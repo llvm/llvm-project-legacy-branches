@@ -77,7 +77,7 @@ bool PCallToThreads::runOnFunction(Function &F) {
   bool Changed = false;
   ParallelInfo &PI = getAnalysis<ParallelInfo>();
 
-  // Convert parallel calls to pthread_create() invocations
+  // Convert parallel calls to __llvm_thread_start() invocations
   for (ParallelInfo::iterator i = PI.begin(), e = PI.end(); i != e; ++i) {
     ParallelSeq *PS = *i;
     for (ParallelSeq::riterator r = PS->rbegin(), re = PS->rend(); 
