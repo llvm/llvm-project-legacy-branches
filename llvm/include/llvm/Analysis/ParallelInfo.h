@@ -30,6 +30,7 @@ class ParallelSeq;
 ///
 class ParallelRegion {
   ParallelSeq *parent;
+  std::vector<ParallelSeq*> children;
   std::vector<BasicBlock*> Blocks;
 
 public:
@@ -43,12 +44,14 @@ public:
   ParallelRegion(ParallelSeq *PS) : parent(PS) {}
   ParallelRegion(BasicBlock *BB) : parent(0) { Blocks.push_back(BB); }
   ParallelRegion() : parent(0) {}
+  ~ParallelRegion();
 
   static ParallelRegion* discoverRegion(BasicBlock *pbrBlock,
                                         BasicBlock *begin, BasicBlock *end);
   void addBasicBlock(BasicBlock *BB) { Blocks.push_back(BB); }
   void removeBasicBlock(BasicBlock *BB);
   bool contains(const BasicBlock *BB);
+  void addChildSeq(ParallelSeq *PS);
 
   ParallelSeq *getParent() { return parent; }
 
@@ -63,9 +66,8 @@ public:
 /// before the end of the function.
 ///
 class ParallelSeq { 
-  ParallelSeq *ParentSeq;
+  ParallelRegion *parent;
   BasicBlock *SeqHeader;
-  std::vector<ParallelSeq*> ParaSubSeqs; // Other parallel sequences contained
   std::vector<ParallelRegion*> Regions;  // Parallel code regions
   std::vector<BasicBlock*> JoinBlocks;   // Blocks containing "join", if any
 
@@ -73,16 +75,16 @@ class ParallelSeq {
   const ParallelSeq &operator=(const ParallelSeq &); // DO NOT IMPLEMENT
 
 public:
+  ParallelSeq(ParallelRegion *PR0, ParallelRegion *PR1, BasicBlock *SeqHd = 0) 
+    : parent(0), SeqHeader(SeqHd) {
+    Regions.push_back(PR0);
+    Regions.push_back(PR1);
+  }
+
   /// contains - Return true of the specified basic block is in this sequence
   ///
   bool contains(const BasicBlock *BB) const;
   
-  /// iterator/begin/end - Return the seqs contained entirely within this seq.
-  ///
-  typedef std::vector<ParallelSeq*>::const_iterator iterator;
-  iterator begin() const { return ParaSubSeqs.begin(); }
-  iterator end() const { return ParaSubSeqs.end(); }
-
   /// region_iterator/region_begin/region_end - Return the regions contained
   /// within this parallel sequence.
   ///
@@ -99,16 +101,13 @@ public:
   ///
   BasicBlock *getHeader() const { return SeqHeader; }
 
+  void setParent(ParallelRegion *PR) { parent = PR; }
+
   void print(std::ostream &O, unsigned Depth = 0) const;
   void dump() const;
 
 private:
   friend class ParallelInfo;
-  inline ParallelSeq(ParallelRegion *PR0, ParallelRegion *PR1) 
-    : ParentSeq(0), SeqHeader(0) {
-    Regions.push_back(PR0);
-    Regions.push_back(PR1);
-  }
 };
 
 
@@ -120,20 +119,21 @@ class ParallelInfo : public FunctionPass {
   std::vector<ParallelSeq*> TopLevelSeqs;
   friend class ParallelSeq;
 
-  /// getAnalysisUsage - Requires dominator sets
-  ///
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+  void print(std::ostream &O) const;
+
+  ParallelSeq* ConsiderParallelSeq(BasicBlock *BB, const DominatorSet &DS);
+
+public:
 
   /// runOnFunction - Calculate the parallel region information.
   ///
   virtual bool runOnFunction(Function &F);
 
-  void print(std::ostream &O) const;
+  /// getAnalysisUsage - Requires dominator sets
+  ///
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
   void Calculate(const DominatorSet &DS);
-  ParallelSeq* ConsiderParallelSeq(BasicBlock *BB, const DominatorSet &DS);
-
-public:
 
   /// iterator/begin/end - The interface to the top-level parallel sequences in
   /// the current function.
