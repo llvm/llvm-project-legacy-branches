@@ -11,9 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/iOther.h"
-#include "llvm/Function.h"
 #include "llvm/BasicBlock.h"
+#include "llvm/Function.h"
+#include "llvm/iOther.h"
+#include "llvm/iTerminators.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/FunctionUtils.h"
 using namespace llvm;
@@ -44,9 +45,18 @@ bool BreakJoin::runOnFunction(Function &F) {
     BasicBlock *BB = Worklist.back();
     Worklist.pop_back();
     if (CallInst *CI = findJoin(BB)) {
+      // Break away everything after the join
+      BasicBlock::iterator Next(CI); ++Next;
+      if (!isa<TerminatorInst>(Next) || isa<ReturnInst>(Next)) {
+        BasicBlock *newBB = 
+          BB->splitBasicBlock(Next, BB->getName() + "_postsplit");
+        if (newBB) Worklist.push_back(newBB);
+      }
+
+      // Break away the join from anything before it
       BasicBlock::iterator II(CI);
       if (II != BB->begin()) {
-        BasicBlock *newBB = BB->splitBasicBlock(II, BB->getName() + "_split");
+        BasicBlock *newBB = BB->splitBasicBlock(II, BB->getName() +"_presplit");
         if (newBB) Worklist.push_back(newBB);
       }
     }
@@ -58,7 +68,8 @@ bool BreakJoin::runOnFunction(Function &F) {
 CallInst* BreakJoin::findJoin(BasicBlock *BB) {
   for (BasicBlock::iterator i = BB->begin(), e = BB->end(); i != e; ++i)
     if (CallInst *CI = dyn_cast<CallInst>(i))
-      if (CI->getCalledFunction()->getName() == "llvm.join")
+      if (CI->getCalledFunction()->getName() == "llvm.join" ||
+          CI->getCalledFunction()->getName() == "__llvm_thread_join") 
         return CI;
 
   return 0;
