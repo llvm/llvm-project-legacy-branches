@@ -820,7 +820,7 @@ using namespace llvm;
 %token OPAQUE NOT EXTERNAL TARGET ENDIAN POINTERSIZE LITTLE BIG
 
 // Basic Block Terminating Operators 
-%token <TermOpVal> RET BR SWITCH INVOKE UNWIND
+%token <TermOpVal> RET BR PBR SWITCH INVOKE UNWIND
 
 // Binary Operators 
 %type  <BinaryOpVal> BinaryOps  // all the binary operators
@@ -1594,6 +1594,10 @@ BBTerminatorInst : RET ResolvedVal {              // Return with a result...
     $$ = new BranchInst(cast<BasicBlock>(getVal(Type::LabelTy, $6)), 
 			cast<BasicBlock>(getVal(Type::LabelTy, $9)),
 			getVal(Type::BoolTy, $3));
+  }
+  | PBR LABEL ValueRef ',' LABEL ValueRef {
+    $$ = new ParaBrInst(cast<BasicBlock>(getVal(Type::LabelTy, $3)),
+                        cast<BasicBlock>(getVal(Type::LabelTy, $6)));
   }
   | SWITCH IntType ValueRef ',' LABEL ValueRef '[' JumpTable ']' {
     SwitchInst *S = new SwitchInst(getVal($2, $3), 

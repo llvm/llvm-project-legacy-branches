@@ -242,6 +242,7 @@ vaarg           { RET_TOK(OtherOpVal, VAArg , VAARG); }
 
 ret             { RET_TOK(TermOpVal, Ret, RET); }
 br              { RET_TOK(TermOpVal, Br, BR); }
+pbr             { RET_TOK(TermOpVal, ParaBr, PBR); }
 switch          { RET_TOK(TermOpVal, Switch, SWITCH); }
 invoke          { RET_TOK(TermOpVal, Invoke, INVOKE); }
 unwind          { RET_TOK(TermOpVal, Unwind, UNWIND); }
