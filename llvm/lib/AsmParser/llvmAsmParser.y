@@ -19,6 +19,7 @@
 #include "llvm/iMemory.h"
 #include "llvm/iOperators.h"
 #include "llvm/iPHINode.h"
+#include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "Support/STLExtras.h"
 #include <list>
 #include <utility>
@@ -857,7 +858,7 @@ using namespace llvm;
 %type  <StrVal> Name OptName OptAssign
 
 
-%token IMPLEMENTATION ZEROINITIALIZER TRUE FALSE BEGINTOK ENDTOK
+%token IMPLEMENTATION ZEROINITIALIZER TRUETOK FALSETOK BEGINTOK ENDTOK
 %token DECLARE GLOBAL CONSTANT VOLATILE
 %token TO DOTDOTDOT NULL_TOK CONST INTERNAL LINKONCE WEAK  APPENDING
 %token OPAQUE NOT EXTERNAL TARGET ENDIAN POINTERSIZE LITTLE BIG
@@ -876,7 +877,7 @@ using namespace llvm;
 
 // Other Operators
 %type  <OtherOpVal> ShiftOps
-%token <OtherOpVal> PHI_TOK CALL CAST SHL SHR VAARG VANEXT
+%token <OtherOpVal> PHI_TOK CALL CAST SELECT SHL SHR VAARG VANEXT
 %token VA_ARG // FIXME: OBSOLETE
 
 %start Module
@@ -1210,10 +1211,10 @@ ConstVal : SIntType EINT64VAL {      // integral constants
       ThrowException("Constant value doesn't fit in type!");
     $$ = ConstantUInt::get($1, $2);
   }
-  | BOOL TRUE {                      // Boolean constants
+  | BOOL TRUETOK {                      // Boolean constants
     $$ = ConstantBool::True;
   }
-  | BOOL FALSE {                     // Boolean constants
+  | BOOL FALSETOK {                     // Boolean constants
     $$ = ConstantBool::False;
   }
   | FPType FPVAL {                   // Float & Double constants
@@ -1235,6 +1236,17 @@ ConstExpr: CAST '(' ConstVal TO Types ')' {
     if (!isa<PointerType>($3->getType()))
       ThrowException("GetElementPtr requires a pointer operand!");
 
+    // LLVM 1.2 and earlier used ubyte struct indices.  Convert any ubyte struct
+    // indices to uint struct indices for compatibility.
+    generic_gep_type_iterator<std::vector<Value*>::iterator>
+      GTI = gep_type_begin($3->getType(), $4->begin(), $4->end()),
+      GTE = gep_type_end($3->getType(), $4->begin(), $4->end());
+    for (unsigned i = 0, e = $4->size(); i != e && GTI != GTE; ++i, ++GTI)
+      if (isa<StructType>(*GTI))        // Only change struct indices
+        if (ConstantUInt *CUI = dyn_cast<ConstantUInt>((*$4)[i]))
+          if (CUI->getType() == Type::UByteTy)
+            (*$4)[i] = ConstantExpr::getCast(CUI, Type::UIntTy);
+
     const Type *IdxTy =
       GetElementPtrInst::getIndexedType($3->getType(), *$4, true);
     if (!IdxTy)
@@ -1250,6 +1262,13 @@ ConstExpr: CAST '(' ConstVal TO Types ')' {
     delete $4;
 
     $$ = ConstantExpr::getGetElementPtr($3, IdxVec);
+  }
+  | SELECT '(' ConstVal ',' ConstVal ',' ConstVal ')' {
+    if ($3->getType() != Type::BoolTy)
+      ThrowException("Select condition must be of boolean type!");
+    if ($5->getType() != $7->getType())
+      ThrowException("Select operand types must match!");
+    $$ = ConstantExpr::getSelect($3, $5, $7);
   }
   | BinaryOps '(' ConstVal ',' ConstVal ')' {
     if ($3->getType() != $5->getType())
@@ -1543,10 +1562,10 @@ ConstValueRef : ESINT64VAL {    // A reference to a direct constant
   | FPVAL {                     // Perhaps it's an FP constant?
     $$ = ValID::create($1);
   }
-  | TRUE {
+  | TRUETOK {
     $$ = ValID::create(ConstantBool::True);
   } 
-  | FALSE {
+  | FALSETOK {
     $$ = ValID::create(ConstantBool::False);
   }
   | NULL_TOK {
@@ -1806,6 +1825,13 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     $$ = new CastInst($2, *$4);
     delete $4;
   }
+  | SELECT ResolvedVal ',' ResolvedVal ',' ResolvedVal {
+    if ($2->getType() != Type::BoolTy)
+      ThrowException("select condition must be boolean!");
+    if ($4->getType() != $6->getType())
+      ThrowException("select value types should match!");
+    $$ = new SelectInst($2, $4, $6);
+  }
   | VA_ARG ResolvedVal ',' Types {
     // FIXME: This is emulation code for an obsolete syntax.  This should be
     // removed at some point.
@@ -1969,8 +1995,21 @@ MemoryInst : MALLOC Types {
   | GETELEMENTPTR Types ValueRef IndexList {
     if (!isa<PointerType>($2->get()))
       ThrowException("getelementptr insn requires pointer operand!");
+
+    // LLVM 1.2 and earlier used ubyte struct indices.  Convert any ubyte struct
+    // indices to uint struct indices for compatibility.
+    generic_gep_type_iterator<std::vector<Value*>::iterator>
+      GTI = gep_type_begin($2->get(), $4->begin(), $4->end()),
+      GTE = gep_type_end($2->get(), $4->begin(), $4->end());
+    for (unsigned i = 0, e = $4->size(); i != e && GTI != GTE; ++i, ++GTI)
+      if (isa<StructType>(*GTI))        // Only change struct indices
+        if (ConstantUInt *CUI = dyn_cast<ConstantUInt>((*$4)[i]))
+          if (CUI->getType() == Type::UByteTy)
+            (*$4)[i] = ConstantExpr::getCast(CUI, Type::UIntTy);
+
     if (!GetElementPtrInst::getIndexedType(*$2, *$4, true))
-      ThrowException("Can't get element ptr '" + (*$2)->getDescription()+ "'!");
+      ThrowException("Invalid getelementptr indices for type '" +
+                     (*$2)->getDescription()+ "'!");
     $$ = new GetElementPtrInst(getVal(*$2, $3), *$4);
     delete $2; delete $4;
   };
@@ -1982,7 +2021,7 @@ int yyerror(const char *ErrorMsg) {
     = std::string((CurFilename == "-") ? std::string("<stdin>") : CurFilename)
                   + ":" + utostr((unsigned) llvmAsmlineno) + ": ";
   std::string errMsg = std::string(ErrorMsg) + "\n" + where + " while reading ";
-  if (yychar == YYEMPTY)
+  if (yychar == YYEMPTY || yychar == 0)
     errMsg += "end-of-file.";
   else
     errMsg += "token: '" + std::string(llvmAsmtext, llvmAsmleng) + "'";

@@ -174,8 +174,8 @@ HexIntConstant [us]0x[0-9A-Fa-f]+
 
 begin           { return BEGINTOK; }
 end             { return ENDTOK; }
-true            { return TRUE;  }
-false           { return FALSE; }
+true            { return TRUETOK;  }
+false           { return FALSETOK; }
 declare         { return DECLARE; }
 global          { return GLOBAL; }
 constant        { return CONSTANT; }
@@ -234,6 +234,7 @@ setge           { RET_TOK(BinaryOpVal, SetGE, SETGE); }
 phi             { RET_TOK(OtherOpVal, PHI, PHI_TOK); }
 call            { RET_TOK(OtherOpVal, Call, CALL); }
 cast            { RET_TOK(OtherOpVal, Cast, CAST); }
+select          { RET_TOK(OtherOpVal, Select, SELECT); }
 shl             { RET_TOK(OtherOpVal, Shl, SHL); }
 shr             { RET_TOK(OtherOpVal, Shr, SHR); }
 va_arg          { return VA_ARG; /* FIXME: OBSOLETE */}
@@ -305,6 +306,14 @@ getelementptr   { RET_TOK(MemOpVal, GetElementPtr, GETELEMENTPTR); }
 
 {FPConstant}    { llvmAsmlval.FPVal = atof(yytext); return FPVAL; }
 {HexFPConstant} { llvmAsmlval.FPVal = HexToFP(yytext); return FPVAL; }
+
+<<EOF>>         {
+                  /* Make sure to free the internal buffers for flex when we are
+                   * done reading our input!
+                   */
+                  yy_delete_buffer(YY_CURRENT_BUFFER);
+                  return EOF;
+                }
 
 [ \t\n]         { /* Ignore whitespace */ }
 .               { return yytext[0]; }
