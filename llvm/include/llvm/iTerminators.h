@@ -155,7 +155,7 @@ public:
 // ParaBrInst - Parallel Branch instruction.
 //
 class ParaBrInst : public TerminatorInst {
-  ParaBrInst(const ParaBrInst &BI);
+  ParaBrInst(const ParaBrInst &Pbr);
 public:
   ParaBrInst(BasicBlock *one, BasicBlock *two);
 
