@@ -1,4 +1,4 @@
-//===- llvm/Analysis/LoopInfo.h - Natural Loop Calculator -------*- C++ -*-===//
+//===- llvm/Analysis/ParallelInfo.h - Parallel Region Analyzer --*- C++ -*-===//
 // 
 //                     The LLVM Compiler Infrastructure
 //
@@ -17,8 +17,6 @@
 #define LLVM_ANALYSIS_PARALLEL_INFO_H
 
 #include "llvm/Pass.h"
-//#include "Support/GraphTraits.h"
-//#include <set>
 #include "llvm/Analysis/Dominators.h"
 #include <iostream>
 #include <vector>
