@@ -562,8 +562,8 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
   case Intrinsic::dbg_func_start:  NumArgs = 1; break;
   case Intrinsic::dbg_declare:     NumArgs = 1; break;
 
-  // FIXME: this should take a single parameter which is returned by pbr
-  case Intrinsic::join:            NumArgs = 0; break;
+  // Join takes a single parameter which is returned by pbr
+  case Intrinsic::join:            NumArgs = 1; break;
  
   case Intrinsic::alpha_ctlz:      NumArgs = 1; break;
   case Intrinsic::alpha_cttz:      NumArgs = 1; break;
