@@ -41,10 +41,10 @@ namespace {
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AliasAnalysis::getAnalysisUsage(AU);
-      AU.setPreservesAll();                    // Does not transform code...
-      AU.addRequiredLive<TDDataStructures>();      // Uses TD Datastructures
-      AU.addRequiredLive<BUDataStructures>();      // Uses BU Datastructures
-      AU.addRequired<AliasAnalysis>();         // Chains to another AA impl...
+      AU.setPreservesAll();                         // Does not transform code
+      AU.addRequiredTransitive<TDDataStructures>(); // Uses TD Datastructures
+      AU.addRequiredTransitive<BUDataStructures>(); // Uses BU Datastructures
+      AU.addRequired<AliasAnalysis>();              // Chains to another AA impl
     }
 
     //------------------------------------------------
