@@ -151,6 +151,43 @@ public:
   }
 };
 
+//===---------------------------------------------------------------------------
+// ParaBrInst - Parallel Branch instruction.
+//
+class ParaBrInst : public TerminatorInst {
+  ParaBrInst(const ParaBrInst &BI);
+public:
+  ParaBrInst(BasicBlock *one, BasicBlock *two);
+
+  virtual Instruction *clone() const { return new ParaBrInst(*this); }
+
+  virtual const BasicBlock *getSuccessor(unsigned i) const {
+    assert(i < getNumSuccessors() && "Successor # out of range for ParaBr!");
+    return (i == 0) ? cast<BasicBlock>(Operands[0].get()) : 
+                      cast<BasicBlock>(Operands[1].get());
+  }
+  inline BasicBlock *getSuccessor(unsigned idx) {
+    const ParaBrInst *BI = this;
+    return const_cast<BasicBlock*>(BI->getSuccessor(idx));
+  }
+
+  virtual void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
+    assert(idx < getNumSuccessors() && "Successor # out of range for Branch!");
+    Operands[idx] = reinterpret_cast<Value*>(NewSucc);
+  }
+
+  virtual unsigned getNumSuccessors() const { return 2; /* support n>2? */ }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const ParaBrInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return (I->getOpcode() == Instruction::ParaBr);
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
 
 //===---------------------------------------------------------------------------
 // SwitchInst - Multiway switch
