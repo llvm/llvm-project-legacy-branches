@@ -44,6 +44,9 @@ namespace Intrinsic {
     dbg_func_start,   // Start of a function
     dbg_declare,      // Declare a local object
 
+    // Parallelism/atomicity/synchronization intrinsics...
+    join,
+
     //===------------------------------------------------------------------===//
     // This section defines intrinsic functions used to represent Alpha
     // instructions...
