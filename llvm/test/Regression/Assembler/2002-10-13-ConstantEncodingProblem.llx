@@ -1,8 +1,0 @@
-; RUN: llvm-as < %s | llvm-dis
-
-%Domain = type { %Domain**, %Domain* }
-
-%D = global %Domain { %Domain** null, %Domain* null }
-
-implementation
-

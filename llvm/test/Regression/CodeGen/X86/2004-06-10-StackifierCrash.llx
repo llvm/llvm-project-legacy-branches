@@ -1,6 +1,0 @@
-; RUN: llvm-as < %s | llc -march=x86
-
-bool %T(double %X) {
-  %V = seteq double %X, %X
-  ret bool %V
-}

@@ -1,7 +1,0 @@
-; RUN: llvm-as < %s | lli -force-interpreter=false -regalloc=simple
-
-int %main(int %B) {
-	;%B = add int 0, 1
-	%R = sub int %B, 1  ; %r = 0
-	ret int %R
-}

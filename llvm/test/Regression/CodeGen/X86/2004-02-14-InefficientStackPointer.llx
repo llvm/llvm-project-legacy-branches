@@ -1,5 +1,0 @@
-; RUN: llvm-as < %s | llc -march=x86 | grep ESP | not grep sub
-
-int %test(int %X) {
-	ret int %X
-}
