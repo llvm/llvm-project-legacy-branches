@@ -20,16 +20,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Pass.h"
 #include "llvm/Argument.h"
 #include "llvm/iOther.h"
 #include "llvm/iMemory.h"
 #include "llvm/Constants.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/DerivedTypes.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/GlobalVariable.h"
+#include "llvm/iOther.h"
+#include "llvm/iMemory.h"
+#include "llvm/Pass.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Target/TargetData.h"
 using namespace llvm;
 
 // Make sure that anything that uses AliasAnalysis pulls in this file...

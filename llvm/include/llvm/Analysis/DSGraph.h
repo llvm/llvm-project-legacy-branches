@@ -360,6 +360,10 @@ public:
   ///
   DSCallSite getCallSiteForArguments(Function &F) const;
 
+  /// getDSCallSiteForCallSite - Given an LLVM CallSite object that is live in
+  /// the context of this graph, return the DSCallSite for it.
+  DSCallSite getDSCallSiteForCallSite(CallSite CS) const;
+
   // Methods for checking to make sure graphs are well formed...
   void AssertNodeInGraph(const DSNode *N) const {
     assert((!N || N->getParentGraph() == this) &&
@@ -370,22 +374,9 @@ public:
            N->getGlobals().end() && "Global value not in node!");
   }
 
-  void AssertCallSiteInGraph(const DSCallSite &CS) const {
-    if (CS.isIndirectCall())
-      AssertNodeInGraph(CS.getCalleeNode());
-    AssertNodeInGraph(CS.getRetVal().getNode());
-    for (unsigned j = 0, e = CS.getNumPtrArgs(); j != e; ++j)
-      AssertNodeInGraph(CS.getPtrArg(j).getNode());
-  }
-
-  void AssertCallNodesInGraph() const {
-    for (unsigned i = 0, e = FunctionCalls.size(); i != e; ++i)
-      AssertCallSiteInGraph(FunctionCalls[i]);
-  }
-  void AssertAuxCallNodesInGraph() const {
-    for (unsigned i = 0, e = AuxFunctionCalls.size(); i != e; ++i)
-      AssertCallSiteInGraph(AuxFunctionCalls[i]);
-  }
+  void AssertCallSiteInGraph(const DSCallSite &CS) const;
+  void AssertCallNodesInGraph() const;
+  void AssertAuxCallNodesInGraph() const;
 
   void AssertGraphOK() const;
 
@@ -436,7 +427,13 @@ public:
     /// site into the nodes reachable from DestCS.
     void mergeCallSite(const DSCallSite &DestCS, const DSCallSite &SrcCS);
 
-    bool clonedNode() const { return !NodeMap.empty(); }
+    bool clonedAnyNodes() const { return !NodeMap.empty(); }
+
+    /// hasClonedNode - Return true if the specified node has been cloned from
+    /// the source graph into the destination graph.
+    bool hasClonedNode(const DSNode *N) {
+      return NodeMap.count(N);
+    }
 
     void destroy() { NodeMap.clear(); }
   };

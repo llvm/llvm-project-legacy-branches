@@ -14,13 +14,16 @@
 
 #include "llvm/Analysis/ProfileInfoLoader.h"
 #include "llvm/Module.h"
+#include "llvm/InstrTypes.h"
 #include <cstdio>
+#include <map>
 using namespace llvm;
 
 enum ProfilingType {
   ArgumentInfo = 1,   // The command line argument block
   FunctionInfo = 2,   // Function profiling information
   BlockInfo    = 3,   // Block profiling information
+  EdgeInfo     = 4,   // Edge profiling information
 };
 
 // ByteSwap - Byteswap 'Var' if 'Really' is true.
@@ -122,6 +125,10 @@ ProfileInfoLoader::ProfileInfoLoader(const char *ToolName,
       ReadProfilingBlock(ToolName, F, ShouldByteSwap, BlockCounts);
       break;
 
+    case EdgeInfo:
+      ReadProfilingBlock(ToolName, F, ShouldByteSwap, EdgeCounts);
+      break;
+
     default:
       std::cerr << ToolName << ": Unknown packet type #" << PacketType << "!\n";
       exit(1);
@@ -139,15 +146,19 @@ ProfileInfoLoader::ProfileInfoLoader(const char *ToolName,
 void ProfileInfoLoader::getFunctionCounts(std::vector<std::pair<Function*,
                                                       unsigned> > &Counts) {
   if (FunctionCounts.empty()) {
-    // Synthesize function frequency information from the number of times their
-    // entry blocks were executed.
-    std::vector<std::pair<BasicBlock*, unsigned> > BlockCounts;
-    getBlockCounts(BlockCounts);
-
-    for (unsigned i = 0, e = BlockCounts.size(); i != e; ++i)
-      if (&BlockCounts[i].first->getParent()->front() == BlockCounts[i].first)
-        Counts.push_back(std::make_pair(BlockCounts[i].first->getParent(),
-                                        BlockCounts[i].second));
+    if (hasAccurateBlockCounts()) {
+      // Synthesize function frequency information from the number of times
+      // their entry blocks were executed.
+      std::vector<std::pair<BasicBlock*, unsigned> > BlockCounts;
+      getBlockCounts(BlockCounts);
+      
+      for (unsigned i = 0, e = BlockCounts.size(); i != e; ++i)
+        if (&BlockCounts[i].first->getParent()->front() == BlockCounts[i].first)
+          Counts.push_back(std::make_pair(BlockCounts[i].first->getParent(),
+                                          BlockCounts[i].second));
+    } else {
+      std::cerr << "Function counts are not available!\n";
+    }
     return;
   }
   
@@ -165,8 +176,59 @@ void ProfileInfoLoader::getFunctionCounts(std::vector<std::pair<Function*,
 void ProfileInfoLoader::getBlockCounts(std::vector<std::pair<BasicBlock*,
                                                          unsigned> > &Counts) {
   if (BlockCounts.empty()) {
-    std::cerr << "Block counts not available, and no synthesis "
-              << "is implemented yet!\n";
+    if (hasAccurateEdgeCounts()) {
+      // Synthesize block count information from edge frequency information.
+      // The block execution frequency is equal to the sum of the execution
+      // frequency of all outgoing edges from a block.
+      //
+      // If a block has no successors, this will not be correct, so we have to
+      // special case it. :(
+      std::vector<std::pair<Edge, unsigned> > EdgeCounts;
+      getEdgeCounts(EdgeCounts);
+
+      std::map<BasicBlock*, unsigned> InEdgeFreqs;
+
+      BasicBlock *LastBlock = 0;
+      TerminatorInst *TI = 0;
+      for (unsigned i = 0, e = EdgeCounts.size(); i != e; ++i) {
+        if (EdgeCounts[i].first.first != LastBlock) {
+          LastBlock = EdgeCounts[i].first.first;
+          TI = LastBlock->getTerminator();
+          Counts.push_back(std::make_pair(LastBlock, 0));
+        }
+        Counts.back().second += EdgeCounts[i].second;
+        unsigned SuccNum = EdgeCounts[i].first.second;
+        if (SuccNum >= TI->getNumSuccessors()) {
+          static bool Warned = false;
+          if (!Warned) {
+            std::cerr << "WARNING: profile info doesn't seem to match"
+                      << " the program!\n";
+            Warned = true;
+          }
+        } else {
+          // If this successor has no successors of its own, we will never
+          // compute an execution count for that block.  Remember the incoming
+          // edge frequencies to add later.
+          BasicBlock *Succ = TI->getSuccessor(SuccNum);
+          if (Succ->getTerminator()->getNumSuccessors() == 0)
+            InEdgeFreqs[Succ] += EdgeCounts[i].second;
+        }
+      }
+
+      // Now we have to accumulate information for those blocks without
+      // successors into our table.
+      for (std::map<BasicBlock*, unsigned>::iterator I = InEdgeFreqs.begin(),
+             E = InEdgeFreqs.end(); I != E; ++I) {
+        unsigned i = 0;
+        for (; i != Counts.size() && Counts[i].first != I->first; ++i)
+          /*empty*/;
+        if (i == Counts.size()) Counts.push_back(std::make_pair(I->first, 0));
+        Counts[i].second += I->second;
+      }
+
+    } else {
+      std::cerr << "Block counts are not available!\n";
+    }
     return;
   }
 
@@ -177,4 +239,27 @@ void ProfileInfoLoader::getBlockCounts(std::vector<std::pair<BasicBlock*,
       if (Counter == BlockCounts.size())
         return;
     }
+}
+
+// getEdgeCounts - This method is used by consumers of edge counting
+// information.  If we do not directly have edge count information, we compute
+// it from other, more refined, types of profile information.
+//
+void ProfileInfoLoader::getEdgeCounts(std::vector<std::pair<Edge,
+                                                  unsigned> > &Counts) {
+  if (EdgeCounts.empty()) {
+    std::cerr << "Edge counts not available, and no synthesis "
+              << "is implemented yet!\n";
+    return;
+  }
+
+  unsigned Counter = 0;
+  for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F)
+    for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
+      for (unsigned i = 0, e = BB->getTerminator()->getNumSuccessors();
+           i != e; ++i) {
+        Counts.push_back(std::make_pair(Edge(BB, i), EdgeCounts[Counter++]));
+        if (Counter == EdgeCounts.size())
+          return;
+      }
 }

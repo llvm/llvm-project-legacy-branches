@@ -73,7 +73,7 @@ static struct PerModuleInfo {
   // here.  This is used for forward references of ConstantPointerRefs.
   //
   typedef std::map<std::pair<const PointerType *,
-                             ValID>, GlobalVariable*> GlobalRefsType;
+                             ValID>, GlobalValue*> GlobalRefsType;
   GlobalRefsType GlobalRefs;
 
   void ModuleDone() {
@@ -114,7 +114,7 @@ static struct PerModuleInfo {
       GlobalRefs.find(std::make_pair(GV->getType(), D));
 
     if (I != GlobalRefs.end()) {
-      GlobalVariable *OldGV = I->second;   // Get the placeholder...
+      GlobalValue *OldGV = I->second;   // Get the placeholder...
       I->first.second.destroy();  // Free string memory if necessary
       
       // Loop over all of the uses of the GlobalValue.  The only thing they are
@@ -125,12 +125,14 @@ static struct PerModuleInfo {
         
       // Change the const pool reference to point to the real global variable
       // now.  This should drop a use from the OldGV.
-      CPR->mutateReferences(OldGV, GV);
+      CPR->replaceUsesOfWithOnConstant(OldGV, GV);
       assert(OldGV->use_empty() && "All uses should be gone now!");
       
       // Remove OldGV from the module...
-      CurrentModule->getGlobalList().remove(OldGV);
-      delete OldGV;                        // Delete the old placeholder
+      if (GlobalVariable *GVar = dyn_cast<GlobalVariable>(OldGV))
+        CurrentModule->getGlobalList().erase(GVar);
+      else
+        CurrentModule->getFunctionList().erase(cast<Function>(OldGV));
       
       // Remove the map entry for the global now that it has been created...
       GlobalRefs.erase(I);
@@ -1293,8 +1295,6 @@ Module : FunctionList {
 //
 FunctionList : FunctionList Function {
     $$ = $1;
-    assert($2->getParent() == 0 && "Function already in module!");
-    $1->getFunctionList().push_back($2);
     CurFun.FunctionDone();
   } 
   | FunctionList FunctionProto {
@@ -1469,18 +1469,13 @@ FunctionHeaderH : TypesV Name '(' ArgList ')' {
     if (!CurFun.isDeclare && !Fn->isExternal())
       ThrowException("Redefinition of function '" + FunctionName + "'!");
     
-    // If we found a preexisting function prototype, remove it from the
-    // module, so that we don't get spurious conflicts with global & local
-    // variables.
-    //
-    CurModule.CurrentModule->getFunctionList().remove(Fn);
-
     // Make sure to strip off any argument names so we can't get conflicts...
     for (Function::aiterator AI = Fn->abegin(), AE = Fn->aend(); AI != AE; ++AI)
       AI->setName("");
 
   } else  {  // Not already defined?
-    Fn = new Function(FT, GlobalValue::ExternalLinkage, FunctionName);
+    Fn = new Function(FT, GlobalValue::ExternalLinkage, FunctionName,
+                      CurModule.CurrentModule);
     InsertValue(Fn, CurModule.Values);
     CurModule.DeclareNewGlobalValue(Fn, ValID::create($2));
   }
@@ -1532,8 +1527,6 @@ Function : BasicBlockList END {
 
 FunctionProto : DECLARE { CurFun.isDeclare = true; } FunctionHeaderH {
   $$ = CurFun.CurrentFunction;
-  assert($$->getParent() == 0 && "Function already in module!");
-  CurModule.CurrentModule->getFunctionList().push_back($$);
   CurFun.FunctionDone();
 };
 

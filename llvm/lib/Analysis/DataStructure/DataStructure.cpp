@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/DSGraph.h"
+#include "llvm/Analysis/DSGraphTraits.h"
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/iOther.h"
@@ -20,6 +20,7 @@
 #include "llvm/Assembly/Writer.h"
 #include "Support/CommandLine.h"
 #include "Support/Debug.h"
+#include "Support/DepthFirstIterator.h"
 #include "Support/STLExtras.h"
 #include "Support/Statistic.h"
 #include "Support/Timer.h"
@@ -80,10 +81,11 @@ DSNode::DSNode(const Type *T, DSGraph *G)
 // DSNode copy constructor... do not copy over the referrers list!
 DSNode::DSNode(const DSNode &N, DSGraph *G, bool NullLinks)
   : NumReferrers(0), Size(N.Size), ParentGraph(G),
-    Ty(N.Ty), Globals(N.Globals), NodeType(N.NodeType) {
-  if (!NullLinks)
+    Ty(N.Ty), NodeType(N.NodeType) {
+  if (!NullLinks) {
     Links = N.Links;
-  else
+    Globals = N.Globals;
+  } else
     Links.resize(N.Links.size()); // Create the appropriate number of null links
   G->addNode(this);
   ++NumNodeAllocated;
@@ -630,6 +632,8 @@ void DSNode::mergeGlobals(const std::vector<GlobalValue*> &RHS) {
 void DSNode::MergeNodes(DSNodeHandle& CurNodeH, DSNodeHandle& NH) {
   assert(CurNodeH.getOffset() >= NH.getOffset() &&
          "This should have been enforced in the caller.");
+  assert(CurNodeH.getNode()->getParentGraph()==NH.getNode()->getParentGraph() &&
+         "Cannot merge two nodes that are not in the same graph!");
 
   // Now we know that Offset >= NH.Offset, so convert it so our "Offset" (with
   // respect to NH.Offset) is now zero.  NOffset is the distance from the base
@@ -781,6 +785,23 @@ DSNodeHandle ReachabilityCloner::getClonedNH(const DSNodeHandle &SrcNH) {
   if (!NH.isNull())    // Node already mapped?
     return DSNodeHandle(NH.getNode(), NH.getOffset()+SrcNH.getOffset());
 
+  // If SrcNH has globals and the destination graph has one of the same globals,
+  // merge this node with the destination node, which is much more efficient.
+  if (SN->global_begin() != SN->global_end()) {
+    DSScalarMap &DestSM = Dest.getScalarMap();
+    for (DSNode::global_iterator I = SN->global_begin(), E = SN->global_end();
+         I != E; ++I) {
+      GlobalValue *GV = *I;
+      DSScalarMap::iterator GI = DestSM.find(GV);
+      if (GI != DestSM.end() && !GI->second.isNull()) {
+        // We found one, use merge instead!
+        merge(GI->second, Src.getNodeForValue(GV));
+        assert(!NH.isNull() && "Didn't merge node!");
+        return DSNodeHandle(NH.getNode(), NH.getOffset()+SrcNH.getOffset());
+      }
+    }
+  }
+
   DSNode *DN = new DSNode(*SN, &Dest, true /* Null out all links */);
   DN->maskNodeTypes(BitsToKeep);
   NH = DN;
@@ -823,6 +844,7 @@ DSNodeHandle ReachabilityCloner::getClonedNH(const DSNodeHandle &SrcNH) {
     if (CloneFlags & DSGraph::UpdateInlinedGlobals)
       Dest.getInlinedGlobals().insert(GV);
   }
+  NH.getNode()->mergeGlobals(SN->getGlobals());
 
   return DSNodeHandle(NH.getNode(), NH.getOffset()+SrcNH.getOffset());
 }
@@ -912,6 +934,7 @@ void ReachabilityCloner::merge(const DSNodeHandle &NH,
         if (CloneFlags & DSGraph::UpdateInlinedGlobals)
           Dest.getInlinedGlobals().insert(GV);
       }
+      NH.getNode()->mergeGlobals(SN->getGlobals());
     }
   } else {
     // We cannot handle this case without allocating a temporary node.  Fall
@@ -963,19 +986,25 @@ void ReachabilityCloner::merge(const DSNodeHandle &NH,
       // wrapping), but if the current node gets collapsed due to
       // recursive merging, we must make sure to merge in all remaining
       // links at offset zero.
-      unsigned MergeOffset = 0;
       DSNode *CN = SCNH.getNode();
-      if (CN->getSize() != 1)
-        MergeOffset = ((i << DS::PointerShift)+SCNH.getOffset()) %CN->getSize();
+      unsigned MergeOffset =
+        ((i << DS::PointerShift)+SCNH.getOffset()) % CN->getSize();
       
-      DSNodeHandle &Link = CN->getLink(MergeOffset);
-      if (!Link.isNull()) {
+      DSNodeHandle Tmp = CN->getLink(MergeOffset);
+      if (!Tmp.isNull()) {
         // Perform the recursive merging.  Make sure to create a temporary NH,
         // because the Link can disappear in the process of recursive merging.
-        DSNodeHandle Tmp = Link;
         merge(Tmp, SrcEdge);
       } else {
-        merge(Link, SrcEdge);
+        Tmp.mergeWith(getClonedNH(SrcEdge));
+        // Merging this could cause all kinds of recursive things to happen,
+        // culminating in the current node being eliminated.  Since this is
+        // possible, make sure to reaquire the link from 'CN'.
+
+        unsigned MergeOffset = 0;
+        CN = SCNH.getNode();
+        MergeOffset = ((i << DS::PointerShift)+SCNH.getOffset()) %CN->getSize();
+        CN->getLink(MergeOffset).mergeWith(Tmp);
       }
     }
   }
@@ -1181,6 +1210,23 @@ void DSGraph::cloneInto(const DSGraph &G, DSScalarMap &OldValMap,
   }
 }
 
+static bool PathExistsToClonedNode(const DSNode *N, ReachabilityCloner &RC) {
+  if (N)
+    for (df_iterator<const DSNode*> I = df_begin(N), E = df_end(N); I != E; ++I)
+      if (RC.hasClonedNode(*I))
+        return true;
+  return false;
+}
+
+static bool PathExistsToClonedNode(const DSCallSite &CS,
+                                   ReachabilityCloner &RC) {
+  if (PathExistsToClonedNode(CS.getRetVal().getNode(), RC))
+    return true;
+  for (unsigned i = 0, e = CS.getNumPtrArgs(); i != e; ++i)
+    if (PathExistsToClonedNode(CS.getPtrArg(i).getNode(), RC))
+      return true;
+  return false;
+}
 
 /// mergeInGraph - The method is used for merging graphs together.  If the
 /// argument graph is not *this, it makes a clone of the specified graph, then
@@ -1190,6 +1236,10 @@ void DSGraph::cloneInto(const DSGraph &G, DSScalarMap &OldValMap,
 void DSGraph::mergeInGraph(const DSCallSite &CS, Function &F,
                            const DSGraph &Graph, unsigned CloneFlags) {
   TIME_REGION(X, "mergeInGraph");
+
+  // Fastpath for a noop inline.
+  if (CS.getNumPtrArgs() == 0 && CS.getRetVal().isNull())
+    return;
 
   // If this is not a recursive call, clone the graph into this graph...
   if (&Graph != this) {
@@ -1218,29 +1268,72 @@ void DSGraph::mergeInGraph(const DSCallSite &CS, Function &F,
     // Map the return node pointer over.
     if (!CS.getRetVal().isNull())
       RC.merge(CS.getRetVal(), Graph.getReturnNodeFor(F));
-    
-    // If requested, copy the calls or aux-calls lists.
+
+    // If requested, copy all of the calls.
     if (!(CloneFlags & DontCloneCallNodes)) {
       // Copy the function calls list...
       FunctionCalls.reserve(FunctionCalls.size()+Graph.FunctionCalls.size());
       for (unsigned i = 0, ei = Graph.FunctionCalls.size(); i != ei; ++i)
         FunctionCalls.push_back(DSCallSite(Graph.FunctionCalls[i], RC));
     }
-    
+
+    // If the user has us copying aux calls (the normal case), set up a data
+    // structure to keep track of which ones we've copied over.
+    std::vector<bool> CopiedAuxCall;
     if (!(CloneFlags & DontCloneAuxCallNodes)) {
-      // Copy the auxiliary function calls list...
       AuxFunctionCalls.reserve(AuxFunctionCalls.size()+
                                Graph.AuxFunctionCalls.size());
-      for (unsigned i = 0, ei = Graph.AuxFunctionCalls.size(); i != ei; ++i)
-        AuxFunctionCalls.push_back(DSCallSite(Graph.AuxFunctionCalls[i], RC));
+      CopiedAuxCall.resize(Graph.AuxFunctionCalls.size());
     }
     
     // Clone over all globals that appear in the caller and callee graphs.
+    hash_set<GlobalVariable*> NonCopiedGlobals;
     for (DSScalarMap::global_iterator GI = Graph.getScalarMap().global_begin(),
            E = Graph.getScalarMap().global_end(); GI != E; ++GI)
       if (GlobalVariable *GV = dyn_cast<GlobalVariable>(*GI))
         if (ScalarMap.count(GV))
           RC.merge(ScalarMap[GV], Graph.getNodeForValue(GV));
+        else
+          NonCopiedGlobals.insert(GV);
+    
+    // If the global does not appear in the callers graph we generally don't
+    // want to copy the node.  However, if there is a path from the node global
+    // node to a node that we did copy in the graph, we *must* copy it to
+    // maintain the connection information.  Every time we decide to include a
+    // new global, this might make other globals live, so we must iterate
+    // unfortunately.
+    bool MadeChange = true;
+    while (MadeChange) {
+      MadeChange = false;
+      for (hash_set<GlobalVariable*>::iterator I = NonCopiedGlobals.begin();
+           I != NonCopiedGlobals.end();) {
+        DSNode *GlobalNode = Graph.getNodeForValue(*I).getNode();
+        if (RC.hasClonedNode(GlobalNode)) {
+          // Already cloned it, remove from set.
+          NonCopiedGlobals.erase(I++);
+          MadeChange = true;
+        } else if (PathExistsToClonedNode(GlobalNode, RC)) {
+          RC.getClonedNH(Graph.getNodeForValue(*I));
+          NonCopiedGlobals.erase(I++);
+          MadeChange = true;
+        } else {
+          ++I;
+        }
+      }
+
+      // If requested, copy any aux calls that can reach copied nodes.
+      if (!(CloneFlags & DontCloneAuxCallNodes)) {
+        for (unsigned i = 0, ei = Graph.AuxFunctionCalls.size(); i != ei; ++i)
+          if (!CopiedAuxCall[i] &&
+              PathExistsToClonedNode(Graph.AuxFunctionCalls[i], RC)) {
+            AuxFunctionCalls.push_back(DSCallSite(Graph.AuxFunctionCalls[i],
+                                                  RC));
+            CopiedAuxCall[i] = true;
+            MadeChange = true;
+          }
+      }
+    }
+
   } else {
     DSNodeHandle RetVal = getReturnNodeFor(F);
 
@@ -1280,6 +1373,30 @@ DSCallSite DSGraph::getCallSiteForArguments(Function &F) const {
       Args.push_back(getNodeForValue(I));
 
   return DSCallSite(CallSite(), getReturnNodeFor(F), &F, Args);
+}
+
+/// getDSCallSiteForCallSite - Given an LLVM CallSite object that is live in
+/// the context of this graph, return the DSCallSite for it.
+DSCallSite DSGraph::getDSCallSiteForCallSite(CallSite CS) const {
+  DSNodeHandle RetVal;
+  Instruction *I = CS.getInstruction();
+  if (isPointerType(I->getType()))
+    RetVal = getNodeForValue(I);
+
+  std::vector<DSNodeHandle> Args;
+  Args.reserve(CS.arg_end()-CS.arg_begin());
+
+  // Calculate the arguments vector...
+  for (CallSite::arg_iterator I = CS.arg_begin(), E = CS.arg_end(); I != E; ++I)
+    if (isPointerType((*I)->getType()))
+      Args.push_back(getNodeForValue(*I));
+
+  // Add a new function call entry...
+  if (Function *F = CS.getCalledFunction())
+    return DSCallSite(CS, RetVal, F, Args);
+  else
+    return DSCallSite(CS, RetVal,
+                      getNodeForValue(CS.getCalledValue()).getNode(), Args);
 }
 
 
@@ -1348,7 +1465,7 @@ void DSGraph::markIncompleteNodes(unsigned Flags) {
     for (DSScalarMap::global_iterator I = ScalarMap.global_begin(),
            E = ScalarMap.global_end(); I != E; ++I)
       if (GlobalVariable *GV = dyn_cast<GlobalVariable>(*I))
-        if (!GV->isConstant())
+        if (!GV->isConstant() || !GV->hasInitializer())
           markIncompleteNode(ScalarMap[GV].getNode());
 }
 
@@ -1799,6 +1916,29 @@ void DSGraph::removeDeadNodes(unsigned Flags) {
   DEBUG(AssertGraphOK(); GlobalsGraph->AssertGraphOK());
 }
 
+void DSGraph::AssertCallSiteInGraph(const DSCallSite &CS) const {
+  if (CS.isIndirectCall()) {
+    AssertNodeInGraph(CS.getCalleeNode());
+#if 0
+    if (CS.getNumPtrArgs() && CS.getCalleeNode() == CS.getPtrArg(0).getNode() &&
+        CS.getCalleeNode() && CS.getCalleeNode()->getGlobals().empty())
+      std::cerr << "WARNING: WIERD CALL SITE FOUND!\n";      
+#endif
+  }
+  AssertNodeInGraph(CS.getRetVal().getNode());
+  for (unsigned j = 0, e = CS.getNumPtrArgs(); j != e; ++j)
+    AssertNodeInGraph(CS.getPtrArg(j).getNode());
+}
+
+void DSGraph::AssertCallNodesInGraph() const {
+  for (unsigned i = 0, e = FunctionCalls.size(); i != e; ++i)
+    AssertCallSiteInGraph(FunctionCalls[i]);
+}
+void DSGraph::AssertAuxCallNodesInGraph() const {
+  for (unsigned i = 0, e = AuxFunctionCalls.size(); i != e; ++i)
+    AssertCallSiteInGraph(AuxFunctionCalls[i]);
+}
+
 void DSGraph::AssertGraphOK() const {
   for (node_iterator NI = node_begin(), E = node_end(); NI != E; ++NI)
     (*NI)->assertOK();
@@ -1847,4 +1987,7 @@ void DSGraph::computeNodeMapping(const DSNodeHandle &NH1,
   for (unsigned i = 0, e = N1->getSize(); i < e; i += DS::PointerSize)
     if (unsigned(N2Idx)+i < N2Size)
       computeNodeMapping(N1->getLink(i), N2->getLink(N2Idx+i), NodeMap);
+    else
+      computeNodeMapping(N1->getLink(i),
+                         N2->getLink(unsigned(N2Idx+i) % N2Size), NodeMap);
 }

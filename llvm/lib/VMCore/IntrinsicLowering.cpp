@@ -125,11 +125,6 @@ void DefaultIntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
       CI->replaceAllUsesWith(Constant::getNullValue(CI->getType()));
     break;    // Simply strip out debugging intrinsics
 
-  case Intrinsic::join: 
-    // Insert the call to abort
-    new CallInst(M->getOrInsertFunction("abort", Type::VoidTy, 0), "", CI);
-    break;    
-
   case Intrinsic::memcpy:
     // The memcpy intrinsic take an extra alignment argument that the memcpy
     // libc function does not.

@@ -13,8 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/PassManager.h"
 #include "PassManagerT.h"         // PassManagerT implementation
+#include "llvm/PassManager.h"
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "Support/STLExtras.h"

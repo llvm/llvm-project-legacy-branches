@@ -29,11 +29,12 @@
 #ifndef LLVM_PASS_H
 #define LLVM_PASS_H
 
-#include <vector>
-#include <map>
-#include <iosfwd>
-#include <typeinfo>
 #include <cassert>
+#include <iosfwd>
+#include <map>
+#include <set>
+#include <typeinfo>
+#include <vector>
 
 namespace llvm {
 
