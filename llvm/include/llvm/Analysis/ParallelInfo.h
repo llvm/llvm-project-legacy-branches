@@ -30,10 +30,18 @@ class ParallelSeq;
 ///
 class ParallelRegion {
   ParallelSeq *parent;
-  std::vector<ParallelSeq*> children;
+  std::vector<ParallelSeq*> Children;
   std::vector<BasicBlock*> Blocks;
 
 public:
+  ParallelRegion(ParallelSeq *PS) : parent(PS) {}
+  ParallelRegion(BasicBlock *BB) : parent(0) { Blocks.push_back(BB); }
+  ParallelRegion() : parent(0) {}
+  ~ParallelRegion();
+
+  static ParallelRegion* discoverRegion(BasicBlock *pbrBlock,
+                                        BasicBlock *begin);
+
   typedef std::vector<BasicBlock*>::iterator             iterator;
   typedef std::vector<BasicBlock*>::const_iterator const_iterator;
   iterator             begin()       { return Blocks.begin(); }
@@ -41,23 +49,23 @@ public:
   const_iterator const_begin() const { return Blocks.begin(); }
   const_iterator   const_end() const { return Blocks.end();   }
 
-  ParallelRegion(ParallelSeq *PS) : parent(PS) {}
-  ParallelRegion(BasicBlock *BB) : parent(0) { Blocks.push_back(BB); }
-  ParallelRegion() : parent(0) {}
-  ~ParallelRegion();
+  typedef std::vector<ParallelSeq*>::iterator             seqiterator;
+  typedef std::vector<ParallelSeq*>::const_iterator const_seqiterator;  
+  seqiterator             seqbegin()       { return Children.begin(); }
+  seqiterator               seqend()       { return Children.end();   }
+  const_seqiterator const_seqbegin() const { return Children.begin(); }
+  const_seqiterator   const_seqend() const { return Children.end();   }
 
-  static ParallelRegion* discoverRegion(BasicBlock *pbrBlock,
-                                        BasicBlock *begin, BasicBlock *end);
   void addBasicBlock(BasicBlock *BB) { Blocks.push_back(BB); }
   void removeBasicBlock(BasicBlock *BB);
   bool contains(const BasicBlock *BB);
   void addChildSeq(ParallelSeq *PS);
+  std::vector<BasicBlock*> &getBlocks() { return Blocks; }
 
   ParallelSeq *getParent() { return parent; }
 
   void print(std::ostream &os);
   void dump() { print(std::cerr); }
-
 };
 
 
@@ -88,9 +96,12 @@ public:
   /// region_iterator/region_begin/region_end - Return the regions contained
   /// within this parallel sequence.
   ///
-  typedef std::vector<ParallelRegion*>::const_iterator region_iterator;
-  region_iterator region_begin() const { return Regions.begin(); }
-  region_iterator region_end()   const { return Regions.end();   }
+  typedef std::vector<ParallelRegion*>::iterator             riterator;
+  typedef std::vector<ParallelRegion*>::const_iterator const_riterator;
+  riterator             rbegin()       { return Regions.begin(); }
+  riterator             rend()         { return Regions.end();   }
+  const_riterator const_rbegin() const { return Regions.begin(); }
+  const_riterator const_rend()   const { return Regions.end();   }
 
   /// getJoinBlocks - Return all of the join/synchronization blocks where the
   /// threads of this sequence become one again.
