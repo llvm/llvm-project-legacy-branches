@@ -107,6 +107,7 @@ namespace {
     /// LowerUnknownIntrinsicFunctionCalls - This performs a prepass over the
     /// function, lowering any calls to unknown intrinsic functions into the
     /// equivalent LLVM code.
+    ///
     void LowerUnknownIntrinsicFunctionCalls(Function &F);
 
     /// LoadArgumentsToVirtualRegs - Load all of the arguments to this function
@@ -198,8 +199,14 @@ namespace {
     ///
     void promote32(unsigned targetReg, const ValueRecord &VR);
 
-    // getGEPIndex - This is used to fold GEP instructions into X86 addressing
-    // expressions.
+    /// getAddressingMode - Get the addressing mode to use to address the
+    /// specified value.  The returned value should be used with addFullAddress.
+    void getAddressingMode(Value *Addr, unsigned &BaseReg, unsigned &Scale,
+                           unsigned &IndexReg, unsigned &Disp);
+
+
+    /// getGEPIndex - This is used to fold GEP instructions into X86 addressing
+    /// expressions.
     void getGEPIndex(MachineBasicBlock *MBB, MachineBasicBlock::iterator IP,
                      std::vector<Value*> &GEPOps,
                      std::vector<const Type*> &GEPTypes, unsigned &BaseReg,
@@ -221,11 +228,13 @@ namespace {
 
     /// emitCastOperation - Common code shared between visitCastInst and
     /// constant expression cast support.
+    ///
     void emitCastOperation(MachineBasicBlock *BB,MachineBasicBlock::iterator IP,
                            Value *Src, const Type *DestTy, unsigned TargetReg);
 
     /// emitSimpleBinaryOperation - Common code shared between visitSimpleBinary
     /// and constant expression support.
+    ///
     void emitSimpleBinaryOperation(MachineBasicBlock *BB,
                                    MachineBasicBlock::iterator IP,
                                    Value *Op0, Value *Op1,
@@ -238,6 +247,7 @@ namespace {
 
     /// emitSetCCOperation - Common code shared between visitSetCondInst and
     /// constant expression support.
+    ///
     void emitSetCCOperation(MachineBasicBlock *BB,
                             MachineBasicBlock::iterator IP,
                             Value *Op0, Value *Op1, unsigned Opcode,
@@ -245,6 +255,7 @@ namespace {
 
     /// emitShiftOperation - Common code shared between visitShiftInst and
     /// constant expression support.
+    ///
     void emitShiftOperation(MachineBasicBlock *MBB,
                             MachineBasicBlock::iterator IP,
                             Value *Op, Value *ShiftAmount, bool isLeftShift,
@@ -709,8 +720,12 @@ void ISel::InsertFPRegKills() {
       ++NumFPKill;
     }
   }
+  // If we got this far, there is no need to insert the kill instruction.
+  return false;
+#else
+  return true;
+#endif
 }
-
 
 // canFoldSetCCIntoBranch - Return the setcc instruction if we can fold it into
 // the conditional branch instruction which is the only user of the cc
@@ -887,6 +902,7 @@ void ISel::visitSetCondInst(SetCondInst &I) {
 
 /// emitSetCCOperation - Common code shared between visitSetCondInst and
 /// constant expression support.
+///
 void ISel::emitSetCCOperation(MachineBasicBlock *MBB,
                               MachineBasicBlock::iterator IP,
                               Value *Op0, Value *Op1, unsigned Opcode,
@@ -913,6 +929,7 @@ void ISel::emitSetCCOperation(MachineBasicBlock *MBB,
 
 /// promote32 - Emit instructions to turn a narrow operand into a 32-bit-wide
 /// operand, in the specified target register.
+///
 void ISel::promote32(unsigned targetReg, const ValueRecord &VR) {
   bool isUnsigned = VR.Ty->isUnsigned();
 
@@ -1221,6 +1238,7 @@ void ISel::visitCallInst(CallInst &CI) {
 /// LowerUnknownIntrinsicFunctionCalls - This performs a prepass over the
 /// function, lowering any calls to unknown intrinsic functions into the
 /// equivalent LLVM code.
+///
 void ISel::LowerUnknownIntrinsicFunctionCalls(Function &F) {
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
     for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; )
@@ -1400,15 +1418,67 @@ void ISel::visitIntrinsicCall(Intrinsic::ID ID, CallInst &CI) {
   }
 }
 
+static bool isSafeToFoldLoadIntoInstruction(LoadInst &LI, Instruction &User) {
+  if (LI.getParent() != User.getParent())
+    return false;
+  BasicBlock::iterator It = &LI;
+  // Check all of the instructions between the load and the user.  We should
+  // really use alias analysis here, but for now we just do something simple.
+  for (++It; It != BasicBlock::iterator(&User); ++It) {
+    switch (It->getOpcode()) {
+    case Instruction::Store:
+    case Instruction::Call:
+    case Instruction::Invoke:
+      return false;
+    }
+  }
+  return true;
+}
+
 
 /// visitSimpleBinary - Implement simple binary operators for integral types...
 /// OperatorClass is one of: 0 for Add, 1 for Sub, 2 for And, 3 for Or, 4 for
 /// Xor.
+///
 void ISel::visitSimpleBinary(BinaryOperator &B, unsigned OperatorClass) {
   unsigned DestReg = getReg(B);
   MachineBasicBlock::iterator MI = BB->end();
-  emitSimpleBinaryOperation(BB, MI, B.getOperand(0), B.getOperand(1),
-                            OperatorClass, DestReg);
+  Value *Op0 = B.getOperand(0), *Op1 = B.getOperand(1);
+
+  // Special case: op Reg, load [mem]
+  if (isa<LoadInst>(Op0) && !isa<LoadInst>(Op1))
+    if (!B.swapOperands())
+      std::swap(Op0, Op1);  // Make sure any loads are in the RHS.
+
+  unsigned Class = getClassB(B.getType());
+  if (isa<LoadInst>(Op1) && Class < cFP &&
+      isSafeToFoldLoadIntoInstruction(*cast<LoadInst>(Op1), B)) {
+
+    static const unsigned OpcodeTab[][3] = {
+      // Arithmetic operators
+      { X86::ADD8rm, X86::ADD16rm, X86::ADD32rm },  // ADD
+      { X86::SUB8rm, X86::SUB16rm, X86::SUB32rm },  // SUB
+      
+      // Bitwise operators
+      { X86::AND8rm, X86::AND16rm, X86::AND32rm },  // AND
+      { X86:: OR8rm, X86:: OR16rm, X86:: OR32rm },  // OR
+      { X86::XOR8rm, X86::XOR16rm, X86::XOR32rm },  // XOR
+    };
+  
+    assert(Class < cFP && "General code handles 64-bit integer types!");
+    unsigned Opcode = OpcodeTab[OperatorClass][Class];
+
+    unsigned BaseReg, Scale, IndexReg, Disp;
+    getAddressingMode(cast<LoadInst>(Op1)->getOperand(0), BaseReg,
+                      Scale, IndexReg, Disp);
+
+    unsigned Op0r = getReg(Op0);
+    addFullAddress(BuildMI(BB, Opcode, 2, DestReg).addReg(Op0r),
+                   BaseReg, Scale, IndexReg, Disp);
+    return;
+  }
+
+  emitSimpleBinaryOperation(BB, MI, Op0, Op1, OperatorClass, DestReg);
 }
 
 /// emitSimpleBinaryOperation - Implement simple binary operators for integral
@@ -1450,83 +1520,82 @@ void ISel::emitSimpleBinaryOperation(MachineBasicBlock *MBB,
         return;
       }
 
-  if (!isa<ConstantInt>(Op1) || Class == cLong) {
-    static const unsigned OpcodeTab[][4] = {
-      // Arithmetic operators
-      { X86::ADD8rr, X86::ADD16rr, X86::ADD32rr, X86::FpADD },  // ADD
-      { X86::SUB8rr, X86::SUB16rr, X86::SUB32rr, X86::FpSUB },  // SUB
-      
-      // Bitwise operators
-      { X86::AND8rr, X86::AND16rr, X86::AND32rr, 0 },  // AND
-      { X86:: OR8rr, X86:: OR16rr, X86:: OR32rr, 0 },  // OR
-      { X86::XOR8rr, X86::XOR16rr, X86::XOR32rr, 0 },  // XOR
-    };
-    
-    bool isLong = false;
-    if (Class == cLong) {
-      isLong = true;
-      Class = cInt;          // Bottom 32 bits are handled just like ints
-    }
-    
-    unsigned Opcode = OpcodeTab[OperatorClass][Class];
-    assert(Opcode && "Floating point arguments to logical inst?");
-    unsigned Op0r = getReg(Op0, MBB, IP);
-    unsigned Op1r = getReg(Op1, MBB, IP);
-    BuildMI(*MBB, IP, Opcode, 2, DestReg).addReg(Op0r).addReg(Op1r);
-    
-    if (isLong) {        // Handle the upper 32 bits of long values...
-      static const unsigned TopTab[] = {
-        X86::ADC32rr, X86::SBB32rr, X86::AND32rr, X86::OR32rr, X86::XOR32rr
-      };
-      BuildMI(*MBB, IP, TopTab[OperatorClass], 2,
-          DestReg+1).addReg(Op0r+1).addReg(Op1r+1);
-    }
-    return;
-  }
-
   // Special case: op Reg, <const>
-  ConstantInt *Op1C = cast<ConstantInt>(Op1);
-  unsigned Op0r = getReg(Op0, MBB, IP);
+  if (Class != cLong && isa<ConstantInt>(Op1)) {
+    ConstantInt *Op1C = cast<ConstantInt>(Op1);
+    unsigned Op0r = getReg(Op0, MBB, IP);
 
-  // xor X, -1 -> not X
-  if (OperatorClass == 4 && Op1C->isAllOnesValue()) {
-    static unsigned const NOTTab[] = { X86::NOT8r, X86::NOT16r, X86::NOT32r };
-    BuildMI(*MBB, IP, NOTTab[Class], 1, DestReg).addReg(Op0r);
-    return;
-  }
+    // xor X, -1 -> not X
+    if (OperatorClass == 4 && Op1C->isAllOnesValue()) {
+      static unsigned const NOTTab[] = { X86::NOT8r, X86::NOT16r, X86::NOT32r };
+      BuildMI(*MBB, IP, NOTTab[Class], 1, DestReg).addReg(Op0r);
+      return;
+    }
 
-  // add X, -1 -> dec X
-  if (OperatorClass == 0 && Op1C->isAllOnesValue()) {
-    static unsigned const DECTab[] = { X86::DEC8r, X86::DEC16r, X86::DEC32r };
-    BuildMI(*MBB, IP, DECTab[Class], 1, DestReg).addReg(Op0r);
-    return;
-  }
+    // add X, -1 -> dec X
+    if (OperatorClass == 0 && Op1C->isAllOnesValue()) {
+      static unsigned const DECTab[] = { X86::DEC8r, X86::DEC16r, X86::DEC32r };
+      BuildMI(*MBB, IP, DECTab[Class], 1, DestReg).addReg(Op0r);
+      return;
+    }
 
-  // add X, 1 -> inc X
-  if (OperatorClass == 0 && Op1C->equalsInt(1)) {
-    static unsigned const DECTab[] = { X86::INC8r, X86::INC16r, X86::INC32r };
-    BuildMI(*MBB, IP, DECTab[Class], 1, DestReg).addReg(Op0r);
-    return;
-  }
+    // add X, 1 -> inc X
+    if (OperatorClass == 0 && Op1C->equalsInt(1)) {
+      static unsigned const DECTab[] = { X86::INC8r, X86::INC16r, X86::INC32r };
+      BuildMI(*MBB, IP, DECTab[Class], 1, DestReg).addReg(Op0r);
+      return;
+    }
   
-  static const unsigned OpcodeTab[][3] = {
-    // Arithmetic operators
-    { X86::ADD8ri, X86::ADD16ri, X86::ADD32ri },  // ADD
-    { X86::SUB8ri, X86::SUB16ri, X86::SUB32ri },  // SUB
+    static const unsigned OpcodeTab[][3] = {
+      // Arithmetic operators
+      { X86::ADD8ri, X86::ADD16ri, X86::ADD32ri },  // ADD
+      { X86::SUB8ri, X86::SUB16ri, X86::SUB32ri },  // SUB
     
+      // Bitwise operators
+      { X86::AND8ri, X86::AND16ri, X86::AND32ri },  // AND
+      { X86:: OR8ri, X86:: OR16ri, X86:: OR32ri },  // OR
+      { X86::XOR8ri, X86::XOR16ri, X86::XOR32ri },  // XOR
+    };
+  
+    assert(Class < cFP && "General code handles 64-bit integer types!");
+    unsigned Opcode = OpcodeTab[OperatorClass][Class];
+
+    uint64_t Op1v = cast<ConstantInt>(Op1C)->getRawValue();
+    BuildMI(*MBB, IP, Opcode, 5, DestReg).addReg(Op0r).addImm(Op1v);
+    return;
+  }
+
+  // Finally, handle the general case now.
+  static const unsigned OpcodeTab[][4] = {
+    // Arithmetic operators
+    { X86::ADD8rr, X86::ADD16rr, X86::ADD32rr, X86::FpADD },  // ADD
+    { X86::SUB8rr, X86::SUB16rr, X86::SUB32rr, X86::FpSUB },  // SUB
+      
     // Bitwise operators
-    { X86::AND8ri, X86::AND16ri, X86::AND32ri },  // AND
-    { X86:: OR8ri, X86:: OR16ri, X86:: OR32ri },  // OR
-    { X86::XOR8ri, X86::XOR16ri, X86::XOR32ri },  // XOR
+    { X86::AND8rr, X86::AND16rr, X86::AND32rr, 0 },  // AND
+    { X86:: OR8rr, X86:: OR16rr, X86:: OR32rr, 0 },  // OR
+    { X86::XOR8rr, X86::XOR16rr, X86::XOR32rr, 0 },  // XOR
   };
-  
-  assert(Class < 3 && "General code handles 64-bit integer types!");
+    
+  bool isLong = false;
+  if (Class == cLong) {
+    isLong = true;
+    Class = cInt;          // Bottom 32 bits are handled just like ints
+  }
+    
   unsigned Opcode = OpcodeTab[OperatorClass][Class];
-  uint64_t Op1v = cast<ConstantInt>(Op1C)->getRawValue();
-  
-  // Mask off any upper bits of the constant, if there are any...
-  Op1v &= (1ULL << (8 << Class)) - 1;
-  BuildMI(*MBB, IP, Opcode, 2, DestReg).addReg(Op0r).addImm(Op1v);
+  assert(Opcode && "Floating point arguments to logical inst?");
+  unsigned Op0r = getReg(Op0, MBB, IP);
+  unsigned Op1r = getReg(Op1, MBB, IP);
+  BuildMI(*MBB, IP, Opcode, 2, DestReg).addReg(Op0r).addReg(Op1r);
+    
+  if (isLong) {        // Handle the upper 32 bits of long values...
+    static const unsigned TopTab[] = {
+      X86::ADC32rr, X86::SBB32rr, X86::AND32rr, X86::OR32rr, X86::XOR32rr
+    };
+    BuildMI(*MBB, IP, TopTab[OperatorClass], 2,
+            DestReg+1).addReg(Op0r+1).addReg(Op1r+1);
+  }
 }
 
 /// doMultiply - Emit appropriate instructions to multiply together the
@@ -1895,30 +1964,65 @@ void ISel::emitShiftOperation(MachineBasicBlock *MBB,
 }
 
 
+void ISel::getAddressingMode(Value *Addr, unsigned &BaseReg, unsigned &Scale,
+                             unsigned &IndexReg, unsigned &Disp) {
+  BaseReg = 0; Scale = 1; IndexReg = 0; Disp = 0;
+  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Addr)) {
+    if (isGEPFoldable(BB, GEP->getOperand(0), GEP->op_begin()+1, GEP->op_end(),
+                       BaseReg, Scale, IndexReg, Disp))
+      return;
+  } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Addr)) {
+    if (CE->getOpcode() == Instruction::GetElementPtr)
+      if (isGEPFoldable(BB, CE->getOperand(0), CE->op_begin()+1, CE->op_end(),
+                        BaseReg, Scale, IndexReg, Disp))
+        return;
+  }
+
+  // If it's not foldable, reset addr mode.
+  BaseReg = getReg(Addr);
+  Scale = 1; IndexReg = 0; Disp = 0;
+}
+
+
 /// visitLoadInst - Implement LLVM load instructions in terms of the x86 'mov'
 /// instruction.  The load and store instructions are the only place where we
 /// need to worry about the memory layout of the target machine.
 ///
 void ISel::visitLoadInst(LoadInst &I) {
-  unsigned DestReg = getReg(I);
-  unsigned BaseReg = 0, Scale = 1, IndexReg = 0, Disp = 0;
-  Value *Addr = I.getOperand(0);
-  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Addr)) {
-    if (isGEPFoldable(BB, GEP->getOperand(0), GEP->op_begin()+1, GEP->op_end(),
-                       BaseReg, Scale, IndexReg, Disp))
-      Addr = 0;  // Address is consumed!
-  } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Addr)) {
-    if (CE->getOpcode() == Instruction::GetElementPtr)
-      if (isGEPFoldable(BB, CE->getOperand(0), CE->op_begin()+1, CE->op_end(),
-                        BaseReg, Scale, IndexReg, Disp))
-        Addr = 0;
+  // Check to see if this load instruction is going to be folded into a binary
+  // instruction, like add.  If so, we don't want to emit it.  Wouldn't a real
+  // pattern matching instruction selector be nice?
+  if (I.hasOneUse() && getClassB(I.getType()) < cFP) {
+    Instruction *User = cast<Instruction>(I.use_back());
+    switch (User->getOpcode()) {
+    default: User = 0; break;
+    case Instruction::Add:
+    case Instruction::Sub:
+    case Instruction::And:
+    case Instruction::Or:
+    case Instruction::Xor:
+      break;
+    }
+
+    if (User) {
+      // Okay, we found a user.  If the load is the first operand and there is
+      // no second operand load, reverse the operand ordering.  Note that this
+      // can fail for a subtract (ie, no change will be made).
+      if (!isa<LoadInst>(User->getOperand(1)))
+        cast<BinaryOperator>(User)->swapOperands();
+      
+      // Okay, now that everything is set up, if this load is used by the second
+      // operand, and if there are no instructions that invalidate the load
+      // before the binary operator, eliminate the load.
+      if (User->getOperand(1) == &I &&
+          isSafeToFoldLoadIntoInstruction(I, *User))
+        return;   // Eliminate the load!
+    }
   }
 
-  if (Addr) {
-    // If it's not foldable, reset addr mode.
-    BaseReg = getReg(Addr);
-    Scale = 1; IndexReg = 0; Disp = 0;
-  }
+  unsigned DestReg = getReg(I);
+  unsigned BaseReg = 0, Scale = 1, IndexReg = 0, Disp = 0;
+  getAddressingMode(I.getOperand(0), BaseReg, Scale, IndexReg, Disp);
 
   unsigned Class = getClassB(I.getType());
   if (Class == cLong) {
@@ -1942,24 +2046,8 @@ void ISel::visitLoadInst(LoadInst &I) {
 /// instruction.
 ///
 void ISel::visitStoreInst(StoreInst &I) {
-  unsigned BaseReg = 0, Scale = 1, IndexReg = 0, Disp = 0;
-  Value *Addr = I.getOperand(1);
-  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Addr)) {
-    if (isGEPFoldable(BB, GEP->getOperand(0), GEP->op_begin()+1, GEP->op_end(),
-                       BaseReg, Scale, IndexReg, Disp))
-      Addr = 0;  // Address is consumed!
-  } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Addr)) {
-    if (CE->getOpcode() == Instruction::GetElementPtr)
-      if (isGEPFoldable(BB, CE->getOperand(0), CE->op_begin()+1, CE->op_end(),
-                        BaseReg, Scale, IndexReg, Disp))
-        Addr = 0;
-  }
-
-  if (Addr) {
-    // If it's not foldable, reset addr mode.
-    BaseReg = getReg(Addr);
-    Scale = 1; IndexReg = 0; Disp = 0;
-  }
+  unsigned BaseReg, Scale, IndexReg, Disp;
+  getAddressingMode(I.getOperand(1), BaseReg, Scale, IndexReg, Disp);
 
   const Type *ValTy = I.getOperand(0)->getType();
   unsigned Class = getClassB(ValTy);
@@ -2003,8 +2091,9 @@ void ISel::visitStoreInst(StoreInst &I) {
 }
 
 
-/// visitCastInst - Here we have various kinds of copying with or without
-/// sign extension going on.
+/// visitCastInst - Here we have various kinds of copying with or without sign
+/// extension going on.
+///
 void ISel::visitCastInst(CastInst &CI) {
   Value *Op = CI.getOperand(0);
   // If this is a cast from a 32-bit integer to a Long type, and the only uses
@@ -2028,8 +2117,9 @@ void ISel::visitCastInst(CastInst &CI) {
   emitCastOperation(BB, MI, Op, CI.getType(), DestReg);
 }
 
-/// emitCastOperation - Common code shared between visitCastInst and
-/// constant expression cast support.
+/// emitCastOperation - Common code shared between visitCastInst and constant
+/// expression cast support.
+///
 void ISel::emitCastOperation(MachineBasicBlock *BB,
                              MachineBasicBlock::iterator IP,
                              Value *Src, const Type *DestTy,
@@ -2371,7 +2461,8 @@ void ISel::visitVAArgInst(VAArgInst &I) {
   }
 }
 
-
+/// visitGetElementPtrInst - instruction-select GEP instructions
+///
 void ISel::visitGetElementPtrInst(GetElementPtrInst &I) {
   // If this GEP instruction will be folded into all of its users, we don't need
   // to explicitly calculate it!

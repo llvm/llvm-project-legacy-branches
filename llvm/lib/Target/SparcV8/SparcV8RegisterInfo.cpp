@@ -71,15 +71,15 @@ void SparcV8RegisterInfo::emitPrologue(MachineFunction &MF) const {
 
   // Eventually this should emit the correct save instruction based on the
   // number of bytes in the frame.  For now we just hardcode it.
-  BuildMI(MBB, MBB.begin(), V8::SAVEi, 2, V8::SP).addImm(-122).addReg(V8::SP);
+  BuildMI(MBB, MBB.begin(), V8::SAVEri, 2, V8::SP).addImm(-112).addReg(V8::SP);
 }
 
 void SparcV8RegisterInfo::emitEpilogue(MachineFunction &MF,
                                        MachineBasicBlock &MBB) const {
   MachineBasicBlock::iterator MBBI = prior(MBB.end());
-  assert(MBBI->getOpcode() == V8::JMPLi &&
-         "Can only put epilog before return instruction!");
-  BuildMI(MBB, MBBI, V8::RESTOREi, 2, V8::O0).addImm(0).addReg(V8::L7);
+  assert(MBBI->getOpcode() == V8::RETL &&
+         "Can only put epilog before 'retl' instruction!");
+  BuildMI(MBB, MBBI, V8::RESTORErr, 2, V8::G0).addReg(V8::G0).addReg(V8::G0);
 }
 
 
@@ -88,9 +88,8 @@ void SparcV8RegisterInfo::emitEpilogue(MachineFunction &MF,
 const TargetRegisterClass*
 SparcV8RegisterInfo::getRegClassForType(const Type* Ty) const {
   switch (Ty->getPrimitiveID()) {
-  case Type::FloatTyID:
-  case Type::DoubleTyID:
-    assert(0 && "Floating point registers not supported yet!");
+  case Type::FloatTyID:  return &FPRegsInstance;
+  case Type::DoubleTyID: return &DFPRegsInstance;
   case Type::LongTyID:
   case Type::ULongTyID: assert(0 && "Long values can't fit in registers!");
   default:              assert(0 && "Invalid type to getClass!");

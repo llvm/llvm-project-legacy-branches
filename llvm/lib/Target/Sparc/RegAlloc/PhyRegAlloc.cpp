@@ -51,12 +51,6 @@ namespace llvm {
 
 RegAllocDebugLevel_t DEBUG_RA;
 
-/// The reoptimizer wants to be able to grovel through the register
-/// allocator's state after it has done its job. This is a hack.
-///
-PhyRegAlloc::SavedStateMapTy ExportedFnAllocState;
-const bool SaveStateToModule = true;
-
 static cl::opt<RegAllocDebugLevel_t, true>
 DRA_opt("dregalloc", cl::Hidden, cl::location(DEBUG_RA),
         cl::desc("enable register allocation debugging information"),
@@ -69,8 +63,16 @@ DRA_opt("dregalloc", cl::Hidden, cl::location(DEBUG_RA),
   clEnumValN(RA_DEBUG_Verbose,     "v", "extra debug output"),
                    0));
 
-static cl::opt<bool>
-SaveRegAllocState("save-ra-state", cl::Hidden,
+/// The reoptimizer wants to be able to grovel through the register
+/// allocator's state after it has done its job. This is a hack.
+///
+PhyRegAlloc::SavedStateMapTy ExportedFnAllocState;
+bool SaveRegAllocState = false;
+bool SaveStateToModule = true;
+static cl::opt<bool, true>
+SaveRegAllocStateOpt("save-ra-state", cl::Hidden,
+                  cl::location (SaveRegAllocState),
+                  cl::init(false),
                   cl::desc("write reg. allocator state into module"));
 
 FunctionPass *getRegisterAllocator(TargetMachine &T) {
@@ -1125,7 +1127,7 @@ void PhyRegAlloc::allocateStackSpace4SpilledLRs() {
 
 
 void PhyRegAlloc::saveStateForValue (std::vector<AllocInfo> &state,
-                                     const Value *V, unsigned Insn, int Opnd) {
+                                     const Value *V, int Insn, int Opnd) {
   LiveRangeMapType::const_iterator HMI = LRI->getLiveRangeMap ()->find (V); 
   LiveRangeMapType::const_iterator HMIEnd = LRI->getLiveRangeMap ()->end ();   
   AllocInfo::AllocStateTy AllocState = AllocInfo::NotAllocated; 
@@ -1155,7 +1157,15 @@ void PhyRegAlloc::saveStateForValue (std::vector<AllocInfo> &state,
 ///
 void PhyRegAlloc::saveState () {
   std::vector<AllocInfo> &state = FnAllocState[Fn];
+  unsigned ArgNum = 0;
+  // Arguments encoded as instruction # -1
+  for (Function::const_aiterator i=Fn->abegin (), e=Fn->aend (); i != e; ++i) {
+    const Argument *Arg = &*i;
+    saveStateForValue (state, Arg, -1, ArgNum);
+    ++ArgNum;
+  }
   unsigned Insn = 0;
+  // Instructions themselves encoded as operand # -1
   for (const_inst_iterator II=inst_begin (Fn), IE=inst_end (Fn); II!=IE; ++II){
     saveStateForValue (state, (*II), Insn, -1);
     for (unsigned i = 0; i < (*II)->getNumOperands (); ++i) {
@@ -1176,7 +1186,7 @@ void PhyRegAlloc::saveState () {
 ///
 void PhyRegAlloc::verifySavedState () {
   std::vector<AllocInfo> &state = FnAllocState[Fn];
-  unsigned Insn = 0;
+  int Insn = 0;
   for (const_inst_iterator II=inst_begin (Fn), IE=inst_end (Fn); II!=IE; ++II) {
     const Instruction *I = *II;
     MachineCodeForInstruction &Instrs = MachineCodeForInstruction::get (I);
@@ -1347,10 +1357,11 @@ bool PhyRegAlloc::runOnFunction (Function &F) {
   colorIncomingArgs();
 
   // Save register allocation state for this function in a Constant.
-  if (SaveRegAllocState)
+  if (SaveRegAllocState) {
     saveState();
-  if (DEBUG_RA) { // Check our work.
-    verifySavedState ();
+    if (DEBUG_RA) { // Check our work.
+      verifySavedState ();
+    }
   }
 
   // Now update the machine code with register names and add any additional

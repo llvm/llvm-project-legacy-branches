@@ -158,6 +158,7 @@ In this release, the following missing features were implemented:
 <li><a href="http://llvm.cs.uiuc.edu/PR205">[llvmgcc] C front-end does not emit 'zeroinitializer' when possible</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR233">[llvmgcc] Structure copies result in a LOT of code</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR239">LLVM is now much more memory efficient when handling large zero initialized arrays</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR275">[llvmgcc] Local array initializers are expanded into large amounts of code</a></li>
 </ol>
 
 <!--=========================================================================-->
@@ -215,6 +216,8 @@ cause use of invalid pointers!</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR245">Linking weak and strong global variables is dependent on link order</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR258">Variables used to define non-printable FP constants are externally visible</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR259">CBE gives linkonce functions wrong linkage semantics</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR274">[JIT] Programs cannot resolve the fstat function</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR284">[indvars] Induction variable analysis violates LLVM invariants</a></li>
 </ol>
 
 
@@ -229,6 +232,9 @@ management functions in libc runtime to allow them to be overriden</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR216">[llvmgcc] floating-point unary minus is incorrect for +0.0</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR221">[llvm-gcc] miscompilation of 'X = Y = Z' with aggregate values</a></li>
 <li><a href="http://llvm.cs.uiuc.edu/PR244">[llvm-gcc] miscompilation when a function is re-declared as static</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR272">[llvmgcc] Invalid code created for complex division operation</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR268">[llvmgcc] Incorrect code generation for pointer subtraction</a></li>
+<li><a href="http://llvm.cs.uiuc.edu/PR261">[llvmg++] Crash assigning pointers-to-members with casted types</a></li>
 </ol>
 
 </div>
