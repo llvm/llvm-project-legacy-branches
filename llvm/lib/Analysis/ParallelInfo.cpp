@@ -15,8 +15,8 @@
 
 #include "llvm/iOther.h"
 #include "llvm/iTerminators.h"
-#include "llvm/Analysis/ParallelInfo.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/ParallelInfo.h"
 #include "llvm/Support/CFG.h"
 #include "Support/Debug.h"
 #include "Support/DepthFirstIterator.h"
@@ -32,6 +32,17 @@ X("paraseq", "Parallel Sequence Construction", true);
 //===----------------------------------------------------------------------===//
 // ParallelRegion implementation
 //
+
+ParallelRegion::~ParallelRegion() {
+  for (std::vector<ParallelSeq*>::iterator i = children.begin(),
+         e = children.end(); i != e; ++i)
+    (*i)->setParent(0);
+}
+
+void ParallelRegion::addChildSeq(ParallelSeq *PS) { 
+  children.push_back(PS); 
+  PS->setParent(this);
+}
 
 bool ParallelRegion::contains(const BasicBlock *BB) {
   return std::find(Blocks.begin(), Blocks.end(), BB) != Blocks.end();
@@ -79,11 +90,28 @@ ParallelRegion* ParallelRegion::discoverRegion(BasicBlock *pbrBlock,
           Worklist.push_back(succ);
       }
     } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
-      assert(0 && "switch not handled within parallel region");
+      for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i) {
+        BasicBlock *succ = SI->getSuccessor(i);
+        DEBUG(std::cerr << "successor: " << succ->getName() << "\n");
+        if (succ != pbrBlock && succ != end && !PR->contains(succ) &&
+            std::find(Worklist.begin(), Worklist.end(), succ) == Worklist.end())
+          Worklist.push_back(succ);
+      }
     } else if (ReturnInst *RI = dyn_cast<ReturnInst>(TI)) {
       assert(0 && "return not handled within parallel region");
     } else if (ParaBrInst *PB = dyn_cast<ParaBrInst>(TI)) {
-      assert(0 && "pbr not handled within parallel region");
+      Value::use_iterator pbrUser = PB->use_begin();
+      assert(pbrUser != PB->use_end() && "pbr not closed by join()?");
+      CallInst *CI = dyn_cast<CallInst>(*pbrUser);
+      assert(CI && "result of pbr used in a non-call instr");
+      assert(CI->getCalledFunction()->getName() == "llvm.join" &&
+             "result of pbr used in a call to something besides `llvm.join'");
+      BasicBlock *pbrBB = PB->getParent(), *joinBB = CI->getParent();
+      ParallelSeq *PS =  
+        new ParallelSeq(discoverRegion(pbrBB, PB->getSuccessor(0), joinBB),
+                        discoverRegion(pbrBB, PB->getSuccessor(1), joinBB),
+                        pbrBB);
+      PR->addChildSeq(PS);
     } else {
       assert(0 && "<unknown terminator> not handled within parallel region");
     }
@@ -128,7 +156,7 @@ void ParallelSeq::dump() const {
 // ParallelInfo implementation
 //
 
-bool ParallelInfo::runOnFunction(Function &) {
+bool ParallelInfo::runOnFunction(Function &F) {
   Calculate(getAnalysis<DominatorSet>());
   return false;
 }
@@ -144,17 +172,8 @@ void ParallelInfo::Calculate(const DominatorSet &DS) {
 
 ParallelSeq*
 ParallelInfo::ConsiderParallelSeq(BasicBlock *BB, const DominatorSet &DS) {
-  // if this block has a pbr
-  bool bbHasPbr = false;
-  ParaBrInst *PBr = 0;
-  for (BasicBlock::iterator i = BB->begin(), e = BB->end(); i != e; ++i) {
-    if ((PBr = dyn_cast<ParaBrInst>(i))) {
-      bbHasPbr = true;
-      break;
-    }
-  }
-
-  if (!bbHasPbr) return 0;
+  ParaBrInst *PBr = dyn_cast<ParaBrInst>(BB->getTerminator());
+  if (!PBr) return 0;
 
   // process each successor tree separately into regions, and combine them
   // into a parallel sequence
@@ -176,7 +195,7 @@ ParallelInfo::ConsiderParallelSeq(BasicBlock *BB, const DominatorSet &DS) {
   DEBUG(std::cerr << "PR1: "; PR1->print(std::cerr); std::cerr << "\n";);
 
   // construct a parallel sequence
-  ParallelSeq *PS = new ParallelSeq(PR0, PR1);
+  ParallelSeq *PS = new ParallelSeq(PR0, PR1, BB);
 
   return PS;
 }
