@@ -720,11 +720,6 @@ void ISel::InsertFPRegKills() {
       ++NumFPKill;
     }
   }
-  // If we got this far, there is no need to insert the kill instruction.
-  return false;
-#else
-  return true;
-#endif
 }
 
 // canFoldSetCCIntoBranch - Return the setcc instruction if we can fold it into
