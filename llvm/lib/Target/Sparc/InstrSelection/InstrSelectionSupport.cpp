@@ -14,7 +14,7 @@
 
 #include "llvm/CodeGen/InstrSelectionSupport.h"
 #include "llvm/CodeGen/InstrSelection.h"
-#include "llvm/CodeGen/MachineInstrAnnot.h"
+#include "../MachineInstrAnnot.h"
 #include "llvm/CodeGen/MachineCodeForInstruction.h"
 #include "llvm/CodeGen/InstrForest.h"
 #include "llvm/Target/TargetMachine.h"
@@ -23,7 +23,7 @@
 #include "llvm/Constants.h"
 #include "llvm/BasicBlock.h"
 #include "llvm/DerivedTypes.h"
-#include "../SparcInstrSelectionSupport.h"
+#include "../SparcV9InstrSelectionSupport.h"
 
 namespace llvm {
 
@@ -71,7 +71,8 @@ ChooseRegOrImmed(int64_t intValue,
       opType = isSigned? MachineOperand::MO_SignExtendedImmed
                        : MachineOperand::MO_UnextendedImmed;
       getImmedValue = intValue;
-  } else if (intValue == 0 && target.getRegInfo().getZeroRegNum() >= 0) {
+  } else if (intValue == 0 &&
+             target.getRegInfo().getZeroRegNum() != (unsigned)-1) {
     opType = MachineOperand::MO_MachineRegister;
     getMachineRegNum = target.getRegInfo().getZeroRegNum();
   }
@@ -129,7 +130,7 @@ FixConstantOperandsForInstr(Instruction* vmInstr,
 {
   std::vector<MachineInstr*> MVec;
   
-  MachineOpCode opCode = minstr->getOpCode();
+  MachineOpCode opCode = minstr->getOpcode();
   const TargetInstrInfo& instrInfo = target.getInstrInfo();
   int resultPos = instrInfo.getResultPos(opCode);
   int immedPos = instrInfo.getImmedConstantPos(opCode);

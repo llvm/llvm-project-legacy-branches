@@ -523,6 +523,10 @@ void Interpreter::visitBinaryOperator(BinaryOperator &I) {
 //===----------------------------------------------------------------------===//
 
 void Interpreter::exitCalled(GenericValue GV) {
+  // runAtExitHandlers() assumes there are no stack frames, but
+  // if exit() was called, then it had a stack frame. Blow away
+  // the stack before interpreting atexit handlers.
+  ECStack.clear ();
   runAtExitHandlers ();
   exit (GV.IntVal);
 }
@@ -589,8 +593,7 @@ void Interpreter::visitUnwindInst(UnwindInst &I) {
   InvokingSF.Caller = CallSite ();
 
   // Go to exceptional destination BB of invoke instruction
-  SwitchToNewBasicBlock (cast<InvokeInst> (Inst)->getExceptionalDest (),
-                         InvokingSF);
+  SwitchToNewBasicBlock(cast<InvokeInst>(Inst)->getUnwindDest(), InvokingSF);
 }
 
 void Interpreter::visitBranchInst(BranchInst &I) {
@@ -771,9 +774,13 @@ void Interpreter::visitCallSite(CallSite CS) {
     switch (F->getIntrinsicID()) {
     case Intrinsic::not_intrinsic:
       break;
-    case Intrinsic::va_start:  // va_start: implemented by getFirstVarArg()
-      SetValue(CS.getInstruction(), getFirstVarArg(), SF);
+    case Intrinsic::va_start: { // va_start
+      GenericValue ArgIndex;
+      ArgIndex.UIntPairVal.first = ECStack.size() - 1;
+      ArgIndex.UIntPairVal.second = 0;
+      SetValue(CS.getInstruction(), ArgIndex, SF);
       return;
+    }
     case Intrinsic::va_end:    // va_end is a noop for the interpreter
       return;
     case Intrinsic::va_copy:   // va_copy: dest = src
@@ -957,14 +964,12 @@ void Interpreter::visitCastInst(CastInst &I) {
 void Interpreter::visitVANextInst(VANextInst &I) {
   ExecutionContext &SF = ECStack.back();
 
-  // Get the incoming valist parameter.  LLI treats the valist as a pointer 
-  // to the next argument.
+  // Get the incoming valist parameter.  LLI treats the valist as a
+  // (ec-stack-depth var-arg-index) pair.
   GenericValue VAList = getOperandValue(I.getOperand(0), SF);
   
   // Move the pointer to the next vararg.
-  GenericValue *ArgPtr = (GenericValue *) GVTOP (VAList);
-  ++ArgPtr;
-  VAList = PTOGV (ArgPtr);
+  ++VAList.UIntPairVal.second;
   SetValue(&I, VAList, SF);
 }
 
@@ -974,11 +979,12 @@ void Interpreter::visitVANextInst(VANextInst &I) {
 void Interpreter::visitVAArgInst(VAArgInst &I) {
   ExecutionContext &SF = ECStack.back();
 
-  // Get the incoming valist parameter.  LLI treats the valist as a pointer 
-  // to the next argument.
+  // Get the incoming valist parameter.  LLI treats the valist as a
+  // (ec-stack-depth var-arg-index) pair.
   GenericValue VAList = getOperandValue(I.getOperand(0), SF);
-  assert (GVTOP (VAList) != 0 && "VAList was null in vaarg instruction");
-  GenericValue Dest, Src = *(GenericValue *) GVTOP (VAList);
+  GenericValue Dest;
+  GenericValue Src = ECStack[VAList.UIntPairVal.first]
+	.VarArgs[VAList.UIntPairVal.second];
   const Type *Ty = I.getType();
   switch (Ty->getPrimitiveID()) {
     IMPLEMENT_VAARG(UByte);

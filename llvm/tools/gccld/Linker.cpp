@@ -21,6 +21,7 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Linker.h"
+#include "Config/config.h"
 #include "Support/CommandLine.h"
 #include "Support/FileUtilities.h"
 #include "Support/Signals.h"
@@ -56,8 +57,8 @@ std::string llvm::FindLib(const std::string &Filename,
     if (!SharedObjectOnly && FileOpenable(Directory + LibName + ".bc"))
       return Directory + LibName + ".bc";
 
-    if (FileOpenable(Directory + LibName + ".so"))
-      return Directory + LibName + ".so";
+    if (FileOpenable(Directory + LibName + SHLIBEXT))
+      return Directory + LibName + SHLIBEXT;
 
     if (!SharedObjectOnly && FileOpenable(Directory + LibName + ".a"))
       return Directory + LibName + ".a";

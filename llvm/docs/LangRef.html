@@ -1,4 +1,5 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+                      "http://www.w3.org/TR/html4/strict.dtd">
 <html>
 <head>
   <title>LLVM Assembly Language Reference Manual</title>
@@ -93,6 +94,19 @@
           <li><a href="#i_va_start">'<tt>llvm.va_start</tt>' Intrinsic</a></li>
           <li><a href="#i_va_end">'<tt>llvm.va_end</tt>'   Intrinsic</a></li>
           <li><a href="#i_va_copy">'<tt>llvm.va_copy</tt>'  Intrinsic</a></li>
+        </ol>
+      </li>
+      <li><a href="#int_codegen">Code Generator Intrinsics</a>
+        <ol>
+          <li><a href="#i_returnaddress">'<tt>llvm.returnaddress</tt>' Intrinsic</a></li>
+          <li><a href="#i_frameaddress">'<tt>llvm.frameaddress</tt>'   Intrinsic</a></li>
+        </ol>
+      </li>
+      <li><a href="#int_libc">Standard C Library Intrinsics</a>
+        <ol>
+          <li><a href="#i_memcpy">'<tt>llvm.memcpy</tt>' Intrinsic</a></li>
+          <li><a href="#i_memmove">'<tt>llvm.memmove</tt>' Intrinsic</a></li>
+          <li><a href="#i_memset">'<tt>llvm.memset</tt>' Intrinsic</a></li>
         </ol>
       </li>
       <li><a href="#int_debugger">Debugger intrinsics</a>
@@ -242,12 +256,12 @@ href="#rw_stroustrup">1</a></sup>.<p> --> </div>
 <div class="doc_text">
 <p>The primitive types are the fundemental building blocks of the LLVM
 system. The current set of primitive types are as follows:</p>
-<p>
-<table border="0" align="center">
+
+<table border="0" style="align: center">
   <tbody>
     <tr>
       <td>
-      <table border="1" cellspacing="0" cellpadding="4" align="center">
+      <table border="1" cellspacing="0" cellpadding="4" style="align: center">
         <tbody>
           <tr>
             <td><tt>void</tt></td>
@@ -281,7 +295,7 @@ system. The current set of primitive types are as follows:</p>
       </table>
       </td>
       <td valign="top">
-      <table border="1" cellspacing="0" cellpadding="4" align="center&quot;">
+      <table border="1" cellspacing="0" cellpadding="4">
         <tbody>
           <tr>
             <td><tt>bool</tt></td>
@@ -313,7 +327,7 @@ system. The current set of primitive types are as follows:</p>
     </tr>
   </tbody>
 </table>
-</p>
+
 </div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_classifications">Type
@@ -321,8 +335,8 @@ Classifications</a> </div>
 <div class="doc_text">
 <p>These different primitive types fall into a few useful
 classifications:</p>
-<p>
-<table border="1" cellspacing="0" cellpadding="4" align="center">
+
+<table border="1" cellspacing="0" cellpadding="4">
   <tbody>
     <tr>
       <td><a name="t_signed">signed</a></td>
@@ -351,7 +365,7 @@ uint, int, ulong, long, float, double, <a href="#t_pointer">pointer</a></tt></td
     </tr>
   </tbody>
 </table>
-</p>
+
 <p>The <a href="#t_firstclass">first class</a> types are perhaps the
 most important.  Values of these types are the only ones which can be
 produced by instructions, passed as arguments, or used as operands to
@@ -383,7 +397,7 @@ be any type with a size.</p>
 <tt>[40 x uint]</tt>: Array of 40 unsigned integer values.</p>
 <p> </p>
 <p>Here are some examples of multidimensional arrays:</p>
-<p>
+
 <table border="0" cellpadding="0" cellspacing="0">
   <tbody>
     <tr>
@@ -400,7 +414,7 @@ be any type with a size.</p>
     </tr>
   </tbody>
 </table>
-</p>
+
 </div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_function">Function Type</a> </div>
@@ -422,7 +436,7 @@ which indicates that the function takes a variable number of arguments.
 Variable argument functions can access their arguments with the <a
  href="#int_varargs">variable argument handling intrinsic</a> functions.</p>
 <h5>Examples:</h5>
-<p>
+
 <table border="0" cellpadding="0" cellspacing="0">
   <tbody>
     <tr>
@@ -444,7 +458,7 @@ in LLVM.</td>
     </tr>
   </tbody>
 </table>
-</p>
+
 </div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_struct">Structure Type</a> </div>
@@ -461,7 +475,7 @@ instruction.</p>
 <h5>Syntax:</h5>
 <pre>  { &lt;type list&gt; }<br></pre>
 <h5>Examples:</h5>
-<p>
+
 <table border="0" cellpadding="0" cellspacing="0">
   <tbody>
     <tr>
@@ -477,7 +491,7 @@ an <tt>int</tt>.</td>
     </tr>
   </tbody>
 </table>
-</p>
+
 </div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_pointer">Pointer Type</a> </div>
@@ -488,7 +502,7 @@ reference to another object, which must live in memory.</p>
 <h5>Syntax:</h5>
 <pre>  &lt;type&gt; *<br></pre>
 <h5>Examples:</h5>
-<p>
+
 <table border="0" cellpadding="0" cellspacing="0">
   <tbody>
     <tr>
@@ -504,7 +518,7 @@ an <tt>int</tt>.</td>
     </tr>
   </tbody>
 </table>
-</p>
+
 </div>
 <!-- _______________________________________________________________________ --><!--
 <div class="doc_subsubsection">
@@ -559,7 +573,7 @@ this case, a pointer to an array of char, and a pointer to a function),
 and have one of the following linkage types:</a>
 <p> </p>
 <dl>
-  <a name="linkage_internal"> <dt><tt><b>internal</b></tt> </dt>
+  <dt><tt><b><a name="linkage_internal">internal</a></b></tt> </dt>
   <dd>Global values with internal linkage are only directly accessible
 by objects in the current module.  In particular, linking code into a
 module with an internal global value may cause the internal to be
@@ -569,7 +583,7 @@ corresponds to the notion of the '<tt>static</tt>' keyword in C, or the
 idea of "anonymous namespaces" in C++.
     <p> </p>
   </dd>
-  </a><a name="linkage_linkonce"> <dt><tt><b>linkonce</b></tt>: </dt>
+  <dt><tt><b><a name="linkage_linkonce">linkonce</a></b></tt>: </dt>
   <dd>"<tt>linkonce</tt>" linkage is similar to <tt>internal</tt>
 linkage, with the twist that linking together two modules defining the
 same <tt>linkonce</tt> globals will cause one of the globals to be
@@ -577,14 +591,14 @@ discarded.  This is typically used to implement inline functions.
 Unreferenced <tt>linkonce</tt> globals are allowed to be discarded.
     <p> </p>
   </dd>
-  </a><a name="linkage_weak"> <dt><tt><b>weak</b></tt>: </dt>
+  <dt><tt><b><a name="linkage_weak">weak</a></b></tt>: </dt>
   <dd>"<tt>weak</tt>" linkage is exactly the same as <tt>linkonce</tt>
 linkage, except that unreferenced <tt>weak</tt> globals may not be
 discarded.  This is used to implement constructs in C such as "<tt>int
 X;</tt>" at global scope.
     <p> </p>
   </dd>
-  </a><a name="linkage_appending"> <dt><tt><b>appending</b></tt>: </dt>
+  <dt><tt><b><a name="linkage_appending">appending</a></b></tt>: </dt>
   <dd>"<tt>appending</tt>" linkage may only be applied to global
 variables of pointer to array type.  When two global variables with
 appending linkage are linked together, the two global arrays are
@@ -593,13 +607,12 @@ the system linker append together "sections" with identical names when
 .o files are linked.
     <p> </p>
   </dd>
-  </a><a name="linkage_external"> <dt><tt><b>externally visible</b></tt>:</dt>
+  <dt><tt><b><a name="linkage_external">externally visible</a></b></tt>:</dt>
   <dd>If none of the above identifiers are used, the global is
 externally visible, meaning that it participates in linkage and can be
 used to resolve external symbol references.
     <p> </p>
   </dd>
-  </a>
 </dl>
 <p> </p>
 <p><a name="linkage_external">For example, since the "<tt>.LC0</tt>"
@@ -735,40 +748,61 @@ control flows to the '<tt>iffalse</tt>' <tt>label</tt> argument.</p>
  href="#i_ret">ret</a> int 1<br>IfUnequal:<br>  <a href="#i_ret">ret</a> int 0<br></pre>
 </div>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_switch">'<tt>switch</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+   <a name="i_switch">'<tt>switch</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
 <h5>Syntax:</h5>
-<pre>  switch uint &lt;value&gt;, label &lt;defaultdest&gt; [ int &lt;val&gt;, label &amp;dest&gt;, ... ]<br></pre>
+
+<pre>
+  switch &lt;intty&gt; &lt;value&gt;, label &lt;defaultdest&gt; [ &lt;intty&gt; &lt;val&gt;, label &lt;dest&gt; ... ]
+</pre>
+
 <h5>Overview:</h5>
-<p>The '<tt>switch</tt>' instruction is used to transfer control flow
-to one of several different places.  It is a generalization of the '<tt>br</tt>'
+
+<p>The '<tt>switch</tt>' instruction is used to transfer control flow to one of
+several different places.  It is a generalization of the '<tt>br</tt>'
 instruction, allowing a branch to occur to one of many possible
 destinations.</p>
+
+
 <h5>Arguments:</h5>
-<p>The '<tt>switch</tt>' instruction uses three parameters: a '<tt>uint</tt>'
-comparison value '<tt>value</tt>', a default '<tt>label</tt>'
-destination, and an array of pairs of comparison value constants and '<tt>label</tt>'s.</p>
+
+<p>The '<tt>switch</tt>' instruction uses three parameters: an integer
+comparison value '<tt>value</tt>', a default '<tt>label</tt>' destination, and
+an array of pairs of comparison value constants and '<tt>label</tt>'s.  The
+table is not allowed to contain duplicate constant entries.</p>
+
 <h5>Semantics:</h5>
+
 <p>The <tt>switch</tt> instruction specifies a table of values and
 destinations. When the '<tt>switch</tt>' instruction is executed, this
 table is searched for the given value.  If the value is found, the
 corresponding destination is branched to, otherwise the default value
 it transfered to.</p>
-<h5>Implementation:</h5>
-<p>Depending on properties of the target machine and the particular <tt>switch</tt>
-instruction, this instruction may be code generated as a series of
-chained conditional branches, or with a lookup table.</p>
-<h5>Example:</h5>
-<pre>  <i>; Emulate a conditional br instruction</i>
-  %Val = <a
- href="#i_cast">cast</a> bool %value to uint<br>  switch uint %Val, label %truedest [int 0, label %falsedest ]<br><br>  <i>; Emulate an unconditional br instruction</i>
-  switch uint 0, label %dest [ ]
 
-  <i>; Implement a jump table:</i>
-  switch uint %val, label %otherwise [ int 0, label %onzero, 
-                                       int 1, label %onone, 
-                                       int 2, label %ontwo ]
+<h5>Implementation:</h5>
+
+<p>Depending on properties of the target machine and the particular
+<tt>switch</tt> instruction, this instruction may be code generated in different
+ways, for example as a series of chained conditional branches, or with a lookup
+table.</p>
+
+<h5>Example:</h5>
+
+<pre>
+ <i>; Emulate a conditional br instruction</i>
+ %Val = <a href="#i_cast">cast</a> bool %value to int
+ switch int %Val, label %truedest [int 0, label %falsedest ]
+
+ <i>; Emulate an unconditional br instruction</i>
+ switch uint 0, label %dest [ ]
+
+ <i>; Implement a jump table:</i>
+ switch uint %val, label %otherwise [ uint 0, label %onzero 
+                                      uint 1, label %onone 
+                                      uint 2, label %ontwo ]
 </pre>
 </div>
 <!-- _______________________________________________________________________ -->
@@ -1032,7 +1066,7 @@ identical types.</p>
 <h5>Semantics:</h5>
 <p>The truth table used for the '<tt>and</tt>' instruction is:</p>
 <p> </p>
-<center>
+<div style="align: center">
 <table border="1" cellspacing="0" cellpadding="4">
   <tbody>
     <tr>
@@ -1062,7 +1096,7 @@ identical types.</p>
     </tr>
   </tbody>
 </table>
-</center>
+</div>
 <h5>Example:</h5>
 <pre>  &lt;result&gt; = and int 4, %var         <i>; yields {int}:result = 4 &amp; %var</i>
   &lt;result&gt; = and int 15, 40          <i>; yields {int}:result = 8</i>
@@ -1085,7 +1119,7 @@ identical types.</p>
 <h5>Semantics:</h5>
 <p>The truth table used for the '<tt>or</tt>' instruction is:</p>
 <p> </p>
-<center>
+<div style="align: center">
 <table border="1" cellspacing="0" cellpadding="4">
   <tbody>
     <tr>
@@ -1115,7 +1149,7 @@ identical types.</p>
     </tr>
   </tbody>
 </table>
-</center>
+</div>
 <h5>Example:</h5>
 <pre>  &lt;result&gt; = or int 4, %var         <i>; yields {int}:result = 4 | %var</i>
   &lt;result&gt; = or int 15, 40          <i>; yields {int}:result = 47</i>
@@ -1140,7 +1174,7 @@ identical types.</p>
 <h5>Semantics:</h5>
 <p>The truth table used for the '<tt>xor</tt>' instruction is:</p>
 <p> </p>
-<center>
+<div style="align: center">
 <table border="1" cellspacing="0" cellpadding="4">
   <tbody>
     <tr>
@@ -1170,7 +1204,7 @@ identical types.</p>
     </tr>
   </tbody>
 </table>
-</center>
+</div>
 <p> </p>
 <h5>Example:</h5>
 <pre>  &lt;result&gt; = xor int 4, %var         <i>; yields {int}:result = 4 ^ %var</i>
@@ -1249,8 +1283,8 @@ Instruction</a> </div>
 <p>The '<tt>malloc</tt>' instruction allocates memory from the system
 heap and returns a pointer to it.</p>
 <h5>Arguments:</h5>
-<p>The the '<tt>malloc</tt>' instruction allocates <tt>sizeof(&lt;type&gt;)*NumElements</tt>
-bytes of memory from the operating system, and returns a pointer of the
+<p>The '<tt>malloc</tt>' instruction allocates <tt>sizeof(&lt;type&gt;)*NumElements</tt>
+bytes of memory from the operating system and returns a pointer of the
 appropriate type to the program.  The second form of the instruction is
 a shorter version of the first instruction that defaults to allocating
 one element.</p>
@@ -1594,23 +1628,31 @@ section.</p>
 <!-- *********************************************************************** -->
 
 <div class="doc_text">
-<p>LLVM supports the notion of an "intrinsic function".  These
-functions have well known names and semantics, and are required to
-follow certain restrictions. Overall, these instructions represent an
-extension mechanism for the LLVM language that does not require
-changing all of the transformations in LLVM to add to the language (or
-the bytecode reader/writer, the parser, etc...).</p>
-<p>Intrinsic function names must all start with an "<tt>llvm.</tt>"
-prefix, this prefix is reserved in LLVM for intrinsic names, thus
-functions may not be named this.  Intrinsic functions must always be
-external functions: you cannot define the body of intrinsic functions. 
-Intrinsic functions may only be used in call or invoke instructions: it
-is illegal to take the address of an intrinsic function.  Additionally,
-because intrinsic functions are part of the LLVM language, it is
-required that they all be documented here if any are added.</p>
-<p>Unless an intrinsic function is target-specific, there must be a
-lowering pass to eliminate the intrinsic or all backends must support
-the intrinsic function.</p>
+
+<p>LLVM supports the notion of an "intrinsic function".  These functions have
+well known names and semantics, and are required to follow certain
+restrictions. Overall, these instructions represent an extension mechanism for
+the LLVM language that does not require changing all of the transformations in
+LLVM to add to the language (or the bytecode reader/writer, the parser,
+etc...).</p>
+
+<p>Intrinsic function names must all start with an "<tt>llvm.</tt>" prefix, this
+prefix is reserved in LLVM for intrinsic names, thus functions may not be named
+this.  Intrinsic functions must always be external functions: you cannot define
+the body of intrinsic functions.  Intrinsic functions may only be used in call
+or invoke instructions: it is illegal to take the address of an intrinsic
+function.  Additionally, because intrinsic functions are part of the LLVM
+language, it is required that they all be documented here if any are added.</p>
+
+
+<p>
+Adding an intrinsic to LLVM is straight-forward if it is possible to express the
+concept in LLVM directly (ie, code generator support is not _required_).  To do
+this, extend the default implementation of the IntrinsicLowering class to handle
+the intrinsic.  Code generators use this class to lower intrinsics they do not
+understand to raw LLVM instructions that they do.
+</p>
+
 </div>
 
 <!-- ======================================================================= -->
@@ -1631,11 +1673,26 @@ used.</p>
 <p>This example shows how the <a href="#i_vanext"><tt>vanext</tt></a>
 instruction and the variable argument handling intrinsic functions are
 used.</p>
-<pre>int %test(int %X, ...) {<br>  ; Initialize variable argument processing<br>  %ap = call sbyte*()* %<a
- href="#i_va_start">llvm.va_start</a>()<br><br>  ; Read a single integer argument<br>  %tmp = vaarg sbyte* %ap, int<br><br>  ; Advance to the next argument<br>  %ap2 = vanext sbyte* %ap, int<br><br>  ; Demonstrate usage of llvm.va_copy and llvm.va_end<br>  %aq = call sbyte* (sbyte*)* %<a
- href="#i_va_copy">llvm.va_copy</a>(sbyte* %ap2)<br>  call void %<a
- href="#i_va_end">llvm.va_end</a>(sbyte* %aq)<br><br>  ; Stop processing of arguments.<br>  call void %<a
- href="#i_va_end">llvm.va_end</a>(sbyte* %ap2)<br>  ret int %tmp<br>}<br></pre>
+<pre>
+int %test(int %X, ...) {
+  ; Initialize variable argument processing
+  %ap = call sbyte* %<a href="#i_va_start">llvm.va_start</a>()
+
+  ; Read a single integer argument
+  %tmp = vaarg sbyte* %ap, int
+
+  ; Advance to the next argument
+  %ap2 = vanext sbyte* %ap, int
+
+  ; Demonstrate usage of llvm.va_copy and llvm.va_end
+  %aq = call sbyte* %<a href="#i_va_copy">llvm.va_copy</a>(sbyte* %ap2)
+  call void %<a href="#i_va_end">llvm.va_end</a>(sbyte* %aq)
+
+  ; Stop processing of arguments.
+  call void %<a href="#i_va_end">llvm.va_end</a>(sbyte* %ap2)
+  ret int %tmp
+}
+</pre>
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -1704,6 +1761,277 @@ element into the returned list.  This intrinsic is necessary because the <tt><a
 complex and require memory allocation, for example.</p>
 </div>
 
+<!-- ======================================================================= -->
+<div class="doc_subsection">
+  <a name="int_codegen">Code Generator Intrinsics</a>
+</div>
+
+<div class="doc_text">
+<p>
+These intrinsics are provided by LLVM to expose special features that may only
+be implemented with code generator support.
+</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_returnaddress">'<tt>llvm.returnaddress</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  call void* ()* %llvm.returnaddress(uint &lt;level&gt;)
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>llvm.returnaddress</tt>' intrinsic returns a target-specific value
+indicating the return address of the current function or one of its callers.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The argument to this intrinsic indicates which function to return the address
+for.  Zero indicates the calling function, one indicates its caller, etc.  The
+argument is <b>required</b> to be a constant integer value.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The '<tt>llvm.returnaddress</tt>' intrinsic either returns a pointer indicating
+the return address of the specified call frame, or zero if it cannot be
+identified.  The value returned by this intrinsic is likely to be incorrect or 0
+for arguments other than zero, so it should only be used for debugging purposes.
+</p>
+
+<p>
+Note that calling this intrinsic does not prevent function inlining or other
+aggressive transformations, so the value returned may not that of the obvious
+source-language caller.
+</p>
+</div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_frameaddress">'<tt>llvm.frameaddress</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  call void* ()* %llvm.frameaddress(uint &lt;level&gt;)
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>llvm.frameaddress</tt>' intrinsic returns the target-specific frame
+pointer value for the specified stack frame.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The argument to this intrinsic indicates which function to return the frame
+pointer for.  Zero indicates the calling function, one indicates its caller,
+etc.  The argument is <b>required</b> to be a constant integer value.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The '<tt>llvm.frameaddress</tt>' intrinsic either returns a pointer indicating
+the frame address of the specified call frame, or zero if it cannot be
+identified.  The value returned by this intrinsic is likely to be incorrect or 0
+for arguments other than zero, so it should only be used for debugging purposes.
+</p>
+
+<p>
+Note that calling this intrinsic does not prevent function inlining or other
+aggressive transformations, so the value returned may not that of the obvious
+source-language caller.
+</p>
+</div>
+
+
+<!-- ======================================================================= -->
+<div class="doc_subsection">
+  <a name="int_libc">Standard C Library Intrinsics</a>
+</div>
+
+<div class="doc_text">
+<p>
+LLVM provides intrinsics for a few important standard C library functions.
+These intrinsics allow source-language front-ends to pass information about the
+alignment of the pointer arguments to the code generator, providing opportunity
+for more efficient code generation.
+</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_memcpy">'<tt>llvm.memcpy</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  call void (sbyte*, sbyte*, uint, uint)* %llvm.memcpy(sbyte* &lt;dest&gt;, sbyte* &lt;src&gt;,
+                                                       uint &lt;len&gt;, uint &lt;align&gt;)
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>llvm.memcpy</tt>' intrinsic copies a block of memory from the source
+location to the destination location.
+</p>
+
+<p>
+Note that, unlike the standard libc function, the <tt>llvm.memcpy</tt> intrinsic
+does not return a value, and takes an extra alignment argument.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The first argument is a pointer to the destination, the second is a pointer to
+the source.  The third argument is an (arbitrarily sized) integer argument
+specifying the number of bytes to copy, and the fourth argument is the alignment
+of the source and destination locations.
+</p>
+
+<p>
+If the call to this intrinisic has an alignment value that is not 0 or 1, then
+the caller guarantees that the size of the copy is a multiple of the alignment
+and that both the source and destination pointers are aligned to that boundary.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The '<tt>llvm.memcpy</tt>' intrinsic copies a block of memory from the source
+location to the destination location, which are not allowed to overlap.  It
+copies "len" bytes of memory over.  If the argument is known to be aligned to
+some boundary, this can be specified as the fourth argument, otherwise it should
+be set to 0 or 1.
+</p>
+</div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_memmove">'<tt>llvm.memmove</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  call void (sbyte*, sbyte*, uint, uint)* %llvm.memmove(sbyte* &lt;dest&gt;, sbyte* &lt;src&gt;,
+                                                       uint &lt;len&gt;, uint &lt;align&gt;)
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>llvm.memmove</tt>' intrinsic moves a block of memory from the source
+location to the destination location. It is similar to the '<tt>llvm.memcpy</tt>' 
+intrinsic but allows the two memory locations to overlap.
+</p>
+
+<p>
+Note that, unlike the standard libc function, the <tt>llvm.memmove</tt> intrinsic
+does not return a value, and takes an extra alignment argument.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The first argument is a pointer to the destination, the second is a pointer to
+the source.  The third argument is an (arbitrarily sized) integer argument
+specifying the number of bytes to copy, and the fourth argument is the alignment
+of the source and destination locations.
+</p>
+
+<p>
+If the call to this intrinisic has an alignment value that is not 0 or 1, then
+the caller guarantees that the size of the copy is a multiple of the alignment
+and that both the source and destination pointers are aligned to that boundary.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The '<tt>llvm.memmove</tt>' intrinsic copies a block of memory from the source
+location to the destination location, which may overlap.  It
+copies "len" bytes of memory over.  If the argument is known to be aligned to
+some boundary, this can be specified as the fourth argument, otherwise it should
+be set to 0 or 1.
+</p>
+</div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_memset">'<tt>llvm.memset</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  call void (sbyte*, ubyte, uint, uint)* %llvm.memset(sbyte* &lt;dest&gt;, ubyte &lt;val&gt;,
+                                                      uint &lt;len&gt;, uint &lt;align&gt;)
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>llvm.memset</tt>' intrinsic fills a block of memory with a particular
+byte value.
+</p>
+
+<p>
+Note that, unlike the standard libc function, the <tt>llvm.memset</tt> intrinsic
+does not return a value, and takes an extra alignment argument.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The first argument is a pointer to the destination to fill, the second is the
+byte value to fill it with, the third argument is an (arbitrarily sized) integer
+argument specifying the number of bytes to fill, and the fourth argument is the
+known alignment of destination location.
+</p>
+
+<p>
+If the call to this intrinisic has an alignment value that is not 0 or 1, then
+the caller guarantees that the size of the copy is a multiple of the alignment
+and that the destination pointer is aligned to that boundary.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The '<tt>llvm.memset</tt>' intrinsic fills "len" bytes of memory starting at the
+destination location.  If the argument is known to be aligned to some boundary,
+this can be specified as the fourth argument, otherwise it should be set to 0 or
+1.
+</p>
+</div>
+
 
 <!-- ======================================================================= -->
 <div class="doc_subsection">
@@ -1722,9 +2050,15 @@ Debugging</a> document.
 
 <!-- *********************************************************************** -->
 <hr>
-<div class="doc_footer">
-<address><a href="mailto:sabre@nondot.org">Chris Lattner</a></address>
-<a href="http://llvm.cs.uiuc.edu">The LLVM Compiler Infrastructure</a> <br>
-Last modified: $Date$ </div>
+<address>
+  <a href="http://jigsaw.w3.org/css-validator/check/referer"><img
+  src="http://jigsaw.w3.org/css-validator/images/vcss" alt="Valid CSS!"></a>
+  <a href="http://validator.w3.org/check/referer"><img
+  src="http://www.w3.org/Icons/valid-html401" alt="Valid HTML 4.01!" /></a>
+
+  <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
+  <a href="http://llvm.cs.uiuc.edu">The LLVM Compiler Infrastructure</a><br>
+  Last modified: $Date$
+</address>
 </body>
 </html>

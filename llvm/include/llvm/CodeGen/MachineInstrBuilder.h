@@ -23,7 +23,7 @@
 #ifndef LLVM_CODEGEN_MACHINEINSTRBUILDER_H
 #define LLVM_CODEGEN_MACHINEINSTRBUILDER_H
 
-#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 
 namespace llvm {
 
@@ -38,33 +38,36 @@ public:
 
   /// addReg - Add a new virtual register operand...
   ///
-  const MachineInstrBuilder &addReg(int RegNo,
-                                    MOTy::UseType Ty = MOTy::Use) const {
+  const MachineInstrBuilder &addReg(
+    int RegNo,
+    MachineOperand::UseType Ty = MachineOperand::Use) const {
     MI->addRegOperand(RegNo, Ty);
     return *this;
   }
 
   /// addReg - Add an LLVM value that is to be used as a register...
   ///
-  const MachineInstrBuilder &addReg(Value *V,
-                                    MOTy::UseType Ty = MOTy::Use) const {
+  const MachineInstrBuilder &addReg(
+    Value *V,
+    MachineOperand::UseType Ty = MachineOperand::Use) const {
     MI->addRegOperand(V, Ty);
     return *this;
   }
 
   /// addReg - Add an LLVM value that is to be used as a register...
   ///
-  const MachineInstrBuilder &addCCReg(Value *V,
-                                      MOTy::UseType Ty = MOTy::Use) const {
+  const MachineInstrBuilder &addCCReg(
+    Value *V,
+    MachineOperand::UseType Ty = MachineOperand::Use) const {
     MI->addCCRegOperand(V, Ty);
     return *this;
   }
 
   /// addRegDef - Add an LLVM value that is to be defined as a register... this
-  /// is the same as addReg(V, MOTy::Def).
+  /// is the same as addReg(V, MachineOperand::Def).
   ///
   const MachineInstrBuilder &addRegDef(Value *V) const {
-    return addReg(V, MOTy::Def);
+    return addReg(V, MachineOperand::Def);
   }
 
   /// addPCDisp - Add an LLVM value to be treated as a PC relative
@@ -77,22 +80,29 @@ public:
 
   /// addMReg - Add a machine register operand...
   ///
-  const MachineInstrBuilder &addMReg(int Reg,
-                                     MOTy::UseType Ty = MOTy::Use) const {
+  const MachineInstrBuilder &addMReg(int Reg, MachineOperand::UseType Ty
+                                        = MachineOperand::Use) const {
     MI->addMachineRegOperand(Reg, Ty);
+    return *this;
+  }
+  
+  /// addImm - Add a new immediate operand.
+  ///
+  const MachineInstrBuilder &addImm(int Val) const {
+    MI->addZeroExtImmOperand(Val);
     return *this;
   }
 
   /// addSImm - Add a new sign extended immediate operand...
   ///
-  const MachineInstrBuilder &addSImm(int64_t val) const {
+  const MachineInstrBuilder &addSImm(int val) const {
     MI->addSignExtImmOperand(val);
     return *this;
   }
 
   /// addZImm - Add a new zero extended immediate operand...
   ///
-  const MachineInstrBuilder &addZImm(int64_t Val) const {
+  const MachineInstrBuilder &addZImm(unsigned Val) const {
     MI->addZeroExtImmOperand(Val);
     return *this;
   }
@@ -137,19 +147,42 @@ inline MachineInstrBuilder BuildMI(int Opcode, unsigned NumOperands) {
 /// destination virtual register.  NumOperands is the number of additional add*
 /// calls that are expected, it does not include the destination register.
 ///
-inline MachineInstrBuilder BuildMI(int Opcode, unsigned NumOperands,
-                                   unsigned DestReg) {
+inline MachineInstrBuilder BuildMI(
+  int Opcode, unsigned NumOperands,
+  unsigned DestReg,
+  MachineOperand::UseType useType = MachineOperand::Def) {
   return MachineInstrBuilder(new MachineInstr(Opcode, NumOperands+1,
-                                   true, true)).addReg(DestReg, MOTy::Def);
+                                   true, true)).addReg(DestReg, useType);
 }
 
+
+/// BuildMI - Insert the instruction before a specified location in the basic
+/// block.
+inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
+                                   MachineBasicBlock::iterator I,
+                                   int Opcode, unsigned NumOperands,
+                                   unsigned DestReg) {
+  MachineInstr *MI = new MachineInstr(Opcode, NumOperands+1, true, true);
+  BB.insert(I, MI);
+  return MachineInstrBuilder(MI).addReg(DestReg, MachineOperand::Def);
+}
+
+/// BMI - A special BuildMI variant that takes an iterator to insert the
+/// instruction at as well as a basic block.
+inline MachineInstrBuilder BuildMI(MachineBasicBlock &BB,
+                                   MachineBasicBlock::iterator I,
+                                   int Opcode, unsigned NumOperands) {
+  MachineInstr *MI = new MachineInstr(Opcode, NumOperands, true, true);
+  BB.insert(I, MI);
+  return MachineInstrBuilder(MI);
+}
 
 /// BuildMI - This version of the builder inserts the built MachineInstr into
 /// the specified MachineBasicBlock.
 ///
 inline MachineInstrBuilder BuildMI(MachineBasicBlock *BB, int Opcode,
                                    unsigned NumOperands) {
-  return MachineInstrBuilder(new MachineInstr(BB, Opcode, NumOperands));
+  return BuildMI(*BB, BB->end(), Opcode, NumOperands);
 }
 
 /// BuildMI - This version of the builder inserts the built MachineInstr into
@@ -159,9 +192,7 @@ inline MachineInstrBuilder BuildMI(MachineBasicBlock *BB, int Opcode,
 ///
 inline MachineInstrBuilder BuildMI(MachineBasicBlock *BB, int Opcode,
                                    unsigned NumOperands, unsigned DestReg) {
-  return MachineInstrBuilder(new MachineInstr(BB, Opcode,
-                                              NumOperands+1)).addReg(DestReg,
-                                                                     MOTy::Def);
+  return BuildMI(*BB, BB->end(), Opcode, NumOperands, DestReg);
 }
 
 } // End llvm namespace

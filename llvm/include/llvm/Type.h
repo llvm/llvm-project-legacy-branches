@@ -36,6 +36,7 @@
 #include "llvm/Value.h"
 #include "Support/GraphTraits.h"
 #include "Support/iterator"
+#include <vector>
 
 namespace llvm {
 
@@ -82,6 +83,13 @@ private:
   unsigned    UID;       // The unique ID number for this class
   bool        Abstract;  // True if type contains an OpaqueType
 
+  /// RefCount - This counts the number of PATypeHolders that are pointing to
+  /// this type.  When this number falls to zero, if the type is abstract and
+  /// has no AbstractTypeUsers, the type is deleted.  This is only sensical for
+  /// derived types.
+  ///
+  mutable unsigned RefCount;
+
   const Type *getForwardedTypeInternal() const;
 protected:
   /// ctor is protected, so only subclasses can create Type objects...
@@ -101,10 +109,21 @@ protected:
   ///
   bool isTypeAbstract();
 
+  unsigned getRefCount() const { return RefCount; }
+
   /// ForwardType - This field is used to implement the union find scheme for
   /// abstract types.  When types are refined to other types, this field is set
   /// to the more refined type.  Only abstract types can be forwarded.
   mutable const Type *ForwardType;
+
+  /// ContainedTys - The list of types contained by this one.  For example, this
+  /// includes the arguments of a function type, the elements of the structure,
+  /// the pointee of a pointer, etc.  Note that keeping this vector in the Type
+  /// class wastes some space for types that do not contain anything (such as
+  /// primitive types).  However, keeping it here allows the subtype_* members
+  /// to be implemented MUCH more efficiently, and dynamically very few types do
+  /// not contain any elements (most are derived).
+  std::vector<PATypeHandle> ContainedTys;
 
 public:
   virtual void print(std::ostream &O) const;
@@ -132,7 +151,7 @@ public:
   /// isSigned - Return whether an integral numeric type is signed.  This is
   /// true for SByteTy, ShortTy, IntTy, LongTy.  Note that this is not true for
   /// Float and Double.
-  //
+  ///
   virtual bool isSigned() const { return 0; }
   
   /// isUnsigned - Return whether a numeric type is unsigned.  This is not quite
@@ -204,22 +223,22 @@ public:
   //===--------------------------------------------------------------------===//
   // Type Iteration support
   //
-  class TypeIterator;
-  typedef TypeIterator subtype_iterator;
-  inline subtype_iterator subtype_begin() const;   // DEFINED BELOW
-  inline subtype_iterator subtype_end() const;     // DEFINED BELOW
+  typedef std::vector<PATypeHandle>::const_iterator subtype_iterator;
+  subtype_iterator subtype_begin() const { return ContainedTys.begin(); }
+  subtype_iterator subtype_end() const { return ContainedTys.end(); }
 
   /// getContainedType - This method is used to implement the type iterator
   /// (defined a the end of the file).  For derived types, this returns the
   /// types 'contained' in the derived type.
   ///
-  virtual const Type *getContainedType(unsigned i) const {
-    assert(0 && "No contained types!");
-    return 0;
+  const Type *getContainedType(unsigned i) const {
+    assert(i < ContainedTys.size() && "Index out of range!");
+    return ContainedTys[i];
   }
 
-  /// getNumContainedTypes - Return the number of types in the derived type
-  virtual unsigned getNumContainedTypes() const { return 0; }
+  /// getNumContainedTypes - Return the number of types in the derived type.
+  ///
+  unsigned getNumContainedTypes() const { return ContainedTys.size(); }
 
   //===--------------------------------------------------------------------===//
   // Static members exported by the Type class itself.  Useful for getting
@@ -250,49 +269,88 @@ public:
 
 #include "llvm/Type.def"
 
+  // Virtual methods used by callbacks below.  These should only be implemented
+  // in the DerivedType class.
+  virtual void addAbstractTypeUser(AbstractTypeUser *U) const {
+    abort(); // Only on derived types!
+  }
+  virtual void removeAbstractTypeUser(AbstractTypeUser *U) const {
+    abort(); // Only on derived types!
+  }
+
+  void addRef() const {
+    assert(isAbstract() && "Cannot add a reference to a non-abstract type!");
+    ++RefCount;
+  }
+  
+  void dropRef() const {
+    assert(isAbstract() && "Cannot drop a refernce to a non-abstract type!");
+    assert(RefCount && "No objects are currently referencing this object!");
+
+    // If this is the last PATypeHolder using this object, and there are no
+    // PATypeHandles using it, the type is dead, delete it now.
+    if (--RefCount == 0)
+      RefCountIsZero();
+  }
 private:
-  class TypeIterator : public bidirectional_iterator<const Type, ptrdiff_t> {
-    const Type * const Ty;
-    unsigned Idx;
+  virtual void RefCountIsZero() const {
+    abort(); // only on derived types!
+  }
 
-    typedef TypeIterator _Self;
-  public:
-    TypeIterator(const Type *ty, unsigned idx) : Ty(ty), Idx(idx) {}
-    ~TypeIterator() {}
-
-    const _Self &operator=(const _Self &RHS) {
-      assert(Ty == RHS.Ty && "Cannot assign from different types!");
-      Idx = RHS.Idx;
-      return *this;
-    }
-    
-    bool operator==(const _Self& x) const { return Idx == x.Idx; }
-    bool operator!=(const _Self& x) const { return !operator==(x); }
-    
-    pointer operator*() const { return Ty->getContainedType(Idx); }
-    pointer operator->() const { return operator*(); }
-    
-    _Self& operator++() { ++Idx; return *this; } // Preincrement
-    _Self operator++(int) { // Postincrement
-      _Self tmp = *this; ++*this; return tmp; 
-    }
-    
-    _Self& operator--() { --Idx; return *this; }  // Predecrement
-    _Self operator--(int) { // Postdecrement
-      _Self tmp = *this; --*this; return tmp;
-    }
-  };
 };
 
-inline Type::TypeIterator Type::subtype_begin() const {
-  return TypeIterator(this, 0);
+//===----------------------------------------------------------------------===//
+// Define some inline methods for the AbstractTypeUser.h:PATypeHandle class.
+// These are defined here because they MUST be inlined, yet are dependent on 
+// the definition of the Type class.  Of course Type derives from Value, which
+// contains an AbstractTypeUser instance, so there is no good way to factor out
+// the code.  Hence this bit of uglyness.
+//
+// In the long term, Type should not derive from Value, allowing
+// AbstractTypeUser.h to #include Type.h, allowing us to eliminate this
+// nastyness entirely.
+//
+inline void PATypeHandle::addUser() {
+  assert(Ty && "Type Handle has a null type!");
+  if (Ty->isAbstract())
+    Ty->addAbstractTypeUser(User);
+}
+inline void PATypeHandle::removeUser() {
+  if (Ty->isAbstract())
+    Ty->removeAbstractTypeUser(User);
 }
 
-inline Type::TypeIterator Type::subtype_end() const {
-  return TypeIterator(this, getNumContainedTypes());
+inline void PATypeHandle::removeUserFromConcrete() {
+  if (!Ty->isAbstract())
+    Ty->removeAbstractTypeUser(User);
+}
+
+// Define inline methods for PATypeHolder...
+
+inline void PATypeHolder::addRef() {
+  if (Ty->isAbstract())
+    Ty->addRef();
+}
+
+inline void PATypeHolder::dropRef() {
+  if (Ty->isAbstract())
+    Ty->dropRef();
+}
+
+/// get - This implements the forwarding part of the union-find algorithm for
+/// abstract types.  Before every access to the Type*, we check to see if the
+/// type we are pointing to is forwarding to a new type.  If so, we drop our
+/// reference to the type.
+///
+inline const Type* PATypeHolder::get() const {
+  const Type *NewTy = Ty->getForwardedType();
+  if (!NewTy) return Ty;
+  return *const_cast<PATypeHolder*>(this) = NewTy;
 }
 
 
+
+//===----------------------------------------------------------------------===//
 // Provide specializations of GraphTraits to be able to treat a type as a 
 // graph of sub types...
 

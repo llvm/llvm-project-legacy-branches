@@ -1,7 +1,7 @@
 ; This test makes sure that these instructions are properly eliminated.
 ;
 
-; RUN: llvm-as < %s | opt -instcombine -die | llvm-dis | not grep phi
+; RUN: llvm-as < %s | opt -instcombine | llvm-dis | not grep phi
 
 implementation
 
@@ -41,5 +41,17 @@ Loop:
         br bool %b, label %L2, label %Loop
 L2:
 	br label %Loop
+}
+
+bool %test4(bool %A) {
+	br bool %A, label %BB1, label %BB2
+BB1:
+	br label %Ret
+BB2:
+	br label %Ret
+Ret:
+	%B = phi int [1000, %BB1], [123, %BB2]
+	%C = cast int %B to bool
+	ret bool %C
 }
 

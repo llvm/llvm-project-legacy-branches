@@ -18,7 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "SchedPriorities.h"
-#include "llvm/CodeGen/FunctionLiveVarInfo.h"
+#include "../../Target/SparcV9/LiveVar/FunctionLiveVarInfo.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/Support/CFG.h"
 #include "Support/PostOrderIterator.h"
@@ -211,7 +211,7 @@ SchedPriorities::getNextHighest(const SchedulingManager& S,
     // it becomes empty.
     nextChoice = candsAsHeap.getNode(mcands[nextIdx]);
     if (getEarliestReadyTimeForNode(nextChoice) > curTime
-        || ! instrIsFeasible(S, nextChoice->getMachineInstr()->getOpCode()))
+        || ! instrIsFeasible(S, nextChoice->getMachineInstr()->getOpcode()))
     {
       mcands.erase(mcands.begin() + nextIdx);
       nextIdx = -1;

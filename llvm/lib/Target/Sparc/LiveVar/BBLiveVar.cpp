@@ -12,16 +12,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "BBLiveVar.h"
-#include "llvm/CodeGen/FunctionLiveVarInfo.h"
+#include "FunctionLiveVarInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/Support/CFG.h"
 #include "Support/SetOperations.h"
-#include "../SparcInternals.h"
+#include "../SparcV9Internals.h"
 
 namespace llvm {
 
-BBLiveVar::BBLiveVar(const BasicBlock &bb, MachineBasicBlock &mbb, unsigned id)
+BBLiveVar::BBLiveVar(const BasicBlock &bb,
+                     const MachineBasicBlock &mbb,
+                     unsigned id)
   : BB(bb), MBB(mbb), POID(id) {
   InSetChanged = OutSetChanged = false;
 
@@ -39,7 +41,7 @@ void BBLiveVar::calcDefUseSets() {
   // iterate over all the machine instructions in BB
   for (MachineBasicBlock::const_reverse_iterator MII = MBB.rbegin(),
          MIE = MBB.rend(); MII != MIE; ++MII) {
-    const MachineInstr *MI = *MII;
+    const MachineInstr *MI = &*MII;
     
     if (DEBUG_LV >= LV_DEBUG_Verbose) {
       std::cerr << " *Iterating over machine instr ";
@@ -76,7 +78,7 @@ void BBLiveVar::calcDefUseSets() {
         // Put Phi operands in UseSet for the incoming edge, not node.
         // They must not "hide" later defs, and must be handled specially
         // during set propagation over the CFG.
-	if (MI->getOpCode() == V9::PHI) {         // for a phi node
+	if (MI->getOpcode() == V9::PHI) {         // for a phi node
           const Value *ArgVal = Op;
 	  const BasicBlock *PredBB = cast<BasicBlock>(*++OpI); // next ptr is BB
 	  
@@ -95,7 +97,7 @@ void BBLiveVar::calcDefUseSets() {
 
     // do for implicit operands as well
     for (unsigned i = 0; i < MI->getNumImplicitRefs(); ++i) {
-      assert(MI->getOpCode() != V9::PHI && "Phi cannot have implicit operands");
+      assert(MI->getOpcode() != V9::PHI && "Phi cannot have implicit operands");
       const Value *Op = MI->getImplicitRef(i);
 
       if (Op->getType() == Type::LabelTy)             // don't process labels

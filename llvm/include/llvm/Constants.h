@@ -258,7 +258,8 @@ public:
 ///
 class ConstantFP : public Constant {
   double Val;
-  friend struct ConstantCreator<ConstantFP, Type, double>;
+  friend struct ConstantCreator<ConstantFP, Type, uint64_t>;
+  friend struct ConstantCreator<ConstantFP, Type, uint32_t>;
   ConstantFP(const ConstantFP &);      // DO NOT IMPLEMENT
 protected:
   ConstantFP(const Type *Ty, double V);
@@ -271,12 +272,68 @@ public:
   inline double getValue() const { return Val; }
 
   /// isNullValue - Return true if this is the value that would be returned by
-  /// getNullValue.
-  virtual bool isNullValue() const { return Val == 0; }
+  /// getNullValue.  Don't depend on == for doubles to tell us it's zero, it
+  /// considers -0.0 to be null as well as 0.0.  :(
+  virtual bool isNullValue() const {
+    union {
+      double V;
+      uint64_t I;
+    } T;
+    T.V = Val;
+    return T.I == 0;
+  }
+
+  /// isExactlyValue - We don't rely on operator== working on double values, as
+  /// it returns true for things that are clearly not equal, like -0.0 and 0.0.
+  /// As such, this method can be used to do an exact bit-for-bit comparison of
+  /// two floating point values.
+  bool isExactlyValue(double V) const {
+    union {
+      double V;
+      uint64_t I;
+    } T1;
+    T1.V = Val;
+    union {
+      double V;
+      uint64_t I;
+    } T2;
+    T2.V = V;
+    return T1.I == T2.I;
+  }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const ConstantFP *) { return true; }
   static bool classof(const Constant *CPV);  // defined in Constants.cpp
+  static inline bool classof(const Value *V) {
+    return isa<Constant>(V) && classof(cast<Constant>(V));
+  }
+};
+
+//===---------------------------------------------------------------------------
+/// ConstantAggregateZero - All zero aggregate value
+///
+class ConstantAggregateZero : public Constant {
+  friend struct ConstantCreator<ConstantAggregateZero, Type, char>;
+  ConstantAggregateZero(const ConstantAggregateZero &);      // DO NOT IMPLEMENT
+protected:
+  ConstantAggregateZero(const Type *Ty) : Constant(Ty) {}
+public:
+  /// get() - static factory method for creating a null aggregate.  It is
+  /// illegal to call this method with a non-aggregate type.
+  static Constant *get(const Type *Ty);
+
+  /// isNullValue - Return true if this is the value that would be returned by
+  /// getNullValue.
+  virtual bool isNullValue() const { return true; }
+
+  virtual void destroyConstant();
+  virtual void replaceUsesOfWithOnConstant(Value *From, Value *To,
+                                           bool DisableChecking = false);
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  ///
+  static inline bool classof(const ConstantAggregateZero *) { return true; }
+  static bool classof(const Constant *CPV);
   static inline bool classof(const Value *V) {
     return isa<Constant>(V) && classof(cast<Constant>(V));
   }
@@ -294,8 +351,8 @@ protected:
   ConstantArray(const ArrayType *T, const std::vector<Constant*> &Val);
 public:
   /// get() - Static factory methods - Return objects of the specified value
-  static ConstantArray *get(const ArrayType *T, const std::vector<Constant*> &);
-  static ConstantArray *get(const std::string &Initializer);
+  static Constant *get(const ArrayType *T, const std::vector<Constant*> &);
+  static Constant *get(const std::string &Initializer);
   
   /// getType - Specialize the getType() method to always return an ArrayType,
   /// which reduces the amount of casting needed in parts of the compiler.
@@ -318,19 +375,9 @@ public:
   inline const std::vector<Use> &getValues() const { return Operands; }
 
   /// isNullValue - Return true if this is the value that would be returned by
-  /// getNullValue.
-  virtual bool isNullValue() const {
-    // FIXME: This should be made to be MUCH faster.  Just check against well
-    // known null value!
-    if (getNumOperands()) {
-      const Constant *First = cast<Constant>(getOperand(0));
-      if (!First->isNullValue()) return false;
-      for (unsigned i = 1, e = getNumOperands(); i != e; ++i)
-        if (cast<Constant>(getOperand(i)) != First)
-          return false; 
-    }
-    return true;
-  }
+  /// getNullValue.  This always returns false because zero arrays are always
+  /// created as ConstantAggregateZero objects.
+  virtual bool isNullValue() const { return false; }
 
   virtual void destroyConstant();
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To,
@@ -356,8 +403,7 @@ protected:
   ConstantStruct(const StructType *T, const std::vector<Constant*> &Val);
 public:
   /// get() - Static factory methods - Return objects of the specified value
-  static ConstantStruct *get(const StructType *T,
-                             const std::vector<Constant*> &V);
+  static Constant *get(const StructType *T, const std::vector<Constant*> &V);
 
   /// getType() specialization - Reduce amount of casting...
   inline const StructType *getType() const {
@@ -369,14 +415,10 @@ public:
   inline const std::vector<Use> &getValues() const { return Operands; }
 
   /// isNullValue - Return true if this is the value that would be returned by
-  /// getNullValue.
+  /// getNullValue.  This always returns false because zero structs are always
+  /// created as ConstantAggregateZero objects.
   virtual bool isNullValue() const {
-    // FIXME: This should be made to be MUCH faster.  Just check against well
-    // known null value!
-    for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
-      if (!cast<Constant>(getOperand(i))->isNullValue())
-        return false; 
-    return true;
+    return false;
   }
 
   virtual void destroyConstant();

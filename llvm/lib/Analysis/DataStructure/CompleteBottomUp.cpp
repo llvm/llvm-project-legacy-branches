@@ -77,6 +77,7 @@ bool CompleteBUDataStructures::run(Module &M) {
     if (!I->isExternal() && !DSInfo.count(I))
       calculateSCCGraphs(getOrCreateGraph(*I), Stack, NextID, ValMap);
 
+  GlobalsGraph->removeTriviallyDeadNodes();
   return false;
 }
 
@@ -141,7 +142,7 @@ unsigned CompleteBUDataStructures::calculateSCCGraphs(DSGraph &FG,
     ValMap[NG] = ~0U;
 
     DSGraph::NodeMapTy NodeMap;
-    FG.cloneInto(*NG, FG.getScalarMap(), FG.getReturnNodes(), NodeMap, 0);
+    FG.cloneInto(*NG, FG.getScalarMap(), FG.getReturnNodes(), NodeMap);
 
     // Update the DSInfo map and delete the old graph...
     for (DSGraph::ReturnNodesTy::iterator I = NG->getReturnNodes().begin();
@@ -167,6 +168,7 @@ unsigned CompleteBUDataStructures::calculateSCCGraphs(DSGraph &FG,
 /// processGraph - Process the BU graphs for the program in bottom-up order on
 /// the SCC of the __ACTUAL__ call graph.  This builds "complete" BU graphs.
 void CompleteBUDataStructures::processGraph(DSGraph &G) {
+
   // The edges out of the current node are the call site targets...
   for (unsigned i = 0, e = G.getFunctionCalls().size(); i != e; ++i) {
     const DSCallSite &CS = G.getFunctionCalls()[i];
@@ -191,12 +193,8 @@ void CompleteBUDataStructures::processGraph(DSGraph &G) {
     }
   }
 
-  // Re-materialize nodes from the globals graph.
-  // Do not ignore globals inlined from callees -- they are not up-to-date!
-  G.getInlinedGlobals().clear();
-  G.updateFromGlobalGraph();
-
   // Recompute the Incomplete markers
+  assert(G.getInlinedGlobals().empty());
   G.maskIncompleteMarkers();
   G.markIncompleteNodes(DSGraph::MarkFormalArgs);
 

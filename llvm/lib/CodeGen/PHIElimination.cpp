@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/SSARegMap.h"
@@ -20,8 +21,8 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/CFG.h"
-
-namespace llvm {
+#include "Support/STLExtras.h"
+using namespace llvm;
 
 namespace {
   struct PNE : public MachineFunctionPass {
@@ -55,28 +56,28 @@ namespace {
 }
 
 
-const PassInfo *PHIEliminationID = X.getPassInfo();
+const PassInfo *llvm::PHIEliminationID = X.getPassInfo();
 
 /// EliminatePHINodes - Eliminate phi nodes by inserting copy instructions in
 /// predecessor basic blocks.
 ///
 bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
-  if (MBB.empty() || MBB.front()->getOpcode() != TargetInstrInfo::PHI)
+  if (MBB.empty() || MBB.front().getOpcode() != TargetInstrInfo::PHI)
     return false;   // Quick exit for normal case...
 
   LiveVariables *LV = getAnalysisToUpdate<LiveVariables>();
   const TargetInstrInfo &MII = MF.getTarget().getInstrInfo();
   const MRegisterInfo *RegInfo = MF.getTarget().getRegisterInfo();
 
-  while (MBB.front()->getOpcode() == TargetInstrInfo::PHI) {
-    MachineInstr *MI = MBB.front();
+  while (MBB.front().getOpcode() == TargetInstrInfo::PHI) {
     // Unlink the PHI node from the basic block... but don't delete the PHI yet
-    MBB.erase(MBB.begin());
-
-    assert(MI->getOperand(0).isVirtualRegister() &&
+    MachineBasicBlock::iterator begin = MBB.begin();
+    MachineInstr *MI = MBB.remove(begin);
+    
+    assert(MRegisterInfo::isVirtualRegister(MI->getOperand(0).getReg()) &&
            "PHI node doesn't write virt reg?");
 
-    unsigned DestReg = MI->getOperand(0).getAllocatedRegNum();
+    unsigned DestReg = MI->getOperand(0).getReg();
     
     // Create a new register for the incoming PHI arguments
     const TargetRegisterClass *RC = MF.getSSARegMap()->getRegClass(DestReg);
@@ -88,13 +89,13 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
     //
     MachineBasicBlock::iterator AfterPHIsIt = MBB.begin();
     while (AfterPHIsIt != MBB.end() &&
-           (*AfterPHIsIt)->getOpcode() == TargetInstrInfo::PHI)
+           AfterPHIsIt->getOpcode() == TargetInstrInfo::PHI)
       ++AfterPHIsIt;    // Skip over all of the PHI nodes...
     RegInfo->copyRegToReg(MBB, AfterPHIsIt, DestReg, IncomingReg, RC);
     
     // Update live variable information if there is any...
     if (LV) {
-      MachineInstr *PHICopy = *(AfterPHIsIt-1);
+      MachineInstr *PHICopy = --AfterPHIsIt;
 
       // Add information to LiveVariables to know that the incoming value is
       // killed.  Note that because the value is defined in several places (once
@@ -142,22 +143,7 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
       // source path the PHI.
       MachineBasicBlock &opBlock = *MI->getOperand(i).getMachineBasicBlock();
 
-      // Figure out where to insert the copy, which is at the end of the
-      // predecessor basic block, but before any terminator/branch
-      // instructions...
-      MachineBasicBlock::iterator I = opBlock.end();
-      if (I != opBlock.begin()) {  // Handle empty blocks
-        --I;
-        // must backtrack over ALL the branches in the previous block
-        while (MII.isTerminatorInstr((*I)->getOpcode()) &&
-               I != opBlock.begin())
-          --I;
-        
-        // move back to the first branch instruction so new instructions
-        // are inserted right in front of it and not in front of a non-branch
-        if (!MII.isTerminatorInstr((*I)->getOpcode()))
-          ++I;
-      }
+      MachineBasicBlock::iterator I = opBlock.getFirstTerminator();
       
       // Check to make sure we haven't already emitted the copy for this block.
       // This can happen because PHI nodes may have multiple entries for the
@@ -171,10 +157,10 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
       bool HaveNotEmitted = true;
       
       if (I != opBlock.begin()) {
-        MachineInstr *PrevInst = *(I-1);
+        MachineBasicBlock::iterator PrevInst = prior(I);
         for (unsigned i = 0, e = PrevInst->getNumOperands(); i != e; ++i) {
           MachineOperand &MO = PrevInst->getOperand(i);
-          if (MO.isVirtualRegister() && MO.getReg() == IncomingReg)
+          if (MO.isRegister() && MO.getReg() == IncomingReg)
             if (MO.isDef()) {
               HaveNotEmitted = false;
               break;
@@ -183,7 +169,7 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
       }
 
       if (HaveNotEmitted) { // If the copy has not already been emitted, do it.
-        assert(opVal.isVirtualRegister() &&
+        assert(MRegisterInfo::isVirtualRegister(opVal.getReg()) &&
                "Machine PHI Operands must all be virtual registers!");
         unsigned SrcReg = opVal.getReg();
         RegInfo->copyRegToReg(opBlock, I, IncomingReg, SrcReg, RC);
@@ -238,10 +224,10 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
             // Loop over all of the PHIs in this successor, checking to see if
             // the register is being used...
             for (MachineBasicBlock::iterator BBI = MBB->begin(), E=MBB->end();
-                 BBI != E && (*BBI)->getOpcode() == TargetInstrInfo::PHI;
+                 BBI != E && BBI->getOpcode() == TargetInstrInfo::PHI;
                  ++BBI)
-              for (unsigned i = 1, e = (*BBI)->getNumOperands(); i < e; i += 2)
-                if ((*BBI)->getOperand(i).getReg() == SrcReg) {
+              for (unsigned i = 1, e = BBI->getNumOperands(); i < e; i += 2)
+                if (BBI->getOperand(i).getReg() == SrcReg) {
                   ValueIsLive = true;
                   break;
                 }
@@ -251,8 +237,10 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
           // we can add a kill marker to the copy we inserted saying that it
           // kills the incoming value!
           //
-          if (!ValueIsLive)
-            LV->addVirtualRegisterKilled(SrcReg, &opBlock, *(I-1));
+          if (!ValueIsLive) {
+            MachineBasicBlock::iterator Prev = prior(I);
+            LV->addVirtualRegisterKilled(SrcReg, &opBlock, Prev);
+          }
         }
       }
     }
@@ -260,8 +248,5 @@ bool PNE::EliminatePHINodes(MachineFunction &MF, MachineBasicBlock &MBB) {
     // really delete the PHI instruction now!
     delete MI;
   }
-
   return true;
 }
-
-} // End llvm namespace

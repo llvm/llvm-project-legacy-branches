@@ -12,13 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SparcInternals.h"
+#include "SparcV9Internals.h"
 #include "llvm/BasicBlock.h"
 #include "llvm/Pass.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
+#include "Support/STLExtras.h"
 
 namespace llvm {
 
@@ -31,14 +32,14 @@ DeleteInstruction(MachineBasicBlock& mvec,
   // Check if this instruction is in a delay slot of its predecessor.
   if (BBI != mvec.begin()) {
       const TargetInstrInfo& mii = target.getInstrInfo();
-      MachineInstr* predMI = *(BBI-1);
-      if (unsigned ndelay = mii.getNumDelaySlots(predMI->getOpCode())) {
+      MachineBasicBlock::iterator predMI = prior(BBI);
+      if (unsigned ndelay = mii.getNumDelaySlots(predMI->getOpcode())) {
         // This instruction is in a delay slot of its predecessor, so
         // replace it with a nop. By replacing in place, we save having
         // to update the I-I maps.
         // 
         assert(ndelay == 1 && "Not yet handling multiple-delay-slot targets");
-        (*BBI)->replace(mii.getNOPOpCode(), 0);
+        BBI->replace(mii.getNOPOpCode(), 0);
         return;
       }
   }
@@ -61,18 +62,17 @@ DeleteInstruction(MachineBasicBlock& mvec,
 //----------------------------------------------------------------------------
 
 static bool IsUselessCopy(const TargetMachine &target, const MachineInstr* MI) {
-  if (MI->getOpCode() == V9::FMOVS || MI->getOpCode() == V9::FMOVD) {
+  if (MI->getOpcode() == V9::FMOVS || MI->getOpcode() == V9::FMOVD) {
     return (// both operands are allocated to the same register
-            MI->getOperand(0).getAllocatedRegNum() == 
-            MI->getOperand(1).getAllocatedRegNum());
-  } else if (MI->getOpCode() == V9::ADDr || MI->getOpCode() == V9::ORr ||
-             MI->getOpCode() == V9::ADDi || MI->getOpCode() == V9::ORi) {
+            MI->getOperand(0).getReg() ==  MI->getOperand(1).getReg());
+  } else if (MI->getOpcode() == V9::ADDr || MI->getOpcode() == V9::ORr ||
+             MI->getOpcode() == V9::ADDi || MI->getOpcode() == V9::ORi) {
     unsigned srcWithDestReg;
     
     for (srcWithDestReg = 0; srcWithDestReg < 2; ++srcWithDestReg)
       if (MI->getOperand(srcWithDestReg).hasAllocatedReg() &&
-          MI->getOperand(srcWithDestReg).getAllocatedRegNum()
-          == MI->getOperand(2).getAllocatedRegNum())
+          MI->getOperand(srcWithDestReg).getReg()
+          == MI->getOperand(2).getReg())
         break;
     
     if (srcWithDestReg == 2)
@@ -82,7 +82,7 @@ static bool IsUselessCopy(const TargetMachine &target, const MachineInstr* MI) {
       unsigned otherOp = 1 - srcWithDestReg;
       return (// either operand otherOp is register %g0
               (MI->getOperand(otherOp).hasAllocatedReg() &&
-               MI->getOperand(otherOp).getAllocatedRegNum() ==
+               MI->getOperand(otherOp).getReg() ==
                target.getRegInfo().getZeroRegNum()) ||
               
               // or operand otherOp == 0
@@ -99,7 +99,7 @@ inline bool
 RemoveUselessCopies(MachineBasicBlock& mvec,
                     MachineBasicBlock::iterator& BBI,
                     const TargetMachine& target) {
-  if (IsUselessCopy(target, *BBI)) {
+  if (IsUselessCopy(target, BBI)) {
     DeleteInstruction(mvec, BBI, target);
     return true;
   }
@@ -148,16 +148,8 @@ bool PeepholeOpts::runOnBasicBlock(BasicBlock &BB) {
   assert(MBB && "MachineBasicBlock object not found for specified block!");
   MachineBasicBlock &mvec = *MBB;
 
-  // Iterate over all machine instructions in the BB
-  // Use a reverse iterator to allow deletion of MI or any instruction after it.
-  // Insertions or deletions *before* MI are not safe.
-  // 
-  for (MachineBasicBlock::reverse_iterator RI=mvec.rbegin(),
-         RE=mvec.rend(); RI != RE; ) {
-    MachineBasicBlock::iterator BBI = RI.base()-1; // save before incr
-    ++RI;             // pre-increment to delete MI or after it
-    visit(mvec, BBI);
-  }
+  for (MachineBasicBlock::iterator I = mvec.begin(), E = mvec.end(); I != E; )
+    visit(mvec, I++);
 
   return true;
 }

@@ -89,7 +89,6 @@ const Type *BytecodeParser::parseTypeConstant(const unsigned char *&Buf,
 // something and when we reread the type later, we can replace the opaque type
 // with a new resolved concrete type.
 //
-namespace llvm { void debug_type_tables(); }
 void BytecodeParser::parseTypeConstants(const unsigned char *&Buf,
                                         const unsigned char *EndBuf,
 					TypeValuesListTy &Tab,
@@ -129,7 +128,6 @@ void BytecodeParser::parseTypeConstants(const unsigned char *&Buf,
   for (unsigned i = 0; i < NumEntries; ++i) {
     BCR_TRACE(5, (void*)Tab[i].get() << " - " << Tab[i].get() << "\n");
   }
-  debug_type_tables();
 }
 
 
@@ -233,12 +231,12 @@ Constant *BytecodeParser::parseConstantValue(const unsigned char *&Buf,
 
   case Type::StructTyID: {
     const StructType *ST = cast<StructType>(Ty);
-    const StructType::ElementTypes &ET = ST->getElementTypes();
 
     std::vector<Constant *> Elements;
-    Elements.reserve(ET.size());
-    for (unsigned i = 0; i != ET.size(); ++i)
-      Elements.push_back(getConstantValue(ET[i], read_vbr_uint(Buf, EndBuf)));
+    Elements.reserve(ST->getNumElements());
+    for (unsigned i = 0; i != ST->getNumElements(); ++i)
+      Elements.push_back(getConstantValue(ST->getElementType(i),
+                                          read_vbr_uint(Buf, EndBuf)));
 
     return ConstantStruct::get(ST, Elements);
   }    

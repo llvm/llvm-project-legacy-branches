@@ -41,17 +41,14 @@
 
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Assembly/Writer.h"
+#include "llvm/Constants.h"
 #include "llvm/Pass.h"
 #include "llvm/Module.h"
 #include "llvm/DerivedTypes.h"
-#include "llvm/iPHINode.h"
-#include "llvm/iTerminators.h"
-#include "llvm/iOther.h"
-#include "llvm/iOperators.h"
-#include "llvm/iMemory.h"
-#include "llvm/SymbolTable.h"
-#include "llvm/PassManager.h"
+#include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
+#include "llvm/PassManager.h"
+#include "llvm/SymbolTable.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstVisitor.h"
@@ -389,9 +386,9 @@ void Verifier::visitCallInst(CallInst &CI) {
 
   // Verify that all arguments to the call match the function type...
   for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i)
-    Assert2(CI.getOperand(i+1)->getType() == FTy->getParamType(i),
+    Assert3(CI.getOperand(i+1)->getType() == FTy->getParamType(i),
             "Call parameter type does not match function signature!",
-            CI.getOperand(i+1), FTy->getParamType(i));
+            CI.getOperand(i+1), FTy->getParamType(i), &CI);
 
   if (Function *F = CI.getCalledFunction())
     if (Intrinsic::ID ID = (Intrinsic::ID)F->getIntrinsicID())
@@ -477,7 +474,8 @@ void Verifier::visitInstruction(Instruction &I) {
   if (!isa<PHINode>(I)) {   // Check that non-phi nodes are not self referential
     for (Value::use_iterator UI = I.use_begin(), UE = I.use_end();
          UI != UE; ++UI)
-      Assert1(*UI != (User*)&I,
+      Assert1(*UI != (User*)&I ||
+              !DS->dominates(&BB->getParent()->getEntryBlock(), BB),
               "Only PHI nodes may reference their own value!", &I);
   }
 
@@ -551,6 +549,16 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
   case Intrinsic::va_end:          NumArgs = 1; break;
   case Intrinsic::va_copy:         NumArgs = 1; break;
 
+  case Intrinsic::returnaddress:
+  case Intrinsic::frameaddress:
+    Assert1(isa<PointerType>(FT->getReturnType()),
+            "llvm.(frame|return)address must return pointers", IF);
+    Assert1(FT->getNumParams() == 1 && isa<ConstantInt>(CI.getOperand(1)),
+       "llvm.(frame|return)address require a single constant integer argument",
+            &CI);
+    NumArgs = 1;
+    break;
+
   case Intrinsic::setjmp:          NumArgs = 1; break;
   case Intrinsic::longjmp:         NumArgs = 2; break;
   case Intrinsic::sigsetjmp:       NumArgs = 2; break;
@@ -564,6 +572,10 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
 
   // Join takes a single parameter which is returned by pbr
   case Intrinsic::join:            NumArgs = 1; break;
+
+  case Intrinsic::memcpy:          NumArgs = 4; break;
+  case Intrinsic::memmove:         NumArgs = 4; break;
+  case Intrinsic::memset:          NumArgs = 4; break;
  
   case Intrinsic::alpha_ctlz:      NumArgs = 1; break;
   case Intrinsic::alpha_cttz:      NumArgs = 1; break;

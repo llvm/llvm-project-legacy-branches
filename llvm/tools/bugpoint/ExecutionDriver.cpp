@@ -49,6 +49,11 @@ namespace {
                             0),
                  cl::init(AutoPick));
 
+  cl::opt<bool>
+  CheckProgramExitCode("check-exit-code",
+                       cl::desc("Assume nonzero exit code is failure (default on)"),
+                       cl::init(true));
+
   cl::opt<std::string>
   InputFile("input", cl::init("/dev/null"),
             cl::desc("Filename to pipe in as stdin (default: /dev/null)"));
@@ -79,11 +84,12 @@ bool BugDriver::initializeExecutionEnvironment() {
 
   // Create an instance of the AbstractInterpreter interface as specified on
   // the command line
+  cbe = 0;
   std::string Message;
   switch (InterpreterSel) {
   case AutoPick:
     InterpreterSel = RunCBE;
-    Interpreter = AbstractInterpreter::createCBE(getToolName(), Message);
+    Interpreter = cbe = AbstractInterpreter::createCBE(getToolName(), Message);
     if (!Interpreter) {
       InterpreterSel = RunJIT;
       Interpreter = AbstractInterpreter::createJIT(getToolName(), Message);
@@ -111,7 +117,7 @@ bool BugDriver::initializeExecutionEnvironment() {
     Interpreter = AbstractInterpreter::createJIT(getToolName(), Message);
     break;
   case RunCBE:
-    Interpreter = AbstractInterpreter::createCBE(getToolName(), Message);
+    Interpreter = cbe = AbstractInterpreter::createCBE(getToolName(), Message);
     break;
   default:
     Message = "Sorry, this back-end is not supported by bugpoint right now!\n";
@@ -120,13 +126,35 @@ bool BugDriver::initializeExecutionEnvironment() {
   std::cerr << Message;
 
   // Initialize auxiliary tools for debugging
-  cbe = AbstractInterpreter::createCBE(getToolName(), Message);
-  if (!cbe) { std::cout << Message << "\nExiting.\n"; exit(1); }
+  if (!cbe) {
+    cbe = AbstractInterpreter::createCBE(getToolName(), Message);
+    if (!cbe) { std::cout << Message << "\nExiting.\n"; exit(1); }
+  }
   gcc = GCC::create(getToolName(), Message);
   if (!gcc) { std::cout << Message << "\nExiting.\n"; exit(1); }
 
   // If there was an error creating the selected interpreter, quit with error.
   return Interpreter == 0;
+}
+
+/// compileProgram - Try to compile the specified module, throwing an exception
+/// if an error occurs, or returning normally if not.  This is used for code
+/// generation crash testing.
+///
+void BugDriver::compileProgram(Module *M) {
+  // Emit the program to a bytecode file...
+  std::string BytecodeFile = getUniqueFilename("bugpoint-test-program.bc");
+  if (writeProgramToFile(BytecodeFile, M)) {
+    std::cerr << ToolName << ": Error emitting bytecode to file '"
+              << BytecodeFile << "'!\n";
+    exit(1);
+  }
+
+    // Remove the temporary bytecode file when we are done.
+  FileRemover BytecodeFileRemover(BytecodeFile);
+
+  // Actually compile the program!
+  Interpreter->compileProgram(BytecodeFile);
 }
 
 
@@ -137,7 +165,8 @@ bool BugDriver::initializeExecutionEnvironment() {
 std::string BugDriver::executeProgram(std::string OutputFile,
                                       std::string BytecodeFile,
                                       const std::string &SharedObj,
-                                      AbstractInterpreter *AI) {
+                                      AbstractInterpreter *AI,
+                                      bool *ProgramExitedNonzero) {
   if (AI == 0) AI = Interpreter;
   assert(AI && "Interpreter should have been created already!");
   bool CreatedBytecode = false;
@@ -153,6 +182,9 @@ std::string BugDriver::executeProgram(std::string OutputFile,
     CreatedBytecode = true;
   }
 
+  // Remove the temporary bytecode file when we are done.
+  FileRemover BytecodeFileRemover(BytecodeFile, CreatedBytecode);
+
   if (OutputFile.empty()) OutputFile = "bugpoint-execution-output";
 
   // Check to see if this is a valid output filename...
@@ -167,14 +199,29 @@ std::string BugDriver::executeProgram(std::string OutputFile,
   int RetVal = AI->ExecuteProgram(BytecodeFile, InputArgv, InputFile,
                                   OutputFile, SharedObjs);
 
-
-  // Remove the temporary bytecode file.
-  if (CreatedBytecode) removeFile(BytecodeFile);
+  if (ProgramExitedNonzero != 0)
+    *ProgramExitedNonzero = (RetVal != 0);
 
   // Return the filename we captured the output to.
   return OutputFile;
 }
 
+/// executeProgramWithCBE - Used to create reference output with the C
+/// backend, if reference output is not provided.
+///
+std::string BugDriver::executeProgramWithCBE(std::string OutputFile) {
+  bool ProgramExitedNonzero;
+  std::string outFN = executeProgram(OutputFile, "", "",
+                                     (AbstractInterpreter*)cbe,
+                                     &ProgramExitedNonzero);
+  if (ProgramExitedNonzero) {
+    std::cerr
+      << "Warning: While generating reference output, program exited with\n"
+      << "non-zero exit code. This will NOT be treated as a failure.\n";
+    CheckProgramExitCode = false;
+  }
+  return outFN;
+}
 
 std::string BugDriver::compileSharedObject(const std::string &BytecodeFile) {
   assert(Interpreter && "Interpreter should have been created already!");
@@ -211,8 +258,15 @@ std::string BugDriver::compileSharedObject(const std::string &BytecodeFile) {
 bool BugDriver::diffProgram(const std::string &BytecodeFile,
                             const std::string &SharedObject,
                             bool RemoveBytecode) {
+  bool ProgramExitedNonzero;
+
   // Execute the program, generating an output file...
-  std::string Output = executeProgram("", BytecodeFile, SharedObject);
+  std::string Output = executeProgram("", BytecodeFile, SharedObject, 0,
+                                      &ProgramExitedNonzero);
+
+  // If we're checking the program exit code, assume anything nonzero is bad.
+  if (CheckProgramExitCode && ProgramExitedNonzero)
+    return true;
 
   std::string Error;
   bool FilesDifferent = false;

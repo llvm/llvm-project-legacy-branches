@@ -15,7 +15,6 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineCodeForInstruction.h"
 #include "llvm/CodeGen/SSARegMap.h"
 #include "llvm/CodeGen/MachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -23,7 +22,6 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetFrameInfo.h"
-#include "llvm/Target/TargetCacheInfo.h"
 #include "llvm/Function.h"
 #include "llvm/iOther.h"
 using namespace llvm;
@@ -34,6 +32,12 @@ static AnnotationID MF_AID(
 
 namespace {
   struct Printer : public MachineFunctionPass {
+    std::ostream *OS;
+    const std::string Banner;
+
+    Printer (std::ostream *_OS, const std::string &_Banner) :
+      OS (_OS), Banner (_Banner) { }
+
     const char *getPassName() const { return "MachineFunction Printer"; }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -41,14 +45,19 @@ namespace {
     }
 
     bool runOnMachineFunction(MachineFunction &MF) {
-      MF.dump();
+      (*OS) << Banner;
+      MF.print (*OS);
       return false;
     }
   };
 }
 
-FunctionPass *llvm::createMachineFunctionPrinterPass() {
-  return new Printer();
+/// Returns a newly-created MachineFunction Printer pass. The default output
+/// stream is std::cerr; the default banner is empty.
+///
+FunctionPass *llvm::createMachineFunctionPrinterPass(std::ostream *OS,
+                                                     const std::string &Banner) {
+  return new Printer(OS, Banner);
 }
 
 namespace {
@@ -56,14 +65,6 @@ namespace {
     const char *getPassName() const { return "Machine Code Deleter"; }
 
     bool runOnMachineFunction(MachineFunction &MF) {
-      // Delete all of the MachineInstrs out of the function.  When the sparc
-      // backend gets fixed, this can be dramatically simpler, but actually
-      // putting this stuff into the MachineBasicBlock destructor!
-      for (MachineFunction::iterator BB = MF.begin(), E = MF.end(); BB != E;
-           ++BB)
-        while (!BB->empty())
-          delete BB->pop_back();
-
       // Delete the annotation from the function now.
       MachineFunction::destruct(MF.getFunction());
       return true;
@@ -77,6 +78,7 @@ namespace {
 FunctionPass *llvm::createMachineCodeDeleter() {
   return new Deleter();
 }
+
 
 
 //===---------------------------------------------------------------------===//
@@ -111,17 +113,10 @@ void MachineFunction::print(std::ostream &OS) const {
   // Print Constant Pool
   getConstantPool()->print(OS);
   
-  for (const_iterator BB = begin(); BB != end(); ++BB) {
-    const BasicBlock *LBB = BB->getBasicBlock();
-    OS << "\n" << LBB->getName() << " (" << (const void*)LBB << "):\n";
-    for (MachineBasicBlock::const_iterator I = BB->begin(); I != BB->end();++I){
-      OS << "\t";
-      (*I)->print(OS, Target);
-    }
-  }
+  for (const_iterator BB = begin(); BB != end(); ++BB)
+    BB->print(OS);
   OS << "\nEnd function \"" << Fn->getName() << "\"\n\n";
 }
-
 
 // The next two methods are used to construct and to retrieve
 // the MachineCodeForFunction object for the given function.
@@ -277,7 +272,7 @@ ComputeMaxOptionalArgsSize(const TargetMachine& target, const Function *F,
 inline unsigned
 SizeToAlignment(unsigned size, const TargetMachine& target)
 {
-  unsigned short cacheLineSize = target.getCacheInfo().getCacheLineSize(1); 
+  const unsigned short cacheLineSize = 16;
   if (size > (unsigned) cacheLineSize / 2)
     return cacheLineSize;
   else

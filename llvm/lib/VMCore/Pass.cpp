@@ -91,8 +91,6 @@ FunctionPassManager::~FunctionPassManager() { delete PM; }
 void FunctionPassManager::add(FunctionPass *P) { PM->add(P); }
 void FunctionPassManager::add(ImmutablePass *IP) { PM->add(IP); }
 bool FunctionPassManager::run(Function &F) { 
-  Function *mF = MP->getModule()->getNamedFunction(F.getName());
-  assert((&F == mF) && "ModuleProvider does not contain this function!");
   MP->materializeFunction(&F);
   return PM->run(F); 
 }
@@ -135,22 +133,31 @@ void PMDebug::PrintArgumentInformation(const Pass *P) {
 }
 
 void PMDebug::PrintPassInformation(unsigned Depth, const char *Action,
-                                   Pass *P, Annotable *V) {
+                                   Pass *P, Module *M) {
   if (PassDebugging >= Executions) {
     std::cerr << (void*)P << std::string(Depth*2+1, ' ') << Action << " '" 
               << P->getPassName();
-    if (V) {
-      std::cerr << "' on ";
+    if (M) std::cerr << "' on Module '" << M->getModuleIdentifier() << "'\n";
+    std::cerr << "'...\n";
+  }
+}
 
-      if (dynamic_cast<Module*>(V)) {
-        std::cerr << "Module\n"; return;
-      } else if (Function *F = dynamic_cast<Function*>(V))
-        std::cerr << "Function '" << F->getName();
-      else if (BasicBlock *BB = dynamic_cast<BasicBlock*>(V))
-        std::cerr << "BasicBlock '" << BB->getName();
-      else if (Value *Val = dynamic_cast<Value*>(V))
-        std::cerr << typeid(*Val).name() << " '" << Val->getName();
-    }
+void PMDebug::PrintPassInformation(unsigned Depth, const char *Action,
+                                   Pass *P, Function *F) {
+  if (PassDebugging >= Executions) {
+    std::cerr << (void*)P << std::string(Depth*2+1, ' ') << Action << " '" 
+              << P->getPassName();
+    if (F) std::cerr << "' on Function '" << F->getName();
+    std::cerr << "'...\n";
+  }
+}
+
+void PMDebug::PrintPassInformation(unsigned Depth, const char *Action,
+                                   Pass *P, BasicBlock *BB) {
+  if (PassDebugging >= Executions) {
+    std::cerr << (void*)P << std::string(Depth*2+1, ' ') << Action << " '" 
+              << P->getPassName();
+    if (BB) std::cerr << "' on BasicBlock '" << BB->getName();
     std::cerr << "'...\n";
   }
 }
@@ -184,7 +191,7 @@ void Pass::dumpPassStructure(unsigned Offset) {
   std::cerr << std::string(Offset*2, ' ') << getPassName() << "\n";
 }
 
-// getPassName - Use C++ RTTI to get a SOMEWHAT intelligable name for the pass.
+// getPassName - Use C++ RTTI to get a SOMEWHAT intelligible name for the pass.
 //
 const char *Pass::getPassName() const {
   if (const PassInfo *PI = getPassInfo())

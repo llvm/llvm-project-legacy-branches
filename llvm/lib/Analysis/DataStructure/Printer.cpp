@@ -29,8 +29,9 @@ using namespace llvm;
 //
 namespace {
   cl::opt<bool> OnlyPrintMain("only-print-main-ds", cl::ReallyHidden);
-  Statistic<> MaxGraphSize   ("dsnode", "Maximum graph size");
-  Statistic<> NumFoldedNodes ("dsnode", "Number of folded nodes (in final graph)");
+  cl::opt<bool> DontPrintAnything("dont-print-ds", cl::ReallyHidden);
+  Statistic<> MaxGraphSize   ("dsa", "Maximum graph size");
+  Statistic<> NumFoldedNodes ("dsa", "Number of folded nodes (in final graph)");
 }
 
 void DSNode::dump() const { print(std::cerr, 0); }
@@ -38,6 +39,9 @@ void DSNode::dump() const { print(std::cerr, 0); }
 static std::string getCaption(const DSNode *N, const DSGraph *G) {
   std::stringstream OS;
   Module *M = 0;
+
+  if (G) G = N->getParentGraph();
+
   // Get the module from ONE of the functions in the graph it is available.
   if (G && !G->getReturnNodes().empty())
     M = G->getReturnNodes().begin()->first->getParent();
@@ -248,10 +252,12 @@ static void printCollection(const Collection &C, std::ostream &O,
           << Gr.getGraphSize() << "+" << NumCalls << "]\n";
       }
 
-      if (MaxGraphSize < Gr.getNodes().size())
-        MaxGraphSize = Gr.getNodes().size();
-      for (unsigned i = 0, e = Gr.getNodes().size(); i != e; ++i)
-        if (Gr.getNodes()[i]->isNodeCompletelyFolded())
+      unsigned GraphSize = Gr.getGraphSize();
+      if (MaxGraphSize < GraphSize) MaxGraphSize = GraphSize;
+
+      for (DSGraph::node_iterator NI = Gr.node_begin(), E = Gr.node_end();
+           NI != E; ++NI)
+        if ((*NI)->isNodeCompletelyFolded())
           ++NumFoldedNodes;
     }
 
@@ -272,18 +278,22 @@ static void printCollection(const Collection &C, std::ostream &O,
 
 // print - Print out the analysis results...
 void LocalDataStructures::print(std::ostream &O, const Module *M) const {
+  if (DontPrintAnything) return;
   printCollection(*this, O, M, "ds.");
 }
 
 void BUDataStructures::print(std::ostream &O, const Module *M) const {
+  if (DontPrintAnything) return;
   printCollection(*this, O, M, "bu.");
 }
 
 void TDDataStructures::print(std::ostream &O, const Module *M) const {
+  if (DontPrintAnything) return;
   printCollection(*this, O, M, "td.");
 }
 
 void CompleteBUDataStructures::print(std::ostream &O, const Module *M) const {
+  if (DontPrintAnything) return;
   printCollection(*this, O, M, "cbu.");
 }
 

@@ -20,9 +20,7 @@
 
 #include "ConstantFolding.h"
 #include "llvm/Constants.h"
-#include "llvm/iPHINode.h"
-#include "llvm/iOperators.h"
-#include "llvm/InstrTypes.h"
+#include "llvm/Instructions.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include <cmath>
@@ -625,11 +623,18 @@ static Instruction::BinaryOps evaluateRelation(const Constant *V1,
     // If the first operand is simple, swap operands.
     assert((isa<ConstantPointerRef>(V2) || isa<ConstantExpr>(V2)) &&
            "Simple cases should have been handled by caller!");
-    return SetCondInst::getSwappedCondition(evaluateRelation(V2, V1));
+    Instruction::BinaryOps SwappedRelation = evaluateRelation(V2, V1);
+    if (SwappedRelation != Instruction::BinaryOpsEnd)
+      return SetCondInst::getSwappedCondition(SwappedRelation);
 
   } else if (const ConstantPointerRef *CPR1 = dyn_cast<ConstantPointerRef>(V1)){
-    if (isa<ConstantExpr>(V2))   // Swap as necessary.
-      return SetCondInst::getSwappedCondition(evaluateRelation(V2, V1));
+    if (isa<ConstantExpr>(V2)) {  // Swap as necessary.
+    Instruction::BinaryOps SwappedRelation = evaluateRelation(V2, V1);
+    if (SwappedRelation != Instruction::BinaryOpsEnd)
+      return SetCondInst::getSwappedCondition(SwappedRelation);
+    else
+      return Instruction::BinaryOpsEnd;
+    }
 
     // Now we know that the RHS is a ConstantPointerRef or simple constant,
     // which (since the types must match) means that it's a ConstantPointerNull.
@@ -920,8 +925,21 @@ Constant *llvm::ConstantFoldGetElementPtr(const Constant *C,
       (IdxList.size() == 1 && IdxList[0]->isNullValue()))
     return const_cast<Constant*>(C);
 
-  // TODO If C is null and all idx's are null, return null of the right type.
-
+  if (C->isNullValue()) {
+    bool isNull = true;
+    for (unsigned i = 0, e = IdxList.size(); i != e; ++i)
+      if (!IdxList[i]->isNullValue()) {
+        isNull = false;
+        break;
+      }
+    if (isNull) {
+      std::vector<Value*> VIdxList(IdxList.begin(), IdxList.end());
+      const Type *Ty = GetElementPtrInst::getIndexedType(C->getType(), VIdxList,
+                                                         true);
+      assert(Ty != 0 && "Invalid indices for GEP!");
+      return ConstantPointerNull::get(PointerType::get(Ty));
+    }
+  }
 
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(const_cast<Constant*>(C))) {
     // Combine Indices - If the source pointer to this getelementptr instruction

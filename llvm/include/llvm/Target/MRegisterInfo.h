@@ -18,11 +18,13 @@
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include <cassert>
+#include <functional>
 
 namespace llvm {
 
 class Type;
 class MachineFunction;
+class MachineInstr;
 
 /// MRegisterDesc - This record contains all of the information known about a
 /// particular register.  The AliasSet field (if not null) contains a pointer to
@@ -136,6 +138,20 @@ public:
     FirstVirtualRegister = 1024,
   };
 
+  /// isPhysicalRegister - Return true if the specified register number is in
+  /// the physical register namespace.
+  static bool isPhysicalRegister(unsigned Reg) {
+    assert(Reg && "this is not a register!");
+    return Reg < FirstVirtualRegister;
+  }
+
+  /// isVirtualRegister - Return true if the specified register number is in
+  /// the virtual register namespace.
+  static bool isVirtualRegister(unsigned Reg) {
+    assert(Reg && "this is not a register!");
+    return Reg >= FirstVirtualRegister;
+  }
+
   const MRegisterDesc &operator[](unsigned RegNo) const {
     assert(RegNo < NumRegs &&
            "Attempting to access record for invalid register number!");
@@ -168,6 +184,20 @@ public:
   /// physical register.
   const char *getName(unsigned RegNo) const {
     return get(RegNo).Name;
+  }
+
+  /// getNumRegs - Return the number of registers this target has
+  /// (useful for sizing arrays holding per register information)
+  unsigned getNumRegs() const {
+    return NumRegs;
+  }
+
+  /// areAliases - Returns true if the two registers alias each other,
+  /// false otherwise
+  bool areAliases(unsigned regA, unsigned regB) const {
+    for (const unsigned *Alias = getAliasSet(regA); *Alias; ++Alias)
+      if (*Alias == regA) return true;
+    return false;
   }
 
   virtual const unsigned* getCalleeSaveRegs() const = 0;
@@ -208,20 +238,31 @@ public:
   //
 
   virtual int storeRegToStackSlot(MachineBasicBlock &MBB,
-                                  MachineBasicBlock::iterator &MBBI,
+                                  MachineBasicBlock::iterator MI,
                                   unsigned SrcReg, int FrameIndex,
                                   const TargetRegisterClass *RC) const = 0;
 
   virtual int loadRegFromStackSlot(MachineBasicBlock &MBB,
-                                   MachineBasicBlock::iterator &MBBI,
+                                   MachineBasicBlock::iterator MI,
                                    unsigned DestReg, int FrameIndex,
                                    const TargetRegisterClass *RC) const = 0;
 
   virtual int copyRegToReg(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator &MBBI,
+                           MachineBasicBlock::iterator MI,
                            unsigned DestReg, unsigned SrcReg,
                            const TargetRegisterClass *RC) const = 0;
 
+
+  /// foldMemoryOperand - If this target supports it, fold a load or store of
+  /// the specified stack slot into the specified machine instruction for the
+  /// specified operand.  If this is possible, the target should perform the
+  /// folding and return true, otherwise it should return false.  If it folds
+  /// the instruction, it is likely that the MachineInstruction the iterator
+  /// references has been changed.
+  virtual bool foldMemoryOperand(MachineBasicBlock::iterator &MI,
+                                 unsigned OpNum, int FrameIndex) const {
+    return false;
+  }
 
   /// getCallFrameSetup/DestroyOpcode - These methods return the opcode of the
   /// frame setup/destroy instructions if they exist (-1 otherwise).  Some
@@ -241,14 +282,14 @@ public:
   /// setup/destroy pseudo instructions. The return value is the number of
   /// instructions added to (negative if removed from) the basic block.
   ///
-  virtual int eliminateCallFramePseudoInstr(MachineFunction &MF,
-					     MachineBasicBlock &MBB,
-                                         MachineBasicBlock::iterator &I) const {
+  virtual void 
+  eliminateCallFramePseudoInstr(MachineFunction &MF,
+                                MachineBasicBlock &MBB,
+                                MachineBasicBlock::iterator MI) const {
     assert(getCallFrameSetupOpcode()== -1 && getCallFrameDestroyOpcode()== -1 &&
 	   "eliminateCallFramePseudoInstr must be implemented if using"
 	   " call frame setup/destroy pseudo instructions!");
     assert(0 && "Call Frame Pseudo Instructions do not exist on this target!");
-    return -1;
   }
 
   /// processFunctionBeforeFrameFinalized - This method is called immediately
@@ -258,8 +299,7 @@ public:
   /// is the number of instructions added to (negative if removed from) the
   /// basic block
   ///
-  virtual int processFunctionBeforeFrameFinalized(MachineFunction &MF) const {
-    return 0;
+  virtual void processFunctionBeforeFrameFinalized(MachineFunction &MF) const {
   }
 
   /// eliminateFrameIndex - This method must be overriden to eliminate abstract
@@ -270,16 +310,23 @@ public:
   /// finished product. The return value is the number of instructions
   /// added to (negative if removed from) the basic block.
   ///
-  virtual int eliminateFrameIndex(MachineFunction &MF,
-                                  MachineBasicBlock::iterator &II) const = 0;
+  virtual void eliminateFrameIndex(MachineFunction &MF,
+                                   MachineBasicBlock::iterator MI) const = 0;
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function. The return value is the number of instructions
   /// added to (negative if removed from) the basic block (entry for prologue).
   ///
-  virtual int emitPrologue(MachineFunction &MF) const = 0;
-  virtual int emitEpilogue(MachineFunction &MF,
-                           MachineBasicBlock &MBB) const = 0;
+  virtual void emitPrologue(MachineFunction &MF) const = 0;
+  virtual void emitEpilogue(MachineFunction &MF,
+                            MachineBasicBlock &MBB) const = 0;
+};
+
+// This is useful when building DenseMap's keyed on virtual registers
+struct VirtReg2IndexFunctor : std::unary_function<unsigned, unsigned> {
+  unsigned operator()(unsigned Reg) const {
+    return Reg - MRegisterInfo::FirstVirtualRegister;
+  }
 };
 
 } // End llvm namespace

@@ -28,30 +28,41 @@ struct X86RegisterInfo : public X86GenRegisterInfo {
 
   /// Code Generation virtual methods...
   int storeRegToStackSlot(MachineBasicBlock &MBB,
-                          MachineBasicBlock::iterator &MBBI,
+                          MachineBasicBlock::iterator MI,
                           unsigned SrcReg, int FrameIndex,
                           const TargetRegisterClass *RC) const;
 
   int loadRegFromStackSlot(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator &MBBI,
+                           MachineBasicBlock::iterator MI,
                            unsigned DestReg, int FrameIndex,
                            const TargetRegisterClass *RC) const;
   
-  int copyRegToReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator &MBBI,
+  int copyRegToReg(MachineBasicBlock &MBB,
+                   MachineBasicBlock::iterator MI,
 		   unsigned DestReg, unsigned SrcReg,
 		   const TargetRegisterClass *RC) const;
 
-  int eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                    MachineBasicBlock &MBB,
-                                    MachineBasicBlock::iterator &I) const;
+  /// foldMemoryOperand - If this target supports it, fold a load or store of
+  /// the specified stack slot into the specified machine instruction for the
+  /// specified operand.  If this is possible, the target should perform the
+  /// folding and return true, otherwise it should return false.  If it folds
+  /// the instruction, it is likely that the MachineInstruction the iterator
+  /// references has been changed.
+  virtual bool foldMemoryOperand(MachineBasicBlock::iterator &MI,unsigned OpNum,
+                                 int FrameIndex) const;
 
-  int eliminateFrameIndex(MachineFunction &MF,
-                          MachineBasicBlock::iterator &II) const;
 
-  int processFunctionBeforeFrameFinalized(MachineFunction &MF) const;
+  void eliminateCallFramePseudoInstr(MachineFunction &MF,
+                                     MachineBasicBlock &MBB,
+                                     MachineBasicBlock::iterator MI) const;
 
-  int emitPrologue(MachineFunction &MF) const;
-  int emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
+  void eliminateFrameIndex(MachineFunction &MF,
+                           MachineBasicBlock::iterator MI) const;
+
+  void processFunctionBeforeFrameFinalized(MachineFunction &MF) const;
+
+  void emitPrologue(MachineFunction &MF) const;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 };
 
 } // End llvm namespace

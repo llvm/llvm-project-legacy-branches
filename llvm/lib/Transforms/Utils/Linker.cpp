@@ -284,7 +284,8 @@ static Value *RemapOperand(const Value *In,
 
   // Check to see if it's a constant that we are interesting in transforming...
   if (const Constant *CPV = dyn_cast<Constant>(In)) {
-    if (!isa<DerivedType>(CPV->getType()) && !isa<ConstantExpr>(CPV))
+    if ((!isa<DerivedType>(CPV->getType()) && !isa<ConstantExpr>(CPV)) ||
+        isa<ConstantAggregateZero>(CPV))
       return const_cast<Constant*>(CPV);   // Simple constants stay identical...
 
     Constant *Result = 0;
@@ -565,13 +566,15 @@ static bool LinkGlobalInits(Module *Dest, const Module *Src,
 
       GlobalVariable *DGV = cast<GlobalVariable>(ValueMap[SGV]);    
       if (DGV->hasInitializer()) {
-        assert(SGV->getLinkage() == DGV->getLinkage());
         if (SGV->hasExternalLinkage()) {
           if (DGV->getInitializer() != SInit)
             return Error(Err, "Global Variable Collision on '" + 
                          SGV->getType()->getDescription() +"':%"+SGV->getName()+
                          " - Global variables have different initializers");
         } else if (DGV->hasLinkOnceLinkage() || DGV->hasWeakLinkage()) {
+          // Nothing is required, mapped values will take the new global
+          // automatically.
+        } else if (SGV->hasLinkOnceLinkage() || SGV->hasWeakLinkage()) {
           // Nothing is required, mapped values will take the new global
           // automatically.
         } else if (DGV->hasAppendingLinkage()) {
@@ -796,12 +799,24 @@ static bool LinkAppendingVars(Module *M,
 
       // Merge the initializer...
       Inits.reserve(NewSize);
-      ConstantArray *I = cast<ConstantArray>(G1->getInitializer());
-      for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
-        Inits.push_back(cast<Constant>(I->getValues()[i]));
-      I = cast<ConstantArray>(G2->getInitializer());
-      for (unsigned i = 0, e = T2->getNumElements(); i != e; ++i)
-        Inits.push_back(cast<Constant>(I->getValues()[i]));
+      if (ConstantArray *I = dyn_cast<ConstantArray>(G1->getInitializer())) {
+        for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
+          Inits.push_back(cast<Constant>(I->getValues()[i]));
+      } else {
+        assert(isa<ConstantAggregateZero>(G1->getInitializer()));
+        Constant *CV = Constant::getNullValue(T1->getElementType());
+        for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
+          Inits.push_back(CV);
+      }
+      if (ConstantArray *I = dyn_cast<ConstantArray>(G2->getInitializer())) {
+        for (unsigned i = 0, e = T2->getNumElements(); i != e; ++i)
+          Inits.push_back(cast<Constant>(I->getValues()[i]));
+      } else {
+        assert(isa<ConstantAggregateZero>(G2->getInitializer()));
+        Constant *CV = Constant::getNullValue(T2->getElementType());
+        for (unsigned i = 0, e = T2->getNumElements(); i != e; ++i)
+          Inits.push_back(CV);
+      }
       NG->setInitializer(ConstantArray::get(NewType, Inits));
       Inits.clear();
 

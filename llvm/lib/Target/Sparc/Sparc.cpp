@@ -1,4 +1,4 @@
-//===-- Sparc.cpp - General implementation file for the Sparc Target ------===//
+//===-- SparcV9.cpp - General implementation file for the SparcV9 Target ------===//
 // 
 //                     The LLVM Compiler Infrastructure
 //
@@ -26,21 +26,21 @@
 #include "llvm/Target/TargetMachineImpls.h"
 #include "llvm/Transforms/Scalar.h"
 #include "MappingInfo.h" 
-#include "SparcInternals.h"
-#include "SparcTargetMachine.h"
+#include "SparcV9Internals.h"
+#include "SparcV9TargetMachine.h"
 #include "Support/CommandLine.h"
 
 using namespace llvm;
 
 static const unsigned ImplicitRegUseList[] = { 0 }; /* not used yet */
 // Build the MachineInstruction Description Array...
-const TargetInstrDescriptor llvm::SparcMachineInstrDesc[] = {
+const TargetInstrDescriptor llvm::SparcV9MachineInstrDesc[] = {
 #define I(ENUM, OPCODESTRING, NUMOPERANDS, RESULTPOS, MAXIMM, IMMSE, \
           NUMDELAYSLOTS, LATENCY, SCHEDCLASS, INSTFLAGS)             \
   { OPCODESTRING, NUMOPERANDS, RESULTPOS, MAXIMM, IMMSE,             \
           NUMDELAYSLOTS, LATENCY, SCHEDCLASS, INSTFLAGS, 0,          \
           ImplicitRegUseList, ImplicitRegUseList },
-#include "SparcInstr.def"
+#include "SparcV9Instr.def"
 };
 
 //---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ namespace {
   };
 
   struct DestroyMachineFunction : public FunctionPass {
-    const char *getPassName() const { return "FreeMachineFunction"; }
+    const char *getPassName() const { return "DestroyMachineFunction"; }
     
     static void freeMachineCode(Instruction &I) {
       MachineCodeForInstruction::destroy(&I);
@@ -106,25 +106,24 @@ namespace {
   }
 }
 
-FunctionPass *llvm::createSparcMachineCodeDestructionPass() {
+FunctionPass *llvm::createSparcV9MachineCodeDestructionPass() {
   return new DestroyMachineFunction();
 }
 
 
-SparcTargetMachine::SparcTargetMachine(IntrinsicLowering *il)
-  : TargetMachine("UltraSparc-Native", il, false),
+SparcV9TargetMachine::SparcV9TargetMachine(IntrinsicLowering *il)
+  : TargetMachine("UltraSparcV9-Native", il, false),
     schedInfo(*this),
     regInfo(*this),
     frameInfo(*this),
-    cacheInfo(*this),
     jitInfo(*this) {
 }
 
-// addPassesToEmitAssembly - This method controls the entire code generation
-// process for the ultra sparc.
-//
+/// addPassesToEmitAssembly - This method controls the entire code generation
+/// process for the ultra sparc.
+///
 bool
-SparcTargetMachine::addPassesToEmitAssembly(PassManager &PM, std::ostream &Out)
+SparcV9TargetMachine::addPassesToEmitAssembly(PassManager &PM, std::ostream &Out)
 {
   // The following 3 passes used to be inserted specially by llc.
   // Replace malloc and free instructions with library calls.
@@ -176,9 +175,10 @@ SparcTargetMachine::addPassesToEmitAssembly(PassManager &PM, std::ostream &Out)
   // function output is pipelined with all of the rest of code generation stuff,
   // allowing machine code representations for functions to be free'd after the
   // function has been emitted.
-  //
   PM.add(createAsmPrinterPass(Out, *this));
-  PM.add(createSparcMachineCodeDestructionPass()); // Free mem no longer needed
+
+  // Free machine-code IR which is no longer needed:
+  PM.add(createSparcV9MachineCodeDestructionPass());
 
   // Emit bytecode to the assembly file into its special section next
   if (EmitMappingInfo)
@@ -187,10 +187,10 @@ SparcTargetMachine::addPassesToEmitAssembly(PassManager &PM, std::ostream &Out)
   return false;
 }
 
-// addPassesToJITCompile - This method controls the JIT method of code
-// generation for the UltraSparc.
-//
-void SparcJITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
+/// addPassesToJITCompile - This method controls the JIT method of code
+/// generation for the UltraSparcV9.
+///
+void SparcV9JITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
   const TargetData &TD = TM.getTargetData();
 
   PM.add(new TargetData("lli", TD.isLittleEndian(), TD.getPointerSize(),
@@ -230,12 +230,10 @@ void SparcJITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
     PM.add(createPeepholeOptsPass(TM));
 }
 
-//----------------------------------------------------------------------------
-// allocateSparcTargetMachine - Allocate and return a subclass of TargetMachine
-// that implements the Sparc backend. (the llvm/CodeGen/Sparc.h interface)
-//----------------------------------------------------------------------------
-
-TargetMachine *llvm::allocateSparcTargetMachine(const Module &M,
+/// allocateSparcV9TargetMachine - Allocate and return a subclass of TargetMachine
+/// that implements the SparcV9 backend. (the llvm/CodeGen/SparcV9.h interface)
+///
+TargetMachine *llvm::allocateSparcV9TargetMachine(const Module &M,
                                                 IntrinsicLowering *IL) {
-  return new SparcTargetMachine(IL);
+  return new SparcV9TargetMachine(IL);
 }

@@ -42,6 +42,11 @@ class DSNode {
   /// null.
   DSNodeHandle ForwardNH;
 
+  /// Next, Prev - These instance variables are used to keep the node on a
+  /// doubly-linked ilist in the DSGraph.
+  DSNode *Next, *Prev;
+  friend class ilist_traits<DSNode>;
+
   /// Size - The current size of the node.  This should be equal to the size of
   /// the current type record.
   ///
@@ -97,9 +102,16 @@ public:
 private:
   unsigned short NodeType;
 public:
-
+  
+  /// DSNode ctor - Create a node of the specified type, inserting it into the
+  /// specified graph.
   DSNode(const Type *T, DSGraph *G);
-  DSNode(const DSNode &, DSGraph *G);
+
+  /// DSNode "copy ctor" - Copy the specified node, inserting it into the
+  /// specified graph.  If NullLinks is true, then null out all of the links,
+  /// but keep the same number of them.  This can be used for efficiency if the
+  /// links are just going to be clobbered anyway.
+  DSNode(const DSNode &, DSGraph *G, bool NullLinks = false);
 
   ~DSNode() {
     dropAllReferences();
@@ -145,10 +157,20 @@ public:
   /// getForwardNode - This method returns the node that this node is forwarded
   /// to, if any.
   DSNode *getForwardNode() const { return ForwardNH.getNode(); }
+
+  /// isForwarding - Return true if this node is forwarding to another.
+  ///
+  bool isForwarding() const { return !ForwardNH.isNull(); }
+
+  /// stopForwarding - When the last reference to this forwarding node has been
+  /// dropped, delete the node.
   void stopForwarding() {
-    assert(!ForwardNH.isNull() &&
+    assert(isForwarding() &&
            "Node isn't forwarding, cannot stopForwarding!");
     ForwardNH.setNode(0);
+    assert(ParentGraph == 0 &&
+           "Forwarding nodes must have been removed from graph!");
+    delete this;
   }
 
   /// hasLink - Return true if this memory object has a link in slot #LinkNo
@@ -241,12 +263,22 @@ public:
   /// also marks the node with the 'G' flag if it does not already have it.
   ///
   void addGlobal(GlobalValue *GV);
+  void mergeGlobals(const std::vector<GlobalValue*> &RHS);
   const std::vector<GlobalValue*> &getGlobals() const { return Globals; }
+
+  typedef std::vector<GlobalValue*>::const_iterator global_iterator;
+  global_iterator global_begin() const { return Globals.begin(); }
+  global_iterator global_end() const { return Globals.end(); }
+
 
   /// maskNodeTypes - Apply a mask to the node types bitfield.
   ///
   void maskNodeTypes(unsigned Mask) {
     NodeType &= Mask;
+  }
+
+  void mergeNodeFlags(unsigned RHS) {
+    NodeType |= RHS;
   }
 
   /// getNodeFlags - Return all of the flags set on the node.  If the DEAD flag
@@ -273,6 +305,7 @@ public:
   DSNode *setIncompleteMarker() { NodeType |= Incomplete; return this; }
   DSNode *setModifiedMarker()   { NodeType |= Modified;   return this; }
   DSNode *setReadMarker()       { NodeType |= Read;       return this; }
+  DSNode *setArrayMarker()      { NodeType |= Array; return this; }
 
   void makeNodeDead() {
     Globals.clear();
@@ -292,7 +325,7 @@ public:
 
   void dropAllReferences() {
     Links.clear();
-    if (!ForwardNH.isNull())
+    if (isForwarding())
       ForwardNH.setNode(0);
   }
 
@@ -313,22 +346,46 @@ private:
   static void MergeNodes(DSNodeHandle& CurNodeH, DSNodeHandle& NH);
 };
 
+//===----------------------------------------------------------------------===//
+// Define the ilist_traits specialization for the DSGraph ilist.
+//
+template<>
+struct ilist_traits<DSNode> {
+  static DSNode *getPrev(const DSNode *N) { return N->Prev; }
+  static DSNode *getNext(const DSNode *N) { return N->Next; }
+
+  static void setPrev(DSNode *N, DSNode *Prev) { N->Prev = Prev; }
+  static void setNext(DSNode *N, DSNode *Next) { N->Next = Next; }
+
+  static DSNode *createNode() { return new DSNode(0,0); }
+  //static DSNode *createNode(const DSNode &V) { return new DSNode(V); }
+
+
+  void addNodeToList(DSNode *NTy) {}
+  void removeNodeFromList(DSNode *NTy) {}
+  void transferNodesFromList(iplist<DSNode, ilist_traits> &L2,
+                             ilist_iterator<DSNode> first,
+                             ilist_iterator<DSNode> last) {}
+};
+
+template<>
+struct ilist_traits<const DSNode> : public ilist_traits<DSNode> {};
 
 //===----------------------------------------------------------------------===//
 // Define inline DSNodeHandle functions that depend on the definition of DSNode
 //
 inline DSNode *DSNodeHandle::getNode() const {
   assert((!N || Offset < N->Size || (N->Size == 0 && Offset == 0) ||
-          !N->ForwardNH.isNull()) && "Node handle offset out of range!");
-  if (!N || N->ForwardNH.isNull())
+          N->isForwarding()) && "Node handle offset out of range!");
+  if (N == 0 || !N->isForwarding())
     return N;
 
   return HandleForwarding();
 }
 
-inline void DSNodeHandle::setNode(DSNode *n) {
-  assert(!n || !n->getForwardNode() && "Cannot set node to a forwarded node!");
-  if (N) N->NumReferrers--;
+inline void DSNodeHandle::setNode(DSNode *n) const {
+  assert(!n || !n->isForwarding() && "Cannot set node to a forwarded node!");
+  if (N) getNode()->NumReferrers--;
   N = n;
   if (N) {
     N->NumReferrers++;
@@ -340,7 +397,7 @@ inline void DSNodeHandle::setNode(DSNode *n) {
   }
   assert(!N || ((N->NodeType & DSNode::DEAD) == 0));
   assert((!N || Offset < N->Size || (N->Size == 0 && Offset == 0) ||
-          !N->ForwardNH.isNull()) && "Node handle offset out of range!");
+          N->isForwarding()) && "Node handle offset out of range!");
 }
 
 inline bool DSNodeHandle::hasLink(unsigned Num) const {
@@ -377,11 +434,14 @@ inline void DSNodeHandle::addEdgeTo(unsigned Off, const DSNodeHandle &Node) {
 /// mergeWith - Merge the logical node pointed to by 'this' with the node
 /// pointed to by 'N'.
 ///
-inline void DSNodeHandle::mergeWith(const DSNodeHandle &Node) {
-  if (N != 0)
+inline void DSNodeHandle::mergeWith(const DSNodeHandle &Node) const {
+  if (!isNull())
     getNode()->mergeWith(Node, Offset);
-  else     // No node to merge with, so just point to Node
-    *this = Node;
+  else {   // No node to merge with, so just point to Node
+    Offset = 0;
+    setNode(Node.getNode());
+    Offset = Node.getOffset();
+  }
 }
 
 } // End llvm namespace

@@ -18,12 +18,27 @@
 #define TOOLRUNNER_H
 
 #include "Support/SystemUtils.h"
+#include <exception>
 #include <vector>
 
 namespace llvm {
 
 class CBE;
 class LLC;
+
+
+/// ToolExecutionError - An instance of this class is thrown by the
+/// AbstractInterpreter instances if there is an error running a tool (e.g., LLC
+/// crashes) which prevents execution of the program.
+///
+class ToolExecutionError : std::exception {
+  std::string Message;
+public:
+  explicit ToolExecutionError(const std::string &M) : Message(M) {}
+  virtual ~ToolExecutionError() throw();
+  virtual const char* what() const throw() { return Message.c_str(); }
+};
+
 
 //===---------------------------------------------------------------------===//
 // GCC abstraction
@@ -56,9 +71,6 @@ public:
   ///
   int MakeSharedObject(const std::string &InputFile, FileType fileType,
                        std::string &OutputFile);
-  
-private:
-  void ProcessFailure(const char **Args);
 };
 
 
@@ -80,6 +92,12 @@ struct AbstractInterpreter {
 
   virtual ~AbstractInterpreter() {}
 
+  /// compileProgram - Compile the specified program from bytecode to executable
+  /// code.  This does not produce any output, it is only used when debugging
+  /// the code generator.  If the code generator fails, an exception should be
+  /// thrown, otherwise, this function will just return.
+  virtual void compileProgram(const std::string &Bytecode) {}
+
   /// ExecuteProgram - Run the specified bytecode file, emitting output to the
   /// specified filename.  This returns the exit code of the program.
   ///
@@ -95,11 +113,17 @@ struct AbstractInterpreter {
 // CBE Implementation of AbstractIntepreter interface
 //
 class CBE : public AbstractInterpreter {
-  std::string DISPath;          // The path to the `llvm-dis' executable
+  std::string LLCPath;          // The path to the `llc' executable
   GCC *gcc;
 public:
-  CBE(const std::string &disPath, GCC *Gcc) : DISPath(disPath), gcc(Gcc) { }
+  CBE(const std::string &llcPath, GCC *Gcc) : LLCPath(llcPath), gcc(Gcc) { }
   ~CBE() { delete gcc; }
+
+  /// compileProgram - Compile the specified program from bytecode to executable
+  /// code.  This does not produce any output, it is only used when debugging
+  /// the code generator.  If the code generator fails, an exception should be
+  /// thrown, otherwise, this function will just return.
+  virtual void compileProgram(const std::string &Bytecode);
 
   virtual int ExecuteProgram(const std::string &Bytecode,
                              const std::vector<std::string> &Args,
@@ -108,10 +132,11 @@ public:
                              const std::vector<std::string> &SharedLibs = 
                                std::vector<std::string>());
 
-  // Sometimes we just want to go half-way and only generate the .c file,
-  // not necessarily compile it with GCC and run the program.
+  // Sometimes we just want to go half-way and only generate the .c file, not
+  // necessarily compile it with GCC and run the program.  This throws an
+  // exception if LLC crashes.
   //
-  virtual int OutputC(const std::string &Bytecode, std::string &OutputCFile);
+  virtual void OutputC(const std::string &Bytecode, std::string &OutputCFile);
 };
 
 
@@ -126,6 +151,13 @@ public:
     : LLCPath(llcPath), gcc(Gcc) { }
   ~LLC() { delete gcc; }
 
+
+  /// compileProgram - Compile the specified program from bytecode to executable
+  /// code.  This does not produce any output, it is only used when debugging
+  /// the code generator.  If the code generator fails, an exception should be
+  /// thrown, otherwise, this function will just return.
+  virtual void compileProgram(const std::string &Bytecode);
+
   virtual int ExecuteProgram(const std::string &Bytecode,
                              const std::vector<std::string> &Args,
                              const std::string &InputFile,
@@ -134,9 +166,10 @@ public:
                                 std::vector<std::string>());
 
   // Sometimes we just want to go half-way and only generate the .s file,
-  // not necessarily compile it all the way and run the program.
+  // not necessarily compile it all the way and run the program.  This throws
+  // an exception if execution of LLC fails.
   //
-  int OutputAsm(const std::string &Bytecode, std::string &OutputAsmFile);
+  void OutputAsm(const std::string &Bytecode, std::string &OutputAsmFile);
 };
 
 } // End llvm namespace

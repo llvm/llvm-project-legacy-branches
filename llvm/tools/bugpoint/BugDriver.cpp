@@ -19,6 +19,7 @@
 #include "llvm/Assembly/Parser.h"
 #include "llvm/Bytecode/Reader.h"
 #include "llvm/Transforms/Utils/Linker.h"
+#include "llvm/Support/ToolRunner.h"
 #include "Support/CommandLine.h"
 #include "Support/FileUtilities.h"
 #include <memory>
@@ -36,6 +37,15 @@ namespace {
   OutputFile("output", cl::desc("Specify a reference program output "
                                 "(for miscompilation detection)"));
 }
+
+/// setNewProgram - If we reduce or update the program somehow, call this method
+/// to update bugdriver with it.  This deletes the old module and sets the
+/// specified one as the current program.
+void BugDriver::setNewProgram(Module *M) {
+  delete Program;
+  Program = M;
+}
+
 
 /// getPassesString - Turn a list of passes into a string which indicates the
 /// command line options that must be passed to add the passes.
@@ -131,11 +141,22 @@ bool BugDriver::run() {
   if (!PassesToRun.empty()) {
     std::cout << "Running selected passes on program to test for crash: ";
     if (runPasses(PassesToRun))
-      return debugCrash();
+      return debugOptimizerCrash();
   }
 
   // Set up the execution environment, selecting a method to run LLVM bytecode.
   if (initializeExecutionEnvironment()) return true;
+
+  // Test to see if we have a code generator crash.
+  std::cout << "Running the code generator to test for a crash: ";
+  try {
+    compileProgram(Program);
+    std::cout << "\n";
+  } catch (ToolExecutionError &TEE) {
+    std::cout << TEE.what();
+    return debugCodeGeneratorCrash();
+  }
+
 
   // Run the raw input to see where we are coming from.  If a reference output
   // was specified, make sure that the raw output matches it.  If not, it's a
@@ -144,33 +165,47 @@ bool BugDriver::run() {
   bool CreatedOutput = false;
   if (ReferenceOutputFile.empty()) {
     std::cout << "Generating reference output from raw program...";
-    ReferenceOutputFile = executeProgramWithCBE("bugpoint.reference.out");
-    CreatedOutput = true;
-    std::cout << "Reference output is: " << ReferenceOutputFile << "\n";
+    try {
+      ReferenceOutputFile = executeProgramWithCBE("bugpoint.reference.out");
+      CreatedOutput = true;
+      std::cout << "Reference output is: " << ReferenceOutputFile << "\n";
+    } catch (ToolExecutionError &TEE) {
+      std::cerr << TEE.what();
+      if (Interpreter != cbe) {
+        std::cerr << "*** There is a bug running the C backend.  Either debug"
+                  << " it (use the -run-cbe bugpoint option), or fix the error"
+                  << " some other way.\n";
+        return 1;
+      }
+      return debugCodeGeneratorCrash();
+    }
   }
 
   // Make sure the reference output file gets deleted on exit from this
   // function, if appropriate.
-  struct Remover {
-    bool DeleteIt; const std::string &Filename;
-    Remover(bool deleteIt, const std::string &filename)
-      : DeleteIt(deleteIt), Filename(filename) {}
-    ~Remover() {
-      if (DeleteIt) removeFile(Filename);
-    }
-  } RemoverInstance(CreatedOutput, ReferenceOutputFile);
+  FileRemover RemoverInstance(ReferenceOutputFile, CreatedOutput);
 
   // Diff the output of the raw program against the reference output.  If it
   // matches, then we have a miscompilation bug.
   std::cout << "*** Checking the code generator...\n";
-  if (!diffProgram()) {
-    std::cout << "\n*** Debugging miscompilation!\n";
-    return debugMiscompilation();
+  try {
+    if (!diffProgram()) {
+      std::cout << "\n*** Debugging miscompilation!\n";
+      return debugMiscompilation();
+    }
+  } catch (ToolExecutionError &TEE) {
+    std::cerr << TEE.what();
+    return debugCodeGeneratorCrash();
   }
 
   std::cout << "\n*** Input program does not match reference diff!\n";
   std::cout << "Debugging code generator problem!\n";
-  return debugCodeGenerator();
+  try {
+    return debugCodeGenerator();
+  } catch (ToolExecutionError &TEE) {
+    std::cerr << TEE.what();
+    return debugCodeGeneratorCrash();
+  }
 }
 
 void BugDriver::PrintFunctionList(const std::vector<Function*> &Funcs) {

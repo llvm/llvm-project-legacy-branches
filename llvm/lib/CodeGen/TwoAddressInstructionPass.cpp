@@ -16,53 +16,49 @@
 // to:
 //
 //     A = B
-//     A = A op C
+//     A op= C
+//
+// Note that if a register allocator chooses to use this pass, that it
+// has to be capable of handling the non-SSA nature of these rewritten
+// virtual registers.
+//
+// It is also worth noting that the duplicate operand of the two
+// address instruction is removed.
 //
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "twoaddrinstr"
 #include "llvm/Function.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/LiveVariables.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/SSARegMap.h"
 #include "llvm/Target/MRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegInfo.h"
 #include "Support/Debug.h"
 #include "Support/Statistic.h"
 #include "Support/STLExtras.h"
 #include <iostream>
-
 using namespace llvm;
 
 namespace {
-    class TwoAddressInstructionPass : public MachineFunctionPass
-    {
-    private:
-        MachineFunction* mf_;
-        const TargetMachine* tm_;
-        const MRegisterInfo* mri_;
-        LiveVariables* lv_;
+    Statistic<> numTwoAddressInstrs("twoaddressinstruction",
+                                    "Number of two-address instructions");
+    Statistic<> numInstrsAdded("twoaddressinstruction",
+                               "Number of instructions added");
 
-    public:
+    struct TwoAddressInstructionPass : public MachineFunctionPass
+    {
         virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
-    private:
         /// runOnMachineFunction - pass entry point
         bool runOnMachineFunction(MachineFunction&);
     };
 
     RegisterPass<TwoAddressInstructionPass> X(
         "twoaddressinstruction", "Two-Address instruction pass");
-
-    Statistic<> numTwoAddressInstrs("twoaddressinstruction",
-                                    "Number of two-address instructions");
-    Statistic<> numInstrsAdded("twoaddressinstruction",
-                               "Number of instructions added");
 };
 
 const PassInfo *llvm::TwoAddressInstructionPassID = X.getPassInfo();
@@ -70,101 +66,113 @@ const PassInfo *llvm::TwoAddressInstructionPassID = X.getPassInfo();
 void TwoAddressInstructionPass::getAnalysisUsage(AnalysisUsage &AU) const
 {
     AU.addPreserved<LiveVariables>();
-    AU.addRequired<LiveVariables>();
     AU.addPreservedID(PHIEliminationID);
-    AU.addRequiredID(PHIEliminationID);
     MachineFunctionPass::getAnalysisUsage(AU);
 }
 
 /// runOnMachineFunction - Reduce two-address instructions to two
-/// operands
+/// operands.
 ///
-bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &fn) {
+bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
     DEBUG(std::cerr << "Machine Function\n");
-    mf_ = &fn;
-    tm_ = &fn.getTarget();
-    mri_ = tm_->getRegisterInfo();
-    lv_ = &getAnalysis<LiveVariables>();
+    const TargetMachine &TM = MF.getTarget();
+    const MRegisterInfo &MRI = *TM.getRegisterInfo();
+    const TargetInstrInfo &TII = TM.getInstrInfo();
+    LiveVariables* LV = getAnalysisToUpdate<LiveVariables>();
 
-    const TargetInstrInfo& tii = tm_->getInstrInfo();
+    bool MadeChange = false;
 
-    for (MachineFunction::iterator mbbi = mf_->begin(), mbbe = mf_->end();
+    DEBUG(std::cerr << "********** REWRITING TWO-ADDR INSTRS **********\n");
+    DEBUG(std::cerr << "********** Function: "
+          << MF.getFunction()->getName() << '\n');
+
+    for (MachineFunction::iterator mbbi = MF.begin(), mbbe = MF.end();
          mbbi != mbbe; ++mbbi) {
-        for (MachineBasicBlock::iterator mii = mbbi->begin();
-             mii != mbbi->end(); ++mii) {
-            MachineInstr* mi = *mii;
-
+        for (MachineBasicBlock::iterator mi = mbbi->begin(), me = mbbi->end();
+             mi != me; ++mi) {
             unsigned opcode = mi->getOpcode();
+
             // ignore if it is not a two-address instruction
-            if (!tii.isTwoAddrInstr(opcode))
+            if (!TII.isTwoAddrInstr(opcode))
                 continue;
 
             ++numTwoAddressInstrs;
 
-            DEBUG(std::cerr << "\tinstruction: "; mi->print(std::cerr, *tm_));
-
-            // we have nothing to do if the two operands are the same
-            if (mi->getOperand(0).getAllocatedRegNum() ==
-                mi->getOperand(1).getAllocatedRegNum())
-                continue;
+            DEBUG(std::cerr << '\t'; mi->print(std::cerr, TM));
 
             assert(mi->getOperand(1).isRegister() &&
-                   mi->getOperand(1).getAllocatedRegNum() &&
+                   mi->getOperand(1).getReg() &&
                    mi->getOperand(1).isUse() &&
                    "two address instruction invalid");
 
-            // rewrite:
-            //     a = b op c
-            // to:
-            //     a = b
-            //     a = a op c
-            unsigned regA = mi->getOperand(0).getAllocatedRegNum();
-            unsigned regB = mi->getOperand(1).getAllocatedRegNum();
+            // if the two operands are the same we just remove the use
+            // and mark the def as def&use
+            if (mi->getOperand(0).getReg() ==
+                mi->getOperand(1).getReg()) {
+            }
+            else {
+                MadeChange = true;
 
-            assert(regA >= MRegisterInfo::FirstVirtualRegister &&
-                   regB >= MRegisterInfo::FirstVirtualRegister &&
-                   "cannot update physical register live information");
+                // rewrite:
+                //     a = b op c
+                // to:
+                //     a = b
+                //     a = a op c
+                unsigned regA = mi->getOperand(0).getReg();
+                unsigned regB = mi->getOperand(1).getReg();
 
-            // first make sure we do not have a use of a in the
-            // instruction (a = b + a for example) because our
-            // transofrmation will not work. This should never occur
-            // because of SSA.
-            for (unsigned i = 1; i < mi->getNumOperands(); ++i) {
-                assert(!mi->getOperand(i).isRegister() ||
-                       mi->getOperand(i).getAllocatedRegNum() != (int)regA);
+                assert(MRegisterInfo::isVirtualRegister(regA) &&
+                       MRegisterInfo::isVirtualRegister(regB) &&
+                       "cannot update physical register live information");
+
+                // first make sure we do not have a use of a in the
+                // instruction (a = b + a for example) because our
+                // transformation will not work. This should never occur
+                // because we are in SSA form.
+                for (unsigned i = 1; i != mi->getNumOperands(); ++i)
+                    assert(!mi->getOperand(i).isRegister() ||
+                           mi->getOperand(i).getReg() != regA);
+
+                const TargetRegisterClass* rc =
+                    MF.getSSARegMap()->getRegClass(regA);
+                unsigned Added = MRI.copyRegToReg(*mbbi, mi, regA, regB, rc);
+                numInstrsAdded += Added;
+
+                MachineBasicBlock::iterator prevMi = prior(mi);
+                DEBUG(std::cerr << "\t\tprepend:\t";
+                      prevMi->print(std::cerr, TM));
+
+                if (LV) {
+                    // update live variables for regA
+                    assert(Added == 1 &&
+                           "Cannot handle multi-instruction copies yet!");
+                    LiveVariables::VarInfo& varInfo = LV->getVarInfo(regA);
+                    varInfo.DefInst = prevMi;
+
+                    // update live variables for regB
+                    if (LV->removeVirtualRegisterKilled(regB, &*mbbi, mi))
+                        LV->addVirtualRegisterKilled(regB, &*mbbi, prevMi);
+
+                    if (LV->removeVirtualRegisterDead(regB, &*mbbi, mi))
+                        LV->addVirtualRegisterDead(regB, &*mbbi, prevMi);
+                }
+
+                // replace all occurences of regB with regA
+                for (unsigned i = 1, e = mi->getNumOperands(); i != e; ++i) {
+                    if (mi->getOperand(i).isRegister() &&
+                        mi->getOperand(i).getReg() == regB)
+                        mi->SetMachineOperandReg(i, regA);
+                }
             }
 
-            const TargetRegisterClass* rc =
-                mf_->getSSARegMap()->getRegClass(regA);
-            numInstrsAdded += mri_->copyRegToReg(*mbbi, mii, regA, regB, rc);
+            assert(mi->getOperand(0).isDef());
+            mi->getOperand(0).setUse();
+            mi->RemoveOperand(1);
 
-            MachineInstr* prevMi = *(mii - 1);
-            DEBUG(std::cerr << "\t\tadded instruction: ";
-                  prevMi->print(std::cerr, *tm_));
-
-            // update live variables for regA
-            LiveVariables::VarInfo& varInfo = lv_->getVarInfo(regA);
-            varInfo.DefInst = prevMi;
-
-            // update live variables for regB
-            if (lv_->removeVirtualRegisterKilled(regB, &*mbbi, mi))
-                lv_->addVirtualRegisterKilled(regB, &*mbbi, prevMi);
-
-            if (lv_->removeVirtualRegisterDead(regB, &*mbbi, mi))
-                lv_->addVirtualRegisterDead(regB, &*mbbi, prevMi);
-
-            // replace all occurences of regB with regA
-            for (unsigned i = 1; i < mi->getNumOperands(); ++i) {
-                if (mi->getOperand(i).isRegister() &&
-                    mi->getOperand(i).getReg() == regB)
-                    mi->SetMachineOperandReg(i, regA);
-            }
-            DEBUG(std::cerr << "\t\tmodified original to: ";
-                  mi->print(std::cerr, *tm_));
-            assert(mi->getOperand(0).getAllocatedRegNum() ==
-                   mi->getOperand(1).getAllocatedRegNum());
+            DEBUG(std::cerr << "\t\trewrite to:\t";
+                  mi->print(std::cerr, TM));
         }
     }
 
-    return numInstrsAdded != 0;
+    return MadeChange;
 }

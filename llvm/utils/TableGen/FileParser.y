@@ -51,7 +51,7 @@ static void addValue(const RecordVal &RV) {
       err() << "New definition of '" << RV.getName() << "' of type '"
             << *RV.getType() << "' is incompatible with previous "
             << "definition of type '" << *ERV->getType() << "'!\n";
-      abort();
+      exit(1);
     }
   } else {
     CurRec->addValue(RV);
@@ -61,20 +61,27 @@ static void addValue(const RecordVal &RV) {
 static void addSuperClass(Record *SC) {
   if (CurRec->isSubClassOf(SC)) {
     err() << "Already subclass of '" << SC->getName() << "'!\n";
-    abort();
+    exit(1);
   }
   CurRec->addSuperClass(SC);
 }
 
 static void setValue(const std::string &ValName, 
 		     std::vector<unsigned> *BitList, Init *V) {
-  if (!V) return ;
+  if (!V) return;
 
   RecordVal *RV = CurRec->getValue(ValName);
   if (RV == 0) {
     err() << "Value '" << ValName << "' unknown!\n";
-    abort();
+    exit(1);
   }
+
+  // Do not allow assignments like 'X = X'.  This will just cause infinite loops
+  // in the resolution machinery.
+  if (!BitList)
+    if (VarInit *VI = dynamic_cast<VarInit*>(V))
+      if (VI->getName() == ValName)
+        return;
   
   // If we are assigning to a subset of the bits in the value... then we must be
   // assigning to a field of BitsRecTy, which must have a BitsInit
@@ -84,7 +91,7 @@ static void setValue(const std::string &ValName,
     BitsInit *CurVal = dynamic_cast<BitsInit*>(RV->getValue());
     if (CurVal == 0) {
       err() << "Value '" << ValName << "' is not a bits type!\n";
-      abort();
+      exit(1);
     }
 
     // Convert the incoming value to a bits type of the appropriate size...
@@ -92,7 +99,7 @@ static void setValue(const std::string &ValName,
     if (BI == 0) {
       V->convertInitializerTo(new BitsRecTy(BitList->size()));
       err() << "Initializer '" << *V << "' not compatible with bit range!\n";
-      abort();
+      exit(1);
     }
 
     // We should have a BitsInit type now...
@@ -107,7 +114,7 @@ static void setValue(const std::string &ValName,
       if (NewVal->getBit(Bit)) {
         err() << "Cannot set bit #" << Bit << " of value '" << ValName
               << "' more than once!\n";
-        abort();
+        exit(1);
       }
       NewVal->setBit(Bit, BInit->getBit(i));
     }
@@ -122,7 +129,7 @@ static void setValue(const std::string &ValName,
   if (RV->setValue(V)) {
     err() << "Value '" << ValName << "' of type '" << *RV->getType()
 	  << "' is incompatible with initializer '" << *V << "'!\n";
-    abort();
+    exit(1);
   }
 }
 
@@ -137,7 +144,7 @@ static void addSubClass(Record *SC, const std::vector<Init*> &TemplateArgs) {
   // Ensure that an appropriate number of template arguments are specified...
   if (TArgs.size() < TemplateArgs.size()) {
     err() << "ERROR: More template args specified than expected!\n";
-    abort();
+    exit(1);
   } else {    // This class expects template arguments...
     // Loop over all of the template arguments, setting them to the specified
     // value or leaving them as the default as necessary.
@@ -149,15 +156,14 @@ static void addSubClass(Record *SC, const std::vector<Init*> &TemplateArgs) {
 	err() << "ERROR: Value not specified for template argument #"
 	      << i << " (" << TArgs[i] << ") of subclass '" << SC->getName()
 	      << "'!\n";
-	abort();
+	exit(1);
       }
     }
   }
 
-
   // Since everything went well, we can now set the "superclass" list for the
   // current record.
-  const std::vector<Record*>   &SCs  = SC->getSuperClasses();
+  const std::vector<Record*> &SCs  = SC->getSuperClasses();
   for (unsigned i = 0, e = SCs.size(); i != e; ++i)
     addSuperClass(SCs[i]);
   addSuperClass(SC);
@@ -206,7 +212,7 @@ ClassID : ID {
     $$ = Records.getClass(*$1);
     if ($$ == 0) {
       err() << "Couldn't find class '" << *$1 << "'!\n";
-      abort();
+      exit(1);
     }
     delete $1;
   };
@@ -252,7 +258,7 @@ Value : INTVAL {
       if (Bit == 0) {
 	err() << "Element #" << i << " (" << *(*$2)[i]
 	      << ") is not convertable to a bit!\n";
-	abort();
+	exit(1);
       }
       Init->setBit($2->size()-i-1, Bit);
     }
@@ -265,7 +271,7 @@ Value : INTVAL {
       $$ = new DefInit(D);
     } else {
       err() << "Variable not defined: '" << *$1 << "'!\n";
-      abort();
+      exit(1);
     }
     
     delete $1;
@@ -273,7 +279,7 @@ Value : INTVAL {
     $$ = $1->convertInitializerBitRange(*$3);
     if ($$ == 0) {
       err() << "Invalid bit range for value '" << *$1 << "'!\n";
-      abort();
+      exit(1);
     }
     delete $3;
   } | '[' ValueList ']' {
@@ -282,7 +288,7 @@ Value : INTVAL {
   } | Value '.' ID {
     if (!$1->getFieldType(*$3)) {
       err() << "Cannot access field '" << *$3 << "' of value '" << *$1 << "!\n";
-      abort();
+      exit(1);
     }
     $$ = new FieldInit($1, *$3);
     delete $3;
@@ -290,7 +296,7 @@ Value : INTVAL {
     Record *D = Records.getDef(*$2);
     if (D == 0) {
       err() << "Invalid def '" << *$2 << "'!\n";
-      abort();
+      exit(1);
     }
     $$ = new DagInit(D, *$3);
     delete $2; delete $3;
@@ -326,7 +332,7 @@ RBitList : INTVAL {
   } | INTVAL '-' INTVAL {
     if ($1 < $3 || $1 < 0 || $3 < 0) {
       err() << "Invalid bit range: " << $1 << "-" << $3 << "!\n";
-      abort();
+      exit(1);
     }
     $$ = new std::vector<unsigned>();
     for (int i = $1; i >= $3; --i)
@@ -335,7 +341,7 @@ RBitList : INTVAL {
     $2 = -$2;
     if ($1 < $2 || $1 < 0 || $2 < 0) {
       err() << "Invalid bit range: " << $1 << "-" << $2 << "!\n";
-      abort();
+      exit(1);
     }
     $$ = new std::vector<unsigned>();
     for (int i = $1; i >= $2; --i)
@@ -345,7 +351,7 @@ RBitList : INTVAL {
   } | RBitList ',' INTVAL '-' INTVAL {
     if ($3 < $5 || $3 < 0 || $5 < 0) {
       err() << "Invalid bit range: " << $3 << "-" << $5 << "!\n";
-      abort();
+      exit(1);
     }
     $$ = $1;
     for (int i = $3; i >= $5; --i)
@@ -354,7 +360,7 @@ RBitList : INTVAL {
     $4 = -$4;
     if ($3 < $4 || $3 < 0 || $4 < 0) {
       err() << "Invalid bit range: " << $3 << "-" << $4 << "!\n";
-      abort();
+      exit(1);
     }
     $$ = $1;
     for (int i = $3; i >= $4; --i)
@@ -461,7 +467,8 @@ ObjectBody : OptID {
   for (unsigned i = 0, e = $4->size(); i != e; ++i) {
     Record *SuperClass = (*$4)[i].first;
     for (unsigned i = 0, e = SuperClass->getTemplateArgs().size(); i != e; ++i)
-    CurRec->removeValue(SuperClass->getTemplateArgs()[i]);
+      if (!CurRec->isTemplateArg(SuperClass->getTemplateArgs()[i]))
+        CurRec->removeValue(SuperClass->getTemplateArgs()[i]);
   }
   delete $4;   // Delete the class list...
 
@@ -472,7 +479,7 @@ ObjectBody : OptID {
 ClassInst : CLASS ObjectBody {
   if (Records.getClass($2->getName())) {
     err() << "Class '" << $2->getName() << "' already defined!\n";
-    abort();
+    exit(1);
   }
   Records.addClass($$ = $2);
 };
@@ -481,12 +488,12 @@ DefInst : DEF ObjectBody {
   if (!$2->getTemplateArgs().empty()) {
     err() << "Def '" << $2->getName()
           << "' is not permitted to have template arguments!\n";
-    abort();
+    exit(1);
   }
   // If ObjectBody has template arguments, it's an error.
   if (Records.getDef($2->getName())) {
     err() << "Def '" << $2->getName() << "' already defined!\n";
-    abort();
+    exit(1);
   }
   Records.addDef($$ = $2);
 };
@@ -520,5 +527,5 @@ File : ObjectList {};
 
 int yyerror(const char *ErrorMsg) {
   err() << "Error parsing: " << ErrorMsg << "\n";
-  abort();
+  exit(1);
 }

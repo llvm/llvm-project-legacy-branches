@@ -20,7 +20,6 @@
 #include "llvm/iOperators.h"
 #include "llvm/iPHINode.h"
 #include "Support/STLExtras.h"
-#include "Support/DepthFirstIterator.h"
 #include <list>
 #include <utility>
 #include <algorithm>
@@ -58,14 +57,14 @@ static bool ObsoleteVarArgs;
 // destroyed when the function is completed.
 //
 typedef std::vector<Value *> ValueList;           // Numbered defs
-static void ResolveDefinitions(std::vector<ValueList> &LateResolvers,
-                               std::vector<ValueList> *FutureLateResolvers = 0);
+static void ResolveDefinitions(std::map<unsigned,ValueList> &LateResolvers,
+                               std::map<unsigned,ValueList> *FutureLateResolvers = 0);
 
 static struct PerModuleInfo {
   Module *CurrentModule;
-  std::vector<ValueList>    Values;     // Module level numbered definitions
-  std::vector<ValueList>    LateResolveValues;
-  std::vector<PATypeHolder> Types;
+  std::map<unsigned,ValueList> Values;  // Module level numbered definitions
+  std::map<unsigned,ValueList> LateResolveValues;
+  std::vector<PATypeHolder>    Types;
   std::map<ValID, PATypeHolder> LateResolveTypes;
 
   // GlobalRefs - This maintains a mapping between <Type, ValID>'s and forward
@@ -143,8 +142,8 @@ static struct PerModuleInfo {
 static struct PerFunctionInfo {
   Function *CurrentFunction;     // Pointer to current function being created
 
-  std::vector<ValueList> Values;      // Keep track of numbered definitions
-  std::vector<ValueList> LateResolveValues;
+  std::map<unsigned,ValueList> Values;   // Keep track of numbered definitions
+  std::map<unsigned,ValueList> LateResolveValues;
   std::vector<PATypeHolder> Types;
   std::map<ValID, PATypeHolder> LateResolveTypes;
   SymbolTable LocalSymtab;
@@ -171,11 +170,11 @@ static struct PerFunctionInfo {
       FID = ValID::create((char*)CurrentFunction->getName().c_str());
     } else {
       unsigned Slot = CurrentFunction->getType()->getUniqueID();
-      assert(CurModule.Values.size() > Slot && "Function not inserted?");
       // Figure out which slot number if is...
+      ValueList &List = CurModule.Values[Slot];
       for (unsigned i = 0; ; ++i) {
-        assert(i < CurModule.Values[Slot].size() && "Function not found!");
-        if (CurModule.Values[Slot][i] == CurrentFunction) {
+        assert(i < List.size() && "Function not found!");
+        if (List[i] == CurrentFunction) {
           FID = ValID::create((int)i);
           break;
         }
@@ -199,16 +198,15 @@ static bool inFunctionScope() { return CurFun.CurrentFunction != 0; }
 //===----------------------------------------------------------------------===//
 
 static int InsertValue(Value *D,
-                       std::vector<ValueList> &ValueTab = CurFun.Values) {
+                       std::map<unsigned,ValueList> &ValueTab = CurFun.Values) {
   if (D->hasName()) return -1;           // Is this a numbered definition?
 
   // Yes, insert the value into the value table...
   unsigned type = D->getType()->getUniqueID();
-  if (ValueTab.size() <= type)
-    ValueTab.resize(type+1, ValueList());
   //printf("Values[%d][%d] = %d\n", type, ValueTab[type].size(), D);
-  ValueTab[type].push_back(D);
-  return ValueTab[type].size()-1;
+  ValueList &List = ValueTab[type];
+  List.push_back(D);
+  return List.size()-1;
 }
 
 // TODO: FIXME when Type are not const
@@ -298,20 +296,21 @@ static Value *getValNonImprovising(const Type *Ty, const ValID &D) {
     unsigned Num = (unsigned)D.Num;
 
     // Module constants occupy the lowest numbered slots...
-    if (type < CurModule.Values.size()) {
-      if (Num < CurModule.Values[type].size()) 
-        return CurModule.Values[type][Num];
-
-      Num -= CurModule.Values[type].size();
+    std::map<unsigned,ValueList>::iterator VI = CurModule.Values.find(type);
+    if (VI != CurModule.Values.end()) {
+      if (Num < VI->second.size()) 
+        return VI->second[Num];
+      Num -= VI->second.size();
     }
 
     // Make sure that our type is within bounds
-    if (CurFun.Values.size() <= type) return 0;
+    VI = CurFun.Values.find(type);
+    if (VI == CurFun.Values.end()) return 0;
 
     // Check that the number is within bounds...
-    if (CurFun.Values[type].size() <= Num) return 0;
+    if (VI->second.size() <= Num) return 0;
   
-    return CurFun.Values[type][Num];
+    return VI->second[Num];
   }
 
   case ValID::NameVal: {                // Is it a named definition?
@@ -416,18 +415,20 @@ static Value *getVal(const Type *Ty, const ValID &D) {
 // time (forward branches, phi functions for loops, etc...) resolve the 
 // defs now...
 //
-static void ResolveDefinitions(std::vector<ValueList> &LateResolvers,
-                               std::vector<ValueList> *FutureLateResolvers) {
+static void ResolveDefinitions(std::map<unsigned,ValueList> &LateResolvers,
+                               std::map<unsigned,ValueList> *FutureLateResolvers) {
   // Loop over LateResolveDefs fixing up stuff that couldn't be resolved
-  for (unsigned ty = 0; ty < LateResolvers.size(); ty++) {
-    while (!LateResolvers[ty].empty()) {
-      Value *V = LateResolvers[ty].back();
+  for (std::map<unsigned,ValueList>::iterator LRI = LateResolvers.begin(),
+         E = LateResolvers.end(); LRI != E; ++LRI) {
+    ValueList &List = LRI->second;
+    while (!List.empty()) {
+      Value *V = List.back();
+      List.pop_back();
       assert(!isa<Type>(V) && "Types should be in LateResolveTypes!");
-
-      LateResolvers[ty].pop_back();
       ValID &DID = getValIDFromPlaceHolder(V);
 
-      Value *TheRealValue = getValNonImprovising(Type::getUniqueIDType(ty),DID);
+      Value *TheRealValue =
+        getValNonImprovising(Type::getUniqueIDType(LRI->first), DID);
       if (TheRealValue) {
         V->replaceAllUsesWith(TheRealValue);
         delete V;
@@ -586,14 +587,33 @@ static bool setValueName(Value *V, char *NameStr) {
 // Code for handling upreferences in type names...
 //
 
-// TypeContains - Returns true if Ty contains E in it.
+// TypeContains - Returns true if Ty directly contains E in it.
 //
 static bool TypeContains(const Type *Ty, const Type *E) {
-  return find(df_begin(Ty), df_end(Ty), E) != df_end(Ty);
+  return find(Ty->subtype_begin(), Ty->subtype_end(), E) != Ty->subtype_end();
+}
+
+namespace {
+  struct UpRefRecord {
+    // NestingLevel - The number of nesting levels that need to be popped before
+    // this type is resolved.
+    unsigned NestingLevel;
+    
+    // LastContainedTy - This is the type at the current binding level for the
+    // type.  Every time we reduce the nesting level, this gets updated.
+    const Type *LastContainedTy;
+
+    // UpRefTy - This is the actual opaque type that the upreference is
+    // represented with.
+    OpaqueType *UpRefTy;
+
+    UpRefRecord(unsigned NL, OpaqueType *URTy)
+      : NestingLevel(NL), LastContainedTy(URTy), UpRefTy(URTy) {}
+  };
 }
 
 // UpRefs - A list of the outstanding upreferences that need to be resolved.
-static std::vector<std::pair<unsigned, OpaqueType *> > UpRefs;
+static std::vector<UpRefRecord> UpRefs;
 
 /// HandleUpRefs - Every time we finish a new layer of types, this function is
 /// called.  It loops through the UpRefs vector, which is a list of the
@@ -603,28 +623,49 @@ static std::vector<std::pair<unsigned, OpaqueType *> > UpRefs;
 /// thus we can complete the cycle.
 ///
 static PATypeHolder HandleUpRefs(const Type *ty) {
+  if (!ty->isAbstract()) return ty;
   PATypeHolder Ty(ty);
   UR_OUT("Type '" << Ty->getDescription() << 
          "' newly formed.  Resolving upreferences.\n" <<
          UpRefs.size() << " upreferences active!\n");
+
+  // If we find any resolvable upreferences (i.e., those whose NestingLevel goes
+  // to zero), we resolve them all together before we resolve them to Ty.  At
+  // the end of the loop, if there is anything to resolve to Ty, it will be in
+  // this variable.
+  OpaqueType *TypeToResolve = 0;
+
   for (unsigned i = 0; i != UpRefs.size(); ++i) {
     UR_OUT("  UR#" << i << " - TypeContains(" << Ty->getDescription() << ", " 
 	   << UpRefs[i].second->getDescription() << ") = " 
 	   << (TypeContains(Ty, UpRefs[i].second) ? "true" : "false") << "\n");
-    if (TypeContains(Ty, UpRefs[i].second)) {
-      unsigned Level = --UpRefs[i].first;   // Decrement level of upreference
+    if (TypeContains(Ty, UpRefs[i].LastContainedTy)) {
+      // Decrement level of upreference
+      unsigned Level = --UpRefs[i].NestingLevel;
+      UpRefs[i].LastContainedTy = Ty;
       UR_OUT("  Uplevel Ref Level = " << Level << "\n");
       if (Level == 0) {                     // Upreference should be resolved! 
-	UR_OUT("  * Resolving upreference for "
-               << UpRefs[i].second->getDescription() << "\n";
-	       std::string OldName = UpRefs[i].second->getDescription());
-	UpRefs[i].second->refineAbstractTypeTo(Ty);
-	UR_OUT("  * Type '" << OldName << "' refined upreference to: "
-	       << (const void*)Ty << ", " << Ty->getDescription() << "\n");
+        if (!TypeToResolve) {
+          TypeToResolve = UpRefs[i].UpRefTy;
+        } else {
+          UR_OUT("  * Resolving upreference for "
+                 << UpRefs[i].second->getDescription() << "\n";
+                 std::string OldName = UpRefs[i].UpRefTy->getDescription());
+          UpRefs[i].UpRefTy->refineAbstractTypeTo(TypeToResolve);
+          UR_OUT("  * Type '" << OldName << "' refined upreference to: "
+                 << (const void*)Ty << ", " << Ty->getDescription() << "\n");
+        }
 	UpRefs.erase(UpRefs.begin()+i);     // Remove from upreference list...
         --i;                                // Do not skip the next element...
       }
     }
+  }
+
+  if (TypeToResolve) {
+    UR_OUT("  * Resolving upreference for "
+           << UpRefs[i].second->getDescription() << "\n";
+           std::string OldName = TypeToResolve->getDescription());
+    TypeToResolve->refineAbstractTypeTo(Ty);
   }
 
   return Ty;
@@ -816,7 +857,7 @@ using namespace llvm;
 
 %token IMPLEMENTATION ZEROINITIALIZER TRUE FALSE BEGINTOK ENDTOK
 %token DECLARE GLOBAL CONSTANT VOLATILE
-%token TO EXCEPT DOTDOTDOT NULL_TOK CONST INTERNAL LINKONCE WEAK  APPENDING
+%token TO DOTDOTDOT NULL_TOK CONST INTERNAL LINKONCE WEAK  APPENDING
 %token OPAQUE NOT EXTERNAL TARGET ENDIAN POINTERSIZE LITTLE BIG
 
 // Basic Block Terminating Operators 
@@ -923,7 +964,7 @@ UpRTypes : SymbolicValueRef {            // Named types are also simple types...
 UpRTypes : '\\' EUINT64VAL {                   // Type UpReference
     if ($2 > (uint64_t)~0U) ThrowException("Value out of range!");
     OpaqueType *OT = OpaqueType::get();        // Use temporary placeholder
-    UpRefs.push_back(std::make_pair((unsigned)$2, OT));  // Add to vector...
+    UpRefs.push_back(UpRefRecord((unsigned)$2, OT));  // Add to vector...
     $$ = new PATypeHolder(OT);
     UR_OUT("New Upreference!\n");
   }
@@ -1064,9 +1105,9 @@ ConstVal: Types '[' ConstVector ']' { // Nonempty unsized arr
 
     // Check to ensure that constants are compatible with the type initializer!
     for (unsigned i = 0, e = $3->size(); i != e; ++i)
-      if ((*$3)[i]->getType() != STy->getElementTypes()[i])
+      if ((*$3)[i]->getType() != STy->getElementType(i))
         ThrowException("Expected type '" +
-                       STy->getElementTypes()[i]->getDescription() +
+                       STy->getElementType(i)->getDescription() +
                        "' for element #" + utostr(i) +
                        " of structure initializer!");
 
@@ -1615,7 +1656,7 @@ BBTerminatorInst : RET ResolvedVal {              // Return with a result...
     $$ = S;
   }
   | INVOKE TypesV ValueRef '(' ValueRefListE ')' TO ResolvedVal 
-    EXCEPT ResolvedVal {
+    UNWIND ResolvedVal {
     const PointerType *PFTy;
     const FunctionType *Ty;
 
@@ -1651,8 +1692,8 @@ BBTerminatorInst : RET ResolvedVal {              // Return with a result...
       // Loop through FunctionType's arguments and ensure they are specified
       // correctly!
       //
-      FunctionType::ParamTypes::const_iterator I = Ty->getParamTypes().begin();
-      FunctionType::ParamTypes::const_iterator E = Ty->getParamTypes().end();
+      FunctionType::param_iterator I = Ty->param_begin();
+      FunctionType::param_iterator E = Ty->param_end();
       std::vector<Value*>::iterator ArgI = $5->begin(), ArgE = $5->end();
 
       for (; ArgI != ArgE && I != E; ++ArgI, ++I)
@@ -1852,8 +1893,8 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
       // Loop through FunctionType's arguments and ensure they are specified
       // correctly!
       //
-      FunctionType::ParamTypes::const_iterator I = Ty->getParamTypes().begin();
-      FunctionType::ParamTypes::const_iterator E = Ty->getParamTypes().end();
+      FunctionType::param_iterator I = Ty->param_begin();
+      FunctionType::param_iterator E = Ty->param_end();
       std::vector<Value*>::iterator ArgI = $5->begin(), ArgE = $5->end();
 
       for (; ArgI != ArgE && I != E; ++ArgI, ++I)

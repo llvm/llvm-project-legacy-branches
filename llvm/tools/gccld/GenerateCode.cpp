@@ -81,6 +81,17 @@ GenerateBytecode (Module *M, bool Strip, bool Internalize, std::ostream *Out) {
   addPass(Passes, createFunctionResolvingPass());
 
   if (!DisableOptimizations) {
+    if (Internalize) {
+      // Now that composite has been compiled, scan through the module, looking
+      // for a main function.  If main is defined, mark all other functions
+      // internal.
+      addPass(Passes, createInternalizePass());
+    }
+
+    // Now that we internalized some globals, see if we can mark any globals as
+    // being constant!
+    addPass(Passes, createGlobalConstifierPass());
+
     // Linking modules together can lead to duplicated global constants, only
     // keep one copy of each constant...
     addPass(Passes, createConstantMergePass());
@@ -91,13 +102,6 @@ GenerateBytecode (Module *M, bool Strip, bool Internalize, std::ostream *Out) {
     if (Strip)
       addPass(Passes, createSymbolStrippingPass());
 
-    if (Internalize) {
-      // Now that composite has been compiled, scan through the module, looking
-      // for a main function.  If main is defined, mark all other functions
-      // internal.
-      addPass(Passes, createInternalizePass());
-    }
-
     // Propagate constants at call sites into the functions they call.
     addPass(Passes, createIPConstantPropagationPass());
 
@@ -107,6 +111,11 @@ GenerateBytecode (Module *M, bool Strip, bool Internalize, std::ostream *Out) {
     if (!DisableInline)
       addPass(Passes, createFunctionInliningPass()); // Inline small functions
 
+    // The IPO passes may leave cruft around.  Clean up after them.
+    addPass(Passes, createInstructionCombiningPass());
+
+    addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
+
     // Run a few AA driven optimizations here and now, to cleanup the code.
     // Eventually we should put an IP AA in place here.
 
@@ -114,8 +123,7 @@ GenerateBytecode (Module *M, bool Strip, bool Internalize, std::ostream *Out) {
     addPass(Passes, createLoadValueNumberingPass()); // GVN for load instrs
     addPass(Passes, createGCSEPass());               // Remove common subexprs
 
-    // The FuncResolve pass may leave cruft around if functions were prototyped
-    // differently than they were defined.  Remove this cruft.
+    // Cleanup and simplify the code after the scalar optimizations.
     addPass(Passes, createInstructionCombiningPass());
 
     // Delete basic blocks, which optimization passes may have killed...
@@ -239,8 +247,10 @@ GenerateNative(const std::string &OutputFilename,
   // Add in the libraries to link.
   std::vector<std::string> Libs(Libraries);
   for (unsigned index = 0; index < Libs.size(); index++) {
-    Libs[index] = "-l" + Libs[index];
-    cmd.push_back(Libs[index].c_str());
+    if (Libs[index] != "crtend") {
+      Libs[index] = "-l" + Libs[index];
+      cmd.push_back(Libs[index].c_str());
+    }
   }
   cmd.push_back(NULL);
 

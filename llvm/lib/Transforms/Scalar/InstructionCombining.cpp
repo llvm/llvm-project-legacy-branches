@@ -35,6 +35,7 @@
 
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Instructions.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Pass.h"
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
@@ -60,13 +61,23 @@ namespace {
     std::vector<Instruction*> WorkList;
     TargetData *TD;
 
-    void AddUsesToWorkList(Instruction &I) {
-      // The instruction was simplified, add all users of the instruction to
-      // the work lists because they might get more simplified now...
-      //
+    /// AddUsersToWorkList - When an instruction is simplified, add all users of
+    /// the instruction to the work lists because they might get more simplified
+    /// now.
+    ///
+    void AddUsersToWorkList(Instruction &I) {
       for (Value::use_iterator UI = I.use_begin(), UE = I.use_end();
            UI != UE; ++UI)
         WorkList.push_back(cast<Instruction>(*UI));
+    }
+
+    /// AddUsesToWorkList - When an instruction is simplified, add operands to
+    /// the work lists because they might get more simplified now.
+    ///
+    void AddUsesToWorkList(Instruction &I) {
+      for (unsigned i = 0, e = I.getNumOperands(); i != e; ++i)
+        if (Instruction *Op = dyn_cast<Instruction>(I.getOperand(i)))
+          WorkList.push_back(Op);
     }
 
     // removeFromWorkList - remove all instances of I from the worklist.
@@ -116,12 +127,13 @@ namespace {
     // InsertNewInstBefore - insert an instruction New before instruction Old
     // in the program.  Add the new instruction to the worklist.
     //
-    void InsertNewInstBefore(Instruction *New, Instruction &Old) {
+    Value *InsertNewInstBefore(Instruction *New, Instruction &Old) {
       assert(New && New->getParent() == 0 &&
              "New instruction already inserted into a basic block!");
       BasicBlock *BB = Old.getParent();
       BB->getInstList().insert(&Old, New);  // Insert inst
       WorkList.push_back(New);              // Add to worklist
+      return New;
     }
 
   public:
@@ -132,10 +144,24 @@ namespace {
     // modified.
     //
     Instruction *ReplaceInstUsesWith(Instruction &I, Value *V) {
-      AddUsesToWorkList(I);         // Add all modified instrs to worklist
+      AddUsersToWorkList(I);         // Add all modified instrs to worklist
       I.replaceAllUsesWith(V);
       return &I;
     }
+
+    // EraseInstFromFunction - When dealing with an instruction that has side
+    // effects or produces a void value, we can't rely on DCE to delete the
+    // instruction.  Instead, visit methods should return the value returned by
+    // this function.
+    Instruction *EraseInstFromFunction(Instruction &I) {
+      assert(I.use_empty() && "Cannot erase instruction that is used!");
+      AddUsesToWorkList(I);
+      removeFromWorkList(&I);
+      I.getParent()->getInstList().erase(&I);
+      return 0;  // Don't do anything with FI
+    }
+
+
   private:
     /// InsertOperandCastBefore - This inserts a cast of V to DestTy before the
     /// InsertBefore instruction.  This is specialized a bit to avoid inserting
@@ -171,6 +197,31 @@ static unsigned getComplexity(Value *V) {
 // it.
 static bool isOnlyUse(Value *V) {
   return V->hasOneUse() || isa<Constant>(V);
+}
+
+// getSignedIntegralType - Given an unsigned integral type, return the signed
+// version of it that has the same size.
+static const Type *getSignedIntegralType(const Type *Ty) {
+  switch (Ty->getPrimitiveID()) {
+  default: assert(0 && "Invalid unsigned integer type!"); abort();
+  case Type::UByteTyID:  return Type::SByteTy;
+  case Type::UShortTyID: return Type::ShortTy;
+  case Type::UIntTyID:   return Type::IntTy;
+  case Type::ULongTyID:  return Type::LongTy;
+  }
+}
+
+// getPromotedType - Return the specified type promoted as it would be to pass
+// though a va_arg area...
+static const Type *getPromotedType(const Type *Ty) {
+  switch (Ty->getPrimitiveID()) {
+  case Type::SByteTyID:
+  case Type::ShortTyID:  return Type::IntTy;
+  case Type::UByteTyID:
+  case Type::UShortTyID: return Type::UIntTy;
+  case Type::FloatTyID:  return Type::DoubleTy;
+  default:               return Ty;
+  }
 }
 
 // SimplifyCommutative - This performs a few simplifications for commutative
@@ -415,7 +466,8 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
   Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
 
   // X + 0 --> X
-  if (RHS == Constant::getNullValue(I.getType()))
+  if (!I.getType()->isFloatingPoint() &&    // -0 + +0 = +0, so it's not a noop
+      RHS == Constant::getNullValue(I.getType()))
     return ReplaceInstUsesWith(I, LHS);
 
   // X + X --> X << 1
@@ -512,7 +564,8 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
       // Replace (x - (y - z)) with (x + (z - y)) if the (y - z) subexpression
       // is not used by anyone else...
       //
-      if (Op1I->getOpcode() == Instruction::Sub) {
+      if (Op1I->getOpcode() == Instruction::Sub &&
+          !Op1I->getType()->isFloatingPoint()) {
         // Swap the two operands of the subexpr...
         Value *IIOp0 = Op1I->getOperand(0), *IIOp1 = Op1I->getOperand(1);
         Op1I->setOperand(0, IIOp1);
@@ -556,6 +609,26 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
   return 0;
 }
 
+/// isSignBitCheck - Given an exploded setcc instruction, return true if it is
+/// really just returns true if the most significant (sign) bit is set.
+static bool isSignBitCheck(unsigned Opcode, Value *LHS, ConstantInt *RHS) {
+  if (RHS->getType()->isSigned()) {
+    // True if source is LHS < 0 or LHS <= -1
+    return Opcode == Instruction::SetLT && RHS->isNullValue() ||
+           Opcode == Instruction::SetLE && RHS->isAllOnesValue();
+  } else {
+    ConstantUInt *RHSC = cast<ConstantUInt>(RHS);
+    // True if source is LHS > 127 or LHS >= 128, where the constants depend on
+    // the size of the integer type.
+    if (Opcode == Instruction::SetGE)
+      return RHSC->getValue() == 1ULL<<(RHS->getType()->getPrimitiveSize()*8-1);
+    if (Opcode == Instruction::SetGT)
+      return RHSC->getValue() ==
+        (1ULL << (RHS->getType()->getPrimitiveSize()*8-1))-1;
+  }
+  return false;
+}
+
 Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   bool Changed = SimplifyCommutative(I);
   Value *Op0 = I.getOperand(0);
@@ -597,6 +670,52 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   if (Value *Op0v = dyn_castNegVal(Op0))     // -X * -Y = X*Y
     if (Value *Op1v = dyn_castNegVal(I.getOperand(1)))
       return BinaryOperator::create(Instruction::Mul, Op0v, Op1v);
+
+  // If one of the operands of the multiply is a cast from a boolean value, then
+  // we know the bool is either zero or one, so this is a 'masking' multiply.
+  // See if we can simplify things based on how the boolean was originally
+  // formed.
+  CastInst *BoolCast = 0;
+  if (CastInst *CI = dyn_cast<CastInst>(I.getOperand(0)))
+    if (CI->getOperand(0)->getType() == Type::BoolTy)
+      BoolCast = CI;
+  if (!BoolCast)
+    if (CastInst *CI = dyn_cast<CastInst>(I.getOperand(1)))
+      if (CI->getOperand(0)->getType() == Type::BoolTy)
+        BoolCast = CI;
+  if (BoolCast) {
+    if (SetCondInst *SCI = dyn_cast<SetCondInst>(BoolCast->getOperand(0))) {
+      Value *SCIOp0 = SCI->getOperand(0), *SCIOp1 = SCI->getOperand(1);
+      const Type *SCOpTy = SCIOp0->getType();
+
+      // If the setcc is true iff the sign bit of X is set, then convert this
+      // multiply into a shift/and combination.
+      if (isa<ConstantInt>(SCIOp1) &&
+          isSignBitCheck(SCI->getOpcode(), SCIOp0, cast<ConstantInt>(SCIOp1))) {
+        // Shift the X value right to turn it into "all signbits".
+        Constant *Amt = ConstantUInt::get(Type::UByteTy,
+                                          SCOpTy->getPrimitiveSize()*8-1);
+        if (SCIOp0->getType()->isUnsigned()) {
+          const Type *NewTy = getSignedIntegralType(SCIOp0->getType());
+          SCIOp0 = InsertNewInstBefore(new CastInst(SCIOp0, NewTy,
+                                                    SCIOp0->getName()), I);
+        }
+
+        Value *V =
+          InsertNewInstBefore(new ShiftInst(Instruction::Shr, SCIOp0, Amt,
+                                            BoolCast->getOperand(0)->getName()+
+                                            ".mask"), I);
+
+        // If the multiply type is not the same as the source type, sign extend
+        // or truncate to the multiply type.
+        if (I.getType() != V->getType())
+          V = InsertNewInstBefore(new CastInst(V, I.getType(), V->getName()),I);
+        
+        Value *OtherOp = Op0 == BoolCast ? I.getOperand(1) : Op0;
+        return BinaryOperator::create(Instruction::And, V, OtherOp);
+      }
+    }
+  }
 
   return Changed ? &I : 0;
 }
@@ -1001,15 +1120,26 @@ Instruction *InstCombiner::visitOr(BinaryOperator &I) {
   return Changed ? &I : 0;
 }
 
+// XorSelf - Implements: X ^ X --> 0
+struct XorSelf {
+  Value *RHS;
+  XorSelf(Value *rhs) : RHS(rhs) {}
+  bool shouldApply(Value *LHS) const { return LHS == RHS; }
+  Instruction *apply(BinaryOperator &Xor) const {
+    return &Xor;
+  }
+};
 
 
 Instruction *InstCombiner::visitXor(BinaryOperator &I) {
   bool Changed = SimplifyCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
-  // xor X, X = 0
-  if (Op0 == Op1)
+  // xor X, X = 0, even if X is nested in a sequence of Xor's.
+  if (Instruction *Result = AssociativeOpt(I, XorSelf(Op1))) {
+    assert(Result == &I && "AssociativeOpt didn't work?");
     return ReplaceInstUsesWith(I, Constant::getNullValue(I.getType()));
+  }
 
   if (ConstantIntegral *RHS = dyn_cast<ConstantIntegral>(Op1)) {
     // xor X, 0 == X
@@ -1074,7 +1204,7 @@ Instruction *InstCombiner::visitXor(BinaryOperator &I) {
                                 ConstantIntegral::getAllOnesValue(I.getType()));
 
   if (Instruction *Op1I = dyn_cast<Instruction>(Op1))
-    if (Op1I->getOpcode() == Instruction::Or)
+    if (Op1I->getOpcode() == Instruction::Or) {
       if (Op1I->getOperand(0) == Op0) {              // B^(B|A) == (A|B)^B
         cast<BinaryOperator>(Op1I)->swapOperands();
         I.swapOperands();
@@ -1082,7 +1212,13 @@ Instruction *InstCombiner::visitXor(BinaryOperator &I) {
       } else if (Op1I->getOperand(1) == Op0) {       // B^(A|B) == (A|B)^B
         I.swapOperands();
         std::swap(Op0, Op1);
-      }
+      }      
+    } else if (Op1I->getOpcode() == Instruction::Xor) {
+      if (Op0 == Op1I->getOperand(0))                        // A^(A^B) == B
+        return ReplaceInstUsesWith(I, Op1I->getOperand(1));
+      else if (Op0 == Op1I->getOperand(1))                   // A^(B^A) == B
+        return ReplaceInstUsesWith(I, Op1I->getOperand(0));
+    }
 
   if (Instruction *Op0I = dyn_cast<Instruction>(Op0))
     if (Op0I->getOpcode() == Instruction::Or && Op0I->hasOneUse()) {
@@ -1094,6 +1230,11 @@ Instruction *InstCombiner::visitXor(BinaryOperator &I) {
         return BinaryOperator::create(Instruction::And, Op0I->getOperand(0),
                                       NotB);
       }
+    } else if (Op0I->getOpcode() == Instruction::Xor) {
+      if (Op1 == Op0I->getOperand(0))                        // (A^B)^A == B
+        return ReplaceInstUsesWith(I, Op0I->getOperand(1));
+      else if (Op1 == Op0I->getOperand(1))                   // (B^A)^A == B
+        return ReplaceInstUsesWith(I, Op0I->getOperand(0));
     }
 
   // (A & C1)^(B & C2) -> (A & C1)|(B & C2) iff C1^C2 == 0
@@ -1250,14 +1391,7 @@ Instruction *InstCombiner::visitSetCondInst(BinaryOperator &I) {
               Value *X = BO->getOperand(0);
               // If 'X' is not signed, insert a cast now...
               if (!BOC->getType()->isSigned()) {
-                const Type *DestTy;
-                switch (BOC->getType()->getPrimitiveID()) {
-                case Type::UByteTyID:  DestTy = Type::SByteTy; break;
-                case Type::UShortTyID: DestTy = Type::ShortTy; break;
-                case Type::UIntTyID:   DestTy = Type::IntTy;   break;
-                case Type::ULongTyID:  DestTy = Type::LongTy;  break;
-                default: assert(0 && "Invalid unsigned integer type!"); abort();
-                }
+                const Type *DestTy = getSignedIntegralType(BOC->getType());
                 CastInst *NewCI = new CastInst(X,DestTy,X->getName()+".signed");
                 InsertNewInstBefore(NewCI, I);
                 X = NewCI;
@@ -1268,6 +1402,43 @@ Instruction *InstCombiner::visitSetCondInst(BinaryOperator &I) {
             }
           }
         default: break;
+        }
+      }
+    } else {  // Not a SetEQ/SetNE
+      // If the LHS is a cast from an integral value of the same size, 
+      if (CastInst *Cast = dyn_cast<CastInst>(Op0)) {
+        Value *CastOp = Cast->getOperand(0);
+        const Type *SrcTy = CastOp->getType();
+        unsigned SrcTySize = SrcTy->getPrimitiveSize();
+        if (SrcTy != Cast->getType() && SrcTy->isInteger() &&
+            SrcTySize == Cast->getType()->getPrimitiveSize()) {
+          assert((SrcTy->isSigned() ^ Cast->getType()->isSigned()) && 
+                 "Source and destination signednesses should differ!");
+          if (Cast->getType()->isSigned()) {
+            // If this is a signed comparison, check for comparisons in the
+            // vicinity of zero.
+            if (I.getOpcode() == Instruction::SetLT && CI->isNullValue())
+              // X < 0  => x > 127
+              return BinaryOperator::create(Instruction::SetGT, CastOp,
+                         ConstantUInt::get(SrcTy, (1ULL << (SrcTySize*8-1))-1));
+            else if (I.getOpcode() == Instruction::SetGT &&
+                     cast<ConstantSInt>(CI)->getValue() == -1)
+              // X > -1  => x < 128
+              return BinaryOperator::create(Instruction::SetLT, CastOp,
+                         ConstantUInt::get(SrcTy, 1ULL << (SrcTySize*8-1)));
+          } else {
+            ConstantUInt *CUI = cast<ConstantUInt>(CI);
+            if (I.getOpcode() == Instruction::SetLT &&
+                CUI->getValue() == 1ULL << (SrcTySize*8-1))
+              // X < 128 => X > -1
+              return BinaryOperator::create(Instruction::SetGT, CastOp,
+                                            ConstantSInt::get(SrcTy, -1));
+            else if (I.getOpcode() == Instruction::SetGT &&
+                     CUI->getValue() == (1ULL << (SrcTySize*8-1))-1)
+              // X > 127 => X < 0
+              return BinaryOperator::create(Instruction::SetLT, CastOp,
+                                            Constant::getNullValue(SrcTy));
+          }
         }
       }
     }
@@ -1306,6 +1477,15 @@ Instruction *InstCombiner::visitSetCondInst(BinaryOperator &I) {
       if (I.getOpcode() == Instruction::SetLE)       // A <= MAX-1 -> A != MAX
         return BinaryOperator::create(Instruction::SetNE, Op0, AddOne(CI));
     }
+
+    // If we still have a setle or setge instruction, turn it into the
+    // appropriate setlt or setgt instruction.  Since the border cases have
+    // already been handled above, this requires little checking.
+    //
+    if (I.getOpcode() == Instruction::SetLE)
+      return BinaryOperator::create(Instruction::SetLT, Op0, AddOne(CI));
+    if (I.getOpcode() == Instruction::SetGE)
+      return BinaryOperator::create(Instruction::SetGT, Op0, SubOne(CI));
   }
 
   // Test to see if the operands of the setcc are casted versions of other
@@ -1416,9 +1596,14 @@ Instruction *InstCombiner::visitShiftInst(ShiftInst &I) {
     // of a signed value.
     //
     unsigned TypeBits = Op0->getType()->getPrimitiveSize()*8;
-    if (CUI->getValue() >= TypeBits &&
-        (!Op0->getType()->isSigned() || isLeftShift))
-      return ReplaceInstUsesWith(I, Constant::getNullValue(Op0->getType()));
+    if (CUI->getValue() >= TypeBits) {
+      if (!Op0->getType()->isSigned() || isLeftShift)
+        return ReplaceInstUsesWith(I, Constant::getNullValue(Op0->getType()));
+      else {
+        I.setOperand(1, ConstantUInt::get(Type::UByteTy, TypeBits-1));
+        return &I;
+      }
+    }
 
     // ((X*C1) << C2) == (X * (C1 << C2))
     if (BinaryOperator *BO = dyn_cast<BinaryOperator>(Op0))
@@ -1482,6 +1667,8 @@ Instruction *InstCombiner::visitShiftInst(ShiftInst &I) {
         // Check for (A << c1) << c2   and   (A >> c1) >> c2
         if (I.getOpcode() == Op0SI->getOpcode()) {
           unsigned Amt = ShiftAmt1+ShiftAmt2;   // Fold into one big shift...
+          if (Op0->getType()->getPrimitiveSize()*8 < Amt)
+            Amt = Op0->getType()->getPrimitiveSize()*8;
           return new ShiftInst(I.getOpcode(), Op0SI->getOperand(0),
                                ConstantUInt::get(Type::UByteTy, Amt));
         }
@@ -1747,6 +1934,23 @@ Instruction *InstCombiner::visitCastInst(CastInst &CI) {
 // CallInst simplification
 //
 Instruction *InstCombiner::visitCallInst(CallInst &CI) {
+  // Intrinsics cannot occur in an invoke, so handle them here instead of in
+  // visitCallSite.
+  if (Function *F = CI.getCalledFunction())
+    switch (F->getIntrinsicID()) {
+    case Intrinsic::memmove:
+    case Intrinsic::memcpy:
+    case Intrinsic::memset:
+      // memmove/cpy/set of zero bytes is a noop.
+      if (Constant *NumBytes = dyn_cast<Constant>(CI.getOperand(3))) {
+        if (NumBytes->isNullValue())
+          return EraseInstFromFunction(CI);
+      }
+      break;
+    default:
+      break;
+    }
+
   return visitCallSite(&CI);
 }
 
@@ -1754,19 +1958,6 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
 //
 Instruction *InstCombiner::visitInvokeInst(InvokeInst &II) {
   return visitCallSite(&II);
-}
-
-// getPromotedType - Return the specified type promoted as it would be to pass
-// though a va_arg area...
-static const Type *getPromotedType(const Type *Ty) {
-  switch (Ty->getPrimitiveID()) {
-  case Type::SByteTyID:
-  case Type::ShortTyID:  return Type::IntTy;
-  case Type::UByteTyID:
-  case Type::UShortTyID: return Type::UIntTy;
-  case Type::FloatTyID:  return Type::DoubleTy;
-  default:               return Ty;
-  }
 }
 
 // visitCallSite - Improvements for call and invoke instructions.
@@ -1838,7 +2029,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
              UI != E; ++UI)
           if (PHINode *PN = dyn_cast<PHINode>(*UI))
             if (PN->getParent() == II->getNormalDest() ||
-                PN->getParent() == II->getExceptionalDest())
+                PN->getParent() == II->getUnwindDest())
               return false;
   }
 
@@ -1903,7 +2094,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
 
   Instruction *NC;
   if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
-    NC = new InvokeInst(Callee, II->getNormalDest(), II->getExceptionalDest(),
+    NC = new InvokeInst(Callee, II->getNormalDest(), II->getUnwindDest(),
                         Args, Caller->getName(), Caller);
   } else {
     NC = new CallInst(Callee, Args, Caller->getName(), Caller);
@@ -1925,7 +2116,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
         // Otherwise, it's a call, just insert cast right after the call instr
         InsertNewInstBefore(NC, *Caller);
       }
-      AddUsesToWorkList(*Caller);
+      AddUsersToWorkList(*Caller);
     } else {
       NV = Constant::getNullValue(Caller->getType());
     }
@@ -1945,6 +2136,35 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
 Instruction *InstCombiner::visitPHINode(PHINode &PN) {
   if (Value *V = hasConstantValue(&PN))
     return ReplaceInstUsesWith(PN, V);
+
+  // If the only user of this instruction is a cast instruction, and all of the
+  // incoming values are constants, change this PHI to merge together the casted
+  // constants.
+  if (PN.hasOneUse())
+    if (CastInst *CI = dyn_cast<CastInst>(PN.use_back()))
+      if (CI->getType() != PN.getType()) {  // noop casts will be folded
+        bool AllConstant = true;
+        for (unsigned i = 0, e = PN.getNumIncomingValues(); i != e; ++i)
+          if (!isa<Constant>(PN.getIncomingValue(i))) {
+            AllConstant = false;
+            break;
+          }
+        if (AllConstant) {
+          // Make a new PHI with all casted values.
+          PHINode *New = new PHINode(CI->getType(), PN.getName(), &PN);
+          for (unsigned i = 0, e = PN.getNumIncomingValues(); i != e; ++i) {
+            Constant *OldArg = cast<Constant>(PN.getIncomingValue(i));
+            New->addIncoming(ConstantExpr::getCast(OldArg, New->getType()),
+                             PN.getIncomingBlock(i));
+          }
+
+          // Update the cast instruction.
+          CI->setOperand(0, New);
+          WorkList.push_back(CI);    // revisit the cast instruction to fold.
+          WorkList.push_back(New);   // Make sure to revisit the new Phi
+          return &PN;                // PN is now dead!
+        }
+      }
   return 0;
 }
 
@@ -1952,9 +2172,14 @@ Instruction *InstCombiner::visitPHINode(PHINode &PN) {
 Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   // Is it 'getelementptr %P, long 0'  or 'getelementptr %P'
   // If so, eliminate the noop.
-  if ((GEP.getNumOperands() == 2 &&
-       GEP.getOperand(1) == Constant::getNullValue(Type::LongTy)) ||
-      GEP.getNumOperands() == 1)
+  if (GEP.getNumOperands() == 1)
+    return ReplaceInstUsesWith(GEP, GEP.getOperand(0));
+
+  bool HasZeroPointerIndex = false;
+  if (Constant *C = dyn_cast<Constant>(GEP.getOperand(1)))
+    HasZeroPointerIndex = C->isNullValue();
+
+  if (GEP.getNumOperands() == 2 && HasZeroPointerIndex)
     return ReplaceInstUsesWith(GEP, GEP.getOperand(0));
 
   // Combine Indices - If the source pointer to this getelementptr instruction
@@ -1975,12 +2200,20 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
       assert(Sum && "Constant folding of longs failed!?");
       GEP.setOperand(0, Src->getOperand(0));
       GEP.setOperand(1, Sum);
-      AddUsesToWorkList(*Src);   // Reduce use count of Src
+      AddUsersToWorkList(*Src);   // Reduce use count of Src
       return &GEP;
     } else if (Src->getNumOperands() == 2) {
       // Replace: gep (gep %P, long B), long A, ...
       // With:    T = long A+B; gep %P, T, ...
       //
+      // Note that if our source is a gep chain itself that we wait for that
+      // chain to be resolved before we perform this transformation.  This
+      // avoids us creating a TON of code in some cases.
+      //
+      if (isa<GetElementPtrInst>(Src->getOperand(0)) &&
+          cast<Instruction>(Src->getOperand(0))->getNumOperands() == 2)
+        return 0;   // Wait until our source is folded to completion.
+
       Value *Sum = BinaryOperator::create(Instruction::Add, Src->getOperand(1),
                                           GEP.getOperand(1),
                                           Src->getName()+".sum", &GEP);
@@ -2020,6 +2253,31 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
 
       // Replace all uses of the GEP with the new constexpr...
       return ReplaceInstUsesWith(GEP, CE);
+    }
+  } else if (ConstantExpr *CE = dyn_cast<ConstantExpr>(GEP.getOperand(0))) {
+    if (CE->getOpcode() == Instruction::Cast) {
+      if (HasZeroPointerIndex) {
+        // transform: GEP (cast [10 x ubyte]* X to [0 x ubyte]*), long 0, ...
+        // into     : GEP [10 x ubyte]* X, long 0, ...
+        //
+        // This occurs when the program declares an array extern like "int X[];"
+        //
+        Constant *X = CE->getOperand(0);
+        const PointerType *CPTy = cast<PointerType>(CE->getType());
+        if (const PointerType *XTy = dyn_cast<PointerType>(X->getType()))
+          if (const ArrayType *XATy =
+              dyn_cast<ArrayType>(XTy->getElementType()))
+            if (const ArrayType *CATy =
+                dyn_cast<ArrayType>(CPTy->getElementType()))
+              if (CATy->getElementType() == XATy->getElementType()) {
+                // At this point, we know that the cast source type is a pointer
+                // to an array of the same type as the destination pointer
+                // array.  Because the array type is never stepped over (there
+                // is a leading zero) we can fold the cast into this GEP.
+                GEP.setOperand(0, X);
+                return &GEP;
+              }
+      }
     }
   }
 
@@ -2071,6 +2329,11 @@ Instruction *InstCombiner::visitFreeInst(FreeInst &FI) {
       return &FI;
     }
 
+  // If we have 'free null' delete the instruction.  This can happen in stl code
+  // when lots of inlining happens.
+  if (isa<ConstantPointerNull>(Op))
+    return EraseInstFromFunction(FI);
+
   return 0;
 }
 
@@ -2087,11 +2350,13 @@ static Constant *GetGEPGlobalInitializer(Constant *C, ConstantExpr *CE) {
   // addressing...
   for (unsigned i = 2, e = CE->getNumOperands(); i != e; ++i)
     if (ConstantUInt *CU = dyn_cast<ConstantUInt>(CE->getOperand(i))) {
-      ConstantStruct *CS = cast<ConstantStruct>(C);
+      ConstantStruct *CS = dyn_cast<ConstantStruct>(C);
+      if (CS == 0) return 0;
       if (CU->getValue() >= CS->getValues().size()) return 0;
       C = cast<Constant>(CS->getValues()[CU->getValue()]);
     } else if (ConstantSInt *CS = dyn_cast<ConstantSInt>(CE->getOperand(i))) {
-      ConstantArray *CA = cast<ConstantArray>(C);
+      ConstantArray *CA = dyn_cast<ConstantArray>(C);
+      if (CA == 0) return 0;
       if ((uint64_t)CS->getValue() >= CA->getValues().size()) return 0;
       C = cast<Constant>(CA->getValues()[CS->getValue()]);
     } else 
@@ -2125,7 +2390,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
 
 Instruction *InstCombiner::visitBranchInst(BranchInst &BI) {
   // Change br (not X), label True, label False to: br X, label False, True
-  if (BI.isConditional() && !isa<Constant>(BI.getCondition()))
+  if (BI.isConditional() && !isa<Constant>(BI.getCondition())) {
     if (Value *V = dyn_castNotVal(BI.getCondition())) {
       BasicBlock *TrueDest = BI.getSuccessor(0);
       BasicBlock *FalseDest = BI.getSuccessor(1);
@@ -2134,7 +2399,29 @@ Instruction *InstCombiner::visitBranchInst(BranchInst &BI) {
       BI.setSuccessor(0, FalseDest);
       BI.setSuccessor(1, TrueDest);
       return &BI;
+    } else if (SetCondInst *I = dyn_cast<SetCondInst>(BI.getCondition())) {
+      // Cannonicalize setne -> seteq
+      if ((I->getOpcode() == Instruction::SetNE ||
+           I->getOpcode() == Instruction::SetLE ||
+           I->getOpcode() == Instruction::SetGE) && I->hasOneUse()) {
+        std::string Name = I->getName(); I->setName("");
+        Instruction::BinaryOps NewOpcode =
+          SetCondInst::getInverseCondition(I->getOpcode());
+        Value *NewSCC =  BinaryOperator::create(NewOpcode, I->getOperand(0),
+                                                I->getOperand(1), Name, I);
+        BasicBlock *TrueDest = BI.getSuccessor(0);
+        BasicBlock *FalseDest = BI.getSuccessor(1);
+        // Swap Destinations and condition...
+        BI.setCondition(NewSCC);
+        BI.setSuccessor(0, FalseDest);
+        BI.setSuccessor(1, TrueDest);
+        removeFromWorkList(I);
+        I->getParent()->getInstList().erase(I);
+        WorkList.push_back(cast<Instruction>(NewSCC));
+        return &BI;
+      }
     }
+  }
   return 0;
 }
 
@@ -2159,9 +2446,7 @@ bool InstCombiner::runOnFunction(Function &F) {
     if (isInstructionTriviallyDead(I)) {
       // Add operands to the worklist...
       if (I->getNumOperands() < 4)
-        for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
-          if (Instruction *Op = dyn_cast<Instruction>(I->getOperand(i)))
-            WorkList.push_back(Op);
+        AddUsesToWorkList(*I);
       ++NumDeadInst;
 
       I->getParent()->getInstList().erase(I);
@@ -2172,9 +2457,7 @@ bool InstCombiner::runOnFunction(Function &F) {
     // Instruction isn't dead, see if we can constant propagate it...
     if (Constant *C = ConstantFoldInstruction(I)) {
       // Add operands to the worklist...
-      for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
-        if (Instruction *Op = dyn_cast<Instruction>(I->getOperand(i)))
-          WorkList.push_back(Op);
+      AddUsesToWorkList(*I);
       ReplaceInstUsesWith(*I, C);
 
       ++NumConstProp;
@@ -2220,7 +2503,7 @@ bool InstCombiner::runOnFunction(Function &F) {
 
       if (Result) {
         WorkList.push_back(Result);
-        AddUsesToWorkList(*Result);
+        AddUsersToWorkList(*Result);
       }
       Changed = true;
     }

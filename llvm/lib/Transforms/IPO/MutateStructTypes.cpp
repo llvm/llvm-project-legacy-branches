@@ -60,8 +60,8 @@ const Type *MutateStructTypes::ConvertType(const Type *Ty) {
     const Type *RetTy = ConvertType(FT->getReturnType());
     std::vector<const Type*> ArgTypes;
 
-    for (FunctionType::ParamTypes::const_iterator I = FT->getParamTypes().begin(),
-           E = FT->getParamTypes().end(); I != E; ++I)
+    for (FunctionType::param_iterator I = FT->param_begin(),
+           E = FT->param_end(); I != E; ++I)
       ArgTypes.push_back(ConvertType(*I));
     
     DestTy = FunctionType::get(RetTy, ArgTypes, FT->isVarArg());
@@ -69,11 +69,10 @@ const Type *MutateStructTypes::ConvertType(const Type *Ty) {
   }
   case Type::StructTyID: {
     const StructType *ST = cast<StructType>(Ty);
-    const StructType::ElementTypes &El = ST->getElementTypes();
     std::vector<const Type *> Types;
 
-    for (StructType::ElementTypes::const_iterator I = El.begin(), E = El.end();
-         I != E; ++I)
+    for (StructType::element_iterator I = ST->element_begin(),
+           E = ST->element_end(); I != E; ++I)
       Types.push_back(ConvertType(*I));
     DestTy = StructType::get(Types);
     break;
@@ -115,7 +114,7 @@ void MutateStructTypes::AdjustIndices(const CompositeType *OldTy,
   if (const StructType *OldST = dyn_cast<StructType>(OldTy)) {
     // Figure out what the current index is...
     unsigned ElNum = cast<ConstantUInt>(Idx[i])->getValue();
-    assert(ElNum < OldST->getElementTypes().size());
+    assert(ElNum < OldST->getNumElements());
 
     std::map<const StructType*, TransformType>::iterator
       I = Transforms.find(OldST);
@@ -198,7 +197,7 @@ void MutateStructTypes::setTransforms(const TransformsType &XForm) {
     const StructType  *OldTy = I->first;
     const std::vector<int> &InVec = I->second;
 
-    assert(OldTy->getElementTypes().size() == InVec.size() &&
+    assert(OldTy->getNumElements() == InVec.size() &&
            "Action not specified for every element of structure type!");
 
     std::vector<const Type *> NewType;

@@ -30,8 +30,6 @@ class Instruction;
 class DebugCrashes;
 class ReduceMiscompilingPasses;
 class ReduceMiscompilingFunctions;
-class ReduceCrashingFunctions;
-class ReduceCrashingBlocks;
 
 class CBE;
 class GCC;
@@ -48,12 +46,10 @@ class BugDriver {
   GCC *gcc;
 
   // FIXME: sort out public/private distinctions...
-  friend class DebugCrashes;
+  friend class ReducePassList;
   friend class ReduceMiscompilingPasses;
   friend class ReduceMiscompilingFunctions;
   friend class ReduceMisCodegenFunctions;
-  friend class ReduceCrashingFunctions;
-  friend class ReduceCrashingBlocks;
 
 public:
   BugDriver(const char *toolname);
@@ -75,11 +71,16 @@ public:
   ///
   bool run();
 
-  /// debugCrash - This method is called when some pass crashes on input.  It
-  /// attempts to prune down the testcase to something reasonable, and figure
-  /// out exactly which pass is crashing.
+  /// debugOptimizerCrash - This method is called when some optimizer pass
+  /// crashes on input.  It attempts to prune down the testcase to something
+  /// reasonable, and figure out exactly which pass is crashing.
   ///
-  bool debugCrash();
+  bool debugOptimizerCrash();
+  
+  /// debugCodeGeneratorCrash - This method is called when the code generator
+  /// crashes on an input.  It attempts to reduce the input as much as possible
+  /// while still causing the code generator to crash.
+  bool debugCodeGeneratorCrash();
 
   /// debugMiscompilation - This method is used when the passes selected are not
   /// crashing, but the generated output is semantically different from the
@@ -109,6 +110,74 @@ public:
   ///
   bool isExecutingJIT();
 
+  /// runPasses - Run all of the passes in the "PassesToRun" list, discard the
+  /// output, and return true if any of the passes crashed.
+  bool runPasses(Module *M = 0) {
+    if (M == 0) M = Program;
+    std::swap(M, Program);
+    bool Result = runPasses(PassesToRun);
+    std::swap(M, Program);
+    return Result;
+  }
+
+  const Module *getProgram() const { return Program; }
+
+  /// setNewProgram - If we reduce or update the program somehow, call this
+  /// method to update bugdriver with it.  This deletes the old module and sets
+  /// the specified one as the current program.
+  void setNewProgram(Module *M);
+
+  /// compileProgram - Try to compile the specified module, throwing an
+  /// exception if an error occurs, or returning normally if not.  This is used
+  /// for code generation crash testing.
+  ///
+  void compileProgram(Module *M);
+
+  /// executeProgram - This method runs "Program", capturing the output of the
+  /// program to a file, returning the filename of the file.  A recommended
+  /// filename may be optionally specified.  If there is a problem with the code
+  /// generator (e.g., llc crashes), this will throw an exception.
+  ///
+  std::string executeProgram(std::string RequestedOutputFilename = "",
+                             std::string Bytecode = "",
+                             const std::string &SharedObjects = "",
+                             AbstractInterpreter *AI = 0,
+                             bool *ProgramExitedNonzero = 0);
+
+  /// executeProgramWithCBE - Used to create reference output with the C
+  /// backend, if reference output is not provided.  If there is a problem with
+  /// the code generator (e.g., llc crashes), this will throw an exception.
+  ///
+  std::string executeProgramWithCBE(std::string OutputFile = "");
+
+  /// diffProgram - This method executes the specified module and diffs the
+  /// output against the file specified by ReferenceOutputFile.  If the output
+  /// is different, true is returned.  If there is a problem with the code
+  /// generator (e.g., llc crashes), this will throw an exception.
+  ///
+  bool diffProgram(const std::string &BytecodeFile = "",
+                   const std::string &SharedObj = "",
+                   bool RemoveBytecode = false);
+  /// EmitProgressBytecode - This function is used to output the current Program
+  /// to a file named "bugpoint-ID.bc".
+  ///
+  void EmitProgressBytecode(const std::string &ID, bool NoFlyer = false);
+
+  /// deleteInstructionFromProgram - This method clones the current Program and
+  /// deletes the specified instruction from the cloned module.  It then runs a
+  /// series of cleanup passes (ADCE and SimplifyCFG) to eliminate any code
+  /// which depends on the value.  The modified module is then returned.
+  ///
+  Module *deleteInstructionFromProgram(const Instruction *I, unsigned Simp)
+    const;
+
+  /// performFinalCleanups - This method clones the current Program and performs
+  /// a series of cleanups intended to get rid of extra cruft on the module.  If
+  /// the MayModifySemantics argument is true, then the cleanups is allowed to
+  /// modify how the code behaves.
+  ///
+  Module *performFinalCleanups(Module *M, bool MayModifySemantics = false);
+
 private:
   /// ParseInputFile - Given a bytecode or assembly input filename, parse and
   /// return it, or return null if not possible.
@@ -120,12 +189,6 @@ private:
   ///
   bool writeProgramToFile(const std::string &Filename, Module *M = 0) const;
 
-
-  /// EmitProgressBytecode - This function is used to output the current Program
-  /// to a file named "bugpoint-ID.bc".
-  ///
-  void EmitProgressBytecode(const std::string &ID, bool NoFlyer = false);
-  
   /// runPasses - Run the specified passes on Program, outputting a bytecode
   /// file and writting the filename into OutputFile if successful.  If the
   /// optimizations fail for some reason (optimizer crashes), return true,
@@ -152,51 +215,10 @@ private:
   ///
   static void PrintFunctionList(const std::vector<Function*> &Funcs);
 
-  /// deleteInstructionFromProgram - This method clones the current Program and
-  /// deletes the specified instruction from the cloned module.  It then runs a
-  /// series of cleanup passes (ADCE and SimplifyCFG) to eliminate any code
-  /// which depends on the value.  The modified module is then returned.
-  ///
-  Module *deleteInstructionFromProgram(Instruction *I, unsigned Simp) const;
-
-  /// performFinalCleanups - This method clones the current Program and performs
-  /// a series of cleanups intended to get rid of extra cruft on the module.  If
-  /// the MayModifySemantics argument is true, then the cleanups is allowed to
-  /// modify how the code behaves.
-  ///
-  Module *performFinalCleanups(Module *M, bool MayModifySemantics = false);
-
   /// initializeExecutionEnvironment - This method is used to set up the
   /// environment for executing LLVM programs.
   ///
   bool initializeExecutionEnvironment();
-
-  /// executeProgram - This method runs "Program", capturing the output of the
-  /// program to a file, returning the filename of the file.  A recommended
-  /// filename may be optionally specified.
-  ///
-  std::string executeProgram(std::string RequestedOutputFilename = "",
-                             std::string Bytecode = "",
-                             const std::string &SharedObjects = "",
-                             AbstractInterpreter *AI = 0);
-
-  /// executeProgramWithCBE - Used to create reference output with the C
-  /// backend, if reference output is not provided.
-  ///
-  std::string executeProgramWithCBE(std::string OutputFile = "",
-                                    std::string BytecodeFile = "",
-                                    const std::string &SharedObj = "") {
-    return executeProgram(OutputFile, BytecodeFile, SharedObj,
-                          (AbstractInterpreter*)cbe);
-  }
-
-  /// diffProgram - This method executes the specified module and diffs the
-  /// output against the file specified by ReferenceOutputFile.  If the output
-  /// is different, true is returned.
-  ///
-  bool diffProgram(const std::string &BytecodeFile = "",
-                   const std::string &SharedObj = "",
-                   bool RemoveBytecode = false);
 };
 
 /// getPassesString - Turn a list of passes into a string which indicates the

@@ -63,6 +63,7 @@ bool BUDataStructures::run(Module &M) {
   // nodes at the end of the BU phase should make things that they point to
   // incomplete in the globals graph.
   // 
+  GlobalsGraph->removeTriviallyDeadNodes();
   GlobalsGraph->maskIncompleteMarkers();
   return false;
 }
@@ -152,7 +153,7 @@ unsigned BUDataStructures::calculateGraphs(Function *F,
   } else {
     // SCCFunctions - Keep track of the functions in the current SCC
     //
-    hash_set<Function*> SCCFunctions;
+    hash_set<DSGraph*> SCCGraphs;
 
     Function *NF;
     std::vector<Function*>::iterator FirstInSCC = Stack.end();
@@ -160,42 +161,44 @@ unsigned BUDataStructures::calculateGraphs(Function *F,
     do {
       NF = *--FirstInSCC;
       ValMap[NF] = ~0U;
-      SCCFunctions.insert(NF);
 
       // Figure out which graph is the largest one, in order to speed things up
       // a bit in situations where functions in the SCC have widely different
       // graph sizes.
       DSGraph &NFGraph = getDSGraph(*NF);
+      SCCGraphs.insert(&NFGraph);
       if (!SCCGraph || SCCGraph->getGraphSize() < NFGraph.getGraphSize())
         SCCGraph = &NFGraph;
     } while (NF != F);
 
     std::cerr << "Calculating graph for SCC #: " << MyID << " of size: "
-              << SCCFunctions.size() << "\n";
+              << SCCGraphs.size() << "\n";
 
     // Compute the Max SCC Size...
-    if (MaxSCC < SCCFunctions.size())
-      MaxSCC = SCCFunctions.size();
+    if (MaxSCC < SCCGraphs.size())
+      MaxSCC = SCCGraphs.size();
 
     // First thing first, collapse all of the DSGraphs into a single graph for
     // the entire SCC.  We computed the largest graph, so clone all of the other
     // (smaller) graphs into it.  Discard all of the old graphs.
     //
-    for (hash_set<Function*>::iterator I = SCCFunctions.begin(),
-           E = SCCFunctions.end(); I != E; ++I) {
-      DSGraph &G = getDSGraph(**I);
+    for (hash_set<DSGraph*>::iterator I = SCCGraphs.begin(),
+           E = SCCGraphs.end(); I != E; ++I) {
+      DSGraph &G = **I;
       if (&G != SCCGraph) {
         DSGraph::NodeMapTy NodeMap;
         SCCGraph->cloneInto(G, SCCGraph->getScalarMap(),
-                            SCCGraph->getReturnNodes(), NodeMap, 0);
+                            SCCGraph->getReturnNodes(), NodeMap);
         // Update the DSInfo map and delete the old graph...
-        DSInfo[*I] = SCCGraph;
+        for (DSGraph::ReturnNodesTy::iterator I = G.getReturnNodes().begin(),
+               E = G.getReturnNodes().end(); I != E; ++I)
+          DSInfo[I->first] = SCCGraph;
         delete &G;
       }
     }
 
     // Clean up the graph before we start inlining a bunch again...
-    SCCGraph->removeTriviallyDeadNodes();
+    SCCGraph->removeDeadNodes(DSGraph::RemoveUnreachableGlobals);
 
     // Now that we have one big happy family, resolve all of the call sites in
     // the graph...
@@ -276,13 +279,15 @@ void BUDataStructures::calculateGraph(DSGraph &Graph) {
       //
       DSGraph &GI = getDSGraph(*Callee);  // Graph to inline
       
+      if (Callee->getName() == "bc_raise")
+        std::cerr << "HERE!\n";
+
       DEBUG(std::cerr << "    Inlining graph for " << Callee->getName()
             << "[" << GI.getGraphSize() << "+"
             << GI.getAuxFunctionCalls().size() << "] into '"
             << Graph.getFunctionNames() << "' [" << Graph.getGraphSize() << "+"
             << Graph.getAuxFunctionCalls().size() << "]\n");
       
-      // Handle self recursion by resolving the arguments and return value
       Graph.mergeInGraph(CS, *Callee, GI,
                          DSGraph::KeepModRefBits | 
                          DSGraph::StripAllocaBit | DSGraph::DontCloneCallNodes);
@@ -301,18 +306,25 @@ void BUDataStructures::calculateGraph(DSGraph &Graph) {
 
   TempFCs.clear();
 
-  // Re-materialize nodes from the globals graph.
-  // Do not ignore globals inlined from callees -- they are not up-to-date!
-  Graph.getInlinedGlobals().clear();
-  Graph.updateFromGlobalGraph();
-
   // Recompute the Incomplete markers
+  assert(Graph.getInlinedGlobals().empty());
   Graph.maskIncompleteMarkers();
   Graph.markIncompleteNodes(DSGraph::MarkFormalArgs);
 
   // Delete dead nodes.  Treat globals that are unreachable but that can
   // reach live nodes as live.
   Graph.removeDeadNodes(DSGraph::KeepUnreachableGlobals);
+
+  // When this graph is finalized, clone the globals in the graph into the
+  // globals graph to make sure it has everything, from all graphs.
+  DSScalarMap &MainSM = Graph.getScalarMap();
+  ReachabilityCloner RC(*GlobalsGraph, Graph, DSGraph::StripAllocaBit);
+
+  // Clone everything reachable from globals in the "main" graph into the
+  // globals graph.
+  for (DSScalarMap::global_iterator I = MainSM.global_begin(),
+         E = MainSM.global_end(); I != E; ++I) 
+    RC.getClonedNH(MainSM[*I]);
 
   //Graph.writeGraphToFile(std::cerr, "bu_" + F.getName());
 }

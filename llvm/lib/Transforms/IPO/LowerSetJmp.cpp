@@ -413,11 +413,6 @@ void LowerSetJmp::TransformSetJmpCall(CallInst* Inst)
 
   SetJmpContBlock->setName("SetJmpContBlock");
 
-  // Reposition the split BB in the BB list to make things tidier.
-  Func->getBasicBlockList().remove(SetJmpContBlock);
-  Func->getBasicBlockList().insert(++Function::iterator(ABlock),
-                                   SetJmpContBlock);
-
   // This PHI node will be in the new block created from the
   // splitBasicBlock call.
   PHINode* PHI = new PHINode(Type::IntTy, "SetJmpReturn", Inst);
@@ -460,10 +455,7 @@ void LowerSetJmp::visitCallInst(CallInst& CI)
   assert(NewBB && "Couldn't split BB of \"call\" instruction!!");
   NewBB->setName("Call2Invoke");
 
-  // Reposition the split BB in the BB list to make things tidier.
   Function* Func = OldBB->getParent();
-  Func->getBasicBlockList().remove(NewBB);
-  Func->getBasicBlockList().insert(++Function::iterator(OldBB), NewBB);
 
   // Construct the new "invoke" instruction.
   TerminatorInst* Term = OldBB->getTerminator();
@@ -497,7 +489,7 @@ void LowerSetJmp::visitInvokeInst(InvokeInst& II)
   if (!DFSBlocks.count(BB)) return;
 
   BasicBlock* NormalBB = II.getNormalDest();
-  BasicBlock* ExceptBB = II.getExceptionalDest();
+  BasicBlock* ExceptBB = II.getUnwindDest();
 
   Function* Func = BB->getParent();
   BasicBlock* NewExceptBB = new BasicBlock("InvokeExcept", Func);
@@ -511,7 +503,7 @@ void LowerSetJmp::visitInvokeInst(InvokeInst& II)
 
   new BranchInst(PrelimBBMap[Func], ExceptBB, IsLJExcept, NewExceptBB);
 
-  II.setExceptionalDest(NewExceptBB);
+  II.setUnwindDest(NewExceptBB);
   ++InvokesTransformed;
 }
 

@@ -131,6 +131,26 @@ public:
     return Ret;
   }
 };
+
+  /// FileRemover - This class is a simple object meant to be stack allocated.
+  /// If an exception is thrown from a region, the object removes the filename
+  /// specified (if deleteIt is true).
+  ///
+  class FileRemover {
+    std::string Filename;
+    bool DeleteIt;
+  public:
+    FileRemover(const std::string &filename, bool deleteIt = true)
+      : Filename(filename), DeleteIt(deleteIt) {}
+    
+    ~FileRemover() {
+      if (DeleteIt) removeFile(Filename);
+    }
+
+    /// releaseFile - Take ownership of the file away from the FileRemover so it
+    /// will not be removed when the object is destroyed.
+    void releaseFile() { DeleteIt = false; }
+  };
 } // End llvm namespace
 
 #endif

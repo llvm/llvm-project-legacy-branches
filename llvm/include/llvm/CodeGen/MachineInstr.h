@@ -16,9 +16,9 @@
 #ifndef LLVM_CODEGEN_MACHINEINSTR_H
 #define LLVM_CODEGEN_MACHINEINSTR_H
 
-#include "llvm/Target/MRegisterInfo.h"
-#include "Support/Annotation.h"
 #include "Support/iterator"
+#include <vector>
+#include <cassert>
 
 namespace llvm {
 
@@ -28,33 +28,10 @@ class MachineBasicBlock;
 class TargetMachine;
 class GlobalValue;
 
-typedef int MachineOpCode;
+template <typename T> class ilist_traits;
+template <typename T> class ilist;
 
-//===----------------------------------------------------------------------===//
-/// Special flags on instructions that modify the opcode.
-/// These flags are unused for now, but having them enforces that some
-/// changes will be needed if they are used.
-///
-enum MachineOpCodeFlags {
-  AnnulFlag,         /// 1 if annul bit is set on a branch
-  PredTakenFlag,     /// 1 if branch should be predicted taken
-  PredNotTakenFlag   /// 1 if branch should be predicted not taken
-};
-
-//===----------------------------------------------------------------------===//
-/// MOTy - MachineOperandType - This namespace contains an enum that describes
-/// how the machine operand is used by the instruction: is it read, defined, or
-/// both?  Note that the MachineInstr/Operator class currently uses bool
-/// arguments to represent this information instead of an enum.  Eventually this
-/// should change over to use this _easier to read_ representation instead.
-///
-namespace MOTy {
-  enum UseType {
-    Use,             /// This machine operand is only read by the instruction
-    Def,             /// This machine operand is only written by the instruction
-    UseAndDef        /// This machine operand is read AND written
-  };
-}
+typedef short MachineOpCode;
 
 //===----------------------------------------------------------------------===//
 // class MachineOperand 
@@ -92,6 +69,31 @@ namespace MOTy {
 //===----------------------------------------------------------------------===//
 
 struct MachineOperand {
+private:
+  // Bit fields of the flags variable used for different operand properties
+  enum {
+    DEFFLAG     = 0x01,       // this is a def of the operand
+    USEFLAG     = 0x02,       // this is a use of the operand
+    HIFLAG32    = 0x04,       // operand is %hi32(value_or_immedVal)
+    LOFLAG32    = 0x08,       // operand is %lo32(value_or_immedVal)
+    HIFLAG64    = 0x10,       // operand is %hi64(value_or_immedVal)
+    LOFLAG64    = 0x20,       // operand is %lo64(value_or_immedVal)
+    PCRELATIVE  = 0x40,       // Operand is relative to PC, not a global address
+  };
+
+public:
+  // UseType - This enum describes how the machine operand is used by
+  // the instruction. Note that the MachineInstr/Operator class
+  // currently uses bool arguments to represent this information
+  // instead of an enum.  Eventually this should change over to use
+  // this _easier to read_ representation instead.
+  //
+  enum UseType {
+    Use = USEFLAG,        /// only read
+    Def = DEFFLAG,        /// only written
+    UseAndDef = Use | Def /// read AND written
+  };
+
   enum MachineOperandType {
     MO_VirtualRegister,		// virtual register for *value
     MO_MachineRegister,		// pre-assigned machine register `regNum'
@@ -107,18 +109,6 @@ struct MachineOperand {
   };
   
 private:
-  // Bit fields of the flags variable used for different operand properties
-  enum {
-    DEFFLAG     = 0x01,       // this is a def of the operand
-    USEFLAG     = 0x02,       // this is a use of the operand
-    HIFLAG32    = 0x04,       // operand is %hi32(value_or_immedVal)
-    LOFLAG32    = 0x08,       // operand is %lo32(value_or_immedVal)
-    HIFLAG64    = 0x10,       // operand is %hi64(value_or_immedVal)
-    LOFLAG64    = 0x20,       // operand is %lo64(value_or_immedVal)
-    PCRELATIVE  = 0x40,       // Operand is relative to PC, not a global address
-  };
-
-private:
   union {
     Value*	value;		// BasicBlockVal for a label operand.
 				// ConstantVal for a non-address immediate.
@@ -127,7 +117,7 @@ private:
 				//   the generated machine code.     
                                 // LLVM global for MO_GlobalAddress.
 
-    int64_t immedVal;		// Constant value for an explicit constant
+    int immedVal;		// Constant value for an explicit constant
 
     MachineBasicBlock *MBB;     // For MO_MachineBasicBlock type
     std::string *SymbolName;    // For MO_ExternalSymbol type
@@ -138,44 +128,25 @@ private:
   int regNum;	                // register number for an explicit register
                                 // will be set for a value after reg allocation
 private:
-  MachineOperand()
-    : immedVal(0),
-      flags(0),
-      opType(MO_VirtualRegister),
-      regNum(-1) {}
-
-  MachineOperand(int64_t ImmVal, MachineOperandType OpTy)
+  MachineOperand(int ImmVal = 0, MachineOperandType OpTy = MO_VirtualRegister)
     : immedVal(ImmVal),
       flags(0),
       opType(OpTy),
       regNum(-1) {}
 
-  MachineOperand(int Reg, MachineOperandType OpTy, MOTy::UseType UseTy)
-    : immedVal(0),
-      opType(OpTy),
-      regNum(Reg) {
-    switch (UseTy) {
-    case MOTy::Use:       flags = USEFLAG; break;
-    case MOTy::Def:       flags = DEFFLAG; break;
-    case MOTy::UseAndDef: flags = DEFFLAG | USEFLAG; break;
-    default: assert(0 && "Invalid value for UseTy!");
-    }
-  }
+  MachineOperand(int Reg, MachineOperandType OpTy, UseType UseTy)
+    : immedVal(0), flags(UseTy), opType(OpTy), regNum(Reg) { }
 
-  MachineOperand(Value *V, MachineOperandType OpTy, MOTy::UseType UseTy,
+  MachineOperand(Value *V, MachineOperandType OpTy, UseType UseTy,
 		 bool isPCRelative = false)
-    : value(V), opType(OpTy), regNum(-1) {
-    switch (UseTy) {
-    case MOTy::Use:       flags = USEFLAG; break;
-    case MOTy::Def:       flags = DEFFLAG; break;
-    case MOTy::UseAndDef: flags = DEFFLAG | USEFLAG; break;
-    default: assert(0 && "Invalid value for UseTy!");
-    }
-    if (isPCRelative) flags |= PCRELATIVE;
+    : value(V),
+      flags(UseTy | (isPCRelative ? PCRELATIVE : 0)),
+      opType(OpTy),
+      regNum(-1) {
   }
 
   MachineOperand(MachineBasicBlock *mbb)
-    : MBB(mbb), flags(0), opType(MO_MachineBasicBlock), regNum(-1) {}
+    : MBB(mbb), flags(0), opType(MO_MachineBasicBlock), regNum(-1) { }
 
   MachineOperand(const std::string &SymName, bool isPCRelative)
     : SymbolName(new std::string(SymName)), flags(isPCRelative ? PCRELATIVE :0),
@@ -207,10 +178,15 @@ public:
     return *this;
   }
 
-  // Accessor methods.  Caller is responsible for checking the
-  // operand type before invoking the corresponding accessor.
-  // 
+  /// getType - Returns the MachineOperandType for this operand.
+  /// 
   MachineOperandType getType() const { return opType; }
+
+  /// getUseType - Returns the MachineOperandUseType of this operand.
+  ///
+  UseType getUseType() const {
+      return UseType(flags & (USEFLAG|DEFFLAG));
+  }
 
   /// isPCRelative - This returns the value of the PCRELATIVE flag, which
   /// indicates whether this operand should be emitted as a PC relative value
@@ -219,22 +195,16 @@ public:
   ///
   bool isPCRelative() const { return (flags & PCRELATIVE) != 0; }
 
+  /// isRegister - Return true if this operand is a register operand.  The X86
+  /// backend currently can't decide whether to use MO_MR or MO_VR to represent
+  /// them, so we accept both.
+  ///
+  /// Note: The sparc backend should not use this method.
+  ///
+  bool isRegister() const {
+    return opType == MO_MachineRegister || opType == MO_VirtualRegister;
+  }
 
-  // This is to finally stop caring whether we have a virtual or machine
-  // register -- an easier interface is to simply call both virtual and machine
-  // registers essentially the same, yet be able to distinguish when
-  // necessary. Thus the instruction selector can just add registers without
-  // abandon, and the register allocator won't be confused.
-  bool isVirtualRegister() const {
-    return (opType == MO_VirtualRegister || opType == MO_MachineRegister) 
-      && regNum >= MRegisterInfo::FirstVirtualRegister;
-  }
-  bool isPhysicalRegister() const {
-    return (opType == MO_VirtualRegister || opType == MO_MachineRegister) 
-      && (unsigned)regNum < MRegisterInfo::FirstVirtualRegister;
-  }
-  bool isRegister() const { return isVirtualRegister() || isPhysicalRegister();}
-  bool isMachineRegister() const { return !isVirtualRegister(); }
   bool isMachineBasicBlock() const { return opType == MO_MachineBasicBlock; }
   bool isPCRelativeDisp() const { return opType == MO_PCRelativeDisp; }
   bool isImmediate() const {
@@ -258,8 +228,8 @@ public:
     assert(opType == MO_MachineRegister);
     return regNum;
   }
-  int64_t getImmedValue() const { assert(isImmediate()); return immedVal; }
-  void setImmedValue(int64_t ImmVal) { assert(isImmediate()); immedVal=ImmVal; }
+  int getImmedValue() const { assert(isImmediate()); return immedVal; }
+  void setImmedValue(int ImmVal) { assert(isImmediate()); immedVal = ImmVal; }
 
   MachineBasicBlock *getMachineBasicBlock() const {
     assert(isMachineBasicBlock() && "Can't get MBB in non-MBB operand!");
@@ -281,12 +251,14 @@ public:
     return *SymbolName;
   }
 
-  bool          isUse           () const { return flags & USEFLAG; }
-  bool		isDef           () const { return flags & DEFFLAG; }
-  bool          isHiBits32      () const { return flags & HIFLAG32; }
-  bool          isLoBits32      () const { return flags & LOFLAG32; }
-  bool          isHiBits64      () const { return flags & HIFLAG64; }
-  bool          isLoBits64      () const { return flags & LOFLAG64; }
+  bool            isUse           () const { return flags & USEFLAG; }
+  MachineOperand& setUse          ()       { flags |= USEFLAG; return *this; }
+  bool		  isDef           () const { return flags & DEFFLAG; }
+  MachineOperand& setDef          ()       { flags |= DEFFLAG; return *this; }
+  bool            isHiBits32      () const { return flags & HIFLAG32; }
+  bool            isLoBits32      () const { return flags & LOFLAG32; }
+  bool            isHiBits64      () const { return flags & HIFLAG64; }
+  bool            isLoBits64      () const { return flags & LOFLAG64; }
 
   // used to check if a machine register has been allocated to this operand
   bool hasAllocatedReg() const {
@@ -296,15 +268,12 @@ public:
   }
 
   // used to get the reg number if when one is allocated
-  int getAllocatedRegNum() const {
+  unsigned getReg() const {
     assert(hasAllocatedReg());
     return regNum;
   }
 
   // ********** TODO: get rid of this duplicate code! ***********
-  unsigned getReg() const {
-    return getAllocatedRegNum();
-  }    
   void setReg(unsigned Reg) {
     assert(hasAllocatedReg() && "This operand cannot have a register number!");
     regNum = Reg;
@@ -352,45 +321,49 @@ private:
 //===----------------------------------------------------------------------===//
 
 class MachineInstr {
-  int              opCode;              // the opcode
-  unsigned         opCodeFlags;         // flags modifying instrn behavior
+  short            Opcode;              // the opcode
+  unsigned char numImplicitRefs;        // number of implicit operands
   std::vector<MachineOperand> operands; // the operands
-  unsigned numImplicitRefs;             // number of implicit operands
-
+  MachineInstr* prev, *next;            // links for our intrusive list
+  MachineBasicBlock* parent;            // pointer to the owning basic block
   // OperandComplete - Return true if it's illegal to add a new operand
   bool OperandsComplete() const;
 
   MachineInstr(const MachineInstr &);  // DO NOT IMPLEMENT
   void operator=(const MachineInstr&); // DO NOT IMPLEMENT
+
+private:
+  // Intrusive list support
+  //
+  friend class ilist_traits<MachineInstr>;
+
 public:
-  MachineInstr(int Opcode, unsigned numOperands);
+  MachineInstr(short Opcode, unsigned numOperands);
 
   /// MachineInstr ctor - This constructor only does a _reserve_ of the
   /// operands, not a resize for them.  It is expected that if you use this that
   /// you call add* methods below to fill up the operands, instead of the Set
   /// methods.  Eventually, the "resizing" ctors will be phased out.
   ///
-  MachineInstr(int Opcode, unsigned numOperands, bool XX, bool YY);
+  MachineInstr(short Opcode, unsigned numOperands, bool XX, bool YY);
 
   /// MachineInstr ctor - Work exactly the same as the ctor above, except that
   /// the MachineInstr is created and added to the end of the specified basic
   /// block.
   ///
-  MachineInstr(MachineBasicBlock *MBB, int Opcode, unsigned numOps);
+  MachineInstr(MachineBasicBlock *MBB, short Opcode, unsigned numOps);
   
+  ~MachineInstr();
 
-  // The opcode.
-  // 
-  const int getOpcode() const { return opCode; }
-  const int getOpCode() const { return opCode; }
+  const MachineBasicBlock* getParent() const { return parent; }
+  MachineBasicBlock* getParent() { return parent; }
 
-  // Opcode flags.
-  // 
-  unsigned       getOpCodeFlags() const { return opCodeFlags; }
+  /// Accessors for opcode.
+  ///
+  const int getOpcode() const { return Opcode; }
 
-  //
-  // Access to explicit operands of the instruction
-  // 
+  /// Access to explicit operands of the instruction.
+  ///
   unsigned getNumOperands() const { return operands.size() - numImplicitRefs; }
   
   const MachineOperand& getOperand(unsigned i) const {
@@ -472,19 +445,24 @@ public:
   void addRegOperand(Value *V, bool isDef, bool isDefAndUse=false) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(V, MachineOperand::MO_VirtualRegister,
-             !isDef ? MOTy::Use : (isDefAndUse ? MOTy::UseAndDef : MOTy::Def)));
+    operands.push_back(
+      MachineOperand(V, MachineOperand::MO_VirtualRegister,
+                     !isDef ? MachineOperand::Use :
+                     (isDefAndUse ? MachineOperand::UseAndDef :
+                      MachineOperand::Def)));
   }
 
-  void addRegOperand(Value *V, MOTy::UseType UTy = MOTy::Use,
-		     bool isPCRelative = false) {
+  void addRegOperand(Value *V,
+                     MachineOperand::UseType UTy = MachineOperand::Use,
+                     bool isPCRelative = false) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
     operands.push_back(MachineOperand(V, MachineOperand::MO_VirtualRegister,
                                       UTy, isPCRelative));
   }
 
-  void addCCRegOperand(Value *V, MOTy::UseType UTy = MOTy::Use) {
+  void addCCRegOperand(Value *V,
+                       MachineOperand::UseType UTy = MachineOperand::Use) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
     operands.push_back(MachineOperand(V, MachineOperand::MO_CCRegister, UTy,
@@ -497,17 +475,19 @@ public:
   void addRegOperand(int reg, bool isDef) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(reg, MachineOperand::MO_VirtualRegister,
-                                      isDef ? MOTy::Def : MOTy::Use));
+    operands.push_back(
+      MachineOperand(reg, MachineOperand::MO_VirtualRegister,
+                     isDef ? MachineOperand::Def : MachineOperand::Use));
   }
 
   /// addRegOperand - Add a symbolic virtual register reference...
   ///
-  void addRegOperand(int reg, MOTy::UseType UTy = MOTy::Use) {
+  void addRegOperand(int reg,
+                     MachineOperand::UseType UTy = MachineOperand::Use) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(reg, MachineOperand::MO_VirtualRegister,
-                                      UTy));
+    operands.push_back(
+      MachineOperand(reg, MachineOperand::MO_VirtualRegister, UTy));
   }
 
   /// addPCDispOperand - Add a PC relative displacement operand to the MI
@@ -515,8 +495,8 @@ public:
   void addPCDispOperand(Value *V) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(V, MachineOperand::MO_PCRelativeDisp,
-                                      MOTy::Use));
+    operands.push_back(
+      MachineOperand(V, MachineOperand::MO_PCRelativeDisp,MachineOperand::Use));
   }
 
   /// addMachineRegOperand - Add a virtual register operand to this MachineInstr
@@ -524,37 +504,39 @@ public:
   void addMachineRegOperand(int reg, bool isDef) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(reg, MachineOperand::MO_MachineRegister,
-                                      isDef ? MOTy::Def : MOTy::Use));
+    operands.push_back(
+      MachineOperand(reg, MachineOperand::MO_MachineRegister,
+                     isDef ? MachineOperand::Def : MachineOperand::Use));
   }
 
   /// addMachineRegOperand - Add a virtual register operand to this MachineInstr
   ///
-  void addMachineRegOperand(int reg, MOTy::UseType UTy = MOTy::Use) {
+  void addMachineRegOperand(int reg,
+                            MachineOperand::UseType UTy = MachineOperand::Use) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(reg, MachineOperand::MO_MachineRegister,
-                                      UTy));
+    operands.push_back(
+      MachineOperand(reg, MachineOperand::MO_MachineRegister, UTy));
   }
 
   /// addZeroExtImmOperand - Add a zero extended constant argument to the
   /// machine instruction.
   ///
-  void addZeroExtImmOperand(int64_t intValue) {
+  void addZeroExtImmOperand(int intValue) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(intValue,
-                                      MachineOperand::MO_UnextendedImmed));
+    operands.push_back(
+      MachineOperand(intValue, MachineOperand::MO_UnextendedImmed));
   }
 
   /// addSignExtImmOperand - Add a zero extended constant argument to the
   /// machine instruction.
   ///
-  void addSignExtImmOperand(int64_t intValue) {
+  void addSignExtImmOperand(int intValue) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand(intValue,
-                                      MachineOperand::MO_SignExtendedImmed));
+    operands.push_back(
+      MachineOperand(intValue, MachineOperand::MO_SignExtendedImmed));
   }
 
   void addMachineBasicBlockOperand(MachineBasicBlock *MBB) {
@@ -583,9 +565,9 @@ public:
   void addGlobalAddressOperand(GlobalValue *GV, bool isPCRelative) {
     assert(!OperandsComplete() &&
            "Trying to add an operand to a machine instr that is already done!");
-    operands.push_back(MachineOperand((Value*)GV,
-				      MachineOperand::MO_GlobalAddress,
-                                      MOTy::Use, isPCRelative));
+    operands.push_back(
+      MachineOperand((Value*)GV, MachineOperand::MO_GlobalAddress,
+                     MachineOperand::Use, isPCRelative));
   }
 
   /// addExternalSymbolOperand - Add an external symbol operand to this instr
@@ -603,11 +585,11 @@ public:
   /// simply replace() and then set new operands with Set.*Operand methods
   /// below.
   /// 
-  void replace(int Opcode, unsigned numOperands);
+  void replace(short Opcode, unsigned numOperands);
 
   /// setOpcode - Replace the opcode of the current instruction with a new one.
   ///
-  void setOpcode(unsigned Op) { opCode = Op; }
+  void setOpcode(unsigned Op) { Opcode = Op; }
 
   /// RemoveOperand - Erase an operand  from an instruction, leaving it with one
   /// fewer operand than it started with.
@@ -618,13 +600,13 @@ public:
 
   // Access to set the operands when building the machine instruction
   // 
-  void SetMachineOperandVal     (unsigned i,
-                                 MachineOperand::MachineOperandType operandType,
-                                 Value* V);
+  void SetMachineOperandVal(unsigned i,
+                            MachineOperand::MachineOperandType operandType,
+                            Value* V);
 
-  void SetMachineOperandConst   (unsigned i,
-                                 MachineOperand::MachineOperandType operandType,
-                                 int64_t intValue);
+  void SetMachineOperandConst(unsigned i,
+                              MachineOperand::MachineOperandType operandType,
+                              int intValue);
 
   void SetMachineOperandReg(unsigned i, int regNum);
 
@@ -710,7 +692,6 @@ public:
     return const_val_op_iterator::end(this);
   }
 };
-
 
 //===----------------------------------------------------------------------===//
 // Debugging Support

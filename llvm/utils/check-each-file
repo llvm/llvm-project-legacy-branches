@@ -10,7 +10,7 @@ then
 	linker=./link-$program
 	echo "Building $program with llvm-native-gcc"
 	rm -f $program
-	gmake -s $program CC=llvm-native-gcc
+	gmake -e $program CC=llvm-native-gcc CXX=llvm-native-gxx
 	echo "Erasing $program and re-linking it" 
 	rm -f $program
 	echo "rm -f $program" > $linker
@@ -55,7 +55,7 @@ usage () {
 	echo ""
 	echo "OBJECTS-FILE is a text file containing the names of all the .o files"
 	echo "PROGRAM is the name of the executable under test"
-	echo "(there must also exist a Makefile in the current directory which
+	echo "(there must also exist a Makefile in the current directory which"
 	echo "has PROGRAM as a target)"
 	echo "LINKER is the script that builds PROGRAM; try --make-linker-script" 
 	echo "to automatically generate it"
@@ -113,8 +113,11 @@ files=`cat $checkfiles`
 echo "Recompiling everything with llvm-native-gcc"
 for f in $files
 do
-	rm -f $f && gmake $f CC=llvm-native-gcc
+	rm -f $f
+	gmake $f CC=llvm-native-gcc CXX=llvm-native-gxx
 done
+rm -f $program
+$linker
 if $checker
 then
 	echo "Sorry, I can't help you, $program is OK when compiled with llvm-native-gcc"

@@ -6,8 +6,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-void *malloc(size_t);
-void free(void *);
 
 size_t strlen(const char *Str) {
   size_t Count = 0;
@@ -16,15 +14,30 @@ size_t strlen(const char *Str) {
 }
 
 char *strdup(const char *str) {
-  long Len = strlen(str);
+  size_t Len = strlen(str);
   char *Result = (char*)malloc((Len+1)*sizeof(char));
   memcpy(Result, str, Len+1);
+  return Result;
+}
+
+char *strndup(const char *str, size_t n) {
+  size_t Len = strlen(str);
+  if (Len > n) Len = n;
+  char *Result = (char*)malloc((Len+1)*sizeof(char));
+  memcpy(Result, str, Len);
+  Result[Len] = 0;
   return Result;
 }
 
 char *strcpy(char *s1, const char *s2) {
   char *dest = s1;
   while ((*s1++ = *s2++));
+  return dest;
+}
+
+char *strncpy(char *s1, const char *s2, size_t n) {
+  char *dest = s1;
+  while (n-- && (*s1++ = *s2++));
   return dest;
 }
 

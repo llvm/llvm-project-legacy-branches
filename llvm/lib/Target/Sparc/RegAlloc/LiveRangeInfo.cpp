@@ -171,13 +171,13 @@ void LiveRangeInfo::constructLiveRanges() {
     // iterate over all the machine instructions in BB
     for(MachineBasicBlock::iterator MInstIterator = MBB.begin();
         MInstIterator != MBB.end(); ++MInstIterator) {  
-      MachineInstr *MInst = *MInstIterator; 
+      MachineInstr *MInst = MInstIterator; 
 
       // If the machine instruction is a  call/return instruction, add it to
       // CallRetInstrList for processing its args, ret value, and ret addr.
       // 
-      if(TM.getInstrInfo().isReturn(MInst->getOpCode()) ||
-	 TM.getInstrInfo().isCall(MInst->getOpCode()))
+      if(TM.getInstrInfo().isReturn(MInst->getOpcode()) ||
+	 TM.getInstrInfo().isCall(MInst->getOpcode()))
 	CallRetInstrList.push_back(MInst); 
  
       // iterate over explicit MI operands and create a new LR
@@ -194,9 +194,8 @@ void LiveRangeInfo::constructLiveRanges() {
           // set it directly in the LiveRange
           if (OpI.getMachineOperand().hasAllocatedReg()) {
             unsigned getClassId;
-            LR->setColor(MRI.getClassRegNum(
-                                OpI.getMachineOperand().getAllocatedRegNum(),
-                                getClassId));
+            LR->setColor(MRI.getClassRegNum(OpI.getMachineOperand().getReg(),
+                                            getClassId));
           }
 	}
 
@@ -212,7 +211,7 @@ void LiveRangeInfo::constructLiveRanges() {
           if (MInst->getImplicitOp(i).hasAllocatedReg()) {
             unsigned getClassId;
             LR->setColor(MRI.getClassRegNum(
-                                MInst->getImplicitOp(i).getAllocatedRegNum(),
+                                MInst->getImplicitOp(i).getReg(),
                                 getClassId));
           }
 	}
@@ -243,7 +242,7 @@ void LiveRangeInfo::suggestRegs4CallRets() {
   std::vector<MachineInstr*>::iterator It = CallRetInstrList.begin();
   for( ; It != CallRetInstrList.end(); ++It) {
     MachineInstr *MInst = *It;
-    MachineOpCode OpCode = MInst->getOpCode();
+    MachineOpCode OpCode = MInst->getOpcode();
 
     if ((TM.getInstrInfo()).isReturn(OpCode))
       MRI.suggestReg4RetValue(MInst, *this);
@@ -330,7 +329,7 @@ void LiveRangeInfo::coalesceLRs()
 
     // iterate over all the machine instructions in BB
     for(MachineBasicBlock::iterator MII = MBB.begin(); MII != MBB.end(); ++MII){
-      const MachineInstr *MI = *MII;
+      const MachineInstr *MI = MII;
 
       if( DEBUG_RA >= RA_DEBUG_LiveRanges) {
 	std::cerr << " *Iterating over machine instr ";

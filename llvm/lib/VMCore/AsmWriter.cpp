@@ -142,7 +142,6 @@ static std::string calcTypeName(const Type *Ty,
   // This is another base case for the recursion.  In this case, we know 
   // that we have looped back to a type that we have previously visited.
   // Generate the appropriate upreference to handle this.
-  // 
   if (Slot < CurSize)
     return "\\" + utostr(CurSize-Slot);       // Here's the upreference
 
@@ -153,15 +152,14 @@ static std::string calcTypeName(const Type *Ty,
   case Type::FunctionTyID: {
     const FunctionType *FTy = cast<FunctionType>(Ty);
     Result = calcTypeName(FTy->getReturnType(), TypeStack, TypeNames) + " (";
-    for (FunctionType::ParamTypes::const_iterator
-           I = FTy->getParamTypes().begin(),
-           E = FTy->getParamTypes().end(); I != E; ++I) {
-      if (I != FTy->getParamTypes().begin())
+    for (FunctionType::param_iterator I = FTy->param_begin(),
+           E = FTy->param_end(); I != E; ++I) {
+      if (I != FTy->param_begin())
         Result += ", ";
       Result += calcTypeName(*I, TypeStack, TypeNames);
     }
     if (FTy->isVarArg()) {
-      if (!FTy->getParamTypes().empty()) Result += ", ";
+      if (FTy->getNumParams()) Result += ", ";
       Result += "...";
     }
     Result += ")";
@@ -170,10 +168,9 @@ static std::string calcTypeName(const Type *Ty,
   case Type::StructTyID: {
     const StructType *STy = cast<StructType>(Ty);
     Result = "{ ";
-    for (StructType::ElementTypes::const_iterator
-           I = STy->getElementTypes().begin(),
-           E = STy->getElementTypes().end(); I != E; ++I) {
-      if (I != STy->getElementTypes().begin())
+    for (StructType::element_iterator I = STy->element_begin(),
+           E = STy->element_end(); I != E; ++I) {
+      if (I != STy->element_begin())
         Result += ", ";
       Result += calcTypeName(*I, TypeStack, TypeNames);
     }
@@ -202,9 +199,9 @@ static std::string calcTypeName(const Type *Ty,
 }
 
 
-// printTypeInt - The internal guts of printing out a type that has a
-// potentially named portion.
-//
+/// printTypeInt - The internal guts of printing out a type that has a
+/// potentially named portion.
+///
 static std::ostream &printTypeInt(std::ostream &Out, const Type *Ty,
                               std::map<const Type *, std::string> &TypeNames) {
   // Primitive types always print out their description, regardless of whether
@@ -228,10 +225,10 @@ static std::ostream &printTypeInt(std::ostream &Out, const Type *Ty,
 }
 
 
-// WriteTypeSymbolic - This attempts to write the specified type as a symbolic
-// type, iff there is an entry in the modules symbol table for the specified
-// type or one of it's component types.  This is slower than a simple x << Type;
-//
+/// WriteTypeSymbolic - This attempts to write the specified type as a symbolic
+/// type, iff there is an entry in the modules symbol table for the specified
+/// type or one of it's component types. This is slower than a simple x << Type
+///
 std::ostream &llvm::WriteTypeSymbolic(std::ostream &Out, const Type *Ty,
                                       const Module *M) {
   Out << " "; 
@@ -290,12 +287,9 @@ static void WriteConstantInt(std::ostream &Out, const Constant *CV,
            "assuming that double is 64 bits!");
     Out << "0x" << utohexstr(*(uint64_t*)Ptr);
 
+  } else if (isa<ConstantAggregateZero>(CV)) {
+    Out << "zeroinitializer";
   } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(CV)) {
-    if (CA->getNumOperands() > 5 && CA->isNullValue()) {
-      Out << "zeroinitializer";
-      return;
-    }
-
     // As a special case, print the array as a string if it is an array of
     // ubytes or an array of sbytes with positive values.
     // 
@@ -341,11 +335,6 @@ static void WriteConstantInt(std::ostream &Out, const Constant *CV,
       Out << " ]";
     }
   } else if (const ConstantStruct *CS = dyn_cast<ConstantStruct>(CV)) {
-    if (CS->getNumOperands() > 5 && CS->isNullValue()) {
-      Out << "zeroinitializer";
-      return;
-    }
-
     Out << "{";
     if (CS->getNumOperands()) {
       Out << " ";
@@ -424,20 +413,23 @@ static void WriteAsOperandInternal(std::ostream &Out, const Value *V,
       }
       if (Slot >= 0)  Out << "%" << Slot;
       else if (PrintName)
-        Out << "<badref>";     // Not embedded into a location?
+        if (V->hasName())
+          Out << "<badref: " << getLLVMName(V->getName()) << ">";
+        else
+          Out << "<badref>";     // Not embedded into a location?
     }
   }
 }
 
 
 
-// WriteAsOperand - Write the name of the specified value out to the specified
-// ostream.  This can be useful when you just want to print int %reg126, not the
-// whole instruction that generated it.
-//
+/// WriteAsOperand - Write the name of the specified value out to the specified
+/// ostream.  This can be useful when you just want to print int %reg126, not
+/// the whole instruction that generated it.
+///
 std::ostream &llvm::WriteAsOperand(std::ostream &Out, const Value *V,
-                                   bool PrintType, 
-                             bool PrintName, const Module *Context) {
+                                   bool PrintType, bool PrintName, 
+                                   const Module *Context) {
   std::map<const Type *, std::string> TypeNames;
   if (Context == 0) Context = getModuleFromVal(V);
 
@@ -517,24 +509,22 @@ private :
 std::ostream &AssemblyWriter::printTypeAtLeastOneLevel(const Type *Ty) {
   if (const FunctionType *FTy = dyn_cast<FunctionType>(Ty)) {
     printType(FTy->getReturnType()) << " (";
-    for (FunctionType::ParamTypes::const_iterator
-           I = FTy->getParamTypes().begin(),
-           E = FTy->getParamTypes().end(); I != E; ++I) {
-      if (I != FTy->getParamTypes().begin())
+    for (FunctionType::param_iterator I = FTy->param_begin(),
+           E = FTy->param_end(); I != E; ++I) {
+      if (I != FTy->param_begin())
         Out << ", ";
       printType(*I);
     }
     if (FTy->isVarArg()) {
-      if (!FTy->getParamTypes().empty()) Out << ", ";
+      if (FTy->getNumParams()) Out << ", ";
       Out << "...";
     }
     Out << ")";
   } else if (const StructType *STy = dyn_cast<StructType>(Ty)) {
     Out << "{ ";
-    for (StructType::ElementTypes::const_iterator
-           I = STy->getElementTypes().begin(),
-           E = STy->getElementTypes().end(); I != E; ++I) {
-      if (I != STy->getElementTypes().begin())
+    for (StructType::element_iterator I = STy->element_begin(),
+           E = STy->element_end(); I != E; ++I) {
+      if (I != STy->element_begin())
         Out << ", ";
       printType(*I);
     }
@@ -689,7 +679,7 @@ void AssemblyWriter::printFunction(const Function *F) {
 
   // Finish printing arguments...
   if (FT->isVarArg()) {
-    if (FT->getParamTypes().size()) Out << ", ";
+    if (FT->getNumParams()) Out << ", ";
     Out << "...";  // Output varargs portion of signature!
   }
   Out << ")";
@@ -894,8 +884,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
 
     Out << " )\n\t\t\tto";
     writeOperand(II->getNormalDest(), true);
-    Out << " except";
-    writeOperand(II->getExceptionalDest(), true);
+    Out << " unwind";
+    writeOperand(II->getUnwindDest(), true);
 
   } else if (const AllocationInst *AI = dyn_cast<AllocationInst>(&I)) {
     Out << " ";

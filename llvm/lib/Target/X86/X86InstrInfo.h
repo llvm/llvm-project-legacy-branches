@@ -62,18 +62,18 @@ namespace X86II {
     ///
     MRMSrcMem      = 6,
   
-    /// MRMS[0-7][rm] - These forms are used to represent instructions that use
+    /// MRM[0-7][rm] - These forms are used to represent instructions that use
     /// a Mod/RM byte, and use the middle field to hold extended opcode
     /// information.  In the intel manual these are represented as /0, /1, ...
     ///
 
     // First, instructions that operate on a register r/m operand...
-    MRMS0r = 16,  MRMS1r = 17,  MRMS2r = 18,  MRMS3r = 19, // Format /0 /1 /2 /3
-    MRMS4r = 20,  MRMS5r = 21,  MRMS6r = 22,  MRMS7r = 23, // Format /4 /5 /6 /7
+    MRM0r = 16,  MRM1r = 17,  MRM2r = 18,  MRM3r = 19, // Format /0 /1 /2 /3
+    MRM4r = 20,  MRM5r = 21,  MRM6r = 22,  MRM7r = 23, // Format /4 /5 /6 /7
 
     // Next, instructions that operate on a memory r/m operand...
-    MRMS0m = 24,  MRMS1m = 25,  MRMS2m = 26,  MRMS3m = 27, // Format /0 /1 /2 /3
-    MRMS4m = 28,  MRMS5m = 29,  MRMS6m = 30,  MRMS7m = 31, // Format /4 /5 /6 /7
+    MRM0m = 24,  MRM1m = 25,  MRM2m = 26,  MRM3m = 27, // Format /0 /1 /2 /3
+    MRM4m = 28,  MRM5m = 29,  MRM6m = 30,  MRM7m = 31, // Format /4 /5 /6 /7
 
     FormMask       = 31,
 
@@ -86,9 +86,9 @@ namespace X86II {
     OpSize      = 1 << 5,
 
     // Op0Mask - There are several prefix bytes that are used to form two byte
-    // opcodes.  These are currently 0x0F, and 0xD8-0xDF.  This mask is used to
-    // obtain the setting of this field.  If no bits in this field is set, there
-    // is no prefix byte for obtaining a multibyte opcode.
+    // opcodes.  These are currently 0x0F, 0xF3, and 0xD8-0xDF.  This mask is
+    // used to obtain the setting of this field.  If no bits in this field is
+    // set, there is no prefix byte for obtaining a multibyte opcode.
     //
     Op0Shift    = 6,
     Op0Mask     = 0xF << Op0Shift,
@@ -97,32 +97,47 @@ namespace X86II {
     // starts with a 0x0F byte before the real opcode.
     TB          = 1 << Op0Shift,
 
+    // REP - The 0xF3 prefix byte indicating repetition of the following
+    // instruction.
+    REP         = 2 << Op0Shift,
+
     // D8-DF - These escape opcodes are used by the floating point unit.  These
     // values must remain sequential.
-    D8 = 2 << Op0Shift,   D9 = 3 << Op0Shift,
-    DA = 4 << Op0Shift,   DB = 5 << Op0Shift,
-    DC = 6 << Op0Shift,   DD = 7 << Op0Shift,
-    DE = 8 << Op0Shift,   DF = 9 << Op0Shift,
+    D8 = 3 << Op0Shift,   D9 = 4 << Op0Shift,
+    DA = 5 << Op0Shift,   DB = 6 << Op0Shift,
+    DC = 7 << Op0Shift,   DD = 8 << Op0Shift,
+    DE = 9 << Op0Shift,   DF = 10 << Op0Shift,
 
     //===------------------------------------------------------------------===//
     // This three-bit field describes the size of a memory operand.  Zero is
     // unused so that we can tell if we forgot to set a value.
-    ArgShift = 10,
-    ArgMask  = 7 << ArgShift,
-    Arg8     = 1 << ArgShift,
-    Arg16    = 2 << ArgShift,
-    Arg32    = 3 << ArgShift,
-    Arg64    = 4 << ArgShift,  // 64 bit int argument for FILD64
-    ArgF32   = 5 << ArgShift,
-    ArgF64   = 6 << ArgShift,
-    ArgF80   = 7 << ArgShift,
+    MemShift = 10,
+    MemMask  = 7 << MemShift,
+    Mem8     = 1 << MemShift,
+    Mem16    = 2 << MemShift,
+    Mem32    = 3 << MemShift,
+    Mem64    = 4 << MemShift,
+    Mem80    = 5 << MemShift,
+    Mem128   = 6 << MemShift,
+
+    //===------------------------------------------------------------------===//
+    // This tow-bit field describes the size of an immediate operand.  Zero is
+    // unused so that we can tell if we forgot to set a value.
+    ImmShift = 13,
+    ImmMask  = 7 << ImmShift,
+    Imm8     = 1 << ImmShift,
+    Imm16    = 2 << ImmShift,
+    Imm32    = 3 << ImmShift,
 
     //===------------------------------------------------------------------===//
     // FP Instruction Classification...  Zero is non-fp instruction.
 
     // FPTypeMask - Mask for all of the FP types...
-    FPTypeShift = 13,
+    FPTypeShift = 15,
     FPTypeMask  = 7 << FPTypeShift,
+
+    // NotFP - The default, set for instructions that do not use FP registers.
+    NotFP      = 0 << FPTypeShift,
 
     // ZeroArgFP - 0 arg FP instruction which implicitly pushes ST(0), f.e. fld0
     ZeroArgFP  = 1 << FPTypeShift,
@@ -144,9 +159,9 @@ namespace X86II {
     SpecialFP  = 5 << FPTypeShift,
 
     // PrintImplUses - Print out implicit uses in the assembly output.
-    PrintImplUses = 1 << 16,
+    PrintImplUses = 1 << 18,
 
-    OpcodeShift   = 17,
+    OpcodeShift   = 19,
     OpcodeMask    = 0xFF << OpcodeShift,
     // Bits 25 -> 31 are unused
   };
@@ -163,12 +178,6 @@ public:
   ///
   virtual const MRegisterInfo &getRegisterInfo() const { return RI; }
 
-  /// createNOPinstr - returns the target's implementation of NOP, which is
-  /// usually a pseudo-instruction, implemented by a degenerate version of
-  /// another instruction, e.g. X86: `xchg ax, ax'; SparcV9: `sethi r0, r0, r0'
-  ///
-  MachineInstr* createNOPinstr() const;
-
   //
   // Return true if the instruction is a register to register move and
   // leave the source and dest operands in the passed parameters.
@@ -176,12 +185,6 @@ public:
   virtual bool isMoveInstr(const MachineInstr& MI,
                            unsigned& sourceReg,
                            unsigned& destReg) const;
-
-  /// isNOPinstr - not having a special NOP opcode, we need to know if a given
-  /// instruction is interpreted as an `official' NOP instr, i.e., there may be
-  /// more than one way to `do nothing' but only one canonical way to slack off.
-  ///
-  bool isNOPinstr(const MachineInstr &MI) const;
 
   // getBaseOpcodeFor - This function returns the "base" X86 opcode for the
   // specified opcode number.

@@ -46,7 +46,7 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
               << " on the input program!\n";
     BD.setPassesToRun(Suffix);
     BD.EmitProgressBytecode("pass-error",  false);
-    exit(BD.debugCrash());
+    exit(BD.debugOptimizerCrash());
   }
 
   // Check to see if the finished program matches the reference output...
@@ -74,7 +74,7 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
               << " on the input program!\n";
     BD.setPassesToRun(Prefix);
     BD.EmitProgressBytecode("pass-error",  false);
-    exit(BD.debugCrash());
+    exit(BD.debugOptimizerCrash());
   }
 
   // If the prefix maintains the predicate by itself, only keep the prefix!
@@ -107,7 +107,7 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
               << " on the input program!\n";
     BD.setPassesToRun(Suffix);
     BD.EmitProgressBytecode("pass-error",  false);
-    exit(BD.debugCrash());
+    exit(BD.debugOptimizerCrash());
   }
 
   // Run the result...
@@ -159,7 +159,7 @@ bool ReduceMiscompilingFunctions::TestFuncs(const std::vector<Function*> &Funcs,
   }
 
   // First step: clone the module for the two halves of the program we want.
-  Module *ToOptimize = CloneModule(BD.Program);
+  Module *ToOptimize = CloneModule(BD.getProgram());
 
   // Second step: Make sure functions & globals are all external so that linkage
   // between the two modules will work.
@@ -225,13 +225,13 @@ bool ReduceMiscompilingFunctions::TestFuncs(const std::vector<Function*> &Funcs,
     std::cerr << " Error running this sequence of passes" 
               << " on the input program!\n";
     BD.EmitProgressBytecode("pass-error",  false);
-    exit(BD.debugCrash());
+    exit(BD.debugOptimizerCrash());
   }
 
   if (!EmitBytecode)
     std::cout << "done.\n";
 
-  delete BD.Program;   // Delete the old "ToOptimize" module
+  delete BD.getProgram();   // Delete the old "ToOptimize" module
   BD.Program = BD.ParseInputFile(BytecodeResult);
 
   if (EmitBytecode) {
@@ -270,7 +270,7 @@ bool ReduceMiscompilingFunctions::TestFuncs(const std::vector<Function*> &Funcs,
   // output, then 'Funcs' are being misoptimized!
   bool Broken = BD.diffProgram();
 
-  delete BD.Program;  // Delete the hacked up program
+  delete BD.Program;         // Delete the hacked up program
   BD.Program = OldProgram;   // Restore the original
 
   std::cout << (Broken ? " nope.\n" : " yup.\n");

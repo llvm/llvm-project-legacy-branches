@@ -24,8 +24,7 @@
 #include "llvm/Target/MRegisterInfo.h"
 #include "llvm/Target/TargetFrameInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
-
-namespace llvm {
+using namespace llvm;
 
 namespace {
   struct PEI : public MachineFunctionPass {
@@ -72,7 +71,7 @@ namespace {
 /// createPrologEpilogCodeInserter - This function returns a pass that inserts
 /// prolog and epilog code, and eliminates abstract frame references.
 ///
-FunctionPass *createPrologEpilogCodeInserter() { return new PEI(); }
+FunctionPass *llvm::createPrologEpilogCodeInserter() { return new PEI(); }
 
 
 /// saveCallerSavedRegisters - Scan the function for modified caller saved
@@ -99,28 +98,29 @@ void PEI::saveCallerSavedRegisters(MachineFunction &Fn) {
     return;
 
   // This bitset contains an entry for each physical register for the target...
-  std::vector<bool> ModifiedRegs(MRegisterInfo::FirstVirtualRegister);
+  std::vector<bool> ModifiedRegs(RegInfo->getNumRegs());
   unsigned MaxCallFrameSize = 0;
   bool HasCalls = false;
 
   for (MachineFunction::iterator BB = Fn.begin(), E = Fn.end(); BB != E; ++BB)
     for (MachineBasicBlock::iterator I = BB->begin(); I != BB->end(); )
-      if ((*I)->getOpcode() == FrameSetupOpcode ||
-	  (*I)->getOpcode() == FrameDestroyOpcode) {
-	assert((*I)->getNumOperands() == 1 && "Call Frame Setup/Destroy Pseudo"
+      if (I->getOpcode() == FrameSetupOpcode ||
+	  I->getOpcode() == FrameDestroyOpcode) {
+	assert(I->getNumOperands() == 1 && "Call Frame Setup/Destroy Pseudo"
 	       " instructions should have a single immediate argument!");
-	unsigned Size = (*I)->getOperand(0).getImmedValue();
+	unsigned Size = I->getOperand(0).getImmedValue();
 	if (Size > MaxCallFrameSize) MaxCallFrameSize = Size;
 	HasCalls = true;
-	RegInfo->eliminateCallFramePseudoInstr(Fn, *BB, I);
+	RegInfo->eliminateCallFramePseudoInstr(Fn, *BB, I++);
       } else {
-	for (unsigned i = 0, e = (*I)->getNumOperands(); i != e; ++i) {
-	  MachineOperand &MO = (*I)->getOperand(i);
-	  assert(!MO.isVirtualRegister() &&
-		 "Register allocation must be performed!");
-	  if (MO.isPhysicalRegister() && MO.isDef())
+	for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i) {
+	  MachineOperand &MO = I->getOperand(i);
+	  if (MO.isRegister() && MO.isDef()) {
+            assert(MRegisterInfo::isPhysicalRegister(MO.getReg()) &&
+                   "Register allocation must be performed!");
 	    ModifiedRegs[MO.getReg()] = true;         // Register is modified
-	}
+          }
+        }
 	++I;
       }
 
@@ -173,8 +173,9 @@ void PEI::saveCallerSavedRegisters(MachineFunction &Fn) {
   const TargetInstrInfo &TII = Fn.getTarget().getInstrInfo();
   for (MachineFunction::iterator FI = Fn.begin(), E = Fn.end(); FI != E; ++FI) {
     // If last instruction is a return instruction, add an epilogue
-    if (!FI->empty() && TII.isReturn(FI->back()->getOpcode())) {
-      MBB = FI; I = MBB->end()-1;
+    if (!FI->empty() && TII.isReturn(FI->back().getOpcode())) {
+      MBB = FI;
+      I = MBB->end(); --I;
 
       for (unsigned i = 0, e = RegsToSave.size(); i != e; ++i) {
 	const TargetRegisterClass *RC = RegInfo->getRegClass(RegsToSave[i]);
@@ -201,8 +202,18 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
 
   unsigned StackAlignment = TFI.getStackAlignment();
 
-  // Start at the beginning of the local area...
+  // Start at the beginning of the local area.
   int Offset = TFI.getOffsetOfLocalArea();
+
+  // Check to see if there are any fixed sized objects that are preallocated in
+  // the local area.  We currently don't support filling in holes in between
+  // fixed sized objects, so we just skip to the end of the last fixed sized
+  // preallocated object.
+  for (int i = FFI->getObjectIndexBegin(); i != 0; ++i) {
+    int FixedOff = -FFI->getObjectOffset(i);
+    if (FixedOff > Offset) Offset = FixedOff;
+  }
+
   for (unsigned i = 0, e = FFI->getObjectIndexEnd(); i != e; ++i) {
     Offset += FFI->getObjectSize(i);         // Allocate Size bytes...
 
@@ -214,8 +225,11 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
     FFI->setObjectOffset(i, -Offset);        // Set the computed offset
   }
 
-  // Align the final stack pointer offset...
-  Offset = (Offset+StackAlignment-1)/StackAlignment*StackAlignment;
+  // Align the final stack pointer offset, but only if there are calls in the
+  // function.  This ensures that any calls to subroutines have their stack
+  // frames suitable aligned.
+  if (FFI->hasCalls())
+    Offset = (Offset+StackAlignment-1)/StackAlignment*StackAlignment;
 
   // Set the final value of the stack pointer...
   FFI->setStackSize(Offset-TFI.getOffsetOfLocalArea());
@@ -234,7 +248,7 @@ void PEI::insertPrologEpilogCode(MachineFunction &Fn) {
   const TargetInstrInfo &TII = Fn.getTarget().getInstrInfo();
   for (MachineFunction::iterator I = Fn.begin(), E = Fn.end(); I != E; ++I) {
     // If last instruction is a return instruction, add an epilogue
-    if (!I->empty() && TII.isReturn(I->back()->getOpcode()))
+    if (!I->empty() && TII.isReturn(I->back().getOpcode()))
       Fn.getTarget().getRegisterInfo()->emitEpilogue(Fn, *I);
   }
 }
@@ -252,13 +266,11 @@ void PEI::replaceFrameIndices(MachineFunction &Fn) {
 
   for (MachineFunction::iterator BB = Fn.begin(), E = Fn.end(); BB != E; ++BB)
     for (MachineBasicBlock::iterator I = BB->begin(); I != BB->end(); ++I)
-      for (unsigned i = 0, e = (*I)->getNumOperands(); i != e; ++i)
-	if ((*I)->getOperand(i).isFrameIndex()) {
+      for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
+	if (I->getOperand(i).isFrameIndex()) {
 	  // If this instruction has a FrameIndex operand, we need to use that
 	  // target machine register info object to eliminate it.
 	  MRI.eliminateFrameIndex(Fn, I);
 	  break;
 	}
 }
-
-} // End llvm namespace

@@ -117,7 +117,7 @@ Pass *createIndVarSimplifyPass();
 //===----------------------------------------------------------------------===//
 //
 // InstructionCombining - Combine instructions to form fewer, simple
-//   instructions.  This pass does not modify the CFG, and has a tendancy to
+//   instructions.  This pass does not modify the CFG, and has a tendency to
 //   make instructions dead, so a subsequent DCE pass is useful.
 //
 // This pass combines things like:
@@ -135,6 +135,14 @@ Pass *createInstructionCombiningPass();
 // pass.
 //
 FunctionPass *createLICMPass();
+
+
+//===----------------------------------------------------------------------===//
+//
+// LoopExtractor - This pass moves every natural loop into its own function.
+// Mostly useful in debugging via bugpoint.
+//
+FunctionPass *createLoopExtractorPass();
 
 
 //===----------------------------------------------------------------------===//
@@ -260,8 +268,7 @@ FunctionPass *createLowerSwitchPass();
 // into calls to abort().
 //
 FunctionPass *createLowerInvokePass();
-
-
+extern const PassInfo *LowerInvokePassID;
 
 //===----------------------------------------------------------------------===//
 //

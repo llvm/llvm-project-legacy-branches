@@ -28,8 +28,7 @@
 #include "Support/Statistic.h"
 #include "Support/StringExtras.h"
 #include "Support/CommandLine.h"
-
-namespace llvm {
+using namespace llvm;
 
 namespace {
   Statistic<> EmittedInsts("asm-printer", "Number of machine instrs printed");
@@ -91,7 +90,7 @@ namespace {
 /// using the given target machine description.  This should work
 /// regardless of whether the function is in SSA form.
 ///
-FunctionPass *createX86CodePrinterPass(std::ostream &o,TargetMachine &tm){
+FunctionPass *llvm::createX86CodePrinterPass(std::ostream &o,TargetMachine &tm){
   return new Printer(o, tm);
 }
 
@@ -145,7 +144,10 @@ void Printer::emitConstantValueOnly(const Constant *CV) {
     assert(CB == ConstantBool::True);
     O << "1";
   } else if (const ConstantSInt *CI = dyn_cast<ConstantSInt>(CV))
-    O << CI->getValue();
+    if (((CI->getValue() << 32) >> 32) == CI->getValue())
+      O << CI->getValue();
+    else
+      O << (unsigned long long)CI->getValue();
   else if (const ConstantUInt *CI = dyn_cast<ConstantUInt>(CV))
     O << CI->getValue();
   else if (const ConstantPointerRef *CPR = dyn_cast<ConstantPointerRef>(CV))
@@ -365,7 +367,7 @@ bool Printer::runOnMachineFunction(MachineFunction &MF) {
 	 II != E; ++II) {
       // Print the assembly for the instruction.
       O << "\t";
-      printMachineInstruction(*II);
+      printMachineInstruction(II);
     }
   }
 
@@ -400,7 +402,7 @@ void Printer::printOp(const MachineOperand &MO,
     }
     // FALLTHROUGH
   case MachineOperand::MO_MachineRegister:
-    if (MO.getReg() < MRegisterInfo::FirstVirtualRegister)
+    if (MRegisterInfo::isPhysicalRegister(MO.getReg()))
       // Bug Workaround: See note in Printer::doInitialization about %.
       O << "%" << RI.get(MO.getReg()).Name;
     else
@@ -431,16 +433,14 @@ void Printer::printOp(const MachineOperand &MO,
   }
 }
 
-static const std::string sizePtr(const TargetInstrDescriptor &Desc) {
-  switch (Desc.TSFlags & X86II::ArgMask) {
+static const char* const sizePtr(const TargetInstrDescriptor &Desc) {
+  switch (Desc.TSFlags & X86II::MemMask) {
   default: assert(0 && "Unknown arg size!");
-  case X86II::Arg8:   return "BYTE PTR"; 
-  case X86II::Arg16:  return "WORD PTR"; 
-  case X86II::Arg32:  return "DWORD PTR"; 
-  case X86II::Arg64:  return "QWORD PTR"; 
-  case X86II::ArgF32:  return "DWORD PTR"; 
-  case X86II::ArgF64:  return "QWORD PTR"; 
-  case X86II::ArgF80:  return "XWORD PTR"; 
+  case X86II::Mem8:   return "BYTE PTR"; 
+  case X86II::Mem16:  return "WORD PTR"; 
+  case X86II::Mem32:  return "DWORD PTR"; 
+  case X86II::Mem64:  return "QWORD PTR"; 
+  case X86II::Mem80:  return "XWORD PTR"; 
   }
 }
 
@@ -594,7 +594,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
 
     unsigned Reg = MI->getOperand(0).getReg();
     
-    O << TII.getName(MI->getOpCode()) << " ";
+    O << TII.getName(MI->getOpcode()) << " ";
     printOp(MI->getOperand(0));
     if (MI->getNumOperands() == 2 &&
 	(!MI->getOperand(1).isRegister() ||
@@ -609,35 +609,31 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     return;
   }
   case X86II::MRMDestReg: {
-    // There are two acceptable forms of MRMDestReg instructions, those with 2,
-    // 3 and 4 operands:
+    // There are three forms of MRMDestReg instructions, those with 2
+    // or 3 operands:
     //
-    // 2 Operands: this is for things like mov that do not read a second input
+    // 2 Operands: this is for things like mov that do not read a
+    // second input.
     //
-    // 3 Operands: in this form, the first two registers (the destination, and
-    // the first operand) should be the same, post register allocation.  The 3rd
-    // operand is an additional input.  This should be for things like add
-    // instructions.
+    // 2 Operands: two address instructions which def&use the first
+    // argument and use the second as input.
     //
-    // 4 Operands: This form is for instructions which are 3 operands forms, but
-    // have a constant argument as well.
+    // 3 Operands: in this form, two address instructions are the same
+    // as in 2 but have a constant argument as well.
     //
     bool isTwoAddr = TII.isTwoAddrInstr(Opcode);
     assert(MI->getOperand(0).isRegister() &&
            (MI->getNumOperands() == 2 ||
-	    (isTwoAddr && MI->getOperand(1).isRegister() &&
-	     MI->getOperand(0).getReg() == MI->getOperand(1).getReg() &&
-	     (MI->getNumOperands() == 3 ||
-	      (MI->getNumOperands() == 4 && MI->getOperand(3).isImmediate()))))
+            (MI->getNumOperands() == 3 && MI->getOperand(2).isImmediate()))
            && "Bad format for MRMDestReg!");
 
-    O << TII.getName(MI->getOpCode()) << " ";
+    O << TII.getName(MI->getOpcode()) << " ";
     printOp(MI->getOperand(0));
     O << ", ";
-    printOp(MI->getOperand(1+isTwoAddr));
-    if (MI->getNumOperands() == 4) {
+    printOp(MI->getOperand(1));
+    if (MI->getNumOperands() == 3) {
       O << ", ";
-      printOp(MI->getOperand(3));
+      printOp(MI->getOperand(2));
     }
     O << "\n";
     return;
@@ -647,52 +643,53 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     // These instructions are the same as MRMDestReg, but instead of having a
     // register reference for the mod/rm field, it's a memory reference.
     //
-    assert(isMem(MI, 0) && MI->getNumOperands() == 4+1 &&
-           MI->getOperand(4).isRegister() && "Bad format for MRMDestMem!");
+    assert(isMem(MI, 0) && 
+           (MI->getNumOperands() == 4+1 ||
+            (MI->getNumOperands() == 4+2 && MI->getOperand(5).isImmediate()))
+           && "Bad format for MRMDestMem!");
 
-    O << TII.getName(MI->getOpCode()) << " " << sizePtr(Desc) << " ";
+    O << TII.getName(MI->getOpcode()) << " " << sizePtr(Desc) << " ";
     printMemReference(MI, 0);
     O << ", ";
     printOp(MI->getOperand(4));
+    if (MI->getNumOperands() == 4+2) {
+      O << ", ";
+      printOp(MI->getOperand(5));
+    }
     O << "\n";
     return;
   }
 
   case X86II::MRMSrcReg: {
-    // There are three forms that are acceptable for MRMSrcReg instructions,
-    // those with 3 and 2 operands:
+    // There are three forms that are acceptable for MRMSrcReg
+    // instructions, those with 2 or 3 operands:
     //
-    // 3 Operands: in this form, the last register (the second input) is the
-    // ModR/M input.  The first two operands should be the same, post register
-    // allocation.  This is for things like: add r32, r/m32
+    // 2 Operands: this is for things like mov that do not read a
+    // second input.
     //
-    // 3 Operands: in this form, we can have 'INST R, R, imm', which is used for
-    // instructions like the IMULri instructions.
+    // 2 Operands: in this form, the last register is the ModR/M
+    // input.  The first operand is a def&use.  This is for things
+    // like: add r32, r/m32
     //
-    // 2 Operands: this is for things like mov that do not read a second input
+    // 3 Operands: in this form, we can have 'INST R1, R2, imm', which is used
+    // for instructions like the IMULrri instructions.
+    //
     //
     assert(MI->getOperand(0).isRegister() &&
            MI->getOperand(1).isRegister() &&
-           (MI->getNumOperands() == 2 || 
-            (MI->getNumOperands() == 3 && 
-             (MI->getOperand(2).isRegister() ||
-              MI->getOperand(2).isImmediate())))
+           (MI->getNumOperands() == 2 ||
+            (MI->getNumOperands() == 3 &&
+             (MI->getOperand(2).isImmediate())))
            && "Bad format for MRMSrcReg!");
-    if (MI->getNumOperands() == 3 &&
-        MI->getOperand(0).getReg() != MI->getOperand(1).getReg())
-      O << "**";
 
-    O << TII.getName(MI->getOpCode()) << " ";
+    O << TII.getName(MI->getOpcode()) << " ";
     printOp(MI->getOperand(0));
-
-    // If this is IMULri* instructions, print the non-two-address operand.
-    if (MI->getNumOperands() == 3 && MI->getOperand(2).isImmediate()) {
-      O << ", ";
-      printOp(MI->getOperand(1));
-    }
-
     O << ", ";
-    printOp(MI->getOperand(MI->getNumOperands()-1));
+    printOp(MI->getOperand(1));
+    if (MI->getNumOperands() == 3) {
+        O << ", ";
+        printOp(MI->getOperand(2));
+    }
     O << "\n";
     return;
   }
@@ -703,25 +700,24 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     //
     assert(MI->getOperand(0).isRegister() &&
            (MI->getNumOperands() == 1+4 && isMem(MI, 1)) || 
-           (MI->getNumOperands() == 2+4 && MI->getOperand(1).isRegister() && 
-            isMem(MI, 2))
-           && "Bad format for MRMDestReg!");
-    if (MI->getNumOperands() == 2+4 &&
-        MI->getOperand(0).getReg() != MI->getOperand(1).getReg())
-      O << "**";
-
-    O << TII.getName(MI->getOpCode()) << " ";
+(MI->getNumOperands() == 2+4 && MI->getOperand(5).isImmediate() && isMem(MI, 1))
+           && "Bad format for MRMSrcMem!");
+    O << TII.getName(MI->getOpcode()) << " ";
     printOp(MI->getOperand(0));
     O << ", " << sizePtr(Desc) << " ";
-    printMemReference(MI, MI->getNumOperands()-4);
+    printMemReference(MI, 1);
+    if (MI->getNumOperands() == 2+4) {
+      O << ", ";
+      printOp(MI->getOperand(5));
+    }
     O << "\n";
     return;
   }
 
-  case X86II::MRMS0r: case X86II::MRMS1r:
-  case X86II::MRMS2r: case X86II::MRMS3r:
-  case X86II::MRMS4r: case X86II::MRMS5r:
-  case X86II::MRMS6r: case X86II::MRMS7r: {
+  case X86II::MRM0r: case X86II::MRM1r:
+  case X86II::MRM2r: case X86II::MRM3r:
+  case X86II::MRM4r: case X86II::MRM5r:
+  case X86II::MRM6r: case X86II::MRM7r: {
     // In this form, the following are valid formats:
     //  1. sete r
     //  2. cmp reg, immediate
@@ -741,7 +737,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
         MI->getOperand(0).getReg() != MI->getOperand(1).getReg())
       O << "**";
 
-    O << TII.getName(MI->getOpCode()) << " ";
+    O << TII.getName(MI->getOpcode()) << " ";
     printOp(MI->getOperand(0));
     if (MI->getOperand(MI->getNumOperands()-1).isImmediate()) {
       O << ", ";
@@ -753,10 +749,10 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     return;
   }
 
-  case X86II::MRMS0m: case X86II::MRMS1m:
-  case X86II::MRMS2m: case X86II::MRMS3m:
-  case X86II::MRMS4m: case X86II::MRMS5m:
-  case X86II::MRMS6m: case X86II::MRMS7m: {
+  case X86II::MRM0m: case X86II::MRM1m:
+  case X86II::MRM2m: case X86II::MRM3m:
+  case X86II::MRM4m: case X86II::MRM5m:
+  case X86II::MRM6m: case X86II::MRM7m: {
     // In this form, the following are valid formats:
     //  1. sete [m]
     //  2. cmp [m], immediate
@@ -776,7 +772,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     // is misassembled by gas in intel_syntax mode as its 32-bit
     // equivalent "fstp DWORD PTR [...]". Workaround: Output the raw
     // opcode bytes instead of the instruction.
-    if (MI->getOpCode() == X86::FSTPr80) {
+    if (MI->getOpcode() == X86::FSTP80m) {
       if ((MI->getOperand(0).getReg() == X86::ESP)
 	  && (MI->getOperand(1).getImmedValue() == 1)) {
         if (Op3.isImmediate() && 
@@ -797,7 +793,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     // misassembled by gas in intel_syntax mode as its 32-bit
     // equivalent "fld DWORD PTR [...]". Workaround: Output the raw
     // opcode bytes instead of the instruction.
-    if (MI->getOpCode() == X86::FLDr80 &&
+    if (MI->getOpcode() == X86::FLD80m &&
         MI->getOperand(0).getReg() == X86::ESP &&
         MI->getOperand(1).getImmedValue() == 1) {
       if (Op3.isImmediate() && Op3.getImmedValue() >= -128 &&
@@ -817,7 +813,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     // 64 bit modes." libopcodes disassembles it as "fild DWORD PTR
     // [...]", which is wrong. Workaround: Output the raw opcode bytes
     // instead of the instruction.
-    if (MI->getOpCode() == X86::FILDr64 &&
+    if (MI->getOpcode() == X86::FILD64m &&
         MI->getOperand(0).getReg() == X86::ESP &&
         MI->getOperand(1).getImmedValue() == 1) {
       if (Op3.isImmediate() && Op3.getImmedValue() >= -128 &&
@@ -838,7 +834,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
     // "fistpll DWORD PTR [...]", which is wrong. Workaround: Output
     // "fistpll DWORD PTR " instead, which is what libopcodes is
     // expecting to see.
-    if (MI->getOpCode() == X86::FISTPr64) {
+    if (MI->getOpcode() == X86::FISTP64m) {
       O << "fistpll DWORD PTR ";
       printMemReference(MI, 0);
       if (MI->getNumOperands() == 5) {
@@ -848,7 +844,7 @@ void Printer::printMachineInstruction(const MachineInstr *MI) {
       O << "\t# ";
     }
     
-    O << TII.getName(MI->getOpCode()) << " ";
+    O << TII.getName(MI->getOpcode()) << " ";
     O << sizePtr(Desc) << " ";
     printMemReference(MI, 0);
     if (MI->getNumOperands() == 5) {
@@ -955,5 +951,3 @@ bool Printer::doFinalization(Module &M) {
   delete Mang;
   return false; // success
 }
-
-} // End llvm namespace

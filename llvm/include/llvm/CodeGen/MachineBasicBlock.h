@@ -14,40 +14,77 @@
 #ifndef LLVM_CODEGEN_MACHINEBASICBLOCK_H
 #define LLVM_CODEGEN_MACHINEBASICBLOCK_H
 
-#include <vector>
+#include "llvm/CodeGen/MachineInstr.h"
+#include "Support/ilist"
+#include <iosfwd>
 
 namespace llvm {
+  class MachineFunction;
+
+// ilist_traits
+template <>
+class ilist_traits<MachineInstr> {
+  // this is only set by the MachineBasicBlock owning the ilist
+  friend class MachineBasicBlock;
+  MachineBasicBlock* parent;
+
+public:
+  ilist_traits<MachineInstr>() : parent(0) { }
+
+  static MachineInstr* getPrev(MachineInstr* N) { return N->prev; }
+  static MachineInstr* getNext(MachineInstr* N) { return N->next; }
+
+  static const MachineInstr*
+  getPrev(const MachineInstr* N) { return N->prev; }
+
+  static const MachineInstr*
+  getNext(const MachineInstr* N) { return N->next; }
+
+  static void setPrev(MachineInstr* N, MachineInstr* prev) { N->prev = prev; }
+  static void setNext(MachineInstr* N, MachineInstr* next) { N->next = next; }
+
+  static MachineInstr* createNode();
+  void addNodeToList(MachineInstr* N);
+  void removeNodeFromList(MachineInstr* N);
+  void transferNodesFromList(
+      iplist<MachineInstr, ilist_traits<MachineInstr> >& toList,
+      ilist_iterator<MachineInstr> first,
+      ilist_iterator<MachineInstr> last);
+};
 
 class BasicBlock;
-class MachineInstr;
-template <typename T> struct ilist_traits;
 
 class MachineBasicBlock {
-  std::vector<MachineInstr*> Insts;
+public:
+  typedef ilist<MachineInstr> Instructions;
+  Instructions Insts;
   MachineBasicBlock *Prev, *Next;
   const BasicBlock *BB;
 public:
-  MachineBasicBlock(const BasicBlock *bb = 0) : Prev(0), Next(0), BB(bb) {}
+  MachineBasicBlock(const BasicBlock *bb = 0) : Prev(0), Next(0), BB(bb) {
+    Insts.parent = this;
+  }
   ~MachineBasicBlock() {}
   
   /// getBasicBlock - Return the LLVM basic block that this instance
   /// corresponded to originally.
   ///
   const BasicBlock *getBasicBlock() const { return BB; }
-  
-  typedef std::vector<MachineInstr*>::iterator                iterator;
-  typedef std::vector<MachineInstr*>::const_iterator    const_iterator;
+
+  /// getParent - Return the MachineFunction containing this basic block.
+  ///
+  const MachineFunction *getParent() const;
+
+  typedef ilist<MachineInstr>::iterator                       iterator;
+  typedef ilist<MachineInstr>::const_iterator           const_iterator;
   typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
   typedef std::reverse_iterator<iterator>             reverse_iterator;
 
   unsigned size() const { return Insts.size(); }
   bool empty() const { return Insts.empty(); }
 
-  MachineInstr * operator[](unsigned i) const { return Insts[i]; }
-  MachineInstr *&operator[](unsigned i)       { return Insts[i]; }
-
-  MachineInstr *front() const { return Insts.front(); }
-  MachineInstr *back()  const { return Insts.back(); }
+  MachineInstr& front() { return Insts.front(); }
+  MachineInstr& back()  { return Insts.back(); }
 
   iterator                begin()       { return Insts.begin();  }
   const_iterator          begin() const { return Insts.begin();  }
@@ -58,22 +95,26 @@ public:
   reverse_iterator       rend  ()       { return Insts.rend();   }
   const_reverse_iterator rend  () const { return Insts.rend();   }
 
+  /// getFirstTerminator - returns an iterator to the first terminator
+  /// instruction of this basic block. If a terminator does not exist,
+  /// it returns end()
+  iterator getFirstTerminator();
+
   void push_back(MachineInstr *MI) { Insts.push_back(MI); }
   template<typename IT>
   void insert(iterator I, IT S, IT E) { Insts.insert(I, S, E); }
   iterator insert(iterator I, MachineInstr *M) { return Insts.insert(I, M); }
 
   // erase - Remove the specified element or range from the instruction list.
-  // These functions do not delete any instructions removed.
+  // These functions delete any instructions removed.
   //
   iterator erase(iterator I)             { return Insts.erase(I); }
   iterator erase(iterator I, iterator E) { return Insts.erase(I, E); }
+  MachineInstr* remove(iterator &I)      { return Insts.remove(I); }
 
-  MachineInstr *pop_back() {
-    MachineInstr *R = back();
-    Insts.pop_back();
-    return R;
-  }
+  // Debugging methods.
+  void dump() const;
+  void print(std::ostream &OS) const;
 
 private:   // Methods used to maintain doubly linked list of blocks...
   friend class ilist_traits<MachineBasicBlock>;

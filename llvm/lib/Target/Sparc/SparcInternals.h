@@ -1,4 +1,4 @@
-//===-- SparcInternals.h ----------------------------------------*- C++ -*-===//
+//===-- SparcV9Internals.h ----------------------------------------*- C++ -*-===//
 // 
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,7 @@
 // 
 //===----------------------------------------------------------------------===//
 // 
-// This file defines stuff that is to be private to the Sparc backend, but is
+// This file defines stuff that is to be private to the SparcV9 backend, but is
 // shared among different portions of the backend.
 //
 //===----------------------------------------------------------------------===//
@@ -19,19 +19,18 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSchedInfo.h"
 #include "llvm/Target/TargetFrameInfo.h"
-#include "llvm/Target/TargetCacheInfo.h"
 #include "llvm/Target/TargetRegInfo.h"
 #include "llvm/Type.h"
-#include "SparcRegClassInfo.h"
+#include "SparcV9RegClassInfo.h"
 #include "Config/sys/types.h"
 
 namespace llvm {
 
 class LiveRange;
-class SparcTargetMachine;
+class SparcV9TargetMachine;
 class Pass;
 
-enum SparcInstrSchedClass {
+enum SparcV9InstrSchedClass {
   SPARC_NONE,		/* Instructions with no scheduling restrictions */
   SPARC_IEUN,		/* Integer class that can use IEU0 or IEU1 */
   SPARC_IEU0,		/* Integer class IEU0 */
@@ -49,20 +48,20 @@ enum SparcInstrSchedClass {
 
 
 //---------------------------------------------------------------------------
-// enum SparcMachineOpCode. 
-// const TargetInstrDescriptor SparcMachineInstrDesc[]
+// enum SparcV9MachineOpCode. 
+// const TargetInstrDescriptor SparcV9MachineInstrDesc[]
 // 
 // Purpose:
-//   Description of UltraSparc machine instructions.
+//   Description of UltraSparcV9 machine instructions.
 // 
 //---------------------------------------------------------------------------
 
 namespace V9 {
-  enum SparcMachineOpCode {
+  enum SparcV9MachineOpCode {
 #define I(ENUM, OPCODESTRING, NUMOPERANDS, RESULTPOS, MAXIMM, IMMSE, \
           NUMDELAYSLOTS, LATENCY, SCHEDCLASS, INSTFLAGS)             \
    ENUM,
-#include "SparcInstr.def"
+#include "SparcV9Instr.def"
 
     // End-of-array marker
     INVALID_OPCODE,
@@ -72,35 +71,22 @@ namespace V9 {
 }
 
 // Array of machine instruction descriptions...
-extern const TargetInstrDescriptor SparcMachineInstrDesc[];
+extern const TargetInstrDescriptor SparcV9MachineInstrDesc[];
 
 //---------------------------------------------------------------------------
-// class SparcSchedInfo
+// class SparcV9SchedInfo
 // 
 // Purpose:
 //   Interface to instruction scheduling information for UltraSPARC.
 //   The parameter values above are based on UltraSPARC IIi.
 //---------------------------------------------------------------------------
 
-class SparcSchedInfo: public TargetSchedInfo {
+class SparcV9SchedInfo: public TargetSchedInfo {
 public:
-  SparcSchedInfo(const TargetMachine &tgt);
+  SparcV9SchedInfo(const TargetMachine &tgt);
 protected:
   virtual void initializeResources();
 };
-
-//---------------------------------------------------------------------------
-// class SparcCacheInfo 
-// 
-// Purpose:
-//   Interface to cache parameters for the UltraSPARC.
-//   Just use defaults for now.
-//---------------------------------------------------------------------------
-
-struct SparcCacheInfo: public TargetCacheInfo {
-  SparcCacheInfo(const TargetMachine &T) : TargetCacheInfo(T) {} 
-};
-
 
 /// createStackSlotsPass - External interface to stack-slots pass that enters 2
 /// empty slots at the top of each function stack
@@ -127,7 +113,7 @@ FunctionPass* createPrologEpilogInsertionPass();
 ///
 Pass* createBytecodeAsmPrinterPass(std::ostream &Out);
 
-FunctionPass *createSparcMachineCodeDestructionPass();
+FunctionPass *createSparcV9MachineCodeDestructionPass();
 
 } // End llvm namespace
 

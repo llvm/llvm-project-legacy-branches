@@ -8,15 +8,19 @@
 ##===----------------------------------------------------------------------===##
 LEVEL = ../..
 TOOLNAME = llc
-USEDLIBS = sparc \
+USEDLIBS = cwriter \
+	   sparcv8 \
+           sparcv9 \
            x86 \
-	   selectiondag \
-           regalloc \
+           powerpc \
+           selectiondag \
+           sparcv9regalloc \
            sched \
-           select \
+           sparcv9select \
            codegen \
            target.a \
-           livevar \
+           sparcv9livevar \
+           ipa.a   \
            transforms.a \
            scalaropts.a \
            analysis.a \

@@ -12,7 +12,7 @@ LEVEL = ..
 include $(LEVEL)/Makefile.config
 
 ifneq ($(wildcard $(LLVMGCCDIR)),)
-PARALLEL_DIRS  := GCCLibraries  libdummy  libprofile  libtrace
+PARALLEL_DIRS  := GCCLibraries  libdummy  libprofile  libtrace libpng zlib
 else
 PARALLEL_DIRS  := 
 install all ::
@@ -30,3 +30,5 @@ include $(LEVEL)/Makefile.common
 install::
 
 clean::
+	rm -f $(DESTLIBBYTECODE)/*
+

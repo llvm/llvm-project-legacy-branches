@@ -146,7 +146,8 @@ void SlotCalculator::processModule() {
           TypePlane &Plane = Table[plane];
           unsigned FirstNonStringID = 0;
           for (unsigned i = 0, e = Plane.size(); i != e; ++i)
-            if (cast<ConstantArray>(Plane[i])->isString()) {
+            if (isa<ConstantAggregateZero>(Plane[i]) ||
+                cast<ConstantArray>(Plane[i])->isString()) {
               // Check to see if we have to shuffle this string around.  If not,
               // don't do anything.
               if (i != FirstNonStringID) {
@@ -381,6 +382,8 @@ static inline bool hasNullValue(unsigned TyID) {
 /// getOrCreateCompactionTableSlot - This method is used to build up the initial
 /// approximation of the compaction table.
 unsigned SlotCalculator::getOrCreateCompactionTableSlot(const Value *V) {
+  if (const ConstantPointerRef *CPR = dyn_cast<ConstantPointerRef>(V))
+    V = CPR->getValue();
   std::map<const Value*, unsigned>::iterator I =
     CompactionNodeMap.lower_bound(V);
   if (I != CompactionNodeMap.end() && I->first == V)

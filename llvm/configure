@@ -465,7 +465,7 @@ ac_includes_default="\
 #endif"
 
 ac_unique_file=""Makefile.config.in""
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS subdirs INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA build build_cpu build_vendor build_os host host_cpu host_vendor host_os target target_cpu target_vendor target_os OS LLVMGCCDIR ARCH CXX CXXFLAGS LDFLAGS CPPFLAGS ac_ct_CXX EXEEXT OBJEXT CC CFLAGS ac_ct_CC CPP ifGNUmake LEX LEXLIB LEX_OUTPUT_ROOT YACC BISON EGREP LN_S ECHO AR ac_ct_AR RANLIB ac_ct_RANLIB STRIP ac_ct_STRIP CXXCPP F77 FFLAGS ac_ct_F77 LIBTOOL DOT ETAGS PYTHON QMTEST ALLOCA MMAP_FILE ENABLE_OPTIMIZED SPEC_ROOT USE_SPEC UPB DISABLE_LLC_DIFFS JIT LLVMCC1 LLVMCC1PLUS BCR PAPIDIR LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS subdirs INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA build build_cpu build_vendor build_os host host_cpu host_vendor host_os target target_cpu target_vendor target_os OS LLVMGCCDIR ARCH CXX CXXFLAGS LDFLAGS CPPFLAGS ac_ct_CXX EXEEXT OBJEXT CC CFLAGS ac_ct_CC CPP ifGNUmake LEX LEXLIB LEX_OUTPUT_ROOT YACC BISON EGREP LN_S ECHO AR ac_ct_AR RANLIB ac_ct_RANLIB STRIP ac_ct_STRIP CXXCPP F77 FFLAGS ac_ct_F77 LIBTOOL DOT ETAGS ETAGSFLAGS PYTHON QMTEST HAVE_PTHREAD_MUTEX_LOCK INCLUDE_SYS_TYPES_H INCLUDE_INTTYPES_H ENDIAN HAVE_STD_EXT_HASH_MAP HAVE_GNU_EXT_HASH_MAP HAVE_GLOBAL_HASH_MAP HAVE_STD_EXT_HASH_SET HAVE_GNU_EXT_HASH_SET HAVE_GLOBAL_HASH_SET HAVE_STD_ITERATOR HAVE_BI_ITERATOR HAVE_FWD_ITERATOR ALLOCA MMAP_FILE ENABLE_OPTIMIZED SPEC2000_ROOT USE_SPEC2000 SPEC95_ROOT USE_SPEC95 POVRAY_ROOT USE_POVRAY UPB DISABLE_LLC_DIFFS JIT LLVMCC1 LLVMCC1PLUS BCR PAPIDIR SHLIBEXT LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -1032,6 +1032,8 @@ Optional Features:
   --disable-libtool-lock  avoid locking (might break parallel builds)
   --enable-optimized      Compile with optimizations enabled (default is NO)
   --enable-spec2000       Compile SPEC 2000 benchmarks (default is NO)
+  --enable-spec95         Compile SPEC 95 benchmarks (default is NO)
+  --enable-povray         Compile Povray benchmark (default is NO)
   --enable-precompiled_bytecode
                           Use pre-compiled bytecode (default is NO)
   --enable-llc_diffs      Enable LLC Diffs when testing (default is YES)
@@ -1569,9 +1571,6 @@ done
           ac_config_commands="$ac_config_commands test/Programs/TEST.dsgraph.report"
 
 
-          ac_config_commands="$ac_config_commands test/Programs/TEST.micro.report"
-
-
           ac_config_commands="$ac_config_commands test/Programs/TEST.aa.report"
 
 
@@ -1602,7 +1601,7 @@ done
           ac_config_commands="$ac_config_commands test/Programs/TEST.dsgraph.gnuplot"
 
 
-          ac_config_commands="$ac_config_commands test/Programs/TEST.micro.Makefile"
+          ac_config_commands="$ac_config_commands test/Programs/TEST.vtl.Makefile"
 
 
           ac_config_commands="$ac_config_commands test/Programs/External/Makefile"
@@ -1612,6 +1611,12 @@ done
 
 
           ac_config_commands="$ac_config_commands test/Programs/External/SPEC/Makefile.spec"
+
+
+          ac_config_commands="$ac_config_commands test/Programs/External/SPEC/Makefile.spec2000"
+
+
+          ac_config_commands="$ac_config_commands test/Programs/External/SPEC/Makefile.spec95"
 
 
           ac_config_commands="$ac_config_commands test/Programs/MultiSource/Makefile"
@@ -1663,6 +1668,9 @@ done
 
 
           ac_config_commands="$ac_config_commands test/Programs/SingleSource/Makefile.singlesrc"
+
+
+          ac_config_commands="$ac_config_commands test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile"
 
 
           ac_config_commands="$ac_config_commands tools/Makefile"
@@ -4036,7 +4044,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 4039 "configure"' > conftest.$ac_ext
+  echo '#line 4047 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -4877,7 +4885,7 @@ fi
 
 
 # Provide some information about the compiler.
-echo "$as_me:4880:" \
+echo "$as_me:4888:" \
      "checking for Fortran 77 compiler version" >&5
 ac_compiler=`set X $ac_compile; echo $2`
 { (eval echo "$as_me:$LINENO: \"$ac_compiler --version </dev/null >&5\"") >&5
@@ -5882,11 +5890,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:5885: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:5893: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:5889: \$? = $ac_status" >&5
+   echo "$as_me:5897: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -6114,11 +6122,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:6117: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:6125: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:6121: \$? = $ac_status" >&5
+   echo "$as_me:6129: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -6181,11 +6189,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:6184: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:6192: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:6188: \$? = $ac_status" >&5
+   echo "$as_me:6196: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -8193,7 +8201,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 8196 "configure"
+#line 8204 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -8291,7 +8299,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 8294 "configure"
+#line 8302 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -10423,11 +10431,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10426: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10434: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10430: \$? = $ac_status" >&5
+   echo "$as_me:10438: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -10490,11 +10498,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10493: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10501: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10497: \$? = $ac_status" >&5
+   echo "$as_me:10505: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -11733,7 +11741,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 11736 "configure"
+#line 11744 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -11831,7 +11839,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 11834 "configure"
+#line 11842 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -12653,11 +12661,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:12656: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:12664: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:12660: \$? = $ac_status" >&5
+   echo "$as_me:12668: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -12720,11 +12728,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:12723: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:12731: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:12727: \$? = $ac_status" >&5
+   echo "$as_me:12735: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -14660,11 +14668,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14663: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14671: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:14667: \$? = $ac_status" >&5
+   echo "$as_me:14675: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -14892,11 +14900,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14895: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14903: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:14899: \$? = $ac_status" >&5
+   echo "$as_me:14907: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings
@@ -14959,11 +14967,11 @@ else
    -e 's:.*FLAGS}? :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14962: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14970: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:14966: \$? = $ac_status" >&5
+   echo "$as_me:14974: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -16971,7 +16979,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 16974 "configure"
+#line 16982 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -17069,7 +17077,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 17072 "configure"
+#line 17080 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -18156,6 +18164,14 @@ else
 echo "${ECHO_T}no" >&6
 fi
 
+etags_version=`$ETAGS --version 2>&1`
+case "$etags_version" in
+	*Eexuberant*) ETAGSFLAGS="--language-force=c++" ;;
+	*GNU\ Emacs*) ETAGSFLAGS="-l c++" ;;
+	*) ETAGSFLAGS="" ;;
+esac
+ETAGSFLAGS=$ETAGSFLAGS
+
 # Extract the first word of "python", so it can be a program name with args.
 set dummy python; ac_word=$2
 echo "$as_me:$LINENO: checking for $ac_word" >&5
@@ -18661,12 +18677,11 @@ echo "$as_me:$LINENO: result: $ac_cv_search_pthread_mutex_lock" >&5
 echo "${ECHO_T}$ac_cv_search_pthread_mutex_lock" >&6
 if test "$ac_cv_search_pthread_mutex_lock" != no; then
   test "$ac_cv_search_pthread_mutex_lock" = "none required" || LIBS="$ac_cv_search_pthread_mutex_lock $LIBS"
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_PTHREAD_MUTEX_LOCK 1
-_ACEOF
-
+  HAVE_PTHREAD_MUTEX_LOCK=1
+else
+  HAVE_PTHREAD_MUTEX_LOCK=0
 fi
+
 
 
 echo "$as_me:$LINENO: checking for ANSI C header files" >&5
@@ -18901,7 +18916,8 @@ fi
 
 
 
-for ac_header in fcntl.h limits.h sys/time.h unistd.h malloc.h sys/mman.h sys/resource.h dlfcn.h link.h
+
+for ac_header in fcntl.h limits.h sys/time.h unistd.h malloc.h sys/mman.h sys/resource.h dlfcn.h link.h execinfo.h
 do
 as_ac_Header=`echo "ac_cv_header_$ac_header" | $as_tr_sh`
 if eval "test \"\${$as_ac_Header+set}\" = set"; then
@@ -19041,6 +19057,281 @@ _ACEOF
 fi
 
 done
+
+
+if test "${ac_cv_header_sys_types_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for sys/types.h" >&5
+echo $ECHO_N "checking for sys/types.h... $ECHO_C" >&6
+if test "${ac_cv_header_sys_types_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_sys_types_h" >&5
+echo "${ECHO_T}$ac_cv_header_sys_types_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking sys/types.h usability" >&5
+echo $ECHO_N "checking sys/types.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <sys/types.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking sys/types.h presence" >&5
+echo $ECHO_N "checking sys/types.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/types.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc in
+  yes:no )
+    { echo "$as_me:$LINENO: WARNING: sys/types.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: sys/types.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/types.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: sys/types.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+  no:yes )
+    { echo "$as_me:$LINENO: WARNING: sys/types.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: sys/types.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/types.h: check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: sys/types.h: check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/types.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: sys/types.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for sys/types.h" >&5
+echo $ECHO_N "checking for sys/types.h... $ECHO_C" >&6
+if test "${ac_cv_header_sys_types_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_sys_types_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_sys_types_h" >&5
+echo "${ECHO_T}$ac_cv_header_sys_types_h" >&6
+
+fi
+if test $ac_cv_header_sys_types_h = yes; then
+  INCLUDE_SYS_TYPES_H='#include <sys/types.h>'
+else
+  INCLUDE_SYS_TYPES_H=''
+fi
+
+
+
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for inttypes.h" >&5
+echo $ECHO_N "checking for inttypes.h... $ECHO_C" >&6
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_inttypes_h" >&5
+echo "${ECHO_T}$ac_cv_header_inttypes_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking inttypes.h usability" >&5
+echo $ECHO_N "checking inttypes.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <inttypes.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking inttypes.h presence" >&5
+echo $ECHO_N "checking inttypes.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <inttypes.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc in
+  yes:no )
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: inttypes.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: inttypes.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+  no:yes )
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: inttypes.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: inttypes.h: check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: inttypes.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: inttypes.h: proceeding with the preprocessor's result" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------ ##
+## Report this to bug-autoconf@gnu.org. ##
+## ------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for inttypes.h" >&5
+echo $ECHO_N "checking for inttypes.h... $ECHO_C" >&6
+if test "${ac_cv_header_inttypes_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_inttypes_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_inttypes_h" >&5
+echo "${ECHO_T}$ac_cv_header_inttypes_h" >&6
+
+fi
+if test $ac_cv_header_inttypes_h = yes; then
+  INCLUDE_INTTYPES_H='#include <inttypes.h>'
+else
+  INCLUDE_INTTYPES_H=''
+fi
+
+
 
 
 echo "$as_me:$LINENO: checking for pid_t" >&5
@@ -19469,6 +19760,209 @@ _ACEOF
 	fi
 
 
+echo "$as_me:$LINENO: checking whether byte ordering is bigendian" >&5
+echo $ECHO_N "checking whether byte ordering is bigendian... $ECHO_C" >&6
+if test "${ac_cv_c_bigendian+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  # See if sys/param.h defines the BYTE_ORDER macro.
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/types.h>
+#include <sys/param.h>
+
+int
+main ()
+{
+#if !BYTE_ORDER || !BIG_ENDIAN || !LITTLE_ENDIAN
+ bogus endian macros
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  # It does; now see whether it defined to BIG_ENDIAN or not.
+cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/types.h>
+#include <sys/param.h>
+
+int
+main ()
+{
+#if BYTE_ORDER != BIG_ENDIAN
+ not big endian
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_c_bigendian=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_c_bigendian=no
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+# It does not; compile a test program.
+if test "$cross_compiling" = yes; then
+  # try to guess the endianness by grepping values into an object file
+  ac_cv_c_bigendian=unknown
+  cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+short ascii_mm[] = { 0x4249, 0x4765, 0x6E44, 0x6961, 0x6E53, 0x7953, 0 };
+short ascii_ii[] = { 0x694C, 0x5454, 0x656C, 0x6E45, 0x6944, 0x6E61, 0 };
+void _ascii () { char *s = (char *) ascii_mm; s = (char *) ascii_ii; }
+short ebcdic_ii[] = { 0x89D3, 0xE3E3, 0x8593, 0x95C5, 0x89C4, 0x9581, 0 };
+short ebcdic_mm[] = { 0xC2C9, 0xC785, 0x95C4, 0x8981, 0x95E2, 0xA8E2, 0 };
+void _ebcdic () { char *s = (char *) ebcdic_mm; s = (char *) ebcdic_ii; }
+int
+main ()
+{
+ _ascii (); _ebcdic ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+         { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  if grep BIGenDianSyS conftest.$ac_objext >/dev/null ; then
+  ac_cv_c_bigendian=yes
+fi
+if grep LiTTleEnDian conftest.$ac_objext >/dev/null ; then
+  if test "$ac_cv_c_bigendian" = unknown; then
+    ac_cv_c_bigendian=no
+  else
+    # finding both strings is unlikely to happen, but who knows?
+    ac_cv_c_bigendian=unknown
+  fi
+fi
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+else
+  cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+int
+main ()
+{
+  /* Are we little or big endian?  From Harbison&Steele.  */
+  union
+  {
+    long l;
+    char c[sizeof (long)];
+  } u;
+  u.l = 1;
+  exit (u.c[sizeof (long) - 1] == 1);
+}
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_c_bigendian=no
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+ac_cv_c_bigendian=yes
+fi
+rm -f core core.* *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+fi
+rm -f conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_c_bigendian" >&5
+echo "${ECHO_T}$ac_cv_c_bigendian" >&6
+case $ac_cv_c_bigendian in
+  yes)
+    ENDIAN=big
+ ;;
+  no)
+    ENDIAN=little
+ ;;
+  *)
+    { { echo "$as_me:$LINENO: error: unknown endianness
+presetting ac_cv_c_bigendian=no (or yes) will help" >&5
+echo "$as_me: error: unknown endianness
+presetting ac_cv_c_bigendian=no (or yes) will help" >&2;}
+   { (exit 1); exit 1; }; } ;;
+esac
+
+
 echo "$as_me:$LINENO: checking whether the compiler implements namespaces" >&5
 echo $ECHO_N "checking whether the compiler implements namespaces... $ECHO_C" >&6
 if test "${ac_cv_cxx_namespaces+set}" = set; then
@@ -19598,13 +20092,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_std_ext_hash_map" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_std_ext_hash_map" >&6
- if test "$ac_cv_cxx_have_std_ext_hash_map" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_STD_EXT_HASH_MAP
-_ACEOF
-
+ HAVE_STD_EXT_HASH_MAP=0
+ if test "$ac_cv_cxx_have_std_ext_hash_map" = yes
+ then
+   HAVE_STD_EXT_HASH_MAP=1
  fi
+
  echo "$as_me:$LINENO: checking whether the compiler has <ext/hash_map> defining template class __gnu_cxx::hash_map" >&5
 echo $ECHO_N "checking whether the compiler has <ext/hash_map> defining template class __gnu_cxx::hash_map... $ECHO_C" >&6
 if test "${ac_cv_cxx_have_gnu_ext_hash_map+set}" = set; then
@@ -19667,13 +20160,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_gnu_ext_hash_map" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_gnu_ext_hash_map" >&6
- if test "$ac_cv_cxx_have_gnu_ext_hash_map" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_GNU_EXT_HASH_MAP
-_ACEOF
-
+ HAVE_GNU_EXT_HASH_MAP=0
+ if test "$ac_cv_cxx_have_gnu_ext_hash_map" = yes
+ then
+   HAVE_GNU_EXT_HASH_MAP=1
  fi
+
  echo "$as_me:$LINENO: checking whether the compiler has <hash_map> defining template class ::hash_map" >&5
 echo $ECHO_N "checking whether the compiler has <hash_map> defining template class ::hash_map... $ECHO_C" >&6
 if test "${ac_cv_cxx_have_global_hash_map+set}" = set; then
@@ -19733,13 +20225,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_global_hash_map" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_global_hash_map" >&6
- if test "$ac_cv_cxx_have_global_hash_map" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_GLOBAL_HASH_MAP
-_ACEOF
-
+ HAVE_GLOBAL_HASH_MAP=0
+ if test "$ac_cv_cxx_have_global_hash_map" = yes
+ then
+   HAVE_GLOBAL_HASH_MAP=1
  fi
+
 echo "$as_me:$LINENO: checking whether the compiler has <ext/hash_set> defining template class std::hash_set" >&5
 echo $ECHO_N "checking whether the compiler has <ext/hash_set> defining template class std::hash_set... $ECHO_C" >&6
 if test "${ac_cv_cxx_have_std_ext_hash_set+set}" = set; then
@@ -19802,13 +20293,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_std_ext_hash_set" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_std_ext_hash_set" >&6
- if test "$ac_cv_cxx_have_std_ext_hash_set" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_STD_EXT_HASH_SET
-_ACEOF
-
+ HAVE_STD_EXT_HASH_SET=0
+ if test "$ac_cv_cxx_have_std_ext_hash_set" = yes
+ then
+   HAVE_STD_EXT_HASH_SET=1
  fi
+
  echo "$as_me:$LINENO: checking whether the compiler has <ext/hash_set> defining template class __gnu_cxx::hash_set" >&5
 echo $ECHO_N "checking whether the compiler has <ext/hash_set> defining template class __gnu_cxx::hash_set... $ECHO_C" >&6
 if test "${ac_cv_cxx_have_gnu_ext_hash_set+set}" = set; then
@@ -19871,13 +20361,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_gnu_ext_hash_set" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_gnu_ext_hash_set" >&6
- if test "$ac_cv_cxx_have_gnu_ext_hash_set" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_GNU_EXT_HASH_SET
-_ACEOF
-
+ HAVE_GNU_EXT_HASH_SET=0
+ if test "$ac_cv_cxx_have_gnu_ext_hash_set" = yes
+ then
+   HAVE_GNU_EXT_HASH_SET=1
  fi
+
  echo "$as_me:$LINENO: checking whether the compiler has <hash_set> defining template class ::hash_set" >&5
 echo $ECHO_N "checking whether the compiler has <hash_set> defining template class ::hash_set... $ECHO_C" >&6
 if test "${ac_cv_cxx_have_global_hash_set+set}" = set; then
@@ -19937,130 +20426,11 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_global_hash_set" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_global_hash_set" >&6
- if test "$ac_cv_cxx_have_global_hash_set" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_GLOBAL_HASH_SET
-_ACEOF
-
+ HAVE_GLOBAL_HASH_SET=0
+ if test "$ac_cv_cxx_have_global_hash_set" = yes
+ then
+   HAVE_GLOBAL_HASH_SET=1
  fi
-echo "$as_me:$LINENO: checking whether the compiler has ext/slist" >&5
-echo $ECHO_N "checking whether the compiler has ext/slist... $ECHO_C" >&6
-if test "${ac_cv_cxx_have_ext_slist+set}" = set; then
-  echo $ECHO_N "(cached) $ECHO_C" >&6
-else
-
-
-
-  ac_ext=cc
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  cat >conftest.$ac_ext <<_ACEOF
-#line $LINENO "configure"
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-#include <ext/slist>
-#ifdef HAVE_NAMESPACES
-using namespace std;
-#endif
-int
-main ()
-{
-slist<int> s; return 0;
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext
-if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
-  (eval $ac_compile) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-         { ac_try='test -s conftest.$ac_objext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_cxx_have_ext_slist=std
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_cxx_have_ext_slist=no
-fi
-rm -f conftest.$ac_objext conftest.$ac_ext
-  cat >conftest.$ac_ext <<_ACEOF
-#line $LINENO "configure"
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-#include <ext/slist>
-#ifdef HAVE_NAMESPACES
-using namespace __gnu_cxx;
-#endif
-int
-main ()
-{
-slist<int> s; return 0;
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext
-if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
-  (eval $ac_compile) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-         { ac_try='test -s conftest.$ac_objext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_cxx_have_ext_slist=gnu
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_cxx_have_ext_slist=no
-fi
-rm -f conftest.$ac_objext conftest.$ac_ext
-
-  ac_ext=c
-ac_cpp='$CPP $CPPFLAGS'
-ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_c_compiler_gnu
-
-
-fi
-echo "$as_me:$LINENO: result: $ac_cv_cxx_have_ext_slist" >&5
-echo "${ECHO_T}$ac_cv_cxx_have_ext_slist" >&6
-if test "$ac_cv_cxx_have_ext_slist" = std; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_EXT_SLIST std
-_ACEOF
-
-fi
-if test "$ac_cv_cxx_have_ext_slist" = gnu; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_EXT_SLIST gnu
-_ACEOF
-
-fi
 
 echo "$as_me:$LINENO: checking whether the compiler has the standard iterator" >&5
 echo $ECHO_N "checking whether the compiler has the standard iterator... $ECHO_C" >&6
@@ -20125,12 +20495,10 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_std_iterator" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_std_iterator" >&6
-if test "$ac_cv_cxx_have_std_iterator" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_STD_ITERATOR
-_ACEOF
-
+HAVE_STD_ITERATOR=0
+if test "$ac_cv_cxx_have_std_iterator" = yes
+then
+   HAVE_STD_ITERATOR=1
 fi
 
 echo "$as_me:$LINENO: checking whether the compiler has the bidirectional iterator" >&5
@@ -20196,12 +20564,10 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_bi_iterator" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_bi_iterator" >&6
-if test "$ac_cv_cxx_have_bi_iterator" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_BI_ITERATOR
-_ACEOF
-
+HAVE_BI_ITERATOR=0
+if test "$ac_cv_cxx_have_bi_iterator" = yes
+then
+   HAVE_BI_ITERATOR=1
 fi
 
 echo "$as_me:$LINENO: checking whether the compiler has forward iterators" >&5
@@ -20267,12 +20633,10 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 fi
 echo "$as_me:$LINENO: result: $ac_cv_cxx_have_fwd_iterator" >&5
 echo "${ECHO_T}$ac_cv_cxx_have_fwd_iterator" >&6
-if test "$ac_cv_cxx_have_fwd_iterator" = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_FWD_ITERATOR
-_ACEOF
-
+HAVE_FWD_ITERATOR=0
+if test "$ac_cv_cxx_have_fwd_iterator" = yes
+then
+   HAVE_FWD_ITERATOR=1
 fi
 
 
@@ -21234,7 +21598,8 @@ _ACEOF
 
 
 
-for ac_func in getcwd gettimeofday strdup strtoq strtoll
+
+for ac_func in getcwd gettimeofday strdup strtoq strtoll backtrace
 do
 as_ac_var=`echo "ac_cv_func_$ac_func" | $as_tr_sh`
 echo "$as_me:$LINENO: checking for $ac_func" >&5
@@ -21476,27 +21841,94 @@ if test ${enableval} = "no"
 then
 	if test -d /home/vadve/shared/benchmarks/speccpu2000/benchspec
 	then
-		SPEC_ROOT=/home/vadve/shared/benchmarks/speccpu2000/benchspec
+		SPEC2000_ROOT=/home/vadve/shared/benchmarks/speccpu2000/benchspec
 
-		USE_SPEC=USE_SPEC=1
+		USE_SPEC2000=USE_SPEC2000=1
 
 	else
-		USE_SPEC=
+		USE_SPEC2000=
 
 
 	fi
 else
 	if test ${enableval} = ""
 	then
-		SPEC_ROOT=/home/vadve/shared/benchmarks/speccpu2000/benchspec
+		SPEC2000_ROOT=/home/vadve/shared/benchmarks/speccpu2000/benchspec
 
 	else
-		SPEC_ROOT=${enableval}
+		SPEC2000_ROOT=${enableval}
 
 	fi
-	USE_SPEC=USE_SPEC=1
+	USE_SPEC2000=USE_SPEC2000=1
 
 fi
+
+# Check whether --enable-spec95 or --disable-spec95 was given.
+if test "${enable_spec95+set}" = set; then
+  enableval="$enable_spec95"
+
+else
+  enableval=no
+fi;
+if test ${enableval} = "no"
+then
+	if test -d /home/vadve/shared/benchmarks/spec95/benchspec
+	then
+		SPEC95_ROOT=/home/vadve/shared/benchmarks/spec95/benchspec
+
+		USE_SPEC95=USE_SPEC95=1
+
+	else
+		USE_SPEC95=
+
+
+	fi
+else
+	if test ${enableval} = ""
+	then
+		SPEC95_ROOT=/home/vadve/shared/benchmarks/spec95/benchspec
+
+	else
+		SPEC95_ROOT=${enableval}
+
+	fi
+	USE_SPEC95=USE_SPEC95=1
+
+fi
+
+# Check whether --enable-povray or --disable-povray was given.
+if test "${enable_povray+set}" = set; then
+  enableval="$enable_povray"
+
+else
+  enableval=no
+fi;
+if test ${enableval} = "no"
+then
+	if test -d /home/vadve/shared/benchmarks/povray31
+	then
+		POVRAY_ROOT=/home/vadve/shared/benchmarks/povray31
+
+		USE_POVRAY=USE_POVRAY=1
+
+	else
+		USE_POVRAY=
+
+
+	fi
+else
+	if test ${enableval} = ""
+	then
+		POVRAY_ROOT=/home/vadve/shared/benchmarks/povray31
+
+	else
+		POVRAY_ROOT=${enableval}
+
+	fi
+	USE_POVRAY=USE_POVRAY=1
+
+fi
+
 
 # Check whether --enable-precompiled_bytecode or --disable-precompiled_bytecode was given.
 if test "${enable_precompiled_bytecode+set}" = set; then
@@ -21595,10 +22027,10 @@ then
 	fi
 	rm conftest.c
 	llvmcc1path=`"$LLVM_GCC_CHECK" --print-prog-name=cc1`
-    LLVMCC1=$llvmcc1path
+	LLVMCC1=$llvmcc1path
 
 	llvmcc1pluspath=`"$LLVM_GCC_CHECK" --print-prog-name=cc1plus`
-    LLVMCC1PLUS=$llvmcc1pluspath
+	LLVMCC1PLUS=$llvmcc1pluspath
 
 fi
 echo "$as_me:$LINENO: result: $LLVM_GCC_SANE" >&5
@@ -21630,7 +22062,20 @@ else
 
 fi;
 
-          ac_config_files="$ac_config_files Makefile.config"
+echo "$as_me:$LINENO: checking for shared library suffix" >&5
+echo $ECHO_N "checking for shared library suffix... $ECHO_C" >&6
+eval "SHLIBEXT=$shrext"
+echo "$as_me:$LINENO: result: $SHLIBEXT" >&5
+echo "${ECHO_T}$SHLIBEXT" >&6
+SHLIBEXT=$SHLIBEXT
+
+
+cat >>confdefs.h <<_ACEOF
+#define SHLIBEXT "$SHLIBEXT"
+_ACEOF
+
+
+                                                            ac_config_files="$ac_config_files Makefile.config include/Support/DataTypes.h include/Support/ThreadSupport.h include/Support/hash_map include/Support/hash_set include/Support/iterator"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -22166,7 +22611,6 @@ ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/Makefile.programs`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.aa.Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.dsgraph.report`
-${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.micro.report`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.aa.report`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.example.Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.nightly.Makefile`
@@ -22177,10 +22621,12 @@ ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.dsgraph.Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.jit.report`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.typesafe.Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.dsgraph.gnuplot`
-${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.micro.Makefile`
+${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/TEST.vtl.Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/External/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/External/SPEC/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/External/SPEC/Makefile.spec`
+${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/External/SPEC/Makefile.spec2000`
+${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/External/SPEC/Makefile.spec95`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/MultiSource/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/MultiSource/Makefile.multisrc`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in`
@@ -22198,6 +22644,7 @@ ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/MultiSource/Benchmarks/F
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/SingleSource/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/SingleSource/Makefile.singlesrc`
+${srcdir}/autoconf/mkinstalldirs `dirname test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname tools/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname utils/Makefile`
 ${srcdir}/autoconf/mkinstalldirs `dirname projects/Makefile`
@@ -22212,6 +22659,11 @@ do
   case "$ac_config_target" in
   # Handling of arguments.
   "Makefile.config" ) CONFIG_FILES="$CONFIG_FILES Makefile.config" ;;
+  "include/Support/DataTypes.h" ) CONFIG_FILES="$CONFIG_FILES include/Support/DataTypes.h" ;;
+  "include/Support/ThreadSupport.h" ) CONFIG_FILES="$CONFIG_FILES include/Support/ThreadSupport.h" ;;
+  "include/Support/hash_map" ) CONFIG_FILES="$CONFIG_FILES include/Support/hash_map" ;;
+  "include/Support/hash_set" ) CONFIG_FILES="$CONFIG_FILES include/Support/hash_set" ;;
+  "include/Support/iterator" ) CONFIG_FILES="$CONFIG_FILES include/Support/iterator" ;;
   "Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS Makefile" ;;
   "Makefile.common" ) CONFIG_COMMANDS="$CONFIG_COMMANDS Makefile.common" ;;
   "lib/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS lib/Makefile" ;;
@@ -22224,7 +22676,6 @@ do
   "test/Programs/Makefile.programs" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/Makefile.programs" ;;
   "test/Programs/TEST.aa.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.aa.Makefile" ;;
   "test/Programs/TEST.dsgraph.report" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.dsgraph.report" ;;
-  "test/Programs/TEST.micro.report" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.micro.report" ;;
   "test/Programs/TEST.aa.report" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.aa.report" ;;
   "test/Programs/TEST.example.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.example.Makefile" ;;
   "test/Programs/TEST.nightly.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.nightly.Makefile" ;;
@@ -22235,10 +22686,12 @@ do
   "test/Programs/TEST.jit.report" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.jit.report" ;;
   "test/Programs/TEST.typesafe.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.typesafe.Makefile" ;;
   "test/Programs/TEST.dsgraph.gnuplot" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.dsgraph.gnuplot" ;;
-  "test/Programs/TEST.micro.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.micro.Makefile" ;;
+  "test/Programs/TEST.vtl.Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/TEST.vtl.Makefile" ;;
   "test/Programs/External/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/External/Makefile" ;;
   "test/Programs/External/SPEC/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/External/SPEC/Makefile" ;;
   "test/Programs/External/SPEC/Makefile.spec" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/External/SPEC/Makefile.spec" ;;
+  "test/Programs/External/SPEC/Makefile.spec2000" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/External/SPEC/Makefile.spec2000" ;;
+  "test/Programs/External/SPEC/Makefile.spec95" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/External/SPEC/Makefile.spec95" ;;
   "test/Programs/MultiSource/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/MultiSource/Makefile" ;;
   "test/Programs/MultiSource/Makefile.multisrc" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/MultiSource/Makefile.multisrc" ;;
   "test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in" ;;
@@ -22256,6 +22709,7 @@ do
   "test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in" ;;
   "test/Programs/SingleSource/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/SingleSource/Makefile" ;;
   "test/Programs/SingleSource/Makefile.singlesrc" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/SingleSource/Makefile.singlesrc" ;;
+  "test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile" ;;
   "tools/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS tools/Makefile" ;;
   "utils/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS utils/Makefile" ;;
   "projects/Makefile" ) CONFIG_COMMANDS="$CONFIG_COMMANDS projects/Makefile" ;;
@@ -22397,13 +22851,31 @@ s,@ac_ct_F77@,$ac_ct_F77,;t t
 s,@LIBTOOL@,$LIBTOOL,;t t
 s,@DOT@,$DOT,;t t
 s,@ETAGS@,$ETAGS,;t t
+s,@ETAGSFLAGS@,$ETAGSFLAGS,;t t
 s,@PYTHON@,$PYTHON,;t t
 s,@QMTEST@,$QMTEST,;t t
+s,@HAVE_PTHREAD_MUTEX_LOCK@,$HAVE_PTHREAD_MUTEX_LOCK,;t t
+s,@INCLUDE_SYS_TYPES_H@,$INCLUDE_SYS_TYPES_H,;t t
+s,@INCLUDE_INTTYPES_H@,$INCLUDE_INTTYPES_H,;t t
+s,@ENDIAN@,$ENDIAN,;t t
+s,@HAVE_STD_EXT_HASH_MAP@,$HAVE_STD_EXT_HASH_MAP,;t t
+s,@HAVE_GNU_EXT_HASH_MAP@,$HAVE_GNU_EXT_HASH_MAP,;t t
+s,@HAVE_GLOBAL_HASH_MAP@,$HAVE_GLOBAL_HASH_MAP,;t t
+s,@HAVE_STD_EXT_HASH_SET@,$HAVE_STD_EXT_HASH_SET,;t t
+s,@HAVE_GNU_EXT_HASH_SET@,$HAVE_GNU_EXT_HASH_SET,;t t
+s,@HAVE_GLOBAL_HASH_SET@,$HAVE_GLOBAL_HASH_SET,;t t
+s,@HAVE_STD_ITERATOR@,$HAVE_STD_ITERATOR,;t t
+s,@HAVE_BI_ITERATOR@,$HAVE_BI_ITERATOR,;t t
+s,@HAVE_FWD_ITERATOR@,$HAVE_FWD_ITERATOR,;t t
 s,@ALLOCA@,$ALLOCA,;t t
 s,@MMAP_FILE@,$MMAP_FILE,;t t
 s,@ENABLE_OPTIMIZED@,$ENABLE_OPTIMIZED,;t t
-s,@SPEC_ROOT@,$SPEC_ROOT,;t t
-s,@USE_SPEC@,$USE_SPEC,;t t
+s,@SPEC2000_ROOT@,$SPEC2000_ROOT,;t t
+s,@USE_SPEC2000@,$USE_SPEC2000,;t t
+s,@SPEC95_ROOT@,$SPEC95_ROOT,;t t
+s,@USE_SPEC95@,$USE_SPEC95,;t t
+s,@POVRAY_ROOT@,$POVRAY_ROOT,;t t
+s,@USE_POVRAY@,$USE_POVRAY,;t t
 s,@UPB@,$UPB,;t t
 s,@DISABLE_LLC_DIFFS@,$DISABLE_LLC_DIFFS,;t t
 s,@JIT@,$JIT,;t t
@@ -22411,6 +22883,7 @@ s,@LLVMCC1@,$LLVMCC1,;t t
 s,@LLVMCC1PLUS@,$LLVMCC1PLUS,;t t
 s,@BCR@,$BCR,;t t
 s,@PAPIDIR@,$PAPIDIR,;t t
+s,@SHLIBEXT@,$SHLIBEXT,;t t
 s,@LIBOBJS@,$LIBOBJS,;t t
 s,@LTLIBOBJS@,$LTLIBOBJS,;t t
 CEOF
@@ -22908,7 +23381,6 @@ echo "$as_me: executing $ac_dest commands" >&6;}
     test/Programs/Makefile.programs ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/Makefile.programs test/Programs/Makefile.programs ;;
     test/Programs/TEST.aa.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.aa.Makefile test/Programs/TEST.aa.Makefile ;;
     test/Programs/TEST.dsgraph.report ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.dsgraph.report test/Programs/TEST.dsgraph.report ;;
-    test/Programs/TEST.micro.report ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.micro.report test/Programs/TEST.micro.report ;;
     test/Programs/TEST.aa.report ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.aa.report test/Programs/TEST.aa.report ;;
     test/Programs/TEST.example.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.example.Makefile test/Programs/TEST.example.Makefile ;;
     test/Programs/TEST.nightly.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.nightly.Makefile test/Programs/TEST.nightly.Makefile ;;
@@ -22919,10 +23391,12 @@ echo "$as_me: executing $ac_dest commands" >&6;}
     test/Programs/TEST.jit.report ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.jit.report test/Programs/TEST.jit.report ;;
     test/Programs/TEST.typesafe.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.typesafe.Makefile test/Programs/TEST.typesafe.Makefile ;;
     test/Programs/TEST.dsgraph.gnuplot ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.dsgraph.gnuplot test/Programs/TEST.dsgraph.gnuplot ;;
-    test/Programs/TEST.micro.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.micro.Makefile test/Programs/TEST.micro.Makefile ;;
+    test/Programs/TEST.vtl.Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/TEST.vtl.Makefile test/Programs/TEST.vtl.Makefile ;;
     test/Programs/External/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/External/Makefile test/Programs/External/Makefile ;;
     test/Programs/External/SPEC/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/External/SPEC/Makefile test/Programs/External/SPEC/Makefile ;;
     test/Programs/External/SPEC/Makefile.spec ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/External/SPEC/Makefile.spec test/Programs/External/SPEC/Makefile.spec ;;
+    test/Programs/External/SPEC/Makefile.spec2000 ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/External/SPEC/Makefile.spec2000 test/Programs/External/SPEC/Makefile.spec2000 ;;
+    test/Programs/External/SPEC/Makefile.spec95 ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/External/SPEC/Makefile.spec95 test/Programs/External/SPEC/Makefile.spec95 ;;
     test/Programs/MultiSource/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/MultiSource/Makefile test/Programs/MultiSource/Makefile ;;
     test/Programs/MultiSource/Makefile.multisrc ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/MultiSource/Makefile.multisrc test/Programs/MultiSource/Makefile.multisrc ;;
     test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in ;;
@@ -22940,6 +23414,7 @@ echo "$as_me: executing $ac_dest commands" >&6;}
     test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in ;;
     test/Programs/SingleSource/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/SingleSource/Makefile test/Programs/SingleSource/Makefile ;;
     test/Programs/SingleSource/Makefile.singlesrc ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/SingleSource/Makefile.singlesrc test/Programs/SingleSource/Makefile.singlesrc ;;
+    test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile ;;
     tools/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/tools/Makefile tools/Makefile ;;
     utils/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/utils/Makefile utils/Makefile ;;
     projects/Makefile ) ${SHELL} ${srcdir}/autoconf/install-sh -c ${srcdir}/projects/Makefile projects/Makefile ;;
@@ -23136,3 +23611,4 @@ echo "$as_me: WARNING: ***** Runtime libraries (in llvm/runtime) will not be bui
 	{ echo "$as_me:$LINENO: WARNING: ***** but you should be able to build the llvm tools." >&5
 echo "$as_me: WARNING: ***** but you should be able to build the llvm tools." >&2;}
 fi
+

@@ -17,6 +17,7 @@
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Instructions.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/InstVisitor.h"
 #include "llvm/Target/TargetData.h"
@@ -37,7 +38,6 @@ X("datastructure", "Local Data Structure Analysis");
 static cl::opt<bool>
 TrackIntegersAsPointers("dsa-track-integers",
          cl::desc("If this is set, track integers as potential pointers"));
-                        
 
 namespace llvm {
 namespace DS {
@@ -72,7 +72,7 @@ namespace {
   class GraphBuilder : InstVisitor<GraphBuilder> {
     DSGraph &G;
     DSNodeHandle *RetNode;               // Node that gets returned...
-    DSGraph::ScalarMapTy &ScalarMap;
+    DSScalarMap &ScalarMap;
     std::vector<DSCallSite> *FunctionCalls;
 
   public:
@@ -171,12 +171,23 @@ DSGraph::DSGraph(const TargetData &td, Function &F, DSGraph *GG)
 #endif
 
   // Remove all integral constants from the scalarmap!
-  for (ScalarMapTy::iterator I = ScalarMap.begin(); I != ScalarMap.end();)
-    if (isa<ConstantIntegral>(I->first)) {
-      ScalarMapTy::iterator J = I++;
-      ScalarMap.erase(J);
-    } else
+  for (DSScalarMap::iterator I = ScalarMap.begin(); I != ScalarMap.end();)
+    if (isa<ConstantIntegral>(I->first))
+      ScalarMap.erase(I++);
+    else
       ++I;
+
+  // If there are any constant globals referenced in this function, merge their
+  // initializers into the local graph from the globals graph.
+  if (ScalarMap.global_begin() != ScalarMap.global_end()) {
+    ReachabilityCloner RC(*this, *GG, 0);
+    
+    for (DSScalarMap::global_iterator I = ScalarMap.global_begin();
+         I != ScalarMap.global_end(); ++I)
+      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(*I))
+        if (GV->isConstant())
+          RC.merge(ScalarMap[GV], GG->ScalarMap[GV]);
+  }
 
   markIncompleteNodes(DSGraph::MarkFormalArgs);
 
@@ -211,7 +222,7 @@ DSNodeHandle GraphBuilder::getValueDest(Value &Val) {
         NH = getValueDest(*CE->getOperand(0));
       else if (CE->getOpcode() == Instruction::GetElementPtr) {
         visitGetElementPtrInst(*CE);
-        DSGraph::ScalarMapTy::iterator I = ScalarMap.find(CE);
+        DSScalarMap::iterator I = ScalarMap.find(CE);
         assert(I != ScalarMap.end() && "GEP didn't get processed right?");
         NH = I->second;
       } else {
@@ -372,6 +383,10 @@ void GraphBuilder::visitGetElementPtrInst(User &GEP) {
     if (const StructType *STy = dyn_cast<StructType>(*I)) {
       unsigned FieldNo = cast<ConstantUInt>(I.getOperand())->getValue();
       Offset += TD.getStructLayout(STy)->MemberOffsets[FieldNo];
+    } else if (const PointerType *PTy = dyn_cast<PointerType>(*I)) {
+      if (!isa<Constant>(I.getOperand()) ||
+          !cast<Constant>(I.getOperand())->isNullValue())
+        Value.getNode()->setArrayMarker();
     }
 
 
@@ -454,42 +469,351 @@ void GraphBuilder::visitInvokeInst(InvokeInst &II) {
 }
 
 void GraphBuilder::visitCallSite(CallSite CS) {
+  Value *Callee = CS.getCalledValue();
+  if (ConstantPointerRef *CPR = dyn_cast<ConstantPointerRef>(Callee))
+    Callee = CPR->getValue();
+
   // Special case handling of certain libc allocation functions here.
-  if (Function *F = CS.getCalledFunction())
+  if (Function *F = dyn_cast<Function>(Callee))
     if (F->isExternal())
-      if (F->getName() == "calloc") {
-        setDestTo(*CS.getInstruction(),
-                  createNode()->setHeapNodeMarker()->setModifiedMarker());
-        return;
-      } else if (F->getName() == "realloc") {
-        DSNodeHandle RetNH = getValueDest(*CS.getInstruction());
-        RetNH.mergeWith(getValueDest(**CS.arg_begin()));
-        if (DSNode *N = RetNH.getNode())
-          N->setHeapNodeMarker()->setModifiedMarker()->setReadMarker();
-        return;
-      } else if (F->getName() == "memset") {
-        // Merge the first argument with the return value, and mark the memory
+      switch (F->getIntrinsicID()) {
+      case Intrinsic::memmove:
+      case Intrinsic::memcpy: {
+        // Merge the first & second arguments, and mark the memory read and
         // modified.
-        DSNodeHandle RetNH = getValueDest(*CS.getInstruction());
-        RetNH.mergeWith(getValueDest(**CS.arg_begin()));
-        if (DSNode *N = RetNH.getNode())
-          N->setModifiedMarker();
-        return;
-      } else if (F->getName() == "memmove") {
-        // Merge the first & second arguments with the result, and mark the
-        // memory read and modified.
-        DSNodeHandle RetNH = getValueDest(*CS.getInstruction());
-        RetNH.mergeWith(getValueDest(**CS.arg_begin()));
+        DSNodeHandle RetNH = getValueDest(**CS.arg_begin());
         RetNH.mergeWith(getValueDest(**(CS.arg_begin()+1)));
         if (DSNode *N = RetNH.getNode())
           N->setModifiedMarker()->setReadMarker();
         return;
-      } else if (F->getName() == "bzero") {
+      }
+      case Intrinsic::memset:
         // Mark the memory modified.
-        DSNodeHandle H = getValueDest(**CS.arg_begin());
-        if (DSNode *N = H.getNode())
+        if (DSNode *N = getValueDest(**CS.arg_begin()).getNode())
           N->setModifiedMarker();
         return;
+      default:
+        if (F->getName() == "calloc") {
+          setDestTo(*CS.getInstruction(),
+                    createNode()->setHeapNodeMarker()->setModifiedMarker());
+          return;
+        } else if (F->getName() == "realloc") {
+          DSNodeHandle RetNH = getValueDest(*CS.getInstruction());
+          RetNH.mergeWith(getValueDest(**CS.arg_begin()));
+          if (DSNode *N = RetNH.getNode())
+            N->setHeapNodeMarker()->setModifiedMarker()->setReadMarker();
+          return;
+        } else if (F->getName() == "memmove") {
+          // Merge the first & second arguments, and mark the memory read and
+          // modified.
+          DSNodeHandle RetNH = getValueDest(**CS.arg_begin());
+          RetNH.mergeWith(getValueDest(**(CS.arg_begin()+1)));
+          if (DSNode *N = RetNH.getNode())
+            N->setModifiedMarker()->setReadMarker();
+          return;
+
+        } else if (F->getName() == "atoi" || F->getName() == "atof" ||
+                   F->getName() == "atol" || F->getName() == "atoll" ||
+                   F->getName() == "remove" || F->getName() == "unlink" ||
+                   F->getName() == "rename" || F->getName() == "memcmp" ||
+                   F->getName() == "strcmp" || F->getName() == "strncmp" ||
+                   F->getName() == "execl" || F->getName() == "execlp" ||
+                   F->getName() == "execle" || F->getName() == "execv" ||
+                   F->getName() == "execvp" || F->getName() == "chmod" ||
+                   F->getName() == "puts" || F->getName() == "write" ||
+                   F->getName() == "open" || F->getName() == "create" ||
+                   F->getName() == "truncate" || F->getName() == "chdir" ||
+                   F->getName() == "mkdir" || F->getName() == "rmdir") {
+          // These functions read all of their pointer operands.
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI) {
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker();   
+          }
+          return;
+        } else if (F->getName() == "read" || F->getName() == "pipe" ||
+                   F->getName() == "wait" || F->getName() == "time") {
+          // These functions write all of their pointer operands.
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI) {
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setModifiedMarker();   
+          }
+          return;
+        } else if (F->getName() == "stat" || F->getName() == "fstat" ||
+                   F->getName() == "lstat") {
+          // These functions read their first operand if its a pointer.
+          CallSite::arg_iterator AI = CS.arg_begin();
+          if (isPointerType((*AI)->getType())) {
+            DSNodeHandle Path = getValueDest(**AI);
+            if (DSNode *N = Path.getNode()) N->setReadMarker();
+          }
+
+          // Then they write into the stat buffer.
+          DSNodeHandle StatBuf = getValueDest(**++AI);
+          if (DSNode *N = StatBuf.getNode()) {
+            N->setModifiedMarker();
+            const Type *StatTy = F->getFunctionType()->getParamType(1);
+            if (const PointerType *PTy = dyn_cast<PointerType>(StatTy))
+              N->mergeTypeInfo(PTy->getElementType(), StatBuf.getOffset());
+          }
+          return;
+        } else if (F->getName() == "fopen" || F->getName() == "fdopen" ||
+                   F->getName() == "freopen") {
+          // These functions read all of their pointer operands.
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI)
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker();
+          
+          // fopen allocates in an unknown way and writes to the file
+          // descriptor.  Also, merge the allocated type into the node.
+          DSNodeHandle Result = getValueDest(*CS.getInstruction());
+          if (DSNode *N = Result.getNode()) {
+            N->setModifiedMarker()->setUnknownNodeMarker();
+            const Type *RetTy = F->getFunctionType()->getReturnType();
+            if (const PointerType *PTy = dyn_cast<PointerType>(RetTy))
+              N->mergeTypeInfo(PTy->getElementType(), Result.getOffset());
+          }
+
+          // If this is freopen, merge the file descriptor passed in with the
+          // result.
+          Result.mergeWith(getValueDest(**--CS.arg_end()));
+
+          return;
+        } else if (F->getName() == "fclose" && CS.arg_end()-CS.arg_begin() ==1){
+          // fclose reads and deallocates the memory in an unknown way for the
+          // file descriptor.  It merges the FILE type into the descriptor.
+          DSNodeHandle H = getValueDest(**CS.arg_begin());
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setUnknownNodeMarker();
+            const Type *ArgTy = F->getFunctionType()->getParamType(0);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+          return;
+        } else if (CS.arg_end()-CS.arg_begin() == 1 && 
+                   (F->getName() == "fflush" || F->getName() == "feof" ||
+                    F->getName() == "fileno" || F->getName() == "clearerr" ||
+                    F->getName() == "rewind" || F->getName() == "ftell" ||
+                    F->getName() == "ferror" || F->getName() == "fgetc" ||
+                    F->getName() == "fgetc" || F->getName() == "_IO_getc")) {
+          // fflush reads and writes the memory for the file descriptor.  It
+          // merges the FILE type into the descriptor.
+          DSNodeHandle H = getValueDest(**CS.arg_begin());
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setModifiedMarker();
+          
+            const Type *ArgTy = F->getFunctionType()->getParamType(0);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+          return;
+        } else if (CS.arg_end()-CS.arg_begin() == 4 && 
+                   (F->getName() == "fwrite" || F->getName() == "fread")) {
+          // fread writes the first operand, fwrite reads it.  They both
+          // read/write the FILE descriptor, and merges the FILE type.
+          DSNodeHandle H = getValueDest(**--CS.arg_end());
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setModifiedMarker();
+            const Type *ArgTy = F->getFunctionType()->getParamType(3);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+
+          H = getValueDest(**CS.arg_begin());
+          if (DSNode *N = H.getNode())
+            if (F->getName() == "fwrite")
+              N->setReadMarker();
+            else
+              N->setModifiedMarker();
+          return;
+        } else if (F->getName() == "fgets" && CS.arg_end()-CS.arg_begin() == 3){
+          // fgets reads and writes the memory for the file descriptor.  It
+          // merges the FILE type into the descriptor, and writes to the
+          // argument.  It returns the argument as well.
+          CallSite::arg_iterator AI = CS.arg_begin();
+          DSNodeHandle H = getValueDest(**AI);
+          if (DSNode *N = H.getNode())
+            N->setModifiedMarker();                        // Writes buffer
+          H.mergeWith(getValueDest(*CS.getInstruction())); // Returns buffer
+          ++AI; ++AI;
+
+          // Reads and writes file descriptor, merge in FILE type.
+          H = getValueDest(**AI);
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setModifiedMarker();
+            const Type *ArgTy = F->getFunctionType()->getParamType(2);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+          return;
+        } else if (F->getName() == "ungetc" || F->getName() == "fputc" ||
+                   F->getName() == "fputs" || F->getName() == "putc" ||
+                   F->getName() == "ftell" || F->getName() == "rewind" ||
+                   F->getName() == "_IO_putc") {
+          // These functions read and write the memory for the file descriptor,
+          // which is passes as the last argument.
+          DSNodeHandle H = getValueDest(**--CS.arg_end());
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setModifiedMarker();
+            const Type *ArgTy = *--F->getFunctionType()->param_end();
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+
+          // Any pointer arguments are read.
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI)
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker();   
+          return;
+        } else if (F->getName() == "fseek" || F->getName() == "fgetpos" ||
+                   F->getName() == "fsetpos") {
+          // These functions read and write the memory for the file descriptor,
+          // and read/write all other arguments.
+          DSNodeHandle H = getValueDest(**CS.arg_begin());
+          if (DSNode *N = H.getNode()) {
+            const Type *ArgTy = *--F->getFunctionType()->param_end();
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+
+          // Any pointer arguments are read.
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI)
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker()->setModifiedMarker();
+          return;
+        } else if (F->getName() == "printf" || F->getName() == "fprintf" ||
+                   F->getName() == "sprintf") {
+          CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+
+          if (F->getName() == "fprintf") {
+            // fprintf reads and writes the FILE argument, and applies the type
+            // to it.
+            DSNodeHandle H = getValueDest(**AI);
+            if (DSNode *N = H.getNode()) {
+              N->setModifiedMarker();
+              const Type *ArgTy = (*AI)->getType();
+              if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+                N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+            }
+          } else if (F->getName() == "sprintf") {
+            // sprintf writes the first string argument.
+            DSNodeHandle H = getValueDest(**AI++);
+            if (DSNode *N = H.getNode()) {
+              N->setModifiedMarker();
+              const Type *ArgTy = (*AI)->getType();
+              if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+                N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+            }
+          }
+
+          for (; AI != E; ++AI) {
+            // printf reads all pointer arguments.
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker();   
+          }
+          return;
+        } else if (F->getName() == "scanf" || F->getName() == "fscanf" ||
+                   F->getName() == "sscanf") {
+          CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+
+          if (F->getName() == "fscanf") {
+            // fscanf reads and writes the FILE argument, and applies the type
+            // to it.
+            DSNodeHandle H = getValueDest(**AI);
+            if (DSNode *N = H.getNode()) {
+              N->setReadMarker();
+              const Type *ArgTy = (*AI)->getType();
+              if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+                N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+            }
+          } else if (F->getName() == "sscanf") {
+            // sscanf reads the first string argument.
+            DSNodeHandle H = getValueDest(**AI++);
+            if (DSNode *N = H.getNode()) {
+              N->setReadMarker();
+              const Type *ArgTy = (*AI)->getType();
+              if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+                N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+            }
+          }
+
+          for (; AI != E; ++AI) {
+            // scanf writes all pointer arguments.
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setModifiedMarker();   
+          }
+          return;
+        } else if (F->getName() == "strtok") {
+          // strtok reads and writes the first argument, returning it.  It reads
+          // its second arg.  FIXME: strtok also modifies some hidden static
+          // data.  Someday this might matter.
+          CallSite::arg_iterator AI = CS.arg_begin();
+          DSNodeHandle H = getValueDest(**AI++);
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker()->setModifiedMarker();      // Reads/Writes buffer
+            const Type *ArgTy = F->getFunctionType()->getParamType(0);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+          H.mergeWith(getValueDest(*CS.getInstruction())); // Returns buffer
+
+          H = getValueDest(**AI);       // Reads delimiter
+          if (DSNode *N = H.getNode()) {
+            N->setReadMarker();
+            const Type *ArgTy = F->getFunctionType()->getParamType(1);
+            if (const PointerType *PTy = dyn_cast<PointerType>(ArgTy))
+              N->mergeTypeInfo(PTy->getElementType(), H.getOffset());
+          }
+          return;
+        } else if (F->getName() == "strchr" || F->getName() == "strrchr" ||
+                   F->getName() == "strstr") {
+          // These read their arguments, and return the first one
+          DSNodeHandle H = getValueDest(**CS.arg_begin());
+          H.mergeWith(getValueDest(*CS.getInstruction())); // Returns buffer
+
+          for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+               AI != E; ++AI)
+            if (isPointerType((*AI)->getType()))
+              if (DSNode *N = getValueDest(**AI).getNode())
+                N->setReadMarker();
+    
+          if (DSNode *N = H.getNode())
+            N->setReadMarker();
+          return;
+        } else if (F->getName() == "modf" && CS.arg_end()-CS.arg_begin() == 2) {
+          // This writes its second argument, and forces it to double.
+          DSNodeHandle H = getValueDest(**--CS.arg_end());
+          if (DSNode *N = H.getNode()) {
+            N->setModifiedMarker();
+            N->mergeTypeInfo(Type::DoubleTy, H.getOffset());
+          }
+          return;
+        } else {
+          // Unknown function, warn if it returns a pointer type or takes a
+          // pointer argument.
+          bool Warn = isPointerType(CS.getInstruction()->getType());
+          if (!Warn)
+            for (CallSite::arg_iterator I = CS.arg_begin(), E = CS.arg_end();
+                 I != E; ++I)
+              if (isPointerType((*I)->getType())) {
+                Warn = true;
+                break;
+              }
+          if (Warn)
+            std::cerr << "WARNING: Call to unknown external function '"
+                      << F->getName() << "' will cause pessimistic results!\n";
+        }
       }
 
 
@@ -499,12 +823,11 @@ void GraphBuilder::visitCallSite(CallSite CS) {
   if (isPointerType(I->getType()))
     RetVal = getValueDest(*I);
 
-  DSNode *Callee = 0;
-  if (DisableDirectCallOpt || !isa<Function>(CS.getCalledValue())) {
-    Callee = getValueDest(*CS.getCalledValue()).getNode();
-    if (Callee == 0) {
-      std::cerr << "WARNING: Program is calling through a null pointer?\n"
-                << *I;
+  DSNode *CalleeNode = 0;
+  if (DisableDirectCallOpt || !isa<Function>(Callee)) {
+    CalleeNode = getValueDest(*Callee).getNode();
+    if (CalleeNode == 0) {
+      std::cerr << "WARNING: Program is calling through a null pointer?\n"<< *I;
       return;  // Calling a null pointer?
     }
   }
@@ -518,18 +841,17 @@ void GraphBuilder::visitCallSite(CallSite CS) {
       Args.push_back(getValueDest(**I));
 
   // Add a new function call entry...
-  if (Callee)
-    FunctionCalls->push_back(DSCallSite(CS, RetVal, Callee, Args));
+  if (CalleeNode)
+    FunctionCalls->push_back(DSCallSite(CS, RetVal, CalleeNode, Args));
   else
-    FunctionCalls->push_back(DSCallSite(CS, RetVal, CS.getCalledFunction(),
+    FunctionCalls->push_back(DSCallSite(CS, RetVal, cast<Function>(Callee),
                                         Args));
 }
 
 void GraphBuilder::visitFreeInst(FreeInst &FI) {
   // Mark that the node is written to...
-  DSNode *N = getValueDest(*FI.getOperand(0)).getNode();
-  N->setModifiedMarker();
-  N->setHeapNodeMarker();
+  if (DSNode *N = getValueDest(*FI.getOperand(0)).getNode())
+    N->setModifiedMarker()->setHeapNodeMarker();
 }
 
 /// Handle casts...
@@ -594,6 +916,8 @@ void GraphBuilder::MergeConstantInitIntoNode(DSNodeHandle &NH, Constant *C) {
       DSNodeHandle NewNH(NH.getNode(), NH.getOffset()+SL->MemberOffsets[i]);
       MergeConstantInitIntoNode(NewNH, cast<Constant>(CS->getOperand(i)));
     }
+  } else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(C)) {
+    // Noop
   } else {
     assert(0 && "Unknown constant type!");
   }
@@ -612,20 +936,22 @@ bool LocalDataStructures::run(Module &M) {
 
   const TargetData &TD = getAnalysis<TargetData>();
 
+  {
+    GraphBuilder GGB(*GlobalsGraph);
+    
+    // Add initializers for all of the globals to the globals graph...
+    for (Module::giterator I = M.gbegin(), E = M.gend(); I != E; ++I)
+      if (!I->isExternal())
+        GGB.mergeInGlobalInitializer(I);
+  }
+
   // Calculate all of the graphs...
   for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I)
     if (!I->isExternal())
       DSInfo.insert(std::make_pair(I, new DSGraph(TD, *I, GlobalsGraph)));
 
-  GraphBuilder GGB(*GlobalsGraph);
-
-  // Add initializers for all of the globals to the globals graph...
-  for (Module::giterator I = M.gbegin(), E = M.gend(); I != E; ++I)
-    if (!I->isExternal())
-      GGB.mergeInGlobalInitializer(I);
-
-  GlobalsGraph->markIncompleteNodes(DSGraph::MarkFormalArgs);
   GlobalsGraph->removeTriviallyDeadNodes();
+  GlobalsGraph->markIncompleteNodes(DSGraph::MarkFormalArgs);
   return false;
 }
 

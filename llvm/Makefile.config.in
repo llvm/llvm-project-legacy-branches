@@ -11,6 +11,9 @@ OS=@OS@
 # Target hardware architecture
 ARCH=@ARCH@
 
+# Endian-ness of the target
+ENDIAN=@ENDIAN@
+
 # Path to the C++ compiler to use.  This is an optional setting, which defaults
 # to whatever your gmake defaults to.
 #
@@ -48,6 +51,7 @@ MV      = mv
 INSTALL = @INSTALL@
 DOT     = @DOT@
 ETAGS   = @ETAGS@
+ETAGSFLAGS = @ETAGSFLAGS@
 
 # Determine the target for which LLVM should generate code.
 LLVMGCCARCH := @target@/3.4-llvm
@@ -80,14 +84,18 @@ LLVMGCCDIR := @LLVMGCCDIR@
 BYTECODE_REPOSITORY := @BCR@
 
 # SPEC benchmarks:
-#	Set the USE_SPEC variable to enable the use of the SPEC benchmarks.
+#	If these are set then run the SPEC benchmarks.
 #	You must provide the SPEC benchmarks on your own.
-@USE_SPEC@
+@USE_SPEC2000@
+@USE_SPEC95@
 
-# Path to the SPEC benchmarks.  If you have the SPEC benchmarks, place the
-# path here.
-#SPEC_ROOT := /home/vadve/shared/benchmarks/speccpu2000/benchspec
-SPEC_ROOT := @SPEC_ROOT@
+# Path to the SPEC benchmarks.
+SPEC2000_ROOT := @SPEC2000_ROOT@
+SPEC95_ROOT := @SPEC95_ROOT@
+
+# Path to the Povray source code.
+@USE_POVRAY@
+POVRAY_ROOT := @POVRAY_ROOT@
 
 # Path to the PAPI code.  This is used by the reoptimizer only.
 #PAPIDIR := /home/vadve/shared/papi-2.3.4.1
@@ -114,6 +122,9 @@ PAPIDIR := @PAPIDIR@
 
 # Disable LLC diffs for testing.
 @DISABLE_LLC_DIFFS@
+
+# Shared library extension for this platform.
+SHLIBEXT = @SHLIBEXT@
 
 ###########################################################################
 # Directory Configuration
@@ -183,6 +194,7 @@ sysconfdir = @sysconfdir@
 sharedstatedir = @sharedstatedir@ 
 localstatedir = @localstatedir@
 libdir = @libdir@
+bytecode_libdir = $(LLVMGCCDIR)/bytecode-libs
 includedir = @includedir@
 infodir = @infodir@
 mandir = @mandir@

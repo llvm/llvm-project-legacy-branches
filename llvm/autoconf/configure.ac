@@ -40,7 +40,6 @@ AC_CONFIG_MAKEFILE(test/Programs/Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/Makefile.programs)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.aa.Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.dsgraph.report)
-AC_CONFIG_MAKEFILE(test/Programs/TEST.micro.report)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.aa.report)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.example.Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.nightly.Makefile)
@@ -51,10 +50,12 @@ AC_CONFIG_MAKEFILE(test/Programs/TEST.dsgraph.Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.jit.report)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.typesafe.Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/TEST.dsgraph.gnuplot)
-AC_CONFIG_MAKEFILE(test/Programs/TEST.micro.Makefile)
+AC_CONFIG_MAKEFILE(test/Programs/TEST.vtl.Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/External/Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/External/SPEC/Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/External/SPEC/Makefile.spec)
+AC_CONFIG_MAKEFILE(test/Programs/External/SPEC/Makefile.spec2000)
+AC_CONFIG_MAKEFILE(test/Programs/External/SPEC/Makefile.spec95)
 AC_CONFIG_MAKEFILE(test/Programs/MultiSource/Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/MultiSource/Makefile.multisrc)
 AC_CONFIG_MAKEFILE(test/Programs/MultiSource/Benchmarks/FreeBench/analyzer/test.in)
@@ -72,6 +73,7 @@ AC_CONFIG_MAKEFILE(test/Programs/MultiSource/Benchmarks/FreeBench/pifft/Makefile
 AC_CONFIG_MAKEFILE(test/Programs/MultiSource/Benchmarks/FreeBench/pifft/test.in)
 AC_CONFIG_MAKEFILE(test/Programs/SingleSource/Makefile)
 AC_CONFIG_MAKEFILE(test/Programs/SingleSource/Makefile.singlesrc)
+AC_CONFIG_MAKEFILE(test/Programs/SingleSource/UnitTests/SetjmpLongjmp/Makefile)
 AC_CONFIG_MAKEFILE(tools/Makefile)
 AC_CONFIG_MAKEFILE(utils/Makefile)
 AC_CONFIG_MAKEFILE(projects/Makefile)
@@ -169,6 +171,14 @@ AC_PROG_LIBTOOL
 dnl Checks for tools we can get away with not having:
 AC_PATH_PROG(DOT,[dot],[true dot])
 AC_PATH_PROG(ETAGS,[etags],[true etags])
+dnl Check if we know how to tell etags we are using C++:
+etags_version=`$ETAGS --version 2>&1`
+case "$etags_version" in
+	*[Ee]xuberant*) ETAGSFLAGS="--language-force=c++" ;;
+	*GNU\ Emacs*) ETAGSFLAGS="-l c++" ;;
+	*) ETAGSFLAGS="" ;;
+esac
+AC_SUBST(ETAGSFLAGS,$ETAGSFLAGS)
 AC_PATH_PROG(PYTHON,[python],[true python])
 if test "$PYTHON" = "false"
 then
@@ -213,7 +223,8 @@ AC_SEARCH_LIBS(mallinfo,malloc,AC_DEFINE([HAVE_MALLINFO],[1],[Define if mallinfo
 
 dnl pthread locking functions are optional - but llvm will not be thread-safe
 dnl without locks.
-AC_SEARCH_LIBS(pthread_mutex_lock,pthread,AC_DEFINE(HAVE_PTHREAD_MUTEX_LOCK,1,[Define if PThread mutexes (e.g., pthread_mutex_lock) are available in the system's thread library.]))
+AC_SEARCH_LIBS(pthread_mutex_lock,pthread,HAVE_PTHREAD_MUTEX_LOCK=1,HAVE_PTHREAD_MUTEX_LOCK=0)
+AC_SUBST(HAVE_PTHREAD_MUTEX_LOCK)
 
 dnl Checks for header files.
 dnl We don't check for ancient stuff or things that are guaranteed to be there
@@ -222,7 +233,19 @@ AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
 
 dnl Checks for POSIX and other various system-specific header files
-AC_CHECK_HEADERS(fcntl.h limits.h sys/time.h unistd.h malloc.h sys/mman.h sys/resource.h dlfcn.h link.h)
+AC_CHECK_HEADERS(fcntl.h limits.h sys/time.h unistd.h malloc.h sys/mman.h sys/resource.h dlfcn.h link.h execinfo.h)
+
+dnl Check for things that need to be included in public headers, and so
+dnl for which we may not have access to a HAVE_* preprocessor #define.
+dnl (primarily used in DataTypes.h)
+AC_CHECK_HEADER([sys/types.h],
+                [INCLUDE_SYS_TYPES_H='#include <sys/types.h>'],
+                [INCLUDE_SYS_TYPES_H=''])
+AC_SUBST(INCLUDE_SYS_TYPES_H)
+AC_CHECK_HEADER([inttypes.h],
+                [INCLUDE_INTTYPES_H='#include <inttypes.h>'],
+                [INCLUDE_INTTYPES_H=''])
+AC_SUBST(INCLUDE_INTTYPES_H)
 
 dnl Check for types
 AC_TYPE_PID_T
@@ -235,10 +258,12 @@ AC_STRUCT_TM
 dnl Check for various C features
 AC_C_PRINTF_A
 
+dnl Check for the endianness of the target
+AC_C_BIGENDIAN(AC_SUBST([ENDIAN],[big]),AC_SUBST([ENDIAN],[little]))
+
 dnl Check for C++ extensions
 AC_CXX_HAVE_HASH_MAP
 AC_CXX_HAVE_HASH_SET
-AC_CXX_HAVE_EXT_SLIST
 AC_CXX_HAVE_STD_ITERATOR
 AC_CXX_HAVE_BI_ITERATOR
 AC_CXX_HAVE_FWD_ITERATOR
@@ -257,7 +282,7 @@ then
 fi
 AC_HEADER_MMAP_ANONYMOUS
 AC_TYPE_SIGNAL
-AC_CHECK_FUNCS(getcwd gettimeofday strdup strtoq strtoll)
+AC_CHECK_FUNCS(getcwd gettimeofday strdup strtoq strtoll backtrace)
 AC_CHECK_FUNC(mprotect,,AC_MSG_ERROR([Function mprotect() required but not found]))
 
 dnl Determine if the linker supports the -R option.
@@ -273,27 +298,72 @@ else
 	AC_SUBST(ENABLE_OPTIMIZED,[[ENABLE_OPTIMIZED=1]])
 fi
 
-dnl Spec Benchmarks
+dnl Spec 2000 Benchmarks
 AC_ARG_ENABLE(spec2000,AC_HELP_STRING([--enable-spec2000],[Compile SPEC 2000 benchmarks (default is NO)]),,enableval=no)
 if test ${enableval} = "no"
 then
 	if test -d /home/vadve/shared/benchmarks/speccpu2000/benchspec
 	then
-		AC_SUBST(SPEC_ROOT,[/home/vadve/shared/benchmarks/speccpu2000/benchspec])
-		AC_SUBST(USE_SPEC,[[USE_SPEC=1]])
+		AC_SUBST(SPEC2000_ROOT,[/home/vadve/shared/benchmarks/speccpu2000/benchspec])
+		AC_SUBST(USE_SPEC2000,[[USE_SPEC2000=1]])
 	else
-		AC_SUBST(USE_SPEC,[[]])
-		AC_SUBST(SPEC_ROOT,[])
+		AC_SUBST(USE_SPEC2000,[[]])
+		AC_SUBST(SPEC2000_ROOT,[])
 	fi
 else
 	if test ${enableval} = ""
 	then
-		AC_SUBST(SPEC_ROOT,[/home/vadve/shared/benchmarks/speccpu2000/benchspec])
+		AC_SUBST(SPEC2000_ROOT,[/home/vadve/shared/benchmarks/speccpu2000/benchspec])
 	else
-		AC_SUBST(SPEC_ROOT,[${enableval}])
+		AC_SUBST(SPEC2000_ROOT,[${enableval}])
 	fi
-	AC_SUBST(USE_SPEC,[[USE_SPEC=1]])
+	AC_SUBST(USE_SPEC2000,[[USE_SPEC2000=1]])
 fi
+
+dnl Spec 95 Benchmarks
+AC_ARG_ENABLE(spec95,AC_HELP_STRING([--enable-spec95],[Compile SPEC 95 benchmarks (default is NO)]),,enableval=no)
+if test ${enableval} = "no"
+then
+	if test -d /home/vadve/shared/benchmarks/spec95/benchspec
+	then
+		AC_SUBST(SPEC95_ROOT,[/home/vadve/shared/benchmarks/spec95/benchspec])
+		AC_SUBST(USE_SPEC95,[[USE_SPEC95=1]])
+	else
+		AC_SUBST(USE_SPEC95,[[]])
+		AC_SUBST(SPEC95_ROOT,[])
+	fi
+else
+	if test ${enableval} = ""
+	then
+		AC_SUBST(SPEC95_ROOT,[/home/vadve/shared/benchmarks/spec95/benchspec])
+	else
+		AC_SUBST(SPEC95_ROOT,[${enableval}])
+	fi
+	AC_SUBST(USE_SPEC95,[[USE_SPEC95=1]])
+fi
+
+dnl Povray External Benchmark
+AC_ARG_ENABLE(povray,AC_HELP_STRING([--enable-povray],[Compile Povray benchmark (default is NO)]),,enableval=no)
+if test ${enableval} = "no"
+then
+	if test -d /home/vadve/shared/benchmarks/povray31
+	then
+		AC_SUBST(POVRAY_ROOT,[/home/vadve/shared/benchmarks/povray31])
+		AC_SUBST(USE_POVRAY,[[USE_POVRAY=1]])
+	else
+		AC_SUBST(USE_POVRAY,[[]])
+		AC_SUBST(POVRAY_ROOT,[])
+	fi
+else
+	if test ${enableval} = ""
+	then
+		AC_SUBST(POVRAY_ROOT,[/home/vadve/shared/benchmarks/povray31])
+	else
+		AC_SUBST(POVRAY_ROOT,[${enableval}])
+	fi
+	AC_SUBST(USE_POVRAY,[[USE_POVRAY=1]])
+fi
+
 
 dnl Precompiled Bytecode Option
 AC_ARG_ENABLE(precompiled_bytecode,AC_HELP_STRING([--enable-precompiled_bytecode],[Use pre-compiled bytecode (default is NO)]),,enableval=no)
@@ -377,8 +447,23 @@ AC_ARG_WITH(bcrepos,AC_HELP_STRING([--with-bcrepos],[Location of Bytecode Reposi
 dnl Location of PAPI
 AC_ARG_WITH(papi,AC_HELP_STRING([--with-papi],[Location of PAPI]),AC_SUBST(PAPIDIR,[$withval]),AC_SUBST(PAPIDIR,[/home/vadve/shared/Sparc/papi-2.3.4.1]))
 
+dnl Get libtool's idea of what the shared library suffix is.
+dnl (This is a hack; it relies on undocumented behavior.)
+AC_MSG_CHECKING([for shared library suffix])
+eval "SHLIBEXT=$shrext"
+AC_MSG_RESULT($SHLIBEXT)
+dnl Propagate it to the Makefiles and config.h (for gccld & bugpoint).
+AC_SUBST(SHLIBEXT,$SHLIBEXT)
+AC_DEFINE_UNQUOTED(SHLIBEXT,"$SHLIBEXT",
+                   [Extension that shared libraries have, e.g., ".so".])
+
 dnl Create the output files
-AC_OUTPUT(Makefile.config)
+AC_OUTPUT(Makefile.config
+ include/Support/DataTypes.h
+ include/Support/ThreadSupport.h
+ include/Support/hash_map
+ include/Support/hash_set
+ include/Support/iterator)
 
 dnl Warn loudly if llvm-gcc was not obviously working
 if test $llvmgccwarn = yes
@@ -390,3 +475,4 @@ then
 	AC_MSG_WARN([***** Runtime libraries (in llvm/runtime) will not be built,])
 	AC_MSG_WARN([***** but you should be able to build the llvm tools.])
 fi
+

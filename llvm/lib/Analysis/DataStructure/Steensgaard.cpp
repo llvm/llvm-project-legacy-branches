@@ -63,6 +63,10 @@ namespace {
     // alias - This is the only method here that does anything interesting...
     AliasResult alias(const Value *V1, unsigned V1Size,
                       const Value *V2, unsigned V2Size);
+
+    bool pointsToConstantMemory(const Value *P) {
+      return getAnalysis<AliasAnalysis>().pointsToConstantMemory(P);
+    }
     
   private:
     void ResolveFunctionCall(Function *F, const DSCallSite &Call,
@@ -130,7 +134,8 @@ bool Steens::run(Module &M) {
       {  // Scope to free NodeMap memory ASAP
         DSGraph::NodeMapTy NodeMap;
         const DSGraph &FDSG = LDS.getDSGraph(*I);
-        ResultGraph->cloneInto(FDSG, ValMap, RetValMap, NodeMap);
+        ResultGraph->cloneInto(FDSG, ValMap, RetValMap, NodeMap,
+                               DSGraph::UpdateInlinedGlobals);
       }
 
       // Incorporate the inlined Function's ScalarMap into the global

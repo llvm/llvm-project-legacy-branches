@@ -116,21 +116,9 @@ Constant *Constant::getNullValue(const Type *Ty) {
   case Type::PointerTyID: 
     return ConstantPointerNull::get(cast<PointerType>(Ty));
 
-  case Type::StructTyID: {
-    const StructType *ST = cast<StructType>(Ty);
-    const StructType::ElementTypes &ETs = ST->getElementTypes();
-    std::vector<Constant*> Elements;
-    Elements.resize(ETs.size());
-    for (unsigned i = 0, e = ETs.size(); i != e; ++i)
-      Elements[i] = Constant::getNullValue(ETs[i]);
-    return ConstantStruct::get(ST, Elements);
-  }
-  case Type::ArrayTyID: {
-    const ArrayType *AT = cast<ArrayType>(Ty);
-    Constant *El = Constant::getNullValue(AT->getElementType());
-    unsigned NumElements = AT->getNumElements();
-    return ConstantArray::get(AT, std::vector<Constant*>(NumElements, El));
-  }
+  case Type::StructTyID:
+  case Type::ArrayTyID:
+    return ConstantAggregateZero::get(Ty);
   default:
     // Function, Type, Label, or Opaque type?
     assert(0 && "Cannot create a null constant of that type!");
@@ -263,14 +251,15 @@ ConstantArray::ConstantArray(const ArrayType *T,
 
 ConstantStruct::ConstantStruct(const StructType *T,
                                const std::vector<Constant*> &V) : Constant(T) {
-  const StructType::ElementTypes &ETypes = T->getElementTypes();
-  assert(V.size() == ETypes.size() &&
+  assert(V.size() == T->getNumElements() &&
          "Invalid initializer vector for constant structure");
   Operands.reserve(V.size());
   for (unsigned i = 0, e = V.size(); i != e; ++i) {
-    assert((V[i]->getType() == ETypes[i] ||
-            ((ETypes[i]->isAbstract() || V[i]->getType()->isAbstract()) &&
-             ETypes[i]->getPrimitiveID()==V[i]->getType()->getPrimitiveID())) &&
+    assert((V[i]->getType() == T->getElementType(i) ||
+            ((T->getElementType(i)->isAbstract() ||
+              V[i]->getType()->isAbstract()) &&
+             T->getElementType(i)->getPrimitiveID() == 
+                      V[i]->getType()->getPrimitiveID())) &&
            "Initializer for struct element doesn't match struct element type!");
     Operands.push_back(Use(V[i], this));
   }
@@ -330,11 +319,15 @@ bool ConstantFP::classof(const Constant *CPV) {
   return ((Ty == Type::FloatTy || Ty == Type::DoubleTy) &&
           !isa<ConstantExpr>(CPV));
 }
+bool ConstantAggregateZero::classof(const Constant *CPV) {
+  return (isa<ArrayType>(CPV->getType()) || isa<StructType>(CPV->getType())) &&
+         CPV->isNullValue();
+}
 bool ConstantArray::classof(const Constant *CPV) {
-  return isa<ArrayType>(CPV->getType()) && !isa<ConstantExpr>(CPV);
+  return isa<ArrayType>(CPV->getType()) && !CPV->isNullValue();
 }
 bool ConstantStruct::classof(const Constant *CPV) {
-  return isa<StructType>(CPV->getType()) && !isa<ConstantExpr>(CPV);
+  return isa<StructType>(CPV->getType()) && !CPV->isNullValue();
 }
 
 bool ConstantPointerNull::classof(const Constant *CPV) {
@@ -417,7 +410,7 @@ void ConstantArray::replaceUsesOfWithOnConstant(Value *From, Value *To,
     Values.push_back(Val);
   }
   
-  ConstantArray *Replacement = ConstantArray::get(getType(), Values);
+  Constant *Replacement = ConstantArray::get(getType(), Values);
   assert(Replacement != this && "I didn't contain From!");
 
   // Everyone using this now uses the replacement...
@@ -442,7 +435,7 @@ void ConstantStruct::replaceUsesOfWithOnConstant(Value *From, Value *To,
     Values.push_back(Val);
   }
   
-  ConstantStruct *Replacement = ConstantStruct::get(getType(), Values);
+  Constant *Replacement = ConstantStruct::get(getType(), Values);
   assert(Replacement != this && "I didn't contain From!");
 
   // Everyone using this now uses the replacement...
@@ -698,11 +691,99 @@ ConstantInt *ConstantInt::get(const Type *Ty, unsigned char V) {
 
 //---- ConstantFP::get() implementation...
 //
-static ValueMap<double, Type, ConstantFP> FPConstants;
+namespace llvm {
+  template<>
+  struct ConstantCreator<ConstantFP, Type, uint64_t> {
+    static ConstantFP *create(const Type *Ty, uint64_t V) {
+      assert(Ty == Type::DoubleTy);
+      union {
+        double F;
+        uint64_t I;
+      } T;
+      T.I = V;
+      return new ConstantFP(Ty, T.F);
+    }
+  };
+  template<>
+  struct ConstantCreator<ConstantFP, Type, uint32_t> {
+    static ConstantFP *create(const Type *Ty, uint32_t V) {
+      assert(Ty == Type::FloatTy);
+      union {
+        float F;
+        uint32_t I;
+      } T;
+      T.I = V;
+      return new ConstantFP(Ty, T.F);
+    }
+  };
+}
+
+static ValueMap<uint64_t, Type, ConstantFP> DoubleConstants;
+static ValueMap<uint32_t, Type, ConstantFP> FloatConstants;
 
 ConstantFP *ConstantFP::get(const Type *Ty, double V) {
-  return FPConstants.getOrCreate(Ty, V);
+  if (Ty == Type::FloatTy) {
+    // Force the value through memory to normalize it.
+    union {
+      float F;
+      uint32_t I;
+    } T;
+    T.F = (float)V;
+    return FloatConstants.getOrCreate(Ty, T.I);
+  } else {
+    assert(Ty == Type::DoubleTy);
+    union {
+      double F;
+      uint64_t I;
+    } T;
+    T.F = V;
+    return DoubleConstants.getOrCreate(Ty, T.I);
+  }
 }
+
+//---- ConstantAggregateZero::get() implementation...
+//
+namespace llvm {
+  // ConstantAggregateZero does not take extra "value" argument...
+  template<class ValType>
+  struct ConstantCreator<ConstantAggregateZero, Type, ValType> {
+    static ConstantAggregateZero *create(const Type *Ty, const ValType &V){
+      return new ConstantAggregateZero(Ty);
+    }
+  };
+
+  template<>
+  struct ConvertConstantType<ConstantAggregateZero, Type> {
+    static void convert(ConstantAggregateZero *OldC, const Type *NewTy) {
+      // Make everyone now use a constant of the new type...
+      Constant *New = ConstantAggregateZero::get(NewTy);
+      assert(New != OldC && "Didn't replace constant??");
+      OldC->uncheckedReplaceAllUsesWith(New);
+      OldC->destroyConstant();     // This constant is now dead, destroy it.
+    }
+  };
+}
+
+static ValueMap<char, Type, ConstantAggregateZero> AggZeroConstants;
+
+Constant *ConstantAggregateZero::get(const Type *Ty) {
+  return AggZeroConstants.getOrCreate(Ty, 0);
+}
+
+// destroyConstant - Remove the constant from the constant table...
+//
+void ConstantAggregateZero::destroyConstant() {
+  AggZeroConstants.remove(this);
+  destroyConstantImpl();
+}
+
+void ConstantAggregateZero::replaceUsesOfWithOnConstant(Value *From, Value *To,
+                                                        bool DisableChecking) {
+  assert(0 && "No uses!");
+  abort();
+}
+
+
 
 //---- ConstantArray::get() implementation...
 //
@@ -725,9 +806,18 @@ namespace llvm {
 static ValueMap<std::vector<Constant*>, ArrayType,
                 ConstantArray> ArrayConstants;
 
-ConstantArray *ConstantArray::get(const ArrayType *Ty,
-                                  const std::vector<Constant*> &V) {
-  return ArrayConstants.getOrCreate(Ty, V);
+Constant *ConstantArray::get(const ArrayType *Ty,
+                             const std::vector<Constant*> &V) {
+  // If this is an all-zero array, return a ConstantAggregateZero object
+  if (!V.empty()) {
+    Constant *C = V[0];
+    if (!C->isNullValue())
+      return ArrayConstants.getOrCreate(Ty, V);
+    for (unsigned i = 1, e = V.size(); i != e; ++i)
+      if (V[i] != C)
+        return ArrayConstants.getOrCreate(Ty, V);
+  }
+  return ConstantAggregateZero::get(Ty);
 }
 
 // destroyConstant - Remove the constant from the constant table...
@@ -741,7 +831,7 @@ void ConstantArray::destroyConstant() {
 // contain the specified string.  A null terminator is added to the specified
 // string so that it may be used in a natural way...
 //
-ConstantArray *ConstantArray::get(const std::string &Str) {
+Constant *ConstantArray::get(const std::string &Str) {
   std::vector<Constant*> ElementVals;
 
   for (unsigned i = 0; i < Str.length(); ++i)
@@ -805,9 +895,14 @@ namespace llvm {
 static ValueMap<std::vector<Constant*>, StructType, 
                 ConstantStruct> StructConstants;
 
-ConstantStruct *ConstantStruct::get(const StructType *Ty,
-                                    const std::vector<Constant*> &V) {
-  return StructConstants.getOrCreate(Ty, V);
+Constant *ConstantStruct::get(const StructType *Ty,
+                              const std::vector<Constant*> &V) {
+  // Create a ConstantAggregateZero value if all elements are zeros...
+  for (unsigned i = 0, e = V.size(); i != e; ++i)
+    if (!V[i]->isNullValue())
+      return StructConstants.getOrCreate(Ty, V);
+
+  return ConstantAggregateZero::get(Ty);
 }
 
 // destroyConstant - Remove the constant from the constant table...
@@ -986,11 +1081,15 @@ Constant *ConstantExpr::getShiftTy(const Type *ReqTy, unsigned Opcode,
 
 Constant *ConstantExpr::getGetElementPtrTy(const Type *ReqTy, Constant *C,
                                         const std::vector<Constant*> &IdxList) {
+  assert(GetElementPtrInst::getIndexedType(C->getType(),
+                   std::vector<Value*>(IdxList.begin(), IdxList.end()), true) &&
+         "GEP indices invalid!");
+
   if (Constant *FC = ConstantFoldGetElementPtr(C, IdxList))
     return FC;          // Fold a few common cases...
+
   assert(isa<PointerType>(C->getType()) &&
          "Non-pointer type for constant GetElementPtr expression");
-
   // Look up the constant in the table first to ensure uniqueness
   std::vector<Constant*> argVec(1, C);
   argVec.insert(argVec.end(), IdxList.begin(), IdxList.end());
@@ -1006,17 +1105,6 @@ Constant *ConstantExpr::getGetElementPtr(Constant *C,
   const Type *Ty = GetElementPtrInst::getIndexedType(C->getType(), VIdxList,
                                                      true);
   assert(Ty && "GEP indices invalid!");
-
-  if (C->isNullValue()) {
-    bool isNull = true;
-    for (unsigned i = 0, e = IdxList.size(); i != e; ++i)
-      if (!IdxList[i]->isNullValue()) {
-        isNull = false;
-        break;
-      }
-    if (isNull) return ConstantPointerNull::get(PointerType::get(Ty));
-  }
-
   return getGetElementPtrTy(PointerType::get(Ty), C, IdxList);
 }
 

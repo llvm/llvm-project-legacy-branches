@@ -18,7 +18,6 @@
 #include "Support/StringExtras.h"
 #include "Support/STLExtras.h"
 #include <algorithm>
-
 using namespace llvm;
 
 // DEBUG_MERGE_TYPES - Enable this #define to see how and when derived types are
@@ -27,6 +26,7 @@ using namespace llvm;
 //
 //#define DEBUG_MERGE_TYPES 1
 
+AbstractTypeUser::~AbstractTypeUser() {}
 
 //===----------------------------------------------------------------------===//
 //                         Type Class Implementation
@@ -43,7 +43,7 @@ static std::map<const Type*, std::string> ConcreteTypeDescriptions;
 static std::map<const Type*, std::string> AbstractTypeDescriptions;
 
 Type::Type(const std::string &name, PrimitiveID id)
-  : Value(Type::TypeTy, Value::TypeVal), ForwardType(0) {
+  : Value(Type::TypeTy, Value::TypeVal), RefCount(0), ForwardType(0) {
   if (!name.empty())
     ConcreteTypeDescriptions[this] = name;
   ID = id;
@@ -190,15 +190,14 @@ static std::string getTypeDescription(const Type *Ty,
   case Type::FunctionTyID: {
     const FunctionType *FTy = cast<FunctionType>(Ty);
     Result = getTypeDescription(FTy->getReturnType(), TypeStack) + " (";
-    for (FunctionType::ParamTypes::const_iterator
-           I = FTy->getParamTypes().begin(),
-           E = FTy->getParamTypes().end(); I != E; ++I) {
-      if (I != FTy->getParamTypes().begin())
+    for (FunctionType::param_iterator I = FTy->param_begin(),
+           E = FTy->param_end(); I != E; ++I) {
+      if (I != FTy->param_begin())
         Result += ", ";
       Result += getTypeDescription(*I, TypeStack);
     }
     if (FTy->isVarArg()) {
-      if (!FTy->getParamTypes().empty()) Result += ", ";
+      if (FTy->getNumParams()) Result += ", ";
       Result += "...";
     }
     Result += ")";
@@ -207,10 +206,9 @@ static std::string getTypeDescription(const Type *Ty,
   case Type::StructTyID: {
     const StructType *STy = cast<StructType>(Ty);
     Result = "{ ";
-    for (StructType::ElementTypes::const_iterator
-           I = STy->getElementTypes().begin(),
-           E = STy->getElementTypes().end(); I != E; ++I) {
-      if (I != STy->getElementTypes().begin())
+    for (StructType::element_iterator I = STy->element_begin(),
+           E = STy->element_end(); I != E; ++I) {
+      if (I != STy->element_begin())
         Result += ", ";
       Result += getTypeDescription(*I, TypeStack);
     }
@@ -263,7 +261,7 @@ const std::string &Type::getDescription() const {
 bool StructType::indexValid(const Value *V) const {
   // Structure indexes require unsigned integer constants.
   if (const ConstantUInt *CU = dyn_cast<ConstantUInt>(V))
-    return CU->getValue() < ETypes.size();
+    return CU->getValue() < ContainedTys.size();
   return false;
 }
 
@@ -273,9 +271,9 @@ bool StructType::indexValid(const Value *V) const {
 const Type *StructType::getTypeAtIndex(const Value *V) const {
   assert(isa<Constant>(V) && "Structure index must be a constant!!");
   unsigned Idx = cast<ConstantUInt>(V)->getValue();
-  assert(Idx < ETypes.size() && "Structure index out of range!");
+  assert(Idx < ContainedTys.size() && "Structure index out of range!");
   assert(indexValid(V) && "Invalid structure index!"); // Duplicate check
-  return ETypes[Idx];
+  return ContainedTys[Idx];
 }
 
 
@@ -360,12 +358,13 @@ Type *Type::LabelTy  = &TheLabelTy;
 FunctionType::FunctionType(const Type *Result,
                            const std::vector<const Type*> &Params, 
                            bool IsVarArgs) : DerivedType(FunctionTyID), 
-    ResultType(PATypeHandle(Result, this)),
-    isVarArgs(IsVarArgs) {
+                                             isVarArgs(IsVarArgs) {
   bool isAbstract = Result->isAbstract();
-  ParamTys.reserve(Params.size());
-  for (unsigned i = 0; i < Params.size(); ++i) {
-    ParamTys.push_back(PATypeHandle(Params[i], this));
+  ContainedTys.reserve(Params.size()+1);
+  ContainedTys.push_back(PATypeHandle(Result, this));
+
+  for (unsigned i = 0; i != Params.size(); ++i) {
+    ContainedTys.push_back(PATypeHandle(Params[i], this));
     isAbstract |= Params[i]->isAbstract();
   }
 
@@ -375,11 +374,11 @@ FunctionType::FunctionType(const Type *Result,
 
 StructType::StructType(const std::vector<const Type*> &Types)
   : CompositeType(StructTyID) {
-  ETypes.reserve(Types.size());
+  ContainedTys.reserve(Types.size());
   bool isAbstract = false;
   for (unsigned i = 0; i < Types.size(); ++i) {
     assert(Types[i] != Type::VoidTy && "Void type in method prototype!!");
-    ETypes.push_back(PATypeHandle(Types[i], this));
+    ContainedTys.push_back(PATypeHandle(Types[i], this));
     isAbstract |= Types[i]->isAbstract();
   }
 
@@ -407,43 +406,21 @@ OpaqueType::OpaqueType() : DerivedType(OpaqueTyID) {
 #endif
 }
 
-
-// getAlwaysOpaqueTy - This function returns an opaque type.  It doesn't matter
-// _which_ opaque type it is, but the opaque type must never get resolved.
-//
-static Type *getAlwaysOpaqueTy() {
-  static Type *AlwaysOpaqueTy = OpaqueType::get();
-  static PATypeHolder Holder(AlwaysOpaqueTy);
-  return AlwaysOpaqueTy;
+// dropAllTypeUses - When this (abstract) type is resolved to be equal to
+// another (more concrete) type, we must eliminate all references to other
+// types, to avoid some circular reference problems.
+void DerivedType::dropAllTypeUses() {
+  if (!ContainedTys.empty()) {
+    while (ContainedTys.size() > 1)
+      ContainedTys.pop_back();
+    
+    // The type must stay abstract.  To do this, we insert a pointer to a type
+    // that will never get resolved, thus will always be abstract.
+    static Type *AlwaysOpaqueTy = OpaqueType::get();
+    static PATypeHolder Holder(AlwaysOpaqueTy);
+    ContainedTys[0] = AlwaysOpaqueTy;
+  }
 }
-
-
-//===----------------------------------------------------------------------===//
-// dropAllTypeUses methods - These methods eliminate any possibly recursive type
-// references from a derived type.  The type must remain abstract, so we make
-// sure to use an always opaque type as an argument.
-//
-
-void FunctionType::dropAllTypeUses() {
-  ResultType = getAlwaysOpaqueTy();
-  ParamTys.clear();
-}
-
-void ArrayType::dropAllTypeUses() {
-  ElementType = getAlwaysOpaqueTy();
-}
-
-void StructType::dropAllTypeUses() {
-  ETypes.clear();
-  ETypes.push_back(PATypeHandle(getAlwaysOpaqueTy(), this));
-}
-
-void PointerType::dropAllTypeUses() {
-  ElementType = getAlwaysOpaqueTy();
-}
-
-
-
 
 // isTypeAbstract - This is a recursive function that walks a type hierarchy
 // calculating whether or not a type is abstract.  Worst case it will have to do
@@ -467,7 +444,7 @@ bool Type::isTypeAbstract() {
   // one!
   for (Type::subtype_iterator I = subtype_begin(), E = subtype_end();
        I != E; ++I)
-    if (const_cast<Type*>(*I)->isTypeAbstract()) {
+    if (const_cast<Type*>(I->get())->isTypeAbstract()) {
       setAbstract(true);        // Restore the abstract bit.
       return true;              // This type is abstract if subtype is abstract!
     }
@@ -513,12 +490,10 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2,
     return TypesEqual(PTy->getElementType(),
                       cast<PointerType>(Ty2)->getElementType(), EqTypes);
   } else if (const StructType *STy = dyn_cast<StructType>(Ty)) {
-    const StructType::ElementTypes &STyE = STy->getElementTypes();
-    const StructType::ElementTypes &STyE2 =
-      cast<StructType>(Ty2)->getElementTypes();
-    if (STyE.size() != STyE2.size()) return false;
-    for (unsigned i = 0, e = STyE.size(); i != e; ++i)
-      if (!TypesEqual(STyE[i], STyE2[i], EqTypes))
+    const StructType *STy2 = cast<StructType>(Ty2);
+    if (STy->getNumElements() != STy2->getNumElements()) return false;
+    for (unsigned i = 0, e = STy2->getNumElements(); i != e; ++i)
+      if (!TypesEqual(STy->getElementType(i), STy2->getElementType(i), EqTypes))
         return false;
     return true;
   } else if (const ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
@@ -528,13 +503,11 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2,
   } else if (const FunctionType *FTy = dyn_cast<FunctionType>(Ty)) {
     const FunctionType *FTy2 = cast<FunctionType>(Ty2);
     if (FTy->isVarArg() != FTy2->isVarArg() ||
-        FTy->getParamTypes().size() != FTy2->getParamTypes().size() ||
+        FTy->getNumParams() != FTy2->getNumParams() ||
         !TypesEqual(FTy->getReturnType(), FTy2->getReturnType(), EqTypes))
       return false;
-    const FunctionType::ParamTypes &FTyP = FTy->getParamTypes();
-    const FunctionType::ParamTypes &FTy2P = FTy2->getParamTypes();
-    for (unsigned i = 0, e = FTyP.size(); i != e; ++i)
-      if (!TypesEqual(FTyP[i], FTy2P[i], EqTypes))
+    for (unsigned i = 0, e = FTy2->getNumParams(); i != e; ++i)
+      if (!TypesEqual(FTy->getParamType(i), FTy2->getParamType(i), EqTypes))
         return false;
     return true;
   } else {
@@ -548,6 +521,38 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2) {
   return TypesEqual(Ty, Ty2, EqTypes);
 }
 
+// TypeHasCycleThrough - Return true there is a path from CurTy to TargetTy in
+// the type graph.  We know that Ty is an abstract type, so if we ever reach a
+// non-abstract type, we know that we don't need to search the subgraph.
+static bool TypeHasCycleThrough(const Type *TargetTy, const Type *CurTy,
+                                std::set<const Type*> &VisitedTypes) {
+  if (TargetTy == CurTy) return true;
+  if (!CurTy->isAbstract()) return false;
+
+  std::set<const Type*>::iterator VTI = VisitedTypes.lower_bound(CurTy);
+  if (VTI != VisitedTypes.end() && *VTI == CurTy)
+    return false;
+  VisitedTypes.insert(VTI, CurTy);
+
+  for (Type::subtype_iterator I = CurTy->subtype_begin(),
+         E = CurTy->subtype_end(); I != E; ++I)
+    if (TypeHasCycleThrough(TargetTy, *I, VisitedTypes))
+      return true;
+  return false;
+}
+
+
+/// TypeHasCycleThroughItself - Return true if the specified type has a cycle
+/// back to itself.
+static bool TypeHasCycleThroughItself(const Type *Ty) {
+  assert(Ty->isAbstract() && "This code assumes that Ty was abstract!");
+  std::set<const Type*> VisitedTypes;
+  for (Type::subtype_iterator I = Ty->subtype_begin(), E = Ty->subtype_end();
+       I != E; ++I)
+    if (TypeHasCycleThrough(Ty, *I, VisitedTypes))
+      return true;
+  return false;
+}
 
 
 //===----------------------------------------------------------------------===//
@@ -556,15 +561,18 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2) {
 
 // TypeMap - Make sure that only one instance of a particular type may be
 // created on any given run of the compiler... note that this involves updating
-// our map if an abstract type gets refined somehow...
+// our map if an abstract type gets refined somehow.
 //
 namespace llvm {
 template<class ValType, class TypeClass>
 class TypeMap {
-  typedef std::map<ValType, PATypeHolder> MapTy;
-  MapTy Map;
+  std::map<ValType, PATypeHolder> Map;
+
+  /// TypesByHash - Keep track of each type by its structure hash value.
+  ///
+  std::multimap<unsigned, PATypeHolder> TypesByHash;
 public:
-  typedef typename MapTy::iterator iterator;
+  typedef typename std::map<ValType, PATypeHolder>::iterator iterator;
   ~TypeMap() { print("ON EXIT"); }
 
   inline TypeClass *get(const ValType &V) {
@@ -572,58 +580,65 @@ public:
     return I != Map.end() ? cast<TypeClass>((Type*)I->second.get()) : 0;
   }
 
-  inline void add(const ValType &V, TypeClass *T) {
-    Map.insert(std::make_pair(V, T));
+  inline void add(const ValType &V, TypeClass *Ty) {
+    Map.insert(std::make_pair(V, Ty));
+
+    // If this type has a cycle, remember it.
+    TypesByHash.insert(std::make_pair(ValType::hashTypeStructure(Ty), Ty));
     print("add");
   }
 
-  iterator getEntryForType(TypeClass *Ty) {
-    iterator I = Map.find(ValType::get(Ty));
-    if (I == Map.end()) print("ERROR!");
-    assert(I != Map.end() && "Didn't find type entry!");
-    assert(I->second.get() == (const Type*)Ty && "Type entry wrong?");
-    return I;
+  void RemoveFromTypesByHash(unsigned Hash, const Type *Ty) {
+    std::multimap<unsigned, PATypeHolder>::iterator I = 
+      TypesByHash.lower_bound(Hash);
+    while (I->second != Ty) {
+      ++I;
+      assert(I != TypesByHash.end() && I->first == Hash);
+    }
+    TypesByHash.erase(I);
   }
 
   /// finishRefinement - This method is called after we have updated an existing
   /// type with its new components.  We must now either merge the type away with
   /// some other type or reinstall it in the map with it's new configuration.
   /// The specified iterator tells us what the type USED to look like.
-  void finishRefinement(iterator TyIt) {
+  void finishRefinement(TypeClass *Ty, const DerivedType *OldType,
+                        const Type *NewType) {
+    assert((Ty->isAbstract() || !OldType->isAbstract()) &&
+           "Refining a non-abstract type!");
+#ifdef DEBUG_MERGE_TYPES
+    std::cerr << "refineAbstractTy(" << (void*)OldType << "[" << *OldType
+              << "], " << (void*)NewType << " [" << *NewType << "])\n";
+#endif
+
     // Make a temporary type holder for the type so that it doesn't disappear on
     // us when we erase the entry from the map.
-    PATypeHolder TyHolder = TyIt->second;
-    TypeClass *Ty = cast<TypeClass>((Type*)TyHolder.get());
+    PATypeHolder TyHolder = Ty;
 
     // The old record is now out-of-date, because one of the children has been
     // updated.  Remove the obsolete entry from the map.
-    Map.erase(TyIt);
+    Map.erase(ValType::get(Ty));
 
-    // Determine whether there is a cycle through the type graph which passes
-    // back through this type.  Other cycles are ok though.
-    bool HasTypeCycle = false;
-    {
-      std::set<const Type*> VisitedTypes;
-      for (Type::subtype_iterator I = Ty->subtype_begin(),
-             E = Ty->subtype_end(); I != E; ++I) {
-        for (df_ext_iterator<const Type *, std::set<const Type*> > 
-               DFI = df_ext_begin(*I, VisitedTypes),
-               E = df_ext_end(*I, VisitedTypes); DFI != E; ++DFI)
-          if (*DFI == Ty) {
-            HasTypeCycle = true;
-            goto FoundCycle;
-          }
+    // Remember the structural hash for the type before we start hacking on it,
+    // in case we need it later.  Also, check to see if the type HAD a cycle
+    // through it, if so, we know it will when we hack on it.
+    unsigned OldTypeHash = ValType::hashTypeStructure(Ty);
+
+    // Find the type element we are refining... and change it now!
+    for (unsigned i = 0, e = Ty->ContainedTys.size(); i != e; ++i)
+      if (Ty->ContainedTys[i] == OldType) {
+        Ty->ContainedTys[i].removeUserFromConcrete();
+        Ty->ContainedTys[i] = NewType;
       }
-    }
-  FoundCycle:
 
-    ValType Key = ValType::get(Ty);
-
+    unsigned TypeHash = ValType::hashTypeStructure(Ty);
+    
     // If there are no cycles going through this node, we can do a simple,
     // efficient lookup in the map, instead of an inefficient nasty linear
     // lookup.
-    if (!HasTypeCycle) {
-      iterator I = Map.find(Key);
+    bool TypeHasCycle = Ty->isAbstract() && TypeHasCycleThroughItself(Ty);
+    if (!TypeHasCycle) {
+      iterator I = Map.find(ValType::get(Ty));
       if (I != Map.end()) {
         // We already have this type in the table.  Get rid of the newly refined
         // type.
@@ -631,6 +646,7 @@ public:
         TypeClass *NewTy = cast<TypeClass>((Type*)I->second.get());
         
         // Refined to a different type altogether?
+        RemoveFromTypesByHash(TypeHash, Ty);
         Ty->refineAbstractTypeTo(NewTy);
         return;
       }
@@ -640,20 +656,46 @@ public:
       // structurally identical to the newly refined type.  If so, this type
       // gets refined to the pre-existing type.
       //
-      for (iterator I = Map.begin(), E = Map.end(); I != E; ++I)
-        if (TypesEqual(Ty, I->second)) {
-          assert(Ty->isAbstract() && "Replacing a non-abstract type?");
-          TypeClass *NewTy = cast<TypeClass>((Type*)I->second.get());
-          
-          // Refined to a different type altogether?
-          Ty->refineAbstractTypeTo(NewTy);
-          return;
+      std::multimap<unsigned, PATypeHolder>::iterator I,E, Entry;
+      tie(I, E) = TypesByHash.equal_range(TypeHash);
+      Entry = E;
+      for (; I != E; ++I) {
+        if (I->second != Ty) {
+          if (TypesEqual(Ty, I->second)) {
+            assert(Ty->isAbstract() && "Replacing a non-abstract type?");
+            TypeClass *NewTy = cast<TypeClass>((Type*)I->second.get());
+            
+            if (Entry == E) {
+              // Find the location of Ty in the TypesByHash structure.
+              while (I->second != Ty) {
+                ++I;
+                assert(I != E && "Structure doesn't contain type??");
+              }
+              Entry = I;
+            }
+
+            TypesByHash.erase(Entry);
+            Ty->refineAbstractTypeTo(NewTy);
+            return;
+          }
+        } else {
+          // Remember the position of 
+          Entry = I;
         }
+      }
+    }
+
+    // If we succeeded, we need to insert the type into the cycletypes table.
+    // There are several cases here, depending on whether the original type
+    // had the same hash code and was itself cyclic.
+    if (TypeHash != OldTypeHash) {
+      RemoveFromTypesByHash(OldTypeHash, Ty);
+      TypesByHash.insert(std::make_pair(TypeHash, Ty));
     }
 
     // If there is no existing type of the same structure, we reinsert an
     // updated record into the map.
-    Map.insert(std::make_pair(Key, Ty));
+    Map.insert(std::make_pair(ValType::get(Ty), Ty));
 
     // If the type is currently thought to be abstract, rescan all of our
     // subtypes to see if the type has just become concrete!
@@ -666,23 +708,12 @@ public:
     }
   }
   
-  void remove(const ValType &OldVal) {
-    iterator I = Map.find(OldVal);
-    assert(I != Map.end() && "TypeMap::remove, element not found!");
-    Map.erase(I);
-  }
-
-  void remove(iterator I) {
-    assert(I != Map.end() && "Cannot remove invalid iterator pointer!");
-    Map.erase(I);
-  }
-
   void print(const char *Arg) const {
 #ifdef DEBUG_MERGE_TYPES
     std::cerr << "TypeMap<>::" << Arg << " table contents:\n";
     unsigned i = 0;
-    for (typename MapTy::const_iterator I = Map.begin(), E = Map.end();
-         I != E; ++I)
+    for (typename std::map<ValType, PATypeHolder>::const_iterator I
+           = Map.begin(), E = Map.end(); I != E; ++I)
       std::cerr << " " << (++i) << ". " << (void*)I->second.get() << " " 
                 << *I->second.get() << "\n";
 #endif
@@ -713,6 +744,10 @@ public:
 
   static FunctionValType get(const FunctionType *FT);
 
+  static unsigned hashTypeStructure(const FunctionType *FT) {
+    return FT->getNumParams()*2+FT->isVarArg();
+  }
+
   // Subclass should override this... to update self as usual
   void doRefinement(const DerivedType *OldType, const Type *NewType) {
     if (RetTy == OldType) RetTy = NewType;
@@ -736,8 +771,8 @@ static TypeMap<FunctionValType, FunctionType> FunctionTypes;
 FunctionValType FunctionValType::get(const FunctionType *FT) {
   // Build up a FunctionValType
   std::vector<const Type *> ParamTypes;
-  ParamTypes.reserve(FT->getParamTypes().size());
-  for (unsigned i = 0, e = FT->getParamTypes().size(); i != e; ++i)
+  ParamTypes.reserve(FT->getNumParams());
+  for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i)
     ParamTypes.push_back(FT->getParamType(i));
   return FunctionValType(FT->getReturnType(), ParamTypes, FT->isVarArg());
 }
@@ -771,6 +806,10 @@ public:
 
   static ArrayValType get(const ArrayType *AT) {
     return ArrayValType(AT->getElementType(), AT->getNumElements());
+  }
+
+  static unsigned hashTypeStructure(const ArrayType *AT) {
+    return AT->getNumElements();
   }
 
   // Subclass should override this... to update self as usual
@@ -818,11 +857,15 @@ public:
 
   static StructValType get(const StructType *ST) {
     std::vector<const Type *> ElTypes;
-    ElTypes.reserve(ST->getElementTypes().size());
-    for (unsigned i = 0, e = ST->getElementTypes().size(); i != e; ++i)
-      ElTypes.push_back(ST->getElementTypes()[i]);
+    ElTypes.reserve(ST->getNumElements());
+    for (unsigned i = 0, e = ST->getNumElements(); i != e; ++i)
+      ElTypes.push_back(ST->getElementType(i));
     
     return StructValType(ElTypes);
+  }
+
+  static unsigned hashTypeStructure(const StructType *ST) {
+    return ST->getNumElements();
   }
 
   // Subclass should override this... to update self as usual
@@ -871,6 +914,10 @@ public:
     return PointerValType(PT->getElementType());
   }
 
+  static unsigned hashTypeStructure(const PointerType *PT) {
+    return 0;
+  }
+
   // Subclass should override this... to update self as usual
   void doRefinement(const DerivedType *OldType, const Type *NewType) {
     assert(ValTy == OldType);
@@ -901,14 +948,6 @@ PointerType *PointerType::get(const Type *ValueType) {
   return PT;
 }
 
-namespace llvm {
-void debug_type_tables() {
-  FunctionTypes.dump();
-  ArrayTypes.dump();
-  StructTypes.dump();
-  PointerTypes.dump();
-}
-}
 
 //===----------------------------------------------------------------------===//
 //                     Derived Type Refinement Functions
@@ -938,7 +977,7 @@ void DerivedType::removeAbstractTypeUser(AbstractTypeUser *U) const {
             << *this << "][" << i << "] User = " << U << "\n";
 #endif
     
-  if (AbstractTypeUsers.empty() && RefCount == 0 && isAbstract()) {
+  if (AbstractTypeUsers.empty() && getRefCount() == 0 && isAbstract()) {
 #ifdef DEBUG_MERGE_TYPES
     std::cerr << "DELETEing unused abstract type: <" << *this
               << ">[" << (void*)this << "]" << "\n";
@@ -1044,30 +1083,7 @@ void DerivedType::notifyUsesThatTypeBecameConcrete() {
 //
 void FunctionType::refineAbstractType(const DerivedType *OldType,
                                       const Type *NewType) {
-  assert((isAbstract() || !OldType->isAbstract()) &&
-         "Refining a non-abstract type!");
-#ifdef DEBUG_MERGE_TYPES
-  std::cerr << "FunctionTy::refineAbstractTy(" << (void*)OldType << "[" 
-            << *OldType << "], " << (void*)NewType << " [" 
-            << *NewType << "])\n";
-#endif
-
-  // Look up our current type map entry..
-  TypeMap<FunctionValType, FunctionType>::iterator TMI =
-    FunctionTypes.getEntryForType(this);
-
-  // Find the type element we are refining...
-  if (ResultType == OldType) {
-    ResultType.removeUserFromConcrete();
-    ResultType = NewType;
-  }
-  for (unsigned i = 0, e = ParamTys.size(); i != e; ++i)
-    if (ParamTys[i] == OldType) {
-      ParamTys[i].removeUserFromConcrete();
-      ParamTys[i] = NewType;
-    }
-
-  FunctionTypes.finishRefinement(TMI);
+  FunctionTypes.finishRefinement(this, OldType, NewType);
 }
 
 void FunctionType::typeBecameConcrete(const DerivedType *AbsTy) {
@@ -1081,23 +1097,7 @@ void FunctionType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void ArrayType::refineAbstractType(const DerivedType *OldType,
 				   const Type *NewType) {
-  assert((isAbstract() || !OldType->isAbstract()) &&
-         "Refining a non-abstract type!");
-#ifdef DEBUG_MERGE_TYPES
-  std::cerr << "ArrayTy::refineAbstractTy(" << (void*)OldType << "[" 
-            << *OldType << "], " << (void*)NewType << " [" 
-            << *NewType << "])\n";
-#endif
-
-  // Look up our current type map entry..
-  TypeMap<ArrayValType, ArrayType>::iterator TMI =
-    ArrayTypes.getEntryForType(this);
-
-  assert(getElementType() == OldType);
-  ElementType.removeUserFromConcrete();
-  ElementType = NewType;
-
-  ArrayTypes.finishRefinement(TMI);
+  ArrayTypes.finishRefinement(this, OldType, NewType);
 }
 
 void ArrayType::typeBecameConcrete(const DerivedType *AbsTy) {
@@ -1111,27 +1111,7 @@ void ArrayType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void StructType::refineAbstractType(const DerivedType *OldType,
 				    const Type *NewType) {
-  assert((isAbstract() || !OldType->isAbstract()) &&
-         "Refining a non-abstract type!");
-#ifdef DEBUG_MERGE_TYPES
-  std::cerr << "StructTy::refineAbstractTy(" << (void*)OldType << "[" 
-            << *OldType << "], " << (void*)NewType << " [" 
-            << *NewType << "])\n";
-#endif
-
-  // Look up our current type map entry..
-  TypeMap<StructValType, StructType>::iterator TMI =
-    StructTypes.getEntryForType(this);
-
-  for (int i = ETypes.size()-1; i >= 0; --i)
-    if (ETypes[i] == OldType) {
-      ETypes[i].removeUserFromConcrete();
-
-      // Update old type to new type in the array...
-      ETypes[i] = NewType;
-    }
-
-  StructTypes.finishRefinement(TMI);
+  StructTypes.finishRefinement(this, OldType, NewType);
 }
 
 void StructType::typeBecameConcrete(const DerivedType *AbsTy) {
@@ -1144,23 +1124,7 @@ void StructType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void PointerType::refineAbstractType(const DerivedType *OldType,
 				     const Type *NewType) {
-  assert((isAbstract() || !OldType->isAbstract()) &&
-         "Refining a non-abstract type!");
-#ifdef DEBUG_MERGE_TYPES
-  std::cerr << "PointerTy::refineAbstractTy(" << (void*)OldType << "[" 
-            << *OldType << "], " << (void*)NewType << " [" 
-            << *NewType << "])\n";
-#endif
-
-  // Look up our current type map entry..
-  TypeMap<PointerValType, PointerType>::iterator TMI =
-    PointerTypes.getEntryForType(this);
-
-  assert(ElementType == OldType);
-  ElementType.removeUserFromConcrete();
-  ElementType = NewType;
-
-  PointerTypes.finishRefinement(TMI);
+  PointerTypes.finishRefinement(this, OldType, NewType);
 }
 
 void PointerType::typeBecameConcrete(const DerivedType *AbsTy) {

@@ -13,12 +13,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ProfileInfo.h"
 #include "llvm/Module.h"
 #include "llvm/Assembly/AsmAnnotationWriter.h"
+#include "llvm/Analysis/ProfileInfoLoader.h"
 #include "llvm/Bytecode/Reader.h"
 #include "Support/CommandLine.h"
-#include <iostream>
+#include "Support/Signals.h"
 #include <cstdio>
 #include <map>
 #include <set>
@@ -81,6 +81,7 @@ namespace {
 
 int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, " llvm profile dump decoder\n");
+  PrintStackTraceOnErrorSignal();
 
   // Read in the bytecode file...
   std::string ErrorMessage;
@@ -92,7 +93,7 @@ int main(int argc, char **argv) {
   }
 
   // Read the profiling information
-  ProfileInfo PI(argv[0], ProfileDataFile, *M);
+  ProfileInfoLoader PI(argv[0], ProfileDataFile, *M);
 
   std::map<const Function  *, unsigned> FuncFreqs;
   std::map<const BasicBlock*, unsigned> BlockFreqs;

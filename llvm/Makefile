@@ -7,8 +7,12 @@
 # 
 ##===----------------------------------------------------------------------===##
 LEVEL = .
-DIRS = lib/Support utils lib tools runtime
+DIRS = lib/Support utils lib tools 
 OPTIONAL_DIRS = projects
+
+ifneq ($(MAKECMDGOALS),tools-only)
+DIRS += runtime
+endif
 
 include $(LEVEL)/Makefile.common
 
@@ -22,22 +26,27 @@ distclean:: clean
 	                  $(LEVEL)/config.log \
 	                  $(LEVEL)/TAGS
 
-tools-only:
-	@for dir in lib/Support utils lib tools; do $(MAKE) -C $$dir; done
+tools-only: all
 
-configure: autoconf/configure.ac autoconf/aclocal.m4
-	cd autoconf && aclocal && autoconf -o ../configure configure.ac
-
-include/Config/config.h.in: autoconf/configure.ac autoconf/aclocal.m4
-	autoheader -I autoconf autoconf/configure.ac
-
-# Install support for llvm include files.
-
+# Install support for llvm include files:
 .PHONY: install-includes
 
 install-includes:
-	$(MKDIR) $(includedir)/llvm
-	cd include && find * '!' '(' -name '*~' -o -name .cvsignore ')' -print | grep -v CVS | pax -rwdvpe $(includedir)/llvm
+	$(MKDIR) $(DESTDIR)$(includedir)/llvm
+	cd include && find * '!' '(' -name '*~' -o -name .cvsignore ')' -print | grep -v CVS | pax -rwdvpe $(DESTDIR)$(includedir)/llvm
+ifneq ($(BUILD_SRC_ROOT),$(BUILD_OBJ_ROOT))
+	cd $(BUILD_SRC_ROOT)/include && find * '!' '(' -name '*~' -o -name .cvsignore ')' -print | grep -v CVS | pax -rwdvpe $(DESTDIR)$(includedir)/llvm
+endif
 
 install:: install-includes
+
+# Build tags database for Emacs/Xemacs:
+.PHONY: tags
+
+TAGS: tags
+
+all:: tags
+
+tags:
+	$(ETAGS) $(ETAGSFLAGS) `find $(wildcard $(SourceDir)/include $(SourceDir)/lib $(SourceDir)/tools) -name '*.cpp' -o -name '*.h'`
 

@@ -103,6 +103,12 @@ private:   // Intermediate data structures
   /// BBMap - Maps LLVM basic blocks to their corresponding machine basic block.
   /// This also provides a numbering of the basic blocks in the function.
   std::map<const BasicBlock*, std::pair<MachineBasicBlock*, unsigned> > BBMap;
+
+
+  /// BBIdxMap - This contains the inverse mapping of BBMap, going from block ID
+  /// numbers to the corresponding MachineBasicBlock.  This is lazily computed
+  /// when the getIndexMachineBasicBlock() method is called.
+  std::vector<MachineBasicBlock*> BBIdxMap;
   
   const MRegisterInfo *RegInfo;
 
@@ -126,6 +132,9 @@ public:
     return BBMap.find(BB)->second;
   }
 
+  /// getIndexMachineBasicBlock() - Given a block index, return the
+  /// MachineBasicBlock corresponding to it.
+  MachineBasicBlock *getIndexMachineBasicBlock(unsigned Idx);
 
   /// killed_iterator - Iterate over registers killed by a machine instruction
   ///
@@ -157,6 +166,12 @@ public:
 
   //===--------------------------------------------------------------------===//
   //  API to update live variable information
+
+  /// instructionChanged - When the address of an instruction changes, this
+  /// method should be called so that live variables can update its internal
+  /// data structures.  This removes the records for OldMI, transfering them to
+  /// the records for NewMI.
+  void instructionChanged(MachineInstr *OldMI, MachineInstr *NewMI);
 
   /// addVirtualRegisterKilled - Add information about the fact that the
   /// specified register is killed after being used by the specified
@@ -243,6 +258,7 @@ public:
     RegistersKilled.clear();
     RegistersDead.clear();
     BBMap.clear();
+    BBIdxMap.clear();
   }
 
   /// getVarInfo - Return the VarInfo structure for the specified VIRTUAL

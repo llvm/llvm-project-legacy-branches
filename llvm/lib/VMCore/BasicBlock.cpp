@@ -61,25 +61,8 @@ iplist<Instruction> &ilist_traits<Instruction>::getList(BasicBlock *BB) {
 template class SymbolTableListTraits<Instruction, BasicBlock, Function>;
 
 
-// BasicBlock ctor - If the function parameter is specified, the basic block is
-// automatically inserted at the end of the function.
-//
-BasicBlock::BasicBlock(const std::string &name, Function *Parent)
-  : Value(Type::LabelTy, Value::BasicBlockVal, name) {
-  // Initialize the instlist...
-  InstList.setItemParent(this);
-
-  // Make sure that we get added to a function
-  LeakDetector::addGarbageObject(this);
-
-  if (Parent)
-    Parent->getBasicBlockList().push_back(this);
-}
-
-/// BasicBlock ctor - If the InsertBefore parameter is specified, the basic
-/// block is automatically inserted right before the specified block.
-///
-BasicBlock::BasicBlock(const std::string &Name, BasicBlock *InsertBefore)
+BasicBlock::BasicBlock(const std::string &Name, Function *Parent,
+                       BasicBlock *InsertBefore)
   : Value(Type::LabelTy, Value::BasicBlockVal, Name) {
   // Initialize the instlist...
   InstList.setItemParent(this);
@@ -88,10 +71,11 @@ BasicBlock::BasicBlock(const std::string &Name, BasicBlock *InsertBefore)
   LeakDetector::addGarbageObject(this);
 
   if (InsertBefore) {
-    assert(InsertBefore->getParent() &&
-           "Cannot insert block before another block that is not embedded into"
-           " a function yet!");
-    InsertBefore->getParent()->getBasicBlockList().insert(InsertBefore, this);
+    assert(Parent &&
+           "Cannot insert block before another block with no function!");
+    Parent->getBasicBlockList().insert(InsertBefore, this);
+  } else if (Parent) {
+    Parent->getBasicBlockList().push_back(this);
   }
 }
 
@@ -134,19 +118,6 @@ const TerminatorInst *const BasicBlock::getTerminator() const {
 void BasicBlock::dropAllReferences() {
   for(iterator I = begin(), E = end(); I != E; ++I)
     I->dropAllReferences();
-}
-
-// hasConstantReferences() - This predicate is true if there is a 
-// reference to this basic block in the constant pool for this method.  For
-// example, if a block is reached through a switch table, that table resides
-// in the constant pool, and the basic block is reference from it.
-//
-bool BasicBlock::hasConstantReferences() const {
-  for (use_const_iterator I = use_begin(), E = use_end(); I != E; ++I)
-    if (isa<Constant>((Value*)*I))
-      return true;
-
-  return false;
 }
 
 // removePredecessor - This method is used to notify a BasicBlock that the
@@ -231,16 +202,11 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const std::string &BBName) {
   assert(I != InstList.end() && 
 	 "Trying to get me to create degenerate basic block!");
 
-  BasicBlock *New = new BasicBlock(BBName, getParent());
+  BasicBlock *New = new BasicBlock(BBName, getParent(), getNext());
 
-  // Go from the end of the basic block through to the iterator pointer, moving
-  // to the new basic block...
-  Instruction *Inst = 0;
-  do {
-    iterator EndIt = end();
-    Inst = InstList.remove(--EndIt);                  // Remove from end
-    New->InstList.push_front(Inst);                   // Add to front
-  } while (Inst != &*I);   // Loop until we move the specified instruction.
+  // Move all of the specified instructions from the original basic block into
+  // the new basic block.
+  New->getInstList().splice(New->end(), this->getInstList(), I, end());
 
   // Add a branch instruction to the newly formed basic block.
   new BranchInst(New, this);

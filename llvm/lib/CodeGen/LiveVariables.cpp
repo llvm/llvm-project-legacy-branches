@@ -28,12 +28,13 @@
 
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/Target/MRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/CFG.h"
 #include "Support/DepthFirstIterator.h"
-
-namespace llvm {
+#include "Support/STLExtras.h"
+using namespace llvm;
 
 static RegisterAnalysis<LiveVariables> X("livevars", "Live Variable Analysis");
 
@@ -41,9 +42,25 @@ const std::pair<MachineBasicBlock*, unsigned> &
 LiveVariables::getMachineBasicBlockInfo(MachineBasicBlock *MBB) const{
   return BBMap.find(MBB->getBasicBlock())->second;
 }
+  
+/// getIndexMachineBasicBlock() - Given a block index, return the
+/// MachineBasicBlock corresponding to it.
+MachineBasicBlock *LiveVariables::getIndexMachineBasicBlock(unsigned Idx) {
+  if (BBIdxMap.empty()) {
+    BBIdxMap.resize(BBMap.size());
+    for (std::map<const BasicBlock*, std::pair<MachineBasicBlock*, unsigned> >
+           ::iterator I = BBMap.begin(), E = BBMap.end(); I != E; ++I) {
+      assert(BBIdxMap.size() > I->second.second &&"Indices are not sequential");
+      assert(BBIdxMap[I->second.second] == 0 && "Multiple idx collision!");
+      BBIdxMap[I->second.second] = I->second.first;
+    }
+  }
+  assert(Idx < BBIdxMap.size() && "BB Index out of range!");
+  return BBIdxMap[Idx];
+}
 
 LiveVariables::VarInfo &LiveVariables::getVarInfo(unsigned RegIdx) {
-  assert(RegIdx >= MRegisterInfo::FirstVirtualRegister &&
+  assert(MRegisterInfo::isVirtualRegister(RegIdx) &&
          "getVarInfo: not a virtual register!");
   RegIdx -= MRegisterInfo::FirstVirtualRegister;
   if (RegIdx >= VirtRegInfo.size()) {
@@ -131,29 +148,31 @@ void LiveVariables::HandlePhysRegDef(unsigned Reg, MachineInstr *MI) {
 
   for (const unsigned *AliasSet = RegInfo->getAliasSet(Reg);
        *AliasSet; ++AliasSet) {
-    if (MachineInstr *LastUse = PhysRegInfo[*AliasSet]) {
-      if (PhysRegUsed[*AliasSet])
-	RegistersKilled.insert(std::make_pair(LastUse, *AliasSet));
+    unsigned Alias = *AliasSet;
+    if (MachineInstr *LastUse = PhysRegInfo[Alias]) {
+      if (PhysRegUsed[Alias])
+	RegistersKilled.insert(std::make_pair(LastUse, Alias));
       else
-	RegistersDead.insert(std::make_pair(LastUse, *AliasSet));
+	RegistersDead.insert(std::make_pair(LastUse, Alias));
     }
-    PhysRegInfo[*AliasSet] = MI;
-    PhysRegUsed[*AliasSet] = false;
+    PhysRegInfo[Alias] = MI;
+    PhysRegUsed[Alias] = false;
   }
 }
 
 bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
+  const TargetInstrInfo &TII = MF.getTarget().getInstrInfo();
+  RegInfo = MF.getTarget().getRegisterInfo();
+  assert(RegInfo && "Target doesn't have register information?");
+
   // First time though, initialize AllocatablePhysicalRegisters for the target
   if (AllocatablePhysicalRegisters.empty()) {
-    const MRegisterInfo &MRI = *MF.getTarget().getRegisterInfo();
-    assert(&MRI && "Target doesn't have register information?");
-
     // Make space, initializing to false...
-    AllocatablePhysicalRegisters.resize(MRegisterInfo::FirstVirtualRegister);
+    AllocatablePhysicalRegisters.resize(RegInfo->getNumRegs());
 
     // Loop over all of the register classes...
-    for (MRegisterInfo::regclass_iterator RCI = MRI.regclass_begin(),
-           E = MRI.regclass_end(); RCI != E; ++RCI)
+    for (MRegisterInfo::regclass_iterator RCI = RegInfo->regclass_begin(),
+           E = RegInfo->regclass_end(); RCI != E; ++RCI)
       // Loop over all of the allocatable registers in the function...
       for (TargetRegisterClass::iterator I = (*RCI)->allocation_order_begin(MF),
              E = (*RCI)->allocation_order_end(MF); I != E; ++I)
@@ -169,15 +188,11 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
   // physical register.  This is a purely local property, because all physical
   // register references as presumed dead across basic blocks.
   //
-  MachineInstr *PhysRegInfoA[MRegisterInfo::FirstVirtualRegister];
-  bool          PhysRegUsedA[MRegisterInfo::FirstVirtualRegister];
-  std::fill(PhysRegInfoA, PhysRegInfoA+MRegisterInfo::FirstVirtualRegister,
-	    (MachineInstr*)0);
+  MachineInstr *PhysRegInfoA[RegInfo->getNumRegs()];
+  bool          PhysRegUsedA[RegInfo->getNumRegs()];
+  std::fill(PhysRegInfoA, PhysRegInfoA+RegInfo->getNumRegs(), (MachineInstr*)0);
   PhysRegInfo = PhysRegInfoA;
   PhysRegUsed = PhysRegUsedA;
-
-  const TargetInstrInfo &TII = MF.getTarget().getInstrInfo();
-  RegInfo = MF.getTarget().getRegisterInfo();
 
   /// Get some space for a respectable number of registers...
   VirtRegInfo.resize(64);
@@ -198,7 +213,7 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
     // Loop over all of the instructions, processing them.
     for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
 	 I != E; ++I) {
-      MachineInstr *MI = *I;
+      MachineInstr *MI = I;
       const TargetInstrDescriptor &MID = TII.get(MI->getOpcode());
 
       // Process all of the operands of the instruction...
@@ -217,10 +232,10 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
       // Process all explicit uses...
       for (unsigned i = 0; i != NumOperandsToProcess; ++i) {
 	MachineOperand &MO = MI->getOperand(i);
-	if (MO.isUse()) {
-	  if (MO.isVirtualRegister() && !MO.getVRegValueOrNull()) {
+	if (MO.isUse() && MO.isRegister() && MO.getReg()) {
+	  if (MRegisterInfo::isVirtualRegister(MO.getReg())){
 	    HandleVirtRegUse(getVarInfo(MO.getReg()), MBB, MI);
-	  } else if (MO.isPhysicalRegister() && 
+	  } else if (MRegisterInfo::isPhysicalRegister(MO.getReg()) &&
                      AllocatablePhysicalRegisters[MO.getReg()]) {
 	    HandlePhysRegUse(MO.getReg(), MI);
 	  }
@@ -235,15 +250,15 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
       // Process all explicit defs...
       for (unsigned i = 0; i != NumOperandsToProcess; ++i) {
 	MachineOperand &MO = MI->getOperand(i);
-	if (MO.isDef()) {
-	  if (MO.isVirtualRegister()) {
+	if (MO.isDef() && MO.isRegister() && MO.getReg()) {
+	  if (MRegisterInfo::isVirtualRegister(MO.getReg())) {
 	    VarInfo &VRInfo = getVarInfo(MO.getReg());
 
 	    assert(VRInfo.DefBlock == 0 && "Variable multiply defined!");
 	    VRInfo.DefBlock = MBB;                           // Created here...
 	    VRInfo.DefInst = MI;
 	    VRInfo.Kills.push_back(std::make_pair(MBB, MI)); // Defaults to dead
-	  } else if (MO.isPhysicalRegister() &&
+	  } else if (MRegisterInfo::isPhysicalRegister(MO.getReg()) &&
                      AllocatablePhysicalRegisters[MO.getReg()]) {
 	    HandlePhysRegDef(MO.getReg(), MI);
 	  }
@@ -260,10 +275,11 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
       MachineBasicBlock *Succ = BBMap.find(*SI)->second.first;
       
       // PHI nodes are guaranteed to be at the top of the block...
-      for (MachineBasicBlock::iterator I = Succ->begin(), E = Succ->end();
-	   I != E && (*I)->getOpcode() == TargetInstrInfo::PHI; ++I) {
-        MachineInstr *MI = *I;
-	for (unsigned i = 1; ; i += 2)
+      for (MachineBasicBlock::iterator MI = Succ->begin(), ME = Succ->end();
+	   MI != ME && MI->getOpcode() == TargetInstrInfo::PHI; ++MI) {
+	for (unsigned i = 1; ; i += 2) {
+          assert(MI->getNumOperands() > i+1 &&
+                 "Didn't find an entry for our predecessor??");
 	  if (MI->getOperand(i+1).getMachineBasicBlock() == MBB) {
 	    MachineOperand &MO = MI->getOperand(i);
 	    if (!MO.getVRegValueOrNull()) {
@@ -274,12 +290,13 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
 	      break;   // Found the PHI entry for this block...
 	    }
 	  }
+        }
       }
     }
     
     // Loop over PhysRegInfo, killing any registers that are available at the
     // end of the basic block.  This also resets the PhysRegInfo map.
-    for (unsigned i = 0, e = MRegisterInfo::FirstVirtualRegister; i != e; ++i)
+    for (unsigned i = 0, e = RegInfo->getNumRegs(); i != e; ++i)
       if (PhysRegInfo[i])
 	HandlePhysRegDef(i, 0);
   }
@@ -301,4 +318,44 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-} // End llvm namespace
+/// instructionChanged - When the address of an instruction changes, this
+/// method should be called so that live variables can update its internal
+/// data structures.  This removes the records for OldMI, transfering them to
+/// the records for NewMI.
+void LiveVariables::instructionChanged(MachineInstr *OldMI,
+                                       MachineInstr *NewMI) {
+  // If the instruction defines any virtual registers, update the VarInfo for
+  // the instruction.
+  for (unsigned i = 0, e = NewMI->getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = NewMI->getOperand(i);
+    if (MO.isRegister() && MO.isDef() && MO.getReg() &&
+        MRegisterInfo::isVirtualRegister(MO.getReg())) {
+      unsigned Reg = MO.getReg();
+      VarInfo &VI = getVarInfo(Reg);
+      if (VI.DefInst == OldMI)
+        VI.DefInst = NewMI; 
+    }
+  }
+
+  // Move the killed information over...
+  killed_iterator I, E;
+  tie(I, E) = killed_range(OldMI);
+  std::vector<unsigned> Regs;
+  for (killed_iterator A = I; A != E; ++A)
+    Regs.push_back(A->second);
+  RegistersKilled.erase(I, E);
+
+  for (unsigned i = 0, e = Regs.size(); i != e; ++i)
+    RegistersKilled.insert(std::make_pair(NewMI, Regs[i]));
+  Regs.clear();
+
+
+  // Move the dead information over...
+  tie(I, E) = dead_range(OldMI);
+  for (killed_iterator A = I; A != E; ++A)
+    Regs.push_back(A->second);
+  RegistersDead.erase(I, E);
+
+  for (unsigned i = 0, e = Regs.size(); i != e; ++i)
+    RegistersDead.insert(std::make_pair(NewMI, Regs[i]));
+}

@@ -38,7 +38,8 @@ namespace llvm {
 // Global variable recording the location of the include directory
 std::string IncludeDirectory;
 
-// ParseInt - This has to handle the special case of binary numbers 0b0101
+/// ParseInt - This has to handle the special case of binary numbers 0b0101
+///
 static int ParseInt(const char *Str) {
   if (Str[0] == '0' && Str[1] == 'b')
     return strtol(Str+2, 0, 2);
@@ -60,7 +61,6 @@ struct IncludeRec {
 
 static std::vector<IncludeRec> IncludeStack;
 
-
 std::ostream &err() {
   if (IncludeStack.empty())
     return std::cerr << "At end of input: ";
@@ -72,19 +72,8 @@ std::ostream &err() {
                    << Filelineno << ": ";
 }
 
-
-
-//
-// Function: ParseFile()
-//
-// Description:
-//	This function begins the parsing of the specified tablegen file.
-//
-// Inputs:
-//	Filename - A string containing the name of the file to parse.
-//	IncludeDir - A string containing the directory from which include
-//	             files can be found.
-//
+/// ParseFile - this function begins the parsing of the specified tablegen file.
+///
 void ParseFile(const std::string &Filename, const std::string & IncludeDir) {
   FILE *F = stdin;
   if (Filename != "-") {
@@ -99,10 +88,8 @@ void ParseFile(const std::string &Filename, const std::string & IncludeDir) {
     IncludeStack.push_back(IncludeRec("<stdin>", stdin));
   }
 
-  //
   // Record the location of the include directory so that the lexer can find
   // it later.
-  //
   IncludeDirectory = IncludeDir;
  
   Filein = F;
@@ -111,8 +98,9 @@ void ParseFile(const std::string &Filename, const std::string & IncludeDir) {
   Filein = stdin;
 }
 
-// HandleInclude - This function is called when an include directive is
-// encountered in the input stream...
+/// HandleInclude - This function is called when an include directive is
+/// encountered in the input stream...
+///
 static void HandleInclude(const char *Buffer) {
   unsigned Length = yyleng;
   assert(Buffer[Length-1] == '"');
@@ -133,20 +121,18 @@ static void HandleInclude(const char *Buffer) {
   // Open the new input file...
   yyin = fopen(Filename.c_str(), "r");
   if (yyin == 0) {
-    //
     // If we couldn't find the file in the current directory, look for it in
     // the include directories.
     //
-    // NOTE:
-    //  Right now, there is only one directory.  We need to eventually add
-    //  support for more.
-    //
-    Filename = IncludeDirectory + "/" + Filename;
-    yyin = fopen(Filename.c_str(), "r");
+    // NOTE: Right now, there is only one directory.  We need to eventually add
+    // support for more.
+    std::string NextFilename = IncludeDirectory + "/" + Filename;
+    yyin = fopen(NextFilename.c_str(), "r");
     if (yyin == 0) {
       err() << "Could not find include file '" << Filename << "'!\n";
-      abort();
+      exit(1);
     }
+    Filename = NextFilename;
   }
 
   // Add the file to our include stack...
@@ -157,10 +143,9 @@ static void HandleInclude(const char *Buffer) {
   yy_switch_to_buffer(yy_create_buffer(yyin, YY_BUF_SIZE));
 }
 
-
-// yywrap - This is called when the lexer runs out of input in one of the files.
-// Switch back to an includer if an includee has run out of input.
-//
+/// yywrap - This is called when the lexer runs out of input in one of the
+/// files. Switch back to an includer if an includee has run out of input.
+///
 extern "C"
 int yywrap() {
   if (IncludeStack.back().File != stdin)
@@ -229,7 +214,7 @@ ${Identifier}  { Filelval.StrVal = new std::string(yytext+1, yytext+yyleng);
 <comment>"/*"           { ++CommentDepth; }
 <comment>"/"+[^*]*      /* eat up /'s not followed by *'s */
 <comment>"*"+"/"        { if (!--CommentDepth) { BEGIN(INITIAL); } }
-<comment><<EOF>>        { err() << "Unterminated comment!\n"; abort(); }
+<comment><<EOF>>        { err() << "Unterminated comment!\n"; exit(1); }
 
 .              { return Filetext[0]; }
 

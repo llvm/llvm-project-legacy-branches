@@ -262,7 +262,7 @@ bool ReduceMisCodegenFunctions::TestFuncs(const std::vector<Function*> &Funcs,
     for (unsigned i=0, e = InputArgv.size(); i != e; ++i)
       std::cout << " " << InputArgv[i];
     std::cout << "\n";
-    std::cout << "The shared object was created with:\n  llvm-dis -c "
+    std::cout << "The shared object was created with:\n  llc -march=c "
               << SafeModuleBC << " -o temporary.c\n"
               << "  gcc -xc temporary.c -O2 -o " << SharedObject
 #if defined(sparc) || defined(__sparc__) || defined(__sparcv9)
@@ -348,8 +348,19 @@ static void DisambiguateGlobalSymbols(Module *M) {
 
 
 bool BugDriver::debugCodeGenerator() {
+  if ((void*)cbe == (void*)Interpreter) {
+    std::string Result = executeProgramWithCBE("bugpoint.cbe.out");
+    std::cout << "\n*** The C backend cannot match the reference diff, but it "
+              << "is used as the 'known good'\n    code generator, so I can't"
+              << " debug it.  Perhaps you have a front-end problem?\n    As a"
+              << " sanity check, I left the result of executing the program "
+              << "with the C backend\n    in this file for you: '"
+              << Result << "'.\n";
+    return true;
+  }
+
   // See if we can pin down which functions are being miscompiled...
-  //First, build a list of all of the non-external functions in the program.
+  // First, build a list of all of the non-external functions in the program.
   std::vector<Function*> MisCodegenFunctions;
   for (Module::iterator I = Program->begin(), E = Program->end(); I != E; ++I)
     if (!I->isExternal())

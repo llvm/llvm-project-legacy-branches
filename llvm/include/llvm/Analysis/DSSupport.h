@@ -28,6 +28,7 @@ class Type;
 
 class DSNode;                  // Each node in the graph
 class DSGraph;                 // A graph for a function
+class ReachabilityCloner;
 
 namespace DS { // FIXME: After the paper, this should get cleaned up
   enum { PointerShift = 2,     // 64bit ptrs = 3, 32 bit ptrs = 2
@@ -76,6 +77,7 @@ public:
   }
   bool operator>(const DSNodeHandle &H) const { return H < *this; }
   bool operator==(const DSNodeHandle &H) const { // Allow comparison
+    // getNode can change the offset, so we must call getNode() first.
     return getNode() == H.getNode() && Offset == H.Offset;
   }
   bool operator!=(const DSNodeHandle &H) const { return !operator==(H); }
@@ -93,7 +95,7 @@ public:
   inline DSNode *getNode() const;  // Defined inline in DSNode.h
   unsigned getOffset() const { return Offset; }
 
-  inline void setNode(DSNode *N);  // Defined inline in DSNode.h
+  inline void setNode(DSNode *N) const;  // Defined inline in DSNode.h
   void setOffset(unsigned O) {
     //assert((!N || Offset < N->Size || (N->Size == 0 && Offset == 0) ||
     //       !N->ForwardNH.isNull()) && "Node handle offset out of range!");
@@ -108,7 +110,7 @@ public:
   /// mergeWith - Merge the logical node pointed to by 'this' with the node
   /// pointed to by 'N'.
   ///
-  void mergeWith(const DSNodeHandle &N);
+  void mergeWith(const DSNodeHandle &N) const;
 
   // hasLink - Return true if there is a link at the specified offset...
   inline bool hasLink(unsigned Num) const;
@@ -127,7 +129,8 @@ private:
 } // End llvm namespace
 
 namespace std {
-  inline void swap(llvm::DSNodeHandle &NH1, llvm::DSNodeHandle &NH2) { NH1.swap(NH2); }
+  template<>
+  inline void swap<llvm::DSNodeHandle>(llvm::DSNodeHandle &NH1, llvm::DSNodeHandle &NH2) { NH1.swap(NH2); }
 }
 
 namespace llvm {
@@ -148,7 +151,7 @@ class DSCallSite {
                      const hash_map<const DSNode*, DSNode*> &NodeMap) {
     if (DSNode *N = Src.getNode()) {
       hash_map<const DSNode*, DSNode*>::const_iterator I = NodeMap.find(N);
-      assert(I != NodeMap.end() && "Not not in mapping!");
+      assert(I != NodeMap.end() && "Node not in mapping!");
 
       NH.setOffset(Src.getOffset());
       NH.setNode(I->second);
@@ -159,12 +162,16 @@ class DSCallSite {
                      const hash_map<const DSNode*, DSNodeHandle> &NodeMap) {
     if (DSNode *N = Src.getNode()) {
       hash_map<const DSNode*, DSNodeHandle>::const_iterator I = NodeMap.find(N);
-      assert(I != NodeMap.end() && "Not not in mapping!");
+      assert(I != NodeMap.end() && "Node not in mapping!");
 
       NH.setOffset(Src.getOffset()+I->second.getOffset());
       NH.setNode(I->second.getNode());
     }
   }
+
+  static void InitNH(DSNodeHandle &NH, const DSNodeHandle &Src,
+                     ReachabilityCloner &RC);
+
 
   DSCallSite();                         // DO NOT IMPLEMENT
 public:
@@ -193,7 +200,7 @@ public:
   /// This is useful when moving a call site from one graph to another.
   ///
   template<typename MapTy>
-  DSCallSite(const DSCallSite &FromCall, const MapTy &NodeMap) {
+  DSCallSite(const DSCallSite &FromCall, MapTy &NodeMap) {
     Site = FromCall.Site;
     InitNH(RetVal, FromCall.RetVal, NodeMap);
     InitNH(CalleeN, FromCall.CalleeN, NodeMap);
@@ -234,7 +241,7 @@ public:
     assert(!CalleeN.getNode() && CalleeF); return CalleeF;
   }
 
-  unsigned            getNumPtrArgs() const { return CallArgs.size(); }
+  unsigned getNumPtrArgs() const { return CallArgs.size(); }
 
   DSNodeHandle &getPtrArg(unsigned i) {
     assert(i < CallArgs.size() && "Argument to getPtrArgNode is out of range!");
@@ -255,7 +262,7 @@ public:
     }
   }
 
-  // MergeWith - Merge the return value and parameters of the these two call
+  // mergeWith - Merge the return value and parameters of the these two call
   // sites.
   void mergeWith(DSCallSite &CS) {
     getRetVal().mergeWith(CS.getRetVal());
@@ -288,14 +295,16 @@ public:
   }
 
   bool operator==(const DSCallSite &CS) const {
-    return RetVal == CS.RetVal && CalleeN == CS.CalleeN &&
-           CalleeF == CS.CalleeF && CallArgs == CS.CallArgs;
+    return CalleeF == CS.CalleeF && CalleeN == CS.CalleeN &&
+           RetVal == CS.RetVal && CallArgs == CS.CallArgs;
   }
 };
 
 } // End llvm namespace
 
 namespace std {
-  inline void swap(llvm::DSCallSite &CS1, llvm::DSCallSite &CS2) { CS1.swap(CS2); }
+  template<>
+  inline void swap<llvm::DSCallSite>(llvm::DSCallSite &CS1,
+                                     llvm::DSCallSite &CS2) { CS1.swap(CS2); }
 }
 #endif

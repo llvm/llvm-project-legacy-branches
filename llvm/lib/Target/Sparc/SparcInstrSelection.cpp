@@ -1,4 +1,4 @@
-//===-- SparcInstrSelection.cpp -------------------------------------------===//
+//===-- SparcV9InstrSelection.cpp -------------------------------------------===//
 // 
 //                     The LLVM Compiler Infrastructure
 //
@@ -23,11 +23,11 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineInstrAnnot.h"
-#include "SparcInstrSelectionSupport.h"
-#include "SparcInternals.h"
-#include "SparcRegClassInfo.h"
-#include "SparcRegInfo.h"
+#include "MachineInstrAnnot.h"
+#include "SparcV9InstrSelectionSupport.h"
+#include "SparcV9Internals.h"
+#include "SparcV9RegClassInfo.h"
+#include "SparcV9RegInfo.h"
 #include "Support/MathExtras.h"
 #include <algorithm>
 #include <cmath>
@@ -786,9 +786,9 @@ CreateShiftInstructions(const TargetMachine& target,
   
   MachineInstr* M = (optArgVal2 != NULL)
     ? BuildMI(shiftOpCode, 3).addReg(argVal1).addReg(optArgVal2)
-                             .addReg(shiftDest, MOTy::Def)
+                             .addReg(shiftDest, MachineOperand::Def)
     : BuildMI(shiftOpCode, 3).addReg(argVal1).addZImm(optShiftNum)
-                             .addReg(shiftDest, MOTy::Def);
+                             .addReg(shiftDest, MachineOperand::Def);
   mvec.push_back(M);
   
   if (shiftDest != destVal) {
@@ -874,7 +874,7 @@ CreateMulConstInstruction(const TargetMachine &target, Function* F,
   if (firstNewInstr < mvec.size()) {
     cost = 0;
     for (unsigned i=firstNewInstr; i < mvec.size(); ++i)
-      cost += target.getInstrInfo().minLatency(mvec[i]->getOpCode());
+      cost += target.getInstrInfo().minLatency(mvec[i]->getOpcode());
   }
   
   return cost;
@@ -915,7 +915,7 @@ CreateMulInstruction(const TargetMachine &target, Function* F,
                      Value* lval, Value* rval, Instruction* destVal,
                      std::vector<MachineInstr*>& mvec,
                      MachineCodeForInstruction& mcfi,
-                     MachineOpCode forceMulOp = INVALID_MACHINE_OPCODE)
+                     MachineOpCode forceMulOp = -1)
 {
   unsigned L = mvec.size();
   CreateCheapestMulConstInstruction(target,F, lval, rval, destVal, mvec, mcfi);
@@ -923,7 +923,7 @@ CreateMulInstruction(const TargetMachine &target, Function* F,
     // no instructions were added so create MUL reg, reg, reg.
     // Use FSMULD if both operands are actually floats cast to doubles.
     // Otherwise, use the default opcode for the appropriate type.
-    MachineOpCode mulOp = ((forceMulOp != INVALID_MACHINE_OPCODE)
+    MachineOpCode mulOp = ((forceMulOp != -1)
                            ? forceMulOp 
                            : ChooseMulInstructionByType(destVal->getType()));
     mvec.push_back(BuildMI(mulOp, 3).addReg(lval).addReg(rval)
@@ -1115,15 +1115,15 @@ CreateCodeForVariableSizeAlloca(const TargetMachine& target,
     // Instruction 1: mul numElements, typeSize -> tmpProd
     // This will optimize the MUL as far as possible.
     CreateMulInstruction(target, F, numElementsVal, tsizeVal, tmpProd, getMvec,
-                         mcfi, INVALID_MACHINE_OPCODE);
+                         mcfi, -1);
 
     // Instruction 2: andn tmpProd, 0x0f -> tmpAndn
     getMvec.push_back(BuildMI(V9::ADDi, 3).addReg(tmpProd).addSImm(15)
-                      .addReg(tmpAdd15, MOTy::Def));
+                      .addReg(tmpAdd15, MachineOperand::Def));
 
     // Instruction 3: add tmpAndn, 0x10 -> tmpAdd16
     getMvec.push_back(BuildMI(V9::ANDi, 3).addReg(tmpAdd15).addSImm(-16)
-                      .addReg(tmpAndf0, MOTy::Def));
+                      .addReg(tmpAndf0, MachineOperand::Def));
 
     totalSizeVal = tmpAndf0;
   }
@@ -1141,7 +1141,7 @@ CreateCodeForVariableSizeAlloca(const TargetMachine& target,
 
   // Instruction 2: sub %sp, totalSizeVal -> %sp
   getMvec.push_back(BuildMI(V9::SUBr, 3).addMReg(SPReg).addReg(totalSizeVal)
-                    .addMReg(SPReg,MOTy::Def));
+                    .addMReg(SPReg,MachineOperand::Def));
 
   // Instruction 3: add %sp, frameSizeBelowDynamicArea -> result
   getMvec.push_back(BuildMI(V9::ADDr,3).addMReg(SPReg).addReg(dynamicAreaOffset)
@@ -1278,7 +1278,7 @@ SetOperandsForMemInstr(unsigned Opcode,
                            eltSizeVal,     /* rval, likely to be constant */
                            addr,           /* result */
                            mulVec, MachineCodeForInstruction::get(memInst),
-                           INVALID_MACHINE_OPCODE);
+                           -1);
 
       assert(mulVec.size() > 0 && "No multiply code created?");
       mvec.insert(mvec.end(), mulVec.begin(), mulVec.end());
@@ -1413,7 +1413,7 @@ static bool CodeGenIntrinsic(Intrinsic::ID iid, CallInst &callInstr,
   }
 
   case Intrinsic::va_end:
-    return true;                        // no-op on Sparc
+    return true;                        // no-op on SparcV9
 
   case Intrinsic::va_copy:
     // Simple copy of current va_list (arg1) to new va_list (result)
@@ -1534,7 +1534,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
 
         MachineInstr* retMI = 
           BuildMI(V9::JMPLRETi, 3).addReg(returnAddrTmp).addSImm(8)
-          .addMReg(target.getRegInfo().getZeroRegNum(), MOTy::Def);
+          .addMReg(target.getRegInfo().getZeroRegNum(), MachineOperand::Def);
       
         // If there is a value to return, we need to:
         // (a) Sign-extend the value if it is smaller than 8 bytes (reg size)
@@ -1543,13 +1543,13 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         //     -- For non-FP values, create an add-with-0 instruction
         // 
         if (retVal != NULL) {
-          const SparcRegInfo& regInfo =
-            (SparcRegInfo&) target.getRegInfo();
+          const SparcV9RegInfo& regInfo =
+            (SparcV9RegInfo&) target.getRegInfo();
           const Type* retType = retVal->getType();
           unsigned regClassID = regInfo.getRegClassIDOfType(retType);
           unsigned retRegNum = (retType->isFloatingPoint()
-                                ? (unsigned) SparcFloatRegClass::f0
-                                : (unsigned) SparcIntRegClass::i0);
+                                ? (unsigned) SparcV9FloatRegClass::f0
+                                : (unsigned) SparcV9IntRegClass::i0);
           retRegNum = regInfo.getUnifiedRegNum(regClassID, retRegNum);
 
           // () Insert sign-extension instructions for small signed values.
@@ -1581,11 +1581,11 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
           
           if (retType->isFloatingPoint())
             M = (BuildMI(retType==Type::FloatTy? V9::FMOVS : V9::FMOVD, 2)
-                 .addReg(retValToUse).addReg(retVReg, MOTy::Def));
+                 .addReg(retValToUse).addReg(retVReg, MachineOperand::Def));
           else
             M = (BuildMI(ChooseAddInstructionByType(retType), 3)
                  .addReg(retValToUse).addSImm((int64_t) 0)
-                 .addReg(retVReg, MOTy::Def));
+                 .addReg(retVReg, MachineOperand::Def));
 
           // Mark the operand with the register it should be assigned
           M->SetRegForOperand(M->getNumOperands()-1, retRegNum);
@@ -1751,7 +1751,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         // Mark the register as a use (as well as a def) because the old
         // value will be retained if the condition is false.
         mvec.push_back(BuildMI(V9::MOVRZi, 3).addReg(notArg).addZImm(1)
-                       .addReg(notI, MOTy::UseAndDef));
+                       .addReg(notI, MachineOperand::UseAndDef));
 
         break;
       }
@@ -1786,7 +1786,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         // value will be retained if the condition is false.
         MachineOpCode opCode = foldCase? V9::MOVRZi : V9::MOVRNZi;
         mvec.push_back(BuildMI(opCode, 3).addReg(opVal).addZImm(1)
-                       .addReg(castI, MOTy::UseAndDef));
+                       .addReg(castI, MachineOperand::UseAndDef));
 
         break;
       }
@@ -1918,7 +1918,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
           const MachineCodeForInstruction& mcfi =
             MachineCodeForInstruction::get(
                 cast<InstructionNode>(subtreeRoot->parent())->getInstruction());
-          if (mcfi.size() == 0 || mcfi.front()->getOpCode() == V9::FSMULD)
+          if (mcfi.size() == 0 || mcfi.front()->getOpcode() == V9::FSMULD)
             forwardOperandNum = 0;    // forward first operand to user
         }
 
@@ -2006,8 +2006,8 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
       {
         maskUnsignedResult = true;
         MachineOpCode forceOp = ((checkCast && BothFloatToDouble(subtreeRoot))
-                                 ? V9::FSMULD
-                                 : INVALID_MACHINE_OPCODE);
+                                 ? (MachineOpCode)V9::FSMULD
+                                 : -1);
         Instruction* mulInstr = subtreeRoot->getInstruction();
         CreateMulInstruction(target, mulInstr->getParent()->getParent(),
                              subtreeRoot->leftChild()->getValue(),
@@ -2024,8 +2024,8 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
       {
         maskUnsignedResult = true;
         MachineOpCode forceOp = ((checkCast && BothFloatToDouble(subtreeRoot))
-                                 ? V9::FSMULD
-                                 : INVALID_MACHINE_OPCODE);
+                                 ? (MachineOpCode)V9::FSMULD
+                                 : -1);
         Instruction* mulInstr = subtreeRoot->getInstruction();
         CreateMulInstruction(target, mulInstr->getParent()->getParent(),
                              subtreeRoot->leftChild()->getValue(),
@@ -2149,12 +2149,12 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         Value *lhs = subtreeRoot->leftChild()->getValue();
         Value *dest = subtreeRoot->getValue();
         mvec.push_back(BuildMI(V9::ANDNr, 3).addReg(lhs).addReg(notArg)
-                                       .addReg(dest, MOTy::Def));
+                                       .addReg(dest, MachineOperand::Def));
 
         if (notArg->getType() == Type::BoolTy) {
           // set 1 in result register if result of above is non-zero
           mvec.push_back(BuildMI(V9::MOVRNZi, 3).addReg(dest).addZImm(1)
-                         .addReg(dest, MOTy::UseAndDef));
+                         .addReg(dest, MachineOperand::UseAndDef));
         }
 
         break;
@@ -2180,12 +2180,12 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         Value *dest = subtreeRoot->getValue();
 
         mvec.push_back(BuildMI(V9::ORNr, 3).addReg(lhs).addReg(notArg)
-                       .addReg(dest, MOTy::Def));
+                       .addReg(dest, MachineOperand::Def));
 
         if (notArg->getType() == Type::BoolTy) {
           // set 1 in result register if result of above is non-zero
           mvec.push_back(BuildMI(V9::MOVRNZi, 3).addReg(dest).addZImm(1)
-                         .addReg(dest, MOTy::UseAndDef));
+                         .addReg(dest, MachineOperand::UseAndDef));
         }
 
         break;
@@ -2210,12 +2210,12 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
         Value *lhs = subtreeRoot->leftChild()->getValue();
         Value *dest = subtreeRoot->getValue();
         mvec.push_back(BuildMI(V9::XNORr, 3).addReg(lhs).addReg(notArg)
-                       .addReg(dest, MOTy::Def));
+                       .addReg(dest, MachineOperand::Def));
 
         if (notArg->getType() == Type::BoolTy) {
           // set 1 in result register if result of above is non-zero
           mvec.push_back(BuildMI(V9::MOVRNZi, 3).addReg(dest).addZImm(1)
-                         .addReg(dest, MOTy::UseAndDef));
+                         .addReg(dest, MachineOperand::UseAndDef));
         }
         break;
       }
@@ -2262,7 +2262,8 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
             MachineOpCode movOpCode = ChooseMovpregiForSetCC(subtreeRoot);
             mvec.push_back(BuildMI(movOpCode, 3)
                            .addReg(subtreeRoot->leftChild()->getValue())
-                           .addZImm(1).addReg(setCCInstr, MOTy::UseAndDef));
+                           .addZImm(1)
+                           .addReg(setCCInstr, MachineOperand::UseAndDef));
                 
             break;
           }
@@ -2336,12 +2337,13 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
           mvec.push_back(BuildMI(V9::SUBccr, 4)
                          .addReg(leftOpToUse)
                          .addReg(rightOpToUse)
-                         .addMReg(target.getRegInfo().getZeroRegNum(),MOTy::Def)
-                         .addCCReg(tmpForCC, MOTy::Def));
+                         .addMReg(target.getRegInfo()
+                                   .getZeroRegNum(), MachineOperand::Def)
+                         .addCCReg(tmpForCC, MachineOperand::Def));
         } else {
           // FP condition: dest of FCMP should be some FCCn register
           mvec.push_back(BuildMI(ChooseFcmpInstruction(subtreeRoot), 3)
-                         .addCCReg(tmpForCC, MOTy::Def)
+                         .addCCReg(tmpForCC, MachineOperand::Def)
                          .addReg(leftOpToUse)
                          .addReg(rightOpToUse));
         }
@@ -2359,7 +2361,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
           // Mark the register as a use (as well as a def) because the old
           // value will be retained if the condition is false.
           M = (BuildMI(movOpCode, 3).addCCReg(tmpForCC).addZImm(1)
-               .addReg(setCCInstr, MOTy::UseAndDef));
+               .addReg(setCCInstr, MachineOperand::UseAndDef));
           mvec.push_back(M);
         }
         break;
@@ -2448,8 +2450,8 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
           MachineFunction& MF = MachineFunction::get(currentFunc);
           MachineCodeForInstruction& mcfi =
             MachineCodeForInstruction::get(callInstr); 
-          const SparcRegInfo& regInfo =
-            (SparcRegInfo&) target.getRegInfo();
+          const SparcV9RegInfo& regInfo =
+            (SparcV9RegInfo&) target.getRegInfo();
           const TargetFrameInfo& frameInfo = target.getFrameInfo();
 
           // Create hidden virtual register for return address with type void*
@@ -2589,7 +2591,7 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
                 unsigned LoadOpcode = ChooseLoadInstruction(loadTy);
                 M = BuildMI(convertOpcodeFromRegToImm(LoadOpcode), 3)
                   .addMReg(regInfo.getFramePointer()).addSImm(tmpOffset)
-                  .addReg(argVReg, MOTy::Def);
+                  .addReg(argVReg, MachineOperand::Def);
 
                 // Mark operand with register it should be assigned
                 // both for copy and for the callMI
@@ -2668,11 +2670,11 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
               // -- For non-FP values, create an add-with-0 instruction
               if (argType->isFloatingPoint())
                 M=(BuildMI(argType==Type::FloatTy? V9::FMOVS :V9::FMOVD,2)
-                   .addReg(argVal).addReg(argVReg, MOTy::Def));
+                   .addReg(argVal).addReg(argVReg, MachineOperand::Def));
               else
                 M = (BuildMI(ChooseAddInstructionByType(argType), 3)
                      .addReg(argVal).addSImm((int64_t) 0)
-                     .addReg(argVReg, MOTy::Def));
+                     .addReg(argVReg, MachineOperand::Def));
               
               // Mark the operand with the register it should be assigned
               M->SetRegForOperand(M->getNumOperands()-1, regNumForArg);
@@ -2699,8 +2701,8 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
             const Type* retType = callInstr->getType();
 
             int regNum = (retType->isFloatingPoint()
-                          ? (unsigned) SparcFloatRegClass::f0 
-                          : (unsigned) SparcIntRegClass::o0);
+                          ? (unsigned) SparcV9FloatRegClass::f0 
+                          : (unsigned) SparcV9IntRegClass::o0);
             unsigned regClassID = regInfo.getRegClassIDOfType(retType);
             regNum = regInfo.getUnifiedRegNum(regClassID, regNum);
 
@@ -2716,11 +2718,11 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
             // -- For non-FP values, create an add-with-0 instruction
             if (retType->isFloatingPoint())
               M = (BuildMI(retType==Type::FloatTy? V9::FMOVS : V9::FMOVD, 2)
-                   .addReg(retVReg).addReg(callInstr, MOTy::Def));
+                   .addReg(retVReg).addReg(callInstr, MachineOperand::Def));
             else
               M = (BuildMI(ChooseAddInstructionByType(retType), 3)
                    .addReg(retVReg).addSImm((int64_t) 0)
-                   .addReg(callInstr, MOTy::Def));
+                   .addReg(callInstr, MachineOperand::Def));
 
             // Mark the operand with the register it should be assigned
             // Also mark the implicit ref of the call defining this operand
@@ -2878,12 +2880,13 @@ GetInstructionsByRule(InstructionNode* subtreeRoot,
                                            tmpI, NULL, "maskHi2");
           mvec.push_back(BuildMI(V9::SLLXi6, 3).addReg(tmpI)
                          .addZImm(8*(4-destSize))
-                         .addReg(srlArgToUse, MOTy::Def));
+                         .addReg(srlArgToUse, MachineOperand::Def));
         }
 
         // Logical right shift 32-N to get zero extension in top 64-N bits.
         mvec.push_back(BuildMI(V9::SRLi5, 3).addReg(srlArgToUse)
-                       .addZImm(8*(4-destSize)).addReg(dest, MOTy::Def));
+                         .addZImm(8*(4-destSize))
+                         .addReg(dest, MachineOperand::Def));
 
       } else if (destSize < 8) {
         assert(0 && "Unsupported type size: 32 < size < 64 bits");

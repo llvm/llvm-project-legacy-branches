@@ -67,13 +67,14 @@ public:
   typedef std::reverse_iterator<iterator>             reverse_iterator;
 
   /// BasicBlock ctor - If the function parameter is specified, the basic block
-  /// is automatically inserted at the end of the function.
+  /// is automatically inserted at either the end of the function (if
+  /// InsertBefore is null), or before the specified basic block.
   ///
-  BasicBlock(const std::string &Name = "", Function *Parent = 0);
-
   /// BasicBlock ctor - If the InsertBefore parameter is specified, the basic
   /// block is automatically inserted right before the specified block.
-  BasicBlock(const std::string &Name, BasicBlock *InsertBefore);
+  ///
+  BasicBlock(const std::string &Name = "", Function *Parent = 0,
+             BasicBlock *InsertBefore = 0);
   ~BasicBlock();
 
   // Specialize setName to take care of symbol table majik
@@ -131,13 +132,6 @@ public:
   static inline bool classof(const Value *V) {
     return V->getValueType() == Value::BasicBlockVal;
   }
-
-  /// hasConstantReferences() - This predicate is true if there is a 
-  /// reference to this basic block in the constant pool for this method.  For
-  /// example, if a block is reached through a switch table, that table resides
-  /// in the constant pool, and the basic block is reference from it.
-  ///
-  bool hasConstantReferences() const;
 
   /// dropAllReferences() - This function causes all the subinstructions to "let
   /// go" of all references that they are maintaining.  This allows one to

@@ -10,56 +10,41 @@
 // This file implements a linear scan register allocator.
 //
 //===----------------------------------------------------------------------===//
+
 #define DEBUG_TYPE "regalloc"
 #include "llvm/Function.h"
-#include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/LiveVariables.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/SSARegMap.h"
 #include "llvm/Target/MRegisterInfo.h"
-#include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Support/CFG.h"
 #include "Support/Debug.h"
-#include "Support/DepthFirstIterator.h"
-#include "Support/Statistic.h"
-#include "Support/STLExtras.h"
+#include "LiveIntervals.h"
+#include "PhysRegTracker.h"
+#include "VirtRegMap.h"
+#include <algorithm>
+#include <iostream>
+
 using namespace llvm;
 
 namespace {
-    Statistic<> numSpilled ("ra-linearscan", "Number of registers spilled");
-    Statistic<> numReloaded("ra-linearscan", "Number of registers reloaded");
-
     class RA : public MachineFunctionPass {
     private:
         MachineFunction* mf_;
         const TargetMachine* tm_;
         const MRegisterInfo* mri_;
-        MachineFunction::iterator currentMbb_;
-        MachineBasicBlock::iterator currentInstr_;
-        typedef std::vector<const LiveIntervals::Interval*> IntervalPtrs;
-        IntervalPtrs unhandled_, fixed_, active_, inactive_;
+        LiveIntervals* li_;
+        typedef std::list<LiveIntervals::Interval*> IntervalPtrs;
+        IntervalPtrs unhandled_, fixed_, active_, inactive_, handled_;
 
-        typedef std::vector<unsigned> Regs;
-        Regs tempUseOperands_;
-        Regs tempDefOperands_;
+        std::auto_ptr<PhysRegTracker> prt_;
+        std::auto_ptr<VirtRegMap> vrm_;
+        std::auto_ptr<Spiller> spiller_;
 
-        typedef std::vector<bool> RegMask;
-        RegMask reserved_;
-
-        unsigned regUse_[MRegisterInfo::FirstVirtualRegister];
-        unsigned regUseBackup_[MRegisterInfo::FirstVirtualRegister];
-
-        typedef std::map<unsigned, unsigned> Virt2PhysMap;
-        Virt2PhysMap v2pMap_;
-
-        typedef std::map<unsigned, int> Virt2StackSlotMap;
-        Virt2StackSlotMap v2ssMap_;
-
-        int instrAdded_;
+        typedef std::vector<float> SpillWeights;
+        SpillWeights spillWeights_;
 
     public:
         virtual const char* getPassName() const {
@@ -72,13 +57,18 @@ namespace {
             MachineFunctionPass::getAnalysisUsage(AU);
         }
 
-    private:
         /// runOnMachineFunction - register allocate the whole function
         bool runOnMachineFunction(MachineFunction&);
 
+        void releaseMemory();
+
+    private:
+        /// linearScan - the linear scan algorithm
+        void linearScan();
+
         /// initIntervalSets - initializa the four interval sets:
         /// unhandled, fixed, active and inactive
-        void initIntervalSets(const LiveIntervals::Intervals& li);
+        void initIntervalSets(LiveIntervals::Intervals& li);
 
         /// processActiveIntervals - expire old intervals and move
         /// non-overlapping ones to the incative list
@@ -88,11 +78,13 @@ namespace {
         /// overlapping ones to the active list
         void processInactiveIntervals(IntervalPtrs::value_type cur);
 
-        /// assignStackSlotAtInterval - choose and spill
-        /// interval. Currently we spill the interval with the last
-        /// end point in the active and inactive lists and the current
-        /// interval
-        void assignStackSlotAtInterval(IntervalPtrs::value_type cur);
+        /// updateSpillWeights - updates the spill weights of the
+        /// specifed physical register and its weight
+        void updateSpillWeights(unsigned reg, SpillWeights::value_type weight);
+
+        /// assignRegOrStackSlotAtInterval - assign a register if one
+        /// is available, or spill.
+        void assignRegOrStackSlotAtInterval(IntervalPtrs::value_type cur);
 
         ///
         /// register handling helpers
@@ -103,321 +95,146 @@ namespace {
         /// 0
         unsigned getFreePhysReg(IntervalPtrs::value_type cur);
 
-        /// physRegAvailable - returns true if the specifed physical
-        /// register is available
-        bool physRegAvailable(unsigned physReg);
-
-        /// tempPhysRegAvailable - returns true if the specifed
-        /// temporary physical register is available
-        bool tempPhysRegAvailable(unsigned physReg);
-
-        /// getFreeTempPhysReg - return a free temprorary physical
-        /// register for this virtual register if we have one (should
-        /// never return 0)
-        unsigned getFreeTempPhysReg(unsigned virtReg);
-
-        /// assignVirt2PhysReg - assigns the free physical register to
-        /// the virtual register passed as arguments
-        void assignVirt2PhysReg(unsigned virtReg, unsigned physReg);
-
-        /// clearVirtReg - free the physical register associated with this
-        /// virtual register and disassociate virtual->physical and
-        /// physical->virtual mappings
-        void clearVirtReg(unsigned virtReg);
-
         /// assignVirt2StackSlot - assigns this virtual register to a
-        /// stack slot
-        void assignVirt2StackSlot(unsigned virtReg);
-
-        /// getStackSlot - returns the offset of the specified
-        /// register on the stack
-        int getStackSlot(unsigned virtReg);
-
-        /// spillVirtReg - spills the virtual register
-        void spillVirtReg(unsigned virtReg);
-
-        /// loadPhysReg - loads to the physical register the value of
-        /// the virtual register specifed. Virtual register must have
-        /// an assigned stack slot
-        void loadVirt2PhysReg(unsigned virtReg, unsigned physReg);
-
-        void markPhysRegFree(unsigned physReg);
-        void markPhysRegNotFree(unsigned physReg);
-
-        void backupRegUse() {
-            memcpy(regUseBackup_, regUse_, sizeof(regUseBackup_));
-        }
-
-        void restoreRegUse() {
-            memcpy(regUse_, regUseBackup_, sizeof(regUseBackup_));
-        }
-
-        void printVirt2PhysMap() const {
-            std::cerr << "allocated registers:\n";
-            for (Virt2PhysMap::const_iterator
-                     i = v2pMap_.begin(), e = v2pMap_.end(); i != e; ++i) {
-                std::cerr << '[' << i->first << ','
-                          << mri_->getName(i->second) << "]\n";
-            }
-            std::cerr << '\n';
-        }
+        /// stack slot. returns the stack slot
+        int assignVirt2StackSlot(unsigned virtReg);
 
         void printIntervals(const char* const str,
                             RA::IntervalPtrs::const_iterator i,
                             RA::IntervalPtrs::const_iterator e) const {
             if (str) std::cerr << str << " intervals:\n";
             for (; i != e; ++i) {
-                std::cerr << "\t\t" << **i << " -> ";
+                std::cerr << "\t" << **i << " -> ";
                 unsigned reg = (*i)->reg;
-                if (reg >= MRegisterInfo::FirstVirtualRegister) {
-                    Virt2PhysMap::const_iterator it = v2pMap_.find(reg);
-                    reg = (it == v2pMap_.end() ? 0 : it->second);
+                if (MRegisterInfo::isVirtualRegister(reg)) {
+                    reg = vrm_->getPhys(reg);
                 }
                 std::cerr << mri_->getName(reg) << '\n';
             }
         }
 
-        void printFreeRegs(const char* const str,
-                           const TargetRegisterClass* rc) const {
-            if (str) std::cerr << str << ':';
-            for (TargetRegisterClass::iterator i =
-                     rc->allocation_order_begin(*mf_);
-                 i != rc->allocation_order_end(*mf_); ++i) {
-                unsigned reg = *i;
-                if (!regUse_[reg]) {
-                    std::cerr << ' ' << mri_->getName(reg);
-                    if (reserved_[reg]) std::cerr << "*";
-                }
-            }
-            std::cerr << '\n';
-        }
+//         void verifyAssignment() const {
+//             for (Virt2PhysMap::const_iterator i = v2pMap_.begin(),
+//                      e = v2pMap_.end(); i != e; ++i)
+//                 for (Virt2PhysMap::const_iterator i2 = next(i); i2 != e; ++i2)
+//                     if (MRegisterInfo::isVirtualRegister(i->second) &&
+//                         (i->second == i2->second ||
+//                          mri_->areAliases(i->second, i2->second))) {
+//                         const LiveIntervals::Interval
+//                             &in = li_->getInterval(i->second),
+//                             &in2 = li_->getInterval(i2->second);
+//                         if (in.overlaps(in2)) {
+//                             std::cerr << in << " overlaps " << in2 << '\n';
+//                             assert(0);
+//                         }
+//                     }
+//         }
     };
+}
+
+void RA::releaseMemory()
+{
+    unhandled_.clear();
+    active_.clear();
+    inactive_.clear();
+    fixed_.clear();
+    handled_.clear();
 }
 
 bool RA::runOnMachineFunction(MachineFunction &fn) {
     mf_ = &fn;
     tm_ = &fn.getTarget();
     mri_ = tm_->getRegisterInfo();
+    li_ = &getAnalysis<LiveIntervals>();
+    if (!prt_.get()) prt_.reset(new PhysRegTracker(*mri_));
+    vrm_.reset(new VirtRegMap(*mf_));
+    if (!spiller_.get()) spiller_.reset(createSpiller());
 
-    initIntervalSets(getAnalysis<LiveIntervals>().getIntervals());
+    initIntervalSets(li_->getIntervals());
 
-    v2pMap_.clear();
-    v2ssMap_.clear();
-    memset(regUse_, 0, sizeof(regUse_));
-    memset(regUseBackup_, 0, sizeof(regUseBackup_));
+    linearScan();
 
-    // FIXME: this will work only for the X86 backend. I need to
-    // device an algorthm to select the minimal (considering register
-    // aliasing) number of temp registers to reserve so that we have 2
-    // registers for each register class available.
+    spiller_->runOnMachineFunction(*mf_, *vrm_);
 
-    // reserve R8:   CH,  CL
-    //         R16:  CX,  DI,
-    //         R32: ECX, EDI,
-    //         RFP: FP5, FP6
-    reserved_.assign(MRegisterInfo::FirstVirtualRegister, false);
-    reserved_[ 8] = true; /*  CH */
-    reserved_[ 9] = true; /*  CL */
-    reserved_[10] = true; /*  CX */
-    reserved_[12] = true; /*  DI */
-    reserved_[18] = true; /* ECX */
-    reserved_[19] = true; /* EDI */
-    reserved_[28] = true; /* FP5 */
-    reserved_[29] = true; /* FP6 */
+    return true;
+}
 
+void RA::linearScan()
+{
     // linear scan algorithm
+    DEBUG(std::cerr << "********** LINEAR SCAN **********\n");
+    DEBUG(std::cerr << "********** Function: "
+          << mf_->getFunction()->getName() << '\n');
 
-    DEBUG(printIntervals("\tunhandled", unhandled_.begin(), unhandled_.end()));
-    DEBUG(printIntervals("\tfixed", fixed_.begin(), fixed_.end()));
-    DEBUG(printIntervals("\tactive", active_.begin(), active_.end()));
-    DEBUG(printIntervals("\tinactive", inactive_.begin(), inactive_.end()));
+    DEBUG(printIntervals("unhandled", unhandled_.begin(), unhandled_.end()));
+    DEBUG(printIntervals("fixed", fixed_.begin(), fixed_.end()));
+    DEBUG(printIntervals("active", active_.begin(), active_.end()));
+    DEBUG(printIntervals("inactive", inactive_.begin(), inactive_.end()));
 
     while (!unhandled_.empty() || !fixed_.empty()) {
         // pick the interval with the earliest start point
         IntervalPtrs::value_type cur;
         if (fixed_.empty()) {
             cur = unhandled_.front();
-            unhandled_.erase(unhandled_.begin());
+            unhandled_.pop_front();
         }
         else if (unhandled_.empty()) {
             cur = fixed_.front();
-            fixed_.erase(fixed_.begin());
+            fixed_.pop_front();
         }
         else if (unhandled_.front()->start() < fixed_.front()->start()) {
             cur = unhandled_.front();
-            unhandled_.erase(unhandled_.begin());
+            unhandled_.pop_front();
         }
         else {
             cur = fixed_.front();
-            fixed_.erase(fixed_.begin());
+            fixed_.pop_front();
         }
 
-        DEBUG(std::cerr << *cur << '\n');
+        DEBUG(std::cerr << "\n*** CURRENT ***: " << *cur << '\n');
 
         processActiveIntervals(cur);
         processInactiveIntervals(cur);
 
         // if this register is fixed we are done
-        if (cur->reg < MRegisterInfo::FirstVirtualRegister) {
-            markPhysRegNotFree(cur->reg);
+        if (MRegisterInfo::isPhysicalRegister(cur->reg)) {
+            prt_->addRegUse(cur->reg);
             active_.push_back(cur);
+            handled_.push_back(cur);
         }
         // otherwise we are allocating a virtual register. try to find
         // a free physical register or spill an interval in order to
         // assign it one (we could spill the current though).
         else {
-            backupRegUse();
-
-            // for every interval in inactive we overlap with, mark the
-            // register as not free
-            for (IntervalPtrs::const_iterator i = inactive_.begin(),
-                     e = inactive_.end(); i != e; ++i) {
-                unsigned reg = (*i)->reg;
-                if (reg >= MRegisterInfo::FirstVirtualRegister)
-                    reg = v2pMap_[reg];
-
-                if (cur->overlaps(**i)) {
-                    markPhysRegNotFree(reg);
-                }
-            }
-
-            // for every interval in fixed we overlap with,
-            // mark the register as not free
-            for (IntervalPtrs::const_iterator i = fixed_.begin(),
-                     e = fixed_.end(); i != e; ++i) {
-                assert((*i)->reg < MRegisterInfo::FirstVirtualRegister &&
-                       "virtual register interval in fixed set?");
-                if (cur->overlaps(**i))
-                    markPhysRegNotFree((*i)->reg);
-            }
-
-            DEBUG(std::cerr << "\tallocating current interval:\n");
-
-            unsigned physReg = getFreePhysReg(cur);
-            if (!physReg) {
-                assignStackSlotAtInterval(cur);
-            }
-            else {
-                restoreRegUse();
-                assignVirt2PhysReg(cur->reg, physReg);
-                active_.push_back(cur);
-            }
+            assignRegOrStackSlotAtInterval(cur);
         }
 
-        DEBUG(printIntervals("\tactive", active_.begin(), active_.end()));
-        DEBUG(printIntervals("\tinactive", inactive_.begin(), inactive_.end()));    }
+        DEBUG(printIntervals("active", active_.begin(), active_.end()));
+        DEBUG(printIntervals("inactive", inactive_.begin(), inactive_.end()));
+        // DEBUG(verifyAssignment());
+    }
 
     // expire any remaining active intervals
     for (IntervalPtrs::iterator i = active_.begin(); i != active_.end(); ++i) {
         unsigned reg = (*i)->reg;
-        DEBUG(std::cerr << "\t\tinterval " << **i << " expired\n");
-        if (reg >= MRegisterInfo::FirstVirtualRegister) {
-            reg = v2pMap_[reg];
-        }
-        markPhysRegFree(reg);
-    }
-    active_.clear();
-    inactive_.clear();
-
-    DEBUG(std::cerr << "finished register allocation\n");
-    DEBUG(printVirt2PhysMap());
-
-    DEBUG(std::cerr << "Rewrite machine code:\n");
-    for (currentMbb_ = mf_->begin(); currentMbb_ != mf_->end(); ++currentMbb_) {
-        instrAdded_ = 0;
-
-        for (currentInstr_ = currentMbb_->begin();
-             currentInstr_ != currentMbb_->end(); ++currentInstr_) {
-
-            DEBUG(std::cerr << "\tinstruction: ";
-                  (*currentInstr_)->print(std::cerr, *tm_););
-
-            // use our current mapping and actually replace and
-            // virtual register with its allocated physical registers
-            DEBUG(std::cerr << "\t\treplacing virtual registers with mapped "
-                  "physical registers:\n");
-            for (unsigned i = 0, e = (*currentInstr_)->getNumOperands();
-                 i != e; ++i) {
-                MachineOperand& op = (*currentInstr_)->getOperand(i);
-                if (op.isVirtualRegister()) {
-                    unsigned virtReg = op.getAllocatedRegNum();
-                    unsigned physReg = v2pMap_[virtReg];
-                    if (physReg) {
-                        DEBUG(std::cerr << "\t\t\t%reg" << virtReg
-                              << " -> " << mri_->getName(physReg) << '\n');
-                        (*currentInstr_)->SetMachineOperandReg(i, physReg);
-                    }
-                }
-            }
-
-            DEBUG(std::cerr << "\t\tloading temporarily used operands to "
-                  "registers:\n");
-            for (unsigned i = 0, e = (*currentInstr_)->getNumOperands();
-                 i != e; ++i) {
-                MachineOperand& op = (*currentInstr_)->getOperand(i);
-                if (op.isVirtualRegister() && op.isUse() && !op.isDef()) {
-                    unsigned virtReg = op.getAllocatedRegNum();
-                    unsigned physReg = v2pMap_[virtReg];
-                    if (!physReg) {
-                        physReg = getFreeTempPhysReg(virtReg);
-                        loadVirt2PhysReg(virtReg, physReg);
-                        tempUseOperands_.push_back(virtReg);
-                    }
-                    (*currentInstr_)->SetMachineOperandReg(i, physReg);
-                }
-            }
-
-            DEBUG(std::cerr << "\t\tclearing temporarily used operands:\n");
-            for (unsigned i = 0, e = tempUseOperands_.size(); i != e; ++i) {
-                clearVirtReg(tempUseOperands_[i]);
-            }
-            tempUseOperands_.clear();
-
-            DEBUG(std::cerr << "\t\tassigning temporarily defined operands to "
-                  "registers:\n");
-            for (unsigned i = 0, e = (*currentInstr_)->getNumOperands();
-                 i != e; ++i) {
-                MachineOperand& op = (*currentInstr_)->getOperand(i);
-                if (op.isVirtualRegister() && op.isDef()) {
-                    unsigned virtReg = op.getAllocatedRegNum();
-                    unsigned physReg = v2pMap_[virtReg];
-                    if (!physReg) {
-                        physReg = getFreeTempPhysReg(virtReg);
-                    }
-                    if (op.isUse()) { // def and use
-                        loadVirt2PhysReg(virtReg, physReg);
-                    }
-                    else {
-                        assignVirt2PhysReg(virtReg, physReg);
-                    }
-                    tempDefOperands_.push_back(virtReg);
-                    (*currentInstr_)->SetMachineOperandReg(i, physReg);
-                }
-            }
-
-            DEBUG(std::cerr << "\t\tspilling temporarily defined operands "
-                  "of this instruction:\n");
-            ++currentInstr_; // we want to insert after this instruction
-            for (unsigned i = 0, e = tempDefOperands_.size(); i != e; ++i) {
-                spillVirtReg(tempDefOperands_[i]);
-            }
-            --currentInstr_; // restore currentInstr_ iterator
-            tempDefOperands_.clear();
-        }
+        DEBUG(std::cerr << "\tinterval " << **i << " expired\n");
+        if (MRegisterInfo::isVirtualRegister(reg))
+            reg = vrm_->getPhys(reg);
+        prt_->delRegUse(reg);
     }
 
-    return true;
+    DEBUG(std::cerr << *vrm_);
 }
 
-void RA::initIntervalSets(const LiveIntervals::Intervals& li)
+void RA::initIntervalSets(LiveIntervals::Intervals& li)
 {
     assert(unhandled_.empty() && fixed_.empty() &&
            active_.empty() && inactive_.empty() &&
            "interval sets should be empty on initialization");
 
-    for (LiveIntervals::Intervals::const_iterator i = li.begin(), e = li.end();
+    for (LiveIntervals::Intervals::iterator i = li.begin(), e = li.end();
          i != e; ++i) {
-        if (i->reg < MRegisterInfo::FirstVirtualRegister)
+        if (MRegisterInfo::isPhysicalRegister(i->reg))
             fixed_.push_back(&*i);
         else
             unhandled_.push_back(&*i);
@@ -432,20 +249,18 @@ void RA::processActiveIntervals(IntervalPtrs::value_type cur)
         // remove expired intervals
         if ((*i)->expiredAt(cur->start())) {
             DEBUG(std::cerr << "\t\tinterval " << **i << " expired\n");
-            if (reg >= MRegisterInfo::FirstVirtualRegister) {
-                reg = v2pMap_[reg];
-            }
-            markPhysRegFree(reg);
+            if (MRegisterInfo::isVirtualRegister(reg))
+                reg = vrm_->getPhys(reg);
+            prt_->delRegUse(reg);
             // remove from active
             i = active_.erase(i);
         }
         // move inactive intervals to inactive list
         else if (!(*i)->liveAt(cur->start())) {
-            DEBUG(std::cerr << "\t\t\tinterval " << **i << " inactive\n");
-            if (reg >= MRegisterInfo::FirstVirtualRegister) {
-                reg = v2pMap_[reg];
-            }
-            markPhysRegFree(reg);
+            DEBUG(std::cerr << "\t\tinterval " << **i << " inactive\n");
+            if (MRegisterInfo::isVirtualRegister(reg))
+                reg = vrm_->getPhys(reg);
+            prt_->delRegUse(reg);
             // add to inactive
             inactive_.push_back(*i);
             // remove from active
@@ -465,17 +280,16 @@ void RA::processInactiveIntervals(IntervalPtrs::value_type cur)
 
         // remove expired intervals
         if ((*i)->expiredAt(cur->start())) {
-            DEBUG(std::cerr << "\t\t\tinterval " << **i << " expired\n");
+            DEBUG(std::cerr << "\t\tinterval " << **i << " expired\n");
             // remove from inactive
             i = inactive_.erase(i);
         }
         // move re-activated intervals in active list
         else if ((*i)->liveAt(cur->start())) {
-            DEBUG(std::cerr << "\t\t\tinterval " << **i << " active\n");
-            if (reg >= MRegisterInfo::FirstVirtualRegister) {
-                reg = v2pMap_[reg];
-            }
-            markPhysRegNotFree(reg);
+            DEBUG(std::cerr << "\t\tinterval " << **i << " active\n");
+            if (MRegisterInfo::isVirtualRegister(reg))
+                reg = vrm_->getPhys(reg);
+            prt_->addRegUse(reg);
             // add to active
             active_.push_back(*i);
             // remove from inactive
@@ -487,281 +301,237 @@ void RA::processInactiveIntervals(IntervalPtrs::value_type cur)
     }
 }
 
-namespace {
-    template <typename T>
-    void updateWeight(T rw[], int reg, T w)
-    {
-        if (rw[reg] == std::numeric_limits<T>::max() ||
-            w == std::numeric_limits<T>::max())
-            rw[reg] = std::numeric_limits<T>::max();
-        else
-            rw[reg] += w;
-    }
+void RA::updateSpillWeights(unsigned reg, SpillWeights::value_type weight)
+{
+    spillWeights_[reg] += weight;
+    for (const unsigned* as = mri_->getAliasSet(reg); *as; ++as)
+        spillWeights_[*as] += weight;
 }
 
-void RA::assignStackSlotAtInterval(IntervalPtrs::value_type cur)
+void RA::assignRegOrStackSlotAtInterval(IntervalPtrs::value_type cur)
 {
-    DEBUG(std::cerr << "\t\tassigning stack slot at interval "
-          << *cur << ":\n");
+    DEBUG(std::cerr << "\tallocating current interval: ");
 
-    // set all weights to zero
-    float regWeight[MRegisterInfo::FirstVirtualRegister];
-    for (unsigned i = 0; i < MRegisterInfo::FirstVirtualRegister; ++i)
-        regWeight[i] = 0.0F;
+    PhysRegTracker backupPrt = *prt_;
 
-    // for each interval in active that overlaps
+    spillWeights_.assign(mri_->getNumRegs(), 0.0);
+
+    // for each interval in active update spill weights
     for (IntervalPtrs::const_iterator i = active_.begin(), e = active_.end();
          i != e; ++i) {
-        if (!cur->overlaps(**i))
-            continue;
-
         unsigned reg = (*i)->reg;
-        if (reg >= MRegisterInfo::FirstVirtualRegister) {
-            reg = v2pMap_[reg];
-        }
-        updateWeight(regWeight, reg, (*i)->weight);
-        for (const unsigned* as = mri_->getAliasSet(reg); *as; ++as)
-            updateWeight(regWeight, *as, (*i)->weight);
+        if (MRegisterInfo::isVirtualRegister(reg))
+            reg = vrm_->getPhys(reg);
+        updateSpillWeights(reg, (*i)->weight);
     }
 
-    // for each interval in inactive that overlaps
+    // for every interval in inactive we overlap with, mark the
+    // register as not free and update spill weights
     for (IntervalPtrs::const_iterator i = inactive_.begin(),
              e = inactive_.end(); i != e; ++i) {
-        if (!cur->overlaps(**i))
-            continue;
-
-        unsigned reg = (*i)->reg;
-        if (reg >= MRegisterInfo::FirstVirtualRegister) {
-            reg = v2pMap_[reg];
+        if (cur->overlaps(**i)) {
+            unsigned reg = (*i)->reg;
+            if (MRegisterInfo::isVirtualRegister(reg))
+                reg = vrm_->getPhys(reg);
+            prt_->addRegUse(reg);
+            updateSpillWeights(reg, (*i)->weight);
         }
-        updateWeight(regWeight, reg, (*i)->weight);
-        for (const unsigned* as = mri_->getAliasSet(reg); *as; ++as)
-            updateWeight(regWeight, *as, (*i)->weight);
     }
 
-    // for each fixed interval that overlaps
-    for (IntervalPtrs::const_iterator i = fixed_.begin(), e = fixed_.end();
-         i != e; ++i) {
-        if (!cur->overlaps(**i))
-            continue;
-
-        assert((*i)->reg < MRegisterInfo::FirstVirtualRegister &&
-               "virtual register interval in fixed set?");
-        updateWeight(regWeight, (*i)->reg, (*i)->weight);
-        for (const unsigned* as = mri_->getAliasSet((*i)->reg); *as; ++as)
-            updateWeight(regWeight, *as, (*i)->weight);
+    // for every interval in fixed we overlap with,
+    // mark the register as not free and update spill weights
+    for (IntervalPtrs::const_iterator i = fixed_.begin(),
+             e = fixed_.end(); i != e; ++i) {
+        if (cur->overlaps(**i)) {
+            unsigned reg = (*i)->reg;
+            prt_->addRegUse(reg);
+            updateSpillWeights(reg, (*i)->weight);
+        }
     }
 
-    float minWeight = std::numeric_limits<float>::max();
+    unsigned physReg = getFreePhysReg(cur);
+    // restore the physical register tracker
+    *prt_ = backupPrt;
+    // if we find a free register, we are done: assign this virtual to
+    // the free physical register and add this interval to the active
+    // list.
+    if (physReg) {
+        DEBUG(std::cerr <<  mri_->getName(physReg) << '\n');
+        vrm_->assignVirt2Phys(cur->reg, physReg);
+        prt_->addRegUse(physReg);
+        active_.push_back(cur);
+        handled_.push_back(cur);
+        return;
+    }
+    DEBUG(std::cerr << "no free registers\n");
+
+    DEBUG(std::cerr << "\tassigning stack slot at interval "<< *cur << ":\n");
+
+    float minWeight = std::numeric_limits<float>::infinity();
     unsigned minReg = 0;
     const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(cur->reg);
     for (TargetRegisterClass::iterator i = rc->allocation_order_begin(*mf_);
          i != rc->allocation_order_end(*mf_); ++i) {
         unsigned reg = *i;
-        if (!reserved_[reg] && minWeight > regWeight[reg]) {
-            minWeight = regWeight[reg];
+        if (minWeight > spillWeights_[reg]) {
+            minWeight = spillWeights_[reg];
             minReg = reg;
         }
     }
+    DEBUG(std::cerr << "\t\tregister with min weight: "
+          << mri_->getName(minReg) << " (" << minWeight << ")\n");
 
-    if (cur->weight < minWeight) {
-        restoreRegUse();
-        DEBUG(std::cerr << "\t\t\t\tspilling: " << *cur << '\n');
-        assignVirt2StackSlot(cur->reg);
+    // if the current has the minimum weight, we need to modify it,
+    // push it back in unhandled and let the linear scan algorithm run
+    // again
+    if (cur->weight <= minWeight) {
+        DEBUG(std::cerr << "\t\t\tspilling(c): " << *cur << '\n';);
+        int slot = vrm_->assignVirt2StackSlot(cur->reg);
+        li_->updateSpilledInterval(*cur, *vrm_, slot);
+
+        // if we didn't eliminate the interval find where to add it
+        // back to unhandled. We need to scan since unhandled are
+        // sorted on earliest start point and we may have changed our
+        // start point.
+        if (!cur->empty()) {
+            IntervalPtrs::iterator it = unhandled_.begin();
+            while (it != unhandled_.end() && (*it)->start() < cur->start())
+                ++it;
+            unhandled_.insert(it, cur);
+        }
+        return;
     }
-    else {
-        DEBUG(std::cerr << "\t\t\t\tfreeing: " << mri_->getName(minReg) << '\n');
-        std::set<unsigned> toSpill;
-        toSpill.insert(minReg);
-        for (const unsigned* as = mri_->getAliasSet(minReg); *as; ++as)
-            toSpill.insert(*as);
 
-        std::vector<unsigned> spilled;
-        for (IntervalPtrs::iterator i = active_.begin();
-             i != active_.end(); ) {
-            unsigned reg = (*i)->reg;
-            if (reg >= MRegisterInfo::FirstVirtualRegister &&
-                toSpill.find(v2pMap_[reg]) != toSpill.end() &&
-                cur->overlaps(**i)) {
-                spilled.push_back(v2pMap_[reg]);
-                DEBUG(std::cerr << "\t\t\t\tspilling : " << **i << '\n');
-                assignVirt2StackSlot(reg);
-                i = active_.erase(i);
+    // push the current interval back to unhandled since we are going
+    // to re-run at least this iteration. Since we didn't modify it it
+    // should go back right in the front of the list
+    unhandled_.push_front(cur);
+
+    // otherwise we spill all intervals aliasing the register with
+    // minimum weight, rollback to the interval with the earliest
+    // start point and let the linear scan algorithm run again
+    assert(MRegisterInfo::isPhysicalRegister(minReg) &&
+           "did not choose a register to spill?");
+    std::vector<bool> toSpill(mri_->getNumRegs(), false);
+    toSpill[minReg] = true;
+    for (const unsigned* as = mri_->getAliasSet(minReg); *as; ++as)
+        toSpill[*as] = true;
+    unsigned earliestStart = cur->start();
+
+    for (IntervalPtrs::iterator i = active_.begin(); i != active_.end(); ++i) {
+        unsigned reg = (*i)->reg;
+        if (MRegisterInfo::isVirtualRegister(reg) &&
+            toSpill[vrm_->getPhys(reg)] &&
+            cur->overlaps(**i)) {
+            DEBUG(std::cerr << "\t\t\tspilling(a): " << **i << '\n');
+            earliestStart = std::min(earliestStart, (*i)->start());
+            int slot = vrm_->assignVirt2StackSlot((*i)->reg);
+            li_->updateSpilledInterval(**i, *vrm_, slot);
+        }
+    }
+    for (IntervalPtrs::iterator i = inactive_.begin();
+         i != inactive_.end(); ++i) {
+        unsigned reg = (*i)->reg;
+        if (MRegisterInfo::isVirtualRegister(reg) &&
+            toSpill[vrm_->getPhys(reg)] &&
+            cur->overlaps(**i)) {
+            DEBUG(std::cerr << "\t\t\tspilling(i): " << **i << '\n');
+            earliestStart = std::min(earliestStart, (*i)->start());
+            int slot = vrm_->assignVirt2StackSlot((*i)->reg);
+            li_->updateSpilledInterval(**i, *vrm_, slot);
+        }
+    }
+
+    DEBUG(std::cerr << "\t\trolling back to: " << earliestStart << '\n');
+    // scan handled in reverse order and undo each one, restoring the
+    // state of unhandled and fixed
+    while (!handled_.empty()) {
+        IntervalPtrs::value_type i = handled_.back();
+        // if this interval starts before t we are done
+        if (!i->empty() && i->start() < earliestStart)
+            break;
+        DEBUG(std::cerr << "\t\t\tundo changes for: " << *i << '\n');
+        handled_.pop_back();
+        IntervalPtrs::iterator it;
+        if ((it = find(active_.begin(), active_.end(), i)) != active_.end()) {
+            active_.erase(it);
+            if (MRegisterInfo::isPhysicalRegister(i->reg)) {
+                fixed_.push_front(i);
+                prt_->delRegUse(i->reg);
             }
             else {
-                ++i;
+                prt_->delRegUse(vrm_->getPhys(i->reg));
+                vrm_->clearVirt(i->reg);
+                if (i->spilled()) {
+                    if (!i->empty()) {
+                        IntervalPtrs::iterator it = unhandled_.begin();
+                        while (it != unhandled_.end() &&
+                               (*it)->start() < i->start())
+                            ++it;
+                        unhandled_.insert(it, i);
+                    }
+                }
+                else
+                    unhandled_.push_front(i);
+
             }
         }
-        for (IntervalPtrs::iterator i = inactive_.begin();
-             i != inactive_.end(); ) {
-            unsigned reg = (*i)->reg;
-            if (reg >= MRegisterInfo::FirstVirtualRegister &&
-                toSpill.find(v2pMap_[reg]) != toSpill.end() &&
-                cur->overlaps(**i)) {
-                DEBUG(std::cerr << "\t\t\t\tspilling : " << **i << '\n');
-                assignVirt2StackSlot(reg);
-                i = inactive_.erase(i);
-            }
+        else if ((it = find(inactive_.begin(), inactive_.end(), i)) != inactive_.end()) {
+            inactive_.erase(it);
+            if (MRegisterInfo::isPhysicalRegister(i->reg))
+                fixed_.push_front(i);
             else {
-                ++i;
+                vrm_->clearVirt(i->reg);
+                if (i->spilled()) {
+                    if (!i->empty()) {
+                        IntervalPtrs::iterator it = unhandled_.begin();
+                        while (it != unhandled_.end() &&
+                               (*it)->start() < i->start())
+                            ++it;
+                        unhandled_.insert(it, i);
+                    }
+                }
+                else
+                    unhandled_.push_front(i);
             }
         }
-
-        unsigned physReg = getFreePhysReg(cur);
-        assert(physReg && "no free physical register after spill?");
-
-        restoreRegUse();
-        for (unsigned i = 0; i < spilled.size(); ++i)
-            markPhysRegFree(spilled[i]);
-
-        assignVirt2PhysReg(cur->reg, physReg);
-        active_.push_back(cur);
+        else {
+            if (MRegisterInfo::isPhysicalRegister(i->reg))
+                fixed_.push_front(i);
+            else {
+                vrm_->clearVirt(i->reg);
+                unhandled_.push_front(i);
+            }
+        }
     }
-}
 
-bool RA::physRegAvailable(unsigned physReg)
-{
-    assert(!reserved_[physReg] &&
-           "cannot call this method with a reserved register");
-
-    return !regUse_[physReg];
+    // scan the rest and undo each interval that expired after t and
+    // insert it in active (the next iteration of the algorithm will
+    // put it in inactive if required)
+    IntervalPtrs::iterator i = handled_.begin(), e = handled_.end();
+    for (; i != e; ++i) {
+        if (!(*i)->expiredAt(earliestStart) && (*i)->expiredAt(cur->start())) {
+            DEBUG(std::cerr << "\t\t\tundo changes for: " << **i << '\n');
+            active_.push_back(*i);
+            if (MRegisterInfo::isPhysicalRegister((*i)->reg))
+                prt_->addRegUse((*i)->reg);
+            else
+                prt_->addRegUse(vrm_->getPhys((*i)->reg));
+        }
+    }
 }
 
 unsigned RA::getFreePhysReg(IntervalPtrs::value_type cur)
 {
-    DEBUG(std::cerr << "\t\tgetting free physical register: ");
     const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(cur->reg);
 
     for (TargetRegisterClass::iterator i = rc->allocation_order_begin(*mf_);
          i != rc->allocation_order_end(*mf_); ++i) {
         unsigned reg = *i;
-        if (!reserved_[reg] && !regUse_[reg]) {
-            DEBUG(std::cerr << mri_->getName(reg) << '\n');
+        if (prt_->isRegAvail(reg))
             return reg;
-        }
     }
-
-    DEBUG(std::cerr << "no free register\n");
     return 0;
-}
-
-bool RA::tempPhysRegAvailable(unsigned physReg)
-{
-    assert(reserved_[physReg] &&
-           "cannot call this method with a not reserved temp register");
-
-    return !regUse_[physReg];
-}
-
-unsigned RA::getFreeTempPhysReg(unsigned virtReg)
-{
-    DEBUG(std::cerr << "\t\tgetting free temporary physical register: ");
-
-    const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(virtReg);
-    // go in reverse allocation order for the temp registers
-    for (TargetRegisterClass::iterator i = rc->allocation_order_end(*mf_) - 1;
-         i != rc->allocation_order_begin(*mf_) - 1; --i) {
-        unsigned reg = *i;
-        if (reserved_[reg] && !regUse_[reg]) {
-            DEBUG(std::cerr << mri_->getName(reg) << '\n');
-            return reg;
-        }
-    }
-
-    assert(0 && "no free temporary physical register?");
-    return 0;
-}
-
-void RA::assignVirt2PhysReg(unsigned virtReg, unsigned physReg)
-{
-    v2pMap_[virtReg] = physReg;
-    markPhysRegNotFree(physReg);
-}
-
-void RA::clearVirtReg(unsigned virtReg)
-{
-    Virt2PhysMap::iterator it = v2pMap_.find(virtReg);
-    assert(it != v2pMap_.end() &&
-           "attempting to clear a not allocated virtual register");
-    unsigned physReg = it->second;
-    markPhysRegFree(physReg);
-    v2pMap_[virtReg] = 0; // this marks that this virtual register
-                          // lives on the stack
-    DEBUG(std::cerr << "\t\t\tcleared register " << mri_->getName(physReg)
-          << "\n");
-}
-
-void RA::assignVirt2StackSlot(unsigned virtReg)
-{
-    const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(virtReg);
-    int frameIndex = mf_->getFrameInfo()->CreateStackObject(rc);
-
-    bool inserted = v2ssMap_.insert(std::make_pair(virtReg, frameIndex)).second;
-    assert(inserted &&
-           "attempt to assign stack slot to already assigned register?");
-    // if the virtual register was previously assigned clear the mapping
-    // and free the virtual register
-    if (v2pMap_.find(virtReg) != v2pMap_.end()) {
-        clearVirtReg(virtReg);
-    }
-    else {
-        v2pMap_[virtReg] = 0; // this marks that this virtual register
-                              // lives on the stack
-    }
-}
-
-int RA::getStackSlot(unsigned virtReg)
-{
-    // use lower_bound so that we can do a possibly O(1) insert later
-    // if necessary
-    Virt2StackSlotMap::iterator it = v2ssMap_.find(virtReg);
-    assert(it != v2ssMap_.end() &&
-           "attempt to get stack slot on register that does not live on the stack");
-    return it->second;
-}
-
-void RA::spillVirtReg(unsigned virtReg)
-{
-    DEBUG(std::cerr << "\t\t\tspilling register: " << virtReg);
-    const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(virtReg);
-    int frameIndex = getStackSlot(virtReg);
-    DEBUG(std::cerr << " to stack slot #" << frameIndex << '\n');
-    ++numSpilled;
-    instrAdded_ += mri_->storeRegToStackSlot(*currentMbb_, currentInstr_,
-                                             v2pMap_[virtReg], frameIndex, rc);
-    clearVirtReg(virtReg);
-}
-
-void RA::loadVirt2PhysReg(unsigned virtReg, unsigned physReg)
-{
-    DEBUG(std::cerr << "\t\t\tloading register: " << virtReg);
-    const TargetRegisterClass* rc = mf_->getSSARegMap()->getRegClass(virtReg);
-    int frameIndex = getStackSlot(virtReg);
-    DEBUG(std::cerr << " from stack slot #" << frameIndex << '\n');
-    ++numReloaded;
-    instrAdded_ += mri_->loadRegFromStackSlot(*currentMbb_, currentInstr_,
-                                              physReg, frameIndex, rc);
-    assignVirt2PhysReg(virtReg, physReg);
-}
-
-void RA::markPhysRegFree(unsigned physReg)
-{
-    assert(regUse_[physReg] != 0);
-    --regUse_[physReg];
-    for (const unsigned* as = mri_->getAliasSet(physReg); *as; ++as) {
-        physReg = *as;
-        assert(regUse_[physReg] != 0);
-        --regUse_[physReg];
-    }
-}
-
-void RA::markPhysRegNotFree(unsigned physReg)
-{
-    ++regUse_[physReg];
-    for (const unsigned* as = mri_->getAliasSet(physReg); *as; ++as) {
-        physReg = *as;
-        ++regUse_[physReg];
-    }
 }
 
 FunctionPass* llvm::createLinearScanRegisterAllocator() {

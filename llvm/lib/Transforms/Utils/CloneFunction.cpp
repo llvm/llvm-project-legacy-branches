@@ -42,8 +42,8 @@ static inline void RemapInstruction(Instruction *I,
 // CloneBasicBlock - See comments in Cloning.h
 BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB,
                                   std::map<const Value*, Value*> &ValueMap,
-                                  const char *NameSuffix) {
-  BasicBlock *NewBB = new BasicBlock("");
+                                  const char *NameSuffix, Function *F) {
+  BasicBlock *NewBB = new BasicBlock("", F);
   if (BB->hasName()) NewBB->setName(BB->getName()+NameSuffix);
 
   // Loop over all instructions copying them over...
@@ -82,8 +82,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
     const BasicBlock &BB = *BI;
     
     // Create a new basic block and copy instructions into it!
-    BasicBlock *CBB = CloneBasicBlock(&BB, ValueMap, NameSuffix);
-    NewFunc->getBasicBlockList().push_back(CBB);
+    BasicBlock *CBB = CloneBasicBlock(&BB, ValueMap, NameSuffix, NewFunc);
     ValueMap[&BB] = CBB;                       // Add basic block mapping.
 
     if (ReturnInst *RI = dyn_cast<ReturnInst>(CBB->getTerminator()))
@@ -93,14 +92,11 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   // Loop over all of the instructions in the function, fixing up operand 
   // references as we go.  This uses ValueMap to do all the hard work.
   //
-  for (Function::const_iterator BB = OldFunc->begin(), BE = OldFunc->end();
-       BB != BE; ++BB) {
-    BasicBlock *NBB = cast<BasicBlock>(ValueMap[BB]);
-    
+  for (Function::iterator BB = cast<BasicBlock>(ValueMap[OldFunc->begin()]),
+         BE = NewFunc->end(); BB != BE; ++BB)
     // Loop over all instructions, fixing each one as we find it...
-    for (BasicBlock::iterator II = NBB->begin(); II != NBB->end(); ++II)
+    for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II)
       RemapInstruction(II, ValueMap);
-  }
 }
 
 /// CloneFunction - Return a copy of the specified function, but without

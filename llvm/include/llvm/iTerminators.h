@@ -21,9 +21,9 @@
 namespace llvm {
 
 //===---------------------------------------------------------------------------
-// ReturnInst - Return a value (possibly void), from a function.  Execution does
-//              not continue in this function any longer.
-//
+/// ReturnInst - Return a value (possibly void), from a function.  Execution
+/// does not continue in this function any longer.
+///
 class ReturnInst : public TerminatorInst {
   ReturnInst(const ReturnInst &RI) : TerminatorInst(Instruction::Ret) {
     if (RI.Operands.size()) {
@@ -83,8 +83,8 @@ public:
 };
 
 //===---------------------------------------------------------------------------
-// BranchInst - Conditional or Unconditional Branch instruction.
-//
+/// BranchInst - Conditional or Unconditional Branch instruction.
+///
 class BranchInst : public TerminatorInst {
   BranchInst(const BranchInst &BI);
 public:
@@ -190,8 +190,8 @@ public:
 
 
 //===---------------------------------------------------------------------------
-// SwitchInst - Multiway switch
-//
+/// SwitchInst - Multiway switch
+///
 class SwitchInst : public TerminatorInst {
   // Operand[0]    = Value to switch on
   // Operand[1]    = Default basic block destination
@@ -213,6 +213,36 @@ public:
   }
   inline       BasicBlock *getDefaultDest()       {
     return cast<BasicBlock>(Operands[1].get());
+  }
+
+  /// getNumCases - return the number of 'cases' in this switch instruction.
+  /// Note that case #0 is always the default case.
+  unsigned getNumCases() const {
+    return Operands.size()/2;
+  }
+
+  /// getCaseValue - Return the specified case value.  Note that case #0, the
+  /// default destination, does not have a case value.
+  Constant *getCaseValue(unsigned i) {
+    assert(i && i < getNumCases() && "Illegal case value to get!");
+    return getSuccessorValue(i);
+  }
+
+  /// getCaseValue - Return the specified case value.  Note that case #0, the
+  /// default destination, does not have a case value.
+  const Constant *getCaseValue(unsigned i) const {
+    assert(i && i < getNumCases() && "Illegal case value to get!");
+    return getSuccessorValue(i);
+  }
+
+  /// findCaseValue - Search all of the case values for the specified constant.
+  /// If it is explicitly handled, return the case number of it, otherwise
+  /// return 0 to indicate that it is handled by the default handler.
+  unsigned findCaseValue(const Constant *C) const {
+    for (unsigned i = 1, e = getNumCases(); i != e; ++i)
+      if (getCaseValue(i) == C)
+        return i;
+    return 0;
   }
 
   /// addCase - Add an entry to the switch instruction...
@@ -261,10 +291,9 @@ public:
   }
 };
 
-
 //===---------------------------------------------------------------------------
-// InvokeInst - Invoke instruction
-//
+/// InvokeInst - Invoke instruction
+///
 class InvokeInst : public TerminatorInst {
   InvokeInst(const InvokeInst &BI);
 public:
@@ -298,10 +327,10 @@ public:
   inline       BasicBlock *getNormalDest() {
     return cast<BasicBlock>(Operands[1].get());
   }
-  inline const BasicBlock *getExceptionalDest() const {
+  inline const BasicBlock *getUnwindDest() const {
     return cast<BasicBlock>(Operands[2].get());
   }
-  inline       BasicBlock *getExceptionalDest() {
+  inline       BasicBlock *getUnwindDest() {
     return cast<BasicBlock>(Operands[2].get());
   }
 
@@ -309,17 +338,17 @@ public:
     Operands[1] = reinterpret_cast<Value*>(B);
   }
 
-  inline void setExceptionalDest(BasicBlock *B){
+  inline void setUnwindDest(BasicBlock *B){
     Operands[2] = reinterpret_cast<Value*>(B);
   }
 
   virtual const BasicBlock *getSuccessor(unsigned i) const {
     assert(i < 2 && "Successor # out of range for invoke!");
-    return i == 0 ? getNormalDest() : getExceptionalDest();
+    return i == 0 ? getNormalDest() : getUnwindDest();
   }
   inline BasicBlock *getSuccessor(unsigned i) {
     assert(i < 2 && "Successor # out of range for invoke!");
-    return i == 0 ? getNormalDest() : getExceptionalDest();
+    return i == 0 ? getNormalDest() : getUnwindDest();
   }
 
   virtual void setSuccessor(unsigned idx, BasicBlock *NewSucc) {

@@ -6,17 +6,22 @@
 // the University of Illinois Open Source License. See LICENSE.TXT for details.
 // 
 //===----------------------------------------------------------------------===//
-// 
+//
+// Methods common to all machine instructions.
+//
+// FIXME: Now that MachineInstrs have parent pointers, they should always
+// print themselves using their MachineFunction's TargetMachine.
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/Value.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/MRegisterInfo.h"
-
-namespace llvm {
+#include "Support/LeakDetector.h"
+using namespace llvm;
 
 // Global variable holding an array of descriptors for machine instructions.
 // The actual object needs to be created separately for each target machine.
@@ -25,15 +30,18 @@ namespace llvm {
 // FIXME: This should be a property of the target so that more than one target
 // at a time can be active...
 //
-extern const TargetInstrDescriptor *TargetInstrDescriptors;
+namespace llvm {
+  extern const TargetInstrDescriptor *TargetInstrDescriptors;
+}
 
 // Constructor for instructions with variable #operands
-MachineInstr::MachineInstr(MachineOpCode OpCode, unsigned  numOperands)
-  : opCode(OpCode),
-    opCodeFlags(0),
+MachineInstr::MachineInstr(short opcode, unsigned numOperands)
+  : Opcode(opcode),
+    numImplicitRefs(0),
     operands(numOperands, MachineOperand()),
-    numImplicitRefs(0)
-{
+    parent(0) {
+  // Make sure that we get added to a machine basicblock
+  LeakDetector::addGarbageObject(this);
 }
 
 /// MachineInstr ctor - This constructor only does a _reserve_ of the operands,
@@ -41,50 +49,48 @@ MachineInstr::MachineInstr(MachineOpCode OpCode, unsigned  numOperands)
 /// add* methods below to fill up the operands, instead of the Set methods.
 /// Eventually, the "resizing" ctors will be phased out.
 ///
-MachineInstr::MachineInstr(MachineOpCode Opcode, unsigned numOperands,
-                           bool XX, bool YY)
-  : opCode(Opcode),
-    opCodeFlags(0),
-    numImplicitRefs(0)
-{
+MachineInstr::MachineInstr(short opcode, unsigned numOperands, bool XX, bool YY)
+  : Opcode(opcode), numImplicitRefs(0), parent(0) {
   operands.reserve(numOperands);
+  // Make sure that we get added to a machine basicblock
+  LeakDetector::addGarbageObject(this);
 }
 
 /// MachineInstr ctor - Work exactly the same as the ctor above, except that the
 /// MachineInstr is created and added to the end of the specified basic block.
 ///
-MachineInstr::MachineInstr(MachineBasicBlock *MBB, MachineOpCode Opcode,
+MachineInstr::MachineInstr(MachineBasicBlock *MBB, short opcode,
                            unsigned numOperands)
-  : opCode(Opcode),
-    opCodeFlags(0),
-    numImplicitRefs(0)
-{
+  : Opcode(opcode), numImplicitRefs(0), parent(0) {
   assert(MBB && "Cannot use inserting ctor with null basic block!");
   operands.reserve(numOperands);
+  // Make sure that we get added to a machine basicblock
+  LeakDetector::addGarbageObject(this);
   MBB->push_back(this);  // Add instruction to end of basic block!
 }
 
-
-// OperandComplete - Return true if it's illegal to add a new operand
-bool MachineInstr::OperandsComplete() const
+MachineInstr::~MachineInstr()
 {
-  int NumOperands = TargetInstrDescriptors[opCode].numOperands;
+  LeakDetector::removeGarbageObject(this);
+}
+
+/// OperandComplete - Return true if it's illegal to add a new operand
+///
+bool MachineInstr::OperandsComplete() const {
+  int NumOperands = TargetInstrDescriptors[Opcode].numOperands;
   if (NumOperands >= 0 && getNumOperands() >= (unsigned)NumOperands)
     return true;  // Broken: we have all the operands of this instruction!
   return false;
 }
 
-
-// 
-// Support for replacing opcode and operands of a MachineInstr in place.
-// This only resets the size of the operand vector and initializes it.
-// The new operands must be set explicitly later.
-// 
-void MachineInstr::replace(MachineOpCode Opcode, unsigned numOperands)
-{
+/// replace - Support for replacing opcode and operands of a MachineInstr in
+/// place. This only resets the size of the operand vector and initializes it.
+/// The new operands must be set explicitly later.
+/// 
+void MachineInstr::replace(short opcode, unsigned numOperands) {
   assert(getNumImplicitRefs() == 0 &&
          "This is probably broken because implicit refs are going to be lost.");
-  opCode = Opcode;
+  Opcode = opcode;
   operands.clear();
   operands.resize(numOperands, MachineOperand());
 }
@@ -100,14 +106,13 @@ void MachineInstr::SetMachineOperandVal(unsigned i,
 
 void
 MachineInstr::SetMachineOperandConst(unsigned i,
-				MachineOperand::MachineOperandType operandType,
-                                     int64_t intValue)
-{
+                                     MachineOperand::MachineOperandType opTy,
+                                     int intValue) {
   assert(i < getNumOperands());          // must be explicit op
-  assert(TargetInstrDescriptors[opCode].resultPos != (int) i &&
+  assert(TargetInstrDescriptors[Opcode].resultPos != (int) i &&
          "immed. constant cannot be defined");
 
-  operands[i].opType = operandType;
+  operands[i].opType = opTy;
   operands[i].value = NULL;
   operands[i].immedVal = intValue;
   operands[i].regNum = -1;
@@ -122,23 +127,24 @@ void MachineInstr::SetMachineOperandReg(unsigned i, int regNum) {
   operands[i].regNum = regNum;
 }
 
-void
-MachineInstr::SetRegForOperand(unsigned i, int regNum)
-{
+// Used only by the SPARC back-end.
+void MachineInstr::SetRegForOperand(unsigned i, int regNum) {
   assert(i < getNumOperands());          // must be explicit op
   operands[i].setRegForValue(regNum);
 }
 
-void
-MachineInstr::SetRegForImplicitRef(unsigned i, int regNum)
-{
+// Used only by the SPARC back-end.
+void MachineInstr::SetRegForImplicitRef(unsigned i, int regNum) {
   getImplicitOp(i).setRegForValue(regNum);
 }
 
-
-// Substitute all occurrences of Value* oldVal with newVal in all operands
-// and all implicit refs.
-// If defsOnly == true, substitute defs only.
+/// substituteValue - Substitute all occurrences of Value* oldVal with newVal
+/// in all operands and all implicit refs. If defsOnly == true, substitute defs
+/// only.
+///
+/// FIXME: Fold this into its single caller, at SparcInstrSelection.cpp:2865,
+/// or make it a static function in that file.
+///
 unsigned
 MachineInstr::substituteValue(const Value* oldVal, Value* newVal,
                               bool defsOnly, bool notDefsAndUses,
@@ -178,32 +184,28 @@ MachineInstr::substituteValue(const Value* oldVal, Value* newVal,
   return numSubst;
 }
 
-
-void
-MachineInstr::dump() const 
-{
+void MachineInstr::dump() const {
   std::cerr << "  " << *this;
 }
 
-static inline std::ostream&
-OutputValue(std::ostream &os, const Value* val)
-{
+static inline std::ostream& OutputValue(std::ostream &os, const Value* val) {
   os << "(val ";
   os << (void*) val;                    // print address always
   if (val && val->hasName())
-    os << " " << val->getName() << ")"; // print name also, if available
+    os << " " << val->getName(); // print name also, if available
+  os << ")";
   return os;
 }
 
 static inline void OutputReg(std::ostream &os, unsigned RegNo,
                              const MRegisterInfo *MRI = 0) {
-  if (MRI) {
-    if (RegNo < MRegisterInfo::FirstVirtualRegister)
+  if (!RegNo || MRegisterInfo::isPhysicalRegister(RegNo)) {
+    if (MRI)
       os << "%" << MRI->get(RegNo).Name;
     else
-      os << "%reg" << RegNo;
+      os << "%mreg(" << RegNo << ")";
   } else
-    os << "%mreg(" << RegNo << ")";
+    os << "%reg" << RegNo;
 }
 
 static void print(const MachineOperand &MO, std::ostream &OS,
@@ -230,14 +232,14 @@ static void print(const MachineOperand &MO, std::ostream &OS,
         OS << "==";
     }
     if (MO.hasAllocatedReg())
-      OutputReg(OS, MO.getAllocatedRegNum(), MRI);
+      OutputReg(OS, MO.getReg(), MRI);
     break;
   case MachineOperand::MO_CCRegister:
     OS << "%ccreg";
     OutputValue(OS, MO.getVRegValue());
     if (MO.hasAllocatedReg()) {
       OS << "==";
-      OutputReg(OS, MO.getAllocatedRegNum(), MRI);
+      OutputReg(OS, MO.getReg(), MRI);
     }
     break;
   case MachineOperand::MO_MachineRegister:
@@ -290,7 +292,7 @@ void MachineInstr::print(std::ostream &OS, const TargetMachine &TM) const {
 
    // Specialize printing if op#0 is definition
   if (getNumOperands() && getOperand(0).isDef() && !getOperand(0).isUse()) {
-      llvm::print(getOperand(0), OS, TM);
+    ::print(getOperand(0), OS, TM);
     OS << " = ";
     ++StartOp;   // Don't print this operand again!
   }
@@ -301,7 +303,7 @@ void MachineInstr::print(std::ostream &OS, const TargetMachine &TM) const {
     if (i != StartOp)
       OS << ",";
     OS << " ";
-    llvm::print(mop, OS, TM);
+    ::print(mop, OS, TM);
     
     if (mop.isDef())
       if (mop.isUse())
@@ -327,10 +329,19 @@ void MachineInstr::print(std::ostream &OS, const TargetMachine &TM) const {
   OS << "\n";
 }
 
+namespace llvm {
+std::ostream &operator<<(std::ostream &os, const MachineInstr &MI) {
+  // If the instruction is embedded into a basic block, we can find the target
+  // info for the instruction.
+  if (const MachineBasicBlock *MBB = MI.getParent()) {
+    const MachineFunction *MF = MBB->getParent();
+    MI.print(os, MF->getTarget());
+    return os;
+  }
 
-std::ostream &operator<<(std::ostream& os, const MachineInstr& MI)
-{
-  os << TargetInstrDescriptors[MI.opCode].Name;
+  // Otherwise, print it out in the "raw" format without symbolic register names
+  // and such.
+  os << TargetInstrDescriptors[MI.getOpcode()].Name;
   
   for (unsigned i=0, N=MI.getNumOperands(); i < N; i++) {
     os << "\t" << MI.getOperand(i);
@@ -359,8 +370,7 @@ std::ostream &operator<<(std::ostream& os, const MachineInstr& MI)
   return os << "\n";
 }
 
-std::ostream &operator<<(std::ostream &OS, const MachineOperand &MO)
-{
+std::ostream &operator<<(std::ostream &OS, const MachineOperand &MO) {
   if (MO.isHiBits32())
     OS << "%lm(";
   else if (MO.isLoBits32())
@@ -374,7 +384,7 @@ std::ostream &operator<<(std::ostream &OS, const MachineOperand &MO)
     {
     case MachineOperand::MO_VirtualRegister:
       if (MO.hasAllocatedReg())
-        OutputReg(OS, MO.getAllocatedRegNum());
+        OutputReg(OS, MO.getReg());
 
       if (MO.getVRegValue()) {
 	if (MO.hasAllocatedReg()) OS << "==";
@@ -387,7 +397,7 @@ std::ostream &operator<<(std::ostream &OS, const MachineOperand &MO)
       OutputValue(OS, MO.getVRegValue());
       if (MO.hasAllocatedReg()) {
         OS << "==";
-        OutputReg(OS, MO.getAllocatedRegNum());
+        OutputReg(OS, MO.getReg());
       }
       break;
     case MachineOperand::MO_MachineRegister:
@@ -433,12 +443,10 @@ std::ostream &operator<<(std::ostream &OS, const MachineOperand &MO)
       break;
     }
   
-  if (MO.flags &
-      (MachineOperand::HIFLAG32 | MachineOperand::LOFLAG32 | 
-       MachineOperand::HIFLAG64 | MachineOperand::LOFLAG64))
+  if (MO.isHiBits32() || MO.isLoBits32() || MO.isHiBits64() || MO.isLoBits64())
     OS << ")";
   
   return OS;
 }
 
-} // End llvm namespace
+}
