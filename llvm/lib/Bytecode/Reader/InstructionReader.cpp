@@ -174,7 +174,8 @@ void BytecodeParser::ParseInstruction(const unsigned char *&Buf,
                            getValue(RI.Type, Args[0]),
                            getValue(Type::UByteTyID, Args[1]));
     break;
-  case Instruction::Ret:
+
+  case Instruction::Ret: {
     if (Args.size() == 0)
       Result = new ReturnInst();
     else if (Args.size() == 1)
@@ -182,8 +183,9 @@ void BytecodeParser::ParseInstruction(const unsigned char *&Buf,
     else
       throw std::string("Unrecognized instruction!");
     break;
+  }
 
-  case Instruction::Br:
+  case Instruction::Br: {
     if (Args.size() == 1)
       Result = new BranchInst(getBasicBlock(Args[0]));
     else if (Args.size() == 3)
@@ -192,6 +194,16 @@ void BytecodeParser::ParseInstruction(const unsigned char *&Buf,
     else
       throw std::string("Invalid number of operands for a 'br' instruction!");
     break;
+  }
+                        
+  case Instruction::ParaBr: {
+    if (Args.size() == 2)
+      Result = new ParaBrInst(getBasicBlock(Args[0]), getBasicBlock(Args[1]));
+    else
+      throw std::string("Invalid number of operands for a 'pbr' instruction!");
+    break;
+  }
+
   case Instruction::Switch: {
     if (Args.size() & 1)
       throw std::string("Switch statement with odd number of arguments!");
