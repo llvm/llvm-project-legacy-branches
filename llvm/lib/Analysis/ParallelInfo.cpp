@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/iOther.h"
+#include "llvm/iPHINode.h"
 #include "llvm/iTerminators.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/ParallelInfo.h"
@@ -34,13 +35,15 @@ X("paraseq", "Parallel Sequence Construction", true);
 //
 
 ParallelRegion::~ParallelRegion() {
-  for (std::vector<ParallelSeq*>::iterator i = children.begin(),
-         e = children.end(); i != e; ++i)
+  for (std::vector<ParallelSeq*>::iterator i = Children.begin(),
+         e = Children.end(); i != e; ++i)
     (*i)->setParent(0);
+
+  // recursively destroy contained parallel sequences?
 }
 
 void ParallelRegion::addChildSeq(ParallelSeq *PS) { 
-  children.push_back(PS); 
+  Children.push_back(PS); 
   PS->setParent(this);
 }
 
@@ -56,14 +59,25 @@ void ParallelRegion::removeBasicBlock(BasicBlock *BB) {
 }
 
 void ParallelRegion::print(std::ostream &os) {
-  for (const_iterator i = const_begin(), e = const_end(); i != e; ++i) {
+  for (const_iterator i = const_begin(), e = const_end(); i != e; ++i)
     os << (*i)->getName() << " ";
-  }
+}
+
+static bool findPbr(Value *V, ParaBrInst *pbr) {
+  if (V == pbr)
+    return true;
+  else if (PHINode *phi = dyn_cast<PHINode>(V)) {
+    bool Found = false;
+    for (unsigned i = 0, e = phi->getNumIncomingValues(); i != e; ++i)
+      if (findPbr(phi->getIncomingValue(i), pbr))
+        return true;
+    return false;
+  } else
+    return false;
 }
 
 ParallelRegion* ParallelRegion::discoverRegion(BasicBlock *pbrBlock,
-                                               BasicBlock *begin,
-                                               BasicBlock *end) {
+                                               BasicBlock *begin) {
   ParallelRegion *PR = new ParallelRegion();
   
   // accumulate all the basic blocks in the subtree following to the first
@@ -72,20 +86,33 @@ ParallelRegion* ParallelRegion::discoverRegion(BasicBlock *pbrBlock,
   std::vector<BasicBlock*> Worklist;
   DEBUG(std::cerr << "begin: " << begin->getName() << "\n");
   Worklist.push_back(begin);
+  ParaBrInst *pbr = dyn_cast<ParaBrInst>(pbrBlock->getTerminator());
 
   while (!Worklist.empty()) {
     BasicBlock *BB = Worklist.back();
     DEBUG(std::cerr << "processing: " << BB->getName() << "\n");
     Worklist.pop_back();
-    PR->addBasicBlock(BB);
 
+    // if this block contains a join to the pbr which we've begun from, then
+    // stop processing this block
+    bool done = false;
+    for (BasicBlock::iterator i = BB->begin(), e = BB->end(); i != e; ++i)
+      if (CallInst *CI = dyn_cast<CallInst>(i))
+        if (CI->getCalledFunction()->getName() == "llvm.join" &&
+            findPbr(CI->getOperand(1), pbr)) {
+          done = true;
+          break;
+        }
+    if (done) continue;
+
+    PR->addBasicBlock(BB);
     TerminatorInst *TI = BB->getTerminator();
     // Add all successors to the worklist
     if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
       for (unsigned i = 0, e = BI->getNumSuccessors(); i != e; ++i) {
         BasicBlock *succ = BI->getSuccessor(i);
         DEBUG(std::cerr << "successor: " << succ->getName() << "\n");
-        if (succ != pbrBlock && succ != end && !PR->contains(succ) &&
+        if (succ != pbrBlock && !PR->contains(succ) &&
             std::find(Worklist.begin(), Worklist.end(), succ) == Worklist.end())
           Worklist.push_back(succ);
       }
@@ -93,23 +120,17 @@ ParallelRegion* ParallelRegion::discoverRegion(BasicBlock *pbrBlock,
       for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i) {
         BasicBlock *succ = SI->getSuccessor(i);
         DEBUG(std::cerr << "successor: " << succ->getName() << "\n");
-        if (succ != pbrBlock && succ != end && !PR->contains(succ) &&
+        if (succ != pbrBlock && !PR->contains(succ) &&
             std::find(Worklist.begin(), Worklist.end(), succ) == Worklist.end())
           Worklist.push_back(succ);
       }
     } else if (ReturnInst *RI = dyn_cast<ReturnInst>(TI)) {
       assert(0 && "return not handled within parallel region");
     } else if (ParaBrInst *PB = dyn_cast<ParaBrInst>(TI)) {
-      Value::use_iterator pbrUser = PB->use_begin();
-      assert(pbrUser != PB->use_end() && "pbr not closed by join()?");
-      CallInst *CI = dyn_cast<CallInst>(*pbrUser);
-      assert(CI && "result of pbr used in a non-call instr");
-      assert(CI->getCalledFunction()->getName() == "llvm.join" &&
-             "result of pbr used in a call to something besides `llvm.join'");
-      BasicBlock *pbrBB = PB->getParent(), *joinBB = CI->getParent();
+      BasicBlock *pbrBB = PB->getParent();
       ParallelSeq *PS =  
-        new ParallelSeq(discoverRegion(pbrBB, PB->getSuccessor(0), joinBB),
-                        discoverRegion(pbrBB, PB->getSuccessor(1), joinBB),
+        new ParallelSeq(discoverRegion(pbrBB, PB->getSuccessor(0)),
+                        discoverRegion(pbrBB, PB->getSuccessor(1)),
                         pbrBB);
       PR->addChildSeq(PS);
     } else {
@@ -128,7 +149,7 @@ ParallelRegion* ParallelRegion::discoverRegion(BasicBlock *pbrBlock,
 /// contains - Return true of the specified basic block is in this loop
 ///
 bool ParallelSeq::contains(const BasicBlock *BB) const {
-  for (region_iterator i = region_begin(), e = region_end(); i != e; ++i)
+  for (const_riterator i = const_rbegin(), e = const_rend(); i != e; ++i)
     if ((*i)->contains(BB))
       return true;
   return false;
@@ -138,9 +159,8 @@ void ParallelSeq::print(std::ostream &os, unsigned Depth) const {
   unsigned region = 0;
   if (SeqHeader)
     os << "header: " << SeqHeader->getName() << "\n";
-  for (region_iterator i = region_begin(), e = region_end(); i != e;
-       ++i, ++region)
-  {
+  for (const_riterator i = const_rbegin(), e = const_rend(); i != e;
+       ++i, ++region) {
     os << utostr(region) << " ";
     (*i)->print(os);
     os << "\n";
@@ -177,21 +197,11 @@ ParallelInfo::ConsiderParallelSeq(BasicBlock *BB, const DominatorSet &DS) {
 
   // process each successor tree separately into regions, and combine them
   // into a parallel sequence
-
-  // The last instruction of the pbr BasicBlock is the pbr that spawned the
-  // regionStart, so find the join instruction correlated to it and hence the
-  // end basic block for the region.
-  Value::use_iterator join = PBr->use_begin();
-  CallInst *call = dyn_cast<CallInst>(*join);
-  // FIXME: make sure the call is to "llvm.join" intrinsic
-  assert(call && "Value returned by pbr used in something not a call to join!");
-  BasicBlock *end = call->getParent();
-
   ParallelRegion *PR0 =
-    ParallelRegion::discoverRegion(PBr->getParent(), PBr->getSuccessor(0), end);
+    ParallelRegion::discoverRegion(PBr->getParent(), PBr->getSuccessor(0));
   DEBUG(std::cerr << "PR0: "; PR0->print(std::cerr); std::cerr << "\n";);
   ParallelRegion *PR1 =
-    ParallelRegion::discoverRegion(PBr->getParent(), PBr->getSuccessor(1), end);
+    ParallelRegion::discoverRegion(PBr->getParent(), PBr->getSuccessor(1));
   DEBUG(std::cerr << "PR1: "; PR1->print(std::cerr); std::cerr << "\n";);
 
   // construct a parallel sequence
