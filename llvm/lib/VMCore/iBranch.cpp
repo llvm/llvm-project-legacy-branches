@@ -85,3 +85,22 @@ BranchInst::BranchInst(const BranchInst &BI) : TerminatorInst(Instruction::Br) {
     Operands.push_back(Use(BI.Operands[2], this));
   }
 }
+
+// Parallel Branch implementations
+ParaBrInst::ParaBrInst(const ParaBrInst &BI) :
+  TerminatorInst(Instruction::ParaBr) {
+  Operands.reserve(2);
+  assert(BI.Operands.size() == 2 && "PBR can have only 2 operands!");
+  Operands.push_back(Use(BI.Operands[0], this));
+  Operands.push_back(Use(BI.Operands[1], this));
+}
+
+ParaBrInst::ParaBrInst(BasicBlock *one, BasicBlock *two) : 
+  TerminatorInst(Instruction::ParaBr) {
+  Operands.reserve(2);
+  Operands.push_back(Use(one, this));
+  Operands.push_back(Use(two, this));
+}
+
+// FIXME: implement copy constructors...?
+

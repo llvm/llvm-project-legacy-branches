@@ -62,6 +62,7 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   // Terminators
   case Ret:    return "ret";
   case Br:     return "br";
+  case ParaBr: return "pbr";
   case Switch: return "switch";
   case Invoke: return "invoke";
   case Unwind: return "unwind";
