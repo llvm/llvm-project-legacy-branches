@@ -1,2 +1,0 @@
-
-char * foo() { return "\\begin{"; }
