@@ -57,6 +57,11 @@ void DefaultIntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
     if (CI->getType() != Type::VoidTy)
       CI->replaceAllUsesWith(Constant::getNullValue(CI->getType()));
     break;    // Simply strip out debugging intrinsics
+
+  case Intrinsic::join: 
+    // Insert the call to abort
+    new CallInst(M->getOrInsertFunction("abort", Type::VoidTy, 0), "", CI);
+    break;    
   }
 
   assert(CI->use_empty() &&

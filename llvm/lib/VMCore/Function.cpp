@@ -214,6 +214,9 @@ unsigned Function::getIntrinsicID() const {
     if (getName() == "llvm.dbg.func.start")  return Intrinsic::dbg_func_start;
     if (getName() == "llvm.dbg.declare")     return Intrinsic::dbg_declare;
     break;
+  case 'j':
+    if (getName() == "llvm.join")  return Intrinsic::join;
+    break;
   case 'l':
     if (getName() == "llvm.longjmp")  return Intrinsic::longjmp;
     break;
