@@ -9,6 +9,14 @@
 //
 // This pass converts hand-annotated parallel code regions to use `pbr'
 //
+// Due to optimizations that run before this pass, at the end of it, there may
+// be multiple calls to %llvm.join() for a given result of pbr. This is invalid
+// LLVM pbr code, and a pass should run after it to `canonicalize' the usage of
+// %llvm.join to push them down to a commonly-dominated block (creating it if
+// necessary).
+//
+// This will be done by a subsequent pass, PbrCanonicalize.
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DerivedTypes.h"
@@ -47,7 +55,7 @@ bool Parallelize::runOnFunction(Function &F) {
   for (std::vector<User*>::iterator u = Users.begin(), e = Users.end();
        u != e; ++u) {
     // Check for the pattern as follows:
-    // %a = call  int %__llvm_parallel()
+    // %a = call  sbyte* %__llvm_pbr()
     // %b = seteq int %a, 0
     // br %b, %label_1, %label_2
     //
@@ -62,29 +70,32 @@ bool Parallelize::runOnFunction(Function &F) {
             new ParaBrInst(BI->getSuccessor(0), BI->getSuccessor(1), BB);
 
           // Before we erase the call, add a join instruction to match the `pbr'
+          CI->replaceAllUsesWith(pbr);
 
           // Delete condition and branch instructions
           BB->getInstList().erase(BI);
           BB->getInstList().erase(SCI);
-
-          // Convert calls to __llvm_join(%x = __llvm_pbr()) to
-          // uses of the %llvm.join intrinsic
-          std::vector<User*> PbrCallUsers(CI->use_begin(), CI->use_end());
-          for (std::vector<User*>::iterator cu = PbrCallUsers.begin(),
-                 cue = PbrCallUsers.end(); cu != cue; ++cu) {
-            if (CallInst *CJ = dyn_cast<CallInst>(*cu)) {
-              if (CJ->getCalledFunction()->getName() == "__llvm_join") {
-                Function *Join = getJoinIntrinsic(F.getParent());
-                new CallInst(Join, pbr, "", CJ);
-                CJ->getParent()->getInstList().erase(CJ);
-              }
-            }
-          }
-
           BB->getInstList().erase(CI);
-
           Changed = true;
         }
+      }
+    }
+  }
+
+  Function *JoinFn = getJoinFunc(F.getParent());
+  if (JoinFn->use_begin() == JoinFn->use_end())
+    return Changed;
+
+  std::vector<User*> JoinCalls(JoinFn->use_begin(), JoinFn->use_end());
+  Function *Join = getJoinIntrinsic(F.getParent());
+  for (std::vector<User*>::iterator u = JoinCalls.begin(), e = JoinCalls.end();
+       u != e; ++u) {
+    // Convert calls to __llvm_join(%x = __llvm_pbr()) to
+    // uses of the %llvm.join intrinsic
+    if (CallInst *CJ = dyn_cast<CallInst>(*u)) {
+      if (CJ->getCalledFunction() == JoinFn) {
+        new CallInst(Join, CJ->getOperand(1), "", CJ);
+        CJ->getParent()->getInstList().erase(CJ);
       }
     }
   }
@@ -92,8 +103,7 @@ bool Parallelize::runOnFunction(Function &F) {
   return Changed;
 }
 
-/// getParallelizer - find the function in the Module that marks parallel
-/// regions
+/// getPbrFunc - find the function in the Module that marks parallel regions
 ///
 Function* Parallelize::getPbrFunc(Module *M) {
   return M->getOrInsertFunction("__llvm_pbr", PointerType::get(Type::SByteTy),
