@@ -1,3 +1,5 @@
+; RUN: llvm-as < %s | opt -pcall-thread | llvm-dis | grep __llvm_thread
+
 declare void %llvm.join(sbyte* %x)
 
 declare sbyte* %foo(sbyte* %f)
