@@ -67,8 +67,8 @@ bool PCallToThreads::runOnFunction(Function &F) {
   for (ParallelInfo::iterator i = PI.begin(), e = PI.end(); i != e; ++i) {
     ParallelSeq *PS = *i;
     std::vector<Value*> JoinValues;
-    for (ParallelSeq::region_iterator r = PS->region_begin(),
-           re = PS->region_end(); r != re; ++r) {
+    for (ParallelSeq::riterator r = PS->rbegin(),
+           re = PS->rend(); r != re; ++r) {
       ParallelRegion *PR = *r;
       std::vector<BasicBlock*> RegionBlocks(PR->begin(), PR->end());
 
@@ -97,6 +97,7 @@ bool PCallToThreads::runOnFunction(Function &F) {
       Args.push_back(funcPtr);
       Args.push_back(funcVal);
       CallInst *ThCreateCall = new CallInst(ThCreate, Args, "threadCall", TI);
+      JoinValues.push_back(ThCreateCall);
 
       OldCall->getParent()->getInstList().erase(OldCall);
 
@@ -114,12 +115,10 @@ bool PCallToThreads::runOnFunction(Function &F) {
     assert(JoinCall && "Pbr result used in something other than call!");
     
     Function *ThJoin = getFuncThreadJoin(*F.getParent());
-    for (std::vector<Value*>::iterator i = JoinValues.begin(), 
-           e = JoinValues.end(); i != e; ++i)
-      CallInst *Join = new CallInst(ThJoin, *i, "join", JoinCall);
-
-    if (JoinValues.size() > 0)
-      JoinCall->getParent()->getInstList().erase(JoinCall);
+    TerminatorInst *JoinBBTerm = JoinCall->getParent()->getTerminator();
+    for (std::vector<Value*>::iterator val = JoinValues.begin(), 
+           ve = JoinValues.end(); val != ve; ++val)
+      CallInst *Join = new CallInst(ThJoin, *val, "", JoinBBTerm);
   }
 
   return Changed;
