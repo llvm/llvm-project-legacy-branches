@@ -29,7 +29,9 @@ class FunctionValType;
 class ArrayValType;
 class StructValType;
 class PointerValType;
-class PackedValType;
+class StreamValType;
+class VectorValType;
+class FixedVectorValType;
 
 class DerivedType : public Type, public AbstractTypeUser {
   // AbstractTypeUsers - Implement a list of the users that need to be notified
@@ -156,7 +158,7 @@ public:
 
 
 /// CompositeType - Common super class of ArrayType, StructType, PointerType
-/// and PackedType
+/// and FixedVectorType
 class CompositeType : public DerivedType {
 protected:
   inline CompositeType(TypeID id) : DerivedType(id) { }
@@ -174,7 +176,9 @@ public:
     return T->getTypeID() == ArrayTyID ||
            T->getTypeID() == StructTyID ||
            T->getTypeID() == PointerTyID ||
-           T->getTypeID() == PackedTyID;
+           T->getTypeID() == StreamTyID ||
+           T->getTypeID() == VectorTyID ||
+           T->getTypeID() == FixedVectorTyID;
   }
 };
 
@@ -231,13 +235,12 @@ public:
 };
 
 
-/// SequentialType - This is the superclass of the array, pointer and packed
-/// type classes.  All of these represent "arrays" in memory.  The array type
-/// represents a specifically sized array, pointer types are unsized/unknown
-/// size arrays, packed types represent specifically sized arrays that
-/// allow for use of SIMD instructions.  SequentialType holds the common
-/// features of all, which stem from the fact that all three lay their
-/// components out in memory identically.
+/// SequentialType - This is the superclass of the array, pointer, and
+/// vector type classes.  The array type represents a specifically
+/// sized array, pointer types are unsized/unknown size arrays, and
+/// vector types are first-class types that allow for use of SIMD
+/// instructions.  SequentialType holds the common features of all,
+/// which stem from the fact that each is a sequence of elements.
 ///
 class SequentialType : public CompositeType {
   SequentialType(const SequentialType &);                  // Do not implement!
@@ -264,8 +267,10 @@ public:
   static inline bool classof(const SequentialType *T) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID ||
-           T->getTypeID() == PointerTyID ||
-           T->getTypeID() == PackedTyID;
+      T->getTypeID() == PointerTyID ||
+      T->getTypeID() == StreamTyID ||
+      T->getTypeID() == VectorTyID ||
+      T->getTypeID() == FixedVectorTyID;
   }
 };
 
@@ -306,28 +311,105 @@ public:
   }
 };
 
-/// PackedType - Class to represent packed types
+/// StreamType - Class to represent vector types
 ///
-class PackedType : public SequentialType {
-  friend class TypeMap<PackedValType, PackedType>;
-  unsigned NumElements;
+class StreamType : public SequentialType {
+  friend class TypeMap<StreamValType, StreamType>;
 
-  PackedType(const PackedType &);                   // Do not implement
-  const PackedType &operator=(const PackedType &);  // Do not implement
+  StreamType(const StreamType &);                   // Do not implement
+  const StreamType &operator=(const StreamType &);  // Do not implement
+
 protected:
   /// This should really be private, but it squelches a bogus warning
-  /// from GCC to make them protected:  warning: `class PackedType' only
+  /// from GCC to make them protected:  warning: `class StreamType' only 
   /// defines private constructors and has no friends
   ///
   /// Private ctor - Only can be created by a static member...
   ///
-  PackedType(const Type *ElType, unsigned NumEl);
+  StreamType(const Type *ElType);
 
 public:
-  /// PackedType::get - This static method is the primary way to construct an
-  /// PackedType
+  /// StreamType::get - This static method is the primary way to construct a
+  /// StreamType
   ///
-  static PackedType *get(const Type *ElementType, unsigned NumElements);
+  static StreamType *get(const Type *ElementType);
+
+  // Implement the AbstractTypeUser interface.
+  virtual void refineAbstractType(const DerivedType *OldTy, const Type *NewTy);
+  virtual void typeBecameConcrete(const DerivedType *AbsTy);
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const StreamType *T) { return true; }
+  static inline bool classof(const Type *T) {
+    return T->getTypeID() == StreamTyID;
+  }
+};
+
+/// VectorType - Class to represent vector types
+///
+class VectorType : public SequentialType {
+  friend class TypeMap<VectorValType, VectorType>;
+
+  VectorType(const VectorType &);                   // Do not implement
+  const VectorType &operator=(const VectorType &);  // Do not implement
+
+protected:
+  /// This should really be private, but it squelches a bogus warning
+  /// from GCC to make them protected:  warning: `class VectorType' only 
+  /// defines private constructors and has no friends
+  ///
+  /// Private ctor - Only can be created by a static member...
+  ///
+  VectorType(const Type *ElType, bool fixed = false);
+
+public:
+  /// VectorType::get - This static method is the primary way to construct a
+  /// VectorType
+  ///
+  static VectorType *get(const Type *ElementType);
+
+  /// Functions for vector support
+  ///
+  bool isIntegerVector() const { return getElementType()->isInteger(); }
+  bool isIntegralVector() const { return getElementType()->isIntegral(); }
+  bool isFPVector() const { return getElementType()->isFloatingPoint(); }
+  bool isBooleanVector() const { return getElementType() == Type::BoolTy; }
+
+  // Implement the AbstractTypeUser interface.
+  virtual void refineAbstractType(const DerivedType *OldTy, const Type *NewTy);
+  virtual void typeBecameConcrete(const DerivedType *AbsTy);
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VectorType *T) { return true; }
+  static inline bool classof(const Type *T) {
+    return T->getTypeID() == VectorTyID ||
+      T->getTypeID() == FixedVectorTyID;
+  }
+};
+
+/// FixedVectorType - Class to represent vectors with fixed lengths
+///
+class FixedVectorType : public VectorType {
+  friend class TypeMap<FixedVectorValType, FixedVectorType>;
+  unsigned NumElements;
+
+  FixedVectorType(const FixedVectorType &);                   // Do not implement
+  const FixedVectorType &operator=(const FixedVectorType &);  // Do not implement
+protected:
+  /// This should really be private, but it squelches a bogus warning
+  /// from GCC to make them protected: warning: `class
+  /// FixedVectorType' only defines private constructors and has no
+  /// friends
+  ///
+  /// Private ctor - Only can be created by a static member...
+  ///
+  FixedVectorType(const Type *ElType, unsigned NumEl);
+
+public:
+  /// FixedVectorType::get - This static method is the primary way to construct an
+  /// FixedVectorType
+  ///
+  static FixedVectorType *get(const Type *ElementType, unsigned NumElements);
 
   inline unsigned getNumElements() const { return NumElements; }
 
@@ -336,9 +418,9 @@ public:
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const PackedType *T) { return true; }
+  static inline bool classof(const FixedVectorType *T) { return true; }
   static inline bool classof(const Type *T) {
-    return T->getTypeID() == PackedTyID;
+    return T->getTypeID() == FixedVectorTyID;
   }
 };
 

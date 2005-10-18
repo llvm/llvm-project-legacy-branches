@@ -274,7 +274,7 @@ static Constant *getAggregateConstantElement(Constant *Agg, Constant *Idx) {
     if (IdxV < CS->getNumOperands()) return CS->getOperand(IdxV);
   } else if (ConstantArray *CA = dyn_cast<ConstantArray>(Agg)) {
     if (IdxV < CA->getNumOperands()) return CA->getOperand(IdxV);
-  } else if (ConstantPacked *CP = dyn_cast<ConstantPacked>(Agg)) {
+  } else if (ConstantVector *CP = dyn_cast<ConstantVector>(Agg)) {
     if (IdxV < CP->getNumOperands()) return CP->getOperand(IdxV);
   } else if (isa<ConstantAggregateZero>(Agg)) {
     if (const StructType *STy = dyn_cast<StructType>(Agg->getType())) {
@@ -394,7 +394,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV) {
     unsigned NumElements = 0;
     if (const ArrayType *ATy = dyn_cast<ArrayType>(STy))
       NumElements = ATy->getNumElements();
-    else if (const PackedType *PTy = dyn_cast<PackedType>(STy))
+    else if (const FixedVectorType *PTy = dyn_cast<FixedVectorType>(STy))
       NumElements = PTy->getNumElements();
     else
       assert(0 && "Unknown aggregate sequential type!");

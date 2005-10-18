@@ -16,7 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/DerivedTypes.h"
+#include "VectorLLVM/Utils.h"
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -87,6 +87,11 @@ bool DSE::runOnBasicBlock(BasicBlock &BB) {
   bool MadeChange = false;
   for (BasicBlock::iterator BBI = BB.end(); BBI != BB.begin(); ) {
     Instruction *I = --BBI;   // Keep moving iterator backwards
+
+    // FIXME:  This is a temporary fix to make vectors work
+    //
+    if (VectorUtils::containsVector(I))
+      continue;
 
     // If this is a free instruction, it makes the free'd location dead!
     if (FreeInst *FI = dyn_cast<FreeInst>(I)) {

@@ -3343,6 +3343,7 @@ Instruction *InstCombiner::visitSetCondInstWithCastAndCast(SetCondInst &SCI) {
 }
 
 Instruction *InstCombiner::visitShiftInst(ShiftInst &I) {
+  if (isa<VectorType>(I.getType())) return 0;
   assert(I.getOperand(1)->getType() == Type::UByteTy);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
   bool isLeftShift = I.getOpcode() == Instruction::Shl;

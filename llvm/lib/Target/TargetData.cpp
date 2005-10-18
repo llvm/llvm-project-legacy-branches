@@ -192,8 +192,8 @@ static inline void getTypeInfo(const Type *Ty, const TargetData *TD,
     Size = AlignedSize*ATy->getNumElements();
     return;
   }
-  case Type::PackedTyID: {
-    const PackedType *PTy = cast<PackedType>(Ty);
+  case Type::FixedVectorTyID: {
+    const FixedVectorType *PTy = cast<FixedVectorType>(Ty);
     getTypeInfo(PTy->getElementType(), TD, Size, Alignment);
     unsigned AlignedSize = (Size + Alignment - 1)/Alignment*Alignment;
     Size = AlignedSize*PTy->getNumElements();

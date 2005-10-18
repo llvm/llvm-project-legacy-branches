@@ -210,6 +210,7 @@ pointersize     { return POINTERSIZE; }
 little          { return LITTLE; }
 big             { return BIG; }
 volatile        { return VOLATILE; }
+fixed           { return FIXED; }
 
 cc              { return CC_TOK; }
 ccc             { return CCC_TOK; }
@@ -246,11 +247,18 @@ setlt           { RET_TOK(BinaryOpVal, SetLT, SETLT); }
 setgt           { RET_TOK(BinaryOpVal, SetGT, SETGT); }
 setle           { RET_TOK(BinaryOpVal, SetLE, SETLE); }
 setge           { RET_TOK(BinaryOpVal, SetGE, SETGE); }
+vsetne          { RET_TOK(BinaryOpVal, VSetNE, VSETNE); }
+vseteq          { RET_TOK(BinaryOpVal, VSetEQ, VSETEQ); }
+vsetlt          { RET_TOK(BinaryOpVal, VSetLT, VSETLT); }
+vsetgt          { RET_TOK(BinaryOpVal, VSetGT, VSETGT); }
+vsetle          { RET_TOK(BinaryOpVal, VSetLE, VSETLE); }
+vsetge          { RET_TOK(BinaryOpVal, VSetGE, VSETGE); }
 
 phi             { RET_TOK(OtherOpVal, PHI, PHI_TOK); }
 call            { RET_TOK(OtherOpVal, Call, CALL); }
 cast            { RET_TOK(OtherOpVal, Cast, CAST); }
 select          { RET_TOK(OtherOpVal, Select, SELECT); }
+vselect         { RET_TOK(OtherOpVal, VSelect, VSELECT); } 
 shl             { RET_TOK(OtherOpVal, Shl, SHL); }
 shr             { RET_TOK(OtherOpVal, Shr, SHR); }
 vanext          { return VANEXT_old; }
@@ -269,7 +277,16 @@ free            { RET_TOK(MemOpVal, Free, FREE); }
 load            { RET_TOK(MemOpVal, Load, LOAD); }
 store           { RET_TOK(MemOpVal, Store, STORE); }
 getelementptr   { RET_TOK(MemOpVal, GetElementPtr, GETELEMENTPTR); }
+vgather         { RET_TOK(MemOpVal, VGather, VGATHER); } 
+vimm            { RET_TOK(MemOpVal, VImm, VIMM); } 
+vscatter        { RET_TOK(MemOpVal, VScatter, VSCATTER); }
 
+extract         { RET_TOK(OtherOpVal, Extract, EXTRACT); }
+extractelement  { RET_TOK(OtherOpVal, ExtractElement, EXTRACTELEMENT); }
+combine         { RET_TOK(OtherOpVal, Combine, COMBINE); }
+combineelement  { RET_TOK(OtherOpVal, CombineElement, COMBINEELEMENT); }
+vector          { return VECTOR; }
+of              { return OF; }
 
 {VarID}         {
                   UnEscapeLexed(yytext+1);

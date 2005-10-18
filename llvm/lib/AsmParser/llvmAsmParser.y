@@ -919,6 +919,7 @@ Module *llvm::RunVMAsmParser(const char * AsmString, Module * M) {
 %type <BoolVal>       GlobalType                  // GLOBAL or CONSTANT?
 %type <BoolVal>       OptVolatile                 // 'volatile' or not
 %type <BoolVal>       OptTailCall                 // TAIL CALL or plain CALL.
+%type <BoolVal>       OptFixed                    // fixed or not 
 %type <Linkage>       OptLinkage
 %type <Endianness>    BigOrLittle
 
@@ -950,29 +951,32 @@ Module *llvm::RunVMAsmParser(const char * AsmString, Module * M) {
 
 
 %token IMPLEMENTATION ZEROINITIALIZER TRUETOK FALSETOK BEGINTOK ENDTOK
-%token DECLARE GLOBAL CONSTANT VOLATILE
+%token DECLARE GLOBAL CONSTANT VOLATILE FIXED
 %token TO DOTDOTDOT NULL_TOK UNDEF CONST INTERNAL LINKONCE WEAK  APPENDING
 %token OPAQUE NOT EXTERNAL TARGET TRIPLE ENDIAN POINTERSIZE LITTLE BIG
 %token DEPLIBS CALL TAIL
 %token CC_TOK CCC_TOK FASTCC_TOK COLDCC_TOK
+%token VECTOR OF
 %type <UIntVal> OptCallingConv
 
 // Basic Block Terminating Operators
 %token <TermOpVal> RET BR SWITCH INVOKE UNWIND UNREACHABLE
 
-// Binary Operators
-%type  <BinaryOpVal> ArithmeticOps LogicalOps SetCondOps // Binops Subcatagories
+// Binary Operators 
+%type  <BinaryOpVal> ArithmeticOps LogicalOps SetCondOps VSetCondOps // Binops Subcategories
+
 %token <BinaryOpVal> ADD SUB MUL DIV REM AND OR XOR
 %token <BinaryOpVal> SETLE SETGE SETLT SETGT SETEQ SETNE  // Binary Comarators
+%token <BinaryOpVal> VSETLE VSETGE VSETLT VSETGT VSETEQ VSETNE
 
 // Memory Instructions
 %token <MemOpVal> MALLOC ALLOCA FREE LOAD STORE GETELEMENTPTR
 
 // Other Operators
 %type  <OtherOpVal> ShiftOps
-%token <OtherOpVal> PHI_TOK CAST SELECT SHL SHR VAARG
+%token <OtherOpVal> PHI_TOK CAST SELECT VSELECT SHL SHR VAARG
+%token <OtherOpVal> VGATHER VIMM VSCATTER EXTRACT EXTRACTELEMENT COMBINE COMBINEELEMENT
 %token VAARG_old VANEXT_old //OBSOLETE
-
 
 %start Module
 %%
@@ -1000,6 +1004,7 @@ EINT64VAL : EUINT64VAL {
 ArithmeticOps: ADD | SUB | MUL | DIV | REM;
 LogicalOps   : AND | OR | XOR;
 SetCondOps   : SETLE | SETGE | SETLT | SETGT | SETEQ | SETNE;
+VSetCondOps  : VSETLE | VSETGE | VSETLT | VSETGT | VSETEQ | VSETNE;
 
 ShiftOps  : SHL | SHR;
 
@@ -1090,17 +1095,24 @@ UpRTypes : '\\' EUINT64VAL {                   // Type UpReference
     $$ = new PATypeHolder(HandleUpRefs(ArrayType::get(*$4, (unsigned)$2)));
     delete $4;
   }
-  | '<' EUINT64VAL 'x' UpRTypes '>' {          // Packed array type?
-     const llvm::Type* ElemTy = $4->get();
-     if ((unsigned)$2 != $2) {
+
+  | '[' VECTOR OF UpRTypes ']' {               // Vector type?
+    $$ = new PATypeHolder(HandleUpRefs(VectorType::get(*$4)));
+    delete $4;
+  }
+
+  | '[' VECTOR OF EUINT64VAL UpRTypes ']' {          // FixedVector type?
+     const llvm::Type* ElemTy = $5->get();
+     if ((unsigned)$4 != $4) {
         ThrowException("Unsigned result not equal to signed result");
      }
      if(!ElemTy->isPrimitiveType()) {
-        ThrowException("Elemental type of a PackedType must be primitive");
+        ThrowException("Element type of a FixedVectorType must be primitive");
      }
-     $$ = new PATypeHolder(HandleUpRefs(PackedType::get(*$4, (unsigned)$2)));
-     delete $4;
+     $$ = new PATypeHolder(HandleUpRefs(FixedVectorType::get(*$5, (unsigned)$4)));
+     delete $5;
   }
+
   | '{' TypeListI '}' {                        // Structure type?
     std::vector<const Type*> Elements;
     for (std::list<llvm::PATypeHolder>::iterator I = $2->begin(),
@@ -1214,16 +1226,16 @@ ConstVal: Types '[' ConstVector ']' { // Nonempty unsized arr
     delete $1;
   }
   | Types '<' ConstVector '>' { // Nonempty unsized arr
-    const PackedType *PTy = dyn_cast<PackedType>($1->get());
+    const FixedVectorType *PTy = dyn_cast<FixedVectorType>($1->get());
     if (PTy == 0)
-      ThrowException("Cannot make packed constant with type: '" + 
+      ThrowException("Cannot make vector constant with type: '" + 
                      (*$1)->getDescription() + "'!");
     const Type *ETy = PTy->getElementType();
     int NumElements = PTy->getNumElements();
 
     // Verify that we have the correct size...
     if (NumElements != -1 && NumElements != (int)$3->size())
-      ThrowException("Type mismatch: constant sized packed initialized with " +
+      ThrowException("Type mismatch: constant sized vector initialized with " +
                      utostr($3->size()) +  " arguments, but has size of " + 
                      itostr(NumElements) + "!");
 
@@ -1235,7 +1247,7 @@ ConstVal: Types '[' ConstVector ']' { // Nonempty unsized arr
            (*$3)[i]->getType()->getDescription() + "'.");
     }
 
-    $$ = ConstantPacked::get(PTy, *$3);
+    $$ = ConstantVector::get(PTy, *$3);
     delete $1; delete $3;
   }
   | Types '{' ConstVector '}' {
@@ -1451,7 +1463,8 @@ ConstExpr: CAST '(' ConstVal TO Types ')' {
   | LogicalOps '(' ConstVal ',' ConstVal ')' {
     if ($3->getType() != $5->getType())
       ThrowException("Logical operator types must match!");
-    if (!$3->getType()->isIntegral())
+    if (!$3->getType()->isIntegral() &&
+	!$3->getType()->isIntegralVector())
       ThrowException("Logical operands must have integral types!");
     $$ = ConstantExpr::get($1, $3, $5);
   }
@@ -1463,8 +1476,10 @@ ConstExpr: CAST '(' ConstVal TO Types ')' {
   | ShiftOps '(' ConstVal ',' ConstVal ')' {
     if ($5->getType() != Type::UByteTy)
       ThrowException("Shift count for shift constant must be unsigned byte!");
-    if (!$3->getType()->isInteger())
+    if (!$3->getType()->isInteger() &&
+	!$3->getType()->isIntegerVector()) {
       ThrowException("Shift constant expression requires integer operand!");
+    }
     $$ = ConstantExpr::get($1, $3, $5);
   };
 
@@ -1758,14 +1773,14 @@ ConstValueRef : ESINT64VAL {    // A reference to a direct constant
   | UNDEF {
     $$ = ValID::createUndef();
   }
-  | '<' ConstVector '>' { // Nonempty unsized packed vector
+  | '<' ConstVector '>' { // Nonempty unsized vector
     const Type *ETy = (*$2)[0]->getType();
     int NumElements = $2->size(); 
     
-    PackedType* pt = PackedType::get(ETy, NumElements);
+    FixedVectorType* pt = FixedVectorType::get(ETy, NumElements);
     PATypeHolder* PTy = new PATypeHolder(
                                          HandleUpRefs(
-                                            PackedType::get(
+                                            FixedVectorType::get(
                                                 ETy, 
                                                 NumElements)
                                             )
@@ -1779,7 +1794,7 @@ ConstValueRef : ESINT64VAL {    // A reference to a direct constant
                      (*$2)[i]->getType()->getDescription() + "'.");
     }
 
-    $$ = ValID::create(ConstantPacked::get(pt, *$2));
+    $$ = ValID::create(ConstantVector::get(pt, *$2));
     delete PTy; delete $2;
   }
   | ConstExpr {
@@ -1980,7 +1995,6 @@ PHIList : Types '[' ValueRef ',' ValueRef ']' {    // Used for PHI nodes
                                  getBBVal($6)));
   };
 
-
 ValueRefList : ResolvedVal {    // Used for call statements, and memory insts...
     $$ = new std::vector<Value*>();
     $$->push_back($1);
@@ -2004,18 +2018,20 @@ OptTailCall : TAIL CALL {
 
 InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     if (!(*$2)->isInteger() && !(*$2)->isFloatingPoint() && 
-        !isa<PackedType>((*$2).get()))
+        !isa<VectorType>((*$2).get()))
+      ThrowException("Arithmetic operator requires integer, FP, or vector operands!");
+    if(isa<FixedVectorType>((*$2).get()) && $1 == Instruction::Rem) {
       ThrowException(
-        "Arithmetic operator requires integer, FP, or packed operands!");
-    if (isa<PackedType>((*$2).get()) && $1 == Instruction::Rem)
-      ThrowException("Rem not supported on packed types!");
+        "Rem not supported on fixed vector types!");     // FIXME:  Why not?!
+    }
     $$ = BinaryOperator::create($1, getVal(*$2, $3), getVal(*$2, $5));
     if ($$ == 0)
       ThrowException("binary operator returned null!");
     delete $2;
   }
   | LogicalOps Types ValueRef ',' ValueRef {
-    if (!(*$2)->isIntegral())
+    if (!(*$2)->isIntegral() &&
+	!(*$2)->isIntegralVector())
       ThrowException("Logical operator requires integral operands!");
     $$ = BinaryOperator::create($1, getVal(*$2, $3), getVal(*$2, $5));
     if ($$ == 0)
@@ -2023,10 +2039,12 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     delete $2;
   }
   | SetCondOps Types ValueRef ',' ValueRef {
-    if(isa<PackedType>((*$2).get())) {
-      ThrowException(
-        "PackedTypes currently not supported in setcc instructions!");
-    }
+    $$ = new SetCondInst($1, getVal(*$2, $3), getVal(*$2, $5));
+    if ($$ == 0)
+      ThrowException("binary operator returned null!");
+    delete $2;
+  }
+  | VSetCondOps Types ValueRef ',' ValueRef {
     $$ = new SetCondInst($1, getVal(*$2, $3), getVal(*$2, $5));
     if ($$ == 0)
       ThrowException("binary operator returned null!");
@@ -2047,8 +2065,9 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
   | ShiftOps ResolvedVal ',' ResolvedVal {
     if ($4->getType() != Type::UByteTy)
       ThrowException("Shift amount must be ubyte!");
-    if (!$2->getType()->isInteger())
-      ThrowException("Shift constant expression requires integer operand!");
+    if (!$2->getType()->isInteger() &&
+	!$2->getType()->isIntegerVector())
+      ThrowException("Shift requires integer operand!");
     $$ = new ShiftInst($1, $2, $4);
   }
   | CAST ResolvedVal TO Types {
@@ -2064,6 +2083,15 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     if ($4->getType() != $6->getType())
       ThrowException("select value types should match!");
     $$ = new SelectInst($2, $4, $6);
+  }
+  | VSELECT ResolvedVal ',' ResolvedVal ',' ResolvedVal {
+    if (!$2->getType()->isBooleanVector())
+      ThrowException("vselect condition must be boolean vector!");
+    if ($4->getType() != $6->getType())
+      ThrowException("vselect value types should match!");
+    if (!isa<VectorType>($4->getType()))
+      ThrowException("vselect value must be a vector!");
+    $$ = new VSelectInst($2, $4, $6);
   }
   | VAARG ResolvedVal ',' Types {
     NewVarArgs = true;
@@ -2201,6 +2229,12 @@ OptVolatile : VOLATILE {
     $$ = false;
   };
 
+OptFixed : FIXED {
+    $$ = true;
+  }
+  | /* empty */ {
+    $$ = false;
+  };
 
 
 MemoryInst : MALLOC Types {
@@ -2236,6 +2270,7 @@ MemoryInst : MALLOC Types {
     $$ = new LoadInst(getVal(*$3, $4), "", $1);
     delete $3;
   }
+
   | OptVolatile STORE ResolvedVal ',' Types ValueRef {
     const PointerType *PT = dyn_cast<PointerType>($5->get());
     if (!PT)
@@ -2249,6 +2284,7 @@ MemoryInst : MALLOC Types {
     $$ = new StoreInst($3, getVal(*$5, $6), $1);
     delete $5;
   }
+
   | GETELEMENTPTR Types ValueRef IndexList {
     if (!isa<PointerType>($2->get()))
       ThrowException("getelementptr insn requires pointer operand!");
@@ -2269,6 +2305,101 @@ MemoryInst : MALLOC Types {
                      (*$2)->getDescription()+ "'!");
     $$ = new GetElementPtrInst(getVal(*$2, $3), *$4);
     delete $2; delete $4;
+  }
+
+  | VGATHER Types ValueRef IndexList {
+    if (!isa<PointerType>($2->get()))
+      ThrowException("Can't load vector from nonpointer type: " +
+		     (*$2)->getDescription());
+    if (!cast<PointerType>($2->get())->getElementType()->isPrimitiveType())
+      ThrowException("Can't create vector of non-primitive type: " +
+                     (*$2)->getDescription());
+    if (!VMemoryInst::checkNumIndices(*$4))
+      ThrowException("vgather must have four indices for each array dimension!");
+    if (!VMemoryInst::checkIndexType(*$4))
+      ThrowException("vgather indices must be of type long!");
+    $$ = new VGatherInst(getVal(*$2, $3), *$4);
+    delete $2; delete $4;
+  }
+
+  | OptFixed VIMM ResolvedVal ',' ResolvedVal {
+    if ($5->getType() != Type::UIntTy)
+      ThrowException("Length of vimm must be unsigned int!");
+    $$ = new VImmInst($3, $5, $1);
+  }
+
+  | EXTRACT ResolvedVal ',' ResolvedVal ',' ResolvedVal ',' ResolvedVal {
+    if (!isa<VectorType>($2->getType()))
+      ThrowException("First operand of extract must be a vector!");
+    if ($4->getType() != Type::UIntTy)
+      ThrowException("Second operand of extract must be a uint!");
+    if ($6->getType() != Type::UIntTy)
+      ThrowException("Third operand of extract must be a uint!");
+    if ($8->getType() != Type::UIntTy)
+      ThrowException("Fourth operand of extract must be a uint!");
+    $$ = new ExtractInst($2, $4, $6, $8);
+  }
+
+  | EXTRACTELEMENT ResolvedVal ',' ResolvedVal {
+    if (!isa<VectorType>($2->getType()))
+      ThrowException("First operand of extractelement must be a vector!");
+    if ($4->getType() != Type::UIntTy)
+      ThrowException("Second operand of extractelement must be a uint!");
+    $$ = new ExtractElementInst($2, $4);
+  }
+
+  | COMBINE ResolvedVal ',' ResolvedVal ',' ResolvedVal ',' ResolvedVal {
+    if (!isa<VectorType>($2->getType()))
+      ThrowException("First operand of combine must be a vector!");
+    if (!isa<VectorType>($4->getType()))
+      ThrowException("Second operand of combine must be a vector!");
+    if ($6->getType() != Type::UIntTy)
+      ThrowException("Third operand of combine must be a uint!");
+    if ($8->getType() != Type::UIntTy)
+      ThrowException("Fourth operand of combine must be a uint!");
+    $$ = new CombineInst($2, $4, $6, $8);
+  }
+
+  | COMBINEELEMENT ResolvedVal ',' ResolvedVal ',' ResolvedVal {
+    if (!isa<VectorType>($2->getType()))
+      ThrowException("First operand of combineelement must be a vector!");
+    if ($4->getType() != cast<VectorType>($2->getType())->getElementType())
+      ThrowException("Second operand of combineelement must be vector element type!");
+    if ($6->getType() != Type::UIntTy)
+      ThrowException("Third operand of combineelement must be a uint!");
+    $$ = new CombineElementInst($2, $4, $6);
+  }
+
+  | VSCATTER ResolvedVal ',' Types ValueRef IndexList {
+    if (!isa<PointerType>($4->get()))
+      ThrowException("Can't store to a nonpointer type: " +
+                     (*$4)->getDescription());
+    if (!isa<VectorType>($2->getType()))
+      ThrowException("Can't store nonvector type: " +
+		     $2->getType()->getDescription());
+    // FIXME: We may change this, but for now it makes things simpler
+    // to require variable vectors in vscatters.  If you need to vscatter
+    // a fixed vector, you can always cast it to a variable vector
+    // first.
+    //
+    if (isa<FixedVectorType>($2->getType()))
+      ThrowException("Can't store fixed vector type: " +
+		     $2->getType()->getDescription() +
+		     " cast to variable vector first");
+    const Type *ElTy = cast<PointerType>($4->get())->getElementType();
+    if (!ElTy->isPrimitiveType())
+      ThrowException("Can't create vector of non-primitive type: " +
+                     ElTy->getDescription());
+    if (!VMemoryInst::checkNumIndices(*$6))
+      ThrowException("vscatter must have four indices for each array dimension!");
+    if (!VMemoryInst::checkIndexType(*$6))
+      ThrowException("vscatter indices must be of type long!");
+    const VectorType *VT = cast<VectorType>($2->getType());
+    if (VT->getElementType() != ElTy)
+      ThrowException("Can't store '" + $2->getType()->getDescription() +
+                     "' into space of type '" + VT->getDescription() + "'!");
+    $$ = new VScatterInst($2, getVal(*$4, $5), *$6);
+    delete $4; delete $6; 
   };
 
 

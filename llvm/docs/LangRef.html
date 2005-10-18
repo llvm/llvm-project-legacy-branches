@@ -1,4 +1,4 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
                       "http://www.w3.org/TR/html4/strict.dtd">
 <html>
 <head>
@@ -12,7 +12,7 @@
 
 <body>
 
-<div class="doc_title"> LLVM Language Reference Manual </div>
+<div class="doc_title"> LLVM Language Reference Manual BETA VERSION</div>
 <ol>
   <li><a href="#abstract">Abstract</a></li>
   <li><a href="#introduction">Introduction</a></li>
@@ -39,7 +39,8 @@
           <li><a href="#t_function">Function Type</a></li>
           <li><a href="#t_pointer">Pointer Type</a></li>
           <li><a href="#t_struct">Structure Type</a></li>
-          <li><a href="#t_packed">Packed Type</a></li>
+	  <li><a href="#t_vector">Vector Type</a></li>
+          <li><a href="#t_fixed_vector">Fixed Vector Type</a></li>
           <li><a href="#t_opaque">Opaque Type</a></li>
         </ol>
       </li>
@@ -74,6 +75,7 @@
           <li><a href="#i_div">'<tt>div</tt>' Instruction</a></li>
           <li><a href="#i_rem">'<tt>rem</tt>' Instruction</a></li>
           <li><a href="#i_setcc">'<tt>set<i>cc</i></tt>' Instructions</a></li>
+	  <li><a href="#i_vsetcc">'<tt>vset<i>cc</i></tt>' Instructions</a></li>
         </ol>
       </li>
       <li><a href="#bitwiseops">Bitwise Binary Operations</a>
@@ -92,6 +94,9 @@
           <li><a href="#i_alloca">'<tt>alloca</tt>'   Instruction</a></li>
 	 <li><a href="#i_load">'<tt>load</tt>'     Instruction</a></li>
 	 <li><a href="#i_store">'<tt>store</tt>'    Instruction</a></li>
+	 <li><a href="#i_vgather">'<tt>vgather</tt>'    Instruction</a></li>
+	 <li><a href="#i_vimm">'<tt>vimm</tt>'    Instruction</a></li>
+	 <li><a href="#i_vscatter">'<tt>vscatter</tt>'    Instruction</a></li>
 	 <li><a href="#i_getelementptr">'<tt>getelementptr</tt>' Instruction</a></li>
         </ol>
       </li>
@@ -100,6 +105,11 @@
           <li><a href="#i_phi">'<tt>phi</tt>'   Instruction</a></li>
           <li><a href="#i_cast">'<tt>cast .. to</tt>' Instruction</a></li>
           <li><a href="#i_select">'<tt>select</tt>' Instruction</a></li>
+          <li><a href="#i_vselect">'<tt>vselect</tt>' Instruction</a></li>
+          <li><a href="#i_extract">'<tt>extract</tt>' Instruction</a></li>
+          <li><a href="#i_extractelement">'<tt>extractelement</tt>' Instruction</a></li>
+          <li><a href="#i_combine">'<tt>combine</tt>' Instruction</a></li>
+          <li><a href="#i_combineelement">'<tt>combineelement</tt>' Instruction</a></li>
           <li><a href="#i_call">'<tt>call</tt>'  Instruction</a></li>
           <li><a href="#i_vaarg">'<tt>vaarg</tt>'  Instruction</a></li>
         </ol>
@@ -162,6 +172,7 @@
 <div class="doc_author">
   <p>Written by <a href="mailto:sabre@nondot.org">Chris Lattner</a>
             and <a href="mailto:vadve@cs.uiuc.edu">Vikram Adve</a></p>
+  <p>Vector extensions by <a href="mailto:bocchino@uiuc.edu">Rob Bocchino</a></p>
 </div>
 
 <!-- *********************************************************************** -->
@@ -645,7 +656,8 @@ classifications:</p>
       <td><a name="t_firstclass">first class</a></td>
       <td><tt>bool, ubyte, sbyte, ushort, short, uint, int, ulong, long,<br> 
       float, double, <a href="#t_pointer">pointer</a>, 
-      <a href="#t_packed">packed</a></tt></td>
+      <a href="#t_vector">vector</a>,
+      <a href="#t_fixed_vector">fixed vector</a></tt></td>
     </tr>
   </tbody>
 </table>
@@ -825,24 +837,66 @@ reference to another object, which must live in memory.</p>
   </tr>
 </table>
 </div>
-
+<p></p>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="t_packed">Packed Type</a> </div>
+<div class="doc_subsubsection"> <a name="t_vector">Vector Type</a> </div>
 <div class="doc_text">
 
 <h5>Overview:</h5>
 
-<p>A packed type is a simple derived type that represents a vector
-of elements.  Packed types are used when multiple primitive data 
-are operated in parallel using a single instruction (SIMD). 
-A packed type requires a size (number of
-elements) and an underlying primitive data type.  Packed types are
-considered <a href="#t_firstclass">first class</a>.</p>
+<p>A vector type is a simple derived type that represents a vector of
+elements whose length is not necessarily known at compile time.
+Vector types are used to express vector (SIMD) parallelism when the
+target architecture supports variable-length vectors, or when the
+vector length of the target is not known.  A vector type requires an
+underlying primitive data type.  Unlike <a href="#t_array">arrays</a>,
+vector types are <a href="#t_firstclass">first class</a> values.</p>
 
 <h5>Syntax:</h5>
 
 <pre>
-  &lt; &lt;# elements&gt; x &lt;elementtype&gt; &gt;
+  [ vector of &lt;elementtype&gt; ]
+</pre>
+
+<p>elementtype may be any integral or floating point type.</p>
+
+<h5>Examples:</h5>
+
+<table class="layout">
+  <tr class="layout">
+    <td class="left">
+      <tt>[vector of int]</tt><br/>
+      <tt>[vector of float]</tt><br/>
+      <tt>[vector of uint]</tt><br/>
+    </td>
+    <td class="left">
+      Vector of integer values.<br/>
+      Vector of floating-point values.<br/>
+      Vector of unsigned integer values.<br/>
+    </td>
+  </tr>
+</table>
+</div>
+<p></p>
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="t_fixed_vector">Fixed Vector Type</a> </div>
+<div class="doc_text">
+
+<h5>Overview:</h5>
+
+<p>A fixed vector type is a simple derived type that represents a
+vector of elements whose length is a compile-time constant.  Fixed
+vector types are used for expressing vector (SIMD) operations when the
+target is a machine with fixed-length vector regsiters (such as
+AltiVec or SSE), and when the target vector length is known.  A fixed
+vector type requires a size (number of elements) and an underlying
+primitive data type.  Unlike <a href="#t_array">arrays</a>,
+vector types are <a href="#t_firstclass">first class</a> values.</p>
+
+<h5>Syntax:</h5>
+
+<pre>
+  [ vector of &lt;# elements&gt; &lt;elementtype&gt; ]
 </pre>
 
 <p>The number of elements is a constant integer value; elementtype may
@@ -853,19 +907,19 @@ be any integral or floating point type.</p>
 <table class="layout">
   <tr class="layout">
     <td class="left">
-      <tt>&lt;4 x int&gt;</tt><br/>
-      <tt>&lt;8 x float&gt;</tt><br/>
-      <tt>&lt;2 x uint&gt;</tt><br/>
+      <tt>[vector of 4 int]</tt><br/>
+      <tt>[vector of 8 float]</tt><br/>
+      <tt>[vector of 2 uint]</tt><br/>
     </td>
     <td class="left">
-      Packed vector of 4 integer values.<br/>
-      Packed vector of 8 floating-point values.<br/>
-      Packed vector of 2 unsigned integer values.<br/>
+      Fixed-length vector of 4 integer values.<br/>
+      Fixed-length vector of 8 floating-point values.<br/>
+      Fixed-length vector of 2 unsigned integer values.<br/>
     </td>
   </tr>
 </table>
 </div>
-
+<p></p>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_opaque">Opaque Type</a> </div>
 <div class="doc_text">
@@ -982,15 +1036,15 @@ and smaller aggregate constants.</p>
   types of elements must match those specified by the type.
   </dd>
 
-  <dt><b>Packed constants</b></dt>
+  <dt><b>Fixed-length vector constants</b></dt>
 
-  <dd>Packed constants are represented with notation similar to packed type
-  definitions (a comma separated list of elements, surrounded by
-  less-than/greater-than's (<tt>&lt;&gt;</tt>)).  For example: "<tt>&lt; int 42,
-  int 11, int 74, int 100 &gt;</tt>".  Packed constants must have <a
-  href="#t_packed">packed type</a>, and the number and types of elements must
-  match those specified by the type.
-  </dd>
+  <dd>Fixed-length vector constants are represented as a
+  comma-separated list of elements surrounded by
+  less-than/greater-than's (<tt>&lt;&gt;</tt>).  For example:
+  "<tt>&lt; int 42, int 11, int 74, int 100 &gt;</tt>".  Fixed-length
+  vector constants must have <a href="#t_fixed_vector">fixed vector
+  type</a>, and the number and types of elements must match those
+  specified by the type.  </dd>
 
   <dt><b>Zero initialization</b></dt>
 
@@ -1366,7 +1420,7 @@ no-return function cannot be reached, and other facts.</p>
 <p>Binary operators are used to do most of the computation in a
 program.  They require two operands, execute an operation on them, and
 produce a single value.  The operands might represent 
-multiple data, as is the case with the <a href="#t_packed">packed</a> data type. 
+multiple data, as is the case with the <a href="#t_fixed_vector">fixed vector</a> data type. 
 The result value of a binary operator is not
 necessarily the same type as its operands.</p>
 <p>There are several different binary operators:</p>
@@ -1383,7 +1437,7 @@ Instruction</a> </div>
 <h5>Arguments:</h5>
 <p>The two arguments to the '<tt>add</tt>' instruction must be either <a
  href="#t_integer">integer</a> or <a href="#t_floating">floating point</a> values.
- This instruction can also take <a href="#t_packed">packed</a> versions of the values.
+ This instruction can also take <a href="#t_vector">vector</a> or <a href="#t_fixed_vector">fixed vector</a> versions of the values.
 Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>The value produced is the integer or floating point sum of the two
@@ -1408,7 +1462,7 @@ instruction present in most other intermediate representations.</p>
 <p>The two arguments to the '<tt>sub</tt>' instruction must be either <a
  href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
 values. 
-This instruction can also take <a href="#t_packed">packed</a> versions of the values.
+This instruction can also take <a href="#t_vector">vector</a> or <a href="#t_fixed_vector">fixed vector</a> versions of the values.
 Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>The value produced is the integer or floating point difference of
@@ -1432,7 +1486,7 @@ operands.</p>
 <p>The two arguments to the '<tt>mul</tt>' instruction must be either <a
  href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
 values. 
-This instruction can also take <a href="#t_packed">packed</a> versions of the values.
+This instruction can also take <a href="#t_vector">vector</a> or <a href="#t_fixed_vector">fixed vector</a> versions of the values.
 Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>The value produced is the integer or floating point product of the
@@ -1457,7 +1511,7 @@ operands.</p>
 <p>The two arguments to the '<tt>div</tt>' instruction must be either <a
  href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
 values. 
-This instruction can also take <a href="#t_packed">packed</a> versions of the values.
+This instruction can also take <a href="#t_vector">vector</a> or <a href="#t_fixed_vector">fixed vector</a> versions of the values.
 Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>The value produced is the integer or floating point quotient of the
@@ -1480,7 +1534,7 @@ division of its two operands.</p>
 <p>The two arguments to the '<tt>rem</tt>' instruction must be either <a
  href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
 values. 
-This instruction can also take <a href="#t_packed">packed</a> versions of the values.
+This instruction can also take <a href="#t_vector">vector</a> or <a href="#t_fixed_vector">fixed vector</a> versions of the values.
 Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>This returns the <i>remainder</i> of a division (where the result
@@ -1512,8 +1566,9 @@ value based on a comparison of their two operands.</p>
 <p>The two arguments to the '<tt>set<i>cc</i></tt>' instructions must
 be of <a href="#t_firstclass">first class</a> type (it is not possible
 to compare '<tt>label</tt>'s, '<tt>array</tt>'s, '<tt>structure</tt>'
-or '<tt>void</tt>' values, etc...).  Both arguments must have identical
-types.</p>
+or '<tt>void</tt>' values, etc...).  They may not be vector types (use
+the <a href=#i_vsetcc><tt>vset<i>cc</i></tt></a> instructions to compare vectors).  Both
+arguments must have identical types.</p> 
 <h5>Semantics:</h5>
 <p>The '<tt>seteq</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
 value if both operands are equal.<br>
@@ -1535,6 +1590,58 @@ operand.</p>
   &lt;result&gt; = setgt sbyte 4, 5        <i>; yields {bool}:result = false</i>
   &lt;result&gt; = setle sbyte 4, 5        <i>; yields {bool}:result = true</i>
   &lt;result&gt; = setge sbyte 4, 5        <i>; yields {bool}:result = false</i>
+</pre>
+</div>
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="i_vsetcc">'<tt>vset<i>cc</i></tt>'
+Instructions</a> </div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<pre>  &lt;result&gt; = vseteq [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vseteq [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+  &lt;result&gt; = vsetne [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vsetne [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+  &lt;result&gt; = vsetlt [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vsetlt [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+  &lt;result&gt; = vsetgt [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vsetgt [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+  &lt;result&gt; = vsetle [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vsetle [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+  &lt;result&gt; = vsetge [vector of &lt;ty&gt;]   &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of bool]</i>
+  &lt;result&gt; = vsetge [vector of n &lt;ty&gt;] &lt;var1&gt;, &lt;var2&gt;   <i>; yields [vector of n bool]</i>
+</pre>
+<h5>Overview:</h5>
+<p>A '<tt>vset<i>cc</i></tt>' instruction returns a vector of boolean
+values representing, at each position, the result of the comparison
+between the values at that position in the two operands.</p>
+<h5>Arguments:</h5>
+<p>The two arguments to a '<tt>vset<i>cc</i></tt>' instruction must
+be of <a href="#t_vector">vector</a> or <a
+href="#t_fixed_vector">fixed vector</a> type.  Both arguments must
+have identical types.  If the arguments are of vector type, then the
+result has type [vector of bool].  If the arguments are of fixed
+vector type with length n, then the result has type [vector of n
+bool].</p> <h5>Semantics:</h5>
+<p>The '<tt>vseteq</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if both operands are equal at that position.<br>
+The '<tt>vsetne</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if both operands are unequal at that position.<br>
+The '<tt>vsetlt</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if the first operand is less than the second operand at that position.<br>
+The '<tt>vsetgt</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if the first operand is greater than the second operand at that position.<br>
+The '<tt>vsetle</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if the first operand is less than or equal to the second operand at that position.<br>
+The '<tt>vsetge</tt>' instruction yields a <tt>true</tt> '<tt>bool</tt>'
+value at position p of the result if the first operand is greater than or equal to the second
+operand at that position.</p>
+<h5>Example:</h5>
+<pre>  &lt;result&gt; = vseteq [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = false, false</i>
+  &lt;result&gt; = vsetne [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = true, true</i>
+  &lt;result&gt; = vsetlt [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = true, false</i>
+  &lt;result&gt; = vsetgt [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = false, true</i>
+  &lt;result&gt; = vsetle [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = true, false</i>
+  &lt;result&gt; = vsetge [vector of 2 int] &lt;int 4, int 5&gt;, &lt;int 5, int 4&gt;      <i>; yields {[vector of 2 bool]}:result = false, true</i>
 </pre>
 </div>
 <!-- ======================================================================= -->
@@ -1857,53 +1964,325 @@ instructions), the memory is reclaimed.</p>
 <div class="doc_subsubsection"> <a name="i_load">'<tt>load</tt>'
 Instruction</a> </div>
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = load &lt;ty&gt;* &lt;pointer&gt;<br>  &lt;result&gt; = volatile load &lt;ty&gt;* &lt;pointer&gt;<br></pre>
+
+<pre>
+  &lt;result&gt; = load &lt;ty&gt;* &lt;pointer&gt;
+  &lt;result&gt; = volatile load &lt;ty&gt;* &lt;pointer&gt;
+  &lt;result&gt; = aligned load &lt;ty&gt;* &lt;pointer&gt;
+</pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>load</tt>' instruction is used to read from memory.</p>
+
 <h5>Arguments:</h5>
-<p>The argument to the '<tt>load</tt>' instruction specifies the memory
-address to load from.  The pointer must point to a <a
- href="#t_firstclass">first class</a> type.  If the <tt>load</tt> is
-marked as <tt>volatile</tt> then the optimizer is not allowed to modify
-the number or order of execution of this <tt>load</tt> with other
-volatile <tt>load</tt> and <tt><a href="#i_store">store</a></tt>
-instructions. </p>
+
+<p>The argument to the '<tt>load</tt>' instruction specifies the
+memory address to load from.  The pointer must point to a <a
+href="#t_firstclass">first class</a> type.  The <tt>load</tt> may be
+marked as <tt>volatile</tt> and/or <tt>aligned</tt>.</p>
+
 <h5>Semantics:</h5>
-<p>The location of memory pointed to is loaded.</p>
+
+<p>The location of memory pointed to is loaded.  If the <tt>load</tt>
+is marked as <tt>volatile</tt> then the optimizer is not allowed to
+modify the number or order of execution of this <tt>load</tt> with
+other volatile <tt>load</tt> and <tt><a href="#i_store">store</a></tt>
+instructions.  The <tt>aligned</tt> attribute applies only to loads of
+<a href="#t_vector">vectors</a> and <a href="#t_fixed_vector">fixed
+vectors<a>.  An <tt>aligned load</tt> means that the pointer is
+guaranteed to satisfy the target architecture's alignment requirement
+for loads (if any), and that the <tt>load</tt> may be translated
+directly to a native load for the target.  Otherwise, the backend may
+have to perform an unaligned load or insert a runtime alignment
+correction, reducing efficiency.</p>
+
 <h5>Examples:</h5>
 <pre>  %ptr = <a href="#i_alloca">alloca</a> int                               <i>; yields {int*}:ptr</i>
   <a
  href="#i_store">store</a> int 3, int* %ptr                          <i>; yields {void}</i>
   %val = load int* %ptr                           <i>; yields {int}:val = int 3</i>
 </pre>
+
+<h5>TO DO:</h5>
+The <tt>aligned</tt> attribute is not yet implemented for <tt>load</tt>.
+
 </div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="i_store">'<tt>store</tt>'
 Instruction</a> </div>
+<div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;                   <i>; yields {void}</i>
-  volatile store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;                   <i>; yields {void}</i>
+
+<pre>
+  store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;                      <i>; yields {void}</i>
+  volatile store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;             <i>; yields {void}</i>
+  aligned store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;              <i>; yields {void}</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>store</tt>' instruction is used to write to memory.</p>
+
 <h5>Arguments:</h5>
-<p>There are two arguments to the '<tt>store</tt>' instruction: a value
-to store and an address to store it into.  The type of the '<tt>&lt;pointer&gt;</tt>'
-operand must be a pointer to the type of the '<tt>&lt;value&gt;</tt>'
-operand. If the <tt>store</tt> is marked as <tt>volatile</tt>, then the
-optimizer is not allowed to modify the number or order of execution of
-this <tt>store</tt> with other volatile <tt>load</tt> and <tt><a
- href="#i_store">store</a></tt> instructions.</p>
+
+<p>There are two arguments to the '<tt>store</tt>' instruction: a
+value to store and an address to store it into.  The type of the
+'<tt>&lt;pointer&gt;</tt>' operand must be a pointer to the type of
+the '<tt>&lt;value&gt;</tt>' operand.  The <tt>store</tt> may be
+marked as <tt>volatile</tt> and/or <tt>aligned</tt>.</p>
+
 <h5>Semantics:</h5>
-<p>The contents of memory are updated to contain '<tt>&lt;value&gt;</tt>'
-at the location specified by the '<tt>&lt;pointer&gt;</tt>' operand.</p>
+
+<p>The contents of memory are updated to contain
+'<tt>&lt;value&gt;</tt>' at the location specified by the
+'<tt>&lt;pointer&gt;</tt>' operand.  If the <tt>store</tt> is marked
+as <tt>volatile</tt>, then the optimizer is not allowed to modify the
+number or order of execution of this <tt>store</tt> with other
+volatile <tt><a href="#i_load">load</a></tt> and <tt>store</tt>
+instructions.  An <tt>aligned store</tt> means that the pointer is
+guaranteed to satisfy the target architecture's alignment requirement
+for stores (if any), and that the <tt>store</tt> may be translated
+directly to a native store for the target.  Otherwise, the backend may
+have to perform an unaligned store or insert a runtime alignment
+correction, reducing efficiency.</p>
+
 <h5>Example:</h5>
 <pre>  %ptr = <a href="#i_alloca">alloca</a> int                               <i>; yields {int*}:ptr</i>
   <a
  href="#i_store">store</a> int 3, int* %ptr                          <i>; yields {void}</i>
   %val = load int* %ptr                           <i>; yields {int}:val = int 3</i>
 </pre>
+
+<h5>TO DO:</h5>
+The <tt>aligned</tt> attribute is not yet implemented for <tt>store</tt>.
+
+</div>
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="i_vgather">'<tt>vgather</tt>' 
+Instruction</a> </div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  &lt;result&gt; = vgather &lt;ty&gt;* &lt;pointer&gt;{, &lt;index group&gt;, &lt;multiplier&gt;}+
+  &lt;result&gt; = aligned vgather &lt;ty&gt;* &lt;pointer&gt;{, &lt;index group&gt;, &lt;multiplier&gt;}+
+</pre>
+
+<tt>&lt;index group&gt;</tt> means either
+<tt>long &lt;start&gt;, long &lt;end&gt;, long &lt;stride&gt</tt> or
+<tt>[vector of long]</tt>
+
+<h5>Overview:</h5>
+
+<p>The '<tt>vgather</tt>' instruction reads an array slice of
+arbitrary dimension from memory into a vector register.</p>
+
+<h5>Arguments:</h5>
+
+<p>The first argument to the '<tt>vgather</tt>' instruction specifies
+the memory address at which to start the gather.  The pointer must
+point to an integral or floating point type.  Following the pointer
+argument are one or more <tt>(index group, multiplier)</tt> pairs.  An
+<tt>index group</tt> specifies a list of indices, either as a triple
+<tt>(start, end, stride)</tt>, or as a vector of indices.  The stride
+may be negative.  <tt>multiplier</tt> specifies a multiplier for the
+indices when generating the array access; this allows access to arrays
+whose shape is unknown at compile time, as well as access to repeated
+values (by using a zero multiplier).  The <tt>vgather</tt> may be
+marked as <tt>aligned</tt>.</p>
+
+<h5>Semantics:</h5>
+<p>Values are loaded from memory into the resulting register according to the following:</p>
+<pre>
+  i = 0;
+  for each index I1 in index group 1
+    for each index I2 in index group 2
+      ...
+        for each index In in index group n
+	  result[i++] = pointer[I1 * multiplier1 + I2 * multiplier2 + ... + In * multipliern]
+</pre>
+The semantics of <tt>vgather</tt> guarantees only that these loads
+occur, and that the loaded values are placed into <tt>result</tt> in
+the order specified above.  Otherwise, <tt>vgather</tt> does <i>not</i>
+guarantee that the loads occur in any particular order.  In
+particular, unlike a Fortran 90 triplet, <tt>vgather</tt> does
+<i>not</i> guarantee that all loads are performed before any use of a
+value in the result vector.  In compiling <tt>vgather</tt> to a
+particular target, the code generator is free to schedule the load of
+any value in the result vector at any point in the program from the
+<tt>vgather</tt> to the first use of that value.  The Vector LLVM
+program must be written so that this rule produces correct results.
+The result of a <tt>vgather</tt> instruction is of <a
+href="#t_vector">vector type</a>.
+
+<p>
+The <tt>aligned</tt> attribute functions as described for <a
+href=#i_load>load</a>.
+</p>
+
+<h5>Examples (Using Fortran 90-Style Notation):</h5>
+<pre>  %vec = vgather int* %ptr, long 0, long 9, long 1, long 1   <i>; yields {[vector of int]}:vec = ptr[0:9:1]</i>
+  %vec = vgather int* %ptr, long 0, long 9, long 1, long 10, long 0, long 9, long 1, long 1   <i>; yields {[vector of int]}:vec = ptr[0:9:1][0:9:1]</i>
+  %vec = vgather int* %ptr, [vector of long] %idx, long 1   <i>; yields{[vector of int]}:vec = ptr[idx]</i>
+</pre>
+
+<h5>TO DO:</h5>
+<ol>
+
+<li>The <tt>aligned</tt> attribute is not yet implemented for <tt>vgather</tt>.
+</li>
+
+<li>Currently only the strided form of the index group is implemented; the
+<tt>[vector of long]</tt> form is not yet implemented.  </li>
+
+</ol>
+
+</div>
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="i_vimm">'<tt>vimm</tt>' Instruction</a> </div>
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = vimm &lt;ty&gt; &lt;val&gt;, uint &lt;length&gt;
+  &lt;result&gt; = fixed vimm &lt;ty&gt; &lt;val&gt;, uint &lt;length&gt;
+</pre>
+
+<h5>Overview:</h5>
+
+<p>The '<tt>vimm</tt>' instruction expands a scalar value into a
+vector value.</p> 
+
+<h5>Arguments:</h5>
+
+<p>The first argument specifies the scalar value to use.  The value
+must be of integral or floating point type.  The second argument
+specifies the length of the resulting vector.  The <tt>vimm</tt> may
+be <tt>fixed</tt> or not; a <tt>fixed vimm</tt> must have a constant
+second operand.  The result of a <tt>vimm</tt> is of <a
+href="#t_vector">vector type</a>, and the result of a <tt>fixed
+vimm</tt> is of <a href="#t_fixed_vector">fixed vector type</a>.</p>
+
+<h5>Semantics:</h5>
+
+<p>The specified value is used to populate each position of a vector
+of the specified length.</p>
+
+<h5>Examples:</h5>
+
+<pre>
+  %vec = vimm int 0, uint %n          <i>; yields [vector of int]</i>
+  %vec = vimm int 0, uint 10          <i>; yields [vector of int]</i>
+  %vec = fixed vimm int 0, uint 10    <i>; yields [vector of 10 int]</i>
+</pre>
+
+<h5>TO DO:</h5> This definition leaves open a perverse case that might
+break the program.  If someone creates a <tt>fixed vimm</tt> with a
+constant second operand (as required) then later replaces that
+constant with a variable, the instruction will be illegal, and the
+program will break on subsequent verification.  It's hard to see why
+an optimization pass would replace a constant with a variable, but to
+guard against this we could
+
+<ol> 
+
+<li>Include the type of the instruction as an operand in the assembly
+language format.  For fixed vectors, this would make the length
+argument useless, but it would also prevent someone from creating an
+illegal instruction by replacing the length operand with a different
+value (since the type is an invariant of the instruction, and cannot
+be "replaced" without explicitly creating a new instruction of a
+different type).
+
+<li>Provide a separate form for fixed vectors (possibly with a
+separate opcode/assembly mnemonic) that takes a scalar value and a
+type (similar to the cast instruction) rather than a length.
+
+<li>Ignore the problem, ostrich-like.  Maybe it's not a real issue.
+
+</ol>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="i_vscatter">'<tt>vscatter</tt>' 
+Instruction</a> </div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<pre>  &lt;result&gt; = vscatter [vector of &lt;ty&gt;] &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;{, &lt;index group&gt;, &lt;multiplier&gt;}+</pre>
+<tt>&lt;index group&gt;</tt> means either
+<tt>long &lt;start&gt;, long &lt;end&gt;, long &lt;stride&gt</tt> or
+<tt>[vector of long]</tt>
+
+<h5>Overview:</h5>
+
+<p>The '<tt>vscatter</tt>' instruction stores ("scatters") a vector
+register into an array slice of arbitrary dimension.</p>
+
+<h5>Arguments:</h5>
+
+<p>The first argument to the '<tt>vscatter</tt>' instruction specifies
+a value of <a href="#t_vector">vector type</a> to scatter to memory,
+and the second is a pointer specifying the location where the scatter
+should begin.  The pointer must point to the element type of the
+vector.  Following the pointer argument are one or more <tt>(index
+group, multiplier)</tt> pairs.  An <tt>index group</tt> specifies a
+list of indices, either as a triple <tt>(start, end, stride)</tt>, or
+as a vector of indices.  The stride may be negative.
+<tt>multiplier</tt> specifies a multiplier for the indices when
+generating the array access; this allows access to arrays whose shape
+is unknown at compile time.  The <tt>vscatter</tt> may be
+marked as <tt>aligned</tt>.</p>
+
+<h5>Semantics:</h5>
+<p>Values are stored to memory according to the following:</p>
+<pre>
+  i = 0;
+  for each index I1 in index group 1
+    for each index I2 in index group 2
+      ...
+        for each index In in index group n
+	  pointer[I1 * multiplier1 + I2 * multiplier2 + ... + In * multipliern] = value[i++]
+</pre>
+
+The semantics of <tt>vscatter</tt> guarantees only that these stores
+occur, and that the stored values are placed into memory in the order
+specified above.  Otherwise, <tt>vscatter</tt> does <i>not</i> guarantee
+that the stores occur in any particular order.  In compiling
+<tt>vscatter</tt> to a particular target, the code generator is free to
+schedule the store of any value in the result vector at any point in
+the program from the point where the value is defined to the
+<tt>vscatter</tt>.  The Vector LLVM program must be written so that this
+rule produces correct results.
+
+<p>
+The <tt>aligned</tt> attribute functions as described for <a
+href=#i_load>store</a>.
+</p>
+
+<h5>Examples (Using Fortran 90-Style Notation):</h5>
+<pre>  vscatter [vector of int] %vec, int* %ptr, long 0, long 9, long 1, long 1   <i>; ptr[0:9:1] = {[vector of int]}:vec</i>
+  vscatter [vector of int] %vec, int* %ptr, long 0, long 9, long 1, long 10, long 0, long 9, long 1, long 1   <i>; ptr[0:9:1][0:9:1] = {[vector of int]}:vec</i>
+  vscatter [vector of int] %vec, int* %ptr, [vector of long] %idx, long 1   <i>; ptr[idx] = {[vector of int]}:vec</i>
+</pre>
+
+<h5>TO DO:</h5>
+<ol>
+
+<li>The <tt>aligned</tt> attribute is not yet implemented for <tt>vscatter</tt>.</li>
+
+<li>Currently only the strided form of the index group is implemented; the
+<tt>[vector of long]</tt> form is not yet implemented.  </li>
+
+</ol>
+
+</div>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection">
    <a name="i_getelementptr">'<tt>getelementptr</tt>' Instruction</a>
@@ -2148,7 +2527,334 @@ value argument; otherwise, it returns the second value argument.
 </div>
 
 
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_vselect">'<tt>vselect</tt>' Instruction</a>
+</div>
 
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = vselect [vector of bool]   &lt;cond&gt;, [vector of &lt;ty&gt;]   &lt;val1&gt;, [vector of &lt;ty&gt;]   &lt;val2&gt; <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = vselect [vector of n bool] &lt;cond&gt;, [vector of n &lt;ty&gt;] &lt;val1&gt;, [vector of n &lt;ty&gt;] &lt;val2&gt; <i>; yields [vector of n &lt;ty&gt;]</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>vselect</tt>' instruction chooses one value at each position
+of a vector based on a condition, without branching.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+
+The '<tt>vselect</tt>' instruction requires a vector of boolean values
+indicating the condition at each vector position, and two values of
+the same <a href="#t_vector">vector</a> or <a
+href="#t_fixed_vector">fixed vector</a> type.  All three operands must
+be vectors or fixed vectors, and all must have the same length.  The
+type of the result is the same as the type of the two value
+operands.</p>
+
+<h5>Semantics:</h5>
+
+<p>
+At each vector position, if the boolean vector contains true at that
+position, that position of the result gets the value at that position
+in the first value argument; otherwise, it gets that value at that
+position in the second value argument.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %X = vselect bool [vector of 2 bool] &lt;bool true, bool false&gt;, [vector of 2 ubyte] &lt;ubyte 17, ubyte 17&gt;, 
+    [vector of 2 ubyte] &lt;ubyte 42, ubyte 42&gt;      <i>; yields [vector of 2 ubyte]:17, 42</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_extract">'<tt>extract</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = extract [vector of &lt;ty&gt;] &lt;val&gt;, uint &lt;start&gt;, uint &lt;stride&gt;, uint &lt;length&gt;   <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = extract [vector of n &lt;ty&gt;] &lt;val&gt;, uint &lt;start&gt;, uint &lt;stride&gt;, uint &lt;length&gt;   <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = fixed extract [vector of &lt;ty&gt;] &lt;val&gt;, uint &lt;start&gt;, uint &lt;stride&gt;, uint &lt;length&gt;   <i>; yields [vector of n &lt;ty&gt;]</i>
+  &lt;result&gt; = fixed extract [vector of n &lt;ty&gt;] &lt;val&gt;, uint &lt;start&gt;, uint &lt;stride&gt;, uint &lt;length&gt;   <i>; yields [vector of n &lt;ty&gt;]</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>extract</tt>' instruction extracts a strided range of values
+from a vector.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of an '<tt>extract</tt>' instruction is a value of
+<a href="t_vector">vector</a> or <a href="t_fixed_vector">fixed
+vector</a> type.  The following operands are indices indicating a
+start position, stride, and length.  The <tt>vimm</tt> may be
+<tt>fixed</tt> or not; a <tt>fixed vimm</tt> must have a constant
+second operand.  The result of a <tt>extract</tt> is of <a
+href="#t_vector">vector type</a>, and the result of a <tt>fixed
+extract</tt> is of <a href="#t_fixed_vector">fixed vector
+type</a>.</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is a vector of the same type as <tt>val</tt> with length
+<tt>length</tt>.  The result contains the <tt>length</tt> values
+obtained by starting at position <tt>start</tt> in <tt>val</tt> and
+incrementing the position by <tt>stride</tt> between each successive
+value.  If <tt>start + stride * length</tt> exceeds the length of
+<tt>val</tt>, the results are undefined.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = extract [vector of int]    %vec, uint 0, uint 9, uint 2    <i>; yields [vector of int]</i>
+  %result = extract [vector of 10 int] %vec, uint 0, uint 9, uint 2    <i>; yields [vector of 10 int]</i>
+</pre>
+
+<h5>TO DO:</h5>
+
+<p>
+The <tt>fixed</tt> attribute is not currently implemented.  Instead,
+we generate a fixed vector if and only if the first operand of
+<tt>extract</tt> is a fixed vector, and the length operand is a
+constant.  This is broken, because changing the length operand (e.g.,
+from a variable to a constant, through constant propagation), changes
+the type of the <tt>extract</tt>, which must be an invariant of the
+instruction.
+</p>
+
+<p>
+The <tt>fixed</tt> attribute suffers from the same issues as described
+in <a href="#i_vimm">vimm</a>.  Instead of <tt>fixed</tt>, we could
+pursue the options outlined there.
+</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_extractelement">'<tt>extractelement</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = extractelement [vector of &lt;ty&gt;]   &lt;val&gt;, uint &lt;idx&gt;    <i>; yields &lt;ty&gt;</i>
+  &lt;result&gt; = extractelement [vector of n &lt;ty&gt;] &lt;val&gt;, uint &lt;idx&gt;    <i>; yields &lt;ty&gt;</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>extractelement</tt>' instruction extracts a single scalar
+element from a vector at a specified index.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of an '<tt>extract</tt>' instruction is a value of
+<a href="t_vector">vector</a> or <a href="t_fixed_vector">fixed
+vector</a> type.  The second operand is an index indicating the
+position from which to extract the element.</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is a scalar of the same type as the element type of
+<tt>val</tt>.  Its value is the value at position <tt>idx</tt> of
+<tt>val</tt>.  If <tt>idx</tt> exceeds the length of <tt>val</tt>, the
+results are undefined.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = extractelement [vector of int]    %vec, uint 0    <i>; yields int</i>
+  %result = extractelement [vector of 10 int] %vec, uint 0    <i>; yields int</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_combine">'<tt>combine</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = combine [vector of &lt;ty&gt;]   &lt;val1&gt;, [vector of &lt;ty&gt;],   &lt;val2&gt;, uint &lt;start&gt;, uint &lt;stride&gt;   <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = combine [vector of n &lt;ty&gt;] &lt;val2&gt;, [vector of n &lt;ty&gt;], &lt;val2&gt;, uint &lt;start&gt;, uint &lt;stride&gt;   <i>; yields [vector of n &lt;ty&gt;]</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>combine</tt>' instruction combines two vectors by overlaying
+the values of the second on the first at the specified start position
+and stride.
+</p>
+
+<h5>Arguments:</h5>
+
+<p>
+The first two operands of a '<tt>combine</tt>' instruction are values
+of <a href="t_vector">vector</a> or <a href="t_fixed_vector">fixed
+vector</a> type.  The second two operands are indices indicating a
+start position and stride.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is a vector of the same type and length as <tt>val1</tt>.
+The result contains the values of <tt>val1</tt> at each position
+except those starting at <tt>start</tt> and proceeding by stride
+<tt>stride</tt>, to and including the length of <tt>val2</tt>.  Each
+of those positions gets the value from the corresponding position of
+<tt>val2</tt>.  If the length of <tt>val2</tt> times <tt>stride</tt>
+plus <tt>start</tt> exceeds the length of <tt>val1</tt>, the results
+are undefined.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = combine [vector of int]    %v1, [vector of int]    %v2, uint 0, uint 9    <i>; yields [vector of int]</i>
+  %result = combine [vector of 10 int] %v1, [vector of 10 int] %v2, uint 0, uint 9    <i>; yields [vector of 10 int]</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_combineelement">'<tt>combineelement</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = combineelement [vector of &lt;ty&gt;]   &lt;val&gt;, &lt;ty&gt; &lt;elt&gt, uint &lt;idx&gt;    <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = combineelement [vector of n &lt;ty&gt;] &lt;val&gt;, &lt;ty&gt; &lt;elt&gt, uint &lt;idx&gt;    <i>; yields [vector of n &lt;ty&gt;]</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>combineelement</tt>' instruction overlays a single scalar
+element on a vector at a specified index.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of a '<tt>combineelement</tt>' instruction is a
+value of <a href="t_vector">vector</a> or <a
+href="t_fixed_vector">fixed vector</a> type.  The second operand is a
+scalar value.  The third operand is an index indicating the position
+at which to overlay the value.</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is a vector of the same type as <tt>val</tt>.  Its element
+values are those of <tt>val</tt> except at position <tt>idx</tt>,
+where it gets the value <tt>elt</tt>.  If <tt>idx</tt> exceeds the
+length of <tt>val</tt>, the results are undefined.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = combineelement [vector of int]    %vec, int 5, uint 0    <i>; yields [vector of int]</i>
+  %result = combineelement [vector of 10 int] %vec, int 5, uint 0    <i>; yields [vector of 10 int]</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_permute">'<tt>permute</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = permute [vector of &lt;ty&gt;] &lt;val&gt;, [vector of uint] &lt;idx&gt;    <i>; yields [vector of &lt;ty&gt;]</i>
+  &lt;result&gt; = permute [vector of n &lt;ty&gt;] &lt;val&gt;, [vector of n uint] &lt;idx&gt;    <i>; yields [vector of n &lt;ty&gt;]</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>permute</tt>' instruction permutes a value vector according
+to an index vector.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of a '<tt>permute</tt>' is a value of any <a
+href="t_vector">vector</a> or <a href="t_fixed_vector">fixed
+vector</a> type.  The second operand is a vector of <tt>uint</tt>.  It
+must have the same length as the first operand and must be a vector or
+fixed vector according to whether the first operand is.</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is a vector of the same type as <tt>val</tt>.  Its element
+values are those of <tt>val</tt>, except at position <tt>i</tt> it has
+the value at position <tt>j</tt> of <tt>val</tt>, where <tt>j</tt> is
+element <tt>i</tt> of <tt>idx</tt>.  If any element of <tt>idx</tt> is
+greater than the length of <tt>val</tt> minus 1, the results are
+undefined.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = permute [vector of 4 int] &lt;int 1, int 2, int 3, int 4&gt;, 
+    [vector of uint] &lt;uint 4, uint 3, uint 2, uint 1&gt;
+  <i>; yields [vector of 4 int] &lt;int 4, int 3, int 2, int 1&gt;</i>
+</pre>
+
+<h5>TO DO:</h5>
+
+This instruction is not yet implemented.  Currently, I use a
+<tt>permute</tt> function (intrinsic) with the semantics described.
+
+</div>
 
 
 <!-- _______________________________________________________________________ -->

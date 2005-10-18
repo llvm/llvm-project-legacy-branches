@@ -678,7 +678,7 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     Result = new VAArgInst(getValue(iType, Oprnds[0]),
                            getSanitizedType(Oprnds[1]));
     break;
-  case 32: { //VANext_old
+  case 42: { //VANext_old
     const Type* ArgTy = getValue(iType, Oprnds[0])->getType();
     Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
 
@@ -698,7 +698,7 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     Result = new LoadInst(foo);
     break;
   }
-  case 33: { //VAArg_old
+  case 43: { //VAArg_old
     const Type* ArgTy = getValue(iType, Oprnds[0])->getType();
     Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
 
@@ -719,11 +719,26 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     Result = new CastInst(getValue(iType, Oprnds[0]),
                           getSanitizedType(Oprnds[1]));
     break;
-  case Instruction::Select:
-    Result = new SelectInst(getValue(Type::BoolTyID, Oprnds[0]),
+  case Instruction::Select: {
+    unsigned rType = Type::BoolTyID;
+    Result = new SelectInst(getValue(rType, Oprnds[0]),
                             getValue(iType, Oprnds[1]),
                             getValue(iType, Oprnds[2]));
     break;
+  }
+  case Instruction::VSelect: {
+    unsigned rType;
+    if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(InstTy))
+      rType = getTypeSlot(FixedVectorType::get(Type::BoolTy, VT->getNumElements()));
+    else if (isa<VectorType>(InstTy))
+      rType = getTypeSlot(VectorType::get(Type::BoolTy));
+    else
+      error("Type of vselect must be vector type!");
+    Result = new VSelectInst(getValue(rType, Oprnds[0]),
+                            getValue(iType, Oprnds[1]),
+                            getValue(iType, Oprnds[2]));
+    break;
+  }
   case Instruction::PHI: {
     if (Oprnds.size() == 0 || (Oprnds.size() & 1))
       error("Invalid phi node encountered!");
@@ -981,7 +996,73 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     Result = new LoadInst(getValue(iType, Oprnds[0]), "", Opcode == 62);
     break;
 
-  case 63:   // volatile store
+  case Instruction::VGather: {
+    if (Oprnds.size() == 0 || !isa<PointerType>(InstTy))
+      throw std::string("Invalid vgather instruction!");
+
+    std::vector<Value*> Idx;
+    for (unsigned i = 1, e = Oprnds.size(); i != e; ++i) {
+      Idx.push_back(getValue(Type::LongTyID, Oprnds[i]));
+    }
+
+    Result = new VGatherInst(getValue(iType, Oprnds[0]), Idx);
+    break;
+  }
+
+  case Instruction::VImm: {
+    if (Oprnds.size() != 2)
+      throw std::string("Invalid vimm instruction!");
+    const VectorType *VT = dyn_cast<VectorType>(InstTy);
+    if (!VT)
+      throw std::string("Type of vimm must be vector type!");
+    //    Result = new VImmInst(getValue(iType, Oprnds[0]),
+    Result = new VImmInst(getValue(getTypeSlot(VT->getElementType()), Oprnds[0]),
+			  getValue(Type::UIntTyID, Oprnds[1]),
+			  isa<FixedVectorType>(VT));
+    break;
+  }
+
+  case Instruction::Extract: {
+    if (Oprnds.size() != 4)
+      throw std::string("Invalid extract instruction!");
+    Result = new ExtractInst(getValue(iType, Oprnds[0]), 
+			     getValue(Type::UIntTyID, Oprnds[1]),
+			     getValue(Type::UIntTyID, Oprnds[2]),
+			     getValue(Type::UIntTyID, Oprnds[3]));
+    break;
+  }
+
+  case Instruction::ExtractElement: {
+    if (Oprnds.size() != 2)
+      throw std::string("Invalid extractelement instruction!");
+    Result = new ExtractElementInst(getValue(iType, Oprnds[0]), 
+				    getValue(Type::UIntTyID, Oprnds[1]));
+    break;
+  }
+
+  case Instruction::Combine: {
+    if (Oprnds.size() != 5)
+      throw std::string("Invalid combine instruction!");
+    Result = new CombineInst(getValue(iType, Oprnds[0]),
+			     //getValue(iType, Oprnds[1]),
+			     getValue(getTypeSlot(getSanitizedType(Oprnds[4])), Oprnds[1]),
+			     getValue(Type::UIntTyID, Oprnds[2]),
+			     getValue(Type::UIntTyID, Oprnds[3]));
+    break;
+  }
+
+  case Instruction::CombineElement: {
+    if (!isa<VectorType>(InstTy) || Oprnds.size() != 3)
+      throw std::string("Invalid combineelement instruction!");
+    Value *Vector = getValue(iType, Oprnds[0]);
+    const Type *ElTy = cast<VectorType>(Vector->getType())->getElementType();
+    Result = new CombineElementInst(Vector, 
+				    getValue(getTypeSlot(ElTy), Oprnds[1]),
+				    getValue(Type::UIntTyID, Oprnds[2]));
+    break;
+  }
+
+  case 63:   // volatile store 
   case Instruction::Store: {
     if (!isa<PointerType>(InstTy) || Oprnds.size() != 2)
       error("Invalid store instruction!");
@@ -992,6 +1073,22 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
                            Opcode == 63);
     break;
   }
+
+  case Instruction::VScatter: {
+    if (Oprnds.size() == 0 || !isa<PointerType>(InstTy))
+      error("Invalid vscatter instruction!");
+
+    std::vector<Value*> Idx;
+    for (unsigned i = 2, e = Oprnds.size(); i != e; ++i) {
+      Idx.push_back(getValue(Type::LongTyID, Oprnds[i]));
+    }
+    Value *Ptr = getValue(iType, Oprnds[1]);
+    const VectorType *ValTy = VectorType::get(cast<PointerType>(InstTy)->getElementType());
+    Result = new VScatterInst(getValue(getTypeSlot(ValTy), Oprnds[0]), Ptr,
+			      Idx);
+    break;
+  }
+
   case Instruction::Unwind:
     if (Oprnds.size() != 0) error("Invalid unwind instruction!");
     Result = new UnwindInst();
@@ -1278,10 +1375,10 @@ const Type *BytecodeReader::ParseType() {
     Result =  ArrayType::get(ElementType, NumElements);
     break;
   }
-  case Type::PackedTyID: {
+  case Type::FixedVectorTyID: {
     const Type *ElementType = readSanitizedType();
     unsigned NumElements = read_vbr_uint();
-    Result =  PackedType::get(ElementType, NumElements);
+    Result =  FixedVectorType::get(ElementType, NumElements);
     break;
   }
   case Type::StructTyID: {
@@ -1301,6 +1398,11 @@ const Type *BytecodeReader::ParseType() {
   }
   case Type::PointerTyID: {
     Result = PointerType::get(readSanitizedType());
+    break;
+  }
+
+  case Type::VectorTyID: {
+    Result = VectorType::get(readSanitizedType());
     break;
   }
 
@@ -1525,8 +1627,8 @@ Constant *BytecodeReader::ParseConstantValue(unsigned TypeID) {
     return Result;
   }
 
-  case Type::PackedTyID: {
-    const PackedType *PT = cast<PackedType>(Ty);
+  case Type::FixedVectorTyID: {
+    const FixedVectorType *PT = cast<FixedVectorType>(Ty);
     unsigned NumElements = PT->getNumElements();
     unsigned TypeSlot = getTypeSlot(PT->getElementType());
     std::vector<Constant*> Elements;
@@ -1534,8 +1636,8 @@ Constant *BytecodeReader::ParseConstantValue(unsigned TypeID) {
     while (NumElements--)     // Read all of the elements of the constant.
       Elements.push_back(getConstantValue(TypeSlot,
                                           read_vbr_uint()));
-    Constant* Result = ConstantPacked::get(PT, Elements);
-    if (Handler) Handler->handleConstantPacked(PT, Elements, TypeSlot, Result);
+    Constant* Result = ConstantVector::get(PT, Elements);
+    if (Handler) Handler->handleConstantVector(PT, Elements, TypeSlot, Result);
     return Result;
   }
 

@@ -342,7 +342,7 @@ private:
 
   void visitInstruction(Instruction &I) {
     // If a new instruction is added to LLVM that we don't handle...
-    std::cerr << "SCCP: Don't know how to handle: " << I;
+    DEBUG(std::cerr << "SCCP: Don't know how to handle: " << I);
     markOverdefined(&I);   // Just in case
   }
 };

@@ -18,6 +18,7 @@
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/Support/CallSite.h"
+
 using namespace llvm;
 
 unsigned CallSite::getCallingConv() const {
@@ -809,21 +810,27 @@ void BinaryOperator::init(BinaryOps iType)
   case Rem:
     assert(getType() == LHS->getType() &&
            "Arithmetic operation should return same type as operands!");
-    assert((getType()->isInteger() ||
-            getType()->isFloatingPoint() ||
-            isa<PackedType>(getType()) ) &&
+    assert((getType()->isInteger() || 
+            getType()->isFloatingPoint() || 
+	    isa<VectorType>(getType())) && 
           "Tried to create an arithmetic operation on a non-arithmetic type!");
     break;
   case And: case Or:
   case Xor:
     assert(getType() == LHS->getType() &&
            "Logical operation should return same type as operands!");
-    assert(getType()->isIntegral() &&
+    assert(getType()->isIntegral() ||
+	   getType()->isIntegralVector() &&
            "Tried to create a logical operation on a non-integral type!");
     break;
   case SetLT: case SetGT: case SetLE:
   case SetGE: case SetEQ: case SetNE:
     assert(getType() == Type::BoolTy && "Setcc must return bool!");
+    break;
+  case VSetLT: case VSetGT: case VSetLE:
+  case VSetGE: case VSetEQ: case VSetNE:
+    assert(getType()->isBooleanVector() && "VSetcc must return bool vector!");
+    break;
   default:
     break;
   }
@@ -839,6 +846,8 @@ BinaryOperator *BinaryOperator::create(BinaryOps Op, Value *S1, Value *S2,
   // Binary comparison operators...
   case SetLT: case SetGT: case SetLE:
   case SetGE: case SetEQ: case SetNE:
+  case VSetLT: case VSetGT: case VSetLE:
+  case VSetGE: case VSetEQ: case VSetNE:
     return new SetCondInst(Op, S1, S2, Name, InsertBefore);
 
   default:
@@ -964,9 +973,18 @@ bool BinaryOperator::swapOperands() {
 //                             SetCondInst Class
 //===----------------------------------------------------------------------===//
 
+static Type *condType(Value *S) {
+  const Type *T = S->getType();
+  if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(T))
+    return FixedVectorType::get(Type::BoolTy, VT->getNumElements());
+  if (const VectorType *VT = dyn_cast<VectorType>(T))
+    return VectorType::get(Type::BoolTy);
+  return Type::BoolTy;
+}
+
 SetCondInst::SetCondInst(BinaryOps Opcode, Value *S1, Value *S2,
                          const std::string &Name, Instruction *InsertBefore)
-  : BinaryOperator(Opcode, S1, S2, Type::BoolTy, Name, InsertBefore) {
+  : BinaryOperator(Opcode, S1, S2, condType(S1), Name, InsertBefore) {
 
   // Make sure it's a valid type... getInverseCondition will assert out if not.
   assert(getInverseCondition(Opcode));
@@ -974,7 +992,7 @@ SetCondInst::SetCondInst(BinaryOps Opcode, Value *S1, Value *S2,
 
 SetCondInst::SetCondInst(BinaryOps Opcode, Value *S1, Value *S2,
                          const std::string &Name, BasicBlock *InsertAtEnd)
-  : BinaryOperator(Opcode, S1, S2, Type::BoolTy, Name, InsertAtEnd) {
+  : BinaryOperator(Opcode, S1, S2, condType(S1), Name, InsertAtEnd) {
 
   // Make sure it's a valid type... getInverseCondition will assert out if not.
   assert(getInverseCondition(Opcode));
@@ -993,6 +1011,12 @@ Instruction::BinaryOps SetCondInst::getInverseCondition(BinaryOps Opcode) {
   case SetLT: return SetGE;
   case SetGE: return SetLT;
   case SetLE: return SetGT;
+  case VSetEQ: return VSetNE;
+  case VSetNE: return VSetEQ;
+  case VSetGT: return VSetLE;
+  case VSetLT: return VSetGE;
+  case VSetGE: return VSetLT;
+  case VSetLE: return VSetGT;
   }
 }
 
@@ -1008,6 +1032,54 @@ Instruction::BinaryOps SetCondInst::getSwappedCondition(BinaryOps Opcode) {
   case SetLT: return SetGT;
   case SetGE: return SetLE;
   case SetLE: return SetGE;
+  case VSetGT: return VSetLT;
+  case VSetLT: return VSetGT;
+  case VSetGE: return VSetLE;
+  case VSetLE: return VSetGE;
+  }
+}
+
+// getScalarOpcode - Return the scalar version of this opcode.
+// For example seteq -> seteq, vseteq -> seteq, etc.
+//
+Instruction::BinaryOps SetCondInst::getScalarOpcode(BinaryOps Opcode) {
+  switch (Opcode) {
+  default:
+    assert(0 && "Unknown setcc opcode!");
+  case SetEQ: case VSetEQ:
+    return SetEQ;
+  case SetNE: case VSetNE:
+    return SetNE;
+  case SetGT: case VSetGT:
+    return SetGT;
+  case SetLT: case VSetLT:
+    return SetLT;
+  case SetGE: case VSetGE:
+    return SetGE;
+  case SetLE: case VSetLE:
+    return SetLE;
+  }
+}
+
+// getVectorOpcode - Return the vector version of this opcode.
+// For example seteq -> vseteq, vseteq -> vseteq, etc.
+//
+Instruction::BinaryOps SetCondInst::getVectorOpcode(BinaryOps Opcode) {
+  switch (Opcode) {
+  default:
+    assert(0 && "Unknown setcc opcode!");
+  case SetEQ: case VSetEQ:
+    return VSetEQ;
+  case SetNE: case VSetNE:
+    return VSetNE;
+  case SetGT: case VSetGT:
+    return VSetGT;
+  case SetLT: case VSetLT:
+    return VSetLT;
+  case SetGE: case VSetGE:
+    return VSetGE;
+  case SetLE: case VSetLE:
+    return VSetLE;
   }
 }
 
@@ -1122,6 +1194,252 @@ void SwitchInst::setSuccessorV(unsigned idx, BasicBlock *B) {
 }
 
 
+//===----------------------------------------------------------------------===//
+//                           VMemoryInst Implementation
+//===----------------------------------------------------------------------===//
+
+VMemoryInst::VMemoryInst(const Type *Ty, unsigned iType,
+			 Use *Ops, unsigned NumOps,
+			 const std::string &Name, Instruction *InsertBef)
+  : Instruction(Ty, iType, Ops, NumOps, Name, InsertBef) {}
+
+VMemoryInst::VMemoryInst(const Type* Ty, unsigned iType,
+			 Use *Ops, unsigned NumOps,
+			 const std::string &Name, BasicBlock *InsertAE)
+  
+  : Instruction(Ty, iType, Ops, NumOps, Name, InsertAE) {}
+
+VMemoryInst::~VMemoryInst() {
+  delete [] OperandList;
+}
+
+bool VMemoryInst::checkIndexType(const std::vector<Value*> &Idx) {
+  unsigned i;
+  for (i = 0; i < Idx.size(); ++i)
+    if (Idx[i]->getType() != Type::LongTy)
+      return false;
+  return true;
+}
+
+const Type *VMemoryInst::getElementType() const {
+  const VectorType *VT = dyn_cast<VectorType>(getType());
+  assert(VT && "Vector instruction not of vector type!");
+  return VT->getElementType();
+}
+
+
+//===----------------------------------------------------------------------===//
+//                           VGatherInst Implementation
+//===----------------------------------------------------------------------===//
+
+void VGatherInst::init(Value *Ptr, const std::vector<Value*> &Idx)
+{
+  assert(isa<PointerType>(Ptr->getType()) && "Ptr must be of pointer type!");
+  assert(cast<PointerType>(Ptr->getType())->getElementType()->isPrimitiveType() &&
+	 "Ptr must be pointer to primitive type!");
+  assert(checkNumIndices(Idx) && "vgather must have four indices for each array dimension!");
+  assert(checkIndexType(Idx) && "vgather indices must be of type long!");
+
+  NumOperands = 1+Idx.size();
+  Use *OL = OperandList = new Use[NumOperands];
+  OL[0].init(Ptr, this);
+
+  for (unsigned i = 0, e = Idx.size(); i != e; ++i)
+    OL[i+1].init(Idx[i], this);
+}
+
+VGatherInst::VGatherInst(Value *Ptr, const std::vector<Value*> &Idx,
+			 const std::string &Name, Instruction *InsertBef)
+  : VMemoryInst(VectorType::get(cast<PointerType>(Ptr->getType())->getElementType()),
+		VGather, 0, 0, Name, InsertBef) {
+  init(Ptr, Idx);
+}
+
+VGatherInst::VGatherInst(Value *Ptr, const std::vector<Value*> &Idx,
+			 const std::string &Name, BasicBlock *InsertAE)
+  : VMemoryInst(VectorType::get(cast<PointerType>(Ptr->getType())->getElementType()),
+		VGather, 0, 0, Name, InsertAE) {
+  init(Ptr, Idx);
+}
+
+
+//===----------------------------------------------------------------------===//
+//                           VScatterInst Implementation
+//===----------------------------------------------------------------------===//
+
+void VScatterInst::init(Value *Val, Value *Ptr, const std::vector<Value*> &Idx) {
+  assert(isa<VectorType>(Val->getType()) && "Val must be of vector type!");
+  assert(isa<PointerType>(Ptr->getType()) && "Ptr must be of pointer type!");
+  assert(cast<PointerType>(Ptr->getType())->getElementType()->isPrimitiveType() &&
+	 "Ptr must be pointer to primitive type!");
+  //assert(Val->getType() == VectorType::get(cast<PointerType>(Ptr->getType())->getElementType())
+  //       && "Ptr must be a pointer to Val type!");
+  assert(cast<VectorType>(Val->getType())->getElementType() == 
+	 cast<PointerType>(Ptr->getType())->getElementType()
+	 && "Ptr must be a pointer to Val type!");
+  assert(checkNumIndices(Idx) && "vscatter must have four indices for each array dimension!");
+  assert(checkIndexType(Idx) && "vscatter indices must be of type long!");
+
+  NumOperands = 2+Idx.size();
+  Use *OL = OperandList = new Use[NumOperands];
+  OL[0].init(Val, this);
+  OL[1].init(Ptr, this);
+
+  for (unsigned i = 0, e = Idx.size(); i != e; ++i)
+    OL[i+2].init(Idx[i], this);
+
+}
+
+VScatterInst::VScatterInst(Value *Val, Value *Ptr, const std::vector<Value*> &Idx,
+			   Instruction *InsertBefore)
+  : VMemoryInst(Type::VoidTy, VScatter, 0, 0, "", InsertBefore) {
+  init(Val, Ptr, Idx);
+}
+
+VScatterInst::VScatterInst(Value *Val, Value *Ptr, const std::vector<Value*> &Idx,
+			   BasicBlock *InsertAtEnd)
+  : VMemoryInst(Type::VoidTy, VScatter, 0, 0, "", InsertAtEnd) {
+  init(Val, Ptr, Idx);
+}
+
+//===----------------------------------------------------------------------===//
+//                           VImmInst Implementation
+//===----------------------------------------------------------------------===//
+
+static const VectorType *VImmType(const Type* Ty, Value *Len, bool isFixed) {
+  if (!isFixed)
+    return VectorType::get(Ty);
+  ConstantUInt *C = dyn_cast<ConstantUInt>(Len);
+  assert(C && "Length operand of fixed vimm must be constant uint!");
+  return FixedVectorType::get(Ty, C->getValue());
+}
+
+VImmInst::VImmInst(Value *Val, Value *Len, bool isFixed,
+		   const std::string &Name, 
+		   Instruction *InsertBef)
+  : Instruction(VImmType(Val->getType(), Len, isFixed),  
+		VImm, Ops, 2, Name, InsertBef) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Len, this);
+}
+
+VImmInst::VImmInst(Value *Val, Value *Len, bool isFixed,
+		   const std::string &Name,
+		   BasicBlock *InsertAE)
+  : Instruction(VImmType(Val->getType(), Len, isFixed),  
+		VImm, Ops, 2, Name, InsertAE) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Len, this);
+}
+
+//===----------------------------------------------------------------------===//
+//                           ExtractInst Implementation
+//===----------------------------------------------------------------------===//
+
+static const Type *getExtractType(const Type *Ty, Value *len) {
+  const VectorType *VTy = dyn_cast<VectorType>(Ty);
+  assert(VTy && "Extract inst must have vector type!");
+  // FIXME: Add a fixed attribute that says whether the result should
+  // be a fixed or variable vector (this is what vimm currently does).
+  // OR, we could explicitly encode the type in the assembly form.  I
+  // haven't decided which is better.
+  //
+  if (isa<FixedVectorType>(Ty))
+    if (ConstantUInt *C = dyn_cast<ConstantUInt>(len))
+      return FixedVectorType::get(VTy->getElementType(), C->getValue());
+  return Ty;
+}
+
+ExtractInst::ExtractInst(Value *Val, Value *Start,
+			 Value *Stride, Value *Len,
+			 const std::string &Name, Instruction *InsertBef)
+  : Instruction(getExtractType(Val->getType(), Len),//Val->getType(),
+                Extract, Ops, 4, Name, InsertBef) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Start, this);
+  Ops[2].init(Stride, this);
+  Ops[3].init(Len, this);
+}
+
+ExtractInst::ExtractInst(Value *Val, Value *Start,
+			 Value *Stride,	Value *Len,
+			 const std::string &Name, BasicBlock *InsertAE)
+  : Instruction(getExtractType(Val->getType(), Len),//Val->getType(),
+		Extract, Ops, 4, Name, InsertAE) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Start, this);
+  Ops[2].init(Stride, this);
+  Ops[3].init(Len, this);
+}
+
+//===----------------------------------------------------------------------===//
+//                           ExtractElementInst Implementation
+//===----------------------------------------------------------------------===//
+
+ExtractElementInst::ExtractElementInst(Value *Val, Value *Index,
+			 const std::string &Name, Instruction *InsertBef)
+  : Instruction(cast<VectorType>(Val->getType())->getElementType(),
+                ExtractElement, Ops, 2, Name, InsertBef) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Index, this);
+}
+
+ExtractElementInst::ExtractElementInst(Value *Val, Value *Index,
+			 const std::string &Name, BasicBlock *InsertAE)
+  : Instruction(cast<VectorType>(Val->getType())->getElementType(),
+		ExtractElement, Ops, 2, Name, InsertAE) {
+  Ops[0].init(Val, this);
+  Ops[1].init(Index, this);
+}
+
+//===----------------------------------------------------------------------===//
+//                           CombineInst Implementation
+//===----------------------------------------------------------------------===//
+
+CombineInst::CombineInst(Value *V1, Value *V2,
+			 Value *Start, Value *Stride,
+			 const std::string &Name, Instruction *InsertBef)
+  : Instruction(V1->getType(),
+                Combine, Ops, 4, Name, InsertBef) {
+  Ops[0].init(V1, this);
+  Ops[1].init(V2, this);
+  Ops[2].init(Start, this);
+  Ops[3].init(Stride, this);
+}
+
+CombineInst::CombineInst(Value *V1, Value *V2,
+			 Value *Start, Value *Stride,
+			 const std::string &Name, BasicBlock *InsertAE)
+  : Instruction(V1->getType(),
+		Combine, Ops, 4, Name, InsertAE) {
+  Ops[0].init(V1, this);
+  Ops[1].init(V2, this);
+  Ops[2].init(Start, this);
+  Ops[3].init(Stride, this);
+}
+
+//===----------------------------------------------------------------------===//
+//                           CombineElementInst Implementation
+//===----------------------------------------------------------------------===//
+
+CombineElementInst::CombineElementInst(Value *Vector, Value *Element, Value *Index,
+				       const std::string &Name, Instruction *InsertBef)
+  : Instruction(Vector->getType(),
+                CombineElement, Ops, 3, Name, InsertBef) {
+  Ops[0].init(Vector, this);
+  Ops[1].init(Element, this);
+  Ops[2].init(Index, this);
+}
+
+CombineElementInst::CombineElementInst(Value *Vector, Value *Element, Value *Index,
+				       const std::string &Name, BasicBlock *InsertAE)
+  : Instruction(Vector->getType(),
+		CombineElement, Ops, 3, Name, InsertAE) {
+  Ops[0].init(Vector, this);
+  Ops[1].init(Element, this);
+  Ops[2].init(Index, this);
+}
+
 // Define these methods here so vtables don't get emitted into every translation
 // unit that uses these classes.
 
@@ -1133,6 +1451,14 @@ BinaryOperator *BinaryOperator::clone() const {
   return create(getOpcode(), Ops[0], Ops[1]);
 }
 
+VGatherInst *VGatherInst::clone()   const { return new VGatherInst(*this); }
+VScatterInst *VScatterInst::clone() const { return new VScatterInst(*this); }
+VImmInst *VImmInst::clone() const { return new VImmInst(*this); }
+ExtractInst *ExtractInst::clone() const { return new ExtractInst(*this); }
+ExtractElementInst *ExtractElementInst::clone() const { return new ExtractElementInst(*this); }
+CombineInst *CombineInst::clone() const { return new CombineInst(*this); }
+CombineElementInst *CombineElementInst::clone() const { return new CombineElementInst(*this); }
+
 MallocInst *MallocInst::clone() const { return new MallocInst(*this); }
 AllocaInst *AllocaInst::clone() const { return new AllocaInst(*this); }
 FreeInst   *FreeInst::clone()   const { return new FreeInst(getOperand(0)); }
@@ -1142,6 +1468,7 @@ CastInst   *CastInst::clone()   const { return new CastInst(*this); }
 CallInst   *CallInst::clone()   const { return new CallInst(*this); }
 ShiftInst  *ShiftInst::clone()  const { return new ShiftInst(*this); }
 SelectInst *SelectInst::clone() const { return new SelectInst(*this); }
+VSelectInst *VSelectInst::clone() const { return new VSelectInst(*this); }
 VAArgInst  *VAArgInst::clone()  const { return new VAArgInst(*this); }
 PHINode    *PHINode::clone()    const { return new PHINode(*this); }
 ReturnInst *ReturnInst::clone() const { return new ReturnInst(*this); }
@@ -1150,3 +1477,4 @@ SwitchInst *SwitchInst::clone() const { return new SwitchInst(*this); }
 InvokeInst *InvokeInst::clone() const { return new InvokeInst(*this); }
 UnwindInst *UnwindInst::clone() const { return new UnwindInst(); }
 UnreachableInst *UnreachableInst::clone() const { return new UnreachableInst();}
+

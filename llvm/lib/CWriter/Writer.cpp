@@ -13,209 +13,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "CTargetMachine.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Module.h"
-#include "llvm/Instructions.h"
-#include "llvm/Pass.h"
-#include "llvm/PassManager.h"
-#include "llvm/SymbolTable.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Analysis/ConstantsScanner.h"
-#include "llvm/Analysis/FindUsedTypes.h"
-#include "llvm/Analysis/LoopInfo.h"
-#include "llvm/CodeGen/IntrinsicLowering.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Target/TargetMachineRegistry.h"
-#include "llvm/Support/CallSite.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/GetElementPtrTypeIterator.h"
-#include "llvm/Support/InstVisitor.h"
-#include "llvm/Support/Mangler.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/Config/config.h"
-#include <algorithm>
-#include <iostream>
-#include <sstream>
+#include "Writer.h"
+
 using namespace llvm;
 
 namespace {
   // Register the target.
   RegisterTarget<CTargetMachine> X("c", "  C backend");
-
-  /// NameAllUsedStructs - This pass inserts names for any unnamed structure
-  /// types that are used by the program.
-  ///
-  class CBackendNameAllUsedStructs : public ModulePass {
-    void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.addRequired<FindUsedTypes>();
-    }
-
-    virtual const char *getPassName() const {
-      return "C backend type canonicalizer";
-    }
-
-    virtual bool runOnModule(Module &M);
-  };
-
-  /// CWriter - This class is the main chunk of code that converts an LLVM
-  /// module to a C translation unit.
-  class CWriter : public FunctionPass, public InstVisitor<CWriter> {
-    std::ostream &Out;
-    IntrinsicLowering &IL;
-    Mangler *Mang;
-    LoopInfo *LI;
-    const Module *TheModule;
-    std::map<const Type *, std::string> TypeNames;
-
-    std::map<const ConstantFP *, unsigned> FPConstantMap;
-  public:
-    CWriter(std::ostream &o, IntrinsicLowering &il) : Out(o), IL(il) {}
-
-    virtual const char *getPassName() const { return "C backend"; }
-
-    void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.addRequired<LoopInfo>();
-      AU.setPreservesAll();
-    }
-
-    virtual bool doInitialization(Module &M);
-
-    bool runOnFunction(Function &F) {
-      LI = &getAnalysis<LoopInfo>();
-
-      // Get rid of intrinsics we can't handle.
-      lowerIntrinsics(F);
-
-      // Output all floating point constants that cannot be printed accurately.
-      printFloatingPointConstants(F);
-
-      // Ensure that no local symbols conflict with global symbols.
-      F.renameLocalSymbols();
-
-      printFunction(F);
-      FPConstantMap.clear();
-      return false;
-    }
-
-    virtual bool doFinalization(Module &M) {
-      // Free memory...
-      delete Mang;
-      TypeNames.clear();
-      return false;
-    }
-
-    std::ostream &printType(std::ostream &Out, const Type *Ty,
-                            const std::string &VariableName = "",
-                            bool IgnoreName = false);
-
-    void writeOperand(Value *Operand);
-    void writeOperandInternal(Value *Operand);
-
-  private :
-    void lowerIntrinsics(Function &F);
-
-    bool nameAllUsedStructureTypes(Module &M);
-    void printModule(Module *M);
-    void printModuleTypes(const SymbolTable &ST);
-    void printContainedStructs(const Type *Ty, std::set<const StructType *> &);
-    void printFloatingPointConstants(Function &F);
-    void printFunctionSignature(const Function *F, bool Prototype);
-
-    void printFunction(Function &);
-    void printBasicBlock(BasicBlock *BB);
-    void printLoop(Loop *L);
-
-    void printConstant(Constant *CPV);
-    void printConstantArray(ConstantArray *CPA);
-
-    // isInlinableInst - Attempt to inline instructions into their uses to build
-    // trees as much as possible.  To do this, we have to consistently decide
-    // what is acceptable to inline, so that variable declarations don't get
-    // printed and an extra copy of the expr is not emitted.
-    //
-    static bool isInlinableInst(const Instruction &I) {
-      // Always inline setcc instructions, even if they are shared by multiple
-      // expressions.  GCC generates horrible code if we don't.
-      if (isa<SetCondInst>(I)) return true;
-
-      // Must be an expression, must be used exactly once.  If it is dead, we
-      // emit it inline where it would go.
-      if (I.getType() == Type::VoidTy || !I.hasOneUse() ||
-          isa<TerminatorInst>(I) || isa<CallInst>(I) || isa<PHINode>(I) ||
-          isa<LoadInst>(I) || isa<VAArgInst>(I))
-        // Don't inline a load across a store or other bad things!
-        return false;
-
-      // Only inline instruction it it's use is in the same BB as the inst.
-      return I.getParent() == cast<Instruction>(I.use_back())->getParent();
-    }
-
-    // isDirectAlloca - Define fixed sized allocas in the entry block as direct
-    // variables which are accessed with the & operator.  This causes GCC to
-    // generate significantly better code than to emit alloca calls directly.
-    //
-    static const AllocaInst *isDirectAlloca(const Value *V) {
-      const AllocaInst *AI = dyn_cast<AllocaInst>(V);
-      if (!AI) return false;
-      if (AI->isArrayAllocation())
-        return 0;   // FIXME: we can also inline fixed size array allocas!
-      if (AI->getParent() != &AI->getParent()->getParent()->getEntryBlock())
-        return 0;
-      return AI;
-    }
-
-    // Instruction visitation functions
-    friend class InstVisitor<CWriter>;
-
-    void visitReturnInst(ReturnInst &I);
-    void visitBranchInst(BranchInst &I);
-    void visitSwitchInst(SwitchInst &I);
-    void visitInvokeInst(InvokeInst &I) {
-      assert(0 && "Lowerinvoke pass didn't work!");
-    }
-
-    void visitUnwindInst(UnwindInst &I) {
-      assert(0 && "Lowerinvoke pass didn't work!");
-    }
-    void visitUnreachableInst(UnreachableInst &I);
-
-    void visitPHINode(PHINode &I);
-    void visitBinaryOperator(Instruction &I);
-
-    void visitCastInst (CastInst &I);
-    void visitSelectInst(SelectInst &I);
-    void visitCallInst (CallInst &I);
-    void visitShiftInst(ShiftInst &I) { visitBinaryOperator(I); }
-
-    void visitMallocInst(MallocInst &I);
-    void visitAllocaInst(AllocaInst &I);
-    void visitFreeInst  (FreeInst   &I);
-    void visitLoadInst  (LoadInst   &I);
-    void visitStoreInst (StoreInst  &I);
-    void visitGetElementPtrInst(GetElementPtrInst &I);
-    void visitVAArgInst (VAArgInst &I);
-
-    void visitInstruction(Instruction &I) {
-      std::cerr << "C Writer does not know about " << I;
-      abort();
-    }
-
-    void outputLValue(Instruction *I) {
-      Out << "  " << Mang->getValueName(I) << " = ";
-    }
-
-    bool isGotoCodeNecessary(BasicBlock *From, BasicBlock *To);
-    void printPHICopiesForSuccessor(BasicBlock *CurBlock,
-                                    BasicBlock *Successor, unsigned Indent);
-    void printBranchToBlock(BasicBlock *CurBlock, BasicBlock *SuccBlock,
-                            unsigned Indent);
-    void printIndexingExpression(Value *Ptr, gep_type_iterator I,
-                                 gep_type_iterator E);
-  };
 }
 
 /// This method inserts names for any unnamed structure types that are used by
@@ -340,6 +144,16 @@ std::ostream &CWriter::printType(std::ostream &Out, const Type *Ty,
     if (NumElements == 0) NumElements = 1;
     return printType(Out, ATy->getElementType(),
                      NameSoFar + "[" + utostr(NumElements) + "]");
+  }
+
+  case Type::FixedVectorTyID: {
+    return printFixedVectorType(Out, cast<FixedVectorType>(Ty),
+				NameSoFar);
+  }
+
+  case Type::VectorTyID: {
+    return printVectorType(Out, cast<VectorType>(Ty),
+			   NameSoFar);
   }
 
   case Type::OpaqueTyID: {
@@ -586,10 +400,14 @@ void CWriter::printConstant(Constant *CPV) {
         const unsigned long SignalNaN = 0x7ff4UL;
 
         // We need to grab the first part of the FP #
+        union {
+          double   d;
+          uint64_t ll;
+        } DHex;
         char Buffer[100];
 
-        uint64_t ll = DoubleToBits(FPC->getValue());
-        sprintf(Buffer, "0x%llx", (unsigned long long)ll);
+        DHex.d = FPC->getValue();
+        sprintf(Buffer, "0x%llx", (unsigned long long)DHex.ll);
 
         std::string Num(&Buffer[0], &Buffer[6]);
         unsigned long Val = strtoul(Num.c_str(), 0, 16);
@@ -684,6 +502,10 @@ void CWriter::printConstant(Constant *CPV) {
   }
 }
 
+void CWriter::writeValueName(Value *V) {
+  Out << Mang->getValueName(V);
+}
+
 void CWriter::writeOperandInternal(Value *Operand) {
   if (Instruction *I = dyn_cast<Instruction>(Operand))
     if (isInlinableInst(*I) && !isDirectAlloca(I)) {
@@ -698,7 +520,7 @@ void CWriter::writeOperandInternal(Value *Operand) {
   if (CPV && !isa<GlobalValue>(CPV)) {
     printConstant(CPV);
   } else {
-    Out << Mang->getValueName(Operand);
+    writeValueName(Operand); //Out << Mang->getValueName(Operand);
   }
 }
 
@@ -826,6 +648,12 @@ static void generateCompilerSpecificCode(std::ostream& Out) {
 
 }
 
+bool CWriter::printDeclarationFor(Function *F) {
+  return !F->getIntrinsicID() &&
+    F->getName() != "setjmp" && F->getName() != "longjmp" && 
+    F->getName() != "memcpy";
+}
+
 bool CWriter::doInitialization(Module &M) {
   // Initialize
   TheModule = &M;
@@ -871,15 +699,11 @@ bool CWriter::doInitialization(Module &M) {
   }
 
   // Function declarations
-  Out << "double fmod(double, double);\n";   // Support for FP rem
-  Out << "float fmodf(float, float);\n";
-  
   if (!M.empty()) {
     Out << "\n/* Function Declarations */\n";
     for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
       // Don't print declarations for intrinsic functions.
-      if (!I->getIntrinsicID() &&
-          I->getName() != "setjmp" && I->getName() != "longjmp") {
+      if (printDeclarationFor(I)) {
         printFunctionSignature(I, true);
         if (I->hasWeakLinkage()) Out << " __ATTRIBUTE_WEAK__";
         if (I->hasLinkOnceLinkage()) Out << " __ATTRIBUTE_WEAK__";
@@ -953,6 +777,16 @@ bool CWriter::doInitialization(Module &M) {
 
 /// Output all floating point constants that cannot be printed accurately...
 void CWriter::printFloatingPointConstants(Function &F) {
+  union {
+    double D;
+    uint64_t U;
+  } DBLUnion;
+
+  union {
+    float F;
+    unsigned U;
+  } FLTUnion;
+
   // Scan the module for floating point constants.  If any FP constant is used
   // in the function, we want to redirect it here so that we do not depend on
   // the precision of the printed form, unless the printed form preserves
@@ -969,12 +803,14 @@ void CWriter::printFloatingPointConstants(Function &F) {
         FPConstantMap[FPC] = FPCounter;  // Number the FP constants
 
         if (FPC->getType() == Type::DoubleTy) {
+          DBLUnion.D = Val;
           Out << "static const ConstantDoubleTy FPConstant" << FPCounter++
-              << " = 0x" << std::hex << DoubleToBits(Val) << std::dec
+              << " = 0x" << std::hex << DBLUnion.U << std::dec
               << "ULL;    /* " << Val << " */\n";
         } else if (FPC->getType() == Type::FloatTy) {
+          FLTUnion.F = Val;
           Out << "static const ConstantFloatTy FPConstant" << FPCounter++
-              << " = 0x" << std::hex << FloatToBits(Val) << std::dec
+              << " = 0x" << std::hex << FLTUnion.U << std::dec
               << "U;    /* " << Val << " */\n";
         } else
           assert(0 && "Unknown float type!");
@@ -985,7 +821,7 @@ void CWriter::printFloatingPointConstants(Function &F) {
 
 
 /// printSymbolTable - Run through symbol table looking for type names.  If a
-/// type name is found, emit it's declaration...
+/// type name is found, emit its declaration...
 ///
 void CWriter::printModuleTypes(const SymbolTable &ST) {
   // We are only interested in the type plane of the symbol table.
@@ -1349,20 +1185,9 @@ void CWriter::visitBinaryOperator(Instruction &I) {
   // If this is a negation operation, print it out as such.  For FP, we don't
   // want to print "-0.0 - X".
   if (BinaryOperator::isNeg(&I)) {
-    Out << "-(";
+    Out << "-";
     writeOperand(BinaryOperator::getNegArgument(cast<BinaryOperator>(&I)));
-    Out << ")";
-  } else if (I.getOpcode() == Instruction::Rem && 
-             I.getType()->isFloatingPoint()) {
-    // Output a call to fmod/fmodf instead of emitting a%b
-    if (I.getType() == Type::FloatTy)
-      Out << "fmodf(";
-    else
-      Out << "fmod(";
-    writeOperand(I.getOperand(0));
-    Out << ", ";
-    writeOperand(I.getOperand(1));
-    Out << ")";
+
   } else {
     writeOperand(I.getOperand(0));
 
@@ -1409,7 +1234,6 @@ void CWriter::visitCastInst(CastInst &I) {
     // Avoid "cast to pointer from integer of different size" warnings
     Out << "(long)";
   }
-
   writeOperand(I.getOperand(0));
 }
 
@@ -1467,10 +1291,7 @@ void CWriter::visitCallInst(CallInst &I) {
       case Intrinsic::vastart:
         Out << "0; ";
 
-        //        Out << "va_start(*(va_list*)&" << Mang->getValueName(&I) << ", ";
-        Out << "va_start(*(va_list*)";
-        writeOperand(I.getOperand(1));
-        Out << ", ";
+        Out << "va_start(*(va_list*)&" << Mang->getValueName(&I) << ", ";
         // Output the last argument to the enclosing function...
         if (I.getParent()->getParent()->arg_empty()) {
           std::cerr << "The C backend does not currently support zero "
@@ -1483,7 +1304,7 @@ void CWriter::visitCallInst(CallInst &I) {
         return;
       case Intrinsic::vaend:
         if (!isa<ConstantPointerNull>(I.getOperand(1))) {
-          Out << "0; va_end(*(va_list*)";
+          Out << "va_end(*(va_list*)&";
           writeOperand(I.getOperand(1));
           Out << ')';
         } else {
@@ -1491,11 +1312,10 @@ void CWriter::visitCallInst(CallInst &I) {
         }
         return;
       case Intrinsic::vacopy:
-        Out << "0; ";
-        Out << "va_copy(*(va_list*)";
+        Out << "0;";
+        Out << "va_copy(*(va_list*)&" << Mang->getValueName(&I) << ", ";
+        Out << "*(va_list*)&";
         writeOperand(I.getOperand(1));
-        Out << ", *(va_list*)";
-        writeOperand(I.getOperand(2));
         Out << ')';
         return;
       case Intrinsic::returnaddress:
@@ -1683,8 +1503,8 @@ void CWriter::visitLoadInst(LoadInst &I) {
   Out << '*';
   if (I.isVolatile()) {
     Out << "((";
-    printType(Out, I.getType(), "volatile*");
-    Out << ")";
+    printType(Out, I.getType());
+    Out << " volatile*)";
   }
 
   writeOperand(I.getOperand(0));
@@ -1697,8 +1517,8 @@ void CWriter::visitStoreInst(StoreInst &I) {
   Out << '*';
   if (I.isVolatile()) {
     Out << "((";
-    printType(Out, I.getOperand(0)->getType(), " volatile*");
-    Out << ")";
+    printType(Out, I.getOperand(0)->getType());
+    Out << " volatile*)";
   }
   writeOperand(I.getPointerOperand());
   if (I.isVolatile()) Out << ')';
@@ -1713,11 +1533,12 @@ void CWriter::visitGetElementPtrInst(GetElementPtrInst &I) {
 }
 
 void CWriter::visitVAArgInst(VAArgInst &I) {
-  Out << "va_arg(*(va_list*)";
+  Out << "0;\n";
+  Out << "{ va_list Tmp; va_copy(Tmp, *(va_list*)&";
   writeOperand(I.getOperand(0));
-  Out << ", ";
+  Out << ");\n  " << Mang->getValueName(&I) << " = va_arg(Tmp, ";
   printType(Out, I.getType());
-  Out << ");\n ";
+  Out << ");\n  va_end(Tmp); }";
 }
 
 //===----------------------------------------------------------------------===//
@@ -1725,7 +1546,7 @@ void CWriter::visitVAArgInst(VAArgInst &I) {
 //===----------------------------------------------------------------------===//
 
 bool CTargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &o,
-                                         CodeGenFileType FileType) {
+					 CodeGenFileType FileType) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
   PM.add(createLowerGCPass());
@@ -1735,3 +1556,5 @@ bool CTargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &o,
   PM.add(new CWriter(o, getIntrinsicLowering()));
   return false;
 }
+
+// vim: sw=2

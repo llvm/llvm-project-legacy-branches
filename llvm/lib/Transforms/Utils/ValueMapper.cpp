@@ -16,9 +16,11 @@
 #include "llvm/Constants.h"
 #include "llvm/GlobalValue.h"
 #include "llvm/Instruction.h"
+#include "llvm/DerivedTypes.h"
 #include <iostream>
 
 using namespace llvm;
+
 
 Value *llvm::MapValue(const Value *V, std::map<const Value*, Value*> &VM) {
   Value *&VMSlot = VM[V];
@@ -32,7 +34,7 @@ Value *llvm::MapValue(const Value *V, std::map<const Value*, Value*> &VM) {
   if (Constant *C = const_cast<Constant*>(dyn_cast<Constant>(V))) {
     if (isa<ConstantIntegral>(C) || isa<ConstantFP>(C) ||
         isa<ConstantPointerNull>(C) || isa<ConstantAggregateZero>(C) ||
-        isa<UndefValue>(C))
+        isa<UndefValue>(C) || isa<VectorType>(C->getType()))
       return VMSlot = C;           // Primitive constants map directly
     else if (ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
       for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i) {

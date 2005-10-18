@@ -234,8 +234,8 @@ void BytecodeWriter::outputType(const Type *T) {
     break;
   }
 
- case Type::PackedTyID: {
-    const PackedType *PT = cast<PackedType>(T);
+ case Type::FixedVectorTyID: {
+    const FixedVectorType *PT = cast<FixedVectorType>(T);
     int Slot = Table.getSlot(PT->getElementType());
     assert(Slot != -1 && "Type used but not available!!");
     output_typeid((unsigned)Slot);
@@ -265,6 +265,14 @@ void BytecodeWriter::outputType(const Type *T) {
     int Slot = Table.getSlot(PT->getElementType());
     assert(Slot != -1 && "Type used but not available!!");
     output_typeid((unsigned)Slot);
+    break;
+  }
+
+  case Type::VectorTyID: {
+    const VectorType *VT = cast<VectorType>(T);
+    int Slot = Table.getSlot(VT->getElementType());
+    assert(Slot != -1 && "Type used but not available!!");
+    output_vbr((unsigned)Slot);
     break;
   }
 
@@ -342,8 +350,8 @@ void BytecodeWriter::outputConstant(const Constant *CPV) {
     break;
   }
 
-  case Type::PackedTyID: {
-    const ConstantPacked *CP = cast<ConstantPacked>(CPV);
+  case Type::FixedVectorTyID: {
+    const ConstantVector *CP = cast<ConstantVector>(CPV);
 
     for (unsigned i = 0, e = CP->getNumOperands(); i != e; ++i) {
       int Slot = Table.getSlot(CP->getOperand(i));
@@ -432,7 +440,7 @@ void BytecodeWriter::outputInstructionFormat0(const Instruction *I,
   output_typeid(Type);                      // Result type
 
   unsigned NumArgs = I->getNumOperands();
-  output_vbr(NumArgs + (isa<CastInst>(I)  ||
+  output_vbr(NumArgs + (isa<CastInst>(I) || isa<CombineInst>(I) ||
                         isa<VAArgInst>(I) || Opcode == 56 || Opcode == 58));
 
   if (!isa<GetElementPtrInst>(&I)) {
@@ -445,6 +453,10 @@ void BytecodeWriter::outputInstructionFormat0(const Instruction *I,
     if (isa<CastInst>(I) || isa<VAArgInst>(I)) {
       int Slot = Table.getSlot(I->getType());
       assert(Slot != -1 && "Cast return type unknown?");
+      output_typeid((unsigned)Slot);
+    } else if (const CombineInst *CI = dyn_cast<CombineInst>(I)) {
+      int Slot = Table.getSlot(I->getOperand(1)->getType());
+      assert(Slot != -1 && "Combine operand 1 type unknown?");
       output_typeid((unsigned)Slot);
     } else if (Opcode == 56) {  // Invoke escape sequence
       output_vbr(cast<InvokeInst>(I)->getCallingConv());
@@ -637,11 +649,14 @@ void BytecodeWriter::outputInstruction(const Instruction &I) {
   const Type *Ty;
   switch (I.getOpcode()) {
   case Instruction::Select:
+  case Instruction::VSelect:
   case Instruction::Malloc:
   case Instruction::Alloca:
+  case Instruction::VImm:
     Ty = I.getType();  // These ALWAYS want to encode the return type
     break;
   case Instruction::Store:
+  case Instruction::VScatter:
     Ty = I.getOperand(1)->getType();  // Encode the pointer type...
     assert(isa<PointerType>(Ty) && "Store to nonpointer type!?!?");
     break;

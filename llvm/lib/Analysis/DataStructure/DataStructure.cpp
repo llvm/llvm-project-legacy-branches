@@ -2234,6 +2234,7 @@ void DSGraph::AssertGraphOK() const {
 /// graph may have multiple nodes representing one node in the second graph),
 /// but it will not work if there is a one-to-many or many-to-many mapping.
 ///
+
 void DSGraph::computeNodeMapping(const DSNodeHandle &NH1,
                                  const DSNodeHandle &NH2, NodeMapTy &NodeMap,
                                  bool StrictChecking) {
@@ -2336,3 +2337,50 @@ void DSGraph::computeCalleeCallerMapping(DSCallSite CS, const Function &Callee,
         computeNodeMapping(CalleeSM[*GI], CallerSM[*GI], NodeMap);
   }
 }
+
+/*
+/// computeNodeMapping - Given roots in two different DSGraphs,
+/// traverse the nodes reachable from the two graphs, computing the
+/// mapping of nodes from the first to the second graph.  Returns true
+/// if mapping succeeded, false otherwise.
+///
+bool DSGraph::computeNodeMapping(const DSNodeHandle &NH1,
+				 const DSNodeHandle &NH2, NodeMapTy &NodeMap,
+				 bool StrictChecking) {
+  DSNode *N1 = NH1.getNode(), *N2 = NH2.getNode();
+  if (N1 == 0 || N2 == 0) return true;
+
+  DSNodeHandle &Entry = NodeMap[N1];
+  if (Entry.getNode()) {
+    // Termination of recursion!
+    if (StrictChecking) {
+      assert(Entry.getNode() == N2 && "Inconsistent mapping detected!");
+      assert((Entry.getOffset() == (NH2.getOffset()-NH1.getOffset()) ||
+              Entry.getNode()->isNodeCompletelyFolded()) &&
+             "Inconsistent mapping detected!");
+    }
+    return true;
+  }
+  
+  Entry.setTo(N2, NH2.getOffset()-NH1.getOffset());
+
+  // Loop over all of the fields that N1 and N2 have in common, recursively
+  // mapping the edges together now.
+  int N2Idx = NH2.getOffset()-NH1.getOffset();
+  unsigned N2Size = N2->getSize();
+  for (unsigned i = 0, e = N1->getSize(); i < e; i += DS::PointerSize) {
+    if (unsigned(N2Idx)+i < N2Size) {
+      if (N1->hasLink(i) && N2->hasLink(N2Idx+i))
+	return computeNodeMapping(N1->getLink(i), N2->getLink(N2Idx+i), NodeMap);
+      else return false;
+    }
+    else {
+      if (N1->hasLink(i) && N2->hasLink(unsigned(N2Idx+i) % N2Size))
+	return computeNodeMapping(N1->getLink(i),
+				  N2->getLink(unsigned(N2Idx+i) % N2Size), NodeMap);
+      else return false;
+    }
+  }
+  return true;
+}
+*/

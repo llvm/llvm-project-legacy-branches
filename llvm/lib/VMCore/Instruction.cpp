@@ -104,6 +104,14 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case SetEQ:  return "seteq";
   case SetNE:  return "setne";
 
+  // VSetCC operators...
+  case VSetLE:  return "vsetle";
+  case VSetGE:  return "vsetge";
+  case VSetLT:  return "vsetlt";
+  case VSetGT:  return "vsetgt";
+  case VSetEQ:  return "vseteq";
+  case VSetNE:  return "vsetne";
+    
   // Memory instructions...
   case Malloc:        return "malloc";
   case Free:          return "free";
@@ -116,10 +124,18 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case PHI:     return "phi";
   case Cast:    return "cast";
   case Select:  return "select";
+  case VSelect: return "vselect";
   case Call:    return "call";
   case Shl:     return "shl";
   case Shr:     return "shr";
-  case VAArg:   return "va_arg";
+  case VAArg:   return "vaarg";
+  case VImm:   return "vimm";
+  case VGather:  return "vgather";
+  case VScatter:  return "vscatter";
+  case Extract: return "extract";
+  case ExtractElement: return "extractelement";
+  case Combine: return "combine";
+  case CombineElement: return "combineelement";
 
   default: return "<Invalid operator> ";
   }

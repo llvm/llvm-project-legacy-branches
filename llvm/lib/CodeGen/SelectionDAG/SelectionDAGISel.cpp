@@ -189,7 +189,10 @@ FunctionLoweringInfo::FunctionLoweringInfo(TargetLowering &tli,
   }
 }
 
-
+static void badInstruction(User &I) {
+  std::cerr << "Instruction " << I << " should not exist at instruction selection time!";
+  abort();
+}
 
 //===----------------------------------------------------------------------===//
 /// SelectionDAGLowering - This is the common target-independent lowering
@@ -389,8 +392,6 @@ public:
   void visitGetElementPtr(User &I);
   void visitCast(User &I);
   void visitSelect(User &I);
-  //
-
   void visitMalloc(MallocInst &I);
   void visitFree(FreeInst &I);
   void visitAlloca(AllocaInst &I);
@@ -407,14 +408,26 @@ public:
 
   void visitMemIntrinsic(CallInst &I, unsigned Op);
 
-  void visitUserOp1(Instruction &I) {
-    assert(0 && "UserOp1 should not exist at instruction selection time!");
-    abort();
-  }
-  void visitUserOp2(Instruction &I) {
-    assert(0 && "UserOp2 should not exist at instruction selection time!");
-    abort();
-  }
+  // Instructions that should not exist at lowering time
+  //
+  void visitUserOp1(Instruction &I) { badInstruction(I); }
+  void visitUserOp2(Instruction &I) { badInstruction(I); }
+  void visitVGather(Instruction &I) { badInstruction(I); }
+  void visitVImm(Instruction &I) { badInstruction(I); }
+  void visitVScatter(Instruction &I) { badInstruction(I); }
+  void visitExtract(Instruction & I) { badInstruction(I); }
+  void visitExtractElement(Instruction &I) { badInstruction(I); }
+  void visitCombine(Instruction & I) { badInstruction(I); }
+  void visitCombineElement(Instruction & I) { badInstruction(I); }
+  void visitVSetCC(Instruction &I) { badInstruction(I); }
+  void visitVSetEQ(Instruction &I) { badInstruction(I); }
+  void visitVSetNE(Instruction &I) { badInstruction(I); }
+  void visitVSetLE(Instruction &I) { badInstruction(I); }
+  void visitVSetGE(Instruction &I) { badInstruction(I); }
+  void visitVSetLT(Instruction &I) { badInstruction(I); }
+  void visitVSetGT(Instruction &I) { badInstruction(I); }
+  void visitVSelect(Instruction &I) { badInstruction(I); }
+
 };
 } // end namespace llvm
 

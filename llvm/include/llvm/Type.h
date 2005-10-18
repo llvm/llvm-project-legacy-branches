@@ -48,7 +48,7 @@ class FunctionType;
 class OpaqueType;
 class PointerType;
 class StructType;
-class PackedType;
+class FixedVectorType;
 
 class Type {
 public:
@@ -73,7 +73,9 @@ public:
     FunctionTyID  , StructTyID,         // Functions... Structs...
     ArrayTyID     , PointerTyID,        // Array... pointer...
     OpaqueTyID,                         // Opaque type instances...
-    PackedTyID,                         // SIMD 'packed' format...
+    StreamTyID,                         // Stream...
+    VectorTyID,                         // Vector...
+    FixedVectorTyID,                    // Vector with fixed length...
     //...
 
     NumTypeIDs,                         // Must remain as last defined ID
@@ -172,6 +174,13 @@ public:
   /// types
   bool isFloatingPoint() const { return ID == FloatTyID || ID == DoubleTyID; }
 
+  /// Functions for vector support
+  ///
+  virtual bool isIntegerVector() const { return false; }
+  virtual bool isIntegralVector() const { return false; }
+  virtual bool isFPVector() const { return false; }
+  virtual bool isBooleanVector() const { return false; }
+
   /// isAbstract - True if the type is either an Opaque type, or is a derived
   /// type that includes an opaque type somewhere in it.
   ///
@@ -192,8 +201,9 @@ public:
   /// isFirstClassType - Return true if the value is holdable in a register.
   ///
   inline bool isFirstClassType() const {
-    return (ID != VoidTyID && ID <= LastPrimitiveTyID) ||
-            ID == PointerTyID || ID == PackedTyID;
+    return (ID != VoidTyID && ID <= LastPrimitiveTyID) || 
+            ID == PointerTyID || ID == VectorTyID || ID == FixedVectorTyID ||
+            ID == StreamTyID;
   }
 
   /// isSized - Return true if it makes sense to take the size of this type.  To
@@ -206,7 +216,7 @@ public:
       return true;
     // If it is not something that can have a size (e.g. a function or label),
     // it doesn't have a size.
-    if (ID != StructTyID && ID != ArrayTyID && ID != PackedTyID)
+    if (ID != StructTyID && ID != ArrayTyID && ID != FixedVectorTyID)
       return false;
     // If it is something that can have a size and it's concrete, it definitely
     // has a size, otherwise we have to try harder to decide.

@@ -258,9 +258,9 @@ FunctionPass *createLowerSwitchPass();
 FunctionPass *createLowerSelectPass(bool OnlyFP = false);
 
 //===----------------------------------------------------------------------===//
-// This pass converts PackedType operations into low-level scalar operations.
+// This pass converts FixedVectorType operations into low-level scalar operations.
 //
-FunctionPass *createLowerPackedPass();
+FunctionPass *createLowerFixedVectorPass();
 
 //===----------------------------------------------------------------------===//
 // This pass converts invoke and unwind instructions to use sjlj exception

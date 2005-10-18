@@ -125,6 +125,9 @@ bool TDDataStructures::runOnModule(Module &M) {
 
   // Visit each of the graphs in reverse post-order now!
   while (!PostOrder.empty()) {
+    // --- RLB start ---
+    SCCs.push_back(PostOrder.back());
+    // --- RLB end ---
     InlineCallersIntoGraph(*PostOrder.back());
     PostOrder.pop_back();
   }

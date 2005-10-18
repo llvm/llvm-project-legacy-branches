@@ -172,9 +172,17 @@ public:
   RetTy visitPHINode(PHINode       &I)              { DELEGATE(Instruction); }
   RetTy visitCastInst(CastInst     &I)              { DELEGATE(Instruction); }
   RetTy visitSelectInst(SelectInst &I)              { DELEGATE(Instruction); }
+  RetTy visitVSelectInst(VSelectInst &I)            { DELEGATE(Instruction); }
   RetTy visitCallInst(CallInst     &I)              { DELEGATE(Instruction); }
   RetTy visitShiftInst(ShiftInst   &I)              { DELEGATE(Instruction); }
   RetTy visitVAArgInst(VAArgInst   &I)              { DELEGATE(Instruction); }
+  RetTy visitVGatherInst(VGatherInst   &I)          { DELEGATE(Instruction); }
+  RetTy visitVScatterInst(VScatterInst &I)          { DELEGATE(Instruction); } 
+  RetTy visitVImmInst(VImmInst &I)                  { DELEGATE(Instruction); } 
+  RetTy visitExtractInst(ExtractInst &I)            { DELEGATE(Instruction); }
+  RetTy visitExtractElementInst(ExtractElementInst &I){ DELEGATE(Instruction); }
+  RetTy visitCombineInst(CombineInst &I)            { DELEGATE(Instruction); }
+  RetTy visitCombineElementInst(CombineElementInst &I){ DELEGATE(Instruction); }
 
   // Next level propagators... if the user does not overload a specific
   // instruction type, they can overload one of these to get the whole class

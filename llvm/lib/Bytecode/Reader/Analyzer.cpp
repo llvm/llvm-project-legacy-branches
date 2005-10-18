@@ -470,14 +470,14 @@ public:
     bca.numValues++;
   }
 
-  virtual void handleConstantPacked(
-    const PackedType* PT,
+  virtual void handleConstantVector( 
+    const FixedVectorType* PT,                
     std::vector<Constant*>& Elements,
-    unsigned TypeSlot,
-    Constant* PackedVal)
+    unsigned TypeSlot,                  
+    Constant* FixedVectorVal) 
   {
     if (os) {
-      *os << "      PACKD: ";
+      *os << "      VECTOR: ";
       WriteTypeSymbolic(*os,PT,M);
       *os << " TypeSlot=" << TypeSlot << "\n";
       for ( unsigned i = 0; i < Elements.size(); ++i ) {
@@ -486,7 +486,7 @@ public:
         *os << "\n";
       }
       *os << "        Value=";
-      PackedVal->print(*os);
+      FixedVectorVal->print(*os);
       *os << "\n";
     }
 

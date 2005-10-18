@@ -102,40 +102,55 @@ HANDLE_BINARY_INST(13, Or    , BinaryOperator)
 HANDLE_BINARY_INST(14, Xor   , BinaryOperator)
 
 // Binary comparison operators...
-HANDLE_BINARY_INST(15, SetEQ , SetCondInst)
+HANDLE_BINARY_INST(15, SetEQ , SetCondInst)  // Scalar operators
 HANDLE_BINARY_INST(16, SetNE , SetCondInst)
 HANDLE_BINARY_INST(17, SetLE , SetCondInst)
 HANDLE_BINARY_INST(18, SetGE , SetCondInst)
 HANDLE_BINARY_INST(19, SetLT , SetCondInst)
 HANDLE_BINARY_INST(20, SetGT , SetCondInst)
-  LAST_BINARY_INST(20)
+HANDLE_BINARY_INST(21, VSetEQ , SetCondInst) // Vector operators
+HANDLE_BINARY_INST(22, VSetNE , SetCondInst)
+HANDLE_BINARY_INST(23, VSetLE , SetCondInst)
+HANDLE_BINARY_INST(24, VSetGE , SetCondInst)
+HANDLE_BINARY_INST(25, VSetLT , SetCondInst)
+HANDLE_BINARY_INST(26, VSetGT , SetCondInst)
+  LAST_BINARY_INST(26)
 
 // Memory operators...
- FIRST_MEMORY_INST(21)
-HANDLE_MEMORY_INST(21, Malloc, MallocInst)  // Heap management instructions
-HANDLE_MEMORY_INST(22, Free  , FreeInst  )
-HANDLE_MEMORY_INST(23, Alloca, AllocaInst)  // Stack management
-HANDLE_MEMORY_INST(24, Load  , LoadInst  )  // Memory manipulation instrs
-HANDLE_MEMORY_INST(25, Store , StoreInst )
-HANDLE_MEMORY_INST(26, GetElementPtr, GetElementPtrInst)
-  LAST_MEMORY_INST(26)
+ FIRST_MEMORY_INST(27)
+HANDLE_MEMORY_INST(28, Malloc, MallocInst)   // Heap management instructions
+HANDLE_MEMORY_INST(29, Free  , FreeInst  )
+HANDLE_MEMORY_INST(30, Alloca, AllocaInst)   // Stack management
+HANDLE_MEMORY_INST(31, Load  , LoadInst  )   // Memory manipulation instrs
+HANDLE_MEMORY_INST(32, Store , StoreInst )
+HANDLE_MEMORY_INST(33, VGather, VGatherInst) // vector gather
+HANDLE_MEMORY_INST(34, VImm, VImmInst)       // vector immediate
+HANDLE_MEMORY_INST(35, VScatter, VScatterInst) // vector scatter
+HANDLE_MEMORY_INST(36, GetElementPtr, GetElementPtrInst)
+  LAST_MEMORY_INST(36)
 
 // Other operators...
- FIRST_OTHER_INST(27)
-HANDLE_OTHER_INST(27, PHI    , PHINode    )  // PHI node instruction
-HANDLE_OTHER_INST(28, Cast   , CastInst   )  // Type cast
-HANDLE_OTHER_INST(29, Call   , CallInst   )  // Call a function
+ FIRST_OTHER_INST(37)
+HANDLE_OTHER_INST(37, PHI    , PHINode    )  // PHI node instruction
+HANDLE_OTHER_INST(38, Cast   , CastInst   )  // Type cast
+HANDLE_OTHER_INST(39, Call   , CallInst   )  // Call a function
 
-HANDLE_OTHER_INST(30, Shl    , ShiftInst  )  // Shift operations
-HANDLE_OTHER_INST(31, Shr    , ShiftInst  )
-// 32 -> Empty slot used to be used for vanext in llvm 1.5 and before.
-// 33 -> Empty slot used to be used for vaarg in llvm 1.5 and before.
-HANDLE_OTHER_INST(34, Select , SelectInst )  // select instruction
+HANDLE_OTHER_INST(40, Shl    , ShiftInst  )  // Shift operations
+HANDLE_OTHER_INST(41, Shr    , ShiftInst  )
+   // 42 is reserved for old VANext
+   // 43 is reserved for old VAArg
+HANDLE_OTHER_INST(44, Select , SelectInst )  // select instruction
+HANDLE_OTHER_INST(45, VSelect, VSelectInst ) // vector select instruction
 
-HANDLE_OTHER_INST(35, UserOp1, Instruction)  // May be used internally in a pass
-HANDLE_OTHER_INST(36, UserOp2, Instruction)
-HANDLE_OTHER_INST(37, VAArg  , VAArgInst  )  // vaarg instruction
-  LAST_OTHER_INST(37)
+HANDLE_OTHER_INST(46, Extract, ExtractInst)  // vector extract
+HANDLE_OTHER_INST(47, ExtractElement, ExtractElementInst)  // vector extract element
+HANDLE_OTHER_INST(48, Combine, CombineInst)  // vector combine
+HANDLE_OTHER_INST(49, CombineElement, CombineElementInst)   // vector combine element
+
+HANDLE_OTHER_INST(50, UserOp1, Instruction)  // May be used internally in a pass
+HANDLE_OTHER_INST(51, UserOp2, Instruction)
+HANDLE_OTHER_INST(52, VAArg  , VAArgInst  )  // vaarg  instruction
+  LAST_OTHER_INST(52)
 
 #undef  FIRST_TERM_INST
 #undef HANDLE_TERM_INST

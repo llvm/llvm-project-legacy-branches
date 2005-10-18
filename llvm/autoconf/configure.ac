@@ -74,6 +74,7 @@ do
       "llvm-gcc")     AC_CONFIG_SUBDIRS([projects/llvm-gcc])  ;;
       "llvm-java")    AC_CONFIG_SUBDIRS([projects/llvm-java]) ;;
       "llvm-tv")      AC_CONFIG_SUBDIRS([projects/llvm-tv])   ;;
+      "llvm-fefw")    AC_CONFIG_SUBDIRS([projects/llvm-fefw]) ;;
       "llvm-poolalloc") AC_CONFIG_SUBDIRS([projects/llvm-poolalloc]) ;;
       *)              
         AC_MSG_WARN([Unknown project (${i}) won't be configured automatically])
@@ -248,7 +249,7 @@ AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-target],
     [Build specific host targets: all,host-only,{target-name} (default=all)]),,
     enableval=all)
 case "$enableval" in
-  all) TARGETS_TO_BUILD="X86 SparcV8 SparcV9 PowerPC Alpha IA64 Skeleton" ;;
+  all) TARGETS_TO_BUILD="X86 SparcV8 SparcV9 PowerPC Alpha IA64 Skeleton RSVP RSVP2" ;;
   host-only)
     case "$llvm_cv_target_arch" in
       x86)     TARGETS_TO_BUILD="X86" ;;

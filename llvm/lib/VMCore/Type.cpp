@@ -177,7 +177,7 @@ bool Type::isSizedDerivedType() const {
   if (const ArrayType *ATy = dyn_cast<ArrayType>(this))
     return ATy->getElementType()->isSized();
 
-  if (const PackedType *PTy = dyn_cast<PackedType>(this))
+  if (const FixedVectorType *PTy = dyn_cast<FixedVectorType>(this))
     return PTy->getElementType()->isSized();
 
   if (!isa<StructType>(this)) return false;
@@ -291,12 +291,24 @@ static std::string getTypeDescription(const Type *Ty,
     Result += getTypeDescription(ATy->getElementType(), TypeStack) + "]";
     break;
   }
-  case Type::PackedTyID: {
-    const PackedType *PTy = cast<PackedType>(Ty);
+  case Type::StreamTyID: {
+    const StreamType *STy = cast<StreamType>(Ty);
+    Result = "[stream of ";
+    Result += getTypeDescription(STy->getElementType(), TypeStack) + "]";
+    break;
+  }
+  case Type::VectorTyID: {
+    const VectorType *VTy = cast<VectorType>(Ty);
+    Result = "[vector of ";
+    Result += getTypeDescription(VTy->getElementType(), TypeStack) + "]";
+    break;
+  }
+  case Type::FixedVectorTyID: {
+    const FixedVectorType *PTy = cast<FixedVectorType>(Ty);
     unsigned NumElements = PTy->getNumElements();
-    Result = "<";
-    Result += utostr(NumElements) + " x ";
-    Result += getTypeDescription(PTy->getElementType(), TypeStack) + ">";
+    Result = "[vector of ";
+    Result += utostr(NumElements) + " ";
+    Result += getTypeDescription(PTy->getElementType(), TypeStack) + "]";
     break;
   }
   default:
@@ -436,19 +448,27 @@ ArrayType::ArrayType(const Type *ElType, uint64_t NumEl)
   setAbstract(ElType->isAbstract());
 }
 
-PackedType::PackedType(const Type *ElType, unsigned NumEl)
-  : SequentialType(PackedTyID, ElType) {
-  NumElements = NumEl;
-
-  assert(NumEl > 0 && "NumEl of a PackedType must be greater than 0");
-  assert((ElType->isIntegral() || ElType->isFloatingPoint()) &&
-         "Elements of a PackedType must be a primitive type");
-}
-
-
 PointerType::PointerType(const Type *E) : SequentialType(PointerTyID, E) {
   // Calculate whether or not this type is abstract
   setAbstract(E->isAbstract());
+}
+
+StreamType::StreamType(const Type *E)
+  : SequentialType(StreamTyID, E) {
+  assert((E->isIntegral() || E->isFloatingPoint() || isa<FixedVectorType>(E)) && 
+         "Elements of a StreamType must be a primitive or fixed vector type!");
+}
+
+VectorType::VectorType(const Type *E, bool fixed)
+  : SequentialType(fixed ? FixedVectorTyID : VectorTyID, E) {
+  assert((E->isIntegral() || E->isFloatingPoint()) && 
+         "Elements of a VectorType must be a primitive type!");
+}
+
+FixedVectorType::FixedVectorType(const Type *ElType, unsigned NumEl)
+  : VectorType(ElType, true) {
+  NumElements = NumEl;
+  assert(NumEl > 0 && "NumEl of a FixedVectorType must be greater than 0!");
 }
 
 OpaqueType::OpaqueType() : DerivedType(OpaqueTyID) {
@@ -595,8 +615,8 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2,
     const ArrayType *ATy2 = cast<ArrayType>(Ty2);
     return ATy->getNumElements() == ATy2->getNumElements() &&
            TypesEqual(ATy->getElementType(), ATy2->getElementType(), EqTypes);
-  } else if (const PackedType *PTy = dyn_cast<PackedType>(Ty)) {
-    const PackedType *PTy2 = cast<PackedType>(Ty2);
+  } else if (const FixedVectorType *PTy = dyn_cast<FixedVectorType>(Ty)) {
+    const FixedVectorType *PTy2 = cast<FixedVectorType>(Ty2);
     return PTy->getNumElements() == PTy2->getNumElements() &&
            TypesEqual(PTy->getElementType(), PTy2->getElementType(), EqTypes);
   } else if (const FunctionType *FTy = dyn_cast<FunctionType>(Ty)) {
@@ -971,20 +991,20 @@ ArrayType *ArrayType::get(const Type *ElementType, uint64_t NumElements) {
 
 
 //===----------------------------------------------------------------------===//
-// Packed Type Factory...
+// FixedVector Type Factory...
 //
 namespace llvm {
-class PackedValType {
+class FixedVectorValType {
   const Type *ValTy;
   unsigned Size;
 public:
-  PackedValType(const Type *val, int sz) : ValTy(val), Size(sz) {}
+  FixedVectorValType(const Type *val, int sz) : ValTy(val), Size(sz) {}
 
-  static PackedValType get(const PackedType *PT) {
-    return PackedValType(PT->getElementType(), PT->getNumElements());
+  static FixedVectorValType get(const FixedVectorType *PT) {
+    return FixedVectorValType(PT->getElementType(), PT->getNumElements());
   }
 
-  static unsigned hashTypeStructure(const PackedType *PT) {
+  static unsigned hashTypeStructure(const FixedVectorType *PT) {
     return PT->getNumElements();
   }
 
@@ -994,24 +1014,24 @@ public:
     ValTy = NewType;
   }
 
-  inline bool operator<(const PackedValType &MTV) const {
+  inline bool operator<(const FixedVectorValType &MTV) const {
     if (Size < MTV.Size) return true;
     return Size == MTV.Size && ValTy < MTV.ValTy;
   }
 };
 }
-static TypeMap<PackedValType, PackedType> PackedTypes;
+static TypeMap<FixedVectorValType, FixedVectorType> FixedVectorTypes;
 
 
-PackedType *PackedType::get(const Type *ElementType, unsigned NumElements) {
-  assert(ElementType && "Can't get packed of null types!");
+FixedVectorType *FixedVectorType::get(const Type *ElementType, unsigned NumElements) {
+  assert(ElementType && "Can't get fixed-length vector of null types!");
 
-  PackedValType PVT(ElementType, NumElements);
-  PackedType *PT = PackedTypes.get(PVT);
+  FixedVectorValType PVT(ElementType, NumElements);
+  FixedVectorType *PT = FixedVectorTypes.get(PVT);
   if (PT) return PT;           // Found a match, return it!
 
   // Value not found.  Derive a new type!
-  PackedTypes.add(PVT, PT = new PackedType(ElementType, NumElements));
+  FixedVectorTypes.add(PVT, PT = new FixedVectorType(ElementType, NumElements));
 
 #ifdef DEBUG_MERGE_TYPES
   std::cerr << "Derived new type: " << *PT << "\n";
@@ -1126,6 +1146,102 @@ PointerType *PointerType::get(const Type *ValueType) {
   std::cerr << "Derived new type: " << *PT << "\n";
 #endif
   return PT;
+}
+
+
+//===----------------------------------------------------------------------===//
+// Vector Type Factory...
+//
+namespace llvm {
+class VectorValType {
+  const Type *ValTy;
+public:
+  VectorValType(const Type *val) : ValTy(val) {}
+
+  static VectorValType get(const VectorType *AT) {
+    return VectorValType(AT->getElementType());
+  }
+
+  static unsigned hashTypeStructure(const VectorType *AT) {
+    return AT->getElementType()->getTypeID(); // ???
+  }
+
+  // Subclass should override this... to update self as usual
+  void doRefinement(const DerivedType *OldType, const Type *NewType) {
+    assert(ValTy == OldType);
+    ValTy = NewType;
+  }
+
+  inline bool operator<(const VectorValType &MTV) const {
+    return ValTy < MTV.ValTy;
+  }
+};
+}
+
+static TypeMap<VectorValType, VectorType> VectorTypes;
+
+VectorType *VectorType::get(const Type *ElementType) {
+  assert(ElementType && "Can't get vector of null types!");
+
+  VectorValType AVT(ElementType);
+  VectorType *AT = VectorTypes.get(AVT);
+  if (AT) return AT;           // Found a match, return it!
+
+  // Value not found.  Derive a new type!
+  VectorTypes.add(AVT, AT = new VectorType(ElementType));
+
+#ifdef DEBUG_MERGE_TYPES
+  std::cerr << "Derived new type: " << *AT << "\n";
+#endif
+  return AT;
+}
+
+
+//===----------------------------------------------------------------------===//
+// Stream Type Factory...
+//
+namespace llvm {
+class StreamValType {
+  const Type *ValTy;
+public:
+  StreamValType(const Type *val) : ValTy(val) {}
+
+  static StreamValType get(const StreamType *AT) {
+    return StreamValType(AT->getElementType());
+  }
+
+  static unsigned hashTypeStructure(const StreamType *AT) {
+    return AT->getElementType()->getTypeID(); // ???
+  }
+
+  // Subclass should override this... to update self as usual
+  void doRefinement(const DerivedType *OldType, const Type *NewType) {
+    assert(ValTy == OldType);
+    ValTy = NewType;
+  }
+
+  inline bool operator<(const StreamValType &MTV) const {
+    return ValTy < MTV.ValTy;
+  }
+};
+}
+
+static TypeMap<StreamValType, StreamType> StreamTypes;
+
+StreamType *StreamType::get(const Type *ElementType) {
+  assert(ElementType && "Can't get vector of null types!");
+
+  StreamValType AVT(ElementType);
+  StreamType *AT = StreamTypes.get(AVT);
+  if (AT) return AT;           // Found a match, return it!
+
+  // Value not found.  Derive a new type!
+  StreamTypes.add(AVT, AT = new StreamType(ElementType));
+
+#ifdef DEBUG_MERGE_TYPES
+  std::cerr << "Derived new type: " << *AT << "\n";
+#endif
+  return AT;
 }
 
 
@@ -1288,12 +1404,12 @@ void ArrayType::typeBecameConcrete(const DerivedType *AbsTy) {
 // concrete - this could potentially change us from an abstract type to a
 // concrete type.
 //
-void PackedType::refineAbstractType(const DerivedType *OldType,
+void FixedVectorType::refineAbstractType(const DerivedType *OldType,
                                    const Type *NewType) {
-  PackedTypes.finishRefinement(this, OldType, NewType);
+  FixedVectorTypes.finishRefinement(this, OldType, NewType);
 }
 
-void PackedType::typeBecameConcrete(const DerivedType *AbsTy) {
+void FixedVectorType::typeBecameConcrete(const DerivedType *AbsTy) {
   refineAbstractType(AbsTy, AbsTy);
 }
 
@@ -1322,6 +1438,34 @@ void PointerType::refineAbstractType(const DerivedType *OldType,
 void PointerType::typeBecameConcrete(const DerivedType *AbsTy) {
   refineAbstractType(AbsTy, AbsTy);
 }
+
+// refineAbstractType - Called when a contained type is found to be more
+// concrete - this could potentially change us from an abstract type to a
+// concrete type.
+//
+void VectorType::refineAbstractType(const DerivedType *OldType,
+				   const Type *NewType) {
+  VectorTypes.finishRefinement(this, OldType, NewType);
+}
+
+void VectorType::typeBecameConcrete(const DerivedType *AbsTy) {
+  refineAbstractType(AbsTy, AbsTy);
+}
+
+
+// refineAbstractType - Called when a contained type is found to be more
+// concrete - this could potentially change us from an abstract type to a
+// concrete type.
+//
+void StreamType::refineAbstractType(const DerivedType *OldType,
+				   const Type *NewType) {
+  StreamTypes.finishRefinement(this, OldType, NewType);
+}
+
+void StreamType::typeBecameConcrete(const DerivedType *AbsTy) {
+  refineAbstractType(AbsTy, AbsTy);
+}
+
 
 bool SequentialType::indexValid(const Value *V) const {
   const Type *Ty = V->getType();
@@ -1361,7 +1505,9 @@ void Type::clearAllTypeMaps() {
   PointerTypes.clear(DerivedTypes);
   StructTypes.clear(DerivedTypes);
   ArrayTypes.clear(DerivedTypes);
-  PackedTypes.clear(DerivedTypes);
+  StreamTypes.clear(DerivedTypes);
+  VectorTypes.clear(DerivedTypes);
+  FixedVectorTypes.clear(DerivedTypes);
 
   for(std::vector<Type *>::iterator I = DerivedTypes.begin(),
       E = DerivedTypes.end(); I != E; ++I)

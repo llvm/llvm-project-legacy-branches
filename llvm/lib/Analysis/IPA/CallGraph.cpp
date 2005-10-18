@@ -17,6 +17,7 @@
 #include "llvm/Support/CallSite.h"
 #include "llvm/ADT/STLExtras.h"
 #include <iostream>
+
 using namespace llvm;
 
 static RegisterAnalysis<CallGraph> X("callgraph", "Call Graph Construction");
@@ -126,35 +127,30 @@ void CallGraph::destroy() {
   CallsExternalNode = 0;
 }
 
-void CallGraphNode::print(std::ostream &OS) const {
-  if (Function *F = getFunction())
-    OS << "Call graph node for function: '" << F->getName() <<"'\n";
+static void WriteToOutput(const CallGraphNode *CGN, std::ostream &o) {
+  if (CGN->getFunction())
+    o << "Call graph node for function: '"
+      << CGN->getFunction()->getName() <<"'\n";
   else
-    OS << "Call graph node <<null function: 0x" << this << ">>:\n";
+    o << "Call graph node <<null function: 0x" << CGN << ">>:\n";
 
-  for (const_iterator I = begin(), E = end(); I != E; ++I)
-    if ((*I)->getFunction())
-      OS << "  Calls function '" << (*I)->getFunction()->getName() << "'\n";
+  for (unsigned i = 0; i < CGN->size(); ++i)
+    if ((*CGN)[i]->getFunction())
+      o << "  Calls function '" << (*CGN)[i]->getFunction()->getName() << "'\n";
     else
-      OS << "  Calls external node\n";
-  OS << "\n";
+      o << "  Calls external node\n";
+  o << "\n";
 }
 
-void CallGraphNode::dump() const { print(std::cerr); }
-
-void CallGraph::print(std::ostream &OS, const Module *M) const {
-  OS << "CallGraph Root is: ";
-  if (Function *F = getRoot()->getFunction())
-    OS << F->getName() << "\n";
+void CallGraph::print(std::ostream &o, const Module *M) const {
+  o << "CallGraph Root is: ";
+  if (getRoot()->getFunction())
+    o << getRoot()->getFunction()->getName() << "\n";
   else
-    OS << "<<null function: 0x" << getRoot() << ">>\n";
+    o << "<<null function: 0x" << getRoot() << ">>\n";
 
   for (CallGraph::const_iterator I = begin(), E = end(); I != E; ++I)
-    I->second->print(OS);
-}
-
-void CallGraph::dump() const {
-  print(std::cerr, 0);
+    WriteToOutput(I->second, o);
 }
 
 

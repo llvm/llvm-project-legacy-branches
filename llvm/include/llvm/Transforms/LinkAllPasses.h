@@ -89,7 +89,7 @@ namespace {
       (void) llvm::createLowerConstantExpressionsPass();
       (void) llvm::createLowerGCPass();
       (void) llvm::createLowerInvokePass();
-      (void) llvm::createLowerPackedPass();
+      (void) llvm::createLowerFixedVectorPass();
       (void) llvm::createLowerSelectPass();
       (void) llvm::createLowerSetJmpPass();
       (void) llvm::createLowerSwitchPass();

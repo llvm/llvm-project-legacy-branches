@@ -418,7 +418,8 @@ void Verifier::visitSwitchInst(SwitchInst &SI) {
 }
 
 void Verifier::visitSelectInst(SelectInst &SI) {
-  Assert1(SI.getCondition()->getType() == Type::BoolTy,
+  Assert1(SI.getCondition()->getType() == Type::BoolTy ||
+	  SI.getCondition()->getType()->isBooleanVector(),
           "Select condition type must be bool!", &SI);
   Assert1(SI.getTrueValue()->getType() == SI.getFalseValue()->getType(),
           "Select values must have identical types!", &SI);
@@ -498,30 +499,36 @@ void Verifier::visitBinaryOperator(BinaryOperator &B) {
   // Check that logical operators are only used with integral operands.
   if (B.getOpcode() == Instruction::And || B.getOpcode() == Instruction::Or ||
       B.getOpcode() == Instruction::Xor) {
-    Assert1(B.getType()->isIntegral(),
+    Assert1(B.getType()->isIntegral() ||
+	    B.getType()->isIntegralVector(),
             "Logical operators only work with integral types!", &B);
     Assert1(B.getType() == B.getOperand(0)->getType(),
             "Logical operators must have same type for operands and result!",
             &B);
   } else if (isa<SetCondInst>(B)) {
-    // Check that setcc instructions return bool
-    Assert1(B.getType() == Type::BoolTy,
-            "setcc instructions must return boolean values!", &B);
+    // Check that setcc instructions return bool or bool vectors
+    if (B.getOpcode() < Instruction::VSetEQ)
+      Assert1(B.getType() == Type::BoolTy,
+	      "setcc instructions must return boolean values!", &B);
+    else
+      Assert1(B.getType()->isBooleanVector(),
+	      "vsetcc instructions must return boolean vector values!", &B);
   } else {
     // Arithmetic operators only work on integer or fp values
     Assert1(B.getType() == B.getOperand(0)->getType(),
             "Arithmetic operators must have same type for operands and result!",
             &B);
-    Assert1(B.getType()->isInteger() || B.getType()->isFloatingPoint() ||
-            isa<PackedType>(B.getType()),
-            "Arithmetic operators must have integer, fp, or packed type!", &B);
+    Assert1(B.getType()->isInteger() || B.getType()->isFloatingPoint() || 
+            isa<VectorType>(B.getType()),
+            "Arithmetic operators must have integer, fp, or vector type!", &B);
   }
 
   visitInstruction(B);
 }
 
 void Verifier::visitShiftInst(ShiftInst &SI) {
-  Assert1(SI.getType()->isInteger(),
+  Assert1(SI.getType()->isInteger() ||
+	  SI.getType()->isIntegerVector(),
           "Shift must return an integer result!", &SI);
   Assert1(SI.getType() == SI.getOperand(0)->getType(),
           "Shift return type must be same as first operand!", &SI);

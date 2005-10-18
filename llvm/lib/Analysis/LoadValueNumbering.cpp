@@ -32,6 +32,7 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/DerivedTypes.h"
 #include <set>
 #include <algorithm>
 using namespace llvm;
@@ -283,6 +284,9 @@ void LoadVN::getEqualNumberNodes(Value *V,
   LoadInst *LI = cast<LoadInst>(V);
   if (LI->isVolatile())
     return getAnalysis<ValueNumbering>().getEqualNumberNodes(V, RetVals);
+  // FIXME:  This is a temporary fix to make vectors work
+  if (isa<VectorType>(LI->getType()) && !isa<FixedVectorType>(LI->getType()))
+    return;
 
   Value *LoadPtr = LI->getOperand(0);
   BasicBlock *LoadBB = LI->getParent();

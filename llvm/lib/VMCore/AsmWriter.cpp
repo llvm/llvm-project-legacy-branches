@@ -332,16 +332,23 @@ static void calcTypeName(const Type *Ty,
     Result += "]";
     break;
   }
-  case Type::PackedTyID: {
-    const PackedType *PTy = cast<PackedType>(Ty);
-    Result += "<" + utostr(PTy->getNumElements()) + " x ";
+  case Type::FixedVectorTyID: {
+    const FixedVectorType *PTy = cast<FixedVectorType>(Ty);
+    Result += "[vector of " + utostr(PTy->getNumElements()) + " ";
     calcTypeName(PTy->getElementType(), TypeStack, TypeNames, Result);
-    Result += ">";
+    Result += "]";
     break;
   }
   case Type::OpaqueTyID:
     Result += "opaque";
     break;
+  case Type::VectorTyID: {
+    const VectorType *VTy = cast<VectorType>(Ty);
+    Result += "[vector of ";
+    calcTypeName(VTy->getElementType(), TypeStack, TypeNames, Result);
+    Result += "]";
+    break;
+  }
   default:
     Result += "<unrecognized-type>";
   }
@@ -503,10 +510,10 @@ static void WriteConstantInt(std::ostream &Out, const Constant *CV,
     }
 
     Out << " }";
-  } else if (const ConstantPacked *CP = dyn_cast<ConstantPacked>(CV)) {
+  } else if (const ConstantVector *CP = dyn_cast<ConstantVector>(CV)) {
       const Type *ETy = CP->getType()->getElementType();
-      assert(CP->getNumOperands() > 0 &&
-             "Number of operands for a PackedConst must be > 0");
+      assert(CP->getNumOperands() > 0 && 
+             "Number of operands for a FixedVectorConst must be > 0");
       Out << '<';
       Out << ' ';
       printTypeInt(Out, ETy, TypeTable);
@@ -734,7 +741,7 @@ std::ostream &AssemblyWriter::printTypeAtLeastOneLevel(const Type *Ty) {
   } else if (const ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
     Out << '[' << ATy->getNumElements() << " x ";
     printType(ATy->getElementType()) << ']';
-  } else if (const PackedType *PTy = dyn_cast<PackedType>(Ty)) {
+  } else if (const FixedVectorType *PTy = dyn_cast<FixedVectorType>(Ty)) {
     Out << '<' << PTy->getNumElements() << " x ";
     printType(PTy->getElementType()) << '>';
   }
@@ -1054,6 +1061,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
   } else if (isa<CallInst>(I) && cast<CallInst>(I).isTailCall()) {
     // If this is a call, check if it's a tail call.
     Out << "tail ";
+  } else if (isa<VImmInst>(I) && isa<FixedVectorType>(I.getType())) {
+    Out << "fixed ";
   }
 
   // Print out the opcode...

@@ -163,6 +163,7 @@ ConstantExpressionsLower::convert(const ConstantExpr& c, Instruction* where)
 
 
 namespace llvm {
+  const PassInfo *llvm::LowerConstantExpressionsID = X.getPassInfo();
     FunctionPass* createLowerConstantExpressionsPass()
     {
         return new ConstantExpressionsLower;

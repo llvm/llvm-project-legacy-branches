@@ -29,7 +29,7 @@ namespace llvm {
 class ArrayType;
 class StructType;
 class PointerType;
-class PackedType;
+class FixedVectorType;
 
 template<class ConstantClass, class TypeClass, class ValType>
 struct ConstantCreator;
@@ -163,6 +163,7 @@ public:
   /// ConstantInt::get static method: return a ConstantInt with the specified
   /// value.  as above, we work only with very small values here.
   ///
+
   static ConstantInt *get(const Type *Ty, unsigned char V);
 
   /// isNullValue - Return true if this is the value that would be returned by
@@ -192,6 +193,7 @@ protected:
 public:
   /// get() - Static factory methods - Return objects of the specified value
   ///
+
   static ConstantSInt *get(const Type *Ty, int64_t V);
 
   /// isValueValidForType - return true if Ty is big enough to represent V.
@@ -243,6 +245,7 @@ protected:
 public:
   /// get() - Static factory methods - Return objects of the specified value
   ///
+
   static ConstantUInt *get(const Type *Ty, uint64_t V);
 
   /// isValueValidForType - return true if Ty is big enough to represent V.
@@ -280,6 +283,7 @@ protected:
   ConstantFP(const Type *Ty, double V);
 public:
   /// get() - Static factory methods - Return objects of the specified value
+
   static ConstantFP *get(const Type *Ty, double V);
 
   /// isValueValidForType - return true if Ty is big enough to represent V.
@@ -420,25 +424,26 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-/// ConstantPacked - Constant Packed Declarations
+/// ConstantVector - Constant FixedVector Declarations
 ///
-class ConstantPacked : public Constant {
-  friend struct ConstantCreator<ConstantPacked, PackedType,
+class ConstantVector : public Constant {
+  friend struct ConstantCreator<ConstantVector, FixedVectorType,
                                     std::vector<Constant*> >;
-  ConstantPacked(const ConstantPacked &);      // DO NOT IMPLEMENT
+  ConstantVector(const ConstantVector &);      // DO NOT IMPLEMENT
 protected:
-  ConstantPacked(const PackedType *T, const std::vector<Constant*> &Val);
-  ~ConstantPacked();
+  ConstantVector(const FixedVectorType *T, const std::vector<Constant*> &Val);
+  ~ConstantVector();
 public:
   /// get() - Static factory methods - Return objects of the specified value
-  static Constant *get(const PackedType *T, const std::vector<Constant*> &);
+  static Constant *get(const FixedVectorType *T, const std::vector<Constant*> &);
   static Constant *get(const std::vector<Constant*> &V);
-
-  /// getType - Specialize the getType() method to always return an PackedType,
-  /// which reduces the amount of casting needed in parts of the compiler.
+  
+  /// getType - Specialize the getType() method to always return a
+  /// FixedVectorType, which reduces the amount of casting needed in
+  /// parts of the compiler.
   ///
-  inline const PackedType *getType() const {
-    return reinterpret_cast<const PackedType*>(Value::getType());
+  inline const FixedVectorType *getType() const {
+    return reinterpret_cast<const FixedVectorType*>(Value::getType());
   }
 
   /// isNullValue - Return true if this is the value that would be returned by
@@ -450,9 +455,14 @@ public:
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To, Use *U);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const ConstantPacked *) { return true; }
+  static inline bool classof(const ConstantVector *) { return true; }
   static bool classof(const Value *V) {
+    //<<<<<<< Constants.h
+    //return V->getValueType() == SimpleConstantVal &&
+    //       V->getType()->getTypeID() == Type::FixedVectorTyID;
+    //=======
     return V->getValueType() == ConstantPackedVal;
+    //>>>>>>> 1.75
   }
 };
 

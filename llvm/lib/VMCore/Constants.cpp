@@ -112,9 +112,15 @@ Constant *Constant::getNullValue(const Type *Ty) {
   case Type::PointerTyID:
     return ConstantPointerNull::get(cast<PointerType>(Ty));
 
+    //case Type::VectorTyID: {
+    //const VectorType *VT = cast<VectorType>(Ty);
+    //return ConstantExpr::getCast(Constant::getNullValue(VT->getElementType()), Ty);
+    //}
+
   case Type::StructTyID:
   case Type::ArrayTyID:
-  case Type::PackedTyID:
+  case Type::FixedVectorTyID:
+  case Type::VectorTyID:
     return ConstantAggregateZero::get(Ty);
   default:
     // Function, Label, or Opaque type?
@@ -287,7 +293,7 @@ ConstantStruct::~ConstantStruct() {
 }
 
 
-ConstantPacked::ConstantPacked(const PackedType *T,
+ConstantVector::ConstantVector(const FixedVectorType *T,
                                const std::vector<Constant*> &V)
   : Constant(T, ConstantPackedVal, new Use[V.size()], V.size()) {
   Use *OL = OperandList;
@@ -297,12 +303,12 @@ ConstantPacked::ConstantPacked(const PackedType *T,
       assert((C->getType() == T->getElementType() ||
             (T->isAbstract() &&
              C->getType()->getTypeID() == T->getElementType()->getTypeID())) &&
-           "Initializer for packed element doesn't match packed element type!");
+           "Initializer for vector element doesn't match vector element type!");
     OL->init(C, this);
   }
 }
 
-ConstantPacked::~ConstantPacked() {
+ConstantVector::~ConstantVector() {
   delete [] OperandList;
 }
 
@@ -483,9 +489,11 @@ bool ConstantFP::isValueValidForType(const Type *Ty, double Val) {
     // TODO: Figure out how to test if a double can be cast to a float!
   case Type::FloatTyID:
   case Type::DoubleTyID:
+  case Type::VectorTyID: // Added this for vector type!
     return true;          // This is the largest type...
   }
 };
+
 
 //===----------------------------------------------------------------------===//
 //                      Factory Function Implementation
@@ -982,17 +990,17 @@ void ConstantStruct::destroyConstant() {
   destroyConstantImpl();
 }
 
-//---- ConstantPacked::get() implementation...
+//---- ConstantVector::get() implementation...
 //
 namespace llvm {
   template<>
-  struct ConvertConstantType<ConstantPacked, PackedType> {
-    static void convert(ConstantPacked *OldC, const PackedType *NewTy) {
+  struct ConvertConstantType<ConstantVector, FixedVectorType> {
+    static void convert(ConstantVector *OldC, const FixedVectorType *NewTy) {
       // Make everyone now use a constant of the new type...
       std::vector<Constant*> C;
       for (unsigned i = 0, e = OldC->getNumOperands(); i != e; ++i)
         C.push_back(cast<Constant>(OldC->getOperand(i)));
-      Constant *New = ConstantPacked::get(NewTy, C);
+      Constant *New = ConstantVector::get(NewTy, C);
       assert(New != OldC && "Didn't replace constant??");
       OldC->uncheckedReplaceAllUsesWith(New);
       OldC->destroyConstant();    // This constant is now dead, destroy it.
@@ -1000,7 +1008,7 @@ namespace llvm {
   };
 }
 
-static std::vector<Constant*> getValType(ConstantPacked *CP) {
+static std::vector<Constant*> getValType(ConstantVector *CP) {
   std::vector<Constant*> Elements;
   Elements.reserve(CP->getNumOperands());
   for (unsigned i = 0, e = CP->getNumOperands(); i != e; ++i)
@@ -1008,32 +1016,32 @@ static std::vector<Constant*> getValType(ConstantPacked *CP) {
   return Elements;
 }
 
-static ValueMap<std::vector<Constant*>, PackedType,
-                ConstantPacked> PackedConstants;
+static ValueMap<std::vector<Constant*>, FixedVectorType,
+                ConstantVector> FixedVectorConstants;
 
-Constant *ConstantPacked::get(const PackedType *Ty,
+Constant *ConstantVector::get(const FixedVectorType *Ty,
                               const std::vector<Constant*> &V) {
-  // If this is an all-zero packed, return a ConstantAggregateZero object
+  // If this is an all-zero vector, return a ConstantAggregateZero object
   if (!V.empty()) {
     Constant *C = V[0];
     if (!C->isNullValue())
-      return PackedConstants.getOrCreate(Ty, V);
+      return FixedVectorConstants.getOrCreate(Ty, V);
     for (unsigned i = 1, e = V.size(); i != e; ++i)
       if (V[i] != C)
-        return PackedConstants.getOrCreate(Ty, V);
+        return FixedVectorConstants.getOrCreate(Ty, V);
   }
   return ConstantAggregateZero::get(Ty);
 }
 
-Constant *ConstantPacked::get(const std::vector<Constant*> &V) {
+Constant *ConstantVector::get(const std::vector<Constant*> &V) {
   assert(!V.empty() && "Cannot infer type if V is empty");
-  return get(PackedType::get(V.front()->getType(),V.size()), V);
+  return get(FixedVectorType::get(V.front()->getType(),V.size()), V);
 }
 
 // destroyConstant - Remove the constant from the constant table...
 //
-void ConstantPacked::destroyConstant() {
-  PackedConstants.remove(this);
+void ConstantVector::destroyConstant() {
+  FixedVectorConstants.remove(this);
   destroyConstantImpl();
 }
 
@@ -1529,7 +1537,7 @@ void ConstantStruct::replaceUsesOfWithOnConstant(Value *From, Value *To,
   destroyConstant();
 }
 
-void ConstantPacked::replaceUsesOfWithOnConstant(Value *From, Value *To,
+void ConstantVector::replaceUsesOfWithOnConstant(Value *From, Value *To,
                                                  Use *U) {
   assert(isa<Constant>(To) && "Cannot make Constant refer to non-constant!");
   
@@ -1541,7 +1549,7 @@ void ConstantPacked::replaceUsesOfWithOnConstant(Value *From, Value *To,
     Values.push_back(Val);
   }
   
-  Constant *Replacement = ConstantPacked::get(getType(), Values);
+  Constant *Replacement = ConstantVector::get(getType(), Values);
   assert(Replacement != this && "I didn't contain From!");
   
   // Everyone using this now uses the replacement.
@@ -1615,7 +1623,7 @@ void Constant::clearAllValueMaps() {
   AggZeroConstants.clear(Constants);
   ArrayConstants.clear(Constants);
   StructConstants.clear(Constants);
-  PackedConstants.clear(Constants);
+  FixedVectorConstants.clear(Constants);
   NullPtrConstants.clear(Constants);
   UndefValueConstants.clear(Constants);
   ExprConstants.clear(Constants);

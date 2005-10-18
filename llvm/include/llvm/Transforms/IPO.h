@@ -24,6 +24,8 @@ class ModulePass;
 class Function;
 class BasicBlock;
 
+ModulePass *createHeap2StackPass();
+
 //===----------------------------------------------------------------------===//
 //
 // These functions removes symbols from functions and modules.  If OnlyDebugInfo

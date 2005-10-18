@@ -20,9 +20,8 @@ namespace llvm {
 class IntrinsicLowering;
 
 struct CTargetMachine : public TargetMachine {
-  CTargetMachine(const Module &M, IntrinsicLowering *IL,
-                 const std::string &FS) :
-    TargetMachine("CBackend", IL, M) {}
+  CTargetMachine(const Module &M, IntrinsicLowering *IL, const std::string &name="CBackend") :
+    TargetMachine(name, IL, M) {}
 
   // This is the only thing that actually does anything here.
   virtual bool addPassesToEmitFile(PassManager &PM, std::ostream &Out,

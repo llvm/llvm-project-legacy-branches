@@ -16,6 +16,6 @@ ANALIBS  = LLVMDataStructure LLVMipa LLVMTarget.a
 USEDLIBS = LLVMipo LLVMScalarOpts LLVMAnalysis $(OPTLIBS) $(ANALIBS) \
 	   LLVMTransformUtils \
 	   LLVMAsmParser LLVMLinker.a LLVMBCReader LLVMBCWriter \
-	   LLVMCore LLVMSupport.a LLVMbzip2 LLVMSystem.a
+	   LLVMCore LLVMSupport.a LLVMbzip2 LLVMSystem.a #LLVMVectorOpts
 
 include $(LEVEL)/Makefile.common

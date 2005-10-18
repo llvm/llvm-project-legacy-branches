@@ -24,6 +24,8 @@ namespace llvm {
 class BasicBlock;
 class ConstantInt;
 class PointerType;
+class VectorType;
+
 
 //===----------------------------------------------------------------------===//
 //                             AllocationInst Class
@@ -380,8 +382,8 @@ public:
 //                            SetCondInst Class
 //===----------------------------------------------------------------------===//
 
-/// SetCondInst class - Represent a setCC operator, where CC is eq, ne, lt, gt,
-/// le, or ge.
+/// SetCondInst class - Represent a SetCC or VSetCC operator, where CC
+/// is eq, ne, lt, gt, le, or ge.
 ///
 class SetCondInst : public BinaryOperator {
 public:
@@ -415,13 +417,35 @@ public:
   ///
   static BinaryOps getSwappedCondition(BinaryOps Opcode);
 
+  // getScalarOpcode - Return the scalar version of this opcode.
+  // For example seteq -> seteq, vseteq -> seteq, etc.
+  //
+  BinaryOps getScalarOpcode() const {
+    return getScalarOpcode(getOpcode());
+  }
+
+  /// getScalarOpcode - Static version that you can use without an
+  /// instruction available.
+  ///
+  static BinaryOps getScalarOpcode(BinaryOps Opcode);
+
+  // getVectorOpcode - Return the scalar version of this opcode.
+  // For example seteq -> seteq, vseteq -> seteq, etc.
+  //
+  BinaryOps getVectorOpcode() const {
+    return getVectorOpcode(getOpcode());
+  }
+
+  /// getVectorOpcode - Static version that you can use without an
+  /// instruction available.
+  ///
+  static BinaryOps getVectorOpcode(BinaryOps Opcode);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const SetCondInst *) { return true; }
   static inline bool classof(const Instruction *I) {
-    return I->getOpcode() == SetEQ || I->getOpcode() == SetNE ||
-           I->getOpcode() == SetLE || I->getOpcode() == SetGE ||
-           I->getOpcode() == SetLT || I->getOpcode() == SetGT;
+    return I->getOpcode() >= SetEQ &&
+      I->getOpcode() <= VSetGT;
   }
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
@@ -659,6 +683,72 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+//===----------------------------------------------------------------------===//
+//                               VSelectInst Class
+//===----------------------------------------------------------------------===//
+
+/// VSelectInst - This class represents the vector version of the LLVM
+/// 'select' instruction.
+///
+class VSelectInst : public Instruction {
+  Use Ops[3];
+
+  void init(Value *C, Value *S1, Value *S2) {
+    Ops[0].init(C, this);
+    Ops[1].init(S1, this);
+    Ops[2].init(S2, this);
+  }
+
+  VSelectInst(const VSelectInst &SI)
+    : Instruction(SI.getType(), SI.getOpcode(), Ops, 3) {
+    init(SI.Ops[0], SI.Ops[1], SI.Ops[2]);
+  }
+public:
+  VSelectInst(Value *C, Value *S1, Value *S2, const std::string &Name = "",
+             Instruction *InsertBefore = 0)
+    : Instruction(S1->getType(), Instruction::VSelect, Ops, 3,
+                  Name, InsertBefore) {
+    init(C, S1, S2);
+  }
+  VSelectInst(Value *C, Value *S1, Value *S2, const std::string &Name,
+             BasicBlock *InsertAtEnd)
+    : Instruction(S1->getType(), Instruction::VSelect, Ops, 3,
+                  Name, InsertAtEnd) {
+    init(C, S1, S2);
+  }
+
+  Value *getCondition() const { return Ops[0]; }
+  Value *getTrueValue() const { return Ops[1]; }
+  Value *getFalseValue() const { return Ops[2]; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 3 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 3 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 3; }
+
+  OtherOps getOpcode() const {
+    return static_cast<OtherOps>(Instruction::getOpcode());
+  }
+
+  virtual VSelectInst *clone() const;
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VSelectInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::VSelect;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
 
 //===----------------------------------------------------------------------===//
 //                                VAArgInst Class
@@ -1287,6 +1377,398 @@ private:
   virtual BasicBlock *getSuccessorV(unsigned idx) const;
   virtual unsigned getNumSuccessorsV() const;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
+};
+
+//===----------------------------------------------------------------------===//
+//                             VMemoryInst Class
+//===----------------------------------------------------------------------===//
+
+/// VMemoryInst - This class is the common base class of VGatherInst and
+/// VScatterInst.
+///
+class VMemoryInst : public Instruction {
+protected:
+  VMemoryInst(const Type *Ty, unsigned iType,
+	      Use *Ops, unsigned NumOps,
+	      const std::string &Name = "", Instruction *InsertBef = 0);
+  VMemoryInst(const Type* Ty, unsigned iType,
+	      Use *Ops, unsigned NumOps,
+	      const std::string &Name, BasicBlock *InsertAE);
+  ~VMemoryInst();
+
+public:
+
+  // Check for correct number of indices
+  //
+  static bool VMemoryInst::checkNumIndices(const std::vector<Value*> &Idx) {
+    return (Idx.size() >= 4 && Idx.size() % 4 == 0);
+  }
+
+  // Check for correct types of indices
+  //
+  static bool VMemoryInst::checkIndexType(const std::vector<Value*> &);
+
+  virtual Instruction *clone() const = 0;
+
+  const Type *getElementType() const;
+  virtual Value *getPointerOperand() = 0;
+  virtual const Value *getPointerOperand() const = 0;
+
+  virtual unsigned getNumIndices() const = 0;
+  virtual Value *getIndex(unsigned) = 0;
+  virtual const Value *getIndex(unsigned) const = 0;
+
+  Value *getLowerBound(unsigned level) { return getIndex(4*level); }
+  const Value *getLowerBound(unsigned level) const { return getIndex(4*level); }
+
+  Value *getUpperBound(unsigned level) { return getIndex(4*level+1); }
+  const Value *getUpperBound(unsigned level) const { return getIndex(4*level+1); }
+
+  Value *getStride(unsigned level) { return getIndex(4*level+2); }
+  const Value *getStride(unsigned level) const { return getIndex(4*level+2); }
+  
+  Value *getMultiplier(unsigned level) {return getIndex(4*level+3); }
+  const Value *getMultiplier(unsigned level) const {return getIndex(4*level+3); }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VMemoryInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::VGather ||
+           I->getOpcode() == Instruction::VScatter;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+
+//===----------------------------------------------------------------------===//
+//                                VGatherInst Class
+//===----------------------------------------------------------------------===//
+
+/// VGatherInst - an instruction for reading a vector into a register
+/// from memory
+///
+class VGatherInst : public VMemoryInst {
+  VGatherInst(const VGatherInst &LI) : VMemoryInst(LI.getType(), VGather, 0, 0) {
+    NumOperands = LI.getNumOperands();
+    Use *OL = OperandList = new Use[NumOperands];
+    for (unsigned i = 0; i < NumOperands; ++i)
+      OL[i].init(LI.getOperand(i), this);
+  }
+  void init(Value *Ptr, const std::vector<Value*> &Idx);
+
+public:
+  VGatherInst(Value *Ptr, const std::vector<Value*> &Idx,
+	    const std::string &Name = "", Instruction *InsertBefore = 0);
+  VGatherInst(Value *Ptr, const std::vector<Value*> &Idx,
+	    const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual VGatherInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  Value *getPointerOperand() { return getOperand(0); }
+  const Value *getPointerOperand() const { return getOperand(0); }
+  static unsigned getPointerOperandIndex() { return 0U; }
+
+  unsigned getNumIndices() const {  // Note: always non-negative
+    return getNumOperands() - 1;
+  }
+
+  Value *getIndex(unsigned i) { return getOperand(i + 1); }
+  const Value *getIndex(unsigned i) const { return getOperand(i + 1); }
+  
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VGatherInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::VGather;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+
+
+//===----------------------------------------------------------------------===//
+//                                VScatterInst Class
+//===----------------------------------------------------------------------===//
+
+/// VScatterInst - an instruction for storing a vector register to
+/// memory
+///
+class VScatterInst : public VMemoryInst {
+  VScatterInst(const VScatterInst &SI) : VMemoryInst(SI.getType(), VScatter, 0, 0) {
+    NumOperands = SI.getNumOperands();
+    Use *OL = OperandList = new Use[NumOperands];
+    for (unsigned i = 0; i < NumOperands; ++i)
+      OL[i].init(SI.getOperand(i), this);
+  }
+  void init(Value *Val, Value *Ptr, const std::vector<Value*> &Idx);
+
+public:
+  VScatterInst(Value *Val, Value *Ptr, const std::vector<Value*> &Idx,
+	       Instruction *InsertBefore = 0);
+  VScatterInst(Value *Val, Value *Ptr, const std::vector<Value*> &Idx,
+	       BasicBlock *InsertAtEnd);
+
+  virtual VScatterInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return true; }
+
+  Value *getPointerOperand() { return getOperand(1); }
+  const Value *getPointerOperand() const { return getOperand(1); }
+  static unsigned getPointerOperandIndex() { return 1U; }
+
+  unsigned getNumIndices() const {  // Note: always non-negative
+    return getNumOperands() - 2;
+  }
+
+  Value *getIndex(unsigned i) { return getOperand(i + 2); }
+  const Value *getIndex(unsigned i) const { return getOperand(i + 2); }
+  
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VScatterInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::VScatter;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+
+//===----------------------------------------------------------------------===//
+//                                VImmInst Class
+//===----------------------------------------------------------------------===//
+
+/// VImmInst - an instruction for creating a vector from a replicated
+/// scalar value
+///
+class VImmInst : public Instruction {
+  Use Ops[2];
+  VImmInst(const VImmInst &VI) : Instruction(VI.getType(), VImm, Ops, 2) {
+    Ops[0].init(VI.Ops[0], this);
+    Ops[1].init(VI.Ops[1], this);
+  }
+
+public:
+  VImmInst(Value *Ptr, Value *Len, bool isFixed,
+	   const std::string &Name = "", Instruction *InsertBefore = 0);
+  VImmInst(Value *Ptr, Value *Len, bool isFixed,
+	   const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual VImmInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 2 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 2 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 2; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VImmInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::VImm;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+//===----------------------------------------------------------------------===//
+//                                ExtractInst Class
+//===----------------------------------------------------------------------===//
+
+/// ExtractInst - an instruction for extracting a subvector from a
+/// vector
+///
+class ExtractInst : public Instruction {
+  Use Ops[4];
+  ExtractInst(const ExtractInst &EI) : Instruction(EI.getType(), Extract, Ops, 4) {
+    Ops[0].init(EI.Ops[0], this);
+    Ops[1].init(EI.Ops[1], this);
+    Ops[2].init(EI.Ops[2], this);
+    Ops[3].init(EI.Ops[3], this);
+  }
+
+public:
+  ExtractInst(Value *Val, Value *Start, Value *Stride, Value *Len,
+	       const std::string &Name = "", Instruction *InsertBefore = 0);
+  ExtractInst(Value *Val, Value *Start, Value *Stride, Value *Len,
+	       const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual ExtractInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 4 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 4 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 4; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const ExtractInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::Extract;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+//===----------------------------------------------------------------------===//
+//                                ExtractElementInst Class
+//===----------------------------------------------------------------------===//
+
+/// ExtractElementInst - an instruction for extracting a single
+/// element from a vector
+///
+class ExtractElementInst : public Instruction {
+  Use Ops[2];
+  ExtractElementInst(const ExtractElementInst &EI) : 
+    Instruction(EI.getType(), ExtractElement, Ops, 2) {
+    Ops[0].init(EI.Ops[0], this);
+    Ops[1].init(EI.Ops[1], this);
+  }
+
+public:
+  ExtractElementInst(Value *Val, Value *Index,
+	       const std::string &Name = "", Instruction *InsertBefore = 0);
+  ExtractElementInst(Value *Val, Value *Index,
+	       const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual ExtractElementInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 2 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 2 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 2; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const ExtractElementInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::ExtractElement;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+//===----------------------------------------------------------------------===//
+//                                CombineInst Class
+//===----------------------------------------------------------------------===//
+
+/// CombineInst - an instruction for combining two vectors by
+/// overlaying the second on the first
+///
+class CombineInst : public Instruction {
+  Use Ops[4];
+  CombineInst(const CombineInst &EI) : Instruction(EI.getType(), Combine, Ops, 4) {
+    Ops[0].init(EI.Ops[0], this);
+    Ops[1].init(EI.Ops[1], this);
+    Ops[2].init(EI.Ops[2], this);
+    Ops[3].init(EI.Ops[3], this);
+  }
+
+public:
+  CombineInst(Value *V1, Value *V2, Value *Start, Value *Stride,
+	      const std::string &Name = "", Instruction *InsertBefore = 0);
+  CombineInst(Value *V1, Value *V2, Value *Start, Value *Stride,
+	      const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual CombineInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 4 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 4 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 4; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const CombineInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::Combine;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+//===----------------------------------------------------------------------===//
+//                                CombineElementInst Class
+//===----------------------------------------------------------------------===//
+
+/// CombineElementInst - an instruction for combining two vectors by
+/// overlaying the second on the first
+///
+class CombineElementInst : public Instruction {
+  Use Ops[3];
+  CombineElementInst(const CombineElementInst &EI) : 
+    Instruction(EI.getType(), CombineElement, Ops, 3) {
+    Ops[0].init(EI.Ops[0], this);
+    Ops[1].init(EI.Ops[1], this);
+    Ops[2].init(EI.Ops[2], this);
+  }
+
+public:
+  CombineElementInst(Value *Vector, Value *Element, Value *Index, 
+	      const std::string &Name = "", Instruction *InsertBefore = 0);
+  CombineElementInst(Value *Vector, Value *Element, Value *Index,
+	      const std::string &Name, BasicBlock *InsertAtEnd);
+
+  virtual CombineElementInst *clone() const;
+
+  virtual bool mayWriteToMemory() const { return false; }
+
+  /// Transparently provide more efficient getOperand methods.
+  Value *getOperand(unsigned i) const {
+    assert(i < 3 && "getOperand() out of range!");
+    return Ops[i];
+  }
+  void setOperand(unsigned i, Value *Val) {
+    assert(i < 3 && "setOperand() out of range!");
+    Ops[i] = Val;
+  }
+  unsigned getNumOperands() const { return 3; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const CombineElementInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::CombineElement;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
 };
 
 } // End llvm namespace

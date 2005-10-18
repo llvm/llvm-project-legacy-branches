@@ -14,7 +14,7 @@ DIRS += tools
 else
   ifneq ($(MAKECMDGOALS),libs-only)
     DIRS += tools runtime docs
-    OPTIONAL_DIRS = examples projects
+    OPTIONAL_DIRS = #projects
   endif
 endif
 

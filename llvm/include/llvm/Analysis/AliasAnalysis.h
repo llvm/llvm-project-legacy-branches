@@ -265,6 +265,9 @@ public:
     case Instruction::Store:  return getModRefInfo((StoreInst*)I, P, Size);
     case Instruction::Call:   return getModRefInfo((CallInst*)I, P, Size);
     case Instruction::Invoke: return getModRefInfo((InvokeInst*)I, P, Size);
+      // FIXME: This is extra safe for now.  Fix it so that we use the
+      // indices to figure out the bounding size of the vscatter.
+    case Instruction::VScatter: return Mod;
     default:                  return NoModRef;
     }
   }
