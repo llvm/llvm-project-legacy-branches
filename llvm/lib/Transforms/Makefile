@@ -7,7 +7,7 @@
 # 
 ##===----------------------------------------------------------------------===##
 LEVEL = ../..
-PARALLEL_DIRS = Utils Instrumentation Scalar IPO Vector TLS
+PARALLEL_DIRS = Utils Instrumentation Scalar IPO Vector
 LIBRARYNAME = LLVMTransforms
 BUILD_ARCHIVE = 1
 
