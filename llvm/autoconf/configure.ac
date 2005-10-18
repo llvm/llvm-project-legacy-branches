@@ -249,7 +249,7 @@ AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-target],
     [Build specific host targets: all,host-only,{target-name} (default=all)]),,
     enableval=all)
 case "$enableval" in
-  all) TARGETS_TO_BUILD="X86 SparcV8 SparcV9 PowerPC Alpha IA64 Skeleton RSVP RSVP2" ;;
+  all) TARGETS_TO_BUILD="X86 SparcV8 SparcV9 PowerPC Alpha IA64 Skeleton" ;;
   host-only)
     case "$llvm_cv_target_arch" in
       x86)     TARGETS_TO_BUILD="X86" ;;
