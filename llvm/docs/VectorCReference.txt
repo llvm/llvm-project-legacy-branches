@@ -1,0 +1,439 @@
+VECTOR C REFERENCE
+Vector LLVM
+Rob Bocchino
+October 20, 2005
+==================
+
+Overview
+========
+
+Vector C is an API that allows you to embed Vector LLVM instructions
+in a C program compiled through llvm-gcc.  (Without this API, we would
+have to either write all the Vector LLVM by hand, or extend llvm-gcc
+itself to support Vector LLVM.)  The API is similar to the APIs for
+AltiVec and SSE provided by gcc.  It provides a set of C functions,
+each of which corresponds to one or more (but at most a few) LLVM
+values (usually instructions).  The C functions are compiled to LLVM
+functions by llvm-gcc, then converted to Vector LLVM instructions by
+an LLVM transformation pass, opt -raisevectors.
+
+Using the API
+=============
+
+Let $(LLVMSRCDIR) equal the root of your LLVM source tree.  To use the
+API, put $(LLVMSRCDIR)/include/VectorC in your include path and put
+#include "VectorC.h" in your source file.  Write the program as
+directed in the next section.  Compile your program through llvm-gcc
+to generate a bytecode file, say foo.vectorc.bc.  Run the program
+through opt -raisevectors (i.e., opt -raisevectors < foo.vectorc.bc >
+foo.raised.bc).  The result will be a program with the Vector C
+functions replaced by the corresponding Vector LLVM instructions.  The
+raisevectors transformation is defined in
+$(LLVMSRCDIR)/lib/Transforms/RaiseVector.cpp.
+
+Writing Vector C Programs
+=========================
+
+Writing Vector C code consists of writing vector source values (vector
+loads or constants), using those values in vector operations, using
+those uses in operations, etc., and finally storing values to memory.
+Vector values are represented in C as scalar types and raised to
+vectors in the LLVM representation according to the following simple
+rule: a value is raised to a vector if and only if it is produced by a
+Vector C function or at least one of its operands must be raised to a
+vector.  In vector LLVM, a vector type consists of an element type and
+(for fixed vectors) a length.  The element type is provided by the C
+scalar type declaration.  The programmer must supply the vector length
+explicitly for vector loads, vector immediates, and fixed combine
+instructions.  Otherwise, the raise pass can infer the vector length
+of the result (or the fact that the vector is variable, and has no
+explicit length) from the length of the operands; the programmer need
+only supply the scalar type.
+
+For example, consider the following C code, which uses fixed vectors:
+
+    short x_vec = vllvm_load_short(x, 8, i);
+    short y_vec = vllvm_load_short(y, 8, i);
+    short a_vec = vllvm_fixed_vimm_short(a, 8);
+    short z_vec = a_vec * x_vec + y_vec;
+    vllvm_store_short(z_vec, z, i);
+
+The raise pass produces the following Vector LLVM code:
+
+    %tmp0 = cast short* %x to [vector of 8 short]
+    %tmp1 = getelementptr [vector of 8 short]* %tmp0, int %i
+    %x_vec = load [vector of 8 short]* %tmp1
+    %tmp2 = cast short *%y to [vector of 8 short]
+    %tmp3 = getelementptr [vector of 8 short]* %tmp2, int %i
+    %y_vec = load [vector of 8 short]* %tmp3
+    %a_vec = fixed vimm short %a, uint 8
+    %tmp4 = mul [vector of 8 short] %x_vec, %a_vec
+    %z_vec = add [vector of 8 short] %tmp4, %y_vec
+    %tmp6 = cast short* %z to [vector of 8 short]*
+    %tmp7 = getelementptr [vector of 8 short]* %cast1, int %i
+    store [vector of 8 short] %z_vec, [vector of 8 short]* %tmp7
+
+The type [vector of 8 short] is specified explicitly for the load and
+vimm instructions (through the C type short and the argument 8), and
+propagated to the other instructions by the chain of defs and uses.
+
+Note that the vector source values must all be Vector C functions, but
+the operations may be either Vector C functions or normal scalar C
+operations (as in the above example, where we have used the normal C
+operators * and +).  In the case of normal C operations, the raise
+pass will see that the operands are vectors and raise the operation to
+a vector operation.  It is illegal, however, to attempt to combine
+scalar and vector values.  For example, the following would be
+illegal:
+
+    short x_vec = vllvm_load_short(x, 8, i);
+    short y_vec = 2 * x_vec;
+
+Instead, we must write
+
+    short x_vec = vllvm_load_short(x, 8, i);
+    short y_vec = vllvm_vimm_short(2, 8) * x_vec;
+
+Note also that the types must match.  If we write
+
+    short x_vec = vllvm_load_short(x, 8, i);
+    short y_vec = vllvm_vimm_short(2, 16) * x_vec;
+
+then the raise pass will crash horribly.
+
+API Reference
+=============
+
+The following reference describes the functions making up the Vector C
+API.  It uses the following conventions:
+
+ * CTYPE is one of the C scalar types { char, unsigned uchar (uchar),
+   short, unsigned short (ushort), int, unsigned int (uint), long,
+   unsigned long (ulong), float, double }, where the types in
+   parentheses are optional shorter forms (defined via typedef).
+
+ * LLVMTYPE is one of { sbyte, ubyte, short, ushort, int, uint, long,
+   ulong, float, double }.
+
+ * If CTYPE is the nth C type listed above, then LLVMTYPE is the nth
+   LLVM type listed above.
+
+ * CTYPE~ means CTYPE with any spaces replaced by _.  For instance, if
+   CTYPE = unsigned int, then CTYPE~ = unsigned_int.  Note that for
+   the shorter forms (such as uint), CTYPE~ = CTYPE.  The shorter
+   forms are also easier to type and help the API function names from
+   getting unduly long.
+
+All function declarations in the API follow the pattern
+vllvm_OP-NAME_CTYPE~, where FN-NAME is the name of the operation
+(which usually corresponds to a Vector LLVM instruction or intrinsic).
+
+vllvm_vimm_CTYPE~
+-----------------
+
+Purpose: Produce a vimm instruction
+
+C Declaration: CTYPE vllvm_vimm_CTYPE~(CTYPE, uint)
+
+C Use: CTYPE res = vllvm_vimm_CTYPE~(val, len)
+
+Raised To: %res = vimm LLVMTYPE %val, uint len
+
+Notes: vllvm_vloadi_CTYPE~ is also allowed, for compatibility with an
+       older form of this instruction.
+
+vllvm_fixed_vimm_CTYPE~
+-----------------------
+
+Purpose: Produce a fixed vimm instruction
+
+C Declaration:  CTYPE vllvm_fixed_vimm_CTYPE~(CTYPE val, uint len)
+
+C Use:  CTYPE res = vllvm_fixed_vimm_CTYPE~(val, len)
+
+Raised To:  %res = fixed vimm LLVMTYPE %val, uint %len
+
+Notes: len must be a constant, otherwise the raise pass will crash.
+
+vllvm_vgather_CTYPE~
+--------------------
+
+Purpose: Produce a vgather instruction
+
+C Declaration:  CTYPE vllvm_vgather_CTYPE~(const CTYPE*, ...)
+
+C Use:  CTYPE res = vllvm_vgather_CTYPE~(ptr, start, end, stride, mult)
+
+Raised To: %res = vgather LLVMTYPE* %ptr, long %start, long %end, long
+             %stride, long %mult
+
+Notes:  An arbitrary number of (start, end, stride, mult) groups are
+        allowed, and the values must be integers.  If the arguments do
+        not follow this pattern, the raise pass will crash.
+
+	vllvm_vload_CTYPE~ is also allowed, for compatibility with an
+	older form of this instruction.
+
+vllvm_vscatter_CTYPE~
+---------------------
+
+Purpose: Produce a vscatter instruction
+
+C Declaration:  void vllvm_vscatter_CTYPE~(CTYPE, CTYPE*, ...)
+
+C Use:  vllvm_vscatter_CTYPE~(val, ptr, start, end, stride, mult)
+
+Raised To: vscatter [vector of LLVMTYPE] %val, LLVMTYPE* %ptr, long
+             %start, long %end, long %stride, long %mult
+	
+Notes:  An arbitrary number of (start, end, stride, mult) groups are
+        allowed, and the values must be integers.  If the arguments do
+        not follow this pattern, the raise pass will crash.
+
+	vllvm_vstore_CTYPE~ is also allowed, for compatibility with an
+	older form of this instruction.
+
+vllvm_load_CTYPE~
+-----------------
+
+Purpose: Produce a vector load instruction for a specified pointer and
+         offset.
+
+C Declaration: CTYPE vllvm_load_CTYPE~(const CTYPE*, uint, int)
+
+C Use: CTYPE res = vllvm_load_CTYPE~(ptr, len, idx)
+
+Raised To: %tmp0 = cast LLVMTYPE* %ptr to [vector of len LLVMTYPE]*
+	   %tmp1 = getelementptr [vector of len LLVMTYPE]* %tmp0, 
+  	     int %idx
+	   %res = load [vector of len LLVMTYPE]* %tmp1
+
+vllvm_store_CTYPE~
+------------------
+
+Purpose: Produce a vector store instruction for a specified value,
+         pointer, and offset.
+
+C Declaration: void vllvm_store_CTYPE~(CTYPE, CTYPE*, int)
+
+C Use: vllvm_store_CTYPE~(val, ptr, idx)
+
+Raised To: %tmp0 = cast LLVMTYPE* %ptr to [vector of len LLVMTYPE]*
+	   %tmp1 = getelementptr [vector of len LLVMTYPE]* %tmp0,
+	     int %idx 
+	   store LLVMTYPE %val, [vector of len LLVMTYPE]* %tmp1
+
+vllvm_vselect_CTYPE~
+--------------------
+
+Purpose: Produce a vselect instruction.
+
+C Declaration: CTYPE vllvm_vselect_CTYPE~(int, CTYPE, CTYPE)
+
+C Use: CTYPE res = vllvm_vselect_CTYPE~(mask, val1, val2)
+
+Raised To: %res = vselect [vector of bool] %mask, TY %val1, TY %val2
+
+           where TY = [vector of LLVMTYPE] or [vector of n LLVMTYPE],
+           and the type is inferred from the instructions producing
+           %val1 and %val2.
+
+Notes: If %val1 and %val2 have incompatible lengths (i.e., are not
+       both variable vectors or both fixed vectors with the same
+       length), the raise pass will crash.
+
+vllvm_extract_CTYPE~
+--------------------
+
+Purpose: Produce an extract instruction.
+
+C Declaration: CTYPE vllvm_extract_CTYPE~(CTYPE, unsigned, unsigned,
+               unsigned)
+
+C Use: CTYPE res = vllvm_extract_CTYPE~(val, start, stride, len)
+
+Raised To: %res = extract TY %val, uint %start, uint %stride,
+           uint %len
+
+           where TY = [vector of LLVMTYPE] or [vector of n LLVMTYPE],
+           and the type is inferred from the instruction producing
+           %val
+
+Notes: In Vector LLVM currently, the result type of the extract is a
+       fixed vector if and only if TY is a fixed vector and len is a
+       constant.  We will probably add a fixed extract (like fixed
+       vimm) and a corresponding vimm_fixed_extract_CTYPE~ function.
+
+vllvm_combine_CTYPE~
+--------------------
+
+Purpose: Produce a combine instruction of variable vector type.
+
+C Declaration: CTYPE vllvm_combine_CTYPE~(CTYPE, CTYPE, unsigned,
+               unsigned)
+
+C Use: CTYPE res = vllvm_combine_CTYPE~(val1, val2, start, stride)
+
+Raised To: %res = combine [vector of LLVMTYPE] %val1, [vector of
+           LLVMTYPE] %val2, uint %start, uint %stride
+
+Notes: %val1 and %val2 must be variable vectors; otherwise the raise
+       pass will crash.  For fixed vectors, use fixed_combine.
+
+vllvm_fixed_combine_CTYPE~
+--------------------------
+
+Purpose: Produce a combine instruction of fixed vector type.
+
+C Declaration: CTYPE vllvm_fixed_combine_CTYPE~(CTYPE, unsigned, CTYPE,
+               unsigned, unsigned, unsigned)
+
+C Use: CTYPE res = vllvm_fixed_combine_CTYPE~(val1, len1, val2, len2,
+       start, stride)
+
+Raised To: %res = combine [vector of len1 LLVMTYPE] %val1, [vector of
+           len2 LLVMTYPE] %val2, uint %start, uint %stride
+
+	   except that len1 and len2 may both be 0, in which case
+	   %val1 and %val2 are both raised to [vector of LLVMTYPE]
+	   (i.e., this function behaves like combine when len1 = len2
+	   = 0).
+
+Notes: %val1 and %val2 must have compatible lengths, otherwise the
+       raise pass will crash
+
+vllvm_extractelement_CTYPE~
+---------------------------
+
+Purpose: Produce an extractelement instruction.
+
+C Declaration: CTYPE vllvm_extractelement_CTYPE~(CTYPE, unsigned)
+
+C Use: CTYPE res = vllvm_extractelement_CTYPE~(val, idx)
+
+Raised To: %res = extractelement TY %val, uint idx
+
+           where TY = [vector of LLVMTYPE] or [vector of n LLVMTYPE],
+           depending on the type to which %val is raised
+
+vllvm_combineelement_CTYPE~
+---------------------------
+
+Purpose: Produce a combineelement instruction.
+
+C Declaration: CTYPE vllvm_combineelement_CTYPE~(CTYPE, CTYPE,
+               unsigned)
+
+C Use: CTYPE res = vllvm_combineelement_CTYPE~(val, elt, idx)
+
+Raised To: %res = combineelement TY %val, LLVMTYPE elt, uint idx
+
+           where TY = [vector of LLVMTYPE] or [vector of n LLVMTYPE],
+           depending on the type to which %val is raised
+
+vllvm_constant_CTYPE~
+---------------------
+
+Purpose: Produce a vector constant.
+
+C Declaration: CTYPE vllvm_constant_CTYPE~(CTYPE,...)
+
+C Use: vllvm_constant_CTYPE~(val1, val2, ... valn)
+
+Raised To: <val1, val2, ..., valn>
+
+vllvm_permute_CTYPE~
+--------------------
+
+Purpose: Produce a permute intrinsic with variable vector type.
+
+C Declaration: CTYPE vllvm_permute_CTYPE~(CTYPE, unsigned,
+               CTYPE, unsigned)
+
+C Use: CTYPE res = vllvm_permute_CTYPE~(val, val_len, idx,
+       idx_len)
+
+Raised To: %res = call %permute_CTYPE~_vector([vector of LLVMTYPE]
+           %val, [vector of LLVMTYPE] %idx)
+
+Notes: This function is raised to an LLVM function with vector
+       arguments (rather than an LLVM instruction) because there is
+       not yet an LLVM instruction for permute.
+
+vllvm_fixed_permute_CTYPE~
+--------------------------
+
+Purpose: Produce a permute intrinsic with fixed vector type.
+
+C Declaration: CTYPE vllvm_fixed_permute_CTYPE~(CTYPE, unsigned,
+               CTYPE, unsigned)
+
+C Use: CTYPE res = vllvm_fixed_permute_CTYPE~(val, val_len, idx,
+       idx_len)
+
+Raised To: %res = call %fixed_permute_CTYPE~_vector([vector of val_len
+           LLVMTYPE] %val, [vector of idx_len LLVMTYPE] %idx)
+
+Notes: The result type is [vector of idx_len LLVMTYPE]
+
+       This function is raised to an LLVM function with vector
+       arguments (rather than an LLVM instruction) because there is
+       not yet an LLVM instruction for permute.
+
+Extending the API
+=================
+
+The API is easy to extend in two ways:
+
+1. Add a new type for an existing Vector C function.  If your program
+   has renamed a scalar type foo (e.g. typedef foo int), and you want
+   to use the Vector C functions on vectors of foo, you can declare a
+   function vllvm_OP-NAME_foo, following the pattern given above for
+   OP-NAME.  As long as OP-NAME and the pattern of parameter types is
+   legal, the raise pass will correctly raise the function.  This is
+   useful, e.g., in media benchmarks, which often have
+   platform-specific typedefs for basic types.
+
+2. Add a new Vector C intrinsic.  vllvm_permute and
+   vllvm_fixed_permute provide examples of how to do this.  Simply
+   declare a function vllvm_NAME, where NAME is any intrinsic name you
+   want (and can include any type mangling, such as CTYPE~).  Whenever
+   this function is used with an argument that has been raised to a
+   vector type, the entire function will be raised to
+   vllvm_NAME_vector, with all non-constant arguments replaced by
+   vectors.  Constant arguments remain scalars.  Thus
+   vllvm_foo_int(int x, int y) is raised to
+
+	     %vllvm_foo_int_vector([vector of int] %x, [vector of int]
+	     %y)
+ 
+   if called with arguments that are raised to [vector of int], while
+   it is raised to
+
+	     %vllvm_foo_int_vector([vector of int] %x, int %y)
+
+   if called with first argument that is raised to [vector of int] and
+   second argument a constant scalar.  The raise pass will break if a
+   vllvm_... function is called with one vector argument and another
+   variable argument that is not a vector, or if any function that
+   does not begin with vllvm_... is called with a vector argument.
+
+Limitations
+-----------
+
+ * You must run mem2reg (normally run automatically by llvm-gcc)
+   before the raise pass.  Any loads and stores of scalar values that
+   are to be raised (other than vector loads and stores indicated with
+   Vector C function calls) will break the pass.
+
+ * There is currently no way to represent passing vectors to functions
+   or returning vectors from functions in Vector C (although these
+   operations are supported in Vector LLVM).
+
+ * As indicated above, the raise pass is not very robust to errors.
+   It sometimes gives meaningful error messages, but mostly just
+   breaks when the Vector C program is incorrect.  For example, if the
+   two operands of an add instruction are raised to different vector
+   types, the raise pass will crash and assert something not
+   particularly helpful -- for instance, that an illegal add
+   instruction was created or illegal ReplaceAllUses was performed.
