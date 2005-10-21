@@ -25,11 +25,11 @@ Instruction selection for AltiVec and SSE is done via the LLVM-to-LLVM
 transformation passes opt -altivec and opt -sse, defined in
 $(VLLVMSRCDIR)/lib/Transforms/Vector/AltiVec.cpp and SSE.cpp.  These
 passes perform pattern matching on Vector LLVM expressions written
-with fixed vectors, and insert LLVM functions that can be written out
+with fixed vectors and insert LLVM functions that can be written out
 by the AltiVec and SSE C writers as C API functions, then fed through
 gcc with the altivec or sse2 flag enabled.
 
-The AltiVec and SSE writers subclass the CWriter class defined in
+The AltiVec and SSE C writers subclass the CWriter class defined in
 $(LLVMSRCDIR)/lib/Target/CBackend/Writer.cpp in mainline LLVM.  To
 enable this, Vector LLVM pulls out the class definition for CWriter
 into a separate file CWriter.h and makes some functions in CWriter
@@ -40,7 +40,7 @@ way as in mainline LLVM).  The SIMD backends themselves are defined in
 TargetMachine and Writer files located in
 $(VLLVMSRCDIR)/lib/Target/CBackend.  They define options
 -march=altivec-c and -march=sse-c that can be invoked with llc to
-write out C code with gcc vector functions.
+write out C code with gcc intrinsics.
 
 Running the Backends
 ====================
@@ -67,15 +67,15 @@ unfortunately, it means that if the C backends are run on "raw" Vector
 LLVM code (without the appropriate -altivec or -sse transformation
 first), they will break.
 
-What Works
-==========
+Code Generation Capabilities
+============================
 
 Don't expect to run arbitrary Vector LLVM code through the code
 generation process described above and have it work.  Any legal Vector
 LLVM code can be run through the -altivec or -sse passes to produce
 more legal Vector LLVM (inapplicable constructs, such as variable
 vectors, are just ignored).  However, unless the result is in a form
-that the AltiVec or SSE backend can understand, the backend will choke
+that the AltiVec or SSE writer can understand, the writer will choke
 when it tries to write out the C file.  For example, if your Vector
 LLVM program contains variable vectors, those vectors will be ignored
 by the -altivec or -sse passes, but will cause the AltiVec or SSE C
@@ -102,48 +102,178 @@ The AltiVec and SSE2 writers understand the following vector types:
 
 In particular, this means you must block all loops manually on the
 correct vector length.  I do not yet have a pass that will take
-variable (long) vectors and block them to fixed vectors.
+variable (long) vectors and block them to fixed vectors.  In what
+follows (and in the source code), I refer to the types listed above as
+"proper types" for AltiVec and SSE.
 
 I have not tried to make arrays of vectors, put vectors in structs,
 etc.  Such code may work, but I haven't tried it.  Any other vector
-types (e.g., [vector of int] or [vector of 8 int]) will cause the
-writers to break.  Any legal LLVM type with no vectors in it is, of
-course, allowed, and will be handled by the normal C backend.
-
-If your code is written with the types listed above only, and uses
-patterns that the -altivec or -sse pass recognizes (as discussed
-below), then it should go through the writer and produce correct code.
-However, if your vector code uses patterns of operations that -altivec
-or -sse passes cannot recognize, these passes can introduce types that
-will break the writers.
+types (e.g., [vector of int], [vector of 8 int], or any sort of vector
+of float) will cause the writers to break.  Any legal LLVM type with
+no vectors in it is, of course, allowed, and will be handled by the
+normal C backend.
 
 Instructions
 ------------
 
+Unless otherwise stated, the types given in the examples below are for
+illustration only.  The types must follow the given pattern, but need
+not be exactly as stated.  For example, a code example given with
+types [vector of 8 short] and [vector of 16 sbyte] should also work
+with [vector of 4 int] and [vector of 8 short].
+
+load and store
+
+The AltiVec and SSE backends will correctly translate loads and stores
+from/to pointers of proper type.
+
 fixed vimm
 
-You should be able to use any fixed vimm instruction with AltiVec or
-SSE, so long as it generates one of the types listed above.  Variable
-vimm will not work.  For AltiVec, a fixed vimm instruction becomes
-either a cast (in the case of a constant) or an altivec_splat
-intrinsic (in the case of a nonconstant).  For SSE, a fixed vimm
-becomes an _mm_splat macro, which expands to a _mm_set intrinsic.
+You can use any fixed vimm instruction with AltiVec or SSE, so long as
+it generates a proper type.  Variable vimm will not work.  For
+AltiVec, a fixed vimm instruction becomes either a cast (in the case
+of a constant) or an altivec_splat intrinsic (in the case of a
+nonconstant).  For SSE, a fixed vimm becomes an _mm_splat macro, which
+expands to a _mm_set intrinsic.
+
+Arithmetic Operators
+
+The AltiVec backend will generate altivec_add, altivec_mul, and
+altivec_sub intrinsics from the corresponding Vector LLVM
+instructions, so long as the types are not promoted.  The SSE backend
+has better support for type promotion (because it has fewer complex
+instructions like mradds).  It will generate _mm_add, _mm_mullo, and
+_mm_sub correctly even if the types are promoted.  For example,
+
+    %tmp1 = cast [vector of 8 short] %op1 to [vector of 8 int]
+    %tmp2 = cast [vector of 8 short] %op2 to [vector of 8 int]
+    %tmp3 = mul [vector of 8 int] %tmp1, %tmp2
+
+yields two values
+
+    tmp3a = _mm_mulhi_epi16(op1, op2)
+    tmp3b = _mm_mullo_epi16(op1, op2)
+
+which are propagated to the uses of %tmp3.  Eventually, if a produced
+[vector of 8 int] value is cast back to [vector of 8 short], the two
+values are merged back into one.  However, this merging is only partly
+implemented in the opt -sse pass.  For now, only multiplication
+followed by addition of a constant is supported (as in AltiVec
+mradds).  If you write code that causes two values to be produced, but
+the code generator doesn't know how to merge them, your program will
+break.  It should be straightforward to generalize this merging
+process.
+
+For AltiVec only, the backend recognizes the following as mladd(op1,
+op2, op3),
+
+    %tmp1 = mul [vector of 8 short] %op1, %op2
+    %tmp2 = add [vector of 8 short] %tmp1, %op3
+
+it will generate mradd(op1, op2, 0) if it sees the following,
+
+    %tmp1 = cast [vector of 8 short] %op1 to [vector of 8 uint]
+    %tmp3 = cast [vector of 8 short] %op2 to [vector of 8 uint]
+    %tmp4 = mul [vector of 8 uint] %tmp1, %tmp3
+    %tmp8 = shr [vector of 8 uint] %tmp7, ubyte 15
+    %tmp9 = cast [vector of 8 uint] %tmp8 to [vector of 8 short]
+
+and it recognizes the following monstrous pattern as
+altivec_mradds(op1, op2, op3)
+
+    %tmp1 = cast [vector of 8 short] %op1 to [vector of 8 uint]
+    %tmp3 = cast [vector of 8 short] %op2 to [vector of 8 uint]
+    %tmp4 = mul [vector of 8 uint] %tmp1, %tmp3
+    %tmp5 = fixed vimm short 16384, uint 8
+    %tmp6 = cast [vector of 8 short] %tmp5 to [vector of 8 uint]
+    %tmp7 = add [vector of 8 uint] %tmp4, %tmp6
+    %tmp8 = shr [vector of 8 uint] %tmp7, ubyte 15
+    %tmp9 = cast [vector of 8 uint] %tmp8 to [vector of 8 short]
+    %res = call [vector of 8 short] %vllvm_adds_short_vector([vector
+      of 8 short] %tmp9, [vector of 8 short] %op3)
+
+Logical Operators
+
+Currently, only LLVM and is supported.  It becomes altivec_and on
+AltiVec and _mm_and on SSE.
+
+vselect
+
+The AltiVec backend will convert a Vector LLVM vselect instruction to
+altivec_sel.  The SSE backend will synthesize a vector select using
+logical operations (SSE does not provide a native select instruction).
+
+Conditional Operators (vsetcc)
+
+The AltiVec backend will convert a Vector LLVM vsetgt instruction to
+altivec_cmpgt.  The SSE backend will convert vsetgt to _mm_cmpgt.  It
+is straightforward to extend this to the other vsetcc instructions,
+but I haven't done this yet.
+
+Shift Operators
+
+The AltiVec backend will convert a Vector LLVM shl instruction to
+altivec_sll. It will convert a shr instruction to altivec_sra if the
+type is signed and altivec_srl if the type is unsigned.  The SSE
+backend does the same thing, using the intrinsics _mm_slli, _mm_slli,
+and _mm_srai.
 
 extract
 
 The AltiVec backend will convert the following pattern
 
    %lo = extract [vector of 16 sbyte] %val, uint 0, uint 1, uint 8
-   %hi = extract [vecotr of 16 sbyte] %val, uint 8, uint 1, uint 8
+   %hi = extract [vector of 16 sbyte] %val, uint 8, uint 1, uint 8
    %unpklo = cast [vector of 16 sbyte] %lo to [vector of short]
    %unpkhi = cast [vector of 16 sbyte] %hi to [vector of short]
 
-to the altivec_unpack_lo and altivec_unpack_hi intrinsics.  This only
-works for the types stated above, and it only works on AltiVec.
+to altivec_unpack_lo and altivec_unpack_hi.  This only works for the
+types stated above, and it only works on AltiVec.
 
 combine
 
-vselect
+The AltiVec backend will convert the following pattern
 
-vsetcc
+   %tmp1 = combine [vector of 16 short] %tmp0, [vector of 8 short] %hi,
+     uint 0, uint 1
+   %tmp2 = combine [vector of 16 short], %tmp1 [vector of 8 short] %lo,
+     uint 8, uint 1
+   %res = cast [vector of 16 short] %tmp2 to [vector of 16 sbyte]
+
+to altivec_pack.  The SSE backend will synthesize an unsaturated pack
+(using the SSE saturated pack intrinsic _mm_packs) for signed values
+only.
+
+For AltiVec only, if a vllvm_saturate intrinsic is used instead of the
+cast, the result will be altivec_packsu.  You can also use a
+vllvm_fixed_permute instead of the cast, in which case you will get
+altivec_perm.
+
+The AltiVec backend will also convert the following pattern
+
+   %tmp1 = combine [vector of 16 short] %tmp0, [vector of 8 short] %hi,
+     uint 0, uint 1
+   %tmp2 = combine [vector of 16 short] %tmp1, [vector of 8 short] %lo,
+     uint 8, uint 1
+   %hi = extract [vector of 16 short] %tmp1, uint 0, uint 2, uint 8
+   %lo = extract [vector of 16 short] %tmp2, uint 1, uint 2, uint 8
+
+to altivec_mergeh and altivec_mergel.  The SSE backend will convert
+this pattern to _mm_unpackhi and _mm_unpacklo.
+
+Explicit Intrinsics
+-------------------
+
+You can use any AltiVec or SSE intrinsic by declaring and using the
+function vllvm_NAME_CTYPE~, where NAME is the name of the altivec
+intrinsic (without the altivec or _mm_ prefix, and without any SSE
+suffix such as _epi16) and CTYPE~ follows the convention for type
+mangling explained in the Vector C documentation (in fact, the exact
+CTYPE~ convention is not required, but some name mangling for the
+different types is).  Doing this makes the program non-portable, but
+it allows you to write AltiVec or SSE programs that are not supported
+by the code generators (in essence doing hand instruction selection
+for AltiVec or SSE).  You can then migrate the AltiVec or SSE
+intrinsics to the more portable Vector LLVM constructs as the code
+generators improve.
 

@@ -1,5 +1,4 @@
 VECTOR C REFERENCE
-Vector LLVM
 Rob Bocchino
 October 20, 2005
 ==================
@@ -79,7 +78,7 @@ propagated to the other instructions by the chain of defs and uses.
 
 Note that the vector source values must all be Vector C functions, but
 the operations may be either Vector C functions or normal scalar C
-operations (as in the above example, where we have used the normal C
+operations (as in the example above, where we have used the normal C
 operators * and +).  In the case of normal C operations, the raise
 pass will see that the operands are vectors and raise the operation to
 a vector operation.  It is illegal, however, to attempt to combine
@@ -104,8 +103,8 @@ then the raise pass will crash horribly.
 API Reference
 =============
 
-The following reference describes the functions making up the Vector C
-API.  It uses the following conventions:
+The following reference describes the functions comprising the Vector
+C API.  It uses the following conventions:
 
  * CTYPE is one of the C scalar types { char, unsigned uchar (uchar),
    short, unsigned short (ushort), int, unsigned int (uint), long,
@@ -125,7 +124,7 @@ API.  It uses the following conventions:
    getting unduly long.
 
 All function declarations in the API follow the pattern
-vllvm_OP-NAME_CTYPE~, where FN-NAME is the name of the operation
+vllvm_OP-NAME_CTYPE~, where OP-NAME is the name of the operation
 (which usually corresponds to a Vector LLVM instruction or intrinsic).
 
 vllvm_vimm_CTYPE~
@@ -404,13 +403,12 @@ The API is easy to extend in two ways:
    vectors.  Constant arguments remain scalars.  Thus
    vllvm_foo_int(int x, int y) is raised to
 
-	     %vllvm_foo_int_vector([vector of int] %x, [vector of int]
-	     %y)
+      %vllvm_foo_int_vector([vector of int] %x, [vector of int] %y)
  
    if called with arguments that are raised to [vector of int], while
    it is raised to
 
-	     %vllvm_foo_int_vector([vector of int] %x, int %y)
+      %vllvm_foo_int_vector([vector of int] %x, int %y)
 
    if called with first argument that is raised to [vector of int] and
    second argument a constant scalar.  The raise pass will break if a
