@@ -1,0 +1,85 @@
+LLVMSRCDIR= $(HOME)/llvm/src
+LLVMGCCFLAGS += -I$(LLVMSRCDIR)/include/VectorC -I$(LLVMSRCDIR)/include/SIMD #-Wa,-unroll-threshold=200
+SSECFLAGS += -I$(LLVMSRCDIR)/include/SIMD -msse2 -O2
+ALTIVECCFLAGS += -I$(LLVMSRCDIR)/include/SIMD -faltivec -O2
+
+
+# Specify how many runs you want here (for timing). You can also say
+# NRUNS=n on the command line.
+#
+ifndef $(NRUNS)
+NRUNS= 1
+endif
+
+all:
+	# Please specify altivec or sse!
+
+altivec: altivec.handwritten altivec.vectorc
+	./altivec.handwritten
+	./altivec.vectorc
+
+sse: sse.handwritten sse.vectorc
+	./sse.handwritten
+	./sse.vectorc
+
+#
+# General stuff
+#
+main.bc : main.c
+	llvm-gcc $(LLVMGCCFLAGS) -DNRUNS=$(NRUNS) -c -o $@ $<
+
+$(NAME).vectorc.bc : $(NAME).vectorc.c
+	llvm-gcc $(LLVMGCCFLAGS) -c $< -o $@	
+
+$(NAME).raised.bc : $(NAME).vectorc.bc
+	opt -raisevectors < $< > $@
+
+%.ll : %.bc
+	llvm-dis < $< > $@
+
+clean:
+	rm -f altivec.handwritten sse.handwritten altivec.vectorc sse.vectorc *.o *.s *.bc *.exe *.ll *.cbe.c
+
+#
+# AltiVec-specific stuff
+#
+../_malloc.bc : ../_malloc.c
+	llvm-gcc $(LLVMGCCFLAGS) -DMEMALIGN=0 -c -o $@ $<
+
+altivec.handwritten: $(NAME).altivec.handwritten.c ../_malloc.c main.c
+	gcc $(ALTIVECCFLAGS) -DMEMALIGN=0 -DNRUNS=$(NRUNS) -o $@ $+
+
+$(NAME).altivec.bc : $(NAME).raised.bc
+	opt < $< -altivec > $@
+
+altivec.vectorc.bc: $(NAME).altivec.bc ../_malloc.bc main.bc
+	llvm-gcc $(LLVMGCCFLAGS) $+ -o altivec.vectorc
+
+altivec.vectorc.cbe.c: altivec.vectorc.bc
+	llc -march=altivec-c < $< | sed 's/_2E_/_/g' > $@	
+
+altivec.vectorc: altivec.vectorc.cbe.c
+	gcc $(ALTIVECCFLAGS) -o $@ $<
+
+#
+# SSE-specific stuff
+#
+../_malloc.memalign.bc : ../_malloc.c
+	llvm-gcc $(LLVMGCCFLAGS) -DMEMALIGN=1 -c -o $@ $<
+
+sse.handwritten: $(NAME).sse.handwritten.c ../_malloc.c main.c
+	gcc $(SSECFLAGS) -DMEMALIGN=1 -DNRUNS=$(NRUNS) -o $@ $+
+
+$(NAME).sse.bc : $(NAME).raised.bc
+	opt < $< -sse > $@
+
+sse.vectorc.bc: $(NAME).sse.bc ../_malloc.memalign.bc main.bc
+	llvm-gcc $(LLVMGCCFLAGS) $+ -o sse.vectorc
+
+sse.vectorc.cbe.c: sse.vectorc.bc
+	llc -march=sse-c < $< | sed 's/_2E_/_/g' > $@	
+
+sse.vectorc: sse.vectorc.cbe.c
+	gcc $(SSECFLAGS) -o $@ $<
+
+
