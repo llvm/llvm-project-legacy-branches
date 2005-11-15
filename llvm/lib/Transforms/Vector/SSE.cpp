@@ -43,7 +43,6 @@ namespace {
     bool runOnFunction(Function &F);
     void visitCastInst(CastInst &);
     void visitVImmInst(VImmInst &);
-    void visitExtractInst(ExtractInst &);
     void visitCombineInst(CombineInst &);
     void visitVSelectInst(VSelectInst &);
     void visitAdd(BinaryOperator &);
@@ -165,7 +164,6 @@ namespace {
 	  DEBUG(std::cerr << "Visiting instruction " << *BI);
 	  visit(*BI);
 	}
-    //visit(F);
     if (changed) deleteInstructions();
     return changed;
   }
@@ -204,72 +202,9 @@ namespace {
 	  changed = true;
 	}
       }
-    } else {
-      // We need to use a _mm_set instruction
-      //
-      const Type *Ty = CI.getOperand(0)->getType();
-      unsigned primitiveSize = Ty->getPrimitiveSize();
-      unsigned vectorSize = getVectorSize(Ty);
-      const FixedVectorType *RetTy = FixedVectorType::get(Ty, vectorSize);
-      CallInst *call = VectorUtils::getCallInst(RetTy, getSSEName("splat", RetTy),
-						 CI.getOperand(0), "splat", &CI);
-      if (RetTy != CI.getType())
-	CI.replaceAllUsesWith(new CastInst(call, CI.getType(), "cast", &CI));
-      else 
-	CI.replaceAllUsesWith(call);
-      instructionsToDelete.insert(&CI);
-      changed = true;
     }
   }
   
-  // Check whether an extract instruction should be turned into
-  // SSE_unpack
-  //
-  // FIXME:  This code doesn't work
-  //
-  void SSE::visitExtractInst(ExtractInst &EI) {
-    Value *v = EI.getOperand(0);
-    ConstantUInt *start = dyn_cast<ConstantUInt>(EI.getOperand(1));
-    ConstantUInt *stride = dyn_cast<ConstantUInt>(EI.getOperand(2));
-    ConstantUInt *len = dyn_cast<ConstantUInt>(EI.getOperand(3));
-    if (!start || !stride || !len) return;
-    if (stride->getValue() != 1 || len->getValue() != 8) return;
-    std::string funcName;
-    if (start->getValue() == 0)
-      funcName = "SSE_unpackh_short";
-    else if (start->getValue() == 8)
-      funcName = "SSE_unpackl_short";
-    else return;
-    const FixedVectorType *VT = dyn_cast<FixedVectorType>(v->getType());
-    if (VT == FixedVectorType::get(Type::UByteTy, 16)) {
-      if (!EI.hasOneUse()) return;
-      CastInst *cast = dyn_cast<CastInst>(*EI.use_begin());
-      if (!cast) return;
-      const FixedVectorType *argTy = FixedVectorType::get(Type::SByteTy, 16);
-      const FixedVectorType *retTy = FixedVectorType::get(Type::ShortTy, 8);
-      if (cast->getType() != FixedVectorType::get(Type::ShortTy, 8))
-	return;
-      CastInst *arg = new CastInst(v, argTy, "cast", &EI);
-      std::vector<const Type*> formalArgs;
-      formalArgs.push_back(argTy);
-      std::vector<Value*> args;
-      args.push_back(arg);
-      FunctionType *FType = FunctionType::get(retTy, formalArgs, false);
-      Module *M = EI.getParent()->getParent()->getParent();
-      Function *unpack = 
-	M->getOrInsertFunction(funcName, FType);
-      CallInst *call = new CallInst(unpack, args, "unpack", &EI);
-      BinaryOperator *andInst = 
-	BinaryOperator::create(Instruction::And, call,
-			       ConstantExpr::getCast(ConstantSInt::get(Type::ShortTy, 0xFF), retTy), 
-			       "and", &EI);
-      cast->replaceAllUsesWith(andInst);
-      instructionsToDelete.insert(cast);
-      instructionsToDelete.insert(&EI);
-      changed = true;
-    }
-  }
-
   void SSE::visitCombineInst(CombineInst &CI) {
     Instruction *combine1 = cast<CombineInst>(&CI);
     Value *v1 = CI.getOperand(0);

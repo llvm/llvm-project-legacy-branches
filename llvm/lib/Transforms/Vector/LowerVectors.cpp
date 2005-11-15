@@ -63,6 +63,7 @@ namespace {
     void visitFreeInst(FreeInst&);
     void visitStoreInst(StoreInst&);
     void visitLoadInst(LoadInst&);
+    void visitGetElementPtrInst(GetElementPtrInst&);
     void visitInstruction(Instruction& I) {
       std::cerr << "LowerVectors class can't handle instruction " << I << "!\n";
       exit(1);
@@ -110,7 +111,7 @@ namespace {
   class InstructionLowering : public InstVisitor<InstructionLowering> {
     friend class LowerVectors;
 
-    Instruction *vector;
+    Value *vector;
     Value *result, *vectorIndex;
     std::vector<Value*> idx;
     BasicBlock *body;
@@ -219,6 +220,8 @@ namespace {
   /// Given a vector type value, look in the lengthMap to get its length.
   ///
   Value *getLength(Value *key) {
+    if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(key->getType()))
+      return ConstantUInt::get(Type::UIntTy, VT->getNumElements());
     Value*& V = lengthMap[key];
     if (!V) {
       V = new Argument(Type::UIntTy);
@@ -248,6 +251,9 @@ namespace {
   /// type to the same type.
   ///
   const Type* getLoweredMemoryType(const Type* Ty) {
+    if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(Ty)) {
+      return VT->getElementType();
+    }
     if (const VectorType *VectorTy = dyn_cast<VectorType>(Ty)) {
       std::vector<const Type*> Params;
       Params.push_back(PointerType::get(VectorTy->getElementType()));
@@ -284,7 +290,10 @@ namespace {
   /// lowered.
   ///
   Value *getLoweredValue(Value *key) {
-    const VectorType *VectorTy = dyn_cast<VectorType>(key->getType());
+    if (!VectorUtils::containsVector(key->getType()) &&
+	!isa<VScatterInst>(key)) {
+      return key;
+    }
     Value*& value = loweringMap[key];
     if (!value) {
       value = new Argument(getLoweredRegisterType(key->getType()));
@@ -501,7 +510,27 @@ namespace {
   }
 
   void LowerVectors::visitCastInst(CastInst &CI) {
-    InstructionLowering lower(&CI, getLength(CI.getOperand(0)));
+    if (isa<PointerType>(CI.getType())) {
+      CastInst *Cast = 
+	new CastInst(getLoweredValue(CI.getOperand(0)),
+		     getLoweredMemoryType(CI.getType()),
+		     "cast", &CI);
+      setLoweredValue(&CI, Cast);
+    } else {
+      InstructionLowering lower(&CI, getLength(CI.getOperand(0)));
+    }
+  }
+
+  void LowerVectors::visitGetElementPtrInst(GetElementPtrInst &GEP) {
+    std::vector<Value*> idx;
+    for (User::op_iterator I = GEP.idx_begin(), E = GEP.idx_end();
+	 I != E; ++I) {
+      idx.push_back(*I);
+    }
+    GetElementPtrInst *NewGEP = 
+      new GetElementPtrInst(getLoweredValue(GEP.getPointerOperand()),
+			    idx, "gep", &GEP);
+    setLoweredValue(&GEP, NewGEP);
   }
 
   void LowerVectors::visitBinaryOperator(BinaryOperator &BO) {
@@ -601,7 +630,12 @@ namespace {
   }
 
   void LowerVectors::visitStoreInst(StoreInst &SI) {
-    if (isa<VectorType>(SI.getOperand(0)->getType())) {
+    const Type *Ty = SI.getOperand(0)->getType();
+    if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(SI.getOperand(0)->getType())) {
+      Value *length = getLength(SI.getOperand(0));//ConstantUInt::get(Type::UIntTy, VT->getNumElements());
+      Value *ptr = getLoweredValue(SI.getOperand(1));
+      InstructionLowering lower(&SI, length, ptr);
+    } else if (isa<VectorType>(SI.getOperand(0)->getType())) {
       std::vector<Value*> Idx;
       Idx.push_back(ConstantUInt::get(Type::UIntTy, 0));
       Idx.push_back(ConstantUInt::get(Type::UIntTy, 0));
@@ -623,7 +657,10 @@ namespace {
   }
 
   void LowerVectors::visitLoadInst(LoadInst &LI) {
-    if (isa<VectorType>(cast<PointerType>(LI.getOperand(0)->getType())->getElementType())) {
+    const Type *Ty = cast<PointerType>(LI.getOperand(0)->getType())->getElementType();
+    if (isa<FixedVectorType>(Ty)) {
+      setLoweredValue(&LI, getLoweredValue(LI.getOperand(0)));
+    } else if (isa<VectorType>(Ty)) {
       std::vector<Value*> Idx;
       Idx.push_back(ConstantUInt::get(Type::UIntTy, 0));
       Idx.push_back(ConstantUInt::get(Type::UIntTy, 1));
@@ -654,7 +691,16 @@ namespace {
     const VectorType *VectorTy = dyn_cast<VectorType>(Ty);
     assert(VectorTy && "Instruction must be of vector type!");
     const Type *elementType = VectorTy->getElementType();
-    vector = allocateVector(elementType, length, "vector", I, ptr);
+    if (isa<FixedVectorType>(Ty)) {
+      if (isa<StoreInst>(I)) {
+	vector = ptr;
+      } else {
+	vector = new AllocaInst(VectorTy->getElementType(), length, "vector", 
+				&(I->getParent()->getParent()->getEntryBlock().front()));
+      }
+    } else {
+      vector = allocateVector(elementType, length, "vector", I, ptr);
+    }
     setLoweredValue(I, vector, length);
 
     // Set up the loop index
@@ -751,7 +797,7 @@ namespace {
   void InstructionLowering::visitCombineInst(CombineInst &CI) {
     // Here we are generating code for
     //
-    //   %tmp = extract v1, v2, start, stride
+    //   %tmp = combine v1, v2, start, stride
     //
     // First we compute secondIndex, the index into v2.  If start <=
     // vectorIndex < start + stride * getLength(v2), then
@@ -1001,7 +1047,7 @@ namespace {
   //                     VScatterLowering implementation
   //===----------------------------------------------------------------------===//
 
-  /// Lower a vstore instruction.  Find the array that holds the
+  /// Lower a vscatter instruction.  Find the array that holds the
   /// vector contents, then copy that array to the indexed memory
   /// locations.
   ///

@@ -41,7 +41,6 @@ namespace {
 
   public:
     bool runOnFunction(Function &F);
-    void visitCastInst(CastInst &);
     void visitVImmInst(VImmInst &);
     void visitExtractInst(ExtractInst &);
     void visitCombineInst(CombineInst &);
@@ -103,7 +102,6 @@ namespace {
     return "altivec_" + baseName + "_" + VT->getElementType()->getDescription();
   }
 
-
   //===----------------------------------------------------------------------===//
   //                     AltiVec implementation
   //===----------------------------------------------------------------------===//
@@ -114,13 +112,15 @@ namespace {
     instructionsToDelete.clear();
     changed = false;
     for (Function::iterator FI = F.begin(), FE = F.end(); 
-	 FI != FE; ++FI)
+	 FI != FE; ++FI) {
       for (BasicBlock::iterator BI = FI->begin(), BE = FI->end(); 
-	   BI != BE; ++BI)
+	   BI != BE; ++BI) {
 	if (!instructionsToDelete.count(BI)) {
 	  DEBUG(std::cerr << "Visiting instruction " << *BI);
 	  visit(*BI);
 	}
+      }
+    }
     if (changed) deleteInstructions();
     return changed;
   }
@@ -157,35 +157,6 @@ namespace {
     changed = true;
   }
 
-  void AltiVec::visitCastInst(CastInst &CI) {
-    // We need only worry about a cast of a non-constant scalar to a
-    // vector; the AltiVec C Backend can handle the other cases
-    // directly.
-    //
-    const VectorType *VT = dyn_cast<VectorType>(CI.getType());
-    if (!VT || !isProperType(VT) ||
-	isa<VectorType>(CI.getOperand(0)->getType()) ||
-	isa<Constant>(CI.getOperand(0)))
-      return;
-    // We need to create a new vector on the stack, store the scalar
-    // value into it, and splat the value into a vector register
-    //
-    AllocaInst *vectorPtr = new AllocaInst(VT, 0, "alloca", &CI);
-    Value *element = CI.getOperand(0); 
-    if (element->getType() != VT->getElementType())
-      element = new CastInst(element, VT->getElementType(), "cast", &CI);
-    CastInst *scalarPtr = new CastInst(vectorPtr, PointerType::get(VT->getElementType()),
-				       "cast", &CI);
-    StoreInst *store = new StoreInst(element, scalarPtr, &CI);
-    LoadInst *vector = new LoadInst(vectorPtr, "load", &CI);
-    CallInst *call = VectorUtils::getCallInst(VT, getAltiVecName("splat", VT),
-					      vector, ConstantUInt::get(Type::UByteTy, 0),
-					      "splat", &CI);
-    CI.replaceAllUsesWith(call);
-    instructionsToDelete.insert(&CI);
-    changed = true;
-  }
-  
   // Check whether an extract instruction should be turned into
   // altivec_unpack
   //
@@ -403,7 +374,7 @@ namespace {
       CastInst *addCast0 = 0, *addCast2 = 0, *shrCast = 0;
       VImmInst *VImm = 0;
       ShiftInst *shr = 0;
-      CallInst *adds;
+      CallInst *adds = 0;
       unsigned offset = 0, shamt = 0;
       if (&BO == add->getOperand(0))
 	addCast0 = dyn_cast<CastInst>(add->getOperand(1));
@@ -427,30 +398,52 @@ namespace {
       }
       if (shrCast && shrCast->hasOneUse()) {
 	adds = dyn_cast<CallInst>(*shrCast->use_begin());
-	Function *F = adds->getCalledFunction();
-	if (!F || F->getName().substr(0, 10) != "vllvm_adds")
+	if (adds) {
+	  Function *F = adds->getCalledFunction();
+	  if (!F || F->getName().substr(0, 10) != "vllvm_adds")
 	    adds = 0;
+	}
       }
       if (mulCast0 && mulCast1 && addCast0 && VImm &&
-	  offset == 16384 && shrCast && shr && shamt == 15 && 
-	  adds) {
-	VT = cast<FixedVectorType>(adds->getType());
-	CallInst *mradds = VectorUtils::getCallInst(VT, getAltiVecName("mradds", VT),
-						    new CastInst(mulCast0->getOperand(0), VT, "cast", adds), 
-						    new CastInst(mulCast1->getOperand(0), VT, "cast", adds),
-						    (shrCast == adds->getOperand(1)) ? adds->getOperand(2) : adds->getOperand(1),
-						    "mradds", adds);
-	adds->replaceAllUsesWith(mradds);
-	instructionsToDelete.insert(&BO);
-	instructionsToDelete.insert(add);
-	instructionsToDelete.insert(shr);
-	instructionsToDelete.insert(mulCast0);
-	instructionsToDelete.insert(mulCast1);
-	instructionsToDelete.insert(addCast0);
-	instructionsToDelete.insert(VImm);
-	instructionsToDelete.insert(shrCast);
-	instructionsToDelete.insert(adds);
-	changed = true;
+	  offset == 16384 && shrCast && shr && shamt == 15) {
+	if (adds) {
+	  VT = cast<FixedVectorType>(adds->getType());
+	  CallInst *mradds = VectorUtils::getCallInst(VT, getAltiVecName("mradds", VT),
+						      new CastInst(mulCast0->getOperand(0), VT, "cast", adds), 
+						      new CastInst(mulCast1->getOperand(0), VT, "cast", adds),
+						      (shrCast == adds->getOperand(1)) ? adds->getOperand(2) : adds->getOperand(1),
+						      "mradds", adds);
+	  adds->replaceAllUsesWith(mradds);
+	  instructionsToDelete.insert(&BO);
+	  instructionsToDelete.insert(add);
+	  instructionsToDelete.insert(shr);
+	  instructionsToDelete.insert(mulCast0);
+	  instructionsToDelete.insert(mulCast1);
+	  instructionsToDelete.insert(addCast0);
+	  instructionsToDelete.insert(VImm);
+	  instructionsToDelete.insert(shrCast);
+	  instructionsToDelete.insert(adds);
+	  changed = true;
+	} else {
+	  VT = cast<FixedVectorType>(shrCast->getType());
+	  CallInst *mradds = VectorUtils::getCallInst(VT, getAltiVecName("mradds", VT),
+						      new CastInst(mulCast0->getOperand(0), VT, "cast", shrCast), 
+						      new CastInst(mulCast1->getOperand(0), VT, "cast", shrCast),
+						      new VImmInst(Constant::getNullValue(VT->getElementType()),
+								   ConstantUInt::get(Type::UIntTy, VT->getNumElements()),
+								   true, "vimm", shrCast),
+						      "mradds", shrCast);
+	  shrCast->replaceAllUsesWith(mradds);
+	  instructionsToDelete.insert(&BO);
+	  instructionsToDelete.insert(add);
+	  instructionsToDelete.insert(shr);
+	  instructionsToDelete.insert(mulCast0);
+	  instructionsToDelete.insert(mulCast1);
+	  instructionsToDelete.insert(addCast0);
+	  instructionsToDelete.insert(VImm);
+	  instructionsToDelete.insert(shrCast);
+	  changed = true;
+	}
 	return;
       }    
       // Check for mladd pattern

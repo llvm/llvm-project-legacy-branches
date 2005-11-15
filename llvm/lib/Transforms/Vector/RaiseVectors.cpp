@@ -492,10 +492,13 @@ namespace {
   /// Raise a phi node
   ///
   void RaiseVectors::visitPHINode(PHINode &PN) {
-    PHINode *raisedValue =
-      new PHINode(VectorType::get(PN.getType()), "phi",
-		  &PN);
     unsigned length = getVectorLength(&PN);
+    const VectorType *VT = 0;
+    if (length)
+      VT = FixedVectorType::get(PN.getType(), length);
+    else
+      VT = VectorType::get(PN.getType());
+    PHINode *raisedValue = new PHINode(VT, "phi", &PN);
     for (unsigned i = 0; i < PN.getNumIncomingValues(); ++i)
       raisedValue->addIncoming(getRaisedValue(PN.getIncomingValue(i), length),
 			       PN.getIncomingBlock(i));
