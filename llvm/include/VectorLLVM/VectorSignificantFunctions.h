@@ -189,13 +189,13 @@ namespace VectorSignificantFunctions {
       break;
     case extract:
       // An extract function must have precisely 4 arguments: a value
-      // and 3 unsigned ints
+      // an unsigned int, and int, and an unsigned int
       //
       if (numParams != 4 || isVarArg)
 	return false;
       if (FTy->getParamType(1) != Type::UIntTy)
 	return false;
-      if (FTy->getParamType(2) != Type::UIntTy)
+      if (!FTy->getParamType(2)->isIntegral())
 	return false;
       if (FTy->getParamType(3) != Type::UIntTy)
 	return false;
