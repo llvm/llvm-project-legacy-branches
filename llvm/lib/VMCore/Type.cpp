@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/MathExtras.h"
 #include <algorithm>
 #include <iostream>
 using namespace llvm;
@@ -42,13 +43,12 @@ AbstractTypeUser::~AbstractTypeUser() {}
 static std::map<const Type*, std::string> ConcreteTypeDescriptions;
 static std::map<const Type*, std::string> AbstractTypeDescriptions;
 
-Type::Type( const std::string& name, TypeID id )
-  : RefCount(0), ForwardType(0) {
-  if (!name.empty())
-    ConcreteTypeDescriptions[this] = name;
-  ID = id;
-  Abstract = false;
+Type::Type(const char *Name, TypeID id)
+  : ID(id), Abstract(false),  RefCount(0), ForwardType(0) {
+  assert(Name && Name[0] && "Should use other ctor if no name!");
+  ConcreteTypeDescriptions[this] = Name;
 }
+
 
 const Type *Type::getPrimitiveType(TypeID IDNumber) {
   switch (IDNumber) {
@@ -213,6 +213,14 @@ const Type *Type::getForwardedTypeInternal() const {
   return ForwardType;
 }
 
+void Type::refineAbstractType(const DerivedType *OldTy, const Type *NewTy) {
+  abort();
+}
+void Type::typeBecameConcrete(const DerivedType *AbsTy) {
+  abort();
+}
+
+
 // getTypeDescription - This is a recursive function that walks a type hierarchy
 // calculating the description for a type.
 //
@@ -289,12 +297,6 @@ static std::string getTypeDescription(const Type *Ty,
     Result = "[";
     Result += utostr(NumElements) + " x ";
     Result += getTypeDescription(ATy->getElementType(), TypeStack) + "]";
-    break;
-  }
-  case Type::StreamTyID: {
-    const StreamType *STy = cast<StreamType>(Ty);
-    Result = "[stream of ";
-    Result += getTypeDescription(STy->getElementType(), TypeStack) + "]";
     break;
   }
   case Type::VectorTyID: {
@@ -451,12 +453,6 @@ ArrayType::ArrayType(const Type *ElType, uint64_t NumEl)
 PointerType::PointerType(const Type *E) : SequentialType(PointerTyID, E) {
   // Calculate whether or not this type is abstract
   setAbstract(E->isAbstract());
-}
-
-StreamType::StreamType(const Type *E)
-  : SequentialType(StreamTyID, E) {
-  assert((E->isIntegral() || E->isFloatingPoint() || isa<FixedVectorType>(E)) && 
-         "Elements of a StreamType must be a primitive or fixed vector type!");
 }
 
 VectorType::VectorType(const Type *E, bool fixed)
@@ -697,15 +693,9 @@ static bool TypeHasCycleThroughItself(const Type *Ty) {
 //                       Derived Type Factory Functions
 //===----------------------------------------------------------------------===//
 
-// TypeMap - Make sure that only one instance of a particular type may be
-// created on any given run of the compiler... note that this involves updating
-// our map if an abstract type gets refined somehow.
-//
 namespace llvm {
-template<class ValType, class TypeClass>
-class TypeMap {
-  std::map<ValType, PATypeHolder> Map;
-
+class TypeMapBase {
+protected:
   /// TypesByHash - Keep track of types by their structure hash value.  Note
   /// that we only keep track of types that have cycles through themselves in
   /// this map.
@@ -714,14 +704,48 @@ class TypeMap {
 
   friend void Type::clearAllTypeMaps();
 
-private:
-  void clear(std::vector<Type *> &DerivedTypes) {
-    for (typename std::map<ValType, PATypeHolder>::iterator I = Map.begin(),
-         E = Map.end(); I != E; ++I)
-      DerivedTypes.push_back(I->second.get());
-    TypesByHash.clear();
-    Map.clear();
+public:
+  void RemoveFromTypesByHash(unsigned Hash, const Type *Ty) {
+    std::multimap<unsigned, PATypeHolder>::iterator I =
+    TypesByHash.lower_bound(Hash);
+    while (I->second != Ty) {
+      ++I;
+      assert(I != TypesByHash.end() && I->first == Hash);
+    }
+    TypesByHash.erase(I);
   }
+  
+  /// TypeBecameConcrete - When Ty gets a notification that TheType just became
+  /// concrete, drop uses and make Ty non-abstract if we should.
+  void TypeBecameConcrete(DerivedType *Ty, const DerivedType *TheType) {
+    // If the element just became concrete, remove 'ty' from the abstract
+    // type user list for the type.  Do this for as many times as Ty uses
+    // OldType.
+    for (Type::subtype_iterator I = Ty->subtype_begin(), E = Ty->subtype_end();
+         I != E; ++I)
+      if (I->get() == TheType)
+        TheType->removeAbstractTypeUser(Ty);
+    
+    // If the type is currently thought to be abstract, rescan all of our
+    // subtypes to see if the type has just become concrete!  Note that this
+    // may send out notifications to AbstractTypeUsers that types become
+    // concrete.
+    if (Ty->isAbstract())
+      Ty->PromoteAbstractToConcrete();
+  }
+};
+}
+
+
+// TypeMap - Make sure that only one instance of a particular type may be
+// created on any given run of the compiler... note that this involves updating
+// our map if an abstract type gets refined somehow.
+//
+namespace llvm {
+template<class ValType, class TypeClass>
+class TypeMap : public TypeMapBase {
+  std::map<ValType, PATypeHolder> Map;
+
 public:
   typedef typename std::map<ValType, PATypeHolder>::iterator iterator;
   ~TypeMap() { print("ON EXIT"); }
@@ -738,29 +762,29 @@ public:
     TypesByHash.insert(std::make_pair(ValType::hashTypeStructure(Ty), Ty));
     print("add");
   }
-
-  void RemoveFromTypesByHash(unsigned Hash, const Type *Ty) {
-    std::multimap<unsigned, PATypeHolder>::iterator I =
-      TypesByHash.lower_bound(Hash);
-    while (I->second != Ty) {
-      ++I;
-      assert(I != TypesByHash.end() && I->first == Hash);
-    }
-    TypesByHash.erase(I);
+  
+  void clear(std::vector<Type *> &DerivedTypes) {
+    for (typename std::map<ValType, PATypeHolder>::iterator I = Map.begin(),
+         E = Map.end(); I != E; ++I)
+      DerivedTypes.push_back(I->second.get());
+    TypesByHash.clear();
+    Map.clear();
   }
 
-  /// finishRefinement - This method is called after we have updated an existing
-  /// type with its new components.  We must now either merge the type away with
+ /// RefineAbstractType - This method is called after we have merged a type
+  /// with another one.  We must now either merge the type away with
   /// some other type or reinstall it in the map with it's new configuration.
-  /// The specified iterator tells us what the type USED to look like.
-  void finishRefinement(TypeClass *Ty, const DerivedType *OldType,
+  void RefineAbstractType(TypeClass *Ty, const DerivedType *OldType,
                         const Type *NewType) {
-    assert((Ty->isAbstract() || !OldType->isAbstract()) &&
-           "Refining a non-abstract type!");
 #ifdef DEBUG_MERGE_TYPES
-    std::cerr << "refineAbstractTy(" << (void*)OldType << "[" << *OldType
-              << "], " << (void*)NewType << " [" << *NewType << "])\n";
+    std::cerr << "RefineAbstractType(" << (void*)OldType << "[" << *OldType
+    << "], " << (void*)NewType << " [" << *NewType << "])\n";
 #endif
+    
+    // Otherwise, we are changing one subelement type into another.  Clearly the
+    // OldType must have been abstract, making us abstract.
+    assert(Ty->isAbstract() && "Refining a non-abstract type!");
+    assert(OldType != NewType);
 
     // Make a temporary type holder for the type so that it doesn't disappear on
     // us when we erase the entry from the map.
@@ -768,7 +792,8 @@ public:
 
     // The old record is now out-of-date, because one of the children has been
     // updated.  Remove the obsolete entry from the map.
-    Map.erase(ValType::get(Ty));
+    unsigned NumErased = Map.erase(ValType::get(Ty));
+    assert(NumErased && "Element not found!");
 
     // Remember the structural hash for the type before we start hacking on it,
     // in case we need it later.
@@ -776,25 +801,22 @@ public:
 
     // Find the type element we are refining... and change it now!
     for (unsigned i = 0, e = Ty->ContainedTys.size(); i != e; ++i)
-      if (Ty->ContainedTys[i] == OldType) {
-        Ty->ContainedTys[i].removeUserFromConcrete();
+      if (Ty->ContainedTys[i] == OldType)
         Ty->ContainedTys[i] = NewType;
-      }
-
-    unsigned TypeHash = ValType::hashTypeStructure(Ty);
-
+    unsigned NewTypeHash = ValType::hashTypeStructure(Ty);
+    
     // If there are no cycles going through this node, we can do a simple,
     // efficient lookup in the map, instead of an inefficient nasty linear
     // lookup.
-    if (!Ty->isAbstract() || !TypeHasCycleThroughItself(Ty)) {
+    if (!TypeHasCycleThroughItself(Ty)) {
       typename std::map<ValType, PATypeHolder>::iterator I;
       bool Inserted;
 
-      ValType V = ValType::get(Ty);
-      tie(I, Inserted) = Map.insert(std::make_pair(V, Ty));
+      tie(I, Inserted) = Map.insert(std::make_pair(ValType::get(Ty), Ty));
       if (!Inserted) {
+        assert(OldType != NewType);
         // Refined to a different type altogether?
-        RemoveFromTypesByHash(TypeHash, Ty);
+        RemoveFromTypesByHash(OldTypeHash, Ty);
 
         // We already have this type in the table.  Get rid of the newly refined
         // type.
@@ -802,7 +824,6 @@ public:
         Ty->refineAbstractTypeTo(NewTy);
         return;
       }
-
     } else {
       // Now we check to see if there is an existing entry in the table which is
       // structurally identical to the newly refined type.  If so, this type
@@ -812,30 +833,28 @@ public:
       tie(I, E) = TypesByHash.equal_range(OldTypeHash);
       Entry = E;
       for (; I != E; ++I) {
-        if (I->second != Ty) {
+        if (I->second == Ty) {
+          // Remember the position of the old type if we see it in our scan.
+          Entry = I;
+        } else {
           if (TypesEqual(Ty, I->second)) {
-            assert(Ty->isAbstract() && "Replacing a non-abstract type?");
             TypeClass *NewTy = cast<TypeClass>((Type*)I->second.get());
 
             if (Entry == E) {
-              // Find the location of Ty in the TypesByHash structure.
+              // Find the location of Ty in the TypesByHash structure if we
+              // haven't seen it already.
               while (I->second != Ty) {
                 ++I;
                 assert(I != E && "Structure doesn't contain type??");
               }
               Entry = I;
             }
-
             TypesByHash.erase(Entry);
             Ty->refineAbstractTypeTo(NewTy);
             return;
           }
-        } else {
-          // Remember the position of
-          Entry = I;
         }
       }
-
 
       // If there is no existing type of the same structure, we reinsert an
       // updated record into the map.
@@ -843,13 +862,15 @@ public:
     }
 
     // If the hash codes differ, update TypesByHash
-    if (TypeHash != OldTypeHash) {
+    if (NewTypeHash != OldTypeHash) {
       RemoveFromTypesByHash(OldTypeHash, Ty);
-      TypesByHash.insert(std::make_pair(TypeHash, Ty));
+      TypesByHash.insert(std::make_pair(NewTypeHash, Ty));
     }
-
+    
     // If the type is currently thought to be abstract, rescan all of our
-    // subtypes to see if the type has just become concrete!
+    // subtypes to see if the type has just become concrete!  Note that this
+    // may send out notifications to AbstractTypeUsers that types become
+    // concrete.
     if (Ty->isAbstract())
       Ty->PromoteAbstractToConcrete();
   }
@@ -1025,6 +1046,7 @@ static TypeMap<FixedVectorValType, FixedVectorType> FixedVectorTypes;
 
 FixedVectorType *FixedVectorType::get(const Type *ElementType, unsigned NumElements) {
   assert(ElementType && "Can't get fixed-length vector of null types!");
+  //assert(isPowerOf2_32(NumElements) && "Vector length should be a power of 2!");
 
   FixedVectorValType PVT(ElementType, NumElements);
   FixedVectorType *PT = FixedVectorTypes.get(PVT);
@@ -1148,7 +1170,6 @@ PointerType *PointerType::get(const Type *ValueType) {
   return PT;
 }
 
-
 //===----------------------------------------------------------------------===//
 // Vector Type Factory...
 //
@@ -1198,54 +1219,6 @@ VectorType *VectorType::get(const Type *ElementType) {
 
 
 //===----------------------------------------------------------------------===//
-// Stream Type Factory...
-//
-namespace llvm {
-class StreamValType {
-  const Type *ValTy;
-public:
-  StreamValType(const Type *val) : ValTy(val) {}
-
-  static StreamValType get(const StreamType *AT) {
-    return StreamValType(AT->getElementType());
-  }
-
-  static unsigned hashTypeStructure(const StreamType *AT) {
-    return AT->getElementType()->getTypeID(); // ???
-  }
-
-  // Subclass should override this... to update self as usual
-  void doRefinement(const DerivedType *OldType, const Type *NewType) {
-    assert(ValTy == OldType);
-    ValTy = NewType;
-  }
-
-  inline bool operator<(const StreamValType &MTV) const {
-    return ValTy < MTV.ValTy;
-  }
-};
-}
-
-static TypeMap<StreamValType, StreamType> StreamTypes;
-
-StreamType *StreamType::get(const Type *ElementType) {
-  assert(ElementType && "Can't get vector of null types!");
-
-  StreamValType AVT(ElementType);
-  StreamType *AT = StreamTypes.get(AVT);
-  if (AT) return AT;           // Found a match, return it!
-
-  // Value not found.  Derive a new type!
-  StreamTypes.add(AVT, AT = new StreamType(ElementType));
-
-#ifdef DEBUG_MERGE_TYPES
-  std::cerr << "Derived new type: " << *AT << "\n";
-#endif
-  return AT;
-}
-
-
-//===----------------------------------------------------------------------===//
 //                     Derived Type Refinement Functions
 //===----------------------------------------------------------------------===//
 
@@ -1254,7 +1227,7 @@ StreamType *StreamType::get(const Type *ElementType) {
 // the PATypeHandle class.  When there are no users of the abstract type, it
 // is annihilated, because there is no way to get a reference to it ever again.
 //
-void DerivedType::removeAbstractTypeUser(AbstractTypeUser *U) const {
+void Type::removeAbstractTypeUser(AbstractTypeUser *U) const {
   // Search from back to front because we will notify users from back to
   // front.  Also, it is likely that there will be a stack like behavior to
   // users that register and unregister users.
@@ -1379,11 +1352,11 @@ void DerivedType::notifyUsesThatTypeBecameConcrete() {
 //
 void FunctionType::refineAbstractType(const DerivedType *OldType,
                                       const Type *NewType) {
-  FunctionTypes.finishRefinement(this, OldType, NewType);
+  FunctionTypes.RefineAbstractType(this, OldType, NewType);
 }
 
 void FunctionType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
+  FunctionTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 
@@ -1393,24 +1366,33 @@ void FunctionType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void ArrayType::refineAbstractType(const DerivedType *OldType,
                                    const Type *NewType) {
-  ArrayTypes.finishRefinement(this, OldType, NewType);
+  ArrayTypes.RefineAbstractType(this, OldType, NewType);
 }
 
 void ArrayType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
+  ArrayTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 // refineAbstractType - Called when a contained type is found to be more
 // concrete - this could potentially change us from an abstract type to a
 // concrete type.
 //
+void VectorType::refineAbstractType(const DerivedType *OldType,
+                                   const Type *NewType) {
+  VectorTypes.RefineAbstractType(this, OldType, NewType);
+}
+
+void VectorType::typeBecameConcrete(const DerivedType *AbsTy) {
+  VectorTypes.TypeBecameConcrete(this, AbsTy);
+}
+
 void FixedVectorType::refineAbstractType(const DerivedType *OldType,
                                    const Type *NewType) {
-  FixedVectorTypes.finishRefinement(this, OldType, NewType);
+  FixedVectorTypes.RefineAbstractType(this, OldType, NewType);
 }
 
 void FixedVectorType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
+  FixedVectorTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 // refineAbstractType - Called when a contained type is found to be more
@@ -1419,11 +1401,11 @@ void FixedVectorType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void StructType::refineAbstractType(const DerivedType *OldType,
                                     const Type *NewType) {
-  StructTypes.finishRefinement(this, OldType, NewType);
+  StructTypes.RefineAbstractType(this, OldType, NewType);
 }
 
 void StructType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
+  StructTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 // refineAbstractType - Called when a contained type is found to be more
@@ -1432,24 +1414,11 @@ void StructType::typeBecameConcrete(const DerivedType *AbsTy) {
 //
 void PointerType::refineAbstractType(const DerivedType *OldType,
                                      const Type *NewType) {
-  PointerTypes.finishRefinement(this, OldType, NewType);
+  PointerTypes.RefineAbstractType(this, OldType, NewType);
 }
 
 void PointerType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
-}
-
-// refineAbstractType - Called when a contained type is found to be more
-// concrete - this could potentially change us from an abstract type to a
-// concrete type.
-//
-void VectorType::refineAbstractType(const DerivedType *OldType,
-				   const Type *NewType) {
-  VectorTypes.finishRefinement(this, OldType, NewType);
-}
-
-void VectorType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
+  PointerTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 
@@ -1457,15 +1426,6 @@ void VectorType::typeBecameConcrete(const DerivedType *AbsTy) {
 // concrete - this could potentially change us from an abstract type to a
 // concrete type.
 //
-void StreamType::refineAbstractType(const DerivedType *OldType,
-				   const Type *NewType) {
-  StreamTypes.finishRefinement(this, OldType, NewType);
-}
-
-void StreamType::typeBecameConcrete(const DerivedType *AbsTy) {
-  refineAbstractType(AbsTy, AbsTy);
-}
-
 
 bool SequentialType::indexValid(const Value *V) const {
   const Type *Ty = V->getType();
@@ -1505,7 +1465,6 @@ void Type::clearAllTypeMaps() {
   PointerTypes.clear(DerivedTypes);
   StructTypes.clear(DerivedTypes);
   ArrayTypes.clear(DerivedTypes);
-  StreamTypes.clear(DerivedTypes);
   VectorTypes.clear(DerivedTypes);
   FixedVectorTypes.clear(DerivedTypes);
 

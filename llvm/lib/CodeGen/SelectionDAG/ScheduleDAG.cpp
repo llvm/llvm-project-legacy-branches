@@ -2,7 +2,7 @@
 //
 //                     The LLVM Compiler Infrastructure
 //
-// This file was developed by Chris Lattner and is distributed under the
+// This file was developed by James M. Laskey and is distributed under the
 // University of Illinois Open Source License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/SSARegMap.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetInstrItineraries.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -32,6 +33,7 @@ namespace {
   enum ScheduleChoices {
     noScheduling,
     simpleScheduling,
+    simpleNoItinScheduling
   };
 } // namespace
 
@@ -43,6 +45,8 @@ cl::opt<ScheduleChoices> ScheduleStyle("sched",
               "Trivial emission with no analysis"),
     clEnumValN(simpleScheduling, "simple",
               "Minimize critical path and maximize processor utilization"),
+    clEnumValN(simpleNoItinScheduling, "simple-noitin",
+              "Same as simple except using generic latency"),
    clEnumValEnd));
 
 
@@ -97,65 +101,74 @@ private:
   typedef typename std::vector<T>::iterator Iter;
                                         // Tally iterator 
   
-  /// AllInUse - Test to see if all of the resources in the slot are busy (set.)
-  inline bool AllInUse(Iter Cursor, unsigned ResourceSet) {
-    return (*Cursor & ResourceSet) == ResourceSet;
+  /// SlotsAvailable - Returns true if all units are available.
+	///
+  bool SlotsAvailable(Iter Begin, unsigned N, unsigned ResourceSet,
+                                              unsigned &Resource) {
+    assert(N && "Must check availability with N != 0");
+    // Determine end of interval
+    Iter End = Begin + N;
+    assert(End <= Tally.end() && "Tally is not large enough for schedule");
+    
+    // Iterate thru each resource
+    BitsIterator<T> Resources(ResourceSet & ~*Begin);
+    while (unsigned Res = Resources.Next()) {
+      // Check if resource is available for next N slots
+      Iter Interval = End;
+      do {
+        Interval--;
+        if (*Interval & Res) break;
+      } while (Interval != Begin);
+      
+      // If available for N
+      if (Interval == Begin) {
+        // Success
+        Resource = Res;
+        return true;
+      }
+    }
+    
+    // No luck
+    Resource = 0;
+    return false;
+  }
+	
+	/// RetrySlot - Finds a good candidate slot to retry search.
+  Iter RetrySlot(Iter Begin, unsigned N, unsigned ResourceSet) {
+    assert(N && "Must check availability with N != 0");
+    // Determine end of interval
+    Iter End = Begin + N;
+    assert(End <= Tally.end() && "Tally is not large enough for schedule");
+		
+		while (Begin != End--) {
+			// Clear units in use
+			ResourceSet &= ~*End;
+			// If no units left then we should go no further 
+			if (!ResourceSet) return End + 1;
+		}
+		// Made it all the way through
+		return Begin;
+	}
+  
+  /// FindAndReserveStages - Return true if the stages can be completed. If
+  /// so mark as busy.
+  bool FindAndReserveStages(Iter Begin,
+                            InstrStage *Stage, InstrStage *StageEnd) {
+    // If at last stage then we're done
+    if (Stage == StageEnd) return true;
+    // Get number of cycles for current stage
+    unsigned N = Stage->Cycles;
+    // Check to see if N slots are available, if not fail
+    unsigned Resource;
+    if (!SlotsAvailable(Begin, N, Stage->Units, Resource)) return false;
+    // Check to see if remaining stages are available, if not fail
+    if (!FindAndReserveStages(Begin + N, Stage + 1, StageEnd)) return false;
+    // Reserve resource
+    Reserve(Begin, N, Resource);
+    // Success
+    return true;
   }
 
-  /// Skip - Skip over slots that use all of the specified resource (all are
-  /// set.)
-  Iter Skip(Iter Cursor, unsigned ResourceSet) {
-    assert(ResourceSet && "At least one resource bit needs to bet set");
-    
-    // Continue to the end
-    while (true) {
-      // Break out if one of the resource bits is not set
-      if (!AllInUse(Cursor, ResourceSet)) return Cursor;
-      // Try next slot
-      Cursor++;
-      assert(Cursor < Tally.end() && "Tally is not large enough for schedule");
-    }
-  }
-  
-  /// FindSlots - Starting from Begin, locate N consecutive slots where at least 
-  /// one of the resource bits is available.  Returns the address of first slot.
-  Iter FindSlots(Iter Begin, unsigned N, unsigned ResourceSet,
-                                         unsigned &Resource) {
-    // Track position      
-    Iter Cursor = Begin;
-    
-    // Try all possible slots forward
-    while (true) {
-      // Skip full slots
-      Cursor = Skip(Cursor, ResourceSet);
-      // Determine end of interval
-      Iter End = Cursor + N;
-      assert(End <= Tally.end() && "Tally is not large enough for schedule");
-      
-      // Iterate thru each resource
-      BitsIterator<T> Resources(ResourceSet & ~*Cursor);
-      while (unsigned Res = Resources.Next()) {
-        // Check if resource is available for next N slots
-        // Break out if resource is busy
-        Iter Interval = Cursor;
-        for (; Interval < End && !(*Interval & Res); Interval++) {}
-        
-        // If available for interval, return where and which resource
-        if (Interval == End) {
-          Resource = Res;
-          return Cursor;
-        }
-        // Otherwise, check if worth checking other resources
-        if (AllInUse(Interval, ResourceSet)) {
-          // Start looking beyond interval
-          Cursor = Interval;
-          break;
-        }
-      }
-      Cursor++;
-    }
-  }
-  
   /// Reserve - Mark busy (set) the specified N slots.
   void Reserve(Iter Begin, unsigned N, unsigned Resource) {
     // Determine end of interval
@@ -167,24 +180,39 @@ private:
       *Begin |= Resource;
   }
 
+  /// FindSlots - Starting from Begin, locate consecutive slots where all stages
+  /// can be completed.  Returns the address of first slot.
+  Iter FindSlots(Iter Begin, InstrStage *StageBegin, InstrStage *StageEnd) {
+    // Track position      
+    Iter Cursor = Begin;
+    
+    // Try all possible slots forward
+    while (true) {
+      // Try at cursor, if successful return position.
+      if (FindAndReserveStages(Cursor, StageBegin, StageEnd)) return Cursor;
+      // Locate a better position
+			Cursor = RetrySlot(Cursor + 1, StageBegin->Cycles, StageBegin->Units);
+    }
+  }
+  
 public:
   /// Initialize - Resize and zero the tally to the specified number of time
   /// slots.
   inline void Initialize(unsigned N) {
     Tally.assign(N, 0);   // Initialize tally to all zeros.
   }
-  
-  // FindAndReserve - Locate and mark busy (set) N bits started at slot I, using
-  // ResourceSet for choices.
-  unsigned FindAndReserve(unsigned I, unsigned N, unsigned ResourceSet) {
-    // Which resource used
-    unsigned Resource;
-    // Find slots for instruction.
-    Iter Where = FindSlots(Tally.begin() + I, N, ResourceSet, Resource);
-    // Reserve the slots
-    Reserve(Where, N, Resource);
-    // Return time slot (index)
-    return Where - Tally.begin();
+
+  // FindAndReserve - Locate an ideal slot for the specified stages and mark
+  // as busy.
+  unsigned FindAndReserve(unsigned Slot, InstrStage *StageBegin,
+                                         InstrStage *StageEnd) {
+		// Where to begin 
+		Iter Begin = Tally.begin() + Slot;
+		// Find a free slot
+		Iter Where = FindSlots(Begin, StageBegin, StageEnd);
+		// Distance is slot number
+		unsigned Final = Where - Tally.begin();
+    return Final;
   }
 
 };
@@ -192,27 +220,46 @@ public:
 
 // Forward
 class NodeInfo;
-typedef std::vector<NodeInfo *>           NIVector;
-typedef std::vector<NodeInfo *>::iterator NIIterator;
+typedef NodeInfo *NodeInfoPtr;
+typedef std::vector<NodeInfoPtr>           NIVector;
+typedef std::vector<NodeInfoPtr>::iterator NIIterator;
 
 //===----------------------------------------------------------------------===//
 ///
 /// Node group -  This struct is used to manage flagged node groups.
 ///
-class NodeGroup : public NIVector {
+class NodeGroup {
 private:
+  NIVector      Members;                // Group member nodes
+  NodeInfo      *Dominator;             // Node with highest latency
+  unsigned      Latency;                // Total latency of the group
   int           Pending;                // Number of visits pending before
                                         //    adding to order  
 
 public:
   // Ctor.
-  NodeGroup() : Pending(0) {}
+  NodeGroup() : Dominator(NULL), Pending(0) {}
   
   // Accessors
-  inline NodeInfo *getLeader() { return empty() ? NULL : front(); }
+  inline void setDominator(NodeInfo *D) { Dominator = D; }
+  inline NodeInfo *getDominator() { return Dominator; }
+  inline void setLatency(unsigned L) { Latency = L; }
+  inline unsigned getLatency() { return Latency; }
   inline int getPending() const { return Pending; }
   inline void setPending(int P)  { Pending = P; }
   inline int addPending(int I)  { return Pending += I; }
+  
+  // Pass thru
+  inline bool group_empty() { return Members.empty(); }
+  inline NIIterator group_begin() { return Members.begin(); }
+  inline NIIterator group_end() { return Members.end(); }
+  inline void group_push_back(const NodeInfoPtr &NI) { Members.push_back(NI); }
+  inline NIIterator group_insert(NIIterator Pos, const NodeInfoPtr &NI) {
+    return Members.insert(Pos, NI);
+  }
+  inline void group_insert(NIIterator Pos, NIIterator First, NIIterator Last) {
+    Members.insert(Pos, First, Last);
+  }
 
   static void Add(NodeInfo *D, NodeInfo *U);
   static unsigned CountInternalUses(NodeInfo *D, NodeInfo *U);
@@ -230,8 +277,9 @@ private:
                                         //    adding to order
 public:
   SDNode        *Node;                  // DAG node
-  unsigned      Latency;                // Cycles to complete instruction
-  unsigned      ResourceSet;            // Bit vector of usable resources
+  InstrStage    *StageBegin;            // First stage in itinerary
+  InstrStage    *StageEnd;              // Last+1 stage in itinerary
+  unsigned      Latency;                // Total cycles to complete instruction
   bool          IsCall;                 // Is function call
   unsigned      Slot;                   // Node's time slot
   NodeGroup     *Group;                 // Grouping information
@@ -244,8 +292,9 @@ public:
   NodeInfo(SDNode *N = NULL)
   : Pending(0)
   , Node(N)
+  , StageBegin(NULL)
+  , StageEnd(NULL)
   , Latency(0)
-  , ResourceSet(0)
   , IsCall(false)
   , Slot(0)
   , Group(NULL)
@@ -257,11 +306,11 @@ public:
   
   // Accessors
   inline bool isInGroup() const {
-    assert(!Group || !Group->empty() && "Group with no members");
+    assert(!Group || !Group->group_empty() && "Group with no members");
     return Group != NULL;
   }
-  inline bool isGroupLeader() const {
-     return isInGroup() && Group->getLeader() == this;
+  inline bool isGroupDominator() const {
+     return isInGroup() && Group->getDominator() == this;
   }
   inline int getPending() const {
     return Group ? Group->getPending() : Pending;
@@ -298,8 +347,8 @@ public:
     if (N->isInGroup()) {
       // get Group
       NodeGroup *Group = NI->Group;
-      NGI = Group->begin();
-      NGE = Group->end();
+      NGI = Group->group_begin();
+      NGE = Group->group_end();
       // Prevent this node from being used (will be in members list
       NI = NULL;
     }
@@ -353,7 +402,8 @@ private:
   
 public:
   // Ctor.
-  NodeGroupOpIterator(NodeInfo *N) : NI(N), GI(N) {}
+  NodeGroupOpIterator(NodeInfo *N)
+    : NI(N), GI(N), OI(SDNode::op_iterator()), OE(SDNode::op_iterator()) {}
   
   /// isEnd - Returns true when not more operands are available.
   ///
@@ -375,15 +425,6 @@ public:
 ///
 class SimpleSched {
 private:
-  // TODO - get ResourceSet from TII
-  enum {
-    RSInteger = 0x3,                    // Two integer units
-    RSFloat = 0xC,                      // Two float units
-    RSLoadStore = 0x30,                 // Two load store units
-    RSBranch = 0x400,                   // One branch unit
-    RSOther = 0                         // Processing unit independent
-  };
-  
   MachineBasicBlock *BB;                // Current basic block
   SelectionDAG &DAG;                    // DAG of the current basic block
   const TargetMachine &TM;              // Target processor
@@ -392,6 +433,7 @@ private:
   SSARegMap *RegMap;                    // Virtual/real register map
   MachineConstantPool *ConstPool;       // Target constant pool
   unsigned NodeCount;                   // Number of nodes in DAG
+  bool HasGroups;                       // True if there are any groups
   NodeInfo *Info;                       // Info for nodes being scheduled
   std::map<SDNode *, NodeInfo *> Map;   // Map nodes to info
   NIVector Ordering;                    // Emit ordering of nodes
@@ -406,7 +448,7 @@ public:
     : BB(bb), DAG(D), TM(D.getTarget()), TII(*TM.getInstrInfo()),
       MRI(*TM.getRegisterInfo()), RegMap(BB->getParent()->getSSARegMap()),
       ConstPool(BB->getParent()->getConstantPool()),
-      NodeCount(0), Info(NULL), Map(), Tally(), NSlots(0) {
+      NodeCount(0), HasGroups(false), Info(NULL), Map(), Tally(), NSlots(0) {
     assert(&TII && "Target doesn't provide instr info?");
     assert(&MRI && "Target doesn't provide register info?");
   }
@@ -439,6 +481,7 @@ private:
   void Schedule();
   void IdentifyGroups();
   void GatherSchedulingInfo();
+  void FakeGroupDominators(); 
   void PrepareNodeInfo();
   bool isStrongDependency(NodeInfo *A, NodeInfo *B);
   bool isWeakDependency(NodeInfo *A, NodeInfo *B);
@@ -458,6 +501,27 @@ private:
   inline void dump(const char *tag) const { std::cerr << tag; dump(); }
   void dump() const;
 };
+
+
+//===----------------------------------------------------------------------===//
+/// Special case itineraries.
+///
+enum {
+  CallLatency = 40,          // To push calls back in time
+
+  RSInteger   = 0xC0000000,  // Two integer units
+  RSFloat     = 0x30000000,  // Two float units
+  RSLoadStore = 0x0C000000,  // Two load store units
+  RSBranch    = 0x02000000   // One branch unit
+};
+static InstrStage CallStage  = { CallLatency, RSBranch };
+static InstrStage LoadStage  = { 5, RSLoadStore };
+static InstrStage StoreStage = { 2, RSLoadStore };
+static InstrStage IntStage   = { 2, RSInteger };
+static InstrStage FloatStage = { 3, RSFloat };
+//===----------------------------------------------------------------------===//
+
+
 //===----------------------------------------------------------------------===//
 
 } // namespace
@@ -491,7 +555,8 @@ void NodeGroup::Add(NodeInfo *D, NodeInfo *U) {
       }
     }
     // Merge the two lists
-    DGroup->insert(DGroup->end(), UGroup->begin(), UGroup->end());
+    DGroup->group_insert(DGroup->group_end(),
+                         UGroup->group_begin(), UGroup->group_end());
   } else if (DGroup) {
     // Make user member of definers group
     U->Group = DGroup;
@@ -503,7 +568,7 @@ void NodeGroup::Add(NodeInfo *D, NodeInfo *U) {
       // Remove internal edges
       DGroup->addPending(-CountInternalUses(DNI, U));
     }
-    DGroup->push_back(U);
+    DGroup->group_push_back(U);
   } else if (UGroup) {
     // Make definer member of users group
     D->Group = UGroup;
@@ -515,13 +580,13 @@ void NodeGroup::Add(NodeInfo *D, NodeInfo *U) {
       // Remove internal edges
       UGroup->addPending(-CountInternalUses(D, UNI));
     }
-    UGroup->insert(UGroup->begin(), D);
+    UGroup->group_insert(UGroup->group_begin(), D);
   } else {
     D->Group = U->Group = DGroup = new NodeGroup();
     DGroup->addPending(D->Node->use_size() + U->Node->use_size() -
                        CountInternalUses(D, U));
-    DGroup->push_back(D);
-    DGroup->push_back(U);
+    DGroup->group_push_back(D);
+    DGroup->group_push_back(U);
   }
 }
 
@@ -529,10 +594,11 @@ void NodeGroup::Add(NodeInfo *D, NodeInfo *U) {
 ///
 unsigned NodeGroup::CountInternalUses(NodeInfo *D, NodeInfo *U) {
   unsigned N = 0;
-  for (SDNode:: use_iterator UI = D->Node->use_begin(),
-                             E = D->Node->use_end(); UI != E; UI++) {
-    if (*UI == U->Node) N++;
+  for (unsigned M = U->Node->getNumOperands(); 0 < M--;) {
+    SDOperand Op = U->Node->getOperand(M);
+    if (Op.Val == D->Node) N++;
   }
+
   return N;
 }
 //===----------------------------------------------------------------------===//
@@ -587,9 +653,9 @@ bool SimpleSched::isPassiveNode(SDNode *Node) {
 /// IncludeNode - Add node to NodeInfo vector.
 ///
 void SimpleSched::IncludeNode(NodeInfo *NI) {
-  // Get node
-  SDNode *Node = NI->Node;
-  // Ignore entry node
+// Get node
+SDNode *Node = NI->Node;
+// Ignore entry node
 if (Node->getOpcode() == ISD::EntryToken) return;
   // Check current count for node
   int Count = NI->getPending();
@@ -601,7 +667,7 @@ if (Node->getOpcode() == ISD::EntryToken) return;
   if (!Count) {
     // Add node
     if (NI->isInGroup()) {
-      Ordering.push_back(NI->Group->getLeader());
+      Ordering.push_back(NI->Group->getDominator());
     } else {
       Ordering.push_back(NI);
     }
@@ -662,6 +728,8 @@ void SimpleSched::IdentifyGroups() {
       if (Op.getValueType() != MVT::Flag) break;
       // Add to node group
       NodeGroup::Add(getNI(Op.Val), NI);
+      // Let evryone else know
+      HasGroups = true;
     }
   }
 }
@@ -669,8 +737,8 @@ void SimpleSched::IdentifyGroups() {
 /// GatherSchedulingInfo - Get latency and resource information about each node.
 ///
 void SimpleSched::GatherSchedulingInfo() {
-  // Track if groups are present
-  bool AreGroups = false;
+  // Get instruction itineraries for the target
+  const InstrItineraryData InstrItins = TM.getInstrItineraryData();
   
   // For each node
   for (unsigned i = 0, N = NodeCount; i < N; i++) {
@@ -678,90 +746,87 @@ void SimpleSched::GatherSchedulingInfo() {
     NodeInfo* NI = &Info[i];
     SDNode *Node = NI->Node;
     
-    // Test for groups
-    if (NI->isInGroup()) AreGroups = true;
+    // If there are itineraries and it is a machine instruction
+    if (InstrItins.isEmpty() || ScheduleStyle == simpleNoItinScheduling) {
+      // If machine opcode
+      if (Node->isTargetOpcode()) {
+        // Get return type to guess which processing unit 
+        MVT::ValueType VT = Node->getValueType(0);
+        // Get machine opcode
+        MachineOpCode TOpc = Node->getTargetOpcode();
+        NI->IsCall = TII.isCall(TOpc);
 
-    // FIXME: Pretend by using value type to choose metrics
-    MVT::ValueType VT = Node->getValueType(0);
-    
-    // If machine opcode
-    if (Node->isTargetOpcode()) {
+        if (TII.isLoad(TOpc))              NI->StageBegin = &LoadStage;
+        else if (TII.isStore(TOpc))        NI->StageBegin = &StoreStage;
+        else if (MVT::isInteger(VT))       NI->StageBegin = &IntStage;
+        else if (MVT::isFloatingPoint(VT)) NI->StageBegin = &FloatStage;
+        if (NI->StageBegin) NI->StageEnd = NI->StageBegin + 1;
+      }
+    } else if (Node->isTargetOpcode()) {
+      // get machine opcode
       MachineOpCode TOpc = Node->getTargetOpcode();
-      // FIXME: This is an ugly (but temporary!) hack to test the scheduler
-      // before we have real target info.
-      // FIXME NI->Latency = std::max(1, TII.maxLatency(TOpc));
-      // FIXME NI->ResourceSet = TII.resources(TOpc);
-      if (TII.isCall(TOpc)) {
-        NI->ResourceSet = RSBranch;
-        NI->Latency = 40;
-        NI->IsCall = true;
-      } else if (TII.isLoad(TOpc)) {
-        NI->ResourceSet = RSLoadStore;
-        NI->Latency = 5;
-      } else if (TII.isStore(TOpc)) {
-        NI->ResourceSet = RSLoadStore;
-        NI->Latency = 2;
-      } else if (MVT::isInteger(VT)) {
-        NI->ResourceSet = RSInteger;
-        NI->Latency = 2;
-      } else if (MVT::isFloatingPoint(VT)) {
-        NI->ResourceSet = RSFloat;
-        NI->Latency = 3;
-      } else {
-        NI->ResourceSet = RSOther;
-        NI->Latency = 0;
-      }
-    } else {
-      if (MVT::isInteger(VT)) {
-        NI->ResourceSet = RSInteger;
-        NI->Latency = 2;
-      } else if (MVT::isFloatingPoint(VT)) {
-        NI->ResourceSet = RSFloat;
-        NI->Latency = 3;
-      } else {
-        NI->ResourceSet = RSOther;
-        NI->Latency = 0;
-      }
+      // Check to see if it is a call
+      NI->IsCall = TII.isCall(TOpc);
+      // Get itinerary stages for instruction
+      unsigned II = TII.getSchedClass(TOpc);
+      NI->StageBegin = InstrItins.begin(II);
+      NI->StageEnd = InstrItins.end(II);
     }
     
-    // Add one slot for the instruction itself
-    NI->Latency++;
+    // One slot for the instruction itself
+    NI->Latency = 1;
+    
+    // Add long latency for a call to push it back in time
+    if (NI->IsCall) NI->Latency += CallLatency;
+    
+    // Sum up all the latencies
+    for (InstrStage *Stage = NI->StageBegin, *E = NI->StageEnd;
+        Stage != E; Stage++) {
+      NI->Latency += Stage->Cycles;
+    }
     
     // Sum up all the latencies for max tally size
     NSlots += NI->Latency;
   }
   
   // Unify metrics if in a group
-  if (AreGroups) {
+  if (HasGroups) {
     for (unsigned i = 0, N = NodeCount; i < N; i++) {
       NodeInfo* NI = &Info[i];
       
-      if (NI->isGroupLeader()) {
+      if (NI->isInGroup()) {
         NodeGroup *Group = NI->Group;
-        unsigned Latency = 0;
-        unsigned MaxLat = 0;
-        unsigned ResourceSet = 0;
-        bool IsCall = false;
         
-        for (NIIterator NGI = Group->begin(), NGE = Group->end();
-             NGI != NGE; NGI++) {
-          NodeInfo* NGNI = *NGI;
-          Latency += NGNI->Latency;
-          IsCall = IsCall || NGNI->IsCall;
+        if (!Group->getDominator()) {
+          NIIterator NGI = Group->group_begin(), NGE = Group->group_end();
+          NodeInfo *Dominator = *NGI;
+          unsigned Latency = 0;
           
-          if (MaxLat < NGNI->Latency) {
-            MaxLat = NGNI->Latency;
-            ResourceSet = NGNI->ResourceSet;
+          for (NGI++; NGI != NGE; NGI++) {
+            NodeInfo* NGNI = *NGI;
+            Latency += NGNI->Latency;
+            if (Dominator->Latency < NGNI->Latency) Dominator = NGNI;
           }
           
-          NGNI->Latency = 0;
-          NGNI->ResourceSet = 0;
-          NGNI->IsCall = false;
+          Dominator->Latency = Latency;
+          Group->setDominator(Dominator);
         }
-        
-        NI->Latency = Latency;
-        NI->ResourceSet = ResourceSet;
-        NI->IsCall = IsCall;
+      }
+    }
+  }
+}
+
+/// FakeGroupDominators - Set dominators for non-scheduling.
+/// 
+void SimpleSched::FakeGroupDominators() {
+  for (unsigned i = 0, N = NodeCount; i < N; i++) {
+    NodeInfo* NI = &Info[i];
+    
+    if (NI->isInGroup()) {
+      NodeGroup *Group = NI->Group;
+      
+      if (!Group->getDominator()) {
+        Group->setDominator(NI);
       }
     }
   }
@@ -772,21 +837,18 @@ void SimpleSched::GatherSchedulingInfo() {
 void SimpleSched::PrepareNodeInfo() {
   // Allocate node information
   Info = new NodeInfo[NodeCount];
-  // Get base of all nodes table
-  SelectionDAG::allnodes_iterator AllNodes = DAG.allnodes_begin();
-  
-  // For each node being scheduled
-  for (unsigned i = 0, N = NodeCount; i < N; i++) {
-    // Get next node from DAG all nodes table
-    SDNode *Node = AllNodes[i];
+
+  unsigned i = 0;
+  for (SelectionDAG::allnodes_iterator I = DAG.allnodes_begin(),
+       E = DAG.allnodes_end(); I != E; ++I, ++i) {
     // Fast reference to node schedule info
     NodeInfo* NI = &Info[i];
     // Set up map
-    Map[Node] = NI;
+    Map[I] = NI;
     // Set node
-    NI->Node = Node;
+    NI->Node = I;
     // Set pending visit count
-    NI->setPending(Node->use_size());    
+    NI->setPending(I->use_size());
   }
 }
 
@@ -798,7 +860,8 @@ bool SimpleSched::isStrongDependency(NodeInfo *A, NodeInfo *B) {
 }
 
 /// isWeakDependency Return true if node A produces a result that will
-/// conflict with operands of B.
+/// conflict with operands of B.  It is assumed that we have called
+/// isStrongDependency prior.
 bool SimpleSched::isWeakDependency(NodeInfo *A, NodeInfo *B) {
   // TODO check for conflicting real registers and aliases
 #if 0 // FIXME - Since we are in SSA form and not checking register aliasing
@@ -843,9 +906,11 @@ void SimpleSched::ScheduleBackward() {
     // If independent of others (or first entry)
     if (Slot == NotFound) Slot = 0;
     
+#if 0 // FIXME - measure later
     // Find a slot where the needed resources are available
-    if (NI->ResourceSet)
-      Slot = Tally.FindAndReserve(Slot, NI->Latency, NI->ResourceSet);
+    if (NI->StageBegin != NI->StageEnd)
+      Slot = Tally.FindAndReserve(Slot, NI->StageBegin, NI->StageEnd);
+#endif
       
     // Set node slot
     NI->Slot = Slot;
@@ -899,8 +964,8 @@ void SimpleSched::ScheduleForward() {
     if (Slot == NotFound) Slot = 0;
     
     // Find a slot where the needed resources are available
-    if (NI->ResourceSet)
-      Slot = Tally.FindAndReserve(Slot, NI->Latency, NI->ResourceSet);
+    if (NI->StageBegin != NI->StageEnd)
+      Slot = Tally.FindAndReserve(Slot, NI->StageBegin, NI->StageEnd);
       
     // Set node slot
     NI->Slot = Slot;
@@ -930,7 +995,7 @@ void SimpleSched::EmitAll() {
     // Iterate through nodes
     NodeGroupIterator NGI(Ordering[i]);
     if (NI->isInGroup()) {
-      if (NI->isGroupLeader()) {
+      if (NI->isGroupDominator()) {
         NodeGroupIterator NGI(Ordering[i]);
         while (NodeInfo *NI = NGI.next()) EmitNode(NI);
       }
@@ -1006,7 +1071,28 @@ void SimpleSched::EmitNode(NodeInfo *NI) {
     
     // Add result register values for things that are defined by this
     // instruction.
-    if (NumResults) VRBase = CreateVirtualRegisters(MI, NumResults, II);
+    
+    // If the node is only used by a CopyToReg and the dest reg is a vreg, use
+    // the CopyToReg'd destination register instead of creating a new vreg.
+    if (NumResults == 1) {
+      for (SDNode::use_iterator UI = Node->use_begin(), E = Node->use_end();
+           UI != E; ++UI) {
+        SDNode *Use = *UI;
+        if (Use->getOpcode() == ISD::CopyToReg && 
+            Use->getOperand(2).Val == Node) {
+          unsigned Reg = cast<RegisterSDNode>(Use->getOperand(1))->getReg();
+          if (MRegisterInfo::isVirtualRegister(Reg)) {
+            VRBase = Reg;
+            MI->addRegOperand(Reg, MachineOperand::Def);
+            break;
+          }
+        }
+      }
+    }
+    
+    // Otherwise, create new virtual registers.
+    if (NumResults && VRBase == 0)
+      VRBase = CreateVirtualRegisters(MI, NumResults, II);
     
     // Emit all of the actual operands of this instruction, adding them to the
     // instruction as appropriate.
@@ -1084,10 +1170,11 @@ void SimpleSched::EmitNode(NodeInfo *NI) {
     case ISD::TokenFactor:
       break;
     case ISD::CopyToReg: {
-      unsigned Val = getVR(Node->getOperand(2));
-      MRI.copyRegToReg(*BB, BB->end(),
-                       cast<RegisterSDNode>(Node->getOperand(1))->getReg(), Val,
-                       RegMap->getRegClass(Val));
+      unsigned InReg = getVR(Node->getOperand(2));
+      unsigned DestReg = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
+      if (InReg != DestReg)   // Coallesced away the copy?
+        MRI.copyRegToReg(*BB, BB->end(), DestReg, InReg,
+                         RegMap->getRegClass(InReg));
       break;
     }
     case ISD::CopyFromReg: {
@@ -1097,21 +1184,40 @@ void SimpleSched::EmitNode(NodeInfo *NI) {
         break;
       }
 
+      // If the node is only used by a CopyToReg and the dest reg is a vreg, use
+      // the CopyToReg'd destination register instead of creating a new vreg.
+      for (SDNode::use_iterator UI = Node->use_begin(), E = Node->use_end();
+           UI != E; ++UI) {
+        SDNode *Use = *UI;
+        if (Use->getOpcode() == ISD::CopyToReg && 
+            Use->getOperand(2).Val == Node) {
+          unsigned DestReg = cast<RegisterSDNode>(Use->getOperand(1))->getReg();
+          if (MRegisterInfo::isVirtualRegister(DestReg)) {
+            VRBase = DestReg;
+            break;
+          }
+        }
+      }
+
       // Figure out the register class to create for the destreg.
       const TargetRegisterClass *TRC = 0;
+      if (VRBase) {
+        TRC = RegMap->getRegClass(VRBase);
+      } else {
 
-      // Pick the register class of the right type that contains this physreg.
-      for (MRegisterInfo::regclass_iterator I = MRI.regclass_begin(),
-           E = MRI.regclass_end(); I != E; ++I)
-        if ((*I)->getType() == Node->getValueType(0) &&
-            (*I)->contains(SrcReg)) {
-          TRC = *I;
-          break;
-        }
-      assert(TRC && "Couldn't find register class for reg copy!");
+        // Pick the register class of the right type that contains this physreg.
+        for (MRegisterInfo::regclass_iterator I = MRI.regclass_begin(),
+             E = MRI.regclass_end(); I != E; ++I)
+          if ((*I)->getType() == Node->getValueType(0) &&
+              (*I)->contains(SrcReg)) {
+            TRC = *I;
+            break;
+          }
+        assert(TRC && "Couldn't find register class for reg copy!");
       
-      // Create the reg, emit the copy.
-      VRBase = RegMap->createVirtualRegister(TRC);
+        // Create the reg, emit the copy.
+        VRBase = RegMap->createVirtualRegister(TRC);
+      }
       MRI.copyRegToReg(*BB, BB->end(), VRBase, SrcReg, TRC);
       break;
     }
@@ -1126,11 +1232,23 @@ void SimpleSched::EmitNode(NodeInfo *NI) {
 ///
 void SimpleSched::Schedule() {
   // Number the nodes
-  NodeCount = DAG.allnodes_size();
-  // Set up minimum info for scheduling.
+  NodeCount = std::distance(DAG.allnodes_begin(), DAG.allnodes_end());
+  // Test to see if scheduling should occur
+  bool ShouldSchedule = NodeCount > 3 && ScheduleStyle != noScheduling;
+  // Set up minimum info for scheduling
   PrepareNodeInfo();
   // Construct node groups for flagged nodes
   IdentifyGroups();
+
+  // Don't waste time if is only entry and return
+  if (ShouldSchedule) {
+    // Get latency and resource requirements
+    GatherSchedulingInfo();
+  } else if (HasGroups) {
+    // Make sure all the groups have dominators
+    FakeGroupDominators();
+  }
+
   // Breadth first walk of DAG
   VisitAll();
 
@@ -1144,10 +1262,7 @@ void SimpleSched::Schedule() {
 #endif  
   
   // Don't waste time if is only entry and return
-  if (NodeCount > 3 && ScheduleStyle != noScheduling) {
-    // Get latency and resource requirements
-    GatherSchedulingInfo();
-    
+  if (ShouldSchedule) {
     // Push back long instructions and critical path
     ScheduleBackward();
     
@@ -1182,9 +1297,9 @@ void SimpleSched::printChanges(unsigned Index) {
       std::cerr << "  " << NI->Preorder << ". ";
       printSI(std::cerr, NI);
       std::cerr << "\n";
-      if (NI->isGroupLeader()) {
+      if (NI->isGroupDominator()) {
         NodeGroup *Group = NI->Group;
-        for (NIIterator NII = Group->begin(), E = Group->end();
+        for (NIIterator NII = Group->group_begin(), E = Group->group_end();
              NII != E; NII++) {
           std::cerr << "          ";
           printSI(std::cerr, *NII);
@@ -1205,7 +1320,6 @@ void SimpleSched::printSI(std::ostream &O, NodeInfo *NI) const {
   SDNode *Node = NI->Node;
   O << " "
     << std::hex << Node << std::dec
-    << ", RS=" << NI->ResourceSet
     << ", Lat=" << NI->Latency
     << ", Slot=" << NI->Slot
     << ", ARITY=(" << Node->getNumOperands() << ","
@@ -1226,9 +1340,9 @@ void SimpleSched::print(std::ostream &O) const {
     NodeInfo *NI = Ordering[i];
     printSI(O, NI);
     O << "\n";
-    if (NI->isGroupLeader()) {
+    if (NI->isGroupDominator()) {
       NodeGroup *Group = NI->Group;
-      for (NIIterator NII = Group->begin(), E = Group->end();
+      for (NIIterator NII = Group->group_begin(), E = Group->group_end();
            NII != E; NII++) {
         O << "    ";
         printSI(O, *NII);

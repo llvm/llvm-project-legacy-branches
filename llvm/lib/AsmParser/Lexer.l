@@ -211,6 +211,8 @@ little          { return LITTLE; }
 big             { return BIG; }
 volatile        { return VOLATILE; }
 fixed           { return FIXED; }
+align           { return ALIGN;  }
+section         { return SECTION; }
 
 cc              { return CC_TOK; }
 ccc             { return CCC_TOK; }

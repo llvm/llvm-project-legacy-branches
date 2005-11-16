@@ -110,7 +110,8 @@ void DefaultIntrinsicLowering::AddPrototypes(Module &M) {
       case Intrinsic::memset:
         M.getOrInsertFunction("memset", PointerType::get(Type::SByteTy),
                               PointerType::get(Type::SByteTy),
-                              Type::IntTy, (--(--I->arg_end()))->getType(), 0);
+                              Type::IntTy, (--(--I->arg_end()))->getType(),
+                              (Type *)0);
         break;
       case Intrinsic::isunordered:
         EnsureFunctionExists(M, "isunordered", I->arg_begin(), I->arg_end(),
@@ -261,6 +262,12 @@ void DefaultIntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
 
   case Intrinsic::pcmarker:
     break;    // Simply strip out pcmarker on unsupported architectures
+  case Intrinsic::readcyclecounter: {
+    std::cerr << "WARNING: this target does not support the llvm.readcyclecounter"
+              << " intrinsic.  It is being lowered to a constant 0\n";
+    CI->replaceAllUsesWith(ConstantUInt::get(Type::ULongTy, 0));
+    break;
+  }
 
   case Intrinsic::dbg_stoppoint:
   case Intrinsic::dbg_region_start:

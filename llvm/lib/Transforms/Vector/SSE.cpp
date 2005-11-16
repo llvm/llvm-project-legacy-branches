@@ -27,6 +27,7 @@
 #include "llvm/ADT/hash_set"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/InstVisitor.h"
+#include "llvm/Transforms/Scalar.h"
 
 using namespace llvm;
 
@@ -516,3 +517,5 @@ namespace {
   }
 
 }
+
+FunctionPass *llvm::createSSEPass() { return new SSE(); }

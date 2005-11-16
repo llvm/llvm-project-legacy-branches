@@ -162,6 +162,12 @@ FunctionPass *createLoopUnrollPass();
 //
 FunctionPass *createPromoteMemoryToRegisterPass();
 
+//===----------------------------------------------------------------------===//
+//
+// This pass is used to demote registers to memory references .
+// In basically undoes the PromoteMemoryToRegister pass to
+// make cfg hacking easier.
+FunctionPass *createDemoteRegisterToMemoryPass();
 
 //===----------------------------------------------------------------------===//
 //
@@ -271,7 +277,8 @@ FunctionPass *createLowerFixedVectorPass();
 // "my LLVM-to-LLVM pass doesn't support the invoke instruction yet" lowering
 // pass.
 //
-FunctionPass *createLowerInvokePass();
+FunctionPass *createLowerInvokePass(unsigned JumBufSize = 200, 
+                                    unsigned JumpBufAlign = 0);
 extern const PassInfo *LowerInvokePassID;
 
 
@@ -282,11 +289,6 @@ extern const PassInfo *LowerInvokePassID;
 FunctionPass *createLowerGCPass();
 
 //===----------------------------------------------------------------------===//
-// Returns a pass which converts all instances of ConstantExpression
-// into regular LLVM instructions.
-FunctionPass* createLowerConstantExpressionsPass();
-
-//===----------------------------------------------------------------------===//
 // This pass reorders basic blocks in order to increase the number of fall-
 // through conditional branches.
 FunctionPass *createBlockPlacementPass();
@@ -294,6 +296,13 @@ FunctionPass *createBlockPlacementPass();
 //===----------------------------------------------------------------------===//
 // This pass does partial redundancy elimination.
 FunctionPass *createPREPass();
+
+// Vector stuff
+FunctionPass *createRaiseVectorsPass();
+FunctionPass *createLowerVectorsPass();
+FunctionPass *createAlloca2ReallocPass();
+FunctionPass *createAltiVecPass();
+FunctionPass *createSSEPass();
 
 } // End llvm namespace
 

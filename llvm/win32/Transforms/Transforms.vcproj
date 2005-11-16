@@ -142,34 +142,6 @@
 				<File
 					RelativePath="..\..\lib\Transforms\Instrumentation\TraceValues.cpp">
 				</File>
-				<Filter
-					Name="ProfilePaths"
-					Filter="">
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\CombineBranch.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\EdgeCode.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\Graph.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\Graph.h">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\GraphAuxiliary.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\InstLoops.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\ProfilePaths.cpp">
-					</File>
-					<File
-						RelativePath="..\..\lib\Transforms\Instrumentation\ProfilePaths\RetracePath.cpp">
-					</File>
-				</Filter>
 			</Filter>
 			<Filter
 				Name="IPO"
@@ -269,9 +241,6 @@
 					RelativePath="..\..\lib\Transforms\Scalar\LICM.cpp">
 				</File>
 				<File
-					RelativePath="..\..\lib\Transforms\Scalar\LoopSimplify.cpp">
-				</File>
-				<File
 					RelativePath="..\..\lib\Transforms\Scalar\LoopStrengthReduce.cpp">
 				</File>
 				<File
@@ -282,9 +251,6 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Scalar\LowerAllocations.cpp">
-				</File>
-				<File
-					RelativePath="..\..\lib\Transforms\Scalar\LowerConstantExprs.cpp">
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Scalar\LowerGC.cpp">
@@ -309,6 +275,9 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Scalar\Reassociate.cpp">
+				</File>
+				<File
+					RelativePath="..\..\lib\Transforms\Scalar\Reg2Mem.cpp">
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Scalar\ScalarReplAggregates.cpp">
@@ -359,6 +328,9 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Utils\Local.cpp">
+				</File>
+				<File
+					RelativePath="..\..\lib\Transforms\Utils\LoopSimplify.cpp">
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Utils\PromoteMemoryToRegister.cpp">

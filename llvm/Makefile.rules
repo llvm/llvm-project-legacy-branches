@@ -588,9 +588,9 @@ endif
 # What the Sparc JIT requires
 ifdef ENABLE_SPARCV9_JIT
   JIT_LIBS += LLVMSparcV9 LLVMSparcV9ModuloSched LLVMSparcV9InstrSched \
-              LLVMSparcV9LiveVar LLVMInstrumentation.a LLVMProfilePaths \
+              LLVMSparcV9LiveVar LLVMInstrumentation.a \
               LLVMBCWriter LLVMTransforms.a LLVMipo.a LLVMipa.a \
-              LLVMDataStructure.a LLVMSparcV9RegAlloc
+              LLVMDataStructure LLVMSparcV9RegAlloc
 endif
 
 # You can enable the PowerPC JIT on a non-PowerPC host by setting the flag
@@ -617,7 +617,7 @@ ifdef ENABLE_ALPHA_JIT
   JIT_LIBS += LLVMAlpha LLVMSelectionDAG
 endif
 
-LLVMLIBS := $(JIT_LIBS) LLVMScalarOpts LLVMAnalysis.a LLVMTransformUtils.a \
+LLVMLIBS := $(JIT_LIBS) LLVMScalarOpts.a LLVMTransformUtils.a LLVMAnalysis.a \
             LLVMBCReader LLVMCore LLVMSupport.a LLVMTarget.a LLVMbzip2 \
             LLVMSystem.a $(PLATFORMLIBDL)
 endif
@@ -824,10 +824,18 @@ endif
 
 #---------------------------------------------------------
 # ReLinked Library Targets:
-#   If the user didn't explicitly forbid building a 
-#   relinked then we provide targets for building them.
+#   If the user explicitly requests a relinked library with
+#   BUILD_RELINKED, provide it.  Otherwise, if they specify
+#   neither of BUILD_ARCHIVE or DONT_BUILD_RELINKED, give
+#   them one.
 #---------------------------------------------------------
+ifndef BUILD_ARCHIVE
 ifndef DONT_BUILD_RELINKED
+BUILD_RELINKED = 1
+endif
+endif
+
+ifdef BUILD_RELINKED
 
 all-local:: $(LibName.O)
 
@@ -1162,6 +1170,10 @@ $(ObjDir)/%GenDAGISel.inc.tmp : %.td $(ObjDir)/.dir
 	$(Echo) "Building $(<F) instruction selector implementation with tblgen"
 	$(Verb) $(TableGen) -gen-dag-isel -o $@ $<
 
+$(TARGET:%=$(ObjDir)/%GenSubtarget.inc.tmp): \
+$(ObjDir)/%GenSubtarget.inc.tmp : %.td $(ObjDir)/.dir
+	$(Echo) "Building $(<F) subtarget information with tblgen"
+	$(Verb) $(TableGen) -gen-subtarget -o $@ $<
 
 clean-local::
 	-$(Verb) $(RM) -f $(INCFiles)

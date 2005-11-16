@@ -20,8 +20,7 @@
 #include <cstdlib>
 #include <map>
 #include <vector>
-
-namespace llvm {
+using namespace llvm;
 
 namespace {
   class SparcV8CodeEmitter : public MachineFunctionPass {
@@ -182,5 +181,3 @@ void SparcV8JITInfo::replaceMachineCodeForFunction(void *Old, void *New) {
 }
 
 #include "SparcV8GenCodeEmitter.inc"
-
-} // end llvm namespace

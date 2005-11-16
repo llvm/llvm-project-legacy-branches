@@ -29,8 +29,8 @@ namespace {
 }
 
 namespace llvm {
-  cl::opt<bool> EnableAlphaLSR("enable-lsr-for-alpha",
-                             cl::desc("Enable LSR for Alpha (beta option!)"),
+  cl::opt<bool> EnableAlphaDAG("enable-dag-isel-for-alpha",
+                             cl::desc("Enable DAG ISEL for Alpha (beta option!)"),
                              cl::Hidden);
 }
 
@@ -48,7 +48,7 @@ unsigned AlphaTargetMachine::getModuleMatchQuality(const Module &M) {
            M.getPointerSize() != Module::AnyPointerSize)
     return 0;                                    // Match for some other target
 
-  return 0;
+  return getJITMatchQuality()/2;
 }
 
 unsigned AlphaTargetMachine::getJITMatchQuality() {
@@ -74,13 +74,11 @@ AlphaTargetMachine::AlphaTargetMachine(const Module &M, IntrinsicLowering *IL,
 ///
 bool AlphaTargetMachine::addPassesToEmitFile(PassManager &PM,
                                              std::ostream &Out,
-                                             CodeGenFileType FileType) {
+                                             CodeGenFileType FileType,
+                                             bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
-  if (EnableAlphaLSR) {
-    PM.add(createLoopStrengthReducePass());
-    PM.add(createCFGSimplificationPass());
-  }
+  PM.add(createLoopStrengthReducePass());
 
   // FIXME: Implement efficient support for garbage collection intrinsics.
   PM.add(createLowerGCPass());
@@ -94,7 +92,12 @@ bool AlphaTargetMachine::addPassesToEmitFile(PassManager &PM,
   // Make sure that no unreachable blocks are instruction selected.
   PM.add(createUnreachableBlockEliminationPass());
 
-  PM.add(createAlphaPatternInstructionSelector(*this));
+  PM.add(createCFGSimplificationPass());
+
+  if (EnableAlphaDAG)
+    PM.add(createAlphaISelDag(*this));
+  else
+    PM.add(createAlphaPatternInstructionSelector(*this));
 
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(&std::cerr));
@@ -117,10 +120,8 @@ bool AlphaTargetMachine::addPassesToEmitFile(PassManager &PM,
 
 void AlphaJITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
 
-  if (EnableAlphaLSR) {
-    PM.add(createLoopStrengthReducePass());
-    PM.add(createCFGSimplificationPass());
-  }
+  PM.add(createLoopStrengthReducePass());
+  PM.add(createCFGSimplificationPass());
 
   // FIXME: Implement efficient support for garbage collection intrinsics.
   PM.add(createLowerGCPass());

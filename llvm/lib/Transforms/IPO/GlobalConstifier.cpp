@@ -678,7 +678,7 @@ static GlobalVariable *OptimizeGlobalAddressOfMalloc(GlobalVariable *GV,
                                  (unsigned)NElements->getRawValue());
     MallocInst *NewMI =
       new MallocInst(NewTy, Constant::getNullValue(Type::UIntTy),
-                     MI->getName(), MI);
+                     MI->getAlignment(), MI->getName(), MI);
     std::vector<Value*> Indices;
     Indices.push_back(Constant::getNullValue(Type::IntTy));
     Indices.push_back(Indices[0]);
@@ -950,6 +950,7 @@ bool GlobalOpt::ProcessInternalGlobal(GlobalVariable *GV,
       DEBUG(std::cerr << "LOCALIZING GLOBAL: " << *GV);
       Instruction* FirstI = GS.AccessingFunction->getEntryBlock().begin();
       const Type* ElemTy = GV->getType()->getElementType();
+      // FIXME: Pass Global's alignment when globals have alignment
       AllocaInst* Alloca = new AllocaInst(ElemTy, NULL, GV->getName(), FirstI);
       if (!isa<UndefValue>(GV->getInitializer()))
         new StoreInst(GV->getInitializer(), Alloca, FirstI);
@@ -1113,7 +1114,8 @@ bool GlobalOpt::OptimizeGlobalVars(Module &M) {
 /// FindGlobalCtors - Find the llvm.globalctors list, verifying that all
 /// initializers have an init priority of 65535.
 GlobalVariable *GlobalOpt::FindGlobalCtors(Module &M) {
-  for (Module::giterator I = M.global_begin(), E = M.global_end(); I != E; ++I)
+  for (Module::global_iterator I = M.global_begin(), E = M.global_end();
+       I != E; ++I)
     if (I->getName() == "llvm.global_ctors") {
       // Found it, verify it's an array of { int, void()* }.
       const ArrayType *ATy =dyn_cast<ArrayType>(I->getType()->getElementType());

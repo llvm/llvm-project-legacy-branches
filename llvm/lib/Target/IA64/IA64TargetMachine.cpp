@@ -37,6 +37,9 @@ namespace {
                               cl::desc("Disable the IA64 asm printer, for use "
                                        "when profiling the code generator."));
 
+  cl::opt<bool> EnableDAGIsel("enable-ia64-dag-isel", cl::Hidden,
+		              cl::desc("Enable the IA64 DAG->DAG isel"));
+
   // Register the target.
   RegisterTarget<IA64TargetMachine> X("ia64", "  IA-64 (Itanium)");
 }
@@ -82,14 +85,16 @@ IA64TargetMachine::IA64TargetMachine(const Module &M, IntrinsicLowering *IL,
 // does to emit statically compiled machine code.
 bool IA64TargetMachine::addPassesToEmitFile(PassManager &PM,
                                             std::ostream &Out,
-                                                CodeGenFileType FileType) {
+                                            CodeGenFileType FileType,
+                                            bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
   // FIXME: Implement efficient support for garbage collection intrinsics.
   PM.add(createLowerGCPass());
 
   // FIXME: Implement the invoke/unwind instructions!
-  PM.add(createLowerInvokePass());
+  PM.add(createLowerInvokePass(704, 16)); // on ia64 linux, jmpbufs are 704
+                                          // bytes and must be 16byte aligned
 
   // FIXME: Implement the switch instruction in the instruction selector!
   PM.add(createLowerSwitchPass());
@@ -97,8 +102,12 @@ bool IA64TargetMachine::addPassesToEmitFile(PassManager &PM,
   // Make sure that no unreachable blocks are instruction selected.
   PM.add(createUnreachableBlockEliminationPass());
 
-  PM.add(createIA64PatternInstructionSelector(*this));
-
+  // Add an instruction selector
+  if(EnableDAGIsel)
+    PM.add(createIA64DAGToDAGInstructionSelector(*this));
+  else
+    PM.add(createIA64PatternInstructionSelector(*this));
+  
 /* XXX not yet. ;)
   // Run optional SSA-based machine code optimizations next...
   if (!NoSSAPeephole)

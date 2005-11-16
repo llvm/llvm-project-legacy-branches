@@ -495,18 +495,20 @@ static Value *getAISize(Value *Amt) {
 }
 
 AllocationInst::AllocationInst(const Type *Ty, Value *ArraySize, unsigned iTy,
-                               const std::string &Name,
+                               unsigned Align, const std::string &Name,
                                Instruction *InsertBefore)
   : UnaryInstruction(PointerType::get(Ty), iTy, getAISize(ArraySize),
-                     Name, InsertBefore) {
+                     Name, InsertBefore), Alignment(Align) {
+  assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
   assert(Ty != Type::VoidTy && "Cannot allocate void!");
 }
 
 AllocationInst::AllocationInst(const Type *Ty, Value *ArraySize, unsigned iTy,
-                               const std::string &Name,
+                               unsigned Align, const std::string &Name,
                                BasicBlock *InsertAtEnd)
   : UnaryInstruction(PointerType::get(Ty), iTy, getAISize(ArraySize),
-                     Name, InsertAtEnd) {
+                     Name, InsertAtEnd), Alignment(Align) {
+  assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
   assert(Ty != Type::VoidTy && "Cannot allocate void!");
 }
 
@@ -522,12 +524,12 @@ const Type *AllocationInst::getAllocatedType() const {
 
 AllocaInst::AllocaInst(const AllocaInst &AI)
   : AllocationInst(AI.getType()->getElementType(), (Value*)AI.getOperand(0),
-                   Instruction::Alloca) {
+                   Instruction::Alloca, AI.getAlignment()) {
 }
 
 MallocInst::MallocInst(const MallocInst &MI)
   : AllocationInst(MI.getType()->getElementType(), (Value*)MI.getOperand(0),
-                   Instruction::Malloc) {
+                   Instruction::Malloc, MI.getAlignment()) {
 }
 
 //===----------------------------------------------------------------------===//

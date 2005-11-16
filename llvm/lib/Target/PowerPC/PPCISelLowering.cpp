@@ -27,6 +27,7 @@ PPCTargetLowering::PPCTargetLowering(TargetMachine &TM)
     
   // Fold away setcc operations if possible.
   setSetCCIsExpensive();
+  setPow2DivIsCheap();
   
   // Use _setjmp/_longjmp instead of setjmp/longjmp.
   setUseUnderscoreSetJmpLongJmp(true);
@@ -80,9 +81,6 @@ PPCTargetLowering::PPCTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::BRCOND,       MVT::Other, Expand);
   setOperationAction(ISD::BRCONDTWOWAY, MVT::Other, Expand);
   
-  // PowerPC does not have FP_TO_UINT
-  setOperationAction(ISD::FP_TO_UINT, MVT::i32, Expand);
-  
   // PowerPC turns FP_TO_SINT into FCTIWZ and some load/stores.
   setOperationAction(ISD::FP_TO_SINT, MVT::i32, Custom);
 
@@ -97,6 +95,11 @@ PPCTargetLowering::PPCTargetLowering(TargetMachine &TM)
     // They also have instructions for converting between i64 and fp.
     setOperationAction(ISD::FP_TO_SINT, MVT::i64, Custom);
     setOperationAction(ISD::SINT_TO_FP, MVT::i64, Custom);
+    // To take advantage of the above i64 FP_TO_SINT, promote i32 FP_TO_UINT
+    setOperationAction(ISD::FP_TO_UINT, MVT::i32, Promote);
+  } else {
+    // PowerPC does not have FP_TO_UINT on 32 bit implementations.
+    setOperationAction(ISD::FP_TO_UINT, MVT::i32, Expand);
   }
 
   if (TM.getSubtarget<PPCSubtarget>().has64BitRegs()) {
@@ -203,34 +206,47 @@ SDOperand PPCTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
         std::swap(TV, FV);  // fsel is natively setge, swap operands for setlt
       case ISD::SETUGE:
       case ISD::SETGE:
+        if (LHS.getValueType() == MVT::f32)   // Comparison is always 64-bits
+          LHS = DAG.getNode(ISD::FP_EXTEND, MVT::f64, LHS);
         return DAG.getNode(PPCISD::FSEL, ResVT, LHS, TV, FV);
       case ISD::SETUGT:
       case ISD::SETGT:
         std::swap(TV, FV);  // fsel is natively setge, swap operands for setlt
       case ISD::SETULE:
       case ISD::SETLE:
+        if (LHS.getValueType() == MVT::f32)   // Comparison is always 64-bits
+          LHS = DAG.getNode(ISD::FP_EXTEND, MVT::f64, LHS);
         return DAG.getNode(PPCISD::FSEL, ResVT,
-                           DAG.getNode(ISD::FNEG, ResVT, LHS), TV, FV);
+                           DAG.getNode(ISD::FNEG, MVT::f64, LHS), TV, FV);
       }
     
+    SDOperand Cmp;
     switch (CC) {
     default: assert(0 && "Invalid FSEL condition"); abort();
     case ISD::SETULT:
     case ISD::SETLT:
-      return DAG.getNode(PPCISD::FSEL, ResVT,
-                         DAG.getNode(ISD::FSUB, CmpVT, LHS, RHS), FV, TV);
+      Cmp = DAG.getNode(ISD::FSUB, CmpVT, LHS, RHS);
+      if (Cmp.getValueType() == MVT::f32)   // Comparison is always 64-bits
+        Cmp = DAG.getNode(ISD::FP_EXTEND, MVT::f64, Cmp);
+      return DAG.getNode(PPCISD::FSEL, ResVT, Cmp, FV, TV);
     case ISD::SETUGE:
     case ISD::SETGE:
-      return DAG.getNode(PPCISD::FSEL, ResVT,
-                         DAG.getNode(ISD::FSUB, CmpVT, LHS, RHS), TV, FV);
+      Cmp = DAG.getNode(ISD::FSUB, CmpVT, LHS, RHS);
+      if (Cmp.getValueType() == MVT::f32)   // Comparison is always 64-bits
+        Cmp = DAG.getNode(ISD::FP_EXTEND, MVT::f64, Cmp);
+      return DAG.getNode(PPCISD::FSEL, ResVT, Cmp, TV, FV);
     case ISD::SETUGT:
     case ISD::SETGT:
-      return DAG.getNode(PPCISD::FSEL, ResVT,
-                         DAG.getNode(ISD::FSUB, CmpVT, RHS, LHS), FV, TV);
+      Cmp = DAG.getNode(ISD::FSUB, CmpVT, RHS, LHS);
+      if (Cmp.getValueType() == MVT::f32)   // Comparison is always 64-bits
+        Cmp = DAG.getNode(ISD::FP_EXTEND, MVT::f64, Cmp);
+      return DAG.getNode(PPCISD::FSEL, ResVT, Cmp, FV, TV);
     case ISD::SETULE:
     case ISD::SETLE:
-      return DAG.getNode(PPCISD::FSEL, ResVT,
-                         DAG.getNode(ISD::FSUB, CmpVT, RHS, LHS), TV, FV);
+      Cmp = DAG.getNode(ISD::FSUB, CmpVT, RHS, LHS);
+      if (Cmp.getValueType() == MVT::f32)   // Comparison is always 64-bits
+        Cmp = DAG.getNode(ISD::FP_EXTEND, MVT::f64, Cmp);
+      return DAG.getNode(PPCISD::FSEL, ResVT, Cmp, TV, FV);
     }
     break;
   }
@@ -691,6 +707,19 @@ PPCTargetLowering::LowerCallTo(SDOperand Chain,
   }
   
   return std::make_pair(RetVal, Chain);
+}
+
+SDOperand PPCTargetLowering::LowerReturnTo(SDOperand Chain, SDOperand Op,
+                                           SelectionDAG &DAG) {
+  if (Op.getValueType() == MVT::i64) {
+    SDOperand Hi = DAG.getNode(ISD::EXTRACT_ELEMENT, MVT::i32, Op, 
+                               DAG.getConstant(1, MVT::i32));
+    SDOperand Lo = DAG.getNode(ISD::EXTRACT_ELEMENT, MVT::i32, Op,
+                               DAG.getConstant(0, MVT::i32));
+    return DAG.getNode(ISD::RET, MVT::Other, Chain, Lo, Hi);
+  } else {
+    return DAG.getNode(ISD::RET, MVT::Other, Chain, Op);
+  }
 }
 
 SDOperand PPCTargetLowering::LowerVAStart(SDOperand Chain, SDOperand VAListP,

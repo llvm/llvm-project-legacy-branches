@@ -125,7 +125,7 @@
 				RelativePath="..\..\lib\Analysis\CFGPrinter.cpp">
 			</File>
 			<File
-				RelativePath="..\..\lib\Analysis\Expressions.cpp">
+				RelativePath="..\..\lib\Analysis\ConstantFolding.cpp">
 			</File>
 			<File
 				RelativePath="..\..\lib\Analysis\InstCount.cpp">
@@ -179,16 +179,10 @@
 					RelativePath="..\..\lib\Analysis\Ipa\CallGraphSCCPass.cpp">
 				</File>
 				<File
-					RelativePath="..\..\lib\Analysis\Ipa\FindUnsafePointerTypes.cpp">
-				</File>
-				<File
 					RelativePath="..\..\lib\Analysis\Ipa\FindUsedTypes.cpp">
 				</File>
 				<File
 					RelativePath="..\..\lib\Analysis\Ipa\GlobalsModRef.cpp">
-				</File>
-				<File
-					RelativePath="..\..\lib\Analysis\Ipa\PrintSCC.cpp">
 				</File>
 			</Filter>
 			<Filter
@@ -252,16 +246,13 @@
 				RelativePath="..\..\include\llvm\Analysis\CFGPrinter.h">
 			</File>
 			<File
+				RelativePath="..\..\include\llvm\Analysis\ConstantFolding.h">
+			</File>
+			<File
 				RelativePath="..\..\include\llvm\Analysis\ConstantsScanner.h">
 			</File>
 			<File
 				RelativePath="..\..\include\llvm\Analysis\Dominators.h">
-			</File>
-			<File
-				RelativePath="..\..\include\llvm\Analysis\Expressions.h">
-			</File>
-			<File
-				RelativePath="..\..\include\llvm\Analysis\FindUnsafePointerTypes.h">
 			</File>
 			<File
 				RelativePath="..\..\include\llvm\Analysis\FindUsedTypes.h">

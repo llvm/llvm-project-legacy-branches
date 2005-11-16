@@ -167,63 +167,63 @@ const TargetMachine &SelectionDAG::getTarget() const {
 /// chain but no other uses and no side effect.  If a node is passed in as an
 /// argument, it is used as the seed for node deletion.
 void SelectionDAG::RemoveDeadNodes(SDNode *N) {
-  std::set<SDNode*> AllNodeSet(AllNodes.begin(), AllNodes.end());
-
   // Create a dummy node (which is not added to allnodes), that adds a reference
   // to the root node, preventing it from being deleted.
   HandleSDNode Dummy(getRoot());
 
+  bool MadeChange = false;
+  
   // If we have a hint to start from, use it.
-  if (N) DeleteNodeIfDead(N, &AllNodeSet);
-
- Restart:
-  unsigned NumNodes = AllNodeSet.size();
-  for (std::set<SDNode*>::iterator I = AllNodeSet.begin(), E = AllNodeSet.end();
-       I != E; ++I) {
-    // Try to delete this node.
-    DeleteNodeIfDead(*I, &AllNodeSet);
-
-    // If we actually deleted any nodes, do not use invalid iterators in
-    // AllNodeSet.
-    if (AllNodeSet.size() != NumNodes)
-      goto Restart;
+  if (N && N->use_empty()) {
+    DestroyDeadNode(N);
+    MadeChange = true;
   }
 
-  // Restore AllNodes.
-  if (AllNodes.size() != NumNodes)
-    AllNodes.assign(AllNodeSet.begin(), AllNodeSet.end());
-
+  for (allnodes_iterator I = allnodes_begin(), E = allnodes_end(); I != E; ++I)
+    if (I->use_empty() && I->getOpcode() != 65535) {
+      // Node is dead, recursively delete newly dead uses.
+      DestroyDeadNode(I);
+      MadeChange = true;
+    }
+  
+  // Walk the nodes list, removing the nodes we've marked as dead.
+  if (MadeChange) {
+    for (allnodes_iterator I = allnodes_begin(), E = allnodes_end(); I != E; ) {
+      SDNode *N = I++;
+      if (N->use_empty())
+        AllNodes.erase(N);
+    }
+  }
+  
   // If the root changed (e.g. it was a dead load, update the root).
   setRoot(Dummy.getValue());
 }
 
-
-void SelectionDAG::DeleteNodeIfDead(SDNode *N, void *NodeSet) {
-  if (!N->use_empty())
-    return;
-
+/// DestroyDeadNode - We know that N is dead.  Nuke it from the CSE maps for the
+/// graph.  If it is the last user of any of its operands, recursively process
+/// them the same way.
+/// 
+void SelectionDAG::DestroyDeadNode(SDNode *N) {
   // Okay, we really are going to delete this node.  First take this out of the
   // appropriate CSE map.
   RemoveNodeFromCSEMaps(N);
   
   // Next, brutally remove the operand list.  This is safe to do, as there are
   // no cycles in the graph.
-  while (!N->Operands.empty()) {
-    SDNode *O = N->Operands.back().Val;
-    N->Operands.pop_back();
+  for (SDNode::op_iterator I = N->op_begin(), E = N->op_end(); I != E; ++I) {
+    SDNode *O = I->Val;
     O->removeUser(N);
     
     // Now that we removed this operand, see if there are no uses of it left.
-    DeleteNodeIfDead(O, NodeSet);
+    if (O->use_empty())
+      DestroyDeadNode(O);
   }
-  
-  // Remove the node from the nodes set and delete it.
-  std::set<SDNode*> &AllNodeSet = *(std::set<SDNode*>*)NodeSet;
-  AllNodeSet.erase(N);
-  
-  // Now that the node is gone, check to see if any of the operands of this node
-  // are dead now.
-  delete N;  
+  delete[] N->OperandList;
+  N->OperandList = 0;
+  N->NumOperands = 0;
+
+  // Mark the node as dead.
+  N->MorphNodeTo(65535);
 }
 
 void SelectionDAG::DeleteNode(SDNode *N) {
@@ -240,22 +240,14 @@ void SelectionDAG::DeleteNode(SDNode *N) {
 void SelectionDAG::DeleteNodeNotInCSEMaps(SDNode *N) {
 
   // Remove it from the AllNodes list.
-  for (std::vector<SDNode*>::iterator I = AllNodes.begin(); ; ++I) {
-    assert(I != AllNodes.end() && "Node not in AllNodes list??");
-    if (*I == N) {
-      // Erase from the vector, which is not ordered.
-      std::swap(*I, AllNodes.back());
-      AllNodes.pop_back();
-      break;
-    }
-  }
+  AllNodes.remove(N);
     
   // Drop all of the operands and decrement used nodes use counts.
-  while (!N->Operands.empty()) {
-    SDNode *O = N->Operands.back().Val;
-    N->Operands.pop_back();
-    O->removeUser(N);
-  }
+  for (SDNode::op_iterator I = N->op_begin(), E = N->op_end(); I != E; ++I)
+    I->Val->removeUser(N);
+  delete[] N->OperandList;
+  N->OperandList = 0;
+  N->NumOperands = 0;
   
   delete N;
 }
@@ -311,6 +303,9 @@ void SelectionDAG::RemoveNodeFromCSEMaps(SDNode *N) {
     break;
   case ISD::ExternalSymbol:
     Erased = ExternalSymbols.erase(cast<ExternalSymbolSDNode>(N)->getSymbol());
+    break;
+  case ISD::TargetExternalSymbol:
+    Erased = TargetExternalSymbols.erase(cast<ExternalSymbolSDNode>(N)->getSymbol());
     break;
   case ISD::VALUETYPE:
     Erased = ValueTypeNodes[cast<VTSDNode>(N)->getVT()] != 0;
@@ -419,14 +414,18 @@ SDNode *SelectionDAG::AddNonLeafNodeToCSEMaps(SDNode *N) {
     AN = N;
   }
   return 0;
-  
 }
 
 
 
 SelectionDAG::~SelectionDAG() {
-  for (unsigned i = 0, e = AllNodes.size(); i != e; ++i)
-    delete AllNodes[i];
+  while (!AllNodes.empty()) {
+    SDNode *N = AllNodes.begin();
+    delete [] N->OperandList;
+    N->OperandList = 0;
+    N->NumOperands = 0;
+    AllNodes.pop_front();
+  }
 }
 
 SDOperand SelectionDAG::getZeroExtendInReg(SDOperand Op, MVT::ValueType VT) {
@@ -551,7 +550,15 @@ SDOperand SelectionDAG::getValueType(MVT::ValueType VT) {
 SDOperand SelectionDAG::getExternalSymbol(const char *Sym, MVT::ValueType VT) {
   SDNode *&N = ExternalSymbols[Sym];
   if (N) return SDOperand(N, 0);
-  N = new ExternalSymbolSDNode(Sym, VT);
+  N = new ExternalSymbolSDNode(false, Sym, VT);
+  AllNodes.push_back(N);
+  return SDOperand(N, 0);
+}
+
+SDOperand SelectionDAG::getTargetExternalSymbol(const char *Sym, MVT::ValueType VT) {
+  SDNode *&N = TargetExternalSymbols[Sym];
+  if (N) return SDOperand(N, 0);
+  N = new ExternalSymbolSDNode(true, Sym, VT);
   AllNodes.push_back(N);
   return SDOperand(N, 0);
 }
@@ -1065,9 +1072,9 @@ void SDNode::setAdjCallChain(SDOperand N) {
   assert((getOpcode() == ISD::CALLSEQ_START ||
           getOpcode() == ISD::CALLSEQ_END) && "Cannot adjust this node!");
 
-  Operands[0].Val->removeUser(this);
-  Operands[0] = N;
-  N.Val->Uses.push_back(this);
+  OperandList[0].Val->removeUser(this);
+  OperandList[0] = N;
+  OperandList[0].Val->Uses.push_back(this);
 }
 
 
@@ -1080,7 +1087,7 @@ SDOperand SelectionDAG::getLoad(MVT::ValueType VT,
   N = new SDNode(ISD::LOAD, Chain, Ptr, SV);
 
   // Loads have a token chain.
-  N->setValueTypes(VT, MVT::Other);
+  setNodeValueTypes(N, VT, MVT::Other);
   AllNodes.push_back(N);
   return SDOperand(N, 0);
 }
@@ -1198,7 +1205,7 @@ SDOperand SelectionDAG::getNode(unsigned Opcode, MVT::ValueType VT,
   case 3: return getNode(Opcode, VT, Ops[0], Ops[1], Ops[2]);
   default: break;
   }
-
+  
   ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(Ops[1].Val);
   switch (Opcode) {
   default: break;
@@ -1324,9 +1331,44 @@ SDOperand SelectionDAG::getNode(unsigned Opcode,
   } else {
     N = new SDNode(Opcode, Ops);
   }
-  N->setValueTypes(ResultTys);
+  setNodeValueTypes(N, ResultTys);
   AllNodes.push_back(N);
   return SDOperand(N, 0);
+}
+
+void SelectionDAG::setNodeValueTypes(SDNode *N, 
+                                     std::vector<MVT::ValueType> &RetVals) {
+  switch (RetVals.size()) {
+  case 0: return;
+  case 1: N->setValueTypes(RetVals[0]); return;
+  case 2: setNodeValueTypes(N, RetVals[0], RetVals[1]); return;
+  default: break;
+  }
+  
+  std::list<std::vector<MVT::ValueType> >::iterator I =
+    std::find(VTList.begin(), VTList.end(), RetVals);
+  if (I == VTList.end()) {
+    VTList.push_front(RetVals);
+    I = VTList.begin();
+  }
+
+  N->setValueTypes(&(*I)[0], I->size());
+}
+
+void SelectionDAG::setNodeValueTypes(SDNode *N, MVT::ValueType VT1, 
+                                     MVT::ValueType VT2) {
+  for (std::list<std::vector<MVT::ValueType> >::iterator I = VTList.begin(),
+       E = VTList.end(); I != E; ++I) {
+    if (I->size() == 2 && (*I)[0] == VT1 && (*I)[1] == VT2) {
+      N->setValueTypes(&(*I)[0], 2);
+      return;
+    }
+  }
+  std::vector<MVT::ValueType> V;
+  V.push_back(VT1);
+  V.push_back(VT2);
+  VTList.push_front(V);
+  N->setValueTypes(&(*VTList.begin())[0], 2);
 }
 
 
@@ -1360,7 +1402,7 @@ void SelectionDAG::SelectNodeTo(SDNode *N, unsigned TargetOpc,
                                 SDOperand Op1, SDOperand Op2) {
   RemoveNodeFromCSEMaps(N);
   N->MorphNodeTo(ISD::BUILTIN_OP_END+TargetOpc);
-  N->setValueTypes(VT1, VT2);
+  setNodeValueTypes(N, VT1, VT2);
   N->setOperands(Op1, Op2);
 }
 void SelectionDAG::SelectNodeTo(SDNode *N, unsigned TargetOpc,
@@ -1376,7 +1418,7 @@ void SelectionDAG::SelectNodeTo(SDNode *N, unsigned TargetOpc,
                                 SDOperand Op1, SDOperand Op2, SDOperand Op3) {
   RemoveNodeFromCSEMaps(N);
   N->MorphNodeTo(ISD::BUILTIN_OP_END+TargetOpc);
-  N->setValueTypes(VT1, VT2);
+  setNodeValueTypes(N, VT1, VT2);
   N->setOperands(Op1, Op2, Op3);
 }
 
@@ -1417,10 +1459,11 @@ void SelectionDAG::ReplaceAllUsesWith(SDOperand FromN, SDOperand ToN,
     // This node is about to morph, remove its old self from the CSE maps.
     RemoveNodeFromCSEMaps(U);
     
-    for (unsigned i = 0, e = U->getNumOperands(); i != e; ++i)
-      if (U->getOperand(i).Val == From) {
+    for (SDOperand *I = U->OperandList, *E = U->OperandList+U->NumOperands;
+         I != E; ++I)
+      if (I->Val == From) {
         From->removeUser(U);
-        U->Operands[i].Val = To;
+        I->Val = To;
         To->addUser(U);
       }
 
@@ -1458,10 +1501,11 @@ void SelectionDAG::ReplaceAllUsesWith(SDNode *From, SDNode *To,
     // This node is about to morph, remove its old self from the CSE maps.
     RemoveNodeFromCSEMaps(U);
     
-    for (unsigned i = 0, e = U->getNumOperands(); i != e; ++i)
-      if (U->getOperand(i).Val == From) {
+    for (SDOperand *I = U->OperandList, *E = U->OperandList+U->NumOperands;
+         I != E; ++I)
+      if (I->Val == From) {
         From->removeUser(U);
-        U->Operands[i].Val = To;
+        I->Val = To;
         To->addUser(U);
       }
         
@@ -1499,11 +1543,12 @@ void SelectionDAG::ReplaceAllUsesWith(SDNode *From,
     // This node is about to morph, remove its old self from the CSE maps.
     RemoveNodeFromCSEMaps(U);
     
-    for (unsigned i = 0, e = U->getNumOperands(); i != e; ++i)
-      if (U->getOperand(i).Val == From) {
-        const SDOperand &ToOp = To[U->getOperand(i).ResNo];
+    for (SDOperand *I = U->OperandList, *E = U->OperandList+U->NumOperands;
+         I != E; ++I)
+      if (I->Val == From) {
+        const SDOperand &ToOp = To[I->ResNo];
         From->removeUser(U);
-        U->Operands[i] = ToOp;
+        *I = ToOp;
         ToOp.Val->addUser(U);
       }
         
@@ -1522,6 +1567,15 @@ void SelectionDAG::ReplaceAllUsesWith(SDNode *From,
 //===----------------------------------------------------------------------===//
 //                              SDNode Class
 //===----------------------------------------------------------------------===//
+
+
+/// getValueTypeList - Return a pointer to the specified value type.
+///
+MVT::ValueType *SDNode::getValueTypeList(MVT::ValueType VT) {
+  static MVT::ValueType VTs[MVT::LAST_VALUETYPE];
+  VTs[VT] = VT;
+  return &VTs[VT];
+}
 
 /// hasNUsesOfValue - Return true if there are exactly NUSES uses of the
 /// indicated value.  This method ignores uses of other values defined by this
@@ -1570,6 +1624,7 @@ const char *SDNode::getOperationName(const SelectionDAG *G) const {
     }
    
   case ISD::PCMARKER:      return "PCMarker";
+  case ISD::READCYCLECOUNTER: return "ReadCycleCounter";
   case ISD::SRCVALUE:      return "SrcValue";
   case ISD::VALUETYPE:     return "ValueType";
   case ISD::EntryToken:    return "EntryToken";
@@ -1586,6 +1641,7 @@ const char *SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::BasicBlock:    return "BasicBlock";
   case ISD::Register:      return "Register";
   case ISD::ExternalSymbol: return "ExternalSymbol";
+  case ISD::TargetExternalSymbol: return "TargetExternalSymbol";
   case ISD::ConstantPool:  return "ConstantPool";
   case ISD::TargetConstantPool:  return "TargetConstantPool";
   case ISD::CopyToReg:     return "CopyToReg";
@@ -1771,7 +1827,7 @@ void SDNode::dump(const SelectionDAG *G) const {
   }
 }
 
-static void DumpNodes(SDNode *N, unsigned indent, const SelectionDAG *G) {
+static void DumpNodes(const SDNode *N, unsigned indent, const SelectionDAG *G) {
   for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i)
     if (N->getOperand(i).Val->hasOneUse())
       DumpNodes(N->getOperand(i).Val, indent+2, G);
@@ -1786,7 +1842,11 @@ static void DumpNodes(SDNode *N, unsigned indent, const SelectionDAG *G) {
 
 void SelectionDAG::dump() const {
   std::cerr << "SelectionDAG has " << AllNodes.size() << " nodes:";
-  std::vector<SDNode*> Nodes(AllNodes);
+  std::vector<const SDNode*> Nodes;
+  for (allnodes_const_iterator I = allnodes_begin(), E = allnodes_end();
+       I != E; ++I)
+    Nodes.push_back(I);
+  
   std::sort(Nodes.begin(), Nodes.end());
 
   for (unsigned i = 0, e = Nodes.size(); i != e; ++i) {

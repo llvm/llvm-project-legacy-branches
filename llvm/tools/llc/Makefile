@@ -69,9 +69,9 @@ USEDLIBS += \
 	LLVMTarget.a \
 	LLVMipa.a \
 	LLVMTransforms.a \
-	LLVMScalarOpts \
-	LLVMAnalysis.a \
+	LLVMScalarOpts.a \
 	LLVMTransformUtils.a \
+	LLVMAnalysis.a \
 	LLVMBCReader \
 	LLVMBCWriter \
 	LLVMCore \

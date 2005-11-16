@@ -28,6 +28,7 @@
 #include "llvm/Pass.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Transforms/Scalar.h"
 
 using namespace llvm;
 
@@ -210,3 +211,5 @@ namespace {
   }
 
 }
+
+FunctionPass *llvm::createAlloca2ReallocPass() { return new Alloca2Realloc(); }

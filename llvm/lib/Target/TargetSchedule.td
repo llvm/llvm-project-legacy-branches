@@ -13,13 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Processor chip sets - These values represent each of the chip sets supported
-// by the scheduler.  Each Processor definition requires corresponding
-// instruction itineraries.
-//
-class Processor;
-
-//===----------------------------------------------------------------------===//
 // Processor functional unit - These values represent the function units
 // available across all chip sets for the target.  Eg., IntUnit, FPUnit, ...
 // These may be independent values for each chip set or may be shared across
@@ -35,8 +28,8 @@ class FuncUnit;
 // need to complete the stage.  Units represent the choice of functional units
 // that can be used to complete the stage.  Eg. IntUnit1, IntUnit2.
 //
-class InstrStage<int latency, list<FuncUnit> units> {
-  int Latency          = latency;     // length of stage in machine cycles
+class InstrStage<int cycles, list<FuncUnit> units> {
+  int Cycles          = cycles;       // length of stage in machine cycles
   list<FuncUnit> Units = units;       // choice of functional units
 }
 
@@ -68,7 +61,11 @@ class InstrItinData<InstrItinClass Class, list<InstrStage> stages> {
 // Processor itineraries - These values represent the set of all itinerary
 // classes for a given chip set.
 //
-class ProcessorItineraries<Processor proc, list<InstrItinData> iid> {
-  Processor Proc = proc;
+class ProcessorItineraries<list<InstrItinData> iid> {
   list<InstrItinData> IID = iid;
 }
+
+// NoItineraries - A marker that can be used by processors without schedule
+// info.
+def NoItineraries : ProcessorItineraries<[]>;
+

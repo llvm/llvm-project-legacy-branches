@@ -39,8 +39,8 @@
       <li><a href="#constantpool">Global Constant Pool</a></li>
       <li><a href="#functiondefs">Function Definition</a></li>
       <li><a href="#compactiontable">Compaction Table</a></li>
-      <li><a href="#instructionlist">Instruction List</a></li>
-      <li><a href="#opcodes">Instruction Opcodes</a></li>
+      <li><a href="#instructionlist">Instructions List</a></li>
+      <li><a href="#instructions">Instructions</a></li>
       <li><a href="#symtab">Symbol Table</a></li>
     </ol>
   </li>
@@ -732,7 +732,7 @@ as shown in the following table.</p>
 </table>
 <p>
 Of particular note, the bytecode format number is simply a 28-bit
-monotonically increase integer that identifies the version of the bytecode
+monotonically increasing integer that identifies the version of the bytecode
 format (which is not directly related to the LLVM release number). The
 bytecode versions defined so far are (note that this document only
 describes the latest version, 1.3):</p>
@@ -740,7 +740,9 @@ describes the latest version, 1.3):</p>
   <li>#0: LLVM 1.0 &amp; 1.1</li>
   <li>#1: LLVM 1.2</li>
   <li>#2: LLVM 1.2.5 (not released)</li>
-  <li>#3: LLVM 1.3<br>
+  <li>#3: LLVM 1.3</li>
+  <li>#4: LLVM 1.3.x (not released)</li>
+  <li>#5: LLVM 1.4, 1.5, 1.6</li>
   </li>
 </ul>
 <p>Note that we plan to eventually expand the target description
@@ -967,20 +969,27 @@ definitions occurring in the module.</td>
 occurring in the module.</td>
     </tr>
     <tr>
-      <td style="vertical-align: top;"><a href="#llist">llist</a>(<a
- href="#string">string</a>)<br>
+      <td><a href="#llist">llist</a>(<a href="#string">string</a>)<br>
       </td>
-      <td style="vertical-align: top; text-align: left;">A length list
+      <td class="td_left">A length list
 of strings that specify the names of the libraries that this module
 depends upon.<br>
       </td>
     </tr>
     <tr>
-      <td style="vertical-align: top;"><a href="#string">string</a><br>
+      <td><a href="#string">string</a><br>
       </td>
-      <td style="vertical-align: top; text-align: left;">The target
+      <td class="td_left">The target
 triple for the module (blank means no target triple specified, i.e. a
 platform independent module).<br>
+      </td>
+    </tr>
+    <tr>
+      <td><a href="#llist">llist</a>(<a href="#string">string</a>)<br>
+      </td>
+      <td class="td_left">A length list
+of strings that defines a table of section strings for globals.  A global's
+SectionID is an index into this table.<br>
       </td>
     </tr>
   </tbody>
@@ -990,12 +999,16 @@ platform independent module).<br>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"><a name="globalvar">Global Variable Field</a>
 </div>
+
 <div class="doc_text">
+
 <p>Global variables are written using an <a href="#uint32_vbr">uint32_vbr</a>
-that encodes information about the global variable and a list of the
-constant initializers for the global var, if any.</p>
+that encodes information about the global variable, an optional extension vbr,
+and a an optional initializers for the global var.</p>
+
 <p>The table below provides the bit layout of the first <a
  href="#uint32_vbr">uint32_vbr</a> that describes the global variable.</p>
+ 
 <table>
   <tbody>
     <tr>
@@ -1023,8 +1036,12 @@ follows. </td>
     </tr>
   </tbody>
 </table>
-<p>The table below provides the format of the constant initializers for
-the global variable field, if it has one.</p>
+
+<p>When the Linkage type is set to 3 (internal) and the initializer field is set
+to 0 (an invalid combination), an extension word follows the first <a
+href="#uint32_vbr">uint32_vbr</a> which encodes the real linkage and init flag,
+and can includes more information:</p>
+
 <table>
   <tbody>
     <tr>
@@ -1032,10 +1049,63 @@ the global variable field, if it has one.</p>
       <th class="td_left"><b>Description</b></th>
     </tr>
     <tr>
-      <td>(<a href="#zlist">zlist</a>(<a href="#uint32_vbr">uint32_vbr</a>))?
+      <td><a href="#bit">bit(0)</a></td>
+      <td class="td_left">Has initializer?  Indicates the real value of the "Has
+        initializer" field for the global. </td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(2-4)</a></td>
+      <td class="td_left">Linkage type: Indicates the real value of the "linkage
+        type" field for the global.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(4-8)</a></td>
+      <td class="td_left">The log-base-2 of the alignment for the global.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(9)</a></td>
+      <td class="td_left">If this bit is set, a SectionID follows this vbr.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(10-31)</a></td>
+      <td class="td_left">Currently unassigned.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>If the SectionID bit is set above, the following field is included:</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Description</b></th>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a>
       </td>
-      <td class="td_left">An optional zero-terminated list of value slot
-numbers of the global variable's constant initializer.</td>
+      <td class="td_left">An optional section ID number, specifying the string
+        to use for the section of the global.  This an index (+1) of an entry
+        into the SectionID llist in the <a href="#globalinfo">Module Global
+        Info</a> block.  If this value is 0 or not present, the global has an
+        empty section string.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>If the "Has initializer" field is set, the following field is included:</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Description</b></th>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a>
+      </td>
+      <td class="td_left">An optional value slot number for the global 
+          variable's constant initializer.</td>
     </tr>
   </tbody>
 </table>
@@ -1046,7 +1116,8 @@ numbers of the global variable's constant initializer.</td>
 </div>
 <div class="doc_text">
 <p>Functions are written using an <a href="#uint32_vbr">uint32_vbr</a>
-that encodes information about the function and a set of flags.</p>
+that encodes information about the function and a set of flags.  If needed,
+an extension word may follow this first field.</p>
 
 <p>The table below provides the bit layout of the <a
 href="#uint32_vbr">uint32_vbr</a> that describes the function.</p>
@@ -1060,8 +1131,7 @@ href="#uint32_vbr">uint32_vbr</a> that describes the function.</p>
     <tr>
       <td><a href="#bit">bit(0-3)</a></td>
       <td class="td_left">
-      Encodes the calling convention number of the function.  If this number is
-      zero, this field is followed by a vbr indicating the CC#.  Otherwise, the
+      Encodes the calling convention number of the function. The
       CC number of the function is the value of this field minus one.
       </td>
     </tr>
@@ -1072,8 +1142,60 @@ href="#uint32_vbr">uint32_vbr</a> that describes the function.</p>
       Block</a> in the bytecode file for the function.</td>
     </tr>
     <tr>
-      <td><a href="#bit">bit(5-)</a></td>
+      <td><a href="#bit">bit(5-30)</a></td>
       <td class="td_left">Type slot number of type for the function.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(31)</a></td>
+      <td class="td_left">Indicates whether an extension word follows.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>If bit(31) is set, an additional <a href="#uint32_vbr">uint32_vbr</a> word
+follows with the following fields:</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Description</b></th>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(0-4)</a></td>
+      <td class="td_left">The log-base-2 of the alignment for the function.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(5-9)</a></td>
+      <td class="td_left">The top nibble of the calling convention.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(10)</a></td>
+      <td class="td_left">If this bit is set, a SectionID follows this vbr.</td>
+    </tr>
+    <tr>
+      <td><a href="#bit">bit(11-31)</a></td>
+      <td class="td_left">Currently unassigned.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>If the SectionID bit is set above, the following field is included:</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Description</b></th>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a>
+      </td>
+      <td class="td_left">An optional section ID number, specifying the string
+        to use for the section of the function.  This an index (+1) of an entry
+        into the SectionID llist in the <a href="#globalinfo">Module Global
+        Info</a> block.  If this value is 0 or not present, the function has an
+        empty section string.</td>
     </tr>
   </tbody>
 </table>
@@ -1361,186 +1483,23 @@ of formats. See <a href="#instruction">Instructions</a> for details.</td>
   </tbody>
 </table>
 </div>
+
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"><a name="instruction">Instructions</a></div>
+<div class="doc_subsection"><a name="instructions">Instructions</a></div>
+
 <div class="doc_text">
-<p>For brevity, instructions are written in one of four formats,
-depending on the number of operands to the instruction. Each
-instruction begins with a <a href="#uint32_vbr">uint32_vbr</a> that
-encodes the type of the instruction as well as other things. The tables
-that follow describe the format of this first part of each instruction.</p>
-<p><b>Instruction Format 0</b></p>
-<p>This format is used for a few instructions that can't easily be
-shortened because they have large numbers of operands (e.g. PHI Node or
-getelementptr). Each of the opcode, type, and operand fields is found in
-successive fields.</p>
-<table>
-  <tbody>
-    <tr>
-      <th><b>Type</b></th>
-      <th class="td_left"><b>Field Description</b></th>
-    </tr>
-    <tr>
-      <td><a href="#uint32_vbr">uint32_vbr</a></td>
-      <td class="td_left">Specifies the opcode of the instruction. Note
-that for compatibility with the other instruction formats, the opcode
-is shifted left by 2 bits. Bits 0 and 1 must have value zero for this
-format.</td>
-    </tr>
-    <tr>
-      <td><a href="#uint24_vbr">uint24_vbr</a></td>
-      <td class="td_left">Provides the type slot number of the result type of
-        the instruction.</td>
-    </tr>
-    <tr>
-      <td><a href="#uint32_vbr">uint32_vbr</a></td>
-      <td class="td_left">The number of operands that follow.</td>
-    </tr>
-    <tr>
-      <td><a href="#uint32_vbr">uint32_vbr</a>+</td>
-      <td class="td_left">The slot number of the value(s) for the operand(s).
-        <sup>1</sup></td>
-    </tr>
-  </tbody>
-</table>
-Notes:
-<ol>
-  <li>Note that if the instruction is a getelementptr and the type of
-the operand is a sequential type (array or pointer) then the slot
-number is shifted up two bits and the low order bits will encode the
-type of index used, as follows: 0=uint, 1=int, 2=ulong, 3=long.</li>
-</ol>
-<p><b>Instruction Format 1</b></p>
-<p>This format encodes the opcode, type and a single operand into a
-single <a href="#uint32_vbr">uint32_vbr</a> as follows:</p>
-<table>
-  <tbody>
-    <tr>
-      <th><b>Bits</b></th>
-      <th><b>Type</b></th>
-      <th class="td_left"><b>Field Description</b></th>
-    </tr>
-    <tr>
-      <td>0-1</td>
-      <td>constant "1"</td>
-      <td class="td_left">These two bits must be the value 1 which identifies 
-        this as an instruction of format 1.</td>
-    </tr>
-    <tr>
-      <td>2-7</td>
-      <td><a href="#opcode">opcode</a></td>
-      <td class="td_left">Specifies the opcode of the instruction. Note that 
-        the maximum opcode value is 63.</td>
-    </tr>
-    <tr>
-      <td>8-19</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the type for this 
-        instruction. Maximum slot number is 2<sup>12</sup>-1=4095.</td>
-    </tr>
-    <tr>
-      <td>20-31</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the 
-        first operand. Maximum slot number is 2<sup>12</sup>-1=4095. Note that 
-        the value 2<sup>12</sup>-1 denotes zero operands.</td>
-    </tr>
-  </tbody>
-</table>
-<p><b>Instruction Format 2</b></p>
-<p>This format encodes the opcode, type and two operands into a single <a
- href="#uint32_vbr">uint32_vbr</a> as follows:</p>
-<table>
-  <tbody>
-    <tr>
-      <th><b>Bits</b></th>
-      <th><b>Type</b></th>
-      <th class="td_left"><b>Field Description</b></th>
-    </tr>
-    <tr>
-      <td>0-1</td>
-      <td>constant "2"</td>
-      <td class="td_left">These two bits must be the value 2 which identifies 
-        this as an instruction of format 2.</td>
-    </tr>
-    <tr>
-      <td>2-7</td>
-      <td><a href="#opcodes">opcode</a></td>
-      <td class="td_left">Specifies the opcode of the instruction. Note that 
-        the maximum opcode value is 63.</td>
-    </tr>
-    <tr>
-      <td>8-15</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the type for this 
-        instruction. Maximum slot number is 2<sup>8</sup>-1=255.</td>
-    </tr>
-    <tr>
-      <td>16-23</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the first 
-        operand. Maximum slot number is 2<sup>8</sup>-1=255.</td>
-    </tr>
-    <tr>
-      <td>24-31</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the second 
-        operand. Maximum slot number is 2<sup>8</sup>-1=255.</td>
-    </tr>
-  </tbody>
-</table>
-<p><b>Instruction Format 3</b></p>
-<p>This format encodes the opcode, type and three operands into a
-single <a href="#uint32_vbr">uint32_vbr</a> as follows:</p>
-<table>
-  <tbody>
-    <tr>
-      <th><b>Bits</b></th>
-      <th><b>Type</b></th>
-      <th class="td_left"><b>Field Description</b></th>
-    </tr>
-    <tr>
-      <td>0-1</td>
-      <td>constant "3"</td>
-      <td class="td_left">These two bits must be the value 3 which identifies 
-        this as an instruction of format 3.</td>
-    </tr>
-    <tr>
-      <td>2-7</td>
-      <td><a href="#opcodes">opcode</a></td>
-      <td class="td_left">Specifies the opcode of the instruction. Note that 
-        the maximum opcode value is 63.</td>
-    </tr>
-    <tr>
-      <td>8-13</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the type for this 
-        instruction. Maximum slot number is 2<sup>6</sup>-1=63.</td>
-    </tr>
-    <tr>
-      <td>14-19</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the first 
-        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
-    </tr>
-    <tr>
-      <td>20-25</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the second
-        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
-    </tr>
-    <tr>
-      <td>26-31</td>
-      <td><a href="#unsigned">unsigned</a></td>
-      <td class="td_left">Specifies the slot number of the value for the third
-        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
-    </tr>
-  </tbody>
-</table>
+<p>Instructions are written out one at a time as distinct units.  Each
+instruction
+record contains at least an <a href="#opcodes">opcode</a> and a type field, 
+and may contain a <a href="#instoperands">list of operands</a> (whose
+interpretation depends on the opcode). Based on the number of operands, the
+<a href="#instencode">instruction is encoded</a> in a
+dense format that tries to encoded each instruction into 32-bits if 
+possible. </p>
 </div>
 
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsection"><a name="opcodes">Instruction Opcodes</a></div>
+<div class="doc_subsubsection"><a name="opcodes">Instruction Opcodes</a></div>
 <div class="doc_text">
   <p>Instructions encode an opcode that identifies the kind of instruction.
   Opcodes are an enumerated integer value. The specific values used depend on
@@ -1612,10 +1571,9 @@ single <a href="#uint32_vbr">uint32_vbr</a> as follows:</p>
       <tr><td>Store+Volatile</td><td>63</td><td>3</td><td>1.3</td></tr>
     </tbody>
   </table>
-</div>
 
 <p><b><a name="pi_note">* Note: </a></b>
-These aren't really opcodes from an LLVM language prespeective. They encode
+These aren't really opcodes from an LLVM language perspective. They encode
 information into other opcodes without reserving space for that information. 
 For example, opcode=63 is a Volatile Store. The opcode for this
 instruction is 25 (Store) but we encode it as 63 to indicate that is a Volatile
@@ -1637,6 +1595,212 @@ opcode (Invoke, Call, Store) plus some set of modifiers, as follows:</p>
   <dt>TailCall</dt>
   <dd>This indicates that the Call has the 'tail' modifier.</dd>
 </dl>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"><a name="instoperands">Instruction
+Operands</a></div>
+
+<div class="doc_text">
+<p>
+Based on the instruction opcode and type, the bytecode format implicitly (to 
+save space) specifies the interpretation of the operand list.  For most
+instructions, the type of each operand is implicit from the type of the 
+instruction itself (e.g. the type of operands of a binary operator must match
+the type of the instruction).  As such, the bytecode format generally only 
+encodes the value number of the operand, not the type.</p>
+
+<p>In some cases, however, this is not sufficient.  This section enumerates
+those cases:</p>
+
+<ul>
+<li>getelementptr: the slot numbers for sequential type indexes are shifted up
+two bits.  This allows the low order bits will encode the type of index used,
+as follows: 0=uint, 1=int, 2=ulong, 3=long.</li>
+<li>cast: the result type number is encoded as the second operand.</li>
+<li>alloca/malloc: If the allocation has an explicit alignment, the log2 of the
+    alignment is encoded as the second operand.</li>
+<li>call: If the tail marker and calling convention cannot be <a 
+    href="#pi_note">encoded into the opcode</a> of the call, it is passed as an
+    additional operand.  The low bit of the operand is a flag indicating whether
+    the call is a tail call.  The rest of the bits contain the calling 
+    convention number (shifted left by one bit).</li>
+</ul>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"><a name="instencode">Instruction 
+Encoding</a></div>
+
+<div class="doc_text">
+<p>For brevity, instructions are written in one of four formats,
+depending on the number of operands to the instruction. Each
+instruction begins with a <a href="#uint32_vbr">uint32_vbr</a> that
+encodes the type of the instruction as well as other things. The tables
+that follow describe the format of this first part of each instruction.</p>
+<p><b>Instruction Format 0</b></p>
+<p>This format is used for a few instructions that can't easily be
+shortened because they have large numbers of operands (e.g. PHI Node or
+getelementptr). Each of the opcode, type, and operand fields is found in
+successive fields.</p>
+<table>
+  <tbody>
+    <tr>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Field Description</b></th>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a></td>
+      <td class="td_left">Specifies the opcode of the instruction. Note
+that for compatibility with the other instruction formats, the opcode
+is shifted left by 2 bits. Bits 0 and 1 must have value zero for this
+format.</td>
+    </tr>
+    <tr>
+      <td><a href="#uint24_vbr">uint24_vbr</a></td>
+      <td class="td_left">Provides the type slot number of the result type of
+        the instruction.</td>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a></td>
+      <td class="td_left">The number of operands that follow.</td>
+    </tr>
+    <tr>
+      <td><a href="#uint32_vbr">uint32_vbr</a>+</td>
+      <td class="td_left">The slot number of the value(s) for the operand(s).
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p><b>Instruction Format 1</b></p>
+<p>This format encodes the opcode, type and a single operand into a
+single <a href="#uint32_vbr">uint32_vbr</a> as follows:</p>
+<table>
+  <tbody>
+    <tr>
+      <th><b>Bits</b></th>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Field Description</b></th>
+    </tr>
+    <tr>
+      <td>0-1</td>
+      <td>constant "1"</td>
+      <td class="td_left">These two bits must be the value 1 which identifies 
+        this as an instruction of format 1.</td>
+    </tr>
+    <tr>
+      <td>2-7</td>
+      <td><a href="#instructions">opcode</a></td>
+      <td class="td_left">Specifies the opcode of the instruction. Note that 
+        the maximum opcode value is 63.</td>
+    </tr>
+    <tr>
+      <td>8-19</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the type for this 
+        instruction. Maximum slot number is 2<sup>12</sup>-1=4095.</td>
+    </tr>
+    <tr>
+      <td>20-31</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the 
+        first operand. Maximum slot number is 2<sup>12</sup>-1=4095. Note that 
+        the value 2<sup>12</sup>-1 denotes zero operands.</td>
+    </tr>
+  </tbody>
+</table>
+<p><b>Instruction Format 2</b></p>
+<p>This format encodes the opcode, type and two operands into a single <a
+ href="#uint32_vbr">uint32_vbr</a> as follows:</p>
+<table>
+  <tbody>
+    <tr>
+      <th><b>Bits</b></th>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Field Description</b></th>
+    </tr>
+    <tr>
+      <td>0-1</td>
+      <td>constant "2"</td>
+      <td class="td_left">These two bits must be the value 2 which identifies 
+        this as an instruction of format 2.</td>
+    </tr>
+    <tr>
+      <td>2-7</td>
+      <td><a href="#instructions">opcode</a></td>
+      <td class="td_left">Specifies the opcode of the instruction. Note that 
+        the maximum opcode value is 63.</td>
+    </tr>
+    <tr>
+      <td>8-15</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the type for this 
+        instruction. Maximum slot number is 2<sup>8</sup>-1=255.</td>
+    </tr>
+    <tr>
+      <td>16-23</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the first 
+        operand. Maximum slot number is 2<sup>8</sup>-1=255.</td>
+    </tr>
+    <tr>
+      <td>24-31</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the second 
+        operand. Maximum slot number is 2<sup>8</sup>-1=255.</td>
+    </tr>
+  </tbody>
+</table>
+<p><b>Instruction Format 3</b></p>
+<p>This format encodes the opcode, type and three operands into a
+single <a href="#uint32_vbr">uint32_vbr</a> as follows:</p>
+<table>
+  <tbody>
+    <tr>
+      <th><b>Bits</b></th>
+      <th><b>Type</b></th>
+      <th class="td_left"><b>Field Description</b></th>
+    </tr>
+    <tr>
+      <td>0-1</td>
+      <td>constant "3"</td>
+      <td class="td_left">These two bits must be the value 3 which identifies 
+        this as an instruction of format 3.</td>
+    </tr>
+    <tr>
+      <td>2-7</td>
+      <td><a href="#instructions">opcode</a></td>
+      <td class="td_left">Specifies the opcode of the instruction. Note that 
+        the maximum opcode value is 63.</td>
+    </tr>
+    <tr>
+      <td>8-13</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the type for this 
+        instruction. Maximum slot number is 2<sup>6</sup>-1=63.</td>
+    </tr>
+    <tr>
+      <td>14-19</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the first 
+        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
+    </tr>
+    <tr>
+      <td>20-25</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the second
+        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
+    </tr>
+    <tr>
+      <td>26-31</td>
+      <td><a href="#unsigned">unsigned</a></td>
+      <td class="td_left">Specifies the slot number of the value for the third
+        operand. Maximum slot number is 2<sup>6</sup>-1=63.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
 
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsection"><a name="symtab">Symbol Table</a> </div>

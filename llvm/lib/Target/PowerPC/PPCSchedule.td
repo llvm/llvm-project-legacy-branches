@@ -7,20 +7,9 @@
 // 
 //===----------------------------------------------------------------------===//
 
-#include "../TargetSchedule.td"
-
-//===----------------------------------------------------------------------===//
-// PowerPC chips sets supported by scheduling (Apple naming)
-//
-def G3      : Processor;
-def G4      : Processor;
-def G4Plus  : Processor;
-def G5      : Processor;
-
 //===----------------------------------------------------------------------===//
 // Functional units across PowerPC chips sets
 //
-def NoUnit : FuncUnit; // Instruction not supported on chip set
 def BPU    : FuncUnit; // Branch unit
 def SLU    : FuncUnit; // Store/load unit
 def SRU    : FuncUnit; // special register unit
@@ -64,17 +53,17 @@ def BrMCRX       : InstrItinClass;
 def LdStDCBA     : InstrItinClass;
 def LdStDCBF     : InstrItinClass;
 def LdStDCBI     : InstrItinClass;
-def LdStDCBT     : InstrItinClass;
+def LdStGeneral  : InstrItinClass;
 def LdStDSS      : InstrItinClass;
 def LdStICBI     : InstrItinClass;
-def LdStLBZUX    : InstrItinClass;
+def LdStUX       : InstrItinClass;
 def LdStLD       : InstrItinClass;
 def LdStLDARX    : InstrItinClass;
 def LdStLFD      : InstrItinClass;
 def LdStLFDU     : InstrItinClass;
 def LdStLHA      : InstrItinClass;
 def LdStLMW      : InstrItinClass;
-def LdStLVEBX    : InstrItinClass;
+def LdStLVecX    : InstrItinClass;
 def LdStLWA      : InstrItinClass;
 def LdStLWARX    : InstrItinClass;
 def LdStSLBIA    : InstrItinClass;
@@ -116,10 +105,10 @@ def VecVSR       : InstrItinClass;
 //===----------------------------------------------------------------------===//
 // Processor instruction itineraries.
 
-#include "PPCScheduleG3.td"
-#include "PPCScheduleG4.td"
-#include "PPCScheduleG4Plus.td"
-#include "PPCScheduleG5.td"
+include "PPCScheduleG3.td"
+include "PPCScheduleG4.td"
+include "PPCScheduleG4Plus.td"
+include "PPCScheduleG5.td"
 
 //===----------------------------------------------------------------------===//
 // Instruction to itinerary class map - When add new opcodes to the supported
@@ -163,8 +152,8 @@ def VecVSR       : InstrItinClass;
 //    dcbf       LdStDCBF
 //    dcbi       LdStDCBI
 //    dcbst      LdStDCBF
-//    dcbt       LdStDCBT
-//    dcbtst     LdStDCBT
+//    dcbt       LdStGeneral
+//    dcbtst     LdStGeneral
 //    dcbz       LdStDCBF
 //    divd       IntDivD
 //    divdu      IntDivD
@@ -173,9 +162,9 @@ def VecVSR       : InstrItinClass;
 //    dss        LdStDSS
 //    dst        LdStDSS
 //    dstst      LdStDSS
-//    eciwx      LdStDCBT
-//    ecowx      LdStDCBT
-//    eieio      LdStDCBT
+//    eciwx      LdStGeneral
+//    ecowx      LdStGeneral
+//    eieio      LdStGeneral
 //    eqv        IntGeneral
 //    extsb      IntGeneral
 //    extsh      IntGeneral
@@ -215,10 +204,10 @@ def VecVSR       : InstrItinClass;
 //    fsubs      FPGeneral
 //    icbi       LdStICBI
 //    isync      SprISYNC
-//    lbz        LdStDCBT
-//    lbzu       LdStDCBT
-//    lbzux      LdStLBZUX
-//    lbzx       LdStDCBT
+//    lbz        LdStGeneral
+//    lbzu       LdStGeneral
+//    lbzux      LdStUX
+//    lbzx       LdStGeneral
 //    ld         LdStLD
 //    ldarx      LdStLDARX
 //    ldu        LdStLD
@@ -236,30 +225,30 @@ def VecVSR       : InstrItinClass;
 //    lhau       LdStLHA
 //    lhaux      LdStLHA
 //    lhax       LdStLHA
-//    lhbrx      LdStDCBT
-//    lhz        LdStDCBT
-//    lhzu       LdStDCBT
-//    lhzux      LdStLBZUX
-//    lhzx       LdStDCBT
+//    lhbrx      LdStGeneral
+//    lhz        LdStGeneral
+//    lhzu       LdStGeneral
+//    lhzux      LdStUX
+//    lhzx       LdStGeneral
 //    lmw        LdStLMW
 //    lswi       LdStLMW
 //    lswx       LdStLMW
-//    lvebx      LdStLVEBX
-//    lvehx      LdStLVEBX
-//    lvewx      LdStLVEBX
-//    lvsl       LdStLVEBX
-//    lvsr       LdStLVEBX
-//    lvx        LdStLVEBX
-//    lvxl       LdStLVEBX
+//    lvebx      LdStLVecX
+//    lvehx      LdStLVecX
+//    lvewx      LdStLVecX
+//    lvsl       LdStLVecX
+//    lvsr       LdStLVecX
+//    lvx        LdStLVecX
+//    lvxl       LdStLVecX
 //    lwa        LdStLWA
 //    lwarx      LdStLWARX
 //    lwaux      LdStLHA
 //    lwax       LdStLHA
-//    lwbrx      LdStDCBT
-//    lwz        LdStDCBT
-//    lwzu       LdStDCBT
-//    lwzux      LdStLBZUX
-//    lwzx       LdStDCBT
+//    lwbrx      LdStGeneral
+//    lwz        LdStGeneral
+//    lwzu       LdStGeneral
+//    lwzux      LdStUX
+//    lwzx       LdStGeneral
 //    mcrf       BrMCR
 //    mcrfs      FPGeneral
 //    mcrxr      BrMCRX
@@ -320,29 +309,29 @@ def VecVSR       : InstrItinClass;
 //    srawi      IntShift
 //    srd        IntRotateD
 //    srw        IntGeneral
-//    stb        LdStDCBT
-//    stbu       LdStDCBT
-//    stbux      LdStDCBT
-//    stbx       LdStDCBT
+//    stb        LdStGeneral
+//    stbu       LdStGeneral
+//    stbux      LdStGeneral
+//    stbx       LdStGeneral
 //    std        LdStSTD
 //    stdcx.     LdStSTDCX
 //    stdu       LdStSTD
 //    stdux      LdStSTD
 //    stdx       LdStSTD
-//    stfd       LdStLBZUX
-//    stfdu      LdStLBZUX
-//    stfdux     LdStLBZUX
-//    stfdx      LdStLBZUX
-//    stfiwx     LdStLBZUX
-//    stfs       LdStLBZUX
-//    stfsu      LdStLBZUX
-//    stfsux     LdStLBZUX
-//    stfsx      LdStLBZUX
-//    sth        LdStDCBT
-//    sthbrx     LdStDCBT
-//    sthu       LdStDCBT
-//    sthux      LdStDCBT
-//    sthx       LdStDCBT
+//    stfd       LdStUX
+//    stfdu      LdStUX
+//    stfdux     LdStUX
+//    stfdx      LdStUX
+//    stfiwx     LdStUX
+//    stfs       LdStUX
+//    stfsu      LdStUX
+//    stfsux     LdStUX
+//    stfsx      LdStUX
+//    sth        LdStGeneral
+//    sthbrx     LdStGeneral
+//    sthu       LdStGeneral
+//    sthux      LdStGeneral
+//    sthx       LdStGeneral
 //    stmw       LdStLMW
 //    stswi      LdStLMW
 //    stswx      LdStLMW
@@ -351,12 +340,12 @@ def VecVSR       : InstrItinClass;
 //    stvewx     LdStSTVEBX
 //    stvx       LdStSTVEBX
 //    stvxl      LdStSTVEBX
-//    stw        LdStDCBT
-//    stwbrx     LdStDCBT
+//    stw        LdStGeneral
+//    stwbrx     LdStGeneral
 //    stwcx.     LdStSTWCX
-//    stwu       LdStDCBT
-//    stwux      LdStDCBT
-//    stwx       LdStDCBT
+//    stwu       LdStGeneral
+//    stwux      LdStGeneral
+//    stwx       LdStGeneral
 //    subf       IntGeneral
 //    subfc      IntGeneral
 //    subfe      IntGeneral
@@ -517,4 +506,3 @@ def VecVSR       : InstrItinClass;
 //    xori       IntGeneral
 //    xoris      IntGeneral
 //
-

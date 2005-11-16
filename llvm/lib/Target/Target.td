@@ -113,6 +113,12 @@ class RegisterClass<string namespace, ValueType regType, int alignment,
 
 
 //===----------------------------------------------------------------------===//
+// Pull in the common support for scheduling
+//
+include "../TargetSchedule.td"
+
+
+//===----------------------------------------------------------------------===//
 // Instruction set description - These classes correspond to the C++ classes in
 // the Target/TargetInstrInfo.h file.
 //
@@ -147,6 +153,8 @@ class Instruction {
   bit isTerminator = 0;     // Is this part of the terminator for a basic block?
   bit hasDelaySlot = 0;     // Does this instruction have an delay slot?
   bit usesCustomDAGSchedInserter = 0; // Pseudo instr needing special help.
+  
+  InstrItinClass Itinerary; // Execution steps used for scheduling. 
 }
 
 
@@ -239,6 +247,48 @@ class Target {
 
   // AssemblyWriters - The AsmWriter instances available for this target.
   list<AsmWriter> AssemblyWriters = [DefaultAsmWriter];
+}
+
+//===----------------------------------------------------------------------===//
+// SubtargetFeature - A characteristic of the chip set.
+//
+class SubtargetFeature<string n, string t, string a, string d> {
+  // Name - Feature name.  Used by command line (-mattr=) to determine the
+  // appropriate target chip.
+  //
+  string Name = n;
+  
+  // Type - Type of attribute to be set by feature.
+  //
+  string Type = t;
+  
+  // Attribute - Attribute to be set by feature.
+  //
+  string Attribute = a;
+  
+  // Desc - Feature description.  Used by command line (-mattr=) to display help
+  // information.
+  //
+  string Desc = d;
+}
+
+//===----------------------------------------------------------------------===//
+// Processor chip sets - These values represent each of the chip sets supported
+// by the scheduler.  Each Processor definition requires corresponding
+// instruction itineraries.
+//
+class Processor<string n, ProcessorItineraries pi, list<SubtargetFeature> f> {
+  // Name - Chip set name.  Used by command line (-mcpu=) to determine the
+  // appropriate target chip.
+  //
+  string Name = n;
+  
+  // ProcItin - The scheduling information for the target processor.
+  //
+  ProcessorItineraries ProcItin = pi;
+  
+  // Features - list of 
+  list<SubtargetFeature> Features = f;
 }
 
 //===----------------------------------------------------------------------===//

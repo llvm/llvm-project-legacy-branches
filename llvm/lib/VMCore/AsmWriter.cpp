@@ -839,7 +839,12 @@ void AssemblyWriter::printGlobal(const GlobalVariable *GV) {
     assert(C &&  "GlobalVar initializer isn't constant?");
     writeOperand(GV->getInitializer(), false, isa<GlobalValue>(C));
   }
-
+  
+  if (GV->hasSection())
+    Out << ", section \"" << GV->getSection() << '"';
+  if (GV->getAlignment())
+    Out << ", align " << GV->getAlignment();
+  
   printInfoComment(*GV);
   Out << "\n";
 }
@@ -946,6 +951,11 @@ void AssemblyWriter::printFunction(const Function *F) {
     Out << "...";  // Output varargs portion of signature!
   }
   Out << ')';
+
+  if (F->hasSection())
+    Out << " section \"" << F->getSection() << '"';
+  if (F->getAlignment())
+    Out << " align " << F->getAlignment();
 
   if (F->isExternal()) {
     Out << "\n";
@@ -1180,6 +1190,9 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     if (AI->isArrayAllocation()) {
       Out << ',';
       writeOperand(AI->getArraySize(), true);
+    }
+    if (AI->getAlignment()) {
+      Out << ", align " << AI->getAlignment();
     }
   } else if (isa<CastInst>(I)) {
     if (Operand) writeOperand(Operand, true);   // Work with broken code

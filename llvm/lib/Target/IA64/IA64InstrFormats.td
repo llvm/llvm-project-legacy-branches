@@ -36,6 +36,14 @@ class AForm<bits<4> opcode, bits<6> qpReg, dag OL, string asmstr> :
   let Inst{5-0} = qpReg;
 }
 
+class AForm_DAG<bits<4> opcode, bits<6> qpReg, dag OL, string asmstr,
+      list<dag> pattern> : 
+  InstIA64<opcode, OL, asmstr> {
+
+  let Pattern = pattern;
+  let Inst{5-0} = qpReg;
+}
+
 let isBranch = 1, isTerminator = 1 in
 class BForm<bits<4> opcode, bits<6> x6, bits<3> btype, dag OL, string asmstr> :
   InstIA64<opcode, OL, asmstr> {
@@ -64,4 +72,8 @@ class RawForm<bits<4> opcode, bits<26> rest, dag OL, string asmstr> :
 class PseudoInstIA64<dag OL, string nm> : InstIA64<0, OL, nm>  {
 }
 
+class PseudoInstIA64_DAG<dag OL, string nm, list<dag> pattern>
+  : InstIA64<0, OL, nm> {
+  let Pattern = pattern;
+}
 

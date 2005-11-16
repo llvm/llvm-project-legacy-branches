@@ -65,7 +65,8 @@ unsigned SparcV8TargetMachine::getModuleMatchQuality(const Module &M) {
 ///
 bool SparcV8TargetMachine::addPassesToEmitFile(PassManager &PM,
                                                std::ostream &Out,
-                                               CodeGenFileType FileType) {
+                                               CodeGenFileType FileType,
+                                               bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
   // FIXME: Implement efficient support for garbage collection intrinsics.
@@ -79,8 +80,6 @@ bool SparcV8TargetMachine::addPassesToEmitFile(PassManager &PM,
 
   // FIXME: implement the invoke/unwind instructions!
   PM.add(createLowerInvokePass());
-
-  PM.add(createLowerConstantExpressionsPass());
 
   // Make sure that no unreachable blocks are instruction selected.
   PM.add(createUnreachableBlockEliminationPass());
@@ -136,8 +135,6 @@ void SparcV8JITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
 
   // FIXME: implement the invoke/unwind instructions!
   PM.add(createLowerInvokePass());
-
-  PM.add(createLowerConstantExpressionsPass());
 
   // Make sure that no unreachable blocks are instruction selected.
   PM.add(createUnreachableBlockEliminationPass());

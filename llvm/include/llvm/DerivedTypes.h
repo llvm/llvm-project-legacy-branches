@@ -29,22 +29,14 @@ class FunctionValType;
 class ArrayValType;
 class StructValType;
 class PointerValType;
-class StreamValType;
 class VectorValType;
 class FixedVectorValType;
 
-class DerivedType : public Type, public AbstractTypeUser {
-  // AbstractTypeUsers - Implement a list of the users that need to be notified
-  // if I am a type, and I get resolved into a more concrete type.
-  //
-  mutable std::vector<AbstractTypeUser *> AbstractTypeUsers;
+class DerivedType : public Type {
   friend class Type;
 
 protected:
-  DerivedType(TypeID id) : Type("", id) {}
-  ~DerivedType() {
-    assert(AbstractTypeUsers.empty());
-  }
+  DerivedType(TypeID id) : Type(id) {}
 
   /// notifyUsesThatTypeBecameConcrete - Notify AbstractTypeUsers of this type
   /// that the current type has transitioned from being abstract to being
@@ -58,34 +50,12 @@ protected:
   ///
   void dropAllTypeUses();
 
-  void RefCountIsZero() const {
-    if (AbstractTypeUsers.empty())
-      delete this;
-  }
-
-
 public:
 
   //===--------------------------------------------------------------------===//
   // Abstract Type handling methods - These types have special lifetimes, which
   // are managed by (add|remove)AbstractTypeUser. See comments in
   // AbstractTypeUser.h for more information.
-
-  /// addAbstractTypeUser - Notify an abstract type that there is a new user of
-  /// it.  This function is called primarily by the PATypeHandle class.
-  ///
-  void addAbstractTypeUser(AbstractTypeUser *U) const {
-    assert(isAbstract() && "addAbstractTypeUser: Current type not abstract!");
-    AbstractTypeUsers.push_back(U);
-  }
-
-  /// removeAbstractTypeUser - Notify an abstract type that a user of the class
-  /// no longer has a handle to the type.  This function is called primarily by
-  /// the PATypeHandle class.  When there are no users of the abstract type, it
-  /// is annihilated, because there is no way to get a reference to it ever
-  /// again.
-  ///
-  void removeAbstractTypeUser(AbstractTypeUser *U) const;
 
   /// refineAbstractTypeTo - This function is used to when it is discovered that
   /// the 'this' abstract type is actually equivalent to the NewType specified.
@@ -176,7 +146,6 @@ public:
     return T->getTypeID() == ArrayTyID ||
            T->getTypeID() == StructTyID ||
            T->getTypeID() == PointerTyID ||
-           T->getTypeID() == StreamTyID ||
            T->getTypeID() == VectorTyID ||
            T->getTypeID() == FixedVectorTyID;
   }
@@ -268,7 +237,6 @@ public:
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID ||
       T->getTypeID() == PointerTyID ||
-      T->getTypeID() == StreamTyID ||
       T->getTypeID() == VectorTyID ||
       T->getTypeID() == FixedVectorTyID;
   }
@@ -308,40 +276,6 @@ public:
   static inline bool classof(const ArrayType *T) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID;
-  }
-};
-
-/// StreamType - Class to represent vector types
-///
-class StreamType : public SequentialType {
-  friend class TypeMap<StreamValType, StreamType>;
-
-  StreamType(const StreamType &);                   // Do not implement
-  const StreamType &operator=(const StreamType &);  // Do not implement
-
-protected:
-  /// This should really be private, but it squelches a bogus warning
-  /// from GCC to make them protected:  warning: `class StreamType' only 
-  /// defines private constructors and has no friends
-  ///
-  /// Private ctor - Only can be created by a static member...
-  ///
-  StreamType(const Type *ElType);
-
-public:
-  /// StreamType::get - This static method is the primary way to construct a
-  /// StreamType
-  ///
-  static StreamType *get(const Type *ElementType);
-
-  // Implement the AbstractTypeUser interface.
-  virtual void refineAbstractType(const DerivedType *OldTy, const Type *NewTy);
-  virtual void typeBecameConcrete(const DerivedType *AbsTy);
-
-  // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const StreamType *T) { return true; }
-  static inline bool classof(const Type *T) {
-    return T->getTypeID() == StreamTyID;
   }
 };
 
@@ -386,6 +320,7 @@ public:
       T->getTypeID() == FixedVectorTyID;
   }
 };
+
 
 /// FixedVectorType - Class to represent vectors with fixed lengths
 ///

@@ -106,7 +106,8 @@ X86TargetMachine::X86TargetMachine(const Module &M,
 // addPassesToEmitFile - We currently use all of the same passes as the JIT
 // does to emit statically compiled machine code.
 bool X86TargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &Out,
-                                           CodeGenFileType FileType) {
+                                           CodeGenFileType FileType,
+                                           bool Fast) {
   if (FileType != TargetMachine::AssemblyFile &&
       FileType != TargetMachine::ObjectFile) return true;
 
@@ -123,7 +124,7 @@ bool X86TargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &Out,
   PM.add(createUnreachableBlockEliminationPass());
 
   // Install an instruction selector.
-  PM.add(createX86PatternInstructionSelector(*this));
+  PM.add(createX86ISelPattern(*this));
 
   // Run optional SSA-based machine code optimizations next...
   if (!NoSSAPeephole)
@@ -191,7 +192,7 @@ void X86JITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
   PM.add(createUnreachableBlockEliminationPass());
 
   // Install an instruction selector.
-  PM.add(createX86PatternInstructionSelector(TM));
+  PM.add(createX86ISelPattern(TM));
 
   // Run optional SSA-based machine code optimizations next...
   if (!NoSSAPeephole)

@@ -161,8 +161,8 @@ inline void BytecodeWriter::output_double(double& DoubleVal) {
   Out.push_back( static_cast<unsigned char>( (i >> 56) & 0xFF));
 }
 
-inline BytecodeBlock::BytecodeBlock(unsigned ID, BytecodeWriter& w,
-                                    bool elideIfEmpty, bool hasLongFormat )
+inline BytecodeBlock::BytecodeBlock(unsigned ID, BytecodeWriter &w,
+                                    bool elideIfEmpty, bool hasLongFormat)
   : Id(ID), Writer(w), ElideIfEmpty(elideIfEmpty), HasLongFormat(hasLongFormat){
 
   if (HasLongFormat) {
@@ -424,7 +424,6 @@ void BytecodeWriter::outputConstantStrings() {
 //===----------------------------------------------------------------------===//
 //===                           Instruction Output                         ===//
 //===----------------------------------------------------------------------===//
-typedef unsigned char uchar;
 
 // outputInstructionFormat0 - Output those weird instructions that have a large
 // number of operands or have large operands themselves.
@@ -708,6 +707,13 @@ void BytecodeWriter::outputInstruction(const Instruction &I) {
       assert(Slots[1] != ~0U && "Cast return type unknown?");
       if (Slots[1] > MaxOpSlot) MaxOpSlot = Slots[1];
       NumOperands++;
+    } else if (const AllocationInst *AI = dyn_cast<AllocationInst>(&I)) {
+      assert(NumOperands == 1 && "Bogus allocation!");
+      if (AI->getAlignment()) {
+        Slots[1] = Log2_32(AI->getAlignment())+1;
+        if (Slots[1] > MaxOpSlot) MaxOpSlot = Slots[1];
+        NumOperands = 2;
+      }
     } else if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(&I)) {
       // We need to encode the type of sequential type indices into their slot #
       unsigned Idx = 1;
@@ -931,17 +937,53 @@ static unsigned getEncodedLinkage(const GlobalValue *GV) {
 void BytecodeWriter::outputModuleInfoBlock(const Module *M) {
   BytecodeBlock ModuleInfoBlock(BytecodeFormat::ModuleGlobalInfoBlockID, *this);
 
+  // Give numbers to sections as we encounter them.
+  unsigned SectionIDCounter = 0;
+  std::vector<std::string> SectionNames;
+  std::map<std::string, unsigned> SectionID;
+  
   // Output the types for the global variables in the module...
   for (Module::const_global_iterator I = M->global_begin(),
-         End = M->global_end(); I != End;++I) {
+         End = M->global_end(); I != End; ++I) {
     int Slot = Table.getSlot(I->getType());
     assert(Slot != -1 && "Module global vars is broken!");
 
+    assert((I->hasInitializer() || !I->hasInternalLinkage()) &&
+           "Global must have an initializer or have external linkage!");
+    
     // Fields: bit0 = isConstant, bit1 = hasInitializer, bit2-4=Linkage,
-    // bit5+ = Slot # for type
-    unsigned oSlot = ((unsigned)Slot << 5) | (getEncodedLinkage(I) << 2) |
-                     (I->hasInitializer() << 1) | (unsigned)I->isConstant();
-    output_vbr(oSlot);
+    // bit5+ = Slot # for type.
+    bool HasExtensionWord = (I->getAlignment() != 0) || I->hasSection();
+    
+    // If we need to use the extension byte, set linkage=3(internal) and
+    // initializer = 0 (impossible!).
+    if (!HasExtensionWord) {
+      unsigned oSlot = ((unsigned)Slot << 5) | (getEncodedLinkage(I) << 2) |
+                        (I->hasInitializer() << 1) | (unsigned)I->isConstant();
+      output_vbr(oSlot);
+    } else {
+      unsigned oSlot = ((unsigned)Slot << 5) | (3 << 2) |
+                        (0 << 1) | (unsigned)I->isConstant();
+      output_vbr(oSlot);
+      
+      // The extension word has this format: bit 0 = has initializer, bit 1-3 =
+      // linkage, bit 4-8 = alignment (log2), bit 9 = has SectionID, 
+      // bits 10+ = future use.
+      unsigned ExtWord = (unsigned)I->hasInitializer() |
+                         (getEncodedLinkage(I) << 1) |
+                         ((Log2_32(I->getAlignment())+1) << 4) |
+                         ((unsigned)I->hasSection() << 9);
+      output_vbr(ExtWord);
+      if (I->hasSection()) {
+        // Give section names unique ID's.
+        unsigned &Entry = SectionID[I->getSection()];
+        if (Entry == 0) {
+          Entry = ++SectionIDCounter;
+          SectionNames.push_back(I->getSection());
+        }
+        output_vbr(Entry);
+      }
+    }
 
     // If we have an initializer, output it now.
     if (I->hasInitializer()) {
@@ -957,18 +999,35 @@ void BytecodeWriter::outputModuleInfoBlock(const Module *M) {
     int Slot = Table.getSlot(I->getType());
     assert(Slot != -1 && "Module slot calculator is broken!");
     assert(Slot >= Type::FirstDerivedTyID && "Derived type not in range!");
-    assert(((Slot << 5) >> 5) == Slot && "Slot # too big!");
-    unsigned ID = (Slot << 5);
-
-    if (I->getCallingConv() < 15)
-      ID += I->getCallingConv()+1;
+    assert(((Slot << 6) >> 6) == Slot && "Slot # too big!");
+    unsigned CC = I->getCallingConv()+1;
+    unsigned ID = (Slot << 5) | (CC & 15);
 
     if (I->isExternal())   // If external, we don't have an FunctionInfo block.
       ID |= 1 << 4;
+    
+    if (I->getAlignment() || I->hasSection() || (CC & ~15) != 0)
+      ID |= 1 << 31;       // Do we need an extension word?
+    
     output_vbr(ID);
-
-    if (I->getCallingConv() >= 15)
-      output_vbr(I->getCallingConv());
+    
+    if (ID & (1 << 31)) {
+      // Extension byte: bits 0-4 = alignment, bits 5-9 = top nibble of calling
+      // convention, bit 10 = hasSectionID.
+      ID = (Log2_32(I->getAlignment())+1) | ((CC >> 4) << 5) | 
+           (I->hasSection() << 10);
+      output_vbr(ID);
+      
+      // Give section names unique ID's.
+      if (I->hasSection()) {
+        unsigned &Entry = SectionID[I->getSection()];
+        if (Entry == 0) {
+          Entry = ++SectionIDCounter;
+          SectionNames.push_back(I->getSection());
+        }
+        output_vbr(Entry);
+      }
+    }
   }
   output_vbr((unsigned)Table.getSlot(Type::VoidTy) << 5);
 
@@ -981,6 +1040,11 @@ void BytecodeWriter::outputModuleInfoBlock(const Module *M) {
 
   // Output the target triple from the module
   output(M->getTargetTriple());
+  
+  // Emit the table of section names.
+  output_vbr((unsigned)SectionNames.size());
+  for (unsigned i = 0, e = SectionNames.size(); i != e; ++i)
+    output(SectionNames[i]);
 }
 
 void BytecodeWriter::outputInstructions(const Function *F) {

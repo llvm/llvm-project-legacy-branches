@@ -68,7 +68,8 @@ class SDTypeProfile<int numresults, int numoperands,
 
 // Builtin profiles.
 def SDTImm    : SDTypeProfile<1, 0, [SDTCisInt<0>]>;      // for 'imm'.
-def SDTVT     : SDTypeProfile<1, 0, [SDTCisVT<0, OtherVT>]>; // for 'vt'
+def SDTVT     : SDTypeProfile<1, 0, [SDTCisVT<0, OtherVT>]>; // for 'vt'.
+def SDTUNDEF  : SDTypeProfile<1, 0, []>; // for 'undef'.
 def SDTIntBinOp : SDTypeProfile<1, 2, [   // add, and, or, xor, udiv, etc.
   SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>, SDTCisInt<0>
 ]>;
@@ -93,9 +94,23 @@ def SDTFPRoundOp  : SDTypeProfile<1, 1, [   // fround
 def SDTFPExtendOp  : SDTypeProfile<1, 1, [   // fextend
   SDTCisFP<0>, SDTCisFP<1>, SDTCisOpSmallerThanOp<1, 0>
 ]>;
+def SDTIntToFPOp : SDTypeProfile<1, 1, [   // [su]int_to_fp 
+  SDTCisFP<0>, SDTCisInt<1>
+]>;
+def SDTFPToIntOp : SDTypeProfile<1, 1, [   // fp_to_[su]int 
+  SDTCisInt<0>, SDTCisFP<1>
+]>;
 def SDTExtInreg : SDTypeProfile<1, 2, [   // sext_inreg
   SDTCisSameAs<0, 1>, SDTCisInt<0>, SDTCisVT<2, OtherVT>,
   SDTCisVTSmallerThanOp<2, 1>
+]>;
+
+def SDTSetCC : SDTypeProfile<1, 3, [ // setcc
+  SDTCisInt<0>, SDTCisSameAs<1, 2>, SDTCisVT<3, OtherVT>
+]>;
+
+def SDTSelect : SDTypeProfile<1, 3, [ // select 
+  SDTCisInt<1>, SDTCisSameAs<0, 2>, SDTCisSameAs<2, 3>
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -123,6 +138,8 @@ def node;
 
 def imm        : SDNode<"ISD::Constant"  , SDTImm     , [], "ConstantSDNode">;
 def vt         : SDNode<"ISD::VALUETYPE" , SDTVT      , [], "VTSDNode">;
+def cond       : SDNode<"ISD::CONDCODE"  , SDTVT      , [], "CondCodeSDNode">;
+def undef      : SDNode<"ISD::UNDEF"     , SDTUNDEF   , []>;
 def add        : SDNode<"ISD::ADD"       , SDTIntBinOp   ,
                         [SDNPCommutative, SDNPAssociative]>;
 def sub        : SDNode<"ISD::SUB"       , SDTIntBinOp>;
@@ -146,6 +163,8 @@ def xor        : SDNode<"ISD::XOR"       , SDTIntBinOp,
                         
 def sext_inreg : SDNode<"ISD::SIGN_EXTEND_INREG", SDTExtInreg>;
 def ctlz       : SDNode<"ISD::CTLZ"       , SDTIntUnaryOp>;
+def cttz       : SDNode<"ISD::CTTZ"       , SDTIntUnaryOp>;
+def ctpop      : SDNode<"ISD::CTPOP"      , SDTIntUnaryOp>;
 def sext       : SDNode<"ISD::SIGN_EXTEND", SDTIntExtendOp>;
 def zext       : SDNode<"ISD::ZERO_EXTEND", SDTIntExtendOp>;
 def anyext     : SDNode<"ISD::ANY_EXTEND" , SDTIntExtendOp>;
@@ -162,6 +181,28 @@ def fsqrt      : SDNode<"ISD::FSQRT"      , SDTFPUnaryOp>;
 
 def fround     : SDNode<"ISD::FP_ROUND"   , SDTFPRoundOp>;
 def fextend    : SDNode<"ISD::FP_EXTEND"  , SDTFPExtendOp>;
+
+def sint_to_fp : SDNode<"ISD::SINT_TO_FP" , SDTIntToFPOp>;
+def uint_to_fp : SDNode<"ISD::UINT_TO_FP" , SDTIntToFPOp>;
+def fp_to_sint : SDNode<"ISD::FP_TO_SINT" , SDTFPToIntOp>;
+def fp_to_uint : SDNode<"ISD::FP_TO_UINT" , SDTFPToIntOp>;
+
+def setcc      : SDNode<"ISD::SETCC"      , SDTSetCC>;
+def select     : SDNode<"ISD::SELECT"     , SDTSelect>;
+
+//===----------------------------------------------------------------------===//
+// Selection DAG Condition Codes
+
+class CondCode; // ISD::CondCode enums
+def SETOEQ : CondCode; def SETOGT : CondCode;
+def SETOGE : CondCode; def SETOLT : CondCode; def SETOLE : CondCode;
+def SETONE : CondCode; def SETO   : CondCode; def SETUO  : CondCode;
+def SETUEQ : CondCode; def SETUGT : CondCode; def SETUGE : CondCode;
+def SETULT : CondCode; def SETULE : CondCode; def SETUNE : CondCode;
+
+def SETEQ : CondCode; def SETGT : CondCode; def SETGE : CondCode;
+def SETLT : CondCode; def SETLE : CondCode; def SETNE : CondCode;
+
 
 //===----------------------------------------------------------------------===//
 // Selection DAG Node Transformation Functions.
@@ -206,7 +247,6 @@ class PatLeaf<dag frag, code pred = [{}], SDNodeXForm xform = NOOP_SDNodeXForm>
 // Leaf fragments.
 
 def immAllOnes : PatLeaf<(imm), [{ return N->isAllOnesValue(); }]>;
-def immZero    : PatLeaf<(imm), [{ return N->isNullValue();    }]>;
 
 def vtInt      : PatLeaf<(vt),  [{ return MVT::isInteger(N->getVT()); }]>;
 def vtFP       : PatLeaf<(vt),  [{ return MVT::isFloatingPoint(N->getVT()); }]>;
@@ -214,7 +254,50 @@ def vtFP       : PatLeaf<(vt),  [{ return MVT::isFloatingPoint(N->getVT()); }]>;
 // Other helper fragments.
 
 def not  : PatFrag<(ops node:$in), (xor node:$in, immAllOnes)>;
-def ineg : PatFrag<(ops node:$in), (sub immZero, node:$in)>;
+def ineg : PatFrag<(ops node:$in), (sub 0, node:$in)>;
+
+
+// setcc convenience fragments.
+def setoeq : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETOEQ)>;
+def setogt : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETOGT)>;
+def setoge : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETOGE)>;
+def setolt : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETOLT)>;
+def setole : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETOLE)>;
+def setone : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETONE)>;
+def seto   : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETO)>;
+def setuo  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETUO)>;
+def setueq : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETUEQ)>;
+def setugt : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETUGT)>;
+def setuge : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETUGE)>;
+def setult : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETULT)>;
+def setule : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETULE)>;
+def setune : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETUNE)>;
+def seteq  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETEQ)>;
+def setgt  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETGT)>;
+def setge  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETGE)>;
+def setlt  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETLT)>;
+def setle  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETLE)>;
+def setne  : PatFrag<(ops node:$lhs, node:$rhs),
+                     (setcc node:$lhs, node:$rhs, SETNE)>;
 
 //===----------------------------------------------------------------------===//
 // Selection DAG Pattern Support.

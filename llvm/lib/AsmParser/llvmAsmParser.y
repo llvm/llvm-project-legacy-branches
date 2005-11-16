@@ -19,6 +19,7 @@
 #include "llvm/SymbolTable.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/MathExtras.h"
 #include <algorithm>
 #include <iostream>
 #include <list>
@@ -49,7 +50,8 @@ static Module *ParserResult;
 
 static bool ObsoleteVarArgs;
 static bool NewVarArgs;
-static BasicBlock* CurBB;
+static BasicBlock *CurBB;
+static GlobalVariable *CurGV;
 
 
 // This contains info used when building the body of a function.  It is
@@ -514,9 +516,10 @@ static void setValueName(Value *V, char *NameStr) {
 
 /// ParseGlobalVariable - Handle parsing of a global.  If Initializer is null,
 /// this is a declaration, otherwise it is a definition.
-static void ParseGlobalVariable(char *NameStr,GlobalValue::LinkageTypes Linkage,
-                                bool isConstantGlobal, const Type *Ty,
-                                Constant *Initializer) {
+static GlobalVariable *
+ParseGlobalVariable(char *NameStr,GlobalValue::LinkageTypes Linkage,
+                    bool isConstantGlobal, const Type *Ty,
+                    Constant *Initializer) {
   if (isa<FunctionType>(Ty))
     ThrowException("Cannot declare global vars of function type!");
 
@@ -547,7 +550,7 @@ static void ParseGlobalVariable(char *NameStr,GlobalValue::LinkageTypes Linkage,
     GV->setLinkage(Linkage);
     GV->setConstant(isConstantGlobal);
     InsertValue(GV, CurModule.Values);
-    return;
+    return GV;
   }
 
   // If this global has a name, check to see if there is already a definition
@@ -572,7 +575,7 @@ static void ParseGlobalVariable(char *NameStr,GlobalValue::LinkageTypes Linkage,
         if (isConstantGlobal)
           EGV->setConstant(true);
         EGV->setLinkage(Linkage);
-        return;
+        return EGV;
       }
 
       ThrowException("Redefinition of global variable named '" + Name +
@@ -585,6 +588,7 @@ static void ParseGlobalVariable(char *NameStr,GlobalValue::LinkageTypes Linkage,
     new GlobalVariable(Ty, isConstantGlobal, Linkage, Initializer, Name,
                        CurModule.CurrentModule);
   InsertValue(GV, CurModule.Values);
+  return GV;
 }
 
 // setTypeName - Set the specified type to the name given.  The name may be
@@ -766,7 +770,7 @@ static PATypeHolder HandleUpRefs(const Type *ty) {
       const Type* ArgTy = F->getFunctionType()->getReturnType();
       const Type* ArgTyPtr = PointerType::get(ArgTy);
       Function* NF = Result->getOrInsertFunction("llvm.va_start", 
-                                                 RetTy, ArgTyPtr, 0);
+                                                 RetTy, ArgTyPtr, (Type *)0);
 
       while (!F->use_empty()) {
         CallInst* CI = cast<CallInst>(F->use_back());
@@ -791,7 +795,7 @@ static PATypeHolder HandleUpRefs(const Type *ty) {
       const Type* ArgTy = F->getFunctionType()->getParamType(0);
       const Type* ArgTyPtr = PointerType::get(ArgTy);
       Function* NF = Result->getOrInsertFunction("llvm.va_end", 
-                                                 RetTy, ArgTyPtr, 0);
+                                                 RetTy, ArgTyPtr, (Type *)0);
 
       while (!F->use_empty()) {
         CallInst* CI = cast<CallInst>(F->use_back());
@@ -818,7 +822,8 @@ static PATypeHolder HandleUpRefs(const Type *ty) {
       const Type* ArgTy = F->getFunctionType()->getReturnType();
       const Type* ArgTyPtr = PointerType::get(ArgTy);
       Function* NF = Result->getOrInsertFunction("llvm.va_copy", 
-                                                 RetTy, ArgTyPtr, ArgTyPtr, 0);
+                                                 RetTy, ArgTyPtr, ArgTyPtr,
+                                                 (Type *)0);
 
       while (!F->use_empty()) {
         CallInst* CI = cast<CallInst>(F->use_back());
@@ -948,12 +953,13 @@ Module *llvm::RunVMAsmParser(const char * AsmString, Module * M) {
 
 %token <StrVal> VAR_ID LABELSTR STRINGCONSTANT
 %type  <StrVal> Name OptName OptAssign
-
+%type  <UIntVal> OptAlign OptCAlign
+%type <StrVal> OptSection SectionString
 
 %token IMPLEMENTATION ZEROINITIALIZER TRUETOK FALSETOK BEGINTOK ENDTOK
-%token DECLARE GLOBAL CONSTANT VOLATILE FIXED
+%token DECLARE GLOBAL CONSTANT SECTION VOLATILE FIXED
 %token TO DOTDOTDOT NULL_TOK UNDEF CONST INTERNAL LINKONCE WEAK  APPENDING
-%token OPAQUE NOT EXTERNAL TARGET TRIPLE ENDIAN POINTERSIZE LITTLE BIG
+%token OPAQUE NOT EXTERNAL TARGET TRIPLE ENDIAN POINTERSIZE LITTLE BIG ALIGN
 %token DEPLIBS CALL TAIL
 %token CC_TOK CCC_TOK FASTCC_TOK COLDCC_TOK
 %token VECTOR OF
@@ -1039,6 +1045,47 @@ OptCallingConv : /*empty*/      { $$ = CallingConv::C; } |
                    $$ = $2;
                  };
 
+// OptAlign/OptCAlign - An optional alignment, and an optional alignment with
+// a comma before it.
+OptAlign : /*empty*/        { $$ = 0; } |
+           ALIGN EUINT64VAL {
+  $$ = $2;
+  if ($$ != 0 && !isPowerOf2_32($$))
+    ThrowException("Alignment must be a power of two!");
+};
+OptCAlign : /*empty*/            { $$ = 0; } |
+            ',' ALIGN EUINT64VAL {
+  $$ = $3;
+  if ($$ != 0 && !isPowerOf2_32($$))
+    ThrowException("Alignment must be a power of two!");
+};
+
+
+SectionString : SECTION STRINGCONSTANT {
+  for (unsigned i = 0, e = strlen($2); i != e; ++i)
+    if ($2[i] == '"' || $2[i] == '\\')
+      ThrowException("Invalid character in section name!");
+  $$ = $2;
+};
+
+OptSection : /*empty*/ { $$ = 0; } |
+             SectionString { $$ = $1; };
+
+// GlobalVarAttributes - Used to pass the attributes string on a global.  CurGV
+// is set to be the global we are processing.
+//
+GlobalVarAttributes : /* empty */ {} |
+                     ',' GlobalVarAttribute GlobalVarAttributes {};
+GlobalVarAttribute : SectionString {
+    CurGV->setSection($1);
+    free($1);
+  } 
+  | ALIGN EUINT64VAL {
+    if ($2 != 0 && !isPowerOf2_32($2))
+      ThrowException("Alignment must be a power of two!");
+    CurGV->setAlignment($2);
+  };
+
 //===----------------------------------------------------------------------===//
 // Types includes all predefined types... except void, because it can only be
 // used in specific contexts (function returning void for example).  To have
@@ -1095,7 +1142,6 @@ UpRTypes : '\\' EUINT64VAL {                   // Type UpReference
     $$ = new PATypeHolder(HandleUpRefs(ArrayType::get(*$4, (unsigned)$2)));
     delete $4;
   }
-
   | '[' VECTOR OF UpRTypes ']' {               // Vector type?
     $$ = new PATypeHolder(HandleUpRefs(VectorType::get(*$4)));
     delete $4;
@@ -1109,6 +1155,8 @@ UpRTypes : '\\' EUINT64VAL {                   // Type UpReference
      if(!ElemTy->isPrimitiveType()) {
         ThrowException("Element type of a FixedVectorType must be primitive");
      }
+     //if (!isPowerOf2_32($2))
+     //  ThrowException("Vector length should be a power of 2!");
      $$ = new PATypeHolder(HandleUpRefs(FixedVectorType::get(*$5, (unsigned)$4)));
      delete $5;
   }
@@ -1559,11 +1607,16 @@ ConstPool : ConstPool OptAssign TYPE TypesV {
   }
   | ConstPool OptAssign OptLinkage GlobalType ConstVal {
     if ($5 == 0) ThrowException("Global value initializer is not a constant!");
-    ParseGlobalVariable($2, $3, $4, $5->getType(), $5);
+    CurGV = ParseGlobalVariable($2, $3, $4, $5->getType(), $5);
+                                                       } GlobalVarAttributes {
+    CurGV = 0;
   }
   | ConstPool OptAssign EXTERNAL GlobalType Types {
-    ParseGlobalVariable($2, GlobalValue::ExternalLinkage, $4, *$5, 0);
+    CurGV = ParseGlobalVariable($2, GlobalValue::ExternalLinkage,
+                                             $4, *$5, 0);
     delete $5;
+                                                   } GlobalVarAttributes {
+    CurGV = 0;
   }
   | ConstPool TARGET TargetDefinition { 
   }
@@ -1647,7 +1700,8 @@ ArgList : ArgListH {
     $$ = 0;
   };
 
-FunctionHeaderH : OptCallingConv TypesV Name '(' ArgList ')' {
+FunctionHeaderH : OptCallingConv TypesV Name '(' ArgList ')' 
+                  OptSection OptAlign {
   UnEscapeLexed($3);
   std::string FunctionName($3);
   free($3);  // Free strdup'd memory!
@@ -1705,6 +1759,11 @@ FunctionHeaderH : OptCallingConv TypesV Name '(' ArgList ')' {
 
   CurFun.FunctionStart(Fn);
   Fn->setCallingConv($1);
+  Fn->setAlignment($8);
+  if ($7) {
+    Fn->setSection($7);
+    free($7);
+  }
 
   // Add all of the arguments we parsed to the function...
   if ($5) {                     // Is null if empty...
@@ -2102,7 +2161,7 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     ObsoleteVarArgs = true;
     const Type* ArgTy = $2->getType();
     Function* NF = CurModule.CurrentModule->
-      getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
+      getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, (Type *)0);
 
     //b = vaarg a, t -> 
     //foo = alloca 1 of t
@@ -2121,7 +2180,7 @@ InstVal : ArithmeticOps Types ValueRef ',' ValueRef {
     ObsoleteVarArgs = true;
     const Type* ArgTy = $2->getType();
     Function* NF = CurModule.CurrentModule->
-      getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
+      getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, (Type *)0);
 
     //b = vanext a, t ->
     //foo = alloca 1 of t
@@ -2237,20 +2296,20 @@ OptFixed : FIXED {
   };
 
 
-MemoryInst : MALLOC Types {
-    $$ = new MallocInst(*$2);
+MemoryInst : MALLOC Types OptCAlign {
+    $$ = new MallocInst(*$2, 0, $3);
     delete $2;
   }
-  | MALLOC Types ',' UINT ValueRef {
-    $$ = new MallocInst(*$2, getVal($4, $5));
+  | MALLOC Types ',' UINT ValueRef OptCAlign {
+    $$ = new MallocInst(*$2, getVal($4, $5), $6);
     delete $2;
   }
-  | ALLOCA Types {
-    $$ = new AllocaInst(*$2);
+  | ALLOCA Types OptCAlign {
+    $$ = new AllocaInst(*$2, 0, $3);
     delete $2;
   }
-  | ALLOCA Types ',' UINT ValueRef {
-    $$ = new AllocaInst(*$2, getVal($4, $5));
+  | ALLOCA Types ',' UINT ValueRef OptCAlign {
+    $$ = new AllocaInst(*$2, getVal($4, $5), $6);
     delete $2;
   }
   | FREE ResolvedVal {

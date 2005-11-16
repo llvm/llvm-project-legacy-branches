@@ -680,7 +680,8 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     break;
   case 42: { //VANext_old
     const Type* ArgTy = getValue(iType, Oprnds[0])->getType();
-    Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
+    Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy,
+                                                  (Type *)0);
 
     //b = vanext a, t ->
     //foo = alloca 1 of t
@@ -700,7 +701,8 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
   }
   case 43: { //VAArg_old
     const Type* ArgTy = getValue(iType, Oprnds[0])->getType();
-    Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy, 0);
+    Function* NF = TheModule->getOrInsertFunction("llvm.va_copy", ArgTy, ArgTy,
+                                                  (Type *)0);
 
     //b = vaarg a, t ->
     //foo = alloca 1 of t
@@ -915,27 +917,33 @@ void BytecodeReader::ParseInstruction(std::vector<unsigned> &Oprnds,
     if (CallingConv) cast<InvokeInst>(Result)->setCallingConv(CallingConv);
     break;
   }
-  case Instruction::Malloc:
-    if (Oprnds.size() > 2)
+  case Instruction::Malloc: {
+    unsigned Align = 0;
+    if (Oprnds.size() == 2)
+      Align = (1 << Oprnds[1]) >> 1;
+    else if (Oprnds.size() > 2)
       error("Invalid malloc instruction!");
     if (!isa<PointerType>(InstTy))
       error("Invalid malloc instruction!");
 
     Result = new MallocInst(cast<PointerType>(InstTy)->getElementType(),
-                            Oprnds.size() ? getValue(Type::UIntTyID,
-                                                   Oprnds[0]) : 0);
+                            getValue(Type::UIntTyID, Oprnds[0]), Align);
     break;
+  }
 
-  case Instruction::Alloca:
-    if (Oprnds.size() > 2)
+  case Instruction::Alloca: {
+    unsigned Align = 0;
+    if (Oprnds.size() == 2)
+      Align = (1 << Oprnds[1]) >> 1;
+    else if (Oprnds.size() > 2)
       error("Invalid alloca instruction!");
     if (!isa<PointerType>(InstTy))
       error("Invalid alloca instruction!");
 
     Result = new AllocaInst(cast<PointerType>(InstTy)->getElementType(),
-                            Oprnds.size() ? getValue(Type::UIntTyID,
-                            Oprnds[0]) :0);
+                            getValue(Type::UIntTyID, Oprnds[0]), Align);
     break;
+  }
   case Instruction::Free:
     if (!isa<PointerType>(InstTy))
       error("Invalid free instruction!");
@@ -1985,6 +1993,10 @@ void BytecodeReader::ParseModuleGlobalInfo() {
 
   if (Handler) Handler->handleModuleGlobalsBegin();
 
+  // SectionID - If a global has an explicit section specified, this map
+  // remembers the ID until we can translate it into a string.
+  std::map<GlobalValue*, unsigned> SectionID;
+  
   // Read global variables...
   unsigned VarType = read_vbr_uint();
   while (VarType != Type::VoidTyID) { // List is terminated by Void
@@ -1995,9 +2007,24 @@ void BytecodeReader::ParseModuleGlobalInfo() {
       error("Invalid type (type type) for global var!");
     unsigned LinkageID = (VarType >> 2) & 7;
     bool isConstant = VarType & 1;
-    bool hasInitializer = VarType & 2;
-    GlobalValue::LinkageTypes Linkage;
+    bool hasInitializer = (VarType & 2) != 0;
+    unsigned Alignment = 0;
+    unsigned GlobalSectionID = 0;
+    
+    // An extension word is present when linkage = 3 (internal) and hasinit = 0.
+    if (LinkageID == 3 && !hasInitializer) {
+      unsigned ExtWord = read_vbr_uint();
+      // The extension word has this format: bit 0 = has initializer, bit 1-3 =
+      // linkage, bit 4-8 = alignment (log2), bits 10+ = future use.
+      hasInitializer = ExtWord & 1;
+      LinkageID = (ExtWord >> 1) & 7;
+      Alignment = (1 << ((ExtWord >> 4) & 31)) >> 1;
+      
+      if (ExtWord & (1 << 9))  // Has a section ID.
+        GlobalSectionID = read_vbr_uint();
+    }
 
+    GlobalValue::LinkageTypes Linkage;
     switch (LinkageID) {
     case 0: Linkage = GlobalValue::ExternalLinkage;  break;
     case 1: Linkage = GlobalValue::WeakLinkage;      break;
@@ -2011,20 +2038,22 @@ void BytecodeReader::ParseModuleGlobalInfo() {
     }
 
     const Type *Ty = getType(SlotNo);
-    if (!Ty) {
+    if (!Ty)
       error("Global has no type! SlotNo=" + utostr(SlotNo));
-    }
 
-    if (!isa<PointerType>(Ty)) {
+    if (!isa<PointerType>(Ty))
       error("Global not a pointer type! Ty= " + Ty->getDescription());
-    }
 
     const Type *ElTy = cast<PointerType>(Ty)->getElementType();
 
     // Create the global variable...
     GlobalVariable *GV = new GlobalVariable(ElTy, isConstant, Linkage,
                                             0, "", TheModule);
+    GV->setAlignment(Alignment);
     insertValue(GV, SlotNo, ModuleValues);
+
+    if (GlobalSectionID != 0)
+      SectionID[GV] = GlobalSectionID;
 
     unsigned initSlot = 0;
     if (hasInitializer) {
@@ -2047,8 +2076,8 @@ void BytecodeReader::ParseModuleGlobalInfo() {
     FnSignature = (FnSignature << 5) + 1;
 
   // List is terminated by VoidTy.
-  while ((FnSignature >> 5) != Type::VoidTyID) {
-    const Type *Ty = getType(FnSignature >> 5);
+  while (((FnSignature & (~0U >> 1)) >> 5) != Type::VoidTyID) {
+    const Type *Ty = getType((FnSignature & (~0U >> 1)) >> 5);
     if (!isa<PointerType>(Ty) ||
         !isa<FunctionType>(cast<PointerType>(Ty)->getElementType())) {
       error("Function not a pointer to function type! Ty = " +
@@ -2059,11 +2088,10 @@ void BytecodeReader::ParseModuleGlobalInfo() {
     const FunctionType* FTy =
       cast<FunctionType>(cast<PointerType>(Ty)->getElementType());
 
-
     // Insert the place holder.
-    Function* Func = new Function(FTy, GlobalValue::ExternalLinkage,
+    Function *Func = new Function(FTy, GlobalValue::ExternalLinkage,
                                   "", TheModule);
-    insertValue(Func, FnSignature >> 5, ModuleValues);
+    insertValue(Func, (FnSignature & (~0U >> 1)) >> 5, ModuleValues);
 
     // Flags are not used yet.
     unsigned Flags = FnSignature & 31;
@@ -2074,13 +2102,20 @@ void BytecodeReader::ParseModuleGlobalInfo() {
     if ((Flags & (1 << 4)) == 0)
       FunctionSignatureList.push_back(Func);
 
-    // Look at the low bits.  If there is a calling conv here, apply it,
-    // read it as a vbr.
-    Flags &= 15;
-    if (Flags)
-      Func->setCallingConv(Flags-1);
-    else
-      Func->setCallingConv(read_vbr_uint());
+    // Get the calling convention from the low bits.
+    unsigned CC = Flags & 15;
+    unsigned Alignment = 0;
+    if (FnSignature & (1 << 31)) {  // Has extension word?
+      unsigned ExtWord = read_vbr_uint();
+      Alignment = (1 << (ExtWord & 31)) >> 1;
+      CC |= ((ExtWord >> 5) & 15) << 4;
+      
+      if (ExtWord & (1 << 10))  // Has a section ID.
+        SectionID[Func] = read_vbr_uint();
+    }
+    
+    Func->setCallingConv(CC-1);
+    Func->setAlignment(Alignment);
 
     if (Handler) Handler->handleFunctionDeclaration(Func);
 
@@ -2094,12 +2129,19 @@ void BytecodeReader::ParseModuleGlobalInfo() {
   // remove elements efficiently from the back of the vector.
   std::reverse(FunctionSignatureList.begin(), FunctionSignatureList.end());
 
-  // If this bytecode format has dependent library information in it ..
-  if (!hasNoDependentLibraries) {
-    // Read in the number of dependent library items that follow
+  /// SectionNames - This contains the list of section names encoded in the
+  /// moduleinfoblock.  Functions and globals with an explicit section index
+  /// into this to get their section name.
+  std::vector<std::string> SectionNames;
+  
+  if (hasInconsistentModuleGlobalInfo) {
+    align32();
+  } else if (!hasNoDependentLibraries) {
+    // If this bytecode format has dependent library information in it, read in
+    // the number of dependent library items that follow.
     unsigned num_dep_libs = read_vbr_uint();
     std::string dep_lib;
-    while( num_dep_libs-- ) {
+    while (num_dep_libs--) {
       dep_lib = read_str();
       TheModule->addLibrary(dep_lib);
       if (Handler)
@@ -2107,15 +2149,28 @@ void BytecodeReader::ParseModuleGlobalInfo() {
     }
 
 
-    // Read target triple and place into the module
+    // Read target triple and place into the module.
     std::string triple = read_str();
     TheModule->setTargetTriple(triple);
     if (Handler)
       Handler->handleTargetTriple(triple);
+    
+    if (At != BlockEnd && !hasAlignment) {
+      // If the file has section info in it, read the section names now.
+      unsigned NumSections = read_vbr_uint();
+      while (NumSections--)
+        SectionNames.push_back(read_str());
+    }
   }
 
-  if (hasInconsistentModuleGlobalInfo)
-    align32();
+  // If any globals are in specified sections, assign them now.
+  for (std::map<GlobalValue*, unsigned>::iterator I = SectionID.begin(), E =
+       SectionID.end(); I != E; ++I)
+    if (I->second) {
+      if (I->second > SectionID.size())
+        error("SectionID out of range for global!");
+      I->first->setSection(SectionNames[I->second-1]);
+    }
 
   // This is for future proofing... in the future extra fields may be added that
   // we don't understand, so we transparently ignore them.

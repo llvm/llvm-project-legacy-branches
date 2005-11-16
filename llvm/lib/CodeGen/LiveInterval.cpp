@@ -101,6 +101,27 @@ bool LiveInterval::overlapsFrom(const LiveInterval& other,
   return false;
 }
 
+/// NontrivialOverlap - Check to see if the two live ranges specified by i and j
+/// overlap.  If so, check to see if they have value numbers that are not 
+/// iIdx/jIdx respectively.  If both conditions are true, return true.
+static inline bool NontrivialOverlap(const LiveRange &I, const LiveRange &J,
+                                     unsigned iIdx, unsigned jIdx) {
+  if (I.start == J.start) {
+    // If this is not the allowed value merge, we cannot join.
+    if (I.ValId != iIdx || J.ValId != jIdx)
+      return true;
+  } else if (I.start < J.start) {
+    if (I.end > J.start && (I.ValId != iIdx || J.ValId != jIdx)) {
+      return true;
+    }
+  } else {
+    if (J.end > I.start && (I.ValId != iIdx || J.ValId != jIdx))
+      return true;
+  }
+  
+  return false;
+}
+
 /// joinable - Two intervals are joinable if the either don't overlap at all
 /// or if the destination of the copy is a single assignment value, and it
 /// only overlaps with one value in the source interval.
@@ -125,21 +146,9 @@ bool LiveInterval::joinable(const LiveInterval &other, unsigned CopyIdx) const {
   }
 
   while (i != ie && j != je) {
-    if (i->start == j->start) {
-      // If this is not the allowed value merge, we cannot join.
-      if (i->ValId != ThisValIdx || j->ValId != OtherValIdx)
-        return false;
-    } else if (i->start < j->start) {
-      if (i->end > j->start) {
-        if (i->ValId != ThisValIdx || j->ValId != OtherValIdx)
-          return false;
-      }
-    } else {
-      if (j->end > i->start) {
-        if (i->ValId != ThisValIdx || j->ValId != OtherValIdx)
-          return false;
-      }
-    }
+    if (NontrivialOverlap(*i, *j, ThisValIdx, OtherValIdx))
+      return false;
+    
     if (i->end < j->end)
       ++i;
     else
@@ -148,6 +157,43 @@ bool LiveInterval::joinable(const LiveInterval &other, unsigned CopyIdx) const {
 
   return true;
 }
+
+/// getOverlapingRanges - Given another live interval which is defined as a
+/// copy from this one, return a list of all of the live ranges where the
+/// two overlap and have different value numbers.
+void LiveInterval::getOverlapingRanges(const LiveInterval &other, 
+                                       unsigned CopyIdx,
+                                       std::vector<LiveRange*> &Ranges) {
+  const LiveRange *SourceLR = getLiveRangeContaining(CopyIdx-1);
+  const LiveRange *DestLR = other.getLiveRangeContaining(CopyIdx);
+  assert(SourceLR && DestLR && "Not joining due to a copy?");
+  unsigned OtherValIdx = SourceLR->ValId;
+  unsigned ThisValIdx = DestLR->ValId;
+  
+  Ranges::iterator i = ranges.begin();
+  Ranges::iterator ie = ranges.end();
+  Ranges::const_iterator j = other.ranges.begin();
+  Ranges::const_iterator je = other.ranges.end();
+  
+  if (i->start < j->start) {
+    i = std::upper_bound(i, ie, j->start);
+    if (i != ranges.begin()) --i;
+  } else if (j->start < i->start) {
+    j = std::upper_bound(j, je, i->start);
+    if (j != other.ranges.begin()) --j;
+  }
+  
+  while (i != ie && j != je) {
+    if (NontrivialOverlap(*i, *j, ThisValIdx, OtherValIdx))
+      Ranges.push_back(&*i);
+    
+    if (i->end < j->end)
+      ++i;
+    else
+      ++j;
+  }
+}
+
 
 
 /// extendIntervalEndTo - This method is used when we want to extend the range
@@ -167,8 +213,16 @@ void LiveInterval::extendIntervalEndTo(Ranges::iterator I, unsigned NewEnd) {
   // If NewEnd was in the middle of an interval, make sure to get its endpoint.
   I->end = std::max(NewEnd, prior(MergeTo)->end);
 
-  // Erase any dead ranges
+  // Erase any dead ranges.
   ranges.erase(next(I), MergeTo);
+  
+  // If the newly formed range now touches the range after it and if they have
+  // the same value number, merge the two ranges into one range.
+  Ranges::iterator Next = next(I);
+  if (Next != ranges.end() && Next->start <= I->end && Next->ValId == ValId) {
+    I->end = Next->end;
+    ranges.erase(Next);
+  }
 }
 
 

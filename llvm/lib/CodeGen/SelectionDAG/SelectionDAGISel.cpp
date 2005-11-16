@@ -32,6 +32,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Debug.h"
 #include <map>
 #include <iostream>
@@ -44,7 +45,6 @@ ViewDAGs("view-isel-dags", cl::Hidden,
 #else
 static const bool ViewDAGs = 0;
 #endif
-
 
 namespace llvm {
   //===--------------------------------------------------------------------===//
@@ -71,14 +71,6 @@ namespace llvm {
     /// the entry block.  This allows the allocas to be efficiently referenced
     /// anywhere in the function.
     std::map<const AllocaInst*, int> StaticAllocaMap;
-
-    /// BlockLocalArguments - If any arguments are only used in a single basic
-    /// block, and if the target can access the arguments without side-effects,
-    /// avoid emitting CopyToReg nodes for those arguments.  This map keeps
-    /// track of which arguments are local to each BB.
-    std::multimap<BasicBlock*, std::pair<Argument*,
-                                         unsigned> > BlockLocalArguments;
-
 
     unsigned MakeReg(MVT::ValueType VT) {
       return RegMap->createVirtualRegister(TLI.getRegClassFor(VT));
@@ -125,24 +117,39 @@ static bool isUsedOutsideOfDefiningBlock(Instruction *I) {
   return false;
 }
 
+/// isOnlyUsedInEntryBlock - If the specified argument is only used in the
+/// entry block, return true.
+static bool isOnlyUsedInEntryBlock(Argument *A) {
+  BasicBlock *Entry = A->getParent()->begin();
+  for (Value::use_iterator UI = A->use_begin(), E = A->use_end(); UI != E; ++UI)
+    if (cast<Instruction>(*UI)->getParent() != Entry)
+      return false;  // Use not in entry block.
+  return true;
+}
+
 FunctionLoweringInfo::FunctionLoweringInfo(TargetLowering &tli,
                                            Function &fn, MachineFunction &mf)
     : TLI(tli), Fn(fn), MF(mf), RegMap(MF.getSSARegMap()) {
 
+  // Create a vreg for each argument register that is not dead and is used
+  // outside of the entry block for the function.
+  for (Function::arg_iterator AI = Fn.arg_begin(), E = Fn.arg_end();
+       AI != E; ++AI)
+    if (!isOnlyUsedInEntryBlock(AI))
+      InitializeRegForValue(AI);
+
   // Initialize the mapping of values to registers.  This is only set up for
   // instruction values that are used outside of the block that defines
   // them.
-  for (Function::arg_iterator AI = Fn.arg_begin(), E = Fn.arg_end();
-       AI != E; ++AI)
-    InitializeRegForValue(AI);
-
   Function::iterator BB = Fn.begin(), EB = Fn.end();
   for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
     if (AllocaInst *AI = dyn_cast<AllocaInst>(I))
       if (ConstantUInt *CUI = dyn_cast<ConstantUInt>(AI->getArraySize())) {
         const Type *Ty = AI->getAllocatedType();
         uint64_t TySize = TLI.getTargetData().getTypeSize(Ty);
-        unsigned Align = TLI.getTargetData().getTypeAlignment(Ty);
+        unsigned Align = 
+          std::max((unsigned)TLI.getTargetData().getTypeAlignment(Ty),
+                   AI->getAlignment());
 
         // If the alignment of the value is smaller than the size of the value,
         // and if the size of the value is particularly small (<= 8 bytes),
@@ -151,9 +158,8 @@ FunctionLoweringInfo::FunctionLoweringInfo(TargetLowering &tli,
         // FIXME: This could be made better with a preferred alignment hook in
         // TargetData.  It serves primarily to 8-byte align doubles for X86.
         if (Align < TySize && TySize <= 8) Align = TySize;
-
-        if (CUI->getValue())           // Don't produce zero sized stack objects
-          TySize *= CUI->getValue();   // Get total allocated size.
+        TySize *= CUI->getValue();   // Get total allocated size.
+        if (TySize == 0) TySize = 1; // Don't create zero-sized stack objects.
         StaticAllocaMap[AI] =
           MF.getFrameInfo()->CreateStackObject((unsigned)TySize, Align);
       }
@@ -399,6 +405,7 @@ public:
   void visitStore(StoreInst &I);
   void visitPHI(PHINode &I) { } // PHI nodes are handled specially.
   void visitCall(CallInst &I);
+  const char *visitIntrinsicCall(CallInst &I, unsigned Intrinsic);
 
   void visitVAStart(CallInst &I);
   void visitVAArg(VAArgInst &I);
@@ -464,8 +471,8 @@ void SelectionDAGLowering::visitRet(ReturnInst &I) {
   case MVT::f64:
     break; // No extension needed!
   }
-
-  DAG.setRoot(DAG.getNode(ISD::RET, MVT::Other, getRoot(), Op1));
+  // Allow targets to lower this further to meet ABI requirements
+  DAG.setRoot(TLI.LowerReturnTo(getRoot(), Op1, DAG));
 }
 
 void SelectionDAGLowering::visitBr(BranchInst &I) {
@@ -614,24 +621,47 @@ void SelectionDAGLowering::visitGetElementPtr(User &I) {
       Ty = StTy->getElementType(Field);
     } else {
       Ty = cast<SequentialType>(Ty)->getElementType();
-      if (!isa<Constant>(Idx) || !cast<Constant>(Idx)->isNullValue()) {
-        // N = N + Idx * ElementSize;
-        uint64_t ElementSize = TD.getTypeSize(Ty);
-        SDOperand IdxN = getValue(Idx), Scale = getIntPtrConstant(ElementSize);
 
-        // If the index is smaller or larger than intptr_t, truncate or extend
-        // it.
-        if (IdxN.getValueType() < Scale.getValueType()) {
-          if (Idx->getType()->isSigned())
-            IdxN = DAG.getNode(ISD::SIGN_EXTEND, Scale.getValueType(), IdxN);
-          else
-            IdxN = DAG.getNode(ISD::ZERO_EXTEND, Scale.getValueType(), IdxN);
-        } else if (IdxN.getValueType() > Scale.getValueType())
-          IdxN = DAG.getNode(ISD::TRUNCATE, Scale.getValueType(), IdxN);
+      // If this is a constant subscript, handle it quickly.
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
+        if (CI->getRawValue() == 0) continue;
 
-        IdxN = DAG.getNode(ISD::MUL, N.getValueType(), IdxN, Scale);
-        N = DAG.getNode(ISD::ADD, N.getValueType(), N, IdxN);
+        uint64_t Offs;
+        if (ConstantSInt *CSI = dyn_cast<ConstantSInt>(CI))
+          Offs = (int64_t)TD.getTypeSize(Ty)*CSI->getValue();
+        else
+          Offs = TD.getTypeSize(Ty)*cast<ConstantUInt>(CI)->getValue();
+        N = DAG.getNode(ISD::ADD, N.getValueType(), N, getIntPtrConstant(Offs));
+        continue;
       }
+      
+      // N = N + Idx * ElementSize;
+      uint64_t ElementSize = TD.getTypeSize(Ty);
+      SDOperand IdxN = getValue(Idx);
+
+      // If the index is smaller or larger than intptr_t, truncate or extend
+      // it.
+      if (IdxN.getValueType() < N.getValueType()) {
+        if (Idx->getType()->isSigned())
+          IdxN = DAG.getNode(ISD::SIGN_EXTEND, N.getValueType(), IdxN);
+        else
+          IdxN = DAG.getNode(ISD::ZERO_EXTEND, N.getValueType(), IdxN);
+      } else if (IdxN.getValueType() > N.getValueType())
+        IdxN = DAG.getNode(ISD::TRUNCATE, N.getValueType(), IdxN);
+
+      // If this is a multiply by a power of two, turn it into a shl
+      // immediately.  This is a very common case.
+      if (isPowerOf2_64(ElementSize)) {
+        unsigned Amt = Log2_64(ElementSize);
+        IdxN = DAG.getNode(ISD::SHL, N.getValueType(), IdxN,
+                           DAG.getConstant(Amt, TLI.getShiftAmountTy()));
+        N = DAG.getNode(ISD::ADD, N.getValueType(), N, IdxN);
+        continue;
+      }
+      
+      SDOperand Scale = getIntPtrConstant(ElementSize);
+      IdxN = DAG.getNode(ISD::MUL, N.getValueType(), IdxN, Scale);
+      N = DAG.getNode(ISD::ADD, N.getValueType(), N, IdxN);
     }
   }
   setValue(&I, N);
@@ -645,7 +675,8 @@ void SelectionDAGLowering::visitAlloca(AllocaInst &I) {
 
   const Type *Ty = I.getAllocatedType();
   uint64_t TySize = TLI.getTargetData().getTypeSize(Ty);
-  unsigned Align = TLI.getTargetData().getTypeAlignment(Ty);
+  unsigned Align = std::max((unsigned)TLI.getTargetData().getTypeAlignment(Ty),
+                            I.getAlignment());
 
   SDOperand AllocSize = getValue(I.getArraySize());
   MVT::ValueType IntPtr = TLI.getPointerTy();
@@ -719,123 +750,144 @@ void SelectionDAGLowering::visitStore(StoreInst &I) {
                           DAG.getSrcValue(I.getOperand(1))));
 }
 
+/// visitIntrinsicCall - Lower the call to the specified intrinsic function.  If
+/// we want to emit this as a call to a named external function, return the name
+/// otherwise lower it and return null.
+const char *
+SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
+  switch (Intrinsic) {
+  case Intrinsic::vastart:  visitVAStart(I); return 0;
+  case Intrinsic::vaend:    visitVAEnd(I); return 0;
+  case Intrinsic::vacopy:   visitVACopy(I); return 0;
+  case Intrinsic::returnaddress: visitFrameReturnAddress(I, false); return 0;
+  case Intrinsic::frameaddress:  visitFrameReturnAddress(I, true); return 0;
+  case Intrinsic::setjmp:
+    return "_setjmp"+!TLI.usesUnderscoreSetJmpLongJmp();
+    break;
+  case Intrinsic::longjmp:
+    return "_longjmp"+!TLI.usesUnderscoreSetJmpLongJmp();
+    break;
+  case Intrinsic::memcpy:  visitMemIntrinsic(I, ISD::MEMCPY); return 0;
+  case Intrinsic::memset:  visitMemIntrinsic(I, ISD::MEMSET); return 0;
+  case Intrinsic::memmove: visitMemIntrinsic(I, ISD::MEMMOVE); return 0;
+    
+  case Intrinsic::readport:
+  case Intrinsic::readio: {
+    std::vector<MVT::ValueType> VTs;
+    VTs.push_back(TLI.getValueType(I.getType()));
+    VTs.push_back(MVT::Other);
+    std::vector<SDOperand> Ops;
+    Ops.push_back(getRoot());
+    Ops.push_back(getValue(I.getOperand(1)));
+    SDOperand Tmp = DAG.getNode(Intrinsic == Intrinsic::readport ?
+                                ISD::READPORT : ISD::READIO, VTs, Ops);
+    
+    setValue(&I, Tmp);
+    DAG.setRoot(Tmp.getValue(1));
+    return 0;
+  }
+  case Intrinsic::writeport:
+  case Intrinsic::writeio:
+    DAG.setRoot(DAG.getNode(Intrinsic == Intrinsic::writeport ?
+                            ISD::WRITEPORT : ISD::WRITEIO, MVT::Other,
+                            getRoot(), getValue(I.getOperand(1)),
+                            getValue(I.getOperand(2))));
+    return 0;
+  case Intrinsic::dbg_stoppoint:
+  case Intrinsic::dbg_region_start:
+  case Intrinsic::dbg_region_end:
+  case Intrinsic::dbg_func_start:
+  case Intrinsic::dbg_declare:
+    if (I.getType() != Type::VoidTy)
+      setValue(&I, DAG.getNode(ISD::UNDEF, TLI.getValueType(I.getType())));
+    return 0;
+    
+  case Intrinsic::isunordered:
+    setValue(&I, DAG.getSetCC(MVT::i1,getValue(I.getOperand(1)),
+                              getValue(I.getOperand(2)), ISD::SETUO));
+    return 0;
+    
+  case Intrinsic::sqrt:
+    setValue(&I, DAG.getNode(ISD::FSQRT,
+                             getValue(I.getOperand(1)).getValueType(),
+                             getValue(I.getOperand(1))));
+    return 0;
+  case Intrinsic::pcmarker: {
+    SDOperand Tmp = getValue(I.getOperand(1));
+    DAG.setRoot(DAG.getNode(ISD::PCMARKER, MVT::Other, getRoot(), Tmp));
+    return 0;
+  }
+  case Intrinsic::readcyclecounter: {
+    std::vector<MVT::ValueType> VTs;
+    VTs.push_back(MVT::i64);
+    VTs.push_back(MVT::Other);
+    std::vector<SDOperand> Ops;
+    Ops.push_back(getRoot());
+    SDOperand Tmp = DAG.getNode(ISD::READCYCLECOUNTER, VTs, Ops);
+    setValue(&I, Tmp);
+    DAG.setRoot(Tmp.getValue(1));
+    return 0;
+  }
+  case Intrinsic::cttz:
+    setValue(&I, DAG.getNode(ISD::CTTZ,
+                             getValue(I.getOperand(1)).getValueType(),
+                             getValue(I.getOperand(1))));
+    return 0;
+  case Intrinsic::ctlz:
+    setValue(&I, DAG.getNode(ISD::CTLZ,
+                             getValue(I.getOperand(1)).getValueType(),
+                             getValue(I.getOperand(1))));
+    return 0;
+  case Intrinsic::ctpop:
+    setValue(&I, DAG.getNode(ISD::CTPOP,
+                             getValue(I.getOperand(1)).getValueType(),
+                             getValue(I.getOperand(1))));
+    return 0;
+  default:
+    std::cerr << I;
+    assert(0 && "This intrinsic is not implemented yet!");
+    return 0;
+  }
+}
+
+
 void SelectionDAGLowering::visitCall(CallInst &I) {
   const char *RenameFn = 0;
-  SDOperand Tmp;
-  if (Function *F = I.getCalledFunction())
+  if (Function *F = I.getCalledFunction()) {
     if (F->isExternal())
-      switch (F->getIntrinsicID()) {
-      case 0:     // Not an LLVM intrinsic.
-        if (F->getName() == "fabs" || F->getName() == "fabsf") {
+      if (unsigned IID = F->getIntrinsicID()) {
+        RenameFn = visitIntrinsicCall(I, IID);
+        if (!RenameFn)
+          return;
+      } else {    // Not an LLVM intrinsic.
+        const std::string &Name = F->getName();
+        if (Name[0] == 'f' && (Name == "fabs" || Name == "fabsf")) {
           if (I.getNumOperands() == 2 &&   // Basic sanity checks.
               I.getOperand(1)->getType()->isFloatingPoint() &&
               I.getType() == I.getOperand(1)->getType()) {
-            Tmp = getValue(I.getOperand(1));
+            SDOperand Tmp = getValue(I.getOperand(1));
             setValue(&I, DAG.getNode(ISD::FABS, Tmp.getValueType(), Tmp));
             return;
           }
-        }
-        else if (F->getName() == "sin" || F->getName() == "sinf") {
+        } else if (Name[0] == 's' && (Name == "sin" || Name == "sinf")) {
           if (I.getNumOperands() == 2 &&   // Basic sanity checks.
               I.getOperand(1)->getType()->isFloatingPoint() &&
               I.getType() == I.getOperand(1)->getType()) {
-            Tmp = getValue(I.getOperand(1));
+            SDOperand Tmp = getValue(I.getOperand(1));
             setValue(&I, DAG.getNode(ISD::FSIN, Tmp.getValueType(), Tmp));
             return;
           }
-        }
-        else if (F->getName() == "cos" || F->getName() == "cosf") {
+        } else if (Name[0] == 'c' && (Name == "cos" || Name == "cosf")) {
           if (I.getNumOperands() == 2 &&   // Basic sanity checks.
               I.getOperand(1)->getType()->isFloatingPoint() &&
               I.getType() == I.getOperand(1)->getType()) {
-            Tmp = getValue(I.getOperand(1));
+            SDOperand Tmp = getValue(I.getOperand(1));
             setValue(&I, DAG.getNode(ISD::FCOS, Tmp.getValueType(), Tmp));
             return;
           }
         }
-        break;
-      case Intrinsic::vastart:  visitVAStart(I); return;
-      case Intrinsic::vaend:    visitVAEnd(I); return;
-      case Intrinsic::vacopy:   visitVACopy(I); return;
-      case Intrinsic::returnaddress: visitFrameReturnAddress(I, false); return;
-      case Intrinsic::frameaddress:  visitFrameReturnAddress(I, true); return;
-
-      case Intrinsic::setjmp:
-        RenameFn = "_setjmp"+!TLI.usesUnderscoreSetJmpLongJmp();
-        break;
-      case Intrinsic::longjmp:
-        RenameFn = "_longjmp"+!TLI.usesUnderscoreSetJmpLongJmp();
-        break;
-      case Intrinsic::memcpy:  visitMemIntrinsic(I, ISD::MEMCPY); return;
-      case Intrinsic::memset:  visitMemIntrinsic(I, ISD::MEMSET); return;
-      case Intrinsic::memmove: visitMemIntrinsic(I, ISD::MEMMOVE); return;
-
-      case Intrinsic::readport:
-      case Intrinsic::readio: {
-        std::vector<MVT::ValueType> VTs;
-        VTs.push_back(TLI.getValueType(I.getType()));
-        VTs.push_back(MVT::Other);
-        std::vector<SDOperand> Ops;
-        Ops.push_back(getRoot());
-        Ops.push_back(getValue(I.getOperand(1)));
-        Tmp = DAG.getNode(F->getIntrinsicID() == Intrinsic::readport ?
-                          ISD::READPORT : ISD::READIO, VTs, Ops);
-
-        setValue(&I, Tmp);
-        DAG.setRoot(Tmp.getValue(1));
-        return;
       }
-      case Intrinsic::writeport:
-      case Intrinsic::writeio:
-        DAG.setRoot(DAG.getNode(F->getIntrinsicID() == Intrinsic::writeport ?
-                                ISD::WRITEPORT : ISD::WRITEIO, MVT::Other,
-                                getRoot(), getValue(I.getOperand(1)),
-                                getValue(I.getOperand(2))));
-        return;
-      case Intrinsic::dbg_stoppoint:
-      case Intrinsic::dbg_region_start:
-      case Intrinsic::dbg_region_end:
-      case Intrinsic::dbg_func_start:
-      case Intrinsic::dbg_declare:
-        if (I.getType() != Type::VoidTy)
-          setValue(&I, DAG.getNode(ISD::UNDEF, TLI.getValueType(I.getType())));
-        return;
-
-      case Intrinsic::isunordered:
-        setValue(&I, DAG.getSetCC(MVT::i1,getValue(I.getOperand(1)),
-                                  getValue(I.getOperand(2)), ISD::SETUO));
-        return;
-
-      case Intrinsic::sqrt:
-        setValue(&I, DAG.getNode(ISD::FSQRT,
-                                 getValue(I.getOperand(1)).getValueType(),
-                                 getValue(I.getOperand(1))));
-        return;
-
-      case Intrinsic::pcmarker:
-        Tmp = getValue(I.getOperand(1));
-        DAG.setRoot(DAG.getNode(ISD::PCMARKER, MVT::Other, getRoot(), Tmp));
-        return;
-      case Intrinsic::cttz:
-        setValue(&I, DAG.getNode(ISD::CTTZ,
-                                 getValue(I.getOperand(1)).getValueType(),
-                                 getValue(I.getOperand(1))));
-        return;
-      case Intrinsic::ctlz:
-        setValue(&I, DAG.getNode(ISD::CTLZ,
-                                 getValue(I.getOperand(1)).getValueType(),
-                                 getValue(I.getOperand(1))));
-        return;
-      case Intrinsic::ctpop:
-        setValue(&I, DAG.getNode(ISD::CTPOP,
-                                 getValue(I.getOperand(1)).getValueType(),
-                                 getValue(I.getOperand(1))));
-        return;
-      default:
-        std::cerr << I;
-        assert(0 && "This intrinsic is not implemented yet!");
-        return;
-      }
+  }
 
   SDOperand Callee;
   if (!RenameFn)
@@ -843,7 +895,7 @@ void SelectionDAGLowering::visitCall(CallInst &I) {
   else
     Callee = DAG.getExternalSymbol(RenameFn, TLI.getPointerTy());
   std::vector<std::pair<SDOperand, const Type*> > Args;
-
+  Args.reserve(I.getNumOperands());
   for (unsigned i = 1, e = I.getNumOperands(); i != e; ++i) {
     Value *Arg = I.getOperand(i);
     SDOperand ArgNode = getValue(Arg);
@@ -910,6 +962,11 @@ MachineBasicBlock *TargetLowering::InsertAtEndOfBasicBlock(MachineInstr *MI,
                "TargetLowering::InsertAtEndOfBasicBlock!\n";
   abort();
   return 0;  
+}
+
+SDOperand TargetLowering::LowerReturnTo(SDOperand Chain, SDOperand Op,
+                                        SelectionDAG &DAG) {
+  return DAG.getNode(ISD::RET, MVT::Other, Chain, Op);
 }
 
 SDOperand TargetLowering::LowerVAStart(SDOperand Chain,
@@ -1022,7 +1079,6 @@ void SelectionDAGISel::getAnalysisUsage(AnalysisUsage &AU) const {
   // updates dom and loop info.
 }
 
-
 bool SelectionDAGISel::runOnFunction(Function &Fn) {
   MachineFunction &MF = MachineFunction::construct(&Fn, TLI.getTargetMachine());
   RegMap = MF.getSSARegMap();
@@ -1039,7 +1095,7 @@ bool SelectionDAGISel::runOnFunction(Function &Fn) {
         if (isa<Constant>(PN->getIncomingValue(i)))
           SplitCriticalEdge(PN->getIncomingBlock(i), BB);
   }
-
+  
   FunctionLoweringInfo FuncInfo(TLI, Fn, MF);
 
   for (Function::iterator I = Fn.begin(), E = Fn.end(); I != E; ++I)
@@ -1081,104 +1137,45 @@ CopyValueToVirtualRegister(SelectionDAGLowering &SDL, Value *V, unsigned Reg) {
   }
 }
 
-/// IsOnlyUsedInOneBasicBlock - If the specified argument is only used in a
-/// single basic block, return that block.  Otherwise, return a null pointer.
-static BasicBlock *IsOnlyUsedInOneBasicBlock(Argument *A) {
-  if (A->use_empty()) return 0;
-  BasicBlock *BB = cast<Instruction>(A->use_back())->getParent();
-  for (Argument::use_iterator UI = A->use_begin(), E = A->use_end(); UI != E;
-       ++UI)
-    if (isa<PHINode>(*UI) || cast<Instruction>(*UI)->getParent() != BB)
-      return 0;  // Disagreement among the users?
-
-  // Okay, there is a single BB user.  Only permit this optimization if this is
-  // the entry block, otherwise, we might sink argument loads into loops and
-  // stuff.  Later, when we have global instruction selection, this won't be an
-  // issue clearly.
-  if (BB == BB->getParent()->begin())
-    return BB;
-  return 0;
-}
-
 void SelectionDAGISel::
 LowerArguments(BasicBlock *BB, SelectionDAGLowering &SDL,
                std::vector<SDOperand> &UnorderedChains) {
   // If this is the entry block, emit arguments.
   Function &F = *BB->getParent();
   FunctionLoweringInfo &FuncInfo = SDL.FuncInfo;
+  SDOperand OldRoot = SDL.DAG.getRoot();
+  std::vector<SDOperand> Args = TLI.LowerArguments(F, SDL.DAG);
 
-  if (BB == &F.front()) {
-    SDOperand OldRoot = SDL.DAG.getRoot();
-
-    std::vector<SDOperand> Args = TLI.LowerArguments(F, SDL.DAG);
-
-    // If there were side effects accessing the argument list, do not do
-    // anything special.
-    if (OldRoot != SDL.DAG.getRoot()) {
-      unsigned a = 0;
-      for (Function::arg_iterator AI = F.arg_begin(), E = F.arg_end();
-           AI != E; ++AI,++a)
-        if (!AI->use_empty()) {
-          SDL.setValue(AI, Args[a]);
-          
-          SDOperand Copy =
-            CopyValueToVirtualRegister(SDL, AI, FuncInfo.ValueMap[AI]);
-          UnorderedChains.push_back(Copy);
-        }
-    } else {
-      // Otherwise, if any argument is only accessed in a single basic block,
-      // emit that argument only to that basic block.
-      unsigned a = 0;
-      for (Function::arg_iterator AI = F.arg_begin(), E = F.arg_end();
-           AI != E; ++AI,++a)
-        if (!AI->use_empty()) {
-          if (BasicBlock *BBU = IsOnlyUsedInOneBasicBlock(AI)) {
-            FuncInfo.BlockLocalArguments.insert(std::make_pair(BBU,
-                                                      std::make_pair(AI, a)));
-          } else {
-            SDL.setValue(AI, Args[a]);
-            SDOperand Copy =
-              CopyValueToVirtualRegister(SDL, AI, FuncInfo.ValueMap[AI]);
-            UnorderedChains.push_back(Copy);
-          }
-        }
-    }
-
-    // Next, if the function has live ins that need to be copied into vregs,
-    // emit the copies now, into the top of the block.
-    MachineFunction &MF = SDL.DAG.getMachineFunction();
-    if (MF.livein_begin() != MF.livein_end()) {
-      SSARegMap *RegMap = MF.getSSARegMap();
-      const MRegisterInfo &MRI = *MF.getTarget().getRegisterInfo();
-      for (MachineFunction::livein_iterator LI = MF.livein_begin(),
-           E = MF.livein_end(); LI != E; ++LI)
-        if (LI->second)
-          MRI.copyRegToReg(*MF.begin(), MF.begin()->end(), LI->second,
-                           LI->first, RegMap->getRegClass(LI->second));
-    }
+  unsigned a = 0;
+  for (Function::arg_iterator AI = F.arg_begin(), E = F.arg_end();
+       AI != E; ++AI, ++a)
+    if (!AI->use_empty()) {
+      SDL.setValue(AI, Args[a]);
       
-    // Finally, if the target has anything special to do, allow it to do so.
-    EmitFunctionEntryCode(F, SDL.DAG.getMachineFunction());
-  }
-
-  // See if there are any block-local arguments that need to be emitted in this
-  // block.
-
-  if (!FuncInfo.BlockLocalArguments.empty()) {
-    std::multimap<BasicBlock*, std::pair<Argument*, unsigned> >::iterator BLAI =
-      FuncInfo.BlockLocalArguments.lower_bound(BB);
-    if (BLAI != FuncInfo.BlockLocalArguments.end() && BLAI->first == BB) {
-      // Lower the arguments into this block.
-      std::vector<SDOperand> Args = TLI.LowerArguments(F, SDL.DAG);
-
-      // Set up the value mapping for the local arguments.
-      for (; BLAI != FuncInfo.BlockLocalArguments.end() && BLAI->first == BB;
-           ++BLAI)
-        SDL.setValue(BLAI->second.first, Args[BLAI->second.second]);
-
-      // Any dead arguments will just be ignored here.
+      // If this argument is live outside of the entry block, insert a copy from
+      // whereever we got it to the vreg that other BB's will reference it as.
+      if (FuncInfo.ValueMap.count(AI)) {
+        SDOperand Copy =
+          CopyValueToVirtualRegister(SDL, AI, FuncInfo.ValueMap[AI]);
+        UnorderedChains.push_back(Copy);
+      }
     }
+
+  // Next, if the function has live ins that need to be copied into vregs,
+  // emit the copies now, into the top of the block.
+  MachineFunction &MF = SDL.DAG.getMachineFunction();
+  if (MF.livein_begin() != MF.livein_end()) {
+    SSARegMap *RegMap = MF.getSSARegMap();
+    const MRegisterInfo &MRI = *MF.getTarget().getRegisterInfo();
+    for (MachineFunction::livein_iterator LI = MF.livein_begin(),
+         E = MF.livein_end(); LI != E; ++LI)
+      if (LI->second)
+        MRI.copyRegToReg(*MF.begin(), MF.begin()->end(), LI->second,
+                         LI->first, RegMap->getRegClass(LI->second));
   }
+    
+  // Finally, if the target has anything special to do, allow it to do so.
+  EmitFunctionEntryCode(F, SDL.DAG.getMachineFunction());
 }
 
 
@@ -1189,8 +1186,9 @@ void SelectionDAGISel::BuildSelectionDAG(SelectionDAG &DAG, BasicBlock *LLVMBB,
 
   std::vector<SDOperand> UnorderedChains;
 
-  // Lower any arguments needed in this block.
-  LowerArguments(LLVMBB, SDL, UnorderedChains);
+  // Lower any arguments needed in this block if this is the entry block.
+  if (LLVMBB == &LLVMBB->getParent()->front())
+    LowerArguments(LLVMBB, SDL, UnorderedChains);
 
   BB = FuncInfo.MBBMap[LLVMBB];
   SDL.setCurrentBasicBlock(BB);
@@ -1269,7 +1267,18 @@ void SelectionDAGISel::BuildSelectionDAG(SelectionDAG &DAG, BasicBlock *LLVMBB,
 
   // Turn all of the unordered chains into one factored node.
   if (!UnorderedChains.empty()) {
-    UnorderedChains.push_back(SDL.getRoot());
+    SDOperand Root = SDL.getRoot();
+    if (Root.getOpcode() != ISD::EntryToken) {
+      unsigned i = 0, e = UnorderedChains.size();
+      for (; i != e; ++i) {
+        assert(UnorderedChains[i].Val->getNumOperands() > 1);
+        if (UnorderedChains[i].Val->getOperand(0) == Root)
+          break;  // Don't add the root if we already indirectly depend on it.
+      }
+        
+      if (i == e)
+        UnorderedChains.push_back(Root);
+    }
     DAG.setRoot(DAG.getNode(ISD::TokenFactor, MVT::Other, UnorderedChains));
   }
 

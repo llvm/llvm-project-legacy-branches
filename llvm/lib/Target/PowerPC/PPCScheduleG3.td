@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 
-def G3Itineraries : ProcessorItineraries<G3, [
+def G3Itineraries : ProcessorItineraries<[
   InstrItinData<IntGeneral  , [InstrStage<1, [IU1, IU2]>]>,
   InstrItinData<IntCompare  , [InstrStage<1, [IU1, IU2]>]>,
   InstrItinData<IntDivW     , [InstrStage<19, [IU1]>]>,
@@ -31,9 +31,9 @@ def G3Itineraries : ProcessorItineraries<G3, [
   InstrItinData<LdStDCBA    , [InstrStage<2, [SLU]>]>,
   InstrItinData<LdStDCBF    , [InstrStage<3, [SLU]>]>,
   InstrItinData<LdStDCBI    , [InstrStage<3, [SLU]>]>,
-  InstrItinData<LdStDCBT    , [InstrStage<2, [SLU]>]>,
+  InstrItinData<LdStGeneral , [InstrStage<2, [SLU]>]>,
   InstrItinData<LdStICBI    , [InstrStage<3, [SLU]>]>,
-  InstrItinData<LdStLBZUX   , [InstrStage<2, [SLU]>]>,
+  InstrItinData<LdStUX      , [InstrStage<2, [SLU]>]>,
   InstrItinData<LdStLFD     , [InstrStage<2, [SLU]>]>,
   InstrItinData<LdStLFDU    , [InstrStage<2, [SLU]>]>,
   InstrItinData<LdStLHA     , [InstrStage<2, [SLU]>]>,
@@ -59,5 +59,5 @@ def G3Itineraries : ProcessorItineraries<G3, [
   InstrItinData<FPDivD      , [InstrStage<31, [FPU1]>]>,
   InstrItinData<FPDivS      , [InstrStage<17, [FPU1]>]>,
   InstrItinData<FPFused     , [InstrStage<2, [FPU1]>]>,
-  InstrItinData<FPRes       , [InstrStage<10, [FPU1]>]>,
+  InstrItinData<FPRes       , [InstrStage<10, [FPU1]>]>
 ]>;

@@ -121,3 +121,122 @@ _foo:
 
 If we exposed the srl & mask ops after the MFCR that we are doing to select
 the correct CR bit, then we could fold the slwi into the rlwinm before it.
+
+===-------------------------------------------------------------------------===
+
+#define  ARRAY_LENGTH  16
+
+union bitfield {
+	struct {
+#ifndef	__ppc__
+		unsigned int                       field0 : 6;
+		unsigned int                       field1 : 6;
+		unsigned int                       field2 : 6;
+		unsigned int                       field3 : 6;
+		unsigned int                       field4 : 3;
+		unsigned int                       field5 : 4;
+		unsigned int                       field6 : 1;
+#else
+		unsigned int                       field6 : 1;
+		unsigned int                       field5 : 4;
+		unsigned int                       field4 : 3;
+		unsigned int                       field3 : 6;
+		unsigned int                       field2 : 6;
+		unsigned int                       field1 : 6;
+		unsigned int                       field0 : 6;
+#endif
+	} bitfields, bits;
+	unsigned int	u32All;
+	signed int	i32All;
+	float	f32All;
+};
+
+
+typedef struct program_t {
+	union bitfield    array[ARRAY_LENGTH];
+    int               size;
+    int               loaded;
+} program;
+
+
+void AdjustBitfields(program* prog, unsigned int fmt1)
+{
+	unsigned int shift = 0;
+	unsigned int texCount = 0;
+	unsigned int i;
+	
+	for (i = 0; i < 8; i++)
+	{
+		prog->array[i].bitfields.field0 = texCount;
+		prog->array[i].bitfields.field1 = texCount + 1;
+		prog->array[i].bitfields.field2 = texCount + 2;
+		prog->array[i].bitfields.field3 = texCount + 3;
+
+		texCount += (fmt1 >> shift) & 0x7;
+		shift    += 3;
+	}
+}
+
+In the loop above, the bitfield adds get generated as 
+(add (shl bitfield, C1), (shl C2, C1)) where C2 is 1, 2 or 3.
+
+Since the input to the (or and, and) is an (add) rather than a (shl), the shift
+doesn't get folded into the rlwimi instruction.  We should ideally see through
+things like this, rather than forcing llvm to generate the equivalent
+
+(shl (add bitfield, C2), C1) with some kind of mask.
+
+===-------------------------------------------------------------------------===
+
+Compile this (standard bitfield insert of a constant):
+void %test(uint* %tmp1) {
+        %tmp2 = load uint* %tmp1                ; <uint> [#uses=1]
+        %tmp5 = or uint %tmp2, 257949696                ; <uint> [#uses=1]
+        %tmp6 = and uint %tmp5, 4018143231              ; <uint> [#uses=1]
+        store uint %tmp6, uint* %tmp1
+        ret void
+}
+
+to:
+
+_test:
+        lwz r0,0(r3)
+        li r2,123
+        rlwimi r0,r2,21,3,10
+        stw r0,0(r3)
+        blr
+
+instead of:
+
+_test:
+        lis r2, -4225
+        lwz r4, 0(r3)
+        ori r2, r2, 65535
+        oris r4, r4, 3936
+        and r2, r4, r2
+        stw r2, 0(r3)
+        blr
+
+===-------------------------------------------------------------------------===
+
+Compile this:
+
+int %f1(int %a, int %b) {
+        %tmp.1 = and int %a, 15         ; <int> [#uses=1]
+        %tmp.3 = and int %b, 240                ; <int> [#uses=1]
+        %tmp.4 = or int %tmp.3, %tmp.1          ; <int> [#uses=1]
+        ret int %tmp.4
+}
+
+without a copy.  We make this currently:
+
+_f1:
+        rlwinm r2, r4, 0, 24, 27
+        rlwimi r2, r3, 0, 28, 31
+        or r3, r2, r2
+        blr
+
+The two-addr pass or RA needs to learn when it is profitable to commute an
+instruction to avoid a copy AFTER the 2-addr instruction.  The 2-addr pass
+currently only commutes to avoid inserting a copy BEFORE the two addr instr.
+

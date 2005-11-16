@@ -82,6 +82,10 @@ public:
     AlphaLowering(TM)
   {}
 
+    virtual const char *getPassName() const {
+      return "Alpha Pattern Instruction Selection";
+    } 
+
   /// InstructionSelectBasicBlock - This callback is invoked by
   /// SelectionDAGISel when it has created a SelectionDAG for us to codegen.
   virtual void InstructionSelectBasicBlock(SelectionDAG &DAG) {
@@ -235,152 +239,6 @@ static bool factorize(int v[], int res[], int size, uint64_t c)
 }
 
 
-//Shamelessly adapted from PPC32
-// Structure used to return the necessary information to codegen an SDIV as
-// a multiply.
-struct ms {
-  int64_t m; // magic number
-  int64_t s; // shift amount
-};
-
-struct mu {
-  uint64_t m; // magic number
-  int64_t a;          // add indicator
-  int64_t s;          // shift amount
-};
-
-/// magic - calculate the magic numbers required to codegen an integer sdiv as
-/// a sequence of multiply and shifts.  Requires that the divisor not be 0, 1,
-/// or -1.
-static struct ms magic(int64_t d) {
-  int64_t p;
-  uint64_t ad, anc, delta, q1, r1, q2, r2, t;
-  const uint64_t two63 = 9223372036854775808ULL; // 2^63
-  struct ms mag;
-
-  ad = llabs(d);
-  t = two63 + ((uint64_t)d >> 63);
-  anc = t - 1 - t%ad;   // absolute value of nc
-  p = 63;               // initialize p
-  q1 = two63/anc;       // initialize q1 = 2p/abs(nc)
-  r1 = two63 - q1*anc;  // initialize r1 = rem(2p,abs(nc))
-  q2 = two63/ad;        // initialize q2 = 2p/abs(d)
-  r2 = two63 - q2*ad;   // initialize r2 = rem(2p,abs(d))
-  do {
-    p = p + 1;
-    q1 = 2*q1;        // update q1 = 2p/abs(nc)
-    r1 = 2*r1;        // update r1 = rem(2p/abs(nc))
-    if (r1 >= anc) {  // must be unsigned comparison
-      q1 = q1 + 1;
-      r1 = r1 - anc;
-    }
-    q2 = 2*q2;        // update q2 = 2p/abs(d)
-    r2 = 2*r2;        // update r2 = rem(2p/abs(d))
-    if (r2 >= ad) {   // must be unsigned comparison
-      q2 = q2 + 1;
-      r2 = r2 - ad;
-    }
-    delta = ad - r2;
-  } while (q1 < delta || (q1 == delta && r1 == 0));
-
-  mag.m = q2 + 1;
-  if (d < 0) mag.m = -mag.m; // resulting magic number
-  mag.s = p - 64;            // resulting shift
-  return mag;
-}
-
-/// magicu - calculate the magic numbers required to codegen an integer udiv as
-/// a sequence of multiply, add and shifts.  Requires that the divisor not be 0.
-static struct mu magicu(uint64_t d)
-{
-  int64_t p;
-  uint64_t nc, delta, q1, r1, q2, r2;
-  struct mu magu;
-  magu.a = 0;               // initialize "add" indicator
-  nc = - 1 - (-d)%d;
-  p = 63;                   // initialize p
-  q1 = 0x8000000000000000ull/nc;       // initialize q1 = 2p/nc
-  r1 = 0x8000000000000000ull - q1*nc;  // initialize r1 = rem(2p,nc)
-  q2 = 0x7FFFFFFFFFFFFFFFull/d;        // initialize q2 = (2p-1)/d
-  r2 = 0x7FFFFFFFFFFFFFFFull - q2*d;   // initialize r2 = rem((2p-1),d)
-  do {
-    p = p + 1;
-    if (r1 >= nc - r1 ) {
-      q1 = 2*q1 + 1;  // update q1
-      r1 = 2*r1 - nc; // update r1
-    }
-    else {
-      q1 = 2*q1; // update q1
-      r1 = 2*r1; // update r1
-    }
-    if (r2 + 1 >= d - r2) {
-      if (q2 >= 0x7FFFFFFFFFFFFFFFull) magu.a = 1;
-      q2 = 2*q2 + 1;     // update q2
-      r2 = 2*r2 + 1 - d; // update r2
-    }
-    else {
-      if (q2 >= 0x8000000000000000ull) magu.a = 1;
-      q2 = 2*q2;     // update q2
-      r2 = 2*r2 + 1; // update r2
-    }
-    delta = d - 1 - r2;
-  } while (p < 64 && (q1 < delta || (q1 == delta && r1 == 0)));
-  magu.m = q2 + 1; // resulting magic number
-  magu.s = p - 64;  // resulting shift
-  return magu;
-}
-
-/// BuildSDIVSequence - Given an ISD::SDIV node expressing a divide by constant,
-/// return a DAG expression to select that will generate the same value by
-/// multiplying by a magic number.  See:
-/// <http://the.wall.riscom.net/books/proc/ppc/cwg/code2.html>
-SDOperand AlphaISel::BuildSDIVSequence(SDOperand N) {
-  int64_t d = (int64_t)cast<ConstantSDNode>(N.getOperand(1))->getSignExtended();
-  ms magics = magic(d);
-  // Multiply the numerator (operand 0) by the magic value
-  SDOperand Q = ISelDAG->getNode(ISD::MULHS, MVT::i64, N.getOperand(0),
-                                 ISelDAG->getConstant(magics.m, MVT::i64));
-  // If d > 0 and m < 0, add the numerator
-  if (d > 0 && magics.m < 0)
-    Q = ISelDAG->getNode(ISD::ADD, MVT::i64, Q, N.getOperand(0));
-  // If d < 0 and m > 0, subtract the numerator.
-  if (d < 0 && magics.m > 0)
-    Q = ISelDAG->getNode(ISD::SUB, MVT::i64, Q, N.getOperand(0));
-  // Shift right algebraic if shift value is nonzero
-  if (magics.s > 0)
-    Q = ISelDAG->getNode(ISD::SRA, MVT::i64, Q,
-                         ISelDAG->getConstant(magics.s, MVT::i64));
-  // Extract the sign bit and add it to the quotient
-  SDOperand T =
-    ISelDAG->getNode(ISD::SRL, MVT::i64, Q, ISelDAG->getConstant(63, MVT::i64));
-  return ISelDAG->getNode(ISD::ADD, MVT::i64, Q, T);
-}
-
-/// BuildUDIVSequence - Given an ISD::UDIV node expressing a divide by constant,
-/// return a DAG expression to select that will generate the same value by
-/// multiplying by a magic number.  See:
-/// <http://the.wall.riscom.net/books/proc/ppc/cwg/code2.html>
-SDOperand AlphaISel::BuildUDIVSequence(SDOperand N) {
-  unsigned d =
-    (unsigned)cast<ConstantSDNode>(N.getOperand(1))->getSignExtended();
-  mu magics = magicu(d);
-  // Multiply the numerator (operand 0) by the magic value
-  SDOperand Q = ISelDAG->getNode(ISD::MULHU, MVT::i64, N.getOperand(0),
-                                 ISelDAG->getConstant(magics.m, MVT::i64));
-  if (magics.a == 0) {
-    Q = ISelDAG->getNode(ISD::SRL, MVT::i64, Q,
-                         ISelDAG->getConstant(magics.s, MVT::i64));
-  } else {
-    SDOperand NPQ = ISelDAG->getNode(ISD::SUB, MVT::i64, N.getOperand(0), Q);
-    NPQ = ISelDAG->getNode(ISD::SRL, MVT::i64, NPQ,
-                           ISelDAG->getConstant(1, MVT::i64));
-    NPQ = ISelDAG->getNode(ISD::ADD, MVT::i64, NPQ, Q);
-    Q = ISelDAG->getNode(ISD::SRL, MVT::i64, NPQ,
-                           ISelDAG->getConstant(magics.s-1, MVT::i64));
-  }
-  return Q;
-}
-
 //These describe LDAx
 static const int IMM_LOW  = -32768;
 static const int IMM_HIGH = 32767;
@@ -511,7 +369,7 @@ bool AlphaISel::SelectFPSetCC(SDOperand N, unsigned dst)
       //assert(0 && "Setcc On float?\n");
       std::cerr << "Setcc on float!\n";
       Tmp3 = MakeReg(MVT::f64);
-      BuildMI(BB, Alpha::CVTST, 1, Tmp3).addReg(Alpha::F31).addReg(Tmp1);
+      BuildMI(BB, Alpha::CVTST, 1, Tmp3).addReg(Tmp1);
       Tmp1 = Tmp3;
     }
   if (SetCC->getOperand(1).getValueType() == MVT::f32)
@@ -519,7 +377,7 @@ bool AlphaISel::SelectFPSetCC(SDOperand N, unsigned dst)
       //assert (0 && "Setcc On float?\n");
       std::cerr << "Setcc on float!\n";
       Tmp3 = MakeReg(MVT::f64);
-      BuildMI(BB, Alpha::CVTST, 1, Tmp3).addReg(Alpha::F31).addReg(Tmp2);
+      BuildMI(BB, Alpha::CVTST, 1, Tmp3).addReg(Tmp2);
       Tmp2 = Tmp3;
     }
 
@@ -652,7 +510,7 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
   unsigned Tmp1, Tmp2 = 0, Tmp3;
   unsigned Opc = 0;
   unsigned opcode = N.getOpcode();
-  int64_t SImm;
+  int64_t SImm = 0;
   uint64_t UImm;
 
   SDNode *Node = N.Val;
@@ -691,13 +549,23 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
     Node->dump();
     assert(0 && "Node not handled!\n");
 
+  case ISD::READCYCLECOUNTER:
+    Select(N.getOperand(0)); //Select chain
+    if (Result != notIn)
+      ExprMap[N.getValue(1)] = notIn;   // Generate the token
+    else
+      Result = ExprMap[N.getValue(0)] = MakeReg(N.getValue(0).getValueType());
+
+    BuildMI(BB, Alpha::RPCC, 1, Result).addReg(Alpha::R31);
+    return Result;
+
   case ISD::CTPOP:
   case ISD::CTTZ:
   case ISD::CTLZ:
     Opc = opcode == ISD::CTPOP ? Alpha::CTPOP :
     (opcode == ISD::CTTZ ? Alpha::CTTZ : Alpha::CTLZ);
     Tmp1 = SelectExpr(N.getOperand(0));
-    BuildMI(BB, Opc, 1, Result).addReg(Alpha::R31).addReg(Tmp1);
+    BuildMI(BB, Opc, 1, Result).addReg(Tmp1);
     return Result;
 
   case ISD::MULHU:
@@ -928,8 +796,11 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
             .addReg(argvregs[i]);
           break;
         case MVT::f32:
+          BuildMI(BB, Alpha::CPYSS, 2, args_float[i]).addReg(argvregs[i])
+            .addReg(argvregs[i]);
+          break;
         case MVT::f64:
-          BuildMI(BB, Alpha::CPYS, 2, args_float[i]).addReg(argvregs[i])
+          BuildMI(BB, Alpha::CPYST, 2, args_float[i]).addReg(argvregs[i])
             .addReg(argvregs[i]);
           break;
         }
@@ -985,8 +856,10 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
         BuildMI(BB, Alpha::BIS, 2, Result).addReg(Alpha::R0).addReg(Alpha::R0);
         break;
       case MVT::f32:
-      case MVT::f64:
-        BuildMI(BB, Alpha::CPYS, 2, Result).addReg(Alpha::F0).addReg(Alpha::F0);
+        BuildMI(BB, Alpha::CPYSS, 2, Result).addReg(Alpha::F0).addReg(Alpha::F0);
+        break;
+       case MVT::f64:
+        BuildMI(BB, Alpha::CPYST, 2, Result).addReg(Alpha::F0).addReg(Alpha::F0);
         break;
       }
       return Result+N.ResNo;
@@ -1084,10 +957,10 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
           break;
         }
       case MVT::i16:
-        BuildMI(BB, Alpha::SEXTW, 1, Result).addReg(Alpha::R31).addReg(Tmp1);
+        BuildMI(BB, Alpha::SEXTW, 1, Result).addReg(Tmp1);
         break;
       case MVT::i8:
-        BuildMI(BB, Alpha::SEXTB, 1, Result).addReg(Alpha::R31).addReg(Tmp1);
+        BuildMI(BB, Alpha::SEXTB, 1, Result).addReg(Tmp1);
         break;
       case MVT::i1:
         Tmp2 = MakeReg(MVT::i64);
@@ -1181,10 +1054,17 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
       Select(Chain);
       unsigned r = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
       //std::cerr << "CopyFromReg " << Result << " = " << r << "\n";
-      if (MVT::isFloatingPoint(N.getValue(0).getValueType()))
-        BuildMI(BB, Alpha::CPYS, 2, Result).addReg(r).addReg(r);
-      else
+      switch(N.getValue(0).getValueType()) {
+      case MVT::f32:
+        BuildMI(BB, Alpha::CPYSS, 2, Result).addReg(r).addReg(r);
+        break;
+      case MVT::f64:
+        BuildMI(BB, Alpha::CPYST, 2, Result).addReg(r).addReg(r);
+        break;
+      default:
         BuildMI(BB, Alpha::BIS, 2, Result).addReg(r).addReg(r);
+        break;
+      }
       return Result;
     }
 
@@ -1390,20 +1270,7 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
       }
     }
     //Else fall through
-
   case ISD::UDIV:
-    {
-      if (isSIntImmediate(N.getOperand(1), SImm) && (SImm >= 2 || SImm <= -2))
-      {
-        // If this is a divide by constant, we can emit code using some magic
-        // constants to implement it as a multiply instead.
-        ExprMap.erase(N);
-        if (opcode == ISD::SDIV)
-          return SelectExpr(BuildSDIVSequence(N));
-        else
-          return SelectExpr(BuildUDIVSequence(N));
-      }
-    }
     //else fall though
   case ISD::UREM:
   case ISD::SREM: {
@@ -1438,11 +1305,11 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
       if (SrcType == MVT::f32)
         {
           Tmp2 = MakeReg(MVT::f64);
-          BuildMI(BB, Alpha::CVTST, 1, Tmp2).addReg(Alpha::F31).addReg(Tmp1);
+          BuildMI(BB, Alpha::CVTST, 1, Tmp2).addReg(Tmp1);
           Tmp1 = Tmp2;
         }
       Tmp2 = MakeReg(MVT::f64);
-      BuildMI(BB, Alpha::CVTTQ, 1, Tmp2).addReg(Alpha::F31).addReg(Tmp1);
+      BuildMI(BB, Alpha::CVTTQ, 1, Tmp2).addReg(Tmp1);
       MoveFP2Int(Tmp2, Result, true);
 
       return Result;
@@ -1643,16 +1510,19 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
     if(ISD::FABS == N.getOperand(0).getOpcode())
       {
         Tmp1 = SelectExpr(N.getOperand(0).getOperand(0));
-        BuildMI(BB, Alpha::CPYSN, 2, Result).addReg(Alpha::F31).addReg(Tmp1);
+        BuildMI(BB, DestType == MVT::f64 ? Alpha::CPYSNT : Alpha::CPYSNS, 
+                2, Result).addReg(Alpha::F31).addReg(Tmp1);
       } else {
         Tmp1 = SelectExpr(N.getOperand(0));
-        BuildMI(BB, Alpha::CPYSN, 2, Result).addReg(Tmp1).addReg(Tmp1);
+        BuildMI(BB, DestType == MVT::f64 ? Alpha::CPYSNT : Alpha::CPYSNS
+                , 2, Result).addReg(Tmp1).addReg(Tmp1);
       }
     return Result;
 
   case ISD::FABS:
     Tmp1 = SelectExpr(N.getOperand(0));
-    BuildMI(BB, Alpha::CPYS, 2, Result).addReg(Alpha::F31).addReg(Tmp1);
+    BuildMI(BB, DestType == MVT::f64 ? Alpha::CPYST : Alpha::CPYSS, 2, Result)
+      .addReg(Alpha::F31).addReg(Tmp1);
     return Result;
 
   case ISD::FP_ROUND:
@@ -1660,7 +1530,7 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
             N.getOperand(0).getValueType() == MVT::f64 &&
             "only f64 to f32 conversion supported here");
     Tmp1 = SelectExpr(N.getOperand(0));
-    BuildMI(BB, Alpha::CVTTS, 1, Result).addReg(Alpha::F31).addReg(Tmp1);
+    BuildMI(BB, Alpha::CVTTS, 1, Result).addReg(Tmp1);
     return Result;
 
   case ISD::FP_EXTEND:
@@ -1668,16 +1538,18 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
             N.getOperand(0).getValueType() == MVT::f32 &&
             "only f32 to f64 conversion supported here");
     Tmp1 = SelectExpr(N.getOperand(0));
-    BuildMI(BB, Alpha::CVTST, 1, Result).addReg(Alpha::F31).addReg(Tmp1);
+    BuildMI(BB, Alpha::CVTST, 1, Result).addReg(Tmp1);
     return Result;
 
   case ISD::ConstantFP:
     if (ConstantFPSDNode *CN = dyn_cast<ConstantFPSDNode>(N)) {
       if (CN->isExactlyValue(+0.0)) {
-        BuildMI(BB, Alpha::CPYS, 2, Result).addReg(Alpha::F31)
+        BuildMI(BB, DestType == MVT::f64 ? Alpha::CPYST : Alpha::CPYSS
+                , 2, Result).addReg(Alpha::F31)
           .addReg(Alpha::F31);
       } else if ( CN->isExactlyValue(-0.0)) {
-        BuildMI(BB, Alpha::CPYSN, 2, Result).addReg(Alpha::F31)
+        BuildMI(BB, DestType == MVT::f64 ? Alpha::CPYSNT : Alpha::CPYSNS,
+                2, Result).addReg(Alpha::F31)
           .addReg(Alpha::F31);
       } else {
         abort();
@@ -1693,7 +1565,7 @@ unsigned AlphaISel::SelectExpr(SDOperand N) {
       Tmp2 = MakeReg(MVT::f64);
       MoveInt2FP(Tmp1, Tmp2, true);
       Opc = DestType == MVT::f64 ? Alpha::CVTQT : Alpha::CVTQS;
-      BuildMI(BB, Opc, 1, Result).addReg(Alpha::F31).addReg(Tmp2);
+      BuildMI(BB, Opc, 1, Result).addReg(Tmp2);
       return Result;
     }
 
@@ -1760,11 +1632,17 @@ void AlphaISel::Select(SDOperand N) {
     Tmp2 = cast<RegisterSDNode>(N.getOperand(1))->getReg();
 
     if (Tmp1 != Tmp2) {
-      if (N.getOperand(2).getValueType() == MVT::f64 ||
-          N.getOperand(2).getValueType() == MVT::f32)
-        BuildMI(BB, Alpha::CPYS, 2, Tmp2).addReg(Tmp1).addReg(Tmp1);
-      else
+      switch(N.getOperand(2).getValueType()) {
+      case MVT::f64:
+        BuildMI(BB, Alpha::CPYST, 2, Tmp2).addReg(Tmp1).addReg(Tmp1);
+        break;
+      case MVT::f32:
+        BuildMI(BB, Alpha::CPYSS, 2, Tmp2).addReg(Tmp1).addReg(Tmp1);
+        break;
+      default:
         BuildMI(BB, Alpha::BIS, 2, Tmp2).addReg(Tmp1).addReg(Tmp1);
+        break;
+      }
     }
     return;
 
@@ -1784,8 +1662,10 @@ void AlphaISel::Select(SDOperand N) {
       default: Node->dump();
         assert(0 && "All other types should have been promoted!!");
       case MVT::f64:
+        BuildMI(BB, Alpha::CPYST, 2, Alpha::F0).addReg(Tmp1).addReg(Tmp1);
+        break;
       case MVT::f32:
-        BuildMI(BB, Alpha::CPYS, 2, Alpha::F0).addReg(Tmp1).addReg(Tmp1);
+        BuildMI(BB, Alpha::CPYSS, 2, Alpha::F0).addReg(Tmp1).addReg(Tmp1);
         break;
       case MVT::i32:
       case MVT::i64:
@@ -1869,6 +1749,7 @@ void AlphaISel::Select(SDOperand N) {
   case ISD::CopyFromReg:
   case ISD::TAILCALL:
   case ISD::CALL:
+  case ISD::READCYCLECOUNTER:
   case ISD::DYNAMIC_STACKALLOC:
     ExprMap.erase(N);
     SelectExpr(N);

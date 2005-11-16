@@ -8,15 +8,6 @@ set xdata time
 set timefmt "%Y-%m-%d-%H:%M:%S:"
 set format x "%b %d, %Y"
 
-## Various labels for the graph
-set label "Reoptimizer\n checkins" at "2003-02-18:", 114000
-set label "Modulo Sched\n   checkin" at "2003-03-28:", 119500
-set label "Reoptimizer\n checkins" at "2003-06-01:", 134000
-set label "'dummy'\nfunction" at "2003-07-20:", 150000
-set label "Reoptimizer\n removal" at "2003-08-10:", 132000
-set label "llvm-db\ncheckin" at "2004-01-04:", 145000
-set label "llvm/projects" at "2004-01-04:", 151000
-
 set size .75,.75
 set xtics rotate
 set xlabel 0,-1
@@ -182,44 +173,6 @@ plot "running_Olden_opt_time.txt" u 1:2 t '' with lines, \
      "running_Olden_opt_time.txt" u 1:9 t "perimeter" with lines, \
      "running_Olden_opt_time.txt" u 1:10 t "treeadd" with lines, \
      "running_Olden_opt_time.txt" u 1:11 t "voronoi" \
-   with lines
-
-
-##------- Machine code size ----
-
-set size .75,.75
-set xtics rotate
-set xlabel 0,-1
-set output "running_Olden_machcode.png"
-set ylabel "Program machine code size (bytes)"
-plot "running_Olden_machcode.txt" u 1:2 t '' with lines, \
-     "running_Olden_machcode.txt" u 1:2 t "bh" with lines, \
-     "running_Olden_machcode.txt" u 1:3 t "em3d" with lines, \
-     "running_Olden_machcode.txt" u 1:4 t "mst" with lines, \
-     "running_Olden_machcode.txt" u 1:5 t "power" with lines, \
-     "running_Olden_machcode.txt" u 1:6 t "tsp" with lines, \
-     "running_Olden_machcode.txt" u 1:7 t "bisort" with lines, \
-     "running_Olden_machcode.txt" u 1:8 t "health" with lines, \
-     "running_Olden_machcode.txt" u 1:9 t "perimeter" with lines, \
-     "running_Olden_machcode.txt" u 1:10 t "treeadd" with lines, \
-     "running_Olden_machcode.txt" u 1:11 t "voronoi" \
-   with lines
-
-set size 1.5,1.5
-set xtics norotate
-set xlabel 0,0
-set output "running_Olden_machcode_large.png"
-plot "running_Olden_machcode.txt" u 1:2 t '' with lines, \
-     "running_Olden_machcode.txt" u 1:2 t "bh" with lines, \
-     "running_Olden_machcode.txt" u 1:3 t "em3d" with lines, \
-     "running_Olden_machcode.txt" u 1:4 t "mst" with lines, \
-     "running_Olden_machcode.txt" u 1:5 t "power" with lines, \
-     "running_Olden_machcode.txt" u 1:6 t "tsp" with lines, \
-     "running_Olden_machcode.txt" u 1:7 t "bisort" with lines, \
-     "running_Olden_machcode.txt" u 1:8 t "health" with lines, \
-     "running_Olden_machcode.txt" u 1:9 t "perimeter" with lines, \
-     "running_Olden_machcode.txt" u 1:10 t "treeadd" with lines, \
-     "running_Olden_machcode.txt" u 1:11 t "voronoi" \
    with lines
 
 

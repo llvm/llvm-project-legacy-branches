@@ -21,6 +21,12 @@ class GPR<bits<5> num, string n> : PPCReg<n> {
   field bits<5> Num = num;
 }
 
+// GP8 - One of the 32 64-bit general-purpose registers
+class GP8<GPR Alias> : PPCReg<Alias.Name> {
+  field bits<5> Num = Alias.Num;
+  let Aliases = [Alias];
+}
+
 // SPR - One of the 32-bit special-purpose registers
 class SPR<bits<5> num, string n> : PPCReg<n> {
   field bits<5> Num = num;
@@ -53,6 +59,24 @@ def R24 : GPR<24, "r24">;  def R25 : GPR<25, "r25">;
 def R26 : GPR<26, "r26">;  def R27 : GPR<27, "r27">;
 def R28 : GPR<28, "r28">;  def R29 : GPR<29, "r29">;
 def R30 : GPR<30, "r30">;  def R31 : GPR<31, "r31">;
+
+// 64-bit General-purpose registers
+def X0  : GP8< R0>;  def X1  : GP8< R1>;
+def X2  : GP8< R2>;  def X3  : GP8< R3>;
+def X4  : GP8< R4>;  def X5  : GP8< R5>;
+def X6  : GP8< R6>;  def X7  : GP8< R7>;
+def X8  : GP8< R8>;  def X9  : GP8< R9>;
+def X10 : GP8<R10>;  def X11 : GP8<R11>;
+def X12 : GP8<R12>;  def X13 : GP8<R13>;
+def X14 : GP8<R14>;  def X15 : GP8<R15>;
+def X16 : GP8<R16>;  def X17 : GP8<R17>;
+def X18 : GP8<R18>;  def X19 : GP8<R19>;
+def X20 : GP8<R20>;  def X21 : GP8<R21>;
+def X22 : GP8<R22>;  def X23 : GP8<R23>;
+def X24 : GP8<R24>;  def X25 : GP8<R25>;
+def X26 : GP8<R26>;  def X27 : GP8<R27>;
+def X28 : GP8<R28>;  def X29 : GP8<R29>;
+def X30 : GP8<R30>;  def X31 : GP8<R31>;
 
 // Floating-point registers
 def F0  : FPR< 0,  "f0">;  def F1  : FPR< 1,  "f1">;
@@ -111,9 +135,9 @@ def GPRC : RegisterClass<"PPC", i32, 32,
   }];
 }
 def G8RC : RegisterClass<"PPC", i64, 64,
-     [R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12,
-      R30, R29, R28, R27, R26, R25, R24, R23, R22, R21, R20, R19, R18, R17,
-      R16, R15, R14, R13, R31, R0, R1, LR]>
+     [X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12,
+      X30, X29, X28, X27, X26, X25, X24, X23, X22, X21, X20, X19, X18, X17,
+      X16, X15, X14, X13, X31, X0, X1]>
 {
   let MethodProtos = [{
     iterator allocation_order_begin(MachineFunction &MF) const;
@@ -127,9 +151,9 @@ def G8RC : RegisterClass<"PPC", i64, 64,
     G8RCClass::iterator
     G8RCClass::allocation_order_end(MachineFunction &MF) const {
       if (hasFP(MF))
-        return end()-4;
-      else
         return end()-3;
+      else
+        return end()-2;
     }
   }];
 }

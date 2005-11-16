@@ -78,7 +78,7 @@ namespace {
 
   RegisterOpt<LowerVectors> X("lowervectors", 
 			      "Lower vector operations to iterated scalar operations");
-  
+
   class VMemoryInstLowering {
   protected:
     BasicBlock *constructLoop(VMemoryInst*,BasicBlock*,std::vector<Value*>,Value*);
@@ -1103,3 +1103,6 @@ namespace {
   }
 
 }
+
+FunctionPass *llvm::createLowerVectorsPass() { return new LowerVectors(); }
+

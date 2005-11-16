@@ -83,7 +83,15 @@ public:
   /// isSetCCExpensive - Return true if the setcc operation is expensive for
   /// this target.
   bool isSetCCExpensive() const { return SetCCIsExpensive; }
+  
+  /// isIntDivCheap() - Return true if integer divide is usually cheaper than
+  /// a sequence of several shifts, adds, and multiplies for this target.
+  bool isIntDivCheap() const { return IntDivIsCheap; }
 
+  /// isPow2DivCheap() - Return true if pow2 div is cheaper than a chain of
+  /// srl/add/sra.
+  bool isPow2DivCheap() const { return Pow2DivIsCheap; }
+  
   /// getSetCCResultTy - Return the ValueType of the result of setcc operations.
   ///
   MVT::ValueType getSetCCResultTy() const { return SetCCResultTy; }
@@ -262,6 +270,16 @@ protected:
   /// setcc operations into other operations if possible.
   void setSetCCIsExpensive() { SetCCIsExpensive = true; }
 
+  /// setIntDivIsCheap - Tells the code generator that integer divide is
+  /// expensive, and if possible, should be replaced by an alternate sequence
+  /// of instructions not containing an integer divide.
+  void setIntDivIsCheap(bool isCheap = true) { IntDivIsCheap = isCheap; }
+  
+  /// setPow2DivIsCheap - Tells the code generator that it shouldn't generate
+  /// srl/add/sra for a signed divide by power of two, and let the target handle
+  /// it.
+  void setPow2DivIsCheap(bool isCheap = true) { Pow2DivIsCheap = isCheap; }
+  
   /// addRegisterClass - Add the specified register class as an available
   /// regclass for the specified value type.  This indicates the selector can
   /// handle values of that class natively.
@@ -311,6 +329,12 @@ public:
               unsigned CallingConv, bool isTailCall, SDOperand Callee,
               ArgListTy &Args, SelectionDAG &DAG) = 0;
 
+  /// LowerReturnTo - This hook lowers a return instruction into the appropriate
+  /// legal ISD::RET node for the target's current ABI.  This method is optional
+  /// and is intended for targets that need non-standard behavior.
+  virtual SDOperand LowerReturnTo(SDOperand Chain, SDOperand Op, 
+                                  SelectionDAG &DAG);
+  
   /// LowerVAStart - This lowers the llvm.va_start intrinsic.  If not
   /// implemented, this method prints a message and aborts.  This method should
   /// return the modified chain value.  Note that VAListPtr* correspond to the
@@ -385,6 +409,17 @@ private:
   /// setcc operations into other operations if possible.
   bool SetCCIsExpensive;
 
+  /// IntDivIsCheap - Tells the code generator not to expand integer divides by
+  /// constants into a sequence of muls, adds, and shifts.  This is a hack until
+  /// a real cost model is in place.  If we ever optimize for size, this will be
+  /// set to true unconditionally.
+  bool IntDivIsCheap;
+  
+  /// Pow2DivIsCheap - Tells the code generator that it shouldn't generate
+  /// srl/add/sra for a signed divide by power of two, and let the target handle
+  /// it.
+  bool Pow2DivIsCheap;
+  
   /// SetCCResultTy - The type that SetCC operations use.  This defaults to the
   /// PointerTy.
   MVT::ValueType SetCCResultTy;

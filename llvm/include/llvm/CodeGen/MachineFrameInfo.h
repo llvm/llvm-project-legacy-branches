@@ -85,6 +85,15 @@ class MachineFrameInfo {
   /// to be allocated on entry to the function.
   ///
   unsigned StackSize;
+  
+  /// MaxAlignment - The prolog/epilog code inserter may process objects 
+  /// that require greater alignment than the default alignment the target
+  /// provides. To handle this, MaxAlignment is set to the maximum alignment 
+  /// needed by the objects on the current frame.  If this is greater than the
+  /// native alignment maintained by the compiler, dynamic alignment code will
+  /// be needed.
+  ///
+  unsigned MaxAlignment;
 
   /// HasCalls - Set to true if this function has any function calls.  This is
   /// only valid during and after prolog/epilog code insertion.
@@ -99,7 +108,7 @@ class MachineFrameInfo {
   unsigned MaxCallFrameSize;
 public:
   MachineFrameInfo() {
-    NumFixedObjects = StackSize = 0;
+    NumFixedObjects = StackSize = MaxAlignment = 0;
     HasVarSizedObjects = false;
     HasCalls = false;
     MaxCallFrameSize = 0;
@@ -163,6 +172,16 @@ public:
   ///
   void setStackSize(unsigned Size) { StackSize = Size; }
 
+  /// getMaxAlignment - Return the alignment in bytes that this function must be 
+  /// aligned to, which is greater than the default stack alignment provided by 
+  /// the target.
+  ///
+  unsigned getMaxAlignment() const { return MaxAlignment; }
+  
+  /// setMaxAlignment - Set the preferred alignment.
+  ///
+  void setMaxAlignment(unsigned Align) { MaxAlignment = Align; }
+  
   /// hasCalls - Return true if the current function has no function calls.
   /// This is only valid during or after prolog/epilog code emission.
   ///

@@ -26,7 +26,7 @@ struct SSECTargetMachine : public CTargetMachine {
 
   // This is the only thing that actually does anything here.
   bool addPassesToEmitFile(PassManager &PM, std::ostream &Out,
-			   CodeGenFileType FileType);
+			   CodeGenFileType FileType, bool Fast);
 
 };
 

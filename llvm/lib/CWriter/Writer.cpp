@@ -662,6 +662,7 @@ bool CWriter::doInitialization(Module &M) {
 
   // Ensure that all structure types have names...
   Mang = new Mangler(M);
+  Mang->markCharUnacceptable('.');
 
   // get declaration for alloca
   Out << "/* Provide Declarations */\n";
@@ -835,7 +836,7 @@ void CWriter::printModuleTypes(const SymbolTable &ST) {
   Out << "/* Structure forward decls */\n";
   for (; I != End; ++I)
     if (const Type *STy = dyn_cast<StructType>(I->second)) {
-      std::string Name = "struct l_" + Mangler::makeNameProper(I->first);
+      std::string Name = "struct l_" + Mang->makeNameProper(I->first);
       Out << Name << ";\n";
       TypeNames.insert(std::make_pair(STy, Name));
     }
@@ -846,7 +847,7 @@ void CWriter::printModuleTypes(const SymbolTable &ST) {
   Out << "/* Typedefs */\n";
   for (I = ST.type_begin(); I != End; ++I) {
     const Type *Ty = cast<Type>(I->second);
-    std::string Name = "l_" + Mangler::makeNameProper(I->first);
+    std::string Name = "l_" + Mang->makeNameProper(I->first);
     Out << "typedef ";
     printType(Out, Ty, Name);
     Out << ";\n";
@@ -1546,12 +1547,13 @@ void CWriter::visitVAArgInst(VAArgInst &I) {
 //===----------------------------------------------------------------------===//
 
 bool CTargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &o,
-					 CodeGenFileType FileType) {
+                                         CodeGenFileType FileType, bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
   PM.add(createLowerGCPass());
   PM.add(createLowerAllocationsPass(true));
   PM.add(createLowerInvokePass());
+  PM.add(createCFGSimplificationPass());   // clean up after lower invoke.
   PM.add(new CBackendNameAllUsedStructs());
   PM.add(new CWriter(o, getIntrinsicLowering()));
   return false;

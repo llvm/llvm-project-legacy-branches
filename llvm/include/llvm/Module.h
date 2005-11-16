@@ -22,6 +22,7 @@
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
 
@@ -51,17 +52,15 @@ public:
   typedef iplist<Function> FunctionListType;
   typedef SetVector<std::string> LibraryListType;
 
-  // Global Variable iterators...
-  typedef GlobalListType::iterator                                   global_iterator;
-  typedef GlobalListType::const_iterator                       const_global_iterator;
-  typedef global_iterator giterator; // these are legacy, deprecated
-  typedef const_global_iterator const_giterator;
+  // Global Variable iterators.
+  typedef GlobalListType::iterator                     global_iterator;
+  typedef GlobalListType::const_iterator         const_global_iterator;
 
-  // Function iterators...
+  // Function iterators.
   typedef FunctionListType::iterator                          iterator;
   typedef FunctionListType::const_iterator              const_iterator;
 
-  // Library list iterators
+  // Library list iterators.
   typedef LibraryListType::const_iterator lib_iterator;
 
   enum Endianness  { AnyEndianness, LittleEndian, BigEndian };
@@ -86,9 +85,11 @@ public:
   Module(const std::string &ModuleID);
   ~Module();
 
-  const std::string& getModuleIdentifier() const { return ModuleID; }
-  const std::string& getTargetTriple() const { return TargetTriple; }
-  void setTargetTriple(const std::string& T) { TargetTriple = T; }
+  const std::string &getModuleIdentifier() const { return ModuleID; }
+  void setModuleIdentifier(const std::string &ID) { ModuleID = ID; }
+
+  const std::string &getTargetTriple() const { return TargetTriple; }
+  void setTargetTriple(const std::string &T) { TargetTriple = T; }
 
   /// Target endian information...
   Endianness getEndianness() const { return Endian; }
@@ -111,7 +112,8 @@ public:
   /// table.  If it does not exist, add a prototype for the function and return
   /// it.  This version of the method takes a null terminated list of function
   /// arguments, which makes it easier for clients to use.
-  Function *getOrInsertFunction(const std::string &Name, const Type *RetTy,...);
+  Function *getOrInsertFunction(const std::string &Name, const Type *RetTy,...)
+    END_WITH_NULL;
 
   /// getFunction - Look up the specified function in the module symbol table.
   /// If it does not exist, return null.

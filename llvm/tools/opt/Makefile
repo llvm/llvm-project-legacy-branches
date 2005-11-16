@@ -9,9 +9,9 @@
 LEVEL = ../..
 TOOLNAME = opt
 
-USEDLIBS = LLVMBCReader LLVMBCWriter LLVMInstrumentation LLVMProfilePaths \
-	   LLVMScalarOpts LLVMVectorOpts LLVMipo LLVMipa LLVMDataStructure LLVMTransforms \
-	   LLVMTarget.a LLVMAnalysis LLVMTransformUtils LLVMCore LLVMSupport.a \
+USEDLIBS = LLVMBCReader LLVMBCWriter LLVMInstrumentation.a \
+	   LLVMScalarOpts.a LLVMVectorOpts.a LLVMipo.a LLVMipa.a LLVMDataStructure LLVMTransforms.a \
+	   LLVMTarget.a LLVMAnalysis.a LLVMTransformUtils.a LLVMCore LLVMSupport.a \
 	   LLVMbzip2 LLVMSystem.a 
 
 include $(LEVEL)/Makefile.common

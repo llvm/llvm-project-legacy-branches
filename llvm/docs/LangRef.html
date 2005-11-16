@@ -138,6 +138,7 @@
           <li><a href="#i_frameaddress">'<tt>llvm.frameaddress</tt>'   Intrinsic</a></li>
           <li><a href="#i_prefetch">'<tt>llvm.prefetch</tt>' Intrinsic</a></li>
           <li><a href="#i_pcmarker">'<tt>llvm.pcmarker</tt>' Intrinsic</a></li>
+          <li><a href="#i_readcyclecounter"><tt>llvm.readcyclecounter</tt>' Intrinsic</a></li>
         </ol>
       </li>
       <li><a href="#int_os">Operating System Intrinsics</a>
@@ -505,12 +506,14 @@ convention.</p>
 <div class="doc_text">
 
 <p>Global variables define regions of memory allocated at compilation time
-instead of run-time.  Global variables may optionally be initialized.  A
-variable may be defined as a global "constant", which indicates that the
+instead of run-time.  Global variables may optionally be initialized, may have
+an explicit section to be placed in, and may
+have an optional explicit alignment specified.  A
+variable may be defined as a global "constant," which indicates that the
 contents of the variable will <b>never</b> be modified (enabling better
 optimization, allowing the global data to be placed in the read-only section of
 an executable, etc).  Note that variables that need runtime initialization
-cannot be marked "constant", as there is a store to the variable.</p>
+cannot be marked "constant" as there is a store to the variable.</p>
 
 <p>
 LLVM explicitly allows <em>declarations</em> of global variables to be marked
@@ -527,6 +530,15 @@ variables always define a pointer to their "content" type because they
 describe a region of memory, and all memory objects in LLVM are
 accessed through pointers.</p>
 
+<p>LLVM allows an explicit section to be specified for globals.  If the target
+supports it, it will emit globals to the section specified.</p>
+
+<p>An explicit alignment may be specified for a global.  If not present, or if
+the alignment is set to zero, the alignment of the global is set by the target
+to whatever it feels convenient.  If an explicit alignment is specified, the 
+global is forced to have at least that much alignment.  All alignments must be
+a power of 2.</p>
+
 </div>
 
 
@@ -539,11 +551,12 @@ accessed through pointers.</p>
 
 <p>LLVM function definitions consist of an optional <a href="#linkage">linkage
 type</a>, an optional <a href="#callingconv">calling convention</a>, a return
-type, a function name, a (possibly empty) argument list, an opening curly brace,
+type, a function name, a (possibly empty) argument list, an optional section,
+an optional alignment, an opening curly brace,
 a list of basic blocks, and a closing curly brace.  LLVM function declarations
 are defined with the "<tt>declare</tt>" keyword, an optional <a
-href="#callingconv">calling convention</a>, a return type, a function name, and
-a possibly empty list of arguments.</p>
+href="#callingconv">calling convention</a>, a return type, a function name,
+a possibly empty list of arguments, and an optional alignment.</p>
 
 <p>A function definition contains a list of basic blocks, forming the CFG for
 the function.  Each basic block may optionally start with a label (giving the
@@ -561,6 +574,15 @@ function).  Because the block can have no predecessors, it also cannot have any
 functions with the same name but different parameter lists or return values are
 considered different functions, and LLVM will resolve references to each
 appropriately.</p>
+
+<p>LLVM allows an explicit section to be specified for functions.  If the target
+supports it, it will emit functions to the section specified.</p>
+
+<p>An explicit alignment may be specified for a function.  If not present, or if
+the alignment is set to zero, the alignment of the function is set by the target
+to whatever it feels convenient.  If an explicit alignment is specified, the
+function is forced to have at least that much alignment.  All alignments must be
+a power of 2.</p>
 
 </div>
 
@@ -732,8 +754,8 @@ be any type with a size.</p>
   </tr>
 </table>
 
-<p>Note that 'variable sized arrays' can be implemented in LLVM With a zero 
-length array.  Normally accesses past the end of an array are undefined in
+<p>Note that 'variable sized arrays' can be implemented in LLVM with a zero 
+length array.  Normally, accesses past the end of an array are undefined in
 LLVM (e.g. it is illegal to access the 5th element of a 3 element array).
 As a special case, however, zero length arrays are recognized to be variable
 length.  This allows implementation of 'pascal style arrays' with the  LLVM
@@ -755,7 +777,7 @@ The return type of a function type cannot be an aggregate type.
 </p>
 <h5>Syntax:</h5>
 <pre>  &lt;returntype&gt; (&lt;parameter list&gt;)<br></pre>
-<p>Where '<tt>&lt;parameter list&gt;</tt>' is a comma-separated list of type
+<p>...where '<tt>&lt;parameter list&gt;</tt>' is a comma-separated list of type
 specifiers.  Optionally, the parameter list may include a type <tt>...</tt>,
 which indicates that the function takes a variable number of arguments.
 Variable argument functions can access their arguments with the <a
@@ -1051,7 +1073,7 @@ and smaller aggregate constants.</p>
   <dd>The string '<tt>zeroinitializer</tt>' can be used to zero initialize a
   value to zero of <em>any</em> type, including scalar and aggregate types.
   This is often used to avoid having to print large zero initializers (e.g. for
-  large arrays), and is always exactly equivalent to using explicit zero
+  large arrays) and is always exactly equivalent to using explicit zero
   initializers.
   </dd>
 </dl>
@@ -1540,7 +1562,7 @@ Both arguments must have identical types.</p>
 <p>This returns the <i>remainder</i> of a division (where the result
 has the same sign as the divisor), not the <i>modulus</i> (where the
 result has the same sign as the dividend) of a value.  For more
-information about the difference, see: <a
+information about the difference, see <a
  href="http://mathforum.org/dr.math/problems/anne.4.28.99.html">The
 Math Forum</a>.</p>
 <h5>Example:</h5>
@@ -1868,98 +1890,157 @@ positions.</p>
   &lt;result&gt; = shr sbyte -2, ubyte 1   <i>; yields {sbyte}:result = -1</i>
 </pre>
 </div>
+
 <!-- ======================================================================= -->
-<div class="doc_subsection"> <a name="memoryops">Memory Access
-Operations</a></div>
+<div class="doc_subsection"> 
+  <a name="memoryops">Memory Access Operations</a>
+</div>
+
 <div class="doc_text">
+
 <p>A key design point of an SSA-based representation is how it
 represents memory.  In LLVM, no memory locations are in SSA form, which
 makes things very simple.  This section describes how to read, write,
 allocate, and free memory in LLVM.</p>
+
 </div>
+
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_malloc">'<tt>malloc</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_malloc">'<tt>malloc</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = malloc &lt;type&gt;, uint &lt;NumElements&gt;     <i>; yields {type*}:result</i>
-  &lt;result&gt; = malloc &lt;type&gt;                         <i>; yields {type*}:result</i>
+
+<pre>
+  &lt;result&gt; = malloc &lt;type&gt;[, uint &lt;NumElements&gt;][, align &lt;alignment&gt;]     <i>; yields {type*}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>malloc</tt>' instruction allocates memory from the system
 heap and returns a pointer to it.</p>
+
 <h5>Arguments:</h5>
-<p>The '<tt>malloc</tt>' instruction allocates <tt>sizeof(&lt;type&gt;)*NumElements</tt>
+
+<p>The '<tt>malloc</tt>' instruction allocates
+<tt>sizeof(&lt;type&gt;)*NumElements</tt>
 bytes of memory from the operating system and returns a pointer of the
-appropriate type to the program.  The second form of the instruction is
-a shorter version of the first instruction that defaults to allocating
-one element.</p>
+appropriate type to the program.  If "NumElements" is specified, it is the
+number of elements allocated.  If an alignment is specified, the value result
+of the allocation is guaranteed to be aligned to at least that boundary.  If
+not specified, or if zero, the target can choose to align the allocation on any
+convenient boundary.</p>
+
 <p>'<tt>type</tt>' must be a sized type.</p>
+
 <h5>Semantics:</h5>
+
 <p>Memory is allocated using the system "<tt>malloc</tt>" function, and
 a pointer is returned.</p>
-<h5>Example:</h5>
-<pre>  %array  = malloc [4 x ubyte ]                    <i>; yields {[%4 x ubyte]*}:array</i>
 
-  %size   = <a
- href="#i_add">add</a> uint 2, 2                          <i>; yields {uint}:size = uint 4</i>
+<h5>Example:</h5>
+
+<pre>
+  %array  = malloc [4 x ubyte ]                    <i>; yields {[%4 x ubyte]*}:array</i>
+
+  %size   = <a href="#i_add">add</a> uint 2, 2                          <i>; yields {uint}:size = uint 4</i>
   %array1 = malloc ubyte, uint 4                   <i>; yields {ubyte*}:array1</i>
   %array2 = malloc [12 x ubyte], uint %size        <i>; yields {[12 x ubyte]*}:array2</i>
+  %array3 = malloc int, uint 4, align 1024         <i>; yields {int*}:array3</i>
+  %array4 = malloc int, align 1024                 <i>; yields {int*}:array4</i>
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_free">'<tt>free</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_free">'<tt>free</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  free &lt;type&gt; &lt;value&gt;                              <i>; yields {void}</i>
+
+<pre>
+  free &lt;type&gt; &lt;value&gt;                              <i>; yields {void}</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>free</tt>' instruction returns memory back to the unused
 memory heap to be reallocated in the future.</p>
-<p> </p>
+
 <h5>Arguments:</h5>
+
 <p>'<tt>value</tt>' shall be a pointer value that points to a value
 that was allocated with the '<tt><a href="#i_malloc">malloc</a></tt>'
 instruction.</p>
+
 <h5>Semantics:</h5>
+
 <p>Access to the memory pointed to by the pointer is no longer defined
 after this instruction executes.</p>
+
 <h5>Example:</h5>
-<pre>  %array  = <a href="#i_malloc">malloc</a> [4 x ubyte]                    <i>; yields {[4 x ubyte]*}:array</i>
+
+<pre>
+  %array  = <a href="#i_malloc">malloc</a> [4 x ubyte]                    <i>; yields {[4 x ubyte]*}:array</i>
             free   [4 x ubyte]* %array
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_alloca">'<tt>alloca</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_alloca">'<tt>alloca</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = alloca &lt;type&gt;, uint &lt;NumElements&gt;  <i>; yields {type*}:result</i>
-  &lt;result&gt; = alloca &lt;type&gt;                      <i>; yields {type*}:result</i>
+
+<pre>
+  &lt;result&gt; = alloca &lt;type&gt;[, uint &lt;NumElements&gt;][, align &lt;alignment&gt;]     <i>; yields {type*}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>alloca</tt>' instruction allocates memory on the current
 stack frame of the procedure that is live until the current function
 returns to its caller.</p>
+
 <h5>Arguments:</h5>
+
 <p>The '<tt>alloca</tt>' instruction allocates <tt>sizeof(&lt;type&gt;)*NumElements</tt>
 bytes of memory on the runtime stack, returning a pointer of the
-appropriate type to the program.  The second form of the instruction is
-a shorter version of the first that defaults to allocating one element.</p>
+appropriate type to the program.    If "NumElements" is specified, it is the
+number of elements allocated.  If an alignment is specified, the value result
+of the allocation is guaranteed to be aligned to at least that boundary.  If
+not specified, or if zero, the target can choose to align the allocation on any
+convenient boundary.</p>
+
 <p>'<tt>type</tt>' may be any sized type.</p>
+
 <h5>Semantics:</h5>
+
 <p>Memory is allocated; a pointer is returned.  '<tt>alloca</tt>'d
 memory is automatically released when the function returns.  The '<tt>alloca</tt>'
 instruction is commonly used to represent automatic variables that must
 have an address available.  When the function returns (either with the <tt><a
  href="#i_ret">ret</a></tt> or <tt><a href="#i_unwind">unwind</a></tt>
 instructions), the memory is reclaimed.</p>
+
 <h5>Example:</h5>
-<pre>  %ptr = alloca int                              <i>; yields {int*}:ptr</i>
+
+<pre>
+  %ptr = alloca int                              <i>; yields {int*}:ptr</i>
   %ptr = alloca int, uint 4                      <i>; yields {int*}:ptr</i>
+  %ptr = alloca int, uint 4, align 1024          <i>; yields {int*}:ptr</i>
+  %ptr = alloca int, align 1024                  <i>; yields {int*}:ptr</i>
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="i_load">'<tt>load</tt>'
 Instruction</a> </div>
@@ -2955,7 +3036,7 @@ the "variable argument" area of a function call.  It is used to implement the
 
 <p>This instruction takes a <tt>va_list*</tt> value and the type of
 the argument. It returns a value of the specified argument type and
-increments the <tt>va_list</tt> to poin to the next argument.  Again, the
+increments the <tt>va_list</tt> to point to the next argument.  Again, the
 actual type of <tt>va_list</tt> is target specific.</p>
 
 <h5>Semantics:</h5>
@@ -3422,8 +3503,8 @@ The '<tt>llvm.pcmarker</tt>' intrinsic is a method to export a Program Counter
 (PC) in a region of 
 code to simulators and other tools.  The method is target specific, but it is 
 expected that the marker will use exported symbols to transmit the PC of the marker.
-The marker makes no guaranties that it will remain with any specific instruction 
-after optimizations.  It is possible that the presense of a marker will inhibit 
+The marker makes no guarantees that it will remain with any specific instruction 
+after optimizations.  It is possible that the presence of a marker will inhibit 
 optimizations.  The intended use is to be inserted after optmizations to allow
 correlations of simulation runs.
 </p>
@@ -3439,6 +3520,39 @@ correlations of simulation runs.
 <p>
 This intrinsic does not modify the behavior of the program.  Backends that do not 
 support this intrinisic may ignore it.
+</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_readcyclecounter">'<tt>llvm.readcyclecounter</tt>' Intrinsic</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  declare ulong %llvm.readcyclecounter( )
+</pre>
+
+<h5>Overview:</h5>
+
+
+<p>
+The '<tt>llvm.readcyclecounter</tt>' intrinsic provides access to the cycle 
+counter register (or similar low latency, high accuracy clocks) on those targets
+that support it.  On X86, it should map to RDTSC.  On Alpha, it should map to RPCC.
+As the backing counters overflow quickly (on the order of 9 seconds on alpha), this
+should only be used for small timings.  
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+When directly supported, reading the cycle counter should not modify any memory.  
+Implementations are allowed to either return a application specific value or a
+system wide value.  On backends without support, this is lowered to a constant 0.
 </p>
 
 </div>
@@ -4020,6 +4134,7 @@ Debugging</a> document.
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.cs.uiuc.edu">The LLVM Compiler Infrastructure</a><br>
+
   Last modified: $Date$
 </address>
 </body>

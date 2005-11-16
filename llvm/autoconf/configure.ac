@@ -31,12 +31,12 @@ dnl===
 dnl===-----------------------------------------------------------------------===
 dnl Initialize autoconf and define the package name, version number and
 dnl email address for reporting bugs.
-AC_INIT([[llvm]],[[1.6cvs]],[llvmbugs@cs.uiuc.edu])
+AC_INIT([[llvm]],[[1.7cvs]],[llvmbugs@cs.uiuc.edu])
 
 dnl Provide a copyright substitution and ensure the copyright notice is included
 dnl in the output of --version option of the generated configure script.
 AC_SUBST(LLVM_COPYRIGHT,["Copyright (c) 2003-2005 University of Illinois at Urbana-Champaign."])
-AC_COPYRIGHT($LLVM_COPYRIGHT)
+AC_COPYRIGHT([Copyright (c) 2003-2005 University of Illinois at Urbana-Champaign.])
 
 dnl Indicate that we require autoconf 2.59 or later. Ths is needed because we
 dnl use some autoconf macros only available in 2.59.
@@ -324,7 +324,7 @@ if test "$GRAPHVIZ" != "echo Graphviz" ; then
    [Define to path to Graphviz program if found or 'echo Graphviz' otherwise])
 fi
 AC_PATH_PROG(GV, [gv], [echo gv])
-if test "$GRAPHVIZ" != "echo gv" ; then
+if test "$GV" != "echo gv" ; then
   AC_DEFINE([HAVE_GV],[1],[Define if the gv program is available])
   AC_DEFINE_UNQUOTED([LLVM_PATH_GV],"$GV",
    [Define to path to gv program if found or 'echo gv' otherwise])
@@ -487,6 +487,7 @@ AC_HEADER_TIME
 AC_CHECK_HEADERS([dlfcn.h execinfo.h fcntl.h inttypes.h limits.h link.h])
 AC_CHECK_HEADERS([malloc.h signal.h stdint.h unistd.h utime.h windows.h])
 AC_CHECK_HEADERS([sys/mman.h sys/param.h sys/resource.h sys/time.h sys/types.h])
+AC_CHECK_HEADERS([malloc/malloc.h])
 AC_CHECK_HEADERS([rw/stdex/hash_map.h rw/stdex/hash_set.h])
 if test "$ENABLE_THREADS" -eq 1 ; then
   AC_CHECK_HEADERS(pthread.h)
@@ -516,7 +517,7 @@ dnl===-----------------------------------------------------------------------===
 AC_CHECK_FUNCS([backtrace getcwd getpagesize getrusage gettimeofday ])
 AC_CHECK_FUNCS([isatty mkdtemp mkstemp mktemp ])
 AC_CHECK_FUNCS([realpath sbrk setrlimit strdup strerror strerror_r ])
-AC_CHECK_FUNCS([strtoll strtoq sysconf])
+AC_CHECK_FUNCS([strtoll strtoq sysconf malloc_zone_statistics ])
 AC_C_PRINTF_A
 AC_FUNC_ALLOCA
 AC_FUNC_RAND48

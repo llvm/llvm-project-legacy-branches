@@ -16,11 +16,54 @@
 include "../Target.td"
 
 //===----------------------------------------------------------------------===//
+// PowerPC Subtarget features.
+//
+ 
+def Feature64Bit     : SubtargetFeature<"64bit", "bool", "Is64Bit",
+                                        "Enable 64-bit instructions">;
+def Feature64BitRegs : SubtargetFeature<"64bitregs", "bool", "Has64BitRegs",
+                                        "Enable 64-bit registers [beta]">;
+def FeatureAltivec   : SubtargetFeature<"altivec", "bool", "HasAltivec",
+                                        "Enable Altivec instructions">;
+def FeatureGPUL      : SubtargetFeature<"gpul", "bool", "IsGigaProcessor",
+                                        "Enable GPUL instructions">;
+def FeatureFSqrt     : SubtargetFeature<"fsqrt", "bool", "HasFSQRT",
+                                        "Enable the fsqrt instruction">; 
+
+//===----------------------------------------------------------------------===//
 // Register File Description
 //===----------------------------------------------------------------------===//
 
 include "PPCRegisterInfo.td"
+include "PPCSchedule.td"
 include "PPCInstrInfo.td"
+
+//===----------------------------------------------------------------------===//
+// PowerPC processors supported.
+//
+
+def : Processor<"generic", G3Itineraries, []>;
+def : Processor<"601", G3Itineraries, []>;
+def : Processor<"602", G3Itineraries, []>;
+def : Processor<"603", G3Itineraries, []>;
+def : Processor<"603e", G3Itineraries, []>;
+def : Processor<"603ev", G3Itineraries, []>;
+def : Processor<"604", G3Itineraries, []>;
+def : Processor<"604e", G3Itineraries, []>;
+def : Processor<"620", G3Itineraries, []>;
+def : Processor<"g3", G3Itineraries, []>;
+def : Processor<"7400", G4Itineraries, [FeatureAltivec]>;
+def : Processor<"g4", G4Itineraries, [FeatureAltivec]>;
+def : Processor<"7450", G4PlusItineraries, [FeatureAltivec]>;
+def : Processor<"g4+", G4PlusItineraries, [FeatureAltivec]>;
+def : Processor<"750", G3Itineraries, []>;
+def : Processor<"970", G5Itineraries,
+                  [FeatureAltivec, FeatureGPUL, FeatureFSqrt,
+                   Feature64Bit /*, Feature64BitRegs */]>;
+def : Processor<"g5", G5Itineraries,
+                  [FeatureAltivec, FeatureGPUL, FeatureFSqrt,
+                   Feature64Bit /*, Feature64BitRegs */]>;
+
 
 def PPC : Target {
   // Pointers on PPC are 32-bits in size.

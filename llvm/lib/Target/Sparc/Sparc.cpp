@@ -162,7 +162,8 @@ SparcV9TargetMachine::SparcV9TargetMachine(const Module &M,
 ///
 bool
 SparcV9TargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &Out,
-                                                CodeGenFileType FileType) {
+                                          CodeGenFileType FileType,
+                                          bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
 
   // FIXME: Implement efficient support for garbage collection intrinsics.
@@ -171,11 +172,11 @@ SparcV9TargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &Out,
   // Replace malloc and free instructions with library calls.
   PM.add(createLowerAllocationsPass());
 
-  // FIXME: implement the switch instruction in the instruction selector.
-  PM.add(createLowerSwitchPass());
-
   // FIXME: implement the invoke/unwind instructions!
   PM.add(createLowerInvokePass());
+
+  // FIXME: implement the switch instruction in the instruction selector.
+  PM.add(createLowerSwitchPass());
 
   // decompose multi-dimensional array references into single-dim refs
   PM.add(createDecomposeMultiDimRefsPass());
@@ -262,11 +263,11 @@ void SparcV9JITInfo::addPassesToJITCompile(FunctionPassManager &PM) {
   // Replace malloc and free instructions with library calls.
   PM.add(createLowerAllocationsPass());
 
-  // FIXME: implement the switch instruction in the instruction selector.
-  PM.add(createLowerSwitchPass());
-
   // FIXME: implement the invoke/unwind instructions!
   PM.add(createLowerInvokePass());
+
+  // FIXME: implement the switch instruction in the instruction selector.
+  PM.add(createLowerSwitchPass());
 
   // decompose multi-dimensional array references into single-dim refs
   PM.add(createDecomposeMultiDimRefsPass());

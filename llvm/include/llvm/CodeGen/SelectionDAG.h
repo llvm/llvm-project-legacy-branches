@@ -16,7 +16,10 @@
 #define LLVM_CODEGEN_SELECTIONDAG_H
 
 #include "llvm/CodeGen/SelectionDAGNodes.h"
+#include "llvm/ADT/ilist"
+
 #include <map>
+#include <list>
 #include <string> // FIXME remove eventually, turning map into const char* map.
 
 namespace llvm {
@@ -42,8 +45,8 @@ class SelectionDAG {
   // Root - The root of the entire DAG.  EntryNode - The starting token.
   SDOperand Root, EntryNode;
 
-  // AllNodes - All of the nodes in the DAG
-  std::vector<SDNode*> AllNodes;
+  // AllNodes - A linked list of nodes in the current DAG.
+  ilist<SDNode> AllNodes;
 
   // ValueNodes - track SrcValue nodes
   std::map<std::pair<const Value*, int>, SDNode*> ValueNodes;
@@ -63,11 +66,13 @@ public:
   void viewGraph();
 
 
-  typedef std::vector<SDNode*>::const_iterator allnodes_iterator;
-  allnodes_iterator allnodes_begin() const { return AllNodes.begin(); }
-  allnodes_iterator allnodes_end() const { return AllNodes.end(); }
-  unsigned allnodes_size() const { return AllNodes.size(); }
-
+  typedef ilist<SDNode>::const_iterator allnodes_const_iterator;
+  allnodes_const_iterator allnodes_begin() const { return AllNodes.begin(); }
+  allnodes_const_iterator allnodes_end() const { return AllNodes.end(); }
+  typedef ilist<SDNode>::iterator allnodes_iterator;
+  allnodes_iterator allnodes_begin() { return AllNodes.begin(); }
+  allnodes_iterator allnodes_end() { return AllNodes.end(); }
+  
   /// getRoot - Return the root tag of the SelectionDAG.
   ///
   const SDOperand &getRoot() const { return Root; }
@@ -111,6 +116,7 @@ public:
   SDOperand getTargetConstantPool(Constant *C, MVT::ValueType VT);
   SDOperand getBasicBlock(MachineBasicBlock *MBB);
   SDOperand getExternalSymbol(const char *Sym, MVT::ValueType VT);
+  SDOperand getTargetExternalSymbol(const char *Sym, MVT::ValueType VT);
   SDOperand getValueType(MVT::ValueType);
   SDOperand getRegister(unsigned Reg, MVT::ValueType VT);
 
@@ -171,7 +177,7 @@ public:
                   SDOperand Callee, bool isTailCall = false) {
     SDNode *NN = new SDNode(isTailCall ? ISD::TAILCALL : ISD::CALL, Chain,
                             Callee);
-    NN->setValueTypes(RetVals);
+    setNodeValueTypes(NN, RetVals);
     AllNodes.push_back(NN);
     return NN;
   }
@@ -185,7 +191,7 @@ public:
     ArgsInRegs.insert(ArgsInRegs.begin(), Callee);
     ArgsInRegs.insert(ArgsInRegs.begin(), Chain);
     SDNode *NN = new SDNode(isTailCall ? ISD::TAILCALL : ISD::CALL, ArgsInRegs);
-    NN->setValueTypes(RetVals);
+    setNodeValueTypes(NN, RetVals);
     AllNodes.push_back(NN);
     return NN;
   }
@@ -279,7 +285,10 @@ public:
   void SelectNodeTo(SDNode *N, unsigned TargetOpc, MVT::ValueType VT1,
                     MVT::ValueType VT2, SDOperand Op1, SDOperand Op2,
                     SDOperand Op3);
-  
+
+  SDOperand getTargetNode(unsigned Opcode, MVT::ValueType VT) {
+    return getNode(ISD::BUILTIN_OP_END+Opcode, VT);
+  }
   SDOperand getTargetNode(unsigned Opcode, MVT::ValueType VT,
                           SDOperand Op1) {
     return getNode(ISD::BUILTIN_OP_END+Opcode, VT, Op1);
@@ -350,14 +359,20 @@ public:
 private:
   void RemoveNodeFromCSEMaps(SDNode *N);
   SDNode *AddNonLeafNodeToCSEMaps(SDNode *N);
-  void DeleteNodeIfDead(SDNode *N, void *NodeSet);
+  void DestroyDeadNode(SDNode *N);
   void DeleteNodeNotInCSEMaps(SDNode *N);
+  void setNodeValueTypes(SDNode *N, std::vector<MVT::ValueType> &RetVals);
+  void setNodeValueTypes(SDNode *N, MVT::ValueType VT1, MVT::ValueType VT2);
+  
   
   /// SimplifySetCC - Try to simplify a setcc built with the specified operands 
   /// and cc.  If unable to simplify it, return a null SDOperand.
   SDOperand SimplifySetCC(MVT::ValueType VT, SDOperand N1,
                           SDOperand N2, ISD::CondCode Cond);
-
+  
+  // List of non-single value types.
+  std::list<std::vector<MVT::ValueType> > VTList;
+  
   // Maps to auto-CSE operations.
   std::map<std::pair<unsigned, MVT::ValueType>, SDNode *> NullaryOps;
   std::map<std::pair<unsigned, std::pair<SDOperand, MVT::ValueType> >,
@@ -382,6 +397,7 @@ private:
   std::map<MachineBasicBlock *, SDNode*> BBNodes;
   std::vector<SDNode*> ValueTypeNodes;
   std::map<std::string, SDNode*> ExternalSymbols;
+  std::map<std::string, SDNode*> TargetExternalSymbols;
   std::map<std::pair<unsigned,
                      std::pair<MVT::ValueType, std::vector<SDOperand> > >,
            SDNode*> OneResultNodes;
@@ -401,6 +417,6 @@ template <> struct GraphTraits<SelectionDAG*> : public GraphTraits<SDNode*> {
   }
 };
 
-}
+}  // end namespace llvm
 
 #endif

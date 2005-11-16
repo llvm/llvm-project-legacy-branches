@@ -26,6 +26,7 @@
 #include "llvm/ADT/hash_set"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/InstVisitor.h"
+#include "llvm/Transforms/Scalar.h"
 #include "VectorLLVM/Utils.h"
 
 using namespace llvm;
@@ -521,3 +522,5 @@ namespace {
   }
 
 }
+
+FunctionPass *llvm::createAltiVecPass() { return new AltiVec(); }

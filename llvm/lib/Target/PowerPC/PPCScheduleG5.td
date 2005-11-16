@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-def G5Itineraries : ProcessorItineraries<G5, [
+def G5Itineraries : ProcessorItineraries<[
   InstrItinData<IntGeneral  , [InstrStage<2, [IU1, IU2]>]>,
   InstrItinData<IntCompare  , [InstrStage<3, [IU1, IU2]>]>,
   InstrItinData<IntDivD     , [InstrStage<68, [IU1]>]>,
@@ -34,17 +34,17 @@ def G5Itineraries : ProcessorItineraries<G5, [
   InstrItinData<BrMCR       , [InstrStage<2, [BPU]>]>,
   InstrItinData<BrMCRX      , [InstrStage<3, [BPU]>]>,
   InstrItinData<LdStDCBF    , [InstrStage<3, [SLU]>]>,
-  InstrItinData<LdStDCBT    , [InstrStage<3, [SLU]>]>,
+  InstrItinData<LdStGeneral , [InstrStage<3, [SLU]>]>,
   InstrItinData<LdStDSS     , [InstrStage<10, [SLU]>]>,
   InstrItinData<LdStICBI    , [InstrStage<40, [SLU]>]>,
-  InstrItinData<LdStLBZUX   , [InstrStage<4, [SLU]>]>,
+  InstrItinData<LdStUX      , [InstrStage<4, [SLU]>]>,
   InstrItinData<LdStLD      , [InstrStage<3, [SLU]>]>,
   InstrItinData<LdStLDARX   , [InstrStage<11, [SLU]>]>,
   InstrItinData<LdStLFD     , [InstrStage<3, [SLU]>]>,
   InstrItinData<LdStLFDU    , [InstrStage<5, [SLU]>]>,
   InstrItinData<LdStLHA     , [InstrStage<5, [SLU]>]>,
   InstrItinData<LdStLMW     , [InstrStage<64, [SLU]>]>,
-  InstrItinData<LdStLVEBX   , [InstrStage<3, [SLU]>]>,
+  InstrItinData<LdStLVecX   , [InstrStage<3, [SLU]>]>,
   InstrItinData<LdStLWA     , [InstrStage<5, [SLU]>]>,
   InstrItinData<LdStLWARX   , [InstrStage<11, [SLU]>]>,
   InstrItinData<LdStSLBIA   , [InstrStage<40, [SLU]>]>, // needs work

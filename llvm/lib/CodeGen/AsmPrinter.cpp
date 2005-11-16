@@ -13,7 +13,7 @@
 
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/Constants.h"
-#include "llvm/Instruction.h"
+#include "llvm/Module.h"
 #include "llvm/Support/Mangler.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetMachine.h"
@@ -31,11 +31,14 @@ bool AsmPrinter::doFinalization(Module &M) {
 
 void AsmPrinter::setupMachineFunction(MachineFunction &MF) {
   // What's my mangled name?
-  CurrentFnName = Mang->getValueName((Value*)MF.getFunction());
+  CurrentFnName = Mang->getValueName(MF.getFunction());
 }
 
 // emitAlignment - Emit an alignment directive to the specified power of two.
-void AsmPrinter::emitAlignment(unsigned NumBits) const {
+void AsmPrinter::emitAlignment(unsigned NumBits, const GlobalValue *GV) const {
+  if (GV && GV->getAlignment())
+    NumBits = Log2_32(GV->getAlignment());
+  if (NumBits == 0) return;   // No need to emit alignment.
   if (AlignmentIsInBytes) NumBits = 1 << NumBits;
   O << AlignDirective << NumBits << "\n";
 }
@@ -68,15 +71,15 @@ void AsmPrinter::emitConstantValueOnly(const Constant *CV) {
       O << (uint64_t)CI->getValue();
   else if (const ConstantUInt *CI = dyn_cast<ConstantUInt>(CV))
     O << CI->getValue();
-  else if (isa<GlobalValue>((Value*)CV)) {
+  else if (const GlobalValue *GV = dyn_cast<GlobalValue>(CV)) {
     // This is a constant address for a global variable or function. Use the
     // name of the variable or function as the address value, possibly
     // decorating it with GlobalVarAddrPrefix/Suffix or
     // FunctionAddrPrefix/Suffix (these all default to "" )
-    if (isa<Function>((Value*)CV))
-      O << FunctionAddrPrefix << Mang->getValueName(CV) << FunctionAddrSuffix;
+    if (isa<Function>(GV))
+      O << FunctionAddrPrefix << Mang->getValueName(GV) << FunctionAddrSuffix;
     else
-      O << GlobalVarAddrPrefix << Mang->getValueName(CV) << GlobalVarAddrSuffix;
+      O << GlobalVarAddrPrefix << Mang->getValueName(GV) << GlobalVarAddrSuffix;
   } else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(CV)) {
     const TargetData &TD = TM.getTargetData();
     switch(CE->getOpcode()) {
@@ -115,9 +118,7 @@ void AsmPrinter::emitConstantValueOnly(const Constant *CV) {
               || (((TD.getTypeSize(Ty) >= TD.getTypeSize(OpTy))
                    && OpTy->isLosslesslyConvertibleTo(Ty))))
              && "FIXME: Don't yet support this kind of constant cast expr");
-      O << "(";
       emitConstantValueOnly(Op);
-      O << ")";
       break;
     }
     case Instruction::Add:
@@ -141,14 +142,15 @@ static inline char toOctal(int X) {
   return (X&7)+'0';
 }
 
-/// getAsCString - Return the specified array as a C compatible string, only if
+/// printAsCString - Print the specified array as a C compatible string, only if
 /// the predicate isString is true.
 ///
-static void printAsCString(std::ostream &O, const ConstantArray *CVA) {
+static void printAsCString(std::ostream &O, const ConstantArray *CVA,
+                           unsigned LastElt) {
   assert(CVA->isString() && "Array is not string compatible!");
 
   O << "\"";
-  for (unsigned i = 0; i != CVA->getNumOperands(); ++i) {
+  for (unsigned i = 0; i != LastElt; ++i) {
     unsigned char C =
         (unsigned char)cast<ConstantInt>(CVA->getOperand(i))->getRawValue();
 
@@ -187,8 +189,15 @@ void AsmPrinter::emitGlobalConstant(const Constant *CV) {
     return;
   } else if (const ConstantArray *CVA = dyn_cast<ConstantArray>(CV)) {
     if (CVA->isString()) {
-      O << AsciiDirective;
-      printAsCString(O, CVA);
+      unsigned NumElts = CVA->getNumOperands();
+      if (AscizDirective && NumElts && 
+          cast<ConstantInt>(CVA->getOperand(NumElts-1))->getRawValue() == 0) {
+        O << AscizDirective;
+        printAsCString(O, CVA, NumElts-1);
+      } else {
+        O << AsciiDirective;
+        printAsCString(O, CVA, NumElts);
+      }
       O << "\n";
     } else { // Not a string.  Print the values in successive locations
       for (unsigned i = 0, e = CVA->getNumOperands(); i != e; ++i)

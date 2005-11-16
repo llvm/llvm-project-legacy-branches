@@ -28,38 +28,23 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/STLExtras.h"
 #include <iostream>
-
 using namespace llvm;
 
-namespace {
-}
 
 IA64RegisterInfo::IA64RegisterInfo()
   : IA64GenRegisterInfo(IA64::ADJUSTCALLSTACKDOWN, IA64::ADJUSTCALLSTACKUP) {}
-
-static const TargetRegisterClass *getClass(unsigned SrcReg) {
-  if (IA64::FPRegisterClass->contains(SrcReg))
-    return IA64::FPRegisterClass;
-  if (IA64::PRRegisterClass->contains(SrcReg))
-    return IA64::PRRegisterClass;
-
-  assert(IA64::GRRegisterClass->contains(SrcReg) &&
-         "PROBLEM: Reg is not FP, predicate or GR!");
-  return IA64::GRRegisterClass;
-}
 
 void IA64RegisterInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MI,
                                            unsigned SrcReg, int FrameIdx,
                                            const TargetRegisterClass *RC) const{
 
-  if (getClass(SrcReg) == IA64::FPRegisterClass) {
+  if (RC == IA64::FPRegisterClass) {
     BuildMI(MBB, MI, IA64::STF8, 2).addFrameIndex(FrameIdx).addReg(SrcReg);
-  }
-  else if (getClass(SrcReg) == IA64::GRRegisterClass) {
+  } else if (RC == IA64::GRRegisterClass) {
     BuildMI(MBB, MI, IA64::ST8, 2).addFrameIndex(FrameIdx).addReg(SrcReg);
  }
-  else if (getClass(SrcReg) == IA64::PRRegisterClass) {
+  else if (RC == IA64::PRRegisterClass) {
     /* we use IA64::r2 as a temporary register for doing this hackery. */
     // first we load 0:
     BuildMI(MBB, MI, IA64::MOV, 1, IA64::r2).addReg(IA64::r0);
@@ -77,11 +62,11 @@ void IA64RegisterInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                             unsigned DestReg, int FrameIdx,
                                             const TargetRegisterClass *RC)const{
 
-  if (getClass(DestReg) == IA64::FPRegisterClass) {
+  if (RC == IA64::FPRegisterClass) {
     BuildMI(MBB, MI, IA64::LDF8, 1, DestReg).addFrameIndex(FrameIdx);
-  } else if (getClass(DestReg) == IA64::GRRegisterClass) {
+  } else if (RC == IA64::GRRegisterClass) {
     BuildMI(MBB, MI, IA64::LD8, 1, DestReg).addFrameIndex(FrameIdx);
- } else if (getClass(DestReg) == IA64::PRRegisterClass) {
+ } else if (RC == IA64::PRRegisterClass) {
    // first we load a byte from the stack into r2, our 'predicate hackery'
    // scratch reg
    BuildMI(MBB, MI, IA64::LD8, 1, IA64::r2).addFrameIndex(FrameIdx);

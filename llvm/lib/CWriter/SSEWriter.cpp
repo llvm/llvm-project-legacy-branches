@@ -117,7 +117,7 @@ std::ostream &SSECWriter::printFixedVectorType(std::ostream &Out,
 //===----------------------------------------------------------------------===//
 
 bool SSECTargetMachine::addPassesToEmitFile(PassManager &PM, std::ostream &o,
-					    CodeGenFileType FileType) {
+					    CodeGenFileType FileType, bool Fast) {
   if (FileType != TargetMachine::AssemblyFile) return true;
   // Add lowervectors pass here to lower variable-length vectors, which we can't handle
   PM.add(createLowerGCPass());

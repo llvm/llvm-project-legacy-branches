@@ -38,15 +38,28 @@ public:
 protected:
   GlobalValue(const Type *Ty, ValueTy vty, Use *Ops, unsigned NumOps,
               LinkageTypes linkage, const std::string &name = "")
-    : Constant(Ty, vty, Ops, NumOps, name), Linkage(linkage), Parent(0) { }
+    : Constant(Ty, vty, Ops, NumOps, name), 
+      Parent(0), Linkage(linkage), Alignment(0) { }
 
-  LinkageTypes Linkage;   // The linkage of this global
   Module *Parent;
+  LinkageTypes Linkage;   // The linkage of this global
+  unsigned Alignment;     // Alignment of this symbol, must be power of two
+  std::string Section;    // Section to emit this into, empty mean default
 public:
   ~GlobalValue() {
     removeDeadConstantUsers();   // remove any dead constants using this.
   }
 
+  unsigned getAlignment() const { return Alignment; }
+  void setAlignment(unsigned Align) {
+    assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
+    Alignment = Align;
+  }
+  
+  bool hasSection() const { return !Section.empty(); }
+  const std::string &getSection() const { return Section; }
+  void setSection(const std::string &S) { Section = S; }
+  
   /// If the usage is empty (except transitively dead constants), then this
   /// global value can can be safely deleted since the destructor will
   /// delete the dead constants as well.
@@ -101,7 +114,7 @@ public:
   void removeDeadConstantUsers();
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const GlobalValue *T) { return true; }
+  static inline bool classof(const GlobalValue *) { return true; }
   static inline bool classof(const Value *V) {
     return V->getValueType() == Value::FunctionVal ||
            V->getValueType() == Value::GlobalVariableVal;

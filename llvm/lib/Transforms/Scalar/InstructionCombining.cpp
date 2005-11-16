@@ -227,6 +227,7 @@ namespace {
                               bool isSub, Instruction &I);
     Instruction *InsertRangeTest(Value *V, Constant *Lo, Constant *Hi,
                                  bool Inside, Instruction &IB);
+    Instruction *PromoteCastOfAllocation(CastInst &CI, AllocationInst &AI);
   };
 
   RegisterOpt<InstCombiner> X("instcombine", "Combine redundant instructions");
@@ -388,7 +389,8 @@ static ConstantInt *SubOne(ConstantInt *C) {
 /// MaskedValueIsZero - Return true if 'V & Mask' is known to be zero.  We use
 /// this predicate to simplify operations downstream.  V and Mask are known to
 /// be the same type.
-static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask) {
+static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask, 
+                              unsigned Depth = 0) {
   // Note, we cannot consider 'undef' to be "IsZero" here.  The problem is that
   // we cannot optimize based on the assumption that it is zero without changing
   // to to an explicit zero.  If we don't change it to zero, other code could
@@ -399,6 +401,8 @@ static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask) {
     return true;
   if (ConstantIntegral *CI = dyn_cast<ConstantIntegral>(V))
     return ConstantExpr::getAnd(CI, Mask)->isNullValue();
+
+  if (Depth == 6) return false;  // Limit search depth.
   
   if (Instruction *I = dyn_cast<Instruction>(V)) {
     switch (I->getOpcode()) {
@@ -407,21 +411,21 @@ static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask) {
       if (ConstantIntegral *CI = dyn_cast<ConstantIntegral>(I->getOperand(1))) {
         ConstantIntegral *C1C2 = 
           cast<ConstantIntegral>(ConstantExpr::getAnd(CI, Mask));
-        if (MaskedValueIsZero(I->getOperand(0), C1C2))
+        if (MaskedValueIsZero(I->getOperand(0), C1C2, Depth+1))
           return true;
       }
       // If either the LHS or the RHS are MaskedValueIsZero, the result is zero.
-      return MaskedValueIsZero(I->getOperand(1), Mask) ||
-             MaskedValueIsZero(I->getOperand(0), Mask);
+      return MaskedValueIsZero(I->getOperand(1), Mask, Depth+1) ||
+             MaskedValueIsZero(I->getOperand(0), Mask, Depth+1);
     case Instruction::Or:
     case Instruction::Xor:
       // If the LHS and the RHS are MaskedValueIsZero, the result is also zero.
-      return MaskedValueIsZero(I->getOperand(1), Mask) &&
-             MaskedValueIsZero(I->getOperand(0), Mask);
+      return MaskedValueIsZero(I->getOperand(1), Mask, Depth+1) &&
+             MaskedValueIsZero(I->getOperand(0), Mask, Depth+1);
     case Instruction::Select:
       // If the T and F values are MaskedValueIsZero, the result is also zero.
-      return MaskedValueIsZero(I->getOperand(2), Mask) &&
-             MaskedValueIsZero(I->getOperand(1), Mask);
+      return MaskedValueIsZero(I->getOperand(2), Mask, Depth+1) &&
+             MaskedValueIsZero(I->getOperand(1), Mask, Depth+1);
     case Instruction::Cast: {
       const Type *SrcTy = I->getOperand(0)->getType();
       if (SrcTy == Type::BoolTy)
@@ -439,7 +443,7 @@ static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask) {
           Constant *NewMask =
           ConstantExpr::getCast(Mask, I->getOperand(0)->getType());
           return MaskedValueIsZero(I->getOperand(0),
-                                   cast<ConstantIntegral>(NewMask));
+                                   cast<ConstantIntegral>(NewMask), Depth+1);
         }
       }
       break;
@@ -448,7 +452,8 @@ static bool MaskedValueIsZero(Value *V, ConstantIntegral *Mask) {
       // (shl X, C1) & C2 == 0   iff   (X & C2 >>u C1) == 0
       if (ConstantUInt *SA = dyn_cast<ConstantUInt>(I->getOperand(1)))
         return MaskedValueIsZero(I->getOperand(0),
-                    cast<ConstantIntegral>(ConstantExpr::getUShr(Mask, SA)));
+                    cast<ConstantIntegral>(ConstantExpr::getUShr(Mask, SA)), 
+                                 Depth+1);
       break;
     case Instruction::Shr:
       // (ushr X, C1) & C2 == 0   iff  (-1 >> C1) & C2 == 0
@@ -705,7 +710,7 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
     // X + (signbit) --> X ^ signbit
     if (ConstantInt *CI = dyn_cast<ConstantInt>(RHSC)) {
       unsigned NumBits = CI->getType()->getPrimitiveSizeInBits();
-      uint64_t Val = CI->getRawValue() & (1ULL << NumBits)-1;
+      uint64_t Val = CI->getRawValue() & (~0ULL >> (64- NumBits));
       if (Val == (1ULL << (NumBits-1)))
         return BinaryOperator::createXor(LHS, RHS);
     }
@@ -1235,13 +1240,32 @@ Instruction *InstCombiner::visitDiv(BinaryOperator &I) {
     if (LHS->equalsInt(0))
       return ReplaceInstUsesWith(I, Constant::getNullValue(I.getType()));
 
+  if (I.getType()->isSigned()) {
+    // If the top bits of both operands are zero (i.e. we can prove they are
+    // unsigned inputs), turn this into a udiv.
+    ConstantIntegral *MaskV = ConstantSInt::getMinValue(I.getType());
+    if (MaskedValueIsZero(Op1, MaskV) && MaskedValueIsZero(Op0, MaskV)) {
+      const Type *NTy = Op0->getType()->getUnsignedVersion();
+      Instruction *LHS = new CastInst(Op0, NTy, Op0->getName());
+      InsertNewInstBefore(LHS, I);
+      Value *RHS;
+      if (Constant *R = dyn_cast<Constant>(Op1))
+        RHS = ConstantExpr::getCast(R, NTy);
+      else
+        RHS = InsertNewInstBefore(new CastInst(Op1, NTy, Op1->getName()), I);
+      Instruction *Div = BinaryOperator::createDiv(LHS, RHS, I.getName());
+      InsertNewInstBefore(Div, I);
+      return new CastInst(Div, I.getType());
+    }      
+  }
+  
   return 0;
 }
 
 
 Instruction *InstCombiner::visitRem(BinaryOperator &I) {
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
-  if (I.getType()->isSigned())
+  if (I.getType()->isSigned()) {
     if (Value *RHSNeg = dyn_castNegVal(Op1))
       if (!isa<ConstantSInt>(RHSNeg) ||
           cast<ConstantSInt>(RHSNeg)->getValue() > 0) {
@@ -1250,6 +1274,24 @@ Instruction *InstCombiner::visitRem(BinaryOperator &I) {
         I.setOperand(1, RHSNeg);
         return &I;
       }
+   
+    // If the top bits of both operands are zero (i.e. we can prove they are
+    // unsigned inputs), turn this into a urem.
+    ConstantIntegral *MaskV = ConstantSInt::getMinValue(I.getType());
+    if (MaskedValueIsZero(Op1, MaskV) && MaskedValueIsZero(Op0, MaskV)) {
+      const Type *NTy = Op0->getType()->getUnsignedVersion();
+      Instruction *LHS = new CastInst(Op0, NTy, Op0->getName());
+      InsertNewInstBefore(LHS, I);
+      Value *RHS;
+      if (Constant *R = dyn_cast<Constant>(Op1))
+        RHS = ConstantExpr::getCast(R, NTy);
+      else
+        RHS = InsertNewInstBefore(new CastInst(Op1, NTy, Op1->getName()), I);
+      Instruction *Rem = BinaryOperator::createRem(LHS, RHS, I.getName());
+      InsertNewInstBefore(Rem, I);
+      return new CastInst(Rem, I.getType());
+    }
+  }
 
   if (isa<UndefValue>(Op0))              // undef % X -> 0
     return ReplaceInstUsesWith(I, Constant::getNullValue(I.getType()));
@@ -1708,7 +1750,6 @@ Value *InstCombiner::FoldLogicalPlusAnd(Value *LHS, Value *RHS,
   return InsertNewInstBefore(New, I);
 }
 
-
 Instruction *InstCombiner::visitAnd(BinaryOperator &I) {
   bool Changed = SimplifyCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
@@ -1724,6 +1765,15 @@ Instruction *InstCombiner::visitAnd(BinaryOperator &I) {
     // and X, -1 == X
     if (AndRHS->isAllOnesValue())
       return ReplaceInstUsesWith(I, Op0);
+    
+    // and (and X, c1), c2 -> and (x, c1&c2).  Handle this case here, before
+    // calling MaskedValueIsZero, to avoid inefficient cases where we traipse
+    // through many levels of ands.
+    {
+      Value *X; ConstantInt *C1;
+      if (match(Op0, m_And(m_Value(X), m_ConstantInt(C1))))
+        return BinaryOperator::createAnd(X, ConstantExpr::getAnd(C1, AndRHS));
+    }
 
     if (MaskedValueIsZero(Op0, AndRHS))        // LHS & RHS == 0
       return ReplaceInstUsesWith(I, Constant::getNullValue(I.getType()));
@@ -3762,6 +3812,149 @@ Value *InstCombiner::InsertOperandCastBefore(Value *V, const Type *DestTy,
   return CI;
 }
 
+/// DecomposeSimpleLinearExpr - Analyze 'Val', seeing if it is a simple linear
+/// expression.  If so, decompose it, returning some value X, such that Val is
+/// X*Scale+Offset.
+///
+static Value *DecomposeSimpleLinearExpr(Value *Val, unsigned &Scale,
+                                        unsigned &Offset) {
+  assert(Val->getType() == Type::UIntTy && "Unexpected allocation size type!");
+  if (ConstantUInt *CI = dyn_cast<ConstantUInt>(Val)) {
+    Offset = CI->getValue();
+    Scale  = 1;
+    return ConstantUInt::get(Type::UIntTy, 0);
+  } else if (Instruction *I = dyn_cast<Instruction>(Val)) {
+    if (I->getNumOperands() == 2) {
+      if (ConstantUInt *CUI = dyn_cast<ConstantUInt>(I->getOperand(1))) {
+        if (I->getOpcode() == Instruction::Shl) {
+          // This is a value scaled by '1 << the shift amt'.
+          Scale = 1U << CUI->getValue();
+          Offset = 0;
+          return I->getOperand(0);
+        } else if (I->getOpcode() == Instruction::Mul) {
+          // This value is scaled by 'CUI'.
+          Scale = CUI->getValue();
+          Offset = 0;
+          return I->getOperand(0);
+        } else if (I->getOpcode() == Instruction::Add) {
+          // We have X+C.  Check to see if we really have (X*C2)+C1, where C1 is
+          // divisible by C2.
+          unsigned SubScale;
+          Value *SubVal = DecomposeSimpleLinearExpr(I->getOperand(0), SubScale,
+                                                    Offset);
+          Offset += CUI->getValue();
+          if (SubScale > 1 && (Offset % SubScale == 0)) {
+            Scale = SubScale;
+            return SubVal;
+          }
+        }
+      }
+    }
+  }
+
+  // Otherwise, we can't look past this.
+  Scale = 1;
+  Offset = 0;
+  return Val;
+}
+
+
+/// PromoteCastOfAllocation - If we find a cast of an allocation instruction,
+/// try to eliminate the cast by moving the type information into the alloc.
+Instruction *InstCombiner::PromoteCastOfAllocation(CastInst &CI,
+                                                   AllocationInst &AI) {
+  const PointerType *PTy = dyn_cast<PointerType>(CI.getType());
+  if (!PTy) return 0;   // Not casting the allocation to a pointer type.
+  
+  // Remove any uses of AI that are dead.
+  assert(!CI.use_empty() && "Dead instructions should be removed earlier!");
+  std::vector<Instruction*> DeadUsers;
+  for (Value::use_iterator UI = AI.use_begin(), E = AI.use_end(); UI != E; ) {
+    Instruction *User = cast<Instruction>(*UI++);
+    if (isInstructionTriviallyDead(User)) {
+      while (UI != E && *UI == User)
+        ++UI; // If this instruction uses AI more than once, don't break UI.
+      
+      // Add operands to the worklist.
+      AddUsesToWorkList(*User);
+      ++NumDeadInst;
+      DEBUG(std::cerr << "IC: DCE: " << *User);
+      
+      User->eraseFromParent();
+      removeFromWorkList(User);
+    }
+  }
+  
+  // Get the type really allocated and the type casted to.
+  const Type *AllocElTy = AI.getAllocatedType();
+  const Type *CastElTy = PTy->getElementType();
+  if (!AllocElTy->isSized() || !CastElTy->isSized()) return 0;
+
+  unsigned AllocElTyAlign = TD->getTypeSize(AllocElTy);
+  unsigned CastElTyAlign = TD->getTypeSize(CastElTy);
+  if (CastElTyAlign < AllocElTyAlign) return 0;
+
+  // If the allocation has multiple uses, only promote it if we are strictly
+  // increasing the alignment of the resultant allocation.  If we keep it the
+  // same, we open the door to infinite loops of various kinds.
+  if (!AI.hasOneUse() && CastElTyAlign == AllocElTyAlign) return 0;
+
+  uint64_t AllocElTySize = TD->getTypeSize(AllocElTy);
+  uint64_t CastElTySize = TD->getTypeSize(CastElTy);
+  if (CastElTySize == 0 || AllocElTySize == 0) return 0;
+
+  // See if we can satisfy the modulus by pulling a scale out of the array
+  // size argument.
+  unsigned ArraySizeScale, ArrayOffset;
+  Value *NumElements = // See if the array size is a decomposable linear expr.
+    DecomposeSimpleLinearExpr(AI.getOperand(0), ArraySizeScale, ArrayOffset);
+ 
+  // If we can now satisfy the modulus, by using a non-1 scale, we really can
+  // do the xform.
+  if ((AllocElTySize*ArraySizeScale) % CastElTySize != 0 ||
+      (AllocElTySize*ArrayOffset   ) % CastElTySize != 0) return 0;
+
+  unsigned Scale = (AllocElTySize*ArraySizeScale)/CastElTySize;
+  Value *Amt = 0;
+  if (Scale == 1) {
+    Amt = NumElements;
+  } else {
+    Amt = ConstantUInt::get(Type::UIntTy, Scale);
+    if (ConstantUInt *CI = dyn_cast<ConstantUInt>(NumElements))
+      Amt = ConstantExpr::getMul(CI, cast<ConstantUInt>(Amt));
+    else if (Scale != 1) {
+      Instruction *Tmp = BinaryOperator::createMul(Amt, NumElements, "tmp");
+      Amt = InsertNewInstBefore(Tmp, AI);
+    }
+  }
+  
+  if (unsigned Offset = (AllocElTySize*ArrayOffset)/CastElTySize) {
+    Value *Off = ConstantUInt::get(Type::UIntTy, Offset);
+    Instruction *Tmp = BinaryOperator::createAdd(Amt, Off, "tmp");
+    Amt = InsertNewInstBefore(Tmp, AI);
+  }
+  
+  std::string Name = AI.getName(); AI.setName("");
+  AllocationInst *New;
+  if (isa<MallocInst>(AI))
+    New = new MallocInst(CastElTy, Amt, AI.getAlignment(), Name);
+  else
+    New = new AllocaInst(CastElTy, Amt, AI.getAlignment(), Name);
+  InsertNewInstBefore(New, AI);
+  
+  // If the allocation has multiple uses, insert a cast and change all things
+  // that used it to use the new cast.  This will also hack on CI, but it will
+  // die soon.
+  if (!AI.hasOneUse()) {
+    AddUsesToWorkList(AI);
+    CastInst *NewCast = new CastInst(New, AI.getType(), "tmpcast");
+    InsertNewInstBefore(NewCast, AI);
+    AI.replaceAllUsesWith(NewCast);
+  }
+  return ReplaceInstUsesWith(CI, New);
+}
+
+
 // CastInst simplification
 //
 Instruction *InstCombiner::visitCastInst(CastInst &CI) {
@@ -3840,30 +4033,8 @@ Instruction *InstCombiner::visitCastInst(CastInst &CI) {
   // size, rewrite the allocation instruction to allocate the "right" type.
   //
   if (AllocationInst *AI = dyn_cast<AllocationInst>(Src))
-    if (AI->hasOneUse() && !AI->isArrayAllocation())
-      if (const PointerType *PTy = dyn_cast<PointerType>(CI.getType())) {
-        // Get the type really allocated and the type casted to...
-        const Type *AllocElTy = AI->getAllocatedType();
-        const Type *CastElTy = PTy->getElementType();
-        if (AllocElTy->isSized() && CastElTy->isSized()) {
-          uint64_t AllocElTySize = TD->getTypeSize(AllocElTy);
-          uint64_t CastElTySize = TD->getTypeSize(CastElTy);
-
-          // If the allocation is for an even multiple of the cast type size
-          if (CastElTySize && (AllocElTySize % CastElTySize == 0)) {
-            Value *Amt = ConstantUInt::get(Type::UIntTy,
-                                         AllocElTySize/CastElTySize);
-            std::string Name = AI->getName(); AI->setName("");
-            AllocationInst *New;
-            if (isa<MallocInst>(AI))
-              New = new MallocInst(CastElTy, Amt, Name);
-            else
-              New = new AllocaInst(CastElTy, Amt, Name);
-            InsertNewInstBefore(New, *AI);
-            return ReplaceInstUsesWith(CI, New);
-          }
-        }
-      }
+    if (Instruction *V = PromoteCastOfAllocation(CI, *AI))
+      return V;
 
   if (SelectInst *SI = dyn_cast<SelectInst>(Src))
     if (Instruction *NV = FoldOpIntoSelect(CI, SI, this))
@@ -4005,6 +4176,7 @@ Instruction *InstCombiner::visitCastInst(CastInst &CI) {
         break;
       }
     }
+      
   return 0;
 }
 
@@ -5095,10 +5267,10 @@ Instruction *InstCombiner::visitAllocationInst(AllocationInst &AI) {
 
       // Create and insert the replacement instruction...
       if (isa<MallocInst>(AI))
-        New = new MallocInst(NewTy, 0, AI.getName());
+        New = new MallocInst(NewTy, 0, AI.getAlignment(), AI.getName());
       else {
         assert(isa<AllocaInst>(AI) && "Unknown type of allocation inst!");
-        New = new AllocaInst(NewTy, 0, AI.getName());
+        New = new AllocaInst(NewTy, 0, AI.getAlignment(), AI.getName());
       }
 
       InsertNewInstBefore(New, AI);
@@ -5597,7 +5769,6 @@ Instruction *InstCombiner::visitSwitchInst(SwitchInst &SI) {
   return 0;
 }
 
-
 void InstCombiner::removeFromWorkList(Instruction *I) {
   WorkList.erase(std::remove(WorkList.begin(), WorkList.end(), I),
                  WorkList.end());
@@ -5611,8 +5782,8 @@ void InstCombiner::removeFromWorkList(Instruction *I) {
 static bool TryToSinkInstruction(Instruction *I, BasicBlock *DestBlock) {
   assert(I->hasOneUse() && "Invariants didn't hold!");
 
-  // Cannot move control-flow-involving instructions.
-  if (isa<PHINode>(I) || isa<InvokeInst>(I) || isa<CallInst>(I)) return false;
+  // Cannot move control-flow-involving, volatile loads, vaarg, etc.
+  if (isa<PHINode>(I) || I->mayWriteToMemory()) return false;
 
   // Do not sink alloca instructions out of the entry block.
   if (isa<AllocaInst>(I) && I->getParent() == &DestBlock->getParent()->front())
@@ -5621,8 +5792,6 @@ static bool TryToSinkInstruction(Instruction *I, BasicBlock *DestBlock) {
   // We can only sink load instructions if there is nothing between the load and
   // the end of block that could change the value.
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-    if (LI->isVolatile()) return false;  // Don't sink volatile loads.
-
     for (BasicBlock::iterator Scan = LI, E = LI->getParent()->end();
          Scan != E; ++Scan)
       if (Scan->mayWriteToMemory())

@@ -45,20 +45,24 @@ OutputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"));
 
 static cl::opt<bool> Force("f", cl::desc("Overwrite output files"));
 
+static cl::opt<bool> Fast("fast", 
+      cl::desc("Generate code quickly, potentially sacrificing code quality"));
+
+
 static cl::opt<const TargetMachineRegistry::Entry*, false, TargetNameParser>
 MArch("march", cl::desc("Architecture to generate code for:"));
 
 static cl::opt<std::string>
 MCPU("mcpu", 
-  cl::desc("Target a specific cpu type (-mcpu=help for list of choices)"),
+  cl::desc("Target a specific cpu type (-mcpu=help for details)"),
   cl::value_desc("cpu-name"),
   cl::init(""));
 
 static cl::list<std::string>
 MAttrs("mattr", 
   cl::CommaSeparated,
-  cl::desc("Target specific attributes (-mattr=help for list of choices)"),
-  cl::value_desc("attr1,+attr2, ..., -attrN"));
+  cl::desc("Target specific attributes (-mattr=help for details)"),
+  cl::value_desc("a1,+a2,-a3,..."));
 
 cl::opt<TargetMachine::CodeGenFileType>
 FileType("filetype", cl::init(TargetMachine::AssemblyFile),
@@ -67,7 +71,7 @@ FileType("filetype", cl::init(TargetMachine::AssemblyFile),
        clEnumValN(TargetMachine::AssemblyFile,    "asm",
                   "  Emit an assembly ('.s') file"),
        clEnumValN(TargetMachine::ObjectFile,    "obj",
-                  "  Emit a native object ('.o') file"),
+                  "  Emit a native object ('.o') file [experimental]"),
        clEnumValN(TargetMachine::DynamicLibrary, "dynlib",
                   "  Emit a native dynamic library ('.so') file"),
        clEnumValEnd));
@@ -228,7 +232,7 @@ int main(int argc, char **argv) {
     }
 
     // Ask the target to add backend passes as necessary.
-    if (Target.addPassesToEmitFile(Passes, *Out, FileType)) {
+    if (Target.addPassesToEmitFile(Passes, *Out, FileType, Fast)) {
       std::cerr << argv[0] << ": target '" << Target.getName()
                 << "' does not support generation of this file type!\n";
       if (Out != &std::cout) delete Out;

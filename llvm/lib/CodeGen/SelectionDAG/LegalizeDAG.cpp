@@ -394,7 +394,6 @@ static void ComputeTopDownOrdering(SDNode *N, std::vector<SDNode*> &Order,
   
   // Now that we have N in, add anything that uses it if all of their operands
   // are now done.
-  
   for (SDNode::use_iterator UI = N->use_begin(), E = N->use_end(); UI != E;++UI)
     ComputeTopDownOrdering(*UI, Order, Visited);
 }
@@ -414,13 +413,15 @@ void SelectionDAGLegalize::LegalizeDAG() {
   // entry node) that have no operands.
   for (SelectionDAG::allnodes_iterator I = DAG.allnodes_begin(),
        E = DAG.allnodes_end(); I != E; ++I) {
-    if ((*I)->getNumOperands() == 0) {
-      Visited[*I] = 0 - 1U;
-      ComputeTopDownOrdering(*I, Order, Visited);
+    if (I->getNumOperands() == 0) {
+      Visited[I] = 0 - 1U;
+      ComputeTopDownOrdering(I, Order, Visited);
     }
   }
   
-  assert(Order.size() == Visited.size() && Order.size() == DAG.allnodes_size()&&
+  assert(Order.size() == Visited.size() &&
+         Order.size() == 
+            (unsigned)std::distance(DAG.allnodes_begin(), DAG.allnodes_end()) &&
          "Error: DAG is cyclic!");
   Visited.clear();
   
@@ -632,19 +633,26 @@ SDOperand SelectionDAGLegalize::LegalizeOp(SDOperand Op) {
     }
     break;
   }
-  case ISD::TokenFactor: {
-    std::vector<SDOperand> Ops;
-    bool Changed = false;
-    // Legalize the operands
-    for (unsigned i = 0, e = Node->getNumOperands(); i != e; ++i) {
-      SDOperand Op = Node->getOperand(i);
-      Ops.push_back(LegalizeOp(Op));
-      Changed |= Ops[i] != Op;
+  case ISD::TokenFactor:
+    if (Node->getNumOperands() == 2) {
+      bool Changed = false;
+      SDOperand Op0 = LegalizeOp(Node->getOperand(0));
+      SDOperand Op1 = LegalizeOp(Node->getOperand(1));
+      if (Op0 != Node->getOperand(0) || Op1 != Node->getOperand(1))
+        Result = DAG.getNode(ISD::TokenFactor, MVT::Other, Op0, Op1);
+    } else {
+      std::vector<SDOperand> Ops;
+      bool Changed = false;
+      // Legalize the operands.
+      for (unsigned i = 0, e = Node->getNumOperands(); i != e; ++i) {
+        SDOperand Op = Node->getOperand(i);
+        Ops.push_back(LegalizeOp(Op));
+        Changed |= Ops[i] != Op;
+      }
+      if (Changed)
+        Result = DAG.getNode(ISD::TokenFactor, MVT::Other, Ops);
     }
-    if (Changed)
-      Result = DAG.getNode(ISD::TokenFactor, MVT::Other, Ops);
     break;
-  }
 
   case ISD::CALLSEQ_START:
   case ISD::CALLSEQ_END:
@@ -955,14 +963,37 @@ SDOperand SelectionDAGLegalize::LegalizeOp(SDOperand Op) {
     }
     assert(0 && "Unreachable");
   }
-  case ISD::EXTRACT_ELEMENT:
-    // Get both the low and high parts.
-    ExpandOp(Node->getOperand(0), Tmp1, Tmp2);
-    if (cast<ConstantSDNode>(Node->getOperand(1))->getValue())
-      Result = Tmp2;  // 1 -> Hi
-    else
-      Result = Tmp1;  // 0 -> Lo
+  case ISD::EXTRACT_ELEMENT: {
+    MVT::ValueType OpTy = Node->getOperand(0).getValueType();
+    switch (getTypeAction(OpTy)) {
+    default:
+      assert(0 && "EXTRACT_ELEMENT action for type unimplemented!");
+      break;
+    case Legal:
+      if (cast<ConstantSDNode>(Node->getOperand(1))->getValue()) {
+        // 1 -> Hi
+        Result = DAG.getNode(ISD::SRL, OpTy, Node->getOperand(0),
+                             DAG.getConstant(MVT::getSizeInBits(OpTy)/2, 
+                                             TLI.getShiftAmountTy()));
+        Result = DAG.getNode(ISD::TRUNCATE, Node->getValueType(0), Result);
+      } else {
+        // 0 -> Lo
+        Result = DAG.getNode(ISD::TRUNCATE, Node->getValueType(0), 
+                             Node->getOperand(0));
+      }
+      Result = LegalizeOp(Result);
+      break;
+    case Expand:
+      // Get both the low and high parts.
+      ExpandOp(Node->getOperand(0), Tmp1, Tmp2);
+      if (cast<ConstantSDNode>(Node->getOperand(1))->getValue())
+        Result = Tmp2;  // 1 -> Hi
+      else
+        Result = Tmp1;  // 0 -> Lo
+      break;
+    }
     break;
+  }
 
   case ISD::CopyToReg:
     Tmp1 = LegalizeOp(Node->getOperand(0));  // Legalize the chain.
@@ -1090,6 +1121,11 @@ SDOperand SelectionDAGLegalize::LegalizeOp(SDOperand Op) {
     Tmp1 = LegalizeOp(Node->getOperand(0));  // Legalize the chain.
     if (Tmp1 != Node->getOperand(0))
       Result = DAG.getNode(ISD::PCMARKER, MVT::Other, Tmp1,Node->getOperand(1));
+    break;
+  case ISD::READCYCLECOUNTER:
+    Tmp1 = LegalizeOp(Node->getOperand(0)); // Legalize the chain
+    if (Tmp1 != Node->getOperand(0))
+      Result = DAG.getNode(ISD::READCYCLECOUNTER, MVT::i64, Tmp1);
     break;
   case ISD::TRUNCSTORE:
     Tmp1 = LegalizeOp(Node->getOperand(0));  // Legalize the chain.
@@ -2243,7 +2279,8 @@ SDOperand SelectionDAGLegalize::PromoteOp(SDOperand Op) {
     // legal, such as PowerPC.
     if (Node->getOpcode() == ISD::FP_TO_UINT && 
         !TLI.isOperationLegal(ISD::FP_TO_UINT, NVT) &&
-        TLI.isOperationLegal(ISD::FP_TO_SINT, NVT)) {
+        (TLI.isOperationLegal(ISD::FP_TO_SINT, NVT) ||
+         TLI.getOperationAction(ISD::FP_TO_SINT, NVT)==TargetLowering::Custom)){
       Result = DAG.getNode(ISD::FP_TO_SINT, NVT, Tmp1);
     } else {
       Result = DAG.getNode(Node->getOpcode(), NVT, Tmp1);

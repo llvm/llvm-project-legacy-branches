@@ -5,3 +5,4 @@
 ;RUN: llvm-ranlib %t.xpg4.a
 ;RUN: llvm-ar t %t.xpg4.a > %t1
 ;RUN: diff %t1 %p/xpg4.toc
+

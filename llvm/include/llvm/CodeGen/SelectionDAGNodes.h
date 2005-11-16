@@ -22,7 +22,6 @@
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/Value.h"
 #include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/iterator"
 #include "llvm/Support/DataTypes.h"
 #include <cassert>
@@ -35,6 +34,9 @@ class GlobalValue;
 class MachineBasicBlock;
 class SDNode;
 template <typename T> struct simplify_type;
+template <typename T> struct ilist_traits;
+template<typename NodeTy, typename Traits> class iplist;
+template<typename NodeTy> class ilist_iterator;
 
 /// ISD namespace - This namespace contains an enum which represents all of the
 /// SelectionDAG node types and value types.
@@ -74,6 +76,7 @@ namespace ISD {
     TargetGlobalAddress,
     TargetFrameIndex,
     TargetConstantPool,
+    TargetExternalSymbol,
 
     // CopyToReg - This node has three operands: a chain, a register number to
     // set to this value, and a value.  
@@ -304,6 +307,12 @@ namespace ISD {
     // PCMARKER - This corresponds to the pcmarker intrinsic.
     PCMARKER,
 
+    // READCYCLECOUNTER - This corresponds to the readcyclecounter intrinsic.
+    // The only operand is a chain and a value and a chain are produced.  The
+    // value is the contents of the architecture specific cycle counter like 
+    // register (or other high accuracy low latency clock source)
+    READCYCLECOUNTER,
+
     // READPORT, WRITEPORT, READIO, WRITEIO - These correspond to the LLVM
     // intrinsics of the same name.  The first operand is a token chain, the
     // other operands match the intrinsic.  These produce a token chain in
@@ -490,19 +499,30 @@ class SDNode {
   /// depth of 2, etc.
   unsigned short NodeDepth;
 
-  /// Operands - The values that are used by this operation.
+  /// OperandList - The values that are used by this operation.
   ///
-  std::vector<SDOperand> Operands;
+  SDOperand *OperandList;
+  
+  /// ValueList - The types of the values this node defines.  SDNode's may
+  /// define multiple values simultaneously.
+  MVT::ValueType *ValueList;
 
-  /// Values - The types of the values this node defines.  SDNode's may define
-  /// multiple values simultaneously.
-  std::vector<MVT::ValueType> Values;
+  /// NumOperands/NumValues - The number of entries in the Operand/Value list.
+  unsigned short NumOperands, NumValues;
+  
+  /// Prev/Next pointers - These pointers form the linked list of of the
+  /// AllNodes list in the current DAG.
+  SDNode *Prev, *Next;
+  friend struct ilist_traits<SDNode>;
 
   /// Uses - These are all of the SDNode's that use a value produced by this
   /// node.
   std::vector<SDNode*> Uses;
 public:
-
+  virtual ~SDNode() {
+    assert(NumOperands == 0 && "Operand list not cleared before deletion");
+  }
+  
   //===--------------------------------------------------------------------===//
   //  Accessors
   //
@@ -532,37 +552,32 @@ public:
 
   /// getNumOperands - Return the number of values used by this operation.
   ///
-  unsigned getNumOperands() const { return Operands.size(); }
-
-  const SDOperand &getOperand(unsigned Num) {
-    assert(Num < Operands.size() && "Invalid child # of SDNode!");
-    return Operands[Num];
-  }
+  unsigned getNumOperands() const { return NumOperands; }
 
   const SDOperand &getOperand(unsigned Num) const {
-    assert(Num < Operands.size() && "Invalid child # of SDNode!");
-    return Operands[Num];
+    assert(Num < NumOperands && "Invalid child # of SDNode!");
+    return OperandList[Num];
   }
-  typedef std::vector<SDOperand>::const_iterator op_iterator;
-  op_iterator op_begin() const { return Operands.begin(); }
-  op_iterator op_end() const { return Operands.end(); }
+  typedef const SDOperand* op_iterator;
+  op_iterator op_begin() const { return OperandList; }
+  op_iterator op_end() const { return OperandList+NumOperands; }
 
 
   /// getNumValues - Return the number of values defined/returned by this
   /// operator.
   ///
-  unsigned getNumValues() const { return Values.size(); }
+  unsigned getNumValues() const { return NumValues; }
 
   /// getValueType - Return the type of a specified result.
   ///
   MVT::ValueType getValueType(unsigned ResNo) const {
-    assert(ResNo < Values.size() && "Illegal result number!");
-    return Values[ResNo];
+    assert(ResNo < NumValues && "Illegal result number!");
+    return ValueList[ResNo];
   }
 
-  typedef std::vector<MVT::ValueType>::const_iterator value_iterator;
-  value_iterator value_begin() const { return Values.begin(); }
-  value_iterator value_end() const { return Values.end(); }
+  typedef const MVT::ValueType* value_iterator;
+  value_iterator value_begin() const { return ValueList; }
+  value_iterator value_end() const { return ValueList+NumValues; }
 
   /// getOperationName - Return the opcode of this operation for printing.
   ///
@@ -578,15 +593,26 @@ public:
 
 protected:
   friend class SelectionDAG;
+  
+  /// getValueTypeList - Return a pointer to the specified value type.
+  ///
+  static MVT::ValueType *getValueTypeList(MVT::ValueType VT);
 
   SDNode(unsigned NT, MVT::ValueType VT) : NodeType(NT), NodeDepth(1) {
-    Values.reserve(1);
-    Values.push_back(VT);
+    OperandList = 0; NumOperands = 0;
+    ValueList = getValueTypeList(VT);
+    NumValues = 1;
+    Prev = 0; Next = 0;
   }
   SDNode(unsigned NT, SDOperand Op)
     : NodeType(NT), NodeDepth(Op.Val->getNodeDepth()+1) {
-    Operands.reserve(1); Operands.push_back(Op);
+    OperandList = new SDOperand[1];
+    OperandList[0] = Op;
+    NumOperands = 1;
     Op.Val->Uses.push_back(this);
+    ValueList = 0;
+    NumValues = 0;
+    Prev = 0; Next = 0;
   }
   SDNode(unsigned NT, SDOperand N1, SDOperand N2)
     : NodeType(NT) {
@@ -594,8 +620,14 @@ protected:
       NodeDepth = N1.Val->getNodeDepth()+1;
     else
       NodeDepth = N2.Val->getNodeDepth()+1;
-    Operands.reserve(2); Operands.push_back(N1); Operands.push_back(N2);
+    OperandList = new SDOperand[2];
+    OperandList[0] = N1;
+    OperandList[1] = N2;
+    NumOperands = 2;
     N1.Val->Uses.push_back(this); N2.Val->Uses.push_back(this);
+    ValueList = 0;
+    NumValues = 0;
+    Prev = 0; Next = 0;
   }
   SDNode(unsigned NT, SDOperand N1, SDOperand N2, SDOperand N3)
     : NodeType(NT) {
@@ -606,10 +638,17 @@ protected:
       ND = N3.Val->getNodeDepth();
     NodeDepth = ND+1;
 
-    Operands.reserve(3); Operands.push_back(N1); Operands.push_back(N2);
-    Operands.push_back(N3);
+    OperandList = new SDOperand[3];
+    OperandList[0] = N1;
+    OperandList[1] = N2;
+    OperandList[2] = N3;
+    NumOperands = 3;
+    
     N1.Val->Uses.push_back(this); N2.Val->Uses.push_back(this);
     N3.Val->Uses.push_back(this);
+    ValueList = 0;
+    NumValues = 0;
+    Prev = 0; Next = 0;
   }
   SDNode(unsigned NT, SDOperand N1, SDOperand N2, SDOperand N3, SDOperand N4)
     : NodeType(NT) {
@@ -622,90 +661,110 @@ protected:
       ND = N4.Val->getNodeDepth();
     NodeDepth = ND+1;
 
-    Operands.reserve(4); Operands.push_back(N1); Operands.push_back(N2);
-    Operands.push_back(N3); Operands.push_back(N4);
+    OperandList = new SDOperand[4];
+    OperandList[0] = N1;
+    OperandList[1] = N2;
+    OperandList[2] = N3;
+    OperandList[3] = N4;
+    NumOperands = 4;
+    
     N1.Val->Uses.push_back(this); N2.Val->Uses.push_back(this);
     N3.Val->Uses.push_back(this); N4.Val->Uses.push_back(this);
+    ValueList = 0;
+    NumValues = 0;
+    Prev = 0; Next = 0;
   }
-  SDNode(unsigned NT, std::vector<SDOperand> &Nodes) : NodeType(NT) {
-    Operands.swap(Nodes);
+  SDNode(unsigned Opc, const std::vector<SDOperand> &Nodes) : NodeType(Opc) {
+    NumOperands = Nodes.size();
+    OperandList = new SDOperand[NumOperands];
+    
     unsigned ND = 0;
-    for (unsigned i = 0, e = Operands.size(); i != e; ++i) {
-      Operands[i].Val->Uses.push_back(this);
-      if (ND < Operands[i].Val->getNodeDepth())
-        ND = Operands[i].Val->getNodeDepth();
+    for (unsigned i = 0, e = Nodes.size(); i != e; ++i) {
+      OperandList[i] = Nodes[i];
+      SDNode *N = OperandList[i].Val;
+      N->Uses.push_back(this);
+      if (ND < N->getNodeDepth()) ND = N->getNodeDepth();
     }
     NodeDepth = ND+1;
+    ValueList = 0;
+    NumValues = 0;
+    Prev = 0; Next = 0;
   }
-
-  virtual ~SDNode() {}
 
   /// MorphNodeTo - This clears the return value and operands list, and sets the
   /// opcode of the node to the specified value.  This should only be used by
   /// the SelectionDAG class.
   void MorphNodeTo(unsigned Opc) {
     NodeType = Opc;
-    Values.clear();
+    ValueList = 0;
+    NumValues = 0;
     
     // Clear the operands list, updating used nodes to remove this from their
     // use list.
-    while (!Operands.empty()) {
-      SDNode *O = Operands.back().Val;
-      Operands.pop_back();
-      O->removeUser(this);
-    }
+    for (op_iterator I = op_begin(), E = op_end(); I != E; ++I)
+      I->Val->removeUser(this);
+    delete [] OperandList;
+    OperandList = 0;
+    NumOperands = 0;
   }
   
   void setValueTypes(MVT::ValueType VT) {
-    Values.reserve(1);
-    Values.push_back(VT);
+    assert(NumValues == 0 && "Should not have values yet!");
+    ValueList = getValueTypeList(VT);
+    NumValues = 1;
   }
-  void setValueTypes(MVT::ValueType VT1, MVT::ValueType VT2) {
-    Values.reserve(2);
-    Values.push_back(VT1);
-    Values.push_back(VT2);
-  }
-  /// Note: this method destroys the vector passed in.
-  void setValueTypes(std::vector<MVT::ValueType> &VTs) {
-    std::swap(Values, VTs);
+  void setValueTypes(MVT::ValueType *List, unsigned NumVal) {
+    assert(NumValues == 0 && "Should not have values yet!");
+    ValueList = List;
+    NumValues = NumVal;
   }
   
   void setOperands(SDOperand Op0) {
-    Operands.reserve(1);
-    Operands.push_back(Op0);
+    assert(NumOperands == 0 && "Should not have operands yet!");
+    OperandList = new SDOperand[1];
+    OperandList[0] = Op0;
+    NumOperands = 1;
     Op0.Val->Uses.push_back(this);
   }
   void setOperands(SDOperand Op0, SDOperand Op1) {
-    Operands.reserve(2);
-    Operands.push_back(Op0);
-    Operands.push_back(Op1);
+    assert(NumOperands == 0 && "Should not have operands yet!");
+    OperandList = new SDOperand[2];
+    OperandList[0] = Op0;
+    OperandList[1] = Op1;
+    NumOperands = 2;
     Op0.Val->Uses.push_back(this); Op1.Val->Uses.push_back(this);
   }
   void setOperands(SDOperand Op0, SDOperand Op1, SDOperand Op2) {
-    Operands.reserve(3);
-    Operands.push_back(Op0);
-    Operands.push_back(Op1);
-    Operands.push_back(Op2);
+    assert(NumOperands == 0 && "Should not have operands yet!");
+    OperandList = new SDOperand[3];
+    OperandList[0] = Op0;
+    OperandList[1] = Op1;
+    OperandList[2] = Op2;
+    NumOperands = 3;
     Op0.Val->Uses.push_back(this); Op1.Val->Uses.push_back(this);
     Op2.Val->Uses.push_back(this);
   }
   void setOperands(SDOperand Op0, SDOperand Op1, SDOperand Op2, SDOperand Op3) {
-    Operands.reserve(4);
-    Operands.push_back(Op0);
-    Operands.push_back(Op1);
-    Operands.push_back(Op2);
-    Operands.push_back(Op3);
+    assert(NumOperands == 0 && "Should not have operands yet!");
+    OperandList = new SDOperand[4];
+    OperandList[0] = Op0;
+    OperandList[1] = Op1;
+    OperandList[2] = Op2;
+    OperandList[3] = Op3;
+    NumOperands = 4;
     Op0.Val->Uses.push_back(this); Op1.Val->Uses.push_back(this);
     Op2.Val->Uses.push_back(this); Op3.Val->Uses.push_back(this);
   }
   void setOperands(SDOperand Op0, SDOperand Op1, SDOperand Op2, SDOperand Op3,
                    SDOperand Op4) {
-    Operands.reserve(5);
-    Operands.push_back(Op0);
-    Operands.push_back(Op1);
-    Operands.push_back(Op2);
-    Operands.push_back(Op3);
-    Operands.push_back(Op4);
+    assert(NumOperands == 0 && "Should not have operands yet!");
+    OperandList = new SDOperand[5];
+    OperandList[0] = Op0;
+    OperandList[1] = Op1;
+    OperandList[2] = Op2;
+    OperandList[3] = Op3;
+    OperandList[4] = Op4;
+    NumOperands = 5;
     Op0.Val->Uses.push_back(this); Op1.Val->Uses.push_back(this);
     Op2.Val->Uses.push_back(this); Op3.Val->Uses.push_back(this);
     Op4.Val->Uses.push_back(this);
@@ -932,8 +991,9 @@ class ExternalSymbolSDNode : public SDNode {
   const char *Symbol;
 protected:
   friend class SelectionDAG;
-  ExternalSymbolSDNode(const char *Sym, MVT::ValueType VT)
-    : SDNode(ISD::ExternalSymbol, VT), Symbol(Sym) {
+  ExternalSymbolSDNode(bool isTarget, const char *Sym, MVT::ValueType VT)
+    : SDNode(isTarget ? ISD::TargetExternalSymbol : ISD::ExternalSymbol, VT),
+      Symbol(Sym) {
     }
 public:
 
@@ -941,7 +1001,8 @@ public:
 
   static bool classof(const ExternalSymbolSDNode *) { return true; }
   static bool classof(const SDNode *N) {
-    return N->getOpcode() == ISD::ExternalSymbol;
+    return N->getOpcode() == ISD::ExternalSymbol ||
+           N->getOpcode() == ISD::TargetExternalSymbol;
   }
 };
 
@@ -1030,6 +1091,28 @@ template <> struct GraphTraits<SDNode*> {
   static inline ChildIteratorType child_end(NodeType *N) {
     return SDNodeIterator::end(N);
   }
+};
+
+template<>
+struct ilist_traits<SDNode> {
+  static SDNode *getPrev(const SDNode *N) { return N->Prev; }
+  static SDNode *getNext(const SDNode *N) { return N->Next; }
+  
+  static void setPrev(SDNode *N, SDNode *Prev) { N->Prev = Prev; }
+  static void setNext(SDNode *N, SDNode *Next) { N->Next = Next; }
+  
+  static SDNode *createSentinel() {
+    return new SDNode(ISD::EntryToken, MVT::Other);
+  }
+  static void destroySentinel(SDNode *N) { delete N; }
+  //static SDNode *createNode(const SDNode &V) { return new SDNode(V); }
+  
+  
+  void addNodeToList(SDNode *NTy) {}
+  void removeNodeFromList(SDNode *NTy) {}
+  void transferNodesFromList(iplist<SDNode, ilist_traits> &L2,
+                             const ilist_iterator<SDNode> &X,
+                             const ilist_iterator<SDNode> &Y) {}
 };
 
 } // end llvm namespace
