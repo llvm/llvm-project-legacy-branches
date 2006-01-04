@@ -147,6 +147,31 @@ namespace {
     return false;
   }
 
+  static const Type *getSignedType(const Type *Ty) {
+    if (Ty->isSigned())
+      return Ty;
+    switch(Ty->getTypeID()) {
+    case Type::UIntTyID:
+      return Type::IntTy;
+    default:
+      std::cerr << "Can't handle type " << Ty->getDescription() << "\n";
+      exit(1);
+    }
+  }
+
+  static const Type *promoteType(const Type *Ty) {
+    if (const FixedVectorType *VT = dyn_cast<FixedVectorType>(Ty))
+      return FixedVectorType::get(promoteType(VT->getElementType()),
+				  VT->getNumElements());
+    switch(Ty->getTypeID()) {
+    case Type::ShortTyID:
+      return Type::IntTy;
+    default:
+      std::cerr << "Can't promote type " << Ty->getDescription() << "\n";
+      exit(1);
+    }
+  }
+
 
   //===----------------------------------------------------------------------===//
   //                     SSE implementation
@@ -274,12 +299,19 @@ namespace {
       ExtractInst *extract0 = dyn_cast<ExtractInst>(*I++);
       ExtractInst *extract1 = dyn_cast<ExtractInst>(*I);
       assert(extract0 && extract1);
-      CallInst *unpackhi = VectorUtils::getCallInst(VT2, getSSEName("unpackhi", VT2),
-						  combine1->getOperand(1), combine2->getOperand(1),
-						  "unpackhi", extract0);
-      CallInst *unpacklo = VectorUtils::getCallInst(VT2, getSSEName("unpacklo", VT2),
-						  combine1->getOperand(1), combine2->getOperand(1),
-						  "unpacklo", extract0);
+      const FixedVectorType *HalfVT = 
+	FixedVectorType::get(promoteType(VT2->getElementType()),
+			     VT2->getNumElements() / 2);
+      CallInst *tmp = 
+	VectorUtils::getCallInst(HalfVT, getSSEName("unpackhi", VT2),
+				 combine1->getOperand(1), combine2->getOperand(1),
+				 "unpackhi", extract0);
+      CastInst *unpackhi = new CastInst(tmp, VT2, "cast", extract0);
+      tmp = 
+	VectorUtils::getCallInst(HalfVT, getSSEName("unpacklo", VT2),
+				 combine1->getOperand(1), combine2->getOperand(1),
+				 "unpacklo", extract0);
+      CastInst *unpacklo = new CastInst(tmp, VT2, "cast", extract0);
       if (cast<ConstantUInt>(extract0->getOperand(1))->getValue() == 1) {
 	extract0->replaceAllUsesWith(unpackhi);
 	extract1->replaceAllUsesWith(unpacklo);
@@ -371,18 +403,6 @@ namespace {
     }
   }
 
-  static const Type *getSignedType(const Type *Ty) {
-    if (Ty->isSigned())
-      return Ty;
-    switch(Ty->getTypeID()) {
-    case Type::UIntTyID:
-      return Type::IntTy;
-    default:
-      std::cerr << "Can't handle type " << Ty->getDescription() << "\n";
-    }
-    return 0;
-  }
-
   void SSE::addComposeConstant(BinaryOperator &Add,
 			      Value *arg1, Value *arg2) {
     CallInst *compose = dyn_cast<CallInst>(arg1);//Add.getOperand(0));
@@ -398,14 +418,18 @@ namespace {
     const FixedVectorType *LongVT = dyn_cast<FixedVectorType>(Add.getType());
     const FixedVectorType *ShortVT = dyn_cast<FixedVectorType>(op1->getType());
     if (!LongVT || !ShortVT) return;
-    const FixedVectorType *HalfVT = FixedVectorType::get(getSignedType(LongVT->getElementType()), 
-							 LongVT->getNumElements() / 2);
-    CallInst *splat2 = VectorUtils::getCallInst(HalfVT, getSSEName("splat", HalfVT),
-						C, "splat", &Add);
-    CallInst *unpackLo = VectorUtils::getCallInst(HalfVT, getSSEName("unpacklo", ShortVT),
+    const FixedVectorType *HalfVT = 
+      FixedVectorType::get(getSignedType(LongVT->getElementType()), 
+			   LongVT->getNumElements() / 2);
+    CallInst *splat2 = 
+      VectorUtils::getCallInst(HalfVT, getSSEName("splat", HalfVT),
+			       C, "splat", &Add);
+    CallInst *unpackLo =
+      VectorUtils::getCallInst(HalfVT, getSSEName("unpacklo", ShortVT),
 						  op1, op2, "unpackLo", &Add);
-    CallInst *unpackHi = VectorUtils::getCallInst(HalfVT, getSSEName("unpackhi", ShortVT),
-						  op1, op2, "unpackHi", &Add);
+    CallInst *unpackHi = 
+      VectorUtils::getCallInst(HalfVT, getSSEName("unpackhi", ShortVT),
+			       op1, op2, "unpackHi", &Add);
     CallInst *addLo = VectorUtils::getCallInst(HalfVT, getSSEName("add", HalfVT),
 					       unpackLo, splat2, "addLo", &Add);
     CallInst *addHi = VectorUtils::getCallInst(HalfVT, getSSEName("add", HalfVT),
