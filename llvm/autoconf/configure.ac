@@ -31,7 +31,7 @@ dnl===
 dnl===-----------------------------------------------------------------------===
 dnl Initialize autoconf and define the package name, version number and
 dnl email address for reporting bugs.
-AC_INIT([[llvm]],[[1.9cvs]],[llvmbugs@cs.uiuc.edu])
+AC_INIT([[llvm]],[[1.9]],[llvmbugs@cs.uiuc.edu])
 
 dnl Provide a copyright substitution and ensure the copyright notice is included
 dnl in the output of --version option of the generated configure script.
@@ -70,6 +70,7 @@ do
       "sample")       AC_CONFIG_SUBDIRS([projects/sample])    ;;
       "Stacker")      AC_CONFIG_SUBDIRS([projects/Stacker])   ;;
       "privbracket")  AC_CONFIG_SUBDIRS([projects/privbracket]) ;;
+      "safecode")     AC_CONFIG_SUBDIRS([projects/safecode])  ;;
       "llvm-test")    AC_CONFIG_SUBDIRS([projects/llvm-test]) ;;
       "llvm-reopt")   AC_CONFIG_SUBDIRS([projects/llvm-reopt]);;
       "llvm-gcc")     AC_CONFIG_SUBDIRS([projects/llvm-gcc])  ;;
