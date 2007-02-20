@@ -1273,6 +1273,8 @@ bool CWriter::doInitialization(Module &M) {
           Out << " __attribute__((common))";
         else if (I->hasWeakLinkage())
           Out << " __ATTRIBUTE_WEAK__";
+        if (I->hasSection())
+          Out << " __attribute__ ((__section__ (\"" << I->getSection() << "\")))";
         Out << ";\n";
       }
   }
