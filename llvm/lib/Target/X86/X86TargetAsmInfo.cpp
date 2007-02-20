@@ -69,7 +69,7 @@ X86TargetAsmInfo::X86TargetAsmInfo(const X86TargetMachine &TM) {
     // bool HasDotLoc; // Defaults to false.
     // HasDotFile - True if target asm supports .file directives.
     // bool HasDotFile; // Defaults to false.
-    PrivateGlobalPrefix = ".";  // Prefix for private global symbols
+    PrivateGlobalPrefix = ".L";  // Prefix for private global symbols
     DwarfRequiresFrameSection = false;
     DwarfAbbrevSection =  "\t.section\t.debug_abbrev,\"\",@progbits";
     DwarfInfoSection =    "\t.section\t.debug_info,\"\",@progbits";
