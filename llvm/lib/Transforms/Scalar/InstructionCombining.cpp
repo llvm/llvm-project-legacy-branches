@@ -4837,6 +4837,21 @@ Instruction *InstCombiner::visitSetCondInst(SetCondInst &I) {
       return BinaryOperator::create(I.getOpcode(), Op0, Op1);
     }
 
+    //Handle special case of setcc (cast T* to uint) (cast T* to uint)
+    //Generalize to seteq (cast T to >= T') (cast T to >= T')
+    //restrict to ints and pointers (so casts are sext or zext, no reinterpret)
+    if (CastInst* CI1 = dyn_cast<CastInst>(Op1)) {
+      Value* CastOp1 = CI1->getOperand(0);
+      if (I.isEquality() && CastOp0->getType() == CastOp1->getType() &&
+          TD->getTypeSize(Op1->getType()) >= TD->getTypeSize(CastOp1->getType()) &&
+          (CastOp1->getType()->isInteger() || isa<PointerType>(CastOp1->getType())) &&
+          (Op1->getType()->isInteger() || isa<PointerType>(Op1->getType()))
+          ) {
+        std::cerr << "Triggered\n";
+        return BinaryOperator::create(I.getOpcode(), CastOp0, CastOp1);
+      }
+    }
+
     // Handle the special case of: setcc (cast bool to X), <cst>
     // This comes up when you have code like
     //   int X = A < B;
