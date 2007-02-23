@@ -4846,10 +4846,8 @@ Instruction *InstCombiner::visitSetCondInst(SetCondInst &I) {
           TD->getTypeSize(Op1->getType()) >= TD->getTypeSize(CastOp1->getType()) &&
           (CastOp1->getType()->isInteger() || isa<PointerType>(CastOp1->getType())) &&
           (Op1->getType()->isInteger() || isa<PointerType>(Op1->getType()))
-          ) {
-        std::cerr << "Triggered\n";
+          ) 
         return BinaryOperator::create(I.getOpcode(), CastOp0, CastOp1);
-      }
     }
 
     // Handle the special case of: setcc (cast bool to X), <cst>
