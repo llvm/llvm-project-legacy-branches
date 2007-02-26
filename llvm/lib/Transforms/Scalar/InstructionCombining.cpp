@@ -5921,6 +5921,17 @@ Instruction *InstCombiner::visitCastInst(CastInst &CI) {
         }
       }
     }
+
+    //and x,c -> cast int to ptr ==> cast (GEP (cast x to sbyte*), 0 - (and x, ~c)) to ptr
+    if (SrcI->getOpcode() == Instruction::And && isa<PointerType>(CI.getType()) && SrcI->getType()->isInteger()
+        && isa<ConstantInt>(SrcI->getOperand(1))) {
+      Value* BC = InsertCastBefore(SrcI->getOperand(0), PointerType::get(Type::SByteTy), CI);
+      Value* Tp = InsertNewInstBefore(BinaryOperator::createNot(SrcI->getOperand(1)), CI);
+      Tp = InsertNewInstBefore(BinaryOperator::createAnd(SrcI->getOperand(0), Tp), CI);
+      Tp = InsertNewInstBefore(BinaryOperator::createSub(ConstantInt::get(SrcI->getType(), 0), Tp), CI);
+      Tp = InsertNewInstBefore(new GetElementPtrInst(BC, Tp), CI);
+      return new CastInst(Tp, CI.getType());
+    }
   }
       
   return 0;
