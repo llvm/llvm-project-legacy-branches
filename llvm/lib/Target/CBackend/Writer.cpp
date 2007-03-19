@@ -1246,6 +1246,14 @@ bool CWriter::doInitialization(Module &M) {
       if (StaticDtors.count(I))
         Out << " __ATTRIBUTE_DTOR__";
       
+#if 1
+      if ((I->getName() == "exactcheck") || (I->getName() == "exactcheck2") ||
+         (I->getName() == "poolcheck") ||
+         (I->getName() == "poolcheckarray") || (I->getName() == "poolcheckarray_i") ||
+         (I->getName() == "pchk_bounds") || (I->getName() == "pchk_bounds_i")) {
+        Out << " __attribute__ ((const))";
+      }
+#endif
       if (I->hasName() && I->getName()[0] == 1)
         Out << " LLVM_ASM(\"" << I->getName().c_str()+1 << "\")";
           
