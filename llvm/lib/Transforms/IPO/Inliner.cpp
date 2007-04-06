@@ -33,9 +33,24 @@ namespace {
   cl::opt<unsigned>             // FIXME: 200 is VERY conservative
   InlineLimit("inline-threshold", cl::Hidden, cl::init(200),
         cl::desc("Control the amount of inlining to perform (default = 200)"));
+
+  // NoInlineList - A list of functions that should *not* be inlined,
+  //                regardless of inlining policy
+  cl::list<std::string>
+  NoInlineList("no-inline", cl::value_desc("list"),
+          cl::desc("A list of functions that should not be inlined"),
+          cl::CommaSeparated);
+
+  // A set of the functions to preserve
+  std::set<std::string> PreserveFuncs;
 }
 
-Inliner::Inliner() : InlineThreshold(InlineLimit) {}
+Inliner::Inliner() : InlineThreshold(InlineLimit) {
+ // Create a set that contains a list of the functions that will not be
+ // inlined.
+ if (!(NoInlineList.empty()))
+  PreserveFuncs.insert (NoInlineList.begin(), NoInlineList.end());
+}
 
 // InlineCallIfPossible - If it is possible to inline the specified call site,
 // do so and update the CallGraph for this operation.
@@ -119,6 +134,15 @@ bool Inliner::runOnSCC(const std::vector<CallGraphNode*> &SCC) {
             // Keep the 'in SCC / not in SCC' boundary correct.
             CallSites.erase(CallSites.begin()+CSi);
           }
+          --CSi;
+          continue;
+        }
+
+        // Do not inline functions that we have explicity said we don't want to
+        // inline.
+        if (!PreserveFuncs.count ((Callee->getName()))) {
+          std::swap(CallSites[CSi], CallSites.back());
+          CallSites.pop_back();
           --CSi;
           continue;
         }
