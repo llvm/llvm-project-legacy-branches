@@ -1247,11 +1247,20 @@ bool CWriter::doInitialization(Module &M) {
         Out << " __ATTRIBUTE_DTOR__";
       
 #if 1
-      if ((I->getName() == "exactcheck") || (I->getName() == "exactcheck2") ||
-         (I->getName() == "poolcheck") ||
-         (I->getName() == "poolcheckarray") || (I->getName() == "poolcheckarray_i") ||
-         (I->getName() == "pchk_bounds") || (I->getName() == "pchk_bounds_i")) {
+      if ((I->getName() == "exactcheck") ||
+          (I->getName() == "exactcheck2") ||
+          (I->getName() == "exactcheck3"))
         Out << " __attribute__ ((const))";
+      if ((I->getName() == "poolcheck") ||
+          (I->getName() == "poolcheckarray") ||
+          (I->getName() == "poolcheckarray_i") ||
+          (I->getName() == "getBounds") ||
+          (I->getName() == "getBounds_i") ||
+          (I->getName() == "getBegin") ||
+          (I->getName() == "getEnd") ||
+          (I->getName() == "pchk_bounds") ||
+          (I->getName() == "pchk_bounds_i")) {
+        Out << " __attribute__ ((pure))";
       }
 #endif
       if (I->hasName() && I->getName()[0] == 1)
@@ -1453,6 +1462,7 @@ void CWriter::printFunctionSignature(const Function *F, bool Prototype) {
   bool isCStructReturn = F->getCallingConv() == CallingConv::CSRet;
   
   if (F->hasInternalLinkage()) Out << "static ";
+  if (F->isExternal()) Out << "extern ";
   if (F->hasDLLImportLinkage()) Out << "__declspec(dllimport) ";
   if (F->hasDLLExportLinkage()) Out << "__declspec(dllexport) ";  
   switch (F->getCallingConv()) {
