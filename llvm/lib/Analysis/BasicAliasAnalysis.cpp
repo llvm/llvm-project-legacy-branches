@@ -786,6 +786,9 @@ static const char *DoesntAccessMemoryFns[] = {
 
   // ISO C99:
   "__signbit", "__signbitf", "__signbitl",
+
+  //Kernel hack
+  "exactcheck1", "exactcheck2", "exactcheck3"
 };
 
 
@@ -810,7 +813,10 @@ static const char *OnlyReadsMemoryFns[] = {
 
   // File I/O
   "feof", "ferror", "fileno",
-  "feof_unlocked", "ferror_unlocked", "fileno_unlocked"
+  "feof_unlocked", "ferror_unlocked", "fileno_unlocked",
+
+  //Kernel hack
+  "getBounds", "getBegin", "getEnd"
 };
 
 static ManagedStatic<std::vector<const char*> > NoMemoryTable;
