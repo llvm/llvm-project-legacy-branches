@@ -54,9 +54,10 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   // PowerPC has an i16 but no i8 (or i1) SEXTLOAD
   setLoadXAction(ISD::SEXTLOAD, MVT::i1, Expand);
   setLoadXAction(ISD::SEXTLOAD, MVT::i8, Expand);
-    
-  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
-    
+  
+  // PowerPC does not have truncstore for i1.
+  setStoreXAction(MVT::i1, Promote);
+
   // PowerPC has pre-inc load and store's.
   setIndexedLoadAction(ISD::PRE_INC, MVT::i1, Legal);
   setIndexedLoadAction(ISD::PRE_INC, MVT::i8, Legal);
@@ -2170,7 +2171,7 @@ static SDOperand LowerSINT_TO_FP(SDOperand Op, SelectionDAG &DAG) {
     SDOperand Bits = DAG.getNode(ISD::BIT_CONVERT, MVT::f64, Op.getOperand(0));
     SDOperand FP = DAG.getNode(PPCISD::FCFID, MVT::f64, Bits);
     if (Op.getValueType() == MVT::f32)
-      FP = DAG.getNode(ISD::FP_ROUND, MVT::f32, FP, DAG.getIntPtrConstant(0));
+      FP = DAG.getNode(ISD::FP_ROUND, MVT::f32, FP);
     return FP;
   }
   
@@ -2198,7 +2199,7 @@ static SDOperand LowerSINT_TO_FP(SDOperand Op, SelectionDAG &DAG) {
   // FCFID it and return it.
   SDOperand FP = DAG.getNode(PPCISD::FCFID, MVT::f64, Ld);
   if (Op.getValueType() == MVT::f32)
-    FP = DAG.getNode(ISD::FP_ROUND, MVT::f32, FP, DAG.getIntPtrConstant(0));
+    FP = DAG.getNode(ISD::FP_ROUND, MVT::f32, FP);
   return FP;
 }
 
@@ -3169,8 +3170,7 @@ SDOperand PPCTargetLowering::PerformDAGCombine(SDNode *N,
           Val = DAG.getNode(PPCISD::FCFID, MVT::f64, Val);
           DCI.AddToWorklist(Val.Val);
           if (N->getValueType(0) == MVT::f32) {
-            Val = DAG.getNode(ISD::FP_ROUND, MVT::f32, Val, 
-                              DAG.getIntPtrConstant(0));
+            Val = DAG.getNode(ISD::FP_ROUND, MVT::f32, Val);
             DCI.AddToWorklist(Val.Val);
           }
           return Val;

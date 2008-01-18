@@ -301,22 +301,19 @@ public:
            getLoadXAction(LType, VT) == Custom;
   }
   
-  /// getTruncStoreAction - Return how this store with truncation should be
-  /// treated: either it is legal, needs to be promoted to a larger size, needs
-  /// to be expanded to some other code sequence, or the target has a custom
-  /// expander for it.
-  LegalizeAction getTruncStoreAction(MVT::ValueType ValVT, 
-                                     MVT::ValueType MemVT) const {
-    assert(ValVT < MVT::LAST_VALUETYPE && MemVT < 32 && 
-           "Table isn't big enough!");
-    return (LegalizeAction)((TruncStoreActions[ValVT] >> (2*MemVT)) & 3);
+  /// getStoreXAction - Return how this store with truncation should be treated:
+  /// either it is legal, needs to be promoted to a larger size, needs to be
+  /// expanded to some other code sequence, or the target has a custom expander
+  /// for it.
+  LegalizeAction getStoreXAction(MVT::ValueType VT) const {
+    if (MVT::isExtendedVT(VT)) return getTypeAction(VT);
+    return (LegalizeAction)((StoreXActions >> (2*VT)) & 3);
   }
   
-  /// isTruncStoreLegal - Return true if the specified store with truncation is
+  /// isStoreXLegal - Return true if the specified store with truncation is
   /// legal on this target.
-  bool isTruncStoreLegal(MVT::ValueType ValVT, MVT::ValueType MemVT) const {
-    return getTruncStoreAction(ValVT, MemVT) == Legal ||
-           getTruncStoreAction(ValVT, MemVT) == Custom;
+  bool isStoreXLegal(MVT::ValueType VT) const {
+    return getStoreXAction(VT) == Legal || getStoreXAction(VT) == Custom;
   }
 
   /// getIndexedLoadAction - Return how the indexed load should be treated:
@@ -763,14 +760,12 @@ protected:
     LoadXActions[ExtType] |= (uint64_t)Action << VT*2;
   }
   
-  /// setTruncStoreAction - Indicate that the specified truncating store does
+  /// setStoreXAction - Indicate that the specified store with truncation does
   /// not work with the with specified type and indicate what to do about it.
-  void setTruncStoreAction(MVT::ValueType ValVT, MVT::ValueType MemVT,
-                           LegalizeAction Action) {
-    assert(ValVT < MVT::LAST_VALUETYPE && MemVT < 32 && 
-           "Table isn't big enough!");
-    TruncStoreActions[ValVT] &= ~(uint64_t(3UL) << MemVT*2);
-    TruncStoreActions[ValVT] |= (uint64_t)Action << MemVT*2;
+  void setStoreXAction(MVT::ValueType VT, LegalizeAction Action) {
+    assert(VT < 32 && "Table isn't big enough!");
+    StoreXActions &= ~(uint64_t(3UL) << VT*2);
+    StoreXActions |= (uint64_t)Action << VT*2;
   }
 
   /// setIndexedLoadAction - Indicate that the specified indexed load does or
@@ -1188,9 +1183,10 @@ private:
   /// with the load.
   uint64_t LoadXActions[ISD::LAST_LOADX_TYPE];
   
-  /// TruncStoreActions - For each truncating store, keep a LegalizeAction that
-  /// indicates how instruction selection should deal with the store.
-  uint64_t TruncStoreActions[MVT::LAST_VALUETYPE];
+  /// StoreXActions - For each store with truncation of each value type, keep a
+  /// LegalizeAction that indicates how instruction selection should deal with
+  /// the store.
+  uint64_t StoreXActions;
 
   /// IndexedModeActions - For each indexed mode and each value type, keep a
   /// pair of LegalizeAction that indicates how instruction selection should

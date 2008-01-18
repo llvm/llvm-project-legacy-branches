@@ -137,21 +137,13 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
   setLoadXAction(ISD::EXTLOAD,  MVT::i1, Promote);
   setLoadXAction(ISD::SEXTLOAD, MVT::i1, Promote);
   setLoadXAction(ISD::ZEXTLOAD, MVT::i1, Promote);
-  setTruncStoreAction(MVT::i8, MVT::i1, Custom);
-  setTruncStoreAction(MVT::i16, MVT::i1, Custom);
-  setTruncStoreAction(MVT::i32, MVT::i1, Custom);
-  setTruncStoreAction(MVT::i64, MVT::i1, Custom);
-  setTruncStoreAction(MVT::i128, MVT::i1, Custom);
+  setStoreXAction(MVT::i1, Custom);
 
   setLoadXAction(ISD::EXTLOAD,  MVT::i8, Custom);
   setLoadXAction(ISD::SEXTLOAD, MVT::i8, Custom);
   setLoadXAction(ISD::ZEXTLOAD, MVT::i8, Custom);
-  setTruncStoreAction(MVT::i8  , MVT::i8, Custom);
-  setTruncStoreAction(MVT::i16 , MVT::i8, Custom);
-  setTruncStoreAction(MVT::i32 , MVT::i8, Custom);
-  setTruncStoreAction(MVT::i64 , MVT::i8, Custom);
-  setTruncStoreAction(MVT::i128, MVT::i8, Custom);
-  
+  setStoreXAction(MVT::i8, Custom);
+
   setLoadXAction(ISD::EXTLOAD,  MVT::i16, Custom);
   setLoadXAction(ISD::SEXTLOAD, MVT::i16, Custom);
   setLoadXAction(ISD::ZEXTLOAD, MVT::i16, Custom);

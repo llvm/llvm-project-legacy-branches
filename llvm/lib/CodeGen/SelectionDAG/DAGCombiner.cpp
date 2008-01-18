@@ -135,7 +135,6 @@ namespace {
       SDOperand To[] = { Res0, Res1 };
       return CombineTo(N, To, 2, AddTo);
     }
-    
   private:    
     
     /// SimplifyDemandedBits - Check the specified integer node value to see if
@@ -461,13 +460,10 @@ static SDOperand GetNegatedExpression(SDOperand Op, SelectionDAG &DAG,
                        GetNegatedExpression(Op.getOperand(1), DAG, Depth+1));
     
   case ISD::FP_EXTEND:
+  case ISD::FP_ROUND:
   case ISD::FSIN:
     return DAG.getNode(Op.getOpcode(), Op.getValueType(),
                        GetNegatedExpression(Op.getOperand(0), DAG, Depth+1));
-  case ISD::FP_ROUND:
-      return DAG.getNode(ISD::FP_ROUND, Op.getValueType(),
-                         GetNegatedExpression(Op.getOperand(0), DAG, Depth+1),
-                         Op.getOperand(1));
   }
 }
 
@@ -1690,7 +1686,8 @@ SDOperand DAGCombiner::visitAND(SDNode *N) {
   if (N1C && N0.getOpcode() == ISD::LOAD) {
     LoadSDNode *LN0 = cast<LoadSDNode>(N0);
     if (LN0->getExtensionType() != ISD::SEXTLOAD &&
-        LN0->isUnindexed() && N0.hasOneUse()) {
+        LN0->getAddressingMode() == ISD::UNINDEXED &&
+        N0.hasOneUse()) {
       MVT::ValueType EVT, LoadedVT;
       if (N1C->getValue() == 255)
         EVT = MVT::i8;
@@ -3636,13 +3633,12 @@ SDOperand DAGCombiner::visitFP_TO_UINT(SDNode *N) {
 
 SDOperand DAGCombiner::visitFP_ROUND(SDNode *N) {
   SDOperand N0 = N->getOperand(0);
-  SDOperand N1 = N->getOperand(1);
   ConstantFPSDNode *N0CFP = dyn_cast<ConstantFPSDNode>(N0);
   MVT::ValueType VT = N->getValueType(0);
   
   // fold (fp_round c1fp) -> c1fp
   if (N0CFP && N0.getValueType() != MVT::ppcf128)
-    return DAG.getNode(ISD::FP_ROUND, VT, N0, N1);
+    return DAG.getNode(ISD::FP_ROUND, VT, N0);
   
   // fold (fp_round (fp_extend x)) -> x
   if (N0.getOpcode() == ISD::FP_EXTEND && VT == N0.getOperand(0).getValueType())
@@ -3650,7 +3646,7 @@ SDOperand DAGCombiner::visitFP_ROUND(SDNode *N) {
   
   // fold (fp_round (copysign X, Y)) -> (copysign (fp_round X), Y)
   if (N0.getOpcode() == ISD::FCOPYSIGN && N0.Val->hasOneUse()) {
-    SDOperand Tmp = DAG.getNode(ISD::FP_ROUND, VT, N0.getOperand(0), N1);
+    SDOperand Tmp = DAG.getNode(ISD::FP_ROUND, VT, N0.getOperand(0));
     AddToWorkList(Tmp.Val);
     return DAG.getNode(ISD::FCOPYSIGN, VT, Tmp, N0.getOperand(1));
   }
@@ -3680,22 +3676,12 @@ SDOperand DAGCombiner::visitFP_EXTEND(SDNode *N) {
   // If this is fp_round(fpextend), don't fold it, allow ourselves to be folded.
   if (N->hasOneUse() && (*N->use_begin())->getOpcode() == ISD::FP_ROUND)
     return SDOperand();
-
+  
   // fold (fp_extend c1fp) -> c1fp
   if (N0CFP && VT != MVT::ppcf128)
     return DAG.getNode(ISD::FP_EXTEND, VT, N0);
-
-  // Turn fp_extend(fp_round(X, 1)) -> x since the fp_round doesn't affect the
-  // value of X.
-  if (N0.getOpcode() == ISD::FP_ROUND && N0.Val->getConstantOperandVal(1) == 1){
-    SDOperand In = N0.getOperand(0);
-    if (In.getValueType() == VT) return In;
-    if (VT < In.getValueType())
-      return DAG.getNode(ISD::FP_ROUND, VT, In, N0.getOperand(1));
-    return DAG.getNode(ISD::FP_EXTEND, VT, In);
-  }
-      
-  // fold (fpext (load x)) -> (fpext (fptrunc (extload x)))
+  
+  // fold (fpext (load x)) -> (fpext (fpround (extload x)))
   if (ISD::isNON_EXTLoad(N0.Val) && N0.hasOneUse() &&
       (!AfterLegalize||TLI.isLoadXLegal(ISD::EXTLOAD, N0.getValueType()))) {
     LoadSDNode *LN0 = cast<LoadSDNode>(N0);
@@ -3706,8 +3692,7 @@ SDOperand DAGCombiner::visitFP_EXTEND(SDNode *N) {
                                        LN0->isVolatile(), 
                                        LN0->getAlignment());
     CombineTo(N, ExtLoad);
-    CombineTo(N0.Val, DAG.getNode(ISD::FP_ROUND, N0.getValueType(), ExtLoad,
-                                  DAG.getIntPtrConstant(1)),
+    CombineTo(N0.Val, DAG.getNode(ISD::FP_ROUND, N0.getValueType(), ExtLoad),
               ExtLoad.getValue(1));
     return SDOperand(N, 0);   // Return N so it doesn't get rechecked!
   }
@@ -3809,7 +3794,7 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
   SDOperand Ptr;
   MVT::ValueType VT;
   if (LoadSDNode *LD  = dyn_cast<LoadSDNode>(N)) {
-    if (LD->isIndexed())
+    if (LD->getAddressingMode() != ISD::UNINDEXED)
       return false;
     VT = LD->getLoadedVT();
     if (!TLI.isIndexedLoadLegal(ISD::PRE_INC, VT) &&
@@ -3817,7 +3802,7 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
       return false;
     Ptr = LD->getBasePtr();
   } else if (StoreSDNode *ST  = dyn_cast<StoreSDNode>(N)) {
-    if (ST->isIndexed())
+    if (ST->getAddressingMode() != ISD::UNINDEXED)
       return false;
     VT = ST->getStoredVT();
     if (!TLI.isIndexedStoreLegal(ISD::PRE_INC, VT) &&
@@ -3936,7 +3921,7 @@ bool DAGCombiner::CombineToPostIndexedLoadStore(SDNode *N) {
   SDOperand Ptr;
   MVT::ValueType VT;
   if (LoadSDNode *LD  = dyn_cast<LoadSDNode>(N)) {
-    if (LD->isIndexed())
+    if (LD->getAddressingMode() != ISD::UNINDEXED)
       return false;
     VT = LD->getLoadedVT();
     if (!TLI.isIndexedLoadLegal(ISD::POST_INC, VT) &&
@@ -3944,7 +3929,7 @@ bool DAGCombiner::CombineToPostIndexedLoadStore(SDNode *N) {
       return false;
     Ptr = LD->getBasePtr();
   } else if (StoreSDNode *ST  = dyn_cast<StoreSDNode>(N)) {
-    if (ST->isIndexed())
+    if (ST->getAddressingMode() != ISD::UNINDEXED)
       return false;
     VT = ST->getStoredVT();
     if (!TLI.isIndexedStoreLegal(ISD::POST_INC, VT) &&
@@ -4186,7 +4171,7 @@ SDOperand DAGCombiner::visitSTORE(SDNode *N) {
   // If this is a store of a bit convert, store the input value if the
   // resultant store does not need a higher alignment than the original.
   if (Value.getOpcode() == ISD::BIT_CONVERT && !ST->isTruncatingStore() &&
-      ST->isUnindexed()) {
+      ST->getAddressingMode() == ISD::UNINDEXED) {
     unsigned Align = ST->getAlignment();
     MVT::ValueType SVT = Value.getOperand(0).getValueType();
     unsigned OrigAlign = TLI.getTargetMachine().getTargetData()->
@@ -4284,7 +4269,7 @@ SDOperand DAGCombiner::visitSTORE(SDNode *N) {
     return SDOperand(N, 0);
 
   // FIXME: is there such a thing as a truncating indexed store?
-  if (ST->isTruncatingStore() && ST->isUnindexed() &&
+  if (ST->isTruncatingStore() && ST->getAddressingMode() == ISD::UNINDEXED &&
       MVT::isInteger(Value.getValueType())) {
     // See if we can simplify the input to this truncstore with knowledge that
     // only the low bits are being used.  For example:
@@ -4307,25 +4292,14 @@ SDOperand DAGCombiner::visitSTORE(SDNode *N) {
   // is dead/noop.
   if (LoadSDNode *Ld = dyn_cast<LoadSDNode>(Value)) {
     if (Ld->getBasePtr() == Ptr && ST->getStoredVT() == Ld->getLoadedVT() &&
-        ST->isUnindexed() && !ST->isVolatile() &&
+        ST->getAddressingMode() == ISD::UNINDEXED &&
+        !ST->isVolatile() &&
         // There can't be any side effects between the load and store, such as
         // a call or store.
         Chain.reachesChainWithoutSideEffects(SDOperand(Ld, 1))) {
       // The store is dead, remove it.
       return Chain;
     }
-  }
-  
-  // If this is an FP_ROUND or TRUNC followed by a store, fold this into a
-  // truncating store.  We can do this even if this is already a truncstore.
-  if ((Value.getOpcode() == ISD::FP_ROUND || Value.getOpcode() == ISD::TRUNCATE)
-      && TLI.isTypeLegal(Value.getOperand(0).getValueType()) &&
-      Value.Val->hasOneUse() && ST->isUnindexed() &&
-      TLI.isTruncStoreLegal(Value.getOperand(0).getValueType(),
-                            ST->getStoredVT())) {
-    return DAG.getTruncStore(Chain, Value.getOperand(0), Ptr, ST->getSrcValue(),
-                             ST->getSrcValueOffset(), ST->getStoredVT(),
-                             ST->isVolatile(), ST->getAlignment());
   }
   
   return SDOperand();
@@ -4463,11 +4437,13 @@ SDOperand DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
 
       // Otherwise, use InIdx + VecSize
       unsigned Idx = cast<ConstantSDNode>(Extract.getOperand(1))->getValue();
-      BuildVecIndices.push_back(DAG.getIntPtrConstant(Idx+NumInScalars));
+      BuildVecIndices.push_back(DAG.getConstant(Idx+NumInScalars,
+                                                TLI.getPointerTy()));
     }
     
     // Add count and size info.
-    MVT::ValueType BuildVecVT = MVT::getVectorType(TLI.getPointerTy(), NumElts);
+    MVT::ValueType BuildVecVT =
+      MVT::getVectorType(TLI.getPointerTy(), NumElts);
     
     // Return the new VECTOR_SHUFFLE node.
     SDOperand Ops[5];
