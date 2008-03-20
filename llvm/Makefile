@@ -41,14 +41,20 @@ endif
 IGNORE_TESTS += $(filter-out $(BINDINGS_TO_BUILD:=.exp),$(ALL_BINDINGS:=.exp))
 
 ifdef IGNORE_TESTS
-RUNTESTFLAGS += --ignore "$(strip $(IGNORE_TESTS))"
+IGNORE_TESTS := $(strip $(IGNORE_TESTS))
+RUNTESTFLAGS += --ignore "$(IGNORE_TESTS)"
 endif
 
 ifneq ($(RUNTEST),)
+%.makefile.out: %.makefile
+	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
+	cat $@
+
 check-local:: site.exp
-	( ulimit -t 600 ; ulimit -d 512000 ; \
+	- ( ulimit -t 600 ; ulimit -d 512000 ; \
 	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
 	  $(RUNTEST) $(RUNTESTFLAGS) )
+	$(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(CLEANED_TESTSUITE) -name Test.makefile))
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."

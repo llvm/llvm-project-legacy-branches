@@ -112,7 +112,9 @@ proc RunLLVMTests { test_source_files } {
 	puts $makeFileId "\t@ (echo source \$(LLVM_OBJ_ROOT)/test/site.exp; \\"
 	puts $makeFileId "\t   echo source \$(LLVM_SRC_ROOT)/test/lib/llvm.exp; \\"
 	puts $makeFileId "\t   echo proc fail { msg } { puts '\"FAIL: \$\$msg\"' }; \\"
+	puts $makeFileId "\t   echo proc xfail { msg } { puts '\"XFAIL: \$\$msg\"' }; \\"
 	puts $makeFileId "\t   echo proc pass { msg } { puts '\"PASS: \$\$msg\"' }; \\"
+	puts $makeFileId "\t   echo proc xpass { msg } { puts '\"XPASS: \$\$msg\"' }; \\"
 	puts $makeFileId "\t   echo proc verbose { msg level } { puts '\"\$\$msg\"' }; \\"
 	puts $makeFileId "\t   echo set subdir \$(SUBDIR); \\"
 
