@@ -214,7 +214,7 @@ proc run_one_test { test } {
 			}
 		}
 		if { $failed } {
-			continue
+			return
 		} else {
 			if { $PRNUMS != "" } {
 				set PRNUMS " for $PRNUMS"
