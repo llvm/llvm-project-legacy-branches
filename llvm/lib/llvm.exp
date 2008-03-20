@@ -97,9 +97,49 @@ proc RunLLVMTests { test_source_files } {
   file mkdir Output
   cd Output
 
+	# Create the makefile that can be invoked in a parallel manner.
+	set makeFilePath [file join $path Output/Test.makefile]
+	set makeFileId [open $makeFilePath w]
+	puts $makeFileId "\# THIS FILE IS GENERATED. DO NOT EDIT"
+	puts $makeFileId ""
+	puts $makeFileId "include [file join $srcroot Makefile.config]"
+	puts $makeFileId ""
+	puts $makeFileId "SUBDIR = $subdir"
+	puts $makeFileId ""
+	puts $makeFileId "%.testresults: [file join $path %]"
+	puts $makeFileId "\t@ (echo source \$(LLVM_OBJ_ROOT)/test/site.exp; \\"
+	puts $makeFileId "\t   echo source \$(LLVM_SRC_ROOT)/test/lib/llvm.exp; \\"
+	puts $makeFileId "\t   echo proc fail { msg } { puts '\"FAIL: \$\$msg\"' }; \\"
+	puts $makeFileId "\t   echo proc pass { msg } { puts '\"PASS: \$\$msg\"' }; \\"
+	puts $makeFileId "\t   echo proc verbose { msg level } { puts '\"\$\$msg\"' }; \\"
+	puts $makeFileId "\t   echo set subdir \$(SUBDIR); \\"
+
+	puts $makeFileId "\t   echo run_one_test \$<) | \\"
+	puts $makeFileId "\t  (ulimit -t 600; \\"
+	puts $makeFileId "\t   ulimit -d 512000; \\"
+	puts $makeFileId "\t   PATH=\"/home/ggreif/llvm/Debug/bin:\$(LLVM_SRC_ROOT)/test/Scripts:\$(PATH)\" \$(TCLSH)) > \$@"
+	puts $makeFileId ""
+	puts $makeFileId ""
+	puts $makeFileId "TESTS = \\"
+
   foreach test $test_source_files {
-      run_one_test "$test"
+		run_one_test "$test"
+		output_one_test "$test" $makeFileId
   }
+
+	puts $makeFileId ""
+	puts $makeFileId "Test.makefile.out: \$(TESTS)"
+	puts $makeFileId "\t@ cat \$(TESTS) > \$@"
+	puts $makeFileId "\t@ touch \$@"
+	puts $makeFileId ""
+
+	close $makeFileId
+}
+
+# This procedure adds just one test to the makefile.
+proc output_one_test { test makeFileId } {
+    set testresults [file tail "$test.testresults"]
+    puts $makeFileId "   $testresults \\"
 }
 
 # This procedure runs just one test from the test_source_files array.
