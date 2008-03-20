@@ -98,6 +98,13 @@ proc RunLLVMTests { test_source_files } {
   cd Output
 
   foreach test $test_source_files {
+      run_one_test "$test"
+  }
+}
+
+# This procedure runs just one test from the test_source_files array.
+proc run_one_test { test } {
+  global srcroot objroot srcdir objdir subdir target_triplet llvmgcc_version
     #Should figure out best way to set the timeout
     #set timeout 40
     
@@ -219,7 +226,6 @@ proc RunLLVMTests { test_source_files } {
         }
       }
     }
-  }
 }
 
 # This procedure provides an interface to check the LLVMGCC_LANGS makefile
