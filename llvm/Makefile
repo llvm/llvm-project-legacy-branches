@@ -30,6 +30,9 @@ ifdef TESTSUITE
 CLEANED_TESTSUITE := $(patsubst %/,%,$(TESTSUITE))
 CLEANED_TESTSUITE := $(patsubst test/%,%,$(CLEANED_TESTSUITE))
 RUNTESTFLAGS += --tool $(CLEANED_TESTSUITE)
+TESTDIRS = $(CLEANED_TESTSUITE)
+else
+TESTDIRS = .
 endif
 
 IGNORE_TESTS :=
@@ -54,7 +57,7 @@ check-local:: site.exp
 	- ( ulimit -t 600 ; ulimit -d 512000 ; \
 	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
 	  $(RUNTEST) $(RUNTESTFLAGS) )
-	$(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(CLEANED_TESTSUITE) -name Test.makefile))
+	$(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."
