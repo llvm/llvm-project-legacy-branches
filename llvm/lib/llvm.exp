@@ -98,11 +98,13 @@ proc RunLLVMTests { test_source_files } {
   cd Output
 
 	# Create the makefile that can be invoked in a parallel manner.
-	set makeFilePath [file join $path Output/Test.makefile]
+	set makeFilePath [file join $path Output Test.makefile]
 	set makeFileId [open $makeFilePath w]
 	puts $makeFileId "\# THIS FILE IS GENERATED. DO NOT EDIT"
 	puts $makeFileId ""
+	puts $makeFileId ""
 	puts $makeFileId "include [file join $srcroot Makefile.config]"
+	puts $makeFileId "include [file join $srcroot Makefile.rules]"
 	puts $makeFileId ""
 	puts $makeFileId "SUBDIR = $subdir"
 	puts $makeFileId ""
@@ -117,7 +119,7 @@ proc RunLLVMTests { test_source_files } {
 	puts $makeFileId "\t   echo run_one_test \$<) | \\"
 	puts $makeFileId "\t  (ulimit -t 600; \\"
 	puts $makeFileId "\t   ulimit -d 512000; \\"
-	puts $makeFileId "\t   PATH=\"/home/ggreif/llvm/Debug/bin:\$(LLVM_SRC_ROOT)/test/Scripts:\$(PATH)\" \$(TCLSH)) > \$@"
+	puts $makeFileId "\t   PATH=\"\$(LLVMToolDir):\$(LLVM_SRC_ROOT)/test/Scripts:\$(PATH)\" \$(TCLSH)) > \$@"
 	puts $makeFileId ""
 	puts $makeFileId ""
 	puts $makeFileId "TESTS = \\"
