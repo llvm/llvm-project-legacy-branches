@@ -109,6 +109,7 @@ proc RunLLVMTests { test_source_files } {
 	puts $makeFileId "SUBDIR = $subdir"
 	puts $makeFileId ""
 	puts $makeFileId "%.testresults: [file join $path %]"
+        puts $makeFileId "\t@ printf '.'"
 	puts $makeFileId "\t@ (echo source \$(LLVM_OBJ_ROOT)/test/site.exp; \\"
 	puts $makeFileId "\t   echo source \$(LLVM_SRC_ROOT)/test/lib/llvm.exp; \\"
 	puts $makeFileId "\t   echo proc fail { msg } { puts '\"FAIL: \$\$msg\"' }; \\"
@@ -127,12 +128,13 @@ proc RunLLVMTests { test_source_files } {
 	puts $makeFileId "TESTS = \\"
 
   foreach test $test_source_files {
-		run_one_test "$test"
+		# run_one_test "$test"
 		output_one_test "$test" $makeFileId
   }
 
 	puts $makeFileId ""
 	puts $makeFileId "Test.makefile.out: \$(TESTS)"
+        puts $makeFileId "\t@ printf '\\n---- testing $subdir ---\\n'"
 	puts $makeFileId "\t@ cat \$(TESTS) > \$@"
 	puts $makeFileId "\t@ touch \$@"
 	puts $makeFileId ""

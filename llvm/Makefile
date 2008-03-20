@@ -51,7 +51,7 @@ endif
 ifneq ($(RUNTEST),)
 %.makefile.out: %.makefile
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
-	cat $@
+#	cat $@
 
 check-local:: site.exp
 	- ( ulimit -t 600 ; ulimit -d 512000 ; \
