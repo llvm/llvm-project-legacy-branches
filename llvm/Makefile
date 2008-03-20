@@ -53,11 +53,16 @@ ifneq ($(RUNTEST),)
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
 #	cat $@
 
+report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+	@ cat $^
+
+.PHONY: report
+
 check-local:: site.exp
-	- ( ulimit -t 600 ; ulimit -d 512000 ; \
+	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
 	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
 	  $(RUNTEST) $(RUNTESTFLAGS) )
-	$(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."
