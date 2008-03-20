@@ -81,7 +81,7 @@ proc substitute { line test tmpFile } {
 
 # This procedure runs the set of tests for the test_source_files array.
 proc RunLLVMTests { test_source_files } {
-  global srcroot objroot srcdir objdir subdir target_triplet llvmgcc_version
+  global srcroot objroot srcdir objdir subdir
   set timeout 60
 
   set path [file join $objdir $subdir]
@@ -104,128 +104,128 @@ proc RunLLVMTests { test_source_files } {
 
 # This procedure runs just one test from the test_source_files array.
 proc run_one_test { test } {
-  global srcroot objroot srcdir objdir subdir target_triplet llvmgcc_version
-    #Should figure out best way to set the timeout
-    #set timeout 40
-    
-    set filename [file tail $test]
-    verbose "ABOUT TO RUN: $filename" 2
-    set outcome PASS
-    set tmpFile "$filename.tmp"
-    
-    # Mark that it should not be XFAIL for this target.
-    set targetPASS 0
-    
-    #set hasRunline bool to check if testcase has a runline
-    set numLines 0
+  global target_triplet llvmgcc_version
+	#Should figure out best way to set the timeout
+	#set timeout 40
+	
+	set filename [file tail $test]
+	verbose "ABOUT TO RUN: $filename" 2
+	set outcome PASS
+	set tmpFile "$filename.tmp"
+	
+	# Mark that it should not be XFAIL for this target.
+	set targetPASS 0
+	
+	#set hasRunline bool to check if testcase has a runline
+	set numLines 0
 
-    # Open the test file and start reading lines
-    set testFileId [ open $test r]
-    set runline ""
-    set PRNUMS ""
-    foreach line [split [read $testFileId] \n] {
+	# Open the test file and start reading lines
+	set testFileId [ open $test r]
+	set runline ""
+	set PRNUMS ""
+	foreach line [split [read $testFileId] \n] {
 
-      # if its the END. line then stop parsing (optimization for big files)
-      if {[regexp {END.[[:space:]]*$} $line match endofscript]} {        
-        break
+		# if its the END. line then stop parsing (optimization for big files)
+		if {[regexp {END.[[:space:]]*$} $line match endofscript]} {        
+			break
 
       # if the line is continued, concatenate and continue the loop
-      } elseif {[regexp {RUN: *(.+)(\\)$} $line match oneline suffix]} {
-        set runline "$runline$oneline "
+		} elseif {[regexp {RUN: *(.+)(\\)$} $line match oneline suffix]} {
+			set runline "$runline$oneline "
 
       # if its a terminating RUN: line then do substitution on the whole line
       # and then save the line. 
-      } elseif {[regexp {RUN: *(.+)$} $line match oneline suffix]} {
-        set runline "$runline$oneline"
-        set runline [ substitute $runline $test $tmpFile ]
-        set lines($numLines) $runline
-        set numLines [expr $numLines + 1]
-        set runline ""
+		} elseif {[regexp {RUN: *(.+)$} $line match oneline suffix]} {
+			set runline "$runline$oneline"
+			set runline [ substitute $runline $test $tmpFile ]
+			set lines($numLines) $runline
+			set numLines [expr $numLines + 1]
+			set runline ""
 
       # if its an PR line, save the problem report number
-      } elseif {[regexp {PR([0-9]+)} $line match prnum]} {
-        if {$PRNUMS == ""} {
-          set PRNUMS "PR$prnum"
-        } else {
-          set PRNUMS "$PRNUMS,$prnum"
-        }
+		} elseif {[regexp {PR([0-9]+)} $line match prnum]} {
+			if {$PRNUMS == ""} {
+				set PRNUMS "PR$prnum"
+			} else {
+				set PRNUMS "$PRNUMS,$prnum"
+			}
       # if its an XFAIL line, see if we should be XFAILing or not.
-      } elseif {[regexp {XFAIL:[ *](.+)} $line match targets]} {
-        set targets
+		} elseif {[regexp {XFAIL:[ *](.+)} $line match targets]} {
+			set targets
 
-        #split up target if more then 1 specified
-        foreach target [split $targets ,] {
-          if { [regexp {\*} $target match] } {
-              if {$targetPASS != 1} {
-                 set outcome XFAIL
-              }
-          } elseif { [regexp $target $target_triplet match] } {
-              if {$targetPASS != 1} {
-                 set outcome XFAIL
-              }
-          } elseif { [regexp {llvmgcc(([0-9]+)|([0-9]+[.][0-9]+))} $target match submatch submatch2]  } {
-            if { [regexp ^($submatch)$|^(($submatch)(\.)) $llvmgcc_version match] } {
-              if {$targetPASS != 1} {
-                 set outcome XFAIL
-              }
-            }
-          }
-        }
-      } elseif {[regexp {XTARGET:[ *](.+)} $line match targets]} {
-        set targets
+			#split up target if more then 1 specified
+			foreach target [split $targets ,] {
+				if { [regexp {\*} $target match] } {
+					if {$targetPASS != 1} {
+						set outcome XFAIL
+					}
+				} elseif { [regexp $target $target_triplet match] } {
+					if {$targetPASS != 1} {
+						set outcome XFAIL
+					}
+				} elseif { [regexp {llvmgcc(([0-9]+)|([0-9]+[.][0-9]+))} $target match submatch submatch2]  } {
+					if { [regexp ^($submatch)$|^(($submatch)(\.)) $llvmgcc_version match] } {
+						if {$targetPASS != 1} {
+							set outcome XFAIL
+						}
+					}
+				}
+			}
+		} elseif {[regexp {XTARGET:[ *](.+)} $line match targets]} {
+			set targets
 
-        #split up target if more then 1 specified
-        foreach target [split $targets ,] {
-          if { [regexp {\*} $target match] } {
-              set targetPASS 1
-              set outcome PASS
-          } elseif { [regexp $target $target_triplet match] } {
-              set targetPASS 1
-              set outcome PASS
-          } elseif { [regexp {llvmgcc(([0-9]+)|([0-9]+[.][0-9]+))} $target match submatch submatch2]  } {
-            if { [regexp ^($submatch)$|^(($submatch)(\.)) $llvmgcc_version match] } {
-              set targetPASS 1
-              set outcome PASS
-            }
-          }
-        }
-      }
-    }
-    
-    # Done reading the script
-    close $testFileId
-    
-    
-    if { $numLines == 0 } {
-      fail "$test: \nDoes not have a RUN line\n"
-    } else {
-      set failed 0
-      for { set i 0 } { $i < $numLines } { set i [ expr $i + 1 ] } {
-        regsub ^.*RUN:(.*) $lines($i) \1 theLine
-        set resultmsg [execOneLine $test $PRNUMS $outcome $i $theLine ]
-        if { $resultmsg != "" } {
-          if { $outcome == "XFAIL" } {
-            xfail "$resultmsg"
-          } else {
-            fail "$resultmsg"
-          }
-          set failed 1
-          break
-        }
-      }
-      if { $failed } {
-        continue
-      } else {
-        if { $PRNUMS != "" } {
-          set PRNUMS " for $PRNUMS"
-        }
-        if { $outcome == "XFAIL" } {
-          xpass "$test$PRNUMS"
-        } else {
-          pass "$test$PRNUMS"
-        }
-      }
-    }
+			#split up target if more then 1 specified
+			foreach target [split $targets ,] {
+				if { [regexp {\*} $target match] } {
+					set targetPASS 1
+					set outcome PASS
+				} elseif { [regexp $target $target_triplet match] } {
+					set targetPASS 1
+					set outcome PASS
+				} elseif { [regexp {llvmgcc(([0-9]+)|([0-9]+[.][0-9]+))} $target match submatch submatch2]  } {
+					if { [regexp ^($submatch)$|^(($submatch)(\.)) $llvmgcc_version match] } {
+						set targetPASS 1
+						set outcome PASS
+					}
+				}
+			}
+		}
+	}
+	
+	# Done reading the script
+	close $testFileId
+	
+	
+	if { $numLines == 0 } {
+		fail "$test: \nDoes not have a RUN line\n"
+	} else {
+		set failed 0
+		for { set i 0 } { $i < $numLines } { set i [ expr $i + 1 ] } {
+			regsub ^.*RUN:(.*) $lines($i) \1 theLine
+			set resultmsg [execOneLine $test $PRNUMS $outcome $i $theLine ]
+			if { $resultmsg != "" } {
+				if { $outcome == "XFAIL" } {
+					xfail "$resultmsg"
+				} else {
+					fail "$resultmsg"
+				}
+				set failed 1
+				break
+			}
+		}
+		if { $failed } {
+			continue
+		} else {
+			if { $PRNUMS != "" } {
+				set PRNUMS " for $PRNUMS"
+			}
+			if { $outcome == "XFAIL" } {
+				xpass "$test$PRNUMS"
+			} else {
+				pass "$test$PRNUMS"
+			}
+		}
+	}
 }
 
 # This procedure provides an interface to check the LLVMGCC_LANGS makefile
