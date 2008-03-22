@@ -410,8 +410,13 @@ namespace {
 /// UnaryConstantExpr - This class is private to Constants.cpp, and is used
 /// behind the scenes to implement unary constant exprs.
 class VISIBILITY_HIDDEN UnaryConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Op;
 public:
+  // allocate space for exactly one operand
+  void *operator new(size_t s) {
+    return User::operator new(s, 1);
+  }
   UnaryConstantExpr(unsigned Opcode, Constant *C, const Type *Ty)
     : ConstantExpr(Ty, Opcode, &Op, 1), Op(C, this) {}
 };
@@ -419,8 +424,13 @@ public:
 /// BinaryConstantExpr - This class is private to Constants.cpp, and is used
 /// behind the scenes to implement binary constant exprs.
 class VISIBILITY_HIDDEN BinaryConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[2];
 public:
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2);
+  }
   BinaryConstantExpr(unsigned Opcode, Constant *C1, Constant *C2)
     : ConstantExpr(C1->getType(), Opcode, Ops, 2) {
     Ops[0].init(C1, this);
@@ -431,8 +441,13 @@ public:
 /// SelectConstantExpr - This class is private to Constants.cpp, and is used
 /// behind the scenes to implement select constant exprs.
 class VISIBILITY_HIDDEN SelectConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[3];
 public:
+  // allocate space for exactly three operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 3);
+  }
   SelectConstantExpr(Constant *C1, Constant *C2, Constant *C3)
     : ConstantExpr(C2->getType(), Instruction::Select, Ops, 3) {
     Ops[0].init(C1, this);
@@ -445,8 +460,13 @@ public:
 /// Constants.cpp, and is used behind the scenes to implement
 /// extractelement constant exprs.
 class VISIBILITY_HIDDEN ExtractElementConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[2];
 public:
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2);
+  }
   ExtractElementConstantExpr(Constant *C1, Constant *C2)
     : ConstantExpr(cast<VectorType>(C1->getType())->getElementType(), 
                    Instruction::ExtractElement, Ops, 2) {
@@ -459,8 +479,13 @@ public:
 /// Constants.cpp, and is used behind the scenes to implement
 /// insertelement constant exprs.
 class VISIBILITY_HIDDEN InsertElementConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[3];
 public:
+  // allocate space for exactly three operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 3);
+  }
   InsertElementConstantExpr(Constant *C1, Constant *C2, Constant *C3)
     : ConstantExpr(C1->getType(), Instruction::InsertElement, 
                    Ops, 3) {
@@ -474,8 +499,13 @@ public:
 /// Constants.cpp, and is used behind the scenes to implement
 /// shufflevector constant exprs.
 class VISIBILITY_HIDDEN ShuffleVectorConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[3];
 public:
+  // allocate space for exactly three operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 3);
+  }
   ShuffleVectorConstantExpr(Constant *C1, Constant *C2, Constant *C3)
   : ConstantExpr(C1->getType(), Instruction::ShuffleVector, 
                  Ops, 3) {
@@ -505,6 +535,11 @@ struct VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
 // behind the scenes to implement ICmp and FCmp constant expressions. This is
 // needed in order to store the predicate value for these instructions.
 struct VISIBILITY_HIDDEN CompareConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2);
+  }
   unsigned short predicate;
   Use Ops[2];
   CompareConstantExpr(Instruction::OtherOps opc, unsigned short pred, 
@@ -771,7 +806,8 @@ namespace llvm {
   template<class ConstantClass, class TypeClass, class ValType>
   struct VISIBILITY_HIDDEN ConstantCreator {
     static ConstantClass *create(const TypeClass *Ty, const ValType &V) {
-      return new ConstantClass(Ty, V);
+      unsigned FIXME; // = traits<ValType>::uses(V)
+      return new(FIXME) ConstantClass(Ty, V);
     }
   };
 
@@ -1004,7 +1040,7 @@ namespace llvm {
   template<class ValType>
   struct ConstantCreator<ConstantAggregateZero, Type, ValType> {
     static ConstantAggregateZero *create(const Type *Ty, const ValType &V){
-      return new ConstantAggregateZero(Ty);
+      return new(0) ConstantAggregateZero(Ty);
     }
   };
 
@@ -1433,7 +1469,7 @@ namespace llvm {
                                              V.operands[2]);
       if (V.opcode == Instruction::GetElementPtr) {
         std::vector<Constant*> IdxList(V.operands.begin()+1, V.operands.end());
-        return new GetElementPtrConstantExpr(V.operands[0], IdxList, Ty);
+        return new(IdxList.size()) GetElementPtrConstantExpr(V.operands[0], IdxList, Ty);
       }
 
       // The compare instructions are weird. We have to encode the predicate

@@ -46,7 +46,7 @@ protected:
   AllocationInst(const Type *Ty, Value *ArraySize, unsigned iTy, unsigned Align,
                  const std::string &Name, BasicBlock *InsertAtEnd);
 public:
-  // Out of line virtual method, so the vtable, etc has a home.
+  // Out of line virtual method, so the vtable, etc. has a home.
   virtual ~AllocationInst();
 
   /// isArrayAllocation - Return true if there is an allocation size parameter
@@ -291,6 +291,7 @@ public:
 /// StoreInst - an instruction for storing to memory
 ///
 class StoreInst : public Instruction {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Ops[2];
   
   StoreInst(const StoreInst &SI) : Instruction(SI.getType(), Store, Ops, 2) {
@@ -305,6 +306,10 @@ class StoreInst : public Instruction {
   }
   void AssertOK();
 public:
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2);
+  }
   StoreInst(Value *Val, Value *Ptr, Instruction *InsertBefore);
   StoreInst(Value *Val, Value *Ptr, BasicBlock *InsertAtEnd);
   StoreInst(Value *Val, Value *Ptr, bool isVolatile = false,
@@ -1269,11 +1274,16 @@ public:
 // scientist's overactive imagination.
 //
 class PHINode : public Instruction {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   /// ReservedSpace - The number of operands actually allocated.  NumOperands is
   /// the number actually in use.
   unsigned ReservedSpace;
   PHINode(const PHINode &PN);
 public:
+  // allocate space for exactly zero operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
   explicit PHINode(const Type *Ty, const std::string &Name = "",
                    Instruction *InsertBefore = 0)
     : Instruction(Ty, Instruction::PHI, 0, 0, InsertBefore),
@@ -1860,7 +1870,12 @@ private:
 /// until an invoke instruction is found.
 ///
 class UnwindInst : public TerminatorInst {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
 public:
+  // allocate space for exactly zero operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
   explicit UnwindInst(Instruction *InsertBefore = 0);
   explicit UnwindInst(BasicBlock *InsertAtEnd);
 
@@ -1892,7 +1907,12 @@ private:
 /// end of the block cannot be reached.
 ///
 class UnreachableInst : public TerminatorInst {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
 public:
+  // allocate space for exactly zero operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
   explicit UnreachableInst(Instruction *InsertBefore = 0);
   explicit UnreachableInst(BasicBlock *InsertAtEnd);
 
@@ -2392,7 +2412,8 @@ public:
 /// GetResultInst - This instruction extracts individual result value from
 /// aggregate value, where aggregate value is returned by CallInst.
 ///
-class GetResultInst : public Instruction {
+class GetResultInst : public /*FIXME: Unary*/Instruction {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   Use Aggr;
   unsigned Idx;
   GetResultInst(const GetResultInst &GRI) :
@@ -2402,6 +2423,10 @@ class GetResultInst : public Instruction {
   }
 
 public:
+  // allocate space for exactly one operand
+  void *operator new(size_t s) {
+    return User::operator new(s, 1);
+  }
   explicit GetResultInst(Value *Aggr, unsigned index,
                          const std::string &Name = "",
                          Instruction *InsertBefore = 0);

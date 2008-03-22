@@ -592,7 +592,8 @@ void LLVMSetAlignment(LLVMValueRef Global, unsigned Bytes) {
 /*--.. Operations on global variables ......................................--*/
 
 LLVMValueRef LLVMAddGlobal(LLVMModuleRef M, LLVMTypeRef Ty, const char *Name) {
-  return wrap(new GlobalVariable(unwrap(Ty), false,
+  unsigned FIXME(0);
+  return wrap(new(FIXME) GlobalVariable(unwrap(Ty), false,
                                  GlobalValue::ExternalLinkage, 0, Name,
                                  unwrap(M)));
 }
@@ -670,7 +671,8 @@ void LLVMSetGlobalConstant(LLVMValueRef GlobalVar, int IsConstant) {
 
 LLVMValueRef LLVMAddFunction(LLVMModuleRef M, const char *Name,
                              LLVMTypeRef FunctionTy) {
-  return wrap(new Function(unwrap<FunctionType>(FunctionTy),
+  unsigned FIXME(0);
+  return wrap(new(FIXME) Function(unwrap<FunctionType>(FunctionTy),
                            GlobalValue::ExternalLinkage, Name, unwrap(M)));
 }
 
@@ -832,14 +834,16 @@ LLVMBasicBlockRef LLVMGetPreviousBasicBlock(LLVMBasicBlockRef BB) {
 }
 
 LLVMBasicBlockRef LLVMAppendBasicBlock(LLVMValueRef FnRef, const char *Name) {
-  return wrap(new BasicBlock(Name, unwrap<Function>(FnRef)));
+  unsigned FIXME(0/*1?*/);
+  return wrap(new(FIXME) BasicBlock(Name, unwrap<Function>(FnRef)));
 }
 
 LLVMBasicBlockRef LLVMInsertBasicBlock(LLVMBasicBlockRef InsertBeforeBBRef,
                                        const char *Name) {
   BasicBlock *InsertBeforeBB = unwrap(InsertBeforeBBRef);
-  return wrap(new BasicBlock(Name, InsertBeforeBB->getParent(),
-                             InsertBeforeBB));
+  unsigned FIXME(0/*1?*/);
+  return wrap(new(FIXME) BasicBlock(Name, InsertBeforeBB->getParent(),
+                                InsertBeforeBB));
 }
 
 void LLVMDeleteBasicBlock(LLVMBasicBlockRef BBRef) {

@@ -32,20 +32,23 @@ using namespace llvm;
 Function *ilist_traits<Function>::createSentinel() {
   FunctionType *FTy =
     FunctionType::get(Type::VoidTy, std::vector<const Type*>(), false);
-  Function *Ret = new Function(FTy, GlobalValue::ExternalLinkage);
+  unsigned FIXME(0);
+  Function *Ret = new(FIXME) Function(FTy, GlobalValue::ExternalLinkage);
   // This should not be garbage monitored.
   LeakDetector::removeGarbageObject(Ret);
   return Ret;
 }
 GlobalVariable *ilist_traits<GlobalVariable>::createSentinel() {
-  GlobalVariable *Ret = new GlobalVariable(Type::Int32Ty, false,
+  unsigned FIXME(0);
+  GlobalVariable *Ret = new(FIXME) GlobalVariable(Type::Int32Ty, false,
                                            GlobalValue::ExternalLinkage);
   // This should not be garbage monitored.
   LeakDetector::removeGarbageObject(Ret);
   return Ret;
 }
 GlobalAlias *ilist_traits<GlobalAlias>::createSentinel() {
-  GlobalAlias *Ret = new GlobalAlias(Type::Int32Ty,
+  unsigned FIXME(0);
+  GlobalAlias *Ret = new(FIXME) GlobalAlias(Type::Int32Ty,
                                      GlobalValue::ExternalLinkage);
   // This should not be garbage monitored.
   LeakDetector::removeGarbageObject(Ret);
@@ -149,7 +152,8 @@ Constant *Module::getOrInsertFunction(const std::string &Name,
   GlobalValue *F = dyn_cast_or_null<GlobalValue>(SymTab.lookup(Name));
   if (F == 0) {
     // Nope, add it
-    Function *New = new Function(Ty, GlobalVariable::ExternalLinkage, Name);
+    unsigned FIXME(0);
+    Function *New = new(FIXME) Function(Ty, GlobalVariable::ExternalLinkage, Name);
     FunctionList.push_back(New);
     return New;                    // Return the new prototype.
   }

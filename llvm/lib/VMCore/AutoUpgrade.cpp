@@ -199,8 +199,11 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 2));
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 3));
       Value *Mask = ConstantVector::get(Idxs);
-      ShuffleVectorInst *SI = new ShuffleVectorInst(ZeroV, CI->getOperand(1),
-                                                    Mask, "upgraded", CI);
+      unsigned FIXME;
+      ShuffleVectorInst *SI = new(FIXME) ShuffleVectorInst(ZeroV,
+                                                           CI->getOperand(1),
+                                                           Mask, "upgraded",
+                                                           CI);
 
       // Handle any uses of the old CallInst.
       if (!CI->use_empty())
@@ -216,7 +219,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     return;
   }
 
-  switch(NewFn->getIntrinsicID()) {
+  switch (NewFn->getIntrinsicID()) {
   default:  assert(0 && "Unknown function for CallInst upgrade.");
   case Intrinsic::x86_mmx_psll_d:
   case Intrinsic::x86_mmx_psll_q:
@@ -237,7 +240,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     Operands[1] = BC;
     
     //  Construct a new CallInst
-    CallInst *NewCI = new CallInst(NewFn, Operands, Operands+2, 
+    unsigned FIXME;
+    CallInst *NewCI = new(FIXME) CallInst(NewFn, Operands, Operands+2, 
                                    "upgraded."+CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
     NewCI->setCallingConv(CI->getCallingConv());
@@ -254,14 +258,15 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   }        
   case Intrinsic::ctlz:
   case Intrinsic::ctpop:
-  case Intrinsic::cttz:
+  case Intrinsic::cttz: {
     //  Build a small vector of the 1..(N-1) operands, which are the 
     //  parameters.
     SmallVector<Value*, 8> Operands(CI->op_begin()+1, CI->op_end());
 
     //  Construct a new CallInst
-    CallInst *NewCI = new CallInst(NewFn, Operands.begin(), Operands.end(), 
-                                   "upgraded."+CI->getName(), CI);
+    unsigned FIXME;
+    CallInst *NewCI = new(FIXME) CallInst(NewFn, Operands.begin(), Operands.end(), 
+                                          "upgraded."+CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
     NewCI->setCallingConv(CI->getCallingConv());
 
@@ -287,7 +292,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
 
     //  Clean up the old call now that it has been completely upgraded.
     CI->eraseFromParent();
-    break;
+  }
+  break;
   }
 }
 

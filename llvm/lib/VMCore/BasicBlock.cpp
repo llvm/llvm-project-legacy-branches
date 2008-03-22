@@ -58,7 +58,7 @@ namespace {
 }
 
 Instruction *ilist_traits<Instruction>::createSentinel() {
-  return new DummyInst();
+  return new(0) DummyInst();
 }
 iplist<Instruction> &ilist_traits<Instruction>::getList(BasicBlock *BB) {
   return BB->getInstList();
@@ -71,7 +71,7 @@ template class SymbolTableListTraits<Instruction, BasicBlock>;
 
 BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
                        BasicBlock *InsertBefore, BasicBlock *Dest)
-  : User(Type::LabelTy, Value::BasicBlockVal, &unwindDest, 0), Parent(0) {
+  : User(Type::LabelTy, Value::BasicBlockVal, &unwindDest, 0/*FIXME*/), Parent(0) {
 
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
@@ -283,14 +283,14 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const std::string &BBName) {
   assert(I != InstList.end() &&
          "Trying to get me to create degenerate basic block!");
 
-  BasicBlock *New = new BasicBlock(BBName, getParent(), getNext());
+  BasicBlock *New = new(0) BasicBlock(BBName, getParent(), getNext());
 
   // Move all of the specified instructions from the original basic block into
   // the new basic block.
   New->getInstList().splice(New->end(), this->getInstList(), I, end());
 
   // Add a branch instruction to the newly formed basic block.
-  new BranchInst(New, this);
+  new(1) BranchInst(New, this);
 
   // Now we must loop through all of the successors of the New block (which
   // _were_ the successors of the 'this' block), and update any PHI nodes in
