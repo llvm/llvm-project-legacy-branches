@@ -875,7 +875,6 @@ class CallInst : public Instruction {
     setName(Name);
   }
 
-public:
   /// Construct a CallInst given a range of arguments.  InputIterator
   /// must be a random-access iterator pointing to contiguous storage
   /// (e.g. a std::vector<>::iterator).  Checks are made for
@@ -915,6 +914,33 @@ public:
   explicit CallInst(Value *F, const std::string &Name = "",
                     Instruction *InsertBefore = 0);
   CallInst(Value *F, const std::string &Name, BasicBlock *InsertAtEnd);
+public:
+  template<typename InputIterator>
+  static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+			  const std::string &Name = "", Instruction *InsertBefore = 0) {
+    return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
+  }
+  template<typename InputIterator>
+  static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+			  const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
+  }
+  static CallInst *Create(Value *F, Value *Actual, const std::string& Name = "",
+			  Instruction *InsertBefore = 0) {
+    return new(2) CallInst(F, Actual, Name, InsertBefore);
+  }
+  static CallInst *Create(Value *F, Value *Actual, const std::string& Name,
+			  BasicBlock *InsertAtEnd) {
+    return new(2) CallInst(F, Actual, Name, InsertAtEnd);
+  }
+  static CallInst *Create(Value *F, const std::string &Name = "",
+			  Instruction *InsertBefore = 0) {
+    return new(1) CallInst(F, Name, InsertBefore);
+  }
+  static CallInst *Create(Value *F, const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(1) CallInst(F, Name, InsertAtEnd);
+  }
+
   ~CallInst();
 
   virtual CallInst *clone() const;
@@ -1279,7 +1305,6 @@ class PHINode : public Instruction {
   /// the number actually in use.
   unsigned ReservedSpace;
   PHINode(const PHINode &PN);
-public:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
@@ -1296,7 +1321,14 @@ public:
       ReservedSpace(0) {
     setName(Name);
   }
-
+public:
+  static PHINode *Create(const Type *Ty, const std::string &Name = "",
+			 Instruction *InsertBefore = 0) {
+    return new PHINode(Ty, Name, InsertBefore);
+  }
+  static PHINode *Create(const Type *Ty, const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new PHINode(Ty, Name, InsertAtEnd);
+  }
   ~PHINode();
 
   /// reserveOperandSpace - This method can be used to avoid repeated

@@ -388,21 +388,20 @@ public:
   //===--------------------------------------------------------------------===//
   
   PHINode *CreatePHI(const Type *Ty, const char *Name = "") {
-    return Insert(new PHINode(Ty, Name));
+    return Insert(PHINode::Create(Ty, Name));
   }
 
   CallInst *CreateCall(Value *Callee, const char *Name = "") {
-    return Insert(new(1) CallInst(Callee, Name));
+    return Insert(CallInst::Create(Callee, Name));
   }
   CallInst *CreateCall(Value *Callee, Value *Arg, const char *Name = "") {
-    return Insert(new(2) CallInst(Callee, Arg, Name));
+    return Insert(CallInst::Create(Callee, Arg, Name));
   }
 
   template<typename InputIterator>
   CallInst *CreateCall(Value *Callee, InputIterator ArgBegin, 
                        InputIterator ArgEnd, const char *Name = "") {
-    unsigned FIXME(1 + (ArgEnd - ArgBegin));
-    return Insert(new(FIXME) CallInst(Callee, ArgBegin, ArgEnd, Name));
+    return Insert(CallInst::Create(Callee, ArgBegin, ArgEnd, Name));
   }
   
   SelectInst *CreateSelect(Value *C, Value *True, Value *False,

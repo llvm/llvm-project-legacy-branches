@@ -240,9 +240,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     Operands[1] = BC;
     
     //  Construct a new CallInst
-    unsigned FIXME;
-    CallInst *NewCI = new(FIXME) CallInst(NewFn, Operands, Operands+2, 
-                                   "upgraded."+CI->getName(), CI);
+    CallInst *NewCI = CallInst::Create(NewFn, Operands, Operands+2, 
+                                       "upgraded."+CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
     NewCI->setCallingConv(CI->getCallingConv());
     
@@ -264,9 +263,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     SmallVector<Value*, 8> Operands(CI->op_begin()+1, CI->op_end());
 
     //  Construct a new CallInst
-    unsigned FIXME;
-    CallInst *NewCI = new(FIXME) CallInst(NewFn, Operands.begin(), Operands.end(), 
-                                          "upgraded."+CI->getName(), CI);
+    CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(), 
+                                       "upgraded."+CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
     NewCI->setCallingConv(CI->getCallingConv());
 
