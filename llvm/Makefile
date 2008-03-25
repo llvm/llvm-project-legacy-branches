@@ -49,9 +49,16 @@ RUNTESTFLAGS += --ignore "$(IGNORE_TESTS)"
 endif
 
 ifneq ($(RUNTEST),)
+
+ifdef VERBOSE
+DONE = true
+else
+DONE = echo
+endif
+
 %.makefile.out: %.makefile
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
-#	cat $@
+	@ $(DONE)
 
 report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 	@ cat $^
