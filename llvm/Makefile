@@ -58,7 +58,6 @@ endif
 
 %.makefile.out: %.makefile
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
-	@ $(DONE)
 
 report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 	@ cat $^
@@ -70,6 +69,7 @@ check-local:: site.exp
 	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
 	  $(RUNTEST) $(RUNTESTFLAGS) )
 	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+	@ $(DONE)
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."
