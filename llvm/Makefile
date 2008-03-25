@@ -67,8 +67,10 @@ report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 check-local:: site.exp
 	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
 	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
-	  $(RUNTEST) $(RUNTESTFLAGS) )
-	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+	  $(RUNTEST) $(RUNTESTFLAGS) ) | sed -e 's/Running /Preparing /1'
+	@ echo '--- Running llvm tests ---'
+	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
+	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile)))
 	@ $(DONE)
 else
 check-local:: site.exp
