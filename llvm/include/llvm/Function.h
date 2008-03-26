@@ -114,7 +114,7 @@ private:
 
 public:
   static Function *Create(const FunctionType *Ty, LinkageTypes Linkage,
-			  const std::string &N = "", Module *M = 0) {
+                          const std::string &N = "", Module *M = 0) {
     return new(0) Function(Ty, Linkage, N, M);
   }
 

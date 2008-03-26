@@ -940,24 +940,24 @@ class CallInst : public Instruction {
 public:
   template<typename InputIterator>
   static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-			  const std::string &Name = "", Instruction *InsertBefore = 0) {
+                          const std::string &Name = "", Instruction *InsertBefore = 0) {
     return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
   }
   template<typename InputIterator>
   static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-			  const std::string &Name, BasicBlock *InsertAtEnd) {
+                          const std::string &Name, BasicBlock *InsertAtEnd) {
     return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
   }
   static CallInst *Create(Value *F, Value *Actual, const std::string& Name = "",
-			  Instruction *InsertBefore = 0) {
+                          Instruction *InsertBefore = 0) {
     return new(2) CallInst(F, Actual, Name, InsertBefore);
   }
   static CallInst *Create(Value *F, Value *Actual, const std::string& Name,
-			  BasicBlock *InsertAtEnd) {
+                          BasicBlock *InsertAtEnd) {
     return new(2) CallInst(F, Actual, Name, InsertAtEnd);
   }
   static CallInst *Create(Value *F, const std::string &Name = "",
-			  Instruction *InsertBefore = 0) {
+                          Instruction *InsertBefore = 0) {
     return new(1) CallInst(F, Name, InsertBefore);
   }
   static CallInst *Create(Value *F, const std::string &Name, BasicBlock *InsertAtEnd) {
@@ -1381,7 +1381,7 @@ class PHINode : public Instruction {
   }
 public:
   static PHINode *Create(const Type *Ty, const std::string &Name = "",
-			 Instruction *InsertBefore = 0) {
+                         Instruction *InsertBefore = 0) {
     return new PHINode(Ty, Name, InsertBefore);
   }
   static PHINode *Create(const Type *Ty, const std::string &Name, BasicBlock *InsertAtEnd) {
