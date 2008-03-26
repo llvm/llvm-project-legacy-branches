@@ -52,8 +52,8 @@ bool IndMemRemPass::runOnModule(Module &M) {
   if (Function* F = M.getFunction("free")) {
     assert(F->isDeclaration() && "free not external?");
     if (!F->use_empty()) {
-      Function* FN = Function::Create(F->getFunctionType(), 
-                                      GlobalValue::LinkOnceLinkage, 
+      Function* FN = Function::Create(F->getFunctionType(),
+                                      GlobalValue::LinkOnceLinkage,
                                       "free_llvm_bounce", &M);
       BasicBlock* bb = BasicBlock::Create("entry",FN);
       Instruction* R = ReturnInst::Create(bb);

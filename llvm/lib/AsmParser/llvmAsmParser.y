@@ -3144,7 +3144,7 @@ MemoryInst : MALLOC Types OptCAlign {
                      (*$2)->getDescription()+ "'");
     Value* tmpVal = getVal(*$2, $3);
     CHECK_FOR_ERROR
-      $$ = GetElementPtrInst::Create(tmpVal, $4->begin(), $4->end());
+    $$ = GetElementPtrInst::Create(tmpVal, $4->begin(), $4->end());
     delete $2; 
     delete $4;
   };

@@ -199,10 +199,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 2));
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 3));
       Value *Mask = ConstantVector::get(Idxs);
-      ShuffleVectorInst *SI = new ShuffleVectorInst(ZeroV,
-                                                    CI->getOperand(1),
-                                                    Mask, "upgraded",
-                                                    CI);
+      ShuffleVectorInst *SI = new ShuffleVectorInst(ZeroV, CI->getOperand(1),
+                                                    Mask, "upgraded", CI);
 
       // Handle any uses of the old CallInst.
       if (!CI->use_empty())
@@ -262,7 +260,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     SmallVector<Value*, 8> Operands(CI->op_begin()+1, CI->op_end());
 
     //  Construct a new CallInst
-    CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(), 
+    CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),
                                        "upgraded."+CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
     NewCI->setCallingConv(CI->getCallingConv());
