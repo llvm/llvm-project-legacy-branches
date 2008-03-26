@@ -35,6 +35,10 @@ namespace {
   /// DummyInst - An instance of this class is used to mark the end of the
   /// instruction list.  This is not a real instruction.
   struct VISIBILITY_HIDDEN DummyInst : public Instruction {
+    // allocate space for exactly zero operands
+    void *operator new(size_t s) {
+      return User::operator new(s, 0);
+    }
     DummyInst() : Instruction(Type::VoidTy, OtherOpsEnd, 0, 0) {
       // This should not be garbage monitored.
       LeakDetector::removeGarbageObject(this);
@@ -58,7 +62,7 @@ namespace {
 }
 
 Instruction *ilist_traits<Instruction>::createSentinel() {
-  return new(0) DummyInst();
+  return new DummyInst();
 }
 iplist<Instruction> &ilist_traits<Instruction>::getList(BasicBlock *BB) {
   return BB->getInstList();
@@ -290,7 +294,7 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const std::string &BBName) {
   New->getInstList().splice(New->end(), this->getInstList(), I, end());
 
   // Add a branch instruction to the newly formed basic block.
-  new(1) BranchInst(New, this);
+  BranchInst::Create(New, this);
 
   // Now we must loop through all of the successors of the New block (which
   // _were_ the successors of the 'this' block), and update any PHI nodes in

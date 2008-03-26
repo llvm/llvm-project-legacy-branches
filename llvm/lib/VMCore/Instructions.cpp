@@ -2740,13 +2740,13 @@ SelectInst *SelectInst::clone()   const { return new(getNumOperands()) SelectIns
 VAArgInst  *VAArgInst::clone()    const { return new VAArgInst(*this); }
 
 ExtractElementInst *ExtractElementInst::clone() const {
-  return new(getNumOperands()) ExtractElementInst(*this);
+  return new ExtractElementInst(*this);
 }
 InsertElementInst *InsertElementInst::clone() const {
-  return new(getNumOperands()) InsertElementInst(*this);
+  return InsertElementInst::Create(*this);
 }
 ShuffleVectorInst *ShuffleVectorInst::clone() const {
-  return new(getNumOperands()) ShuffleVectorInst(*this);
+  return new ShuffleVectorInst(*this);
 }
 PHINode    *PHINode::clone()    const { return new PHINode(*this); }
 ReturnInst *ReturnInst::clone() const { return new(getNumOperands()) ReturnInst(*this); }

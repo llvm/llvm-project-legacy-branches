@@ -47,12 +47,12 @@ class ConstantInt : public Constant {
   ConstantInt(const ConstantInt &);      // DO NOT IMPLEMENT
   ConstantInt(const IntegerType *Ty, const APInt& V);
   APInt Val;
-public:
+protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-
+public:
   /// Return the constant as an APInt value reference. This allows clients to
   /// obtain a copy of the value, with all its precision in tact.
   /// @brief Return the constant's value.
@@ -225,12 +225,12 @@ class ConstantFP : public Constant {
   ConstantFP(const ConstantFP &);      // DO NOT IMPLEMENT
 protected:
   ConstantFP(const Type *Ty, const APFloat& V);
-public:
+protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-
+public:
   /// get() - Static factory methods - Return objects of the specified value
   static ConstantFP *get(const Type *Ty, const APFloat& V);
 
@@ -279,12 +279,12 @@ class ConstantAggregateZero : public Constant {
 protected:
   explicit ConstantAggregateZero(const Type *Ty)
     : Constant(Ty, ConstantAggregateZeroVal, 0, 0) {}
-public:
+protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-
+public:
   /// get() - static factory method for creating a null aggregate.  It is
   /// illegal to call this method with a non-aggregate type.
   static Constant *get(const Type *Ty);
@@ -482,12 +482,12 @@ protected:
     : Constant(reinterpret_cast<const Type*>(T),
                Value::ConstantPointerNullVal, 0, 0) {}
 
-public:
+protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-
+public:
   /// get() - Static factory methods - Return objects of the specified value
   static ConstantPointerNull *get(const PointerType *T);
 
@@ -733,12 +733,12 @@ class UndefValue : public Constant {
   UndefValue(const UndefValue &);      // DO NOT IMPLEMENT
 protected:
   explicit UndefValue(const Type *T) : Constant(T, UndefValueVal, 0, 0) {}
-public:
+protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-
+public:
   /// get() - Static factory methods - Return an 'undef' object of the specified
   /// type.
   ///

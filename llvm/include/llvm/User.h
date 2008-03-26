@@ -39,13 +39,13 @@ protected:
   ///
   unsigned NumOperands;
 
-public:
   void *operator new(size_t s, unsigned) {
     return ::operator new(s);
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
     : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
 
+public:
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
     return OperandList[i];

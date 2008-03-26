@@ -517,7 +517,7 @@ public:
 
 /// GetElementPtrConstantExpr - This class is private to Constants.cpp, and is
 /// used behind the scenes to implement getelementpr constant exprs.
-struct VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
+class VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
   GetElementPtrConstantExpr(Constant *C, const std::vector<Constant*> &IdxList,
                             const Type *DestTy)
     : ConstantExpr(DestTy, Instruction::GetElementPtr,
@@ -525,6 +525,11 @@ struct VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
     OperandList[0].init(C, this);
     for (unsigned i = 0, E = IdxList.size(); i != E; ++i)
       OperandList[i+1].init(IdxList[i], this);
+  }
+public:
+  static GetElementPtrConstantExpr *Create(Constant *C, const std::vector<Constant*> &IdxList,
+                                    const Type *DestTy) {
+    return new(IdxList.size() + 1/*FIXME*/) GetElementPtrConstantExpr(C, IdxList, DestTy);
   }
   ~GetElementPtrConstantExpr() {
     delete [] OperandList;
@@ -1469,7 +1474,7 @@ namespace llvm {
                                              V.operands[2]);
       if (V.opcode == Instruction::GetElementPtr) {
         std::vector<Constant*> IdxList(V.operands.begin()+1, V.operands.end());
-        return new(IdxList.size()) GetElementPtrConstantExpr(V.operands[0], IdxList, Ty);
+        return GetElementPtrConstantExpr::Create(V.operands[0], IdxList, Ty);
       }
 
       // The compare instructions are weird. We have to encode the predicate

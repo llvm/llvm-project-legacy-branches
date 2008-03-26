@@ -199,11 +199,10 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 2));
       Idxs.push_back(ConstantInt::get(Type::Int32Ty, 3));
       Value *Mask = ConstantVector::get(Idxs);
-      unsigned FIXME;
-      ShuffleVectorInst *SI = new(FIXME) ShuffleVectorInst(ZeroV,
-                                                           CI->getOperand(1),
-                                                           Mask, "upgraded",
-                                                           CI);
+      ShuffleVectorInst *SI = new ShuffleVectorInst(ZeroV,
+                                                    CI->getOperand(1),
+                                                    Mask, "upgraded",
+                                                    CI);
 
       // Handle any uses of the old CallInst.
       if (!CI->use_empty())

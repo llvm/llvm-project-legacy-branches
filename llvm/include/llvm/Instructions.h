@@ -447,7 +447,6 @@ class GetElementPtrInst : public Instruction {
     }
   }
 
-public:
   /// Constructors - Create a getelementptr instruction with a base pointer an
   /// list of indices.  The first ctor can optionally insert before an existing
   /// instruction, the second appends the new instruction to the specified
@@ -456,7 +455,7 @@ public:
   GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, 
                     InputIterator IdxEnd,
                     const std::string &Name = "",
-                    Instruction *InsertBefore =0)
+                    Instruction *InsertBefore = 0)
       : Instruction(PointerType::get(
                       checkType(getIndexedType(Ptr->getType(),
                                                IdxBegin, IdxEnd, true)),
@@ -480,9 +479,33 @@ public:
   /// Constructors - These two constructors are convenience methods because one
   /// and two index getelementptr instructions are so common.
   GetElementPtrInst(Value *Ptr, Value *Idx,
-                    const std::string &Name = "", Instruction *InsertBefore =0);
+                    const std::string &Name = "", Instruction *InsertBefore = 0);
   GetElementPtrInst(Value *Ptr, Value *Idx,
                     const std::string &Name, BasicBlock *InsertAtEnd);
+public:
+  template<typename InputIterator>
+  static GetElementPtrInst *Create(Value *Ptr, InputIterator IdxBegin, 
+                                   InputIterator IdxEnd,
+                                   const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
+    return new(0/*FIXME*/) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Name, InsertBefore);
+  }
+  template<typename InputIterator>
+  static GetElementPtrInst *Create(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
+                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(0/*FIXME*/) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Name, InsertAtEnd);
+  }
+
+  /// Constructors - These two constructors are convenience methods because one
+  /// and two index getelementptr instructions are so common.
+  static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
+                                   const std::string &Name = "", Instruction *InsertBefore = 0) {
+    return new(2/*FIXME*/) GetElementPtrInst(Ptr, Idx, Name, InsertBefore);
+  }
+  static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
+                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(2/*FIXME*/) GetElementPtrInst(Ptr, Idx, Name, InsertAtEnd);
+  }
   ~GetElementPtrInst();
 
   virtual GetElementPtrInst *clone() const;
@@ -1046,7 +1069,6 @@ class SelectInst : public Instruction {
     : Instruction(SI.getType(), SI.getOpcode(), Ops, 3) {
     init(SI.Ops[0], SI.Ops[1], SI.Ops[2]);
   }
-public:
   SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name = "",
              Instruction *InsertBefore = 0)
     : Instruction(S1->getType(), Instruction::Select, Ops, 3, InsertBefore) {
@@ -1058,6 +1080,15 @@ public:
     : Instruction(S1->getType(), Instruction::Select, Ops, 3, InsertAtEnd) {
     init(C, S1, S2);
     setName(Name);
+  }
+public:
+  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name = "",
+             Instruction *InsertBefore = 0) {
+    return new(3) SelectInst(C, S1, S2, Name, InsertBefore);
+  }
+  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name,
+             BasicBlock *InsertAtEnd) {
+    return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
   }
 
   Value *getCondition() const { return Ops[0]; }
@@ -1141,6 +1172,10 @@ class ExtractElementInst : public Instruction {
   }
 
 public:
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2); // FIXME: unsigned Idx forms of constructor?
+  }
   ExtractElementInst(Value *Vec, Value *Idx, const std::string &Name = "",
                      Instruction *InsertBefore = 0);
   ExtractElementInst(Value *Vec, unsigned Idx, const std::string &Name = "",
@@ -1187,15 +1222,34 @@ public:
 class InsertElementInst : public Instruction {
   Use Ops[3];
   InsertElementInst(const InsertElementInst &IE);
+  InsertElementInst(Value *Vec, Value *NewElt, Value *Idx,
+                    const std::string &Name = "",Instruction *InsertBefore = 0);
+  InsertElementInst(Value *Vec, Value *NewElt, unsigned Idx,
+                    const std::string &Name = "",Instruction *InsertBefore = 0);
+  InsertElementInst(Value *Vec, Value *NewElt, Value *Idx,
+                    const std::string &Name, BasicBlock *InsertAtEnd);
+  InsertElementInst(Value *Vec, Value *NewElt, unsigned Idx,
+                    const std::string &Name, BasicBlock *InsertAtEnd);
 public:
-  InsertElementInst(Value *Vec, Value *NewElt, Value *Idx,
-                    const std::string &Name = "",Instruction *InsertBefore = 0);
-  InsertElementInst(Value *Vec, Value *NewElt, unsigned Idx,
-                    const std::string &Name = "",Instruction *InsertBefore = 0);
-  InsertElementInst(Value *Vec, Value *NewElt, Value *Idx,
-                    const std::string &Name, BasicBlock *InsertAtEnd);
-  InsertElementInst(Value *Vec, Value *NewElt, unsigned Idx,
-                    const std::string &Name, BasicBlock *InsertAtEnd);
+  static InsertElementInst *Create(const InsertElementInst &IE) {
+    return new(IE.getNumOperands()) InsertElementInst(IE);
+  }
+  static InsertElementInst *Create(Value *Vec, Value *NewElt, Value *Idx,
+                                   const std::string &Name = "",Instruction *InsertBefore = 0) {
+    return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
+  }
+  static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
+                                   const std::string &Name = "",Instruction *InsertBefore = 0) {
+    return new(3/*FIXME*/) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
+  }
+  static InsertElementInst *Create(Value *Vec, Value *NewElt, Value *Idx,
+                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
+  }
+  static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
+                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(3/*FIXME*/) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
+  }
 
   /// isValidOperands - Return true if an insertelement instruction can be
   /// formed with the specified operands.
@@ -1242,6 +1296,10 @@ class ShuffleVectorInst : public Instruction {
   Use Ops[3];
   ShuffleVectorInst(const ShuffleVectorInst &IE);
 public:
+  // allocate space for exactly three operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 3);
+  }
   ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
                     const std::string &Name = "", Instruction *InsertBefor = 0);
   ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
@@ -1447,7 +1505,7 @@ class ReturnInst : public TerminatorInst {
   ReturnInst(const ReturnInst &RI);
   void init(Value * const* retVals, unsigned N);
 
-public:
+private:
   // ReturnInst constructors:
   // ReturnInst()                  - 'ret void' instruction
   // ReturnInst(    null)          - 'ret void' instruction
@@ -1468,6 +1526,25 @@ public:
   ReturnInst(Value * const* retVals, unsigned N, Instruction *InsertBefore);
   ReturnInst(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd);
   explicit ReturnInst(BasicBlock *InsertAtEnd);
+public:
+  static ReturnInst* Create(Value *retVal = 0, Instruction *InsertBefore = 0) {
+    return new(!!retVal) ReturnInst(retVal, InsertBefore);
+  }
+  static ReturnInst* Create(Value *retVal, BasicBlock *InsertAtEnd) {
+    return new(!!retVal) ReturnInst(retVal, InsertAtEnd);
+  }
+  static ReturnInst* Create(Value * const* retVals, unsigned N) {
+    return new(N) ReturnInst(retVals, N);
+  }
+  static ReturnInst* Create(Value * const* retVals, unsigned N, Instruction *InsertBefore) {
+    return new(N) ReturnInst(retVals, N, InsertBefore);
+  }
+  static ReturnInst* Create(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd) {
+    return new(N) ReturnInst(retVals, N, InsertAtEnd);
+  }
+  static ReturnInst* Create(BasicBlock *InsertAtEnd) {
+    return new(0) ReturnInst(InsertAtEnd);
+  }
   virtual ~ReturnInst();
 
   virtual ReturnInst *clone() const;
@@ -1513,7 +1590,6 @@ class BranchInst : public TerminatorInst {
   Use Ops[3];
   BranchInst(const BranchInst &BI);
   void AssertOK();
-public:
   // BranchInst constructors (where {B, T, F} are blocks, and C is a condition):
   // BranchInst(BB *B)                           - 'br B'
   // BranchInst(BB* T, BB *F, Value *C)          - 'br C, T, F'
@@ -1527,6 +1603,21 @@ public:
   BranchInst(BasicBlock *IfTrue, BasicBlock *InsertAtEnd);
   BranchInst(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
              BasicBlock *InsertAtEnd);
+public:
+  static BranchInst *Create(BasicBlock *IfTrue, Instruction *InsertBefore = 0) {
+    return new(1) BranchInst(IfTrue, InsertBefore);
+  }
+  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
+                            Instruction *InsertBefore = 0) {
+    return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertBefore);
+  }
+  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *InsertAtEnd) {
+    return new(1) BranchInst(IfTrue, InsertAtEnd);
+  }
+  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
+                            BasicBlock *InsertAtEnd) {
+    return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertAtEnd);
+  }
 
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
@@ -1607,7 +1698,6 @@ class SwitchInst : public TerminatorInst {
   SwitchInst(const SwitchInst &RI);
   void init(Value *Value, BasicBlock *Default, unsigned NumCases);
   void resizeOperands(unsigned No);
-public:
   /// SwitchInst ctor - Create a new switch instruction, specifying a value to
   /// switch on and a default destination.  The number of additional cases can
   /// be specified here to make memory allocation more efficient.  This
@@ -1621,8 +1711,16 @@ public:
   /// constructor also autoinserts at the end of the specified BasicBlock.
   SwitchInst(Value *Value, BasicBlock *Default, unsigned NumCases,
              BasicBlock *InsertAtEnd);
+public:
+  static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
+                            Instruction *InsertBefore = 0) {
+    return new(NumCases/*FIXME*/) SwitchInst(Value, Default, NumCases, InsertBefore);
+  }
+  static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
+                            BasicBlock *InsertAtEnd) {
+    return new(NumCases/*FIXME*/) SwitchInst(Value, Default, NumCases, InsertAtEnd);
+  }
   ~SwitchInst();
-
 
   // Accessor Methods for Switch stmt
   Value *getCondition() const { return getOperand(0); }
@@ -1749,7 +1847,6 @@ class InvokeInst : public TerminatorInst {
     setName(Name);
   }
 
-public:
   /// Construct an InvokeInst given a range of arguments.
   /// InputIterator must be a random-access iterator pointing to
   /// contiguous storage (e.g. a std::vector<>::iterator).  Checks are
@@ -1784,6 +1881,19 @@ public:
                        Instruction::Invoke, 0, 0, InsertAtEnd) {
     init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
+  }
+public:
+  template<typename InputIterator>
+  static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                            InputIterator ArgBegin, InputIterator ArgEnd,
+                            const std::string &Name = "", Instruction *InsertBefore = 0) {
+    return new(ArgEnd - ArgBegin + 3) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name, InsertBefore);
+  }
+  template<typename InputIterator>
+  static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                            InputIterator ArgBegin, InputIterator ArgEnd,
+                            const std::string &Name, BasicBlock *InsertAtEnd) {
+    return new(ArgEnd - ArgBegin + 3) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name, InsertAtEnd);
   }
 
   ~InvokeInst();
