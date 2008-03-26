@@ -92,8 +92,8 @@ namespace {
 
       for (Module::iterator I = M.begin(); ; ++I) {
         if (&*I != Named) {
-          Function *New = new Function(I->getFunctionType(),
-                                       GlobalValue::ExternalLinkage);
+          Function *New = Function::Create(I->getFunctionType(),
+                                           GlobalValue::ExternalLinkage);
           New->setCallingConv(I->getCallingConv());
           New->setParamAttrs(I->getParamAttrs());
           if (I->hasCollector())

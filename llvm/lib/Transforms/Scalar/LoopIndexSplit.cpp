@@ -774,7 +774,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               A, UB,"lsplit,c", PHTerminator);
-      NUB = new SelectInst (C, A, UB, "lsplit.nub", PHTerminator);
+      NUB = SelectInst::Create(C, A, UB, "lsplit.nub", PHTerminator);
     }
     
     // for (i = LB; i <= UB; ++i)
@@ -790,7 +790,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
              || ExitCondition->getPredicate() == ICmpInst::ICMP_ULE) {
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               NV, UB, "lsplit.c", PHTerminator);
-      NUB = new SelectInst (C, NV, UB, "lsplit.nub", PHTerminator);
+      NUB = SelectInst::Create(C, NV, UB, "lsplit.nub", PHTerminator);
     }
     break;
   case ICmpInst::ICMP_ULT:
@@ -808,7 +808,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
         || ExitCondition->getPredicate() == ICmpInst::ICMP_ULT) {
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               NV, UB, "lsplit.c", PHTerminator);
-      NUB = new SelectInst (C, NV, UB, "lsplit.nub", PHTerminator);
+      NUB = SelectInst::Create(C, NV, UB, "lsplit.nub", PHTerminator);
     }
 
     // for (i = LB; i <= UB; ++i)
@@ -826,7 +826,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               S, UB, "lsplit.c", PHTerminator);
-      NUB = new SelectInst (C, S, UB, "lsplit.nub", PHTerminator);
+      NUB = SelectInst::Create(C, S, UB, "lsplit.nub", PHTerminator);
     }
     break;
   case ICmpInst::ICMP_UGE:
@@ -843,7 +843,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
     {
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               NV, StartValue, "lsplit.c", PHTerminator);
-      NLB = new SelectInst (C, StartValue, NV, "lsplit.nlb", PHTerminator);
+      NLB = SelectInst::Create(C, StartValue, NV, "lsplit.nlb", PHTerminator);
     }
     break;
   case ICmpInst::ICMP_UGT:
@@ -862,7 +862,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               A, StartValue, "lsplit.c", PHTerminator);
-      NLB = new SelectInst (C, StartValue, A, "lsplit.nlb", PHTerminator);
+      NLB = SelectInst::Create(C, StartValue, A, "lsplit.nlb", PHTerminator);
     }
     break;
   default:
@@ -1358,16 +1358,16 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
                            ExitCondition->getOperand(ExitValueNum), 
                            "lsplit.ev", InsertPt);
 
-  SD.A_ExitValue = new SelectInst(C1, AEV,
-                                  ExitCondition->getOperand(ExitValueNum), 
-                                  "lsplit.ev", InsertPt);
+  SD.A_ExitValue = SelectInst::Create(C1, AEV,
+                                      ExitCondition->getOperand(ExitValueNum), 
+                                      "lsplit.ev", InsertPt);
 
   Value *C2 = new ICmpInst(Sign ?
                            ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                            BSV, StartValue, "lsplit.sv",
                            PHTerminator);
-  SD.B_StartValue = new SelectInst(C2, StartValue, BSV,
-                                   "lsplit.sv", PHTerminator);
+  SD.B_StartValue = SelectInst::Create(C2, StartValue, BSV,
+                                       "lsplit.sv", PHTerminator);
 }
 
 /// splitLoop - Split current loop L in two loops using split information
@@ -1510,7 +1510,7 @@ bool LoopIndexSplit::splitLoop(SplitInfo &SD) {
       BI != BE; ++BI) {
     if (PHINode *PN = dyn_cast<PHINode>(BI)) {
       Value *V1 = PN->getIncomingValueForBlock(A_ExitBlock);
-      PHINode *newPHI = new PHINode(PN->getType(), PN->getName());
+      PHINode *newPHI = PHINode::Create(PN->getType(), PN->getName());
       newPHI->addIncoming(V1, A_ExitingBlock);
       A_ExitBlock->getInstList().push_front(newPHI);
       PN->removeIncomingValue(A_ExitBlock);
@@ -1600,7 +1600,7 @@ void LoopIndexSplit::moveExitCondition(BasicBlock *CondBB, BasicBlock *ActiveBB,
   CurrentBR->eraseFromParent();
 
   // Connect exiting block to original destination.
-  new BranchInst(OrigDestBB, ExitingBB);
+  BranchInst::Create(OrigDestBB, ExitingBB);
 
   // Update PHINodes
   updatePHINodes(ExitBB, ExitingBB, CondBB, IV, IVAdd, LP);

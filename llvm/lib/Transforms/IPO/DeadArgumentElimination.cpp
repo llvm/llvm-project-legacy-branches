@@ -156,7 +156,7 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
   unsigned NumArgs = Params.size();
 
   // Create the new function body and insert it into the module...
-  Function *NF = new Function(NFTy, Fn.getLinkage());
+  Function *NF = Function::Create(NFTy, Fn.getLinkage());
   NF->setCallingConv(Fn.getCallingConv());
   NF->setParamAttrs(Fn.getParamAttrs());
   if (Fn.hasCollector())
@@ -186,12 +186,12 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
 
     Instruction *New;
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
-      New = new InvokeInst(NF, II->getNormalDest(), II->getUnwindDest(),
-                           Args.begin(), Args.end(), "", Call);
+      New = InvokeInst::Create(NF, II->getNormalDest(), II->getUnwindDest(),
+                               Args.begin(), Args.end(), "", Call);
       cast<InvokeInst>(New)->setCallingConv(CS.getCallingConv());
       cast<InvokeInst>(New)->setParamAttrs(PAL);
     } else {
-      New = new CallInst(NF, Args.begin(), Args.end(), "", Call);
+      New = CallInst::Create(NF, Args.begin(), Args.end(), "", Call);
       cast<CallInst>(New)->setCallingConv(CS.getCallingConv());
       cast<CallInst>(New)->setParamAttrs(PAL);
       if (cast<CallInst>(Call)->isTailCall())
@@ -549,7 +549,7 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
   FunctionType *NFTy = FunctionType::get(RetTy, Params, FTy->isVarArg());
 
   // Create the new function body and insert it into the module...
-  Function *NF = new Function(NFTy, F->getLinkage());
+  Function *NF = Function::Create(NFTy, F->getLinkage());
   NF->setCallingConv(F->getCallingConv());
   NF->setParamAttrs(NewPAL);
   if (F->hasCollector())
@@ -601,12 +601,12 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
 
     Instruction *New;
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
-      New = new InvokeInst(NF, II->getNormalDest(), II->getUnwindDest(),
-                           Args.begin(), Args.end(), "", Call);
+      New = InvokeInst::Create(NF, II->getNormalDest(), II->getUnwindDest(),
+                               Args.begin(), Args.end(), "", Call);
       cast<InvokeInst>(New)->setCallingConv(CS.getCallingConv());
       cast<InvokeInst>(New)->setParamAttrs(NewCallPAL);
     } else {
-      New = new CallInst(NF, Args.begin(), Args.end(), "", Call);
+      New = CallInst::Create(NF, Args.begin(), Args.end(), "", Call);
       cast<CallInst>(New)->setCallingConv(CS.getCallingConv());
       cast<CallInst>(New)->setParamAttrs(NewCallPAL);
       if (cast<CallInst>(Call)->isTailCall())
@@ -659,7 +659,7 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
   if (F->getReturnType() != NF->getReturnType())
     for (Function::iterator BB = NF->begin(), E = NF->end(); BB != E; ++BB)
       if (ReturnInst *RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
-        new ReturnInst(0, RI);
+        ReturnInst::Create(0, RI);
         BB->getInstList().erase(RI);
       }
 

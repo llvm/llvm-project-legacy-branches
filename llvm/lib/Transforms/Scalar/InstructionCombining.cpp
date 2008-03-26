@@ -1764,8 +1764,8 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, uint64_t DemandedElts,
           }
           
           Instruction *New =
-            new InsertElementInst(UndefValue::get(II->getType()), TmpV, 0U,
-                                  II->getName());
+            InsertElementInst::Create(UndefValue::get(II->getType()), TmpV, 0U,
+                                      II->getName());
           InsertNewInstBefore(New, *II);
           AddSoonDeadInstToWorklist(*II, 0);
           return New;
@@ -1960,8 +1960,8 @@ static Instruction *FoldOpIntoSelect(Instruction &Op, SelectInst *SI,
     Value *SelectTrueVal = FoldOperationIntoSelectOperand(Op, TV, IC);
     Value *SelectFalseVal = FoldOperationIntoSelectOperand(Op, FV, IC);
 
-    return new SelectInst(SI->getCondition(), SelectTrueVal,
-                          SelectFalseVal);
+    return SelectInst::Create(SI->getCondition(), SelectTrueVal,
+                              SelectFalseVal);
   }
   return 0;
 }
@@ -2001,7 +2001,7 @@ Instruction *InstCombiner::FoldOpIntoPhi(Instruction &I) {
   }
 
   // Okay, we can do the transformation: create the new PHI node.
-  PHINode *NewPN = new PHINode(I.getType(), "");
+  PHINode *NewPN = PHINode::Create(I.getType(), "");
   NewPN->reserveOperandSpace(PN->getNumOperands()/2);
   InsertNewInstBefore(NewPN, *PN);
   NewPN->takeName(PN);
@@ -2319,7 +2319,7 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
         cast<PointerType>(CI->getOperand(0)->getType())->getAddressSpace();
       Value *I2 = InsertBitCastBefore(CI->getOperand(0),
                                       PointerType::get(Type::Int8Ty, AS), I);
-      I2 = InsertNewInstBefore(new GetElementPtrInst(I2, Other, "ctg2"), I);
+      I2 = InsertNewInstBefore(GetElementPtrInst::Create(I2, Other, "ctg2"), I);
       return new PtrToIntInst(I2, CI->getType());
     }
   }
@@ -2341,10 +2341,10 @@ Instruction *InstCombiner::visitAdd(BinaryOperator &I) {
       // We check both true and false select arguments for a matching subtract.
       if (match(FV, m_Zero()) && match(TV, m_Sub(m_Value(N), m_Value(A))) &&
           A == Other)  // Fold the add into the true select value.
-        return new SelectInst(SI->getCondition(), N, A);
+        return SelectInst::Create(SI->getCondition(), N, A);
       if (match(TV, m_Zero()) && match(FV, m_Sub(m_Value(N), m_Value(A))) && 
           A == Other)  // Fold the add into the false select value.
-        return new SelectInst(SI->getCondition(), A, N);
+        return SelectInst::Create(SI->getCondition(), A, N);
     }
   }
   
@@ -2828,7 +2828,7 @@ Instruction *InstCombiner::visitUDiv(BinaryOperator &I) {
           FSI = InsertNewInstBefore(FSI, I);
 
           // construct the select instruction and return it.
-          return new SelectInst(SI->getOperand(0), TSI, FSI, SI->getName());
+          return SelectInst::Create(SI->getOperand(0), TSI, FSI, SI->getName());
         }
       }
   return 0;
@@ -3002,7 +3002,7 @@ Instruction *InstCombiner::visitURem(BinaryOperator &I) {
             BinaryOperator::createAnd(Op0, SubOne(STO), SI->getName()+".t"), I);
           Value *FalseAnd = InsertNewInstBefore(
             BinaryOperator::createAnd(Op0, SubOne(SFO), SI->getName()+".f"), I);
-          return new SelectInst(SI->getOperand(0), TrueAnd, FalseAnd);
+          return SelectInst::Create(SI->getOperand(0), TrueAnd, FalseAnd);
         }
       }
   }
@@ -3974,7 +3974,7 @@ Instruction *InstCombiner::MatchBSwap(BinaryOperator &I) {
   const Type *Tys[] = { ITy };
   Module *M = I.getParent()->getParent()->getParent();
   Function *F = Intrinsic::getDeclaration(M, Intrinsic::bswap, Tys, 1);
-  return new CallInst(F, V);
+  return CallInst::Create(F, V);
 }
 
 
@@ -4901,7 +4901,7 @@ Instruction *InstCombiner::visitFCmpInst(FCmpInst &I) {
         }
 
         if (Op1)
-          return new SelectInst(LHSI->getOperand(0), Op1, Op2);
+          return SelectInst::Create(LHSI->getOperand(0), Op1, Op2);
         break;
       }
   }
@@ -5201,7 +5201,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
         }
 
         if (Op1)
-          return new SelectInst(LHSI->getOperand(0), Op1, Op2);
+          return SelectInst::Create(LHSI->getOperand(0), Op1, Op2);
         break;
       }
       case Instruction::Malloc:
@@ -6888,9 +6888,9 @@ Instruction *InstCombiner::commonPointerCastTransforms(CastInst &CI) {
             // If we were able to index down into an element, create the GEP
             // and bitcast the result.  This eliminates one bitcast, potentially
             // two.
-            Instruction *NGEP = new GetElementPtrInst(OrigBase, 
-                                                      NewIndices.begin(),
-                                                      NewIndices.end(), "");
+            Instruction *NGEP = GetElementPtrInst::Create(OrigBase, 
+                                                          NewIndices.begin(),
+                                                          NewIndices.end(), "");
             InsertNewInstBefore(NGEP, CI);
             NGEP->takeName(GEP);
             
@@ -7425,7 +7425,7 @@ Instruction *InstCombiner::visitIntToPtr(IntToPtrInst &CI) {
       // If Offset is evenly divisible by Size, we can do this xform.
       if (Size && !APIntOps::srem(Offset, APInt(Offset.getBitWidth(), Size))){
         Offset = APIntOps::sdiv(Offset, APInt(Offset.getBitWidth(), Size));
-        return new GetElementPtrInst(X, ConstantInt::get(Offset));
+        return GetElementPtrInst::Create(X, ConstantInt::get(Offset));
       }
     }
     // TODO: Could handle other cases, e.g. where add is indexing into field of
@@ -7448,7 +7448,7 @@ Instruction *InstCombiner::visitIntToPtr(IntToPtrInst &CI) {
       
       Instruction *P = InsertNewInstBefore(new IntToPtrInst(X, CI.getType(),
                                                             "tmp"), CI);
-      return new GetElementPtrInst(P, ConstantInt::get(Offset), "tmp");
+      return GetElementPtrInst::Create(P, ConstantInt::get(Offset), "tmp");
     }
   }
   return 0;
@@ -7504,8 +7504,8 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
     // If we found a path from the src to dest, create the getelementptr now.
     if (SrcElTy == DstElTy) {
       SmallVector<Value*, 8> Idxs(NumZeros+1, ZeroUInt);
-      return new GetElementPtrInst(Src, Idxs.begin(), Idxs.end(), "", 
-                                   ((Instruction*) NULL));
+      return GetElementPtrInst::Create(Src, Idxs.begin(), Idxs.end(), "", 
+                                       ((Instruction*) NULL));
     }
   }
 
@@ -7602,8 +7602,8 @@ Instruction *InstCombiner::FoldSelectOpOp(SelectInst &SI, Instruction *TI,
     }
 
     // Fold this by inserting a select from the input values.
-    SelectInst *NewSI = new SelectInst(SI.getCondition(), TI->getOperand(0),
-                                       FI->getOperand(0), SI.getName()+".v");
+    SelectInst *NewSI = SelectInst::Create(SI.getCondition(), TI->getOperand(0),
+                                           FI->getOperand(0), SI.getName()+".v");
     InsertNewInstBefore(NewSI, SI);
     return CastInst::create(Instruction::CastOps(TI->getOpcode()), NewSI, 
                             TI->getType());
@@ -7643,8 +7643,8 @@ Instruction *InstCombiner::FoldSelectOpOp(SelectInst &SI, Instruction *TI,
   }
 
   // If we reach here, they do have operations in common.
-  SelectInst *NewSI = new SelectInst(SI.getCondition(), OtherOpT,
-                                     OtherOpF, SI.getName()+".v");
+  SelectInst *NewSI = SelectInst::Create(SI.getCondition(), OtherOpT,
+                                         OtherOpF, SI.getName()+".v");
   InsertNewInstBefore(NewSI, SI);
 
   if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TI)) {
@@ -7893,7 +7893,7 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
             if (AddOp != TI)
               std::swap(NewTrueOp, NewFalseOp);
             Instruction *NewSel =
-              new SelectInst(CondVal, NewTrueOp,NewFalseOp,SI.getName()+".p");
+              SelectInst::Create(CondVal, NewTrueOp,NewFalseOp,SI.getName()+".p");
 
             NewSel = InsertNewInstBefore(NewSel, SI);
             return BinaryOperator::createAdd(SubOp->getOperand(0), NewSel);
@@ -7919,7 +7919,7 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
           if (OpToFold) {
             Constant *C = GetSelectFoldableConstant(TVI);
             Instruction *NewSel =
-              new SelectInst(SI.getCondition(), TVI->getOperand(2-OpToFold), C);
+              SelectInst::Create(SI.getCondition(), TVI->getOperand(2-OpToFold), C);
             InsertNewInstBefore(NewSel, SI);
             NewSel->takeName(TVI);
             if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TVI))
@@ -7944,7 +7944,7 @@ Instruction *InstCombiner::visitSelectInst(SelectInst &SI) {
           if (OpToFold) {
             Constant *C = GetSelectFoldableConstant(FVI);
             Instruction *NewSel =
-              new SelectInst(SI.getCondition(), C, FVI->getOperand(2-OpToFold));
+              SelectInst::Create(SI.getCondition(), C, FVI->getOperand(2-OpToFold));
             InsertNewInstBefore(NewSel, SI);
             NewSel->takeName(FVI);
             if (BinaryOperator *BO = dyn_cast<BinaryOperator>(FVI))
@@ -8272,7 +8272,7 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
             }
           
             // Insert this value into the result vector.
-            Result = new InsertElementInst(Result, ExtractedElts[Idx], i,"tmp");
+            Result = InsertElementInst::Create(Result, ExtractedElts[Idx], i, "tmp");
             InsertNewInstBefore(cast<Instruction>(Result), CI);
           }
           return CastInst::create(Instruction::BitCast, Result, CI.getType());
@@ -8369,8 +8369,8 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
 
     if (InvokeInst *II = dyn_cast<InvokeInst>(CS.getInstruction())) {
       // Don't break the CFG, insert a dummy cond branch.
-      new BranchInst(II->getNormalDest(), II->getUnwindDest(),
-                     ConstantInt::getTrue(), II);
+      BranchInst::Create(II->getNormalDest(), II->getUnwindDest(),
+                         ConstantInt::getTrue(), II);
     }
     return EraseInstFromFunction(*CS.getInstruction());
   }
@@ -8581,13 +8581,13 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
 
   Instruction *NC;
   if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
-    NC = new InvokeInst(Callee, II->getNormalDest(), II->getUnwindDest(),
-                        Args.begin(), Args.end(), Caller->getName(), Caller);
+    NC = InvokeInst::Create(Callee, II->getNormalDest(), II->getUnwindDest(),
+                            Args.begin(), Args.end(), Caller->getName(), Caller);
     cast<InvokeInst>(NC)->setCallingConv(II->getCallingConv());
     cast<InvokeInst>(NC)->setParamAttrs(NewCallerPAL);
   } else {
-    NC = new CallInst(Callee, Args.begin(), Args.end(),
-                      Caller->getName(), Caller);
+    NC = CallInst::Create(Callee, Args.begin(), Args.end(),
+                          Caller->getName(), Caller);
     CallInst *CI = cast<CallInst>(Caller);
     if (CI->isTailCall())
       cast<CallInst>(NC)->setTailCall();
@@ -8744,15 +8744,15 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
 
       Instruction *NewCaller;
       if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
-        NewCaller = new InvokeInst(NewCallee,
-                                   II->getNormalDest(), II->getUnwindDest(),
-                                   NewArgs.begin(), NewArgs.end(),
-                                   Caller->getName(), Caller);
+        NewCaller = InvokeInst::Create(NewCallee,
+                                       II->getNormalDest(), II->getUnwindDest(),
+                                       NewArgs.begin(), NewArgs.end(),
+                                       Caller->getName(), Caller);
         cast<InvokeInst>(NewCaller)->setCallingConv(II->getCallingConv());
         cast<InvokeInst>(NewCaller)->setParamAttrs(NewPAL);
       } else {
-        NewCaller = new CallInst(NewCallee, NewArgs.begin(), NewArgs.end(),
-                                 Caller->getName(), Caller);
+        NewCaller = CallInst::Create(NewCallee, NewArgs.begin(), NewArgs.end(),
+                                     Caller->getName(), Caller);
         if (cast<CallInst>(Caller)->isTailCall())
           cast<CallInst>(NewCaller)->setTailCall();
         cast<CallInst>(NewCaller)->
@@ -8824,7 +8824,7 @@ Instruction *InstCombiner::FoldPHIArgBinOpIntoPHI(PHINode &PN) {
   Value *InRHS = FirstInst->getOperand(1);
   PHINode *NewLHS = 0, *NewRHS = 0;
   if (LHSVal == 0) {
-    NewLHS = new PHINode(LHSType, FirstInst->getOperand(0)->getName()+".pn");
+    NewLHS = PHINode::Create(LHSType, FirstInst->getOperand(0)->getName()+".pn");
     NewLHS->reserveOperandSpace(PN.getNumOperands()/2);
     NewLHS->addIncoming(InLHS, PN.getIncomingBlock(0));
     InsertNewInstBefore(NewLHS, PN);
@@ -8832,7 +8832,7 @@ Instruction *InstCombiner::FoldPHIArgBinOpIntoPHI(PHINode &PN) {
   }
   
   if (RHSVal == 0) {
-    NewRHS = new PHINode(RHSType, FirstInst->getOperand(1)->getName()+".pn");
+    NewRHS = PHINode::Create(RHSType, FirstInst->getOperand(1)->getName()+".pn");
     NewRHS->reserveOperandSpace(PN.getNumOperands()/2);
     NewRHS->addIncoming(InRHS, PN.getIncomingBlock(0));
     InsertNewInstBefore(NewRHS, PN);
@@ -8858,7 +8858,7 @@ Instruction *InstCombiner::FoldPHIArgBinOpIntoPHI(PHINode &PN) {
                            RHSVal);
   else {
     assert(isa<GetElementPtrInst>(FirstInst));
-    return new GetElementPtrInst(LHSVal, RHSVal);
+    return GetElementPtrInst::Create(LHSVal, RHSVal);
   }
 }
 
@@ -8960,8 +8960,8 @@ Instruction *InstCombiner::FoldPHIArgOpIntoPHI(PHINode &PN) {
 
   // Okay, they are all the same operation.  Create a new PHI node of the
   // correct type, and PHI together all of the LHS's of the instructions.
-  PHINode *NewPN = new PHINode(FirstInst->getOperand(0)->getType(),
-                               PN.getName()+".in");
+  PHINode *NewPN = PHINode::Create(FirstInst->getOperand(0)->getType(),
+                                   PN.getName()+".in");
   NewPN->reserveOperandSpace(PN.getNumOperands()/2);
 
   Value *InVal = FirstInst->getOperand(0);
@@ -9308,8 +9308,8 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     }
 
     if (!Indices.empty())
-      return new GetElementPtrInst(SrcGEPOperands[0], Indices.begin(),
-                                   Indices.end(), GEP.getName());
+      return GetElementPtrInst::Create(SrcGEPOperands[0], Indices.begin(),
+                                       Indices.end(), GEP.getName());
 
   } else if (GlobalValue *GV = dyn_cast<GlobalValue>(PtrOp)) {
     // GEP of global variable.  If all of the indices for this GEP are
@@ -9364,7 +9364,7 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
         Idx[0] = Constant::getNullValue(Type::Int32Ty);
         Idx[1] = GEP.getOperand(1);
         Value *V = InsertNewInstBefore(
-               new GetElementPtrInst(X, Idx, Idx + 2, GEP.getName()), GEP);
+               GetElementPtrInst::Create(X, Idx, Idx + 2, GEP.getName()), GEP);
         // V and GEP are both pointer types --> BitCast
         return new BitCastInst(V, GEP.getType());
       }
@@ -9422,7 +9422,7 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
           Idx[0] = Constant::getNullValue(Type::Int32Ty);
           Idx[1] = NewIdx;
           Instruction *NewGEP =
-            new GetElementPtrInst(X, Idx, Idx + 2, GEP.getName());
+            GetElementPtrInst::Create(X, Idx, Idx + 2, GEP.getName());
           NewGEP = InsertNewInstBefore(NewGEP, GEP);
           // The NewGEP must be pointer typed, so must the old one -> BitCast
           return new BitCastInst(NewGEP, GEP.getType());
@@ -9465,8 +9465,8 @@ Instruction *InstCombiner::visitAllocationInst(AllocationInst &AI) {
       Value *Idx[2];
       Idx[0] = NullIdx;
       Idx[1] = NullIdx;
-      Value *V = new GetElementPtrInst(New, Idx, Idx + 2,
-                                       New->getName()+".sub", It);
+      Value *V = GetElementPtrInst::Create(New, Idx, Idx + 2,
+                                           New->getName()+".sub", It);
 
       // Now make everything use the getelementptr instead of the original
       // allocation.
@@ -9777,7 +9777,7 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
                                      SI->getOperand(1)->getName()+".val"), LI);
         Value *V2 = InsertNewInstBefore(new LoadInst(SI->getOperand(2),
                                      SI->getOperand(2)->getName()+".val"), LI);
-        return new SelectInst(SI->getCondition(), V1, V2);
+        return SelectInst::Create(SI->getCondition(), V1, V2);
       }
 
       // load (select (cond, null, P)) -> load P
@@ -10054,7 +10054,7 @@ bool InstCombiner::SimplifyStoreAtEndOfBlock(StoreInst &SI) {
   // Insert a PHI node now if we need it.
   Value *MergedVal = OtherStore->getOperand(0);
   if (MergedVal != SI.getOperand(0)) {
-    PHINode *PN = new PHINode(MergedVal->getType(), "storemerge");
+    PHINode *PN = PHINode::Create(MergedVal->getType(), "storemerge");
     PN->reserveOperandSpace(2);
     PN->addIncoming(SI.getOperand(0), SI.getParent());
     PN->addIncoming(OtherStore->getOperand(0), OtherBB);
@@ -10340,7 +10340,7 @@ Instruction *InstCombiner::visitExtractElementInst(ExtractElementInst &EI) {
         Value *Ptr = InsertBitCastBefore(I->getOperand(0),
                                          PointerType::get(EI.getType(), AS),EI);
         GetElementPtrInst *GEP = 
-          new GetElementPtrInst(Ptr, EI.getOperand(1), I->getName() + ".gep");
+          GetElementPtrInst::Create(Ptr, EI.getOperand(1), I->getName() + ".gep");
         InsertNewInstBefore(GEP, EI);
         return new LoadInst(GEP);
       }
