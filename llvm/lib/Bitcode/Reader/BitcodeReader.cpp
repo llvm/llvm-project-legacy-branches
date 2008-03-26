@@ -124,10 +124,10 @@ namespace {
     void operator=(const ConstantPlaceHolder &); // DO NOT IMPLEMENT
     Use Op;
   public:
-  // allocate space for exactly one operand
-  void *operator new(size_t s) {
-    return User::operator new(s, 1);
-  }
+    // allocate space for exactly one operand
+    void *operator new(size_t s) {
+      return User::operator new(s, 1);
+    }
     explicit ConstantPlaceHolder(const Type *Ty)
       : ConstantExpr(Ty, Instruction::UserOp1, &Op, 1),
         Op(UndefValue::get(Type::Int32Ty), this) {
