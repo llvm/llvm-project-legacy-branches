@@ -1045,7 +1045,7 @@ namespace llvm {
   template<class ValType>
   struct ConstantCreator<ConstantAggregateZero, Type, ValType> {
     static ConstantAggregateZero *create(const Type *Ty, const ValType &V){
-      return new(0) ConstantAggregateZero(Ty);
+      return new ConstantAggregateZero(Ty);
     }
   };
 
