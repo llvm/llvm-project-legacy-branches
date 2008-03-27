@@ -130,6 +130,21 @@ The following literate Haskell fragment demonstrates the concept:
 
 Printing <test> gives: "1s100000s11010s10100s1111s1010s110s11s1S"
 
+The reverse algorithm computes the
+length of the string just by examining
+a certain prefix:
+
+> pref :: [Char] -> Int
+> pref "S" = 1
+> pref ('s':rest) = decode 1 0 rest
+> pref (_:rest) = 1 + pref rest
+> 
+> decode walk acc ('0':rest) = decode (walk + 1) (acc * 2) rest
+> decode walk acc ('1':rest) = decode (walk + 1) (acc * 2 + 1) rest
+> decode walk acc _ = walk + acc
+> 
+
+Now, as expected, printing <pref test> gives 40.
 
 
 To maintain the invariant that the 2 LSBits of each Value* in Use
