@@ -23,6 +23,104 @@
 
 namespace llvm {
 
+/*==============================================================================
+
+
+   -----------------------------------------------------------------
+   --- Interaction and relationship between User and Use objects ---
+   -----------------------------------------------------------------
+
+
+A subclass of User can choose between incorporating its Use objects
+or refer to them out-of-line by means of a pointer. A mixed variant
+(some Uses inline others hung off) is impractical and breaks the invariant
+that the Use objects belonging to the same User form a contiguous array.
+
+We have 2 different layouts in the User (sub)classes:
+
+Layout a)
+The Use object(s) are inside (resp. at fixed offset) of the User
+object and there are a fixed number of them.
+
+Layout b)
+The Use object(s) are referenced by a pointer to an
+array from the User object and there may be a variable
+number of them.
+
+Initially each layout will posses a direct pointer to the
+start of the array of Uses. Though not mandatory for layout a),
+we stick to this redundancy for the sake of simplicity.
+The User object will also store the number of Use objects it
+has. (Theoretically this information can also be calculated
+given the scheme presented below.)
+
+Special forms of allocation operators (operator new)
+will enforce the following memory layouts:
+
+
+#  Layout a) will be modelled by prepending the User object
+#  by the Use[] array.
+#      
+#      ...---.---.---.---.-------...
+#        | V | V | V | V | User
+#      '''---'---'---'---'-------'''
+
+
+#  Layout b) will be modelled by pointing at the Use[] array.
+#      
+#      .-------...
+#      | User
+#      '-------'''
+#          |
+#          v
+#          .---.---.---.---...
+#          | V | V | V | V |
+#          '---'---'---'---'''
+
+
+Since the Use objects will be deprived of the direct pointer to
+their User objects, there must be a fast and exact method to
+recover it. This is accomplished by the following scheme:
+
+A bit-encoding in the 2 LSBits of the Use::Val will allow to find the
+start of the User object:
+
+00 --> binary digit 0
+01 --> binary digit 1
+10 --> stop and calc (s)
+11 --> full stop (S)
+
+Given a Use*, all we have to do is walk till we get a
+stop and we either have a User immediately behind or
+we have to walk to the next stop picking up digits
+and calculate the offset:
+
+.---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.----------------
+| s | 1 | 0 | 1 | 1 | s | 0 | 1 | 1 | 0 | s | 0 | 0 | 0 | 1 | S | User (or User*)
+'---'---'---'---'---'---'---'---'---'---'---'---'---'---'---'---'----------------
+|+16                |+11                |+6                 |+1
+|                   |                   |                   |__>
+|                   |                   |______________________>
+|                   |__________________________________________>
+|______________________________________________________________>
+
+
+Only the significant number of bits need to be stored between the
+stops, so that the worst case is 21 memory accesses when there are
+1000 Use objects.
+
+To maintain the invariant that the 2 LSBits of each Value* in Use
+never change after being set up, setters of Use::Val must re-tag the
+new Value* on every modification. Accordingly getters must strip the
+tag bits.
+
+For layout b) instead of the User we will find a pointer (with LSBit set).
+Following this pointer brings us to the User. A portable trick will ensure
+that the first bytes of User (if interpreted as a pointer) will never have
+the LSBit set.
+
+==============================================================================*/
+
 class User : public Value {
   User(const User &);             // Do not implement
   void *operator new(size_t);     // Do not implement
