@@ -111,6 +111,7 @@ stops, so that the worst case is 21 memory accesses when there are
 
 The following literate Haskell fragment demonstrates the concept:
 
+> import Test.QuickCheck
 > 
 > digits :: Int -> [Char] -> [Char]
 > digits 0 acc = '0' : acc
@@ -145,6 +146,30 @@ a certain prefix:
 > 
 
 Now, as expected, printing <pref test> gives 40.
+
+We can quickCheck this with following property:
+
+> testcase = dist 2000 []
+> testcaseLength = length testcase
+> 
+> identityProp n = n > 0 && n <= testcaseLength ==> length arr == pref arr
+>     where arr = takeLast n testcase
+
+As expected <quickCheck identityProp> gives:
+
+*Main> quickCheck identityProp
+OK, passed 100 tests.
+
+Let's be a bit more exhaustive:
+
+> 
+> deepCheck p = check (defaultConfig { configMaxTest = 500 }) p
+> 
+
+And here is the result of <deepCheck identityProp>:
+
+*Main> deepCheck identityProp
+OK, passed 500 tests.
 
 
 To maintain the invariant that the 2 LSBits of each Value* in Use
