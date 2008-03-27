@@ -109,6 +109,29 @@ Only the significant number of bits need to be stored between the
 stops, so that the worst case is 21 memory accesses when there are
 1000 Use objects.
 
+The following literate Haskell fragment demonstrates the concept:
+
+> 
+> digits :: Int -> [Char] -> [Char]
+> digits 0 acc = '0' : acc
+> digits 1 acc = '1' : acc
+> digits n acc = digits (n `div` 2) $ digits (n `mod` 2) acc
+> 
+> dist :: Int -> [Char] -> [Char]
+> dist 0 [] = ['S']
+> dist 0 acc = acc
+> dist 1 acc = let r = dist 0 acc in 's' : digits (length r) r
+> dist n acc = dist (n - 1) $ dist 1 acc
+> 
+> takeLast n ss = reverse $ take n $ reverse ss
+> 
+> test = takeLast 40 $ dist 20 []
+> 
+
+Printing <test> gives: "1s100000s11010s10100s1111s1010s110s11s1S"
+
+
+
 To maintain the invariant that the 2 LSBits of each Value* in Use
 never change after being set up, setters of Use::Val must re-tag the
 new Value* on every modification. Accordingly getters must strip the
