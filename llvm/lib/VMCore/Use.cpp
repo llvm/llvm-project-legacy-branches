@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Use.h"
+#include "llvm/Value.h"
 
 namespace llvm {
 
@@ -20,31 +20,30 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 const Use *Use::getImpliedUser() const {
+  bool StopEncountered = false;
+  ptrdiff_t Offset = 0;
+  const Use *Current = this;
+  enum { stop = 0x2, fullstop = 0x3 };
 
-    bool StopEncountered = false;
-    ptrdiff_t Offset = 0;
-    const Use *Current = this;
+  while (true) {
+    unsigned Tag = unsigned(Current->Val) & 0x3;
+    switch (Tag)
+      {
+      case 0:
+      case 1:   // digits
+	if (StopEncountered)
+	  Offset = (Offset << 1) + Tag;
+	break;
+      case stop:
+	if (StopEncountered)
+	  return Current + Offset;
+	StopEncountered = true;
+	break;
+      case fullstop:
+	return Current + 1;
+      }
 
-    while (true) 
-    {
-        unsigned Tag = unsigned(Current->Val) & 0x3;
-        switch (Tag)
-        {
-            case 0:
-            case 1:   // digits
-                if (StopEncountered)
-                    Offset = (Offset << 1) + Tag;
-                break;
-            case 0x2: // stop
-                if (StopEncountered)
-                    return Current + Offset;
-                StopEncountered = true;
-                break;
-            case 0x3: // full stop
-                return Current + 1;
-        }
-
-        ++Current;
-    }
+    ++Current;
+  }
 }
 }

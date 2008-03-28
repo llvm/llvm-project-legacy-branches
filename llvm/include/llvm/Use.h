@@ -49,6 +49,7 @@ public:
   operator Value*() const { return Val; }
   Value *get() const { return Val; }
   User *getUser() const { return U; }
+  const Use* getImpliedUser() const;
 
   inline void set(Value *Val);
 
