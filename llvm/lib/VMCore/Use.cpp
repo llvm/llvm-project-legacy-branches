@@ -48,21 +48,21 @@ const Use *Use::getImpliedUser() const {
   }
 }
 
-void Use::initTags(Use* start, Use* stop, ptrdiff_t done) {
-    ptrdiff_t Count = 0;
-    while (start != stop) 
-    {
-        --stop;
-        if (!Count) {
-            stop->Val = reinterpret_cast<Value*>(done == 0 ? fullStopTag : stopTag);
-            ++done;
-            Count = done;
-        } else {
-            stop->Val = reinterpret_cast<Value*>(Count & 1);
-            Count >>= 1;
-            ++done;
-        }
+void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
+  ptrdiff_t Count = 0;
+  while (Start != Stop) 
+  {
+    --Stop;
+    if (!Count) {
+      Stop->Val = reinterpret_cast<Value*>(Done == 0 ? fullStopTag : stopTag);
+      ++Done;
+      Count = Done;
+    } else {
+      Stop->Val = reinterpret_cast<Value*>(Count & 1);
+      Count >>= 1;
+      ++Done;
     }
+  }
 }
 
 

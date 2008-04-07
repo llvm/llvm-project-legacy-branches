@@ -50,7 +50,7 @@ public:
   Value *get() const { return Val; }
   User *getUser() const { return U; }
   const Use* getImpliedUser() const;
-  void initTags(Use* start, Use* stop, ptrdiff_t done = 0);
+  void initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
 
   inline void set(Value *Val);
 
