@@ -41,7 +41,7 @@ public:
     if (Val) removeFromList();
   }
 
-  /// Default ctor - This leaves the Use completely unitialized.  The only thing
+  /// Default ctor - This leaves the Use completely uninitialized.  The only thing
   /// that is valid to do with this use is to call the "init" method.
   inline Use() : Val(0) {}
 
@@ -50,6 +50,7 @@ public:
   Value *get() const { return Val; }
   User *getUser() const { return U; }
   const Use* getImpliedUser() const;
+  void initTags(Use* start, Use* stop, ptrdiff_t done = 0);
 
   inline void set(Value *Val);
 

@@ -19,31 +19,51 @@ namespace llvm {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
+enum ValuePtrTag { zeroDigitTag = 0, oneDigitTag = 1, stopTag = 0x2, fullStopTag = 0x3 };
+
 const Use *Use::getImpliedUser() const {
   bool StopEncountered = false;
   ptrdiff_t Offset = 0;
   const Use *Current = this;
-  enum { stop = 0x2, fullstop = 0x3 };
 
   while (true) {
     unsigned Tag = unsigned(Current->Val) & 0x3;
     switch (Tag)
       {
-      case 0:
-      case 1:   // digits
-	if (StopEncountered)
-	  Offset = (Offset << 1) + Tag;
-	break;
-      case stop:
-	if (StopEncountered)
-	  return Current + Offset;
-	StopEncountered = true;
-	break;
-      case fullstop:
-	return Current + 1;
+      case zeroDigitTag:
+      case oneDigitTag:
+        if (StopEncountered)
+          Offset = (Offset << 1) + Tag;
+        break;
+      case stopTag:
+        if (StopEncountered)
+          return Current + Offset;
+        StopEncountered = true;
+        break;
+      case fullStopTag:
+        return Current + 1;
       }
 
     ++Current;
   }
 }
+
+void Use::initTags(Use* start, Use* stop, ptrdiff_t done) {
+    ptrdiff_t Count = 0;
+    while (start != stop) 
+    {
+        --stop;
+        if (!Count) {
+            stop->Val = reinterpret_cast<Value*>(done == 0 ? fullStopTag : stopTag);
+            ++done;
+            Count = done;
+        } else {
+            stop->Val = reinterpret_cast<Value*>(Count & 1);
+            Count >>= 1;
+            ++done;
+        }
+    }
+}
+
+
 }
