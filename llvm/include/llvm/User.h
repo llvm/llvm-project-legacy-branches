@@ -47,7 +47,7 @@ The Use object(s) are referenced by a pointer to an
 array from the User object and there may be a variable
 number of them.
 
-Initially each layout will posses a direct pointer to the
+Initially each layout will possess a direct pointer to the
 start of the array of Uses. Though not mandatory for layout a),
 we stick to this redundancy for the sake of simplicity.
 The User object will also store the number of Use objects it
@@ -77,6 +77,9 @@ will enforce the following memory layouts:
 #          | V | V | V | V |
 #          '---'---'---'---'''
 
+   (In the above figures 'V' stands for the Value* that
+    is stored in each Use object)
+
 
 Since the Use objects will be deprived of the direct pointer to
 their User objects, there must be a fast and exact method to
@@ -90,10 +93,10 @@ start of the User object:
 10 --> stop and calc (s)
 11 --> full stop (S)
 
-Given a Use*, all we have to do is walk till we get a
-stop and we either have a User immediately behind or
+Given a Use*, all we have to do is to walk till we get
+a stop and we either have a User immediately behind or
 we have to walk to the next stop picking up digits
-and calculate the offset:
+and calculating the offset:
 
 .---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.----------------
 | 1 | s | 1 | 0 | 1 | 0 | s | 1 | 1 | 0 | s | 1 | 1 | s | 1 | S | User (or User*)
