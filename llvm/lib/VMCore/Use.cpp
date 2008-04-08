@@ -23,7 +23,7 @@ enum ValuePtrTag { zeroDigitTag = 0, oneDigitTag = 1, stopTag = 0x2, fullStopTag
 
 const Use *Use::getImpliedUser() const {
   bool StopEncountered = false;
-  ptrdiff_t Offset = 0;
+  ptrdiff_t Offset = 1;
   const Use *Current = this;
 
   while (true) {
@@ -39,7 +39,8 @@ const Use *Use::getImpliedUser() const {
         if (StopEncountered)
           return Current + Offset;
         StopEncountered = true;
-        break;
+        Current += 2;
+        continue;
       case fullStopTag:
         return Current + 1;
       }

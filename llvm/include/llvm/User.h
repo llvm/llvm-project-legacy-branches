@@ -110,7 +110,7 @@ and calculating the offset:
 
 
 Only the significant number of bits need to be stored between the
-stops, so that the worst case is 21 memory accesses when there are
+stops, so that the worst case is 20 memory accesses when there are
 1000 Use objects.
 
 The following literate Haskell fragment demonstrates the concept:
@@ -141,7 +141,7 @@ a certain prefix:
 
 > pref :: [Char] -> Int
 > pref "S" = 1
-> pref ('s':rest) = decode 1 0 rest
+> pref ('s':'1':rest) = decode 2 1 rest
 > pref (_:rest) = 1 + pref rest
 > 
 > decode walk acc ('0':rest) = decode (walk + 1) (acc * 2) rest
