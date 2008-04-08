@@ -36,18 +36,18 @@ public:
   inline void init(Value *V, User *U);
 
   Use(Value *V, User *U) { init(V, U); }
-  Use(const Use &U) { init(U.Val, U.U); }
+  Use(const Use &U) { init(U.get(), U.U); }
   inline ~Use() {
-    if (Val) removeFromList();
+    if (get()) removeFromList();
   }
 
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing
   /// that is valid to do with this use is to call the "init" method.
-  inline Use() : Val(0) {}
+  inline Use() {}
 
 
-  operator Value*() const { return Val; }
-  Value *get() const { return Val; }
+  operator Value*() const { return stripTag(Val); }
+  Value *get() const { return stripTag(Val); }
   User *getUser() const { return U; }
   const Use* getImpliedUser() const;
   static void initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
@@ -59,12 +59,12 @@ public:
     return RHS;
   }
   const Use &operator=(const Use &RHS) {
-    set(RHS.Val);
+    set(RHS.get());
     return *this;
   }
 
-        Value *operator->()       { return Val; }
-  const Value *operator->() const { return Val; }
+        Value *operator->()       { return stripTag(Val); }
+  const Value *operator->() const { return stripTag(Val); }
 
   Use *getNext() const { return Next; }
 private:
@@ -72,6 +72,9 @@ private:
   Value *Val;
   User *U;
 
+  static Value *stripTag(Value *V) {
+    return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) & ~3UL);
+  }
   void addToList(Use **List) {
     Next = *List;
     if (Next) Next->Prev = &Next;
