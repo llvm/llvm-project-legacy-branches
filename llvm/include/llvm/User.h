@@ -204,8 +204,12 @@ protected:
   ///
   unsigned NumOperands;
 
-  void *operator new(size_t s, unsigned) {
-    return ::operator new(s);
+  void *operator new(size_t s, unsigned Us) {
+    void *Storage = ::operator new(s + sizeof(Use) * Us);
+    Use *Start = static_cast<Use*>(Storage);
+    Use *End = Start + Us;
+    Use::initTags(Start, End);
+    return End;
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
     : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
