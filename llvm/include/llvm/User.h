@@ -195,8 +195,8 @@ protected:
   /// OperandList - This is a pointer to the array of Users for this operand.
   /// For nodes of fixed arity (e.g. a binary operator) this array will live
   /// embedded into the derived class.  For nodes of variable arity
-  /// (e.g. ConstantArrays, CallInst, PHINodes, ReturnInst etc), this memory 
-  /// will be dynamically allocated and should be destroyed by the classes 
+  /// (e.g. ConstantArrays, CallInst, PHINodes, ReturnInst etc.), this memory 
+  /// will be dynamically allocated and should be destroyed by the classes' 
   /// virtual dtor.
   Use *OperandList;
 
@@ -213,7 +213,14 @@ protected:
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
     : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
-
+public:
+  void operator delete(void *Usr) {
+    User *Start = static_cast<User*>(Usr);
+    Use *Storage = static_cast<Use*>(Usr) - Start->NumOperands;
+    if (Storage == Start->OperandList)
+      ::operator delete(Storage); // FIXME: destructors of Uses?
+    else ::operator delete(Usr);
+  }
 public:
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
