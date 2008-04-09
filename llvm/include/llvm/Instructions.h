@@ -288,11 +288,10 @@ public:
 ///
 class StoreInst : public Instruction {
   void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
-  Use Ops[2];
   
-  StoreInst(const StoreInst &SI) : Instruction(SI.getType(), Store, Ops, 2) {
-    Ops[0].init(SI.Ops[0], this);
-    Ops[1].init(SI.Ops[1], this);
+  StoreInst(const StoreInst &SI) : Instruction(SI.getType(), Store, &Op<0>(), 2) {
+    Op<0>().init(SI.Op<0>(), this);
+    Op<1>().init(SI.Op<1>(), this);
     setVolatile(SI.isVolatile());
     setAlignment(SI.getAlignment());
     
@@ -331,11 +330,11 @@ public:
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 2 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 2; }
 
@@ -383,7 +382,7 @@ class GetElementPtrInst : public Instruction {
   GetElementPtrInst(const GetElementPtrInst &GEPI)
     : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
                   0, GEPI.getNumOperands()) {
-    Use *OL = OperandList = new Use[NumOperands];
+    Use *OL = OperandList = 0; // FIXME: GEPI.dupHangoffUses(this, NumOperands, GEPI.OperandList)   new Use[NumOperands];
     Use *GEPIOL = GEPI.OperandList;
     for (unsigned i = 0, E = NumOperands; i != E; ++i)
       OL[i].init(GEPIOL[i], this);
@@ -401,7 +400,7 @@ class GetElementPtrInst : public Instruction {
       std::distance(IdxBegin, IdxEnd);
     
     if (NumIdx > 0) {
-      // This requires that the itoerator points to contiguous memory.
+      // This requires that the iterator points to contiguous memory.
       init(Ptr, &*IdxBegin, NumIdx);
     }
     else {
@@ -725,7 +724,7 @@ public:
   /// @brief Swap operands and adjust predicate.
   void swapOperands() {
     SubclassData = getSwappedPredicate();
-    std::swap(Ops[0], Ops[1]);
+    std::swap(Op<0>(), Op<1>());
   }
 
   virtual ICmpInst *clone() const;
@@ -849,7 +848,7 @@ public:
   /// @brief Swap operands and adjust predicate.
   void swapOperands() {
     SubclassData = getSwappedPredicate();
-    std::swap(Ops[0], Ops[1]);
+    std::swap(Op<0>(), Op<1>());
   }
 
   virtual FCmpInst *clone() const;
@@ -1053,27 +1052,25 @@ public:
 /// SelectInst - This class represents the LLVM 'select' instruction.
 ///
 class SelectInst : public Instruction {
-  Use Ops[3];
-
   void init(Value *C, Value *S1, Value *S2) {
-    Ops[0].init(C, this);
-    Ops[1].init(S1, this);
-    Ops[2].init(S2, this);
+    Op<0>() = C;
+    Op<1>() = S1;
+    Op<2>() = S2;
   }
 
   SelectInst(const SelectInst &SI)
-    : Instruction(SI.getType(), SI.getOpcode(), Ops, 3) {
-    init(SI.Ops[0], SI.Ops[1], SI.Ops[2]);
+    : Instruction(SI.getType(), SI.getOpcode(), &Op<0>(), 3) {
+    init(SI.Op<0>(), SI.Op<1>(), SI.Op<2>());
   }
   SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name = "",
              Instruction *InsertBefore = 0)
-    : Instruction(S1->getType(), Instruction::Select, Ops, 3, InsertBefore) {
+    : Instruction(S1->getType(), Instruction::Select, &Op<0>(), 3, InsertBefore) {
     init(C, S1, S2);
     setName(Name);
   }
   SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name,
              BasicBlock *InsertAtEnd)
-    : Instruction(S1->getType(), Instruction::Select, Ops, 3, InsertAtEnd) {
+    : Instruction(S1->getType(), Instruction::Select, &Op<0>(), 3, InsertAtEnd) {
     init(C, S1, S2);
     setName(Name);
   }
@@ -1087,18 +1084,18 @@ public:
     return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
   }
 
-  Value *getCondition() const { return Ops[0]; }
-  Value *getTrueValue() const { return Ops[1]; }
-  Value *getFalseValue() const { return Ops[2]; }
+  Value *getCondition() const { return Op<0>(); }
+  Value *getTrueValue() const { return Op<1>(); }
+  Value *getFalseValue() const { return Op<2>(); }
 
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 3 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 3; }
 
@@ -1160,11 +1157,10 @@ public:
 /// element from a VectorType value
 ///
 class ExtractElementInst : public Instruction {
-  Use Ops[2];
   ExtractElementInst(const ExtractElementInst &EE) :
-    Instruction(EE.getType(), ExtractElement, Ops, 2) {
-    Ops[0].init(EE.Ops[0], this);
-    Ops[1].init(EE.Ops[1], this);
+    Instruction(EE.getType(), ExtractElement, &Op<0>(), 2) {
+    Op<0>().init(EE.Op<0>(), this);
+    Op<1>().init(EE.Op<1>(), this);
   }
 
 public:
@@ -1190,11 +1186,11 @@ public:
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 2 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 2; }
 
@@ -1216,7 +1212,6 @@ public:
 /// element into a VectorType value
 ///
 class InsertElementInst : public Instruction {
-  Use Ops[3];
   InsertElementInst(const InsertElementInst &IE);
   InsertElementInst(Value *Vec, Value *NewElt, Value *Idx,
                     const std::string &Name = "",Instruction *InsertBefore = 0);
@@ -1263,11 +1258,11 @@ public:
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 3 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 3; }
 
@@ -1289,7 +1284,6 @@ public:
 /// input vectors.
 ///
 class ShuffleVectorInst : public Instruction {
-  Use Ops[3];
   ShuffleVectorInst(const ShuffleVectorInst &IE);
 public:
   // allocate space for exactly three operands
@@ -1317,15 +1311,15 @@ public:
   /// Transparently provide more efficient getOperand methods.
   const Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   Value *getOperand(unsigned i) {
     assert(i < 3 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 3 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 3; }
   
@@ -1497,7 +1491,6 @@ public:
 /// does not continue in this function any longer.
 ///
 class ReturnInst : public TerminatorInst {
-  Use RetVal;
   ReturnInst(const ReturnInst &RI);
   void init(Value * const* retVals, unsigned N);
 
@@ -1549,7 +1542,7 @@ public:
     if (getNumOperands() > 1)
       return TerminatorInst::getOperand(n);
     else
-      return RetVal;
+      return Op<0>();
   }
 
   Value *getReturnValue(unsigned n = 0) const {
@@ -1583,7 +1576,6 @@ class BranchInst : public TerminatorInst {
   /// Ops list - Branches are strange.  The operands are ordered:
   ///  TrueDest, FalseDest, Cond.  This makes some accessors faster because
   /// they don't have to check for cond/uncond branchness.
-  Use Ops[3];
   BranchInst(const BranchInst &BI);
   void AssertOK();
   // BranchInst constructors (where {B, T, F} are blocks, and C is a condition):
@@ -1618,11 +1610,11 @@ public:
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < getNumOperands() && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < getNumOperands() && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
 
   virtual BranchInst *clone() const;
@@ -1646,8 +1638,8 @@ public:
   void setUnconditionalDest(BasicBlock *Dest) {
     if (isConditional()) {  // Convert this to an uncond branch.
       NumOperands = 1;
-      Ops[1].set(0);
-      Ops[2].set(0);
+      Op<1>().set(0);
+      Op<2>().set(0);
     }
     setOperand(0, reinterpret_cast<Value*>(Dest));
   }
@@ -2552,11 +2544,10 @@ public:
 ///
 class GetResultInst : public /*FIXME: Unary*/Instruction {
   void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
-  Use Aggr;
   unsigned Idx;
   GetResultInst(const GetResultInst &GRI) :
-    Instruction(GRI.getType(), Instruction::GetResult, &Aggr, 1) {
-    Aggr.init(GRI.Aggr, this);
+    Instruction(GRI.getType(), Instruction::GetResult, &Op<0>(), 1) {
+    Op<0>().init(GRI.Op<0>(), this);
     Idx = GRI.Idx;
   }
 

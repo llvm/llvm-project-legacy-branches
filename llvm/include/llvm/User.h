@@ -208,11 +208,14 @@ protected:
     void *Storage = ::operator new(s + sizeof(Use) * Us);
     Use *Start = static_cast<Use*>(Storage);
     Use *End = Start + Us;
+    User *Obj = reinterpret_cast<User*>(End);
+    Obj->OperandList = Start;
+    Obj->NumOperands = Us;
     Use::initTags(Start, End);
-    return End;
+    return Obj;
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
-    : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
+    : Value(Ty, vty)/*, OperandList(OpList), NumOperands(NumOps)*/ {}
 public:
   void operator delete(void *Usr) {
     User *Start = static_cast<User*>(Usr);
@@ -222,6 +225,10 @@ public:
     else ::operator delete(Usr);
   }
 public:
+  template <unsigned> Use &Op();
+  template <unsigned> const Use &Op() const;
+  Use *allocHangoffUses(unsigned) const;
+
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
     return OperandList[i];

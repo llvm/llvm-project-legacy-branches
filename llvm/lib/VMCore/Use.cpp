@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the algoritm for finding the User of a Use.
+// This file implements the algorithm for finding the User of a Use.
 //
 //===----------------------------------------------------------------------===//
 

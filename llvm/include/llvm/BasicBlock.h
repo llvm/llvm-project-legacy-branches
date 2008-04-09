@@ -52,11 +52,11 @@ template<> struct ilist_traits<Instruction>
 class BasicBlock : public User {       // Basic blocks are data objects also
 public:
   typedef iplist<Instruction> InstListType;
-private :
+private:
   InstListType InstList;
   BasicBlock *Prev, *Next; // Next and Prev links for our intrusive linked list
   Function *Parent;
-  Use unwindDest;
+/*  Use unwindDest;*/
 
   void setParent(Function *parent);
   void setNext(BasicBlock *N) { Next = N; }

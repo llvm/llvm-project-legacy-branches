@@ -84,16 +84,15 @@ public:
 
 class UnaryInstruction : public Instruction {
   void *operator new(size_t, unsigned); // Do not implement
-  Use Op;
   
-  // avoiding warning: 'this' : used in base member initializer list
-  UnaryInstruction* this_() { return this; }
 protected:
-  UnaryInstruction(const Type *Ty, unsigned iType, Value *V, Instruction *IB =0)
-    : Instruction(Ty, iType, &Op, 1, IB), Op(V, this_()) {
+  UnaryInstruction(const Type *Ty, unsigned iType, Value *V, Instruction *IB = 0)
+    : Instruction(Ty, iType, &Op<0>(), 1, IB) {
+    Op<0>() = V;
   }
   UnaryInstruction(const Type *Ty, unsigned iType, Value *V, BasicBlock *IAE)
-    : Instruction(Ty, iType, &Op, 1, IAE), Op(V, this_()) {
+    : Instruction(Ty, iType, &Op<0>(), 1, IAE) {
+    Op<0>() = V;
   }
 public:
   // allocate space for exactly one operand
@@ -107,11 +106,11 @@ public:
   // Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i == 0 && "getOperand() out of range!");
-    return Op;
+    return Op<0>();
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i == 0 && "setOperand() out of range!");
-    Op = Val;
+    Op<0>() = Val;
   }
   unsigned getNumOperands() const { return 1; }
   
@@ -136,7 +135,6 @@ public:
 
 class BinaryOperator : public Instruction {
   void *operator new(size_t, unsigned); // Do not implement
-  Use Ops[2];
 protected:
   void init(BinaryOps iType);
   BinaryOperator(BinaryOps iType, Value *S1, Value *S2, const Type *Ty,
@@ -152,11 +150,11 @@ public:
   /// Transparently provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 2 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
   unsigned getNumOperands() const { return 2; }
 
@@ -509,8 +507,6 @@ protected:
   CmpInst(Instruction::OtherOps op, unsigned short pred, Value *LHS, Value *RHS,
           const std::string &Name, BasicBlock *InsertAtEnd);
 
-  Use Ops[2]; // CmpInst instructions always have 2 operands, optimize
-
 public:
   // allocate space for exactly two operands
   void *operator new(size_t s) {
@@ -552,11 +548,11 @@ public:
   /// @brief Provide more efficient getOperand methods.
   Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
-    return Ops[i];
+    return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < 2 && "setOperand() out of range!");
-    Ops[i] = Val;
+    OperandList[i] = Val;
   }
 
   /// @brief CmpInst instructions always have 2 operands.

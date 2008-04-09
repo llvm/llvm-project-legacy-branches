@@ -44,12 +44,11 @@ class GlobalVariable : public GlobalValue {
 
   bool isConstantGlobal : 1;           // Is this a global constant?
   bool isThreadLocalSymbol : 1;        // Is this symbol "Thread Local"?
-  Use Initializer;
 
 public:
-  // allocate space for exactly zero operands
+  // allocate space for exactly one operand
   void *operator new(size_t s) {
-    return User::operator new(s, 0);
+    return User::operator new(s, 1); // FIXME: if no initializer, then 0
   }
   /// GlobalVariable ctor - If a parent module is specified, the global is
   /// automatically inserted into the end of the specified modules global list.
@@ -81,22 +80,22 @@ public:
   ///
   inline Constant *getInitializer() const {
     assert(hasInitializer() && "GV doesn't have initializer!");
-    return reinterpret_cast<Constant*>(Initializer.get());
+    return static_cast<Constant*>(Op<0>().get());
   }
   inline Constant *getInitializer() {
     assert(hasInitializer() && "GV doesn't have initializer!");
-    return reinterpret_cast<Constant*>(Initializer.get());
+    return static_cast<Constant*>(Op<0>().get());
   }
   inline void setInitializer(Constant *CPV) {
     if (CPV == 0) {
       if (hasInitializer()) {
-        Initializer.set(0);
+        Op<0>().set(0);
         NumOperands = 0;
       }
     } else {
       if (!hasInitializer())
         NumOperands = 1;
-      Initializer.set(CPV);
+      Op<0>().set(CPV);
     }
   }
 

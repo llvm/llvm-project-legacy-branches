@@ -35,15 +35,19 @@ class Use {
 public:
   inline void init(Value *V, User *U);
 
-  Use(Value *V, User *U) { init(V, U); }
+/*  Use(Value *V, User *U) { init(V, U); }
   Use(const Use &U) { init(U.get(), U.U); }
+*/
   inline ~Use() {
     if (get()) removeFromList();
   }
 
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing
   /// that is valid to do with this use is to call the "init" method.
+
+private:
   inline Use() {}
+public:
 
 
   operator Value*() const { return stripTag(Val); }
@@ -68,9 +72,9 @@ public:
 
   Use *getNext() const { return Next; }
 private:
+  User *U;
   Use *Next, **Prev;
   Value *Val;
-  User *U;
 
   static Value *stripTag(Value *V) {
     return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) & ~3UL);

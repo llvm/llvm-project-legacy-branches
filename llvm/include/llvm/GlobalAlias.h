@@ -42,11 +42,10 @@ class GlobalAlias : public GlobalValue {
         GlobalAlias *getPrev()       { return Prev; }
   const GlobalAlias *getPrev() const { return Prev; }
 
-  Use Aliasee;
 public:
-  // allocate space for exactly zero operands
+  // allocate space for exactly one operand
   void *operator new(size_t s) {
-    return User::operator new(s, 0);
+    return User::operator new(s, 1);
   }
   /// GlobalAlias ctor - If a parent module is specified, the alias is
   /// automatically inserted into the end of the specified module's alias list.

@@ -75,7 +75,7 @@ template class SymbolTableListTraits<Instruction, BasicBlock>;
 
 BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
                        BasicBlock *InsertBefore, BasicBlock *Dest)
-  : User(Type::LabelTy, Value::BasicBlockVal, &unwindDest, 0/*FIXME*/), Parent(0) {
+  : User(Type::LabelTy, Value::BasicBlockVal, &Op<0>()/*unwindDest*/, 0/*FIXME*/), Parent(0) {
 
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
@@ -89,8 +89,9 @@ BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
   }
   
   setName(Name);
-  unwindDest.init(NULL, this);
-  setUnwindDest(Dest);
+  // Op<0>()./*unwindDest.*/init(NULL, this); /*FIXME*/
+  if (Dest)
+    setUnwindDest(Dest);
 }
 
 
@@ -120,16 +121,17 @@ void BasicBlock::eraseFromParent() {
 }
 
 const BasicBlock *BasicBlock::getUnwindDest() const {
-  return cast_or_null<const BasicBlock>(unwindDest.get());
+  return cast_or_null<const BasicBlock>(Op<0>().get());
 }
 
 BasicBlock *BasicBlock::getUnwindDest() {
-  return cast_or_null<BasicBlock>(unwindDest.get());
+  return cast_or_null<BasicBlock>(Op<0>().get());
 }
 
 void BasicBlock::setUnwindDest(BasicBlock *dest) {
-  NumOperands = unwindDest ? 1 : 0;
-  unwindDest.set(dest);
+//  NumOperands = unwindDest ? 1 : 0;
+  if (dest) // FIXME
+    Op<0>().set(dest);
 }
 
 /// moveBefore - Unlink this basic block from its current function and
