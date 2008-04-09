@@ -27,30 +27,29 @@ namespace llvm {
   class MemoryBuffer;
   
 class BitcodeReaderValueList : public User {
-  std::vector<Use> Uses;
 public:
   BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0) {}
   
   // vector compatibility methods
   unsigned size() const { return getNumOperands(); }
   void push_back(Value *V) {
-    Uses.push_back(Use(V, this));
-    OperandList = &Uses[0];
+//    Uses.push_back(Use(V, this));
+//    OperandList = &Uses[0];
     ++NumOperands;
   }
   
   void clear() {
-    std::vector<Use>().swap(Uses);
+//    std::vector<Use>().swap(Uses);
   }
   
   Value *operator[](unsigned i) const { return getOperand(i); }
   
-  Value *back() const { return Uses.back(); }
-  void pop_back() { Uses.pop_back(); --NumOperands; }
+  Value *back() const { /*return Uses.back();*/ }
+  void pop_back() { /*Uses.pop_back(); --NumOperands;*/ }
   bool empty() const { return NumOperands == 0; }
   void shrinkTo(unsigned N) {
     assert(N <= NumOperands && "Invalid shrinkTo request!");
-    Uses.resize(N);
+//    Uses.resize(N);
     NumOperands = N;
   }
   virtual void print(std::ostream&) const {}
@@ -73,8 +72,8 @@ public:
   
 private:
   void initVal(unsigned Idx, Value *V) {
-    assert(Uses[Idx] == 0 && "Cannot init an already init'd Use!");
-    Uses[Idx].init(V, this);
+//    assert(Uses[Idx] == 0 && "Cannot init an already init'd Use!");
+//    Uses[Idx].init(V, this);
   }
 };
   

@@ -122,15 +122,14 @@ namespace {
   class ConstantPlaceHolder : public ConstantExpr {
     ConstantPlaceHolder();                       // DO NOT IMPLEMENT
     void operator=(const ConstantPlaceHolder &); // DO NOT IMPLEMENT
-    Use Op;
   public:
     // allocate space for exactly one operand
     void *operator new(size_t s) {
       return User::operator new(s, 1);
     }
     explicit ConstantPlaceHolder(const Type *Ty)
-      : ConstantExpr(Ty, Instruction::UserOp1, &Op, 1),
-        Op(UndefValue::get(Type::Int32Ty), this) {
+      : ConstantExpr(Ty, Instruction::UserOp1, /*&Op*/NULL, 1) {
+      Op<0>() = UndefValue::get(Type::Int32Ty);
     }
   };
 }
@@ -139,41 +138,41 @@ Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
                                                     const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    Uses.resize(Idx+1);
-    OperandList = &Uses[0];
+//    Uses.resize(Idx+1);
+//    OperandList = &Uses[0];
     NumOperands = Idx+1;
   }
 
-  if (Value *V = Uses[Idx]) {
-    assert(Ty == V->getType() && "Type mismatch in constant table!");
-    return cast<Constant>(V);
-  }
+//  if (Value *V = Uses[Idx]) {
+//    assert(Ty == V->getType() && "Type mismatch in constant table!");
+//    return cast<Constant>(V);
+//  }
 
   // Create and return a placeholder, which will later be RAUW'd.
   Constant *C = new ConstantPlaceHolder(Ty);
-  Uses[Idx].init(C, this);
+//  Uses[Idx].init(C, this);
   return C;
 }
 
 Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    Uses.resize(Idx+1);
-    OperandList = &Uses[0];
+//    Uses.resize(Idx+1);
+//    OperandList = &Uses[0];
     NumOperands = Idx+1;
   }
   
-  if (Value *V = Uses[Idx]) {
+/*  if (Value *V = Uses[Idx]) {
     assert((Ty == 0 || Ty == V->getType()) && "Type mismatch in value table!");
     return V;
-  }
+  }*/
   
   // No type specified, must be invalid reference.
   if (Ty == 0) return 0;
   
   // Create and return a placeholder, which will later be RAUW'd.
   Value *V = new Argument(Ty);
-  Uses[Idx].init(V, this);
+//  Uses[Idx].init(V, this);
   return V;
 }
 
