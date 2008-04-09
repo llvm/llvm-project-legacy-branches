@@ -251,7 +251,7 @@ public:
   template <unsigned Idx> const Use &Op() const {
 		return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
 	}
-  Use *allocHangoffUses(unsigned) const;
+  inline Use *allocHangoffUses(unsigned) const;
 
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
@@ -319,6 +319,12 @@ inline unsigned OperandTraits<User>::operands(User *U) {
 	static inline void *allocate(unsigned);
 };
 	*/
+
+Use *User::allocHangoffUses(unsigned N) const {
+  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N));
+	Use::initTags(Begin, Begin + N);
+	return Begin;
+}
 
 template<> struct simplify_type<User::op_iterator> {
   typedef Value* SimpleType;
