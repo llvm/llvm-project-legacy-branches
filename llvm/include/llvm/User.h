@@ -188,6 +188,26 @@ the LSBit set.
 
 ==============================================================================*/
 
+/// OperandTraits - Compile-time customization of
+/// operand-related allocators and accessors
+/// for use of the User class
+template <class>
+struct OperandTraits;
+
+class User;
+
+template <>
+struct OperandTraits<User> {
+  static inline Use *op_begin(User*);
+  static inline Use *op_end(User*);
+	static inline unsigned operands(User*);
+  template <class U>
+	struct Layout {
+		typedef U overlay;
+	};
+	static inline void *allocate(unsigned);
+};
+
 class User : public Value {
   User(const User &);             // Do not implement
   void *operator new(size_t);     // Do not implement
@@ -225,8 +245,12 @@ public:
     else ::operator delete(Usr);
   }
 public:
-  template <unsigned> Use &Op();
-  template <unsigned> const Use &Op() const;
+  template <unsigned Idx> Use &Op() {
+		return OperandTraits<User>::op_begin(this)[Idx];
+	}
+  template <unsigned Idx> const Use &Op() const {
+		return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
+	}
   Use *allocHangoffUses(unsigned) const;
 
   Value *getOperand(unsigned i) const {
@@ -275,6 +299,26 @@ public:
     return isa<Instruction>(V) || isa<Constant>(V);
   }
 };
+
+inline Use *OperandTraits<User>::op_begin(User *U) {
+	return U->op_begin();
+}
+
+inline Use *OperandTraits<User>::op_end(User *U) {
+	return U->op_end();
+}
+
+inline unsigned OperandTraits<User>::operands(User *U) {
+	return U->getNumOperands();
+}
+	/*
+  template <class U>
+	struct Layout {
+		typedef U overlay;
+	};
+	static inline void *allocate(unsigned);
+};
+	*/
 
 template<> struct simplify_type<User::op_iterator> {
   typedef Value* SimpleType;
