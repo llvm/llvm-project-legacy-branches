@@ -106,13 +106,15 @@ struct FixedNumOperandTraits {
 	static inline void *allocate(unsigned); // FIXME
 };
 
-
+/// Macro for generating in-class operand accessor declarations
 #define DECLARE_TRANSPARENT_OPERAND_ACCESSORS(VALUECLASS) \
   inline VALUECLASS *getOperand(unsigned) const; \
   inline void setOperand(unsigned, VALUECLASS*); \
-  inline unsigned getNumOperands() const
+  inline unsigned getNumOperands() const; \
+  template <unsigned Idx> inline Use &Op(); \
+  template <unsigned Idx> inline const Use &Op() const
 
-
+/// Macro for generating out-of-class operand accessor definitions
 #define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
 VALUECLASS *CLASS::getOperand(unsigned i) const { \
 	assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
@@ -122,7 +124,13 @@ void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
 	assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
 	OperandTraits<CLASS>::op_begin(this)[i] = Val; \
 } \
-unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); }
+unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
+template <unsigned Idx> Use &CLASS::Op() { \
+  return OperandTraits<CLASS>::op_begin(this)[Idx]; \
+} \
+template <unsigned Idx> const Use &CLASS::Op() const { \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx]; \
+}
 
 
 //===----------------------------------------------------------------------===//
@@ -152,15 +160,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-/*  Value *getOperand(unsigned i) const {
-    assert(i == 0 && "getOperand() out of range!");
-    return Op<0>();
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i == 0 && "setOperand() out of range!");
-    Op<0>() = Val;
-  }
-  unsigned getNumOperands() const { return 1; }*/
   
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const UnaryInstruction *) { return true; }
@@ -203,9 +202,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-/*  inline Value *getOperand(unsigned i) const;
-  inline void setOperand(unsigned i, Value *Val);
-  inline unsigned getNumOperands() const;*/
 
   /// create() - Construct a binary instruction, given the opcode and the two
   /// operands.  Optionally (if InstBefore is specified) insert the instruction
@@ -603,17 +599,6 @@ public:
 
   /// @brief Provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-/*  Value *getOperand(unsigned i) const {
-    assert(i < 2 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 2 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-
-  /// @brief CmpInst instructions always have 2 operands.
-  unsigned getNumOperands() const { return 2; }*/
 
   /// This is just a convenience that dispatches to the subclasses.
   /// @brief Swap the operands and adjust predicate accordingly to retain

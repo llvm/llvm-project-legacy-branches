@@ -235,7 +235,7 @@ protected:
     return Obj;
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
-    : Value(Ty, vty)/*, OperandList(OpList), NumOperands(NumOps)*/ {}
+    : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
 public:
   void operator delete(void *Usr) {
     User *Start = static_cast<User*>(Usr);

@@ -2253,7 +2253,10 @@ BitCastInst::BitCastInst(
 
 CmpInst::CmpInst(OtherOps op, unsigned short predicate, Value *LHS, Value *RHS,
                  const std::string &Name, Instruction *InsertBefore)
-  : Instruction(Type::Int1Ty, op, /*Ops*/NULL, 2, InsertBefore) {
+  : Instruction(Type::Int1Ty, op,
+                OperandTraits<CmpInst>::op_begin(this),
+                OperandTraits<CmpInst>::operands(this),
+                InsertBefore) {
     Op<0>().init(LHS, this);
     Op<1>().init(RHS, this);
   SubclassData = predicate;
@@ -2282,10 +2285,13 @@ CmpInst::CmpInst(OtherOps op, unsigned short predicate, Value *LHS, Value *RHS,
   assert(Op0Ty->isFloatingPoint() &&
          "Invalid operand types for FCmp instruction");
 }
-  
+
 CmpInst::CmpInst(OtherOps op, unsigned short predicate, Value *LHS, Value *RHS,
                  const std::string &Name, BasicBlock *InsertAtEnd)
-  : Instruction(Type::Int1Ty, op, /*Ops*/NULL, 2, InsertAtEnd) {
+  : Instruction(Type::Int1Ty, op,
+                OperandTraits<CmpInst>::op_begin(this),
+                OperandTraits<CmpInst>::operands(this),
+                InsertAtEnd) {
   Op<0>().init(LHS, this);
   Op<1>().init(RHS, this);
   SubclassData = predicate;
@@ -2677,7 +2683,10 @@ GetResultInst::GetResultInst(Value *Aggregate, unsigned Index,
                              const std::string &Name,
                              Instruction *InsertBef)
   : Instruction(cast<StructType>(Aggregate->getType())->getElementType(Index),
-                GetResult, /*&Aggr*/NULL, 1, InsertBef) {
+                GetResult,
+                OperandTraits<GetResultInst>::op_begin(this),
+                OperandTraits<GetResultInst>::operands(this),
+                InsertBef) {
   assert(isValidOperands(Aggregate, Index) && "Invalid GetResultInst operands!");
   Op<0>().init(Aggregate, this);
   Idx = Index;

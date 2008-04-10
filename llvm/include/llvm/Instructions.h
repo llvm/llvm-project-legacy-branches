@@ -2578,7 +2578,8 @@ public:
     return Idx;
   }
 
-  unsigned getNumOperands() const { return 1; }
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const GetResultInst *) { return true; }
@@ -2589,6 +2590,14 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+// FIXME: these are redundant if GetResultInst < UnaryInstruction
+template <>
+struct OperandTraits<GetResultInst> : FixedNumOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetResultInst, Value)
+
 
 } // End llvm namespace
 
