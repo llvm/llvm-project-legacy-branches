@@ -32,7 +32,6 @@ template<typename ValueSubClass, typename ItemParentClass>
 
 class GlobalVariable : public GlobalValue {
   friend class SymbolTableListTraits<GlobalVariable, Module>;
-  void *operator new(size_t, unsigned);       // Do not implement
   void operator=(const GlobalVariable &);     // Do not implement
   GlobalVariable(const GlobalVariable &);     // Do not implement
 
@@ -45,23 +44,39 @@ class GlobalVariable : public GlobalValue {
   bool isConstantGlobal : 1;           // Is this a global constant?
   bool isThreadLocalSymbol : 1;        // Is this symbol "Thread Local"?
 
-public:
-  // allocate space for exactly one operand
-  void *operator new(size_t s) {
-    return User::operator new(s, 1); // FIXME: if no initializer, then 0
-  }
-  /// GlobalVariable ctor - If a parent module is specified, the global is
-  /// automatically inserted into the end of the specified modules global list.
-  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
-                 Constant *Initializer = 0, const std::string &Name = "",
-                 Module *Parent = 0, bool ThreadLocal = false, 
-                 unsigned AddressSpace = 0);
-  /// GlobalVariable ctor - This creates a global and inserts it before the
-  /// specified other global.
+private:
+  /// GlobalVariable ctor - for internal use.
   GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
                  Constant *Initializer, const std::string &Name,
-                 GlobalVariable *InsertBefore, bool ThreadLocal = false, 
-                 unsigned AddressSpace = 0);
+                 Module *Parent, bool ThreadLocal, unsigned AddressSpace);
+  /// GlobalVariable ctor - for internal use.
+  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
+                 Constant *Initializer, const std::string &Name,
+                 GlobalVariable *InsertBefore, bool ThreadLocal,
+                 unsigned AddressSpace);
+
+public:
+  /// GlobalVariable creator - If a parent module is specified, the global is
+  /// automatically inserted into the end of the specified modules global list.
+  static GlobalVariable *Create(const Type *Ty, bool isConstant, LinkageTypes Linkage,
+                                Constant *Initializer = 0, const std::string &Name = "",
+                                Module *Parent = 0, bool ThreadLocal = false, 
+                                unsigned AddressSpace = 0) {
+    return new (!!Initializer) GlobalVariable(Ty, isConstant, Linkage,
+                                              Initializer, Name, Parent,
+                                              ThreadLocal, AddressSpace);
+  }
+
+  /// GlobalVariable creator - This creates a global and inserts it before the
+  /// specified other global.
+  static GlobalVariable *Create(const Type *Ty, bool isConstant, LinkageTypes Linkage,
+                                Constant *Initializer, const std::string &Name,
+                                GlobalVariable *InsertBefore, bool ThreadLocal = false, 
+                                unsigned AddressSpace = 0) {
+    return new (!!Initializer) GlobalVariable(Ty, isConstant, Linkage,
+                                              Initializer, Name, InsertBefore,
+                                              ThreadLocal, AddressSpace);
+  }
   
   /// isDeclaration - Is this global variable lacking an initializer?  If so, 
   /// the global variable is defined in some other translation unit, and is thus
