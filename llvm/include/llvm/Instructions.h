@@ -1511,7 +1511,6 @@ struct VariadicOperandTraits {
 class ReturnInst : public TerminatorInst {
   ReturnInst(const ReturnInst &RI);
   void init(Value * const* retVals, unsigned N);
-  void *operator new(size_t, unsigned); // Do not implement
 
 private:
   // ReturnInst constructors:
