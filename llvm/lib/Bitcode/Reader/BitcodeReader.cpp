@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/OperandTraits.h"
 using namespace llvm;
 
 void BitcodeReader::FreeState() {
@@ -115,7 +116,7 @@ static int GetDecodedBinaryOpcode(unsigned Val, const Type *Ty) {
   }
 }
 
-
+namespace llvm {
 namespace {
   /// @brief A class for maintaining the slot number definition
   /// as a placeholder for the actual definition for forward constants defs.
@@ -128,51 +129,62 @@ namespace {
       return User::operator new(s, 1);
     }
     explicit ConstantPlaceHolder(const Type *Ty)
-      : ConstantExpr(Ty, Instruction::UserOp1, /*&Op*/NULL, 1) {
+      : ConstantExpr(Ty, Instruction::UserOp1, &Op<0>(), 1) {
       Op<0>() = UndefValue::get(Type::Int32Ty);
     }
+    /// Provide fast operand accessors
+    DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
   };
+}
+
+
+	// FIXME: can we inherit this from ConstantExpr?
+template <>
+struct OperandTraits<ConstantPlaceHolder> : FixedNumOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
 }
 
 Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
                                                     const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-//    Uses.resize(Idx+1);
+    resize(Idx * 2 + 1);
 //    OperandList = &Uses[0];
-    NumOperands = Idx+1;
+//    NumOperands = Idx+1;
   }
 
-//  if (Value *V = Uses[Idx]) {
-//    assert(Ty == V->getType() && "Type mismatch in constant table!");
-//    return cast<Constant>(V);
-//  }
+  if (Value *V = OperandList[Idx]) {
+    assert(Ty == V->getType() && "Type mismatch in constant table!");
+    return cast<Constant>(V);
+  }
 
   // Create and return a placeholder, which will later be RAUW'd.
   Constant *C = new ConstantPlaceHolder(Ty);
-//  Uses[Idx].init(C, this);
+  OperandList[Idx].init(C, this);
   return C;
 }
 
 Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-//    Uses.resize(Idx+1);
+    resize(Idx * 2 + 1);
 //    OperandList = &Uses[0];
-    NumOperands = Idx+1;
+//    NumOperands = Idx+1;
   }
   
-/*  if (Value *V = Uses[Idx]) {
+  if (Value *V = OperandList[Idx]) {
     assert((Ty == 0 || Ty == V->getType()) && "Type mismatch in value table!");
     return V;
-  }*/
+  }
   
   // No type specified, must be invalid reference.
   if (Ty == 0) return 0;
   
   // Create and return a placeholder, which will later be RAUW'd.
   Value *V = new Argument(Ty);
-//  Uses[Idx].init(V, this);
+  OperandList[Idx].init(V, this);
   return V;
 }
 

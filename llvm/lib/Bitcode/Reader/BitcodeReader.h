@@ -26,12 +26,35 @@
 namespace llvm {
   class MemoryBuffer;
   
+//===----------------------------------------------------------------------===//
+//                          HungoffOperand Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned MINARITY = 0>
+struct HungoffOperandTraits {
+  static Use *op_begin(User* U) {
+    return U->OperandList;
+  }
+  static Use *op_end(User* U) {
+    return U->OperandList + U->getNumOperands();
+  }
+  static unsigned operands(const User *U) {
+    return U->getNumOperands();
+  }
+  static inline void *allocate(unsigned); // FIXME
+};
+
+//===----------------------------------------------------------------------===//
+//                          BitcodeReaderValueList Class
+//===----------------------------------------------------------------------===//
+
 class BitcodeReaderValueList : public User {
 public:
   BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0) {}
   
   // vector compatibility methods
   unsigned size() const { return getNumOperands(); }
+	void resize(unsigned);
   void push_back(Value *V) {
 //    Uses.push_back(Use(V, this));
 //    OperandList = &Uses[0];
@@ -39,18 +62,20 @@ public:
   }
   
   void clear() {
-//    std::vector<Use>().swap(Uses);
+    dropHungoffUses(OperandList);
   }
   
   Value *operator[](unsigned i) const { return getOperand(i); }
   
-  Value *back() const { /*return Uses.back();*/ }
-  void pop_back() { /*Uses.pop_back(); --NumOperands;*/ }
+  Value *back() const { return getOperand(size() - 1); }
+  void pop_back() { setOperand(size() - 1, 0); --NumOperands; }
   bool empty() const { return NumOperands == 0; }
   void shrinkTo(unsigned N) {
     assert(N <= NumOperands && "Invalid shrinkTo request!");
 //    Uses.resize(N);
-    NumOperands = N;
+//    NumOperands = N;
+    while (NumOperands > N)
+      pop_back();
   }
   virtual void print(std::ostream&) const {}
   

@@ -252,6 +252,7 @@ public:
 		return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
 	}
   inline Use *allocHangoffUses(unsigned) const;
+  void dropHungoffUses(Use*);
 
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
