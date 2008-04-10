@@ -1,0 +1,67 @@
+//===-- llvm/OperandTraits.h - OperandTraits class definition ---------------------*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file defines the FIXME.
+//
+
+#ifndef LLVM_OPERAND_TRAITS_H
+#define LLVM_OPERAND_TRAITS_H
+
+#include "llvm/User.h"
+
+namespace llvm {
+
+//===----------------------------------------------------------------------===//
+//                          VariadicOperand Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned MINARITY = 0>
+struct VariadicOperandTraits {
+  static Use *op_begin(User* U) {
+    return reinterpret_cast<Use*>(U) - U->getNumOperands();
+  }
+  static Use *op_end(User* U) {
+    return reinterpret_cast<Use*>(U);
+  }
+  static unsigned operands(const User *U) {
+    return U->getNumOperands();
+  }
+  static inline void *allocate(unsigned); // FIXME
+};
+
+/// Macro for generating in-class operand accessor declarations
+#define DECLARE_TRANSPARENT_OPERAND_ACCESSORS(VALUECLASS) \
+  inline VALUECLASS *getOperand(unsigned) const; \
+  inline void setOperand(unsigned, VALUECLASS*); \
+  inline unsigned getNumOperands() const; \
+  template <unsigned Idx> inline Use &Op(); \
+  template <unsigned Idx> inline const Use &Op() const
+
+/// Macro for generating out-of-class operand accessor definitions
+#define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
+VALUECLASS *CLASS::getOperand(unsigned i) const { \
+	assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
+	return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]; \
+} \
+void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
+	assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+	OperandTraits<CLASS>::op_begin(this)[i] = Val; \
+} \
+unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
+template <unsigned Idx> Use &CLASS::Op() { \
+  return OperandTraits<CLASS>::op_begin(this)[Idx]; \
+} \
+template <unsigned Idx> const Use &CLASS::Op() const { \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx]; \
+}
+
+
+} // End llvm namespace
+
+#endif

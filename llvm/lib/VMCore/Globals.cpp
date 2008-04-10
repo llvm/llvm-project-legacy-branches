@@ -89,14 +89,13 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                Module *ParentModule, bool ThreadLocal, 
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                &Op<0>(), InitVal != 0, Link, Name),
+                OperandTraits<GlobalVariable>::op_end(this) - (InitVal != 0),
+                InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");
     Op<0>().init(InitVal, this);
-  } else {
-    Op<0>().init(0, this); // FIXME: if no InitVal, then none!
   }
 
   LeakDetector::addGarbageObject(this);
@@ -110,14 +109,13 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                GlobalVariable *Before, bool ThreadLocal,
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                &Op<0>(), InitVal != 0, Link, Name), 
+                OperandTraits<GlobalVariable>::op_end(this) - (InitVal != 0),
+                InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");
     Op<0>().init(InitVal, this);
-  } else {
-    Op<0>().init(0, this); // FIXME: if no InitVal, then none!
   }
   
   LeakDetector::addGarbageObject(this);

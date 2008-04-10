@@ -21,6 +21,7 @@
 #include "llvm/InstrTypes.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/ParameterAttributes.h"
+#include "llvm/OperandTraits.h"
 
 namespace llvm {
 
@@ -362,24 +363,6 @@ public:
   }
 };
 
-
-//===----------------------------------------------------------------------===//
-//                          VariadicOperand Trait Class
-//===----------------------------------------------------------------------===//
-
-template <unsigned MINARITY = 0>
-struct VariadicOperandTraits {
-  static Use *op_begin(User* U) {
-    return reinterpret_cast<Use*>(U) - U->getNumOperands();
-  }
-  static Use *op_end(User* U) {
-    return reinterpret_cast<Use*>(U);
-  }
-  static unsigned operands(const User*U) {
-    return U->getNumOperands();
-  }
-  static inline void *allocate(unsigned); // FIXME
-};
 
 //===----------------------------------------------------------------------===//
 //                             GetElementPtrInst Class

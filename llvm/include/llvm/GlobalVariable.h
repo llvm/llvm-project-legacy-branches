@@ -21,6 +21,7 @@
 #define LLVM_GLOBAL_VARIABLE_H
 
 #include "llvm/GlobalValue.h"
+#include "llvm/OperandTraits.h"
 
 namespace llvm {
 
@@ -78,6 +79,9 @@ public:
                                               ThreadLocal, AddressSpace);
   }
   
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   /// isDeclaration - Is this global variable lacking an initializer?  If so, 
   /// the global variable is defined in some other translation unit, and is thus
   /// only a declaration here.
@@ -154,6 +158,12 @@ private:
         GlobalVariable *getPrev()       { return Prev; }
   const GlobalVariable *getPrev() const { return Prev; }
 };
+
+template <>
+struct OperandTraits<GlobalVariable> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GlobalVariable, Value)
 
 } // End llvm namespace
 
