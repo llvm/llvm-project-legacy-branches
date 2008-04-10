@@ -1483,6 +1483,24 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+//                          VariadicOperand Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned MINARITY = 0>
+struct VariadicOperandTraits {
+  static Use *op_begin(User* U) {
+    return reinterpret_cast<Use*>(U) - U->getNumOperands();
+  }
+  static Use *op_end(User* U) {
+    return reinterpret_cast<Use*>(U);
+  }
+  static unsigned operands(const User*U) {
+    return U->getNumOperands();
+  }
+  static inline void *allocate(unsigned); // FIXME
+};
+
+//===----------------------------------------------------------------------===//
 //                               ReturnInst Class
 //===----------------------------------------------------------------------===//
 
@@ -1511,8 +1529,8 @@ private:
   // if it was passed NULL.
   explicit ReturnInst(Value *retVal = 0, Instruction *InsertBefore = 0);
   ReturnInst(Value *retVal, BasicBlock *InsertAtEnd);
-  ReturnInst(Value * const* retVals, unsigned N);
-  ReturnInst(Value * const* retVals, unsigned N, Instruction *InsertBefore);
+/*  ReturnInst(Value * const* retVals, unsigned N);*/
+  ReturnInst(Value * const* retVals, unsigned N, Instruction *InsertBefore = 0);
   ReturnInst(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd);
   explicit ReturnInst(BasicBlock *InsertAtEnd);
 public:
@@ -1522,10 +1540,10 @@ public:
   static ReturnInst* Create(Value *retVal, BasicBlock *InsertAtEnd) {
     return new(!!retVal) ReturnInst(retVal, InsertAtEnd);
   }
-  static ReturnInst* Create(Value * const* retVals, unsigned N) {
-    return new(N) ReturnInst(retVals, N);
-  }
-  static ReturnInst* Create(Value * const* retVals, unsigned N, Instruction *InsertBefore) {
+//  static ReturnInst* Create(Value * const* retVals, unsigned N) {
+//    return new(N) ReturnInst(retVals, N);
+//  }
+  static ReturnInst* Create(Value * const* retVals, unsigned N, Instruction *InsertBefore = 0) {
     return new(N) ReturnInst(retVals, N, InsertBefore);
   }
   static ReturnInst* Create(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd) {
@@ -1538,13 +1556,16 @@ public:
 
   virtual ReturnInst *clone() const;
 
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+/*
   Value *getOperand(unsigned n = 0) const {
     if (getNumOperands() > 1)
       return TerminatorInst::getOperand(n);
     else
       return Op<0>();
   }
-
+*/
   Value *getReturnValue(unsigned n = 0) const {
     return getOperand(n);
   }
@@ -1564,6 +1585,12 @@ public:
   virtual unsigned getNumSuccessorsV() const;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
 };
+
+template <>
+struct OperandTraits<ReturnInst> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ReturnInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                               BranchInst Class

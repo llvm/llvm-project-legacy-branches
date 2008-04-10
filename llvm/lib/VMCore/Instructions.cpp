@@ -524,7 +524,7 @@ void ReturnInst::init(Value * const* retVals, unsigned N) {
     Op<0>().init(V, this);
   }
 
-  Use *OL = OperandList = allocHangoffUses(NumOperands);
+  Use *OL = OperandList;
   for (unsigned i = 0; i < NumOperands; ++i) {
     Value *V = *retVals++;
     assert(!isa<BasicBlock>(V) &&
