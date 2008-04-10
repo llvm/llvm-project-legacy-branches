@@ -17,7 +17,7 @@
 #include "llvm/ModuleProvider.h"
 #include "llvm/ParameterAttributes.h"
 #include "llvm/Type.h"
-#include "llvm/User.h"
+#include "llvm/OperandTraits.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Bitcode/LLVMBitCodes.h"
 #include "llvm/ADT/DenseMap.h"
@@ -30,7 +30,7 @@ namespace llvm {
 //                          HungoffOperand Trait Class
 //===----------------------------------------------------------------------===//
 
-template <unsigned MINARITY = 0>
+template <unsigned MINARITY = 1>
 struct HungoffOperandTraits {
   static Use *op_begin(User* U) {
     return U->OperandList;
@@ -52,6 +52,9 @@ class BitcodeReaderValueList : public User {
 public:
   BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0) {}
   
+  /// Provide fast operand accessors
+	DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   // vector compatibility methods
   unsigned size() const { return getNumOperands(); }
 	void resize(unsigned);
@@ -101,7 +104,12 @@ private:
 //    Uses[Idx].init(V, this);
   }
 };
-  
+
+template <>
+struct OperandTraits<BitcodeReaderValueList> : HungoffOperandTraits</*16 FIXME*/> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BitcodeReaderValueList, Value)  
 
 class BitcodeReader : public ModuleProvider {
   MemoryBuffer *Buffer;

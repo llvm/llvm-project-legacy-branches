@@ -211,6 +211,8 @@ struct OperandTraits<User> {
 class User : public Value {
   User(const User &);             // Do not implement
   void *operator new(size_t);     // Do not implement
+  template <unsigned>
+	friend struct HungoffOperandTraits;
 protected:
   /// OperandList - This is a pointer to the array of Users for this operand.
   /// For nodes of fixed arity (e.g. a binary operator) this array will live

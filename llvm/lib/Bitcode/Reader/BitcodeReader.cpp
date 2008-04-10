@@ -146,6 +146,18 @@ struct OperandTraits<ConstantPlaceHolder> : FixedNumOperandTraits<1> {
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
 }
 
+void BitcodeReaderValueList::resize(unsigned Desired) {
+  unsigned Capacity = 0;
+	if (OperandList) {
+		Capacity = OperandList->getImpliedUser() - OperandList;
+	}
+
+	if (Desired > Capacity)
+	{
+		// FIXME
+	}
+}
+
 Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
                                                     const Type *Ty) {
   if (Idx >= size()) {
