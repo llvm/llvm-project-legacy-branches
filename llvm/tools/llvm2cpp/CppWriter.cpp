@@ -989,7 +989,7 @@ void CppWriter::printVariableHead(const GlobalVariable *GV) {
      nl(Out) << "if (!" << getCppName(GV) << ") {";
      in(); nl(Out) << getCppName(GV);
   }
-  Out << " = new GlobalVariable(";
+  Out << " = GlobalVariable::Create(";
   nl(Out) << "/*Type=*/";
   printCppName(GV->getType()->getElementType());
   Out << ",";

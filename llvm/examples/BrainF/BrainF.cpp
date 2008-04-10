@@ -124,7 +124,7 @@ void BrainF::header() {
     Constant *msg_0 = ConstantArray::
       get("Error: The head has left the tape.", true);
 
-    GlobalVariable *aberrormsg = new GlobalVariable(
+    GlobalVariable *aberrormsg = GlobalVariable::Create(
       msg_0->getType(),
       true,
       GlobalValue::InternalLinkage,

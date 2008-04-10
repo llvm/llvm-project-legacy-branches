@@ -64,7 +64,7 @@ bool FunctionProfiler::runOnModule(Module &M) {
 
   const Type *ATy = ArrayType::get(Type::Int32Ty, NumFunctions);
   GlobalVariable *Counters =
-    new GlobalVariable(ATy, false, GlobalValue::InternalLinkage,
+    GlobalVariable::Create(ATy, false, GlobalValue::InternalLinkage,
                        Constant::getNullValue(ATy), "FuncProfCounters", &M);
 
   // Instrument all of the functions...
@@ -109,7 +109,7 @@ bool BlockProfiler::runOnModule(Module &M) {
 
   const Type *ATy = ArrayType::get(Type::Int32Ty, NumBlocks);
   GlobalVariable *Counters =
-    new GlobalVariable(ATy, false, GlobalValue::InternalLinkage,
+    GlobalVariable::Create(ATy, false, GlobalValue::InternalLinkage,
                        Constant::getNullValue(ATy), "BlockProfCounters", &M);
 
   // Instrument all of the blocks...

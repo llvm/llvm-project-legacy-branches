@@ -138,7 +138,7 @@ bool LowerInvoke::doInitialization(Module &M) {
     // Now that we've done that, insert the jmpbuf list head global, unless it
     // already exists.
     if (!(JBListHead = M.getGlobalVariable("llvm.sjljeh.jblist", PtrJBList))) {
-      JBListHead = new GlobalVariable(PtrJBList, false,
+      JBListHead = GlobalVariable::Create(PtrJBList, false,
                                       GlobalValue::LinkOnceLinkage,
                                       Constant::getNullValue(PtrJBList),
                                       "llvm.sjljeh.jblist", &M);
@@ -166,7 +166,7 @@ void LowerInvoke::createAbortMessage(Module *M) {
       ConstantArray::get("ERROR: Exception thrown, but not caught!\n");
     AbortMessageLength = Msg->getNumOperands()-1;  // don't include \0
 
-    GlobalVariable *MsgGV = new GlobalVariable(Msg->getType(), true,
+    GlobalVariable *MsgGV = GlobalVariable::Create(Msg->getType(), true,
                                                GlobalValue::InternalLinkage,
                                                Msg, "abortmsg", M);
     std::vector<Constant*> GEPIdx(2, Constant::getNullValue(Type::Int32Ty));
@@ -179,7 +179,7 @@ void LowerInvoke::createAbortMessage(Module *M) {
                          " program with -enable-correct-eh-support.\n");
     AbortMessageLength = Msg->getNumOperands()-1;  // don't include \0
 
-    GlobalVariable *MsgGV = new GlobalVariable(Msg->getType(), true,
+    GlobalVariable *MsgGV = GlobalVariable::Create(Msg->getType(), true,
                                                GlobalValue::InternalLinkage,
                                                Msg, "abortmsg", M);
     std::vector<Constant*> GEPIdx(2, Constant::getNullValue(Type::Int32Ty));

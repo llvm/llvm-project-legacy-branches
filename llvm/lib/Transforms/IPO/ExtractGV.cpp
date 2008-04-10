@@ -106,7 +106,7 @@ namespace {
         }
         ArrayType *AT = ArrayType::get(SBP, AUGs.size());
         Constant *Init = ConstantArray::get(AT, AUGs);
-        GlobalValue *gv = new GlobalVariable(AT, false, 
+        GlobalValue *gv = GlobalVariable::Create(AT, false, 
                                              GlobalValue::AppendingLinkage, 
                                              Init, "llvm.used", &M);
         gv->setSection("llvm.metadata");
