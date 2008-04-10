@@ -182,15 +182,9 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const; /*{
-    assert(i < OperandTraits<BinaryOperator>::operands && "getOperand() out of range!");
-    return OperandTraits<BinaryOperator>::op_begin(this)[i];
-		}*/
-  void setOperand(unsigned i, Value *Val); /*{
-    assert(i < OperandTraits<BinaryOperator>::operands && "setOperand() out of range!");
-    OperandTraits<BinaryOperator>::op_begin(this)[i] = Val;
-  }*/
-  unsigned getNumOperands() const;// { return OperandTraits<BinaryOperator>::operands; }
+  inline Value *getOperand(unsigned i) const;
+  inline void setOperand(unsigned i, Value *Val);
+  inline unsigned getNumOperands() const;
 
   /// create() - Construct a binary instruction, given the opcode and the two
   /// operands.  Optionally (if InstBefore is specified) insert the instruction
