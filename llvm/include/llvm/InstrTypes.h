@@ -90,7 +90,7 @@ struct FixedNumOperandTraits {
   static Use *op_end(User* U) {
 		return reinterpret_cast<Use*>(U);
 	}
-	static unsigned operands(User*) {
+	static unsigned operands(const User*) {
 		return ARITY;
 	}
 	struct prefix {
@@ -182,15 +182,15 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
-    assert(i < 2 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 2 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 2; }
+  Value *getOperand(unsigned i) const; /*{
+    assert(i < OperandTraits<BinaryOperator>::operands && "getOperand() out of range!");
+    return OperandTraits<BinaryOperator>::op_begin(this)[i];
+		}*/
+  void setOperand(unsigned i, Value *Val); /*{
+    assert(i < OperandTraits<BinaryOperator>::operands && "setOperand() out of range!");
+    OperandTraits<BinaryOperator>::op_begin(this)[i] = Val;
+  }*/
+  unsigned getNumOperands() const;// { return OperandTraits<BinaryOperator>::operands; }
 
   /// create() - Construct a binary instruction, given the opcode and the two
   /// operands.  Optionally (if InstBefore is specified) insert the instruction
@@ -288,6 +288,17 @@ public:
 template <>
 struct OperandTraits<BinaryOperator> : FixedNumOperandTraits<2> {
 };
+
+Value *BinaryOperator::getOperand(unsigned i) const {
+	assert(i < OperandTraits<BinaryOperator>::operands(this) && "getOperand() out of range!");
+	return OperandTraits<BinaryOperator>::op_begin(const_cast<BinaryOperator*>(this))[i];
+}
+void BinaryOperator::setOperand(unsigned i, Value *Val) {
+	assert(i < OperandTraits<BinaryOperator>::operands(this) && "setOperand() out of range!");
+	OperandTraits<BinaryOperator>::op_begin(this)[i] = Val;
+}
+unsigned BinaryOperator::getNumOperands() const { return OperandTraits<BinaryOperator>::operands(this); }
+
 
 //===----------------------------------------------------------------------===//
 //                               CastInst Class

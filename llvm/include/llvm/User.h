@@ -200,7 +200,7 @@ template <>
 struct OperandTraits<User> {
   static inline Use *op_begin(User*);
   static inline Use *op_end(User*);
-	static inline unsigned operands(User*);
+	static inline unsigned operands(const User*);
   template <class U>
 	struct Layout {
 		typedef U overlay;
@@ -308,7 +308,7 @@ inline Use *OperandTraits<User>::op_end(User *U) {
 	return U->op_end();
 }
 
-inline unsigned OperandTraits<User>::operands(User *U) {
+inline unsigned OperandTraits<User>::operands(const User *U) {
 	return U->getNumOperands();
 }
 	/*
