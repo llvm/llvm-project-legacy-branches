@@ -244,12 +244,11 @@ Value *PHINode::hasConstantValue(bool AllowNonDominatingInstruction) const {
 //===----------------------------------------------------------------------===//
 
 CallInst::~CallInst() {
-//  delete [] OperandList;
 }
 
 void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
   NumOperands = NumParams+1;
-  Use *OL = OperandList = allocHangoffUses(NumParams+1);
+  Use *OL = OperandList;
   OL[0].init(Func, this);
 
   const FunctionType *FTy =
@@ -269,7 +268,7 @@ void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
 
 void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
   NumOperands = 3;
-  Use *OL = OperandList = allocHangoffUses(3);
+  Use *OL = OperandList;
   OL[0].init(Func, this);
   OL[1].init(Actual1, this);
   OL[2].init(Actual2, this);
@@ -291,7 +290,7 @@ void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
 
 void CallInst::init(Value *Func, Value *Actual) {
   NumOperands = 2;
-  Use *OL = OperandList = allocHangoffUses(2);
+  Use *OL = OperandList;
   OL[0].init(Func, this);
   OL[1].init(Actual, this);
 
@@ -309,7 +308,7 @@ void CallInst::init(Value *Func, Value *Actual) {
 
 void CallInst::init(Value *Func) {
   NumOperands = 1;
-  Use *OL = OperandList = allocHangoffUses(1);
+  Use *OL = OperandList;
   OL[0].init(Func, this);
 
   const FunctionType *FTy =
@@ -323,7 +322,9 @@ CallInst::CallInst(Value *Func, Value* Actual, const std::string &Name,
                    Instruction *InsertBefore)
   : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                    ->getElementType())->getReturnType(),
-                Instruction::Call, 0, 0, InsertBefore) {
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - 2,
+                2, InsertBefore) {
   init(Func, Actual);
   setName(Name);
 }
@@ -332,7 +333,9 @@ CallInst::CallInst(Value *Func, Value* Actual, const std::string &Name,
                    BasicBlock  *InsertAtEnd)
   : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                    ->getElementType())->getReturnType(),
-                Instruction::Call, 0, 0, InsertAtEnd) {
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - 2,
+                2, InsertAtEnd) {
   init(Func, Actual);
   setName(Name);
 }
@@ -340,7 +343,9 @@ CallInst::CallInst(Value *Func, const std::string &Name,
                    Instruction *InsertBefore)
   : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                    ->getElementType())->getReturnType(),
-                Instruction::Call, 0, 0, InsertBefore) {
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - 1,
+                1, InsertBefore) {
   init(Func);
   setName(Name);
 }
@@ -349,13 +354,16 @@ CallInst::CallInst(Value *Func, const std::string &Name,
                    BasicBlock *InsertAtEnd)
   : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                    ->getElementType())->getReturnType(),
-                Instruction::Call, 0, 0, InsertAtEnd) {
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - 1,
+                1, InsertAtEnd) {
   init(Func);
   setName(Name);
 }
 
 CallInst::CallInst(const CallInst &CI)
-  : Instruction(CI.getType(), Instruction::Call, allocHangoffUses(CI.getNumOperands()),
+  : Instruction(CI.getType(), Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - CI.getNumOperands(),
                 CI.getNumOperands()) {
   setParamAttrs(CI.getParamAttrs());
   SubclassData = CI.SubclassData;

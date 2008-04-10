@@ -364,6 +364,24 @@ public:
 
 
 //===----------------------------------------------------------------------===//
+//                          VariadicOperand Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned MINARITY = 0>
+struct VariadicOperandTraits {
+  static Use *op_begin(User* U) {
+    return reinterpret_cast<Use*>(U) - U->getNumOperands();
+  }
+  static Use *op_end(User* U) {
+    return reinterpret_cast<Use*>(U);
+  }
+  static unsigned operands(const User*U) {
+    return U->getNumOperands();
+  }
+  static inline void *allocate(unsigned); // FIXME
+};
+
+//===----------------------------------------------------------------------===//
 //                             GetElementPtrInst Class
 //===----------------------------------------------------------------------===//
 
@@ -901,13 +919,13 @@ class CallInst : public Instruction {
   /// @brief Construct a CallInst from a range of arguments
   template<typename InputIterator>
   CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-           const std::string &Name = "", Instruction *InsertBefore = 0)
+           const std::string &Name = "", Instruction *InsertBefore = 0);/*
       : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                        ->getElementType())->getReturnType(),
                     Instruction::Call, 0, 0, InsertBefore) {
     init(Func, ArgBegin, ArgEnd, Name, 
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+  }*/
 
   /// Construct a CallInst given a range of arguments.  InputIterator
   /// must be a random-access iterator pointing to contiguous storage
@@ -916,14 +934,15 @@ class CallInst : public Instruction {
   /// incur runtime overhead.
   /// @brief Construct a CallInst from a range of arguments
   template<typename InputIterator>
-  CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-           const std::string &Name, BasicBlock *InsertAtEnd)
+  inline CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+                  const std::string &Name, BasicBlock *InsertAtEnd);
+    /*
       : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
                                        ->getElementType())->getReturnType(),
                     Instruction::Call, 0, 0, InsertAtEnd) {
     init(Func, ArgBegin, ArgEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+  }*/
 
   CallInst(Value *F, Value *Actual, const std::string& Name = "",
            Instruction *InsertBefore = 0);
@@ -962,6 +981,9 @@ public:
   ~CallInst();
 
   virtual CallInst *clone() const;
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
   
   bool isTailCall() const           { return SubclassData & 1; }
   void setTailCall(bool isTailCall = true) {
@@ -1044,6 +1066,39 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+template <>
+struct OperandTraits<CallInst> : VariadicOperandTraits<1> {
+};
+
+template<typename InputIterator>
+CallInst::CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+                   const std::string &Name, BasicBlock *InsertAtEnd)
+  : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
+                                   ->getElementType())->getReturnType(),
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - (ArgEnd - ArgBegin + 1),
+                ArgEnd - ArgBegin + 1, InsertAtEnd) {
+  init(Func, ArgBegin, ArgEnd, Name,
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+
+template<typename InputIterator>
+CallInst::CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+                   const std::string &Name, Instruction *InsertBefore)
+  : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
+                                   ->getElementType())->getReturnType(),
+                Instruction::Call,
+                OperandTraits<CallInst>::op_end(this) - (ArgEnd - ArgBegin + 1),
+                ArgEnd - ArgBegin + 1, InsertBefore) {
+  init(Func, ArgBegin, ArgEnd, Name, 
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CallInst, Value)
+//void CallInst::operator delete(void *it) {
+//  OperandTraits<CallInst>::op_begin(static_cast<CallInst*>(it));
+//}
 
 //===----------------------------------------------------------------------===//
 //                               SelectInst Class
@@ -1480,24 +1535,6 @@ public:
   }
  private:
   void resizeOperands(unsigned NumOperands);
-};
-
-//===----------------------------------------------------------------------===//
-//                          VariadicOperand Trait Class
-//===----------------------------------------------------------------------===//
-
-template <unsigned MINARITY = 0>
-struct VariadicOperandTraits {
-  static Use *op_begin(User* U) {
-    return reinterpret_cast<Use*>(U) - U->getNumOperands();
-  }
-  static Use *op_end(User* U) {
-    return reinterpret_cast<Use*>(U);
-  }
-  static unsigned operands(const User*U) {
-    return U->getNumOperands();
-  }
-  static inline void *allocate(unsigned); // FIXME
 };
 
 //===----------------------------------------------------------------------===//
