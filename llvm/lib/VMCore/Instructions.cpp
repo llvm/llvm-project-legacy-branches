@@ -100,10 +100,13 @@ void CallSite::setDoesNotThrow(bool doesNotThrow) {
 TerminatorInst::~TerminatorInst() {
 }
 
+//===----------------------------------------------------------------------===//
+//                           UnaryInstruction Class
+//===----------------------------------------------------------------------===//
+
 // Out of line virtual method, so the vtable, etc has a home.
 UnaryInstruction::~UnaryInstruction() {
 }
-
 
 //===----------------------------------------------------------------------===//
 //                               PHINode Class
@@ -455,49 +458,60 @@ void InvokeInst::setDoesNotThrow(bool doesNotThrow) {
 //===----------------------------------------------------------------------===//
 
 ReturnInst::ReturnInst(const ReturnInst &RI)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret,
-                   /*&RetVal*/NULL, RI.getNumOperands()) {
+  : TerminatorInst(Type::VoidTy/*FIXME: correct?*/, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this) - RI.getNumOperands(),
+                   RI.getNumOperands()) {
   unsigned N = RI.getNumOperands();
-  if (N == 1) 
+  if (N == 1)
     Op<0>().init(RI.Op<0>(), this);
   else if (N) {
-    Use *OL = OperandList = allocHangoffUses(N);
+    Use *OL = OperandList;
     for (unsigned i = 0; i < N; ++i)
       OL[i].init(RI.getOperand(i), this);
   }
 }
 
 ReturnInst::ReturnInst(Value *retVal, Instruction *InsertBefore)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, 0, InsertBefore) {
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this) - (retVal != 0),
+                   retVal != 0, InsertBefore) {
   if (retVal)
     init(&retVal, 1);
 }
 ReturnInst::ReturnInst(Value *retVal, BasicBlock *InsertAtEnd)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, 0, InsertAtEnd) {
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this) - (retVal != 0),
+                   retVal != 0, InsertAtEnd) {
   if (retVal)
     init(&retVal, 1);
 }
 ReturnInst::ReturnInst(BasicBlock *InsertAtEnd)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, 0, InsertAtEnd) {
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this),
+                   0, InsertAtEnd) {
 }
 
 ReturnInst::ReturnInst(Value * const* retVals, unsigned N,
                        Instruction *InsertBefore)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, N, InsertBefore) {
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this) - N,
+                   N, InsertBefore) {
   if (N != 0)
     init(retVals, N);
 }
 ReturnInst::ReturnInst(Value * const* retVals, unsigned N,
                        BasicBlock *InsertAtEnd)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, N, InsertAtEnd) {
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
+                   OperandTraits<ReturnInst>::op_end(this) - N,
+                   N, InsertAtEnd) {
   if (N != 0)
     init(retVals, N);
 }
-ReturnInst::ReturnInst(Value * const* retVals, unsigned N)
-  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, N) {
-  if (N != 0)
-    init(retVals, N);
-}
+//ReturnInst::ReturnInst(Value * const* retVals, unsigned N)
+//  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, N) {
+//  if (N != 0)
+//    init(retVals, N);
+//}
 
 void ReturnInst::init(Value * const* retVals, unsigned N) {
   assert (N > 0 && "Invalid operands numbers in ReturnInst init");
@@ -1274,7 +1288,10 @@ int ShuffleVectorInst::getMaskValue(unsigned i) const {
 BinaryOperator::BinaryOperator(BinaryOps iType, Value *S1, Value *S2,
                                const Type *Ty, const std::string &Name,
                                Instruction *InsertBefore)
-  : Instruction(Ty, iType, /*Ops*/NULL, 2, InsertBefore) {
+  : Instruction(Ty, iType,
+                OperandTraits<BinaryOperator>::op_begin(this),
+                OperandTraits<BinaryOperator>::operands(this),
+                InsertBefore) {
   Op<0>().init(S1, this);
   Op<1>().init(S2, this);
   init(iType);
@@ -1284,7 +1301,10 @@ BinaryOperator::BinaryOperator(BinaryOps iType, Value *S1, Value *S2,
 BinaryOperator::BinaryOperator(BinaryOps iType, Value *S1, Value *S2, 
                                const Type *Ty, const std::string &Name,
                                BasicBlock *InsertAtEnd)
-  : Instruction(Ty, iType, /*Ops*/NULL, 2, InsertAtEnd) {
+  : Instruction(Ty, iType,
+                OperandTraits<BinaryOperator>::op_begin(this),
+                OperandTraits<BinaryOperator>::operands(this),
+                InsertAtEnd) {
   Op<0>().init(S1, this);
   Op<1>().init(S2, this);
   init(iType);
