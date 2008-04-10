@@ -107,6 +107,23 @@ struct FixedNumOperandTraits {
 };
 
 
+#define DECLARE_TRANSPARENT_OPERAND_ACCESSORS(VALUECLASS) \
+  inline VALUECLASS *getOperand(unsigned) const; \
+  inline void setOperand(unsigned, VALUECLASS*); \
+  inline unsigned getNumOperands() const
+
+
+#define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
+VALUECLASS *CLASS::getOperand(unsigned i) const { \
+	assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
+	return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]; \
+} \
+void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
+	assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+	OperandTraits<CLASS>::op_begin(this)[i] = Val; \
+} \
+unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); }
+
 
 //===----------------------------------------------------------------------===//
 //                          UnaryInstruction Class
@@ -133,8 +150,9 @@ public:
   // Out of line virtual method, so the vtable, etc has a home.
   ~UnaryInstruction();
 
-  // Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+/*  Value *getOperand(unsigned i) const {
     assert(i == 0 && "getOperand() out of range!");
     return Op<0>();
   }
@@ -142,7 +160,7 @@ public:
     assert(i == 0 && "setOperand() out of range!");
     Op<0>() = Val;
   }
-  unsigned getNumOperands() const { return 1; }
+  unsigned getNumOperands() const { return 1; }*/
   
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const UnaryInstruction *) { return true; }
@@ -163,6 +181,8 @@ template <>
 struct OperandTraits<UnaryInstruction> : FixedNumOperandTraits<1> {
 };
 
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(UnaryInstruction, Value)
+
 //===----------------------------------------------------------------------===//
 //                           BinaryOperator Class
 //===----------------------------------------------------------------------===//
@@ -182,9 +202,10 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  inline Value *getOperand(unsigned i) const;
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+/*  inline Value *getOperand(unsigned i) const;
   inline void setOperand(unsigned i, Value *Val);
-  inline unsigned getNumOperands() const;
+  inline unsigned getNumOperands() const;*/
 
   /// create() - Construct a binary instruction, given the opcode and the two
   /// operands.  Optionally (if InstBefore is specified) insert the instruction
@@ -283,16 +304,7 @@ template <>
 struct OperandTraits<BinaryOperator> : FixedNumOperandTraits<2> {
 };
 
-Value *BinaryOperator::getOperand(unsigned i) const {
-	assert(i < OperandTraits<BinaryOperator>::operands(this) && "getOperand() out of range!");
-	return OperandTraits<BinaryOperator>::op_begin(const_cast<BinaryOperator*>(this))[i];
-}
-void BinaryOperator::setOperand(unsigned i, Value *Val) {
-	assert(i < OperandTraits<BinaryOperator>::operands(this) && "setOperand() out of range!");
-	OperandTraits<BinaryOperator>::op_begin(this)[i] = Val;
-}
-unsigned BinaryOperator::getNumOperands() const { return OperandTraits<BinaryOperator>::operands(this); }
-
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BinaryOperator, Value)
 
 //===----------------------------------------------------------------------===//
 //                               CastInst Class
@@ -540,6 +552,7 @@ public:
 
 /// This class is the base class for the comparison instructions. 
 /// @brief Abstract base class of comparison instructions.
+// FIXME: why not derive from BinaryOperator?
 class CmpInst: public Instruction {
   void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   CmpInst(); // do not implement
@@ -589,7 +602,8 @@ public:
   }
 
   /// @brief Provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+/*  Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -599,7 +613,7 @@ public:
   }
 
   /// @brief CmpInst instructions always have 2 operands.
-  unsigned getNumOperands() const { return 2; }
+  unsigned getNumOperands() const { return 2; }*/
 
   /// This is just a convenience that dispatches to the subclasses.
   /// @brief Swap the operands and adjust predicate accordingly to retain
@@ -638,6 +652,14 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+
+// FIXME: these are redundant if CmpInst < BinaryOperator
+template <>
+struct OperandTraits<CmpInst> : FixedNumOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CmpInst, Value)
 
 } // End llvm namespace
 
