@@ -18,6 +18,34 @@
 namespace llvm {
 
 //===----------------------------------------------------------------------===//
+//                          FixedNumOperands Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned ARITY>
+struct FixedNumOperandTraits {
+  static Use *op_begin(User* U) {
+		return reinterpret_cast<Use*>(U) - ARITY;
+	}
+  static Use *op_end(User* U) {
+		return reinterpret_cast<Use*>(U);
+	}
+	static unsigned operands(const User*) {
+		return ARITY;
+	}
+	struct prefix {
+		Use Ops[ARITY];
+		prefix(); // DO NOT IMPLEMENT
+	};
+  template <class U>
+	struct Layout {
+		struct overlay : prefix, U {
+			overlay(); // DO NOT IMPLEMENT
+		};
+	};
+	static inline void *allocate(unsigned); // FIXME
+};
+
+//===----------------------------------------------------------------------===//
 //                          VariadicOperand Trait Class
 //===----------------------------------------------------------------------===//
 

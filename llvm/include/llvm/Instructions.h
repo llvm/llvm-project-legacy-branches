@@ -21,7 +21,6 @@
 #include "llvm/InstrTypes.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/ParameterAttributes.h"
-#include "llvm/OperandTraits.h"
 
 namespace llvm {
 
