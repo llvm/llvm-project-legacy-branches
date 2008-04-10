@@ -1511,25 +1511,25 @@ struct VariadicOperandTraits {
 class ReturnInst : public TerminatorInst {
   ReturnInst(const ReturnInst &RI);
   void init(Value * const* retVals, unsigned N);
+  void *operator new(size_t, unsigned); // Do not implement
 
 private:
   // ReturnInst constructors:
   // ReturnInst()                  - 'ret void' instruction
   // ReturnInst(    null)          - 'ret void' instruction
   // ReturnInst(Value* X)          - 'ret X'    instruction
-  // ReturnInst(    null, Inst *)  - 'ret void' instruction, insert before I
+  // ReturnInst(    null, Inst *I) - 'ret void' instruction, insert before I
   // ReturnInst(Value* X, Inst *I) - 'ret X'    instruction, insert before I
-  // ReturnInst(    null, BB *B)   - 'ret void' instruction, insert @ end of BB
-  // ReturnInst(Value* X, BB *B)   - 'ret X'    instruction, insert @ end of BB
+  // ReturnInst(    null, BB *B)   - 'ret void' instruction, insert @ end of B
+  // ReturnInst(Value* X, BB *B)   - 'ret X'    instruction, insert @ end of B
   // ReturnInst(Value* X, N)          - 'ret X,X+1...X+N-1' instruction
-  // ReturnInst(Value* X, N, Inst *)  - 'ret X,X+1...X+N-1', insert before I
-  // ReturnInst(Value* X, N, BB *)    - 'ret X,X+1...X+N-1', insert @ end of BB
+  // ReturnInst(Value* X, N, Inst *I) - 'ret X,X+1...X+N-1', insert before I
+  // ReturnInst(Value* X, N, BB *B)   - 'ret X,X+1...X+N-1', insert @ end of B
   //
   // NOTE: If the Value* passed is of type void then the constructor behaves as
   // if it was passed NULL.
   explicit ReturnInst(Value *retVal = 0, Instruction *InsertBefore = 0);
   ReturnInst(Value *retVal, BasicBlock *InsertAtEnd);
-/*  ReturnInst(Value * const* retVals, unsigned N);*/
   ReturnInst(Value * const* retVals, unsigned N, Instruction *InsertBefore = 0);
   ReturnInst(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd);
   explicit ReturnInst(BasicBlock *InsertAtEnd);
@@ -1540,9 +1540,6 @@ public:
   static ReturnInst* Create(Value *retVal, BasicBlock *InsertAtEnd) {
     return new(!!retVal) ReturnInst(retVal, InsertAtEnd);
   }
-//  static ReturnInst* Create(Value * const* retVals, unsigned N) {
-//    return new(N) ReturnInst(retVals, N);
-//  }
   static ReturnInst* Create(Value * const* retVals, unsigned N, Instruction *InsertBefore = 0) {
     return new(N) ReturnInst(retVals, N, InsertBefore);
   }
@@ -1553,19 +1550,14 @@ public:
     return new(0) ReturnInst(InsertAtEnd);
   }
   virtual ~ReturnInst();
+  inline void operator delete(void*);
 
   virtual ReturnInst *clone() const;
 
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-/*
-  Value *getOperand(unsigned n = 0) const {
-    if (getNumOperands() > 1)
-      return TerminatorInst::getOperand(n);
-    else
-      return Op<0>();
-  }
-*/
+
+  /// Convenience accessor
   Value *getReturnValue(unsigned n = 0) const {
     return getOperand(n);
   }
@@ -1591,6 +1583,9 @@ struct OperandTraits<ReturnInst> : VariadicOperandTraits<> {
 };
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ReturnInst, Value)
+void ReturnInst::operator delete(void *it) {
+  OperandTraits<ReturnInst>::op_begin(static_cast<ReturnInst*>(it));
+}
 
 //===----------------------------------------------------------------------===//
 //                               BranchInst Class

@@ -458,7 +458,7 @@ void InvokeInst::setDoesNotThrow(bool doesNotThrow) {
 //===----------------------------------------------------------------------===//
 
 ReturnInst::ReturnInst(const ReturnInst &RI)
-  : TerminatorInst(Type::VoidTy/*FIXME: correct?*/, Instruction::Ret,
+  : TerminatorInst(Type::VoidTy, Instruction::Ret,
                    OperandTraits<ReturnInst>::op_end(this) - RI.getNumOperands(),
                    RI.getNumOperands()) {
   unsigned N = RI.getNumOperands();
@@ -507,11 +507,6 @@ ReturnInst::ReturnInst(Value * const* retVals, unsigned N,
   if (N != 0)
     init(retVals, N);
 }
-//ReturnInst::ReturnInst(Value * const* retVals, unsigned N)
-//  : TerminatorInst(Type::VoidTy, Instruction::Ret, /*&RetVal*/NULL, N) {
-//  if (N != 0)
-//    init(retVals, N);
-//}
 
 void ReturnInst::init(Value * const* retVals, unsigned N) {
   assert (N > 0 && "Invalid operands numbers in ReturnInst init");
@@ -550,8 +545,6 @@ BasicBlock *ReturnInst::getSuccessorV(unsigned idx) const {
 }
 
 ReturnInst::~ReturnInst() {
-//  if (NumOperands > 1)
-//    delete [] OperandList;
 }
 
 //===----------------------------------------------------------------------===//
