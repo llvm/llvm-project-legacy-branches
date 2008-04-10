@@ -312,10 +312,6 @@ inline unsigned OperandTraits<User>::operands(User *U) {
 	return U->getNumOperands();
 }
 	/*
-  template <class U>
-	struct Layout {
-		typedef U overlay;
-	};
 	static inline void *allocate(unsigned);
 };
 	*/

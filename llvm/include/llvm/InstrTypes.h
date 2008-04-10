@@ -79,6 +79,36 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+//                          FixedNumOperands Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned ARITY>
+struct FixedNumOperandTraits {
+  static Use *op_begin(User* U) {
+		return reinterpret_cast<Use*>(U) - ARITY;
+	}
+  static Use *op_end(User* U) {
+		return reinterpret_cast<Use*>(U);
+	}
+	static unsigned operands(User*) {
+		return ARITY;
+	}
+	struct prefix {
+		Use Ops[ARITY];
+		prefix(); // DO NOT IMPLEMENT
+	};
+  template <class U>
+	struct Layout {
+		struct overlay : prefix, U {
+			overlay(); // DO NOT IMPLEMENT
+		};
+	};
+	static inline void *allocate(unsigned); // FIXME
+};
+
+
+
+//===----------------------------------------------------------------------===//
 //                          UnaryInstruction Class
 //===----------------------------------------------------------------------===//
 
@@ -127,6 +157,10 @@ public:
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
+};
+
+template <>
+struct OperandTraits<UnaryInstruction> : FixedNumOperandTraits<1> {
 };
 
 //===----------------------------------------------------------------------===//
@@ -249,6 +283,10 @@ public:
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
+};
+
+template <>
+struct OperandTraits<BinaryOperator> : FixedNumOperandTraits<2> {
 };
 
 //===----------------------------------------------------------------------===//
