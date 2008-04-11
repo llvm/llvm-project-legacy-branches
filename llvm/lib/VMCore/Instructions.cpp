@@ -884,7 +884,10 @@ void StoreInst::AssertOK() {
 
 
 StoreInst::StoreInst(Value *val, Value *addr, Instruction *InsertBefore)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertBefore) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(false);
@@ -893,7 +896,10 @@ StoreInst::StoreInst(Value *val, Value *addr, Instruction *InsertBefore)
 }
 
 StoreInst::StoreInst(Value *val, Value *addr, BasicBlock *InsertAtEnd)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertAtEnd) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(false);
@@ -903,7 +909,10 @@ StoreInst::StoreInst(Value *val, Value *addr, BasicBlock *InsertAtEnd)
 
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      Instruction *InsertBefore)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertBefore) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -913,7 +922,10 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      unsigned Align, Instruction *InsertBefore)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertBefore) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -923,7 +935,10 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      unsigned Align, BasicBlock *InsertAtEnd)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertAtEnd) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -933,7 +948,10 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      BasicBlock *InsertAtEnd)
-  : Instruction(Type::VoidTy, Store, /*Ops*/NULL, 2, InsertAtEnd) {
+  : Instruction(Type::VoidTy, Store,
+								OperandTraits<StoreInst>::op_begin(this),
+								OperandTraits<StoreInst>::operands(this),
+								InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);

@@ -328,7 +328,8 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+	/*  Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -336,7 +337,7 @@ public:
     assert(i < 2 && "setOperand() out of range!");
     OperandList[i] = Val;
   }
-  unsigned getNumOperands() const { return 2; }
+  unsigned getNumOperands() const { return 2; }*/
 
   /// getAlignment - Return the alignment of the access that is being performed
   ///
@@ -362,6 +363,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<StoreInst> : FixedNumOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(StoreInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                             GetElementPtrInst Class
