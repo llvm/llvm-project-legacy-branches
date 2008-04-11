@@ -154,7 +154,10 @@ void BitcodeReaderValueList::resize(unsigned Desired) {
 
   if (Desired > Capacity)
   {
-    // FIXME
+    Use *New = allocHangoffUses(Desired);
+    for (int i(getNumOperands() - 1); i >= 0; --i)
+      New[i] = getOperand(i);
+    OperandList = New;
   }
 }
 

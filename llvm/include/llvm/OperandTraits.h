@@ -7,7 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the FIXME.
+// This file defines the traits classes that are handy for enforcing the correct
+// layout of various User subclasses. It also provides the means for accessing
+// the operands in the most efficient manner.
 //
 
 #ifndef LLVM_OPERAND_TRAITS_H
@@ -56,6 +58,24 @@ struct VariadicOperandTraits {
   }
   static Use *op_end(User* U) {
     return reinterpret_cast<Use*>(U);
+  }
+  static unsigned operands(const User *U) {
+    return U->getNumOperands();
+  }
+  static inline void *allocate(unsigned); // FIXME
+};
+
+//===----------------------------------------------------------------------===//
+//                          HungoffOperand Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned MINARITY = 1>
+struct HungoffOperandTraits {
+  static Use *op_begin(User* U) {
+    return U->OperandList;
+  }
+  static Use *op_end(User* U) {
+    return U->OperandList + U->getNumOperands();
   }
   static unsigned operands(const User *U) {
     return U->getNumOperands();

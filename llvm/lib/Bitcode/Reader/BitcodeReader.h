@@ -27,24 +27,6 @@ namespace llvm {
   class MemoryBuffer;
   
 //===----------------------------------------------------------------------===//
-//                          HungoffOperand Trait Class
-//===----------------------------------------------------------------------===//
-
-template <unsigned MINARITY = 1>
-struct HungoffOperandTraits {
-  static Use *op_begin(User* U) {
-    return U->OperandList;
-  }
-  static Use *op_end(User* U) {
-    return U->OperandList + U->getNumOperands();
-  }
-  static unsigned operands(const User *U) {
-    return U->getNumOperands();
-  }
-  static inline void *allocate(unsigned); // FIXME
-};
-
-//===----------------------------------------------------------------------===//
 //                          BitcodeReaderValueList Class
 //===----------------------------------------------------------------------===//
 
@@ -59,8 +41,6 @@ public:
   unsigned size() const { return getNumOperands(); }
   void resize(unsigned);
   void push_back(Value *V) {
-//    Uses.push_back(Use(V, this));
-//    OperandList = &Uses[0];
     ++NumOperands;
   }
   
@@ -75,8 +55,6 @@ public:
   bool empty() const { return NumOperands == 0; }
   void shrinkTo(unsigned N) {
     assert(N <= NumOperands && "Invalid shrinkTo request!");
-//    Uses.resize(N);
-//    NumOperands = N;
     while (NumOperands > N)
       pop_back();
   }
@@ -100,8 +78,12 @@ public:
   
 private:
   void initVal(unsigned Idx, Value *V) {
-//    assert(Uses[Idx] == 0 && "Cannot init an already init'd Use!");
-//    Uses[Idx].init(V, this);
+    if (Idx >= size()) {
+      // Insert a bunch of null values.
+        resize(Idx * 2 + 1);
+    }
+    assert(getOperand(Idx) == 0 && "Cannot init an already init'd Use!");
+    OperandList[Idx].init(V, this);
   }
 };
 
