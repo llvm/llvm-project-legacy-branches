@@ -525,6 +525,7 @@ void ReturnInst::init(Value * const* retVals, unsigned N) {
     if (V->getType() == Type::VoidTy)
       return;
     Op<0>().init(V, this);
+    return;
   }
 
   Use *OL = OperandList;
