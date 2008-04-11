@@ -24,25 +24,25 @@ namespace llvm {
 template <unsigned ARITY>
 struct FixedNumOperandTraits {
   static Use *op_begin(User* U) {
-		return reinterpret_cast<Use*>(U) - ARITY;
-	}
+    return reinterpret_cast<Use*>(U) - ARITY;
+  }
   static Use *op_end(User* U) {
-		return reinterpret_cast<Use*>(U);
-	}
-	static unsigned operands(const User*) {
-		return ARITY;
-	}
-	struct prefix {
-		Use Ops[ARITY];
-		prefix(); // DO NOT IMPLEMENT
-	};
+    return reinterpret_cast<Use*>(U);
+  }
+  static unsigned operands(const User*) {
+    return ARITY;
+  }
+  struct prefix {
+    Use Ops[ARITY];
+    prefix(); // DO NOT IMPLEMENT
+  };
   template <class U>
-	struct Layout {
-		struct overlay : prefix, U {
-			overlay(); // DO NOT IMPLEMENT
-		};
-	};
-	static inline void *allocate(unsigned); // FIXME
+  struct Layout {
+    struct overlay : prefix, U {
+      overlay(); // DO NOT IMPLEMENT
+    };
+  };
+  static inline void *allocate(unsigned); // FIXME
 };
 
 //===----------------------------------------------------------------------===//
@@ -74,12 +74,12 @@ struct VariadicOperandTraits {
 /// Macro for generating out-of-class operand accessor definitions
 #define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
 VALUECLASS *CLASS::getOperand(unsigned i) const { \
-	assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
-	return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]; \
+  assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]; \
 } \
 void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
-	assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
-	OperandTraits<CLASS>::op_begin(this)[i] = Val; \
+  assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+  OperandTraits<CLASS>::op_begin(this)[i] = Val; \
 } \
 unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
 template <unsigned Idx> Use &CLASS::Op() { \

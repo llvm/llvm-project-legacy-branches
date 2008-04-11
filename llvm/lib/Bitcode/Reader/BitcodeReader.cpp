@@ -138,7 +138,7 @@ namespace {
 }
 
 
-	// FIXME: can we inherit this from ConstantExpr?
+  // FIXME: can we inherit this from ConstantExpr?
 template <>
 struct OperandTraits<ConstantPlaceHolder> : FixedNumOperandTraits<1> {
 };
@@ -148,14 +148,14 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
 
 void BitcodeReaderValueList::resize(unsigned Desired) {
   unsigned Capacity = 0;
-	if (OperandList) {
-		Capacity = OperandList->getImpliedUser() - OperandList;
-	}
+  if (OperandList) {
+    Capacity = OperandList->getImpliedUser() - OperandList;
+  }
 
-	if (Desired > Capacity)
-	{
-		// FIXME
-	}
+  if (Desired > Capacity)
+  {
+    // FIXME
+  }
 }
 
 Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,

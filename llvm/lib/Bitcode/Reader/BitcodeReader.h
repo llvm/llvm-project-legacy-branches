@@ -53,11 +53,11 @@ public:
   BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0) {}
   
   /// Provide fast operand accessors
-	DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   // vector compatibility methods
   unsigned size() const { return getNumOperands(); }
-	void resize(unsigned);
+  void resize(unsigned);
   void push_back(Value *V) {
 //    Uses.push_back(Use(V, this));
 //    OperandList = &Uses[0];
