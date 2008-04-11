@@ -223,15 +223,15 @@ inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
   return OS;
 }
 
-void Use::init(Value *v, User *user) {
-  Val = v;
+void Use::init(Value *V, User *user) {
+  Val = transferTag(V);
   U = user;
-  if (Val) Val->addUse(*this);
+  if (V) V->addUse(*this);
 }
 
 void Use::set(Value *V) {
-  if (Val) removeFromList();
-  Val = V;
+  if (stripTag(Val)) removeFromList();
+  Val = transferTag(V);
   if (V) V->addUse(*this);
 }
 
