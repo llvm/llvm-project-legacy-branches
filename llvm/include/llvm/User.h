@@ -322,8 +322,10 @@ inline unsigned OperandTraits<User>::operands(const User *U) {
   */
 
 Use *User::allocHangoffUses(unsigned N) const {
-  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N));
-  Use::initTags(Begin, Begin + N);
+  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof this));
+  Use *End = Begin + N;
+  (*(User**)End) = (User*)(ptrdiff_t(this) | 1);
+  Use::initTags(Begin, End);
   return Begin;
 }
 

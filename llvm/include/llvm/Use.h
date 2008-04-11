@@ -52,7 +52,7 @@ public:
 
   operator Value*() const { return stripTag(Val); }
   Value *get() const { return stripTag(Val); }
-  User *getUser() const { return U; }
+  User *getUser() const;
   const Use* getImpliedUser() const;
   static void initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   static void zap(Use *Start, const Use *Stop);
@@ -81,7 +81,7 @@ private:
     return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) & ~3UL);
   }
   Value *transferTag(Value *V) {
-    return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) + (reinterpret_cast<ptrdiff_t>(Val) & 3UL));
+    return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) | (reinterpret_cast<ptrdiff_t>(Val) & 3UL));
   }
   void addToList(Use **List) {
     Next = *List;

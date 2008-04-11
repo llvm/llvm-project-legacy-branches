@@ -80,4 +80,20 @@ void Use::zap(Use *Start, const Use *Stop) {
   }
 }
 
+//===----------------------------------------------------------------------===//
+//                         Use getUser Implementation
+//===----------------------------------------------------------------------===//
+
+User *Use::getUser() const {
+  const Use* End = getImpliedUser();
+  User *She = End->U;
+  if (ptrdiff_t(She) & 1UL)
+    She = (User*)(ptrdiff_t(She) & ~1UL);
+  else
+    She = (User*)End;
+
+  assert((!U || U == She) && "Implicit User differs?");
+  return She;
+}
+
 } // End llvm namespace
