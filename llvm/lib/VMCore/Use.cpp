@@ -76,8 +76,8 @@ void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
 
 void Use::zap(Use *Start, const Use *Stop) {
   while (Start != Stop) {
-		(Start++)->set(0);
-	}
+    (Start++)->set(0);
+  }
 }
 
 } // End llvm namespace

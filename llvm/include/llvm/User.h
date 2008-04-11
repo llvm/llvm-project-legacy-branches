@@ -200,19 +200,19 @@ template <>
 struct OperandTraits<User> {
   static inline Use *op_begin(User*);
   static inline Use *op_end(User*);
-	static inline unsigned operands(const User*);
+  static inline unsigned operands(const User*);
   template <class U>
-	struct Layout {
-		typedef U overlay;
-	};
-	static inline void *allocate(unsigned);
+  struct Layout {
+    typedef U overlay;
+  };
+  static inline void *allocate(unsigned);
 };
 
 class User : public Value {
   User(const User &);             // Do not implement
   void *operator new(size_t);     // Do not implement
   template <unsigned>
-	friend struct HungoffOperandTraits;
+  friend struct HungoffOperandTraits;
 protected:
   /// OperandList - This is a pointer to the array of Users for this operand.
   /// For nodes of fixed arity (e.g. a binary operator) this array will live
@@ -248,15 +248,15 @@ public:
   }
 public:
   template <unsigned Idx> Use &Op() {
-		return OperandTraits<User>::op_begin(this)[Idx];
-	}
+    return OperandTraits<User>::op_begin(this)[Idx];
+  }
   template <unsigned Idx> const Use &Op() const {
-		return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
-	}
+    return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
+  }
   inline Use *allocHangoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
     U->zap(U, U->getImpliedUser());
-	}
+  }
 
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
@@ -306,25 +306,25 @@ public:
 };
 
 inline Use *OperandTraits<User>::op_begin(User *U) {
-	return U->op_begin();
+  return U->op_begin();
 }
 
 inline Use *OperandTraits<User>::op_end(User *U) {
-	return U->op_end();
+  return U->op_end();
 }
 
 inline unsigned OperandTraits<User>::operands(const User *U) {
-	return U->getNumOperands();
+  return U->getNumOperands();
 }
-	/*
-	static inline void *allocate(unsigned);
+  /*
+  static inline void *allocate(unsigned);
 };
-	*/
+  */
 
 Use *User::allocHangoffUses(unsigned N) const {
   Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N));
-	Use::initTags(Begin, Begin + N);
-	return Begin;
+  Use::initTags(Begin, Begin + N);
+  return Begin;
 }
 
 template<> struct simplify_type<User::op_iterator> {
