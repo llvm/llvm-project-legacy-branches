@@ -157,7 +157,9 @@ void BitcodeReaderValueList::resize(unsigned Desired) {
     Use *New = allocHangoffUses(Desired);
     for (int i(getNumOperands() - 1); i >= 0; --i)
       New[i] = getOperand(i);
+    Use *Old = OperandList;
     OperandList = New;
+    dropHungoffUses(Old);
   }
 }
 

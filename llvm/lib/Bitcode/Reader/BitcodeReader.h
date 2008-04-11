@@ -41,6 +41,8 @@ public:
   unsigned size() const { return getNumOperands(); }
   void resize(unsigned);
   void push_back(Value *V) {
+    resize(NumOperands + 1);
+    setOperand(NumOperands, V);
     ++NumOperands;
   }
   
