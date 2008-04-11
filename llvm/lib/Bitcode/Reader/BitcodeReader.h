@@ -41,9 +41,10 @@ public:
   unsigned size() const { return getNumOperands(); }
   void resize(unsigned);
   void push_back(Value *V) {
-    resize(++NumOperands);
-    OperandList[NumOperands - 1].init(V, this);
-    //setOperand(NumOperands - 1, V);
+    unsigned OldOps(NumOperands), NewOps(NumOperands + 1);
+    resize(NewOps);
+    NumOperands = NewOps;
+    OperandList[OldOps].init(V, this);
   }
   
   void clear() {
