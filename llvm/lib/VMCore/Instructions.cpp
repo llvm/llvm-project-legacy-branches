@@ -885,9 +885,9 @@ void StoreInst::AssertOK() {
 
 StoreInst::StoreInst(Value *val, Value *addr, Instruction *InsertBefore)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertBefore) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(false);
@@ -897,9 +897,9 @@ StoreInst::StoreInst(Value *val, Value *addr, Instruction *InsertBefore)
 
 StoreInst::StoreInst(Value *val, Value *addr, BasicBlock *InsertAtEnd)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertAtEnd) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(false);
@@ -910,9 +910,9 @@ StoreInst::StoreInst(Value *val, Value *addr, BasicBlock *InsertAtEnd)
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      Instruction *InsertBefore)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertBefore) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -923,9 +923,9 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      unsigned Align, Instruction *InsertBefore)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertBefore) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertBefore) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -936,9 +936,9 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      unsigned Align, BasicBlock *InsertAtEnd)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertAtEnd) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -949,9 +949,9 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
                      BasicBlock *InsertAtEnd)
   : Instruction(Type::VoidTy, Store,
-								OperandTraits<StoreInst>::op_begin(this),
-								OperandTraits<StoreInst>::operands(this),
-								InsertAtEnd) {
+                OperandTraits<StoreInst>::op_begin(this),
+                OperandTraits<StoreInst>::operands(this),
+                InsertAtEnd) {
   Op<0>().init(val, this);
   Op<1>().init(addr, this);
   setVolatile(isVolatile);
@@ -1239,9 +1239,9 @@ bool InsertElementInst::isValidOperands(const Value *Vec, const Value *Elt,
 //===----------------------------------------------------------------------===//
 
 ShuffleVectorInst::ShuffleVectorInst(const ShuffleVectorInst &SV) 
-	: Instruction(SV.getType(), ShuffleVector,
-								OperandTraits<ShuffleVectorInst>::op_begin(this),
-								OperandTraits<ShuffleVectorInst>::operands(this)) {
+  : Instruction(SV.getType(), ShuffleVector,
+                OperandTraits<ShuffleVectorInst>::op_begin(this),
+                OperandTraits<ShuffleVectorInst>::operands(this)) {
   Op<0>().init(SV.Op<0>(), this);
   Op<1>().init(SV.Op<1>(), this);
   Op<2>().init(SV.Op<2>(), this);
@@ -1251,9 +1251,9 @@ ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
                                      const std::string &Name,
                                      Instruction *InsertBefore)
   : Instruction(V1->getType(), ShuffleVector,
-								OperandTraits<ShuffleVectorInst>::op_begin(this),
-								OperandTraits<ShuffleVectorInst>::operands(this),
-								InsertBefore) {
+                OperandTraits<ShuffleVectorInst>::op_begin(this),
+                OperandTraits<ShuffleVectorInst>::operands(this),
+                InsertBefore) {
   assert(isValidOperands(V1, V2, Mask) &&
          "Invalid shuffle vector instruction operands!");
   Op<0>().init(V1, this);
@@ -1266,9 +1266,9 @@ ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
                                      const std::string &Name, 
                                      BasicBlock *InsertAtEnd)
   : Instruction(V1->getType(), ShuffleVector,
-								OperandTraits<ShuffleVectorInst>::op_begin(this),
-								OperandTraits<ShuffleVectorInst>::operands(this),
-								InsertAtEnd) {
+                OperandTraits<ShuffleVectorInst>::op_begin(this),
+                OperandTraits<ShuffleVectorInst>::operands(this),
+                InsertAtEnd) {
   assert(isValidOperands(V1, V2, Mask) &&
          "Invalid shuffle vector instruction operands!");
 

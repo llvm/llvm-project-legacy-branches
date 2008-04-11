@@ -329,7 +329,7 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-	/*  Value *getOperand(unsigned i) const {
+  /*  Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -1353,7 +1353,7 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-	/*  const Value *getOperand(unsigned i) const {
+  /*  const Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
     return OperandList[i];
   }

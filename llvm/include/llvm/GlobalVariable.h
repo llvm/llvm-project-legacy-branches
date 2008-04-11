@@ -63,9 +63,9 @@ public:
                                 Constant *Initializer = 0, const std::string &Name = "",
                                 Module *Parent = 0, bool ThreadLocal = false, 
                                 unsigned AddressSpace = 0) {
-    return new (!!Initializer) GlobalVariable(Ty, isConstant, Linkage,
-                                              Initializer, Name, Parent,
-                                              ThreadLocal, AddressSpace);
+    return new (1) GlobalVariable(Ty, isConstant, Linkage,
+                                  Initializer, Name, Parent,
+                                  ThreadLocal, AddressSpace);
   }
 
   /// GlobalVariable creator - This creates a global and inserts it before the
@@ -74,9 +74,9 @@ public:
                                 Constant *Initializer, const std::string &Name,
                                 GlobalVariable *InsertBefore, bool ThreadLocal = false, 
                                 unsigned AddressSpace = 0) {
-    return new (!!Initializer) GlobalVariable(Ty, isConstant, Linkage,
-                                              Initializer, Name, InsertBefore,
-                                              ThreadLocal, AddressSpace);
+    return new (1) GlobalVariable(Ty, isConstant, Linkage,
+                                  Initializer, Name, InsertBefore,
+                                  ThreadLocal, AddressSpace);
   }
   
   /// Provide fast operand accessors
@@ -97,7 +97,7 @@ public:
   /// illegal to call this method if the global is external, because we cannot
   /// tell what the value is initialized to!
   ///
-  inline Constant *getInitializer() const {
+  inline /*const FIXME*/ Constant *getInitializer() const {
     assert(hasInitializer() && "GV doesn't have initializer!");
     return static_cast<Constant*>(Op<0>().get());
   }
@@ -160,7 +160,7 @@ private:
 };
 
 template <>
-struct OperandTraits<GlobalVariable> : VariadicOperandTraits<> {
+struct OperandTraits<GlobalVariable> : OptionalOperandTraits<> {
 };
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GlobalVariable, Value)

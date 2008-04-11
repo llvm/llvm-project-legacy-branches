@@ -89,7 +89,7 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                Module *ParentModule, bool ThreadLocal, 
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                OperandTraits<GlobalVariable>::op_end(this) - (InitVal != 0),
+                OperandTraits<GlobalVariable>::op_begin(this),
                 InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
@@ -109,7 +109,7 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                GlobalVariable *Before, bool ThreadLocal,
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                OperandTraits<GlobalVariable>::op_end(this) - (InitVal != 0),
+                OperandTraits<GlobalVariable>::op_begin(this),
                 InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {

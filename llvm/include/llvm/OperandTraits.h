@@ -48,6 +48,17 @@ struct FixedNumOperandTraits {
 };
 
 //===----------------------------------------------------------------------===//
+//                          OptionalOperands Trait Class
+//===----------------------------------------------------------------------===//
+
+template <unsigned ARITY = 1>
+struct OptionalOperandTraits : FixedNumOperandTraits<ARITY> {
+  static unsigned operands(const User *U) {
+    return U->getNumOperands();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 //                          VariadicOperand Trait Class
 //===----------------------------------------------------------------------===//
 
