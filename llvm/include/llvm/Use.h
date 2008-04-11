@@ -55,6 +55,7 @@ public:
   User *getUser() const { return U; }
   const Use* getImpliedUser() const;
   static void initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
+  static void zap(Use *Start, const Use *Stop);
 
   inline void set(Value *Val);
 
