@@ -42,8 +42,8 @@ public:
   void resize(unsigned);
   void push_back(Value *V) {
     resize(NumOperands + 1);
-    setOperand(NumOperands, V);
     ++NumOperands;
+    setOperand(NumOperands - 1, V);
   }
   
   void clear() {
