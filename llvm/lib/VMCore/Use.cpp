@@ -58,6 +58,7 @@ void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
   while (Start != Stop) 
   {
     --Stop;
+    Stop->U = 0;
     if (!Count) {
       Stop->Val = reinterpret_cast<Value*>(Done == 0 ? fullStopTag : stopTag);
       ++Done;
