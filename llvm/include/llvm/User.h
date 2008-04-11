@@ -239,11 +239,14 @@ protected:
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
     : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
 public:
+  ~User() {
+    Use::zap(OperandList, OperandList + NumOperands);
+  }
   void operator delete(void *Usr) {
     User *Start = static_cast<User*>(Usr);
     Use *Storage = static_cast<Use*>(Usr) - Start->NumOperands;
     if (Storage == Start->OperandList)
-      ::operator delete(Storage); // FIXME: destructors of Uses?
+      ::operator delete(Storage);
     else ::operator delete(Usr);
   }
 public:
@@ -255,7 +258,7 @@ public:
   }
   inline Use *allocHangoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
-    U->zap(U, U->getImpliedUser());
+    Use::zap(U, U->getImpliedUser());
   }
 
   Value *getOperand(unsigned i) const {
