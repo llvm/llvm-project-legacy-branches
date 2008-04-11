@@ -1221,7 +1221,9 @@ bool InsertElementInst::isValidOperands(const Value *Vec, const Value *Elt,
 //===----------------------------------------------------------------------===//
 
 ShuffleVectorInst::ShuffleVectorInst(const ShuffleVectorInst &SV) 
-    : Instruction(SV.getType(), ShuffleVector, /*Ops*/NULL, 3) {
+	: Instruction(SV.getType(), ShuffleVector,
+								OperandTraits<ShuffleVectorInst>::op_begin(this),
+								OperandTraits<ShuffleVectorInst>::operands(this)) {
   Op<0>().init(SV.Op<0>(), this);
   Op<1>().init(SV.Op<1>(), this);
   Op<2>().init(SV.Op<2>(), this);
@@ -1230,7 +1232,10 @@ ShuffleVectorInst::ShuffleVectorInst(const ShuffleVectorInst &SV)
 ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
                                      const std::string &Name,
                                      Instruction *InsertBefore)
-  : Instruction(V1->getType(), ShuffleVector, /*Ops*/NULL, 3, InsertBefore) {
+  : Instruction(V1->getType(), ShuffleVector,
+								OperandTraits<ShuffleVectorInst>::op_begin(this),
+								OperandTraits<ShuffleVectorInst>::operands(this),
+								InsertBefore) {
   assert(isValidOperands(V1, V2, Mask) &&
          "Invalid shuffle vector instruction operands!");
   Op<0>().init(V1, this);
@@ -1242,7 +1247,10 @@ ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
 ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
                                      const std::string &Name, 
                                      BasicBlock *InsertAtEnd)
-  : Instruction(V1->getType(), ShuffleVector, /*Ops*/NULL, 3, InsertAtEnd) {
+  : Instruction(V1->getType(), ShuffleVector,
+								OperandTraits<ShuffleVectorInst>::op_begin(this),
+								OperandTraits<ShuffleVectorInst>::operands(this),
+								InsertAtEnd) {
   assert(isValidOperands(V1, V2, Mask) &&
          "Invalid shuffle vector instruction operands!");
 

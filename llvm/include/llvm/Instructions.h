@@ -1346,7 +1346,8 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  const Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+	/*  const Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -1358,7 +1359,7 @@ public:
     assert(i < 3 && "setOperand() out of range!");
     OperandList[i] = Val;
   }
-  unsigned getNumOperands() const { return 3; }
+  unsigned getNumOperands() const { return 3; }*/
   
   /// getMaskValue - Return the index from the shuffle mask for the specified
   /// output result.  This is either -1 if the element is undef or a number less
@@ -1375,6 +1376,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ShuffleVectorInst> : FixedNumOperandTraits<3> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ShuffleVectorInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                               PHINode Class
