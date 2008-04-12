@@ -660,7 +660,9 @@ BranchInst::BranchInst(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
 
 
 BranchInst::BranchInst(const BranchInst &BI) :
-  TerminatorInst(Type::VoidTy, Instruction::Br, /*Ops*/NULL, BI.getNumOperands()) {
+  TerminatorInst(Type::VoidTy, Instruction::Br,
+                 OperandTraits<BranchInst>::op_end(this) - BI.getNumOperands(),
+                 BI.getNumOperands()) {
   OperandList[0].init(BI.getOperand(0), this);
   if (BI.getNumOperands() != 1) {
     assert(BI.getNumOperands() == 3 && "BR can have 1 or 3 operands!");
