@@ -184,7 +184,6 @@ void PHINode::resizeOperands(unsigned NumOps) {
   Use *NewOps = allocHangoffUses(NumOps);
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
-      //      OldOps[i].set(0);
   }
   if (OldOps) dropHungoffUses(OldOps);
   OperandList = NewOps;
@@ -2651,7 +2650,7 @@ SwitchInst::SwitchInst(const SwitchInst &SI)
 }
 
 SwitchInst::~SwitchInst() {
-//  delete [] OperandList;
+  dropHungoffUses(OperandList);
 }
 
 
@@ -2719,9 +2718,8 @@ void SwitchInst::resizeOperands(unsigned NumOps) {
   Use *OldOps = OperandList;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
-      OldOps[i].set(0);
   }
-//  delete [] OldOps;
+  if (OldOps) dropHungoffUses(OldOps);
   OperandList = NewOps;
 }
 

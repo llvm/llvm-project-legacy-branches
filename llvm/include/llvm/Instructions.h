@@ -1788,13 +1788,16 @@ class SwitchInst : public TerminatorInst {
 public:
   static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
                             Instruction *InsertBefore = 0) {
-    return new(NumCases/*FIXME*/) SwitchInst(Value, Default, NumCases, InsertBefore);
+    return new(NumCases * 2) SwitchInst(Value, Default, NumCases, InsertBefore);
   }
   static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
                             BasicBlock *InsertAtEnd) {
-    return new(NumCases/*FIXME*/) SwitchInst(Value, Default, NumCases, InsertAtEnd);
+    return new(NumCases * 2) SwitchInst(Value, Default, NumCases, InsertAtEnd);
   }
   ~SwitchInst();
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   // Accessor Methods for Switch stmt
   Value *getCondition() const { return getOperand(0); }
@@ -1891,6 +1894,13 @@ private:
   virtual unsigned getNumSuccessorsV() const;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
 };
+
+template <>
+struct OperandTraits<SwitchInst> : HungoffOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(SwitchInst, Value)  
+
 
 //===----------------------------------------------------------------------===//
 //                               InvokeInst Class
