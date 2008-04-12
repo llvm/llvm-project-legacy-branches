@@ -247,7 +247,7 @@ CallInst::~CallInst() {
 }
 
 void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
-  NumOperands = NumParams+1;
+  assert(NumOperands == NumParams+1 && "NumOperands not set up?");
   Use *OL = OperandList;
   OL[0].init(Func, this);
 
@@ -267,7 +267,7 @@ void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
 }
 
 void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
-  NumOperands = 3;
+  assert(NumOperands == 3 && "NumOperands not set up?");
   Use *OL = OperandList;
   OL[0].init(Func, this);
   OL[1].init(Actual1, this);
@@ -289,7 +289,7 @@ void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
 }
 
 void CallInst::init(Value *Func, Value *Actual) {
-  NumOperands = 2;
+  assert(NumOperands == 2 && "NumOperands not set up?");
   Use *OL = OperandList;
   OL[0].init(Func, this);
   OL[1].init(Actual, this);
@@ -307,7 +307,7 @@ void CallInst::init(Value *Func, Value *Actual) {
 }
 
 void CallInst::init(Value *Func) {
-  NumOperands = 1;
+  assert(NumOperands == 1 && "NumOperands not set up?");
   Use *OL = OperandList;
   OL[0].init(Func, this);
 
@@ -401,8 +401,8 @@ InvokeInst::~InvokeInst() {
 
 void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
                       Value* const *Args, unsigned NumArgs) {
-  NumOperands = 3+NumArgs;
-  Use *OL = OperandList = allocHangoffUses(3+NumArgs);
+  assert(NumOperands == 3+NumArgs && "NumOperands not set up?");
+  Use *OL = OperandList;
   OL[0].init(Fn, this);
   OL[1].init(IfNormal, this);
   OL[2].init(IfException, this);
@@ -425,7 +425,8 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
 
 InvokeInst::InvokeInst(const InvokeInst &II)
   : TerminatorInst(II.getType(), Instruction::Invoke,
-                   allocHangoffUses(II.getNumOperands()), II.getNumOperands()) {
+                   OperandTraits<InvokeInst>::op_end(this) - II.getNumOperands(),
+                   II.getNumOperands()) {
   setParamAttrs(II.getParamAttrs());
   SubclassData = II.SubclassData;
   Use *OL = OperandList, *InOL = II.OperandList;

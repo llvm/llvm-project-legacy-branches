@@ -945,13 +945,7 @@ class CallInst : public Instruction {
   /// @brief Construct a CallInst from a range of arguments
   template<typename InputIterator>
   CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-           const std::string &Name = "", Instruction *InsertBefore = 0);/*
-      : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
-                                       ->getElementType())->getReturnType(),
-                    Instruction::Call, 0, 0, InsertBefore) {
-    init(Func, ArgBegin, ArgEnd, Name, 
-         typename std::iterator_traits<InputIterator>::iterator_category());
-  }*/
+           const std::string &Name = "", Instruction *InsertBefore);
 
   /// Construct a CallInst given a range of arguments.  InputIterator
   /// must be a random-access iterator pointing to contiguous storage
@@ -962,20 +956,13 @@ class CallInst : public Instruction {
   template<typename InputIterator>
   inline CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
                   const std::string &Name, BasicBlock *InsertAtEnd);
-    /*
-      : Instruction(cast<FunctionType>(cast<PointerType>(Func->getType())
-                                       ->getElementType())->getReturnType(),
-                    Instruction::Call, 0, 0, InsertAtEnd) {
-    init(Func, ArgBegin, ArgEnd, Name,
-         typename std::iterator_traits<InputIterator>::iterator_category());
-  }*/
 
-  CallInst(Value *F, Value *Actual, const std::string& Name = "",
-           Instruction *InsertBefore = 0);
+  CallInst(Value *F, Value *Actual, const std::string& Name,
+           Instruction *InsertBefore);
   CallInst(Value *F, Value *Actual, const std::string& Name,
            BasicBlock *InsertAtEnd);
-  explicit CallInst(Value *F, const std::string &Name = "",
-                    Instruction *InsertBefore = 0);
+  explicit CallInst(Value *F, const std::string &Name,
+                    Instruction *InsertBefore);
   CallInst(Value *F, const std::string &Name, BasicBlock *InsertAtEnd);
 public:
   template<typename InputIterator>
@@ -1699,14 +1686,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-  /*  Value *getOperand(unsigned i) const {
-    assert(i < getNumOperands() && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < getNumOperands() && "setOperand() out of range!");
-    OperandList[i] = Val;
-    }*/
 
   virtual BranchInst *clone() const;
 
@@ -1940,15 +1919,16 @@ class InvokeInst : public TerminatorInst {
   ///
   /// @brief Construct an InvokeInst from a range of arguments
   template<typename InputIterator>
-  InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
-             InputIterator ArgBegin, InputIterator ArgEnd,
-             const std::string &Name = "", Instruction *InsertBefore = 0)
+  inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                    InputIterator ArgBegin, InputIterator ArgEnd,
+                    unsigned Values,
+                    const std::string &Name, Instruction *InsertBefore);/*
       : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
                                           ->getElementType())->getReturnType(),
-                       Instruction::Invoke, 0, 0, InsertBefore) {
+                       Instruction::Invoke, 0, Values, InsertBefore) {
     init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+         }*/
 
   /// Construct an InvokeInst given a range of arguments.
   /// InputIterator must be a random-access iterator pointing to
@@ -1958,33 +1938,41 @@ class InvokeInst : public TerminatorInst {
   ///
   /// @brief Construct an InvokeInst from a range of arguments
   template<typename InputIterator>
-  InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+  inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
              InputIterator ArgBegin, InputIterator ArgEnd,
-             const std::string &Name, BasicBlock *InsertAtEnd)
+             unsigned Values,
+                    const std::string &Name, BasicBlock *InsertAtEnd);/*
       : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
                                           ->getElementType())->getReturnType(),
-                       Instruction::Invoke, 0, 0, InsertAtEnd) {
+                       Instruction::Invoke, 0, Values, InsertAtEnd) {
     init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+         }*/
 public:
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const std::string &Name = "", Instruction *InsertBefore = 0) {
-    return new(ArgEnd - ArgBegin + 3) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name, InsertBefore);
+    unsigned Values(ArgEnd - ArgBegin + 3);
+    return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
+                                  Values, Name, InsertBefore);
   }
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(ArgEnd - ArgBegin + 3) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name, InsertAtEnd);
+    unsigned Values(ArgEnd - ArgBegin + 3);
+    return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
+                                  Values, Name, InsertAtEnd);
   }
 
   ~InvokeInst();
 
   virtual InvokeInst *clone() const;
 
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  
   /// getCallingConv/setCallingConv - Get or set the calling convention of this
   /// function call.
   unsigned getCallingConv() const { return SubclassData; }
@@ -2087,6 +2075,38 @@ private:
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
 };
 
+template <>
+struct OperandTraits<InvokeInst> : VariadicOperandTraits<3> {
+};
+
+template<typename InputIterator>
+InvokeInst::InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                       InputIterator ArgBegin, InputIterator ArgEnd,
+                       unsigned Values,
+                       const std::string &Name, Instruction *InsertBefore)
+  : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
+                                      ->getElementType())->getReturnType(),
+                   Instruction::Invoke,
+                   OperandTraits<InvokeInst>::op_end(this) - Values,
+                   Values, InsertBefore) {
+  init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+template<typename InputIterator>
+InvokeInst::InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                       InputIterator ArgBegin, InputIterator ArgEnd,
+                       unsigned Values,
+                       const std::string &Name, BasicBlock *InsertAtEnd)
+  : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
+                                      ->getElementType())->getReturnType(),
+                   Instruction::Invoke,
+                   OperandTraits<InvokeInst>::op_end(this) - Values,
+                   Values, InsertAtEnd) {
+  init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(InvokeInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                              UnwindInst Class
