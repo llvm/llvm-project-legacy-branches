@@ -455,11 +455,11 @@ class GetElementPtrInst : public Instruction {
   /// instruction, the second appends the new instruction to the specified
   /// BasicBlock.
   template<typename InputIterator>
-  GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, 
-                    InputIterator IdxEnd,
-                    unsigned Values,
-                    const std::string &Name,
-                    Instruction *InsertBefore)
+  inline GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, 
+                           InputIterator IdxEnd,
+                           unsigned Values,
+                           const std::string &Name,
+                           Instruction *InsertBefore);/*
       : Instruction(PointerType::get(
                       checkType(getIndexedType(Ptr->getType(),
                                                IdxBegin, IdxEnd, true)),
@@ -467,11 +467,11 @@ class GetElementPtrInst : public Instruction {
                     GetElementPtr, 0, Values, InsertBefore) {
     init(Ptr, IdxBegin, IdxEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+         }*/
   template<typename InputIterator>
-  GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
-                    unsigned Values,
-                    const std::string &Name, BasicBlock *InsertAtEnd)
+  inline GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
+                           unsigned Values,
+                           const std::string &Name, BasicBlock *InsertAtEnd);/*
       : Instruction(PointerType::get(
                       checkType(getIndexedType(Ptr->getType(),
                                                IdxBegin, IdxEnd, true)),
@@ -479,7 +479,7 @@ class GetElementPtrInst : public Instruction {
                     GetElementPtr, 0, Values, InsertAtEnd) {
     init(Ptr, IdxBegin, IdxEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
-  }
+         }*/
 
   /// Constructors - These two constructors are convenience methods because one
   /// and two index getelementptr instructions are so common.
@@ -601,6 +601,40 @@ GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
   for (unsigned i = 0, E = NumOperands; i != E; ++i)
     OL[i].init(GEPIOL[i], this);
 }
+
+template<typename InputIterator>
+GetElementPtrInst::GetElementPtrInst(Value *Ptr,
+                                     InputIterator IdxBegin, 
+                                     InputIterator IdxEnd,
+                                     unsigned Values,
+                                     const std::string &Name,
+                                     Instruction *InsertBefore)
+  : Instruction(PointerType::get(
+                                 checkType(getIndexedType(Ptr->getType(),
+                                                          IdxBegin, IdxEnd, true)),
+                                 cast<PointerType>(Ptr->getType())->getAddressSpace()),
+                GetElementPtr, OperandTraits<GetElementPtrInst>::op_end(this) - Values,
+                Values, InsertBefore) {
+  init(Ptr, IdxBegin, IdxEnd, Name,
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+template<typename InputIterator>
+GetElementPtrInst::GetElementPtrInst(Value *Ptr,
+                                     InputIterator IdxBegin,
+                                     InputIterator IdxEnd,
+                                     unsigned Values,
+                                     const std::string &Name,
+                                     BasicBlock *InsertAtEnd)
+  : Instruction(PointerType::get(
+                                 checkType(getIndexedType(Ptr->getType(),
+                                                          IdxBegin, IdxEnd, true)),
+                                 cast<PointerType>(Ptr->getType())->getAddressSpace()),
+                GetElementPtr, OperandTraits<GetElementPtrInst>::op_end(this) - Values,
+                Values, InsertAtEnd) {
+  init(Ptr, IdxBegin, IdxEnd, Name,
+       typename std::iterator_traits<InputIterator>::iterator_category());
+}
+
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetElementPtrInst, Value)
 
