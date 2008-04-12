@@ -18,6 +18,7 @@
 #include "llvm/SymbolTableListTraits.h"
 #include "llvm/ADT/ilist"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/OperandTraits.h"
 
 namespace llvm {
 
@@ -56,7 +57,6 @@ private:
   InstListType InstList;
   BasicBlock *Prev, *Next; // Next and Prev links for our intrusive linked list
   Function *Parent;
-/*  Use unwindDest;*/
 
   void setParent(Function *parent);
   void setNext(BasicBlock *N) { Next = N; }
@@ -80,9 +80,12 @@ public:
   // allocate space for exactly zero operands
   static BasicBlock *Create(const std::string &Name = "", Function *Parent = 0,
                             BasicBlock *InsertBefore = 0, BasicBlock *UnwindDest = 0) {
-    return new(!!UnwindDest) BasicBlock(Name, Parent, InsertBefore, UnwindDest);
+    return new(1) BasicBlock(Name, Parent, InsertBefore, UnwindDest);
   }
   ~BasicBlock();
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   /// getUnwindDest - Returns the BasicBlock that flow will enter if an unwind
   /// instruction occurs in this block. May be null, in which case unwinding
@@ -229,6 +232,12 @@ inline int
 ilist_traits<Instruction>::getListOffset() {
   return BasicBlock::getInstListOffset();
 }
+
+template <>
+struct OperandTraits<BasicBlock> : OptionalOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BasicBlock, Value)
 
 } // End llvm namespace
 

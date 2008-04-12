@@ -75,7 +75,9 @@ template class SymbolTableListTraits<Instruction, BasicBlock>;
 
 BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
                        BasicBlock *InsertBefore, BasicBlock *Dest)
-  : User(Type::LabelTy, Value::BasicBlockVal, &Op<0>()/*unwindDest*/, 0/*FIXME*/), Parent(0) {
+  : User(Type::LabelTy, Value::BasicBlockVal,
+         OperandTraits<BasicBlock>::op_begin(this),
+         !!Dest), Parent(0) {
 
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
@@ -89,7 +91,7 @@ BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
   }
   
   setName(Name);
-  // Op<0>()./*unwindDest.*/init(NULL, this); /*FIXME*/
+
   if (Dest)
     setUnwindDest(Dest);
 }
@@ -133,9 +135,8 @@ BasicBlock *BasicBlock::getUnwindDest() {
 }
 
 void BasicBlock::setUnwindDest(BasicBlock *dest) {
-//  NumOperands = unwindDest ? 1 : 0;
-  if (dest) // FIXME
-    Op<0>().set(dest);
+  NumOperands = dest ? 1 : 0;
+  Op<0>().set(dest);
 }
 
 /// moveBefore - Unlink this basic block from its current function and
@@ -293,7 +294,7 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const std::string &BBName) {
   assert(I != InstList.end() &&
          "Trying to get me to create degenerate basic block!");
 
-  BasicBlock *New = new(0/*FIXME*/) BasicBlock(BBName, getParent(), getNext());
+  BasicBlock *New = new(1) BasicBlock(BBName, getParent(), getNext());
 
   // Move all of the specified instructions from the original basic block into
   // the new basic block.
