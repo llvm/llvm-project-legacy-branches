@@ -385,15 +385,7 @@ static inline const Type *checkType(const Type *Ty) {
 /// access elements of arrays and structs
 ///
 class GetElementPtrInst : public Instruction {
-  GetElementPtrInst(const GetElementPtrInst &GEPI);/*
-    : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
-                  0, GEPI.getNumOperands()) {
-    OperandList = &Op<0>();
-    Use *OL = OperandList;
-    Use *GEPIOL = GEPI.OperandList;
-    for (unsigned i = 0, E = NumOperands; i != E; ++i)
-      OL[i].init(GEPIOL[i], this);
-      }*/
+  inline GetElementPtrInst(const GetElementPtrInst &GEPI);
   void init(Value *Ptr, Value* const *Idx, unsigned NumIdx);
   void init(Value *Ptr, Value *Idx);
 
