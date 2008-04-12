@@ -403,6 +403,7 @@ ConstantVector::~ConstantVector() {
 //  delete [] OperandList;
 }
 
+namespace llvm {
 // We declare several classes private to this file, so use an anonymous
 // namespace
 namespace {
@@ -515,23 +516,49 @@ public:
 /// used behind the scenes to implement getelementpr constant exprs.
 class VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
   GetElementPtrConstantExpr(Constant *C, const std::vector<Constant*> &IdxList,
-                            const Type *DestTy)
+                            const Type *DestTy);/*
     : ConstantExpr(DestTy, Instruction::GetElementPtr,
-                   allocHangoffUses(IdxList.size()+1), IdxList.size()+1) {
+                   OperandTraits<GetElementPtrConstantExpr>::op_end(this)
+                   - (IdxList.size()+1),
+                   IdxList.size()+1) {
     OperandList[0].init(C, this);
     for (unsigned i = 0, E = IdxList.size(); i != E; ++i)
       OperandList[i+1].init(IdxList[i], this);
-  }
+      }*/
 public:
   static GetElementPtrConstantExpr *Create(Constant *C, const std::vector<Constant*> &IdxList,
-                                    const Type *DestTy) {
-    return new(IdxList.size() + 1/*FIXME*/) GetElementPtrConstantExpr(C, IdxList, DestTy);
+                                           const Type *DestTy) {
+    return new(IdxList.size() + 1) GetElementPtrConstantExpr(C, IdxList, DestTy);
   }
-  ~GetElementPtrConstantExpr() {
-    delete [] OperandList;
-  }
+  //  ~GetElementPtrConstantExpr() {
+    //    delete [] OperandList;
+  //  }
+
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+};
+} // end anonymous namespace
+
+template <>
+struct OperandTraits<GetElementPtrConstantExpr> : VariadicOperandTraits<1> {
 };
 
+GetElementPtrConstantExpr::GetElementPtrConstantExpr
+  (Constant *C,
+   const std::vector<Constant*> &IdxList,
+   const Type *DestTy)
+    : ConstantExpr(DestTy, Instruction::GetElementPtr,
+                   OperandTraits<GetElementPtrConstantExpr>::op_end(this)
+                   - (IdxList.size()+1),
+                   IdxList.size()+1) {
+  OperandList[0].init(C, this);
+  for (unsigned i = 0, E = IdxList.size(); i != E; ++i)
+    OperandList[i+1].init(IdxList[i], this);
+}
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetElementPtrConstantExpr, Value)
+
+namespace {
 // CompareConstantExpr - This class is private to Constants.cpp, and is used
 // behind the scenes to implement ICmp and FCmp constant expressions. This is
 // needed in order to store the predicate value for these instructions.
@@ -551,6 +578,7 @@ struct VISIBILITY_HIDDEN CompareConstantExpr : public ConstantExpr {
 };
 
 } // end anonymous namespace
+} // End llvm namespace
 
 
 // Utility function for determining if a ConstantExpr is a CastOp or not. This
