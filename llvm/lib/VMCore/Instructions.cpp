@@ -973,8 +973,8 @@ static unsigned retrieveAddrSpace(const Value *Val) {
 }
 
 void GetElementPtrInst::init(Value *Ptr, Value* const *Idx, unsigned NumIdx) {
-  NumOperands = 1+NumIdx;
-  Use *OL = OperandList = allocHangoffUses(NumOperands);
+  assert(NumOperands == 1+NumIdx && "NumOperands not initialized?");
+  Use *OL = OperandList;
   OL[0].init(Ptr, this);
 
   for (unsigned i = 0; i != NumIdx; ++i)
@@ -982,8 +982,8 @@ void GetElementPtrInst::init(Value *Ptr, Value* const *Idx, unsigned NumIdx) {
 }
 
 void GetElementPtrInst::init(Value *Ptr, Value *Idx) {
-  NumOperands = 2;
-  Use *OL = OperandList = allocHangoffUses(2);
+  assert(NumOperands == 2 && "NumOperands not initialized?");
+  Use *OL = OperandList;
   OL[0].init(Ptr, this);
   OL[1].init(Idx, this);
 }
@@ -992,7 +992,9 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
                                      const std::string &Name, Instruction *InBe)
   : Instruction(PointerType::get(checkType(getIndexedType(Ptr->getType(),Idx)),
                                  retrieveAddrSpace(Ptr)),
-                GetElementPtr, 0, 0, InBe) {
+                GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - 2,
+                2, InBe) {
   init(Ptr, Idx);
   setName(Name);
 }
@@ -1001,13 +1003,15 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
                                      const std::string &Name, BasicBlock *IAE)
   : Instruction(PointerType::get(checkType(getIndexedType(Ptr->getType(),Idx)),
                                  retrieveAddrSpace(Ptr)),
-                GetElementPtr, 0, 0, IAE) {
+                GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - 2,
+                2, IAE) {
   init(Ptr, Idx);
   setName(Name);
 }
 
 GetElementPtrInst::~GetElementPtrInst() {
-  delete[] OperandList;
+  //  delete[] OperandList;
 }
 
 // getIndexedType - Returns the type of the element that would be loaded with

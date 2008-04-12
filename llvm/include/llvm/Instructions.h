@@ -385,14 +385,15 @@ static inline const Type *checkType(const Type *Ty) {
 /// access elements of arrays and structs
 ///
 class GetElementPtrInst : public Instruction {
-  GetElementPtrInst(const GetElementPtrInst &GEPI)
+  GetElementPtrInst(const GetElementPtrInst &GEPI);/*
     : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
                   0, GEPI.getNumOperands()) {
-    Use *OL = OperandList = 0; // FIXME: GEPI.dupHangoffUses(this, NumOperands, GEPI.OperandList)   new Use[NumOperands];
+    OperandList = &Op<0>();
+    Use *OL = OperandList;
     Use *GEPIOL = GEPI.OperandList;
     for (unsigned i = 0, E = NumOperands; i != E; ++i)
       OL[i].init(GEPIOL[i], this);
-  }
+      }*/
   void init(Value *Ptr, Value* const *Idx, unsigned NumIdx);
   void init(Value *Ptr, Value *Idx);
 
@@ -407,7 +408,8 @@ class GetElementPtrInst : public Instruction {
     
     if (NumIdx > 0) {
       // This requires that the iterator points to contiguous memory.
-      init(Ptr, &*IdxBegin, NumIdx);
+      init(Ptr, &*IdxBegin, NumIdx); // FIXME: for the general case
+                                     // we have to build an array here
     }
     else {
       init(Ptr, 0, NumIdx);
@@ -455,24 +457,26 @@ class GetElementPtrInst : public Instruction {
   template<typename InputIterator>
   GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, 
                     InputIterator IdxEnd,
-                    const std::string &Name = "",
-                    Instruction *InsertBefore = 0)
+                    unsigned Values,
+                    const std::string &Name,
+                    Instruction *InsertBefore)
       : Instruction(PointerType::get(
                       checkType(getIndexedType(Ptr->getType(),
                                                IdxBegin, IdxEnd, true)),
                       cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                    GetElementPtr, 0, 0, InsertBefore) {
+                    GetElementPtr, 0, Values, InsertBefore) {
     init(Ptr, IdxBegin, IdxEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
   }
   template<typename InputIterator>
   GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
+                    unsigned Values,
                     const std::string &Name, BasicBlock *InsertAtEnd)
       : Instruction(PointerType::get(
                       checkType(getIndexedType(Ptr->getType(),
                                                IdxBegin, IdxEnd, true)),
                       cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                    GetElementPtr, 0, 0, InsertAtEnd) {
+                    GetElementPtr, 0, Values, InsertAtEnd) {
     init(Ptr, IdxBegin, IdxEnd, Name,
          typename std::iterator_traits<InputIterator>::iterator_category());
   }
@@ -489,27 +493,34 @@ public:
                                    InputIterator IdxEnd,
                                    const std::string &Name = "",
                                    Instruction *InsertBefore = 0) {
-    return new(0/*FIXME*/) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Name, InsertBefore);
+    typename std::iterator_traits<InputIterator>::difference_type Values = 
+      1 + std::distance(IdxBegin, IdxEnd);
+    return new(Values) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertBefore);
   }
   template<typename InputIterator>
   static GetElementPtrInst *Create(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
                                    const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(0/*FIXME*/) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Name, InsertAtEnd);
+    typename std::iterator_traits<InputIterator>::difference_type Values = 
+      1 + std::distance(IdxBegin, IdxEnd);
+    return new(Values) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
   }
 
   /// Constructors - These two constructors are convenience methods because one
   /// and two index getelementptr instructions are so common.
   static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
                                    const std::string &Name = "", Instruction *InsertBefore = 0) {
-    return new(2/*FIXME*/) GetElementPtrInst(Ptr, Idx, Name, InsertBefore);
+    return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertBefore);
   }
   static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
                                    const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(2/*FIXME*/) GetElementPtrInst(Ptr, Idx, Name, InsertAtEnd);
+    return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertAtEnd);
   }
   ~GetElementPtrInst();
 
   virtual GetElementPtrInst *clone() const;
+
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   // getType - Overload to return most specific pointer type...
   const PointerType *getType() const {
@@ -576,6 +587,23 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+template <>
+struct OperandTraits<GetElementPtrInst> : VariadicOperandTraits<1> {
+};
+
+GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
+  : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - GEPI.getNumOperands(),
+                GEPI.getNumOperands()) {
+  Use *OL = OperandList;
+  Use *GEPIOL = GEPI.OperandList;
+  for (unsigned i = 0, E = NumOperands; i != E; ++i)
+    OL[i].init(GEPIOL[i], this);
+}
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetElementPtrInst, Value)
+
 
 //===----------------------------------------------------------------------===//
 //                               ICmpInst Class
