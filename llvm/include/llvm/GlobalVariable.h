@@ -78,7 +78,11 @@ public:
                                   Initializer, Name, InsertBefore,
                                   ThreadLocal, AddressSpace);
   }
-  
+
+  ~GlobalVariable() {
+    NumOperands = 1; // FIXME: needed by operator delete
+  }
+
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
