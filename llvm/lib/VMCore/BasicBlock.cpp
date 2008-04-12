@@ -101,6 +101,7 @@ BasicBlock::~BasicBlock() {
   assert(getParent() == 0 && "BasicBlock still linked into the program!");
   dropAllReferences();
   InstList.clear();
+  NumOperands = 1; // FIXME: needed for deallocate
 }
 
 void BasicBlock::setParent(Function *parent) {
