@@ -451,27 +451,11 @@ class GetElementPtrInst : public Instruction {
                            InputIterator IdxEnd,
                            unsigned Values,
                            const std::string &Name,
-                           Instruction *InsertBefore);/*
-      : Instruction(PointerType::get(
-                      checkType(getIndexedType(Ptr->getType(),
-                                               IdxBegin, IdxEnd, true)),
-                      cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                    GetElementPtr, 0, Values, InsertBefore) {
-    init(Ptr, IdxBegin, IdxEnd, Name,
-         typename std::iterator_traits<InputIterator>::iterator_category());
-         }*/
+                           Instruction *InsertBefore);
   template<typename InputIterator>
   inline GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
                            unsigned Values,
-                           const std::string &Name, BasicBlock *InsertAtEnd);/*
-      : Instruction(PointerType::get(
-                      checkType(getIndexedType(Ptr->getType(),
-                                               IdxBegin, IdxEnd, true)),
-                      cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                    GetElementPtr, 0, Values, InsertAtEnd) {
-    init(Ptr, IdxBegin, IdxEnd, Name,
-         typename std::iterator_traits<InputIterator>::iterator_category());
-         }*/
+                           const std::string &Name, BasicBlock *InsertAtEnd);
 
   /// Constructors - These two constructors are convenience methods because one
   /// and two index getelementptr instructions are so common.
@@ -1714,14 +1698,15 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  /*  Value *getOperand(unsigned i) const {
     assert(i < getNumOperands() && "getOperand() out of range!");
     return OperandList[i];
   }
   void setOperand(unsigned i, Value *Val) {
     assert(i < getNumOperands() && "setOperand() out of range!");
     OperandList[i] = Val;
-  }
+    }*/
 
   virtual BranchInst *clone() const;
 
@@ -1775,6 +1760,12 @@ private:
   virtual unsigned getNumSuccessorsV() const;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
 };
+
+template <>
+struct OperandTraits<BranchInst> : VariadicOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BranchInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                               SwitchInst Class

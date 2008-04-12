@@ -618,13 +618,17 @@ void BranchInst::AssertOK() {
 }
 
 BranchInst::BranchInst(BasicBlock *IfTrue, Instruction *InsertBefore)
-  : TerminatorInst(Type::VoidTy, Instruction::Br, /*Ops*/NULL, 1, InsertBefore) {
+  : TerminatorInst(Type::VoidTy, Instruction::Br,
+                   OperandTraits<BranchInst>::op_end(this) - 1,
+                   1, InsertBefore) {
   assert(IfTrue != 0 && "Branch destination may not be null!");
   Op<0>().init(reinterpret_cast<Value*>(IfTrue), this);
 }
 BranchInst::BranchInst(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
                        Instruction *InsertBefore)
-: TerminatorInst(Type::VoidTy, Instruction::Br, /*Ops*/NULL, 3, InsertBefore) {
+  : TerminatorInst(Type::VoidTy, Instruction::Br,
+                   OperandTraits<BranchInst>::op_end(this) - 3,
+                   3, InsertBefore) {
   Op<0>().init(reinterpret_cast<Value*>(IfTrue), this);
   Op<1>().init(reinterpret_cast<Value*>(IfFalse), this);
   Op<2>().init(Cond, this);
@@ -634,14 +638,18 @@ BranchInst::BranchInst(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
 }
 
 BranchInst::BranchInst(BasicBlock *IfTrue, BasicBlock *InsertAtEnd)
-  : TerminatorInst(Type::VoidTy, Instruction::Br, /*Ops*/NULL, 1, InsertAtEnd) {
+  : TerminatorInst(Type::VoidTy, Instruction::Br,
+                   OperandTraits<BranchInst>::op_end(this) - 1,
+                   1, InsertAtEnd) {
   assert(IfTrue != 0 && "Branch destination may not be null!");
   Op<0>().init(reinterpret_cast<Value*>(IfTrue), this);
 }
 
 BranchInst::BranchInst(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
            BasicBlock *InsertAtEnd)
-  : TerminatorInst(Type::VoidTy, Instruction::Br, /*Ops*/NULL, 3, InsertAtEnd) {
+  : TerminatorInst(Type::VoidTy, Instruction::Br,
+                   OperandTraits<BranchInst>::op_end(this) - 3,
+                   3, InsertAtEnd) {
   Op<0>().init(reinterpret_cast<Value*>(IfTrue), this);
   Op<1>().init(reinterpret_cast<Value*>(IfFalse), this);
   Op<2>().init(Cond, this);
