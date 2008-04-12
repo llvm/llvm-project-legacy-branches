@@ -1788,11 +1788,11 @@ class SwitchInst : public TerminatorInst {
 public:
   static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
                             Instruction *InsertBefore = 0) {
-    return new(NumCases * 2) SwitchInst(Value, Default, NumCases, InsertBefore);
+    return new(0) SwitchInst(Value, Default, NumCases, InsertBefore);
   }
   static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
                             BasicBlock *InsertAtEnd) {
-    return new(NumCases * 2) SwitchInst(Value, Default, NumCases, InsertAtEnd);
+    return new(0) SwitchInst(Value, Default, NumCases, InsertAtEnd);
   }
   ~SwitchInst();
 
