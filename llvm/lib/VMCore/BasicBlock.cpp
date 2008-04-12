@@ -121,11 +121,15 @@ void BasicBlock::eraseFromParent() {
 }
 
 const BasicBlock *BasicBlock::getUnwindDest() const {
-  return cast_or_null<const BasicBlock>(Op<0>().get());
+  return NumOperands
+    ? cast_or_null<const BasicBlock>(Op<0>().get())
+    : 0;
 }
 
 BasicBlock *BasicBlock::getUnwindDest() {
-  return cast_or_null<BasicBlock>(Op<0>().get());
+  return NumOperands
+    ? cast_or_null<BasicBlock>(Op<0>().get())
+    : 0;
 }
 
 void BasicBlock::setUnwindDest(BasicBlock *dest) {
