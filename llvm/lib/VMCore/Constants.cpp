@@ -421,6 +421,8 @@ public:
     : ConstantExpr(Ty, Opcode, &Op<0>(), 1) {
     Op<0>() = C;
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// BinaryConstantExpr - This class is private to Constants.cpp, and is used
@@ -437,6 +439,8 @@ public:
     Op<0>().init(C1, this);
     Op<1>().init(C2, this);
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// SelectConstantExpr - This class is private to Constants.cpp, and is used
@@ -454,6 +458,8 @@ public:
     Op<1>().init(C2, this);
     Op<2>().init(C3, this);
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// ExtractElementConstantExpr - This class is private to
@@ -472,6 +478,8 @@ public:
     Op<0>().init(C1, this);
     Op<1>().init(C2, this);
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// InsertElementConstantExpr - This class is private to
@@ -491,6 +499,8 @@ public:
     Op<1>().init(C2, this);
     Op<2>().init(C3, this);
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// ShuffleVectorConstantExpr - This class is private to
@@ -510,34 +520,76 @@ public:
     Op<1>().init(C2, this);
     Op<2>().init(C3, this);
   }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
 
 /// GetElementPtrConstantExpr - This class is private to Constants.cpp, and is
 /// used behind the scenes to implement getelementpr constant exprs.
 class VISIBILITY_HIDDEN GetElementPtrConstantExpr : public ConstantExpr {
   GetElementPtrConstantExpr(Constant *C, const std::vector<Constant*> &IdxList,
-                            const Type *DestTy);/*
-    : ConstantExpr(DestTy, Instruction::GetElementPtr,
-                   OperandTraits<GetElementPtrConstantExpr>::op_end(this)
-                   - (IdxList.size()+1),
-                   IdxList.size()+1) {
-    OperandList[0].init(C, this);
-    for (unsigned i = 0, E = IdxList.size(); i != E; ++i)
-      OperandList[i+1].init(IdxList[i], this);
-      }*/
+                            const Type *DestTy);
 public:
   static GetElementPtrConstantExpr *Create(Constant *C, const std::vector<Constant*> &IdxList,
                                            const Type *DestTy) {
     return new(IdxList.size() + 1) GetElementPtrConstantExpr(C, IdxList, DestTy);
   }
-  //  ~GetElementPtrConstantExpr() {
-    //    delete [] OperandList;
-  //  }
-
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 };
+
+// CompareConstantExpr - This class is private to Constants.cpp, and is used
+// behind the scenes to implement ICmp and FCmp constant expressions. This is
+// needed in order to store the predicate value for these instructions.
+struct VISIBILITY_HIDDEN CompareConstantExpr : public ConstantExpr {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
+  // allocate space for exactly two operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 2);
+  }
+  unsigned short predicate;
+  CompareConstantExpr(Instruction::OtherOps opc, unsigned short pred, 
+                      Constant* LHS, Constant* RHS)
+    : ConstantExpr(Type::Int1Ty, opc, &Op<0>(), 2), predicate(pred) {
+    Op<0>().init(LHS, this);
+    Op<1>().init(RHS, this);
+  }
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+};
+
 } // end anonymous namespace
+
+template <>
+struct OperandTraits<UnaryConstantExpr> : FixedNumOperandTraits<1> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(UnaryConstantExpr, Value)
+
+template <>
+struct OperandTraits<BinaryConstantExpr> : FixedNumOperandTraits<2> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BinaryConstantExpr, Value)
+
+template <>
+struct OperandTraits<SelectConstantExpr> : FixedNumOperandTraits<3> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(SelectConstantExpr, Value)
+
+template <>
+struct OperandTraits<ExtractElementConstantExpr> : FixedNumOperandTraits<2> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ExtractElementConstantExpr, Value)
+
+template <>
+struct OperandTraits<InsertElementConstantExpr> : FixedNumOperandTraits<3> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(InsertElementConstantExpr, Value)
+
+template <>
+struct OperandTraits<ShuffleVectorConstantExpr> : FixedNumOperandTraits<3> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ShuffleVectorConstantExpr, Value)
+
 
 template <>
 struct OperandTraits<GetElementPtrConstantExpr> : VariadicOperandTraits<1> {
@@ -558,26 +610,13 @@ GetElementPtrConstantExpr::GetElementPtrConstantExpr
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(GetElementPtrConstantExpr, Value)
 
-namespace {
-// CompareConstantExpr - This class is private to Constants.cpp, and is used
-// behind the scenes to implement ICmp and FCmp constant expressions. This is
-// needed in order to store the predicate value for these instructions.
-struct VISIBILITY_HIDDEN CompareConstantExpr : public ConstantExpr {
-  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
-  // allocate space for exactly two operands
-  void *operator new(size_t s) {
-    return User::operator new(s, 2);
-  }
-  unsigned short predicate;
-  CompareConstantExpr(Instruction::OtherOps opc, unsigned short pred, 
-                      Constant* LHS, Constant* RHS)
-    : ConstantExpr(Type::Int1Ty, opc, &Op<0>(), 2), predicate(pred) {
-    OperandList[0].init(LHS, this);
-    OperandList[1].init(RHS, this);
-  }
-};
 
-} // end anonymous namespace
+template <>
+struct OperandTraits<CompareConstantExpr> : FixedNumOperandTraits<2> {
+};
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CompareConstantExpr, Value)
+
+
 } // End llvm namespace
 
 
