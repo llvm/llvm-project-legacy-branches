@@ -124,7 +124,7 @@ PHINode::PHINode(const PHINode &PN)
 }
 
 PHINode::~PHINode() {
-//  delete [] OperandList;
+  dropHungoffUses(OperandList);
 }
 
 // removeIncomingValue - Remove an incoming value.  This is useful if a
@@ -184,9 +184,9 @@ void PHINode::resizeOperands(unsigned NumOps) {
   Use *NewOps = allocHangoffUses(NumOps);
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
-      OldOps[i].set(0);
+      //      OldOps[i].set(0);
   }
-//  delete [] OldOps;
+  if (OldOps) dropHungoffUses(OldOps);
   OperandList = NewOps;
 }
 

@@ -1463,6 +1463,9 @@ public:
 
   virtual PHINode *clone() const;
 
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   /// getNumIncomingValues - Return the number of incoming edges
   ///
   unsigned getNumIncomingValues() const { return getNumOperands()/2; }
@@ -1555,6 +1558,13 @@ public:
  private:
   void resizeOperands(unsigned NumOperands);
 };
+
+template <>
+struct OperandTraits<PHINode> : HungoffOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(PHINode, Value)  
+
 
 //===----------------------------------------------------------------------===//
 //                               ReturnInst Class
