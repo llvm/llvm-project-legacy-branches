@@ -75,10 +75,12 @@ void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
 //                         Use zap Implementation
 //===----------------------------------------------------------------------===//
 
-void Use::zap(Use *Start, const Use *Stop) {
+void Use::zap(Use *Start, const Use *Stop, bool del) {
   while (Start != Stop) {
-    (Start++)->set(0);
+    (--Stop)->set(0);
   }
+  if (del)
+    ::operator delete(Start);
 }
 
 //===----------------------------------------------------------------------===//

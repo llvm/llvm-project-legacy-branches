@@ -1649,8 +1649,10 @@ struct OperandTraits<ReturnInst> : VariadicOperandTraits<> {
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ReturnInst, Value)
 void ReturnInst::operator delete(void *it) {
-  assert(0 && "ReturnInst::operator delete");
-  ::operator delete(OperandTraits<ReturnInst>::op_begin(static_cast<ReturnInst*>(it)));
+  ReturnInst* me(static_cast<ReturnInst*>(it));
+  Use::zap(OperandTraits<ReturnInst>::op_begin(me),
+           OperandTraits<ReturnInst>::op_end(me),
+           true);
 }
 
 //===----------------------------------------------------------------------===//
