@@ -1114,7 +1114,9 @@ ExtractElementInst::ExtractElementInst(Value *Val, Value *Index,
                                        const std::string &Name,
                                        Instruction *InsertBef)
   : Instruction(cast<VectorType>(Val->getType())->getElementType(),
-                ExtractElement, /*Ops*/NULL, 2, InsertBef) {
+                ExtractElement,
+                OperandTraits<ExtractElementInst>::op_begin(this),
+                2, InsertBef) {
   assert(isValidOperands(Val, Index) &&
          "Invalid extractelement instruction operands!");
   Op<0>().init(Val, this);
@@ -1126,7 +1128,9 @@ ExtractElementInst::ExtractElementInst(Value *Val, unsigned IndexV,
                                        const std::string &Name,
                                        Instruction *InsertBef)
   : Instruction(cast<VectorType>(Val->getType())->getElementType(),
-                ExtractElement, /*Ops*/NULL, 2, InsertBef) {
+                ExtractElement,
+                OperandTraits<ExtractElementInst>::op_begin(this),
+                2, InsertBef) {
   Constant *Index = ConstantInt::get(Type::Int32Ty, IndexV);
   assert(isValidOperands(Val, Index) &&
          "Invalid extractelement instruction operands!");
@@ -1140,7 +1144,9 @@ ExtractElementInst::ExtractElementInst(Value *Val, Value *Index,
                                        const std::string &Name,
                                        BasicBlock *InsertAE)
   : Instruction(cast<VectorType>(Val->getType())->getElementType(),
-                ExtractElement, /*Ops*/NULL, 2, InsertAE) {
+                ExtractElement,
+                OperandTraits<ExtractElementInst>::op_begin(this),
+                2, InsertAE) {
   assert(isValidOperands(Val, Index) &&
          "Invalid extractelement instruction operands!");
 
@@ -1153,7 +1159,9 @@ ExtractElementInst::ExtractElementInst(Value *Val, unsigned IndexV,
                                        const std::string &Name,
                                        BasicBlock *InsertAE)
   : Instruction(cast<VectorType>(Val->getType())->getElementType(),
-                ExtractElement, /*Ops*/NULL, 2, InsertAE) {
+                ExtractElement,
+                OperandTraits<ExtractElementInst>::op_begin(this),
+                2, InsertAE) {
   Constant *Index = ConstantInt::get(Type::Int32Ty, IndexV);
   assert(isValidOperands(Val, Index) &&
          "Invalid extractelement instruction operands!");
@@ -1176,7 +1184,8 @@ bool ExtractElementInst::isValidOperands(const Value *Val, const Value *Index) {
 //===----------------------------------------------------------------------===//
 
 InsertElementInst::InsertElementInst(const InsertElementInst &IE)
-    : Instruction(IE.getType(), InsertElement, /*Ops*/NULL, 3) {
+    : Instruction(IE.getType(), InsertElement,
+                  OperandTraits<InsertElementInst>::op_begin(this), 3) {
   Op<0>().init(IE.Op<0>(), this);
   Op<1>().init(IE.Op<1>(), this);
   Op<2>().init(IE.Op<2>(), this);
@@ -1184,7 +1193,9 @@ InsertElementInst::InsertElementInst(const InsertElementInst &IE)
 InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, Value *Index,
                                      const std::string &Name,
                                      Instruction *InsertBef)
-  : Instruction(Vec->getType(), InsertElement, /*Ops*/NULL, 3, InsertBef) {
+  : Instruction(Vec->getType(), InsertElement,
+                OperandTraits<InsertElementInst>::op_begin(this),
+                3, InsertBef) {
   assert(isValidOperands(Vec, Elt, Index) &&
          "Invalid insertelement instruction operands!");
   Op<0>().init(Vec, this);
@@ -1196,7 +1207,9 @@ InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, Value *Index,
 InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, unsigned IndexV,
                                      const std::string &Name,
                                      Instruction *InsertBef)
-  : Instruction(Vec->getType(), InsertElement, /*Ops*/NULL, 3, InsertBef) {
+  : Instruction(Vec->getType(), InsertElement,
+                OperandTraits<InsertElementInst>::op_begin(this),
+                3, InsertBef) {
   Constant *Index = ConstantInt::get(Type::Int32Ty, IndexV);
   assert(isValidOperands(Vec, Elt, Index) &&
          "Invalid insertelement instruction operands!");
@@ -1210,7 +1223,9 @@ InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, unsigned IndexV,
 InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, Value *Index,
                                      const std::string &Name,
                                      BasicBlock *InsertAE)
-  : Instruction(Vec->getType(), InsertElement, /*Ops*/NULL, 3, InsertAE) {
+  : Instruction(Vec->getType(), InsertElement,
+                OperandTraits<InsertElementInst>::op_begin(this),
+                3, InsertAE) {
   assert(isValidOperands(Vec, Elt, Index) &&
          "Invalid insertelement instruction operands!");
 
@@ -1223,7 +1238,9 @@ InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, Value *Index,
 InsertElementInst::InsertElementInst(Value *Vec, Value *Elt, unsigned IndexV,
                                      const std::string &Name,
                                      BasicBlock *InsertAE)
-: Instruction(Vec->getType(), InsertElement, /*Ops*/NULL, 3, InsertAE) {
+: Instruction(Vec->getType(), InsertElement,
+              OperandTraits<InsertElementInst>::op_begin(this),
+              3, InsertAE) {
   Constant *Index = ConstantInt::get(Type::Int32Ty, IndexV);
   assert(isValidOperands(Vec, Elt, Index) &&
          "Invalid insertelement instruction operands!");

@@ -1252,7 +1252,8 @@ public:
   virtual ExtractElementInst *clone() const;
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  /*  Value *getOperand(unsigned i) const {
     assert(i < 2 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -1260,7 +1261,7 @@ public:
     assert(i < 2 && "setOperand() out of range!");
     OperandList[i] = Val;
   }
-  unsigned getNumOperands() const { return 2; }
+  unsigned getNumOperands() const { return 2; }*/
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const ExtractElementInst *) { return true; }
@@ -1271,6 +1272,12 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+template <>
+struct OperandTraits<ExtractElementInst> : FixedNumOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ExtractElementInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                                InsertElementInst Class
@@ -1299,7 +1306,7 @@ public:
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
                                    const std::string &Name = "",Instruction *InsertBefore = 0) {
-    return new(3/*FIXME*/) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
+    return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, Value *Idx,
                                    const std::string &Name, BasicBlock *InsertAtEnd) {
@@ -1307,7 +1314,7 @@ public:
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
                                    const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(3/*FIXME*/) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
+    return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
   }
 
   /// isValidOperands - Return true if an insertelement instruction can be
@@ -1324,7 +1331,8 @@ public:
   }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  /*  Value *getOperand(unsigned i) const {
     assert(i < 3 && "getOperand() out of range!");
     return OperandList[i];
   }
@@ -1332,7 +1340,7 @@ public:
     assert(i < 3 && "setOperand() out of range!");
     OperandList[i] = Val;
   }
-  unsigned getNumOperands() const { return 3; }
+  unsigned getNumOperands() const { return 3; }*/
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const InsertElementInst *) { return true; }
@@ -1343,6 +1351,12 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+template <>
+struct OperandTraits<InsertElementInst> : FixedNumOperandTraits<3> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(InsertElementInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                           ShuffleVectorInst Class
@@ -1378,19 +1392,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-  /*  const Value *getOperand(unsigned i) const {
-    assert(i < 3 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  Value *getOperand(unsigned i) {
-    assert(i < 3 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 3 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 3; }*/
   
   /// getMaskValue - Return the index from the shuffle mask for the specified
   /// output result.  This is either -1 if the element is undef or a number less
