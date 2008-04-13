@@ -21,6 +21,7 @@
 #include "llvm/InstrTypes.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/ParameterAttributes.h"
+#include "llvm/BasicBlock.h"
 
 namespace llvm {
 
@@ -1509,7 +1510,7 @@ public:
     // Initialize some new operands.
     NumOperands = OpNo+2;
     OperandList[OpNo].init(V, this);
-    OperandList[OpNo+1].init(reinterpret_cast<Value*>(BB), this);
+    OperandList[OpNo+1].init(BB, this);
   }
 
   /// removeIncomingValue - Remove an incoming value.  This is useful if a
