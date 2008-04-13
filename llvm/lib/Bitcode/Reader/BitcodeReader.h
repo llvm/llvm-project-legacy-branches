@@ -48,7 +48,7 @@ public:
   }
   
   void clear() {
-    dropHungoffUses(OperandList);
+    if (OperandList) dropHungoffUses(OperandList);
   }
   
   Value *operator[](unsigned i) const { return getOperand(i); }

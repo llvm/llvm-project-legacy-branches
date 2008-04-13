@@ -169,7 +169,7 @@ Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
     // Insert a bunch of null values.
     resize(Idx * 2 + 1);
 //    OperandList = &Uses[0];
-//    NumOperands = Idx+1;
+    NumOperands = Idx+1;
   }
 
   if (Value *V = OperandList[Idx]) {
@@ -188,7 +188,7 @@ Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
     // Insert a bunch of null values.
     resize(Idx * 2 + 1);
 //    OperandList = &Uses[0];
-//    NumOperands = Idx+1;
+    NumOperands = Idx+1;
   }
   
   if (Value *V = OperandList[Idx]) {
