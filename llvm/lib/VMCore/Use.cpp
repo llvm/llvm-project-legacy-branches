@@ -76,8 +76,9 @@ void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
 //===----------------------------------------------------------------------===//
 
 void Use::zap(Use *Start, const Use *Stop, bool del) {
-  while (Start != Stop) {
-    (--Stop)->set(0);
+  Use *Iter = Start;
+  while (Iter != Stop) {
+    (Iter++)->set(0);
   }
   if (del)
     ::operator delete(Start);
