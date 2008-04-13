@@ -1488,10 +1488,10 @@ public:
   /// getIncomingBlock - Return incoming basic block number x
   ///
   BasicBlock *getIncomingBlock(unsigned i) const {
-    return reinterpret_cast<BasicBlock*>(getOperand(i*2+1));
+    return static_cast<BasicBlock*>(getOperand(i*2+1));
   }
   void setIncomingBlock(unsigned i, BasicBlock *BB) {
-    setOperand(i*2+1, reinterpret_cast<Value*>(BB));
+    setOperand(i*2+1, BB);
   }
   unsigned getOperandNumForIncomingBlock(unsigned i) {
     return i*2+1;
@@ -1535,7 +1535,7 @@ public:
   int getBasicBlockIndex(const BasicBlock *BB) const {
     Use *OL = OperandList;
     for (unsigned i = 0, e = getNumOperands(); i != e; i += 2)
-      if (OL[i+1] == reinterpret_cast<const Value*>(BB)) return i/2;
+      if (OL[i+1].get() == BB) return i/2;
     return -1;
   }
 
@@ -1722,7 +1722,7 @@ public:
       Op<1>().set(0);
       Op<2>().set(0);
     }
-    setOperand(0, reinterpret_cast<Value*>(Dest));
+    Op<0>() = Dest;
   }
 
   unsigned getNumSuccessors() const { return 1+isConditional(); }
@@ -1734,7 +1734,7 @@ public:
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < getNumSuccessors() && "Successor # out of range for Branch!");
-    setOperand(idx, reinterpret_cast<Value*>(NewSucc));
+    setOperand(idx, NewSucc);
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -1872,7 +1872,7 @@ public:
   }
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < getNumSuccessors() && "Successor # out of range for switch!");
-    setOperand(idx*2+1, reinterpret_cast<Value*>(NewSucc));
+    setOperand(idx*2+1, NewSucc);
   }
 
   // getSuccessorValue - Return the value associated with the specified
@@ -2063,11 +2063,11 @@ public:
     return cast<BasicBlock>(getOperand(2));
   }
   void setNormalDest(BasicBlock *B) {
-    setOperand(1, reinterpret_cast<Value*>(B));
+    setOperand(1, B);
   }
 
   void setUnwindDest(BasicBlock *B) {
-    setOperand(2, reinterpret_cast<Value*>(B));
+    setOperand(2, B);
   }
 
   BasicBlock *getSuccessor(unsigned i) const {
@@ -2077,7 +2077,7 @@ public:
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < 2 && "Successor # out of range for invoke!");
-    setOperand(idx+1, reinterpret_cast<Value*>(NewSucc));
+    setOperand(idx+1, NewSucc);
   }
 
   unsigned getNumSuccessors() const { return 2; }
