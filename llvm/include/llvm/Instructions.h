@@ -329,15 +329,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-  /*  Value *getOperand(unsigned i) const {
-    assert(i < 2 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 2 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 2; }*/
 
   /// getAlignment - Return the alignment of the access that is being performed
   ///
@@ -1253,15 +1244,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-  /*  Value *getOperand(unsigned i) const {
-    assert(i < 2 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 2 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 2; }*/
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const ExtractElementInst *) { return true; }
@@ -1332,15 +1314,6 @@ public:
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-  /*  Value *getOperand(unsigned i) const {
-    assert(i < 3 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 3 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 3; }*/
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const InsertElementInst *) { return true; }
@@ -1957,13 +1930,7 @@ class InvokeInst : public TerminatorInst {
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
                     InputIterator ArgBegin, InputIterator ArgEnd,
                     unsigned Values,
-                    const std::string &Name, Instruction *InsertBefore);/*
-      : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
-                                          ->getElementType())->getReturnType(),
-                       Instruction::Invoke, 0, Values, InsertBefore) {
-    init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
-         typename std::iterator_traits<InputIterator>::iterator_category());
-         }*/
+                    const std::string &Name, Instruction *InsertBefore);
 
   /// Construct an InvokeInst given a range of arguments.
   /// InputIterator must be a random-access iterator pointing to
@@ -1974,15 +1941,9 @@ class InvokeInst : public TerminatorInst {
   /// @brief Construct an InvokeInst from a range of arguments
   template<typename InputIterator>
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
-             InputIterator ArgBegin, InputIterator ArgEnd,
-             unsigned Values,
-                    const std::string &Name, BasicBlock *InsertAtEnd);/*
-      : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
-                                          ->getElementType())->getReturnType(),
-                       Instruction::Invoke, 0, Values, InsertAtEnd) {
-    init(Func, IfNormal, IfException, ArgBegin, ArgEnd, Name,
-         typename std::iterator_traits<InputIterator>::iterator_category());
-         }*/
+                    InputIterator ArgBegin, InputIterator ArgEnd,
+                    unsigned Values,
+                    const std::string &Name, BasicBlock *InsertAtEnd);
 public:
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
