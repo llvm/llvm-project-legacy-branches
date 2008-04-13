@@ -25,7 +25,6 @@
 
 namespace llvm {
 
-class BasicBlock;
 class ConstantInt;
 class PointerType;
 class VectorType;
@@ -1650,7 +1649,8 @@ struct OperandTraits<ReturnInst> : VariadicOperandTraits<> {
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ReturnInst, Value)
 void ReturnInst::operator delete(void *it) {
-  OperandTraits<ReturnInst>::op_begin(static_cast<ReturnInst*>(it));
+  assert(0 && "ReturnInst::operator delete");
+  ::operator delete(OperandTraits<ReturnInst>::op_begin(static_cast<ReturnInst*>(it)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1694,6 +1694,8 @@ public:
                             BasicBlock *InsertAtEnd) {
     return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertAtEnd);
   }
+
+  // not yet ~BranchInst();
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
