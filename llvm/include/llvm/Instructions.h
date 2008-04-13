@@ -1698,7 +1698,13 @@ public:
     return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertAtEnd);
   }
 
-  // not yet ~BranchInst();
+  ~BranchInst()
+  {
+    if (NumOperands == 1)
+      {
+        NumOperands = (Use*)this - OperandList;
+      }
+  }
 
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
@@ -1722,12 +1728,12 @@ public:
   // targeting the specified block.
   // FIXME: Eliminate this ugly method.
   void setUnconditionalDest(BasicBlock *Dest) {
+    Op<0>() = Dest;
     if (isConditional()) {  // Convert this to an uncond branch.
-      NumOperands = 1;
       Op<1>().set(0);
       Op<2>().set(0);
+      NumOperands = 1;
     }
-    Op<0>() = Dest;
   }
 
   unsigned getNumSuccessors() const { return 1+isConditional(); }
@@ -1757,7 +1763,10 @@ private:
 };
 
 template <>
-struct OperandTraits<BranchInst> : VariadicOperandTraits<1> {
+struct OperandTraits<BranchInst> : HungoffOperandTraits<> {
+  // we need to access operands via OperandList, since
+  // the NumOperands may change from 3 to 1
+  static inline void *allocate(unsigned); // FIXME
 };
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BranchInst, Value)
