@@ -98,7 +98,7 @@ bool IPCP::PropagateConstantsIntoArguments(Function &F) {
         if (*AI == &F) return false;  // Passes the function into itself
 
         if (!ArgumentConstants[i].second) {
-          if (Constant *C = dyn_cast<Constant>(*AI)) {
+          if (Constant *C = dyn_cast<Constant>(AI->get())) {
             if (!ArgumentConstants[i].first)
               ArgumentConstants[i].first = C;
             else if (ArgumentConstants[i].first != C) {
