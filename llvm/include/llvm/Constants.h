@@ -314,7 +314,6 @@ class ConstantArray : public Constant {
   ConstantArray(const ConstantArray &);      // DO NOT IMPLEMENT
 protected:
   ConstantArray(const ArrayType *T, const std::vector<Constant*> &Val);
-  ~ConstantArray();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   static Constant *get(const ArrayType *T, const std::vector<Constant*> &);
@@ -388,7 +387,6 @@ class ConstantStruct : public Constant {
   ConstantStruct(const ConstantStruct &);      // DO NOT IMPLEMENT
 protected:
   ConstantStruct(const StructType *T, const std::vector<Constant*> &Val);
-  ~ConstantStruct();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   ///
@@ -441,7 +439,6 @@ class ConstantVector : public Constant {
   ConstantVector(const ConstantVector &);      // DO NOT IMPLEMENT
 protected:
   ConstantVector(const VectorType *T, const std::vector<Constant*> &Val);
-  ~ConstantVector();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   static Constant *get(const VectorType *T, const std::vector<Constant*> &);
