@@ -99,8 +99,8 @@ struct HungoffOperandTraits {
   inline VALUECLASS *getOperand(unsigned) const; \
   inline void setOperand(unsigned, VALUECLASS*); \
   inline unsigned getNumOperands() const; \
-  template <unsigned Idx> inline Use &Op(); \
-  template <unsigned Idx> inline const Use &Op() const
+  template <unsigned> inline Use &Op(); \
+  template <unsigned> inline const Use &Op() const
 
 /// Macro for generating out-of-class operand accessor definitions
 #define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
@@ -113,11 +113,11 @@ void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
   OperandTraits<CLASS>::op_begin(this)[i] = Val; \
 } \
 unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
-template <unsigned Idx> Use &CLASS::Op() { \
-  return OperandTraits<CLASS>::op_begin(this)[Idx]; \
+template <unsigned Idx_nocapture> Use &CLASS::Op() { \
+  return OperandTraits<CLASS>::op_begin(this)[Idx_nocapture]; \
 } \
-template <unsigned Idx> const Use &CLASS::Op() const { \
-  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx]; \
+template <unsigned Idx_nocapture> const Use &CLASS::Op() const { \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx_nocapture]; \
 }
 
 
@@ -133,11 +133,11 @@ void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
   OperandTraits<CLASS>::op_begin(this)[i] = Val; \
 } \
 unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
-template <unsigned Idx> Use &CLASS::Op() { \
-  return OperandTraits<CLASS>::op_begin(this)[Idx]; \
+template <unsigned Idx_nocapture> Use &CLASS::Op() { \
+  return OperandTraits<CLASS>::op_begin(this)[Idx_nocapture]; \
 } \
-template <unsigned Idx> const Use &CLASS::Op() const { \
-  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx]; \
+template <unsigned Idx_nocapture> const Use &CLASS::Op() const { \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx_nocapture]; \
 }
 
 
