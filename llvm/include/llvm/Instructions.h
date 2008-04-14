@@ -2671,9 +2671,9 @@ public:
   void *operator new(size_t s) {
     return User::operator new(s, 1);
   }
-  explicit GetResultInst(Value *Aggr, unsigned index,
-                         const std::string &Name = "",
-                         Instruction *InsertBefore = 0);
+  GetResultInst(Value *Aggr, unsigned index,
+                const std::string &Name = "",
+                Instruction *InsertBefore = 0);
 
   /// isValidOperands - Return true if an getresult instruction can be
   /// formed with the specified operands.
