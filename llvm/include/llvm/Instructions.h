@@ -936,7 +936,7 @@ class CallInst : public Instruction {
   /// @brief Construct a CallInst from a range of arguments
   template<typename InputIterator>
   CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-           const std::string &Name = "", Instruction *InsertBefore);
+           const std::string &Name, Instruction *InsertBefore);
 
   /// Construct a CallInst given a range of arguments.  InputIterator
   /// must be a random-access iterator pointing to contiguous storage
