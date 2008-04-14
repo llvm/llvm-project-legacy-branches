@@ -1082,9 +1082,12 @@ CppWriter::printInstruction(const Instruction *I, const std::string& bbname) {
 
   switch (I->getOpcode()) {
     case Instruction::Ret: {
-      const ReturnInst* ret =  cast<ReturnInst>(I);
+      const ReturnInst* ret = cast<ReturnInst>(I);
       Out << "new ReturnInst("
-          << (ret->getReturnValue() ? opNames[0] + ", " : "") << bbname << ");";
+          << (ret->getReturnValue()
+              ? opNames[0] + ", "
+              : "")
+          << bbname << ");";
       break;
     }
     case Instruction::Br: {
