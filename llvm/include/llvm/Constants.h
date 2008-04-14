@@ -331,6 +331,9 @@ public:
   /// null termination. 
   static Constant *get(const std::string &Initializer, bool AddNull = true);
 
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   /// getType - Specialize the getType() method to always return an ArrayType,
   /// which reduces the amount of casting needed in parts of the compiler.
   ///
@@ -369,6 +372,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantArray> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantArray, Value)
 
 //===----------------------------------------------------------------------===//
 // ConstantStruct - Constant Struct Declarations
@@ -391,6 +399,9 @@ public:
     return get(std::vector<Constant*>(Vals, Vals+NumVals), Packed);
   }
   
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   /// getType() specialization - Reduce amount of casting...
   ///
   inline const StructType *getType() const {
@@ -414,6 +425,12 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantStruct> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantStruct, Value)
+
 //===----------------------------------------------------------------------===//
 /// ConstantVector - Constant Vector Declarations
 ///
@@ -433,6 +450,9 @@ public:
     return get(std::vector<Constant*>(Vals, Vals+NumVals));
   }
   
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
   /// getType - Specialize the getType() method to always return a VectorType,
   /// which reduces the amount of casting needed in parts of the compiler.
   ///
@@ -469,6 +489,12 @@ public:
     return V->getValueID() == ConstantVectorVal;
   }
 };
+
+template <>
+struct OperandTraits<ConstantVector> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantVector, Value)
 
 //===----------------------------------------------------------------------===//
 /// ConstantPointerNull - a constant pointer value that points to null
@@ -567,6 +593,9 @@ public:
   static Constant *getPtrToInt(Constant *C, const Type *Ty);
   static Constant *getIntToPtr(Constant *C, const Type *Ty);
   static Constant *getBitCast (Constant *C, const Type *Ty);
+
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   // @brief Convenience function for getting one of the casting operations
   // using a CastOps opcode.
@@ -720,6 +749,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantExpr> : VariadicOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantExpr, Constant)
 
 //===----------------------------------------------------------------------===//
 /// UndefValue - 'undef' values are things that do not have specified contents.

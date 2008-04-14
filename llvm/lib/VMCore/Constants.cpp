@@ -341,7 +341,9 @@ ConstantFP *ConstantFP::get(const Type *Ty, const APFloat& V) {
 
 ConstantArray::ConstantArray(const ArrayType *T,
                              const std::vector<Constant*> &V)
-  : Constant(T, ConstantArrayVal, allocHangoffUses(V.size()), V.size()) {
+  : Constant(T, ConstantArrayVal,
+             OperandTraits<ConstantArray>::op_end(this) - V.size(),
+             V.size()) {
   assert(V.size() == T->getNumElements() &&
          "Invalid initializer vector for constant array");
   Use *OL = OperandList;
@@ -356,13 +358,12 @@ ConstantArray::ConstantArray(const ArrayType *T,
   }
 }
 
-ConstantArray::~ConstantArray() {
-//  delete [] OperandList;
-}
 
 ConstantStruct::ConstantStruct(const StructType *T,
                                const std::vector<Constant*> &V)
-  : Constant(T, ConstantStructVal, allocHangoffUses(V.size()), V.size()) {
+  : Constant(T, ConstantStructVal,
+             OperandTraits<ConstantStruct>::op_end(this) - V.size(),
+             V.size()) {
   assert(V.size() == T->getNumElements() &&
          "Invalid initializer vector for constant structure");
   Use *OL = OperandList;
@@ -379,14 +380,12 @@ ConstantStruct::ConstantStruct(const StructType *T,
   }
 }
 
-ConstantStruct::~ConstantStruct() {
-  delete [] OperandList;
-}
-
 
 ConstantVector::ConstantVector(const VectorType *T,
                                const std::vector<Constant*> &V)
-  : Constant(T, ConstantVectorVal, allocHangoffUses(V.size()), V.size()) {
+  : Constant(T, ConstantVectorVal,
+             OperandTraits<ConstantVector>::op_end(this) - V.size(),
+             V.size()) {
   Use *OL = OperandList;
     for (std::vector<Constant*>::const_iterator I = V.begin(), E = V.end();
          I != E; ++I, ++OL) {
@@ -399,9 +398,6 @@ ConstantVector::ConstantVector(const VectorType *T,
   }
 }
 
-ConstantVector::~ConstantVector() {
-//  delete [] OperandList;
-}
 
 namespace llvm {
 // We declare several classes private to this file, so use an anonymous
@@ -864,17 +860,29 @@ bool ConstantFP::isValueValidForType(const Type *Ty, const APFloat& Val) {
 //===----------------------------------------------------------------------===//
 //                      Factory Function Implementation
 
+
+// The number of operands for each ConstantCreator::create method is
+// determined by the ConstantTraits template.
 // ConstantCreator - A class that is used to create constants by
 // ValueMap*.  This class should be partially specialized if there is
 // something strange that needs to be done to interface to the ctor for the
 // constant.
 //
 namespace llvm {
+  template<class ValType>
+  struct ConstantTraits;
+
+  template<typename T, typename Alloc>
+  struct VISIBILITY_HIDDEN ConstantTraits< std::vector<T, Alloc> > {
+    static unsigned uses(const std::vector<T, Alloc>& v) {
+      return v.size();
+    }
+  };
+
   template<class ConstantClass, class TypeClass, class ValType>
   struct VISIBILITY_HIDDEN ConstantCreator {
     static ConstantClass *create(const TypeClass *Ty, const ValType &V) {
-      unsigned FIXME = 0; // = traits<ValType>::uses(V)
-      return new(FIXME) ConstantClass(Ty, V);
+      return new(ConstantTraits<ValType>::uses(V)) ConstantClass(Ty, V);
     }
   };
 
