@@ -106,7 +106,27 @@ struct HungoffOperandTraits {
 #define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
 VALUECLASS *CLASS::getOperand(unsigned i) const { \
   assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
-  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]; \
+  return static_cast<VALUECLASS*>(OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]); \
+} \
+void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
+  assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+  OperandTraits<CLASS>::op_begin(this)[i] = Val; \
+} \
+unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
+template <unsigned Idx> Use &CLASS::Op() { \
+  return OperandTraits<CLASS>::op_begin(this)[Idx]; \
+} \
+template <unsigned Idx> const Use &CLASS::Op() const { \
+  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx]; \
+}
+
+
+/// Macro for generating out-of-class operand accessor
+/// definitions with casted result
+#define DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
+VALUECLASS *CLASS::getOperand(unsigned i) const { \
+  assert(i < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
+  return cast<VALUECLASS>(OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i]); \
 } \
 void CLASS::setOperand(unsigned i, VALUECLASS *Val) { \
   assert(i < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \

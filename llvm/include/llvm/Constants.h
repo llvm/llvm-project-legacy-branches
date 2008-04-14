@@ -22,6 +22,7 @@
 
 #include "llvm/Constant.h"
 #include "llvm/Type.h"
+#include "llvm/OperandTraits.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APFloat.h"
 
@@ -332,7 +333,7 @@ public:
   static Constant *get(const std::string &Initializer, bool AddNull = true);
 
   /// Transparently provide more efficient getOperand methods.
-  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   /// getType - Specialize the getType() method to always return an ArrayType,
   /// which reduces the amount of casting needed in parts of the compiler.
@@ -376,7 +377,7 @@ template <>
 struct OperandTraits<ConstantArray> : VariadicOperandTraits<> {
 };
 
-DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantArray, Value)
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantArray, Constant)
 
 //===----------------------------------------------------------------------===//
 // ConstantStruct - Constant Struct Declarations
@@ -400,7 +401,7 @@ public:
   }
   
   /// Transparently provide more efficient getOperand methods.
-  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   /// getType() specialization - Reduce amount of casting...
   ///
@@ -429,7 +430,7 @@ template <>
 struct OperandTraits<ConstantStruct> : VariadicOperandTraits<> {
 };
 
-DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantStruct, Value)
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantStruct, Constant)
 
 //===----------------------------------------------------------------------===//
 /// ConstantVector - Constant Vector Declarations
@@ -451,7 +452,7 @@ public:
   }
   
   /// Transparently provide more efficient getOperand methods.
-  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   /// getType - Specialize the getType() method to always return a VectorType,
   /// which reduces the amount of casting needed in parts of the compiler.
@@ -494,7 +495,7 @@ template <>
 struct OperandTraits<ConstantVector> : VariadicOperandTraits<> {
 };
 
-DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantVector, Value)
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantVector, Constant)
 
 //===----------------------------------------------------------------------===//
 /// ConstantPointerNull - a constant pointer value that points to null
@@ -733,13 +734,13 @@ public:
   virtual void destroyConstant();
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To, Use *U);
 
-  /// Override methods to provide more type information...
+/*  /// Override methods to provide more type information...
   inline Constant *getOperand(unsigned i) {
     return cast<Constant>(User::getOperand(i));
   }
   inline Constant *getOperand(unsigned i) const {
     return const_cast<Constant*>(cast<Constant>(User::getOperand(i)));
-  }
+  }*/
 
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -753,7 +754,7 @@ template <>
 struct OperandTraits<ConstantExpr> : VariadicOperandTraits<1> {
 };
 
-DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantExpr, Constant)
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantExpr, Constant)
 
 //===----------------------------------------------------------------------===//
 /// UndefValue - 'undef' values are things that do not have specified contents.
