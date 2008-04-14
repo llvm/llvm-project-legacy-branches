@@ -18,6 +18,7 @@
 
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/iterator"
+#include <algorithm>
 
 namespace llvm {
 
@@ -35,9 +36,11 @@ class Use {
 public:
   inline void init(Value *V, User *U);
 
+private:
+  template <typename U> friend void std::swap(U&, U&);
 /*  Use(Value *V, User *U) { init(V, U); }
-  Use(const Use &U) { init(U.get(), U.U); }
-*/
+ */  Use(const Use &U) { init(U.get(), 0); }
+
   inline ~Use() {
     if (get()) removeFromList();
   }

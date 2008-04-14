@@ -226,7 +226,7 @@ inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
 void Use::init(Value *V, User *user) {
   Val = transferTag(V);
   U = user;
-  assert(U == getUser() && "Use::init discrepancy?");
+  assert((!U || U == getUser()) && "Use::init discrepancy?");
   if (V) V->addUse(*this);
 }
 
