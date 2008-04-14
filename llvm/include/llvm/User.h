@@ -258,7 +258,7 @@ public:
   }
   inline Use *allocHangoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
-    Use::zap(U, U->getImpliedUser());
+    Use::zap(U, U->getImpliedUser(), true);
   }
 
   Value *getOperand(unsigned i) const {
