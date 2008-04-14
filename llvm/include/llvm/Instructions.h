@@ -1598,7 +1598,9 @@ public:
 
   /// Convenience accessor
   Value *getReturnValue(unsigned n = 0) const {
-    return getOperand(n);
+    return n < getNumOperands()
+      ? getOperand(n)
+      : 0;
   }
 
   unsigned getNumSuccessors() const { return 0; }
