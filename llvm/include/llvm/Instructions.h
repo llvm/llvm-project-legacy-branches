@@ -1121,8 +1121,8 @@ class SelectInst : public Instruction {
     : Instruction(SI.getType(), SI.getOpcode(), &Op<0>(), 3) {
     init(SI.Op<0>(), SI.Op<1>(), SI.Op<2>());
   }
-  SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name = "",
-             Instruction *InsertBefore = 0)
+  SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name,
+             Instruction *InsertBefore)
     : Instruction(S1->getType(), Instruction::Select, &Op<0>(), 3, InsertBefore) {
     init(C, S1, S2);
     setName(Name);
@@ -1135,11 +1135,11 @@ class SelectInst : public Instruction {
   }
 public:
   static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name = "",
-             Instruction *InsertBefore = 0) {
+                            Instruction *InsertBefore = 0) {
     return new(3) SelectInst(C, S1, S2, Name, InsertBefore);
   }
-  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name,
-             BasicBlock *InsertAtEnd) {
+  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name = "",
+                            BasicBlock *InsertAtEnd) {
     return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
   }
 
@@ -1148,15 +1148,7 @@ public:
   Value *getFalseValue() const { return Op<2>(); }
 
   /// Transparently provide more efficient getOperand methods.
-  Value *getOperand(unsigned i) const {
-    assert(i < 3 && "getOperand() out of range!");
-    return OperandList[i];
-  }
-  void setOperand(unsigned i, Value *Val) {
-    assert(i < 3 && "setOperand() out of range!");
-    OperandList[i] = Val;
-  }
-  unsigned getNumOperands() const { return 3; }
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
   OtherOps getOpcode() const {
     return static_cast<OtherOps>(Instruction::getOpcode());
@@ -1173,6 +1165,12 @@ public:
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
 };
+
+template <>
+struct OperandTraits<SelectInst> : FixedNumOperandTraits<3> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(SelectInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                                VAArgInst Class
