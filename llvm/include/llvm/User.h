@@ -323,8 +323,13 @@ inline unsigned OperandTraits<User>::operands(const User *U) {
 enum Tag { noTag, tagOne, tagTwo, tagThree };
 
 template <typename T, typename TAG>
-inline T *addTag(T *P, TAG Tag) {
+inline T *addTag(const T *P, TAG Tag) {
     return reinterpret_cast<T*>(ptrdiff_t(P) | Tag);
+}
+
+template <typename T, typename TAG, ptrdiff_t MASK>
+inline T *stripTag(const T *P) {
+  return reinterpret_cast<T*>(ptrdiff_t(P) & ~MASK);
 }
 
 Use *User::allocHungoffUses(unsigned N) const {
@@ -334,7 +339,7 @@ Use *User::allocHungoffUses(unsigned N) const {
   };
   Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof(AugmentedUse) - sizeof(Use)));
   AugmentedUse *End = static_cast<AugmentedUse*>(Begin + N);
-  End->ref = (User*)(ptrdiff_t(this) | tagOne);
+  End->ref = addTag(this, tagOne);
   Use::initTags(Begin, End);
   return Begin;
 }
