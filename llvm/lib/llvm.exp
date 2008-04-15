@@ -139,7 +139,6 @@ proc RunLLVMTests { test_source_files } {
   puts $makeFileId "\t  (ulimit -t 600; \\"
   puts $makeFileId "\t   ulimit -d 512000; \\"
   puts $makeFileId "\t   PATH=\"\$(LLVMToolDir):\$(LLVM_SRC_ROOT)/test/Scripts:\$(PATH)\" \$(TCLSH)) > \$@ || \$(REPORTFAIL)"
-#  puts $makeFileId "\t@ \$(DONE)"
   puts $makeFileId ""
   puts $makeFileId ""
   puts $makeFileId "TESTS = \\"
@@ -150,9 +149,7 @@ proc RunLLVMTests { test_source_files } {
 
   puts $makeFileId ""
   puts $makeFileId "Test.makefile.out: \$(TESTS)"
-#  puts $makeFileId "\t@ printf '\\n---- testing $subdir ---\\n'"
   puts $makeFileId "\t@ cat \$(TESTS) > \$@"
-#  puts $makeFileId "\t@ touch \$@"
   puts $makeFileId ""
 
   close $makeFileId
@@ -166,12 +163,12 @@ proc output_one_test { test makeFileId } {
 
 # This procedure runs just one test from the test_source_files array.
 proc run_one_test { test } {
-  global target_triplet llvmgcc_version
+  global target_triplet llvmgcc_version subdir
   #Should figure out best way to set the timeout
   #set timeout 40
   
   set filename [file tail $test]
-  verbose "ABOUT TO RUN: $filename" 2
+  verbose "ABOUT TO RUN: [file join $subdir $filename]" 2
   set outcome PASS
   set tmpFile "$filename.tmp"
   
