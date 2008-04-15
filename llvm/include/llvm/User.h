@@ -245,9 +245,9 @@ public:
   void operator delete(void *Usr) {
     User *Start = static_cast<User*>(Usr);
     Use *Storage = static_cast<Use*>(Usr) - Start->NumOperands;
-    if (Storage == Start->OperandList)
-      ::operator delete(Storage);
-    else ::operator delete(Usr);
+    ::operator delete(Storage == Start->OperandList
+                      ? Storage
+                      : Usr);
   }
 public:
   template <unsigned Idx> Use &Op() {
@@ -320,10 +320,21 @@ inline unsigned OperandTraits<User>::operands(const User *U) {
   return U->getNumOperands();
 }
 
+enum Tag { noTag, tagOne, tagTwo, tagThree };
+
+template <typename T, typename TAG>
+inline T *addTag(T *P, TAG Tag) {
+    return reinterpret_cast<T*>(ptrdiff_t(P) | Tag);
+}
+
 Use *User::allocHungoffUses(unsigned N) const {
-  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof this));
-  Use *End = Begin + N;
-  (*(User**)End) = (User*)(ptrdiff_t(this) | 1);
+  struct AugmentedUse : Use {
+    User *ref;
+    AugmentedUse(); // not implemented
+  };
+  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof(AugmentedUse) - sizeof(Use)));
+  AugmentedUse *End = static_cast<AugmentedUse*>(Begin + N);
+  End->ref = (User*)(ptrdiff_t(this) | tagOne);
   Use::initTags(Begin, End);
   return Begin;
 }
