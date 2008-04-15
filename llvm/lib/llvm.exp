@@ -81,7 +81,7 @@ proc substitute { line test tmpFile } {
 
 # This procedure runs the set of tests for the test_source_files array.
 proc RunLLVMTests { test_source_files } {
-  global srcroot objroot srcdir objdir subdir
+  global srcroot objroot srcdir objdir subdir verbose
 
   if 0==[llength $test_source_files] {
     verbose "NOTE: test suite without tests: $subdir" 1
@@ -133,7 +133,11 @@ proc RunLLVMTests { test_source_files } {
   puts $makeFileId "\t   echo proc xfail { msg } { puts '\"XFAIL: \$\$msg\"' }; \\"
   puts $makeFileId "\t   echo proc pass { msg } { puts '\"PASS: \$\$msg\"' }; \\"
   puts $makeFileId "\t   echo proc xpass { msg } { puts '\"XPASS: \$\$msg\"' '; exit 1' }; \\"
-  puts $makeFileId "\t   echo proc verbose { msg level } { puts stderr '\"\$\$msg\"' }; \\"
+  if $verbose>=2 {
+    puts $makeFileId "\t   echo proc verbose { msg level } { puts stderr '\"\$\$msg\"' }; \\"
+  } else {
+    puts $makeFileId "\t   echo proc verbose { msg level } { }; \\"
+  }
   puts $makeFileId "\t   echo set subdir \$(SUBDIR); \\"
   puts $makeFileId "\t   echo run_one_test \$<) | \\"
   puts $makeFileId "\t  (ulimit -t 600; \\"
