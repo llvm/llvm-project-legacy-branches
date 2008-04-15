@@ -18,7 +18,6 @@
 
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/iterator"
-#include <algorithm>
 
 namespace llvm {
 
@@ -37,10 +36,13 @@ public:
   inline void init(Value *V, User *U);
 
 private:
+  /// Allow std::swap some intimacy
   template <typename U> friend void std::swap(U&, U&);
-/*  Use(Value *V, User *U) { init(V, U); }
- */  Use(const Use &U) { init(U.get(), 0); }
 
+  /// Copy ctor - Only for std::swap
+  Use(const Use &U) { init(U.get(), 0); }
+
+  /// Destructor - Only for zap() and std::swap
   inline ~Use() {
     if (get()) removeFromList();
   }
