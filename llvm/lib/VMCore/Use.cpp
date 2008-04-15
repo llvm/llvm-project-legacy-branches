@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Value.h"
+#include "llvm/User.h"
 
 namespace llvm {
 
@@ -19,15 +20,13 @@ namespace llvm {
 //                         Use getImpliedUser Implementation
 //===----------------------------------------------------------------------===//
 
-enum ValuePtrTag { zeroDigitTag = 0, oneDigitTag = 1, stopTag = 0x2, fullStopTag = 0x3 };
-
 const Use *Use::getImpliedUser() const {
   bool StopEncountered = false;
   ptrdiff_t Offset = 1;
   const Use *Current = this;
 
   while (true) {
-    unsigned Tag = unsigned(Current->Val) & 0x3;
+    unsigned Tag = extractTag<ValuePtrTag, fullStopTag>(Current->Val);
     switch (Tag)
       {
       case zeroDigitTag:
@@ -53,7 +52,7 @@ const Use *Use::getImpliedUser() const {
 //                         Use initTags Implementation
 //===----------------------------------------------------------------------===//
 
-void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
+Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
   ptrdiff_t Count = 0;
   while (Start != Stop) 
   {
@@ -69,6 +68,8 @@ void Use::initTags(Use *Start, Use *Stop, ptrdiff_t Done) {
       ++Done;
     }
   }
+
+  return Start;
 }
 
 //===----------------------------------------------------------------------===//
@@ -85,19 +86,39 @@ void Use::zap(Use *Start, const Use *Stop, bool del) {
 }
 
 //===----------------------------------------------------------------------===//
+//                         AugmentedUse layout struct
+//===----------------------------------------------------------------------===//
+
+struct AugmentedUse : Use {
+  User *ref;
+  AugmentedUse(); // not implemented
+};
+
+
+//===----------------------------------------------------------------------===//
 //                         Use getUser Implementation
 //===----------------------------------------------------------------------===//
 
 User *Use::getUser() const {
   const Use* End = getImpliedUser();
-  User *She = End->U;
-  if (ptrdiff_t(She) & 1UL)
-    She = (User*)(ptrdiff_t(She) & ~1UL);
-  else
-    She = (User*)End;
+  User *She = static_cast<const AugmentedUse*>(End - 1)->ref;
+  She = extractTag<Tag, tagOne>(She)
+      ? llvm::stripTag<tagOne>(She)
+      : reinterpret_cast<User*>(const_cast<Use*>(End));
 
   assert((!U || U == She) && "Implicit User differs?");
   return She;
+}
+
+//===----------------------------------------------------------------------===//
+//                         User allocHungoffUses Implementation
+//===----------------------------------------------------------------------===//
+
+Use *User::allocHungoffUses(unsigned N) const {
+  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof(AugmentedUse) - sizeof(Use)));
+  Use *End = Begin + N;
+  static_cast<AugmentedUse&>(End[-1]).ref = addTag(this, tagOne);
+  return Use::initTags(Begin, End);
 }
 
 } // End llvm namespace

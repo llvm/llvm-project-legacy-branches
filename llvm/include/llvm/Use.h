@@ -26,6 +26,40 @@ class User;
 
 
 //===----------------------------------------------------------------------===//
+//                          Generic Tagging Functions
+//===----------------------------------------------------------------------===//
+
+/// Tag - generic tag type for (at least 32 bit) pointers
+enum Tag { noTag, tagOne, tagTwo, tagThree };
+
+/// addTag - insert tag bits into an (untagged) pointer
+template <typename T, typename TAG>
+inline T *addTag(const T *P, TAG Tag) {
+    return reinterpret_cast<T*>(ptrdiff_t(P) | Tag);
+}
+
+/// stripTag - remove tag bits from a pointer,
+/// making it dereferencable
+template <ptrdiff_t MASK, typename T>
+inline T *stripTag(const T *P) {
+  return reinterpret_cast<T*>(ptrdiff_t(P) & ~MASK);
+}
+
+/// extractTag - extract tag bits from a pointer
+template <typename TAG, TAG MASK, typename T>
+inline TAG extractTag(const T *P) {
+  return TAG(ptrdiff_t(P) & MASK);
+}
+
+/// transferTag - transfer tag bits from a pointer,
+/// to an untagged pointer
+template <ptrdiff_t MASK, typename T>
+inline T *transferTag(const T *From, const T *To) {
+  return reinterpret_cast<T*>((ptrdiff_t(From) & MASK) | ptrdiff_t(To));
+}
+
+
+//===----------------------------------------------------------------------===//
 //                                  Use Class
 //===----------------------------------------------------------------------===//
 
@@ -50,8 +84,12 @@ private:
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing
   /// that is valid to do with this use is to call the "init" method.
 
-private:
   inline Use() {}
+  enum ValuePtrTag { zeroDigitTag = noTag
+                   , oneDigitTag = tagOne
+                   , stopTag = tagTwo
+                   , fullStopTag = tagThree };
+
 public:
 
 
@@ -59,7 +97,7 @@ public:
   Value *get() const { return stripTag(Val); }
   User *getUser() const;
   const Use* getImpliedUser() const;
-  static void initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
+  static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   static void zap(Use *Start, const Use *Stop, bool del = false);
 
   inline void set(Value *Val);
@@ -83,10 +121,10 @@ private:
   Value *Val;
 
   static Value *stripTag(Value *V) {
-    return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) & ~3UL);
+    return llvm::stripTag<fullStopTag>(V);
   }
   Value *transferTag(Value *V) {
-    return reinterpret_cast<Value*>(reinterpret_cast<ptrdiff_t>(V) | (reinterpret_cast<ptrdiff_t>(Val) & 3UL));
+    return llvm::transferTag<fullStopTag>(Val, V);
   }
   void addToList(Use **List) {
     Next = *List;

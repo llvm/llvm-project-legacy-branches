@@ -196,6 +196,7 @@ struct OperandTraits;
 
 class User;
 
+/// OperandTraits<User> - specialization to User
 template <>
 struct OperandTraits<User> {
   static inline Use *op_begin(User*);
@@ -216,9 +217,9 @@ class User : public Value {
 protected:
   /// OperandList - This is a pointer to the array of Users for this operand.
   /// For nodes of fixed arity (e.g. a binary operator) this array will live
-  /// embedded into the derived class.  For nodes of variable arity
-  /// (e.g. ConstantArrays, CallInst, PHINodes, ReturnInst etc.), this memory 
-  /// will be dynamically allocated and should be destroyed by the classes' 
+  /// prefixed to the derived class.  For nodes of resizable variable arity
+  /// (e.g. PHINodes, SwitchInst etc.), this memory will be dynamically
+  /// allocated and should be destroyed by the classes' 
   /// virtual dtor.
   Use *OperandList;
 
@@ -256,7 +257,7 @@ public:
   template <unsigned Idx> const Use &Op() const {
     return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
   }
-  inline Use *allocHungoffUses(unsigned) const;
+  Use *allocHungoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
     Use::zap(U, U->getImpliedUser(), true);
   }
@@ -318,30 +319,6 @@ inline Use *OperandTraits<User>::op_end(User *U) {
 
 inline unsigned OperandTraits<User>::operands(const User *U) {
   return U->getNumOperands();
-}
-
-enum Tag { noTag, tagOne, tagTwo, tagThree };
-
-template <typename T, typename TAG>
-inline T *addTag(const T *P, TAG Tag) {
-    return reinterpret_cast<T*>(ptrdiff_t(P) | Tag);
-}
-
-template <typename T, typename TAG, ptrdiff_t MASK>
-inline T *stripTag(const T *P) {
-  return reinterpret_cast<T*>(ptrdiff_t(P) & ~MASK);
-}
-
-Use *User::allocHungoffUses(unsigned N) const {
-  struct AugmentedUse : Use {
-    User *ref;
-    AugmentedUse(); // not implemented
-  };
-  Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof(AugmentedUse) - sizeof(Use)));
-  Use *End = Begin + N;
-  static_cast<AugmentedUse&>(End[-1]).ref = addTag(this, tagOne);
-  Use::initTags(Begin, End);
-  return Begin;
 }
 
 template<> struct simplify_type<User::op_iterator> {
