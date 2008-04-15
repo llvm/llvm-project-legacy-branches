@@ -259,6 +259,10 @@ public:
   }
   Use *allocHungoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
+    if (OperandList == U) {
+      OperandList = 0;
+      NumOperands = 0;
+    }
     Use::zap(U, U->getImpliedUser(), true);
   }
 
