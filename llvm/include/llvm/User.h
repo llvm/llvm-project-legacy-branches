@@ -256,7 +256,7 @@ public:
   template <unsigned Idx> const Use &Op() const {
     return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
   }
-  inline Use *allocHangoffUses(unsigned) const;
+  inline Use *allocHungoffUses(unsigned) const;
   void dropHungoffUses(Use *U) {
     Use::zap(U, U->getImpliedUser(), true);
   }
@@ -319,12 +319,8 @@ inline Use *OperandTraits<User>::op_end(User *U) {
 inline unsigned OperandTraits<User>::operands(const User *U) {
   return U->getNumOperands();
 }
-  /*
-  static inline void *allocate(unsigned);
-};
-  */
 
-Use *User::allocHangoffUses(unsigned N) const {
+Use *User::allocHungoffUses(unsigned N) const {
   Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof this));
   Use *End = Begin + N;
   (*(User**)End) = (User*)(ptrdiff_t(this) | 1);

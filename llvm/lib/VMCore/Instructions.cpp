@@ -114,7 +114,7 @@ UnaryInstruction::~UnaryInstruction() {
 
 PHINode::PHINode(const PHINode &PN)
   : Instruction(PN.getType(), Instruction::PHI,
-                allocHangoffUses(PN.getNumOperands()), PN.getNumOperands()),
+                allocHungoffUses(PN.getNumOperands()), PN.getNumOperands()),
     ReservedSpace(PN.getNumOperands()) {
   Use *OL = OperandList;
   for (unsigned i = 0, e = PN.getNumOperands(); i != e; i+=2) {
@@ -181,7 +181,7 @@ void PHINode::resizeOperands(unsigned NumOps) {
 
   ReservedSpace = NumOps;
   Use *OldOps = OperandList;
-  Use *NewOps = allocHangoffUses(NumOps);
+  Use *NewOps = allocHungoffUses(NumOps);
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
   }
@@ -2632,7 +2632,7 @@ void SwitchInst::init(Value *Value, BasicBlock *Default, unsigned NumCases) {
   assert(Value && Default);
   ReservedSpace = 2+NumCases*2;
   NumOperands = 2;
-  OperandList = allocHangoffUses(ReservedSpace);
+  OperandList = allocHungoffUses(ReservedSpace);
 
   OperandList[0].init(Value, this);
   OperandList[1].init(Default, this);
@@ -2660,7 +2660,7 @@ SwitchInst::SwitchInst(Value *Value, BasicBlock *Default, unsigned NumCases,
 
 SwitchInst::SwitchInst(const SwitchInst &SI)
   : TerminatorInst(Type::VoidTy, Instruction::Switch,
-                   allocHangoffUses(SI.getNumOperands()), SI.getNumOperands()) {
+                   allocHungoffUses(SI.getNumOperands()), SI.getNumOperands()) {
   Use *OL = OperandList, *InOL = SI.OperandList;
   for (unsigned i = 0, E = SI.getNumOperands(); i != E; i+=2) {
     OL[i].init(InOL[i], this);
@@ -2733,7 +2733,7 @@ void SwitchInst::resizeOperands(unsigned NumOps) {
   }
 
   ReservedSpace = NumOps;
-  Use *NewOps = allocHangoffUses(NumOps);
+  Use *NewOps = allocHungoffUses(NumOps);
   Use *OldOps = OperandList;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
