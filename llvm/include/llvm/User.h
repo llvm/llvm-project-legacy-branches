@@ -338,8 +338,8 @@ Use *User::allocHungoffUses(unsigned N) const {
     AugmentedUse(); // not implemented
   };
   Use *Begin = static_cast<Use*>(::operator new(sizeof(Use) * N + sizeof(AugmentedUse) - sizeof(Use)));
-  AugmentedUse *End = static_cast<AugmentedUse*>(Begin + N);
-  End->ref = addTag(this, tagOne);
+  Use *End = Begin + N;
+  static_cast<AugmentedUse&>(End[-1]).ref = addTag(this, tagOne);
   Use::initTags(Begin, End);
   return Begin;
 }
