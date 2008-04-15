@@ -1754,6 +1754,7 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BranchInst, Value)
 /// SwitchInst - Multiway switch
 ///
 class SwitchInst : public TerminatorInst {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   unsigned ReservedSpace;
   // Operand[0]    = Value to switch on
   // Operand[1]    = Default basic block destination
@@ -1762,6 +1763,10 @@ class SwitchInst : public TerminatorInst {
   SwitchInst(const SwitchInst &RI);
   void init(Value *Value, BasicBlock *Default, unsigned NumCases);
   void resizeOperands(unsigned No);
+  // allocate space for exactly zero operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
   /// SwitchInst ctor - Create a new switch instruction, specifying a value to
   /// switch on and a default destination.  The number of additional cases can
   /// be specified here to make memory allocation more efficient.  This

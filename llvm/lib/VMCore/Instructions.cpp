@@ -2843,7 +2843,7 @@ ShuffleVectorInst *ShuffleVectorInst::clone() const {
 PHINode    *PHINode::clone()    const { return new PHINode(*this); }
 ReturnInst *ReturnInst::clone() const { return new(getNumOperands()) ReturnInst(*this); }
 BranchInst *BranchInst::clone() const { return new(getNumOperands()) BranchInst(*this); }
-SwitchInst *SwitchInst::clone() const { return new(getNumOperands()) SwitchInst(*this); }
+SwitchInst *SwitchInst::clone() const { return new SwitchInst(*this); }
 InvokeInst *InvokeInst::clone() const { return new(getNumOperands()) InvokeInst(*this); }
 UnwindInst *UnwindInst::clone() const { return new UnwindInst(); }
 UnreachableInst *UnreachableInst::clone() const { return new UnreachableInst();}
