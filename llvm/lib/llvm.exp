@@ -1,5 +1,5 @@
 # This procedure executes one line of a test case's execution script.
-proc execOneLine { test PRS outcome lineno line } {
+proc execOneLine { subdir_filename test PRS outcome lineno line } {
   set status 0
   set resultmsg ""
   set retval [ catch { eval exec -keepnewline -- $line } errmsg ]
@@ -14,21 +14,21 @@ proc execOneLine { test PRS outcome lineno line } {
       CHILDSTATUS {
         set status [lindex $::errorCode 2]
         if { $status != 0 } {
-          set resultmsg "$test$PRS\nFailed with exit($status)$errmsg"
+          set resultmsg "$subdir_filename$PRS\nFailed with exit($status)$errmsg"
         }
       }
       CHILDKILLED {
         set signal [lindex $::errorCode 2]
-        set resultmsg "$test$PRS\nFailed with signal($signal)$errmsg"
+        set resultmsg "$subdir_filename$PRS\nFailed with signal($signal)$errmsg"
       }
       CHILDSUSP {
         set signal [lindex $::errorCode 2]
-        set resultmsg "$test$PRS\nFailed with suspend($signal)$errmsg"
+        set resultmsg "$subdir_filename$PRS\nFailed with suspend($signal)$errmsg"
       }
       POSIX {
         set posixNum [lindex $::errorCode 1]
         set posixMsg [lindex $::errorCode 2]
-        set resultmsg "$test$PRS\nFailed with posix($posixNum,$posixMsg)$errmsg"
+        set resultmsg "$subdir_filename$PRS\nFailed with posix($posixNum,$posixMsg)$errmsg"
       }
       NONE {
       }
@@ -273,7 +273,7 @@ proc run_one_test { test } {
     set failed 0
     for { set i 0 } { $i < $numLines } { set i [ expr $i + 1 ] } {
       regsub ^.*RUN:(.*) $lines($i) \1 theLine
-      set resultmsg [execOneLine $test $PRNUMS $outcome $i $theLine ]
+      set resultmsg [execOneLine $subdir_filename $test $PRNUMS $outcome $i $theLine ]
       if { $resultmsg != "" } {
         if { $outcome == "XFAIL" } {
           xfail "$resultmsg"
