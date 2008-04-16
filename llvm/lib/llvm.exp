@@ -179,7 +179,8 @@ proc run_one_test { test } {
   #set timeout 40
   
   set filename [file tail $test]
-  verbose "ABOUT TO RUN: [file join $subdir $filename]" 2
+  set subdir_filename "[file join $subdir $filename]"
+  verbose "ABOUT TO RUN: $subdir_filename" 2
   set outcome PASS
   set tmpFile "$filename.tmp"
   
@@ -267,7 +268,7 @@ proc run_one_test { test } {
   
   
   if { $numLines == 0 } {
-    fail "$test: \nDoes not have a RUN line\n"
+    fail "$subdir_filename: \nDoes not have a RUN line\n"
   } else {
     set failed 0
     for { set i 0 } { $i < $numLines } { set i [ expr $i + 1 ] } {
@@ -290,9 +291,9 @@ proc run_one_test { test } {
         set PRNUMS " for $PRNUMS"
       }
       if { $outcome == "XFAIL" } {
-        xpass "$test$PRNUMS"
+        xpass "$subdir_filename$PRNUMS"
       } else {
-        pass "$test$PRNUMS"
+        pass "$subdir_filename$PRNUMS"
       }
     }
   }
