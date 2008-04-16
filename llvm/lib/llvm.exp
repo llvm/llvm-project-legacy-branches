@@ -131,7 +131,11 @@ proc RunLLVMTests { test_source_files } {
   puts $makeFileId "\t   echo source \$(LLVM_SRC_ROOT)/test/lib/llvm.exp; \\"
   puts $makeFileId "\t   echo proc fail { msg } { puts '\"FAIL: \$\$msg\"' '; exit 1' }; \\"
   puts $makeFileId "\t   echo proc xfail { msg } { puts '\"XFAIL: \$\$msg\"' }; \\"
-  puts $makeFileId "\t   echo proc pass { msg } { puts '\"PASS: \$\$msg\"' }; \\"
+  if $verbose>0 {
+    puts $makeFileId "\t   echo proc pass { msg } { puts '\"PASS: \$\$msg\"' }; \\"
+  } else {
+    puts $makeFileId "\t   echo proc pass { msg } { }; \\"
+  }
   puts $makeFileId "\t   echo proc xpass { msg } { puts '\"XPASS: \$\$msg\"' '; exit 1' }; \\"
   if $verbose>=2 {
     puts $makeFileId "\t   echo proc verbose { msg level } { puts stderr '\"\$\$msg\"' }; \\"
@@ -153,7 +157,10 @@ proc RunLLVMTests { test_source_files } {
 
   puts $makeFileId ""
   puts $makeFileId "Test.makefile.out: \$(TESTS)"
-  puts $makeFileId "\t@ cat \$(TESTS) > \$@"
+  puts $makeFileId "\t@ cat \$(TESTS) /dev/null  > \$@"
+  if $verbose<1 {
+    puts $makeFileId "\t@ wc \$(TESTS) /dev/null | grep -E ' +0 +0 +0 ' | grep -v ' total\$\$' | grep -v ' /dev/null\$\$' | sed -e 's| *0 *0 *0 |PASS: \$(SUBDIR)\\/|1' -e 's|.testresults\$\$||1' >> \$@"
+  }
   puts $makeFileId ""
 
   close $makeFileId
