@@ -158,9 +158,9 @@ void GlobalDCE::GlobalIsNeeded(GlobalValue *G) {
       for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
         // For all operands...
         for (User::op_iterator U = I->op_begin(), E = I->op_end(); U != E; ++U)
-          if (GlobalValue *GV = dyn_cast<GlobalValue>(U->get()))
+          if (GlobalValue *GV = dyn_cast<GlobalValue>(*U))
             GlobalIsNeeded(GV);
-          else if (Constant *C = dyn_cast<Constant>(U->get()))
+          else if (Constant *C = dyn_cast<Constant>(*U))
             MarkUsedGlobalsAsNeeded(C);
   }
 }

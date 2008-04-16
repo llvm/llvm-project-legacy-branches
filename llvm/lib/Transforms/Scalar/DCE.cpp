@@ -102,7 +102,7 @@ bool DCE::runOnFunction(Function &F) {
       // go dead after this one is removed.
       //
       for (User::op_iterator OI = I->op_begin(), E = I->op_end(); OI != E; ++OI)
-        if (Instruction *Used = dyn_cast<Instruction>(OI->get()))
+        if (Instruction *Used = dyn_cast<Instruction>(*OI))
           WorkList.push_back(Used);
 
       // Remove the instruction.

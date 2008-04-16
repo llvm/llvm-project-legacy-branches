@@ -8484,7 +8484,7 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
     // the call.
     for (CallSite::arg_iterator I = CS.arg_begin()+FTy->getNumParams(),
            E = CS.arg_end(); I != E; ++I)
-      if (CastInst *CI = dyn_cast<CastInst>(I->get())) {
+      if (CastInst *CI = dyn_cast<CastInst>(*I)) {
         // If this cast does not effect the value passed through the varargs
         // area, we can eliminate the use of the cast.
         Value *Op = CI->getOperand(0);
@@ -8575,7 +8575,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
     if (CallerPAL.getParamAttrs(i + 1) & ParamAttr::typeIncompatible(ParamTy))
       return false;   // Attribute not compatible with transformed value.
 
-    ConstantInt *c = dyn_cast<ConstantInt>(AI->get());
+    ConstantInt *c = dyn_cast<ConstantInt>(*AI);
     // Some conversions are safe even if we do not have a body.
     // Either we can cast directly, or we can upconvert the argument
     bool isConvertible = ActTy == ParamTy ||
