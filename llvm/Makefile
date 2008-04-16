@@ -63,7 +63,7 @@ report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 	@ cat $^
 
 %.report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
-	@ cat $^ | grep "$(basename $@): " | wc -l | xargs echo "$(basename $@):" | (grep -v ': 0' ; true) > $@
+	@ cat $^ | grep "^$(basename $@): " | wc -l | xargs echo "$(basename $@):" | (grep -v ': 0' ; true) > $@
 
 .PHONY: report
 
