@@ -62,6 +62,9 @@ endif
 report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 	@ cat $^
 
+%.report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+	@ cat $^ | grep "$(basename $@): " | wc -l | xargs echo "$(basename $@):" | (grep -v ': 0' ; true) > $@
+
 .PHONY: report
 
 check-local:: site.exp
@@ -72,6 +75,8 @@ check-local:: site.exp
 	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
 	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile)))
 	@ $(DONE)
+	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make PASS.report FAIL.report XPASS.report XFAIL.report
+	@ cat PASS.report FAIL.report XPASS.report XFAIL.report
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."
