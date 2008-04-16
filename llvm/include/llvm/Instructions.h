@@ -1138,7 +1138,7 @@ public:
                             Instruction *InsertBefore = 0) {
     return new(3) SelectInst(C, S1, S2, Name, InsertBefore);
   }
-  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name = "",
+  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name,
                             BasicBlock *InsertAtEnd) {
     return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
   }
