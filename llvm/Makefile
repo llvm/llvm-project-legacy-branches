@@ -31,8 +31,10 @@ CLEANED_TESTSUITE := $(patsubst %/,%,$(TESTSUITE))
 CLEANED_TESTSUITE := $(patsubst test/%,%,$(CLEANED_TESTSUITE))
 RUNTESTFLAGS += --tool $(CLEANED_TESTSUITE)
 TESTDIRS = $(CLEANED_TESTSUITE)
+DISPLAYDIRS = $(TESTDIRS)
 else
 TESTDIRS = .
+DISPLAYDIRS =
 endif
 
 IGNORE_TESTS :=
@@ -59,16 +61,18 @@ PREPARATION = -e '/Running \(.*\) \.\.\./d'
 endif
 
 ifndef TESTDIRS-MAKEFILES
-TESTDIRS-MAKEFILES := $(shell echo "Z" >> Z && find $(TESTDIRS) -name Test.makefile)
+TESTDIRS-MAKEFILES := $(shell find $(TESTDIRS) -name Test.makefile)
 endif
+
+TESTDIRS-OUTFILES := $(addsuffix .out, $(TESTDIRS-MAKEFILES))
 
 %.makefile.out: %.makefile
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
 
-report:: $(addsuffix .out, $(TESTDIRS-MAKEFILES))
+report:: $(TESTDIRS-OUTFILES)
 	@ cat $^
 
-%.report:: $(addsuffix .out, $(TESTDIRS-MAKEFILES))
+%.report:: $(TESTDIRS-OUTFILES)
 	@ cat $^ \
 	| grep "^$(basename $@): " \
 	| wc -l \
@@ -93,12 +97,12 @@ check-local:: site.exp
 			$(RUNTEST) $(RUNTESTFLAGS) ) | $(PRETTIFY-DEJA)
 	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
 	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile TESTDIRS-MAKEFILES="$(TESTDIRS-MAKEFILES)" \
-		$(addsuffix .out, $(TESTDIRS-MAKEFILES)))
+	    $(TESTDIRS-OUTFILES))
 	@ $(DONE)
 	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make TESTDIRS-MAKEFILES="$(TESTDIRS-MAKEFILES)" \
 		PASS.report FAIL.report XPASS.report XFAIL.report
 	@ echo
-	@ echo "		=== $(TESTDIRS) Summary ==="
+	@ echo "		=== $(DISPLAYDIRS) Summary ==="
 	@ echo
 	@ cat PASS.report FAIL.report XPASS.report XFAIL.report | $(PRETTIFY-REPORT)
 else
@@ -109,7 +113,7 @@ endif
 ifdef TESTONE
 CLEANED_TESTONE := $(patsubst %/,%,$(TESTONE))
 CLEANED_TESTONE := $(patsubst test/%,%,$(CLEANED_TESTONE))
-SUBDIR := $(shell dirname $(CLEANED_TESTONE))
+SUBDIR := $(dir $(CLEANED_TESTONE))
 TESTPATH := $(LLVM_SRC_ROOT)/test/$(CLEANED_TESTONE)
 check-one: site.exp $(TCLSH)
 	$(Verb)( echo "source $(LLVM_OBJ_ROOT)/test/site.exp" ; \
