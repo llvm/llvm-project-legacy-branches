@@ -63,20 +63,34 @@ report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 	@ cat $^
 
 %.report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
-	@ cat $^ | grep "^$(basename $@): " | wc -l | xargs echo "$(basename $@):" | (grep -v ': 0' ; true) > $@
+	@ cat $^ \
+	| grep "^$(basename $@): " \
+	| wc -l \
+	| xargs echo "$(basename $@):" \
+	| (grep -v ': 0$$' ; true) > $@
 
 .PHONY: report
 
+PRETTIFY-DEJA = sed \
+		-e 's/Running /Preparing /1' \
+		-e 's/		===  Summary ===/--- Running llvm tests ---/1' \
+		-e 's/		=== /--- Running /1' \
+		-e 's/ Summary ===/ tests ---/1'
+
+PRETTIFY-REPORT = sed \
+		-e 's|XPASS: |\# of unexpected successes	|1' \
+		-e 's|PASS: |\# of expected passes	|1' \
+		-e 's|XFAIL: |\# of expected failures	|1' \
+		-e 's|FAIL: |\# of unexpected failures	|1'
+
 check-local:: site.exp
-	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
-	  PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
-	  $(RUNTEST) $(RUNTESTFLAGS) ) | sed -e 's/Running /Preparing /1'
-	@ echo '--- Running llvm tests ---'
+	@ ( PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
+			$(RUNTEST) $(RUNTESTFLAGS) ) | $(PRETTIFY-DEJA)
 	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
 	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile)))
 	@ $(DONE)
 	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make PASS.report FAIL.report XPASS.report XFAIL.report
-	@ cat PASS.report FAIL.report XPASS.report XFAIL.report
+	@ cat PASS.report FAIL.report XPASS.report XFAIL.report | $(PRETTIFY-REPORT)
 else
 check-local:: site.exp
 	@echo "*** dejagnu not found.  Make sure runtest is in your PATH, then reconfigure llvm."
