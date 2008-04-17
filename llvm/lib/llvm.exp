@@ -159,7 +159,7 @@ proc RunLLVMTests { test_source_files } {
   puts $makeFileId "Test.makefile.out: \$(TESTS)"
   puts $makeFileId "\t@ cat \$(TESTS) /dev/null  > \$@"
   if $verbose<1 {
-    puts $makeFileId "\t@ wc \$(TESTS) /dev/null | grep -E ' +0 +0 +0 ' | grep -v ' total\$\$' | grep -v ' /dev/null\$\$' | sed -e 's| *0 *0 *0 |PASS: \$(SUBDIR)\\/|1' -e 's|.testresults\$\$||1' >> \$@"
+    puts $makeFileId "\t@ wc \$(TESTS) /dev/null | grep -E ' *0 +0 +0 ' | grep -v ' total\$\$' | grep -v ' /dev/null\$\$' | sed -e 's| *0 *0 *0 |PASS: \$(SUBDIR)\\/|1' -e 's|.testresults\$\$||1' >> \$@"
   }
   puts $makeFileId ""
 
