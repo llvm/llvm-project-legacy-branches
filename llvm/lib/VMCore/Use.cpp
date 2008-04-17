@@ -57,7 +57,6 @@ Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
   while (Start != Stop) 
   {
     --Stop;
-    Stop->U = 0;
     if (!Count) {
       Stop->Val = reinterpret_cast<Value*>(Done == 0 ? fullStopTag : stopTag);
       ++Done;
@@ -100,13 +99,12 @@ struct AugmentedUse : Use {
 //===----------------------------------------------------------------------===//
 
 User *Use::getUser() const {
-  const Use* End = getImpliedUser();
+  const Use *End = getImpliedUser();
   User *She = static_cast<const AugmentedUse*>(End - 1)->ref;
   She = extractTag<Tag, tagOne>(She)
       ? llvm::stripTag<tagOne>(She)
       : reinterpret_cast<User*>(const_cast<Use*>(End));
 
-  assert((!U || U == She) && "Implicit User differs?");
   return She;
 }
 

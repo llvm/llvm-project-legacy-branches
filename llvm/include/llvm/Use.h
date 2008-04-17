@@ -116,7 +116,6 @@ public:
 
   Use *getNext() const { return Next; }
 private:
-  User *U;
   Use *Next, **Prev;
   Value *Val;
 
