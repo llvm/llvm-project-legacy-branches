@@ -58,13 +58,17 @@ DONE = echo
 PREPARATION = -e '/Running \(.*\) \.\.\./d'
 endif
 
+ifndef TESTDIRS-MAKEFILES
+TESTDIRS-MAKEFILES := $(shell echo "Z" >> Z && find $(TESTDIRS) -name Test.makefile)
+endif
+
 %.makefile.out: %.makefile
 	@ $(MAKE) --always-make -C $(dir $<) -f $(notdir $<) $(notdir $@)
 
-report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+report:: $(addsuffix .out, $(TESTDIRS-MAKEFILES))
 	@ cat $^
 
-%.report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
+%.report:: $(addsuffix .out, $(TESTDIRS-MAKEFILES))
 	@ cat $^ \
 	| grep "^$(basename $@): " \
 	| wc -l \
@@ -79,18 +83,20 @@ PRETTIFY-DEJA = sed \
 		-e 's/		=== \(.*\) Summary ===/		=== Running \1 tests ===/1'
 
 PRETTIFY-REPORT = sed \
-		-e 's/XPASS: /\# of unexpected successes		/1' \
+		-e 's/XPASS: /\# of unexpected successes	/1' \
 		-e 's/PASS: /\# of expected passes		/1' \
 		-e 's/XFAIL: /\# of expected failures		/1' \
-		-e 's/FAIL: /\# of unexpected failures		/1'
+		-e 's/FAIL: /\# of unexpected failures	/1'
 
 check-local:: site.exp
 	@ ( PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
 			$(RUNTEST) $(RUNTESTFLAGS) ) | $(PRETTIFY-DEJA)
 	@ ( ulimit -t 600 ; ulimit -d 512000 ; \
-	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile)))
+	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile TESTDIRS-MAKEFILES="$(TESTDIRS-MAKEFILES)" \
+		$(addsuffix .out, $(TESTDIRS-MAKEFILES)))
 	@ $(DONE)
-	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make PASS.report FAIL.report XPASS.report XFAIL.report
+	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make TESTDIRS-MAKEFILES="$(TESTDIRS-MAKEFILES)" \
+		PASS.report FAIL.report XPASS.report XFAIL.report
 	@ echo
 	@ echo "		=== $(TESTDIRS) Summary ==="
 	@ echo
