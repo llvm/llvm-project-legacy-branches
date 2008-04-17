@@ -85,10 +85,10 @@ private:
   /// that is valid to do with this use is to call the "init" method.
 
   inline Use() {}
-  enum ValuePtrTag { zeroDigitTag = noTag
-                   , oneDigitTag = tagOne
-                   , stopTag = tagTwo
-                   , fullStopTag = tagThree };
+  enum PrevPtrTag { zeroDigitTag = noTag
+                  , oneDigitTag = tagOne
+                  , stopTag = tagTwo
+                  , fullStopTag = tagThree };
 
 public:
 
