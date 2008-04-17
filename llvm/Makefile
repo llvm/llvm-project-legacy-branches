@@ -72,16 +72,15 @@ report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 .PHONY: report
 
 PRETTIFY-DEJA = sed \
-		-e 's/Running /Preparing /1' \
+		-e 's/Running \(.*\) \.\.\./Preparing \1 .../1' \
 		-e 's/		===  Summary ===/--- Running llvm tests ---/1' \
-		-e 's/		=== /--- Running /1' \
-		-e 's/ Summary ===/ tests ---/1'
+		-e 's/		=== \(.*\) Summary ===/--- Running \1 tests ---/1'
 
 PRETTIFY-REPORT = sed \
-		-e 's|XPASS: |\# of unexpected successes	|1' \
-		-e 's|PASS: |\# of expected passes	|1' \
-		-e 's|XFAIL: |\# of expected failures	|1' \
-		-e 's|FAIL: |\# of unexpected failures	|1'
+		-e 's/XPASS: /\# of unexpected successes		/1' \
+		-e 's/PASS: /\# of expected passes		/1' \
+		-e 's/XFAIL: /\# of expected failures		/1' \
+		-e 's/FAIL: /\# of unexpected failures		/1'
 
 check-local:: site.exp
 	@ ( PATH="$(LLVMToolDir):$(LLVM_SRC_ROOT)/test/Scripts:$(PATH)" \
@@ -90,6 +89,9 @@ check-local:: site.exp
 	    $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile)))
 	@ $(DONE)
 	@ $(MAKE) -f $(LLVM_SRC_ROOT)/test/Makefile --always-make PASS.report FAIL.report XPASS.report XFAIL.report
+	@ echo
+	@ echo "		=== $(TESTDIRS) Summary ==="
+	@ echo
 	@ cat PASS.report FAIL.report XPASS.report XFAIL.report | $(PRETTIFY-REPORT)
 else
 check-local:: site.exp
