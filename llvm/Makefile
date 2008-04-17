@@ -52,8 +52,10 @@ ifneq ($(RUNTEST),)
 
 ifdef VERBOSE
 DONE = true
+PREPARATION = -e 's/Running \(.*\) \.\.\./Preparing \1 .../1'
 else
 DONE = echo
+PREPARATION = -e '/Running \(.*\) \.\.\./d'
 endif
 
 %.makefile.out: %.makefile
@@ -72,9 +74,9 @@ report:: $(addsuffix .out, $(shell find $(TESTDIRS) -name Test.makefile))
 .PHONY: report
 
 PRETTIFY-DEJA = sed \
-		-e 's/Running \(.*\) \.\.\./Preparing \1 .../1' \
-		-e 's/		===  Summary ===/--- Running llvm tests ---/1' \
-		-e 's/		=== \(.*\) Summary ===/--- Running \1 tests ---/1'
+		$(PREPARATION) \
+		-e 's/		===  Summary ===/		=== Running llvm tests ===/1' \
+		-e 's/		=== \(.*\) Summary ===/		=== Running \1 tests ===/1'
 
 PRETTIFY-REPORT = sed \
 		-e 's/XPASS: /\# of unexpected successes		/1' \
