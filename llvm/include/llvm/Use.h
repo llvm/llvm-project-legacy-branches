@@ -116,8 +116,8 @@ public:
 
   Use *getNext() const { return Next; }
 private:
-  Use *Next, **Prev;
   Value *Val;
+  Use *Next, **Prev;
 
   static Value *stripTag(Value *V) {
     return llvm::stripTag<fullStopTag>(V);
@@ -127,13 +127,13 @@ private:
   }
   void addToList(Use **List) {
     Next = *List;
-    if (Next) Next->Prev = &Next;
-    Prev = List;
+    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, &Next);
+    Prev = llvm::transferTag<fullStopTag>(Prev, List);
     *List = this;
   }
   void removeFromList() {
-    *Prev = Next;
-    if (Next) Next->Prev = Prev;
+    *llvm::stripTag<fullStopTag>(Prev) = Next;
+    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, Prev);
   }
 
   friend class Value;
