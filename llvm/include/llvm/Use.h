@@ -93,8 +93,8 @@ private:
 public:
 
 
-  operator Value*() const { return stripTag(Val); }
-  Value *get() const { return stripTag(Val); }
+  operator Value*() const { return Val; }
+  Value *get() const { return Val; }
   User *getUser() const;
   const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
@@ -111,30 +111,24 @@ public:
     return *this;
   }
 
-        Value *operator->()       { return stripTag(Val); }
-  const Value *operator->() const { return stripTag(Val); }
+        Value *operator->()       { return Val; }
+  const Value *operator->() const { return Val; }
 
   Use *getNext() const { return Next; }
 private:
   Value *Val;
   Use *Next, **Prev;
 
-  static Value *stripTag(Value *V) {
-    return llvm::stripTag<fullStopTag>(V);
-  }
-  Value *transferTag(Value *V) {
-    return llvm::transferTag<fullStopTag>(Val, V);
-  }
   void addToList(Use **List) {
     Next = *List;
-    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, &Next);
-    Prev = llvm::transferTag<fullStopTag>(Prev, List);
+    if (Next) Next->Prev = transferTag<fullStopTag>(Next->Prev, &Next);
+    Prev = transferTag<fullStopTag>(Prev, List);
     *List = this;
   }
   void removeFromList() {
-    Use **StrippedPrev = llvm::stripTag<fullStopTag>(Prev);
+    Use **StrippedPrev = stripTag<fullStopTag>(Prev);
     *StrippedPrev = Next;
-    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, StrippedPrev);
+    if (Next) Next->Prev = transferTag<fullStopTag>(Next->Prev, StrippedPrev);
   }
 
   friend class Value;
