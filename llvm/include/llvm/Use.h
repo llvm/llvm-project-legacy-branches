@@ -132,8 +132,9 @@ private:
     *List = this;
   }
   void removeFromList() {
-    *llvm::stripTag<fullStopTag>(Prev) = Next;
-    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, Prev);
+    Use **StrippedPrev = llvm::stripTag<fullStopTag>(Prev);
+    *StrippedPrev = Next;
+    if (Next) Next->Prev = llvm::transferTag<fullStopTag>(Next->Prev, StrippedPrev);
   }
 
   friend class Value;

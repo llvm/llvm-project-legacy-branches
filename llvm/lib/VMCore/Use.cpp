@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-//#include "llvm/Value.h"
 #include "llvm/User.h"
 
 namespace llvm {
@@ -27,8 +26,7 @@ const Use *Use::getImpliedUser() const {
 
   while (true) {
     unsigned Tag = extractTag<PrevPtrTag, fullStopTag>(Current->Prev);
-    switch (Tag)
-      {
+    switch (Tag) {
       case zeroDigitTag:
       case oneDigitTag:
         if (StopEncountered)
@@ -54,9 +52,9 @@ const Use *Use::getImpliedUser() const {
 
 Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
   ptrdiff_t Count = 0;
-  while (Start != Stop) 
-  {
+  while (Start != Stop) {
     --Stop;
+    Stop->Val = 0;
     if (!Count) {
       Stop->Prev = reinterpret_cast<Use**>(Done == 0 ? fullStopTag : stopTag);
       ++Done;
