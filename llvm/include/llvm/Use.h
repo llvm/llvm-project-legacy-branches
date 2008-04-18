@@ -119,16 +119,19 @@ private:
   Value *Val;
   Use *Next, **Prev;
 
+  void setPrev(Use **NewPrev) {
+    Prev = transferTag<fullStopTag>(Prev, NewPrev);
+  }
   void addToList(Use **List) {
     Next = *List;
-    if (Next) Next->Prev = transferTag<fullStopTag>(Next->Prev, &Next);
-    Prev = transferTag<fullStopTag>(Prev, List);
+    if (Next) Next->setPrev(&Next);
+    setPrev(List);
     *List = this;
   }
   void removeFromList() {
     Use **StrippedPrev = stripTag<fullStopTag>(Prev);
     *StrippedPrev = Next;
-    if (Next) Next->Prev = transferTag<fullStopTag>(Next->Prev, StrippedPrev);
+    if (Next) Next->setPrev(StrippedPrev);
   }
 
   friend class Value;
