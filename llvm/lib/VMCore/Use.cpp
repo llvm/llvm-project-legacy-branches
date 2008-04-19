@@ -51,7 +51,7 @@ const Use *Use::getImpliedUser() const {
 //===----------------------------------------------------------------------===//
 
 Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
-  ptrdiff_t Count = 0;
+  ptrdiff_t Count = Done;
   while (Start != Stop) {
     --Stop;
     Stop->Val = 0;
@@ -74,12 +74,17 @@ Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
 //===----------------------------------------------------------------------===//
 
 void Use::zap(Use *Start, const Use *Stop, bool del) {
-  Use *Iter = Start;
-  while (Iter != Stop) {
-    (Iter++)->set(0);
-  }
-  if (del)
+  if (del) {
+    while (Start != Stop) {
+      (--Stop)->~Use();
+    }
     ::operator delete(Start);
+    return;
+  }
+
+  while (Start != Stop) {
+    (Start++)->set(0);
+  }
 }
 
 //===----------------------------------------------------------------------===//

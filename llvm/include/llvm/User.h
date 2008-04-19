@@ -62,7 +62,7 @@ will enforce the following memory layouts:
 #  by the Use[] array.
 #      
 #      ...---.---.---.---.-------...
-#        | V | V | V | V | User
+#        | P | P | P | P | User
 #      '''---'---'---'---'-------'''
 
 
@@ -74,18 +74,18 @@ will enforce the following memory layouts:
 #          |
 #          v
 #          .---.---.---.---...
-#          | V | V | V | V |
+#          | P | P | P | P |
 #          '---'---'---'---'''
 
-   (In the above figures 'V' stands for the Value* that
-    is stored in each Use object)
+   (In the above figures 'P' stands for the Use** that
+    is stored in each Use object in the member Use::Prev)
 
 
 Since the Use objects will be deprived of the direct pointer to
 their User objects, there must be a fast and exact method to
 recover it. This is accomplished by the following scheme:
 
-A bit-encoding in the 2 LSBits of the Use::Val will allow to find the
+A bit-encoding in the 2 LSBits of the Use::Prev will allow to find the
 start of the User object:
 
 00 --> binary digit 0
@@ -176,12 +176,12 @@ And here is the result of <deepCheck identityProp>:
 OK, passed 500 tests.
 
 
-To maintain the invariant that the 2 LSBits of each Value* in Use
-never change after being set up, setters of Use::Val must re-tag the
-new Value* on every modification. Accordingly getters must strip the
+To maintain the invariant that the 2 LSBits of each Use** in Use
+never change after being set up, setters of Use::Prev must re-tag the
+new Use** on every modification. Accordingly getters must strip the
 tag bits.
 
-For layout b) instead of the User we will find a pointer (with LSBit set).
+For layout b) instead of the User we will find a pointer (User* with LSBit set).
 Following this pointer brings us to the User. A portable trick will ensure
 that the first bytes of User (if interpreted as a pointer) will never have
 the LSBit set.
