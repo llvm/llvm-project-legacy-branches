@@ -167,8 +167,9 @@ Value *PHINode::removeIncomingValue(unsigned Idx, bool DeletePHIIfEmpty) {
 ///   3. If NumOps == NumOperands, trim the reserved space.
 ///
 void PHINode::resizeOperands(unsigned NumOps) {
+  unsigned e = getNumOperands();
   if (NumOps == 0) {
-    NumOps = (getNumOperands())*3/2;
+    NumOps = e*3/2;
     if (NumOps < 4) NumOps = 4;      // 4 op PHI nodes are VERY common.
   } else if (NumOps*2 > NumOperands) {
     // No resize needed.
@@ -182,11 +183,11 @@ void PHINode::resizeOperands(unsigned NumOps) {
   ReservedSpace = NumOps;
   Use *OldOps = OperandList;
   Use *NewOps = allocHungoffUses(NumOps);
-  for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
+  for (unsigned i = 0; i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
   }
-  if (OldOps) dropHungoffUses(OldOps);
   OperandList = NewOps;
+  if (OldOps) Use::zap(OldOps, OldOps + e, true);
 }
 
 /// hasConstantValue - If the specified PHI node always merges together the same
@@ -2716,13 +2717,14 @@ void SwitchInst::removeCase(unsigned idx) {
 /// resizeOperands - resize operands - This adjusts the length of the operands
 /// list according to the following behavior:
 ///   1. If NumOps == 0, grow the operand list in response to a push_back style
-///      of operation.  This grows the number of ops by 1.5 times.
+///      of operation.  This grows the number of ops by 3 times.
 ///   2. If NumOps > NumOperands, reserve space for NumOps operands.
 ///   3. If NumOps == NumOperands, trim the reserved space.
 ///
 void SwitchInst::resizeOperands(unsigned NumOps) {
+  unsigned e = getNumOperands();
   if (NumOps == 0) {
-    NumOps = getNumOperands()/2*6;
+    NumOps = e*3;
   } else if (NumOps*2 > NumOperands) {
     // No resize needed.
     if (ReservedSpace >= NumOps) return;
@@ -2735,11 +2737,11 @@ void SwitchInst::resizeOperands(unsigned NumOps) {
   ReservedSpace = NumOps;
   Use *NewOps = allocHungoffUses(NumOps);
   Use *OldOps = OperandList;
-  for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
+  for (unsigned i = 0; i != e; ++i) {
       NewOps[i].init(OldOps[i], this);
   }
-  if (OldOps) dropHungoffUses(OldOps);
   OperandList = NewOps;
+  if (OldOps) Use::zap(OldOps, OldOps + e, true);
 }
 
 
