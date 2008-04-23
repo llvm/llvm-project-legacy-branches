@@ -31,9 +31,11 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 class BitcodeReaderValueList : public User {
+  unsigned Capacity;
 public:
-  BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0) {}
-  
+  BitcodeReaderValueList() : User(Type::VoidTy, Value::ArgumentVal, 0, 0)
+                           , Capacity(0) {}
+
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
@@ -44,11 +46,12 @@ public:
     unsigned OldOps(NumOperands), NewOps(NumOperands + 1);
     resize(NewOps);
     NumOperands = NewOps;
-    OperandList[OldOps].init(V, this);
+    OperandList[OldOps] = V;
   }
   
   void clear() {
     if (OperandList) dropHungoffUses(OperandList);
+    Capacity = 0;
   }
   
   Value *operator[](unsigned i) const { return getOperand(i); }

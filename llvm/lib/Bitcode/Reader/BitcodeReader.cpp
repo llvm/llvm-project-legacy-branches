@@ -147,19 +147,16 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
 }
 
 void BitcodeReaderValueList::resize(unsigned Desired) {
-  unsigned Capacity = 0;
-  if (OperandList) {
-    Capacity = OperandList->getImpliedUser() - OperandList;
-  }
-
   if (Desired > Capacity)
   {
-    Use *New = allocHungoffUses(Desired*2+100);
-    for (int i(getNumOperands() - 1); i >= 0; --i)
-      New[i] = getOperand(i);
+    Capacity = Desired * 2 + 100;
+    Use *New = allocHungoffUses(Capacity);
     Use *Old = OperandList;
+    unsigned Ops = getNumOperands();
+    for (int i(Ops - 1); i >= 0; --i)
+      New[i] = Old[i].get();
     OperandList = New;
-    if (Old) dropHungoffUses(Old);
+    if (Old) Use::zap(Old, Old + Ops, true);
   }
 }
 
@@ -167,8 +164,7 @@ Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
                                                     const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    resize(Idx * 2 + 1);
-//    OperandList = &Uses[0];
+    resize(Idx + 1);
     NumOperands = Idx+1;
   }
 
@@ -186,8 +182,7 @@ Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
 Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    resize(Idx * 2 + 1);
-//    OperandList = &Uses[0];
+    resize(Idx + 1);
     NumOperands = Idx+1;
   }
   
