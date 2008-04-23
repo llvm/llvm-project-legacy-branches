@@ -33,16 +33,15 @@ const Use *Use::getImpliedUser() const {
         ++Current;
         ptrdiff_t Offset = 1;
         while (true) {
-          unsigned Tag = extractTag<PrevPtrTag, fullStopTag>((Current++)->Prev);
+          unsigned Tag = extractTag<PrevPtrTag, fullStopTag>(Current->Prev);
           switch (Tag) {
             case zeroDigitTag:
             case oneDigitTag:
+              ++Current;
               Offset = (Offset << 1) + Tag;
               continue;
-            case stopTag:
-              return Current + Offset - 1;
-            case fullStopTag:
-              return Current;
+            default:
+              return Current + Offset;
           }
         }
       }
