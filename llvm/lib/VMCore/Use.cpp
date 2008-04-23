@@ -20,29 +20,36 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 const Use *Use::getImpliedUser() const {
-  bool StopEncountered = false;
-  ptrdiff_t Offset = 1;
   const Use *Current = this;
 
   while (true) {
-    unsigned Tag = extractTag<PrevPtrTag, fullStopTag>(Current->Prev);
+    unsigned Tag = extractTag<PrevPtrTag, fullStopTag>((Current++)->Prev);
     switch (Tag) {
       case zeroDigitTag:
       case oneDigitTag:
-        if (StopEncountered)
-          Offset = (Offset << 1) + Tag;
-        break;
-      case stopTag:
-        if (StopEncountered)
-          return Current + Offset;
-        StopEncountered = true;
-        Current += 2;
         continue;
-      case fullStopTag:
-        return Current + 1;
+
+      case stopTag: {
+        ++Current;
+        ptrdiff_t Offset = 1;
+        while (true) {
+          unsigned Tag = extractTag<PrevPtrTag, fullStopTag>((Current++)->Prev);
+          switch (Tag) {
+            case zeroDigitTag:
+            case oneDigitTag:
+              Offset = (Offset << 1) + Tag;
+              continue;
+            case stopTag:
+              return Current + Offset - 1;
+            case fullStopTag:
+              return Current;
+          }
+        }
       }
 
-    ++Current;
+      case fullStopTag:
+        return Current;
+    }
   }
 }
 
