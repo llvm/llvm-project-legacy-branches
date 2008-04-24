@@ -193,7 +193,7 @@ GlobalRandomCounter::GlobalRandomCounter(Module& M, const Type* t,
                                          uint64_t resetval) : T(t) {
   ConstantInt* Init = ConstantInt::get(T, resetval); 
   ResetValue = Init;
-  Counter = GlobalVariable::Create(T, false, GlobalValue::InternalLinkage,
+  Counter = new GlobalVariable(T, false, GlobalValue::InternalLinkage,
                                Init, "RandomSteeringCounter", &M);
 }
 
@@ -230,7 +230,7 @@ GlobalRandomCounterOpt::GlobalRandomCounterOpt(Module& M, const Type* t,
   : AI(0), T(t) {
   ConstantInt* Init = ConstantInt::get(T, resetval);
   ResetValue  = Init;
-  Counter = GlobalVariable::Create(T, false, GlobalValue::InternalLinkage,
+  Counter = new GlobalVariable(T, false, GlobalValue::InternalLinkage,
                                Init, "RandomSteeringCounter", &M);
 }
 

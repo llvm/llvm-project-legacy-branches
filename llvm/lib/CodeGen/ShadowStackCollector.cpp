@@ -229,7 +229,7 @@ Constant *ShadowStackCollector::GetFrameMap(Function &F) {
   //        to be a ModulePass (which means it cannot be in the 'llc' pipeline
   //        (which uses a FunctionPassManager (which segfaults (not asserts) if
   //        provided a ModulePass))).
-  Constant *GV = GlobalVariable::Create(FrameMap->getType(), true,
+  Constant *GV = new GlobalVariable(FrameMap->getType(), true,
                                     GlobalVariable::InternalLinkage,
                                     FrameMap, "__gc_" + F.getName(),
                                     F.getParent());
@@ -292,7 +292,7 @@ bool ShadowStackCollector::initializeCustomLowering(Module &M) {
   if (!Head) {
     // If the root chain does not exist, insert a new one with linkonce
     // linkage!
-    Head = GlobalVariable::Create(StackEntryPtrTy, false,
+    Head = new GlobalVariable(StackEntryPtrTy, false,
                               GlobalValue::LinkOnceLinkage,
                               Constant::getNullValue(StackEntryPtrTy),
                               "llvm_gc_root_chain", &M);

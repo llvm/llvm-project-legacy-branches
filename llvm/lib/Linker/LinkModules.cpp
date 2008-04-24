@@ -499,7 +499,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       // symbol over in the dest module... the initializer will be filled in
       // later by LinkGlobalInits...
       GlobalVariable *NewDGV =
-        GlobalVariable::Create(SGV->getType()->getElementType(),
+        new GlobalVariable(SGV->getType()->getElementType(),
                            SGV->isConstant(), SGV->getLinkage(), /*init*/0,
                            SGV->getName(), Dest);
       // Propagate alignment, visibility and section info.
@@ -523,7 +523,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       // AppendingVars map.  The name is cleared out so that no linkage is
       // performed.
       GlobalVariable *NewDGV =
-        GlobalVariable::Create(SGV->getType()->getElementType(),
+        new GlobalVariable(SGV->getType()->getElementType(),
                            SGV->isConstant(), SGV->getLinkage(), /*init*/0,
                            "", Dest);
 
@@ -558,7 +558,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
         // DGV and create a new one of the appropriate type.
         if (SGV->getType() != DGVar->getType()) {
           GlobalVariable *NewDGV =
-            GlobalVariable::Create(SGV->getType()->getElementType(),
+            new GlobalVariable(SGV->getType()->getElementType(),
                                DGVar->isConstant(), DGVar->getLinkage(),
                                /*init*/0, DGVar->getName(), Dest);
           CopyGVAttributes(NewDGV, DGVar);
@@ -1034,7 +1034,7 @@ static bool LinkAppendingVars(Module *M,
       
       // Create the new global variable...
       GlobalVariable *NG =
-        GlobalVariable::Create(NewType, G1->isConstant(), G1->getLinkage(),
+        new GlobalVariable(NewType, G1->isConstant(), G1->getLinkage(),
                            /*init*/0, First->first, M, G1->isThreadLocal());
 
       // Propagate alignment, visibility and section info.

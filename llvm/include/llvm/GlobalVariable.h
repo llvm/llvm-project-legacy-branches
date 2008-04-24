@@ -33,6 +33,7 @@ template<typename ValueSubClass, typename ItemParentClass>
 
 class GlobalVariable : public GlobalValue {
   friend class SymbolTableListTraits<GlobalVariable, Module>;
+  void *operator new(size_t, unsigned);       // Do not implement
   void operator=(const GlobalVariable &);     // Do not implement
   GlobalVariable(const GlobalVariable &);     // Do not implement
 
@@ -45,39 +46,23 @@ class GlobalVariable : public GlobalValue {
   bool isConstantGlobal : 1;           // Is this a global constant?
   bool isThreadLocalSymbol : 1;        // Is this symbol "Thread Local"?
 
-private:
-  /// GlobalVariable ctor - for internal use.
-  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
-                 Constant *Initializer, const std::string &Name,
-                 Module *Parent, bool ThreadLocal, unsigned AddressSpace);
-  /// GlobalVariable ctor - for internal use.
-  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
-                 Constant *Initializer, const std::string &Name,
-                 GlobalVariable *InsertBefore, bool ThreadLocal,
-                 unsigned AddressSpace);
-
 public:
-  /// GlobalVariable creator - If a parent module is specified, the global is
+  // allocate space for exactly one operand
+  void *operator new(size_t s) {
+    return User::operator new(s, 1);
+  }
+  /// GlobalVariable ctor - If a parent module is specified, the global is
   /// automatically inserted into the end of the specified modules global list.
-  static GlobalVariable *Create(const Type *Ty, bool isConstant, LinkageTypes Linkage,
-                                Constant *Initializer = 0, const std::string &Name = "",
-                                Module *Parent = 0, bool ThreadLocal = false, 
-                                unsigned AddressSpace = 0) {
-    return new (1) GlobalVariable(Ty, isConstant, Linkage,
-                                  Initializer, Name, Parent,
-                                  ThreadLocal, AddressSpace);
-  }
-
-  /// GlobalVariable creator - This creates a global and inserts it before the
+  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
+                 Constant *Initializer = 0, const std::string &Name = "",
+                 Module *Parent = 0, bool ThreadLocal = false,
+                 unsigned AddressSpace = 0);
+  /// GlobalVariable ctor - This creates a global and inserts it before the
   /// specified other global.
-  static GlobalVariable *Create(const Type *Ty, bool isConstant, LinkageTypes Linkage,
-                                Constant *Initializer, const std::string &Name,
-                                GlobalVariable *InsertBefore, bool ThreadLocal = false, 
-                                unsigned AddressSpace = 0) {
-    return new (1) GlobalVariable(Ty, isConstant, Linkage,
-                                  Initializer, Name, InsertBefore,
-                                  ThreadLocal, AddressSpace);
-  }
+  GlobalVariable(const Type *Ty, bool isConstant, LinkageTypes Linkage,
+                 Constant *Initializer, const std::string &Name,
+                 GlobalVariable *InsertBefore, bool ThreadLocal = false,
+                 unsigned AddressSpace = 0);
 
   ~GlobalVariable() {
     NumOperands = 1; // FIXME: needed by operator delete

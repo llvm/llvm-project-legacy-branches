@@ -56,7 +56,7 @@ Module *llvm::CloneModule(const Module *M,
   //
   for (Module::const_global_iterator I = M->global_begin(), E = M->global_end();
        I != E; ++I)
-    ValueMap[I] = GlobalVariable::Create(I->getType()->getElementType(), false,
+    ValueMap[I] = new GlobalVariable(I->getType()->getElementType(), false,
                                      GlobalValue::ExternalLinkage, 0,
                                      I->getName(), New);
 

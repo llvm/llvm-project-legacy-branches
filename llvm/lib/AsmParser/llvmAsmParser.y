@@ -495,7 +495,7 @@ static Value *getVal(const Type *Ty, const ValID &ID) {
    if (const FunctionType *FTy = dyn_cast<FunctionType>(ElTy))
      V = Function::Create(FTy, GlobalValue::ExternalLinkage);
    else
-     V = GlobalVariable::Create(ElTy, false, GlobalValue::ExternalLinkage, 0, "",
+     V = new GlobalVariable(ElTy, false, GlobalValue::ExternalLinkage, 0, "",
                                 (Module*)0, false, PTy->getAddressSpace());
    break;
   }
@@ -784,7 +784,7 @@ ParseGlobalVariable(std::string *NameStr,
 
   // Otherwise there is no existing GV to use, create one now.
   GlobalVariable *GV =
-    GlobalVariable::Create(Ty, isConstantGlobal, Linkage, Initializer, Name,
+    new GlobalVariable(Ty, isConstantGlobal, Linkage, Initializer, Name,
                            CurModule.CurrentModule, IsThreadLocal, AddressSpace);
   GV->setVisibility(Visibility);
   InsertValue(GV, CurModule.Values);
@@ -1782,7 +1782,7 @@ ConstVal: Types '[' ConstVector ']' { // Nonempty unsized arr
           GV = Function::Create(FTy, GlobalValue::ExternalWeakLinkage, Name,
                                 CurModule.CurrentModule);
         } else {
-          GV = GlobalVariable::Create(PT->getElementType(), false,
+          GV = new GlobalVariable(PT->getElementType(), false,
                                       GlobalValue::ExternalWeakLinkage, 0,
                                       Name, CurModule.CurrentModule);
         }

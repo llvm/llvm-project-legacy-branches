@@ -496,7 +496,7 @@ static Value *getVal(const Type *Ty, const ValID &ID) {
      V = Function::Create(FTy, GlobalValue::ExternalLinkage);
    else
      V = new GlobalVariable(ElTy, false, GlobalValue::ExternalLinkage, 0, "",
-                            (Module*)0, false, PTy->getAddressSpace());
+                                (Module*)0, false, PTy->getAddressSpace());
    break;
   }
   default:
@@ -785,7 +785,7 @@ ParseGlobalVariable(std::string *NameStr,
   // Otherwise there is no existing GV to use, create one now.
   GlobalVariable *GV =
     new GlobalVariable(Ty, isConstantGlobal, Linkage, Initializer, Name,
-                       CurModule.CurrentModule, IsThreadLocal, AddressSpace);
+                           CurModule.CurrentModule, IsThreadLocal, AddressSpace);
   GV->setVisibility(Visibility);
   InsertValue(GV, CurModule.Values);
   return GV;
@@ -1783,8 +1783,8 @@ ConstVal: Types '[' ConstVector ']' { // Nonempty unsized arr
                                 CurModule.CurrentModule);
         } else {
           GV = new GlobalVariable(PT->getElementType(), false,
-                                  GlobalValue::ExternalWeakLinkage, 0,
-                                  Name, CurModule.CurrentModule);
+                                      GlobalValue::ExternalWeakLinkage, 0,
+                                      Name, CurModule.CurrentModule);
         }
 
         // Keep track of the fact that we have a forward ref to recycle it

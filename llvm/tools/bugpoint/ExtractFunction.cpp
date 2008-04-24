@@ -233,7 +233,7 @@ static void SplitStaticCtorDtor(const char *GlobalName, Module *M1, Module *M2){
   GV->eraseFromParent();
   if (!M1Tors.empty()) {
     Constant *M1Init = GetTorInit(M1Tors);
-    GlobalVariable::Create(M1Init->getType(), false, GlobalValue::AppendingLinkage,
+    new GlobalVariable(M1Init->getType(), false, GlobalValue::AppendingLinkage,
                        M1Init, GlobalName, M1);
   }
 
@@ -244,7 +244,7 @@ static void SplitStaticCtorDtor(const char *GlobalName, Module *M1, Module *M2){
   GV->eraseFromParent();
   if (!M2Tors.empty()) {
     Constant *M2Init = GetTorInit(M2Tors);
-    GlobalVariable::Create(M2Init->getType(), false, GlobalValue::AppendingLinkage,
+    new GlobalVariable(M2Init->getType(), false, GlobalValue::AppendingLinkage,
                        M2Init, GlobalName, M2);
   }
 }

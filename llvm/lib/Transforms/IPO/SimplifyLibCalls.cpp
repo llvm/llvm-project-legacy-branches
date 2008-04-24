@@ -1232,7 +1232,7 @@ public:
       // pass to be run after this pass, to merge duplicate strings.
       FormatStr.erase(FormatStr.end()-1);
       Constant *Init = ConstantArray::get(FormatStr, true);
-      Constant *GV = GlobalVariable::Create(Init->getType(), true,
+      Constant *GV = new GlobalVariable(Init->getType(), true,
                                         GlobalVariable::InternalLinkage,
                                         Init, "str",
                                      CI->getParent()->getParent()->getParent());

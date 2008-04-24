@@ -337,7 +337,7 @@ public:
     }
     
     Constant *CA = ConstantArray::get(AT, ArrayElements);
-    GlobalVariable *CAGV = GlobalVariable::Create(AT, true,
+    GlobalVariable *CAGV = new GlobalVariable(AT, true,
                                               GlobalValue::InternalLinkage,
                                               CA, "llvm.dbg.array",
                                               SR.getModule());
@@ -1333,7 +1333,7 @@ Constant *DISerializer::getString(const std::string &String) {
     // Construct string as an llvm constant.
     Constant *ConstStr = ConstantArray::get(String);
     // Otherwise create and return a new string global.
-    GlobalVariable *StrGV = GlobalVariable::Create(ConstStr->getType(), true,
+    GlobalVariable *StrGV = new GlobalVariable(ConstStr->getType(), true,
                                                GlobalVariable::InternalLinkage,
                                                ConstStr, ".str", M);
     StrGV->setSection("llvm.metadata");
@@ -1357,11 +1357,11 @@ GlobalVariable *DISerializer::Serialize(DebugInfoDesc *DD) {
   const StructType *Ty = getTagType(DD);
 
   // Create the GlobalVariable early to prevent infinite recursion.
-  GlobalVariable *GV = GlobalVariable::Create(Ty, true, DD->getLinkage(),
+  GlobalVariable *GV = new GlobalVariable(Ty, true, DD->getLinkage(),
                                           NULL, DD->getDescString(), M);
   GV->setSection("llvm.metadata");
 
-  // Insert GlobalVariable::Create in DescGlobals map.
+  // Insert new GlobalVariable in DescGlobals map.
   Slot = GV;
  
   // Set up elements vector

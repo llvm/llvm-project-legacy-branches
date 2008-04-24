@@ -473,7 +473,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV) {
       Constant *In = getAggregateConstantElement(Init,
                                             ConstantInt::get(Type::Int32Ty, i));
       assert(In && "Couldn't get element of initializer?");
-      GlobalVariable *NGV = GlobalVariable::Create(STy->getElementType(i), false,
+      GlobalVariable *NGV = new GlobalVariable(STy->getElementType(i), false,
                                                GlobalVariable::InternalLinkage,
                                                In, GV->getName()+"."+utostr(i),
                                                (Module *)NULL,
@@ -498,7 +498,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV) {
                                             ConstantInt::get(Type::Int32Ty, i));
       assert(In && "Couldn't get element of initializer?");
 
-      GlobalVariable *NGV = GlobalVariable::Create(STy->getElementType(), false,
+      GlobalVariable *NGV = new GlobalVariable(STy->getElementType(), false,
                                                GlobalVariable::InternalLinkage,
                                                In, GV->getName()+"."+utostr(i),
                                                (Module *)NULL,
@@ -799,7 +799,7 @@ static GlobalVariable *OptimizeGlobalAddressOfMalloc(GlobalVariable *GV,
   // Create the new global variable.  The contents of the malloc'd memory is
   // undefined, so initialize with an undef value.
   Constant *Init = UndefValue::get(MI->getAllocatedType());
-  GlobalVariable *NewGV = GlobalVariable::Create(MI->getAllocatedType(), false,
+  GlobalVariable *NewGV = new GlobalVariable(MI->getAllocatedType(), false,
                                              GlobalValue::InternalLinkage, Init,
                                              GV->getName()+".body",
                                              (Module *)NULL,
@@ -817,7 +817,7 @@ static GlobalVariable *OptimizeGlobalAddressOfMalloc(GlobalVariable *GV,
   // If there is a comparison against null, we will insert a global bool to
   // keep track of whether the global was initialized yet or not.
   GlobalVariable *InitBool =
-    GlobalVariable::Create(Type::Int1Ty, false, GlobalValue::InternalLinkage,
+    new GlobalVariable(Type::Int1Ty, false, GlobalValue::InternalLinkage,
                        ConstantInt::getFalse(), GV->getName()+".init",
                        (Module *)NULL, GV->isThreadLocal());
   bool InitBoolUsed = false;
@@ -1132,7 +1132,7 @@ static GlobalVariable *PerformHeapAllocSRoA(GlobalVariable *GV, MallocInst *MI){
     const Type *PFieldTy = PointerType::getUnqual(FieldTy);
     
     GlobalVariable *NGV =
-      GlobalVariable::Create(PFieldTy, false, GlobalValue::InternalLinkage,
+      new GlobalVariable(PFieldTy, false, GlobalValue::InternalLinkage,
                          Constant::getNullValue(PFieldTy),
                          GV->getName() + ".f" + utostr(FieldNo), GV,
                          GV->isThreadLocal());
@@ -1356,7 +1356,7 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
   DOUT << "   *** SHRINKING TO BOOL: " << *GV;
   
   // Create the new global, initializing it to false.
-  GlobalVariable *NewGV = GlobalVariable::Create(Type::Int1Ty, false,
+  GlobalVariable *NewGV = new GlobalVariable(Type::Int1Ty, false,
          GlobalValue::InternalLinkage, ConstantInt::getFalse(),
                                              GV->getName()+".b",
                                              (Module *)NULL,
@@ -1754,7 +1754,7 @@ static GlobalVariable *InstallGlobalCtors(GlobalVariable *GCL,
   }
   
   // Create the new global and insert it next to the existing list.
-  GlobalVariable *NGV = GlobalVariable::Create(CA->getType(), GCL->isConstant(),
+  GlobalVariable *NGV = new GlobalVariable(CA->getType(), GCL->isConstant(),
                                            GCL->getLinkage(), CA, "",
                                            (Module *)NULL,
                                            GCL->isThreadLocal());
@@ -1992,7 +1992,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
     } else if (AllocaInst *AI = dyn_cast<AllocaInst>(CurInst)) {
       if (AI->isArrayAllocation()) return false;  // Cannot handle array allocs.
       const Type *Ty = AI->getType()->getElementType();
-      AllocaTmps.push_back(GlobalVariable::Create(Ty, false,
+      AllocaTmps.push_back(new GlobalVariable(Ty, false,
                                               GlobalValue::InternalLinkage,
                                               UndefValue::get(Ty),
                                               AI->getName()));

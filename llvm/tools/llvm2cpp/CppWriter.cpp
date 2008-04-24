@@ -989,7 +989,7 @@ void CppWriter::printVariableHead(const GlobalVariable *GV) {
      nl(Out) << "if (!" << getCppName(GV) << ") {";
      in(); nl(Out) << getCppName(GV);
   }
-  Out << " = GlobalVariable::Create(";
+  Out << " = new GlobalVariable(";
   nl(Out) << "/*Type=*/";
   printCppName(GV->getType()->getElementType());
   Out << ",";
@@ -1083,7 +1083,7 @@ CppWriter::printInstruction(const Instruction *I, const std::string& bbname) {
   switch (I->getOpcode()) {
     case Instruction::Ret: {
       const ReturnInst* ret = cast<ReturnInst>(I);
-      Out << "new ReturnInst("
+      Out << "ReturnInst::Create("
           << (ret->getReturnValue()
               ? opNames[0] + ", "
               : "")
