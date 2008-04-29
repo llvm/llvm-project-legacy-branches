@@ -46,16 +46,13 @@ public:
   /// Allocate - Allocate and return at least the specified number of bytes.
   ///
   void *Allocate(unsigned AllocSize, unsigned Alignment, MemRegion **RegPtr) {
+    // Round size up to an even multiple of the alignment.
+    AllocSize = (AllocSize+Alignment-1) & ~(Alignment-1);
     
-    char* Result = (char*) (((uintptr_t) (NextPtr+Alignment-1)) 
-                            & ~((uintptr_t) Alignment-1));
-
-    // Speculate the new value of NextPtr.
-    char* NextPtrTmp = Result + AllocSize;
-    
-    // If we are still within the current region, return Result.
-    if (unsigned (NextPtrTmp - (char*) this) <= RegionSize) {
-      NextPtr = NextPtrTmp;
+    // If there is space in this region, return it.
+    if (unsigned(NextPtr+AllocSize-(char*)this) <= RegionSize) {
+      void *Result = NextPtr;
+      NextPtr += AllocSize;
       return Result;
     }
     
