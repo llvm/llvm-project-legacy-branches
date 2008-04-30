@@ -86,7 +86,7 @@ private:
   void initVal(unsigned Idx, Value *V) {
     if (Idx >= size()) {
       // Insert a bunch of null values.
-        resize(Idx * 2 + 1);
+      resize(Idx * 2 + 1);
     }
     assert(getOperand(Idx) == 0 && "Cannot init an already init'd Use!");
     OperandList[Idx].init(V, this);

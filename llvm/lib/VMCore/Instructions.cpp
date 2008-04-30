@@ -995,6 +995,16 @@ void GetElementPtrInst::init(Value *Ptr, Value *Idx) {
   OL[1].init(Idx, this);
 }
 
+GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
+  : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - GEPI.getNumOperands(),
+                GEPI.getNumOperands()) {
+  Use *OL = OperandList;
+  Use *GEPIOL = GEPI.OperandList;
+  for (unsigned i = 0, E = NumOperands; i != E; ++i)
+    OL[i].init(GEPIOL[i], this);
+}
+
 GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
                                      const std::string &Name, Instruction *InBe)
   : Instruction(PointerType::get(checkType(getIndexedType(Ptr->getType(),Idx)),

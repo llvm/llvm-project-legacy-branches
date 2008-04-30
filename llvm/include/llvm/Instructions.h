@@ -376,7 +376,7 @@ static inline const Type *checkType(const Type *Ty) {
 /// access elements of arrays and structs
 ///
 class GetElementPtrInst : public Instruction {
-  inline GetElementPtrInst(const GetElementPtrInst &GEPI);
+  GetElementPtrInst(const GetElementPtrInst &GEPI);
   void init(Value *Ptr, Value* const *Idx, unsigned NumIdx);
   void init(Value *Ptr, Value *Idx);
 
@@ -472,8 +472,8 @@ public:
     return new(Values) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
   }
 
-  /// Constructors - These two constructors are convenience methods because one
-  /// and two index getelementptr instructions are so common.
+  /// Constructors - These two creators are convenience methods because one
+  /// index getelementptr instructions are so common.
   static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
                                    const std::string &Name = "", Instruction *InsertBefore = 0) {
     return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertBefore);
@@ -557,16 +557,6 @@ public:
 template <>
 struct OperandTraits<GetElementPtrInst> : VariadicOperandTraits<1> {
 };
-
-GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
-  : Instruction(reinterpret_cast<const Type*>(GEPI.getType()), GetElementPtr,
-                OperandTraits<GetElementPtrInst>::op_end(this) - GEPI.getNumOperands(),
-                GEPI.getNumOperands()) {
-  Use *OL = OperandList;
-  Use *GEPIOL = GEPI.OperandList;
-  for (unsigned i = 0, E = NumOperands; i != E; ++i)
-    OL[i].init(GEPIOL[i], this);
-}
 
 template<typename InputIterator>
 GetElementPtrInst::GetElementPtrInst(Value *Ptr,
@@ -1099,9 +1089,6 @@ CallInst::CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
 }
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CallInst, Value)
-//void CallInst::operator delete(void *it) {
-//  OperandTraits<CallInst>::op_begin(static_cast<CallInst*>(it));
-//}
 
 //===----------------------------------------------------------------------===//
 //                               SelectInst Class

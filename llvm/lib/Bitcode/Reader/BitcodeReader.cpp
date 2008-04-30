@@ -147,8 +147,7 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
 }
 
 void BitcodeReaderValueList::resize(unsigned Desired) {
-  if (Desired > Capacity)
-  {
+  if (Desired > Capacity) {
     // Since we expect many values to come from the bitcode file we better
     // allocate the double amount, so that the array size grows exponentially
     // at each reallocation.  Also, add a small amount of 100 extra elements
