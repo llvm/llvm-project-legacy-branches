@@ -239,6 +239,14 @@ protected:
   }
   User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
     : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
+  Use *allocHungoffUses(unsigned) const;
+  void dropHungoffUses(Use *U) {
+    if (OperandList == U) {
+      OperandList = 0;
+      NumOperands = 0;
+    }
+    Use::zap(U, U->getImpliedUser(), true);
+  }
 public:
   ~User() {
     Use::zap(OperandList, OperandList + NumOperands);
@@ -250,22 +258,12 @@ public:
                       ? Storage
                       : Usr);
   }
-public:
   template <unsigned Idx> Use &Op() {
     return OperandTraits<User>::op_begin(this)[Idx];
   }
   template <unsigned Idx> const Use &Op() const {
     return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
   }
-  Use *allocHungoffUses(unsigned) const;
-  void dropHungoffUses(Use *U) {
-    if (OperandList == U) {
-      OperandList = 0;
-      NumOperands = 0;
-    }
-    Use::zap(U, U->getImpliedUser(), true);
-  }
-
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
     return OperandList[i];
