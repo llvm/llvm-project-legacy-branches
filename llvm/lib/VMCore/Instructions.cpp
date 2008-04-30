@@ -395,10 +395,6 @@ void CallInst::setDoesNotThrow(bool doesNotThrow) {
 //                        InvokeInst Implementation
 //===----------------------------------------------------------------------===//
 
-InvokeInst::~InvokeInst() {
-//  delete [] OperandList;
-}
-
 void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
                       Value* const *Args, unsigned NumArgs) {
   assert(NumOperands == 3+NumArgs && "NumOperands not set up?");
@@ -1019,10 +1015,6 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
                 2, IAE) {
   init(Ptr, Idx);
   setName(Name);
-}
-
-GetElementPtrInst::~GetElementPtrInst() {
-  //  delete[] OperandList;
 }
 
 // getIndexedType - Returns the type of the element that would be loaded with

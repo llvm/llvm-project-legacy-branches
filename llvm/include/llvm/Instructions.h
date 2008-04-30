@@ -482,7 +482,6 @@ public:
                                    const std::string &Name, BasicBlock *InsertAtEnd) {
     return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertAtEnd);
   }
-  ~GetElementPtrInst();
 
   virtual GetElementPtrInst *clone() const;
 
@@ -1966,8 +1965,6 @@ public:
     return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
                                   Values, Name, InsertAtEnd);
   }
-
-  ~InvokeInst();
 
   virtual InvokeInst *clone() const;
 
