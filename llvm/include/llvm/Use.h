@@ -96,14 +96,6 @@ public:
   operator Value*() const { return Val; }
   Value *get() const { return Val; }
   User *getUser() const;
-  inline User *getUserFast() const {
-    unsigned t = extractTag<PrevPtrTag, fullStopTag>(Prev);
-    if (t == fullStopTag) {
-      if (extractTag<Tag, tagOne>(this[1].Val))
-        return reinterpret_cast<User*>(stripTag<tagOne>(this[1].Val));
-      else return (User*)(this + 1);
-    } else return getUser(); // fallback
-  }
   const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   static void zap(Use *Start, const Use *Stop, bool del = false);
@@ -200,7 +192,7 @@ public:
   // Retrieve a reference to the current SCC
   UserTy *operator*() const {
     assert(U && "Cannot dereference end iterator!");
-    return U->getUserFast();
+    return U->getUser();
   }
 
   UserTy *operator->() const { return operator*(); }
