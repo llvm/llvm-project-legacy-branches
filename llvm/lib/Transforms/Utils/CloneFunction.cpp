@@ -34,7 +34,8 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB,
   BasicBlock *NewBB = BasicBlock::Create("", F);
   if (BB->hasName()) NewBB->setName(BB->getName()+NameSuffix);
   NewBB->setUnwindDest(const_cast<BasicBlock*>(BB->getUnwindDest()));
-
+  NewBB->setDoesNotThrow(BB->doesNotThrow());
+  
   bool hasCalls = false, hasDynamicAllocas = false, hasStaticAllocas = false;
   
   // Loop over all instructions, and copy them over.
