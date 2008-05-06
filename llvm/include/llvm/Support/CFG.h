@@ -48,6 +48,13 @@ public:
   }
   inline PredIterator(_Ptr *bb, bool) : It(bb->use_end()) {}
 
+  /// isUnwindEdge - This is used to determine whether this predecessor is a
+  /// exception edge.
+  bool isUnwindEdge() const {
+    assert(!It.atEnd() && "pred_iterator out of range!");
+    return isa<BasicBlock>(*It);
+  }
+
   inline bool operator==(const _Self& x) const { return It == x.It; }
   inline bool operator!=(const _Self& x) const { return !operator==(x); }
 
@@ -120,14 +127,20 @@ public:
   /// operate on terminator instructions directly.
   unsigned getSuccessorIndex() const { return idx; }
 
+  /// isUnwindEdge - This is used to determine whether this successor is a
+  /// exception edge.
+  bool isUnwindEdge() const {
+    return idx == Term->getNumSuccessors();
+  }
+
   inline bool operator==(const _Self& x) const { return idx == x.idx; }
   inline bool operator!=(const _Self& x) const { return !operator==(x); }
 
   inline pointer operator*() const {
-    if (idx == Term->getNumSuccessors())
+    if (isUnwindEdge())
       return Term->getParent()->getUnwindDest();
-
-    return Term->getSuccessor(idx);
+    else
+      return Term->getSuccessor(idx);
   }
   inline pointer operator->() const { return operator*(); }
 
