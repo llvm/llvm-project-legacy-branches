@@ -80,10 +80,15 @@ struct DOTGraphTraits<const Function*> : public DefaultDOTGraphTraits {
 
   static std::string getEdgeSourceLabel(const BasicBlock *Node,
                                         succ_const_iterator I) {
+    // Label unwind edges "EH" for exception handling.
+    if (I.isUnwindEdge())
+      return "EH";
+
     // Label source of conditional branches with "T" or "F"
     if (const BranchInst *BI = dyn_cast<BranchInst>(Node->getTerminator()))
       if (BI->isConditional())
         return (I == succ_begin(Node)) ? "T" : "F";
+
     return "";
   }
 };
