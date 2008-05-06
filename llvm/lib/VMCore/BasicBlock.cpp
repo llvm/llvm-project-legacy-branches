@@ -80,6 +80,8 @@ BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
 
+  SubclassData = 0;
+
   if (InsertBefore) {
     assert(NewParent &&
            "Cannot insert block before another block with no function!");
@@ -123,13 +125,33 @@ const BasicBlock *BasicBlock::getUnwindDest() const {
   return cast_or_null<const BasicBlock>(unwindDest.get());
 }
 
+/// getUnwindDest - Returns the BasicBlock that flow will enter if an unwind
+/// instruction occurs in this block. May be null, in which case unwinding
+/// exits the function.
 BasicBlock *BasicBlock::getUnwindDest() {
   return cast_or_null<BasicBlock>(unwindDest.get());
 }
 
+/// setUnwindDest - Set which BasicBlock flow will enter if an unwind is
+/// executed within this block. It may be set to null to indicate that
+/// unwinding will exit the function.
 void BasicBlock::setUnwindDest(BasicBlock *dest) {
   NumOperands = unwindDest ? 1 : 0;
   unwindDest.set(dest);
+}
+
+/// doesNotThrow - Determine whether the block may not unwind.
+bool BasicBlock::doesNotThrow() const {
+  return SubclassData & 1;
+}
+
+/// setDoesNotThrow - Set whether unwinding is permissible in this
+/// BasicBlock. Setting it to true will also clear the unwind dest.
+void BasicBlock::setDoesNotThrow(bool doesNotThrow) {
+  if (doesNotThrow)
+    SubclassData |= 1;
+  else
+    SubclassData &= ~1;
 }
 
 /// moveBefore - Unlink this basic block from its current function and

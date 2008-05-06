@@ -975,7 +975,11 @@ static void WriteFunction(const Function &F, ValueEnumerator &VE,
       Vals.push_back(VE.getValueID(unwindDest));
       Stream.EmitRecord(bitc::FUNC_CODE_INST_BB_UNWINDDEST, Vals);
       Vals.clear();
-    }   
+    }
+    if (BB->doesNotThrow()) {
+      Stream.EmitRecord(bitc::FUNC_CODE_INST_BB_NOUNWIND, Vals);
+      Vals.clear();
+    }
 
     for (BasicBlock::const_iterator I = BB->begin(), E = BB->end();
          I != E; ++I) {

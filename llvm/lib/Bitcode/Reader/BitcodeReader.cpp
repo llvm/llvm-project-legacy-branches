@@ -1233,6 +1233,10 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       CurBB->setUnwindDest(getBasicBlock(Record[0]));
       continue;
       
+    case bitc::FUNC_CODE_INST_BB_NOUNWIND:    // BB_NOUNWIND
+      CurBB->setDoesNotThrow();
+      continue;
+
     case bitc::FUNC_CODE_INST_BINOP: {    // BINOP: [opval, ty, opval, opcode]
       unsigned OpNum = 0;
       Value *LHS, *RHS;

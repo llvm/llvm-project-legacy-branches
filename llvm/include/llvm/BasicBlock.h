@@ -86,14 +86,25 @@ public:
 
   /// getUnwindDest - Returns the BasicBlock that flow will enter if an unwind
   /// instruction occurs in this block. May be null, in which case unwinding
-  /// is undefined in this block.
+  /// exits the function.
+  ///
   const BasicBlock *getUnwindDest() const;
   BasicBlock *getUnwindDest();
 
   /// setUnwindDest - Set which BasicBlock flow will enter if an unwind is
-  /// executed within this block. It may be set to null if unwinding is not
-  /// permitted in this block.
+  /// executed within this block. It may be set to null to indicate that
+  /// unwinding will exit the function.
+  ///
   void setUnwindDest(BasicBlock *unwindDest);
+
+  /// doesNotThrow - Determine whether the block may not unwind.
+  ///
+  bool doesNotThrow() const;
+
+  /// setDoesNotThrow - Set whether unwinding is permissible in this
+  /// BasicBlock. Setting it to true will also clear the unwind dest.
+  ///
+  void setDoesNotThrow(bool doesNotThrow = true);
 
   /// getParent - Return the enclosing method, or null if none
   ///

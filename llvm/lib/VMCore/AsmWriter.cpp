@@ -1164,15 +1164,15 @@ void AssemblyWriter::printArgument(const Argument *Arg,
 ///
 void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
   if (BB->hasName())              // Print out the label if it exists...
-    Out << getLLVMName(BB->getName(), LabelPrefix) << ':';
+    Out << getLLVMName(BB->getName(), LabelPrefix) << ": ";
+
+  if (BB->doesNotThrow())
+    Out << "nounwind ";
 
   if (const BasicBlock* unwindDest = BB->getUnwindDest()) {
-    if (BB->hasName())
-      Out << ' ';
-
     Out << "unwinds to";
     writeOperand(unwindDest, false);
-  }
+  } 
 
   if (!BB->hasName() && !BB->use_empty()) { // Don't print block # of no uses...
     Out << "; <label>:";

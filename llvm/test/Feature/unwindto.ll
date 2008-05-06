@@ -48,7 +48,7 @@ define void @test5() {
 
 define void @test6() {
 entry:
-	br label %unwind
+  br label %unwind
 unwind: unwinds to %unwind
   unwind
 }
@@ -64,4 +64,29 @@ cleanup:
   %x = phi i8 [0, %entry], [1, %cond_true], [1, %cond_true],
                            [2, %cond_false], [2, %cond_false]
   ret i8 %x
+}
+
+define i1 @test8(i8 %i, i8 %j) {
+entry: unwinds to %target
+	%tmp = sub i8 %i, %j		; <i8> [#uses=1]
+	%b = icmp eq i8 %tmp, 0		; <i1> [#uses=1]
+	ret i1 %b
+target: nounwind
+	ret i1 false
+}
+
+define i1 @test9(i8 %i, i8 %j) {
+entry: nounwind unwinds to %0
+	%tmp = sub i8 %i, %j		; <i8> [#uses=1]
+	%b = icmp eq i8 %tmp, 0		; <i1> [#uses=1]
+	ret i1 %b
+nounwind unwinds to %0
+	ret i1 false
+}
+
+define void @test10() {
+entry:
+  br label %unwind
+unwind: nounwind unwinds to %unwind
+  unwind
 }

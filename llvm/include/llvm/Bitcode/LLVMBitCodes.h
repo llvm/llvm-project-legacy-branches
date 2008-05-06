@@ -204,7 +204,8 @@ namespace bitc {
     FUNC_CODE_INST_STORE2      = 24, // STORE:      [ptrty,ptr,val, align, vol]
     FUNC_CODE_INST_GETRESULT   = 25, // GETRESULT:  [ty, opval, n]
 
-    FUNC_CODE_INST_BB_UNWINDDEST = 26  // BB_UNWINDDEST: [bb#]
+    FUNC_CODE_INST_BB_UNWINDDEST = 26, // BB_UNWINDDEST: [bb#]
+    FUNC_CODE_INST_BB_NOUNWIND = 27  // BB_NOUNWIND
   };
 } // End bitc namespace
 } // End llvm namespace

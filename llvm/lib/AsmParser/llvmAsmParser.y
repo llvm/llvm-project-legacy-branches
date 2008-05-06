@@ -2561,10 +2561,21 @@ InstructionList : InstructionList Inst {
     $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum), 0);
     CHECK_FOR_ERROR
   }
-  | UNWINDS TO ValueRef {   // Only the unwind to block
+  | UNWINDS TO ValueRef {  // Only the unwind to block
     $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum), getBBVal($3));
     CHECK_FOR_ERROR
   }
+  | NOUNWIND {             // Only the nounwind label
+    $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum), 0);
+    $$->setDoesNotThrow();
+    CHECK_FOR_ERROR
+  }
+  | NOUNWIND UNWINDS TO ValueRef {  // Only the nounwind and unwind to block
+    $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum), getBBVal($4));
+    $$->setDoesNotThrow();
+    CHECK_FOR_ERROR
+  }
+ 
   | LABELSTR {             // Labelled (named) basic block
     $$ = defineBBVal(ValID::createLocalName(*$1), 0);
     delete $1;
@@ -2572,6 +2583,18 @@ InstructionList : InstructionList Inst {
   }
   | LABELSTR UNWINDS TO ValueRef {
     $$ = defineBBVal(ValID::createLocalName(*$1), getBBVal($4));
+    delete $1;
+    CHECK_FOR_ERROR
+  };
+  | LABELSTR NOUNWIND {
+    $$ = defineBBVal(ValID::createLocalName(*$1), 0);
+    $$->setDoesNotThrow();
+    delete $1;
+    CHECK_FOR_ERROR
+  };
+  | LABELSTR NOUNWIND UNWINDS TO ValueRef {
+    $$ = defineBBVal(ValID::createLocalName(*$1), getBBVal($5));
+    $$->setDoesNotThrow();
     delete $1;
     CHECK_FOR_ERROR
   };
