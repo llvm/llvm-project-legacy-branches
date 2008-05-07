@@ -289,7 +289,8 @@ public:
 class StoreInst : public Instruction {
   void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
   
-  StoreInst(const StoreInst &SI) : Instruction(SI.getType(), Store, &Op<0>(), 2) {
+  StoreInst(const StoreInst &SI) : Instruction(SI.getType(), Store,
+                                               &Op<0>(), 2) {
     Op<0>().init(SI.Op<0>(), this);
     Op<1>().init(SI.Op<1>(), this);
     setVolatile(SI.isVolatile());
@@ -444,14 +445,15 @@ class GetElementPtrInst : public Instruction {
                            const std::string &Name,
                            Instruction *InsertBefore);
   template<typename InputIterator>
-  inline GetElementPtrInst(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
+  inline GetElementPtrInst(Value *Ptr,
+                           InputIterator IdxBegin, InputIterator IdxEnd,
                            unsigned Values,
                            const std::string &Name, BasicBlock *InsertAtEnd);
 
   /// Constructors - These two constructors are convenience methods because one
   /// and two index getelementptr instructions are so common.
-  GetElementPtrInst(Value *Ptr, Value *Idx,
-                    const std::string &Name = "", Instruction *InsertBefore = 0);
+  GetElementPtrInst(Value *Ptr, Value *Idx, const std::string &Name = "",
+                    Instruction *InsertBefore = 0);
   GetElementPtrInst(Value *Ptr, Value *Idx,
                     const std::string &Name, BasicBlock *InsertAtEnd);
 public:
@@ -462,24 +464,30 @@ public:
                                    Instruction *InsertBefore = 0) {
     typename std::iterator_traits<InputIterator>::difference_type Values = 
       1 + std::distance(IdxBegin, IdxEnd);
-    return new(Values) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertBefore);
+    return new(Values)
+        GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertBefore);
   }
   template<typename InputIterator>
-  static GetElementPtrInst *Create(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
-                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+  static GetElementPtrInst *Create(Value *Ptr,
+                                   InputIterator IdxBegin, InputIterator IdxEnd,
+                                   const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
     typename std::iterator_traits<InputIterator>::difference_type Values = 
       1 + std::distance(IdxBegin, IdxEnd);
-    return new(Values) GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
+    return new(Values)
+        GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
   }
 
   /// Constructors - These two creators are convenience methods because one
   /// index getelementptr instructions are so common.
   static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
-                                   const std::string &Name = "", Instruction *InsertBefore = 0) {
+                                   const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
     return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertBefore);
   }
   static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
-                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+                                   const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
     return new(2) GetElementPtrInst(Ptr, Idx, Name, InsertAtEnd);
   }
 
@@ -565,11 +573,13 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      unsigned Values,
                                      const std::string &Name,
                                      Instruction *InsertBefore)
-  : Instruction(PointerType::get(
-                                 checkType(getIndexedType(Ptr->getType(),
-                                                          IdxBegin, IdxEnd, true)),
-                                 cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                GetElementPtr, OperandTraits<GetElementPtrInst>::op_end(this) - Values,
+  : Instruction(PointerType::get(checkType(
+                                     getIndexedType(Ptr->getType(),
+                                                    IdxBegin, IdxEnd, true)),
+                                 cast<PointerType>(Ptr->getType())
+                                   ->getAddressSpace()),
+                GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertBefore) {
   init(Ptr, IdxBegin, IdxEnd, Name,
        typename std::iterator_traits<InputIterator>::iterator_category());
@@ -582,10 +592,13 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      const std::string &Name,
                                      BasicBlock *InsertAtEnd)
   : Instruction(PointerType::get(
-                                 checkType(getIndexedType(Ptr->getType(),
-                                                          IdxBegin, IdxEnd, true)),
-                                 cast<PointerType>(Ptr->getType())->getAddressSpace()),
-                GetElementPtr, OperandTraits<GetElementPtrInst>::op_end(this) - Values,
+                                 checkType(
+                                     getIndexedType(Ptr->getType(),
+                                                    IdxBegin, IdxEnd, true)),
+                                 cast<PointerType>(Ptr->getType())
+                                   ->getAddressSpace()),
+                GetElementPtr,
+                OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertAtEnd) {
   init(Ptr, IdxBegin, IdxEnd, Name,
        typename std::iterator_traits<InputIterator>::iterator_category());
@@ -946,14 +959,19 @@ class CallInst : public Instruction {
   CallInst(Value *F, const std::string &Name, BasicBlock *InsertAtEnd);
 public:
   template<typename InputIterator>
-  static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
-                          const std::string &Name = "", Instruction *InsertBefore = 0) {
-    return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
+  static CallInst *Create(Value *Func,
+                          InputIterator ArgBegin, InputIterator ArgEnd,
+                          const std::string &Name = "",
+                          Instruction *InsertBefore = 0) {
+    return new(ArgEnd - ArgBegin + 1)
+        CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
   }
   template<typename InputIterator>
-  static CallInst *Create(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
+  static CallInst *Create(Value *Func,
+                          InputIterator ArgBegin, InputIterator ArgEnd,
                           const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(ArgEnd - ArgBegin + 1) CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
+    return new(ArgEnd - ArgBegin + 1)
+        CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
   }
   static CallInst *Create(Value *F, Value *Actual, const std::string& Name = "",
                           Instruction *InsertBefore = 0) {
@@ -967,7 +985,8 @@ public:
                           Instruction *InsertBefore = 0) {
     return new(1) CallInst(F, Name, InsertBefore);
   }
-  static CallInst *Create(Value *F, const std::string &Name, BasicBlock *InsertAtEnd) {
+  static CallInst *Create(Value *F, const std::string &Name,
+                          BasicBlock *InsertAtEnd) {
     return new(1) CallInst(F, Name, InsertAtEnd);
   }
 
@@ -1109,22 +1128,26 @@ class SelectInst : public Instruction {
   }
   SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name,
              Instruction *InsertBefore)
-    : Instruction(S1->getType(), Instruction::Select, &Op<0>(), 3, InsertBefore) {
+    : Instruction(S1->getType(), Instruction::Select,
+                  &Op<0>(), 3, InsertBefore) {
     init(C, S1, S2);
     setName(Name);
   }
   SelectInst(Value *C, Value *S1, Value *S2, const std::string &Name,
              BasicBlock *InsertAtEnd)
-    : Instruction(S1->getType(), Instruction::Select, &Op<0>(), 3, InsertAtEnd) {
+    : Instruction(S1->getType(), Instruction::Select,
+                  &Op<0>(), 3, InsertAtEnd) {
     init(C, S1, S2);
     setName(Name);
   }
 public:
-  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name = "",
+  static SelectInst *Create(Value *C, Value *S1, Value *S2,
+                            const std::string &Name = "",
                             Instruction *InsertBefore = 0) {
     return new(3) SelectInst(C, S1, S2, Name, InsertBefore);
   }
-  static SelectInst *Create(Value *C, Value *S1, Value *S2, const std::string &Name,
+  static SelectInst *Create(Value *C, Value *S1, Value *S2,
+                            const std::string &Name,
                             BasicBlock *InsertAtEnd) {
     return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
   }
@@ -1209,7 +1232,7 @@ class ExtractElementInst : public Instruction {
 public:
   // allocate space for exactly two operands
   void *operator new(size_t s) {
-    return User::operator new(s, 2); // FIXME: unsigned Idx forms of constructor?
+    return User::operator new(s, 2); // FIXME: "unsigned Idx" forms of ctor?
   }
   ExtractElementInst(Value *Vec, Value *Idx, const std::string &Name = "",
                      Instruction *InsertBefore = 0);
@@ -1267,19 +1290,23 @@ public:
     return new(IE.getNumOperands()) InsertElementInst(IE);
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, Value *Idx,
-                                   const std::string &Name = "",Instruction *InsertBefore = 0) {
+                                   const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
     return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
-                                   const std::string &Name = "",Instruction *InsertBefore = 0) {
+                                   const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
     return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertBefore);
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, Value *Idx,
-                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+                                   const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
     return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
   }
   static InsertElementInst *Create(Value *Vec, Value *NewElt, unsigned Idx,
-                                   const std::string &Name, BasicBlock *InsertAtEnd) {
+                                   const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
     return new(3) InsertElementInst(Vec, NewElt, Idx, Name, InsertAtEnd);
   }
 
@@ -1406,7 +1433,8 @@ public:
                          Instruction *InsertBefore = 0) {
     return new PHINode(Ty, Name, InsertBefore);
   }
-  static PHINode *Create(const Type *Ty, const std::string &Name, BasicBlock *InsertAtEnd) {
+  static PHINode *Create(const Type *Ty, const std::string &Name,
+                         BasicBlock *InsertAtEnd) {
     return new PHINode(Ty, Name, InsertAtEnd);
   }
   ~PHINode();
@@ -1480,7 +1508,7 @@ public:
   ///
   Value *removeIncomingValue(unsigned Idx, bool DeletePHIIfEmpty = true);
 
-  Value *removeIncomingValue(const BasicBlock *BB, bool DeletePHIIfEmpty =true){
+  Value *removeIncomingValue(const BasicBlock *BB, bool DeletePHIIfEmpty=true) {
     int Idx = getBasicBlockIndex(BB);
     assert(Idx >= 0 && "Invalid basic block argument to remove!");
     return removeIncomingValue(Idx, DeletePHIIfEmpty);
@@ -1563,10 +1591,12 @@ public:
   static ReturnInst* Create(Value *retVal, BasicBlock *InsertAtEnd) {
     return new(!!retVal) ReturnInst(retVal, InsertAtEnd);
   }
-  static ReturnInst* Create(Value * const* retVals, unsigned N, Instruction *InsertBefore = 0) {
+  static ReturnInst* Create(Value * const* retVals, unsigned N,
+                            Instruction *InsertBefore = 0) {
     return new(N) ReturnInst(retVals, N, InsertBefore);
   }
-  static ReturnInst* Create(Value * const* retVals, unsigned N, BasicBlock *InsertAtEnd) {
+  static ReturnInst* Create(Value * const* retVals, unsigned N,
+                            BasicBlock *InsertAtEnd) {
     return new(N) ReturnInst(retVals, N, InsertAtEnd);
   }
   static ReturnInst* Create(BasicBlock *InsertAtEnd) {
@@ -1645,15 +1675,15 @@ public:
   static BranchInst *Create(BasicBlock *IfTrue, Instruction *InsertBefore = 0) {
     return new(1) BranchInst(IfTrue, InsertBefore);
   }
-  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
-                            Instruction *InsertBefore = 0) {
+  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse,
+                            Value *Cond, Instruction *InsertBefore = 0) {
     return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertBefore);
   }
   static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *InsertAtEnd) {
     return new(1) BranchInst(IfTrue, InsertAtEnd);
   }
-  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse, Value *Cond,
-                            BasicBlock *InsertAtEnd) {
+  static BranchInst *Create(BasicBlock *IfTrue, BasicBlock *IfFalse,
+                            Value *Cond, BasicBlock *InsertAtEnd) {
     return new(3) BranchInst(IfTrue, IfFalse, Cond, InsertAtEnd);
   }
 
@@ -1765,12 +1795,12 @@ class SwitchInst : public TerminatorInst {
   SwitchInst(Value *Value, BasicBlock *Default, unsigned NumCases,
              BasicBlock *InsertAtEnd);
 public:
-  static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
-                            Instruction *InsertBefore = 0) {
+  static SwitchInst *Create(Value *Value, BasicBlock *Default,
+                            unsigned NumCases, Instruction *InsertBefore = 0) {
     return new SwitchInst(Value, Default, NumCases, InsertBefore);
   }
-  static SwitchInst *Create(Value *Value, BasicBlock *Default, unsigned NumCases,
-                            BasicBlock *InsertAtEnd) {
+  static SwitchInst *Create(Value *Value, BasicBlock *Default,
+                            unsigned NumCases, BasicBlock *InsertAtEnd) {
     return new SwitchInst(Value, Default, NumCases, InsertAtEnd);
   }
   ~SwitchInst();
@@ -1937,15 +1967,18 @@ class InvokeInst : public TerminatorInst {
                     const std::string &Name, BasicBlock *InsertAtEnd);
 public:
   template<typename InputIterator>
-  static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+  static InvokeInst *Create(Value *Func,
+                            BasicBlock *IfNormal, BasicBlock *IfException,
                             InputIterator ArgBegin, InputIterator ArgEnd,
-                            const std::string &Name = "", Instruction *InsertBefore = 0) {
+                            const std::string &Name = "",
+                            Instruction *InsertBefore = 0) {
     unsigned Values(ArgEnd - ArgBegin + 3);
     return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
                                   Values, Name, InsertBefore);
   }
   template<typename InputIterator>
-  static InvokeInst *Create(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+  static InvokeInst *Create(Value *Func,
+                            BasicBlock *IfNormal, BasicBlock *IfException,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const std::string &Name, BasicBlock *InsertAtEnd) {
     unsigned Values(ArgEnd - ArgBegin + 3);
@@ -2065,7 +2098,8 @@ struct OperandTraits<InvokeInst> : VariadicOperandTraits<3> {
 };
 
 template<typename InputIterator>
-InvokeInst::InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+InvokeInst::InvokeInst(Value *Func,
+                       BasicBlock *IfNormal, BasicBlock *IfException,
                        InputIterator ArgBegin, InputIterator ArgEnd,
                        unsigned Values,
                        const std::string &Name, Instruction *InsertBefore)
@@ -2078,7 +2112,8 @@ InvokeInst::InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfExceptio
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 template<typename InputIterator>
-InvokeInst::InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+InvokeInst::InvokeInst(Value *Func,
+                       BasicBlock *IfNormal, BasicBlock *IfException,
                        InputIterator ArgBegin, InputIterator ArgEnd,
                        unsigned Values,
                        const std::string &Name, BasicBlock *InsertAtEnd)
