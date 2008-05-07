@@ -94,30 +94,41 @@ struct HungoffOperandTraits {
   static inline void *allocate(unsigned); // FIXME
 };
 
-/// Macro for generating in-class operand accessor declarations
+/// Macro for generating in-class operand accessor declarations.
+/// It should only be called in the public section of the interface.
+///
 #define DECLARE_TRANSPARENT_OPERAND_ACCESSORS(VALUECLASS) \
+  public: \
   inline VALUECLASS *getOperand(unsigned) const; \
   inline void setOperand(unsigned, VALUECLASS*); \
-  inline unsigned getNumOperands() const; \
+  protected: \
   template <unsigned> inline Use &Op(); \
-  template <unsigned> inline const Use &Op() const
+  template <unsigned> inline const Use &Op() const; \
+  public: \
+  inline unsigned getNumOperands() const
 
 /// Macro for generating out-of-class operand accessor definitions
 #define DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
 VALUECLASS *CLASS::getOperand(unsigned i_nocapture) const { \
-  assert(i_nocapture < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
-  return static_cast<VALUECLASS*>(OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i_nocapture]); \
+  assert(i_nocapture < OperandTraits<CLASS>::operands(this) \
+         && "getOperand() out of range!"); \
+  return static_cast<VALUECLASS*>( \
+    OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i_nocapture]); \
 } \
 void CLASS::setOperand(unsigned i_nocapture, VALUECLASS *Val_nocapture) { \
-  assert(i_nocapture < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+  assert(i_nocapture < OperandTraits<CLASS>::operands(this) \
+         && "setOperand() out of range!"); \
   OperandTraits<CLASS>::op_begin(this)[i_nocapture] = Val_nocapture; \
 } \
-unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
+unsigned CLASS::getNumOperands() const { \
+  return OperandTraits<CLASS>::operands(this);  \
+} \
 template <unsigned Idx_nocapture> Use &CLASS::Op() { \
   return OperandTraits<CLASS>::op_begin(this)[Idx_nocapture]; \
 } \
 template <unsigned Idx_nocapture> const Use &CLASS::Op() const { \
-  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx_nocapture]; \
+  return OperandTraits<CLASS>::op_begin( \
+    const_cast<CLASS*>(this))[Idx_nocapture]; \
 }
 
 
@@ -125,19 +136,25 @@ template <unsigned Idx_nocapture> const Use &CLASS::Op() const { \
 /// definitions with casted result
 #define DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(CLASS, VALUECLASS) \
 VALUECLASS *CLASS::getOperand(unsigned i_nocapture) const { \
-  assert(i_nocapture < OperandTraits<CLASS>::operands(this) && "getOperand() out of range!"); \
-  return cast<VALUECLASS>(OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i_nocapture]); \
+  assert(i_nocapture < OperandTraits<CLASS>::operands(this) \
+         && "getOperand() out of range!"); \
+  return cast<VALUECLASS>( \
+    OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[i_nocapture]); \
 } \
 void CLASS::setOperand(unsigned i_nocapture, VALUECLASS *Val_nocapture) { \
-  assert(i_nocapture < OperandTraits<CLASS>::operands(this) && "setOperand() out of range!"); \
+  assert(i_nocapture < OperandTraits<CLASS>::operands(this) \
+         && "setOperand() out of range!"); \
   OperandTraits<CLASS>::op_begin(this)[i_nocapture] = Val_nocapture; \
 } \
-unsigned CLASS::getNumOperands() const { return OperandTraits<CLASS>::operands(this); } \
+unsigned CLASS::getNumOperands() const { \
+  return OperandTraits<CLASS>::operands(this); \
+} \
 template <unsigned Idx_nocapture> Use &CLASS::Op() { \
   return OperandTraits<CLASS>::op_begin(this)[Idx_nocapture]; \
 } \
 template <unsigned Idx_nocapture> const Use &CLASS::Op() const { \
-  return OperandTraits<CLASS>::op_begin(const_cast<CLASS*>(this))[Idx_nocapture]; \
+  return OperandTraits<CLASS>::op_begin( \
+    const_cast<CLASS*>(this))[Idx_nocapture]; \
 }
 
 
