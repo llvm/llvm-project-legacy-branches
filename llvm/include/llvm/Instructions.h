@@ -465,7 +465,7 @@ public:
     typename std::iterator_traits<InputIterator>::difference_type Values = 
       1 + std::distance(IdxBegin, IdxEnd);
     return new(Values)
-        GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertBefore);
+      GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertBefore);
   }
   template<typename InputIterator>
   static GetElementPtrInst *Create(Value *Ptr,
@@ -475,7 +475,7 @@ public:
     typename std::iterator_traits<InputIterator>::difference_type Values = 
       1 + std::distance(IdxBegin, IdxEnd);
     return new(Values)
-        GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
+      GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, Name, InsertAtEnd);
   }
 
   /// Constructors - These two creators are convenience methods because one
@@ -574,8 +574,8 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      const std::string &Name,
                                      Instruction *InsertBefore)
   : Instruction(PointerType::get(checkType(
-                                     getIndexedType(Ptr->getType(),
-                                                    IdxBegin, IdxEnd, true)),
+                                   getIndexedType(Ptr->getType(),
+                                                  IdxBegin, IdxEnd, true)),
                                  cast<PointerType>(Ptr->getType())
                                    ->getAddressSpace()),
                 GetElementPtr,
@@ -591,10 +591,9 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      unsigned Values,
                                      const std::string &Name,
                                      BasicBlock *InsertAtEnd)
-  : Instruction(PointerType::get(
-                                 checkType(
-                                     getIndexedType(Ptr->getType(),
-                                                    IdxBegin, IdxEnd, true)),
+  : Instruction(PointerType::get(checkType(
+                                   getIndexedType(Ptr->getType(),
+                                                  IdxBegin, IdxEnd, true)),
                                  cast<PointerType>(Ptr->getType())
                                    ->getAddressSpace()),
                 GetElementPtr,
@@ -964,14 +963,14 @@ public:
                           const std::string &Name = "",
                           Instruction *InsertBefore = 0) {
     return new(ArgEnd - ArgBegin + 1)
-        CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
+      CallInst(Func, ArgBegin, ArgEnd, Name, InsertBefore);
   }
   template<typename InputIterator>
   static CallInst *Create(Value *Func,
                           InputIterator ArgBegin, InputIterator ArgEnd,
                           const std::string &Name, BasicBlock *InsertAtEnd) {
     return new(ArgEnd - ArgBegin + 1)
-        CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
+      CallInst(Func, ArgBegin, ArgEnd, Name, InsertAtEnd);
   }
   static CallInst *Create(Value *F, Value *Actual, const std::string& Name = "",
                           Instruction *InsertBefore = 0) {
