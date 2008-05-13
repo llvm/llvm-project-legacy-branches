@@ -26,14 +26,20 @@ void Use::swap(Use &RHS) {
     if (V1) {
       removeFromList();
     }
+
     if (V2) {
       RHS.removeFromList();
       Val = V2;
       V2->addUse(*this);
+    } else {
+      Val = 0;
     }
+
     if (V1) {
       RHS.Val = V1;
       V1->addUse(RHS);
+    } else {
+      RHS.Val = 0;
     }
   }
 }
