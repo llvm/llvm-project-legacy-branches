@@ -2711,7 +2711,8 @@ BBTerminatorInst :
       PAL = PAListPtr::get(Attrs.begin(), Attrs.end());
 
     // Create the InvokeInst
-    InvokeInst *II = InvokeInst::Create(V, Normal, Except, Args.begin(),Args.end());
+    InvokeInst *II = InvokeInst::Create(V, Normal, Except,
+                                        Args.begin(), Args.end());
     II->setCallingConv($2);
     II->setParamAttrs(PAL);
     $$ = II;
