@@ -1153,7 +1153,7 @@ namespace {
     case Instruction::Shl:
     case Instruction::LShr:
     case Instruction::AShr:{
-      Out << "BinaryOperator* " << iName << " = BinaryOperator::create(";
+      Out << "BinaryOperator* " << iName << " = BinaryOperator::Create(";
       switch (I->getOpcode()) {
       case Instruction::Add: Out << "Instruction::Add"; break;
       case Instruction::Sub: Out << "Instruction::Sub"; break;

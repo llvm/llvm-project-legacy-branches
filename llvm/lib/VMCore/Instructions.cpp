@@ -1445,7 +1445,7 @@ void BinaryOperator::init(BinaryOps iType) {
 #endif
 }
 
-BinaryOperator *BinaryOperator::create(BinaryOps Op, Value *S1, Value *S2,
+BinaryOperator *BinaryOperator::Create(BinaryOps Op, Value *S1, Value *S2,
                                        const std::string &Name,
                                        Instruction *InsertBefore) {
   assert(S1->getType() == S2->getType() &&
@@ -1453,15 +1453,15 @@ BinaryOperator *BinaryOperator::create(BinaryOps Op, Value *S1, Value *S2,
   return new BinaryOperator(Op, S1, S2, S1->getType(), Name, InsertBefore);
 }
 
-BinaryOperator *BinaryOperator::create(BinaryOps Op, Value *S1, Value *S2,
+BinaryOperator *BinaryOperator::Create(BinaryOps Op, Value *S1, Value *S2,
                                        const std::string &Name,
                                        BasicBlock *InsertAtEnd) {
-  BinaryOperator *Res = create(Op, S1, S2, Name);
+  BinaryOperator *Res = Create(Op, S1, S2, Name);
   InsertAtEnd->getInstList().push_back(Res);
   return Res;
 }
 
-BinaryOperator *BinaryOperator::createNeg(Value *Op, const std::string &Name,
+BinaryOperator *BinaryOperator::CreateNeg(Value *Op, const std::string &Name,
                                           Instruction *InsertBefore) {
   Value *zero = ConstantExpr::getZeroValueForNegationExpr(Op->getType());
   return new BinaryOperator(Instruction::Sub,
@@ -1469,7 +1469,7 @@ BinaryOperator *BinaryOperator::createNeg(Value *Op, const std::string &Name,
                             Op->getType(), Name, InsertBefore);
 }
 
-BinaryOperator *BinaryOperator::createNeg(Value *Op, const std::string &Name,
+BinaryOperator *BinaryOperator::CreateNeg(Value *Op, const std::string &Name,
                                           BasicBlock *InsertAtEnd) {
   Value *zero = ConstantExpr::getZeroValueForNegationExpr(Op->getType());
   return new BinaryOperator(Instruction::Sub,
@@ -1477,7 +1477,7 @@ BinaryOperator *BinaryOperator::createNeg(Value *Op, const std::string &Name,
                             Op->getType(), Name, InsertAtEnd);
 }
 
-BinaryOperator *BinaryOperator::createNot(Value *Op, const std::string &Name,
+BinaryOperator *BinaryOperator::CreateNot(Value *Op, const std::string &Name,
                                           Instruction *InsertBefore) {
   Constant *C;
   if (const VectorType *PTy = dyn_cast<VectorType>(Op->getType())) {
@@ -1491,7 +1491,7 @@ BinaryOperator *BinaryOperator::createNot(Value *Op, const std::string &Name,
                             Op->getType(), Name, InsertBefore);
 }
 
-BinaryOperator *BinaryOperator::createNot(Value *Op, const std::string &Name,
+BinaryOperator *BinaryOperator::CreateNot(Value *Op, const std::string &Name,
                                           BasicBlock *InsertAtEnd) {
   Constant *AllOnes;
   if (const VectorType *PTy = dyn_cast<VectorType>(Op->getType())) {
@@ -1796,7 +1796,7 @@ unsigned CastInst::isEliminableCastPair(
   return 0;
 }
 
-CastInst *CastInst::create(Instruction::CastOps op, Value *S, const Type *Ty, 
+CastInst *CastInst::Create(Instruction::CastOps op, Value *S, const Type *Ty, 
   const std::string &Name, Instruction *InsertBefore) {
   // Construct and return the appropriate CastInst subclass
   switch (op) {
@@ -1818,7 +1818,7 @@ CastInst *CastInst::create(Instruction::CastOps op, Value *S, const Type *Ty,
   return 0;
 }
 
-CastInst *CastInst::create(Instruction::CastOps op, Value *S, const Type *Ty,
+CastInst *CastInst::Create(Instruction::CastOps op, Value *S, const Type *Ty,
   const std::string &Name, BasicBlock *InsertAtEnd) {
   // Construct and return the appropriate CastInst subclass
   switch (op) {
@@ -1840,55 +1840,55 @@ CastInst *CastInst::create(Instruction::CastOps op, Value *S, const Type *Ty,
   return 0;
 }
 
-CastInst *CastInst::createZExtOrBitCast(Value *S, const Type *Ty, 
+CastInst *CastInst::CreateZExtOrBitCast(Value *S, const Type *Ty, 
                                         const std::string &Name,
                                         Instruction *InsertBefore) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertBefore);
-  return create(Instruction::ZExt, S, Ty, Name, InsertBefore);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
+  return Create(Instruction::ZExt, S, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createZExtOrBitCast(Value *S, const Type *Ty, 
+CastInst *CastInst::CreateZExtOrBitCast(Value *S, const Type *Ty, 
                                         const std::string &Name,
                                         BasicBlock *InsertAtEnd) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
-  return create(Instruction::ZExt, S, Ty, Name, InsertAtEnd);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
+  return Create(Instruction::ZExt, S, Ty, Name, InsertAtEnd);
 }
 
-CastInst *CastInst::createSExtOrBitCast(Value *S, const Type *Ty, 
+CastInst *CastInst::CreateSExtOrBitCast(Value *S, const Type *Ty, 
                                         const std::string &Name,
                                         Instruction *InsertBefore) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertBefore);
-  return create(Instruction::SExt, S, Ty, Name, InsertBefore);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
+  return Create(Instruction::SExt, S, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createSExtOrBitCast(Value *S, const Type *Ty, 
+CastInst *CastInst::CreateSExtOrBitCast(Value *S, const Type *Ty, 
                                         const std::string &Name,
                                         BasicBlock *InsertAtEnd) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
-  return create(Instruction::SExt, S, Ty, Name, InsertAtEnd);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
+  return Create(Instruction::SExt, S, Ty, Name, InsertAtEnd);
 }
 
-CastInst *CastInst::createTruncOrBitCast(Value *S, const Type *Ty,
+CastInst *CastInst::CreateTruncOrBitCast(Value *S, const Type *Ty,
                                          const std::string &Name,
                                          Instruction *InsertBefore) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertBefore);
-  return create(Instruction::Trunc, S, Ty, Name, InsertBefore);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
+  return Create(Instruction::Trunc, S, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createTruncOrBitCast(Value *S, const Type *Ty,
+CastInst *CastInst::CreateTruncOrBitCast(Value *S, const Type *Ty,
                                          const std::string &Name, 
                                          BasicBlock *InsertAtEnd) {
   if (S->getType()->getPrimitiveSizeInBits() == Ty->getPrimitiveSizeInBits())
-    return create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
-  return create(Instruction::Trunc, S, Ty, Name, InsertAtEnd);
+    return Create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
+  return Create(Instruction::Trunc, S, Ty, Name, InsertAtEnd);
 }
 
-CastInst *CastInst::createPointerCast(Value *S, const Type *Ty,
+CastInst *CastInst::CreatePointerCast(Value *S, const Type *Ty,
                                       const std::string &Name,
                                       BasicBlock *InsertAtEnd) {
   assert(isa<PointerType>(S->getType()) && "Invalid cast");
@@ -1896,12 +1896,12 @@ CastInst *CastInst::createPointerCast(Value *S, const Type *Ty,
          "Invalid cast");
 
   if (Ty->isInteger())
-    return create(Instruction::PtrToInt, S, Ty, Name, InsertAtEnd);
-  return create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
+    return Create(Instruction::PtrToInt, S, Ty, Name, InsertAtEnd);
+  return Create(Instruction::BitCast, S, Ty, Name, InsertAtEnd);
 }
 
 /// @brief Create a BitCast or a PtrToInt cast instruction
-CastInst *CastInst::createPointerCast(Value *S, const Type *Ty, 
+CastInst *CastInst::CreatePointerCast(Value *S, const Type *Ty, 
                                       const std::string &Name, 
                                       Instruction *InsertBefore) {
   assert(isa<PointerType>(S->getType()) && "Invalid cast");
@@ -1909,11 +1909,11 @@ CastInst *CastInst::createPointerCast(Value *S, const Type *Ty,
          "Invalid cast");
 
   if (Ty->isInteger())
-    return create(Instruction::PtrToInt, S, Ty, Name, InsertBefore);
-  return create(Instruction::BitCast, S, Ty, Name, InsertBefore);
+    return Create(Instruction::PtrToInt, S, Ty, Name, InsertBefore);
+  return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createIntegerCast(Value *C, const Type *Ty, 
+CastInst *CastInst::CreateIntegerCast(Value *C, const Type *Ty, 
                                       bool isSigned, const std::string &Name,
                                       Instruction *InsertBefore) {
   assert(C->getType()->isInteger() && Ty->isInteger() && "Invalid cast");
@@ -1923,10 +1923,10 @@ CastInst *CastInst::createIntegerCast(Value *C, const Type *Ty,
     (SrcBits == DstBits ? Instruction::BitCast :
      (SrcBits > DstBits ? Instruction::Trunc :
       (isSigned ? Instruction::SExt : Instruction::ZExt)));
-  return create(opcode, C, Ty, Name, InsertBefore);
+  return Create(opcode, C, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createIntegerCast(Value *C, const Type *Ty, 
+CastInst *CastInst::CreateIntegerCast(Value *C, const Type *Ty, 
                                       bool isSigned, const std::string &Name,
                                       BasicBlock *InsertAtEnd) {
   assert(C->getType()->isInteger() && Ty->isInteger() && "Invalid cast");
@@ -1936,10 +1936,10 @@ CastInst *CastInst::createIntegerCast(Value *C, const Type *Ty,
     (SrcBits == DstBits ? Instruction::BitCast :
      (SrcBits > DstBits ? Instruction::Trunc :
       (isSigned ? Instruction::SExt : Instruction::ZExt)));
-  return create(opcode, C, Ty, Name, InsertAtEnd);
+  return Create(opcode, C, Ty, Name, InsertAtEnd);
 }
 
-CastInst *CastInst::createFPCast(Value *C, const Type *Ty, 
+CastInst *CastInst::CreateFPCast(Value *C, const Type *Ty, 
                                  const std::string &Name, 
                                  Instruction *InsertBefore) {
   assert(C->getType()->isFloatingPoint() && Ty->isFloatingPoint() && 
@@ -1949,10 +1949,10 @@ CastInst *CastInst::createFPCast(Value *C, const Type *Ty,
   Instruction::CastOps opcode =
     (SrcBits == DstBits ? Instruction::BitCast :
      (SrcBits > DstBits ? Instruction::FPTrunc : Instruction::FPExt));
-  return create(opcode, C, Ty, Name, InsertBefore);
+  return Create(opcode, C, Ty, Name, InsertBefore);
 }
 
-CastInst *CastInst::createFPCast(Value *C, const Type *Ty, 
+CastInst *CastInst::CreateFPCast(Value *C, const Type *Ty, 
                                  const std::string &Name, 
                                  BasicBlock *InsertAtEnd) {
   assert(C->getType()->isFloatingPoint() && Ty->isFloatingPoint() && 
@@ -1962,7 +1962,7 @@ CastInst *CastInst::createFPCast(Value *C, const Type *Ty,
   Instruction::CastOps opcode =
     (SrcBits == DstBits ? Instruction::BitCast :
      (SrcBits > DstBits ? Instruction::FPTrunc : Instruction::FPExt));
-  return create(opcode, C, Ty, Name, InsertAtEnd);
+  return Create(opcode, C, Ty, Name, InsertAtEnd);
 }
 
 // Check whether it is valid to call getCastOpcode for these types.
@@ -2362,7 +2362,7 @@ CmpInst::CmpInst(const Type *ty, OtherOps op, unsigned short predicate,
 }
 
 CmpInst *
-CmpInst::create(OtherOps Op, unsigned short predicate, Value *S1, Value *S2, 
+CmpInst::Create(OtherOps Op, unsigned short predicate, Value *S1, Value *S2, 
                 const std::string &Name, Instruction *InsertBefore) {
   if (Op == Instruction::ICmp) {
     return new ICmpInst(CmpInst::Predicate(predicate), S1, S2, Name, 
@@ -2381,7 +2381,7 @@ CmpInst::create(OtherOps Op, unsigned short predicate, Value *S1, Value *S2,
 }
 
 CmpInst *
-CmpInst::create(OtherOps Op, unsigned short predicate, Value *S1, Value *S2, 
+CmpInst::Create(OtherOps Op, unsigned short predicate, Value *S1, Value *S2, 
                 const std::string &Name, BasicBlock *InsertAtEnd) {
   if (Op == Instruction::ICmp) {
     return new ICmpInst(CmpInst::Predicate(predicate), S1, S2, Name, 
@@ -2775,7 +2775,7 @@ GetElementPtrInst *GetElementPtrInst::clone() const {
 }
 
 BinaryOperator *BinaryOperator::clone() const {
-  return create(getOpcode(), Op<0>(), Op<1>());
+  return Create(getOpcode(), Op<0>(), Op<1>());
 }
 
 FCmpInst* FCmpInst::clone() const {
