@@ -191,6 +191,7 @@ public:
   }
 #include "llvm/Instruction.def"
 
+
   /// Helper functions to construct and inspect unary operations (NEG and NOT)
   /// via binary operators SUB and XOR:
   ///
