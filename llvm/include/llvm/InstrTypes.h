@@ -191,7 +191,6 @@ public:
   }
 #include "llvm/Instruction.def"
 
-
   /// Helper functions to construct and inspect unary operations (NEG and NOT)
   /// via binary operators SUB and XOR:
   ///
@@ -240,6 +239,53 @@ public:
   }
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+
+  /// Backward-compatible interfaces
+  /// @deprecated in 2.4, do not use, will disappear soon
+  static BinaryOperator *create(BinaryOps Op, Value *S1, Value *S2,
+                                const std::string &Name = "",
+                                Instruction *InsertBefore = 0) {
+    return Create(Op, S1, S2, Name, InsertBefore);
+  }
+  static BinaryOperator *create(BinaryOps Op, Value *S1, Value *S2,
+                                const std::string &Name,
+                                BasicBlock *InsertAtEnd) {
+    return Create(Op, S1, S2, Name, InsertAtEnd);
+  }
+#define HANDLE_BINARY_INST(N, OPC, CLASS) \
+  static BinaryOperator *create##OPC(Value *V1, Value *V2, \
+                                     const std::string &Name = "") {\
+    return Create(Instruction::OPC, V1, V2, Name);\
+  }
+#include "llvm/Instruction.def"
+#define HANDLE_BINARY_INST(N, OPC, CLASS) \
+  static BinaryOperator *create##OPC(Value *V1, Value *V2, \
+                                     const std::string &Name, BasicBlock *BB) {\
+    return Create(Instruction::OPC, V1, V2, Name, BB);\
+  }
+#include "llvm/Instruction.def"
+#define HANDLE_BINARY_INST(N, OPC, CLASS) \
+  static BinaryOperator *create##OPC(Value *V1, Value *V2, \
+                                     const std::string &Name, Instruction *I) {\
+    return Create(Instruction::OPC, V1, V2, Name, I);\
+  }
+#include "llvm/Instruction.def"
+  static BinaryOperator *createNeg(Value *Op, const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
+    return CreateNeg(Op, Name, InsertBefore);
+  }
+  static BinaryOperator *createNeg(Value *Op, const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
+    return CreateNeg(Op, Name, InsertAtEnd);
+  }
+  static BinaryOperator *createNot(Value *Op, const std::string &Name = "",
+                                   Instruction *InsertBefore = 0) {
+    return CreateNot(Op, Name, InsertBefore);
+  }
+  static BinaryOperator *createNot(Value *Op, const std::string &Name,
+                                   BasicBlock *InsertAtEnd) {
+    return CreateNot(Op, Name, InsertAtEnd);
   }
 };
 
@@ -331,6 +377,14 @@ public:
     Instruction *InsertBefore = 0 ///< Place to insert the instruction
   );
 
+  /// @brief Create a SExt or BitCast cast instruction
+  static CastInst *CreateSExtOrBitCast(
+    Value *S,                ///< The value to be casted (operand 0)
+    const Type *Ty,          ///< The type to which operand is casted
+    const std::string &Name, ///< The name for the instruction
+    BasicBlock *InsertAtEnd  ///< The block to insert the instruction into
+  );
+
   /// @brief Create a BitCast or a PtrToInt cast instruction
   static CastInst *CreatePointerCast(
     Value *S,                ///< The pointer value to be casted (operand 0)
@@ -377,14 +431,6 @@ public:
   static CastInst *CreateFPCast(
     Value *S,                ///< The floating point value to be casted 
     const Type *Ty,          ///< The floating point type to cast to
-    const std::string &Name, ///< The name for the instruction
-    BasicBlock *InsertAtEnd  ///< The block to insert the instruction into
-  );
-
-  /// @brief Create a SExt or BitCast cast instruction
-  static CastInst *CreateSExtOrBitCast(
-    Value *S,                ///< The value to be casted (operand 0)
-    const Type *Ty,          ///< The type to which operand is casted
     const std::string &Name, ///< The name for the instruction
     BasicBlock *InsertAtEnd  ///< The block to insert the instruction into
   );
@@ -487,6 +533,33 @@ public:
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
   }
+  /// Backward-compatible interfaces
+  /// @deprecated in 2.4, do not use, will disappear soon
+  static CastInst *create(Instruction::CastOps Op,Value *S,const Type *Ty,
+    const std::string &Name = "",Instruction *InsertBefore = 0) {
+    return Create(Op,S,Ty,Name,InsertBefore);
+  }
+  static CastInst *create(Instruction::CastOps Op,Value *S,const Type *Ty,
+    const std::string &Name,BasicBlock *InsertAtEnd) {
+    return Create(Op,S,Ty,Name,InsertAtEnd);
+  }
+
+#define DEFINE_CASTINST_DEPRECATED(OP)                                  \
+  static CastInst *create ## OP ## Cast(Value *S, const Type *Ty,       \
+    const std::string &Name = "", Instruction *InsertBefore = 0) {      \
+    return Create ## OP ## Cast(S, Ty, Name, InsertBefore);             \
+  }                                                                     \
+  static CastInst *create ## OP ## Cast(Value *S, const Type *Ty,       \
+    const std::string &Name, BasicBlock *InsertAtEnd) {                 \
+    return Create ## OP ## Cast(S, Ty, Name, InsertAtEnd);              \
+  }
+  DEFINE_CASTINST_DEPRECATED(ZExtOrBit)
+  DEFINE_CASTINST_DEPRECATED(SExtOrBit)
+  DEFINE_CASTINST_DEPRECATED(Pointer)
+  // Not yet: DEFINE_CASTINST_DEPRECATED(Integer)
+  DEFINE_CASTINST_DEPRECATED(FP)
+  DEFINE_CASTINST_DEPRECATED(TruncOrBit)
+#undef DEFINE_CASTINST_DEPRECATED
 };
 
 //===----------------------------------------------------------------------===//
@@ -626,6 +699,18 @@ public:
   }
   static inline bool classof(const Value *V) {
     return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+  /// Backward-compatible interfaces
+  /// @deprecated in 2.4, do not use, will disappear soon
+  static CmpInst *create(OtherOps Op, unsigned short predicate, Value *S1, 
+                         Value *S2, const std::string &Name = "",
+                         Instruction *InsertBefore = 0) {
+    return Create(Op, predicate, S1, S2, Name, InsertBefore);
+  }
+  static CmpInst *create(OtherOps Op, unsigned short predicate, Value *S1, 
+                         Value *S2, const std::string &Name, 
+                         BasicBlock *InsertAtEnd) {
+    return Create(Op, predicate, S1, S2, Name, InsertAtEnd);
   }
 };
 
