@@ -556,10 +556,17 @@ public:
   DEFINE_CASTINST_DEPRECATED(ZExtOrBit)
   DEFINE_CASTINST_DEPRECATED(SExtOrBit)
   DEFINE_CASTINST_DEPRECATED(Pointer)
-  // Not yet: DEFINE_CASTINST_DEPRECATED(Integer)
   DEFINE_CASTINST_DEPRECATED(FP)
   DEFINE_CASTINST_DEPRECATED(TruncOrBit)
 #undef DEFINE_CASTINST_DEPRECATED
+  static CastInst *createIntegerCast(Value *S, const Type *Ty, bool isSigned,
+    const std::string &Name = "", Instruction *InsertBefore = 0) {
+    return CreateIntegerCast(S, Ty, isSigned, Name, InsertBefore);
+  }
+  static CastInst *createIntegerCast(Value *S, const Type *Ty, bool isSigned,
+    const std::string &Name, BasicBlock *InsertAtEnd) {
+    return CreateIntegerCast(S, Ty, isSigned, Name, InsertAtEnd);
+  }
 };
 
 //===----------------------------------------------------------------------===//
