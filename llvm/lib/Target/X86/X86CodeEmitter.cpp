@@ -117,7 +117,6 @@ bool Emitter::runOnMachineFunction(MachineFunction &MF) {
   II = ((X86TargetMachine&)TM).getInstrInfo();
   TD = ((X86TargetMachine&)TM).getTargetData();
   Is64BitMode = TM.getSubtarget<X86Subtarget>().is64Bit();
-  IsPIC = TM.getRelocationModel() == Reloc::PIC_;
   
   do {
     DOUT << "JITTing function '" << MF.getFunction()->getName() << "'\n";
