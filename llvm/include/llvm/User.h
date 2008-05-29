@@ -227,6 +227,9 @@ protected:
   ///
   unsigned NumOperands;
 
+  void* operator new(size_t, char dummy, void* __p) throw() {
+    return __p;
+  }
   void *operator new(size_t s, unsigned Us) {
     void *Storage = ::operator new(s + sizeof(Use) * Us);
     Use *Start = static_cast<Use*>(Storage);

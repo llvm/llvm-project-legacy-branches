@@ -34,17 +34,22 @@ struct FixedNumOperandTraits {
   static unsigned operands(const User*) {
     return ARITY;
   }
-  struct prefix {
-    Use Ops[ARITY];
-    prefix(); // DO NOT IMPLEMENT
-  };
   template <class U>
   struct Layout {
-    struct overlay : prefix, U {
-      overlay(); // DO NOT IMPLEMENT
-    };
+    Use Ops[ARITY];
+    U It;
+    Layout(); // DO NOT IMPLEMENT
   };
-  static inline void *allocate(unsigned); // FIXME
+  template <class U>
+  static inline void *alloc() {
+    void *Storage = ::operator new(sizeof(Layout<U>));
+    Layout<U> *Obj = static_cast<Layout<U>*>(Storage);
+    Use *Start = Obj->Ops;
+//    Obj->OperandList = Start;
+//    Obj->NumOperands = ARITY;
+    Use::initTags(Start, Start + ARITY);
+    return &Obj->It;
+  }
 };
 
 //===----------------------------------------------------------------------===//

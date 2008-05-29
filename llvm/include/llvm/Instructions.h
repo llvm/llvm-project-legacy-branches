@@ -1229,15 +1229,18 @@ class SelectInst : public Instruction {
     setName(Name);
   }
 public:
-  static SelectInst *Create(Value *C, Value *S1, Value *S2,
-                            const std::string &Name = "",
-                            Instruction *InsertBefore = 0) {
-    return new(3) SelectInst(C, S1, S2, Name, InsertBefore);
-  }
-  static SelectInst *Create(Value *C, Value *S1, Value *S2,
-                            const std::string &Name, BasicBlock *InsertAtEnd) {
-    return new(3) SelectInst(C, S1, S2, Name, InsertAtEnd);
-  }
+  /// Create - allocate and construct a SelectInst
+  /// given condition and value alternatives
+  /// before another Instruction
+  static inline SelectInst *Create(Value *C, Value *S1, Value *S2,
+                                   const std::string &Name = "",
+                                   Instruction *InsertBefore = 0);
+  /// Create - allocate and construct a SelectInst
+  /// given condition and value alternatives
+  /// at end of block
+  static inline SelectInst *Create(Value *C, Value *S1, Value *S2,
+                                   const std::string &Name,
+                                   BasicBlock *InsertAtEnd);
 
   Value *getCondition() const { return Op<0>(); }
   Value *getTrueValue() const { return Op<1>(); }
@@ -1267,6 +1270,19 @@ struct OperandTraits<SelectInst> : FixedNumOperandTraits<3> {
 };
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(SelectInst, Value)
+
+SelectInst *SelectInst::Create(Value *C, Value *S1, Value *S2,
+                               const std::string &Name,
+                               Instruction *InsertBefore) {
+  return new('A', OperandTraits<SelectInst>::alloc<SelectInst>())
+    SelectInst(C, S1, S2, Name, InsertBefore);
+}
+SelectInst *SelectInst::Create(Value *C, Value *S1, Value *S2,
+                               const std::string &Name,
+                               BasicBlock *InsertAtEnd) {
+  return new('A', OperandTraits<SelectInst>::alloc<SelectInst>())
+    SelectInst(C, S1, S2, Name, InsertAtEnd);
+}
 
 //===----------------------------------------------------------------------===//
 //                                VAArgInst Class
