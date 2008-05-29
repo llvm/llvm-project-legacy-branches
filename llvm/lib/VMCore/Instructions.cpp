@@ -2813,7 +2813,7 @@ CallInst   *CallInst::clone()     const {
   return new(getNumOperands()) CallInst(*this);
 }
 SelectInst *SelectInst::clone()   const {
-  return new('A', OperandTraits<SelectInst>::alloc<SelectInst>())
+  return ::new(OperandTraits<SelectInst>::alloc<SelectInst>())
     SelectInst(*this);
 }
 VAArgInst  *VAArgInst::clone()    const { return new VAArgInst(*this); }

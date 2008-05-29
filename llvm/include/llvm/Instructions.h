@@ -1274,13 +1274,13 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(SelectInst, Value)
 SelectInst *SelectInst::Create(Value *C, Value *S1, Value *S2,
                                const std::string &Name,
                                Instruction *InsertBefore) {
-  return new('A', OperandTraits<SelectInst>::alloc<SelectInst>())
+  return ::new(OperandTraits<SelectInst>::alloc<SelectInst>())
     SelectInst(C, S1, S2, Name, InsertBefore);
 }
 SelectInst *SelectInst::Create(Value *C, Value *S1, Value *S2,
                                const std::string &Name,
                                BasicBlock *InsertAtEnd) {
-  return new('A', OperandTraits<SelectInst>::alloc<SelectInst>())
+  return ::new(OperandTraits<SelectInst>::alloc<SelectInst>())
     SelectInst(C, S1, S2, Name, InsertAtEnd);
 }
 
