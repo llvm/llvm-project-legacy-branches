@@ -140,7 +140,7 @@ private:
 
   /// Data - Raw data bytes for abbreviation.
   ///
-  std::vector<DIEAbbrevData> Data;
+  SmallVector<DIEAbbrevData, 8> Data;
 
 public:
 
@@ -155,7 +155,7 @@ public:
   unsigned getTag()                           const { return Tag; }
   unsigned getNumber()                        const { return Number; }
   unsigned getChildrenFlag()                  const { return ChildrenFlag; }
-  const std::vector<DIEAbbrevData> &getData() const { return Data; }
+  const SmallVector<DIEAbbrevData, 8> &getData() const { return Data; }
   void setTag(unsigned T)                           { Tag = T; }
   void setChildrenFlag(unsigned CF)                 { ChildrenFlag = CF; }
   void setNumber(unsigned N)                        { Number = N; }
@@ -219,7 +219,7 @@ protected:
   
   /// Attributes values.
   ///
-  std::vector<DIEValue *> Values;
+  SmallVector<DIEValue*, 32> Values;
   
 public:
   explicit DIE(unsigned Tag)
@@ -240,7 +240,7 @@ public:
   unsigned getOffset()                       const { return Offset; }
   unsigned getSize()                         const { return Size; }
   const std::vector<DIE *> &getChildren()    const { return Children; }
-  std::vector<DIEValue *> &getValues()       { return Values; }
+  SmallVector<DIEValue*, 32> &getValues()       { return Values; }
   void setTag(unsigned Tag)                  { Abbrev.setTag(Tag); }
   void setOffset(unsigned O)                 { Offset = O; }
   void setSize(unsigned S)                   { Size = S; }
@@ -296,6 +296,7 @@ public:
     isString,
     isLabel,
     isAsIsLabel,
+    isSectionOffset,
     isDelta,
     isEntry,
     isBlock
@@ -500,6 +501,56 @@ public:
 #ifndef NDEBUG
   virtual void print(std::ostream &O) {
     O << "Obj: " << Label;
+  }
+#endif
+};
+
+//===----------------------------------------------------------------------===//
+/// DIESectionOffset - A section offset DIE.
+//
+class DIESectionOffset : public DIEValue {
+public:
+  const DWLabel Label;
+  const DWLabel Section;
+  bool IsEH : 1;
+  bool UseSet : 1;
+  
+  DIESectionOffset(const DWLabel &Lab, const DWLabel &Sec,
+                   bool isEH = false, bool useSet = true)
+  : DIEValue(isSectionOffset), Label(Lab), Section(Sec),
+                               IsEH(isEH), UseSet(useSet) {}
+
+  // Implement isa/cast/dyncast.
+  static bool classof(const DIESectionOffset *)  { return true; }
+  static bool classof(const DIEValue *D) { return D->Type == isSectionOffset; }
+  
+  /// EmitValue - Emit section offset.
+  ///
+  virtual void EmitValue(DwarfDebug &DD, unsigned Form);
+  
+  /// SizeOf - Determine size of section offset value in bytes.
+  ///
+  virtual unsigned SizeOf(const DwarfDebug &DD, unsigned Form) const;
+  
+  /// Profile - Used to gather unique data for the value folding set.
+  ///
+  static void Profile(FoldingSetNodeID &ID, const DWLabel &Label,
+                                            const DWLabel &Section) {
+    ID.AddInteger(isSectionOffset);
+    Label.Profile(ID);
+    Section.Profile(ID);
+    // IsEH and UseSet are specific to the Label/Section that we will emit
+    // the offset for; so Label/Section are enough for uniqueness.
+  }
+  virtual void Profile(FoldingSetNodeID &ID) { Profile(ID, Label, Section); }
+
+#ifndef NDEBUG
+  virtual void print(std::ostream &O) {
+    O << "Off: ";
+    Label.print(O);
+    O << "-";
+    Section.print(O);
+    O << "-" << IsEH << "-" << UseSet;
   }
 #endif
 };
@@ -775,7 +826,7 @@ protected:
   ///
   AsmPrinter *Asm;
   
-  /// TAI - Target Asm Printer.
+  /// TAI - Target asm information.
   const TargetAsmInfo *TAI;
   
   /// TD - Target data.
@@ -1275,6 +1326,24 @@ public:
     Die->AddValue(Attribute, Form, Value);
   }
       
+  /// AddSectionOffset - Add a section offset label attribute data and value.
+  ///
+  void AddSectionOffset(DIE *Die, unsigned Attribute, unsigned Form,
+                        const DWLabel &Label, const DWLabel &Section,
+                        bool isEH = false, bool useSet = true) {
+    FoldingSetNodeID ID;
+    DIESectionOffset::Profile(ID, Label, Section);
+    void *Where;
+    DIEValue *Value = ValuesSet.FindNodeOrInsertPos(ID, Where);
+    if (!Value) {
+      Value = new DIESectionOffset(Label, Section, isEH, useSet);
+      ValuesSet.InsertNode(Value, Where);
+      Values.push_back(Value);
+    }
+  
+    Die->AddValue(Attribute, Form, Value);
+  }
+      
   /// AddDelta - Add a label delta attribute data and value.
   ///
   void AddDelta(DIE *Die, unsigned Attribute, unsigned Form,
@@ -1714,11 +1783,8 @@ private:
   CompileUnit *NewCompileUnit(CompileUnitDesc *UnitDesc, unsigned ID) {
     // Construct debug information entry.
     DIE *Die = new DIE(DW_TAG_compile_unit);
-    if (TAI->isAbsoluteDebugSectionOffsets())
-      AddLabel(Die, DW_AT_stmt_list, DW_FORM_data4, DWLabel("section_line", 0));
-    else
-      AddDelta(Die, DW_AT_stmt_list, DW_FORM_data4, DWLabel("section_line", 0),
-               DWLabel("section_line", 0));      
+    AddSectionOffset(Die, DW_AT_stmt_list, DW_FORM_data4,
+              DWLabel("section_line", 0), DWLabel("section_line", 0), false);
     AddString(Die, DW_AT_producer,  DW_FORM_string, UnitDesc->getProducer());
     AddUInt  (Die, DW_AT_language,  DW_FORM_data1,  UnitDesc->getLanguage());
     AddString(Die, DW_AT_name,      DW_FORM_string, UnitDesc->getFileName());
@@ -2009,14 +2075,18 @@ private:
 
     // Emit the code (index) for the abbreviation.
     Asm->EmitULEB128Bytes(AbbrevNumber);
-    Asm->EOL(std::string("Abbrev [" +
-             utostr(AbbrevNumber) +
-             "] 0x" + utohexstr(Die->getOffset()) +
-             ":0x" + utohexstr(Die->getSize()) + " " +
-             TagString(Abbrev->getTag())));
+
+    if (VerboseAsm)
+      Asm->EOL(std::string("Abbrev [" +
+                           utostr(AbbrevNumber) +
+                           "] 0x" + utohexstr(Die->getOffset()) +
+                           ":0x" + utohexstr(Die->getSize()) + " " +
+                           TagString(Abbrev->getTag())));
+    else
+      Asm->EOL();
     
-    std::vector<DIEValue *> &Values = Die->getValues();
-    const std::vector<DIEAbbrevData> &AbbrevData = Abbrev->getData();
+    SmallVector<DIEValue*, 32> &Values = Die->getValues();
+    const SmallVector<DIEAbbrevData, 8> &AbbrevData = Abbrev->getData();
     
     // Emit the DIE attribute values.
     for (unsigned i = 0, N = Values.size(); i < N; ++i) {
@@ -2073,8 +2143,8 @@ private:
     // Start the size with the size of abbreviation code.
     Offset += Asm->SizeULEB128(AbbrevNumber);
     
-    const std::vector<DIEValue *> &Values = Die->getValues();
-    const std::vector<DIEAbbrevData> &AbbrevData = Abbrev->getData();
+    const SmallVector<DIEValue*, 32> &Values = Die->getValues();
+    const SmallVector<DIEAbbrevData, 8> &AbbrevData = Abbrev->getData();
 
     // Size the DIE attribute values.
     for (unsigned i = 0, N = Values.size(); i < N; ++i) {
@@ -2230,8 +2300,7 @@ private:
     Asm->EmitInt8(1); Asm->EOL("DW_LNS_fixed_advance_pc arg count");
 
     const UniqueVector<std::string> &Directories = MMI->getDirectories();
-    const UniqueVector<SourceFileInfo>
-      &SourceFiles = MMI->getSourceFiles();
+    const UniqueVector<SourceFileInfo> &SourceFiles = MMI->getSourceFiles();
 
     // Emit directories.
     for (unsigned DirectoryID = 1, NDID = Directories.size();
@@ -2261,8 +2330,11 @@ private:
     for (unsigned j = 0, M = SectionSourceLines.size(); j < M; ++j) {
       // Isolate current sections line info.
       const std::vector<SourceLineInfo> &LineInfos = SectionSourceLines[j];
-      
-      Asm->EOL(std::string("Section ") + SectionMap[j + 1]);
+
+      if (VerboseAsm)
+        Asm->EOL(std::string("Section ") + SectionMap[j + 1]);
+      else
+        Asm->EOL();
 
       // Dwarf assumes we start with first line of first source file.
       unsigned Source = 1;
@@ -2277,10 +2349,13 @@ private:
         unsigned SourceID = LineInfo.getSourceID();
         const SourceFileInfo &SourceFile = SourceFiles[SourceID];
         unsigned DirectoryID = SourceFile.getDirectoryID();
-        Asm->EOL(Directories[DirectoryID]
-          + SourceFile.getName()
-          + ":"
-          + utostr_32(LineInfo.getLine()));
+        if (VerboseAsm)
+          Asm->EOL(Directories[DirectoryID]
+                   + SourceFile.getName()
+                   + ":"
+                   + utostr_32(LineInfo.getLine()));
+        else
+          Asm->EOL();
 
         // Define the line address.
         Asm->EmitInt8(0); Asm->EOL("Extended Op");
@@ -2555,8 +2630,8 @@ private:
   /// ConstructGlobalDIEs - Create DIEs for each of the externally visible
   /// global variables.
   void ConstructGlobalDIEs() {
-    std::vector<GlobalVariableDesc *> GlobalVariables =
-        MMI->getAnchoredDescriptors<GlobalVariableDesc>(*M);
+    std::vector<GlobalVariableDesc *> GlobalVariables;
+    MMI->getAnchoredDescriptors<GlobalVariableDesc>(*M, GlobalVariables);
     
     for (unsigned i = 0, N = GlobalVariables.size(); i < N; ++i) {
       GlobalVariableDesc *GVD = GlobalVariables[i];
@@ -2567,8 +2642,8 @@ private:
   /// ConstructSubprogramDIEs - Create DIEs for each of the externally visible
   /// subprograms.
   void ConstructSubprogramDIEs() {
-    std::vector<SubprogramDesc *> Subprograms =
-        MMI->getAnchoredDescriptors<SubprogramDesc>(*M);
+    std::vector<SubprogramDesc *> Subprograms;
+    MMI->getAnchoredDescriptors<SubprogramDesc>(*M, Subprograms);
     
     for (unsigned i = 0, N = Subprograms.size(); i < N; ++i) {
       SubprogramDesc *SPD = Subprograms[i];
@@ -2796,7 +2871,7 @@ private:
   /// shouldEmitFrameModule - Per-module flag to indicate if frame moves 
   /// should be emitted.
   bool shouldEmitMovesModule;
-  
+
   /// EmitCommonEHFrame - Emit the common eh unwind frame.
   ///
   void EmitCommonEHFrame(const Function *Personality, unsigned Index) {
@@ -2813,7 +2888,7 @@ private:
 
     // Define base labels.
     EmitLabel("eh_frame_common", Index);
-    
+
     // Define the eh frame length.
     EmitDifference("eh_frame_common_end", Index,
                    "eh_frame_common_begin", Index, true);
@@ -2825,50 +2900,50 @@ private:
     Asm->EOL("CIE Identifier Tag");
     Asm->EmitInt8(DW_CIE_VERSION);
     Asm->EOL("CIE Version");
-    
+
     // The personality presence indicates that language specific information
     // will show up in the eh frame.
     Asm->EmitString(Personality ? "zPLR" : "zR");
     Asm->EOL("CIE Augmentation");
-    
+
     // Round out reader.
     Asm->EmitULEB128Bytes(1);
     Asm->EOL("CIE Code Alignment Factor");
     Asm->EmitSLEB128Bytes(stackGrowth);
-    Asm->EOL("CIE Data Alignment Factor");   
+    Asm->EOL("CIE Data Alignment Factor");
     Asm->EmitInt8(RI->getDwarfRegNum(RI->getRARegister(), true));
-    Asm->EOL("CIE RA Column");
-    
+    Asm->EOL("CIE Return Address Column");
+
     // If there is a personality, we need to indicate the functions location.
     if (Personality) {
       Asm->EmitULEB128Bytes(7);
       Asm->EOL("Augmentation Size");
 
-      if (TAI->getNeedsIndirectEncoding())
+      if (TAI->getNeedsIndirectEncoding()) {
         Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4 | DW_EH_PE_indirect);
-      else
+        Asm->EOL("Personality (pcrel sdata4 indirect)");
+      } else {
         Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
+        Asm->EOL("Personality (pcrel sdata4)");
+      }
 
-      Asm->EOL("Personality (pcrel sdata4 indirect)");
-      
-      PrintRelDirective(TAI->getShortenEHDataOn64Bit());
+      PrintRelDirective(true);
       O << TAI->getPersonalityPrefix();
       Asm->EmitExternalGlobal((const GlobalVariable *)(Personality));
       O << TAI->getPersonalitySuffix();
-      if (!TAI->getShortenEHDataOn64Bit()) {
+      if (strcmp(TAI->getPersonalitySuffix(), "+4@GOTPCREL"))
         O << "-" << TAI->getPCSymbol();
-      }
       Asm->EOL("Personality");
 
-      Asm->EmitULEB128Bytes(DW_EH_PE_pcrel);
-      Asm->EOL("LSDA Encoding (pcrel)");
-      Asm->EmitULEB128Bytes(DW_EH_PE_pcrel);
-      Asm->EOL("FDE Encoding (pcrel)");
+      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
+      Asm->EOL("LSDA Encoding (pcrel sdata4)");
+      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
+      Asm->EOL("FDE Encoding (pcrel sdata4)");
    } else {
       Asm->EmitULEB128Bytes(1);
       Asm->EOL("Augmentation Size");
-      Asm->EmitULEB128Bytes(DW_EH_PE_pcrel);
-      Asm->EOL("FDE Encoding (pcrel)");
+      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
+      Asm->EOL("FDE Encoding (pcrel sdata4)");
     }
 
     // Indicate locations of general callee saved registers in frame.
@@ -2876,12 +2951,16 @@ private:
     RI->getInitialFrameState(Moves);
     EmitFrameMoves(NULL, 0, Moves, true);
 
-    Asm->EmitAlignment(2, 0, 0, false);
+    // On Darwin the linker honors the alignment of eh_frame, which means it
+    // must be 8-byte on 64-bit targets to match what gcc does.  Otherwise
+    // you get holes which confuse readers of eh_frame.
+    Asm->EmitAlignment(TD->getPointerSize() == sizeof(int32_t) ? 2 : 3, 
+                       0, 0, false);
     EmitLabel("eh_frame_common_end", Index);
-    
+
     Asm->EOL();
   }
-  
+
   /// EmitEHFrame - Emit function exception frame information.
   ///
   void EmitEHFrame(const FunctionEHFrameInfo &EHFrameInfo) {
@@ -2936,36 +3015,37 @@ private:
                         true, true, false);
       Asm->EOL("FDE CIE offset");
 
-      EmitReference("eh_func_begin", EHFrameInfo.Number, true);
+      EmitReference("eh_func_begin", EHFrameInfo.Number, true, true);
       Asm->EOL("FDE initial location");
       EmitDifference("eh_func_end", EHFrameInfo.Number,
-                     "eh_func_begin", EHFrameInfo.Number);
+                     "eh_func_begin", EHFrameInfo.Number, true);
       Asm->EOL("FDE address range");
-      
+
       // If there is a personality and landing pads then point to the language
       // specific data area in the exception table.
       if (EHFrameInfo.PersonalityIndex) {
-        Asm->EmitULEB128Bytes(TAI->getShortenEHDataOn64Bit() ? 8 : 4);
+        Asm->EmitULEB128Bytes(4);
         Asm->EOL("Augmentation size");
-        
-        if (EHFrameInfo.hasLandingPads) {
-          EmitReference("exception", EHFrameInfo.Number, true);
-        } else if (TD->getPointerSize() == 8) {
-          Asm->EmitInt64((int)0);
-        } else {
+
+        if (EHFrameInfo.hasLandingPads)
+          EmitReference("exception", EHFrameInfo.Number, true, true);
+        else
           Asm->EmitInt32((int)0);
-        }
         Asm->EOL("Language Specific Data Area");
       } else {
         Asm->EmitULEB128Bytes(0);
         Asm->EOL("Augmentation size");
       }
-      
+
       // Indicate locations of function specific  callee saved registers in
       // frame.
       EmitFrameMoves("eh_func_begin", EHFrameInfo.Number, EHFrameInfo.Moves, true);
       
-      Asm->EmitAlignment(2, 0, 0, false);
+      // On Darwin the linker honors the alignment of eh_frame, which means it
+      // must be 8-byte on 64-bit targets to match what gcc does.  Otherwise
+      // you get holes which confuse readers of eh_frame.
+      Asm->EmitAlignment(TD->getPointerSize() == sizeof(int32_t) ? 2 : 3, 
+                         0, 0, false);
       EmitLabel("eh_frame_end", EHFrameInfo.Number);
     
       // If the function is marked used, this table should be also.  We cannot 
@@ -3190,7 +3270,7 @@ private:
          I != E; ++I) {
       for (MachineBasicBlock::const_iterator MI = I->begin(), E = I->end();
            MI != E; ++MI) {
-        if (MI->getOpcode() != TargetInstrInfo::LABEL) {
+        if (!MI->isLabel()) {
           SawPotentiallyThrowing |= MI->getDesc().isCall();
           continue;
         }
@@ -3233,7 +3313,7 @@ private:
 
           // Try to merge with the previous call-site.
           if (PreviousIsInvoke) {
-            CallSiteEntry &Prev = CallSites[CallSites.size()-1];
+            CallSiteEntry &Prev = CallSites.back();
             if (Site.PadLabel == Prev.PadLabel && Site.Action == Prev.Action) {
               // Extend the range of the previous entry.
               Prev.EndLabel = Site.EndLabel;
@@ -3259,13 +3339,20 @@ private:
     }
 
     // Final tallies.
-    unsigned SizeSites = CallSites.size() * (sizeof(int32_t) + // Site start.
-                                             sizeof(int32_t) + // Site length.
-                                             sizeof(int32_t)); // Landing pad.
+
+    // Call sites.
+    const unsigned SiteStartSize  = sizeof(int32_t); // DW_EH_PE_udata4
+    const unsigned SiteLengthSize = sizeof(int32_t); // DW_EH_PE_udata4
+    const unsigned LandingPadSize = sizeof(int32_t); // DW_EH_PE_udata4
+    unsigned SizeSites = CallSites.size() * (SiteStartSize +
+                                             SiteLengthSize +
+                                             LandingPadSize);
     for (unsigned i = 0, e = CallSites.size(); i < e; ++i)
       SizeSites += Asm->SizeULEB128(CallSites[i].Action);
 
-    unsigned SizeTypes = TypeInfos.size() * TD->getPointerSize();
+    // Type infos.
+    const unsigned TypeInfoSize = TD->getPointerSize(); // DW_EH_PE_absptr
+    unsigned SizeTypes = TypeInfos.size() * TypeInfoSize;
 
     unsigned TypeOffset = sizeof(int8_t) + // Call site format
                           Asm->SizeULEB128(SizeSites) + // Call-site table length
@@ -3315,27 +3402,22 @@ private:
       }
 
       EmitSectionOffset(BeginTag, "eh_func_begin", BeginNumber, SubprogramCount,
-                        TAI->getShortenEHDataOn64Bit(), true);
+                        true, true);
       Asm->EOL("Region start");
 
       if (!S.EndLabel) {
         EmitDifference("eh_func_end", SubprogramCount, BeginTag, BeginNumber,
-                       TAI->getShortenEHDataOn64Bit());
+                       true);
       } else {
-        EmitDifference("label", S.EndLabel, BeginTag, BeginNumber, 
-                       TAI->getShortenEHDataOn64Bit());
+        EmitDifference("label", S.EndLabel, BeginTag, BeginNumber, true);
       }
       Asm->EOL("Region length");
 
-      if (!S.PadLabel) {
-        if (TD->getPointerSize() == sizeof(int32_t) || TAI->getShortenEHDataOn64Bit())
-          Asm->EmitInt32(0);
-        else
-          Asm->EmitInt64(0);
-      } else {
+      if (!S.PadLabel)
+        Asm->EmitInt32(0);
+      else
         EmitSectionOffset("label", "eh_func_begin", S.PadLabel, SubprogramCount,
-                          TAI->getShortenEHDataOn64Bit(), true);
-      }
+                          true, true);
       Asm->EOL("Landing pad");
 
       Asm->EmitULEB128Bytes(S.Action);
@@ -3430,9 +3512,7 @@ public:
         shouldEmitTable = true;
 
       // See if we need frame move info.
-      if (MMI->hasDebugInfo() || 
-          !MF->getFunction()->doesNotThrow() ||
-          UnwindTablesMandatory)
+      if (!MF->getFunction()->doesNotThrow() || UnwindTablesMandatory)
         shouldEmitMoves = true;
 
       if (shouldEmitMoves || shouldEmitTable)
@@ -3610,6 +3690,23 @@ unsigned DIEObjectLabel::SizeOf(const DwarfDebug &DD, unsigned Form) const {
 
 /// EmitValue - Emit delta value.
 ///
+void DIESectionOffset::EmitValue(DwarfDebug &DD, unsigned Form) {
+  bool IsSmall = Form == DW_FORM_data4;
+  DD.EmitSectionOffset(Label.Tag, Section.Tag,
+                       Label.Number, Section.Number, IsSmall, IsEH, UseSet);
+}
+
+/// SizeOf - Determine size of delta value in bytes.
+///
+unsigned DIESectionOffset::SizeOf(const DwarfDebug &DD, unsigned Form) const {
+  if (Form == DW_FORM_data4) return 4;
+  return DD.getTargetData()->getPointerSize();
+}
+    
+//===----------------------------------------------------------------------===//
+
+/// EmitValue - Emit delta value.
+///
 void DIEDelta::EmitValue(DwarfDebug &DD, unsigned Form) {
   bool IsSmall = Form == DW_FORM_data4;
   DD.EmitDifference(LabelHi, LabelLo, IsSmall);
@@ -3636,7 +3733,7 @@ void DIEntry::EmitValue(DwarfDebug &DD, unsigned Form) {
 ///
 unsigned DIEBlock::ComputeSize(DwarfDebug &DD) {
   if (!Size) {
-    const std::vector<DIEAbbrevData> &AbbrevData = Abbrev.getData();
+    const SmallVector<DIEAbbrevData, 8> &AbbrevData = Abbrev.getData();
     
     for (unsigned i = 0, N = Values.size(); i < N; ++i) {
       Size += Values[i]->SizeOf(DD, AbbrevData[i].getForm());
@@ -3656,7 +3753,7 @@ void DIEBlock::EmitValue(DwarfDebug &DD, unsigned Form) {
   default: assert(0 && "Improper form for block");          break;
   }
   
-  const std::vector<DIEAbbrevData> &AbbrevData = Abbrev.getData();
+  const SmallVector<DIEAbbrevData, 8> &AbbrevData = Abbrev.getData();
 
   for (unsigned i = 0, N = Values.size(); i < N; ++i) {
     DD.getAsm()->EOL();
@@ -3729,7 +3826,7 @@ void DIE::print(std::ostream &O, unsigned IncIndent) {
   }
   O << "\n";
 
-  const std::vector<DIEAbbrevData> &Data = Abbrev.getData();
+  const SmallVector<DIEAbbrevData, 8> &Data = Abbrev.getData();
   
   IndentCount += 2;
   for (unsigned i = 0, N = Data.size(); i < N; ++i) {

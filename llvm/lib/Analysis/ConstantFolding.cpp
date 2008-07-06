@@ -65,8 +65,9 @@ static bool IsConstantOffsetFromGlobal(Constant *C, GlobalValue *&GV,
     
     // Otherwise, add any offset that our operands provide.
     gep_type_iterator GTI = gep_type_begin(CE);
-    for (unsigned i = 1, e = CE->getNumOperands(); i != e; ++i, ++GTI) {
-      ConstantInt *CI = dyn_cast<ConstantInt>(CE->getOperand(i));
+    for (User::const_op_iterator i = CE->op_begin() + 1, e = CE->op_end();
+         i != e; ++i, ++GTI) {
+      ConstantInt *CI = dyn_cast<ConstantInt>(*i);
       if (!CI) return false;  // Index isn't a simple constant?
       if (CI->getZExtValue() == 0) continue;  // Not adding anything.
       
@@ -122,27 +123,32 @@ static Constant *SymbolicallyEvaluateGEP(Constant* const* Ops, unsigned NumOps,
                                          const Type *ResultTy,
                                          const TargetData *TD) {
   Constant *Ptr = Ops[0];
-  if (!cast<PointerType>(Ptr->getType())->getElementType()->isSized())
+  if (!TD || !cast<PointerType>(Ptr->getType())->getElementType()->isSized())
     return 0;
   
-  if (TD && Ptr->isNullValue()) {
-    // If this is a constant expr gep that is effectively computing an
-    // "offsetof", fold it into 'cast int Size to T*' instead of 'gep 0, 0, 12'
-    bool isFoldableGEP = true;
-    for (unsigned i = 1; i != NumOps; ++i)
-      if (!isa<ConstantInt>(Ops[i])) {
-        isFoldableGEP = false;
-        break;
-      }
-    if (isFoldableGEP) {
-      uint64_t Offset = TD->getIndexedOffset(Ptr->getType(),
-                                             (Value**)Ops+1, NumOps-1);
-      Constant *C = ConstantInt::get(TD->getIntPtrType(), Offset);
-      return ConstantExpr::getIntToPtr(C, ResultTy);
-    }
+  uint64_t BasePtr = 0;
+  if (!Ptr->isNullValue()) {
+    // If this is a inttoptr from a constant int, we can fold this as the base,
+    // otherwise we can't.
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Ptr))
+      if (CE->getOpcode() == Instruction::IntToPtr)
+        if (ConstantInt *Base = dyn_cast<ConstantInt>(CE->getOperand(0)))
+          BasePtr = Base->getZExtValue();
+    
+    if (BasePtr == 0)
+      return 0;
   }
+
+  // If this is a constant expr gep that is effectively computing an
+  // "offsetof", fold it into 'cast int Size to T*' instead of 'gep 0, 0, 12'
+  for (unsigned i = 1; i != NumOps; ++i)
+    if (!isa<ConstantInt>(Ops[i]))
+      return false;
   
-  return 0;
+  uint64_t Offset = TD->getIndexedOffset(Ptr->getType(),
+                                         (Value**)Ops+1, NumOps-1);
+  Constant *C = ConstantInt::get(TD->getIntPtrType(), Offset+BasePtr);
+  return ConstantExpr::getIntToPtr(C, ResultTy);
 }
 
 /// FoldBitCast - Constant fold bitcast, symbolically evaluating it with 
@@ -292,8 +298,8 @@ Constant *llvm::ConstantFoldInstruction(Instruction *I, const TargetData *TD) {
   // Scan the operand list, checking to see if they are all constants, if so,
   // hand off to ConstantFoldInstOperands.
   SmallVector<Constant*, 8> Ops;
-  for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
-    if (Constant *Op = dyn_cast<Constant>(I->getOperand(i)))
+  for (User::op_iterator i = I->op_begin(), e = I->op_end(); i != e; ++i)
+    if (Constant *Op = dyn_cast<Constant>(*i))
       Ops.push_back(Op);
     else
       return 0;  // All operands not constant!
@@ -303,6 +309,25 @@ Constant *llvm::ConstantFoldInstruction(Instruction *I, const TargetData *TD) {
                                            &Ops[0], Ops.size(), TD);
   else
     return ConstantFoldInstOperands(I->getOpcode(), I->getType(),
+                                    &Ops[0], Ops.size(), TD);
+}
+
+/// ConstantFoldConstantExpression - Attempt to fold the constant expression
+/// using the specified TargetData.  If successful, the constant result is
+/// result is returned, if not, null is returned.
+Constant *llvm::ConstantFoldConstantExpression(ConstantExpr *CE,
+                                               const TargetData *TD) {
+  assert(TD && "ConstantFoldConstantExpression requires a valid TargetData.");
+
+  SmallVector<Constant*, 8> Ops;
+  for (User::op_iterator i = CE->op_begin(), e = CE->op_end(); i != e; ++i)
+    Ops.push_back(cast<Constant>(*i));
+
+  if (CE->isCompare())
+    return ConstantFoldCompareInstOperands(CE->getPredicate(),
+                                           &Ops[0], Ops.size(), TD);
+  else 
+    return ConstantFoldInstOperands(CE->getOpcode(), CE->getType(),
                                     &Ops[0], Ops.size(), TD);
 }
 
@@ -392,7 +417,7 @@ Constant *llvm::ConstantFoldCompareInstOperands(unsigned Predicate,
                                                 const TargetData *TD) {
   // fold: icmp (inttoptr x), null         -> icmp x, 0
   // fold: icmp (ptrtoint x), 0            -> icmp x, null
-  // fold: icmp (inttoptr x), (inttoptr y) -> icmp x, y
+  // fold: icmp (inttoptr x), (inttoptr y) -> icmp trunc/zext x, trunc/zext y
   // fold: icmp (ptrtoint x), (ptrtoint y) -> icmp x, y
   //
   // ConstantExpr::getCompare cannot do this, because it doesn't have TD
@@ -420,21 +445,31 @@ Constant *llvm::ConstantFoldCompareInstOperands(unsigned Predicate,
       }
     }
     
-    if (TD && isa<ConstantExpr>(Ops[1]) &&
-        cast<ConstantExpr>(Ops[1])->getOpcode() == CE0->getOpcode()) {
-      const Type *IntPtrTy = TD->getIntPtrType();
-      // Only do this transformation if the int is intptrty in size, otherwise
-      // there is a truncation or extension that we aren't modeling.
-      if ((CE0->getOpcode() == Instruction::IntToPtr &&
-           CE0->getOperand(0)->getType() == IntPtrTy &&
-           Ops[1]->getOperand(0)->getType() == IntPtrTy) ||
-          (CE0->getOpcode() == Instruction::PtrToInt &&
-           CE0->getType() == IntPtrTy &&
-           CE0->getOperand(0)->getType() == Ops[1]->getOperand(0)->getType())) {
-        Constant *NewOps[] = { 
-          CE0->getOperand(0), cast<ConstantExpr>(Ops[1])->getOperand(0) 
-        };
-        return ConstantFoldCompareInstOperands(Predicate, NewOps, 2, TD);
+    if (ConstantExpr *CE1 = dyn_cast<ConstantExpr>(Ops[1])) {
+      if (TD && CE0->getOpcode() == CE1->getOpcode()) {
+        const Type *IntPtrTy = TD->getIntPtrType();
+
+        if (CE0->getOpcode() == Instruction::IntToPtr) {
+          // Convert the integer value to the right size to ensure we get the
+          // proper extension or truncation.
+          Constant *C0 = ConstantExpr::getIntegerCast(CE0->getOperand(0),
+                                                      IntPtrTy, false);
+          Constant *C1 = ConstantExpr::getIntegerCast(CE1->getOperand(0),
+                                                      IntPtrTy, false);
+          Constant *NewOps[] = { C0, C1 };
+          return ConstantFoldCompareInstOperands(Predicate, NewOps, 2, TD);
+        }
+
+        // Only do this transformation if the int is intptrty in size, otherwise
+        // there is a truncation or extension that we aren't modeling.
+        if ((CE0->getOpcode() == Instruction::PtrToInt &&
+             CE0->getType() == IntPtrTy &&
+             CE0->getOperand(0)->getType() == CE1->getOperand(0)->getType())) {
+          Constant *NewOps[] = { 
+            CE0->getOperand(0), CE1->getOperand(0) 
+          };
+          return ConstantFoldCompareInstOperands(Predicate, NewOps, 2, TD);
+        }
       }
     }
   }
@@ -597,6 +632,7 @@ static Constant *ConstantFoldFP(double (*NativeFP)(double), double V,
   if (Ty == Type::DoubleTy)
     return ConstantFP::get(APFloat(V));
   assert(0 && "Can only constant fold float/double");
+  return 0; // dummy return to suppress warning
 }
 
 static Constant *ConstantFoldBinaryFP(double (*NativeFP)(double, double),
@@ -614,6 +650,7 @@ static Constant *ConstantFoldBinaryFP(double (*NativeFP)(double, double),
   if (Ty == Type::DoubleTy)
     return ConstantFP::get(APFloat(V));
   assert(0 && "Can only constant fold float/double");
+  return 0; // dummy return to suppress warning
 }
 
 /// ConstantFoldCall - Attempt to constant fold a call to the specified function

@@ -16,7 +16,6 @@
 #ifndef LLVM_TARGET_ASM_INFO_H
 #define LLVM_TARGET_ASM_INFO_H
 
-#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
@@ -29,8 +28,22 @@ namespace llvm {
     };
   }
 
+  namespace SectionKind {
+    enum Kind {
+      Text,             ///< Text section
+      Data,             ///< Data section
+      BSS,              ///< BSS section
+      ROData,           ///< Readonly data section
+      RODataMergeStr,   ///< Readonly data section (mergeable strings)
+      RODataMergeConst, ///< Readonly data section (mergeable constants)
+      ThreadData,       ///< Initialized TLS data objects
+      ThreadBSS         ///< Uninitialized TLS data objects
+    };
+  }
+
   class TargetMachine;
   class CallInst;
+  class GlobalValue;
 
   /// TargetAsmInfo - This class is intended to be used as a base class for asm
   /// properties and features specific to the target.
@@ -61,10 +74,16 @@ namespace llvm {
     /// Null if this target doesn't support a BSS section.
     ///
     const char *TLSBSSSection;// Default to ".section .tbss,"awT",@nobits".
+
     /// ZeroFillDirective - Directive for emitting a global to the ZeroFill
     /// section on this target.  Null if this target doesn't support zerofill.
     const char *ZeroFillDirective;        // Default is null.
     
+    /// NonexecutableStackDirective - Directive for declaring to the
+    /// linker and beyond that the emitted code does not require stack
+    /// memory to be executable.
+    const char *NonexecutableStackDirective; // Default is null.
+
     /// NeedsSet - True if target asm treats expressions in data directives
     /// as linktime-relocatable.  For assembly-time computation, we need to
     /// use a .set.  Thus:
@@ -140,6 +159,12 @@ namespace llvm {
 
     /// AssemblerDialect - Which dialect of an assembler variant to use.
     unsigned AssemblerDialect;            // Defaults to 0
+
+    /// StringConstantPrefix - Prefix for FEs to use when generating unnamed
+    /// constant strings.  These names get run through the Mangler later; if
+    /// you want the Mangler not to add the GlobalPrefix as well, 
+    /// use '\1' as the first character.
+    const char *StringConstantPrefix;     // Defaults to ".str"
 
     //===--- Data Emission Directives -------------------------------------===//
 
@@ -333,10 +358,6 @@ namespace llvm {
     /// handle a weak_definition of constant 0 for an omitted EH frame.
     bool SupportsWeakOmittedEHFrame;  // Defaults to true.
 
-    /// ShortenEHDataON64Bit - True if target exception table format requires
-    /// 32-bit data in certain places even when targeting 64-bits.
-    bool ShortenEHDataOn64Bit;    // Defaults to false.
-
     /// DwarfSectionOffsetDirective - Special section offset directive.
     const char* DwarfSectionOffsetDirective; // Defaults to NULL
     
@@ -391,7 +412,6 @@ namespace llvm {
     /// DwarfExceptionSection - Section directive for Exception table.
     ///
     const char *DwarfExceptionSection; // Defaults to ".gcc_except_table".
-     
 
     //===--- CBE Asm Translation Table -----------------------------------===//
 
@@ -419,7 +439,11 @@ namespace llvm {
     /// if the symbol can be relocated.
     virtual unsigned PreferredEHDataFormat(DwarfEncoding::Target Reason,
                                            bool Global) const;
-    
+
+    /// SectionKindForGlobal - This hook allows the target to select proper
+    /// section kind used for global emission.
+    SectionKind::Kind SectionKindForGlobal(const GlobalValue *GV) const;
+
     // Accessors.
     //
     const char *getTextSection() const {
@@ -439,6 +463,9 @@ namespace llvm {
     }
     const char *getZeroFillDirective() const {
       return ZeroFillDirective;
+    }
+    const char *getNonexecutableStackDirective() const {
+      return NonexecutableStackDirective;
     }
     bool needsSet() const {
       return NeedsSet;
@@ -490,6 +517,9 @@ namespace llvm {
     }
     unsigned getAssemblerDialect() const {
       return AssemblerDialect;
+    }
+    const char *getStringConstantPrefix() const {
+      return StringConstantPrefix;
     }
     const char *getZeroDirective() const {
       return ZeroDirective;
@@ -626,12 +656,9 @@ namespace llvm {
     bool getSupportsWeakOmittedEHFrame() const {
       return SupportsWeakOmittedEHFrame;
     }
-    bool getShortenEHDataOn64Bit() const {
-      return ShortenEHDataOn64Bit;
-    }
     const char *getDwarfSectionOffsetDirective() const {
       return DwarfSectionOffsetDirective;
-    }    
+    }
     const char *getDwarfAbbrevSection() const {
       return DwarfAbbrevSection;
     }

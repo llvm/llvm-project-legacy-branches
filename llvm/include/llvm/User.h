@@ -23,15 +23,38 @@
 
 namespace llvm {
 
+/// OperandTraits - Compile-time customization of
+/// operand-related allocators and accessors
+/// for use of the User class
+template <class>
+struct OperandTraits;
+
+class User;
+
+/// OperandTraits<User> - specialization to User
+template <>
+struct OperandTraits<User> {
+  static inline Use *op_begin(User*);
+  static inline Use *op_end(User*);
+  static inline unsigned operands(const User*);
+  template <class U>
+  struct Layout {
+    typedef U overlay;
+  };
+  static inline void *allocate(unsigned);
+};
+
 class User : public Value {
   User(const User &);             // Do not implement
   void *operator new(size_t);     // Do not implement
+  template <unsigned>
+  friend struct HungoffOperandTraits;
 protected:
   /// OperandList - This is a pointer to the array of Users for this operand.
   /// For nodes of fixed arity (e.g. a binary operator) this array will live
-  /// embedded into the derived class.  For nodes of variable arity
-  /// (e.g. ConstantArrays, CallInst, PHINodes, ReturnInst etc), this memory 
-  /// will be dynamically allocated and should be destroyed by the classes 
+  /// prefixed to the derived class.  For nodes of resizable variable arity
+  /// (e.g. PHINodes, SwitchInst etc.), this memory will be dynamically
+  /// allocated and should be destroyed by the classes' 
   /// virtual dtor.
   Use *OperandList;
 
@@ -39,13 +62,33 @@ protected:
   ///
   unsigned NumOperands;
 
-  void *operator new(size_t s, unsigned) {
-    return ::operator new(s);
+  void *operator new(size_t s, unsigned Us);
+  User(const Type *ty, unsigned vty, Use *OpList, unsigned NumOps)
+    : Value(ty, vty), OperandList(OpList), NumOperands(NumOps) {}
+  Use *allocHungoffUses(unsigned) const;
+  void dropHungoffUses(Use *U) {
+    if (OperandList == U) {
+      OperandList = 0;
+      NumOperands = 0;
+    }
+    Use::zap(U, U->getImpliedUser(), true);
   }
-  User(const Type *Ty, unsigned vty, Use *OpList, unsigned NumOps)
-    : Value(Ty, vty), OperandList(OpList), NumOperands(NumOps) {}
-
 public:
+  ~User() {
+    Use::zap(OperandList, OperandList + NumOperands);
+  }
+  /// operator delete - free memory allocated for User and Use objects
+  void operator delete(void *Usr);
+  /// placement delete - required by std, but never called.
+  void operator delete(void*, unsigned) {
+    assert(0 && "Constructor throws?");
+  }
+  template <unsigned Idx> Use &Op() {
+    return OperandTraits<User>::op_begin(this)[Idx];
+  }
+  template <unsigned Idx> const Use &Op() const {
+    return OperandTraits<User>::op_begin(const_cast<User*>(this))[Idx];
+  }
   Value *getOperand(unsigned i) const {
     assert(i < NumOperands && "getOperand() out of range!");
     return OperandList[i];
@@ -70,15 +113,14 @@ public:
   // dropAllReferences() - This function is in charge of "letting go" of all
   // objects that this User refers to.  This allows one to
   // 'delete' a whole class at a time, even though there may be circular
-  // references... first all references are dropped, and all use counts go to
-  // zero.  Then everything is delete'd for real.  Note that no operations are
+  // references...  First all references are dropped, and all use counts go to
+  // zero.  Then everything is deleted for real.  Note that no operations are
   // valid on an object that has "dropped all references", except operator
   // delete.
   //
   void dropAllReferences() {
-    Use *OL = OperandList;
-    for (unsigned i = 0, e = NumOperands; i != e; ++i)
-      OL[i].set(0);
+    for (op_iterator i = op_begin(), e = op_end(); i != e; ++i)
+      i->set(0);
   }
 
   /// replaceUsesOfWith - Replaces all references to the "From" definition with
@@ -92,6 +134,18 @@ public:
     return isa<Instruction>(V) || isa<Constant>(V);
   }
 };
+
+inline Use *OperandTraits<User>::op_begin(User *U) {
+  return U->op_begin();
+}
+
+inline Use *OperandTraits<User>::op_end(User *U) {
+  return U->op_end();
+}
+
+inline unsigned OperandTraits<User>::operands(const User *U) {
+  return U->getNumOperands();
+}
 
 template<> struct simplify_type<User::op_iterator> {
   typedef Value* SimpleType;

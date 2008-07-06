@@ -17,7 +17,7 @@
 #ifndef LLVM_BITCODE_ARCHIVE_H
 #define LLVM_BITCODE_ARCHIVE_H
 
-#include "llvm/ADT/ilist"
+#include "llvm/ADT/ilist.h"
 #include "llvm/System/Path.h"
 #include <map>
 #include <set>
@@ -254,7 +254,7 @@ class Archive {
     inline reverse_iterator       rend  ()       { return members.rend();   }
     inline const_reverse_iterator rend  () const { return members.rend();   }
 
-    inline unsigned               size()   const { return members.size();   }
+    inline size_t                 size()   const { return members.size();   }
     inline bool                   empty()  const { return members.empty();  }
     inline const ArchiveMember&   front()  const { return members.front();  }
     inline       ArchiveMember&   front()        { return members.front();  }

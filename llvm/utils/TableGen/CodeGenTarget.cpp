@@ -27,13 +27,13 @@ static cl::opt<unsigned>
 AsmWriterNum("asmwriternum", cl::init(0),
              cl::desc("Make -gen-asm-writer emit assembly writer #N"));
 
-/// getValueType - Return the MCV::ValueType that the specified TableGen record
-/// corresponds to.
-MVT::ValueType llvm::getValueType(Record *Rec) {
-  return (MVT::ValueType)Rec->getValueAsInt("Value");
+/// getValueType - Return the MVT::SimpleValueType that the specified TableGen
+/// record corresponds to.
+MVT::SimpleValueType llvm::getValueType(Record *Rec) {
+  return (MVT::SimpleValueType)Rec->getValueAsInt("Value");
 }
 
-std::string llvm::getName(MVT::ValueType T) {
+std::string llvm::getName(MVT::SimpleValueType T) {
   switch (T) {
   case MVT::Other: return "UNKNOWN";
   case MVT::i1:    return "MVT::i1";
@@ -69,7 +69,7 @@ std::string llvm::getName(MVT::ValueType T) {
   }
 }
 
-std::string llvm::getEnumName(MVT::ValueType T) {
+std::string llvm::getEnumName(MVT::SimpleValueType T) {
   switch (T) {
   case MVT::Other: return "MVT::Other";
   case MVT::i1:    return "MVT::i1";
@@ -181,7 +181,7 @@ std::vector<unsigned char> CodeGenTarget::getRegisterVTs(Record *R) const {
     const CodeGenRegisterClass &RC = RegisterClasses[i];
     for (unsigned ei = 0, ee = RC.Elements.size(); ei != ee; ++ei) {
       if (R == RC.Elements[ei]) {
-        const std::vector<MVT::ValueType> &InVTs = RC.getValueTypes();
+        const std::vector<MVT::SimpleValueType> &InVTs = RC.getValueTypes();
         for (unsigned i = 0, e = InVTs.size(); i != e; ++i)
           Result.push_back(InVTs[i]);
       }
@@ -231,7 +231,7 @@ CodeGenRegisterClass::CodeGenRegisterClass(Record *R) : TheDef(R) {
   unsigned Size = R->getValueAsInt("Size");
 
   Namespace = R->getValueAsString("Namespace");
-  SpillSize = Size ? Size : MVT::getSizeInBits(VTs[0]);
+  SpillSize = Size ? Size : MVT(VTs[0]).getSizeInBits();
   SpillAlignment = R->getValueAsInt("Alignment");
   CopyCost = R->getValueAsInt("CopyCost");
   MethodBodies = R->getValueAsCode("MethodBodies");
@@ -286,9 +286,17 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   if (I == Instructions.end()) throw "Could not find 'INLINEASM' instruction!";
   const CodeGenInstruction *INLINEASM = &I->second;
   
-  I = getInstructions().find("LABEL");
-  if (I == Instructions.end()) throw "Could not find 'LABEL' instruction!";
-  const CodeGenInstruction *LABEL = &I->second;
+  I = getInstructions().find("DBG_LABEL");
+  if (I == Instructions.end()) throw "Could not find 'DBG_LABEL' instruction!";
+  const CodeGenInstruction *DBG_LABEL = &I->second;
+  
+  I = getInstructions().find("EH_LABEL");
+  if (I == Instructions.end()) throw "Could not find 'EH_LABEL' instruction!";
+  const CodeGenInstruction *EH_LABEL = &I->second;
+  
+  I = getInstructions().find("GC_LABEL");
+  if (I == Instructions.end()) throw "Could not find 'GC_LABEL' instruction!";
+  const CodeGenInstruction *GC_LABEL = &I->second;
   
   I = getInstructions().find("DECLARE");
   if (I == Instructions.end()) throw "Could not find 'DECLARE' instruction!";
@@ -317,7 +325,9 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   // Print out the rest of the instructions now.
   NumberedInstructions.push_back(PHI);
   NumberedInstructions.push_back(INLINEASM);
-  NumberedInstructions.push_back(LABEL);
+  NumberedInstructions.push_back(DBG_LABEL);
+  NumberedInstructions.push_back(EH_LABEL);
+  NumberedInstructions.push_back(GC_LABEL);
   NumberedInstructions.push_back(DECLARE);
   NumberedInstructions.push_back(EXTRACT_SUBREG);
   NumberedInstructions.push_back(INSERT_SUBREG);
@@ -326,7 +336,9 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   for (inst_iterator II = inst_begin(), E = inst_end(); II != E; ++II)
     if (&II->second != PHI &&
         &II->second != INLINEASM &&
-        &II->second != LABEL &&
+        &II->second != DBG_LABEL &&
+        &II->second != EH_LABEL &&
+        &II->second != GC_LABEL &&
         &II->second != DECLARE &&
         &II->second != EXTRACT_SUBREG &&
         &II->second != INSERT_SUBREG &&
@@ -366,6 +378,8 @@ ComplexPattern::ComplexPattern(Record *R) {
       Properties |= 1 << SDNPMayLoad;
     } else if (PropList[i]->getName() == "SDNPSideEffect") {
       Properties |= 1 << SDNPSideEffect;
+    } else if (PropList[i]->getName() == "SDNPMemOperand") {
+      Properties |= 1 << SDNPMemOperand;
     } else {
       cerr << "Unsupported SD Node property '" << PropList[i]->getName()
            << "' on ComplexPattern '" << R->getName() << "'!\n";
@@ -404,6 +418,7 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
   std::string DefName = R->getName();
   ModRef = WriteMem;
   isOverloaded = false;
+  isCommutative = false;
   
   if (DefName.size() <= 4 || 
       std::string(DefName.begin(), DefName.begin()+4) != "int_")
@@ -443,7 +458,7 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
   for (unsigned i = 0, e = TypeList->getSize(); i != e; ++i) {
     Record *TyEl = TypeList->getElementAsRecord(i);
     assert(TyEl->isSubClassOf("LLVMType") && "Expected a type!");
-    MVT::ValueType VT = getValueType(TyEl->getValueAsDef("VT"));
+    MVT::SimpleValueType VT = getValueType(TyEl->getValueAsDef("VT"));
     isOverloaded |= VT == MVT::iAny || VT == MVT::fAny;
     ArgVTs.push_back(VT);
     ArgTypeDefs.push_back(TyEl);
@@ -469,6 +484,8 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
       ModRef = WriteArgMem;
     else if (Property->getName() == "IntrWriteMem")
       ModRef = WriteMem;
+    else if (Property->getName() == "Commutative")
+      isCommutative = true;
     else
       assert(0 && "Unknown property!");
   }

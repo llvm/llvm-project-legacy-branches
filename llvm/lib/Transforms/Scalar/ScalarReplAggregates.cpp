@@ -124,10 +124,10 @@ namespace {
                                       unsigned Offset);
     static Instruction *isOnlyCopiedFromConstantGlobal(AllocationInst *AI);
   };
-
-  char SROA::ID = 0;
-  RegisterPass<SROA> X("scalarrepl", "Scalar Replacement of Aggregates");
 }
+
+char SROA::ID = 0;
+static RegisterPass<SROA> X("scalarrepl", "Scalar Replacement of Aggregates");
 
 // Public interface to the ScalarReplAggregates pass
 FunctionPass *llvm::createScalarReplAggregatesPass(signed int Threshold) { 
@@ -178,6 +178,14 @@ bool SROA::performPromotion(Function &F) {
   return Changed;
 }
 
+/// getNumSAElements - Return the number of elements in the specific struct or
+/// array.
+static uint64_t getNumSAElements(const Type *T) {
+  if (const StructType *ST = dyn_cast<StructType>(T))
+    return ST->getNumElements();
+  return cast<ArrayType>(T)->getNumElements();
+}
+
 // performScalarRepl - This algorithm is a simple worklist driven algorithm,
 // which runs on all of the malloc/alloca instructions in the function, removing
 // them if they are only used by getelementptr instructions.
@@ -224,7 +232,10 @@ bool SROA::performScalarRepl(Function &F) {
         (isa<StructType>(AI->getAllocatedType()) ||
          isa<ArrayType>(AI->getAllocatedType())) &&
         AI->getAllocatedType()->isSized() &&
-        TD.getABITypeSize(AI->getAllocatedType()) < SRThreshold) {
+        // Do not promote any struct whose size is larger than "128" bytes.
+        TD.getABITypeSize(AI->getAllocatedType()) < SRThreshold &&
+        // Do not promote any struct into more than "32" separate vars.
+        getNumSAElements(AI->getAllocatedType()) < SRThreshold/4) {
       // Check that all of the users of the allocation are capable of being
       // transformed.
       switch (isSafeAllocaToScalarRepl(AI)) {
@@ -299,6 +310,43 @@ void SROA::DoScalarReplacement(AllocationInst *AI,
     if (BitCastInst *BCInst = dyn_cast<BitCastInst>(User)) {
       RewriteBitCastUserOfAlloca(BCInst, AI, ElementAllocas);
       BCInst->eraseFromParent();
+      continue;
+    }
+    
+    // Replace:
+    //   %res = load { i32, i32 }* %alloc
+    // with:
+    //   %load.0 = load i32* %alloc.0
+    //   %insert.0 insertvalue { i32, i32 } zeroinitializer, i32 %load.0, 0 
+    //   %load.1 = load i32* %alloc.1
+    //   %insert = insertvalue { i32, i32 } %insert.0, i32 %load.1, 1 
+    // (Also works for arrays instead of structs)
+    if (LoadInst *LI = dyn_cast<LoadInst>(User)) {
+      Value *Insert = UndefValue::get(LI->getType());
+      for (unsigned i = 0, e = ElementAllocas.size(); i != e; ++i) {
+        Value *Load = new LoadInst(ElementAllocas[i], "load", LI);
+        Insert = InsertValueInst::Create(Insert, Load, i, "insert", LI);
+      }
+      LI->replaceAllUsesWith(Insert);
+      LI->eraseFromParent();
+      continue;
+    }
+
+    // Replace:
+    //   store { i32, i32 } %val, { i32, i32 }* %alloc
+    // with:
+    //   %val.0 = extractvalue { i32, i32 } %val, 0 
+    //   store i32 %val.0, i32* %alloc.0
+    //   %val.1 = extractvalue { i32, i32 } %val, 1 
+    //   store i32 %val.1, i32* %alloc.1
+    // (Also works for arrays instead of structs)
+    if (StoreInst *SI = dyn_cast<StoreInst>(User)) {
+      Value *Val = SI->getOperand(0);
+      for (unsigned i = 0, e = ElementAllocas.size(); i != e; ++i) {
+        Value *Extract = ExtractValueInst::Create(Val, i, Val->getName(), SI);
+        new StoreInst(Extract, ElementAllocas[i], SI);
+      }
+      SI->eraseFromParent();
       continue;
     }
     
@@ -440,6 +488,12 @@ void SROA::isSafeUseOfAllocation(Instruction *User, AllocationInst *AI,
   if (BitCastInst *C = dyn_cast<BitCastInst>(User))
     return isSafeUseOfBitCastedAllocation(C, AI, Info);
 
+  if (isa<LoadInst>(User))
+    return; // Loads (returning a first class aggregrate) are always rewritable
+
+  if (isa<StoreInst>(User) && User->getOperand(0) != AI)
+    return; // Store is ok if storing INTO the pointer, not storing the pointer
+ 
   GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(User);
   if (GEPI == 0)
     return MarkUnsafe(Info);
@@ -631,11 +685,9 @@ void SROA::RewriteBitCastUserOfAlloca(Instruction *BCInst, AllocationInst *AI,
       // If this is a memcpy/memmove, emit a GEP of the other element address.
       Value *OtherElt = 0;
       if (OtherPtr) {
-        Value *Idx[2];
-        Idx[0] = Zero;
-        Idx[1] = ConstantInt::get(Type::Int32Ty, i);
+        Value *Idx[2] = { Zero, ConstantInt::get(Type::Int32Ty, i) };
         OtherElt = GetElementPtrInst::Create(OtherPtr, Idx, Idx + 2,
-                                             OtherPtr->getNameStr()+"."+utostr(i),
+                                           OtherPtr->getNameStr()+"."+utostr(i),
                                              MI);
       }
 
@@ -643,7 +695,7 @@ void SROA::RewriteBitCastUserOfAlloca(Instruction *BCInst, AllocationInst *AI,
       const Type *EltTy =cast<PointerType>(EltPtr->getType())->getElementType();
       
       // If we got down to a scalar, insert a load or store as appropriate.
-      if (EltTy->isFirstClassType()) {
+      if (EltTy->isSingleValueType()) {
         if (isa<MemCpyInst>(MI) || isa<MemMoveInst>(MI)) {
           Value *Elt = new LoadInst(SROADest ? OtherElt : EltPtr, "tmp",
                                     MI);
@@ -737,8 +789,7 @@ void SROA::RewriteBitCastUserOfAlloca(Instruction *BCInst, AllocationInst *AI,
 
 /// HasPadding - Return true if the specified type has any structure or
 /// alignment padding, false otherwise.
-static bool HasPadding(const Type *Ty, const TargetData &TD,
-                       bool inPacked = false) {
+static bool HasPadding(const Type *Ty, const TargetData &TD) {
   if (const StructType *STy = dyn_cast<StructType>(Ty)) {
     const StructLayout *SL = TD.getStructLayout(STy);
     unsigned PrevFieldBitOffset = 0;
@@ -746,7 +797,7 @@ static bool HasPadding(const Type *Ty, const TargetData &TD,
       unsigned FieldBitOffset = SL->getElementOffsetInBits(i);
 
       // Padding in sub-elements?
-      if (HasPadding(STy->getElementType(i), TD, STy->isPacked()))
+      if (HasPadding(STy->getElementType(i), TD))
         return true;
 
       // Check to see if there is any padding between this element and the
@@ -770,12 +821,11 @@ static bool HasPadding(const Type *Ty, const TargetData &TD,
     }
 
   } else if (const ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
-    return HasPadding(ATy->getElementType(), TD, false);
+    return HasPadding(ATy->getElementType(), TD);
   } else if (const VectorType *VTy = dyn_cast<VectorType>(Ty)) {
-    return HasPadding(VTy->getElementType(), TD, false);
+    return HasPadding(VTy->getElementType(), TD);
   }
-  return inPacked ?
-    false : TD.getTypeSizeInBits(Ty) != TD.getABITypeSizeInBits(Ty);
+  return TD.getTypeSizeInBits(Ty) != TD.getABITypeSizeInBits(Ty);
 }
 
 /// isSafeStructAllocaToScalarRepl - Check to see if the specified allocation of
@@ -963,12 +1013,22 @@ const Type *SROA::CanConvertToScalar(Value *V, bool &IsNotTrivial) {
     Instruction *User = cast<Instruction>(*UI);
     
     if (LoadInst *LI = dyn_cast<LoadInst>(User)) {
+      // FIXME: Loads of a first class aggregrate value could be converted to a
+      // series of loads and insertvalues
+      if (!LI->getType()->isSingleValueType())
+        return 0;
+
       if (MergeInType(LI->getType(), UsedType, TD))
         return 0;
       
     } else if (StoreInst *SI = dyn_cast<StoreInst>(User)) {
       // Storing the pointer, not into the value?
       if (SI->getOperand(0) == V) return 0;
+
+      // FIXME: Stores of a first class aggregrate value could be converted to a
+      // series of extractvalues and stores
+      if (!SI->getOperand(0)->getType()->isSingleValueType())
+        return 0;
       
       // NOTE: We could handle storing of FP imms into integers here!
       
@@ -1204,11 +1264,11 @@ Value *SROA::ConvertUsesOfLoadToScalar(LoadInst *LI, AllocaInst *NewAI,
   // We do this to support (f.e.) loads off the end of a structure where
   // only some bits are used.
   if (ShAmt > 0 && (unsigned)ShAmt < NTy->getBitWidth())
-    NV = BinaryOperator::createLShr(NV, 
+    NV = BinaryOperator::CreateLShr(NV, 
                                     ConstantInt::get(NV->getType(),ShAmt),
                                     LI->getName(), LI);
   else if (ShAmt < 0 && (unsigned)-ShAmt < NTy->getBitWidth())
-    NV = BinaryOperator::createShl(NV, 
+    NV = BinaryOperator::CreateShl(NV, 
                                    ConstantInt::get(NV->getType(),-ShAmt),
                                    LI->getName(), LI);
   
@@ -1308,12 +1368,12 @@ Value *SROA::ConvertUsesOfStoreToScalar(StoreInst *SI, AllocaInst *NewAI,
     // only some bits in the structure are set.
     APInt Mask(APInt::getLowBitsSet(DestWidth, SrcWidth));
     if (ShAmt > 0 && (unsigned)ShAmt < DestWidth) {
-      SV = BinaryOperator::createShl(SV, 
+      SV = BinaryOperator::CreateShl(SV, 
                                      ConstantInt::get(SV->getType(), ShAmt),
                                      SV->getName(), SI);
       Mask <<= ShAmt;
     } else if (ShAmt < 0 && (unsigned)-ShAmt < DestWidth) {
-      SV = BinaryOperator::createLShr(SV,
+      SV = BinaryOperator::CreateLShr(SV,
                                       ConstantInt::get(SV->getType(),-ShAmt),
                                       SV->getName(), SI);
       Mask = Mask.lshr(ShAmt);
@@ -1323,9 +1383,9 @@ Value *SROA::ConvertUsesOfStoreToScalar(StoreInst *SI, AllocaInst *NewAI,
     // in the new bits.
     if (SrcWidth != DestWidth) {
       assert(DestWidth > SrcWidth);
-      Old = BinaryOperator::createAnd(Old, ConstantInt::get(~Mask),
+      Old = BinaryOperator::CreateAnd(Old, ConstantInt::get(~Mask),
                                       Old->getName()+".mask", SI);
-      SV = BinaryOperator::createOr(Old, SV, SV->getName()+".ins", SI);
+      SV = BinaryOperator::CreateOr(Old, SV, SV->getName()+".ins", SI);
     }
   }
   return SV;

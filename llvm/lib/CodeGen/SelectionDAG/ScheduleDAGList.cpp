@@ -28,9 +28,9 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/Statistic.h"
 #include <climits>
-#include <queue>
 using namespace llvm;
 
 STATISTIC(NumNoops , "Number of noops inserted");
@@ -94,7 +94,7 @@ void ScheduleDAGList::Schedule() {
   // Build scheduling units.
   BuildSchedUnits();
 
-  AvailableQueue->initNodes(SUnitMap, SUnits);
+  AvailableQueue->initNodes(SUnits);
   
   ListScheduleTopDown();
   
@@ -177,6 +177,7 @@ void ScheduleDAGList::ListScheduleTopDown() {
   // While Available queue is not empty, grab the node with the highest
   // priority. If it is not ready put it back.  Schedule the node.
   std::vector<SUnit*> NotReady;
+  Sequence.reserve(SUnits.size());
   while (!AvailableQueue->empty() || !PendingQueue.empty()) {
     // Check to see if any of the pending instructions are ready to issue.  If
     // so, add them to the available queue.
@@ -314,13 +315,12 @@ namespace {
     /// mobility.
     std::vector<unsigned> NumNodesSolelyBlocking;
 
-    std::priority_queue<SUnit*, std::vector<SUnit*>, latency_sort> Queue;
+    PriorityQueue<SUnit*, std::vector<SUnit*>, latency_sort> Queue;
 public:
     LatencyPriorityQueue() : Queue(latency_sort(this)) {
     }
     
-    void initNodes(DenseMap<SDNode*, std::vector<SUnit*> > &sumap,
-                   std::vector<SUnit> &sunits) {
+    void initNodes(std::vector<SUnit> &sunits) {
       SUnits = &sunits;
       // Calculate node priorities.
       CalculatePriorities();
@@ -373,25 +373,9 @@ public:
       return V;
     }
 
-    /// remove - This is a really inefficient way to remove a node from a
-    /// priority queue.  We should roll our own heap to make this better or
-    /// something.
     void remove(SUnit *SU) {
-      std::vector<SUnit*> Temp;
-      
       assert(!Queue.empty() && "Not in queue!");
-      while (Queue.top() != SU) {
-        Temp.push_back(Queue.top());
-        Queue.pop();
-        assert(!Queue.empty() && "Not in queue!");
-      }
-
-      // Remove the node from the PQ.
-      Queue.pop();
-      
-      // Add all the other nodes back.
-      for (unsigned i = 0, e = Temp.size(); i != e; ++i)
-        Queue.push(Temp[i]);
+      Queue.erase_one(SU);
     }
 
     // ScheduledNode - As nodes are scheduled, we look to see if there are any
@@ -564,7 +548,7 @@ void LatencyPriorityQueue::AdjustPriorityOfUnscheduledPreds(SUnit *SU) {
 /// recognizer and deletes it when done.
 ScheduleDAG* llvm::createTDListDAGScheduler(SelectionDAGISel *IS,
                                             SelectionDAG *DAG,
-                                            MachineBasicBlock *BB) {
+                                            MachineBasicBlock *BB, bool Fast) {
   return new ScheduleDAGList(*DAG, BB, DAG->getTarget(),
                              new LatencyPriorityQueue(),
                              IS->CreateTargetHazardRecognizer());

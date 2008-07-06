@@ -20,14 +20,16 @@
 #include "X86MachineFunctionInfo.h"
 #include "X86TargetMachine.h"
 #include "X86TargetAsmInfo.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/CallingConv.h"
-#include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
+#include "llvm/Type.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/Support/Mangler.h"
 #include "llvm/Target/TargetAsmInfo.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/Statistic.h"
 using namespace llvm;
 
 STATISTIC(EmittedInsts, "Number of machine instrs printed");
@@ -39,11 +41,108 @@ static std::string getPICLabelString(unsigned FnNum,
   if (Subtarget->isTargetDarwin())
     label =  "\"L" + utostr_32(FnNum) + "$pb\"";
   else if (Subtarget->isTargetELF())
-    label = ".Lllvm$" + utostr_32(FnNum) + "." + "$piclabel";
+    label = ".Lllvm$" + utostr_32(FnNum) + "." "$piclabel";
   else
     assert(0 && "Don't know how to print PIC label!\n");
 
   return label;
+}
+
+static X86MachineFunctionInfo calculateFunctionInfo(const Function *F,
+                                                    const TargetData *TD) {
+  X86MachineFunctionInfo Info;
+  uint64_t Size = 0;
+
+  switch (F->getCallingConv()) {
+  case CallingConv::X86_StdCall:
+    Info.setDecorationStyle(StdCall);
+    break;
+  case CallingConv::X86_FastCall:
+    Info.setDecorationStyle(FastCall);
+    break;
+  default:
+    return Info;
+  }
+
+  unsigned argNum = 1;
+  for (Function::const_arg_iterator AI = F->arg_begin(), AE = F->arg_end();
+       AI != AE; ++AI, ++argNum) {
+    const Type* Ty = AI->getType();
+
+    // 'Dereference' type in case of byval parameter attribute
+    if (F->paramHasAttr(argNum, ParamAttr::ByVal))
+      Ty = cast<PointerType>(Ty)->getElementType();
+
+    // Size should be aligned to DWORD boundary
+    Size += ((TD->getABITypeSize(Ty) + 3)/4)*4;
+  }
+
+  // We're not supporting tooooo huge arguments :)
+  Info.setBytesToPopOnReturn((unsigned int)Size);
+  return Info;
+}
+
+/// PrintUnmangledNameSafely - Print out the printable characters in the name.
+/// Don't print things like \n or \0.
+static void PrintUnmangledNameSafely(const Value *V, std::ostream &OS) {
+  for (const char *Name = V->getNameStart(), *E = Name+V->getNameLen();
+       Name != E; ++Name)
+    if (isprint(*Name))
+      OS << *Name;
+}
+
+/// decorateName - Query FunctionInfoMap and use this information for various
+/// name decoration.
+void X86ATTAsmPrinter::decorateName(std::string &Name,
+                                    const GlobalValue *GV) {
+  const Function *F = dyn_cast<Function>(GV);
+  if (!F) return;
+
+  // We don't want to decorate non-stdcall or non-fastcall functions right now
+  unsigned CC = F->getCallingConv();
+  if (CC != CallingConv::X86_StdCall && CC != CallingConv::X86_FastCall)
+    return;
+
+  // Decorate names only when we're targeting Cygwin/Mingw32 targets
+  if (!Subtarget->isTargetCygMing())
+    return;
+
+  FMFInfoMap::const_iterator info_item = FunctionInfoMap.find(F);
+
+  const X86MachineFunctionInfo *Info;
+  if (info_item == FunctionInfoMap.end()) {
+    // Calculate apropriate function info and populate map
+    FunctionInfoMap[F] = calculateFunctionInfo(F, TM.getTargetData());
+    Info = &FunctionInfoMap[F];
+  } else {
+    Info = &info_item->second;
+  }
+
+  const FunctionType *FT = F->getFunctionType();
+  switch (Info->getDecorationStyle()) {
+  case None:
+    break;
+  case StdCall:
+    // "Pure" variadic functions do not receive @0 suffix.
+    if (!FT->isVarArg() || (FT->getNumParams() == 0) ||
+        (FT->getNumParams() == 1 && F->hasStructRetAttr()))
+      Name += '@' + utostr_32(Info->getBytesToPopOnReturn());
+    break;
+  case FastCall:
+    // "Pure" variadic functions do not receive @0 suffix.
+    if (!FT->isVarArg() || (FT->getNumParams() == 0) ||
+        (FT->getNumParams() == 1 && F->hasStructRetAttr()))
+      Name += '@' + utostr_32(Info->getBytesToPopOnReturn());
+
+    if (Name[0] == '_') {
+      Name[0] = '@';
+    } else {
+      Name = '@' + Name;
+    }
+    break;
+  default:
+    assert(0 && "Unsupported DecorationStyle");
+  }
 }
 
 /// getSectionForFunction - Return the section that we should emit the
@@ -51,7 +150,7 @@ static std::string getPICLabelString(unsigned FnNum,
 std::string X86ATTAsmPrinter::getSectionForFunction(const Function &F) const {
   switch (F.getLinkage()) {
   default: assert(0 && "Unknown linkage type!");
-  case Function::InternalLinkage: 
+  case Function::InternalLinkage:
   case Function::DLLExportLinkage:
   case Function::ExternalLinkage:
     return TAI->getTextSection();
@@ -68,36 +167,13 @@ std::string X86ATTAsmPrinter::getSectionForFunction(const Function &F) const {
   }
 }
 
-/// runOnMachineFunction - This uses the printMachineInstruction()
-/// method to print assembly for each instruction.
-///
-bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
-  if (TAI->doesSupportDebugInformation()) {
-    // Let PassManager know we need debug information and relay
-    // the MachineModuleInfo address on to DwarfWriter.
-    MMI = &getAnalysis<MachineModuleInfo>();
-    DW.SetModuleInfo(MMI);
-  }
-
-  SetupMachineFunction(MF);
-  O << "\n\n";
-
-  // Print out constants referenced by the function
-  EmitConstantPool(MF.getConstantPool());
-
-  // Print out labels for the function.
+void X86ATTAsmPrinter::emitFunctionHeader(const MachineFunction &MF) {
   const Function *F = MF.getFunction();
-  unsigned CC = F->getCallingConv();
 
-  // Populate function information map.  Actually, We don't want to populate
-  // non-stdcall or non-fastcall functions' information right now.
-  if (CC == CallingConv::X86_StdCall || CC == CallingConv::X86_FastCall)
-    FunctionInfoMap[F] = *MF.getInfo<X86MachineFunctionInfo>();
-
-  X86SharedAsmPrinter::decorateName(CurrentFnName, F);
+  decorateName(CurrentFnName, F);
 
   SwitchToTextSection(getSectionForFunction(*F).c_str(), F);
-    
+
   unsigned FnAlign = OptimizeForSize ? 1 : 4;
   switch (F->getLinkage()) {
   default: assert(0 && "Unknown linkage type!");
@@ -105,32 +181,30 @@ bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
     EmitAlignment(FnAlign, F);
     break;
   case Function::DLLExportLinkage:
-    DLLExportedFns.insert(Mang->makeNameProper(F->getName(), ""));
-    //FALLS THROUGH
   case Function::ExternalLinkage:
     EmitAlignment(FnAlign, F);
-    O << "\t.globl\t" << CurrentFnName << "\n";    
+    O << "\t.globl\t" << CurrentFnName << '\n';
     break;
   case Function::LinkOnceLinkage:
   case Function::WeakLinkage:
     EmitAlignment(FnAlign, F);
     if (Subtarget->isTargetDarwin()) {
-      O << "\t.globl\t" << CurrentFnName << "\n";
-      O << TAI->getWeakDefDirective() << CurrentFnName << "\n";
+      O << "\t.globl\t" << CurrentFnName << '\n';
+      O << TAI->getWeakDefDirective() << CurrentFnName << '\n';
     } else if (Subtarget->isTargetCygMing()) {
-      O << "\t.globl\t" << CurrentFnName << "\n";
-      O << "\t.linkonce discard\n";
+      O << "\t.globl\t" << CurrentFnName << "\n"
+           "\t.linkonce discard\n";
     } else {
-      O << "\t.weak\t" << CurrentFnName << "\n";
+      O << "\t.weak\t" << CurrentFnName << '\n';
     }
     break;
   }
   if (F->hasHiddenVisibility()) {
     if (const char *Directive = TAI->getHiddenDirective())
-      O << Directive << CurrentFnName << "\n";
+      O << Directive << CurrentFnName << '\n';
   } else if (F->hasProtectedVisibility()) {
     if (const char *Directive = TAI->getProtectedDirective())
-      O << Directive << CurrentFnName << "\n";
+      O << Directive << CurrentFnName << '\n';
   }
 
   if (Subtarget->isTargetELF())
@@ -149,12 +223,42 @@ bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
       (F->getLinkage() == Function::LinkOnceLinkage ||
        F->getLinkage() == Function::WeakLinkage))
     O << "Lllvm$workaround$fake$stub$" << CurrentFnName << ":\n";
+}
 
-  if (TAI->doesSupportDebugInformation() ||
-      TAI->doesSupportExceptionHandling()) {
-    // Emit pre-function debug and/or EH information.
-    DW.BeginFunction(&MF);
+/// runOnMachineFunction - This uses the printMachineInstruction()
+/// method to print assembly for each instruction.
+///
+bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+  const Function *F = MF.getFunction();
+  unsigned CC = F->getCallingConv();
+
+  if (TAI->doesSupportDebugInformation()) {
+    // Let PassManager know we need debug information and relay
+    // the MachineModuleInfo address on to DwarfWriter.
+    MMI = &getAnalysis<MachineModuleInfo>();
+    DW.SetModuleInfo(MMI);
   }
+
+  SetupMachineFunction(MF);
+  O << "\n\n";
+
+  // Populate function information map.  Actually, We don't want to populate
+  // non-stdcall or non-fastcall functions' information right now.
+  if (CC == CallingConv::X86_StdCall || CC == CallingConv::X86_FastCall)
+    FunctionInfoMap[F] = *MF.getInfo<X86MachineFunctionInfo>();
+
+  // Print out constants referenced by the function
+  EmitConstantPool(MF.getConstantPool());
+
+  if (F->hasDLLExportLinkage())
+    DLLExportedFns.insert(Mang->makeNameProper(F->getName(), ""));
+
+  // Print the 'header' of function
+  emitFunctionHeader(MF);
+
+  // Emit pre-function debug and/or EH information.
+  if (TAI->doesSupportDebugInformation() || TAI->doesSupportExceptionHandling())
+    DW.BeginFunction(&MF);
 
   // Print out code for the function.
   bool hasAnyRealCode = false;
@@ -168,7 +272,7 @@ bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
     for (MachineBasicBlock::const_iterator II = I->begin(), IE = I->end();
          II != IE; ++II) {
       // Print the assembly for the instruction.
-      if (II->getOpcode() != X86::LABEL)
+      if (!II->isLabel())
         hasAnyRealCode = true;
       printMachineInstruction(II);
     }
@@ -183,25 +287,29 @@ bool X86ATTAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   }
 
   if (TAI->hasDotTypeDotSizeDirective())
-    O << "\t.size\t" << CurrentFnName << ", .-" << CurrentFnName << "\n";
+    O << "\t.size\t" << CurrentFnName << ", .-" << CurrentFnName << '\n';
 
-  if (TAI->doesSupportDebugInformation()) {
-    // Emit post-function debug information.
+  // Emit post-function debug information.
+  if (TAI->doesSupportDebugInformation())
     DW.EndFunction();
-  }
 
   // Print out jump tables referenced by the function.
   EmitJumpTableInfo(MF.getJumpTableInfo(), MF);
-  
+
   // We didn't modify anything.
   return false;
 }
 
-static inline bool printGOT(TargetMachine &TM, const X86Subtarget* ST) {
+static inline bool shouldPrintGOT(TargetMachine &TM, const X86Subtarget* ST) {
   return ST->isPICStyleGOT() && TM.getRelocationModel() == Reloc::PIC_;
 }
 
-static inline bool printStub(TargetMachine &TM, const X86Subtarget* ST) {
+static inline bool shouldPrintPLT(TargetMachine &TM, const X86Subtarget* ST) {
+  return ST->isTargetELF() && TM.getRelocationModel() == Reloc::PIC_ &&
+      (ST->isPICStyleRIPRel() || ST->isPICStyleGOT());
+}
+
+static inline bool shouldPrintStub(TargetMachine &TM, const X86Subtarget* ST) {
   return ST->isPICStyleStub() && TM.getRelocationModel() != Reloc::Static;
 }
 
@@ -215,7 +323,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
     O << '%';
     unsigned Reg = MO.getReg();
     if (Modifier && strncmp(Modifier, "subreg", strlen("subreg")) == 0) {
-      MVT::ValueType VT = (strcmp(Modifier+6,"64") == 0) ?
+      MVT VT = (strcmp(Modifier+6,"64") == 0) ?
         MVT::i64 : ((strcmp(Modifier+6, "32") == 0) ? MVT::i32 :
                     ((strcmp(Modifier+6,"16") == 0) ? MVT::i16 : MVT::i8));
       Reg = getX86SubSuperRegister(Reg, VT);
@@ -237,7 +345,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
   case MachineOperand::MO_JumpTableIndex: {
     bool isMemOp  = Modifier && !strcmp(Modifier, "mem");
     if (!isMemOp) O << '$';
-    O << TAI->getPrivateGlobalPrefix() << "JTI" << getFunctionNumber() << "_"
+    O << TAI->getPrivateGlobalPrefix() << "JTI" << getFunctionNumber() << '_'
       << MO.getIndex();
 
     if (TM.getRelocationModel() == Reloc::PIC_) {
@@ -247,7 +355,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
       else if (Subtarget->isPICStyleGOT())
         O << "@GOTOFF";
     }
-    
+
     if (isMemOp && Subtarget->isPICStyleRIPRel() && !NotRIPRel)
       O << "(%rip)";
     return;
@@ -255,7 +363,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
   case MachineOperand::MO_ConstantPoolIndex: {
     bool isMemOp  = Modifier && !strcmp(Modifier, "mem");
     if (!isMemOp) O << '$';
-    O << TAI->getPrivateGlobalPrefix() << "CPI" << getFunctionNumber() << "_"
+    O << TAI->getPrivateGlobalPrefix() << "CPI" << getFunctionNumber() << '_'
       << MO.getIndex();
 
     if (TM.getRelocationModel() == Reloc::PIC_) {
@@ -265,10 +373,10 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
       else if (Subtarget->isPICStyleGOT())
         O << "@GOTOFF";
     }
-    
+
     int Offset = MO.getOffset();
     if (Offset > 0)
-      O << "+" << Offset;
+      O << '+' << Offset;
     else if (Offset < 0)
       O << Offset;
 
@@ -293,8 +401,8 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
     bool isThreadLocal = GVar && GVar->isThreadLocal();
 
     std::string Name = Mang->getValueName(GV);
-    X86SharedAsmPrinter::decorateName(Name, GV);
-    
+    decorateName(Name, GV);
+
     if (!isMemOp && !isCallOp)
       O << '$';
     else if (Name[0] == '$') {
@@ -304,39 +412,40 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
       needCloseParen = true;
     }
 
-    if (printStub(TM, Subtarget)) {
+    if (shouldPrintStub(TM, Subtarget)) {
       // Link-once, declaration, or Weakly-linked global variables need
       // non-lazily-resolved stubs
       if (GV->isDeclaration() ||
           GV->hasWeakLinkage() ||
-          GV->hasLinkOnceLinkage()) {
+          GV->hasLinkOnceLinkage() ||
+          GV->hasCommonLinkage()) {
         // Dynamically-resolved functions need a stub for the function.
         if (isCallOp && isa<Function>(GV)) {
           FnStubs.insert(Name);
-          O << TAI->getPrivateGlobalPrefix() << Name << "$stub";
+          printSuffixedName(Name, "$stub");
         } else {
           GVStubs.insert(Name);
-          O << TAI->getPrivateGlobalPrefix() << Name << "$non_lazy_ptr";
+          printSuffixedName(Name, "$non_lazy_ptr");
         }
       } else {
         if (GV->hasDLLImportLinkage())
-          O << "__imp_";          
+          O << "__imp_";
         O << Name;
       }
-      
+
       if (!isCallOp && TM.getRelocationModel() == Reloc::PIC_)
         O << '-' << getPICLabelString(getFunctionNumber(), TAI, Subtarget);
     } else {
       if (GV->hasDLLImportLinkage()) {
-        O << "__imp_";          
-      }       
+        O << "__imp_";
+      }
       O << Name;
 
-      if (isCallOp && isa<Function>(GV)) {
-        if (printGOT(TM, Subtarget)) {
-          // Assemble call via PLT for non-local symbols
-          if (!(GV->hasHiddenVisibility() || GV->hasProtectedVisibility()) ||
-              GV->isDeclaration())
+      if (isCallOp) {
+        if (shouldPrintPLT(TM, Subtarget)) {
+          // Assemble call via PLT for externally visible symbols
+          if (!GV->hasHiddenVisibility() && !GV->hasProtectedVisibility() &&
+              !GV->hasInternalLinkage())
             O << "@PLT";
         }
         if (Subtarget->isTargetCygMing() && GV->isDeclaration())
@@ -347,15 +456,15 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
 
     if (GV->hasExternalWeakLinkage())
       ExtWeakSymbols.insert(GV);
-    
+
     int Offset = MO.getOffset();
     if (Offset > 0)
-      O << "+" << Offset;
+      O << '+' << Offset;
     else if (Offset < 0)
       O << Offset;
 
     if (isThreadLocal) {
-      if (TM.getRelocationModel() == Reloc::PIC_)
+      if (TM.getRelocationModel() == Reloc::PIC_ || Subtarget->is64Bit())
         O << "@TLSGD"; // general dynamic TLS model
       else
         if (GV->isDeclaration())
@@ -363,7 +472,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
         else
           O << "@NTPOFF"; // local exec TLS model
     } else if (isMemOp) {
-      if (printGOT(TM, Subtarget)) {
+      if (shouldPrintGOT(TM, Subtarget)) {
         if (Subtarget->GVRequiresExtraLoad(GV, TM, false))
           O << "@GOT";
         else
@@ -395,9 +504,9 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
     bool needCloseParen = false;
     std::string Name(TAI->getGlobalPrefix());
     Name += MO.getSymbolName();
-    if (isCallOp && printStub(TM, Subtarget)) {
+    if (isCallOp && shouldPrintStub(TM, Subtarget)) {
       FnStubs.insert(Name);
-      O << TAI->getPrivateGlobalPrefix() << Name << "$stub";
+      printSuffixedName(Name, "$stub");
       return;
     }
     if (!isCallOp)
@@ -411,7 +520,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
 
     O << Name;
 
-    if (printGOT(TM, Subtarget)) {
+    if (shouldPrintPLT(TM, Subtarget)) {
       std::string GOTName(TAI->getGlobalPrefix());
       GOTName+="_GLOBAL_OFFSET_TABLE_";
       if (Name == GOTName)
@@ -423,7 +532,7 @@ void X86ATTAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
         //   popl %some_register
         //   addl $_GLOBAL_ADDRESS_TABLE_ + [.-piclabel], %some_register
         O << " + [.-"
-          << getPICLabelString(getFunctionNumber(), TAI, Subtarget) << "]";
+          << getPICLabelString(getFunctionNumber(), TAI, Subtarget) << ']';
 
       if (isCallOp)
         O << "@PLT";
@@ -478,7 +587,7 @@ void X86ATTAsmPrinter::printMemReference(const MachineInstr *MI, unsigned Op,
   if (IndexReg.getReg() || BaseReg.getReg()) {
     unsigned ScaleVal = MI->getOperand(Op+1).getImm();
     unsigned BaseRegOperand = 0, IndexRegOperand = 2;
-      
+
     // There are cases where we can end up with ESP/RSP in the indexreg slot.
     // If this happens, swap the base/index register to support assemblers that
     // don't work when the index is *SP.
@@ -487,22 +596,22 @@ void X86ATTAsmPrinter::printMemReference(const MachineInstr *MI, unsigned Op,
       std::swap(BaseReg, IndexReg);
       std::swap(BaseRegOperand, IndexRegOperand);
     }
-    
-    O << "(";
+
+    O << '(';
     if (BaseReg.getReg())
       printOperand(MI, Op+BaseRegOperand, Modifier);
 
     if (IndexReg.getReg()) {
-      O << ",";
+      O << ',';
       printOperand(MI, Op+IndexRegOperand, Modifier);
       if (ScaleVal != 1)
-        O << "," << ScaleVal;
+        O << ',' << ScaleVal;
     }
-    O << ")";
+    O << ')';
   }
 }
 
-void X86ATTAsmPrinter::printPICJumpTableSetLabel(unsigned uid, 
+void X86ATTAsmPrinter::printPICJumpTableSetLabel(unsigned uid,
                                            const MachineBasicBlock *MBB) const {
   if (!TAI->getSetDirective())
     return;
@@ -510,12 +619,12 @@ void X86ATTAsmPrinter::printPICJumpTableSetLabel(unsigned uid,
   // We don't need .set machinery if we have GOT-style relocations
   if (Subtarget->isPICStyleGOT())
     return;
-    
+
   O << TAI->getSetDirective() << ' ' << TAI->getPrivateGlobalPrefix()
     << getFunctionNumber() << '_' << uid << "_set_" << MBB->getNumber() << ',';
   printBasicBlockLabel(MBB, false, false, false);
   if (Subtarget->isPICStyleRIPRel())
-    O << '-' << TAI->getPrivateGlobalPrefix() << "JTI" << getFunctionNumber() 
+    O << '-' << TAI->getPrivateGlobalPrefix() << "JTI" << getFunctionNumber()
       << '_' << uid << '\n';
   else
     O << '-' << getPICLabelString(getFunctionNumber(), TAI, Subtarget) << '\n';
@@ -523,14 +632,14 @@ void X86ATTAsmPrinter::printPICJumpTableSetLabel(unsigned uid,
 
 void X86ATTAsmPrinter::printPICLabel(const MachineInstr *MI, unsigned Op) {
   std::string label = getPICLabelString(getFunctionNumber(), TAI, Subtarget);
-  O << label << "\n" << label << ":";
+  O << label << '\n' << label << ':';
 }
 
 
 void X86ATTAsmPrinter::printPICJumpTableEntry(const MachineJumpTableInfo *MJTI,
                                               const MachineBasicBlock *MBB,
-                                              unsigned uid) const 
-{  
+                                              unsigned uid) const
+{
   const char *JTEntryDirective = MJTI->getEntrySize() == 4 ?
     TAI->getData32bitsDirective() : TAI->getData64bitsDirective();
 
@@ -580,12 +689,12 @@ bool X86ATTAsmPrinter::printAsmMRegister(const MachineOperand &MO,
 /// PrintAsmOperand - Print out an operand for an inline asm expression.
 ///
 bool X86ATTAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                       unsigned AsmVariant, 
+                                       unsigned AsmVariant,
                                        const char *ExtraCode) {
   // Does this asm operand have a single letter operand modifier?
   if (ExtraCode && ExtraCode[0]) {
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
-    
+
     switch (ExtraCode[0]) {
     default: return true;  // Unknown modifier.
     case 'c': // Don't print "$" before a global var name or constant.
@@ -600,24 +709,24 @@ bool X86ATTAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
         return printAsmMRegister(MI->getOperand(OpNo), ExtraCode[0]);
       printOperand(MI, OpNo);
       return false;
-      
+
     case 'P': // Don't print @PLT, but do print as memory.
       printOperand(MI, OpNo, "mem");
       return false;
     }
   }
-  
+
   printOperand(MI, OpNo);
   return false;
 }
 
 bool X86ATTAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
                                              unsigned OpNo,
-                                             unsigned AsmVariant, 
+                                             unsigned AsmVariant,
                                              const char *ExtraCode) {
   if (ExtraCode && ExtraCode[0]) {
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
-    
+
     switch (ExtraCode[0]) {
     default: return true;  // Unknown modifier.
     case 'b': // Print QImode register
@@ -643,6 +752,329 @@ void X86ATTAsmPrinter::printMachineInstruction(const MachineInstr *MI) {
   printInstruction(MI);
 }
 
+/// doInitialization
+bool X86ATTAsmPrinter::doInitialization(Module &M) {
+  if (TAI->doesSupportDebugInformation()) {
+    // Emit initial debug information.
+    DW.BeginModule(&M);
+  }
+
+  bool Result = AsmPrinter::doInitialization(M);
+
+  // Darwin wants symbols to be quoted if they have complex names.
+  if (Subtarget->isTargetDarwin())
+    Mang->setUseQuotes(true);
+
+  return Result;
+}
+
+
+void X86ATTAsmPrinter::printModuleLevelGV(const GlobalVariable* GVar) {
+  const TargetData *TD = TM.getTargetData();
+
+  if (!GVar->hasInitializer())
+    return;   // External global require no code
+
+  // Check to see if this is a special global used by LLVM, if so, emit it.
+  if (EmitSpecialLLVMGlobal(GVar)) {
+    if (Subtarget->isTargetDarwin() &&
+        TM.getRelocationModel() == Reloc::Static) {
+      if (GVar->getName() == "llvm.global_ctors")
+        O << ".reference .constructors_used\n";
+      else if (GVar->getName() == "llvm.global_dtors")
+        O << ".reference .destructors_used\n";
+    }
+    return;
+  }
+
+  std::string name = Mang->getValueName(GVar);
+  Constant *C = GVar->getInitializer();
+  const Type *Type = C->getType();
+  unsigned Size = TD->getABITypeSize(Type);
+  unsigned Align = TD->getPreferredAlignmentLog(GVar);
+
+  if (GVar->hasHiddenVisibility()) {
+    if (const char *Directive = TAI->getHiddenDirective())
+      O << Directive << name << '\n';
+  } else if (GVar->hasProtectedVisibility()) {
+    if (const char *Directive = TAI->getProtectedDirective())
+      O << Directive << name << '\n';
+  }
+
+  if (Subtarget->isTargetELF())
+    O << "\t.type\t" << name << ",@object\n";
+
+  if (C->isNullValue() && !GVar->hasSection()) {
+    if (GVar->hasExternalLinkage()) {
+      if (const char *Directive = TAI->getZeroFillDirective()) {
+        O << "\t.globl " << name << '\n';
+        O << Directive << "__DATA, __common, " << name << ", "
+          << Size << ", " << Align << '\n';
+        return;
+      }
+    }
+
+    if (!GVar->isThreadLocal() &&
+        (GVar->hasInternalLinkage() || GVar->hasWeakLinkage() ||
+         GVar->hasLinkOnceLinkage() || GVar->hasCommonLinkage())) {
+      if (Size == 0) Size = 1;   // .comm Foo, 0 is undefined, avoid it.
+      if (!NoZerosInBSS && TAI->getBSSSection())
+        SwitchToDataSection(TAI->getBSSSection(), GVar);
+      else
+        SwitchToDataSection(TAI->getDataSection(), GVar);
+      if (TAI->getLCOMMDirective() != NULL) {
+        if (GVar->hasInternalLinkage()) {
+          O << TAI->getLCOMMDirective() << name << ',' << Size;
+          if (Subtarget->isTargetDarwin())
+            O << ',' << Align;
+        } else if (Subtarget->isTargetDarwin() && !GVar->hasCommonLinkage()) {
+          O << "\t.globl " << name << '\n'
+            << TAI->getWeakDefDirective() << name << '\n';
+          SwitchToDataSection("\t.section __DATA,__datacoal_nt,coalesced", GVar);
+          EmitAlignment(Align, GVar);
+          O << name << ":\t\t\t\t" << TAI->getCommentString() << ' ';
+          PrintUnmangledNameSafely(GVar, O);
+          O << '\n';
+          EmitGlobalConstant(C);
+          return;
+        } else {
+          O << TAI->getCOMMDirective()  << name << ',' << Size;
+
+          // Leopard and above support aligned common symbols.
+          if (Subtarget->getDarwinVers() >= 9)
+            O << ',' << Align;
+        }
+      } else {
+        if (!Subtarget->isTargetCygMing()) {
+          if (GVar->hasInternalLinkage())
+            O << "\t.local\t" << name << '\n';
+        }
+        O << TAI->getCOMMDirective()  << name << ',' << Size;
+        if (TAI->getCOMMDirectiveTakesAlignment())
+          O << ',' << (TAI->getAlignmentIsInBytes() ? (1 << Align) : Align);
+      }
+      O << "\t\t" << TAI->getCommentString() << ' ';
+      PrintUnmangledNameSafely(GVar, O);
+      O << '\n';
+      return;
+    }
+  }
+
+  switch (GVar->getLinkage()) {
+   case GlobalValue::CommonLinkage:
+   case GlobalValue::LinkOnceLinkage:
+   case GlobalValue::WeakLinkage:
+    if (Subtarget->isTargetDarwin()) {
+      O << "\t.globl " << name << '\n'
+        << TAI->getWeakDefDirective() << name << '\n';
+      if (!GVar->isConstant())
+        SwitchToDataSection("\t.section __DATA,__datacoal_nt,coalesced", GVar);
+      else {
+        const ArrayType *AT = dyn_cast<ArrayType>(Type);
+        if (AT && AT->getElementType()==Type::Int8Ty)
+          SwitchToDataSection("\t.section __TEXT,__const_coal,coalesced", GVar);
+        else
+          SwitchToDataSection("\t.section __DATA,__const_coal,coalesced", GVar);
+      }
+    } else if (Subtarget->isTargetCygMing()) {
+      std::string SectionName(".section\t.data$linkonce." +
+                              name +
+                              ",\"aw\"");
+      SwitchToDataSection(SectionName.c_str(), GVar);
+      O << "\t.globl\t" << name << "\n"
+           "\t.linkonce same_size\n";
+    } else {
+      std::string SectionName("\t.section\t.llvm.linkonce.d." +
+                              name +
+                              ",\"aw\",@progbits");
+      SwitchToDataSection(SectionName.c_str(), GVar);
+      O << "\t.weak\t" << name << '\n';
+    }
+    break;
+   case GlobalValue::DLLExportLinkage:
+   case GlobalValue::AppendingLinkage:
+    // FIXME: appending linkage variables should go into a section of
+    // their name or something.  For now, just emit them as external.
+   case GlobalValue::ExternalLinkage:
+    // If external or appending, declare as a global symbol
+    O << "\t.globl " << name << '\n';
+    // FALL THROUGH
+   case GlobalValue::InternalLinkage: {
+     if (GVar->isConstant()) {
+       const ConstantArray *CVA = dyn_cast<ConstantArray>(C);
+       if (TAI->getCStringSection() && CVA && CVA->isCString()) {
+         SwitchToDataSection(TAI->getCStringSection(), GVar);
+         break;
+       }
+     }
+     // FIXME: special handling for ".ctors" & ".dtors" sections
+     if (GVar->hasSection() &&
+         (GVar->getSection() == ".ctors" || GVar->getSection() == ".dtors")) {
+       std::string SectionName = ".section " + GVar->getSection();
+
+       if (Subtarget->isTargetCygMing()) {
+         SectionName += ",\"aw\"";
+       } else {
+         assert(!Subtarget->isTargetDarwin());
+         SectionName += ",\"aw\",@progbits";
+       }
+       SwitchToDataSection(SectionName.c_str());
+     } else if (GVar->hasSection() && Subtarget->isTargetDarwin()) {
+       // Honor all section names on Darwin; ObjC uses this
+       std::string SectionName = ".section " + GVar->getSection();
+       SwitchToDataSection(SectionName.c_str());
+     } else {
+       if (C->isNullValue() && !NoZerosInBSS && TAI->getBSSSection())
+         SwitchToDataSection(GVar->isThreadLocal() ? TAI->getTLSBSSSection() :
+                             TAI->getBSSSection(), GVar);
+       else if (!GVar->isConstant())
+         SwitchToDataSection(GVar->isThreadLocal() ? TAI->getTLSDataSection() :
+                             TAI->getDataSection(), GVar);
+       else if (GVar->isThreadLocal())
+         SwitchToDataSection(TAI->getTLSDataSection());
+       else {
+         // Read-only data.
+         bool HasReloc = C->ContainsRelocations();
+         if (HasReloc &&
+             Subtarget->isTargetDarwin() &&
+             TM.getRelocationModel() != Reloc::Static)
+           SwitchToDataSection("\t.const_data\n");
+         else if (!HasReloc && Size == 4 &&
+                  TAI->getFourByteConstantSection())
+           SwitchToDataSection(TAI->getFourByteConstantSection(), GVar);
+         else if (!HasReloc && Size == 8 &&
+                  TAI->getEightByteConstantSection())
+           SwitchToDataSection(TAI->getEightByteConstantSection(), GVar);
+         else if (!HasReloc && Size == 16 &&
+                  TAI->getSixteenByteConstantSection())
+           SwitchToDataSection(TAI->getSixteenByteConstantSection(), GVar);
+         else if (TAI->getReadOnlySection())
+           SwitchToDataSection(TAI->getReadOnlySection(), GVar);
+         else
+           SwitchToDataSection(TAI->getDataSection(), GVar);
+       }
+     }
+
+     break;
+   }
+   default:
+    assert(0 && "Unknown linkage type!");
+  }
+
+  EmitAlignment(Align, GVar);
+  O << name << ":\t\t\t\t" << TAI->getCommentString() << ' ';
+  PrintUnmangledNameSafely(GVar, O);
+  O << '\n';
+  if (TAI->hasDotTypeDotSizeDirective())
+    O << "\t.size\t" << name << ", " << Size << '\n';
+
+  // If the initializer is a extern weak symbol, remember to emit the weak
+  // reference!
+  if (const GlobalValue *GV = dyn_cast<GlobalValue>(C))
+    if (GV->hasExternalWeakLinkage())
+      ExtWeakSymbols.insert(GV);
+
+  EmitGlobalConstant(C);
+}
+
+
+bool X86ATTAsmPrinter::doFinalization(Module &M) {
+  // Print out module-level global variables here.
+  for (Module::const_global_iterator I = M.global_begin(), E = M.global_end();
+       I != E; ++I) {
+    printModuleLevelGV(I);
+
+    if (I->hasDLLExportLinkage())
+      DLLExportedGVs.insert(Mang->makeNameProper(I->getName(),""));
+  }
+
+  // Output linker support code for dllexported globals
+  if (!DLLExportedGVs.empty())
+    SwitchToDataSection(".section .drectve");
+
+  for (StringSet<>::iterator i = DLLExportedGVs.begin(),
+         e = DLLExportedGVs.end();
+         i != e; ++i)
+    O << "\t.ascii \" -export:" << i->getKeyData() << ",data\"\n";
+
+  if (!DLLExportedFns.empty()) {
+    SwitchToDataSection(".section .drectve");
+  }
+
+  for (StringSet<>::iterator i = DLLExportedFns.begin(),
+         e = DLLExportedFns.end();
+         i != e; ++i)
+    O << "\t.ascii \" -export:" << i->getKeyData() << "\"\n";
+
+  if (Subtarget->isTargetDarwin()) {
+    SwitchToDataSection("");
+
+    // Output stubs for dynamically-linked functions
+    unsigned j = 1;
+    for (StringSet<>::iterator i = FnStubs.begin(), e = FnStubs.end();
+         i != e; ++i, ++j) {
+      SwitchToDataSection("\t.section __IMPORT,__jump_table,symbol_stubs,"
+                          "self_modifying_code+pure_instructions,5", 0);
+      std::string p = i->getKeyData();
+      printSuffixedName(p, "$stub");
+      O << ":\n"
+           "\t.indirect_symbol " << p << "\n"
+           "\thlt ; hlt ; hlt ; hlt ; hlt\n";
+    }
+
+    O << '\n';
+
+    if (TAI->doesSupportExceptionHandling() && MMI && !Subtarget->is64Bit()) {
+      // Add the (possibly multiple) personalities to the set of global values.
+      // Only referenced functions get into the Personalities list.
+      const std::vector<Function *>& Personalities = MMI->getPersonalities();
+
+      for (std::vector<Function *>::const_iterator I = Personalities.begin(),
+             E = Personalities.end(); I != E; ++I)
+        if (*I) GVStubs.insert('_' + (*I)->getName());
+    }
+
+    // Output stubs for external and common global variables.
+    if (!GVStubs.empty())
+      SwitchToDataSection(
+                    "\t.section __IMPORT,__pointers,non_lazy_symbol_pointers");
+    for (StringSet<>::iterator i = GVStubs.begin(), e = GVStubs.end();
+         i != e; ++i) {
+      std::string p = i->getKeyData();
+      printSuffixedName(p, "$non_lazy_ptr");
+      O << ":\n"
+           "\t.indirect_symbol " << p << "\n"
+           "\t.long\t0\n";
+    }
+
+    // Emit final debug information.
+    DW.EndModule();
+
+    // Funny Darwin hack: This flag tells the linker that no global symbols
+    // contain code that falls through to other global symbols (e.g. the obvious
+    // implementation of multiple entry points).  If this doesn't occur, the
+    // linker can safely perform dead code stripping.  Since LLVM never
+    // generates code that does this, it is always safe to set.
+    O << "\t.subsections_via_symbols\n";
+  } else if (Subtarget->isTargetCygMing()) {
+    // Emit type information for external functions
+    for (StringSet<>::iterator i = FnStubs.begin(), e = FnStubs.end();
+         i != e; ++i) {
+      O << "\t.def\t " << i->getKeyData()
+        << ";\t.scl\t" << COFF::C_EXT
+        << ";\t.type\t" << (COFF::DT_FCN << COFF::N_BTSHFT)
+        << ";\t.endef\n";
+    }
+
+    // Emit final debug information.
+    DW.EndModule();
+  } else if (Subtarget->isTargetELF()) {
+    // Emit final debug information.
+    DW.EndModule();
+  }
+
+  return AsmPrinter::doFinalization(M);
+}
+
 // Include the auto-generated portion of the assembly writer.
 #include "X86GenAsmWriter.inc"
-

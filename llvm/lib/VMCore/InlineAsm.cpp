@@ -183,15 +183,18 @@ bool InlineAsm::Verify(const FunctionType *Ty, const std::string &ConstStr) {
   if (Constraints.empty() && !ConstStr.empty()) return false;
   
   unsigned NumOutputs = 0, NumInputs = 0, NumClobbers = 0;
+  unsigned NumIndirect = 0;
   
   for (unsigned i = 0, e = Constraints.size(); i != e; ++i) {
     switch (Constraints[i].Type) {
     case InlineAsm::isOutput:
+      if ((NumInputs-NumIndirect) != 0 || NumClobbers != 0)
+        return false;  // outputs before inputs and clobbers.
       if (!Constraints[i].isIndirect) {
-        if (NumInputs || NumClobbers) return false;  // outputs come first.
         ++NumOutputs;
         break;
       }
+      ++NumIndirect;
       // FALLTHROUGH for Indirect Outputs.
     case InlineAsm::isInput:
       if (NumClobbers) return false;               // inputs before clobbers.
@@ -202,11 +205,20 @@ bool InlineAsm::Verify(const FunctionType *Ty, const std::string &ConstStr) {
       break;
     }
   }
-    
-  if (NumOutputs > 1) return false;  // Only one result allowed so far.
   
-  if ((Ty->getReturnType() != Type::VoidTy) != NumOutputs)
-    return false;   // NumOutputs = 1 iff has a result type.
+  switch (NumOutputs) {
+  case 0:
+    if (Ty->getReturnType() != Type::VoidTy) return false;
+    break;
+  case 1:
+    if (isa<StructType>(Ty->getReturnType())) return false;
+    break;
+  default:
+    const StructType *STy = dyn_cast<StructType>(Ty->getReturnType());
+    if (STy == 0 || STy->getNumElements() != NumOutputs)
+      return false;
+    break;
+  }      
   
   if (Ty->getNumParams() != NumInputs) return false;
   return true;

@@ -89,14 +89,14 @@ STATISTIC(NumNodes      , "Number of nodes");
 STATISTIC(NumUnified    , "Number of variables unified");
 STATISTIC(NumErased     , "Number of redundant constraints erased");
 
-namespace {
-  const unsigned SelfRep = (unsigned)-1;
-  const unsigned Unvisited = (unsigned)-1;
-  // Position of the function return node relative to the function node.
-  const unsigned CallReturnPos = 1;
-  // Position of the function call node relative to the function node.
-  const unsigned CallFirstArgPos = 2;
+static const unsigned SelfRep = (unsigned)-1;
+static const unsigned Unvisited = (unsigned)-1;
+// Position of the function return node relative to the function node.
+static const unsigned CallReturnPos = 1;
+// Position of the function call node relative to the function node.
+static const unsigned CallFirstArgPos = 2;
 
+namespace {
   struct BitmapKeyInfo {
     static inline SparseBitVector<> *getEmptyKey() {
       return reinterpret_cast<SparseBitVector<> *>(-1);
@@ -608,16 +608,15 @@ namespace {
       PrintPointsToGraph();
     }
   };
-
-  char Andersens::ID = 0;
-  RegisterPass<Andersens> X("anders-aa",
-                            "Andersen's Interprocedural Alias Analysis", false,
-                            true);
-  RegisterAnalysisGroup<AliasAnalysis> Y(X);
-
-  // Initialize Timestamp Counter (static).
-  unsigned Andersens::Node::Counter = 0;
 }
+
+char Andersens::ID = 0;
+static RegisterPass<Andersens>
+X("anders-aa", "Andersen's Interprocedural Alias Analysis", false, true);
+static RegisterAnalysisGroup<AliasAnalysis> Y(X);
+
+// Initialize Timestamp Counter (static).
+unsigned Andersens::Node::Counter = 0;
 
 ModulePass *llvm::createAndersensPass() { return new Andersens(); }
 
@@ -864,7 +863,7 @@ unsigned Andersens::getNodeForConstantPointerTarget(Constant *C) {
 /// object N, which contains values indicated by C.
 void Andersens::AddGlobalInitializerConstraints(unsigned NodeIndex,
                                                 Constant *C) {
-  if (C->getType()->isFirstClassType()) {
+  if (C->getType()->isSingleValueType()) {
     if (isa<PointerType>(C->getType()))
       Constraints.push_back(Constraint(Constraint::Copy, NodeIndex,
                                        getNodeForConstantPointer(C)));
@@ -2725,13 +2724,14 @@ unsigned Andersens::UniteNodes(unsigned First, unsigned Second,
   DOUT << "\n";
 
   if (SDTActive)
-    if (SDT[Second] >= 0)
+    if (SDT[Second] >= 0) {
       if (SDT[First] < 0)
         SDT[First] = SDT[Second];
       else {
         UniteNodes( FindNode(SDT[First]), FindNode(SDT[Second]) );
         First = FindNode(First);
       }
+    }
 
   return First;
 }

@@ -74,8 +74,8 @@ template class SymbolTableListTraits<Instruction, BasicBlock>;
 
 
 BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
-                       BasicBlock *InsertBefore, BasicBlock *Dest)
-  : User(Type::LabelTy, Value::BasicBlockVal, &unwindDest, 0/*FIXME*/), Parent(0) {
+                       BasicBlock *InsertBefore)
+  : User(Type::LabelTy, Value::BasicBlockVal, OpList?, NumOps?), Parent(0) {
 
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
@@ -91,8 +91,6 @@ BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
   }
   
   setName(Name);
-  unwindDest.init(NULL, this);
-  setUnwindDest(Dest);
 }
 
 
@@ -122,22 +120,21 @@ void BasicBlock::eraseFromParent() {
 }
 
 const BasicBlock *BasicBlock::getUnwindDest() const {
-  return cast_or_null<const BasicBlock>(unwindDest.get());
+  return getOperand(0);
 }
 
 /// getUnwindDest - Returns the BasicBlock that flow will enter if an unwind
 /// instruction occurs in this block. May be null, in which case unwinding
 /// exits the function.
 BasicBlock *BasicBlock::getUnwindDest() {
-  return cast_or_null<BasicBlock>(unwindDest.get());
+  return getOperand(0);
 }
 
 /// setUnwindDest - Set which BasicBlock flow will enter if an unwind is
 /// executed within this block. It may be set to null to indicate that
 /// unwinding will exit the function.
 void BasicBlock::setUnwindDest(BasicBlock *dest) {
-  NumOperands = unwindDest ? 1 : 0;
-  unwindDest.set(dest);
+  setOperand(0, dest);
 }
 
 /// doesNotThrow - Determine whether the block may not unwind.
@@ -180,19 +177,17 @@ const TerminatorInst *BasicBlock::getTerminator() const {
   return dyn_cast<TerminatorInst>(&InstList.back());
 }
 
-Instruction* BasicBlock::getFirstNonPHI()
-{
-    BasicBlock::iterator i = begin();
-    // All valid basic blocks should have a terminator,
-    // which is not a PHINode. If we have invalid basic
-    // block we'll get assert when dereferencing past-the-end
-    // iterator.
-    while (isa<PHINode>(i)) ++i;
-    return &*i;
+Instruction* BasicBlock::getFirstNonPHI() {
+  BasicBlock::iterator i = begin();
+  // All valid basic blocks should have a terminator,
+  // which is not a PHINode. If we have an invalid basic
+  // block we'll get an assertion failure when dereferencing
+  // a past-the-end iterator.
+  while (isa<PHINode>(i)) ++i;
+  return &*i;
 }
 
 void BasicBlock::dropAllReferences() {
-  setUnwindDest(NULL);
   for(iterator I = begin(), E = end(); I != E; ++I)
     I->dropAllReferences();
 }
@@ -214,8 +209,7 @@ BasicBlock *BasicBlock::getSinglePredecessor() {
 /// called while the predecessor still refers to this block.
 ///
 void BasicBlock::removePredecessor(BasicBlock *Pred,
-                                   bool DontDeleteUselessPHIs,
-                                   bool OnlyDeleteOne) {
+                                   bool DontDeleteUselessPHIs) {
   assert((hasNUsesOrMore(16)||// Reduce cost of this assertion for complex CFGs.
           find(pred_begin(this), pred_end(this), Pred) != pred_end(this)) &&
          "removePredecessor: BB is not a predecessor!");
@@ -250,11 +244,7 @@ void BasicBlock::removePredecessor(BasicBlock *Pred,
     // Yup, loop through and nuke the PHI nodes
     while (PHINode *PN = dyn_cast<PHINode>(&front())) {
       // Remove the predecessor first.
-      if (OnlyDeleteOne) {
-        int idx = PN->getBasicBlockIndex(Pred);
-        PN->removeIncomingValue(idx, !DontDeleteUselessPHIs);
-      } else
-        PN->removeIncomingValue(Pred, !DontDeleteUselessPHIs);
+      PN->removeIncomingValue(Pred, !DontDeleteUselessPHIs);
 
       // If the PHI _HAD_ two uses, replace PHI node with its now *single* value
       if (max_idx == 2) {
@@ -275,12 +265,7 @@ void BasicBlock::removePredecessor(BasicBlock *Pred,
     PHINode *PN;
     for (iterator II = begin(); (PN = dyn_cast<PHINode>(II)); ) {
       ++II;
-      if (OnlyDeleteOne) {
-        int idx = PN->getBasicBlockIndex(Pred);
-        PN->removeIncomingValue(idx, false);
-      } else 
-        PN->removeIncomingValue(Pred, false);
-
+      PN->removeIncomingValue(Pred, false);
       // If all incoming values to the Phi are the same, we can replace the Phi
       // with that value.
       Value* PNV = 0;
@@ -309,7 +294,7 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const std::string &BBName) {
   assert(I != InstList.end() &&
          "Trying to get me to create degenerate basic block!");
 
-  BasicBlock *New = new(0/*FIXME*/) BasicBlock(BBName, getParent(), getNext());
+  BasicBlock *New = BasicBlock::Create(BBName, getParent(), getNext());
 
   // Move all of the specified instructions from the original basic block into
   // the new basic block.

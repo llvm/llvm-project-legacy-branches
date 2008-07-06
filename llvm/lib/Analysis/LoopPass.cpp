@@ -184,6 +184,9 @@ bool LPPassManager::runOnFunction(Function &F) {
   LI = &getAnalysis<LoopInfo>();
   bool Changed = false;
 
+  // Collect inherited analysis from Module level pass manager.
+  populateInheritedAnalysis(TPM->activeStack);
+
   // Populate Loop Queue
   for (LoopInfo::iterator I = LI->begin(), E = LI->end(); I != E; ++I)
     addLoopIntoQueue(*I, LQ);
@@ -233,6 +236,9 @@ bool LPPassManager::runOnFunction(Function &F) {
       removeNotPreservedAnalysis(P);
       recordAvailableAnalysis(P);
       removeDeadPasses(P, "", ON_LOOP_MSG);
+
+      // If dominator information is available then verify the info if requested.
+      verifyDomInfo(*LP, F);
 
       if (skipThisLoop)
         // Do not run other passes on this loop.

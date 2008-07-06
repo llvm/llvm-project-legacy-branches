@@ -23,9 +23,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Allocator.h"
-#include "llvm/Support/Streams.h"
 #include <iosfwd>
-#include <vector>
 #include <cassert>
 
 namespace llvm {
@@ -37,6 +35,7 @@ namespace llvm {
   /// merge point), it contains ~0u,x. If the value number is not in use, it
   /// contains ~1u,x to indicate that the value # is not used. 
   ///   def   - Instruction # of the definition.
+  ///         - or reg # of the definition if it's a stack slot liveinterval.
   ///   copy  - Copy iff val# is defined by a copy; zero otherwise.
   ///   hasPHIKill - One or more of the kills are PHI nodes.
   ///   kills - Instruction # of the kills.
@@ -102,15 +101,18 @@ namespace llvm {
     typedef SmallVector<LiveRange,4> Ranges;
     typedef SmallVector<VNInfo*,4> VNInfoList;
 
-    unsigned reg;        // the register of this interval
+    unsigned reg;        // the register or stack slot of this interval
+                         // if the top bits is set, it represents a stack slot.
     unsigned preference; // preferred register to allocate for this interval
     float weight;        // weight of this interval
     Ranges ranges;       // the ranges in which this register is live
     VNInfoList valnos;   // value#'s
 
   public:
-    LiveInterval(unsigned Reg, float Weight)
+    LiveInterval(unsigned Reg, float Weight, bool IsSS = false)
       : reg(Reg), preference(0), weight(Weight) {
+      if (IsSS)
+        reg = reg | (1U << (sizeof(unsigned)*8-1));
     }
 
     typedef Ranges::iterator iterator;
@@ -141,9 +143,22 @@ namespace llvm {
       return I;
     }
 
+    /// isStackSlot - Return true if this is a stack slot interval.
+    ///
+    bool isStackSlot() const {
+      return reg & (1U << (sizeof(unsigned)*8-1));
+    }
+
+    /// getStackSlotIndex - Return stack slot index if this is a stack slot
+    /// interval.
+    int getStackSlotIndex() const {
+      assert(isStackSlot() && "Interval is not a stack slot interval!");
+      return reg & ~(1U << (sizeof(unsigned)*8-1));
+    }
+
     bool containsOneValue() const { return valnos.size() == 1; }
 
-    unsigned getNumValNums() const { return valnos.size(); }
+    unsigned getNumValNums() const { return (unsigned)valnos.size(); }
     
     /// getValNumInfo - Returns pointer to the specified val#.
     ///
@@ -168,14 +183,15 @@ namespace llvm {
     VNInfo *getNextValue(unsigned MIIdx, MachineInstr *CopyMI,
                          BumpPtrAllocator &VNInfoAllocator) {
 #ifdef __GNUC__
-      unsigned Alignment = __alignof__(VNInfo);
+      unsigned Alignment = (unsigned)__alignof__(VNInfo);
 #else
       // FIXME: ugly.
       unsigned Alignment = 8;
 #endif
-      VNInfo *VNI= static_cast<VNInfo*>(VNInfoAllocator.Allocate(sizeof(VNInfo),
-                                                                 Alignment));
-      new (VNI) VNInfo(valnos.size(), MIIdx, CopyMI);
+      VNInfo *VNI =
+        static_cast<VNInfo*>(VNInfoAllocator.Allocate((unsigned)sizeof(VNInfo),
+                                                      Alignment));
+      new (VNI) VNInfo((unsigned)valnos.size(), MIIdx, CopyMI);
       valnos.push_back(VNI);
       return VNI;
     }
@@ -196,7 +212,8 @@ namespace llvm {
     /// addKills - Add a number of kills into the VNInfo kill vector. If this
     /// interval is live at a kill point, then the kill is not added.
     void addKills(VNInfo *VNI, const SmallVector<unsigned, 4> &kills) {
-      for (unsigned i = 0, e = kills.size(); i != e; ++i) {
+      for (unsigned i = 0, e = static_cast<unsigned>(kills.size());
+           i != e; ++i) {
         unsigned KillIdx = kills[i];
         if (!liveBeforeAndAt(KillIdx)) {
           SmallVector<unsigned, 4>::iterator
@@ -313,6 +330,11 @@ namespace llvm {
     /// FindLiveRangeContaining - Return an iterator to the live range that
     /// contains the specified index, or end() if there is none.
     iterator FindLiveRangeContaining(unsigned Idx);
+
+    /// findDefinedVNInfo - Find the VNInfo that's defined at the specified
+    /// index (register interval) or defined by the specified register (stack
+    /// inteval).
+    VNInfo *findDefinedVNInfo(unsigned DefIdxOrReg) const;
     
     /// overlaps - Return true if the intersection of the two live intervals is
     /// not empty.

@@ -220,6 +220,7 @@ public:
   void AddFloat(float F);
   void AddDouble(double D);
   void AddString(const std::string &String);
+  void AddString(const char* String);
   
   template <typename T>
   inline void Add(const T& x) { FoldingSetTrait<T>::Profile(x, *this); }
@@ -426,6 +427,18 @@ public:
 
   operator T&() { return data; }
   operator const T&() const { return data; }
+};  
+  
+//===----------------------------------------------------------------------===//
+// Partial specializations of FoldingSetTrait.
+
+template<typename T> struct FoldingSetTrait<T*> {
+  static inline void Profile(const T* X, FoldingSetNodeID& ID) {
+    ID.AddPointer(X);
+  }
+  static inline void Profile(T* X, FoldingSetNodeID& ID) {
+    ID.AddPointer(X);
+  }
 };
 
 } // End of namespace llvm.

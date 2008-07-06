@@ -75,6 +75,12 @@ using namespace sys;
 
 extern const char sys::PathSeparator = ':';
 
+Path::Path(const std::string& p)
+  : path(p) {}
+
+Path::Path(const char *StrStart, unsigned StrLen)
+  : path(StrStart, StrLen) {}
+
 bool 
 Path::isValid() const {
   // Check some obvious things
@@ -257,11 +263,9 @@ Path::GetCurrentDirectory() {
 /// GetMainExecutable - Return the path to the main executable, given the
 /// value of argv[0] from program startup.
 Path Path::GetMainExecutable(const char *argv0, void *MainAddr) {
-#if defined(__CYGWIN__)
-  char exe_link[64];
-  snprintf(exe_link, sizeof(exe_link), "/proc/%d/exe", getpid());
+#if defined(__linux__) || defined(__CYGWIN__)
   char exe_path[MAXPATHLEN];
-  ssize_t len = readlink(exe_link, exe_path, sizeof(exe_path));
+  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path));
   if (len > 0 && len < MAXPATHLEN - 1) {
     exe_path[len] = '\0';
     return Path(std::string(exe_path));
@@ -295,6 +299,22 @@ Path::getBasename() const {
     return path.substr(slash);
   else
     return path.substr(slash, dot - slash);
+}
+
+std::string
+Path::getSuffix() const {
+  // Find the last slash
+  std::string::size_type slash = path.rfind('/');
+  if (slash == std::string::npos)
+    slash = 0;
+  else
+    slash++;
+
+  std::string::size_type dot = path.rfind('.');
+  if (dot == std::string::npos || dot < slash)
+    return std::string();
+  else
+    return path.substr(dot + 1);
 }
 
 bool Path::getMagicNumber(std::string& Magic, unsigned len) const {
@@ -566,7 +586,7 @@ Path::createDirectoryOnDisk( bool create_parents, std::string* ErrMsg ) {
   path.copy(pathname,MAXPATHLEN);
 
   // Null-terminate the last component
-  int lastchar = path.length() - 1 ;
+  size_t lastchar = path.length() - 1 ;
   
   if (pathname[lastchar] != '/')
     ++lastchar;
@@ -639,7 +659,7 @@ Path::eraseFromDisk(bool remove_contents, std::string *ErrStr) const {
   // Otherwise, try to just remove the one directory.
   char pathname[MAXPATHLEN];
   path.copy(pathname, MAXPATHLEN);
-  int lastchar = path.length() - 1 ; 
+  size_t lastchar = path.length() - 1;
   if (pathname[lastchar] == '/') 
     pathname[lastchar] = 0;
   else

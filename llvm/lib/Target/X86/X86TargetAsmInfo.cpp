@@ -66,6 +66,7 @@ X86TargetAsmInfo::X86TargetAsmInfo(const X86TargetMachine &TM) {
     ReadOnlySection = "\t.const\n";
     LCOMMDirective = "\t.lcomm\t";
     SwitchToSectionDirective = "\t.section ";
+    StringConstantPrefix = "\1LC";
     COMMDirectiveTakesAlignment = false;
     HasDotTypeDotSizeDirective = false;
     if (TM.getRelocationModel() == Reloc::Static) {
@@ -120,8 +121,6 @@ X86TargetAsmInfo::X86TargetAsmInfo(const X86TargetMachine &TM) {
     GlobalEHDirective = "\t.globl\t";
     SupportsWeakOmittedEHFrame = false;
     AbsoluteEHSectionOffsets = false;
-    if (Subtarget->is64Bit())
-      ShortenEHDataOn64Bit = true;
     DwarfEHFrameSection =
     ".section __TEXT,__eh_frame,coalesced,no_toc+strip_static_syms+live_support";
     DwarfExceptionSection = ".section __DATA,__gcc_except_tab";
@@ -228,6 +227,10 @@ X86TargetAsmInfo::X86TargetAsmInfo(const X86TargetMachine &TM) {
     DataSectionStartSuffix = "\tsegment 'DATA'";
     SectionEndDirectiveSuffix = "\tends\n";
   }
+
+  // On Linux we must declare when we can use a non-executable stack.
+  if (Subtarget->isLinux())
+    NonexecutableStackDirective = "\t.section\t.note.GNU-stack,\"\",@progbits";
 
   AssemblerDialect = Subtarget->getAsmFlavor();
 }

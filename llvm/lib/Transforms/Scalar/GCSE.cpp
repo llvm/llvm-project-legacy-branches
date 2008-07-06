@@ -9,8 +9,11 @@
 //
 // This pass is designed to be a very quick global transformation that
 // eliminates global common subexpressions from a function.  It does this by
-// using an existing value numbering implementation to identify the common
+// using an existing value numbering analysis pass to identify the common
 // subexpressions, eliminating them when possible.
+//
+// This pass is deprecated by the Global Value Numbering pass (which does a
+// better job with its own value numbering).
 //
 //===----------------------------------------------------------------------===//
 
@@ -52,10 +55,11 @@ namespace {
       AU.addRequired<ValueNumbering>();
     }
   };
-
-  char GCSE::ID = 0;
-  RegisterPass<GCSE> X("gcse", "Global Common Subexpression Elimination");
 }
+
+char GCSE::ID = 0;
+static RegisterPass<GCSE>
+X("gcse", "Global Common Subexpression Elimination");
 
 // createGCSEPass - The public interface to this file...
 FunctionPass *llvm::createGCSEPass() { return new GCSE(); }
@@ -197,5 +201,5 @@ void GCSE::ReplaceInstructionWith(Instruction *I, Value *V) {
   }
 
   // Erase the instruction from the program.
-  I->getParent()->getInstList().erase(I);
+  I->eraseFromParent();
 }

@@ -10,6 +10,10 @@
 // This file implements the non-abstract Value Numbering methods as well as a
 // default implementation for the analysis group.
 //
+// The ValueNumbering analysis pass is mostly deprecated. It is only used by the
+// Global Common Subexpression Elimination pass, which is deprecated by the
+// Global Value Numbering pass (which does its value numbering on its own).
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/Passes.h"
@@ -24,7 +28,7 @@ using namespace llvm;
 
 char ValueNumbering::ID = 0;
 // Register the ValueNumbering interface, providing a nice name to refer to.
-static RegisterAnalysisGroup<ValueNumbering> X("Value Numbering");
+static RegisterAnalysisGroup<ValueNumbering> V("Value Numbering");
 
 /// ValueNumbering destructor: DO NOT move this to the header file for
 /// ValueNumbering or else clients of the ValueNumbering class may not depend on
@@ -64,15 +68,17 @@ namespace {
     virtual void getEqualNumberNodes(Value *V1,
                                      std::vector<Value*> &RetVals) const;
   };
+}
 
-  char BasicVN::ID = 0;
-  // Register this pass...
-  RegisterPass<BasicVN>
-  X("basicvn", "Basic Value Numbering (default GVN impl)", false, true);
+char BasicVN::ID = 0;
+// Register this pass...
+static RegisterPass<BasicVN>
+X("basicvn", "Basic Value Numbering (default GVN impl)", false, true);
 
-  // Declare that we implement the ValueNumbering interface
-  RegisterAnalysisGroup<ValueNumbering, true> Y(X);
+// Declare that we implement the ValueNumbering interface
+static RegisterAnalysisGroup<ValueNumbering, true> Y(X);
 
+namespace {
   /// BVNImpl - Implement BasicVN in terms of a visitor class that
   /// handles the different types of instructions as appropriate.
   ///
@@ -242,9 +248,9 @@ void BVNImpl::visitGetElementPtrInst(GetElementPtrInst &I) {
 
   // Try to pick a local operand if possible instead of a constant or a global
   // that might have a lot of uses.
-  for (unsigned i = 1, e = I.getNumOperands(); i != e; ++i)
-    if (isa<Instruction>(I.getOperand(i)) || isa<Argument>(I.getOperand(i))) {
-      Op = I.getOperand(i);
+  for (User::op_iterator i = I.op_begin() + 1, e = I.op_end(); i != e; ++i)
+    if (isa<Instruction>(*i) || isa<Argument>(*i)) {
+      Op = *i;
       break;
     }
 

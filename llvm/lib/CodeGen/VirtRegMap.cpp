@@ -29,35 +29,37 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include <algorithm>
 using namespace llvm;
 
-STATISTIC(NumSpills, "Number of register spills");
-STATISTIC(NumPSpills,"Number of physical register spills");
-STATISTIC(NumReMats, "Number of re-materialization");
-STATISTIC(NumDRM   , "Number of re-materializable defs elided");
-STATISTIC(NumStores, "Number of stores added");
-STATISTIC(NumLoads , "Number of loads added");
-STATISTIC(NumReused, "Number of values reused");
-STATISTIC(NumDSE   , "Number of dead stores elided");
-STATISTIC(NumDCE   , "Number of copies elided");
-STATISTIC(NumDSS   , "Number of dead spill slots removed");
+STATISTIC(NumSpills  , "Number of register spills");
+STATISTIC(NumPSpills , "Number of physical register spills");
+STATISTIC(NumReMats  , "Number of re-materialization");
+STATISTIC(NumDRM     , "Number of re-materializable defs elided");
+STATISTIC(NumStores  , "Number of stores added");
+STATISTIC(NumLoads   , "Number of loads added");
+STATISTIC(NumReused  , "Number of values reused");
+STATISTIC(NumDSE     , "Number of dead stores elided");
+STATISTIC(NumDCE     , "Number of copies elided");
+STATISTIC(NumDSS     , "Number of dead spill slots removed");
+STATISTIC(NumCommutes, "Number of instructions commuted");
 
 namespace {
   enum SpillerName { simple, local };
-
-  static cl::opt<SpillerName>
-  SpillerOpt("spiller",
-             cl::desc("Spiller to use: (default: local)"),
-             cl::Prefix,
-             cl::values(clEnumVal(simple, "  simple spiller"),
-                        clEnumVal(local,  "  local spiller"),
-                        clEnumValEnd),
-             cl::init(local));
 }
+
+static cl::opt<SpillerName>
+SpillerOpt("spiller",
+           cl::desc("Spiller to use: (default: local)"),
+           cl::Prefix,
+           cl::values(clEnumVal(simple, "  simple spiller"),
+                      clEnumVal(local,  "  local spiller"),
+                      clEnumValEnd),
+           cl::init(local));
 
 //===----------------------------------------------------------------------===//
 //  VirtRegMap implementation
@@ -147,8 +149,14 @@ int VirtRegMap::getEmergencySpillSlot(const TargetRegisterClass *RC) {
 
 void VirtRegMap::addSpillSlotUse(int FI, MachineInstr *MI) {
   if (!MF.getFrameInfo()->isFixedObjectIndex(FI)) {
-    assert(FI >= 0 && "Spill slot index should not be negative!");
-    SpillSlotToUsesMap[FI-LowSpillSlot].insert(MI);
+    // If FI < LowSpillSlot, this stack reference was produced by
+    // instruction selection and is not a spill
+    if (FI >= LowSpillSlot) {
+      assert(FI >= 0 && "Spill slot index should not be negative!");
+      assert((unsigned)FI-LowSpillSlot < SpillSlotToUsesMap.size()
+             && "Invalid spill slot");
+      SpillSlotToUsesMap[FI-LowSpillSlot].insert(MI);
+    }
   }
 }
 
@@ -179,6 +187,12 @@ void VirtRegMap::RemoveMachineInstrFromMaps(MachineInstr *MI) {
     int FI = MO.getIndex();
     if (MF.getFrameInfo()->isFixedObjectIndex(FI))
       continue;
+    // This stack reference was produced by instruction selection and
+    // is not a spill
+    if (FI < LowSpillSlot)
+      continue;
+    assert((unsigned)FI-LowSpillSlot < SpillSlotToUsesMap.size()
+           && "Invalid spill slot");
     SpillSlotToUsesMap[FI-LowSpillSlot].erase(MI);
   }
   MI2VirtMap.erase(MI);
@@ -302,6 +316,7 @@ namespace {
     MachineRegisterInfo *RegInfo;
     const TargetRegisterInfo *TRI;
     const TargetInstrInfo *TII;
+    DenseMap<MachineInstr*, unsigned> DistanceMap;
   public:
     bool runOnMachineFunction(MachineFunction &MF, VirtRegMap &VRM) {
       RegInfo = &MF.getRegInfo(); 
@@ -333,12 +348,22 @@ namespace {
       return true;
     }
   private:
+    void TransferDeadness(MachineBasicBlock *MBB, unsigned CurDist,
+                          unsigned Reg, BitVector &RegKills,
+                          std::vector<MachineOperand*> &KillOps);
     bool PrepForUnfoldOpti(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator &MII,
                            std::vector<MachineInstr*> &MaybeDeadStores,
                            AvailableSpills &Spills, BitVector &RegKills,
                            std::vector<MachineOperand*> &KillOps,
                            VirtRegMap &VRM);
+    bool CommuteToFoldReload(MachineBasicBlock &MBB,
+                             MachineBasicBlock::iterator &MII,
+                             unsigned VirtReg, unsigned SrcReg, int SS,
+                             BitVector &RegKills,
+                             std::vector<MachineOperand*> &KillOps,
+                             const TargetRegisterInfo *TRI,
+                             VirtRegMap &VRM);
     void SpillRegToStackSlot(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator &MII,
                              int Idx, unsigned PhysReg, int StackSlot,
@@ -857,12 +882,12 @@ namespace {
 /// This enables unfolding optimization for a subsequent instruction which will
 /// also eliminate the newly introduced store instruction.
 bool LocalSpiller::PrepForUnfoldOpti(MachineBasicBlock &MBB,
-                                     MachineBasicBlock::iterator &MII,
+                                    MachineBasicBlock::iterator &MII,
                                     std::vector<MachineInstr*> &MaybeDeadStores,
-                                     AvailableSpills &Spills,
-                                     BitVector &RegKills,
-                                     std::vector<MachineOperand*> &KillOps,
-                                     VirtRegMap &VRM) {
+                                    AvailableSpills &Spills,
+                                    BitVector &RegKills,
+                                    std::vector<MachineOperand*> &KillOps,
+                                    VirtRegMap &VRM) {
   MachineFunction &MF = *MBB.getParent();
   MachineInstr &MI = *MII;
   unsigned UnfoldedOpc = 0;
@@ -943,6 +968,7 @@ bool LocalSpiller::PrepForUnfoldOpti(MachineBasicBlock &MBB,
           VRM.assignVirt2Phys(UnfoldVR, UnfoldPR);
         VRM.virtFolded(VirtReg, FoldedMI, VirtRegMap::isRef);
         MII = MBB.insert(MII, FoldedMI);
+        InvalidateKills(MI, RegKills, KillOps);
         VRM.RemoveMachineInstrFromMaps(&MI);
         MBB.erase(&MI);
         return true;
@@ -950,6 +976,92 @@ bool LocalSpiller::PrepForUnfoldOpti(MachineBasicBlock &MBB,
       delete NewMI;
     }
   }
+  return false;
+}
+
+/// CommuteToFoldReload -
+/// Look for
+/// r1 = load fi#1
+/// r1 = op r1, r2<kill>
+/// store r1, fi#1
+///
+/// If op is commutable and r2 is killed, then we can xform these to
+/// r2 = op r2, fi#1
+/// store r2, fi#1
+bool LocalSpiller::CommuteToFoldReload(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator &MII,
+                                    unsigned VirtReg, unsigned SrcReg, int SS,
+                                    BitVector &RegKills,
+                                    std::vector<MachineOperand*> &KillOps,
+                                    const TargetRegisterInfo *TRI,
+                                    VirtRegMap &VRM) {
+  if (MII == MBB.begin() || !MII->killsRegister(SrcReg))
+    return false;
+
+  MachineFunction &MF = *MBB.getParent();
+  MachineInstr &MI = *MII;
+  MachineBasicBlock::iterator DefMII = prior(MII);
+  MachineInstr *DefMI = DefMII;
+  const TargetInstrDesc &TID = DefMI->getDesc();
+  unsigned NewDstIdx;
+  if (DefMII != MBB.begin() &&
+      TID.isCommutable() &&
+      TII->CommuteChangesDestination(DefMI, NewDstIdx)) {
+    MachineOperand &NewDstMO = DefMI->getOperand(NewDstIdx);
+    unsigned NewReg = NewDstMO.getReg();
+    if (!NewDstMO.isKill() || TRI->regsOverlap(NewReg, SrcReg))
+      return false;
+    MachineInstr *ReloadMI = prior(DefMII);
+    int FrameIdx;
+    unsigned DestReg = TII->isLoadFromStackSlot(ReloadMI, FrameIdx);
+    if (DestReg != SrcReg || FrameIdx != SS)
+      return false;
+    int UseIdx = DefMI->findRegisterUseOperandIdx(DestReg, false);
+    if (UseIdx == -1)
+      return false;
+    int DefIdx = TID.getOperandConstraint(UseIdx, TOI::TIED_TO);
+    if (DefIdx == -1)
+      return false;
+    assert(DefMI->getOperand(DefIdx).isRegister() &&
+           DefMI->getOperand(DefIdx).getReg() == SrcReg);
+
+    // Now commute def instruction.
+    MachineInstr *CommutedMI = TII->commuteInstruction(DefMI, true);
+    if (!CommutedMI)
+      return false;
+    SmallVector<unsigned, 2> Ops;
+    Ops.push_back(NewDstIdx);
+    MachineInstr *FoldedMI = TII->foldMemoryOperand(MF, CommutedMI, Ops, SS);
+    delete CommutedMI;  // Not needed since foldMemoryOperand returns new MI.
+    if (!FoldedMI)
+      return false;
+
+    VRM.addSpillSlotUse(SS, FoldedMI);
+    VRM.virtFolded(VirtReg, FoldedMI, VirtRegMap::isRef);
+    // Insert new def MI and spill MI.
+    const TargetRegisterClass* RC = MF.getRegInfo().getRegClass(VirtReg);
+    TII->storeRegToStackSlot(MBB, MI, NewReg, true, SS, RC);
+    MII = prior(MII);
+    MachineInstr *StoreMI = MII;
+    VRM.addSpillSlotUse(SS, StoreMI);
+    VRM.virtFolded(VirtReg, StoreMI, VirtRegMap::isMod);
+    MII = MBB.insert(MII, FoldedMI);  // Update MII to backtrack.
+
+    // Delete all 3 old instructions.
+    InvalidateKills(*ReloadMI, RegKills, KillOps);
+    VRM.RemoveMachineInstrFromMaps(ReloadMI);
+    MBB.erase(ReloadMI);
+    InvalidateKills(*DefMI, RegKills, KillOps);
+    VRM.RemoveMachineInstrFromMaps(DefMI);
+    MBB.erase(DefMI);
+    InvalidateKills(MI, RegKills, KillOps);
+    VRM.RemoveMachineInstrFromMaps(&MI);
+    MBB.erase(&MI);
+
+    ++NumCommutes;
+    return true;
+  }
+
   return false;
 }
 
@@ -1026,6 +1138,49 @@ void LocalSpiller::SpillRegToStackSlot(MachineBasicBlock &MBB,
   ++NumStores;
 }
 
+/// TransferDeadness - A identity copy definition is dead and it's being
+/// removed. Find the last def or use and mark it as dead / kill.
+void LocalSpiller::TransferDeadness(MachineBasicBlock *MBB, unsigned CurDist,
+                                    unsigned Reg, BitVector &RegKills,
+                                    std::vector<MachineOperand*> &KillOps) {
+  int LastUDDist = -1;
+  MachineInstr *LastUDMI = NULL;
+  for (MachineRegisterInfo::reg_iterator RI = RegInfo->reg_begin(Reg),
+         RE = RegInfo->reg_end(); RI != RE; ++RI) {
+    MachineInstr *UDMI = &*RI;
+    if (UDMI->getParent() != MBB)
+      continue;
+    DenseMap<MachineInstr*, unsigned>::iterator DI = DistanceMap.find(UDMI);
+    if (DI == DistanceMap.end() || DI->second > CurDist)
+      continue;
+    if ((int)DI->second < LastUDDist)
+      continue;
+    LastUDDist = DI->second;
+    LastUDMI = UDMI;
+  }
+
+  if (LastUDMI) {
+    const TargetInstrDesc &TID = LastUDMI->getDesc();
+    MachineOperand *LastUD = NULL;
+    for (unsigned i = 0, e = LastUDMI->getNumOperands(); i != e; ++i) {
+      MachineOperand &MO = LastUDMI->getOperand(i);
+      if (!MO.isRegister() || MO.getReg() != Reg)
+        continue;
+      if (!LastUD || (LastUD->isUse() && MO.isDef()))
+        LastUD = &MO;
+      if (TID.getOperandConstraint(i, TOI::TIED_TO) != -1)
+        return;
+    }
+    if (LastUD->isDef())
+      LastUD->setIsDead();
+    else {
+      LastUD->setIsKill();
+      RegKills.set(Reg);
+      KillOps[Reg] = LastUD;
+    }
+  }
+}
+
 /// rewriteMBB - Keep track of which spills are available even after the
 /// register allocator is done with them.  If possible, avid reloading vregs.
 void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
@@ -1054,6 +1209,8 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
   std::vector<MachineOperand*>  KillOps;
   KillOps.resize(TRI->getNumRegs(), NULL);
 
+  unsigned Dist = 0;
+  DistanceMap.clear();
   for (MachineBasicBlock::iterator MII = MBB.begin(), E = MBB.end();
        MII != E; ) {
     MachineBasicBlock::iterator NextMII = MII; ++NextMII;
@@ -1431,6 +1588,7 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
               InvalidateKill(InReg, RegKills, KillOps);
             }
 
+            InvalidateKills(MI, RegKills, KillOps);
             VRM.RemoveMachineInstrFromMaps(&MI);
             MBB.erase(&MI);
             Erased = true;
@@ -1442,6 +1600,7 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
           if (PhysReg &&
               TII->unfoldMemoryOperand(MF, &MI, PhysReg, false, false, NewMIs)) {
             MBB.insert(MII, NewMIs[0]);
+            InvalidateKills(MI, RegKills, KillOps);
             VRM.RemoveMachineInstrFromMaps(&MI);
             MBB.erase(&MI);
             Erased = true;
@@ -1465,20 +1624,26 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
           // the value and there isn't an earlier def that has already clobbered
           // the physreg.
           if (PhysReg &&
-              !TII->isStoreToStackSlot(&MI, SS) && // Not profitable!
-              DeadStore->killsRegister(PhysReg) &&
-              TII->unfoldMemoryOperand(MF, &MI, PhysReg, false, true, NewMIs)) {
-            MBB.insert(MII, NewMIs[0]);
-            NewStore = NewMIs[1];
-            MBB.insert(MII, NewStore);
-            VRM.addSpillSlotUse(SS, NewStore);
-            VRM.RemoveMachineInstrFromMaps(&MI);
-            MBB.erase(&MI);
-            Erased = true;
-            --NextMII;
-            --NextMII;  // backtrack to the unfolded instruction.
-            BackTracked = true;
-            isDead = true;
+              !TII->isStoreToStackSlot(&MI, SS)) { // Not profitable!
+            MachineOperand *KillOpnd =
+              DeadStore->findRegisterUseOperand(PhysReg, true);
+            // Note, if the store is storing a sub-register, it's possible the
+            // super-register is needed below.
+            if (KillOpnd && !KillOpnd->getSubReg() &&
+                TII->unfoldMemoryOperand(MF, &MI, PhysReg, false, true,NewMIs)){
+              MBB.insert(MII, NewMIs[0]);
+              NewStore = NewMIs[1];
+              MBB.insert(MII, NewStore);
+              VRM.addSpillSlotUse(SS, NewStore);
+              InvalidateKills(MI, RegKills, KillOps);
+              VRM.RemoveMachineInstrFromMaps(&MI);
+              MBB.erase(&MI);
+              Erased = true;
+              --NextMII;
+              --NextMII;  // backtrack to the unfolded instruction.
+              BackTracked = true;
+              isDead = true;
+            }
           }
         }
 
@@ -1516,15 +1681,23 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
           if (unsigned SrcReg = TII->isStoreToStackSlot(&MI, StackSlot)) {
             assert(TargetRegisterInfo::isPhysicalRegister(SrcReg) &&
                    "Src hasn't been allocated yet?");
+
+            if (CommuteToFoldReload(MBB, MII, VirtReg, SrcReg, StackSlot,
+                                    RegKills, KillOps, TRI, VRM)) {
+              NextMII = next(MII);
+              BackTracked = true;
+              goto ProcessNextInst;
+            }
+
             // Okay, this is certainly a store of SrcReg to [StackSlot].  Mark
             // this as a potentially dead store in case there is a subsequent
             // store into the stack slot without a read from it.
             MaybeDeadStores[StackSlot] = &MI;
 
             // If the stack slot value was previously available in some other
-            // register, change it now.  Otherwise, make the register available,
-            // in PhysReg.
-            Spills.addAvailable(StackSlot, &MI, SrcReg, false/*don't clobber*/);
+            // register, change it now.  Otherwise, make the register
+            // available in PhysReg.
+            Spills.addAvailable(StackSlot, &MI, SrcReg, false/*!clobber*/);
           }
         }
       }
@@ -1544,6 +1717,13 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
         if (TII->isMoveInstr(MI, Src, Dst) && Src == Dst) {
           ++NumDCE;
           DOUT << "Removing now-noop copy: " << MI;
+          SmallVector<unsigned, 2> KillRegs;
+          InvalidateKills(MI, RegKills, KillOps, &KillRegs);
+          if (MO.isDead() && !KillRegs.empty()) {
+            assert(KillRegs[0] == Dst);
+            // Last def is now dead.
+            TransferDeadness(&MBB, Dist, Src, RegKills, KillOps);
+          }
           VRM.RemoveMachineInstrFromMaps(&MI);
           MBB.erase(&MI);
           Erased = true;
@@ -1621,6 +1801,7 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
           if (TII->isMoveInstr(MI, Src, Dst) && Src == Dst) {
             ++NumDCE;
             DOUT << "Removing now-noop copy: " << MI;
+            InvalidateKills(MI, RegKills, KillOps);
             VRM.RemoveMachineInstrFromMaps(&MI);
             MBB.erase(&MI);
             Erased = true;
@@ -1631,6 +1812,7 @@ void LocalSpiller::RewriteMBB(MachineBasicBlock &MBB, VirtRegMap &VRM) {
       }    
     }
   ProcessNextInst:
+    DistanceMap.insert(std::make_pair(&MI, Dist++));
     if (!Erased && !BackTracked) {
       for (MachineBasicBlock::iterator II = MI; II != NextMII; ++II)
         UpdateKills(*II, RegKills, KillOps);

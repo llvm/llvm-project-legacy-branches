@@ -40,7 +40,7 @@ Value *SCEVExpander::InsertCastOfTo(Instruction::CastOps opcode, Value *V,
             return CI;
           }
     }
-    return CastInst::create(opcode, V, Ty, V->getName(), 
+    return CastInst::Create(opcode, V, Ty, V->getName(), 
                             A->getParent()->getEntryBlock().begin());
   }
 
@@ -67,13 +67,13 @@ Value *SCEVExpander::InsertCastOfTo(Instruction::CastOps opcode, Value *V,
   if (InvokeInst *II = dyn_cast<InvokeInst>(I))
     IP = II->getNormalDest()->begin();
   while (isa<PHINode>(IP)) ++IP;
-  return CastInst::create(opcode, V, Ty, V->getName(), IP);
+  return CastInst::Create(opcode, V, Ty, V->getName(), IP);
 }
 
 /// InsertBinop - Insert the specified binary operator, doing a small amount
 /// of work to avoid inserting an obviously redundant operation.
 Value *SCEVExpander::InsertBinop(Instruction::BinaryOps Opcode, Value *LHS,
-                                 Value *RHS, Instruction *&InsertPt) {
+                                 Value *RHS, Instruction *InsertPt) {
   // Fold a binop with constant operands.
   if (Constant *CLHS = dyn_cast<Constant>(LHS))
     if (Constant *CRHS = dyn_cast<Constant>(RHS))
@@ -81,24 +81,34 @@ Value *SCEVExpander::InsertBinop(Instruction::BinaryOps Opcode, Value *LHS,
 
   // Do a quick scan to see if we have this binop nearby.  If so, reuse it.
   unsigned ScanLimit = 6;
-  for (BasicBlock::iterator IP = InsertPt, E = InsertPt->getParent()->begin();
-       ScanLimit; --IP, --ScanLimit) {
-    if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(IP))
-      if (BinOp->getOpcode() == Opcode && BinOp->getOperand(0) == LHS &&
-          BinOp->getOperand(1) == RHS) {
-        // If we found the instruction *at* the insert point, insert later
-        // instructions after it.
-        if (BinOp == InsertPt)
-          InsertPt = ++IP;
-        return BinOp;
-      }
-    if (IP == E) break;
+  BasicBlock::iterator BlockBegin = InsertPt->getParent()->begin();
+  if (InsertPt != BlockBegin) {
+    // Scanning starts from the last instruction before InsertPt.
+    BasicBlock::iterator IP = InsertPt;
+    --IP;
+    for (; ScanLimit; --IP, --ScanLimit) {
+      if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(IP))
+        if (BinOp->getOpcode() == Opcode && BinOp->getOperand(0) == LHS &&
+            BinOp->getOperand(1) == RHS)
+          return BinOp;
+      if (IP == BlockBegin) break;
+    }
   }
-
-  // If we don't have 
-  return BinaryOperator::create(Opcode, LHS, RHS, "tmp", InsertPt);
+  
+  // If we haven't found this binop, insert it.
+  return BinaryOperator::Create(Opcode, LHS, RHS, "tmp", InsertPt);
 }
 
+Value *SCEVExpander::visitAddExpr(SCEVAddExpr *S) {
+  Value *V = expand(S->getOperand(S->getNumOperands()-1));
+
+  // Emit a bunch of add instructions
+  for (int i = S->getNumOperands()-2; i >= 0; --i)
+    V = InsertBinop(Instruction::Add, V, expand(S->getOperand(i)),
+                    InsertPt);
+  return V;
+}
+    
 Value *SCEVExpander::visitMulExpr(SCEVMulExpr *S) {
   int FirstOp = 0;  // Set if we should emit a subtract.
   if (SCEVConstant *SC = dyn_cast<SCEVConstant>(S->getOperand(0)))
@@ -126,8 +136,7 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
   assert(Ty->isInteger() && "Cannot expand fp recurrences yet!");
 
   // {X,+,F} --> X + {0,+,F}
-  if (!isa<SCEVConstant>(S->getStart()) ||
-      !cast<SCEVConstant>(S->getStart())->getValue()->isZero()) {
+  if (!S->getStart()->isZero()) {
     Value *Start = expand(S->getStart());
     std::vector<SCEVHandle> NewOps(S->op_begin(), S->op_end());
     NewOps[0] = SE.getIntegerSCEV(0, Ty);
@@ -138,7 +147,7 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
   }
 
   // {0,+,1} --> Insert a canonical induction variable into the loop!
-  if (S->getNumOperands() == 2 &&
+  if (S->isAffine() &&
       S->getOperand(1) == SE.getIntegerSCEV(1, Ty)) {
     // Create and insert the PHI node for the induction variable in the
     // specified loop.
@@ -155,7 +164,7 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
     // Insert a unit add instruction right before the terminator corresponding
     // to the back-edge.
     Constant *One = ConstantInt::get(Ty, 1);
-    Instruction *Add = BinaryOperator::createAdd(PN, One, "indvar.next",
+    Instruction *Add = BinaryOperator::CreateAdd(PN, One, "indvar.next",
                                                  (*HPI)->getTerminator());
 
     pred_iterator PI = pred_begin(Header);
@@ -169,7 +178,7 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
   Value *I = getOrInsertCanonicalInductionVariable(L, Ty);
 
   // If this is a simple linear addrec, emit it now as a special case.
-  if (S->getNumOperands() == 2) {   // {0,+,F} --> i*F
+  if (S->isAffine()) {   // {0,+,F} --> i*F
     Value *F = expand(S->getOperand(1));
     
     // IF the step is by one, just return the inserted IV.
@@ -185,14 +194,21 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
     Loop *InsertPtLoop = LI.getLoopFor(MulInsertPt->getParent());
     if (InsertPtLoop != L && InsertPtLoop &&
         L->contains(InsertPtLoop->getHeader())) {
-      while (InsertPtLoop != L) {
+      do {
         // If we cannot hoist the multiply out of this loop, don't.
         if (!InsertPtLoop->isLoopInvariant(F)) break;
 
-        // Otherwise, move the insert point to the preheader of the loop.
-        MulInsertPt = InsertPtLoop->getLoopPreheader()->getTerminator();
+        BasicBlock *InsertPtLoopPH = InsertPtLoop->getLoopPreheader();
+
+        // If this loop hasn't got a preheader, we aren't able to hoist the
+        // multiply.
+        if (!InsertPtLoopPH)
+          break;
+
+        // Otherwise, move the insert point to the preheader.
+        MulInsertPt = InsertPtLoopPH->getTerminator();
         InsertPtLoop = InsertPtLoop->getParentLoop();
-      }
+      } while (InsertPtLoop != L);
     }
     
     return InsertBinop(Instruction::Mul, I, F, MulInsertPt);
@@ -208,6 +224,21 @@ Value *SCEVExpander::visitAddRecExpr(SCEVAddRecExpr *S) {
   //cerr << "Evaluated: " << *this << "\n     to: " << *V << "\n";
 
   return expand(V);
+}
+
+Value *SCEVExpander::visitTruncateExpr(SCEVTruncateExpr *S) {
+  Value *V = expand(S->getOperand());
+  return CastInst::createTruncOrBitCast(V, S->getType(), "tmp.", InsertPt);
+}
+
+Value *SCEVExpander::visitZeroExtendExpr(SCEVZeroExtendExpr *S) {
+  Value *V = expand(S->getOperand());
+  return CastInst::createZExtOrBitCast(V, S->getType(), "tmp.", InsertPt);
+}
+
+Value *SCEVExpander::visitSignExtendExpr(SCEVSignExtendExpr *S) {
+  Value *V = expand(S->getOperand());
+  return CastInst::createSExtOrBitCast(V, S->getType(), "tmp.", InsertPt);
 }
 
 Value *SCEVExpander::visitSMaxExpr(SCEVSMaxExpr *S) {
@@ -228,6 +259,12 @@ Value *SCEVExpander::visitUMaxExpr(SCEVUMaxExpr *S) {
     LHS = SelectInst::Create(ICmp, LHS, RHS, "umax", InsertPt);
   }
   return LHS;
+}
+
+Value *SCEVExpander::expandCodeFor(SCEVHandle SH, Instruction *IP) {
+  // Expand the code for this SCEV.
+  this->InsertPt = IP;
+  return expand(SH);
 }
 
 Value *SCEVExpander::expand(SCEV *S) {

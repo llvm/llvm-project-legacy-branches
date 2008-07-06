@@ -251,6 +251,9 @@ static int GenerateAssembly(const std::string &OutputFilename,
   // Run LLC to convert the bitcode file into assembly code.
   std::vector<const char*> args;
   args.push_back(llc.c_str());
+  // We will use GCC to assemble the program so set the assembly syntax to AT&T,
+  // regardless of what the target in the bitcode file is.
+  args.push_back("-x86-asm-syntax=att");
   args.push_back("-f");
   args.push_back("-o");
   args.push_back(OutputFilename.c_str());
@@ -530,8 +533,24 @@ int main(int argc, char **argv, char **envp) {
     // Optimize the module
     Optimize(Composite.get());
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+    if (!LinkAsLibrary) {
+      // Default to "a.exe" instead of "a.out".
+      if (OutputFilename.getNumOccurrences() == 0)
+        OutputFilename = "a.exe";
+
+      // If there is no suffix add an "exe" one.
+      sys::Path ExeFile( OutputFilename );
+      if (ExeFile.getSuffix() == "") {
+        ExeFile.appendSuffix("exe");
+        OutputFilename = ExeFile.toString();
+      }
+    }
+#endif
+
     // Generate the bitcode for the optimized module.
     std::string RealBitcodeOutput = OutputFilename;
+
     if (!LinkAsLibrary) RealBitcodeOutput += ".bc";
     GenerateBitcode(Composite.get(), RealBitcodeOutput);
 

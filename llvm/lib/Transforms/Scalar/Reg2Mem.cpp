@@ -67,7 +67,7 @@ namespace {
         while (isa<AllocaInst>(I)) ++I;
 
         CastInst *AllocaInsertionPoint =
-          CastInst::create(Instruction::BitCast,
+          CastInst::Create(Instruction::BitCast,
                            Constant::getNullValue(Type::Int32Ty), Type::Int32Ty,
                            "reg2mem alloca point", I);
 
@@ -111,14 +111,15 @@ namespace {
       return false;
     }
   };
-  
-  char RegToMem::ID = 0;
-  RegisterPass<RegToMem> X("reg2mem", "Demote all values to stack slots");
 }
+  
+char RegToMem::ID = 0;
+static RegisterPass<RegToMem>
+X("reg2mem", "Demote all values to stack slots");
 
 // createDemoteRegisterToMemory - Provide an entry point to create this pass.
 //
-const PassInfo *llvm::DemoteRegisterToMemoryID = X.getPassInfo();
+const PassInfo *const llvm::DemoteRegisterToMemoryID = &X;
 FunctionPass *llvm::createDemoteRegisterToMemoryPass() {
   return new RegToMem();
 }

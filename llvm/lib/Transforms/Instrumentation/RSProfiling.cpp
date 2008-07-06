@@ -55,16 +55,18 @@ namespace {
   enum RandomMeth {
     GBV, GBVO, HOSTCC
   };
+}
 
-  cl::opt<RandomMeth> RandomMethod("profile-randomness",
-      cl::desc("How to randomly choose to profile:"),
-      cl::values(
-                 clEnumValN(GBV, "global", "global counter"),
-                 clEnumValN(GBVO, "ra_global", 
-                            "register allocated global counter"),
-                 clEnumValN(HOSTCC, "rdcc", "cycle counter"),
-                 clEnumValEnd));
+static cl::opt<RandomMeth> RandomMethod("profile-randomness",
+    cl::desc("How to randomly choose to profile:"),
+    cl::values(
+               clEnumValN(GBV, "global", "global counter"),
+               clEnumValN(GBVO, "ra_global", 
+                          "register allocated global counter"),
+               clEnumValN(HOSTCC, "rdcc", "cycle counter"),
+               clEnumValEnd));
   
+namespace {
   /// NullProfilerRS - The basic profiler that does nothing.  It is the default
   /// profiler and thus terminates RSProfiler chains.  It is useful for 
   /// measuring framework overhead
@@ -81,12 +83,14 @@ namespace {
       AU.setPreservesAll();
     }
   };
+}
 
-  static RegisterAnalysisGroup<RSProfilers> A("Profiling passes");
-  static RegisterPass<NullProfilerRS> NP("insert-null-profiling-rs",
-                                         "Measure profiling framework overhead");
-  static RegisterAnalysisGroup<RSProfilers, true> NPT(NP);
+static RegisterAnalysisGroup<RSProfilers> A("Profiling passes");
+static RegisterPass<NullProfilerRS> NP("insert-null-profiling-rs",
+                                       "Measure profiling framework overhead");
+static RegisterAnalysisGroup<RSProfilers, true> NPT(NP);
 
+namespace {
   /// Chooser - Something that chooses when to make a sample of the profiled code
   class VISIBILITY_HIDDEN Chooser {
   public:
@@ -158,10 +162,11 @@ namespace {
     bool doInitialization(Module &M);
     virtual void getAnalysisUsage(AnalysisUsage &AU) const;
   };
-
-  RegisterPass<ProfilerRS> X("insert-rs-profiling-framework",
-                             "Insert random sampling instrumentation framework");
 }
+
+static RegisterPass<ProfilerRS>
+X("insert-rs-profiling-framework",
+  "Insert random sampling instrumentation framework");
 
 char RSProfilers::ID = 0;
 char NullProfilerRS::ID = 0;
@@ -210,7 +215,7 @@ void GlobalRandomCounter::ProcessChoicePoint(BasicBlock* bb) {
   ICmpInst* s = new ICmpInst(ICmpInst::ICMP_EQ, l, ConstantInt::get(T, 0), 
                              "countercc", t);
 
-  Value* nv = BinaryOperator::createSub(l, ConstantInt::get(T, 1),
+  Value* nv = BinaryOperator::CreateSub(l, ConstantInt::get(T, 1),
                                         "counternew", t);
   new StoreInst(nv, Counter, t);
   t->setCondition(s);
@@ -260,14 +265,11 @@ void GlobalRandomCounterOpt::PrepFunction(Function* F) {
         new StoreInst(l, Counter, bib);
         
         BasicBlock* bb = cast<InvokeInst>(bib)->getNormalDest();
-        BasicBlock::iterator i = bb->begin();
-        while (isa<PHINode>(i))
-          ++i;
+        BasicBlock::iterator i = bb->getFirstNonPHI();
         l = new LoadInst(Counter, "counter", i);
         
         bb = cast<InvokeInst>(bib)->getUnwindDest();
-        i = bb->begin();
-        while (isa<PHINode>(i)) ++i;
+        i = bb->getFirstNonPHI();
         l = new LoadInst(Counter, "counter", i);
         new StoreInst(l, AI, i);
       } else if (isa<UnwindInst>(&*bib) || isa<ReturnInst>(&*bib)) {
@@ -285,7 +287,7 @@ void GlobalRandomCounterOpt::ProcessChoicePoint(BasicBlock* bb) {
   ICmpInst* s = new ICmpInst(ICmpInst::ICMP_EQ, l, ConstantInt::get(T, 0), 
                              "countercc", t);
 
-  Value* nv = BinaryOperator::createSub(l, ConstantInt::get(T, 1),
+  Value* nv = BinaryOperator::CreateSub(l, ConstantInt::get(T, 1),
                                         "counternew", t);
   new StoreInst(nv, AI, t);
   t->setCondition(s);
@@ -314,7 +316,7 @@ void CycleCounter::ProcessChoicePoint(BasicBlock* bb) {
   
   CallInst* c = CallInst::Create(F, "rdcc", t);
   BinaryOperator* b = 
-    BinaryOperator::createAnd(c, ConstantInt::get(Type::Int64Ty, rm),
+    BinaryOperator::CreateAnd(c, ConstantInt::get(Type::Int64Ty, rm),
                               "mrdcc", t);
   
   ICmpInst *s = new ICmpInst(ICmpInst::ICMP_EQ, b,
@@ -338,8 +340,8 @@ bool RSProfilers_std::isProfiling(Value* v) {
 void RSProfilers_std::IncrementCounterInBlock(BasicBlock *BB, unsigned CounterNum,
                                           GlobalValue *CounterArray) {
   // Insert the increment after any alloca or PHI instructions...
-  BasicBlock::iterator InsertPos = BB->begin();
-  while (isa<AllocaInst>(InsertPos) || isa<PHINode>(InsertPos))
+  BasicBlock::iterator InsertPos = BB->getFirstNonPHI();
+  while (isa<AllocaInst>(InsertPos))
     ++InsertPos;
   
   // Create the getelementptr constant expression
@@ -352,7 +354,7 @@ void RSProfilers_std::IncrementCounterInBlock(BasicBlock *BB, unsigned CounterNu
   // Load, increment and store the value back.
   Value *OldVal = new LoadInst(ElementPtr, "OldCounter", InsertPos);
   profcode.insert(OldVal);
-  Value *NewVal = BinaryOperator::createAdd(OldVal,
+  Value *NewVal = BinaryOperator::CreateAdd(OldVal,
                                             ConstantInt::get(Type::Int32Ty, 1),
                                             "NewCounter", InsertPos);
   profcode.insert(NewVal);
@@ -376,8 +378,8 @@ Value* ProfilerRS::Translate(Value* v) {
     if (bb == &bb->getParent()->getEntryBlock())
       TransCache[bb] = bb; //don't translate entry block
     else
-      TransCache[bb] = BasicBlock::Create("dup_" + bb->getName(), bb->getParent(), 
-                                          NULL);
+      TransCache[bb] = BasicBlock::Create("dup_" + bb->getName(),
+                                          bb->getParent(), NULL);
     return TransCache[bb];
   } else if (Instruction* i = dyn_cast<Instruction>(v)) {
     //we have already translated this

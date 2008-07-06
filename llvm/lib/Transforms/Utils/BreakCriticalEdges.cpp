@@ -48,14 +48,14 @@ namespace {
       AU.addPreservedID(LoopSimplifyID);
     }
   };
-
-  char BreakCriticalEdges::ID = 0;
-  RegisterPass<BreakCriticalEdges> X("break-crit-edges",
-                                    "Break critical edges in CFG");
 }
 
+char BreakCriticalEdges::ID = 0;
+static RegisterPass<BreakCriticalEdges>
+X("break-crit-edges", "Break critical edges in CFG");
+
 // Publically exposed interface to pass...
-const PassInfo *llvm::BreakCriticalEdgesID = X.getPassInfo();
+const PassInfo *const llvm::BreakCriticalEdgesID = &X;
 FunctionPass *llvm::createBreakCriticalEdgesPass() {
   return new BreakCriticalEdges();
 }
@@ -235,9 +235,12 @@ bool llvm::SplitCriticalEdge(TerminatorInst *TI, unsigned SuccNum, Pass *P,
       DominanceFrontier::iterator I = DF->find(DestBB);
       if (I != DF->end()) {
         DF->addBasicBlock(NewBB, I->second);
-        // However NewBB's frontier does not include DestBB.
-        DominanceFrontier::iterator NF = DF->find(NewBB);
-        DF->removeFromFrontier(NF, DestBB);
+        
+        if (I->second.count(DestBB)) {
+          // However NewBB's frontier does not include DestBB.
+          DominanceFrontier::iterator NF = DF->find(NewBB);
+          DF->removeFromFrontier(NF, DestBB);
+        }
       }
       else
         DF->addBasicBlock(NewBB, DominanceFrontier::DomSetType());

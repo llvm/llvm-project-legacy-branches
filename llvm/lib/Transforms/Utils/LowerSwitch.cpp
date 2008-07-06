@@ -77,14 +77,14 @@ namespace {
       return CI1->getValue().slt(CI2->getValue());
     }
   };
-
-  char LowerSwitch::ID = 0;
-  RegisterPass<LowerSwitch>
-  X("lowerswitch", "Lower SwitchInst's to branches");
 }
 
+char LowerSwitch::ID = 0;
+static RegisterPass<LowerSwitch>
+X("lowerswitch", "Lower SwitchInst's to branches");
+
 // Publically exposed interface to pass...
-const PassInfo *llvm::LowerSwitchID = X.getPassInfo();
+const PassInfo *const llvm::LowerSwitchID = &X;
 // createLowerSwitchPass - Interface to this file...
 FunctionPass *llvm::createLowerSwitchPass() {
   return new LowerSwitch();
@@ -202,7 +202,7 @@ BasicBlock* LowerSwitch::newLeafBlock(CaseRange& Leaf, Value* Val,
     } else {
       // Emit V-Lo <=u Hi-Lo
       Constant* NegLo = ConstantExpr::getNeg(Leaf.Low);
-      Instruction* Add = BinaryOperator::createAdd(Val, NegLo,
+      Instruction* Add = BinaryOperator::CreateAdd(Val, NegLo,
                                                    Val->getName()+".off",
                                                    NewLeaf);
       Constant *UpperBound = ConstantExpr::getAdd(NegLo, Leaf.High);

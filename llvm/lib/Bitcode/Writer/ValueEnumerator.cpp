@@ -21,9 +21,9 @@
 #include <algorithm>
 using namespace llvm;
 
-static bool isFirstClassType(const std::pair<const llvm::Type*,
-                             unsigned int> &P) {
-  return P.first->isFirstClassType();
+static bool isSingleValueType(const std::pair<const llvm::Type*,
+                              unsigned int> &P) {
+  return P.first->isSingleValueType();
 }
 
 static bool isIntegerValue(const std::pair<const Value*, unsigned> &V) {
@@ -103,10 +103,10 @@ ValueEnumerator::ValueEnumerator(const Module *M) {
   // in the table (have low bit-width).
   std::stable_sort(Types.begin(), Types.end(), CompareByFrequency);
     
-  // Partition the Type ID's so that the first-class types occur before the
+  // Partition the Type ID's so that the single-value types occur before the
   // aggregate types.  This allows the aggregate types to be dropped from the
   // type table after parsing the global variable initializers.
-  std::partition(Types.begin(), Types.end(), isFirstClassType);
+  std::partition(Types.begin(), Types.end(), isSingleValueType);
 
   // Now that we rearranged the type table, rebuild TypeMap.
   for (unsigned i = 0, e = Types.size(); i != e; ++i)
@@ -114,19 +114,21 @@ ValueEnumerator::ValueEnumerator(const Module *M) {
 }
 
 // Optimize constant ordering.
-struct CstSortPredicate {
-  ValueEnumerator &VE;
-  CstSortPredicate(ValueEnumerator &ve) : VE(ve) {}
-  bool operator()(const std::pair<const Value*, unsigned> &LHS,
-                  const std::pair<const Value*, unsigned> &RHS) {
-    // Sort by plane.
-    if (LHS.first->getType() != RHS.first->getType())
-      return VE.getTypeID(LHS.first->getType()) < 
-             VE.getTypeID(RHS.first->getType());
-    // Then by frequency.
-    return LHS.second > RHS.second;
-  }
-};
+namespace {
+  struct CstSortPredicate {
+    ValueEnumerator &VE;
+    explicit CstSortPredicate(ValueEnumerator &ve) : VE(ve) {}
+    bool operator()(const std::pair<const Value*, unsigned> &LHS,
+                    const std::pair<const Value*, unsigned> &RHS) {
+      // Sort by plane.
+      if (LHS.first->getType() != RHS.first->getType())
+        return VE.getTypeID(LHS.first->getType()) < 
+               VE.getTypeID(RHS.first->getType());
+      // Then by frequency.
+      return LHS.second > RHS.second;
+    }
+  };
+}
 
 /// OptimizeConstants - Reorder constant pool for denser encoding.
 void ValueEnumerator::OptimizeConstants(unsigned CstStart, unsigned CstEnd) {
@@ -262,11 +264,11 @@ void ValueEnumerator::EnumerateParamAttrs(const PAListPtr &PAL) {
 /// there are none, return -1.
 int ValueEnumerator::PurgeAggregateValues() {
   // If there are no aggregate values at the end of the list, return -1.
-  if (Values.empty() || Values.back().first->getType()->isFirstClassType())
+  if (Values.empty() || Values.back().first->getType()->isSingleValueType())
     return -1;
   
   // Otherwise, remove aggregate values...
-  while (!Values.empty() && !Values.back().first->getType()->isFirstClassType())
+  while (!Values.empty() && !Values.back().first->getType()->isSingleValueType())
     Values.pop_back();
   
   // ... and return the new size.

@@ -26,6 +26,7 @@
 #include "llvm/Assembly/Writer.h"
 #include "llvm/Support/Streams.h"
 #include "llvm/System/Path.h"
+#include "llvm/ADT/DenseMap.h"
 #include <sstream>
 using namespace llvm;
 
@@ -52,7 +53,6 @@ static std::string ToStr(const Type *Ty, const Module *M) {
 // Inputs:
 //  DestTy - The type to which we wish to resolve.
 //  SrcTy  - The original type which we want to resolve.
-//  Name   - The name of the type.
 //
 // Outputs:
 //  DestST - The symbol table in which the new type should be placed.
@@ -61,121 +61,203 @@ static std::string ToStr(const Type *Ty, const Module *M) {
 //  true  - There is an error and the types cannot yet be linked.
 //  false - No errors.
 //
-static bool ResolveTypes(const Type *DestTy, const Type *SrcTy,
-                         TypeSymbolTable *DestST, const std::string &Name) {
+static bool ResolveTypes(const Type *DestTy, const Type *SrcTy) {
   if (DestTy == SrcTy) return false;       // If already equal, noop
+  assert(DestTy && SrcTy && "Can't handle null types");
 
-  // Does the type already exist in the module?
-  if (DestTy && !isa<OpaqueType>(DestTy)) {  // Yup, the type already exists...
-    if (const OpaqueType *OT = dyn_cast<OpaqueType>(SrcTy)) {
-      const_cast<OpaqueType*>(OT)->refineAbstractTypeTo(DestTy);
-    } else {
-      return true;  // Cannot link types... neither is opaque and not-equal
-    }
-  } else {                       // Type not in dest module.  Add it now.
-    if (DestTy)                  // Type _is_ in module, just opaque...
-      const_cast<OpaqueType*>(cast<OpaqueType>(DestTy))
-                           ->refineAbstractTypeTo(SrcTy);
-    else if (!Name.empty())
-      DestST->insert(Name, const_cast<Type*>(SrcTy));
+  if (const OpaqueType *OT = dyn_cast<OpaqueType>(DestTy)) {
+    // Type _is_ in module, just opaque...
+    const_cast<OpaqueType*>(OT)->refineAbstractTypeTo(SrcTy);
+  } else if (const OpaqueType *OT = dyn_cast<OpaqueType>(SrcTy)) {
+    const_cast<OpaqueType*>(OT)->refineAbstractTypeTo(DestTy);
+  } else {
+    return true;  // Cannot link types... not-equal and neither is opaque.
   }
   return false;
 }
 
-static const FunctionType *getFT(const PATypeHolder &TH) {
-  return cast<FunctionType>(TH.get());
+/// LinkerTypeMap - This implements a map of types that is stable
+/// even if types are resolved/refined to other types.  This is not a general
+/// purpose map, it is specific to the linker's use.
+namespace {
+class LinkerTypeMap : public AbstractTypeUser {
+  typedef DenseMap<const Type*, PATypeHolder> TheMapTy;
+  TheMapTy TheMap;
+  
+  LinkerTypeMap(const LinkerTypeMap&); // DO NOT IMPLEMENT
+  void operator=(const LinkerTypeMap&); // DO NOT IMPLEMENT
+public:
+  LinkerTypeMap() {}
+  ~LinkerTypeMap() {
+    for (DenseMap<const Type*, PATypeHolder>::iterator I = TheMap.begin(),
+         E = TheMap.end(); I != E; ++I)
+      I->first->removeAbstractTypeUser(this);
+  }
+  
+  /// lookup - Return the value for the specified type or null if it doesn't
+  /// exist.
+  const Type *lookup(const Type *Ty) const {
+    TheMapTy::const_iterator I = TheMap.find(Ty);
+    if (I != TheMap.end()) return I->second;
+    return 0;
+  }
+  
+  /// erase - Remove the specified type, returning true if it was in the set.
+  bool erase(const Type *Ty) {
+    if (!TheMap.erase(Ty))
+      return false;
+    if (Ty->isAbstract())
+      Ty->removeAbstractTypeUser(this);
+    return true;
+  }
+  
+  /// insert - This returns true if the pointer was new to the set, false if it
+  /// was already in the set.
+  bool insert(const Type *Src, const Type *Dst) {
+    if (!TheMap.insert(std::make_pair(Src, PATypeHolder(Dst))))
+      return false;  // Already in map.
+    if (Src->isAbstract())
+      Src->addAbstractTypeUser(this);
+    return true;
+  }
+  
+protected:
+  /// refineAbstractType - The callback method invoked when an abstract type is
+  /// resolved to another type.  An object must override this method to update
+  /// its internal state to reference NewType instead of OldType.
+  ///
+  virtual void refineAbstractType(const DerivedType *OldTy,
+                                  const Type *NewTy) {
+    TheMapTy::iterator I = TheMap.find(OldTy);
+    const Type *DstTy = I->second;
+    
+    TheMap.erase(I);
+    if (OldTy->isAbstract())
+      OldTy->removeAbstractTypeUser(this);
+
+    // Don't reinsert into the map if the key is concrete now.
+    if (NewTy->isAbstract())
+      insert(NewTy, DstTy);
+  }
+  
+  /// The other case which AbstractTypeUsers must be aware of is when a type
+  /// makes the transition from being abstract (where it has clients on it's
+  /// AbstractTypeUsers list) to concrete (where it does not).  This method
+  /// notifies ATU's when this occurs for a type.
+  virtual void typeBecameConcrete(const DerivedType *AbsTy) {
+    TheMap.erase(AbsTy);
+    AbsTy->removeAbstractTypeUser(this);
+  }
+  
+  // for debugging...
+  virtual void dump() const {
+    cerr << "AbstractTypeSet!\n";
+  }
+};
 }
-static const StructType *getST(const PATypeHolder &TH) {
-  return cast<StructType>(TH.get());
-}
+
 
 // RecursiveResolveTypes - This is just like ResolveTypes, except that it
 // recurses down into derived types, merging the used types if the parent types
 // are compatible.
-static bool RecursiveResolveTypesI(const PATypeHolder &DestTy,
-                                   const PATypeHolder &SrcTy,
-                                   TypeSymbolTable *DestST, 
-                                   const std::string &Name,
-                std::vector<std::pair<PATypeHolder, PATypeHolder> > &Pointers) {
-  const Type *SrcTyT = SrcTy.get();
-  const Type *DestTyT = DestTy.get();
-  if (DestTyT == SrcTyT) return false;       // If already equal, noop
+static bool RecursiveResolveTypesI(const Type *DstTy, const Type *SrcTy,
+                                   LinkerTypeMap &Pointers) {
+  if (DstTy == SrcTy) return false;       // If already equal, noop
 
   // If we found our opaque type, resolve it now!
-  if (isa<OpaqueType>(DestTyT) || isa<OpaqueType>(SrcTyT))
-    return ResolveTypes(DestTyT, SrcTyT, DestST, Name);
+  if (isa<OpaqueType>(DstTy) || isa<OpaqueType>(SrcTy))
+    return ResolveTypes(DstTy, SrcTy);
 
   // Two types cannot be resolved together if they are of different primitive
   // type.  For example, we cannot resolve an int to a float.
-  if (DestTyT->getTypeID() != SrcTyT->getTypeID()) return true;
+  if (DstTy->getTypeID() != SrcTy->getTypeID()) return true;
 
+  // If neither type is abstract, then they really are just different types.
+  if (!DstTy->isAbstract() && !SrcTy->isAbstract())
+    return true;
+  
   // Otherwise, resolve the used type used by this derived type...
-  switch (DestTyT->getTypeID()) {
-  case Type::IntegerTyID: {
-    if (cast<IntegerType>(DestTyT)->getBitWidth() !=
-        cast<IntegerType>(SrcTyT)->getBitWidth())
-      return true;
-    return false;
-  }
+  switch (DstTy->getTypeID()) {
+  default:
+    return true;
   case Type::FunctionTyID: {
-    if (cast<FunctionType>(DestTyT)->isVarArg() !=
-        cast<FunctionType>(SrcTyT)->isVarArg() ||
-        cast<FunctionType>(DestTyT)->getNumContainedTypes() !=
-        cast<FunctionType>(SrcTyT)->getNumContainedTypes())
+    const FunctionType *DstFT = cast<FunctionType>(DstTy);
+    const FunctionType *SrcFT = cast<FunctionType>(SrcTy);
+    if (DstFT->isVarArg() != SrcFT->isVarArg() ||
+        DstFT->getNumContainedTypes() != SrcFT->getNumContainedTypes())
       return true;
-    for (unsigned i = 0, e = getFT(DestTy)->getNumContainedTypes(); i != e; ++i)
-      if (RecursiveResolveTypesI(getFT(DestTy)->getContainedType(i),
-                                 getFT(SrcTy)->getContainedType(i), DestST, "",
-                                 Pointers))
+    
+    // Use TypeHolder's so recursive resolution won't break us.
+    PATypeHolder ST(SrcFT), DT(DstFT);
+    for (unsigned i = 0, e = DstFT->getNumContainedTypes(); i != e; ++i) {
+      const Type *SE = ST->getContainedType(i), *DE = DT->getContainedType(i);
+      if (SE != DE && RecursiveResolveTypesI(DE, SE, Pointers))
         return true;
+    }
     return false;
   }
   case Type::StructTyID: {
-    if (getST(DestTy)->getNumContainedTypes() !=
-        getST(SrcTy)->getNumContainedTypes()) return 1;
-    for (unsigned i = 0, e = getST(DestTy)->getNumContainedTypes(); i != e; ++i)
-      if (RecursiveResolveTypesI(getST(DestTy)->getContainedType(i),
-                                 getST(SrcTy)->getContainedType(i), DestST, "",
-                                 Pointers))
+    const StructType *DstST = cast<StructType>(DstTy);
+    const StructType *SrcST = cast<StructType>(SrcTy);
+    if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes())
+      return true;
+    
+    PATypeHolder ST(SrcST), DT(DstST);
+    for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
+      const Type *SE = ST->getContainedType(i), *DE = DT->getContainedType(i);
+      if (SE != DE && RecursiveResolveTypesI(DE, SE, Pointers))
         return true;
+    }
     return false;
   }
   case Type::ArrayTyID: {
-    const ArrayType *DAT = cast<ArrayType>(DestTy.get());
-    const ArrayType *SAT = cast<ArrayType>(SrcTy.get());
+    const ArrayType *DAT = cast<ArrayType>(DstTy);
+    const ArrayType *SAT = cast<ArrayType>(SrcTy);
     if (DAT->getNumElements() != SAT->getNumElements()) return true;
     return RecursiveResolveTypesI(DAT->getElementType(), SAT->getElementType(),
-                                  DestST, "", Pointers);
+                                  Pointers);
+  }
+  case Type::VectorTyID: {
+    const VectorType *DVT = cast<VectorType>(DstTy);
+    const VectorType *SVT = cast<VectorType>(SrcTy);
+    if (DVT->getNumElements() != SVT->getNumElements()) return true;
+    return RecursiveResolveTypesI(DVT->getElementType(), SVT->getElementType(),
+                                  Pointers);
   }
   case Type::PointerTyID: {
+    const PointerType *DstPT = cast<PointerType>(DstTy);
+    const PointerType *SrcPT = cast<PointerType>(SrcTy);
+    
+    if (DstPT->getAddressSpace() != SrcPT->getAddressSpace())
+      return true;
+    
     // If this is a pointer type, check to see if we have already seen it.  If
     // so, we are in a recursive branch.  Cut off the search now.  We cannot use
     // an associative container for this search, because the type pointers (keys
-    // in the container) change whenever types get resolved...
-    for (unsigned i = 0, e = Pointers.size(); i != e; ++i)
-      if (Pointers[i].first == DestTy)
-        return Pointers[i].second != SrcTy;
-
+    // in the container) change whenever types get resolved.
+    if (SrcPT->isAbstract())
+      if (const Type *ExistingDestTy = Pointers.lookup(SrcPT))
+        return ExistingDestTy != DstPT;
+    
+    if (DstPT->isAbstract())
+      if (const Type *ExistingSrcTy = Pointers.lookup(DstPT))
+        return ExistingSrcTy != SrcPT;
     // Otherwise, add the current pointers to the vector to stop recursion on
     // this pair.
-    Pointers.push_back(std::make_pair(DestTyT, SrcTyT));
-    bool Result =
-      RecursiveResolveTypesI(cast<PointerType>(DestTy.get())->getElementType(),
-                             cast<PointerType>(SrcTy.get())->getElementType(),
-                             DestST, "", Pointers);
-    Pointers.pop_back();
-    return Result;
+    if (DstPT->isAbstract())
+      Pointers.insert(DstPT, SrcPT);
+    if (SrcPT->isAbstract())
+      Pointers.insert(SrcPT, DstPT);
+    
+    return RecursiveResolveTypesI(DstPT->getElementType(),
+                                  SrcPT->getElementType(), Pointers);
   }
-  default: assert(0 && "Unexpected type!"); return true;
   }
 }
 
-static bool RecursiveResolveTypes(const PATypeHolder &DestTy,
-                                  const PATypeHolder &SrcTy,
-                                  TypeSymbolTable *DestST, 
-                                  const std::string &Name){
-  std::vector<std::pair<PATypeHolder, PATypeHolder> > PointerTypes;
-  return RecursiveResolveTypesI(DestTy, SrcTy, DestST, Name, PointerTypes);
+static bool RecursiveResolveTypes(const Type *DestTy, const Type *SrcTy) {
+  LinkerTypeMap PointerTypes;
+  return RecursiveResolveTypesI(DestTy, SrcTy, PointerTypes);
 }
 
 
@@ -200,10 +282,14 @@ static bool LinkTypes(Module *Dest, const Module *Src, std::string *Err) {
     const std::string &Name = TI->first;
     const Type *RHS = TI->second;
 
-    // Check to see if this type name is already in the dest module...
+    // Check to see if this type name is already in the dest module.
     Type *Entry = DestST->lookup(Name);
 
-    if (ResolveTypes(Entry, RHS, DestST, Name)) {
+    // If the name is just in the source module, bring it over to the dest.
+    if (Entry == 0) {
+      if (!Name.empty())
+        DestST->insert(Name, const_cast<Type*>(RHS));
+    } else if (ResolveTypes(Entry, RHS)) {
       // They look different, save the types 'till later to resolve.
       DelayedTypesToResolve.push_back(Name);
     }
@@ -219,7 +305,7 @@ static bool LinkTypes(Module *Dest, const Module *Src, std::string *Err) {
       const std::string &Name = DelayedTypesToResolve[i];
       Type *T1 = SrcST->lookup(Name);
       Type *T2 = DestST->lookup(Name);
-      if (!ResolveTypes(T2, T1, DestST, Name)) {
+      if (!ResolveTypes(T2, T1)) {
         // We are making progress!
         DelayedTypesToResolve.erase(DelayedTypesToResolve.begin()+i);
         --i;
@@ -232,10 +318,7 @@ static bool LinkTypes(Module *Dest, const Module *Src, std::string *Err) {
       // two types: { int* } and { opaque* }
       for (unsigned i = 0, e = DelayedTypesToResolve.size(); i != e; ++i) {
         const std::string &Name = DelayedTypesToResolve[i];
-        PATypeHolder T1(SrcST->lookup(Name));
-        PATypeHolder T2(DestST->lookup(Name));
-
-        if (!RecursiveResolveTypes(T2, T1, DestST, Name)) {
+        if (!RecursiveResolveTypes(SrcST->lookup(Name), DestST->lookup(Name))) {
           // We are making progress!
           DelayedTypesToResolve.erase(DelayedTypesToResolve.begin()+i);
 
@@ -351,20 +434,10 @@ static void ForceRenaming(GlobalValue *GV, const std::string &Name) {
 /// CopyGVAttributes - copy additional attributes (those not needed to construct
 /// a GlobalValue) from the SrcGV to the DestGV. 
 static void CopyGVAttributes(GlobalValue *DestGV, const GlobalValue *SrcGV) {
-  // Propagate alignment, visibility and section info.
-  DestGV->setAlignment(std::max(DestGV->getAlignment(), SrcGV->getAlignment()));
-  DestGV->setSection(SrcGV->getSection());
-  DestGV->setVisibility(SrcGV->getVisibility());
-  if (const Function *SrcF = dyn_cast<Function>(SrcGV)) {
-    Function *DestF = cast<Function>(DestGV);
-    DestF->setCallingConv(SrcF->getCallingConv());
-    DestF->setParamAttrs(SrcF->getParamAttrs());
-    if (SrcF->hasCollector())
-      DestF->setCollector(SrcF->getCollector());
-  } else if (const GlobalVariable *SrcVar = dyn_cast<GlobalVariable>(SrcGV)) {
-    GlobalVariable *DestVar = cast<GlobalVariable>(DestGV);
-    DestVar->setThreadLocal(SrcVar->isThreadLocal());
-  }
+  // Use the maximum alignment, rather than just copying the alignment of SrcGV.
+  unsigned Alignment = std::max(DestGV->getAlignment(), SrcGV->getAlignment());
+  DestGV->copyAttributesFrom(SrcGV);
+  DestGV->setAlignment(Alignment);
 }
 
 /// GetLinkageResult - This analyzes the two global values and determines what
@@ -410,10 +483,12 @@ static bool GetLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
             "': can only link appending global with another appending global!");
     LinkFromSrc = true; // Special cased.
     LT = Src->getLinkage();
-  } else if (Src->hasWeakLinkage() || Src->hasLinkOnceLinkage()) {
-    // At this point we know that Dest has LinkOnce, External*, Weak, or
-    // DLL* linkage.
-    if ((Dest->hasLinkOnceLinkage() && Src->hasWeakLinkage()) ||
+  } else if (Src->hasWeakLinkage() || Src->hasLinkOnceLinkage() ||
+             Src->hasCommonLinkage()) {
+    // At this point we know that Dest has LinkOnce, External*, Weak, Common,
+    // or DLL* linkage.
+    if ((Dest->hasLinkOnceLinkage() && 
+          (Src->hasWeakLinkage() || Src->hasCommonLinkage())) ||
         Dest->hasExternalWeakLinkage()) {
       LinkFromSrc = true;
       LT = Src->getLinkage();
@@ -421,7 +496,8 @@ static bool GetLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
       LinkFromSrc = false;
       LT = Dest->getLinkage();
     }
-  } else if (Dest->hasWeakLinkage() || Dest->hasLinkOnceLinkage()) {
+  } else if (Dest->hasWeakLinkage() || Dest->hasLinkOnceLinkage() ||
+             Dest->hasCommonLinkage()) {
     // At this point we know that Src has External* or DLL* linkage.
     if (Src->hasExternalWeakLinkage()) {
       LinkFromSrc = false;
@@ -469,8 +545,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       DGV = Dest->getGlobalVariable(SGV->getName());
       if (DGV && DGV->getType() != SGV->getType())
         // If types don't agree due to opaque types, try to resolve them.
-        RecursiveResolveTypes(SGV->getType(), DGV->getType(), 
-                              &Dest->getTypeSymbolTable(), "");
+        RecursiveResolveTypes(SGV->getType(), DGV->getType());
     }
 
     // Check to see if may have to link the global with the alias
@@ -478,8 +553,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       DGV = Dest->getNamedAlias(SGV->getName());
       if (DGV && DGV->getType() != SGV->getType())
         // If types don't agree due to opaque types, try to resolve them.
-        RecursiveResolveTypes(SGV->getType(), DGV->getType(), 
-                              &Dest->getTypeSymbolTable(), "");
+        RecursiveResolveTypes(SGV->getType(), DGV->getType());
     }
 
     if (DGV && DGV->hasInternalLinkage())
@@ -501,7 +575,8 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       GlobalVariable *NewDGV =
         new GlobalVariable(SGV->getType()->getElementType(),
                            SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                           SGV->getName(), Dest);
+                           SGV->getName(), Dest, false,
+                           SGV->getType()->getAddressSpace());
       // Propagate alignment, visibility and section info.
       CopyGVAttributes(NewDGV, SGV);
 
@@ -525,7 +600,8 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       GlobalVariable *NewDGV =
         new GlobalVariable(SGV->getType()->getElementType(),
                            SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                           "", Dest);
+                           "", Dest, false,
+                           SGV->getType()->getAddressSpace());
 
       // Set alignment allowing CopyGVAttributes merge it with alignment of SGV.
       NewDGV->setAlignment(DGV->getAlignment());
@@ -560,7 +636,8 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
           GlobalVariable *NewDGV =
             new GlobalVariable(SGV->getType()->getElementType(),
                                DGVar->isConstant(), DGVar->getLinkage(),
-                               /*init*/0, DGVar->getName(), Dest);
+                               /*init*/0, DGVar->getName(), Dest, false,
+                               SGV->getType()->getAddressSpace());
           CopyGVAttributes(NewDGV, DGVar);
           DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV,
                                                            DGVar->getType()));
@@ -627,20 +704,49 @@ static bool LinkAlias(Module *Dest, const Module *Src,
     GlobalAlias *NewGA = NULL;
 
     // Globals were already linked, thus we can just query ValueMap for variant
-    // of SAliasee in Dest
+    // of SAliasee in Dest.
     std::map<const Value*,Value*>::const_iterator VMI = ValueMap.find(SAliasee);
     assert(VMI != ValueMap.end() && "Aliasee not linked");
     GlobalValue* DAliasee = cast<GlobalValue>(VMI->second);
+    GlobalValue* DGV = NULL;
 
     // Try to find something 'similar' to SGA in destination module.
-    if (GlobalAlias *DGA = Dest->getNamedAlias(SGA->getName())) {
-      // If types don't agree due to opaque types, try to resolve them.
-      if (RecursiveResolveTypes(SGA->getType(), DGA->getType(),
-                                &Dest->getTypeSymbolTable(), ""))
-        return Error(Err, "Alias Collision on '" + SGA->getName()+
-                     "': aliases have different types");
+    if (!DGV && !SGA->hasInternalLinkage()) {
+      DGV = Dest->getNamedAlias(SGA->getName());
 
-      // Now types are known to be the same, check whether aliasees equal. As
+      // If types don't agree due to opaque types, try to resolve them.
+      if (DGV && DGV->getType() != SGA->getType())
+        if (RecursiveResolveTypes(SGA->getType(), DGV->getType()))
+          return Error(Err, "Alias Collision on '" + SGA->getName()+
+                       "': aliases have different types");
+    }
+
+    if (!DGV && !SGA->hasInternalLinkage()) {
+      DGV = Dest->getGlobalVariable(SGA->getName());
+
+      // If types don't agree due to opaque types, try to resolve them.
+      if (DGV && DGV->getType() != SGA->getType())
+        if (RecursiveResolveTypes(SGA->getType(), DGV->getType()))
+          return Error(Err, "Alias Collision on '" + SGA->getName()+
+                       "': aliases have different types");
+    }
+
+    if (!DGV && !SGA->hasInternalLinkage()) {
+      DGV = Dest->getFunction(SGA->getName());
+
+      // If types don't agree due to opaque types, try to resolve them.
+      if (DGV && DGV->getType() != SGA->getType())
+        if (RecursiveResolveTypes(SGA->getType(), DGV->getType()))
+          return Error(Err, "Alias Collision on '" + SGA->getName()+
+                       "': aliases have different types");
+    }
+
+    // No linking to be performed on internal stuff.
+    if (DGV && DGV->hasInternalLinkage())
+      DGV = NULL;
+
+    if (GlobalAlias *DGA = dyn_cast_or_null<GlobalAlias>(DGV)) {
+      // Types are known to be the same, check whether aliasees equal. As
       // globals are already linked we just need query ValueMap to find the
       // mapping.
       if (DAliasee == DGA->getAliasedGlobal()) {
@@ -653,47 +759,41 @@ static bool LinkAlias(Module *Dest, const Module *Src,
       } else
         return Error(Err, "Alias Collision on '"  + SGA->getName()+
                      "': aliases have different aliasees");
-    } else if (GlobalVariable *DGV = Dest->getGlobalVariable(SGA->getName())) {
-      RecursiveResolveTypes(SGA->getType(), DGV->getType(),
-                            &Dest->getTypeSymbolTable(), "");
-
+    } else if (GlobalVariable *DGVar = dyn_cast_or_null<GlobalVariable>(DGV)) {
       // The only allowed way is to link alias with external declaration.
-      if (DGV->isDeclaration()) {
+      if (DGVar->isDeclaration()) {
         // But only if aliasee is global too...
         if (!isa<GlobalVariable>(DAliasee))
-            return Error(Err, "Global-Alias Collision on '" + SGA->getName() +
-                         "': aliasee is not global variable");
+          return Error(Err, "Global-Alias Collision on '" + SGA->getName() +
+                       "': aliasee is not global variable");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
                                 SGA->getName(), DAliasee, Dest);
         CopyGVAttributes(NewGA, SGA);
 
         // Any uses of DGV need to change to NewGA, with cast, if needed.
-        if (SGA->getType() != DGV->getType())
-          DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,
-                                                           DGV->getType()));
+        if (SGA->getType() != DGVar->getType())
+          DGVar->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,
+                                                             DGVar->getType()));
         else
-          DGV->replaceAllUsesWith(NewGA);
+          DGVar->replaceAllUsesWith(NewGA);
 
-        // DGV will conflict with NewGA because they both had the same
+        // DGVar will conflict with NewGA because they both had the same
         // name. We must erase this now so ForceRenaming doesn't assert
         // because DGV might not have internal linkage.
-        DGV->eraseFromParent();
+        DGVar->eraseFromParent();
 
         // Proceed to 'common' steps
       } else
         return Error(Err, "Global-Alias Collision on '" + SGA->getName() +
                      "': symbol multiple defined");
-    } else if (Function *DF = Dest->getFunction(SGA->getName())) {
-      RecursiveResolveTypes(SGA->getType(), DF->getType(),
-                            &Dest->getTypeSymbolTable(), "");
-
+    } else if (Function *DF = dyn_cast_or_null<Function>(DGV)) {
       // The only allowed way is to link alias with external declaration.
       if (DF->isDeclaration()) {
         // But only if aliasee is function too...
         if (!isa<Function>(DAliasee))
-            return Error(Err, "Function-Alias Collision on '" + SGA->getName() +
-                         "': aliasee is not function");
+          return Error(Err, "Function-Alias Collision on '" + SGA->getName() +
+                       "': aliasee is not function");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
                                 SGA->getName(), DAliasee, Dest);
@@ -716,7 +816,8 @@ static bool LinkAlias(Module *Dest, const Module *Src,
         return Error(Err, "Function-Alias Collision on '" + SGA->getName() +
                      "': symbol multiple defined");
     } else {
-      // Nothing similar found, just copy alias into destination module.
+      // No linking to be performed, simply create an identical version of the
+      // alias over in the dest module...
 
       NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
                               SGA->getName(), DAliasee, Dest);
@@ -728,7 +829,7 @@ static bool LinkAlias(Module *Dest, const Module *Src,
     assert(NewGA && "No alias was created in destination module!");
 
     // If the symbol table renamed the alias, but it is an externally visible
-    // symbol, DGV must be an global value with internal linkage. Rename it.
+    // symbol, DGA must be an global value with internal linkage. Rename it.
     if (NewGA->getName() != SGA->getName() &&
         !NewGA->hasInternalLinkage())
       ForceRenaming(NewGA, SGA->getName());
@@ -758,16 +859,19 @@ static bool LinkGlobalInits(Module *Dest, const Module *Src,
       Constant *SInit =
         cast<Constant>(RemapOperand(SGV->getInitializer(), ValueMap));
 
-      GlobalVariable *DGV = cast<GlobalVariable>(ValueMap[SGV]);
+      GlobalVariable *DGV =
+        cast<GlobalVariable>(ValueMap[SGV]->stripPointerCasts());
       if (DGV->hasInitializer()) {
         if (SGV->hasExternalLinkage()) {
           if (DGV->getInitializer() != SInit)
             return Error(Err, "Global Variable Collision on '" + SGV->getName() +
                          "': global variables have different initializers");
-        } else if (DGV->hasLinkOnceLinkage() || DGV->hasWeakLinkage()) {
+        } else if (DGV->hasLinkOnceLinkage() || DGV->hasWeakLinkage() ||
+                   DGV->hasCommonLinkage()) {
           // Nothing is required, mapped values will take the new global
           // automatically.
-        } else if (SGV->hasLinkOnceLinkage() || SGV->hasWeakLinkage()) {
+        } else if (SGV->hasLinkOnceLinkage() || SGV->hasWeakLinkage() ||
+                   SGV->hasCommonLinkage()) {
           // Nothing is required, mapped values will take the new global
           // automatically.
         } else if (DGV->hasAppendingLinkage()) {
@@ -794,35 +898,65 @@ static bool LinkFunctionProtos(Module *Dest, const Module *Src,
   // Loop over all of the functions in the src module, mapping them over
   for (Module::const_iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
     const Function *SF = I;   // SrcFunction
+    
     Function *DF = 0;
+    Value *MappedDF;
+    
+    // If this function is internal or has no name, it doesn't participate in
+    // linkage.
     if (SF->hasName() && !SF->hasInternalLinkage()) {
       // Check to see if may have to link the function.
       DF = Dest->getFunction(SF->getName());
-      if (DF && SF->getType() != DF->getType())
-        // If types don't agree because of opaque, try to resolve them
-        RecursiveResolveTypes(SF->getType(), DF->getType(), 
-                              &Dest->getTypeSymbolTable(), "");
+      if (DF && DF->hasInternalLinkage())
+        DF = 0;
     }
-
-    // Check visibility
-    if (DF && !DF->hasInternalLinkage() &&
-        SF->getVisibility() != DF->getVisibility()) {
+    
+    // If there is no linkage to be performed, just bring over SF without
+    // modifying it.
+    if (DF == 0) {
+      // Function does not already exist, simply insert an function signature
+      // identical to SF into the dest module.
+      Function *NewDF = Function::Create(SF->getFunctionType(),
+                                         SF->getLinkage(),
+                                         SF->getName(), Dest);
+      CopyGVAttributes(NewDF, SF);
+      
+      // If the LLVM runtime renamed the function, but it is an externally
+      // visible symbol, DF must be an existing function with internal linkage.
+      // Rename it.
+      if (!NewDF->hasInternalLinkage() && NewDF->getName() != SF->getName())
+        ForceRenaming(NewDF, SF->getName());
+      
+      // ... and remember this mapping...
+      ValueMap[SF] = NewDF;
+      continue;
+    }
+    
+    
+    // If types don't agree because of opaque, try to resolve them.
+    if (SF->getType() != DF->getType())
+      RecursiveResolveTypes(SF->getType(), DF->getType());
+    
+    // Check visibility, merging if a definition overrides a prototype.
+    if (SF->getVisibility() != DF->getVisibility()) {
       // If one is a prototype, ignore its visibility.  Prototypes are always
       // overridden by the definition.
       if (!SF->isDeclaration() && !DF->isDeclaration())
         return Error(Err, "Linking functions named '" + SF->getName() +
                      "': symbols have different visibilities!");
+      
+      // Otherwise, replace the visibility of DF if DF is a prototype.
+      if (DF->isDeclaration())
+        DF->setVisibility(SF->getVisibility());
     }
     
-    if (DF && DF->hasInternalLinkage())
-      DF = NULL;
-
-    if (DF && DF->getType() != SF->getType()) {
+    if (DF->getType() != SF->getType()) {
       if (DF->isDeclaration() && !SF->isDeclaration()) {
         // We have a definition of the same name but different type in the
         // source module. Copy the prototype to the destination and replace
         // uses of the destination's prototype with the new prototype.
-        Function *NewDF = Function::Create(SF->getFunctionType(), SF->getLinkage(),
+        Function *NewDF = Function::Create(SF->getFunctionType(),
+                                           SF->getLinkage(),
                                            SF->getName(), Dest);
         CopyGVAttributes(NewDF, SF);
 
@@ -843,77 +977,77 @@ static bool LinkFunctionProtos(Module *Dest, const Module *Src,
         // Remember this mapping so uses in the source module get remapped
         // later by RemapOperand.
         ValueMap[SF] = NewDF;
-      } else if (SF->isDeclaration()) {
-        // We have two functions of the same name but different type and the
-        // source is a declaration while the destination is not. Any use of
-        // the source must be mapped to the destination, with a cast. 
-        ValueMap[SF] = ConstantExpr::getBitCast(DF, SF->getType());
+        continue;
       } else {
-        // We have two functions of the same name but different types and they
-        // are both definitions. This is an error.
-        return Error(Err, "Function '" + DF->getName() + "' defined as both '" +
-                     ToStr(SF->getFunctionType(), Src) + "' and '" +
-                     ToStr(DF->getFunctionType(), Dest) + "'");
+        // We have two functions of the same name but different type. Any use
+        // of the source must be mapped to the destination, with a cast. 
+        MappedDF = ConstantExpr::getBitCast(DF, SF->getType());
       }
-    } else if (!DF || SF->hasInternalLinkage() || DF->hasInternalLinkage()) {
-      // Function does not already exist, simply insert an function signature
-      // identical to SF into the dest module.
-      Function *NewDF = Function::Create(SF->getFunctionType(), SF->getLinkage(),
-                                         SF->getName(), Dest);
-      CopyGVAttributes(NewDF, SF);
-
-      // If the LLVM runtime renamed the function, but it is an externally
-      // visible symbol, DF must be an existing function with internal linkage.
-      // Rename it.
-      if (NewDF->getName() != SF->getName() && !NewDF->hasInternalLinkage())
-        ForceRenaming(NewDF, SF->getName());
-
-      // ... and remember this mapping...
-      ValueMap[SF] = NewDF;
-    } else if (SF->isDeclaration()) {
+    } else {
+       MappedDF = DF;
+    }
+    
+    if (SF->isDeclaration()) {
       // If SF is a declaration or if both SF & DF are declarations, just link 
       // the declarations, we aren't adding anything.
       if (SF->hasDLLImportLinkage()) {
         if (DF->isDeclaration()) {
-          ValueMap.insert(std::make_pair(SF, DF));
+          ValueMap[SF] = MappedDF;
           DF->setLinkage(SF->getLinkage());          
-        }        
+        }
       } else {
-        ValueMap[SF] = DF;
-      }      
-    } else if (DF->isDeclaration() && !DF->hasDLLImportLinkage()) {
-      // If DF is external but SF is not...
-      // Link the external functions, update linkage qualifiers
-      ValueMap.insert(std::make_pair(SF, DF));
+        ValueMap[SF] = MappedDF;
+      }
+      continue;
+    }
+    
+    // If DF is external but SF is not, link the external functions, update
+    // linkage qualifiers.
+    if (DF->isDeclaration() && !DF->hasDLLImportLinkage()) {
+      ValueMap.insert(std::make_pair(SF, MappedDF));
       DF->setLinkage(SF->getLinkage());
-      // Visibility of prototype is overridden by vis of definition.
-      DF->setVisibility(SF->getVisibility());
-    } else if (SF->hasWeakLinkage() || SF->hasLinkOnceLinkage()) {
-      // At this point we know that DF has LinkOnce, Weak, or External* linkage.
-      ValueMap[SF] = DF;
+      continue;
+    }
+    
+    // At this point we know that DF has LinkOnce, Weak, or External* linkage.
+    if (SF->hasWeakLinkage() || SF->hasLinkOnceLinkage() ||
+        SF->hasCommonLinkage()) {
+      ValueMap[SF] = MappedDF;
 
       // Linkonce+Weak = Weak
       // *+External Weak = *
-      if ((DF->hasLinkOnceLinkage() && SF->hasWeakLinkage()) ||
+      if ((DF->hasLinkOnceLinkage() && 
+              (SF->hasWeakLinkage() || SF->hasCommonLinkage())) ||
           DF->hasExternalWeakLinkage())
         DF->setLinkage(SF->getLinkage());
-    } else if (DF->hasWeakLinkage() || DF->hasLinkOnceLinkage()) {
+      continue;
+    }
+    
+    if (DF->hasWeakLinkage() || DF->hasLinkOnceLinkage() ||
+        DF->hasCommonLinkage()) {
       // At this point we know that SF has LinkOnce or External* linkage.
-      ValueMap[SF] = DF;
-      if (!SF->hasLinkOnceLinkage() && !SF->hasExternalWeakLinkage())
-        // Don't inherit linkonce & external weak linkage
+      ValueMap[SF] = MappedDF;
+      
+      // If the source function has stronger linkage than the destination, 
+      // its body and linkage should override ours.
+      if (!SF->hasLinkOnceLinkage() && !SF->hasExternalWeakLinkage()) {
+        // Don't inherit linkonce & external weak linkage.
         DF->setLinkage(SF->getLinkage());
-    } else if (SF->getLinkage() != DF->getLinkage()) {
-        return Error(Err, "Functions named '" + SF->getName() +
-                     "' have different linkage specifiers!");
-    } else if (SF->hasExternalLinkage()) {
-      // The function is defined identically in both modules!!
+        DF->deleteBody();
+      }
+      continue;
+    }
+    
+    if (SF->getLinkage() != DF->getLinkage())
+      return Error(Err, "Functions named '" + SF->getName() +
+                   "' have different linkage specifiers!");
+
+    // The function is defined identically in both modules!
+    if (SF->hasExternalLinkage())
       return Error(Err, "Function '" +
                    ToStr(SF->getFunctionType(), Src) + "':\"" +
                    SF->getName() + "\" - Function is already defined!");
-    } else {
-      assert(0 && "Unknown linkage configuration found!");
-    }
+    assert(0 && "Unknown linkage configuration found!");
   }
   return false;
 }
@@ -971,10 +1105,10 @@ static bool LinkFunctionBodies(Module *Dest, Module *Src,
   // go
   for (Module::iterator SF = Src->begin(), E = Src->end(); SF != E; ++SF) {
     if (!SF->isDeclaration()) {               // No body if function is external
-      Function *DF = cast<Function>(ValueMap[SF]); // Destination function
+      Function *DF = dyn_cast<Function>(ValueMap[SF]); // Destination function
 
       // DF not external SF external?
-      if (DF->isDeclaration())
+      if (DF && DF->isDeclaration())
         // Only provide the function body if there isn't one already.
         if (LinkFunctionBody(DF, SF, ValueMap, Err))
           return true;
@@ -1035,7 +1169,8 @@ static bool LinkAppendingVars(Module *M,
       // Create the new global variable...
       GlobalVariable *NG =
         new GlobalVariable(NewType, G1->isConstant(), G1->getLinkage(),
-                           /*init*/0, First->first, M, G1->isThreadLocal());
+                           /*init*/0, First->first, M, G1->isThreadLocal(),
+                           G1->getType()->getAddressSpace());
 
       // Propagate alignment, visibility and section info.
       CopyGVAttributes(NG, G1);

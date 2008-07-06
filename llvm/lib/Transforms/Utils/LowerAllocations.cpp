@@ -66,14 +66,14 @@ namespace {
     ///
     bool runOnBasicBlock(BasicBlock &BB);
   };
-
-  char LowerAllocations::ID = 0;
-  RegisterPass<LowerAllocations>
-  X("lowerallocs", "Lower allocations from instructions to calls");
 }
 
+char LowerAllocations::ID = 0;
+static RegisterPass<LowerAllocations>
+X("lowerallocs", "Lower allocations from instructions to calls");
+
 // Publically exposed interface to pass...
-const PassInfo *llvm::LowerAllocationsID = X.getPassInfo();
+const PassInfo *const llvm::LowerAllocationsID = &X;
 // createLowerAllocationsPass - Interface to this file...
 Pass *llvm::createLowerAllocationsPass(bool LowerMallocArgToInteger) {
   return new LowerAllocations(LowerMallocArgToInteger);
@@ -131,11 +131,11 @@ bool LowerAllocations::runOnBasicBlock(BasicBlock &BB) {
         } else {
           Value *Scale = MI->getOperand(0);
           if (Scale->getType() != IntPtrTy)
-            Scale = CastInst::createIntegerCast(Scale, IntPtrTy, false /*ZExt*/,
+            Scale = CastInst::CreateIntegerCast(Scale, IntPtrTy, false /*ZExt*/,
                                                 "", I);
 
           // Multiply it by the array size if necessary...
-          MallocArg = BinaryOperator::create(Instruction::Mul, Scale,
+          MallocArg = BinaryOperator::Create(Instruction::Mul, Scale,
                                              MallocArg, "", I);
         }
       }

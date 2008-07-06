@@ -403,7 +403,8 @@ void MachOWriter::EmitGlobal(GlobalVariable *GV) {
     // If this global is part of the common block, add it now.  Variables are
     // part of the common block if they are zero initialized and allowed to be
     // merged with other symbols.
-    if (NoInit || GV->hasLinkOnceLinkage() || GV->hasWeakLinkage()) {
+    if (NoInit || GV->hasLinkOnceLinkage() || GV->hasWeakLinkage() ||
+        GV->hasCommonLinkage()) {
       MachOSym ExtOrCommonSym(GV, Mang->getValueName(GV), MachOSym::NO_SECT,TM);
       // For undefined (N_UNDF) external (N_EXT) types, n_value is the size in
       // bytes of the symbol.
@@ -839,7 +840,7 @@ void MachOWriter::InitMem(const Constant *C, void *Addr, intptr_t Offset,
         abort();
         break;
       }
-    } else if (PC->getType()->isFirstClassType()) {
+    } else if (PC->getType()->isSingleValueType()) {
       unsigned char *ptr = (unsigned char *)PA;
       switch (PC->getType()->getTypeID()) {
       case Type::IntegerTyID: {
@@ -951,6 +952,7 @@ MachOSym::MachOSym(const GlobalValue *gv, std::string name, uint8_t sect,
     break;
   case GlobalValue::WeakLinkage:
   case GlobalValue::LinkOnceLinkage:
+  case GlobalValue::CommonLinkage:
     assert(!isa<Function>(gv) && "Unexpected linkage type for Function!");
   case GlobalValue::ExternalLinkage:
     GVName = TAI->getGlobalPrefix() + name;

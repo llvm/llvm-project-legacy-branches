@@ -236,6 +236,7 @@ namespace llvm {
     /// then it will be printed first.  Comments should not contain '\n'.
     void EOL() const;
     void EOL(const std::string &Comment) const;
+    void EOL(const char* Comment) const;
     
     /// EmitULEB128Bytes - Emit an assembler byte data directive to compose an
     /// unsigned leb128 value.
@@ -314,8 +315,7 @@ namespace llvm {
     void EmitConstantValueOnly(const Constant *CV);
 
     /// EmitGlobalConstant - Print a general LLVM constant to the .s file.
-    /// If Packed is false, pad to the ABI size.
-    void EmitGlobalConstant(const Constant* CV, bool Packed = false);
+    void EmitGlobalConstant(const Constant* CV);
 
     virtual void EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV);
     
@@ -347,6 +347,11 @@ namespace llvm {
     /// printDataDirective - This method prints the asm directive for the
     /// specified type.
     void printDataDirective(const Type *type);
+
+    /// printSuffixedName - This prints a name with preceding 
+    /// getPrivateGlobalPrefix and the specified suffix, handling quoted names
+    /// correctly.
+    void printSuffixedName(std::string &Name, const char* Suffix);
 
   private:
     void EmitLLVMUsedList(Constant *List);

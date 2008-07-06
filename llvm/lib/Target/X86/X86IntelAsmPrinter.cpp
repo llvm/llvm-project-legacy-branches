@@ -15,19 +15,108 @@
 
 #define DEBUG_TYPE "asm-printer"
 #include "X86IntelAsmPrinter.h"
+#include "X86InstrInfo.h"
 #include "X86TargetAsmInfo.h"
 #include "X86.h"
 #include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Assembly/Writer.h"
 #include "llvm/Support/Mangler.h"
 #include "llvm/Target/TargetAsmInfo.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/Statistic.h"
 using namespace llvm;
 
 STATISTIC(EmittedInsts, "Number of machine instrs printed");
+
+static X86MachineFunctionInfo calculateFunctionInfo(const Function *F,
+                                                    const TargetData *TD) {
+  X86MachineFunctionInfo Info;
+  uint64_t Size = 0;
+
+  switch (F->getCallingConv()) {
+  case CallingConv::X86_StdCall:
+    Info.setDecorationStyle(StdCall);
+    break;
+  case CallingConv::X86_FastCall:
+    Info.setDecorationStyle(FastCall);
+    break;
+  default:
+    return Info;
+  }
+
+  unsigned argNum = 1;
+  for (Function::const_arg_iterator AI = F->arg_begin(), AE = F->arg_end();
+       AI != AE; ++AI, ++argNum) {
+    const Type* Ty = AI->getType();
+
+    // 'Dereference' type in case of byval parameter attribute
+    if (F->paramHasAttr(argNum, ParamAttr::ByVal))
+      Ty = cast<PointerType>(Ty)->getElementType();
+
+    // Size should be aligned to DWORD boundary
+    Size += ((TD->getABITypeSize(Ty) + 3)/4)*4;
+  }
+
+  // We're not supporting tooooo huge arguments :)
+  Info.setBytesToPopOnReturn((unsigned int)Size);
+  return Info;
+}
+
+
+/// decorateName - Query FunctionInfoMap and use this information for various
+/// name decoration.
+void X86IntelAsmPrinter::decorateName(std::string &Name,
+                                      const GlobalValue *GV) {
+  const Function *F = dyn_cast<Function>(GV);
+  if (!F) return;
+
+  // We don't want to decorate non-stdcall or non-fastcall functions right now
+  unsigned CC = F->getCallingConv();
+  if (CC != CallingConv::X86_StdCall && CC != CallingConv::X86_FastCall)
+    return;
+
+  FMFInfoMap::const_iterator info_item = FunctionInfoMap.find(F);
+
+  const X86MachineFunctionInfo *Info;
+  if (info_item == FunctionInfoMap.end()) {
+    // Calculate apropriate function info and populate map
+    FunctionInfoMap[F] = calculateFunctionInfo(F, TM.getTargetData());
+    Info = &FunctionInfoMap[F];
+  } else {
+    Info = &info_item->second;
+  }
+
+  const FunctionType *FT = F->getFunctionType();
+  switch (Info->getDecorationStyle()) {
+  case None:
+    break;
+  case StdCall:
+    // "Pure" variadic functions do not receive @0 suffix.
+    if (!FT->isVarArg() || (FT->getNumParams() == 0) ||
+        (FT->getNumParams() == 1 && F->hasStructRetAttr()))
+      Name += '@' + utostr_32(Info->getBytesToPopOnReturn());
+    break;
+  case FastCall:
+    // "Pure" variadic functions do not receive @0 suffix.
+    if (!FT->isVarArg() || (FT->getNumParams() == 0) ||
+        (FT->getNumParams() == 1 && F->hasStructRetAttr()))
+      Name += '@' + utostr_32(Info->getBytesToPopOnReturn());
+
+    if (Name[0] == '_')
+      Name[0] = '@';
+    else
+      Name = '@' + Name;
+
+    break;
+  default:
+    assert(0 && "Unsupported DecorationStyle");
+  }
+}
+
 
 std::string X86IntelAsmPrinter::getSectionForFunction(const Function &F) const {
   // Intel asm always emits functions to _text.
@@ -53,7 +142,7 @@ bool X86IntelAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   if (CC == CallingConv::X86_StdCall || CC == CallingConv::X86_FastCall)
     FunctionInfoMap[F] = *MF.getInfo<X86MachineFunctionInfo>();
 
-  X86SharedAsmPrinter::decorateName(CurrentFnName, F);
+  decorateName(CurrentFnName, F);
 
   SwitchToTextSection(getSectionForFunction(*F).c_str(), F);
 
@@ -62,18 +151,18 @@ bool X86IntelAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   default: assert(0 && "Unsupported linkage type!");
   case Function::InternalLinkage:
     EmitAlignment(FnAlign);
-    break;    
+    break;
   case Function::DLLExportLinkage:
     DLLExportedFns.insert(CurrentFnName);
     //FALLS THROUGH
   case Function::ExternalLinkage:
     O << "\tpublic " << CurrentFnName << "\n";
     EmitAlignment(FnAlign);
-    break;    
+    break;
   }
-  
+
   O << CurrentFnName << "\tproc near\n";
-  
+
   // Print out code for the function.
   for (MachineFunction::const_iterator I = MF.begin(), E = MF.end();
        I != E; ++I) {
@@ -113,14 +202,14 @@ void X86IntelAsmPrinter::printSSECC(const MachineInstr *MI, unsigned Op) {
   }
 }
 
-void X86IntelAsmPrinter::printOp(const MachineOperand &MO, 
+void X86IntelAsmPrinter::printOp(const MachineOperand &MO,
                                  const char *Modifier) {
   switch (MO.getType()) {
-  case MachineOperand::MO_Register: {      
+  case MachineOperand::MO_Register: {
     if (TargetRegisterInfo::isPhysicalRegister(MO.getReg())) {
       unsigned Reg = MO.getReg();
       if (Modifier && strncmp(Modifier, "subreg", strlen("subreg")) == 0) {
-        MVT::ValueType VT = (strcmp(Modifier,"subreg64") == 0) ?
+        MVT VT = (strcmp(Modifier,"subreg64") == 0) ?
           MVT::i64 : ((strcmp(Modifier, "subreg32") == 0) ? MVT::i32 :
                       ((strcmp(Modifier,"subreg16") == 0) ? MVT::i16 :MVT::i8));
         Reg = getX86SubSuperRegister(Reg, VT);
@@ -142,7 +231,7 @@ void X86IntelAsmPrinter::printOp(const MachineOperand &MO,
     O << TAI->getPrivateGlobalPrefix() << "JTI" << getFunctionNumber()
       << "_" << MO.getIndex();
     return;
-  }    
+  }
   case MachineOperand::MO_ConstantPoolIndex: {
     bool isMemOp  = Modifier && !strcmp(Modifier, "mem");
     if (!isMemOp) O << "OFFSET ";
@@ -159,17 +248,17 @@ void X86IntelAsmPrinter::printOp(const MachineOperand &MO,
   case MachineOperand::MO_GlobalAddress: {
     bool isCallOp = Modifier && !strcmp(Modifier, "call");
     bool isMemOp  = Modifier && !strcmp(Modifier, "mem");
-    GlobalValue *GV = MO.getGlobal();    
+    GlobalValue *GV = MO.getGlobal();
     std::string Name = Mang->getValueName(GV);
 
-    X86SharedAsmPrinter::decorateName(Name, GV);
+    decorateName(Name, GV);
 
     if (!isMemOp && !isCallOp) O << "OFFSET ";
     if (GV->hasDLLImportLinkage()) {
       // FIXME: This should be fixed with full support of stdcall & fastcall
       // CC's
-      O << "__imp_";          
-    } 
+      O << "__imp_";
+    }
     O << Name;
     int Offset = MO.getOffset();
     if (Offset > 0)
@@ -235,11 +324,11 @@ void X86IntelAsmPrinter::printMemReference(const MachineInstr *MI, unsigned Op,
   O << "]";
 }
 
-void X86IntelAsmPrinter::printPICJumpTableSetLabel(unsigned uid, 
+void X86IntelAsmPrinter::printPICJumpTableSetLabel(unsigned uid,
                                            const MachineBasicBlock *MBB) const {
   if (!TAI->getSetDirective())
     return;
-  
+
   O << TAI->getSetDirective() << ' ' << TAI->getPrivateGlobalPrefix()
     << getFunctionNumber() << '_' << uid << "_set_" << MBB->getNumber() << ',';
   printBasicBlockLabel(MBB, false, false, false);
@@ -277,12 +366,12 @@ bool X86IntelAsmPrinter::printAsmMRegister(const MachineOperand &MO,
 /// PrintAsmOperand - Print out an operand for an inline asm expression.
 ///
 bool X86IntelAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                                         unsigned AsmVariant, 
+                                         unsigned AsmVariant,
                                          const char *ExtraCode) {
   // Does this asm operand have a single letter operand modifier?
   if (ExtraCode && ExtraCode[0]) {
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
-    
+
     switch (ExtraCode[0]) {
     default: return true;  // Unknown modifier.
     case 'b': // Print QImode register
@@ -292,14 +381,14 @@ bool X86IntelAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
       return printAsmMRegister(MI->getOperand(OpNo), ExtraCode[0]);
     }
   }
-  
+
   printOperand(MI, OpNo);
   return false;
 }
 
 bool X86IntelAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
                                                unsigned OpNo,
-                                               unsigned AsmVariant, 
+                                               unsigned AsmVariant,
                                                const char *ExtraCode) {
   if (ExtraCode && ExtraCode[0])
     return true; // Unknown modifier.
@@ -318,8 +407,8 @@ void X86IntelAsmPrinter::printMachineInstruction(const MachineInstr *MI) {
 }
 
 bool X86IntelAsmPrinter::doInitialization(Module &M) {
-  bool Result = X86SharedAsmPrinter::doInitialization(M);
-  
+  bool Result = AsmPrinter::doInitialization(M);
+
   Mang->markCharUnacceptable('.');
 
   O << "\t.686\n\t.model flat\n\n";
@@ -328,15 +417,15 @@ bool X86IntelAsmPrinter::doInitialization(Module &M) {
   for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I)
     if (I->isDeclaration()) {
       std::string Name = Mang->getValueName(I);
-      X86SharedAsmPrinter::decorateName(Name, I);
+      decorateName(Name, I);
 
       O << "\textern " ;
       if (I->hasDLLImportLinkage()) {
         O << "__imp_";
-      }      
+      }
       O << Name << ":near\n";
     }
-  
+
   // Emit declarations for external globals.  Note that VC++ always declares
   // external globals to have type byte, and if that's good enough for VC++...
   for (Module::const_global_iterator I = M.global_begin(), E = M.global_end();
@@ -347,7 +436,7 @@ bool X86IntelAsmPrinter::doInitialization(Module &M) {
       O << "\textern " ;
       if (I->hasDLLImportLinkage()) {
         O << "__imp_";
-      }      
+      }
       O << Name << ":byte\n";
     }
   }
@@ -362,17 +451,18 @@ bool X86IntelAsmPrinter::doFinalization(Module &M) {
   for (Module::const_global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
     if (I->isDeclaration()) continue;   // External global require no code
-    
+
     // Check to see if this is a special global used by LLVM, if so, emit it.
     if (EmitSpecialLLVMGlobal(I))
       continue;
-    
+
     std::string name = Mang->getValueName(I);
     Constant *C = I->getInitializer();
     unsigned Align = TD->getPreferredAlignmentLog(I);
     bool bCustomSegment = false;
 
     switch (I->getLinkage()) {
+    case GlobalValue::CommonLinkage:
     case GlobalValue::LinkOnceLinkage:
     case GlobalValue::WeakLinkage:
       SwitchToDataSection("");
@@ -414,8 +504,7 @@ bool X86IntelAsmPrinter::doFinalization(Module &M) {
   }
 
     // Output linker support code for dllexported globals
-  if (!DLLExportedGVs.empty() ||
-      !DLLExportedFns.empty()) {
+  if (!DLLExportedGVs.empty() || !DLLExportedFns.empty()) {
     SwitchToDataSection("");
     O << "; WARNING: The following code is valid only with MASM v8.x and (possible) higher\n"
       << "; This version of MASM is usually shipped with Microsoft Visual Studio 2005\n"
@@ -424,23 +513,19 @@ bool X86IntelAsmPrinter::doFinalization(Module &M) {
     O << "_drectve\t segment info alias('.drectve')\n";
   }
 
-  for (std::set<std::string>::iterator i = DLLExportedGVs.begin(),
+  for (StringSet<>::iterator i = DLLExportedGVs.begin(),
          e = DLLExportedGVs.end();
-         i != e; ++i) {
-    O << "\t db ' /EXPORT:" << *i << ",data'\n";
-  }    
+         i != e; ++i)
+    O << "\t db ' /EXPORT:" << i->getKeyData() << ",data'\n";
 
-  for (std::set<std::string>::iterator i = DLLExportedFns.begin(),
+  for (StringSet<>::iterator i = DLLExportedFns.begin(),
          e = DLLExportedFns.end();
-         i != e; ++i) {
-    O << "\t db ' /EXPORT:" << *i << "'\n";
-  }    
+         i != e; ++i)
+    O << "\t db ' /EXPORT:" << i->getKeyData() << "'\n";
 
-  if (!DLLExportedGVs.empty() ||
-      !DLLExportedFns.empty()) {
-    O << "_drectve\t ends\n";    
-  }
-  
+  if (!DLLExportedGVs.empty() || !DLLExportedFns.empty())
+    O << "_drectve\t ends\n";
+
   // Bypass X86SharedAsmPrinter::doFinalization().
   bool Result = AsmPrinter::doFinalization(M);
   SwitchToDataSection("");

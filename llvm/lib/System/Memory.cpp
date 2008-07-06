@@ -14,16 +14,9 @@
 
 #include "llvm/System/Memory.h"
 #include "llvm/Config/config.h"
-#include "llvm/System/IncludeFile.h"
 
 namespace llvm {
 using namespace sys;
-
-//===----------------------------------------------------------------------===//
-//=== WARNING: Implementation here must contain only TRULY operating system
-//===          independent code.
-//===----------------------------------------------------------------------===//
-
 }
 
 // Include the platform-specific parts of this class.
@@ -34,4 +27,34 @@ using namespace sys;
 #include "Win32/Memory.inc"
 #endif
 
-DEFINING_FILE_FOR(SystemMemory)
+extern "C" void sys_icache_invalidate(const void *Addr, size_t len);
+
+/// InvalidateInstructionCache - Before the JIT can run a block of code
+/// that has been emitted it must invalidate the instruction cache on some
+/// platforms.
+void llvm::sys::Memory::InvalidateInstructionCache(const void *Addr,
+                                                   size_t Len) {
+  
+// icache invalidation for PPC.
+#if (defined(__POWERPC__) || defined (__ppc__) || \
+     defined(_POWER) || defined(_ARCH_PPC))
+   #if defined(__APPLE__)
+       sys_icache_invalidate(Addr, Len);
+   #elif defined(__GNUC__)
+        const size_t LineSize = 32;
+
+        const intptr_t Mask = ~(LineSize - 1);
+        const intptr_t StartLine = ((intptr_t) Addr) & Mask;
+        const intptr_t EndLine = ((intptr_t) Addr + Len + LineSize - 1) & Mask;
+
+        for (intptr_t Line = StartLine; Line < EndLine; Line += LineSize)
+          asm volatile("dcbf 0, %0" : : "r"(Line));
+        asm volatile("sync");
+
+        for (intptr_t Line = StartLine; Line < EndLine; Line += LineSize)
+          asm volatile("icbi 0, %0" : : "r"(Line));
+        asm volatile("isync");
+   #endif
+#endif  // end PPC
+
+}

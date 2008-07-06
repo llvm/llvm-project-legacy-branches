@@ -7,16 +7,17 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//
 // This file contains the declaration of the BasicBlock class.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_BASICBLOCK_H
 #define LLVM_BASICBLOCK_H
 
 #include "llvm/Instruction.h"
+#include "llvm/OperandTraits.h"
 #include "llvm/SymbolTableListTraits.h"
-#include "llvm/ADT/ilist"
+#include "llvm/ADT/ilist.h"
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
@@ -56,7 +57,6 @@ private :
   InstListType InstList;
   BasicBlock *Prev, *Next; // Next and Prev links for our intrusive linked list
   Function *Parent;
-  Use unwindDest;
 
   void setParent(Function *parent);
   void setNext(BasicBlock *N) { Next = N; }
@@ -71,7 +71,7 @@ private :
   /// InsertBefore is null), or before the specified basic block.
   ///
   explicit BasicBlock(const std::string &Name = "", Function *Parent = 0,
-                      BasicBlock *InsertBefore = 0, BasicBlock *UnwindDest = 0);
+                      BasicBlock *InsertBefore = 0);
 public:
   /// Instruction iterators...
   typedef InstListType::iterator                              iterator;
@@ -79,10 +79,13 @@ public:
 
   // allocate space for exactly zero operands
   static BasicBlock *Create(const std::string &Name = "", Function *Parent = 0,
-                            BasicBlock *InsertBefore = 0, BasicBlock *UnwindDest = 0) {
-    return new(!!UnwindDest) BasicBlock(Name, Parent, InsertBefore, UnwindDest);
+                            BasicBlock *InsertBefore = 0) {
+    return new(1) BasicBlock(Name, Parent, InsertBefore);
   }
   ~BasicBlock();
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(BasicBlock);
 
   /// getUnwindDest - Returns the BasicBlock that flow will enter if an unwind
   /// instruction occurs in this block. May be null, in which case unwinding
@@ -111,6 +114,11 @@ public:
   const Function *getParent() const { return Parent; }
         Function *getParent()       { return Parent; }
 
+  /// use_back - Specialize the methods defined in Value, as we know that an
+  /// BasicBlock can only be used by Instructions (specifically PHI and terms).
+  Instruction       *use_back()       { return cast<Instruction>(*use_begin());}
+  const Instruction *use_back() const { return cast<Instruction>(*use_begin());}
+  
   /// getTerminator() - If this is a well formed basic block, then this returns
   /// a pointer to the terminator instruction.  If it is not, then you get a
   /// null pointer back.
@@ -124,6 +132,9 @@ public:
   /// the first instruction, which might be PHI.
   /// Returns 0 is there's no non-PHI instruction.
   Instruction* getFirstNonPHI();
+  const Instruction* getFirstNonPHI() const {
+    return const_cast<BasicBlock*>(this)->getFirstNonPHI();
+  }
   
   /// removeFromParent - This method unlinks 'this' from the containing
   /// function, but does not delete it.
@@ -198,14 +209,7 @@ public:
   /// update the PHI nodes that reside in the block.  Note that this should be
   /// called while the predecessor still refers to this block.
   ///
-  /// DontDeleteUselessPHIs will keep PHIs that have one value or the same 
-  /// value for all entries.
-  ///
-  /// OnlyDeleteOne will only remove one entry from a PHI, in case there were
-  /// duplicate entries for the Pred.
-  ///
-  void removePredecessor(BasicBlock *Pred, bool DontDeleteUselessPHIs = false,
-                         bool OnlyDeleteOne = false);
+  void removePredecessor(BasicBlock *Pred, bool DontDeleteUselessPHIs = false);
 
   /// splitBasicBlock - This splits a basic block into two at the specified
   /// instruction.  Note that all instructions BEFORE the specified iterator
@@ -240,6 +244,12 @@ inline int
 ilist_traits<Instruction>::getListOffset() {
   return BasicBlock::getInstListOffset();
 }
+
+template <>
+struct OperandTraits<BasicBlock> : OptionalOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(BasicBlock, BasicBlock)
 
 } // End llvm namespace
 

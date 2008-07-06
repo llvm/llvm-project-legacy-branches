@@ -39,8 +39,8 @@ class Constant : public User {
   void operator=(const Constant &);     // Do not implement
   Constant(const Constant &);           // Do not implement
 protected:
-  Constant(const Type *Ty, ValueTy vty, Use *Ops, unsigned NumOps)
-    : User(Ty, vty, Ops, NumOps) {}
+  Constant(const Type *ty, ValueTy vty, Use *Ops, unsigned NumOps)
+    : User(ty, vty, Ops, NumOps) {}
 
   void destroyConstantImpl();
 public:
@@ -115,13 +115,6 @@ public:
            "implemented for all constants that have operands!");
     assert(0 && "Constants that do not have operands cannot be using 'From'!");
   }
-
-  /// getStringValue - Turn an LLVM constant pointer that eventually points to a
-  /// global into a string value.  Return an empty string if we can't do it.
-  /// Parameter Chop determines if the result is chopped at the first null
-  /// terminator.
-  ///
-  std::string getStringValue(bool Chop = true, unsigned Offset = 0);
 };
 
 } // End llvm namespace

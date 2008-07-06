@@ -17,7 +17,7 @@
 #include "SPUTargetMachine.h"
 #include "SPUGenInstrInfo.inc"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
-#include <iostream>
+#include "llvm/Support/Streams.h"
 
 using namespace llvm;
 
@@ -218,7 +218,7 @@ void SPUInstrInfo::copyRegToReg(MachineBasicBlock &MBB,
     BuildMI(MBB, MI, get(SPU::ORv4i32), DestReg).addReg(SrcReg)
       .addReg(SrcReg);
   } else {
-    std::cerr << "Attempt to copy unknown/unsupported register class!\n";
+    cerr << "Attempt to copy unknown/unsupported register class!\n";
     abort();
   }
 }
@@ -412,19 +412,21 @@ SPUInstrInfo::foldMemoryOperand(MachineFunction &MF,
        && MI->getOperand(1).getReg() == MI->getOperand(2).getReg()) {
     if (OpNum == 0) {  // move -> store
       unsigned InReg = MI->getOperand(1).getReg();
+      bool isKill = MI->getOperand(1).isKill();
       if (FrameIndex < SPUFrameInfo::maxFrameOffset()) {
-        NewMI = addFrameReference(BuildMI(TII.get(SPU::STQDr32)).addReg(InReg),
+        NewMI = addFrameReference(BuildMI(TII.get(SPU::STQDr32))
+                                  .addReg(InReg, false, false, isKill),
                                   FrameIndex);
       }
     } else {           // move -> load
       unsigned OutReg = MI->getOperand(0).getReg();
-      Opc = (FrameIndex < SPUFrameInfo::maxFrameOffset()) ? SPU::STQDr32 : SPU::STQXr32;
-      NewMI = addFrameReference(BuildMI(TII.get(Opc), OutReg), FrameIndex);
+      bool isDead = MI->getOperand(0).isDead();
+      Opc = (FrameIndex < SPUFrameInfo::maxFrameOffset())
+        ? SPU::STQDr32 : SPU::STQXr32;
+      NewMI = addFrameReference(BuildMI(TII.get(Opc))
+                       .addReg(OutReg, true, false, false, isDead), FrameIndex);
     }
   }
-
-  if (NewMI)
-    NewMI->copyKillDeadInfo(MI);
 
   return NewMI;
 #else

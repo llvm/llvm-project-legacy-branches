@@ -58,7 +58,7 @@ Program::FindProgramByName(const std::string& progName) {
     return Path();
 
   // Now we have a colon separated list of directories to search; try them.
-  unsigned PathLen = strlen(PathStr);
+  size_t PathLen = strlen(PathStr);
   while (PathLen) {
     // Find the first colon...
     const char *Colon = std::find(PathStr, PathStr+PathLen, ':');
@@ -84,8 +84,16 @@ Program::FindProgramByName(const std::string& progName) {
   return Path();
 }
 
-static bool RedirectFD(const std::string &File, int FD, std::string* ErrMsg) {
-  if (File.empty()) return false;  // Noop
+static bool RedirectIO(const Path *Path, int FD, std::string* ErrMsg) {
+  if (Path == 0)
+    // Noop
+    return false;
+  std::string File;
+  if (Path->isEmpty())
+    // Redirect empty paths to /dev/null
+    File = "/dev/null";
+  else
+    File = Path->toString();
 
   // Open the file
   int InFD = open(File.c_str(), FD == 0 ? O_RDONLY : O_WRONLY|O_CREAT, 0666);
@@ -162,30 +170,21 @@ Program::ExecuteAndWait(const Path& path,
     case 0: {
       // Redirect file descriptors...
       if (redirects) {
-        if (redirects[0]) {
-          if (redirects[0]->isEmpty()) {
-            if (RedirectFD("/dev/null",0,ErrMsg)) { return -1; }
-          } else {
-            if (RedirectFD(redirects[0]->toString(), 0,ErrMsg)) { return -1; }
-          }
-        }
-        if (redirects[1]) {
-          if (redirects[1]->isEmpty()) {
-            if (RedirectFD("/dev/null",1,ErrMsg)) { return -1; }
-          } else {
-            if (RedirectFD(redirects[1]->toString(),1,ErrMsg)) { return -1; }
-          }
-        }
+        // Redirect stdin
+        if (RedirectIO(redirects[0], 0, ErrMsg)) { return -1; }
+        // Redirect stdout
+        if (RedirectIO(redirects[1], 1, ErrMsg)) { return -1; }
         if (redirects[1] && redirects[2] && 
-            *(redirects[1]) != *(redirects[2])) {
-          if (redirects[2]->isEmpty()) {
-            if (RedirectFD("/dev/null",2,ErrMsg)) { return -1; }
-          } else {
-            if (RedirectFD(redirects[2]->toString(), 2,ErrMsg)) { return -1; }
+            *(redirects[1]) == *(redirects[2])) {
+          // If stdout and stderr should go to the same place, redirect stderr
+          // to the FD already open for stdout.
+          if (-1 == dup2(1,2)) {
+            MakeErrMsg(ErrMsg, "Can't redirect stderr to stdout");
+            return -1;
           }
-        } else if (-1 == dup2(1,2)) {
-          MakeErrMsg(ErrMsg, "Can't redirect");
-          return -1;
+        } else {
+          // Just redirect stderr
+          if (RedirectIO(redirects[2], 2, ErrMsg)) { return -1; }
         }
       }
 

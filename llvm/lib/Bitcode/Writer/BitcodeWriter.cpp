@@ -23,6 +23,7 @@
 #include "llvm/TypeSymbolTable.h"
 #include "llvm/ValueSymbolTable.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/System/Program.h"
 using namespace llvm;
 
 /// These are manifest constants used by the bitcode writer. They do not need to
@@ -270,6 +271,7 @@ static unsigned getEncodedLinkage(const GlobalValue *GV) {
   case GlobalValue::DLLImportLinkage:    return 5;
   case GlobalValue::DLLExportLinkage:    return 6;
   case GlobalValue::ExternalWeakLinkage: return 7;
+  case GlobalValue::CommonLinkage:       return 8;
   }
 }
 
@@ -352,7 +354,7 @@ static void WriteModuleInfo(const Module *M, const ValueEnumerator &VE,
                               Log2_32_Ceil(MaxGlobalType+1)));
     Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1));      // Constant.
     Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6));        // Initializer.
-    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3));      // Linkage.
+    Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 4));      // Linkage.
     if (MaxAlignment == 0)                                      // Alignment.
       Abbv->Add(BitCodeAbbrevOp(0));
     else {
@@ -609,6 +611,26 @@ static void WriteConstants(unsigned FirstVal, unsigned LastVal,
           Record.push_back(VE.getValueID(C->getOperand(i)));
         }
         break;
+      case Instruction::ExtractValue: {
+        Code = bitc::CST_CODE_CE_EXTRACTVAL;
+        Record.push_back(VE.getTypeID(C->getOperand(0)->getType()));
+        Record.push_back(VE.getValueID(C->getOperand(0)));
+        const SmallVector<unsigned, 4> &Indices = CE->getIndices();
+        for (unsigned i = 0, e = Indices.size(); i != e; ++i)
+          Record.push_back(Indices[i]);
+        break;
+      }
+      case Instruction::InsertValue: {
+        Code = bitc::CST_CODE_CE_INSERTVAL;
+        Record.push_back(VE.getTypeID(C->getOperand(0)->getType()));
+        Record.push_back(VE.getValueID(C->getOperand(0)));
+        Record.push_back(VE.getTypeID(C->getOperand(1)->getType()));
+        Record.push_back(VE.getValueID(C->getOperand(1)));
+        const SmallVector<unsigned, 4> &Indices = CE->getIndices();
+        for (unsigned i = 0, e = Indices.size(); i != e; ++i)
+          Record.push_back(Indices[i]);
+        break;
+      }
       case Instruction::Select:
         Code = bitc::CST_CODE_CE_SELECT;
         Record.push_back(VE.getValueID(C->getOperand(0)));
@@ -635,6 +657,8 @@ static void WriteConstants(unsigned FirstVal, unsigned LastVal,
         break;
       case Instruction::ICmp:
       case Instruction::FCmp:
+      case Instruction::VICmp:
+      case Instruction::VFCmp:
         Code = bitc::CST_CODE_CE_CMP;
         Record.push_back(VE.getTypeID(C->getOperand(0)->getType()));
         Record.push_back(VE.getValueID(C->getOperand(0)));
@@ -715,6 +739,23 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     for (unsigned i = 0, e = I.getNumOperands(); i != e; ++i)
       PushValueAndType(I.getOperand(i), InstID, Vals, VE);
     break;
+  case Instruction::ExtractValue: {
+    Code = bitc::FUNC_CODE_INST_EXTRACTVAL;
+    PushValueAndType(I.getOperand(0), InstID, Vals, VE);
+    const ExtractValueInst *EVI = cast<ExtractValueInst>(&I);
+    for (const unsigned *i = EVI->idx_begin(), *e = EVI->idx_end(); i != e; ++i)
+      Vals.push_back(*i);
+    break;
+  }
+  case Instruction::InsertValue: {
+    Code = bitc::FUNC_CODE_INST_INSERTVAL;
+    PushValueAndType(I.getOperand(0), InstID, Vals, VE);
+    PushValueAndType(I.getOperand(1), InstID, Vals, VE);
+    const InsertValueInst *IVI = cast<InsertValueInst>(&I);
+    for (const unsigned *i = IVI->idx_begin(), *e = IVI->idx_end(); i != e; ++i)
+      Vals.push_back(*i);
+    break;
+  }
   case Instruction::Select:
     Code = bitc::FUNC_CODE_INST_SELECT;
     PushValueAndType(I.getOperand(1), InstID, Vals, VE);
@@ -740,6 +781,8 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     break;
   case Instruction::ICmp:
   case Instruction::FCmp:
+  case Instruction::VICmp:
+  case Instruction::VFCmp:
     Code = bitc::FUNC_CODE_INST_CMP;
     PushValueAndType(I.getOperand(0), InstID, Vals, VE);
     Vals.push_back(VE.getValueID(I.getOperand(1)));
@@ -987,7 +1030,6 @@ static void WriteFunction(const Function &F, ValueEnumerator &VE,
       if (I->getType() != Type::VoidTy)
         ++InstID;
     }
-  }
   
   // Emit names for all the instructions etc.
   WriteValueSymbolTable(F.getValueSymbolTable(), VE, Stream);
@@ -1261,6 +1303,10 @@ void llvm::WriteBitcodeToFile(const Module *M, std::ostream &Out) {
   // Emit the module.
   WriteModule(M, Stream);
   
+  // If writing to stdout, set binary mode.
+  if (llvm::cout == Out)
+      sys::Program::ChangeStdoutToBinary();
+
   // Write the generated bitstream to "Out".
   Out.write((char*)&Buffer.front(), Buffer.size());
   

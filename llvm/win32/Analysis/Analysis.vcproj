@@ -22,7 +22,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -93,7 +93,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -353,6 +353,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\lib\Analysis\LibCallAliasAnalysis.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\lib\Analysis\LibCallSemantics.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\..\lib\Analysis\LoadValueNumbering.cpp"
 				>
 			</File>
@@ -362,6 +370,10 @@
 			</File>
 			<File
 				RelativePath="..\..\lib\Analysis\LoopPass.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\lib\Analysis\LoopVR.cpp"
 				>
 			</File>
 			<File
@@ -393,11 +405,19 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\lib\Analysis\SparsePropagation.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\..\lib\Analysis\Trace.cpp"
 				>
 			</File>
 			<File
 				RelativePath="..\..\lib\Analysis\ValueNumbering.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\lib\Analysis\ValueTracking.cpp"
 				>
 			</File>
 			<Filter
@@ -492,6 +512,10 @@
 			</File>
 			<File
 				RelativePath="..\..\include\llvm\Analysis\LoopPass.h"
+				>
+			</File>
+			<File
+				RelativePath="..\..\include\llvm\Analysis\LoopVR.h"
 				>
 			</File>
 			<File

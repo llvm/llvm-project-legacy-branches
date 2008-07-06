@@ -32,6 +32,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MutexGuard.h"
 #include "llvm/System/Disassembler.h"
+#include "llvm/System/Memory.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include <algorithm>
@@ -144,20 +145,6 @@ namespace {
 }
 
 JITResolver *JITResolver::TheJITResolver = 0;
-
-#if (defined(__POWERPC__) || defined (__ppc__) || defined(_POWER)) && \
-    defined(__APPLE__)
-extern "C" void sys_icache_invalidate(const void *Addr, size_t len);
-#endif
-
-/// synchronizeICache - On some targets, the JIT emitted code must be
-/// explicitly refetched to ensure correct execution.
-static void synchronizeICache(const void *Addr, size_t len) {
-#if (defined(__POWERPC__) || defined (__ppc__) || defined(_POWER)) && \
-    defined(__APPLE__)
-  sys_icache_invalidate(Addr, len);
-#endif
-}
 
 /// getFunctionStub - This returns a pointer to a function stub, creating
 /// one on demand as needed.
@@ -308,7 +295,7 @@ void *JITResolver::JITCompilerFn(void *Stub) {
 // have useful answers.  However, we don't go crazy with atomic operations, we
 // just do a "reasonable effort".
 #ifdef __APPLE__ 
-#define ENABLE_JIT_SYMBOL_TABLE 1
+#define ENABLE_JIT_SYMBOL_TABLE 0
 #endif
 
 /// JitSymbolEntry - Each function that is JIT compiled results in one of these
@@ -421,7 +408,7 @@ static void RemoveFunctionFromSymbolTable(void *FnStart) {
   --SymTabPtr->NumSymbols;
 
   // Finally, if we deleted the final symbol, deallocate the table itself.
-  if (SymTabPtr->NumSymbols == 0) 
+  if (SymTabPtr->NumSymbols != 0) 
     return;
   
   *SymTabPtrPtr = 0;
@@ -564,6 +551,8 @@ void *JITEmitter::getPointerToGlobal(GlobalValue *V, void *Reference,
     /// global immediately instead of queuing it for codegen later!
     return TheJIT->getOrEmitGlobalVariable(GV);
   }
+  if (GlobalAlias *GA = dyn_cast<GlobalAlias>(V))
+    return TheJIT->getPointerToGlobal(GA->resolveAliasedGlobal());
 
   // If we have already compiled the function, return a pointer to its body.
   Function *F = cast<Function>(V);
@@ -756,7 +745,7 @@ bool JITEmitter::finishFunction(MachineFunction &F) {
   }
 
   // Invalidate the icache if necessary.
-  synchronizeICache(FnStart, FnEnd-FnStart);
+  sys::Memory::InvalidateInstructionCache(FnStart, FnEnd-FnStart);
   
   // Add it to the JIT symbol table if the host wants it.
   AddFunctionToSymbolTable(F.getFunction()->getNameStart(),

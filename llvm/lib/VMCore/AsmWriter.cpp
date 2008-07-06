@@ -539,7 +539,7 @@ static void WriteConstantInt(std::ostream &Out, const Constant *CV,
     Out << "zeroinitializer";
   } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(CV)) {
     // As a special case, print the array as a string if it is an array of
-    // ubytes or an array of sbytes with positive values.
+    // i8 with ConstantInt values.
     //
     const Type *ETy = CA->getType()->getElementType();
     if (CA->isString()) {
@@ -622,6 +622,12 @@ static void WriteConstantInt(std::ostream &Out, const Constant *CV,
       WriteAsOperandInternal(Out, *OI, TypeTable, Machine);
       if (OI+1 != CE->op_end())
         Out << ", ";
+    }
+
+    if (CE->hasIndices()) {
+      const SmallVector<unsigned, 4> &Indices = CE->getIndices();
+      for (unsigned i = 0, e = Indices.size(); i != e; ++i)
+        Out << ", " << Indices[i];
     }
 
     if (CE->isCast()) {
@@ -930,6 +936,7 @@ void AssemblyWriter::printGlobal(const GlobalVariable *GV) {
   } else {
     switch (GV->getLinkage()) {
     case GlobalValue::InternalLinkage:     Out << "internal "; break;
+    case GlobalValue::CommonLinkage:       Out << "common "; break;
     case GlobalValue::LinkOnceLinkage:     Out << "linkonce "; break;
     case GlobalValue::WeakLinkage:         Out << "weak "; break;
     case GlobalValue::AppendingLinkage:    Out << "appending "; break;
@@ -972,7 +979,11 @@ void AssemblyWriter::printGlobal(const GlobalVariable *GV) {
 }
 
 void AssemblyWriter::printAlias(const GlobalAlias *GA) {
-  Out << getLLVMName(GA->getName(), GlobalPrefix) << " = ";
+  // Don't crash when dumping partially built GA
+  if (!GA->hasName())
+    Out << "<<nameless>> = ";
+  else
+    Out << getLLVMName(GA->getName(), GlobalPrefix) << " = ";
   switch (GA->getVisibility()) {
   default: assert(0 && "Invalid visibility style!");
   case GlobalValue::DefaultVisibility: break;
@@ -1049,6 +1060,7 @@ void AssemblyWriter::printFunction(const Function *F) {
   case GlobalValue::InternalLinkage:     Out << "internal "; break;
   case GlobalValue::LinkOnceLinkage:     Out << "linkonce "; break;
   case GlobalValue::WeakLinkage:         Out << "weak "; break;
+  case GlobalValue::CommonLinkage:       Out << "common "; break;
   case GlobalValue::AppendingLinkage:    Out << "appending "; break;
   case GlobalValue::DLLImportLinkage:    Out << "dllimport "; break;
   case GlobalValue::DLLExportLinkage:    Out << "dllexport "; break;
@@ -1131,7 +1143,7 @@ void AssemblyWriter::printFunction(const Function *F) {
   if (F->isDeclaration()) {
     Out << "\n";
   } else {
-    Out << " {\n";
+    Out << " {";
 
     // Output all of its basic blocks... for the function
     for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)
@@ -1185,28 +1197,24 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
 
   if (BB->getParent() == 0)
     Out << "\t\t; Error: Block without parent!";
-  else {
-    if (BB != &BB->getParent()->getEntryBlock()) {  // Not the entry block?
-      // Output predecessors for the block...
-      Out << "\t\t;";
-      pred_const_iterator PI = pred_begin(BB), PE = pred_end(BB);
-
-      if (PI == PE) {
-        Out << " No predecessors!";
-      } else {
-        Out << " preds =";
+  else if (BB != &BB->getParent()->getEntryBlock()) {  // Not the entry block?
+    // Output predecessors for the block...
+    Out << "\t\t;";
+    pred_const_iterator PI = pred_begin(BB), PE = pred_end(BB);
+    
+    if (PI == PE) {
+      Out << " No predecessors!";
+    } else {
+      Out << " preds =";
+      writeOperand(*PI, false);
+      for (++PI; PI != PE; ++PI) {
+        Out << ',';
         writeOperand(*PI, false);
-        for (++PI; PI != PE; ++PI) {
-          Out << ',';
-          writeOperand(*PI, false);
-        }
       }
     }
   }
 
-  if (BB->hasName() || !BB->use_empty() || BB->getUnwindDest() ||
-      BB != &BB->getParent()->getEntryBlock())
-    Out << "\n";
+  Out << "\n";
 
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockStartAnnot(BB, Out);
 
@@ -1264,11 +1272,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
   Out << I.getOpcodeName();
 
   // Print out the compare instruction predicates
-  if (const FCmpInst *FCI = dyn_cast<FCmpInst>(&I)) {
-    Out << " " << getPredicateText(FCI->getPredicate());
-  } else if (const ICmpInst *ICI = dyn_cast<ICmpInst>(&I)) {
-    Out << " " << getPredicateText(ICI->getPredicate());
-  }
+  if (const CmpInst *CI = dyn_cast<CmpInst>(&I))
+    Out << " " << getPredicateText(CI->getPredicate());
 
   // Print out the type of the operands...
   const Value *Operand = I.getNumOperands() ? I.getOperand(0) : 0;
@@ -1306,6 +1311,15 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
   } else if (const GetResultInst *GRI = dyn_cast<GetResultInst>(&I)) {
     writeOperand(I.getOperand(0), true);
     Out << ", " << GRI->getIndex();
+  } else if (const ExtractValueInst *EVI = dyn_cast<ExtractValueInst>(&I)) {
+    writeOperand(I.getOperand(0), true);
+    for (const unsigned *i = EVI->idx_begin(), *e = EVI->idx_end(); i != e; ++i)
+      Out << ", " << *i;
+  } else if (const InsertValueInst *IVI = dyn_cast<InsertValueInst>(&I)) {
+    writeOperand(I.getOperand(0), true); Out << ',';
+    writeOperand(I.getOperand(1), true);
+    for (const unsigned *i = IVI->idx_begin(), *e = IVI->idx_end(); i != e; ++i)
+      Out << ", " << *i;
   } else if (isa<ReturnInst>(I) && !Operand) {
     Out << " void";
   } else if (const CallInst *CI = dyn_cast<CallInst>(&I)) {

@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/ValueTypes.h"
 #include <cassert>
 #include <functional>
+#include <set>
 
 namespace llvm {
 
@@ -41,18 +42,15 @@ class Type;
 /// Registers that this does not apply to simply should set this to null.
 /// The SubRegs field is a zero terminated array of registers that are
 /// sub-registers of the specific register, e.g. AL, AH are sub-registers of AX.
-/// The ImmsubRegs field is a subset of SubRegs. It includes only the immediate
-/// sub-registers. e.g. EAX has only one immediate sub-register of AX, not AH,
-/// AL which are immediate sub-registers of AX. The SuperRegs field is a zero
-/// terminated array of registers that are super-registers of the specific
-/// register, e.g. RAX, EAX, are super-registers of AX.
+/// The SuperRegs field is a zero terminated array of registers that are
+/// super-registers of the specific register, e.g. RAX, EAX, are super-registers
+/// of AX.
 ///
 struct TargetRegisterDesc {
   const char     *AsmName;      // Assembly language name for the register
   const char     *Name;         // Printable name for the reg (for debugging)
   const unsigned *AliasSet;     // Register Alias Set, described above
   const unsigned *SubRegs;      // Sub-register set, described above
-  const unsigned *ImmSubRegs;   // Immediate sub-register set, described above
   const unsigned *SuperRegs;    // Super-register set, described above
 };
 
@@ -61,7 +59,7 @@ public:
   typedef const unsigned* iterator;
   typedef const unsigned* const_iterator;
 
-  typedef const MVT::ValueType* vt_iterator;
+  typedef const MVT* vt_iterator;
   typedef const TargetRegisterClass* const * sc_iterator;
 private:
   unsigned ID;
@@ -76,7 +74,7 @@ private:
   const iterator RegsBegin, RegsEnd;
 public:
   TargetRegisterClass(unsigned id,
-                      const MVT::ValueType *vts,
+                      const MVT *vts,
                       const TargetRegisterClass * const *subcs,
                       const TargetRegisterClass * const *supcs,
                       const TargetRegisterClass * const *subregcs,
@@ -99,7 +97,7 @@ public:
 
   /// getNumRegs - Return the number of registers in this class.
   ///
-  unsigned getNumRegs() const { return RegsEnd-RegsBegin; }
+  unsigned getNumRegs() const { return (unsigned)(RegsEnd-RegsBegin); }
 
   /// getRegister - Return the specified register in the class.
   ///
@@ -118,7 +116,7 @@ public:
 
   /// hasType - return true if this TargetRegisterClass has the ValueType vt.
   ///
-  bool hasType(MVT::ValueType vt) const {
+  bool hasType(MVT vt) const {
     for(int i = 0; VTs[i] != MVT::Other; ++i)
       if (VTs[i] == vt)
         return true;
@@ -276,6 +274,9 @@ public:
 /// descriptor.
 ///
 class TargetRegisterInfo {
+protected:
+  const unsigned* SubregHash;
+  const unsigned SubregHashSize;
 public:
   typedef const TargetRegisterClass * const * regclass_iterator;
 private:
@@ -290,7 +291,9 @@ protected:
                      regclass_iterator RegClassBegin,
                      regclass_iterator RegClassEnd,
                      int CallFrameSetupOpcode = -1,
-                     int CallFrameDestroyOpcode = -1);
+                     int CallFrameDestroyOpcode = -1,
+                     const unsigned* subregs = 0,
+                     const unsigned subregsize = 0);
   virtual ~TargetRegisterInfo();
 public:
 
@@ -324,7 +327,7 @@ public:
   /// register of the given type. If type is MVT::Other, then just return any
   /// register class the register belongs to.
   const TargetRegisterClass *getPhysicalRegisterRegClass(unsigned Reg,
-                                          MVT::ValueType VT = MVT::Other) const;
+                                          MVT VT = MVT::Other) const;
 
   /// getAllocatableSet - Returns a bitset indexed by register number
   /// indicating if a register is allocatable or not. If a register class is
@@ -360,14 +363,6 @@ public:
   ///
   const unsigned *getSubRegisters(unsigned RegNo) const {
     return get(RegNo).SubRegs;
-  }
-
-  /// getImmediateSubRegisters - Return the set of registers that are immediate
-  /// sub-registers of the specified register, or a null list of there are none.
-  /// The list returned is zero terminated.
-  ///
-  const unsigned *getImmediateSubRegisters(unsigned RegNo) const {
-    return get(RegNo).ImmSubRegs;
   }
 
   /// getSuperRegisters - Return the list of registers that are super-registers
@@ -419,8 +414,18 @@ public:
   /// isSubRegister - Returns true if regB is a sub-register of regA.
   ///
   bool isSubRegister(unsigned regA, unsigned regB) const {
-    for (const unsigned *SR = getSubRegisters(regA); *SR; ++SR)
-      if (*SR == regB) return true;
+    // SubregHash is a simple quadratically probed hash table.
+    size_t index = (regA + regB * 37) & (SubregHashSize-1);
+    unsigned ProbeAmt = 2;
+    while (SubregHash[index*2] != 0 &&
+           SubregHash[index*2+1] != 0) {
+      if (SubregHash[index*2] == regA && SubregHash[index*2+1] == regB)
+        return true;
+      
+      index = (index + ProbeAmt) & (SubregHashSize-1);
+      ProbeAmt += 2;
+    }
+    
     return false;
   }
 
@@ -465,7 +470,7 @@ public:
   regclass_iterator regclass_end() const { return RegClassEnd; }
 
   unsigned getNumRegClasses() const {
-    return regclass_end()-regclass_begin();
+    return (unsigned)(regclass_end()-regclass_begin());
   }
   
   /// getRegClass - Returns the register class associated with the enumeration
@@ -514,6 +519,13 @@ public:
   // included as part of the stack frame.
   virtual bool hasReservedCallFrame(MachineFunction &MF) const {
     return !hasFP(MF);
+  }
+
+  // needsStackRealignment - true if storage within the function requires the
+  // stack pointer to be aligned more than the normal calling convention calls
+  // for.
+  virtual bool needsStackRealignment(const MachineFunction &MF) const {
+    return false;
   }
 
   /// getCallFrameSetup/DestroyOpcode - These methods return the opcode of the

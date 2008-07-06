@@ -40,6 +40,7 @@ ExecutionEngine::EERegisterFn ExecutionEngine::ExceptionTableRegister = 0;
 
 ExecutionEngine::ExecutionEngine(ModuleProvider *P) : LazyFunctionCreator(0) {
   LazyCompilationDisabled = false;
+  SymbolSearchingDisabled = false;
   Modules.push_back(P);
   assert(P && "ModuleProvider is null?");
 }
@@ -59,6 +60,7 @@ Module* ExecutionEngine::removeModuleProvider(ModuleProvider *P,
     ModuleProvider *MP = *I;
     if (MP == P) {
       Modules.erase(I);
+      clearGlobalMappingsFromModule(MP->getModule());
       return MP->releaseModule(ErrInfo);
     }
   }
@@ -104,6 +106,22 @@ void ExecutionEngine::clearAllGlobalMappings() {
   
   state.getGlobalAddressMap(locked).clear();
   state.getGlobalAddressReverseMap(locked).clear();
+}
+
+/// clearGlobalMappingsFromModule - Clear all global mappings that came from a
+/// particular module, because it has been removed from the JIT.
+void ExecutionEngine::clearGlobalMappingsFromModule(Module *M) {
+  MutexGuard locked(lock);
+  
+  for (Module::iterator FI = M->begin(), FE = M->end(); FI != FE; ++FI) {
+    state.getGlobalAddressMap(locked).erase(FI);
+    state.getGlobalAddressReverseMap(locked).erase(FI);
+  }
+  for (Module::global_iterator GI = M->global_begin(), GE = M->global_end(); 
+       GI != GE; ++GI) {
+    state.getGlobalAddressMap(locked).erase(GI);
+    state.getGlobalAddressReverseMap(locked).erase(GI);
+  }
 }
 
 /// updateGlobalMapping - Replace an existing mapping for GV with a new
@@ -812,35 +830,26 @@ void ExecutionEngine::InitializeMemory(const Constant *Init, void *Addr) {
   } else if (isa<ConstantAggregateZero>(Init)) {
     memset(Addr, 0, (size_t)getTargetData()->getABITypeSize(Init->getType()));
     return;
+  } else if (const ConstantArray *CPA = dyn_cast<ConstantArray>(Init)) {
+    unsigned ElementSize =
+      getTargetData()->getABITypeSize(CPA->getType()->getElementType());
+    for (unsigned i = 0, e = CPA->getNumOperands(); i != e; ++i)
+      InitializeMemory(CPA->getOperand(i), (char*)Addr+i*ElementSize);
+    return;
+  } else if (const ConstantStruct *CPS = dyn_cast<ConstantStruct>(Init)) {
+    const StructLayout *SL =
+      getTargetData()->getStructLayout(cast<StructType>(CPS->getType()));
+    for (unsigned i = 0, e = CPS->getNumOperands(); i != e; ++i)
+      InitializeMemory(CPS->getOperand(i), (char*)Addr+SL->getElementOffset(i));
+    return;
   } else if (Init->getType()->isFirstClassType()) {
     GenericValue Val = getConstantValue(Init);
     StoreValueToMemory(Val, (GenericValue*)Addr, Init->getType());
     return;
   }
 
-  switch (Init->getType()->getTypeID()) {
-  case Type::ArrayTyID: {
-    const ConstantArray *CPA = cast<ConstantArray>(Init);
-    unsigned ElementSize =
-      getTargetData()->getABITypeSize(CPA->getType()->getElementType());
-    for (unsigned i = 0, e = CPA->getNumOperands(); i != e; ++i)
-      InitializeMemory(CPA->getOperand(i), (char*)Addr+i*ElementSize);
-    return;
-  }
-
-  case Type::StructTyID: {
-    const ConstantStruct *CPS = cast<ConstantStruct>(Init);
-    const StructLayout *SL =
-      getTargetData()->getStructLayout(cast<StructType>(CPS->getType()));
-    for (unsigned i = 0, e = CPS->getNumOperands(); i != e; ++i)
-      InitializeMemory(CPS->getOperand(i), (char*)Addr+SL->getElementOffset(i));
-    return;
-  }
-
-  default:
-    cerr << "Bad Type: " << *Init->getType() << "\n";
-    assert(0 && "Unknown constant type to initialize memory with!");
-  }
+  cerr << "Bad Type: " << *Init->getType() << "\n";
+  assert(0 && "Unknown constant type to initialize memory with!");
 }
 
 /// EmitGlobals - Emit all of the global variables to memory, storing their
@@ -884,7 +893,7 @@ void ExecutionEngine::emitGlobals() {
           continue;
         
         // Otherwise, we know it's linkonce/weak, replace it if this is a strong
-        // symbol.
+        // symbol.  FIXME is this right for common?
         if (GV->hasExternalLinkage() || GVEntry->hasExternalWeakLinkage())
           GVEntry = GV;
       }

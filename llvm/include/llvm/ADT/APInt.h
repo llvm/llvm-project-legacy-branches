@@ -31,7 +31,8 @@ namespace llvm {
   typedef uint64_t integerPart;
 
   const unsigned int host_char_bit = 8;
-  const unsigned int integerPartWidth = host_char_bit * sizeof(integerPart);
+  const unsigned int integerPartWidth = host_char_bit *
+    static_cast<unsigned int>(sizeof(integerPart));
 
 //===----------------------------------------------------------------------===//
 //                              APInt Class
@@ -76,8 +77,10 @@ class APInt {
 
   /// This enum is used to hold the constants we needed for APInt.
   enum {
-    APINT_BITS_PER_WORD = sizeof(uint64_t) * 8, ///< Bits in a word
-    APINT_WORD_SIZE = sizeof(uint64_t)          ///< Byte size of a word
+    /// Bits in a word
+    APINT_BITS_PER_WORD = static_cast<unsigned int>(sizeof(uint64_t)) * 8,
+    /// Byte size of a word
+    APINT_WORD_SIZE = static_cast<unsigned int>(sizeof(uint64_t))
   };
 
   /// This constructor is used only internally for speed of construction of
@@ -127,7 +130,7 @@ class APInt {
       // the word size (64).
       return *this;
 
-    // Mask out the hight bits.
+    // Mask out the high bits.
     uint64_t mask = ~uint64_t(0ULL) >> (APINT_BITS_PER_WORD - wordBits);
     if (isSingleWord())
       VAL &= mask;
@@ -665,9 +668,11 @@ public:
     return this->urem(RHS);
   }
 
-  /// Sometimes it is convenient to divide two APInt values and obtain both
-  /// the quotient and remainder. This function does both operations in the
-  /// same computation making it a little more efficient.
+  /// Sometimes it is convenient to divide two APInt values and obtain both the
+  /// quotient and remainder. This function does both operations in the same
+  /// computation making it a little more efficient. The pair of input arguments
+  /// may overlap with the pair of output arguments. It is safe to call
+  /// udivrem(X, Y, X, Y), for example.
   /// @brief Dual division/remainder interface.
   static void udivrem(const APInt &LHS, const APInt &RHS, 
                       APInt &Quotient, APInt &Remainder);
@@ -895,7 +900,7 @@ public:
 
   /// Computes the minimum bit width for this APInt while considering it to be
   /// a signed (and probably negative) value. If the value is not negative, 
-  /// this function returns the same value as getActiveBits(). Otherwise, it
+  /// this function returns the same value as getActiveBits()+1. Otherwise, it
   /// returns the smallest bit width that will retain the negative value. For
   /// example, -1 can be written as 0b1 or 0xFFFFFFFFFF. 0b1 is shorter and so
   /// for -1, this function will always return 1.
@@ -1104,7 +1109,8 @@ public:
     return *this;
   }
 
-  /// @}
+  /// @returns the multiplicative inverse for a given modulo.
+  APInt multiplicativeInverse(const APInt& modulo) const;
 
   /// @}
   /// @name Building-block Operations for APInt and APFloat
@@ -1279,7 +1285,8 @@ inline bool isSignedIntN(uint32_t N, const APInt& APIVal) {
 /// @returns true if the argument APInt value is a sequence of ones
 /// starting at the least significant bit with the remainder zero.
 inline bool isMask(uint32_t numBits, const APInt& APIVal) {
-  return APIVal.getBoolValue() && ((APIVal + APInt(numBits,1)) & APIVal) == 0;
+  return numBits <= APIVal.getBitWidth() &&
+    APIVal == APInt::getLowBitsSet(APIVal.getBitWidth(), numBits);
 }
 
 /// @returns true if the argument APInt value contains a sequence of ones
@@ -1299,7 +1306,7 @@ inline uint32_t logBase2(const APInt& APIVal) {
 }
 
 /// GreatestCommonDivisor - This function returns the greatest common
-/// divisor of the two APInt values using Enclid's algorithm.
+/// divisor of the two APInt values using Euclid's algorithm.
 /// @returns the greatest common divisor of Val1 and Val2
 /// @brief Compute GCD of two APInt values.
 APInt GreatestCommonDivisor(const APInt& Val1, const APInt& Val2);

@@ -45,14 +45,17 @@ public:
   
   /// Allocate - Allocate and return at least the specified number of bytes.
   ///
-  void *Allocate(unsigned AllocSize, unsigned Alignment, MemRegion **RegPtr) {
-    // Round size up to an even multiple of the alignment.
-    AllocSize = (AllocSize+Alignment-1) & ~(Alignment-1);
+  void *Allocate(size_t AllocSize, size_t Alignment, MemRegion **RegPtr) {
     
-    // If there is space in this region, return it.
-    if (unsigned(NextPtr+AllocSize-(char*)this) <= RegionSize) {
-      void *Result = NextPtr;
-      NextPtr += AllocSize;
+    char* Result = (char*) (((uintptr_t) (NextPtr+Alignment-1)) 
+                            & ~((uintptr_t) Alignment-1));
+
+    // Speculate the new value of NextPtr.
+    char* NextPtrTmp = Result + AllocSize;
+    
+    // If we are still within the current region, return Result.
+    if (unsigned (NextPtrTmp - (char*) this) <= RegionSize) {
+      NextPtr = NextPtrTmp;
       return Result;
     }
     
@@ -110,7 +113,7 @@ void BumpPtrAllocator::Reset() {
   TheMemory = MRP;
 }
 
-void *BumpPtrAllocator::Allocate(unsigned Size, unsigned Align) {
+void *BumpPtrAllocator::Allocate(size_t Size, size_t Align) {
   MemRegion *MRP = (MemRegion*)TheMemory;
   void *Ptr = MRP->Allocate(Size, Align, &MRP);
   TheMemory = MRP;

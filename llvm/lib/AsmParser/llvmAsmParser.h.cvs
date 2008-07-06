@@ -85,26 +85,26 @@
      DLLIMPORT = 301,
      DLLEXPORT = 302,
      EXTERN_WEAK = 303,
-     OPAQUE = 304,
-     EXTERNAL = 305,
-     TARGET = 306,
-     TRIPLE = 307,
-     ALIGN = 308,
-     ADDRSPACE = 309,
-     DEPLIBS = 310,
-     CALL = 311,
-     TAIL = 312,
-     ASM_TOK = 313,
-     MODULE = 314,
-     SIDEEFFECT = 315,
-     CC_TOK = 316,
-     CCC_TOK = 317,
-     FASTCC_TOK = 318,
-     COLDCC_TOK = 319,
-     X86_STDCALLCC_TOK = 320,
-     X86_FASTCALLCC_TOK = 321,
-     DATALAYOUT = 322,
-     UNWINDS = 323,
+     COMMON = 304,
+     OPAQUE = 305,
+     EXTERNAL = 306,
+     TARGET = 307,
+     TRIPLE = 308,
+     ALIGN = 309,
+     ADDRSPACE = 310,
+     DEPLIBS = 311,
+     CALL = 312,
+     TAIL = 313,
+     ASM_TOK = 314,
+     MODULE = 315,
+     SIDEEFFECT = 316,
+     CC_TOK = 317,
+     CCC_TOK = 318,
+     FASTCC_TOK = 319,
+     COLDCC_TOK = 320,
+     X86_STDCALLCC_TOK = 321,
+     X86_FASTCALLCC_TOK = 322,
+     DATALAYOUT = 323,
      RET = 324,
      BR = 325,
      SWITCH = 326,
@@ -128,66 +128,70 @@
      ASHR = 344,
      ICMP = 345,
      FCMP = 346,
-     EQ = 347,
-     NE = 348,
-     SLT = 349,
-     SGT = 350,
-     SLE = 351,
-     SGE = 352,
-     ULT = 353,
-     UGT = 354,
-     ULE = 355,
-     UGE = 356,
-     OEQ = 357,
-     ONE = 358,
-     OLT = 359,
-     OGT = 360,
-     OLE = 361,
-     OGE = 362,
-     ORD = 363,
-     UNO = 364,
-     UEQ = 365,
-     UNE = 366,
-     MALLOC = 367,
-     ALLOCA = 368,
-     FREE = 369,
-     LOAD = 370,
-     STORE = 371,
-     GETELEMENTPTR = 372,
-     TRUNC = 373,
-     ZEXT = 374,
-     SEXT = 375,
-     FPTRUNC = 376,
-     FPEXT = 377,
-     BITCAST = 378,
-     UITOFP = 379,
-     SITOFP = 380,
-     FPTOUI = 381,
-     FPTOSI = 382,
-     INTTOPTR = 383,
-     PTRTOINT = 384,
-     PHI_TOK = 385,
-     SELECT = 386,
-     VAARG = 387,
-     EXTRACTELEMENT = 388,
-     INSERTELEMENT = 389,
-     SHUFFLEVECTOR = 390,
-     GETRESULT = 391,
-     SIGNEXT = 392,
-     ZEROEXT = 393,
-     NORETURN = 394,
-     INREG = 395,
-     SRET = 396,
-     NOUNWIND = 397,
-     NOALIAS = 398,
-     BYVAL = 399,
-     NEST = 400,
-     READNONE = 401,
-     READONLY = 402,
-     GC = 403,
-     DEFAULT = 404,
-     HIDDEN = 405,
-     PROTECTED = 406
+     VICMP = 347,
+     VFCMP = 348,
+     EQ = 349,
+     NE = 350,
+     SLT = 351,
+     SGT = 352,
+     SLE = 353,
+     SGE = 354,
+     ULT = 355,
+     UGT = 356,
+     ULE = 357,
+     UGE = 358,
+     OEQ = 359,
+     ONE = 360,
+     OLT = 361,
+     OGT = 362,
+     OLE = 363,
+     OGE = 364,
+     ORD = 365,
+     UNO = 366,
+     UEQ = 367,
+     UNE = 368,
+     MALLOC = 369,
+     ALLOCA = 370,
+     FREE = 371,
+     LOAD = 372,
+     STORE = 373,
+     GETELEMENTPTR = 374,
+     TRUNC = 375,
+     ZEXT = 376,
+     SEXT = 377,
+     FPTRUNC = 378,
+     FPEXT = 379,
+     BITCAST = 380,
+     UITOFP = 381,
+     SITOFP = 382,
+     FPTOUI = 383,
+     FPTOSI = 384,
+     INTTOPTR = 385,
+     PTRTOINT = 386,
+     PHI_TOK = 387,
+     SELECT = 388,
+     VAARG = 389,
+     EXTRACTELEMENT = 390,
+     INSERTELEMENT = 391,
+     SHUFFLEVECTOR = 392,
+     GETRESULT = 393,
+     EXTRACTVALUE = 394,
+     INSERTVALUE = 395,
+     SIGNEXT = 396,
+     ZEROEXT = 397,
+     NORETURN = 398,
+     INREG = 399,
+     SRET = 400,
+     NOUNWIND = 401,
+     NOALIAS = 402,
+     BYVAL = 403,
+     NEST = 404,
+     READNONE = 405,
+     READONLY = 406,
+     GC = 407,
+     DEFAULT = 408,
+     HIDDEN = 409,
+     PROTECTED = 410
    };
 #endif
 /* Tokens.  */
@@ -237,26 +241,26 @@
 #define DLLIMPORT 301
 #define DLLEXPORT 302
 #define EXTERN_WEAK 303
-#define OPAQUE 304
-#define EXTERNAL 305
-#define TARGET 306
-#define TRIPLE 307
-#define ALIGN 308
-#define ADDRSPACE 309
-#define DEPLIBS 310
-#define CALL 311
-#define TAIL 312
-#define ASM_TOK 313
-#define MODULE 314
-#define SIDEEFFECT 315
-#define CC_TOK 316
-#define CCC_TOK 317
-#define FASTCC_TOK 318
-#define COLDCC_TOK 319
-#define X86_STDCALLCC_TOK 320
-#define X86_FASTCALLCC_TOK 321
-#define DATALAYOUT 322
-#define UNWINDS 323
+#define COMMON 304
+#define OPAQUE 305
+#define EXTERNAL 306
+#define TARGET 307
+#define TRIPLE 308
+#define ALIGN 309
+#define ADDRSPACE 310
+#define DEPLIBS 311
+#define CALL 312
+#define TAIL 313
+#define ASM_TOK 314
+#define MODULE 315
+#define SIDEEFFECT 316
+#define CC_TOK 317
+#define CCC_TOK 318
+#define FASTCC_TOK 319
+#define COLDCC_TOK 320
+#define X86_STDCALLCC_TOK 321
+#define X86_FASTCALLCC_TOK 322
+#define DATALAYOUT 323
 #define RET 324
 #define BR 325
 #define SWITCH 326
@@ -280,73 +284,77 @@
 #define ASHR 344
 #define ICMP 345
 #define FCMP 346
-#define EQ 347
-#define NE 348
-#define SLT 349
-#define SGT 350
-#define SLE 351
-#define SGE 352
-#define ULT 353
-#define UGT 354
-#define ULE 355
-#define UGE 356
-#define OEQ 357
-#define ONE 358
-#define OLT 359
-#define OGT 360
-#define OLE 361
-#define OGE 362
-#define ORD 363
-#define UNO 364
-#define UEQ 365
-#define UNE 366
-#define MALLOC 367
-#define ALLOCA 368
-#define FREE 369
-#define LOAD 370
-#define STORE 371
-#define GETELEMENTPTR 372
-#define TRUNC 373
-#define ZEXT 374
-#define SEXT 375
-#define FPTRUNC 376
-#define FPEXT 377
-#define BITCAST 378
-#define UITOFP 379
-#define SITOFP 380
-#define FPTOUI 381
-#define FPTOSI 382
-#define INTTOPTR 383
-#define PTRTOINT 384
-#define PHI_TOK 385
-#define SELECT 386
-#define VAARG 387
-#define EXTRACTELEMENT 388
-#define INSERTELEMENT 389
-#define SHUFFLEVECTOR 390
-#define GETRESULT 391
-#define SIGNEXT 392
-#define ZEROEXT 393
-#define NORETURN 394
-#define INREG 395
-#define SRET 396
-#define NOUNWIND 397
-#define NOALIAS 398
-#define BYVAL 399
-#define NEST 400
-#define READNONE 401
-#define READONLY 402
-#define GC 403
-#define DEFAULT 404
-#define HIDDEN 405
-#define PROTECTED 406
+#define VICMP 347
+#define VFCMP 348
+#define EQ 349
+#define NE 350
+#define SLT 351
+#define SGT 352
+#define SLE 353
+#define SGE 354
+#define ULT 355
+#define UGT 356
+#define ULE 357
+#define UGE 358
+#define OEQ 359
+#define ONE 360
+#define OLT 361
+#define OGT 362
+#define OLE 363
+#define OGE 364
+#define ORD 365
+#define UNO 366
+#define UEQ 367
+#define UNE 368
+#define MALLOC 369
+#define ALLOCA 370
+#define FREE 371
+#define LOAD 372
+#define STORE 373
+#define GETELEMENTPTR 374
+#define TRUNC 375
+#define ZEXT 376
+#define SEXT 377
+#define FPTRUNC 378
+#define FPEXT 379
+#define BITCAST 380
+#define UITOFP 381
+#define SITOFP 382
+#define FPTOUI 383
+#define FPTOSI 384
+#define INTTOPTR 385
+#define PTRTOINT 386
+#define PHI_TOK 387
+#define SELECT 388
+#define VAARG 389
+#define EXTRACTELEMENT 390
+#define INSERTELEMENT 391
+#define SHUFFLEVECTOR 392
+#define GETRESULT 393
+#define EXTRACTVALUE 394
+#define INSERTVALUE 395
+#define SIGNEXT 396
+#define ZEROEXT 397
+#define NORETURN 398
+#define INREG 399
+#define SRET 400
+#define NOUNWIND 401
+#define NOALIAS 402
+#define BYVAL 403
+#define NEST 404
+#define READNONE 405
+#define READONLY 406
+#define GC 407
+#define DEFAULT 408
+#define HIDDEN 409
+#define PROTECTED 410
 
 
 
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 950 "/Users/sabre/llvm/lib/AsmParser/llvmAsmParser.y"
+#line 953 "/Volumes/Data/Code/work/llvm2/lib/AsmParser/llvmAsmParser.y"
 {
   llvm::Module                           *ModuleVal;
   llvm::Function                         *FunctionVal;
@@ -360,6 +368,7 @@ typedef union YYSTYPE
   llvm::PATypeHolder                     *TypeVal;
   llvm::Value                            *ValueVal;
   std::vector<llvm::Value*>              *ValueList;
+  std::vector<unsigned>                  *ConstantList;
   llvm::ArgListType                      *ArgList;
   llvm::TypeWithAttrs                     TypeWithAttrs;
   llvm::TypeWithAttrsList                *TypeWithAttrsList;
@@ -394,7 +403,7 @@ typedef union YYSTYPE
   llvm::FCmpInst::Predicate         FPredicate;
 }
 /* Line 1529 of yacc.c.  */
-#line 398 "llvmAsmParser.tab.h"
+#line 407 "llvmAsmParser.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

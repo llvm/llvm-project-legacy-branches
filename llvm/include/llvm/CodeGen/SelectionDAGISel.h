@@ -41,13 +41,13 @@ public:
   SelectionDAG *CurDAG;
   MachineBasicBlock *BB;
   AliasAnalysis *AA;
-  std::vector<SDNode*> TopOrder;
-  unsigned DAGSize;
   CollectorMetadata *GCI;
+  bool FastISel;
+  std::vector<SDNode*> TopOrder;
   static char ID;
 
-  explicit SelectionDAGISel(TargetLowering &tli) : 
-    FunctionPass((intptr_t)&ID), TLI(tli), DAGSize(0), GCI(0) {}
+  explicit SelectionDAGISel(TargetLowering &tli, bool fast = false) : 
+    FunctionPass((intptr_t)&ID), TLI(tli), GCI(0), FastISel(fast), DAGSize(0) {}
   
   TargetLowering &getTargetLowering() { return TLI; }
 
@@ -55,10 +55,12 @@ public:
 
   virtual bool runOnFunction(Function &Fn);
 
-  unsigned MakeReg(MVT::ValueType VT);
+  unsigned MakeReg(MVT VT);
 
   virtual void EmitFunctionEntryCode(Function &Fn, MachineFunction &MF) {}
-  virtual void InstructionSelectBasicBlock(SelectionDAG &SD) = 0;
+  virtual void InstructionSelect(SelectionDAG &SD) = 0;
+  virtual void InstructionSelectPostProcessing(SelectionDAG &DAG) {}
+  
   virtual void SelectRootInit() {
     DAGSize = CurDAG->AssignTopologicalOrder(TopOrder);
   }
@@ -158,11 +160,12 @@ public:
     MachineBasicBlock *Default;
     BitTestInfo Cases;
   };
-protected:
-  /// Pick a safe ordering and emit instructions for each target node in the
-  /// graph.
-  void ScheduleAndEmitDAG(SelectionDAG &DAG);
   
+protected:
+  /// DAGSize - Size of DAG being instruction selected.
+  ///
+  unsigned DAGSize;
+
   /// SelectInlineAsmMemoryOperands - Calls to this are automatically generated
   /// by tblgen.  Others should not call it.
   void SelectInlineAsmMemoryOperands(std::vector<SDOperand> &Ops,
@@ -183,6 +186,12 @@ private:
                          FunctionLoweringInfo &FuncInfo);
   void CodeGenAndEmitDAG(SelectionDAG &DAG);
   void LowerArguments(BasicBlock *BB, SelectionDAGLowering &SDL);
+  
+  void ComputeLiveOutVRegInfo(SelectionDAG &DAG);
+
+  /// Pick a safe ordering and emit instructions for each target node in the
+  /// graph.
+  void ScheduleAndEmitDAG(SelectionDAG &DAG);
 
   /// SwitchCases - Vector of CaseBlock structures used to communicate
   /// SwitchInst code generation information.

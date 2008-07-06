@@ -86,6 +86,9 @@
 #ifndef PASSMANAGERS_H
 #define PASSMANAGERS_H
 
+#include "llvm/Pass.h"
+#include <deque>
+
 namespace llvm {
 
 /// FunctionPassManager and PassManager, two top level managers, serve 
@@ -145,8 +148,8 @@ private:
 class PMTopLevelManager {
 public:
 
-  virtual unsigned getNumContainedManagers() {
-    return PassManagers.size();
+  virtual unsigned getNumContainedManagers() const {
+    return (unsigned)PassManagers.size();
   }
 
   /// Schedule pass P for execution. Make sure that passes required by
@@ -242,6 +245,9 @@ public:
   /// verifyPreservedAnalysis -- Verify analysis presreved by pass P.
   void verifyPreservedAnalysis(Pass *P);
 
+  /// verifyDomInfo -- Verify dominator information if it is available.
+  void verifyDomInfo(Pass &P, Function &F);
+
   /// Remove Analysis that is not preserved by the pass
   void removeNotPreservedAnalysis(Pass *P);
   
@@ -305,8 +311,8 @@ public:
   void dumpAnalysisSetInfo(const char *Msg, Pass *P,
                            const std::vector<AnalysisID> &Set) const;
 
-  virtual unsigned getNumContainedPasses() { 
-    return PassVector.size();
+  virtual unsigned getNumContainedPasses() const {
+    return (unsigned)PassVector.size();
   }
 
   virtual PassManagerType getPassManagerType() const { 

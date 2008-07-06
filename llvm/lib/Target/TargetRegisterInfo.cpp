@@ -22,8 +22,10 @@ using namespace llvm;
 
 TargetRegisterInfo::TargetRegisterInfo(const TargetRegisterDesc *D, unsigned NR,
                              regclass_iterator RCB, regclass_iterator RCE,
-                             int CFSO, int CFDO)
-  : Desc(D), NumRegs(NR), RegClassBegin(RCB), RegClassEnd(RCE) {
+                             int CFSO, int CFDO,
+                             const unsigned* subregs, const unsigned subregsize)
+  : SubregHash(subregs), SubregHashSize(subregsize), Desc(D), NumRegs(NR),
+    RegClassBegin(RCB), RegClassEnd(RCE) {
   assert(NumRegs < FirstVirtualRegister &&
          "Target has too many physical registers!");
 
@@ -48,13 +50,12 @@ namespace {
 /// register of the given type. If type is MVT::Other, then just return any
 /// register class the register belongs to.
 const TargetRegisterClass *
-TargetRegisterInfo::getPhysicalRegisterRegClass(unsigned reg,
-                                                MVT::ValueType VT) const {
+TargetRegisterInfo::getPhysicalRegisterRegClass(unsigned reg, MVT VT) const {
   assert(isPhysicalRegister(reg) && "reg must be a physical register");
 
   // Pick the register class of the right type that contains this physreg.
   SmallVector<const TargetRegisterClass*, 4> RCs;
-  for (regclass_iterator I = regclass_begin(), E = regclass_end(); I != E; ++I) {
+  for (regclass_iterator I = regclass_begin(), E = regclass_end(); I != E; ++I){
     if ((VT == MVT::Other || (*I)->hasType(VT)) && (*I)->contains(reg))
       RCs.push_back(*I);
   }

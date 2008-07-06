@@ -51,8 +51,8 @@ static const ComplexPattern *NodeGetComplexPattern(TreePatternNode *N,
 /// patterns before small ones.  This is used to determine the size of a
 /// pattern.
 static unsigned getPatternSize(TreePatternNode *P, CodeGenDAGPatterns &CGP) {
-  assert((MVT::isExtIntegerInVTs(P->getExtTypes()) || 
-          MVT::isExtFloatingPointInVTs(P->getExtTypes()) ||
+  assert((EMVT::isExtIntegerInVTs(P->getExtTypes()) ||
+          EMVT::isExtFloatingPointInVTs(P->getExtTypes()) ||
           P->getExtTypeNum(0) == MVT::isVoid ||
           P->getExtTypeNum(0) == MVT::Flag ||
           P->getExtTypeNum(0) == MVT::iPTR) && 
@@ -160,7 +160,7 @@ struct PatternSortingPredicate {
 
 /// getRegisterValueType - Look up and return the first ValueType of specified 
 /// RegisterClass record
-static MVT::ValueType getRegisterValueType(Record *R, const CodeGenTarget &T) {
+static MVT::SimpleValueType getRegisterValueType(Record *R, const CodeGenTarget &T) {
   if (const CodeGenRegisterClass *RC = T.getRegisterClassForRegister(R))
     return RC->getValueTypeNum(0);
   return MVT::Other;
@@ -204,6 +204,28 @@ static bool PatternHasProperty(TreePatternNode *N, SDNP Property,
   }
 
   return false;
+}
+
+static std::string getOpcodeName(Record *Op, CodeGenDAGPatterns &CGP) {
+  return CGP.getSDNodeInfo(Op).getEnumName();
+}
+
+static
+bool DisablePatternForFastISel(TreePatternNode *N, CodeGenDAGPatterns &CGP) {
+  bool isStore = !N->isLeaf() &&
+    getOpcodeName(N->getOperator(), CGP) == "ISD::STORE";
+  if (!isStore && NodeHasProperty(N, SDNPHasChain, CGP))
+    return false;
+
+  bool HasChain = false;
+  for (unsigned i = 0, e = N->getNumChildren(); i != e; ++i) {
+    TreePatternNode *Child = N->getChild(i);
+    if (PatternHasProperty(Child, SDNPHasChain, CGP)) {
+      HasChain = true;
+      break;
+    }
+  }
+  return HasChain;
 }
 
 //===----------------------------------------------------------------------===//
@@ -331,6 +353,15 @@ private:
   /// instructions.
   std::vector<std::string> &TargetOpcodes;
   std::vector<std::string> &TargetVTs;
+  /// OutputIsVariadic - Records whether the instruction output pattern uses
+  /// variable_ops.  This requires that the Emit function be passed an
+  /// additional argument to indicate where the input varargs operands
+  /// begin.
+  bool &OutputIsVariadic;
+  /// NumInputRootOps - Records the number of operands the root node of the
+  /// input pattern has.  This information is used in the generated code to
+  /// pass to Emit functions when variable_ops processing is needed.
+  unsigned &NumInputRootOps;
 
   std::string ChainName;
   unsigned TmpNo;
@@ -367,10 +398,13 @@ public:
                      std::vector<std::pair<unsigned, std::string> > &gc,
                      std::set<std::string> &gd,
                      std::vector<std::string> &to,
-                     std::vector<std::string> &tv)
+                     std::vector<std::string> &tv,
+                     bool &oiv,
+                     unsigned &niro)
   : CGP(cgp), Predicates(preds), Pattern(pattern), Instruction(instr),
     GeneratedCode(gc), GeneratedDecl(gd),
     TargetOpcodes(to), TargetVTs(tv),
+    OutputIsVariadic(oiv), NumInputRootOps(niro),
     TmpNo(0), OpcNo(0), VTNo(0) {}
 
   /// EmitMatchCode - Emit a matcher for N, going to the label for PatternNo
@@ -382,16 +416,19 @@ public:
 
     // Save loads/stores matched by a pattern.
     if (!N->isLeaf() && N->getName().empty()) {
-      std::string EnumName = N->getOperator()->getValueAsString("Opcode");
-      if (EnumName == "ISD::LOAD" ||
-          EnumName == "ISD::STORE") {
+      if (NodeHasProperty(N, SDNPMemOperand, CGP))
         LSI.push_back(RootName);
-      }
     }
 
     bool isRoot = (P == NULL);
     // Emit instruction predicates. Each predicate is just a string for now.
     if (isRoot) {
+      // Record input varargs info.
+      NumInputRootOps = N->getNumChildren();
+
+      if (DisablePatternForFastISel(N, CGP))
+        emitCheck("!FastISel");
+
       std::string PredicateCheck;
       for (unsigned i = 0, e = Predicates->getSize(); i != e; ++i) {
         if (DefInit *Pred = dynamic_cast<DefInit*>(Predicates->getElement(i))) {
@@ -468,10 +505,8 @@ public:
           //      /        [YY]
           //      |         ^
           //     [XX]-------|
-          bool NeedCheck = false;
-          if (P != Pattern)
-            NeedCheck = true;
-          else {
+          bool NeedCheck = P != Pattern;
+          if (!NeedCheck) {
             const SDNodeInfo &PInfo = CGP.getSDNodeInfo(P->getOperator());
             NeedCheck =
               P->getOperator() == CGP.get_intrinsic_void_sdnode() ||
@@ -887,7 +922,7 @@ public:
       if (InstPatNode && InstPatNode->getOperator()->getName() == "set") {
         InstPatNode = InstPatNode->getChild(InstPatNode->getNumChildren()-1);
       }
-      bool HasVarOps     = isRoot && II.isVariadic;
+      bool IsVariadic = isRoot && II.isVariadic;
       // FIXME: fix how we deal with physical register operands.
       bool HasImpInputs  = isRoot && Inst.getNumImpOperands() > 0;
       bool HasImpResults = isRoot && DstRegs.size() > 0;
@@ -904,17 +939,20 @@ public:
       unsigned NumResults = Inst.getNumResults();    
       unsigned NumDstRegs = HasImpResults ? DstRegs.size() : 0;
 
+      // Record output varargs info.
+      OutputIsVariadic = IsVariadic;
+
       if (NodeHasOptInFlag) {
         emitCode("bool HasInFlag = "
            "(N.getOperand(N.getNumOperands()-1).getValueType() == MVT::Flag);");
       }
-      if (HasVarOps)
+      if (IsVariadic)
         emitCode("SmallVector<SDOperand, 8> Ops" + utostr(OpcNo) + ";");
 
       // How many results is this pattern expected to produce?
       unsigned NumPatResults = 0;
       for (unsigned i = 0, e = Pattern->getExtTypes().size(); i != e; i++) {
-        MVT::ValueType VT = Pattern->getTypeNum(i);
+        MVT::SimpleValueType VT = Pattern->getTypeNum(i);
         if (VT != MVT::isVoid && VT != MVT::Flag)
           NumPatResults++;
       }
@@ -946,23 +984,16 @@ public:
       // in the 'execute always' values.  Match up the node operands to the
       // instruction operands to do this.
       std::vector<std::string> AllOps;
-      unsigned NumEAInputs = 0; // # of synthesized 'execute always' inputs.
       for (unsigned ChildNo = 0, InstOpNo = NumResults;
            InstOpNo != II.OperandList.size(); ++InstOpNo) {
         std::vector<std::string> Ops;
         
-        // If this is a normal operand or a predicate operand without
-        // 'execute always', emit it.
+        // Determine what to emit for this operand.
         Record *OperandNode = II.OperandList[InstOpNo].Rec;
-        if ((!OperandNode->isSubClassOf("PredicateOperand") &&
-             !OperandNode->isSubClassOf("OptionalDefOperand")) ||
-            CGP.getDefaultOperand(OperandNode).DefaultOps.empty()) {
-          Ops = EmitResultCode(N->getChild(ChildNo), DstRegs,
-                               InFlagDecled, ResNodeDecled);
-          AllOps.insert(AllOps.end(), Ops.begin(), Ops.end());
-          ++ChildNo;
-        } else {
-          // Otherwise, this is a predicate or optional def operand, emit the
+        if ((OperandNode->isSubClassOf("PredicateOperand") ||
+             OperandNode->isSubClassOf("OptionalDefOperand")) &&
+            !CGP.getDefaultOperand(OperandNode).DefaultOps.empty()) {
+          // This is a predicate or optional def operand; emit the
           // 'default ops' operands.
           const DAGDefaultOperand &DefaultOp =
             CGP.getDefaultOperand(II.OperandList[InstOpNo].Rec);
@@ -970,20 +1001,14 @@ public:
             Ops = EmitResultCode(DefaultOp.DefaultOps[i], DstRegs,
                                  InFlagDecled, ResNodeDecled);
             AllOps.insert(AllOps.end(), Ops.begin(), Ops.end());
-            NumEAInputs += Ops.size();
           }
-        }
-      }
-
-      // Generate MemOperandSDNodes nodes for each memory accesses covered by 
-      // this pattern.
-      if (II.isSimpleLoad | II.mayLoad | II.mayStore) {
-        std::vector<std::string>::const_iterator mi, mie;
-        for (mi = LSI.begin(), mie = LSI.end(); mi != mie; ++mi) {
-          emitCode("SDOperand LSI_" + *mi + " = "
-                   "CurDAG->getMemOperand(cast<LSBaseSDNode>(" +
-                   *mi + ")->getMemOperand());");
-          AllOps.push_back("LSI_" + *mi);
+        } else {
+          // Otherwise this is a normal operand or a predicate operand without
+          // 'execute always'; emit it.
+          Ops = EmitResultCode(N->getChild(ChildNo), DstRegs,
+                               InFlagDecled, ResNodeDecled);
+          AllOps.insert(AllOps.end(), Ops.begin(), Ops.end());
+          ++ChildNo;
         }
       }
 
@@ -1040,7 +1065,7 @@ public:
         for (unsigned i = 0; i < NumDstRegs; i++) {
           Record *RR = DstRegs[i];
           if (RR->isSubClassOf("Register")) {
-            MVT::ValueType RVT = getRegisterValueType(RR, CGT);
+            MVT::SimpleValueType RVT = getRegisterValueType(RR, CGT);
             Code += ", " + getEnumName(RVT);
           }
         }
@@ -1049,19 +1074,12 @@ public:
         if (NodeHasOutFlag)
           Code += ", MVT::Flag";
 
-        // Figure out how many fixed inputs the node has.  This is important to
-        // know which inputs are the variable ones if present.
-        unsigned NumInputs = AllOps.size();
-        NumInputs += NodeHasChain;
-        
         // Inputs.
-        if (HasVarOps) {
+        if (IsVariadic) {
           for (unsigned i = 0, e = AllOps.size(); i != e; ++i)
             emitCode("Ops" + utostr(OpsNo) + ".push_back(" + AllOps[i] + ");");
           AllOps.clear();
-        }
 
-        if (HasVarOps) {
           // Figure out whether any operands at the end of the op list are not
           // part of the variable section.
           std::string EndAdjust;
@@ -1070,7 +1088,7 @@ public:
           else if (NodeHasOptInFlag)
             EndAdjust = "-(HasInFlag?1:0)"; // May have a flag.
 
-          emitCode("for (unsigned i = " + utostr(NumInputs - NumEAInputs) +
+          emitCode("for (unsigned i = NumInputRootOps + " + utostr(NodeHasChain) +
                    ", e = N.getNumOperands()" + EndAdjust + "; i != e; ++i) {");
 
           emitCode("  AddToISelQueue(N.getOperand(i));");
@@ -1078,14 +1096,29 @@ public:
           emitCode("}");
         }
 
+        // Generate MemOperandSDNodes nodes for each memory accesses covered by 
+        // this pattern.
+        if (II.isSimpleLoad | II.mayLoad | II.mayStore) {
+          std::vector<std::string>::const_iterator mi, mie;
+          for (mi = LSI.begin(), mie = LSI.end(); mi != mie; ++mi) {
+            emitCode("SDOperand LSI_" + *mi + " = "
+                     "CurDAG->getMemOperand(cast<MemSDNode>(" +
+                     *mi + ")->getMemOperand());");
+            if (IsVariadic)
+              emitCode("Ops" + utostr(OpsNo) + ".push_back(LSI_" + *mi + ");");
+            else
+              AllOps.push_back("LSI_" + *mi);
+          }
+        }
+
         if (NodeHasChain) {
-          if (HasVarOps)
+          if (IsVariadic)
             emitCode("Ops" + utostr(OpsNo) + ".push_back(" + ChainName + ");");
           else
             AllOps.push_back(ChainName);
         }
 
-        if (HasVarOps) {
+        if (IsVariadic) {
           if (NodeHasInFlag || HasImpInputs)
             emitCode("Ops" + utostr(OpsNo) + ".push_back(InFlag);");
           else if (NodeHasOptInFlag) {
@@ -1298,7 +1331,7 @@ private:
 
           Record *RR = DI->getDef();
           if (RR->isSubClassOf("Register")) {
-            MVT::ValueType RVT = getRegisterValueType(RR, T);
+            MVT::SimpleValueType RVT = getRegisterValueType(RR, T);
             if (RVT == MVT::Flag) {
               if (!InFlagDecled) {
                 emitCode("SDOperand InFlag = " + RootName + utostr(OpNo) + ";");
@@ -1350,11 +1383,17 @@ void DAGISelEmitter::GenerateCodeForPattern(const PatternToMatch &Pattern,
                   std::vector<std::pair<unsigned, std::string> > &GeneratedCode,
                                            std::set<std::string> &GeneratedDecl,
                                         std::vector<std::string> &TargetOpcodes,
-                                          std::vector<std::string> &TargetVTs) {
+                                            std::vector<std::string> &TargetVTs,
+                                            bool &OutputIsVariadic,
+                                            unsigned &NumInputRootOps) {
+  OutputIsVariadic = false;
+  NumInputRootOps = 0;
+
   PatternCodeEmitter Emitter(CGP, Pattern.getPredicates(),
                              Pattern.getSrcPattern(), Pattern.getDstPattern(),
                              GeneratedCode, GeneratedDecl,
-                             TargetOpcodes, TargetVTs);
+                             TargetOpcodes, TargetVTs,
+                             OutputIsVariadic, NumInputRootOps);
 
   // Emit the matcher, capturing named arguments in VariableMap.
   bool FoundChain = false;
@@ -1532,10 +1571,6 @@ void DAGISelEmitter::EmitPatterns(std::vector<std::pair<const PatternToMatch*,
     OS << std::string(Indent-2, ' ') << "}\n";
 }
 
-static std::string getOpcodeName(Record *Op, CodeGenDAGPatterns &CGP) {
-  return CGP.getSDNodeInfo(Op).getEnumName();
-}
-
 static std::string getLegalCName(std::string OpName) {
   std::string::size_type pos = OpName.find("::");
   if (pos != std::string::npos)
@@ -1615,12 +1650,13 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
                      PatternSortingPredicate(CGP));
 
     // Split them into groups by type.
-    std::map<MVT::ValueType, std::vector<const PatternToMatch*> >PatternsByType;
+    std::map<MVT::SimpleValueType,
+             std::vector<const PatternToMatch*> > PatternsByType;
     for (unsigned i = 0, e = PatternsOfOp.size(); i != e; ++i) {
       const PatternToMatch *Pat = PatternsOfOp[i];
       TreePatternNode *SrcPat = Pat->getSrcPattern();
-      MVT::ValueType VT = SrcPat->getTypeNum(0);
-      std::map<MVT::ValueType, 
+      MVT::SimpleValueType VT = SrcPat->getTypeNum(0);
+      std::map<MVT::SimpleValueType,
                std::vector<const PatternToMatch*> >::iterator TI = 
         PatternsByType.find(VT);
       if (TI != PatternsByType.end())
@@ -1632,10 +1668,11 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
       }
     }
 
-    for (std::map<MVT::ValueType, std::vector<const PatternToMatch*> >::iterator
+    for (std::map<MVT::SimpleValueType,
+                  std::vector<const PatternToMatch*> >::iterator
            II = PatternsByType.begin(), EE = PatternsByType.end(); II != EE;
          ++II) {
-      MVT::ValueType OpVT = II->first;
+      MVT::SimpleValueType OpVT = II->first;
       std::vector<const PatternToMatch*> &Patterns = II->second;
       typedef std::vector<std::pair<unsigned,std::string> > CodeList;
       typedef std::vector<std::pair<unsigned,std::string> >::iterator CodeListI;
@@ -1644,17 +1681,24 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
       std::vector<std::vector<std::string> > PatternOpcodes;
       std::vector<std::vector<std::string> > PatternVTs;
       std::vector<std::set<std::string> > PatternDecls;
+      std::vector<bool> OutputIsVariadicFlags;
+      std::vector<unsigned> NumInputRootOpsCounts;
       for (unsigned i = 0, e = Patterns.size(); i != e; ++i) {
         CodeList GeneratedCode;
         std::set<std::string> GeneratedDecl;
         std::vector<std::string> TargetOpcodes;
         std::vector<std::string> TargetVTs;
+        bool OutputIsVariadic;
+        unsigned NumInputRootOps;
         GenerateCodeForPattern(*Patterns[i], GeneratedCode, GeneratedDecl,
-                               TargetOpcodes, TargetVTs);
+                               TargetOpcodes, TargetVTs,
+                               OutputIsVariadic, NumInputRootOps);
         CodeForPatterns.push_back(std::make_pair(Patterns[i], GeneratedCode));
         PatternDecls.push_back(GeneratedDecl);
         PatternOpcodes.push_back(TargetOpcodes);
         PatternVTs.push_back(TargetVTs);
+        OutputIsVariadicFlags.push_back(OutputIsVariadic);
+        NumInputRootOpsCounts.push_back(NumInputRootOps);
       }
     
       // Scan the code to see if all of the patterns are reachable and if it is
@@ -1689,6 +1733,8 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
         std::vector<std::string> &TargetOpcodes = PatternOpcodes[i];
         std::vector<std::string> &TargetVTs = PatternVTs[i];
         std::set<std::string> Decls = PatternDecls[i];
+        bool OutputIsVariadic = OutputIsVariadicFlags[i];
+        unsigned NumInputRootOps = NumInputRootOpsCounts[i];
         std::vector<std::string> AddedInits;
         int CodeSize = (int)GeneratedCode.size();
         int LastPred = -1;
@@ -1706,7 +1752,7 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
           CallerCode += ", " + TargetOpcodes[j];
         }
         for (unsigned j = 0, e = TargetVTs.size(); j != e; ++j) {
-          CalleeCode += ", MVT::ValueType VT" + utostr(j);
+          CalleeCode += ", MVT VT" + utostr(j);
           CallerCode += ", " + TargetVTs[j];
         }
         for (std::set<std::string>::iterator
@@ -1715,6 +1761,12 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
           CalleeCode += ", SDOperand &" + Name;
           CallerCode += ", " + Name;
         }
+
+        if (OutputIsVariadic) {
+          CalleeCode += ", unsigned NumInputRootOps";
+          CallerCode += ", " + utostr(NumInputRootOps);
+        }
+
         CallerCode += ");";
         CalleeCode += ") ";
         // Prevent emission routines from being inlined to reduce selection
@@ -1818,7 +1870,7 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "  for (unsigned j = 0, e = Ops.size(); j != e; ++j)\n"
      << "    AddToISelQueue(Ops[j]);\n\n"
     
-     << "  std::vector<MVT::ValueType> VTs;\n"
+     << "  std::vector<MVT> VTs;\n"
      << "  VTs.push_back(MVT::Other);\n"
      << "  VTs.push_back(MVT::Flag);\n"
      << "  SDOperand New = CurDAG->getNode(ISD::INLINEASM, VTs, &Ops[0], "
@@ -1827,22 +1879,26 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "}\n\n";
 
   OS << "SDNode *Select_UNDEF(const SDOperand &N) {\n"
-     << "  return CurDAG->getTargetNode(TargetInstrInfo::IMPLICIT_DEF,\n"
-     << "                               N.getValueType());\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::IMPLICIT_DEF,\n"
+     << "                              N.getValueType());\n"
      << "}\n\n";
 
-  OS << "SDNode *Select_LABEL(const SDOperand &N) {\n"
+  OS << "SDNode *Select_DBG_LABEL(const SDOperand &N) {\n"
      << "  SDOperand Chain = N.getOperand(0);\n"
-     << "  SDOperand N1 = N.getOperand(1);\n"
-     << "  SDOperand N2 = N.getOperand(2);\n"
-     << "  unsigned C1 = cast<ConstantSDNode>(N1)->getValue();\n"
-     << "  unsigned C2 = cast<ConstantSDNode>(N2)->getValue();\n"
-     << "  SDOperand Tmp1 = CurDAG->getTargetConstant(C1, MVT::i32);\n"
-     << "  SDOperand Tmp2 = CurDAG->getTargetConstant(C2, MVT::i32);\n"
+     << "  unsigned C = cast<LabelSDNode>(N)->getLabelID();\n"
+     << "  SDOperand Tmp = CurDAG->getTargetConstant(C, MVT::i32);\n"
      << "  AddToISelQueue(Chain);\n"
-     << "  SDOperand Ops[] = { Tmp1, Tmp2, Chain };\n"
-     << "  return CurDAG->getTargetNode(TargetInstrInfo::LABEL,\n"
-     << "                               MVT::Other, Ops, 3);\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::DBG_LABEL,\n"
+     << "                              MVT::Other, Tmp, Chain);\n"
+     << "}\n\n";
+
+  OS << "SDNode *Select_EH_LABEL(const SDOperand &N) {\n"
+     << "  SDOperand Chain = N.getOperand(0);\n"
+     << "  unsigned C = cast<LabelSDNode>(N)->getLabelID();\n"
+     << "  SDOperand Tmp = CurDAG->getTargetConstant(C, MVT::i32);\n"
+     << "  AddToISelQueue(Chain);\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::EH_LABEL,\n"
+     << "                              MVT::Other, Tmp, Chain);\n"
      << "}\n\n";
 
   OS << "SDNode *Select_DECLARE(const SDOperand &N) {\n"
@@ -1861,9 +1917,8 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "  SDOperand Tmp2 = "
      << "CurDAG->getTargetGlobalAddress(GV, TLI.getPointerTy());\n"
      << "  AddToISelQueue(Chain);\n"
-     << "  SDOperand Ops[] = { Tmp1, Tmp2, Chain };\n"
-     << "  return CurDAG->getTargetNode(TargetInstrInfo::DECLARE,\n"
-     << "                               MVT::Other, Ops, 3);\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::DECLARE,\n"
+     << "                              MVT::Other, Tmp1, Tmp2, Chain);\n"
      << "}\n\n";
 
   OS << "SDNode *Select_EXTRACT_SUBREG(const SDOperand &N) {\n"
@@ -1872,9 +1927,8 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "  unsigned C = cast<ConstantSDNode>(N1)->getValue();\n"
      << "  SDOperand Tmp = CurDAG->getTargetConstant(C, MVT::i32);\n"
      << "  AddToISelQueue(N0);\n"
-     << "  SDOperand Ops[] = { N0, Tmp };\n"
-     << "  return CurDAG->getTargetNode(TargetInstrInfo::EXTRACT_SUBREG,\n"
-     << "                               N.getValueType(), Ops, 2);\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::EXTRACT_SUBREG,\n"
+     << "                              N.getValueType(), N0, Tmp);\n"
      << "}\n\n";
 
   OS << "SDNode *Select_INSERT_SUBREG(const SDOperand &N) {\n"
@@ -1884,10 +1938,9 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "  unsigned C = cast<ConstantSDNode>(N2)->getValue();\n"
      << "  SDOperand Tmp = CurDAG->getTargetConstant(C, MVT::i32);\n"
      << "  AddToISelQueue(N1);\n"
-     << "  SDOperand Ops[] = { N0, N1, Tmp };\n"
      << "  AddToISelQueue(N0);\n"
-     << "  return CurDAG->getTargetNode(TargetInstrInfo::INSERT_SUBREG,\n"
-     << "                               N.getValueType(), Ops, 3);\n"
+     << "  return CurDAG->SelectNodeTo(N.Val, TargetInstrInfo::INSERT_SUBREG,\n"
+     << "                              N.getValueType(), N0, N1, Tmp);\n"
      << "}\n\n";
 
   OS << "// The main instruction selector code.\n"
@@ -1897,7 +1950,7 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "INSTRUCTION_LIST_END)) {\n"
      << "    return NULL;   // Already selected.\n"
      << "  }\n\n"
-     << "  MVT::ValueType NVT = N.Val->getValueType(0);\n"
+     << "  MVT::SimpleValueType NVT = N.Val->getValueType(0).getSimpleVT();\n"
      << "  switch (N.getOpcode()) {\n"
      << "  default: break;\n"
      << "  case ISD::EntryToken:       // These leaves remain the same.\n"
@@ -1928,7 +1981,8 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "    return NULL;\n"
      << "  }\n"
      << "  case ISD::INLINEASM: return Select_INLINEASM(N);\n"
-     << "  case ISD::LABEL: return Select_LABEL(N);\n"
+     << "  case ISD::DBG_LABEL: return Select_DBG_LABEL(N);\n"
+     << "  case ISD::EH_LABEL: return Select_EH_LABEL(N);\n"
      << "  case ISD::DECLARE: return Select_DECLARE(N);\n"
      << "  case ISD::EXTRACT_SUBREG: return Select_EXTRACT_SUBREG(N);\n"
      << "  case ISD::INSERT_SUBREG: return Select_INSERT_SUBREG(N);\n"
@@ -1974,7 +2028,7 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
       
     // If there is an iPTR result version of this pattern, emit it here.
     if (HasPtrPattern) {
-      OS << "      if (NVT == TLI.getPointerTy())\n";
+      OS << "      if (TLI.getPointerTy() == NVT)\n";
       OS << "        return Select_" << getLegalCName(OpName) <<"_iPTR(N);\n";
     }
     if (HasDefaultPattern) {
@@ -2011,147 +2065,10 @@ void DAGISelEmitter::run(std::ostream &OS) {
   OS << "// *** NOTE: This file is #included into the middle of the target\n"
      << "// *** instruction selector class.  These functions are really "
      << "methods.\n\n";
-  
-  OS << "// Instruction selector priority queue:\n"
-     << "std::vector<SDNode*> ISelQueue;\n";
-  OS << "/// Keep track of nodes which have already been added to queue.\n"
-     << "unsigned char *ISelQueued;\n";
-  OS << "/// Keep track of nodes which have already been selected.\n"
-     << "unsigned char *ISelSelected;\n";
 
-
-  OS << "/// IsChainCompatible - Returns true if Chain is Op or Chain does\n";
-  OS << "/// not reach Op.\n";
-  OS << "static bool IsChainCompatible(SDNode *Chain, SDNode *Op) {\n";
-  OS << "  if (Chain->getOpcode() == ISD::EntryToken)\n";
-  OS << "    return true;\n";
-  OS << "  else if (Chain->getOpcode() == ISD::TokenFactor)\n";
-  OS << "    return false;\n";
-  OS << "  else if (Chain->getNumOperands() > 0) {\n";
-  OS << "    SDOperand C0 = Chain->getOperand(0);\n";
-  OS << "    if (C0.getValueType() == MVT::Other)\n";
-  OS << "      return C0.Val != Op && IsChainCompatible(C0.Val, Op);\n";
-  OS << "  }\n";
-  OS << "  return true;\n";
-  OS << "}\n";
-
-  OS << "/// Sorting functions for the selection queue.\n"
-     << "struct isel_sort : public std::binary_function"
-     << "<SDNode*, SDNode*, bool> {\n"
-     << "  bool operator()(const SDNode* left, const SDNode* right) "
-     << "const {\n"
-     << "    return (left->getNodeId() > right->getNodeId());\n"
-     << "  }\n"
-     << "};\n\n";
-
-  OS << "inline void setQueued(int Id) {\n";
-  OS << "  ISelQueued[Id / 8] |= 1 << (Id % 8);\n";
-  OS << "}\n";
-  OS << "inline bool isQueued(int Id) {\n";
-  OS << "  return ISelQueued[Id / 8] & (1 << (Id % 8));\n";
-  OS << "}\n";
-  OS << "inline void setSelected(int Id) {\n";
-  OS << "  ISelSelected[Id / 8] |= 1 << (Id % 8);\n";
-  OS << "}\n";
-  OS << "inline bool isSelected(int Id) {\n";
-  OS << "  return ISelSelected[Id / 8] & (1 << (Id % 8));\n";
-  OS << "}\n\n";
-
-  OS << "void AddToISelQueue(SDOperand N) DISABLE_INLINE {\n";
-  OS << "  int Id = N.Val->getNodeId();\n";
-  OS << "  if (Id != -1 && !isQueued(Id)) {\n";
-  OS << "    ISelQueue.push_back(N.Val);\n";
- OS << "    std::push_heap(ISelQueue.begin(), ISelQueue.end(), isel_sort());\n";
-  OS << "    setQueued(Id);\n";
-  OS << "  }\n";
-  OS << "}\n\n";
-
-  
-  OS << "class VISIBILITY_HIDDEN ISelQueueUpdater :\n";
-  OS << "  public SelectionDAG::DAGUpdateListener {\n";
-  OS << "    std::vector<SDNode*> &ISelQueue;\n";
-  OS << "    bool HadDelete;\n";
-  OS << "  public:\n";
-  OS << "    explicit ISelQueueUpdater(std::vector<SDNode*> &isq)\n";
-  OS << "      : ISelQueue(isq), HadDelete(false) {}\n";
-  OS << "    \n";
-  OS << "    bool hadDelete() const { return HadDelete; }\n";
-  OS << "    \n";
-  OS << "    virtual void NodeDeleted(SDNode *N) {\n";
-  OS << "      ISelQueue.erase(std::remove(ISelQueue.begin(), ISelQueue.end(),";
-  OS << " N),\n                      ISelQueue.end());\n";
-  OS << "      HadDelete = true;\n";
-  OS << "    }\n";
-  OS << "    \n";
-  OS << "    // Ignore updates.\n";
-  OS << "    virtual void NodeUpdated(SDNode *N) {}\n";
-  OS << "  };\n";
-  
-  OS << "inline void UpdateQueue(const ISelQueueUpdater &ISQU) {\n";
-  OS << "  if (ISQU.hadDelete())\n";
-  OS << "    std::make_heap(ISelQueue.begin(), ISelQueue.end(),isel_sort());\n";
-  OS << "}\n\n";
-
-  OS << "void ReplaceUses(SDOperand F, SDOperand T) DISABLE_INLINE {\n";
-  OS << "  ISelQueueUpdater ISQU(ISelQueue);\n";
-  OS << "  CurDAG->ReplaceAllUsesOfValueWith(F, T, &ISQU);\n";
-  OS << "  setSelected(F.Val->getNodeId());\n";
-  OS << "  UpdateQueue(ISQU);\n";
-  OS << "}\n";
-  OS << "void ReplaceUses(SDNode *F, SDNode *T) DISABLE_INLINE {\n";
-  OS << "  unsigned FNumVals = F->getNumValues();\n";
-  OS << "  unsigned TNumVals = T->getNumValues();\n";
-  OS << "  ISelQueueUpdater ISQU(ISelQueue);\n";
-  OS << "  if (FNumVals != TNumVals) {\n";
-  OS << "    for (unsigned i = 0, e = std::min(FNumVals, TNumVals); "
-     << "i < e; ++i)\n";
-  OS << "      CurDAG->ReplaceAllUsesOfValueWith(SDOperand(F, i), "
-     << "SDOperand(T, i), &ISQU);\n";
-  OS << "  } else {\n";
-  OS << "    CurDAG->ReplaceAllUsesWith(F, T, &ISQU);\n";
-  OS << "  }\n";
-  OS << "  setSelected(F->getNodeId());\n";
-  OS << "  UpdateQueue(ISQU);\n";
-  OS << "}\n\n";
-
-  OS << "// SelectRoot - Top level entry to DAG isel.\n";
-  OS << "SDOperand SelectRoot(SDOperand Root) {\n";
-  OS << "  SelectRootInit();\n";
-  OS << "  unsigned NumBytes = (DAGSize + 7) / 8;\n";
-  OS << "  ISelQueued   = new unsigned char[NumBytes];\n";
-  OS << "  ISelSelected = new unsigned char[NumBytes];\n";
-  OS << "  memset(ISelQueued,   0, NumBytes);\n";
-  OS << "  memset(ISelSelected, 0, NumBytes);\n";
-  OS << "\n";
-  OS << "  // Create a dummy node (which is not added to allnodes), that adds\n"
-     << "  // a reference to the root node, preventing it from being deleted,\n"
-     << "  // and tracking any changes of the root.\n"
-     << "  HandleSDNode Dummy(CurDAG->getRoot());\n"
-     << "  ISelQueue.push_back(CurDAG->getRoot().Val);\n";
-  OS << "  while (!ISelQueue.empty()) {\n";
-  OS << "    SDNode *Node = ISelQueue.front();\n";
-  OS << "    std::pop_heap(ISelQueue.begin(), ISelQueue.end(), isel_sort());\n";
-  OS << "    ISelQueue.pop_back();\n";
-  OS << "    if (!isSelected(Node->getNodeId())) {\n";
-  OS << "      SDNode *ResNode = Select(SDOperand(Node, 0));\n";
-  OS << "      if (ResNode != Node) {\n";
-  OS << "        if (ResNode)\n";
-  OS << "          ReplaceUses(Node, ResNode);\n";
-  OS << "        if (Node->use_empty()) { // Don't delete EntryToken, etc.\n";
-  OS << "          ISelQueueUpdater ISQU(ISelQueue);\n";
-  OS << "          CurDAG->RemoveDeadNode(Node, &ISQU);\n";
-  OS << "          UpdateQueue(ISQU);\n";
-  OS << "        }\n";
-  OS << "      }\n";
-  OS << "    }\n";
-  OS << "  }\n";
-  OS << "\n";
-  OS << "  delete[] ISelQueued;\n";
-  OS << "  ISelQueued = NULL;\n";
-  OS << "  delete[] ISelSelected;\n";
-  OS << "  ISelSelected = NULL;\n";
-  OS << "  return Dummy.getValue();\n";
-  OS << "}\n";
+  OS << "// Include standard, target-independent definitions and methods used\n"
+     << "// by the instruction selector.\n";
+  OS << "#include <llvm/CodeGen/DAGISelHeader.h>\n\n";
   
   EmitNodeTransforms(OS);
   EmitPredicateFunctions(OS);

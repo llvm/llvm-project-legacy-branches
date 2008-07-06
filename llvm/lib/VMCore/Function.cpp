@@ -106,10 +106,22 @@ bool Argument::hasNoAliasAttr() const {
 /// it in its containing function.
 bool Argument::hasStructRetAttr() const {
   if (!isa<PointerType>(getType())) return false;
-  if (this != getParent()->arg_begin()) return false; // StructRet param must be first param
+  if (this != getParent()->arg_begin())
+    return false; // StructRet param must be first param
   return getParent()->paramHasAttr(1, ParamAttr::StructRet);
 }
 
+/// addAttr - Add a ParamAttr to an argument
+void Argument::addAttr(ParameterAttributes attr) {
+  getParent()->setParamAttrs(
+    getParent()->getParamAttrs().addAttr(getArgNo() + 1, attr));
+}
+  
+/// removeAttr - Remove a ParamAttr from an argument
+void Argument::removeAttr(ParameterAttributes attr) {
+  getParent()->setParamAttrs(
+    getParent()->getParamAttrs().removeAttr(getArgNo() + 1, attr));
+}
 
 
 
@@ -228,6 +240,12 @@ void Function::setDoesNotThrow(bool doesNotThrow) {
   setParamAttrs(PAL);
 }
 
+void Function::addParamAttr(unsigned i, ParameterAttributes attr) {
+  PAListPtr PAL = getParamAttrs();
+  PAL = PAL.addAttr(i, attr);
+  setParamAttrs(PAL);
+}
+
 // Maintain the collector name for each function in an on-the-side table. This
 // saves allocating an additional word in Function for programs which do not use
 // GC (i.e., most programs) at the cost of increased overhead for clients which
@@ -264,6 +282,18 @@ void Function::clearCollector() {
       }
     }
   }
+}
+
+/// copyAttributesFrom - copy all additional attributes (those not needed to
+/// create a Function) from the Function Src to this one.
+void Function::copyAttributesFrom(const GlobalValue *Src) {
+  assert(isa<Function>(Src) && "Expected a Function!");
+  GlobalValue::copyAttributesFrom(Src);
+  const Function *SrcF = cast<Function>(Src);
+  setCallingConv(SrcF->getCallingConv());
+  setParamAttrs(SrcF->getParamAttrs());
+  if (SrcF->hasCollector())
+    setCollector(SrcF->getCollector());
 }
 
 /// getIntrinsicID - This method returns the ID number of the specified
@@ -306,7 +336,7 @@ std::string Intrinsic::getName(ID id, const Type **Tys, unsigned numTys) {
   std::string Result(Table[id]);
   for (unsigned i = 0; i < numTys; ++i) 
     if (Tys[i])
-      Result += "." + MVT::getValueTypeString(MVT::getValueType(Tys[i]));
+      Result += "." + MVT::getMVT(Tys[i]).getMVTString();
   return Result;
 }
 
@@ -344,30 +374,6 @@ Function *Intrinsic::getDeclaration(Module *M, ID id, const Type **Tys,
   return
     cast<Function>(M->getOrInsertFunction(getName(id, Tys, numTys),
                                           getType(id, Tys, numTys)));
-}
-
-Value *IntrinsicInst::StripPointerCasts(Value *Ptr) {
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Ptr)) {
-    if (CE->getOpcode() == Instruction::BitCast) {
-      if (isa<PointerType>(CE->getOperand(0)->getType()))
-        return StripPointerCasts(CE->getOperand(0));
-    } else if (CE->getOpcode() == Instruction::GetElementPtr) {
-      for (unsigned i = 1, e = CE->getNumOperands(); i != e; ++i)
-        if (!CE->getOperand(i)->isNullValue())
-          return Ptr;
-      return StripPointerCasts(CE->getOperand(0));
-    }
-    return Ptr;
-  }
-
-  if (BitCastInst *CI = dyn_cast<BitCastInst>(Ptr)) {
-    if (isa<PointerType>(CI->getOperand(0)->getType()))
-      return StripPointerCasts(CI->getOperand(0));
-  } else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
-    if (GEP->hasAllZeroIndices())
-      return StripPointerCasts(GEP->getOperand(0));
-  }
-  return Ptr;
 }
 
 // vim: sw=2 ai

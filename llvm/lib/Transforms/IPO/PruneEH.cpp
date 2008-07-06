@@ -31,7 +31,6 @@ using namespace llvm;
 
 STATISTIC(NumRemoved, "Number of invokes removed");
 STATISTIC(NumUnreach, "Number of noreturn calls optimized");
-STATISTIC(NumBBUnwind, "Number of unwind dest removed from blocks");
 
 namespace {
   struct VISIBILITY_HIDDEN PruneEH : public CallGraphSCCPass {
@@ -44,10 +43,11 @@ namespace {
     bool SimplifyFunction(Function *F);
     void DeleteBasicBlock(BasicBlock *BB);
   };
-
-  char PruneEH::ID = 0;
-  RegisterPass<PruneEH> X("prune-eh", "Remove unused exception handling info");
 }
+
+char PruneEH::ID = 0;
+static RegisterPass<PruneEH>
+X("prune-eh", "Remove unused exception handling info");
 
 Pass *llvm::createPruneEHPass() { return new PruneEH(); }
 
@@ -64,6 +64,8 @@ bool PruneEH::runOnSCC(const std::vector<CallGraphNode *> &SCC) {
 
   // Next, check to see if any callees might throw or if there are any external
   // functions in this SCC: if so, we cannot prune any functions in this SCC.
+  // Definitions that are weak and not declared non-throwing might be 
+  // overridden at linktime with something that throws, so assume that.
   // If this SCC includes the unwind instruction, we KNOW it throws, so
   // obviously the SCC might throw.
   //
@@ -74,7 +76,7 @@ bool PruneEH::runOnSCC(const std::vector<CallGraphNode *> &SCC) {
     if (F == 0) {
       SCCMightUnwind = true;
       SCCMightReturn = true;
-    } else if (F->isDeclaration()) {
+    } else if (F->isDeclaration() || F->hasWeakLinkage()) {
       SCCMightUnwind |= !F->doesNotThrow();
       SCCMightReturn |= !F->doesNotReturn();
     } else {
@@ -152,8 +154,6 @@ bool PruneEH::runOnSCC(const std::vector<CallGraphNode *> &SCC) {
 bool PruneEH::SimplifyFunction(Function *F) {
   bool MadeChange = false;
   for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
-    bool couldUnwind = false;
-
     if (InvokeInst *II = dyn_cast<InvokeInst>(BB->getTerminator()))
       if (II->doesNotThrow()) {
         SmallVector<Value*, 8> Args(II->op_begin()+3, II->op_end());
@@ -183,12 +183,10 @@ bool PruneEH::SimplifyFunction(Function *F) {
 
         ++NumRemoved;
         MadeChange = true;
-      } else {
-        couldUnwind = true;
       }
 
     for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; )
-      if (CallInst *CI = dyn_cast<CallInst>(I++)) {
+      if (CallInst *CI = dyn_cast<CallInst>(I++))
         if (CI->doesNotReturn() && !isa<UnreachableInst>(I)) {
           // This call calls a function that cannot return.  Insert an
           // unreachable instruction after it and simplify the code.  Do this
@@ -204,19 +202,9 @@ bool PruneEH::SimplifyFunction(Function *F) {
           MadeChange = true;
           ++NumUnreach;
           break;
-        } else if (!CI->doesNotThrow()) {
-          couldUnwind = true;
         }
-      }
-
-    // Strip 'unwindTo' off of BBs that have no calls/invokes without nounwind.
-    if (!couldUnwind && BB->getUnwindDest()) {
-      MadeChange = true;
-      ++NumBBUnwind;
-      BB->getUnwindDest()->removePredecessor(BB, false, true);
-      BB->setUnwindDest(NULL);
-    }
   }
+
   return MadeChange;
 }
 

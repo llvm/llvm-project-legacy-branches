@@ -119,7 +119,7 @@ static void HandleInlinedInvoke(InvokeInst *II, BasicBlock *FirstNewBlock,
         BranchInst::Create(InvokeDest, UI);
         
         // Delete the unwind instruction!
-        UI->getParent()->getInstList().pop_back();
+        UI->eraseFromParent();
         
         // Update any PHI nodes in the exceptional block to indicate that
         // there is now a new entry in them.
@@ -203,7 +203,6 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
 
   BasicBlock *OrigBB = TheCall->getParent();
   Function *Caller = OrigBB->getParent();
-  BasicBlock *UnwindBB = OrigBB->getUnwindDest();
 
   // GC poses two hazards to inlining, which only occur when the callee has GC:
   //  1. If the caller has no GC, then the callee's GC must be propagated to the
@@ -230,8 +229,7 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
   { // Scope to destroy ValueMap after cloning.
     DenseMap<const Value*, Value*> ValueMap;
 
-    assert(std::distance(CalledFunc->arg_begin(), CalledFunc->arg_end()) ==
-           std::distance(CS.arg_begin(), CS.arg_end()) &&
+    assert(CalledFunc->arg_size() == CS.arg_size() &&
            "No varargs calls can be inlined!");
     
     // Calculate the vector of arguments to pass into the function cloner, which
@@ -419,18 +417,6 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
       }
     }
 
-  // If we are inlining a function that unwinds into a BB with an unwind dest,
-  // turn the inlined unwinds into branches to the unwind dest.
-  if (InlinedFunctionInfo.ContainsUnwinds && UnwindBB && isa<CallInst>(TheCall))
-    for (Function::iterator BB = FirstNewBlock, E = Caller->end();
-         BB != E; ++BB) {
-      TerminatorInst *Term = BB->getTerminator();
-      if (isa<UnwindInst>(Term)) {
-        BranchInst::Create(UnwindBB, Term);
-        BB->getInstList().erase(Term);
-      }
-    }
-
   // If we are inlining for an invoke instruction, we must make sure to rewrite
   // any inlined 'unwind' instructions into branches to the invoke exception
   // destination, and call instructions into invoke instructions.
@@ -456,8 +442,9 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
     // uses of the returned value.
     if (!TheCall->use_empty()) {
       ReturnInst *R = Returns[0];
-      if (R->getNumOperands() > 1) {
-        // Multiple return values.
+      if (isa<StructType>(TheCall->getType()) &&
+          TheCall->getType() != R->getOperand(0)->getType()) {
+        // Multiple-value return statements.
         while (!TheCall->use_empty()) {
           GetResultInst *GR = cast<GetResultInst>(TheCall->use_back());
           Value *RV = R->getOperand(GR->getIndex());
@@ -468,10 +455,10 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
         TheCall->replaceAllUsesWith(R->getReturnValue());
     }
     // Since we are now done with the Call/Invoke, we can delete it.
-    TheCall->getParent()->getInstList().erase(TheCall);
+    TheCall->eraseFromParent();
 
     // Since we are now done with the return instruction, delete it also.
-    Returns[0]->getParent()->getInstList().erase(Returns[0]);
+    Returns[0]->eraseFromParent();
 
     // We are now done with the inlining.
     return true;
@@ -522,6 +509,13 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
   // any users of the original call/invoke instruction.
   const Type *RTy = CalledFunc->getReturnType();
   const StructType *STy = dyn_cast<StructType>(RTy);
+
+  // We do special handling for multiple-value return statements. If this is
+  // a plain aggregate return, don't do the special handling.
+  if (!Returns.empty() && Returns[0]->getNumOperands() != 0 &&
+      Returns[0]->getOperand(0)->getType() == STy)
+    STy = 0;
+
   if (Returns.size() > 1 || STy) {
     // The PHI node should go at the front of the new basic block to merge all
     // possible incoming values.
@@ -545,7 +539,8 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
           GR->eraseFromParent();
         }
       } else {
-        PHINode *PHI = PHINode::Create(RTy, TheCall->getName(), AfterCallBB->begin());
+        PHINode *PHI = PHINode::Create(RTy, TheCall->getName(),
+                                       AfterCallBB->begin());
         PHIs.push_back(PHI);
         // Anything that used the result of the function call should now use the
         // PHI node as their operand.

@@ -16,19 +16,16 @@
 #include "llvm/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
-cl::opt<X86Subtarget::AsmWriterFlavorTy>
+static cl::opt<X86Subtarget::AsmWriterFlavorTy>
 AsmWriterFlavor("x86-asm-syntax", cl::init(X86Subtarget::Unset),
   cl::desc("Choose style of code to emit from X86 backend:"),
   cl::values(
     clEnumValN(X86Subtarget::ATT,   "att",   "  Emit AT&T-style assembly"),
     clEnumValN(X86Subtarget::Intel, "intel", "  Emit Intel-style assembly"),
     clEnumValEnd));
-
-cl::opt<unsigned>
-StackAlignment("stack-alignment", cl::init(0),
-               cl::desc("Override default stack alignment"));
 
 
 /// True if accessing the GV requires an extra load. For Windows, dllimported
@@ -44,11 +41,15 @@ bool X86Subtarget::GVRequiresExtraLoad(const GlobalValue* GV,
     if (isTargetDarwin()) {
       return (!isDirectCall &&
               (GV->hasWeakLinkage() || GV->hasLinkOnceLinkage() ||
+               GV->hasCommonLinkage() ||
                (GV->isDeclaration() && !GV->hasNotBeenReadFromBitcode())));
     } else if (isTargetELF()) {
-      // Extra load is needed for all non-statics.
-      return (!isDirectCall &&
-              (GV->isDeclaration() || !GV->hasInternalLinkage()));
+      // Extra load is needed for all externally visible.
+      if (isDirectCall)
+        return false;
+      if (GV->hasInternalLinkage() || GV->hasHiddenVisibility())
+        return false;
+      return true;
     } else if (isTargetCygMing() || isTargetWindows()) {
       return (GV->hasDLLImportLinkage());
     }
@@ -244,12 +245,13 @@ X86Subtarget::X86Subtarget(const Module &M, const std::string &FS, bool is64Bit)
   , X863DNowLevel(NoThreeDNow)
   , HasX86_64(false)
   , DarwinVers(0)
+  , IsLinux(false)
   , stackAlignment(8)
   // FIXME: this is a known good value for Yonah. How about others?
   , MaxInlineSizeThreshold(128)
   , Is64Bit(is64Bit)
   , TargetType(isELF) { // Default to ELF unless otherwise specified.
-
+    
   // Determine default and user specified characteristics
   if (!FS.empty()) {
     // If feature string is not empty, parse features string.
@@ -281,6 +283,10 @@ X86Subtarget::X86Subtarget(const Module &M, const std::string &FS, bool is64Bit)
         DarwinVers = atoi(&TT[Pos+7]);
       else
         DarwinVers = 8;  // Minimum supported darwin is Tiger.
+    } else if (TT.find("linux") != std::string::npos) {
+      // Linux doesn't imply ELF, but we don't currently support anything else.
+      TargetType = isELF;
+      IsLinux = true;
     } else if (TT.find("cygwin") != std::string::npos) {
       TargetType = isCygwin;
     } else if (TT.find("mingw") != std::string::npos) {
@@ -305,6 +311,10 @@ X86Subtarget::X86Subtarget(const Module &M, const std::string &FS, bool is64Bit)
     
 #elif defined(_WIN32) || defined(_WIN64)
     TargetType = isWindows;
+#elif defined(__linux__)
+    // Linux doesn't imply ELF, but we don't currently support anything else.
+    TargetType = isELF;
+    IsLinux = true;
 #endif
   }
 
@@ -315,11 +325,9 @@ X86Subtarget::X86Subtarget(const Module &M, const std::string &FS, bool is64Bit)
       ? X86Subtarget::Intel : X86Subtarget::ATT;
   }
 
-  if (TargetType == isDarwin ||
-      TargetType == isCygwin ||
-      TargetType == isMingw  ||
-      TargetType == isWindows ||
-      (TargetType == isELF && Is64Bit))
+  // Stack alignment is 16 bytes on Darwin (both 32 and 64 bit) and for all 64
+  // bit targets.
+  if (TargetType == isDarwin || Is64Bit)
     stackAlignment = 16;
 
   if (StackAlignment)

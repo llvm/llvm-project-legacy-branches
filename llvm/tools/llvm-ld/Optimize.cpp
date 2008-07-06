@@ -35,35 +35,6 @@ static cl::list<const PassInfo*, bool, PassNameParser>
 //Don't verify at the end
 static cl::opt<bool> DontVerify("disable-verify", cl::ReallyHidden);
 
-// Optimization Enumeration
-enum OptimizationLevels {
-  OPT_FAST_COMPILE         = 1,
-  OPT_SIMPLE               = 2,
-  OPT_AGGRESSIVE           = 3,
-  OPT_LINK_TIME            = 4,
-  OPT_AGGRESSIVE_LINK_TIME = 5
-};
-
-// Optimization Options
-static cl::opt<OptimizationLevels> OptLevel(
-  cl::desc("Choose level of optimization to apply:"),
-  cl::init(OPT_FAST_COMPILE), cl::values(
-    clEnumValN(OPT_FAST_COMPILE,"O0",
-      "An alias for the -O1 option."),
-    clEnumValN(OPT_FAST_COMPILE,"O1",
-      "Optimize for linking speed, not execution speed."),
-    clEnumValN(OPT_SIMPLE,"O2",
-      "Perform only required/minimal optimizations"),
-    clEnumValN(OPT_AGGRESSIVE,"O3",
-      "An alias for the -O2 option."),
-    clEnumValN(OPT_LINK_TIME,"O4",
-      "Perform standard link time optimizations"),
-    clEnumValN(OPT_AGGRESSIVE_LINK_TIME,"O5",
-      "Perform aggressive link time optimizations"),
-    clEnumValEnd
-  )
-);
-
 static cl::opt<bool> DisableInline("disable-inlining",
   cl::desc("Do not run the inliner pass"));
 
@@ -162,20 +133,23 @@ void Optimize(Module* M) {
 
     // The IPO passes may leave cruft around.  Clean up after them.
     addPass(Passes, createInstructionCombiningPass());
-
+    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
     addPass(Passes, createScalarReplAggregatesPass()); // Break up allocas
 
     // Run a few AA driven optimizations here and now, to cleanup the code.
     addPass(Passes, createGlobalsModRefPass());      // IP alias analysis
 
     addPass(Passes, createLICMPass());               // Hoist loop invariants
-    addPass(Passes, createMemCpyOptPass());          // Remove dead memcpy's
     addPass(Passes, createGVNPass());                  // Remove redundancies
+    addPass(Passes, createMemCpyOptPass());          // Remove dead memcpy's
     addPass(Passes, createDeadStoreEliminationPass()); // Nuke dead stores
 
     // Cleanup and simplify the code after the scalar optimizations.
     addPass(Passes, createInstructionCombiningPass());
 
+    addPass(Passes, createJumpThreadingPass());        // Thread jumps.
+    addPass(Passes, createPromoteMemoryToRegisterPass()); // Cleanup jumpthread.
+    
     // Delete basic blocks, which optimization passes may have killed...
     addPass(Passes, createCFGSimplificationPass());
 
@@ -205,7 +179,7 @@ void Optimize(Module* M) {
   if (!DisableOptimizations) {
     addPass(Passes, createInstructionCombiningPass());
     addPass(Passes, createCFGSimplificationPass());
-    addPass(Passes, createDeadCodeEliminationPass());
+    addPass(Passes, createAggressiveDCEPass());
     addPass(Passes, createGlobalDCEPass());
   }
 

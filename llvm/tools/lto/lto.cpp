@@ -12,550 +12,236 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Module.h"
-#include "llvm/PassManager.h"
-#include "llvm/Linker.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/ModuleProvider.h"
-#include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/FileUtilities.h"
-#include "llvm/Support/SystemUtils.h"
-#include "llvm/Support/Mangler.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/System/Program.h"
-#include "llvm/System/Signals.h"
-#include "llvm/Analysis/Passes.h"
-#include "llvm/Analysis/LoopPass.h"
-#include "llvm/Analysis/Verifier.h"
-#include "llvm/CodeGen/FileWriters.h"
-#include "llvm/Target/SubtargetFeature.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetMachineRegistry.h"
-#include "llvm/Target/TargetAsmInfo.h"
-#include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Analysis/LoadValueNumbering.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/LinkTimeOptimizer.h"
-#include <fstream>
-#include <ostream>
-using namespace llvm;
+#include "llvm-c/lto.h"
 
-extern "C"
-llvm::LinkTimeOptimizer *createLLVMOptimizer(unsigned VERSION)
+#include "LTOModule.h"
+#include "LTOCodeGenerator.h"
+
+
+// holds most recent error string
+// *** not thread safe ***
+static std::string sLastErrorString;
+
+
+
+//
+// returns a printable string
+//
+extern const char* lto_get_version()
 {
-  // Linker records LLVM_LTO_VERSION based on llvm optimizer available
-  // during linker build. Match linker's recorded LTO VERSION number 
-  // with installed llvm optimizer version. If these numbers do not match
-  // then linker may not be able to use llvm optimizer dynamically.
-  if (VERSION != LLVM_LTO_VERSION)
-    return NULL;
-
-  llvm::LTO *l = new llvm::LTO();
-  return l;
+    return LTOCodeGenerator::getVersionString();
 }
 
-/// If symbol is not used then make it internal and let optimizer takes 
-/// care of it.
-void LLVMSymbol::mayBeNotUsed() { 
-  gv->setLinkage(GlobalValue::InternalLinkage); 
-}
-
-// Map LLVM LinkageType to LTO LinakgeType
-static LTOLinkageTypes
-getLTOLinkageType(GlobalValue *v)
+//
+// returns the last error string or NULL if last operation was successful
+//
+const char* lto_get_error_message()
 {
-  LTOLinkageTypes lt;
-  if (v->hasExternalLinkage())
-    lt = LTOExternalLinkage;
-  else if (v->hasLinkOnceLinkage())
-    lt = LTOLinkOnceLinkage;
-  else if (v->hasWeakLinkage())
-    lt = LTOWeakLinkage;
-  else
-    // Otherwise it is internal linkage for link time optimizer
-    lt = LTOInternalLinkage;
-  return lt;
+    return sLastErrorString.c_str();
 }
 
-// MAP LLVM VisibilityType to LTO VisibilityType
-static LTOVisibilityTypes
-getLTOVisibilityType(GlobalValue *v)
+
+
+//
+// validates if a file is a loadable object file
+//
+bool lto_module_is_object_file(const char* path)
 {
-  LTOVisibilityTypes vis;
-  if (v->hasHiddenVisibility()) 
-    vis = LTOHiddenVisibility;
-  else if (v->hasProtectedVisibility())
-    vis = LTOProtectedVisibility;
-  else
-    vis = LTODefaultVisibility;
-  return vis;
-}
-    
-// Find exeternal symbols referenced by VALUE. This is a recursive function.
-static void
-findExternalRefs(Value *value, std::set<std::string> &references, 
-                 Mangler &mangler) {
-
-  if (GlobalValue *gv = dyn_cast<GlobalValue>(value)) {
-    LTOLinkageTypes lt = getLTOLinkageType(gv);
-    if (lt != LTOInternalLinkage && strncmp (gv->getName().c_str(), "llvm.", 5))
-      references.insert(mangler.getValueName(gv));
-  }
-
-  // GlobalValue, even with InternalLinkage type, may have operands with 
-  // ExternalLinkage type. Do not ignore these operands.
-  if (Constant *c = dyn_cast<Constant>(value))
-    // Handle ConstantExpr, ConstantStruct, ConstantArry etc..
-    for (unsigned i = 0, e = c->getNumOperands(); i != e; ++i)
-      findExternalRefs(c->getOperand(i), references, mangler);
+    return LTOModule::isBitcodeFile(path);
 }
 
-/// If Module with InputFilename is available then remove it from allModules
-/// and call delete on it.
-void
-LTO::removeModule (const std::string &InputFilename)
+
+//
+// validates if a file is a loadable object file compilable for requested target
+//
+bool lto_module_is_object_file_for_target(const char* path, 
+                                            const char* target_triplet_prefix)
 {
-  NameToModuleMap::iterator pos = allModules.find(InputFilename.c_str());
-  if (pos == allModules.end()) 
-    return;
-
-  Module *m = pos->second;
-  allModules.erase(pos);
-  delete m;
+    return LTOModule::isBitcodeFileForTarget(path, target_triplet_prefix);
 }
 
-/// InputFilename is a LLVM bitcode file. If Module with InputFilename is
-/// available then return it. Otherwise parseInputFilename.
-Module *
-LTO::getModule(const std::string &InputFilename)
+
+//
+// validates if a buffer is a loadable object file
+//
+bool lto_module_is_object_file_in_memory(const void* mem, size_t length)
 {
-  Module *m = NULL;
-
-  NameToModuleMap::iterator pos = allModules.find(InputFilename.c_str());
-  if (pos != allModules.end())
-    m = allModules[InputFilename.c_str()];
-  else {
-    if (MemoryBuffer *Buffer
-        = MemoryBuffer::getFile(&InputFilename[0], InputFilename.size())) {
-      m = ParseBitcodeFile(Buffer);
-      delete Buffer;
-    }
-    allModules[InputFilename.c_str()] = m;
-  }
-  return m;
+    return LTOModule::isBitcodeFile(mem, length);
 }
 
-/// InputFilename is a LLVM bitcode file. Reade this bitcode file and 
-/// set corresponding target triplet string.
-void
-LTO::getTargetTriple(const std::string &InputFilename, 
-                     std::string &targetTriple)
+
+//
+// validates if a buffer is a loadable object file compilable for the target
+//
+bool lto_module_is_object_file_in_memory_for_target(const void* mem, 
+                            size_t length, const char* target_triplet_prefix)
 {
-  Module *m = getModule(InputFilename);
-  if (m)
-    targetTriple = m->getTargetTriple();
+    return LTOModule::isBitcodeFileForTarget(mem, length, target_triplet_prefix);
 }
 
-/// InputFilename is a LLVM bitcode file. Read it using bitcode reader.
-/// Collect global functions and symbol names in symbols vector.
-/// Collect external references in references vector.
-/// Return LTO_READ_SUCCESS if there is no error.
-enum LTOStatus
-LTO::readLLVMObjectFile(const std::string &InputFilename,
-                        NameToSymbolMap &symbols,
-                        std::set<std::string> &references)
+
+
+//
+// loads an object file from disk  
+// returns NULL on error (check lto_get_error_message() for details)
+//
+lto_module_t lto_module_create(const char* path)
 {
-  Module *m = getModule(InputFilename);
-  if (!m)
-    return LTO_READ_FAILURE;
-
-  // Collect Target info
-  getTarget(m);
-
-  if (!Target)
-    return LTO_READ_FAILURE;
-  
-  // Use mangler to add GlobalPrefix to names to match linker names.
-  // FIXME : Instead of hard coding "-" use GlobalPrefix.
-  Mangler mangler(*m, Target->getTargetAsmInfo()->getGlobalPrefix());
-  modules.push_back(m);
-  
-  for (Module::iterator f = m->begin(), e = m->end(); f != e; ++f) {
-    LTOLinkageTypes lt = getLTOLinkageType(f);
-    LTOVisibilityTypes vis = getLTOVisibilityType(f);
-    if (!f->isDeclaration() && lt != LTOInternalLinkage
-        && strncmp (f->getName().c_str(), "llvm.", 5)) {
-      int alignment = ( 16 > f->getAlignment() ? 16 : f->getAlignment());
-      LLVMSymbol *newSymbol = new LLVMSymbol(lt, vis, f, f->getName(), 
-                                             mangler.getValueName(f),
-                                             Log2_32(alignment));
-      symbols[newSymbol->getMangledName()] = newSymbol;
-      allSymbols[newSymbol->getMangledName()] = newSymbol;
-    }
-
-    // Collect external symbols referenced by this function.
-    for (Function::iterator b = f->begin(), fe = f->end(); b != fe; ++b) 
-      for (BasicBlock::iterator i = b->begin(), be = b->end(); 
-           i != be; ++i) {
-        for (unsigned count = 0, total = i->getNumOperands(); 
-             count != total; ++count)
-          findExternalRefs(i->getOperand(count), references, mangler);
-      }
-  }
-    
-  for (Module::global_iterator v = m->global_begin(), e = m->global_end();
-       v !=  e; ++v) {
-    LTOLinkageTypes lt = getLTOLinkageType(v);
-    LTOVisibilityTypes vis = getLTOVisibilityType(v);
-    if (!v->isDeclaration() && lt != LTOInternalLinkage
-        && strncmp (v->getName().c_str(), "llvm.", 5)) {
-      const TargetData *TD = Target->getTargetData();
-      LLVMSymbol *newSymbol = new LLVMSymbol(lt, vis, v, v->getName(), 
-                                             mangler.getValueName(v),
-                                             TD->getPreferredAlignmentLog(v));
-      symbols[newSymbol->getMangledName()] = newSymbol;
-      allSymbols[newSymbol->getMangledName()] = newSymbol;
-
-      for (unsigned count = 0, total = v->getNumOperands(); 
-           count != total; ++count)
-        findExternalRefs(v->getOperand(count), references, mangler);
-
-    }
-  }
-  
-  return LTO_READ_SUCCESS;
+     return LTOModule::makeLTOModule(path, sLastErrorString);
 }
 
-/// Get TargetMachine.
-/// Use module M to find appropriate Target.
-void
-LTO::getTarget (Module *M) {
 
-  if (Target)
-    return;
-
-  std::string Err;
-  const TargetMachineRegistry::entry* March = 
-    TargetMachineRegistry::getClosestStaticTargetForModule(*M, Err);
-  
-  if (March == 0)
-    return;
-  
-  // Create target
-  SubtargetFeatures Features;
-  std::string FeatureStr;
-  std::string TargetTriple = M->getTargetTriple();
-
-  if (strncmp(TargetTriple.c_str(), "powerpc-apple-", 14) == 0) 
-    Features.AddFeature("altivec", true);
-  else if (strncmp(TargetTriple.c_str(), "powerpc64-apple-", 16) == 0) {
-    Features.AddFeature("64bit", true);
-    Features.AddFeature("altivec", true);
-  }
-
-  FeatureStr = Features.getString();
-  Target = March->CtorFn(*M, FeatureStr);
-}
-
-/// Optimize module M using various IPO passes. Use exportList to 
-/// internalize selected symbols. Target platform is selected
-/// based on information available to module M. No new target
-/// features are selected. 
-enum LTOStatus 
-LTO::optimize(Module *M, std::ostream &Out,
-              std::vector<const char *> &exportList)
+//
+// loads an object file from memory 
+// returns NULL on error (check lto_get_error_message() for details)
+//
+lto_module_t lto_module_create_from_memory(const void* mem, size_t length)
 {
-  // Instantiate the pass manager to organize the passes.
-  PassManager Passes;
-  
-  // Collect Target info
-  getTarget(M);
-
-  if (!Target)
-    return LTO_NO_TARGET;
-
-  // If target supports exception handling then enable it now.
-  if (Target->getTargetAsmInfo()->doesSupportExceptionHandling())
-    ExceptionHandling = true;
-
-  // Start off with a verification pass.
-  Passes.add(createVerifierPass());
-  
-  // Add an appropriate TargetData instance for this module...
-  Passes.add(new TargetData(*Target->getTargetData()));
-  
-  // Internalize symbols if export list is nonemty
-  if (!exportList.empty())
-    Passes.add(createInternalizePass(exportList));
-
-  // Now that we internalized some globals, see if we can hack on them!
-  Passes.add(createGlobalOptimizerPass());
-  
-  // Linking modules together can lead to duplicated global constants, only
-  // keep one copy of each constant...
-  Passes.add(createConstantMergePass());
-  
-  // If the -s command line option was specified, strip the symbols out of the
-  // resulting program to make it smaller.  -s is a GLD option that we are
-  // supporting.
-  Passes.add(createStripSymbolsPass());
-  
-  // Propagate constants at call sites into the functions they call.
-  Passes.add(createIPConstantPropagationPass());
-  
-  // Remove unused arguments from functions...
-  Passes.add(createDeadArgEliminationPass());
-  
-  Passes.add(createFunctionInliningPass()); // Inline small functions
-  
-  Passes.add(createPruneEHPass());            // Remove dead EH info
-
-  Passes.add(createGlobalDCEPass());          // Remove dead functions
-
-  // If we didn't decide to inline a function, check to see if we can
-  // transform it to pass arguments by value instead of by reference.
-  Passes.add(createArgumentPromotionPass());
-
-  // The IPO passes may leave cruft around.  Clean up after them.
-  Passes.add(createInstructionCombiningPass());
-  
-  Passes.add(createScalarReplAggregatesPass()); // Break up allocas
-  
-  // Run a few AA driven optimizations here and now, to cleanup the code.
-  Passes.add(createGlobalsModRefPass());      // IP alias analysis
-  
-  Passes.add(createLICMPass());               // Hoist loop invariants
-  Passes.add(createLoadValueNumberingPass()); // GVN for load instrs
-  Passes.add(createGCSEPass());               // Remove common subexprs
-  Passes.add(createDeadStoreEliminationPass()); // Nuke dead stores
-
-  // Cleanup and simplify the code after the scalar optimizations.
-  Passes.add(createInstructionCombiningPass());
- 
-  // Delete basic blocks, which optimization passes may have killed...
-  Passes.add(createCFGSimplificationPass());
-  
-  // Now that we have optimized the program, discard unreachable functions...
-  Passes.add(createGlobalDCEPass());
-  
-  // Make sure everything is still good.
-  Passes.add(createVerifierPass());
-
-  FunctionPassManager *CodeGenPasses =
-    new FunctionPassManager(new ExistingModuleProvider(M));
-
-  CodeGenPasses->add(new TargetData(*Target->getTargetData()));
-
-  MachineCodeEmitter *MCE = 0;
-
-  switch (Target->addPassesToEmitFile(*CodeGenPasses, Out,
-                                      TargetMachine::AssemblyFile, true)) {
-  default:
-  case FileModel::Error:
-    return LTO_WRITE_FAILURE;
-  case FileModel::AsmFile:
-    break;
-  case FileModel::MachOFile:
-    MCE = AddMachOWriter(*CodeGenPasses, Out, *Target);
-    break;
-  case FileModel::ElfFile:
-    MCE = AddELFWriter(*CodeGenPasses, Out, *Target);
-    break;
-  }
-
-  if (Target->addPassesToEmitFileFinish(*CodeGenPasses, MCE, true))
-    return LTO_WRITE_FAILURE;
-
-  // Run our queue of passes all at once now, efficiently.
-  Passes.run(*M);
-
-  // Run the code generator, if present.
-  CodeGenPasses->doInitialization();
-  for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
-    if (!I->isDeclaration())
-      CodeGenPasses->run(*I);
-  }
-  CodeGenPasses->doFinalization();
-
-  return LTO_OPT_SUCCESS;
+     return LTOModule::makeLTOModule(mem, length, sLastErrorString);
 }
 
-///Link all modules together and optimize them using IPO. Generate
-/// native object file using OutputFilename
-/// Return appropriate LTOStatus.
-enum LTOStatus
-LTO::optimizeModules(const std::string &OutputFilename,
-                     std::vector<const char *> &exportList,
-                     std::string &targetTriple,
-                     bool saveTemps, const char *FinalOutputFilename)
+
+//
+// frees all memory for a module
+// upon return the lto_module_t is no longer valid
+//
+void lto_module_dispose(lto_module_t mod)
 {
-  if (modules.empty())
-    return LTO_NO_WORK;
-
-  std::ios::openmode io_mode = 
-    std::ios::out | std::ios::trunc | std::ios::binary; 
-  std::string *errMsg = NULL;
-  Module *bigOne = modules[0];
-  Linker theLinker("LinkTimeOptimizer", bigOne, false);
-  for (unsigned i = 1, e = modules.size(); i != e; ++i)
-    if (theLinker.LinkModules(bigOne, modules[i], errMsg))
-      return LTO_MODULE_MERGE_FAILURE;
-  //  all modules have been handed off to the linker.
-  modules.clear();
-
-  sys::Path FinalOutputPath(FinalOutputFilename);
-  FinalOutputPath.eraseSuffix();
-
-  switch(CGModel) {
-  case LTO_CGM_Dynamic:
-    Target->setRelocationModel(Reloc::PIC_);
-    break;
-  case LTO_CGM_DynamicNoPIC:
-    Target->setRelocationModel(Reloc::DynamicNoPIC);
-    break;
-  case LTO_CGM_Static:
-    Target->setRelocationModel(Reloc::Static);
-    break;
-  }
-
-  if (saveTemps) {
-    std::string tempFileName(FinalOutputPath.c_str());
-    tempFileName += "0.bc";
-    std::ofstream Out(tempFileName.c_str(), io_mode);
-    WriteBitcodeToFile(bigOne, Out);
-  }
-
-  // Strip leading underscore because it was added to match names
-  // seen by linker.
-  for (unsigned i = 0, e = exportList.size(); i != e; ++i) {
-    const char *name = exportList[i];
-    NameToSymbolMap::iterator itr = allSymbols.find(name);
-    if (itr != allSymbols.end())
-      exportList[i] = allSymbols[name]->getName();
-  }
-
-
-  std::string ErrMsg;
-  sys::Path TempDir = sys::Path::GetTemporaryDirectory(&ErrMsg);
-  if (TempDir.isEmpty()) {
-    cerr << "lto: " << ErrMsg << "\n";
-    return LTO_WRITE_FAILURE;
-  }
-  sys::Path tmpAsmFilePath(TempDir);
-  if (!tmpAsmFilePath.appendComponent("lto")) {
-    cerr << "lto: " << ErrMsg << "\n";
-    TempDir.eraseFromDisk(true);
-    return LTO_WRITE_FAILURE;
-  }
-  if (tmpAsmFilePath.createTemporaryFileOnDisk(true, &ErrMsg)) {
-    cerr << "lto: " << ErrMsg << "\n";
-    TempDir.eraseFromDisk(true);
-    return LTO_WRITE_FAILURE;
-  }
-  sys::RemoveFileOnSignal(tmpAsmFilePath);
-
-  std::ofstream asmFile(tmpAsmFilePath.c_str(), io_mode);
-  if (!asmFile.is_open() || asmFile.bad()) {
-    if (tmpAsmFilePath.exists()) {
-      tmpAsmFilePath.eraseFromDisk();
-      TempDir.eraseFromDisk(true);
-    }
-    return LTO_WRITE_FAILURE;
-  }
-
-  enum LTOStatus status = optimize(bigOne, asmFile, exportList);
-  asmFile.close();
-  if (status != LTO_OPT_SUCCESS) {
-    tmpAsmFilePath.eraseFromDisk();
-    TempDir.eraseFromDisk(true);
-    return status;
-  }
-
-  if (saveTemps) {
-    std::string tempFileName(FinalOutputPath.c_str());
-    tempFileName += "1.bc";
-    std::ofstream Out(tempFileName.c_str(), io_mode);
-    WriteBitcodeToFile(bigOne, Out);
-  }
-
-  targetTriple = bigOne->getTargetTriple();
-
-  // Run GCC to assemble and link the program into native code.
-  //
-  // Note:
-  //  We can't just assemble and link the file with the system assembler
-  //  and linker because we don't know where to put the _start symbol.
-  //  GCC mysteriously knows how to do it.
-  const sys::Path gcc = sys::Program::FindProgramByName("gcc");
-  if (gcc.isEmpty()) {
-    tmpAsmFilePath.eraseFromDisk();
-    TempDir.eraseFromDisk(true);
-    return LTO_ASM_FAILURE;
-  }
-
-  std::vector<const char*> args;
-  args.push_back(gcc.c_str());
-  if (strncmp(targetTriple.c_str(), "i686-apple-", 11) == 0) {
-    args.push_back("-arch");
-    args.push_back("i386");
-  }
-  if (strncmp(targetTriple.c_str(), "x86_64-apple-", 13) == 0) {
-    args.push_back("-arch");
-    args.push_back("x86_64");
-  }
-  if (strncmp(targetTriple.c_str(), "powerpc-apple-", 14) == 0) {
-    args.push_back("-arch");
-    args.push_back("ppc");
-  }
-  if (strncmp(targetTriple.c_str(), "powerpc64-apple-", 16) == 0) {
-    args.push_back("-arch");
-    args.push_back("ppc64");
-  }
-  args.push_back("-c");
-  args.push_back("-x");
-  args.push_back("assembler");
-  args.push_back("-o");
-  args.push_back(OutputFilename.c_str());
-  args.push_back(tmpAsmFilePath.c_str());
-  args.push_back(0);
-
-  if (sys::Program::ExecuteAndWait(gcc, &args[0], 0, 0, 0, 0, &ErrMsg)) {
-    cerr << "lto: " << ErrMsg << "\n";
-    return LTO_ASM_FAILURE;
-  }
-
-  tmpAsmFilePath.eraseFromDisk();
-  TempDir.eraseFromDisk(true);
-
-  return LTO_OPT_SUCCESS;
+    delete mod;
 }
 
-void LTO::printVersion() {
-    cl::PrintVersionMessage();
+
+//
+// returns triplet string which the object module was compiled under
+//
+const char* lto_module_get_target_triple(lto_module_t mod)
+{
+    return mod->getTargetTriple();
 }
 
-/// Unused pure-virtual destructor. Must remain empty.
-LinkTimeOptimizer::~LinkTimeOptimizer() {}
 
-/// Destruct LTO. Delete all modules, symbols and target.
-LTO::~LTO() {
-  
-  for (std::vector<Module *>::iterator itr = modules.begin(), e = modules.end();
-       itr != e; ++itr)
-    delete *itr;
-
-  modules.clear();
-
-  for (NameToSymbolMap::iterator itr = allSymbols.begin(), e = allSymbols.end(); 
-       itr != e; ++itr)
-    delete itr->second;
-
-  allSymbols.clear();
-
-  delete Target;
+//
+// returns the number of symbols in the object module
+//
+uint32_t lto_module_get_num_symbols(lto_module_t mod)
+{
+    return mod->getSymbolCount();
 }
+
+//
+// returns the name of the ith symbol in the object module
+//
+const char* lto_module_get_symbol_name(lto_module_t mod, uint32_t index)
+{
+    return mod->getSymbolName(index);
+}
+
+
+//
+// returns the attributes of the ith symbol in the object module
+//
+lto_symbol_attributes lto_module_get_symbol_attribute(lto_module_t mod, 
+                                                            uint32_t index)
+{
+    return mod->getSymbolAttributes(index);
+}
+
+
+
+
+
+//
+// instantiates a code generator
+// returns NULL if there is an error
+//
+lto_code_gen_t lto_codegen_create()
+{
+     return new LTOCodeGenerator();
+}
+
+
+
+//
+// frees all memory for a code generator
+// upon return the lto_code_gen_t is no longer valid
+//
+void lto_codegen_dispose(lto_code_gen_t cg)
+{
+    delete cg;
+}
+
+
+
+//
+// add an object module to the set of modules for which code will be generated
+// returns true on error (check lto_get_error_message() for details)
+//
+bool lto_codegen_add_module(lto_code_gen_t cg, lto_module_t mod)
+{
+    return cg->addModule(mod, sLastErrorString);
+}
+
+
+//
+// sets what if any format of debug info should be generated
+// returns true on error (check lto_get_error_message() for details)
+//
+bool lto_codegen_set_debug_model(lto_code_gen_t cg, lto_debug_model debug)
+{
+    return cg->setDebugInfo(debug, sLastErrorString);
+}
+
+
+//
+// sets what code model to generated
+// returns true on error (check lto_get_error_message() for details)
+//
+bool lto_codegen_set_pic_model(lto_code_gen_t cg, lto_codegen_model model)
+{
+    return cg->setCodePICModel(model, sLastErrorString);
+}
+
+//
+// adds to a list of all global symbols that must exist in the final
+// generated code.  If a function is not listed there, it might be
+// inlined into every usage and optimized away.
+//
+void lto_codegen_add_must_preserve_symbol(lto_code_gen_t cg, const char* symbol)
+{
+    cg->addMustPreserveSymbol(symbol);
+}
+
+
+//
+// writes a new file at the specified path that contains the
+// merged contents of all modules added so far.
+// returns true on error (check lto_get_error_message() for details)
+//
+bool lto_codegen_write_merged_modules(lto_code_gen_t cg, const char* path)
+{
+   return cg->writeMergedModules(path, sLastErrorString);
+}
+
+
+//
+// Generates code for all added modules into one native object file.
+// On sucess returns a pointer to a generated mach-o/ELF buffer and
+// length set to the buffer size.  The buffer is owned by the 
+// lto_code_gen_t and will be freed when lto_codegen_dispose()
+// is called, or lto_codegen_compile() is called again.
+// On failure, returns NULL (check lto_get_error_message() for details).
+//
+extern const void*
+lto_codegen_compile(lto_code_gen_t cg, size_t* length)
+{
+    return cg->compile(length, sLastErrorString);
+}
+
+extern void
+lto_codegen_debug_options(lto_code_gen_t cg, const char * opt)
+{
+  cg->setCodeGenDebugOptions(opt);
+}
+
+
+

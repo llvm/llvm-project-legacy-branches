@@ -32,7 +32,6 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/Mangler.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/CommandLine.h"
@@ -62,6 +61,8 @@ namespace {
 
     void printOperand(const MachineInstr *MI, int opNum);
     void printMemOperand(const MachineInstr *MI, int opNum, 
+                         const char *Modifier = 0);
+    void printFCCOperand(const MachineInstr *MI, int opNum, 
                          const char *Modifier = 0);
 
     unsigned int getSavedRegsBitmask(bool isFloat, MachineFunction &MF);
@@ -429,6 +430,13 @@ printMemOperand(const MachineInstr *MI, int opNum, const char *Modifier)
   O << ")";
 }
 
+void MipsAsmPrinter::
+printFCCOperand(const MachineInstr *MI, int opNum, const char *Modifier) 
+{
+  const MachineOperand& MO = MI->getOperand(opNum);
+  O << Mips::MipsFCCToString((Mips::CondCode)MO.getImm()); 
+}
+
 bool MipsAsmPrinter::
 doInitialization(Module &M) 
 {
@@ -461,7 +469,8 @@ doFinalization(Module &M)
 
       // Is this correct ?
       if (C->isNullValue() && (I->hasLinkOnceLinkage() || 
-          I->hasInternalLinkage() || I->hasWeakLinkage())) 
+          I->hasInternalLinkage() || I->hasWeakLinkage() ||
+          I->hasCommonLinkage()))
       {
         if (Size == 0) Size = 1;   // .comm Foo, 0 is undefined, avoid it.
 
@@ -487,7 +496,8 @@ doFinalization(Module &M)
         switch (I->getLinkage()) 
         {
           case GlobalValue::LinkOnceLinkage:
-          case GlobalValue::WeakLinkage:   
+          case GlobalValue::CommonLinkage:
+          case GlobalValue::WeakLinkage:
             // FIXME: Verify correct for weak.
             // Nonnull linkonce -> weak
             O << "\t.weak " << name << "\n";
@@ -544,6 +554,8 @@ doFinalization(Module &M)
         EmitGlobalConstant(C);
     }
   }
+
+  O << "\n";
 
   return AsmPrinter::doFinalization(M);
 }

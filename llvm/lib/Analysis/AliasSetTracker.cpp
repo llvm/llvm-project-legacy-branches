@@ -284,11 +284,7 @@ bool AliasSetTracker::add(StoreInst *SI) {
 
 bool AliasSetTracker::add(FreeInst *FI) {
   bool NewPtr;
-  AliasSet &AS = addPointer(FI->getOperand(0), ~0,
-                            AliasSet::Mods, NewPtr);
-
-  // Free operations are volatile ops (cannot be moved).
-  AS.setVolatile();
+  addPointer(FI->getOperand(0), ~0, AliasSet::Mods, NewPtr);
   return NewPtr;
 }
 
@@ -517,7 +513,7 @@ void AliasSetTracker::copyValue(Value *From, Value *To) {
 
 void AliasSet::print(std::ostream &OS) const {
   OS << "  AliasSet[" << (void*)this << "," << RefCount << "] ";
-  OS << (AliasTy == MustAlias ? "must" : "may ") << " alias, ";
+  OS << (AliasTy == MustAlias ? "must" : "may") << " alias, ";
   switch (AccessTy) {
   case NoModRef: OS << "No access "; break;
   case Refs    : OS << "Ref       "; break;
@@ -585,6 +581,8 @@ namespace {
       return false;
     }
   };
-  char AliasSetPrinter::ID = 0;
-  RegisterPass<AliasSetPrinter> X("print-alias-sets", "Alias Set Printer", false, true);
 }
+
+char AliasSetPrinter::ID = 0;
+static RegisterPass<AliasSetPrinter>
+X("print-alias-sets", "Alias Set Printer", false, true);

@@ -76,7 +76,7 @@ namespace llvm {
     explicit ARMTargetLowering(TargetMachine &TM);
 
     virtual SDOperand LowerOperation(SDOperand Op, SelectionDAG &DAG);
-    virtual SDNode *ExpandOperationResult(SDNode *N, SelectionDAG &DAG);
+    virtual SDNode *ReplaceNodeResults(SDNode *N, SelectionDAG &DAG);
         
     virtual SDOperand PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
     
@@ -114,10 +114,10 @@ namespace llvm {
     ConstraintType getConstraintType(const std::string &Constraint) const;
     std::pair<unsigned, const TargetRegisterClass*> 
       getRegForInlineAsmConstraint(const std::string &Constraint,
-                                   MVT::ValueType VT) const;
+                                   MVT VT) const;
     std::vector<unsigned>
     getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                      MVT::ValueType VT) const;
+                                      MVT VT) const;
 
     virtual const ARMSubtarget* getSubtarget() {
       return Subtarget;
@@ -149,8 +149,8 @@ namespace llvm {
                                       SDOperand Dst, SDOperand Src,
                                       SDOperand Size, unsigned Align,
                                       bool AlwaysInline,
-                                      const Value *DstSV, uint64_t DstOff,
-                                      const Value *SrcSV, uint64_t SrcOff);
+                                      const Value *DstSV, uint64_t DstSVOff,
+                                      const Value *SrcSV, uint64_t SrcSVOff);
   };
 }
 

@@ -27,6 +27,8 @@ using namespace llvm;
 //
 /// CGPassManager manages FPPassManagers and CalLGraphSCCPasses.
 
+namespace {
+
 class CGPassManager : public ModulePass, public PMDataManager {
 
 public:
@@ -72,6 +74,8 @@ public:
     return PMT_CallGraphPassManager; 
   }
 };
+
+}
 
 char CGPassManager::ID = 0;
 /// run - Execute all of the passes scheduled for execution.  Keep track of
@@ -158,6 +162,7 @@ void CallGraphSCCPass::assignPassManager(PMStack &PMS,
          PMS.top()->getPassManagerType() > PMT_CallGraphPassManager)
     PMS.pop();
 
+  assert (!PMS.empty() && "Unable to handle Call Graph Pass");
   CGPassManager *CGP = dynamic_cast<CGPassManager *>(PMS.top());
 
   // Create new Call Graph SCC Pass Manager if it does not exist. 

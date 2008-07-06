@@ -32,15 +32,18 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include <map>
 using namespace llvm;
 
 STATISTIC(NumEliminated, "Number of unconditional branches eliminated");
 
+static cl::opt<unsigned>
+TailDupThreshold("taildup-threshold",
+                 cl::desc("Max block size to tail duplicate"),
+                 cl::init(1), cl::Hidden);
+
 namespace {
-  cl::opt<unsigned>
-  Threshold("taildup-threshold", cl::desc("Max block size to tail duplicate"),
-            cl::init(6), cl::Hidden);
   class VISIBILITY_HIDDEN TailDup : public FunctionPass {
     bool runOnFunction(Function &F);
   public:
@@ -48,28 +51,35 @@ namespace {
     TailDup() : FunctionPass((intptr_t)&ID) {}
 
   private:
-    inline bool shouldEliminateUnconditionalBranch(TerminatorInst *TI);
+    inline bool shouldEliminateUnconditionalBranch(TerminatorInst *, unsigned);
     inline void eliminateUnconditionalBranch(BranchInst *BI);
+    SmallPtrSet<BasicBlock*, 4> CycleDetector;
   };
-  char TailDup::ID = 0;
-  RegisterPass<TailDup> X("tailduplicate", "Tail Duplication");
 }
+
+char TailDup::ID = 0;
+static RegisterPass<TailDup> X("tailduplicate", "Tail Duplication");
 
 // Public interface to the Tail Duplication pass
 FunctionPass *llvm::createTailDuplicationPass() { return new TailDup(); }
 
 /// runOnFunction - Top level algorithm - Loop over each unconditional branch in
-/// the function, eliminating it if it looks attractive enough.
-///
+/// the function, eliminating it if it looks attractive enough.  CycleDetector
+/// prevents infinite loops by checking that we aren't redirecting a branch to
+/// a place it already pointed to earlier; see PR 2323.
 bool TailDup::runOnFunction(Function &F) {
   bool Changed = false;
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; )
-    if (shouldEliminateUnconditionalBranch(I->getTerminator())) {
+  CycleDetector.clear();
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ) {
+    if (shouldEliminateUnconditionalBranch(I->getTerminator(),
+                                           TailDupThreshold)) {
       eliminateUnconditionalBranch(cast<BranchInst>(I->getTerminator()));
       Changed = true;
     } else {
       ++I;
+      CycleDetector.clear();
     }
+  }
   return Changed;
 }
 
@@ -82,7 +92,8 @@ bool TailDup::runOnFunction(Function &F) {
 /// We don't count PHI nodes in the count since they will be removed when the
 /// contents of the block are copied over.
 ///
-bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI) {
+bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI,
+                                                 unsigned Threshold) {
   BranchInst *BI = dyn_cast<BranchInst>(TI);
   if (!BI || !BI->isUnconditional()) return false;  // Not an uncond branch!
 
@@ -101,18 +112,13 @@ bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI) {
   if (!DTI->use_empty())
     return false;
 
-  // Do not bother working on dead blocks...
-  pred_iterator PI = pred_begin(Dest), PE = pred_end(Dest);
-  if (PI == PE && Dest != Dest->getParent()->begin())
-    return false;   // It's just a dead block, ignore it...
-
-  // Also, do not bother with blocks with only a single predecessor: simplify
+  // Do not bother with blocks with only a single predecessor: simplify
   // CFG will fold these two blocks together!
+  pred_iterator PI = pred_begin(Dest), PE = pred_end(Dest);
   ++PI;
   if (PI == PE) return false;  // Exactly one predecessor!
 
-  BasicBlock::iterator I = Dest->begin();
-  while (isa<PHINode>(*I)) ++I;
+  BasicBlock::iterator I = Dest->getFirstNonPHI();
 
   for (unsigned Size = 0; I != Dest->end(); ++I) {
     if (Size == Threshold) return false;  // The block is too large.
@@ -120,6 +126,13 @@ bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI) {
     // Don't tail duplicate call instructions.  They are very large compared to
     // other instructions.
     if (isa<CallInst>(I) || isa<InvokeInst>(I)) return false;
+
+    // Allso alloca and malloc.
+    if (isa<AllocationInst>(I)) return false;
+
+    // Some vector instructions can expand into a number of instructions.
+    if (isa<ShuffleVectorInst>(I) || isa<ExtractElementInst>(I) ||
+        isa<InsertElementInst>(I)) return false;
     
     // Only count instructions that are not debugger intrinsics.
     if (!isa<DbgInfoIntrinsic>(I)) ++Size;
@@ -138,7 +151,7 @@ bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI) {
       if (TooMany-- == 0) return false;
   }
   
-  // Finally, if this unconditional branch is a fall-through, be careful about
+  // If this unconditional branch is a fall-through, be careful about
   // tail duplicating it.  In particular, we don't want to taildup it if the
   // original block will still be there after taildup is completed: doing so
   // would eliminate the fall-through, requiring unconditional branches.
@@ -167,6 +180,11 @@ bool TailDup::shouldEliminateUnconditionalBranch(TerminatorInst *TI) {
           return false;
     }
   }
+
+  // Finally, check that we haven't redirected to this target block earlier;
+  // there are cases where we loop forever if we don't check this (PR 2323).
+  if (!CycleDetector.insert(Dest))
+    return false;
 
   return true;
 }
@@ -235,8 +253,7 @@ void TailDup::eliminateUnconditionalBranch(BranchInst *Branch) {
     // If there are non-phi instructions in DestBlock that have no operands
     // defined in DestBlock, and if the instruction has no side effects, we can
     // move the instruction to DomBlock instead of duplicating it.
-    BasicBlock::iterator BBI = DestBlock->begin();
-    while (isa<PHINode>(BBI)) ++BBI;
+    BasicBlock::iterator BBI = DestBlock->getFirstNonPHI();
     while (!isa<TerminatorInst>(BBI)) {
       Instruction *I = BBI++;
 

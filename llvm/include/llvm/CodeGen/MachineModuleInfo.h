@@ -34,6 +34,7 @@
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/GlobalValue.h"
@@ -748,14 +749,9 @@ public:
 /// DIDeserializer - This class is responsible for casting GlobalVariables
 /// into DebugInfoDesc objects.
 class DIDeserializer {
-private:
-  std::map<GlobalVariable *, DebugInfoDesc *> GlobalDescs;
-                                        // Previously defined gloabls.
-  
+  // Previously defined gloabls.
+  std::map<GlobalVariable*, DebugInfoDesc*> GlobalDescs;
 public:
-  DIDeserializer() {}
-  ~DIDeserializer() {}
-  
   const std::map<GlobalVariable *, DebugInfoDesc *> &getGlobalDescs() const {
     return GlobalDescs;
   }
@@ -770,27 +766,23 @@ public:
 /// DISerializer - This class is responsible for casting DebugInfoDesc objects
 /// into GlobalVariables.
 class DISerializer {
-private:
   Module *M;                            // Definition space module.
   PointerType *StrPtrTy;                // A "i8*" type.  Created lazily.
   PointerType *EmptyStructPtrTy;        // A "{ }*" type.  Created lazily.
+
+  // Types per Tag. Created lazily.
   std::map<unsigned, StructType *> TagTypes;
-                                        // Types per Tag.  Created lazily.
-  std::map<DebugInfoDesc *, GlobalVariable *> DescGlobals;
-                                        // Previously defined descriptors.
-  std::map<const std::string, Constant *> StringCache;
-                                        // Previously defined strings.
-                                          
+
+  // Previously defined descriptors.
+  DenseMap<DebugInfoDesc *, GlobalVariable *> DescGlobals;
+
+  // Previously defined strings.
+  DenseMap<const char *, Constant*> StringCache;
 public:
   DISerializer()
-  : M(NULL)
-  , StrPtrTy(NULL)
-  , EmptyStructPtrTy(NULL)
-  , TagTypes()
-  , DescGlobals()
-  , StringCache()
+    : M(NULL), StrPtrTy(NULL), EmptyStructPtrTy(NULL), TagTypes(),
+      DescGlobals(), StringCache()
   {}
-  ~DISerializer() {}
   
   // Accessors
   Module *getModule()        const { return M; };
@@ -824,21 +816,17 @@ public:
 /// DIVerifier - This class is responsible for verifying the given network of
 /// GlobalVariables are valid as DebugInfoDesc objects.
 class DIVerifier {
-private:
   enum {
     Unknown = 0,
     Invalid,
     Valid
   };
-  std::map<GlobalVariable *, unsigned> Validity;// Tracks prior results.
-  std::map<unsigned, unsigned> Counts;  // Count of fields per Tag type.
-  
+  DenseMap<GlobalVariable *, unsigned> Validity; // Tracks prior results.
+  std::map<unsigned, unsigned> Counts; // Count of fields per Tag type.
 public:
   DIVerifier()
-  : Validity()
-  , Counts()
+    : Validity(), Counts()
   {}
-  ~DIVerifier() {}
   
   /// Verify - Return true if the GlobalVariable appears to be a valid
   /// serialization of a DebugInfoDesc.
@@ -854,12 +842,10 @@ public:
 /// SourceLineInfo - This class is used to record source line correspondence.
 ///
 class SourceLineInfo {
-private:
   unsigned Line;                        // Source line number.
   unsigned Column;                      // Source column.
   unsigned SourceID;                    // Source ID number.
   unsigned LabelID;                     // Label in code ID number.
-
 public:
   SourceLineInfo(unsigned L, unsigned C, unsigned S, unsigned I)
   : Line(L), Column(C), SourceID(S), LabelID(I) {}
@@ -875,10 +861,8 @@ public:
 /// SourceFileInfo - This class is used to track source information.
 ///
 class SourceFileInfo {
-private:
   unsigned DirectoryID;                 // Directory ID number.
   std::string Name;                     // File name (not including directory.)
-  
 public:
   SourceFileInfo(unsigned D, const std::string &N) : DirectoryID(D), Name(N) {}
             
@@ -1100,7 +1084,7 @@ public:
   /// NextLabelID - Return the next unique label id.
   ///
   unsigned NextLabelID() {
-    unsigned ID = LabelIDList.size() + 1;
+    unsigned ID = (unsigned)LabelIDList.size() + 1;
     LabelIDList.push_back(ID);
     return ID;
   }
@@ -1168,16 +1152,17 @@ public:
   
   /// getGlobalVariablesUsing - Return all of the GlobalVariables that use the
   /// named GlobalVariable.
-  std::vector<GlobalVariable*>
-  getGlobalVariablesUsing(Module &M, const std::string &RootName);
+  void getGlobalVariablesUsing(Module &M, const std::string &RootName,
+                               std::vector<GlobalVariable*> &Result);
 
   /// getAnchoredDescriptors - Return a vector of anchored debug descriptors.
   ///
-  template <class T>std::vector<T *> getAnchoredDescriptors(Module &M) {
+  template <class T>
+  void getAnchoredDescriptors(Module &M, std::vector<T*> &AnchoredDescs) {
     T Desc;
-    std::vector<GlobalVariable *> Globals =
-                             getGlobalVariablesUsing(M, Desc.getAnchorString());
-    std::vector<T *> AnchoredDescs;
+    std::vector<GlobalVariable *> Globals;
+    getGlobalVariablesUsing(M, Desc.getAnchorString(), Globals);
+
     for (unsigned i = 0, N = Globals.size(); i < N; ++i) {
       GlobalVariable *GV = Globals[i];
 
@@ -1187,8 +1172,6 @@ public:
         AnchoredDescs.push_back(cast<T>(DR.Deserialize(GV)));
       }
     }
-
-    return AnchoredDescs;
   }
   
   /// RecordRegionStart - Indicate the start of a region.

@@ -47,55 +47,58 @@ public:
     /// ReadyToProcess - All operands have been processed, so this node is ready
     /// to be handled.
     ReadyToProcess = 0,
-    
+
     /// NewNode - This is a new node that was created in the process of
     /// legalizing some other node.
     NewNode = -1,
-    
+
     /// Processed - This is a node that has already been processed.
     Processed = -2
-    
+
     // 1+ - This is a node which has this many unlegalized operands.
   };
 private:
   enum LegalizeAction {
-    Legal,      // The target natively supports this type.
-    Promote,    // This type should be executed in a larger type.
-    Expand,     // This type should be split into two types of half the size.
-    FloatToInt, // Convert a floating point type to an integer of the same size.
-    Scalarize,  // Replace this one-element vector type with its element type.
-    Split       // This vector type should be split into smaller vectors.
+    Legal,          // The target natively supports this type.
+    PromoteInteger, // Replace this integer type with a larger one.
+    ExpandInteger,  // Split this integer type into two of half the size.
+    SoftenFloat,    // Convert this float type to a same size integer type.
+    ExpandFloat,    // Split this float type into two of half the size.
+    Scalarize,      // Replace this one-element vector type with its element type.
+    Split           // This vector type should be split into smaller vectors.
   };
 
   /// ValueTypeActions - This is a bitvector that contains two bits for each
   /// simple value type, where the two bits correspond to the LegalizeAction
   /// enum from TargetLowering.  This can be queried with "getTypeAction(VT)".
   TargetLowering::ValueTypeActionImpl ValueTypeActions;
-  
+
   /// getTypeAction - Return how we should legalize values of this type, either
   /// it is already legal, or we need to promote it to a larger integer type, or
   /// we need to expand it into multiple registers of a smaller integer type, or
   /// we need to scalarize a one-element vector type into the element type, or
   /// we need to split a vector type into smaller vector types.
-  LegalizeAction getTypeAction(MVT::ValueType VT) const {
+  LegalizeAction getTypeAction(MVT VT) const {
     switch (ValueTypeActions.getTypeAction(VT)) {
     default:
       assert(false && "Unknown legalize action!");
     case TargetLowering::Legal:
       return Legal;
     case TargetLowering::Promote:
-      return Promote;
+      return PromoteInteger;
     case TargetLowering::Expand:
       // Expand can mean
       // 1) split scalar in half, 2) convert a float to an integer,
       // 3) scalarize a single-element vector, 4) split a vector in two.
-      if (!MVT::isVector(VT)) {
-        if (MVT::getSizeInBits(VT) ==
-            MVT::getSizeInBits(TLI.getTypeToTransformTo(VT)))
-          return FloatToInt;
+      if (!VT.isVector()) {
+        if (VT.isInteger())
+          return ExpandInteger;
+        else if (VT.getSizeInBits() ==
+                 TLI.getTypeToTransformTo(VT).getSizeInBits())
+          return SoftenFloat;
         else
-          return Expand;
-      } else if (MVT::getVectorNumElements(VT) == 1) {
+          return ExpandFloat;
+      } else if (VT.getVectorNumElements() == 1) {
         return Scalarize;
       } else {
         return Split;
@@ -104,30 +107,34 @@ private:
   }
 
   /// isTypeLegal - Return true if this type is legal on this target.
-  bool isTypeLegal(MVT::ValueType VT) const {
+  bool isTypeLegal(MVT VT) const {
     return ValueTypeActions.getTypeAction(VT) == TargetLowering::Legal;
   }
 
-  /// PromotedNodes - For nodes that are below legal width, this map indicates
-  /// what promoted value to use.
-  DenseMap<SDOperand, SDOperand> PromotedNodes;
-  
-  /// ExpandedNodes - For nodes that need to be expanded this map indicates
-  /// which operands are the expanded version of the input.
-  DenseMap<SDOperand, std::pair<SDOperand, SDOperand> > ExpandedNodes;
+  /// PromotedIntegers - For integer nodes that are below legal width, this map
+  /// indicates what promoted value to use.
+  DenseMap<SDOperand, SDOperand> PromotedIntegers;
 
-  /// FloatToIntedNodes - For floating point nodes converted to integers of
+  /// ExpandedIntegers - For integer nodes that need to be expanded this map
+  /// indicates which operands are the expanded version of the input.
+  DenseMap<SDOperand, std::pair<SDOperand, SDOperand> > ExpandedIntegers;
+
+  /// SoftenedFloats - For floating point nodes converted to integers of
   /// the same size, this map indicates the converted value to use.
-  DenseMap<SDOperand, SDOperand> FloatToIntedNodes;
+  DenseMap<SDOperand, SDOperand> SoftenedFloats;
 
-  /// ScalarizedNodes - For nodes that are <1 x ty>, this map indicates the
+  /// ExpandedFloats - For float nodes that need to be expanded this map
+  /// indicates which operands are the expanded version of the input.
+  DenseMap<SDOperand, std::pair<SDOperand, SDOperand> > ExpandedFloats;
+
+  /// ScalarizedVectors - For nodes that are <1 x ty>, this map indicates the
   /// scalar value of type 'ty' to use.
-  DenseMap<SDOperand, SDOperand> ScalarizedNodes;
+  DenseMap<SDOperand, SDOperand> ScalarizedVectors;
 
-  /// SplitNodes - For nodes that need to be split this map indicates
+  /// SplitVectors - For nodes that need to be split this map indicates
   /// which operands are the expanded version of the input.
-  DenseMap<SDOperand, std::pair<SDOperand, SDOperand> > SplitNodes;
-  
+  DenseMap<SDOperand, std::pair<SDOperand, SDOperand> > SplitVectors;
+
   /// ReplacedNodes - For nodes that have been replaced with another,
   /// indicates the replacement node to use.
   DenseMap<SDOperand, SDOperand> ReplacedNodes;
@@ -136,22 +143,29 @@ private:
   /// pushed onto this worklist, all operands of a node must have already been
   /// processed.
   SmallVector<SDNode*, 128> Worklist;
-  
+
 public:
   explicit DAGTypeLegalizer(SelectionDAG &dag)
     : TLI(dag.getTargetLoweringInfo()), DAG(dag),
     ValueTypeActions(TLI.getValueTypeActions()) {
     assert(MVT::LAST_VALUETYPE <= 32 &&
            "Too many value types for ValueTypeActions to hold!");
-  }      
-  
+  }
+
   void run();
-  
+
   /// ReanalyzeNode - Recompute the NodeID and correct processed operands
   /// for the specified node, adding it to the worklist if ready.
   void ReanalyzeNode(SDNode *N) {
     N->setNodeId(NewNode);
     AnalyzeNewNode(N);
+  }
+
+  void NoteDeletion(SDNode *Old, SDNode *New) {
+    ExpungeNode(Old);
+    ExpungeNode(New);
+    for (unsigned i = 0, e = Old->getNumValues(); i != e; ++i)
+      ReplacedNodes[SDOperand(Old, i)] = SDOperand(New, i);
   }
 
 private:
@@ -161,240 +175,329 @@ private:
   void ReplaceNodeWith(SDNode *From, SDNode *To);
 
   void RemapNode(SDOperand &N);
+  void ExpungeNode(SDNode *N);
 
   // Common routines.
-  SDOperand BitConvertToInteger(SDOperand Op);
-  SDOperand CreateStackStoreLoad(SDOperand Op, MVT::ValueType DestVT);
-  SDOperand JoinIntegers(SDOperand Lo, SDOperand Hi);
-  void SplitInteger(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
-  void SplitInteger(SDOperand Op, MVT::ValueType LoVT, MVT::ValueType HiVT,
-                    SDOperand &Lo, SDOperand &Hi);
-  SDOperand MakeLibCall(RTLIB::Libcall LC, MVT::ValueType RetVT,
+  SDOperand CreateStackStoreLoad(SDOperand Op, MVT DestVT);
+  SDOperand MakeLibCall(RTLIB::Libcall LC, MVT RetVT,
                         const SDOperand *Ops, unsigned NumOps, bool isSigned);
 
+  SDOperand BitConvertToInteger(SDOperand Op);
+  SDOperand JoinIntegers(SDOperand Lo, SDOperand Hi);
+  void SplitInteger(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
+  void SplitInteger(SDOperand Op, MVT LoVT, MVT HiVT,
+                    SDOperand &Lo, SDOperand &Hi);
+
+  SDOperand GetVectorElementPointer(SDOperand VecPtr, MVT EltVT,
+                                    SDOperand Index);
+
   //===--------------------------------------------------------------------===//
-  // Promotion Support: LegalizeTypesPromote.cpp
+  // Integer Promotion Support: LegalizeIntegerTypes.cpp
   //===--------------------------------------------------------------------===//
-  
-  SDOperand GetPromotedOp(SDOperand Op) {
-    SDOperand &PromotedOp = PromotedNodes[Op];
+
+  SDOperand GetPromotedInteger(SDOperand Op) {
+    SDOperand &PromotedOp = PromotedIntegers[Op];
     RemapNode(PromotedOp);
     assert(PromotedOp.Val && "Operand wasn't promoted?");
     return PromotedOp;
   }
-  void SetPromotedOp(SDOperand Op, SDOperand Result);
-  
-  /// GetPromotedZExtOp - Get a promoted operand and zero extend it to the final
-  /// size.
-  SDOperand GetPromotedZExtOp(SDOperand Op) {
-    MVT::ValueType OldVT = Op.getValueType();
-    Op = GetPromotedOp(Op);
-    return DAG.getZeroExtendInReg(Op, OldVT);
-  }    
-    
-  // Result Promotion.
-  void PromoteResult(SDNode *N, unsigned ResNo);
-  SDOperand PromoteResult_BIT_CONVERT(SDNode *N);
-  SDOperand PromoteResult_BUILD_PAIR(SDNode *N);
-  SDOperand PromoteResult_Constant(SDNode *N);
-  SDOperand PromoteResult_CTLZ(SDNode *N);
-  SDOperand PromoteResult_CTPOP(SDNode *N);
-  SDOperand PromoteResult_CTTZ(SDNode *N);
-  SDOperand PromoteResult_EXTRACT_VECTOR_ELT(SDNode *N);
-  SDOperand PromoteResult_FP_ROUND(SDNode *N);
-  SDOperand PromoteResult_FP_TO_XINT(SDNode *N);
-  SDOperand PromoteResult_INT_EXTEND(SDNode *N);
-  SDOperand PromoteResult_LOAD(LoadSDNode *N);
-  SDOperand PromoteResult_SDIV(SDNode *N);
-  SDOperand PromoteResult_SELECT   (SDNode *N);
-  SDOperand PromoteResult_SELECT_CC(SDNode *N);
-  SDOperand PromoteResult_SETCC(SDNode *N);
-  SDOperand PromoteResult_SHL(SDNode *N);
-  SDOperand PromoteResult_SimpleIntBinOp(SDNode *N);
-  SDOperand PromoteResult_SRA(SDNode *N);
-  SDOperand PromoteResult_SRL(SDNode *N);
-  SDOperand PromoteResult_TRUNCATE(SDNode *N);
-  SDOperand PromoteResult_UDIV(SDNode *N);
-  SDOperand PromoteResult_UNDEF(SDNode *N);
+  void SetPromotedInteger(SDOperand Op, SDOperand Result);
 
-  // Operand Promotion.
-  bool PromoteOperand(SDNode *N, unsigned OperandNo);
-  SDOperand PromoteOperand_ANY_EXTEND(SDNode *N);
-  SDOperand PromoteOperand_BUILD_PAIR(SDNode *N);
-  SDOperand PromoteOperand_BR_CC(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_BRCOND(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_BUILD_VECTOR(SDNode *N);
-  SDOperand PromoteOperand_FP_EXTEND(SDNode *N);
-  SDOperand PromoteOperand_FP_ROUND(SDNode *N);
-  SDOperand PromoteOperand_INT_TO_FP(SDNode *N);
-  SDOperand PromoteOperand_INSERT_VECTOR_ELT(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_MEMBARRIER(SDNode *N);
-  SDOperand PromoteOperand_RET(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_SELECT(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_SETCC(SDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_SIGN_EXTEND(SDNode *N);
-  SDOperand PromoteOperand_STORE(StoreSDNode *N, unsigned OpNo);
-  SDOperand PromoteOperand_TRUNCATE(SDNode *N);
-  SDOperand PromoteOperand_ZERO_EXTEND(SDNode *N);
+  /// ZExtPromotedInteger - Get a promoted operand and zero extend it to the
+  /// final size.
+  SDOperand ZExtPromotedInteger(SDOperand Op) {
+    MVT OldVT = Op.getValueType();
+    Op = GetPromotedInteger(Op);
+    return DAG.getZeroExtendInReg(Op, OldVT);
+  }
+
+  // Integer Result Promotion.
+  void PromoteIntegerResult(SDNode *N, unsigned ResNo);
+  SDOperand PromoteIntRes_BIT_CONVERT(SDNode *N);
+  SDOperand PromoteIntRes_BUILD_PAIR(SDNode *N);
+  SDOperand PromoteIntRes_Constant(SDNode *N);
+  SDOperand PromoteIntRes_CTLZ(SDNode *N);
+  SDOperand PromoteIntRes_CTPOP(SDNode *N);
+  SDOperand PromoteIntRes_CTTZ(SDNode *N);
+  SDOperand PromoteIntRes_EXTRACT_VECTOR_ELT(SDNode *N);
+  SDOperand PromoteIntRes_FP_ROUND(SDNode *N);
+  SDOperand PromoteIntRes_FP_TO_XINT(SDNode *N);
+  SDOperand PromoteIntRes_INT_EXTEND(SDNode *N);
+  SDOperand PromoteIntRes_LOAD(LoadSDNode *N);
+  SDOperand PromoteIntRes_SDIV(SDNode *N);
+  SDOperand PromoteIntRes_SELECT   (SDNode *N);
+  SDOperand PromoteIntRes_SELECT_CC(SDNode *N);
+  SDOperand PromoteIntRes_SETCC(SDNode *N);
+  SDOperand PromoteIntRes_SHL(SDNode *N);
+  SDOperand PromoteIntRes_SimpleIntBinOp(SDNode *N);
+  SDOperand PromoteIntRes_SRA(SDNode *N);
+  SDOperand PromoteIntRes_SRL(SDNode *N);
+  SDOperand PromoteIntRes_TRUNCATE(SDNode *N);
+  SDOperand PromoteIntRes_UDIV(SDNode *N);
+  SDOperand PromoteIntRes_UNDEF(SDNode *N);
+  SDOperand PromoteIntRes_VAARG(SDNode *N);
+
+  // Integer Operand Promotion.
+  bool PromoteIntegerOperand(SDNode *N, unsigned OperandNo);
+  SDOperand PromoteIntOp_ANY_EXTEND(SDNode *N);
+  SDOperand PromoteIntOp_BUILD_PAIR(SDNode *N);
+  SDOperand PromoteIntOp_BR_CC(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_BRCOND(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_BUILD_VECTOR(SDNode *N);
+  SDOperand PromoteIntOp_FP_EXTEND(SDNode *N);
+  SDOperand PromoteIntOp_FP_ROUND(SDNode *N);
+  SDOperand PromoteIntOp_INT_TO_FP(SDNode *N);
+  SDOperand PromoteIntOp_INSERT_VECTOR_ELT(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_MEMBARRIER(SDNode *N);
+  SDOperand PromoteIntOp_SELECT(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_SELECT_CC(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_SETCC(SDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_SIGN_EXTEND(SDNode *N);
+  SDOperand PromoteIntOp_STORE(StoreSDNode *N, unsigned OpNo);
+  SDOperand PromoteIntOp_TRUNCATE(SDNode *N);
+  SDOperand PromoteIntOp_ZERO_EXTEND(SDNode *N);
 
   void PromoteSetCCOperands(SDOperand &LHS,SDOperand &RHS, ISD::CondCode Code);
 
   //===--------------------------------------------------------------------===//
-  // Expansion Support: LegalizeTypesExpand.cpp
+  // Integer Expansion Support: LegalizeIntegerTypes.cpp
   //===--------------------------------------------------------------------===//
-  
-  void GetExpandedOp(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
-  void SetExpandedOp(SDOperand Op, SDOperand Lo, SDOperand Hi);
-    
-  // Result Expansion.
-  void ExpandResult(SDNode *N, unsigned ResNo);
-  void ExpandResult_ANY_EXTEND (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_AssertZext (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_BIT_CONVERT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_BUILD_PAIR (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_Constant   (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_CTLZ       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_CTPOP      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_CTTZ       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_EXTRACT_VECTOR_ELT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_LOAD       (LoadSDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_MERGE_VALUES(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SIGN_EXTEND(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SIGN_EXTEND_INREG(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_TRUNCATE   (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_UNDEF      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_ZERO_EXTEND(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_FP_TO_SINT (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_FP_TO_UINT (SDNode *N, SDOperand &Lo, SDOperand &Hi);
 
-  void ExpandResult_Logical    (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_BSWAP      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_ADDSUB     (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_ADDSUBC    (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_ADDSUBE    (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SELECT     (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SELECT_CC  (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_MUL        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SDIV       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_SREM       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_UDIV       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_UREM       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void ExpandResult_Shift      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  
-  void ExpandShiftByConstant(SDNode *N, unsigned Amt, 
+  void GetExpandedInteger(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
+  void SetExpandedInteger(SDOperand Op, SDOperand Lo, SDOperand Hi);
+
+  // Integer Result Expansion.
+  void ExpandIntegerResult(SDNode *N, unsigned ResNo);
+  void ExpandIntRes_ANY_EXTEND        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_AssertZext        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_Constant          (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_CTLZ              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_CTPOP             (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_CTTZ              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_LOAD          (LoadSDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_SIGN_EXTEND       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_SIGN_EXTEND_INREG (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_TRUNCATE          (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_ZERO_EXTEND       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_FP_TO_SINT        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_FP_TO_UINT        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  void ExpandIntRes_Logical           (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_ADDSUB            (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_ADDSUBC           (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_ADDSUBE           (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_BSWAP             (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_MUL               (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_SDIV              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_SREM              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_UDIV              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_UREM              (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandIntRes_Shift             (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  void ExpandShiftByConstant(SDNode *N, unsigned Amt,
                              SDOperand &Lo, SDOperand &Hi);
   bool ExpandShiftWithKnownAmountBit(SDNode *N, SDOperand &Lo, SDOperand &Hi);
 
-  // Operand Expansion.
-  bool ExpandOperand(SDNode *N, unsigned OperandNo);
-  SDOperand ExpandOperand_BIT_CONVERT(SDNode *N);
-  SDOperand ExpandOperand_BR_CC(SDNode *N);
-  SDOperand ExpandOperand_BUILD_VECTOR(SDNode *N);
-  SDOperand ExpandOperand_EXTRACT_ELEMENT(SDNode *N);
-  SDOperand ExpandOperand_SETCC(SDNode *N);
-  SDOperand ExpandOperand_SINT_TO_FP(SDOperand Source, MVT::ValueType DestTy);
-  SDOperand ExpandOperand_STORE(StoreSDNode *N, unsigned OpNo);
-  SDOperand ExpandOperand_TRUNCATE(SDNode *N);
-  SDOperand ExpandOperand_UINT_TO_FP(SDOperand Source, MVT::ValueType DestTy);
+  // Integer Operand Expansion.
+  bool ExpandIntegerOperand(SDNode *N, unsigned OperandNo);
+  SDOperand ExpandIntOp_BIT_CONVERT(SDNode *N);
+  SDOperand ExpandIntOp_BR_CC(SDNode *N);
+  SDOperand ExpandIntOp_BUILD_VECTOR(SDNode *N);
+  SDOperand ExpandIntOp_EXTRACT_ELEMENT(SDNode *N);
+  SDOperand ExpandIntOp_SELECT_CC(SDNode *N);
+  SDOperand ExpandIntOp_SETCC(SDNode *N);
+  SDOperand ExpandIntOp_SINT_TO_FP(SDOperand Source, MVT DestTy);
+  SDOperand ExpandIntOp_STORE(StoreSDNode *N, unsigned OpNo);
+  SDOperand ExpandIntOp_TRUNCATE(SDNode *N);
+  SDOperand ExpandIntOp_UINT_TO_FP(SDOperand Source, MVT DestTy);
 
-  void ExpandSetCCOperands(SDOperand &NewLHS, SDOperand &NewRHS,
-                           ISD::CondCode &CCCode);
-  
+  void IntegerExpandSetCCOperands(SDOperand &NewLHS, SDOperand &NewRHS,
+                                  ISD::CondCode &CCCode);
+
   //===--------------------------------------------------------------------===//
-  // Float to Integer Conversion Support: LegalizeTypesFloatToInt.cpp
+  // Float to Integer Conversion Support: LegalizeFloatTypes.cpp
   //===--------------------------------------------------------------------===//
 
-  SDOperand GetIntegerOp(SDOperand Op) {
-    SDOperand &IntegerOp = FloatToIntedNodes[Op];
-    RemapNode(IntegerOp);
-    assert(IntegerOp.Val && "Operand wasn't converted to integer?");
-    return IntegerOp;
+  SDOperand GetSoftenedFloat(SDOperand Op) {
+    SDOperand &SoftenedOp = SoftenedFloats[Op];
+    RemapNode(SoftenedOp);
+    assert(SoftenedOp.Val && "Operand wasn't converted to integer?");
+    return SoftenedOp;
   }
-  void SetIntegerOp(SDOperand Op, SDOperand Result);
+  void SetSoftenedFloat(SDOperand Op, SDOperand Result);
 
   // Result Float to Integer Conversion.
-  void FloatToIntResult(SDNode *N, unsigned OpNo);
-  SDOperand FloatToIntRes_BIT_CONVERT(SDNode *N);
-  SDOperand FloatToIntRes_BUILD_PAIR(SDNode *N);
-  SDOperand FloatToIntRes_ConstantFP(ConstantFPSDNode *N);
-  SDOperand FloatToIntRes_FADD(SDNode *N);
-  SDOperand FloatToIntRes_FCOPYSIGN(SDNode *N);
-  SDOperand FloatToIntRes_FMUL(SDNode *N);
-  SDOperand FloatToIntRes_FSUB(SDNode *N);
-  SDOperand FloatToIntRes_LOAD(SDNode *N);
-  SDOperand FloatToIntRes_XINT_TO_FP(SDNode *N);
+  void SoftenFloatResult(SDNode *N, unsigned OpNo);
+  SDOperand SoftenFloatRes_BIT_CONVERT(SDNode *N);
+  SDOperand SoftenFloatRes_BUILD_PAIR(SDNode *N);
+  SDOperand SoftenFloatRes_ConstantFP(ConstantFPSDNode *N);
+  SDOperand SoftenFloatRes_FADD(SDNode *N);
+  SDOperand SoftenFloatRes_FCOPYSIGN(SDNode *N);
+  SDOperand SoftenFloatRes_FMUL(SDNode *N);
+  SDOperand SoftenFloatRes_FSUB(SDNode *N);
+  SDOperand SoftenFloatRes_LOAD(SDNode *N);
+  SDOperand SoftenFloatRes_XINT_TO_FP(SDNode *N);
 
   // Operand Float to Integer Conversion.
-  bool FloatToIntOperand(SDNode *N, unsigned OpNo);
-  SDOperand FloatToIntOp_BIT_CONVERT(SDNode *N);
+  bool SoftenFloatOperand(SDNode *N, unsigned OpNo);
+  SDOperand SoftenFloatOp_BIT_CONVERT(SDNode *N);
+  SDOperand SoftenFloatOp_BR_CC(SDNode *N);
+  SDOperand SoftenFloatOp_SELECT_CC(SDNode *N);
+  SDOperand SoftenFloatOp_SETCC(SDNode *N);
+
+  void SoftenSetCCOperands(SDOperand &NewLHS, SDOperand &NewRHS,
+                           ISD::CondCode &CCCode);
 
   //===--------------------------------------------------------------------===//
-  // Scalarization Support: LegalizeTypesScalarize.cpp
+  // Float Expansion Support: LegalizeFloatTypes.cpp
   //===--------------------------------------------------------------------===//
-  
-  SDOperand GetScalarizedOp(SDOperand Op) {
-    SDOperand &ScalarOp = ScalarizedNodes[Op];
-    RemapNode(ScalarOp);
-    assert(ScalarOp.Val && "Operand wasn't scalarized?");
-    return ScalarOp;
+
+  void GetExpandedFloat(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
+  void SetExpandedFloat(SDOperand Op, SDOperand Lo, SDOperand Hi);
+
+  // Float Result Expansion.
+  void ExpandFloatResult(SDNode *N, unsigned ResNo);
+  void ExpandFloatRes_ConstantFP(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_FADD      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_FDIV      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_FMUL      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_FSUB      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_LOAD      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandFloatRes_XINT_TO_FP(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  // Float Operand Expansion.
+  bool ExpandFloatOperand(SDNode *N, unsigned OperandNo);
+  SDOperand ExpandFloatOp_BR_CC(SDNode *N);
+  SDOperand ExpandFloatOp_FP_ROUND(SDNode *N);
+  SDOperand ExpandFloatOp_FP_TO_SINT(SDNode *N);
+  SDOperand ExpandFloatOp_FP_TO_UINT(SDNode *N);
+  SDOperand ExpandFloatOp_SELECT_CC(SDNode *N);
+  SDOperand ExpandFloatOp_SETCC(SDNode *N);
+  SDOperand ExpandFloatOp_STORE(SDNode *N, unsigned OpNo);
+
+  void FloatExpandSetCCOperands(SDOperand &NewLHS, SDOperand &NewRHS,
+                                ISD::CondCode &CCCode);
+
+  //===--------------------------------------------------------------------===//
+  // Scalarization Support: LegalizeVectorTypes.cpp
+  //===--------------------------------------------------------------------===//
+
+  SDOperand GetScalarizedVector(SDOperand Op) {
+    SDOperand &ScalarizedOp = ScalarizedVectors[Op];
+    RemapNode(ScalarizedOp);
+    assert(ScalarizedOp.Val && "Operand wasn't scalarized?");
+    return ScalarizedOp;
   }
-  void SetScalarizedOp(SDOperand Op, SDOperand Result);
-    
-  // Result Vector Scalarization: <1 x ty> -> ty.
+  void SetScalarizedVector(SDOperand Op, SDOperand Result);
+
+  // Vector Result Scalarization: <1 x ty> -> ty.
   void ScalarizeResult(SDNode *N, unsigned OpNo);
-  SDOperand ScalarizeRes_BinOp(SDNode *N);
-  SDOperand ScalarizeRes_UnaryOp(SDNode *N);
+  SDOperand ScalarizeVecRes_BinOp(SDNode *N);
+  SDOperand ScalarizeVecRes_UnaryOp(SDNode *N);
 
-  SDOperand ScalarizeRes_BIT_CONVERT(SDNode *N);
-  SDOperand ScalarizeRes_FPOWI(SDNode *N);
-  SDOperand ScalarizeRes_INSERT_VECTOR_ELT(SDNode *N);
-  SDOperand ScalarizeRes_LOAD(LoadSDNode *N);
-  SDOperand ScalarizeRes_SELECT(SDNode *N);
-  SDOperand ScalarizeRes_UNDEF(SDNode *N);
-  SDOperand ScalarizeRes_VECTOR_SHUFFLE(SDNode *N);
+  SDOperand ScalarizeVecRes_BIT_CONVERT(SDNode *N);
+  SDOperand ScalarizeVecRes_FPOWI(SDNode *N);
+  SDOperand ScalarizeVecRes_INSERT_VECTOR_ELT(SDNode *N);
+  SDOperand ScalarizeVecRes_LOAD(LoadSDNode *N);
+  SDOperand ScalarizeVecRes_SELECT(SDNode *N);
+  SDOperand ScalarizeVecRes_UNDEF(SDNode *N);
+  SDOperand ScalarizeVecRes_VECTOR_SHUFFLE(SDNode *N);
 
-  // Operand Vector Scalarization: <1 x ty> -> ty.
+  // Vector Operand Scalarization: <1 x ty> -> ty.
   bool ScalarizeOperand(SDNode *N, unsigned OpNo);
-  SDOperand ScalarizeOp_BIT_CONVERT(SDNode *N);
-  SDOperand ScalarizeOp_EXTRACT_VECTOR_ELT(SDNode *N);
-  SDOperand ScalarizeOp_STORE(StoreSDNode *N, unsigned OpNo);
+  SDOperand ScalarizeVecOp_BIT_CONVERT(SDNode *N);
+  SDOperand ScalarizeVecOp_EXTRACT_VECTOR_ELT(SDNode *N);
+  SDOperand ScalarizeVecOp_STORE(StoreSDNode *N, unsigned OpNo);
 
   //===--------------------------------------------------------------------===//
-  // Vector Splitting Support: LegalizeTypesSplit.cpp
+  // Vector Splitting Support: LegalizeVectorTypes.cpp
   //===--------------------------------------------------------------------===//
-  
-  void GetSplitOp(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
-  void SetSplitOp(SDOperand Op, SDOperand Lo, SDOperand Hi);
-  
-  // Result Vector Splitting: <128 x ty> -> 2 x <64 x ty>.
+
+  void GetSplitVector(SDOperand Op, SDOperand &Lo, SDOperand &Hi);
+  void SetSplitVector(SDOperand Op, SDOperand Lo, SDOperand Hi);
+
+  // Vector Result Splitting: <128 x ty> -> 2 x <64 x ty>.
   void SplitResult(SDNode *N, unsigned OpNo);
 
-  void SplitRes_UNDEF(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_LOAD(LoadSDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_BUILD_PAIR(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_INSERT_VECTOR_ELT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_VECTOR_SHUFFLE(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_UNDEF(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_LOAD(LoadSDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_BUILD_PAIR(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_INSERT_VECTOR_ELT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_VECTOR_SHUFFLE(SDNode *N, SDOperand &Lo, SDOperand &Hi);
 
-  void SplitRes_BUILD_VECTOR(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_CONCAT_VECTORS(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_BIT_CONVERT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_UnOp(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_BinOp(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_FPOWI(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  void SplitRes_SELECT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
-  
-  // Operand Vector Splitting: <128 x ty> -> 2 x <64 x ty>.
+  void SplitVecRes_BUILD_VECTOR(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_CONCAT_VECTORS(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_BIT_CONVERT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_UnOp(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_BinOp(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitVecRes_FPOWI(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  // Vector Operand Splitting: <128 x ty> -> 2 x <64 x ty>.
   bool SplitOperand(SDNode *N, unsigned OpNo);
 
-  SDOperand SplitOp_BIT_CONVERT(SDNode *N);
-  SDOperand SplitOp_EXTRACT_SUBVECTOR(SDNode *N);
-  SDOperand SplitOp_EXTRACT_VECTOR_ELT(SDNode *N);
-  SDOperand SplitOp_RET(SDNode *N, unsigned OpNo);
-  SDOperand SplitOp_STORE(StoreSDNode *N, unsigned OpNo);
-  SDOperand SplitOp_VECTOR_SHUFFLE(SDNode *N, unsigned OpNo);
+  SDOperand SplitVecOp_BIT_CONVERT(SDNode *N);
+  SDOperand SplitVecOp_EXTRACT_SUBVECTOR(SDNode *N);
+  SDOperand SplitVecOp_EXTRACT_VECTOR_ELT(SDNode *N);
+  SDOperand SplitVecOp_RET(SDNode *N, unsigned OpNo);
+  SDOperand SplitVecOp_STORE(StoreSDNode *N, unsigned OpNo);
+  SDOperand SplitVecOp_VECTOR_SHUFFLE(SDNode *N, unsigned OpNo);
 
-public:
-  void SanityCheck(SDNode *N);
+  //===--------------------------------------------------------------------===//
+  // Generic Splitting: LegalizeTypesGeneric.cpp
+  //===--------------------------------------------------------------------===//
+
+  // Legalization methods which only use that the illegal type is split into two
+  // not necessarily identical types.  As such they can be used for splitting
+  // vectors and expanding integers and floats.
+
+  void GetSplitOp(SDOperand Op, SDOperand &Lo, SDOperand &Hi) {
+    if (Op.getValueType().isVector())
+      GetSplitVector(Op, Lo, Hi);
+    else if (Op.getValueType().isInteger())
+      GetExpandedInteger(Op, Lo, Hi);
+    else
+      GetExpandedFloat(Op, Lo, Hi);
+  }
+
+  /// GetSplitDestVTs - Compute the VTs needed for the low/hi parts of a type
+  /// which is split (or expanded) into two not necessarily identical pieces.
+  void GetSplitDestVTs(MVT InVT, MVT &LoVT, MVT &HiVT);
+
+  // Generic Result Splitting.
+  void SplitRes_MERGE_VALUES(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitRes_SELECT      (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitRes_SELECT_CC   (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void SplitRes_UNDEF       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  //===--------------------------------------------------------------------===//
+  // Generic Expansion: LegalizeTypesGeneric.cpp
+  //===--------------------------------------------------------------------===//
+
+  // Legalization methods which only use that the illegal type is split into two
+  // identical types of half the size, and that the Lo/Hi part is stored first
+  // in memory on little/big-endian machines, followed by the Hi/Lo part.  As
+  // such they can be used for expanding integers and floats.
+
+  void GetExpandedOp(SDOperand Op, SDOperand &Lo, SDOperand &Hi) {
+    if (Op.getValueType().isInteger())
+      GetExpandedInteger(Op, Lo, Hi);
+    else
+      GetExpandedFloat(Op, Lo, Hi);
+  }
+
+  // Generic Result Expansion.
+  void ExpandRes_BIT_CONVERT       (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandRes_BUILD_PAIR        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandRes_EXTRACT_ELEMENT   (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandRes_EXTRACT_VECTOR_ELT(SDNode *N, SDOperand &Lo, SDOperand &Hi);
+  void ExpandRes_NormalLoad        (SDNode *N, SDOperand &Lo, SDOperand &Hi);
+
+  // Generic Operand Expansion.
+  SDOperand ExpandOp_BIT_CONVERT    (SDNode *N);
+  SDOperand ExpandOp_BUILD_VECTOR   (SDNode *N);
+  SDOperand ExpandOp_EXTRACT_ELEMENT(SDNode *N);
+  SDOperand ExpandOp_NormalStore    (SDNode *N, unsigned OpNo);
+
 };
 
 } // end namespace llvm.

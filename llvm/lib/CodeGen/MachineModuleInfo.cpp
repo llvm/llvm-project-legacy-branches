@@ -10,6 +10,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 
 #include "llvm/Constants.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineLocation.h"
@@ -27,9 +28,8 @@ using namespace llvm;
 using namespace llvm::dwarf;
 
 // Handle the Pass registration stuff necessary to use TargetData's.
-namespace {
-  RegisterPass<MachineModuleInfo> X("machinemoduleinfo", "Module Information");
-}
+static RegisterPass<MachineModuleInfo>
+X("machinemoduleinfo", "Module Information");
 char MachineModuleInfo::ID = 0;
 
 //===----------------------------------------------------------------------===//
@@ -52,10 +52,9 @@ getGlobalVariablesUsing(Value *V, std::vector<GlobalVariable*> &Result) {
 
 /// getGlobalVariablesUsing - Return all of the GlobalVariables that use the
 /// named GlobalVariable.
-static std::vector<GlobalVariable*>
-getGlobalVariablesUsing(Module &M, const std::string &RootName) {
-  std::vector<GlobalVariable*> Result;  // GlobalVariables matching criteria.
-  
+static void
+getGlobalVariablesUsing(Module &M, const std::string &RootName,
+                        std::vector<GlobalVariable*> &Result) {
   std::vector<const Type*> FieldTypes;
   FieldTypes.push_back(Type::Int32Ty);
   FieldTypes.push_back(Type::Int32Ty);
@@ -65,11 +64,8 @@ getGlobalVariablesUsing(Module &M, const std::string &RootName) {
                                                 StructType::get(FieldTypes));
 
   // If present and linkonce then scan for users.
-  if (UseRoot && UseRoot->hasLinkOnceLinkage()) {
+  if (UseRoot && UseRoot->hasLinkOnceLinkage())
     getGlobalVariablesUsing(UseRoot, Result);
-  }
-  
-  return Result;
 }
   
 /// isStringValue - Return true if the given value can be coerced to a string.
@@ -160,6 +156,8 @@ void DIVisitor::ApplyToFields(DebugInfoDesc *DD) {
   DD->ApplyToFields(this);
 }
 
+namespace {
+
 //===----------------------------------------------------------------------===//
 /// DICountVisitor - This DIVisitor counts all the fields in the supplied debug
 /// the supplied DebugInfoDesc.
@@ -199,10 +197,7 @@ private:
 
 public:
   DIDeserializeVisitor(DIDeserializer &D, GlobalVariable *GV)
-  : DIVisitor()
-  , DR(D)
-  , I(0)
-  , CI(cast<ConstantStruct>(GV->getInitializer()))
+    : DIVisitor(), DR(D), I(0), CI(cast<ConstantStruct>(GV->getInitializer()))
   {}
   
   /// Apply - Set the value of each of the fields.
@@ -229,7 +224,9 @@ public:
   }
   virtual void Apply(std::string &Field) {
     Constant *C = CI->getOperand(I++);
-    Field = C->getStringValue();
+    // Fills in the string if it succeeds
+    if (!GetConstantStringInfo(C, Field))
+      Field.clear();
   }
   virtual void Apply(DebugInfoDesc *&Field) {
     Constant *C = CI->getOperand(I++);
@@ -293,7 +290,7 @@ public:
     Elements.push_back(ConstantInt::get(Type::Int1Ty, Field));
   }
   virtual void Apply(std::string &Field) {
-      Elements.push_back(SR.getString(Field));
+    Elements.push_back(SR.getString(Field));
   }
   virtual void Apply(DebugInfoDesc *&Field) {
     GlobalVariable *GV = NULL;
@@ -479,6 +476,7 @@ public:
   }
 };
 
+}
 
 //===----------------------------------------------------------------------===//
 
@@ -1284,14 +1282,14 @@ const PointerType *DISerializer::getStrPtrType() {
 ///
 const PointerType *DISerializer::getEmptyStructPtrType() {
   // If not already defined.
-  if (!EmptyStructPtrTy) {
-    // Construct the empty structure type.
-    const StructType *EmptyStructTy =
-                                    StructType::get(std::vector<const Type*>());
-    // Construct the pointer to empty structure type.
-    EmptyStructPtrTy = PointerType::getUnqual(EmptyStructTy);
-  }
-  
+  if (EmptyStructPtrTy) return EmptyStructPtrTy;
+
+  // Construct the pointer to empty structure type.
+  const StructType *EmptyStructTy =
+    StructType::get(std::vector<const Type*>());
+
+  // Construct the pointer to empty structure type.
+  EmptyStructPtrTy = PointerType::getUnqual(EmptyStructTy);
   return EmptyStructPtrTy;
 }
 
@@ -1323,23 +1321,28 @@ const StructType *DISerializer::getTagType(DebugInfoDesc *DD) {
 ///
 Constant *DISerializer::getString(const std::string &String) {
   // Check string cache for previous edition.
-  Constant *&Slot = StringCache[String];
+  Constant *&Slot = StringCache[String.c_str()];
+
   // Return Constant if previously defined.
   if (Slot) return Slot;
+
   // If empty string then use a sbyte* null instead.
   if (String.empty()) {
     Slot = ConstantPointerNull::get(getStrPtrType());
   } else {
     // Construct string as an llvm constant.
     Constant *ConstStr = ConstantArray::get(String);
+
     // Otherwise create and return a new string global.
     GlobalVariable *StrGV = new GlobalVariable(ConstStr->getType(), true,
                                                GlobalVariable::InternalLinkage,
                                                ConstStr, ".str", M);
     StrGV->setSection("llvm.metadata");
+
     // Convert to generic string pointer.
     Slot = ConstantExpr::getBitCast(StrGV, getStrPtrType());
   }
+
   return Slot;
   
 }
@@ -1369,7 +1372,7 @@ GlobalVariable *DISerializer::Serialize(DebugInfoDesc *DD) {
   // Add fields.
   DISerializeVisitor SRAM(*this, Elements);
   SRAM.ApplyToFields(DD);
-  
+
   // Set the globals initializer.
   GV->setInitializer(ConstantStruct::get(Ty, Elements));
   
@@ -1586,7 +1589,8 @@ void MachineModuleInfo::AnalyzeModule(Module &M) {
 /// SetupCompileUnits - Set up the unique vector of compile units.
 ///
 void MachineModuleInfo::SetupCompileUnits(Module &M) {
-  std::vector<CompileUnitDesc *>CU = getAnchoredDescriptors<CompileUnitDesc>(M);
+  std::vector<CompileUnitDesc *> CU;
+  getAnchoredDescriptors<CompileUnitDesc>(M, CU);
   
   for (unsigned i = 0, N = CU.size(); i < N; i++) {
     CompileUnits.insert(CU[i]);
@@ -1601,10 +1605,11 @@ const UniqueVector<CompileUnitDesc *> MachineModuleInfo::getCompileUnits()const{
 
 /// getGlobalVariablesUsing - Return all of the GlobalVariables that use the
 /// named GlobalVariable.
-std::vector<GlobalVariable*>
+void
 MachineModuleInfo::getGlobalVariablesUsing(Module &M,
-                                           const std::string &RootName) {
-  return ::getGlobalVariablesUsing(M, RootName);
+                                           const std::string &RootName,
+                                           std::vector<GlobalVariable*>&Result){
+  return ::getGlobalVariablesUsing(M, RootName, Result);
 }
 
 /// RecordSourceLine - Records location information and associates it with a

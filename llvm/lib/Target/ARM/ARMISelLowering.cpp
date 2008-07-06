@@ -188,7 +188,7 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::UDIVREM, MVT::i32, Expand);
   
   // Support label based line numbers.
-  setOperationAction(ISD::LOCATION, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_STOPPOINT, MVT::Other, Expand);
   setOperationAction(ISD::DEBUG_LOC, MVT::Other, Expand);
 
   setOperationAction(ISD::RET,           MVT::Other, Custom);
@@ -363,7 +363,7 @@ static bool FPCCToARMCC(ISD::CondCode CC, ARMCC::CondCodes &CondCode,
 }
 
 static void
-HowToPassArgument(MVT::ValueType ObjectVT, unsigned NumGPRs,
+HowToPassArgument(MVT ObjectVT, unsigned NumGPRs,
                   unsigned StackOffset, unsigned &NeededGPRs,
                   unsigned &NeededStackSize, unsigned &GPRPad,
                   unsigned &StackPad, ISD::ArgFlagsTy Flags) {
@@ -375,7 +375,7 @@ HowToPassArgument(MVT::ValueType ObjectVT, unsigned NumGPRs,
   GPRPad = NumGPRs % ((align + 3)/4);
   StackPad = StackOffset % align;
   unsigned firstGPR = NumGPRs + GPRPad;
-  switch (ObjectVT) {
+  switch (ObjectVT.getSimpleVT()) {
   default: assert(0 && "Unhandled argument type!");
   case MVT::i32:
   case MVT::f32:
@@ -400,7 +400,7 @@ HowToPassArgument(MVT::ValueType ObjectVT, unsigned NumGPRs,
 /// ARMISD:CALL <- callseq_end chain. Also add input and output parameter
 /// nodes.
 SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
-  MVT::ValueType RetVT= Op.Val->getValueType(0);
+  MVT RetVT= Op.Val->getValueType(0);
   SDOperand Chain    = Op.getOperand(0);
   unsigned CallConv  = cast<ConstantSDNode>(Op.getOperand(1))->getValue();
   assert((CallConv == CallingConv::C ||
@@ -419,7 +419,7 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
     unsigned ObjGPRs;
     unsigned StackPad;
     unsigned GPRPad;
-    MVT::ValueType ObjectVT = Op.getOperand(5+2*i).getValueType();
+    MVT ObjectVT = Op.getOperand(5+2*i).getValueType();
     ISD::ArgFlagsTy Flags =
       cast<ARG_FLAGSSDNode>(Op.getOperand(5+2*i+1))->getArgFlags();
     HowToPassArgument(ObjectVT, NumGPRs, NumBytes, ObjGPRs, ObjSize,
@@ -446,7 +446,7 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
     SDOperand Arg = Op.getOperand(5+2*i);
     ISD::ArgFlagsTy Flags =
       cast<ARG_FLAGSSDNode>(Op.getOperand(5+2*i+1))->getArgFlags();
-    MVT::ValueType ArgVT = Arg.getValueType();
+    MVT ArgVT = Arg.getValueType();
 
     unsigned ObjSize;
     unsigned ObjGPRs;
@@ -457,7 +457,7 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
     NumGPRs += GPRPad;
     ArgOffset += StackPad;
     if (ObjGPRs > 0) {
-      switch (ArgVT) {
+      switch (ArgVT.getSimpleVT()) {
       default: assert(0 && "Unexpected ValueType for argument!");
       case MVT::i32:
         RegsToPass.push_back(std::make_pair(GPRArgRegs[NumGPRs], Arg));
@@ -587,10 +587,6 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
     InFlag = Chain.getValue(1);
   }
 
-  std::vector<MVT::ValueType> NodeTys;
-  NodeTys.push_back(MVT::Other);   // Returns a chain
-  NodeTys.push_back(MVT::Flag);    // Returns a flag for retval copy to use.
-
   std::vector<SDOperand> Ops;
   Ops.push_back(Chain);
   Ops.push_back(Callee);
@@ -603,7 +599,9 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
 
   if (InFlag.Val)
     Ops.push_back(InFlag);
-  Chain = DAG.getNode(CallOpc, NodeTys, &Ops[0], Ops.size());
+  // Returns a chain and a flag for retval copy to use.
+  Chain = DAG.getNode(CallOpc, DAG.getVTList(MVT::Other, MVT::Flag),
+                      &Ops[0], Ops.size());
   InFlag = Chain.getValue(1);
 
   Chain = DAG.getCALLSEQ_END(Chain,
@@ -614,10 +612,9 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
     InFlag = Chain.getValue(1);
 
   std::vector<SDOperand> ResultVals;
-  NodeTys.clear();
 
   // If the call has results, copy the values out of the ret val registers.
-  switch (RetVT) {
+  switch (RetVT.getSimpleVT()) {
   default: assert(0 && "Unexpected ret value!");
   case MVT::Other:
     break;
@@ -629,33 +626,26 @@ SDOperand ARMTargetLowering::LowerCALL(SDOperand Op, SelectionDAG &DAG) {
       Chain = DAG.getCopyFromReg(Chain, ARM::R1, MVT::i32,
                                  Chain.getValue(2)).getValue(1);
       ResultVals.push_back(Chain.getValue(0));
-      NodeTys.push_back(MVT::i32);
     }
-    NodeTys.push_back(MVT::i32);
     break;
   case MVT::f32:
     Chain = DAG.getCopyFromReg(Chain, ARM::R0, MVT::i32, InFlag).getValue(1);
     ResultVals.push_back(DAG.getNode(ISD::BIT_CONVERT, MVT::f32,
                                      Chain.getValue(0)));
-    NodeTys.push_back(MVT::f32);
     break;
   case MVT::f64: {
     SDOperand Lo = DAG.getCopyFromReg(Chain, ARM::R0, MVT::i32, InFlag);
     SDOperand Hi = DAG.getCopyFromReg(Lo, ARM::R1, MVT::i32, Lo.getValue(2));
     ResultVals.push_back(DAG.getNode(ARMISD::FMDRR, MVT::f64, Lo, Hi));
-    NodeTys.push_back(MVT::f64);
     break;
   }
   }
-
-  NodeTys.push_back(MVT::Other);
 
   if (ResultVals.empty())
     return Chain;
 
   ResultVals.push_back(Chain);
-  SDOperand Res = DAG.getNode(ISD::MERGE_VALUES, NodeTys, &ResultVals[0],
-                              ResultVals.size());
+  SDOperand Res = DAG.getMergeValues(&ResultVals[0], ResultVals.size());
   return Res.getValue(Op.ResNo);
 }
 
@@ -708,7 +698,7 @@ static SDOperand LowerRET(SDOperand Op, SelectionDAG &DAG) {
 // be used to form addressing mode. These wrapped nodes will be selected
 // into MOVi.
 static SDOperand LowerConstantPool(SDOperand Op, SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = Op.getValueType();
+  MVT PtrVT = Op.getValueType();
   ConstantPoolSDNode *CP = cast<ConstantPoolSDNode>(Op);
   SDOperand Res;
   if (CP->isMachineConstantPoolEntry())
@@ -724,7 +714,7 @@ static SDOperand LowerConstantPool(SDOperand Op, SelectionDAG &DAG) {
 SDOperand
 ARMTargetLowering::LowerToTLSGeneralDynamicModel(GlobalAddressSDNode *GA,
                                                  SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = getPointerTy();
+  MVT PtrVT = getPointerTy();
   unsigned char PCAdj = Subtarget->isThumb() ? 4 : 8;
   ARMConstantPoolValue *CPV =
     new ARMConstantPoolValue(GA->getGlobal(), ARMPCLabelIndex, ARMCP::CPValue,
@@ -758,7 +748,7 @@ ARMTargetLowering::LowerToTLSExecModels(GlobalAddressSDNode *GA,
   GlobalValue *GV = GA->getGlobal();
   SDOperand Offset;
   SDOperand Chain = DAG.getEntryNode();
-  MVT::ValueType PtrVT = getPointerTy();
+  MVT PtrVT = getPointerTy();
   // Get the Thread Pointer
   SDOperand ThreadPointer = DAG.getNode(ARMISD::THREAD_POINTER, PtrVT);
 
@@ -807,7 +797,7 @@ ARMTargetLowering::LowerGlobalTLSAddress(SDOperand Op, SelectionDAG &DAG) {
 
 SDOperand ARMTargetLowering::LowerGlobalAddressELF(SDOperand Op,
                                                    SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = getPointerTy();
+  MVT PtrVT = getPointerTy();
   GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
   Reloc::Model RelocM = getTargetMachine().getRelocationModel();
   if (RelocM == Reloc::PIC_) {
@@ -840,7 +830,7 @@ static bool GVIsIndirectSymbol(GlobalValue *GV, Reloc::Model RelocM) {
 
 SDOperand ARMTargetLowering::LowerGlobalAddressDarwin(SDOperand Op,
                                                       SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = getPointerTy();
+  MVT PtrVT = getPointerTy();
   GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
   Reloc::Model RelocM = getTargetMachine().getRelocationModel();
   bool IsIndirect = GVIsIndirectSymbol(GV, RelocM);
@@ -875,7 +865,7 @@ SDOperand ARMTargetLowering::LowerGLOBAL_OFFSET_TABLE(SDOperand Op,
                                                       SelectionDAG &DAG){
   assert(Subtarget->isTargetELF() &&
          "GLOBAL OFFSET TABLE not implemented for non-ELF targets");
-  MVT::ValueType PtrVT = getPointerTy();
+  MVT PtrVT = getPointerTy();
   unsigned PCAdj = Subtarget->isThumb() ? 4 : 8;
   ARMConstantPoolValue *CPV = new ARMConstantPoolValue("_GLOBAL_OFFSET_TABLE_",
                                                        ARMPCLabelIndex,
@@ -888,7 +878,7 @@ SDOperand ARMTargetLowering::LowerGLOBAL_OFFSET_TABLE(SDOperand Op,
 }
 
 static SDOperand LowerINTRINSIC_WO_CHAIN(SDOperand Op, SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
+  MVT PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
   unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getValue();
   switch (IntNo) {
   default: return SDOperand();    // Don't custom lower most intrinsics.
@@ -901,7 +891,7 @@ static SDOperand LowerVASTART(SDOperand Op, SelectionDAG &DAG,
                               unsigned VarArgsFrameIndex) {
   // vastart just stores the address of the VarArgsFrameIndex slot into the
   // memory location argument.
-  MVT::ValueType PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
+  MVT PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
   SDOperand FR = DAG.getFrameIndex(VarArgsFrameIndex, PtrVT);
   const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
   return DAG.getStore(Op.getOperand(0), FR, Op.getOperand(1), SV, 0);
@@ -911,7 +901,7 @@ static SDOperand LowerFORMAL_ARGUMENT(SDOperand Op, SelectionDAG &DAG,
                                       unsigned ArgNo, unsigned &NumGPRs,
                                       unsigned &ArgOffset) {
   MachineFunction &MF = DAG.getMachineFunction();
-  MVT::ValueType ObjectVT = Op.getValue(ArgNo).getValueType();
+  MVT ObjectVT = Op.getValue(ArgNo).getValueType();
   SDOperand Root = Op.getOperand(0);
   std::vector<SDOperand> ArgValues;
   MachineRegisterInfo &RegInfo = MF.getRegInfo();
@@ -1025,9 +1015,8 @@ ARMTargetLowering::LowerFORMAL_ARGUMENTS(SDOperand Op, SelectionDAG &DAG) {
   ArgValues.push_back(Root);
 
   // Return the new list of results.
-  std::vector<MVT::ValueType> RetVT(Op.Val->value_begin(),
-                                    Op.Val->value_end());
-  return DAG.getNode(ISD::MERGE_VALUES, RetVT, &ArgValues[0], ArgValues.size());
+  return DAG.getMergeValues(Op.Val->getVTList(), &ArgValues[0],
+                            ArgValues.size());
 }
 
 /// isFloatingPointZero - Return true if this is +0.0.
@@ -1123,7 +1112,7 @@ static SDOperand getVFPCmp(SDOperand LHS, SDOperand RHS, SelectionDAG &DAG) {
 
 static SDOperand LowerSELECT_CC(SDOperand Op, SelectionDAG &DAG,
                                 const ARMSubtarget *ST) {
-  MVT::ValueType VT = Op.getValueType();
+  MVT VT = Op.getValueType();
   SDOperand LHS = Op.getOperand(0);
   SDOperand RHS = Op.getOperand(1);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
@@ -1195,7 +1184,7 @@ SDOperand ARMTargetLowering::LowerBR_JT(SDOperand Op, SelectionDAG &DAG) {
   SDOperand Table = Op.getOperand(1);
   SDOperand Index = Op.getOperand(2);
 
-  MVT::ValueType PTy = getPointerTy();
+  MVT PTy = getPointerTy();
   JumpTableSDNode *JT = cast<JumpTableSDNode>(Table);
   ARMFunctionInfo *AFI = DAG.getMachineFunction().getInfo<ARMFunctionInfo>();
   SDOperand UId =  DAG.getConstant(AFI->createJumpTableUId(), PTy);
@@ -1204,7 +1193,7 @@ SDOperand ARMTargetLowering::LowerBR_JT(SDOperand Op, SelectionDAG &DAG) {
   Index = DAG.getNode(ISD::MUL, PTy, Index, DAG.getConstant(4, PTy));
   SDOperand Addr = DAG.getNode(ISD::ADD, PTy, Index, Table);
   bool isPIC = getTargetMachine().getRelocationModel() == Reloc::PIC_;
-  Addr = DAG.getLoad(isPIC ? (MVT::ValueType)MVT::i32 : PTy,
+  Addr = DAG.getLoad(isPIC ? (MVT)MVT::i32 : PTy,
                      Chain, Addr, NULL, 0);
   Chain = Addr.getValue(1);
   if (isPIC)
@@ -1220,7 +1209,7 @@ static SDOperand LowerFP_TO_INT(SDOperand Op, SelectionDAG &DAG) {
 }
 
 static SDOperand LowerINT_TO_FP(SDOperand Op, SelectionDAG &DAG) {
-  MVT::ValueType VT = Op.getValueType();
+  MVT VT = Op.getValueType();
   unsigned Opc =
     Op.getOpcode() == ISD::SINT_TO_FP ? ARMISD::SITOF : ARMISD::UITOF;
 
@@ -1232,8 +1221,8 @@ static SDOperand LowerFCOPYSIGN(SDOperand Op, SelectionDAG &DAG) {
   // Implement fcopysign with a fabs and a conditional fneg.
   SDOperand Tmp0 = Op.getOperand(0);
   SDOperand Tmp1 = Op.getOperand(1);
-  MVT::ValueType VT = Op.getValueType();
-  MVT::ValueType SrcVT = Tmp1.getValueType();
+  MVT VT = Op.getValueType();
+  MVT SrcVT = Tmp1.getValueType();
   SDOperand AbsVal = DAG.getNode(ISD::FABS, VT, Tmp0);
   SDOperand Cmp = getVFPCmp(Tmp1, DAG.getConstantFP(0.0, SrcVT), DAG);
   SDOperand ARMCC = DAG.getConstant(ARMCC::LT, MVT::i32);
@@ -1247,8 +1236,8 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
                                            SDOperand Dst, SDOperand Src,
                                            SDOperand Size, unsigned Align,
                                            bool AlwaysInline,
-                                           const Value *DstSV, uint64_t DstOff,
-                                           const Value *SrcSV, uint64_t SrcOff){
+                                         const Value *DstSV, uint64_t DstSVOff,
+                                         const Value *SrcSV, uint64_t SrcSVOff){
   // Do repeated 4-byte loads and stores. To be improved.
   // This requires 4-byte alignment.
   if ((Align & 3) != 0)
@@ -1265,12 +1254,13 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
   unsigned BytesLeft = SizeVal & 3;
   unsigned NumMemOps = SizeVal >> 2;
   unsigned EmittedNumMemOps = 0;
-  MVT::ValueType VT = MVT::i32;
+  MVT VT = MVT::i32;
   unsigned VTSize = 4;
   unsigned i = 0;
   const unsigned MAX_LOADS_IN_LDM = 6;
   SDOperand TFOps[MAX_LOADS_IN_LDM];
   SDOperand Loads[MAX_LOADS_IN_LDM];
+  uint64_t SrcOff = 0, DstOff = 0;
 
   // Emit up to MAX_LOADS_IN_LDM loads, then a TokenFactor barrier, then the
   // same number of stores.  The loads and stores will get combined into
@@ -1281,7 +1271,7 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
       Loads[i] = DAG.getLoad(VT, Chain,
                              DAG.getNode(ISD::ADD, MVT::i32, Src,
                                          DAG.getConstant(SrcOff, MVT::i32)),
-                             SrcSV, SrcOff);
+                             SrcSV, SrcSVOff + SrcOff);
       TFOps[i] = Loads[i].getValue(1);
       SrcOff += VTSize;
     }
@@ -1292,7 +1282,7 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
       TFOps[i] = DAG.getStore(Chain, Loads[i],
                            DAG.getNode(ISD::ADD, MVT::i32, Dst, 
                                        DAG.getConstant(DstOff, MVT::i32)),
-                           DstSV, DstOff);
+                           DstSV, DstSVOff + DstOff);
       DstOff += VTSize;
     }
     Chain = DAG.getNode(ISD::TokenFactor, MVT::Other, &TFOps[0], i);
@@ -1318,7 +1308,7 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
     Loads[i] = DAG.getLoad(VT, Chain,
                            DAG.getNode(ISD::ADD, MVT::i32, Src,
                                        DAG.getConstant(SrcOff, MVT::i32)),
-                           SrcSV, SrcOff);
+                           SrcSV, SrcSVOff + SrcOff);
     TFOps[i] = Loads[i].getValue(1);
     ++i;
     SrcOff += VTSize;
@@ -1340,7 +1330,7 @@ ARMTargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG,
     TFOps[i] = DAG.getStore(Chain, Loads[i],
                             DAG.getNode(ISD::ADD, MVT::i32, Dst, 
                                         DAG.getConstant(DstOff, MVT::i32)),
-                            DstSV, DstOff);
+                            DstSV, DstSVOff + DstOff);
     ++i;
     DstOff += VTSize;
     BytesLeft -= VTSize;
@@ -1428,9 +1418,9 @@ SDOperand ARMTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
 }
 
 
-/// ExpandOperationResult - Provide custom lowering hooks for expanding
-/// operations.
-SDNode *ARMTargetLowering::ExpandOperationResult(SDNode *N, SelectionDAG &DAG) {
+/// ReplaceNodeResults - Provide custom lowering hooks for nodes with illegal
+/// result types.
+SDNode *ARMTargetLowering::ReplaceNodeResults(SDNode *N, SelectionDAG &DAG) {
   switch (N->getOpcode()) {
   default: assert(0 && "Don't know how to custom expand this!"); abort();
   case ISD::BIT_CONVERT:   return ExpandBIT_CONVERT(N, DAG);
@@ -1535,7 +1525,7 @@ SDOperand ARMTargetLowering::PerformDAGCombine(SDNode *N,
 /// isLegalAddressImmediate - Return true if the integer value can be used
 /// as the offset of the target addressing mode for load / store of the
 /// given type.
-static bool isLegalAddressImmediate(int64_t V, MVT::ValueType VT,
+static bool isLegalAddressImmediate(int64_t V, MVT VT,
                                     const ARMSubtarget *Subtarget) {
   if (V == 0)
     return true;
@@ -1545,7 +1535,7 @@ static bool isLegalAddressImmediate(int64_t V, MVT::ValueType VT,
       return false;
 
     unsigned Scale = 1;
-    switch (VT) {
+    switch (VT.getSimpleVT()) {
     default: return false;
     case MVT::i1:
     case MVT::i8:
@@ -1569,7 +1559,7 @@ static bool isLegalAddressImmediate(int64_t V, MVT::ValueType VT,
 
   if (V < 0)
     V = - V;
-  switch (VT) {
+  switch (VT.getSimpleVT()) {
   default: return false;
   case MVT::i1:
   case MVT::i8:
@@ -1614,7 +1604,7 @@ bool ARMTargetLowering::isLegalAddressingMode(const AddrMode &AM,
       return false;
     
     int Scale = AM.Scale;
-    switch (getValueType(Ty)) {
+    switch (getValueType(Ty).getSimpleVT()) {
     default: return false;
     case MVT::i1:
     case MVT::i8:
@@ -1649,7 +1639,7 @@ bool ARMTargetLowering::isLegalAddressingMode(const AddrMode &AM,
 }
 
 
-static bool getIndexedAddressParts(SDNode *Ptr, MVT::ValueType VT,
+static bool getIndexedAddressParts(SDNode *Ptr, MVT VT,
                                    bool isSEXTLoad, SDOperand &Base,
                                    SDOperand &Offset, bool &isInc,
                                    SelectionDAG &DAG) {
@@ -1716,7 +1706,7 @@ ARMTargetLowering::getPreIndexedAddressParts(SDNode *N, SDOperand &Base,
   if (Subtarget->isThumb())
     return false;
 
-  MVT::ValueType VT;
+  MVT VT;
   SDOperand Ptr;
   bool isSEXTLoad = false;
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
@@ -1750,7 +1740,7 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
   if (Subtarget->isThumb())
     return false;
 
-  MVT::ValueType VT;
+  MVT VT;
   SDOperand Ptr;
   bool isSEXTLoad = false;
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
@@ -1815,7 +1805,7 @@ ARMTargetLowering::getConstraintType(const std::string &Constraint) const {
 
 std::pair<unsigned, const TargetRegisterClass*> 
 ARMTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
-                                                MVT::ValueType VT) const {
+                                                MVT VT) const {
   if (Constraint.size() == 1) {
     // GCC RS6000 Constraint Letters
     switch (Constraint[0]) {
@@ -1837,7 +1827,7 @@ ARMTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
 
 std::vector<unsigned> ARMTargetLowering::
 getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                  MVT::ValueType VT) const {
+                                  MVT VT) const {
   if (Constraint.size() != 1)
     return std::vector<unsigned>();
 

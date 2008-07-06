@@ -229,7 +229,7 @@ bool ELFWriter::doInitialization(Module &M) {
 
   // This should change for shared objects.
   FHOut.outhalf(1);                 // e_type = ET_REL
-  FHOut.outword(TM.getELFWriterInfo()->getEMachine()); // target-defined
+  FHOut.outhalf(TM.getELFWriterInfo()->getEMachine()); // target-defined
   FHOut.outword(1);                 // e_version = 1
   FHOut.outaddr(0);                 // e_entry = 0 -> no entry point in .o file
   FHOut.outaddr(0);                 // e_phoff = 0 -> no program header for .o
@@ -282,7 +282,8 @@ void ELFWriter::EmitGlobal(GlobalVariable *GV) {
     // If this global is part of the common block, add it now.  Variables are
     // part of the common block if they are zero initialized and allowed to be
     // merged with other symbols.
-    if (GV->hasLinkOnceLinkage() || GV->hasWeakLinkage()) {
+    if (GV->hasLinkOnceLinkage() || GV->hasWeakLinkage() ||
+        GV->hasCommonLinkage()) {
       ELFSym CommonSym(GV);
       // Value for common symbols is the alignment required.
       CommonSym.Value = Align;
@@ -313,7 +314,7 @@ void ELFWriter::EmitGlobal(GlobalVariable *GV) {
     BSSSym.SetType(ELFSym::STT_OBJECT);
 
     switch (GV->getLinkage()) {
-    default:  // weak/linkonce handled above
+    default:  // weak/linkonce/common handled above
       assert(0 && "Unexpected linkage type!");
     case GlobalValue::AppendingLinkage:  // FIXME: This should be improved!
     case GlobalValue::ExternalLinkage:

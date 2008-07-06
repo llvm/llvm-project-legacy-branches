@@ -16,7 +16,7 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Streams.h"
 #include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/iterator"
+#include "llvm/ADT/iterator.h"
 #include <string>
 #include <vector>
 
@@ -212,11 +212,31 @@ public:
   inline bool isPrimitiveType() const { return ID <= LastPrimitiveTyID; }
   inline bool isDerivedType()   const { return ID >= FirstDerivedTyID; }
 
-  /// isFirstClassType - Return true if the value is holdable in a register.
+  /// isFirstClassType - Return true if the type is "first class", meaning it
+  /// is a valid type for a Value.
   ///
   inline bool isFirstClassType() const {
+    // There are more first-class kinds than non-first-class kinds, so a
+    // negative test is simpler than a positive one.
+    return ID != FunctionTyID && ID != VoidTyID && ID != OpaqueTyID;
+  }
+
+  /// isSingleValueType - Return true if the type is a valid type for a
+  /// virtual register in codegen.  This includes all first-class types
+  /// except struct and array types.
+  ///
+  inline bool isSingleValueType() const {
     return (ID != VoidTyID && ID <= LastPrimitiveTyID) ||
             ID == IntegerTyID || ID == PointerTyID || ID == VectorTyID;
+  }
+
+  /// isAggregateType - Return true if the type is an aggregate type. This
+  /// means it is valid as the first operand of an insertvalue or
+  /// extractvalue instruction. This includes struct and array types, but
+  /// does not include vector types.
+  ///
+  inline bool isAggregateType() const {
+    return ID == StructTyID || ID == ArrayTyID;
   }
 
   /// isSized - Return true if it makes sense to take the size of this type.  To
@@ -242,6 +262,19 @@ public:
   /// primitive type.
   ///
   unsigned getPrimitiveSizeInBits() const;
+  
+  /// getFPMantissaWidth - Return the width of the mantissa of this type.  This
+  /// is only valid on scalar floating point types.  If the FP type does not
+  /// have a stable mantissa (e.g. ppc long double), this method returns -1.
+  int getFPMantissaWidth() const {
+    assert(isFloatingPoint() && "Not a floating point type!");
+    if (ID == FloatTyID) return 24;
+    if (ID == DoubleTyID) return 53;
+    if (ID == X86_FP80TyID) return 64;
+    if (ID == FP128TyID) return 113;
+    assert(ID == PPC_FP128TyID && "unknown fp type");
+    return -1;
+  }
 
   /// getForwardedType - Return the type that this type has been resolved to if
   /// it has been resolved to anything.  This is used to implement the
@@ -293,7 +326,7 @@ public:
   static const IntegerType *Int1Ty, *Int8Ty, *Int16Ty, *Int32Ty, *Int64Ty;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const Type *T) { return true; }
+  static inline bool classof(const Type *) { return true; }
 
   void addRef() const {
     assert(isAbstract() && "Cannot add a reference to a non-abstract type!");

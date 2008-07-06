@@ -205,6 +205,11 @@ void MachineBasicBlock::removeLiveIn(unsigned Reg) {
   LiveIns.erase(I);
 }
 
+bool MachineBasicBlock::isLiveIn(unsigned Reg) const {
+  const_livein_iterator I = std::find(livein_begin(), livein_end(), Reg);
+  return I != livein_end();
+}
+
 void MachineBasicBlock::moveBefore(MachineBasicBlock *NewAfter) {
   MachineFunction::BasicBlockListType &BBList =getParent()->getBasicBlockList();
   getParent()->getBasicBlockList().splice(NewAfter, BBList, this);
@@ -245,6 +250,19 @@ void MachineBasicBlock::removePredecessor(MachineBasicBlock *pred) {
     std::find(Predecessors.begin(), Predecessors.end(), pred);
   assert(I != Predecessors.end() && "Pred is not a predecessor of this block!");
   Predecessors.erase(I);
+}
+
+void MachineBasicBlock::transferSuccessors(MachineBasicBlock *fromMBB)
+{
+  if (this == fromMBB)
+    return;
+  
+  for(MachineBasicBlock::succ_iterator iter = fromMBB->succ_begin(), 
+      end = fromMBB->succ_end(); iter != end; ++iter) {
+      addSuccessor(*iter);
+  }
+  while(!fromMBB->succ_empty())
+    fromMBB->removeSuccessor(fromMBB->succ_begin());
 }
 
 bool MachineBasicBlock::isSuccessor(MachineBasicBlock *MBB) const {

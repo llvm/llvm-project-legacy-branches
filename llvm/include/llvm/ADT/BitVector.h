@@ -17,7 +17,6 @@
 #include "llvm/Support/MathExtras.h"
 #include <algorithm>
 #include <cassert>
-#include <cstdlib>
 #include <cstring>
 
 namespace llvm {
@@ -25,7 +24,7 @@ namespace llvm {
 class BitVector {
   typedef unsigned long BitWord;
 
-  enum { BITWORD_SIZE = sizeof(BitWord) * 8 };
+  enum { BITWORD_SIZE = (unsigned)sizeof(BitWord) * 8 };
 
   BitWord  *Bits;        // Actual bits. 
   unsigned Size;         // Size of bitvector in bits.
@@ -65,7 +64,7 @@ public:
 
   /// BitVector default ctor - Creates an empty bitvector.
   BitVector() : Size(0), Capacity(0) {
-    Bits = NULL;
+    Bits = 0;
   }
 
   /// BitVector ctor - Creates a bitvector of specified number of bits. All
@@ -81,7 +80,7 @@ public:
   /// BitVector copy ctor.
   BitVector(const BitVector &RHS) : Size(RHS.size()) {
     if (Size == 0) {
-      Bits = NULL;
+      Bits = 0;
       Capacity = 0;
       return;
     }
@@ -103,7 +102,7 @@ public:
     unsigned NumBits = 0;
     for (unsigned i = 0; i < NumBitWords(size()); ++i)
       if (sizeof(BitWord) == 4)
-        NumBits += CountPopulation_32(Bits[i]);
+        NumBits += CountPopulation_32((uint32_t)Bits[i]);
       else if (sizeof(BitWord) == 8)
         NumBits += CountPopulation_64(Bits[i]);
       else
@@ -130,7 +129,7 @@ public:
     for (unsigned i = 0; i < NumBitWords(size()); ++i)
       if (Bits[i] != 0) {
         if (sizeof(BitWord) == 4)
-          return i * BITWORD_SIZE + CountTrailingZeros_32(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_32((uint32_t)Bits[i]);
         else if (sizeof(BitWord) == 8)
           return i * BITWORD_SIZE + CountTrailingZeros_64(Bits[i]);
         else
@@ -154,7 +153,7 @@ public:
 
     if (Copy != 0) {
       if (sizeof(BitWord) == 4)
-        return WordPos * BITWORD_SIZE + CountTrailingZeros_32(Copy);
+        return WordPos * BITWORD_SIZE + CountTrailingZeros_32((uint32_t)Copy);
       else if (sizeof(BitWord) == 8)
         return WordPos * BITWORD_SIZE + CountTrailingZeros_64(Copy);
       else
@@ -165,7 +164,7 @@ public:
     for (unsigned i = WordPos+1; i < NumBitWords(size()); ++i)
       if (Bits[i] != 0) {
         if (sizeof(BitWord) == 4)
-          return i * BITWORD_SIZE + CountTrailingZeros_32(Bits[i]);
+          return i * BITWORD_SIZE + CountTrailingZeros_32((uint32_t)Bits[i]);
         else if (sizeof(BitWord) == 8)
           return i * BITWORD_SIZE + CountTrailingZeros_64(Bits[i]);
         else

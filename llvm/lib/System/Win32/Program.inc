@@ -77,10 +77,12 @@ static HANDLE RedirectIO(const Path *path, int fd, std::string* ErrMsg) {
                     0, TRUE, DUPLICATE_SAME_ACCESS);
     return h;
   }
-
-  const char *fname = path->toString().c_str();
-  if (*fname == 0)
+  
+  const char *fname;
+  if (path->isEmpty())
     fname = "NUL";
+  else
+    fname = path->toString().c_str();
 
   SECURITY_ATTRIBUTES sa;
   sa.nLength = sizeof(sa);
@@ -152,6 +154,33 @@ Program::ExecuteAndWait(const Path& path,
 
   *p = 0;
 
+  // The pointer to the environment block for the new process.
+  char *envblock = 0;
+  
+  if (envp) {
+    // An environment block consists of a null-terminated block of
+    // null-terminated strings. Convert the array of environment variables to
+    // an environment block by concatenating them.
+
+    // First, determine the length of the environment block.
+    len = 0;
+    for (unsigned i = 0; envp[i]; i++)
+      len += strlen(envp[i]) + 1;
+
+    // Now build the environment block.
+    envblock = reinterpret_cast<char *>(_alloca(len+1));
+    p = envblock;
+
+    for (unsigned i = 0; envp[i]; i++) {
+      const char *ev = envp[i];
+      size_t len = strlen(ev) + 1;
+      memcpy(p, ev, len);
+      p += len;
+    }
+
+    *p = 0;
+  }
+
   // Create a child process.
   STARTUPINFO si;
   memset(&si, 0, sizeof(si));
@@ -174,7 +203,14 @@ Program::ExecuteAndWait(const Path& path,
       MakeErrMsg(ErrMsg, "can't redirect stdout");
       return -1;
     }
-    if (redirects[1] && redirects[2] && *(redirects[1]) != *(redirects[2])) {
+    if (redirects[1] && redirects[2] && *(redirects[1]) == *(redirects[2])) {
+      // If stdout and stderr should go to the same place, redirect stderr
+      // to the handle already open for stdout.
+      DuplicateHandle(GetCurrentProcess(), si.hStdOutput,
+                      GetCurrentProcess(), &si.hStdError,
+                      0, TRUE, DUPLICATE_SAME_ACCESS);
+    } else {
+      // Just redirect stderr
       si.hStdError = RedirectIO(redirects[2], 2, ErrMsg);
       if (si.hStdError == INVALID_HANDLE_VALUE) {
         CloseHandle(si.hStdInput);
@@ -182,10 +218,6 @@ Program::ExecuteAndWait(const Path& path,
         MakeErrMsg(ErrMsg, "can't redirect stderr");
         return -1;
       }
-    } else {
-      DuplicateHandle(GetCurrentProcess(), si.hStdOutput,
-                      GetCurrentProcess(), &si.hStdError,
-                      0, TRUE, DUPLICATE_SAME_ACCESS);
     }
   }
   
@@ -195,7 +227,7 @@ Program::ExecuteAndWait(const Path& path,
   fflush(stdout);
   fflush(stderr);
   BOOL rc = CreateProcess(path.c_str(), command, NULL, NULL, FALSE, 0,
-                          envp, NULL, &si, &pi);
+                          envblock, NULL, &si, &pi);
   DWORD err = GetLastError();
 
   // Regardless of whether the process got created or not, we are done with

@@ -80,10 +80,6 @@ FunctionPass *llvm::createPPCCodeEmitterPass(PPCTargetMachine &TM,
   return new PPCCodeEmitter(TM, MCE);
 }
 
-#ifdef __APPLE__ 
-extern "C" void sys_icache_invalidate(const void *Addr, size_t len);
-#endif
-
 bool PPCCodeEmitter::runOnMachineFunction(MachineFunction &MF) {
   assert((MF.getTarget().getRelocationModel() != Reloc::Default ||
           MF.getTarget().getRelocationModel() != Reloc::Static) &&
@@ -109,7 +105,8 @@ void PPCCodeEmitter::emitBasicBlock(MachineBasicBlock &MBB) {
     default:
       MCE.emitWordBE(getBinaryCodeForInstr(*I));
       break;
-    case TargetInstrInfo::LABEL:
+    case TargetInstrInfo::DBG_LABEL:
+    case TargetInstrInfo::EH_LABEL:
       MCE.emitLabel(MI.getOperand(0).getImm());
       break;
     case TargetInstrInfo::IMPLICIT_DEF:
@@ -143,7 +140,8 @@ int PPCCodeEmitter::getMachineOpValue(MachineInstr &MI, MachineOperand &MO) {
              MO.isConstantPoolIndex() || MO.isJumpTableIndex()) {
     unsigned Reloc = 0;
     if (MI.getOpcode() == PPC::BL_Macho || MI.getOpcode() == PPC::BL8_Macho ||
-        MI.getOpcode() == PPC::BL_ELF || MI.getOpcode() == PPC::BL8_ELF)
+        MI.getOpcode() == PPC::BL_ELF || MI.getOpcode() == PPC::BL8_ELF ||
+        MI.getOpcode() == PPC::TAILB || MI.getOpcode() == PPC::TAILB8)
       Reloc = PPC::reloc_pcrel_bx;
     else {
       if (TM.getRelocationModel() == Reloc::PIC_) {

@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/OperandTraits.h"
 using namespace llvm;
 
 void BitcodeReader::FreeState() {
@@ -65,6 +66,7 @@ static GlobalValue::LinkageTypes GetDecodedLinkage(unsigned Val) {
   case 5: return GlobalValue::DLLImportLinkage;
   case 6: return GlobalValue::DLLExportLinkage;
   case 7: return GlobalValue::ExternalWeakLinkage;
+  case 8: return GlobalValue::CommonLinkage;
   }
 }
 
@@ -115,55 +117,81 @@ static int GetDecodedBinaryOpcode(unsigned Val, const Type *Ty) {
   }
 }
 
-
+namespace llvm {
 namespace {
   /// @brief A class for maintaining the slot number definition
   /// as a placeholder for the actual definition for forward constants defs.
   class ConstantPlaceHolder : public ConstantExpr {
     ConstantPlaceHolder();                       // DO NOT IMPLEMENT
     void operator=(const ConstantPlaceHolder &); // DO NOT IMPLEMENT
-    Use Op;
   public:
     // allocate space for exactly one operand
     void *operator new(size_t s) {
       return User::operator new(s, 1);
     }
     explicit ConstantPlaceHolder(const Type *Ty)
-      : ConstantExpr(Ty, Instruction::UserOp1, &Op, 1),
-        Op(UndefValue::get(Type::Int32Ty), this) {
+      : ConstantExpr(Ty, Instruction::UserOp1, &Op<0>(), 1) {
+      Op<0>() = UndefValue::get(Type::Int32Ty);
     }
+    /// Provide fast operand accessors
+    DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
   };
+}
+
+
+  // FIXME: can we inherit this from ConstantExpr?
+template <>
+struct OperandTraits<ConstantPlaceHolder> : FixedNumOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantPlaceHolder, Value)
+}
+
+void BitcodeReaderValueList::resize(unsigned Desired) {
+  if (Desired > Capacity) {
+    // Since we expect many values to come from the bitcode file we better
+    // allocate the double amount, so that the array size grows exponentially
+    // at each reallocation.  Also, add a small amount of 100 extra elements
+    // each time, to reallocate less frequently when the array is still small.
+    //
+    Capacity = Desired * 2 + 100;
+    Use *New = allocHungoffUses(Capacity);
+    Use *Old = OperandList;
+    unsigned Ops = getNumOperands();
+    for (int i(Ops - 1); i >= 0; --i)
+      New[i] = Old[i].get();
+    OperandList = New;
+    if (Old) Use::zap(Old, Old + Ops, true);
+  }
 }
 
 Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
                                                     const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    Uses.resize(Idx+1);
-    OperandList = &Uses[0];
+    resize(Idx + 1);
     NumOperands = Idx+1;
   }
 
-  if (Value *V = Uses[Idx]) {
+  if (Value *V = OperandList[Idx]) {
     assert(Ty == V->getType() && "Type mismatch in constant table!");
     return cast<Constant>(V);
   }
 
   // Create and return a placeholder, which will later be RAUW'd.
   Constant *C = new ConstantPlaceHolder(Ty);
-  Uses[Idx].init(C, this);
+  OperandList[Idx] = C;
   return C;
 }
 
 Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
   if (Idx >= size()) {
     // Insert a bunch of null values.
-    Uses.resize(Idx+1);
-    OperandList = &Uses[0];
+    resize(Idx + 1);
     NumOperands = Idx+1;
   }
   
-  if (Value *V = Uses[Idx]) {
+  if (Value *V = OperandList[Idx]) {
     assert((Ty == 0 || Ty == V->getType()) && "Type mismatch in value table!");
     return V;
   }
@@ -173,7 +201,7 @@ Value *BitcodeReaderValueList::getValueFwdRef(unsigned Idx, const Type *Ty) {
   
   // Create and return a placeholder, which will later be RAUW'd.
   Value *V = new Argument(Ty);
-  Uses[Idx].init(V, this);
+  OperandList[Idx] = V;
   return V;
 }
 
@@ -742,6 +770,47 @@ bool BitcodeReader::ParseConstants() {
       V = ConstantExpr::getGetElementPtr(Elts[0], &Elts[1], Elts.size()-1);
       break;
     }
+    case bitc::CST_CODE_CE_EXTRACTVAL: {
+                                    // CE_EXTRACTVAL: [opty, opval, n x indices]
+      const Type *AggTy = getTypeByID(Record[0]);
+      if (!AggTy || !AggTy->isAggregateType())
+        return Error("Invalid CE_EXTRACTVAL record");
+      Constant *Agg = ValueList.getConstantFwdRef(Record[1], AggTy);
+      SmallVector<unsigned, 4> Indices;
+      for (unsigned i = 2, e = Record.size(); i != e; ++i) {
+        uint64_t Index = Record[i];
+        if ((unsigned)Index != Index)
+          return Error("Invalid CE_EXTRACTVAL record");
+        Indices.push_back((unsigned)Index);
+      }
+      if (!ExtractValueInst::getIndexedType(AggTy,
+                                            Indices.begin(), Indices.end()))
+        return Error("Invalid CE_EXTRACTVAL record");
+      V = ConstantExpr::getExtractValue(Agg, &Indices[0], Indices.size());
+      break;
+    }
+    case bitc::CST_CODE_CE_INSERTVAL: {
+                        // CE_INSERTVAL: [opty, opval, opty, opval, n x indices]
+      const Type *AggTy = getTypeByID(Record[0]);
+      if (!AggTy || !AggTy->isAggregateType())
+        return Error("Invalid CE_INSERTVAL record");
+      Constant *Agg = ValueList.getConstantFwdRef(Record[1], AggTy);
+      const Type *ValTy = getTypeByID(Record[2]);
+      Constant *Val = ValueList.getConstantFwdRef(Record[3], ValTy);
+      SmallVector<unsigned, 4> Indices;
+      for (unsigned i = 4, e = Record.size(); i != e; ++i) {
+        uint64_t Index = Record[i];
+        if ((unsigned)Index != Index)
+          return Error("Invalid CE_INSERTVAL record");
+        Indices.push_back((unsigned)Index);
+      }
+      if (ExtractValueInst::getIndexedType(AggTy,
+                                           Indices.begin(),
+                                           Indices.end()) != ValTy)
+        return Error("Invalid CE_INSERTVAL record");
+      V = ConstantExpr::getInsertValue(Agg, Val, &Indices[0], Indices.size());
+      break;
+    }
     case bitc::CST_CODE_CE_SELECT:  // CE_SELECT: [opval#, opval#, opval#]
       if (Record.size() < 3) return Error("Invalid CE_SELECT record");
       V = ConstantExpr::getSelect(ValueList.getConstantFwdRef(Record[0],
@@ -791,8 +860,12 @@ bool BitcodeReader::ParseConstants() {
 
       if (OpTy->isFloatingPoint())
         V = ConstantExpr::getFCmp(Record[3], Op0, Op1);
-      else
+      else if (!isa<VectorType>(OpTy))
         V = ConstantExpr::getICmp(Record[3], Op0, Op1);
+      else if (OpTy->isFPOrFPVector())
+        V = ConstantExpr::getVFCmp(Record[3], Op0, Op1);
+      else
+        V = ConstantExpr::getVICmp(Record[3], Op0, Op1);
       break;
     }
     case bitc::CST_CODE_INLINEASM: {
@@ -1224,15 +1297,6 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       CurBB = FunctionBBs[0];
       continue;
       
-    case bitc::FUNC_CODE_INST_BB_UNWINDDEST:   // BB_UNWINDDEST: [bb#]
-      if (CurBB->getUnwindDest())
-        return Error("Only permit one BB_UNWINDDEST per BB");
-      if (Record.size() != 1)
-        return Error("Invalid BB_UNWINDDEST record");
-
-      CurBB->setUnwindDest(getBasicBlock(Record[0]));
-      continue;
-      
     case bitc::FUNC_CODE_INST_BB_NOUNWIND:    // BB_NOUNWIND
       CurBB->setDoesNotThrow();
       continue;
@@ -1247,7 +1311,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       
       int Opc = GetDecodedBinaryOpcode(Record[OpNum], LHS->getType());
       if (Opc == -1) return Error("Invalid BINOP record");
-      I = BinaryOperator::create((Instruction::BinaryOps)Opc, LHS, RHS);
+      I = BinaryOperator::Create((Instruction::BinaryOps)Opc, LHS, RHS);
       break;
     }
     case bitc::FUNC_CODE_INST_CAST: {    // CAST: [opval, opty, destty, castopc]
@@ -1261,7 +1325,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       int Opc = GetDecodedCastOpcode(Record[OpNum+1]);
       if (Opc == -1 || ResTy == 0)
         return Error("Invalid CAST record");
-      I = CastInst::create((Instruction::CastOps)Opc, Op, ResTy);
+      I = CastInst::Create((Instruction::CastOps)Opc, Op, ResTy);
       break;
     }
     case bitc::FUNC_CODE_INST_GEP: { // GEP: [n x operands]
@@ -1279,6 +1343,51 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       }
 
       I = GetElementPtrInst::Create(BasePtr, GEPIdx.begin(), GEPIdx.end());
+      break;
+    }
+      
+    case bitc::FUNC_CODE_INST_EXTRACTVAL: {
+                                       // EXTRACTVAL: [opty, opval, n x indices]
+      unsigned OpNum = 0;
+      Value *Agg;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Agg))
+        return Error("Invalid EXTRACTVAL record");
+
+      SmallVector<unsigned, 4> EXTRACTVALIdx;
+      for (unsigned RecSize = Record.size();
+           OpNum != RecSize; ++OpNum) {
+        uint64_t Index = Record[OpNum];
+        if ((unsigned)Index != Index)
+          return Error("Invalid EXTRACTVAL index");
+        EXTRACTVALIdx.push_back((unsigned)Index);
+      }
+
+      I = ExtractValueInst::Create(Agg,
+                                   EXTRACTVALIdx.begin(), EXTRACTVALIdx.end());
+      break;
+    }
+      
+    case bitc::FUNC_CODE_INST_INSERTVAL: {
+                           // INSERTVAL: [opty, opval, opty, opval, n x indices]
+      unsigned OpNum = 0;
+      Value *Agg;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Agg))
+        return Error("Invalid INSERTVAL record");
+      Value *Val;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Val))
+        return Error("Invalid INSERTVAL record");
+
+      SmallVector<unsigned, 4> INSERTVALIdx;
+      for (unsigned RecSize = Record.size();
+           OpNum != RecSize; ++OpNum) {
+        uint64_t Index = Record[OpNum];
+        if ((unsigned)Index != Index)
+          return Error("Invalid INSERTVAL index");
+        INSERTVALIdx.push_back((unsigned)Index);
+      }
+
+      I = InsertValueInst::Create(Agg, Val,
+                                  INSERTVALIdx.begin(), INSERTVALIdx.end());
       break;
     }
       
@@ -1341,10 +1450,14 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
           OpNum+1 != Record.size())
         return Error("Invalid CMP record");
       
-      if (LHS->getType()->isFPOrFPVector())
+      if (LHS->getType()->isFloatingPoint())
         I = new FCmpInst((FCmpInst::Predicate)Record[OpNum], LHS, RHS);
-      else
+      else if (!isa<VectorType>(LHS->getType()))
         I = new ICmpInst((ICmpInst::Predicate)Record[OpNum], LHS, RHS);
+      else if (LHS->getType()->isFPOrFPVector())
+        I = new VFCmpInst((FCmpInst::Predicate)Record[OpNum], LHS, RHS);
+      else
+        I = new VICmpInst((ICmpInst::Predicate)Record[OpNum], LHS, RHS);
       break;
     }
     case bitc::FUNC_CODE_INST_GETRESULT: { // GETRESULT: [ty, val, n]
@@ -1462,7 +1575,8 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         }
       }
       
-      I = InvokeInst::Create(Callee, NormalBB, UnwindBB, Ops.begin(), Ops.end());
+      I = InvokeInst::Create(Callee, NormalBB, UnwindBB,
+                             Ops.begin(), Ops.end());
       cast<InvokeInst>(I)->setCallingConv(CCInfo);
       cast<InvokeInst>(I)->setParamAttrs(PAL);
       break;

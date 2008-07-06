@@ -115,6 +115,8 @@ public:
 
   bool hasFP(const MachineFunction &MF) const;
 
+  bool needsStackRealignment(const MachineFunction &MF) const;
+
   bool hasReservedCallFrame(MachineFunction &MF) const;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
@@ -125,9 +127,14 @@ public:
                            int SPAdj, RegScavenger *RS = NULL) const;
 
   void processFunctionBeforeFrameFinalized(MachineFunction &MF) const;
+  void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
+                                            RegScavenger *RS = NULL) const;
 
   void emitPrologue(MachineFunction &MF) const;
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
+
+  void emitFrameMoves(MachineFunction &MF,
+                      unsigned FrameLabelId, unsigned ReadyLabelId) const;
 
   // Debug information queries.
   unsigned getRARegister() const;
@@ -143,7 +150,7 @@ public:
 // getX86SubSuperRegister - X86 utility function. It returns the sub or super
 // register of a specific X86 register.
 // e.g. getX86SubSuperRegister(X86::EAX, MVT::i16) return X86:AX
-unsigned getX86SubSuperRegister(unsigned, MVT::ValueType, bool High=false);
+unsigned getX86SubSuperRegister(unsigned, MVT, bool High=false);
 
 } // End llvm namespace
 

@@ -16,7 +16,7 @@
 
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/iterator"
+#include "llvm/ADT/iterator.h"
 #include <vector>
 
 namespace llvm {
@@ -90,6 +90,10 @@ public:
   }
   static use_iterator use_end() { return use_iterator(0); }
   
+  /// use_empty - Return true if there are no instructions using the specified
+  /// register.
+  bool use_empty(unsigned RegNo) const { return use_begin(RegNo) == use_end(); }
+
   
   /// replaceRegWith - Replace all instances of FromReg with ToReg in the
   /// machine function.  This is like llvm-level X->replaceAllUsesWith(Y),
@@ -131,6 +135,13 @@ public:
     assert(Reg < VRegInfo.size() && "Invalid vreg!");
     return VRegInfo[Reg].first;
   }
+
+  /// setRegClass - Set the register class of the specified virtual register.
+  void setRegClass(unsigned Reg, const TargetRegisterClass *RC) {
+    Reg -= TargetRegisterInfo::FirstVirtualRegister;
+    assert(Reg < VRegInfo.size() && "Invalid vreg!");
+    VRegInfo[Reg].first = RC;
+  }
   
   /// createVirtualRegister - Create and return a new virtual register in the
   /// function with the specified register class.
@@ -152,7 +163,7 @@ public:
   /// getLastVirtReg - Return the highest currently assigned virtual register.
   ///
   unsigned getLastVirtReg() const {
-    return VRegInfo.size()+TargetRegisterInfo::FirstVirtualRegister-1;
+    return (unsigned)VRegInfo.size()+TargetRegisterInfo::FirstVirtualRegister-1;
   }
   
   

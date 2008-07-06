@@ -22,7 +22,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -93,7 +93,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -352,6 +352,10 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\Transforms\IPO\ExtractGV.cpp"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\Transforms\Ipo\GlobalDCE.cpp"
 					>
 				</File>
@@ -393,10 +397,6 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Ipo\RaiseAllocations.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\..\lib\Transforms\Ipo\SimplifyLibCalls.cpp"
 					>
 				</File>
 				<File
@@ -464,7 +464,15 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\Transforms\Scalar\JumpThreading.cpp"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\Transforms\Scalar\LICM.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\Transforms\Scalar\LoopDeletion.cpp"
 					>
 				</File>
 				<File
@@ -516,8 +524,30 @@
 					>
 				</File>
 				<File
-					RelativePath="..\..\lib\Transforms\Scalar\SimplifyCFG.cpp"
+					RelativePath="..\..\lib\Transforms\Scalar\SimplifyCFGPass.cpp"
 					>
+				</File>
+				<File
+					RelativePath="..\..\lib\Transforms\Scalar\SimplifyLibCalls.cpp"
+					>
+					<FileConfiguration
+						Name="Debug|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							ObjectFile="$(IntDir)\$(InputName)1.obj"
+							XMLDocumentationFileName="$(IntDir)\$(InputName)1.xdc"
+						/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							ObjectFile="$(IntDir)\$(InputName)1.obj"
+							XMLDocumentationFileName="$(IntDir)\$(InputName)1.xdc"
+						/>
+					</FileConfiguration>
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Scalar\TailDuplication.cpp"
@@ -527,10 +557,6 @@
 					RelativePath="..\..\lib\Transforms\Scalar\TailRecursionElimination.cpp"
 					>
 				</File>
-			</Filter>
-			<Filter
-				Name="Parallel"
-				>
 			</Filter>
 			<Filter
 				Name="Utils"
@@ -649,6 +675,10 @@
 				</File>
 				<File
 					RelativePath="..\..\lib\Transforms\Utils\UnifyFunctionExitNodes.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\Transforms\Utils\UnrollLoop.cpp"
 					>
 				</File>
 				<File

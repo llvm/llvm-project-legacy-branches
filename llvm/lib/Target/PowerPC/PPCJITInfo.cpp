@@ -17,7 +17,7 @@
 #include "PPCTargetMachine.h"
 #include "llvm/Function.h"
 #include "llvm/CodeGen/MachineCodeEmitter.h"
-#include "llvm/Config/alloca.h"
+#include "llvm/System/Memory.h"
 #include "llvm/Support/Debug.h"
 #include <set>
 using namespace llvm;
@@ -72,7 +72,7 @@ extern "C" void PPC32CompilationCallback();
 extern "C" void PPC64CompilationCallback();
 
 #if (defined(__POWERPC__) || defined (__ppc__) || defined(_POWER)) && \
-    !defined(__ppc64__)
+    !(defined(__ppc64__) || defined(__FreeBSD__))
 // CompilationCallback stub - We can't use a C function with inline assembly in
 // it, because we the prolog/epilog inserted by GCC won't work for us.  Instead,
 // write our own wrapper, which does things our way, so we have complete control
@@ -138,7 +138,7 @@ asm(
     );
 
 #elif defined(__PPC__) && !defined(__ppc64__)
-// Linux/PPC support
+// Linux & FreeBSD / PPC 32 support
 
 // CompilationCallback stub - We can't use a C function with inline assembly in
 // it, because we the prolog/epilog inserted by GCC won't work for us.  Instead,
@@ -330,15 +330,6 @@ defined(__APPLE__)
 extern "C" void sys_icache_invalidate(const void *Addr, size_t len);
 #endif
 
-/// SyncICache - On PPC, the JIT emitted code must be explicitly refetched to
-/// ensure correct execution.
-static void SyncICache(const void *Addr, size_t len) {
-#if (defined(__POWERPC__) || defined (__ppc__) || defined(_POWER)) && \
-defined(__APPLE__)
-  sys_icache_invalidate(Addr, len);
-#endif
-}
-
 void *PPCJITInfo::emitFunctionStub(const Function* F, void *Fn,
                                    MachineCodeEmitter &MCE) {
   // If this is just a call to an external function, emit a branch instead of a
@@ -355,7 +346,7 @@ void *PPCJITInfo::emitFunctionStub(const Function* F, void *Fn,
     MCE.emitWordBE(0);
     MCE.emitWordBE(0);
     EmitBranchToAt(Addr, (intptr_t)Fn, false, is64Bit);
-    SyncICache((void*)Addr, 7*4);
+    sys::Memory::InvalidateInstructionCache((void*)Addr, 7*4);
     return MCE.finishFunctionStub(F);
   }
 
@@ -383,7 +374,7 @@ void *PPCJITInfo::emitFunctionStub(const Function* F, void *Fn,
   MCE.emitWordBE(0);
   MCE.emitWordBE(0);
   EmitBranchToAt(BranchAddr, (intptr_t)Fn, true, is64Bit);
-  SyncICache((void*)Addr, 10*4);
+  sys::Memory::InvalidateInstructionCache((void*)Addr, 10*4);
   return MCE.finishFunctionStub(F);
 }
 

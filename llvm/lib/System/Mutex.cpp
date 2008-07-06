@@ -13,7 +13,6 @@
 
 #include "llvm/Config/config.h"
 #include "llvm/System/Mutex.h"
-#include "llvm/System/IncludeFile.h"
 
 //===----------------------------------------------------------------------===//
 //=== WARNING: Implementation here must contain only TRULY operating system
@@ -76,7 +75,7 @@ Mutex::Mutex( bool recursive)
     errorcode = pthread_mutexattr_settype(&attr, kind);
     assert(errorcode == 0);
 
-#if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__NetBSD__)
+#if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__NetBSD__) && !defined(__DragonFly__)
     // Make it a process local mutex
     errorcode = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_PRIVATE);
 #endif
@@ -99,7 +98,7 @@ Mutex::~Mutex()
 {
   if (pthread_enabled)
   {
-    pthread_mutex_t* mutex = reinterpret_cast<pthread_mutex_t*>(data_);
+    pthread_mutex_t* mutex = static_cast<pthread_mutex_t*>(data_);
     assert(mutex != 0);
     pthread_mutex_destroy(mutex);
     assert(mutex != 0);
@@ -111,7 +110,7 @@ Mutex::acquire()
 {
   if (pthread_enabled)
   {
-    pthread_mutex_t* mutex = reinterpret_cast<pthread_mutex_t*>(data_);
+    pthread_mutex_t* mutex = static_cast<pthread_mutex_t*>(data_);
     assert(mutex != 0);
 
     int errorcode = pthread_mutex_lock(mutex);
@@ -125,7 +124,7 @@ Mutex::release()
 {
   if (pthread_enabled)
   {
-    pthread_mutex_t* mutex = reinterpret_cast<pthread_mutex_t*>(data_);
+    pthread_mutex_t* mutex = static_cast<pthread_mutex_t*>(data_);
     assert(mutex != 0);
 
     int errorcode = pthread_mutex_unlock(mutex);
@@ -139,7 +138,7 @@ Mutex::tryacquire()
 {
   if (pthread_enabled)
   {
-    pthread_mutex_t* mutex = reinterpret_cast<pthread_mutex_t*>(data_);
+    pthread_mutex_t* mutex = static_cast<pthread_mutex_t*>(data_);
     assert(mutex != 0);
 
     int errorcode = pthread_mutex_trylock(mutex);

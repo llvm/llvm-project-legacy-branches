@@ -97,9 +97,13 @@ namespace {
 
     void RemoveDeadArgumentsFromFunction(Function *F);
   };
-  char DAE::ID = 0;
-  RegisterPass<DAE> X("deadargelim", "Dead Argument Elimination");
+}
 
+char DAE::ID = 0;
+static RegisterPass<DAE>
+X("deadargelim", "Dead Argument Elimination");
+
+namespace {
   /// DAH - DeadArgumentHacking pass - Same as dead argument elimination, but
   /// deletes arguments to functions which are external.  This is only for use
   /// by bugpoint.
@@ -107,10 +111,11 @@ namespace {
     static char ID;
     virtual bool ShouldHackArguments() const { return true; }
   };
-  char DAH::ID = 0;
-  RegisterPass<DAH> Y("deadarghaX0r",
-                      "Dead Argument Hacking (BUGPOINT USE ONLY; DO NOT USE)");
 }
+
+char DAH::ID = 0;
+static RegisterPass<DAH>
+Y("deadarghaX0r", "Dead Argument Hacking (BUGPOINT USE ONLY; DO NOT USE)");
 
 /// createDeadArgEliminationPass - This pass removes arguments from functions
 /// which are not used by the body of the function.
@@ -158,10 +163,7 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
 
   // Create the new function body and insert it into the module...
   Function *NF = Function::Create(NFTy, Fn.getLinkage());
-  NF->setCallingConv(Fn.getCallingConv());
-  NF->setParamAttrs(Fn.getParamAttrs());
-  if (Fn.hasCollector())
-    NF->setCollector(Fn.getCollector());
+  NF->copyAttributesFrom(&Fn);
   Fn.getParent()->getFunctionList().insert(&Fn, NF);
   NF->takeName(&Fn);
 
@@ -300,6 +302,12 @@ void DAE::SurveyFunction(Function &F) {
     FunctionIntrinsicallyLive = true;
   else
     for (Value::use_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I) {
+      // If the function is PASSED IN as an argument, its address has been taken
+      if (I.getOperandNo() != 0) {
+        FunctionIntrinsicallyLive = true;
+        break;
+      }
+
       // If this use is anything other than a call site, the function is alive.
       CallSite CS = CallSite::get(*I);
       Instruction *TheCall = CS.getInstruction();
@@ -327,15 +335,6 @@ void DAE::SurveyFunction(Function &F) {
             RetValLiveness = Live;
             break;
           }
-
-      // If the function is PASSED IN as an argument, its address has been taken
-      for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
-           AI != E; ++AI)
-        if (AI->get() == &F) {
-          FunctionIntrinsicallyLive = true;
-          break;
-        }
-      if (FunctionIntrinsicallyLive) break;
     }
 
   if (FunctionIntrinsicallyLive) {
@@ -551,10 +550,8 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
 
   // Create the new function body and insert it into the module...
   Function *NF = Function::Create(NFTy, F->getLinkage());
-  NF->setCallingConv(F->getCallingConv());
+  NF->copyAttributesFrom(F);
   NF->setParamAttrs(NewPAL);
-  if (F->hasCollector())
-    NF->setCollector(F->getCollector());
   F->getParent()->getFunctionList().insert(F, NF);
   NF->takeName(F);
 
@@ -626,7 +623,7 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
 
     // Finally, remove the old call from the program, reducing the use-count of
     // F.
-    Call->getParent()->getInstList().erase(Call);
+    Call->eraseFromParent();
   }
 
   // Since we have now created the new function, splice the body of the old
@@ -665,7 +662,7 @@ void DAE::RemoveDeadArgumentsFromFunction(Function *F) {
       }
 
   // Now that the old function is dead, delete it.
-  F->getParent()->getFunctionList().erase(F);
+  F->eraseFromParent();
 }
 
 bool DAE::runOnModule(Module &M) {

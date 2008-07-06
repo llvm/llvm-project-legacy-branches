@@ -32,6 +32,174 @@
 #include <algorithm>
 using namespace llvm;
 
+//===----------------------------------------------------------------------===//
+// Useful predicates
+//===----------------------------------------------------------------------===//
+
+// Determine if an AllocationInst instruction escapes from the function it is
+// contained in. If it does not escape, there is no way for another function to
+// mod/ref it.  We do this by looking at its uses and determining if the uses
+// can escape (recursively).
+static bool AddressMightEscape(const Value *V) {
+  for (Value::use_const_iterator UI = V->use_begin(), E = V->use_end();
+       UI != E; ++UI) {
+    const Instruction *I = cast<Instruction>(*UI);
+    switch (I->getOpcode()) {
+    case Instruction::Load: 
+      break; //next use.
+    case Instruction::Store:
+      if (I->getOperand(0) == V)
+        return true; // Escapes if the pointer is stored.
+      break; // next use.
+    case Instruction::GetElementPtr:
+      if (AddressMightEscape(I))
+        return true;
+      break; // next use.
+    case Instruction::BitCast:
+      if (AddressMightEscape(I))
+        return true;
+      break; // next use
+    case Instruction::Ret:
+      // If returned, the address will escape to calling functions, but no
+      // callees could modify it.
+      break; // next use
+    case Instruction::Call:
+      // If the call is to a few known safe intrinsics, we know that it does
+      // not escape.
+      // TODO: Eventually just check the 'nocapture' attribute.
+      if (!isa<MemIntrinsic>(I))
+        return true;
+      break;  // next use
+    default:
+      return true;
+    }
+  }
+  return false;
+}
+
+/// getUnderlyingObject - This traverses the use chain to figure out what object
+/// the specified value points to.  If the value points to, or is derived from,
+/// a unique object or an argument, return it.  This returns:
+///    Arguments, GlobalVariables, Functions, Allocas, Mallocs.
+static const Value *getUnderlyingObject(const Value *V) {
+  if (!isa<PointerType>(V->getType())) return V;
+
+  // If we are at some type of object, return it. GlobalValues and Allocations
+  // have unique addresses. 
+  if (isa<GlobalValue>(V) || isa<AllocationInst>(V) || isa<Argument>(V))
+    return V;
+
+  // Traverse through different addressing mechanisms...
+  if (const Instruction *I = dyn_cast<Instruction>(V)) {
+    if (isa<BitCastInst>(I) || isa<GetElementPtrInst>(I))
+      return getUnderlyingObject(I->getOperand(0));
+  } else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(V)) {
+    if (CE->getOpcode() == Instruction::BitCast || 
+        CE->getOpcode() == Instruction::GetElementPtr)
+      return getUnderlyingObject(CE->getOperand(0));
+  }
+  return V;
+}
+
+static const User *isGEP(const Value *V) {
+  if (isa<GetElementPtrInst>(V) ||
+      (isa<ConstantExpr>(V) &&
+       cast<ConstantExpr>(V)->getOpcode() == Instruction::GetElementPtr))
+    return cast<User>(V);
+  return 0;
+}
+
+static const Value *GetGEPOperands(const Value *V, 
+                                   SmallVector<Value*, 16> &GEPOps){
+  assert(GEPOps.empty() && "Expect empty list to populate!");
+  GEPOps.insert(GEPOps.end(), cast<User>(V)->op_begin()+1,
+                cast<User>(V)->op_end());
+
+  // Accumulate all of the chained indexes into the operand array
+  V = cast<User>(V)->getOperand(0);
+
+  while (const User *G = isGEP(V)) {
+    if (!isa<Constant>(GEPOps[0]) || isa<GlobalValue>(GEPOps[0]) ||
+        !cast<Constant>(GEPOps[0])->isNullValue())
+      break;  // Don't handle folding arbitrary pointer offsets yet...
+    GEPOps.erase(GEPOps.begin());   // Drop the zero index
+    GEPOps.insert(GEPOps.begin(), G->op_begin()+1, G->op_end());
+    V = G->getOperand(0);
+  }
+  return V;
+}
+
+/// isIdentifiedObject - Return true if this pointer refers to a distinct and
+/// identifiable object.  This returns true for:
+///    Global Variables and Functions
+///    Allocas and Mallocs
+///    ByVal and NoAlias Arguments
+///
+static bool isIdentifiedObject(const Value *V) {
+  if (isa<GlobalValue>(V) || isa<AllocationInst>(V))
+    return true;
+  if (const Argument *A = dyn_cast<Argument>(V))
+    return A->hasNoAliasAttr() || A->hasByValAttr();
+  return false;
+}
+
+/// isKnownNonNull - Return true if we know that the specified value is never
+/// null.
+static bool isKnownNonNull(const Value *V) {
+  // Alloca never returns null, malloc might.
+  if (isa<AllocaInst>(V)) return true;
+  
+  // A byval argument is never null.
+  if (const Argument *A = dyn_cast<Argument>(V))
+    return A->hasByValAttr();
+
+  // Global values are not null unless extern weak.
+  if (const GlobalValue *GV = dyn_cast<GlobalValue>(V))
+    return !GV->hasExternalWeakLinkage();
+  return false;
+}
+
+/// isNonEscapingLocalObject - Return true if the pointer is to a function-local
+/// object that never escapes from the function.
+static bool isNonEscapingLocalObject(const Value *V) {
+  // If this is a local allocation, check to see if it escapes.
+  if (isa<AllocationInst>(V))
+    return !AddressMightEscape(V);
+      
+  // If this is an argument that corresponds to a byval or noalias argument,
+  // it can't escape either.
+  if (const Argument *A = dyn_cast<Argument>(V))
+    if (A->hasByValAttr() || A->hasNoAliasAttr())
+      return !AddressMightEscape(V);
+  return false;
+}
+
+
+/// isObjectSmallerThan - Return true if we can prove that the object specified
+/// by V is smaller than Size.
+static bool isObjectSmallerThan(const Value *V, unsigned Size,
+                                const TargetData &TD) {
+  const Type *AccessTy = 0;
+  if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
+    AccessTy = GV->getType()->getElementType();
+  
+  if (const AllocationInst *AI = dyn_cast<AllocationInst>(V))
+    if (!AI->isArrayAllocation())
+      AccessTy = AI->getType()->getElementType();
+
+  if (const Argument *A = dyn_cast<Argument>(V))
+    if (A->hasByValAttr())
+      AccessTy = cast<PointerType>(A->getType())->getElementType();
+  
+  if (AccessTy && AccessTy->isSized())
+    return TD.getABITypeSize(AccessTy) < Size;
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+// NoAA Pass
+//===----------------------------------------------------------------------===//
+
 namespace {
   /// NoAA - This class implements the -no-aa pass, which always returns "I
   /// don't know" for alias queries.  NoAA is unlike other alias analysis
@@ -79,17 +247,21 @@ namespace {
     virtual void deleteValue(Value *V) {}
     virtual void copyValue(Value *From, Value *To) {}
   };
-
-  // Register this pass...
-  char NoAA::ID = 0;
-  RegisterPass<NoAA>
-  U("no-aa", "No Alias Analysis (always returns 'may' alias)", true, true);
-
-  // Declare that we implement the AliasAnalysis interface
-  RegisterAnalysisGroup<AliasAnalysis> V(U);
 }  // End of anonymous namespace
 
+// Register this pass...
+char NoAA::ID = 0;
+static RegisterPass<NoAA>
+U("no-aa", "No Alias Analysis (always returns 'may' alias)", true, true);
+
+// Declare that we implement the AliasAnalysis interface
+static RegisterAnalysisGroup<AliasAnalysis> V(U);
+
 ImmutablePass *llvm::createNoAAPass() { return new NoAA(); }
+
+//===----------------------------------------------------------------------===//
+// BasicAA Pass
+//===----------------------------------------------------------------------===//
 
 namespace {
   /// BasicAliasAnalysis - This is the default alias analysis implementation.
@@ -124,118 +296,27 @@ namespace {
                          const Type *BasePtr2Ty,
                          Value **GEP2Ops, unsigned NumGEP2Ops, unsigned G2Size);
   };
-
-  // Register this pass...
-  char BasicAliasAnalysis::ID = 0;
-  RegisterPass<BasicAliasAnalysis>
-  X("basicaa", "Basic Alias Analysis (default AA impl)", false, true);
-
-  // Declare that we implement the AliasAnalysis interface
-  RegisterAnalysisGroup<AliasAnalysis, true> Y(X);
 }  // End of anonymous namespace
+
+// Register this pass...
+char BasicAliasAnalysis::ID = 0;
+static RegisterPass<BasicAliasAnalysis>
+X("basicaa", "Basic Alias Analysis (default AA impl)", false, true);
+
+// Declare that we implement the AliasAnalysis interface
+static RegisterAnalysisGroup<AliasAnalysis, true> Y(X);
 
 ImmutablePass *llvm::createBasicAliasAnalysisPass() {
   return new BasicAliasAnalysis();
 }
 
-/// getUnderlyingObject - This traverses the use chain to figure out what object
-/// the specified value points to.  If the value points to, or is derived from,
-/// a unique object or an argument, return it.  This returns:
-///    Arguments, GlobalVariables, Functions, Allocas, Mallocs.
-static const Value *getUnderlyingObject(const Value *V) {
-  if (!isa<PointerType>(V->getType())) return 0;
-
-  // If we are at some type of object, return it. GlobalValues and Allocations
-  // have unique addresses. 
-  if (isa<GlobalValue>(V) || isa<AllocationInst>(V) || isa<Argument>(V))
-    return V;
-
-  // Traverse through different addressing mechanisms...
-  if (const Instruction *I = dyn_cast<Instruction>(V)) {
-    if (isa<BitCastInst>(I) || isa<GetElementPtrInst>(I))
-      return getUnderlyingObject(I->getOperand(0));
-  } else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(V)) {
-    if (CE->getOpcode() == Instruction::BitCast || 
-        CE->getOpcode() == Instruction::GetElementPtr)
-      return getUnderlyingObject(CE->getOperand(0));
-  }
-  return 0;
-}
-
-static const User *isGEP(const Value *V) {
-  if (isa<GetElementPtrInst>(V) ||
-      (isa<ConstantExpr>(V) &&
-       cast<ConstantExpr>(V)->getOpcode() == Instruction::GetElementPtr))
-    return cast<User>(V);
-  return 0;
-}
-
-static const Value *GetGEPOperands(const Value *V, 
-                                   SmallVector<Value*, 16> &GEPOps){
-  assert(GEPOps.empty() && "Expect empty list to populate!");
-  GEPOps.insert(GEPOps.end(), cast<User>(V)->op_begin()+1,
-                cast<User>(V)->op_end());
-
-  // Accumulate all of the chained indexes into the operand array
-  V = cast<User>(V)->getOperand(0);
-
-  while (const User *G = isGEP(V)) {
-    if (!isa<Constant>(GEPOps[0]) || isa<GlobalValue>(GEPOps[0]) ||
-        !cast<Constant>(GEPOps[0])->isNullValue())
-      break;  // Don't handle folding arbitrary pointer offsets yet...
-    GEPOps.erase(GEPOps.begin());   // Drop the zero index
-    GEPOps.insert(GEPOps.begin(), G->op_begin()+1, G->op_end());
-    V = G->getOperand(0);
-  }
-  return V;
-}
 
 /// pointsToConstantMemory - Chase pointers until we find a (constant
 /// global) or not.
 bool BasicAliasAnalysis::pointsToConstantMemory(const Value *P) {
-  if (const Value *V = getUnderlyingObject(P))
-    if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
-      return GV->isConstant();
-  return false;
-}
-
-// Determine if an AllocationInst instruction escapes from the function it is
-// contained in. If it does not escape, there is no way for another function to
-// mod/ref it.  We do this by looking at its uses and determining if the uses
-// can escape (recursively).
-static bool AddressMightEscape(const Value *V) {
-  for (Value::use_const_iterator UI = V->use_begin(), E = V->use_end();
-       UI != E; ++UI) {
-    const Instruction *I = cast<Instruction>(*UI);
-    switch (I->getOpcode()) {
-    case Instruction::Load: 
-      break; //next use.
-    case Instruction::Store:
-      if (I->getOperand(0) == V)
-        return true; // Escapes if the pointer is stored.
-      break; // next use.
-    case Instruction::GetElementPtr:
-      if (AddressMightEscape(I))
-        return true;
-      break; // next use.
-    case Instruction::BitCast:
-      if (AddressMightEscape(I))
-        return true;
-      break; // next use
-    case Instruction::Ret:
-      // If returned, the address will escape to calling functions, but no
-      // callees could modify it.
-      break; // next use
-    case Instruction::Call:
-      // If the call is to a few known safe intrinsics, we know that it does
-      // not escape
-      if (!isa<MemIntrinsic>(I))
-        return true;
-      break;  // next use
-    default:
-      return true;
-    }
-  }
+  if (const GlobalVariable *GV = 
+        dyn_cast<GlobalVariable>(getUnderlyingObject(P)))
+    return GV->isConstant();
   return false;
 }
 
@@ -248,44 +329,38 @@ AliasAnalysis::ModRefResult
 BasicAliasAnalysis::getModRefInfo(CallSite CS, Value *P, unsigned Size) {
   if (!isa<Constant>(P)) {
     const Value *Object = getUnderlyingObject(P);
-    // Allocations and byval arguments are "new" objects.
-    if (Object &&
-        (isa<AllocationInst>(Object) || isa<Argument>(Object))) {
-      // Okay, the pointer is to a stack allocated (or effectively so, for 
-      // for noalias parameters) object.  If the address of this object doesn't
-      // escape from this function body to a callee, then we know that no
-      // callees can mod/ref it unless they are actually passed it.
-      if (isa<AllocationInst>(Object) ||
-          cast<Argument>(Object)->hasByValAttr() ||
-          cast<Argument>(Object)->hasNoAliasAttr())
-        if (!AddressMightEscape(Object)) {
-          bool passedAsArg = false;
-          for (CallSite::arg_iterator CI = CS.arg_begin(), CE = CS.arg_end();
-              CI != CE; ++CI)
-            if (isa<PointerType>((*CI)->getType()) &&
-                ( getUnderlyingObject(*CI) == P ||
-                  alias(cast<Value>(CI), ~0UL, P, ~0UL) != NoAlias) )
-              passedAsArg = true;
-          
-          if (!passedAsArg)
-            return NoModRef;
-        }
-
-      // If this is a tail call and P points to a stack location, we know that
-      // the tail call cannot access or modify the local stack.
-      // We cannot exclude byval arguments here; these belong to the caller of
-      // the current function not to the current function, and a tail callee
-      // may reference them.
-      if (isa<AllocaInst>(Object))
-        if (CallInst *CI = dyn_cast<CallInst>(CS.getInstruction()))
-          if (CI->isTailCall())
-            return NoModRef;
+    
+    // If this is a tail call and P points to a stack location, we know that
+    // the tail call cannot access or modify the local stack.
+    // We cannot exclude byval arguments here; these belong to the caller of
+    // the current function not to the current function, and a tail callee
+    // may reference them.
+    if (isa<AllocaInst>(Object))
+      if (CallInst *CI = dyn_cast<CallInst>(CS.getInstruction()))
+        if (CI->isTailCall())
+          return NoModRef;
+    
+    // If the pointer is to a locally allocated object that does not escape,
+    // then the call can not mod/ref the pointer unless the call takes the
+    // argument without capturing it.
+    if (isNonEscapingLocalObject(Object)) {
+      bool passedAsArg = false;
+      // TODO: Eventually only check 'nocapture' arguments.
+      for (CallSite::arg_iterator CI = CS.arg_begin(), CE = CS.arg_end();
+           CI != CE; ++CI)
+        if (isa<PointerType>((*CI)->getType()) &&
+            alias(cast<Value>(CI), ~0U, P, ~0U) != NoAlias)
+          passedAsArg = true;
+      
+      if (!passedAsArg)
+        return NoModRef;
     }
   }
 
   // The AliasAnalysis base class has some smarts, lets use them.
   return AliasAnalysis::getModRefInfo(CS, P, Size);
 }
+
 
 // alias - Provide a bunch of ad-hoc rules to disambiguate in common cases, such
 // as array references.  Note that this function is heavily tail recursive.
@@ -319,92 +394,39 @@ BasicAliasAnalysis::alias(const Value *V1, unsigned V1Size,
   const Value *O1 = getUnderlyingObject(V1);
   const Value *O2 = getUnderlyingObject(V2);
 
-  // Pointing at a discernible object?
-  if (O1) {
-    if (O2) {
-      if (const Argument *O1Arg = dyn_cast<Argument>(O1)) {
-        // Incoming argument cannot alias locally allocated object!
-        if (isa<AllocationInst>(O2)) return NoAlias;
-        
-        // If they are two different objects, and one is a noalias argument
-        // then they do not alias.
-        if (O1 != O2 && O1Arg->hasNoAliasAttr())
-          return NoAlias;
-
-        // Byval arguments can't alias globals or other arguments.
-        if (O1 != O2 && O1Arg->hasByValAttr()) return NoAlias;
-        
-        // Otherwise, nothing is known...
-      } 
-      
-      if (const Argument *O2Arg = dyn_cast<Argument>(O2)) {
-        // Incoming argument cannot alias locally allocated object!
-        if (isa<AllocationInst>(O1)) return NoAlias;
-        
-        // If they are two different objects, and one is a noalias argument
-        // then they do not alias.
-        if (O1 != O2 && O2Arg->hasNoAliasAttr())
-          return NoAlias;
-          
-        // Byval arguments can't alias globals or other arguments.
-        if (O1 != O2 && O2Arg->hasByValAttr()) return NoAlias;
-        
-        // Otherwise, nothing is known...
-      
-      } else if (O1 != O2 && !isa<Argument>(O1)) {
-        // If they are two different objects, and neither is an argument,
-        // we know that we have no alias.
-        return NoAlias;
-      }
-
-      // If they are the same object, they we can look at the indexes.  If they
-      // index off of the object is the same for both pointers, they must alias.
-      // If they are provably different, they must not alias.  Otherwise, we
-      // can't tell anything.
-    }
-
-    // Unique values don't alias null, except non-byval arguments.
-    if (isa<ConstantPointerNull>(V2)) {
-      if (const Argument *O1Arg = dyn_cast<Argument>(O1)) {
-        if (O1Arg->hasByValAttr()) 
-          return NoAlias;
-      } else {
-        return NoAlias;                    
-      }
-    }
-
-    if (isa<GlobalVariable>(O1) ||
-        (isa<AllocationInst>(O1) &&
-         !cast<AllocationInst>(O1)->isArrayAllocation()))
-      if (cast<PointerType>(O1->getType())->getElementType()->isSized()) {
-        // If the size of the other access is larger than the total size of the
-        // global/alloca/malloc, it cannot be accessing the global (it's
-        // undefined to load or store bytes before or after an object).
-        const Type *ElTy = cast<PointerType>(O1->getType())->getElementType();
-        unsigned GlobalSize = getTargetData().getABITypeSize(ElTy);
-        if (GlobalSize < V2Size && V2Size != ~0U)
-          return NoAlias;
-      }
+  if (O1 != O2) {
+    // If V1/V2 point to two different objects we know that we have no alias.
+    if (isIdentifiedObject(O1) && isIdentifiedObject(O2))
+      return NoAlias;
+  
+    // Incoming argument cannot alias locally allocated object!
+    if ((isa<Argument>(O1) && isa<AllocationInst>(O2)) ||
+        (isa<Argument>(O2) && isa<AllocationInst>(O1)))
+      return NoAlias;
+    
+    // Most objects can't alias null.
+    if ((isa<ConstantPointerNull>(V2) && isKnownNonNull(O1)) ||
+        (isa<ConstantPointerNull>(V1) && isKnownNonNull(O2)))
+      return NoAlias;
   }
-
-  if (O2) {
-    if (!isa<Argument>(O2) && isa<ConstantPointerNull>(V1))
-      return NoAlias;                    // Unique values don't alias null
-
-    if (isa<GlobalVariable>(O2) ||
-        (isa<AllocationInst>(O2) &&
-         !cast<AllocationInst>(O2)->isArrayAllocation()))
-      if (cast<PointerType>(O2->getType())->getElementType()->isSized()) {
-        // If the size of the other access is larger than the total size of the
-        // global/alloca/malloc, it cannot be accessing the object (it's
-        // undefined to load or store bytes before or after an object).
-        const Type *ElTy = cast<PointerType>(O2->getType())->getElementType();
-        unsigned GlobalSize = getTargetData().getABITypeSize(ElTy);
-        if (GlobalSize < V1Size && V1Size != ~0U)
-          return NoAlias;
-      }
-  }
-
+  
+  // If the size of one access is larger than the entire object on the other
+  // side, then we know such behavior is undefined and can assume no alias.
+  const TargetData &TD = getTargetData();
+  if ((V1Size != ~0U && isObjectSmallerThan(O2, V1Size, TD)) ||
+      (V2Size != ~0U && isObjectSmallerThan(O1, V2Size, TD)))
+    return NoAlias;
+  
+  // If one pointer is the result of a call/invoke and the other is a
+  // non-escaping local object, then we know the object couldn't escape to a
+  // point where the call could return it.
+  if ((isa<CallInst>(O1) || isa<InvokeInst>(O1)) &&
+      isNonEscapingLocalObject(O2))
+    return NoAlias;
+  if ((isa<CallInst>(O2) || isa<InvokeInst>(O2)) &&
+      isNonEscapingLocalObject(O1))
+    return NoAlias;
+  
   // If we have two gep instructions with must-alias'ing base pointers, figure
   // out if the indexes to the GEP tell us anything about the derived pointer.
   // Note that we also handle chains of getelementptr instructions as well as
@@ -687,7 +709,7 @@ BasicAliasAnalysis::CheckGEPInstructions(
         if (isa<ConstantInt>(GEP1Ops[i]) && 
             !cast<ConstantInt>(GEP1Ops[i])->isZero()) {
           // Yup, there's a constant in the tail.  Set all variables to
-          // constants in the GEP instruction to make it suiteable for
+          // constants in the GEP instruction to make it suitable for
           // TargetData::getIndexedOffset.
           for (i = 0; i != MaxOperands; ++i)
             if (!isa<ConstantInt>(GEP1Ops[i]))
@@ -702,9 +724,15 @@ BasicAliasAnalysis::CheckGEPInstructions(
           int64_t Offset2 = TD.getIndexedOffset(GEPPointerTy, GEP1Ops,
                                                 MinOperands);
 
+          // Make sure we compare the absolute difference.
+          if (Offset1 > Offset2)
+            std::swap(Offset1, Offset2);
+
           // If the tail provided a bit enough offset, return noalias!
           if ((uint64_t)(Offset2-Offset1) >= SizeMax)
             return NoAlias;
+          // Otherwise break - we don't look for another constant in the tail.
+          break;
         }
     }
 

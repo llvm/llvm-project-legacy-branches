@@ -162,7 +162,16 @@ namespace llvm {
 
       /// CMP_UNRESERVE = Test for equality and "unreserve" if not true. This
       /// is used to implement atomic operations.
-      CMP_UNRESERVE
+      CMP_UNRESERVE,
+
+      /// TAILCALL - Indicates a tail call should be taken.
+      TAILCALL,
+      /// TC_RETURN - A tail call return.
+      ///   operand #0 chain
+      ///   operand #1 callee (register or absolute)
+      ///   operand #2 stack adjustment
+      ///   operand #3 optional in flag
+      TC_RETURN
     };
   }
 
@@ -226,7 +235,7 @@ namespace llvm {
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - Return the ISD::SETCC ValueType
-    virtual MVT::ValueType getSetCCResultType(const SDOperand &) const;
+    virtual MVT getSetCCResultType(const SDOperand &) const;
 
     /// getPreIndexedAddressParts - returns true by value, base pointer and
     /// offset pointer and addressing mode by reference if the node's address
@@ -264,7 +273,7 @@ namespace llvm {
     ///
     virtual SDOperand LowerOperation(SDOperand Op, SelectionDAG &DAG);
 
-    virtual SDNode *ExpandOperationResult(SDNode *N, SelectionDAG &DAG);
+    virtual SDNode *ReplaceNodeResults(SDNode *N, SelectionDAG &DAG);
     
     virtual SDOperand PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
     
@@ -281,7 +290,7 @@ namespace llvm {
     ConstraintType getConstraintType(const std::string &Constraint) const;
     std::pair<unsigned, const TargetRegisterClass*> 
       getRegForInlineAsmConstraint(const std::string &Constraint,
-                                   MVT::ValueType VT) const;
+                                   MVT VT) const;
 
     /// getByValTypeAlignment - Return the desired alignment for ByVal aggregate
     /// function arguments in the caller parameter area.  This is the actual
@@ -293,7 +302,7 @@ namespace llvm {
     virtual void LowerAsmOperandForConstraint(SDOperand Op,
                                               char ConstraintLetter,
                                               std::vector<SDOperand> &Ops,
-                                              SelectionDAG &DAG);
+                                              SelectionDAG &DAG) const;
     
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
@@ -308,10 +317,26 @@ namespace llvm {
     /// the offset of the target addressing mode.
     virtual bool isLegalAddressImmediate(GlobalValue *GV) const;
 
+     /// IsEligibleForTailCallOptimization - Check whether the call is eligible
+    /// for tail call optimization. Target which want to do tail call
+    /// optimization should implement this function.
+    virtual bool IsEligibleForTailCallOptimization(SDOperand Call,
+                                                   SDOperand Ret,
+                                                   SelectionDAG &DAG) const;
+
   private:
     /// PPCAtomicLabelIndex - Keep track the number of PPC atomic labels.
     ///
     unsigned PPCAtomicLabelIndex;
+
+    SDOperand getFramePointerFrameIndex(SelectionDAG & DAG) const;
+    SDOperand getReturnAddrFrameIndex(SelectionDAG & DAG) const;
+
+    SDOperand EmitTailCallLoadFPAndRetAddr(SelectionDAG & DAG,
+                                           int SPDiff,
+                                           SDOperand Chain,
+                                           SDOperand &LROpOut,
+                                           SDOperand &FPOpOut);
 
     SDOperand LowerRETURNADDR(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerFRAMEADDR(SDOperand Op, SelectionDAG &DAG);
@@ -341,8 +366,8 @@ namespace llvm {
     SDOperand LowerDYNAMIC_STACKALLOC(SDOperand Op, SelectionDAG &DAG,
                                       const PPCSubtarget &Subtarget);
     SDOperand LowerSELECT_CC(SDOperand Op, SelectionDAG &DAG);
-    SDOperand LowerAtomicLAS(SDOperand Op, SelectionDAG &DAG);
-    SDOperand LowerAtomicLCS(SDOperand Op, SelectionDAG &DAG);
+    SDOperand LowerAtomicLOAD_ADD(SDOperand Op, SelectionDAG &DAG);
+    SDOperand LowerAtomicCMP_SWAP(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerAtomicSWAP(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerFP_TO_SINT(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerSINT_TO_FP(SDOperand Op, SelectionDAG &DAG);

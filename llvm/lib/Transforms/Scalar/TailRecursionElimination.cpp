@@ -80,9 +80,10 @@ namespace {
     bool CanMoveAboveCall(Instruction *I, CallInst *CI);
     Value *CanTransformAccumulatorRecursion(Instruction *I, CallInst *CI);
   };
-  char TailCallElim::ID = 0;
-  RegisterPass<TailCallElim> X("tailcallelim", "Tail Call Elimination");
 }
+
+char TailCallElim::ID = 0;
+static RegisterPass<TailCallElim> X("tailcallelim", "Tail Call Elimination");
 
 // Public interface to the TailCallElimination pass
 FunctionPass *llvm::createTailCallEliminationPass() {
@@ -184,8 +185,10 @@ bool TailCallElim::runOnFunction(Function &F) {
   if (!FunctionContainsEscapingAllocas)
     for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
       for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
-        if (CallInst *CI = dyn_cast<CallInst>(I))
+        if (CallInst *CI = dyn_cast<CallInst>(I)) {
           CI->setTailCall();
+          MadeChange = true;
+        }
 
   return MadeChange;
 }
@@ -400,7 +403,8 @@ bool TailCallElim::ProcessReturningBlock(ReturnInst *Ret, BasicBlock *&OldEntry,
     Instruction *InsertPos = OldEntry->begin();
     for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
          I != E; ++I) {
-      PHINode *PN = PHINode::Create(I->getType(), I->getName()+".tr", InsertPos);
+      PHINode *PN = PHINode::Create(I->getType(),
+                                    I->getName() + ".tr", InsertPos);
       I->replaceAllUsesWith(PN); // Everyone use the PHI node now!
       PN->addIncoming(I, NewEntry);
       ArgumentPHIs.push_back(PN);

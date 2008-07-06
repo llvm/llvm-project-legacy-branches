@@ -509,7 +509,11 @@ def u16imm_i64 : Operand<i64> {
   let PrintMethod = "printU16ImmOperand";
 }
 
-def u16imm : Operand<i32> {
+def u16imm_i32 : Operand<i32> {
+  let PrintMethod = "printU16ImmOperand";
+}
+
+def u16imm : Operand<i16> {
   let PrintMethod = "printU16ImmOperand";
 }
 
@@ -552,6 +556,10 @@ def rotNeg7imm : Operand<i32> {
 }
 
 def rotNeg7imm_i16 : Operand<i16> {
+  let PrintMethod = "printROTNeg7Imm";
+}
+
+def rotNeg7imm_i8 : Operand<i8> {
   let PrintMethod = "printROTNeg7Imm";
 }
 

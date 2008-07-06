@@ -54,11 +54,11 @@ STATISTIC(NumSelects , "Number of selects unswitched");
 STATISTIC(NumTrivial , "Number of unswitches that are trivial");
 STATISTIC(NumSimplify, "Number of simplifications of unswitched code");
 
-namespace {
-  cl::opt<unsigned>
-  Threshold("loop-unswitch-threshold", cl::desc("Max loop size to unswitch"),
-            cl::init(10), cl::Hidden);
+static cl::opt<unsigned>
+Threshold("loop-unswitch-threshold", cl::desc("Max loop size to unswitch"),
+          cl::init(10), cl::Hidden);
   
+namespace {
   class VISIBILITY_HIDDEN LoopUnswitch : public LoopPass {
     LoopInfo *LI;  // Loop information
     LPPassManager *LPM;
@@ -71,24 +71,28 @@ namespace {
     bool OptimizeForSize;
     bool redoLoop;
 
+    Loop *currentLoop;
     DominanceFrontier *DF;
     DominatorTree *DT;
+    BasicBlock *loopHeader;
+    BasicBlock *loopPreheader;
     
-    /// LoopDF - Loop's dominance frontier. This set is a collection of 
-    /// loop exiting blocks' DF member blocks. However this does set does not
-    /// includes basic blocks that are inside loop.
-    SmallPtrSet<BasicBlock *, 8> LoopDF;
+    // LoopBlocks contains all of the basic blocks of the loop, including the
+    // preheader of the loop, the body of the loop, and the exit blocks of the 
+    // loop, in that order.
+    std::vector<BasicBlock*> LoopBlocks;
+    // NewBlocks contained cloned copy of basic blocks from LoopBlocks.
+    std::vector<BasicBlock*> NewBlocks;
 
-    /// OrigLoopExitMap - This is used to map loop exiting block with 
-    /// corresponding loop exit block, before updating CFG.
-    DenseMap<BasicBlock *, BasicBlock *> OrigLoopExitMap;
   public:
     static char ID; // Pass ID, replacement for typeid
     explicit LoopUnswitch(bool Os = false) : 
-      LoopPass((intptr_t)&ID), OptimizeForSize(Os), redoLoop(false) {}
+      LoopPass((intptr_t)&ID), OptimizeForSize(Os), redoLoop(false), 
+      currentLoop(NULL), DF(NULL), DT(NULL), loopHeader(NULL),
+      loopPreheader(NULL) {}
 
     bool runOnLoop(Loop *L, LPPassManager &LPM);
-    bool processLoop(Loop *L);
+    bool processCurrentLoop();
 
     /// This transformation requires natural loop information & requires that
     /// loop preheaders be inserted into the CFG...
@@ -115,18 +119,17 @@ namespace {
         LoopProcessWorklist.erase(I);
     }
 
+    void initLoopData() {
+      loopHeader = currentLoop->getHeader();
+      loopPreheader = currentLoop->getLoopPreheader();
+    }
+
     /// Split all of the edges from inside the loop to their exit blocks.
     /// Update the appropriate Phi nodes as we do so.
-    void SplitExitEdges(Loop *L, const SmallVector<BasicBlock *, 8> &ExitBlocks,
-                        SmallVector<BasicBlock *, 8> &MiddleBlocks);
+    void SplitExitEdges(Loop *L, const SmallVector<BasicBlock *, 8> &ExitBlocks);
 
-    /// If BB's dominance frontier  has a member that is not part of loop L then
-    /// remove it. Add NewDFMember in BB's dominance frontier.
-    void ReplaceLoopExternalDFMember(Loop *L, BasicBlock *BB,
-                                     BasicBlock *NewDFMember);
-      
-    bool UnswitchIfProfitable(Value *LoopCond, Constant *Val,Loop *L);
-    unsigned getLoopUnswitchCost(Loop *L, Value *LIC);
+    bool UnswitchIfProfitable(Value *LoopCond, Constant *Val);
+    unsigned getLoopUnswitchCost(Value *LIC);
     void UnswitchTrivialCondition(Loop *L, Value *Cond, Constant *Val,
                                   BasicBlock *ExitBlock);
     void UnswitchNontrivialCondition(Value *LIC, Constant *OnVal, Loop *L);
@@ -143,10 +146,13 @@ namespace {
     void RemoveBlockIfDead(BasicBlock *BB,
                            std::vector<Instruction*> &Worklist, Loop *l);
     void RemoveLoopFromHierarchy(Loop *L);
+    bool IsTrivialUnswitchCondition(Value *Cond, Constant **Val = 0,
+                                    BasicBlock **LoopExit = 0);
+
   };
-  char LoopUnswitch::ID = 0;
-  RegisterPass<LoopUnswitch> X("loop-unswitch", "Unswitch loops");
 }
+char LoopUnswitch::ID = 0;
+static RegisterPass<LoopUnswitch> X("loop-unswitch", "Unswitch loops");
 
 LoopPass *llvm::createLoopUnswitchPass(bool Os) { 
   return new LoopUnswitch(Os); 
@@ -183,26 +189,27 @@ bool LoopUnswitch::runOnLoop(Loop *L, LPPassManager &LPM_Ref) {
   LPM = &LPM_Ref;
   DF = getAnalysisToUpdate<DominanceFrontier>();
   DT = getAnalysisToUpdate<DominatorTree>();
-
+  currentLoop = L;
   bool Changed = false;
-
   do {
+    assert(currentLoop->isLCSSAForm());
     redoLoop = false;
-    Changed |= processLoop(L);
+    Changed |= processCurrentLoop();
   } while(redoLoop);
 
   return Changed;
 }
 
-/// processLoop - Do actual work and unswitch loop if possible and profitable.
-bool LoopUnswitch::processLoop(Loop *L) {
-  assert(L->isLCSSAForm());
+/// processCurrentLoop - Do actual work and unswitch loop if possible 
+/// and profitable.
+bool LoopUnswitch::processCurrentLoop() {
   bool Changed = false;
 
   // Loop over all of the basic blocks in the loop.  If we find an interior
   // block that is branching on a loop-invariant condition, we can unswitch this
   // loop.
-  for (Loop::block_iterator I = L->block_begin(), E = L->block_end();
+  for (Loop::block_iterator I = currentLoop->block_begin(), 
+         E = currentLoop->block_end();
        I != E; ++I) {
     TerminatorInst *TI = (*I)->getTerminator();
     if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
@@ -211,15 +218,17 @@ bool LoopUnswitch::processLoop(Loop *L) {
       if (BI->isConditional()) {
         // See if this, or some part of it, is loop invariant.  If so, we can
         // unswitch on it if we desire.
-        Value *LoopCond = FindLIVLoopCondition(BI->getCondition(), L, Changed);
-        if (LoopCond && UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(),
-                                             L)) {
+        Value *LoopCond = FindLIVLoopCondition(BI->getCondition(), 
+                                               currentLoop, Changed);
+        if (LoopCond && UnswitchIfProfitable(LoopCond, 
+                                             ConstantInt::getTrue())) {
           ++NumBranches;
           return true;
         }
       }      
     } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
-      Value *LoopCond = FindLIVLoopCondition(SI->getCondition(), L, Changed);
+      Value *LoopCond = FindLIVLoopCondition(SI->getCondition(), 
+                                             currentLoop, Changed);
       if (LoopCond && SI->getNumCases() > 1) {
         // Find a value to unswitch on:
         // FIXME: this should chose the most expensive case!
@@ -228,7 +237,7 @@ bool LoopUnswitch::processLoop(Loop *L) {
         if (!UnswitchedVals.insert(UnswitchVal))
           continue;
 
-        if (UnswitchIfProfitable(LoopCond, UnswitchVal, L)) {
+        if (UnswitchIfProfitable(LoopCond, UnswitchVal)) {
           ++NumSwitches;
           return true;
         }
@@ -239,17 +248,15 @@ bool LoopUnswitch::processLoop(Loop *L) {
     for (BasicBlock::iterator BBI = (*I)->begin(), E = (*I)->end(); 
          BBI != E; ++BBI)
       if (SelectInst *SI = dyn_cast<SelectInst>(BBI)) {
-        Value *LoopCond = FindLIVLoopCondition(SI->getCondition(), L, Changed);
-        if (LoopCond && UnswitchIfProfitable(LoopCond, ConstantInt::getTrue(),
-                                             L)) {
+        Value *LoopCond = FindLIVLoopCondition(SI->getCondition(), 
+                                               currentLoop, Changed);
+        if (LoopCond && UnswitchIfProfitable(LoopCond, 
+                                             ConstantInt::getTrue())) {
           ++NumSelects;
           return true;
         }
       }
   }
-  
-  assert(L->isLCSSAForm());
-  
   return Changed;
 }
 
@@ -314,9 +321,9 @@ static BasicBlock *isTrivialLoopExitBlock(Loop *L, BasicBlock *BB) {
 /// exit.  Finally, this sets LoopExit to the BB that the loop exits to when
 /// Cond == Val.
 ///
-static bool IsTrivialUnswitchCondition(Loop *L, Value *Cond, Constant **Val = 0,
-                                       BasicBlock **LoopExit = 0) {
-  BasicBlock *Header = L->getHeader();
+bool LoopUnswitch::IsTrivialUnswitchCondition(Value *Cond, Constant **Val,
+                                       BasicBlock **LoopExit) {
+  BasicBlock *Header = currentLoop->getHeader();
   TerminatorInst *HeaderTerm = Header->getTerminator();
   
   BasicBlock *LoopExitBB = 0;
@@ -330,9 +337,11 @@ static bool IsTrivialUnswitchCondition(Loop *L, Value *Cond, Constant **Val = 0,
     // latch block or exit through a one exit block without having any 
     // side-effects.  If so, determine the value of Cond that causes it to do
     // this.
-    if ((LoopExitBB = isTrivialLoopExitBlock(L, BI->getSuccessor(0)))) {
+    if ((LoopExitBB = isTrivialLoopExitBlock(currentLoop, 
+                                             BI->getSuccessor(0)))) {
       if (Val) *Val = ConstantInt::getTrue();
-    } else if ((LoopExitBB = isTrivialLoopExitBlock(L, BI->getSuccessor(1)))) {
+    } else if ((LoopExitBB = isTrivialLoopExitBlock(currentLoop, 
+                                                    BI->getSuccessor(1)))) {
       if (Val) *Val = ConstantInt::getFalse();
     }
   } else if (SwitchInst *SI = dyn_cast<SwitchInst>(HeaderTerm)) {
@@ -344,7 +353,8 @@ static bool IsTrivialUnswitchCondition(Loop *L, Value *Cond, Constant **Val = 0,
     // side-effects.  If so, determine the value of Cond that causes it to do
     // this.  Note that we can't trivially unswitch on the default case.
     for (unsigned i = 1, e = SI->getNumSuccessors(); i != e; ++i)
-      if ((LoopExitBB = isTrivialLoopExitBlock(L, SI->getSuccessor(i)))) {
+      if ((LoopExitBB = isTrivialLoopExitBlock(currentLoop, 
+                                               SI->getSuccessor(i)))) {
         // Okay, we found a trivial case, remember the value that is trivial.
         if (Val) *Val = SI->getCaseValue(i);
         break;
@@ -370,24 +380,25 @@ static bool IsTrivialUnswitchCondition(Loop *L, Value *Cond, Constant **Val = 0,
 }
 
 /// getLoopUnswitchCost - Return the cost (code size growth) that will happen if
-/// we choose to unswitch the specified loop on the specified value.
+/// we choose to unswitch current loop on the specified value.
 ///
-unsigned LoopUnswitch::getLoopUnswitchCost(Loop *L, Value *LIC) {
+unsigned LoopUnswitch::getLoopUnswitchCost(Value *LIC) {
   // If the condition is trivial, always unswitch.  There is no code growth for
   // this case.
-  if (IsTrivialUnswitchCondition(L, LIC))
+  if (IsTrivialUnswitchCondition(LIC))
     return 0;
   
   // FIXME: This is really overly conservative.  However, more liberal 
   // estimations have thus far resulted in excessive unswitching, which is bad
   // both in compile time and in code size.  This should be replaced once
   // someone figures out how a good estimation.
-  return L->getBlocks().size();
+  return currentLoop->getBlocks().size();
   
   unsigned Cost = 0;
   // FIXME: this is brain dead.  It should take into consideration code
   // shrinkage.
-  for (Loop::block_iterator I = L->block_begin(), E = L->block_end();
+  for (Loop::block_iterator I = currentLoop->block_begin(), 
+         E = currentLoop->block_end();
        I != E; ++I) {
     BasicBlock *BB = *I;
     // Do not include empty blocks in the cost calculation.  This happen due to
@@ -402,12 +413,12 @@ unsigned LoopUnswitch::getLoopUnswitchCost(Loop *L, Value *LIC) {
   return Cost;
 }
 
-/// UnswitchIfProfitable - We have found that we can unswitch L when
+/// UnswitchIfProfitable - We have found that we can unswitch currentLoop when
 /// LoopCond == Val to simplify the loop.  If we decide that this is profitable,
 /// unswitch the loop, reprocess the pieces, then return true.
-bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val,Loop *L){
-  // Check to see if it would be profitable to unswitch this loop.
-  unsigned Cost = getLoopUnswitchCost(L, LoopCond);
+bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val){
+  // Check to see if it would be profitable to unswitch current loop.
+  unsigned Cost = getLoopUnswitchCost(LoopCond);
 
   // Do not do non-trivial unswitch while optimizing for size.
   if (Cost && OptimizeForSize)
@@ -418,21 +429,27 @@ bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val,Loop *L){
     // resultant unswitched loops.
     //
     DOUT << "NOT unswitching loop %"
-         << L->getHeader()->getName() << ", cost too high: "
-         << L->getBlocks().size() << "\n";
+         << currentLoop->getHeader()->getName() << ", cost too high: "
+         << currentLoop->getBlocks().size() << "\n";
     return false;
   }
-  
-  // If this is a trivial condition to unswitch (which results in no code
-  // duplication), do it now.
+
+  initLoopData();
+
   Constant *CondVal;
   BasicBlock *ExitBlock;
-  if (IsTrivialUnswitchCondition(L, LoopCond, &CondVal, &ExitBlock)) {
-    UnswitchTrivialCondition(L, LoopCond, CondVal, ExitBlock);
+  if (IsTrivialUnswitchCondition(LoopCond, &CondVal, &ExitBlock)) {
+    UnswitchTrivialCondition(currentLoop, LoopCond, CondVal, ExitBlock);
   } else {
-    UnswitchNontrivialCondition(LoopCond, Val, L);
+    UnswitchNontrivialCondition(LoopCond, Val, currentLoop);
   }
- 
+
+  // FIXME: Reconstruct dom info, because it is not preserved properly.
+  Function *F = loopHeader->getParent();
+  if (DT)
+    DT->runOnFunction(*F);
+  if (DF)
+    DF->runOnFunction(*F);
   return true;
 }
 
@@ -446,87 +463,6 @@ static inline void RemapInstruction(Instruction *I,
     DenseMap<const Value *, Value*>::iterator It = ValueMap.find(Op);
     if (It != ValueMap.end()) Op = It->second;
     I->setOperand(op, Op);
-  }
-}
-
-// CloneDomInfo - NewBB is cloned from Orig basic block. Now clone Dominator
-// Info.
-//
-// If Orig block's immediate dominator is mapped in VM then use corresponding
-// immediate dominator from the map. Otherwise Orig block's dominator is also
-// NewBB's dominator.
-//
-// OrigPreheader is loop pre-header before this pass started
-// updating CFG. NewPrehader is loops new pre-header. However, after CFG
-// manipulation, loop L may not exist. So rely on input parameter NewPreheader.
-void CloneDomInfo(BasicBlock *NewBB, BasicBlock *Orig, 
-                  BasicBlock *NewPreheader, BasicBlock *OrigPreheader, 
-                  BasicBlock *OrigHeader,
-                  DominatorTree *DT, DominanceFrontier *DF,
-                  DenseMap<const Value*, Value*> &VM) {
-
-  // If NewBB alreay has found its place in domiantor tree then no need to do
-  // anything.
-  if (DT->getNode(NewBB))
-    return;
-
-  // If Orig does not have any immediate domiantor then its clone, NewBB, does 
-  // not need any immediate dominator.
-  DomTreeNode *OrigNode = DT->getNode(Orig);
-  if (!OrigNode)
-    return;
-  DomTreeNode *OrigIDomNode = OrigNode->getIDom();
-  if (!OrigIDomNode)
-    return;
-
-  BasicBlock *OrigIDom = NULL; 
-
-  // If Orig is original loop header then its immediate dominator is
-  // NewPreheader.
-  if (Orig == OrigHeader)
-    OrigIDom = NewPreheader;
-
-  // If Orig is new pre-header then its immediate dominator is
-  // original pre-header.
-  else if (Orig == NewPreheader)
-    OrigIDom = OrigPreheader;
-
-  // Other as DT to find Orig's immediate dominator.
-  else
-     OrigIDom = OrigIDomNode->getBlock();
-
-  // Initially use Orig's immediate dominator as NewBB's immediate dominator.
-  BasicBlock *NewIDom = OrigIDom;
-  DenseMap<const Value*, Value*>::iterator I = VM.find(OrigIDom);
-  if (I != VM.end()) {
-    NewIDom = cast<BasicBlock>(I->second);
-    
-    // If NewIDom does not have corresponding dominatore tree node then
-    // get one.
-    if (!DT->getNode(NewIDom))
-      CloneDomInfo(NewIDom, OrigIDom, NewPreheader, OrigPreheader, 
-                   OrigHeader, DT, DF, VM);
-  }
-  
-  DT->addNewBlock(NewBB, NewIDom);
-  
-  // Copy cloned dominance frontiner set
-  DominanceFrontier::DomSetType NewDFSet;
-  if (DF) {
-    DominanceFrontier::iterator DFI = DF->find(Orig);
-    if ( DFI != DF->end()) {
-      DominanceFrontier::DomSetType S = DFI->second;
-      for (DominanceFrontier::DomSetType::iterator I = S.begin(), E = S.end();
-           I != E; ++I) {
-        BasicBlock *BB = *I;
-        DenseMap<const Value*, Value*>::iterator IDM = VM.find(BB);
-        if (IDM != VM.end())
-          NewDFSet.insert(cast<BasicBlock>(IDM->second));
-        else
-          NewDFSet.insert(BB);
-      }
-    }
-    DF->addBasicBlock(NewBB, NewDFSet);
   }
 }
 
@@ -569,9 +505,7 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
 
   // Insert the new branch.
   BranchInst::Create(TrueDest, FalseDest, BranchVal, InsertPt);
-
 }
-
 
 /// UnswitchTrivialCondition - Given a loop that has a trivial unswitchable
 /// condition in it (a cond branch from its header block to its latch block,
@@ -582,15 +516,14 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond,
                                             Constant *Val, 
                                             BasicBlock *ExitBlock) {
   DOUT << "loop-unswitch: Trivial-Unswitch loop %"
-       << L->getHeader()->getName() << " [" << L->getBlocks().size()
+       << loopHeader->getName() << " [" << L->getBlocks().size()
        << " blocks] in Function " << L->getHeader()->getParent()->getName()
        << " on cond: " << *Val << " == " << *Cond << "\n";
   
   // First step, split the preheader, so that we know that there is a safe place
-  // to insert the conditional branch.  We will change 'OrigPH' to have a
+  // to insert the conditional branch.  We will change loopPreheader to have a
   // conditional branch on Cond.
-  BasicBlock *OrigPH = L->getLoopPreheader();
-  BasicBlock *NewPH = SplitEdge(OrigPH, L->getHeader(), this);
+  BasicBlock *NewPH = SplitEdge(loopPreheader, loopHeader, this);
 
   // Now that we have a place to insert the conditional branch, create a place
   // to branch to: this is the exit block out of the loop that we should
@@ -606,9 +539,9 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond,
   // Okay, now we have a position to branch from and a position to branch to, 
   // insert the new conditional branch.
   EmitPreheaderBranchOnCondition(Cond, Val, NewExit, NewPH, 
-                                 OrigPH->getTerminator());
-  LPM->deleteSimpleAnalysisValue(OrigPH->getTerminator(), L);
-  OrigPH->getTerminator()->eraseFromParent();
+                                 loopPreheader->getTerminator());
+  LPM->deleteSimpleAnalysisValue(loopPreheader->getTerminator(), L);
+  loopPreheader->getTerminator()->eraseFromParent();
 
   // We need to reprocess this loop, it could be unswitched again.
   redoLoop = true;
@@ -620,94 +553,52 @@ void LoopUnswitch::UnswitchTrivialCondition(Loop *L, Value *Cond,
   ++NumTrivial;
 }
 
-/// ReplaceLoopExternalDFMember -
-/// If BB's dominance frontier  has a member that is not part of loop L then 
-/// remove it. Add NewDFMember in BB's dominance frontier.
-void LoopUnswitch::ReplaceLoopExternalDFMember(Loop *L, BasicBlock *BB,
-                                               BasicBlock *NewDFMember) {
-  
-  DominanceFrontier::iterator DFI = DF->find(BB);
-  if (DFI == DF->end())
-    return;
-  
-  DominanceFrontier::DomSetType &DFSet = DFI->second;
-  for (DominanceFrontier::DomSetType::iterator DI = DFSet.begin(),
-         DE = DFSet.end(); DI != DE;) {
-    BasicBlock *B = *DI++;
-    if (L->contains(B))
-      continue;
-
-    DF->removeFromFrontier(DFI, B);
-    LoopDF.insert(B);
-  }
-
-  DF->addToFrontier(DFI, NewDFMember);
-}
-
 /// SplitExitEdges - Split all of the edges from inside the loop to their exit
 /// blocks.  Update the appropriate Phi nodes as we do so.
 void LoopUnswitch::SplitExitEdges(Loop *L, 
-                                 const SmallVector<BasicBlock *, 8> &ExitBlocks,
-                                  SmallVector<BasicBlock *, 8> &MiddleBlocks) {
+                                const SmallVector<BasicBlock *, 8> &ExitBlocks) 
+{
 
   for (unsigned i = 0, e = ExitBlocks.size(); i != e; ++i) {
     BasicBlock *ExitBlock = ExitBlocks[i];
     std::vector<BasicBlock*> Preds(pred_begin(ExitBlock), pred_end(ExitBlock));
 
     for (unsigned j = 0, e = Preds.size(); j != e; ++j) {
-      BasicBlock* MiddleBlock = SplitEdge(Preds[j], ExitBlock, this);
-      MiddleBlocks.push_back(MiddleBlock);
+      BasicBlock* NewExitBlock = SplitEdge(Preds[j], ExitBlock, this);
       BasicBlock* StartBlock = Preds[j];
       BasicBlock* EndBlock;
-      if (MiddleBlock->getSinglePredecessor() == ExitBlock) {
-        EndBlock = MiddleBlock;
-        MiddleBlock = EndBlock->getSinglePredecessor();;
+      if (NewExitBlock->getSinglePredecessor() == ExitBlock) {
+        EndBlock = NewExitBlock;
+        NewExitBlock = EndBlock->getSinglePredecessor();;
       } else {
         EndBlock = ExitBlock;
       }
       
-      OrigLoopExitMap[StartBlock] = EndBlock;
-
       std::set<PHINode*> InsertedPHIs;
       PHINode* OldLCSSA = 0;
       for (BasicBlock::iterator I = EndBlock->begin();
            (OldLCSSA = dyn_cast<PHINode>(I)); ++I) {
-        Value* OldValue = OldLCSSA->getIncomingValueForBlock(MiddleBlock);
+        Value* OldValue = OldLCSSA->getIncomingValueForBlock(NewExitBlock);
         PHINode* NewLCSSA = PHINode::Create(OldLCSSA->getType(),
                                             OldLCSSA->getName() + ".us-lcssa",
-                                            MiddleBlock->getTerminator());
+                                            NewExitBlock->getTerminator());
         NewLCSSA->addIncoming(OldValue, StartBlock);
-        OldLCSSA->setIncomingValue(OldLCSSA->getBasicBlockIndex(MiddleBlock),
+        OldLCSSA->setIncomingValue(OldLCSSA->getBasicBlockIndex(NewExitBlock),
                                    NewLCSSA);
         InsertedPHIs.insert(NewLCSSA);
       }
 
-      BasicBlock::iterator InsertPt = EndBlock->begin();
-      while (dyn_cast<PHINode>(InsertPt)) ++InsertPt;
-      for (BasicBlock::iterator I = MiddleBlock->begin();
+      BasicBlock::iterator InsertPt = EndBlock->getFirstNonPHI();
+      for (BasicBlock::iterator I = NewExitBlock->begin();
          (OldLCSSA = dyn_cast<PHINode>(I)) && InsertedPHIs.count(OldLCSSA) == 0;
          ++I) {
         PHINode *NewLCSSA = PHINode::Create(OldLCSSA->getType(),
                                             OldLCSSA->getName() + ".us-lcssa",
                                             InsertPt);
         OldLCSSA->replaceAllUsesWith(NewLCSSA);
-        NewLCSSA->addIncoming(OldLCSSA, MiddleBlock);
+        NewLCSSA->addIncoming(OldLCSSA, NewExitBlock);
       }
 
-      if (DF && DT) {
-        // StartBlock -- > MiddleBlock -- > EndBlock
-        // StartBlock is loop exiting block. EndBlock will become merge point 
-        // of two loop exits after loop unswitch.
-        
-        // If StartBlock's DF member includes a block that is not loop member 
-        // then replace that DF member with EndBlock.
-
-        // If MiddleBlock's DF member includes a block that is not loop member
-        // tnen replace that DF member with EndBlock.
-
-        ReplaceLoopExternalDFMember(L, StartBlock, EndBlock);
-        ReplaceLoopExternalDFMember(L, MiddleBlock, EndBlock);
-      }
     }    
   }
 
@@ -718,22 +609,18 @@ void LoopUnswitch::SplitExitEdges(Loop *L,
 /// condition outside of either loop.  Return the loops created as Out1/Out2.
 void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val, 
                                                Loop *L) {
-  Function *F = L->getHeader()->getParent();
+  Function *F = loopHeader->getParent();
   DOUT << "loop-unswitch: Unswitching loop %"
-       << L->getHeader()->getName() << " [" << L->getBlocks().size()
+       << loopHeader->getName() << " [" << L->getBlocks().size()
        << " blocks] in Function " << F->getName()
        << " when '" << *Val << "' == " << *LIC << "\n";
 
-  // LoopBlocks contains all of the basic blocks of the loop, including the
-  // preheader of the loop, the body of the loop, and the exit blocks of the 
-  // loop, in that order.
-  std::vector<BasicBlock*> LoopBlocks;
+  LoopBlocks.clear();
+  NewBlocks.clear();
 
   // First step, split the preheader and exit blocks, and add these blocks to
   // the LoopBlocks list.
-  BasicBlock *OrigHeader = L->getHeader();
-  BasicBlock *OrigPreheader = L->getLoopPreheader();
-  BasicBlock *NewPreheader = SplitEdge(OrigPreheader, L->getHeader(), this);
+  BasicBlock *NewPreheader = SplitEdge(loopPreheader, loopHeader, this);
   LoopBlocks.push_back(NewPreheader);
 
   // We want the loop to come after the preheader, but before the exit blocks.
@@ -744,8 +631,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
 
   // Split all of the edges from inside the loop to their exit blocks.  Update
   // the appropriate Phi nodes as we do so.
-  SmallVector<BasicBlock *,8> MiddleBlocks;
-  SplitExitEdges(L, ExitBlocks, MiddleBlocks);
+  SplitExitEdges(L, ExitBlocks);
 
   // The exit blocks may have been changed due to edge splitting, recompute.
   ExitBlocks.clear();
@@ -757,7 +643,6 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   // Next step, clone all of the basic blocks that make up the loop (including
   // the loop preheader and exit blocks), keeping track of the mapping between
   // the instructions and blocks.
-  std::vector<BasicBlock*> NewBlocks;
   NewBlocks.reserve(LoopBlocks.size());
   DenseMap<const Value*, Value*> ValueMap;
   for (unsigned i = 0, e = LoopBlocks.size(); i != e; ++i) {
@@ -765,21 +650,6 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
     NewBlocks.push_back(New);
     ValueMap[LoopBlocks[i]] = New;  // Keep the BB mapping.
     LPM->cloneBasicBlockSimpleAnalysis(LoopBlocks[i], New, L);
-  }
-
-  // OutSiders are basic block that are dominated by original header and
-  // at the same time they are not part of loop.
-  SmallPtrSet<BasicBlock *, 8> OutSiders;
-  if (DT) {
-    DomTreeNode *OrigHeaderNode = DT->getNode(OrigHeader);
-    for(std::vector<DomTreeNode*>::iterator DI = OrigHeaderNode->begin(), 
-          DE = OrigHeaderNode->end();  DI != DE; ++DI) {
-      BasicBlock *B = (*DI)->getBlock();
-
-      DenseMap<const Value*, Value*>::iterator VI = ValueMap.find(B);
-      if (VI == ValueMap.end()) 
-        OutSiders.insert(B);
-    }
   }
 
   // Splice the newly inserted blocks into the function right before the
@@ -805,7 +675,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
     assert(NewExit->getTerminator()->getNumSuccessors() == 1 &&
            "Exit block should have been split to have one successor!");
     BasicBlock *ExitSucc = NewExit->getTerminator()->getSuccessor(0);
-    
+
     // If the successor of the exit block had PHI nodes, add an entry for
     // NewExit.
     PHINode *PN;
@@ -819,17 +689,13 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   }
 
   // Rewrite the code to refer to itself.
-  for (unsigned i = 0, e = NewBlocks.size(); i != e; ++i) {
-    BasicBlock *NB = NewBlocks[i];
-    if (BasicBlock *UnwindDest = NB->getUnwindDest())
-      NB->setUnwindDest(cast<BasicBlock>(ValueMap[UnwindDest]));
-
-    for (BasicBlock::iterator I = NB->begin(), E = NB->end(); I != E; ++I)
+  for (unsigned i = 0, e = NewBlocks.size(); i != e; ++i)
+    for (BasicBlock::iterator I = NewBlocks[i]->begin(),
+           E = NewBlocks[i]->end(); I != E; ++I)
       RemapInstruction(I, ValueMap);
-  }
   
   // Rewrite the original preheader to select between versions of the loop.
-  BranchInst *OldBR = cast<BranchInst>(OrigPreheader->getTerminator());
+  BranchInst *OldBR = cast<BranchInst>(loopPreheader->getTerminator());
   assert(OldBR->isUnconditional() && OldBR->getSuccessor(0) == LoopBlocks[0] &&
          "Preheader splitting did not work correctly!");
 
@@ -837,94 +703,6 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   EmitPreheaderBranchOnCondition(LIC, Val, NewBlocks[0], LoopBlocks[0], OldBR);
   LPM->deleteSimpleAnalysisValue(OldBR, L);
   OldBR->eraseFromParent();
-
-  // Update dominator info
-  if (DF && DT) {
-
-    SmallVector<BasicBlock *,4> ExitingBlocks;
-    L->getExitingBlocks(ExitingBlocks);
-
-    // Clone dominator info for all cloned basic block.
-    for (unsigned i = 0, e = LoopBlocks.size(); i != e; ++i) {
-      BasicBlock *LBB = LoopBlocks[i];
-      BasicBlock *NBB = NewBlocks[i];
-      CloneDomInfo(NBB, LBB, NewPreheader, OrigPreheader, 
-                   OrigHeader, DT, DF, ValueMap);
-
-      //   If LBB's dominance frontier includes DFMember 
-      //      such that DFMember is also a member of LoopDF then
-      //         - Remove DFMember from LBB's dominance frontier
-      //         - Copy loop exiting blocks', that are dominated by BB,
-      //           dominance frontier member in BB's dominance frontier
-
-      DominanceFrontier::iterator LBBI = DF->find(LBB);
-      DominanceFrontier::iterator NBBI = DF->find(NBB);
-      if (LBBI == DF->end())
-        continue;
-
-      DominanceFrontier::DomSetType &LBSet = LBBI->second;
-      for (DominanceFrontier::DomSetType::iterator LI = LBSet.begin(),
-             LE = LBSet.end(); LI != LE; /* NULL */) {
-        BasicBlock *B = *LI++;
-        if (B == LBB && B == L->getHeader())
-          continue;
-        bool removeB = false;
-        if (!LoopDF.count(B))
-          continue;
-        
-        // If LBB dominates loop exits then insert loop exit block's DF
-        // into B's DF.
-        for(SmallVector<BasicBlock *, 4>::iterator 
-              LExitI = ExitingBlocks.begin(),
-              LExitE = ExitingBlocks.end(); LExitI != LExitE; ++LExitI) {
-          BasicBlock *E = *LExitI;
-          
-          if (!DT->dominates(LBB,E))
-            continue;
-          
-          DenseMap<BasicBlock *, BasicBlock *>::iterator DFBI = 
-            OrigLoopExitMap.find(E);
-          if (DFBI == OrigLoopExitMap.end()) 
-            continue;
-          
-          BasicBlock *DFB = DFBI->second;
-          DF->addToFrontier(LBBI, DFB);
-          DF->addToFrontier(NBBI, DFB);
-          removeB = true;
-        }
-        
-        // If B's replacement is inserted in DF then now is the time to remove
-        // B.
-        if (removeB) {
-          DF->removeFromFrontier(LBBI, B);
-          if (L->contains(B))
-            DF->removeFromFrontier(NBBI, cast<BasicBlock>(ValueMap[B]));
-          else
-            DF->removeFromFrontier(NBBI, B);
-        }
-      }
-
-    }
-
-    // MiddleBlocks are dominated by original pre header. SplitEdge updated
-    // MiddleBlocks' dominance frontier appropriately.
-    for (unsigned i = 0, e = MiddleBlocks.size(); i != e; ++i) {
-      BasicBlock *MBB = MiddleBlocks[i];
-      if (!MBB->getSinglePredecessor())
-        DT->changeImmediateDominator(MBB, OrigPreheader);
-    }
-
-    // All Outsiders are now dominated by original pre header.
-    for (SmallPtrSet<BasicBlock *, 8>::iterator OI = OutSiders.begin(),
-           OE = OutSiders.end(); OI != OE; ++OI) {
-      BasicBlock *OB = *OI;
-      DT->changeImmediateDominator(OB, OrigPreheader);
-    }
-
-    // New loop headers are dominated by original preheader
-    DT->changeImmediateDominator(NewBlocks[0], OrigPreheader);
-    DT->changeImmediateDominator(LoopBlocks[0], OrigPreheader);
-  }
 
   LoopProcessWorklist.push_back(NewLoop);
   redoLoop = true;
@@ -937,6 +715,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   // deleted.  If so, don't simplify it.
   if (!LoopProcessWorklist.empty() && LoopProcessWorklist.back() == NewLoop)
     RewriteLoopBodyWithConditionConstant(NewLoop, LIC, Val, true);
+
 }
 
 /// RemoveFromWorklist - Remove all instances of I from the worklist vector
@@ -994,7 +773,7 @@ void LoopUnswitch::RemoveBlockIfDead(BasicBlock *BB,
       // If this is the header of a loop and the only pred is the latch, we now
       // have an unreachable loop.
       if (Loop *L = LI->getLoopFor(BB))
-        if (L->getHeader() == BB && L->contains(Pred)) {
+        if (loopHeader == BB && L->contains(Pred)) {
           // Remove the branch from the latch to the header block, this makes
           // the header dead, which will make the latch dead (because the header
           // dominates the latch).
@@ -1090,8 +869,6 @@ void LoopUnswitch::RemoveLoopFromHierarchy(Loop *L) {
   RemoveLoopFromWorklist(L);
 }
 
-
-
 // RewriteLoopBodyWithConditionConstant - We know either that the value LIC has
 // the value specified by Val in the specified loop, or we know it does NOT have
 // that value.  Rewrite any uses of LIC or of properties correlated to it.
@@ -1153,18 +930,19 @@ void LoopUnswitch::RewriteLoopBodyWithConditionConstant(Loop *L, Value *LIC,
               // trying to update it is complicated.  So instead we preserve the
               // loop structure and put the block on an dead code path.
               
+              BasicBlock *SISucc = SI->getSuccessor(i);
               BasicBlock* Old = SI->getParent();
               BasicBlock* Split = SplitBlock(Old, SI, this);
               
               Instruction* OldTerm = Old->getTerminator();
-              BranchInst::Create(Split, SI->getSuccessor(i),
+              BranchInst::Create(Split, SISucc,
                                  ConstantInt::getTrue(), OldTerm);
 
               LPM->deleteSimpleAnalysisValue(Old->getTerminator(), L);
               Old->getTerminator()->eraseFromParent();
               
               PHINode *PN;
-              for (BasicBlock::iterator II = SI->getSuccessor(i)->begin();
+              for (BasicBlock::iterator II = SISucc->begin();
                    (PN = dyn_cast<PHINode>(II)); ++II) {
                 Value *InVal = PN->removeIncomingValue(Split, false);
                 PN->addIncoming(InVal, Old);

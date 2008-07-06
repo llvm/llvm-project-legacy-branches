@@ -134,7 +134,7 @@ public:
   /// such, whenever a client has an instance of instruction info, it should
   /// always be able to get register info as well (through this method).
   ///
-  virtual const TargetRegisterInfo &getRegisterInfo() const { return RI; }
+  virtual const ARMRegisterInfo &getRegisterInfo() const { return RI; }
 
   /// getPointerRegClass - Return the register class to use to hold pointers.
   /// This is used for addressing modes.
@@ -153,7 +153,7 @@ public:
 
   virtual MachineInstr *convertToThreeAddress(MachineFunction::iterator &MFI,
                                               MachineBasicBlock::iterator &MBBI,
-                                              LiveVariables &LV) const;
+                                              LiveVariables *LV) const;
 
   // Branch analysis.
   virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,

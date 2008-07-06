@@ -28,7 +28,6 @@
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
-#include "llvm/System/IncludeFile.h"
 
 namespace llvm {
   /// IntrinsicInst - A useful wrapper class for inspecting calls to intrinsic
@@ -39,12 +38,6 @@ namespace llvm {
     IntrinsicInst(const IntrinsicInst&);  // DO NOT IMPLEMENT
     void operator=(const IntrinsicInst&); // DO NOT IMPLEMENT
   public:
-
-    /// StripPointerCasts - This static method strips off any unneeded pointer
-    /// casts from the specified value, returning the original uncasted value.
-    /// Note that the returned value is guaranteed to have pointer type.
-    static Value *StripPointerCasts(Value *Ptr);
-    
     /// getIntrinsicID - Return the intrinsic ID of this intrinsic.
     ///
     Intrinsic::ID getIntrinsicID() const {
@@ -103,8 +96,8 @@ namespace llvm {
       return unsigned(cast<ConstantInt>(getOperand(2))->getZExtValue());
     }
     
-    std::string getFileName() const;
-    std::string getDirectory() const;
+    Value* getFileName() const;
+    Value* getDirectory() const;
 
     // Methods for support type inquiry through isa, cast, and dyn_cast:
     static inline bool classof(const DbgStopPointInst *) { return true; }
@@ -190,7 +183,7 @@ namespace llvm {
     /// getDest - This is just like getRawDest, but it strips off any cast
     /// instructions that feed it, giving the original input.  The returned
     /// value is guaranteed to be a pointer.
-    Value *getDest() const { return StripPointerCasts(getRawDest()); }
+    Value *getDest() const { return getRawDest()->stripPointerCasts(); }
 
     /// set* - Set the specified arguments of the instruction.
     ///
@@ -241,7 +234,7 @@ namespace llvm {
     /// getSource - This is just like getRawSource, but it strips off any cast
     /// instructions that feed it, giving the original input.  The returned
     /// value is guaranteed to be a pointer.
-    Value *getSource() const { return StripPointerCasts(getRawSource()); }
+    Value *getSource() const { return getRawSource()->stripPointerCasts(); }
 
 
     void setSource(Value *Ptr) {
@@ -271,7 +264,7 @@ namespace llvm {
     /// getSource - This is just like getRawSource, but it strips off any cast
     /// instructions that feed it, giving the original input.  The returned
     /// value is guaranteed to be a pointer.
-    Value *getSource() const { return StripPointerCasts(getRawSource()); }
+    Value *getSource() const { return getRawSource()->stripPointerCasts(); }
 
     void setSource(Value *Ptr) {
       assert(getRawSource()->getType() == Ptr->getType() &&
@@ -315,9 +308,5 @@ namespace llvm {
   };
 
 }
-
-// Ensure that the IntrinsicInst.cpp file gets added as a dependency of any 
-// file that includes this header
-FORCE_DEFINING_FILE_TO_BE_LINKED(IntrinsicInst)
 
 #endif

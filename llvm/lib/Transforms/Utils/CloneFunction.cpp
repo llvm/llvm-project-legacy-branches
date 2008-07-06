@@ -17,6 +17,7 @@
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Instructions.h"
+#include "llvm/GlobalVariable.h"
 #include "llvm/Function.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Compiler.h"
@@ -33,7 +34,6 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB,
                                   ClonedCodeInfo *CodeInfo) {
   BasicBlock *NewBB = BasicBlock::Create("", F);
   if (BB->hasName()) NewBB->setName(BB->getName()+NameSuffix);
-  NewBB->setUnwindDest(const_cast<BasicBlock*>(BB->getUnwindDest()));
   NewBB->setDoesNotThrow(BB->doesNotThrow());
   
   bool hasCalls = false, hasDynamicAllocas = false, hasStaticAllocas = false;
@@ -81,11 +81,8 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
     assert(ValueMap.count(I) && "No mapping from source argument specified!");
 #endif
 
-  // Clone the parameter attributes
-  NewFunc->setParamAttrs(OldFunc->getParamAttrs());
-
-  // Clone the calling convention
-  NewFunc->setCallingConv(OldFunc->getCallingConv());
+  // Clone any attributes.
+  NewFunc->copyAttributesFrom(OldFunc);
 
   // Loop over all of the basic blocks in the function, cloning them as
   // appropriate.  Note that we save BE this way in order to handle cloning of
@@ -108,15 +105,10 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   // references as we go.  This uses ValueMap to do all the hard work.
   //
   for (Function::iterator BB = cast<BasicBlock>(ValueMap[OldFunc->begin()]),
-         BE = NewFunc->end(); BB != BE; ++BB) {
-    // Fix up the unwind destination.
-    if (BasicBlock *UnwindDest = BB->getUnwindDest())
-      BB->setUnwindDest(cast<BasicBlock>(ValueMap[UnwindDest]));
-
+         BE = NewFunc->end(); BB != BE; ++BB)
     // Loop over all instructions, fixing each one as we find it...
     for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II)
       RemapInstruction(II, ValueMap);
-  }
 }
 
 /// CloneFunction - Return a copy of the specified function, but without
@@ -309,13 +301,20 @@ ConstantFoldMappedInstruction(const Instruction *I) {
     else
       return 0;  // All operands not constant!
 
-  
   if (const CmpInst *CI = dyn_cast<CmpInst>(I))
     return ConstantFoldCompareInstOperands(CI->getPredicate(),
                                            &Ops[0], Ops.size(), TD);
-  else
-    return ConstantFoldInstOperands(I->getOpcode(), I->getType(),
-                                    &Ops[0], Ops.size(), TD);
+
+  if (const LoadInst *LI = dyn_cast<LoadInst>(I))
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Ops[0]))
+      if (!LI->isVolatile() && CE->getOpcode() == Instruction::GetElementPtr)
+        if (GlobalVariable *GV = dyn_cast<GlobalVariable>(CE->getOperand(0)))
+          if (GV->isConstant() && !GV->isDeclaration())
+            return ConstantFoldLoadThroughGEPConstantExpr(GV->getInitializer(),
+                                                          CE);
+
+  return ConstantFoldInstOperands(I->getOpcode(), I->getType(), &Ops[0],
+                                  Ops.size(), TD);
 }
 
 /// CloneAndPruneFunctionInto - This works exactly like CloneFunctionInto,
@@ -338,8 +337,8 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
        E = OldFunc->arg_end(); II != E; ++II)
     assert(ValueMap.count(II) && "No mapping from source argument specified!");
 #endif
-  
-  PruningFunctionCloner PFC(NewFunc, OldFunc, ValueMap, Returns, 
+
+  PruningFunctionCloner PFC(NewFunc, OldFunc, ValueMap, Returns,
                             NameSuffix, CodeInfo, TD);
 
   // Clone the entry block, and anything recursively reachable from it.

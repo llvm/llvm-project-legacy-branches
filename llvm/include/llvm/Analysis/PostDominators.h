@@ -29,6 +29,8 @@ struct PostDominatorTree : public FunctionPass {
     DT = new DominatorTreeBase<BasicBlock>(true);
   }
 
+  ~PostDominatorTree();
+
   virtual bool runOnFunction(Function &F);
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -60,6 +62,7 @@ struct PostDominatorTree : public FunctionPass {
   }
 };
 
+FunctionPass* createPostDomTree();
 
 /// PostDominanceFrontier Class - Concrete subclass of DominanceFrontier that is
 /// used to compute the a post-dominance frontier.
@@ -88,9 +91,8 @@ private:
                               const DomTreeNode *Node);
 };
 
-} // End llvm namespace
+FunctionPass* createPostDomFrontier();
 
-// Make sure that any clients of this file link in PostDominators.cpp
-FORCE_DEFINING_FILE_TO_BE_LINKED(PostDominanceFrontier)
+} // End llvm namespace
 
 #endif

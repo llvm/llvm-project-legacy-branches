@@ -1,4 +1,4 @@
-//===- llvm/System/Linux/Path.cpp - Linux Path Implementation ---*- C++ -*-===//
+//===- llvm/System/Win32/Path.cpp - Win32 Path Implementation ---*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -45,6 +45,16 @@ static void FlipBackSlashes(std::string& s) {
 namespace llvm {
 namespace sys {
 const char PathSeparator = ';';
+
+Path::Path(const std::string& p)
+  : path(p) {
+  FlipBackSlashes(path);
+}
+
+Path::Path(const char *StrStart, unsigned StrLen)
+  : path(StrStart, StrLen) {
+  FlipBackSlashes(path);
+}
 
 bool
 Path::isValid() const {
@@ -230,7 +240,7 @@ Path::isRootDirectory() const {
 }
 
 std::string Path::getDirname() const {
-  return getDirnameCharSep(path, '\\');
+  return getDirnameCharSep(path, '/');
 }
 
 std::string
@@ -247,6 +257,22 @@ Path::getBasename() const {
     return path.substr(slash);
   else
     return path.substr(slash, dot - slash);
+}
+
+std::string
+Path::getSuffix() const {
+  // Find the last slash
+  size_t slash = path.rfind('/');
+  if (slash == std::string::npos)
+    slash = 0;
+  else
+    slash++;
+
+  size_t dot = path.rfind('.');
+  if (dot == std::string::npos || dot < slash)
+    return std::string();
+  else
+    return path.substr(dot + 1);
 }
 
 bool
@@ -672,7 +698,7 @@ Path::renamePathOnDisk(const Path& newName, std::string* ErrMsg) {
   if (!MoveFileEx(path.c_str(), newName.c_str(), MOVEFILE_REPLACE_EXISTING))
     return MakeErrMsg(ErrMsg, "Can't move '" + path + "' to '" + newName.path 
         + "': ");
-  return true;
+  return false;
 }
 
 bool

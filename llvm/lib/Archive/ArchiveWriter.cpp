@@ -25,7 +25,7 @@ using namespace llvm;
 
 // Write an integer using variable bit rate encoding. This saves a few bytes
 // per entry in the symbol table.
-inline void writeInteger(unsigned num, std::ofstream& ARFile) {
+static inline void writeInteger(unsigned num, std::ofstream& ARFile) {
   while (1) {
     if (num < 0x80) { // done?
       ARFile << (unsigned char)num;
@@ -41,7 +41,7 @@ inline void writeInteger(unsigned num, std::ofstream& ARFile) {
 
 // Compute how many bytes are taken by a given VBR encoded value. This is needed
 // to pre-compute the size of the symbol table.
-inline unsigned numVbrBytes(unsigned num) {
+static inline unsigned numVbrBytes(unsigned num) {
 
   // Note that the following nested ifs are somewhat equivalent to a binary
   // search. We split it in half by comparing against 2^14 first. This allows
@@ -465,6 +465,13 @@ Archive::writeToDisk(bool CreateSymbolTable, bool TruncateNames, bool Compress,
   cleanUpMemory();
   
   if (TmpArchive.renamePathOnDisk(archPath, ErrMsg))
+    return true;
+
+  // Set correct read and write permissions after temporary file is moved
+  // to final destination path.
+  if (archPath.makeReadableOnDisk(ErrMsg))
+    return true;
+  if (archPath.makeWriteableOnDisk(ErrMsg))
     return true;
 
   return false;

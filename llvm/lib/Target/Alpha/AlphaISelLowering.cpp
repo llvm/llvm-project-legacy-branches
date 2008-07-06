@@ -104,9 +104,10 @@ AlphaTargetLowering::AlphaTargetLowering(TargetMachine &TM) : TargetLowering(TM)
   setOperationAction(ISD::BIT_CONVERT, MVT::f32, Promote);
 
   // We don't have line number support yet.
-  setOperationAction(ISD::LOCATION, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_STOPPOINT, MVT::Other, Expand);
   setOperationAction(ISD::DEBUG_LOC, MVT::Other, Expand);
-  setOperationAction(ISD::LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::EH_LABEL, MVT::Other, Expand);
 
   // Not implemented yet.
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand); 
@@ -145,8 +146,7 @@ AlphaTargetLowering::AlphaTargetLowering(TargetMachine &TM) : TargetLowering(TM)
   computeRegisterProperties();
 }
 
-MVT::ValueType
-AlphaTargetLowering::getSetCCResultType(const SDOperand &) const {
+MVT AlphaTargetLowering::getSetCCResultType(const SDOperand &) const {
   return MVT::i64;
 }
 
@@ -169,7 +169,7 @@ const char *AlphaTargetLowering::getTargetNodeName(unsigned Opcode) const {
 }
 
 static SDOperand LowerJumpTable(SDOperand Op, SelectionDAG &DAG) {
-  MVT::ValueType PtrVT = Op.getValueType();
+  MVT PtrVT = Op.getValueType();
   JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
   SDOperand JTI = DAG.getTargetJumpTable(JT->getIndex(), PtrVT);
   SDOperand Zero = DAG.getConstant(0, PtrVT);
@@ -217,14 +217,13 @@ static SDOperand LowerFORMAL_ARGUMENTS(SDOperand Op, SelectionDAG &DAG,
   
   for (unsigned ArgNo = 0, e = Op.Val->getNumValues()-1; ArgNo != e; ++ArgNo) {
     SDOperand argt;
-    MVT::ValueType ObjectVT = Op.getValue(ArgNo).getValueType();
+    MVT ObjectVT = Op.getValue(ArgNo).getValueType();
     SDOperand ArgVal;
 
     if (ArgNo  < 6) {
-      switch (ObjectVT) {
+      switch (ObjectVT.getSimpleVT()) {
       default:
-        cerr << "Unknown Type " << ObjectVT << "\n";
-        abort();
+        assert(false && "Invalid value type!");
       case MVT::f64:
         args_float[ArgNo] = AddLiveIn(MF, args_float[ArgNo], 
                                       &Alpha::F8RCRegClass);
@@ -282,9 +281,8 @@ static SDOperand LowerFORMAL_ARGUMENTS(SDOperand Op, SelectionDAG &DAG,
   ArgValues.push_back(Root);
 
   // Return the new list of results.
-  std::vector<MVT::ValueType> RetVT(Op.Val->value_begin(),
-                                    Op.Val->value_end());
-  return DAG.getNode(ISD::MERGE_VALUES, RetVT, &ArgValues[0], ArgValues.size());
+  return DAG.getMergeValues(Op.Val->getVTList(), &ArgValues[0],
+                            ArgValues.size());
 }
 
 static SDOperand LowerRET(SDOperand Op, SelectionDAG &DAG) {
@@ -300,12 +298,12 @@ static SDOperand LowerRET(SDOperand Op, SelectionDAG &DAG) {
     break;
     //return SDOperand(); // ret void is legal
   case 3: {
-    MVT::ValueType ArgVT = Op.getOperand(1).getValueType();
+    MVT ArgVT = Op.getOperand(1).getValueType();
     unsigned ArgReg;
-    if (MVT::isInteger(ArgVT))
+    if (ArgVT.isInteger())
       ArgReg = Alpha::R0;
     else {
-      assert(MVT::isFloatingPoint(ArgVT));
+      assert(ArgVT.isFloatingPoint());
       ArgReg = Alpha::F0;
     }
     Copy = DAG.getCopyToReg(Copy, ArgReg, Op.getOperand(1), Copy.getValue(1));
@@ -332,7 +330,7 @@ AlphaTargetLowering::LowerCallTo(SDOperand Chain, const Type *RetTy,
   std::vector<SDOperand> args_to_use;
   for (unsigned i = 0, e = Args.size(); i != e; ++i)
   {
-    switch (getValueType(Args[i].Ty)) {
+    switch (getValueType(Args[i].Ty).getSimpleVT()) {
     default: assert(0 && "Unexpected ValueType for argument!");
     case MVT::i1:
     case MVT::i8:
@@ -355,10 +353,10 @@ AlphaTargetLowering::LowerCallTo(SDOperand Chain, const Type *RetTy,
     args_to_use.push_back(Args[i].Node);
   }
 
-  std::vector<MVT::ValueType> RetVals;
-  MVT::ValueType RetTyVT = getValueType(RetTy);
-  MVT::ValueType ActualRetTyVT = RetTyVT;
-  if (RetTyVT >= MVT::i1 && RetTyVT <= MVT::i32)
+  std::vector<MVT> RetVals;
+  MVT RetTyVT = getValueType(RetTy);
+  MVT ActualRetTyVT = RetTyVT;
+  if (RetTyVT.getSimpleVT() >= MVT::i1 && RetTyVT.getSimpleVT() <= MVT::i32)
     ActualRetTyVT = MVT::i64;
 
   if (RetTyVT != MVT::isVoid)
@@ -394,6 +392,34 @@ AlphaTargetLowering::LowerCallTo(SDOperand Chain, const Type *RetTy,
   return std::make_pair(RetVal, Chain);
 }
 
+void AlphaTargetLowering::LowerVAARG(SDNode *N, SDOperand &Chain,
+                                     SDOperand &DataPtr, SelectionDAG &DAG) {
+  Chain = N->getOperand(0);
+  SDOperand VAListP = N->getOperand(1);
+  const Value *VAListS = cast<SrcValueSDNode>(N->getOperand(2))->getValue();
+
+  SDOperand Base = DAG.getLoad(MVT::i64, Chain, VAListP, VAListS, 0);
+  SDOperand Tmp = DAG.getNode(ISD::ADD, MVT::i64, VAListP,
+                              DAG.getConstant(8, MVT::i64));
+  SDOperand Offset = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, Base.getValue(1),
+                                    Tmp, NULL, 0, MVT::i32);
+  DataPtr = DAG.getNode(ISD::ADD, MVT::i64, Base, Offset);
+  if (N->getValueType(0).isFloatingPoint())
+  {
+    //if fp && Offset < 6*8, then subtract 6*8 from DataPtr
+    SDOperand FPDataPtr = DAG.getNode(ISD::SUB, MVT::i64, DataPtr,
+                                      DAG.getConstant(8*6, MVT::i64));
+    SDOperand CC = DAG.getSetCC(MVT::i64, Offset,
+                                DAG.getConstant(8*6, MVT::i64), ISD::SETLT);
+    DataPtr = DAG.getNode(ISD::SELECT, MVT::i64, CC, FPDataPtr, DataPtr);
+  }
+
+  SDOperand NewOffset = DAG.getNode(ISD::ADD, MVT::i64, Offset,
+                                    DAG.getConstant(8, MVT::i64));
+  Chain = DAG.getTruncStore(Offset.getValue(1), NewOffset, Tmp, NULL, 0,
+                            MVT::i32);
+}
+
 /// LowerOperation - Provide custom lowering hooks for some operations.
 ///
 SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
@@ -407,17 +433,17 @@ SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
   case ISD::JumpTable: return LowerJumpTable(Op, DAG);
 
   case ISD::SINT_TO_FP: {
-    assert(MVT::i64 == Op.getOperand(0).getValueType() && 
+    assert(Op.getOperand(0).getValueType() == MVT::i64 &&
            "Unhandled SINT_TO_FP type in custom expander!");
     SDOperand LD;
-    bool isDouble = MVT::f64 == Op.getValueType();
+    bool isDouble = Op.getValueType() == MVT::f64;
     LD = DAG.getNode(ISD::BIT_CONVERT, MVT::f64, Op.getOperand(0));
     SDOperand FP = DAG.getNode(isDouble?AlphaISD::CVTQT_:AlphaISD::CVTQS_,
                                isDouble?MVT::f64:MVT::f32, LD);
     return FP;
   }
   case ISD::FP_TO_SINT: {
-    bool isDouble = MVT::f64 == Op.getOperand(0).getValueType();
+    bool isDouble = Op.getOperand(0).getValueType() == MVT::f64;
     SDOperand src = Op.getOperand(0);
 
     if (!isDouble) //Promote
@@ -465,7 +491,7 @@ SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
   case ISD::SREM:
     //Expand only on constant case
     if (Op.getOperand(1).getOpcode() == ISD::Constant) {
-      MVT::ValueType VT = Op.Val->getValueType(0);
+      MVT VT = Op.Val->getValueType(0);
       SDOperand Tmp1 = Op.Val->getOpcode() == ISD::UREM ?
         BuildUDIV(Op.Val, DAG, NULL) :
         BuildSDIV(Op.Val, DAG, NULL);
@@ -476,7 +502,7 @@ SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
     //fall through
   case ISD::SDIV:
   case ISD::UDIV:
-    if (MVT::isInteger(Op.getValueType())) {
+    if (Op.getValueType().isInteger()) {
       if (Op.getOperand(1).getOpcode() == ISD::Constant)
         return Op.getOpcode() == ISD::SDIV ? BuildSDIV(Op.Val, DAG, NULL) 
           : BuildUDIV(Op.Val, DAG, NULL);
@@ -495,37 +521,15 @@ SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
     break;
 
   case ISD::VAARG: {
-    SDOperand Chain = Op.getOperand(0);
-    SDOperand VAListP = Op.getOperand(1);
-    const Value *VAListS = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
-    
-    SDOperand Base = DAG.getLoad(MVT::i64, Chain, VAListP, VAListS, 0);
-    SDOperand Tmp = DAG.getNode(ISD::ADD, MVT::i64, VAListP,
-                                DAG.getConstant(8, MVT::i64));
-    SDOperand Offset = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, Base.getValue(1),
-                                      Tmp, NULL, 0, MVT::i32);
-    SDOperand DataPtr = DAG.getNode(ISD::ADD, MVT::i64, Base, Offset);
-    if (MVT::isFloatingPoint(Op.getValueType()))
-    {
-      //if fp && Offset < 6*8, then subtract 6*8 from DataPtr
-      SDOperand FPDataPtr = DAG.getNode(ISD::SUB, MVT::i64, DataPtr,
-                                        DAG.getConstant(8*6, MVT::i64));
-      SDOperand CC = DAG.getSetCC(MVT::i64, Offset,
-                                  DAG.getConstant(8*6, MVT::i64), ISD::SETLT);
-      DataPtr = DAG.getNode(ISD::SELECT, MVT::i64, CC, FPDataPtr, DataPtr);
-    }
+    SDOperand Chain, DataPtr;
+    LowerVAARG(Op.Val, Chain, DataPtr, DAG);
 
-    SDOperand NewOffset = DAG.getNode(ISD::ADD, MVT::i64, Offset,
-                                      DAG.getConstant(8, MVT::i64));
-    SDOperand Update = DAG.getTruncStore(Offset.getValue(1), NewOffset,
-                                         Tmp, NULL, 0, MVT::i32);
-    
     SDOperand Result;
     if (Op.getValueType() == MVT::i32)
-      Result = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, Update, DataPtr,
+      Result = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, Chain, DataPtr,
                               NULL, 0, MVT::i32);
     else
-      Result = DAG.getLoad(Op.getValueType(), Update, DataPtr, NULL, 0);
+      Result = DAG.getLoad(Op.getValueType(), Chain, DataPtr, NULL, 0);
     return Result;
   }
   case ISD::VACOPY: {
@@ -566,14 +570,15 @@ SDOperand AlphaTargetLowering::LowerOperation(SDOperand Op, SelectionDAG &DAG) {
   return SDOperand();
 }
 
-SDOperand AlphaTargetLowering::CustomPromoteOperation(SDOperand Op, 
-                                                      SelectionDAG &DAG) {
-  assert(Op.getValueType() == MVT::i32 && 
-         Op.getOpcode() == ISD::VAARG &&
+SDNode *AlphaTargetLowering::ReplaceNodeResults(SDNode *N,
+                                                SelectionDAG &DAG) {
+  assert(N->getValueType(0) == MVT::i32 &&
+         N->getOpcode() == ISD::VAARG &&
          "Unknown node to custom promote!");
-  
-  // The code in LowerOperation already handles i32 vaarg
-  return LowerOperation(Op, DAG);
+
+  SDOperand Chain, DataPtr;
+  LowerVAARG(N, Chain, DataPtr, DAG);
+  return DAG.getLoad(N->getValueType(0), Chain, DataPtr, NULL, 0).Val;
 }
 
 
@@ -596,7 +601,7 @@ AlphaTargetLowering::getConstraintType(const std::string &Constraint) const {
 
 std::vector<unsigned> AlphaTargetLowering::
 getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                  MVT::ValueType VT) const {
+                                  MVT VT) const {
   if (Constraint.size() == 1) {
     switch (Constraint[0]) {
     default: break;  // Unknown constriant letter
@@ -664,11 +669,7 @@ AlphaTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   MachineBasicBlock *llscMBB = new MachineBasicBlock(LLVM_BB);
   MachineBasicBlock *sinkMBB = new MachineBasicBlock(LLVM_BB);
 
-  for(MachineBasicBlock::succ_iterator i = thisMBB->succ_begin(), 
-        e = thisMBB->succ_end(); i != e; ++i)
-    sinkMBB->addSuccessor(*i);
-  while(!thisMBB->succ_empty())
-    thisMBB->removeSuccessor(thisMBB->succ_begin());
+  sinkMBB->transferSuccessors(thisMBB);
 
   MachineFunction *F = BB->getParent();
   F->getBasicBlockList().insert(It, llscMBB);

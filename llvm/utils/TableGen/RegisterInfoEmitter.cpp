@@ -64,6 +64,8 @@ void RegisterInfoEmitter::runHeader(std::ostream &OS) {
      << "  virtual int getDwarfRegNumFull(unsigned RegNum, "
      << "unsigned Flavour) const;\n"
      << "  virtual int getDwarfRegNum(unsigned RegNum, bool isEH) const = 0;\n"
+     << "  virtual bool needsStackRealignment(const MachineFunction &) const\n"
+     << "     { return false; }\n"
      << "  unsigned getSubReg(unsigned RegNo, unsigned Index) const;\n"
      << "};\n\n";
 
@@ -221,7 +223,7 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
     // Emit the register list now.
     OS << "  // " << Name 
        << " Register Class Value Types...\n"
-       << "  static const MVT::ValueType " << Name
+       << "  static const MVT " << Name
        << "[] = {\n    ";
     for (unsigned i = 0, e = RC.VTs.size(); i != e; ++i)
       OS << getEnumName(RC.VTs[i]) << ", ";
@@ -416,7 +418,6 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
   OS << "  };\n";
 
   // Emit register sub-registers / super-registers, aliases...
-  std::map<Record*, std::set<Record*> > RegisterImmSubRegs;
   std::map<Record*, std::set<Record*> > RegisterSubRegs;
   std::map<Record*, std::set<Record*> > RegisterSuperRegs;
   std::map<Record*, std::set<Record*> > RegisterAliases;
@@ -457,11 +458,80 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
         cerr << "Warning: register " << getQualifiedName(SubReg)
              << " specified as a sub-register of " << getQualifiedName(R)
              << " multiple times!\n";
-      RegisterImmSubRegs[R].insert(SubReg);
       addSubSuperReg(R, SubReg, RegisterSubRegs, RegisterSuperRegs,
                      RegisterAliases);
     }
   }
+  
+  // Print the SubregHashTable, a simple quadratically probed
+  // hash table for determining if a register is a subregister
+  // of another register.
+  unsigned NumSubRegs = 0;
+  std::map<Record*, unsigned> RegNo;
+  for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
+    RegNo[Regs[i].TheDef] = i;
+    NumSubRegs += RegisterSubRegs[Regs[i].TheDef].size();
+  }
+  
+  unsigned SubregHashTableSize = NextPowerOf2(2 * NumSubRegs);
+  unsigned* SubregHashTable = new unsigned[2 * SubregHashTableSize];
+  std::fill(SubregHashTable, SubregHashTable + 2 * SubregHashTableSize, ~0U);
+  
+  for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
+    Record* R = Regs[i].TheDef;
+    for (std::set<Record*>::iterator I = RegisterSubRegs[R].begin(),
+         E = RegisterSubRegs[R].end(); I != E; ++I) {
+      Record* RJ = *I;
+      // We have to increase the indices of both registers by one when
+      // computing the hash because, in the generated code, there
+      // will be an extra empty slot at register 0.
+      size_t index = ((i+1) + (RegNo[RJ]+1) * 37) & (SubregHashTableSize-1);
+      unsigned ProbeAmt = 2;
+      while (SubregHashTable[index*2] != ~0U &&
+             SubregHashTable[index*2+1] != ~0U) {
+        index = (index + ProbeAmt) & (SubregHashTableSize-1);
+        ProbeAmt += 2;
+      }
+      
+      SubregHashTable[index*2] = i;
+      SubregHashTable[index*2+1] = RegNo[RJ];
+    }
+  }
+  
+  if (SubregHashTableSize) {
+    std::string Namespace = Regs[0].TheDef->getValueAsString("Namespace");
+    
+    OS << "\n\n  const unsigned SubregHashTable[] = { ";
+    for (unsigned i = 0; i < SubregHashTableSize - 1; ++i) {
+      if (i != 0)
+        // Insert spaces for nice formatting.
+        OS << "                                       ";
+      
+      if (SubregHashTable[2*i] != ~0U) {
+        OS << getQualifiedName(Regs[SubregHashTable[2*i]].TheDef) << ", "
+           << getQualifiedName(Regs[SubregHashTable[2*i+1]].TheDef) << ", \n";
+      } else {
+        OS << Namespace << "::NoRegister, " << Namespace << "::NoRegister, \n";
+      }
+    }
+    
+    unsigned Idx = SubregHashTableSize*2-2;
+    if (SubregHashTable[Idx] != ~0U) {
+      OS << "                                       "
+         << getQualifiedName(Regs[SubregHashTable[Idx]].TheDef) << ", "
+         << getQualifiedName(Regs[SubregHashTable[Idx+1]].TheDef) << " };\n";
+    } else {
+      OS << Namespace << "::NoRegister, " << Namespace << "::NoRegister };\n";
+    }
+    
+    OS << "  const unsigned SubregHashTableSize = "
+       << SubregHashTableSize << ";\n";
+  } else {
+    OS << "\n\n  const unsigned SubregHashTable[] = { ~0U, ~0U };\n"
+       << "  const unsigned SubregHashTableSize = 1;\n";
+  }
+  
+  delete [] SubregHashTable;
 
   if (!RegisterAliases.empty())
     OS << "\n\n  // Register Alias Sets...\n";
@@ -500,21 +570,6 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
     OS << "0 };\n";
   }
 
-  if (!RegisterImmSubRegs.empty())
-    OS << "\n\n  // Register Immediate Sub-registers Sets...\n";
-
-  // Loop over all of the registers which have sub-registers, emitting the
-  // sub-registers list to memory.
-  for (std::map<Record*, std::set<Record*> >::iterator
-         I = RegisterImmSubRegs.begin(), E = RegisterImmSubRegs.end();
-       I != E; ++I) {
-    OS << "  const unsigned " << I->first->getName() << "_ImmSubRegsSet[] = { ";
-    for (std::set<Record*>::iterator ASI = I->second.begin(),
-           E = I->second.end(); ASI != E; ++ASI)
-      OS << getQualifiedName(*ASI) << ", ";
-    OS << "0 };\n";
-  }
-
   if (!RegisterSuperRegs.empty())
     OS << "\n\n  // Register Super-registers Sets...\n";
 
@@ -538,7 +593,7 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
   }
 
   OS<<"\n  const TargetRegisterDesc RegisterDescriptors[] = { // Descriptors\n";
-  OS << "    { \"NOREG\",\t\"NOREG\",\t0,\t0,\t0,\t0 },\n";
+  OS << "    { \"NOREG\",\t\"NOREG\",\t0,\t0,\t0 },\n";
 
   // Now that register alias and sub-registers sets have been emitted, emit the
   // register descriptors now.
@@ -567,10 +622,6 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
       OS << "Empty_AliasSet,\t";
     if (RegisterSubRegs.count(Reg.TheDef))
       OS << Reg.getName() << "_SubRegsSet,\t";
-    else
-      OS << "Empty_SubRegsSet,\t";
-    if (RegisterImmSubRegs.count(Reg.TheDef))
-      OS << Reg.getName() << "_ImmSubRegsSet,\t";
     else
       OS << "Empty_SubRegsSet,\t";
     if (RegisterSuperRegs.count(Reg.TheDef))
@@ -626,7 +677,9 @@ void RegisterInfoEmitter::run(std::ostream &OS) {
      << "(int CallFrameSetupOpcode, int CallFrameDestroyOpcode)\n"
      << "  : TargetRegisterInfo(RegisterDescriptors, " << Registers.size()+1
      << ", RegisterClasses, RegisterClasses+" << RegisterClasses.size() <<",\n "
-     << "                 CallFrameSetupOpcode, CallFrameDestroyOpcode) {}\n\n";
+     << "                 CallFrameSetupOpcode, CallFrameDestroyOpcode,\n"
+     << "                 SubregHashTable, SubregHashTableSize) {\n"
+     << "}\n\n";
 
   // Collect all information about dwarf register numbers
 

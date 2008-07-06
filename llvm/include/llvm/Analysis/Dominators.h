@@ -94,7 +94,7 @@ public:
   const std::vector<DomTreeNodeBase<NodeT>*> &getChildren() const {
     return Children;
   }
-  
+
   DomTreeNodeBase(NodeT *BB, DomTreeNodeBase<NodeT> *iDom)
     : TheBB(BB), IDom(iDom), DFSNumIn(-1), DFSNumOut(-1) { }
   
@@ -102,11 +102,33 @@ public:
     Children.push_back(C);
     return C;
   }
-  
+
   size_t getNumChildren() const {
     return Children.size();
   }
+
+  void clearAllChildren() {
+    Children.clear();
+  }
   
+  bool compare(DomTreeNodeBase<NodeT> *Other) {
+    if (getNumChildren() != Other->getNumChildren())
+      return true;
+
+    SmallPtrSet<NodeT *, 4> OtherChildren;
+    for(iterator I = Other->begin(), E = Other->end(); I != E; ++I) {
+      NodeT *Nd = (*I)->getBlock();
+      OtherChildren.insert(Nd);
+    }
+
+    for(iterator I = begin(), E = end(); I != E; ++I) {
+      NodeT *N = (*I)->getBlock();
+      if (OtherChildren.count(N) == 0)
+        return true;
+    }
+    return false;
+  }
+
   void setIDom(DomTreeNodeBase<NodeT> *NewIDom) {
     assert(IDom && "No immediate dominator?");
     if (IDom != NewIDom) {
@@ -237,7 +259,7 @@ protected:
       bool NewBBDominatesNewBBSucc = true;
       {
         typename GraphT::NodeType* OnePred = PredBlocks[0];
-        unsigned i = 1, e = PredBlocks.size();
+        size_t i = 1, e = PredBlocks.size();
         for (i = 1; !DT.isReachableFromEntry(OnePred); ++i) {
           assert(i != e && "Didn't find reachable pred?");
           OnePred = PredBlocks[i];
@@ -307,6 +329,33 @@ public:
 
   // FIXME: Should remove this
   virtual bool runOnFunction(Function &F) { return false; }
+
+  /// compare - Return false if the other dominator tree base matches this
+  /// dominator tree base. Otherwise return true.
+  bool compare(DominatorTreeBase &Other) const {
+
+    const DomTreeNodeMapType &OtherDomTreeNodes = Other.DomTreeNodes;
+    if (DomTreeNodes.size() != OtherDomTreeNodes.size())
+      return true;
+
+    SmallPtrSet<const NodeT *,4> MyBBs;
+    for (typename DomTreeNodeMapType::const_iterator 
+           I = this->DomTreeNodes.begin(),
+           E = this->DomTreeNodes.end(); I != E; ++I) {
+      NodeT *BB = I->first;
+      typename DomTreeNodeMapType::const_iterator OI = OtherDomTreeNodes.find(BB);
+      if (OI == OtherDomTreeNodes.end())
+        return true;
+
+      DomTreeNodeBase<NodeT>* MyNd = I->second;
+      DomTreeNodeBase<NodeT>* OtherNd = OI->second;
+      
+      if (MyNd->compare(OtherNd))
+        return true;
+    }
+
+    return false;
+  }
 
   virtual void releaseMemory() { reset(); }
 
@@ -567,7 +616,7 @@ protected:
     SmallVector<std::pair<DomTreeNodeBase<NodeT>*,
                 typename DomTreeNodeBase<NodeT>::iterator>, 32> WorkStack;
 
-    for (unsigned i = 0, e = this->Roots.size(); i != e; ++i) {
+    for (unsigned i = 0, e = (unsigned)this->Roots.size(); i != e; ++i) {
       DomTreeNodeBase<NodeT> *ThisRoot = getNode(this->Roots[i]);
       WorkStack.push_back(std::make_pair(ThisRoot, ThisRoot->begin()));
       ThisRoot->DFSNumIn = DFSNum++;
@@ -605,16 +654,8 @@ protected:
     // immediate dominator.
     NodeT *IDom = getIDom(BB);
 
-    // skip all non root nodes that have no dominator
-    if (!IDom && std::count(this->Roots.begin(), this->Roots.end(), BB) == 0)
-      return NULL;
-
+    assert(IDom || this->DomTreeNodes[NULL]);
     DomTreeNodeBase<NodeT> *IDomNode = getNodeForBlock(IDom);
-
-    // skip all nodes that are dominated by a non root node that, by itself,
-    // has no dominator.
-    if (!IDomNode)
-      return NULL;
 
     // Add a new tree node for this BasicBlock, and link it as a child of
     // IDomNode
@@ -705,7 +746,22 @@ public:
   inline DomTreeNode *getRootNode() const {
     return DT->getRootNode();
   }
-  
+
+  /// compare - Return false if the other dominator tree matches this
+  /// dominator tree. Otherwise return true.
+  inline bool compare(DominatorTree &Other) const {
+    DomTreeNode *R = getRootNode();
+    DomTreeNode *OtherR = Other.getRootNode();
+    
+    if (!R || !OtherR || R->getBlock() != OtherR->getBlock())
+      return true;
+    
+    if (DT->compare(Other.getBase()))
+      return true;
+
+    return false;
+  }
+
   virtual bool runOnFunction(Function &F);
   
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -800,6 +856,10 @@ public:
     DT->splitBlock(NewBB);
   }
   
+  bool isReachableFromEntry(BasicBlock* A) {
+    return DT->isReachableFromEntry(A);
+  }
+  
   
   virtual void releaseMemory() { 
     DT->releaseMemory();
@@ -847,8 +907,8 @@ public:
   typedef std::map<BasicBlock*, DomSetType> DomSetMapType; // Dom set map
 protected:
   DomSetMapType Frontiers;
-    std::vector<BasicBlock*> Roots;
-    const bool IsPostDominators;
+  std::vector<BasicBlock*> Roots;
+  const bool IsPostDominators;
   
 public:
   DominanceFrontierBase(intptr_t ID, bool isPostDom) 
@@ -898,6 +958,58 @@ public:
     assert(I != end() && "BB is not in DominanceFrontier!");
     assert(I->second.count(Node) && "Node is not in DominanceFrontier of BB");
     I->second.erase(Node);
+  }
+
+  /// compareDomSet - Return false if two domsets match. Otherwise
+  /// return true;
+  bool compareDomSet(DomSetType &DS1, const DomSetType &DS2) const {
+    std::set<BasicBlock *> tmpSet;
+    for (DomSetType::const_iterator I = DS2.begin(),
+           E = DS2.end(); I != E; ++I) 
+      tmpSet.insert(*I);
+
+    for (DomSetType::const_iterator I = DS1.begin(),
+           E = DS1.end(); I != E; ++I) {
+      BasicBlock *Node = *I;
+
+      if (tmpSet.erase(Node) == 0)
+        // Node is in DS1 but not in DS2.
+        return true;
+    }
+
+    if(!tmpSet.empty())
+      // There are nodes that are in DS2 but not in DS1.
+      return true;
+
+    // DS1 and DS2 matches.
+    return false;
+  }
+
+  /// compare - Return true if the other dominance frontier base matches
+  /// this dominance frontier base. Otherwise return false.
+  bool compare(DominanceFrontierBase &Other) const {
+    DomSetMapType tmpFrontiers;
+    for (DomSetMapType::const_iterator I = Other.begin(),
+           E = Other.end(); I != E; ++I) 
+      tmpFrontiers.insert(std::make_pair(I->first, I->second));
+
+    for (DomSetMapType::iterator I = tmpFrontiers.begin(),
+           E = tmpFrontiers.end(); I != E; ++I) {
+      BasicBlock *Node = I->first;
+      const_iterator DFI = find(Node);
+      if (DFI == end()) 
+        return true;
+
+      if (compareDomSet(I->second, DFI->second))
+        return true;
+
+      tmpFrontiers.erase(Node);
+    }
+
+    if (!tmpFrontiers.empty())
+      return true;
+
+    return false;
   }
 
   /// print - Convert to human readable form
@@ -952,6 +1064,9 @@ public:
     // itself is not member of NewBB's dominance frontier.
     DominanceFrontier::iterator NewDFI = find(NewBB);
     DominanceFrontier::iterator DFI = find(BB);
+    // If BB was an entry block then its frontier is empty.
+    if (DFI == end())
+      return;
     DominanceFrontier::DomSetType BBSet = DFI->second;
     for (DominanceFrontier::DomSetType::iterator BBSetI = BBSet.begin(),
            BBSetE = BBSet.end(); BBSetI != BBSetE; ++BBSetI) {
@@ -963,7 +1078,6 @@ public:
     NewDFI->second.erase(BB);
   }
 
-private:
   const DomSetType &calculate(const DominatorTree &DT,
                               const DomTreeNode *Node);
 };

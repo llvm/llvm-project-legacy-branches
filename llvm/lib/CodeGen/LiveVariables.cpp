@@ -34,6 +34,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/alloca.h"
 #include <algorithm>
@@ -139,8 +140,23 @@ void LiveVariables::HandleVirtRegUse(unsigned reg, MachineBasicBlock *MBB,
     assert(VRInfo.Kills[i]->getParent() != MBB && "entry should be at end!");
 #endif
 
-  assert(MBB != MRI->getVRegDef(reg)->getParent() &&
-         "Should have kill for defblock!");
+  // This situation can occur:
+  //
+  //     ,------.
+  //     |      |
+  //     |      v
+  //     |   t2 = phi ... t1 ...
+  //     |      |
+  //     |      v
+  //     |   t1 = ...
+  //     |  ... = ... t1 ...
+  //     |      |
+  //     `------'
+  //
+  // where there is a use in a PHI node that's a predecessor to the defining
+  // block. We don't want to mark all predecessors as having the value "alive"
+  // in this case.
+  if (MBB == MRI->getVRegDef(reg)->getParent()) return;
 
   // Add a new kill entry for this basic block. If this virtual register is
   // already marked as alive in this basic block, that means it is alive in at
@@ -372,7 +388,7 @@ bool LiveVariables::HandlePhysRegKill(unsigned Reg) {
 
 void LiveVariables::HandlePhysRegDef(unsigned Reg, MachineInstr *MI) {
   // What parts of the register are previously defined?
-  std::set<unsigned> Live;
+  SmallSet<unsigned, 32> Live;
   if (PhysRegDef[Reg] || PhysRegUse[Reg]) {
     Live.insert(Reg);
     for (const unsigned *SS = TRI->getSubRegisters(Reg); *SS; ++SS)
@@ -587,7 +603,7 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &mf) {
            I = MF->getRegInfo().liveout_begin(),
            E = MF->getRegInfo().liveout_end(); I != E; ++I) {
         assert(TargetRegisterInfo::isPhysicalRegister(*I) &&
-               "Cannot have a live-in virtual register!");
+               "Cannot have a live-out virtual register!");
         HandlePhysRegUse(*I, Ret);
 
         // Add live-out registers as implicit uses.
@@ -637,35 +653,12 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &mf) {
   return false;
 }
 
-/// instructionChanged - When the address of an instruction changes, this method
-/// should be called so that live variables can update its internal data
-/// structures.  This removes the records for OldMI, transfering them to the
-/// records for NewMI.
-void LiveVariables::instructionChanged(MachineInstr *OldMI,
-                                       MachineInstr *NewMI) {
-  // If the instruction defines any virtual registers, update the VarInfo,
-  // kill and dead information for the instruction.
-  for (unsigned i = 0, e = OldMI->getNumOperands(); i != e; ++i) {
-    MachineOperand &MO = OldMI->getOperand(i);
-    if (MO.isRegister() && MO.getReg() &&
-        TargetRegisterInfo::isVirtualRegister(MO.getReg())) {
-      unsigned Reg = MO.getReg();
-      VarInfo &VI = getVarInfo(Reg);
-      if (MO.isDef()) {
-        if (MO.isDead()) {
-          MO.setIsDead(false);
-          addVirtualRegisterDead(Reg, NewMI);
-        }
-      }
-      if (MO.isKill()) {
-        MO.setIsKill(false);
-        addVirtualRegisterKilled(Reg, NewMI);
-      }
-      // If this is a kill of the value, update the VI kills list.
-      if (VI.removeKill(OldMI))
-        VI.Kills.push_back(NewMI);   // Yes, there was a kill of it
-    }
-  }
+/// replaceKillInstruction - Update register kill info by replacing a kill
+/// instruction with a new one.
+void LiveVariables::replaceKillInstruction(unsigned Reg, MachineInstr *OldMI,
+                                           MachineInstr *NewMI) {
+  VarInfo &VI = getVarInfo(Reg);
+  std::replace(VI.Kills.begin(), VI.Kills.end(), OldMI, NewMI);
 }
 
 /// removeVirtualRegistersKilled - Remove all killed info for the specified
@@ -675,22 +668,6 @@ void LiveVariables::removeVirtualRegistersKilled(MachineInstr *MI) {
     MachineOperand &MO = MI->getOperand(i);
     if (MO.isRegister() && MO.isKill()) {
       MO.setIsKill(false);
-      unsigned Reg = MO.getReg();
-      if (TargetRegisterInfo::isVirtualRegister(Reg)) {
-        bool removed = getVarInfo(Reg).removeKill(MI);
-        assert(removed && "kill not in register's VarInfo?");
-      }
-    }
-  }
-}
-
-/// removeVirtualRegistersDead - Remove all of the dead registers for the
-/// specified instruction from the live variable information.
-void LiveVariables::removeVirtualRegistersDead(MachineInstr *MI) {
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
-    MachineOperand &MO = MI->getOperand(i);
-    if (MO.isRegister() && MO.isDead()) {
-      MO.setIsDead(false);
       unsigned Reg = MO.getReg();
       if (TargetRegisterInfo::isVirtualRegister(Reg)) {
         bool removed = getVarInfo(Reg).removeKill(MI);

@@ -37,6 +37,15 @@ namespace llvm {
       // No relation with Mips Lo register
       Lo, 
 
+      // Select CC Pseudo Instruction
+      SelectCC,
+
+      // Float Point Branch Conditional
+      FPBrcond,
+
+      // Float Point Compare
+      FPCmp,
+
       // Return 
       Ret
     };
@@ -63,9 +72,12 @@ namespace llvm {
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - get the ISD::SETCC result ValueType
-    MVT::ValueType getSetCCResultType(const SDOperand &) const;
+    MVT getSetCCResultType(const SDOperand &) const;
 
   private:
+    // Subtarget Info
+    const MipsSubtarget *Subtarget;
+
     // Lower Operand helpers
     SDOperand LowerCCCArguments(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerCCCCallTo(SDOperand Op, SelectionDAG &DAG, unsigned CC);
@@ -80,17 +92,21 @@ namespace llvm {
     SDOperand LowerGlobalAddress(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerGlobalTLSAddress(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerJumpTable(SDOperand Op, SelectionDAG &DAG);
+    SDOperand LowerSELECT_CC(SDOperand Op, SelectionDAG &DAG);
+
+    virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
+                                                        MachineBasicBlock *MBB);
 
     // Inline asm support
     ConstraintType getConstraintType(const std::string &Constraint) const;
 
     std::pair<unsigned, const TargetRegisterClass*> 
               getRegForInlineAsmConstraint(const std::string &Constraint,
-              MVT::ValueType VT) const;
+              MVT VT) const;
 
     std::vector<unsigned>
     getRegClassForInlineAsmConstraint(const std::string &Constraint,
-              MVT::ValueType VT) const;
+              MVT VT) const;
   };
 }
 

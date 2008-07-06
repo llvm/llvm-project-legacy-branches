@@ -181,10 +181,10 @@ namespace llvm {
       /// in order to obtain suitable precision.
       FRSQRT, FRCP,
 
-      // Thread Local Storage
+      // TLSADDR, THREAThread - Thread Local Storage.
       TLSADDR, THREAD_POINTER,
 
-      // Exception Handling helpers
+      // EH_RETURN - Exception Handling helpers.
       EH_RETURN,
       
       /// TC_RETURN - Tail call return.
@@ -194,12 +194,21 @@ namespace llvm {
       ///   operand #3 optional in flag
       TC_RETURN,
 
-      // compare and swap
+      // LCMPXCHG_DAG, LCMPXCHG8_DAG - Compare and swap.
       LCMPXCHG_DAG,
       LCMPXCHG8_DAG,
 
-      // Store FP control world into i16 memory
-      FNSTCW16m
+      // FNSTCW16m - Store FP control world into i16 memory.
+      FNSTCW16m,
+
+      // VZEXT_MOVL - Vector move low and zero extend.
+      VZEXT_MOVL,
+
+      // VZEXT_LOAD - Load, scalar_to_vector, and zero extend.
+      VZEXT_LOAD,
+
+      // VSHL, VSRL - Vector logical left / right shift.
+      VSHL, VSRL
     };
   }
 
@@ -305,7 +314,7 @@ namespace llvm {
     int BytesCallerReserves;          // Number of arg bytes caller makes.
 
   public:
-    explicit X86TargetLowering(TargetMachine &TM);
+    explicit X86TargetLowering(X86TargetMachine &TM);
 
     /// getPICJumpTableRelocaBase - Returns relocation base for the given PIC
     /// jumptable.
@@ -330,15 +339,23 @@ namespace llvm {
     /// that contains are placed at 16-byte boundaries while the rest are at
     /// 4-byte boundaries.
     virtual unsigned getByValTypeAlignment(const Type *Ty) const;
+
+    /// getOptimalMemOpType - Returns the target specific optimal type for load
+    /// and store operations as a result of memset, memcpy, and memmove
+    /// lowering. It returns MVT::iAny if SelectionDAG should be responsible for
+    /// determining it.
+    virtual
+    MVT getOptimalMemOpType(uint64_t Size, unsigned Align,
+                            bool isSrcConst, bool isSrcStr) const;
     
     /// LowerOperation - Provide custom lowering hooks for some operations.
     ///
     virtual SDOperand LowerOperation(SDOperand Op, SelectionDAG &DAG);
 
-    /// ExpandOperation - Custom lower the specified operation, splitting the
-    /// value into two pieces.
+    /// ReplaceNodeResults - Replace a node with an illegal result type
+    /// with a new node built out of custom code.
     ///
-    virtual SDNode *ExpandOperationResult(SDNode *N, SelectionDAG &DAG);
+    virtual SDNode *ReplaceNodeResults(SDNode *N, SelectionDAG &DAG);
 
     
     virtual SDOperand PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
@@ -346,12 +363,13 @@ namespace llvm {
     virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
                                                         MachineBasicBlock *MBB);
 
+ 
     /// getTargetNodeName - This method returns the name of a target specific
     /// DAG node.
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - Return the ISD::SETCC ValueType
-    virtual MVT::ValueType getSetCCResultType(const SDOperand &) const;
+    virtual MVT getSetCCResultType(const SDOperand &) const;
 
     /// computeMaskedBitsForTargetNode - Determine which of the bits specified 
     /// in Mask are known to be either zero or one and return them in the 
@@ -362,6 +380,9 @@ namespace llvm {
                                                 APInt &KnownOne,
                                                 const SelectionDAG &DAG,
                                                 unsigned Depth = 0) const;
+
+    virtual bool
+    isGAPlusOffset(SDNode *N, GlobalValue* &GA, int64_t &Offset) const;
     
     SDOperand getReturnAddressFrameIndex(SelectionDAG &DAG);
 
@@ -369,17 +390,16 @@ namespace llvm {
      
     std::vector<unsigned> 
       getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                        MVT::ValueType VT) const;
+                                        MVT VT) const;
 
-    virtual void lowerXConstraint(MVT::ValueType ConstraintVT, 
-                                  std::string&) const;
+    virtual const char *LowerXConstraint(MVT ConstraintVT) const;
 
     /// LowerAsmOperandForConstraint - Lower the specified operand into the Ops
     /// vector.  If it is invalid, don't add anything to Ops.
     virtual void LowerAsmOperandForConstraint(SDOperand Op,
                                               char ConstraintLetter,
                                               std::vector<SDOperand> &Ops,
-                                              SelectionDAG &DAG);
+                                              SelectionDAG &DAG) const;
     
     /// getRegForInlineAsmConstraint - Given a physical register constraint
     /// (e.g. {edx}), return the register number and the register class for the
@@ -387,7 +407,7 @@ namespace llvm {
     /// error, this returns a register number of 0.
     std::pair<unsigned, const TargetRegisterClass*> 
       getRegForInlineAsmConstraint(const std::string &Constraint,
-                                   MVT::ValueType VT) const;
+                                   MVT VT) const;
     
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
@@ -397,26 +417,25 @@ namespace llvm {
     /// type Ty1 to type Ty2. e.g. On x86 it's free to truncate a i32 value in
     /// register EAX to i16 by referencing its sub-register AX.
     virtual bool isTruncateFree(const Type *Ty1, const Type *Ty2) const;
-    virtual bool isTruncateFree(MVT::ValueType VT1, MVT::ValueType VT2) const;
+    virtual bool isTruncateFree(MVT VT1, MVT VT2) const;
   
     /// isShuffleMaskLegal - Targets can use this to indicate that they only
     /// support *some* VECTOR_SHUFFLE operations, those with specific masks.
     /// By default, if a target supports the VECTOR_SHUFFLE node, all mask
     /// values are assumed to be legal.
-    virtual bool isShuffleMaskLegal(SDOperand Mask, MVT::ValueType VT) const;
+    virtual bool isShuffleMaskLegal(SDOperand Mask, MVT VT) const;
 
     /// isVectorClearMaskLegal - Similar to isShuffleMaskLegal. This is
     /// used by Targets can use this to indicate if there is a suitable
     /// VECTOR_SHUFFLE that can be used to replace a VAND with a constant
     /// pool entry.
     virtual bool isVectorClearMaskLegal(const std::vector<SDOperand> &BVOps,
-                                        MVT::ValueType EVT,
-                                        SelectionDAG &DAG) const;
+                                        MVT EVT, SelectionDAG &DAG) const;
 
     /// ShouldShrinkFPConstant - If true, then instruction selection should
     /// seek to shrink the FP constant of the specified type to a smaller type
     /// in order to save space and / or reduce runtime.
-    virtual bool ShouldShrinkFPConstant(MVT::ValueType VT) const {
+    virtual bool ShouldShrinkFPConstant(MVT VT) const {
       // Don't shrink FP constpool if SSE2 is available since cvtss2sd is more
       // expensive than a straight movsd. On the other hand, it's important to
       // shrink long double fp constant since fldt is very slow.
@@ -436,7 +455,7 @@ namespace llvm {
 
     /// isScalarFPTypeInSSEReg - Return true if the specified scalar FP type is
     /// computed in an SSE register, not on the X87 floating point stack.
-    bool isScalarFPTypeInSSEReg(MVT::ValueType VT) const {
+    bool isScalarFPTypeInSSEReg(MVT VT) const {
       return (VT == MVT::f64 && X86ScalarSSEf64) || // f64 is when SSE2
       (VT == MVT::f32 && X86ScalarSSEf32);   // f32 is when SSE1
     }
@@ -445,7 +464,7 @@ namespace llvm {
     /// Subtarget - Keep a pointer to the X86Subtarget around so that we can
     /// make the right decision when generating code for different targets.
     const X86Subtarget *Subtarget;
-    const TargetRegisterInfo *RegInfo;
+    const X86RegisterInfo *RegInfo;
 
     /// X86StackPtr - X86 physical register used as stack ptr.
     unsigned X86StackPtr;
@@ -476,15 +495,6 @@ namespace llvm {
     SDOperand EmitTailCallLoadRetAddr(SelectionDAG &DAG, SDOperand &OutRetAddr,
                                 SDOperand Chain, bool IsTailCall, bool Is64Bit,
                                 int FPDiff);
-    
-    bool CopyTailCallByValClobberedRegToVirtReg(bool containsByValArg,
-     SmallVector< std::pair<unsigned, unsigned>,8> &TailCallByValClobberedVRegs,
-     SmallVector<MVT::ValueType, 8> &TailCallByValClobberedVRegTypes,
-     std::pair<unsigned, SDOperand> &RegToPass,
-     SDOperand &OutChain,
-     SDOperand &OutFlag,
-     MachineFunction &MF,
-     SelectionDAG & DAG);
 
     CCAssignFn *CCAssignFnForNode(SDOperand Op) const;
     NameDecorationStyle NameDecorationForFORMAL_ARGUMENTS(SDOperand Op);
@@ -520,6 +530,7 @@ namespace llvm {
     SDOperand LowerDYNAMIC_STACKALLOC(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerFORMAL_ARGUMENTS(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerVASTART(SDOperand Op, SelectionDAG &DAG);
+    SDOperand LowerVAARG(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerVACOPY(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerINTRINSIC_WO_CHAIN(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerRETURNADDR(SDOperand Op, SelectionDAG &DAG);
@@ -530,23 +541,41 @@ namespace llvm {
     SDOperand LowerFLT_ROUNDS_(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerCTLZ(SDOperand Op, SelectionDAG &DAG);
     SDOperand LowerCTTZ(SDOperand Op, SelectionDAG &DAG);
-    SDOperand LowerLCS(SDOperand Op, SelectionDAG &DAG);
+    SDOperand LowerCMP_SWAP(SDOperand Op, SelectionDAG &DAG);
     SDNode *ExpandFP_TO_SINT(SDNode *N, SelectionDAG &DAG);
     SDNode *ExpandREADCYCLECOUNTER(SDNode *N, SelectionDAG &DAG);
-    SDNode *ExpandATOMIC_LCS(SDNode *N, SelectionDAG &DAG);
-
+    SDNode *ExpandATOMIC_CMP_SWAP(SDNode *N, SelectionDAG &DAG);
+    SDNode *ExpandATOMIC_LOAD_SUB(SDNode *N, SelectionDAG &DAG);
+    
     SDOperand EmitTargetCodeForMemset(SelectionDAG &DAG,
                                       SDOperand Chain,
                                       SDOperand Dst, SDOperand Src,
                                       SDOperand Size, unsigned Align,
-                                      const Value *DstSV, uint64_t DstOff);
+                                      const Value *DstSV, uint64_t DstSVOff);
     SDOperand EmitTargetCodeForMemcpy(SelectionDAG &DAG,
                                       SDOperand Chain,
                                       SDOperand Dst, SDOperand Src,
                                       SDOperand Size, unsigned Align,
                                       bool AlwaysInline,
-                                      const Value *DstSV, uint64_t DstOff,
-                                      const Value *SrcSV, uint64_t SrcOff);
+                                      const Value *DstSV, uint64_t DstSVOff,
+                                      const Value *SrcSV, uint64_t SrcSVOff);
+    
+    /// Utility function to emit atomic bitwise operations (and, or, xor).
+    // It takes the bitwise instruction to expand, the associated machine basic
+    // block, and the associated X86 opcodes for reg/reg and reg/imm.
+    MachineBasicBlock *EmitAtomicBitwiseWithCustomInserter(
+                                                    MachineInstr *BInstr,
+                                                    MachineBasicBlock *BB,
+                                                    unsigned regOpc,
+                                                    unsigned immOpc,
+                                                    bool invSrc = false);
+    
+    /// Utility function to emit atomic min and max.  It takes the min/max
+    // instruction to expand, the associated basic block, and the associated
+    // cmov opcode for moving the min or max value.
+    MachineBasicBlock *EmitAtomicMinMaxWithCustomInserter(MachineInstr *BInstr,
+                                                          MachineBasicBlock *BB,
+                                                          unsigned cmovOpc);
   };
 }
 

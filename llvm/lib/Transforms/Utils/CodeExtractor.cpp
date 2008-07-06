@@ -126,8 +126,7 @@ void CodeExtractor::severSplitPHINodes(BasicBlock *&Header) {
   // containing PHI nodes merging values from outside of the region, and a
   // second that contains all of the code for the block and merges back any
   // incoming values from inside of the region.
-  BasicBlock::iterator AfterPHIs = Header->begin();
-  while (isa<PHINode>(AfterPHIs)) ++AfterPHIs;
+  BasicBlock::iterator AfterPHIs = Header->getFirstNonPHI();
   BasicBlock *NewBB = Header->splitBasicBlock(AfterPHIs,
                                               Header->getName()+".ce");
 
@@ -551,18 +550,18 @@ emitCallAndSwitchStatement(Function *newFunction, BasicBlock *codeReplacer,
       ReturnInst::Create(Constant::getNullValue(OldFnRetTy), TheSwitch);
     }
 
-    TheSwitch->getParent()->getInstList().erase(TheSwitch);
+    TheSwitch->eraseFromParent();
     break;
   case 1:
     // Only a single destination, change the switch into an unconditional
     // branch.
     BranchInst::Create(TheSwitch->getSuccessor(1), TheSwitch);
-    TheSwitch->getParent()->getInstList().erase(TheSwitch);
+    TheSwitch->eraseFromParent();
     break;
   case 2:
     BranchInst::Create(TheSwitch->getSuccessor(1), TheSwitch->getSuccessor(2),
                        call, TheSwitch);
-    TheSwitch->getParent()->getInstList().erase(TheSwitch);
+    TheSwitch->eraseFromParent();
     break;
   default:
     // Otherwise, make the default destination of the switch instruction be one
@@ -641,7 +640,8 @@ ExtractCodeRegion(const std::vector<BasicBlock*> &code) {
   Function *oldFunction = header->getParent();
 
   // This takes place of the original loop
-  BasicBlock *codeReplacer = BasicBlock::Create("codeRepl", oldFunction, header);
+  BasicBlock *codeReplacer = BasicBlock::Create("codeRepl", oldFunction,
+                                                header);
 
   // The new function needs a root node because other nodes can branch to the
   // head of the region, but the entry node of a function cannot have preds.

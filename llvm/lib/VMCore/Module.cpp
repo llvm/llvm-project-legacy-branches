@@ -156,10 +156,12 @@ Constant *Module::getOrInsertFunction(const std::string &Name,
 
   // Okay, the function exists.  Does it have externally visible linkage?
   if (F->hasInternalLinkage()) {
-    // Rename the function.
-    F->setName(SymTab.getUniqueName(F->getName()));
+    // Clear the function's name.
+    F->setName("");
     // Retry, now there won't be a conflict.
-    return getOrInsertFunction(Name, Ty);
+    Constant *NewF = getOrInsertFunction(Name, Ty);
+    F->setName(&Name[0], Name.size());
+    return NewF;
   }
 
   // If the function exists but has the wrong type, return a bitcast to the
@@ -199,6 +201,11 @@ Constant *Module::getOrInsertFunction(const std::string &Name,
 Function *Module::getFunction(const std::string &Name) const {
   const ValueSymbolTable &SymTab = getValueSymbolTable();
   return dyn_cast_or_null<Function>(SymTab.lookup(Name));
+}
+
+Function *Module::getFunction(const char *Name) const {
+  const ValueSymbolTable &SymTab = getValueSymbolTable();
+  return dyn_cast_or_null<Function>(SymTab.lookup(Name, Name+strlen(Name)));
 }
 
 //===----------------------------------------------------------------------===//

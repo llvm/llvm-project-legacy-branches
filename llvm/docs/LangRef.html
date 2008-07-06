@@ -111,6 +111,12 @@
           <li><a href="#i_shufflevector">'<tt>shufflevector</tt>' Instruction</a></li>
         </ol>
       </li>
+      <li><a href="#aggregateops">Aggregate Operations</a>
+        <ol>
+          <li><a href="#i_extractvalue">'<tt>extractvalue</tt>' Instruction</a></li>
+          <li><a href="#i_insertvalue">'<tt>insertvalue</tt>' Instruction</a></li>
+        </ol>
+      </li>
       <li><a href="#memoryops">Memory Access and Addressing Operations</a>
         <ol>
           <li><a href="#i_malloc">'<tt>malloc</tt>'   Instruction</a></li>
@@ -140,6 +146,8 @@
         <ol>
           <li><a href="#i_icmp">'<tt>icmp</tt>' Instruction</a></li>
           <li><a href="#i_fcmp">'<tt>fcmp</tt>' Instruction</a></li>
+          <li><a href="#i_vicmp">'<tt>vicmp</tt>' Instruction</a></li>
+          <li><a href="#i_vfcmp">'<tt>vfcmp</tt>' Instruction</a></li>
           <li><a href="#i_phi">'<tt>phi</tt>'   Instruction</a></li>
           <li><a href="#i_select">'<tt>select</tt>' Instruction</a></li>
           <li><a href="#i_call">'<tt>call</tt>'  Instruction</a></li>
@@ -208,9 +216,18 @@
           <li><a href="#int_atomics">Atomic intrinsics</a>
             <ol>
               <li><a href="#int_memory_barrier"><tt>llvm.memory_barrier</tt></a></li>
-              <li><a href="#int_atomic_lcs"><tt>llvm.atomic.lcs</tt></a></li>
-              <li><a href="#int_atomic_las"><tt>llvm.atomic.las</tt></a></li>
+              <li><a href="#int_atomic_cmp_swap"><tt>llvm.atomic.cmp.swap</tt></a></li>
               <li><a href="#int_atomic_swap"><tt>llvm.atomic.swap</tt></a></li>
+              <li><a href="#int_atomic_load_add"><tt>llvm.atomic.load.add</tt></a></li>
+              <li><a href="#int_atomic_load_sub"><tt>llvm.atomic.load.sub</tt></a></li>
+              <li><a href="#int_atomic_load_and"><tt>llvm.atomic.load.and</tt></a></li>
+              <li><a href="#int_atomic_load_nand"><tt>llvm.atomic.load.nand</tt></a></li>
+              <li><a href="#int_atomic_load_or"><tt>llvm.atomic.load.or</tt></a></li>
+              <li><a href="#int_atomic_load_xor"><tt>llvm.atomic.load.xor</tt></a></li>
+              <li><a href="#int_atomic_load_max"><tt>llvm.atomic.load.max</tt></a></li>
+              <li><a href="#int_atomic_load_min"><tt>llvm.atomic.load.min</tt></a></li>
+              <li><a href="#int_atomic_load_umax"><tt>llvm.atomic.load.umax</tt></a></li>
+              <li><a href="#int_atomic_load_umin"><tt>llvm.atomic.load.umin</tt></a></li>
             </ol>
           </li>
       <li><a href="#int_general">General intrinsics</a>
@@ -458,7 +475,7 @@ All Global Variables and Functions have one of the following types of linkage:
 
 <dl>
 
-  <dt><tt><b><a name="linkage_internal">internal</a></b></tt> </dt>
+  <dt><tt><b><a name="linkage_internal">internal</a></b></tt>: </dt>
 
   <dd>Global values with internal linkage are only directly accessible by
   objects in the current module.  In particular, linking code into a module with
@@ -477,14 +494,22 @@ All Global Variables and Functions have one of the following types of linkage:
   allowed to be discarded.
   </dd>
 
+  <dt><tt><b><a name="linkage_common">common</a></b></tt>: </dt>
+
+  <dd>"<tt>common</tt>" linkage is exactly the same as <tt>linkonce</tt> 
+  linkage, except that unreferenced <tt>common</tt> globals may not be
+  discarded.  This is used for globals that may be emitted in multiple 
+  translation units, but that are not guaranteed to be emitted into every 
+  translation unit that uses them.  One example of this is tentative
+  definitions in C, such as "<tt>int X;</tt>" at global scope.
+  </dd>
+
   <dt><tt><b><a name="linkage_weak">weak</a></b></tt>: </dt>
 
-  <dd>"<tt>weak</tt>" linkage is exactly the same as <tt>linkonce</tt> linkage,
-  except that unreferenced <tt>weak</tt> globals may not be discarded.  This is
-  used for globals that may be emitted in multiple translation units, but that
-  are not guaranteed to be emitted into every translation unit that uses them.
-  One example of this are common globals in C, such as "<tt>int X;</tt>" at 
-  global scope.
+  <dd>"<tt>weak</tt>" linkage is the same as <tt>common</tt> linkage, except
+  that some targets may choose to emit different assembly sequences for them 
+  for target-dependent reasons.  This is used for globals that are declared 
+  "weak" in C source code.
   </dd>
 
   <dt><tt><b><a name="linkage_appending">appending</a></b></tt>: </dt>
@@ -578,9 +603,11 @@ the future:</p>
   (e.g. by passing things in registers).  This calling convention allows the
   target to use whatever tricks it wants to produce fast code for the target,
   without having to conform to an externally specified ABI.  Implementations of
-  this convention should allow arbitrary tail call optimization to be supported.
-  This calling convention does not support varargs and requires the prototype of
-  all callees to exactly match the prototype of the function definition.
+  this convention should allow arbitrary
+  <a href="CodeGenerator.html#tailcallopt">tail call optimization</a> to be
+  supported.  This calling convention does not support varargs and requires the
+  prototype of all callees to exactly match the prototype of the function
+  definition.
   </dd>
 
   <dt><b>"<tt>coldcc</tt>" - The cold calling convention</b>:</dt>
@@ -1027,14 +1054,16 @@ classifications:</p>
       <td><a href="#t_integer">integer</a>,
           <a href="#t_floating">floating point</a>,
           <a href="#t_pointer">pointer</a>,
-          <a href="#t_vector">vector</a>
+          <a href="#t_vector">vector</a>,
+          <a href="#t_struct">structure</a>,
+          <a href="#t_array">array</a>,
+          <a href="#t_label">label</a>.
       </td>
     </tr>
     <tr>
       <td><a href="#t_primitive">primitive</a></td>
       <td><a href="#t_label">label</a>,
           <a href="#t_void">void</a>,
-          <a href="#t_integer">integer</a>,
           <a href="#t_floating">floating point</a>.</td>
     </tr>
     <tr>
@@ -1054,8 +1083,7 @@ classifications:</p>
 <p>The <a href="#t_firstclass">first class</a> types are perhaps the
 most important.  Values of these types are the only ones which can be
 produced by instructions, passed as arguments, or used as operands to
-instructions.  This means that all structures and arrays must be
-manipulated either by pointer or by component.</p>
+instructions.</p>
 </div>
 
 <!-- ======================================================================= -->
@@ -1223,17 +1251,21 @@ type "{ i32, [0 x float]}", for example.</p>
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_function">Function Type</a> </div>
 <div class="doc_text">
+
 <h5>Overview:</h5>
+
 <p>The function type can be thought of as a function signature.  It
 consists of a return type and a list of formal parameter types. The
-return type of a function type is a scalar type or a void type or a struct type. 
+return type of a function type is a scalar type, a void type, or a struct type. 
 If the return type is a struct type then all struct elements must be of first 
-class types. Function types are usually used to build virtual function tables
-(which are structures of pointers to functions), for indirect function
-calls, and when defining a function.</p>
+class types, and the struct must have at least one element.</p>
 
 <h5>Syntax:</h5>
-<pre>  &lt;returntype list&gt; (&lt;parameter list&gt;)<br></pre>
+
+<pre>
+  &lt;returntype list&gt; (&lt;parameter list&gt;)
+</pre>
+
 <p>...where '<tt>&lt;parameter list&gt;</tt>' is a comma-separated list of type
 specifiers.  Optionally, the parameter list may include a type <tt>...</tt>,
 which indicates that the function takes a variable number of arguments.
@@ -1241,6 +1273,7 @@ Variable argument functions can access their arguments with the <a
  href="#int_varargs">variable argument handling intrinsic</a> functions.
 '<tt>&lt;returntype list&gt;</tt>' is a comma-separated list of
 <a href="#t_firstclass">first class</a> type specifiers.</p>
+
 <h5>Examples:</h5>
 <table class="layout">
   <tr class="layout">
@@ -1675,6 +1708,12 @@ following is the syntax for constant expressions:</p>
   <dt><b><tt>fcmp COND ( VAL1, VAL2 )</tt></b></dt>
   <dd>Performs the <a href="#i_fcmp">fcmp operation</a> on constants.</dd>
 
+  <dt><b><tt>vicmp COND ( VAL1, VAL2 )</tt></b></dt>
+  <dd>Performs the <a href="#i_vicmp">vicmp operation</a> on constants.</dd>
+
+  <dt><b><tt>vfcmp COND ( VAL1, VAL2 )</tt></b></dt>
+  <dd>Performs the <a href="#i_vfcmp">vfcmp operation</a> on constants.</dd>
+
   <dt><b><tt>extractelement ( VAL, IDX )</tt></b></dt>
 
   <dd>Perform the <a href="#i_extractelement">extractelement
@@ -1802,19 +1841,26 @@ Instruction</a> </div>
   ret void                 <i>; Return from void function</i>
   ret &lt;type&gt; &lt;value&gt;, &lt;type&gt; &lt;value&gt;  <i>; Return two values from a non-void function </i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>ret</tt>' instruction is used to return control flow (and a
 value) from a function back to the caller.</p>
 <p>There are two forms of the '<tt>ret</tt>' instruction: one that
-returns a value and then causes control flow, and one that just causes
+returns value(s) and then causes control flow, and one that just causes
 control flow to occur.</p>
+
 <h5>Arguments:</h5>
-<p>The '<tt>ret</tt>' instruction may return one or multiple values. The
-type of each return value must be a '<a href="#t_firstclass">first class</a>'
- type.  Note that a function is not <a href="#wellformed">well formed</a> 
-if there exists a '<tt>ret</tt>' instruction inside of the function that 
-returns values that do not match the return type of the function.</p>
+
+<p>The '<tt>ret</tt>' instruction may return zero, one or multiple values. 
+The type of each return value must be a '<a href="#t_firstclass">first 
+class</a>' type.  Note that a function is not <a href="#wellformed">well 
+formed</a> if there exists a '<tt>ret</tt>' instruction inside of the 
+function that returns values that do not match the return type of the 
+function.</p>
+
 <h5>Semantics:</h5>
+
 <p>When the '<tt>ret</tt>' instruction is executed, control flow
 returns back to the calling function's context.  If the caller is a "<a
  href="#i_call"><tt>call</tt></a>" instruction, execution continues at
@@ -1825,8 +1871,11 @@ returns a value, that value shall set the call or invoke instruction's
 return value. If the instruction returns multiple values then these 
 values can only be accessed through a '<a href="#i_getresult"><tt>getresult</tt>
 </a>' instruction.</p>
+
 <h5>Example:</h5>
-<pre>  ret i32 5                       <i>; Return an integer value of 5</i>
+
+<pre>
+  ret i32 5                       <i>; Return an integer value of 5</i>
   ret void                        <i>; Return from a void function</i>
   ret i32 4, i8 2                 <i>; Return two values 4 and 2 </i> 
 </pre>
@@ -2062,82 +2111,121 @@ The result value has the same type as its operands.</p>
 <p>There are several different binary operators:</p>
 </div>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_add">'<tt>add</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_add">'<tt>add</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = add &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+
+<pre>
+  &lt;result&gt; = add &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>add</tt>' instruction returns the sum of its two operands.</p>
+
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>add</tt>' instruction must be either <a
- href="#t_integer">integer</a> or <a href="#t_floating">floating point</a> values.
- This instruction can also take <a href="#t_vector">vector</a> versions of the values.
-Both arguments must have identical types.</p>
+
+<p>The two arguments to the '<tt>add</tt>' instruction must be <a
+ href="#t_integer">integer</a>, <a href="#t_floating">floating point</a>, or
+ <a href="#t_vector">vector</a> values. Both arguments must have identical
+ types.</p>
+
 <h5>Semantics:</h5>
+
 <p>The value produced is the integer or floating point sum of the two
 operands.</p>
+
 <p>If an integer sum has unsigned overflow, the result returned is the
 mathematical result modulo 2<sup>n</sup>, where n is the bit width of
 the result.</p>
+
 <p>Because LLVM integers use a two's complement representation, this
 instruction is appropriate for both signed and unsigned integers.</p>
+
 <h5>Example:</h5>
-<pre>  &lt;result&gt; = add i32 4, %var          <i>; yields {i32}:result = 4 + %var</i>
+
+<pre>
+  &lt;result&gt; = add i32 4, %var          <i>; yields {i32}:result = 4 + %var</i>
 </pre>
 </div>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_sub">'<tt>sub</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+   <a name="i_sub">'<tt>sub</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = sub &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+
+<pre>
+  &lt;result&gt; = sub &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>sub</tt>' instruction returns the difference of its two
 operands.</p>
-<p>Note that the '<tt>sub</tt>' instruction is used to represent the '<tt>neg</tt>'
-instruction present in most other intermediate representations.</p>
+
+<p>Note that the '<tt>sub</tt>' instruction is used to represent the
+'<tt>neg</tt>' instruction present in most other intermediate 
+representations.</p>
+
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>sub</tt>' instruction must be either <a
- href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
-values. 
-This instruction can also take <a href="#t_vector">vector</a> versions of the values.
-Both arguments must have identical types.</p>
+
+<p>The two arguments to the '<tt>sub</tt>' instruction must be <a
+ href="#t_integer">integer</a>, <a href="#t_floating">floating point</a>,
+ or <a href="#t_vector">vector</a> values.  Both arguments must have identical
+ types.</p>
+
 <h5>Semantics:</h5>
+
 <p>The value produced is the integer or floating point difference of
 the two operands.</p>
+
 <p>If an integer difference has unsigned overflow, the result returned is the
 mathematical result modulo 2<sup>n</sup>, where n is the bit width of
 the result.</p>
+
 <p>Because LLVM integers use a two's complement representation, this
 instruction is appropriate for both signed and unsigned integers.</p>
+
 <h5>Example:</h5>
 <pre>
   &lt;result&gt; = sub i32 4, %var          <i>; yields {i32}:result = 4 - %var</i>
   &lt;result&gt; = sub i32 0, %val          <i>; yields {i32}:result = -%var</i>
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_mul">'<tt>mul</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_mul">'<tt>mul</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
 <pre>  &lt;result&gt; = mul &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
 <h5>Overview:</h5>
 <p>The  '<tt>mul</tt>' instruction returns the product of its two
 operands.</p>
+
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>mul</tt>' instruction must be either <a
- href="#t_integer">integer</a> or <a href="#t_floating">floating point</a>
-values. 
-This instruction can also take <a href="#t_vector">vector</a> versions of the values.
-Both arguments must have identical types.</p>
+
+<p>The two arguments to the '<tt>mul</tt>' instruction must be <a
+href="#t_integer">integer</a>, <a href="#t_floating">floating point</a>,
+or <a href="#t_vector">vector</a> values.  Both arguments must have identical
+types.</p>
+ 
 <h5>Semantics:</h5>
+
 <p>The value produced is the integer or floating point product of the
 two operands.</p>
+
 <p>If the result of an integer multiplication has unsigned overflow,
 the result returned is the mathematical result modulo 
 2<sup>n</sup>, where n is the bit width of the result.</p>
@@ -2151,6 +2239,7 @@ width of the full product.</p>
 <pre>  &lt;result&gt; = mul i32 4, %var          <i>; yields {i32}:result = 4 * %var</i>
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="i_udiv">'<tt>udiv</tt>' Instruction
 </a></div>
@@ -2161,12 +2250,15 @@ width of the full product.</p>
 <h5>Overview:</h5>
 <p>The '<tt>udiv</tt>' instruction returns the quotient of its two
 operands.</p>
+
 <h5>Arguments:</h5>
+
 <p>The two arguments to the '<tt>udiv</tt>' instruction must be 
-<a href="#t_integer">integer</a> values. Both arguments must have identical 
-types. This instruction can also take <a href="#t_vector">vector</a> versions 
-of the values in which case the elements must be integers.</p>
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
+
 <p>The value produced is the unsigned integer quotient of the two operands.</p>
 <p>Note that unsigned integer division and signed integer division are distinct
 operations; for signed integer division, use '<tt>sdiv</tt>'.</p>
@@ -2180,16 +2272,21 @@ operations; for signed integer division, use '<tt>sdiv</tt>'.</p>
 </a> </div>
 <div class="doc_text">
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = sdiv &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+<pre>
+  &lt;result&gt; = sdiv &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>sdiv</tt>' instruction returns the quotient of its two
 operands.</p>
+
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>sdiv</tt>' instruction must be
-<a href="#t_integer">integer</a> values.  Both arguments must have identical 
-types. This instruction can also take <a href="#t_vector">vector</a> versions 
-of the values in which case the elements must be integers.</p>
+
+<p>The two arguments to the '<tt>sdiv</tt>' instruction must be 
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
 <p>The value produced is the signed integer quotient of the two operands rounded towards zero.</p>
 <p>Note that signed integer division and unsigned integer division are distinct
@@ -2206,22 +2303,31 @@ by doing a 32-bit division of -2147483648 by -1.</p>
 Instruction</a> </div>
 <div class="doc_text">
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = fdiv &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+<pre>
+  &lt;result&gt; = fdiv &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
 <h5>Overview:</h5>
+
 <p>The '<tt>fdiv</tt>' instruction returns the quotient of its two
 operands.</p>
+
 <h5>Arguments:</h5>
+
 <p>The two arguments to the '<tt>fdiv</tt>' instruction must be
-<a href="#t_floating">floating point</a> values.  Both arguments must have
-identical types.  This instruction can also take <a href="#t_vector">vector</a>
-versions of floating point values.</p>
+<a href="#t_floating">floating point</a> or <a href="#t_vector">vector</a>
+of floating point values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
+
 <p>The value produced is the floating point quotient of the two operands.</p>
+
 <h5>Example:</h5>
-<pre>  &lt;result&gt; = fdiv float 4.0, %var          <i>; yields {float}:result = 4.0 / %var</i>
+
+<pre>
+  &lt;result&gt; = fdiv float 4.0, %var          <i>; yields {float}:result = 4.0 / %var</i>
 </pre>
 </div>
+
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="i_urem">'<tt>urem</tt>' Instruction</a>
 </div>
@@ -2233,10 +2339,9 @@ versions of floating point values.</p>
 <p>The '<tt>urem</tt>' instruction returns the remainder from the
 unsigned division of its two arguments.</p>
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>urem</tt>' instruction must be
-<a href="#t_integer">integer</a> values. Both arguments must have identical
-types. This instruction can also take <a href="#t_vector">vector</a> versions 
-of the values in which case the elements must be integers.</p>
+<p>The two arguments to the '<tt>urem</tt>' instruction must be 
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>This instruction returns the unsigned integer <i>remainder</i> of a division.
 This instruction always performs an unsigned division to get the remainder.</p>
@@ -2249,23 +2354,33 @@ distinct operations; for signed integer remainder, use '<tt>srem</tt>'.</p>
 
 </div>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_srem">'<tt>srem</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_srem">'<tt>srem</tt>' Instruction</a>
+</div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = srem &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+
+<pre>
+  &lt;result&gt; = srem &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>srem</tt>' instruction returns the remainder from the
 signed division of its two operands. This instruction can also take
 <a href="#t_vector">vector</a> versions of the values in which case
 the elements must be integers.</p>
 
 <h5>Arguments:</h5>
+
 <p>The two arguments to the '<tt>srem</tt>' instruction must be 
-<a href="#t_integer">integer</a> values.  Both arguments must have identical 
-types.</p>
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
+
 <p>This instruction returns the <i>remainder</i> of a division (where the result
 has the same sign as the dividend, <tt>var1</tt>), not the <i>modulo</i> 
 operator (where the result has the same sign as the divisor, <tt>var2</tt>) of 
@@ -2288,9 +2403,11 @@ and the remainder.)</p>
 
 </div>
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_frem">'<tt>frem</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_frem">'<tt>frem</tt>' Instruction</a> </div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
 <pre>  &lt;result&gt; = frem &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
@@ -2299,14 +2416,18 @@ Instruction</a> </div>
 division of its two operands.</p>
 <h5>Arguments:</h5>
 <p>The two arguments to the '<tt>frem</tt>' instruction must be
-<a href="#t_floating">floating point</a> values.  Both arguments must have 
-identical types.  This instruction can also take <a href="#t_vector">vector</a>
-versions of floating point values.</p>
+<a href="#t_floating">floating point</a> or <a href="#t_vector">vector</a>
+of floating point values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
+
 <p>This instruction returns the <i>remainder</i> of a division.
 The remainder has the same sign as the dividend.</p>
+
 <h5>Example:</h5>
-<pre>  &lt;result&gt; = frem float 4.0, %var          <i>; yields {float}:result = 4.0 % %var</i>
+
+<pre>
+  &lt;result&gt; = frem float 4.0, %var          <i>; yields {float}:result = 4.0 % %var</i>
 </pre>
 </div>
 
@@ -2338,7 +2459,8 @@ the left a specified number of bits.</p>
 
 <p>Both arguments to the '<tt>shl</tt>' instruction must be the same <a
  href="#t_integer">integer</a> type.  '<tt>var2</tt>' is treated as an
-unsigned value.</p>
+unsigned value.  This instruction does not support
+<a href="#t_vector">vector</a> operands.</p>
  
 <h5>Semantics:</h5>
 
@@ -2368,7 +2490,8 @@ operand shifted to the right a specified number of bits with zero fill.</p>
 <h5>Arguments:</h5>
 <p>Both arguments to the '<tt>lshr</tt>' instruction must be the same 
 <a href="#t_integer">integer</a> type.  '<tt>var2</tt>' is treated as an
-unsigned value.</p>
+unsigned value.  This instruction does not support
+<a href="#t_vector">vector</a> operands.</p>
 
 <h5>Semantics:</h5>
 
@@ -2403,7 +2526,8 @@ operand shifted to the right a specified number of bits with sign extension.</p>
 <h5>Arguments:</h5>
 <p>Both arguments to the '<tt>ashr</tt>' instruction must be the same 
 <a href="#t_integer">integer</a> type.  '<tt>var2</tt>' is treated as an
-unsigned value.</p>
+unsigned value.  This instruction does not support
+<a href="#t_vector">vector</a> operands.</p>
 
 <h5>Semantics:</h5>
 <p>This instruction always performs an arithmetic shift right operation, 
@@ -2425,17 +2549,26 @@ larger than the number of bits in <tt>var1</tt>, the result is undefined.
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="i_and">'<tt>and</tt>'
 Instruction</a> </div>
+
 <div class="doc_text">
+
 <h5>Syntax:</h5>
-<pre>  &lt;result&gt; = and &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+
+<pre>
+  &lt;result&gt; = and &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
 </pre>
+
 <h5>Overview:</h5>
+
 <p>The '<tt>and</tt>' instruction returns the bitwise logical and of
 its two operands.</p>
+
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>and</tt>' instruction must be <a
- href="#t_integer">integer</a> values.  Both arguments must have
-identical types.</p>
+
+<p>The two arguments to the '<tt>and</tt>' instruction must be 
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
 <p>The truth table used for the '<tt>and</tt>' instruction is:</p>
 <p> </p>
@@ -2471,7 +2604,8 @@ identical types.</p>
 </table>
 </div>
 <h5>Example:</h5>
-<pre>  &lt;result&gt; = and i32 4, %var         <i>; yields {i32}:result = 4 &amp; %var</i>
+<pre>
+  &lt;result&gt; = and i32 4, %var         <i>; yields {i32}:result = 4 &amp; %var</i>
   &lt;result&gt; = and i32 15, 40          <i>; yields {i32}:result = 8</i>
   &lt;result&gt; = and i32 4, 8            <i>; yields {i32}:result = 0</i>
 </pre>
@@ -2486,9 +2620,10 @@ identical types.</p>
 <p>The '<tt>or</tt>' instruction returns the bitwise logical inclusive
 or of its two operands.</p>
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>or</tt>' instruction must be <a
- href="#t_integer">integer</a> values.  Both arguments must have
-identical types.</p>
+
+<p>The two arguments to the '<tt>or</tt>' instruction must be 
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
 <h5>Semantics:</h5>
 <p>The truth table used for the '<tt>or</tt>' instruction is:</p>
 <p> </p>
@@ -2541,10 +2676,12 @@ Instruction</a> </div>
 or of its two operands.  The <tt>xor</tt> is used to implement the
 "one's complement" operation, which is the "~" operator in C.</p>
 <h5>Arguments:</h5>
-<p>The two arguments to the '<tt>xor</tt>' instruction must be <a
- href="#t_integer">integer</a> values.  Both arguments must have
-identical types.</p>
+<p>The two arguments to the '<tt>xor</tt>' instruction must be 
+<a href="#t_integer">integer</a> or <a href="#t_vector">vector</a> of integer
+values.  Both arguments must have identical types.</p>
+
 <h5>Semantics:</h5>
+
 <p>The truth table used for the '<tt>xor</tt>' instruction is:</p>
 <p> </p>
 <div style="align: center">
@@ -2659,7 +2796,7 @@ results are undefined.
 <h5>Syntax:</h5>
 
 <pre>
-  &lt;result&gt; = insertelement &lt;n x &lt;ty&gt;&gt; &lt;val&gt;, &lt;ty&gt; &lt;elt&gt, i32 &lt;idx&gt;    <i>; yields &lt;n x &lt;ty&gt;&gt;</i>
+  &lt;result&gt; = insertelement &lt;n x &lt;ty&gt;&gt; &lt;val&gt;, &lt;ty&gt; &lt;elt&gt;, i32 &lt;idx&gt;    <i>; yields &lt;n x &lt;ty&gt;&gt;</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -2746,6 +2883,114 @@ operand may be undef if performing a shuffle from only one vector.
                           &lt;4 x i32&gt; &lt;i32 0, i32 4, i32 1, i32 5&gt;  <i>; yields &lt;4 x i32&gt;</i>
   %result = shufflevector &lt;4 x i32&gt; %v1, &lt;4 x i32&gt; undef, 
                           &lt;4 x i32&gt; &lt;i32 0, i32 1, i32 2, i32 3&gt;  <i>; yields &lt;4 x i32&gt;</i> - Identity shuffle.
+</pre>
+</div>
+
+
+<!-- ======================================================================= -->
+<div class="doc_subsection"> 
+  <a name="aggregateops">Aggregate Operations</a>
+</div>
+
+<div class="doc_text">
+
+<p>LLVM supports several instructions for working with aggregate values.
+</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_extractvalue">'<tt>extractvalue</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = extractvalue &lt;aggregate type&gt; &lt;val&gt;, &lt;idx&gt;{, &lt;idx&gt;}*
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>extractvalue</tt>' instruction extracts the value of a struct field
+or array element from an aggregate value.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of an '<tt>extractvalue</tt>' instruction is a
+value of <a href="#t_struct">struct</a> or <a href="#t_array">array</a>
+type.  The operands are constant indices to specify which value to extract
+in a similar manner as indices in a
+'<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.
+</p>
+
+<h5>Semantics:</h5>
+
+<p>
+The result is the value at the position in the aggregate specified by
+the index operands.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = extractvalue {i32, float} %agg, 0    <i>; yields i32</i>
+</pre>
+</div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_insertvalue">'<tt>insertvalue</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
+<pre>
+  &lt;result&gt; = insertvalue &lt;aggregate type&gt; &lt;val&gt;, &lt;ty&gt; &lt;val&gt;, &lt;idx&gt;    <i>; yields &lt;n x &lt;ty&gt;&gt;</i>
+</pre>
+
+<h5>Overview:</h5>
+
+<p>
+The '<tt>insertvalue</tt>' instruction inserts a value
+into a struct field or array element in an aggregate.
+</p>
+
+
+<h5>Arguments:</h5>
+
+<p>
+The first operand of an '<tt>insertvalue</tt>' instruction is a
+value of <a href="#t_struct">struct</a> or <a href="#t_array">array</a> type.
+The second operand is a first-class value to insert.
+The following operands are constant indices
+indicating the position at which to insert the value in a similar manner as
+indices in a
+'<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.
+The value to insert must have the same type as the value identified
+by the indices.
+
+<h5>Semantics:</h5>
+
+<p>
+The result is an aggregate of the same type as <tt>val</tt>.  Its
+value is that of <tt>val</tt> except that the value at the position
+specified by the indices is that of <tt>elt</tt>.
+</p>
+
+<h5>Example:</h5>
+
+<pre>
+  %result = insertvalue {i32, float} %agg, i32 1, 0    <i>; yields {i32, float}</i>
 </pre>
 </div>
 
@@ -3005,8 +3250,8 @@ provided depend on the type of the first pointer argument.  The
 '<tt>getelementptr</tt>' instruction is used to index down through the type
 levels of a structure or to a specific index in an array.  When indexing into a
 structure, only <tt>i32</tt> integer constants are allowed.  When indexing 
-into an array or pointer, only integers of 32 or 64 bits are allowed, and will 
-be sign extended to 64-bit values.</p>
+into an array or pointer, only integers of 32 or 64 bits are allowed; 32-bit 
+values will be sign extended to 64-bits if required.</p>
 
 <p>For example, let's consider a C code fragment and how it gets
 compiled to LLVM:</p>
@@ -3081,7 +3326,7 @@ the LLVM code for the given testcase is equivalent to:</p>
 
 <p>Note that it is undefined to access an array out of bounds: array and 
 pointer indexes must always be within the defined bounds of the array type.
-The one exception for this rules is zero length arrays.  These arrays are
+The one exception for this rule is zero length arrays.  These arrays are
 defined to be accessible as variable length arrays, which requires access
 beyond the zero'th element.</p>
 
@@ -3517,15 +3762,19 @@ nothing is done (<i>no-op cast</i>).</p>
 </pre>
 
 <h5>Overview:</h5>
+
 <p>The '<tt>bitcast</tt>' instruction converts <tt>value</tt> to type
 <tt>ty2</tt> without changing any bits.</p>
 
 <h5>Arguments:</h5>
+
 <p>The '<tt>bitcast</tt>' instruction takes a value to cast, which must be 
 a first class value, and a type to cast it to, which must also be a <a
   href="#t_firstclass">first class</a> type. The bit sizes of <tt>value</tt>
 and the destination type, <tt>ty2</tt>, must be identical. If the source
-type is a pointer, the destination type must also be a pointer.</p>
+type is a pointer, the destination type must also be a pointer.  This
+instruction supports bitwise conversion of vectors to integers and to vectors
+of other types (as long as they have the same size).</p>
 
 <h5>Semantics:</h5>
 <p>The '<tt>bitcast</tt>' instruction converts <tt>value</tt> to type
@@ -3657,9 +3906,9 @@ a value, just a keyword. The possible condition code are:
 <a href="#t_floating">floating point</a> typed.  They must have identical 
 types.</p>
 <h5>Semantics:</h5>
-<p>The '<tt>fcmp</tt>' compares <tt>var1</tt> and <tt>var2</tt> according to 
-the condition code given as <tt>cond</tt>. The comparison performed always
-yields a <a href="#t_primitive">i1</a> result, as follows: 
+<p>The '<tt>fcmp</tt>' instruction compares <tt>var1</tt> and <tt>var2</tt>
+according to the condition code given as <tt>cond</tt>. The comparison performed 
+always yields a <a href="#t_primitive">i1</a> result, as follows: 
 <ol>
   <li><tt>false</tt>: always yields <tt>false</tt>, regardless of operands.</li>
   <li><tt>oeq</tt>: yields <tt>true</tt> if both operands are not a QNAN and 
@@ -3700,30 +3949,144 @@ yields a <a href="#t_primitive">i1</a> result, as follows:
 </div>
 
 <!-- _______________________________________________________________________ -->
-<div class="doc_subsubsection"> <a name="i_phi">'<tt>phi</tt>'
-Instruction</a> </div>
+<div class="doc_subsubsection">
+  <a name="i_vicmp">'<tt>vicmp</tt>' Instruction</a>
+</div>
 <div class="doc_text">
 <h5>Syntax:</h5>
+<pre>  &lt;result&gt; = vicmp &lt;cond&gt; &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;   <i>; yields {ty}:result</i>
+</pre>
+<h5>Overview:</h5>
+<p>The '<tt>vicmp</tt>' instruction returns an integer vector value based on
+element-wise comparison of its two integer vector operands.</p>
+<h5>Arguments:</h5>
+<p>The '<tt>vicmp</tt>' instruction takes three operands. The first operand is
+the condition code indicating the kind of comparison to perform. It is not
+a value, just a keyword. The possible condition code are:
+<ol>
+  <li><tt>eq</tt>: equal</li>
+  <li><tt>ne</tt>: not equal </li>
+  <li><tt>ugt</tt>: unsigned greater than</li>
+  <li><tt>uge</tt>: unsigned greater or equal</li>
+  <li><tt>ult</tt>: unsigned less than</li>
+  <li><tt>ule</tt>: unsigned less or equal</li>
+  <li><tt>sgt</tt>: signed greater than</li>
+  <li><tt>sge</tt>: signed greater or equal</li>
+  <li><tt>slt</tt>: signed less than</li>
+  <li><tt>sle</tt>: signed less or equal</li>
+</ol>
+<p>The remaining two arguments must be <a href="#t_vector">vector</a> of 
+<a href="#t_integer">integer</a> typed. They must also be identical types.</p>
+<h5>Semantics:</h5>
+<p>The '<tt>vicmp</tt>' instruction compares <tt>var1</tt> and <tt>var2</tt>
+according to the condition code given as <tt>cond</tt>. The comparison yields a 
+<a href="#t_vector">vector</a> of <a href="#t_integer">integer</a> result, of
+identical type as the values being compared.  The most significant bit in each
+element is 1 if the element-wise comparison evaluates to true, and is 0
+otherwise.  All other bits of the result are undefined.  The condition codes
+are evaluated identically to the <a href="#i_icmp">'<tt>icmp</tt>'
+instruction</a>.
+
+<h5>Example:</h5>
+<pre>
+  &lt;result&gt; = vicmp eq &lt;2 x i32&gt; &lt; i32 4, i32 0&gt;, &lt; i32 5, i32 0&gt;   <i>; yields: result=&lt;2 x i32&gt; &lt; i32 0, i32 -1 &gt;</i>
+  &lt;result&gt; = vicmp ult &lt;2 x i8 &gt; &lt; i8 1, i8 2&gt;, &lt; i8 2, i8 2 &gt;        <i>; yields: result=&lt;2 x i8&gt; &lt; i8 -1, i8 0 &gt;</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_vfcmp">'<tt>vfcmp</tt>' Instruction</a>
+</div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<pre>  &lt;result&gt; = vfcmp &lt;cond&gt; &lt;ty&gt; &lt;var1&gt;, &lt;var2&gt;</pre>
+<h5>Overview:</h5>
+<p>The '<tt>vfcmp</tt>' instruction returns an integer vector value based on
+element-wise comparison of its two floating point vector operands.  The output
+elements have the same width as the input elements.</p>
+<h5>Arguments:</h5>
+<p>The '<tt>vfcmp</tt>' instruction takes three operands. The first operand is
+the condition code indicating the kind of comparison to perform. It is not
+a value, just a keyword. The possible condition code are:
+<ol>
+  <li><tt>false</tt>: no comparison, always returns false</li>
+  <li><tt>oeq</tt>: ordered and equal</li>
+  <li><tt>ogt</tt>: ordered and greater than </li>
+  <li><tt>oge</tt>: ordered and greater than or equal</li>
+  <li><tt>olt</tt>: ordered and less than </li>
+  <li><tt>ole</tt>: ordered and less than or equal</li>
+  <li><tt>one</tt>: ordered and not equal</li>
+  <li><tt>ord</tt>: ordered (no nans)</li>
+  <li><tt>ueq</tt>: unordered or equal</li>
+  <li><tt>ugt</tt>: unordered or greater than </li>
+  <li><tt>uge</tt>: unordered or greater than or equal</li>
+  <li><tt>ult</tt>: unordered or less than </li>
+  <li><tt>ule</tt>: unordered or less than or equal</li>
+  <li><tt>une</tt>: unordered or not equal</li>
+  <li><tt>uno</tt>: unordered (either nans)</li>
+  <li><tt>true</tt>: no comparison, always returns true</li>
+</ol>
+<p>The remaining two arguments must be <a href="#t_vector">vector</a> of 
+<a href="#t_floating">floating point</a> typed. They must also be identical
+types.</p>
+<h5>Semantics:</h5>
+<p>The '<tt>vfcmp</tt>' instruction compares <tt>var1</tt> and <tt>var2</tt>
+according to  the condition code given as <tt>cond</tt>. The comparison yields a 
+<a href="#t_vector">vector</a> of <a href="#t_integer">integer</a> result, with
+an identical number of elements as the values being compared, and each element
+having identical with to the width of the floating point elements. The most 
+significant bit in each element is 1 if the element-wise comparison evaluates to
+true, and is 0 otherwise.  All other bits of the result are undefined.  The
+condition codes are evaluated identically to the 
+<a href="#i_fcmp">'<tt>fcmp</tt>' instruction</a>.
+
+<h5>Example:</h5>
+<pre>
+  &lt;result&gt; = vfcmp oeq &lt;2 x float&gt; &lt; float 4, float 0 &gt;, &lt; float 5, float 0 &gt;       <i>; yields: result=&lt;2 x i32&gt; &lt; i32 0, i32 -1 &gt;</i>
+  &lt;result&gt; = vfcmp ult &lt;2 x double&gt; &lt; double 1, double 2 &gt;, &lt; double 2, double 2&gt;   <i>; yields: result=&lt;2 x i64&gt; &lt; i64 -1, i64 0 &gt;</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="i_phi">'<tt>phi</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+
 <pre>  &lt;result&gt; = phi &lt;ty&gt; [ &lt;val0&gt;, &lt;label0&gt;], ...<br></pre>
 <h5>Overview:</h5>
 <p>The '<tt>phi</tt>' instruction is used to implement the &#966; node in
 the SSA graph representing the function.</p>
 <h5>Arguments:</h5>
+
 <p>The type of the incoming values is specified with the first type
 field. After this, the '<tt>phi</tt>' instruction takes a list of pairs
 as arguments, with one pair for each predecessor basic block of the
 current block.  Only values of <a href="#t_firstclass">first class</a>
 type may be used as the value arguments to the PHI node.  Only labels
 may be used as the label arguments.</p>
+
 <p>There must be no non-phi instructions between the start of a basic
 block and the PHI instructions: i.e. PHI instructions must be first in
 a basic block.</p>
+
 <h5>Semantics:</h5>
+
 <p>At runtime, the '<tt>phi</tt>' instruction logically takes on the value
 specified by the pair corresponding to the predecessor basic block that executed
 just prior to the current block.</p>
+
 <h5>Example:</h5>
-<pre>Loop:       ; Infinite loop that counts from 0 on up...<br>  %indvar = phi i32 [ 0, %LoopHeader ], [ %nextindvar, %Loop ]<br>  %nextindvar = add i32 %indvar, 1<br>  br label %Loop<br></pre>
+<pre>
+Loop:       ; Infinite loop that counts from 0 on up...
+  %indvar = phi i32 [ 0, %LoopHeader ], [ %nextindvar, %Loop ]
+  %nextindvar = add i32 %indvar, 1
+  br label %Loop
+</pre>
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -3750,13 +4113,16 @@ condition, without branching.
 <h5>Arguments:</h5>
 
 <p>
-The '<tt>select</tt>' instruction requires a boolean value indicating the condition, and two values of the same <a href="#t_firstclass">first class</a> type.
+The '<tt>select</tt>' instruction requires an 'i1' value indicating the
+condition, and two values of the same <a href="#t_firstclass">first class</a>
+type.  If the val1/val2 are vectors, the entire vectors are selected, not
+individual elements.
 </p>
 
 <h5>Semantics:</h5>
 
 <p>
-If the boolean condition evaluates to true, the instruction returns the first
+If the i1 condition evaluates is 1, the instruction returns the first
 value argument; otherwise, it returns the second value argument.
 </p>
 
@@ -3925,9 +4291,10 @@ results.</p>
 <h5>Arguments:</h5>
 
 <p>The '<tt>getresult</tt>' instruction takes a call or invoke value as its 
-first argument.  The value must have <a href="#t_struct">structure type</a>. 
-The second argument is a constant unsigned index value which must be in range for
-the number of values returned by the call.</p>
+first argument, or an undef value.  The value must have <a 
+href="#t_struct">structure type</a>.  The second argument is a constant 
+unsigned index value which must be in range for the number of values returned 
+by the call.</p>
 
 <h5>Semantics:</h5>
 
@@ -4191,7 +4558,7 @@ value address) contains the meta-data to be associated with the root.</p>
 
 <h5>Semantics:</h5>
 
-<p>At runtime, a call to this intrinsics stores a null pointer into the "ptrloc"
+<p>At runtime, a call to this intrinsic stores a null pointer into the "ptrloc"
 location.  At compile-time, the code generator generates information to allow
 the runtime to find the pointer at GC safe points. The '<tt>llvm.gcroot</tt>'
 intrinsic may only be used in a function which <a href="#gc">specifies a GC
@@ -5419,19 +5786,19 @@ i1 &lt;device&gt; )
 
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection">
-  <a name="int_atomic_lcs">'<tt>llvm.atomic.lcs.*</tt>' Intrinsic</a>
+  <a name="int_atomic_cmp_swap">'<tt>llvm.atomic.cmp.swap.*</tt>' Intrinsic</a>
 </div>
 <div class="doc_text">
 <h5>Syntax:</h5>
 <p>
-  This is an overloaded intrinsic. You can use <tt>llvm.atomic.lcs</tt> on any 
+  This is an overloaded intrinsic. You can use <tt>llvm.atomic.cmp.swap</tt> on any 
   integer bit width. Not all targets support all bit widths however.</p>
 
 <pre>
-declare i8 @llvm.atomic.lcs.i8( i8* &lt;ptr&gt;, i8 &lt;cmp&gt;, i8 &lt;val&gt; )
-declare i16 @llvm.atomic.lcs.i16( i16* &lt;ptr&gt;, i16 &lt;cmp&gt;, i16 &lt;val&gt; )
-declare i32 @llvm.atomic.lcs.i32( i32* &lt;ptr&gt;, i32 &lt;cmp&gt;, i32 &lt;val&gt; )
-declare i64 @llvm.atomic.lcs.i64( i64* &lt;ptr&gt;, i64 &lt;cmp&gt;, i64 &lt;val&gt; )
+declare i8 @llvm.atomic.cmp.swap.i8( i8* &lt;ptr&gt;, i8 &lt;cmp&gt;, i8 &lt;val&gt; )
+declare i16 @llvm.atomic.cmp.swap.i16( i16* &lt;ptr&gt;, i16 &lt;cmp&gt;, i16 &lt;val&gt; )
+declare i32 @llvm.atomic.cmp.swap.i32( i32* &lt;ptr&gt;, i32 &lt;cmp&gt;, i32 &lt;val&gt; )
+declare i64 @llvm.atomic.cmp.swap.i64( i64* &lt;ptr&gt;, i64 &lt;cmp&gt;, i64 &lt;val&gt; )
 
 </pre>
 <h5>Overview:</h5>
@@ -5441,7 +5808,7 @@ declare i64 @llvm.atomic.lcs.i64( i64* &lt;ptr&gt;, i64 &lt;cmp&gt;, i64 &lt;val
 </p>
 <h5>Arguments:</h5>
 <p>
-  The <tt>llvm.atomic.lcs</tt> intrinsic takes three arguments. The result as 
+  The <tt>llvm.atomic.cmp.swap</tt> intrinsic takes three arguments. The result as 
   well as both <tt>cmp</tt> and <tt>val</tt> must be integer values with the 
   same bit width. The <tt>ptr</tt> argument must be a pointer to a value of 
   this integer type. While any bit width integer may be used, targets may only 
@@ -5463,13 +5830,13 @@ declare i64 @llvm.atomic.lcs.i64( i64* &lt;ptr&gt;, i64 &lt;cmp&gt;, i64 &lt;val
             store i32 4, %ptr
 
 %val1     = add i32 4, 4
-%result1  = call i32 @llvm.atomic.lcs.i32( i32* %ptr, i32 4, %val1 )
+%result1  = call i32 @llvm.atomic.cmp.swap.i32( i32* %ptr, i32 4, %val1 )
                                           <i>; yields {i32}:result1 = 4</i>
 %stored1  = icmp eq i32 %result1, 4       <i>; yields {i1}:stored1 = true</i>
 %memval1  = load i32* %ptr                <i>; yields {i32}:memval1 = 8</i>
 
 %val2     = add i32 1, 1
-%result2  = call i32 @llvm.atomic.lcs.i32( i32* %ptr, i32 5, %val2 )
+%result2  = call i32 @llvm.atomic.cmp.swap.i32( i32* %ptr, i32 5, %val2 )
                                           <i>; yields {i32}:result2 = 8</i>
 %stored2  = icmp eq i32 %result2, 5       <i>; yields {i1}:stored2 = false</i>
 
@@ -5503,7 +5870,7 @@ declare i64 @llvm.atomic.swap.i64( i64* &lt;ptr&gt;, i64 &lt;val&gt; )
 <h5>Arguments:</h5>
 
 <p>
-  The <tt>llvm.atomic.ls</tt> intrinsic takes two arguments. Both the 
+  The <tt>llvm.atomic.swap</tt> intrinsic takes two arguments. Both the 
   <tt>val</tt> argument and the result must be integers of the same bit width. 
   The first argument, <tt>ptr</tt>, must be a pointer to a value of this 
   integer type. The targets may only lower integer representations they 
@@ -5538,19 +5905,19 @@ declare i64 @llvm.atomic.swap.i64( i64* &lt;ptr&gt;, i64 &lt;val&gt; )
 
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection">
-  <a name="int_atomic_las">'<tt>llvm.atomic.las.*</tt>' Intrinsic</a>
+  <a name="int_atomic_load_add">'<tt>llvm.atomic.load.add.*</tt>' Intrinsic</a>
 
 </div>
 <div class="doc_text">
 <h5>Syntax:</h5>
 <p>
-  This is an overloaded intrinsic. You can use <tt>llvm.atomic.las</tt> on any 
+  This is an overloaded intrinsic. You can use <tt>llvm.atomic.load.add</tt> on any 
   integer bit width. Not all targets support all bit widths however.</p>
 <pre>
-declare i8 @llvm.atomic.las.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
-declare i16 @llvm.atomic.las.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
-declare i32 @llvm.atomic.las.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
-declare i64 @llvm.atomic.las.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+declare i8 @llvm.atomic.load.add.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.add.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.add.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.add.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
 
 </pre>
 <h5>Overview:</h5>
@@ -5577,16 +5944,235 @@ declare i64 @llvm.atomic.las.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
 <pre>
 %ptr      = malloc i32
         store i32 4, %ptr
-%result1  = call i32 @llvm.atomic.las.i32( i32* %ptr, i32 4 )
+%result1  = call i32 @llvm.atomic.load.add.i32( i32* %ptr, i32 4 )
                                 <i>; yields {i32}:result1 = 4</i>
-%result2  = call i32 @llvm.atomic.las.i32( i32* %ptr, i32 2 )
+%result2  = call i32 @llvm.atomic.load.add.i32( i32* %ptr, i32 2 )
                                 <i>; yields {i32}:result2 = 8</i>
-%result3  = call i32 @llvm.atomic.las.i32( i32* %ptr, i32 5 )
+%result3  = call i32 @llvm.atomic.load.add.i32( i32* %ptr, i32 5 )
                                 <i>; yields {i32}:result3 = 10</i>
-%memval   = load i32* %ptr      <i>; yields {i32}:memval1 = 15</i>
+%memval1  = load i32* %ptr      <i>; yields {i32}:memval1 = 15</i>
 </pre>
 </div>
 
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="int_atomic_load_sub">'<tt>llvm.atomic.load.sub.*</tt>' Intrinsic</a>
+
+</div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<p>
+  This is an overloaded intrinsic. You can use <tt>llvm.atomic.load.sub</tt> on
+  any integer bit width. Not all targets support all bit widths however.</p>
+<pre>
+declare i8 @llvm.atomic.load.sub.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.sub.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.sub.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.sub.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+<h5>Overview:</h5>
+<p>
+  This intrinsic subtracts <tt>delta</tt> to the value stored in memory at 
+  <tt>ptr</tt>. It yields the original value at <tt>ptr</tt>.
+</p>
+<h5>Arguments:</h5>
+<p>
+
+  The intrinsic takes two arguments, the first a pointer to an integer value 
+  and the second an integer value. The result is also an integer value. These 
+  integer types can have any bit width, but they must all have the same bit 
+  width. The targets may only lower integer representations they support.
+</p>
+<h5>Semantics:</h5>
+<p>
+  This intrinsic does a series of operations atomically. It first loads the 
+  value stored at <tt>ptr</tt>. It then subtracts <tt>delta</tt>, stores the
+  result to <tt>ptr</tt>. It yields the original value stored at <tt>ptr</tt>.
+</p>
+
+<h5>Examples:</h5>
+<pre>
+%ptr      = malloc i32
+        store i32 8, %ptr
+%result1  = call i32 @llvm.atomic.load.sub.i32( i32* %ptr, i32 4 )
+                                <i>; yields {i32}:result1 = 8</i>
+%result2  = call i32 @llvm.atomic.load.sub.i32( i32* %ptr, i32 2 )
+                                <i>; yields {i32}:result2 = 4</i>
+%result3  = call i32 @llvm.atomic.load.sub.i32( i32* %ptr, i32 5 )
+                                <i>; yields {i32}:result3 = 2</i>
+%memval1  = load i32* %ptr      <i>; yields {i32}:memval1 = -3</i>
+</pre>
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="int_atomic_load_and">'<tt>llvm.atomic.load.and.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_nand">'<tt>llvm.atomic.load.nand.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_or">'<tt>llvm.atomic.load.or.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_xor">'<tt>llvm.atomic.load.xor.*</tt>' Intrinsic</a><br>
+
+</div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<p>
+  These are overloaded intrinsics. You can use <tt>llvm.atomic.load_and</tt>,
+  <tt>llvm.atomic.load_nand</tt>, <tt>llvm.atomic.load_or</tt>, and
+  <tt>llvm.atomic.load_xor</tt> on any integer bit width. Not all targets
+  support all bit widths however.</p>
+<pre>
+declare i8 @llvm.atomic.load.and.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.and.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.and.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.and.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.or.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.or.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.or.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.or.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.nand.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.nand.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.nand.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.nand.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.xor.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.xor.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.xor.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.xor.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+<h5>Overview:</h5>
+<p>
+  These intrinsics bitwise the operation (and, nand, or, xor) <tt>delta</tt> to
+  the value stored in memory at <tt>ptr</tt>. It yields the original value
+  at <tt>ptr</tt>.
+</p>
+<h5>Arguments:</h5>
+<p>
+
+  These intrinsics take two arguments, the first a pointer to an integer value 
+  and the second an integer value. The result is also an integer value. These 
+  integer types can have any bit width, but they must all have the same bit 
+  width. The targets may only lower integer representations they support.
+</p>
+<h5>Semantics:</h5>
+<p>
+  These intrinsics does a series of operations atomically. They first load the 
+  value stored at <tt>ptr</tt>. They then do the bitwise operation
+  <tt>delta</tt>, store the result to <tt>ptr</tt>. They yield the original
+  value stored at <tt>ptr</tt>.
+</p>
+
+<h5>Examples:</h5>
+<pre>
+%ptr      = malloc i32
+        store i32 0x0F0F, %ptr
+%result0  = call i32 @llvm.atomic.load.nand.i32( i32* %ptr, i32 0xFF )
+                                <i>; yields {i32}:result0 = 0x0F0F</i>
+%result1  = call i32 @llvm.atomic.load.and.i32( i32* %ptr, i32 0xFF )
+                                <i>; yields {i32}:result1 = 0xFFFFFFF0</i>
+%result2  = call i32 @llvm.atomic.load.or.i32( i32* %ptr, i32 0F )
+                                <i>; yields {i32}:result2 = 0xF0</i>
+%result3  = call i32 @llvm.atomic.load.xor.i32( i32* %ptr, i32 0F )
+                                <i>; yields {i32}:result3 = FF</i>
+%memval1  = load i32* %ptr      <i>; yields {i32}:memval1 = F0</i>
+</pre>
+</div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="int_atomic_load_max">'<tt>llvm.atomic.load.max.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_min">'<tt>llvm.atomic.load.min.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_umax">'<tt>llvm.atomic.load.umax.*</tt>' Intrinsic</a><br>
+  <a name="int_atomic_load_umin">'<tt>llvm.atomic.load.umin.*</tt>' Intrinsic</a><br>
+
+</div>
+<div class="doc_text">
+<h5>Syntax:</h5>
+<p>
+  These are overloaded intrinsics. You can use <tt>llvm.atomic.load_max</tt>,
+  <tt>llvm.atomic.load_min</tt>, <tt>llvm.atomic.load_umax</tt>, and
+  <tt>llvm.atomic.load_umin</tt> on any integer bit width. Not all targets
+  support all bit widths however.</p>
+<pre>
+declare i8 @llvm.atomic.load.max.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.max.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.max.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.max.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.min.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.min.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.min.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.min.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.umax.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.umax.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.umax.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.umax.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+
+<pre>
+declare i8 @llvm.atomic.load.umin.i8.( i8* &lt;ptr&gt;, i8 &lt;delta&gt; )
+declare i16 @llvm.atomic.load.umin.i16.( i16* &lt;ptr&gt;, i16 &lt;delta&gt; )
+declare i32 @llvm.atomic.load.umin.i32.( i32* &lt;ptr&gt;, i32 &lt;delta&gt; )
+declare i64 @llvm.atomic.load.umin.i64.( i64* &lt;ptr&gt;, i64 &lt;delta&gt; )
+
+</pre>
+<h5>Overview:</h5>
+<p>
+  These intrinsics takes the signed or unsigned minimum or maximum of 
+  <tt>delta</tt> and the value stored in memory at <tt>ptr</tt>. It yields the
+  original value at <tt>ptr</tt>.
+</p>
+<h5>Arguments:</h5>
+<p>
+
+  These intrinsics take two arguments, the first a pointer to an integer value 
+  and the second an integer value. The result is also an integer value. These 
+  integer types can have any bit width, but they must all have the same bit 
+  width. The targets may only lower integer representations they support.
+</p>
+<h5>Semantics:</h5>
+<p>
+  These intrinsics does a series of operations atomically. They first load the 
+  value stored at <tt>ptr</tt>. They then do the signed or unsigned min or max
+  <tt>delta</tt> and the value, store the result to <tt>ptr</tt>. They yield
+  the original value stored at <tt>ptr</tt>.
+</p>
+
+<h5>Examples:</h5>
+<pre>
+%ptr      = malloc i32
+        store i32 7, %ptr
+%result0  = call i32 @llvm.atomic.load.min.i32( i32* %ptr, i32 -2 )
+                                <i>; yields {i32}:result0 = 7</i>
+%result1  = call i32 @llvm.atomic.load.max.i32( i32* %ptr, i32 8 )
+                                <i>; yields {i32}:result1 = -2</i>
+%result2  = call i32 @llvm.atomic.load.umin.i32( i32* %ptr, i32 10 )
+                                <i>; yields {i32}:result2 = 8</i>
+%result3  = call i32 @llvm.atomic.load.umax.i32( i32* %ptr, i32 30 )
+                                <i>; yields {i32}:result3 = 8</i>
+%memval1  = load i32* %ptr      <i>; yields {i32}:memval1 = 30</i>
+</pre>
+</div>
 
 <!-- ======================================================================= -->
 <div class="doc_subsection">

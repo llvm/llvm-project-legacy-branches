@@ -131,7 +131,7 @@ namespace llvm {
     const_iterator end() const { return r2iMap_.end(); }
     iterator begin() { return r2iMap_.begin(); }
     iterator end() { return r2iMap_.end(); }
-    unsigned getNumIntervals() const { return r2iMap_.size(); }
+    unsigned getNumIntervals() const { return (unsigned)r2iMap_.size(); }
 
     LiveInterval &getInterval(unsigned reg) {
       Reg2IntervalMap::iterator I = r2iMap_.find(reg);
@@ -167,6 +167,13 @@ namespace llvm {
     unsigned getMBBEndIdx(unsigned MBBNo) const {
       assert(MBBNo < MBB2IdxMap.size() && "Invalid MBB number!");
       return MBB2IdxMap[MBBNo].second;
+    }
+
+    /// getIntervalSize - get the size of an interval in "units,"
+    /// where every function is composed of one thousand units.  This
+    /// measure scales properly with empty index slots in the function.
+    unsigned getScaledIntervalSize(LiveInterval& I) const {
+      return (1000 / InstrSlots::NUM * I.getSize()) / i2miMap_.size();
     }
 
     /// getMBBFromIndex - given an index in any instruction of an
@@ -220,6 +227,11 @@ namespace llvm {
         I = r2iMap_.insert(I, std::make_pair(reg, createInterval(reg)));
       return I->second;
     }
+    
+    /// addLiveRangeToEndOfBlock - Given a register and an instruction,
+    /// adds a live range from that instruction to the end of its MBB.
+    LiveRange addLiveRangeToEndOfBlock(unsigned reg,
+                                        MachineInstr* startInst);
 
     // Interval removal
 
@@ -278,10 +290,12 @@ namespace llvm {
     }
 
     /// addIntervalsForSpills - Create new intervals for spilled defs / uses of
-    /// the given interval.
+    /// the given interval. FIXME: It also returns the weight of the spill slot
+    /// (if any is created) by reference. This is temporary.
     std::vector<LiveInterval*>
     addIntervalsForSpills(const LiveInterval& i,
-                          const MachineLoopInfo *loopInfo, VirtRegMap& vrm);
+                          const MachineLoopInfo *loopInfo, VirtRegMap& vrm,
+                          float &SSWeight);
 
     /// spillPhysRegAroundRegDefsUses - Spill the specified physical register
     /// around all defs and uses of the specified interval.
@@ -302,6 +316,9 @@ namespace llvm {
     unsigned getNumConflictsWithPhysReg(const LiveInterval &li,
                                         unsigned PhysReg) const;
 
+    /// computeNumbering - Compute the index numbering.
+    void computeNumbering();
+
   private:      
     /// computeIntervals - Compute live intervals.
     void computeIntervals();
@@ -311,20 +328,20 @@ namespace llvm {
     /// handleVirtualRegisterDef)
     void handleRegisterDef(MachineBasicBlock *MBB,
                            MachineBasicBlock::iterator MI, unsigned MIIdx,
-                           unsigned reg);
+                           MachineOperand& MO);
 
     /// handleVirtualRegisterDef - update intervals for a virtual
     /// register def
     void handleVirtualRegisterDef(MachineBasicBlock *MBB,
                                   MachineBasicBlock::iterator MI,
-                                  unsigned MIIdx,
+                                  unsigned MIIdx, MachineOperand& MO,
                                   LiveInterval& interval);
 
     /// handlePhysicalRegisterDef - update intervals for a physical register
     /// def.
     void handlePhysicalRegisterDef(MachineBasicBlock* mbb,
                                    MachineBasicBlock::iterator mi,
-                                   unsigned MIIdx,
+                                   unsigned MIIdx, MachineOperand& MO,
                                    LiveInterval &interval,
                                    MachineInstr *CopyMI);
 
@@ -416,7 +433,7 @@ namespace llvm {
         SmallVector<int, 4> &ReMatIds, const MachineLoopInfo *loopInfo,
         unsigned &NewVReg, unsigned ImpUse, bool &HasDef, bool &HasUse,
         std::map<unsigned,unsigned> &MBBVRegsMap,
-        std::vector<LiveInterval*> &NewLIs);
+        std::vector<LiveInterval*> &NewLIs, float &SSWeight);
     void rewriteInstructionsForSpills(const LiveInterval &li, bool TrySplit,
         LiveInterval::Ranges::const_iterator &I,
         MachineInstr *OrigDefMI, MachineInstr *DefMI, unsigned Slot, int LdSlot,
@@ -428,7 +445,7 @@ namespace llvm {
         BitVector &RestoreMBBs,
         std::map<unsigned,std::vector<SRInfo> > &RestoreIdxes,
         std::map<unsigned,unsigned> &MBBVRegsMap,
-        std::vector<LiveInterval*> &NewLIs);
+        std::vector<LiveInterval*> &NewLIs, float &SSWeight);
 
     static LiveInterval createInterval(unsigned Reg);
 

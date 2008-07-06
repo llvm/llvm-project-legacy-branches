@@ -48,10 +48,10 @@ namespace {
       AU.addPreservedID(LowerAllocationsID);
     }
   };
-
-  char PromotePass::ID = 0;
-  RegisterPass<PromotePass> X("mem2reg", "Promote Memory to Register");
 }  // end of anonymous namespace
+
+char PromotePass::ID = 0;
+static RegisterPass<PromotePass> X("mem2reg", "Promote Memory to Register");
 
 bool PromotePass::runOnFunction(Function &F) {
   std::vector<AllocaInst*> Allocas;
@@ -84,7 +84,7 @@ bool PromotePass::runOnFunction(Function &F) {
 }
 
 // Publically exposed interface to pass...
-const PassInfo *llvm::PromoteMemoryToRegisterID = X.getPassInfo();
+const PassInfo *const llvm::PromoteMemoryToRegisterID = &X;
 // createPromoteMemoryToRegister - Provide an entry point to create this pass.
 //
 FunctionPass *llvm::createPromoteMemoryToRegisterPass() {

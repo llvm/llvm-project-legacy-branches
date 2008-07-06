@@ -172,6 +172,8 @@ static bool PadLT(const LandingPadInfo *L, const LandingPadInfo *R) {
   return LSize < RSize;
 }
 
+namespace {
+
 struct KeyInfo {
   static inline unsigned getEmptyKey() { return -1U; }
   static inline unsigned getTombstoneKey() { return -2U; }
@@ -204,6 +206,8 @@ struct CallSiteEntry {
   unsigned PadLabel;   // zero indicates that there is no landing pad.
   unsigned Action;
 };
+
+}
 
 unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
                                          unsigned char* StartFunction,
@@ -321,7 +325,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
         I != E; ++I) {
     for (MachineBasicBlock::const_iterator MI = I->begin(), E = I->end();
           MI != E; ++MI) {
-      if (MI->getOpcode() != TargetInstrInfo::LABEL) {
+      if (!MI->isLabel()) {
         MayThrow |= MI->getDesc().isCall();
         continue;
       }
@@ -360,7 +364,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
 
       // Try to merge with the previous call-site.
       if (CallSites.size()) {
-        CallSiteEntry &Prev = CallSites[CallSites.size()-1];
+        CallSiteEntry &Prev = CallSites.back();
         if (Site.PadLabel == Prev.PadLabel && Site.Action == Prev.Action) {
           // Extend the range of the previous entry.
           Prev.EndLabel = Site.EndLabel;
@@ -936,7 +940,7 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
         I != E; ++I) {
     for (MachineBasicBlock::const_iterator MI = I->begin(), E = I->end();
           MI != E; ++MI) {
-      if (MI->getOpcode() != TargetInstrInfo::LABEL) {
+      if (!MI->isLabel()) {
         MayThrow |= MI->getDesc().isCall();
         continue;
       }
@@ -975,7 +979,7 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
 
       // Try to merge with the previous call-site.
       if (CallSites.size()) {
-        CallSiteEntry &Prev = CallSites[CallSites.size()-1];
+        CallSiteEntry &Prev = CallSites.back();
         if (Site.PadLabel == Prev.PadLabel && Site.Action == Prev.Action) {
           // Extend the range of the previous entry.
           Prev.EndLabel = Site.EndLabel;

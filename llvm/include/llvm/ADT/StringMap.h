@@ -130,10 +130,10 @@ class StringMapEntry : public StringMapEntryBase {
 public:
   ValueTy second;
 
-  explicit StringMapEntry(unsigned StrLen)
-    : StringMapEntryBase(StrLen), second() {}
-  StringMapEntry(unsigned StrLen, const ValueTy &V)
-    : StringMapEntryBase(StrLen), second(V) {}
+  explicit StringMapEntry(unsigned strLen)
+    : StringMapEntryBase(strLen), second() {}
+  StringMapEntry(unsigned strLen, const ValueTy &V)
+    : StringMapEntryBase(strLen), second(V) {}
 
   const ValueTy &getValue() const { return second; }
   ValueTy &getValue() { return second; }
@@ -153,13 +153,14 @@ public:
   static StringMapEntry *Create(const char *KeyStart, const char *KeyEnd,
                                 AllocatorTy &Allocator,
                                 InitType InitVal) {
-    unsigned KeyLength = KeyEnd-KeyStart;
+    unsigned KeyLength = static_cast<unsigned>(KeyEnd-KeyStart);
 
     // Okay, the item doesn't already exist, and 'Bucket' is the bucket to fill
     // in.  Allocate a new item with space for the string at the end and a null
     // terminator.
 
-    unsigned AllocSize = sizeof(StringMapEntry)+KeyLength+1;
+    unsigned AllocSize = static_cast<unsigned>(sizeof(StringMapEntry))+
+      KeyLength+1;
     unsigned Alignment = alignof<StringMapEntry>();
 
     StringMapEntry *NewItem =
@@ -236,9 +237,9 @@ class StringMap : public StringMapImpl {
   AllocatorTy Allocator;
   typedef StringMapEntry<ValueTy> MapEntryTy;
 public:
-  StringMap() : StringMapImpl(sizeof(MapEntryTy)) {}
+  StringMap() : StringMapImpl(static_cast<unsigned>(sizeof(MapEntryTy))) {}
   explicit StringMap(unsigned InitialSize)
-    : StringMapImpl(InitialSize, sizeof(MapEntryTy)) {}
+    : StringMapImpl(InitialSize, static_cast<unsigned>(sizeof(MapEntryTy))) {}
 
   AllocatorTy &getAllocator() { return Allocator; }
   const AllocatorTy &getAllocator() const { return Allocator; }
@@ -332,6 +333,20 @@ public:
     return true;
   }
 
+  // clear - Empties out the StringMap
+  void clear() {
+    if (empty()) return;
+    
+    // Zap all values, resetting the keys back to non-present (not tombstone),
+    // which is safe because we're removing all elements.
+    for (ItemBucket *I = TheTable, *E = TheTable+NumBuckets; I != E; ++I) {
+      if (I->Item && I->Item != getTombstoneVal()) {
+        static_cast<MapEntryTy*>(I->Item)->Destroy(Allocator);
+        I->Item = 0;
+      }
+    }
+  }
+
   /// GetOrCreateValue - Look up the specified key in the table.  If a value
   /// exists, return it.  Otherwise, default construct a value, insert it, and
   /// return.
@@ -376,11 +391,22 @@ public:
     V.Destroy(Allocator);
   }
 
+  bool erase(const char *Key) {
+    iterator I = find(Key);
+    if (I == end()) return false;
+    erase(I);
+    return true;
+  }
+
+  bool erase(const std::string &Key) {
+    iterator I = find(Key);
+    if (I == end()) return false;
+    erase(I);
+    return true;
+  }
+
   ~StringMap() {
-    for (ItemBucket *I = TheTable, *E = TheTable+NumBuckets; I != E; ++I) {
-      if (I->Item && I->Item != getTombstoneVal())
-        static_cast<MapEntryTy*>(I->Item)->Destroy(Allocator);
-    }
+    clear();
     free(TheTable);
   }
 private:

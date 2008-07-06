@@ -78,7 +78,7 @@ public:
   /// such, whenever a client has an instance of instruction info, it should
   /// always be able to get register info as well (through this method).
   ///
-  virtual const TargetRegisterInfo &getRegisterInfo() const { return RI; }
+  virtual const PPCRegisterInfo &getRegisterInfo() const { return RI; }
 
   /// getPointerRegClass - Return the register class to use to hold pointers.
   /// This is used for addressing modes.
@@ -96,7 +96,7 @@ public:
 
   // commuteInstruction - We can commute rlwimi instructions, but only if the
   // rotate amt is zero.  We also have to munge the immediates a bit.
-  virtual MachineInstr *commuteInstruction(MachineInstr *MI) const;
+  virtual MachineInstr *commuteInstruction(MachineInstr *MI, bool NewMI) const;
   
   virtual void insertNoop(MachineBasicBlock &MBB, 
                           MachineBasicBlock::iterator MI) const;

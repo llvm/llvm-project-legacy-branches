@@ -16,6 +16,9 @@
 // live ranges, and should be used with caution on platforms that are very 
 // sensitive to register pressure.
 //
+// Note that this pass does the value numbering itself, it does not use the
+// ValueNumbering analysis passes.
+//
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "gvnpre"
@@ -44,6 +47,8 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 //                         ValueTable Class
 //===----------------------------------------------------------------------===//
+
+namespace {
 
 /// This class holds the mapping between values and value numbers.  It is used
 /// as an efficient mechanism to determine the expression-wise equivalence of
@@ -123,6 +128,7 @@ struct Expression {
   }
 };
 
+}
 
 namespace {
   class VISIBILITY_HIDDEN ValueTable {
@@ -596,6 +602,8 @@ unsigned ValueTable::size() {
   return nextValueNumber;
 }
 
+namespace {
+
 //===----------------------------------------------------------------------===//
 //                       ValueNumberedSet Class
 //===----------------------------------------------------------------------===//
@@ -651,6 +659,8 @@ class ValueNumberedSet {
       numbers.clear();
     }
 };
+
+}
 
 //===----------------------------------------------------------------------===//
 //                         GVNPRE Pass
@@ -797,7 +807,7 @@ Value* GVNPRE::phi_translate(Value* V, BasicBlock* pred, BasicBlock* succ) {
     if (newOp1 != U->getOperand(0)) {
       Instruction* newVal = 0;
       if (CastInst* C = dyn_cast<CastInst>(U))
-        newVal = CastInst::create(C->getOpcode(),
+        newVal = CastInst::Create(C->getOpcode(),
                                   newOp1, C->getType(),
                                   C->getName()+".expr");
       
@@ -840,11 +850,11 @@ Value* GVNPRE::phi_translate(Value* V, BasicBlock* pred, BasicBlock* succ) {
     if (newOp1 != U->getOperand(0) || newOp2 != U->getOperand(1)) {
       Instruction* newVal = 0;
       if (BinaryOperator* BO = dyn_cast<BinaryOperator>(U))
-        newVal = BinaryOperator::create(BO->getOpcode(),
+        newVal = BinaryOperator::Create(BO->getOpcode(),
                                         newOp1, newOp2,
                                         BO->getName()+".expr");
       else if (CmpInst* C = dyn_cast<CmpInst>(U))
-        newVal = CmpInst::create(C->getOpcode(),
+        newVal = CmpInst::Create(C->getOpcode(),
                                  C->getPredicate(),
                                  newOp1, newOp2,
                                  C->getName()+".expr");
@@ -902,12 +912,13 @@ Value* GVNPRE::phi_translate(Value* V, BasicBlock* pred, BasicBlock* succ) {
       Instruction* newVal = 0;
       if (ShuffleVectorInst* S = dyn_cast<ShuffleVectorInst>(U))
         newVal = new ShuffleVectorInst(newOp1, newOp2, newOp3,
-                                       S->getName()+".expr");
+                                       S->getName() + ".expr");
       else if (InsertElementInst* I = dyn_cast<InsertElementInst>(U))
         newVal = InsertElementInst::Create(newOp1, newOp2, newOp3,
-                                           I->getName()+".expr");
+                                           I->getName() + ".expr");
       else if (SelectInst* I = dyn_cast<SelectInst>(U))
-        newVal = SelectInst::Create(newOp1, newOp2, newOp3, I->getName()+".expr");
+        newVal = SelectInst::Create(newOp1, newOp2, newOp3,
+                                    I->getName() + ".expr");
       
       uint32_t v = VN.lookup_or_add(newVal);
       
@@ -1657,11 +1668,11 @@ void GVNPRE::insertion_pre(Value* e, BasicBlock* BB,
       
       Value* newVal = 0;
       if (BinaryOperator* BO = dyn_cast<BinaryOperator>(U))
-        newVal = BinaryOperator::create(BO->getOpcode(), s1, s2,
+        newVal = BinaryOperator::Create(BO->getOpcode(), s1, s2,
                                         BO->getName()+".gvnpre",
                                         (*PI)->getTerminator());
       else if (CmpInst* C = dyn_cast<CmpInst>(U))
-        newVal = CmpInst::create(C->getOpcode(), C->getPredicate(), s1, s2,
+        newVal = CmpInst::Create(C->getOpcode(), C->getPredicate(), s1, s2,
                                  C->getName()+".gvnpre", 
                                  (*PI)->getTerminator());
       else if (ShuffleVectorInst* S = dyn_cast<ShuffleVectorInst>(U))
@@ -1677,7 +1688,7 @@ void GVNPRE::insertion_pre(Value* e, BasicBlock* BB,
         newVal = SelectInst::Create(s1, s2, s3, S->getName()+".gvnpre",
                                     (*PI)->getTerminator());
       else if (CastInst* C = dyn_cast<CastInst>(U))
-        newVal = CastInst::create(C->getOpcode(), s1, C->getType(),
+        newVal = CastInst::Create(C->getOpcode(), s1, C->getType(),
                                   C->getName()+".gvnpre", 
                                   (*PI)->getTerminator());
       else if (GetElementPtrInst* G = dyn_cast<GetElementPtrInst>(U))

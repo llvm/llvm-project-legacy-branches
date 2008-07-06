@@ -138,7 +138,8 @@ with another <tt>Value</tt></a> </li>
     <li><a href="#AbstractTypeUser">The AbstractTypeUser Class</a></li>
   </ul></li>
 
-  <li><a href="#SymbolTable">The <tt>ValueSymbolTable</tt> and <tt>TypeSymbolTable</tt> classes </a></li>
+  <li><a href="#SymbolTable">The <tt>ValueSymbolTable</tt> and <tt>TypeSymbolTable</tt> classes</a></li>
+  <li><a href="#UserLayout">The <tt>User</tt> and owned <tt>Use</tt> classes' memory layout</a></li>
   </ul></li>
 
   <li><a href="#coreclasses">The Core LLVM Class Hierarchy Reference</a>
@@ -173,7 +174,8 @@ with another <tt>Value</tt></a> </li>
 <div class="doc_author">    
   <p>Written by <a href="mailto:sabre@nondot.org">Chris Lattner</a>, 
                 <a href="mailto:dhurjati@cs.uiuc.edu">Dinakar Dhurjati</a>, 
-                <a href="mailto:jstanley@cs.uiuc.edu">Joel Stanley</a>, and
+                <a href="mailto:ggreif@gmail.com">Gabor Greif</a>, 
+                <a href="mailto:jstanley@cs.uiuc.edu">Joel Stanley</a> and
                 <a href="mailto:rspencer@x10sys.com">Reid Spencer</a></p>
 </div>
 
@@ -331,7 +333,7 @@ file (note that you very rarely have to include this file directly).</p>
   <dt><tt>cast&lt;&gt;</tt>: </dt>
 
   <dd><p>The <tt>cast&lt;&gt;</tt> operator is a "checked cast" operation. It
-  converts a pointer or reference from a base class to a derived cast, causing
+  converts a pointer or reference from a base class to a derived class, causing
   an assertion failure if it is not really an instance of the right type.  This
   should be used in cases where you have some information that makes you believe
   that something is of the right type.  An example of the <tt>isa&lt;&gt;</tt>
@@ -1484,8 +1486,8 @@ small example that shows how to dump all instructions in a function to the stand
 #include "<a href="/doxygen/InstIterator_8h-source.html">llvm/Support/InstIterator.h</a>"
 
 // <i>F is a pointer to a Function instance</i>
-for (inst_iterator i = inst_begin(F), e = inst_end(F); i != e; ++i)
-  llvm::cerr &lt;&lt; *i &lt;&lt; "\n";
+for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
+  llvm::cerr &lt;&lt; *I &lt;&lt; "\n";
 </pre>
 </div>
 
@@ -1497,7 +1499,10 @@ F, all you would need to do is something like:</p>
 <div class="doc_code">
 <pre>
 std::set&lt;Instruction*&gt; worklist;
-worklist.insert(inst_begin(F), inst_end(F));
+// or better yet, SmallPtrSet&lt;Instruction*, 64&gt; worklist;
+
+for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I)
+   worklist.insert(&amp;*I);
 </pre>
 </div>
 
@@ -2204,7 +2209,7 @@ names for types.</p>
 by most clients.  It should only be used when iteration over the symbol table 
 names themselves are required, which is very special purpose.  Note that not 
 all LLVM
-<a href="#Value">Value</a>s have names, and those without names (i.e. they have
+<tt><a href="#Value">Value</a></tt>s have names, and those without names (i.e. they have
 an empty name) do not exist in the symbol table.
 </p>
 
@@ -2220,7 +2225,230 @@ insert entries into the symbol table.</p>
 
 
 
-<!-- *********************************************************************** -->
+<!-- ======================================================================= -->
+<div class="doc_subsection">
+  <a name="UserLayout">The <tt>User</tt> and owned <tt>Use</tt> classes' memory layout</a>
+</div>
+
+<div class="doc_text">
+<p>The <tt><a href="http://llvm.org/doxygen/classllvm_1_1User.html">
+User</a></tt> class provides a base for expressing the ownership of <tt>User</tt>
+towards other <tt><a href="http://llvm.org/doxygen/classllvm_1_1Value.html">
+Value</a></tt>s. The <tt><a href="http://llvm.org/doxygen/classllvm_1_1Use.html">
+Use</a></tt> helper class is employed to do the bookkeeping and to facilitate <i>O(1)</i>
+addition and removal.</p>
+
+<!-- ______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="PATypeHolder">Interaction and relationship between <tt>User</tt> and <tt>Use</tt> objects</a>
+</div>
+
+<div class="doc_text">
+<p>
+A subclass of <tt>User</tt> can choose between incorporating its <tt>Use</tt> objects
+or refer to them out-of-line by means of a pointer. A mixed variant
+(some <tt>Use</tt>s inline others hung off) is impractical and breaks the invariant
+that the <tt>Use</tt> objects belonging to the same <tt>User</tt> form a contiguous array.
+</p>
+</div>
+
+<p>
+We have 2 different layouts in the <tt>User</tt> (sub)classes:
+<ul>
+<li><p>Layout a)
+The <tt>Use</tt> object(s) are inside (resp. at fixed offset) of the <tt>User</tt>
+object and there are a fixed number of them.</p>
+
+<li><p>Layout b)
+The <tt>Use</tt> object(s) are referenced by a pointer to an
+array from the <tt>User</tt> object and there may be a variable
+number of them.</p>
+</ul>
+<p>
+As of v2.4 each layout still possesses a direct pointer to the
+start of the array of <tt>Use</tt>s. Though not mandatory for layout a),
+we stick to this redundancy for the sake of simplicity.
+The <tt>User</tt> object also stores the number of <tt>Use</tt> objects it
+has. (Theoretically this information can also be calculated
+given the scheme presented below.)</p>
+<p>
+Special forms of allocation operators (<tt>operator new</tt>)
+enforce the following memory layouts:</p>
+
+<ul>
+<li><p>Layout a) is modelled by prepending the <tt>User</tt> object by the <tt>Use[]</tt> array.</p>
+
+<pre>
+...---.---.---.---.-------...
+  | P | P | P | P | User
+'''---'---'---'---'-------'''
+</pre>
+
+<li><p>Layout b) is modelled by pointing at the <tt>Use[]</tt> array.</p>
+<pre>
+.-------...
+| User
+'-------'''
+    |
+    v
+    .---.---.---.---...
+    | P | P | P | P |
+    '---'---'---'---'''
+</pre>
+</ul>
+<i>(In the above figures '<tt>P</tt>' stands for the <tt>Use**</tt> that
+    is stored in each <tt>Use</tt> object in the member <tt>Use::Prev</tt>)</i>
+
+<!-- ______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="PATypeHolder">The waymarking algorithm</a>
+</div>
+
+<div class="doc_text">
+<p>
+Since the <tt>Use</tt> objects are deprived of the direct (back)pointer to
+their <tt>User</tt> objects, there must be a fast and exact method to
+recover it. This is accomplished by the following scheme:</p>
+</div>
+
+A bit-encoding in the 2 LSBits (least significant bits) of the <tt>Use::Prev</tt> allows to find the
+start of the <tt>User</tt> object:
+<ul>
+<li><tt>00</tt> &mdash;&gt; binary digit 0</li>
+<li><tt>01</tt> &mdash;&gt; binary digit 1</li>
+<li><tt>10</tt> &mdash;&gt; stop and calculate (<tt>s</tt>)</li>
+<li><tt>11</tt> &mdash;&gt; full stop (<tt>S</tt>)</li>
+</ul>
+<p>
+Given a <tt>Use*</tt>, all we have to do is to walk till we get
+a stop and we either have a <tt>User</tt> immediately behind or
+we have to walk to the next stop picking up digits
+and calculating the offset:</p>
+<pre>
+.---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.---.----------------
+| 1 | s | 1 | 0 | 1 | 0 | s | 1 | 1 | 0 | s | 1 | 1 | s | 1 | S | User (or User*)
+'---'---'---'---'---'---'---'---'---'---'---'---'---'---'---'---'----------------
+    |+15                |+10            |+6         |+3     |+1
+    |                   |               |           |       |__>
+    |                   |               |           |__________>
+    |                   |               |______________________>
+    |                   |______________________________________>
+    |__________________________________________________________>
+</pre>
+<p>
+Only the significant number of bits need to be stored between the
+stops, so that the <i>worst case is 20 memory accesses</i> when there are
+1000 <tt>Use</tt> objects associated with a <tt>User</tt>.</p>
+
+<!-- ______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="PATypeHolder">Reference implementation</a>
+</div>
+
+<div class="doc_text">
+<p>
+The following literate Haskell fragment demonstrates the concept:</p>
+</div>
+
+<div class="doc_code">
+<pre>
+> import Test.QuickCheck
+> 
+> digits :: Int -> [Char] -> [Char]
+> digits 0 acc = '0' : acc
+> digits 1 acc = '1' : acc
+> digits n acc = digits (n `div` 2) $ digits (n `mod` 2) acc
+> 
+> dist :: Int -> [Char] -> [Char]
+> dist 0 [] = ['S']
+> dist 0 acc = acc
+> dist 1 acc = let r = dist 0 acc in 's' : digits (length r) r
+> dist n acc = dist (n - 1) $ dist 1 acc
+> 
+> takeLast n ss = reverse $ take n $ reverse ss
+> 
+> test = takeLast 40 $ dist 20 []
+> 
+</pre>
+</div>
+<p>
+Printing &lt;test&gt; gives: <tt>"1s100000s11010s10100s1111s1010s110s11s1S"</tt></p>
+<p>
+The reverse algorithm computes the length of the string just by examining
+a certain prefix:</p>
+
+<div class="doc_code">
+<pre>
+> pref :: [Char] -> Int
+> pref "S" = 1
+> pref ('s':'1':rest) = decode 2 1 rest
+> pref (_:rest) = 1 + pref rest
+> 
+> decode walk acc ('0':rest) = decode (walk + 1) (acc * 2) rest
+> decode walk acc ('1':rest) = decode (walk + 1) (acc * 2 + 1) rest
+> decode walk acc _ = walk + acc
+> 
+</pre>
+</div>
+<p>
+Now, as expected, printing &lt;pref test&gt; gives <tt>40</tt>.</p>
+<p>
+We can <i>quickCheck</i> this with following property:</p>
+
+<div class="doc_code">
+<pre>
+> testcase = dist 2000 []
+> testcaseLength = length testcase
+> 
+> identityProp n = n > 0 && n <= testcaseLength ==> length arr == pref arr
+>     where arr = takeLast n testcase
+> 
+</pre>
+</div>
+<p>
+As expected &lt;quickCheck identityProp&gt; gives:</p>
+
+<pre>
+*Main> quickCheck identityProp
+OK, passed 100 tests.
+</pre>
+<p>
+Let's be a bit more exhaustive:</p>
+
+<div class="doc_code">
+<pre>
+> 
+> deepCheck p = check (defaultConfig { configMaxTest = 500 }) p
+> 
+</pre>
+</div>
+<p>
+And here is the result of &lt;deepCheck identityProp&gt;:</p>
+
+<pre>
+*Main> deepCheck identityProp
+OK, passed 500 tests.
+</pre>
+
+<!-- ______________________________________________________________________ -->
+<div class="doc_subsubsection">
+  <a name="PATypeHolder">Tagging considerations</a>
+</div>
+
+<p>
+To maintain the invariant that the 2 LSBits of each <tt>Use**</tt> in <tt>Use</tt>
+never change after being set up, setters of <tt>Use::Prev</tt> must re-tag the
+new <tt>Use**</tt> on every modification. Accordingly getters must strip the
+tag bits.</p>
+<p>
+For layout b) instead of the <tt>User</tt> we find a pointer (<tt>User*</tt> with LSBit set).
+Following this pointer brings us to the <tt>User</tt>. A portable trick ensures
+that the first bytes of <tt>User</tt> (if interpreted as a pointer) never has
+the LSBit set.</p>
+
+</div>
+
+  <!-- *********************************************************************** -->
 <div class="doc_section">
   <a name="coreclasses">The Core LLVM Class Hierarchy Reference </a>
 </div>
@@ -3183,7 +3411,7 @@ arguments. An argument has a pointer to the parent Function.</p>
   <a href="http://jigsaw.w3.org/css-validator/check/referer"><img
   src="http://jigsaw.w3.org/css-validator/images/vcss" alt="Valid CSS!"></a>
   <a href="http://validator.w3.org/check/referer"><img
-  src="http://www.w3.org/Icons/valid-html401" alt="Valid HTML 4.01!" /></a>
+  src="http://www.w3.org/Icons/valid-html401" alt="Valid HTML 4.01 Strict"></a>
 
   <a href="mailto:dhurjati@cs.uiuc.edu">Dinakar Dhurjati</a> and
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>

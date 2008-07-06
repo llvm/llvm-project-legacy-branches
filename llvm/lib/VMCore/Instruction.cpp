@@ -68,6 +68,12 @@ void Instruction::eraseFromParent() {
   getParent()->getInstList().erase(this);
 }
 
+/// insertBefore - Insert an unlinked instructions into a basic block
+/// immediately before the specified instruction.
+void Instruction::insertBefore(Instruction *InsertPos) {
+  InsertPos->getParent()->getInstList().insert(InsertPos, this);
+}
+
 /// moveBefore - Unlink this instruction from its current basic block and
 /// insert it into the basic block that MovePos lives in, right before
 /// MovePos.
@@ -128,6 +134,8 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   // Other instructions...
   case ICmp:           return "icmp";
   case FCmp:           return "fcmp";
+  case VICmp:          return "vicmp";
+  case VFCmp:          return "vfcmp";
   case PHI:            return "phi";
   case Select:         return "select";
   case Call:           return "call";
@@ -139,6 +147,8 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case InsertElement:  return "insertelement";
   case ShuffleVector:  return "shufflevector";
   case GetResult:      return "getresult";
+  case ExtractValue:   return "extractvalue";
+  case InsertValue:    return "insertvalue";
 
   default: return "<Invalid operator> ";
   }
@@ -219,7 +229,23 @@ bool Instruction::isUsedOutsideOfBlock(const BasicBlock *BB) const {
   return false;    
 }
 
-
+/// mayReadFromMemory - Return true if this instruction may read memory.
+///
+bool Instruction::mayReadFromMemory() const {
+  switch (getOpcode()) {
+  default: return false;
+  case Instruction::Free:
+  case Instruction::VAArg:
+  case Instruction::Load:
+    return true;
+  case Instruction::Call:
+    return !cast<CallInst>(this)->doesNotAccessMemory();
+  case Instruction::Invoke:
+    return !cast<InvokeInst>(this)->doesNotAccessMemory();
+  case Instruction::Store:
+    return cast<StoreInst>(this)->isVolatile();
+  }
+}
 
 /// mayWriteToMemory - Return true if this instruction may modify memory.
 ///
@@ -227,12 +253,13 @@ bool Instruction::mayWriteToMemory() const {
   switch (getOpcode()) {
   default: return false;
   case Instruction::Free:
-  case Instruction::Invoke:
   case Instruction::Store:
   case Instruction::VAArg:
     return true;
   case Instruction::Call:
     return !cast<CallInst>(this)->onlyReadsMemory();
+  case Instruction::Invoke:
+    return !cast<InvokeInst>(this)->onlyReadsMemory();
   case Instruction::Load:
     return cast<LoadInst>(this)->isVolatile();
   }

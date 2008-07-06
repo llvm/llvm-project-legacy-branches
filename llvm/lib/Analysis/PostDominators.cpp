@@ -37,6 +37,15 @@ bool PostDominatorTree::runOnFunction(Function &F) {
   return false;
 }
 
+PostDominatorTree::~PostDominatorTree()
+{
+  delete DT;
+}
+
+FunctionPass* llvm::createPostDomTree() {
+  return new PostDominatorTree();
+}
+
 //===----------------------------------------------------------------------===//
 //  PostDominanceFrontier Implementation
 //===----------------------------------------------------------------------===//
@@ -80,5 +89,6 @@ PostDominanceFrontier::calculate(const PostDominatorTree &DT,
   return S;
 }
 
-// Ensure that this .cpp file gets linked when PostDominators.h is used.
-DEFINING_FILE_FOR(PostDominanceFrontier)
+FunctionPass* llvm::createPostDomFrontier() {
+  return new PostDominanceFrontier();
+}

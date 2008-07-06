@@ -152,8 +152,8 @@ namespace llvm {
       rmNearestTiesToAway
     };
 
-    /* Operation status.  opUnderflow or opOverflow are always returned
-       or-ed with opInexact.  */
+    // Operation status.  opUnderflow or opOverflow are always returned
+    // or-ed with opInexact.
     enum opStatus {
       opOK          = 0x00,
       opInvalidOp   = 0x01,
@@ -163,7 +163,7 @@ namespace llvm {
       opInexact     = 0x10
     };
 
-    /* Category of internally-represented number.  */
+    // Category of internally-represented number.
     enum fltCategory {
       fcInfinity,
       fcNaN,
@@ -171,7 +171,7 @@ namespace llvm {
       fcZero
     };
 
-    /* Constructors.  */
+    // Constructors.
     APFloat(const fltSemantics &, const char *);
     APFloat(const fltSemantics &, integerPart);
     APFloat(const fltSemantics &, fltCategory, bool negative);
@@ -180,6 +180,17 @@ namespace llvm {
     explicit APFloat(const APInt &, bool isIEEE = false);
     APFloat(const APFloat &);
     ~APFloat();
+
+    // Convenience "constructors"
+    static APFloat getZero(const fltSemantics &Sem, bool Negative = false) {
+      return APFloat(Sem, fcZero, Negative);
+    }
+    static APFloat getInf(const fltSemantics &Sem, bool Negative = false) {
+      return APFloat(Sem, fcInfinity, Negative);
+    }
+    static APFloat getNaN(const fltSemantics &Sem, bool Negative = false) {
+      return APFloat(Sem, fcNaN, Negative);
+    }
     
     /// Profile - Used to insert APFloat objects, or objects that contain
     ///  APFloat objects, into FoldingSets.
@@ -244,6 +255,7 @@ namespace llvm {
     bool isZero() const { return category == fcZero; }
     bool isNonZero() const { return category != fcZero; }
     bool isNaN() const { return category == fcNaN; }
+    bool isInfinity() const { return category == fcInfinity; }
     bool isNegative() const { return sign; }
     bool isPosZero() const { return isZero() && !isNegative(); }
     bool isNegZero() const { return isZero() && isNegative(); }

@@ -68,7 +68,7 @@ Attributes typeIncompatible(const Type *Ty);
 
 /// This turns an int alignment (a power of 2, normally) into the
 /// form used internally in ParameterAttributes.
-ParamAttr::Attributes inline constructAlignmentFromInt(unsigned i) {
+inline ParamAttr::Attributes constructAlignmentFromInt(unsigned i) {
   return (i << 16);
 }
 
@@ -124,7 +124,7 @@ public:
   template <typename Iter>
   static PAListPtr get(const Iter &I, const Iter &E) {
     if (I == E) return PAListPtr();  // Empty list.
-    return get(&*I, E-I);
+    return get(&*I, static_cast<unsigned>(E-I));
   }
 
   /// addAttr - Add the specified attribute at the specified index to this

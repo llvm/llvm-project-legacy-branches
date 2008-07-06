@@ -94,10 +94,11 @@ namespace {
 
     void DeleteTriviallyDeadInstructions(std::set<Instruction*> &Insts);
   };
-
-  char IndVarSimplify::ID = 0;
-  RegisterPass<IndVarSimplify> X("indvars", "Canonicalize Induction Variables");
 }
+
+char IndVarSimplify::ID = 0;
+static RegisterPass<IndVarSimplify>
+X("indvars", "Canonicalize Induction Variables");
 
 LoopPass *llvm::createIndVarSimplifyPass() {
   return new IndVarSimplify();
@@ -150,7 +151,7 @@ void IndVarSimplify::EliminatePointerRecurrence(PHINode *PN,
       NewPhi->addIncoming(Constant::getNullValue(NewPhi->getType()), Preheader);
 
       // Create the new add instruction.
-      Value *NewAdd = BinaryOperator::createAdd(NewPhi, AddedVal,
+      Value *NewAdd = BinaryOperator::CreateAdd(NewPhi, AddedVal,
                                                 GEPI->getName()+".rec", GEPI);
       NewPhi->addIncoming(NewAdd, PN->getIncomingBlock(BackedgeIdx));
 
@@ -318,8 +319,7 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L) {
     BlockToInsertInto = ExitBlocks[0];
   else
     BlockToInsertInto = Preheader;
-  BasicBlock::iterator InsertPt = BlockToInsertInto->begin();
-  while (isa<PHINode>(InsertPt)) ++InsertPt;
+  BasicBlock::iterator InsertPt = BlockToInsertInto->getFirstNonPHI();
 
   bool HasConstantItCount = isa<SCEVConstant>(SE->getIterationCount(L));
 
@@ -522,11 +522,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
   DOUT << "INDVARS: New CanIV: " << *IndVar;
 
   if (!isa<SCEVCouldNotCompute>(IterationCount)) {
-    if (IterationCount->getType()->getPrimitiveSizeInBits() <
-        LargestType->getPrimitiveSizeInBits())
-      IterationCount = SE->getZeroExtendExpr(IterationCount, LargestType);
-    else if (IterationCount->getType() != LargestType)
-      IterationCount = SE->getTruncateExpr(IterationCount, LargestType);
+    IterationCount = SE->getTruncateOrZeroExtend(IterationCount, LargestType);
     if (Instruction *DI = LinearFunctionTestReplace(L, IterationCount,Rewriter))
       DeadInsts.insert(DI);
   }
@@ -534,8 +530,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
   // Now that we have a canonical induction variable, we can rewrite any
   // recurrences in terms of the induction variable.  Start with the auxillary
   // induction variables, and recursively rewrite any of their uses.
-  BasicBlock::iterator InsertPt = Header->begin();
-  while (isa<PHINode>(InsertPt)) ++InsertPt;
+  BasicBlock::iterator InsertPt = Header->getFirstNonPHI();
 
   // If there were induction variables of other sizes, cast the primary
   // induction variable to the right size for them, avoiding the need for the
@@ -579,9 +574,10 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 #if 0
   // Now replace all derived expressions in the loop body with simpler
   // expressions.
-  for (unsigned i = 0, e = L->getBlocks().size(); i != e; ++i)
-    if (LI->getLoopFor(L->getBlocks()[i]) == L) {  // Not in a subloop...
-      BasicBlock *BB = L->getBlocks()[i];
+  for (LoopInfo::block_iterator I = L->block_begin(), E = L->block_end();
+       I != E; ++I) {
+    BasicBlock *BB = *I;
+    if (LI->getLoopFor(BB) == L) {  // Not in a subloop...
       for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
         if (I->getType()->isInteger() &&      // Is an integer instruction
             !I->use_empty() &&
@@ -598,6 +594,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
           }
         }
     }
+  }
 #endif
 
   DeleteTriviallyDeadInstructions(DeadInsts);

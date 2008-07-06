@@ -46,12 +46,14 @@ public:
   enum { 
     PHI = 0,
     INLINEASM = 1,
-    LABEL = 2,
-    DECLARE = 3,
-    EXTRACT_SUBREG = 4,
-    INSERT_SUBREG = 5,
-    IMPLICIT_DEF = 6,
-    SUBREG_TO_REG = 7
+    DBG_LABEL = 2,
+    EH_LABEL = 3,
+    GC_LABEL = 4,
+    DECLARE = 5,
+    EXTRACT_SUBREG = 6,
+    INSERT_SUBREG = 7,
+    IMPLICIT_DEF = 8,
+    SUBREG_TO_REG = 9
   };
 
   unsigned getNumOpcodes() const { return NumOpcodes; }
@@ -67,7 +69,7 @@ public:
   /// isTriviallyReMaterializable - Return true if the instruction is trivially
   /// rematerializable, meaning it has no side effects and requires no operands
   /// that aren't always available.
-  bool isTriviallyReMaterializable(MachineInstr *MI) const {
+  bool isTriviallyReMaterializable(const MachineInstr *MI) const {
     return MI->getDesc().isRematerializable() &&
            isReallyTriviallyReMaterializable(MI);
   }
@@ -81,7 +83,7 @@ protected:
   /// return false if the instruction has any side effects other than
   /// producing a value, or if it requres any address registers that are not
   /// always available.
-  virtual bool isReallyTriviallyReMaterializable(MachineInstr *MI) const {
+  virtual bool isReallyTriviallyReMaterializable(const MachineInstr *MI) const {
     return true;
   }
 
@@ -141,7 +143,7 @@ public:
   ///
   virtual MachineInstr *
   convertToThreeAddress(MachineFunction::iterator &MFI,
-                   MachineBasicBlock::iterator &MBBI, LiveVariables &LV) const {
+                   MachineBasicBlock::iterator &MBBI, LiveVariables *LV) const {
     return 0;
   }
 
@@ -155,7 +157,10 @@ public:
   /// return a new machine instruction.  If an instruction cannot commute, it
   /// can also return null.
   ///
-  virtual MachineInstr *commuteInstruction(MachineInstr *MI) const = 0;
+  /// If NewMI is true, then a new machine instruction must be created.
+  ///
+  virtual MachineInstr *commuteInstruction(MachineInstr *MI,
+                                           bool NewMI = false) const = 0;
 
   /// CommuteChangesDestination - Return true if commuting the specified
   /// instruction will also changes the destination operand. Also return the
@@ -411,7 +416,8 @@ protected:
   TargetInstrInfoImpl(const TargetInstrDesc *desc, unsigned NumOpcodes)
   : TargetInstrInfo(desc, NumOpcodes) {}
 public:
-  virtual MachineInstr *commuteInstruction(MachineInstr *MI) const;
+  virtual MachineInstr *commuteInstruction(MachineInstr *MI,
+                                           bool NewMI = false) const;
   virtual bool CommuteChangesDestination(MachineInstr *MI,
                                          unsigned &OpIdx) const;
   virtual bool PredicateInstruction(MachineInstr *MI,

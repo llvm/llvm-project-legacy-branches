@@ -195,10 +195,11 @@ namespace {
     // Induction variable's final loop exit value operand number in exit condition..
     unsigned ExitValueNum;
   };
-
-  char LoopIndexSplit::ID = 0;
-  RegisterPass<LoopIndexSplit> X ("loop-index-split", "Index Split Loops");
 }
+
+char LoopIndexSplit::ID = 0;
+static RegisterPass<LoopIndexSplit>
+X("loop-index-split", "Index Split Loops");
 
 LoopPass *llvm::createLoopIndexSplitPass() {
   return new LoopIndexSplit();
@@ -580,7 +581,7 @@ bool LoopIndexSplit::processOneIterationLoop(SplitInfo &SD) {
                                  ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                                  SD.SplitValue, ExitValue, "lisplit", 
                                  Terminator);
-  Instruction *NSplitCond = BinaryOperator::createAnd(C1, C2, "lisplit", 
+  Instruction *NSplitCond = BinaryOperator::CreateAnd(C1, C2, "lisplit", 
                                                       Terminator);
   SD.SplitCondition->replaceAllUsesWith(NSplitCond);
   SD.SplitCondition->eraseFromParent();
@@ -595,11 +596,27 @@ bool LoopIndexSplit::processOneIterationLoop(SplitInfo &SD) {
     if (isa<PHINode>(I) || I == LTerminator)
       continue;
 
-    if (I == IndVarIncrement) 
-      I->replaceAllUsesWith(ExitValue);
-    else
+    if (I == IndVarIncrement) {
+      // Replace induction variable increment if it is not used outside 
+      // the loop.
+      bool UsedOutsideLoop = false;
+      for (Value::use_iterator UI = I->use_begin(), E = I->use_end(); 
+           UI != E; ++UI) {
+        if (Instruction *Use = dyn_cast<Instruction>(UI)) 
+          if (!L->contains(Use->getParent())) {
+            UsedOutsideLoop = true;
+            break;
+          }
+      }
+      if (!UsedOutsideLoop) {
+        I->replaceAllUsesWith(ExitValue);
+        I->eraseFromParent();
+      }
+    }
+    else {
       I->replaceAllUsesWith(UndefValue::get(I->getType()));
-    I->eraseFromParent();
+      I->eraseFromParent();
+    }
   }
 
   LPM->deleteLoopFromQueue(L);
@@ -768,7 +785,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
     //
     if (ExitCondition->getPredicate() == ICmpInst::ICMP_SLT
         || ExitCondition->getPredicate() == ICmpInst::ICMP_ULT) {
-      Value *A = BinaryOperator::createAdd(NV, ConstantInt::get(Ty, 1, Sign),
+      Value *A = BinaryOperator::CreateAdd(NV, ConstantInt::get(Ty, 1, Sign),
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               A, UB,"lsplit,c", PHTerminator);
@@ -820,7 +837,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
     //
     else if (ExitCondition->getPredicate() == ICmpInst::ICMP_SLE
              || ExitCondition->getPredicate() == ICmpInst::ICMP_ULE) {
-      Value *S = BinaryOperator::createSub(NV, ConstantInt::get(Ty, 1, Sign),
+      Value *S = BinaryOperator::CreateSub(NV, ConstantInt::get(Ty, 1, Sign),
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               S, UB, "lsplit.c", PHTerminator);
@@ -856,7 +873,7 @@ void LoopIndexSplit::updateLoopBounds(ICmpInst *CI) {
     //   LOOP_BODY
     //
     {
-      Value *A = BinaryOperator::createAdd(NV, ConstantInt::get(Ty, 1, Sign),
+      Value *A = BinaryOperator::CreateAdd(NV, ConstantInt::get(Ty, 1, Sign),
                                            "lsplit.add", PHTerminator);
       Value *C = new ICmpInst(Sign ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                               A, StartValue, "lsplit.c", PHTerminator);
@@ -1124,6 +1141,11 @@ bool LoopIndexSplit::safeSplitCondition(SplitInfo &SD) {
   BasicBlock *Succ0 = SplitTerminator->getSuccessor(0);
   BasicBlock *Succ1 = SplitTerminator->getSuccessor(1);
 
+  // If split block does not dominate the latch then this is not a diamond.
+  // Such loop may not benefit from index split.
+  if (!DT->dominates(SplitCondBlock, Latch))
+    return false;
+
   // Finally this split condition is safe only if merge point for
   // split condition branch is loop latch. This check along with previous
   // check, to ensure that exit condition is in either loop latch or header,
@@ -1207,7 +1229,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
           //       A;
           // for (i = max(LB, BSV); i < UB; ++i) 
           //       B;
-          BSV = BinaryOperator::createAdd(SD.SplitValue,
+          BSV = BinaryOperator::CreateAdd(SD.SplitValue,
                                           ConstantInt::get(Ty, 1, Sign),
                                           "lsplit.add", PHTerminator);
           AEV = BSV;
@@ -1238,7 +1260,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
           //       B;
           // for (i = max(LB, BSV); i < UB; ++i) 
           //       A;
-          BSV = BinaryOperator::createAdd(SD.SplitValue,
+          BSV = BinaryOperator::CreateAdd(SD.SplitValue,
                                           ConstantInt::get(Ty, 1, Sign),
                                           "lsplit.add", PHTerminator);
           AEV = BSV;
@@ -1266,7 +1288,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
         //       A;
         // for (i = max(LB, BSV); i <= UB; ++i) 
         //       B;
-        AEV = BinaryOperator::createSub(SD.SplitValue,
+        AEV = BinaryOperator::CreateSub(SD.SplitValue,
                                         ConstantInt::get(Ty, 1, Sign),
                                         "lsplit.sub", PHTerminator);
         break;
@@ -1282,7 +1304,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
         //       A;
         // for (i = max(LB, BSV); i <= UB; ++i) 
         //       B;
-        BSV = BinaryOperator::createAdd(SD.SplitValue,
+        BSV = BinaryOperator::CreateAdd(SD.SplitValue,
                                         ConstantInt::get(Ty, 1, Sign),
                                         "lsplit.add", PHTerminator);
         break;
@@ -1298,7 +1320,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
         //      B;
         // for (i = max(LB, BSV); i <= UB; ++i)
         //      A;
-        BSV = BinaryOperator::createAdd(SD.SplitValue,
+        BSV = BinaryOperator::CreateAdd(SD.SplitValue,
                                         ConstantInt::get(Ty, 1, Sign),
                                         "lsplit.add", PHTerminator);
         break;
@@ -1315,7 +1337,7 @@ void LoopIndexSplit::calculateLoopBounds(SplitInfo &SD) {
         //      B;
         // for (i = max(LB, BSV); i <= UB; ++i)
         //      A;
-        AEV = BinaryOperator::createSub(SD.SplitValue,
+        AEV = BinaryOperator::CreateSub(SD.SplitValue,
                                         ConstantInt::get(Ty, 1, Sign),
                                         "lsplit.sub", PHTerminator);
         break;
@@ -1377,7 +1399,7 @@ bool LoopIndexSplit::splitLoop(SplitInfo &SD) {
 
   BasicBlock *SplitCondBlock = SD.SplitCondition->getParent();
   
-  // Unable to handle triange loops at the moment.
+  // Unable to handle triangle loops at the moment.
   // In triangle loop, split condition is in header and one of the
   // the split destination is loop latch. If split condition is EQ
   // then such loops are already handle in processOneIterationLoop().

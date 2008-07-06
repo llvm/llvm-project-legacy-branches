@@ -67,7 +67,7 @@ public:
   void dump() const { Type::dump(); }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const DerivedType *T) { return true; }
+  static inline bool classof(const DerivedType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->isDerivedType();
   }
@@ -127,7 +127,7 @@ public:
   bool isPowerOf2ByteWidth() const;
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const IntegerType *T) { return true; }
+  static inline bool classof(const IntegerType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == IntegerTyID;
   }
@@ -154,6 +154,10 @@ public:
     const std::vector<const Type*> &Params, ///< The types of the parameters
     bool isVarArg  ///< Whether this is a variable argument length function
   );
+  
+  /// isValidReturnType - Return true if the specified type is valid as a return
+  /// type.
+  static bool isValidReturnType(const Type *RetTy);
 
   inline bool isVarArg() const { return isVarArgs; }
   inline const Type *getReturnType() const { return ContainedTys[0]; }
@@ -175,7 +179,7 @@ public:
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const FunctionType *T) { return true; }
+  static inline bool classof(const FunctionType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == FunctionTyID;
   }
@@ -193,10 +197,12 @@ public:
   /// the element.
   ///
   virtual const Type *getTypeAtIndex(const Value *V) const = 0;
+  virtual const Type *getTypeAtIndex(unsigned Idx) const = 0;
   virtual bool indexValid(const Value *V) const = 0;
+  virtual bool indexValid(unsigned Idx) const = 0;
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const CompositeType *T) { return true; }
+  static inline bool classof(const CompositeType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID ||
            T->getTypeID() == StructTyID ||
@@ -241,15 +247,17 @@ public:
   /// getTypeAtIndex - Given an index value into the type, return the type of
   /// the element.  For a structure type, this must be a constant value...
   ///
-  virtual const Type *getTypeAtIndex(const Value *V) const ;
+  virtual const Type *getTypeAtIndex(const Value *V) const;
+  virtual const Type *getTypeAtIndex(unsigned Idx) const;
   virtual bool indexValid(const Value *V) const;
+  virtual bool indexValid(unsigned Idx) const;
 
   // Implement the AbstractTypeUser interface.
   virtual void refineAbstractType(const DerivedType *OldTy, const Type *NewTy);
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const StructType *T) { return true; }
+  static inline bool classof(const StructType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == StructTyID;
   }
@@ -284,16 +292,22 @@ public:
   inline const Type *getElementType() const { return ContainedTys[0]; }
 
   virtual bool indexValid(const Value *V) const;
+  virtual bool indexValid(unsigned) const {
+    return true;
+  }
 
   /// getTypeAtIndex - Given an index value into the type, return the type of
   /// the element.  For sequential types, there is only one subtype...
   ///
-  virtual const Type *getTypeAtIndex(const Value *V) const {
+  virtual const Type *getTypeAtIndex(const Value *) const {
+    return ContainedTys[0];
+  }
+  virtual const Type *getTypeAtIndex(unsigned) const {
     return ContainedTys[0];
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const SequentialType *T) { return true; }
+  static inline bool classof(const SequentialType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID ||
            T->getTypeID() == PointerTyID ||
@@ -324,7 +338,7 @@ public:
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const ArrayType *T) { return true; }
+  static inline bool classof(const ArrayType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == ArrayTyID;
   }
@@ -345,6 +359,16 @@ public:
   ///
   static VectorType *get(const Type *ElementType, unsigned NumElements);
 
+  /// VectorType::getInteger - This static method gets a VectorType with the
+  /// same number of elements as the input type, and the element type is an
+  /// integer type of the same width as the input element type.
+  ///
+  static VectorType *getInteger(const VectorType *VTy) {
+    unsigned EltBits = VTy->getElementType()->getPrimitiveSizeInBits();
+    const Type *EltTy = IntegerType::get(EltBits);
+    return VectorType::get(EltTy, VTy->getNumElements());
+  }
+
   /// @brief Return the number of elements in the Vector type.
   inline unsigned getNumElements() const { return NumElements; }
 
@@ -358,7 +382,7 @@ public:
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VectorType *T) { return true; }
+  static inline bool classof(const VectorType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == VectorTyID;
   }
@@ -393,7 +417,7 @@ public:
   virtual void typeBecameConcrete(const DerivedType *AbsTy);
 
   // Implement support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const PointerType *T) { return true; }
+  static inline bool classof(const PointerType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == PointerTyID;
   }
@@ -414,7 +438,7 @@ public:
   }
 
   // Implement support for type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const OpaqueType *T) { return true; }
+  static inline bool classof(const OpaqueType *) { return true; }
   static inline bool classof(const Type *T) {
     return T->getTypeID() == OpaqueTyID;
   }

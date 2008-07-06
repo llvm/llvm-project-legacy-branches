@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Constant.h"
+#include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/InstrTypes.h"
 #include "llvm/Instructions.h"
@@ -92,6 +93,17 @@ bool Value::hasNUsesOrMore(unsigned N) const {
   return true;
 }
 
+/// isUsedInBasicBlock - Return true if this value is used in the specified
+/// basic block.
+bool Value::isUsedInBasicBlock(BasicBlock *BB) const {
+  for (use_const_iterator I = use_begin(), E = use_end(); I != E; ++I) {
+    const Instruction *User = dyn_cast<Instruction>(*I);
+    if (User && User->getParent() == BB)
+      return true;
+  }
+  return false;
+}
+
 
 /// getNumUses - This method computes the number of uses of this Value.  This
 /// is a linear time operation.  Use hasOneUse or hasNUses to check for specific
@@ -134,6 +146,13 @@ const char *Value::getNameStart() const {
 /// characters embedded into them.
 unsigned Value::getNameLen() const {
   return Name ? Name->getKeyLength() : 0;
+}
+
+/// isName - Return true if this value has the name specified by the provided
+/// nul terminated string.
+bool Value::isName(const char *N) const {
+  unsigned InLen = strlen(N);
+  return InLen == getNameLen() && memcmp(getNameStart(), N, InLen) == 0;
 }
 
 
@@ -245,7 +264,7 @@ void Value::takeName(Value *V) {
   // Get V's ST, this should always succed, because V has a name.
   ValueSymbolTable *VST;
   bool Failure = getSymTab(V, VST);
-  assert(!Failure && "V has a name, so it should have a ST!");
+  assert(!Failure && "V has a name, so it should have a ST!"); Failure=Failure;
   
   // If these values are both in the same symtab, we can do this very fast.
   // This works even if both values have no symtab yet.
@@ -302,6 +321,30 @@ void Value::replaceAllUsesWith(Value *New) {
   uncheckedReplaceAllUsesWith(New);
 }
 
+Value *Value::stripPointerCasts() {
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(this)) {
+    if (CE->getOpcode() == Instruction::BitCast) {
+      if (isa<PointerType>(CE->getOperand(0)->getType()))
+        return CE->getOperand(0)->stripPointerCasts();
+    } else if (CE->getOpcode() == Instruction::GetElementPtr) {
+      for (unsigned i = 1, e = CE->getNumOperands(); i != e; ++i)
+        if (!CE->getOperand(i)->isNullValue())
+          return this;
+      return CE->getOperand(0)->stripPointerCasts();
+    }
+    return this;
+  }
+
+  if (BitCastInst *CI = dyn_cast<BitCastInst>(this)) {
+    if (isa<PointerType>(CI->getOperand(0)->getType()))
+      return CI->getOperand(0)->stripPointerCasts();
+  } else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(this)) {
+    if (GEP->hasAllZeroIndices())
+      return GEP->getOperand(0)->stripPointerCasts();
+  }
+  return this;
+}
+
 //===----------------------------------------------------------------------===//
 //                                 User Class
 //===----------------------------------------------------------------------===//
@@ -324,3 +367,21 @@ void User::replaceUsesOfWith(Value *From, Value *To) {
     }
 }
 
+void *User::operator new(size_t s, unsigned Us) {
+  void *Storage = ::operator new(s + sizeof(Use) * Us);
+  Use *Start = static_cast<Use*>(Storage);
+  Use *End = Start + Us;
+  User *Obj = reinterpret_cast<User*>(End);
+  Obj->OperandList = Start;
+  Obj->NumOperands = Us;
+  Use::initTags(Start, End);
+  return Obj;
+}
+
+void User::operator delete(void *Usr) {
+  User *Start = static_cast<User*>(Usr);
+  Use *Storage = static_cast<Use*>(Usr) - Start->NumOperands;
+  ::operator delete(Storage == Start->OperandList
+                    ? Storage
+                    : Usr);
+}

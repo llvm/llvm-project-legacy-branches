@@ -20,6 +20,7 @@
 #include "llvm/TypeSymbolTable.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/CallSite.h"
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -89,18 +90,13 @@ LLVMTypeKind LLVMGetTypeKind(LLVMTypeRef Ty) {
   return static_cast<LLVMTypeKind>(unwrap(Ty)->getTypeID());
 }
 
-void LLVMRefineAbstractType(LLVMTypeRef AbstractType, LLVMTypeRef ConcreteType){
-  DerivedType *Ty = unwrap<DerivedType>(AbstractType);
-  Ty->refineAbstractTypeTo(unwrap(ConcreteType));
-}
-
 /*--.. Operations on integer types .........................................--*/
 
-LLVMTypeRef LLVMInt1Type()  { return (LLVMTypeRef) Type::Int1Ty;  }
-LLVMTypeRef LLVMInt8Type()  { return (LLVMTypeRef) Type::Int8Ty;  }
-LLVMTypeRef LLVMInt16Type() { return (LLVMTypeRef) Type::Int16Ty; }
-LLVMTypeRef LLVMInt32Type() { return (LLVMTypeRef) Type::Int32Ty; }
-LLVMTypeRef LLVMInt64Type() { return (LLVMTypeRef) Type::Int64Ty; }
+LLVMTypeRef LLVMInt1Type(void)  { return (LLVMTypeRef) Type::Int1Ty;  }
+LLVMTypeRef LLVMInt8Type(void)  { return (LLVMTypeRef) Type::Int8Ty;  }
+LLVMTypeRef LLVMInt16Type(void) { return (LLVMTypeRef) Type::Int16Ty; }
+LLVMTypeRef LLVMInt32Type(void) { return (LLVMTypeRef) Type::Int32Ty; }
+LLVMTypeRef LLVMInt64Type(void) { return (LLVMTypeRef) Type::Int64Ty; }
 
 LLVMTypeRef LLVMIntType(unsigned NumBits) {
   return wrap(IntegerType::get(NumBits));
@@ -112,11 +108,11 @@ unsigned LLVMGetIntTypeWidth(LLVMTypeRef IntegerTy) {
 
 /*--.. Operations on real types ............................................--*/
 
-LLVMTypeRef LLVMFloatType()    { return (LLVMTypeRef) Type::FloatTy;     }
-LLVMTypeRef LLVMDoubleType()   { return (LLVMTypeRef) Type::DoubleTy;    }
-LLVMTypeRef LLVMX86FP80Type()  { return (LLVMTypeRef) Type::X86_FP80Ty;  }
-LLVMTypeRef LLVMFP128Type()    { return (LLVMTypeRef) Type::FP128Ty;     }
-LLVMTypeRef LLVMPPCFP128Type() { return (LLVMTypeRef) Type::PPC_FP128Ty; }
+LLVMTypeRef LLVMFloatType(void)    { return (LLVMTypeRef) Type::FloatTy;     }
+LLVMTypeRef LLVMDoubleType(void)   { return (LLVMTypeRef) Type::DoubleTy;    }
+LLVMTypeRef LLVMX86FP80Type(void)  { return (LLVMTypeRef) Type::X86_FP80Ty;  }
+LLVMTypeRef LLVMFP128Type(void)    { return (LLVMTypeRef) Type::FP128Ty;     }
+LLVMTypeRef LLVMPPCFP128Type(void) { return (LLVMTypeRef) Type::PPC_FP128Ty; }
 
 /*--.. Operations on function types ........................................--*/
 
@@ -208,10 +204,10 @@ unsigned LLVMGetVectorSize(LLVMTypeRef VectorTy) {
 
 /*--.. Operations on other types ...........................................--*/
 
-LLVMTypeRef LLVMVoidType()  { return (LLVMTypeRef) Type::VoidTy;  }
-LLVMTypeRef LLVMLabelType() { return (LLVMTypeRef) Type::LabelTy; }
+LLVMTypeRef LLVMVoidType(void)  { return (LLVMTypeRef) Type::VoidTy;  }
+LLVMTypeRef LLVMLabelType(void) { return (LLVMTypeRef) Type::LabelTy; }
 
-LLVMTypeRef LLVMOpaqueType() {
+LLVMTypeRef LLVMOpaqueType(void) {
   return wrap(llvm::OpaqueType::get());
 }
 
@@ -745,7 +741,7 @@ void LLVMSetCollector(LLVMValueRef Fn, const char *Coll) {
 unsigned LLVMCountParams(LLVMValueRef FnRef) {
   // This function is strictly redundant to
   //   LLVMCountParamTypes(LLVMGetElementType(LLVMTypeOf(FnRef)))
-  return unwrap<Function>(FnRef)->getArgumentList().size();
+  return unwrap<Function>(FnRef)->arg_size();
 }
 
 void LLVMGetParams(LLVMValueRef FnRef, LLVMValueRef *ParamRefs) {
@@ -798,6 +794,19 @@ LLVMValueRef LLVMGetPreviousParam(LLVMValueRef Arg) {
   return wrap(--I);
 }
 
+void LLVMAddParamAttr(LLVMValueRef Arg, LLVMParamAttr PA) {
+  unwrap<Argument>(Arg)->addAttr(PA);
+}
+
+void LLVMRemoveParamAttr(LLVMValueRef Arg, LLVMParamAttr PA) {
+  unwrap<Argument>(Arg)->removeAttr(PA);
+}
+
+void LLVMSetParamAlignment(LLVMValueRef Arg, unsigned align) {
+  unwrap<Argument>(Arg)->addAttr(
+          ParamAttr::constructAlignmentFromInt(align));
+}
+
 /*--.. Operations on basic blocks ..........................................--*/
 
 LLVMValueRef LLVMBasicBlockAsValue(LLVMBasicBlockRef BB) {
@@ -817,7 +826,7 @@ LLVMValueRef LLVMGetBasicBlockParent(LLVMBasicBlockRef BB) {
 }
 
 unsigned LLVMCountBasicBlocks(LLVMValueRef FnRef) {
-  return unwrap<Function>(FnRef)->getBasicBlockList().size();
+  return unwrap<Function>(FnRef)->size();
 }
 
 void LLVMGetBasicBlocks(LLVMValueRef FnRef, LLVMBasicBlockRef *BasicBlocksRefs){
@@ -936,6 +945,28 @@ void LLVMSetInstructionCallConv(LLVMValueRef Instr, unsigned CC) {
   assert(0 && "LLVMSetInstructionCallConv applies only to call and invoke!");
 }
 
+void LLVMAddInstrParamAttr(LLVMValueRef Instr, unsigned index, 
+                           LLVMParamAttr PA) {
+  CallSite Call = CallSite(unwrap<Instruction>(Instr));
+  Call.setParamAttrs(
+    Call.getParamAttrs().addAttr(index, PA));
+}
+
+void LLVMRemoveInstrParamAttr(LLVMValueRef Instr, unsigned index, 
+                              LLVMParamAttr PA) {
+  CallSite Call = CallSite(unwrap<Instruction>(Instr));
+  Call.setParamAttrs(
+    Call.getParamAttrs().removeAttr(index, PA));
+}
+
+void LLVMSetInstrParamAlignment(LLVMValueRef Instr, unsigned index, 
+                                unsigned align) {
+  CallSite Call = CallSite(unwrap<Instruction>(Instr));
+  Call.setParamAttrs(
+    Call.getParamAttrs().addAttr(index, 
+        ParamAttr::constructAlignmentFromInt(align)));
+}
+
 /*--.. Operations on phi nodes .............................................--*/
 
 void LLVMAddIncoming(LLVMValueRef PhiNode, LLVMValueRef *IncomingValues,
@@ -960,7 +991,7 @@ LLVMBasicBlockRef LLVMGetIncomingBlock(LLVMValueRef PhiNode, unsigned Index) {
 
 /*===-- Instruction builders ----------------------------------------------===*/
 
-LLVMBuilderRef LLVMCreateBuilder() {
+LLVMBuilderRef LLVMCreateBuilder(void) {
   return wrap(new IRBuilder());
 }
 

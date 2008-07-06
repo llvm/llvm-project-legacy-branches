@@ -37,12 +37,11 @@ using namespace llvm;
 STATISTIC(NumStores, "Number of stores added");
 STATISTIC(NumLoads , "Number of loads added");
 
+static RegisterRegAlloc
+  localRegAlloc("local", "  local register allocator",
+                createLocalRegisterAllocator);
+
 namespace {
-  static RegisterRegAlloc
-    localRegAlloc("local", "  local register allocator",
-                  createLocalRegisterAllocator);
-
-
   class VISIBILITY_HIDDEN RALocal : public MachineFunctionPass {
   public:
     static char ID;
@@ -550,10 +549,10 @@ void RALocal::AllocateBasicBlock(MachineBasicBlock &MBB) {
 
   // If this is the first basic block in the machine function, add live-in
   // registers as active.
-  if (&MBB == &*MF->begin()) {
-    for (MachineRegisterInfo::livein_iterator I=MF->getRegInfo().livein_begin(),
-         E = MF->getRegInfo().livein_end(); I != E; ++I) {
-      unsigned Reg = I->first;
+  if (&MBB == &*MF->begin() || MBB.isLandingPad()) {
+    for (MachineBasicBlock::livein_iterator I = MBB.livein_begin(),
+         E = MBB.livein_end(); I != E; ++I) {
+      unsigned Reg = *I;
       MF->getRegInfo().setPhysRegUsed(Reg);
       PhysRegsUsed[Reg] = 0;            // It is free and reserved now
       AddToPhysRegsUseOrder(Reg); 

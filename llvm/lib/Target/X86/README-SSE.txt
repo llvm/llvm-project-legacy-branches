@@ -382,106 +382,6 @@ elements are fixed zeros.
 
 //===---------------------------------------------------------------------===//
 
-For this:
-
-#include <emmintrin.h>
-void test(__m128d *r, __m128d *A, double B) {
-  *r = _mm_loadl_pd(*A, &B);
-}
-
-We generates:
-
-	subl $12, %esp
-	movsd 24(%esp), %xmm0
-	movsd %xmm0, (%esp)
-	movl 20(%esp), %eax
-	movapd (%eax), %xmm0
-	movlpd (%esp), %xmm0
-	movl 16(%esp), %eax
-	movapd %xmm0, (%eax)
-	addl $12, %esp
-	ret
-
-icc generates:
-
-        movl      4(%esp), %edx                                 #3.6
-        movl      8(%esp), %eax                                 #3.6
-        movapd    (%eax), %xmm0                                 #4.22
-        movlpd    12(%esp), %xmm0                               #4.8
-        movapd    %xmm0, (%edx)                                 #4.3
-        ret                                                     #5.1
-
-So icc is smart enough to know that B is in memory so it doesn't load it and
-store it back to stack.
-
-This should be fixed by eliminating the llvm.x86.sse2.loadl.pd intrinsic, 
-lowering it to a load+insertelement instead.  Already match the load+shuffle 
-as movlpd, so this should be easy.  We already get optimal code for:
-
-define void @test2(<2 x double>* %r, <2 x double>* %A, double %B) {
-entry:
-	%tmp2 = load <2 x double>* %A, align 16
-	%tmp8 = insertelement <2 x double> %tmp2, double %B, i32 0
-	store <2 x double> %tmp8, <2 x double>* %r, align 16
-	ret void
-}
-
-//===---------------------------------------------------------------------===//
-
-Consider (PR2108):
-
-#include <xmmintrin.h>
-__m128i doload64(unsigned long long x) { return _mm_loadl_epi64(&x);}
-__m128i doload64_2(unsigned long long *x) { return _mm_loadl_epi64(x);}
-
-These are very similar routines, but we generate significantly worse code for
-the first one on x86-32:
-
-_doload64:
-	subl	$12, %esp
-	movl	20(%esp), %eax
-	movl	%eax, 4(%esp)
-	movl	16(%esp), %eax
-	movl	%eax, (%esp)
-	movsd	(%esp), %xmm0
-	addl	$12, %esp
-	ret
-_doload64_2:
-	movl	4(%esp), %eax
-	movsd	(%eax), %xmm0
-	ret
-
-The problem is that the argument lowering logic splits the i64 argument into
-2x i32 loads early, the f64 insert doesn't match.  Here's a reduced testcase:
-
-define fastcc double @doload64(i64 %x) nounwind  {
-entry:
-	%tmp717 = bitcast i64 %x to double		; <double> [#uses=1]
-	ret double %tmp717
-}
-
-compiles to:
-
-_doload64:
-	subl	$12, %esp
-	movl	20(%esp), %eax
-	movl	%eax, 4(%esp)
-	movl	16(%esp), %eax
-	movl	%eax, (%esp)
-	movsd	(%esp), %xmm0
-	addl	$12, %esp
-	ret
-
-instead of movsd from the stack.  This is actually not too bad to implement. The
-best way to do this is to implement a dag combine that turns 
-bitconvert(build_pair(load a, load b)) into one load of the right type.  The
-only trick to this is writing the predicate that determines that a/b are at the
-right offset from each other.  For the enterprising hacker, InferAlignment is a
-helpful place to start poking if interested.
-
-
-//===---------------------------------------------------------------------===//
-
 __m128d test1( __m128d A, __m128d B) {
   return _mm_shuffle_pd(A, B, 0x3);
 }
@@ -556,75 +456,6 @@ to loads from constant pool.
 Floating point max / min are commutable when -enable-unsafe-fp-path is
 specified. We should turn int_x86_sse_max_ss and X86ISD::FMIN etc. into other
 nodes which are selected to max / min instructions that are marked commutable.
-
-//===---------------------------------------------------------------------===//
-
-We should compile this:
-#include <xmmintrin.h>
-typedef union {
-  int i[4];
-  float f[4];
-  __m128 v;
-} vector4_t;
-void swizzle (const void *a, vector4_t * b, vector4_t * c) {
-  b->v = _mm_loadl_pi (b->v, (__m64 *) a);
-  c->v = _mm_loadl_pi (c->v, ((__m64 *) a) + 1);
-}
-
-to:
-
-_swizzle:
-        movl    4(%esp), %eax
-        movl    8(%esp), %edx
-        movl    12(%esp), %ecx
-        movlps  (%eax), %xmm0
-        movlps  %xmm0, (%edx)
-        movlps  8(%eax), %xmm0
-        movlps  %xmm0, (%ecx)
-        ret
-
-not:
-
-swizzle:
-        movl 8(%esp), %eax
-        movaps (%eax), %xmm0
-        movl 4(%esp), %ecx
-        movlps (%ecx), %xmm0
-        movaps %xmm0, (%eax)
-        movl 12(%esp), %eax
-        movaps (%eax), %xmm0
-        movlps 8(%ecx), %xmm0
-        movaps %xmm0, (%eax)
-        ret
-
-//===---------------------------------------------------------------------===//
-
-These functions should produce the same code:
-
-#include <emmintrin.h>
-
-typedef long long __m128i __attribute__ ((__vector_size__ (16)));
-
-int foo(__m128i* val) {
-  return __builtin_ia32_vec_ext_v4si(*val, 1);
-}
-int bar(__m128i* val) {
-  union vs {
-    __m128i *_v;
-    int* _s;
-  } v = {val};
-  return v._s[1];
-}
-
-We currently produce (with -m64):
-
-_foo:
-        pshufd $1, (%rdi), %xmm0
-        movd %xmm0, %eax
-        ret
-_bar:
-        movl 4(%rdi), %eax
-        ret
 
 //===---------------------------------------------------------------------===//
 
@@ -811,27 +642,200 @@ or iseling it.
 
 //===---------------------------------------------------------------------===//
 
-Take the following code:
+LLVM currently generates stack realignment code, when it is not necessary
+needed. The problem is that we need to know about stack alignment too early,
+before RA runs.
 
-#include <xmmintrin.h>
-__m128i doload64(short x) {return _mm_set_epi16(x,x,x,x,x,x,x,x);}
+At that point we don't know, whether there will be vector spill, or not.
+Stack realignment logic is overly conservative here, but otherwise we can
+produce unaligned loads/stores.
 
-LLVM currently generates the following on x86:
-doload64:
-        movzwl  4(%esp), %eax
-        movd    %eax, %xmm0
-        punpcklwd       %xmm0, %xmm0
-        pshufd  $0, %xmm0, %xmm0
+Fixing this will require some huge RA changes.
+
+Testcase:
+#include <emmintrin.h>
+
+typedef short vSInt16 __attribute__ ((__vector_size__ (16)));
+
+static const vSInt16 a = {- 22725, - 12873, - 22725, - 12873, - 22725, - 12873,
+- 22725, - 12873};;
+
+vSInt16 madd(vSInt16 b)
+{
+    return _mm_madd_epi16(a, b);
+}
+
+Generated code (x86-32, linux):
+madd:
+        pushl   %ebp
+        movl    %esp, %ebp
+        andl    $-16, %esp
+        movaps  .LCPI1_0, %xmm1
+        pmaddwd %xmm1, %xmm0
+        movl    %ebp, %esp
+        popl    %ebp
         ret
-
-gcc's generated code:
-doload64:
-        movd    4(%esp), %xmm0
-        punpcklwd       %xmm0, %xmm0
-        pshufd  $0, %xmm0, %xmm0
-        ret
-
-LLVM should be able to generate the same thing as gcc.  This looks like it is
-just a matter of matching (scalar_to_vector (load x)) to movd.
 
 //===---------------------------------------------------------------------===//
+
+Consider:
+#include <emmintrin.h> 
+__m128 foo2 (float x) {
+ return _mm_set_ps (0, 0, x, 0);
+}
+
+In x86-32 mode, we generate this spiffy code:
+
+_foo2:
+	movss	4(%esp), %xmm0
+	pshufd	$81, %xmm0, %xmm0
+	ret
+
+in x86-64 mode, we generate this code, which could be better:
+
+_foo2:
+	xorps	%xmm1, %xmm1
+	movss	%xmm0, %xmm1
+	pshufd	$81, %xmm1, %xmm0
+	ret
+
+In sse4 mode, we could use insertps to make both better.
+
+Here's another testcase that could use insertps [mem]:
+
+#include <xmmintrin.h>
+extern float x2, x3;
+__m128 foo1 (float x1, float x4) {
+ return _mm_set_ps (x2, x1, x3, x4);
+}
+
+gcc mainline compiles it to:
+
+foo1:
+       insertps        $0x10, x2(%rip), %xmm0
+       insertps        $0x10, x3(%rip), %xmm1
+       movaps  %xmm1, %xmm2
+       movlhps %xmm0, %xmm2
+       movaps  %xmm2, %xmm0
+       ret
+
+//===---------------------------------------------------------------------===//
+
+We compile vector multiply-by-constant into poor code:
+
+define <4 x i32> @f(<4 x i32> %i) nounwind  {
+	%A = mul <4 x i32> %i, < i32 10, i32 10, i32 10, i32 10 >
+	ret <4 x i32> %A
+}
+
+On targets without SSE4.1, this compiles into:
+
+LCPI1_0:					##  <4 x i32>
+	.long	10
+	.long	10
+	.long	10
+	.long	10
+	.text
+	.align	4,0x90
+	.globl	_f
+_f:
+	pshufd	$3, %xmm0, %xmm1
+	movd	%xmm1, %eax
+	imull	LCPI1_0+12, %eax
+	movd	%eax, %xmm1
+	pshufd	$1, %xmm0, %xmm2
+	movd	%xmm2, %eax
+	imull	LCPI1_0+4, %eax
+	movd	%eax, %xmm2
+	punpckldq	%xmm1, %xmm2
+	movd	%xmm0, %eax
+	imull	LCPI1_0, %eax
+	movd	%eax, %xmm1
+	movhlps	%xmm0, %xmm0
+	movd	%xmm0, %eax
+	imull	LCPI1_0+8, %eax
+	movd	%eax, %xmm0
+	punpckldq	%xmm0, %xmm1
+	movaps	%xmm1, %xmm0
+	punpckldq	%xmm2, %xmm0
+	ret
+
+It would be better to synthesize integer vector multiplication by constants
+using shifts and adds, pslld and paddd here. And even on targets with SSE4.1,
+simple cases such as multiplication by powers of two would be better as
+vector shifts than as multiplications.
+
+//===---------------------------------------------------------------------===//
+
+We compile this:
+
+__m128i
+foo2 (char x)
+{
+  return _mm_set_epi8 (1, 0, 0, 0, 0, 0, 0, 0, 0, x, 0, 1, 0, 0, 0, 0);
+}
+
+into:
+	movl	$1, %eax
+	xorps	%xmm0, %xmm0
+	pinsrw	$2, %eax, %xmm0
+	movzbl	4(%esp), %eax
+	pinsrw	$3, %eax, %xmm0
+	movl	$256, %eax
+	pinsrw	$7, %eax, %xmm0
+	ret
+
+
+gcc-4.2:
+	subl	$12, %esp
+	movzbl	16(%esp), %eax
+	movdqa	LC0, %xmm0
+	pinsrw	$3, %eax, %xmm0
+	addl	$12, %esp
+	ret
+	.const
+	.align 4
+LC0:
+	.word	0
+	.word	0
+	.word	1
+	.word	0
+	.word	0
+	.word	0
+	.word	0
+	.word	256
+
+With SSE4, it should be
+      movdqa  .LC0(%rip), %xmm0
+      pinsrb  $6, %edi, %xmm0
+
+//===---------------------------------------------------------------------===//
+
+We should transform a shuffle of two vectors of constants into a single vector
+of constants. Also, insertelement of a constant into a vector of constants
+should also result in a vector of constants. e.g. 2008-06-25-VecISelBug.ll.
+
+We compiled it to something horrible:
+
+	.align	4
+LCPI1_1:					##  float
+	.long	1065353216	## float 1
+	.const
+
+	.align	4
+LCPI1_0:					##  <4 x float>
+	.space	4
+	.long	1065353216	## float 1
+	.space	4
+	.long	1065353216	## float 1
+	.text
+	.align	4,0x90
+	.globl	_t
+_t:
+	xorps	%xmm0, %xmm0
+	movhps	LCPI1_0, %xmm0
+	movss	LCPI1_1, %xmm1
+	movaps	%xmm0, %xmm2
+	shufps	$2, %xmm1, %xmm2
+	shufps	$132, %xmm2, %xmm0
+	movaps	%xmm0, 0

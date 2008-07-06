@@ -27,11 +27,9 @@ static cl::opt<bool> DisableLdStOpti("disable-arm-loadstore-opti", cl::Hidden,
 static cl::opt<bool> DisableIfConversion("disable-arm-if-conversion",cl::Hidden,
                               cl::desc("Disable if-conversion pass"));
 
-namespace {
-  // Register the target.
-  RegisterTarget<ARMTargetMachine>   X("arm",   "  ARM");
-  RegisterTarget<ThumbTargetMachine> Y("thumb", "  Thumb");
-}
+// Register the target.
+static RegisterTarget<ARMTargetMachine>   X("arm",   "  ARM");
+static RegisterTarget<ThumbTargetMachine> Y("thumb", "  Thumb");
 
 /// ThumbTargetMachine - Create an Thumb architecture model.
 ///
@@ -94,7 +92,8 @@ unsigned ARMTargetMachine::getJITMatchQuality() {
 
 unsigned ARMTargetMachine::getModuleMatchQuality(const Module &M) {
   std::string TT = M.getTargetTriple();
-  if (TT.size() >= 4 && std::string(TT.begin(), TT.begin()+4) == "arm-")
+  if (TT.size() >= 4 && // Match arm-foo-bar, as well as things like armv5blah-*
+      (TT.substr(0, 4) == "arm-" || TT.substr(0, 4) == "armv"))
     return 20;
   // If the target triple is something non-arm, we don't match.
   if (!TT.empty()) return 0;

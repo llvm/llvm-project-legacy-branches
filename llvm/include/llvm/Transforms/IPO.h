@@ -102,12 +102,22 @@ Pass *createPruneEHPass();
 
 //===----------------------------------------------------------------------===//
 /// createInternalizePass - This pass loops over all of the functions in the
-/// input module, looking for a main function.  If a list of symbols is
-/// specified with the -internalize-public-api-* command line options, those
-/// symbols are internalized.  Otherwise if InternalizeEverything is set and
-/// the main function is found, all other globals are marked as internal.
+/// input module, internalizing all globals (functions and variables) not part
+/// of the api.  If a list of symbols is specified with the
+/// -internalize-public-api-* command line options, those symbols are not
+/// internalized and all others are.  Otherwise if AllButMain is set and the
+/// main function is found, all other globals are marked as internal. If no api
+/// is supplied and AllButMain is not set, or no main function is found, nothing
+/// is internalized.
 ///
-ModulePass *createInternalizePass(bool InternalizeEverything);
+ModulePass *createInternalizePass(bool AllButMain);
+
+/// createInternalizePass - This pass loops over all of the functions in the
+/// input module, internalizing all globals (functions and variables) not in the
+/// given exportList.
+///
+/// Note that commandline options that are used with the above function are not
+/// used now! Also, when exportList is empty, nothing is internalized.
 ModulePass *createInternalizePass(const std::vector<const char *> &exportList);
 
 //===----------------------------------------------------------------------===//
@@ -158,11 +168,6 @@ FunctionPass *createSingleLoopExtractorPass();
 /// specified in the argument list) from the functions in the module.
 ///
 ModulePass *createBlockExtractorPass(const std::vector<BasicBlock*> &BTNE);
-
-/// createOptimizeWellKnownCallsPass - This pass optimizes specific calls to
-/// specific well-known (library) functions.
-ModulePass *createSimplifyLibCallsPass();
-
 
 /// createIndMemRemPass - This pass removes potential indirect calls of
 /// malloc and free

@@ -33,18 +33,18 @@ namespace llvm {
     virtual const TargetAsmInfo *createTargetAsmInfo() const;
   
   public:
-    MipsTargetMachine(const Module &M, const std::string &FS);
+    MipsTargetMachine(const Module &M, const std::string &FS, bool isLittle);
 
     virtual const MipsInstrInfo   *getInstrInfo()     const 
     { return &InstrInfo; }
     virtual const TargetFrameInfo *getFrameInfo()     const 
     { return &FrameInfo; }
-    virtual const TargetSubtarget *getSubtargetImpl() const 
+    virtual const MipsSubtarget   *getSubtargetImpl() const 
     { return &Subtarget; }
     virtual const TargetData      *getTargetData()    const 
     { return &DataLayout;}
 
-    virtual const TargetRegisterInfo   *getRegisterInfo()  const {
+    virtual const MipsRegisterInfo *getRegisterInfo()  const {
       return &InstrInfo.getRegisterInfo();
     }
 
@@ -60,6 +60,16 @@ namespace llvm {
     virtual bool addAssemblyEmitter(PassManagerBase &PM, bool Fast, 
                                     std::ostream &Out);
   };
+
+/// MipselTargetMachine - Mipsel target machine.
+///
+class MipselTargetMachine : public MipsTargetMachine {
+public:
+  MipselTargetMachine(const Module &M, const std::string &FS);
+
+  static unsigned getModuleMatchQuality(const Module &M);
+};
+
 } // End llvm namespace
 
 #endif

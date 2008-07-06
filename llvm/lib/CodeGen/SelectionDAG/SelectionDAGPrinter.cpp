@@ -18,6 +18,7 @@
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/GraphWriter.h"
@@ -48,7 +49,7 @@ namespace llvm {
     template<typename EdgeIter>
     static std::string getEdgeAttributes(const void *Node, EdgeIter EI) {
       SDOperand Op = EI.getNode()->getOperand(EI.getOperand());
-      MVT::ValueType VT = Op.getValueType();
+      MVT VT = Op.getValueType();
       if (VT == MVT::Flag)
         return "color=red,style=bold";
       else if (VT == MVT::Other)
@@ -90,7 +91,7 @@ std::string DOTGraphTraits<SelectionDAG*>::getNodeLabel(const SDNode *Node,
     if (Node->getValueType(i) == MVT::Other)
       Op += ":ch";
     else
-      Op = Op + ":" + MVT::getValueTypeString(Node->getValueType(i));
+      Op = Op + ":" + Node->getValueType(i).getMVTString();
     
   if (const ConstantSDNode *CSDN = dyn_cast<ConstantSDNode>(Node)) {
     Op += ": " + utostr(CSDN->getValue());
@@ -138,6 +139,13 @@ std::string DOTGraphTraits<SelectionDAG*>::getNodeLabel(const SDNode *Node,
     } else {
       Op += " #" + utostr(R->getReg());
     }
+  } else if (const DbgStopPointSDNode *D = dyn_cast<DbgStopPointSDNode>(Node)) {
+    Op += ": " + D->getCompileUnit()->getFileName();
+    Op += ":" + utostr(D->getLine());
+    if (D->getColumn() != 0)
+      Op += ":" + utostr(D->getColumn());
+  } else if (const LabelSDNode *L = dyn_cast<LabelSDNode>(Node)) {
+    Op += ": LabelID=" + utostr(L->getLabelID());
   } else if (const ExternalSymbolSDNode *ES =
              dyn_cast<ExternalSymbolSDNode>(Node)) {
     Op += "'" + std::string(ES->getSymbol()) + "'";
@@ -154,9 +162,7 @@ std::string DOTGraphTraits<SelectionDAG*>::getNodeLabel(const SDNode *Node,
   } else if (const ARG_FLAGSSDNode *N = dyn_cast<ARG_FLAGSSDNode>(Node)) {
     Op = Op + " AF=" + N->getArgFlags().getArgFlagsString();
   } else if (const VTSDNode *N = dyn_cast<VTSDNode>(Node)) {
-    Op = Op + " VT=" + MVT::getValueTypeString(N->getVT());
-  } else if (const StringSDNode *N = dyn_cast<StringSDNode>(Node)) {
-    Op = Op + "\"" + N->getValue() + "\"";
+    Op = Op + " VT=" + N->getVT().getMVTString();
   } else if (const LoadSDNode *LD = dyn_cast<LoadSDNode>(Node)) {
     bool doExt = true;
     switch (LD->getExtensionType()) {
@@ -172,7 +178,7 @@ std::string DOTGraphTraits<SelectionDAG*>::getNodeLabel(const SDNode *Node,
       break;
     }
     if (doExt)
-      Op += MVT::getValueTypeString(LD->getMemoryVT()) + ">";
+      Op += LD->getMemoryVT().getMVTString() + ">";
     if (LD->isVolatile())
       Op += "<V>";
     Op += LD->getIndexedModeName(LD->getAddressingMode());
@@ -180,7 +186,7 @@ std::string DOTGraphTraits<SelectionDAG*>::getNodeLabel(const SDNode *Node,
       Op += " A=" + utostr(LD->getAlignment());
   } else if (const StoreSDNode *ST = dyn_cast<StoreSDNode>(Node)) {
     if (ST->isTruncatingStore())
-      Op += "<trunc " + MVT::getValueTypeString(ST->getMemoryVT()) + ">";
+      Op += "<trunc " + ST->getMemoryVT().getMVTString() + ">";
     if (ST->isVolatile())
       Op += "<V>";
     Op += ST->getIndexedModeName(ST->getAddressingMode());
@@ -301,8 +307,9 @@ namespace llvm {
     static void addCustomGraphFeatures(ScheduleDAG *G,
                                        GraphWriter<ScheduleDAG*> &GW) {
       GW.emitSimpleNode(0, "plaintext=circle", "GraphRoot");
-      if (G->DAG.getRoot().Val)
-        GW.emitEdge(0, -1, G->SUnitMap[G->DAG.getRoot().Val].front(), -1, "");
+      const SDNode *N = G->DAG.getRoot().Val;
+      if (N && N->getNodeId() != -1)
+        GW.emitEdge(0, -1, &G->SUnits[N->getNodeId()], -1, "");
     }
   };
 }

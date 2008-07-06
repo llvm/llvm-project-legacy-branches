@@ -39,12 +39,12 @@ static std::string &getLibSupportInfoOutputFilename() {
 }
 
 namespace {
-  cl::opt<bool>
+  static cl::opt<bool>
   TrackSpace("track-memory", cl::desc("Enable -time-passes memory "
                                       "tracking (this may be slow)"),
              cl::Hidden);
 
-  cl::opt<std::string, true>
+  static cl::opt<std::string, true>
   InfoOutputFilename("info-output-file", cl::value_desc("filename"),
                      cl::desc("File to append -stats and -timer output to"),
                    cl::Hidden, cl::location(getLibSupportInfoOutputFilename()));
@@ -132,13 +132,13 @@ static ManagedStatic<std::vector<Timer*> > ActiveTimers;
 
 void Timer::startTimer() {
   Started = true;
+  ActiveTimers->push_back(this);
   TimeRecord TR = getTimeRecord(true);
   Elapsed    -= TR.Elapsed;
   UserTime   -= TR.UserTime;
   SystemTime -= TR.SystemTime;
   MemUsed    -= TR.MemUsed;
   PeakMemBase = TR.MemUsed;
-  ActiveTimers->push_back(this);
 }
 
 void Timer::stopTimer() {

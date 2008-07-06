@@ -101,7 +101,7 @@ let isCall = 1 in
     def CALL64r       : I<0xFF, MRM2r, (outs), (ins GR64:$dst, variable_ops),
                           "call\t{*}$dst", [(X86call GR64:$dst)]>;
     def CALL64m       : I<0xFF, MRM2m, (outs), (ins i64mem:$dst, variable_ops),
-                          "call\t{*}$dst", []>;
+                          "call\t{*}$dst", [(X86call (loadi64 addr:$dst))]>;
   }
 
 
@@ -199,7 +199,7 @@ let neverHasSideEffects = 1 in
 def MOV64rr : RI<0x89, MRMDestReg, (outs GR64:$dst), (ins GR64:$src),
                  "mov{q}\t{$src, $dst|$dst, $src}", []>;
 
-let isReMaterializable = 1 in {
+let isReMaterializable = 1, isAsCheapAsAMove = 1  in {
 def MOV64ri : RIi64<0xB8, AddRegFrm, (outs GR64:$dst), (ins i64imm:$src),
                     "movabs{q}\t{$src, $dst|$dst, $src}",
                     [(set GR64:$dst, imm:$src)]>;
@@ -751,7 +751,7 @@ def OR64mi8  : RIi8<0x83, MRM1m, (outs), (ins i64mem:$dst, i64i8imm:$src),
                   [(store (or (load addr:$dst), i64immSExt8:$src), addr:$dst)]>;
 
 let isTwoAddress = 1 in {
-let isCommutable = 1 in
+let isCommutable = 1, isAsCheapAsAMove = 1 in
 def XOR64rr  : RI<0x31, MRMDestReg,  (outs GR64:$dst), (ins GR64:$src1, GR64:$src2), 
                   "xor{q}\t{$src2, $dst|$dst, $src2}",
                   [(set GR64:$dst, (xor GR64:$src1, GR64:$src2))]>;
@@ -1091,7 +1091,8 @@ def Int_CVTTSS2SI64rm: RSSI<0x2C, MRMSrcMem, (outs GR64:$dst), (ins f32mem:$src)
 // FIXME: remove when we can teach regalloc that xor reg, reg is ok.
 // FIXME: AddedComplexity gives MOV64r0 a higher priority than MOV64ri32. Remove
 // when we have a better way to specify isel priority.
-let Defs = [EFLAGS], AddedComplexity = 1, isReMaterializable = 1 in
+let Defs = [EFLAGS], AddedComplexity = 1,
+    isReMaterializable = 1, isAsCheapAsAMove = 1 in
 def MOV64r0  : RI<0x31, MRMInitReg,  (outs GR64:$dst), (ins),
                  "xor{l}\t${dst:subreg32}, ${dst:subreg32}",
                  [(set GR64:$dst, 0)]>;
@@ -1102,6 +1103,13 @@ def MOV64ri64i32 : Ii32<0xB8, AddRegFrm, (outs GR64:$dst), (ins i64i32imm:$src),
                         "mov{l}\t{$src, ${dst:subreg32}|${dst:subreg32}, $src}",
                         [(set GR64:$dst, i64immZExt32:$src)]>;
 
+//===----------------------------------------------------------------------===//
+// Thread Local Storage Instructions
+//===----------------------------------------------------------------------===//
+
+def TLS_addr64 : I<0, Pseudo, (outs GR64:$dst), (ins i64imm:$sym),
+              ".byte\t0x66; leaq\t${sym:mem}(%rip), $dst; .word\t0x6666; rex64",
+                  [(set GR64:$dst, (X86tlsaddr tglobaltlsaddr:$sym))]>;
 
 //===----------------------------------------------------------------------===//
 // Atomic Instructions
@@ -1116,7 +1124,7 @@ def LCMPXCHG64 : RI<0xB1, MRMDestMem, (outs), (ins i64mem:$ptr, GR64:$swap),
 let Constraints = "$val = $dst", Defs = [EFLAGS] in {
 def LXADD64 : RI<0xC1, MRMSrcMem, (outs GR64:$dst), (ins i64mem:$ptr,GR64:$val),
                "lock xadd $val, $ptr", 
-               [(set GR64:$dst, (atomic_las_64 addr:$ptr, GR64:$val))]>,
+               [(set GR64:$dst, (atomic_load_add_64 addr:$ptr, GR64:$val))]>,
                 TB, LOCK;
 def XCHG64rm : RI<0x87, MRMSrcMem, (outs GR64:$dst), (ins i64mem:$ptr,GR64:$val),
                   "xchg $val, $ptr", 

@@ -43,11 +43,11 @@ namespace {
       AU.setPreservesCFG();
     }
   };
-
-  char ConstantPropagation::ID = 0;
-  RegisterPass<ConstantPropagation> X("constprop",
-                                      "Simple constant propagation");
 }
+
+char ConstantPropagation::ID = 0;
+static RegisterPass<ConstantPropagation>
+X("constprop", "Simple constant propagation");
 
 FunctionPass *llvm::createConstantPropagationPass() {
   return new ConstantPropagation();
@@ -79,7 +79,7 @@ bool ConstantPropagation::runOnFunction(Function &F) {
 
         // Remove the dead instruction.
         WorkList.erase(I);
-        I->getParent()->getInstList().erase(I);
+        I->eraseFromParent();
 
         // We made a change to the function...
         Changed = true;

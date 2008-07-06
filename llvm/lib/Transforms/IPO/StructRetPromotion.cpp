@@ -1,4 +1,4 @@
-//===-- StructRetPromotion.cpp - Promote sret arguments -000000------------===//
+//===-- StructRetPromotion.cpp - Promote sret arguments ------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// TODO : Describe this pass.
+// This pass finds functions that return a struct (using a pointer to the struct
+// as the first argument of the function, marked with the 'sret' attribute) and
+// replaces them with a new function that simply returns each of the elements of
+// that struct (using multiple return values).
+//
+// This pass works under a number of conditions:
+//  1. The returned struct must not contain other structs
+//  2. The returned struct must only be used to load values from
+//  3. The placeholder struct passed in is the result of an alloca
+//
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "sretpromotion"
@@ -49,11 +58,11 @@ namespace {
     void updateCallSites(Function *F, Function *NF);
     bool nestedStructType(const StructType *STy);
   };
-
-  char SRETPromotion::ID = 0;
-  RegisterPass<SRETPromotion> X("sretpromotion",
-                               "Promote sret arguments to multiple ret values");
 }
+
+char SRETPromotion::ID = 0;
+static RegisterPass<SRETPromotion>
+X("sretpromotion", "Promote sret arguments to multiple ret values");
 
 Pass *llvm::createStructRetPromotionPass() {
   return new SRETPromotion();
@@ -73,7 +82,7 @@ bool SRETPromotion::runOnSCC(const std::vector<CallGraphNode *> &SCC) {
 bool SRETPromotion::PromoteReturn(CallGraphNode *CGN) {
   Function *F = CGN->getFunction();
 
-  if (!F || F->isDeclaration())
+  if (!F || F->isDeclaration() || !F->hasInternalLinkage())
     return false;
 
   // Make sure that function returns struct.
@@ -83,7 +92,7 @@ bool SRETPromotion::PromoteReturn(CallGraphNode *CGN) {
   assert (F->getReturnType() == Type::VoidTy && "Invalid function return type");
   Function::arg_iterator AI = F->arg_begin();
   const llvm::PointerType *FArgType = dyn_cast<PointerType>(AI->getType());
-  assert (FArgType && "Invalid sret paramater type");
+  assert (FArgType && "Invalid sret parameter type");
   const llvm::StructType *STy = 
     dyn_cast<StructType>(FArgType->getElementType());
   assert (STy && "Invalid sret parameter element type");
@@ -140,7 +149,7 @@ bool SRETPromotion::PromoteReturn(CallGraphNode *CGN) {
   return true;
 }
 
-  // Check if it is ok to perform this promotion.
+// Check if it is ok to perform this promotion.
 bool SRETPromotion::isSafeToUpdateAllCallers(Function *F) {
 
   if (F->use_empty())
@@ -149,9 +158,17 @@ bool SRETPromotion::isSafeToUpdateAllCallers(Function *F) {
 
   for (Value::use_iterator FnUseI = F->use_begin(), FnUseE = F->use_end();
        FnUseI != FnUseE; ++FnUseI) {
+    // The function is passed in as an argument to (possibly) another function,
+    // we can't change it!
+    if (FnUseI.getOperandNo() != 0)
+      return false;
 
     CallSite CS = CallSite::get(*FnUseI);
     Instruction *Call = CS.getInstruction();
+    // The function is used by something else than a call or invoke instruction,
+    // we can't change it!
+    if (!Call)
+      return false;
     CallSite::arg_iterator AI = CS.arg_begin();
     Value *FirstArg = *AI;
 
@@ -223,7 +240,7 @@ Function *SRETPromotion::cloneFunctionBody(Function *F,
 
   FunctionType *NFTy = FunctionType::get(STy, Params, FTy->isVarArg());
   Function *NF = Function::Create(NFTy, F->getLinkage(), F->getName());
-  NF->setCallingConv(F->getCallingConv());
+  NF->copyAttributesFrom(F);
   NF->setParamAttrs(PAListPtr::get(ParamAttrsVec.begin(), ParamAttrsVec.end()));
   F->getParent()->getFunctionList().insert(F, NF);
   NF->getBasicBlockList().splice(NF->begin(), F->getBasicBlockList());
@@ -330,7 +347,7 @@ bool SRETPromotion::nestedStructType(const StructType *STy) {
   unsigned Num = STy->getNumElements();
   for (unsigned i = 0; i < Num; i++) {
     const Type *Ty = STy->getElementType(i);
-    if (!Ty->isFirstClassType() && Ty != Type::VoidTy)
+    if (!Ty->isSingleValueType() && Ty != Type::VoidTy)
       return true;
   }
   return false;

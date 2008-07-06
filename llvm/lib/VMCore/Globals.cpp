@@ -79,7 +79,16 @@ void GlobalValue::destroyConstant() {
   assert(0 && "You can't GV->destroyConstant()!");
   abort();
 }
-  
+
+/// copyAttributesFrom - copy all additional attributes (those not needed to
+/// create a GlobalValue) from the GlobalValue Src to this one.
+void GlobalValue::copyAttributesFrom(const GlobalValue *Src) {
+  setAlignment(Src->getAlignment());
+  setSection(Src->getSection());
+  setVisibility(Src->getVisibility());
+}
+
+
 //===----------------------------------------------------------------------===//
 // GlobalVariable Implementation
 //===----------------------------------------------------------------------===//
@@ -89,14 +98,13 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                Module *ParentModule, bool ThreadLocal, 
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                &Initializer, InitVal != 0, Link, Name),
+                OperandTraits<GlobalVariable>::op_begin(this),
+                InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");
-    Initializer.init(InitVal, this);
-  } else {
-    Initializer.init(0, this);
+    Op<0>() = InitVal;
   }
 
   LeakDetector::addGarbageObject(this);
@@ -110,14 +118,13 @@ GlobalVariable::GlobalVariable(const Type *Ty, bool constant, LinkageTypes Link,
                                GlobalVariable *Before, bool ThreadLocal,
                                unsigned AddressSpace)
   : GlobalValue(PointerType::get(Ty, AddressSpace), Value::GlobalVariableVal,
-                &Initializer, InitVal != 0, Link, Name), 
+                OperandTraits<GlobalVariable>::op_begin(this),
+                InitVal != 0, Link, Name),
     isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");
-    Initializer.init(InitVal, this);
-  } else {
-    Initializer.init(0, this);
+    Op<0>() = InitVal;
   }
   
   LeakDetector::addGarbageObject(this);
@@ -162,6 +169,16 @@ void GlobalVariable::replaceUsesOfWithOnConstant(Value *From, Value *To,
   this->setOperand(0, cast<Constant>(To));
 }
 
+/// copyAttributesFrom - copy all additional attributes (those not needed to
+/// create a GlobalVariable) from the GlobalVariable Src to this one.
+void GlobalVariable::copyAttributesFrom(const GlobalValue *Src) {
+  assert(isa<GlobalVariable>(Src) && "Expected a GlobalVariable!");
+  GlobalValue::copyAttributesFrom(Src);
+  const GlobalVariable *SrcVar = cast<GlobalVariable>(Src);
+  setThreadLocal(SrcVar->isThreadLocal());
+}
+
+
 //===----------------------------------------------------------------------===//
 // GlobalAlias Implementation
 //===----------------------------------------------------------------------===//
@@ -169,12 +186,12 @@ void GlobalVariable::replaceUsesOfWithOnConstant(Value *From, Value *To,
 GlobalAlias::GlobalAlias(const Type *Ty, LinkageTypes Link,
                          const std::string &Name, Constant* aliasee,
                          Module *ParentModule)
-  : GlobalValue(Ty, Value::GlobalAliasVal, &Aliasee, 1, Link, Name) {
+  : GlobalValue(Ty, Value::GlobalAliasVal, &Op<0>(), 1, Link, Name) {
   LeakDetector::addGarbageObject(this);
 
   if (aliasee)
     assert(aliasee->getType() == Ty && "Alias and aliasee types should match!");
-  Aliasee.init(aliasee, this);
+  Op<0>() = aliasee;
 
   if (ParentModule)
     ParentModule->getAliasList().push_back(this);

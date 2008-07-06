@@ -68,7 +68,7 @@ namespace {
 
       // Allow the target machine to make final modifications to the function
       // before the frame layout is finalized.
-      Fn.getTarget().getRegisterInfo()->processFunctionBeforeFrameFinalized(Fn);
+      TRI->processFunctionBeforeFrameFinalized(Fn);
 
       // Calculate actual frame offsets for all of the abstract stack objects...
       calculateFrameObjectOffsets(Fn);
@@ -313,7 +313,7 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
   // Loop over all of the stack objects, assigning sequential addresses...
   MachineFrameInfo *FFI = Fn.getFrameInfo();
 
-  unsigned MaxAlign = 0;
+  unsigned MaxAlign = FFI->getMaxAlignment();
 
   // Start at the beginning of the local area.
   // The Offset is the distance from the stack top in the direction
@@ -362,7 +362,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
       FFI->setObjectOffset(i, -Offset);        // Set the computed offset
     }
   } else {
-    for (unsigned i = MaxCSFrameIndex; i >= MinCSFrameIndex; --i) {
+    int MaxCSFI = MaxCSFrameIndex, MinCSFI = MinCSFrameIndex;
+    for (int i = MaxCSFI; i >= MinCSFI ; --i) {
       unsigned Align = FFI->getObjectAlignment(i);
       // If the alignment of this object is greater than that of the stack, then
       // increase the stack alignment to match.
@@ -458,15 +459,20 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
   // Round up the size to a multiple of the alignment, but only if there are
   // calls or alloca's in the function.  This ensures that any calls to
   // subroutines have their stack frames suitable aligned.
+  // Also do this if we need runtime alignment of the stack.  In this case
+  // offsets will be relative to SP not FP; round up the stack size so this
+  // works.
   if (!RegInfo->targetHandlesStackFrameRounding() &&
-      (FFI->hasCalls() || FFI->hasVarSizedObjects())) {
+      (FFI->hasCalls() || FFI->hasVarSizedObjects() || 
+       (RegInfo->needsStackRealignment(Fn) &&
+        FFI->getObjectIndexEnd() != 0))) {
     // If we have reserved argument space for call sites in the function
     // immediately on entry to the current function, count it as part of the
     // overall stack size.
     if (RegInfo->hasReservedCallFrame(Fn))
       Offset += FFI->getMaxCallFrameSize();
 
-    unsigned AlignMask = TFI.getStackAlignment() - 1;
+    unsigned AlignMask = std::max(TFI.getStackAlignment(),MaxAlign) - 1;
     Offset = (Offset + AlignMask) & ~uint64_t(AlignMask);
   }
 
@@ -484,14 +490,16 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
 /// prolog and epilog code to the function.
 ///
 void PEI::insertPrologEpilogCode(MachineFunction &Fn) {
+  const TargetRegisterInfo *TRI = Fn.getTarget().getRegisterInfo();
+
   // Add prologue to the function...
-  Fn.getTarget().getRegisterInfo()->emitPrologue(Fn);
+  TRI->emitPrologue(Fn);
 
   // Add epilogue to restore the callee-save registers in each exiting block
   for (MachineFunction::iterator I = Fn.begin(), E = Fn.end(); I != E; ++I) {
     // If last instruction is a return instruction, add an epilogue
     if (!I->empty() && I->back().getDesc().isReturn())
-      Fn.getTarget().getRegisterInfo()->emitEpilogue(Fn, *I);
+      TRI->emitEpilogue(Fn, *I);
   }
 }
 

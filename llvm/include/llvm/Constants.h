@@ -22,8 +22,10 @@
 
 #include "llvm/Constant.h"
 #include "llvm/Type.h"
+#include "llvm/OperandTraits.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace llvm {
 
@@ -233,9 +235,6 @@ protected:
 public:
   /// get() - Static factory methods - Return objects of the specified value
   static ConstantFP *get(const APFloat &V);
-  static ConstantFP *get(const Type *Ty, const APFloat &V) {
-    return get(V);
-  }
 
   /// get() - This returns a constant fp for the specified value in the
   /// specified type.  This should only be used for simple constant values like
@@ -263,6 +262,9 @@ public:
   bool isExactlyValue(const APFloat& V) const;
 
   bool isExactlyValue(double V) const {
+    // convert is not supported on this type
+    if (&Val.getSemantics() == &APFloat::PPCDoubleDouble)
+      return false;
     APFloat FV(V);
     FV.convert(Val.getSemantics(), APFloat::rmNearestTiesToEven);
     return isExactlyValue(FV);
@@ -282,8 +284,8 @@ class ConstantAggregateZero : public Constant {
   void *operator new(size_t, unsigned);                      // DO NOT IMPLEMENT
   ConstantAggregateZero(const ConstantAggregateZero &);      // DO NOT IMPLEMENT
 protected:
-  explicit ConstantAggregateZero(const Type *Ty)
-    : Constant(Ty, ConstantAggregateZeroVal, 0, 0) {}
+  explicit ConstantAggregateZero(const Type *ty)
+    : Constant(ty, ConstantAggregateZeroVal, 0, 0) {}
 protected:
   // allocate space for exactly zero operands
   void *operator new(size_t s) {
@@ -318,7 +320,6 @@ class ConstantArray : public Constant {
   ConstantArray(const ConstantArray &);      // DO NOT IMPLEMENT
 protected:
   ConstantArray(const ArrayType *T, const std::vector<Constant*> &Val);
-  ~ConstantArray();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   static Constant *get(const ArrayType *T, const std::vector<Constant*> &);
@@ -335,6 +336,9 @@ public:
   /// this is not desired so if AddNull==false then the string is copied without
   /// null termination. 
   static Constant *get(const std::string &Initializer, bool AddNull = true);
+
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   /// getType - Specialize the getType() method to always return an ArrayType,
   /// which reduces the amount of casting needed in parts of the compiler.
@@ -374,6 +378,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantArray> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantArray, Constant)
 
 //===----------------------------------------------------------------------===//
 // ConstantStruct - Constant Struct Declarations
@@ -384,7 +393,6 @@ class ConstantStruct : public Constant {
   ConstantStruct(const ConstantStruct &);      // DO NOT IMPLEMENT
 protected:
   ConstantStruct(const StructType *T, const std::vector<Constant*> &Val);
-  ~ConstantStruct();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   ///
@@ -396,6 +404,9 @@ public:
     return get(std::vector<Constant*>(Vals, Vals+NumVals), Packed);
   }
   
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
+
   /// getType() specialization - Reduce amount of casting...
   ///
   inline const StructType *getType() const {
@@ -419,6 +430,12 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantStruct> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantStruct, Constant)
+
 //===----------------------------------------------------------------------===//
 /// ConstantVector - Constant Vector Declarations
 ///
@@ -428,7 +445,6 @@ class ConstantVector : public Constant {
   ConstantVector(const ConstantVector &);      // DO NOT IMPLEMENT
 protected:
   ConstantVector(const VectorType *T, const std::vector<Constant*> &Val);
-  ~ConstantVector();
 public:
   /// get() - Static factory methods - Return objects of the specified value
   static Constant *get(const VectorType *T, const std::vector<Constant*> &);
@@ -438,6 +454,9 @@ public:
     return get(std::vector<Constant*>(Vals, Vals+NumVals));
   }
   
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
+
   /// getType - Specialize the getType() method to always return a VectorType,
   /// which reduces the amount of casting needed in parts of the compiler.
   ///
@@ -474,6 +493,12 @@ public:
     return V->getValueID() == ConstantVectorVal;
   }
 };
+
+template <>
+struct OperandTraits<ConstantVector> : VariadicOperandTraits<> {
+};
+
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantVector, Constant)
 
 //===----------------------------------------------------------------------===//
 /// ConstantPointerNull - a constant pointer value that points to null
@@ -529,8 +554,8 @@ class ConstantExpr : public Constant {
   friend struct ConvertConstantType<ConstantExpr, Type>;
 
 protected:
-  ConstantExpr(const Type *Ty, unsigned Opcode, Use *Ops, unsigned NumOps)
-    : Constant(Ty, ConstantExprVal, Ops, NumOps) {
+  ConstantExpr(const Type *ty, unsigned Opcode, Use *Ops, unsigned NumOps)
+    : Constant(ty, ConstantExprVal, Ops, NumOps) {
     // Operation type (an Instruction opcode) is stored as the SubclassData.
     SubclassData = Opcode;
   }
@@ -551,6 +576,11 @@ protected:
                                       Constant *Elt, Constant *Idx);
   static Constant *getShuffleVectorTy(const Type *Ty, Constant *V1,
                                       Constant *V2, Constant *Mask);
+  static Constant *getExtractValueTy(const Type *Ty, Constant *Agg,
+                                     const unsigned *Idxs, unsigned NumIdxs);
+  static Constant *getInsertValueTy(const Type *Ty, Constant *Agg,
+                                    Constant *Val,
+                                    const unsigned *Idxs, unsigned NumIdxs);
 
 public:
   // Static methods to construct a ConstantExpr of different kinds.  Note that
@@ -572,6 +602,9 @@ public:
   static Constant *getPtrToInt(Constant *C, const Type *Ty);
   static Constant *getIntToPtr(Constant *C, const Type *Ty);
   static Constant *getBitCast (Constant *C, const Type *Ty);
+
+  /// Transparently provide more efficient getOperand methods.
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
   // @brief Convenience function for getting one of the casting operations
   // using a CastOps opcode.
@@ -624,6 +657,10 @@ public:
   /// @brief Return true if this is a compare constant expression
   bool isCompare() const;
 
+  /// @brief Return true if this is an insertvalue or extractvalue expression,
+  /// and the getIndices() method may be used.
+  bool hasIndices() const;
+
   /// Select constant expr
   ///
   static Constant *getSelect(Constant *C, Constant *V1, Constant *V2) {
@@ -662,6 +699,8 @@ public:
   static Constant *getXor(Constant *C1, Constant *C2);
   static Constant *getICmp(unsigned short pred, Constant *LHS, Constant *RHS);
   static Constant *getFCmp(unsigned short pred, Constant *LHS, Constant *RHS);
+  static Constant *getVICmp(unsigned short pred, Constant *LHS, Constant *RHS);
+  static Constant *getVFCmp(unsigned short pred, Constant *LHS, Constant *RHS);
   static Constant *getShl(Constant *C1, Constant *C2);
   static Constant *getLShr(Constant *C1, Constant *C2);
   static Constant *getAShr(Constant *C1, Constant *C2);
@@ -677,6 +716,10 @@ public:
   static Constant *getExtractElement(Constant *Vec, Constant *Idx);
   static Constant *getInsertElement(Constant *Vec, Constant *Elt,Constant *Idx);
   static Constant *getShuffleVector(Constant *V1, Constant *V2, Constant *Mask);
+  static Constant *getExtractValue(Constant *Agg,
+                                   const unsigned *IdxList, unsigned NumIdx);
+  static Constant *getInsertValue(Constant *Agg, Constant *Val,
+                                  const unsigned *IdxList, unsigned NumIdx);
 
   /// Floating point negation must be implemented with f(x) = -0.0 - x. This
   /// method returns the negative zero constant for floating point or vector
@@ -694,6 +737,10 @@ public:
   /// not an ICMP or FCMP constant expression.
   unsigned getPredicate() const;
 
+  /// getIndices - Assert that this is an insertvalue or exactvalue
+  /// expression and return the list of indices.
+  const SmallVector<unsigned, 4> &getIndices() const;
+
   /// getOpcodeName - Return a string representation for an opcode.
   const char *getOpcodeName() const;
 
@@ -709,15 +756,6 @@ public:
   virtual void destroyConstant();
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To, Use *U);
 
-  /// Override methods to provide more type information...
-  inline Constant *getOperand(unsigned i) {
-    return cast<Constant>(User::getOperand(i));
-  }
-  inline Constant *getOperand(unsigned i) const {
-    return const_cast<Constant*>(cast<Constant>(User::getOperand(i)));
-  }
-
-
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const ConstantExpr *) { return true; }
   static inline bool classof(const Value *V) {
@@ -725,6 +763,11 @@ public:
   }
 };
 
+template <>
+struct OperandTraits<ConstantExpr> : VariadicOperandTraits<1> {
+};
+
+DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantExpr, Constant)
 
 //===----------------------------------------------------------------------===//
 /// UndefValue - 'undef' values are things that do not have specified contents.

@@ -14,13 +14,10 @@
 #ifndef LLVM_ANALYSIS_SCALAREVOLUTION_EXPANDER_H
 #define LLVM_ANALYSIS_SCALAREVOLUTION_EXPANDER_H
 
-#include "llvm/BasicBlock.h"
-#include "llvm/Constants.h"
 #include "llvm/Instructions.h"
 #include "llvm/Type.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
-#include "llvm/Support/CFG.h"
 
 namespace llvm {
   /// SCEVExpander - This class uses information about analyze scalars to
@@ -78,11 +75,7 @@ namespace llvm {
     /// expandCodeFor - Insert code to directly compute the specified SCEV
     /// expression into the program.  The inserted code is inserted into the
     /// specified block.
-    Value *expandCodeFor(SCEVHandle SH, Instruction *IP) {
-      // Expand the code for this SCEV.
-      this->InsertPt = IP;
-      return expand(SH);
-    }
+    Value *expandCodeFor(SCEVHandle SH, Instruction *IP);
 
     /// InsertCastOfTo - Insert a cast of V to the specified type, doing what
     /// we can to share the casts.
@@ -91,7 +84,7 @@ namespace llvm {
     /// InsertBinop - Insert the specified binary operator, doing a small amount
     /// of work to avoid inserting an obviously redundant operation.
     static Value *InsertBinop(Instruction::BinaryOps Opcode, Value *LHS,
-                              Value *RHS, Instruction *&InsertPt);
+                              Value *RHS, Instruction *InsertPt);
   protected:
     Value *expand(SCEV *S);
     
@@ -99,30 +92,13 @@ namespace llvm {
       return S->getValue();
     }
 
-    Value *visitTruncateExpr(SCEVTruncateExpr *S) {
-      Value *V = expand(S->getOperand());
-      return CastInst::createTruncOrBitCast(V, S->getType(), "tmp.", InsertPt);
-    }
+    Value *visitTruncateExpr(SCEVTruncateExpr *S);
 
-    Value *visitZeroExtendExpr(SCEVZeroExtendExpr *S) {
-      Value *V = expand(S->getOperand());
-      return CastInst::createZExtOrBitCast(V, S->getType(), "tmp.", InsertPt);
-    }
+    Value *visitZeroExtendExpr(SCEVZeroExtendExpr *S);
 
-    Value *visitSignExtendExpr(SCEVSignExtendExpr *S) {
-      Value *V = expand(S->getOperand());
-      return CastInst::createSExtOrBitCast(V, S->getType(), "tmp.", InsertPt);
-    }
+    Value *visitSignExtendExpr(SCEVSignExtendExpr *S);
 
-    Value *visitAddExpr(SCEVAddExpr *S) {
-      Value *V = expand(S->getOperand(S->getNumOperands()-1));
-
-      // Emit a bunch of add instructions
-      for (int i = S->getNumOperands()-2; i >= 0; --i)
-        V = InsertBinop(Instruction::Add, V, expand(S->getOperand(i)),
-                        InsertPt);
-      return V;
-    }
+    Value *visitAddExpr(SCEVAddExpr *S);
 
     Value *visitMulExpr(SCEVMulExpr *S);
 

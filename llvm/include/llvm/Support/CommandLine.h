@@ -41,14 +41,16 @@ namespace cl {
 // ParseCommandLineOptions - Command line option processing entry point.
 //
 void ParseCommandLineOptions(int argc, char **argv,
-                             const char *Overview = 0);
+                             const char *Overview = 0,
+                             bool ReadResponseFiles = false);
 
 //===----------------------------------------------------------------------===//
 // ParseEnvironmentOptions - Environment variable option processing alternate
 //                           entry point.
 //
 void ParseEnvironmentOptions(const char *progName, const char *envvar,
-                             const char *Overview = 0);
+                             const char *Overview = 0,
+                             bool ReadResponseFiles = false);
 
 ///===---------------------------------------------------------------------===//
 /// SetVersionPrinter - Override the default (LLVM specific) version printer
@@ -146,10 +148,10 @@ class Option {
   virtual enum ValueExpected getValueExpectedFlagDefault() const {
     return ValueOptional;
   }
-  
+
   // Out of line virtual function to provide home for the class.
   virtual void anchor();
-  
+
   int NumOccurrences;     // The number of times specified
   int Flags;              // Flags for the argument
   unsigned Position;      // Position of last occurrence of the option
@@ -213,19 +215,19 @@ public:
   // addArgument - Register this argument with the commandline system.
   //
   void addArgument();
-  
+
   Option *getNextRegisteredOption() const { return NextRegistered; }
 
   // Return the width of the option tag for printing...
-  virtual unsigned getOptionWidth() const = 0;
+  virtual size_t getOptionWidth() const = 0;
 
   // printOptionInfo - Print out information about this option.  The
   // to-be-maintained width is specified.
   //
-  virtual void printOptionInfo(unsigned GlobalWidth) const = 0;
+  virtual void printOptionInfo(size_t GlobalWidth) const = 0;
 
-  virtual void getExtraOptionNames(std::vector<const char*> &OptionNames) {}
-  
+  virtual void getExtraOptionNames(std::vector<const char*> &) {}
+
   // addOccurrence - Wrapper around handleOccurrence that enforces Flags
   //
   bool addOccurrence(unsigned pos, const char *ArgName,
@@ -322,24 +324,25 @@ public:
     Values.push_back(std::make_pair(EnumName, std::make_pair(Val, Desc)));
 
     // Process the varargs portion of the values...
-    while (const char *EnumName = va_arg(ValueArgs, const char *)) {
+    while (const char *enumName = va_arg(ValueArgs, const char *)) {
       DataType EnumVal = static_cast<DataType>(va_arg(ValueArgs, int));
       const char *EnumDesc = va_arg(ValueArgs, const char *);
-      Values.push_back(std::make_pair(EnumName,      // Add value to value map
+      Values.push_back(std::make_pair(enumName,      // Add value to value map
                                       std::make_pair(EnumVal, EnumDesc)));
     }
   }
 
   template<class Opt>
   void apply(Opt &O) const {
-    for (unsigned i = 0, e = Values.size(); i != e; ++i)
+    for (unsigned i = 0, e = static_cast<unsigned>(Values.size());
+         i != e; ++i)
       O.getParser().addLiteralOption(Values[i].first, Values[i].second.first,
                                      Values[i].second.second);
   }
 };
 
 template<class DataType>
-ValuesClass<DataType> END_WITH_NULL values(const char *Arg, DataType Val, 
+ValuesClass<DataType> END_WITH_NULL values(const char *Arg, DataType Val,
                                            const char *Desc, ...) {
     va_list ValueArgs;
     va_start(ValueArgs, Desc);
@@ -376,12 +379,12 @@ struct generic_parser_base {
   virtual const char *getDescription(unsigned N) const = 0;
 
   // Return the width of the option tag for printing...
-  virtual unsigned getOptionWidth(const Option &O) const;
+  virtual size_t getOptionWidth(const Option &O) const;
 
   // printOptionInfo - Print out information about this option.  The
   // to-be-maintained width is specified.
   //
-  virtual void printOptionInfo(const Option &O, unsigned GlobalWidth) const;
+  virtual void printOptionInfo(const Option &O, size_t GlobalWidth) const;
 
   void initialize(Option &O) {
     // All of the modifiers for the option have been processed by now, so the
@@ -389,7 +392,7 @@ struct generic_parser_base {
     //
     hasArgStr = O.hasArgStr();
   }
-  
+
   void getExtraOptionNames(std::vector<const char*> &OptionNames) {
     // If there has been no argstr specified, that means that we need to add an
     // argument for every possible option.  This ensures that our options are
@@ -457,7 +460,8 @@ public:
     else
       ArgVal = ArgName;
 
-    for (unsigned i = 0, e = Values.size(); i != e; ++i)
+    for (unsigned i = 0, e = static_cast<unsigned>(Values.size());
+         i != e; ++i)
       if (ArgVal == Values[i].first) {
         V = Values[i].second.first;
         return false;
@@ -495,17 +499,17 @@ struct basic_parser_impl {  // non-template implementation of basic_parser<t>
     return ValueRequired;
   }
 
-  void getExtraOptionNames(std::vector<const char*> &OptionNames) {}
+  void getExtraOptionNames(std::vector<const char*> &) {}
 
-  void initialize(Option &O) {}
+  void initialize(Option &) {}
 
   // Return the width of the option tag for printing...
-  unsigned getOptionWidth(const Option &O) const;
+  size_t getOptionWidth(const Option &O) const;
 
   // printOptionInfo - Print out information about this option.  The
   // to-be-maintained width is specified.
   //
-  void printOptionInfo(const Option &O, unsigned GlobalWidth) const;
+  void printOptionInfo(const Option &O, size_t GlobalWidth) const;
 
   // getValueName - Overload in subclass to provide a better default value.
   virtual const char *getValueName() const { return "value"; }
@@ -537,7 +541,7 @@ public:
 
   // getValueName - Do not print =<value> at all.
   virtual const char *getValueName() const { return 0; }
-  
+
   // An out-of-line virtual method to provide a 'home' for this class.
   virtual void anchor();
 };
@@ -551,7 +555,7 @@ template<>
 class parser<boolOrDefault> : public basic_parser<boolOrDefault> {
 public:
   // parse - Return true on error.
-  bool parse(Option &O, const char *ArgName, const std::string &Arg, 
+  bool parse(Option &O, const char *ArgName, const std::string &Arg,
              boolOrDefault &Val);
 
   enum ValueExpected getValueExpectedFlagDefault() const {
@@ -560,7 +564,7 @@ public:
 
   // getValueName - Do not print =<value> at all.
   virtual const char *getValueName() const { return 0; }
-  
+
   // An out-of-line virtual method to provide a 'home' for this class.
   virtual void anchor();
 };
@@ -647,7 +651,7 @@ template<>
 class parser<std::string> : public basic_parser<std::string> {
 public:
   // parse - Return true on error.
-  bool parse(Option &O, const char *AN, const std::string &Arg,
+  bool parse(Option &, const char *, const std::string &Arg,
              std::string &Value) {
     Value = Arg;
     return false;
@@ -813,8 +817,8 @@ class opt : public Option,
   }
 
   // Forward printing stuff to the parser...
-  virtual unsigned getOptionWidth() const {return Parser.getOptionWidth(*this);}
-  virtual void printOptionInfo(unsigned GlobalWidth) const {
+  virtual size_t getOptionWidth() const {return Parser.getOptionWidth(*this);}
+  virtual void printOptionInfo(size_t GlobalWidth) const {
     Parser.printOptionInfo(*this, GlobalWidth);
   }
 
@@ -965,7 +969,7 @@ class list : public Option, public list_storage<DataType, Storage> {
   virtual void getExtraOptionNames(std::vector<const char*> &OptionNames) {
     return Parser.getExtraOptionNames(OptionNames);
   }
-  
+
   virtual bool handleOccurrence(unsigned pos, const char *ArgName,
                                 const std::string &Arg) {
     typename ParserClass::parser_data_type Val =
@@ -979,8 +983,8 @@ class list : public Option, public list_storage<DataType, Storage> {
   }
 
   // Forward printing stuff to the parser...
-  virtual unsigned getOptionWidth() const {return Parser.getOptionWidth(*this);}
-  virtual void printOptionInfo(unsigned GlobalWidth) const {
+  virtual size_t getOptionWidth() const {return Parser.getOptionWidth(*this);}
+  virtual void printOptionInfo(size_t GlobalWidth) const {
     Parser.printOptionInfo(*this, GlobalWidth);
   }
 
@@ -1071,7 +1075,7 @@ public:
 template<class DataType, class StorageClass>
 class bits_storage {
   unsigned *Location;   // Where to store the bits...
-  
+
   template<class T>
   static unsigned Bit(const T &V) {
     unsigned BitPos = reinterpret_cast<unsigned>(V);
@@ -1096,9 +1100,9 @@ public:
            "line option with external storage!");
     *Location |= Bit(V);
   }
-  
+
   unsigned getBits() { return *Location; }
-  
+
   template<class T>
   bool isSet(const T &V) {
     return (*Location & Bit(V)) != 0;
@@ -1106,13 +1110,13 @@ public:
 };
 
 
-// Define how to hold bits.  Since we can inherit from a class, we do so. 
+// Define how to hold bits.  Since we can inherit from a class, we do so.
 // This makes us exactly compatible with the bits in all cases that it is used.
 //
 template<class DataType>
 class bits_storage<DataType, bool> {
   unsigned Bits;   // Where to store the bits...
-  
+
   template<class T>
   static unsigned Bit(const T &V) {
     unsigned BitPos = reinterpret_cast<unsigned>(V);
@@ -1120,15 +1124,15 @@ class bits_storage<DataType, bool> {
           "enum exceeds width of bit vector!");
     return 1 << BitPos;
   }
-  
+
 public:
   template<class T>
   void addValue(const T &V) {
     Bits |=  Bit(V);
   }
-  
+
   unsigned getBits() { return Bits; }
-  
+
   template<class T>
   bool isSet(const T &V) {
     return (Bits & Bit(V)) != 0;
@@ -1151,7 +1155,7 @@ class bits : public Option, public bits_storage<DataType, Storage> {
   virtual void getExtraOptionNames(std::vector<const char*> &OptionNames) {
     return Parser.getExtraOptionNames(OptionNames);
   }
-  
+
   virtual bool handleOccurrence(unsigned pos, const char *ArgName,
                                 const std::string &Arg) {
     typename ParserClass::parser_data_type Val =
@@ -1165,8 +1169,8 @@ class bits : public Option, public bits_storage<DataType, Storage> {
   }
 
   // Forward printing stuff to the parser...
-  virtual unsigned getOptionWidth() const {return Parser.getOptionWidth(*this);}
-  virtual void printOptionInfo(unsigned GlobalWidth) const {
+  virtual size_t getOptionWidth() const {return Parser.getOptionWidth(*this);}
+  virtual void printOptionInfo(size_t GlobalWidth) const {
     Parser.printOptionInfo(*this, GlobalWidth);
   }
 
@@ -1253,13 +1257,13 @@ public:
 
 class alias : public Option {
   Option *AliasFor;
-  virtual bool handleOccurrence(unsigned pos, const char *ArgName,
+  virtual bool handleOccurrence(unsigned pos, const char * /*ArgName*/,
                                 const std::string &Arg) {
     return AliasFor->handleOccurrence(pos, AliasFor->ArgStr, Arg);
   }
   // Handle printing stuff...
-  virtual unsigned getOptionWidth() const;
-  virtual void printOptionInfo(unsigned GlobalWidth) const;
+  virtual size_t getOptionWidth() const;
+  virtual void printOptionInfo(size_t GlobalWidth) const;
 
   void done() {
     if (!hasArgStr())

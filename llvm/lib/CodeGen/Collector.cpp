@@ -178,8 +178,8 @@ bool LowerIntrinsics::InsertRootInitializers(Function &F, AllocaInst **Roots,
   SmallPtrSet<AllocaInst*,16> InitedRoots;
   for (; !CouldBecomeSafePoint(IP); ++IP)
     if (StoreInst *SI = dyn_cast<StoreInst>(IP))
-      if (AllocaInst *AI = dyn_cast<AllocaInst>(
-            IntrinsicInst::StripPointerCasts(SI->getOperand(1))))
+      if (AllocaInst *AI =
+          dyn_cast<AllocaInst>(SI->getOperand(1)->stripPointerCasts()))
         InitedRoots.insert(AI);
   
   // Add root initializers.
@@ -294,7 +294,7 @@ bool LowerIntrinsics::PerformDefaultLowering(Function &F, Collector &Coll) {
             // Initialize the GC root, but do not delete the intrinsic. The
             // backend needs the intrinsic to flag the stack slot.
             Roots.push_back(cast<AllocaInst>(
-              IntrinsicInst::StripPointerCasts(CI->getOperand(1))));
+                              CI->getOperand(1)->stripPointerCasts()));
           }
           break;
         default:
@@ -337,7 +337,7 @@ void MachineCodeAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 unsigned MachineCodeAnalysis::InsertLabel(MachineBasicBlock &MBB, 
                                      MachineBasicBlock::iterator MI) const {
   unsigned Label = MMI->NextLabelID();
-  BuildMI(MBB, MI, TII->get(TargetInstrInfo::LABEL)).addImm(Label).addImm(2);
+  BuildMI(MBB, MI, TII->get(TargetInstrInfo::GC_LABEL)).addImm(Label);
   return Label;
 }
 

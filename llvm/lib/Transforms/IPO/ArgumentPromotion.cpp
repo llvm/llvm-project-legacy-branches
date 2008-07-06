@@ -66,7 +66,8 @@ namespace {
 
     virtual bool runOnSCC(const std::vector<CallGraphNode *> &SCC);
     static char ID; // Pass identification, replacement for typeid
-    ArgPromotion(unsigned maxElements = 3) : CallGraphSCCPass((intptr_t)&ID), maxElements(maxElements) {}
+    ArgPromotion(unsigned maxElements = 3) : CallGraphSCCPass((intptr_t)&ID),
+                                             maxElements(maxElements) {}
 
   private:
     bool PromoteArguments(CallGraphNode *CGN);
@@ -74,14 +75,14 @@ namespace {
     Function *DoPromotion(Function *F, 
                           SmallPtrSet<Argument*, 8> &ArgsToPromote,
                           SmallPtrSet<Argument*, 8> &ByValArgsToTransform);
-	/// The maximum number of elements to expand, or 0 for unlimited.
-	unsigned maxElements;
+    /// The maximum number of elements to expand, or 0 for unlimited.
+    unsigned maxElements;
   };
-
-  char ArgPromotion::ID = 0;
-  RegisterPass<ArgPromotion> X("argpromotion",
-                               "Promote 'by reference' arguments to scalars");
 }
+
+char ArgPromotion::ID = 0;
+static RegisterPass<ArgPromotion>
+X("argpromotion", "Promote 'by reference' arguments to scalars");
 
 Pass *llvm::createArgumentPromotionPass(unsigned maxElements) {
   return new ArgPromotion(maxElements);
@@ -147,16 +148,16 @@ bool ArgPromotion::PromoteArguments(CallGraphNode *CGN) {
     Argument *PtrArg = PointerArgs[i].first;
     if (isByVal) {
       const Type *AgTy = cast<PointerType>(PtrArg->getType())->getElementType();
-      if (const StructType *STy = dyn_cast<StructType>(AgTy))
+      if (const StructType *STy = dyn_cast<StructType>(AgTy)) {
         if (maxElements > 0 && STy->getNumElements() > maxElements) {
           DOUT << "argpromotion disable promoting argument '"
                << PtrArg->getName() << "' because it would require adding more "
                << "than " << maxElements << " arguments to the function.\n";
         } else {
-          // If all the elements are first class types, we can promote it.
+          // If all the elements are single-value types, we can promote it.
           bool AllSimple = true;
           for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
-            if (!STy->getElementType(i)->isFirstClassType()) {
+            if (!STy->getElementType(i)->isSingleValueType()) {
               AllSimple = false;
               break;
             }
@@ -169,6 +170,7 @@ bool ArgPromotion::PromoteArguments(CallGraphNode *CGN) {
             continue;
           }
         }
+      }
     }
     
     // Otherwise, see if we can promote the pointer to its value.
@@ -260,8 +262,9 @@ bool ArgPromotion::isSafeToPromoteArgument(Argument *Arg, bool isByVal) const {
       }
       // Ensure that all of the indices are constants.
       SmallVector<ConstantInt*, 8> Operands;
-      for (unsigned i = 1, e = GEP->getNumOperands(); i != e; ++i)
-        if (ConstantInt *C = dyn_cast<ConstantInt>(GEP->getOperand(i)))
+      for (User::op_iterator i = GEP->op_begin() + 1, e = GEP->op_end();
+	   i != e; ++i)
+        if (ConstantInt *C = dyn_cast<ConstantInt>(*i))
           Operands.push_back(C);
         else
           return false;  // Not a constant operand GEP!
@@ -290,7 +293,7 @@ bool ArgPromotion::isSafeToPromoteArgument(Argument *Arg, bool isByVal) const {
                << Arg->getName() << "' because it would require adding more "
                << "than " << maxElements << " arguments to the function.\n";
           // We limit aggregate promotion to only promoting up to a fixed number
-		  // of elements of the aggregate.
+          // of elements of the aggregate.
           return false;
         }
         GEPIndices.push_back(Operands);
@@ -477,15 +480,13 @@ Function *ArgPromotion::DoPromotion(Function *F,
 
   // Create the new function body and insert it into the module...
   Function *NF = Function::Create(NFTy, F->getLinkage(), F->getName());
-  NF->setCallingConv(F->getCallingConv());
+  NF->copyAttributesFrom(F);
 
   // Recompute the parameter attributes list based on the new arguments for
   // the function.
   NF->setParamAttrs(PAListPtr::get(ParamAttrsVec.begin(), ParamAttrsVec.end()));
   ParamAttrsVec.clear();
-  
-  if (F->hasCollector())
-    NF->setCollector(F->getCollector());
+
   F->getParent()->getFunctionList().insert(F, NF);
   NF->takeName(F);
 

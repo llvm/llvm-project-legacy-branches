@@ -21,6 +21,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/ADT/Statistic.h"
@@ -42,9 +43,11 @@ namespace {
     bool PropagateConstantsIntoArguments(Function &F);
     bool PropagateConstantReturn(Function &F);
   };
-  char IPCP::ID = 0;
-  RegisterPass<IPCP> X("ipconstprop", "Interprocedural constant propagation");
 }
+
+char IPCP::ID = 0;
+static RegisterPass<IPCP>
+X("ipconstprop", "Interprocedural constant propagation");
 
 ModulePass *llvm::createIPConstantPropagationPass() { return new IPCP(); }
 
@@ -76,156 +79,199 @@ bool IPCP::runOnModule(Module &M) {
 bool IPCP::PropagateConstantsIntoArguments(Function &F) {
   if (F.arg_empty() || F.use_empty()) return false; // No arguments? Early exit.
 
-  std::vector<std::pair<Constant*, bool> > ArgumentConstants;
+  // For each argument, keep track of its constant value and whether it is a
+  // constant or not.  The bool is driven to true when found to be non-constant.
+  SmallVector<std::pair<Constant*, bool>, 16> ArgumentConstants;
   ArgumentConstants.resize(F.arg_size());
 
   unsigned NumNonconstant = 0;
+  for (Value::use_iterator UI = F.use_begin(), E = F.use_end(); UI != E; ++UI) {
+    // Used by a non-instruction, or not the callee of a function, do not
+    // transform.
+    if (UI.getOperandNo() != 0 ||
+        (!isa<CallInst>(*UI) && !isa<InvokeInst>(*UI)))
+      return false;
+    
+    CallSite CS = CallSite::get(cast<Instruction>(*UI));
 
-  for (Value::use_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I)
-    if (!isa<Instruction>(*I))
-      return false;  // Used by a non-instruction, do not transform
-    else {
-      CallSite CS = CallSite::get(cast<Instruction>(*I));
-      if (CS.getInstruction() == 0 ||
-          CS.getCalledFunction() != &F)
-        return false;  // Not a direct call site?
-
-      // Check out all of the potentially constant arguments
-      CallSite::arg_iterator AI = CS.arg_begin();
-      Function::arg_iterator Arg = F.arg_begin();
-      for (unsigned i = 0, e = ArgumentConstants.size(); i != e;
-           ++i, ++AI, ++Arg) {
-        if (*AI == &F) return false;  // Passes the function into itself
-
-        if (!ArgumentConstants[i].second) {
-          if (Constant *C = dyn_cast<Constant>(*AI)) {
-            if (!ArgumentConstants[i].first)
-              ArgumentConstants[i].first = C;
-            else if (ArgumentConstants[i].first != C) {
-              // Became non-constant
-              ArgumentConstants[i].second = true;
-              ++NumNonconstant;
-              if (NumNonconstant == ArgumentConstants.size()) return false;
-            }
-          } else if (*AI != &*Arg) {    // Ignore recursive calls with same arg
-            // This is not a constant argument.  Mark the argument as
-            // non-constant.
-            ArgumentConstants[i].second = true;
-            ++NumNonconstant;
-            if (NumNonconstant == ArgumentConstants.size()) return false;
-          }
-        }
+    // Check out all of the potentially constant arguments.  Note that we don't
+    // inspect varargs here.
+    CallSite::arg_iterator AI = CS.arg_begin();
+    Function::arg_iterator Arg = F.arg_begin();
+    for (unsigned i = 0, e = ArgumentConstants.size(); i != e;
+         ++i, ++AI, ++Arg) {
+      
+      // If this argument is known non-constant, ignore it.
+      if (ArgumentConstants[i].second)
+        continue;
+      
+      Constant *C = dyn_cast<Constant>(*AI);
+      if (C && ArgumentConstants[i].first == 0) {
+        ArgumentConstants[i].first = C;   // First constant seen.
+      } else if (C && ArgumentConstants[i].first == C) {
+        // Still the constant value we think it is.
+      } else if (*AI == &*Arg) {
+        // Ignore recursive calls passing argument down.
+      } else {
+        // Argument became non-constant.  If all arguments are non-constant now,
+        // give up on this function.
+        if (++NumNonconstant == ArgumentConstants.size())
+          return false;
+        ArgumentConstants[i].second = true;
       }
     }
+  }
 
   // If we got to this point, there is a constant argument!
   assert(NumNonconstant != ArgumentConstants.size());
-  Function::arg_iterator AI = F.arg_begin();
   bool MadeChange = false;
-  for (unsigned i = 0, e = ArgumentConstants.size(); i != e; ++i, ++AI)
-    // Do we have a constant argument!?
-    if (!ArgumentConstants[i].second && !AI->use_empty()) {
-      Value *V = ArgumentConstants[i].first;
-      if (V == 0) V = UndefValue::get(AI->getType());
-      AI->replaceAllUsesWith(V);
-      ++NumArgumentsProped;
-      MadeChange = true;
-    }
+  Function::arg_iterator AI = F.arg_begin();
+  for (unsigned i = 0, e = ArgumentConstants.size(); i != e; ++i, ++AI) {
+    // Do we have a constant argument?
+    if (ArgumentConstants[i].second || AI->use_empty())
+      continue;
+  
+    Value *V = ArgumentConstants[i].first;
+    if (V == 0) V = UndefValue::get(AI->getType());
+    AI->replaceAllUsesWith(V);
+    ++NumArgumentsProped;
+    MadeChange = true;
+  }
   return MadeChange;
 }
 
 
-// Check to see if this function returns a constant.  If so, replace all callers
-// that user the return value with the returned valued.  If we can replace ALL
-// callers,
+// Check to see if this function returns one or more constants. If so, replace
+// all callers that use those return values with the constant value. This will
+// leave in the actual return values and instructions, but deadargelim will
+// clean that up.
+//
+// Additionally if a function always returns one of its arguments directly,
+// callers will be updated to use the value they pass in directly instead of
+// using the return value.
 bool IPCP::PropagateConstantReturn(Function &F) {
   if (F.getReturnType() == Type::VoidTy)
     return false; // No return value.
 
+  // If this function could be overridden later in the link stage, we can't
+  // propagate information about its results into callers.
+  if (F.hasLinkOnceLinkage() || F.hasWeakLinkage())
+    return false;
+  
   // Check to see if this function returns a constant.
   SmallVector<Value *,4> RetVals;
   const StructType *STy = dyn_cast<StructType>(F.getReturnType());
   if (STy)
-    RetVals.assign(STy->getNumElements(), 0);
+    for (unsigned i = 0, e = STy->getNumElements(); i < e; ++i) 
+      RetVals.push_back(UndefValue::get(STy->getElementType(i)));
   else
-    RetVals.push_back(0);
+    RetVals.push_back(UndefValue::get(F.getReturnType()));
 
+  unsigned NumNonConstant = 0;
   for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
     if (ReturnInst *RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
-      unsigned RetValsSize = RetVals.size();
-      assert (RetValsSize == RI->getNumOperands() && "Invalid ReturnInst operands!");
-      for (unsigned i = 0; i < RetValsSize; ++i) {
-        if (isa<UndefValue>(RI->getOperand(i))) {
-          // Ignore
-        } else if (Constant *C = dyn_cast<Constant>(RI->getOperand(i))) { 
-          Value *RV = RetVals[i];
-          if (RV == 0)
-            RetVals[i] = C;
-          else if (RV != C)
-            return false; // Does not return the same constant.
-        } else {
-          return false; // Does not return a constant.
-        }
-      }
-    }
+      // Return type does not match operand type, this is an old style multiple
+      // return
+      bool OldReturn = (F.getReturnType() != RI->getOperand(0)->getType());
 
-  if (STy) {
-    for (unsigned i = 0, e = RetVals.size(); i < e; ++i) 
-      if (RetVals[i] == 0) 
-        RetVals[i] = UndefValue::get(STy->getElementType(i));
-  } else {
-    if (RetVals.size() == 1) 
-      if (RetVals[0] == 0)
-        RetVals[0] = UndefValue::get(F.getReturnType());
-  }
+      for (unsigned i = 0, e = RetVals.size(); i != e; ++i) {
+        // Already found conflicting return values?
+        Value *RV = RetVals[i];
+        if (!RV)
+          continue;
 
-  // If we got here, the function returns a constant value.  Loop over all
-  // users, replacing any uses of the return value with the returned constant.
-  bool ReplacedAllUsers = true;
-  bool MadeChange = false;
-  for (Value::use_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I)
-    if (!isa<Instruction>(*I))
-      ReplacedAllUsers = false;
-    else {
-      CallSite CS = CallSite::get(cast<Instruction>(*I));
-      if (CS.getInstruction() == 0 ||
-          CS.getCalledFunction() != &F) {
-        ReplacedAllUsers = false;
-      } else {
-        Instruction *Call = CS.getInstruction();
-        if (!Call->use_empty()) {
-          if (RetVals.size() == 1)
-            Call->replaceAllUsesWith(RetVals[0]);
-          else {
-            for(Value::use_iterator CUI = Call->use_begin(), CUE = Call->use_end();
-                CUI != CUE; ++CUI) {
-              GetResultInst *GR = cast<GetResultInst>(CUI);
-              if (RetVals[GR->getIndex()]) {
-                GR->replaceAllUsesWith(RetVals[GR->getIndex()]);
-                GR->eraseFromParent();
-              }
-            }
-          }
-          MadeChange = true;
-        }
-      }
-    }
+        // Find the returned value
+        Value *V;
+        if (!STy || OldReturn)
+          V = RI->getOperand(i);
+        else
+          V = FindInsertedValue(RI->getOperand(0), i);
 
-  // If we replace all users with the returned constant, and there can be no
-  // other callers of the function, replace the constant being returned in the
-  // function with an undef value.
-  if (ReplacedAllUsers && F.hasInternalLinkage()) {
-    for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-      if (ReturnInst *RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
-        for (unsigned i = 0, e = RetVals.size(); i < e; ++i) {
-          Value *RetVal = RetVals[i];
-          if (isa<UndefValue>(RetVal))
+        if (V) {
+          // Ignore undefs, we can change them into anything
+          if (isa<UndefValue>(V))
             continue;
-          Value *RV = UndefValue::get(RetVal->getType());
-          if (RI->getOperand(i) != RV) {
-            RI->setOperand(i, RV);
-            MadeChange = true;
+          
+          // Try to see if all the rets return the same constant or argument.
+          if (isa<Constant>(V) || isa<Argument>(V)) {
+            if (isa<UndefValue>(RV)) {
+              // No value found yet? Try the current one.
+              RetVals[i] = V;
+              continue;
+            }
+            // Returning the same value? Good.
+            if (RV == V)
+              continue;
           }
+        }
+        // Different or no known return value? Don't propagate this return
+        // value.
+        RetVals[i] = 0;
+        // All values non constant? Stop looking.
+        if (++NumNonConstant == RetVals.size())
+          return false;
+      }
+    }
+
+  // If we got here, the function returns at least one constant value.  Loop
+  // over all users, replacing any uses of the return value with the returned
+  // constant.
+  bool MadeChange = false;
+  for (Value::use_iterator UI = F.use_begin(), E = F.use_end(); UI != E; ++UI) {
+    CallSite CS = CallSite::get(*UI);
+    Instruction* Call = CS.getInstruction();
+
+    // Not a call instruction or a call instruction that's not calling F
+    // directly?
+    if (!Call || UI.getOperandNo() != 0)
+      continue;
+    
+    // Call result not used?
+    if (Call->use_empty())
+      continue;
+
+    MadeChange = true;
+
+    if (STy == 0) {
+      Value* New = RetVals[0];
+      if (Argument *A = dyn_cast<Argument>(New))
+        // Was an argument returned? Then find the corresponding argument in
+        // the call instruction and use that.
+        New = CS.getArgument(A->getArgNo());
+      Call->replaceAllUsesWith(New);
+      continue;
+    }
+   
+    for (Value::use_iterator I = Call->use_begin(), E = Call->use_end();
+         I != E;) {
+      Instruction *Ins = dyn_cast<Instruction>(*I);
+
+      // Increment now, so we can remove the use
+      ++I;
+
+      // Not an instruction? Ignore
+      if (!Ins)
+        continue;
+
+      // Find the index of the retval to replace with
+      int index = -1;
+      if (GetResultInst *GR = dyn_cast<GetResultInst>(Ins))
+        index = GR->getIndex();
+      else if (ExtractValueInst *EV = dyn_cast<ExtractValueInst>(Ins))
+        if (EV->hasIndices())
+          index = *EV->idx_begin();
+
+      // If this use uses a specific return value, and we have a replacement,
+      // replace it.
+      if (index != -1) {
+        Value *New = RetVals[index];
+        if (New) {
+          if (Argument *A = dyn_cast<Argument>(New))
+            // Was an argument returned? Then find the corresponding argument in
+            // the call instruction and use that.
+            New = CS.getArgument(A->getArgNo());
+          Ins->replaceAllUsesWith(New);
+          Ins->eraseFromParent();
         }
       }
     }

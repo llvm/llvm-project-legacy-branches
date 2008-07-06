@@ -180,7 +180,7 @@ namespace sys {
       /// of the path, use the isValid method.
       /// @param p The path to assign.
       /// @brief Construct a Path from a string.
-      explicit Path(const std::string& p) : path(p) {}
+      explicit Path(const std::string& p);
 
       /// This constructor will accept a character range as a path.  No checking
       /// is done on this path to determine if it is valid.  To determine
@@ -188,8 +188,7 @@ namespace sys {
       /// @param StrStart A pointer to the first character of the path name
       /// @param StrLen The length of the path name at StrStart
       /// @brief Construct a Path from a string.
-      explicit Path(const char *StrStart, unsigned StrLen)
-        : path(StrStart, StrStart+StrLen) {}
+      Path(const char *StrStart, unsigned StrLen);
 
     /// @}
     /// @name Operators
@@ -206,16 +205,12 @@ namespace sys {
       /// Compares \p this Path with \p that Path for equality.
       /// @returns true if \p this and \p that refer to the same thing.
       /// @brief Equality Operator
-      bool operator==(const Path &that) const {
-        return 0 == path.compare(that.path);
-      }
+      bool operator==(const Path &that) const;
 
       /// Compares \p this Path with \p that Path for inequality.
       /// @returns true if \p this and \p that refer to different things.
       /// @brief Inequality Operator
-      bool operator!=(const Path &that) const {
-        return 0 != path.compare(that.path);
-      }
+      bool operator!=(const Path &that) const;
 
       /// Determines if \p this Path is less than \p that Path. This is required
       /// so that Path objects can be placed into ordered collections (e.g.
@@ -223,9 +218,7 @@ namespace sys {
       /// the std::string::compare method.
       /// @returns true if \p this path is lexicographically less than \p that.
       /// @brief Less Than Operator
-      bool operator<(const Path& that) const {
-        return 0 > path.compare(that.path);
-      }
+      bool operator<(const Path& that) const;
 
     /// @}
     /// @name Path Accessors
@@ -288,7 +281,7 @@ namespace sys {
       const char *c_str() const { return path.c_str(); }
 
       /// size - Return the length in bytes of this path name.
-      unsigned size() const { return path.size(); }
+      size_t size() const { return path.size(); }
 
       /// empty - Returns true if the path is empty.
       unsigned empty() const { return path.empty(); }

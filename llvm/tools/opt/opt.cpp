@@ -262,11 +262,12 @@ void AddStandardCompilePasses(PassManager &PM) {
 
   if (!DisableInline)
     addPass(PM, createFunctionInliningPass());   // Inline small functions
-  addPass(PM, createSimplifyLibCallsPass());     // Library Call Optimizations
   addPass(PM, createArgumentPromotionPass());    // Scalarize uninlined fn args
 
   addPass(PM, createTailDuplicationPass());      // Simplify cfg by copying code
+  addPass(PM, createSimplifyLibCallsPass());     // Library Call Optimizations
   addPass(PM, createInstructionCombiningPass()); // Cleanup for scalarrepl.
+  addPass(PM, createJumpThreadingPass());        // Thread jumps.
   addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
   addPass(PM, createScalarReplAggregatesPass()); // Break up aggregate allocas
   addPass(PM, createInstructionCombiningPass()); // Combine silly seq's
@@ -279,8 +280,10 @@ void AddStandardCompilePasses(PassManager &PM) {
   addPass(PM, createLICMPass());                 // Hoist loop invariants
   addPass(PM, createLoopUnswitchPass());         // Unswitch loops.
   addPass(PM, createLoopIndexSplitPass());       // Index split loops.
-  addPass(PM, createInstructionCombiningPass()); // Clean up after LICM/reassoc
+  // FIXME : Removing instcombine causes nestedloop regression.
+  addPass(PM, createInstructionCombiningPass()); 
   addPass(PM, createIndVarSimplifyPass());       // Canonicalize indvars
+  addPass(PM, createLoopDeletionPass());         // Delete dead loops
   addPass(PM, createLoopUnrollPass());           // Unroll small loops
   addPass(PM, createInstructionCombiningPass()); // Clean up after the unroller
   addPass(PM, createGVNPass());                  // Remove redundancies
@@ -293,7 +296,7 @@ void AddStandardCompilePasses(PassManager &PM) {
   addPass(PM, createCondPropagationPass());      // Propagate conditionals
 
   addPass(PM, createDeadStoreEliminationPass()); // Delete dead stores
-  addPass(PM, createAggressiveDCEPass());        // SSA based 'Aggressive DCE'
+  addPass(PM, createAggressiveDCEPass());        // Delete dead instructions
   addPass(PM, createCFGSimplificationPass());    // Merge & remove BBs
   addPass(PM, createStripDeadPrototypesPass());  // Get rid of dead prototypes
   addPass(PM, createDeadTypeEliminationPass());  // Eliminate dead types

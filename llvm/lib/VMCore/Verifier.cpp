@@ -92,11 +92,14 @@ namespace {  // Anonymous namespace for class
       return false;
     }
   };
+}
 
-  char PreVerifier::ID = 0;
-  RegisterPass<PreVerifier> PreVer("preverify", "Preliminary module verification");
-  const PassInfo *PreVerifyID = PreVer.getPassInfo();
+char PreVerifier::ID = 0;
+static RegisterPass<PreVerifier>
+PreVer("preverify", "Preliminary module verification");
+static const PassInfo *const PreVerifyID = &PreVer;
 
+namespace {
   struct VISIBILITY_HIDDEN
      Verifier : public FunctionPass, InstVisitor<Verifier> {
     static char ID; // Pass ID, replacement for typeid
@@ -305,11 +308,10 @@ namespace {  // Anonymous namespace for class
       Broken = true;
     }
   };
-
-  char Verifier::ID = 0;
-  RegisterPass<Verifier> X("verify", "Module Verifier");
 } // End anonymous namespace
 
+char Verifier::ID = 0;
+static RegisterPass<Verifier> X("verify", "Module Verifier");
 
 // Assert - We know that cond should be true, if not print an error message.
 #define Assert(C, M) \
@@ -367,9 +369,11 @@ void Verifier::visitGlobalAlias(GlobalAlias &GA) {
   Assert1(GA.hasExternalLinkage() || GA.hasInternalLinkage() ||
           GA.hasWeakLinkage(),
           "Alias should have external or external weak linkage!", &GA);
+  Assert1(GA.getAliasee(),
+          "Aliasee cannot be NULL!", &GA);
   Assert1(GA.getType() == GA.getAliasee()->getType(),
           "Alias and aliasee types should match!", &GA);
-  
+
   if (!isa<GlobalValue>(GA.getAliasee())) {
     const ConstantExpr *CE = dyn_cast<ConstantExpr>(GA.getAliasee());
     Assert1(CE && CE->getOpcode() == Instruction::BitCast &&
@@ -530,12 +534,6 @@ void Verifier::visitBasicBlock(BasicBlock &BB) {
   // Ensure that basic blocks have terminators!
   Assert1(BB.getTerminator(), "Basic Block does not have terminator!", &BB);
 
-  // Ensure that the BB doesn't point out of its Function for unwinding.
-  Assert2(!BB.getUnwindDest() ||
-          BB.getUnwindDest()->getParent() == BB.getParent(),
-          "Basic Block unwinds to block in different function!",
-          &BB, BB.getUnwindDest());
-
   // Check constraints that this basic block imposes on all of the PHI nodes in
   // it.
   if (isa<PHINode>(BB.front())) {
@@ -592,22 +590,34 @@ void Verifier::visitTerminatorInst(TerminatorInst &I) {
 void Verifier::visitReturnInst(ReturnInst &RI) {
   Function *F = RI.getParent()->getParent();
   unsigned N = RI.getNumOperands();
-  if (N == 0) 
-    Assert2(F->getReturnType() == Type::VoidTy,
+  if (F->getReturnType() == Type::VoidTy) 
+    Assert2(N == 0,
             "Found return instr that returns void in Function of non-void "
             "return type!", &RI, F->getReturnType());
-  else if (const StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
-    for (unsigned i = 0; i < N; i++)
+  else if (N == 1 && F->getReturnType() == RI.getOperand(0)->getType()) {
+    // Exactly one return value and it matches the return type. Good.
+  } else if (const StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
+    // The return type is a struct; check for multiple return values.
+    Assert2(STy->getNumElements() == N,
+            "Incorrect number of return values in ret instruction!",
+            &RI, F->getReturnType());
+    for (unsigned i = 0; i != N; ++i)
       Assert2(STy->getElementType(i) == RI.getOperand(i)->getType(),
               "Function return type does not match operand "
               "type of return inst!", &RI, F->getReturnType());
-  } 
-  else if (N == 1) 
-    Assert2(F->getReturnType() == RI.getOperand(0)->getType(),
-            "Function return type does not match operand "
-            "type of return inst!", &RI, F->getReturnType());
-  else
-    Assert1(0, "Invalid return type!", &RI);
+  } else if (const ArrayType *ATy = dyn_cast<ArrayType>(F->getReturnType())) {
+    // The return type is an array; check for multiple return values.
+    Assert2(ATy->getNumElements() == N,
+            "Incorrect number of return values in ret instruction!",
+            &RI, F->getReturnType());
+    for (unsigned i = 0; i != N; ++i)
+      Assert2(ATy->getElementType() == RI.getOperand(i)->getType(),
+              "Function return type does not match operand "
+              "type of return inst!", &RI, F->getReturnType());
+  } else {
+    CheckFailed("Function return type does not match operand "
+                "type of return inst!", &RI, F->getReturnType());
+  }
   
   // Check to make sure that the return value has necessary properties for
   // terminators...
@@ -1046,7 +1056,7 @@ void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   SmallVector<Value*, 16> Idxs(GEP.idx_begin(), GEP.idx_end());
   const Type *ElTy =
     GetElementPtrInst::getIndexedType(GEP.getOperand(0)->getType(),
-                                      Idxs.begin(), Idxs.end(), true);
+                                      Idxs.begin(), Idxs.end());
   Assert1(ElTy, "Invalid indices for GEP pointer type!", &GEP);
   Assert2(isa<PointerType>(GEP.getType()) &&
           cast<PointerType>(GEP.getType())->getElementType() == ElTy,
@@ -1081,8 +1091,14 @@ void Verifier::visitAllocationInst(AllocationInst &AI) {
 }
 
 void Verifier::visitGetResultInst(GetResultInst &GRI) {
-  Assert1(GRI.isValidOperands(GRI.getAggregateValue(), GRI.getIndex()),
+  Assert1(GetResultInst::isValidOperands(GRI.getAggregateValue(),
+                                         GRI.getIndex()),
           "Invalid GetResultInst operands!", &GRI);
+  Assert1(isa<CallInst>(GRI.getAggregateValue()) ||
+          isa<InvokeInst>(GRI.getAggregateValue()) ||
+          isa<UndefValue>(GRI.getAggregateValue()),
+          "GetResultInst operand must be a call/invoke/undef!", &GRI);
+  
   visitInstruction(GRI);
 }
 
@@ -1270,8 +1286,7 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
                 "Intrinsic parameter #1 is not i8**.", &CI);
         Assert1(CI.getOperand(2)->getType() == PtrTy,
                 "Intrinsic parameter #2 is not i8*.", &CI);
-        Assert1(isa<AllocaInst>(
-                  IntrinsicInst::StripPointerCasts(CI.getOperand(1))),
+        Assert1(isa<AllocaInst>(CI.getOperand(1)->stripPointerCasts()),
                 "llvm.gcroot parameter #1 must be an alloca.", &CI);
         Assert1(isa<Constant>(CI.getOperand(2)),
                 "llvm.gcroot parameter #2 must be a constant.", &CI);
@@ -1297,7 +1312,7 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
               &CI);
     } break;
   case Intrinsic::init_trampoline:
-    Assert1(isa<Function>(IntrinsicInst::StripPointerCasts(CI.getOperand(2))),
+    Assert1(isa<Function>(CI.getOperand(2)->stripPointerCasts()),
             "llvm.init_trampoline parameter #2 must resolve to a function.",
             &CI);
     break;
@@ -1327,7 +1342,7 @@ void Verifier::VerifyIntrinsicPrototype(Intrinsic::ID ID,
 
   // Note that "arg#0" is the return type.
   for (unsigned ArgNo = 0; ArgNo < Count; ++ArgNo) {
-    MVT::ValueType VT = va_arg(VA, MVT::ValueType);
+    int VT = va_arg(VA, int); // An MVT::SimpleValueType when non-negative.
 
     if (VT == MVT::isVoid && ArgNo > 0) {
       if (!FTy->isVarArg())
@@ -1347,8 +1362,8 @@ void Verifier::VerifyIntrinsicPrototype(Intrinsic::ID ID,
       EltTy = VTy->getElementType();
       NumElts = VTy->getNumElements();
     }
-    
-    if ((int)VT < 0) {
+
+    if (VT < 0) {
       int Match = ~VT;
       if (Match == 0) {
         if (Ty != FTy->getReturnType()) {
@@ -1399,7 +1414,7 @@ void Verifier::VerifyIntrinsicPrototype(Intrinsic::ID ID,
       Suffix += ".";
       if (EltTy != Ty)
         Suffix += "v" + utostr(NumElts);
-      Suffix += MVT::getValueTypeString(MVT::getValueType(EltTy));
+      Suffix += MVT::getMVT(EltTy).getMVTString();
     } else if (VT == MVT::iPTR) {
       if (!isa<PointerType>(Ty)) {
         if (ArgNo == 0)
@@ -1410,19 +1425,20 @@ void Verifier::VerifyIntrinsicPrototype(Intrinsic::ID ID,
                       "pointer and a pointer is required.", F);
         break;
       }
-    } else if (MVT::isVector(VT)) {
+    } else if (MVT((MVT::SimpleValueType)VT).isVector()) {
+      MVT VVT = MVT((MVT::SimpleValueType)VT);
       // If this is a vector argument, verify the number and type of elements.
-      if (MVT::getVectorElementType(VT) != MVT::getValueType(EltTy)) {
+      if (VVT.getVectorElementType() != MVT::getMVT(EltTy)) {
         CheckFailed("Intrinsic prototype has incorrect vector element type!",
                     F);
         break;
       }
-      if (MVT::getVectorNumElements(VT) != NumElts) {
+      if (VVT.getVectorNumElements() != NumElts) {
         CheckFailed("Intrinsic prototype has incorrect number of "
                     "vector elements!",F);
         break;
       }
-    } else if (MVT::getTypeForValueType(VT) != EltTy) {
+    } else if (MVT((MVT::SimpleValueType)VT).getTypeForMVT() != EltTy) {
       if (ArgNo == 0)
         CheckFailed("Intrinsic prototype has incorrect result type!", F);
       else
@@ -1488,7 +1504,7 @@ bool llvm::verifyModule(const Module &M, VerifierFailureAction action,
   PassManager PM;
   Verifier *V = new Verifier(action);
   PM.add(V);
-  PM.run((Module&)M);
+  PM.run(const_cast<Module&>(M));
   
   if (ErrorInfo && V->Broken)
     *ErrorInfo = V->msgs.str();

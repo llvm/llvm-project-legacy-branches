@@ -18,7 +18,6 @@
 #define LLVM_CODEGEN_MACHINECODEEMITTER_H
 
 #include "llvm/Support/DataTypes.h"
-#include <vector>
 
 namespace llvm {
 
@@ -168,7 +167,8 @@ public:
   /// emitString - This callback is invoked when a String needs to be
   /// written to the output stream.
   void emitString(const std::string &String) {
-    for (unsigned i = 0, N = String.size(); i < N; ++i) {
+    for (unsigned i = 0, N = static_cast<unsigned>(String.size());
+         i < N; ++i) {
       unsigned char C = String[i];
       emitByte(C);
     }

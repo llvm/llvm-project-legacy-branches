@@ -14,7 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "pre-RA-sched"
-#include "llvm/Constants.h"
 #include "llvm/Type.h"
 #include "llvm/CodeGen/ScheduleDAG.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -79,13 +78,12 @@ static void CheckForPhysRegDependency(SDNode *Def, SDNode *Use, unsigned Op,
 
 SUnit *ScheduleDAG::Clone(SUnit *Old) {
   SUnit *SU = NewSUnit(Old->Node);
+  SU->OrigNode = Old->OrigNode;
   SU->FlaggedNodes = Old->FlaggedNodes;
-  SU->InstanceNo = SUnitMap[Old->Node].size();
   SU->Latency = Old->Latency;
   SU->isTwoAddress = Old->isTwoAddress;
   SU->isCommutable = Old->isCommutable;
   SU->hasPhysRegDefs = Old->hasPhysRegDefs;
-  SUnitMap[Old->Node].push_back(SU);
   return SU;
 }
 
@@ -97,15 +95,22 @@ void ScheduleDAG::BuildSchedUnits() {
   // Reserve entries in the vector for each of the SUnits we are creating.  This
   // ensure that reallocation of the vector won't happen, so SUnit*'s won't get
   // invalidated.
-  SUnits.reserve(std::distance(DAG.allnodes_begin(), DAG.allnodes_end()));
+  SUnits.reserve(DAG.allnodes_size());
   
+  // During scheduling, the NodeId field of SDNode is used to map SDNodes
+  // to their associated SUnits by holding SUnits table indices. A value
+  // of -1 means the SDNode does not yet have an associated SUnit.
+  for (SelectionDAG::allnodes_iterator NI = DAG.allnodes_begin(),
+       E = DAG.allnodes_end(); NI != E; ++NI)
+    NI->setNodeId(-1);
+
   for (SelectionDAG::allnodes_iterator NI = DAG.allnodes_begin(),
        E = DAG.allnodes_end(); NI != E; ++NI) {
     if (isPassiveNode(NI))  // Leaf node, e.g. a TargetImmediate.
       continue;
     
     // If this node has already been processed, stop now.
-    if (SUnitMap[NI].size()) continue;
+    if (NI->getNodeId() != -1) continue;
     
     SUnit *NodeSUnit = NewSUnit(NI);
     
@@ -120,7 +125,8 @@ void ScheduleDAG::BuildSchedUnits() {
       do {
         N = N->getOperand(N->getNumOperands()-1).Val;
         NodeSUnit->FlaggedNodes.push_back(N);
-        SUnitMap[N].push_back(NodeSUnit);
+        assert(N->getNodeId() == -1 && "Node already inserted!");
+        N->setNodeId(NodeSUnit->NodeNum);
       } while (N->getNumOperands() &&
                N->getOperand(N->getNumOperands()-1).getValueType()== MVT::Flag);
       std::reverse(NodeSUnit->FlaggedNodes.begin(),
@@ -140,7 +146,8 @@ void ScheduleDAG::BuildSchedUnits() {
         if (FlagVal.isOperandOf(UI->getUser())) {
           HasFlagUse = true;
           NodeSUnit->FlaggedNodes.push_back(N);
-          SUnitMap[N].push_back(NodeSUnit);
+          assert(N->getNodeId() == -1 && "Node already inserted!");
+          N->setNodeId(NodeSUnit->NodeNum);
           N = UI->getUser();
           break;
         }
@@ -150,7 +157,8 @@ void ScheduleDAG::BuildSchedUnits() {
     // Now all flagged nodes are in FlaggedNodes and N is the bottom-most node.
     // Update the SUnit
     NodeSUnit->Node = N;
-    SUnitMap[N].push_back(NodeSUnit);
+    assert(N->getNodeId() == -1 && "Node already inserted!");
+    N->setNodeId(NodeSUnit->NodeNum);
 
     ComputeLatency(NodeSUnit);
   }
@@ -187,11 +195,11 @@ void ScheduleDAG::BuildSchedUnits() {
       for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
         SDNode *OpN = N->getOperand(i).Val;
         if (isPassiveNode(OpN)) continue;   // Not scheduled.
-        SUnit *OpSU = SUnitMap[OpN].front();
+        SUnit *OpSU = &SUnits[OpN->getNodeId()];
         assert(OpSU && "Node has no SUnit!");
         if (OpSU == SU) continue;           // In the same group.
 
-        MVT::ValueType OpVT = N->getOperand(i).getValueType();
+        MVT OpVT = N->getOperand(i).getValueType();
         assert(OpVT != MVT::Flag && "Flagged nodes should be in same sunit!");
         bool isChain = OpVT == MVT::Other;
 
@@ -206,8 +214,6 @@ void ScheduleDAG::BuildSchedUnits() {
     // Remove MainNode from FlaggedNodes again.
     SU->FlaggedNodes.pop_back();
   }
-  
-  return;
 }
 
 void ScheduleDAG::ComputeLatency(SUnit *SU) {
@@ -218,25 +224,25 @@ void ScheduleDAG::ComputeLatency(SUnit *SU) {
   if (InstrItins.isEmpty()) {
     // No latency information.
     SU->Latency = 1;
-  } else {
-    SU->Latency = 0;
-    if (SU->Node->isTargetOpcode()) {
-      unsigned SchedClass =
-        TII->get(SU->Node->getTargetOpcode()).getSchedClass();
+    return;
+  }
+
+  SU->Latency = 0;
+  if (SU->Node->isTargetOpcode()) {
+    unsigned SchedClass = TII->get(SU->Node->getTargetOpcode()).getSchedClass();
+    const InstrStage *S = InstrItins.begin(SchedClass);
+    const InstrStage *E = InstrItins.end(SchedClass);
+    for (; S != E; ++S)
+      SU->Latency += S->Cycles;
+  }
+  for (unsigned i = 0, e = SU->FlaggedNodes.size(); i != e; ++i) {
+    SDNode *FNode = SU->FlaggedNodes[i];
+    if (FNode->isTargetOpcode()) {
+      unsigned SchedClass = TII->get(FNode->getTargetOpcode()).getSchedClass();
       const InstrStage *S = InstrItins.begin(SchedClass);
       const InstrStage *E = InstrItins.end(SchedClass);
       for (; S != E; ++S)
         SU->Latency += S->Cycles;
-    }
-    for (unsigned i = 0, e = SU->FlaggedNodes.size(); i != e; ++i) {
-      SDNode *FNode = SU->FlaggedNodes[i];
-      if (FNode->isTargetOpcode()) {
-        unsigned SchedClass =TII->get(FNode->getTargetOpcode()).getSchedClass();
-        const InstrStage *S = InstrItins.begin(SchedClass);
-        const InstrStage *E = InstrItins.end(SchedClass);
-        for (; S != E; ++S)
-          SU->Latency += S->Cycles;
-      }
     }
   }
 }
@@ -384,11 +390,12 @@ unsigned ScheduleDAG::ComputeMemOperandsEnd(SDNode *Node) {
   return N;
 }
 
-static const TargetRegisterClass *getInstrOperandRegClass(
-        const TargetRegisterInfo *TRI, 
-        const TargetInstrInfo *TII,
-        const TargetInstrDesc &II,
-        unsigned Op) {
+/// getInstrOperandRegClass - Return register class of the operand of an
+/// instruction of the specified TargetInstrDesc.
+static const TargetRegisterClass*
+getInstrOperandRegClass(const TargetRegisterInfo *TRI, 
+                        const TargetInstrInfo *TII, const TargetInstrDesc &II,
+                        unsigned Op) {
   if (Op >= II.getNumOperands()) {
     assert(II.isVariadic() && "Invalid operand # of instruction");
     return NULL;
@@ -398,15 +405,18 @@ static const TargetRegisterClass *getInstrOperandRegClass(
   return TRI->getRegClass(II.OpInfo[Op].RegClass);
 }
 
+/// EmitCopyFromReg - Generate machine code for an CopyFromReg node or an
+/// implicit physical register output.
 void ScheduleDAG::EmitCopyFromReg(SDNode *Node, unsigned ResNo,
-                                  unsigned InstanceNo, unsigned SrcReg,
+                                  bool IsClone, unsigned SrcReg,
                                   DenseMap<SDOperand, unsigned> &VRBaseMap) {
   unsigned VRBase = 0;
   if (TargetRegisterInfo::isVirtualRegister(SrcReg)) {
     // Just use the input register directly!
-    if (InstanceNo > 0)
+    if (IsClone)
       VRBaseMap.erase(SDOperand(Node, ResNo));
     bool isNew = VRBaseMap.insert(std::make_pair(SDOperand(Node,ResNo),SrcReg));
+    isNew = isNew; // Silence compiler warning.
     assert(isNew && "Node emitted out of order - early");
     return;
   }
@@ -432,7 +442,7 @@ void ScheduleDAG::EmitCopyFromReg(SDNode *Node, unsigned ResNo,
         SDOperand Op = Use->getOperand(i);
         if (Op.Val != Node || Op.ResNo != ResNo)
           continue;
-        MVT::ValueType VT = Node->getValueType(Op.ResNo);
+        MVT VT = Node->getValueType(Op.ResNo);
         if (VT != MVT::Other && VT != MVT::Flag)
           Match = false;
       }
@@ -462,9 +472,10 @@ void ScheduleDAG::EmitCopyFromReg(SDNode *Node, unsigned ResNo,
     TII->copyRegToReg(*BB, BB->end(), VRBase, SrcReg, DstRC, SrcRC);
   }
 
-  if (InstanceNo > 0)
+  if (IsClone)
     VRBaseMap.erase(SDOperand(Node, ResNo));
   bool isNew = VRBaseMap.insert(std::make_pair(SDOperand(Node,ResNo), VRBase));
+  isNew = isNew; // Silence compiler warning.
   assert(isNew && "Node emitted out of order - early");
 }
 
@@ -522,6 +533,7 @@ void ScheduleDAG::CreateVirtualRegisters(SDNode *Node, MachineInstr *MI,
     }
 
     bool isNew = VRBaseMap.insert(std::make_pair(SDOperand(Node,i), VRBase));
+    isNew = isNew; // Silence compiler warning.
     assert(isNew && "Node emitted out of order - early");
   }
 }
@@ -651,18 +663,17 @@ void ScheduleDAG::AddOperand(MachineInstr *MI, SDOperand Op,
       assert(getInstrOperandRegClass(TRI, TII, *II, IIOpNum) &&
              "Don't have operand info for this instruction!");
     }
-  }
-  
+  }  
 }
 
 void ScheduleDAG::AddMemOperand(MachineInstr *MI, const MachineMemOperand &MO) {
   MI->addMemOperand(MO);
 }
 
-// Returns the Register Class of a subregister
-static const TargetRegisterClass *getSubRegisterRegClass(
-        const TargetRegisterClass *TRC,
-        unsigned SubIdx) {
+/// getSubRegisterRegClass - Returns the register class of specified register
+/// class' "SubIdx"'th sub-register class.
+static const TargetRegisterClass*
+getSubRegisterRegClass(const TargetRegisterClass *TRC, unsigned SubIdx) {
   // Pick the register class of the subregister
   TargetRegisterInfo::regclass_iterator I =
     TRC->subregclasses_begin() + SubIdx-1;
@@ -671,10 +682,12 @@ static const TargetRegisterClass *getSubRegisterRegClass(
   return *I;
 }
 
-static const TargetRegisterClass *getSuperregRegisterClass(
-        const TargetRegisterClass *TRC,
-        unsigned SubIdx,
-        MVT::ValueType VT) {
+/// getSuperRegisterRegClass - Returns the register class of a superreg A whose
+/// "SubIdx"'th sub-register class is the specified register class and whose
+/// type matches the specified type.
+static const TargetRegisterClass*
+getSuperRegisterRegClass(const TargetRegisterClass *TRC,
+                         unsigned SubIdx, MVT VT) {
   // Pick the register class of the superegister for this type
   for (TargetRegisterInfo::regclass_iterator I = TRC->superregclasses_begin(),
          E = TRC->superregclasses_end(); I != E; ++I)
@@ -719,9 +732,11 @@ void ScheduleDAG::EmitSubregNode(SDNode *Node,
 
     if (VRBase) {
       // Grab the destination register
+#ifndef NDEBUG
       const TargetRegisterClass *DRC = MRI.getRegClass(VRBase);
       assert(SRC && DRC && SRC == DRC && 
              "Source subregister and destination must have the same class");
+#endif
     } else {
       // Create the reg
       assert(SRC && "Couldn't find source register class");
@@ -747,7 +762,7 @@ void ScheduleDAG::EmitSubregNode(SDNode *Node,
     if (VRBase) {
       TRC = MRI.getRegClass(VRBase);
     } else {
-      TRC = getSuperregRegisterClass(MRI.getRegClass(SubReg), SubIdx, 
+      TRC = getSuperRegisterRegClass(MRI.getRegClass(SubReg), SubIdx, 
                                      Node->getValueType(0));
       assert(TRC && "Couldn't determine register class for insert_subreg");
       VRBase = MRI.createVirtualRegister(TRC); // Create the reg
@@ -772,12 +787,13 @@ void ScheduleDAG::EmitSubregNode(SDNode *Node,
     assert(0 && "Node is not insert_subreg, extract_subreg, or subreg_to_reg");
      
   bool isNew = VRBaseMap.insert(std::make_pair(SDOperand(Node,0), VRBase));
+  isNew = isNew; // Silence compiler warning.
   assert(isNew && "Node emitted out of order - early");
 }
 
 /// EmitNode - Generate machine code for an node and needed dependencies.
 ///
-void ScheduleDAG::EmitNode(SDNode *Node, unsigned InstanceNo,
+void ScheduleDAG::EmitNode(SDNode *Node, bool IsClone,
                            DenseMap<SDOperand, unsigned> &VRBaseMap) {
   // If machine instruction
   if (Node->isTargetOpcode()) {
@@ -799,10 +815,10 @@ void ScheduleDAG::EmitNode(SDNode *Node, unsigned InstanceNo,
     unsigned NumResults = CountResults(Node);
     unsigned NodeOperands = CountOperands(Node);
     unsigned MemOperandsEnd = ComputeMemOperandsEnd(Node);
-    unsigned NumMIOperands = NodeOperands + NumResults;
     bool HasPhysRegOuts = (NumResults > II.getNumDefs()) &&
                           II.getImplicitDefs() != 0;
 #ifndef NDEBUG
+    unsigned NumMIOperands = NodeOperands + NumResults;
     assert((II.getNumOperands() == NumMIOperands ||
             HasPhysRegOuts || II.isVariadic()) &&
            "#operands for dag node doesn't match .td file!"); 
@@ -852,120 +868,98 @@ void ScheduleDAG::EmitNode(SDNode *Node, unsigned InstanceNo,
       for (unsigned i = II.getNumDefs(); i < NumResults; ++i) {
         unsigned Reg = II.getImplicitDefs()[i - II.getNumDefs()];
         if (Node->hasAnyUseOfValue(i))
-          EmitCopyFromReg(Node, i, InstanceNo, Reg, VRBaseMap);
+          EmitCopyFromReg(Node, i, IsClone, Reg, VRBaseMap);
       }
     }
-  } else {
-    switch (Node->getOpcode()) {
-    default:
+    return;
+  }
+
+  switch (Node->getOpcode()) {
+  default:
 #ifndef NDEBUG
-      Node->dump(&DAG);
+    Node->dump(&DAG);
 #endif
-      assert(0 && "This target-independent node should have been selected!");
-      break;
-    case ISD::EntryToken:
-      assert(0 && "EntryToken should have been excluded from the schedule!");
-      break;
-    case ISD::TokenFactor: // fall thru
-    case ISD::LABEL:
-    case ISD::DECLARE:
-    case ISD::SRCVALUE:
-      break;
-    case ISD::CopyToReg: {
-      unsigned SrcReg;
-      SDOperand SrcVal = Node->getOperand(2);
-      if (RegisterSDNode *R = dyn_cast<RegisterSDNode>(SrcVal))
-        SrcReg = R->getReg();
-      else
-        SrcReg = getVR(SrcVal, VRBaseMap);
+    assert(0 && "This target-independent node should have been selected!");
+    break;
+  case ISD::EntryToken:
+    assert(0 && "EntryToken should have been excluded from the schedule!");
+    break;
+  case ISD::TokenFactor: // fall thru
+    break;
+  case ISD::CopyToReg: {
+    unsigned SrcReg;
+    SDOperand SrcVal = Node->getOperand(2);
+    if (RegisterSDNode *R = dyn_cast<RegisterSDNode>(SrcVal))
+      SrcReg = R->getReg();
+    else
+      SrcReg = getVR(SrcVal, VRBaseMap);
       
-      unsigned DestReg = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
-      if (SrcReg == DestReg) // Coalesced away the copy? Ignore.
-        break;
+    unsigned DestReg = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
+    if (SrcReg == DestReg) // Coalesced away the copy? Ignore.
+      break;
       
-      const TargetRegisterClass *SrcTRC = 0, *DstTRC = 0;
-      // Get the register classes of the src/dst.
-      if (TargetRegisterInfo::isVirtualRegister(SrcReg))
-        SrcTRC = MRI.getRegClass(SrcReg);
-      else
-        SrcTRC = TRI->getPhysicalRegisterRegClass(SrcReg,SrcVal.getValueType());
+    const TargetRegisterClass *SrcTRC = 0, *DstTRC = 0;
+    // Get the register classes of the src/dst.
+    if (TargetRegisterInfo::isVirtualRegister(SrcReg))
+      SrcTRC = MRI.getRegClass(SrcReg);
+    else
+      SrcTRC = TRI->getPhysicalRegisterRegClass(SrcReg,SrcVal.getValueType());
 
-      if (TargetRegisterInfo::isVirtualRegister(DestReg))
-        DstTRC = MRI.getRegClass(DestReg);
-      else
-        DstTRC = TRI->getPhysicalRegisterRegClass(DestReg,
+    if (TargetRegisterInfo::isVirtualRegister(DestReg))
+      DstTRC = MRI.getRegClass(DestReg);
+    else
+      DstTRC = TRI->getPhysicalRegisterRegClass(DestReg,
                                             Node->getOperand(1).getValueType());
-      TII->copyRegToReg(*BB, BB->end(), DestReg, SrcReg, DstTRC, SrcTRC);
-      break;
-    }
-    case ISD::CopyFromReg: {
-      unsigned SrcReg = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
-      EmitCopyFromReg(Node, 0, InstanceNo, SrcReg, VRBaseMap);
-      break;
-    }
-    case ISD::INLINEASM: {
-      unsigned NumOps = Node->getNumOperands();
-      if (Node->getOperand(NumOps-1).getValueType() == MVT::Flag)
-        --NumOps;  // Ignore the flag operand.
+    TII->copyRegToReg(*BB, BB->end(), DestReg, SrcReg, DstTRC, SrcTRC);
+    break;
+  }
+  case ISD::CopyFromReg: {
+    unsigned SrcReg = cast<RegisterSDNode>(Node->getOperand(1))->getReg();
+    EmitCopyFromReg(Node, 0, IsClone, SrcReg, VRBaseMap);
+    break;
+  }
+  case ISD::INLINEASM: {
+    unsigned NumOps = Node->getNumOperands();
+    if (Node->getOperand(NumOps-1).getValueType() == MVT::Flag)
+      --NumOps;  // Ignore the flag operand.
       
-      // Create the inline asm machine instruction.
-      MachineInstr *MI = BuildMI(TII->get(TargetInstrInfo::INLINEASM));
+    // Create the inline asm machine instruction.
+    MachineInstr *MI = BuildMI(TII->get(TargetInstrInfo::INLINEASM));
 
-      // Add the asm string as an external symbol operand.
-      const char *AsmStr =
-        cast<ExternalSymbolSDNode>(Node->getOperand(1))->getSymbol();
-      MI->addOperand(MachineOperand::CreateES(AsmStr));
+    // Add the asm string as an external symbol operand.
+    const char *AsmStr =
+      cast<ExternalSymbolSDNode>(Node->getOperand(1))->getSymbol();
+    MI->addOperand(MachineOperand::CreateES(AsmStr));
       
-      // Add all of the operand registers to the instruction.
-      for (unsigned i = 2; i != NumOps;) {
-        unsigned Flags = cast<ConstantSDNode>(Node->getOperand(i))->getValue();
-        unsigned NumVals = Flags >> 3;
+    // Add all of the operand registers to the instruction.
+    for (unsigned i = 2; i != NumOps;) {
+      unsigned Flags = cast<ConstantSDNode>(Node->getOperand(i))->getValue();
+      unsigned NumVals = Flags >> 3;
         
-        MI->addOperand(MachineOperand::CreateImm(Flags));
-        ++i;  // Skip the ID value.
+      MI->addOperand(MachineOperand::CreateImm(Flags));
+      ++i;  // Skip the ID value.
         
-        switch (Flags & 7) {
-        default: assert(0 && "Bad flags!");
-        case 1:  // Use of register.
-          for (; NumVals; --NumVals, ++i) {
-            unsigned Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
-            MI->addOperand(MachineOperand::CreateReg(Reg, false));
-          }
-          break;
-        case 2:   // Def of register.
-          for (; NumVals; --NumVals, ++i) {
-            unsigned Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
-            MI->addOperand(MachineOperand::CreateReg(Reg, true));
-          }
-          break;
-        case 3: { // Immediate.
-          for (; NumVals; --NumVals, ++i) {
-            if (ConstantSDNode *CS =
-                   dyn_cast<ConstantSDNode>(Node->getOperand(i))) {
-              MI->addOperand(MachineOperand::CreateImm(CS->getValue()));
-            } else if (GlobalAddressSDNode *GA = 
-                  dyn_cast<GlobalAddressSDNode>(Node->getOperand(i))) {
-              MI->addOperand(MachineOperand::CreateGA(GA->getGlobal(),
-                                                      GA->getOffset()));
-            } else {
-              BasicBlockSDNode *BB =cast<BasicBlockSDNode>(Node->getOperand(i));
-              MI->addOperand(MachineOperand::CreateMBB(BB->getBasicBlock()));
-            }
-          }
-          break;
+      switch (Flags & 7) {
+      default: assert(0 && "Bad flags!");
+      case 2:   // Def of register.
+        for (; NumVals; --NumVals, ++i) {
+          unsigned Reg = cast<RegisterSDNode>(Node->getOperand(i))->getReg();
+          MI->addOperand(MachineOperand::CreateReg(Reg, true));
         }
-        case 4:  // Addressing mode.
-          // The addressing mode has been selected, just add all of the
-          // operands to the machine instruction.
-          for (; NumVals; --NumVals, ++i)
-            AddOperand(MI, Node->getOperand(i), 0, 0, VRBaseMap);
-          break;
-        }
+        break;
+      case 1:  // Use of register.
+      case 3:  // Immediate.
+      case 4:  // Addressing mode.
+        // The addressing mode has been selected, just add all of the
+        // operands to the machine instruction.
+        for (; NumVals; --NumVals, ++i)
+          AddOperand(MI, Node->getOperand(i), 0, 0, VRBaseMap);
+        break;
       }
-      BB->push_back(MI);
-      break;
     }
-    }
+    BB->push_back(MI);
+    break;
+  }
   }
 }
 
@@ -999,6 +993,7 @@ void ScheduleDAG::EmitCrossRCCopy(SUnit *SU,
       assert(I->Reg && "Unknown physical register!");
       unsigned VRBase = MRI.createVirtualRegister(SU->CopyDstRC);
       bool isNew = VRBaseMap.insert(std::make_pair(SU, VRBase));
+      isNew = isNew; // Silence compiler warning.
       assert(isNew && "Node emitted out of order - early");
       TII->copyRegToReg(*BB, BB->end(), VRBase, I->Reg,
                         SU->CopyDstRC, SU->CopySrcRC);
@@ -1111,11 +1106,11 @@ void ScheduleDAG::EmitSchedule() {
       continue;
     }
     for (unsigned j = 0, ee = SU->FlaggedNodes.size(); j != ee; ++j)
-      EmitNode(SU->FlaggedNodes[j], SU->InstanceNo, VRBaseMap);
+      EmitNode(SU->FlaggedNodes[j], SU->OrigNode != SU, VRBaseMap);
     if (!SU->Node)
       EmitCrossRCCopy(SU, CopyVRBaseMap);
     else
-      EmitNode(SU->Node, SU->InstanceNo, VRBaseMap);
+      EmitNode(SU->Node, SU->OrigNode != SU, VRBaseMap);
   }
 
   if (isEntryBB && SchedLiveInCopies)

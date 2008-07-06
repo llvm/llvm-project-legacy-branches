@@ -19,6 +19,7 @@
 #include "llvm/Analysis/FindUsedTypes.h"
 #include "llvm/Analysis/IntervalPartition.h"
 #include "llvm/Analysis/LoadValueNumbering.h"
+#include "llvm/Analysis/LoopVR.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -48,6 +49,7 @@ namespace {
       (void) llvm::createArgumentPromotionPass();
       (void) llvm::createStructRetPromotionPass();
       (void) llvm::createBasicAliasAnalysisPass();
+      (void) llvm::createLibCallAliasAnalysisPass(0);
       (void) llvm::createBasicVNPass();
       (void) llvm::createBlockPlacementPass();
       (void) llvm::createBlockProfilerPass();
@@ -114,10 +116,14 @@ namespace {
       (void) llvm::createCodeGenPreparePass();
       (void) llvm::createGVNPass();
       (void) llvm::createMemCpyOptPass();
+      (void) llvm::createLoopDeletionPass();
+      (void) llvm::createPostDomTree();
+      (void) llvm::createPostDomFrontier();
 
       (void)new llvm::IntervalPartition();
       (void)new llvm::FindUsedTypes();
       (void)new llvm::ScalarEvolution();
+      (void)new llvm::LoopVR();
       ((llvm::Function*)0)->viewCFGOnly();
       llvm::AliasSetTracker X(*(llvm::AliasAnalysis*)0);
       X.add((llvm::Value*)0, 0);  // for -print-alias-sets

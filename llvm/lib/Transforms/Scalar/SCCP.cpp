@@ -29,6 +29,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/Pass.h"
 #include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/Compiler.h"
@@ -130,21 +131,6 @@ public:
   }
 };
 
-/// LatticeValIndex - LatticeVal and associated Index. This is used
-/// to track individual operand Lattice values for multi value ret instructions.
-class VISIBILITY_HIDDEN LatticeValIndexed {
- public:
-  LatticeValIndexed(unsigned I = 0) { Index = I; }
-  LatticeVal &getLatticeVal() { return LV; }
-  unsigned getIndex() const { return Index; }
-
-  void setLatticeVal(LatticeVal &L) { LV = L; }
-  void setIndex(unsigned I) { Index = I; }
-
- private:
-  LatticeVal LV;
-  unsigned Index;
-};
 //===----------------------------------------------------------------------===//
 //
 /// SCCPSolver - This class is a general purpose solver for Sparse Conditional
@@ -167,7 +153,7 @@ class SCCPSolver : public InstVisitor<SCCPSolver> {
 
   /// TrackedMultipleRetVals - Same as TrackedRetVals, but used for functions
   /// that return multiple values.
-  std::multimap<Function*, LatticeValIndexed> TrackedMultipleRetVals;
+  std::map<std::pair<Function*, unsigned>, LatticeVal> TrackedMultipleRetVals;
 
   // The reason for two worklists is that overdefined is the lowest state
   // on the lattice, and moving things to overdefined as fast as possible
@@ -194,7 +180,7 @@ public:
   /// MarkBlockExecutable - This method can be used by clients to mark all of
   /// the blocks that are known to be intrinsically live in the processed unit.
   void MarkBlockExecutable(BasicBlock *BB) {
-    DOUT << "Marking Block Executable: " << BB->getName() << "\n";
+    DOUT << "Marking Block Executable: " << BB->getNameStart() << "\n";
     BBExecutable.insert(BB);   // Basic block is executable!
     BBWorkList.push_back(BB);  // Add the block to the work list!
   }
@@ -220,11 +206,10 @@ public:
     // Add an entry, F -> undef.
     if (const StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
       for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
-        TrackedMultipleRetVals.insert(std::pair<Function *, LatticeValIndexed>
-                                      (F, LatticeValIndexed(i)));
-    }
-    else
-      TrackedRetVals[F];
+        TrackedMultipleRetVals.insert(std::make_pair(std::make_pair(F, i),
+                                                     LatticeVal()));
+    } else
+      TrackedRetVals.insert(std::make_pair(F, LatticeVal()));
   }
 
   /// Solve - Solve for constants and executable blocks.
@@ -291,7 +276,6 @@ private:
   // markOverdefined - Make a value be marked as "overdefined". If the
   // value is not already overdefined, add it to the overdefined instruction
   // work list so that the users of the instruction are updated later.
-
   inline void markOverdefined(LatticeVal &IV, Value *V) {
     if (IV.markOverdefined()) {
       DEBUG(DOUT << "markOverdefined: ";
@@ -351,8 +335,8 @@ private:
       return;  // This edge is already known to be executable!
 
     if (BBExecutable.count(Dest)) {
-      DOUT << "Marking Edge Executable: " << Source->getName()
-           << " -> " << Dest->getName() << "\n";
+      DOUT << "Marking Edge Executable: " << Source->getNameStart()
+           << " -> " << Dest->getNameStart() << "\n";
 
       // The destination is already executable, but we just made an edge
       // feasible that wasn't before.  Revisit the PHI nodes in the block
@@ -407,6 +391,8 @@ private:
   void visitExtractElementInst(ExtractElementInst &I);
   void visitInsertElementInst(InsertElementInst &I);
   void visitShuffleVectorInst(ShuffleVectorInst &I);
+  void visitExtractValueInst(ExtractValueInst &EVI);
+  void visitInsertValueInst(InsertValueInst &IVI);
 
   // Instructions that cannot be folded away...
   void visitStoreInst     (Instruction &I);
@@ -465,20 +451,8 @@ void SCCPSolver::getFeasibleSuccessors(TerminatorInst &TI,
         (SCValue.isConstant() && !isa<ConstantInt>(SCValue.getConstant()))) {
       // All destinations are executable!
       Succs.assign(TI.getNumSuccessors(), true);
-    } else if (SCValue.isConstant()) {
-      Constant *CPV = SCValue.getConstant();
-      // Make sure to skip the "default value" which isn't a value
-      for (unsigned i = 1, E = SI->getNumSuccessors(); i != E; ++i) {
-        if (SI->getSuccessorValue(i) == CPV) {// Found the right branch...
-          Succs[i] = true;
-          return;
-        }
-      }
-
-      // Constant value not equal to any of the branches... must execute
-      // default branch then...
-      Succs[0] = true;
-    }
+    } else if (SCValue.isConstant())
+      Succs[SI->findCaseValue(cast<ConstantInt>(SCValue.getConstant()))] = true;
   } else {
     assert(0 && "SCCP: Don't know how to handle this terminator!");
   }
@@ -640,7 +614,7 @@ void SCCPSolver::visitReturnInst(ReturnInst &I) {
   if (!F->hasInternalLinkage())
     return;
 
-  if (!TrackedRetVals.empty()) {
+  if (!TrackedRetVals.empty() && I.getNumOperands() == 1) {
     DenseMap<Function*, LatticeVal>::iterator TFRVI =
       TrackedRetVals.find(F);
     if (TFRVI != TrackedRetVals.end() &&
@@ -651,15 +625,24 @@ void SCCPSolver::visitReturnInst(ReturnInst &I) {
     }
   }
   
-  // Handle function that returns multiple values.
-  std::multimap<Function*, LatticeValIndexed>::iterator It, E;
-  tie(It, E) = TrackedMultipleRetVals.equal_range(F);
-  if (It != E) {
-    for (; It != E; ++It) {
-      LatticeValIndexed &LV = It->second;
-      unsigned Idx = LV.getIndex();
-      Value *V = I.getOperand(Idx);
-      mergeInValue(LV.getLatticeVal(), V, getValueState(V));
+  // Handle functions that return multiple values.
+  if (!TrackedMultipleRetVals.empty() && I.getNumOperands() > 1) {
+    for (unsigned i = 0, e = I.getNumOperands(); i != e; ++i) {
+      std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+        It = TrackedMultipleRetVals.find(std::make_pair(F, i));
+      if (It == TrackedMultipleRetVals.end()) break;
+      mergeInValue(It->second, F, getValueState(I.getOperand(i)));
+    }
+  } else if (!TrackedMultipleRetVals.empty() &&
+             I.getNumOperands() == 1 &&
+             isa<StructType>(I.getOperand(0)->getType())) {
+    for (unsigned i = 0, e = I.getOperand(0)->getType()->getNumContainedTypes();
+         i != e; ++i) {
+      std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+        It = TrackedMultipleRetVals.find(std::make_pair(F, i));
+      if (It == TrackedMultipleRetVals.end()) break;
+      Value *Val = FindInsertedValue(I.getOperand(0), i);
+      mergeInValue(It->second, F, getValueState(Val));
     }
   }
 }
@@ -687,28 +670,124 @@ void SCCPSolver::visitCastInst(CastInst &I) {
 }
 
 void SCCPSolver::visitGetResultInst(GetResultInst &GRI) {
-  unsigned Idx = GRI.getIndex();
   Value *Aggr = GRI.getOperand(0);
-  Function *F = NULL;
+
+  // If the operand to the getresult is an undef, the result is undef.
+  if (isa<UndefValue>(Aggr))
+    return;
+  
+  Function *F;
+  if (CallInst *CI = dyn_cast<CallInst>(Aggr))
+    F = CI->getCalledFunction();
+  else
+    F = cast<InvokeInst>(Aggr)->getCalledFunction();
+
+  // TODO: If IPSCCP resolves the callee of this function, we could propagate a
+  // result back!
+  if (F == 0 || TrackedMultipleRetVals.empty()) {
+    markOverdefined(&GRI);
+    return;
+  }
+  
+  // See if we are tracking the result of the callee.
+  std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+    It = TrackedMultipleRetVals.find(std::make_pair(F, GRI.getIndex()));
+
+  // If not tracking this function (for example, it is a declaration) just move
+  // to overdefined.
+  if (It == TrackedMultipleRetVals.end()) {
+    markOverdefined(&GRI);
+    return;
+  }
+  
+  // Otherwise, the value will be merged in here as a result of CallSite
+  // handling.
+}
+
+void SCCPSolver::visitExtractValueInst(ExtractValueInst &EVI) {
+  Value *Aggr = EVI.getAggregateOperand();
+
+  // If the operand to the extractvalue is an undef, the result is undef.
+  if (isa<UndefValue>(Aggr))
+    return;
+
+  // Currently only handle single-index extractvalues.
+  if (EVI.getNumIndices() != 1) {
+    markOverdefined(&EVI);
+    return;
+  }
+  
+  Function *F = 0;
   if (CallInst *CI = dyn_cast<CallInst>(Aggr))
     F = CI->getCalledFunction();
   else if (InvokeInst *II = dyn_cast<InvokeInst>(Aggr))
     F = II->getCalledFunction();
 
-  if (!F)
+  // TODO: If IPSCCP resolves the callee of this function, we could propagate a
+  // result back!
+  if (F == 0 || TrackedMultipleRetVals.empty()) {
+    markOverdefined(&EVI);
+    return;
+  }
+  
+  // See if we are tracking the result of the callee.
+  std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+    It = TrackedMultipleRetVals.find(std::make_pair(F, *EVI.idx_begin()));
+
+  // If not tracking this function (for example, it is a declaration) just move
+  // to overdefined.
+  if (It == TrackedMultipleRetVals.end()) {
+    markOverdefined(&EVI);
+    return;
+  }
+  
+  // Otherwise, the value will be merged in here as a result of CallSite
+  // handling.
+}
+
+void SCCPSolver::visitInsertValueInst(InsertValueInst &IVI) {
+  Value *Aggr = IVI.getAggregateOperand();
+  Value *Val = IVI.getInsertedValueOperand();
+
+  // If the operands to the insertvalue are undef, the result is undef.
+  if (isa<UndefValue>(Aggr) && isa<UndefValue>(Val))
     return;
 
-  std::multimap<Function*, LatticeValIndexed>::iterator It, E;
-  tie(It, E) = TrackedMultipleRetVals.equal_range(F);
-  if (It == E) 
+  // Currently only handle single-index insertvalues.
+  if (IVI.getNumIndices() != 1) {
+    markOverdefined(&IVI);
     return;
+  }
 
-  for (; It != E; ++It) {
-    LatticeValIndexed &LIV = It->second;
-    if (LIV.getIndex() == Idx) {
-      mergeInValue(&GRI, LIV.getLatticeVal());
+  // Currently only handle insertvalue instructions that are in a single-use
+  // chain that builds up a return value.
+  for (const InsertValueInst *TmpIVI = &IVI; ; ) {
+    if (!TmpIVI->hasOneUse()) {
+      markOverdefined(&IVI);
+      return;
+    }
+    const Value *V = *TmpIVI->use_begin();
+    if (isa<ReturnInst>(V))
+      break;
+    TmpIVI = dyn_cast<InsertValueInst>(V);
+    if (!TmpIVI) {
+      markOverdefined(&IVI);
+      return;
     }
   }
+  
+  // See if we are tracking the result of the callee.
+  Function *F = IVI.getParent()->getParent();
+  std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+    It = TrackedMultipleRetVals.find(std::make_pair(F, *IVI.idx_begin()));
+
+  // Merge in the inserted member value.
+  if (It != TrackedMultipleRetVals.end())
+    mergeInValue(It->second, F, getValueState(Val));
+
+  // Mark the aggregate result of the IVI overdefined; any tracking that we do
+  // will be done on the individual member values.
+  markOverdefined(&IVI);
 }
 
 void SCCPSolver::visitSelectInst(SelectInst &I) {
@@ -1127,79 +1206,101 @@ void SCCPSolver::visitLoadInst(LoadInst &I) {
 
 void SCCPSolver::visitCallSite(CallSite CS) {
   Function *F = CS.getCalledFunction();
-
-  DenseMap<Function*, LatticeVal>::iterator TFRVI =TrackedRetVals.end();
-  // If we are tracking this function, we must make sure to bind arguments as
-  // appropriate.
-  bool FirstCall = false;
-  if (F && F->hasInternalLinkage()) {
-    TFRVI = TrackedRetVals.find(F);
-    if (TFRVI != TrackedRetVals.end()) 
-      FirstCall = true;
-    else {
-      std::multimap<Function*, LatticeValIndexed>::iterator It, E;
-      tie(It, E) = TrackedMultipleRetVals.equal_range(F);
-      if (It != E) 
-        FirstCall = true;
-    }
-  }
-
-  if (FirstCall) {
-    // If this is the first call to the function hit, mark its entry block
-    // executable.
-    if (!BBExecutable.count(F->begin()))
-      MarkBlockExecutable(F->begin());
-    
-    CallSite::arg_iterator CAI = CS.arg_begin();
-    for (Function::arg_iterator AI = F->arg_begin(), E = F->arg_end();
-         AI != E; ++AI, ++CAI) {
-      LatticeVal &IV = ValueState[AI];
-      if (!IV.isOverdefined())
-        mergeInValue(IV, AI, getValueState(*CAI));
-    }
-  }
   Instruction *I = CS.getInstruction();
-
-  if (!CS.doesNotThrow() && I->getParent()->getUnwindDest())
-    markEdgeExecutable(I->getParent(), I->getParent()->getUnwindDest());
-
-  if (I->getType() == Type::VoidTy) return;
-
-  LatticeVal &IV = ValueState[I];
-  if (IV.isOverdefined()) return;
-
-  // Propagate the single return value of the function to the value of the 
-  // instruction.
-  if (TFRVI != TrackedRetVals.end()) {
-    mergeInValue(IV, I, TFRVI->second);
-    return;
-  }
-
-  if (F == 0 || !F->isDeclaration() || !canConstantFoldCallTo(F)) {
-    markOverdefined(IV, I);
-    return;
-  }
-
-  SmallVector<Constant*, 8> Operands;
-  Operands.reserve(I->getNumOperands()-1);
-
-  for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
-       AI != E; ++AI) {
-    LatticeVal &State = getValueState(*AI);
-    if (State.isUndefined())
-      return;  // Operands are not resolved yet...
-    else if (State.isOverdefined()) {
-      markOverdefined(IV, I);
-      return;
+  
+  // The common case is that we aren't tracking the callee, either because we
+  // are not doing interprocedural analysis or the callee is indirect, or is
+  // external.  Handle these cases first.
+  if (F == 0 || !F->hasInternalLinkage()) {
+CallOverdefined:
+    // Void return and not tracking callee, just bail.
+    if (I->getType() == Type::VoidTy) return;
+    
+    // Otherwise, if we have a single return value case, and if the function is
+    // a declaration, maybe we can constant fold it.
+    if (!isa<StructType>(I->getType()) && F && F->isDeclaration() && 
+        canConstantFoldCallTo(F)) {
+      
+      SmallVector<Constant*, 8> Operands;
+      for (CallSite::arg_iterator AI = CS.arg_begin(), E = CS.arg_end();
+           AI != E; ++AI) {
+        LatticeVal &State = getValueState(*AI);
+        if (State.isUndefined())
+          return;  // Operands are not resolved yet.
+        else if (State.isOverdefined()) {
+          markOverdefined(I);
+          return;
+        }
+        assert(State.isConstant() && "Unknown state!");
+        Operands.push_back(State.getConstant());
+      }
+     
+      // If we can constant fold this, mark the result of the call as a
+      // constant.
+      if (Constant *C = ConstantFoldCall(F, &Operands[0], Operands.size())) {
+        markConstant(I, C);
+        return;
+      }
     }
-    assert(State.isConstant() && "Unknown state!");
-    Operands.push_back(State.getConstant());
+
+    // Otherwise, we don't know anything about this call, mark it overdefined.
+    markOverdefined(I);
+    return;
   }
 
-  if (Constant *C = ConstantFoldCall(F, &Operands[0], Operands.size()))
-    markConstant(IV, I, C);
-  else
-    markOverdefined(IV, I);
+  // If this is a single/zero retval case, see if we're tracking the function.
+  DenseMap<Function*, LatticeVal>::iterator TFRVI = TrackedRetVals.find(F);
+  if (TFRVI != TrackedRetVals.end()) {
+    // If so, propagate the return value of the callee into this call result.
+    mergeInValue(I, TFRVI->second);
+  } else if (isa<StructType>(I->getType())) {
+    // Check to see if we're tracking this callee, if not, handle it in the
+    // common path above.
+    std::map<std::pair<Function*, unsigned>, LatticeVal>::iterator
+      TMRVI = TrackedMultipleRetVals.find(std::make_pair(F, 0));
+    if (TMRVI == TrackedMultipleRetVals.end())
+      goto CallOverdefined;
+    
+    // If we are tracking this callee, propagate the return values of the call
+    // into this call site.  We do this by walking all the uses. Single-index
+    // ExtractValueInst uses can be tracked; anything more complicated is
+    // currently handled conservatively.
+    for (Value::use_iterator UI = I->use_begin(), E = I->use_end();
+         UI != E; ++UI) {
+      if (GetResultInst *GRI = dyn_cast<GetResultInst>(*UI)) {
+        mergeInValue(GRI, 
+                TrackedMultipleRetVals[std::make_pair(F, GRI->getIndex())]);
+        continue;
+      }
+      if (ExtractValueInst *EVI = dyn_cast<ExtractValueInst>(*UI)) {
+        if (EVI->getNumIndices() == 1) {
+          mergeInValue(EVI, 
+                  TrackedMultipleRetVals[std::make_pair(F, *EVI->idx_begin())]);
+          continue;
+        }
+      }
+      // The aggregate value is used in a way not handled here. Assume nothing.
+      markOverdefined(*UI);
+    }
+  } else {
+    // Otherwise we're not tracking this callee, so handle it in the
+    // common path above.
+    goto CallOverdefined;
+  }
+   
+  // Finally, if this is the first call to the function hit, mark its entry
+  // block executable.
+  if (!BBExecutable.count(F->begin()))
+    MarkBlockExecutable(F->begin());
+  
+  // Propagate information from this call site into the callee.
+  CallSite::arg_iterator CAI = CS.arg_begin();
+  for (Function::arg_iterator AI = F->arg_begin(), E = F->arg_end();
+       AI != E; ++AI, ++CAI) {
+    LatticeVal &IV = ValueState[AI];
+    if (!IV.isOverdefined())
+      mergeInValue(IV, AI, getValueState(*CAI));
+  }
 }
 
 
@@ -1380,6 +1481,12 @@ bool SCCPSolver::ResolvedUndefsIn(Function &F) {
         else
           markOverdefined(LV, I);
         return true;
+      case Instruction::Call:
+        // If a call has an undef result, it is because it is constant foldable
+        // but one of the inputs was undef.  Just force the result to
+        // overdefined.
+        markOverdefined(LV, I);
+        return true;
       }
     }
   
@@ -1389,6 +1496,8 @@ bool SCCPSolver::ResolvedUndefsIn(Function &F) {
       if (!getValueState(BI->getCondition()).isUndefined())
         continue;
     } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
+      if (SI->getNumSuccessors()<2)   // no cases
+        continue;
       if (!getValueState(SI->getCondition()).isUndefined())
         continue;
     } else {
@@ -1445,11 +1554,11 @@ namespace {
       AU.setPreservesCFG();
     }
   };
-
-  char SCCP::ID = 0;
-  RegisterPass<SCCP> X("sccp", "Sparse Conditional Constant Propagation");
 } // end anonymous namespace
 
+char SCCP::ID = 0;
+static RegisterPass<SCCP>
+X("sccp", "Sparse Conditional Constant Propagation");
 
 // createSCCPPass - This is the public interface to this file...
 FunctionPass *llvm::createSCCPPass() {
@@ -1461,7 +1570,7 @@ FunctionPass *llvm::createSCCPPass() {
 // and return true if the function was modified.
 //
 bool SCCP::runOnFunction(Function &F) {
-  DOUT << "SCCP on function '" << F.getName() << "'\n";
+  DOUT << "SCCP on function '" << F.getNameStart() << "'\n";
   SCCPSolver Solver;
 
   // Mark the first block of the function as being executable.
@@ -1514,25 +1623,28 @@ bool SCCP::runOnFunction(Function &F) {
       //
       for (BasicBlock::iterator BI = BB->begin(), E = BB->end(); BI != E; ) {
         Instruction *Inst = BI++;
-        if (Inst->getType() != Type::VoidTy) {
-          LatticeVal &IV = Values[Inst];
-          if ((IV.isConstant() || IV.isUndefined()) &&
-              !isa<TerminatorInst>(Inst)) {
-            Constant *Const = IV.isConstant()
-              ? IV.getConstant() : UndefValue::get(Inst->getType());
-            DOUT << "  Constant: " << *Const << " = " << *Inst;
+        if (Inst->getType() == Type::VoidTy ||
+            isa<StructType>(Inst->getType()) ||
+            isa<TerminatorInst>(Inst))
+          continue;
+        
+        LatticeVal &IV = Values[Inst];
+        if (!IV.isConstant() && !IV.isUndefined())
+          continue;
+        
+        Constant *Const = IV.isConstant()
+          ? IV.getConstant() : UndefValue::get(Inst->getType());
+        DOUT << "  Constant: " << *Const << " = " << *Inst;
 
-            // Replaces all of the uses of a variable with uses of the constant.
-            Inst->replaceAllUsesWith(Const);
-
-            // Delete the instruction.
-            BB->getInstList().erase(Inst);
-
-            // Hey, we just changed something!
-            MadeChanges = true;
-            ++NumInstRemoved;
-          }
-        }
+        // Replaces all of the uses of a variable with uses of the constant.
+        Inst->replaceAllUsesWith(Const);
+        
+        // Delete the instruction.
+        Inst->eraseFromParent();
+        
+        // Hey, we just changed something!
+        MadeChanges = true;
+        ++NumInstRemoved;
       }
     }
 
@@ -1550,11 +1662,11 @@ namespace {
     IPSCCP() : ModulePass((intptr_t)&ID) {}
     bool runOnModule(Module &M);
   };
-
-  char IPSCCP::ID = 0;
-  RegisterPass<IPSCCP>
-  Y("ipsccp", "Interprocedural Sparse Conditional Constant Propagation");
 } // end anonymous namespace
+
+char IPSCCP::ID = 0;
+static RegisterPass<IPSCCP>
+Y("ipsccp", "Interprocedural Sparse Conditional Constant Propagation");
 
 // createIPSCCPPass - This is the public interface to this file...
 ModulePass *llvm::createIPSCCPPass() {
@@ -1688,27 +1800,30 @@ bool IPSCCP::runOnModule(Module &M) {
       } else {
         for (BasicBlock::iterator BI = BB->begin(), E = BB->end(); BI != E; ) {
           Instruction *Inst = BI++;
-          if (Inst->getType() != Type::VoidTy) {
-            LatticeVal &IV = Values[Inst];
-            if (IV.isConstant() ||
-                (IV.isUndefined() && !isa<TerminatorInst>(Inst))) {
-              Constant *Const = IV.isConstant()
-                ? IV.getConstant() : UndefValue::get(Inst->getType());
-              DOUT << "  Constant: " << *Const << " = " << *Inst;
+          if (Inst->getType() == Type::VoidTy ||
+              isa<StructType>(Inst->getType()) ||
+              isa<TerminatorInst>(Inst))
+            continue;
+          
+          LatticeVal &IV = Values[Inst];
+          if (!IV.isConstant() && !IV.isUndefined())
+            continue;
+          
+          Constant *Const = IV.isConstant()
+            ? IV.getConstant() : UndefValue::get(Inst->getType());
+          DOUT << "  Constant: " << *Const << " = " << *Inst;
 
-              // Replaces all of the uses of a variable with uses of the
-              // constant.
-              Inst->replaceAllUsesWith(Const);
+          // Replaces all of the uses of a variable with uses of the
+          // constant.
+          Inst->replaceAllUsesWith(Const);
+          
+          // Delete the instruction.
+          if (!isa<CallInst>(Inst))
+            Inst->eraseFromParent();
 
-              // Delete the instruction.
-              if (!isa<TerminatorInst>(Inst) && !isa<CallInst>(Inst))
-                BB->getInstList().erase(Inst);
-
-              // Hey, we just changed something!
-              MadeChanges = true;
-              ++IPNumInstRemoved;
-            }
-          }
+          // Hey, we just changed something!
+          MadeChanges = true;
+          ++IPNumInstRemoved;
         }
       }
 
@@ -1719,11 +1834,6 @@ bool IPSCCP::runOnModule(Module &M) {
       // If there are any PHI nodes in this successor, drop entries for BB now.
       BasicBlock *DeadBB = BlocksToErase[i];
       while (!DeadBB->use_empty()) {
-        if (BasicBlock *PredBB = dyn_cast<BasicBlock>(DeadBB->use_back())) {
-          PredBB->setUnwindDest(NULL);
-          continue;
-        }
-
         Instruction *I = cast<Instruction>(DeadBB->use_back());
         bool Folded = ConstantFoldTerminator(I->getParent());
         if (!Folded) {
@@ -1783,7 +1893,7 @@ bool IPSCCP::runOnModule(Module &M) {
     GlobalVariable *GV = I->first;
     assert(!I->second.isOverdefined() &&
            "Overdefined values should have been taken out of the map!");
-    DOUT << "Found that GV '" << GV->getName()<< "' is constant!\n";
+    DOUT << "Found that GV '" << GV->getNameStart() << "' is constant!\n";
     while (!GV->use_empty()) {
       StoreInst *SI = cast<StoreInst>(GV->use_back());
       SI->eraseFromParent();

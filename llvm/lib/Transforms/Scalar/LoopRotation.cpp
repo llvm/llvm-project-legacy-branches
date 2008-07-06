@@ -102,10 +102,10 @@ namespace {
     LPPassManager *LPM_Ptr;
     SmallVector<RenameData, MAX_HEADER_SIZE> LoopHeaderInfo;
   };
-  
-  char LoopRotate::ID = 0;
-  RegisterPass<LoopRotate> X ("loop-rotate", "Rotate Loops");
 }
+  
+char LoopRotate::ID = 0;
+static RegisterPass<LoopRotate> X("loop-rotate", "Rotate Loops");
 
 LoopPass *llvm::createLoopRotatePass() { return new LoopRotate(); }
 
@@ -164,7 +164,7 @@ bool LoopRotate::rotateLoop(Loop *Lp, LPPassManager &LPM) {
 
   // Check size of original header and reject
   // loop if it is very big.
-  if (OrigHeader->getInstList().size() > MAX_HEADER_SIZE)
+  if (OrigHeader->size() > MAX_HEADER_SIZE)
     return false;
 
   // Now, this loop is suitable for rotation.
@@ -208,10 +208,10 @@ bool LoopRotate::rotateLoop(Loop *Lp, LPPassManager &LPM) {
     // Create new PHI node with two incoming values for NewHeader.
     // One incoming value is from OrigLatch (through OrigHeader) and 
     // second incoming value is from original pre-header.
-    PHINode *NH = PHINode::Create(In->getType(), In->getName());
+    PHINode *NH = PHINode::Create(In->getType(), In->getName(),
+                                  NewHeader->begin());
     NH->addIncoming(PN->getIncomingValueForBlock(OrigLatch), OrigHeader);
     NH->addIncoming(NPV, OrigPreHeader);
-    NewHeader->getInstList().push_front(NH);
     
     // "In" can be replaced by NH at various places.
     LoopHeaderInfo.push_back(RenameData(In, NPV, NH));
@@ -249,14 +249,36 @@ bool LoopRotate::rotateLoop(Loop *Lp, LPPassManager &LPM) {
     // create new PHINode for this instruction.
     Instruction *NewHeaderReplacement = NULL;
     if (usedOutsideOriginalHeader(In)) {
-      PHINode *PN = PHINode::Create(In->getType(), In->getName());
-      PN->addIncoming(In, OrigHeader);
-      PN->addIncoming(C, OrigPreHeader);
-      NewHeader->getInstList().push_front(PN);
-      NewHeaderReplacement = PN;
-    } 
-    
-    // "In" can be replaced by NPH or NH at various places.
+      // FIXME: remove this when we have first-class aggregates.
+      if (isa<StructType>(In->getType())) {
+        // Can't create PHI nodes for this type.  If there are any getResults
+        // not defined in this block, move them back to this block.  PHI
+        // nodes will be created for all getResults later.
+        BasicBlock::iterator InsertPoint;
+        if (InvokeInst *II = dyn_cast<InvokeInst>(In)) {
+          InsertPoint = II->getNormalDest()->getFirstNonPHI();
+        } else {
+          InsertPoint = I;  // call
+          ++InsertPoint;
+        }
+        for (Value::use_iterator UI = In->use_begin(), UE = In->use_end();
+             UI != UE; ++UI) {
+          GetResultInst *InGR = cast<GetResultInst>(UI);
+          if (InGR->getParent() != OrigHeader) {
+            // Move InGR to immediately after the call or in the normal dest of
+            // the invoke.  It will be picked up, cloned and PHI'd on the next
+            // iteration.
+            InGR->moveBefore(InsertPoint);
+          }
+        }
+      } else {
+        PHINode *PN = PHINode::Create(In->getType(), In->getName(),
+                                      NewHeader->begin());
+        PN->addIncoming(In, OrigHeader);
+        PN->addIncoming(C, OrigPreHeader);
+        NewHeaderReplacement = PN;
+      }
+    }
     LoopHeaderInfo.push_back(RenameData(In, C, NewHeaderReplacement));
   }
 
@@ -336,10 +358,10 @@ bool LoopRotate::rotateLoop(Loop *Lp, LPPassManager &LPM) {
       } else {
         // Used outside Exit block. Create a new PHI node from exit block
         // to receive value from ne new header ane pre header.
-        PHINode *PN = PHINode::Create(U->getType(), U->getName());
+        PHINode *PN = PHINode::Create(U->getType(), U->getName(),
+                                      Exit->begin());
         PN->addIncoming(ILoopHeaderInfo.PreHeader, OrigPreHeader);
         PN->addIncoming(OldPhi, OrigHeader);
-        Exit->getInstList().push_front(PN);
         U->replaceUsesOfWith(OldPhi, PN);
       }
     }
@@ -447,7 +469,8 @@ void LoopRotate::preserveCanonicalLoopForm(LPPassManager &LPM) {
   // Right now original pre-header has two successors, new header and
   // exit block. Insert new block between original pre-header and
   // new header such that loop's new pre-header has only one successor.
-  BasicBlock *NewPreHeader = BasicBlock::Create("bb.nph", OrigHeader->getParent(), 
+  BasicBlock *NewPreHeader = BasicBlock::Create("bb.nph",
+                                                OrigHeader->getParent(), 
                                                 NewHeader);
   LoopInfo &LI = LPM.getAnalysis<LoopInfo>();
   if (Loop *PL = LI.getLoopFor(OrigPreHeader))
@@ -560,14 +583,15 @@ void LoopRotate::preserveCanonicalLoopForm(LPPassManager &LPM) {
   BasicBlock::iterator I = Exit->begin(), E = Exit->end();
   PHINode *PN = NULL;
   for (; (PN = dyn_cast<PHINode>(I)); ++I) {
-    PHINode *NewPN = PHINode::Create(PN->getType(), PN->getName());
     unsigned N = PN->getNumIncomingValues();
     for (unsigned index = 0; index < N; ++index)
       if (PN->getIncomingBlock(index) == NExit) {
+        PHINode *NewPN = PHINode::Create(PN->getType(), PN->getName(),
+                                         NExit->begin());
         NewPN->addIncoming(PN->getIncomingValue(index), L->getLoopLatch());
         PN->setIncomingValue(index, NewPN);
         PN->setIncomingBlock(index, NExit);
-        NExit->getInstList().push_front(NewPN);
+        break;
       }
   }
 

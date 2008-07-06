@@ -43,14 +43,14 @@
 #include <algorithm>
 #include <ostream>
 
+namespace llvm {
+
 template<typename T>
 static void RemoveFromVector(std::vector<T*> &V, T *N) {
   typename std::vector<T*>::iterator I = std::find(V.begin(), V.end(), N);
   assert(I != V.end() && "N is not in this list!");
   V.erase(I);
 }
-
-namespace llvm {
 
 class DominatorTree;
 class LoopInfo;
@@ -80,7 +80,7 @@ public:
   /// Loop ctor - This creates an empty loop.
   LoopBase() : ParentLoop(0) {}
   ~LoopBase() {
-    for (unsigned i = 0, e = SubLoops.size(); i != e; ++i)
+    for (size_t i = 0, e = SubLoops.size(); i != e; ++i)
       delete SubLoops[i];
   }
 
@@ -118,8 +118,8 @@ public:
   block_iterator block_begin() const { return Blocks.begin(); }
   block_iterator block_end() const { return Blocks.end(); }
 
-  /// isLoopExit - True if this block can branch to another block that is
-  /// outside of the current loop.
+  /// isLoopExit - True if terminator in the block can branch to another block
+  /// that is outside of the current loop.
   ///
   bool isLoopExit(const BlockT *BB) const {
     typedef GraphTraits<BlockT*> BlockTraits;
@@ -416,6 +416,59 @@ public:
       }
 
     return 0;
+  }
+  
+  /// getSmallConstantTripCount - Returns the trip count of this loop as a
+  /// normal unsigned value, if possible. Returns 0 if the trip count is unknown
+  /// of not constant. Will also return 0 if the trip count is very large 
+  /// (>= 2^32)
+  inline unsigned getSmallConstantTripCount() const {
+    Value* TripCount = this->getTripCount();
+    if (TripCount) {
+      if (ConstantInt *TripCountC = dyn_cast<ConstantInt>(TripCount)) {
+        // Guard against huge trip counts.
+        if (TripCountC->getValue().getActiveBits() <= 32) {
+          return (unsigned)TripCountC->getZExtValue();
+        }
+      }
+    }
+    return 0;
+  }
+
+  /// getSmallConstantTripMultiple - Returns the largest constant divisor of the
+  /// trip count of this loop as a normal unsigned value, if possible. This
+  /// means that the actual trip count is always a multiple of the returned
+  /// value (don't forget the trip count could very well be zero as well!).
+  ///
+  /// Returns 1 if the trip count is unknown or not guaranteed to be the
+  /// multiple of a constant (which is also the case if the trip count is simply
+  /// constant, use getSmallConstantTripCount for that case), Will also return 1
+  /// if the trip count is very large (>= 2^32).
+  inline unsigned getSmallConstantTripMultiple() const {
+    Value* TripCount = this->getTripCount();
+    // This will hold the ConstantInt result, if any
+    ConstantInt *Result = NULL;
+    if (TripCount) {
+      // See if the trip count is constant itself
+      Result = dyn_cast<ConstantInt>(TripCount);
+      // if not, see if it is a multiplication
+      if (!Result)
+        if (BinaryOperator *BO = dyn_cast<BinaryOperator>(TripCount)) {
+          switch (BO->getOpcode()) {
+          case BinaryOperator::Mul:
+            Result = dyn_cast<ConstantInt>(BO->getOperand(1));
+            break;
+          default: 
+            break;
+          }
+        }
+    }
+    // Guard against huge trip counts.
+    if (Result && Result->getValue().getActiveBits() <= 32) {
+      return (unsigned)Result->getZExtValue();
+    } else {
+      return 1;
+    }
   }
   
   /// isLCSSAForm - Return true if the Loop is in LCSSA form
@@ -847,7 +900,8 @@ public:
            "This loop should not be inserted here!");
 
     // Check to see if it belongs in a child loop...
-    for (unsigned i = 0, e = Parent->SubLoops.size(); i != e; ++i)
+    for (unsigned i = 0, e = static_cast<unsigned>(Parent->SubLoops.size());
+         i != e; ++i)
       if (Parent->SubLoops[i]->contains(LHeader)) {
         InsertLoopInto(L, Parent->SubLoops[i]);
         return;
@@ -918,9 +972,6 @@ public:
   inline bool isLoopHeader(BasicBlock *BB) const {
     return LI->isLoopHeader(BB);
   }
-
-  /// isAnalysis - Return true if this pass is  implementing an analysis pass.
-  bool isAnalysis() const { return true; }
 
   /// runOnFunction - Calculate the natural loop information.
   ///
@@ -1014,8 +1065,5 @@ void LoopBase<BlockT>::addBasicBlockToLoop(BlockT *NewBB,
 }
 
 } // End llvm namespace
-
-// Make sure that any clients of this file link in LoopInfo.cpp
-FORCE_DEFINING_FILE_TO_BE_LINKED(LoopInfo)
 
 #endif

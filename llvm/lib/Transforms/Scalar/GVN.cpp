@@ -10,6 +10,9 @@
 // This pass performs global value numbering to eliminate fully redundant
 // instructions.  It also performs simple dead load elimination.
 //
+// Note that this pass does the value numbering itself, it does not use the
+// ValueNumbering analysis passes.
+//
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "gvn"
@@ -18,15 +21,12 @@
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
-#include "llvm/IntrinsicInst.h"
 #include "llvm/Instructions.h"
-#include "llvm/ParameterAttributes.h"
 #include "llvm/Value.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -35,13 +35,15 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/GetElementPtrTypeIterator.h"
-#include "llvm/Target/TargetData.h"
-#include <list>
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 using namespace llvm;
 
 STATISTIC(NumGVNInstr, "Number of instructions deleted");
 STATISTIC(NumGVNLoad, "Number of loads deleted");
+STATISTIC(NumGVNPRE, "Number of instructions PRE'd");
+
+static cl::opt<bool> EnablePRE("enable-pre",
+                               cl::init(false), cl::Hidden);
 
 //===----------------------------------------------------------------------===//
 //                         ValueTable Class
@@ -61,8 +63,8 @@ namespace {
                             FCMPULT, FCMPULE, FCMPUNE, EXTRACT, INSERT,
                             SHUFFLE, SELECT, TRUNC, ZEXT, SEXT, FPTOUI,
                             FPTOSI, UITOFP, SITOFP, FPTRUNC, FPEXT, 
-                            PTRTOINT, INTTOPTR, BITCAST, GEP, CALL, EMPTY,
-                            TOMBSTONE };
+                            PTRTOINT, INTTOPTR, BITCAST, GEP, CALL, CONSTANT,
+                            EMPTY, TOMBSTONE };
 
     ExpressionOpcode opcode;
     const Type* type;
@@ -136,6 +138,7 @@ namespace {
       DenseMap<Expression, uint32_t> expressionNumbering;
       AliasAnalysis* AA;
       MemoryDependenceAnalysis* MD;
+      DominatorTree* DT;
   
       uint32_t nextValueNumber;
     
@@ -151,6 +154,7 @@ namespace {
       Expression create_expression(CastInst* C);
       Expression create_expression(GetElementPtrInst* G);
       Expression create_expression(CallInst* C);
+      Expression create_expression(Constant* C);
     public:
       ValueTable() : nextValueNumber(1) { }
       uint32_t lookup_or_add(Value* V);
@@ -161,6 +165,8 @@ namespace {
       unsigned size();
       void setAliasAnalysis(AliasAnalysis* A) { AA = A; }
       void setMemDep(MemoryDependenceAnalysis* M) { MD = M; }
+      void setDomTree(DominatorTree* D) { DT = D; }
+      uint32_t getNextUnusedValueNumber() { return nextValueNumber; }
   };
 }
 
@@ -228,7 +234,7 @@ Expression::ExpressionOpcode ValueTable::getOpcode(BinaryOperator* BO) {
 }
 
 Expression::ExpressionOpcode ValueTable::getOpcode(CmpInst* C) {
-  if (isa<ICmpInst>(C)) {
+  if (isa<ICmpInst>(C) || isa<VICmpInst>(C)) {
     switch (C->getPredicate()) {
     default:  // THIS SHOULD NEVER HAPPEN
       assert(0 && "Comparison with unknown predicate?");
@@ -244,7 +250,7 @@ Expression::ExpressionOpcode ValueTable::getOpcode(CmpInst* C) {
     case ICmpInst::ICMP_SLE: return Expression::ICMPSLE;
     }
   }
-  assert(isa<FCmpInst>(C) && "Unknown compare");
+  assert((isa<FCmpInst>(C) || isa<VFCmpInst>(C)) && "Unknown compare");
   switch (C->getPredicate()) {
   default: // THIS SHOULD NEVER HAPPEN
     assert(0 && "Comparison with unknown predicate?");
@@ -394,7 +400,7 @@ Expression ValueTable::create_expression(SelectInst* I) {
 
 Expression ValueTable::create_expression(GetElementPtrInst* G) {
   Expression e;
-    
+  
   e.firstVN = lookup_or_add(G->getPointerOperand());
   e.secondVN = 0;
   e.thirdVN = 0;
@@ -412,6 +418,11 @@ Expression ValueTable::create_expression(GetElementPtrInst* G) {
 //===----------------------------------------------------------------------===//
 //                     ValueTable External Functions
 //===----------------------------------------------------------------------===//
+
+/// add - Insert a value into the table with a specified value number.
+void ValueTable::add(Value* V, uint32_t num) {
+  valueNumbering.insert(std::make_pair(V, num));
+}
 
 /// lookup_or_add - Returns the value number for the specified value, assigning
 /// it a new number if it did not have one before.
@@ -437,26 +448,97 @@ uint32_t ValueTable::lookup_or_add(Value* V) {
     } else if (AA->onlyReadsMemory(C)) {
       Expression e = create_expression(C);
       
-      Instruction* dep = MD->getDependency(C);
-      
-      if (dep == MemoryDependenceAnalysis::NonLocal ||
-          !isa<CallInst>(dep)) {
+      if (expressionNumbering.find(e) == expressionNumbering.end()) {
         expressionNumbering.insert(std::make_pair(e, nextValueNumber));
         valueNumbering.insert(std::make_pair(V, nextValueNumber));
-      
         return nextValueNumber++;
       }
       
-      CallInst* cdep = cast<CallInst>(dep);
-      Expression d_exp = create_expression(cdep);
+      Instruction* local_dep = MD->getDependency(C);
       
-      if (e != d_exp) {
-        expressionNumbering.insert(std::make_pair(e, nextValueNumber));
+      if (local_dep == MemoryDependenceAnalysis::None) {
         valueNumbering.insert(std::make_pair(V, nextValueNumber));
+        return nextValueNumber++;
+      } else if (local_dep != MemoryDependenceAnalysis::NonLocal) {
+        if (!isa<CallInst>(local_dep)) {
+          valueNumbering.insert(std::make_pair(V, nextValueNumber));
+          return nextValueNumber++;
+        }
+        
+        CallInst* local_cdep = cast<CallInst>(local_dep);
+        
+        if (local_cdep->getCalledFunction() != C->getCalledFunction() ||
+            local_cdep->getNumOperands() != C->getNumOperands()) {
+          valueNumbering.insert(std::make_pair(V, nextValueNumber));
+          return nextValueNumber++;
+        } else if (!C->getCalledFunction()) { 
+          valueNumbering.insert(std::make_pair(V, nextValueNumber));
+          return nextValueNumber++;
+        } else {
+          for (unsigned i = 1; i < C->getNumOperands(); ++i) {
+            uint32_t c_vn = lookup_or_add(C->getOperand(i));
+            uint32_t cd_vn = lookup_or_add(local_cdep->getOperand(i));
+            if (c_vn != cd_vn) {
+              valueNumbering.insert(std::make_pair(V, nextValueNumber));
+              return nextValueNumber++;
+            }
+          }
+        
+          uint32_t v = lookup_or_add(local_cdep);
+          valueNumbering.insert(std::make_pair(V, v));
+          return v;
+        }
+      }
       
+      
+      DenseMap<BasicBlock*, Value*> deps;
+      MD->getNonLocalDependency(C, deps);
+      CallInst* cdep = 0;
+      
+      for (DenseMap<BasicBlock*, Value*>::iterator I = deps.begin(),
+           E = deps.end(); I != E; ++I) {
+        if (I->second == MemoryDependenceAnalysis::None) {
+          valueNumbering.insert(std::make_pair(V, nextValueNumber));
+
+          return nextValueNumber++;
+        } else if (I->second != MemoryDependenceAnalysis::NonLocal) {
+          if (DT->properlyDominates(I->first, C->getParent())) {
+            if (CallInst* CD = dyn_cast<CallInst>(I->second))
+              cdep = CD;
+            else {
+              valueNumbering.insert(std::make_pair(V, nextValueNumber));
+              return nextValueNumber++;
+            }
+          } else {
+            valueNumbering.insert(std::make_pair(V, nextValueNumber));
+            return nextValueNumber++;
+          }
+        }
+      }
+      
+      if (!cdep) {
+        valueNumbering.insert(std::make_pair(V, nextValueNumber));
+        return nextValueNumber++;
+      }
+      
+      if (cdep->getCalledFunction() != C->getCalledFunction() ||
+          cdep->getNumOperands() != C->getNumOperands()) {
+        valueNumbering.insert(std::make_pair(V, nextValueNumber));
+        return nextValueNumber++;
+      } else if (!C->getCalledFunction()) { 
+        valueNumbering.insert(std::make_pair(V, nextValueNumber));
         return nextValueNumber++;
       } else {
-        uint32_t v = expressionNumbering[d_exp];
+        for (unsigned i = 1; i < C->getNumOperands(); ++i) {
+          uint32_t c_vn = lookup_or_add(C->getOperand(i));
+          uint32_t cd_vn = lookup_or_add(cdep->getOperand(i));
+          if (c_vn != cd_vn) {
+            valueNumbering.insert(std::make_pair(V, nextValueNumber));
+            return nextValueNumber++;
+          }
+        }
+        
+        uint32_t v = lookup_or_add(cdep);
         valueNumbering.insert(std::make_pair(V, v));
         return v;
       }
@@ -596,53 +678,29 @@ void ValueTable::erase(Value* V) {
 }
 
 //===----------------------------------------------------------------------===//
-//                       ValueNumberedSet Class
-//===----------------------------------------------------------------------===//
-namespace {
-class VISIBILITY_HIDDEN ValueNumberedSet {
-  private:
-    SmallPtrSet<Value*, 8> contents;
-    SparseBitVector<64> numbers;
-  public:
-    ValueNumberedSet() { }
-    ValueNumberedSet(const ValueNumberedSet& other) {
-      numbers = other.numbers;
-      contents = other.contents;
-    }
-    
-    typedef SmallPtrSet<Value*, 8>::iterator iterator;
-    
-    iterator begin() { return contents.begin(); }
-    iterator end() { return contents.end(); }
-    
-    bool insert(Value* v) { return contents.insert(v); }
-    void insert(iterator I, iterator E) { contents.insert(I, E); }
-    void erase(Value* v) { contents.erase(v); }
-    unsigned count(Value* v) { return contents.count(v); }
-    size_t size() { return contents.size(); }
-    
-    void set(unsigned i)  {
-      numbers.set(i);
-    }
-    
-    void operator=(const ValueNumberedSet& other) {
-      contents = other.contents;
-      numbers = other.numbers;
-    }
-    
-    void reset(unsigned i)  {
-      numbers.reset(i);
-    }
-    
-    bool test(unsigned i)  {
-      return numbers.test(i);
-    }
-};
-}
-
-//===----------------------------------------------------------------------===//
 //                         GVN Pass
 //===----------------------------------------------------------------------===//
+
+namespace llvm {
+  template<> struct DenseMapInfo<uint32_t> {
+    static inline uint32_t getEmptyKey() { return ~0; }
+    static inline uint32_t getTombstoneKey() { return ~0 - 1; }
+    static unsigned getHashValue(const uint32_t& Val) { return Val * 37; }
+    static bool isPod() { return true; }
+    static bool isEqual(const uint32_t& LHS, const uint32_t& RHS) {
+      return LHS == RHS;
+    }
+  };
+}
+
+namespace {
+  struct VISIBILITY_HIDDEN ValueNumberScope {
+    ValueNumberScope* parent;
+    DenseMap<uint32_t, Value*> table;
+    
+    ValueNumberScope(ValueNumberScope* p) : parent(p) { }
+  };
+}
 
 namespace {
 
@@ -654,8 +712,7 @@ namespace {
 
   private:
     ValueTable VN;
-    
-    DenseMap<BasicBlock*, ValueNumberedSet> availableOut;
+    DenseMap<BasicBlock*, ValueNumberScope*> localAvail;
     
     typedef DenseMap<Value*, SmallPtrSet<Instruction*, 4> > PhiMapType;
     PhiMapType phiMap;
@@ -663,36 +720,35 @@ namespace {
     
     // This transformation requires dominator postdominator info
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.setPreservesCFG();
       AU.addRequired<DominatorTree>();
       AU.addRequired<MemoryDependenceAnalysis>();
       AU.addRequired<AliasAnalysis>();
-      AU.addRequired<TargetData>();
+      
+      AU.addPreserved<DominatorTree>();
       AU.addPreserved<AliasAnalysis>();
       AU.addPreserved<MemoryDependenceAnalysis>();
-      AU.addPreserved<TargetData>();
     }
   
     // Helper fuctions
     // FIXME: eliminate or document these better
-    Value* find_leader(ValueNumberedSet& vals, uint32_t v) ;
-    void val_insert(ValueNumberedSet& s, Value* v);
     bool processLoad(LoadInst* L,
                      DenseMap<Value*, LoadInst*> &lastLoad,
                      SmallVectorImpl<Instruction*> &toErase);
     bool processInstruction(Instruction* I,
-                            ValueNumberedSet& currAvail,
                             DenseMap<Value*, LoadInst*>& lastSeenLoad,
                             SmallVectorImpl<Instruction*> &toErase);
     bool processNonLocalLoad(LoadInst* L,
                              SmallVectorImpl<Instruction*> &toErase);
+    bool processBlock(DomTreeNode* DTN);
     Value *GetValueForBlock(BasicBlock *BB, LoadInst* orig,
                             DenseMap<BasicBlock*, Value*> &Phis,
                             bool top_level = false);
-    void dump(DenseMap<BasicBlock*, Value*>& d);
+    void dump(DenseMap<uint32_t, Value*>& d);
     bool iterateOnFunction(Function &F);
     Value* CollapsePhi(PHINode* p);
     bool isSafeReplacement(PHINode* p, Instruction* inst);
+    bool performPRE(Function& F);
+    Value* lookupNumber(BasicBlock* BB, uint32_t num);
   };
   
   char GVN::ID = 0;
@@ -704,37 +760,11 @@ FunctionPass *llvm::createGVNPass() { return new GVN(); }
 static RegisterPass<GVN> X("gvn",
                            "Global Value Numbering");
 
-/// find_leader - Given a set and a value number, return the first
-/// element of the set with that value number, or 0 if no such element
-/// is present
-Value* GVN::find_leader(ValueNumberedSet& vals, uint32_t v) {
-  if (!vals.test(v))
-    return 0;
-  
-  for (ValueNumberedSet::iterator I = vals.begin(), E = vals.end();
-       I != E; ++I)
-    if (v == VN.lookup(*I))
-      return *I;
-  
-  assert(0 && "No leader found, but present bit is set?");
-  return 0;
-}
-
-/// val_insert - Insert a value into a set only if there is not a value
-/// with the same value number already in the set
-void GVN::val_insert(ValueNumberedSet& s, Value* v) {
-  uint32_t num = VN.lookup(v);
-  if (!s.test(num))
-    s.insert(v);
-}
-
-void GVN::dump(DenseMap<BasicBlock*, Value*>& d) {
+void GVN::dump(DenseMap<uint32_t, Value*>& d) {
   printf("{\n");
-  for (DenseMap<BasicBlock*, Value*>::iterator I = d.begin(),
+  for (DenseMap<uint32_t, Value*>::iterator I = d.begin(),
        E = d.end(); I != E; ++I) {
-    if (I->second == MemoryDependenceAnalysis::None)
-      printf("None\n");
-    else
+      printf("%d\n", I->first);
       I->second->dump();
   }
   printf("}\n");
@@ -778,6 +808,11 @@ Value *GVN::GetValueForBlock(BasicBlock *BB, LoadInst* orig,
   // If we have already computed this value, return the previously computed val.
   DenseMap<BasicBlock*, Value*>::iterator V = Phis.find(BB);
   if (V != Phis.end() && !top_level) return V->second;
+  
+  // If the block is unreachable, just return undef, since this path
+  // can't actually occur at runtime.
+  if (!getAnalysis<DominatorTree>().isReachableFromEntry(BB))
+    return Phis[BB] = UndefValue::get(orig->getType());
   
   BasicBlock* singlePred = BB->getSinglePredecessor();
   if (singlePred) {
@@ -990,20 +1025,49 @@ bool GVN::processLoad(LoadInst *L, DenseMap<Value*, LoadInst*> &lastLoad,
   return deletedLoad;
 }
 
+Value* GVN::lookupNumber(BasicBlock* BB, uint32_t num) {
+  DenseMap<BasicBlock*, ValueNumberScope*>::iterator I = localAvail.find(BB);
+  if (I == localAvail.end())
+    return 0;
+  
+  ValueNumberScope* locals = I->second;
+  
+  while (locals) {
+    DenseMap<uint32_t, Value*>::iterator I = locals->table.find(num);
+    if (I != locals->table.end())
+      return I->second;
+    else
+      locals = locals->parent;
+  }
+  
+  return 0;
+}
+
 /// processInstruction - When calculating availability, handle an instruction
 /// by inserting it into the appropriate sets
-bool GVN::processInstruction(Instruction *I, ValueNumberedSet &currAvail,
+bool GVN::processInstruction(Instruction *I,
                              DenseMap<Value*, LoadInst*> &lastSeenLoad,
                              SmallVectorImpl<Instruction*> &toErase) {
-  if (LoadInst* L = dyn_cast<LoadInst>(I))
-    return processLoad(L, lastSeenLoad, toErase);
+  if (LoadInst* L = dyn_cast<LoadInst>(I)) {
+    bool changed = processLoad(L, lastSeenLoad, toErase);
+    
+    if (!changed) {
+      unsigned num = VN.lookup_or_add(L);
+      localAvail[I->getParent()]->table.insert(std::make_pair(num, L));
+    }
+    
+    return changed;
+  }
+  
+  uint32_t nextNum = VN.getNextUnusedValueNumber();
+  unsigned num = VN.lookup_or_add(I);
   
   // Allocations are always uniquely numbered, so we can save time and memory
   // by fast failing them.
-  if (isa<AllocationInst>(I))
+  if (isa<AllocationInst>(I) || isa<TerminatorInst>(I)) {
+    localAvail[I->getParent()]->table.insert(std::make_pair(num, I));
     return false;
-  
-  unsigned num = VN.lookup_or_add(I);
+  }
   
   // Collapse PHI nodes
   if (PHINode* p = dyn_cast<PHINode>(I)) {
@@ -1017,11 +1081,18 @@ bool GVN::processInstruction(Instruction *I, ValueNumberedSet &currAvail,
         
       p->replaceAllUsesWith(constVal);
       toErase.push_back(p);
+    } else {
+      localAvail[I->getParent()]->table.insert(std::make_pair(num, I));
     }
-  // Perform value-number based elimination
-  } else if (currAvail.test(num)) {
-    Value* repl = find_leader(currAvail, num);
+  
+  // If the number we were assigned was a brand new VN, then we don't
+  // need to do a lookup to see if the number already exists
+  // somewhere in the domtree: it can't!
+  } else if (num == nextNum) {
+    localAvail[I->getParent()]->table.insert(std::make_pair(num, I));
     
+  // Perform value-number based elimination
+  } else if (Value* repl = lookupNumber(I->getParent(), num)) {
     // Remove it!
     MemoryDependenceAnalysis& MD = getAnalysis<MemoryDependenceAnalysis>();
     MD.removeInstruction(I);
@@ -1030,9 +1101,8 @@ bool GVN::processInstruction(Instruction *I, ValueNumberedSet &currAvail,
     I->replaceAllUsesWith(repl);
     toErase.push_back(I);
     return true;
-  } else if (!I->isTerminator()) {
-    currAvail.set(num);
-    currAvail.insert(I);
+  } else {
+    localAvail[I->getParent()]->table.insert(std::make_pair(num, I));
   }
   
   return false;
@@ -1044,6 +1114,7 @@ bool GVN::processInstruction(Instruction *I, ValueNumberedSet &currAvail,
 bool GVN::runOnFunction(Function& F) {
   VN.setAliasAnalysis(&getAnalysis<AliasAnalysis>());
   VN.setMemDep(&getAnalysis<MemoryDependenceAnalysis>());
+  VN.setDomTree(&getAnalysis<DominatorTree>());
   
   bool changed = false;
   bool shouldContinue = true;
@@ -1057,72 +1128,220 @@ bool GVN::runOnFunction(Function& F) {
 }
 
 
+bool GVN::processBlock(DomTreeNode* DTN) {
+  BasicBlock* BB = DTN->getBlock();
+
+  SmallVector<Instruction*, 8> toErase;
+  DenseMap<Value*, LoadInst*> lastSeenLoad;
+  bool changed_function = false;
+  
+  if (DTN->getIDom())
+    localAvail[BB] =
+                  new ValueNumberScope(localAvail[DTN->getIDom()->getBlock()]);
+  else
+    localAvail[BB] = new ValueNumberScope(0);
+  
+  for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
+       BI != BE;) {
+    changed_function |= processInstruction(BI, lastSeenLoad, toErase);
+    if (toErase.empty()) {
+      ++BI;
+      continue;
+    }
+    
+    // If we need some instructions deleted, do it now.
+    NumGVNInstr += toErase.size();
+    
+    // Avoid iterator invalidation.
+    bool AtStart = BI == BB->begin();
+    if (!AtStart)
+      --BI;
+
+    for (SmallVector<Instruction*, 4>::iterator I = toErase.begin(),
+         E = toErase.end(); I != E; ++I)
+      (*I)->eraseFromParent();
+
+    if (AtStart)
+      BI = BB->begin();
+    else
+      ++BI;
+    
+    toErase.clear();
+  }
+  
+  return changed_function;
+}
+
+/// performPRE - Perform a purely local form of PRE that looks for diamond
+/// control flow patterns and attempts to perform simple PRE at the join point.
+bool GVN::performPRE(Function& F) {
+  bool changed = false;
+  SmallVector<std::pair<TerminatorInst*, unsigned>, 4> toSplit;
+  for (df_iterator<BasicBlock*> DI = df_begin(&F.getEntryBlock()),
+       DE = df_end(&F.getEntryBlock()); DI != DE; ++DI) {
+    BasicBlock* CurrentBlock = *DI;
+    
+    // Nothing to PRE in the entry block.
+    if (CurrentBlock == &F.getEntryBlock()) continue;
+    
+    for (BasicBlock::iterator BI = CurrentBlock->begin(),
+         BE = CurrentBlock->end(); BI != BE; ) {
+      if (isa<AllocationInst>(BI) || isa<TerminatorInst>(BI) ||
+          isa<PHINode>(BI) || BI->mayReadFromMemory() ||
+          BI->mayWriteToMemory()) {
+        BI++;
+        continue;
+      }
+      
+      uint32_t valno = VN.lookup(BI);
+      
+      // Look for the predecessors for PRE opportunities.  We're
+      // only trying to solve the basic diamond case, where
+      // a value is computed in the successor and one predecessor,
+      // but not the other.  We also explicitly disallow cases
+      // where the successor is its own predecessor, because they're
+      // more complicated to get right.
+      unsigned numWith = 0;
+      unsigned numWithout = 0;
+      BasicBlock* PREPred = 0;
+      DenseMap<BasicBlock*, Value*> predMap;
+      for (pred_iterator PI = pred_begin(CurrentBlock),
+           PE = pred_end(CurrentBlock); PI != PE; ++PI) {
+        // We're not interested in PRE where the block is its
+        // own predecessor, on in blocks with predecessors
+        // that are not reachable.
+        if (*PI == CurrentBlock) {
+          numWithout = 2;
+          break;
+        } else if (!localAvail.count(*PI))  {
+          numWithout = 2;
+          break;
+        }
+        
+        DenseMap<uint32_t, Value*>::iterator predV = 
+                                            localAvail[*PI]->table.find(valno);
+        if (predV == localAvail[*PI]->table.end()) {
+          PREPred = *PI;
+          numWithout++;
+        } else if (predV->second == BI) {
+          numWithout = 2;
+        } else {
+          predMap[*PI] = predV->second;
+          numWith++;
+        }
+      }
+      
+      // Don't do PRE when it might increase code size, i.e. when
+      // we would need to insert instructions in more than one pred.
+      if (numWithout != 1 || numWith == 0) {
+        BI++;
+        continue;
+      }
+      
+      // We can't do PRE safely on a critical edge, so instead we schedule
+      // the edge to be split and perform the PRE the next time we iterate
+      // on the function.
+      unsigned succNum = 0;
+      for (unsigned i = 0, e = PREPred->getTerminator()->getNumSuccessors();
+           i != e; ++i)
+        if (PREPred->getTerminator()->getSuccessor(i) == PREPred) {
+          succNum = i;
+          break;
+        }
+        
+      if (isCriticalEdge(PREPred->getTerminator(), succNum)) {
+        toSplit.push_back(std::make_pair(PREPred->getTerminator(), succNum));
+        changed = true;
+        BI++;
+        continue;
+      }
+      
+      // Instantiate the expression the in predecessor that lacked it.
+      // Because we are going top-down through the block, all value numbers
+      // will be available in the predecessor by the time we need them.  Any
+      // that weren't original present will have been instantiated earlier
+      // in this loop.
+      Instruction* PREInstr = BI->clone();
+      bool success = true;
+      for (unsigned i = 0; i < BI->getNumOperands(); ++i) {
+        Value* op = BI->getOperand(i);
+        if (isa<Argument>(op) || isa<Constant>(op) || isa<GlobalValue>(op))
+          PREInstr->setOperand(i, op);
+        else if (!lookupNumber(PREPred, VN.lookup(op))) {
+          success = false;
+          break;
+        } else
+          PREInstr->setOperand(i, lookupNumber(PREPred, VN.lookup(op)));
+      }
+      
+      // Fail out if we encounter an operand that is not available in
+      // the PRE predecessor.  This is typically because of loads which 
+      // are not value numbered precisely.
+      if (!success) {
+        delete PREInstr;
+        BI++;
+        continue;
+      }
+      
+      PREInstr->insertBefore(PREPred->getTerminator());
+      PREInstr->setName(BI->getName() + ".pre");
+      predMap[PREPred] = PREInstr;
+      VN.add(PREInstr, valno);
+      NumGVNPRE++;
+      
+      // Update the availability map to include the new instruction.
+      localAvail[PREPred]->table.insert(std::make_pair(valno, PREInstr));
+      
+      // Create a PHI to make the value available in this block.
+      PHINode* Phi = PHINode::Create(BI->getType(),
+                                     BI->getName() + ".pre-phi",
+                                     CurrentBlock->begin());
+      for (pred_iterator PI = pred_begin(CurrentBlock),
+           PE = pred_end(CurrentBlock); PI != PE; ++PI)
+        Phi->addIncoming(predMap[*PI], *PI);
+      
+      VN.add(Phi, valno);
+      localAvail[CurrentBlock]->table[valno] = Phi;
+      
+      BI->replaceAllUsesWith(Phi);
+      VN.erase(BI);
+      
+      Instruction* erase = BI;
+      BI++;
+      erase->eraseFromParent();
+      
+      changed = true;
+    }
+  }
+  
+  for (SmallVector<std::pair<TerminatorInst*, unsigned>, 4>::iterator
+       I = toSplit.begin(), E = toSplit.end(); I != E; ++I)
+    SplitCriticalEdge(I->first, I->second, this);
+  
+  return changed;
+}
+
 // GVN::iterateOnFunction - Executes one iteration of GVN
 bool GVN::iterateOnFunction(Function &F) {
   // Clean out global sets from any previous functions
   VN.clear();
-  availableOut.clear();
   phiMap.clear();
- 
-  bool changed_function = false;
+  
+  for (DenseMap<BasicBlock*, ValueNumberScope*>::iterator
+       I = localAvail.begin(), E = localAvail.end(); I != E; ++I)
+    delete I->second;
+  localAvail.clear();
   
   DominatorTree &DT = getAnalysis<DominatorTree>();   
-  
-  SmallVector<Instruction*, 8> toErase;
-  DenseMap<Value*, LoadInst*> lastSeenLoad;
-  DenseMap<DomTreeNode*, size_t> numChildrenVisited;
 
   // Top-down walk of the dominator tree
+  bool changed = false;
   for (df_iterator<DomTreeNode*> DI = df_begin(DT.getRootNode()),
-         E = df_end(DT.getRootNode()); DI != E; ++DI) {
-    
-    // Get the set to update for this block
-    ValueNumberedSet& currAvail = availableOut[DI->getBlock()];     
-    lastSeenLoad.clear();
-
-    BasicBlock* BB = DI->getBlock();
+       DE = df_end(DT.getRootNode()); DI != DE; ++DI)
+    changed |= processBlock(*DI);
   
-    // A block inherits AVAIL_OUT from its dominator
-    if (DI->getIDom() != 0) {
-      currAvail = availableOut[DI->getIDom()->getBlock()];
-      
-      numChildrenVisited[DI->getIDom()]++;
-      
-      if (numChildrenVisited[DI->getIDom()] == DI->getIDom()->getNumChildren()) {
-        availableOut.erase(DI->getIDom()->getBlock());
-        numChildrenVisited.erase(DI->getIDom());
-      }
-    }
-
-    for (BasicBlock::iterator BI = BB->begin(), BE = BB->end();
-         BI != BE;) {
-      changed_function |= processInstruction(BI, currAvail,
-                                             lastSeenLoad, toErase);
-      if (toErase.empty()) {
-        ++BI;
-        continue;
-      }
-      
-      // If we need some instructions deleted, do it now.
-      NumGVNInstr += toErase.size();
-      
-      // Avoid iterator invalidation.
-      bool AtStart = BI == BB->begin();
-      if (!AtStart)
-        --BI;
-
-      for (SmallVector<Instruction*, 4>::iterator I = toErase.begin(),
-           E = toErase.end(); I != E; ++I)
-        (*I)->eraseFromParent();
-
-      if (AtStart)
-        BI = BB->begin();
-      else
-        ++BI;
-      
-      toErase.clear();
-    }
-  }
+  if (EnablePRE)
+    changed |= performPRE(F);
   
-  return changed_function;
+  return changed;
 }

@@ -20,7 +20,6 @@
 namespace llvm {
 
 struct AssemblyAnnotationWriter;
-class BinaryOperator;
 
 template<typename ValueSubClass, typename ItemParentClass>
   class SymbolTableListTraits;
@@ -50,6 +49,10 @@ public:
   ///
   bool mayWriteToMemory() const;
 
+  /// mayReadFromMemory - Return true if this instruction may read memory.
+  ///
+  bool mayReadFromMemory() const;
+  
   /// clone() - Create a copy of 'this' instruction that is identical in all
   /// ways except the following:
   ///   * The instruction has no parent
@@ -98,6 +101,10 @@ public:
   /// block and deletes it.
   ///
   void eraseFromParent();
+
+  /// insertBefore - Insert an unlinked instructions into a basic block
+  /// immediately before the specified instruction.
+  void insertBefore(Instruction *InsertPos);
 
   /// moveBefore - Unlink this instruction from its current basic block and
   /// insert it into the basic block that MovePos lives in, right before

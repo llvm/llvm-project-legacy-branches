@@ -20,7 +20,6 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetMachineRegistry.h"
-#include "llvm/Transforms/Scalar.h"
 using namespace llvm;
 
 /// X86TargetMachineModule - Note that this is used on hosts that cannot link
@@ -30,13 +29,11 @@ using namespace llvm;
 extern "C" int X86TargetMachineModule;
 int X86TargetMachineModule = 0;
 
-namespace {
-  // Register the target.
-  RegisterTarget<X86_32TargetMachine>
-  X("x86",    "  32-bit X86: Pentium-Pro and above");
-  RegisterTarget<X86_64TargetMachine>
-  Y("x86-64", "  64-bit X86: EM64T and AMD64");
-}
+// Register the target.
+static RegisterTarget<X86_32TargetMachine>
+X("x86",    "  32-bit X86: Pentium-Pro and above");
+static RegisterTarget<X86_64TargetMachine>
+Y("x86-64", "  64-bit X86: EM64T and AMD64");
 
 const TargetAsmInfo *X86TargetMachine::createTargetAsmInfo() const {
   return new X86TargetAsmInfo(*this);
@@ -161,6 +158,13 @@ bool X86TargetMachine::addInstSelector(PassManagerBase &PM, bool Fast) {
   return false;
 }
 
+bool X86TargetMachine::addPreRegAlloc(PassManagerBase &PM, bool Fast) {
+  // Calculate and set max stack object alignment early, so we can decide
+  // whether we will need stack realignment (and thus FP).
+  PM.add(createX86MaxStackAlignmentCalculatorPass());
+  return false;  // -print-machineinstr shouldn't print after this.
+}
+
 bool X86TargetMachine::addPostRegAlloc(PassManagerBase &PM, bool Fast) {
   PM.add(createX86FloatingPointStackifierPass());
   return true;  // -print-machineinstr should print after this.
@@ -175,10 +179,8 @@ bool X86TargetMachine::addAssemblyEmitter(PassManagerBase &PM, bool Fast,
 bool X86TargetMachine::addCodeEmitter(PassManagerBase &PM, bool Fast,
                                       bool DumpAsm, MachineCodeEmitter &MCE) {
   // FIXME: Move this to TargetJITInfo!
-  if (DefRelocModel == Reloc::Default) {
+  if (DefRelocModel == Reloc::Default)
     setRelocationModel(Reloc::Static);
-    Subtarget.setPICStyle(PICStyle::None);
-  }
   
   // JIT cannot ensure globals are placed in the lower 4G of address.
   if (Subtarget.is64Bit())

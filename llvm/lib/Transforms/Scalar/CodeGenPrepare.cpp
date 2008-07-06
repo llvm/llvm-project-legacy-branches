@@ -8,8 +8,8 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass munges the code in the input function to better prepare it for
-// SelectionDAG-based code generation.  This works around limitations in it's
-// basic-block-at-a-time approach.  It should eventually be removed.
+// SelectionDAG-based code generation. This works around limitations in it's
+// basic-block-at-a-time approach. It should eventually be removed.
 //
 //===----------------------------------------------------------------------===//
 
@@ -333,16 +333,16 @@ static void SplitEdgeNicely(TerminatorInst *TI, unsigned SuccNum, Pass *P) {
 /// Return true if any changes are made.
 static bool OptimizeNoopCopyExpression(CastInst *CI, const TargetLowering &TLI){
   // If this is a noop copy, 
-  MVT::ValueType SrcVT = TLI.getValueType(CI->getOperand(0)->getType());
-  MVT::ValueType DstVT = TLI.getValueType(CI->getType());
+  MVT SrcVT = TLI.getValueType(CI->getOperand(0)->getType());
+  MVT DstVT = TLI.getValueType(CI->getType());
   
   // This is an fp<->int conversion?
-  if (MVT::isInteger(SrcVT) != MVT::isInteger(DstVT))
+  if (SrcVT.isInteger() != DstVT.isInteger())
     return false;
-  
+
   // If this is an extension, it will be a zero or sign extension, which
   // isn't a noop.
-  if (SrcVT < DstVT) return false;
+  if (SrcVT.bitsLT(DstVT)) return false;
   
   // If these values will be promoted, find out what they will be promoted
   // to.  This helps us consider truncates on PPC as noop copies when they
@@ -385,11 +385,10 @@ static bool OptimizeNoopCopyExpression(CastInst *CI, const TargetLowering &TLI){
     CastInst *&InsertedCast = InsertedCasts[UserBB];
 
     if (!InsertedCast) {
-      BasicBlock::iterator InsertPt = UserBB->begin();
-      while (isa<PHINode>(InsertPt)) ++InsertPt;
+      BasicBlock::iterator InsertPt = UserBB->getFirstNonPHI();
       
       InsertedCast = 
-        CastInst::create(CI->getOpcode(), CI->getOperand(0), CI->getType(), "", 
+        CastInst::Create(CI->getOpcode(), CI->getOperand(0), CI->getType(), "", 
                          InsertPt);
       MadeChange = true;
     }
@@ -443,11 +442,10 @@ static bool OptimizeCmpExpression(CmpInst *CI){
     CmpInst *&InsertedCmp = InsertedCmps[UserBB];
 
     if (!InsertedCmp) {
-      BasicBlock::iterator InsertPt = UserBB->begin();
-      while (isa<PHINode>(InsertPt)) ++InsertPt;
+      BasicBlock::iterator InsertPt = UserBB->getFirstNonPHI();
       
       InsertedCmp = 
-        CmpInst::create(CI->getOpcode(), CI->getPredicate(), CI->getOperand(0), 
+        CmpInst::Create(CI->getOpcode(), CI->getPredicate(), CI->getOperand(0), 
                         CI->getOperand(1), "", InsertPt);
       MadeChange = true;
     }
@@ -483,6 +481,7 @@ static void EraseDeadInstructions(Value *V) {
   }
 }
 
+namespace {
 
 /// ExtAddrMode - This is an extended version of TargetLowering::AddrMode which
 /// holds actual Value*'s for register values.
@@ -515,6 +514,8 @@ static std::ostream &operator<<(std::ostream &OS, const ExtAddrMode &AM) {
 
 void ExtAddrMode::dump() const {
   cerr << *this << "\n";
+}
+
 }
 
 static bool TryMatchingScaledValue(Value *ScaleReg, int64_t Scale,
@@ -877,7 +878,7 @@ bool CodeGenPrepare::OptimizeLoadStoreInst(Instruction *LdStInst, Value *Addr,
         V = new SExtInst(V, IntPtrTy, "sunkaddr", InsertPt);
       }
       if (AddrMode.Scale != 1)
-        V = BinaryOperator::createMul(V, ConstantInt::get(IntPtrTy,
+        V = BinaryOperator::CreateMul(V, ConstantInt::get(IntPtrTy,
                                                           AddrMode.Scale),
                                       "sunkaddr", InsertPt);
       Result = V;
@@ -889,7 +890,7 @@ bool CodeGenPrepare::OptimizeLoadStoreInst(Instruction *LdStInst, Value *Addr,
       if (V->getType() != IntPtrTy)
         V = new PtrToIntInst(V, IntPtrTy, "sunkaddr", InsertPt);
       if (Result)
-        Result = BinaryOperator::createAdd(Result, V, "sunkaddr", InsertPt);
+        Result = BinaryOperator::CreateAdd(Result, V, "sunkaddr", InsertPt);
       else
         Result = V;
     }
@@ -899,7 +900,7 @@ bool CodeGenPrepare::OptimizeLoadStoreInst(Instruction *LdStInst, Value *Addr,
       Value *V = new PtrToIntInst(AddrMode.BaseGV, IntPtrTy, "sunkaddr",
                                   InsertPt);
       if (Result)
-        Result = BinaryOperator::createAdd(Result, V, "sunkaddr", InsertPt);
+        Result = BinaryOperator::CreateAdd(Result, V, "sunkaddr", InsertPt);
       else
         Result = V;
     }
@@ -908,7 +909,7 @@ bool CodeGenPrepare::OptimizeLoadStoreInst(Instruction *LdStInst, Value *Addr,
     if (AddrMode.BaseOffs) {
       Value *V = ConstantInt::get(IntPtrTy, AddrMode.BaseOffs);
       if (Result)
-        Result = BinaryOperator::createAdd(Result, V, "sunkaddr", InsertPt);
+        Result = BinaryOperator::CreateAdd(Result, V, "sunkaddr", InsertPt);
       else
         Result = V;
     }
@@ -962,7 +963,7 @@ bool CodeGenPrepare::OptimizeInlineAsmInst(Instruction *I, CallSite CS,
     }
 
     // Compute the constraint code and ConstraintType to use.
-    OpInfo.ComputeConstraintToUse(*TLI);
+    TLI->ComputeConstraintToUse(OpInfo, SDOperand());
 
     if (OpInfo.ConstraintType == TargetLowering::C_Memory &&
         OpInfo.isIndirect) {
@@ -1036,8 +1037,7 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
     Instruction *&InsertedTrunc = InsertedTruncs[UserBB];
 
     if (!InsertedTrunc) {
-      BasicBlock::iterator InsertPt = UserBB->begin();
-      while (isa<PHINode>(InsertPt)) ++InsertPt;
+      BasicBlock::iterator InsertPt = UserBB->getFirstNonPHI();
       
       InsertedTrunc = new TruncInst(I, Src->getType(), "", InsertPt);
     }
@@ -1127,15 +1127,6 @@ bool CodeGenPrepare::OptimizeBlock(BasicBlock &BB) {
             // Sink address computing for memory operands into the block.
             MadeChange |= OptimizeInlineAsmInst(I, &(*CI), SunkAddrs);
         }
-    } else if (GetResultInst *GRI = dyn_cast<GetResultInst>(I)) {
-      // Ensure that all getresult instructions live in the same basic block
-      // as their associated struct-value instructions. Codegen requires
-      // this, as lowering only works on one basic block at a time.
-      if (Instruction *Agg = dyn_cast<Instruction>(GRI->getAggregateValue())) {
-        BasicBlock *AggBB = Agg->getParent();
-        if (AggBB != GRI->getParent())
-          GRI->moveBefore(AggBB->getTerminator());
-      }
     }
   }
     

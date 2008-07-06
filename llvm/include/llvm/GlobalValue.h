@@ -38,7 +38,8 @@ public:
     DLLImportLinkage,   ///< Function to be imported from DLL
     DLLExportLinkage,   ///< Function to be accessible from DLL
     ExternalWeakLinkage,///< ExternalWeak linkage description
-    GhostLinkage        ///< Stand-in functions for streaming fns from BC files    
+    GhostLinkage,       ///< Stand-in functions for streaming fns from BC files
+    CommonLinkage       ///< Tentative definitions
   };
 
   /// @brief An enumeration for the kinds of visibility of global values.
@@ -49,9 +50,9 @@ public:
   };
 
 protected:
-  GlobalValue(const Type *Ty, ValueTy vty, Use *Ops, unsigned NumOps,
+  GlobalValue(const Type *ty, ValueTy vty, Use *Ops, unsigned NumOps,
               LinkageTypes linkage, const std::string &name = "")
-    : Constant(Ty, vty, Ops, NumOps), Parent(0),
+    : Constant(ty, vty, Ops, NumOps), Parent(0),
       Linkage(linkage), Visibility(DefaultVisibility), Alignment(0) {
     if (!name.empty()) setName(name);
   }
@@ -100,6 +101,7 @@ public:
   bool hasExternalLinkage()   const { return Linkage == ExternalLinkage; }
   bool hasLinkOnceLinkage()   const { return Linkage == LinkOnceLinkage; }
   bool hasWeakLinkage()       const { return Linkage == WeakLinkage; }
+  bool hasCommonLinkage()     const { return Linkage == CommonLinkage; }
   bool hasAppendingLinkage()  const { return Linkage == AppendingLinkage; }
   bool hasInternalLinkage()   const { return Linkage == InternalLinkage; }
   bool hasDLLImportLinkage()  const { return Linkage == DLLImportLinkage; }
@@ -107,6 +109,10 @@ public:
   bool hasExternalWeakLinkage() const { return Linkage == ExternalWeakLinkage; }
   void setLinkage(LinkageTypes LT) { Linkage = LT; }
   LinkageTypes getLinkage() const { return Linkage; }
+
+  /// copyAttributesFrom - copy all additional attributes (those not needed to
+  /// create a GlobalValue) from the GlobalValue Src to this one.
+  virtual void copyAttributesFrom(const GlobalValue *Src);
 
   /// hasNotBeenReadFromBitcode - If a module provider is being used to lazily
   /// stream in functions from disk, this method can be used to check to see if

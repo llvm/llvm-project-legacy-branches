@@ -227,6 +227,23 @@ namespace X86II {
   };
 }
 
+inline static bool isScale(const MachineOperand &MO) {
+  return MO.isImmediate() &&
+    (MO.getImm() == 1 || MO.getImm() == 2 ||
+     MO.getImm() == 4 || MO.getImm() == 8);
+}
+
+inline static bool isMem(const MachineInstr *MI, unsigned Op) {
+  if (MI->getOperand(Op).isFrameIndex()) return true;
+  return Op+4 <= MI->getNumOperands() &&
+    MI->getOperand(Op  ).isRegister() && isScale(MI->getOperand(Op+1)) &&
+    MI->getOperand(Op+2).isRegister() &&
+    (MI->getOperand(Op+3).isImmediate() ||
+     MI->getOperand(Op+3).isGlobalAddress() ||
+     MI->getOperand(Op+3).isConstantPoolIndex() ||
+     MI->getOperand(Op+3).isJumpTableIndex());
+}
+
 class X86InstrInfo : public TargetInstrInfoImpl {
   X86TargetMachine &TM;
   const X86RegisterInfo RI;
@@ -250,7 +267,7 @@ public:
   /// such, whenever a client has an instance of instruction info, it should
   /// always be able to get register info as well (through this method).
   ///
-  virtual const TargetRegisterInfo &getRegisterInfo() const { return RI; }
+  virtual const X86RegisterInfo &getRegisterInfo() const { return RI; }
 
   // Return true if the instruction is a register to register move and
   // leave the source and dest operands in the passed parameters.
@@ -260,7 +277,7 @@ public:
   unsigned isLoadFromStackSlot(MachineInstr *MI, int &FrameIndex) const;
   unsigned isStoreToStackSlot(MachineInstr *MI, int &FrameIndex) const;
 
-  bool isReallyTriviallyReMaterializable(MachineInstr *MI) const;
+  bool isReallyTriviallyReMaterializable(const MachineInstr *MI) const;
   void reMaterialize(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
                      unsigned DestReg, const MachineInstr *Orig) const;
 
@@ -278,12 +295,12 @@ public:
   ///
   virtual MachineInstr *convertToThreeAddress(MachineFunction::iterator &MFI,
                                               MachineBasicBlock::iterator &MBBI,
-                                              LiveVariables &LV) const;
+                                              LiveVariables *LV) const;
 
   /// commuteInstruction - We have a few instructions that must be hacked on to
   /// commute them.
   ///
-  virtual MachineInstr *commuteInstruction(MachineInstr *MI) const;
+  virtual MachineInstr *commuteInstruction(MachineInstr *MI, bool NewMI) const;
 
   // Branch analysis.
   virtual bool isUnpredicatedTerminator(const MachineInstr* MI) const;

@@ -8,7 +8,6 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares the Value class. 
-// This file also defines the Use<> template for users of value.
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,7 +17,7 @@
 #include "llvm/AbstractTypeUser.h"
 #include "llvm/Use.h"
 #include "llvm/Support/Casting.h"
-#include "llvm/Support/Streams.h"
+#include <iosfwd>
 #include <string>
 
 namespace llvm {
@@ -94,6 +93,12 @@ public:
   /// Note that names can have null characters within the string as well as at
   /// their end.  This always returns a non-null pointer.
   const char *getNameStart() const;
+  /// getNameEnd - Return a pointer to the end of the name.
+  const char *getNameEnd() const { return getNameStart() + getNameLen(); }
+  
+  /// isName - Return true if this value has the name specified by the provided
+  /// nul terminated string.
+  bool isName(const char *N) const;
   
   /// getNameLen - Return the length of the string, correctly handling nul
   /// characters embedded into them.
@@ -158,6 +163,8 @@ public:
   ///
   bool hasNUsesOrMore(unsigned N) const;
 
+  bool isUsedInBasicBlock(BasicBlock *BB) const;
+
   /// getNumUses - This method computes the number of uses of this Value.  This
   /// is a linear time operation.  Use hasOneUse, hasNUses, or hasMoreThanNUses
   /// to check for specific values.
@@ -216,6 +223,14 @@ public:
   /// getRawType - This should only be used to implement the vmcore library.
   ///
   const Type *getRawType() const { return Ty.getRawType(); }
+
+  /// stripPointerCasts - This method strips off any unneeded pointer
+  /// casts from the specified value, returning the original uncasted value.
+  /// Note that the returned value is guaranteed to have pointer type.
+  Value *stripPointerCasts();
+  const Value *stripPointerCasts() const {
+    return const_cast<Value*>(this)->stripPointerCasts();
+  }
 };
 
 inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
@@ -223,10 +238,9 @@ inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
   return OS;
 }
 
-void Use::init(Value *v, User *user) {
-  Val = v;
-  U = user;
-  if (Val) Val->addUse(*this);
+void Use::init(Value *V, User *) {
+  Val = V;
+  if (V) V->addUse(*this);
 }
 
 void Use::set(Value *V) {

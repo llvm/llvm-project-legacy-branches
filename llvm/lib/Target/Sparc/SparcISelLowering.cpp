@@ -74,11 +74,11 @@ static SDOperand LowerRET(SDOperand Op, SelectionDAG &DAG) {
 /// LowerArguments - V8 uses a very simple ABI, where all values are passed in
 /// either one or two GPRs, including FP values.  TODO: we should pass FP values
 /// in FP registers for fastcc functions.
-std::vector<SDOperand>
-SparcTargetLowering::LowerArguments(Function &F, SelectionDAG &DAG) {
+void
+SparcTargetLowering::LowerArguments(Function &F, SelectionDAG &DAG,
+                                    SmallVectorImpl<SDOperand> &ArgValues) {
   MachineFunction &MF = DAG.getMachineFunction();
   MachineRegisterInfo &RegInfo = MF.getRegInfo();
-  std::vector<SDOperand> ArgValues;
   
   static const unsigned ArgRegs[] = {
     SP::I0, SP::I1, SP::I2, SP::I3, SP::I4, SP::I5
@@ -91,9 +91,9 @@ SparcTargetLowering::LowerArguments(Function &F, SelectionDAG &DAG) {
   std::vector<SDOperand> OutChains;
 
   for (Function::arg_iterator I = F.arg_begin(), E = F.arg_end(); I != E; ++I) {
-    MVT::ValueType ObjectVT = getValueType(I->getType());
+    MVT ObjectVT = getValueType(I->getType());
     
-    switch (ObjectVT) {
+    switch (ObjectVT.getSimpleVT()) {
     default: assert(0 && "Unhandled argument type!");
     case MVT::i1:
     case MVT::i8:
@@ -123,7 +123,7 @@ SparcTargetLowering::LowerArguments(Function &F, SelectionDAG &DAG) {
           ISD::LoadExtType LoadOp = ISD::SEXTLOAD;
 
           // Sparc is big endian, so add an offset based on the ObjectVT.
-          unsigned Offset = 4-std::max(1U, MVT::getSizeInBits(ObjectVT)/8);
+          unsigned Offset = 4-std::max(1U, ObjectVT.getSizeInBits()/8);
           FIPtr = DAG.getNode(ISD::ADD, MVT::i32, FIPtr,
                               DAG.getConstant(Offset, MVT::i32));
           Load = DAG.getExtLoad(LoadOp, MVT::i32, Root, FIPtr,
@@ -221,8 +221,6 @@ SparcTargetLowering::LowerArguments(Function &F, SelectionDAG &DAG) {
   if (!OutChains.empty())
     DAG.setRoot(DAG.getNode(ISD::TokenFactor, MVT::Other,
                             &OutChains[0], OutChains.size()));
-  
-  return ArgValues;
 }
 
 static SDOperand LowerCALL(SDOperand Op, SelectionDAG &DAG) {
@@ -246,7 +244,7 @@ static SDOperand LowerCALL(SDOperand Op, SelectionDAG &DAG) {
   // Count the size of the outgoing arguments.
   unsigned ArgsSize = 0;
   for (unsigned i = 5, e = Op.getNumOperands(); i != e; i += 2) {
-    switch (Op.getOperand(i).getValueType()) {
+    switch (Op.getOperand(i).getValueType().getSimpleVT()) {
       default: assert(0 && "Unknown value type!");
       case MVT::i1:
       case MVT::i8:
@@ -323,10 +321,10 @@ static SDOperand LowerCALL(SDOperand Op, SelectionDAG &DAG) {
 
   for (unsigned i = 5, e = Op.getNumOperands(); i != e; i += 2) {
     SDOperand Val = Op.getOperand(i);
-    MVT::ValueType ObjectVT = Val.getValueType();
+    MVT ObjectVT = Val.getValueType();
     SDOperand ValToStore(0, 0);
     unsigned ObjSize;
-    switch (ObjectVT) {
+    switch (ObjectVT.getSimpleVT()) {
     default: assert(0 && "Unhandled argument type!");
     case MVT::i32:
       ObjSize = 4;
@@ -414,7 +412,7 @@ static SDOperand LowerCALL(SDOperand Op, SelectionDAG &DAG) {
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
     Callee = DAG.getTargetExternalSymbol(E->getSymbol(), MVT::i32);
 
-  std::vector<MVT::ValueType> NodeTys;
+  std::vector<MVT> NodeTys;
   NodeTys.push_back(MVT::Other);   // Returns a chain
   NodeTys.push_back(MVT::Flag);    // Returns a flag for retval copy to use.
   SDOperand Ops[] = { Chain, Callee, InFlag };
@@ -448,10 +446,10 @@ static SDOperand LowerCALL(SDOperand Op, SelectionDAG &DAG) {
   }
   
   ResultVals.push_back(Chain);
-  
+
   // Merge everything together with a MERGE_VALUES node.
-  return DAG.getNode(ISD::MERGE_VALUES, Op.Val->getVTList(),
-                     &ResultVals[0], ResultVals.size());
+  return DAG.getMergeValues(Op.Val->getVTList(), &ResultVals[0],
+                            ResultVals.size());
 }
 
 
@@ -597,9 +595,10 @@ SparcTargetLowering::SparcTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::UMUL_LOHI, MVT::i32, Expand);
     
   // We don't have line number support yet.
-  setOperationAction(ISD::LOCATION, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_STOPPOINT, MVT::Other, Expand);
   setOperationAction(ISD::DEBUG_LOC, MVT::Other, Expand);
-  setOperationAction(ISD::LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::EH_LABEL, MVT::Other, Expand);
 
   // RET must be custom lowered, to meet ABI requirements
   setOperationAction(ISD::RET               , MVT::Other, Custom);
@@ -617,8 +616,9 @@ SparcTargetLowering::SparcTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32  , Custom);
 
   // No debug info support yet.
-  setOperationAction(ISD::LOCATION, MVT::Other, Expand);
-  setOperationAction(ISD::LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_STOPPOINT, MVT::Other, Expand);
+  setOperationAction(ISD::DBG_LABEL, MVT::Other, Expand);
+  setOperationAction(ISD::EH_LABEL, MVT::Other, Expand);
   setOperationAction(ISD::DECLARE, MVT::Other, Expand);
     
   setStackPointerRegisterToSaveRestore(SP::O6);
@@ -744,7 +744,7 @@ static SDOperand LowerBR_CC(SDOperand Op, SelectionDAG &DAG) {
   // Get the condition flag.
   SDOperand CompareFlag;
   if (LHS.getValueType() == MVT::i32) {
-    std::vector<MVT::ValueType> VTs;
+    std::vector<MVT> VTs;
     VTs.push_back(MVT::i32);
     VTs.push_back(MVT::Flag);
     SDOperand Ops[2] = { LHS, RHS };
@@ -774,7 +774,7 @@ static SDOperand LowerSELECT_CC(SDOperand Op, SelectionDAG &DAG) {
   
   SDOperand CompareFlag;
   if (LHS.getValueType() == MVT::i32) {
-    std::vector<MVT::ValueType> VTs;
+    std::vector<MVT> VTs;
     VTs.push_back(LHS.getValueType());   // subcc returns a value
     VTs.push_back(MVT::Flag);
     SDOperand Ops[2] = { LHS, RHS };
@@ -804,14 +804,14 @@ static SDOperand LowerVASTART(SDOperand Op, SelectionDAG &DAG,
 
 static SDOperand LowerVAARG(SDOperand Op, SelectionDAG &DAG) {
   SDNode *Node = Op.Val;
-  MVT::ValueType VT = Node->getValueType(0);
+  MVT VT = Node->getValueType(0);
   SDOperand InChain = Node->getOperand(0);
   SDOperand VAListPtr = Node->getOperand(1);
   const Value *SV = cast<SrcValueSDNode>(Node->getOperand(2))->getValue();
   SDOperand VAList = DAG.getLoad(MVT::i32, InChain, VAListPtr, SV, 0);
   // Increment the pointer, VAList, to the next vaarg
   SDOperand NextPtr = DAG.getNode(ISD::ADD, MVT::i32, VAList, 
-                                  DAG.getConstant(MVT::getSizeInBits(VT)/8, 
+                                  DAG.getConstant(VT.getSizeInBits()/8,
                                                   MVT::i32));
   // Store the incremented VAList to the legalized pointer
   InChain = DAG.getStore(VAList.getValue(1), NextPtr,
@@ -829,8 +829,7 @@ static SDOperand LowerVAARG(SDOperand Op, SelectionDAG &DAG) {
     DAG.getNode(ISD::BIT_CONVERT, MVT::f64, V),
     V.getValue(1)
   };
-  return DAG.getNode(ISD::MERGE_VALUES, DAG.getVTList(MVT::f64, MVT::Other),
-                     Ops, 2);
+  return DAG.getMergeValues(Ops, 2);
 }
 
 static SDOperand LowerDYNAMIC_STACKALLOC(SDOperand Op, SelectionDAG &DAG) {
@@ -846,11 +845,8 @@ static SDOperand LowerDYNAMIC_STACKALLOC(SDOperand Op, SelectionDAG &DAG) {
   // to provide a register spill area.
   SDOperand NewVal = DAG.getNode(ISD::ADD, MVT::i32, NewSP,
                                  DAG.getConstant(96, MVT::i32));
-  std::vector<MVT::ValueType> Tys;
-  Tys.push_back(MVT::i32);
-  Tys.push_back(MVT::Other);
   SDOperand Ops[2] = { NewVal, Chain };
-  return DAG.getNode(ISD::MERGE_VALUES, Tys, Ops, 2);
+  return DAG.getMergeValues(Ops, 2);
 }
 
 
@@ -920,15 +916,10 @@ SparcTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   MachineFunction *F = BB->getParent();
   F->getBasicBlockList().insert(It, copy0MBB);
   F->getBasicBlockList().insert(It, sinkMBB);
-  // Update machine-CFG edges by first adding all successors of the current
+  // Update machine-CFG edges by transferring all successors of the current
   // block to the new block which will contain the Phi node for the select.
-  for(MachineBasicBlock::succ_iterator i = BB->succ_begin(), 
-      e = BB->succ_end(); i != e; ++i)
-    sinkMBB->addSuccessor(*i);
-  // Next, remove all successors of the current block, and add the true
-  // and fallthrough blocks as its successors.
-  while(!BB->succ_empty())
-    BB->removeSuccessor(BB->succ_begin());
+  sinkMBB->transferSuccessors(BB);
+  // Next, add the true and fallthrough blocks as its successors.
   BB->addSuccessor(copy0MBB);
   BB->addSuccessor(sinkMBB);
   

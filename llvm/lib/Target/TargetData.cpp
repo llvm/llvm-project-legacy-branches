@@ -30,11 +30,10 @@
 using namespace llvm;
 
 // Handle the Pass registration stuff necessary to use TargetData's.
-namespace {
-  // Register the default SparcV9 implementation...
-  RegisterPass<TargetData> X("targetdata", "Target Data Layout", false, 
-                             true);
-}
+
+// Register the default SparcV9 implementation...
+static RegisterPass<TargetData> X("targetdata", "Target Data Layout", false, 
+                                  true);
 char TargetData::ID = 0;
 
 //===----------------------------------------------------------------------===//
@@ -49,10 +48,7 @@ StructLayout::StructLayout(const StructType *ST, const TargetData &TD) {
   // Loop over each of the elements, placing them in memory...
   for (unsigned i = 0, e = NumElements; i != e; ++i) {
     const Type *Ty = ST->getElementType(i);
-    unsigned TyAlign = ST->isPacked() ?
-      1 : TD.getABITypeAlignment(Ty);
-    uint64_t TySize  = ST->isPacked() ?
-      TD.getTypeStoreSize(Ty) : TD.getABITypeSize(Ty);
+    unsigned TyAlign = ST->isPacked() ? 1 : TD.getABITypeAlignment(Ty);
 
     // Add padding if necessary to align the data element properly...
     StructSize = (StructSize + TyAlign - 1)/TyAlign * TyAlign;
@@ -61,7 +57,7 @@ StructLayout::StructLayout(const StructType *ST, const TargetData &TD) {
     StructAlignment = std::max(TyAlign, StructAlignment);
 
     MemberOffsets[i] = StructSize;
-    StructSize += TySize;                 // Consume space for this data item
+    StructSize += TD.getABITypeSize(Ty); // Consume space for this data item
   }
 
   // Empty structures have alignment of 1 byte.
@@ -318,6 +314,8 @@ unsigned TargetData::getAlignmentInfo(AlignTypeEnum AlignType,
                  : Alignments[BestMatchIdx].PrefAlign;
 }
 
+namespace {
+
 /// LayoutInfo - The lazy cache of structure layout information maintained by
 /// TargetData.  Note that the struct types must have been free'd before
 /// llvm_shutdown is called (and thus this is deallocated) because all the
@@ -342,8 +340,10 @@ struct DenseMapLayoutKeyInfo {
 };
 
 typedef DenseMap<LayoutKey, StructLayout*, DenseMapLayoutKeyInfo> LayoutInfoTy;
-static ManagedStatic<LayoutInfoTy> LayoutInfo;
 
+}
+
+static ManagedStatic<LayoutInfoTy> LayoutInfo;
 
 TargetData::~TargetData() {
   if (LayoutInfo.isConstructed()) {

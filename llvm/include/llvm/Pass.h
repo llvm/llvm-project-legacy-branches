@@ -82,8 +82,7 @@ class Pass {
   Pass(const Pass &);           // DO NOT IMPLEMENT
 public:
   explicit Pass(intptr_t pid) : Resolver(0), PassID(pid) {}
-  explicit Pass(const void *pid) : Resolver(0), 
-                                                    PassID((intptr_t)pid) {}
+  explicit Pass(const void *pid) : Resolver(0), PassID((intptr_t)pid) {}
   virtual ~Pass();
 
   /// getPassName - Return a nice clean name for a pass.  This usually
@@ -110,10 +109,10 @@ public:
 
   /// Each pass is responsible for assigning a pass manager to itself.
   /// PMS is the stack of available pass manager. 
-  virtual void assignPassManager(PMStack &PMS, 
-                                 PassManagerType T = PMT_Unknown) {}
+  virtual void assignPassManager(PMStack &, 
+                                 PassManagerType = PMT_Unknown) {}
   /// Check if available pass managers are suitable for this pass or not.
-  virtual void preparePassManager(PMStack &PMS) {}
+  virtual void preparePassManager(PMStack &) {}
   
   ///  Return what kind of Pass Manager can manage this pass.
   virtual PassManagerType getPotentialPassManagerType() const {
@@ -126,7 +125,6 @@ public:
     Resolver = AR; 
   }
   inline AnalysisResolver *getResolver() { 
-    assert (Resolver && "Resolver is not set");
     return Resolver; 
   }
 
@@ -135,7 +133,7 @@ public:
   /// particular analysis result to this function, it can then use the
   /// getAnalysis<AnalysisType>() function, below.
   ///
-  virtual void getAnalysisUsage(AnalysisUsage &Info) const {
+  virtual void getAnalysisUsage(AnalysisUsage &) const {
     // By default, no analysis results are used, all are invalidated.
   }
 
@@ -251,7 +249,7 @@ public:
 
   /// ImmutablePasses are never run.
   ///
-  bool runOnModule(Module &M) { return false; }
+  bool runOnModule(Module &) { return false; }
 
   explicit ImmutablePass(intptr_t pid) : ModulePass(pid) {}
   explicit ImmutablePass(const void *pid) 
@@ -278,7 +276,7 @@ public:
   /// doInitialization - Virtual method overridden by subclasses to do
   /// any necessary per-module initialization.
   ///
-  virtual bool doInitialization(Module &M) { return false; }
+  virtual bool doInitialization(Module &) { return false; }
 
   /// runOnFunction - Virtual method overriden by subclasses to do the
   /// per-function processing of the pass.
@@ -288,7 +286,7 @@ public:
   /// doFinalization - Virtual method overriden by subclasses to do any post
   /// processing needed after all passes have run.
   ///
-  virtual bool doFinalization(Module &M) { return false; }
+  virtual bool doFinalization(Module &) { return false; }
 
   /// runOnModule - On a module, we run this pass by initializing,
   /// ronOnFunction'ing once for every function in the module, then by
@@ -330,12 +328,12 @@ public:
   /// doInitialization - Virtual method overridden by subclasses to do
   /// any necessary per-module initialization.
   ///
-  virtual bool doInitialization(Module &M) { return false; }
+  virtual bool doInitialization(Module &) { return false; }
 
   /// doInitialization - Virtual method overridden by BasicBlockPass subclasses
   /// to do any necessary per-function initialization.
   ///
-  virtual bool doInitialization(Function &F) { return false; }
+  virtual bool doInitialization(Function &) { return false; }
 
   /// runOnBasicBlock - Virtual method overriden by subclasses to do the
   /// per-basicblock processing of the pass.
@@ -345,12 +343,12 @@ public:
   /// doFinalization - Virtual method overriden by BasicBlockPass subclasses to
   /// do any post processing needed after all passes have run.
   ///
-  virtual bool doFinalization(Function &F) { return false; }
+  virtual bool doFinalization(Function &) { return false; }
 
   /// doFinalization - Virtual method overriden by subclasses to do any post
   /// processing needed after all passes have run.
   ///
-  virtual bool doFinalization(Module &M) { return false; }
+  virtual bool doFinalization(Module &) { return false; }
 
 
   // To run this pass on a function, we simply call runOnBasicBlock once for

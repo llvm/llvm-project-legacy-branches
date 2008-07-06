@@ -22,7 +22,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -93,7 +93,7 @@
 			OutputDirectory="$(SolutionDir)\bin\$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="4"
-			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops;..\common.vsprops"
 			CharacterSet="2"
 			>
 			<Tool
@@ -353,6 +353,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\lib\CodeGen\LiveStackAnalysis.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\..\lib\CodeGen\LiveVariables.cpp"
 				>
 			</File>
@@ -370,6 +374,10 @@
 			</File>
 			<File
 				RelativePath="..\..\lib\CodeGen\MachineBasicBlock.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\..\lib\CodeGen\MachineDebugInfoDesc.cpp"
 				>
 			</File>
 			<File
@@ -473,6 +481,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\lib\CodeGen\StackSlotColoring.cpp"
+				>
+			</File>
+			<File
 				RelativePath="..\..\lib\CodeGen\StrongPHIElimination.cpp"
 				>
 			</File>
@@ -508,27 +520,23 @@
 					>
 				</File>
 				<File
+					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeFloatTypes.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeIntegerTypes.cpp"
+					>
+				</File>
+				<File
 					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypes.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesExpand.cpp"
+					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesGeneric.cpp"
 					>
 				</File>
 				<File
-					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesFloatToInt.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesPromote.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesScalarize.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeTypesSplit.cpp"
+					RelativePath="..\..\lib\CodeGen\SelectionDAG\LegalizeVectorTypes.cpp"
 					>
 				</File>
 				<File
@@ -636,6 +644,10 @@
 			</File>
 			<File
 				RelativePath="..\..\include\llvm\CodeGen\MachineConstantPool.h"
+				>
+			</File>
+			<File
+				RelativePath="..\..\include\llvm\CodeGen\MachineDebugInfoDesc.h"
 				>
 			</File>
 			<File

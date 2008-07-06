@@ -126,7 +126,7 @@ static inline std::string UppercaseString(const std::string &S) {
 static inline bool StringsEqualNoCase(const std::string &LHS, 
                                       const std::string &RHS) {
   if (LHS.size() != RHS.size()) return false;
-  for (unsigned i = 0, e = LHS.size(); i != e; ++i)
+  for (unsigned i = 0, e = static_cast<unsigned>(LHS.size()); i != e; ++i)
     if (tolower(LHS[i]) != tolower(RHS[i])) return false;
   return true;
 }
@@ -135,11 +135,37 @@ static inline bool StringsEqualNoCase(const std::string &LHS,
 /// case.
 static inline bool StringsEqualNoCase(const std::string &LHS, 
                                       const char *RHS) {
-  for (unsigned i = 0, e = LHS.size(); i != e; ++i) {
+  for (unsigned i = 0, e = static_cast<unsigned>(LHS.size()); i != e; ++i) {
     if (RHS[i] == 0) return false;  // RHS too short.
     if (tolower(LHS[i]) != tolower(RHS[i])) return false;
   }
   return RHS[LHS.size()] == 0;  // Not too long?
+}
+  
+/// CStrInCStrNoCase - Portable version of strcasestr.  Locates the first
+///  occurance of c-string 's2' in string 's1', ignoring case.  Returns
+///  NULL if 's2' cannot be found.
+static inline const char* CStrInCStrNoCase(const char *s1, const char *s2) {
+
+  // Are either strings NULL or empty?
+  if (!s1 || !s2 || s1[0] == '\0' || s2[0] == '\0')
+    return 0;
+  
+  if (s1 == s2)
+    return s1;
+  
+  const char *I1=s1, *I2=s2;
+  
+  while (*I1 != '\0' || *I2 != '\0' )
+    if (tolower(*I1) != tolower(*I2)) { // No match.  Start over.
+      ++s1; I1 = s1; I2 = s2;
+    }
+    else { // Character match.  Advance to the next character.
+      ++I1; ++I2;
+    }
+
+  // If we exhausted all of the characters in 's2', then 's2' appears in 's1'.
+  return *I2 == '\0' ? s1 : 0;
 }
 
 /// getToken - This function extracts one token from source, ignoring any

@@ -48,7 +48,11 @@ parser than it is to generate LLVM IR code. :)
 </p>
 
 <p><b>Please note</b>: the code in this chapter and later require LLVM 2.2 or
-LLVM SVN to work.  LLVM 2.1 and before will not work with it.</p>
+later.  LLVM 2.1 and before will not work with it.  Also note that you need
+to use a version of this tutorial that matches your LLVM release: If you are
+using an official LLVM release, use the version of the documentation included
+with your release or on the <a href="http://llvm.org/releases/">llvm.org 
+releases page</a>.</p>
 
 </div>
 
@@ -155,7 +159,7 @@ we'll do numeric literals:</p>
 <div class="doc_code">
 <pre>
 Value *NumberExprAST::Codegen() {
-  return ConstantFP::get(Type::DoubleTy, APFloat(Val));
+  return ConstantFP::get(APFloat(Val));
 }
 </pre>
 </div>
@@ -166,7 +170,7 @@ internally (<tt>APFloat</tt> has the capability of holding floating point
 constants of <em>A</em>rbitrary <em>P</em>recision).  This code basically just
 creates and returns a <tt>ConstantFP</tt>.  Note that in the LLVM IR
 that constants are all uniqued together and shared.  For this reason, the API
-uses "the foo::get(..)" idiom instead of "new foo(..)" or "foo::create(..)".</p>
+uses "the foo::get(..)" idiom instead of "new foo(..)" or "foo::Create(..)".</p>
 
 <div class="doc_code">
 <pre>
@@ -1029,7 +1033,7 @@ static std::map&lt;std::string, Value*&gt; NamedValues;
 Value *ErrorV(const char *Str) { Error(Str); return 0; }
 
 Value *NumberExprAST::Codegen() {
-  return ConstantFP::get(Type::DoubleTy, APFloat(Val));
+  return ConstantFP::get(APFloat(Val));
 }
 
 Value *VariableExprAST::Codegen() {

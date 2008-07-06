@@ -24,11 +24,13 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/STLExtras.h"
 #include <climits>
-#include <queue>
 #include "llvm/Support/CommandLine.h"
 using namespace llvm;
 
@@ -56,6 +58,10 @@ private:
   /// isBottomUp - This is true if the scheduling problem is bottom-up, false if
   /// it is top-down.
   bool isBottomUp;
+
+  /// Fast - True if we are performing fast scheduling.
+  ///
+  bool Fast;
   
   /// AvailableQueue - The priority queue to use for the available SUnits.
   SchedulingPriorityQueue *AvailableQueue;
@@ -69,9 +75,9 @@ private:
 
 public:
   ScheduleDAGRRList(SelectionDAG &dag, MachineBasicBlock *bb,
-                  const TargetMachine &tm, bool isbottomup,
-                  SchedulingPriorityQueue *availqueue)
-    : ScheduleDAG(dag, bb, tm), isBottomUp(isbottomup),
+                    const TargetMachine &tm, bool isbottomup, bool f,
+                    SchedulingPriorityQueue *availqueue)
+    : ScheduleDAG(dag, bb, tm), isBottomUp(isbottomup), Fast(f),
       AvailableQueue(availqueue) {
     }
 
@@ -142,36 +148,6 @@ private:
   /// even after dynamic insertions of new edges.
   /// This allows a very fast implementation of IsReachable.
 
-
-  /** 
-  The idea of the algorithm is taken from 
-  "Online algorithms for managing the topological order of
-  a directed acyclic graph" by David J. Pearce and Paul H.J. Kelly
-  This is the MNR algorithm, which was first introduced by 
-  A. Marchetti-Spaccamela, U. Nanni and H. Rohnert in  
-  "Maintaining a topological order under edge insertions".
-
-  Short description of the algorithm: 
-  
-  Topological ordering, ord, of a DAG maps each node to a topological
-  index so that for all edges X->Y it is the case that ord(X) < ord(Y).
-  
-  This means that if there is a path from the node X to the node Z, 
-  then ord(X) < ord(Z).
-  
-  This property can be used to check for reachability of nodes:
-  if Z is reachable from X, then an insertion of the edge Z->X would 
-  create a cycle.
-   
-  The algorithm first computes a topological ordering for the DAG by initializing
-  the Index2Node and Node2Index arrays and then tries to keep the ordering
-  up-to-date after edge insertions by reordering the DAG.
-  
-  On insertion of the edge X->Y, the algorithm first marks by calling DFS the
-  nodes reachable from Y, and then shifts them using Shift to lie immediately
-  after X in Index2Node.
-  */
-
   /// InitDAGTopologicalSorting - create the initial topological 
   /// ordering from the DAG to be scheduled.
   void InitDAGTopologicalSorting();
@@ -210,11 +186,13 @@ void ScheduleDAGRRList::Schedule() {
 
   DEBUG(for (unsigned su = 0, e = SUnits.size(); su != e; ++su)
           SUnits[su].dumpAll(&DAG));
-  CalculateDepths();
-  CalculateHeights();
+  if (!Fast) {
+    CalculateDepths();
+    CalculateHeights();
+  }
   InitDAGTopologicalSorting();
 
-  AvailableQueue->initNodes(SUnitMap, SUnits);
+  AvailableQueue->initNodes(SUnits);
   
   // Execute the actual scheduling loop Top-Down or Bottom-Up as appropriate.
   if (isBottomUp)
@@ -223,8 +201,9 @@ void ScheduleDAGRRList::Schedule() {
     ListScheduleTopDown();
   
   AvailableQueue->releaseState();
-  
-  CommuteNodesToReducePressure();
+
+  if (!Fast)
+    CommuteNodesToReducePressure();
   
   DOUT << "*** Final schedule ***\n";
   DEBUG(dumpSchedule());
@@ -253,7 +232,7 @@ void ScheduleDAGRRList::CommuteNodesToReducePressure() {
           continue;
 
         SDNode *OpN = SU->Node->getOperand(j).Val;
-        SUnit *OpSU = isPassiveNode(OpN) ? NULL : SUnitMap[OpN][SU->InstanceNo];
+        SUnit *OpSU = isPassiveNode(OpN) ? NULL : &SUnits[OpN->getNodeId()];
         if (OpSU && OperandSeen.count(OpSU) == 1) {
           // Ok, so SU is not the last use of OpSU, but SU is two-address so
           // it will clobber OpSU. Try to commute SU if no other source operands
@@ -262,7 +241,7 @@ void ScheduleDAGRRList::CommuteNodesToReducePressure() {
           for (unsigned k = 0; k < NumOps; ++k) {
             if (k != j) {
               OpN = SU->Node->getOperand(k).Val;
-              OpSU = isPassiveNode(OpN) ? NULL : SUnitMap[OpN][SU->InstanceNo];
+              OpSU = isPassiveNode(OpN) ? NULL : &SUnits[OpN->getNodeId()];
               if (OpSU && OperandSeen.count(OpSU) == 1) {
                 DoCommute = false;
                 break;
@@ -281,7 +260,7 @@ void ScheduleDAGRRList::CommuteNodesToReducePressure() {
     for (SUnit::pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
          I != E; ++I) {
       if (!I->isCtrl)
-        OperandSeen.insert(I->Dep);
+        OperandSeen.insert(I->Dep->OrigNode);
     }
   }
 }
@@ -363,14 +342,14 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU, unsigned CurCycle) {
 /// CapturePred - This does the opposite of ReleasePred. Since SU is being
 /// unscheduled, incrcease the succ left count of its predecessors. Remove
 /// them from AvailableQueue if necessary.
-void ScheduleDAGRRList::CapturePred(SUnit *PredSU, SUnit *SU, bool isChain) {
-  PredSU->CycleBound = 0;
+void ScheduleDAGRRList::CapturePred(SUnit *PredSU, SUnit *SU, bool isChain) {  
+  unsigned CycleBound = 0;
   for (SUnit::succ_iterator I = PredSU->Succs.begin(), E = PredSU->Succs.end();
        I != E; ++I) {
     if (I->Dep == SU)
       continue;
-    PredSU->CycleBound = std::max(PredSU->CycleBound,
-                                  I->Dep->Cycle + PredSU->Latency);
+    CycleBound = std::max(CycleBound,
+                          I->Dep->Cycle + PredSU->Latency);
   }
 
   if (PredSU->isAvailable) {
@@ -379,6 +358,7 @@ void ScheduleDAGRRList::CapturePred(SUnit *PredSU, SUnit *SU, bool isChain) {
       AvailableQueue->remove(PredSU);
   }
 
+  PredSU->CycleBound = CycleBound;
   ++PredSU->NumSuccsLeft;
 }
 
@@ -446,6 +426,33 @@ inline void ScheduleDAGRRList::Allocate(int n, int index) {
 
 /// InitDAGTopologicalSorting - create the initial topological 
 /// ordering from the DAG to be scheduled.
+
+/// The idea of the algorithm is taken from 
+/// "Online algorithms for managing the topological order of
+/// a directed acyclic graph" by David J. Pearce and Paul H.J. Kelly
+/// This is the MNR algorithm, which was first introduced by 
+/// A. Marchetti-Spaccamela, U. Nanni and H. Rohnert in  
+/// "Maintaining a topological order under edge insertions".
+///
+/// Short description of the algorithm: 
+///
+/// Topological ordering, ord, of a DAG maps each node to a topological
+/// index so that for all edges X->Y it is the case that ord(X) < ord(Y).
+///
+/// This means that if there is a path from the node X to the node Z, 
+/// then ord(X) < ord(Z).
+///
+/// This property can be used to check for reachability of nodes:
+/// if Z is reachable from X, then an insertion of the edge Z->X would 
+/// create a cycle.
+///
+/// The algorithm first computes a topological ordering for the DAG by
+/// initializing the Index2Node and Node2Index arrays and then tries to keep
+/// the ordering up-to-date after edge insertions by reordering the DAG.
+///
+/// On insertion of the edge X->Y, the algorithm first marks by calling DFS
+/// the nodes reachable from Y, and then shifts them using Shift to lie
+/// immediately after X in Index2Node.
 void ScheduleDAGRRList::InitDAGTopologicalSorting() {
   unsigned DAGSize = SUnits.size();
   std::vector<unsigned> InDegree(DAGSize);
@@ -644,7 +651,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
   SUnit *NewSU;
   bool TryUnfold = false;
   for (unsigned i = 0, e = N->getNumValues(); i != e; ++i) {
-    MVT::ValueType VT = N->getValueType(i);
+    MVT VT = N->getValueType(i);
     if (VT == MVT::Flag)
       return NULL;
     else if (VT == MVT::Other)
@@ -652,13 +659,13 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
   }
   for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
     const SDOperand &Op = N->getOperand(i);
-    MVT::ValueType VT = Op.Val->getValueType(Op.ResNo);
+    MVT VT = Op.Val->getValueType(Op.ResNo);
     if (VT == MVT::Flag)
       return NULL;
   }
 
   if (TryUnfold) {
-    SmallVector<SDNode*, 4> NewNodes;
+    SmallVector<SDNode*, 2> NewNodes;
     if (!TII->unfoldMemoryOperand(DAG, N, NewNodes))
       return NULL;
 
@@ -675,7 +682,9 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
                                   SDOperand(LoadNode, 1));
 
     SUnit *NewSU = CreateNewSUnit(N);
-    SUnitMap[N].push_back(NewSU);
+    assert(N->getNodeId() == -1 && "Node already inserted!");
+    N->setNodeId(NewSU->NodeNum);
+      
     const TargetInstrDesc &TID = TII->get(N->getTargetOpcode());
     for (unsigned i = 0; i != TID.getNumOperands(); ++i) {
       if (TID.getOperandConstraint(i, TOI::TIED_TO) != -1) {
@@ -695,14 +704,12 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
     // but it has different alignment or volatileness.
     bool isNewLoad = true;
     SUnit *LoadSU;
-    DenseMap<SDNode*, std::vector<SUnit*> >::iterator SMI =
-      SUnitMap.find(LoadNode);
-    if (SMI != SUnitMap.end()) {
-      LoadSU = SMI->second.front();
+    if (LoadNode->getNodeId() != -1) {
+      LoadSU = &SUnits[LoadNode->getNodeId()];
       isNewLoad = false;
     } else {
       LoadSU = CreateNewSUnit(LoadNode);
-      SUnitMap[LoadNode].push_back(LoadSU);
+      LoadNode->setNodeId(LoadSU->NodeNum);
 
       LoadSU->Depth = SU->Depth;
       LoadSU->Height = SU->Height;
@@ -870,8 +877,8 @@ void ScheduleDAGRRList::InsertCCCopiesAndMoveSuccs(SUnit *SU, unsigned Reg,
 /// getPhysicalRegisterVT - Returns the ValueType of the physical register
 /// definition of the specified node.
 /// FIXME: Move to SelectionDAG?
-static MVT::ValueType getPhysicalRegisterVT(SDNode *N, unsigned Reg,
-                                            const TargetInstrInfo *TII) {
+static MVT getPhysicalRegisterVT(SDNode *N, unsigned Reg,
+                                 const TargetInstrInfo *TII) {
   const TargetInstrDesc &TID = TII->get(N->getTargetOpcode());
   assert(TID.ImplicitDefs && "Physical reg def must be in implicit def list!");
   unsigned NumRes = TID.getNumDefs();
@@ -941,7 +948,7 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
   unsigned CurCycle = 0;
   // Add root to Available queue.
   if (!SUnits.empty()) {
-    SUnit *RootSU = SUnitMap[DAG.getRoot().Val].front();
+    SUnit *RootSU = &SUnits[DAG.getRoot().Val->getNodeId()];
     assert(RootSU->Succs.empty() && "Graph root shouldn't have successors!");
     RootSU->isAvailable = true;
     AvailableQueue->push(RootSU);
@@ -950,9 +957,11 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
   // While Available queue is not empty, grab the node with the highest
   // priority. If it is not ready put it back.  Schedule the node.
   SmallVector<SUnit*, 4> NotReady;
+  DenseMap<SUnit*, SmallVector<unsigned, 4> > LRegsMap;
+  Sequence.reserve(SUnits.size());
   while (!AvailableQueue->empty()) {
     bool Delayed = false;
-    DenseMap<SUnit*, SmallVector<unsigned, 4> > LRegsMap;
+    LRegsMap.clear();
     SUnit *CurSU = AvailableQueue->pop();
     while (CurSU) {
       if (CurSU->CycleBound <= CurCycle) {
@@ -1020,7 +1029,7 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
         SUnit *NewDef = CopyAndMoveSuccessors(LRDef);
         if (!NewDef) {
           // Issue expensive cross register class copies.
-          MVT::ValueType VT = getPhysicalRegisterVT(LRDef->Node, Reg, TII);
+          MVT VT = getPhysicalRegisterVT(LRDef->Node, Reg, TII);
           const TargetRegisterClass *RC =
             TRI->getPhysicalRegisterRegClass(Reg, VT);
           const TargetRegisterClass *DestRC = TRI->getCrossCopyRegClass(RC);
@@ -1172,6 +1181,7 @@ void ScheduleDAGRRList::ListScheduleTopDown() {
   // While Available queue is not empty, grab the node with the highest
   // priority. If it is not ready put it back.  Schedule the node.
   std::vector<SUnit*> NotReady;
+  Sequence.reserve(SUnits.size());
   while (!AvailableQueue->empty()) {
     SUnit *CurSU = AvailableQueue->pop();
     while (CurSU && CurSU->CycleBound > CurCycle) {
@@ -1249,6 +1259,15 @@ namespace {
     bool operator()(const SUnit* left, const SUnit* right) const;
   };
 
+  struct bu_ls_rr_fast_sort : public std::binary_function<SUnit*, SUnit*, bool>{
+    RegReductionPriorityQueue<bu_ls_rr_fast_sort> *SPQ;
+    bu_ls_rr_fast_sort(RegReductionPriorityQueue<bu_ls_rr_fast_sort> *spq)
+      : SPQ(spq) {}
+    bu_ls_rr_fast_sort(const bu_ls_rr_fast_sort &RHS) : SPQ(RHS.SPQ) {}
+    
+    bool operator()(const SUnit* left, const SUnit* right) const;
+  };
+
   struct td_ls_rr_sort : public std::binary_function<SUnit*, SUnit*, bool> {
     RegReductionPriorityQueue<td_ls_rr_sort> *SPQ;
     td_ls_rr_sort(RegReductionPriorityQueue<td_ls_rr_sort> *spq) : SPQ(spq) {}
@@ -1264,18 +1283,88 @@ static inline bool isCopyFromLiveIn(const SUnit *SU) {
     N->getOperand(N->getNumOperands()-1).getValueType() != MVT::Flag;
 }
 
+/// CalcNodeBUSethiUllmanNumber - Compute Sethi Ullman number for bottom up
+/// scheduling. Smaller number is the higher priority.
+static unsigned
+CalcNodeBUSethiUllmanNumber(const SUnit *SU, std::vector<unsigned> &SUNumbers) {
+  unsigned &SethiUllmanNumber = SUNumbers[SU->NodeNum];
+  if (SethiUllmanNumber != 0)
+    return SethiUllmanNumber;
+
+  unsigned Extra = 0;
+  for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
+       I != E; ++I) {
+    if (I->isCtrl) continue;  // ignore chain preds
+    SUnit *PredSU = I->Dep;
+    unsigned PredSethiUllman = CalcNodeBUSethiUllmanNumber(PredSU, SUNumbers);
+    if (PredSethiUllman > SethiUllmanNumber) {
+      SethiUllmanNumber = PredSethiUllman;
+      Extra = 0;
+    } else if (PredSethiUllman == SethiUllmanNumber && !I->isCtrl)
+      ++Extra;
+  }
+
+  SethiUllmanNumber += Extra;
+
+  if (SethiUllmanNumber == 0)
+    SethiUllmanNumber = 1;
+  
+  return SethiUllmanNumber;
+}
+
+/// CalcNodeTDSethiUllmanNumber - Compute Sethi Ullman number for top down
+/// scheduling. Smaller number is the higher priority.
+static unsigned
+CalcNodeTDSethiUllmanNumber(const SUnit *SU, std::vector<unsigned> &SUNumbers) {
+  unsigned &SethiUllmanNumber = SUNumbers[SU->NodeNum];
+  if (SethiUllmanNumber != 0)
+    return SethiUllmanNumber;
+
+  unsigned Opc = SU->Node ? SU->Node->getOpcode() : 0;
+  if (Opc == ISD::TokenFactor || Opc == ISD::CopyToReg)
+    SethiUllmanNumber = 0xffff;
+  else if (SU->NumSuccsLeft == 0)
+    // If SU does not have a use, i.e. it doesn't produce a value that would
+    // be consumed (e.g. store), then it terminates a chain of computation.
+    // Give it a small SethiUllman number so it will be scheduled right before
+    // its predecessors that it doesn't lengthen their live ranges.
+    SethiUllmanNumber = 0;
+  else if (SU->NumPredsLeft == 0 &&
+           (Opc != ISD::CopyFromReg || isCopyFromLiveIn(SU)))
+    SethiUllmanNumber = 0xffff;
+  else {
+    int Extra = 0;
+    for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
+         I != E; ++I) {
+      if (I->isCtrl) continue;  // ignore chain preds
+      SUnit *PredSU = I->Dep;
+      unsigned PredSethiUllman = CalcNodeTDSethiUllmanNumber(PredSU, SUNumbers);
+      if (PredSethiUllman > SethiUllmanNumber) {
+        SethiUllmanNumber = PredSethiUllman;
+        Extra = 0;
+      } else if (PredSethiUllman == SethiUllmanNumber && !I->isCtrl)
+        ++Extra;
+    }
+
+    SethiUllmanNumber += Extra;
+  }
+  
+  return SethiUllmanNumber;
+}
+
+
 namespace {
   template<class SF>
   class VISIBILITY_HIDDEN RegReductionPriorityQueue
    : public SchedulingPriorityQueue {
-    std::priority_queue<SUnit*, std::vector<SUnit*>, SF> Queue;
+    PriorityQueue<SUnit*, std::vector<SUnit*>, SF> Queue;
+    unsigned currentQueueId;
 
   public:
     RegReductionPriorityQueue() :
-    Queue(SF(this)) {}
+    Queue(SF(this)), currentQueueId(0) {}
     
-    virtual void initNodes(DenseMap<SDNode*, std::vector<SUnit*> > &sumap,
-                           std::vector<SUnit> &sunits) {}
+    virtual void initNodes(std::vector<SUnit> &sunits) {}
 
     virtual void addNode(const SUnit *SU) {}
 
@@ -1292,48 +1381,34 @@ namespace {
     bool empty() const { return Queue.empty(); }
     
     void push(SUnit *U) {
+      assert(!U->NodeQueueId && "Node in the queue already");
+      U->NodeQueueId = ++currentQueueId;
       Queue.push(U);
     }
+
     void push_all(const std::vector<SUnit *> &Nodes) {
       for (unsigned i = 0, e = Nodes.size(); i != e; ++i)
-        Queue.push(Nodes[i]);
+        push(Nodes[i]);
     }
     
     SUnit *pop() {
       if (empty()) return NULL;
       SUnit *V = Queue.top();
       Queue.pop();
+      V->NodeQueueId = 0;
       return V;
     }
 
-    /// remove - This is a really inefficient way to remove a node from a
-    /// priority queue.  We should roll our own heap to make this better or
-    /// something.
     void remove(SUnit *SU) {
-      std::vector<SUnit*> Temp;
-      
-      assert(!Queue.empty() && "Not in queue!");
-      while (Queue.top() != SU) {
-        Temp.push_back(Queue.top());
-        Queue.pop();
-        assert(!Queue.empty() && "Not in queue!");
-      }
-
-      // Remove the node from the PQ.
-      Queue.pop();
-      
-      // Add all the other nodes back.
-      for (unsigned i = 0, e = Temp.size(); i != e; ++i)
-        Queue.push(Temp[i]);
+      assert(!Queue.empty() && "Queue is empty!");
+      assert(SU->NodeQueueId != 0 && "Not in queue!");
+      Queue.erase_one(SU);
+      SU->NodeQueueId = 0;
     }
   };
 
-  template<class SF>
   class VISIBILITY_HIDDEN BURegReductionPriorityQueue
-   : public RegReductionPriorityQueue<SF> {
-    // SUnitMap SDNode to SUnit mapping (n -> n).
-    DenseMap<SDNode*, std::vector<SUnit*> > *SUnitMap;
-
+   : public RegReductionPriorityQueue<bu_ls_rr_sort> {
     // SUnits - The SUnits for the current graph.
     const std::vector<SUnit> *SUnits;
     
@@ -1343,14 +1418,13 @@ namespace {
     const TargetInstrInfo *TII;
     const TargetRegisterInfo *TRI;
     ScheduleDAGRRList *scheduleDAG;
+
   public:
     explicit BURegReductionPriorityQueue(const TargetInstrInfo *tii,
                                          const TargetRegisterInfo *tri)
       : TII(tii), TRI(tri), scheduleDAG(NULL) {}
 
-    void initNodes(DenseMap<SDNode*, std::vector<SUnit*> > &sumap,
-                   std::vector<SUnit> &sunits) {
-      SUnitMap = &sumap;
+    void initNodes(std::vector<SUnit> &sunits) {
       SUnits = &sunits;
       // Add pseudo dependency edges for two-address nodes.
       AddPseudoTwoAddrDeps();
@@ -1359,13 +1433,15 @@ namespace {
     }
 
     void addNode(const SUnit *SU) {
-      SethiUllmanNumbers.resize(SUnits->size(), 0);
-      CalcNodeSethiUllmanNumber(SU);
+      unsigned SUSize = SethiUllmanNumbers.size();
+      if (SUnits->size() > SUSize)
+        SethiUllmanNumbers.resize(SUSize*2, 0);
+      CalcNodeBUSethiUllmanNumber(SU, SethiUllmanNumbers);
     }
 
     void updateNode(const SUnit *SU) {
       SethiUllmanNumbers[SU->NodeNum] = 0;
-      CalcNodeSethiUllmanNumber(SU);
+      CalcNodeBUSethiUllmanNumber(SU, SethiUllmanNumbers);
     }
 
     void releaseState() {
@@ -1412,16 +1488,53 @@ namespace {
     bool canClobber(const SUnit *SU, const SUnit *Op);
     void AddPseudoTwoAddrDeps();
     void CalculateSethiUllmanNumbers();
-    unsigned CalcNodeSethiUllmanNumber(const SUnit *SU);
   };
 
 
-  template<class SF>
-  class VISIBILITY_HIDDEN TDRegReductionPriorityQueue
-   : public RegReductionPriorityQueue<SF> {
-    // SUnitMap SDNode to SUnit mapping (n -> n).
-    DenseMap<SDNode*, std::vector<SUnit*> > *SUnitMap;
+  class VISIBILITY_HIDDEN BURegReductionFastPriorityQueue
+   : public RegReductionPriorityQueue<bu_ls_rr_fast_sort> {
+    // SUnits - The SUnits for the current graph.
+    const std::vector<SUnit> *SUnits;
+    
+    // SethiUllmanNumbers - The SethiUllman number for each node.
+    std::vector<unsigned> SethiUllmanNumbers;
+  public:
+    explicit BURegReductionFastPriorityQueue() {}
 
+    void initNodes(std::vector<SUnit> &sunits) {
+      SUnits = &sunits;
+      // Calculate node priorities.
+      CalculateSethiUllmanNumbers();
+    }
+
+    void addNode(const SUnit *SU) {
+      unsigned SUSize = SethiUllmanNumbers.size();
+      if (SUnits->size() > SUSize)
+        SethiUllmanNumbers.resize(SUSize*2, 0);
+      CalcNodeBUSethiUllmanNumber(SU, SethiUllmanNumbers);
+    }
+
+    void updateNode(const SUnit *SU) {
+      SethiUllmanNumbers[SU->NodeNum] = 0;
+      CalcNodeBUSethiUllmanNumber(SU, SethiUllmanNumbers);
+    }
+
+    void releaseState() {
+      SUnits = 0;
+      SethiUllmanNumbers.clear();
+    }
+
+    unsigned getNodePriority(const SUnit *SU) const {
+      return SethiUllmanNumbers[SU->NodeNum];
+    }
+
+  private:
+    void CalculateSethiUllmanNumbers();
+  };
+
+
+  class VISIBILITY_HIDDEN TDRegReductionPriorityQueue
+   : public RegReductionPriorityQueue<td_ls_rr_sort> {
     // SUnits - The SUnits for the current graph.
     const std::vector<SUnit> *SUnits;
     
@@ -1431,22 +1544,22 @@ namespace {
   public:
     TDRegReductionPriorityQueue() {}
 
-    void initNodes(DenseMap<SDNode*, std::vector<SUnit*> > &sumap,
-                   std::vector<SUnit> &sunits) {
-      SUnitMap = &sumap;
+    void initNodes(std::vector<SUnit> &sunits) {
       SUnits = &sunits;
       // Calculate node priorities.
       CalculateSethiUllmanNumbers();
     }
 
     void addNode(const SUnit *SU) {
-      SethiUllmanNumbers.resize(SUnits->size(), 0);
-      CalcNodeSethiUllmanNumber(SU);
+      unsigned SUSize = SethiUllmanNumbers.size();
+      if (SUnits->size() > SUSize)
+        SethiUllmanNumbers.resize(SUSize*2, 0);
+      CalcNodeTDSethiUllmanNumber(SU, SethiUllmanNumbers);
     }
 
     void updateNode(const SUnit *SU) {
       SethiUllmanNumbers[SU->NodeNum] = 0;
-      CalcNodeSethiUllmanNumber(SU);
+      CalcNodeTDSethiUllmanNumber(SU, SethiUllmanNumbers);
     }
 
     void releaseState() {
@@ -1461,7 +1574,6 @@ namespace {
 
   private:
     void CalculateSethiUllmanNumbers();
-    unsigned CalcNodeSethiUllmanNumber(const SUnit *SU);
   };
 }
 
@@ -1504,19 +1616,6 @@ static unsigned calcMaxScratches(const SUnit *SU) {
 
 // Bottom up
 bool bu_ls_rr_sort::operator()(const SUnit *left, const SUnit *right) const {
-  // There used to be a special tie breaker here that looked for
-  // two-address instructions and preferred the instruction with a
-  // def&use operand.  The special case triggered diagnostics when
-  // _GLIBCXX_DEBUG was enabled because it broke the strict weak
-  // ordering that priority_queue requires. It didn't help much anyway
-  // because AddPseudoTwoAddrDeps already covers many of the cases
-  // where it would have applied.  In addition, it's counter-intuitive
-  // that a tie breaker would be the first thing attempted.  There's a
-  // "real" tie breaker below that is the operation of last resort.
-  // The fact that the "special tie breaker" would trigger when there
-  // wasn't otherwise a tie is what broke the strict weak ordering
-  // constraint.
-
   unsigned LPriority = SPQ->getNodePriority(left);
   unsigned RPriority = SPQ->getNodePriority(right);
   if (LPriority != RPriority)
@@ -1562,12 +1661,24 @@ bool bu_ls_rr_sort::operator()(const SUnit *left, const SUnit *right) const {
   if (left->CycleBound != right->CycleBound)
     return left->CycleBound > right->CycleBound;
 
-  // FIXME: No strict ordering.
-  return false;
+  assert(left->NodeQueueId && right->NodeQueueId && 
+         "NodeQueueId cannot be zero");
+  return (left->NodeQueueId > right->NodeQueueId);
 }
 
-template<class SF> bool
-BURegReductionPriorityQueue<SF>::canClobber(const SUnit *SU, const SUnit *Op) {
+bool
+bu_ls_rr_fast_sort::operator()(const SUnit *left, const SUnit *right) const {
+  unsigned LPriority = SPQ->getNodePriority(left);
+  unsigned RPriority = SPQ->getNodePriority(right);
+  if (LPriority != RPriority)
+    return LPriority > RPriority;
+  assert(left->NodeQueueId && right->NodeQueueId && 
+         "NodeQueueId cannot be zero");
+  return (left->NodeQueueId > right->NodeQueueId);
+}
+
+bool
+BURegReductionPriorityQueue::canClobber(const SUnit *SU, const SUnit *Op) {
   if (SU->isTwoAddress) {
     unsigned Opc = SU->Node->getTargetOpcode();
     const TargetInstrDesc &TID = TII->get(Opc);
@@ -1576,8 +1687,8 @@ BURegReductionPriorityQueue<SF>::canClobber(const SUnit *SU, const SUnit *Op) {
     for (unsigned i = 0; i != NumOps; ++i) {
       if (TID.getOperandConstraint(i+NumRes, TOI::TIED_TO) != -1) {
         SDNode *DU = SU->Node->getOperand(i).Val;
-        if ((*SUnitMap).find(DU) != (*SUnitMap).end() &&
-            Op == (*SUnitMap)[DU][SU->InstanceNo])
+        if (DU->getNodeId() != -1 &&
+            Op->OrigNode == &(*SUnits)[DU->getNodeId()])
           return true;
       }
     }
@@ -1600,21 +1711,20 @@ static bool hasCopyToRegUse(SUnit *SU) {
 }
 
 /// canClobberPhysRegDefs - True if SU would clobber one of SuccSU's
-/// physical register def.
+/// physical register defs.
 static bool canClobberPhysRegDefs(SUnit *SuccSU, SUnit *SU,
                                   const TargetInstrInfo *TII,
                                   const TargetRegisterInfo *TRI) {
   SDNode *N = SuccSU->Node;
   unsigned NumDefs = TII->get(N->getTargetOpcode()).getNumDefs();
   const unsigned *ImpDefs = TII->get(N->getTargetOpcode()).getImplicitDefs();
-  if (!ImpDefs)
-    return false;
+  assert(ImpDefs && "Caller should check hasPhysRegDefs");
   const unsigned *SUImpDefs =
     TII->get(SU->Node->getTargetOpcode()).getImplicitDefs();
   if (!SUImpDefs)
     return false;
   for (unsigned i = NumDefs, e = N->getNumValues(); i != e; ++i) {
-    MVT::ValueType VT = N->getValueType(i);
+    MVT VT = N->getValueType(i);
     if (VT == MVT::Flag || VT == MVT::Other)
       continue;
     unsigned Reg = ImpDefs[i - NumDefs];
@@ -1634,8 +1744,7 @@ static bool canClobberPhysRegDefs(SUnit *SuccSU, SUnit *SU,
 /// one that has a CopyToReg use (more likely to be a loop induction update).
 /// If both are two-address, but one is commutable while the other is not
 /// commutable, favor the one that's not commutable.
-template<class SF>
-void BURegReductionPriorityQueue<SF>::AddPseudoTwoAddrDeps() {
+void BURegReductionPriorityQueue::AddPseudoTwoAddrDeps() {
   for (unsigned i = 0, e = SUnits->size(); i != e; ++i) {
     SUnit *SU = (SUnit *)&((*SUnits)[i]);
     if (!SU->isTwoAddress)
@@ -1652,12 +1761,12 @@ void BURegReductionPriorityQueue<SF>::AddPseudoTwoAddrDeps() {
     for (unsigned j = 0; j != NumOps; ++j) {
       if (TID.getOperandConstraint(j+NumRes, TOI::TIED_TO) != -1) {
         SDNode *DU = SU->Node->getOperand(j).Val;
-        if ((*SUnitMap).find(DU) == (*SUnitMap).end())
+        if (DU->getNodeId() == -1)
           continue;
-        SUnit *DUSU = (*SUnitMap)[DU][SU->InstanceNo];
+        const SUnit *DUSU = &(*SUnits)[DU->getNodeId()];
         if (!DUSU) continue;
-        for (SUnit::succ_iterator I = DUSU->Succs.begin(),E = DUSU->Succs.end();
-             I != E; ++I) {
+        for (SUnit::const_succ_iterator I = DUSU->Succs.begin(),
+             E = DUSU->Succs.end(); I != E; ++I) {
           if (I->isCtrl) continue;
           SUnit *SuccSU = I->Dep;
           if (SuccSU == SU)
@@ -1694,44 +1803,19 @@ void BURegReductionPriorityQueue<SF>::AddPseudoTwoAddrDeps() {
   }
 }
 
-/// CalcNodeSethiUllmanNumber - Priority is the Sethi Ullman number. 
-/// Smaller number is the higher priority.
-template<class SF>
-unsigned BURegReductionPriorityQueue<SF>::
-CalcNodeSethiUllmanNumber(const SUnit *SU) {
-  unsigned &SethiUllmanNumber = SethiUllmanNumbers[SU->NodeNum];
-  if (SethiUllmanNumber != 0)
-    return SethiUllmanNumber;
-
-  unsigned Extra = 0;
-  for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
-       I != E; ++I) {
-    if (I->isCtrl) continue;  // ignore chain preds
-    SUnit *PredSU = I->Dep;
-    unsigned PredSethiUllman = CalcNodeSethiUllmanNumber(PredSU);
-    if (PredSethiUllman > SethiUllmanNumber) {
-      SethiUllmanNumber = PredSethiUllman;
-      Extra = 0;
-    } else if (PredSethiUllman == SethiUllmanNumber && !I->isCtrl)
-      ++Extra;
-  }
-
-  SethiUllmanNumber += Extra;
-
-  if (SethiUllmanNumber == 0)
-    SethiUllmanNumber = 1;
-  
-  return SethiUllmanNumber;
-}
-
 /// CalculateSethiUllmanNumbers - Calculate Sethi-Ullman numbers of all
 /// scheduling units.
-template<class SF>
-void BURegReductionPriorityQueue<SF>::CalculateSethiUllmanNumbers() {
+void BURegReductionPriorityQueue::CalculateSethiUllmanNumbers() {
   SethiUllmanNumbers.assign(SUnits->size(), 0);
   
   for (unsigned i = 0, e = SUnits->size(); i != e; ++i)
-    CalcNodeSethiUllmanNumber(&(*SUnits)[i]);
+    CalcNodeBUSethiUllmanNumber(&(*SUnits)[i], SethiUllmanNumbers);
+}
+void BURegReductionFastPriorityQueue::CalculateSethiUllmanNumbers() {
+  SethiUllmanNumbers.assign(SUnits->size(), 0);
+  
+  for (unsigned i = 0, e = SUnits->size(); i != e; ++i)
+    CalcNodeBUSethiUllmanNumber(&(*SUnits)[i], SethiUllmanNumbers);
 }
 
 /// LimitedSumOfUnscheduledPredsOfSuccs - Compute the sum of the unscheduled
@@ -1792,59 +1876,18 @@ bool td_ls_rr_sort::operator()(const SUnit *left, const SUnit *right) const {
   if (left->CycleBound != right->CycleBound)
     return left->CycleBound > right->CycleBound;
 
-  // FIXME: No strict ordering.
-  return false;
-}
-
-/// CalcNodeSethiUllmanNumber - Priority is the Sethi Ullman number. 
-/// Smaller number is the higher priority.
-template<class SF>
-unsigned TDRegReductionPriorityQueue<SF>::
-CalcNodeSethiUllmanNumber(const SUnit *SU) {
-  unsigned &SethiUllmanNumber = SethiUllmanNumbers[SU->NodeNum];
-  if (SethiUllmanNumber != 0)
-    return SethiUllmanNumber;
-
-  unsigned Opc = SU->Node ? SU->Node->getOpcode() : 0;
-  if (Opc == ISD::TokenFactor || Opc == ISD::CopyToReg)
-    SethiUllmanNumber = 0xffff;
-  else if (SU->NumSuccsLeft == 0)
-    // If SU does not have a use, i.e. it doesn't produce a value that would
-    // be consumed (e.g. store), then it terminates a chain of computation.
-    // Give it a small SethiUllman number so it will be scheduled right before
-    // its predecessors that it doesn't lengthen their live ranges.
-    SethiUllmanNumber = 0;
-  else if (SU->NumPredsLeft == 0 &&
-           (Opc != ISD::CopyFromReg || isCopyFromLiveIn(SU)))
-    SethiUllmanNumber = 0xffff;
-  else {
-    int Extra = 0;
-    for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
-         I != E; ++I) {
-      if (I->isCtrl) continue;  // ignore chain preds
-      SUnit *PredSU = I->Dep;
-      unsigned PredSethiUllman = CalcNodeSethiUllmanNumber(PredSU);
-      if (PredSethiUllman > SethiUllmanNumber) {
-        SethiUllmanNumber = PredSethiUllman;
-        Extra = 0;
-      } else if (PredSethiUllman == SethiUllmanNumber && !I->isCtrl)
-        ++Extra;
-    }
-
-    SethiUllmanNumber += Extra;
-  }
-  
-  return SethiUllmanNumber;
+  assert(left->NodeQueueId && right->NodeQueueId && 
+         "NodeQueueId cannot be zero");
+  return (left->NodeQueueId > right->NodeQueueId);
 }
 
 /// CalculateSethiUllmanNumbers - Calculate Sethi-Ullman numbers of all
 /// scheduling units.
-template<class SF>
-void TDRegReductionPriorityQueue<SF>::CalculateSethiUllmanNumbers() {
+void TDRegReductionPriorityQueue::CalculateSethiUllmanNumbers() {
   SethiUllmanNumbers.assign(SUnits->size(), 0);
   
   for (unsigned i = 0, e = SUnits->size(); i != e; ++i)
-    CalcNodeSethiUllmanNumber(&(*SUnits)[i]);
+    CalcNodeTDSethiUllmanNumber(&(*SUnits)[i], SethiUllmanNumbers);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1853,23 +1896,27 @@ void TDRegReductionPriorityQueue<SF>::CalculateSethiUllmanNumbers() {
 
 llvm::ScheduleDAG* llvm::createBURRListDAGScheduler(SelectionDAGISel *IS,
                                                     SelectionDAG *DAG,
-                                                    MachineBasicBlock *BB) {
+                                                    MachineBasicBlock *BB,
+                                                    bool Fast) {
+  if (Fast)
+    return new ScheduleDAGRRList(*DAG, BB, DAG->getTarget(), true, true,
+                                 new BURegReductionFastPriorityQueue());
+
   const TargetInstrInfo *TII = DAG->getTarget().getInstrInfo();
   const TargetRegisterInfo *TRI = DAG->getTarget().getRegisterInfo();
   
-  BURegReductionPriorityQueue<bu_ls_rr_sort> *priorityQueue = 
-    new BURegReductionPriorityQueue<bu_ls_rr_sort>(TII, TRI);
+  BURegReductionPriorityQueue *PQ = new BURegReductionPriorityQueue(TII, TRI);
 
-  ScheduleDAGRRList * scheduleDAG = 
-    new ScheduleDAGRRList(*DAG, BB, DAG->getTarget(), true, priorityQueue);
-  priorityQueue->setScheduleDAG(scheduleDAG);
-  return scheduleDAG;  
+  ScheduleDAGRRList *SD =
+    new ScheduleDAGRRList(*DAG, BB, DAG->getTarget(),true,false, PQ);
+  PQ->setScheduleDAG(SD);
+  return SD;  
 }
 
 llvm::ScheduleDAG* llvm::createTDRRListDAGScheduler(SelectionDAGISel *IS,
                                                     SelectionDAG *DAG,
-                                                    MachineBasicBlock *BB) {
-  return new ScheduleDAGRRList(*DAG, BB, DAG->getTarget(), false,
-                              new TDRegReductionPriorityQueue<td_ls_rr_sort>());
+                                                    MachineBasicBlock *BB,
+                                                    bool Fast) {
+  return new ScheduleDAGRRList(*DAG, BB, DAG->getTarget(), false, Fast,
+                               new TDRegReductionPriorityQueue());
 }
-

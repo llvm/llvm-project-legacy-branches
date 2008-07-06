@@ -229,7 +229,7 @@ namespace llvm {
     ~SCEVCommutativeExpr();
 
   public:
-    unsigned getNumOperands() const { return Operands.size(); }
+    unsigned getNumOperands() const { return (unsigned)Operands.size(); }
     const SCEVHandle &getOperand(unsigned i) const {
       assert(i < Operands.size() && "Operand index out of range!");
       return Operands[i];
@@ -387,7 +387,7 @@ namespace llvm {
 
     SCEVAddRecExpr(const std::vector<SCEVHandle> &ops, const Loop *l)
       : SCEV(scAddRecExpr), Operands(ops), L(l) {
-      for (unsigned i = 0, e = Operands.size(); i != e; ++i)
+      for (size_t i = 0, e = Operands.size(); i != e; ++i)
         assert(Operands[i]->isLoopInvariant(l) &&
                "Operands of AddRec must be loop-invariant!");
     }
@@ -397,7 +397,7 @@ namespace llvm {
     op_iterator op_begin() const { return Operands.begin(); }
     op_iterator op_end() const { return Operands.end(); }
 
-    unsigned getNumOperands() const { return Operands.size(); }
+    unsigned getNumOperands() const { return (unsigned)Operands.size(); }
     const SCEVHandle &getOperand(unsigned i) const { return Operands[i]; }
     const SCEVHandle &getStart() const { return Operands[0]; }
     const Loop *getLoop() const { return L; }
@@ -407,7 +407,7 @@ namespace llvm {
     /// indicating how much this expression steps by.  If this is a polynomial
     /// of degree N, it returns a chrec of degree N-1.
     SCEVHandle getStepRecurrence(ScalarEvolution &SE) const {
-      if (getNumOperands() == 2) return getOperand(1);
+      if (isAffine()) return getOperand(1);
       return SE.getAddRecExpr(std::vector<SCEVHandle>(op_begin()+1,op_end()),
                               getLoop());
     }

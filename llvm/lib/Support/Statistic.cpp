@@ -70,6 +70,8 @@ void Statistic::RegisterStatistic() {
   Initialized = true;
 }
 
+namespace {
+
 struct NameCompare {
   bool operator()(const Statistic *LHS, const Statistic *RHS) const {
     int Cmp = std::strcmp(LHS->getName(), RHS->getName());
@@ -79,6 +81,8 @@ struct NameCompare {
     return std::strcmp(LHS->getDesc(), RHS->getDesc()) < 0;
   }
 };
+
+}
 
 // Print information when destroyed, iff command line option is specified.
 StatisticInfo::~StatisticInfo() {
@@ -90,7 +94,7 @@ StatisticInfo::~StatisticInfo() {
 
   // Figure out how long the biggest Value and Name fields are.
   unsigned MaxNameLen = 0, MaxValLen = 0;
-  for (unsigned i = 0, e = Stats.size(); i != e; ++i) {
+  for (size_t i = 0, e = Stats.size(); i != e; ++i) {
     MaxValLen = std::max(MaxValLen,
                          (unsigned)utostr(Stats[i]->getValue()).size());
     MaxNameLen = std::max(MaxNameLen,
@@ -106,7 +110,7 @@ StatisticInfo::~StatisticInfo() {
             << "===" << std::string(73, '-') << "===\n\n";
   
   // Print all of the statistics.
-  for (unsigned i = 0, e = Stats.size(); i != e; ++i) {
+  for (size_t i = 0, e = Stats.size(); i != e; ++i) {
     std::string CountStr = utostr(Stats[i]->getValue());
     OutStream << std::string(MaxValLen-CountStr.size(), ' ')
               << CountStr << " " << Stats[i]->getName()

@@ -18,6 +18,7 @@
 
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include <vector>
 
 namespace llvm {
 
@@ -82,7 +83,7 @@ public:
 
   /// Access to explicit operands of the instruction.
   ///
-  unsigned getNumOperands() const { return Operands.size(); }
+  unsigned getNumOperands() const { return (unsigned)Operands.size(); }
 
   const MachineOperand& getOperand(unsigned i) const {
     assert(i < getNumOperands() && "getOperand() out of range!");
@@ -98,7 +99,7 @@ public:
   unsigned getNumExplicitOperands() const;
   
   /// Access to memory operands of the instruction
-  unsigned getNumMemOperands() const { return MemOperands.size(); }
+  unsigned getNumMemOperands() const { return (unsigned)MemOperands.size(); }
 
   const MachineMemOperand& getMemOperand(unsigned i) const {
     assert(i < getNumMemOperands() && "getMemOperand() out of range!");
@@ -134,6 +135,10 @@ public:
   void eraseFromParent() {
     delete removeFromParent();
   }
+
+  /// isLabel - Returns true if the MachineInstr represents a label.
+  ///
+  bool isLabel() const;
 
   /// isDebugLabel - Returns true if the MachineInstr represents a debug label.
   ///
@@ -184,10 +189,9 @@ public:
   }
   
   /// findRegisterDefOperandIdx() - Returns the operand index that is a def of
-  /// the specific register or -1 if it is not found. It further tightening
-  /// the search criteria to a def that is dead the register if isDead is true.
-  /// If TargetRegisterInfo is passed, then it also checks if there is a def of
-  /// a super-register.
+  /// the specified register or -1 if it is not found. If isDead is true, defs
+  /// that are not dead are skipped. If TargetRegisterInfo is non-null, then it
+  /// also checks if there is a def of a super-register.
   int findRegisterDefOperandIdx(unsigned Reg, bool isDead = false,
                                 const TargetRegisterInfo *TRI = NULL) const;
 
@@ -230,13 +234,9 @@ public:
   bool addRegisterDead(unsigned IncomingReg, const TargetRegisterInfo *RegInfo,
                        bool AddIfNotFound = false);
 
-  /// copyKillDeadInfo - Copies killed/dead information from one instr to another
-  void copyKillDeadInfo(MachineInstr *OldMI,
-                        const TargetRegisterInfo *RegInfo);
-
-  /// isSafeToMove - Return true if it is safe to this instruction. If SawStore
-  /// true, it means there is a store (or call) between the instruction the
-  /// localtion and its intended destination.
+  /// isSafeToMove - Return true if it is safe to move this instruction. If
+  /// SawStore is set to true, it means that there is a store (or call) between
+  /// the instruction's location and its intended destination.
   bool isSafeToMove(const TargetInstrInfo *TII, bool &SawStore);
 
   //

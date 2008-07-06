@@ -90,7 +90,7 @@ void Type::destroy() const {
 
     // Finally, remove the memory as an array deallocation of the chars it was
     // constructed from.
-    delete [] reinterpret_cast<const char*>(this); 
+    operator delete(const_cast<Type *>(this));
 
     return;
   }
@@ -396,16 +396,24 @@ bool StructType::indexValid(const Value *V) const {
   // Structure indexes require 32-bit integer constants.
   if (V->getType() == Type::Int32Ty)
     if (const ConstantInt *CU = dyn_cast<ConstantInt>(V))
-      return CU->getZExtValue() < NumContainedTys;
+      return indexValid(CU->getZExtValue());
   return false;
+}
+
+bool StructType::indexValid(unsigned V) const {
+  return V < NumContainedTys;
 }
 
 // getTypeAtIndex - Given an index value into the type, return the type of the
 // element.  For a structure type, this must be a constant value...
 //
 const Type *StructType::getTypeAtIndex(const Value *V) const {
-  assert(indexValid(V) && "Invalid structure index!");
   unsigned Idx = (unsigned)cast<ConstantInt>(V)->getZExtValue();
+  return getTypeAtIndex(Idx);
+}
+
+const Type *StructType::getTypeAtIndex(unsigned Idx) const {
+  assert(indexValid(Idx) && "Invalid structure index!");
   return ContainedTys[Idx];
 }
 
@@ -437,16 +445,35 @@ const IntegerType *Type::Int64Ty = new BuiltinIntegerType(64);
 //                          Derived Type Constructors
 //===----------------------------------------------------------------------===//
 
+/// isValidReturnType - Return true if the specified type is valid as a return
+/// type.
+bool FunctionType::isValidReturnType(const Type *RetTy) {
+  if (RetTy->isFirstClassType())
+    return true;
+  if (RetTy == Type::VoidTy || isa<OpaqueType>(RetTy))
+    return true;
+  
+  // If this is a multiple return case, verify that each return is a first class
+  // value and that there is at least one value.
+  const StructType *SRetTy = dyn_cast<StructType>(RetTy);
+  if (SRetTy == 0 || SRetTy->getNumElements() == 0)
+    return false;
+  
+  for (unsigned i = 0, e = SRetTy->getNumElements(); i != e; ++i)
+    if (!SRetTy->getElementType(i)->isFirstClassType())
+      return false;
+  return true;
+}
+
 FunctionType::FunctionType(const Type *Result,
                            const std::vector<const Type*> &Params,
                            bool IsVarArgs)
   : DerivedType(FunctionTyID), isVarArgs(IsVarArgs) {
   ContainedTys = reinterpret_cast<PATypeHandle*>(this+1);
   NumContainedTys = Params.size() + 1; // + 1 for result type
-  assert((Result->isFirstClassType() || Result == Type::VoidTy ||
-          Result->getTypeID() == Type::StructTyID ||
-          isa<OpaqueType>(Result)) &&
-         "LLVM functions cannot return aggregates");
+  assert(isValidReturnType(Result) && "invalid return type for function");
+    
+    
   bool isAbstract = Result->isAbstract();
   new (&ContainedTys[0]) PATypeHandle(Result, this);
 
@@ -531,6 +558,7 @@ void DerivedType::dropAllTypeUses() {
 }
 
 
+namespace {
 
 /// TypePromotionGraph and graph traits - this is designed to allow us to do
 /// efficient SCC processing of type graphs.  This is the exact same as
@@ -540,6 +568,8 @@ struct TypePromotionGraph {
   Type *Ty;
   TypePromotionGraph(Type *T) : Ty(T) {}
 };
+
+}
 
 namespace llvm {
   template <> struct GraphTraits<TypePromotionGraph> {
@@ -687,11 +717,11 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2) {
 // ever reach a non-abstract type, we know that we don't need to search the
 // subgraph.
 static bool AbstractTypeHasCycleThrough(const Type *TargetTy, const Type *CurTy,
-                                std::set<const Type*> &VisitedTypes) {
+                                SmallPtrSet<const Type*, 128> &VisitedTypes) {
   if (TargetTy == CurTy) return true;
   if (!CurTy->isAbstract()) return false;
 
-  if (!VisitedTypes.insert(CurTy).second)
+  if (!VisitedTypes.insert(CurTy))
     return false;  // Already been here.
 
   for (Type::subtype_iterator I = CurTy->subtype_begin(),
@@ -702,10 +732,10 @@ static bool AbstractTypeHasCycleThrough(const Type *TargetTy, const Type *CurTy,
 }
 
 static bool ConcreteTypeHasCycleThrough(const Type *TargetTy, const Type *CurTy,
-                                        std::set<const Type*> &VisitedTypes) {
+                                SmallPtrSet<const Type*, 128> &VisitedTypes) {
   if (TargetTy == CurTy) return true;
 
-  if (!VisitedTypes.insert(CurTy).second)
+  if (!VisitedTypes.insert(CurTy))
     return false;  // Already been here.
 
   for (Type::subtype_iterator I = CurTy->subtype_begin(),
@@ -718,7 +748,7 @@ static bool ConcreteTypeHasCycleThrough(const Type *TargetTy, const Type *CurTy,
 /// TypeHasCycleThroughItself - Return true if the specified type has a cycle
 /// back to itself.
 static bool TypeHasCycleThroughItself(const Type *Ty) {
-  std::set<const Type*> VisitedTypes;
+  SmallPtrSet<const Type*, 128> VisitedTypes;
 
   if (Ty->isAbstract()) {  // Optimized case for abstract types.
     for (Type::subtype_iterator I = Ty->subtype_begin(), E = Ty->subtype_end();
@@ -871,7 +901,7 @@ public:
     // The old record is now out-of-date, because one of the children has been
     // updated.  Remove the obsolete entry from the map.
     unsigned NumErased = Map.erase(ValType::get(Ty));
-    assert(NumErased && "Element not found!");
+    assert(NumErased && "Element not found!"); NumErased = NumErased;
 
     // Remember the structural hash for the type before we start hacking on it,
     // in case we need it later.
@@ -1091,12 +1121,11 @@ FunctionType *FunctionType::get(const Type *ReturnType,
                                 bool isVarArg) {
   FunctionValType VT(ReturnType, Params, isVarArg);
   FunctionType *FT = FunctionTypes->get(VT);
-  if (FT) { 
+  if (FT)
     return FT;
-  }
 
-  FT = (FunctionType*) new char[sizeof(FunctionType) + 
-                                sizeof(PATypeHandle)*(Params.size()+1)];
+  FT = (FunctionType*) operator new(sizeof(FunctionType) +
+                                    sizeof(PATypeHandle)*(Params.size()+1));
   new (FT) FunctionType(ReturnType, Params, isVarArg);
   FunctionTypes->add(VT, FT);
 
@@ -1237,8 +1266,8 @@ StructType *StructType::get(const std::vector<const Type*> &ETypes,
   if (ST) return ST;
 
   // Value not found.  Derive a new type!
-  ST = (StructType*) new char[sizeof(StructType) + 
-                              sizeof(PATypeHandle) * ETypes.size()];
+  ST = (StructType*) operator new(sizeof(StructType) +
+                                  sizeof(PATypeHandle) * ETypes.size());
   new (ST) StructType(ETypes, isPacked);
   StructTypes->add(STV, ST);
 
@@ -1397,7 +1426,7 @@ void DerivedType::refineAbstractTypeTo(const Type *NewType) {
   while (!AbstractTypeUsers.empty() && NewTy != this) {
     AbstractTypeUser *User = AbstractTypeUsers.back();
 
-    unsigned OldSize = AbstractTypeUsers.size();
+    unsigned OldSize = AbstractTypeUsers.size(); OldSize=OldSize;
 #ifdef DEBUG_MERGE_TYPES
     DOUT << " REFINING user " << OldSize-1 << "[" << (void*)User
          << "] of abstract type [" << (void*)this << " "
@@ -1424,7 +1453,7 @@ void DerivedType::notifyUsesThatTypeBecameConcrete() {
   DOUT << "typeIsREFINED type: " << (void*)this << " " << *this << "\n";
 #endif
 
-  unsigned OldSize = AbstractTypeUsers.size();
+  unsigned OldSize = AbstractTypeUsers.size(); OldSize=OldSize;
   while (!AbstractTypeUsers.empty()) {
     AbstractTypeUser *ATU = AbstractTypeUsers.back();
     ATU->typeBecameConcrete(this);

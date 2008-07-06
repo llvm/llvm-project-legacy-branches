@@ -41,7 +41,8 @@ static std::vector<sys::Path> *DirectoriesToRemove = 0;
 static const int IntSigs[] = {
   SIGHUP, SIGINT, SIGQUIT, SIGPIPE, SIGTERM, SIGUSR1, SIGUSR2
 };
-static const int *IntSigsEnd = IntSigs + sizeof(IntSigs) / sizeof(IntSigs[0]);
+static const int *const IntSigsEnd =
+  IntSigs + sizeof(IntSigs) / sizeof(IntSigs[0]);
 
 // KillSigs - Signals that are synchronous with the program that will cause it
 // to die.
@@ -51,7 +52,8 @@ static const int KillSigs[] = {
   , SIGEMT
 #endif
 };
-static const int *KillSigsEnd = KillSigs + sizeof(KillSigs) / sizeof(KillSigs[0]);
+static const int *const KillSigsEnd =
+  KillSigs + sizeof(KillSigs) / sizeof(KillSigs[0]);
 
 #ifdef HAVE_BACKTRACE
 static void* StackTrace[256];
@@ -65,7 +67,8 @@ static void* StackTrace[256];
 static void PrintStackTrace() {
 #ifdef HAVE_BACKTRACE
   // Use backtrace() to output a backtrace on Linux systems with glibc.
-  int depth = backtrace(StackTrace, array_lengthof(StackTrace));
+  int depth = backtrace(StackTrace,
+                        static_cast<int>(array_lengthof(StackTrace)));
   backtrace_symbols_fd(StackTrace, depth, STDERR_FILENO);
 #endif
 }

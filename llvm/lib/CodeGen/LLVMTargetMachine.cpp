@@ -38,12 +38,9 @@ static cl::opt<bool>
 EnableSinking("enable-sinking", cl::init(false), cl::Hidden,
               cl::desc("Perform sinking on machine code"));
 static cl::opt<bool>
-AlignLoops("align-loops", cl::init(true), cl::Hidden,
-              cl::desc("Align loop headers"));
-static cl::opt<bool>
-PerformLICM("machine-licm",
-            cl::init(false), cl::Hidden,
-            cl::desc("Perform loop-invariant code motion on machine code"));
+EnableLICM("machine-licm",
+           cl::init(false), cl::Hidden,
+           cl::desc("Perform loop-invariant code motion on machine code"));
 
 // When this works it will be on by default.
 static cl::opt<bool>
@@ -88,29 +85,40 @@ LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
 
-  if (PerformLICM)
+  if (EnableLICM)
     PM.add(createMachineLICMPass());
   
   if (EnableSinking)
     PM.add(createMachineSinkingPass());
 
+  // Run pre-ra passes.
+  if (addPreRegAlloc(PM, Fast) && PrintMachineCode)
+    PM.add(createMachineFunctionPrinterPass(cerr));
+
   // Perform register allocation to convert to a concrete x86 representation
   PM.add(createRegisterAllocator());
   
-  if (PrintMachineCode)
+  // Perform stack slot coloring.
+  if (!Fast)
+    PM.add(createStackSlotColoringPass());
+
+  if (PrintMachineCode)  // Print the register-allocated code
     PM.add(createMachineFunctionPrinterPass(cerr));
-    
+  
+  // Run post-ra passes.
+  if (addPostRegAlloc(PM, Fast) && PrintMachineCode)
+    PM.add(createMachineFunctionPrinterPass(cerr));
+
   PM.add(createLowerSubregsPass());
   
   if (PrintMachineCode)  // Print the subreg lowered code
     PM.add(createMachineFunctionPrinterPass(cerr));
 
-  // Run post-ra passes.
-  if (addPostRegAlloc(PM, Fast) && PrintMachineCode)
-    PM.add(createMachineFunctionPrinterPass(cerr));
-
   // Insert prolog/epilog code.  Eliminate abstract frame index references...
   PM.add(createPrologEpilogCodeInserter());
+  
+  if (PrintMachineCode)
+    PM.add(createMachineFunctionPrinterPass(cerr));
   
   // Second pass scheduler.
   if (!Fast && !DisablePostRAScheduler)
@@ -136,7 +144,7 @@ LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   if (addPreEmitPass(PM, Fast) && PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
 
-  if (AlignLoops && !OptimizeForSize)
+  if (!Fast && !OptimizeForSize)
     PM.add(createLoopAlignerPass());
 
   switch (FileType) {
@@ -214,31 +222,42 @@ bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
 
-  if (PerformLICM)
+  if (EnableLICM)
     PM.add(createMachineLICMPass());
   
   if (EnableSinking)
     PM.add(createMachineSinkingPass());
 
-  // Perform register allocation to convert to a concrete x86 representation
+  // Run pre-ra passes.
+  if (addPreRegAlloc(PM, Fast) && PrintMachineCode)
+    PM.add(createMachineFunctionPrinterPass(cerr));
+
+  // Perform register allocation.
   PM.add(createRegisterAllocator());
-  
+
+  // Perform stack slot coloring.
+  if (!Fast)
+    PM.add(createStackSlotColoringPass());
+
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
     
+  // Run post-ra passes.
+  if (addPostRegAlloc(PM, Fast) && PrintMachineCode)
+    PM.add(createMachineFunctionPrinterPass(cerr));
+
+  if (PrintMachineCode)  // Print the register-allocated code
+    PM.add(createMachineFunctionPrinterPass(cerr));
+  
   PM.add(createLowerSubregsPass());
   
   if (PrintMachineCode)  // Print the subreg lowered code
     PM.add(createMachineFunctionPrinterPass(cerr));
 
-  // Run post-ra passes.
-  if (addPostRegAlloc(PM, Fast) && PrintMachineCode)
-    PM.add(createMachineFunctionPrinterPass(cerr));
-
   // Insert prolog/epilog code.  Eliminate abstract frame index references...
   PM.add(createPrologEpilogCodeInserter());
   
-  if (PrintMachineCode)  // Print the register-allocated code
+  if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
   
   // Second pass scheduler.
@@ -250,6 +269,7 @@ bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
     PM.add(createBranchFoldingPass(getEnableTailMergeDefault()));
 
   PM.add(createGCMachineCodeAnalysisPass());
+
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(cerr));
   

@@ -1509,7 +1509,7 @@ namespace {
       }
 
       // We'd like to allow makeEqual on two values to perform a simple
-      // substitution without every creating nodes in the IG whenever possible.
+      // substitution without creating nodes in the IG whenever possible.
       //
       // The first iteration through this loop operates on V2 before going
       // through the Remove list and operating on those too. If all of the
@@ -1594,6 +1594,7 @@ namespace {
       if (mergeIGNode) {
         // Create N1.
         if (!n1) n1 = VN.getOrInsertVN(V1, Top);
+        IG.node(n1); // Ensure that IG.Nodes won't get resized
 
         // Migrate relationships from removed nodes to N1.
         for (SetVector<unsigned>::iterator I = Remove.begin(), E = Remove.end();
@@ -2646,11 +2647,11 @@ namespace {
       }
     }
   }
-
-  char PredicateSimplifier::ID = 0;
-  RegisterPass<PredicateSimplifier> X("predsimplify",
-                                      "Predicate Simplifier");
 }
+
+char PredicateSimplifier::ID = 0;
+static RegisterPass<PredicateSimplifier>
+X("predsimplify", "Predicate Simplifier");
 
 FunctionPass *llvm::createPredicateSimplifierPass() {
   return new PredicateSimplifier();

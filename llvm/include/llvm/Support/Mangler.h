@@ -14,7 +14,7 @@
 #ifndef LLVM_SUPPORT_MANGLER_H
 #define LLVM_SUPPORT_MANGLER_H
 
-#include "llvm/System/IncludeFile.h"
+#include "llvm/ADT/DenseMap.h"
 #include <map>
 #include <set>
 #include <string>
@@ -41,7 +41,7 @@ class Mangler {
   
   /// Memo - This is used to remember the name that we assign a value.
   ///
-  std::map<const Value*, std::string> Memo;
+  DenseMap<const Value*, std::string> Memo;
 
   /// Count - This simple counter is used to unique value names.
   ///
@@ -111,8 +111,5 @@ private:
 };
 
 } // End llvm namespace
-
-// Force the Mangler.cpp file to be linked when this header is #included
-FORCE_DEFINING_FILE_TO_BE_LINKED(Mangler)
 
 #endif // LLVM_SUPPORT_MANGLER_H

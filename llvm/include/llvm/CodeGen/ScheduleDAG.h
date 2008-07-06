@@ -17,7 +17,6 @@
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SmallSet.h"
@@ -59,26 +58,23 @@ namespace llvm {
     ///     other instruction is available, issue it first.
     ///  * NoopHazard: issuing this instruction would break the program.  If
     ///     some other instruction can be issued, do so, otherwise issue a noop.
-    virtual HazardType getHazardType(SDNode *Node) {
+    virtual HazardType getHazardType(SDNode *) {
       return NoHazard;
     }
     
     /// EmitInstruction - This callback is invoked when an instruction is
     /// emitted, to advance the hazard state.
-    virtual void EmitInstruction(SDNode *Node) {
-    }
+    virtual void EmitInstruction(SDNode *) {}
     
     /// AdvanceCycle - This callback is invoked when no instructions can be
     /// issued on this cycle without a hazard.  This should increment the
     /// internal state of the hazard recognizer so that previously "Hazard"
     /// instructions will now not be hazards.
-    virtual void AdvanceCycle() {
-    }
+    virtual void AdvanceCycle() {}
     
     /// EmitNoop - This callback is invoked when a noop was added to the
     /// instruction stream.
-    virtual void EmitNoop() {
-    }
+    virtual void EmitNoop() {}
   };
 
   /// SDep - Scheduling dependency. It keeps track of dependent nodes,
@@ -98,8 +94,8 @@ namespace llvm {
   struct SUnit {
     SDNode *Node;                       // Representative node.
     SmallVector<SDNode*,4> FlaggedNodes;// All nodes flagged to Node.
-    unsigned InstanceNo;                // Instance#. One SDNode can be multiple
-                                        // SUnit due to cloning.
+    SUnit *OrigNode;                    // If not this, the node from which
+                                        // this node was cloned.
     
     // Preds/Succs - The SUnits before/after us in the graph.  The boolean value
     // is true if the edge is a token chain edge, false if it is a value edge. 
@@ -112,6 +108,7 @@ namespace llvm {
     typedef SmallVector<SDep, 4>::const_iterator const_succ_iterator;
     
     unsigned NodeNum;                   // Entry # of node in the node vector.
+    unsigned NodeQueueId;               // Queue id of node.
     unsigned short Latency;             // Node latency.
     short NumPreds;                     // # of preds.
     short NumSuccs;                     // # of sucss.
@@ -131,7 +128,7 @@ namespace llvm {
     const TargetRegisterClass *CopySrcRC;
     
     SUnit(SDNode *node, unsigned nodenum)
-      : Node(node), InstanceNo(0), NodeNum(nodenum), Latency(0),
+      : Node(node), OrigNode(0), NodeNum(nodenum), NodeQueueId(0), Latency(0),
         NumPreds(0), NumSuccs(0), NumPredsLeft(0), NumSuccsLeft(0),
         isTwoAddress(false), isCommutable(false), hasPhysRegDefs(false),
         isPending(false), isAvailable(false), isScheduled(false),
@@ -142,7 +139,7 @@ namespace llvm {
     /// not already.  This returns true if this is a new pred.
     bool addPred(SUnit *N, bool isCtrl, bool isSpecial,
                  unsigned PhyReg = 0, int Cost = 1) {
-      for (unsigned i = 0, e = Preds.size(); i != e; ++i)
+      for (unsigned i = 0, e = (unsigned)Preds.size(); i != e; ++i)
         if (Preds[i].Dep == N &&
             Preds[i].isCtrl == isCtrl && Preds[i].isSpecial == isSpecial)
           return false;
@@ -188,14 +185,14 @@ namespace llvm {
     }
 
     bool isPred(SUnit *N) {
-      for (unsigned i = 0, e = Preds.size(); i != e; ++i)
+      for (unsigned i = 0, e = (unsigned)Preds.size(); i != e; ++i)
         if (Preds[i].Dep == N)
           return true;
       return false;
     }
     
     bool isSucc(SUnit *N) {
-      for (unsigned i = 0, e = Succs.size(); i != e; ++i)
+      for (unsigned i = 0, e = (unsigned)Succs.size(); i != e; ++i)
         if (Succs[i].Dep == N)
           return true;
       return false;
@@ -217,8 +214,7 @@ namespace llvm {
   public:
     virtual ~SchedulingPriorityQueue() {}
   
-    virtual void initNodes(DenseMap<SDNode*, std::vector<SUnit*> > &SUMap,
-                           std::vector<SUnit> &SUnits) = 0;
+    virtual void initNodes(std::vector<SUnit> &SUnits) = 0;
     virtual void addNode(const SUnit *SU) = 0;
     virtual void updateNode(const SUnit *SU) = 0;
     virtual void releaseState() = 0;
@@ -233,11 +229,12 @@ namespace llvm {
     virtual void remove(SUnit *SU) = 0;
 
     /// ScheduledNode - As each node is scheduled, this method is invoked.  This
-    /// allows the priority function to adjust the priority of node that have
-    /// already been emitted.
-    virtual void ScheduledNode(SUnit *Node) {}
+    /// allows the priority function to adjust the priority of related
+    /// unscheduled nodes, for example.
+    ///
+    virtual void ScheduledNode(SUnit *) {}
 
-    virtual void UnscheduledNode(SUnit *Node) {}
+    virtual void UnscheduledNode(SUnit *) {}
   };
 
   class ScheduleDAG {
@@ -253,8 +250,6 @@ namespace llvm {
     MachineConstantPool *ConstPool;       // Target constant pool
     std::vector<SUnit*> Sequence;         // The schedule. Null SUnit*'s
                                           // represent noop instructions.
-    DenseMap<SDNode*, std::vector<SUnit*> > SUnitMap;
-                                          // SDNode to SUnit mapping (n -> n).
     std::vector<SUnit> SUnits;            // The scheduling units.
     SmallSet<SDNode*, 16> CommuteSet;     // Nodes that should be commuted.
 
@@ -292,7 +287,8 @@ namespace llvm {
     /// NewSUnit - Creates a new SUnit and return a ptr to it.
     ///
     SUnit *NewSUnit(SDNode *N) {
-      SUnits.push_back(SUnit(N, SUnits.size()));
+      SUnits.push_back(SUnit(N, (unsigned)SUnits.size()));
+      SUnits.back().OrigNode = &SUnits.back();
       return &SUnits.back();
     }
 
@@ -333,7 +329,7 @@ namespace llvm {
     /// VRBaseMap contains, for each already emitted node, the first virtual
     /// register number for the results of the node.
     ///
-    void EmitNode(SDNode *Node, unsigned InstNo,
+    void EmitNode(SDNode *Node, bool IsClone,
                   DenseMap<SDOperand, unsigned> &VRBaseMap);
     
     /// EmitNoop - Emit a noop instruction.
@@ -344,9 +340,10 @@ namespace llvm {
 
     void dumpSchedule() const;
 
-    /// Schedule - Order nodes according to selected style.
+    /// Schedule - Order nodes according to selected style, filling
+    /// in the Sequence member.
     ///
-    virtual void Schedule() {}
+    virtual void Schedule() = 0;
 
   private:
     /// EmitSubregNode - Generate machine code for subreg nodes.
@@ -372,7 +369,7 @@ namespace llvm {
 
     /// EmitCopyFromReg - Generate machine code for an CopyFromReg node or an
     /// implicit physical register output.
-    void EmitCopyFromReg(SDNode *Node, unsigned ResNo, unsigned InstNo,
+    void EmitCopyFromReg(SDNode *Node, unsigned ResNo, bool IsClone,
                          unsigned SrcReg,
                          DenseMap<SDOperand, unsigned> &VRBaseMap);
     
@@ -399,25 +396,29 @@ namespace llvm {
   /// reduction list scheduler.
   ScheduleDAG* createBURRListDAGScheduler(SelectionDAGISel *IS,
                                           SelectionDAG *DAG,
-                                          MachineBasicBlock *BB);
+                                          MachineBasicBlock *BB,
+                                          bool Fast);
   
   /// createTDRRListDAGScheduler - This creates a top down register usage
   /// reduction list scheduler.
   ScheduleDAG* createTDRRListDAGScheduler(SelectionDAGISel *IS,
                                           SelectionDAG *DAG,
-                                          MachineBasicBlock *BB);
+                                          MachineBasicBlock *BB,
+                                          bool Fast);
   
   /// createTDListDAGScheduler - This creates a top-down list scheduler with
   /// a hazard recognizer.
   ScheduleDAG* createTDListDAGScheduler(SelectionDAGISel *IS,
                                         SelectionDAG *DAG,
-                                        MachineBasicBlock *BB);
+                                        MachineBasicBlock *BB,
+                                        bool Fast);
                                         
   /// createDefaultScheduler - This creates an instruction scheduler appropriate
   /// for the target.
   ScheduleDAG* createDefaultScheduler(SelectionDAGISel *IS,
                                       SelectionDAG *DAG,
-                                      MachineBasicBlock *BB);
+                                      MachineBasicBlock *BB,
+                                      bool Fast);
 
   class SUnitIterator : public forward_iterator<SUnit, ptrdiff_t> {
     SUnit *Node;
@@ -451,7 +452,7 @@ namespace llvm {
 
     static SUnitIterator begin(SUnit *N) { return SUnitIterator(N, 0); }
     static SUnitIterator end  (SUnit *N) {
-      return SUnitIterator(N, N->Preds.size());
+      return SUnitIterator(N, (unsigned)N->Preds.size());
     }
 
     unsigned getOperand() const { return Operand; }

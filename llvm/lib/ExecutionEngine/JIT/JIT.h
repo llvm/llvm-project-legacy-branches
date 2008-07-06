@@ -54,7 +54,7 @@ class JIT : public ExecutionEngine {
   TargetJITInfo &TJI;      // The JITInfo for the target we are compiling to
   MachineCodeEmitter *MCE; // MCE object
 
-  JITState jitstate;
+  JITState *jitstate;
 
   JIT(ModuleProvider *MP, TargetMachine &tm, TargetJITInfo &tji, 
       JITMemoryManager *JMM);
@@ -76,7 +76,11 @@ public:
     return createJIT(MP, Err, 0);
   }
 
-  /// run - Start execution with the specified function and arguments.
+  virtual void addModuleProvider(ModuleProvider *MP);
+  virtual Module *removeModuleProvider(ModuleProvider *MP,
+                                       std::string *ErrInfo = 0);
+
+  /// runFunction - Start execution with the specified function and arguments.
   ///
   virtual GenericValue runFunction(Function *F,
                                    const std::vector<GenericValue> &ArgValues);

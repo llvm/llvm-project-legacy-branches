@@ -16,7 +16,7 @@
 
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/ilist"
+#include "llvm/ADT/ilist.h"
 #include "llvm/Support/Streams.h"
 
 namespace llvm {
@@ -108,7 +108,7 @@ public:
   typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
   typedef std::reverse_iterator<iterator>             reverse_iterator;
 
-  unsigned size() const { return Insts.size(); }
+  unsigned size() const { return (unsigned)Insts.size(); }
   bool empty() const { return Insts.empty(); }
 
   MachineInstr& front() { return Insts.front(); }
@@ -149,7 +149,9 @@ public:
                                           { return Predecessors.rend();  }
   const_pred_reverse_iterator  pred_rend()   const
                                           { return Predecessors.rend();  }
-  unsigned             pred_size()  const { return Predecessors.size();  }
+  unsigned             pred_size()  const {
+    return (unsigned)Predecessors.size();
+  }
   bool                 pred_empty() const { return Predecessors.empty(); }
   succ_iterator        succ_begin()       { return Successors.begin();   }
   const_succ_iterator  succ_begin() const { return Successors.begin();   }
@@ -163,7 +165,9 @@ public:
                                           { return Successors.rend();    }
   const_succ_reverse_iterator  succ_rend()   const
                                           { return Successors.rend();    }
-  unsigned             succ_size()  const { return Successors.size();    }
+  unsigned             succ_size()  const {
+    return (unsigned)Successors.size();
+  }
   bool                 succ_empty() const { return Successors.empty();   }
 
   // LiveIn management methods.
@@ -175,6 +179,10 @@ public:
   /// removeLiveIn - Remove the specified register from the live in set.
   ///
   void removeLiveIn(unsigned Reg);
+
+  /// isLiveIn - Return true if the specified register is in the live in set.
+  ///
+  bool isLiveIn(unsigned Reg) const;
 
   // Iteration support for live in sets.  These sets are kept in sorted
   // order by their register number.
@@ -227,6 +235,11 @@ public:
   /// updated.  Return the iterator to the element after the one removed.
   ///
   succ_iterator removeSuccessor(succ_iterator I);
+  
+  /// transferSuccessors - Transfers all the successors from MBB to this
+  /// machine basic block (i.e., copies all the successors fromMBB and
+  /// remove all the successors fromBB).
+  void transferSuccessors(MachineBasicBlock *fromMBB);
   
   /// isSuccessor - Return true if the specified MBB is a successor of this
   /// block.
