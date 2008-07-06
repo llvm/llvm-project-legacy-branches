@@ -1030,6 +1030,7 @@ static void WriteFunction(const Function &F, ValueEnumerator &VE,
       if (I->getType() != Type::VoidTy)
         ++InstID;
     }
+  }
   
   // Emit names for all the instructions etc.
   WriteValueSymbolTable(F.getValueSymbolTable(), VE, Stream);

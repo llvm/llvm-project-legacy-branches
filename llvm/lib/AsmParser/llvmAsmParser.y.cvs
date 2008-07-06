@@ -1065,7 +1065,7 @@ Module *llvm::RunVMAsmParser(llvm::MemoryBuffer *MB) {
 %token DECLARE DEFINE GLOBAL CONSTANT SECTION ALIAS VOLATILE THREAD_LOCAL
 %token TO DOTDOTDOT NULL_TOK UNDEF INTERNAL LINKONCE WEAK APPENDING
 %token DLLIMPORT DLLEXPORT EXTERN_WEAK COMMON
-%token OPAQUE EXTERNAL TARGET TRIPLE ALIGN ADDRSPACE
+%token OPAQUE EXTERNAL TARGET TRIPLE ALIGN ADDRSPACE UNWINDS
 %token DEPLIBS CALL TAIL ASM_TOK MODULE SIDEEFFECT
 %token CC_TOK CCC_TOK FASTCC_TOK COLDCC_TOK X86_STDCALLCC_TOK X86_FASTCALLCC_TOK
 %token DATALAYOUT
@@ -2669,11 +2669,39 @@ InstructionList : InstructionList Inst {
     $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum));
     CHECK_FOR_ERROR
   }
+  | UNWINDS TO ValueRef {  // Only the unwind to block
+    $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum));
+    $$->setUnwindDest(getBBVal($3));
+    CHECK_FOR_ERROR
+  }
+  | NOUNWIND {             // Only the nounwind label
+    $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum));
+    $$->setDoesNotThrow();
+    CHECK_FOR_ERROR
+  }
+  | NOUNWIND UNWINDS TO ValueRef {  // The nounwind and unwind to block
+    $$ = defineBBVal(ValID::createLocalID(CurFun.NextValNum));
+    $$->setUnwindDest(getBBVal($4));
+    $$->setDoesNotThrow();
+    CHECK_FOR_ERROR
+  }
   | LABELSTR {             // Labelled (named) basic block
     $$ = defineBBVal(ValID::createLocalName(*$1));
     delete $1;
     CHECK_FOR_ERROR
-
+  };
+  | LABELSTR NOUNWIND {
+    $$ = defineBBVal(ValID::createLocalName(*$1));
+    $$->setDoesNotThrow();
+    delete $1;
+    CHECK_FOR_ERROR
+  };
+  | LABELSTR NOUNWIND UNWINDS TO ValueRef {
+    $$ = defineBBVal(ValID::createLocalName(*$1));
+    $$->setUnwindDest(getBBVal($5));
+    $$->setDoesNotThrow();
+    delete $1;
+    CHECK_FOR_ERROR
   };
 
 BBTerminatorInst : 

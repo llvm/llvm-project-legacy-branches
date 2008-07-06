@@ -75,7 +75,8 @@ template class SymbolTableListTraits<Instruction, BasicBlock>;
 
 BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
                        BasicBlock *InsertBefore)
-  : User(Type::LabelTy, Value::BasicBlockVal, OpList?, NumOps?), Parent(0) {
+  : User(Type::LabelTy, Value::BasicBlockVal,
+         OperandTraits<BasicBlock>::op_begin(this), 0), Parent(0) {
 
   // Make sure that we get added to a function
   LeakDetector::addGarbageObject(this);
@@ -96,6 +97,7 @@ BasicBlock::BasicBlock(const std::string &Name, Function *NewParent,
 
 BasicBlock::~BasicBlock() {
   assert(getParent() == 0 && "BasicBlock still linked into the program!");
+  NumOperands = 1;     // force User::operator delete to find the Use storage
   dropAllReferences();
   InstList.clear();
 }
@@ -120,6 +122,9 @@ void BasicBlock::eraseFromParent() {
 }
 
 const BasicBlock *BasicBlock::getUnwindDest() const {
+  if (getNumOperands() == 0)
+    return NULL;
+
   return getOperand(0);
 }
 
@@ -127,6 +132,9 @@ const BasicBlock *BasicBlock::getUnwindDest() const {
 /// instruction occurs in this block. May be null, in which case unwinding
 /// exits the function.
 BasicBlock *BasicBlock::getUnwindDest() {
+  if (getNumOperands() == 0)
+    return NULL;
+
   return getOperand(0);
 }
 
