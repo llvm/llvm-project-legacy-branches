@@ -57,9 +57,9 @@ proc substitute { line test tmpFile } {
   #replace %prcontext with prcontext.tcl (Must replace before %p)
   regsub -all {%prcontext} $new_line $prcontext new_line
   #replace %llvmgcc with actual path to llvmgcc
-  regsub -all {%llvmgcc} $new_line "$llvmgcc -emit-llvm" new_line
+  regsub -all {%llvmgcc} $new_line "$llvmgcc -emit-llvm -w" new_line
   #replace %llvmgxx with actual path to llvmg++
-  regsub -all {%llvmgxx} $new_line "$llvmgxx -emit-llvm" new_line
+  regsub -all {%llvmgxx} $new_line "$llvmgxx -emit-llvm -w" new_line
   #replace %compile_cxx with C++ compilation command
   regsub -all {%compile_cxx} $new_line "$compile_cxx" new_line
   #replace %compile_c with C compilation command
@@ -313,9 +313,9 @@ proc llvm_gcc_supports { lang } {
     ada     { set file gnat1 }
     c       { set file cc1 }
     c++     { set file cc1plus }
-    objc    { set file cc1 }
-    objc++  { set file cc1 }
-    fortran { set file fcc1 }
+    objc    { set file cc1obj }
+    objc++  { set file cc1objplus }
+    fortran { set file f951 }
     default { return 0 }
   }
   foreach supported_lang [split "$llvmgcc_langs" ,] {
