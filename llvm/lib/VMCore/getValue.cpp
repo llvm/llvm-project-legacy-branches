@@ -1,8 +1,23 @@
+//===-- Use.cpp - Implement the Use class ---------------------------------===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file implements the algorithm for finding the User of a Use.
+//
+//===----------------------------------------------------------------------===//
+
+#include "llvm/User.h"
 #include <new>
 #include <cassert>
 
+namespace llvm {
 
-
+/*
 //===----------------------------------------------------------------------===//
 //                          Generic Tagging Functions
 //===----------------------------------------------------------------------===//
@@ -36,15 +51,18 @@ inline T *transferTag(const T *From, const T *To) {
   return reinterpret_cast<T*>((ptrdiff_t(From) & MASK) | ptrdiff_t(To));
 }
 
+*/
 
 
 
 
+// class Value;
+class Use::UseWaymark {
 
-class Value;
+  friend class Use;
 
 enum { requiredSteps = sizeof(Value*) * 8 - 2 };
-
+/*
 struct Use {
   enum NextPtrTag { zeroDigitTagN = tagTwo
                   , oneDigitTagN = tagOne
@@ -62,6 +80,7 @@ struct Use {
   Value *getValue() const;
 };
 
+*/
 
 /// repaintByCopying -- given a pattern and a
 /// junk tagspace, copy the former's tags into
@@ -306,6 +325,8 @@ static inline Value *skipPotentiallyGathering(Use *U,
   }
 }
 
+}; // class UseWaymark
+
 Value *Use::getValue() const {
   // __builtin_prefetch(Next);
   NextPtrTag Tag(extractTag<NextPtrTag, fullStopTagN>(Next));
@@ -313,19 +334,23 @@ Value *Use::getValue() const {
   case fullStopTagN:
       return reinterpret_cast<Value*>(stripTag<fullStopTagN>(Next));
   case stopTagN:
-    return gatherAndPotentiallyRepaint(Next);
+    return UseWaymark::gatherAndPotentiallyRepaint(Next);
   default:
-    return skipPotentiallyGathering(stripTag<fullStopTagN>(Next),
+    return UseWaymark::skipPotentiallyGathering(stripTag<fullStopTagN>(Next),
                                     Tag & 1,
-                                    requiredSteps - 1);
+                                    Use::UseWaymark::requiredSteps - 1);
   }
 }
+
+} // namespace llvm
+
+#if 0
 
 // ################################################################
 // ############################# TESTS ############################
 // ################################################################
 
-
+using namespace llvm;
 
 namespace T1
 {
@@ -461,3 +486,5 @@ int main(){
     if ((Value*)0xCAFEBABCUL != T4::ms32.getValue()) // check the mutated value
         return 4;
 }
+
+#endif

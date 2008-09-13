@@ -66,6 +66,10 @@ inline T *transferTag(const T *From, const T *To) {
 // Use is here to make keeping the "use" list of a Value up-to-date really easy.
 //
 class Use {
+  class UseWaymark;
+  friend class UseWaymark;
+  Value *getValue() const;
+
 public:
   /// init - specify Value and User
   /// @deprecated in 2.4, will be removed soon
