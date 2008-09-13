@@ -69,6 +69,7 @@ class Use {
   class UseWaymark;
   friend class UseWaymark;
   Value *getValue() const;
+  static Use *nilUse(const Value*); // marks the end of the def/use chain
 
 public:
   /// init - specify Value and User
@@ -108,12 +109,12 @@ public:
 
 
   operator Value*() const { return get(); }
-  Value *get() const {
+  Value *get() const; /*{
     if (Value *V = getFastValueMaybe())
       return V;
     else
       return Val1; // for now :-)
-    }
+    }*/
   User *getUser() const;
   const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
@@ -133,7 +134,7 @@ public:
         Value *operator->()       { return get(); }
   const Value *operator->() const { return get(); }
 
-  Use *getNext() const { return Next; }
+  Use *getNext() const { return extractTag<NextPtrTag, fullStopTagN>(Next) == fullStopTagN ? 0 : stripTag<fullStopTagN>(Next); }
 private:
   Value *Val1;
   Use *Next, **Prev;
@@ -143,7 +144,8 @@ private:
   }
   void addToList(Use **List) {
     Next = *List;
-    if (Next) Next->setPrev(&Next);
+    Use *StrippedNext(getNext());
+    if (StrippedNext) StrippedNext->setPrev(&Next);
     setPrev(List);
     *List = this;
   }
@@ -179,7 +181,10 @@ class value_use_iterator : public forward_iterator<UserTy*, ptrdiff_t> {
   typedef value_use_iterator<UserTy> _Self;
 
   Use *U;
-  explicit value_use_iterator(Use *u) : U(u) {}
+  explicit value_use_iterator(Use *u) : U(extractTag<Use::NextPtrTag, Use::tagMaskN>(u)
+					  == Use::fullStopTagN
+					  ? 0
+					  : stripTag<Use::tagMaskN>(u)) {}
   friend class Value;
 public:
   typedef typename super::reference reference;
@@ -196,11 +201,11 @@ public:
   }
 
   /// atEnd - return true if this iterator is equal to use_end() on the value.
-  bool atEnd() const { return U == 0; }
+  bool atEnd() const { return !U/*extractTag<Use::NextPtrTag, Use::tagMaskN>(U) == Use::fullStopTagN*/; }
 
   // Iterator traversal: forward iteration only
   _Self &operator++() {          // Preincrement
-    assert(U && "Cannot increment end iterator!");
+    assert(!atEnd() && "Cannot increment end iterator!");
     U = U->getNext();
     return *this;
   }
@@ -210,7 +215,7 @@ public:
 
   // Retrieve a reference to the current User
   UserTy *operator*() const {
-    assert(U && "Cannot dereference end iterator!");
+    assert(!atEnd() && "Cannot dereference end iterator!");
     return U->getUser();
   }
 

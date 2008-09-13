@@ -17,70 +17,11 @@
 
 namespace llvm {
 
-/*
-//===----------------------------------------------------------------------===//
-//                          Generic Tagging Functions
-//===----------------------------------------------------------------------===//
-
-/// Tag - generic tag type for (at least 32 bit) pointers
-enum Tag { noTag, tagOne, tagTwo, tagThree };
-
-/// addTag - insert tag bits into an (untagged) pointer
-template <typename T, typename TAG>
-inline T *addTag(const T *P, TAG Tag) {
-    return reinterpret_cast<T*>(ptrdiff_t(P) | Tag);
-}
-
-/// stripTag - remove tag bits from a pointer,
-/// making it dereferencable
-template <ptrdiff_t MASK, typename T>
-inline T *stripTag(const T *P) {
-  return reinterpret_cast<T*>(ptrdiff_t(P) & ~MASK);
-}
-
-/// extractTag - extract tag bits from a pointer
-template <typename TAG, TAG MASK, typename T>
-inline TAG extractTag(const T *P) {
-  return TAG(ptrdiff_t(P) & MASK);
-}
-
-/// transferTag - transfer tag bits from a pointer,
-/// to an untagged pointer
-template <ptrdiff_t MASK, typename T>
-inline T *transferTag(const T *From, const T *To) {
-  return reinterpret_cast<T*>((ptrdiff_t(From) & MASK) | ptrdiff_t(To));
-}
-
-*/
-
-
-
-
-// class Value;
 class Use::UseWaymark {
 
   friend class Use;
 
 enum { requiredSteps = sizeof(Value*) * 8 - 2 };
-/*
-struct Use {
-  enum NextPtrTag { zeroDigitTagN = tagTwo
-                  , oneDigitTagN = tagOne
-                  , stopTagN = noTag
-                  , fullStopTagN = tagThree };
-
-  Use *Next;
-
-  Use() : Next(reinterpret_cast<Use*>(fullStopTagN)) {}
-  explicit Use(Value *V) : Next(reinterpret_cast<Use*>(addTag(V, fullStopTagN))) {}
-
-  // Link up from front:
-  explicit Use(Use& U) : Next(&U) {}
-
-  Value *getValue() const;
-};
-
-*/
 
 /// repaintByCopying -- given a pattern and a
 /// junk tagspace, copy the former's tags into
@@ -342,6 +283,18 @@ Value *Use::getValue() const {
   }
 }
 
+/*inline*/Use *Use::nilUse(const Value *V) {
+  // return 0;
+  return addTag((Use*)V, fullStopTagN);
+}
+
+Value *Use::get() const {
+  Value *V(Val1);
+  Value *ValComp(getValue());
+  if (V != ValComp)
+    assert(V == ValComp && "Computed Value wrong?");
+  return V;
+}
 } // namespace llvm
 
 #if 0
