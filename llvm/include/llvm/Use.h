@@ -134,13 +134,15 @@ public:
         Value *operator->()       { return get(); }
   const Value *operator->() const { return get(); }
 
-  Use *getNext() const { return extractTag<NextPtrTag, fullStopTagN>(Next) == fullStopTagN ? 0 : stripTag<fullStopTagN>(Next); }
+  Use *getNext() const { return extractTag<NextPtrTag, tagMaskN>(Next) == fullStopTagN
+			   ? 0
+			   : stripTag<tagMaskN>(Next); }
 private:
   Value *Val1;
   Use *Next, **Prev;
 
   void setPrev(Use **NewPrev) {
-    Prev = transferTag<fullStopTag>(Prev, NewPrev);
+    Prev = transferTag<tagMask>(Prev, NewPrev);
   }
   void addToList(Use **List) {
     Next = *List;
@@ -150,7 +152,7 @@ private:
     *List = this;
   }
   void removeFromList() {
-    Use **StrippedPrev = stripTag<fullStopTag>(Prev);
+    Use **StrippedPrev = stripTag<tagMask>(Prev);
     *StrippedPrev = Next;
     if (Next) Next->setPrev(StrippedPrev);
   }
@@ -201,7 +203,7 @@ public:
   }
 
   /// atEnd - return true if this iterator is equal to use_end() on the value.
-  bool atEnd() const { return !U/*extractTag<Use::NextPtrTag, Use::tagMaskN>(U) == Use::fullStopTagN*/; }
+  bool atEnd() const { return !U; }
 
   // Iterator traversal: forward iteration only
   _Self &operator++() {          // Preincrement
@@ -231,7 +233,7 @@ public:
 
 Value *Use::getFastValueMaybe() const {
   if (fullStopTagN == extractTag<NextPtrTag, tagMaskN>(Next)) {
-    return reinterpret_cast<Value*>(stripTag<fullStopTagN>(Next));
+    return reinterpret_cast<Value*>(stripTag<tagMaskN>(Next));
   }
   return 0;
 }

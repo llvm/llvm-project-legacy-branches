@@ -29,13 +29,13 @@ enum { requiredSteps = sizeof(Value*) * 8 - 2 };
 ///
 static inline void repaintByCopying(Use *Tagspace, Use *Junk) {
     for (int I = requiredSteps; I; --I) {
-        Use *Next = stripTag<Use::fullStopTagN>(Junk->Next);
-        Junk->Next = transferTag<Use::fullStopTagN>(Tagspace->Next, Next);
-        Tagspace = stripTag<Use::fullStopTagN>(Tagspace->Next);
+        Use *Next = stripTag<Use::tagMaskN>(Junk->Next);
+        Junk->Next = transferTag<Use::tagMaskN>(Tagspace->Next, Next);
+        Tagspace = stripTag<Use::tagMaskN>(Tagspace->Next);
         Junk = Next;
     }
 
-    assert((extractTag<Use::NextPtrTag, Use::fullStopTagN>(Junk->Next) == Use::stopTagN)
+    assert((extractTag<Use::NextPtrTag, Use::tagMaskN>(Junk->Next) == Use::stopTagN)
            && "Why repaint by copying if the next is not Stop?");
 }
 
@@ -48,12 +48,12 @@ static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
 
     for (int I = requiredSteps - 1; I >= 0; --I) {
         Use::NextPtrTag Tag(Tags & (1 << I) ? Use::oneDigitTagN : Use::zeroDigitTagN);
-        Use *Next = stripTag<Use::fullStopTagN>(Junk->Next);
-        Junk->Next = transferTag<Use::fullStopTagN>(reinterpret_cast<Use*>(Tag), Next);
+        Use *Next = stripTag<Use::tagMaskN>(Junk->Next);
+        Junk->Next = transferTag<Use::tagMaskN>(reinterpret_cast<Use*>(Tag), Next);
         Junk = Next;
     }
 
-    assert((extractTag<Use::NextPtrTag, Use::fullStopTagN>(Junk->Next) == Use::fullStopTagN)
+    assert((extractTag<Use::NextPtrTag, Use::tagMaskN>(Junk->Next) == Use::fullStopTagN)
            && "Why repaint by calculating if the next is not FullStop?");
 }
 
@@ -62,7 +62,7 @@ static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
 ///
 static inline void punchAwayDigits(Use *PrevU) {
     if (PrevU)
-        PrevU->Next = stripTag<Use::fullStopTagN>(PrevU->Next);
+        PrevU->Next = stripTag<Use::tagMaskN>(PrevU->Next);
 }
 
 
@@ -79,8 +79,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
 
   Use *Next(U->Next);
   // __builtin_prefetch(Next);
-  Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next));
-  Next = stripTag<Use::fullStopTagN>(Next);
+  Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::tagMaskN>(Next));
+  Next = stripTag<Use::tagMaskN>(Next);
 
   // try to pick up exactly requiredSteps digits
   // from immediately behind the (precondition) stop
@@ -102,8 +102,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
               Next = Next->Next;
               // __builtin_prefetch(Next);
               --Cushion;
-              Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-              Next = stripTag<Use::fullStopTagN>(Next);
+              Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+              Next = stripTag<Use::tagMaskN>(Next);
               */
               break;
           }
@@ -112,8 +112,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
               Next = Next->Next;
               // __builtin_prefetch(Next);
               --Cushion;
-              Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-              Next = stripTag<Use::fullStopTagN>(Next);
+              Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+              Next = stripTag<Use::tagMaskN>(Next);
               continue;
       }
       break;
@@ -142,8 +142,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             Next = Next->Next;
             // __builtin_prefetch(Next);
             --Cushion;
-            Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-            Next = stripTag<Use::fullStopTagN>(Next);
+            Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+            Next = stripTag<Use::tagMaskN>(Next);
             switch (Tag) {
                 case Use::fullStopTagN:
                     if (Cushion <= 0) {
@@ -154,7 +154,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                 case Use::stopTagN: {
                     if (Cushion <= 0) {
                         PrevU = U;
-                        U = stripTag<Use::fullStopTagN>(U->Next);
+                        U = stripTag<Use::tagMaskN>(U->Next);
                     }
                     break;
                 }
@@ -171,8 +171,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         Next = Next->Next;
         // __builtin_prefetch(Next);
         --Cushion;
-        Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-        Next = stripTag<Use::fullStopTagN>(Next);
+        Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+        Next = stripTag<Use::tagMaskN>(Next);
     } // switch
   } // while
 
@@ -205,11 +205,11 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             Next = Next->Next;
             // __builtin_prefetch(Next);
             PrevU = U;
-            U = stripTag<Use::fullStopTagN>(U->Next);
-            Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-            Next = stripTag<Use::fullStopTagN>(Next);
+            U = stripTag<Use::tagMaskN>(U->Next);
+            Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+            Next = stripTag<Use::tagMaskN>(Next);
             switch (Tag) {
-                case Use::fullStopTagN:{
+                case Use::fullStopTagN: {
                     punchAwayDigits(PrevU);
                     repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
                     return reinterpret_cast<Value*>(Next);
@@ -230,9 +230,9 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         Next = Next->Next;
         // __builtin_prefetch(Next);
         PrevU = U;
-        U = stripTag<Use::fullStopTagN>(U->Next);
-        Tag = extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next);
-        Next = stripTag<Use::fullStopTagN>(Next);
+        U = stripTag<Use::tagMaskN>(U->Next);
+        Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
+        Next = stripTag<Use::tagMaskN>(Next);
     } // switch
   } // while
 }
@@ -251,8 +251,8 @@ static inline Value *skipPotentiallyGathering(Use *U,
 
     Use *Next(U->Next);
     // __builtin_prefetch(Next);
-    Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::fullStopTagN>(Next));
-    Next = stripTag<Use::fullStopTagN>(Next);
+    Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::tagMaskN>(Next));
+    Next = stripTag<Use::tagMaskN>(Next);
     switch (Tag) {
     case Use::fullStopTagN:
       return reinterpret_cast<Value*>(Next);
@@ -270,14 +270,14 @@ static inline Value *skipPotentiallyGathering(Use *U,
 
 Value *Use::getValue() const {
   // __builtin_prefetch(Next);
-  NextPtrTag Tag(extractTag<NextPtrTag, fullStopTagN>(Next));
+  NextPtrTag Tag(extractTag<NextPtrTag, tagMaskN>(Next));
   switch (Tag) {
   case fullStopTagN:
-      return reinterpret_cast<Value*>(stripTag<fullStopTagN>(Next));
+      return reinterpret_cast<Value*>(stripTag<tagMaskN>(Next));
   case stopTagN:
     return UseWaymark::gatherAndPotentiallyRepaint(Next);
   default:
-    return UseWaymark::skipPotentiallyGathering(stripTag<fullStopTagN>(Next),
+    return UseWaymark::skipPotentiallyGathering(stripTag<tagMaskN>(Next),
                                     Tag & 1,
                                     Use::UseWaymark::requiredSteps - 1);
   }
