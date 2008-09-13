@@ -80,7 +80,7 @@ private:
 
   /// Destructor - Only for zap()
   inline ~Use() {
-    if (Val) removeFromList();
+    if (Val1) removeFromList();
   }
 
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing
@@ -90,13 +90,26 @@ private:
   enum PrevPtrTag { zeroDigitTag = noTag
                   , oneDigitTag = tagOne
                   , stopTag = tagTwo
-                  , fullStopTag = tagThree };
+                  , fullStopTag = tagThree
+                  , tagMask = tagThree };
 
+  enum NextPtrTag { zeroDigitTagN = tagTwo
+                  , oneDigitTagN = tagOne
+                  , stopTagN = noTag
+                  , fullStopTagN = tagThree
+                  , tagMaskN = tagThree };
+
+  inline Value *getFastValueMaybe() const;
 public:
 
 
-  operator Value*() const { return Val; }
-  Value *get() const { return Val; }
+  operator Value*() const { return get(); }
+  Value *get() const {
+    if (Value *V = getFastValueMaybe())
+      return V;
+    else
+      return Val1; // for now :-)
+    }
   User *getUser() const;
   const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
@@ -109,16 +122,16 @@ public:
     return RHS;
   }
   const Use &operator=(const Use &RHS) {
-    set(RHS.Val);
+    set(RHS.Val1);
     return *this;
   }
 
-        Value *operator->()       { return Val; }
-  const Value *operator->() const { return Val; }
+        Value *operator->()       { return get(); }
+  const Value *operator->() const { return get(); }
 
   Use *getNext() const { return Next; }
 private:
-  Value *Val;
+  Value *Val1;
   Use *Next, **Prev;
 
   void setPrev(Use **NewPrev) {
@@ -206,6 +219,13 @@ public:
   ///
   unsigned getOperandNo() const;
 };
+
+Value *Use::getFastValueMaybe() const {
+  if (fullStopTagN == extractTag<NextPtrTag, tagMaskN>(Next)) {
+    return reinterpret_cast<Value*>(stripTag<fullStopTagN>(Next));
+  }
+  return 0;
+}
 
 
 template<> struct simplify_type<value_use_iterator<User> > {

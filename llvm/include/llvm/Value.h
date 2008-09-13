@@ -233,13 +233,13 @@ inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
 }
 
 void Use::init(Value *V, User *user) {
-  Val = V;
+  Val1 = V;
   if (V) V->addUse(*this);
 }
 
 void Use::set(Value *V) {
-  if (Val) removeFromList();
-  Val = V;
+  if (Val1) removeFromList();
+  Val1 = V;
   if (V) V->addUse(*this);
 }
 
