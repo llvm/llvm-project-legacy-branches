@@ -70,7 +70,7 @@ class Use {
   friend class UseWaymark;
   Value *getValue() const;
   static Use *nilUse(const Value*); // marks the end of the def/use chain
-
+  static bool isNil(Use *U) { return extractTag<NextPtrTag, tagMaskN>(U) == fullStopTagN; }
 public:
   /// init - specify Value and User
   /// @deprecated in 2.4, will be removed soon
@@ -154,7 +154,8 @@ private:
   void removeFromList() {
     Use **StrippedPrev = stripTag<tagMask>(Prev);
     *StrippedPrev = Next;
-    if (Next) Next->setPrev(StrippedPrev);
+    Use *StrippedNext(getNext());
+    if (StrippedNext) StrippedNext->setPrev(StrippedPrev);
   }
 
   friend class Value;

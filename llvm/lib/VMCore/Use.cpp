@@ -90,6 +90,7 @@ Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
   while (Start != Stop) {
     --Stop;
     Stop->Val1 = 0;
+    Stop->Next = nilUse(0);
     if (!Count) {
       Stop->Prev = reinterpret_cast<Use**>(Done == 0 ? fullStopTag : stopTag);
       ++Done;
