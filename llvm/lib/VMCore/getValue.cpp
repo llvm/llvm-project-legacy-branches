@@ -132,7 +132,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
     case Use::fullStopTagN:
         return reinterpret_cast<Value*>(Next);
     case Use::stopTagN: {
-        // efficiency:
+        efficiency:
         // try to pick up exactly requiredSteps digits
         int digits = requiredSteps;
         Acc = 0;
@@ -158,11 +158,15 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                         PrevU = U;
                         U = stripTag<Use::tagMaskN>(U->Next);
                     }
-                    break;
+                    goto efficiency;
                 }
                 default:
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
+                    if (Cushion <= 0) {
+		      PrevU = U;
+		      U = stripTag<Use::tagMaskN>(U->Next);
+                    }
                     continue;
             }
             break;
@@ -290,11 +294,17 @@ Value *Use::getValue() const {
   return addTag((Use*)V, fullStopTagN);
 }
 
+static bool again(false);
+
 Value *Use::get() const {
   Value *V(Val1);
+  //  if ((size_t)V == 0x5b0d150)
+  //    getValue();
   Value *ValComp(getValue());
   if (V != ValComp)
     assert(V == ValComp && "Computed Value wrong?");
+  if (again)
+    getValue();
   return V;
 }
 
@@ -314,8 +324,11 @@ void Use::showWaymarks() const {
   std::cerr << TagChar(TagHere);
 
   me = stripTag<tagMaskN>(me);
-  if (TagHere == fullStopTagN)
+  if (TagHere == fullStopTagN) {
     std::cerr << " ---> " << me << std::endl;
+    std::cerr << "1234567890123456789012345678901234567890123456789012345678901234567890" << std::endl;
+    std::cerr << "         1         2         3         4         5         6         7" << std::endl;
+  }
   else
     me->showWaymarks();
 }
