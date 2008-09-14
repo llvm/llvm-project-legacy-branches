@@ -71,6 +71,10 @@ class Use {
   Value *getValue() const;
   static Use *nilUse(const Value*); // marks the end of the def/use chain
   static bool isNil(Use *U) { return extractTag<NextPtrTag, tagMaskN>(U) == fullStopTagN; }
+  void showWaymarks() const;
+  static bool isStop(Use *U) {
+    return isStopTag(extractTag<NextPtrTag, tagMaskN>(U));
+  }
 public:
   /// init - specify Value and User
   /// @deprecated in 2.4, will be removed soon
@@ -104,6 +108,10 @@ private:
                   , fullStopTagN = tagThree
                   , tagMaskN = tagThree };
 
+  static bool isStopTag(NextPtrTag T) {
+    bool P[] = { true, false, false, true };
+    return P[T];
+  }
   inline Value *getFastValueMaybe() const;
 public:
 
@@ -152,9 +160,13 @@ private:
     *List = this;
   }
   void removeFromList() {
+    // __builtin_prefetch(Next);
     Use **StrippedPrev = stripTag<tagMask>(Prev);
-    *StrippedPrev = Next;
     Use *StrippedNext(getNext());
+    if (isStop(Next))
+      assert((isStop(*StrippedPrev) || (StrippedNext ? isStop(StrippedNext->Next) : true)) && "joining digits?");
+    *StrippedPrev = Next;
+  //    Use *StrippedNext(getNext());
     if (StrippedNext) StrippedNext->setPrev(StrippedPrev);
   }
 

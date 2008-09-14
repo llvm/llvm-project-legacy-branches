@@ -13,7 +13,9 @@
 
 #include "llvm/User.h"
 #include <new>
-#include <cassert>
+//#include <cassert>
+// this can later be removed:
+#include <iostream>
 
 namespace llvm {
 
@@ -295,6 +297,29 @@ Value *Use::get() const {
     assert(V == ValComp && "Computed Value wrong?");
   return V;
 }
+
+static char TagChar(int Tag) {
+  return "s10S"[Tag];
+}
+
+void Use::showWaymarks() const {
+  const Use *me(this);
+  if (NextPtrTag Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(me)) {
+    me = stripTag<tagMaskN>(me);
+    std::cerr << '(' << TagChar(Tag) << ')';
+  }
+
+  me = me->Next;
+  NextPtrTag TagHere = extractTag<Use::NextPtrTag, Use::tagMaskN>(me);
+  std::cerr << TagChar(TagHere);
+
+  me = stripTag<tagMaskN>(me);
+  if (TagHere == fullStopTagN)
+    std::cerr << " ---> " << me << std::endl;
+  else
+    me->showWaymarks();
+}
+
 } // namespace llvm
 
 #if 0
