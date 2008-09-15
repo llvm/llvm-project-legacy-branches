@@ -69,7 +69,10 @@ class Use {
   class UseWaymark;
   friend class UseWaymark;
   Value *getValue() const;
-  static Use *nilUse(const Value*); // marks the end of the def/use chain
+  /// nilUse - returns a 'token' that marks the end of the def/use chain
+  static Use *nilUse(const Value *V) {
+    return addTag((Use*)V, fullStopTagN);
+  }
   static bool isNil(Use *U) { return extractTag<NextPtrTag, tagMaskN>(U) == fullStopTagN; }
   void showWaymarks() const;
   static bool isStop(Use *U) {

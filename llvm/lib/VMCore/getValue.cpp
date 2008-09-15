@@ -62,7 +62,10 @@ static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
 /// punchAwayDigits -- ensure that repainted area
 /// begins with a stop
 ///
-static inline void punchAwayDigits(Use *PrevU) {
+static inline void punchAwayDigits(Use *PrevU, Use **Uprev) {
+  if (PrevU)
+    assert(&PrevU->Next == stripTag<Use::tagMask>(Uprev) && "U->Prev differs from PrevU?");
+
     if (PrevU)
         PrevU->Next = stripTag<Use::tagMaskN>(PrevU->Next);
 }
@@ -149,7 +152,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             switch (Tag) {
                 case Use::fullStopTagN:
                     if (Cushion <= 0) {
-                        punchAwayDigits(PrevU);
+                        punchAwayDigits(PrevU, U->Prev);
                         repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
                     }
                     return reinterpret_cast<Value*>(Next);
@@ -191,7 +194,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
   while (1) {
     switch (Tag) {
     case Use::fullStopTagN: {
-        punchAwayDigits(PrevU);
+        punchAwayDigits(PrevU, U->Prev);
         repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
         return reinterpret_cast<Value*>(Next);
     }
@@ -203,7 +206,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
 
         while (1) {
             if (!digits) {
-                punchAwayDigits(PrevU);
+                punchAwayDigits(PrevU, U->Prev);
                 repaintByCopying(Tagspace, U);
                 return reinterpret_cast<Value*>(Acc << 2);
             }
@@ -216,7 +219,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             Next = stripTag<Use::tagMaskN>(Next);
             switch (Tag) {
                 case Use::fullStopTagN: {
-                    punchAwayDigits(PrevU);
+                    punchAwayDigits(PrevU, U->Prev);
                     repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
                     return reinterpret_cast<Value*>(Next);
                 }
@@ -287,11 +290,6 @@ Value *Use::getValue() const {
                                     Tag & 1,
                                     Use::UseWaymark::requiredSteps - 1);
   }
-}
-
-/*inline*/Use *Use::nilUse(const Value *V) {
-  // return 0;
-  return addTag((Use*)V, fullStopTagN);
 }
 
 static bool again(false);
