@@ -115,17 +115,9 @@ private:
     bool P[] = { true, false, false, true };
     return P[T];
   }
-  inline Value *getFastValueMaybe() const;
 public:
-
-
   operator Value*() const { return get(); }
-  Value *get() const; /*{
-    if (Value *V = getFastValueMaybe())
-      return V;
-    else
-      return Val1; // for now :-)
-    }*/
+  inline Value *get() const;
   User *getUser() const;
   const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
@@ -247,13 +239,11 @@ public:
   unsigned getOperandNo() const;
 };
 
-Value *Use::getFastValueMaybe() const {
-  if (fullStopTagN == extractTag<NextPtrTag, tagMaskN>(Next)) {
-    return reinterpret_cast<Value*>(stripTag<tagMaskN>(Next));
-  }
-  return 0;
+Value *Use::get() const {
+  return fullStopTagN == extractTag<NextPtrTag, tagMaskN>(Next)
+    ? reinterpret_cast<Value*>(stripTag<tagMaskN>(Next))
+    : (Val1 == getValue() ? Val1 : 0); // should crash if not equal!
 }
-
 
 template<> struct simplify_type<value_use_iterator<User> > {
   typedef User* SimpleType;

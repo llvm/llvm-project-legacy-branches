@@ -63,11 +63,11 @@ static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
 /// begins with a stop
 ///
 static inline void punchAwayDigits(Use *PrevU, Use **Uprev) {
+  Uprev = stripTag<Use::tagMask>(Uprev);
   if (PrevU)
-    assert(&PrevU->Next == stripTag<Use::tagMask>(Uprev) && "U->Prev differs from PrevU?");
+    assert(&PrevU->Next == Uprev && "U->Prev differs from PrevU?");
 
-    if (PrevU)
-        PrevU->Next = stripTag<Use::tagMaskN>(PrevU->Next);
+    *Uprev = stripTag<Use::tagMaskN>(*Uprev);
 }
 
 
@@ -290,20 +290,6 @@ Value *Use::getValue() const {
                                     Tag & 1,
                                     Use::UseWaymark::requiredSteps - 1);
   }
-}
-
-static bool again(false);
-
-Value *Use::get() const {
-  Value *V(Val1);
-  //  if ((size_t)V == 0x5b0d150)
-  //    getValue();
-  Value *ValComp(getValue());
-  if (V != ValComp)
-    assert(V == ValComp && "Computed Value wrong?");
-  if (again)
-    getValue();
-  return V;
 }
 
 static char TagChar(int Tag) {
