@@ -12,8 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/User.h"
-#include <new>
-//#include <cassert>
 // this can later be removed:
 #include <iostream>
 
@@ -23,7 +21,7 @@ class Use::UseWaymark {
 
   friend class Use;
 
-enum { requiredSteps = sizeof(Value*) * 8 - 2 };
+enum { spareBits = 2, requiredSteps = sizeof(Value*) * 8 - spareBits };
 
 /// repaintByCopying -- given a pattern and a
 /// junk tagspace, copy the former's tags into
@@ -46,7 +44,7 @@ static inline void repaintByCopying(Use *Tagspace, Use *Junk) {
 /// junk tagspace, compute tags into the latter
 ///
 static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
-    Tags >>= 2;
+    Tags >>= spareBits;
 
     for (int I = requiredSteps - 1; I >= 0; --I) {
         Use::NextPtrTag Tag(Tags & (1 << I) ? Use::oneDigitTagN : Use::zeroDigitTagN);
@@ -62,12 +60,11 @@ static inline void repaintByCalculating(unsigned long Tags, Use *Junk) {
 /// punchAwayDigits -- ensure that repainted area
 /// begins with a stop
 ///
-static inline void punchAwayDigits(Use *PrevU, Use **Uprev) {
+static inline void punchAwayDigits(Use **Uprev) {
   Uprev = stripTag<Use::tagMask>(Uprev);
-  if (PrevU)
-    assert(&PrevU->Next == Uprev && "U->Prev differs from PrevU?");
-
-    *Uprev = stripTag<Use::tagMaskN>(*Uprev);
+  // if (PrevU)
+  //   assert(&PrevU->Next == Uprev && "U->Prev differs from PrevU?");
+  *Uprev = stripTag<Use::tagMaskN>(*Uprev);
 }
 
 
@@ -79,6 +76,7 @@ static inline void punchAwayDigits(Use *PrevU, Use **Uprev) {
 ///    overpainted.
 ///  In any case this routine is invoked with U being
 ///  pointed at from a Use with a stop tag.
+///
 static inline Value *gatherAndPotentiallyRepaint(Use *U) {
   int Cushion = requiredSteps;
 
@@ -94,23 +92,14 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
       if (Cushion <= 0) {
           assert((Tag == Use::fullStopTagN || Tag == Use::stopTagN)
                  && "More digits?");
-          return reinterpret_cast<Value*>(Acc << 2);
+          return reinterpret_cast<Value*>(Acc << spareBits);
       }
 
       switch (Tag) {
           case Use::fullStopTagN:
               return reinterpret_cast<Value*>(Next);
           case Use::stopTagN: {
-              // for efficieny:
-              // goto efficiency
-              /* THIS PESSIMIZES THE ddsd30S case !!!
-              Next = Next->Next;
-              // __builtin_prefetch(Next);
-              --Cushion;
-              Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
-              Next = stripTag<Use::tagMaskN>(Next);
-              */
-              break;
+	      goto efficiency;
           }
           default:
               Acc = (Acc << 1) | (Tag & 1);
@@ -124,12 +113,6 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
       break;
   }
 
-  // FIXME: We track prev this way, in the real
-  // Use struct there is a (tagged) Prev.
-  // It is needed to punch over junk
-  // digit sequence just before repaint.
-  Use *PrevU = NULL;
-
   while (Cushion > 0) {
     switch (Tag) {
     case Use::fullStopTagN:
@@ -142,7 +125,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
 
         while (1) {
             if (!digits)
-                return reinterpret_cast<Value*>(Acc << 2);
+                return reinterpret_cast<Value*>(Acc << spareBits);
 
             Next = Next->Next;
             // __builtin_prefetch(Next);
@@ -152,13 +135,12 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             switch (Tag) {
                 case Use::fullStopTagN:
                     if (Cushion <= 0) {
-                        punchAwayDigits(PrevU, U->Prev);
+                        punchAwayDigits(U->Prev);
                         repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
                     }
                     return reinterpret_cast<Value*>(Next);
                 case Use::stopTagN: {
                     if (Cushion <= 0) {
-                        PrevU = U;
                         U = stripTag<Use::tagMaskN>(U->Next);
                     }
                     goto efficiency;
@@ -167,7 +149,6 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
                     if (Cushion <= 0) {
-                        PrevU = U;
                         U = stripTag<Use::tagMaskN>(U->Next);
                     }
                     continue;
@@ -185,16 +166,14 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
     } // switch
   } // while
 
-  // Now we know that we have a nice cushion between
-  // U and Next. Do the same thing as above, but
-  // don't decrement Cushion any more, instead
-  // push U forward. After the value is found,
-  // repaint beginning at U.
+  // Now we know that we have a nice cushion between U and Next. Do the same
+  // thing as above, but don't decrement Cushion any more, instead push U
+  // forward. After the value is found, repaint beginning at U.
 
   while (1) {
     switch (Tag) {
     case Use::fullStopTagN: {
-        punchAwayDigits(PrevU, U->Prev);
+        punchAwayDigits(U->Prev);
         repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
         return reinterpret_cast<Value*>(Next);
     }
@@ -206,20 +185,19 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
 
         while (1) {
             if (!digits) {
-                punchAwayDigits(PrevU, U->Prev);
+                punchAwayDigits(U->Prev);
                 repaintByCopying(Tagspace, U);
-                return reinterpret_cast<Value*>(Acc << 2);
+                return reinterpret_cast<Value*>(Acc << spareBits);
             }
 
             Next = Next->Next;
             // __builtin_prefetch(Next);
-            PrevU = U;
             U = stripTag<Use::tagMaskN>(U->Next);
             Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
             Next = stripTag<Use::tagMaskN>(Next);
             switch (Tag) {
                 case Use::fullStopTagN: {
-                    punchAwayDigits(PrevU, U->Prev);
+                    punchAwayDigits(U->Prev);
                     repaintByCalculating(reinterpret_cast<unsigned long>(Next), U);
                     return reinterpret_cast<Value*>(Next);
                 }
@@ -238,7 +216,6 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
     default:
         Next = Next->Next;
         // __builtin_prefetch(Next);
-        PrevU = U;
         U = stripTag<Use::tagMaskN>(U->Next);
         Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
         Next = stripTag<Use::tagMaskN>(Next);
@@ -251,12 +228,13 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
 ///  - picking up exactly ToGo digits
 ///  - or finding a stop which marks the beginning
 ///    of a repaintable area
+///
 static inline Value *skipPotentiallyGathering(Use *U,
                                               unsigned long Acc,
                                               int ToGo) {
   while (1) {
     if (!ToGo)
-      return reinterpret_cast<Value*>(Acc << 2);
+      return reinterpret_cast<Value*>(Acc << spareBits);
 
     Use *Next(U->Next);
     // __builtin_prefetch(Next);

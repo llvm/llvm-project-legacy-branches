@@ -161,7 +161,6 @@ private:
     if (isStop(Next))
       assert((isStop(*StrippedPrev) || (StrippedNext ? isStop(StrippedNext->Next) : true)) && "joining digits?");
     *StrippedPrev = Next;
-  //    Use *StrippedNext(getNext());
     if (StrippedNext) StrippedNext->setPrev(StrippedPrev);
   }
 
