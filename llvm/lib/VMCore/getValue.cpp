@@ -164,8 +164,8 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
                     if (Cushion <= 0) {
-		      PrevU = U;
-		      U = stripTag<Use::tagMaskN>(U->Next);
+                        PrevU = U;
+                        U = stripTag<Use::tagMaskN>(U->Next);
                     }
                     continue;
             }
@@ -363,6 +363,7 @@ namespace T3
     struct UseChain<0> {
         Use first;
         UseChain(Value *V) : first(V) {}
+        UseChain(Use &U) : first(U) {}
     };
 
     template <unsigned NEST>
@@ -372,6 +373,9 @@ namespace T3
         UseChain(Value *V)
             : first(rest.first)
             , rest(V) {}
+        UseChain(Use &U)
+            : first(rest.first)
+            , rest(U) {}
     };
 
     UseChain<30> uc31((Value*)0xCAFEBABCUL);
@@ -432,6 +436,17 @@ namespace T4
     Use ms35(m34);
     Use ms31(m30);
     Use ms32(ms31);
+
+    UseChain<24, 0xCAFEBABCUL> uc25;
+    Use& u25(uc25.first);
+    T3::UseChain<10> m11s24dS(u25);
+    Use& m36(m11s24dS.first);
+
+
+    T3::UseChain<10> s10S((Value*)0xCAFEBABCUL);
+    UseChain<20, 0xCAFEBABCUL> d20ss10S(s10S.first);
+    T3::UseChain<20> s20sd20ss10S(d20ss10S.first);
+    Use& m53(s20sd20ss10S.first);
 }
 
 
@@ -476,6 +491,22 @@ int main(){
         return 4;
     if ((Value*)0xCAFEBABCUL != T4::ms32.getValue()) // check the mutated value
         return 4;
+
+    T4::m36.showWaymarks();
+    if ((Value*)0xCAFEBABCUL != T4::m36.getValue())
+        return 4;
+    T4::m36.showWaymarks();
+    if ((Value*)0xCAFEBABCUL != T4::m36.getValue()) // check the mutated value
+        return 4;
+    T4::m36.showWaymarks();
+
+    T4::m53.showWaymarks();
+    if ((Value*)0xCAFEBABCUL != T4::m53.getValue())
+        return 4;
+    T4::m53.showWaymarks();
+    if ((Value*)0xCAFEBABCUL != T4::m53.getValue()) // check the mutated value
+        return 4;
+    T4::m53.showWaymarks();
 }
 
 #endif
