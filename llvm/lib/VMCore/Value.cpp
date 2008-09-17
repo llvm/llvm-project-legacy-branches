@@ -287,7 +287,7 @@ void Value::takeName(Value *V) {
 //
 void Value::uncheckedReplaceAllUsesWith(Value *New) {
   while (!use_empty()) {
-    Use &U = *UseList;
+    Use &U = *use_begin().U;
     // Must handle Constants specially, we cannot call replaceUsesOfWith on a
     // constant because they are uniqued.
     if (Constant *C = dyn_cast<Constant>(U.getUser())) {
