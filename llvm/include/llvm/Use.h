@@ -155,7 +155,7 @@ private:
     *List = this;
   }
   void removeFromList() {
-    // __builtin_prefetch(Next);
+    __builtin_prefetch(Next);
     Use **StrippedPrev = stripTag<tagMask>(Prev);
     Use *StrippedNext(getNext());
     if (isStop(Next))

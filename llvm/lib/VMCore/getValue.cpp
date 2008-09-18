@@ -81,7 +81,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
   int Cushion = requiredSteps;
 
   Use *Next(U->Next);
-  // __builtin_prefetch(Next);
+  __builtin_prefetch(Next);
   Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::tagMaskN>(Next));
   Next = stripTag<Use::tagMaskN>(Next);
 
@@ -104,7 +104,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
           default:
               Acc = (Acc << 1) | (Tag & 1);
               Next = Next->Next;
-              // __builtin_prefetch(Next);
+              __builtin_prefetch(Next);
               --Cushion;
               Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
               Next = stripTag<Use::tagMaskN>(Next);
@@ -128,7 +128,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                 return reinterpret_cast<Value*>(Acc << spareBits);
 
             Next = Next->Next;
-            // __builtin_prefetch(Next);
+            __builtin_prefetch(Next);
             --Cushion;
             Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
             Next = stripTag<Use::tagMaskN>(Next);
@@ -159,7 +159,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
     // fall through
     default:
         Next = Next->Next;
-        // __builtin_prefetch(Next);
+        __builtin_prefetch(Next);
         --Cushion;
         Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
         Next = stripTag<Use::tagMaskN>(Next);
@@ -191,7 +191,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
             }
 
             Next = Next->Next;
-            // __builtin_prefetch(Next);
+            __builtin_prefetch(Next);
             U = stripTag<Use::tagMaskN>(U->Next);
             Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
             Next = stripTag<Use::tagMaskN>(Next);
@@ -215,7 +215,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
     // fall through
     default:
         Next = Next->Next;
-        // __builtin_prefetch(Next);
+        __builtin_prefetch(Next);
         U = stripTag<Use::tagMaskN>(U->Next);
         Tag = extractTag<Use::NextPtrTag, Use::tagMaskN>(Next);
         Next = stripTag<Use::tagMaskN>(Next);
@@ -237,7 +237,7 @@ static inline Value *skipPotentiallyGathering(Use *U,
       return reinterpret_cast<Value*>(Acc << spareBits);
 
     Use *Next(U->Next);
-    // __builtin_prefetch(Next);
+    __builtin_prefetch(Next);
     Use::NextPtrTag Tag(extractTag<Use::NextPtrTag, Use::tagMaskN>(Next));
     Next = stripTag<Use::tagMaskN>(Next);
     switch (Tag) {
@@ -256,7 +256,7 @@ static inline Value *skipPotentiallyGathering(Use *U,
 }; // class UseWaymark
 
 Value *Use::getValue() const {
-  // __builtin_prefetch(Next);
+  __builtin_prefetch(Next);
   NextPtrTag Tag(extractTag<NextPtrTag, tagMaskN>(Next));
   switch (Tag) {
   case fullStopTagN:
