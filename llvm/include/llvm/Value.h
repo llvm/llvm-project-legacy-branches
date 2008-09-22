@@ -233,14 +233,12 @@ inline std::ostream &operator<<(std::ostream &OS, const Value &V) {
 }
 
 void Use::init(Value *V, User *user) {
-  Val1 = V;
   if (V) V->addUse(*this);
   else Next = nilUse(0);
 }
 
 void Use::set(Value *V) {
-  if (Val1) removeFromList();
-  Val1 = V;
+  if (isNil(Next)) removeFromList();
   if (V) V->addUse(*this);
   else Next = nilUse(0);
 }

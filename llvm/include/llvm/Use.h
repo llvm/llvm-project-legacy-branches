@@ -92,7 +92,7 @@ private:
 
   /// Destructor - Only for zap()
   inline ~Use() {
-    if (Val1) removeFromList();
+    if (!isNil(Next)) removeFromList();
   }
 
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing
@@ -130,7 +130,7 @@ public:
     return RHS;
   }
   const Use &operator=(const Use &RHS) {
-    set(RHS.Val1);
+    set(RHS.get());
     return *this;
   }
 
@@ -141,7 +141,6 @@ public:
 			   ? 0
 			   : stripTag<tagMaskN>(Next); }
 private:
-  Value *Val1;
   Use *Next, **Prev;
 
   void setPrev(Use **NewPrev) {
@@ -241,7 +240,7 @@ public:
 Value *Use::get() const {
   return fullStopTagN == extractTag<NextPtrTag, tagMaskN>(Next)
     ? reinterpret_cast<Value*>(stripTag<tagMaskN>(Next))
-    : (Val1 == getValue() ? Val1 : 0); // should crash if not equal!
+    : getValue();
 }
 
 template<> struct simplify_type<value_use_iterator<User> > {
