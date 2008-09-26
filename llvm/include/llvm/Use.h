@@ -92,7 +92,7 @@ private:
 
   /// Destructor - Only for zap()
   inline ~Use() {
-    if (!isNil(Next)) removeFromList();
+    if (Next != nilUse(0)) removeFromList();
   }
 
   /// Default ctor - This leaves the Use completely uninitialized.  The only thing

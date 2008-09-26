@@ -238,7 +238,7 @@ void Use::init(Value *V, User *user) {
 }
 
 void Use::set(Value *V) {
-  if (!isNil(Next)) removeFromList();
+  if (Next != nilUse(0)) removeFromList();
   if (V) V->addUse(*this);
   else Next = nilUse(0);
 }
