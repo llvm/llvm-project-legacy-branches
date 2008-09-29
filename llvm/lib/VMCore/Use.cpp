@@ -31,10 +31,9 @@ void Use::swap(Use &RHS) {
       (char*&)*stripTag<tagMask>(Prev) += dist;
       (char*&)*stripTag<tagMask>(RHS.Prev) -= dist;
       if (real1)
-	(char*&)valid1->Next += dist;
+	(char*&)valid1->Prev += dist;
       if (real2)
-        (char*&)valid2->Next -= dist;
-
+        (char*&)valid2->Prev -= dist;
     }
 
     // swap the members
@@ -43,29 +42,6 @@ void Use::swap(Use &RHS) {
     RHS.Prev = transferTag<tagMask>(RHS.Prev, stripTag<tagMask>(Prev));
     Prev = Prev1;
   }
-  /*  Value *V1(Val1);
-  Value *V2(RHS.Val1);
-  if (V1 != V2) {
-    if (V1) {
-      removeFromList();
-    }
-
-    if (V2) {
-      RHS.removeFromList();
-      Val1 = V2;
-      V2->addUse(*this);
-    } else {
-      Val1 = 0;
-    }
-
-    if (V1) {
-      RHS.Val1 = V1;
-      V1->addUse(RHS);
-    } else {
-      RHS.Val1 = 0;
-    }
-  }
-  */
 }
 
 //===----------------------------------------------------------------------===//
