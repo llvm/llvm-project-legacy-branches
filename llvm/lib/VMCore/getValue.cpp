@@ -123,12 +123,13 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         int digits = requiredSteps;
         Acc = 0;
 	Use* Tagspace = 0;
-        Use* OrigTagspace(Next);
+        Use* Orig(Next);
 
         while (1) {
 	    if (!digits) {
 	        if (Tagspace && Cushion <= -requiredSteps) {
-		    repaintByCopying(Tagspace, OrigTagspace);
+		    punchAwayDigits(Orig->Prev);
+		    repaintByCopying(Tagspace, Orig);
 	        }
                 return reinterpret_cast<Value*>(Acc << spareBits);
 	    }
@@ -151,9 +152,15 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                     goto efficiency;
                 }
                 default:
-		    if (digits == requiredSteps /*!Tagspace*/) {
-		        Tagspace = OrigTagspace;
-			OrigTagspace = (Use*)stripTag<Use::tagMask>(U->Prev);
+		    if (!Tagspace) {
+		        Tagspace = Orig;
+			// Exploit the fact that a pointer to Use::Next
+			// is identical to the pointer to the previous Use.
+			// This is a mild hack assuming Use::Next being the
+			// first member. At this point we can be certain
+			// that U->Prev points into a Use, because we have
+			// already seen a stop tag (precondition).
+			Orig = (Use*)stripTag<Use::tagMask>(U->Prev);
 		    }
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
