@@ -122,11 +122,16 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         // try to pick up exactly requiredSteps digits
         int digits = requiredSteps;
         Acc = 0;
+	Use* Tagspace = 0;
+        Use* OrigTagspace(Next);
 
         while (1) {
-            if (!digits)
+	    if (!digits) {
+	        if (Tagspace && Cushion <= -requiredSteps) {
+		    repaintByCopying(Tagspace, OrigTagspace);
+	        }
                 return reinterpret_cast<Value*>(Acc << spareBits);
-
+	    }
             Next = Next->Next;
             __builtin_prefetch(Next);
             --Cushion;
@@ -146,6 +151,10 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                     goto efficiency;
                 }
                 default:
+		    if (digits == requiredSteps /*!Tagspace*/) {
+		        Tagspace = OrigTagspace;
+			OrigTagspace = (Use*)stripTag<Use::tagMask>(U->Prev);
+		    }
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
                     if (Cushion <= 0) {
