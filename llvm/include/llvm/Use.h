@@ -112,7 +112,7 @@ private:
                   , tagMaskN = tagThree };
 
   static bool isStopTag(NextPtrTag T) {
-    bool P[4] = { true, false, false, true };
+    const bool P[4] = { true, false, false, true };
     return P[T];
   }
 public:
@@ -157,10 +157,9 @@ private:
     __builtin_prefetch(Next);
     Use **StrippedPrev = stripTag<tagMask>(Prev);
     Use *StrippedNext(getNext());
-    if (!isStop(Next) && isStop(*StrippedPrev))
-      *StrippedPrev = stripTag<tagMaskN>(Next);
-    else
-      *StrippedPrev = Next;
+    *StrippedPrev = !isStop(Next) && isStop(*StrippedPrev)
+      ? stripTag<tagMaskN>(Next)
+      : Next;
     if (StrippedNext) StrippedNext->setPrev(StrippedPrev);
   }
 
