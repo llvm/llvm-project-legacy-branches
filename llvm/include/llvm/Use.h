@@ -112,7 +112,7 @@ private:
                   , tagMaskN = tagThree };
 
   static bool isStopTag(NextPtrTag T) {
-    bool P[] = { true, false, false, true };
+    bool P[4] = { true, false, false, true };
     return P[T];
   }
 public:
@@ -157,9 +157,10 @@ private:
     __builtin_prefetch(Next);
     Use **StrippedPrev = stripTag<tagMask>(Prev);
     Use *StrippedNext(getNext());
-    if (isStop(Next))
-      assert((isStop(*StrippedPrev) || (StrippedNext ? isStop(StrippedNext->Next) : true)) && "joining digits?");
-    *StrippedPrev = Next;
+    if (!isStop(Next) && isStop(*StrippedPrev))
+      *StrippedPrev = stripTag<tagMaskN>(Next);
+    else
+      *StrippedPrev = Next;
     if (StrippedNext) StrippedNext->setPrev(StrippedPrev);
   }
 
