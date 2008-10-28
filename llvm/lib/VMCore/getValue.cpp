@@ -99,7 +99,7 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
           case Use::fullStopTagN:
               return reinterpret_cast<Value*>(Next);
           case Use::stopTagN: {
-	      goto efficiency;
+              goto efficiency;
           }
           default:
               Acc = (Acc << 1) | (Tag & 1);
@@ -122,17 +122,10 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         // try to pick up exactly requiredSteps digits
         int digits = requiredSteps;
         Acc = 0;
-	Use* Tagspace = 0;
+        Use* Tagspace = 0;
         Use* Orig(Next);
 
         while (1) {
-	    if (!digits) {
-	        if (Tagspace && Cushion <= -requiredSteps) {
-		    punchAwayDigits(Orig->Prev);
-		    repaintByCopying(Tagspace, Orig);
-	        }
-                return reinterpret_cast<Value*>(Acc << spareBits);
-	    }
             Next = Next->Next;
             __builtin_prefetch(Next);
             --Cushion;
@@ -152,20 +145,27 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                     goto efficiency;
                 }
                 default:
-		    if (!Tagspace) {
-		        Tagspace = Orig;
-			// Exploit the fact that a pointer to Use::Next
-			// is identical to the pointer to the previous Use.
-			// This is a mild hack assuming Use::Next being the
-			// first member. At this point we can be certain
-			// that U->Prev points into a Use, because we have
-			// already seen a stop tag (precondition).
-			Orig = (Use*)stripTag<Use::tagMask>(U->Prev);
-		    }
+                    if (!Tagspace) {
+                        Tagspace = Orig;
+                        // Exploit the fact that a pointer to Use::Next
+                        // is identical to the pointer to the previous Use.
+                        // This is a mild hack assuming Use::Next being the
+                        // first member. At this point we can be certain
+                        // that U->Prev points into a Use, because we have
+                        // already seen a stop tag (precondition).
+                        Orig = (Use*)stripTag<Use::tagMask>(U->Prev);
+                    }
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
                     if (Cushion <= 0) {
                         U = stripTag<Use::tagMaskN>(U->Next);
+                    }
+                    if (!digits) {
+                      if (Tagspace && Cushion <= -requiredSteps) {
+                        punchAwayDigits(Orig->Prev);
+                        repaintByCopying(Tagspace, Orig);
+                      }
+                      return reinterpret_cast<Value*>(Acc << spareBits);
                     }
                     continue;
             }
@@ -200,12 +200,6 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
         Use *Tagspace(Next);
 
         while (1) {
-            if (!digits) {
-                punchAwayDigits(U->Prev);
-                repaintByCopying(Tagspace, U);
-                return reinterpret_cast<Value*>(Acc << spareBits);
-            }
-
             Next = Next->Next;
             __builtin_prefetch(Next);
             U = stripTag<Use::tagMaskN>(U->Next);
@@ -223,6 +217,11 @@ static inline Value *gatherAndPotentiallyRepaint(Use *U) {
                 default:
                     --digits;
                     Acc = (Acc << 1) | (Tag & 1);
+                    if (!digits) {
+                      punchAwayDigits(U->Prev);
+                      repaintByCopying(Tagspace, U);
+                      return reinterpret_cast<Value*>(Acc << spareBits);
+                    }
                     continue;
             }
             break;
