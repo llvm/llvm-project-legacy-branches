@@ -20,27 +20,27 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 void Use::swap(Use &RHS) {
-  Value *V1(Val);
-  Value *V2(RHS.Val);
-  if (V1 != V2) {
-    if (V1) {
-      removeFromList();
+  ptrdiff_t dist((char*)&RHS - (char*)this);
+
+  if (dist) {
+    Use *valid1(stripTag<tagMaskN>(Next));
+    Use *valid2(stripTag<tagMaskN>(RHS.Next));
+    if (valid1 && valid2) {
+      bool real1(fullStopTagN != extractTag<NextPtrTag, tagMaskN>(Next));
+      bool real2(fullStopTagN != extractTag<NextPtrTag, tagMaskN>(RHS.Next));
+      (char*&)*stripTag<tagMask>(Prev) += dist;
+      (char*&)*stripTag<tagMask>(RHS.Prev) -= dist;
+      if (real1)
+	(char*&)valid1->Prev += dist;
+      if (real2)
+        (char*&)valid2->Prev -= dist;
     }
 
-    if (V2) {
-      RHS.removeFromList();
-      Val = V2;
-      V2->addUse(*this);
-    } else {
-      Val = 0;
-    }
-
-    if (V1) {
-      RHS.Val = V1;
-      V1->addUse(RHS);
-    } else {
-      RHS.Val = 0;
-    }
+    // swap the members
+    std::swap(Next, RHS.Next);
+    Use** Prev1 = transferTag<tagMask>(Prev, stripTag<tagMask>(RHS.Prev));
+    RHS.Prev = transferTag<tagMask>(RHS.Prev, stripTag<tagMask>(Prev));
+    Prev = Prev1;
   }
 }
 
@@ -52,7 +52,7 @@ const Use *Use::getImpliedUser() const {
   const Use *Current = this;
 
   while (true) {
-    unsigned Tag = extractTag<PrevPtrTag, fullStopTag>((Current++)->Prev);
+    unsigned Tag = extractTag<PrevPtrTag, tagMask>((Current++)->Prev);
     switch (Tag) {
       case zeroDigitTag:
       case oneDigitTag:
@@ -62,7 +62,7 @@ const Use *Use::getImpliedUser() const {
         ++Current;
         ptrdiff_t Offset = 1;
         while (true) {
-          unsigned Tag = extractTag<PrevPtrTag, fullStopTag>(Current->Prev);
+          unsigned Tag = extractTag<PrevPtrTag, tagMask>(Current->Prev);
           switch (Tag) {
             case zeroDigitTag:
             case oneDigitTag:
@@ -89,7 +89,7 @@ Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
   ptrdiff_t Count = Done;
   while (Start != Stop) {
     --Stop;
-    Stop->Val = 0;
+    Stop->Next = nilUse(0);
     if (!Count) {
       Stop->Prev = reinterpret_cast<Use**>(Done == 0 ? fullStopTag : stopTag);
       ++Done;
