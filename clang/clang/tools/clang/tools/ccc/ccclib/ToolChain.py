@@ -59,15 +59,16 @@ class Darwin_X86_ToolChain(ToolChain):
             Phases.LinkPhase : Tools.Darwin_X86_LinkTool(self),
             Phases.LipoPhase : Tools.LipoTool(),
             }
-        self.clangTool = Tools.Clang_CompileTool()
+        self.clangTool = Tools.Clang_CompileTool(self)
 
     def getToolChainDir(self):
         return 'i686-apple-darwin%d/%s' % (self.darwinVersion[0],
                                            '.'.join(map(str,self.gccVersion)))
 
     def getProgramPath(self, name):
-        # FIXME: Implement proper search.
-        return '/usr/libexec/gcc/%s/%s' % (self.getToolChainDir(), name)
+        return '%s/../libexec/gcc/%s/%s' % (self.driver.driverDir,
+                                            self.getToolChainDir(),
+                                            name)
 
     def getMacosxVersionMin(self):
         major,minor,minorminor = self.darwinVersion

@@ -163,11 +163,12 @@ class Darwin_AssembleTool(Tool):
                                  cmd_args))
 
 class Clang_CompileTool(Tool):
-    def __init__(self):
+    def __init__(self, toolChain):
         super(Clang_CompileTool, self).__init__('clang',
                                    (Tool.eFlagsPipedInput |
                                     Tool.eFlagsPipedOutput |
                                     Tool.eFlagsIntegratedCPP))
+        self.toolChain = toolChain
 
     def constructJob(self, phase, arch, jobs, inputs, 
                      output, outputType, arglist, linkingOutput):
@@ -263,7 +264,7 @@ class Clang_CompileTool(Tool):
             else:
                 cmd_args.extend(arglist.renderAsInput(input.source))
             
-        jobs.addJob(Jobs.Command('clang', cmd_args))
+        jobs.addJob(Jobs.Command('%s/clang' % self.toolChain.driver.driverDir, cmd_args))
         
 class Darwin_X86_CC1Tool(Tool):
     def getCC1Name(self, type):

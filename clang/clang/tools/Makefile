@@ -8,11 +8,13 @@
 ##===----------------------------------------------------------------------===##
 
 LEVEL := ..
+CLANG_DIR := $(shell test -e clang && echo clang)
+
 # NOTE: The tools are organized into five groups of four consisting of one
 # large and three small executables. This is done to minimize memory load
 # in parallel builds.  Please retain this ordering.
 PARALLEL_DIRS := llvm-config  \
-                 opt llvm-as llvm-dis \
+                 opt $(CLANG_DIR) llvm-as llvm-dis \
                  llc llvm-ranlib llvm-ar llvm-nm \
                  llvm-ld llvm-prof llvm-link \
 		 lli gccas gccld llvm-extract llvm-db \
