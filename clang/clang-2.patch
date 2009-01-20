@@ -1,0 +1,49 @@
+Doing diffs in tools/clang/.:
+--- tools/clang/./tools/ccc/ccclib/ToolChain.py.~1~	2009-01-20 14:53:16.000000000 -0800
++++ tools/clang/./tools/ccc/ccclib/ToolChain.py	2009-01-20 14:53:57.000000000 -0800
+@@ -59,15 +59,16 @@ class Darwin_X86_ToolChain(ToolChain):
+             Phases.LinkPhase : Tools.Darwin_X86_LinkTool(self),
+             Phases.LipoPhase : Tools.LipoTool(),
+             }
+-        self.clangTool = Tools.Clang_CompileTool()
++        self.clangTool = Tools.Clang_CompileTool(self)
+ 
+     def getToolChainDir(self):
+         return 'i686-apple-darwin%d/%s' % (self.darwinVersion[0],
+                                            '.'.join(map(str,self.gccVersion)))
+ 
+     def getProgramPath(self, name):
+-        # FIXME: Implement proper search.
+-        return '/usr/libexec/gcc/%s/%s' % (self.getToolChainDir(), name)
++        return '%s/../libexec/gcc/%s/%s' % (self.driver.driverDir,
++                                            self.getToolChainDir(),
++                                            name)
+ 
+     def getMacosxVersionMin(self):
+         major,minor,minorminor = self.darwinVersion
+--- tools/clang/./tools/ccc/ccclib/Tools.py.~1~	2009-01-20 14:53:16.000000000 -0800
++++ tools/clang/./tools/ccc/ccclib/Tools.py	2009-01-20 14:53:57.000000000 -0800
+@@ -163,11 +163,12 @@ class Darwin_AssembleTool(Tool):
+                                  cmd_args))
+ 
+ class Clang_CompileTool(Tool):
+-    def __init__(self):
++    def __init__(self, toolChain):
+         super(Clang_CompileTool, self).__init__('clang',
+                                    (Tool.eFlagsPipedInput |
+                                     Tool.eFlagsPipedOutput |
+                                     Tool.eFlagsIntegratedCPP))
++        self.toolChain = toolChain
+ 
+     def constructJob(self, phase, arch, jobs, inputs, 
+                      output, outputType, arglist, linkingOutput):
+@@ -263,7 +264,7 @@ class Clang_CompileTool(Tool):
+             else:
+                 cmd_args.extend(arglist.renderAsInput(input.source))
+             
+-        jobs.addJob(Jobs.Command('clang', cmd_args))
++        jobs.addJob(Jobs.Command('%s/clang' % self.toolChain.driver.driverDir, cmd_args))
+         
+ class Darwin_X86_CC1Tool(Tool):
+     def getCC1Name(self, type):
+--------------
