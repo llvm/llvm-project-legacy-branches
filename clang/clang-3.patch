@@ -1,0 +1,6 @@
+Doing diffs in .:
+--- ./tools/clang/tools/ccc/ccclib/__init__.py.~1~	2009-01-20 14:59:45.000000000 -0800
++++ ./tools/clang/tools/ccc/ccclib/__init__.py	2009-01-20 17:06:43.000000000 -0800
+@@ -0,0 +1 @@
++# initializations
+--------------
