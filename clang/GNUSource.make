@@ -146,7 +146,7 @@ build:: configure
 ifneq ($(GnuNoBuild),YES)
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building $(Project) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(BuildDirectory)/$$arch $(Environment) $(BuildTarget) || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(BuildDirectory)/$$arch $(Environment) $(Build_Target) || exit 1; \
 	done
 endif
 
