@@ -1578,7 +1578,7 @@ private:
   void AddSourceLine(DIE *Die, const DIGlobal *G) {
     unsigned FileID = 0;
     unsigned Line = G->getLineNumber();
-    if (G->getVersion() < LLVMDebugVersion6) {
+    if (G->getVersion() <= LLVMDebugVersion6) {
       // Version6 or earlier. Use compile unit info to get file id.
       CompileUnit *Unit = FindCompileUnit(G->getCompileUnit());
       FileID = Unit->getID();
@@ -1747,6 +1747,7 @@ private:
     const std::string &Name = CTy.getName();
     uint64_t Size = CTy.getSizeInBits() >> 3;
     unsigned Tag = CTy.getTag();
+    Buffer.setTag(Tag);
     switch (Tag) {
     case DW_TAG_vector_type:
     case DW_TAG_array_type:
