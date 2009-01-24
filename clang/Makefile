@@ -65,9 +65,8 @@ install-plist:
 
 SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
 SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
-N := echo
 
 update-clang:
-	$(N) svn rm $(SVN_CLANG)/clang
-	$(N) svn cp $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
-	$(N) svn cp $(SVN_BASE)/clang/trunk $(SVN_CLANG)/clang/tools/clang
+	svn rm -m 'Update.' $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
