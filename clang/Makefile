@@ -7,18 +7,16 @@ Project               = clang
 UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
-Extra_Configure_Flags = --enable-targets=powerpc,x86,arm,cbe,cpp \
-			--enable-optimized --disable-doxygen \
+Extra_Configure_Flags = --enable-targets=x86 \
+			--enable-optimized --disable-assertions --disable-doxygen \
 			$(HOST_TARGET_FLAGS)
 Extra_CC_Flags        = -mdynamic-no-pic
 GnuAfterInstall       = post-install install-plist
-CXX = g++
-CXX = g++
 
 # It's a GNU Source project
 include ./GNUSource.make
 
-CXX := g++
+CXX := /usr/bin/g++
 
 # Automatic Extract & Patch
 #AEP            = YES
