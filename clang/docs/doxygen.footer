@@ -1,10 +1,13 @@
 <hr>
 <p class="footer">
-Generated on $datetime by <a href="http://www.doxygen.org">Doxygen 
-$doxygenversion</a>.</p>
+Generated on $datetime for <a href="http://llvm.org">$projectname</a> by
+<a href="http://www.doxygen.org"><img src="doxygen.png" alt="Doxygen"
+align="middle" border="0"/>$doxygenversion</a><br>
+Copyright &copy; 2003-2007 University of Illinois at Urbana-Champaign.
+All Rights Reserved.</p>
 
-<p class="footer">
-See the <a href="http://clang.llvm.org">Main Clang Web Page</a> for more 
-information.</p>
+<hr>
+<!--#include virtual="/attrib.incl" -->
+
 </body>
 </html>

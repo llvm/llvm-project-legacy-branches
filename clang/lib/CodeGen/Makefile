@@ -1,23 +1,22 @@
-##===- clang/lib/CodeGen/Makefile --------------------------*- Makefile -*-===##
-# 
+##===- lib/CodeGen/Makefile --------------------------------*- Makefile -*-===##
+#
 #                     The LLVM Compiler Infrastructure
 #
 # This file is distributed under the University of Illinois Open Source
 # License. See LICENSE.TXT for details.
-# 
-##===----------------------------------------------------------------------===##
-#
-# This implements the AST -> LLVM code generation library for the 
-# C-Language front-end.
 #
 ##===----------------------------------------------------------------------===##
 
-LEVEL = ../../../..
-LIBRARYNAME := clangCodeGen
+LEVEL = ../..
+LIBRARYNAME = LLVMCodeGen
+PARALLEL_DIRS = SelectionDAG AsmPrinter
 BUILD_ARCHIVE = 1
-CXXFLAGS = -fno-rtti
-
-CPPFLAGS += -I$(PROJ_SRC_DIR)/../../include
 
 include $(LEVEL)/Makefile.common
+
+# Xcode prior to 2.4 generates an error in -pedantic mode with use of HUGE_VAL
+# in this directory.  Disable -pedantic for this broken compiler.
+ifneq ($(HUGE_VAL_SANITY),yes)
+CompileCommonOpts := $(filter-out -pedantic, $(CompileCommonOpts))
+endif
 
