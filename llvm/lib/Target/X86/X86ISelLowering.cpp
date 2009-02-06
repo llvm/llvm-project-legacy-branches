@@ -5420,16 +5420,6 @@ SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
         addTest = false;
         break;
       }
-    } else if (Cond.hasOneUse() && isXor1OfSetCC(Cond)) {
-      // Recognize for xorb (setcc), 1 patterns. The xor inverts the condition.
-      // It should be transformed during dag combiner except when the condition
-      // is set by a arithmetics with overflow node.
-      X86::CondCode CCode =
-        (X86::CondCode)Cond.getOperand(0).getConstantOperandVal(0);
-      CCode = X86::GetOppositeBranchCondition(CCode);
-      CC = DAG.getConstant(CCode, MVT::i8);
-      Cond = Cond.getOperand(0).getOperand(1);
-      addTest = false;
     }
   } else {
     unsigned CondOpc;
