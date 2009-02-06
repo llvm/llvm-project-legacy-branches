@@ -5380,17 +5380,6 @@ static bool isXor1OfSetCC(SDValue Op) {
   return false;
 }
 
-static bool isXor1OfSetCC(SDValue Op) {
-  if (Op.getOpcode() != ISD::XOR)
-    return false;
-  ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(Op.getOperand(1));
-  if (N1C && N1C->getAPIntValue() == 1) {
-    return Op.getOperand(0).getOpcode() == X86ISD::SETCC &&
-      Op.getOperand(0).hasOneUse();
-  }
-  return false;
-}
-
 SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
   bool addTest = true;
   SDValue Chain = Op.getOperand(0);
