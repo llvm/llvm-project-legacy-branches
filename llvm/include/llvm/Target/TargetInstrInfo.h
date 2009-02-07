@@ -427,19 +427,10 @@ public:
     return false;
   }
 
-  /// IgnoreRegisterClassBarriers - Returns true if pre-register allocation
-  /// live interval splitting pass should ignore barriers of the specified
-  /// register class.
-  virtual bool IgnoreRegisterClassBarriers(const TargetRegisterClass *RC) const{
+  /// isSafeToMoveRegClassDefs - Return true if it's safe to move a machine
+  /// instruction that defines the specified register class.
+  virtual bool isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const {
     return true;
-  }
-
-  /// getPointerRegClass - Returns a TargetRegisterClass used for pointer
-  /// values.
-  virtual const TargetRegisterClass *getPointerRegClass() const {
-    assert(0 && "Target didn't implement getPointerRegClass!");
-    abort();
-    return 0; // Must return a value in order to compile with VS 2005
   }
 
   /// GetInstSize - Returns the size of the specified Instruction.
