@@ -176,7 +176,9 @@ echo "#define LLVM_MINOR_VERSION ${RC_ProjectSourceSubversion}" >> $DEST_DIR$DES
 if [ "x$LLVM_DEBUG" != "x1" ]; then
     # Strip local symbols from llvm libraries.
     strip -S $DEST_DIR$DEST_ROOT/lib/*.[oa]
-    strip -Sx $DEST_DIR$DEST_ROOT/lib/*.so
+    for f in `ls $DEST_DIR$DEST_ROOT/lib/*.so`; do
+        strip -Sx $f
+    done
 fi
 
 # Copy over the tblgen utility.
@@ -184,21 +186,25 @@ cp `find $DIR -name tblgen` $DT_HOME/local/bin
 
 # Remove .dir files 
 cd $DEST_DIR$DEST_ROOT
-rm bin/.dir etc/llvm/.dir lib/.dir
+rm -f bin/.dir etc/llvm/.dir lib/.dir
 
 # Remove PPC64 fat slices.
 cd $DEST_DIR$DEST_ROOT/bin
 if [ $MACOSX_DEPLOYMENT_TARGET = "10.4" ]; then
-    find . -perm 755 -type f -exec lipo -extract ppc -extract i386 {} -output {} \;
+    find . -perm 755 -type f \! \( -name '*gccas' -o -name '*gccld' -o -name llvm-config \) \
+        -exec lipo -extract ppc -extract i386 {} -output {} \;
 elif [ $MACOSX_DEPLOYMENT_TARGET = "10.5" ]; then
-    find . -perm 755 -type f -exec lipo -extract ppc7400 -extract i386 {} -output {} \;
+    find . -perm 755 -type f \! \( -name '*gccas' -o -name '*gccld' -o -name llvm-config \) \
+        -exec lipo -extract ppc7400 -extract i386 {} -output {} \;
 else
-    find . -perm 755 -type f -exec lipo -extract ppc7400 -extract i386 -extract x86_64 {} -output {} \;
+    find . -perm 755 -type f \! \( -name '*gccas' -o -name '*gccld' -o -name llvm-config \) \
+        -exec lipo -extract ppc7400 -extract i386 -extract x86_64 {} -output {} \;
 fi
 
 cd $DEST_DIR$DEST_ROOT
 mkdir -p $DT_HOME/lib
 mv lib/libLTO.dylib $DT_HOME/lib/libLTO.dylib
+strip -S lib/libLTO.dylib $DT_HOME/lib/libLTO.dylib
 rm -f lib/libLTO.a lib/libLTO.la
 
 # Compress manpages
