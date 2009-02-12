@@ -879,12 +879,6 @@ namespace {
   };
 }  // end anonymous namespace
 
-static inline bool isCopyFromLiveIn(const SUnit *SU) {
-  SDNode *N = SU->getNode();
-  return N && N->getOpcode() == ISD::CopyFromReg &&
-    N->getOperand(N->getNumOperands()-1).getValueType() != MVT::Flag;
-}
-
 /// CalcNodeSethiUllmanNumber - Compute Sethi Ullman number.
 /// Smaller number is the higher priority.
 static unsigned
@@ -902,7 +896,7 @@ CalcNodeSethiUllmanNumber(const SUnit *SU, std::vector<unsigned> &SUNumbers) {
     if (PredSethiUllman > SethiUllmanNumber) {
       SethiUllmanNumber = PredSethiUllman;
       Extra = 0;
-    } else if (PredSethiUllman == SethiUllmanNumber && !I->isCtrl())
+    } else if (PredSethiUllman == SethiUllmanNumber)
       ++Extra;
   }
 
@@ -966,11 +960,6 @@ namespace {
     unsigned getNodePriority(const SUnit *SU) const {
       assert(SU->NodeNum < SethiUllmanNumbers.size());
       unsigned Opc = SU->getNode() ? SU->getNode()->getOpcode() : 0;
-      if (Opc == ISD::CopyFromReg && !isCopyFromLiveIn(SU))
-        // CopyFromReg should be close to its def because it restricts
-        // allocation choices. But if it is a livein then perhaps we want it
-        // closer to its uses so it can be coalesced.
-        return 0xffff;
       if (Opc == ISD::TokenFactor || Opc == ISD::CopyToReg)
         // CopyToReg should be close to its uses to facilitate coalescing and
         // avoid spilling.
@@ -980,15 +969,16 @@ namespace {
         // EXTRACT_SUBREG / INSERT_SUBREG should be close to its use to
         // facilitate coalescing.
         return 0;
-      if (SU->NumSuccs == 0)
-        // If SU does not have a use, i.e. it doesn't produce a value that would
-        // be consumed (e.g. store), then it terminates a chain of computation.
-        // Give it a large SethiUllman number so it will be scheduled right
-        // before its predecessors that it doesn't lengthen their live ranges.
+      if (SU->NumSuccs == 0 && SU->NumPreds != 0)
+        // If SU does not have a register use, i.e. it doesn't produce a value
+        // that would be consumed (e.g. store), then it terminates a chain of
+        // computation.  Give it a large SethiUllman number so it will be
+        // scheduled right before its predecessors that it doesn't lengthen
+        // their live ranges.
         return 0xffff;
-      if (SU->NumPreds == 0)
-        // If SU does not have a def, schedule it close to its uses because it
-        // does not lengthen any live ranges.
+      if (SU->NumPreds == 0 && SU->NumSuccs != 0)
+        // If SU does not have a register def, schedule it close to its uses
+        // because it does not lengthen any live ranges.
         return 0;
       return SethiUllmanNumbers[SU->NodeNum];
     }
@@ -1060,23 +1050,13 @@ static unsigned closestSucc(const SUnit *SU) {
 }
 
 /// calcMaxScratches - Returns an cost estimate of the worse case requirement
-/// for scratch registers. Live-in operands and live-out results don't count
-/// since they are "fixed".
+/// for scratch registers, i.e. number of data dependencies.
 static unsigned calcMaxScratches(const SUnit *SU) {
   unsigned Scratches = 0;
   for (SUnit::const_pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
        I != E; ++I) {
     if (I->isCtrl()) continue;  // ignore chain preds
-    if (!I->getSUnit()->getNode() ||
-        I->getSUnit()->getNode()->getOpcode() != ISD::CopyFromReg)
-      Scratches++;
-  }
-  for (SUnit::const_succ_iterator I = SU->Succs.begin(), E = SU->Succs.end();
-       I != E; ++I) {
-    if (I->isCtrl()) continue;  // ignore chain succs
-    if (!I->getSUnit()->getNode() ||
-        I->getSUnit()->getNode()->getOpcode() != ISD::CopyToReg)
-      Scratches += 10;
+    Scratches++;
   }
   return Scratches;
 }
@@ -1110,10 +1090,7 @@ bool bu_ls_rr_sort::operator()(const SUnit *left, const SUnit *right) const {
   if (LDist != RDist)
     return LDist < RDist;
 
-  // Intuitively, it's good to push down instructions whose results are
-  // liveout so their long live ranges won't conflict with other values
-  // which are needed inside the BB. Further prioritize liveout instructions
-  // by the number of operands which are calculated within the BB.
+  // How many registers becomes live when the node is scheduled.
   unsigned LScratch = calcMaxScratches(left);
   unsigned RScratch = calcMaxScratches(right);
   if (LScratch != RScratch)
@@ -1242,8 +1219,8 @@ void RegReductionPriorityQueue<SF>::AddPseudoTwoAddrDeps() {
           if (canClobberPhysRegDefs(SuccSU, SU, TII, TRI))
             continue;
         }
-        // Don't constraint extract_subreg / insert_subreg these may be
-        // coalesced away. We don't them close to their uses.
+        // Don't constrain extract_subreg / insert_subreg; these may be
+        // coalesced away. We want them close to their uses.
         unsigned SuccOpc = SuccSU->getNode()->getMachineOpcode();
         if (SuccOpc == TargetInstrInfo::EXTRACT_SUBREG ||
             SuccOpc == TargetInstrInfo::INSERT_SUBREG)
