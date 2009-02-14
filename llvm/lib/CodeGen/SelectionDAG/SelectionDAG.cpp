@@ -1137,7 +1137,7 @@ SDValue SelectionDAG::getCondCode(ISD::CondCode Cond) {
   return SDValue(CondCodeNodes[Cond], 0);
 }
 
-SDValue SelectionDAG::getConvertRndSat(MVT VT,
+SDValue SelectionDAG::getConvertRndSat(MVT VT, DebugLoc dl,
                                        SDValue Val, SDValue DTy,
                                        SDValue STy, SDValue Rnd, SDValue Sat,
                                        ISD::CvtCode Code) {
@@ -1153,7 +1153,7 @@ SDValue SelectionDAG::getConvertRndSat(MVT VT,
     return SDValue(E, 0);
   CvtRndSatSDNode *N = NodeAllocator.Allocate<CvtRndSatSDNode>();
   SDValue Ops[] = { Val, DTy, STy, Rnd, Sat };
-  new (N) CvtRndSatSDNode(VT, Ops, 5, Code);
+  new (N) CvtRndSatSDNode(VT, dl, Ops, 5, Code);
   CSEMap.InsertNode(N, IP);
   AllNodes.push_back(N);
   return SDValue(N, 0);

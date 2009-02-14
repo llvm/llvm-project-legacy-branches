@@ -994,19 +994,6 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     assert(StackTop == 1 && "Stack should have one element on it to return!");
     --StackTop;   // "Forget" we have something on the top of stack!
     break;
-  case X86::FpSET_ST1_32:
-  case X86::FpSET_ST1_64:
-  case X86::FpSET_ST1_80:
-    // StackTop can be 1 if a FpSET_ST0_* was before this. Exchange them.
-    if (StackTop == 1) {
-      BuildMI(*MBB, I, dl, TII->get(X86::XCH_F)).addReg(X86::ST1);
-      NumFXCH++;
-      StackTop = 0;
-      break;
-    }
-    assert(StackTop == 2 && "Stack should have two element on it to return!");
-    --StackTop;   // "Forget" we have something on the top of stack!
-    break;
   case X86::MOV_Fp3232:
   case X86::MOV_Fp3264:
   case X86::MOV_Fp6432:
