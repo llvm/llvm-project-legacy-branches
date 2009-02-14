@@ -259,22 +259,25 @@ bool SPUInstrInfo::copyRegToReg(MachineBasicBlock &MBB,
   // we instruction select bitconvert i64 -> f64 as a noop for example, so our
   // types have no specific meaning.
 
+  DebugLoc DL = DebugLoc::getUnknownLoc();
+  if (MI != MBB.end()) DL = MI->getDebugLoc();
+
   if (DestRC == SPU::R8CRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRr8), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRr8), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::R16CRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRr16), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRr16), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::R32CRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRr32), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRr32), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::R32FPRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRf32), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRf32), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::R64CRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRr64), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRr64), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::R64FPRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRf64), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRf64), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::GPRCRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRr128), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRr128), DestReg).addReg(SrcReg);
   } else if (DestRC == SPU::VECREGRegisterClass) {
-    BuildMI(MBB, MI, get(SPU::LRv16i8), DestReg).addReg(SrcReg);
+    BuildMI(MBB, MI, DL, get(SPU::LRv16i8), DestReg).addReg(SrcReg);
   } else {
     // Attempt to copy unknown/unsupported register class!
     return false;
@@ -312,15 +315,17 @@ SPUInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
     abort();
   }
 
-  addFrameReference(BuildMI(MBB, MI, get(opc))
+  DebugLoc DL = DebugLoc::getUnknownLoc();
+  if (MI != MBB.end()) DL = MI->getDebugLoc();
+  addFrameReference(BuildMI(MBB, MI, DL, get(opc))
                     .addReg(SrcReg, false, false, isKill), FrameIdx);
 }
 
 void SPUInstrInfo::storeRegToAddr(MachineFunction &MF, unsigned SrcReg,
-                                     bool isKill,
-                                     SmallVectorImpl<MachineOperand> &Addr,
-                                     const TargetRegisterClass *RC,
-                                     SmallVectorImpl<MachineInstr*> &NewMIs) const {
+                                  bool isKill,
+                                  SmallVectorImpl<MachineOperand> &Addr,
+                                  const TargetRegisterClass *RC,
+                                  SmallVectorImpl<MachineInstr*> &NewMIs) const {
   cerr << "storeRegToAddr() invoked!\n";
   abort();
 
@@ -344,7 +349,8 @@ void SPUInstrInfo::storeRegToAddr(MachineFunction &MF, unsigned SrcReg,
       assert(0 && "Unknown regclass!");
       abort();
     }
-    MachineInstrBuilder MIB = BuildMI(MF, get(Opc))
+    DebugLoc DL = DebugLoc::getUnknownLoc();
+    MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc))
       .addReg(SrcReg, false, false, isKill);
     for (unsigned i = 0, e = Addr.size(); i != e; ++i) {
       MachineOperand &MO = Addr[i];
@@ -388,7 +394,9 @@ SPUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
     abort();
   }
 
-  addFrameReference(BuildMI(MBB, MI, get(opc)).addReg(DestReg), FrameIdx);
+  DebugLoc DL = DebugLoc::getUnknownLoc();
+  if (MI != MBB.end()) DL = MI->getDebugLoc();
+  addFrameReference(BuildMI(MBB, MI, DL, get(opc)).addReg(DestReg), FrameIdx);
 }
 
 /*!
@@ -424,7 +432,8 @@ void SPUInstrInfo::loadRegFromAddr(MachineFunction &MF, unsigned DestReg,
       assert(0 && "Unknown regclass!");
       abort();
     }
-    MachineInstrBuilder MIB = BuildMI(MF, get(Opc), DestReg);
+    DebugLoc DL = DebugLoc::getUnknownLoc();
+    MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc), DestReg);
     for (unsigned i = 0, e = Addr.size(); i != e; ++i) {
       MachineOperand &MO = Addr[i];
       if (MO.isReg())
@@ -495,7 +504,8 @@ SPUInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       unsigned InReg = MI->getOperand(1).getReg();
       bool isKill = MI->getOperand(1).isKill();
       if (FrameIndex < SPUFrameInfo::maxFrameOffset()) {
-        MachineInstrBuilder MIB = BuildMI(MF, get(SPU::STQDr32));
+        MachineInstrBuilder MIB = BuildMI(MF, MI->getDebugLoc(),
+                                          get(SPU::STQDr32));
 
         MIB.addReg(InReg, false, false, isKill);
         NewMI = addFrameReference(MIB, FrameIndex);
@@ -503,7 +513,7 @@ SPUInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     } else {           // move -> load
       unsigned OutReg = MI->getOperand(0).getReg();
       bool isDead = MI->getOperand(0).isDead();
-      MachineInstrBuilder MIB = BuildMI(MF, get(Opc));
+      MachineInstrBuilder MIB = BuildMI(MF, MI->getDebugLoc(), get(Opc));
 
       MIB.addReg(OutReg, true, false, false, isDead);
       Opc = (FrameIndex < SPUFrameInfo::maxFrameOffset())
@@ -617,6 +627,8 @@ unsigned
 SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                            MachineBasicBlock *FBB,
                            const SmallVectorImpl<MachineOperand> &Cond) const {
+  // FIXME this should probably have a DebugLoc argument
+  DebugLoc dl = DebugLoc::getUnknownLoc();
   // Shouldn't be a fall through.
   assert(TBB && "InsertBranch must not be told to insert a fallthrough");
   assert((Cond.size() == 2 || Cond.size() == 0) &&
@@ -626,14 +638,14 @@ SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   if (FBB == 0) {
     if (Cond.empty()) {
       // Unconditional branch
-      MachineInstrBuilder MIB = BuildMI(&MBB, get(SPU::BR));
+      MachineInstrBuilder MIB = BuildMI(&MBB, dl, get(SPU::BR));
       MIB.addMBB(TBB);
 
       DEBUG(cerr << "Inserted one-way uncond branch: ");
       DEBUG((*MIB).dump());
     } else {
       // Conditional branch
-      MachineInstrBuilder  MIB = BuildMI(&MBB, get(Cond[0].getImm()));
+      MachineInstrBuilder  MIB = BuildMI(&MBB, dl, get(Cond[0].getImm()));
       MIB.addReg(Cond[1].getReg()).addMBB(TBB);
 
       DEBUG(cerr << "Inserted one-way cond branch:   ");
@@ -641,8 +653,8 @@ SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
     }
     return 1;
   } else {
-    MachineInstrBuilder MIB = BuildMI(&MBB, get(Cond[0].getImm()));
-    MachineInstrBuilder MIB2 = BuildMI(&MBB, get(SPU::BR));
+    MachineInstrBuilder MIB = BuildMI(&MBB, dl, get(Cond[0].getImm()));
+    MachineInstrBuilder MIB2 = BuildMI(&MBB, dl, get(SPU::BR));
 
     // Two-way Conditional Branch.
     MIB.addReg(Cond[1].getReg()).addMBB(TBB);

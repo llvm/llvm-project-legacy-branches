@@ -978,7 +978,8 @@ public:
           emitCode("}");
         }
         emitCode("InChains.push_back(" + ChainName + ");");
-        emitCode(ChainName + " = CurDAG->getNode(ISD::TokenFactor, MVT::Other, "
+        emitCode(ChainName + " = CurDAG->getNode(ISD::TokenFactor, "
+                 "N.getDebugLoc(), MVT::Other, "
                  "&InChains[0], InChains.size());");
         if (GenDebug) {
           emitCode("CurDAG->setSubgraphColor(" + ChainName +".getNode(), \"yellow\");");
@@ -1395,6 +1396,7 @@ private:
               }
               std::string Decl = (!ResNodeDecled) ? "SDNode *" : "";
               emitCode(Decl + "ResNode = CurDAG->getCopyToReg(" + ChainName +
+                       ", " + RootName + ".getDebugLoc()" +
                        ", " + getQualifiedName(RR) +
                        ", " +  RootName + utostr(OpNo) + ", InFlag).getNode();");
               ResNodeDecled = true;
@@ -1901,8 +1903,8 @@ void DAGISelEmitter::EmitInstructionSelector(std::ostream &OS) {
      << "  std::vector<MVT> VTs;\n"
      << "  VTs.push_back(MVT::Other);\n"
      << "  VTs.push_back(MVT::Flag);\n"
-     << "  SDValue New = CurDAG->getNode(ISD::INLINEASM, VTs, &Ops[0], "
-                 "Ops.size());\n"
+     << "  SDValue New = CurDAG->getNode(ISD::INLINEASM, N.getDebugLoc(), "
+                 "VTs, &Ops[0], Ops.size());\n"
      << "  return New.getNode();\n"
      << "}\n\n";
 

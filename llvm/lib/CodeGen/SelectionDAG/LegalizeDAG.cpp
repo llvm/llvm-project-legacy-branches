@@ -345,15 +345,14 @@ SDNode *SelectionDAGLegalize::isShuffleLegal(MVT VT, SDValue Mask) const {
         SDValue InOp = Mask.getOperand(i);
         for (unsigned j = 0; j != NumEltsGrowth; ++j) {
           if (InOp.getOpcode() == ISD::UNDEF)
-            Ops.push_back(DAG.getNode(ISD::UNDEF, 
-                                      InOp.getNode()->getDebugLoc(), EltVT));
+            Ops.push_back(DAG.getUNDEF(EltVT));
           else {
             unsigned InEltNo = cast<ConstantSDNode>(InOp)->getZExtValue();
             Ops.push_back(DAG.getConstant(InEltNo*NumEltsGrowth+j, EltVT));
           }
         }
       }
-      Mask = DAG.getNode(ISD::BUILD_VECTOR, Mask.getNode()->getDebugLoc(),
+      Mask = DAG.getNode(ISD::BUILD_VECTOR, Mask.getDebugLoc(),
                          NVT, &Ops[0], Ops.size());
     }
     VT = NVT;
@@ -556,6 +555,7 @@ void SelectionDAGLegalize::HandleOp(SDValue Op) {
 static SDValue ExpandConstantFP(ConstantFPSDNode *CFP, bool UseCP,
                                 SelectionDAG &DAG, const TargetLowering &TLI) {
   bool Extend = false;
+  DebugLoc dl = CFP->getDebugLoc();
 
   // If a FP immediate is precise when represented as a float and if the
   // target can do an extending load from float to double, we put it into
@@ -591,10 +591,11 @@ static SDValue ExpandConstantFP(ConstantFPSDNode *CFP, bool UseCP,
   SDValue CPIdx = DAG.getConstantPool(LLVMC, TLI.getPointerTy());
   unsigned Alignment = 1 << cast<ConstantPoolSDNode>(CPIdx)->getAlignment();
   if (Extend)
-    return DAG.getExtLoad(ISD::EXTLOAD, OrigVT, DAG.getEntryNode(),
+    return DAG.getExtLoad(ISD::EXTLOAD, dl,
+                          OrigVT, DAG.getEntryNode(),
                           CPIdx, PseudoSourceValue::getConstantPool(),
                           0, VT, false, Alignment);
-  return DAG.getLoad(OrigVT, DAG.getEntryNode(), CPIdx,
+  return DAG.getLoad(OrigVT, dl, DAG.getEntryNode(), CPIdx,
                      PseudoSourceValue::getConstantPool(), 0, false, Alignment);
 }
 
@@ -892,7 +893,7 @@ SDValue SelectionDAGLegalize::UnrollVectorOp(SDValue Op) {
          "Can't unroll a vector with multiple results!");
   unsigned NE = VT.getVectorNumElements();
   MVT EltVT = VT.getVectorElementType();
-  DebugLoc dl = Op.getNode()->getDebugLoc();
+  DebugLoc dl = Op.getDebugLoc();
 
   SmallVector<SDValue, 8> Scalars;
   SmallVector<SDValue, 4> Operands(Op.getNumOperands());
@@ -1114,7 +1115,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     default: assert(0 && "This action is not supported yet!");
     case TargetLowering::Expand: {
         unsigned Reg = TLI.getExceptionAddressRegister();
-        Result = DAG.getCopyFromReg(Tmp1, Reg, VT);
+        Result = DAG.getCopyFromReg(Tmp1, dl, Reg, VT);
       }
       break;
     case TargetLowering::Custom:
@@ -1148,7 +1149,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     default: assert(0 && "This action is not supported yet!");
     case TargetLowering::Expand: {
         unsigned Reg = TLI.getExceptionSelectorRegister();
-        Result = DAG.getCopyFromReg(Tmp2, Reg, VT);
+        Result = DAG.getCopyFromReg(Tmp2, dl, Reg, VT);
       }
       break;
     case TargetLowering::Custom:
@@ -1736,7 +1737,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       for (unsigned i = 0; i != NumElems; ++i) {
         SDValue Arg = Mask.getOperand(i);
         if (Arg.getOpcode() == ISD::UNDEF) {
-          Ops.push_back(DAG.getNode(ISD::UNDEF, dl, EltVT));
+          Ops.push_back(DAG.getUNDEF(EltVT));
         } else {
           assert(isa<ConstantSDNode>(Arg) && "Invalid VECTOR_SHUFFLE mask!");
           unsigned Idx = cast<ConstantSDNode>(Arg)->getZExtValue();
@@ -1919,7 +1920,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(0, true));
 
       SDValue Size  = Tmp2.getOperand(1);
-      SDValue SP = DAG.getCopyFromReg(Chain, SPReg, VT);
+      SDValue SP = DAG.getCopyFromReg(Chain, dl, SPReg, VT);
       Chain = SP.getValue(1);
       unsigned Align = cast<ConstantSDNode>(Tmp3)->getZExtValue();
       unsigned StackAlign =
@@ -1928,7 +1929,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
         SP = DAG.getNode(ISD::AND, dl, VT, SP,
                          DAG.getConstant(-(uint64_t)Align, VT));
       Tmp1 = DAG.getNode(ISD::SUB, dl, VT, SP, Size);       // Value
-      Chain = DAG.getCopyToReg(Chain, SPReg, Tmp1);     // Output chain
+      Chain = DAG.getCopyToReg(Chain, dl, SPReg, Tmp1);     // Output chain
 
       Tmp2 = DAG.getCALLSEQ_END(Chain,  DAG.getIntPtrConstant(0, true),
                                 DAG.getIntPtrConstant(0, true), SDValue());
@@ -2188,7 +2189,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
         Tmp1 = DAG.getLoad(NVT, dl, Tmp1, Tmp2, LD->getSrcValue(),
                            LD->getSrcValueOffset(),
                            LD->isVolatile(), LD->getAlignment());
-        Tmp3 = LegalizeOp(DAG.getNode(ISD::BIT_CONVERT, VT, Tmp1));
+        Tmp3 = LegalizeOp(DAG.getNode(ISD::BIT_CONVERT, dl, VT, Tmp1));
         Tmp4 = LegalizeOp(Tmp1.getValue(1));
         break;
       }
@@ -2890,11 +2891,11 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       // Expand to CopyFromReg if the target set 
       // StackPointerRegisterToSaveRestore.
       if (unsigned SP = TLI.getStackPointerRegisterToSaveRestore()) {
-        Tmp1 = DAG.getCopyFromReg(Result.getOperand(0), SP,
+        Tmp1 = DAG.getCopyFromReg(Result.getOperand(0), dl, SP,
                                   Node->getValueType(0));
         Tmp2 = Tmp1.getValue(1);
       } else {
-        Tmp1 = DAG.getNode(ISD::UNDEF, dl, Node->getValueType(0));
+        Tmp1 = DAG.getUNDEF(Node->getValueType(0));
         Tmp2 = Node->getOperand(0);
       }
       break;
@@ -2922,7 +2923,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       // Expand to CopyToReg if the target set 
       // StackPointerRegisterToSaveRestore.
       if (unsigned SP = TLI.getStackPointerRegisterToSaveRestore()) {
-        Result = DAG.getCopyToReg(Tmp1, SP, Tmp2);
+        Result = DAG.getCopyToReg(Tmp1, dl, SP, Tmp2);
       } else {
         Result = Tmp1;
       }
@@ -3428,7 +3429,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
         // Select between the nabs and abs value based on the sign bit of
         // the input.
         Result = DAG.getNode(ISD::SELECT, dl, AbsVal.getValueType(), SignBit,
-                             DAG.getNode(ISD::FNEG, AbsVal.getValueType(), 
+                             DAG.getNode(ISD::FNEG, dl, AbsVal.getValueType(), 
                                          AbsVal),
                              AbsVal);
         Result = LegalizeOp(Result);
@@ -4037,7 +4038,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
         Result = PromoteOp(Node->getOperand(0));
         // For FP, make Op1 a i32
         
-        Result = DAG.getConvertRndSat(Op.getValueType(), Result,
+        Result = DAG.getConvertRndSat(Op.getValueType(), dl, Result,
                                       DTyOp, STyOp, RndOp, SatOp, CvtCode);
         break;
       }
@@ -4530,7 +4531,7 @@ SDValue SelectionDAGLegalize::PromoteOp(SDValue Op) {
     assert(0 && "Do not know how to promote this operator!");
     abort();
   case ISD::UNDEF:
-    Result = DAG.getNode(ISD::UNDEF, dl, NVT);
+    Result = DAG.getUNDEF(NVT);
     break;
   case ISD::Constant:
     if (VT != MVT::i1)
@@ -4601,7 +4602,7 @@ SDValue SelectionDAGLegalize::PromoteOp(SDValue Op) {
              CvtCode == ISD::CVT_US || CvtCode == ISD::CVT_UU ||
              CvtCode == ISD::CVT_SF || CvtCode == ISD::CVT_UF) &&
             "can only promote integers");
-    Result = DAG.getConvertRndSat(NVT, Node->getOperand(0),
+    Result = DAG.getConvertRndSat(NVT, dl, Node->getOperand(0),
                                   Node->getOperand(1), Node->getOperand(2),
                                   Node->getOperand(3), Node->getOperand(4),
                                   CvtCode);
@@ -4885,11 +4886,11 @@ SDValue SelectionDAGLegalize::PromoteOp(SDValue Op) {
     Tmp1 = Node->getOperand(0);   // Get the chain.
     Tmp2 = Node->getOperand(1);   // Get the pointer.
     if (TLI.getOperationAction(ISD::VAARG, VT) == TargetLowering::Custom) {
-      Tmp3 = DAG.getVAArg(VT, Tmp1, Tmp2, Node->getOperand(2));
+      Tmp3 = DAG.getVAArg(VT, dl, Tmp1, Tmp2, Node->getOperand(2));
       Result = TLI.LowerOperation(Tmp3, DAG);
     } else {
       const Value *V = cast<SrcValueSDNode>(Node->getOperand(2))->getValue();
-      SDValue VAList = DAG.getLoad(TLI.getPointerTy(), Tmp1, Tmp2, V, 0);
+      SDValue VAList = DAG.getLoad(TLI.getPointerTy(), dl, Tmp1, Tmp2, V, 0);
       // Increment the pointer, VAList, to the next vaarg
       Tmp3 = DAG.getNode(ISD::ADD, dl, TLI.getPointerTy(), VAList, 
                          DAG.getConstant(VT.getSizeInBits()/8,
@@ -5000,7 +5001,7 @@ SDValue SelectionDAGLegalize::ExpandEXTRACT_VECTOR_ELT(SDValue Op) {
   // lower to a store then an indexed load.
   SDValue Vec = Op.getOperand(0);
   SDValue Idx = Op.getOperand(1);
-  DebugLoc dl = Op.getNode()->getDebugLoc();
+  DebugLoc dl = Op.getDebugLoc();
   
   MVT TVT = Vec.getValueType();
   unsigned NumElems = TVT.getVectorNumElements();
@@ -5512,7 +5513,7 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
   if (isOnlyLowElement) {
     // If the low element is an undef too, then this whole things is an undef.
     if (Node->getOperand(0).getOpcode() == ISD::UNDEF)
-      return DAG.getNode(ISD::UNDEF, dl, Node->getValueType(0));
+      return DAG.getUNDEF(Node->getValueType(0));
     // Otherwise, turn this into a scalar_to_vector node.
     return DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, Node->getValueType(0),
                        Node->getOperand(0));
@@ -5562,7 +5563,7 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
       // Return shuffle(LowValVec, undef, <0,0,0,0>)
       return DAG.getNode(ISD::VECTOR_SHUFFLE, dl, 
                          Node->getValueType(0), LowValVec,
-                         DAG.getNode(ISD::UNDEF, Node->getValueType(0)),
+                         DAG.getUNDEF(Node->getValueType(0)),
                          SplatMask);
     }
   }
@@ -5600,7 +5601,7 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
       if (Val2.getOpcode() != ISD::UNDEF)
         MaskVec[Val2Elts[i]] = DAG.getConstant(NumElems, MaskEltVT);
       else
-        MaskVec[Val2Elts[i]] = DAG.getNode(ISD::UNDEF, dl, MaskEltVT);
+        MaskVec[Val2Elts[i]] = DAG.getUNDEF(MaskEltVT);
     
     SDValue ShuffleMask = DAG.getNode(ISD::BUILD_VECTOR, dl, MaskVT,
                                         &MaskVec[0], MaskVec.size());
@@ -5986,7 +5987,7 @@ ExpandIntToFP(bool isSigned, MVT DestTy, SDValue Source, DebugLoc dl) {
     case TargetLowering::Expand:
       break;   // This case is handled below.
     case TargetLowering::Custom: {
-      SDValue NV = TLI.LowerOperation(DAG.getNode(ISD::UINT_TO_FP, DestTy,
+      SDValue NV = TLI.LowerOperation(DAG.getNode(ISD::UINT_TO_FP, dl, DestTy,
                                                     Source), DAG);
       if (NV.getNode())
         return LegalizeOp(NV);
@@ -6374,7 +6375,8 @@ SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
         VT.getVectorElementType().getSizeInBits() : len;
       SDValue Tmp2 = DAG.getConstant(APInt(EltSize, mask[i]), VT);
       SDValue Tmp3 = DAG.getConstant(1ULL << i, ShVT);
-      Op = DAG.getNode(ISD::ADD, dl, VT, DAG.getNode(ISD::AND, VT, Op, Tmp2),
+      Op = DAG.getNode(ISD::ADD, dl, VT, 
+                       DAG.getNode(ISD::AND, dl, VT, Op, Tmp2),
                        DAG.getNode(ISD::AND, dl, VT,
                                    DAG.getNode(ISD::SRL, dl, VT, Op, Tmp3),
                                    Tmp2));
@@ -6397,7 +6399,7 @@ SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
     for (unsigned i = 0; (1U << i) <= (len / 2); ++i) {
       SDValue Tmp3 = DAG.getConstant(1ULL << i, ShVT);
       Op = DAG.getNode(ISD::OR, dl, VT, Op, 
-                       DAG.getNode(ISD::SRL, VT, Op, Tmp3));
+                       DAG.getNode(ISD::SRL, dl, VT, Op, Tmp3));
     }
     Op = DAG.getNOT(dl, Op, VT);
     return DAG.getNode(ISD::CTPOP, dl, VT, Op);
@@ -6480,8 +6482,8 @@ void SelectionDAGLegalize::ExpandOp(SDValue Op, SDValue &Lo, SDValue &Hi){
     Lo  = ExpandEXTRACT_VECTOR_ELT(Op);
     return ExpandOp(Lo, Lo, Hi);
   case ISD::UNDEF:
-    Lo = DAG.getNode(ISD::UNDEF, dl, NVT);
-    Hi = DAG.getNode(ISD::UNDEF, dl, NVT);
+    Lo = DAG.getUNDEF(NVT);
+    Hi = DAG.getUNDEF(NVT);
     break;
   case ISD::Constant: {
     unsigned NVTBits = NVT.getSizeInBits();
@@ -6586,8 +6588,8 @@ void SelectionDAGLegalize::ExpandOp(SDValue Op, SDValue &Lo, SDValue &Hi){
   case ISD::VAARG: {
     SDValue Ch = Node->getOperand(0);   // Legalize the chain.
     SDValue Ptr = Node->getOperand(1);  // Legalize the pointer.
-    Lo = DAG.getVAArg(NVT, Ch, Ptr, Node->getOperand(2));
-    Hi = DAG.getVAArg(NVT, Lo.getValue(1), Ptr, Node->getOperand(2));
+    Lo = DAG.getVAArg(NVT, dl, Ch, Ptr, Node->getOperand(2));
+    Hi = DAG.getVAArg(NVT, dl, Lo.getValue(1), Ptr, Node->getOperand(2));
 
     // Remember that we legalized the chain.
     Hi = LegalizeOp(Hi);
@@ -6674,7 +6676,7 @@ void SelectionDAGLegalize::ExpandOp(SDValue Op, SDValue &Lo, SDValue &Hi){
         Hi = DAG.getConstant(0, NVT);
       } else /* if (ExtType == ISD::EXTLOAD) */ {
         // The high part is undefined.
-        Hi = DAG.getNode(ISD::UNDEF, dl, NVT);
+        Hi = DAG.getUNDEF(NVT);
       }
     }
     break;
@@ -6717,7 +6719,7 @@ void SelectionDAGLegalize::ExpandOp(SDValue Op, SDValue &Lo, SDValue &Hi){
     // The low part is any extension of the input (which degenerates to a copy).
     Lo = DAG.getNode(ISD::ANY_EXTEND, dl, NVT, Node->getOperand(0));
     // The high part is undefined.
-    Hi = DAG.getNode(ISD::UNDEF, dl, NVT);
+    Hi = DAG.getUNDEF(NVT);
     break;
   case ISD::SIGN_EXTEND: {
     // The low part is just a sign extension of the input (which degenerates to
@@ -6944,7 +6946,7 @@ void SelectionDAGLegalize::ExpandOp(SDValue Op, SDValue &Lo, SDValue &Hi){
     // If the target wants custom lowering, do so.
     SDValue ShiftAmt = LegalizeOp(Node->getOperand(1));
     if (TLI.getOperationAction(ISD::SRA, VT) == TargetLowering::Custom) {
-      SDValue Op = DAG.getNode(ISD::SRA, VT, Node->getOperand(0), ShiftAmt);
+      SDValue Op = DAG.getNode(ISD::SRA, dl, VT, Node->getOperand(0), ShiftAmt);
       Op = TLI.LowerOperation(Op, DAG);
       if (Op.getNode()) {
         // Now that the custom expander is done, expand the result, which is
@@ -7513,8 +7515,8 @@ void SelectionDAGLegalize::SplitVectorOp(SDValue Op, SDValue &Lo,
 #endif
     assert(0 && "Unhandled operation in SplitVectorOp!");
   case ISD::UNDEF:
-    Lo = DAG.getNode(ISD::UNDEF, dl, NewVT_Lo);
-    Hi = DAG.getNode(ISD::UNDEF, dl, NewVT_Hi);
+    Lo = DAG.getUNDEF(NewVT_Lo);
+    Hi = DAG.getUNDEF(NewVT_Hi);
     break;
   case ISD::BUILD_PAIR:
     Lo = Node->getOperand(0);
@@ -7551,7 +7553,7 @@ void SelectionDAGLegalize::SplitVectorOp(SDValue Op, SDValue &Lo,
     for (unsigned i = 0; i != NewNumElts_Lo; ++i) {
       SDValue IdxNode = Mask.getOperand(i);
       if (IdxNode.getOpcode() == ISD::UNDEF) {
-        Ops.push_back(DAG.getNode(ISD::UNDEF, dl, NewEltVT));
+        Ops.push_back(DAG.getUNDEF(NewEltVT));
         continue;
       }
       unsigned Idx = cast<ConstantSDNode>(IdxNode)->getZExtValue();
@@ -7569,7 +7571,7 @@ void SelectionDAGLegalize::SplitVectorOp(SDValue Op, SDValue &Lo,
     for (unsigned i = NewNumElts_Lo; i != NumElements; ++i) {
       SDValue IdxNode = Mask.getOperand(i);
       if (IdxNode.getOpcode() == ISD::UNDEF) {
-        Ops.push_back(DAG.getNode(ISD::UNDEF, dl, NewEltVT));
+        Ops.push_back(DAG.getUNDEF(NewEltVT));
         continue;
       }
       unsigned Idx = cast<ConstantSDNode>(IdxNode)->getZExtValue();
@@ -7752,9 +7754,9 @@ void SelectionDAGLegalize::SplitVectorOp(SDValue Op, SDValue &Lo,
     SDValue RndOp = Node->getOperand(3);
     SDValue SatOp = Node->getOperand(4);
 
-    Lo = DAG.getConvertRndSat(NewVT_Lo, L, DTyOpL, STyOpL,
+    Lo = DAG.getConvertRndSat(NewVT_Lo, dl, L, DTyOpL, STyOpL,
                               RndOp, SatOp, CvtCode);
-    Hi = DAG.getConvertRndSat(NewVT_Hi, H, DTyOpH, STyOpH,
+    Hi = DAG.getConvertRndSat(NewVT_Hi, dl, H, DTyOpH, STyOpH,
                               RndOp, SatOp, CvtCode);
     break;
   }
@@ -7770,7 +7772,7 @@ void SelectionDAGLegalize::SplitVectorOp(SDValue Op, SDValue &Lo,
     bool isVolatile = LD->isVolatile();
 
     assert(LD->isUnindexed() && "Indexed vector loads are not supported yet!");
-    SDValue Offset = DAG.getNode(ISD::UNDEF, dl, Ptr.getValueType());
+    SDValue Offset = DAG.getUNDEF(Ptr.getValueType());
 
     MVT MemNewEltVT = MemoryVT.getVectorElementType();
     MVT MemNewVT_Lo = MVT::getVectorVT(MemNewEltVT, NewNumElts_Lo);
@@ -7900,7 +7902,7 @@ SDValue SelectionDAGLegalize::ScalarizeVectorOp(SDValue Op) {
     break;
   case ISD::CONVERT_RNDSAT: {
     SDValue Op0 = ScalarizeVectorOp(Node->getOperand(0));
-    Result = DAG.getConvertRndSat(NewVT, Op0,
+    Result = DAG.getConvertRndSat(NewVT, dl, Op0,
                                   DAG.getValueType(NewVT),
                                   DAG.getValueType(Op0.getValueType()),
                                   Node->getOperand(3),
@@ -7927,7 +7929,7 @@ SDValue SelectionDAGLegalize::ScalarizeVectorOp(SDValue Op) {
     bool isVolatile = LD->isVolatile();
 
     assert(LD->isUnindexed() && "Indexed vector loads are not supported yet!");
-    SDValue Offset = DAG.getNode(ISD::UNDEF, dl, Ptr.getValueType());
+    SDValue Offset = DAG.getUNDEF(Ptr.getValueType());
     
     Result = DAG.getLoad(ISD::UNINDEXED, dl, ExtType,
                          NewVT, Ch, Ptr, Offset, SV, SVOffset,
@@ -8049,13 +8051,13 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
     assert(0 && "Unexpected operation in WidenVectorOp!");
     break;
   case ISD::UNDEF:
-    Result = DAG.getNode(ISD::UNDEF, dl, WidenVT);
+    Result = DAG.getUNDEF(WidenVT);
     break;
   case ISD::BUILD_VECTOR: {
     // Build a vector with undefined for the new nodes
     SDValueVector NewOps(Node->op_begin(), Node->op_end());
     for (unsigned i = NumElts; i < NewNumElts; ++i) {
-      NewOps.push_back(DAG.getNode(ISD::UNDEF, dl, EVT));
+      NewOps.push_back(DAG.getUNDEF(EVT));
     }
     Result = DAG.getNode(ISD::BUILD_VECTOR, dl, WidenVT, 
                          &NewOps[0], NewOps.size());    
@@ -8092,7 +8094,7 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
       }
     }
     for (unsigned i = NumElts; i < NewNumElts; ++i) {
-      NewOps.push_back(DAG.getNode(ISD::UNDEF, dl, PVT));
+      NewOps.push_back(DAG.getUNDEF(PVT));
     }
     
     SDValue Tmp3 = DAG.getNode(ISD::BUILD_VECTOR, dl, 
@@ -8137,7 +8139,7 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
              "can not widen bit convert that are not multiple of element type");
       unsigned NewNumElts = WidenSize / InSize;
       SmallVector<SDValue, 16> Ops(NewNumElts);
-      SDValue UndefVal = DAG.getNode(ISD::UNDEF, dl, InVT);
+      SDValue UndefVal = DAG.getUNDEF(InVT);
       Ops[0] = Tmp1;
       for (unsigned i = 1; i < NewNumElts; ++i)
         Ops[i] = UndefVal;
@@ -8207,7 +8209,7 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
     SDValue STyOp = DAG.getValueType(SrcOp.getValueType());
     ISD::CvtCode CvtCode = cast<CvtRndSatSDNode>(Node)->getCvtCode();
 
-    Result = DAG.getConvertRndSat(WidenVT, SrcOp, DTyOp, STyOp,
+    Result = DAG.getConvertRndSat(WidenVT, dl, SrcOp, DTyOp, STyOp,
                                   RndOp, SatOp, CvtCode);
     break;
   }
@@ -8266,7 +8268,7 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
     // We could widen on a multiple of the incoming operand if necessary.
     unsigned NumConcat = NewNumElts / NumElts;
     assert(NewNumElts % NumElts == 0 && "Can widen only a multiple of vector");
-    SDValue UndefVal = DAG.getNode(ISD::UNDEF, dl, VT);
+    SDValue UndefVal = DAG.getUNDEF(VT);
     SmallVector<SDValue, 8> MOps;
     MOps.push_back(Op);
     for (unsigned i = 1; i != NumConcat; ++i) {
@@ -8296,7 +8298,7 @@ SDValue SelectionDAGLegalize::WidenVectorOp(SDValue Op, MVT WidenVT) {
     } else if (NewNumElts % NumElts == 0) {
       // Widen the extracted subvector.
       unsigned NumConcat = NewNumElts / NumElts;
-      SDValue UndefVal = DAG.getNode(ISD::UNDEF, dl, VT);
+      SDValue UndefVal = DAG.getUNDEF(VT);
       SmallVector<SDValue, 8> MOps;
       MOps.push_back(Op);
       for (unsigned i = 1; i != NumConcat; ++i) {

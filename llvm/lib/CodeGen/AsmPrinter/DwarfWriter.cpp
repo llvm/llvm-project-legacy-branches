@@ -54,9 +54,9 @@ namespace llvm {
 
 /// Configuration values for initial hash set sizes (log2).
 ///
-static const unsigned InitDiesSetSize          = 9; // 512
-static const unsigned InitAbbreviationsSetSize = 9; // 512
-static const unsigned InitValuesSetSize        = 9; // 512
+static const unsigned InitDiesSetSize          = 9; // log2(512)
+static const unsigned InitAbbreviationsSetSize = 9; // log2(512)
+static const unsigned InitValuesSetSize        = 9; // log2(512)
 
 //===----------------------------------------------------------------------===//
 /// Forward declarations.
@@ -855,9 +855,7 @@ public:
 /// Dwarf - Emits general Dwarf directives.
 ///
 class Dwarf {
-
 protected:
-
   //===--------------------------------------------------------------------===//
   // Core attributes used by the Dwarf writer.
   //
@@ -918,7 +916,6 @@ protected:
   }
 
 public:
-
   //===--------------------------------------------------------------------===//
   // Accessors.
   //
@@ -1166,7 +1163,7 @@ class SrcLineInfo {
   unsigned LabelID;                     // Label in code ID number.
 public:
   SrcLineInfo(unsigned L, unsigned C, unsigned S, unsigned I)
-  : Line(L), Column(C), SourceID(S), LabelID(I) {}
+    : Line(L), Column(C), SourceID(S), LabelID(I) {}
   
   // Accessors
   unsigned getLine()     const { return Line; }
@@ -1174,7 +1171,6 @@ public:
   unsigned getSourceID() const { return SourceID; }
   unsigned getLabelID()  const { return LabelID; }
 };
-
 
 //===----------------------------------------------------------------------===//
 /// SrcFileInfo - This class is used to track source information.
@@ -1207,10 +1203,8 @@ public:
 /// DbgVariable - This class is used to track local variable information.
 ///
 class DbgVariable {
-private:
   DIVariable Var;                   // Variable Descriptor.
   unsigned FrameIndex;               // Variable frame index.
-
 public:
   DbgVariable(DIVariable V, unsigned I) : Var(V), FrameIndex(I)  {}
   
@@ -1223,7 +1217,6 @@ public:
 /// DbgScope - This class is used to track scope information.
 ///
 class DbgScope {
-private:
   DbgScope *Parent;                   // Parent to this scope.
   DIDescriptor Desc;                  // Debug info descriptor for scope.
                                       // Either subprogram or block.
@@ -1231,7 +1224,6 @@ private:
   unsigned EndLabelID;                // Label ID of the end of scope.
   SmallVector<DbgScope *, 4> Scopes;  // Scopes defined in scope.
   SmallVector<DbgVariable *, 8> Variables;// Variables declared in scope.
-  
 public:
   DbgScope(DbgScope *P, DIDescriptor D)
   : Parent(P), Desc(D), StartLabelID(0), EndLabelID(0), Scopes(), Variables()
@@ -1264,8 +1256,6 @@ public:
 /// DwarfDebug - Emits Dwarf debug directives.
 ///
 class DwarfDebug : public Dwarf {
-
-private:
   //===--------------------------------------------------------------------===//
   // Attributes used to construct specific Dwarf sections.
   //
@@ -1641,7 +1631,7 @@ private:
     else if (Ty.isDerivedType(Ty.getTag()))
       ConstructTypeDIE(DW_Unit, Buffer, DIDerivedType(Ty.getGV()));
     else {
-      assert (Ty.isCompositeType(Ty.getTag()) && "Unknown kind of DIType");
+      assert(Ty.isCompositeType(Ty.getTag()) && "Unknown kind of DIType");
       ConstructTypeDIE(DW_Unit, Buffer, DICompositeType(Ty.getGV()));
     }
     
@@ -1656,8 +1646,7 @@ private:
       Die->AddChild(Child);
       Buffer.Detach();
       SetDIEntry(Slot, Child);
-    }
-    else {
+    } else {
       Die = DW_Unit->AddDie(Buffer);
       SetDIEntry(Slot, Die);
     }
@@ -1806,8 +1795,8 @@ private:
     }
   }
   
-  // ConstructSubrangeDIE - Construct subrange DIE from DISubrange.
-  void ConstructSubrangeDIE (DIE &Buffer, DISubrange SR, DIE *IndexTy) {
+  /// ConstructSubrangeDIE - Construct subrange DIE from DISubrange.
+  void ConstructSubrangeDIE(DIE &Buffer, DISubrange SR, DIE *IndexTy) {
     int64_t L = SR.getLo();
     int64_t H = SR.getHi();
     DIE *DW_Subrange = new DIE(DW_TAG_subrange_type);
@@ -1845,8 +1834,7 @@ private:
     }
   }
 
-  /// ConstructEnumTypeDIE - Construct enum type DIE from 
-  /// DIEnumerator.
+  /// ConstructEnumTypeDIE - Construct enum type DIE from DIEnumerator.
   DIE *ConstructEnumTypeDIE(CompileUnit *DW_Unit, DIEnumerator *ETy) {
 
     DIE *Enumerator = new DIE(DW_TAG_enumerator);
@@ -1857,7 +1845,7 @@ private:
   }
 
   /// CreateGlobalVariableDIE - Create new DIE using GV.
-  DIE *CreateGlobalVariableDIE(CompileUnit *DW_Unit, const DIGlobalVariable &GV) 
+  DIE *CreateGlobalVariableDIE(CompileUnit *DW_Unit, const DIGlobalVariable &GV)
   {
     DIE *GVDie = new DIE(DW_TAG_variable);
     AddString(GVDie, DW_AT_name, DW_FORM_string, GV.getName());
@@ -2101,9 +2089,9 @@ private:
     std::string SPName = "llvm.dbg.subprograms";
     std::vector<GlobalVariable*> Result;
     getGlobalVariablesUsing(*M, SPName, Result);
+
     for (std::vector<GlobalVariable *>::iterator I = Result.begin(),
            E = Result.end(); I != E; ++I) {
-
       DISubprogram SPD(*I);
 
       if (SPD.getName() == MF->getFunction()->getName()) {
@@ -2795,7 +2783,7 @@ private:
 
       CompileUnit *Unit = new CompileUnit(ID, Die);
       if (DIUnit.isMain()) {
-        assert (!MainCU && "Multiple main compile units are found!");
+        assert(!MainCU && "Multiple main compile units are found!");
         MainCU = Unit;
       }
       DW_CUs[DIUnit.getGV()] = Unit;
@@ -2901,41 +2889,40 @@ public:
   /// SetDebugInfo - Create global DIEs and emit initial debug info sections.
   /// This is inovked by the target AsmPrinter.
   void SetDebugInfo(MachineModuleInfo *mmi) {
-
-      // Create all the compile unit DIEs.
-      ConstructCompileUnits();
+    // Create all the compile unit DIEs.
+    ConstructCompileUnits();
       
-      if (DW_CUs.empty())
-        return;
+    if (DW_CUs.empty())
+      return;
 
-      MMI = mmi;
-      shouldEmit = true;
-      MMI->setDebugInfoAvailability(true);
+    MMI = mmi;
+    shouldEmit = true;
+    MMI->setDebugInfoAvailability(true);
 
-      // Create DIEs for each of the externally visible global variables.
-      ConstructGlobalVariableDIEs();
+    // Create DIEs for each of the externally visible global variables.
+    ConstructGlobalVariableDIEs();
 
-      // Create DIEs for each of the externally visible subprograms.
-      ConstructSubprograms();
+    // Create DIEs for each of the externally visible subprograms.
+    ConstructSubprograms();
 
-      // Prime section data.
-      SectionMap.insert(TAI->getTextSection());
+    // Prime section data.
+    SectionMap.insert(TAI->getTextSection());
 
-      // Print out .file directives to specify files for .loc directives. These
-      // are printed out early so that they precede any .loc directives.
-      if (TAI->hasDotLocAndDotFile()) {
-        for (unsigned i = 1, e = SrcFiles.size(); i <= e; ++i) {
-          sys::Path FullPath(Directories[SrcFiles[i].getDirectoryID()]);
-          bool AppendOk = FullPath.appendComponent(SrcFiles[i].getName());
-          assert(AppendOk && "Could not append filename to directory!");
-          AppendOk = false;
-          Asm->EmitFile(i, FullPath.toString());
-          Asm->EOL();
-        }
+    // Print out .file directives to specify files for .loc directives. These
+    // are printed out early so that they precede any .loc directives.
+    if (TAI->hasDotLocAndDotFile()) {
+      for (unsigned i = 1, e = SrcFiles.size(); i <= e; ++i) {
+        sys::Path FullPath(Directories[SrcFiles[i].getDirectoryID()]);
+        bool AppendOk = FullPath.appendComponent(SrcFiles[i].getName());
+        assert(AppendOk && "Could not append filename to directory!");
+        AppendOk = false;
+        Asm->EmitFile(i, FullPath.toString());
+        Asm->EOL();
       }
+    }
 
-      // Emit initial sections
-      EmitInitial();
+    // Emit initial sections
+    EmitInitial();
   }
 
   /// BeginModule - Emit all Dwarf sections that should come prior to the
@@ -3094,13 +3081,13 @@ public:
     unsigned Tag = DI.getTag();
     switch (Tag) {
     case DW_TAG_variable:
-      assert (DIVariable(GV).Verify() && "Invalid DebugInfo value");
+      assert(DIVariable(GV).Verify() && "Invalid DebugInfo value");
       break;
     case DW_TAG_compile_unit:
-      assert (DICompileUnit(GV).Verify() && "Invalid DebugInfo value");
+      assert(DICompileUnit(GV).Verify() && "Invalid DebugInfo value");
       break;
     case DW_TAG_subprogram:
-      assert (DISubprogram(GV).Verify() && "Invalid DebugInfo value");
+      assert(DISubprogram(GV).Verify() && "Invalid DebugInfo value");
       break;
     default:
       break;
@@ -3114,7 +3101,7 @@ public:
   /// correspondence to the source line list.
   unsigned RecordSourceLine(Value *V, unsigned Line, unsigned Col) {
     CompileUnit *Unit = DW_CUs[V];
-    assert (Unit && "Unable to find CompileUnit");
+    assert(Unit && "Unable to find CompileUnit");
     unsigned ID = MMI->NextLabelID();
     Lines.push_back(SrcLineInfo(Line, Col, Unit->getID(), ID));
     return ID;
@@ -3173,7 +3160,7 @@ public:
       DIVariable DV(GV);
       Scope = getOrCreateScope(DV.getContext().getGV());
     }
-    assert (Scope && "Unable to find variable' scope");
+    assert(Scope && "Unable to find variable' scope");
     DbgVariable *DV = new DbgVariable(DIVariable(GV), FrameIndex);
     Scope->AddVariable(DV);
   }
@@ -3183,8 +3170,6 @@ public:
 /// DwarfException - Emits Dwarf exception handling directives.
 ///
 class DwarfException : public Dwarf  {
-
-private:
   struct FunctionEHFrameInfo {
     std::string FnName;
     unsigned Number;

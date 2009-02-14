@@ -692,7 +692,7 @@ unsigned TargetLowering::getByValTypeAlignment(const Type *Ty) const {
 SDValue TargetLowering::getPICJumpTableRelocBase(SDValue Table,
                                                  SelectionDAG &DAG) const {
   if (usesGlobalOffsetTable())
-    return DAG.getNode(ISD::GLOBAL_OFFSET_TABLE, getPointerTy());
+    return DAG.getGLOBAL_OFFSET_TABLE(getPointerTy());
   return Table;
 }
 
@@ -723,6 +723,7 @@ TargetLowering::isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
 /// constant and return true.
 bool TargetLowering::TargetLoweringOpt::ShrinkDemandedConstant(SDValue Op, 
                                                         const APInt &Demanded) {
+  DebugLoc dl = Op.getDebugLoc();
   // FIXME: ISD::SELECT, ISD::SELECT_CC
   switch (Op.getOpcode()) {
   default: break;
@@ -732,7 +733,7 @@ bool TargetLowering::TargetLoweringOpt::ShrinkDemandedConstant(SDValue Op,
     if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op.getOperand(1)))
       if (C->getAPIntValue().intersects(~Demanded)) {
         MVT VT = Op.getValueType();
-        SDValue New = DAG.getNode(Op.getOpcode(), VT, Op.getOperand(0),
+        SDValue New = DAG.getNode(Op.getOpcode(), dl, VT, Op.getOperand(0),
                                     DAG.getConstant(Demanded &
                                                       C->getAPIntValue(), 
                                                     VT));
@@ -760,7 +761,7 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
   assert(Op.getValueSizeInBits() == BitWidth &&
          "Mask size mismatches value type size!");
   APInt NewMask = DemandedMask;
-  DebugLoc dl = Op.getNode()->getDebugLoc();
+  DebugLoc dl = Op.getDebugLoc();
 
   // Don't know anything.
   KnownZero = KnownOne = APInt(BitWidth, 0);
@@ -779,8 +780,7 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
   } else if (DemandedMask == 0) {   
     // Not demanding any bits from Op.
     if (Op.getOpcode() != ISD::UNDEF)
-      return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::UNDEF, dl,
-                                               Op.getValueType()));
+      return TLO.CombineTo(Op, TLO.DAG.getUNDEF(Op.getValueType()));
     return false;
   } else if (Depth == 6) {        // Limit search depth.
     return false;
@@ -890,7 +890,7 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     // (but not both) turn this into an *inclusive* or.
     //    e.g. (A & C1)^(B & C2) -> (A & C1)|(B & C2) iff C1&C2 == 0
     if ((NewMask & ~KnownZero & ~KnownZero2) == 0)
-      return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::OR, Op.getValueType(),
+      return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::OR, dl, Op.getValueType(),
                                                Op.getOperand(0),
                                                Op.getOperand(1)));
     
@@ -1704,7 +1704,7 @@ TargetLowering::SimplifySetCC(MVT VT, SDValue N0, SDValue N1,
       case 1:  // Known true.
         return DAG.getConstant(1, VT);
       case 2:  // Undefined.
-        return DAG.getNode(ISD::UNDEF, VT);
+        return DAG.getUNDEF(VT);
       }
     }
     
@@ -1871,7 +1871,7 @@ TargetLowering::SimplifySetCC(MVT VT, SDValue N0, SDValue N1,
     case ISD::SETGT:  // X >s Y   -->  X == 0 & Y == 1  -->  ~X & Y
     case ISD::SETULT: // X <u Y   -->  X == 0 & Y == 1  -->  ~X & Y
       Temp = DAG.getNOT(dl, N0, MVT::i1);
-      N0 = DAG.getNode(ISD::AND, MVT::i1, N1, Temp);
+      N0 = DAG.getNode(ISD::AND, dl, MVT::i1, N1, Temp);
       if (!DCI.isCalledByLegalizer())
         DCI.AddToWorklist(Temp.getNode());
       break;

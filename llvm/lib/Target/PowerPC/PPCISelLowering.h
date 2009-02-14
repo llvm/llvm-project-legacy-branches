@@ -340,10 +340,11 @@ namespace llvm {
     SDValue getReturnAddrFrameIndex(SelectionDAG & DAG) const;
 
     SDValue EmitTailCallLoadFPAndRetAddr(SelectionDAG & DAG,
-                                           int SPDiff,
-                                           SDValue Chain,
-                                           SDValue &LROpOut,
-                                           SDValue &FPOpOut);
+                                         int SPDiff,
+                                         SDValue Chain,
+                                         SDValue &LROpOut,
+                                         SDValue &FPOpOut,
+                                         DebugLoc dl);
 
     SDValue LowerRETURNADDR(SDValue Op, SelectionDAG &DAG);
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG);
@@ -374,7 +375,7 @@ namespace llvm {
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG,
                                       const PPCSubtarget &Subtarget);
     SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG);
-    SDValue LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG);
+    SDValue LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG, DebugLoc dl);
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG);
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG);
     SDValue LowerSHL_PARTS(SDValue Op, SelectionDAG &DAG);

@@ -549,7 +549,7 @@ namespace llvm {
     bool CallRequiresFnAddressInReg(bool Is64Bit, bool IsTailCall);
     SDValue EmitTailCallLoadRetAddr(SelectionDAG &DAG, SDValue &OutRetAddr,
                                 SDValue Chain, bool IsTailCall, bool Is64Bit,
-                                int FPDiff);
+                                int FPDiff, DebugLoc dl);
 
     CCAssignFn *CCAssignFnForNode(unsigned CallingConv) const;
     NameDecorationStyle NameDecorationForFORMAL_ARGUMENTS(SDValue Op);
@@ -566,8 +566,8 @@ namespace llvm {
     SDValue LowerINSERT_VECTOR_ELT_SSE4(SDValue Op, SelectionDAG &DAG);
     SDValue LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG);
     SDValue LowerConstantPool(SDValue Op, SelectionDAG &DAG);
-    SDValue LowerGlobalAddress(const GlobalValue *GV, int64_t Offset,
-                               SelectionDAG &DAG) const;
+    SDValue LowerGlobalAddress(const GlobalValue *GV, DebugLoc dl,
+                               int64_t Offset, SelectionDAG &DAG) const;
     SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG);
     SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG);
     SDValue LowerExternalSymbol(SDValue Op, SelectionDAG &DAG);
@@ -612,12 +612,12 @@ namespace llvm {
     void ReplaceATOMIC_BINARY_64(SDNode *N, SmallVectorImpl<SDValue> &Results,
                                  SelectionDAG &DAG, unsigned NewOp);
 
-    SDValue EmitTargetCodeForMemset(SelectionDAG &DAG,
+    SDValue EmitTargetCodeForMemset(SelectionDAG &DAG, DebugLoc dl,
                                     SDValue Chain,
                                     SDValue Dst, SDValue Src,
                                     SDValue Size, unsigned Align,
                                     const Value *DstSV, uint64_t DstSVOff);
-    SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG,
+    SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
                                     SDValue Chain,
                                     SDValue Dst, SDValue Src,
                                     SDValue Size, unsigned Align,
