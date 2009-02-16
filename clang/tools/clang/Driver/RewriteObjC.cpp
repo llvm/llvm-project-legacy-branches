@@ -2835,8 +2835,8 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
      char *method_types;
      }
      */
-    Result += "\nstruct protocol_methods {\n";
-    Result += "\tSEL _cmd;\n";
+    Result += "\nstruct _protocol_methods {\n";
+    Result += "\tstruct objc_selector *_cmd;\n";
     Result += "\tchar *method_types;\n";
     Result += "};\n";
     
@@ -2855,7 +2855,7 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
      */
     Result += "\nstatic struct {\n";
     Result += "\tint protocol_method_count;\n";
-    Result += "\tstruct protocol_methods protocol_methods[";
+    Result += "\tstruct _protocol_methods protocol_methods[";
     Result += utostr(NumMethods);
     Result += "];\n} _OBJC_PROTOCOL_INSTANCE_METHODS_";
     Result += PDecl->getNameAsString();
@@ -2866,9 +2866,9 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
     for (ObjCProtocolDecl::instmeth_iterator I = PDecl->instmeth_begin(), 
          E = PDecl->instmeth_end(); I != E; ++I) {
       if (I == PDecl->instmeth_begin())
-        Result += "\t  ,{{(SEL)\"";
+        Result += "\t  ,{{(struct objc_selector *)\"";
       else
-        Result += "\t  ,{(SEL)\"";
+        Result += "\t  ,{(struct objc_selector *)\"";
       Result += (*I)->getSelector().getAsString().c_str();
       std::string MethodTypeString;
       Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
@@ -2889,7 +2889,7 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
      */
     Result += "\nstatic struct {\n";
     Result += "\tint protocol_method_count;\n";
-    Result += "\tstruct protocol_methods protocol_methods[";
+    Result += "\tstruct _protocol_methods protocol_methods[";
     Result += utostr(NumMethods);
     Result += "];\n} _OBJC_PROTOCOL_CLASS_METHODS_";
     Result += PDecl->getNameAsString();
@@ -2902,9 +2902,9 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
     for (ObjCProtocolDecl::classmeth_iterator I = PDecl->classmeth_begin(), 
          E = PDecl->classmeth_end(); I != E; ++I) {
       if (I == PDecl->classmeth_begin())
-        Result += "\t  ,{{(SEL)\"";
+        Result += "\t  ,{{(struct objc_selector *)\"";
       else
-        Result += "\t  ,{(SEL)\"";
+        Result += "\t  ,{(struct objc_selector *)\"";
       Result += (*I)->getSelector().getAsString().c_str();
       std::string MethodTypeString;
       Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
@@ -3383,11 +3383,6 @@ void RewriteObjC::SynthesizeMetaDataIntoBuffer(std::string &Result) {
   for (int i = 0; i < CatDefCount; i++)
     RewriteObjCCategoryImplDecl(CategoryImplementation[i], Result);
 
-  // Write out meta data for each @protocol(<expr>).
-  for (llvm::SmallPtrSet<ObjCProtocolDecl *,8>::iterator I = ProtocolExprDecls.begin(), 
-       E = ProtocolExprDecls.end(); I != E; ++I) {
-        RewriteObjCProtocolMetaData(*I, "", "", Result);
-  }
   // Write objc_symtab metadata
   /*
    struct _objc_symtab
@@ -4546,11 +4541,8 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
   // Here's a great place to add any extra declarations that may be needed.
   // Write out meta data for each @protocol(<expr>).
   for (llvm::SmallPtrSet<ObjCProtocolDecl *,8>::iterator I = ProtocolExprDecls.begin(), 
-       E = ProtocolExprDecls.end(); I != E; ++I) {
-    Preamble += "\nextern struct _objc_protocol _OBJC_PROTOCOL_";
-    Preamble += (*I)->getNameAsString();
-    Preamble += ";\n";
-  }
+       E = ProtocolExprDecls.end(); I != E; ++I)
+    RewriteObjCProtocolMetaData(*I, "", "", Preamble);
 
   InsertText(SM->getLocForStartOfFile(MainFileID), 
              Preamble.c_str(), Preamble.size(), false);
