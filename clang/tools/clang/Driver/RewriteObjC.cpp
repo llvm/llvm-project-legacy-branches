@@ -60,7 +60,7 @@ namespace {
     llvm::SmallVector<Stmt *, 32> Stmts;
     llvm::SmallVector<int, 8> ObjCBcLabelNo;
     // Remember all the @protocol(<expr>) expressions.
-    llvm::SmallVector<ObjCProtocolDecl *, 32> ProtocolExprDecls;
+    llvm::SmallPtrSet<ObjCProtocolDecl *, 32> ProtocolExprDecls;
     
     unsigned NumObjCStringLiterals;
     
@@ -2587,7 +2587,7 @@ Stmt *RewriteObjC::RewriteObjCProtocolExpr(ObjCProtocolExpr *Exp) {
                                                     &ProtoExprs[0], 
                                                     ProtoExprs.size());
   ReplaceStmt(Exp, ProtoExp);
-  ProtocolExprDecls.push_back(Exp->getProtocol());
+  ProtocolExprDecls.insert(Exp->getProtocol());
   // delete Exp; leak for now, see RewritePropertySetter() usage for more info. 
   return ProtoExp;
   
@@ -2940,7 +2940,7 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
     objc_protocol = true;
   }
   
-  Result += "\nstatic struct _objc_protocol _OBJC_PROTOCOL_";
+  Result += "\nstruct _objc_protocol _OBJC_PROTOCOL_";
   Result += PDecl->getNameAsString();
   Result += " __attribute__ ((used, section (\"__OBJC, __protocol\")))= "
     "{\n\t0, \"";
@@ -3386,11 +3386,10 @@ void RewriteObjC::SynthesizeMetaDataIntoBuffer(std::string &Result) {
     RewriteObjCCategoryImplDecl(CategoryImplementation[i], Result);
 
   // Write out meta data for each @protocol(<expr>).
-  if (unsigned int nProtoExprs = ProtocolExprDecls.size()) {
-    for (unsigned int i = 0; i < nProtoExprs; i++)
-      RewriteObjCProtocolMetaData(ProtocolExprDecls[i], "", "", Result);
+  for (llvm::SmallPtrSet<ObjCProtocolDecl *,8>::iterator I = ProtocolExprDecls.begin(), 
+       E = ProtocolExprDecls.end(); I != E; ++I) {
+        RewriteObjCProtocolMetaData(*I, "", "", Result);
   }
-  
   // Write objc_symtab metadata
   /*
    struct _objc_symtab
@@ -4546,6 +4545,15 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
   
   RewriteInclude();
   
+  // Here's a great place to add any extra declarations that may be needed.
+  // Write out meta data for each @protocol(<expr>).
+  for (llvm::SmallPtrSet<ObjCProtocolDecl *,8>::iterator I = ProtocolExprDecls.begin(), 
+       E = ProtocolExprDecls.end(); I != E; ++I) {
+    Preamble += "\nextern struct _objc_protocol _OBJC_PROTOCOL_";
+    Preamble += (*I)->getNameAsString();
+    Preamble += ";\n";
+  }
+
   InsertText(SM->getLocForStartOfFile(MainFileID), 
              Preamble.c_str(), Preamble.size(), false);
   
