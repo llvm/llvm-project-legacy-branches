@@ -59,6 +59,8 @@ namespace {
     llvm::DenseMap<ObjCMethodDecl*, std::string> MethodInternalNames;
     llvm::SmallVector<Stmt *, 32> Stmts;
     llvm::SmallVector<int, 8> ObjCBcLabelNo;
+    // Remember all the @protocol(<expr>) expressions.
+    llvm::SmallVector<ObjCProtocolDecl *, 32> ProtocolExprDecls;
     
     unsigned NumObjCStringLiterals;
     
@@ -297,11 +299,14 @@ namespace {
                                     const char *ClassName,
                                     std::string &Result);
     
-    void RewriteObjCProtocolsMetaData(const ObjCList<ObjCProtocolDecl>
-                                                       &Protocols,
-                                      const char *prefix,
-                                      const char *ClassName,
-                                      std::string &Result);
+    void RewriteObjCProtocolMetaData(ObjCProtocolDecl *Protocol,
+                                     const char *prefix,
+                                     const char *ClassName,
+                                     std::string &Result);
+    void RewriteObjCProtocolListMetaData(const ObjCList<ObjCProtocolDecl> &Prots,
+                                         const char *prefix, 
+                                         const char *ClassName,
+                                         std::string &Result);
     void SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
                                       std::string &Result);
     void SynthesizeIvarOffsetComputation(ObjCImplementationDecl *IDecl, 
@@ -2582,7 +2587,8 @@ Stmt *RewriteObjC::RewriteObjCProtocolExpr(ObjCProtocolExpr *Exp) {
                                                     &ProtoExprs[0], 
                                                     ProtoExprs.size());
   ReplaceStmt(Exp, ProtoExp);
-  // delete Exp; leak for now, see RewritePropertySetter() usage for more info.
+  ProtocolExprDecls.push_back(Exp->getProtocol());
+  // delete Exp; leak for now, see RewritePropertySetter() usage for more info. 
   return ProtoExp;
   
 }
@@ -2818,153 +2824,159 @@ void RewriteObjC::RewriteObjCMethodsMetaData(instmeth_iterator MethodBegin,
   Result += "\t }\n};\n";
 }
 
-/// RewriteObjCProtocolsMetaData - Rewrite protocols meta-data.
+/// RewriteObjCProtocolMetaData - Rewrite protocols meta-data.
 void RewriteObjC::
-RewriteObjCProtocolsMetaData(const ObjCList<ObjCProtocolDecl> &Protocols,
-                             const char *prefix,
-                             const char *ClassName,
-                             std::string &Result) {
+RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
+                            const char *ClassName, std::string &Result) {
   static bool objc_protocol_methods = false;
-  if (Protocols.empty()) return;
-  
-  for (unsigned i = 0; i != Protocols.size(); i++) {
-    ObjCProtocolDecl *PDecl = Protocols[i];
-    // Output struct protocol_methods holder of method selector and type.
-    if (!objc_protocol_methods && !PDecl->isForwardDecl()) {
-      /* struct protocol_methods {
-       SEL _cmd;
-       char *method_types;
-       }
-       */
-      Result += "\nstruct protocol_methods {\n";
-      Result += "\tSEL _cmd;\n";
-      Result += "\tchar *method_types;\n";
-      Result += "};\n";
-      
-      objc_protocol_methods = true;
-    }
-    // Do not synthesize the protocol more than once.
-    if (ObjCSynthesizedProtocols.count(PDecl))
-      continue;
-           
-    if (PDecl->instmeth_begin() != PDecl->instmeth_end()) {
-      unsigned NumMethods = PDecl->getNumInstanceMethods();
-      /* struct _objc_protocol_method_list {
-       int protocol_method_count;
-       struct protocol_methods protocols[];
-       }
-       */
-      Result += "\nstatic struct {\n";
-      Result += "\tint protocol_method_count;\n";
-      Result += "\tstruct protocol_methods protocols[";
-      Result += utostr(NumMethods);
-      Result += "];\n} _OBJC_PROTOCOL_INSTANCE_METHODS_";
-      Result += PDecl->getNameAsString();
-      Result += " __attribute__ ((used, section (\"__OBJC, __cat_inst_meth\")))= "
-        "{\n\t" + utostr(NumMethods) + "\n";
-      
-      // Output instance methods declared in this protocol.
-      for (ObjCProtocolDecl::instmeth_iterator I = PDecl->instmeth_begin(), 
-           E = PDecl->instmeth_end(); I != E; ++I) {
-        if (I == PDecl->instmeth_begin())
-          Result += "\t  ,{{(SEL)\"";
-        else
-          Result += "\t  ,{(SEL)\"";
-        Result += (*I)->getSelector().getAsString().c_str();
-        std::string MethodTypeString;
-        Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
-        Result += "\", \"";
-        Result += MethodTypeString;
-        Result += "\"}\n";
-      }
-      Result += "\t }\n};\n";
-    }
-    
-    // Output class methods declared in this protocol.
-    int NumMethods = PDecl->getNumClassMethods();
-    if (NumMethods > 0) {
-      /* struct _objc_protocol_method_list {
-       int protocol_method_count;
-       struct protocol_methods protocols[];
-       }
-       */
-      Result += "\nstatic struct {\n";
-      Result += "\tint protocol_method_count;\n";
-      Result += "\tstruct protocol_methods protocols[";
-      Result += utostr(NumMethods);
-      Result += "];\n} _OBJC_PROTOCOL_CLASS_METHODS_";
-      Result += PDecl->getNameAsString();
-      Result += " __attribute__ ((used, section (\"__OBJC, __cat_cls_meth\")))= "
-             "{\n\t";
-      Result += utostr(NumMethods);
-      Result += "\n";
-      
-      // Output instance methods declared in this protocol.
-      for (ObjCProtocolDecl::classmeth_iterator I = PDecl->classmeth_begin(), 
-           E = PDecl->classmeth_end(); I != E; ++I) {
-        if (I == PDecl->classmeth_begin())
-          Result += "\t  ,{{(SEL)\"";
-        else
-          Result += "\t  ,{(SEL)\"";
-        Result += (*I)->getSelector().getAsString().c_str();
-        std::string MethodTypeString;
-        Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
-        Result += "\", \"";
-        Result += MethodTypeString;
-        Result += "\"}\n";
-      }
-      Result += "\t }\n};\n";
-    }
 
-    // Output:
-    /* struct _objc_protocol {
-     // Objective-C 1.0 extensions
-     struct _objc_protocol_extension *isa;
-     char *protocol_name;
-     struct _objc_protocol **protocol_list;
-     struct _objc_protocol_method_list *instance_methods;
-     struct _objc_protocol_method_list *class_methods;
-     };  
+  // Output struct protocol_methods holder of method selector and type.
+  if (!objc_protocol_methods && !PDecl->isForwardDecl()) {
+    /* struct protocol_methods {
+     SEL _cmd;
+     char *method_types;
+     }
      */
-    static bool objc_protocol = false;
-    if (!objc_protocol) {
-      Result += "\nstruct _objc_protocol {\n";
-      Result += "\tstruct _objc_protocol_extension *isa;\n";
-      Result += "\tchar *protocol_name;\n";
-      Result += "\tstruct _objc_protocol **protocol_list;\n";
-      Result += "\tstruct _objc_protocol_method_list *instance_methods;\n";
-      Result += "\tstruct _objc_protocol_method_list *class_methods;\n";
-      Result += "};\n";
-      
-      objc_protocol = true;
-    }
-    
-    Result += "\nstatic struct _objc_protocol _OBJC_PROTOCOL_";
-    Result += PDecl->getNameAsString();
-    Result += " __attribute__ ((used, section (\"__OBJC, __protocol\")))= "
-      "{\n\t0, \"";
-    Result += PDecl->getNameAsString();
-    Result += "\", 0, ";
-    if (PDecl->instmeth_begin() != PDecl->instmeth_end()) {
-      Result += "(struct _objc_protocol_method_list *)&_OBJC_PROTOCOL_INSTANCE_METHODS_";
-      Result += PDecl->getNameAsString();
-      Result += ", ";
-    }
-    else
-      Result += "0, ";
-    if (PDecl->getNumClassMethods() > 0) {
-      Result += "(struct _objc_protocol_method_list *)&_OBJC_PROTOCOL_CLASS_METHODS_";
-      Result += PDecl->getNameAsString();
-      Result += "\n";
-    }
-    else
-      Result += "0\n";
+    Result += "\nstruct protocol_methods {\n";
+    Result += "\tSEL _cmd;\n";
+    Result += "\tchar *method_types;\n";
     Result += "};\n";
     
-    // Mark this protocol as having been generated.
-    if (!ObjCSynthesizedProtocols.insert(PDecl))
-      assert(false && "protocol already synthesized");
+    objc_protocol_methods = true;
   }
+  // Do not synthesize the protocol more than once.
+  if (ObjCSynthesizedProtocols.count(PDecl))
+    return;
+         
+  if (PDecl->instmeth_begin() != PDecl->instmeth_end()) {
+    unsigned NumMethods = PDecl->getNumInstanceMethods();
+    /* struct _objc_protocol_method_list {
+     int protocol_method_count;
+     struct protocol_methods protocols[];
+     }
+     */
+    Result += "\nstatic struct {\n";
+    Result += "\tint protocol_method_count;\n";
+    Result += "\tstruct protocol_methods protocol_methods[";
+    Result += utostr(NumMethods);
+    Result += "];\n} _OBJC_PROTOCOL_INSTANCE_METHODS_";
+    Result += PDecl->getNameAsString();
+    Result += " __attribute__ ((used, section (\"__OBJC, __cat_inst_meth\")))= "
+      "{\n\t" + utostr(NumMethods) + "\n";
+    
+    // Output instance methods declared in this protocol.
+    for (ObjCProtocolDecl::instmeth_iterator I = PDecl->instmeth_begin(), 
+         E = PDecl->instmeth_end(); I != E; ++I) {
+      if (I == PDecl->instmeth_begin())
+        Result += "\t  ,{{(SEL)\"";
+      else
+        Result += "\t  ,{(SEL)\"";
+      Result += (*I)->getSelector().getAsString().c_str();
+      std::string MethodTypeString;
+      Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
+      Result += "\", \"";
+      Result += MethodTypeString;
+      Result += "\"}\n";
+    }
+    Result += "\t }\n};\n";
+  }
+  
+  // Output class methods declared in this protocol.
+  int NumMethods = PDecl->getNumClassMethods();
+  if (NumMethods > 0) {
+    /* struct _objc_protocol_method_list {
+     int protocol_method_count;
+     struct protocol_methods protocols[];
+     }
+     */
+    Result += "\nstatic struct {\n";
+    Result += "\tint protocol_method_count;\n";
+    Result += "\tstruct protocol_methods protocol_methods[";
+    Result += utostr(NumMethods);
+    Result += "];\n} _OBJC_PROTOCOL_CLASS_METHODS_";
+    Result += PDecl->getNameAsString();
+    Result += " __attribute__ ((used, section (\"__OBJC, __cat_cls_meth\")))= "
+           "{\n\t";
+    Result += utostr(NumMethods);
+    Result += "\n";
+    
+    // Output instance methods declared in this protocol.
+    for (ObjCProtocolDecl::classmeth_iterator I = PDecl->classmeth_begin(), 
+         E = PDecl->classmeth_end(); I != E; ++I) {
+      if (I == PDecl->classmeth_begin())
+        Result += "\t  ,{{(SEL)\"";
+      else
+        Result += "\t  ,{(SEL)\"";
+      Result += (*I)->getSelector().getAsString().c_str();
+      std::string MethodTypeString;
+      Context->getObjCEncodingForMethodDecl((*I), MethodTypeString);
+      Result += "\", \"";
+      Result += MethodTypeString;
+      Result += "\"}\n";
+    }
+    Result += "\t }\n};\n";
+  }
+
+  // Output:
+  /* struct _objc_protocol {
+   // Objective-C 1.0 extensions
+   struct _objc_protocol_extension *isa;
+   char *protocol_name;
+   struct _objc_protocol **protocol_list;
+   struct _objc_protocol_method_list *instance_methods;
+   struct _objc_protocol_method_list *class_methods;
+   };  
+   */
+  static bool objc_protocol = false;
+  if (!objc_protocol) {
+    Result += "\nstruct _objc_protocol {\n";
+    Result += "\tstruct _objc_protocol_extension *isa;\n";
+    Result += "\tchar *protocol_name;\n";
+    Result += "\tstruct _objc_protocol **protocol_list;\n";
+    Result += "\tstruct _objc_protocol_method_list *instance_methods;\n";
+    Result += "\tstruct _objc_protocol_method_list *class_methods;\n";
+    Result += "};\n";
+    
+    objc_protocol = true;
+  }
+  
+  Result += "\nstatic struct _objc_protocol _OBJC_PROTOCOL_";
+  Result += PDecl->getNameAsString();
+  Result += " __attribute__ ((used, section (\"__OBJC, __protocol\")))= "
+    "{\n\t0, \"";
+  Result += PDecl->getNameAsString();
+  Result += "\", 0, ";
+  if (PDecl->instmeth_begin() != PDecl->instmeth_end()) {
+    Result += "(struct _objc_protocol_method_list *)&_OBJC_PROTOCOL_INSTANCE_METHODS_";
+    Result += PDecl->getNameAsString();
+    Result += ", ";
+  }
+  else
+    Result += "0, ";
+  if (PDecl->getNumClassMethods() > 0) {
+    Result += "(struct _objc_protocol_method_list *)&_OBJC_PROTOCOL_CLASS_METHODS_";
+    Result += PDecl->getNameAsString();
+    Result += "\n";
+  }
+  else
+    Result += "0\n";
+  Result += "};\n";
+  
+  // Mark this protocol as having been generated.
+  if (!ObjCSynthesizedProtocols.insert(PDecl))
+    assert(false && "protocol already synthesized");
+
+}
+
+void RewriteObjC::
+RewriteObjCProtocolListMetaData(const ObjCList<ObjCProtocolDecl> &Protocols,
+                                const char *prefix, const char *ClassName,
+                                std::string &Result) {
+  if (Protocols.empty()) return;
+  
+  for (unsigned i = 0; i != Protocols.size(); i++)
+    RewriteObjCProtocolMetaData(Protocols[i], prefix, ClassName, Result);
+
   // Output the top lovel protocol meta-data for the class.
   /* struct _objc_protocol_list {
    struct _objc_protocol_list *next;
@@ -2998,6 +3010,7 @@ RewriteObjCProtocolsMetaData(const ObjCList<ObjCProtocolDecl> &Protocols,
   Result += "\t }\n};\n";
 }
 
+
 /// RewriteObjCCategoryImplDecl - Rewrite metadata for each category 
 /// implementation.
 void RewriteObjC::RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *IDecl,
@@ -3027,9 +3040,8 @@ void RewriteObjC::RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *IDecl,
   // Protocols referenced in class declaration?
   // Null CDecl is case of a category implementation with no category interface
   if (CDecl)
-    RewriteObjCProtocolsMetaData(CDecl->getReferencedProtocols(), "CATEGORY",
-                                 FullCategoryName.c_str(), Result);
-  
+    RewriteObjCProtocolListMetaData(CDecl->getReferencedProtocols(), "CATEGORY",
+                                    FullCategoryName.c_str(), Result);
   /* struct _objc_category {
    char *category_name;
    char *class_name;
@@ -3205,10 +3217,9 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
                              false, "", IDecl->getNameAsCString(), Result);
     
   // Protocols referenced in class declaration?
-  RewriteObjCProtocolsMetaData(CDecl->getReferencedProtocols(),
-                               "CLASS", CDecl->getNameAsCString(), Result);
+  RewriteObjCProtocolListMetaData(CDecl->getReferencedProtocols(),
+                                  "CLASS", CDecl->getNameAsCString(), Result);
     
-  
   // Declaration of class/meta-class metadata
   /* struct _objc_class {
    struct _objc_class *isa; // or const char *root_class_name when metadata
@@ -3373,6 +3384,12 @@ void RewriteObjC::SynthesizeMetaDataIntoBuffer(std::string &Result) {
   // For each implemented category, write out all its meta data.
   for (int i = 0; i < CatDefCount; i++)
     RewriteObjCCategoryImplDecl(CategoryImplementation[i], Result);
+
+  // Write out meta data for each @protocol(<expr>).
+  if (unsigned int nProtoExprs = ProtocolExprDecls.size()) {
+    for (unsigned int i = 0; i < nProtoExprs; i++)
+      RewriteObjCProtocolMetaData(ProtocolExprDecls[i], "", "", Result);
+  }
   
   // Write objc_symtab metadata
   /*
@@ -4520,7 +4537,7 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
   
   if (ClassImplementation.size() || CategoryImplementation.size())
     RewriteImplementations();
-  
+
   // Get the buffer corresponding to MainFileID.  If we haven't changed it, then
   // we are done.
   if (const RewriteBuffer *RewriteBuf = 
@@ -4531,7 +4548,8 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
     fprintf(stderr, "No changes\n");
   }
 
-  if (ClassImplementation.size() || CategoryImplementation.size()) {
+  if (ClassImplementation.size() || CategoryImplementation.size() ||
+      ProtocolExprDecls.size()) {
     // Rewrite Objective-c meta data*
     std::string ResultStr;
     SynthesizeMetaDataIntoBuffer(ResultStr);
