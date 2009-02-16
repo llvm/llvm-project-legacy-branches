@@ -2938,7 +2938,7 @@ RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl, const char *prefix,
     objc_protocol = true;
   }
   
-  Result += "\nstruct _objc_protocol _OBJC_PROTOCOL_";
+  Result += "\nstatic struct _objc_protocol _OBJC_PROTOCOL_";
   Result += PDecl->getNameAsString();
   Result += " __attribute__ ((used, section (\"__OBJC, __protocol\")))= "
     "{\n\t0, \"";
