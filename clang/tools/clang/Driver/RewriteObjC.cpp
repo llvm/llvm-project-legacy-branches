@@ -73,7 +73,6 @@ namespace {
     FunctionDecl *GetMetaClassFunctionDecl;
     FunctionDecl *SelGetUidFunctionDecl;
     FunctionDecl *CFStringFunctionDecl;
-    FunctionDecl *GetProtocolFunctionDecl;
     FunctionDecl *SuperContructorFunctionDecl;
       
     // ObjC string constant support.
@@ -87,6 +86,9 @@ namespace {
     ObjCMethodDecl *CurMethodDef;
     RecordDecl *SuperStructDecl;
     RecordDecl *ConstantStringDecl;
+    
+    TypeDecl *ProtocolTypeDecl;
+    QualType getProtocolType();
     
     // Needed for header files being rewritten
     bool IsHeader;
@@ -281,7 +283,6 @@ namespace {
     void SynthGetClassFunctionDecl();
     void SynthGetMetaClassFunctionDecl();
     void SynthSelGetUidFunctionDecl();
-    void SynthGetProtocolFunctionDecl();
     void SynthSuperContructorFunctionDecl();
       
     // Metadata emission.
@@ -438,13 +439,13 @@ void RewriteObjC::Initialize(ASTContext &context) {
   GetMetaClassFunctionDecl = 0;
   SelGetUidFunctionDecl = 0;
   CFStringFunctionDecl = 0;
-  GetProtocolFunctionDecl = 0;
   ConstantStringClassReference = 0;
   NSStringRecord = 0;
   CurMethodDef = 0;
   CurFunctionDef = 0;
   GlobalVarDecl = 0;
   SuperStructDecl = 0;
+  ProtocolTypeDecl = 0;
   ConstantStringDecl = 0;
   BcLabelCount = 0;
   SuperContructorFunctionDecl = 0;
@@ -1929,21 +1930,6 @@ void RewriteObjC::SynthSelGetUidFunctionDecl() {
                                            FunctionDecl::Extern, false);
 }
 
-// SynthGetProtocolFunctionDecl - Protocol objc_getProtocol(const char *proto);
-void RewriteObjC::SynthGetProtocolFunctionDecl() {
-  IdentifierInfo *SelGetProtoIdent = &Context->Idents.get("objc_getProtocol");
-  llvm::SmallVector<QualType, 16> ArgTys;
-  ArgTys.push_back(Context->getPointerType(
-    Context->CharTy.getQualifiedType(QualType::Const)));
-  QualType getFuncType = Context->getFunctionType(Context->getObjCProtoType(),
-                                                  &ArgTys[0], ArgTys.size(),
-                                                  false /*isVariadic*/, 0);
-  GetProtocolFunctionDecl = FunctionDecl::Create(*Context, TUDecl,
-                                             SourceLocation(), 
-                                             SelGetProtoIdent, getFuncType,
-                                             FunctionDecl::Extern, false);
-}
-
 void RewriteObjC::RewriteFunctionDecl(FunctionDecl *FD) {
   // declared in <objc/objc.h>
   if (FD->getIdentifier() &&
@@ -2571,25 +2557,37 @@ Stmt *RewriteObjC::RewriteMessageExpr(ObjCMessageExpr *Exp) {
   return ReplacingStmt;
 }
 
+// typedef struct objc_object Protocol;
+QualType RewriteObjC::getProtocolType() {
+  if (!ProtocolTypeDecl) {
+    ProtocolTypeDecl = TypedefDecl::Create(*Context, TUDecl,
+                                           SourceLocation(), 
+                                           &Context->Idents.get("Protocol"),
+                                           Context->getObjCIdType());
+  }
+  return Context->getTypeDeclType(ProtocolTypeDecl);
+}
+
 /// RewriteObjCProtocolExpr - Rewrite a protocol expression into
-/// call to objc_getProtocol("proto-name").
+/// a synthesized/forward data reference (to the protocol's metadata).
+/// The forward references (and metadata) are generated in
+/// RewriteObjC::HandleTranslationUnit().
 Stmt *RewriteObjC::RewriteObjCProtocolExpr(ObjCProtocolExpr *Exp) {
-  if (!GetProtocolFunctionDecl)
-    SynthGetProtocolFunctionDecl();
-  // Create a call to objc_getProtocol("ProtocolName").
-  llvm::SmallVector<Expr*, 8> ProtoExprs;
-  QualType argType = Context->getPointerType(Context->CharTy);
-  ProtoExprs.push_back(new StringLiteral(Exp->getProtocol()->getNameAsCString(),
-                                       strlen(Exp->getProtocol()->getNameAsCString()),
-                                       false, argType, SourceLocation(),
-                                       SourceLocation()));
-  CallExpr *ProtoExp = SynthesizeCallToFunctionDecl(GetProtocolFunctionDecl,
-                                                    &ProtoExprs[0], 
-                                                    ProtoExprs.size());
-  ReplaceStmt(Exp, ProtoExp);
+  std::string Name = "_OBJC_PROTOCOL_" + Exp->getProtocol()->getNameAsString();
+  IdentifierInfo *ID = &Context->Idents.get(Name);
+  VarDecl *VD = VarDecl::Create(*Context, TUDecl, SourceLocation(), 
+                          ID, QualType()/*UNUSED*/, VarDecl::Extern);
+  DeclRefExpr *DRE = new DeclRefExpr(VD, getProtocolType(), SourceLocation());
+  Expr *DerefExpr = new UnaryOperator(DRE, UnaryOperator::AddrOf,
+                             Context->getPointerType(DRE->getType()),
+                             SourceLocation());
+  CastExpr *castExpr = new CStyleCastExpr(DerefExpr->getType(), DerefExpr, 
+                                          DerefExpr->getType(), 
+                                          SourceLocation(), SourceLocation());
+  ReplaceStmt(Exp, castExpr);
   ProtocolExprDecls.insert(Exp->getProtocol());
   // delete Exp; leak for now, see RewritePropertySetter() usage for more info. 
-  return ProtoExp;
+  return castExpr;
   
 }
 
