@@ -325,7 +325,7 @@ namespace {
     // Block specific rewrite rules.    
     void RewriteBlockCall(CallExpr *Exp);
     void RewriteBlockPointerDecl(NamedDecl *VD);
-    void RewriteBlockDeclRefExpr(BlockDeclRefExpr *VD);
+    Stmt *RewriteBlockDeclRefExpr(BlockDeclRefExpr *VD);
     void RewriteBlockPointerFunctionArgs(FunctionDecl *FD);
     
     std::string SynthesizeBlockHelperFuncs(BlockExpr *CE, int i, 
@@ -3859,7 +3859,20 @@ void RewriteObjC::RewriteBlockCall(CallExpr *Exp) {
   ReplaceStmt(Exp, BlockCall);
 }
 
-void RewriteObjC::RewriteBlockDeclRefExpr(BlockDeclRefExpr *BDRE) {
+// We need to return the rewritten expression to handle cases where the
+// BlockDeclRefExpr is embedded in another expression being rewritten.
+// For example:
+//
+// int main() {
+//    __block Foo *f;
+//    __block int i;
+// 
+//    void (^myblock)() = ^() {
+//        [f test]; // f is a BlockDeclRefExpr embedded in a message (which is being rewritten).
+//        i = 77;
+//    };
+//}
+Stmt *RewriteObjC::RewriteBlockDeclRefExpr(BlockDeclRefExpr *BDRE) {
   // FIXME: Add more elaborate code generation required by the ABI.
   Expr *DerefExpr = new UnaryOperator(BDRE, UnaryOperator::Deref,
                              Context->getPointerType(BDRE->getType()),
@@ -3867,6 +3880,7 @@ void RewriteObjC::RewriteBlockDeclRefExpr(BlockDeclRefExpr *BDRE) {
   // Need parens to enforce precedence.
   ParenExpr *PE = new ParenExpr(SourceLocation(), SourceLocation(), DerefExpr);
   ReplaceStmt(BDRE, PE);
+  return PE;
 }
 
 void RewriteObjC::RewriteCastExpr(CStyleCastExpr *CE) {
@@ -4359,7 +4373,7 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
   // Handle blocks rewriting.
   if (BlockDeclRefExpr *BDRE = dyn_cast<BlockDeclRefExpr>(S)) {
     if (BDRE->isByRef())
-      RewriteBlockDeclRefExpr(BDRE);
+      return RewriteBlockDeclRefExpr(BDRE);
   }
   if (CallExpr *CE = dyn_cast<CallExpr>(S)) {
     if (CE->getCallee()->getType()->isBlockPointerType()) {
