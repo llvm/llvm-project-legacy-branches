@@ -2430,9 +2430,10 @@ Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp) {
       }
     } 
     MsgExprs.push_back(userExpr);
-    // We've transferred the ownership to MsgExprs. Null out the argument in
-    // the original expression, since we will delete it below.
-    Exp->setArg(i, 0);
+    // We've transferred the ownership to MsgExprs. For now, we *don't* null
+    // out the argument in the original expression (since we aren't deleting
+    // the ObjCMessageExpr). See RewritePropertySetter() usage for more info.
+    //Exp->setArg(i, 0);
   }
   // Generate the funky cast.
   CastExpr *cast;
@@ -2543,13 +2544,13 @@ Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp) {
       new ConditionalOperator(lessThanExpr, CE, STCE, returnType);
     ReplacingStmt = new ParenExpr(SourceLocation(), SourceLocation(), CondExpr);
   }
+  // delete Exp; leak for now, see RewritePropertySetter() usage for more info. 
   return ReplacingStmt;
 }
 
 Stmt *RewriteObjC::RewriteMessageExpr(ObjCMessageExpr *Exp) {
   Stmt *ReplacingStmt = SynthMessageExpr(Exp);
   
-  //ReplacingStmt->dump();
   // Now do the actual rewrite.
   ReplaceStmt(Exp, ReplacingStmt);
   

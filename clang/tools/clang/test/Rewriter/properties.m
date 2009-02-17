@@ -52,3 +52,24 @@ static int func(int i);
     obj1.o.i = 77;
 }
 @end
+
+@class NSString;
+@interface NSCoder
+- (float)decodeFloatForKey:(NSString *)key;
+- (float)decodeFloat;
+@end
+@interface Window {
+    float thickness;
+}
+@property float thickness;
+@end
+@implementation Window
+@synthesize thickness;
+
+- (id)initWithCoder:(NSCoder *)coder
+{
+  self.thickness = [coder decodeFloat];
+  self.thickness = [coder decodeFloatForKey:@"thickness"];
+}
+
+@end
