@@ -153,26 +153,20 @@ static Constant *FoldBitCast(Constant *V, const Type *DestTy) {
       // Integral -> Integral. This is a no-op because the bit widths must
       // be the same. Consequently, we just fold to V.
       return V;
-    
-    if (DestTy->isFloatingPoint()) {
-      assert((DestTy == Type::DoubleTy || DestTy == Type::FloatTy) && 
-             "Unknown FP type!");
-      return ConstantFP::get(APFloat(CI->getValue()));
-    }
+
+    if (DestTy->isFloatingPoint())
+      return ConstantFP::get(APFloat(CI->getValue(),
+                                     DestTy != Type::PPC_FP128Ty));
+
     // Otherwise, can't fold this (vector?)
     return 0;
   }
-  
+
   // Handle ConstantFP input.
-  if (const ConstantFP *FP = dyn_cast<ConstantFP>(V)) {
+  if (const ConstantFP *FP = dyn_cast<ConstantFP>(V))
     // FP -> Integral.
-    if (DestTy == Type::Int32Ty) {
-      return ConstantInt::get(FP->getValueAPF().bitcastToAPInt());
-    } else {
-      assert(DestTy == Type::Int64Ty && "only support f32/f64 for now!");
-      return ConstantInt::get(FP->getValueAPF().bitcastToAPInt());
-    }
-  }
+    return ConstantInt::get(FP->getValueAPF().bitcastToAPInt());
+
   return 0;
 }
 
