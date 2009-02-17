@@ -3636,9 +3636,12 @@ std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
       S += FieldName + "; // by ref\n";
     }
     // Finish writing the constructor.
-    // FIXME: handle NSConcreteGlobalBlock.
     Constructor += ", int flags=0) {\n";
-    Constructor += "    impl.isa = 0/*&_NSConcreteStackBlock*/;\n    impl.Size = sizeof(";
+    if (GlobalVarDecl)
+      Constructor += "    impl.isa = &_NSConcreteGlobalBlock;\n";
+    else
+      Constructor += "    impl.isa = &_NSConcreteStackBlock;\n";
+    Constructor += "    impl.Size = sizeof(";
     Constructor += Tag + ");\n    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
     
     if (hasCopyDisposeHelpers)
@@ -3668,9 +3671,12 @@ std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
     }
   } else {
     // Finish writing the constructor.
-    // FIXME: handle NSConcreteGlobalBlock.
     Constructor += ", int flags=0) {\n";
-    Constructor += "    impl.isa = 0/*&_NSConcreteStackBlock*/;\n    impl.Size = sizeof(";
+    if (GlobalVarDecl)
+      Constructor += "    impl.isa = &_NSConcreteGlobalBlock;\n";
+    else
+      Constructor += "    impl.isa = &_NSConcreteStackBlock;\n";
+    Constructor += "    impl.Size = sizeof(";
     Constructor += Tag + ");\n    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
     if (hasCopyDisposeHelpers)
       Constructor += "    copy = copyHelp;\n    dispose = disposeHelp;\n";
