@@ -1538,11 +1538,12 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
       }
     }
 
+    APInt UndefElts4(LHSVWidth, 0);
     TmpV = SimplifyDemandedVectorElts(I->getOperand(0), LeftDemanded,
-                                      UndefElts2, Depth+1);
+                                      UndefElts4, Depth+1);
     if (TmpV) { I->setOperand(0, TmpV); MadeChange = true; }
 
-    APInt UndefElts3(VWidth, 0);
+    APInt UndefElts3(LHSVWidth, 0);
     TmpV = SimplifyDemandedVectorElts(I->getOperand(1), RightDemanded,
                                       UndefElts3, Depth+1);
     if (TmpV) { I->setOperand(1, TmpV); MadeChange = true; }
@@ -1553,7 +1554,7 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
       if (MaskVal == -1u) {
         UndefElts.set(i);
       } else if (MaskVal < LHSVWidth) {
-        if (UndefElts2[MaskVal]) {
+        if (UndefElts4[MaskVal]) {
           NewUndefElts = true;
           UndefElts.set(i);
         }
@@ -8270,32 +8271,35 @@ Instruction *InstCombiner::visitZExt(ZExtInst &CI) {
 
   Value *Src = CI.getOperand(0);
 
-  // If this is a cast of a cast
-  if (CastInst *CSrc = dyn_cast<CastInst>(Src)) {   // A->B->C cast
-    // If this is a TRUNC followed by a ZEXT then we are dealing with integral
-    // types and if the sizes are just right we can convert this into a logical
-    // 'and' which will be much cheaper than the pair of casts.
-    if (isa<TruncInst>(CSrc)) {
-      // Get the sizes of the types involved
-      Value *A = CSrc->getOperand(0);
-      uint32_t SrcSize = A->getType()->getPrimitiveSizeInBits();
-      uint32_t MidSize = CSrc->getType()->getPrimitiveSizeInBits();
-      uint32_t DstSize = CI.getType()->getPrimitiveSizeInBits();
-      // If we're actually extending zero bits and the trunc is a no-op
-      if (MidSize < DstSize && SrcSize == DstSize) {
-        // Replace both of the casts with an And of the type mask.
-        APInt AndValue(APInt::getLowBitsSet(SrcSize, MidSize));
-        Constant *AndConst = ConstantInt::get(AndValue);
-        Instruction *And = 
-          BinaryOperator::CreateAnd(CSrc->getOperand(0), AndConst);
-        // Unfortunately, if the type changed, we need to cast it back.
-        if (And->getType() != CI.getType()) {
-          And->setName(CSrc->getName()+".mask");
-          InsertNewInstBefore(And, CI);
-          And = CastInst::CreateIntegerCast(And, CI.getType(), false/*ZExt*/);
-        }
-        return And;
-      }
+  // If this is a TRUNC followed by a ZEXT then we are dealing with integral
+  // types and if the sizes are just right we can convert this into a logical
+  // 'and' which will be much cheaper than the pair of casts.
+  if (TruncInst *CSrc = dyn_cast<TruncInst>(Src)) {   // A->B->C cast
+    // Get the sizes of the types involved.  We know that the intermediate type
+    // will be smaller than A or C, but don't know the relation between A and C.
+    Value *A = CSrc->getOperand(0);
+    unsigned SrcSize = A->getType()->getPrimitiveSizeInBits();
+    unsigned MidSize = CSrc->getType()->getPrimitiveSizeInBits();
+    unsigned DstSize = CI.getType()->getPrimitiveSizeInBits();
+    // If we're actually extending zero bits, then if
+    // SrcSize <  DstSize: zext(a & mask)
+    // SrcSize == DstSize: a & mask
+    // SrcSize  > DstSize: trunc(a) & mask
+    if (SrcSize < DstSize) {
+      APInt AndValue(APInt::getLowBitsSet(SrcSize, MidSize));
+      Constant *AndConst = ConstantInt::get(AndValue);
+      Instruction *And =
+        BinaryOperator::CreateAnd(A, AndConst, CSrc->getName()+".mask");
+      InsertNewInstBefore(And, CI);
+      return new ZExtInst(And, CI.getType());
+    } else if (SrcSize == DstSize) {
+      APInt AndValue(APInt::getLowBitsSet(SrcSize, MidSize));
+      return BinaryOperator::CreateAnd(A, ConstantInt::get(AndValue));
+    } else if (SrcSize > DstSize) {
+      Instruction *Trunc = new TruncInst(A, CI.getType(), "tmp");
+      InsertNewInstBefore(Trunc, CI);
+      APInt AndValue(APInt::getLowBitsSet(DstSize, MidSize));
+      return BinaryOperator::CreateAnd(Trunc, ConstantInt::get(AndValue));
     }
   }
 
@@ -9236,15 +9240,23 @@ static unsigned EnforceKnownAlignment(Value *V,
     // If there is a large requested alignment and we can, bump up the alignment
     // of the global.
     if (!GV->isDeclaration()) {
-      GV->setAlignment(PrefAlign);
-      Align = PrefAlign;
+      if (GV->getAlignment() >= PrefAlign)
+        Align = GV->getAlignment();
+      else {
+        GV->setAlignment(PrefAlign);
+        Align = PrefAlign;
+      }
     }
   } else if (AllocationInst *AI = dyn_cast<AllocationInst>(V)) {
     // If there is a requested alignment and if this is an alloca, round up.  We
     // don't do this for malloc, because some systems can't respect the request.
     if (isa<AllocaInst>(AI)) {
-      AI->setAlignment(PrefAlign);
-      Align = PrefAlign;
+      if (AI->getAlignment() >= PrefAlign)
+        Align = AI->getAlignment();
+      else {
+        AI->setAlignment(PrefAlign);
+        Align = PrefAlign;
+      }
     }
   }
 
@@ -9274,7 +9286,7 @@ unsigned InstCombiner::GetOrEnforceKnownAlignment(Value *V,
 
 Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
   unsigned DstAlign = GetOrEnforceKnownAlignment(MI->getOperand(1));
-  unsigned SrcAlign = GetOrEnforceKnownAlignment(MI->getOperand(2));
+  unsigned SrcAlign = GetOrEnforceKnownAlignment(MI->getOperand(2), DstAlign);
   unsigned MinAlign = std::min(DstAlign, SrcAlign);
   unsigned CopyAlign = MI->getAlignment()->getZExtValue();
 
@@ -11096,7 +11108,8 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
   Value *Op = LI.getOperand(0);
 
   // Attempt to improve the alignment.
-  unsigned KnownAlign = GetOrEnforceKnownAlignment(Op);
+  unsigned KnownAlign =
+    GetOrEnforceKnownAlignment(Op, TD->getPrefTypeAlignment(LI.getType()));
   if (KnownAlign >
       (LI.getAlignment() == 0 ? TD->getABITypeAlignment(LI.getType()) :
                                 LI.getAlignment()))
@@ -11375,7 +11388,8 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   }
 
   // Attempt to improve the alignment.
-  unsigned KnownAlign = GetOrEnforceKnownAlignment(Ptr);
+  unsigned KnownAlign =
+    GetOrEnforceKnownAlignment(Ptr, TD->getPrefTypeAlignment(Val->getType()));
   if (KnownAlign >
       (SI.getAlignment() == 0 ? TD->getABITypeAlignment(Val->getType()) :
                                 SI.getAlignment()))
