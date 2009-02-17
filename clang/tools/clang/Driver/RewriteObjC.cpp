@@ -3187,7 +3187,7 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
     Result += (*IVI)->getNameAsString();
     Result += "\", \"";
     std::string StrEncoding;
-    Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding);
+    Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding, *IVI);
     Result += StrEncoding;
     Result += "\", ";
     SynthesizeIvarOffsetComputation(IDecl, *IVI, Result);
@@ -3197,7 +3197,7 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
       Result += (*IVI)->getNameAsString();
       Result += "\", \"";
       std::string StrEncoding;
-      Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding);
+      Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding, *IVI);
       Result += StrEncoding;
       Result += "\", ";
       SynthesizeIvarOffsetComputation(IDecl, (*IVI), Result);
