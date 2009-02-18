@@ -371,6 +371,15 @@ namespace {
     
     FunctionDecl *SynthBlockInitFunctionDecl(const char *name);
     Stmt *SynthBlockInitExpr(BlockExpr *Exp);
+    
+    void ScrubNewlines(std::string &From, std::string &To) {
+      for(unsigned i = 0; i < From.length(); i++) {
+        if (From[i] == '\n')
+          To += "\r\n";
+        else
+          To += From[i];
+      }
+    }
   };
 }
 
@@ -4551,9 +4560,15 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
        E = ProtocolExprDecls.end(); I != E; ++I)
     RewriteObjCProtocolMetaData(*I, "", "", Preamble);
 
-  InsertText(SM->getLocForStartOfFile(MainFileID), 
-             Preamble.c_str(), Preamble.size(), false);
-  
+  if (LangOpts.Microsoft) {
+    std::string ConvertedString;
+    ScrubNewlines(Preamble, ConvertedString);
+    InsertText(SM->getLocForStartOfFile(MainFileID), 
+               ConvertedString.c_str(), ConvertedString.size(), false);
+  } else {
+    InsertText(SM->getLocForStartOfFile(MainFileID), 
+               Preamble.c_str(), Preamble.size(), false);
+  }
   if (ClassImplementation.size() || CategoryImplementation.size())
     RewriteImplementations();
 
@@ -4573,7 +4588,13 @@ void RewriteObjC::HandleTranslationUnit(TranslationUnit& TU) {
     std::string ResultStr;
     SynthesizeMetaDataIntoBuffer(ResultStr);
     // Emit metadata.
-    *OutFile << ResultStr;
+    if (LangOpts.Microsoft) {
+      std::string ConvertedString;
+      ScrubNewlines(ResultStr, ConvertedString);
+      *OutFile << ConvertedString;
+    } else {
+      *OutFile << ResultStr;
+    }
   }
   OutFile->flush();
 }
