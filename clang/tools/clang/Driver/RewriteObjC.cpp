@@ -380,6 +380,14 @@ namespace {
           To += From[i];
       }
     }
+    void QuoteDoublequotes(std::string &From, std::string &To) {
+      for(unsigned i = 0; i < From.length(); i++) {
+        if (From[i] == '"')
+          To += "\\\"";
+        else
+          To += From[i];
+      }
+    }
   };
 }
 
@@ -3195,8 +3203,9 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
     Result += "\t,{{\"";
     Result += (*IVI)->getNameAsString();
     Result += "\", \"";
-    std::string StrEncoding;
-    Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding, *IVI);
+    std::string TmpString, StrEncoding;
+    Context->getObjCEncodingForType((*IVI)->getType(), TmpString, *IVI);
+    QuoteDoublequotes(TmpString, StrEncoding);
     Result += StrEncoding;
     Result += "\", ";
     SynthesizeIvarOffsetComputation(IDecl, *IVI, Result);
@@ -3205,8 +3214,9 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
       Result += "\t  ,{\"";
       Result += (*IVI)->getNameAsString();
       Result += "\", \"";
-      std::string StrEncoding;
+      std::string TmpString, StrEncoding;
       Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding, *IVI);
+      QuoteDoublequotes(TmpString, StrEncoding);
       Result += StrEncoding;
       Result += "\", ";
       SynthesizeIvarOffsetComputation(IDecl, (*IVI), Result);
