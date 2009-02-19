@@ -90,7 +90,8 @@ namespace {
 
     void EliminatePointerRecurrence(PHINode *PN, BasicBlock *Preheader,
                                     SmallPtrSet<Instruction*, 16> &DeadInsts);
-    void LinearFunctionTestReplace(Loop *L, SCEVHandle IterationCount, Value *IndVar,
+    void LinearFunctionTestReplace(Loop *L, SCEVHandle IterationCount,
+                                   Value *IndVar,
                                    BasicBlock *ExitingBlock,
                                    BranchInst *BI,
                                    SCEVExpander &Rewriter);
@@ -98,7 +99,7 @@ namespace {
 
     void DeleteTriviallyDeadInstructions(SmallPtrSet<Instruction*, 16> &Insts);
 
-    void HandleFloatingPointIV(Loop *L, PHINode *PH, 
+    void HandleFloatingPointIV(Loop *L, PHINode *PH,
                                SmallPtrSet<Instruction*, 16> &DeadInsts);
   };
 }
@@ -146,7 +147,7 @@ void IndVarSimplify::EliminatePointerRecurrence(PHINode *PN,
     if (GEPI->getOperand(0) == PN) {
       assert(GEPI->getNumOperands() == 2 && "GEP types must match!");
       DOUT << "INDVARS: Eliminating pointer recurrence: " << *GEPI;
-      
+
       // Okay, we found a pointer recurrence.  Transform this pointer
       // recurrence into an integer recurrence.  Compute the value that gets
       // added to the pointer at every iteration.
@@ -190,7 +191,7 @@ void IndVarSimplify::EliminatePointerRecurrence(PHINode *PN,
               Idx[0] = Constant::getNullValue(Type::Int32Ty);
               Idx[1] = NewAdd;
               GetElementPtrInst *NGEPI = GetElementPtrInst::Create(
-                  NCE, Idx, Idx + 2, 
+                  NCE, Idx, Idx + 2,
                   GEPI->getName(), GEPI);
               SE->deleteValueFromRecords(GEPI);
               GEPI->replaceAllUsesWith(NGEPI);
@@ -286,7 +287,7 @@ void IndVarSimplify::LinearFunctionTestReplace(Loop *L,
   DOUT << "INDVARS: Rewriting loop exit condition to:\n"
        << "      LHS:" << *CmpIndVar // includes a newline
        << "       op:\t"
-       << (Opcode == ICmpInst::ICMP_NE ? "!=" : "=") << "\n"
+       << (Opcode == ICmpInst::ICMP_NE ? "!=" : "==") << "\n"
        << "      RHS:\t" << *IterationCount << "\n";
 
   Value *Cond = new ICmpInst(Opcode, CmpIndVar, ExitCnt, "exitcond", BI);
@@ -328,18 +329,18 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L, SCEV *IterationCount) {
   // the exit blocks of the loop to find them.
   for (unsigned i = 0, e = ExitBlocks.size(); i != e; ++i) {
     BasicBlock *ExitBB = ExitBlocks[i];
-    
+
     // If there are no PHI nodes in this exit block, then no values defined
     // inside the loop are used on this path, skip it.
     PHINode *PN = dyn_cast<PHINode>(ExitBB->begin());
     if (!PN) continue;
-    
+
     unsigned NumPreds = PN->getNumIncomingValues();
-    
+
     // Iterate over all of the PHI nodes.
     BasicBlock::iterator BBI = ExitBB->begin();
     while ((PN = dyn_cast<PHINode>(BBI++))) {
-      
+
       // Iterate over all of the values in all the PHI nodes.
       for (unsigned i = 0; i != NumPreds; ++i) {
         // If the value being merged in is not integer or is not defined
@@ -351,14 +352,14 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L, SCEV *IterationCount) {
           continue;
 
         // If this pred is for a subloop, not L itself, skip it.
-        if (LI->getLoopFor(PN->getIncomingBlock(i)) != L) 
+        if (LI->getLoopFor(PN->getIncomingBlock(i)) != L)
           continue; // The Block is in a subloop, skip it.
 
         // Check that InVal is defined in the loop.
         Instruction *Inst = cast<Instruction>(InVal);
         if (!L->contains(Inst->getParent()))
           continue;
-        
+
         // We require that this value either have a computable evolution or that
         // the loop have a constant iteration count.  In the case where the loop
         // has a constant iteration count, we can sometimes force evaluation of
@@ -366,7 +367,7 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L, SCEV *IterationCount) {
         SCEVHandle SH = SE->getSCEV(Inst);
         if (!SH->hasComputableLoopEvolution(L) && !HasConstantItCount)
           continue;          // Cannot get exit evolution for the loop value.
-        
+
         // Okay, this instruction has a user outside of the current loop
         // and varies predictably *inside* the loop.  Evaluate the value it
         // contains when the loop exits, if possible.
@@ -377,22 +378,22 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L, SCEV *IterationCount) {
 
         Changed = true;
         ++NumReplaced;
-        
+
         // See if we already computed the exit value for the instruction, if so,
         // just reuse it.
         Value *&ExitVal = ExitValues[Inst];
         if (!ExitVal)
           ExitVal = Rewriter.expandCodeFor(ExitValue, InsertPt);
-        
+
         DOUT << "INDVARS: RLEV: AfterLoopVal = " << *ExitVal
              << "  LoopVal = " << *Inst << "\n";
 
         PN->setIncomingValue(i, ExitVal);
-        
+
         // If this instruction is dead now, schedule it to be removed.
         if (Inst->use_empty())
           InstructionsToDelete.insert(Inst);
-        
+
         // See if this is a single-entry LCSSA PHI node.  If so, we can (and
         // have to) remove
         // the PHI entirely.  This is safe, because the NewVal won't be variant
@@ -406,7 +407,7 @@ void IndVarSimplify::RewriteLoopExitValues(Loop *L, SCEV *IterationCount) {
       }
     }
   }
-  
+
   DeleteTriviallyDeadInstructions(InstructionsToDelete);
 }
 
@@ -458,33 +459,101 @@ static const Type *getEffectiveIndvarType(const PHINode *Phi) {
   return Ty;
 }
 
-/// isOrigIVAlwaysNonNegative - Analyze the original induction variable
-/// in the loop to determine whether it would ever have a negative
-/// value.
+/// TestOrigIVForWrap - Analyze the original induction variable
+/// that controls the loop's iteration to determine whether it
+/// would ever undergo signed or unsigned overflow.
+///
+/// In addition to setting the NoSignedWrap and NoUnsignedWrap
+/// variables, return the PHI for this induction variable.
 ///
 /// TODO: This duplicates a fair amount of ScalarEvolution logic.
-/// Perhaps this can be merged with ScalarEvolution::getIterationCount.
+/// Perhaps this can be merged with ScalarEvolution::getIterationCount
+/// and/or ScalarEvolution::get{Sign,Zero}ExtendExpr.
 ///
-static bool isOrigIVAlwaysNonNegative(const Loop *L,
-                                      const Instruction *OrigCond) {
+static const PHINode *TestOrigIVForWrap(const Loop *L,
+                                        const BranchInst *BI,
+                                        const Instruction *OrigCond,
+                                        bool &NoSignedWrap,
+                                        bool &NoUnsignedWrap) {
   // Verify that the loop is sane and find the exit condition.
   const ICmpInst *Cmp = dyn_cast<ICmpInst>(OrigCond);
-  if (!Cmp) return false;
+  if (!Cmp) return 0;
 
-  // For now, analyze only SLT loops for signed overflow.
-  if (Cmp->getPredicate() != ICmpInst::ICMP_SLT) return false;
+  const Value *CmpLHS = Cmp->getOperand(0);
+  const Value *CmpRHS = Cmp->getOperand(1);
+  const BasicBlock *TrueBB = BI->getSuccessor(0);
+  const BasicBlock *FalseBB = BI->getSuccessor(1);
+  ICmpInst::Predicate Pred = Cmp->getPredicate();
 
-  // Get the increment instruction. Look past SExtInsts if we will
+  // Canonicalize a constant to the RHS.
+  if (isa<ConstantInt>(CmpLHS)) {
+    Pred = ICmpInst::getSwappedPredicate(Pred);
+    std::swap(CmpLHS, CmpRHS);
+  }
+  // Canonicalize SLE to SLT.
+  if (Pred == ICmpInst::ICMP_SLE)
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(CmpRHS))
+      if (!CI->getValue().isMaxSignedValue()) {
+        CmpRHS = ConstantInt::get(CI->getValue() + 1);
+        Pred = ICmpInst::ICMP_SLT;
+      }
+  // Canonicalize SGT to SGE.
+  if (Pred == ICmpInst::ICMP_SGT)
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(CmpRHS))
+      if (!CI->getValue().isMaxSignedValue()) {
+        CmpRHS = ConstantInt::get(CI->getValue() + 1);
+        Pred = ICmpInst::ICMP_SGE;
+      }
+  // Canonicalize SGE to SLT.
+  if (Pred == ICmpInst::ICMP_SGE) {
+    std::swap(TrueBB, FalseBB);
+    Pred = ICmpInst::ICMP_SLT;
+  }
+  // Canonicalize ULE to ULT.
+  if (Pred == ICmpInst::ICMP_ULE)
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(CmpRHS))
+      if (!CI->getValue().isMaxValue()) {
+        CmpRHS = ConstantInt::get(CI->getValue() + 1);
+        Pred = ICmpInst::ICMP_ULT;
+      }
+  // Canonicalize UGT to UGE.
+  if (Pred == ICmpInst::ICMP_UGT)
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(CmpRHS))
+      if (!CI->getValue().isMaxValue()) {
+        CmpRHS = ConstantInt::get(CI->getValue() + 1);
+        Pred = ICmpInst::ICMP_UGE;
+      }
+  // Canonicalize UGE to ULT.
+  if (Pred == ICmpInst::ICMP_UGE) {
+    std::swap(TrueBB, FalseBB);
+    Pred = ICmpInst::ICMP_ULT;
+  }
+  // For now, analyze only LT loops for signed overflow.
+  if (Pred != ICmpInst::ICMP_SLT && Pred != ICmpInst::ICMP_ULT)
+    return 0;
+
+  bool isSigned = Pred == ICmpInst::ICMP_SLT;
+
+  // Get the increment instruction. Look past casts if we will
   // be able to prove that the original induction variable doesn't
-  // undergo signed overflow.
-  const Value *OrigIncrVal = Cmp->getOperand(0);
-  const Value *IncrVal = OrigIncrVal;
-  if (SExtInst *SI = dyn_cast<SExtInst>(Cmp->getOperand(0))) {
-    if (!isa<ConstantInt>(Cmp->getOperand(1)) ||
-        !cast<ConstantInt>(Cmp->getOperand(1))->getValue()
-          .isSignedIntN(IncrVal->getType()->getPrimitiveSizeInBits()))
-      return false;
-    IncrVal = SI->getOperand(0);
+  // undergo signed or unsigned overflow, respectively.
+  const Value *IncrVal = CmpLHS;
+  if (isSigned) {
+    if (const SExtInst *SI = dyn_cast<SExtInst>(CmpLHS)) {
+      if (!isa<ConstantInt>(CmpRHS) ||
+          !cast<ConstantInt>(CmpRHS)->getValue()
+            .isSignedIntN(IncrVal->getType()->getPrimitiveSizeInBits()))
+        return 0;
+      IncrVal = SI->getOperand(0);
+    }
+  } else {
+    if (const ZExtInst *ZI = dyn_cast<ZExtInst>(CmpLHS)) {
+      if (!isa<ConstantInt>(CmpRHS) ||
+          !cast<ConstantInt>(CmpRHS)->getValue()
+            .isIntN(IncrVal->getType()->getPrimitiveSizeInBits()))
+        return 0;
+      IncrVal = ZI->getOperand(0);
+    }
   }
 
   // For now, only analyze induction variables that have simple increments.
@@ -493,32 +562,37 @@ static bool isOrigIVAlwaysNonNegative(const Loop *L,
       IncrOp->getOpcode() != Instruction::Add ||
       !isa<ConstantInt>(IncrOp->getOperand(1)) ||
       !cast<ConstantInt>(IncrOp->getOperand(1))->equalsInt(1))
-    return false;
+    return 0;
 
   // Make sure the PHI looks like a normal IV.
   const PHINode *PN = dyn_cast<PHINode>(IncrOp->getOperand(0));
   if (!PN || PN->getNumIncomingValues() != 2)
-    return false;
+    return 0;
   unsigned IncomingEdge = L->contains(PN->getIncomingBlock(0));
   unsigned BackEdge = !IncomingEdge;
   if (!L->contains(PN->getIncomingBlock(BackEdge)) ||
       PN->getIncomingValue(BackEdge) != IncrOp)
-    return false;
+    return 0;
+  if (!L->contains(TrueBB))
+    return 0;
 
   // For now, only analyze loops with a constant start value, so that
-  // we can easily determine if the start value is non-negative and
-  // not a maximum value which would wrap on the first iteration.
+  // we can easily determine if the start value is not a maximum value
+  // which would wrap on the first iteration.
   const Value *InitialVal = PN->getIncomingValue(IncomingEdge);
-  if (!isa<ConstantInt>(InitialVal) ||
-      cast<ConstantInt>(InitialVal)->getValue().isNegative() ||
-      cast<ConstantInt>(InitialVal)->getValue().isMaxSignedValue())
-    return false;
+  if (!isa<ConstantInt>(InitialVal))
+    return 0;
 
-  // The original induction variable will start at some non-negative
-  // non-max value, it counts up by one, and the loop iterates only
-  // while it remans less than (signed) some value in the same type.
-  // As such, it will always be non-negative.
-  return true;
+  // The original induction variable will start at some non-max value,
+  // it counts up by one, and the loop iterates only while it remans
+  // less than some value in the same type. As such, it will never wrap.
+  if (isSigned &&
+      !cast<ConstantInt>(InitialVal)->getValue().isMaxSignedValue())
+    NoSignedWrap = true;
+  else if (!isSigned &&
+           !cast<ConstantInt>(InitialVal)->getValue().isMaxValue())
+    NoUnsignedWrap = true;
+  return PN;
 }
 
 bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
@@ -551,15 +625,14 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
     PHINode *PN = cast<PHINode>(I);
     if (PN->getType()->isInteger()) { // FIXME: when we have fast-math, enable!
       SCEVHandle SCEV = SE->getSCEV(PN);
-      if (SCEV->hasComputableLoopEvolution(L))
-        // FIXME: It is an extremely bad idea to indvar substitute anything more
-        // complex than affine induction variables.  Doing so will put expensive
-        // polynomial evaluations inside of the loop, and the str reduction pass
-        // currently can only reduce affine polynomials.  For now just disable
-        // indvar subst on anything more complex than an affine addrec.
-        if (SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(SCEV))
-          if (AR->isAffine())
-            IndVars.push_back(std::make_pair(PN, SCEV));
+      // FIXME: It is an extremely bad idea to indvar substitute anything more
+      // complex than affine induction variables.  Doing so will put expensive
+      // polynomial evaluations inside of the loop, and the str reduction pass
+      // currently can only reduce affine polynomials.  For now just disable
+      // indvar subst on anything more complex than an affine addrec.
+      if (SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(SCEV))
+        if (AR->getLoop() == L && AR->isAffine())
+          IndVars.push_back(std::make_pair(PN, SCEV));
     }
   }
 
@@ -597,13 +670,17 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // If we have a trip count expression, rewrite the loop's exit condition
   // using it.  We can currently only handle loops with a single exit.
-  bool OrigIVAlwaysNonNegative = false;
+  bool NoSignedWrap = false;
+  bool NoUnsignedWrap = false;
+  const PHINode *OrigControllingPHI = 0;
   if (!isa<SCEVCouldNotCompute>(IterationCount) && ExitingBlock)
     // Can't rewrite non-branch yet.
     if (BranchInst *BI = dyn_cast<BranchInst>(ExitingBlock->getTerminator())) {
       if (Instruction *OrigCond = dyn_cast<Instruction>(BI->getCondition())) {
-        // Determine if the OrigIV will ever have a non-zero sign bit.
-        OrigIVAlwaysNonNegative = isOrigIVAlwaysNonNegative(L, OrigCond);
+        // Determine if the OrigIV will ever undergo overflow.
+        OrigControllingPHI =
+          TestOrigIVForWrap(L, BI, OrigCond,
+                            NoSignedWrap, NoUnsignedWrap);
 
         // We'll be replacing the original condition, so it'll be dead.
         DeadInsts.insert(OrigCond);
@@ -635,27 +712,47 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
   // variable.
   while (!IndVars.empty()) {
     PHINode *PN = IndVars.back().first;
-    Value *NewVal = Rewriter.expandCodeFor(IndVars.back().second, InsertPt);
-    DOUT << "INDVARS: Rewrote IV '" << *IndVars.back().second << "' " << *PN
+    SCEVAddRecExpr *AR = cast<SCEVAddRecExpr>(IndVars.back().second);
+    Value *NewVal = Rewriter.expandCodeFor(AR, InsertPt);
+    DOUT << "INDVARS: Rewrote IV '" << *AR << "' " << *PN
          << "   into = " << *NewVal << "\n";
     NewVal->takeName(PN);
 
     /// If the new canonical induction variable is wider than the original,
     /// and the original has uses that are casts to wider types, see if the
     /// truncate and extend can be omitted.
-    if (isa<TruncInst>(NewVal))
+    if (PN == OrigControllingPHI && PN->getType() != LargestType)
       for (Value::use_iterator UI = PN->use_begin(), UE = PN->use_end();
-           UI != UE; ++UI)
-        if (isa<ZExtInst>(UI) ||
-            (isa<SExtInst>(UI) && OrigIVAlwaysNonNegative)) {
-          Value *TruncIndVar = IndVar;
-          if (TruncIndVar->getType() != UI->getType())
-            TruncIndVar = new TruncInst(IndVar, UI->getType(), "truncindvar",
-                                        InsertPt);
+           UI != UE; ++UI) {
+        if (isa<SExtInst>(UI) && NoSignedWrap) {
+          SCEVHandle ExtendedStart =
+            SE->getSignExtendExpr(AR->getStart(), LargestType);
+          SCEVHandle ExtendedStep =
+            SE->getSignExtendExpr(AR->getStepRecurrence(*SE), LargestType);
+          SCEVHandle ExtendedAddRec =
+            SE->getAddRecExpr(ExtendedStart, ExtendedStep, L);
+          if (LargestType != UI->getType())
+            ExtendedAddRec = SE->getTruncateExpr(ExtendedAddRec, UI->getType());
+          Value *TruncIndVar = Rewriter.expandCodeFor(ExtendedAddRec, InsertPt);
           UI->replaceAllUsesWith(TruncIndVar);
           if (Instruction *DeadUse = dyn_cast<Instruction>(*UI))
             DeadInsts.insert(DeadUse);
         }
+        if (isa<ZExtInst>(UI) && NoUnsignedWrap) {
+          SCEVHandle ExtendedStart =
+            SE->getZeroExtendExpr(AR->getStart(), LargestType);
+          SCEVHandle ExtendedStep =
+            SE->getZeroExtendExpr(AR->getStepRecurrence(*SE), LargestType);
+          SCEVHandle ExtendedAddRec =
+            SE->getAddRecExpr(ExtendedStart, ExtendedStep, L);
+          if (LargestType != UI->getType())
+            ExtendedAddRec = SE->getTruncateExpr(ExtendedAddRec, UI->getType());
+          Value *TruncIndVar = Rewriter.expandCodeFor(ExtendedAddRec, InsertPt);
+          UI->replaceAllUsesWith(TruncIndVar);
+          if (Instruction *DeadUse = dyn_cast<Instruction>(*UI))
+            DeadInsts.insert(DeadUse);
+        }
+      }
 
     // Replace the old PHI Node with the inserted computation.
     PN->replaceAllUsesWith(NewVal);
@@ -664,32 +761,6 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
     ++NumRemoved;
     Changed = true;
   }
-
-#if 0
-  // Now replace all derived expressions in the loop body with simpler
-  // expressions.
-  for (LoopInfo::block_iterator I = L->block_begin(), E = L->block_end();
-       I != E; ++I) {
-    BasicBlock *BB = *I;
-    if (LI->getLoopFor(BB) == L) {  // Not in a subloop...
-      for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
-        if (I->getType()->isInteger() &&      // Is an integer instruction
-            !I->use_empty() &&
-            !Rewriter.isInsertedInstruction(I)) {
-          SCEVHandle SH = SE->getSCEV(I);
-          Value *V = Rewriter.expandCodeFor(SH, I, I->getType());
-          if (V != I) {
-            if (isa<Instruction>(V))
-              V->takeName(I);
-            I->replaceAllUsesWith(V);
-            DeadInsts.insert(I);
-            ++NumRemoved;
-            Changed = true;
-          }
-        }
-    }
-  }
-#endif
 
   DeleteTriviallyDeadInstructions(DeadInsts);
   assert(L->isLCSSAForm());
@@ -701,14 +772,14 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 static bool useSIToFPInst(ConstantFP &InitV, ConstantFP &ExitV,
                           uint64_t intIV, uint64_t intEV) {
 
-  if (InitV.getValueAPF().isNegative() || ExitV.getValueAPF().isNegative()) 
+  if (InitV.getValueAPF().isNegative() || ExitV.getValueAPF().isNegative())
     return true;
 
   // If the iteration range can be handled by SIToFPInst then use it.
   APInt Max = APInt::getSignedMaxValue(32);
   if (Max.getZExtValue() > static_cast<uint64_t>(abs(intEV - intIV)))
     return true;
-  
+
   return false;
 }
 
@@ -718,11 +789,11 @@ static bool convertToInt(const APFloat &APF, uint64_t *intVal) {
   bool isExact = false;
   if (&APF.getSemantics() == &APFloat::PPCDoubleDouble)
     return false;
-  if (APF.convertToInteger(intVal, 32, APF.isNegative(), 
+  if (APF.convertToInteger(intVal, 32, APF.isNegative(),
                            APFloat::rmTowardZero, &isExact)
       != APFloat::opOK)
     return false;
-  if (!isExact) 
+  if (!isExact)
     return false;
   return true;
 
@@ -737,12 +808,12 @@ static bool convertToInt(const APFloat &APF, uint64_t *intVal) {
 /// for(int i = 0; i < 10000; ++i)
 ///   bar((double)i);
 ///
-void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH, 
+void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
                                    SmallPtrSet<Instruction*, 16> &DeadInsts) {
 
   unsigned IncomingEdge = L->contains(PH->getIncomingBlock(0));
   unsigned BackEdge     = IncomingEdge^1;
-  
+
   // Check incoming value.
   ConstantFP *InitValue = dyn_cast<ConstantFP>(PH->getIncomingValue(IncomingEdge));
   if (!InitValue) return;
@@ -752,7 +823,7 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
 
   // Check IV increment. Reject this PH if increement operation is not
   // an add or increment value can not be represented by an integer.
-  BinaryOperator *Incr = 
+  BinaryOperator *Incr =
     dyn_cast<BinaryOperator>(PH->getIncomingValue(BackEdge));
   if (!Incr) return;
   if (Incr->getOpcode() != Instruction::Add) return;
@@ -765,7 +836,7 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
   uint64_t newIncrValue = Type::Int32Ty->getPrimitiveSizeInBits();
   if (!convertToInt(IncrValue->getValueAPF(), &newIncrValue))
     return;
-  
+
   // Check Incr uses. One user is PH and the other users is exit condition used
   // by the conditional terminator.
   Value::use_iterator IncrUse = Incr->use_begin();
@@ -773,7 +844,7 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
   if (IncrUse == Incr->use_end()) return;
   Instruction *U2 = cast<Instruction>(IncrUse++);
   if (IncrUse != Incr->use_end()) return;
-  
+
   // Find exit condition.
   FCmpInst *EC = dyn_cast<FCmpInst>(U1);
   if (!EC)
@@ -796,7 +867,7 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
   uint64_t intEV = Type::Int32Ty->getPrimitiveSizeInBits();
   if (!convertToInt(EV->getValueAPF(), &intEV))
     return;
-  
+
   // Find new predicate for integer comparison.
   CmpInst::Predicate NewPred = CmpInst::BAD_ICMP_PREDICATE;
   switch (EC->getPredicate()) {
@@ -824,15 +895,15 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
     break;
   }
   if (NewPred == CmpInst::BAD_ICMP_PREDICATE) return;
-  
+
   // Insert new integer induction variable.
   PHINode *NewPHI = PHINode::Create(Type::Int32Ty,
                                     PH->getName()+".int", PH);
   NewPHI->addIncoming(ConstantInt::get(Type::Int32Ty, newInitValue),
                       PH->getIncomingBlock(IncomingEdge));
 
-  Value *NewAdd = BinaryOperator::CreateAdd(NewPHI, 
-                                            ConstantInt::get(Type::Int32Ty, 
+  Value *NewAdd = BinaryOperator::CreateAdd(NewPHI,
+                                            ConstantInt::get(Type::Int32Ty,
                                                              newIncrValue),
                                             Incr->getName()+".int", Incr);
   NewPHI->addIncoming(NewAdd, PH->getIncomingBlock(BackEdge));
@@ -840,25 +911,25 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PH,
   ConstantInt *NewEV = ConstantInt::get(Type::Int32Ty, intEV);
   Value *LHS = (EVIndex == 1 ? NewPHI->getIncomingValue(BackEdge) : NewEV);
   Value *RHS = (EVIndex == 1 ? NewEV : NewPHI->getIncomingValue(BackEdge));
-  ICmpInst *NewEC = new ICmpInst(NewPred, LHS, RHS, EC->getNameStart(), 
+  ICmpInst *NewEC = new ICmpInst(NewPred, LHS, RHS, EC->getNameStart(),
                                  EC->getParent()->getTerminator());
-  
+
   // Delete old, floating point, exit comparision instruction.
   EC->replaceAllUsesWith(NewEC);
   DeadInsts.insert(EC);
-  
+
   // Delete old, floating point, increment instruction.
   Incr->replaceAllUsesWith(UndefValue::get(Incr->getType()));
   DeadInsts.insert(Incr);
-  
+
   // Replace floating induction variable. Give SIToFPInst preference over
   // UIToFPInst because it is faster on platforms that are widely used.
   if (useSIToFPInst(*InitValue, *EV, newInitValue, intEV)) {
-    SIToFPInst *Conv = new SIToFPInst(NewPHI, PH->getType(), "indvar.conv", 
+    SIToFPInst *Conv = new SIToFPInst(NewPHI, PH->getType(), "indvar.conv",
                                       PH->getParent()->getFirstNonPHI());
     PH->replaceAllUsesWith(Conv);
   } else {
-    UIToFPInst *Conv = new UIToFPInst(NewPHI, PH->getType(), "indvar.conv", 
+    UIToFPInst *Conv = new UIToFPInst(NewPHI, PH->getType(), "indvar.conv",
                                       PH->getParent()->getFirstNonPHI());
     PH->replaceAllUsesWith(Conv);
   }
