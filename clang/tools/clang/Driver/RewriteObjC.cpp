@@ -3215,7 +3215,7 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
       Result += (*IVI)->getNameAsString();
       Result += "\", \"";
       std::string TmpString, StrEncoding;
-      Context->getObjCEncodingForType((*IVI)->getType(), StrEncoding, *IVI);
+      Context->getObjCEncodingForType((*IVI)->getType(), TmpString, *IVI);
       QuoteDoublequotes(TmpString, StrEncoding);
       Result += StrEncoding;
       Result += "\", ";
