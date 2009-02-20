@@ -1331,9 +1331,10 @@ class DwarfDebug : public Dwarf {
 
 public:
 
-  /// ShouldEmitDwarf - Returns true if Dwarf declarations should be made.
+  /// ShouldEmitDwarfDebug - Returns true if Dwarf debugging declarations should
+  /// be emitted.
   ///
-  bool ShouldEmitDwarf() const { return shouldEmit; }
+  bool ShouldEmitDwarfDebug() const { return shouldEmit; }
 
   /// AssignAbbrevNumber - Define a unique number for the abbreviation.
   ///
@@ -2960,7 +2961,7 @@ public:
   /// EndModule - Emit all Dwarf sections that should come after the content.
   ///
   void EndModule() {
-    if (!ShouldEmitDwarf()) return;
+    if (!ShouldEmitDwarfDebug()) return;
 
     // Standard sections final addresses.
     Asm->SwitchToSection(TAI->getTextSection());
@@ -3018,7 +3019,7 @@ public:
   void BeginFunction(MachineFunction *MF) {
     this->MF = MF;
 
-    if (!ShouldEmitDwarf()) return;
+    if (!ShouldEmitDwarfDebug()) return;
 
     // Begin accumulating function debug information.
     MMI->BeginFunction(MF);
@@ -3037,7 +3038,7 @@ public:
   /// EndFunction - Gather and emit post-function debug information.
   ///
   void EndFunction(MachineFunction *MF) {
-    if (!ShouldEmitDwarf()) return;
+    if (!ShouldEmitDwarfDebug()) return;
 
     // Define end label for subprogram.
     EmitLabel("func_end", SubprogramCount);
@@ -4326,3 +4327,8 @@ void DwarfWriter::RecordVariable(GlobalVariable *GV, unsigned FrameIndex) {
   DD->RecordVariable(GV, FrameIndex);
 }
 
+/// ShouldEmitDwarfDebug - Returns true if Dwarf debugging declarations should
+/// be emitted.
+bool DwarfWriter::ShouldEmitDwarfDebug() const {
+  return DD->ShouldEmitDwarfDebug();
+}
