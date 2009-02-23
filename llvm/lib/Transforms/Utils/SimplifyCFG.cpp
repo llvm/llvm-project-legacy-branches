@@ -33,11 +33,6 @@ using namespace llvm;
 
 STATISTIC(NumSpeculations, "Number of speculative executed instructions");
 
-#include "llvm/Support/CommandLine.h"
-
-static cl::opt<bool>
-DisableOpt("disable-opt", cl::Hidden, cl::init(false));
-
 /// SafeToMergeTerminators - Return true if it is safe to merge these two
 /// terminator instructions together.
 ///
@@ -1783,7 +1778,7 @@ bool llvm::SimplifyCFG(BasicBlock *BB) {
       }
 
       // If we found some, do the transformation!
-      if (!UncondBranchPreds.empty() && !DisableOpt) {
+      if (!UncondBranchPreds.empty()) {
         while (!UncondBranchPreds.empty()) {
           BasicBlock *Pred = UncondBranchPreds.back();
           DOUT << "FOLDING: " << *BB
