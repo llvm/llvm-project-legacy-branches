@@ -22,11 +22,25 @@ namespace llvm {
 
   /// DebugLocTuple - Debug location tuple of filename id, line and column.
   ///
-  struct DebugLocTuple {
-    unsigned Src, Line, Col;
+  class DebugLocTuple {
+    enum { Mask = 0xFFFFFFFFUL };
+    uint64_t Src, Line, ScopeCol;
+  public:
+    DebugLocTuple(uint64_t s, uint64_t l, uint64_t p, uint64_t c)
+      : Src(s), Line(l), Col((p << 32) | (c & Mask)) {};
 
-    DebugLocTuple(unsigned s, unsigned l, unsigned c)
-      : Src(s), Line(l), Col(c) {};
+    uint64_t getSource() const {
+      return Src;
+    }
+    uint64_t getLine() const {
+      return Line;
+    }
+    uint32_t getScope() const {
+      return (ScopeCol >> 32) & Mask;
+    }
+    uint32_t getCol() const {
+      return ScopeCol & Mask;
+    }
 
     bool operator==(const DebugLocTuple &DLT) const {
       return Src == DLT.Src && Line == DLT.Line && Col == DLT.Col;
