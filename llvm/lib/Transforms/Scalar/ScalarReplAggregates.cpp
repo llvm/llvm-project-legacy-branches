@@ -286,7 +286,8 @@ bool SROA::performScalarRepl(Function &F) {
     const Type *VectorTy = 0;
     bool HadAVector = false;
     if (CanConvertToScalar(AI, IsNotTrivial, VectorTy, HadAVector, 
-                           0, unsigned(AllocaSize)) && IsNotTrivial) {
+                           0, unsigned(AllocaSize)) && IsNotTrivial &&
+        AllocaSize <= SRThreshold) {
       AllocaInst *NewAI;
       // If we were able to find a vector type that can handle this with
       // insert/extract elements, and if there was at least one use that had
