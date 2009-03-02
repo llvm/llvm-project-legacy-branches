@@ -53,6 +53,7 @@ STATISTIC(NumAggrCommuted    , "Number of instructions aggressively commuted");
 STATISTIC(NumConvertedTo3Addr, "Number of instructions promoted to 3-address");
 STATISTIC(Num3AddrSunk,        "Number of 3-address instructions sunk");
 STATISTIC(NumReMats,           "Number of instructions re-materialized");
+STATISTIC(NumDeletes,          "Number of dead instructions deleted");
 
 namespace {
   class VISIBILITY_HIDDEN TwoAddressInstructionPass
@@ -62,28 +63,41 @@ namespace {
     MachineRegisterInfo *MRI;
     LiveVariables *LV;
 
+    // DistanceMap - Keep track the distance of a MI from the start of the
+    // current basic block.
+    DenseMap<MachineInstr*, unsigned> DistanceMap;
+
+    // SrcRegMap - A map from virtual registers to physical registers which
+    // are likely targets to be coalesced to due to copies from physical
+    // registers to virtual registers. e.g. v1024 = move r0.
+    DenseMap<unsigned, unsigned> SrcRegMap;
+
+    // DstRegMap - A map from virtual registers to physical registers which
+    // are likely targets to be coalesced to due to copies to physical
+    // registers from virtual registers. e.g. r1 = move v1024.
+    DenseMap<unsigned, unsigned> DstRegMap;
+
     bool Sink3AddrInstruction(MachineBasicBlock *MBB, MachineInstr *MI,
                               unsigned Reg,
                               MachineBasicBlock::iterator OldPos);
 
     bool isProfitableToReMat(unsigned Reg, const TargetRegisterClass *RC,
                              MachineInstr *MI, MachineInstr *DefMI,
-                             MachineBasicBlock *MBB, unsigned Loc,
-                             DenseMap<MachineInstr*, unsigned> &DistanceMap);
+                             MachineBasicBlock *MBB, unsigned Loc);
 
     bool NoUseAfterLastDef(unsigned Reg, MachineBasicBlock *MBB, unsigned Dist,
-                           DenseMap<MachineInstr*, unsigned> &DistanceMap,
                            unsigned &LastDef);
 
     bool isProfitableToCommute(unsigned regB, unsigned regC,
                                MachineInstr *MI, MachineBasicBlock *MBB,
-                               unsigned Dist,
-                               DenseMap<MachineInstr*, unsigned> &DistanceMap);
+                               unsigned Dist);
 
     bool CommuteInstruction(MachineBasicBlock::iterator &mi,
                             MachineFunction::iterator &mbbi,
-                            unsigned RegC, unsigned Dist,
-                            DenseMap<MachineInstr*, unsigned> &DistanceMap);
+                            unsigned RegB, unsigned RegC, unsigned Dist);
+
+    void ProcessCopy(MachineInstr *MI, MachineBasicBlock *MBB,
+                     SmallPtrSet<MachineInstr*, 8> &Processed);
   public:
     static char ID; // Pass identification, replacement for typeid
     TwoAddressInstructionPass() : MachineFunctionPass(&ID) {}
@@ -232,10 +246,9 @@ static bool isTwoAddrUse(MachineInstr *UseMI, unsigned Reg) {
 /// the register.
 bool
 TwoAddressInstructionPass::isProfitableToReMat(unsigned Reg,
-                                const TargetRegisterClass *RC,
-                                MachineInstr *MI, MachineInstr *DefMI,
-                                MachineBasicBlock *MBB, unsigned Loc,
-                                DenseMap<MachineInstr*, unsigned> &DistanceMap){
+                                         const TargetRegisterClass *RC,
+                                         MachineInstr *MI, MachineInstr *DefMI,
+                                         MachineBasicBlock *MBB, unsigned Loc) {
   bool OtherUse = false;
   for (MachineRegisterInfo::use_iterator UI = MRI->use_begin(Reg),
          UE = MRI->use_end(); UI != UE; ++UI) {
@@ -268,9 +281,8 @@ TwoAddressInstructionPass::isProfitableToReMat(unsigned Reg,
 /// two-address instruction which is being processed. It also returns the last
 /// def location by reference
 bool TwoAddressInstructionPass::NoUseAfterLastDef(unsigned Reg,
-                                 MachineBasicBlock *MBB, unsigned Dist,
-                                 DenseMap<MachineInstr*, unsigned> &DistanceMap,
-                                 unsigned &LastDef) {
+                                           MachineBasicBlock *MBB, unsigned Dist,
+                                           unsigned &LastDef) {
   LastDef = 0;
   unsigned LastUse = Dist;
   for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(Reg),
@@ -291,12 +303,110 @@ bool TwoAddressInstructionPass::NoUseAfterLastDef(unsigned Reg,
   return !(LastUse > LastDef && LastUse < Dist);
 }
 
+/// isCopyToReg - Return true if the specified MI is a copy instruction or
+/// a extract_subreg instruction. It also returns the source and destination
+/// registers and whether they are physical registers by reference.
+static bool isCopyToReg(MachineInstr &MI, const TargetInstrInfo *TII,
+                        unsigned &SrcReg, unsigned &DstReg,
+                        bool &IsSrcPhys, bool &IsDstPhys) {
+  SrcReg = 0;
+  DstReg = 0;
+  unsigned SrcSubIdx, DstSubIdx;
+  if (!TII->isMoveInstr(MI, SrcReg, DstReg, SrcSubIdx, DstSubIdx)) {
+    if (MI.getOpcode() == TargetInstrInfo::EXTRACT_SUBREG) {
+      DstReg = MI.getOperand(0).getReg();
+      SrcReg = MI.getOperand(1).getReg();
+    } else if (MI.getOpcode() == TargetInstrInfo::INSERT_SUBREG) {
+      DstReg = MI.getOperand(0).getReg();
+      SrcReg = MI.getOperand(2).getReg();
+    }
+  }
+
+  if (DstReg) {
+    IsSrcPhys = TargetRegisterInfo::isPhysicalRegister(SrcReg);
+    IsDstPhys = TargetRegisterInfo::isPhysicalRegister(DstReg);
+    return true;
+  }
+  return false;
+}
+
+/// isTwoAddrUse - Return true if the specified MI uses the specified register
+/// as a two-address use. If so, return the destination register by reference.
+static bool isTwoAddrUse(MachineInstr &MI, unsigned Reg, unsigned &DstReg) {
+  const TargetInstrDesc &TID = MI.getDesc();
+  for (unsigned i = 0, e = TID.getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = MI.getOperand(i);
+    if (!MO.isReg() || !MO.isUse() || MO.getReg() != Reg)
+      continue;
+    int ti = TID.getOperandConstraint(i, TOI::TIED_TO);
+    if (ti != -1) {
+      DstReg = MI.getOperand(ti).getReg();
+      return true;
+    }
+  }
+  return false;
+}
+
+/// findOnlyInterestingUse - Given a register, if has a single in-basic block
+/// use, return the use instruction if it's a copy or a two-address use.
+static
+MachineInstr *findOnlyInterestingUse(unsigned Reg, MachineBasicBlock *MBB,
+                                     MachineRegisterInfo *MRI,
+                                     const TargetInstrInfo *TII,
+                                     bool &isCopy,
+                                     unsigned &DstReg, bool &IsDstPhys) {
+  MachineRegisterInfo::use_iterator UI = MRI->use_begin(Reg);
+  if (UI == MRI->use_end())
+    return 0;
+  MachineInstr &UseMI = *UI;
+  if (++UI != MRI->use_end())
+    // More than one use.
+    return 0;
+  if (UseMI.getParent() != MBB)
+    return 0;
+  unsigned SrcReg;
+  bool IsSrcPhys;
+  if (isCopyToReg(UseMI, TII, SrcReg, DstReg, IsSrcPhys, IsDstPhys))
+    return &UseMI;
+  IsDstPhys = false;
+  if (isTwoAddrUse(UseMI, Reg, DstReg))
+    return &UseMI;
+  return 0;
+}
+
+/// getMappedReg - Return the physical register the specified virtual register
+/// might be mapped to.
+static unsigned
+getMappedReg(unsigned Reg, DenseMap<unsigned, unsigned> &RegMap) {
+  while (TargetRegisterInfo::isVirtualRegister(Reg))  {
+    DenseMap<unsigned, unsigned>::iterator SI = RegMap.find(Reg);
+    if (SI == RegMap.end())
+      return 0;
+    Reg = SI->second;
+  }
+  if (TargetRegisterInfo::isPhysicalRegister(Reg))
+    return Reg;
+  return 0;
+}
+
+/// regsAreCompatible - Return true if the two registers are equal or aliased.
+///
+static bool
+regsAreCompatible(unsigned RegA, unsigned RegB, const TargetRegisterInfo *TRI) {
+  if (RegA == RegB)
+    return true;
+  if (!RegA || !RegB)
+    return false;
+  return TRI->regsOverlap(RegA, RegB);
+}
+
+
 /// isProfitableToReMat - Return true if it's potentially profitable to commute
 /// the two-address instruction that's being processed.
 bool
 TwoAddressInstructionPass::isProfitableToCommute(unsigned regB, unsigned regC,
-                MachineInstr *MI, MachineBasicBlock *MBB,
-                unsigned Dist, DenseMap<MachineInstr*, unsigned> &DistanceMap) {
+                                       MachineInstr *MI, MachineBasicBlock *MBB,
+                                       unsigned Dist) {
   // Determine if it's profitable to commute this two address instruction. In
   // general, we want no uses between this instruction and the definition of
   // the two-address register.
@@ -322,16 +432,31 @@ TwoAddressInstructionPass::isProfitableToCommute(unsigned regB, unsigned regC,
   // %reg1030<def> = ADD8rr %reg1028<kill>, %reg1029<kill>, %EFLAGS<imp-def,dead>
   // let's see if it's worth commuting it.
 
+  // Look for situations like this:
+  // %reg1024<def> = MOV r1
+  // %reg1025<def> = MOV r0
+  // %reg1026<def> = ADD %reg1024, %reg1025
+  // r0            = MOV %reg1026
+  // Commute the ADD to hopefully eliminate an otherwise unavoidable copy.
+  unsigned FromRegB = getMappedReg(regB, SrcRegMap);
+  unsigned FromRegC = getMappedReg(regC, SrcRegMap);
+  unsigned ToRegB = getMappedReg(regB, DstRegMap);
+  unsigned ToRegC = getMappedReg(regC, DstRegMap);
+  if (!regsAreCompatible(FromRegB, ToRegB, TRI) &&
+      (regsAreCompatible(FromRegB, ToRegC, TRI) ||
+       regsAreCompatible(FromRegC, ToRegB, TRI)))
+    return true;
+
   // If there is a use of regC between its last def (could be livein) and this
   // instruction, then bail.
   unsigned LastDefC = 0;
-  if (!NoUseAfterLastDef(regC, MBB, Dist, DistanceMap, LastDefC))
+  if (!NoUseAfterLastDef(regC, MBB, Dist, LastDefC))
     return false;
 
   // If there is a use of regB between its last def (could be livein) and this
   // instruction, then go ahead and make this transformation.
   unsigned LastDefB = 0;
-  if (!NoUseAfterLastDef(regB, MBB, Dist, DistanceMap, LastDefB))
+  if (!NoUseAfterLastDef(regB, MBB, Dist, LastDefB))
     return true;
 
   // Since there are no intervening uses for both registers, then commute
@@ -344,9 +469,8 @@ TwoAddressInstructionPass::isProfitableToCommute(unsigned regB, unsigned regC,
 /// successful.
 bool
 TwoAddressInstructionPass::CommuteInstruction(MachineBasicBlock::iterator &mi,
-                                              MachineFunction::iterator &mbbi,
-                                              unsigned RegC, unsigned Dist,
-                               DenseMap<MachineInstr*, unsigned> &DistanceMap) {
+                               MachineFunction::iterator &mbbi,
+                               unsigned RegB, unsigned RegC, unsigned Dist) {
   MachineInstr *MI = mi;
   DOUT << "2addr: COMMUTING  : " << *MI;
   MachineInstr *NewMI = TII->commuteInstruction(MI);
@@ -368,6 +492,108 @@ TwoAddressInstructionPass::CommuteInstruction(MachineBasicBlock::iterator &mi,
     mi = NewMI;
     DistanceMap.insert(std::make_pair(NewMI, Dist));
   }
+
+  // Update source register map.
+  unsigned FromRegC = getMappedReg(RegC, SrcRegMap);
+  if (FromRegC) {
+    unsigned RegA = MI->getOperand(0).getReg();
+    SrcRegMap[RegA] = FromRegC;
+  }
+
+  return true;
+}
+
+/// ProcessCopy - If the specified instruction is not yet processed, process it
+/// if it's a copy. For a copy instruction, we find the physical registers the
+/// source and destination registers might be mapped to. These are kept in
+/// point-to maps used to determine future optimizations. e.g.
+/// v1024 = mov r0
+/// v1025 = mov r1
+/// v1026 = add v1024, v1025
+/// r1    = mov r1026
+/// If 'add' is a two-address instruction, v1024, v1026 are both potentially
+/// coalesced to r0 (from the input side). v1025 is mapped to r1. v1026 is
+/// potentially joined with r1 on the output side. It's worthwhile to commute
+/// 'add' to eliminate a copy.
+void TwoAddressInstructionPass::ProcessCopy(MachineInstr *MI,
+                                     MachineBasicBlock *MBB,
+                                     SmallPtrSet<MachineInstr*, 8> &Processed) {
+  if (Processed.count(MI))
+    return;
+
+  bool IsSrcPhys, IsDstPhys;
+  unsigned SrcReg, DstReg;
+  if (!isCopyToReg(*MI, TII, SrcReg, DstReg, IsSrcPhys, IsDstPhys))
+    return;
+
+  if (IsDstPhys && !IsSrcPhys)
+    DstRegMap.insert(std::make_pair(SrcReg, DstReg));
+  else if (!IsDstPhys && IsSrcPhys) {
+    bool isNew =
+      SrcRegMap.insert(std::make_pair(DstReg, SrcReg)).second;
+    isNew = isNew; // Silence compiler warning.
+    assert(isNew && "Can't map to two src physical registers!");
+
+    SmallVector<unsigned, 4> VirtRegPairs;
+    bool isCopy = false;
+    unsigned NewReg = 0;
+    while (MachineInstr *UseMI = findOnlyInterestingUse(DstReg, MBB, MRI,TII,
+                                                   isCopy, NewReg, IsDstPhys)) {
+      if (isCopy) {
+        if (Processed.insert(UseMI))
+          break;
+      }
+
+      DenseMap<MachineInstr*, unsigned>::iterator DI = DistanceMap.find(UseMI);
+      if (DI != DistanceMap.end())
+        // Earlier in the same MBB.Reached via a back edge.
+        break;
+
+      if (IsDstPhys) {
+        VirtRegPairs.push_back(NewReg);
+        break;
+      }
+      bool isNew = SrcRegMap.insert(std::make_pair(NewReg, DstReg)).second;
+      isNew = isNew; // Silence compiler warning.
+      assert(isNew && "Can't map to two src physical registers!");
+      VirtRegPairs.push_back(NewReg);
+      DstReg = NewReg;
+    }
+
+    if (!VirtRegPairs.empty()) {
+      unsigned ToReg = VirtRegPairs.back();
+      VirtRegPairs.pop_back();
+      while (!VirtRegPairs.empty()) {
+        unsigned FromReg = VirtRegPairs.back();
+        VirtRegPairs.pop_back();
+        bool isNew = DstRegMap.insert(std::make_pair(FromReg, ToReg)).second;
+        isNew = isNew; // Silence compiler warning.
+        assert(isNew && "Can't map to two dst physical registers!");
+        ToReg = FromReg;
+      }
+    }
+  }
+
+  Processed.insert(MI);
+}
+
+/// isSafeToDelete - If the specified instruction does not produce any side
+/// effects and all of its defs are dead, then it's safe to delete.
+static bool isSafeToDelete(MachineInstr *MI, const TargetInstrInfo *TII) {
+  const TargetInstrDesc &TID = MI->getDesc();
+  if (TID.mayStore() || TID.isCall())
+    return false;
+  if (TID.isTerminator() || TID.hasUnmodeledSideEffects())
+    return false;
+
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = MI->getOperand(i);
+    if (!MO.isReg() || !MO.isDef())
+      continue;
+    if (!MO.isDead())
+      return false;
+  }
+
   return true;
 }
 
@@ -390,14 +616,14 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
   BitVector ReMatRegs;
   ReMatRegs.resize(MRI->getLastVirtReg()+1);
 
-  // DistanceMap - Keep track the distance of a MI from the start of the
-  // current basic block.
-  DenseMap<MachineInstr*, unsigned> DistanceMap;
-
+  SmallPtrSet<MachineInstr*, 8> Processed;
   for (MachineFunction::iterator mbbi = MF.begin(), mbbe = MF.end();
        mbbi != mbbe; ++mbbi) {
     unsigned Dist = 0;
     DistanceMap.clear();
+    SrcRegMap.clear();
+    DstRegMap.clear();
+    Processed.clear();
     for (MachineBasicBlock::iterator mi = mbbi->begin(), me = mbbi->end();
          mi != me; ) {
       MachineBasicBlock::iterator nmi = next(mi);
@@ -405,6 +631,9 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
       bool FirstTied = true;
 
       DistanceMap.insert(std::make_pair(mi, ++Dist));
+
+      ProcessCopy(&*mi, &*mbbi, Processed);
+
       for (unsigned si = 1, e = TID.getNumOperands(); si < e; ++si) {
         int ti = TID.getOperandConstraint(si, TOI::TIED_TO);
         if (ti == -1)
@@ -450,6 +679,15 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           // allow us to coalesce A and B together, eliminating the copy we are
           // about to insert.
           if (!mi->killsRegister(regB)) {
+            // If regA is dead and the instruction can be deleted, just delete
+            // it so it doesn't clobber regB.
+            if (mi->getOperand(ti).isDead() && isSafeToDelete(mi, TII)) {
+              mbbi->erase(mi); // Nuke the old inst.
+              mi = nmi;
+              ++NumDeletes;
+              break; // Done with this instruction.
+            }
+
             // If this instruction is commutative, check to see if C dies.  If
             // so, swap the B and C operands.  This makes the live ranges of A
             // and C joinable.
@@ -459,7 +697,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
                      "Not a proper commutative instruction!");
               unsigned regC = mi->getOperand(3-si).getReg();
               if (mi->killsRegister(regC)) {
-                if (CommuteInstruction(mi, mbbi, regC, Dist, DistanceMap)) {
+                if (CommuteInstruction(mi, mbbi, regB, regC, Dist)) {
                   ++NumCommuted;
                   regB = regC;
                   goto InstructionRearranged;
@@ -506,8 +744,8 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           // If it's profitable to commute the instruction, do so.
           if (TID.isCommutable() && mi->getNumOperands() >= 3) {
             unsigned regC = mi->getOperand(3-si).getReg();
-            if (isProfitableToCommute(regB, regC, mi, mbbi, Dist, DistanceMap))
-              if (CommuteInstruction(mi, mbbi, regC, Dist, DistanceMap)) {
+            if (isProfitableToCommute(regB, regC, mi, mbbi, Dist))
+              if (CommuteInstruction(mi, mbbi, regB, regC, Dist)) {
                 ++NumAggrCommuted;
                 ++NumCommuted;
                 regB = regC;
@@ -522,7 +760,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           if (DefMI &&
               DefMI->getDesc().isAsCheapAsAMove() &&
               DefMI->isSafeToReMat(TII, regB) &&
-              isProfitableToReMat(regB, rc, mi, DefMI, mbbi, Dist,DistanceMap)){
+              isProfitableToReMat(regB, rc, mi, DefMI, mbbi, Dist)){
             DEBUG(cerr << "2addr: REMATTING : " << *DefMI << "\n");
             TII->reMaterialize(*mbbi, mi, regA, DefMI);
             ReMatRegs.set(regB);
