@@ -11466,17 +11466,16 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   BasicBlock::iterator BBI = &SI;
   for (unsigned ScanInsts = 6; BBI != SI.getParent()->begin() && ScanInsts;
        --ScanInsts) {
-    // Don't count debug info directives, lest they affect codegen.
-    // Likewise, we skip bitcasts that feed into a llvm.dbg.declare; these are
-    // not present when debugging is off.
+    --BBI;
+    // Don't count debug info directives, lest they affect codegen,
+    // and we skip pointer-to-pointer bitcasts, which are NOPs.
+    // It is necessary for correctness to skip those that feed into a
+    // llvm.dbg.declare, as these are not present when debugging is off.
     if (isa<DbgInfoIntrinsic>(BBI) ||
-        (isa<BitCastInst>(BBI) && BBI->hasOneUse() &&
-         isa<DbgDeclareInst>(BBI->use_begin()))) {
+        (isa<BitCastInst>(BBI) && isa<PointerType>(BBI->getType()))) {
       ScanInsts++;
-      --BBI;
       continue;
     }    
-    --BBI;
     
     if (StoreInst *PrevSI = dyn_cast<StoreInst>(BBI)) {
       // Prev store isn't volatile, and stores to the same location?
