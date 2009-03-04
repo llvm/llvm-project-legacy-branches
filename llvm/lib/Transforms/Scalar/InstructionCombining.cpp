@@ -250,6 +250,8 @@ namespace {
     Instruction *transformZExtICmp(ICmpInst *ICI, Instruction &CI,
                                    bool DoXform = true);
     bool WillNotOverflowSignedAdd(Value *LHS, Value *RHS);
+    DbgDeclareInst *hasOneUsePlusDeclare(Value *V);
+
 
   public:
     // InsertNewInstBefore - insert an instruction New before instruction Old
@@ -11386,6 +11388,23 @@ static bool equivalentAddressValues(Value *A, Value *B) {
   return false;
 }
 
+// If this instruction has two uses, one of which is a llvm.dbg.declare,
+// return the llvm.dbg.declare.
+DbgDeclareInst *InstCombiner::hasOneUsePlusDeclare(Value *V) {
+  if (!V->hasNUses(2))
+    return 0;
+  for (Value::use_iterator UI = V->use_begin(), E = V->use_end();
+       UI != E; ++UI) {
+    if (DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(UI))
+      return DI;
+    if (isa<BitCastInst>(UI) && UI->hasOneUse()) {
+      if (DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(UI->use_begin()))
+        return DI;
+      }
+  }
+  return 0;
+}
+
 Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   Value *Val = SI.getOperand(0);
   Value *Ptr = SI.getOperand(1);
@@ -11398,20 +11417,39 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   
   // If the RHS is an alloca with a single use, zapify the store, making the
   // alloca dead.
-  if (Ptr->hasOneUse() && !SI.isVolatile()) {
-    if (isa<AllocaInst>(Ptr)) {
-      EraseInstFromFunction(SI);
-      ++NumCombined;
-      return 0;
-    }
-    
-    if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr))
-      if (isa<AllocaInst>(GEP->getOperand(0)) &&
-          GEP->getOperand(0)->hasOneUse()) {
+  // If the RHS is an alloca with a two uses, the other one being a 
+  // llvm.dbg.declare, zapify the store and the declare, making the
+  // alloca dead.  We must do this to prevent declare's from affecting
+  // codegen.
+  if (!SI.isVolatile()) {
+    if (Ptr->hasOneUse()) {
+      if (isa<AllocaInst>(Ptr)) {
         EraseInstFromFunction(SI);
         ++NumCombined;
         return 0;
       }
+      if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
+        if (isa<AllocaInst>(GEP->getOperand(0))) {
+          if (GEP->getOperand(0)->hasOneUse()) {
+            EraseInstFromFunction(SI);
+            ++NumCombined;
+            return 0;
+          }
+          if (DbgDeclareInst *DI = hasOneUsePlusDeclare(GEP->getOperand(0))) {
+            EraseInstFromFunction(*DI);
+            EraseInstFromFunction(SI);
+            ++NumCombined;
+            return 0;
+          }
+        }
+      }
+    }
+    if (DbgDeclareInst *DI = hasOneUsePlusDeclare(Ptr)) {
+      EraseInstFromFunction(*DI);
+      EraseInstFromFunction(SI);
+      ++NumCombined;
+      return 0;
+    }
   }
 
   // Attempt to improve the alignment.
@@ -11429,7 +11467,11 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   for (unsigned ScanInsts = 6; BBI != SI.getParent()->begin() && ScanInsts;
        --ScanInsts) {
     // Don't count debug info directives, lest they affect codegen.
-    if (isa<DbgInfoIntrinsic>(BBI)) {
+    // Likewise, we skip bitcasts that feed into a llvm.dbg.declare; these are
+    // not present when debugging is off.
+    if (isa<DbgInfoIntrinsic>(BBI) ||
+        (isa<BitCastInst>(BBI) && BBI->hasOneUse() &&
+         isa<DbgDeclareInst>(BBI->use_begin()))) {
       ScanInsts++;
       --BBI;
       continue;
@@ -12363,6 +12405,7 @@ static bool TryToSinkInstruction(Instruction *I, BasicBlock *DestBlock) {
 
   BasicBlock::iterator InsertPos = DestBlock->getFirstNonPHI();
 
+  CopyPrecedingStopPoint(I, InsertPos);
   I->moveBefore(InsertPos);
   ++NumSunkInst;
   return true;
