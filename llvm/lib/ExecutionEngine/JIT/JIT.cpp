@@ -581,7 +581,8 @@ void *JIT::getPointerToFunction(Function *F) {
   MutexGuard locked(lock);
 
   if (F->isDeclaration()) {
-    bool AbortOnFailure = F->getLinkage() != GlobalValue::ExternalWeakLinkage;
+    bool AbortOnFailure = !areDlsymStubsEnabled() &&
+                          F->getLinkage() != GlobalValue::ExternalWeakLinkage;
     void *Addr = getPointerToNamedFunction(F->getName(), AbortOnFailure);
     addGlobalMapping(F, Addr);
     return Addr;
