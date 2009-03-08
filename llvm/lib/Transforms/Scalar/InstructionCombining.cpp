@@ -9290,10 +9290,10 @@ Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
   unsigned DstAlign = GetOrEnforceKnownAlignment(MI->getOperand(1));
   unsigned SrcAlign = GetOrEnforceKnownAlignment(MI->getOperand(2), DstAlign);
   unsigned MinAlign = std::min(DstAlign, SrcAlign);
-  unsigned CopyAlign = MI->getAlignment()->getZExtValue();
+  unsigned CopyAlign = MI->getAlignment();
 
   if (CopyAlign < MinAlign) {
-    MI->setAlignment(ConstantInt::get(Type::Int32Ty, MinAlign));
+    MI->setAlignment(MinAlign);
     return MI;
   }
   
@@ -9365,8 +9365,8 @@ Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
 
 Instruction *InstCombiner::SimplifyMemSet(MemSetInst *MI) {
   unsigned Alignment = GetOrEnforceKnownAlignment(MI->getDest());
-  if (MI->getAlignment()->getZExtValue() < Alignment) {
-    MI->setAlignment(ConstantInt::get(Type::Int32Ty, Alignment));
+  if (MI->getAlignment() < Alignment) {
+    MI->setAlignment(Alignment);
     return MI;
   }
   
@@ -9376,7 +9376,7 @@ Instruction *InstCombiner::SimplifyMemSet(MemSetInst *MI) {
   if (!LenC || !FillC || FillC->getType() != Type::Int8Ty)
     return 0;
   uint64_t Len = LenC->getZExtValue();
-  Alignment = MI->getAlignment()->getZExtValue();
+  Alignment = MI->getAlignment();
   
   // If the length is zero, this is a no-op
   if (Len == 0) return MI; // memset(d,c,0,a) -> noop
@@ -9452,7 +9452,7 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
 
     // If we can determine a pointer alignment that is bigger than currently
     // set, update the alignment.
-    if (isa<MemCpyInst>(MI) || isa<MemMoveInst>(MI)) {
+    if (isa<MemTransferInst>(MI)) {
       if (Instruction *I = SimplifyMemTransfer(MI))
         return I;
     } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(MI)) {

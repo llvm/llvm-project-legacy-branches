@@ -605,7 +605,7 @@ void SROA::isSafeMemIntrinsicOnAllocation(MemIntrinsic *MI, AllocationInst *AI,
     return MarkUnsafe(Info);
   
   // We only know about memcpy/memset/memmove.
-  if (!isa<MemCpyInst>(MI) && !isa<MemSetInst>(MI) && !isa<MemMoveInst>(MI))
+  if (!isa<MemIntrinsic>(MI))
     return MarkUnsafe(Info);
   
   // Otherwise, we can transform it.  Determine whether this is a memcpy/set
@@ -721,21 +721,17 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
                                         SmallVector<AllocaInst*, 32> &NewElts) {
   
   // If this is a memcpy/memmove, construct the other pointer as the
-  // appropriate type.
+  // appropriate type.  The "Other" pointer is the pointer that goes to memory
+  // that doesn't have anything to do with the alloca that we are promoting. For
+  // memset, this Value* stays null.
   Value *OtherPtr = 0;
-  if (MemCpyInst *MCI = dyn_cast<MemCpyInst>(MI)) {
-    if (BCInst == MCI->getRawDest())
-      OtherPtr = MCI->getRawSource();
+  unsigned MemAlignment = MI->getAlignment();
+  if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(MI)) { // memmove/memcopy
+    if (BCInst == MTI->getRawDest())
+      OtherPtr = MTI->getRawSource();
     else {
-      assert(BCInst == MCI->getRawSource());
-      OtherPtr = MCI->getRawDest();
-    }
-  } else if (MemMoveInst *MMI = dyn_cast<MemMoveInst>(MI)) {
-    if (BCInst == MMI->getRawDest())
-      OtherPtr = MMI->getRawSource();
-    else {
-      assert(BCInst == MMI->getRawSource());
-      OtherPtr = MMI->getRawDest();
+      assert(BCInst == MTI->getRawSource());
+      OtherPtr = MTI->getRawDest();
     }
   }
   
@@ -771,22 +767,47 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
   for (unsigned i = 0, e = NewElts.size(); i != e; ++i) {
     // If this is a memcpy/memmove, emit a GEP of the other element address.
     Value *OtherElt = 0;
+    unsigned OtherEltAlign = MemAlignment;
+    
     if (OtherPtr) {
       Value *Idx[2] = { Zero, ConstantInt::get(Type::Int32Ty, i) };
       OtherElt = GetElementPtrInst::Create(OtherPtr, Idx, Idx + 2,
                                            OtherPtr->getNameStr()+"."+utostr(i),
                                            MI);
+      uint64_t EltOffset;
+      const PointerType *OtherPtrTy = cast<PointerType>(OtherPtr->getType());
+      if (const StructType *ST =
+            dyn_cast<StructType>(OtherPtrTy->getElementType())) {
+        EltOffset = TD->getStructLayout(ST)->getElementOffset(i);
+      } else {
+        const Type *EltTy =
+          cast<SequentialType>(OtherPtr->getType())->getElementType();
+        EltOffset = TD->getTypePaddedSize(EltTy)*i;
+      }
+      
+      // The alignment of the other pointer is the guaranteed alignment of the
+      // element, which is affected by both the known alignment of the whole
+      // mem intrinsic and the alignment of the element.  If the alignment of
+      // the memcpy (f.e.) is 32 but the element is at a 4-byte offset, then the
+      // known alignment is just 4 bytes.
+      OtherEltAlign = (unsigned)MinAlign(OtherEltAlign, EltOffset);
     }
     
     Value *EltPtr = NewElts[i];
-    const Type *EltTy =cast<PointerType>(EltPtr->getType())->getElementType();
+    const Type *EltTy = cast<PointerType>(EltPtr->getType())->getElementType();
     
     // If we got down to a scalar, insert a load or store as appropriate.
     if (EltTy->isSingleValueType()) {
-      if (isa<MemCpyInst>(MI) || isa<MemMoveInst>(MI)) {
-        Value *Elt = new LoadInst(SROADest ? OtherElt : EltPtr, "tmp",
-                                  MI);
-        new StoreInst(Elt, SROADest ? EltPtr : OtherElt, MI);
+      if (isa<MemTransferInst>(MI)) {
+        if (SROADest) {
+          // From Other to Alloca.
+          Value *Elt = new LoadInst(OtherElt, "tmp", false, OtherEltAlign, MI);
+          new StoreInst(Elt, EltPtr, MI);
+        } else {
+          // From Alloca to Other.
+          Value *Elt = new LoadInst(EltPtr, "tmp", MI);
+          new StoreInst(Elt, OtherElt, false, OtherEltAlign, MI);
+        }
         continue;
       }
       assert(isa<MemSetInst>(MI));
@@ -847,12 +868,12 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
     unsigned EltSize = TD->getTypePaddedSize(EltTy);
     
     // Finally, insert the meminst for this element.
-    if (isa<MemCpyInst>(MI) || isa<MemMoveInst>(MI)) {
+    if (isa<MemTransferInst>(MI)) {
       Value *Ops[] = {
         SROADest ? EltPtr : OtherElt,  // Dest ptr
         SROADest ? OtherElt : EltPtr,  // Src ptr
         ConstantInt::get(MI->getOperand(3)->getType(), EltSize), // Size
-        Zero  // Align
+        ConstantInt::get(Type::Int32Ty, OtherEltAlign)  // Align
       };
       CallInst::Create(TheFn, Ops, Ops + 4, "", MI);
     } else {
@@ -1322,19 +1343,32 @@ bool SROA::CanConvertToScalar(Value *V, bool &IsNotTrivial, const Type *&VecTy,
       IsNotTrivial = true;
       continue;
     }
-    
+
     // If this is a constant sized memset of a constant value (e.g. 0) we can
     // handle it.
-    if (isa<MemSetInst>(User) &&
-        // Store of constant value.
-        isa<ConstantInt>(User->getOperand(2)) &&
-        // Store with constant size.
-        isa<ConstantInt>(User->getOperand(3))) {
-      VecTy = Type::VoidTy;
-      IsNotTrivial = true;
-      continue;
+    if (MemSetInst *MSI = dyn_cast<MemSetInst>(User)) {
+      // Store of constant value and constant size.
+      if (isa<ConstantInt>(MSI->getValue()) &&
+          isa<ConstantInt>(MSI->getLength())) {
+        IsNotTrivial = true;
+        continue;
+      }
+    }
+
+    // If this is a memcpy or memmove into or out of the whole allocation, we
+    // can handle it like a load or store of the scalar type.
+    if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(User)) {
+      if (ConstantInt *Len = dyn_cast<ConstantInt>(MTI->getLength()))
+        if (Len->getZExtValue() == AllocaSize && Offset == 0) {
+          IsNotTrivial = true;
+          continue;
+        }
     }
     
+    // Ignore dbg intrinsic.
+    if (isa<DbgInfoIntrinsic>(User))
+      continue;
+
     // Otherwise, we cannot handle this!
     return false;
   }
@@ -1414,8 +1448,51 @@ void SROA::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI, uint64_t Offset) {
       MSI->eraseFromParent();
       continue;
     }
+
+    // If this is a memcpy or memmove into or out of the whole allocation, we
+    // can handle it like a load or store of the scalar type.
+    if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(User)) {
+      assert(Offset == 0 && "must be store to start of alloca");
+      
+      // If the source and destination are both to the same alloca, then this is
+      // a noop copy-to-self, just delete it.  Otherwise, emit a load and store
+      // as appropriate.
+      AllocaInst *OrigAI = cast<AllocaInst>(Ptr->getUnderlyingObject());
+      
+      if (MTI->getSource()->getUnderlyingObject() != OrigAI) {
+        // Dest must be OrigAI, change this to be a load from the original
+        // pointer (bitcasted), then a store to our new alloca.
+        assert(MTI->getRawDest() == Ptr && "Neither use is of pointer?");
+        Value *SrcPtr = MTI->getSource();
+        SrcPtr = Builder.CreateBitCast(SrcPtr, NewAI->getType());
         
+        LoadInst *SrcVal = Builder.CreateLoad(SrcPtr, "srcval");
+        SrcVal->setAlignment(MTI->getAlignment());
+        Builder.CreateStore(SrcVal, NewAI);
+      } else if (MTI->getDest()->getUnderlyingObject() != OrigAI) {
+        // Src must be OrigAI, change this to be a load from NewAI then a store
+        // through the original dest pointer (bitcasted).
+        assert(MTI->getRawSource() == Ptr && "Neither use is of pointer?");
+        LoadInst *SrcVal = Builder.CreateLoad(NewAI, "srcval");
+
+        Value *DstPtr = Builder.CreateBitCast(MTI->getDest(), NewAI->getType());
+        StoreInst *NewStore = Builder.CreateStore(SrcVal, DstPtr);
+        NewStore->setAlignment(MTI->getAlignment());
+      } else {
+        // Noop transfer. Src == Dst
+      }
+          
+
+      MTI->eraseFromParent();
+      continue;
+    }
     
+    // If user is a dbg info intrinsic then it is safe to remove it.
+    if (isa<DbgInfoIntrinsic>(User)) {
+      User->eraseFromParent();
+      continue;
+    }
+
     assert(0 && "Unsupported operation!");
     abort();
   }
@@ -1549,21 +1626,25 @@ Value *SROA::ConvertScalar_InsertValue(Value *SV, Value *Old,
   const Type *AllocaType = Old->getType();
 
   if (const VectorType *VTy = dyn_cast<VectorType>(AllocaType)) {
-    // If the result alloca is a vector type, this is either an element
-    // access or a bitcast to another vector type.
-    if (isa<VectorType>(SV->getType())) {
-      SV = Builder.CreateBitCast(SV, AllocaType, "tmp");
-    } else {
-      // Must be an element insertion.
-      unsigned Elt = Offset/TD->getTypePaddedSizeInBits(VTy->getElementType());
-      
-      if (SV->getType() != VTy->getElementType())
-        SV = Builder.CreateBitCast(SV, VTy->getElementType(), "tmp");
-      
-      SV = Builder.CreateInsertElement(Old, SV, 
-                                       ConstantInt::get(Type::Int32Ty, Elt), 
-                                       "tmp");
-    }
+    uint64_t VecSize = TD->getTypePaddedSizeInBits(VTy);
+    uint64_t ValSize = TD->getTypePaddedSizeInBits(SV->getType());
+    
+    // Changing the whole vector with memset or with an access of a different
+    // vector type?
+    if (ValSize == VecSize)
+      return Builder.CreateBitCast(SV, AllocaType, "tmp");
+
+    uint64_t EltSize = TD->getTypePaddedSizeInBits(VTy->getElementType());
+
+    // Must be an element insertion.
+    unsigned Elt = Offset/EltSize;
+    
+    if (SV->getType() != VTy->getElementType())
+      SV = Builder.CreateBitCast(SV, VTy->getElementType(), "tmp");
+    
+    SV = Builder.CreateInsertElement(Old, SV, 
+                                     ConstantInt::get(Type::Int32Ty, Elt),
+                                     "tmp");
     return SV;
   }
   
@@ -1694,7 +1775,7 @@ static bool isOnlyCopiedFromConstantGlobal(Value *V, Instruction *&TheCopy,
     
     // If this is isn't our memcpy/memmove, reject it as something we can't
     // handle.
-    if (!isa<MemCpyInst>(*UI) && !isa<MemMoveInst>(*UI))
+    if (!isa<MemTransferInst>(*UI))
       return false;
 
     // If we already have seen a copy, reject the second one.
