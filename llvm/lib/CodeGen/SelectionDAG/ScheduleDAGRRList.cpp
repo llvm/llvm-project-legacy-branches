@@ -402,7 +402,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       NewSU->isCommutable = true;
     ComputeLatency(NewSU);
 
-    SmallVector<SDep, 4> ChainPreds;
+    SDep ChainPred;
     SmallVector<SDep, 4> ChainSuccs;
     SmallVector<SDep, 4> LoadPreds;
     SmallVector<SDep, 4> NodePreds;
@@ -410,7 +410,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
     for (SUnit::pred_iterator I = SU->Preds.begin(), E = SU->Preds.end();
          I != E; ++I) {
       if (I->isCtrl())
-        ChainPreds.push_back(*I);
+        ChainPred = *I;
       else if (I->getSUnit()->getNode() &&
                I->getSUnit()->getNode()->isOperandOf(LoadNode))
         LoadPreds.push_back(*I);
@@ -425,17 +425,17 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
         NodeSuccs.push_back(*I);
     }
 
-    for (unsigned i = 0, e = ChainPreds.size(); i != e; ++i) {
-      const SDep &Pred = ChainPreds[i];
-      RemovePred(SU, Pred);
+    if (ChainPred.getSUnit()) {
+      RemovePred(SU, ChainPred);
       if (isNewLoad)
-        AddPred(LoadSU, Pred);
+        AddPred(LoadSU, ChainPred);
     }
     for (unsigned i = 0, e = LoadPreds.size(); i != e; ++i) {
       const SDep &Pred = LoadPreds[i];
       RemovePred(SU, Pred);
-      if (isNewLoad)
+      if (isNewLoad) {
         AddPred(LoadSU, Pred);
+      }
     }
     for (unsigned i = 0, e = NodePreds.size(); i != e; ++i) {
       const SDep &Pred = NodePreds[i];

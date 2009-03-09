@@ -5345,113 +5345,6 @@ SDValue X86TargetLowering::LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) {
   return DAG.getNode(X86ISD::FOR, dl, VT, Val, SignBit);
 }
 
-/// Emit nodes that will be selected as "test Op0,Op0", or something
-/// equivalent.
-SDValue X86TargetLowering::EmitTest(SDValue Op, unsigned X86CC,
-                                    SelectionDAG &DAG) {
-  DebugLoc dl = Op.getDebugLoc();
-
-  // CF and OF aren't always set the way we want. Determine which
-  // of these we need.
-  bool NeedCF = false;
-  bool NeedOF = false;
-  switch (X86CC) {
-  case X86::COND_A: case X86::COND_AE:
-  case X86::COND_B: case X86::COND_BE:
-    NeedCF = true;
-    break;
-  case X86::COND_G: case X86::COND_GE:
-  case X86::COND_L: case X86::COND_LE:
-  case X86::COND_O: case X86::COND_NO:
-    NeedOF = true;
-    break;
-  default: break;
-  }
-
-  // See if we can use the EFLAGS value from the operand instead of
-  // doing a separate TEST. TEST always sets OF and CF to 0, so unless
-  // we prove that the arithmetic won't overflow, we can't use OF or CF.
-  if (Op.getResNo() == 0 && !NeedOF && !NeedCF) {
-    unsigned Opcode = 0;
-    unsigned NumOperands = 0;
-    switch (Op.getNode()->getOpcode()) {
-    case ISD::ADD:
-      // Due to an isel shortcoming, be conservative if this add is likely to
-      // be selected as part of a load-modify-store instruction. When the root
-      // node in a match is a store, isel doesn't know how to remap non-chain
-      // non-flag uses of other nodes in the match, such as the ADD in this
-      // case. This leads to the ADD being left around and reselected, with
-      // the result being two adds in the output.
-      for (SDNode::use_iterator UI = Op.getNode()->use_begin(),
-           UE = Op.getNode()->use_end(); UI != UE; ++UI)
-        if (UI->getOpcode() == ISD::STORE)
-          goto default_case;
-      if (ConstantSDNode *C =
-            dyn_cast<ConstantSDNode>(Op.getNode()->getOperand(1))) {
-        // An add of one will be selected as an INC.
-        if (C->getAPIntValue() == 1) {
-          Opcode = X86ISD::INC;
-          NumOperands = 1;
-          break;
-        }
-        // An add of negative one (subtract of one) will be selected as a DEC.
-        if (C->getAPIntValue().isAllOnesValue()) {
-          Opcode = X86ISD::DEC;
-          NumOperands = 1;
-          break;
-        }
-      }
-      // Otherwise use a regular EFLAGS-setting add.
-      Opcode = X86ISD::ADD;
-      NumOperands = 2;
-      break;
-    case ISD::SUB:
-      // Due to the ISEL shortcoming noted above, be conservative if this sub is
-      // likely to be selected as part of a load-modify-store instruction.
-      for (SDNode::use_iterator UI = Op.getNode()->use_begin(),
-           UE = Op.getNode()->use_end(); UI != UE; ++UI)
-        if (UI->getOpcode() == ISD::STORE)
-          goto default_case;
-      // Otherwise use a regular EFLAGS-setting sub.
-      Opcode = X86ISD::SUB;
-      NumOperands = 2;
-      break;
-    case X86ISD::ADD:
-    case X86ISD::SUB:
-    case X86ISD::INC:
-    case X86ISD::DEC:
-      return SDValue(Op.getNode(), 1);
-    default:
-    default_case:
-      break;
-    }
-    if (Opcode != 0) {
-      const MVT *VTs = DAG.getNodeValueTypes(Op.getValueType(), MVT::i32);
-      SmallVector<SDValue, 4> Ops;
-      for (unsigned i = 0; i != NumOperands; ++i)
-        Ops.push_back(Op.getOperand(i));
-      SDValue New = DAG.getNode(Opcode, dl, VTs, 2, &Ops[0], NumOperands);
-      DAG.ReplaceAllUsesWith(Op, New);
-      return SDValue(New.getNode(), 1);
-    }
-  }
-
-  return DAG.getNode(X86ISD::CMP, dl, MVT::i32, Op,
-                     DAG.getConstant(0, Op.getValueType()));
-}
-
-/// Emit nodes that will be selected as "cmp Op0,Op1", or something
-/// equivalent.
-SDValue X86TargetLowering::EmitCmp(SDValue Op0, SDValue Op1, unsigned X86CC,
-                                   SelectionDAG &DAG) {
-  if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op1))
-    if (C->getAPIntValue() == 0)
-      return EmitTest(Op0, X86CC, DAG);
-
-  DebugLoc dl = Op0.getDebugLoc();
-  return DAG.getNode(X86ISD::CMP, dl, MVT::i32, Op0, Op1);
-}
-
 SDValue X86TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) {
   assert(Op.getValueType() == MVT::i8 && "SetCC type must be 8-bit integer");
   SDValue Op0 = Op.getOperand(0);
@@ -5514,7 +5407,7 @@ SDValue X86TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) {
   bool isFP = Op.getOperand(1).getValueType().isFloatingPoint();
   unsigned X86CC = TranslateX86CC(CC, isFP, Op0, Op1, DAG);
     
-  SDValue Cond = EmitCmp(Op0, Op1, X86CC, DAG);
+  SDValue Cond = DAG.getNode(X86ISD::CMP, dl, MVT::i32, Op0, Op1);
   return DAG.getNode(X86ISD::SETCC, dl, MVT::i8,
                      DAG.getConstant(X86CC, MVT::i8), Cond);
 }
@@ -5633,20 +5526,8 @@ SDValue X86TargetLowering::LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
 }
 
 // isX86LogicalCmp - Return true if opcode is a X86 logical comparison.
-static bool isX86LogicalCmp(SDValue Op) {
-  unsigned Opc = Op.getNode()->getOpcode();
-  if (Opc == X86ISD::CMP || Opc == X86ISD::COMI || Opc == X86ISD::UCOMI)
-    return true;
-  if (Op.getResNo() == 1 &&
-      Opc == X86ISD::ADD ||
-      Opc == X86ISD::SUB ||
-      Opc == X86ISD::SMUL ||
-      Opc == X86ISD::UMUL ||
-      Opc == X86ISD::INC ||
-      Opc == X86ISD::DEC)
-    return true;
-
-  return false;
+static bool isX86LogicalCmp(unsigned Opc) {
+  return Opc == X86ISD::CMP || Opc == X86ISD::COMI || Opc == X86ISD::UCOMI;
 }
 
 SDValue X86TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) {
@@ -5672,7 +5553,7 @@ SDValue X86TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) {
         !isScalarFPTypeInSSEReg(VT))  // FPStack?
       IllegalFPCMov = !hasFPCMov(cast<ConstantSDNode>(CC)->getSExtValue());
     
-    if ((isX86LogicalCmp(Cmp) && !IllegalFPCMov) || Opc == X86ISD::BT) { // FIXME
+    if ((isX86LogicalCmp(Opc) && !IllegalFPCMov) || Opc == X86ISD::BT) { // FIXME
       Cond = Cmp;
       addTest = false;
     }
@@ -5680,7 +5561,8 @@ SDValue X86TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) {
 
   if (addTest) {
     CC = DAG.getConstant(X86::COND_NE, MVT::i8);
-    Cond = EmitTest(Cond, X86::COND_NE, DAG);
+    Cond= DAG.getNode(X86ISD::CMP, dl, MVT::i32, Cond, 
+                      DAG.getConstant(0, MVT::i8));
   }
 
   const MVT *VTs = DAG.getNodeValueTypes(Op.getValueType(),
@@ -5748,7 +5630,7 @@ SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
     SDValue Cmp = Cond.getOperand(1);
     unsigned Opc = Cmp.getOpcode();
     // FIXME: WHY THE SPECIAL CASING OF LogicalCmp??
-    if (isX86LogicalCmp(Cmp) || Opc == X86ISD::BT) {
+    if (isX86LogicalCmp(Opc) || Opc == X86ISD::BT) {
       Cond = Cmp;
       addTest = false;
     } else {
@@ -5767,12 +5649,13 @@ SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
     unsigned CondOpc;
     if (Cond.hasOneUse() && isAndOrOfSetCCs(Cond, CondOpc)) {
       SDValue Cmp = Cond.getOperand(0).getOperand(1);
+      unsigned Opc = Cmp.getOpcode();
       if (CondOpc == ISD::OR) {
         // Also, recognize the pattern generated by an FCMP_UNE. We can emit
         // two branches instead of an explicit OR instruction with a
         // separate test.
         if (Cmp == Cond.getOperand(1).getOperand(1) &&
-            isX86LogicalCmp(Cmp)) {
+            isX86LogicalCmp(Opc)) {
           CC = Cond.getOperand(0).getOperand(0);
           Chain = DAG.getNode(X86ISD::BRCOND, dl, Op.getValueType(),
                               Chain, Dest, CC, Cmp);
@@ -5787,7 +5670,7 @@ SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
         // have a fall-through edge, because this requires an explicit
         // jmp when the condition is false.
         if (Cmp == Cond.getOperand(1).getOperand(1) &&
-            isX86LogicalCmp(Cmp) &&
+            isX86LogicalCmp(Opc) &&
             Op.getNode()->hasOneUse()) {
           X86::CondCode CCode =
             (X86::CondCode)Cond.getOperand(0).getConstantOperandVal(0);
@@ -5830,7 +5713,8 @@ SDValue X86TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) {
 
   if (addTest) {
     CC = DAG.getConstant(X86::COND_NE, MVT::i8);
-    Cond = EmitTest(Cond, X86::COND_NE, DAG);
+    Cond= DAG.getNode(X86ISD::CMP, dl, MVT::i32, Cond, 
+                      DAG.getConstant(0, MVT::i8));
   }
   return DAG.getNode(X86ISD::BRCOND, dl, Op.getValueType(),
                      Chain, Dest, CC, Cond);
@@ -6763,14 +6647,6 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) {
   switch (Op.getOpcode()) {
   default: assert(0 && "Unknown ovf instruction!");
   case ISD::SADDO:
-    // A subtract of one will be selected as a INC. Note that INC doesn't
-    // set CF, so we can't do this for UADDO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
-        BaseOp = X86ISD::INC;
-        Cond = X86::COND_O;
-        break;
-      }
     BaseOp = X86ISD::ADD;
     Cond = X86::COND_O;
     break;
@@ -6779,14 +6655,6 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) {
     Cond = X86::COND_B;
     break;
   case ISD::SSUBO:
-    // A subtract of one will be selected as a DEC. Note that DEC doesn't
-    // set CF, so we can't do this for USUBO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
-        BaseOp = X86ISD::DEC;
-        Cond = X86::COND_O;
-        break;
-      }
     BaseOp = X86ISD::SUB;
     Cond = X86::COND_O;
     break;
@@ -7127,8 +6995,6 @@ const char *X86TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case X86ISD::SUB:                return "X86ISD::SUB";
   case X86ISD::SMUL:               return "X86ISD::SMUL";
   case X86ISD::UMUL:               return "X86ISD::UMUL";
-  case X86ISD::INC:                return "X86ISD::INC";
-  case X86ISD::DEC:                return "X86ISD::DEC";
   }
 }
 
@@ -7927,8 +7793,6 @@ void X86TargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
   case X86ISD::SUB:
   case X86ISD::SMUL:
   case X86ISD::UMUL:
-  case X86ISD::INC:
-  case X86ISD::DEC:
     // These nodes' second result is a boolean.
     if (Op.getResNo() == 0)
       break;

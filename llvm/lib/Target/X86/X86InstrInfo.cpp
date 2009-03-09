@@ -2404,7 +2404,6 @@ X86InstrInfo::unfoldMemoryOperand(SelectionDAG &DAG, SDNode *N,
   const TargetOperandInfo &TOI = TID.OpInfo[Index];
   const TargetRegisterClass *RC = TOI.isLookupPtrRegClass()
     ? RI.getPointerRegClass() : RI.getRegClass(TOI.RegClass);
-  unsigned NumDefs = TID.NumDefs;
   std::vector<SDValue> AddrOps;
   std::vector<SDValue> BeforeOps;
   std::vector<SDValue> AfterOps;
@@ -2412,11 +2411,11 @@ X86InstrInfo::unfoldMemoryOperand(SelectionDAG &DAG, SDNode *N,
   unsigned NumOps = N->getNumOperands();
   for (unsigned i = 0; i != NumOps-1; ++i) {
     SDValue Op = N->getOperand(i);
-    if (i >= Index-NumDefs && i < Index-NumDefs+4)
+    if (i >= Index && i < Index+4)
       AddrOps.push_back(Op);
-    else if (i < Index-NumDefs)
+    else if (i < Index)
       BeforeOps.push_back(Op);
-    else if (i > Index-NumDefs)
+    else if (i > Index)
       AfterOps.push_back(Op);
   }
   SDValue Chain = N->getOperand(NumOps-1);

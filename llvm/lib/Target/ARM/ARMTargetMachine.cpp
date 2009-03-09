@@ -53,9 +53,7 @@ unsigned ThumbTargetMachine::getJITMatchQuality() {
 
 unsigned ThumbTargetMachine::getModuleMatchQuality(const Module &M) {
   std::string TT = M.getTargetTriple();
-  // Match thumb-foo-bar, as well as things like thumbv5blah-*
-  if (TT.size() >= 6 &&
-      (TT.substr(0, 6) == "thumb-" || TT.substr(0, 6) == "thumbv"))
+  if (TT.size() >= 6 && std::string(TT.begin(), TT.begin()+6) == "thumb-")
     return 20;
 
   // If the target triple is something non-thumb, we don't match.
@@ -107,8 +105,7 @@ unsigned ARMTargetMachine::getJITMatchQuality() {
 
 unsigned ARMTargetMachine::getModuleMatchQuality(const Module &M) {
   std::string TT = M.getTargetTriple();
-  // Match arm-foo-bar, as well as things like armv5blah-*
-  if (TT.size() >= 4 &&
+  if (TT.size() >= 4 && // Match arm-foo-bar, as well as things like armv5blah-*
       (TT.substr(0, 4) == "arm-" || TT.substr(0, 4) == "armv"))
     return 20;
   // If the target triple is something non-arm, we don't match.
