@@ -1496,7 +1496,7 @@ void ARMTargetLowering::ReplaceNodeResults(SDNode *N,
 
 MachineBasicBlock *
 ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
-                                           MachineBasicBlock *BB) {
+                                               MachineBasicBlock *BB) const {
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
   switch (MI->getOpcode()) {

@@ -7124,7 +7124,7 @@ X86TargetLowering::EmitAtomicBitwiseWithCustomInserter(MachineInstr *bInstr,
                                                        unsigned notOpc,
                                                        unsigned EAXreg,
                                                        TargetRegisterClass *RC,
-                                                       bool invSrc) {
+                                                       bool invSrc) const {
   // For the atomic bitwise operator, we generate
   //   thisMBB:
   //   newMBB:
@@ -7221,7 +7221,7 @@ X86TargetLowering::EmitAtomicBit6432WithCustomInserter(MachineInstr *bInstr,
                                                        unsigned regOpcH,
                                                        unsigned immOpcL,
                                                        unsigned immOpcH,
-                                                       bool invSrc) {
+                                                       bool invSrc) const {
   // For the atomic bitwise operator, we generate
   //   thisMBB (instructions are in pairs, except cmpxchg8b)
   //     ld t1,t2 = [bitinstr.addr]
@@ -7365,7 +7365,7 @@ X86TargetLowering::EmitAtomicBit6432WithCustomInserter(MachineInstr *bInstr,
 MachineBasicBlock *
 X86TargetLowering::EmitAtomicMinMaxWithCustomInserter(MachineInstr *mInstr,
                                                       MachineBasicBlock *MBB,
-                                                      unsigned cmovOpc) {
+                                                      unsigned cmovOpc) const {
   // For the atomic min/max operator, we generate
   //   thisMBB:
   //   newMBB:
@@ -7465,7 +7465,7 @@ X86TargetLowering::EmitAtomicMinMaxWithCustomInserter(MachineInstr *mInstr,
 
 MachineBasicBlock *
 X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
-                                               MachineBasicBlock *BB) {
+                                               MachineBasicBlock *BB) const {
   DebugLoc dl = MI->getDebugLoc();
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   switch (MI->getOpcode()) {
