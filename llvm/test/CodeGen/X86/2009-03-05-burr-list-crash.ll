@@ -6,7 +6,7 @@ external global i32		; <i32*>:0 [#uses=1]
 
 declare i64 @strlen(i8* nocapture) nounwind readonly
 
-define fastcc i8* @1(i8*) nounwind {
+define fastcc i8* @foo(i8*) nounwind {
 	br i1 false, label %3, label %2
 
 ; <label>:2		; preds = %1
