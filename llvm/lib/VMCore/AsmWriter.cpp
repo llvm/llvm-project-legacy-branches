@@ -1242,10 +1242,7 @@ void AssemblyWriter::printAlias(const GlobalAlias *GA) {
     printType(F->getFunctionType());
     Out << "* ";
 
-    if (F->hasName())
-      PrintLLVMName(Out, F);
-    else
-      Out << "@\"\"";
+    WriteAsOperandInternal(Out, F, TypeNames, &Machine);
   } else if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(Aliasee)) {
     printType(GA->getType());
     Out << " ";
@@ -1312,10 +1309,7 @@ void AssemblyWriter::printFunction(const Function *F) {
     Out <<  Attribute::getAsString(Attrs.getRetAttributes()) << ' ';
   printType(F->getReturnType());
   Out << ' ';
-  if (F->hasName())
-    PrintLLVMName(Out, F);
-  else
-    Out << "@\"\"";
+  WriteAsOperandInternal(Out, F, TypeNames, &Machine);
   Out << '(';
   Machine.incorporateFunction(F);
 
