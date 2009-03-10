@@ -163,7 +163,6 @@ public:
 /// DIEAbbrevData - Dwarf abbreviation data, describes the one attribute of a
 /// Dwarf abbreviation.
 class DIEAbbrevData {
-private:
   /// Attribute - Dwarf attribute code.
   ///
   unsigned Attribute;
@@ -171,12 +170,8 @@ private:
   /// Form - Dwarf form code.
   ///
   unsigned Form;
-
 public:
-  DIEAbbrevData(unsigned A, unsigned F)
-  : Attribute(A)
-  , Form(F)
-  {}
+  DIEAbbrevData(unsigned A, unsigned F) : Attribute(A), Form(F) {}
 
   // Accessors.
   unsigned getAttribute() const { return Attribute; }
@@ -210,15 +205,9 @@ private:
   /// Data - Raw data bytes for abbreviation.
   ///
   SmallVector<DIEAbbrevData, 8> Data;
-
 public:
-
-  DIEAbbrev(unsigned T, unsigned C)
-  : Tag(T)
-  , ChildrenFlag(C)
-  , Data()
-  {}
-  ~DIEAbbrev() {}
+  DIEAbbrev(unsigned T, unsigned C) : Tag(T), ChildrenFlag(C), Data() {}
+  virtual ~DIEAbbrev() {}
 
   // Accessors.
   unsigned getTag()                           const { return Tag; }
@@ -292,12 +281,7 @@ protected:
 
 public:
   explicit DIE(unsigned Tag)
-  : Abbrev(Tag, DW_CHILDREN_no)
-  , Offset(0)
-  , Size(0)
-  , Children()
-  , Values()
-  {}
+    : Abbrev(Tag, DW_CHILDREN_no), Offset(0), Size(0), Children(), Values() {}
   virtual ~DIE();
 
   // Accessors.
@@ -375,9 +359,7 @@ public:
   ///
   unsigned Type;
 
-  explicit DIEValue(unsigned T)
-  : Type(T)
-  {}
+  explicit DIEValue(unsigned T) : Type(T) {}
   virtual ~DIEValue() {}
 
   // Accessors
@@ -464,10 +446,9 @@ public:
 /// DIEString - A string value DIE.
 ///
 class DIEString : public DIEValue {
+  const std::string Str;
 public:
-  const std::string String;
-
-  explicit DIEString(const std::string &S) : DIEValue(isString), String(S) {}
+  explicit DIEString(const std::string &S) : DIEValue(isString), Str(S) {}
 
   // Implement isa/cast/dyncast.
   static bool classof(const DIEString *) { return true; }
@@ -480,20 +461,20 @@ public:
   /// SizeOf - Determine size of string value in bytes.
   ///
   virtual unsigned SizeOf(const DwarfDebug &DD, unsigned Form) const {
-    return String.size() + sizeof(char); // sizeof('\0');
+    return Str.size() + sizeof(char); // sizeof('\0');
   }
 
   /// Profile - Used to gather unique data for the value folding set.
   ///
-  static void Profile(FoldingSetNodeID &ID, const std::string &String) {
+  static void Profile(FoldingSetNodeID &ID, const std::string &Str) {
     ID.AddInteger(isString);
-    ID.AddString(String);
+    ID.AddString(Str);
   }
-  virtual void Profile(FoldingSetNodeID &ID) { Profile(ID, String); }
+  virtual void Profile(FoldingSetNodeID &ID) { Profile(ID, Str); }
 
 #ifndef NDEBUG
   virtual void print(std::ostream &O) {
-    O << "Str: \"" << String << "\"";
+    O << "Str: \"" << Str << "\"";
   }
 #endif
 };
@@ -502,10 +483,8 @@ public:
 /// DIEDwarfLabel - A Dwarf internal label expression DIE.
 //
 class DIEDwarfLabel : public DIEValue {
-public:
-
   const DWLabel Label;
-
+public:
   explicit DIEDwarfLabel(const DWLabel &L) : DIEValue(isLabel), Label(L) {}
 
   // Implement isa/cast/dyncast.
@@ -536,14 +515,12 @@ public:
 #endif
 };
 
-
 //===----------------------------------------------------------------------===//
 /// DIEObjectLabel - A label to an object in code or data.
 //
 class DIEObjectLabel : public DIEValue {
-public:
   const std::string Label;
-
+public:
   explicit DIEObjectLabel(const std::string &L)
   : DIEValue(isAsIsLabel), Label(L) {}
 
@@ -578,16 +555,15 @@ public:
 /// DIESectionOffset - A section offset DIE.
 //
 class DIESectionOffset : public DIEValue {
-public:
   const DWLabel Label;
   const DWLabel Section;
   bool IsEH : 1;
   bool UseSet : 1;
-
+public:
   DIESectionOffset(const DWLabel &Lab, const DWLabel &Sec,
                    bool isEH = false, bool useSet = true)
-  : DIEValue(isSectionOffset), Label(Lab), Section(Sec),
-                               IsEH(isEH), UseSet(useSet) {}
+    : DIEValue(isSectionOffset), Label(Lab), Section(Sec),
+      IsEH(isEH), UseSet(useSet) {}
 
   // Implement isa/cast/dyncast.
   static bool classof(const DIESectionOffset *)  { return true; }
@@ -628,12 +604,11 @@ public:
 /// DIEDelta - A simple label difference DIE.
 ///
 class DIEDelta : public DIEValue {
-public:
   const DWLabel LabelHi;
   const DWLabel LabelLo;
-
+public:
   DIEDelta(const DWLabel &Hi, const DWLabel &Lo)
-  : DIEValue(isDelta), LabelHi(Hi), LabelLo(Lo) {}
+    : DIEValue(isDelta), LabelHi(Hi), LabelLo(Lo) {}
 
   // Implement isa/cast/dyncast.
   static bool classof(const DIEDelta *)  { return true; }
@@ -672,10 +647,11 @@ public:
 /// class can also be used as a proxy for a debug information entry not yet
 /// defined (ie. types.)
 class DIEntry : public DIEValue {
-public:
   DIE *Entry;
-
+public:
   explicit DIEntry(DIE *E) : DIEValue(isEntry), Entry(E) {}
+
+  void setEntry(DIE *E) { Entry = E; }
 
   // Implement isa/cast/dyncast.
   static bool classof(const DIEntry *)   { return true; }
@@ -718,16 +694,11 @@ public:
 /// DIEBlock - A block of values.  Primarily used for location expressions.
 //
 class DIEBlock : public DIEValue, public DIE {
+  unsigned Size;                // Size in bytes excluding size header.
 public:
-  unsigned Size;                        // Size in bytes excluding size header.
-
   DIEBlock()
-  : DIEValue(isBlock)
-  , DIE(0)
-  , Size(0)
-  {}
-  ~DIEBlock()  {
-  }
+    : DIEValue(isBlock), DIE(0), Size(0) {}
+  virtual ~DIEBlock() {}
 
   // Implement isa/cast/dyncast.
   static bool classof(const DIEBlock *)  { return true; }
@@ -754,7 +725,6 @@ public:
   ///
   virtual unsigned SizeOf(const DwarfDebug &DD, unsigned Form) const;
 
-
   /// Profile - Used to gather unique data for the value folding set.
   ///
   virtual void Profile(FoldingSetNodeID &ID) {
@@ -774,7 +744,6 @@ public:
 /// CompileUnit - This dwarf writer support class manages information associate
 /// with a source file.
 class CompileUnit {
-private:
   /// ID - File identifier for source.
   ///
   unsigned ID;
@@ -798,7 +767,6 @@ private:
   /// DiesSet - Used to uniquely define dies within the compile unit.
   ///
   FoldingSet<DIE> DiesSet;
-
 public:
   CompileUnit(unsigned I, DIE *D)
     : ID(I), Die(D), GVToDieMap(),
@@ -1395,7 +1363,7 @@ private:
   /// SetDIEntry - Set a DIEntry once the debug information entry is defined.
   ///
   void SetDIEntry(DIEntry *Value, DIE *Entry) {
-    Value->Entry = Entry;
+    Value->setEntry(Entry);
     // Add to values set if not already there.  If it is, we merely have a
     // duplicate in the values list (no harm.)
     ValuesSet.GetOrInsertNode(Value);
@@ -4176,7 +4144,7 @@ unsigned DIEInteger::SizeOf(const DwarfDebug &DD, unsigned Form) const {
 /// EmitValue - Emit string value.
 ///
 void DIEString::EmitValue(DwarfDebug &DD, unsigned Form) {
-  DD.getAsm()->EmitString(String);
+  DD.getAsm()->EmitString(Str);
 }
 
 //===----------------------------------------------------------------------===//
