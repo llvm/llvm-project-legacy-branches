@@ -1344,12 +1344,6 @@ class DwarfDebug : public Dwarf {
 
   std::vector<FunctionDebugFrameInfo> DebugFrames;
 
-public:
-  /// ShouldEmitDwarfDebug - Returns true if Dwarf debugging declarations should
-  /// be emitted.
-  ///
-  bool ShouldEmitDwarfDebug() const { return shouldEmit; }
-
 private:
   /// AssignAbbrevNumber - Define a unique number for the abbreviation.
   ///
@@ -2960,6 +2954,10 @@ public:
     delete DebugTimer;
   }
 
+  /// ShouldEmitDwarfDebug - Returns true if Dwarf debugging declarations should
+  /// be emitted.
+  bool ShouldEmitDwarfDebug() const { return shouldEmit; }
+
   /// SetDebugInfo - Create global DIEs and emit initial debug info sections.
   /// This is inovked by the target AsmPrinter.
   void SetDebugInfo(MachineModuleInfo *mmi) {
@@ -3251,7 +3249,9 @@ public:
     return ID;
   }
 
-  unsigned getRecordSourceLineCount() {
+  /// getRecordSourceLineCount - Return the number of source lines in the debug
+  /// info.
+  unsigned getRecordSourceLineCount() const {
     return Lines.size();
   }
                             
@@ -3264,7 +3264,6 @@ public:
   }
 
   /// RecordRegionStart - Indicate the start of a region.
-  ///
   unsigned RecordRegionStart(GlobalVariable *V) {
     if (TimePassesIsEnabled)
       DebugTimer->startTimer();
@@ -3280,7 +3279,6 @@ public:
   }
 
   /// RecordRegionEnd - Indicate the end of a region.
-  ///
   unsigned RecordRegionEnd(GlobalVariable *V) {
     if (TimePassesIsEnabled)
       DebugTimer->startTimer();
@@ -3296,7 +3294,6 @@ public:
   }
 
   /// RecordVariable - Indicate the declaration of  a local variable.
-  ///
   void RecordVariable(GlobalVariable *GV, unsigned FrameIndex) {
     if (TimePassesIsEnabled)
       DebugTimer->startTimer();
