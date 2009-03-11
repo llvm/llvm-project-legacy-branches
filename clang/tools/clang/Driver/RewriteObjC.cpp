@@ -2265,10 +2265,14 @@ Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp) {
       llvm::SmallVector<Expr*, 4> InitExprs;
       
       // set the receiver to self, the first argument to all methods.
-      InitExprs.push_back(new DeclRefExpr(
-            CurMethodDef->getSelfDecl(), 
-            Context->getObjCIdType(),
-            SourceLocation())); 
+      InitExprs.push_back(
+        new CStyleCastExpr(Context->getObjCIdType(), 
+                     new DeclRefExpr(CurMethodDef->getSelfDecl(), 
+                                     Context->getObjCIdType(),
+                                     SourceLocation()),
+                     Context->getObjCIdType(),
+                     SourceLocation(), SourceLocation())); // set the 'receiver'.
+
       llvm::SmallVector<Expr*, 8> ClsExprs;
       QualType argType = Context->getPointerType(Context->CharTy);
       ClsExprs.push_back(new StringLiteral(SuperDecl->getIdentifier()->getName(), 
