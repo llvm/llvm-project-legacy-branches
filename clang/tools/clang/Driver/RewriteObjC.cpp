@@ -934,7 +934,7 @@ void RewriteObjC::RewriteObjCMethodDecl(ObjCMethodDecl *OMD,
     ResultStr += " *";
   }
   else
-    ResultStr += Context->getObjCIdType().getAsString();
+    ResultStr += Context->getObjCClassType().getAsString();
   
   ResultStr += " self, ";
   ResultStr += Context->getObjCSelType().getAsString();
