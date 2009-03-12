@@ -1966,7 +1966,7 @@ bool llvm::SimplifyCFG(BasicBlock *BB) {
       --BBI;
       // Do not delete instructions that can have side effects, like calls
       // (which may never return) and volatile loads and stores.
-      if (isa<CallInst>(BBI)) break;
+      if (isa<CallInst>(BBI) && !isa<DbgInfoIntrinsic>(BBI)) break;
 
       if (StoreInst *SI = dyn_cast<StoreInst>(BBI))
         if (SI->isVolatile())
