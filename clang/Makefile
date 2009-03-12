@@ -87,24 +87,26 @@ retag-clang:
 
 build-and-test: fast-build
 
+SUDO := sudo
+
 fast-build:
 	svn up .
-	cd .. && BUILDIT_DIR=`pwd`/build really /usr/local/bin/buildit -arch i386 -arch x86_64 -noinstallsrc -noinstallhdrs -nosum -noverify `pwd`/clang -noclean
+	cd .. && BUILDIT_DIR=`pwd`/build $(SUDO) /usr/local/bin/buildit -arch i386 -arch x86_64 -noinstallsrc -noinstallhdrs -nosum -noverify `pwd`/clang -noclean
 
 check: llvm-binaries-i386 llvm-binaries-x86_64 check-i386 check-x86_64 unittests-i386 unittests-x86_64 clang-i386 clang-x86_64
 llvm-binaries-i386:
-	cd ../build/clang.roots/clang~obj/i386 && really make DESTDIR=`pwd`/../../../llvm-i386 install
+	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make DESTDIR=`pwd`/../../../llvm-i386 install
 llvm-binaries-x86_64:
-	cd ../build/clang.roots/clang~obj/x86_64 && really make DESTDIR=`pwd`/../../../llvm-x86_64 install
+	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make DESTDIR=`pwd`/../../../llvm-x86_64 install
 check-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386 && PATH=`pwd`/../../../llvm-i386/Developer/usr/bin:$(PATH) really make check && echo PASS: check-i386
+	cd ../build/clang.roots/clang~obj/i386 && PATH=`pwd`/../../../llvm-i386/Developer/usr/bin:$(PATH) $(SUDO) make check && echo PASS: check-i386
 check-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64 && PATH=`pwd`/../../../llvm-x86_64/Developer/usr/bin:$(PATH) really make check && echo PASS: check-x86_64
+	cd ../build/clang.roots/clang~obj/x86_64 && PATH=`pwd`/../../../llvm-x86_64/Developer/usr/bin:$(PATH) $(SUDO) make check && echo PASS: check-x86_64
 unittests-i386:
-	cd ../build/clang.roots/clang~obj/i386 && really make unittests && echo PASS: unittests-i386
+	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make unittests && echo PASS: unittests-i386
 unittests-x86_64:
-	cd ../build/clang.roots/clang~obj/x86_64 && really make unittests && echo PASS: unittests-x86_64
+	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make unittests && echo PASS: unittests-x86_64
 clang-i386:
-	cd ../build/clang.roots/clang~obj/i386/tools/clang && { really make test && echo PASS: clang-i386 || make report; }
+	cd ../build/clang.roots/clang~obj/i386/tools/clang && { $(SUDO) make test && echo PASS: clang-i386 || make report; }
 clang-x86_64:
-	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { really make test && echo PASS: clang-x86_64 || make report; }
+	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { $(SUDO) make test && echo PASS: clang-x86_64 || make report; }
