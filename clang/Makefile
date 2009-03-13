@@ -107,6 +107,6 @@ unittests-i386:
 unittests-x86_64:
 	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make unittests && echo PASS: unittests-x86_64
 clang-i386:
-	cd ../build/clang.roots/clang~obj/i386/tools/clang && { $(SUDO) make test && echo PASS: clang-i386 || make report; }
+	cd ../build/clang.roots/clang~obj/i386/tools/clang && { $(SUDO) make VERBOSE=0 test && echo PASS: clang-i386 || { echo FAIL: clang-i386; make report; } }
 clang-x86_64:
-	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { $(SUDO) make test && echo PASS: clang-x86_64 || make report; }
+	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { $(SUDO) make VERBOSE=0 test && echo PASS: clang-x86_64 || { echo FAIL: clang-x86_64; make report; } }
