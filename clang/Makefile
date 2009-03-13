@@ -99,9 +99,9 @@ llvm-binaries-i386:
 llvm-binaries-x86_64:
 	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make DESTDIR=`pwd`/../../../llvm-x86_64 install
 check-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386 && PATH=`pwd`/../../../llvm-i386/Developer/usr/bin:$(PATH) $(SUDO) make check && echo PASS: check-i386
+	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make check && echo PASS: check-i386
 check-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64 && PATH=`pwd`/../../../llvm-x86_64/Developer/usr/bin:$(PATH) $(SUDO) make check && echo PASS: check-x86_64
+	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make check && echo PASS: check-x86_64
 unittests-i386:
 	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make unittests && echo PASS: unittests-i386
 unittests-x86_64:
