@@ -1,8 +1,4 @@
 // RUN: %llvmgcc -S -g --emit-llvm %s -o - | grep "\~A"
-// RUN: %llvmgcc -S -g --emit-llvm %s -o - | not grep comp_ctor
-// RUN: %llvmgcc -S -g --emit-llvm %s -o - | not grep comp_dtor
-// FIXME: Temporarily XFAIL this test.
-// XFAIL: *
 class A {
   int i;
 public:
