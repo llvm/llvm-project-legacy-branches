@@ -8111,16 +8111,16 @@ static SDValue PerformBuildVectorCombine(SDNode *N, SelectionDAG &DAG,
 /// PerformSELECTCombine - Do target-specific dag combines on SELECT nodes.
 static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
                                       const X86Subtarget *Subtarget) {
-  DebugLoc dl = N->getDebugLoc();
+  DebugLoc DL = N->getDebugLoc();
   SDValue Cond = N->getOperand(0);
+  // Get the LHS/RHS of the select.
+  SDValue LHS = N->getOperand(1);
+  SDValue RHS = N->getOperand(2);
 
   // If we have SSE[12] support, try to form min/max nodes.
   if (Subtarget->hasSSE2() &&
       (N->getValueType(0) == MVT::f32 || N->getValueType(0) == MVT::f64)) {
     if (Cond.getOpcode() == ISD::SETCC) {
-      // Get the LHS/RHS of the select.
-      SDValue LHS = N->getOperand(1);
-      SDValue RHS = N->getOperand(2);
       ISD::CondCode CC = cast<CondCodeSDNode>(Cond.getOperand(2))->get();
 
       unsigned Opcode = 0;
@@ -8173,7 +8173,7 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
       }
 
       if (Opcode)
-        return DAG.getNode(Opcode, dl, N->getValueType(0), LHS, RHS);
+        return DAG.getNode(Opcode, DL, N->getValueType(0), LHS, RHS);
     }
 
   }
