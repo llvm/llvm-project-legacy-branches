@@ -102,7 +102,8 @@ TRANSLATE_ARCH=$(SED) -e s/ppc/powerpc/ -e s/i386/i686/
 BUILD=`$(ARCH) | $(TRANSLATE_ARCH)`-apple-darwin
 
 Configure_Flags = --prefix="$(Install_Prefix)"	\
-		  $(Extra_Configure_Flags)
+		  $(Extra_Configure_Flags)      \
+		  `case $$arch in x86_64) echo --build=x86_64-apple-darwin$$(uname -r | sed 's/\..*//');; esac`
 
 Install_Flags = DESTDIR=$(BuildDirectory)/install-$$arch \
 		$(Extra_Install_Flags)
