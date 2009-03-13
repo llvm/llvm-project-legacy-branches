@@ -5701,7 +5701,8 @@ SDValue X86TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) {
         !isScalarFPTypeInSSEReg(VT))  // FPStack?
       IllegalFPCMov = !hasFPCMov(cast<ConstantSDNode>(CC)->getSExtValue());
     
-    if ((isX86LogicalCmp(Cmp) && !IllegalFPCMov) || Opc == X86ISD::BT) { // FIXME
+    if ((isX86LogicalCmp(Cmp) && !IllegalFPCMov) ||
+        Opc == X86ISD::BT) { // FIXME
       Cond = Cmp;
       addTest = false;
     }
@@ -8178,8 +8179,211 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
 
   }
 
+  // If this is a select between two integer constants, try to do some
+  // optimizations.
+  if (ConstantSDNode *TrueC = dyn_cast<ConstantSDNode>(LHS)) {
+    if (ConstantSDNode *FalseC = dyn_cast<ConstantSDNode>(RHS))
+      // Don't do this for crazy integer types.
+      if (DAG.getTargetLoweringInfo().isTypeLegal(LHS.getValueType())) {
+        // If this is efficiently invertible, canonicalize the LHSC/RHSC values
+        // so that TrueC (the true value) is larger than FalseC.
+        bool NeedsCondInvert = false;
+        
+        if (TrueC->getAPIntValue().ult(FalseC->getAPIntValue()) &&
+            // Efficiently invertible.
+            (Cond.getOpcode() == ISD::SETCC ||  // setcc -> invertible.
+             (Cond.getOpcode() == ISD::XOR &&   // xor(X, C) -> invertible.
+              isa<ConstantSDNode>(Cond.getOperand(1))))) {
+          NeedsCondInvert = true;
+          std::swap(TrueC, FalseC);
+        }
+   
+        // Optimize C ? 8 : 0 -> zext(C) << 3.  Likewise for any pow2/0.
+        if (FalseC->getAPIntValue() == 0 &&
+            TrueC->getAPIntValue().isPowerOf2()) {
+          if (NeedsCondInvert) // Invert the condition if needed.
+            Cond = DAG.getNode(ISD::XOR, DL, Cond.getValueType(), Cond,
+                               DAG.getConstant(1, Cond.getValueType()));
+          
+          // Zero extend the condition if needed.
+          Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, LHS.getValueType(), Cond);
+          
+          unsigned ShAmt = TrueC->getAPIntValue().logBase2();
+          return DAG.getNode(ISD::SHL, DL, LHS.getValueType(), Cond,
+                             DAG.getConstant(ShAmt, MVT::i8));
+        }
+        
+        // Optimize Cond ? cst+1 : cst -> zext(setcc(C)+cst.
+        if (FalseC->getAPIntValue()+1 == TrueC->getAPIntValue()) {
+          if (NeedsCondInvert) // Invert the condition if needed.
+            Cond = DAG.getNode(ISD::XOR, DL, Cond.getValueType(), Cond,
+                               DAG.getConstant(1, Cond.getValueType()));
+          
+          // Zero extend the condition if needed.
+          Cond = DAG.getNode(ISD::ZERO_EXTEND, DL,
+                             FalseC->getValueType(0), Cond);
+          return DAG.getNode(ISD::ADD, DL, Cond.getValueType(), Cond,
+                             SDValue(FalseC, 0));
+        }
+        
+        // Optimize cases that will turn into an LEA instruction.  This requires
+        // an i32 or i64 and an efficient multiplier (1, 2, 3, 4, 5, 8, 9).
+        if (N->getValueType(0) == MVT::i32 || N->getValueType(0) == MVT::i64) {
+          uint64_t Diff = TrueC->getZExtValue()-FalseC->getZExtValue();
+          if (N->getValueType(0) == MVT::i32) Diff = (unsigned)Diff;
+          
+          bool isFastMultiplier = false;
+          if (Diff < 10) {
+            switch ((unsigned char)Diff) {
+              default: break;
+              case 1:  // result = add base, cond
+              case 2:  // result = lea base(    , cond*2)
+              case 3:  // result = lea base(cond, cond*2)
+              case 4:  // result = lea base(    , cond*4)
+              case 5:  // result = lea base(cond, cond*4)
+              case 8:  // result = lea base(    , cond*8)
+              case 9:  // result = lea base(cond, cond*8)
+                isFastMultiplier = true;
+                break;
+            }
+          }
+          
+          if (isFastMultiplier) {
+            APInt Diff = TrueC->getAPIntValue()-FalseC->getAPIntValue();
+            if (NeedsCondInvert) // Invert the condition if needed.
+              Cond = DAG.getNode(ISD::XOR, DL, Cond.getValueType(), Cond,
+                                 DAG.getConstant(1, Cond.getValueType()));
+            
+            // Zero extend the condition if needed.
+            Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, FalseC->getValueType(0),
+                               Cond);
+            // Scale the condition by the difference.
+            if (Diff != 1)
+              Cond = DAG.getNode(ISD::MUL, DL, Cond.getValueType(), Cond,
+                                 DAG.getConstant(Diff, Cond.getValueType()));
+            
+            // Add the base if non-zero.
+            if (FalseC->getAPIntValue() != 0)
+              Cond = DAG.getNode(ISD::ADD, DL, Cond.getValueType(), Cond,
+                                 SDValue(FalseC, 0));
+            return Cond;
+          }
+        }      
+      }
+  }
+      
   return SDValue();
 }
+
+/// Optimize X86ISD::CMOV [LHS, RHS, CONDCODE (e.g. X86::COND_NE), CONDVAL]
+static SDValue PerformCMOVCombine(SDNode *N, SelectionDAG &DAG,
+                                  TargetLowering::DAGCombinerInfo &DCI) {
+  DebugLoc DL = N->getDebugLoc();
+  
+  // If the flag operand isn't dead, don't touch this CMOV.
+  if (N->getNumValues() == 2 && !SDValue(N, 1).use_empty())
+    return SDValue();
+  
+  // If this is a select between two integer constants, try to do some
+  // optimizations.  Note that the operands are ordered the opposite of SELECT
+  // operands.
+  if (ConstantSDNode *TrueC = dyn_cast<ConstantSDNode>(N->getOperand(1))) {
+    if (ConstantSDNode *FalseC = dyn_cast<ConstantSDNode>(N->getOperand(0))) {
+      // Canonicalize the TrueC/FalseC values so that TrueC (the true value) is
+      // larger than FalseC (the false value).
+      X86::CondCode CC = (X86::CondCode)N->getConstantOperandVal(2);
+        
+      if (TrueC->getAPIntValue().ult(FalseC->getAPIntValue())) {
+        CC = X86::GetOppositeBranchCondition(CC);
+        std::swap(TrueC, FalseC);
+      }
+        
+      // Optimize C ? 8 : 0 -> zext(setcc(C)) << 3.  Likewise for any pow2/0.
+      // This is efficient for any integer data type (including i8/i16) and
+      // shift amount.
+      if (FalseC->getAPIntValue() == 0 && TrueC->getAPIntValue().isPowerOf2()) {
+        SDValue Cond = N->getOperand(3);
+        Cond = DAG.getNode(X86ISD::SETCC, DL, MVT::i8,
+                           DAG.getConstant(CC, MVT::i8), Cond);
+      
+        // Zero extend the condition if needed.
+        Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, TrueC->getValueType(0), Cond);
+        
+        unsigned ShAmt = TrueC->getAPIntValue().logBase2();
+        Cond = DAG.getNode(ISD::SHL, DL, Cond.getValueType(), Cond,
+                           DAG.getConstant(ShAmt, MVT::i8));
+        if (N->getNumValues() == 2)  // Dead flag value?
+          return DCI.CombineTo(N, Cond, SDValue());
+        return Cond;
+      }
+      
+      // Optimize Cond ? cst+1 : cst -> zext(setcc(C)+cst.  This is efficient
+      // for any integer data type, including i8/i16.
+      if (FalseC->getAPIntValue()+1 == TrueC->getAPIntValue()) {
+        SDValue Cond = N->getOperand(3);
+        Cond = DAG.getNode(X86ISD::SETCC, DL, MVT::i8,
+                           DAG.getConstant(CC, MVT::i8), Cond);
+        
+        // Zero extend the condition if needed.
+        Cond = DAG.getNode(ISD::ZERO_EXTEND, DL,
+                           FalseC->getValueType(0), Cond);
+        Cond = DAG.getNode(ISD::ADD, DL, Cond.getValueType(), Cond,
+                           SDValue(FalseC, 0));
+        
+        if (N->getNumValues() == 2)  // Dead flag value?
+          return DCI.CombineTo(N, Cond, SDValue());
+        return Cond;
+      }
+      
+      // Optimize cases that will turn into an LEA instruction.  This requires
+      // an i32 or i64 and an efficient multiplier (1, 2, 3, 4, 5, 8, 9).
+      if (N->getValueType(0) == MVT::i32 || N->getValueType(0) == MVT::i64) {
+        uint64_t Diff = TrueC->getZExtValue()-FalseC->getZExtValue();
+        if (N->getValueType(0) == MVT::i32) Diff = (unsigned)Diff;
+       
+        bool isFastMultiplier = false;
+        if (Diff < 10) {
+          switch ((unsigned char)Diff) {
+          default: break;
+          case 1:  // result = add base, cond
+          case 2:  // result = lea base(    , cond*2)
+          case 3:  // result = lea base(cond, cond*2)
+          case 4:  // result = lea base(    , cond*4)
+          case 5:  // result = lea base(cond, cond*4)
+          case 8:  // result = lea base(    , cond*8)
+          case 9:  // result = lea base(cond, cond*8)
+            isFastMultiplier = true;
+            break;
+          }
+        }
+        
+        if (isFastMultiplier) {
+          APInt Diff = TrueC->getAPIntValue()-FalseC->getAPIntValue();
+          SDValue Cond = N->getOperand(3);
+          Cond = DAG.getNode(X86ISD::SETCC, DL, MVT::i8,
+                             DAG.getConstant(CC, MVT::i8), Cond);
+          // Zero extend the condition if needed.
+          Cond = DAG.getNode(ISD::ZERO_EXTEND, DL, FalseC->getValueType(0),
+                             Cond);
+          // Scale the condition by the difference.
+          if (Diff != 1)
+            Cond = DAG.getNode(ISD::MUL, DL, Cond.getValueType(), Cond,
+                               DAG.getConstant(Diff, Cond.getValueType()));
+
+          // Add the base if non-zero.
+          if (FalseC->getAPIntValue() != 0)
+            Cond = DAG.getNode(ISD::ADD, DL, Cond.getValueType(), Cond,
+                               SDValue(FalseC, 0));
+          if (N->getNumValues() == 2)  // Dead flag value?
+            return DCI.CombineTo(N, Cond, SDValue());
+          return Cond;
+        }
+      }      
+    }
+  }
+  return SDValue();
+}
+
 
 /// PerformShiftCombine - Transforms vector shift nodes to use vector shifts
 ///                       when possible.
@@ -8441,6 +8645,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::BUILD_VECTOR:
     return PerformBuildVectorCombine(N, DAG, DCI, Subtarget, *this);
   case ISD::SELECT:         return PerformSELECTCombine(N, DAG, Subtarget);
+  case X86ISD::CMOV:        return PerformCMOVCombine(N, DAG, DCI);
   case ISD::SHL:
   case ISD::SRA:
   case ISD::SRL:            return PerformShiftCombine(N, DAG, Subtarget);
