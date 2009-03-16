@@ -662,11 +662,13 @@ bool X86FastISel::X86SelectCmp(Instruction *I) {
 }
 
 bool X86FastISel::X86SelectZExt(Instruction *I) {
-  // Special-case hack: The only i1 values we know how to produce currently
-  // set the upper bits of an i8 value to zero.
+  // Handle zero-extension from i1 to i8, which is common.
   if (I->getType() == Type::Int8Ty &&
       I->getOperand(0)->getType() == Type::Int1Ty) {
     unsigned ResultReg = getRegForValue(I->getOperand(0));
+    if (ResultReg == 0) return false;
+    // Set the high bits to zero.
+    ResultReg = FastEmitZExtFromI1(MVT::i8, ResultReg);
     if (ResultReg == 0) return false;
     UpdateValueMap(I, ResultReg);
     return true;
@@ -1402,6 +1404,19 @@ X86FastISel::TargetSelectInstruction(Instruction *I)  {
     return X86SelectFPTrunc(I);
   case Instruction::ExtractValue:
     return X86SelectExtractValue(I);
+  case Instruction::IntToPtr: // Deliberate fall-through.
+  case Instruction::PtrToInt: {
+    MVT SrcVT = TLI.getValueType(I->getOperand(0)->getType());
+    MVT DstVT = TLI.getValueType(I->getType());
+    if (DstVT.bitsGT(SrcVT))
+      return X86SelectZExt(I);
+    if (DstVT.bitsLT(SrcVT))
+      return X86SelectTrunc(I);
+    unsigned Reg = getRegForValue(I->getOperand(0));
+    if (Reg == 0) return false;
+    UpdateValueMap(I, Reg);
+    return true;
+  }
   }
 
   return false;
