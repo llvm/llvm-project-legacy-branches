@@ -1,0 +1,66 @@
+// RUN: clang %s -emit-llvm -o %t -fblocks -f__block &&
+// RUN: grep "_Block_object_dispose" %t | count 12 &&
+// RUN: grep "__copy_helper_block_" %t | count 8 &&
+// RUN: grep "__destroy_helper_block_" %t | count 8 &&
+// RUN: grep "__Block_byref_id_object_copy_" %t | count 2 &&
+// RUN: grep "__Block_byref_id_object_dispose_" %t | count 2 &&
+// RUN: grep "i32 135)" %t | count 2 &&
+// RUN: grep "_Block_object_assign" %t | count 7
+
+#include <stdio.h>
+
+void test1() {
+  __block int a;
+  int b=2;
+  a=1;
+  printf("a is %d, b is %d\n", a, b);
+  ^{ a = 10; printf("a is %d, b is %d\n", a, b); }();
+  printf("a is %d, b is %d\n", a, b);
+  a = 1;
+  printf("a is %d, b is %d\n", a, b);
+}
+
+
+void test2() {
+  __block int a;
+  a=1;
+  printf("a is %d\n", a);
+  ^{
+    ^{
+      a = 10;
+    }();
+  }();
+  printf("a is %d\n", a);
+  a = 1;
+  printf("a is %d\n", a);
+}
+
+void test3() {
+  __block int k;
+  __block int (^j)(int);
+  ^{j=0; k=0;}();
+}
+
+int test4() {
+  extern int g;
+  static int i = 1;
+  ^(int j){ i = j; g = 0; }(0);
+  return i + g;
+}
+
+int g;
+
+void test5() {
+  __block struct { int i; } i;
+  ^{ (void)i; }();
+}
+
+int main() {
+  int rv = 0;
+  test1();
+  test2();
+  test3();
+  rv += test4();
+  test5();
+  return rv;
+}
