@@ -234,7 +234,7 @@ static bool isTwoAddrUse(MachineInstr *UseMI, unsigned Reg) {
   for (unsigned i = 0, e = TID.getNumOperands(); i != e; ++i) {
     MachineOperand &MO = UseMI->getOperand(i);
     if (MO.isReg() && MO.getReg() == Reg &&
-        (MO.isDef() || TID.getOperandConstraint(i, TOI::TIED_TO) != -1))
+        (MO.isDef() || UseMI->isRegTiedToDefOperand(i)))
       // Earlier use is a two-address one.
       return true;
   }
@@ -338,8 +338,8 @@ static bool isTwoAddrUse(MachineInstr &MI, unsigned Reg, unsigned &DstReg) {
     const MachineOperand &MO = MI.getOperand(i);
     if (!MO.isReg() || !MO.isUse() || MO.getReg() != Reg)
       continue;
-    int ti = TID.getOperandConstraint(i, TOI::TIED_TO);
-    if (ti != -1) {
+    unsigned ti;
+    if (MI.isRegTiedToDefOperand(i, &ti)) {
       DstReg = MI.getOperand(ti).getReg();
       return true;
     }
@@ -634,9 +634,11 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
 
       ProcessCopy(&*mi, &*mbbi, Processed);
 
-      for (unsigned si = 1, e = TID.getNumOperands(); si < e; ++si) {
-        int ti = TID.getOperandConstraint(si, TOI::TIED_TO);
-        if (ti == -1)
+      unsigned NumOps = (mi->getOpcode() == TargetInstrInfo::INLINEASM)
+        ? mi->getNumOperands() : TID.getNumOperands();
+      for (unsigned si = 0; si < NumOps; ++si) {
+        unsigned ti = 0;
+        if (!mi->isRegTiedToDefOperand(si, &ti))
           continue;
 
         if (FirstTied) {
@@ -660,8 +662,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           unsigned regA = mi->getOperand(ti).getReg();
           unsigned regB = mi->getOperand(si).getReg();
 
-          assert(TargetRegisterInfo::isVirtualRegister(regA) &&
-                 TargetRegisterInfo::isVirtualRegister(regB) &&
+          assert(TargetRegisterInfo::isVirtualRegister(regB) &&
                  "cannot update physical register live information");
 
 #ifndef NDEBUG
@@ -669,7 +670,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           // b + a for example) because our transformation will not work. This
           // should never occur because we are in SSA form.
           for (unsigned i = 0; i != mi->getNumOperands(); ++i)
-            assert((int)i == ti ||
+            assert(i == ti ||
                    !mi->getOperand(i).isReg() ||
                    mi->getOperand(i).getReg() != regA);
 #endif
@@ -753,7 +754,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           }
 
         InstructionRearranged:
-          const TargetRegisterClass* rc = MRI->getRegClass(regA);
+          const TargetRegisterClass* rc = MRI->getRegClass(regB);
           MachineInstr *DefMI = MRI->getVRegDef(regB);
           // If it's safe and profitable, remat the definition instead of
           // copying it.

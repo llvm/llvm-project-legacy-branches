@@ -228,10 +228,11 @@ namespace llvm {
                        SDValue &Chain, SDValue *Flag) const;
 
     /// AddInlineAsmOperands - Add this value to the specified inlineasm node
-    /// operand list.  This adds the code marker and includes the number of
-    /// values added into it.
-    void AddInlineAsmOperands(unsigned Code, SelectionDAG &DAG,
-                              std::vector<SDValue> &Ops) const;
+    /// operand list.  This adds the code marker, matching input operand index
+    /// (if applicable), and includes the number of values added into it.
+    void AddInlineAsmOperands(unsigned Code,
+                              bool HasMatching, unsigned MatchingIdx,
+                              SelectionDAG &DAG, std::vector<SDValue> &Ops) const;
   };
 }
 
@@ -4659,10 +4660,16 @@ void RegsForValue::getCopyToRegs(SDValue Val, SelectionDAG &DAG, DebugLoc dl,
 /// AddInlineAsmOperands - Add this value to the specified inlineasm node
 /// operand list.  This adds the code marker and includes the number of
 /// values added into it.
-void RegsForValue::AddInlineAsmOperands(unsigned Code, SelectionDAG &DAG,
+void RegsForValue::AddInlineAsmOperands(unsigned Code,
+                                        bool HasMatching,unsigned MatchingIdx,
+                                        SelectionDAG &DAG,
                                         std::vector<SDValue> &Ops) const {
   MVT IntPtrTy = DAG.getTargetLoweringInfo().getPointerTy();
-  Ops.push_back(DAG.getTargetConstant(Code | (Regs.size() << 3), IntPtrTy));
+  assert(Regs.size() < (1 << 13) && "Too many inline asm outputs!");
+  unsigned Flag = Code | (Regs.size() << 3);
+  if (HasMatching)
+    Flag |= 0x80000000 | (MatchingIdx << 16);
+  Ops.push_back(DAG.getTargetConstant(Flag, IntPtrTy));
   for (unsigned Value = 0, Reg = 0, e = ValueVTs.size(); Value != e; ++Value) {
     unsigned NumRegs = TLI->getNumRegisters(ValueVTs[Value]);
     MVT RegisterVT = RegVTs[Value];
@@ -4925,28 +4932,17 @@ GetRegistersForValue(SDISelAsmOperandInfo &OpInfo,
   std::vector<unsigned> RegClassRegs;
   const TargetRegisterClass *RC = PhysReg.second;
   if (RC) {
-    // If this is a tied register, our regalloc doesn't know how to maintain
-    // the constraint, so we have to pick a register to pin the input/output to.
-    // If it isn't a matched constraint, go ahead and create vreg and let the
-    // regalloc do its thing.
-    if (!OpInfo.hasMatchingInput()) {
-      RegVT = *PhysReg.second->vt_begin();
-      if (OpInfo.ConstraintVT == MVT::Other)
-        ValueVT = RegVT;
+    RegVT = *PhysReg.second->vt_begin();
+    if (OpInfo.ConstraintVT == MVT::Other)
+      ValueVT = RegVT;
 
-      // Create the appropriate number of virtual registers.
-      MachineRegisterInfo &RegInfo = MF.getRegInfo();
-      for (; NumRegs; --NumRegs)
-        Regs.push_back(RegInfo.createVirtualRegister(PhysReg.second));
+    // Create the appropriate number of virtual registers.
+    MachineRegisterInfo &RegInfo = MF.getRegInfo();
+    for (; NumRegs; --NumRegs)
+      Regs.push_back(RegInfo.createVirtualRegister(PhysReg.second));
 
-      OpInfo.AssignedRegs = RegsForValue(TLI, Regs, RegVT, ValueVT);
-      return;
-    }
-
-    // Otherwise, we can't allocate it.  Let the code below figure out how to
-    // maintain these constraints.
-    RegClassRegs.assign(PhysReg.second->begin(), PhysReg.second->end());
-
+    OpInfo.AssignedRegs = RegsForValue(TLI, Regs, RegVT, ValueVT);
+    return;
   } else {
     // This is a reference to a register class that doesn't directly correspond
     // to an LLVM register class.  Allocate NumRegs consecutive, available,
@@ -5230,6 +5226,8 @@ void SelectionDAGLowering::visitInlineAsm(CallSite CS) {
       OpInfo.AssignedRegs.AddInlineAsmOperands(OpInfo.isEarlyClobber ?
                                                6 /* EARLYCLOBBER REGDEF */ :
                                                2 /* REGDEF */ ,
+                                               false,
+                                               0,
                                                DAG, AsmNodeOperands);
       break;
     }
@@ -5246,40 +5244,46 @@ void SelectionDAGLowering::visitInlineAsm(CallSite CS) {
         unsigned CurOp = 2;  // The first operand.
         for (; OperandNo; --OperandNo) {
           // Advance to the next operand.
-          unsigned NumOps =
+          unsigned OpFlag =
             cast<ConstantSDNode>(AsmNodeOperands[CurOp])->getZExtValue();
-          assert(((NumOps & 7) == 2 /*REGDEF*/ ||
-                  (NumOps & 7) == 6 /*EARLYCLOBBER REGDEF*/ ||
-                  (NumOps & 7) == 4 /*MEM*/) &&
+          assert(((OpFlag & 7) == 2 /*REGDEF*/ ||
+                  (OpFlag & 7) == 6 /*EARLYCLOBBER REGDEF*/ ||
+                  (OpFlag & 7) == 4 /*MEM*/) &&
                  "Skipped past definitions?");
-          CurOp += (NumOps>>3)+1;
+          CurOp += InlineAsm::getNumOperandRegisters(OpFlag)+1;
         }
 
-        unsigned NumOps =
+        unsigned OpFlag =
           cast<ConstantSDNode>(AsmNodeOperands[CurOp])->getZExtValue();
-        if ((NumOps & 7) == 2 /*REGDEF*/
-            || (NumOps & 7) == 6 /* EARLYCLOBBER REGDEF */) {
-          // Add NumOps>>3 registers to MatchedRegs.
+        if ((OpFlag & 7) == 2 /*REGDEF*/
+            || (OpFlag & 7) == 6 /* EARLYCLOBBER REGDEF */) {
+          // Add (OpFlag&0xffff)>>3 registers to MatchedRegs.
           RegsForValue MatchedRegs;
           MatchedRegs.TLI = &TLI;
           MatchedRegs.ValueVTs.push_back(InOperandVal.getValueType());
-          MatchedRegs.RegVTs.push_back(AsmNodeOperands[CurOp+1].getValueType());
-          for (unsigned i = 0, e = NumOps>>3; i != e; ++i) {
-            unsigned Reg =
-              cast<RegisterSDNode>(AsmNodeOperands[++CurOp])->getReg();
-            MatchedRegs.Regs.push_back(Reg);
-          }
+          MVT RegVT = AsmNodeOperands[CurOp+1].getValueType();
+          MatchedRegs.RegVTs.push_back(RegVT);
+          MachineRegisterInfo &RegInfo = DAG.getMachineFunction().getRegInfo();
+          for (unsigned i = 0, e = InlineAsm::getNumOperandRegisters(OpFlag);
+               i != e; ++i)
+            MatchedRegs.Regs.
+              push_back(RegInfo.createVirtualRegister(TLI.getRegClassFor(RegVT)));
 
           // Use the produced MatchedRegs object to
           MatchedRegs.getCopyToRegs(InOperandVal, DAG, getCurDebugLoc(),
                                     Chain, &Flag);
-          MatchedRegs.AddInlineAsmOperands(1 /*REGUSE*/, DAG, AsmNodeOperands);
+          MatchedRegs.AddInlineAsmOperands(1 /*REGUSE*/,
+                                           true, OpInfo.getMatchedOperand(),
+                                           DAG, AsmNodeOperands);
           break;
         } else {
-          assert(((NumOps & 7) == 4) && "Unknown matching constraint!");
-          assert((NumOps >> 3) == 1 && "Unexpected number of operands");
+          assert(((OpFlag & 7) == 4) && "Unknown matching constraint!");
+          assert((InlineAsm::getNumOperandRegisters(OpFlag)) == 1 &&
+                 "Unexpected number of operands");
           // Add information to the INLINEASM node to know about this input.
-          AsmNodeOperands.push_back(DAG.getTargetConstant(NumOps,
+          // See InlineAsm.h isUseOperandTiedToDef.
+          OpFlag |= 0x80000000 | (OpInfo.getMatchedOperand() << 16);
+          AsmNodeOperands.push_back(DAG.getTargetConstant(OpFlag,
                                                           TLI.getPointerTy()));
           AsmNodeOperands.push_back(AsmNodeOperands[CurOp+1]);
           break;
@@ -5334,7 +5338,7 @@ void SelectionDAGLowering::visitInlineAsm(CallSite CS) {
       OpInfo.AssignedRegs.getCopyToRegs(InOperandVal, DAG, getCurDebugLoc(),
                                         Chain, &Flag);
 
-      OpInfo.AssignedRegs.AddInlineAsmOperands(1/*REGUSE*/,
+      OpInfo.AssignedRegs.AddInlineAsmOperands(1/*REGUSE*/, false, 0,
                                                DAG, AsmNodeOperands);
       break;
     }
@@ -5343,7 +5347,7 @@ void SelectionDAGLowering::visitInlineAsm(CallSite CS) {
       // allocator is aware that the physreg got clobbered.
       if (!OpInfo.AssignedRegs.Regs.empty())
         OpInfo.AssignedRegs.AddInlineAsmOperands(6 /* EARLYCLOBBER REGDEF */,
-                                                 DAG, AsmNodeOperands);
+                                                 false, 0, DAG,AsmNodeOperands);
       break;
     }
     }
