@@ -410,6 +410,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       NewSU->isCommutable = true;
     ComputeLatency(NewSU);
 
+    // Record all the edges to and from the old SU, by category.
     SmallVector<SDep, 4> ChainPreds;
     SmallVector<SDep, 4> ChainSuccs;
     SmallVector<SDep, 4> LoadPreds;
@@ -433,6 +434,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
         NodeSuccs.push_back(*I);
     }
 
+    // Now assign edges to the newly-created nodes.
     for (unsigned i = 0, e = ChainPreds.size(); i != e; ++i) {
       const SDep &Pred = ChainPreds[i];
       RemovePred(SU, Pred);
@@ -468,9 +470,10 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
         AddPred(SuccDep, D);
       }
     } 
-    if (isNewLoad) {
-      AddPred(NewSU, SDep(LoadSU, SDep::Order, LoadSU->Latency));
-    }
+
+    // Add a data dependency to reflect that NewSU reads the value defined
+    // by LoadSU.
+    AddPred(NewSU, SDep(LoadSU, SDep::Data, LoadSU->Latency));
 
     if (isNewLoad)
       AvailableQueue->addNode(LoadSU);
@@ -985,6 +988,8 @@ namespace {
       SUnits = &sunits;
       // Add pseudo dependency edges for two-address nodes.
       AddPseudoTwoAddrDeps();
+      // Reroute edges to nodes with multiple uses.
+      PrescheduleNodesWithMultipleUses();
       // Calculate node priorities.
       CalculateSethiUllmanNumbers();
     }
@@ -1069,6 +1074,7 @@ namespace {
   protected:
     bool canClobber(const SUnit *SU, const SUnit *Op);
     void AddPseudoTwoAddrDeps();
+    void PrescheduleNodesWithMultipleUses();
     void CalculateSethiUllmanNumbers();
   };
 
@@ -1199,24 +1205,146 @@ static bool canClobberPhysRegDefs(const SUnit *SuccSU, const SUnit *SU,
   unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
   const unsigned *ImpDefs = TII->get(N->getMachineOpcode()).getImplicitDefs();
   assert(ImpDefs && "Caller should check hasPhysRegDefs");
-  const unsigned *SUImpDefs =
-    TII->get(SU->getNode()->getMachineOpcode()).getImplicitDefs();
-  if (!SUImpDefs)
-    return false;
-  for (unsigned i = NumDefs, e = N->getNumValues(); i != e; ++i) {
-    MVT VT = N->getValueType(i);
-    if (VT == MVT::Flag || VT == MVT::Other)
+  for (const SDNode *SUNode = SU->getNode(); SUNode;
+       SUNode = SUNode->getFlaggedNode()) {
+    if (!SUNode->isMachineOpcode())
       continue;
-    if (!N->hasAnyUseOfValue(i))
-      continue;
-    unsigned Reg = ImpDefs[i - NumDefs];
-    for (;*SUImpDefs; ++SUImpDefs) {
-      unsigned SUReg = *SUImpDefs;
-      if (TRI->regsOverlap(Reg, SUReg))
-        return true;
+    const unsigned *SUImpDefs =
+      TII->get(SUNode->getMachineOpcode()).getImplicitDefs();
+    if (!SUImpDefs)
+      return false;
+    for (unsigned i = NumDefs, e = N->getNumValues(); i != e; ++i) {
+      MVT VT = N->getValueType(i);
+      if (VT == MVT::Flag || VT == MVT::Other)
+        continue;
+      if (!N->hasAnyUseOfValue(i))
+        continue;
+      unsigned Reg = ImpDefs[i - NumDefs];
+      for (;*SUImpDefs; ++SUImpDefs) {
+        unsigned SUReg = *SUImpDefs;
+        if (TRI->regsOverlap(Reg, SUReg))
+          return true;
+      }
     }
   }
   return false;
+}
+
+/// PrescheduleNodesWithMultipleUses - Nodes with multiple uses
+/// are not handled well by the general register pressure reduction
+/// heuristics. When presented with code like this:
+///
+///      N
+///    / |
+///   /  |
+///  U  store
+///  |
+/// ...
+///
+/// the heuristics tend to push the store up, but since the
+/// operand of the store has another use (U), this would increase
+/// the length of that other use (the U->N edge).
+///
+/// This function transforms code like the above to route U's
+/// dependence through the store when possible, like this:
+///
+///      N
+///      ||
+///      ||
+///     store
+///       |
+///       U
+///       |
+///      ...
+///
+/// This results in the store being scheduled immediately
+/// after N, which shortens the U->N live range, reducing
+/// register pressure.
+///
+template<class SF>
+void RegReductionPriorityQueue<SF>::PrescheduleNodesWithMultipleUses() {
+  // Visit all the nodes in topological order, working top-down.
+  for (unsigned i = 0, e = SUnits->size(); i != e; ++i) {
+    SUnit *SU = &(*SUnits)[i];
+    // For now, only look at nodes with no data successors, such as stores.
+    // These are especially important, due to the heuristics in
+    // getNodePriority for nodes with no data successors.
+    if (SU->NumSuccs != 0)
+      continue;
+    // For now, only look at nodes with exactly one data predecessor.
+    if (SU->NumPreds != 1)
+      continue;
+    // Avoid prescheduling copies to virtual registers, which don't behave
+    // like other nodes from the perspective of scheduling heuristics.
+    if (SDNode *N = SU->getNode())
+      if (N->getOpcode() == ISD::CopyToReg &&
+          TargetRegisterInfo::isVirtualRegister
+            (cast<RegisterSDNode>(N->getOperand(1))->getReg()))
+        continue;
+
+    // Locate the single data predecessor.
+    SUnit *PredSU = 0;
+    for (SUnit::const_pred_iterator II = SU->Preds.begin(),
+         EE = SU->Preds.end(); II != EE; ++II)
+      if (!II->isCtrl()) {
+        PredSU = II->getSUnit();
+        break;
+      }
+    assert(PredSU);
+
+    // Don't rewrite edges that carry physregs, because that requires additional
+    // support infrastructure.
+    if (PredSU->hasPhysRegDefs)
+      continue;
+    // Short-circuit the case where SU is PredSU's only data successor.
+    if (PredSU->NumSuccs == 1)
+      continue;
+    // Avoid prescheduling to copies from virtual registers, which don't behave
+    // like other nodes from the perspective of scheduling // heuristics.
+    if (SDNode *N = SU->getNode())
+      if (N->getOpcode() == ISD::CopyFromReg &&
+          TargetRegisterInfo::isVirtualRegister
+            (cast<RegisterSDNode>(N->getOperand(1))->getReg()))
+        continue;
+
+    // Perform checks on the successors of PredSU.
+    for (SUnit::const_succ_iterator II = PredSU->Succs.begin(),
+         EE = PredSU->Succs.end(); II != EE; ++II) {
+      SUnit *PredSuccSU = II->getSUnit();
+      if (PredSuccSU == SU) continue;
+      // If PredSU has another successor with no data successors, for
+      // now don't attempt to choose either over the other.
+      if (PredSuccSU->NumSuccs == 0)
+        goto outer_loop_continue;
+      // Don't break physical register dependencies.
+      if (SU->hasPhysRegClobbers && PredSuccSU->hasPhysRegDefs)
+        if (canClobberPhysRegDefs(PredSuccSU, SU, TII, TRI))
+          goto outer_loop_continue;
+      // Don't introduce graph cycles.
+      if (scheduleDAG->IsReachable(SU, PredSuccSU))
+        goto outer_loop_continue;
+    }
+
+    // Ok, the transformation is safe and the heuristics suggest it is
+    // profitable. Update the graph.
+    DOUT << "Prescheduling SU # " << SU->NodeNum
+         << " next to PredSU # " << PredSU->NodeNum
+         << " to guide scheduling in the presence of multiple uses\n";
+    for (unsigned i = 0; i != PredSU->Succs.size(); ++i) {
+      SDep Edge = PredSU->Succs[i];
+      assert(!Edge.isAssignedRegDep());
+      SUnit *SuccSU = Edge.getSUnit();
+      if (SuccSU != SU) {
+        Edge.setSUnit(PredSU);
+        scheduleDAG->RemovePred(SuccSU, Edge);
+        scheduleDAG->AddPred(SU, Edge);
+        Edge.setSUnit(SU);
+        scheduleDAG->AddPred(SuccSU, Edge);
+        --i;
+      }
+    }
+  outer_loop_continue:;
+  }
 }
 
 /// AddPseudoTwoAddrDeps - If two nodes share an operand and one of them uses

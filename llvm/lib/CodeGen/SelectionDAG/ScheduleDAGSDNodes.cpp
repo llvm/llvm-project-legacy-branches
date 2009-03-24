@@ -41,6 +41,7 @@ SUnit *ScheduleDAGSDNodes::Clone(SUnit *Old) {
   SU->isTwoAddress = Old->isTwoAddress;
   SU->isCommutable = Old->isCommutable;
   SU->hasPhysRegDefs = Old->hasPhysRegDefs;
+  SU->hasPhysRegClobbers = Old->hasPhysRegClobbers;
   Old->isCloned = true;
   return SU;
 }
@@ -175,9 +176,14 @@ void ScheduleDAGSDNodes::AddSchedEdges() {
     // Find all predecessors and successors of the group.
     for (SDNode *N = SU->getNode(); N; N = N->getFlaggedNode()) {
       if (N->isMachineOpcode() &&
-          TII->get(N->getMachineOpcode()).getImplicitDefs() &&
-          CountResults(N) > TII->get(N->getMachineOpcode()).getNumDefs())
-        SU->hasPhysRegDefs = true;
+          TII->get(N->getMachineOpcode()).getImplicitDefs()) {
+        SU->hasPhysRegClobbers = true;
+        unsigned NumUsed = CountResults(N);
+        while (NumUsed != 0 && !N->hasAnyUseOfValue(NumUsed - 1))
+          --NumUsed;    // Skip over unused values at the end.
+        if (NumUsed > TII->get(N->getMachineOpcode()).getNumDefs())
+          SU->hasPhysRegDefs = true;
+      }
       
       for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
         SDNode *OpN = N->getOperand(i).getNode();
