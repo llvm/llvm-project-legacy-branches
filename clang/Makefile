@@ -8,7 +8,8 @@ UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
 Extra_Configure_Flags = --enable-targets=x86 \
-			--enable-optimized --disable-assertions --disable-doxygen \
+			--enable-optimized --disable-assertions \
+			--with-extra-options=-g --disable-doxygen \
 			$(HOST_TARGET_FLAGS)
 Extra_CC_Flags        = -mdynamic-no-pic
 GnuAfterInstall       = post-install install-plist
