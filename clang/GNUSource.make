@@ -88,7 +88,7 @@ ifndef Configure
 Configure = $(Sources)/configure
 endif
 
-Environment = CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" 
+Environment = CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" KEEP_SYMBOLS=1 -s --no-print-directory
 
 CC_Archs      = # set by CC
 # FIXME: Common.make shouldn't be setting this in the first place.
@@ -116,6 +116,8 @@ Install_Target = install-strip
 
 .PHONY: configure almostclean
 
+SYSCTL := $(shell sysctl -n hw.activecpu)
+
 install:: build
 ifneq ($(GnuNoInstall),YES)
 	$(_v) for arch in $(RC_ARCHS) ; do \
@@ -128,6 +130,10 @@ ifneq ($(GnuNoInstall),YES)
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(BuildDirectory)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
+	$(_v) $(FIND) $(DSTROOT) -perm -0111 ! -name ccc -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
+	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
+	$(_v) find $(DSTROOT) -perm -0111 ! -name ccc -type f -print | xargs -P $(SYSCTL) strip
+	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 ifneq ($(GnuNoChown),YES)
 	$(_v)- $(CHOWN) -R $(Install_User):$(Install_Group) $(DSTROOT) $(SYMROOT)
 endif
@@ -140,8 +146,6 @@ endif
 		$(MV) "$(DSTROOT)$(Workaround_3678855)" \
 			"$(DSTROOT)$(SYSTEM_DEVELOPER_TOOLS_DOC_DIR)/$(ProjectName)"; \
 	fi
-
-SYSCTL=`sysctl -n hw.activecpu`
 
 build:: configure
 ifneq ($(GnuNoBuild),YES)
