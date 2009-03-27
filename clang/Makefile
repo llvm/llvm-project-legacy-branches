@@ -34,8 +34,8 @@ else
 AEP_ExtractOption = z
 endif
 
-Install_Target = install-clang
-Build_Target = clang-only
+Install_Target = KEEP_SYMBOLS=1 -s --no-print-directory install-clang
+Build_Target = KEEP_SYMBOLS=1 -s --no-print-directory clang-only
 
 # Extract the source.
 install_source::
@@ -103,9 +103,9 @@ check-i386: llvm-binaries-i386
 	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make check && echo PASS: check-i386
 check-x86_64: llvm-binaries-x86_64
 	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make check && echo PASS: check-x86_64
-unittests-i386:
+unittests-i386: llvm-binaries-i386
 	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make unittests && echo PASS: unittests-i386
-unittests-x86_64:
+unittests-x86_64: llvm-binaries-x86_64
 	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make unittests && echo PASS: unittests-x86_64
 clang-i386: llvm-binaries-i386
 	cd ../build/clang.roots/clang~obj/i386/tools/clang && { $(SUDO) make VERBOSE=0 test && echo PASS: clang-i386 || { echo FAIL: clang-i386; make report; } }

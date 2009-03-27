@@ -88,7 +88,7 @@ ifndef Configure
 Configure = $(Sources)/configure
 endif
 
-Environment = CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" KEEP_SYMBOLS=1 -s --no-print-directory
+Environment = CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch"
 
 CC_Archs      = # set by CC
 # FIXME: Common.make shouldn't be setting this in the first place.
