@@ -62,9 +62,9 @@ install-plist:
 	$(INSTALL_FILE) $(Sources)/LICENSE.TXT $(OSL)/$(Project)-llvm.txt
 	$(INSTALL_FILE) $(Sources)/tools/clang/LICENSE.TXT $(OSL)/$(Project).txt
 
-SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
-SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
-SVN_TAGS := $(shell dirname $(SVN_CLANG))
+SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
+SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
+SVN_TAGS = $(shell dirname $(SVN_CLANG))
 
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
