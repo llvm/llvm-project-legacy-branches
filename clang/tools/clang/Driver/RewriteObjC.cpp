@@ -3463,6 +3463,19 @@ void RewriteObjC::SynthesizeMetaDataIntoBuffer(std::string &Result) {
   Result += "};\n\n";
 
   if (LangOpts.Microsoft) {
+    if (ProtocolExprDecls.size()) {
+      Result += "#pragma section(\".objc_protocol$B\",long,read,write)\n";
+      Result += "#pragma data_seg(push, \".objc_protocol$B\")\n";
+      for (llvm::SmallPtrSet<ObjCProtocolDecl *,8>::iterator I = ProtocolExprDecls.begin(), 
+           E = ProtocolExprDecls.end(); I != E; ++I) {
+        Result += "static struct _objc_protocol *_POINTER_OBJC_PROTOCOL_";
+        Result += (*I)->getNameAsString();
+        Result += " = &_OBJC_PROTOCOL_";
+        Result += (*I)->getNameAsString();
+        Result += ";\n";
+      }
+      Result += "#pragma data_seg(pop)\n\n";
+    }
     Result += "#pragma section(\".objc_module_info$B\",long,read,write)\n";
     Result += "#pragma data_seg(push, \".objc_module_info$B\")\n";
     Result += "static struct _objc_module *_POINTER_OBJC_MODULES = ";
