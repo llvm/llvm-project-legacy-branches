@@ -253,7 +253,7 @@ else
 
     # Darwin requires -fstrict-aliasing to be explicitly enabled.
     ifeq ($(OS),Darwin)
-      EXTRA_OPTIONS += -fstrict-aliasing -Wstrict-aliasing
+      EXTRA_OPTIONS += -Wstrict-aliasing
     endif
 
     CXX.Flags += $(OPTIMIZE_OPTION) $(OmitFramePointer)
