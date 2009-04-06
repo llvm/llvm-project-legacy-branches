@@ -7,8 +7,9 @@ Project               = clang
 UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
+# Add --disable-assertions back after a while
 Extra_Configure_Flags = --enable-targets=x86 \
-			--enable-optimized --disable-assertions \
+			--enable-optimized \
 			--with-extra-options=-g --disable-doxygen \
 			$(HOST_TARGET_FLAGS)
 Extra_CC_Flags        = -mdynamic-no-pic
