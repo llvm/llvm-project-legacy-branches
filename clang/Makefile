@@ -53,7 +53,6 @@ endif
 # Remove the parts of the destroot we don't need
 post-install:
 	$(MKDIR) -p $(DSTROOT)/usr/bin
-	ln -sf ../../Developer/usr/bin/ccc $(DSTROOT)/usr/bin/ccc
 	ln -sf ../../Developer/usr/bin/clang $(DSTROOT)/usr/bin/clang
 
 OSV = $(DSTROOT)/usr/local/OpenSourceVersions
