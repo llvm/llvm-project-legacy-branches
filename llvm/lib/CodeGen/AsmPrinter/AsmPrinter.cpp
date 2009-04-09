@@ -727,13 +727,17 @@ static void printStringChar(raw_ostream &O, char C) {
 /// Special characters are emitted properly.
 /// \literal (Eg. '\t') \endliteral
 void AsmPrinter::EmitString(const std::string &String) const {
+  EmitString(String.c_str(), String.size());
+}
+
+void AsmPrinter::EmitString(const char *String, unsigned Size) const {
   const char* AscizDirective = TAI->getAscizDirective();
   if (AscizDirective)
     O << AscizDirective;
   else
     O << TAI->getAsciiDirective();
   O << '\"';
-  for (unsigned i = 0, N = String.size(); i < N; ++i) {
+  for (unsigned i = 0; i < Size; ++i) {
     unsigned char C = String[i];
     printStringChar(O, C);
   }
