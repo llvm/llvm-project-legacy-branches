@@ -858,7 +858,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Accessors.
   //
-  AsmPrinter *getAsm() const { return Asm; }
+  const AsmPrinter *getAsm() const { return Asm; }
   MachineModuleInfo *getMMI() const { return MMI; }
   const TargetAsmInfo *getTargetAsmInfo() const { return TAI; }
   const TargetData *getTargetData() const { return TD; }
@@ -2886,8 +2886,9 @@ private:
     // Add address.
     DIEBlock *Block = new DIEBlock();
     AddUInt(Block, 0, DW_FORM_data1, DW_OP_addr);
+    std::string GLN;
     AddObjectLabel(Block, 0, DW_FORM_udata,
-                   Asm->getGlobalLinkName(DI_GV.getGlobal()));
+                   Asm->getGlobalLinkName(DI_GV.getGlobal(), GLN));
     AddBlock(VariableDie, DW_AT_location, 0, Block);
 
     // Add to map.
@@ -4007,10 +4008,12 @@ class DwarfException : public Dwarf  {
 
       PrintRelDirective();
 
-      if (GV)
-        O << Asm->getGlobalLinkName(GV);
-      else
+      if (GV) {
+        std::string GLN;
+        O << Asm->getGlobalLinkName(GV, GLN);
+      } else {
         O << "0";
+      }
 
       Asm->EOL("TypeInfo");
     }
@@ -4118,14 +4121,15 @@ public:
       EmitExceptionTable();
 
       // Save EH frame information
-      EHFrames.
-        push_back(FunctionEHFrameInfo(getAsm()->getCurrentFunctionEHName(MF),
-                                      SubprogramCount,
-                                      MMI->getPersonalityIndex(),
-                                      MF->getFrameInfo()->hasCalls(),
-                                      !MMI->getLandingPads().empty(),
-                                      MMI->getFrameMoves(),
-                                      MF->getFunction()));
+      std::string Name;
+      EHFrames.push_back(
+        FunctionEHFrameInfo(getAsm()->getCurrentFunctionEHName(MF, Name),
+                            SubprogramCount,
+                            MMI->getPersonalityIndex(),
+                            MF->getFrameInfo()->hasCalls(),
+                            !MMI->getLandingPads().empty(),
+                            MMI->getFrameMoves(),
+                            MF->getFunction()));
     }
 
     if (TimePassesIsEnabled) 
