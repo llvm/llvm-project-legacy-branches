@@ -23,7 +23,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
+#include "llvm/IntrinsicInst.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -112,7 +112,7 @@ private:
 
   bool X86SelectExtractValue(Instruction *I);
 
-  bool X86VisitIntrinsicCall(CallInst &I, unsigned Intrinsic);
+  bool X86VisitIntrinsicCall(IntrinsicInst &I);
   bool X86SelectCall(Instruction *I);
 
   CCAssignFn *CCAssignFnForCall(unsigned CC, bool isTailCall = false);
@@ -777,66 +777,44 @@ bool X86FastISel::X86SelectBranch(Instruction *I) {
     // looking for the SETO/SETB instruction. If an instruction modifies the
     // EFLAGS register before we reach the SETO/SETB instruction, then we can't
     // convert the branch into a JO/JB instruction.
+    if (IntrinsicInst *CI = dyn_cast<IntrinsicInst>(EI->getAggregateOperand())){
+      if (CI->getIntrinsicID() == Intrinsic::sadd_with_overflow ||
+          CI->getIntrinsicID() == Intrinsic::uadd_with_overflow) {
+        const MachineInstr *SetMI = 0;
+        unsigned Reg = lookUpRegForValue(EI);
 
-    Value *Agg = EI->getAggregateOperand();
+        for (MachineBasicBlock::const_reverse_iterator
+               RI = MBB->rbegin(), RE = MBB->rend(); RI != RE; ++RI) {
+          const MachineInstr &MI = *RI;
 
-    if (CallInst *CI = dyn_cast<CallInst>(Agg)) {
-      Function *F = CI->getCalledFunction();
+          if (MI.modifiesRegister(Reg)) {
+            unsigned Src, Dst, SrcSR, DstSR;
 
-      if (F && F->isDeclaration()) {
-        switch (F->getIntrinsicID()) {
-        default: break;
-        case Intrinsic::sadd_with_overflow:
-        case Intrinsic::uadd_with_overflow: {
-          const MachineInstr *SetMI = 0;
-          unsigned Reg = lookUpRegForValue(EI);
-
-          for (MachineBasicBlock::const_reverse_iterator
-                 RI = MBB->rbegin(), RE = MBB->rend(); RI != RE; ++RI) {
-            const MachineInstr &MI = *RI;
-
-            if (MI.modifiesRegister(Reg)) {
-              unsigned Src, Dst, SrcSR, DstSR;
-
-              if (getInstrInfo()->isMoveInstr(MI, Src, Dst, SrcSR, DstSR)) {
-                Reg = Src;
-                continue;
-              }
-
-              SetMI = &MI;
-              break;
+            if (getInstrInfo()->isMoveInstr(MI, Src, Dst, SrcSR, DstSR)) {
+              Reg = Src;
+              continue;
             }
 
-            const TargetInstrDesc &TID = MI.getDesc();
-            const unsigned *ImpDefs = TID.getImplicitDefs();
-
-            if (TID.hasUnmodeledSideEffects()) break;
-
-            bool ModifiesEFlags = false;
-
-            if (ImpDefs) {
-              for (unsigned u = 0; ImpDefs[u]; ++u)
-                if (ImpDefs[u] == X86::EFLAGS) {
-                  ModifiesEFlags = true;
-                  break;
-                }
-            }
-
-            if (ModifiesEFlags) break;
+            SetMI = &MI;
+            break;
           }
 
-          if (SetMI) {
-            unsigned OpCode = SetMI->getOpcode();
-
-            if (OpCode == X86::SETOr || OpCode == X86::SETBr) {
-              BuildMI(MBB, DL, TII.get((OpCode == X86::SETOr) ? 
-                                   X86::JO : X86::JB)).addMBB(TrueMBB);
-              FastEmitBranch(FalseMBB);
-              MBB->addSuccessor(TrueMBB);
-              return true;
-            }
-          }
+          const TargetInstrDesc &TID = MI.getDesc();
+          if (TID.hasUnmodeledSideEffects() ||
+              TID.hasImplicitDefOfPhysReg(X86::EFLAGS))
+            break;
         }
+
+        if (SetMI) {
+          unsigned OpCode = SetMI->getOpcode();
+
+          if (OpCode == X86::SETOr || OpCode == X86::SETBr) {
+            BuildMI(MBB, DL, TII.get(OpCode == X86::SETOr ? X86::JO : X86::JB))
+              .addMBB(TrueMBB);
+            FastEmitBranch(FalseMBB);
+            MBB->addSuccessor(TrueMBB);
+            return true;
+          }
         }
       }
     }
@@ -1039,30 +1017,26 @@ bool X86FastISel::X86SelectExtractValue(Instruction *I) {
   ExtractValueInst *EI = cast<ExtractValueInst>(I);
   Value *Agg = EI->getAggregateOperand();
 
-  if (CallInst *CI = dyn_cast<CallInst>(Agg)) {
-    Function *F = CI->getCalledFunction();
-
-    if (F && F->isDeclaration()) {
-      switch (F->getIntrinsicID()) {
-      default: break;
-      case Intrinsic::sadd_with_overflow:
-      case Intrinsic::uadd_with_overflow:
-        // Cheat a little. We know that the registers for "add" and "seto" are
-        // allocated sequentially. However, we only keep track of the register
-        // for "add" in the value map. Use extractvalue's index to get the
-        // correct register for "seto".
-        UpdateValueMap(I, lookUpRegForValue(Agg) + *EI->idx_begin());
-        return true;
-      }
+  if (IntrinsicInst *CI = dyn_cast<IntrinsicInst>(Agg)) {
+    switch (CI->getIntrinsicID()) {
+    default: break;
+    case Intrinsic::sadd_with_overflow:
+    case Intrinsic::uadd_with_overflow:
+      // Cheat a little. We know that the registers for "add" and "seto" are
+      // allocated sequentially. However, we only keep track of the register
+      // for "add" in the value map. Use extractvalue's index to get the
+      // correct register for "seto".
+      UpdateValueMap(I, lookUpRegForValue(Agg) + *EI->idx_begin());
+      return true;
     }
   }
 
   return false;
 }
 
-bool X86FastISel::X86VisitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
+bool X86FastISel::X86VisitIntrinsicCall(IntrinsicInst &I) {
   // FIXME: Handle more intrinsics.
-  switch (Intrinsic) {
+  switch (I.getIntrinsicID()) {
   default: return false;
   case Intrinsic::sadd_with_overflow:
   case Intrinsic::uadd_with_overflow: {
@@ -1071,11 +1045,11 @@ bool X86FastISel::X86VisitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     // instructions are encountered, we use the fact that two registers were
     // created sequentially to get the correct registers for the "sum" and the
     // "overflow bit".
-    MVT VT;
     const Function *Callee = I.getCalledFunction();
     const Type *RetTy =
       cast<StructType>(Callee->getReturnType())->getTypeAtIndex(unsigned(0));
 
+    MVT VT;
     if (!isTypeLegal(RetTy, VT))
       return false;
 
@@ -1089,7 +1063,6 @@ bool X86FastISel::X86VisitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
       return false;
 
     unsigned OpC = 0;
-
     if (VT == MVT::i32)
       OpC = X86::ADD32rr;
     else if (VT == MVT::i64)
@@ -1099,11 +1072,24 @@ bool X86FastISel::X86VisitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
 
     unsigned ResultReg = createResultReg(TLI.getRegClassFor(VT));
     BuildMI(MBB, DL, TII.get(OpC), ResultReg).addReg(Reg1).addReg(Reg2);
-    UpdateValueMap(&I, ResultReg);
+    unsigned DestReg1 = UpdateValueMap(&I, ResultReg);
 
-    ResultReg = createResultReg(TLI.getRegClassFor(MVT::i8));
-    BuildMI(MBB, DL, TII.get((Intrinsic == Intrinsic::sadd_with_overflow) ?
-                         X86::SETOr : X86::SETBr), ResultReg);
+    // If the add with overflow is an intra-block value then we just want to
+    // create temporaries for it like normal.  If it is a cross-block value then
+    // UpdateValueMap will return the cross-block register used.  Since we
+    // *really* want the value to be live in the register pair known by
+    // UpdateValueMap, we have to use DestReg1+1 as the destination register in
+    // the cross block case.  In the non-cross-block case, we should just make
+    // another register for the value.
+    if (DestReg1 != ResultReg)
+      ResultReg = DestReg1+1;
+    else
+      ResultReg = createResultReg(TLI.getRegClassFor(MVT::i8));
+    
+    unsigned Opc = X86::SETBr;
+    if (I.getIntrinsicID() == Intrinsic::sadd_with_overflow)
+      Opc = X86::SETOr;
+    BuildMI(MBB, DL, TII.get(Opc), ResultReg);
     return true;
   }
   }
@@ -1118,10 +1104,8 @@ bool X86FastISel::X86SelectCall(Instruction *I) {
     return false;
 
   // Handle intrinsic calls.
-  if (Function *F = CI->getCalledFunction())
-    if (F->isDeclaration())
-      if (unsigned IID = F->getIntrinsicID())
-        return X86VisitIntrinsicCall(*CI, IID);
+  if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(CI))
+    return X86VisitIntrinsicCall(*II);
 
   // Handle only C and fastcc calling conventions for now.
   CallSite CS(CI);
