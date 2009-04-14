@@ -243,9 +243,7 @@ static bool isUsedOutsideOfDefiningBlock(Instruction *I) {
   if (isa<PHINode>(I)) return true;
   BasicBlock *BB = I->getParent();
   for (Value::use_iterator UI = I->use_begin(), E = I->use_end(); UI != E; ++UI)
-    if (cast<Instruction>(*UI)->getParent() != BB || isa<PHINode>(*UI) ||
-        // FIXME: Remove switchinst special case.
-        isa<SwitchInst>(*UI))
+    if (cast<Instruction>(*UI)->getParent() != BB || isa<PHINode>(*UI))
       return true;
   return false;
 }
@@ -1640,6 +1638,9 @@ bool SelectionDAGLowering::handleSmallSwitchRange(CaseRec& CR,
     if (I != E-1) {
       FallThrough = CurMF->CreateMachineBasicBlock(CurBlock->getBasicBlock());
       CurMF->insert(BBI, FallThrough);
+
+      // Put SV in a virtual register to make it available from the new blocks.
+      ExportFromCurrentBlock(SV);
     } else {
       // If the last case doesn't match, go to the default block.
       FallThrough = Default;
@@ -1874,6 +1875,9 @@ bool SelectionDAGLowering::handleBTSplitSwitchCase(CaseRec& CR,
     TrueBB = CurMF->CreateMachineBasicBlock(LLVMBB);
     CurMF->insert(BBI, TrueBB);
     WorkList.push_back(CaseRec(TrueBB, C, CR.GE, LHSR));
+
+    // Put SV in a virtual register to make it available from the new blocks.
+    ExportFromCurrentBlock(SV);
   }
 
   // Similar to the optimization above, if the Value being switched on is
@@ -1888,6 +1892,9 @@ bool SelectionDAGLowering::handleBTSplitSwitchCase(CaseRec& CR,
     FalseBB = CurMF->CreateMachineBasicBlock(LLVMBB);
     CurMF->insert(BBI, FalseBB);
     WorkList.push_back(CaseRec(FalseBB,CR.LT,C,RHSR));
+
+    // Put SV in a virtual register to make it available from the new blocks.
+    ExportFromCurrentBlock(SV);
   }
 
   // Create a CaseBlock record representing a conditional branch to
@@ -2013,6 +2020,9 @@ bool SelectionDAGLowering::handleBitTestsSwitchCase(CaseRec& CR,
     BTC.push_back(BitTestCase(CasesBits[i].Mask,
                               CaseBB,
                               CasesBits[i].BB));
+
+    // Put SV in a virtual register to make it available from the new blocks.
+    ExportFromCurrentBlock(SV);
   }
 
   BitTestBlock BTB(lowBound, cmpRange, SV,
@@ -2180,8 +2190,24 @@ void SelectionDAGLowering::visitBinary(User &I, unsigned OpCode) {
 void SelectionDAGLowering::visitShift(User &I, unsigned Opcode) {
   SDValue Op1 = getValue(I.getOperand(0));
   SDValue Op2 = getValue(I.getOperand(1));
-  if (!isa<VectorType>(I.getType())) {
-    if (TLI.getPointerTy().bitsLT(Op2.getValueType()))
+  if (!isa<VectorType>(I.getType()) &&
+      Op2.getValueType() != TLI.getShiftAmountTy()) {
+    // If the operand is smaller than the shift count type, promote it.
+    if (TLI.getShiftAmountTy().bitsGT(Op2.getValueType()))
+      Op2 = DAG.getNode(ISD::ANY_EXTEND, getCurDebugLoc(),
+                        TLI.getShiftAmountTy(), Op2);
+    // If the operand is larger than the shift count type but the shift
+    // count type has enough bits to represent any shift value, truncate
+    // it now. This is a common case and it exposes the truncate to
+    // optimization early.
+    else if (TLI.getShiftAmountTy().getSizeInBits() >=
+             Log2_32_Ceil(Op2.getValueType().getSizeInBits()))
+      Op2 = DAG.getNode(ISD::TRUNCATE, getCurDebugLoc(),
+                        TLI.getShiftAmountTy(), Op2);
+    // Otherwise we'll need to temporarily settle for some other
+    // convenient type; type legalization will make adjustments as
+    // needed.
+    else if (TLI.getPointerTy().bitsLT(Op2.getValueType()))
       Op2 = DAG.getNode(ISD::TRUNCATE, getCurDebugLoc(),
                         TLI.getPointerTy(), Op2);
     else if (TLI.getPointerTy().bitsGT(Op2.getValueType()))

@@ -678,6 +678,7 @@ void LoopIndexSplit::removeBlocks(BasicBlock *DeadBB, Loop *LP,
       Instruction *I = BBI;
       ++BBI;
       I->replaceAllUsesWith(UndefValue::get(I->getType()));
+      LPM->deleteSimpleAnalysisValue(I, LP);
       I->eraseFromParent();
     }
     LPM->deleteSimpleAnalysisValue(BB, LP);
