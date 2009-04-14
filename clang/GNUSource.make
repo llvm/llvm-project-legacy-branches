@@ -34,7 +34,7 @@
 #  Configure             [ $(Sources)/configure                   ]
 #  Extra_Configure_Flags
 #  Extra_Install_Flags 
-#  Passed_Targets        [ check                                  ]
+#  Passed_Targets        [                                        ]
 #
 # Additional variables inherited from ReleaseControl/Common.make
 ##
@@ -42,8 +42,6 @@
 ifndef CoreOSMakefiles
 CoreOSMakefiles = $(MAKEFILEPATH)/CoreOS
 endif
-
-Passed_Targets += check
 
 include $(CoreOSMakefiles)/ReleaseControl/Common.make
 
