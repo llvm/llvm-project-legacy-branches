@@ -74,6 +74,11 @@ update-clang:
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
 
+update-to-tot:
+	rm -rf clang
+	svn co $(SVN_BASE)/llvm/trunk clang
+	svn co $(SVN_BASE)/cfe/trunk clang/tools/clang
+
 tag-clang:
 	if [ -n "$(VERSION)" ]; then \
 	  svn cp -m 'Tag.' $(SVN_TAGS)/clang $(SVN_TAGS)/clang-$(VERSION); \
