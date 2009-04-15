@@ -2897,22 +2897,21 @@ Sema::DeclPtrTy Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, DeclPtrTy D) {
 }
 
 static bool StatementCreatesScope(Stmt* S) {
+  DeclStmt *DS = dyn_cast<DeclStmt>(S);
+  if (DS == 0) return false;
   
-  if (DeclStmt *DS = dyn_cast<DeclStmt>(S)) {
-    for (DeclStmt::decl_iterator I = DS->decl_begin(), E = DS->decl_end();
-         I != E; ++I) {
-      if (VarDecl *D = dyn_cast<VarDecl>(*I)) {
-        if (D->getType()->isVariablyModifiedType() ||
-            D->hasAttr<CleanupAttr>())
-          return true;
-      } else if (TypedefDecl *D = dyn_cast<TypedefDecl>(*I)) {
-        if (D->getUnderlyingType()->isVariablyModifiedType())
-          return true;
-      }
+  for (DeclStmt::decl_iterator I = DS->decl_begin(), E = DS->decl_end();
+       I != E; ++I) {
+    if (VarDecl *D = dyn_cast<VarDecl>(*I)) {
+      if (D->getType()->isVariablyModifiedType() ||
+          D->hasAttr<CleanupAttr>())
+        return true;
+    } else if (TypedefDecl *D = dyn_cast<TypedefDecl>(*I)) {
+      if (D->getUnderlyingType()->isVariablyModifiedType())
+        return true;
     }
-  } else if (isa<ObjCAtTryStmt>(S)) {
-    return true;
   }
+  
   return false;
 }
 
