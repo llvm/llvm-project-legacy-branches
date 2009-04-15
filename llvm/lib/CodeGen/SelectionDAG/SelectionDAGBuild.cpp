@@ -5430,6 +5430,9 @@ void SelectionDAGLowering::visitInlineAsm(CallSite CS) {
     }
 
     setValue(CS.getInstruction(), Val);
+    // Don't need to use this as a chain in this case.
+    if (!IA->hasSideEffects() && !hasMemory && IndirectStoresToEmit.empty())
+      return;
   }
 
   std::vector<std::pair<SDValue, Value*> > StoresToEmit;
