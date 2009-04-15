@@ -184,7 +184,7 @@ def f128mem : X86MemOperand<"printf128mem">;
 // plain GR64, so that it doesn't potentially require a REX prefix.
 def i8mem_NOREX : Operand<i64> {
   let PrintMethod = "printi8mem";
-  let MIOperandInfo = (ops GR64_NOREX, i8imm, GR64_NOREX, i32imm, i8imm);
+  let MIOperandInfo = (ops GR64_NOREX, i8imm, GR64_NOREX, i32imm);
 }
 
 def lea32mem : Operand<i32> {
