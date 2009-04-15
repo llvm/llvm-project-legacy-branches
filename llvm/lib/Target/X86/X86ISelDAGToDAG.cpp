@@ -229,12 +229,6 @@ namespace {
     ///
     SDNode *getGlobalBaseReg();
 
-    /// getTruncateTo8Bit - return an SDNode that implements a subreg based
-    /// truncate of the specified operand to i8. This can be done with tablegen,
-    /// except that this code uses MVT::Flag in a tricky way that happens to
-    /// improve scheduling in some cases.
-    SDNode *getTruncateTo8Bit(SDValue N0);
-
 #ifndef NDEBUG
     unsigned Indent;
 #endif
@@ -938,20 +932,81 @@ bool X86DAGToDAGISel::MatchAddress(SDValue N, X86ISelAddressMode &AM,
     break;
       
   case ISD::AND: {
-    // Handle "(x << C1) & C2" as "(X & (C2>>C1)) << C1" if safe and if this
-    // allows us to fold the shift into this addressing mode.
+    // Perform some heroic transforms on an and of a constant-count shift
+    // with a constant to enable use of the scaled offset field.
+
     SDValue Shift = N.getOperand(0);
-    if (Shift.getOpcode() != ISD::SHL) break;
+    if (Shift.getNumOperands() != 2) break;
 
     // Scale must not be used already.
     if (AM.IndexReg.getNode() != 0 || AM.Scale != 1) break;
 
     // Not when RIP is used as the base.
     if (AM.isRIPRel) break;
-      
+
+    SDValue X = Shift.getOperand(0);
     ConstantSDNode *C2 = dyn_cast<ConstantSDNode>(N.getOperand(1));
     ConstantSDNode *C1 = dyn_cast<ConstantSDNode>(Shift.getOperand(1));
     if (!C1 || !C2) break;
+
+    // Handle "(X >> (8-C1)) & C2" as "(X >> 8) & 0xff)" if safe. This
+    // allows us to convert the shift and and into an h-register extract and
+    // a scaled index.
+    if (Shift.getOpcode() == ISD::SRL && Shift.hasOneUse()) {
+      unsigned ScaleLog = 8 - C1->getZExtValue();
+      if (ScaleLog > 0 && ScaleLog < 64 &&
+          C2->getZExtValue() == (UINT64_C(0xff) << ScaleLog)) {
+        SDValue Eight = CurDAG->getConstant(8, MVT::i8);
+        SDValue Mask = CurDAG->getConstant(0xff, N.getValueType());
+        SDValue Srl = CurDAG->getNode(ISD::SRL, dl, N.getValueType(),
+                                      X, Eight);
+        SDValue And = CurDAG->getNode(ISD::AND, dl, N.getValueType(),
+                                      Srl, Mask);
+        SDValue ShlCount = CurDAG->getConstant(ScaleLog, MVT::i8);
+        SDValue Shl = CurDAG->getNode(ISD::SHL, dl, N.getValueType(),
+                                      And, ShlCount);
+
+        // Insert the new nodes into the topological ordering.
+        if (Eight.getNode()->getNodeId() == -1 ||
+            Eight.getNode()->getNodeId() > X.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(X.getNode(), Eight.getNode());
+          Eight.getNode()->setNodeId(X.getNode()->getNodeId());
+        }
+        if (Mask.getNode()->getNodeId() == -1 ||
+            Mask.getNode()->getNodeId() > X.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(X.getNode(), Mask.getNode());
+          Mask.getNode()->setNodeId(X.getNode()->getNodeId());
+        }
+        if (Srl.getNode()->getNodeId() == -1 ||
+            Srl.getNode()->getNodeId() > Shift.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(Shift.getNode(), Srl.getNode());
+          Srl.getNode()->setNodeId(Shift.getNode()->getNodeId());
+        }
+        if (And.getNode()->getNodeId() == -1 ||
+            And.getNode()->getNodeId() > N.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(N.getNode(), And.getNode());
+          And.getNode()->setNodeId(N.getNode()->getNodeId());
+        }
+        if (ShlCount.getNode()->getNodeId() == -1 ||
+            ShlCount.getNode()->getNodeId() > X.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(X.getNode(), ShlCount.getNode());
+          ShlCount.getNode()->setNodeId(N.getNode()->getNodeId());
+        }
+        if (Shl.getNode()->getNodeId() == -1 ||
+            Shl.getNode()->getNodeId() > N.getNode()->getNodeId()) {
+          CurDAG->RepositionNode(N.getNode(), Shl.getNode());
+          Shl.getNode()->setNodeId(N.getNode()->getNodeId());
+        }
+        CurDAG->ReplaceAllUsesWith(N, Shl);
+        AM.IndexReg = And;
+        AM.Scale = (1 << ScaleLog);
+        return false;
+      }
+    }
+
+    // Handle "(X << C1) & C2" as "(X & (C2>>C1)) << C1" if safe and if this
+    // allows us to fold the shift into this addressing mode.
+    if (Shift.getOpcode() != ISD::SHL) break;
 
     // Not likely to be profitable if either the AND or SHIFT node has more
     // than one use (unless all uses are for address computation). Besides,
@@ -965,7 +1020,6 @@ bool X86DAGToDAGISel::MatchAddress(SDValue N, X86ISelAddressMode &AM,
       break;
     
     // Get the new AND mask, this folds to a constant.
-    SDValue X = Shift.getOperand(0);
     SDValue NewANDMask = CurDAG->getNode(ISD::SRL, dl, N.getValueType(),
                                          SDValue(C2, 0), SDValue(C1, 0));
     SDValue NewAND = CurDAG->getNode(ISD::AND, dl, N.getValueType(), X, 
@@ -1173,36 +1227,6 @@ static SDNode *FindCallStartFromCall(SDNode *Node) {
   return FindCallStartFromCall(Node->getOperand(0).getNode());
 }
 
-/// getTruncateTo8Bit - return an SDNode that implements a subreg based
-/// truncate of the specified operand to i8. This can be done with tablegen,
-/// except that this code uses MVT::Flag in a tricky way that happens to
-/// improve scheduling in some cases.
-SDNode *X86DAGToDAGISel::getTruncateTo8Bit(SDValue N0) {
-  assert(!Subtarget->is64Bit() &&
-         "getTruncateTo8Bit is only needed on x86-32!");
-  SDValue SRIdx = CurDAG->getTargetConstant(1, MVT::i32); // SubRegSet 1
-  DebugLoc dl = N0.getDebugLoc();
-
-  // Ensure that the source register has an 8-bit subreg on 32-bit targets
-  unsigned Opc;
-  MVT N0VT = N0.getValueType();
-  switch (N0VT.getSimpleVT()) {
-  default: assert(0 && "Unknown truncate!");
-  case MVT::i16:
-    Opc = X86::MOV16to16_;
-    break;
-  case MVT::i32:
-    Opc = X86::MOV32to32_;
-    break;
-  }
-
-  // The use of MVT::Flag here is not strictly accurate, but it helps
-  // scheduling in some cases.
-  N0 = SDValue(CurDAG->getTargetNode(Opc, dl, N0VT, MVT::Flag, N0), 0);
-  return CurDAG->getTargetNode(X86::EXTRACT_SUBREG, dl,
-                               MVT::i8, N0, SRIdx, N0.getValue(1));
-}
-
 SDNode *X86DAGToDAGISel::SelectAtomic64(SDNode *Node, unsigned Opc) {
   SDValue Chain = Node->getOperand(0);
   SDValue In1 = Node->getOperand(1);
@@ -1342,7 +1366,7 @@ SDNode *X86DAGToDAGISel::Select(SDValue N) {
                                                  Result,
                                      CurDAG->getTargetConstant(8, MVT::i8)), 0);
           // Then truncate it down to i8.
-          SDValue SRIdx = CurDAG->getTargetConstant(1, MVT::i32); // SubRegSet 1
+          SDValue SRIdx = CurDAG->getTargetConstant(X86::SUBREG_8BIT, MVT::i32);
           Result = SDValue(CurDAG->getTargetNode(X86::EXTRACT_SUBREG, dl,
                                                    MVT::i8, Result, SRIdx), 0);
         } else {
@@ -1492,7 +1516,7 @@ SDNode *X86DAGToDAGISel::Select(SDValue N) {
                                         CurDAG->getTargetConstant(8, MVT::i8)), 
                            0);
           // Then truncate it down to i8.
-          SDValue SRIdx = CurDAG->getTargetConstant(1, MVT::i32); // SubRegSet 1
+          SDValue SRIdx = CurDAG->getTargetConstant(X86::SUBREG_8BIT, MVT::i32);
           Result = SDValue(CurDAG->getTargetNode(X86::EXTRACT_SUBREG, dl,
                                                    MVT::i8, Result, SRIdx), 0);
         } else {
@@ -1513,55 +1537,6 @@ SDNode *X86DAGToDAGISel::Select(SDValue N) {
 #endif
 
       return NULL;
-    }
-
-    case ISD::SIGN_EXTEND_INREG: {
-      MVT SVT = cast<VTSDNode>(Node->getOperand(1))->getVT();
-      if (SVT == MVT::i8 && !Subtarget->is64Bit()) {
-        SDValue N0 = Node->getOperand(0);
-      
-        SDValue TruncOp = SDValue(getTruncateTo8Bit(N0), 0);
-        unsigned Opc = 0;
-        switch (NVT.getSimpleVT()) {
-        default: assert(0 && "Unknown sign_extend_inreg!");
-        case MVT::i16:
-          Opc = X86::MOVSX16rr8;
-          break;
-        case MVT::i32:
-          Opc = X86::MOVSX32rr8; 
-          break;
-        }
-      
-        SDNode *ResNode = CurDAG->getTargetNode(Opc, dl, NVT, TruncOp);
-      
-#ifndef NDEBUG
-        DOUT << std::string(Indent-2, ' ') << "=> ";
-        DEBUG(TruncOp.getNode()->dump(CurDAG));
-        DOUT << "\n";
-        DOUT << std::string(Indent-2, ' ') << "=> ";
-        DEBUG(ResNode->dump(CurDAG));
-        DOUT << "\n";
-        Indent -= 2;
-#endif
-        return ResNode;
-      }
-      break;
-    }
-    
-    case ISD::TRUNCATE: {
-      if (NVT == MVT::i8 && !Subtarget->is64Bit()) {
-        SDValue Input = Node->getOperand(0);
-        SDNode *ResNode = getTruncateTo8Bit(Input);
-      
-#ifndef NDEBUG
-        DOUT << std::string(Indent-2, ' ') << "=> ";
-        DEBUG(ResNode->dump(CurDAG));
-        DOUT << "\n";
-        Indent -= 2;
-#endif
-        return ResNode;
-      }
-      break;
     }
 
     case ISD::DECLARE: {

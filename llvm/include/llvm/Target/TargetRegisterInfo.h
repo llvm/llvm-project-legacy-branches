@@ -18,6 +18,7 @@
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/ADT/DenseSet.h"
 #include <cassert>
 #include <functional>
 
@@ -60,18 +61,27 @@ private:
   const vt_iterator VTs;
   const sc_iterator SubClasses;
   const sc_iterator SuperClasses;
+  const sc_iterator SubRegClasses;
+  const sc_iterator SuperRegClasses;
   const unsigned RegSize, Alignment;    // Size & Alignment of register in bytes
   const int CopyCost;
   const iterator RegsBegin, RegsEnd;
+  DenseSet<unsigned> RegSet;
 public:
   TargetRegisterClass(unsigned id,
                       const MVT *vts,
                       const TargetRegisterClass * const *subcs,
                       const TargetRegisterClass * const *supcs,
+                      const TargetRegisterClass * const *subregcs,
+                      const TargetRegisterClass * const *superregcs,
                       unsigned RS, unsigned Al, int CC,
                       iterator RB, iterator RE)
     : ID(id), VTs(vts), SubClasses(subcs), SuperClasses(supcs),
-    RegSize(RS), Alignment(Al), CopyCost(CC), RegsBegin(RB), RegsEnd(RE) {}
+    SubRegClasses(subregcs), SuperRegClasses(superregcs),
+    RegSize(RS), Alignment(Al), CopyCost(CC), RegsBegin(RB), RegsEnd(RE) {
+      for (iterator I = RegsBegin, E = RegsEnd; I != E; ++I)
+        RegSet.insert(*I);
+    }
   virtual ~TargetRegisterClass() {}     // Allow subclasses
   
   /// getID() - Return the register class ID number.
@@ -97,9 +107,7 @@ public:
   /// contains - Return true if the specified register is included in this
   /// register class.
   bool contains(unsigned Reg) const {
-    for (iterator I = begin(), E = end(); I != E; ++I)
-      if (*I == Reg) return true;
-    return false;
+    return RegSet.count(Reg);
   }
 
   /// hasType - return true if this TargetRegisterClass has the ValueType vt.
@@ -123,8 +131,32 @@ public:
     return I;
   }
 
-  /// hasSubClass - return true if the specified TargetRegisterClass is a
-  /// sub-register class of this TargetRegisterClass.
+  /// subregclasses_begin / subregclasses_end - Loop over all of
+  /// the subreg register classes of this register class.
+  sc_iterator subregclasses_begin() const {
+    return SubRegClasses;
+  }
+
+  sc_iterator subregclasses_end() const {
+    sc_iterator I = SubRegClasses;
+    while (*I != NULL) ++I;
+    return I;
+  }
+
+  /// superregclasses_begin / superregclasses_end - Loop over all of
+  /// the superreg register classes of this register class.
+  sc_iterator superregclasses_begin() const {
+    return SuperRegClasses;
+  }
+
+  sc_iterator superregclasses_end() const {
+    sc_iterator I = SuperRegClasses;
+    while (*I != NULL) ++I;
+    return I;
+  }
+
+  /// hasSubClass - return true if the the specified TargetRegisterClass
+  /// is a proper subset of this TargetRegisterClass.
   bool hasSubClass(const TargetRegisterClass *cs) const {
     for (int i = 0; SubClasses[i] != NULL; ++i) 
       if (SubClasses[i] == cs)
@@ -132,8 +164,8 @@ public:
     return false;
   }
 
-  /// subclasses_begin / subclasses_end - Loop over all of the sub-classes of
-  /// this register class.
+  /// subclasses_begin / subclasses_end - Loop over all of the classes
+  /// that are proper subsets of this register class.
   sc_iterator subclasses_begin() const {
     return SubClasses;
   }
@@ -145,7 +177,7 @@ public:
   }
   
   /// hasSuperClass - return true if the specified TargetRegisterClass is a
-  /// super-register class of this TargetRegisterClass.
+  /// proper superset of this TargetRegisterClass.
   bool hasSuperClass(const TargetRegisterClass *cs) const {
     for (int i = 0; SuperClasses[i] != NULL; ++i) 
       if (SuperClasses[i] == cs)
@@ -153,8 +185,8 @@ public:
     return false;
   }
 
-  /// superclasses_begin / superclasses_end - Loop over all of the super-classes
-  /// of this register class.
+  /// superclasses_begin / superclasses_end - Loop over all of the classes
+  /// that are proper supersets of this register class.
   sc_iterator superclasses_begin() const {
     return SuperClasses;
   }
@@ -165,8 +197,8 @@ public:
     return I;
   }
 
-  /// isASubClass - return true if this TargetRegisterClass is a sub-class of at
-  /// least one other TargetRegisterClass.
+  /// isASubClass - return true if this TargetRegisterClass is a subset
+  /// class of at least one other TargetRegisterClass.
   bool isASubClass() const {
     return SuperClasses[0] != 0;
   }
@@ -218,6 +250,10 @@ class TargetRegisterInfo {
 protected:
   const unsigned* SubregHash;
   const unsigned SubregHashSize;
+  const unsigned* SuperregHash;
+  const unsigned SuperregHashSize;
+  const unsigned* AliasesHash;
+  const unsigned AliasesHashSize;
 public:
   typedef const TargetRegisterClass * const * regclass_iterator;
 private:
@@ -234,7 +270,11 @@ protected:
                      int CallFrameSetupOpcode = -1,
                      int CallFrameDestroyOpcode = -1,
                      const unsigned* subregs = 0,
-                     const unsigned subregsize = 0);
+                     const unsigned subregsize = 0,
+		     const unsigned* superregs = 0,
+		     const unsigned superregsize = 0,
+		     const unsigned* aliases = 0,
+		     const unsigned aliasessize = 0);
   virtual ~TargetRegisterInfo();
 public:
 
@@ -336,8 +376,17 @@ public:
   /// areAliases - Returns true if the two registers alias each other, false
   /// otherwise
   bool areAliases(unsigned regA, unsigned regB) const {
-    for (const unsigned *Alias = getAliasSet(regA); *Alias; ++Alias)
-      if (*Alias == regB) return true;
+    size_t index = (regA + regB * 37) & (AliasesHashSize-1);
+    unsigned ProbeAmt = 0;
+    while (AliasesHash[index*2] != 0 &&
+	   AliasesHash[index*2+1] != 0) {
+      if (AliasesHash[index*2] == regA && AliasesHash[index*2+1] == regB)
+	return true;
+
+      index = (index + ProbeAmt) & (AliasesHashSize-1);
+      ProbeAmt += 2;
+    }
+
     return false;
   }
 
@@ -373,8 +422,18 @@ public:
   /// isSuperRegister - Returns true if regB is a super-register of regA.
   ///
   bool isSuperRegister(unsigned regA, unsigned regB) const {
-    for (const unsigned *SR = getSuperRegisters(regA); *SR; ++SR)
-      if (*SR == regB) return true;
+    // SuperregHash is a simple quadratically probed hash table.
+    size_t index = (regA + regB * 37) & (SuperregHashSize-1);
+    unsigned ProbeAmt = 2;
+    while (SuperregHash[index*2] != 0 &&
+           SuperregHash[index*2+1] != 0) {
+      if (SuperregHash[index*2] == regA && SuperregHash[index*2+1] == regB)
+        return true;
+      
+      index = (index + ProbeAmt) & (SuperregHashSize-1);
+      ProbeAmt += 2;
+    }
+    
     return false;
   }
 
