@@ -29,11 +29,15 @@ class DwarfDebug;
 class DwarfException;
 class MachineModuleInfo;
 class MachineFunction;
+class MachineInstr;
 class Value;
 class Module;
 class GlobalVariable;
 class TargetAsmInfo;
 class raw_ostream;
+class Instruction;
+class DISubprogram;
+class DIVariable;
 
 //===----------------------------------------------------------------------===//
 // DwarfWriter - Emits Dwarf debug and exception handling directives.
@@ -77,7 +81,7 @@ public:
   void EndFunction(MachineFunction *MF);
 
   /// ValidDebugInfo - Return true if V represents valid debug info value.
-  bool ValidDebugInfo(Value *V);
+  bool ValidDebugInfo(Value *V, bool FastISel);
 
   /// RecordSourceLine - Register a source line with debug info. Returns a
   /// unique label ID used to generate a label and provide correspondence to
@@ -102,11 +106,23 @@ public:
 
   /// RecordVariable - Indicate the declaration of  a local variable.
   ///
-  void RecordVariable(GlobalVariable *GV, unsigned FrameIndex);
+  void RecordVariable(GlobalVariable *GV, unsigned FrameIndex, 
+                      const MachineInstr *MI);
 
   /// ShouldEmitDwarfDebug - Returns true if Dwarf debugging declarations should
   /// be emitted.
   bool ShouldEmitDwarfDebug() const;
+
+  //// RecordInlinedFnStart - Indicate the start of a inlined function.
+  void RecordInlinedFnStart(Instruction *I, DISubprogram &SP, unsigned LabelID,
+                            unsigned Src, unsigned Line, unsigned Col);
+
+  /// RecordInlinedFnEnd - Indicate the end of inlined subroutine.
+  unsigned RecordInlinedFnEnd(DISubprogram &SP);
+
+  /// RecordVariableScope - Record scope for the variable declared by
+  /// DeclareMI. DeclareMI must describe TargetInstrInfo::DECLARE.
+  void RecordVariableScope(DIVariable &DV, const MachineInstr *DeclareMI);
 };
 
 

@@ -1534,7 +1534,7 @@ void AsmPrinter::printLabel(unsigned Id) const {
 void AsmPrinter::printDeclare(const MachineInstr *MI) const {
   unsigned FI = MI->getOperand(0).getIndex();
   GlobalValue *GV = MI->getOperand(1).getGlobal();
-  DW->RecordVariable(cast<GlobalVariable>(GV), FI);
+  DW->RecordVariable(cast<GlobalVariable>(GV), FI, MI);
 }
 
 /// PrintAsmOperand - Print the specified operand of MI, an INLINEASM

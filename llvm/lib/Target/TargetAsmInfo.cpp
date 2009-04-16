@@ -100,6 +100,7 @@ void TargetAsmInfo::fillDefaultValues() {
   SupportsDebugInformation = false;
   SupportsExceptionHandling = false;
   DwarfRequiresFrameSection = true;
+  DwarfUsesInlineInfoSection = false;
   SupportsMacInfoSection = true;
   NonLocalEHFrameLabel = false;
   GlobalEHDirective = 0;
@@ -111,6 +112,7 @@ void TargetAsmInfo::fillDefaultValues() {
   DwarfFrameSection = ".debug_frame";
   DwarfPubNamesSection = ".debug_pubnames";
   DwarfPubTypesSection = ".debug_pubtypes";
+  DwarfDebugInlineSection = ".debug_inlined";
   DwarfStrSection = ".debug_str";
   DwarfLocSection = ".debug_loc";
   DwarfARangesSection = ".debug_aranges";

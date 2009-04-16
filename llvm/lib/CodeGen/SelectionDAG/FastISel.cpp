@@ -47,6 +47,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/DebugLoc.h"
 #include "llvm/CodeGen/DwarfWriter.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Target/TargetData.h"
@@ -322,7 +323,7 @@ bool FastISel::SelectCall(User *I) {
   default: break;
   case Intrinsic::dbg_stoppoint: {
     DbgStopPointInst *SPI = cast<DbgStopPointInst>(I);
-    if (DW && DW->ValidDebugInfo(SPI->getContext())) {
+    if (DW && DW->ValidDebugInfo(SPI->getContext(), true)) {
       DICompileUnit CU(cast<GlobalVariable>(SPI->getContext()));
       std::string Dir, FN;
       unsigned SrcFile = DW->getOrCreateSourceID(CU.getDirectory(Dir),
@@ -339,7 +340,7 @@ bool FastISel::SelectCall(User *I) {
   }
   case Intrinsic::dbg_region_start: {
     DbgRegionStartInst *RSI = cast<DbgRegionStartInst>(I);
-    if (DW && DW->ValidDebugInfo(RSI->getContext())) {
+    if (DW && DW->ValidDebugInfo(RSI->getContext(), true)) {
       unsigned ID = 
         DW->RecordRegionStart(cast<GlobalVariable>(RSI->getContext()));
       const TargetInstrDesc &II = TII.get(TargetInstrInfo::DBG_LABEL);
@@ -349,11 +350,24 @@ bool FastISel::SelectCall(User *I) {
   }
   case Intrinsic::dbg_region_end: {
     DbgRegionEndInst *REI = cast<DbgRegionEndInst>(I);
-    if (DW && DW->ValidDebugInfo(REI->getContext())) {
-      unsigned ID = 
-        DW->RecordRegionEnd(cast<GlobalVariable>(REI->getContext()));
-      const TargetInstrDesc &II = TII.get(TargetInstrInfo::DBG_LABEL);
-      BuildMI(MBB, DL, II).addImm(ID);
+    if (DW && DW->ValidDebugInfo(REI->getContext(), true)) {
+     unsigned ID = 0;
+     DISubprogram Subprogram(cast<GlobalVariable>(REI->getContext()));
+     if (!Subprogram.isNull() && !Subprogram.describes(MF.getFunction())) {
+        // This is end of an inlined function.
+        const TargetInstrDesc &II = TII.get(TargetInstrInfo::DBG_LABEL);
+        ID = DW->RecordInlinedFnEnd(Subprogram);
+        if (ID)
+          // Returned ID is 0 if this is unbalanced "end of inlined
+          // scope". This could happen if optimizer eats dbg intrinsics
+          // or "beginning of inlined scope" is not recoginized due to
+          // missing location info. In such cases, do ignore this region.end.
+          BuildMI(MBB, DL, II).addImm(ID);
+      } else {
+        const TargetInstrDesc &II = TII.get(TargetInstrInfo::DBG_LABEL);
+        ID =  DW->RecordRegionEnd(cast<GlobalVariable>(REI->getContext()));
+        BuildMI(MBB, DL, II).addImm(ID);
+      }
     }
     return true;
   }
@@ -362,25 +376,43 @@ bool FastISel::SelectCall(User *I) {
     DbgFuncStartInst *FSI = cast<DbgFuncStartInst>(I);
     Value *SP = FSI->getSubprogram();
 
-    if (DW->ValidDebugInfo(SP)) {
+    if (DW->ValidDebugInfo(SP, true)) {
       // llvm.dbg.func.start implicitly defines a dbg_stoppoint which is what
       // (most?) gdb expects.
+      DebugLoc PrevLoc = DL;
       DISubprogram Subprogram(cast<GlobalVariable>(SP));
       DICompileUnit CompileUnit = Subprogram.getCompileUnit();
       std::string Dir, FN;
       unsigned SrcFile = DW->getOrCreateSourceID(CompileUnit.getDirectory(Dir),
                                                  CompileUnit.getFilename(FN));
 
-      // Record the source line but does not create a label for the normal
-      // function start. It will be emitted at asm emission time. However,
-      // create a label if this is a beginning of inlined function.
-      unsigned Line = Subprogram.getLineNumber();
-      unsigned LabelID = DW->RecordSourceLine(Line, 0, SrcFile);
-      setCurDebugLoc(DebugLoc::get(MF.getOrCreateDebugLocID(SrcFile, Line, 0)));
+      if (!Subprogram.describes(MF.getFunction())) {
+        // This is a beginning of an inlined function.
+        
+        // If llvm.dbg.func.start is seen in a new block before any
+        // llvm.dbg.stoppoint intrinsic then the location info is unknown.
+        // FIXME : Why DebugLoc is reset at the beginning of each block ?
+        if (PrevLoc.isUnknown())
+          return true;
+        // Record the source line.
+        unsigned Line = Subprogram.getLineNumber();
+        unsigned LabelID = DW->RecordSourceLine(Line, 0, SrcFile);
+        setCurDebugLoc(DebugLoc::get(MF.getOrCreateDebugLocID(SrcFile, Line, 0)));
 
-      if (DW->getRecordSourceLineCount() != 1) {
         const TargetInstrDesc &II = TII.get(TargetInstrInfo::DBG_LABEL);
         BuildMI(MBB, DL, II).addImm(LabelID);
+        DebugLocTuple PrevLocTpl = MF.getDebugLocTuple(PrevLoc);
+        DW->RecordInlinedFnStart(FSI, Subprogram, LabelID, 
+                                 PrevLocTpl.Src,
+                                 PrevLocTpl.Line,
+                                 PrevLocTpl.Col);
+      } else {
+        // Record the source line.
+        unsigned Line = Subprogram.getLineNumber();
+        setCurDebugLoc(DebugLoc::get(MF.getOrCreateDebugLocID(SrcFile, Line, 0)));
+        DW->RecordSourceLine(Line, 0, SrcFile);
+        // llvm.dbg.func_start also defines beginning of function scope.
+        DW->RecordRegionStart(cast<GlobalVariable>(FSI->getSubprogram()));
       }
     }
 
@@ -389,7 +421,7 @@ bool FastISel::SelectCall(User *I) {
   case Intrinsic::dbg_declare: {
     DbgDeclareInst *DI = cast<DbgDeclareInst>(I);
     Value *Variable = DI->getVariable();
-    if (DW && DW->ValidDebugInfo(Variable)) {
+    if (DW && DW->ValidDebugInfo(Variable, true)) {
       // Determine the address of the declared object.
       Value *Address = DI->getAddress();
       if (BitCastInst *BCI = dyn_cast<BitCastInst>(Address))
@@ -407,7 +439,13 @@ bool FastISel::SelectCall(User *I) {
 
       // Build the DECLARE instruction.
       const TargetInstrDesc &II = TII.get(TargetInstrInfo::DECLARE);
-      BuildMI(MBB, DL, II).addFrameIndex(FI).addGlobalAddress(GV);
+      MachineInstr *DeclareMI 
+        = BuildMI(MBB, DL, II).addFrameIndex(FI).addGlobalAddress(GV);
+      DIVariable DV(cast<GlobalVariable>(GV));
+      if (!DV.isNull()) {
+        // This is a local variable
+        DW->RecordVariableScope(DV, DeclareMI);
+      }
     }
     return true;
   }
