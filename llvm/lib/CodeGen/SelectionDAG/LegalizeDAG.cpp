@@ -4432,8 +4432,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
                            DAG.getVTList(&ValueVTs[0], 2),
                            &Ops[0], 2);
       SDNode *RNode = Result.getNode();
-      DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 0), SDValue(RNode, 0));
-      DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 1), SDValue(RNode, 1));
+      DAG.ReplaceAllUsesWith(Node, RNode);
       break;
     }
     }
@@ -4468,8 +4467,7 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
                            DAG.getVTList(&ValueVTs[0], 2),
                            &Ops[0], 2);
       SDNode *RNode = Result.getNode();
-      DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 0), SDValue(RNode, 0));
-      DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 1), SDValue(RNode, 1));
+      DAG.ReplaceAllUsesWith(Node, RNode);
       break;
     }
     }
