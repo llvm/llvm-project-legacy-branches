@@ -469,7 +469,7 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
     // must be due to phi elimination or two addr elimination.  If this is
     // the result of two address elimination, then the vreg is one of the
     // def-and-use register operand.
-    if (mi->isRegReDefinedByTwoAddr(MOIdx)) {
+    if (mi->isRegTiedToUseOperand(MOIdx)) {
       // If this is a two-address definition, then we have already processed
       // the live range.  The only problem is that we didn't realize there
       // are actually two values in the live interval.  Because of this we
@@ -1734,14 +1734,6 @@ LiveIntervals::handleSpilledImpDefs(const LiveInterval &li, VirtRegMap &vrm,
   }
 }
 
-namespace {
-  struct LISorter {
-    bool operator()(LiveInterval* A, LiveInterval* B) {
-      return A->beginNumber() < B->beginNumber();
-    }
-  };
-}
-
 std::vector<LiveInterval*> LiveIntervals::
 addIntervalsForSpillsFast(const LiveInterval &li,
                           const MachineLoopInfo *loopInfo,
@@ -1837,9 +1829,6 @@ addIntervalsForSpillsFast(const LiveInterval &li,
     
     RI = mri_->reg_begin(li.reg);
   }
-
-  // Clients expect the new intervals to be returned in sorted order.
-  std::sort(added.begin(), added.end(), LISorter());
 
   return added;
 }
@@ -1977,8 +1966,15 @@ addIntervalsForSpills(const LiveInterval &li,
   }
 
   // One stack slot per live interval.
-  if (NeedStackSlot && vrm.getPreSplitReg(li.reg) == 0)
-    Slot = vrm.assignVirt2StackSlot(li.reg);
+  if (NeedStackSlot && vrm.getPreSplitReg(li.reg) == 0) {
+    if (vrm.getStackSlot(li.reg) == VirtRegMap::NO_STACK_SLOT)
+      Slot = vrm.assignVirt2StackSlot(li.reg);
+    
+    // This case only occurs when the prealloc splitter has already assigned
+    // a stack slot to this vreg.
+    else
+      Slot = vrm.getStackSlot(li.reg);
+  }
 
   // Create new intervals and rewrite defs and uses.
   for (LiveInterval::Ranges::const_iterator
@@ -2048,7 +2044,7 @@ addIntervalsForSpills(const LiveInterval &li,
         if (CanFold && !Ops.empty()) {
           if (tryFoldMemoryOperand(MI, vrm, NULL, index, Ops, true, Slot,VReg)){
             Folded = true;
-            if (FoundUse > 0) {
+            if (FoundUse) {
               // Also folded uses, do not issue a load.
               eraseRestoreInfo(Id, index, VReg, RestoreMBBs, RestoreIdxes);
               nI.removeRange(getLoadIndex(index), getUseIndex(index)+1);
