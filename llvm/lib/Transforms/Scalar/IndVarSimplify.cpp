@@ -738,6 +738,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
         // See if we can figure out sext(i+constant) doesn't wrap, so we can
         // use a larger add.  This is common in subscripting.
         if (UInst && UInst->getOpcode()==Instruction::Add &&
+            !UInst->use_empty() &&
             allUsesAreSameTyped(Instruction::SExt, UInst) &&
             isa<ConstantInt>(UInst->getOperand(1)) &&
             NoSignedWrap && LimitVal) {
@@ -749,11 +750,14 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
             // We've determined this is (i+constant) and it won't overflow.
             if (isa<SExtInst>(UInst->use_begin())) {
               SExtInst* oldSext = dyn_cast<SExtInst>(UInst->use_begin());
+              uint64_t truncSize = oldSext->getType()->getPrimitiveSizeInBits();
               Value *TruncIndVar = getSignExtendedTruncVar(AR, SE, LargestType,
                                                 L, oldSext->getType(), Rewriter,
                                                 InsertPt);
-              APInt APcopy = APInt(AddRHS->getValue());
-              ConstantInt* newAddRHS =ConstantInt::get(APcopy.sext(newBitSize));
+              APInt APnewAddRHS = APInt(AddRHS->getValue()).sext(newBitSize);
+              if (newBitSize > truncSize)
+                APnewAddRHS = APnewAddRHS.trunc(truncSize);
+              ConstantInt* newAddRHS =ConstantInt::get(APnewAddRHS);
               Value *NewAdd = 
                     BinaryOperator::CreateAdd(TruncIndVar, newAddRHS,
                                               UInst->getName()+".nosex", UInst);
@@ -770,24 +774,28 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
         // Try for sext(i | constant).  This is safe as long as the
         // high bit of the constant is not set.
         if (UInst && UInst->getOpcode()==Instruction::Or &&
+            !UInst->use_empty() &&
             allUsesAreSameTyped(Instruction::SExt, UInst) && NoSignedWrap &&
             isa<ConstantInt>(UInst->getOperand(1))) {
           ConstantInt* RHS = dyn_cast<ConstantInt>(UInst->getOperand(1));
           if (!RHS->getValue().isNegative()) {
             uint64_t newBitSize = LargestType->getPrimitiveSizeInBits();
             SExtInst* oldSext = dyn_cast<SExtInst>(UInst->use_begin());
+            uint64_t truncSize = oldSext->getType()->getPrimitiveSizeInBits();
             Value *TruncIndVar = getSignExtendedTruncVar(AR, SE, LargestType,
                                               L, oldSext->getType(), Rewriter,
                                               InsertPt);
-            APInt APcopy = APInt(RHS->getValue());
-            ConstantInt* newRHS =ConstantInt::get(APcopy.sext(newBitSize));
-            Value *NewAdd = 
-                  BinaryOperator::CreateOr(TruncIndVar, newRHS,
+            APInt APnewOrRHS = APInt(RHS->getValue()).sext(newBitSize);
+            if (newBitSize > truncSize)
+              APnewOrRHS = APnewOrRHS.trunc(truncSize);
+            ConstantInt* newOrRHS =ConstantInt::get(APnewOrRHS);
+            Value *NewOr = 
+                  BinaryOperator::CreateOr(TruncIndVar, newOrRHS,
                                             UInst->getName()+".nosex", UInst);
             for (Value::use_iterator UI2 = UInst->use_begin(), 
                   UE2 = UInst->use_end(); UI2 != UE2; ++UI2) {
               Instruction *II = dyn_cast<Instruction>(UI2);
-              II->replaceAllUsesWith(NewAdd);
+              II->replaceAllUsesWith(NewOr);
               DeadInsts.insert(II);
             }
             DeadInsts.insert(UInst);
@@ -805,15 +813,19 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
         // (RHS doesn't have to be constant.  There should be a better approach
         // than bottom-up pattern matching for this...)
         if (UInst && UInst->getOpcode()==Instruction::And &&
+            !UInst->use_empty() &&
             allUsesAreSameTyped(Instruction::ZExt, UInst) &&
             isa<ConstantInt>(UInst->getOperand(1))) {
           uint64_t newBitSize = LargestType->getPrimitiveSizeInBits();
           ConstantInt* AndRHS = dyn_cast<ConstantInt>(UInst->getOperand(1));
           ZExtInst* oldZext = dyn_cast<ZExtInst>(UInst->use_begin());
+          uint64_t truncSize = oldZext->getType()->getPrimitiveSizeInBits();
           Value *TruncIndVar = getSignExtendedTruncVar(AR, SE, LargestType,
                                   L, oldZext->getType(), Rewriter, InsertPt);
-          APInt APcopy = APInt(AndRHS->getValue());
-          ConstantInt* newAndRHS = ConstantInt::get(APcopy.zext(newBitSize));
+          APInt APnewAndRHS = APInt(AndRHS->getValue()).zext(newBitSize);
+          if (newBitSize > truncSize)
+            APnewAndRHS = APnewAndRHS.trunc(truncSize);
+          ConstantInt* newAndRHS = ConstantInt::get(APnewAndRHS);
           Value *NewAnd = 
                 BinaryOperator::CreateAnd(TruncIndVar, newAndRHS,
                                           UInst->getName()+".nozex", UInst);
@@ -839,14 +851,18 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
           ConstantInt* AddRHS = dyn_cast<ConstantInt>(UInst->getOperand(1));
           Instruction *UInst2 = dyn_cast<Instruction>(UInst->use_begin());
           if (UInst2 && UInst2->getOpcode() == Instruction::And &&
+              !UInst2->use_empty() &&
               allUsesAreSameTyped(Instruction::ZExt, UInst2) &&
               isa<ConstantInt>(UInst2->getOperand(1))) {
             ZExtInst* oldZext = dyn_cast<ZExtInst>(UInst2->use_begin());
+            uint64_t truncSize = oldZext->getType()->getPrimitiveSizeInBits();
             Value *TruncIndVar = getSignExtendedTruncVar(AR, SE, LargestType,
                                     L, oldZext->getType(), Rewriter, InsertPt);
             ConstantInt* AndRHS = dyn_cast<ConstantInt>(UInst2->getOperand(1));
-            APInt APcopy = APInt(AddRHS->getValue());
-            ConstantInt* newAddRHS = ConstantInt::get(APcopy.zext(newBitSize));
+            APInt APnewAddRHS = APInt(AddRHS->getValue()).zext(newBitSize);
+            if (newBitSize > truncSize)
+              APnewAddRHS = APnewAddRHS.trunc(truncSize);
+            ConstantInt* newAddRHS = ConstantInt::get(APnewAddRHS);
             Value *NewAdd = ((UInst->getOpcode()==Instruction::Add) ?
                   BinaryOperator::CreateAdd(TruncIndVar, newAddRHS,
                                             UInst->getName()+".nozex", UInst2) :
