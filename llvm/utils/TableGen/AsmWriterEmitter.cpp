@@ -137,6 +137,8 @@ AsmWriterInst::AsmWriterInst(const CodeGenInstruction &CGI, unsigned Variant) {
           case '\t': AddLiteralString("\\t"); break;
           case '"': AddLiteralString("\\\""); break;
           case '\\': AddLiteralString("\\\\"); break;
+          case '{': AddLiteralString("{"); break;
+          case '}': AddLiteralString("}"); break;
           default:
             AddLiteralString(std::string(1, AsmString[LastEmitted]));
             break;

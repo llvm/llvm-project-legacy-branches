@@ -173,6 +173,16 @@ tgtok::TokKind TGLexer::LexString() {
       // These turn into their literal character.
       CurStrVal += *CurPtr++;
       break;
+    case '{':
+      CurStrVal += '\\';
+      CurStrVal += '{';
+      ++CurPtr;
+      break;
+    case '}':
+      CurStrVal += '\\';
+      CurStrVal += '}';
+      ++CurPtr;
+      break;
     case 't':
       CurStrVal += '\t';
       ++CurPtr;
