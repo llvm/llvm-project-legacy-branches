@@ -213,6 +213,10 @@ namespace llvm {
       return VNI;
     }
 
+    /// getUnknownValNo - Find a value# for unknown values, if there isn't one
+    /// create a new one.
+    VNInfo *getUnknownValNo(BumpPtrAllocator &VNInfoAllocator);
+
     /// addKill - Add a kill instruction index to the specified value
     /// number.
     static void addKill(VNInfo *VNI, unsigned KillIdx) {

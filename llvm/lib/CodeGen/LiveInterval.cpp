@@ -19,7 +19,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/LiveInterval.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Streams.h"
@@ -568,6 +567,20 @@ void LiveInterval::MergeValueInAsValue(const LiveInterval &RHS,
   }
 }
 
+VNInfo *LiveInterval::getUnknownValNo(BumpPtrAllocator &VNInfoAllocator) {
+  unsigned i = getNumValNums();
+  if (i) {
+    do {
+      --i;
+      VNInfo *VNI = getValNumInfo(i);
+      if (VNI->def == ~0U && !VNI->copy &&
+          !VNI->hasPHIKill && !VNI->redefByEC && VNI->kills.empty())
+        return VNI;
+    } while (i != 0);
+  }
+  return getNextValue(~0U, 0, VNInfoAllocator);
+}
+
 
 /// MergeInClobberRanges - For any live ranges that are not defined in the
 /// current interval, but are defined in the Clobbers interval, mark them
@@ -576,19 +589,12 @@ void LiveInterval::MergeInClobberRanges(const LiveInterval &Clobbers,
                                         BumpPtrAllocator &VNInfoAllocator) {
   if (Clobbers.empty()) return;
   
-  DenseMap<VNInfo*, VNInfo*> ValNoMaps;
+  // Find a value # to use for the clobber ranges.  If there is already a value#
+  // for unknown values, use it.
+  VNInfo *ClobberValNo = getUnknownValNo(VNInfoAllocator);
+  
   iterator IP = begin();
   for (const_iterator I = Clobbers.begin(), E = Clobbers.end(); I != E; ++I) {
-    // For every val# in the Clobbers interval, create a new "unknown" val#.
-    VNInfo *ClobberValNo = 0;
-    DenseMap<VNInfo*, VNInfo*>::iterator VI = ValNoMaps.find(I->valno);
-    if (VI != ValNoMaps.end())
-      ClobberValNo = VI->second;
-    else {
-      ClobberValNo = getNextValue(~0U, 0, VNInfoAllocator);
-      ValNoMaps.insert(std::make_pair(I->valno, ClobberValNo));
-    }
-
     bool Done = false;
     unsigned Start = I->start, End = I->end;
     // If a clobber range starts before an existing range and ends after
@@ -631,7 +637,7 @@ void LiveInterval::MergeInClobberRange(unsigned Start, unsigned End,
                                        BumpPtrAllocator &VNInfoAllocator) {
   // Find a value # to use for the clobber ranges.  If there is already a value#
   // for unknown values, use it.
-  VNInfo *ClobberValNo = getNextValue(~0U, 0, VNInfoAllocator);
+  VNInfo *ClobberValNo = getUnknownValNo(VNInfoAllocator);
   
   iterator IP = begin();
   IP = std::upper_bound(IP, end(), Start);
