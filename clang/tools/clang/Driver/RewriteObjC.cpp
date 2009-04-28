@@ -1488,6 +1488,8 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   SourceLocation lastCurlyLoc = startLoc;
   buf = "}\nelse {\n";
   buf += "  _rethrow = objc_exception_extract(&_stack);\n";
+  buf += "}\n";
+  buf += "{ /* implicit finally clause */\n";
   buf += "  if (!_rethrow) objc_exception_try_exit(&_stack);\n";
   buf += "  objc_sync_exit(";
   Expr *syncExpr = new CStyleCastExpr(Context->getObjCIdType(), 
