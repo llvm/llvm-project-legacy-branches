@@ -23,7 +23,6 @@
 #include "clang/Driver/Types.h"
 
 #include "clang/Basic/Version.h"
-#include "clang/Frontend/PCHBitCodes.h"
 
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/PrettyStackTrace.h"
