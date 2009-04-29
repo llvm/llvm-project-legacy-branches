@@ -361,8 +361,6 @@ void Driver::PrintVersion(const Compilation &C) const {
   // FIXME: Temporary hack
   llvm::errs() << "gcc version " CLANG_VERSION_STRING " (" 
                << vers << " " << revision << ")" << "\n";
-  llvm::errs() << "PCH version " << pch::VERSION_MAJOR << "."
-               << pch::VERSION_MINOR << "\n";
 
   const ToolChain &TC = C.getDefaultToolChain();
   llvm::errs() << "Target: " << TC.getTripleString() << '\n';
