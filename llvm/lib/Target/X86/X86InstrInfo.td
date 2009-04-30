@@ -783,15 +783,21 @@ def MOV32mr : I<0x89, MRMDestMem, (outs), (ins i32mem:$dst, GR32:$src),
                 "mov{l}\t{$src, $dst|$dst, $src}",
                 [(store GR32:$src, addr:$dst)]>;
 
-// Versions of MOV8rr and MOV8mr that use i8mem_NOREX and GR8_NOREX so that they
-// can be used for copying and storing h registers, which can't be encoded when
-// a REX prefix is present.
+// Versions of MOV8rr, MOV8mr, and MOV8rm that use i8mem_NOREX and GR8_NOREX so
+// that they can be used for copying and storing h registers, which can't be
+// encoded when a REX prefix is present.
 let neverHasSideEffects = 1 in
 def MOV8rr_NOREX : I<0x88, MRMDestReg,
                      (outs GR8_NOREX:$dst), (ins GR8_NOREX:$src),
                      "mov{b}\t{$src, $dst|$dst, $src}  # NOREX", []>;
+let mayStore = 1 in
 def MOV8mr_NOREX : I<0x88, MRMDestMem,
                      (outs), (ins i8mem_NOREX:$dst, GR8_NOREX:$src),
+                     "mov{b}\t{$src, $dst|$dst, $src}  # NOREX", []>;
+let mayLoad = 1,
+    canFoldAsLoad = 1, isReMaterializable = 1, mayHaveSideEffects = 1 in
+def MOV8rm_NOREX : I<0x8A, MRMSrcMem,
+                     (outs GR8_NOREX:$dst), (ins i8mem_NOREX:$src),
                      "mov{b}\t{$src, $dst|$dst, $src}  # NOREX", []>;
 
 //===----------------------------------------------------------------------===//
@@ -2932,6 +2938,7 @@ def MOVZX32_NOREXrr8 : I<0xB6, MRMSrcReg,
                          (outs GR32_NOREX:$dst), (ins GR8:$src),
                          "movz{bl|x}\t{$src, $dst|$dst, $src}  # NOREX",
                          []>, TB;
+let mayLoad = 1 in
 def MOVZX32_NOREXrm8 : I<0xB6, MRMSrcMem,
                          (outs GR32_NOREX:$dst), (ins i8mem:$src),
                          "movz{bl|x}\t{$src, $dst|$dst, $src}  # NOREX",
@@ -3363,12 +3370,12 @@ def : Pat<(and GR32:$src1, 0xffff),
           (MOVZX32rr16 (EXTRACT_SUBREG GR32:$src1, x86_subreg_16bit))>;
 // r & (2^8-1) ==> movz
 def : Pat<(and GR32:$src1, 0xff),
-          (MOVZX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src1, GR32_),
+          (MOVZX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src1, GR32_ABCD),
                                       x86_subreg_8bit))>,
       Requires<[In32BitMode]>;
 // r & (2^8-1) ==> movz
 def : Pat<(and GR16:$src1, 0xff),
-          (MOVZX16rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src1, GR16_),
+          (MOVZX16rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src1, GR16_ABCD),
                                       x86_subreg_8bit))>,
       Requires<[In32BitMode]>;
 
@@ -3376,11 +3383,11 @@ def : Pat<(and GR16:$src1, 0xff),
 def : Pat<(sext_inreg GR32:$src, i16),
           (MOVSX32rr16 (EXTRACT_SUBREG GR32:$src, x86_subreg_16bit))>;
 def : Pat<(sext_inreg GR32:$src, i8),
-          (MOVSX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_),
+          (MOVSX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_ABCD),
                                       x86_subreg_8bit))>,
       Requires<[In32BitMode]>;
 def : Pat<(sext_inreg GR16:$src, i8),
-          (MOVSX16rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_),
+          (MOVSX16rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_ABCD),
                                       x86_subreg_8bit))>,
       Requires<[In32BitMode]>;
 
@@ -3388,32 +3395,32 @@ def : Pat<(sext_inreg GR16:$src, i8),
 def : Pat<(i16 (trunc GR32:$src)),
           (EXTRACT_SUBREG GR32:$src, x86_subreg_16bit)>;
 def : Pat<(i8 (trunc GR32:$src)),
-          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_),
+          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_ABCD),
                           x86_subreg_8bit)>,
       Requires<[In32BitMode]>;
 def : Pat<(i8 (trunc GR16:$src)),
-          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_),
+          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_ABCD),
                           x86_subreg_8bit)>,
       Requires<[In32BitMode]>;
 
 // h-register tricks
 def : Pat<(i8 (trunc (srl_su GR16:$src, (i8 8)))),
-          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_),
+          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_ABCD),
                           x86_subreg_8bit_hi)>,
       Requires<[In32BitMode]>;
 def : Pat<(i8 (trunc (srl_su GR32:$src, (i8 8)))),
-          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_),
+          (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_ABCD),
                           x86_subreg_8bit_hi)>,
       Requires<[In32BitMode]>;
 def : Pat<(srl_su GR16:$src, (i8 8)),
           (EXTRACT_SUBREG
             (MOVZX32rr8
-              (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_),
+              (EXTRACT_SUBREG (COPY_TO_REGCLASS GR16:$src, GR16_ABCD),
                               x86_subreg_8bit_hi)),
             x86_subreg_16bit)>,
       Requires<[In32BitMode]>;
 def : Pat<(and (srl_su GR32:$src, (i8 8)), (i32 255)),
-          (MOVZX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_),
+          (MOVZX32rr8 (EXTRACT_SUBREG (COPY_TO_REGCLASS GR32:$src, GR32_ABCD),
                                       x86_subreg_8bit_hi))>,
       Requires<[In32BitMode]>;
 
