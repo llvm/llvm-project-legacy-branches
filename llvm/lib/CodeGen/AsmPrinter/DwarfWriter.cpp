@@ -2099,29 +2099,28 @@ private:
           AddUInt(ScopeDie, DW_AT_call_file, 0, Scope->getFile());
           AddUInt(ScopeDie, DW_AT_call_line, 0, Scope->getLine());
           AddUInt(ScopeDie, DW_AT_call_column, 0, Scope->getColumn());
-        }
-        else
+        } else {
           ScopeDie = new DIE(DW_TAG_lexical_block);
-          
-          // Add the scope bounds.
-          if (StartID) {
-            AddLabel(ScopeDie, DW_AT_low_pc, DW_FORM_addr,
-                     DWLabel("label", StartID));
-          } else {
-            AddLabel(ScopeDie, DW_AT_low_pc, DW_FORM_addr,
-                     DWLabel("func_begin", SubprogramCount));
-          }
-          if (EndID) {
-            AddLabel(ScopeDie, DW_AT_high_pc, DW_FORM_addr,
-                     DWLabel("label", EndID));
-          } else {
-            AddLabel(ScopeDie, DW_AT_high_pc, DW_FORM_addr,
-                     DWLabel("func_end", SubprogramCount));
-          }
-          
-          // Add the scope contents.
-          ConstructDbgScope(Scope, StartID, EndID, ScopeDie, Unit);
-          ParentDie->AddChild(ScopeDie);
+        }
+
+        // Add the scope bounds.
+        if (StartID)
+          AddLabel(ScopeDie, DW_AT_low_pc, DW_FORM_addr,
+                   DWLabel("label", StartID));
+        else
+          AddLabel(ScopeDie, DW_AT_low_pc, DW_FORM_addr,
+                   DWLabel("func_begin", SubprogramCount));
+
+        if (EndID)
+          AddLabel(ScopeDie, DW_AT_high_pc, DW_FORM_addr,
+                   DWLabel("label", EndID));
+        else
+          AddLabel(ScopeDie, DW_AT_high_pc, DW_FORM_addr,
+                   DWLabel("func_end", SubprogramCount));
+
+        // Add the scope contents.
+        ConstructDbgScope(Scope, StartID, EndID, ScopeDie, Unit);
+        ParentDie->AddChild(ScopeDie);
       }
     }
   }
@@ -3540,14 +3539,11 @@ public:
 
     DenseMap<GlobalVariable *, SmallVector<DbgScope *, 2> >::iterator
       SI = DbgInlinedScopeMap.find(GV);
-    if (SI == DbgInlinedScopeMap.end()) {
-      SmallVector<DbgScope *, 2> Scopes;
-      Scopes.push_back(Scope);
-      DbgInlinedScopeMap[GV] = Scopes;
-    } else {
-      SmallVector<DbgScope *, 2> &Scopes = SI->second;
-      Scopes.push_back(Scope);
-    }
+
+    if (SI == DbgInlinedScopeMap.end())
+      DbgInlinedScopeMap[GV].push_back(Scope);
+    else
+      SI->second.push_back(Scope);
 
     DenseMap<GlobalVariable *, SmallVector<unsigned, 4> >::iterator
       I = InlineInfo.find(GV);
