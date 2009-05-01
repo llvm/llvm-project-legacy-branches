@@ -54,6 +54,7 @@ endif
 post-install:
 	$(MKDIR) -p $(DSTROOT)/usr/bin
 	ln -sf ../../Developer/usr/bin/clang $(DSTROOT)/usr/bin/clang
+	rm -rf $(DSTROOT)/Developer/docs
 
 OSV = $(DSTROOT)/usr/local/OpenSourceVersions
 OSL = $(DSTROOT)/usr/local/OpenSourceLicenses
