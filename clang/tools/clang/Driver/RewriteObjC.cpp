@@ -1315,7 +1315,12 @@ Stmt *RewriteObjC::RewriteObjCForCollectionStmt(ObjCForCollectionStmt *S,
     // type elem;
     NamedDecl* D = cast<NamedDecl>(DS->getSolitaryDecl());
     QualType ElementType = cast<ValueDecl>(D)->getType();
-    elementTypeAsString = ElementType.getAsString();
+    if (ElementType->isObjCQualifiedIdType() ||
+        ElementType->isObjCQualifiedInterfaceType())
+      // Simply use 'id' for all qualified types.
+      elementTypeAsString = "id";
+    else
+      elementTypeAsString = ElementType.getAsString();
     buf += elementTypeAsString;
     buf += " ";
     elementName = D->getNameAsCString();
@@ -1325,8 +1330,13 @@ Stmt *RewriteObjC::RewriteObjCForCollectionStmt(ObjCForCollectionStmt *S,
   else {
     DeclRefExpr *DR = cast<DeclRefExpr>(S->getElement());
     elementName = DR->getDecl()->getNameAsCString();
-    elementTypeAsString 
-      = cast<ValueDecl>(DR->getDecl())->getType().getAsString();
+    ValueDecl *VD = cast<ValueDecl>(DR->getDecl());
+    if (VD->getType()->isObjCQualifiedIdType() ||
+        VD->getType()->isObjCQualifiedInterfaceType())
+      // Simply use 'id' for all qualified types.
+      elementTypeAsString = "id";
+    else
+      elementTypeAsString = VD->getType().getAsString();
   }
   
   // struct __objcFastEnumerationState enumState = { 0 };
