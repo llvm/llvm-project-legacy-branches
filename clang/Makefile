@@ -70,9 +70,13 @@ SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(shell dirname $(SVN_CLANG))
 
 update-clang:
-	svn rm -m 'Update.' $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/Dib $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/cfe/tags/Apple/Dib $(SVN_CLANG)/clang/tools/clang
+	if [ -n "$(LLVM_VERSION)" ]; then \
+	  svn rm -m 'Update.' $(SVN_CLANG)/clang; \
+	  svn cp -m 'Update.' $(SVN_BASE)/llvm/tags/Apple/llvmCore-$(LLVM_VERSION) $(SVN_CLANG)/clang; \
+	  svn cp -m 'Update.' $(SVN_BASE)/cfe/cfe/tags/Apple/Dib $(SVN_CLANG)/clang/tools/clang; \
+	else \
+	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
+	fi
 
 update-clang-trunk:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
