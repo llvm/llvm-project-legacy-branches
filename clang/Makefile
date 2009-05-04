@@ -71,6 +71,11 @@ SVN_TAGS = $(shell dirname $(SVN_CLANG))
 
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/Dib $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/cfe/tags/Apple/Dib $(SVN_CLANG)/clang/tools/clang
+
+update-clang-trunk:
+	svn rm -m 'Update.' $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
 
