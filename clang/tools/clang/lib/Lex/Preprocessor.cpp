@@ -489,6 +489,9 @@ static void InitializePredefinedMacros(Preprocessor &PP,
     DefineBuiltinMacro(Buf, "__int16=short");
     DefineBuiltinMacro(Buf, "__int32=int");
     DefineBuiltinMacro(Buf, "__int64=long long");
+    // Both __PRETTY_FUNCTION__ and __FUNCTION__ are GCC extensions, however
+    // VC++ appears to only like __FUNCTION__.
+    DefineBuiltinMacro(Buf, "__PRETTY_FUNCTION__=__FUNCTION__");
   }
   
   
