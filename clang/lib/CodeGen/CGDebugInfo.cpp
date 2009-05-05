@@ -742,23 +742,17 @@ void CGDebugInfo::EmitDeclare(const VarDecl *Decl, unsigned Tag,
   if (CO.OptimizationLevel)
     return;
 
-  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
-  llvm::DIType Ty = getOrCreateType(Decl->getType(), Unit);
-
   // Get location information.
   SourceManager &SM = M->getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(Decl->getLocation());
-  unsigned Line = 0;
-  if (!PLoc.isInvalid())
-    Line = PLoc.getLine();
-  else
-    Unit = llvm::DICompileUnit();
-
+  unsigned Line = PLoc.isInvalid() ? 0 : PLoc.getLine();
+  llvm::DICompileUnit Unit = getOrCreateCompileUnit(Decl->getLocation());
   
   // Create the descriptor for the variable.
   llvm::DIVariable D = 
     DebugFactory.CreateVariable(Tag, RegionStack.back(),Decl->getNameAsString(),
-                                Unit, Line, Ty);
+                                Unit, Line,
+                                getOrCreateType(Decl->getType(), Unit));
   // Insert an llvm.dbg.declare into the current block.
   DebugFactory.InsertDeclare(Storage, D, Builder.GetInsertBlock());
 }
