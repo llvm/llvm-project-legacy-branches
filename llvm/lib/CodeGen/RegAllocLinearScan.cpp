@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "regalloc"
-#include "PhysRegTracker.h"
 #include "VirtRegMap.h"
 #include "Spiller.h"
 #include "llvm/Function.h"
@@ -118,8 +117,14 @@ namespace {
                                 SmallVector<LiveInterval*, 64>,
                                 greater_ptr<LiveInterval> > IntervalHeap;
     IntervalHeap unhandled_;
-    std::auto_ptr<PhysRegTracker> prt_;
+
+    /// regUse_ - Tracks register usage.
+    SmallVector<unsigned, 32> regUse_;
+    SmallVector<unsigned, 32> regUseBackUp_;
+
+    /// vrm_ - Tracks register assignments.
     VirtRegMap* vrm_;
+
     std::auto_ptr<Spiller> spiller_;
 
   public:
@@ -202,7 +207,66 @@ namespace {
     unsigned attemptTrivialCoalescing(LiveInterval &cur, unsigned Reg);
 
     ///
-    /// register handling helpers
+    /// Register usage / availability tracking helpers.
+    ///
+
+    void initRegUses() {
+      regUse_.resize(tri_->getNumRegs(), 0);
+      regUseBackUp_.resize(tri_->getNumRegs(), 0);
+    }
+
+    void finalizeRegUses() {
+#ifndef NDEBUG
+      // Verify all the registers are "freed".
+      bool Error = false;
+      for (unsigned i = 0, e = tri_->getNumRegs(); i != e; ++i) {
+        if (regUse_[i] != 0) {
+          cerr << tri_->getName(i) << " is still in use!\n";
+          Error = true;
+        }
+      }
+      if (Error)
+        abort();
+#endif
+      regUse_.clear();
+      regUseBackUp_.clear();
+    }
+
+    void addRegUse(unsigned physReg) {
+      assert(TargetRegisterInfo::isPhysicalRegister(physReg) &&
+             "should be physical register!");
+      ++regUse_[physReg];
+      for (const unsigned* as = tri_->getAliasSet(physReg); *as; ++as)
+        ++regUse_[*as];
+    }
+
+    void delRegUse(unsigned physReg) {
+      assert(TargetRegisterInfo::isPhysicalRegister(physReg) &&
+             "should be physical register!");
+      assert(regUse_[physReg] != 0);
+      --regUse_[physReg];
+      for (const unsigned* as = tri_->getAliasSet(physReg); *as; ++as) {
+        assert(regUse_[*as] != 0);
+        --regUse_[*as];
+      }
+    }
+
+    bool isRegAvail(unsigned physReg) const {
+      assert(TargetRegisterInfo::isPhysicalRegister(physReg) &&
+             "should be physical register!");
+      return regUse_[physReg] == 0;
+    }
+
+    void backUpRegUses() {
+      regUseBackUp_ = regUse_;
+    }
+
+    void restoreRegUses() {
+      regUse_ = regUseBackUp_;
+    }
+
+    ///
+    /// Register handling helpers.
     ///
 
     /// getFreePhysReg - return a free physical register for this virtual
@@ -335,8 +399,10 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
   // If this is the first function compiled, compute the related reg classes.
   if (RelatedRegClasses.empty())
     ComputeRelatedRegClasses();
-  
-  if (!prt_.get()) prt_.reset(new PhysRegTracker(*tri_));
+
+  // Also resize register usage trackers.
+  initRegUses();
+
   vrm_ = &getAnalysis<VirtRegMap>();
   if (!spiller_.get()) spiller_.reset(createSpiller());
 
@@ -348,6 +414,9 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
   spiller_->runOnMachineFunction(*mf_, *vrm_, li_);
 
   assert(unhandled_.empty() && "Unhandled live intervals remain!");
+
+  finalizeRegUses();
+
   fixed_.clear();
   active_.clear();
   inactive_.clear();
@@ -410,7 +479,7 @@ void RALinScan::linearScan()
     DEBUG(printIntervals("inactive", inactive_.begin(), inactive_.end()));
   }
 
-  // expire any remaining active intervals
+  // Expire any remaining active intervals
   while (!active_.empty()) {
     IntervalPtr &IP = active_.back();
     unsigned reg = IP.first->reg;
@@ -418,11 +487,11 @@ void RALinScan::linearScan()
     assert(TargetRegisterInfo::isVirtualRegister(reg) &&
            "Can only allocate virtual registers!");
     reg = vrm_->getPhys(reg);
-    prt_->delRegUse(reg);
+    delRegUse(reg);
     active_.pop_back();
   }
 
-  // expire any remaining inactive intervals
+  // Expire any remaining inactive intervals
   DEBUG(for (IntervalPtrs::reverse_iterator
                i = inactive_.rbegin(); i != inactive_.rend(); ++i)
         DOUT << "\tinterval " << *i->first << " expired\n");
@@ -457,6 +526,13 @@ void RALinScan::linearScan()
   }
 
   DOUT << *vrm_;
+
+  // Look for physical registers that end up not being allocated even though
+  // register allocator had to spill other registers in its register class.
+  if (ls_->getNumIntervals() == 0)
+    return;
+  if (!vrm_->FindUnusedRegisters(tri_, li_))
+    return;
 }
 
 /// processActiveIntervals - expire old intervals and move non-overlapping ones
@@ -477,7 +553,7 @@ void RALinScan::processActiveIntervals(unsigned CurPoint)
       assert(TargetRegisterInfo::isVirtualRegister(reg) &&
              "Can only allocate virtual registers!");
       reg = vrm_->getPhys(reg);
-      prt_->delRegUse(reg);
+      delRegUse(reg);
 
       // Pop off the end of the list.
       active_[i] = active_.back();
@@ -490,7 +566,7 @@ void RALinScan::processActiveIntervals(unsigned CurPoint)
       assert(TargetRegisterInfo::isVirtualRegister(reg) &&
              "Can only allocate virtual registers!");
       reg = vrm_->getPhys(reg);
-      prt_->delRegUse(reg);
+      delRegUse(reg);
       // add to inactive.
       inactive_.push_back(std::make_pair(Interval, IntervalPos));
 
@@ -531,7 +607,7 @@ void RALinScan::processInactiveIntervals(unsigned CurPoint)
       assert(TargetRegisterInfo::isVirtualRegister(reg) &&
              "Can only allocate virtual registers!");
       reg = vrm_->getPhys(reg);
-      prt_->addRegUse(reg);
+      addRegUse(reg);
       // add to active
       active_.push_back(std::make_pair(Interval, IntervalPos));
 
@@ -573,9 +649,9 @@ void RALinScan::updateSpillWeights(std::vector<float> &Weights,
   //      bl should get the same spill weight otherwise it will be choosen
   //      as a spill candidate since spilling bh doesn't make ebx available.
   for (unsigned i = 0, e = Supers.size(); i != e; ++i) {
-      for (const unsigned *sr = tri_->getSubRegisters(Supers[i]); *sr; ++sr)
-        if (!Processed.count(*sr))
-          Weights[*sr] += weight;
+    for (const unsigned *sr = tri_->getSubRegisters(Supers[i]); *sr; ++sr)
+      if (!Processed.count(*sr))
+        Weights[*sr] += weight;
   }
 }
 
@@ -601,13 +677,14 @@ static void RevertVectorIteratorsTo(RALinScan::IntervalPtrs &V, unsigned Point){
 /// addStackInterval - Create a LiveInterval for stack if the specified live
 /// interval has been spilled.
 static void addStackInterval(LiveInterval *cur, LiveStacks *ls_,
-                             LiveIntervals *li_, float &Weight,
-                             VirtRegMap &vrm_) {
+                             LiveIntervals *li_,
+                             MachineRegisterInfo* mri_, VirtRegMap &vrm_) {
   int SS = vrm_.getStackSlot(cur->reg);
   if (SS == VirtRegMap::NO_STACK_SLOT)
     return;
-  LiveInterval &SI = ls_->getOrCreateInterval(SS);
-  SI.weight += Weight;
+
+  const TargetRegisterClass *RC = mri_->getRegClass(cur->reg);
+  LiveInterval &SI = ls_->getOrCreateInterval(SS, RC);
 
   VNInfo *VNI;
   if (SI.hasAtLeastOneValue())
@@ -622,10 +699,10 @@ static void addStackInterval(LiveInterval *cur, LiveStacks *ls_,
 
 /// getConflictWeight - Return the number of conflicts between cur
 /// live interval and defs and uses of Reg weighted by loop depthes.
-static float getConflictWeight(LiveInterval *cur, unsigned Reg,
-                                  LiveIntervals *li_,
-                                  MachineRegisterInfo *mri_,
-                                  const MachineLoopInfo *loopInfo) {
+static
+float getConflictWeight(LiveInterval *cur, unsigned Reg, LiveIntervals *li_,
+                        MachineRegisterInfo *mri_,
+                        const MachineLoopInfo *loopInfo) {
   float Conflicts = 0;
   for (MachineRegisterInfo::reg_iterator I = mri_->reg_begin(Reg),
          E = mri_->reg_end(); I != E; ++I) {
@@ -776,7 +853,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     return;
   }
 
-  PhysRegTracker backupPrt = *prt_;
+  backUpRegUses();
 
   std::vector<std::pair<unsigned, float> > SpillWeightsToAdd;
   unsigned StartPosition = cur->beginNumber();
@@ -811,7 +888,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     }
   }
 
-  // for every interval in inactive we overlap with, mark the
+  // For every interval in inactive we overlap with, mark the
   // register as not free and update spill weights.
   for (IntervalPtrs::const_iterator i = inactive_.begin(),
          e = inactive_.end(); i != e; ++i) {
@@ -824,7 +901,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     if (RelatedRegClasses.getLeaderValue(RegRC) == RCLeader &&
         cur->overlapsFrom(*i->first, i->second-1)) {
       Reg = vrm_->getPhys(Reg);
-      prt_->addRegUse(Reg);
+      addRegUse(Reg);
       SpillWeightsToAdd.push_back(std::make_pair(Reg, i->first->weight));
     }
   }
@@ -866,7 +943,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     
     // Okay, the register picked by our speculative getFreePhysReg call turned
     // out to be in use.  Actually add all of the conflicting fixed registers to
-    // prt so we can do an accurate query.
+    // regUse_ so we can do an accurate query.
     if (ConflictsWithFixed) {
       // For every interval in fixed we overlap with, mark the register as not
       // free and update spill weights.
@@ -883,13 +960,13 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
             --II;
           if (cur->overlapsFrom(*I, II)) {
             unsigned reg = I->reg;
-            prt_->addRegUse(reg);
+            addRegUse(reg);
             SpillWeightsToAdd.push_back(std::make_pair(reg, I->weight));
           }
         }
       }
 
-      // Using the newly updated prt_ object, which includes conflicts in the
+      // Using the newly updated regUse_ object, which includes conflicts in the
       // future, see if there are any registers available.
       physReg = getFreePhysReg(cur);
     }
@@ -897,15 +974,15 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     
   // Restore the physical register tracker, removing information about the
   // future.
-  *prt_ = backupPrt;
+  restoreRegUses();
   
-  // if we find a free register, we are done: assign this virtual to
+  // If we find a free register, we are done: assign this virtual to
   // the free physical register and add this interval to the active
   // list.
   if (physReg) {
     DOUT <<  tri_->getName(physReg) << '\n';
     vrm_->assignVirt2Phys(cur->reg, physReg);
-    prt_->addRegUse(physReg);
+    addRegUse(physReg);
     active_.push_back(std::make_pair(cur, cur->begin()));
     handled_.push_back(cur);
 
@@ -1015,12 +1092,11 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
   // linearscan.
   if (cur->weight != HUGE_VALF && cur->weight <= minWeight) {
     DOUT << "\t\t\tspilling(c): " << *cur << '\n';
-    float SSWeight;
     SmallVector<LiveInterval*, 8> spillIs;
     std::vector<LiveInterval*> added =
-      li_->addIntervalsForSpills(*cur, spillIs, loopInfo, *vrm_, SSWeight);
+      li_->addIntervalsForSpills(*cur, spillIs, loopInfo, *vrm_);
     std::sort(added.begin(), added.end(), LISorter());
-    addStackInterval(cur, ls_, li_, SSWeight, *vrm_);
+    addStackInterval(cur, ls_, li_, mri_, *vrm_);
     if (added.empty())
       return;  // Early exit if all spills were folded.
 
@@ -1092,10 +1168,9 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     spillIs.pop_back();
     DOUT << "\t\t\tspilling(a): " << *sli << '\n';
     earliestStart = std::min(earliestStart, sli->beginNumber());
-    float SSWeight;
     std::vector<LiveInterval*> newIs =
-      li_->addIntervalsForSpills(*sli, spillIs, loopInfo, *vrm_, SSWeight);
-    addStackInterval(sli, ls_, li_, SSWeight, *vrm_);
+      li_->addIntervalsForSpills(*sli, spillIs, loopInfo, *vrm_);
+    addStackInterval(sli, ls_, li_, mri_, *vrm_);
     std::copy(newIs.begin(), newIs.end(), std::back_inserter(added));
     spilled.insert(sli->reg);
   }
@@ -1114,14 +1189,14 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
     handled_.pop_back();
 
     // When undoing a live interval allocation we must know if it is active or
-    // inactive to properly update the PhysRegTracker and the VirtRegMap.
+    // inactive to properly update regUse_ and the VirtRegMap.
     IntervalPtrs::iterator it;
     if ((it = FindIntervalInVector(active_, i)) != active_.end()) {
       active_.erase(it);
       assert(!TargetRegisterInfo::isPhysicalRegister(i->reg));
       if (!spilled.count(i->reg))
         unhandled_.push(i);
-      prt_->delRegUse(vrm_->getPhys(i->reg));
+      delRegUse(vrm_->getPhys(i->reg));
       vrm_->clearVirt(i->reg);
     } else if ((it = FindIntervalInVector(inactive_, i)) != inactive_.end()) {
       inactive_.erase(it);
@@ -1163,7 +1238,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur)
       DOUT << "\t\t\tundo changes for: " << *HI << '\n';
       active_.push_back(std::make_pair(HI, HI->begin()));
       assert(!TargetRegisterInfo::isPhysicalRegister(HI->reg));
-      prt_->addRegUse(vrm_->getPhys(HI->reg));
+      addRegUse(vrm_->getPhys(HI->reg));
     }
   }
 
@@ -1214,7 +1289,7 @@ unsigned RALinScan::getFreePhysReg(const TargetRegisterClass *RC,
     // Ignore "downgraded" registers.
     if (SkipDGRegs && DowngradedRegs.count(Reg))
       continue;
-    if (prt_->isRegAvail(Reg)) {
+    if (isRegAvail(Reg)) {
       FreeReg = Reg;
       if (FreeReg < inactiveCounts.size())
         FreeRegInactiveCount = inactiveCounts[FreeReg];
@@ -1238,7 +1313,7 @@ unsigned RALinScan::getFreePhysReg(const TargetRegisterClass *RC,
     // Ignore "downgraded" registers.
     if (SkipDGRegs && DowngradedRegs.count(Reg))
       continue;
-    if (prt_->isRegAvail(Reg) && Reg < inactiveCounts.size() &&
+    if (isRegAvail(Reg) && Reg < inactiveCounts.size() &&
         FreeRegInactiveCount < inactiveCounts[Reg]) {
       FreeReg = Reg;
       FreeRegInactiveCount = inactiveCounts[Reg];
@@ -1281,7 +1356,7 @@ unsigned RALinScan::getFreePhysReg(LiveInterval *cur) {
   // available first.
   if (cur->preference) {
     DOUT << "(preferred: " << tri_->getName(cur->preference) << ") ";
-    if (prt_->isRegAvail(cur->preference) && 
+    if (isRegAvail(cur->preference) && 
         RC->contains(cur->preference))
       return cur->preference;
   }

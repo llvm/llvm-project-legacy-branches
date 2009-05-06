@@ -20,6 +20,7 @@
 namespace llvm {
 
 class TargetRegisterClass;
+class TargetRegisterInfo;
 class LiveVariables;
 class CalleeSavedInfo;
 class SDNode;
@@ -391,7 +392,7 @@ public:
   /// possible, returns true as well as the new instructions by reference.
   virtual bool unfoldMemoryOperand(MachineFunction &MF, MachineInstr *MI,
                                 unsigned Reg, bool UnfoldLoad, bool UnfoldStore,
-                                  SmallVectorImpl<MachineInstr*> &NewMIs) const{
+                                 SmallVectorImpl<MachineInstr*> &NewMIs) const{
     return false;
   }
 
@@ -504,6 +505,12 @@ public:
                              const MachineInstr *Orig) const;
   virtual unsigned GetFunctionSizeInBytes(const MachineFunction &MF) const;
 };
+
+/// getInstrOperandRegClass - Return register class of the operand of an
+/// instruction of the specified TargetInstrDesc.
+const TargetRegisterClass*
+getInstrOperandRegClass(const TargetRegisterInfo *TRI,
+                        const TargetInstrDesc &II, unsigned Op);
 
 } // End llvm namespace
 
