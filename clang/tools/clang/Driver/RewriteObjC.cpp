@@ -4382,8 +4382,16 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
   if (DeclStmt *DS = dyn_cast<DeclStmt>(S)) {
     // FIXME: What we're doing here is modifying the type-specifier that
     // precedes the first Decl.  In the future the DeclGroup should have
-    // a separate type-specifier that we can rewrite.    
-    RewriteObjCQualifiedInterfaceTypes(*DS->decl_begin());
+    // a separate type-specifier that we can rewrite.
+    // NOTE: We need to avoid rewriting rewriting the DeclStmt if it is within
+    // the context of an ObjCForCollectionStmt. For example:
+    //   NSArray *someArray;
+    //   for (id <FooProtocol> index in someArray) ;
+    // This is because RewriteObjCForCollectionStmt() does textual rewriting 
+    // and it depends on the original text locations/positions.
+    Stmt *ParentStmt = Stmts.back();
+    if (!ParentStmt || !isa<ObjCForCollectionStmt>(ParentStmt))
+      RewriteObjCQualifiedInterfaceTypes(*DS->decl_begin());
     
     // Blocks rewrite rules.
     for (DeclStmt::decl_iterator DI = DS->decl_begin(), DE = DS->decl_end();
