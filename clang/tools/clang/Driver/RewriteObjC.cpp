@@ -4383,7 +4383,7 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
     // FIXME: What we're doing here is modifying the type-specifier that
     // precedes the first Decl.  In the future the DeclGroup should have
     // a separate type-specifier that we can rewrite.
-    // NOTE: We need to avoid rewriting rewriting the DeclStmt if it is within
+    // NOTE: We need to avoid rewriting the DeclStmt if it is within
     // the context of an ObjCForCollectionStmt. For example:
     //   NSArray *someArray;
     //   for (id <FooProtocol> index in someArray) ;
