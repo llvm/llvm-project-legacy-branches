@@ -180,7 +180,7 @@ static void DummyArgToStringFn(Diagnostic::ArgumentKind AK, intptr_t QT,
 }
 
 
-Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client) {
+Diagnostic::Diagnostic(DiagnosticClient *client) : Client(client), LangOpts(0) {
   IgnoreAllWarnings = false;
   WarningsAsErrors = false;
   WarnOnExtensions = false;

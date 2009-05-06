@@ -114,10 +114,15 @@ void TextDiagnosticPrinter::HandleDiagnostic(Diagnostic::Level Level,
     // Compute the column number.
     ColNo = PLoc.getColumn();
     if (ShowLocation) {
-      OS << PLoc.getFilename() << ':' << LineNo << ':';
-      if (ColNo && ShowColumn) 
-        OS << ColNo << ':';
-      OS << ' ';
+      if (Info.getDiags()->getLangOpts()->Microsoft) {
+        OS << PLoc.getFilename() << '(' << LineNo << ')';
+        OS << " : ";
+      } else {
+        OS << PLoc.getFilename() << ':' << LineNo << ':';
+        if (ColNo && ShowColumn) 
+          OS << ColNo << ':';
+        OS << ' ';
+      }
     }
   }
   

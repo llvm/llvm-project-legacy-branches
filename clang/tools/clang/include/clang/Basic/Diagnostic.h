@@ -15,6 +15,7 @@
 #define LLVM_CLANG_DIAGNOSTIC_H
 
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/LangOptions.h"
 #include <string>
 #include <cassert>
 
@@ -94,7 +95,8 @@ private:
   bool ErrorOnExtensions;     // Error on extensions: -pedantic-errors.
   bool SuppressSystemWarnings;// Suppress warnings in system headers.
   DiagnosticClient *Client;
-
+  LangOptions *LangOpts;
+  
   /// DiagMappings - Mapping information for diagnostics.  Mapping info is
   /// packed into two bits per diagnostic.
   unsigned char DiagMappings[diag::DIAG_UPPER_LIMIT/4];
@@ -129,8 +131,11 @@ public:
   DiagnosticClient *getClient() { return Client; };
   const DiagnosticClient *getClient() const { return Client; };
     
-  void setClient(DiagnosticClient* client) { Client = client; }
-
+  void setClient(DiagnosticClient* client, LangOptions *opts = 0) { 
+    Client = client; LangOpts = opts; 
+  }
+  LangOptions *getLangOpts() const { return LangOpts; }
+  
   /// setIgnoreAllWarnings - When set to true, any unmapped warnings are
   /// ignored.  If this and WarningsAsErrors are both set, then this one wins.
   void setIgnoreAllWarnings(bool Val) { IgnoreAllWarnings = Val; }

@@ -1624,10 +1624,10 @@ int main(int argc, char **argv) {
       if (!HTMLDiag.empty()) {
         TmpClient.reset(CreateHTMLDiagnosticClient(HTMLDiag, PP.get(),
                                                    &PPFactory));
-        Diags.setClient(TmpClient.get());
+        Diags.setClient(TmpClient.get(), &LangInfo);
       }
       else
-        Diags.setClient(TextDiagClient);
+        Diags.setClient(TextDiagClient, &LangInfo);
 
       // Process the source file.
       ProcessInputFile(*PP, PPFactory, InFile, PCH ? GeneratePCH : ProgAction);

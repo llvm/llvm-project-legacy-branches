@@ -338,6 +338,8 @@ namespace {
     Stmt *SynthesizeBlockCall(CallExpr *Exp);
     void SynthesizeBlockLiterals(SourceLocation FunLocStart,
                                    const char *FunName);
+                                   
+    void RewriteRecordBody(RecordDecl *RD);
     
     void CollectBlockDeclRefInfo(BlockExpr *Exp);
     void GetBlockCallExprs(Stmt *S);
@@ -1880,6 +1882,10 @@ void RewriteObjC::RewriteObjCQualifiedInterfaceTypes(Decl *Dcl) {
     if (!proto)
       return;
     Type = proto->getResultType();
+  }
+  else if (FieldDecl *FD = dyn_cast<FieldDecl>(Dcl)) {
+    Loc = FD->getLocation();
+    Type = FD->getType();
   }
   else
     return;
@@ -4443,6 +4449,18 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
   return S;
 }
 
+void RewriteObjC::RewriteRecordBody(RecordDecl *RD) {
+  for (RecordDecl::field_iterator i = RD->field_begin(), 
+                                  e = RD->field_end(); i != e; ++i) {
+    FieldDecl *FD = *i;
+    if (isTopLevelBlockPointerType(FD->getType()))
+      RewriteBlockPointerDecl(FD);
+    if (FD->getType()->isObjCQualifiedIdType() ||
+        FD->getType()->isObjCQualifiedInterfaceType())
+      RewriteObjCQualifiedInterfaceTypes(FD);
+  }
+}
+
 /// HandleDeclInMainFile - This is called for each top-level decl defined in the
 /// main file of the input.
 void RewriteObjC::HandleDeclInMainFile(Decl *D) {
@@ -4504,6 +4522,10 @@ void RewriteObjC::HandleDeclInMainFile(Decl *D) {
           RewriteCastExpr(CE);
         }
       }
+    } else if (VD->getType()->isRecordType()) {
+      RecordDecl *RD = VD->getType()->getAsRecordType()->getDecl();
+      if (RD->isDefinition())
+        RewriteRecordBody(RD);
     }
     if (VD->getInit()) {
       GlobalVarDecl = VD;
@@ -4531,17 +4553,16 @@ void RewriteObjC::HandleDeclInMainFile(Decl *D) {
       RewriteBlockPointerDecl(TD);
     else if (TD->getUnderlyingType()->isFunctionPointerType()) 
       CheckFunctionPointerDecl(TD->getUnderlyingType(), TD);
+    else if (TD->getUnderlyingType()->isRecordType()) {
+      RecordDecl *RD = TD->getUnderlyingType()->getAsRecordType()->getDecl();
+      if (RD->isDefinition())
+        RewriteRecordBody(RD);
+    }
     return;
   }
   if (RecordDecl *RD = dyn_cast<RecordDecl>(D)) {
-    if (RD->isDefinition()) {
-      for (RecordDecl::field_iterator i = RD->field_begin(), 
-             e = RD->field_end(); i != e; ++i) {
-        FieldDecl *FD = *i;
-        if (isTopLevelBlockPointerType(FD->getType()))
-          RewriteBlockPointerDecl(FD);
-      }
-    }
+    if (RD->isDefinition()) 
+      RewriteRecordBody(RD);
     return;
   }
   // Nothing yet.
