@@ -60,6 +60,11 @@ CrossClassJoin("join-cross-class-copies",
                cl::desc("Coalesce cross register class copies"),
                cl::init(false), cl::Hidden);
 
+static cl::opt<bool>
+PhysJoinTweak("tweak-phys-join-heuristics",
+               cl::desc("Tweak heuristics for joining phys reg with vr"),
+               cl::init(false), cl::Hidden);
+
 static RegisterPass<SimpleRegisterCoalescing> 
 X("simple-register-coalescing", "Simple Register Coalescing");
 
@@ -772,8 +777,6 @@ void SimpleRegisterCoalescing::RemoveUnnecessaryKills(unsigned Reg,
     if (UseMO.isKill()) {
       MachineInstr *UseMI = UseMO.getParent();
       unsigned UseIdx = li_->getUseIndex(li_->getInstructionIndex(UseMI));
-      if (JoinedCopies.count(UseMI))
-        continue;
       const LiveRange *UI = LI.getLiveRangeContaining(UseIdx);
       if (!UI || !LI.isKill(UI->valno, UseIdx+1))
         UseMO.setIsKill(false);
@@ -1002,6 +1005,117 @@ void SimpleRegisterCoalescing::RemoveCopiesFromValNo(LiveInterval &li,
   }
 }
 
+/// isWinToJoinVRWithSrcPhysReg - Return true if it's worth while to join a
+/// a virtual destination register with physical source register.
+bool
+SimpleRegisterCoalescing::isWinToJoinVRWithSrcPhysReg(MachineInstr *CopyMI,
+                                                     MachineBasicBlock *CopyMBB,
+                                                     LiveInterval &DstInt,
+                                                     LiveInterval &SrcInt) {
+  // If the virtual register live interval is long but it has low use desity,
+  // do not join them, instead mark the physical register as its allocation
+  // preference.
+  const TargetRegisterClass *RC = mri_->getRegClass(DstInt.reg);
+  unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
+  unsigned Length = li_->getApproximateInstructionCount(DstInt);
+  if (Length > Threshold &&
+      (((float)std::distance(mri_->use_begin(DstInt.reg),
+                             mri_->use_end()) / Length) < (1.0 / Threshold)))
+    return false;
+
+  // If the virtual register live interval extends into a loop, turn down
+  // aggressiveness.
+  unsigned CopyIdx = li_->getDefIndex(li_->getInstructionIndex(CopyMI));
+  const MachineLoop *L = loopInfo->getLoopFor(CopyMBB);
+  if (!L) {
+    // Let's see if the virtual register live interval extends into the loop.
+    LiveInterval::iterator DLR = DstInt.FindLiveRangeContaining(CopyIdx);
+    assert(DLR != DstInt.end() && "Live range not found!");
+    DLR = DstInt.FindLiveRangeContaining(DLR->end+1);
+    if (DLR != DstInt.end()) {
+      CopyMBB = li_->getMBBFromIndex(DLR->start);
+      L = loopInfo->getLoopFor(CopyMBB);
+    }
+  }
+
+  if (!L || Length <= Threshold)
+    return true;
+
+  unsigned UseIdx = li_->getUseIndex(CopyIdx);
+  LiveInterval::iterator SLR = SrcInt.FindLiveRangeContaining(UseIdx);
+  MachineBasicBlock *SMBB = li_->getMBBFromIndex(SLR->start);
+  if (loopInfo->getLoopFor(SMBB) != L) {
+    if (!loopInfo->isLoopHeader(CopyMBB))
+      return false;
+    // If vr's live interval extends pass the loop header, do not join.
+    for (MachineBasicBlock::succ_iterator SI = CopyMBB->succ_begin(),
+           SE = CopyMBB->succ_end(); SI != SE; ++SI) {
+      MachineBasicBlock *SuccMBB = *SI;
+      if (SuccMBB == CopyMBB)
+        continue;
+      if (DstInt.overlaps(li_->getMBBStartIdx(SuccMBB),
+                          li_->getMBBEndIdx(SuccMBB)+1))
+        return false;
+    }
+  }
+  return true;
+}
+
+/// isWinToJoinVRWithDstPhysReg - Return true if it's worth while to join a
+/// copy from a virtual source register to a physical destination register.
+bool
+SimpleRegisterCoalescing::isWinToJoinVRWithDstPhysReg(MachineInstr *CopyMI,
+                                                     MachineBasicBlock *CopyMBB,
+                                                     LiveInterval &DstInt,
+                                                     LiveInterval &SrcInt) {
+  // If the virtual register live interval is long but it has low use desity,
+  // do not join them, instead mark the physical register as its allocation
+  // preference.
+  const TargetRegisterClass *RC = mri_->getRegClass(SrcInt.reg);
+  unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
+  unsigned Length = li_->getApproximateInstructionCount(SrcInt);
+  if (Length > Threshold &&
+      (((float)std::distance(mri_->use_begin(SrcInt.reg),
+                             mri_->use_end()) / Length) < (1.0 / Threshold)))
+    return false;
+
+  if (SrcInt.empty())
+    // Must be implicit_def.
+    return false;
+
+  // If the virtual register live interval is defined or cross a loop, turn
+  // down aggressiveness.
+  unsigned CopyIdx = li_->getDefIndex(li_->getInstructionIndex(CopyMI));
+  unsigned UseIdx = li_->getUseIndex(CopyIdx);
+  LiveInterval::iterator SLR = SrcInt.FindLiveRangeContaining(UseIdx);
+  assert(SLR != SrcInt.end() && "Live range not found!");
+  SLR = SrcInt.FindLiveRangeContaining(SLR->start-1);
+  if (SLR == SrcInt.end())
+    return true;
+  MachineBasicBlock *SMBB = li_->getMBBFromIndex(SLR->start);
+  const MachineLoop *L = loopInfo->getLoopFor(SMBB);
+
+  if (!L || Length <= Threshold)
+    return true;
+
+  if (loopInfo->getLoopFor(CopyMBB) != L) {
+    if (SMBB != L->getLoopLatch())
+      return false;
+    // If vr's live interval is extended from before the loop latch, do not
+    // join.
+    for (MachineBasicBlock::pred_iterator PI = SMBB->pred_begin(),
+           PE = SMBB->pred_end(); PI != PE; ++PI) {
+      MachineBasicBlock *PredMBB = *PI;
+      if (PredMBB == SMBB)
+        continue;
+      if (SrcInt.overlaps(li_->getMBBStartIdx(PredMBB),
+                          li_->getMBBEndIdx(PredMBB)+1))
+        return false;
+    }
+  }
+  return true;
+}
+
 /// isWinToJoinCrossClass - Return true if it's profitable to coalesce
 /// two virtual registers from different register classes.
 bool
@@ -1150,22 +1264,25 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
 
   DOUT << li_->getInstructionIndex(CopyMI) << '\t' << *CopyMI;
 
-  unsigned SrcReg, DstReg, SrcSubIdx, DstSubIdx;
+  unsigned SrcReg, DstReg, SrcSubIdx = 0, DstSubIdx = 0;
   bool isExtSubReg = CopyMI->getOpcode() == TargetInstrInfo::EXTRACT_SUBREG;
   bool isInsSubReg = CopyMI->getOpcode() == TargetInstrInfo::INSERT_SUBREG;
   bool isSubRegToReg = CopyMI->getOpcode() == TargetInstrInfo::SUBREG_TO_REG;
   unsigned SubIdx = 0;
   if (isExtSubReg) {
-    DstReg = CopyMI->getOperand(0).getReg();
-    SrcReg = CopyMI->getOperand(1).getReg();
+    DstReg    = CopyMI->getOperand(0).getReg();
+    DstSubIdx = CopyMI->getOperand(0).getSubReg();
+    SrcReg    = CopyMI->getOperand(1).getReg();
+    SrcSubIdx = CopyMI->getOperand(2).getImm();
   } else if (isInsSubReg || isSubRegToReg) {
     if (CopyMI->getOperand(2).getSubReg()) {
       DOUT << "\tSource of insert_subreg is already coalesced "
            << "to another register.\n";
       return false;  // Not coalescable.
     }
-    DstReg = CopyMI->getOperand(0).getReg();
-    SrcReg = CopyMI->getOperand(2).getReg();
+    DstReg    = CopyMI->getOperand(0).getReg();
+    DstSubIdx = CopyMI->getOperand(3).getImm();
+    SrcReg    = CopyMI->getOperand(2).getReg();
   } else if (!tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubIdx, DstSubIdx)){
     assert(0 && "Unrecognized copy instruction!");
     return false;
@@ -1194,6 +1311,40 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
   if (DstIsPhys && !allocatableRegs_[DstReg]) {
     DOUT << "\tDst reg is unallocatable physreg.\n";
     return false;  // Not coalescable.
+  }
+
+  // Check that a physical source register is compatible with dst regclass
+  if (SrcIsPhys) {
+    unsigned SrcSubReg = SrcSubIdx ?
+      tri_->getSubReg(SrcReg, SrcSubIdx) : SrcReg;
+    const TargetRegisterClass *DstRC = mri_->getRegClass(DstReg);
+    const TargetRegisterClass *DstSubRC = DstRC;
+    if (DstSubIdx)
+      DstSubRC = DstRC->getSubRegisterRegClass(DstSubIdx);
+    assert(DstSubRC && "Illegal subregister index");
+    if (!DstSubRC->contains(SrcSubReg)) {
+      DOUT << "\tIncompatible destination regclass: "
+           << tri_->getName(SrcSubReg) << " not in " << DstSubRC->getName()
+           << ".\n";
+      return false;             // Not coalescable.
+    }
+  }
+
+  // Check that a physical dst register is compatible with source regclass
+  if (DstIsPhys) {
+    unsigned DstSubReg = DstSubIdx ?
+      tri_->getSubReg(DstReg, DstSubIdx) : DstReg;
+    const TargetRegisterClass *SrcRC = mri_->getRegClass(SrcReg);
+    const TargetRegisterClass *SrcSubRC = SrcRC;
+    if (SrcSubIdx)
+      SrcSubRC = SrcRC->getSubRegisterRegClass(SrcSubIdx);
+    assert(SrcSubRC && "Illegal subregister index");
+    if (!SrcSubRC->contains(DstReg)) {
+      DOUT << "\tIncompatible source regclass: "
+           << tri_->getName(DstSubReg) << " not in " << SrcSubRC->getName()
+           << ".\n";
+      return false;             // Not coalescable.
+    }
   }
 
   // Should be non-null only when coalescing to a sub-register class.
@@ -1331,27 +1482,15 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
       }
       Limit = allocatableRCRegs_[DstRC].count();
     } else if (!SrcIsPhys && !DstIsPhys) {
-      unsigned SrcSize = SrcRC->getSize();
-      unsigned DstSize = DstRC->getSize();
-      if (SrcSize < DstSize)
-        // For example X86::MOVSD2PDrr copies from FR64 to VR128.
-        NewRC = DstRC;
-      else if (DstSize > SrcSize) {
-        NewRC = SrcRC;
-        std::swap(LargeReg, SmallReg);
-      } else {
-        unsigned SrcNumRegs = SrcRC->getNumRegs();
-        unsigned DstNumRegs = DstRC->getNumRegs();
-        if (DstNumRegs < SrcNumRegs)
-          // Sub-register class?
-          NewRC = DstRC;
-        else if (SrcNumRegs < DstNumRegs) {
-          NewRC = SrcRC;
-          std::swap(LargeReg, SmallReg);
-        } else
-          // No idea what's the right register class to use.
-          return false;
+      NewRC = getCommonSubClass(SrcRC, DstRC);
+      if (!NewRC) {
+        DOUT << "\tDisjoint regclasses: "
+             << SrcRC->getName() << ", "
+             << DstRC->getName() << ".\n";
+        return false;           // Not coalescable.
       }
+      if (DstRC->getSize() > SrcRC->getSize())
+        std::swap(LargeReg, SmallReg);
     }
 
     // If we are joining two virtual registers and the resulting register
@@ -1405,26 +1544,51 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
     // these are not spillable! If the destination interval uses are far away,
     // think twice about coalescing them!
     if (!isDead && (SrcIsPhys || DstIsPhys)) {
-      LiveInterval &JoinVInt = SrcIsPhys ? DstInt : SrcInt;
-      unsigned JoinVReg = SrcIsPhys ? DstReg : SrcReg;
-      unsigned JoinPReg = SrcIsPhys ? SrcReg : DstReg;
-      const TargetRegisterClass *RC = mri_->getRegClass(JoinVReg);
-      unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
-      if (TheCopy.isBackEdge)
-        Threshold *= 2; // Favors back edge copies.
+      // If the copy is in a loop, take care not to coalesce aggressively if the
+      // src is coming in from outside the loop (or the dst is out of the loop).
+      // If it's not in a loop, then determine whether to join them base purely
+      // by the length of the interval.
+      if (PhysJoinTweak) {
+        if (SrcIsPhys) {
+          if (!isWinToJoinVRWithSrcPhysReg(CopyMI, CopyMBB, DstInt, SrcInt)) {
+            DstInt.preference = SrcReg;
+            ++numAborts;
+            DOUT << "\tMay tie down a physical register, abort!\n";
+            Again = true;  // May be possible to coalesce later.
+            return false;
+          }
+        } else {
+          if (!isWinToJoinVRWithDstPhysReg(CopyMI, CopyMBB, DstInt, SrcInt)) {
+            SrcInt.preference = DstReg;
+            ++numAborts;
+            DOUT << "\tMay tie down a physical register, abort!\n";
+            Again = true;  // May be possible to coalesce later.
+            return false;
+          }
+        }
+      } else {
+        // If the virtual register live interval is long but it has low use desity,
+        // do not join them, instead mark the physical register as its allocation
+        // preference.
+        LiveInterval &JoinVInt = SrcIsPhys ? DstInt : SrcInt;
+        unsigned JoinVReg = SrcIsPhys ? DstReg : SrcReg;
+        unsigned JoinPReg = SrcIsPhys ? SrcReg : DstReg;
+        const TargetRegisterClass *RC = mri_->getRegClass(JoinVReg);
+        unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
+        if (TheCopy.isBackEdge)
+          Threshold *= 2; // Favors back edge copies.
 
-      // If the virtual register live interval is long but it has low use desity,
-      // do not join them, instead mark the physical register as its allocation
-      // preference.
-      unsigned Length = li_->getApproximateInstructionCount(JoinVInt);
-      if (Length > Threshold &&
-          (((float)std::distance(mri_->use_begin(JoinVReg), mri_->use_end())
-            / Length) < (1.0 / Threshold))) {
-        JoinVInt.preference = JoinPReg;
-        ++numAborts;
-        DOUT << "\tMay tie down a physical register, abort!\n";
-        Again = true;  // May be possible to coalesce later.
-        return false;
+        unsigned Length = li_->getApproximateInstructionCount(JoinVInt);
+        float Ratio = 1.0 / Threshold;
+        if (Length > Threshold &&
+            (((float)std::distance(mri_->use_begin(JoinVReg),
+                                   mri_->use_end()) / Length) < Ratio)) {
+          JoinVInt.preference = JoinPReg;
+          ++numAborts;
+          DOUT << "\tMay tie down a physical register, abort!\n";
+          Again = true;  // May be possible to coalesce later.
+          return false;
+        }
       }
     }
   }
