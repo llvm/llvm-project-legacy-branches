@@ -1518,10 +1518,14 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   buf += "}";
   
   ReplaceText(lastCurlyLoc, 1, buf.c_str(), buf.size());
+  
+  WarnAboutReturnGotoContinueOrBreakStmts(S->getSynchBody());
+
   return 0;
 }
 
-void RewriteObjC::WarnAboutReturnGotoContinueOrBreakStmts(Stmt *S) {  
+void RewriteObjC::WarnAboutReturnGotoContinueOrBreakStmts(Stmt *S) 
+{  
   // Perform a bottom up traversal of all children.
   for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
        CI != E; ++CI)
@@ -1695,6 +1699,11 @@ Stmt *RewriteObjC::RewriteObjCTryStmt(ObjCAtTryStmt *S) {
     buf += " if (_rethrow) objc_exception_throw(_rethrow);\n";
     buf += "}";
     ReplaceText(lastCurlyLoc, 1, buf.c_str(), buf.size());
+    
+    // Now check for any return/continue/go statements within the @try.
+    // The implicit finally clause won't called if the @try contains any
+    // jump statements.
+    WarnAboutReturnGotoContinueOrBreakStmts(S->getTryBody());
   }
   // Now emit the final closing curly brace...
   lastCurlyLoc = lastCurlyLoc.getFileLocWithOffset(1);

@@ -24,3 +24,17 @@ int main() {
   return 0;
 }
 
+void test_sync_with_implicit_finally() {
+    id foo;
+    @synchronized (foo) {
+        return; // expected-warning{{rewriter doesn't support user-specified control flow semantics for @try/@finally (code may not execute properly)}}
+    }
+}
+
+void test2_try_with_implicit_finally() {
+    @try {
+        return; // expected-warning{{rewriter doesn't support user-specified control flow semantics for @try/@finally (code may not execute properly)}}
+    } @catch (id e) {
+        
+    }
+}
