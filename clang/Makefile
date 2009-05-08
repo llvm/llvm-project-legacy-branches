@@ -7,10 +7,12 @@ Project               = clang
 UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
-# Add --disable-assertions back after a while
 Extra_Configure_Flags = --enable-targets=x86 \
 			--enable-optimized \
-			--with-extra-options=-g --disable-doxygen \
+			--disable-assertions \
+			--with-extra-options='-g -DDISABLE_SMART_POINTERS' \
+			--disable-pic \
+			--disable-doxygen \
 			$(HOST_TARGET_FLAGS)
 Extra_CC_Flags        = -mdynamic-no-pic
 GnuAfterInstall       = post-install install-plist
