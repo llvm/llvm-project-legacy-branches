@@ -1549,6 +1549,8 @@ void PCHWriter::WriteAttributeRecord(const Attr *Attr) {
 
     case Attr::ObjCException:
     case Attr::ObjCNSObject:
+    case Attr::CFReturnsRetained:
+    case Attr::NSReturnsRetained:
     case Attr::Overloadable:
       break;
 
