@@ -129,4 +129,7 @@ struct s28 { int a; int b[]; } f28(void) {}
 // RUN: grep 'define i16 @f29()' %t &&
 struct s29 { struct { } a[1]; char b; char c; } f29(void) {}
 
+// RUN: grep 'define float @f31()' %t &&
+struct s31 { char : 0; float b; char : 0} f31(void) {}
+
 // RUN: true
