@@ -297,7 +297,7 @@ private:
   // Utility methods.
   BasicValueFactory& getBasicVals() { return StateMgr.getBasicVals(); }
   ASTContext& getContext() { return StateMgr.getContext(); }
-  TargetInfo& getTargetInfo() { return getContext().getTargetInfo(); }
+
   SymbolManager& getSymbolManager() { return StateMgr.getSymbolManager(); }
 
   const GRState* AddRegionView(const GRState* St,
