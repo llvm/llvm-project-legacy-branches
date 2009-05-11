@@ -5,6 +5,7 @@
 ; RUN: grep leaq %t | count 8
 ; RUN: grep leal %t | count 4
 ; RUN: grep movq %t | count 5
+; XFAIL: *
 
 ; IV users in each of the loops from other loops shouldn't cause LSR
 ; to insert new induction variables. Previously it would create a
