@@ -63,7 +63,7 @@ endif
 
 $(DST_HTML_DIR)%.html: %.pod $(DST_HTML_DIR)/.dir
 	pod2html --css=manpage.css --htmlroot=. \
-	  --podpath=. --noindex --infile=$< --outfile=$@ --title=$*
+	  --podpath=. --infile=$< --outfile=$@ --title=$*
 
 $(DST_MAN_DIR)%.1: %.pod $(DST_MAN_DIR)/.dir
 	pod2man $< $@
