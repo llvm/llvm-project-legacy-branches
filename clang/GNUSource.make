@@ -125,6 +125,8 @@ ifneq ($(GnuNoInstall),YES)
 		$(MAKE) -C $(BuildDirectory)/$$arch $(Environment) \
 			$(Install_Flags) $(Install_Target) || exit 1 ; \
 	done
+	$(_v) rm -rf $(DSTROOT)
+	$(_v) mkdir -p $(DSTROOT)
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(BuildDirectory)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
