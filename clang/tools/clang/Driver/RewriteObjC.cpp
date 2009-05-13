@@ -4398,9 +4398,12 @@ Stmt *RewriteObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
     //   for (id <FooProtocol> index in someArray) ;
     // This is because RewriteObjCForCollectionStmt() does textual rewriting 
     // and it depends on the original text locations/positions.
-    Stmt *ParentStmt = Stmts.back();
-    if (!ParentStmt || !isa<ObjCForCollectionStmt>(ParentStmt))
+	if (Stmts.empty()) {
       RewriteObjCQualifiedInterfaceTypes(*DS->decl_begin());
+	} else {
+	  if (!isa<ObjCForCollectionStmt>(Stmts.back()))
+        RewriteObjCQualifiedInterfaceTypes(*DS->decl_begin());
+	}
     
     // Blocks rewrite rules.
     for (DeclStmt::decl_iterator DI = DS->decl_begin(), DE = DS->decl_end();
