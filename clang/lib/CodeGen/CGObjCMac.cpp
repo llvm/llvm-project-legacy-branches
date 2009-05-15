@@ -4195,16 +4195,17 @@ llvm::GlobalVariable * CGObjCNonFragileABIMac::BuildClassMetaData(
   return GV;
 }
 
-bool 
+bool
 CGObjCNonFragileABIMac::ImplementationIsNonLazy(const DeclContext *DC) const {
-  DeclContext::lookup_const_result res = 
-    DC->lookup(CGM.getContext(), GetNullarySelector("load"));
+  IdentifierInfo *II = &CGM.getContext().Idents.get("load");
+  DeclContext::lookup_const_result res =
+    DC->lookup(CGM.getContext(), CGM.getContext().Selectors.getSelector(0, &II));
 
   for (; res.first != res.second; ++res.first)
     if (const ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(*res.first))
       if (OMD->isClassMethod())
         return true;
-  
+
   return false;
 }
 
