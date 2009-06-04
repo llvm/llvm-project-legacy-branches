@@ -338,8 +338,8 @@ void Emitter::emitMemModRMByte(const MachineInstr &MI,
   unsigned BaseReg = Base.getReg();
 
   // Is a SIB byte needed?
-  if ((!Is64BitMode || DispForReloc) && IndexReg.getReg() == 0 &&
-      (BaseReg == 0 || getX86RegNum(BaseReg) != N86::ESP)) {
+  if (IndexReg.getReg() == 0 && (!Is64BitMode || BaseReg != 0) && 
+      (BaseReg == 0 || getX86RegNum(BaseReg) != N86::ESP)) {      
     if (BaseReg == 0) {  // Just a displacement?
       // Emit special case [disp32] encoding
       MCE.emitByte(ModRMByte(0, RegOpcodeField, 5));
@@ -670,13 +670,26 @@ void Emitter::emitInstruction(const MachineInstr &MI,
   case X86II::MRM6r: case X86II::MRM7r: {
     MCE.emitByte(BaseOpcode);
 
-    // Special handling of lfence and mfence. 
+    // Special handling of lfence, mfence, monitor, and mwait.
     if (Desc->getOpcode() == X86::LFENCE ||
-        Desc->getOpcode() == X86::MFENCE)
+        Desc->getOpcode() == X86::MFENCE ||
+        Desc->getOpcode() == X86::MONITOR ||
+        Desc->getOpcode() == X86::MWAIT) {
       emitRegModRMByte((Desc->TSFlags & X86II::FormMask)-X86II::MRM0r);
-    else
+
+      switch (Desc->getOpcode()) {
+      default: break;
+      case X86::MONITOR:
+        MCE.emitByte(0xC8);
+        break;
+      case X86::MWAIT:
+        MCE.emitByte(0xC9);
+        break;
+      }
+    } else {
       emitRegModRMByte(MI.getOperand(CurOp++).getReg(),
                        (Desc->TSFlags & X86II::FormMask)-X86II::MRM0r);
+    }
 
     if (CurOp != NumOps) {
       const MachineOperand &MO1 = MI.getOperand(CurOp++);

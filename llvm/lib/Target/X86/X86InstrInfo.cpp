@@ -2811,8 +2811,8 @@ static unsigned getMemModRMByteSize(const MachineInstr &MI, unsigned Op,
   unsigned BaseReg = Base.getReg();
 
   // Is a SIB byte needed?
-  if ((!Is64BitMode || DispForReloc) && IndexReg.getReg() == 0 &&
-      (BaseReg == 0 || X86RegisterInfo::getX86RegNum(BaseReg) != N86::ESP)) {
+  if (IndexReg.getReg() == 0 && (!Is64BitMode || BaseReg != 0) && 
+      (BaseReg == 0 || X86RegisterInfo::getX86RegNum(BaseReg) != N86::ESP)) {      
     if (BaseReg == 0) {  // Just a displacement?
       // Emit special case [disp32] encoding
       ++FinalSize; 
@@ -2864,7 +2864,7 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
   // Emit the lock opcode prefix as needed.
   if (Desc->TSFlags & X86II::LOCK) ++FinalSize;
 
-  // Emit segment overrid opcode prefix as needed.
+  // Emit segment override opcode prefix as needed.
   switch (Desc->TSFlags & X86II::SegOvrMask) {
   case X86II::FS:
   case X86II::GS:
@@ -2922,7 +2922,7 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
   case X86II::T8:  // 0F 38
     ++FinalSize;
     break;
-  case X86II::TA:    // 0F 3A
+  case X86II::TA:  // 0F 3A
     ++FinalSize;
     break;
   }
@@ -2932,6 +2932,9 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
   unsigned CurOp = 0;
   if (NumOps > 1 && Desc->getOperandConstraint(1, TOI::TIED_TO) != -1)
     CurOp++;
+  else if (NumOps > 2 && Desc->getOperandConstraint(NumOps-1, TOI::TIED_TO)== 0)
+    // Skip the last source operand that is tied_to the dest reg. e.g. LXADD32
+    --NumOps;
 
   switch (Desc->TSFlags & X86II::FormMask) {
   default: assert(0 && "Unknown FormMask value in X86 MachineCodeEmitter!");
@@ -3022,7 +3025,7 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
   case X86II::MRMDestMem: {
     ++FinalSize;
     FinalSize += getMemModRMByteSize(MI, CurOp, IsPIC, Is64BitMode);
-    CurOp += 5;
+    CurOp +=  X86AddrNumOperands + 1;
     if (CurOp != NumOps) {
       ++CurOp;
       FinalSize += sizeConstant(X86InstrInfo::sizeOfImm(Desc));
@@ -3041,10 +3044,16 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
     break;
 
   case X86II::MRMSrcMem: {
+    int AddrOperands;
+    if (Opcode == X86::LEA64r || Opcode == X86::LEA64_32r ||
+        Opcode == X86::LEA16r || Opcode == X86::LEA32r)
+      AddrOperands = X86AddrNumOperands - 1; // No segment register
+    else
+      AddrOperands = X86AddrNumOperands;
 
     ++FinalSize;
     FinalSize += getMemModRMByteSize(MI, CurOp+1, IsPIC, Is64BitMode);
-    CurOp += 5;
+    CurOp += AddrOperands + 1;
     if (CurOp != NumOps) {
       ++CurOp;
       FinalSize += sizeConstant(X86InstrInfo::sizeOfImm(Desc));
@@ -3057,8 +3066,18 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
   case X86II::MRM4r: case X86II::MRM5r:
   case X86II::MRM6r: case X86II::MRM7r:
     ++FinalSize;
-    ++CurOp;
-    FinalSize += sizeRegModRMByte();
+    if (Desc->getOpcode() == X86::LFENCE ||
+        Desc->getOpcode() == X86::MFENCE) {
+      // Special handling of lfence and mfence. 
+      FinalSize += sizeRegModRMByte();
+    } else if (Desc->getOpcode() == X86::MONITOR ||
+               Desc->getOpcode() == X86::MWAIT) {
+      // Special handling of monitor and mwait.
+      FinalSize += sizeRegModRMByte() + 1; // +1 for the opcode.
+    } else {
+      ++CurOp;
+      FinalSize += sizeRegModRMByte();
+    }
 
     if (CurOp != NumOps) {
       const MachineOperand &MO1 = MI.getOperand(CurOp++);
@@ -3088,7 +3107,7 @@ static unsigned GetInstSizeWithDesc(const MachineInstr &MI,
     
     ++FinalSize;
     FinalSize += getMemModRMByteSize(MI, CurOp, IsPIC, Is64BitMode);
-    CurOp += 4;
+    CurOp += X86AddrNumOperands;
 
     if (CurOp != NumOps) {
       const MachineOperand &MO = MI.getOperand(CurOp++);
