@@ -1482,6 +1482,8 @@ void ScalarEvolution::deleteValueFromRecords(Value *V) {
   if (Scalars.erase(V)) {
     if (PHINode *PN = dyn_cast<PHINode>(V))
       ConstantEvolutionLoopExitValue.erase(PN);
+    if (Instruction *I = dyn_cast<Instruction>(V))
+      ValuesAtScopes.erase(I);
     Worklist.push_back(V);
   }
 
@@ -1495,6 +1497,8 @@ void ScalarEvolution::deleteValueFromRecords(Value *V) {
       if (Scalars.erase(Inst)) {
         if (PHINode *PN = dyn_cast<PHINode>(VV))
           ConstantEvolutionLoopExitValue.erase(PN);
+        if (Instruction *I = dyn_cast<Instruction>(VV))
+          ValuesAtScopes.erase(I);
         Worklist.push_back(Inst);
       }
     }
@@ -2607,6 +2611,13 @@ SCEVHandle ScalarEvolution::getSCEVAtScope(SCEV *V, const Loop *L) {
       // the arguments into constants, and if so, try to constant propagate the
       // result.  This is particularly useful for computing loop exit values.
       if (CanConstantFold(I)) {
+        // Check to see if we've folded this instruction at this loop before.
+        std::map<const Loop *, Constant *> &Values = ValuesAtScopes[I];
+        std::pair<std::map<const Loop *, Constant *>::iterator, bool> Pair =
+          Values.insert(std::make_pair(L, static_cast<Constant *>(0)));
+        if (!Pair.second)
+          return Pair.first->second ? &*getUnknown(Pair.first->second) : V;
+
         std::vector<Constant*> Operands;
         Operands.reserve(I->getNumOperands());
         for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i) {
@@ -2646,6 +2657,7 @@ SCEVHandle ScalarEvolution::getSCEVAtScope(SCEV *V, const Loop *L) {
         else
           C = ConstantFoldInstOperands(I->getOpcode(), I->getType(),
                                        &Operands[0], Operands.size());
+        Pair.first->second = C;
         return getUnknown(C);
       }
     }
@@ -3275,6 +3287,7 @@ void ScalarEvolution::releaseMemory() {
   Scalars.clear();
   BackedgeTakenCounts.clear();
   ConstantEvolutionLoopExitValue.clear();
+  ValuesAtScopes.clear();
 }
 
 void ScalarEvolution::getAnalysisUsage(AnalysisUsage &AU) const {
