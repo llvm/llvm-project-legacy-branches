@@ -61,6 +61,14 @@ struct s12 { int a __attribute__((aligned(16))); };
 struct s12 f12_0(void) {}
 void f12_1(struct s12 a0) {}
 
+// Check that sret parameter is accounted for when checking available integer
+// registers.
+// RUN: grep 'define void @f13(.struct.s13_0. noalias sret .agg.result, i32 .a, i32 .b, i32 .c, i32 .d, .struct.s13_1. byval .e, i32 .f)' %t &&
+
+struct s13_0 { long long f0[3]; };
+struct s13_0 f13(int a, int b, int c, int d, 
+                 struct s13_1 { long long f0[2]; } e, int f) {}
+
 // RUN: grep 'define void @f14(.*, i8 signext .X)' %t &&
 void f14(int a, int b, int c, int d, int e, int f, 
          char X) {}
