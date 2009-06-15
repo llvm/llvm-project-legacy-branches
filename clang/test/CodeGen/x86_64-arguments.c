@@ -61,4 +61,17 @@ struct s12 { int a __attribute__((aligned(16))); };
 struct s12 f12_0(void) {}
 void f12_1(struct s12 a0) {}
 
+// RUN: grep 'define void @f14(.*, i8 signext .X)' %t &&
+void f14(int a, int b, int c, int d, int e, int f, 
+         char X) {}
+// RUN: grep 'define void @f15(.*, i8\* .X)' %t &&
+void f15(int a, int b, int c, int d, int e, int f, 
+         void *X) {}
+// RUN: grep 'define void @f16(.*, float .X)' %t &&
+void f16(float a, float b, float c, float d, float e, float f, float g, float h,
+         float X) {}
+// RUN: grep 'define void @f17(.*, x86_fp80 .X)' %t &&
+void f17(float a, float b, float c, float d, float e, float f, float g, float h,
+         long double X) {}
+
 // RUN: true
