@@ -262,7 +262,8 @@ namespace {
     Stmt *RewriteObjCProtocolExpr(ObjCProtocolExpr *Exp);
     void WarnAboutReturnGotoStmts(Stmt *S);
     void HasReturnStmts(Stmt *S, bool &hasReturns);
-    void RewriteReturnStmts(Stmt *S);
+    void RewriteTryReturnStmts(Stmt *S);
+    void RewriteSyncReturnStmts(Stmt *S, std::string buf);
     Stmt *RewriteObjCTryStmt(ObjCAtTryStmt *S);
     Stmt *RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S);
     Stmt *RewriteObjCCatchStmt(ObjCAtCatchStmt *S);
@@ -1512,7 +1513,9 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   buf += "}\n";
   buf += "{ /* implicit finally clause */\n";
   buf += "  if (!_rethrow) objc_exception_try_exit(&_stack);\n";
-  buf += "  objc_sync_exit(";
+  
+  std::string syncBuf;
+  syncBuf += " objc_sync_exit(";
   Expr *syncExpr = new CStyleCastExpr(Context->getObjCIdType(), 
                                          S->getSynchExpr(), 
                                          Context->getObjCIdType(),
@@ -1520,9 +1523,11 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   std::string syncExprBufS;
   llvm::raw_string_ostream syncExprBuf(syncExprBufS);
   syncExpr->printPretty(syncExprBuf);
-  buf += syncExprBuf.str();
-  buf += ");\n";
-  buf += "  if (_rethrow) objc_exception_throw(_rethrow);\n";
+  syncBuf += syncExprBuf.str();
+  syncBuf += ");";
+  
+  buf += syncBuf;
+  buf += "\n  if (_rethrow) objc_exception_throw(_rethrow);\n";
   buf += "}\n";
   buf += "}";
   
@@ -1531,7 +1536,7 @@ Stmt *RewriteObjC::RewriteObjCSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   bool hasReturns = false;
   HasReturnStmts(S->getSynchBody(), hasReturns);
   if (hasReturns)
-    RewriteReturnStmts(S->getSynchBody());
+    RewriteSyncReturnStmts(S->getSynchBody(), syncBuf);
 
   return 0;
 }
@@ -1564,23 +1569,49 @@ void RewriteObjC::HasReturnStmts(Stmt *S, bool &hasReturns)
   return;
 }
 
-void RewriteObjC::RewriteReturnStmts(Stmt *S) {
+void RewriteObjC::RewriteTryReturnStmts(Stmt *S) {
   // Perform a bottom up traversal of all children.
   for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
        CI != E; ++CI)
     if (*CI) {
-      RewriteReturnStmts(*CI);
+      RewriteTryReturnStmts(*CI);
     }
   if (isa<ReturnStmt>(S)) {
     SourceLocation startLoc = S->getLocStart();
     const char *startBuf = SM->getCharacterData(startLoc);
 
     const char *semiBuf = strchr(startBuf, ';');
-    assert((*semiBuf == ';') && "RewriteReturnStmts: can't find ';'");
+    assert((*semiBuf == ';') && "RewriteTryReturnStmts: can't find ';'");
     SourceLocation onePastSemiLoc = startLoc.getFileLocWithOffset(semiBuf-startBuf+1);
 
     std::string buf;
     buf = "{ objc_exception_try_exit(&_stack); return";
+    
+    ReplaceText(startLoc, 6, buf.c_str(), buf.size());
+    InsertText(onePastSemiLoc, "}", 1);
+  }
+  return;
+}
+
+void RewriteObjC::RewriteSyncReturnStmts(Stmt *S, std::string syncExitBuf) {
+  // Perform a bottom up traversal of all children.
+  for (Stmt::child_iterator CI = S->child_begin(), E = S->child_end();
+       CI != E; ++CI)
+    if (*CI) {
+      RewriteSyncReturnStmts(*CI, syncExitBuf);
+    }
+  if (isa<ReturnStmt>(S)) {
+    SourceLocation startLoc = S->getLocStart();
+    const char *startBuf = SM->getCharacterData(startLoc);
+
+    const char *semiBuf = strchr(startBuf, ';');
+    assert((*semiBuf == ';') && "RewriteSyncReturnStmts: can't find ';'");
+    SourceLocation onePastSemiLoc = startLoc.getFileLocWithOffset(semiBuf-startBuf+1);
+
+    std::string buf;
+    buf = "{ objc_exception_try_exit(&_stack);";
+    buf += syncExitBuf;
+    buf += " return";
     
     ReplaceText(startLoc, 6, buf.c_str(), buf.size());
     InsertText(onePastSemiLoc, "}", 1);
@@ -1754,7 +1785,7 @@ Stmt *RewriteObjC::RewriteObjCTryStmt(ObjCAtTryStmt *S) {
     bool hasReturns = false;
     HasReturnStmts(S->getTryBody(), hasReturns);
     if (hasReturns)
-      RewriteReturnStmts(S->getTryBody());
+      RewriteTryReturnStmts(S->getTryBody());
   }
   // Now emit the final closing curly brace...
   lastCurlyLoc = lastCurlyLoc.getFileLocWithOffset(1);
