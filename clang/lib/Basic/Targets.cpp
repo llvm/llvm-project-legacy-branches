@@ -12,9 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-// FIXME: Layering violation
-#include "clang/AST/Builtins.h"
-#include "clang/AST/TargetBuiltins.h"
+#include "clang/Basic/Builtins.h"
+#include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/LangOptions.h"
 #include "llvm/ADT/STLExtras.h"
@@ -299,7 +298,7 @@ public:
 const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
-#include "clang/AST/PPCBuiltins.def"
+#include "clang/Basic/BuiltinsPPC.def"
 };
 
 
@@ -471,7 +470,7 @@ namespace {
 const Builtin::Info BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, false },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER, false },
-#include "clang/AST/X86Builtins.def"
+#include "clang/Basic/BuiltinsX86.def"
 };
 
 const char *GCCRegNames[] = {

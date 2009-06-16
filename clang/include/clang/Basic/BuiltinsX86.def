@@ -1,4 +1,4 @@
-//===--- X86Builtins.def - X86 Builtin function database --------*- C++ -*-===//
+//===--- BuiltinsX86.def - X86 Builtin function database --------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,10 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// FIXME: this needs to be the full list supported by GCC.  Right now, I'm just
-// adding stuff on demand.
-
-// The format of this database matches clang/AST/Builtins.def.
+// The format of this database matches clang/Basic/Builtins.def.
 
 // FIXME: In GCC, these builtins are defined depending on whether support for
 // MMX/SSE/etc is turned on. We should do this too.
@@ -420,7 +417,7 @@ BUILTIN(__builtin_ia32_vec_set_v8hi, "V8sV8ssi", "")
 BUILTIN(__builtin_ia32_vec_set_v4hi, "V4sV4ssi", "")
 BUILTIN(__builtin_ia32_vec_set_v16qi, "V16cV16cii", "")
 BUILTIN(__builtin_ia32_vec_set_v4si, "V4iV4iii", "")
-BUILTIN(__builtin_ia32_vec_set_v2di, "V2LLiV2LLiLLii", "")
+BUILTIN(__builtin_ia32_vec_set_v2di, "V2LLiV2LLiLLii", ")"
 BUILTIN(__builtin_ia32_insertps128, "V4fV4fV4fi", "")
 
 BUILTIN(__builtin_ia32_movqv4si, "V4iV4i", "")
