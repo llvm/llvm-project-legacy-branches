@@ -319,9 +319,12 @@ void BackendConsumer::CreatePasses() {
       PM->add(createPruneEHPass());               // Remove dead EH info
       PM->add(createFunctionAttrsPass());         // Set readonly/readnone attrs
     }
-    if (CompileOpts.InlineFunctions)
-      PM->add(createFunctionInliningPass());      // Inline small functions
-    else 
+    if (CompileOpts.InlineFunctions) {
+      // Inline small functions
+      unsigned Threshold = (CompileOpts.OptimizeSize ||
+                            CompileOpts.OptimizationLevel < 3) ? 50 : 200;
+      PM->add(createFunctionInliningPass(Threshold));
+    } else 
       PM->add(createAlwaysInlinerPass());         // Respect always_inline
     if (CompileOpts.OptimizationLevel > 2)
       PM->add(createArgumentPromotionPass());     // Scalarize uninlined fn args
