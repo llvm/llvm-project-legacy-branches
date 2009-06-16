@@ -345,6 +345,7 @@ void PCHWriter::WriteBlockInfoBlock() {
  
   // PCH Top-Level Block.
   BLOCK(PCH_BLOCK);
+  RECORD(ORIGINAL_FILE_NAME);
   RECORD(TYPE_OFFSET);
   RECORD(DECL_OFFSET);
   RECORD(LANGUAGE_OPTIONS);
@@ -761,8 +762,8 @@ void PCHWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         Record.push_back((unsigned)LE->FileKind);
         Record.push_back(LE->IncludeOffset);
       }
-      Stream.EmitRecord(pch::SM_LINE_TABLE, Record);
     }
+    Stream.EmitRecord(pch::SM_LINE_TABLE, Record);
   }
 
   // Write out entries for all of the header files we know about.
