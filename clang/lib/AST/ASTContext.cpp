@@ -3484,6 +3484,6 @@ QualType ASTContext::GetBuiltinType(unsigned id,
   // handle untyped/variadic arguments "T c99Style();" or "T cppStyle(...);".
   if (ArgTypes.size() == 0 && TypeStr[0] == '.')
     return getFunctionNoProtoType(ResType);
-  return getFunctionType(ResType, ArgTypes.data(), ArgTypes.size(),
+  return getFunctionType(ResType, &ArgTypes[0], ArgTypes.size(),
                          TypeStr[0] == '.', 0);
 }
