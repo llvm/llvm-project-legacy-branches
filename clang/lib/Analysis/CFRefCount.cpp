@@ -636,6 +636,10 @@ class VISIBILITY_HIDDEN RetainSummaryManager {
   /// ObjCAllocRetE - Default return effect for methods returning Objective-C
   ///  objects.
   RetEffect ObjCAllocRetE;
+
+  /// ObjCInitRetE - Default return effect for init methods returning Objective-C
+  ///  objects.
+  RetEffect ObjCInitRetE;
   
   RetainSummary DefaultSummary;
   RetainSummary* StopSummary;
@@ -776,6 +780,8 @@ public:
      GCEnabled(gcenabled), AF(BPAlloc), ScratchArgs(AF.GetEmptyMap()),
      ObjCAllocRetE(gcenabled ? RetEffect::MakeGCNotOwned()
                              : RetEffect::MakeOwned(RetEffect::ObjC, true)),
+     ObjCInitRetE(gcenabled ? RetEffect::MakeGCNotOwned()
+                            : RetEffect::MakeOwnedWhenTrackedReceiver()),
      DefaultSummary(AF.GetEmptyMap() /* per-argument effects (none) */,
                     RetEffect::MakeNoRet() /* return effect */,
                     MayEscape, /* default argument effect */
@@ -894,10 +900,17 @@ bool RetainSummaryManager::isTrackedObjCObjectType(QualType Ty) {
   if (!OT)
     return true;
     
-  // Does the interface subclass NSObject?
-  // FIXME: We can memoize here if this gets too expensive.  
-  IdentifierInfo* NSObjectII = &Ctx.Idents.get("NSObject");
+  // Does the interface subclass NSObject?    
+  // FIXME: We can memoize here if this gets too expensive.    
   ObjCInterfaceDecl* ID = OT->getDecl();  
+
+  // Assume that anything declared with a forward declaration and no
+  // @interface subclasses NSObject.
+  if (ID->isForwardDecl())
+    return true;
+  
+  IdentifierInfo* NSObjectII = &Ctx.Idents.get("NSObject");
+
 
   for ( ; ID ; ID = ID->getSuperClass())
     if (ID->getIdentifier() == NSObjectII)
@@ -958,15 +971,96 @@ RetainSummary* RetainSummaryManager::getSummary(FunctionDecl* FD) {
     
     // FIXME: This should all be refactored into a chain of "summary lookup"
     //  filters.
-    if (strcmp(FName, "IOServiceGetMatchingServices") == 0) {
-      // FIXES: <rdar://problem/6326900>
-      // This should be addressed using a API table.  This strcmp is also
-      // a little gross, but there is no need to super optimize here.
-      assert (ScratchArgs.isEmpty());
-      ScratchArgs = AF.Add(ScratchArgs, 1, DecRef);
-      S = getPersistentSummary(RetEffect::MakeNoRet(), DoNothing, DoNothing);
-      break;
+    assert (ScratchArgs.isEmpty());
+    
+    switch (strlen(FName)) {
+      default: break;
+        
+
+      case 17:
+        // Handle: id NSMakeCollectable(CFTypeRef)
+        if (!memcmp(FName, "NSMakeCollectable", 17)) {
+          S = (RetTy == Ctx.getObjCIdType())
+              ? getUnarySummary(FT, cfmakecollectable)
+              : getPersistentStopSummary();
+        }
+        else if (!memcmp(FName, "IOBSDNameMatching", 17) ||
+                 !memcmp(FName, "IOServiceMatching", 17)) {
+          // Part of <rdar://problem/6961230>. (IOKit)
+          // This should be addressed using a API table.
+          S = getPersistentSummary(RetEffect::MakeOwned(RetEffect::CF, true),
+                                   DoNothing, DoNothing);
+        }
+        break;
+
+      case 21:
+        if (!memcmp(FName, "IOServiceNameMatching", 21)) {
+          // Part of <rdar://problem/6961230>. (IOKit)
+          // This should be addressed using a API table.
+          S = getPersistentSummary(RetEffect::MakeOwned(RetEffect::CF, true),
+                                   DoNothing, DoNothing);
+        }
+        break;
+
+      case 24:
+        if (!memcmp(FName, "IOServiceAddNotification", 24)) {
+          // Part of <rdar://problem/6961230>. (IOKit)
+          // This should be addressed using a API table.
+          ScratchArgs = AF.Add(ScratchArgs, 2, DecRef);
+          S = getPersistentSummary(RetEffect::MakeNoRet(), DoNothing, DoNothing);         
+        }
+        break;
+        
+      case 25:
+        if (!memcmp(FName, "IORegistryEntryIDMatching", 25)) {
+          // Part of <rdar://problem/6961230>. (IOKit)
+          // This should be addressed using a API table.
+          S = getPersistentSummary(RetEffect::MakeOwned(RetEffect::CF, true),
+                                   DoNothing, DoNothing);
+        }
+        break;
+        
+      case 26:
+        if (!memcmp(FName, "IOOpenFirmwarePathMatching", 26)) {
+          // Part of <rdar://problem/6961230>. (IOKit)
+          // This should be addressed using a API table.
+          S = getPersistentSummary(RetEffect::MakeOwned(RetEffect::CF, true),
+                                   DoNothing, DoNothing);          
+        }
+        break;
+
+      case 27:
+        if (!memcmp(FName, "IOServiceGetMatchingService", 27)) {
+          // Part of <rdar://problem/6961230>.
+          // This should be addressed using a API table.
+          ScratchArgs = AF.Add(ScratchArgs, 1, DecRef);
+          S = getPersistentSummary(RetEffect::MakeNoRet(), DoNothing, DoNothing);         
+        }
+        break;
+
+      case 28:
+        if (!memcmp(FName, "IOServiceGetMatchingServices", 28)) {
+          // FIXES: <rdar://problem/6326900>
+          // This should be addressed using a API table.  This strcmp is also
+          // a little gross, but there is no need to super optimize here.
+          ScratchArgs = AF.Add(ScratchArgs, 1, DecRef);
+          S = getPersistentSummary(RetEffect::MakeNoRet(), DoNothing, DoNothing);
+        }
+        break;
+        
+      case 32:
+        if (!memcmp(FName, "IOServiceAddMatchingNotification", 32)) {
+          // Part of <rdar://problem/6961230>.
+          // This should be addressed using a API table.
+          ScratchArgs = AF.Add(ScratchArgs, 2, DecRef);
+          S = getPersistentSummary(RetEffect::MakeNoRet(), DoNothing, DoNothing);         
+        }
+        break;
     }
+    
+    // Did we get a summary?
+    if (S)
+      break;
 
     // Enable this code once the semantics of NSDeallocateObject are resolved
     // for GC.  <rdar://problem/6619988>
@@ -979,15 +1073,6 @@ RetainSummary* RetainSummaryManager::getSummary(FunctionDecl* FD) {
         : getPersistentStopSummary();
     }
 #endif
-    
-    // Handle: id NSMakeCollectable(CFTypeRef)
-    if (strcmp(FName, "NSMakeCollectable") == 0) {
-      S = (RetTy == Ctx.getObjCIdType())
-          ? getUnarySummary(FT, cfmakecollectable)
-          : getPersistentStopSummary();
-        
-      break;
-    }
 
     if (RetTy->isPointerType()) {
       // For CoreFoundation ('CF') types.
@@ -1149,8 +1234,7 @@ RetainSummaryManager::getInitMethodSummary(QualType RetTy) {
   // 'init' methods conceptually return a newly allocated object and claim
   // the receiver.  
   if (isTrackedObjCObjectType(RetTy) || isTrackedCFObjectType(RetTy))
-    return getPersistentSummary(RetEffect::MakeOwnedWhenTrackedReceiver(),
-                                DecRefMsg);
+    return getPersistentSummary(ObjCInitRetE, DecRefMsg);
   
   return getDefaultSummary();
 }
@@ -1161,12 +1245,19 @@ RetainSummaryManager::updateSummaryFromAnnotations(RetainSummary &Summ,
   if (!FD)
     return;
 
+  QualType RetTy = FD->getResultType();
+  
   // Determine if there is a special return effect for this method.
-  if (isTrackedObjCObjectType(FD->getResultType())) {
+  if (isTrackedObjCObjectType(RetTy)) {
     if (FD->getAttr<NSReturnsRetainedAttr>()) {
       Summ.setRetEffect(ObjCAllocRetE);
     }
     else if (FD->getAttr<CFReturnsRetainedAttr>()) {
+      Summ.setRetEffect(RetEffect::MakeOwned(RetEffect::CF, true));
+    }
+  }
+  else if (RetTy->getAsPointerType()) {
+    if (FD->getAttr<CFReturnsRetainedAttr>()) {
       Summ.setRetEffect(RetEffect::MakeOwned(RetEffect::CF, true));
     }
   }
@@ -1360,21 +1451,20 @@ void RetainSummaryManager::InitializeMethodSummaries() {
   // Create the "init" selector.  It just acts as a pass-through for the
   // receiver.
   addNSObjectMethSummary(GetNullarySelector("init", Ctx),
-                 getPersistentSummary(RetEffect::MakeOwnedWhenTrackedReceiver(),
-                 DecRefMsg));
+                         getPersistentSummary(ObjCInitRetE, DecRefMsg));
   
   // The next methods are allocators.
-  RetainSummary* Summ = getPersistentSummary(ObjCAllocRetE);  
+  RetainSummary *AllocSumm = getPersistentSummary(ObjCAllocRetE);  
   
   // Create the "copy" selector.  
-  addNSObjectMethSummary(GetNullarySelector("copy", Ctx), Summ);  
+  addNSObjectMethSummary(GetNullarySelector("copy", Ctx), AllocSumm);  
 
   // Create the "mutableCopy" selector.
-  addNSObjectMethSummary(GetNullarySelector("mutableCopy", Ctx), Summ);
+  addNSObjectMethSummary(GetNullarySelector("mutableCopy", Ctx), AllocSumm);
   
   // Create the "retain" selector.
   RetEffect E = RetEffect::MakeReceiverAlias();
-  Summ = getPersistentSummary(E, IncRefMsg);
+  RetainSummary *Summ = getPersistentSummary(E, IncRefMsg);
   addNSObjectMethSummary(GetNullarySelector("retain", Ctx), Summ);
   
   // Create the "release" selector.
@@ -1431,6 +1521,10 @@ void RetainSummaryManager::InitializeMethodSummaries() {
   addInstMethSummary("NSPanel", NoTrackYet, "initWithContentRect",
                      "styleMask", "backing", "defer", "screen", NULL);
 #endif
+  
+  // Don't track allocated autorelease pools yet, as it is okay to prematurely
+  // exit a method.
+  addClassMethSummary("NSAutoreleasePool", "alloc", NoTrackYet);
 
   // Create NSAssertionHandler summaries.
   addPanicSummary("NSAssertionHandler", "handleFailureInFunction", "file",
@@ -1438,6 +1532,21 @@ void RetainSummaryManager::InitializeMethodSummaries() {
   
   addPanicSummary("NSAssertionHandler", "handleFailureInMethod", "object",
                   "file", "lineNumber", "description", NULL);
+  
+  // Create summaries QCRenderer/QCView -createSnapShotImageOfType:
+  addInstMethSummary("QCRenderer", AllocSumm,
+                     "createSnapshotImageOfType", NULL);
+  addInstMethSummary("QCView", AllocSumm,
+                     "createSnapshotImageOfType", NULL);
+
+  // Create summaries for CIContext, 'createCGImage' and
+  // 'createCGLayerWithSize'.
+  addInstMethSummary("CIContext", AllocSumm,
+                     "createCGImage", "fromRect", NULL);
+  addInstMethSummary("CIContext", AllocSumm,
+                     "createCGImage", "fromRect", "format", "colorSpace", NULL);  
+  addInstMethSummary("CIContext", AllocSumm, "createCGLayerWithSize",
+           "info", NULL);
 }
 
 //===----------------------------------------------------------------------===//
@@ -3142,22 +3251,24 @@ void CFRefCount::EvalReturn(ExplodedNodeSet<GRState>& Dst,
       RetEffect RE = Summ.getRetEffect();
       bool hasError = false;
 
-      if (isGCEnabled() && RE.getObjKind() == RetEffect::ObjC) {
-        // Things are more complicated with garbage collection.  If the
-        // returned object is suppose to be an Objective-C object, we have
-        // a leak (as the caller expects a GC'ed object) because no
-        // method should return ownership unless it returns a CF object.
-        X = X ^ RefVal::ErrorGCLeakReturned;
-        
-        // Keep this false until this is properly tested.
-        hasError = true;
-      }
-      else if (!RE.isOwned()) {
-        // Either we are using GC and the returned object is a CF type
-        // or we aren't using GC.  In either case, we expect that the
-        // enclosing method is expected to return ownership.        
-        hasError = true;
-        X = X ^ RefVal::ErrorLeakReturned;
+      if (RE.getKind() != RetEffect::NoRet) {
+        if (isGCEnabled() && RE.getObjKind() == RetEffect::ObjC) {
+          // Things are more complicated with garbage collection.  If the
+          // returned object is suppose to be an Objective-C object, we have
+          // a leak (as the caller expects a GC'ed object) because no
+          // method should return ownership unless it returns a CF object.
+          X = X ^ RefVal::ErrorGCLeakReturned;
+          
+          // Keep this false until this is properly tested.
+          hasError = true;
+        }
+        else if (!RE.isOwned()) {
+          // Either we are using GC and the returned object is a CF type
+          // or we aren't using GC.  In either case, we expect that the
+          // enclosing method is expected to return ownership.        
+          hasError = true;
+          X = X ^ RefVal::ErrorLeakReturned;
+        }
       }
       
       if (hasError) {        
