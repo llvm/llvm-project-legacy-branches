@@ -472,11 +472,6 @@ ComplexPairTy ComplexExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   if (LHS.isSimple()) {
     EmitStoreOfComplex(Val, LHS.getAddress(), LHS.isVolatileQualified());
 
-    // And now return the LHS
-    IgnoreReal = ignreal;
-    IgnoreImag = ignimag;
-    IgnoreRealAssign = ignreal;
-    IgnoreImagAssign = ignimag;
     return EmitLoadOfComplex(LHS.getAddress(), LHS.isVolatileQualified());
   }
   
@@ -485,13 +480,6 @@ ComplexPairTy ComplexExprEmitter::VisitBinAssign(const BinaryOperator *E) {
     CGF.EmitObjCPropertySet(LHS.getPropertyRefExpr(), RValue::getComplex(Val));
   else
     CGF.EmitObjCPropertySet(LHS.getKVCRefExpr(), RValue::getComplex(Val));
-
-  // There is no reload after a store through a method, but we need to restore
-  // the Ignore* flags.
-  IgnoreReal = ignreal;
-  IgnoreImag = ignimag;
-  IgnoreRealAssign = ignreal;
-  IgnoreImagAssign = ignimag;
   return Val;
 }
 
