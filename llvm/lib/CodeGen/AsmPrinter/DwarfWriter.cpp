@@ -3607,6 +3607,9 @@ public:
     if (TimePassesIsEnabled)
       DebugTimer->startTimer();
 
+    CompileUnit *Unit = MainCU;
+    if (!Unit)
+      Unit = &FindCompileUnit(SP.getCompileUnit());
     GlobalVariable *GV = SP.getGV();
     DenseMap<const GlobalVariable *, DbgScope *>::iterator
       II = AbstractInstanceRootMap.find(GV);
@@ -3617,7 +3620,6 @@ public:
       DbgScope *Scope = new DbgScope(NULL, DIDescriptor(GV));
 
       // Get the compile unit context.
-      CompileUnit *Unit = &FindCompileUnit(SP.getCompileUnit());
       DIE *SPDie = Unit->getDieMapSlotFor(GV);
       if (!SPDie)
         SPDie = CreateSubprogramDIE(Unit, SP);
@@ -3639,7 +3641,6 @@ public:
     // Create a concrete inlined instance for this inlined function.
     DbgConcreteScope *ConcreteScope = new DbgConcreteScope(DIDescriptor(GV));
     DIE *ScopeDie = new DIE(DW_TAG_inlined_subroutine);
-    CompileUnit *Unit = &FindCompileUnit(SP.getCompileUnit());
     ScopeDie->setAbstractCompileUnit(Unit);
 
     DIE *Origin = Unit->getDieMapSlotFor(GV);
