@@ -9487,7 +9487,13 @@ Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
     return 0;  // If not 1/2/4/8 bytes, exit.
   
   // Use an integer load+store unless we can find something better.
-  Type *NewPtrTy = PointerType::getUnqual(IntegerType::get(Size<<3));
+  unsigned SrcAddrSp =
+     cast<PointerType>(MI->getOperand(2)->getType())->getAddressSpace();
+  unsigned DstAddrSp =
+     cast<PointerType>(MI->getOperand(1)->getType())->getAddressSpace();
+
+  Type *NewSrcPtrTy = PointerType::get(IntegerType::get(Size<<3), SrcAddrSp);
+  Type *NewDstPtrTy = PointerType::get(IntegerType::get(Size<<3), DstAddrSp);
   
   // Memcpy forces the use of i8* for the source and destination.  That means
   // that if you're using memcpy to move one double around, you'll get a cast
@@ -9515,8 +9521,10 @@ Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
           break;
       }
       
-      if (SrcETy->isSingleValueType())
-        NewPtrTy = PointerType::getUnqual(SrcETy);
+      if (SrcETy->isSingleValueType()) {
+        NewSrcPtrTy = PointerType::get(SrcETy, SrcAddrSp);
+        NewDstPtrTy = PointerType::get(SrcETy, DstAddrSp);
+      }
     }
   }
   
@@ -9526,8 +9534,8 @@ Instruction *InstCombiner::SimplifyMemTransfer(MemIntrinsic *MI) {
   SrcAlign = std::max(SrcAlign, CopyAlign);
   DstAlign = std::max(DstAlign, CopyAlign);
   
-  Value *Src = InsertBitCastBefore(MI->getOperand(2), NewPtrTy, *MI);
-  Value *Dest = InsertBitCastBefore(MI->getOperand(1), NewPtrTy, *MI);
+  Value *Src = InsertBitCastBefore(MI->getOperand(2), NewSrcPtrTy, *MI);
+  Value *Dest = InsertBitCastBefore(MI->getOperand(1), NewDstPtrTy, *MI);
   Instruction *L = new LoadInst(Src, "tmp", false, SrcAlign);
   InsertNewInstBefore(L, *MI);
   InsertNewInstBefore(new StoreInst(L, Dest, false, DstAlign), *MI);

@@ -752,9 +752,18 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
     
     // If the pointer is not the right type, insert a bitcast to the right
     // type.
-    if (OtherPtr->getType() != AI->getType())
-      OtherPtr = new BitCastInst(OtherPtr, AI->getType(), OtherPtr->getName(),
-                                 MI);
+
+    if (OtherPtr->getType() != AI->getType()) {
+      // Preserve address space of OtherPtrTy
+      const PointerType* OtherPtrTy = cast<PointerType>(OtherPtr->getType());
+      const PointerType* AIPtrTy = cast<PointerType>(AI->getType());
+      if (OtherPtrTy->getElementType() != AIPtrTy->getElementType()) {
+        Type *NewOtherPtrTy = PointerType::get(AIPtrTy->getElementType(),
+                                               OtherPtrTy->getAddressSpace());
+        OtherPtr = new BitCastInst(OtherPtr, NewOtherPtrTy, OtherPtr->getName(),
+                                   MI);
+      }
+    }
   }
   
   // Process each element of the aggregate.
@@ -861,10 +870,17 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
       EltPtr = new BitCastInst(EltPtr, BytePtrTy, EltPtr->getNameStr(), MI);
     
     // Cast the other pointer (if we have one) to BytePtrTy. 
-    if (OtherElt && OtherElt->getType() != BytePtrTy)
-      OtherElt = new BitCastInst(OtherElt, BytePtrTy,OtherElt->getNameStr(),
-                                 MI);
-    
+    if (OtherElt && OtherElt->getType() != BytePtrTy) {
+      // Preserve address space of OtherElt
+      const PointerType* OtherPTy = cast<PointerType>(OtherElt->getType());
+      const PointerType* PTy = cast<PointerType>(BytePtrTy);
+      if (OtherPTy->getElementType() != PTy->getElementType()) {
+        Type *NewOtherPTy = PointerType::get(PTy->getElementType(),
+                                             OtherPTy->getAddressSpace());
+        OtherElt = new BitCastInst(OtherElt, NewOtherPTy,
+                                   OtherElt->getNameStr(), MI);
+      }
+    }
     unsigned EltSize = TD->getTypePaddedSize(EltTy);
     
     // Finally, insert the meminst for this element.
@@ -875,6 +891,14 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *BCInst,
         ConstantInt::get(MI->getOperand(3)->getType(), EltSize), // Size
         ConstantInt::get(Type::Int32Ty, OtherEltAlign)  // Align
       };
+      if (MI->getIntrinsicID() == Intrinsic::memcpyany) {
+        // In case we fold a memcpyany of A to B with memcpyany of B to C,
+        // we will need to change the function to be a memcpyany of A to C.
+        const Type *Tys[] = { Ops[0]->getType(), Ops[1]->getType(),
+                         Ops[2]->getType(), Ops[3]->getType() };
+        Module *M = MI->getParent()->getParent()->getParent();
+        TheFn = Intrinsic::getDeclaration(M, Intrinsic::memcpyany, Tys, 4);
+      }
       CallInst::Create(TheFn, Ops, Ops + 4, "", MI);
     } else {
       assert(isa<MemSetInst>(MI));
