@@ -215,6 +215,7 @@ def int_memcpy  : Intrinsic<[llvm_void_ty],
                              [llvm_ptr_ty, llvm_ptr_ty, llvm_anyint_ty,
                               llvm_i32_ty],
                             [IntrWriteArgMem, NoCapture<0>, NoCapture<1>]>;
+
 def int_memmove : Intrinsic<[llvm_void_ty],
                             [llvm_ptr_ty, llvm_ptr_ty, llvm_anyint_ty,
                              llvm_i32_ty],
@@ -223,6 +224,18 @@ def int_memset  : Intrinsic<[llvm_void_ty],
                             [llvm_ptr_ty, llvm_i8_ty, llvm_anyint_ty,
                              llvm_i32_ty],
                             [IntrWriteArgMem, NoCapture<0>]>;
+
+// This version is used to support a memcpy that allows different address
+// spaces for the source and destination to allow OpenCL to copy structures.
+// We make it only a member of MemIntrinsic for now since we don't want it
+// to participate with the normal memcpy optimizations.
+// FIXME: fold this version with memcpy and add a volatile bit and check all
+//        memcpy optimizations.
+def int_memcpyany : Intrinsic<[llvm_void_ty],
+                             [llvm_anyptr_ty, llvm_anyptr_ty, llvm_anyint_ty,
+                              llvm_i32_ty],
+                             [IntrWriteArgMem, NoCapture<0>, NoCapture<1>]>;
+
 
 // These functions do not actually read memory, but they are sensitive to the
 // rounding mode.  This needs to be modelled separately; in the meantime

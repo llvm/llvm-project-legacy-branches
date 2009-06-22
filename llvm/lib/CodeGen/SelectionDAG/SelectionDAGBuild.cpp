@@ -3867,6 +3867,24 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
                               I.getOperand(1), 0, I.getOperand(2), 0));
     return 0;
   }
+  case Intrinsic::memcpyany: {
+    // Default is to lower memcpyany that allows multiple address spaces for
+    // OpenCL to either generating an inline memcpy or to standard memcpy
+    // function.  We assert for address spaces < 256 since we only support
+    // user defined address spaces.
+    assert(cast<PointerType>(I.getOperand(1)->getType())->getAddressSpace()
+           < 256 &&
+           cast<PointerType>(I.getOperand(2)->getType())->getAddressSpace()
+           < 256 &&
+           "Unknown address space");
+    SDValue Op1 = getValue(I.getOperand(1));
+    SDValue Op2 = getValue(I.getOperand(2));
+    SDValue Op3 = getValue(I.getOperand(3));
+    unsigned Align = cast<ConstantInt>(I.getOperand(4))->getZExtValue();
+    DAG.setRoot(DAG.getMemcpy(getRoot(), dl, Op1, Op2, Op3, Align, false,
+                              I.getOperand(1), 0, I.getOperand(2), 0));
+    return 0;
+  }
   case Intrinsic::memset: {
     SDValue Op1 = getValue(I.getOperand(1));
     SDValue Op2 = getValue(I.getOperand(2));

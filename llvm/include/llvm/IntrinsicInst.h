@@ -214,6 +214,7 @@ namespace llvm {
       case Intrinsic::memcpy:
       case Intrinsic::memmove:
       case Intrinsic::memset:
+      case Intrinsic::memcpyany:
         return true;
       default: return false;
       }
@@ -268,6 +269,7 @@ namespace llvm {
     static inline bool classof(const MemTransferInst *) { return true; }
     static inline bool classof(const IntrinsicInst *I) {
       return I->getIntrinsicID() == Intrinsic::memcpy ||
+             I->getIntrinsicID() == Intrinsic::memcpyany ||
              I->getIntrinsicID() == Intrinsic::memmove;
     }
     static inline bool classof(const Value *V) {
