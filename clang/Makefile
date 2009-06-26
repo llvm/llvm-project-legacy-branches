@@ -9,15 +9,11 @@ ToolType              = Commands
 Install_Prefix	      = /Developer/usr
 Extra_Configure_Flags = --enable-targets=x86 \
 			--enable-optimized \
+			--disable-assertions \
 			--with-extra-options='-g -DDISABLE_SMART_POINTERS' \
 			--disable-pic \
 			--disable-doxygen \
 			$(HOST_TARGET_FLAGS)
-
-ifndef ENABLE_ASSERTIONS
-Extra_Configure_Flags += --disable-assertions
-endif
-
 Extra_CC_Flags        = -mdynamic-no-pic
 GnuAfterInstall       = post-install install-plist
 
