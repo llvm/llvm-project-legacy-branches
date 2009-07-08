@@ -5039,7 +5039,17 @@ SDValue SelectionDAGLegalize::ExpandEXTRACT_SUBVECTOR(SDValue Op) {
   // We know that operand #0 is the Vec vector.  For now we assume the index
   // is a constant and that the extracted result is a supported hardware type.
   SDValue Vec = Op.getOperand(0);
+  MVT TVT = Vec.getValueType();
   SDValue Idx = LegalizeOp(Op.getOperand(1));
+
+  if (TLI.getOperationAction(ISD::EXTRACT_SUBVECTOR, TVT) ==
+      TargetLowering::Custom) {
+    Vec = LegalizeOp(Vec);
+    Op = DAG.UpdateNodeOperands(Op, Vec, Idx);
+    SDValue Tmp3 = TLI.LowerOperation(Op, DAG);
+    if (Tmp3.getNode())
+      return Tmp3;
+  }
 
   unsigned NumElems = Vec.getValueType().getVectorNumElements();
 
