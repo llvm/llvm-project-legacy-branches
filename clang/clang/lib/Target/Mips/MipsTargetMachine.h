@@ -1,0 +1,91 @@
+//===-- MipsTargetMachine.h - Define TargetMachine for Mips -00--*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file declares the Mips specific subclass of TargetMachine.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef MIPSTARGETMACHINE_H
+#define MIPSTARGETMACHINE_H
+
+#include "MipsSubtarget.h"
+#include "MipsInstrInfo.h"
+#include "MipsISelLowering.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetFrameInfo.h"
+
+namespace llvm {
+  class formatted_raw_ostream;
+  
+  class MipsTargetMachine : public LLVMTargetMachine {
+    MipsSubtarget       Subtarget;
+    const TargetData    DataLayout; // Calculates type size & alignment
+    MipsInstrInfo       InstrInfo;
+    TargetFrameInfo     FrameInfo;
+    MipsTargetLowering  TLInfo;
+  
+  protected:
+    virtual const TargetAsmInfo *createTargetAsmInfo() const;
+  protected:
+    // To avoid having target depend on the asmprinter stuff libraries,
+    // asmprinter set this functions to ctor pointer at startup time if they are
+    // linked in.
+    typedef FunctionPass *(*AsmPrinterCtorFn)(formatted_raw_ostream &o,
+                                              TargetMachine &tm,
+                                              bool verbose);
+    static AsmPrinterCtorFn AsmPrinterCtor;
+    
+  public:
+    MipsTargetMachine(const Target &T, const Module &M, const std::string &FS, 
+                      bool isLittle);
+
+    static void registerAsmPrinter(AsmPrinterCtorFn F) {
+      AsmPrinterCtor = F;
+    }
+    
+    virtual const MipsInstrInfo   *getInstrInfo()     const 
+    { return &InstrInfo; }
+    virtual const TargetFrameInfo *getFrameInfo()     const 
+    { return &FrameInfo; }
+    virtual const MipsSubtarget   *getSubtargetImpl() const 
+    { return &Subtarget; }
+    virtual const TargetData      *getTargetData()    const 
+    { return &DataLayout;}
+
+    virtual const MipsRegisterInfo *getRegisterInfo()  const {
+      return &InstrInfo.getRegisterInfo();
+    }
+
+    virtual MipsTargetLowering   *getTargetLowering() const { 
+      return const_cast<MipsTargetLowering*>(&TLInfo); 
+    }
+
+    // Pass Pipeline Configuration
+    virtual bool addInstSelector(PassManagerBase &PM,
+                                 CodeGenOpt::Level OptLevel);
+    virtual bool addPreEmitPass(PassManagerBase &PM,
+                                CodeGenOpt::Level OptLevel);
+    virtual bool addAssemblyEmitter(PassManagerBase &PM,
+                                    CodeGenOpt::Level OptLevel,
+                                    bool Verbose, formatted_raw_ostream &Out);
+  };
+
+/// MipselTargetMachine - Mipsel target machine.
+///
+class MipselTargetMachine : public MipsTargetMachine {
+public:
+  MipselTargetMachine(const Target &T, const Module &M, const std::string &FS);
+
+  static unsigned getModuleMatchQuality(const Module &M);
+};
+
+} // End llvm namespace
+
+#endif
