@@ -1903,8 +1903,14 @@ private:
     AddString(GVDie, DW_AT_name, DW_FORM_string, Name);
     std::string LinkageName;
     GV.getLinkageName(LinkageName);
-    if (!LinkageName.empty())
+    if (!LinkageName.empty()) {
+      // Skip special LLVM prefix that is used to inform the asm printer to not emit
+      // usual symbol prefix before the symbol name. This happens for Objective-C
+      // symbol names and symbol whose name is replaced using GCC's __asm__ attribute.
+      if (LinkageName[0] == 1)
+        LinkageName = &LinkageName[1];
       AddString(GVDie, DW_AT_MIPS_linkage_name, DW_FORM_string, LinkageName);
+    }
     AddType(DW_Unit, GVDie, GV.getType());
     if (!GV.isLocalToUnit())
       AddUInt(GVDie, DW_AT_external, DW_FORM_flag, 1);
@@ -1968,8 +1974,15 @@ private:
     std::string LinkageName;
     SP.getLinkageName(LinkageName);
 
-    if (!LinkageName.empty())
-      AddString(SPDie, DW_AT_MIPS_linkage_name, DW_FORM_string, LinkageName);
+    if (!LinkageName.empty()) {
+      // Skip special LLVM prefix that is used to inform the asm printer to not emit
+      // usual symbol prefix before the symbol name. This happens for Objective-C
+      // symbol names and symbol whose name is replaced using GCC's __asm__ attribute.
+      if (LinkageName[0] == 1)
+        LinkageName = &LinkageName[1];
+      AddString(SPDie, dwarf::DW_AT_MIPS_linkage_name, dwarf::DW_FORM_string,
+                LinkageName);
+    }
 
     AddSourceLine(SPDie, &SP);
 
@@ -2974,7 +2987,16 @@ private:
       SP.getLinkageName(LName);
       SP.getName(Name);
 
-      Asm->EmitString(LName.empty() ? Name : LName);
+      if (LName.empty())
+        Asm->EmitString(Name);
+      else {
+        // Skip special LLVM prefix that is used to inform the asm printer to not emit
+        // usual symbol prefix before the symbol name. This happens for Objective-C
+        // symbol names and symbol whose name is replaced using GCC's __asm__ attribute.
+        if (LName[0] == 1)
+          LName = &LName[1];
+        Asm->EmitString(LName);
+      }
       Asm->EOL("MIPS linkage name");
 
       Asm->EmitString(Name); Asm->EOL("Function name");
