@@ -760,7 +760,7 @@ bool X86ATTAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
       // These only apply to registers, ignore on mem.
       break;
     case 'P': // Don't print @PLT, but do print as memory.
-      printOperand(MI, OpNo, "mem");
+      printOperand(MI, OpNo, "call");
       return false;
     }
   }
