@@ -712,6 +712,15 @@ bool X86ATTAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     case 'c': // Don't print "$" before a global var name or constant.
       printOperand(MI, OpNo, "mem", /*NotRIPRel=*/true);
       return false;
+
+    case 'A': // Print '*' before a register (it must be a register)
+      if (MI->getOperand(OpNo).isReg()) {
+        O << '*';
+        printOperand(MI, OpNo);
+        return false;
+      }
+      return true;
+
     case 'b': // Print QImode register
     case 'h': // Print QImode high register
     case 'w': // Print HImode register
@@ -723,7 +732,7 @@ bool X86ATTAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
       return false;
 
     case 'P': // Don't print @PLT, but do print as memory.
-      printOperand(MI, OpNo, "mem");
+      printOperand(MI, OpNo, "call");
       return false;
 
       case 'n': { // Negate the immediate or print a '-' before the operand.
@@ -760,7 +769,7 @@ bool X86ATTAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
       // These only apply to registers, ignore on mem.
       break;
     case 'P': // Don't print @PLT, but do print as memory.
-      printOperand(MI, OpNo, "call");
+      printOperand(MI, OpNo, "mem");
       return false;
     }
   }
