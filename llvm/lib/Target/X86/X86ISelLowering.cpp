@@ -1107,7 +1107,7 @@ LowerCallResult(SDValue Chain, SDValue InFlag, CallSDNode *TheCall,
                                    MVT::v2i64, InFlag).getValue(1);
         Val = Chain.getValue(0);
         Val = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, MVT::i64,
-                          Val, DAG.getConstant(0, MVT::i64));        
+                          Val, DAG.getConstant(0, MVT::i64));
       } else {
         Chain = DAG.getCopyFromReg(Chain, dl, VA.getLocReg(),
                                    MVT::i64, InFlag).getValue(1);
@@ -1307,6 +1307,7 @@ X86TargetLowering::LowerFORMAL_ARGUMENTS(SDValue Op, SelectionDAG &DAG) {
 
   SmallVector<SDValue, 8> ArgValues;
   unsigned LastVal = ~0U;
+  SDValue ArgValue;
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
     // TODO: If an arg is passed in two places (e.g. reg and stack), skip later
@@ -1328,27 +1329,13 @@ X86TargetLowering::LowerFORMAL_ARGUMENTS(SDValue Op, SelectionDAG &DAG) {
         RC = X86::FR64RegisterClass;
       else if (RegVT.isVector() && RegVT.getSizeInBits() == 128)
         RC = X86::VR128RegisterClass;
-      else if (RegVT.isVector()) {
-        assert(RegVT.getSizeInBits() == 64);
-        if (!Is64Bit)
-          RC = X86::VR64RegisterClass;     // MMX values are passed in MMXs.
-        else {
-          // Darwin calling convention passes MMX values in either GPRs or
-          // XMMs in x86-64. Other targets pass them in memory.
-          if (RegVT != MVT::v1i64 && Subtarget->hasSSE2()) {
-            RC = X86::VR128RegisterClass;  // MMX values are passed in XMMs.
-            RegVT = MVT::v2i64;
-          } else {
-            RC = X86::GR64RegisterClass;   // v1i64 values are passed in GPRs.
-            RegVT = MVT::i64;
-          }
-        }
-      } else {
+      else if (RegVT.isVector() && RegVT.getSizeInBits() == 64)
+        RC = X86::VR64RegisterClass;
+      else
         assert(0 && "Unknown argument type!");
-      }
 
       unsigned Reg = DAG.getMachineFunction().addLiveIn(VA.getLocReg(), RC);
-      SDValue ArgValue = DAG.getCopyFromReg(Root, dl, Reg, RegVT);
+      ArgValue = DAG.getCopyFromReg(Root, dl, Reg, RegVT);
 
       // If this is an 8 or 16-bit value, it is really passed promoted to 32
       // bits.  Insert an assert[sz]ext to capture this, then truncate to the
@@ -1359,26 +1346,28 @@ X86TargetLowering::LowerFORMAL_ARGUMENTS(SDValue Op, SelectionDAG &DAG) {
       else if (VA.getLocInfo() == CCValAssign::ZExt)
         ArgValue = DAG.getNode(ISD::AssertZext, dl, RegVT, ArgValue,
                                DAG.getValueType(VA.getValVT()));
+      else if (VA.getLocInfo() == CCValAssign::BCvt)
+        ArgValue = DAG.getNode(ISD::BIT_CONVERT, dl, VA.getValVT(), ArgValue);
 
-      if (VA.getLocInfo() != CCValAssign::Full)
-        ArgValue = DAG.getNode(ISD::TRUNCATE, dl, VA.getValVT(), ArgValue);
-
-      // Handle MMX values passed in GPRs.
-      if (Is64Bit && RegVT != VA.getLocVT()) {
-        if (RegVT.getSizeInBits() == 64 && RC == X86::GR64RegisterClass)
-          ArgValue = DAG.getNode(ISD::BIT_CONVERT, dl, VA.getLocVT(), ArgValue);
-        else if (RC == X86::VR128RegisterClass) {
+      if (VA.isExtInLoc()) {
+        // Handle MMX values passed in XMM regs.
+        if (RegVT.isVector()) {
           ArgValue = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, MVT::i64,
                                  ArgValue, DAG.getConstant(0, MVT::i64));
-          ArgValue = DAG.getNode(ISD::BIT_CONVERT, dl, VA.getLocVT(), ArgValue);
-        }
+          ArgValue = DAG.getNode(ISD::BIT_CONVERT, dl, VA.getValVT(), ArgValue);
+        } else
+          ArgValue = DAG.getNode(ISD::TRUNCATE, dl, VA.getValVT(), ArgValue);
       }
-
-      ArgValues.push_back(ArgValue);
     } else {
       assert(VA.isMemLoc());
-      ArgValues.push_back(LowerMemArgument(Op, DAG, VA, MFI, CC, Root, i));
+      ArgValue = LowerMemArgument(Op, DAG, VA, MFI, CC, Root, i);
     }
+
+    // If value is passed via pointer - do a load.
+    if (VA.getLocInfo() == CCValAssign::Indirect)
+      ArgValue = DAG.getLoad(VA.getValVT(), dl, Root, ArgValue, NULL, 0);
+
+    ArgValues.push_back(ArgValue);
   }
 
   // The x86-64 ABI for returning structs by value requires that we copy
@@ -1527,8 +1516,9 @@ X86TargetLowering::LowerMemOpCallTo(CallSDNode *TheCall, SelectionDAG &DAG,
                                     const CCValAssign &VA,
                                     SDValue Chain,
                                     SDValue Arg, ISD::ArgFlagsTy Flags) {
+  const unsigned FirstStackArgOffset = (Subtarget->isTargetWin64() ? 32 : 0);
   DebugLoc dl = TheCall->getDebugLoc();
-  unsigned LocMemOffset = VA.getLocMemOffset();
+  unsigned LocMemOffset = FirstStackArgOffset + VA.getLocMemOffset();
   SDValue PtrOff = DAG.getIntPtrConstant(LocMemOffset);
   PtrOff = DAG.getNode(ISD::ADD, dl, getPointerTy(), StackPtr, PtrOff);
   if (Flags.isByVal()) {
@@ -1632,6 +1622,7 @@ SDValue X86TargetLowering::LowerCALL(SDValue Op, SelectionDAG &DAG) {
   // of tail call optimization arguments are handle later.
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
+    MVT RegVT = VA.getLocVT();
     SDValue Arg = TheCall->getArg(i);
     ISD::ArgFlagsTy Flags = TheCall->getArgFlags(i);
     bool isByVal = Flags.isByVal();
@@ -1641,39 +1632,35 @@ SDValue X86TargetLowering::LowerCALL(SDValue Op, SelectionDAG &DAG) {
     default: assert(0 && "Unknown loc info!");
     case CCValAssign::Full: break;
     case CCValAssign::SExt:
-      Arg = DAG.getNode(ISD::SIGN_EXTEND, dl, VA.getLocVT(), Arg);
+      Arg = DAG.getNode(ISD::SIGN_EXTEND, dl, RegVT, Arg);
       break;
     case CCValAssign::ZExt:
-      Arg = DAG.getNode(ISD::ZERO_EXTEND, dl, VA.getLocVT(), Arg);
+      Arg = DAG.getNode(ISD::ZERO_EXTEND, dl, RegVT, Arg);
       break;
     case CCValAssign::AExt:
-      Arg = DAG.getNode(ISD::ANY_EXTEND, dl, VA.getLocVT(), Arg);
+      if (RegVT.isVector() && RegVT.getSizeInBits() == 128) {
+        // Special case: passing MMX values in XMM registers.
+        Arg = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i64, Arg);
+        Arg = DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, MVT::v2i64, Arg);
+        Arg = getMOVL(DAG, dl, MVT::v2i64, DAG.getUNDEF(MVT::v2i64), Arg);
+      } else
+        Arg = DAG.getNode(ISD::ANY_EXTEND, dl, RegVT, Arg);
       break;
+    case CCValAssign::BCvt:
+      Arg = DAG.getNode(ISD::BIT_CONVERT, dl, RegVT, Arg);
+      break;
+    case CCValAssign::Indirect: {
+      // Store the argument.
+      SDValue SpillSlot = DAG.CreateStackTemporary(VA.getValVT());
+      int FI = cast<FrameIndexSDNode>(SpillSlot)->getIndex();
+      Chain = DAG.getStore(Chain, dl, Arg, SpillSlot,
+                           PseudoSourceValue::getFixedStack(FI), 0);
+      Arg = SpillSlot;
+      break;
+    }
     }
 
     if (VA.isRegLoc()) {
-      if (Is64Bit) {
-        MVT RegVT = VA.getLocVT();
-        if (RegVT.isVector() && RegVT.getSizeInBits() == 64)
-          switch (VA.getLocReg()) {
-          default:
-            break;
-          case X86::RDI: case X86::RSI: case X86::RDX: case X86::RCX:
-          case X86::R8: {
-            // Special case: passing MMX values in GPR registers.
-            Arg = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i64, Arg);
-            break;
-          }
-          case X86::XMM0: case X86::XMM1: case X86::XMM2: case X86::XMM3:
-          case X86::XMM4: case X86::XMM5: case X86::XMM6: case X86::XMM7: {
-            // Special case: passing MMX values in XMM registers.
-            Arg = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i64, Arg);
-            Arg = DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, MVT::v2i64, Arg);
-            Arg = getMOVL(DAG, dl, MVT::v2i64, DAG.getUNDEF(MVT::v2i64), Arg);
-            break;
-          }
-          }
-      }
       RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
     } else {
       if (!IsTailCall || (IsTailCall && isByVal)) {

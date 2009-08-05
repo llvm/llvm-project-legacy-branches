@@ -132,7 +132,9 @@ X86TargetMachine::X86TargetMachine(const Module &M, const std::string &FS,
   : Subtarget(M, FS, is64Bit),
     DataLayout(Subtarget.getDataLayout()),
     FrameInfo(TargetFrameInfo::StackGrowsDown,
-              Subtarget.getStackAlignment(), Subtarget.is64Bit() ? -8 : -4),
+              Subtarget.getStackAlignment(),
+              (Subtarget.isTargetWin64() ? -40 :
+               (Subtarget.is64Bit() ? -8 : -4))),
     InstrInfo(*this), JITInfo(*this), TLInfo(*this) {
   DefRelocModel = getRelocationModel();
   // FIXME: Correctly select PIC model for Win64 stuff
