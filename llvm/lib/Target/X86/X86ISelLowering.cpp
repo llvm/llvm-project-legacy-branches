@@ -7707,7 +7707,7 @@ static SDValue PerformShuffleCombine(SDNode *N, SelectionDAG &DAG,
                              dyn_cast<ConstantSDNode>(In[Idx0/2].getOperand(2));
       if (InsertVecIdx &&
           InsertVecIdx->getZExtValue() == (unsigned)(Idx0 % 2) &&
-          isZeroNode(In[Idx1/2].getOperand(Idx1 % 2))) {
+          X86::isZeroNode(In[Idx1/2].getOperand(Idx1 % 2))) {
         return DAG.getNode(ISD::BUILD_VECTOR, dl, VT,
                            In[Idx0/2].getOperand(1),
                            In[Idx1/2].getOperand(Idx1 % 2));
@@ -7756,7 +7756,7 @@ static SDValue PerformBuildVectorCombine(SDNode *N, SelectionDAG &DAG,
     
     // This must be an insertion into a zero vector.
     SDValue HighElt = N->getOperand(1);
-    if (!isZeroNode(HighElt))
+    if (!X86::isZeroNode(HighElt))
       return SDValue();
     
     // Value must be a load.
@@ -7807,9 +7807,9 @@ static SDValue PerformBuildVectorCombine(SDNode *N, SelectionDAG &DAG,
 
     SDValue N2 = N->getOperand(2);
     SDValue N3 = N->getOperand(3);
-    if (!isZeroNode(N2) && N2.getOpcode() != ISD::UNDEF)
+    if (!X86::isZeroNode(N2) && N2.getOpcode() != ISD::UNDEF)
       return SDValue();
-    if (!isZeroNode(N3) && N3.getOpcode() != ISD::UNDEF)
+    if (!X86::isZeroNode(N3) && N3.getOpcode() != ISD::UNDEF)
       return SDValue();
     
     SDVTList Tys = DAG.getVTList(MVT::v2i64, MVT::Other);
