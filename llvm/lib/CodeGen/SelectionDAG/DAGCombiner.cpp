@@ -1922,7 +1922,7 @@ SDValue DAGCombiner::visitOR(SDNode *N) {
 
   // fold (or x, undef) -> -1
   if (N0.getOpcode() == ISD::UNDEF || N1.getOpcode() == ISD::UNDEF)
-    return DAG.getConstant(~0ULL, VT);
+    return DAG.getConstant(APInt::getAllOnesValue(VT.getSizeInBits()), VT);
   // fold (or c1, c2) -> c1|c2
   if (N0C && N1C)
     return DAG.FoldConstantArithmetic(ISD::OR, VT, N0C, N1C);
@@ -2469,8 +2469,12 @@ SDValue DAGCombiner::visitSHL(SDNode *N) {
       N0.getOperand(1).getOpcode() == ISD::Constant) {
     uint64_t c1 = cast<ConstantSDNode>(N0.getOperand(1))->getZExtValue();
     uint64_t c2 = N1C->getZExtValue();
+    SDValue HiBitsMask =
+      DAG.getConstant(APInt::getHighBitsSet(VT.getSizeInBits(),
+                                            VT.getSizeInBits() - c1),
+                      VT);
     SDValue Mask = DAG.getNode(ISD::AND, N0.getDebugLoc(), VT, N0.getOperand(0),
-                               DAG.getConstant(~0ULL << c1, VT));
+                               HiBitsMask);
     if (c2 > c1)
       return DAG.getNode(ISD::SHL, N->getDebugLoc(), VT, Mask,
                          DAG.getConstant(c2-c1, N1.getValueType()));
@@ -2479,9 +2483,15 @@ SDValue DAGCombiner::visitSHL(SDNode *N) {
                          DAG.getConstant(c1-c2, N1.getValueType()));
   }
   // fold (shl (sra x, c1), c1) -> (and x, (shl -1, c1))
-  if (N1C && N0.getOpcode() == ISD::SRA && N1 == N0.getOperand(1))
+  if (N1C && N0.getOpcode() == ISD::SRA && N1 == N0.getOperand(1)) {
+    SDValue HiBitsMask =
+      DAG.getConstant(APInt::getHighBitsSet(VT.getSizeInBits(),
+                                            VT.getSizeInBits() -
+                                              N1C->getZExtValue()),
+                      VT);
     return DAG.getNode(ISD::AND, N->getDebugLoc(), VT, N0.getOperand(0),
-                       DAG.getConstant(~0ULL << N1C->getZExtValue(), VT));
+                       HiBitsMask);
+  }
 
   return N1C ? visitShiftByConstant(N, N1C->getZExtValue()) : SDValue();
 }
@@ -3067,9 +3077,11 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
 
   // sext(setcc x, y, cc) -> (select_cc x, y, -1, 0, cc)
   if (N0.getOpcode() == ISD::SETCC) {
+    SDValue NegOne =
+      DAG.getConstant(APInt::getAllOnesValue(VT.getSizeInBits()), VT);
     SDValue SCC =
       SimplifySelectCC(N->getDebugLoc(), N0.getOperand(0), N0.getOperand(1),
-                       DAG.getConstant(~0ULL, VT), DAG.getConstant(0, VT),
+                       NegOne, DAG.getConstant(0, VT),
                        cast<CondCodeSDNode>(N0.getOperand(2))->get(), true);
     if (SCC.getNode()) return SCC;
   }
