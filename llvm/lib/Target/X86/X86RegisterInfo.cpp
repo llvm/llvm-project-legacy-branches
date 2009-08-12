@@ -933,7 +933,7 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
     }
   }
 
-  if (!HasFP && needsFrameMoves && NumBytes) {
+  if (!HasFP && needsFrameMoves) {
     // Mark end of stack pointer adjustment.
     unsigned LabelId = MMI->NextLabelID();
     BuildMI(MBB, MBBI, DL, TII.get(X86::DBG_LABEL)).addImm(LabelId);
