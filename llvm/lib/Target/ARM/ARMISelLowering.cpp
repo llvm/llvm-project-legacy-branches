@@ -484,6 +484,9 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::VST2D:         return "ARMISD::VST2D";
   case ARMISD::VST3D:         return "ARMISD::VST3D";
   case ARMISD::VST4D:         return "ARMISD::VST4D";
+  case ARMISD::VREV64:        return "ARMISD::VREV64";
+  case ARMISD::VREV32:        return "ARMISD::VREV32";
+  case ARMISD::VREV16:        return "ARMISD::VREV16";
   }
 }
 
@@ -2336,7 +2339,7 @@ SDValue ARM::getVMOVImm(SDNode *N, unsigned ByteSize, SelectionDAG &DAG) {
 /// isVREVMask - Check if a vector shuffle corresponds to a VREV
 /// instruction with the specified blocksize.  (The order of the elements
 /// within each block of the vector is reversed.)
-bool ARM::isVREVMask(ShuffleVectorSDNode *N, unsigned BlockSize) {
+static bool isVREVMask(ShuffleVectorSDNode *N, unsigned BlockSize) {
   assert((BlockSize==16 || BlockSize==32 || BlockSize==64) &&
          "Only possible block sizes for VREV are: 16, 32, 64");
 
@@ -2359,7 +2362,7 @@ bool ARM::isVREVMask(ShuffleVectorSDNode *N, unsigned BlockSize) {
 
 static SDValue BuildSplat(SDValue Val, EVT VT, SelectionDAG &DAG, DebugLoc dl) {
   // Canonicalize all-zeros and all-ones vectors.
-  ConstantSDNode *ConstVal = dyn_cast<ConstantSDNode>(Val.getNode());
+  ConstantSDNode *ConstVal = cast<ConstantSDNode>(Val.getNode());
   if (ConstVal->isNullValue())
     return getZeroVector(VT, DAG, dl);
   if (ConstVal->isAllOnesValue())
@@ -2396,8 +2399,7 @@ static SDValue BuildSplat(SDValue Val, EVT VT, SelectionDAG &DAG, DebugLoc dl) {
 // If this is a case we can't handle, return null and let the default
 // expansion code take care of it.
 static SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) {
-  BuildVectorSDNode *BVN = dyn_cast<BuildVectorSDNode>(Op.getNode());
-  assert(BVN != 0 && "Expected a BuildVectorSDNode in LowerBUILD_VECTOR");
+  BuildVectorSDNode *BVN = cast<BuildVectorSDNode>(Op.getNode());
   DebugLoc dl = Op.getDebugLoc();
   EVT VT = Op.getValueType();
 
@@ -2432,6 +2434,23 @@ static SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) {
 }
 
 static SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) {
+  ShuffleVectorSDNode *SVN = cast<ShuffleVectorSDNode>(Op.getNode());
+  DebugLoc dl = Op.getDebugLoc();
+  EVT VT = Op.getValueType();
+
+  // Convert shuffles that are directly supported on NEON to target-specific
+  // DAG nodes, instead of keeping them as shuffles and matching them again
+  // during code selection.  This is more efficient and avoids the possibility
+  // of inconsistencies between legalization and selection.
+  // FIXME: floating-point vectors should be canonicalized to integer vectors
+  // of the same time so that they get CSEd properly.
+  if (isVREVMask(SVN, 64))
+    return DAG.getNode(ARMISD::VREV64, dl, VT, SVN->getOperand(0));
+  if (isVREVMask(SVN, 32))
+    return DAG.getNode(ARMISD::VREV32, dl, VT, SVN->getOperand(0));
+  if (isVREVMask(SVN, 16))
+    return DAG.getNode(ARMISD::VREV16, dl, VT, SVN->getOperand(0));
+
   return Op;
 }
 
