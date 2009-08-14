@@ -3115,6 +3115,63 @@ SDValue ARMTargetLowering::PerformDAGCombine(SDNode *N,
   return SDValue();
 }
 
+static bool isLegalT1AddressImmediate(int64_t V, EVT VT) {
+  if (V < 0)
+    return false;
+
+  unsigned Scale = 1;
+  switch (VT.getSimpleVT().SimpleTy) {
+  default: return false;
+  case MVT::i1:
+  case MVT::i8:
+    // Scale == 1;
+    break;
+  case MVT::i16:
+    // Scale == 2;
+    Scale = 2;
+    break;
+  case MVT::i32:
+    // Scale == 4;
+    Scale = 4;
+    break;
+  }
+
+  if ((V & (Scale - 1)) != 0)
+    return false;
+  V /= Scale;
+  return V == (V & ((1LL << 5) - 1));
+}
+
+static bool isLegalT2AddressImmediate(int64_t V, EVT VT,
+                                      const ARMSubtarget *Subtarget) {
+  bool isNeg = false;
+  if (V < 0) {
+    isNeg = true;
+    V = - V;
+  }
+
+  switch (VT.getSimpleVT().SimpleTy) {
+  default: return false;
+  case MVT::i1:
+  case MVT::i8:
+  case MVT::i16:
+  case MVT::i32:
+    // + imm12 or - imm8
+    if (isNeg)
+      return V == (V & ((1LL << 8) - 1));
+    return V == (V & ((1LL << 12) - 1));
+  case MVT::f32:
+  case MVT::f64:
+    // Same as ARM mode. FIXME: NEON?
+    if (!Subtarget->hasVFP2())
+      return false;
+    if ((V & 3) != 0)
+      return false;
+    V >>= 2;
+    return V == (V & ((1LL << 8) - 1));
+  }
+}
+
 /// isLegalAddressImmediate - Return true if the integer value can be used
 /// as the offset of the target addressing mode for load / store of the
 /// given type.
@@ -3126,33 +3183,12 @@ static bool isLegalAddressImmediate(int64_t V, EVT VT,
   if (!VT.isSimple())
     return false;
 
-  if (Subtarget->isThumb()) { // FIXME for thumb2
-    if (V < 0)
-      return false;
+  if (Subtarget->isThumb1Only())
+    return isLegalT1AddressImmediate(V, VT);
+  else if (Subtarget->isThumb2())
+    return isLegalT2AddressImmediate(V, VT, Subtarget);
 
-    unsigned Scale = 1;
-    switch (VT.getSimpleVT().SimpleTy) {
-    default: return false;
-    case MVT::i1:
-    case MVT::i8:
-      // Scale == 1;
-      break;
-    case MVT::i16:
-      // Scale == 2;
-      Scale = 2;
-      break;
-    case MVT::i32:
-      // Scale == 4;
-      Scale = 4;
-      break;
-    }
-
-    if ((V & (Scale - 1)) != 0)
-      return false;
-    V /= Scale;
-    return V == (V & ((1LL << 5) - 1));
-  }
-
+  // ARM mode.
   if (V < 0)
     V = - V;
   switch (VT.getSimpleVT().SimpleTy) {
@@ -3167,12 +3203,45 @@ static bool isLegalAddressImmediate(int64_t V, EVT VT,
     return V == (V & ((1LL << 8) - 1));
   case MVT::f32:
   case MVT::f64:
-    if (!Subtarget->hasVFP2())
+    if (!Subtarget->hasVFP2()) // FIXME: NEON?
       return false;
     if ((V & 3) != 0)
       return false;
     V >>= 2;
     return V == (V & ((1LL << 8) - 1));
+  }
+}
+
+bool ARMTargetLowering::isLegalT2ScaledAddressingMode(const AddrMode &AM,
+                                                      EVT VT) const {
+  int Scale = AM.Scale;
+  if (Scale < 0)
+    return false;
+
+  switch (VT.getSimpleVT().SimpleTy) {
+  default: return false;
+  case MVT::i1:
+  case MVT::i8:
+  case MVT::i16:
+  case MVT::i32:
+    if (Scale == 1)
+      return true;
+    // r + r << imm
+    Scale = Scale & ~1;
+    return Scale == 2 || Scale == 4 || Scale == 8;
+  case MVT::i64:
+    // r + r
+    if (((unsigned)AM.HasBaseReg + Scale) <= 2)
+      return true;
+    return false;
+  case MVT::isVoid:
+    // Note, we allow "void" uses (basically, uses that aren't loads or
+    // stores), because arm allows folding a scale into many arithmetic
+    // operations.  This should be made more precise and revisited later.
+
+    // Allow r << imm, but the imm has to be a multiple of two.
+    if (Scale & 1) return false;
+    return isPowerOf2_32(Scale);
   }
 }
 
@@ -3192,7 +3261,7 @@ bool ARMTargetLowering::isLegalAddressingMode(const AddrMode &AM,
   case 0:  // no scale reg, must be "r+i" or "r", or "i".
     break;
   case 1:
-    if (Subtarget->isThumb())  // FIXME for thumb2
+    if (Subtarget->isThumb1Only())
       return false;
     // FALL THROUGH.
   default:
@@ -3203,22 +3272,22 @@ bool ARMTargetLowering::isLegalAddressingMode(const AddrMode &AM,
     if (!VT.isSimple())
       return false;
 
+    if (Subtarget->isThumb2())
+      return isLegalT2ScaledAddressingMode(AM, VT);
+
     int Scale = AM.Scale;
     switch (VT.getSimpleVT().SimpleTy) {
     default: return false;
     case MVT::i1:
     case MVT::i8:
     case MVT::i32:
-    case MVT::i64:
-      // This assumes i64 is legalized to a pair of i32. If not (i.e.
-      // ldrd / strd are used, then its address mode is same as i16.
-      // r + r
       if (Scale < 0) Scale = -Scale;
       if (Scale == 1)
         return true;
       // r + r << imm
       return isPowerOf2_32(Scale & ~1);
     case MVT::i16:
+    case MVT::i64:
       // r + r
       if (((unsigned)AM.HasBaseReg + Scale) <= 2)
         return true;
@@ -3230,8 +3299,8 @@ bool ARMTargetLowering::isLegalAddressingMode(const AddrMode &AM,
       // operations.  This should be made more precise and revisited later.
 
       // Allow r << imm, but the imm has to be a multiple of two.
-      if (AM.Scale & 1) return false;
-      return isPowerOf2_32(AM.Scale);
+      if (Scale & 1) return false;
+      return isPowerOf2_32(Scale);
     }
     break;
   }
@@ -3347,7 +3416,7 @@ ARMTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
 
   bool isInc;
   bool isLegal = false;
-  if (Subtarget->isThumb() && Subtarget->hasThumb2())
+  if (Subtarget->isThumb2())
     isLegal = getT2IndexedAddressParts(Ptr.getNode(), VT, isSEXTLoad, Base,
                                        Offset, isInc, DAG);
   else
@@ -3384,7 +3453,7 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
 
   bool isInc;
   bool isLegal = false;
-  if (Subtarget->isThumb() && Subtarget->hasThumb2())
+  if (Subtarget->isThumb2())
     isLegal = getT2IndexedAddressParts(Op, VT, isSEXTLoad, Base, Offset,
                                         isInc, DAG);
   else
