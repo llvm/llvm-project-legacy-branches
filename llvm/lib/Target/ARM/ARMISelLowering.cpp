@@ -477,7 +477,8 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::VQRSHRNsu:     return "ARMISD::VQRSHRNsu";
   case ARMISD::VGETLANEu:     return "ARMISD::VGETLANEu";
   case ARMISD::VGETLANEs:     return "ARMISD::VGETLANEs";
-  case ARMISD::VDUPLANEQ:     return "ARMISD::VDUPLANEQ";
+  case ARMISD::VDUP:          return "ARMISD::VDUP";
+  case ARMISD::VDUPLANE:      return "ARMISD::VDUPLANE";
   case ARMISD::VLD2D:         return "ARMISD::VLD2D";
   case ARMISD::VLD3D:         return "ARMISD::VLD3D";
   case ARMISD::VLD4D:         return "ARMISD::VLD4D";
@@ -2444,6 +2445,15 @@ static SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) {
   // of inconsistencies between legalization and selection.
   // FIXME: floating-point vectors should be canonicalized to integer vectors
   // of the same time so that they get CSEd properly.
+  if (SVN->isSplat()) {
+    int Lane = SVN->getSplatIndex();
+    SDValue Op0 = SVN->getOperand(0);
+    if (Lane == 0 && Op0.getOpcode() == ISD::SCALAR_TO_VECTOR) {
+      return DAG.getNode(ARMISD::VDUP, dl, VT, Op0.getOperand(0));
+    }
+    return DAG.getNode(ARMISD::VDUPLANE, dl, VT, SVN->getOperand(0),
+		       DAG.getConstant(Lane, MVT::i32));
+  }
   if (isVREVMask(SVN, 64))
     return DAG.getNode(ARMISD::VREV64, dl, VT, SVN->getOperand(0));
   if (isVREVMask(SVN, 32))
@@ -2451,7 +2461,7 @@ static SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) {
   if (isVREVMask(SVN, 16))
     return DAG.getNode(ARMISD::VREV16, dl, VT, SVN->getOperand(0));
 
-  return Op;
+  return SDValue();
 }
 
 static SDValue LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) {

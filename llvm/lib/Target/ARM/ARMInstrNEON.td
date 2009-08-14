@@ -65,8 +65,13 @@ def SDTARMVGETLN  : SDTypeProfile<1, 2, [SDTCisVT<0, i32>, SDTCisInt<1>,
 def NEONvgetlaneu : SDNode<"ARMISD::VGETLANEu", SDTARMVGETLN>;
 def NEONvgetlanes : SDNode<"ARMISD::VGETLANEs", SDTARMVGETLN>;
 
-def NEONvduplaneq : SDNode<"ARMISD::VDUPLANEQ",
-                           SDTypeProfile<1, 2, [SDTCisVT<2, i32>]>>;
+def NEONvdup      : SDNode<"ARMISD::VDUP", SDTypeProfile<1, 1, [SDTCisVec<0>]>>;
+
+// VDUPLANE can produce a quad-register result from a double-register source,
+// so the result is not constrained to match the source.
+def NEONvduplane  : SDNode<"ARMISD::VDUPLANE",
+                           SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
+                                                SDTCisVT<2, i32>]>>;
 
 def SDTARMVLD2    : SDTypeProfile<2, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<2>]>;
 def SDTARMVLD3    : SDTypeProfile<3, 1, [SDTCisSameAs<0, 1>,
@@ -1744,20 +1749,14 @@ def : Pat<(v2f64 (insertelt QPR:$src1, DPR:$src2, imm:$src3)),
 
 //   VDUP     : Vector Duplicate (from ARM core register to all elements)
 
-def splat_lo : PatFrag<(ops node:$lhs, node:$rhs),
-                       (vector_shuffle node:$lhs, node:$rhs), [{
-  ShuffleVectorSDNode *SVOp = cast<ShuffleVectorSDNode>(N);
-  return SVOp->isSplat() && SVOp->getSplatIndex() == 0;
-}]>;
-
 class VDUPD<bits<8> opcod1, bits<2> opcod3, string asmSize, ValueType Ty>
   : NVDup<opcod1, 0b1011, opcod3, (outs DPR:$dst), (ins GPR:$src),
           NoItinerary, "vdup", !strconcat(asmSize, "\t$dst, $src"),
-          [(set DPR:$dst, (Ty (splat_lo (scalar_to_vector GPR:$src), undef)))]>;
+          [(set DPR:$dst, (Ty (NEONvdup (i32 GPR:$src))))]>;
 class VDUPQ<bits<8> opcod1, bits<2> opcod3, string asmSize, ValueType Ty>
   : NVDup<opcod1, 0b1011, opcod3, (outs QPR:$dst), (ins GPR:$src),
           NoItinerary, "vdup", !strconcat(asmSize, "\t$dst, $src"),
-          [(set QPR:$dst, (Ty (splat_lo (scalar_to_vector GPR:$src), undef)))]>;
+          [(set QPR:$dst, (Ty (NEONvdup (i32 GPR:$src))))]>;
 
 def  VDUP8d   : VDUPD<0b11101100, 0b00, ".8", v8i8>;
 def  VDUP16d  : VDUPD<0b11101000, 0b01, ".16", v4i16>;
@@ -1768,44 +1767,27 @@ def  VDUP32q  : VDUPQ<0b11101010, 0b00, ".32", v4i32>;
 
 def  VDUPfd   : NVDup<0b11101000, 0b1011, 0b00, (outs DPR:$dst), (ins GPR:$src),
                       NoItinerary, "vdup", ".32\t$dst, $src",
-                      [(set DPR:$dst, (v2f32 (splat_lo
-                                              (scalar_to_vector
-                                               (f32 (bitconvert GPR:$src))),
-                                              undef)))]>;
+                      [(set DPR:$dst, (v2f32 (NEONvdup
+                                              (f32 (bitconvert GPR:$src)))))]>;
 def  VDUPfq   : NVDup<0b11101010, 0b1011, 0b00, (outs QPR:$dst), (ins GPR:$src),
                       NoItinerary, "vdup", ".32\t$dst, $src",
-                      [(set QPR:$dst, (v4f32 (splat_lo
-                                              (scalar_to_vector
-                                               (f32 (bitconvert GPR:$src))),
-                                              undef)))]>;
+                      [(set QPR:$dst, (v4f32 (NEONvdup
+                                              (f32 (bitconvert GPR:$src)))))]>;
 
 //   VDUP     : Vector Duplicate Lane (from scalar to all elements)
-
-def SHUFFLE_get_splat_lane : SDNodeXForm<vector_shuffle, [{
-  ShuffleVectorSDNode *SVOp = cast<ShuffleVectorSDNode>(N);
-  return CurDAG->getTargetConstant(SVOp->getSplatIndex(), MVT::i32);
-}]>;
-
-def splat_lane : PatFrag<(ops node:$lhs, node:$rhs),
-                         (vector_shuffle node:$lhs, node:$rhs), [{
-  ShuffleVectorSDNode *SVOp = cast<ShuffleVectorSDNode>(N);
-  return SVOp->isSplat();
-}], SHUFFLE_get_splat_lane>;
 
 class VDUPLND<bits<2> op19_18, bits<2> op17_16, string OpcodeStr, ValueType Ty>
   : N2V<0b11, 0b11, op19_18, op17_16, 0b11000, 0, 0,
         (outs DPR:$dst), (ins DPR:$src, lane_cst:$lane), NoItinerary,
         !strconcat(OpcodeStr, "\t$dst, $src[$lane]"), "",
-        [(set DPR:$dst, (Ty (splat_lane:$lane DPR:$src, undef)))]>;
+        [(set DPR:$dst, (Ty (NEONvduplane (Ty DPR:$src), imm:$lane)))]>;
 
-// vector_shuffle requires that the source and destination types match, so
-// VDUP to a 128-bit result uses a target-specific VDUPLANEQ node.
 class VDUPLNQ<bits<2> op19_18, bits<2> op17_16, string OpcodeStr,
               ValueType ResTy, ValueType OpTy>
   : N2V<0b11, 0b11, op19_18, op17_16, 0b11000, 1, 0,
         (outs QPR:$dst), (ins DPR:$src, lane_cst:$lane), NoItinerary,
         !strconcat(OpcodeStr, "\t$dst, $src[$lane]"), "",
-        [(set QPR:$dst, (ResTy (NEONvduplaneq (OpTy DPR:$src), imm:$lane)))]>;
+        [(set QPR:$dst, (ResTy (NEONvduplane (OpTy DPR:$src), imm:$lane)))]>;
 
 def VDUPLN8d  : VDUPLND<0b00, 0b01, "vdup.8", v8i8>;
 def VDUPLN16d : VDUPLND<0b00, 0b10, "vdup.16", v4i16>;
@@ -1816,19 +1798,32 @@ def VDUPLN16q : VDUPLNQ<0b00, 0b10, "vdup.16", v8i16, v4i16>;
 def VDUPLN32q : VDUPLNQ<0b01, 0b00, "vdup.32", v4i32, v2i32>;
 def VDUPLNfq  : VDUPLNQ<0b01, 0b00, "vdup.32", v4f32, v2f32>;
 
+def : Pat<(v16i8 (NEONvduplane (v16i8 QPR:$src), imm:$lane)),
+          (v16i8 (VDUPLN8q (v8i8 (EXTRACT_SUBREG QPR:$src,
+                                  (DSubReg_i8_reg imm:$lane))),
+                           (SubReg_i8_lane imm:$lane)))>;
+def : Pat<(v8i16 (NEONvduplane (v8i16 QPR:$src), imm:$lane)),
+          (v8i16 (VDUPLN16q (v4i16 (EXTRACT_SUBREG QPR:$src,
+                                    (DSubReg_i16_reg imm:$lane))),
+                            (SubReg_i16_lane imm:$lane)))>;
+def : Pat<(v4i32 (NEONvduplane (v4i32 QPR:$src), imm:$lane)),
+          (v4i32 (VDUPLN32q (v2i32 (EXTRACT_SUBREG QPR:$src,
+                                    (DSubReg_i32_reg imm:$lane))),
+                            (SubReg_i32_lane imm:$lane)))>;
+def : Pat<(v4f32 (NEONvduplane (v4f32 QPR:$src), imm:$lane)),
+          (v4f32 (VDUPLNfq (v2f32 (EXTRACT_SUBREG QPR:$src,
+                                   (DSubReg_i32_reg imm:$lane))),
+                           (SubReg_i32_lane imm:$lane)))>;
+
 def VDUPfdf   : N2V<0b11, 0b11, 0b01, 0b00, 0b11000, 0, 0,
                     (outs DPR:$dst), (ins SPR:$src),
                     NoItinerary, "vdup.32\t$dst, ${src:lane}", "",
-                    [(set DPR:$dst, (v2f32 (splat_lo
-                                            (scalar_to_vector SPR:$src),
-                                            undef)))]>;
+                    [(set DPR:$dst, (v2f32 (NEONvdup (f32 SPR:$src))))]>;
 
 def VDUPfqf   : N2V<0b11, 0b11, 0b01, 0b00, 0b11000, 1, 0,
                     (outs QPR:$dst), (ins SPR:$src),
                     NoItinerary, "vdup.32\t$dst, ${src:lane}", "",
-                    [(set QPR:$dst, (v4f32 (splat_lo
-                                            (scalar_to_vector SPR:$src),
-                                            undef)))]>;
+                    [(set QPR:$dst, (v4f32 (NEONvdup (f32 SPR:$src))))]>;
 
 //   VMOVN    : Vector Narrowing Move
 defm VMOVN    : N2VNInt_HSD<0b11,0b11,0b10,0b00100,0,0, "vmovn.i",
