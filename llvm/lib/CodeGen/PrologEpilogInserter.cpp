@@ -272,6 +272,8 @@ void PEI::insertCSRSpillsAndRestores(MachineFunction &Fn) {
   MachineFrameInfo *FFI = Fn.getFrameInfo();
   const std::vector<CalleeSavedInfo> &CSI = FFI->getCalleeSavedInfo();
 
+  FFI->setCalleeSavedInfoValid(true);
+
   // Early exit if no callee saved registers are modified!
   if (CSI.empty())
     return;
