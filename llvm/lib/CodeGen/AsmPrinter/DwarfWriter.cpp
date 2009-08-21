@@ -1848,12 +1848,13 @@ private:
     int64_t L = SR.getLo();
     int64_t H = SR.getHi();
     DIE *DW_Subrange = new DIE(DW_TAG_subrange_type);
-    if (L != H) {
-      AddDIEntry(DW_Subrange, DW_AT_type, DW_FORM_ref4, IndexTy);
-      if (L)
-        AddSInt(DW_Subrange, DW_AT_lower_bound, 0, L);
-      AddSInt(DW_Subrange, DW_AT_upper_bound, 0, H);
-    }
+
+    AddDIEEntry(DW_Subrange, dwarf::DW_AT_type, dwarf::DW_FORM_ref4, IndexTy);
+    if (L)
+      AddSInt(DW_Subrange, dwarf::DW_AT_lower_bound, 0, L);
+    if (H)
+      AddSInt(DW_Subrange, dwarf::DW_AT_upper_bound, 0, H);
+
     Buffer.AddChild(DW_Subrange);
   }
 
