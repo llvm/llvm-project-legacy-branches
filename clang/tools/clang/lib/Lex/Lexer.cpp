@@ -33,7 +33,7 @@
 #include <cctype>
 using namespace clang;
 
-static void InitCharacterInfo();
+static void InitCharacterInfo(LangOptions);
 
 //===----------------------------------------------------------------------===//
 // Token Class Implementation
@@ -59,7 +59,7 @@ tok::ObjCKeywordKind Token::getObjCKeywordID() const {
 
 void Lexer::InitLexer(const char *BufStart, const char *BufPtr, 
                       const char *BufEnd) {
-  InitCharacterInfo();
+  InitCharacterInfo(Features);
   
   BufferStart = BufStart;
   BufferPtr = BufPtr;
@@ -254,7 +254,7 @@ enum {
   CHAR_PERIOD   = 0x20   // .
 };
 
-static void InitCharacterInfo() {
+static void InitCharacterInfo(LangOptions Features) {
   static bool isInited = false;
   if (isInited) return;
   isInited = true;
@@ -264,6 +264,11 @@ static void InitCharacterInfo() {
   CharInfo[(int)' '] = CharInfo[(int)'\t'] = 
   CharInfo[(int)'\f'] = CharInfo[(int)'\v'] = CHAR_HORZ_WS;
   CharInfo[(int)'\n'] = CharInfo[(int)'\r'] = CHAR_VERT_WS;
+  
+  if (Features.Microsoft)
+    // Fix for <rdar://problem/6975290> clang can't digest MAPI headers.
+    // This Windows hack treats DOS & CP/M EOF as horizontal whitespace.
+    CharInfo[26/*sub*/] = CHAR_HORZ_WS;
   
   CharInfo[(int)'_'] = CHAR_UNDER;
   CharInfo[(int)'.'] = CHAR_PERIOD;
