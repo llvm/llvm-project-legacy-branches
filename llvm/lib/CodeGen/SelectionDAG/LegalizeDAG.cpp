@@ -5028,7 +5028,8 @@ SDValue SelectionDAGLegalize::ExpandEXTRACT_VECTOR_ELT(SDValue Op) {
 
     StackPtr = DAG.getNode(ISD::ADD, dl, Idx.getValueType(), Idx, StackPtr);
 
-    Op = DAG.getLoad(Op.getValueType(), dl, Ch, StackPtr, NULL, 0);
+    Op = DAG.getExtLoad(ISD::EXTLOAD, dl, Op.getValueType(), Ch, StackPtr,
+                        NULL, 0, Vec.getValueType().getVectorElementType());
   }
   return Op;
 }
