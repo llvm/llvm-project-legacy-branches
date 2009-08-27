@@ -71,7 +71,7 @@ install-plist:
 
 SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
 SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
-SVN_TAGS = $(shell dirname $(SVN_CLANG))
+SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
 update-clang-branch:
 	if [ -n "$(LLVM_VERSION)" ]; then \
@@ -94,7 +94,7 @@ update-to-tot:
 
 tag-clang:
 	if [ -n "$(VERSION)" ]; then \
-	  svn cp -m 'Tag.' $(SVN_TAGS)/clang $(SVN_TAGS)/clang-$(VERSION); \
+	  svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION); \
 	else \
 	  echo Usage: make VERSION=25 tag-clang; \
 	fi
@@ -102,7 +102,7 @@ tag-clang:
 retag-clang:
 	if [ -n "$(VERSION)" ]; then \
 	  svn rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION) && \
-	  svn cp -m 'Retag.' $(SVN_TAGS)/clang $(SVN_TAGS)/clang-$(VERSION); \
+	  svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION); \
 	else \
 	  echo Usage: make VERSION=25 retag-clang; \
 	fi
