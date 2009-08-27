@@ -71,7 +71,7 @@ SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-pro
 SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(shell dirname $(SVN_CLANG))
 
-update-clang:
+update-clang-branch:
 	if [ -n "$(LLVM_VERSION)" ]; then \
 	  svn rm -m 'Update.' $(SVN_CLANG)/clang; \
 	  svn cp -m 'Update.' $(SVN_BASE)/llvm/tags/Apple/llvmCore-$(LLVM_VERSION) $(SVN_CLANG)/clang; \
@@ -80,7 +80,7 @@ update-clang:
 	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
 	fi
 
-update-clang-trunk:
+update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
