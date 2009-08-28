@@ -7,7 +7,7 @@ Project               = clang
 UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
-Extra_Configure_Flags = --enable-targets=x86 \
+Extra_Configure_Flags = --enable-targets=x86,arm \
 			--enable-optimized \
 			--disable-assertions \
 			--with-extra-options='-g -DDISABLE_SMART_POINTERS' \
