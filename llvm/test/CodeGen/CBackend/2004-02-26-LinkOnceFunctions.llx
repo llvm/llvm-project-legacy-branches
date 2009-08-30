@@ -1,8 +1,0 @@
-; RUN: llvm-upgrade < %s | llvm-as | llc -march=c | grep func1 | grep WEAK
-
-implementation
-
-linkonce int %func1 () {
-  ret int 5
-}
-
