@@ -7,14 +7,21 @@ Project               = clang
 UserType              = Developer
 ToolType              = Commands
 Install_Prefix	      = /Developer/usr
+
+# Default is build assertions disabled.
+ifndef ENABLE_ASSERTIONS
+Assertions_Configure_Flag = --disable-assertions
+else
+Assertions_Configure_Flag = --enable-assertions
+endif
+
 Extra_Configure_Flags = --enable-targets=x86 \
 			--enable-optimized \
-			--disable-assertions \
+			$(Assertions_Configure_Flag) \
 			--with-extra-options='-g -DDISABLE_SMART_POINTERS' \
-			--disable-pic \
 			--disable-doxygen \
 			$(HOST_TARGET_FLAGS)
-Extra_CC_Flags        = -mdynamic-no-pic
+
 GnuAfterInstall       = post-install install-plist
 
 # It's a GNU Source project
