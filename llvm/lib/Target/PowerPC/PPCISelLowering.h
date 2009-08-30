@@ -337,6 +337,14 @@ namespace llvm {
 
     virtual bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
 
+    /// getPreferredLSDADataFormat - Return the preferred exception handling data
+    /// format for the LSDA.
+    virtual unsigned getPreferredLSDADataFormat() const;
+
+    /// getPreferredFDEDataFormat - Return the preferred exception handling data
+    /// format for the FDE.
+    virtual unsigned getPreferredFDEDataFormat() const;
+
   private:
     SDValue getFramePointerFrameIndex(SelectionDAG & DAG) const;
     SDValue getReturnAddrFrameIndex(SelectionDAG & DAG) const;

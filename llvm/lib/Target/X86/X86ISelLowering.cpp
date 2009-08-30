@@ -933,6 +933,49 @@ SDValue X86TargetLowering::getPICJumpTableRelocBase(SDValue Table,
   return Table;
 }
 
+/// getPreferredLSDADataFormat - Return the preferred exception handling data
+/// format for the LSDA.
+unsigned X86TargetLowering::getPreferredLSDADataFormat() const {
+  if (Subtarget->isTargetDarwin())
+    return dwarf::DW_EH_PE_pcrel;
+
+  CodeModel::Model M = getTargetMachine().getCodeModel();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+    if (!Subtarget->is64Bit() || M == CodeModel::Small)
+      return dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
+
+    return dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8;
+  }
+
+  if (M == CodeModel::Small)
+    return dwarf::DW_EH_PE_sdata4;
+
+  return dwarf::DW_EH_PE_absptr;
+}
+
+/// getPreferredFDEDataFormat - Return the preferred exception handling data
+/// format for the FDE.
+unsigned X86TargetLowering::getPreferredFDEDataFormat() const {
+  if (Subtarget->isTargetDarwin())
+    return dwarf::DW_EH_PE_pcrel;
+
+  CodeModel::Model M = getTargetMachine().getCodeModel();
+
+  if (getTargetMachine().getRelocationModel() == Reloc::PIC_) {
+    if (!Subtarget->is64Bit() ||
+        M == CodeModel::Small || M == CodeModel::Medium)
+      return dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
+
+    return dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8;
+  }
+
+  if (M == CodeModel::Small || M == CodeModel::Medium)
+    return dwarf::DW_EH_PE_sdata4;
+
+  return dwarf::DW_EH_PE_absptr;
+}
+
 //===----------------------------------------------------------------------===//
 //               Return Value Calling Convention Implementation
 //===----------------------------------------------------------------------===//

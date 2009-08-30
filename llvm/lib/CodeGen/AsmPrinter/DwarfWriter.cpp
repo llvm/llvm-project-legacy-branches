@@ -33,6 +33,7 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetFrameInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/ADT/DenseMap.h"
@@ -3803,9 +3804,10 @@ class DwarfException : public Dwarf  {
   /// ExceptionTimer - Timer for the Dwarf exception writer.
   Timer *ExceptionTimer;
 
-  /// EmitCommonEHFrame - Emit the common eh unwind frame.
-  ///
-  void EmitCommonEHFrame(const Function *Personality, unsigned Index) {
+  /// EmitCIE - Emit a Common Information Entry (CIE). This holds information
+  /// that is shared among many Frame Description Entries.  There is at least
+  /// one CIE in every non-empty .debug_frame section.
+  void EmitCIE(const Function *Personality, unsigned Index) {
     // Size and sign of stack growth.
     int stackGrowth =
         Asm->TM.getFrameInfo()->getStackGrowthDirection() ==
@@ -3832,6 +3834,7 @@ class DwarfException : public Dwarf  {
     EmitLabel("eh_frame_common_begin", Index);
     Asm->EmitInt32((int)0);
     Asm->EOL("CIE Identifier Tag");
+
     Asm->EmitInt8(DW_CIE_VERSION);
     Asm->EOL("CIE Version");
 
@@ -3843,22 +3846,29 @@ class DwarfException : public Dwarf  {
     // Round out reader.
     Asm->EmitULEB128Bytes(1);
     Asm->EOL("CIE Code Alignment Factor");
+
     Asm->EmitSLEB128Bytes(stackGrowth);
     Asm->EOL("CIE Data Alignment Factor");
+
     Asm->EmitInt8(RI->getDwarfRegNum(RI->getRARegister(), true));
     Asm->EOL("CIE Return Address Column");
 
-    // If there is a personality, we need to indicate the functions location.
+    unsigned Encoding = 0;
+
+    // If there is a personality, we need to indicate the function's location.
     if (Personality) {
       Asm->EmitULEB128Bytes(7);
       Asm->EOL("Augmentation Size");
 
       if (TAI->getNeedsIndirectEncoding()) {
-        Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4 | DW_EH_PE_indirect);
-        Asm->EOL("Personality (pcrel sdata4 indirect)");
+        Encoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4 |
+          dwarf::DW_EH_PE_indirect;
+        Asm->EmitInt8(Encoding);
+        Asm->EOL("Personality", Encoding);
       } else {
-        Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
-        Asm->EOL("Personality (pcrel sdata4)");
+        Encoding = dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4;
+        Asm->EmitInt8(Encoding);
+        Asm->EOL("Personality", Encoding);
       }
 
       PrintRelDirective(true);
@@ -3869,17 +3879,20 @@ class DwarfException : public Dwarf  {
         O << "-" << TAI->getPCSymbol();
       Asm->EOL("Personality");
 
-      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
-      Asm->EOL("LSDA Encoding (pcrel sdata4)");
+      Encoding = Asm->TM.getTargetLowering()->getPreferredLSDADataFormat();
+      Asm->EmitInt8(Encoding);
+      Asm->EOL("LSDA Encoding", Encoding);
 
-      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
-      Asm->EOL("FDE Encoding (pcrel sdata4)");
+      Encoding = Asm->TM.getTargetLowering()->getPreferredFDEDataFormat();
+      Asm->EmitInt8(Encoding);
+      Asm->EOL("FDE Encoding", Encoding);
    } else {
       Asm->EmitULEB128Bytes(1);
       Asm->EOL("Augmentation Size");
 
-      Asm->EmitInt8(DW_EH_PE_pcrel | DW_EH_PE_sdata4);
-      Asm->EOL("FDE Encoding (pcrel sdata4)");
+      Encoding = Asm->TM.getTargetLowering()->getPreferredFDEDataFormat();
+      Asm->EmitInt8(Encoding);
+      Asm->EOL("FDE Encoding", Encoding);
     }
 
     // Indicate locations of general callee saved registers in frame.
@@ -3897,15 +3910,15 @@ class DwarfException : public Dwarf  {
     Asm->EOL();
   }
 
-  /// EmitEHFrame - Emit function exception frame information.
-  ///
-  void EmitEHFrame(const FunctionEHFrameInfo &EHFrameInfo) {
+  /// EmitFDE - Emit the Frame Description Entry (FDE) for the function.
+  void EmitFDE(const FunctionEHFrameInfo &EHFrameInfo) {
     Function::LinkageTypes linkage = EHFrameInfo.function->getLinkage();
     
     assert(!EHFrameInfo.function->hasAvailableExternallyLinkage() && 
            "Should not emit 'available externally' functions at all");
 
     Asm->SwitchToTextSection(TAI->getDwarfEHFrameSection());
+    bool is4Byte = TD->getPointerSize() == sizeof(int32_t);
 
     // Externally visible entry into the functions eh frame info.
     // If the corresponding function is static, this should not be
@@ -3968,22 +3981,26 @@ class DwarfException : public Dwarf  {
 
       Asm->EOL("FDE CIE offset");
 
-      EmitReference("eh_func_begin", EHFrameInfo.Number, true, true);
+      EmitReference("eh_func_begin", EHFrameInfo.Number, true, is4Byte);
       Asm->EOL("FDE initial location");
       EmitDifference("eh_func_end", EHFrameInfo.Number,
-                     "eh_func_begin", EHFrameInfo.Number, true);
+                     "eh_func_begin", EHFrameInfo.Number, is4Byte);
       Asm->EOL("FDE address range");
 
       // If there is a personality and landing pads then point to the language
       // specific data area in the exception table.
-      if (EHFrameInfo.PersonalityIndex) {
-        Asm->EmitULEB128Bytes(4);
+      if (MMI->getPersonalities()[0] != NULL) {
+        Asm->EmitULEB128Bytes(is4Byte ? 4 : 8);
         Asm->EOL("Augmentation size");
 
-        if (EHFrameInfo.hasLandingPads)
-          EmitReference("exception", EHFrameInfo.Number, true, true);
-        else
-          Asm->EmitInt32((int)0);
+        if (EHFrameInfo.hasLandingPads) {
+          EmitReference("exception", EHFrameInfo.Number, true, false);
+        } else {
+          if (is4Byte)
+            Asm->EmitInt32((int)0);
+          else
+            Asm->EmitInt64((int)0);
+        }
         Asm->EOL("Language Specific Data Area");
       } else {
         Asm->EmitULEB128Bytes(0);
@@ -4011,6 +4028,8 @@ class DwarfException : public Dwarf  {
         if (const char *UsedDirective = TAI->getUsedDirective())
           O << UsedDirective << EHFrameInfo.FnName << "\n\n";
     }
+
+    Asm->EOL();
   }
 
   /// EmitExceptionTable - Emit landing pads and actions.
@@ -4453,11 +4472,11 @@ public:
     if (shouldEmitMovesModule || shouldEmitTableModule) {
       const std::vector<Function *> Personalities = MMI->getPersonalities();
       for (unsigned i = 0; i < Personalities.size(); ++i)
-        EmitCommonEHFrame(Personalities[i], i);
+        EmitCIE(Personalities[i], i);
 
       for (std::vector<FunctionEHFrameInfo>::iterator I = EHFrames.begin(),
              E = EHFrames.end(); I != E; ++I)
-        EmitEHFrame(*I);
+        EmitFDE(*I);
     }
 
     if (TimePassesIsEnabled)
