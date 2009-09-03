@@ -114,7 +114,7 @@ Install_Target = install-strip
 
 .PHONY: configure almostclean
 
-SYSCTL := $(shell sysctl -n hw.activecpu)
+SYSCTL := $(shell if [ `sysctl -n hw.activecpu` -ge 8 -a `sysctl -n hw.memsize` -le 2147483648 ]; then echo 4; else sysctl -n hw.activecpu; fi)
 
 install:: build
 ifneq ($(GnuNoInstall),YES)
