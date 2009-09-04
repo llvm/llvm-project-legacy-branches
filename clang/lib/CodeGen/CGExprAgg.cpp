@@ -13,6 +13,7 @@
 
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
+#include "CGObjCRuntime.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/StmtVisitor.h"
@@ -244,6 +245,17 @@ void AggExprEmitter::VisitBinAssign(const BinaryOperator *E) {
     CGF.EmitObjCPropertySet(LHS.getKVCRefExpr(), 
                             RValue::getAggregate(AggLoc));
   } else {
+    if (CGF.getContext().getLangOptions().NeXTRuntime) {
+      QualType LHSTy = E->getLHS()->getType();
+      if (const RecordType *FDTTy = LHSTy.getTypePtr()->getAsRecordType())
+        if (FDTTy->getDecl()->hasObjectMember()) {
+          LValue RHS = CGF.EmitLValue(E->getRHS());
+          CGF.CGM.getObjCRuntime().EmitGCMemmoveCollectable(CGF, LHS.getAddress(), 
+                                      RHS.getAddress(),
+                                      CGF.getContext().getTypeSize(LHSTy) / 8);
+          return;
+        }
+    }
     // Codegen the RHS so that it stores directly into the LHS.
     CGF.EmitAggExpr(E->getRHS(), LHS.getAddress(), false /*FIXME: VOLATILE LHS*/);
     

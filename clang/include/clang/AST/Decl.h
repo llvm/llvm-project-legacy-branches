@@ -1028,6 +1028,10 @@ class RecordDecl : public TagDecl {
   /// AnonymousStructOrUnion - Whether this is the type of an
   /// anonymous struct or union.
   bool AnonymousStructOrUnion : 1;
+  
+  /// HasObjectMember - This is true if this struct has at least one
+  /// member containing an object 
+  bool HasObjectMember : 1;
 
 protected:
   RecordDecl(Kind DK, TagKind TK, DeclContext *DC,
@@ -1061,6 +1065,9 @@ public:
     AnonymousStructOrUnion = Anon;
   }
 
+  bool hasObjectMember() const { return HasObjectMember; }
+  void setHasObjectMember (bool val) { HasObjectMember = val; }
+  
   /// \brief Determines whether this declaration represents the
   /// injected class name.
   ///

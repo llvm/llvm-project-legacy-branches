@@ -3959,6 +3959,8 @@ void Sema::ActOnFields(Scope* S,
           }
         }
       }
+      if (Record && FDTTy->getDecl()->hasObjectMember())
+        Record->setHasObjectMember(true);
     } else if (FDTy->isObjCInterfaceType()) {
       /// A field cannot be an Objective-c object
       Diag(FD->getLocation(), diag::err_statically_allocated_object);
@@ -3966,6 +3968,12 @@ void Sema::ActOnFields(Scope* S,
       EnclosingDecl->setInvalidDecl();
       continue;
     }
+    else if (getLangOptions().ObjC1 &&
+             getLangOptions().getGCMode() != LangOptions::NonGC &&
+             Record &&
+             (Context.isObjCObjectPointerType(FD->getType()) ||
+              FD->getType().isObjCGCStrong()))
+      Record->setHasObjectMember(true);
     // Keep track of the number of named members.
     if (FD->getIdentifier())
       ++NumNamedMembers;

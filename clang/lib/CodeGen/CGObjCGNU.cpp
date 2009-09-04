@@ -146,6 +146,10 @@ public:
                                     llvm::Value *src, llvm::Value *dest);
   virtual void EmitObjCStrongCastAssign(CodeGen::CodeGenFunction &CGF,
                                         llvm::Value *src, llvm::Value *dest);
+  virtual void EmitGCMemmoveCollectable(CodeGen::CodeGenFunction &CGF,
+                                        llvm::Value *DestPtr, 
+                                        llvm::Value *SrcPtr,
+                                        unsigned long size);
   virtual LValue EmitObjCValueForIvar(CodeGen::CodeGenFunction &CGF,
                                       QualType ObjectTy,
                                       llvm::Value *BaseValue,
@@ -1113,6 +1117,13 @@ void CGObjCGNU::EmitObjCIvarAssign(CodeGen::CodeGenFunction &CGF,
 void CGObjCGNU::EmitObjCStrongCastAssign(CodeGen::CodeGenFunction &CGF,
                                          llvm::Value *src, llvm::Value *dst)
 {
+  return;
+}
+
+void CGObjCGNU::EmitGCMemmoveCollectable(CodeGen::CodeGenFunction &CGF,
+                                         llvm::Value *DestPtr, 
+                                         llvm::Value *SrcPtr,
+                                         unsigned long size) {
   return;
 }
 

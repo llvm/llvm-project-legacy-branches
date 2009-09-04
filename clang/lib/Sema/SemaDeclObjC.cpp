@@ -1846,6 +1846,9 @@ Sema::DeclPtrTy Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
       } 
     }
 
+  if (T->isObjCInterfaceType())
+    Diag(FD.D.getIdentifierLoc(), diag::err_statically_allocated_object);
+
   DeclContext *DC = dyn_cast<DeclContext>(ClassDecl);
   assert(DC && "ClassDecl is not a DeclContext");
   ObjCPropertyDecl *PDecl = ObjCPropertyDecl::Create(Context, DC,
