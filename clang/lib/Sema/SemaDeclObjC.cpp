@@ -1975,7 +1975,9 @@ Sema::DeclPtrTy Sema::ActOnPropertyImplDecl(SourceLocation AtLoc,
     // @synthesize
     if (!PropertyIvar)
       PropertyIvar = PropertyId;
-    QualType PropType = Context.getCanonicalType(property->getType());
+    // We cannot use canonical type for ivar type as when types are 'id' or 'Class'
+    // GC API generation logic must recognize these types as such.
+    QualType PropType = property->getType();
     // Check that this is a previously declared 'ivar' in 'IDecl' interface
     ObjCInterfaceDecl *ClassDeclared;
     Ivar = IDecl->lookupInstanceVariable(Context, PropertyIvar, ClassDeclared);
