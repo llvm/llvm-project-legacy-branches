@@ -16,7 +16,7 @@
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/InlineAsm.h"
-#include "llvm/IntrinsicInst.h"
+#include "llvm/Instructions.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Metadata.h"
 #include "llvm/Module.h"
@@ -332,9 +332,6 @@ void BitcodeReaderMDValueList::AssignValue(Value *V, unsigned Idx) {
   Value *PrevVal = OldV;
   OldV->replaceAllUsesWith(V);
   delete PrevVal;
-  // Deleting PrevVal sets Idx value in MDValuePtrs to null. Set new
-  // value for Idx.
-  MDValuePtrs[Idx] = V;
 }
 
 Value *BitcodeReaderMDValueList::getValueFwdRef(unsigned Idx) {
@@ -2197,10 +2194,7 @@ Module *BitcodeReader::materializeModule(std::string *ErrInfo) {
     }
   }
   std::vector<std::pair<Function*, Function*> >().swap(UpgradedIntrinsics);
-
-  // Check debug info intrinsics.
-  CheckDebugInfoIntrinsics(TheModule);
-
+  
   return TheModule;
 }
 

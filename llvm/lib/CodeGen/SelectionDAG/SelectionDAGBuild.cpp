@@ -3871,7 +3871,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     if (isValidDebugInfoIntrinsic(RSI, OptLevel) && DW
         && DW->ShouldEmitDwarfDebug()) {
       unsigned LabelID =
-        DW->RecordRegionStart(RSI.getContext());
+        DW->RecordRegionStart(cast<GlobalVariable>(RSI.getContext()));
       DAG.setRoot(DAG.getLabel(ISD::DBG_LABEL, getCurDebugLoc(),
                                getRoot(), LabelID));
     }
@@ -3886,7 +3886,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
       return 0;
 
     MachineFunction &MF = DAG.getMachineFunction();
-    DISubprogram Subprogram(REI.getContext());
+    DISubprogram Subprogram(cast<GlobalVariable>(REI.getContext()));
     
     if (isInlinedFnEnd(REI, MF.getFunction())) {
       // This is end of inlined function. Debugging information for inlined
@@ -3905,7 +3905,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     } 
 
     unsigned LabelID =
-      DW->RecordRegionEnd(REI.getContext());
+      DW->RecordRegionEnd(cast<GlobalVariable>(REI.getContext()));
     DAG.setRoot(DAG.getLabel(ISD::DBG_LABEL, getCurDebugLoc(),
                              getRoot(), LabelID));
     return 0;
@@ -3937,7 +3937,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
       if (!DW || !DW->ShouldEmitDwarfDebug())
         return 0;
       DebugLocTuple PrevLocTpl = MF.getDebugLocTuple(PrevLoc);
-      DISubprogram SP(FSI.getSubprogram());
+      DISubprogram SP(cast<GlobalVariable>(FSI.getSubprogram()));
       DICompileUnit CU(PrevLocTpl.CompileUnit);
       unsigned LabelID = DW->RecordInlinedFnStart(SP, CU,
                                                   PrevLocTpl.Line,
@@ -3953,7 +3953,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     if (!DW || !DW->ShouldEmitDwarfDebug())
       return 0;
     // llvm.dbg.func_start also defines beginning of function scope.
-    DW->RecordRegionStart(FSI.getSubprogram());
+    DW->RecordRegionStart(cast<GlobalVariable>(FSI.getSubprogram()));
     return 0;
   }
   case Intrinsic::dbg_declare: {
@@ -3980,7 +3980,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     if (SI == FuncInfo.StaticAllocaMap.end()) 
       return 0; // VLAs.
     int FI = SI->second;
-    DW->RecordVariable(cast<MDNode>(Variable), FI);
+    DW->RecordVariable(cast<GlobalVariable>(Variable), FI);
     return 0;
   }
   case Intrinsic::eh_exception: {
