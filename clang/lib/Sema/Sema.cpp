@@ -247,31 +247,30 @@ void Sema::ActOnEndOfTranslationUnit() {
   //   translation unit contains a file scope declaration of that
   //   identifier, with the composite type as of the end of the
   //   translation unit, with an initializer equal to 0.
-  for (llvm::DenseMap<DeclarationName, VarDecl *>::iterator 
-         D = TentativeDefinitions.begin(),
-         DEnd = TentativeDefinitions.end();
-       D != DEnd; ++D) {
-    VarDecl *VD = D->second;
-
-    if (VD->isInvalidDecl() || !VD->isTentativeDefinition(Context))
+  for (unsigned i = 0, e = TentativeDefinitionList.size(); i != e; ++i) {
+    VarDecl *VD = TentativeDefinitions.lookup(TentativeDefinitionList[i]);
+    
+    // If the tentative definition was completed, it will be in the list, but
+    // not the map.
+    if (VD == 0 || VD->isInvalidDecl() || !VD->isTentativeDefinition(Context))
       continue;
 
     if (const IncompleteArrayType *ArrayT 
         = Context.getAsIncompleteArrayType(VD->getType())) {
       if (RequireCompleteType(VD->getLocation(), 
                               ArrayT->getElementType(),
-                              diag::err_tentative_def_incomplete_type_arr))
+                              diag::err_tentative_def_incomplete_type_arr)) {
         VD->setInvalidDecl();
-      else {
-        // Set the length of the array to 1 (C99 6.9.2p5).
-        Diag(VD->getLocation(),  diag::warn_tentative_incomplete_array);
-        llvm::APInt One(Context.getTypeSize(Context.getSizeType()), 
-                        true);
-        QualType T 
-          = Context.getConstantArrayType(ArrayT->getElementType(),
-                                         One, ArrayType::Normal, 0);
-        VD->setType(T);
+        continue;
       }
+      
+      // Set the length of the array to 1 (C99 6.9.2p5).
+      Diag(VD->getLocation(), diag::warn_tentative_incomplete_array);
+      llvm::APInt One(Context.getTypeSize(Context.getSizeType()), true);
+      QualType T 
+        = Context.getConstantArrayType(ArrayT->getElementType(),
+                                       One, ArrayType::Normal, 0);
+      VD->setType(T);
     } else if (RequireCompleteType(VD->getLocation(), VD->getType(), 
                                    diag::err_tentative_def_incomplete_type))
       VD->setInvalidDecl();

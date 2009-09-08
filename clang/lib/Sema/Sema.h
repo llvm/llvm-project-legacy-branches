@@ -221,6 +221,7 @@ public:
   /// declaration, and only the most recent tentative declaration for
   /// a given variable will be recorded here.
   llvm::DenseMap<DeclarationName, VarDecl *> TentativeDefinitions;
+  std::vector<DeclarationName> TentativeDefinitionList;
 
   IdentifierResolver IdResolver;
 
