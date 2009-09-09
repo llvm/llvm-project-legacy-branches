@@ -798,15 +798,16 @@ Value *ScalarExprEmitter::EmitCompoundAssign(const CompoundAssignOperator *E,
     return llvm::UndefValue::get(CGF.ConvertType(E->getType()));
   }
 
+  // Emit the RHS first.  __block variables need to have the rhs evaluated
+  // first, plus this should improve codegen a little.
+  OpInfo.RHS = Visit(E->getRHS());
+  OpInfo.Ty = E->getComputationResultType();
+  OpInfo.E = E;
   // Load/convert the LHS.
   LValue LHSLV = EmitLValue(E->getLHS());
   OpInfo.LHS = EmitLoadOfLValue(LHSLV, LHSTy);
   OpInfo.LHS = EmitScalarConversion(OpInfo.LHS, LHSTy,
                                     E->getComputationLHSType());
-  // Emit the RHS.
-  OpInfo.RHS = Visit(E->getRHS());
-  OpInfo.Ty = E->getComputationResultType();
-  OpInfo.E = E;
   
   // Expand the binary operator.
   Value *Result = (this->*Func)(OpInfo);
@@ -1184,8 +1185,10 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,unsigned UICmpOpc,
 }
 
 Value *ScalarExprEmitter::VisitBinAssign(const BinaryOperator *E) {
-  LValue LHS = EmitLValue(E->getLHS());
+  // __block variables need to have the rhs evaluated first, plus this should
+  // improve codegen just a little.
   Value *RHS = Visit(E->getRHS());
+  LValue LHS = EmitLValue(E->getLHS());
   
   // Store the value into the LHS.  Bit-fields are handled specially
   // because the result is altered by the store, i.e., [C99 6.5.16p1]

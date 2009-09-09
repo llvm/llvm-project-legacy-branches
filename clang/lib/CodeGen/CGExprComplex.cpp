@@ -433,20 +433,23 @@ ComplexPairTy ComplexExprEmitter::
 EmitCompoundAssign(const CompoundAssignOperator *E,
                    ComplexPairTy (ComplexExprEmitter::*Func)(const BinOpInfo&)){
   QualType LHSTy = E->getLHS()->getType(), RHSTy = E->getRHS()->getType();
-  
-  // Load the LHS and RHS operands.
-  LValue LHSLV = CGF.EmitLValue(E->getLHS());
 
   BinOpInfo OpInfo;
+
+  // Load the RHS and LHS operands.
+  // __block variables need to have the rhs evaluated first, plus this should
+  // improve codegen a little.  It is possible for the RHS to be complex or
+  // scalar.
   OpInfo.Ty = E->getComputationResultType();
+  OpInfo.RHS = EmitCast(E->getRHS(), OpInfo.Ty);
+
+  LValue LHSLV = CGF.EmitLValue(E->getLHS());
+
 
   // We know the LHS is a complex lvalue.
-  OpInfo.LHS = EmitLoadOfComplex(LHSLV.getAddress(), LHSLV.isVolatileQualified());
-  OpInfo.LHS = EmitComplexToComplexCast(OpInfo.LHS, LHSTy, OpInfo.Ty);
+  OpInfo.LHS=EmitLoadOfComplex(LHSLV.getAddress(), LHSLV.isVolatileQualified());
+  OpInfo.LHS=EmitComplexToComplexCast(OpInfo.LHS, LHSTy, OpInfo.Ty);
     
-  // It is possible for the RHS to be complex or scalar.
-  OpInfo.RHS = EmitCast(E->getRHS(), OpInfo.Ty);
-  
   // Expand the binary operator.
   ComplexPairTy Result = (this->*Func)(OpInfo);
   
