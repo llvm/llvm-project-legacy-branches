@@ -1,4 +1,4 @@
-// RUN: %llvmgxx %s -S -emit-llvm -O2 -o - | ignore grep _Unwind_Resume | \
+// RUN: %llvmgxx %s -S -emit-llvm -O2 -o - | ignore grep " unwind\$" | \
 // RUN:   wc -l | grep {\[23\]}
 
 struct One { };
