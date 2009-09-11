@@ -17,6 +17,24 @@
 #include "llvm/DerivedTypes.h"
 using namespace llvm;
 
+//===----------------------------------------------------------------------===//
+//  TargetOperandInfo
+//===----------------------------------------------------------------------===//
+
+/// getRegClass - Get the register class for the operand, handling resolution
+/// of "symbolic" pointer register classes etc.  If this is not a register
+/// operand, this returns null.
+const TargetRegisterClass *
+TargetOperandInfo::getRegClass(const TargetRegisterInfo *TRI) const {
+  if (isLookupPtrRegClass())
+    return TRI->getPointerRegClass();
+  return TRI->getRegClass(RegClass);
+}
+
+//===----------------------------------------------------------------------===//
+//  TargetInstrInfo
+//===----------------------------------------------------------------------===//
+
 TargetInstrInfo::TargetInstrInfo(const TargetInstrDesc* Desc,
                                  unsigned numOpcodes)
   : Descriptors(Desc), NumOpcodes(numOpcodes) {

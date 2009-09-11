@@ -18,6 +18,7 @@
 namespace llvm {
 
 class TargetRegisterClass;
+class TargetRegisterInfo;
 
 //===----------------------------------------------------------------------===//
 // Machine Operand Flags and Description
@@ -53,6 +54,12 @@ public:
   unsigned int Constraints;
   /// Currently no other information.
   
+  /// getRegClass - Get the register class for the operand, handling resolution
+  /// of "symbolic" pointer register classes etc.  If this is not a register
+  /// operand, this returns null.
+  const TargetRegisterClass *getRegClass(const TargetRegisterInfo *TRI) const;
+  
+
   /// isLookupPtrRegClass - Set if this operand is a pointer value and it
   /// requires a callback to look up its register class.
   bool isLookupPtrRegClass() const { return Flags&(1 <<TOI::LookupPtrRegClass);}
