@@ -861,6 +861,12 @@ Expr::isModifiableLvalue(ASTContext &Ctx, SourceLocation *Loc) const {
     if (!BDR->isByRef() && isa<VarDecl>(BDR->getDecl()))
       return MLV_NotBlockQualified;
   }
+  // Assigning to an 'implicit' property?
+  if (isa<ObjCKVCRefExpr>(this)) {
+    const ObjCKVCRefExpr* KVCExpr = cast<ObjCKVCRefExpr>(this);
+    if (KVCExpr->getSetterMethod() == 0)
+      return MLV_NoSetterProperty;
+  }
 
   QualType CT = Ctx.getCanonicalType(getType());
   
@@ -876,12 +882,6 @@ Expr::isModifiableLvalue(ASTContext &Ctx, SourceLocation *Loc) const {
       return MLV_ConstQualified;
   }
   
-  // Assigning to an 'implicit' property?
-  else if (isa<ObjCKVCRefExpr>(this)) {
-    const ObjCKVCRefExpr* KVCExpr = cast<ObjCKVCRefExpr>(this);
-    if (KVCExpr->getSetterMethod() == 0)
-      return MLV_NoSetterProperty;
-  }
   return MLV_Valid;    
 }
 
