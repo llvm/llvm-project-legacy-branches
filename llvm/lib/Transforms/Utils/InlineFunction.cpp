@@ -270,11 +270,6 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
       return false;
   }
 
-  // FIXME: When we rework invoke/unwind/selector handling for unwinding
-  // ordering we can turn this back on.
-  if (isa<InvokeInst>(TheCall) && !MarkNoUnwind)
-    return false;
-
   // Get an iterator to the last basic block in the function, which will have
   // the new function inlined after it.
   //
