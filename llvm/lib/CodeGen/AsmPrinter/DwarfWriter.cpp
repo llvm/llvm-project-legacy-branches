@@ -3467,6 +3467,7 @@ public:
       InlinedVariableScopes.clear();
       FunctionDbgScope = NULL;
       LexicalScopeStack.clear();
+      AbstractInstanceRootMap.clear();
       AbstractInstanceRootList.clear();
     }
 
