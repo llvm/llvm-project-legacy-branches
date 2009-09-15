@@ -2,11 +2,11 @@
 <array>
 <dict>
 	<key>OpenSourceImportDate</key>
-	<string>2009-01-20</string>
+	<string>2009-05-04</string>
 	<key>OpenSourceProject</key>
 	<string>clang</string>
 	<key>OpenSourceVersion</key>
-	<string>090120</string>
+	<string>090504</string>
 	<key>OpenSourceWebsiteURL</key>
 	<string>http://clang.llvm.org/</string>
         <key>OpenSourceSVN</key>
@@ -18,11 +18,11 @@
 </dict>
 <dict>
 	<key>OpenSourceImportDate</key>
-	<string>2009-01-20</string>
+	<string>2009-05-04</string>
 	<key>OpenSourceProject</key>
 	<string>llvm</string>
 	<key>OpenSourceVersion</key>
-	<string>090120</string>
+	<string>090504</string>
 	<key>OpenSourceWebsiteURL</key>
 	<string>http://llvm.org/</string>
         <key>OpenSourceSVN</key>
