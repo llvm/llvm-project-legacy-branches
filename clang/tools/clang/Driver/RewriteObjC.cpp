@@ -336,8 +336,11 @@ namespace {
                                       const char *funcName, std::string Tag);
     std::string SynthesizeBlockFunc(BlockExpr *CE, int i, 
                                       const char *funcName, std::string Tag);
-    std::string SynthesizeBlockImpl(BlockExpr *CE, std::string Tag, 
-                                    bool hasCopyDisposeHelpers);
+    std::string SynthesizeBlockImpl(BlockExpr *CE, 
+                                    std::string Tag, std::string Desc);
+    std::string SynthesizeBlockDescriptor(std::string Tag, int i, 
+                                          const char *funcName,
+                                          unsigned hasCopy);
     Stmt *SynthesizeBlockCall(CallExpr *Exp);
     void SynthesizeBlockLiterals(SourceLocation FunLocStart,
                                    const char *FunName);
@@ -551,7 +554,7 @@ void RewriteObjC::Initialize(ASTContext &context) {
   Preamble += "struct __block_impl {\n";
   Preamble += "  void *isa;\n";
   Preamble += "  int Flags;\n";
-  Preamble += "  int Size;\n";
+  Preamble += "  int Reserved;\n";
   Preamble += "  void *FuncPtr;\n";
   Preamble += "};\n";
   Preamble += "// Runtime copy/destroy helper functions (from Block_private.h)\n";
@@ -3704,21 +3707,19 @@ std::string RewriteObjC::SynthesizeBlockHelperFuncs(BlockExpr *CE, int i,
   return S;
 }
 
-std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
-                                               bool hasCopyDisposeHelpers) {
+std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag, 
+                                             std::string Desc) {
   std::string S = "\nstruct " + Tag;
   std::string Constructor = "  " + Tag;
   
   S += " {\n  struct __block_impl impl;\n";
-  
-  if (hasCopyDisposeHelpers)
-    S += "  void *copy;\n  void *dispose;\n";
+  S += "  struct " + Desc;
+  S += "* Desc;\n";
     
-  Constructor += "(void *fp";
+  Constructor += "(void *fp, "; // Invoke function pointer.
+  Constructor += "struct " + Desc; // Descriptor pointer.
+  Constructor += " *desc";
   
-  if (hasCopyDisposeHelpers)
-    Constructor += ", void *copyHelp, void *disposeHelp";
-    
   if (BlockDeclRefs.size()) {
     // Output all "by copy" declarations.
     for (llvm::SmallPtrSet<ValueDecl*,8>::iterator I = BlockByCopyDecls.begin(), 
@@ -3778,11 +3779,9 @@ std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
       Constructor += "    impl.isa = &_NSConcreteGlobalBlock;\n";
     else
       Constructor += "    impl.isa = &_NSConcreteStackBlock;\n";
-    Constructor += "    impl.Size = sizeof(";
-    Constructor += Tag + ");\n    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
+    Constructor += "    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
     
-    if (hasCopyDisposeHelpers)
-      Constructor += "    copy = copyHelp;\n    dispose = disposeHelp;\n";
+    Constructor += "    Desc = desc;\n";
       
     // Initialize all "by copy" arguments.
     for (llvm::SmallPtrSet<ValueDecl*,8>::iterator I = BlockByCopyDecls.begin(), 
@@ -3813,14 +3812,35 @@ std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
       Constructor += "    impl.isa = &_NSConcreteGlobalBlock;\n";
     else
       Constructor += "    impl.isa = &_NSConcreteStackBlock;\n";
-    Constructor += "    impl.Size = sizeof(";
-    Constructor += Tag + ");\n    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
-    if (hasCopyDisposeHelpers)
-      Constructor += "    copy = copyHelp;\n    dispose = disposeHelp;\n";
+    Constructor += "    impl.Flags = flags;\n    impl.FuncPtr = fp;\n";
+    Constructor += "    Desc = desc;\n";
   }
   Constructor += "  ";
   Constructor += "}\n";
   S += Constructor;
+  S += "};\n";
+  return S;
+}
+
+std::string RewriteObjC::SynthesizeBlockDescriptor(std::string Tag, int i,
+                                                   const char *FunName,
+                                                   unsigned hasCopy) {
+  std::string S = "\nstatic struct " + Tag;
+  std::string Constructor = "  " + Tag;
+  
+  S += " {\n  unsigned long reserved;\n";
+  S += "  unsigned long Block_size;\n";
+  if (hasCopy) {
+    S += "  void *copy;\n  void *dispose;\n";
+  }
+  S += "} ";
+
+  S += Tag + "_DATA = { 0, sizeof(struct ";
+  S += Tag + ")";
+  if (hasCopy) {
+    S += ", __" + std::string(FunName) + "_block_copy_" + utostr(i);
+    S += ", __" + std::string(FunName) + "_block_dispose_" + utostr(i);
+  }
   S += "};\n";
   return S;
 }
@@ -3833,9 +3853,9 @@ void RewriteObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
     CollectBlockDeclRefInfo(Blocks[i]);
 
     std::string Tag = "__" + std::string(FunName) + "_block_impl_" + utostr(i);
+    std::string Desc = "__" + std::string(FunName) + "_block_desc_" + utostr(i);
                       
-    std::string CI = SynthesizeBlockImpl(Blocks[i], Tag, 
-                                         ImportedBlockDecls.size() > 0);
+    std::string CI = SynthesizeBlockImpl(Blocks[i], Tag, Desc);
 
     InsertText(FunLocStart, CI.c_str(), CI.size());
 
@@ -3847,6 +3867,10 @@ void RewriteObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
       std::string HF = SynthesizeBlockHelperFuncs(Blocks[i], i, FunName, Tag);
       InsertText(FunLocStart, HF.c_str(), HF.size());
     }
+    
+    std::string BD = SynthesizeBlockDescriptor(Desc, i, FunName,
+                                               ImportedBlockDecls.size() > 0);
+    InsertText(FunLocStart, BD.c_str(), BD.size());
     
     BlockDeclRefs.clear();
     BlockByRefDecls.clear();
@@ -4240,21 +4264,21 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp) {
                                           Context->VoidPtrTy, SourceLocation(), SourceLocation());
   InitExprs.push_back(castExpr); 
   
-  if (ImportedBlockDecls.size()) {
-    std::string Buf = "__" + FuncName + "_block_copy_" + BlockNumber;
-    FD = SynthBlockInitFunctionDecl(Buf.c_str());
-    Arg = new DeclRefExpr(FD, FD->getType(), SourceLocation());
-    castExpr = new CStyleCastExpr(Context->VoidPtrTy, Arg, 
-                                  Context->VoidPtrTy, SourceLocation(), SourceLocation());
-    InitExprs.push_back(castExpr); 
-    
-    Buf = "__" + FuncName + "_block_dispose_" + BlockNumber;
-    FD = SynthBlockInitFunctionDecl(Buf.c_str());
-    Arg = new DeclRefExpr(FD, FD->getType(), SourceLocation());
-    castExpr = new CStyleCastExpr(Context->VoidPtrTy, Arg, 
-                                  Context->VoidPtrTy, SourceLocation(), SourceLocation());
-    InitExprs.push_back(castExpr); 
-  }
+  // Initialize the block descriptor.
+  std::string DescData = "__" + FuncName + "_block_desc_" + BlockNumber + "_DATA";
+
+  VarDecl *NewVD = VarDecl::Create(*Context, TUDecl, SourceLocation(), 
+                                    &Context->Idents.get(DescData.c_str()), 
+                                    Context->VoidPtrTy, 
+                                    VarDecl::Static);
+  UnaryOperator *DescRefExpr = new UnaryOperator(
+                                 new DeclRefExpr(NewVD, Context->VoidPtrTy, 
+                                                 SourceLocation()), 
+                                  UnaryOperator::AddrOf,
+                                  Context->getPointerType(Context->VoidPtrTy), 
+                                  SourceLocation());
+  InitExprs.push_back(DescRefExpr); 
+  
   // Add initializers for any closure decl refs.
   if (BlockDeclRefs.size()) {
     Expr *Exp;
