@@ -109,7 +109,7 @@ namespace {
     llvm::SmallPtrSet<ValueDecl *, 8> ImportedBlockDecls;
 
     llvm::DenseMap<BlockExpr *, std::string> RewrittenBlockExprs;
-
+    
     // This maps a property to it's assignment statement.
     llvm::DenseMap<ObjCPropertyRefExpr *, BinaryOperator *> PropSetters;
     // This maps a property to it's synthesied message expression.
@@ -3867,8 +3867,7 @@ void RewriteObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
     if (ImportedBlockDecls.size()) {
       std::string HF = SynthesizeBlockHelperFuncs(Blocks[i], i, FunName, ImplTag);
       InsertText(FunLocStart, HF.c_str(), HF.size());
-    }
-    
+    }    
     std::string BD = SynthesizeBlockDescriptor(DescTag, ImplTag, i, FunName,
                                                ImportedBlockDecls.size() > 0);
     InsertText(FunLocStart, BD.c_str(), BD.size());
@@ -4311,6 +4310,17 @@ Stmt *RewriteObjC::SynthBlockInitExpr(BlockExpr *Exp) {
                               SourceLocation());
       InitExprs.push_back(Exp); 
     }
+  }
+  if (ImportedBlockDecls.size()) { // generate "1<<25" to indicate we have helper functions.
+    unsigned IntSize = 
+      static_cast<unsigned>(Context->getTypeSize(Context->IntTy));
+    BinaryOperator *Exp = new BinaryOperator(
+                              new IntegerLiteral(llvm::APInt(IntSize, 1), 
+                                                 Context->IntTy,SourceLocation()), 
+                              new IntegerLiteral(llvm::APInt(IntSize, 25), 
+                                                 Context->IntTy, SourceLocation()), 
+                              BinaryOperator::Shl, Context->IntTy, SourceLocation());
+    InitExprs.push_back(Exp);
   }
   NewRep = new CallExpr(DRE, &InitExprs[0], InitExprs.size(),
                         FType, SourceLocation());
