@@ -103,7 +103,7 @@ llvm::DICompileUnit CGDebugInfo::getOrCreateCompileUnit(SourceLocation Loc) {
     LangTag = llvm::dwarf::DW_LANG_C89;
   }
 
-  std::string Producer = "clang 1.0";// FIXME: clang version.
+  std::string Producer = "clang 1.0.1";// FIXME: clang version.
   bool isOptimized = LO.Optimize;
   const char *Flags = "";   // FIXME: Encode command line options.
 
