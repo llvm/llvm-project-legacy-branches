@@ -2075,7 +2075,7 @@ int main(int argc, char **argv) {
   }
 
   if (Verbose)
-    fprintf(stderr, "clang version 1.0 based upon " PACKAGE_STRING
+    fprintf(stderr, "clang version " CLANG_VERSION_STRING " based upon " PACKAGE_STRING
             " hosted on " LLVM_HOSTTRIPLE "\n");
 
   if (!NoCaretDiagnostics)
