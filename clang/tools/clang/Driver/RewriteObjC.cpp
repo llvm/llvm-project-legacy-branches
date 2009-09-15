@@ -338,8 +338,9 @@ namespace {
                                       const char *funcName, std::string Tag);
     std::string SynthesizeBlockImpl(BlockExpr *CE, 
                                     std::string Tag, std::string Desc);
-    std::string SynthesizeBlockDescriptor(std::string Tag, int i, 
-                                          const char *funcName,
+    std::string SynthesizeBlockDescriptor(std::string DescTag, 
+                                          std::string ImplTag,
+                                          int i, const char *funcName,
                                           unsigned hasCopy);
     Stmt *SynthesizeBlockCall(CallExpr *Exp);
     void SynthesizeBlockLiterals(SourceLocation FunLocStart,
@@ -3822,11 +3823,11 @@ std::string RewriteObjC::SynthesizeBlockImpl(BlockExpr *CE, std::string Tag,
   return S;
 }
 
-std::string RewriteObjC::SynthesizeBlockDescriptor(std::string Tag, int i,
+std::string RewriteObjC::SynthesizeBlockDescriptor(std::string DescTag, 
+                                                   std::string ImplTag, int i,
                                                    const char *FunName,
                                                    unsigned hasCopy) {
-  std::string S = "\nstatic struct " + Tag;
-  std::string Constructor = "  " + Tag;
+  std::string S = "\nstatic struct " + DescTag;
   
   S += " {\n  unsigned long reserved;\n";
   S += "  unsigned long Block_size;\n";
@@ -3835,8 +3836,8 @@ std::string RewriteObjC::SynthesizeBlockDescriptor(std::string Tag, int i,
   }
   S += "} ";
 
-  S += Tag + "_DATA = { 0, sizeof(struct ";
-  S += Tag + ")";
+  S += DescTag + "_DATA = { 0, sizeof(struct ";
+  S += ImplTag + ")";
   if (hasCopy) {
     S += ", __" + std::string(FunName) + "_block_copy_" + utostr(i);
     S += ", __" + std::string(FunName) + "_block_dispose_" + utostr(i);
@@ -3852,23 +3853,23 @@ void RewriteObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
 
     CollectBlockDeclRefInfo(Blocks[i]);
 
-    std::string Tag = "__" + std::string(FunName) + "_block_impl_" + utostr(i);
-    std::string Desc = "__" + std::string(FunName) + "_block_desc_" + utostr(i);
+    std::string ImplTag = "__" + std::string(FunName) + "_block_impl_" + utostr(i);
+    std::string DescTag = "__" + std::string(FunName) + "_block_desc_" + utostr(i);
                       
-    std::string CI = SynthesizeBlockImpl(Blocks[i], Tag, Desc);
+    std::string CI = SynthesizeBlockImpl(Blocks[i], ImplTag, DescTag);
 
     InsertText(FunLocStart, CI.c_str(), CI.size());
 
-    std::string CF = SynthesizeBlockFunc(Blocks[i], i, FunName, Tag);
+    std::string CF = SynthesizeBlockFunc(Blocks[i], i, FunName, ImplTag);
     
     InsertText(FunLocStart, CF.c_str(), CF.size());
 
     if (ImportedBlockDecls.size()) {
-      std::string HF = SynthesizeBlockHelperFuncs(Blocks[i], i, FunName, Tag);
+      std::string HF = SynthesizeBlockHelperFuncs(Blocks[i], i, FunName, ImplTag);
       InsertText(FunLocStart, HF.c_str(), HF.size());
     }
     
-    std::string BD = SynthesizeBlockDescriptor(Desc, i, FunName,
+    std::string BD = SynthesizeBlockDescriptor(DescTag, ImplTag, i, FunName,
                                                ImportedBlockDecls.size() > 0);
     InsertText(FunLocStart, BD.c_str(), BD.size());
     
