@@ -10377,6 +10377,10 @@ Instruction *InstCombiner::FoldPHIArgGEPIntoPHI(PHINode &PN) {
   // This is true if all GEP bases are allocas and if all indices into them are
   // constants.
   bool AllBasePointersAreAllocas = true;
+
+  // We don't want to replace this phi if the replacement would require
+  // more than one phi.
+  bool NeededPhi = false;
   
   // Scan to see if all operands are the same opcode, all have one use, and all
   // kill their operands (i.e. the operands have one use).
@@ -10408,7 +10412,16 @@ Instruction *InstCombiner::FoldPHIArgGEPIntoPHI(PHINode &PN) {
       
       if (FirstInst->getOperand(op)->getType() !=GEP->getOperand(op)->getType())
         return 0;
+
+      // If we already needed a PHI for an earlier operand, and another operand
+      // also requires a PHI, we'd be introducing more PHIs than we're
+      // eliminating, which increases register pressure on entry to the PHI's
+      // block.
+      if (NeededPhi)
+        return 0;
+
       FixedOperands[op] = 0;  // Needs a PHI.
+      NeededPhi = true;
     }
   }
   
