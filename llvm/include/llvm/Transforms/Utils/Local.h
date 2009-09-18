@@ -22,7 +22,6 @@ class BasicBlock;
 class Instruction;
 class Value;
 class Pass;
-class GlobalVariable;
 class PHINode;
 class AllocaInst;
 class ConstantExpr;
@@ -109,10 +108,6 @@ bool UserIsDebugInfo(User *U);
 
 /// RemoveDbgInfoUser - Remove an User which is representing debug info.
 void RemoveDbgInfoUser(User *U);
-
-/// IsGlobalVariableDebugInfo - Return true if GV is encoding debug info
-/// for a global variable.
-bool IsGlobalVariableDebugInfo(GlobalVariable *GV);
 
 } // End llvm namespace
 

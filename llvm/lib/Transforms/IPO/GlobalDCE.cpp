@@ -20,7 +20,6 @@
 #include "llvm/Constants.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
-#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Compiler.h"
 #include <set>
@@ -72,10 +71,6 @@ bool GlobalDCE::runOnModule(Module &M) {
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
     Changed |= RemoveUnusedGlobalValue(*I);
-    // Do not remove llvm.dbg.global_variable.
-    if (GlobalVariable *GV = dyn_cast<GlobalVariable>(I))
-      if (IsGlobalVariableDebugInfo(GV))
-	GlobalIsNeeded(I);
     // Externally visible & appending globals are needed, if they have an
     // initializer.
     if (!I->hasLocalLinkage() && !I->hasLinkOnceLinkage() &&

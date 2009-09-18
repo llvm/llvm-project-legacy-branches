@@ -317,10 +317,3 @@ void llvm::RemoveDbgInfoUser(User *U) {
   }
   CE->destroyConstant();
 }
-
-/// IsGlobalVariableDebugInfo - Return true if GV is encoding debug info
-/// for a global variable.
-bool llvm::IsGlobalVariableDebugInfo(GlobalVariable *GV) {
-  return GV->hasName() && 
-    strncmp(GV->getNameStart(), "llvm.dbg.global_variable", 24) == 0;
-}

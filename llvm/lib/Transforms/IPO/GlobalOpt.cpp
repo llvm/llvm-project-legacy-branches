@@ -22,7 +22,6 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
-#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Support/CallSite.h"
@@ -144,22 +143,11 @@ struct VISIBILITY_HIDDEN GlobalStatus {
 static bool ConstantIsDead(Constant *C) {
   if (isa<GlobalValue>(C)) return false;
 
-  for (Value::use_iterator UI = C->use_begin(), E = C->use_end(); UI != E; ) {
-    // Remove llvm.dbg.global_variable.
-    if (GlobalVariable *UGV = dyn_cast<GlobalVariable>(*UI)) {
-      if (IsGlobalVariableDebugInfo(UGV)) {
-	++UI;
-	if (UGV->use_empty())
-	  UGV->eraseFromParent();
-	continue;
-      }
-    }
+  for (Value::use_iterator UI = C->use_begin(), E = C->use_end(); UI != E; ++UI)
     if (Constant *CU = dyn_cast<Constant>(*UI)) {
       if (!ConstantIsDead(CU)) return false;
     } else
       return false;
-    ++UI;
-  }
   return true;
 }
 
@@ -1550,21 +1538,13 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
   if (GVElType == Type::Int1Ty || GVElType->isFloatingPoint() ||
       isa<PointerType>(GVElType) || isa<VectorType>(GVElType))
     return false;
-
+  
   // Walk the use list of the global seeing if all the uses are load or store.
   // If there is anything else, bail out.
-  for (Value::use_iterator I = GV->use_begin(), E = GV->use_end(); I != E; ) {
-    if (Constant *CC = dyn_cast<Constant>(*I))
-      if (ConstantIsDead(CC)) {
-	++I;
-        CC->destroyConstant();	
-	continue;
-      }
+  for (Value::use_iterator I = GV->use_begin(), E = GV->use_end(); I != E; ++I)
     if (!isa<LoadInst>(I) && !isa<StoreInst>(I))
       return false;
-    ++I;
-  }
-
+  
   DOUT << "   *** SHRINKING TO BOOL: " << *GV;
   
   // Create the new global, initializing it to false.
