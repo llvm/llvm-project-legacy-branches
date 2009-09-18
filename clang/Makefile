@@ -27,8 +27,6 @@ GnuAfterInstall       = post-install install-plist
 # It's a GNU Source project
 include ./GNUSource.make
 
-# Hack around for 7195647
-CC := /usr/bin/cc
 CXX := /usr/bin/g++
 
 # Automatic Extract & Patch
