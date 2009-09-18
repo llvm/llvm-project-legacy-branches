@@ -21,6 +21,7 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Compiler.h"
 #include <map>
@@ -70,9 +71,11 @@ bool ConstantMerge::runOnModule(Module &M) {
          GVI != E; ) {
       GlobalVariable *GV = GVI++;
       
-      // If this GV is dead, remove it.
-      GV->removeDeadConstantUsers();
-      if (GV->use_empty() && GV->hasLocalLinkage()) {
+      // If this GV is dead, remove it. Skip llvm.dbg.global_variable.
+      if (!IsGlobalVariableDebugInfo(GV))
+	GV->removeDeadConstantUsers();
+      if (!IsGlobalVariableDebugInfo(GV) && GV->use_empty() 
+	  && GV->hasLocalLinkage()) {
         GV->eraseFromParent();
         continue;
       }
