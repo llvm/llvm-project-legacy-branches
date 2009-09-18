@@ -44,7 +44,7 @@ MachineModuleInfo::MachineModuleInfo()
 , CallsUnwindInit(0)
 , DbgInfoAvailable(false)
 {
-  // Always emit some info, by default "no personality" info.
+  // Always emit "no personality" info
   Personalities.push_back(NULL);
 }
 MachineModuleInfo::~MachineModuleInfo() {
@@ -149,12 +149,7 @@ void MachineModuleInfo::addPersonality(MachineBasicBlock *LandingPad,
     if (Personalities[i] == Personality)
       return;
   
-  // If this is the first personality we're adding go ahead and add it at the
-  // beginning.
-  if (Personalities[0] == NULL)
-    Personalities[0] = Personality;
-  else
-    Personalities.push_back(Personality);
+  Personalities.push_back(Personality);
 }
 
 /// addCatchTypeInfo - Provide the catch typeinfo for a landing pad.
@@ -278,7 +273,7 @@ Function *MachineModuleInfo::getPersonality() const {
 }
 
 /// getPersonalityIndex - Return unique index for current personality
-/// function. NULL/first personality function should always get zero index.
+/// function. NULL personality function should always get zero index.
 unsigned MachineModuleInfo::getPersonalityIndex() const {
   const Function* Personality = NULL;
   
@@ -294,7 +289,8 @@ unsigned MachineModuleInfo::getPersonalityIndex() const {
       return i;
   }
 
-  // This will happen if the current personality function is in the zero index.
+  // This should never happen
+  assert(0 && "Personality function should be set!");
   return 0;
 }
 

@@ -3977,7 +3977,7 @@ class DwarfException : public Dwarf  {
 
       // If there is a personality and landing pads then point to the language
       // specific data area in the exception table.
-      if (MMI->getPersonalities()[0] != NULL) {
+      if (EHFrameInfo.PersonalityIndex) {
         Asm->EmitULEB128Bytes(4);
         Asm->EOL("Augmentation size");
 
