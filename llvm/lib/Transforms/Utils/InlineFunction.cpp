@@ -270,6 +270,12 @@ bool llvm::InlineFunction(CallSite CS, CallGraph *CG, const TargetData *TD) {
       return false;
   }
 
+  // FIXME: When we get inlining across invokes and eh information
+  // better coordinated, turn this back on.
+  if (isa<InvokeInst>(TheCall) && !MarkNoUnwind
+      && !CalledFunc->hasFnAttr(Attribute::AlwaysInline))
+    return false;
+
   // Get an iterator to the last basic block in the function, which will have
   // the new function inlined after it.
   //
