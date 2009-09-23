@@ -6,7 +6,6 @@
 Project                := clang
 UserType               := Developer
 ToolType               := Commands
-Install_Prefix	       := /Developer/usr
 
 # LLVM/Clang default configuration.
 
@@ -35,6 +34,29 @@ else ifeq ($(Clang_Driver_Mode), Development)
 else
 $(error "invalid setting for clang driver mode: '$(Clang_Driver_Mode)'")
 endif
+
+# Set destination information.
+ifneq ($(RC_PURPLE),)
+Install_Root := $(shell xcodebuild -version -sdk iphoneos.internal PlatformPath)
+Post_Install_RootLinks := 0
+Post_Install_OpenSourceLicense := 0
+else ifneq ($(RC_INDIGO),)
+Install_Root := $(shell xcodebuild -version -sdk iphonesimulator PlatformPath)
+Post_Install_RootLinks := 0
+Post_Install_OpenSourceLicense := 0
+else
+Install_Root := 
+Post_Install_RootLinks := 1
+Post_Install_OpenSourceLicense := 1
+endif
+Install_Prefix := $(Install_Root)/Developer/usr
+
+# Validate that Install_Prefix exists.
+ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
+  $(error "invalid install prefix: '$(Install_Prefix)'")
+endif
+
+# Set configure flags.
 Extra_Configure_Flags = --enable-targets=x86,arm \
 			--enable-optimized \
 			$(Assertions_Configure_Flag) \
@@ -42,7 +64,21 @@ Extra_Configure_Flags = --enable-targets=x86,arm \
 			--disable-doxygen \
 			$(HOST_TARGET_FLAGS)
 
-GnuAfterInstall       = post-install install-plist
+# Set up post install targets.
+GnuAfterInstall      := post-install
+Post_Install_Targets :=
+  # Install /usr/... symlinks?
+ifeq ($(Post_Install_RootLinks),1)
+Post_Install_Targets += post-install-rootlinks
+else ifneq ($(Post_Install_RootLinks),0)
+$(error "unknown value for post install of root symlinks: '$(Post_Install_RootLinks)'")
+endif
+  # Install open source license?
+ifeq ($(Post_Install_OpenSourceLicense),1)
+Post_Install_Targets += post-install-opensourcelicense
+else ifneq ($(Post_Install_OpenSourceLicense),0)
+$(error "unknown value for post install of open source license: '$(Post_Install_OpenSourceLicense)'")
+endif
 
 # It's a GNU Source project
 include ./GNUSource.make
@@ -79,17 +115,19 @@ ifeq ($(AEP),YES)
 	done
 endif
 
-# Remove the parts of the destroot we don't need
-post-install:
+# Available post install targets.
+post-install: $(Post_Install_Targets)
+
+post-install-rootlinks:
 	$(MKDIR) -p $(DSTROOT)/usr/bin
-	ln -sf ../../Developer/usr/bin/clang $(DSTROOT)/usr/bin/clang
+	ln -sf ../../$(Install_Prefix)/bin/clang $(DSTROOT)/usr/bin/clang
 	$(MKDIR) -p $(DSTROOT)/usr/share/man/man1/
-	cp $(DSTROOT)/Developer/usr/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
+	cp $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
 
 OSV = $(DSTROOT)/usr/local/OpenSourceVersions
 OSL = $(DSTROOT)/usr/local/OpenSourceLicenses
 
-install-plist:
+post-install-opensourcelicense:
 	$(MKDIR) $(OSV)
 	$(INSTALL_FILE) $(SRCROOT)/$(Project).plist $(OSV)/$(Project).plist
 	$(MKDIR) $(OSL)
