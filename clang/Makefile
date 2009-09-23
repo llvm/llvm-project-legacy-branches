@@ -1,20 +1,40 @@
 ##
-# cxxfilt Makefile
+# Clang Makefile
 ##
 
 # Project info
-Project               = clang
-UserType              = Developer
-ToolType              = Commands
-Install_Prefix	      = /Developer/usr
+Project                := clang
+UserType               := Developer
+ToolType               := Commands
+Install_Prefix	       := /Developer/usr
 
-# Default is build assertions disabled.
-ifndef ENABLE_ASSERTIONS
-Assertions_Configure_Flag = --disable-assertions
+# LLVM/Clang default configuration.
+
+# Select default assertion mode, valid values are '0' and '1'.
+Clang_Use_Assertions   := 1
+# Select clang driver mode, valid values are 'Production' and 'Development'.
+Clang_Driver_Mode      := Production
+
+##
+
+# Selection assertions mode.
+ifeq ($(Clang_Use_Assertions), 1)
+Assertions_Configure_Flag :=  --enable-assertions
+else ifeq ($(Clang_Use_Assertions), 0)
+Assertions_Configure_Flag :=  --disable-assertions
 else
-Assertions_Configure_Flag = --enable-assertions
+$(error "invalid setting for clang assertions: '$(Clang_Use_Assertions)'")
 endif
 
+# Set makefile variables to pass during build and install.
+Clang_Make_Variables := KEEP_SYMBOLS=1
+ifeq ($(Clang_Driver_Mode), Production)
+Clang_Make_Variables += CLANG_IS_PRODUCTION=1
+else ifeq ($(Clang_Driver_Mode), Development)
+# ... this is the default ...
+else
+$(error "invalid setting for clang driver mode: '$(Clang_Driver_Mode)'")
+endif
 Extra_Configure_Flags = --enable-targets=x86,arm \
 			--enable-optimized \
 			$(Assertions_Configure_Flag) \
@@ -44,8 +64,8 @@ else
 AEP_ExtractOption = z
 endif
 
-Install_Target = KEEP_SYMBOLS=1 -s --no-print-directory install-clang
-Build_Target = KEEP_SYMBOLS=1 -s --no-print-directory clang-only
+Install_Target = $(Clang_Make_Variables) -s --no-print-directory install-clang
+Build_Target = $(Clang_Make_Variables) -s --no-print-directory clang-only
 
 # Extract the source.
 install_source::
