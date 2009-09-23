@@ -36,22 +36,18 @@ $(error "invalid setting for clang driver mode: '$(Clang_Driver_Mode)'")
 endif
 
 # Set destination information.
-ifneq ($(RC_PURPLE),)
-Install_Root := $(shell xcodebuild -version -sdk iphoneos.internal PlatformPath)
-Post_Install_RootLinks := 0
-Post_Install_OpenSourceLicense := 0
-else ifneq ($(RC_INDIGO),)
-Install_Root := $(shell xcodebuild -version -sdk iphonesimulator PlatformPath)
+ifneq ($(INSTALL_LOCATION),)
+Install_Root := $(INSTALL_LOCATION)
 Post_Install_RootLinks := 0
 Post_Install_OpenSourceLicense := 0
 else
-Install_Root := 
+Install_Root := /Developer
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
 endif
-Install_Prefix := $(Install_Root)/Developer/usr
+Install_Prefix := $(Install_Root)/usr
 
-# Validate that Install_Prefix exists.
+# Set and validate Install_Prefix exists.
 ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
   $(error "invalid install prefix: '$(Install_Prefix)'")
 endif
