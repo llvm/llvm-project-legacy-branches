@@ -77,6 +77,12 @@ void ARMTargetLowering::addTypeForNEON(EVT VT, EVT PromotedLdStVT,
     setOperationAction(ISD::VSETCC, VT.getSimpleVT(), Custom);
   if (ElemTy == MVT::i8 || ElemTy == MVT::i16)
     setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT.getSimpleVT(), Custom);
+  if (ElemTy != MVT::i32) {
+    setOperationAction(ISD::SINT_TO_FP, VT.getSimpleVT(), Expand);
+    setOperationAction(ISD::UINT_TO_FP, VT.getSimpleVT(), Expand);
+    setOperationAction(ISD::FP_TO_SINT, VT.getSimpleVT(), Expand);
+    setOperationAction(ISD::FP_TO_UINT, VT.getSimpleVT(), Expand);
+  }
   setOperationAction(ISD::BUILD_VECTOR, VT.getSimpleVT(), Custom);
   setOperationAction(ISD::VECTOR_SHUFFLE, VT.getSimpleVT(), Custom);
   setOperationAction(ISD::CONCAT_VECTORS, VT.getSimpleVT(), Custom);
@@ -99,6 +105,14 @@ void ARMTargetLowering::addTypeForNEON(EVT VT, EVT PromotedLdStVT,
     AddPromotedToType (ISD::XOR, VT.getSimpleVT(),
                        PromotedBitwiseVT.getSimpleVT());
   }
+
+  // Neon does not support vector divide/remainder operations.
+  setOperationAction(ISD::SDIV, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::UDIV, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::FDIV, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::SREM, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::UREM, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::FREM, VT.getSimpleVT(), Expand);
 }
 
 void ARMTargetLowering::addDRTypeForNEON(EVT VT) {
@@ -236,6 +250,39 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     addQRTypeForNEON(MVT::v8i16);
     addQRTypeForNEON(MVT::v4i32);
     addQRTypeForNEON(MVT::v2i64);
+
+    // v2f64 is legal so that QR subregs can be extracted as f64 elements, but
+    // neither Neon nor VFP support any arithmetic operations on it.
+    setOperationAction(ISD::FADD, MVT::v2f64, Expand);
+    setOperationAction(ISD::FSUB, MVT::v2f64, Expand);
+    setOperationAction(ISD::FMUL, MVT::v2f64, Expand);
+    setOperationAction(ISD::FDIV, MVT::v2f64, Expand);
+    setOperationAction(ISD::FREM, MVT::v2f64, Expand);
+    setOperationAction(ISD::FCOPYSIGN, MVT::v2f64, Expand);
+    setOperationAction(ISD::VSETCC, MVT::v2f64, Expand);
+    setOperationAction(ISD::FNEG, MVT::v2f64, Expand);
+    setOperationAction(ISD::FABS, MVT::v2f64, Expand);
+    setOperationAction(ISD::FSQRT, MVT::v2f64, Expand);
+    setOperationAction(ISD::FSIN, MVT::v2f64, Expand);
+    setOperationAction(ISD::FCOS, MVT::v2f64, Expand);
+    setOperationAction(ISD::FPOWI, MVT::v2f64, Expand);
+    setOperationAction(ISD::FPOW, MVT::v2f64, Expand);
+    setOperationAction(ISD::FLOG, MVT::v2f64, Expand);
+    setOperationAction(ISD::FLOG2, MVT::v2f64, Expand);
+    setOperationAction(ISD::FLOG10, MVT::v2f64, Expand);
+    setOperationAction(ISD::FEXP, MVT::v2f64, Expand);
+    setOperationAction(ISD::FEXP2, MVT::v2f64, Expand);
+    setOperationAction(ISD::FCEIL, MVT::v2f64, Expand);
+    setOperationAction(ISD::FTRUNC, MVT::v2f64, Expand);
+    setOperationAction(ISD::FRINT, MVT::v2f64, Expand);
+    setOperationAction(ISD::FNEARBYINT, MVT::v2f64, Expand);
+    setOperationAction(ISD::FFLOOR, MVT::v2f64, Expand);
+
+    // Neon does not support some operations on v1i64 and v2i64 types.
+    setOperationAction(ISD::MUL, MVT::v1i64, Expand);
+    setOperationAction(ISD::MUL, MVT::v2i64, Expand);
+    setOperationAction(ISD::VSETCC, MVT::v1i64, Expand);
+    setOperationAction(ISD::VSETCC, MVT::v2i64, Expand);
 
     setTargetDAGCombine(ISD::INTRINSIC_WO_CHAIN);
     setTargetDAGCombine(ISD::SHL);
