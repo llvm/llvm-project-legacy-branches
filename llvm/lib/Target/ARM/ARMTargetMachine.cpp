@@ -91,7 +91,7 @@ ThumbTargetMachine::ThumbTargetMachine(const Target &T, const std::string &TT,
 // Pass Pipeline Configuration
 bool ARMBaseTargetMachine::addInstSelector(PassManagerBase &PM,
                                            CodeGenOpt::Level OptLevel) {
-  PM.add(createARMISelDag(*this));
+  PM.add(createARMISelDag(*this, OptLevel));
   return false;
 }
 
