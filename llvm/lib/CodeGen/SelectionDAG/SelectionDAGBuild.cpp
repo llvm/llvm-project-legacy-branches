@@ -4035,7 +4035,7 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
 
   case Intrinsic::eh_personality_i32:
   case Intrinsic::eh_personality_i64: {
-    MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
+    // FIXME: Most of this was taken from eh_selector...
 
     // FIXME: Mark exception selector register as live in.  Hack for PR1508.
     unsigned Reg = TLI.getExceptionSelectorRegister();
