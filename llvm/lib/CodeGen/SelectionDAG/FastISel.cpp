@@ -447,8 +447,7 @@ bool FastISel::SelectCall(User *I) {
     switch (TLI.getOperationAction(ISD::EHSELECTION, VT)) {
     default: break;
     case TargetLowering::Expand: {
-      EVT VT = (IID == Intrinsic::eh_selector_i32 ?
-                           MVT::i32 : MVT::i64);
+      EVT VT = (IID == Intrinsic::eh_selector_i32 ? MVT::i32 : MVT::i64);
 
       if (MMI) {
         if (MBB->isLandingPad())
@@ -463,6 +462,37 @@ bool FastISel::SelectCall(User *I) {
         }
 
         unsigned Reg = TLI.getExceptionSelectorRegister();
+        const TargetRegisterClass *RC = TLI.getRegClassFor(VT);
+        unsigned ResultReg = createResultReg(RC);
+        bool InsertedCopy = TII.copyRegToReg(*MBB, MBB->end(), ResultReg,
+                                             Reg, RC, RC);
+        assert(InsertedCopy && "Can't copy address registers!");
+        InsertedCopy = InsertedCopy;
+        UpdateValueMap(I, ResultReg);
+      } else {
+        unsigned ResultReg =
+          getRegForValue(Constant::getNullValue(I->getType()));
+        UpdateValueMap(I, ResultReg);
+      }
+      return true;
+    }
+    }
+    break;
+  }
+
+  case Intrinsic::eh_personality_i32:
+  case Intrinsic::eh_personality_i64: {
+    EVT VT = TLI.getValueType(I->getType());
+    switch (TLI.getOperationAction(ISD::EHPERSONALITY, VT)) {
+    default: break;
+    case TargetLowering::Expand: {
+      EVT VT = (IID == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
+
+      if (MMI) {
+        // FIXME: Mark exception selector register as live in.  Hack for PR1508.
+        unsigned Reg = TLI.getExceptionSelectorRegister();
+        if (Reg) MBB->addLiveIn(Reg);
+
         const TargetRegisterClass *RC = TLI.getRegClassFor(VT);
         unsigned ResultReg = createResultReg(RC);
         bool InsertedCopy = TII.copyRegToReg(*MBB, MBB->end(), ResultReg,

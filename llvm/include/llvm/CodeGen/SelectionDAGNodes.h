@@ -126,6 +126,10 @@ namespace ISD {
     // the selection index of the exception thrown.
     EHSELECTION,
 
+    // RESULT, OUTCHAIN = EHPERSONALITY(INCHAIN, EXCEPTION) - This node
+    // represents the selection index of the exception thrown.
+    EHPERSONALITY,
+
     // OUTCHAIN = EH_RETURN(INCHAIN, OFFSET, HANDLER) - This node represents
     // 'eh_return' gcc dwarf builtin, which is used to return from
     // exception. The general meaning is: adjust stack by OFFSET and pass

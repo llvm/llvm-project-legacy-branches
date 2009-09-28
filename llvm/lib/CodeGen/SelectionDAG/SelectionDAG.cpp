@@ -5367,6 +5367,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::EXCEPTIONADDR: return "EXCEPTIONADDR";
   case ISD::LSDAADDR: return "LSDAADDR";
   case ISD::EHSELECTION: return "EHSELECTION";
+  case ISD::EHPERSONALITY: return "EHPERSONALITY";
   case ISD::EH_RETURN: return "EH_RETURN";
   case ISD::ConstantPool:  return "ConstantPool";
   case ISD::ExternalSymbol: return "ExternalSymbol";

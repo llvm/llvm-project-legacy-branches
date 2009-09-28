@@ -4033,6 +4033,34 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     return 0;
   }
 
+  case Intrinsic::eh_personality_i32:
+  case Intrinsic::eh_personality_i64: {
+    MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
+
+    // FIXME: Mark exception selector register as live in.  Hack for PR1508.
+    unsigned Reg = TLI.getExceptionSelectorRegister();
+    if (Reg) CurMBB->addLiveIn(Reg);
+
+    // Insert the EHPERSONALITY instruction.
+    SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
+    SDValue Ops[2];
+    Ops[0] = getValue(I.getOperand(1));
+    Ops[1] = getRoot();
+    SDValue Op = DAG.getNode(ISD::EHPERSONALITY, dl, VTs, Ops, 2);
+
+    DAG.setRoot(Op.getValue(1));
+
+    MVT::SimpleValueType VT =
+      (Intrinsic == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
+    if (Op.getValueType().getSimpleVT() < VT)
+      Op = DAG.getNode(ISD::SIGN_EXTEND, dl, VT, Op);
+    else if (Op.getValueType().getSimpleVT() < VT)
+      Op = DAG.getNode(ISD::TRUNCATE, dl, VT, Op);
+
+    setValue(&I, Op);
+    return 0;
+  }
+
   case Intrinsic::eh_typeid_for_i32:
   case Intrinsic::eh_typeid_for_i64: {
     MachineModuleInfo *MMI = DAG.getMachineModuleInfo();

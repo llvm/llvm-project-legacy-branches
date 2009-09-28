@@ -437,6 +437,8 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
   case Intrinsic::eh_exception:
   case Intrinsic::eh_selector_i32:
   case Intrinsic::eh_selector_i64:
+  case Intrinsic::eh_personality_i32:
+  case Intrinsic::eh_personality_i64:
     CI->replaceAllUsesWith(Constant::getNullValue(CI->getType()));
     break;
 
