@@ -188,8 +188,10 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
 
   setOperationAction(ISD::EXCEPTIONADDR, MVT::i64, Expand);
   setOperationAction(ISD::EHSELECTION,   MVT::i64, Expand);
+  setOperationAction(ISD::EHPERSONALITY, MVT::i64, Expand);
   setOperationAction(ISD::EXCEPTIONADDR, MVT::i32, Expand);
   setOperationAction(ISD::EHSELECTION,   MVT::i32, Expand);
+  setOperationAction(ISD::EHPERSONALITY, MVT::i32, Expand);
 
   // We want to legalize GlobalAddress and ConstantPool nodes into the
   // appropriate instructions to materialize the address.

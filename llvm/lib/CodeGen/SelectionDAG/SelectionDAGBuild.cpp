@@ -67,11 +67,6 @@ LimitFPPrecision("limit-float-precision",
                  cl::location(LimitFloatPrecision),
                  cl::init(0));
 
-// Forward declarations.
-static bool
-isInTailCallPosition(const Instruction *I, Attributes RetAttr,
-                     const TargetLowering &TLI);
-
 /// ComputeLinearIndex - Given an LLVM IR aggregate type and a sequence
 /// of insertvalue or extractvalue indices that identify a member, return
 /// the linearized index of the start of the member.
@@ -4040,26 +4035,27 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
 
   case Intrinsic::eh_personality_i32:
   case Intrinsic::eh_personality_i64: {
-    TargetLowering::ArgListTy Args; // Empty.
-    // FIXME: This "isTailCall" looks fishy here.
-    bool isTailCall = PerformTailCallOpt &&
-      isInTailCallPosition(&I, Attribute::None, TLI);
-    std::pair<SDValue, SDValue> Result =
-      TLI.LowerCallTo(getRoot(), I.getType(), false, false, false, false,
-                      0, CallingConv::C, isTailCall, /*isReturnValueUsed=*/true,
-                      getValue(I.getOperand(1)), Args, DAG,
-                      getCurDebugLoc());
+    // FIXME: Mark exception selector register as live in.  Hack for PR1508.
+    unsigned Reg = TLI.getExceptionSelectorRegister();
+    if (Reg) CurMBB->addLiveIn(Reg);
 
-    if (Result.first.getNode())
-      setValue(&I, Result.first);
+    // Insert the EHPERSONALITY instruction.
+    SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
+    SDValue Ops[2];
+    Ops[0] = getValue(I.getOperand(1));
+    Ops[1] = getRoot();
+    SDValue Op = DAG.getNode(ISD::EHPERSONALITY, dl, VTs, Ops, 2);
 
-    if (Result.second.getNode())
-      DAG.setRoot(Result.second);
+    DAG.setRoot(Op.getValue(1));
 
-    // This is bookkeeping so that the CIE generates correct data.
-    MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
-    ConstantExpr *CE = cast<ConstantExpr>(I.getOperand(1));
-    MMI->addPersonality(CurMBB, cast<Function>(CE->getOperand(0)));
+    MVT::SimpleValueType VT =
+      (Intrinsic == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
+    if (Op.getValueType().getSimpleVT() < VT)
+      Op = DAG.getNode(ISD::SIGN_EXTEND, dl, VT, Op);
+    else if (Op.getValueType().getSimpleVT() < VT)
+      Op = DAG.getNode(ISD::TRUNCATE, dl, VT, Op);
+
+    setValue(&I, Op);
     return 0;
   }
 

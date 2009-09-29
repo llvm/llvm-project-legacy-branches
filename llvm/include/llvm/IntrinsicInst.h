@@ -321,20 +321,6 @@ namespace llvm {
     }
   };
 
-  /// EHPersonalityInst - This represents the llvm.eh.personality instruction.
-  ///
-  struct EHPersonalityInst : public IntrinsicInst {
-    // Methods for support type inquiry through isa, cast, and dyn_cast:
-    static inline bool classof(const EHPersonalityInst *) { return true; }
-    static inline bool classof(const IntrinsicInst *I) {
-      return I->getIntrinsicID() == Intrinsic::eh_selector_i32 ||
-             I->getIntrinsicID() == Intrinsic::eh_selector_i64;
-    }
-    static inline bool classof(const Value *V) {
-      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
-    }
-  };
-
 }
 
 #endif
