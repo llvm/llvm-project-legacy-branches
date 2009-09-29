@@ -2976,13 +2976,11 @@ void AddCatchInfo(CallInst &I, MachineModuleInfo *MMI,
          "Personality should be a function");
   MMI->addPersonality(MBB, cast<Function>(CE->getOperand(0)));
 
-
   // TODO: Do we need to do anything about cleanups here?
   std::vector<GlobalVariable *> TyInfo;
   TyInfo.push_back(ExtractTypeInfo(I.getOperand(3)));
-
-    MMI->addCatchTypeInfo(MBB, TyInfo);
-  }
+  MMI->addCatchTypeInfo(MBB, TyInfo);
+}
 
 }
 
@@ -4001,7 +3999,6 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
   case Intrinsic::eh_personality_i32:
   case Intrinsic::eh_personality_i64: {
     MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
-
     AddCatchInfo(I, MMI, CurMBB);
 
     // FIXME: Mark exception selector register as live in.  Hack for PR1508.
