@@ -489,6 +489,9 @@ bool FastISel::SelectCall(User *I) {
       EVT VT = (IID == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
 
       if (MMI) {
+	// TODO: Figure if this is correct.
+	AddCatchInfo(*cast<CallInst>(I), MMI, MBB);
+
         // FIXME: Mark exception selector register as live in.  Hack for PR1508.
         unsigned Reg = TLI.getExceptionSelectorRegister();
         if (Reg) MBB->addLiveIn(Reg);
