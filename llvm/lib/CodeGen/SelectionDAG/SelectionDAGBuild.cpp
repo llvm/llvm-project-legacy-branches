@@ -4002,9 +4002,9 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     // TODO: Figure out if we want to do this like this.
     AddCatchInfo(I, MMI, CurMBB);
 
-    // FIXME: Mark exception selector register as live in.  Hack for PR1508.
+    // FIXME: Mark exception selector register as live in. Hack for PR1508.
     unsigned Reg = TLI.getExceptionSelectorRegister();
-    if (Reg) CurMBB->addLiveIn(Reg);
+    if (Reg && !CurMBB->isLiveIn(Reg)) CurMBB->addLiveIn(Reg);
 
     // Insert the EHPERSONALITY instruction.
     SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
