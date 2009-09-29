@@ -300,8 +300,11 @@ let Properties = [IntrNoMem] in {
 // recover this data. However, that falls apart very quickly. This way is robust
 // for all transformations.
 
-def int_eh_personality_i32 : Intrinsic<[llvm_i32_ty], [llvm_ptr_ty]>;
-def int_eh_personality_i64 : Intrinsic<[llvm_i64_ty], [llvm_ptr_ty]>;
+// Args: Exception, Personality Routine, Catch-All Type
+def int_eh_personality_i32 : Intrinsic<[llvm_i32_ty],
+				       [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
+def int_eh_personality_i64 : Intrinsic<[llvm_i64_ty],
+				       [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
 
 def int_eh_exception    : Intrinsic<[llvm_ptr_ty]>;
 

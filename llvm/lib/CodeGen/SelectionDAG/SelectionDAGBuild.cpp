@@ -2976,48 +2976,13 @@ void AddCatchInfo(CallInst &I, MachineModuleInfo *MMI,
          "Personality should be a function");
   MMI->addPersonality(MBB, cast<Function>(CE->getOperand(0)));
 
-  // Gather all the type infos for this landing pad and pass them along to
-  // MachineModuleInfo.
+
+  // TODO: Do we need to do anything about cleanups here?
   std::vector<GlobalVariable *> TyInfo;
-  unsigned N = I.getNumOperands();
+  TyInfo.push_back(ExtractTypeInfo(I.getOperand(3)));
 
-  for (unsigned i = N - 1; i > 2; --i) {
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(i))) {
-      unsigned FilterLength = CI->getZExtValue();
-      unsigned FirstCatch = i + FilterLength + !FilterLength;
-      assert (FirstCatch <= N && "Invalid filter length");
-
-      if (FirstCatch < N) {
-        TyInfo.reserve(N - FirstCatch);
-        for (unsigned j = FirstCatch; j < N; ++j)
-          TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
-        MMI->addCatchTypeInfo(MBB, TyInfo);
-        TyInfo.clear();
-      }
-
-      if (!FilterLength) {
-        // Cleanup.
-        MMI->addCleanup(MBB);
-      } else {
-        // Filter.
-        TyInfo.reserve(FilterLength - 1);
-        for (unsigned j = i + 1; j < FirstCatch; ++j)
-          TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
-        MMI->addFilterTypeInfo(MBB, TyInfo);
-        TyInfo.clear();
-      }
-
-      N = i;
-    }
-  }
-
-  if (N > 3) {
-    TyInfo.reserve(N - 3);
-    for (unsigned j = 3; j < N; ++j)
-      TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
     MMI->addCatchTypeInfo(MBB, TyInfo);
   }
-}
 
 }
 
@@ -4035,6 +4000,10 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
 
   case Intrinsic::eh_personality_i32:
   case Intrinsic::eh_personality_i64: {
+    MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
+
+    AddCatchInfo(I, MMI, CurMBB);
+
     // FIXME: Mark exception selector register as live in.  Hack for PR1508.
     unsigned Reg = TLI.getExceptionSelectorRegister();
     if (Reg) CurMBB->addLiveIn(Reg);
