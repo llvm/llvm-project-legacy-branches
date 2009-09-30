@@ -126,9 +126,10 @@ namespace ISD {
     // the selection index of the exception thrown.
     EHSELECTION,
 
-    // RESULT, OUTCHAIN = EHPERSONALITY(INCHAIN, EXCEPTION) - This node
-    // represents the selection index of the exception thrown.
-    EHPERSONALITY,
+    // RESULT, OUTCHAIN = EHLANDINGPAD(INCHAIN, EXCEPTION) - This node
+    // represents the selection index of the exception thrown. This replaces the
+    // EHSELECTION node.
+    EHLANDINGPAD,
 
     // OUTCHAIN = EH_RETURN(INCHAIN, OFFSET, HANDLER) - This node represents
     // 'eh_return' gcc dwarf builtin, which is used to return from

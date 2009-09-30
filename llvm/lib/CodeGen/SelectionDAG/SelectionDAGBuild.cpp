@@ -3996,8 +3996,8 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     return 0;
   }
 
-  case Intrinsic::eh_personality_i32:
-  case Intrinsic::eh_personality_i64: {
+  case Intrinsic::eh_landingpad_i32:
+  case Intrinsic::eh_landingpad_i64: {
     MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
     // TODO: Figure out if we want to do this like this.
     AddCatchInfo(I, MMI, CurMBB);
@@ -4006,17 +4006,17 @@ SelectionDAGLowering::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     unsigned Reg = TLI.getExceptionSelectorRegister();
     if (Reg && !CurMBB->isLiveIn(Reg)) CurMBB->addLiveIn(Reg);
 
-    // Insert the EHPERSONALITY instruction.
+    // Insert the EHLANDINGPAD instruction.
     SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
     SDValue Ops[2];
     Ops[0] = getValue(I.getOperand(1));
     Ops[1] = getRoot();
-    SDValue Op = DAG.getNode(ISD::EHPERSONALITY, dl, VTs, Ops, 2);
+    SDValue Op = DAG.getNode(ISD::EHLANDINGPAD, dl, VTs, Ops, 2);
 
     DAG.setRoot(Op.getValue(1));
 
     MVT::SimpleValueType VT =
-      (Intrinsic == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
+      (Intrinsic == Intrinsic::eh_landingpad_i32 ? MVT::i32 : MVT::i64);
     if (Op.getValueType().getSimpleVT() < VT)
       Op = DAG.getNode(ISD::SIGN_EXTEND, dl, VT, Op);
     else if (Op.getValueType().getSimpleVT() < VT)

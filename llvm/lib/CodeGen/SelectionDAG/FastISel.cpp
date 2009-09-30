@@ -480,13 +480,13 @@ bool FastISel::SelectCall(User *I) {
     break;
   }
 
-  case Intrinsic::eh_personality_i32:
-  case Intrinsic::eh_personality_i64: {
+  case Intrinsic::eh_landingpad_i32:
+  case Intrinsic::eh_landingpad_i64: {
     EVT VT = TLI.getValueType(I->getType());
-    switch (TLI.getOperationAction(ISD::EHPERSONALITY, VT)) {
+    switch (TLI.getOperationAction(ISD::EHLANDINGPAD, VT)) {
     default: break;
     case TargetLowering::Expand: {
-      EVT VT = (IID == Intrinsic::eh_personality_i32 ? MVT::i32 : MVT::i64);
+      EVT VT = (IID == Intrinsic::eh_landingpad_i32 ? MVT::i32 : MVT::i64);
 
       if (MMI) {
 	// TODO: Figure if this is correct.

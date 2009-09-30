@@ -383,10 +383,10 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   setOperationAction(ISD::EXCEPTIONADDR, MVT::i64, Expand);
   setOperationAction(ISD::EHSELECTION,   MVT::i64, Expand);
-  setOperationAction(ISD::EHPERSONALITY, MVT::i64, Expand);
+  setOperationAction(ISD::EHLANDINGPAD,  MVT::i64, Expand);
   setOperationAction(ISD::EXCEPTIONADDR, MVT::i32, Expand);
   setOperationAction(ISD::EHSELECTION,   MVT::i32, Expand);
-  setOperationAction(ISD::EHPERSONALITY, MVT::i32, Expand);
+  setOperationAction(ISD::EHLANDINGPAD,  MVT::i32, Expand);
 
   if (Subtarget->is64Bit()) {
     setExceptionPointerRegister(X86::RAX);

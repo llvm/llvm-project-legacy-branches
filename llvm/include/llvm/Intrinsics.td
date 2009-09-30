@@ -290,21 +290,12 @@ let Properties = [IntrNoMem] in {
 //===------------------ Exception Handling Intrinsics----------------------===//
 //
 
-// The `eh.personality' intrinsics hold a pointer to the "personality"
-// function. The main purpose being to facilitate performing exception handling
-// explicitly. I.e., we won't be going through exception handling tables. The
-// reason for doing this is that LLVM's IR isn't sufficient enough (at the
-// present time) to encode the exception handling data and also keep it
-// up-to-date during transformations. The current way is to encode the EH data
-// in the CFG, and then do a sort of pattern matching algorithm to try to
-// recover this data. However, that falls apart very quickly. This way is robust
-// for all transformations.
-
-// Args: Exception, Personality Routine, Catch-All Type
-def int_eh_personality_i32 : Intrinsic<[llvm_i32_ty],
-				       [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
-def int_eh_personality_i64 : Intrinsic<[llvm_i64_ty],
-				       [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
+// The `eh.landingpad' instrinsics indicate that a basic block is a landing
+// pad. Args: Exception, Personality Routine, Catch-All Type.
+def int_eh_landingpad_i32 : Intrinsic<[llvm_i32_ty],
+                                      [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
+def int_eh_landingpad_i64 : Intrinsic<[llvm_i64_ty],
+                                      [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty]>;
 
 def int_eh_exception    : Intrinsic<[llvm_ptr_ty]>;
 
