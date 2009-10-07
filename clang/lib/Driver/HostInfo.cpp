@@ -45,7 +45,7 @@ class DarwinHostInfo : public HostInfo {
   unsigned DarwinVersion[3];
 
   /// GCC version to use on this host.
-  unsigned GCCVersion[3];
+  unsigned GCCVersion[4];
 
   /// Cache of tool chains we have created.
   mutable llvm::StringMap<ToolChain *> ToolChains;
@@ -94,6 +94,12 @@ DarwinHostInfo::DarwinHostInfo(const Driver &D, const char *_Arch,
   GCCVersion[0] = 4;
   GCCVersion[1] = 2;
   GCCVersion[2] = 1;
+  // And we need to select the OS gcc was configured for, darwin10
+#ifdef OS_MAJOR
+  GCCVersion[3] = OS_MAJOR;
+#else
+  GCCVersion[3] = 10;
+#endif
 }
 
 DarwinHostInfo::~DarwinHostInfo() {
