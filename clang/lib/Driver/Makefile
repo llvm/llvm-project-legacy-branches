@@ -11,14 +11,13 @@ LEVEL = ../../../..
 LIBRARYNAME := clangDriver
 BUILD_ARCHIVE = 1
 CXXFLAGS = -fno-rtti
-OS_MAJOR := -DOS_MAJOR=$(shell uname -r | sed 's/\..*//')
+
 
 include $(LEVEL)/Makefile.common
 
 SVN_REVISION := $(shell cd $(PROJ_SRC_DIR)/../.. && svnversion)
 
 CPP.Defines += -I$(PROJ_SRC_DIR)/../../include -I$(PROJ_OBJ_DIR)/../../include \
-	 $(OS_MAJOR) \
          -DSVN_REVISION='"$(SVN_REVISION)"'
 
 $(ObjDir)/.ver-svn .ver:

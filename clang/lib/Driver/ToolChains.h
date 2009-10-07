@@ -52,7 +52,7 @@ class VISIBILITY_HIDDEN Darwin_X86 : public ToolChain {
   unsigned DarwinVersion[3];
 
   /// GCC version to use.
-  unsigned GCCVersion[4];
+  unsigned GCCVersion[3];
 
   /// The directory suffix for this tool chain.
   std::string ToolChainDir;
@@ -66,7 +66,7 @@ class VISIBILITY_HIDDEN Darwin_X86 : public ToolChain {
 public:
   Darwin_X86(const HostInfo &Host, const char *Arch, const char *Platform, 
              const char *OS, const unsigned (&DarwinVersion)[3],
-             const unsigned (&GCCVersion)[4]);
+             const unsigned (&GCCVersion)[3]);
   ~Darwin_X86();
 
   void getDarwinVersion(unsigned (&Res)[3]) const {

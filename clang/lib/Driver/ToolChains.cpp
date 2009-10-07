@@ -30,7 +30,7 @@ using namespace clang::driver::toolchains;
 Darwin_X86::Darwin_X86(const HostInfo &Host, const char *Arch, 
                        const char *Platform, const char *OS, 
                        const unsigned (&_DarwinVersion)[3],
-                       const unsigned (&_GCCVersion)[4])
+                       const unsigned (&_GCCVersion)[3])
   : ToolChain(Host, Arch, Platform, OS) {
   DarwinVersion[0] = _DarwinVersion[0];
   DarwinVersion[1] = _DarwinVersion[1];
@@ -38,13 +38,12 @@ Darwin_X86::Darwin_X86(const HostInfo &Host, const char *Arch,
   GCCVersion[0] = _GCCVersion[0];
   GCCVersion[1] = _GCCVersion[1];
   GCCVersion[2] = _GCCVersion[2];
-  GCCVersion[3] = _GCCVersion[3];
 
   llvm::raw_string_ostream(MacosxVersionMin)
     << "10." << DarwinVersion[0] - 4 << '.' << DarwinVersion[1];
 
   ToolChainDir = "i686-apple-darwin";
-  ToolChainDir += llvm::utostr(GCCVersion[3]);
+  ToolChainDir += llvm::utostr(DarwinVersion[0]);
   ToolChainDir += "/";
   ToolChainDir += llvm::utostr(GCCVersion[0]);
   ToolChainDir += '.';
