@@ -266,16 +266,24 @@ def  VLD4q32b : VLD4WB<0b1000, "vld4.32">;
 //   FIXME: Not yet implemented.
 
 //   VLD2LN   : Vector Load (single 2-element structure to one lane)
-class VLD2LND<bits<4> op11_8, string OpcodeStr>
+class VLD2LN<bits<4> op11_8, string OpcodeStr>
   : NLdSt<1,0b10,op11_8,0b0000, (outs DPR:$dst1, DPR:$dst2),
           (ins addrmode6:$addr, DPR:$src1, DPR:$src2, nohash_imm:$lane),
           IIC_VLD2,
           !strconcat(OpcodeStr, "\t\\{$dst1[$lane],$dst2[$lane]\\}, $addr"),
           "$src1 = $dst1, $src2 = $dst2", []>;
 
-def VLD2LNd8  : VLD2LND<0b0001, "vld2.8">;
-def VLD2LNd16 : VLD2LND<0b0101, "vld2.16">;
-def VLD2LNd32 : VLD2LND<0b1001, "vld2.32">;
+def VLD2LNd8  : VLD2LN<0b0001, "vld2.8">;
+def VLD2LNd16 : VLD2LN<0b0101, "vld2.16">;
+def VLD2LNd32 : VLD2LN<0b1001, "vld2.32">;
+
+// vld2 to double-spaced even registers.
+def VLD2LNq16a: VLD2LN<0b0101, "vld2.16">;
+def VLD2LNq32a: VLD2LN<0b1001, "vld2.32">;
+
+// vld2 to double-spaced odd registers.
+def VLD2LNq16b: VLD2LN<0b0101, "vld2.16">;
+def VLD2LNq32b: VLD2LN<0b1001, "vld2.32">;
 
 //   VLD3LN   : Vector Load (single 3-element structure to one lane)
 class VLD3LND<bits<4> op11_8, string OpcodeStr>
@@ -374,6 +382,10 @@ class VST3WB<bits<4> op7_4, string OpcodeStr>
 def  VST3d8   : VST3D<0b0000, "vst3.8">;
 def  VST3d16  : VST3D<0b0100, "vst3.16">;
 def  VST3d32  : VST3D<0b1000, "vst3.32">;
+def  VST3d64  : NLdSt<0,0b00,0b0110,0b1100, (outs),
+                      (ins addrmode6:$addr, DPR:$src1, DPR:$src2, DPR:$src3),
+                      IIC_VST,
+                      "vst1.64\t\\{$src1,$src2,$src3\\}, $addr", "", []>;
 
 // vst3 to double-spaced even registers.
 def  VST3q8a  : VST3WB<0b0000, "vst3.8">;
@@ -402,6 +414,10 @@ class VST4WB<bits<4> op7_4, string OpcodeStr>
 def  VST4d8   : VST4D<0b0000, "vst4.8">;
 def  VST4d16  : VST4D<0b0100, "vst4.16">;
 def  VST4d32  : VST4D<0b1000, "vst4.32">;
+def  VST4d64  : NLdSt<0,0b00,0b0010,0b1100, (outs),
+                      (ins addrmode6:$addr, DPR:$src1, DPR:$src2, DPR:$src3,
+                       DPR:$src4), IIC_VST,
+                      "vst1.64\t\\{$src1,$src2,$src3,$src4\\}, $addr", "", []>;
 
 // vst4 to double-spaced even registers.
 def  VST4q8a  : VST4WB<0b0000, "vst4.8">;
