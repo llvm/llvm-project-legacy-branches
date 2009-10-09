@@ -26,7 +26,7 @@ $(error "invalid setting for clang assertions: '$(Clang_Use_Assertions)'")
 endif
 
 # Set makefile variables to pass during build and install.
-Clang_Make_Variables := KEEP_SYMBOLS=1
+Clang_Make_Variables := KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
 else ifeq ($(Clang_Driver_Mode), Development)
