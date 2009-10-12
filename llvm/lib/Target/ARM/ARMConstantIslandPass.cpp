@@ -70,6 +70,8 @@ namespace {
     /// to a return, unreachable, or unconditional branch).
     std::vector<MachineBasicBlock*> WaterList;
 
+    typedef std::vector<MachineBasicBlock*>::iterator water_iterator;
+
     /// CPUser - One user of a constant pool, keeping the machine instruction
     /// pointer, the constant pool being referenced, and the max displacement
     /// allowed from the instruction to the CP.
@@ -162,9 +164,8 @@ namespace {
     bool DecrementOldEntry(unsigned CPI, MachineInstr* CPEMI);
     int LookForExistingCPEntry(CPUser& U, unsigned UserOffset);
     bool LookForWater(CPUser&U, unsigned UserOffset,
-                      MachineBasicBlock** NewMBB);
-    MachineBasicBlock* AcceptWater(MachineBasicBlock *WaterBB,
-                        std::vector<MachineBasicBlock*>::iterator IP);
+                      MachineBasicBlock *&NewMBB);
+    MachineBasicBlock *AcceptWater(water_iterator IP);
     void CreateNewWater(unsigned CPUserIndex, unsigned UserOffset,
                       MachineBasicBlock** NewMBB);
     bool HandleConstantPoolUser(MachineFunction &MF, unsigned CPUserIndex);
@@ -608,7 +609,7 @@ void ARMConstantIslands::UpdateForInsertedWaterBlock(MachineBasicBlock *NewBB) {
 
   // Next, update WaterList.  Specifically, we need to add NewMBB as having
   // available water after it.
-  std::vector<MachineBasicBlock*>::iterator IP =
+  water_iterator IP =
     std::lower_bound(WaterList.begin(), WaterList.end(), NewBB,
                      CompareMBBNumbers);
   WaterList.insert(IP, NewBB);
@@ -670,7 +671,7 @@ MachineBasicBlock *ARMConstantIslands::SplitBlockBeforeInstr(MachineInstr *MI) {
   // available water after it (but not if it's already there, which happens
   // when splitting before a conditional branch that is followed by an
   // unconditional branch - in that case we want to insert NewBB).
-  std::vector<MachineBasicBlock*>::iterator IP =
+  water_iterator IP =
     std::lower_bound(WaterList.begin(), WaterList.end(), OrigBB,
                      CompareMBBNumbers);
   MachineBasicBlock* WaterBB = *IP;
@@ -930,9 +931,8 @@ static inline unsigned getUnconditionalBrDisp(int Opc) {
 }
 
 /// AcceptWater - Small amount of common code factored out of the following.
-
-MachineBasicBlock* ARMConstantIslands::AcceptWater(MachineBasicBlock *WaterBB,
-                          std::vector<MachineBasicBlock*>::iterator IP) {
+///
+MachineBasicBlock *ARMConstantIslands::AcceptWater(water_iterator IP) {
   DEBUG(errs() << "found water in range\n");
   // Remove the original WaterList entry; we want subsequent
   // insertions in this vicinity to go after the one we're
@@ -940,45 +940,49 @@ MachineBasicBlock* ARMConstantIslands::AcceptWater(MachineBasicBlock *WaterBB,
   // of times we have to move the same CPE more than once.
   WaterList.erase(IP);
   // CPE goes before following block (NewMBB).
-  return next(MachineFunction::iterator(WaterBB));
+  return next(MachineFunction::iterator(*IP));
 }
 
 /// LookForWater - look for an existing entry in the WaterList in which
 /// we can place the CPE referenced from U so it's within range of U's MI.
-/// Returns true if found, false if not.  If it returns true, *NewMBB
-/// is set to the WaterList entry.
-/// For ARM, we prefer the water that's farthest away. For Thumb, prefer
-/// water that will not introduce padding to water that will; within each
-/// group, prefer the water that's farthest away.
+/// Returns true if found, false if not.  If it returns true, NewMBB
+/// is set to the WaterList entry.  For Thumb, prefer water that will not
+/// introduce padding to water that will.  To ensure that this pass
+/// terminates, the CPE location for a particular CPUser is only allowed to
+/// move to a lower address, so search backward from the end of the list and
+/// prefer the first water that is in range.
 bool ARMConstantIslands::LookForWater(CPUser &U, unsigned UserOffset,
-                                      MachineBasicBlock** NewMBB) {
-  std::vector<MachineBasicBlock*>::iterator IPThatWouldPad;
-  MachineBasicBlock* WaterBBThatWouldPad = NULL;
-  if (!WaterList.empty()) {
-    for (std::vector<MachineBasicBlock*>::iterator IP = prior(WaterList.end()),
-           B = WaterList.begin();; --IP) {
-      MachineBasicBlock* WaterBB = *IP;
-      if (WaterIsInRange(UserOffset, WaterBB, U)) {
-        unsigned WBBId = WaterBB->getNumber();
-        if (isThumb &&
-            (BBOffsets[WBBId] + BBSizes[WBBId])%4 != 0) {
-          // This is valid Water, but would introduce padding.  Remember
-          // it in case we don't find any Water that doesn't do this.
-          if (!WaterBBThatWouldPad) {
-            WaterBBThatWouldPad = WaterBB;
-            IPThatWouldPad = IP;
-          }
-        } else {
-          *NewMBB = AcceptWater(WaterBB, IP);
-          return true;
+                                      MachineBasicBlock *&NewMBB) {
+  if (WaterList.empty())
+    return false;
+
+  bool FoundWaterThatWouldPad = false;
+  water_iterator IPThatWouldPad;
+  for (water_iterator IP = prior(WaterList.end()),
+         B = WaterList.begin();; --IP) {
+    MachineBasicBlock* WaterBB = *IP;
+    // Check if water is in range and at a lower address than the current one.
+    if (WaterIsInRange(UserOffset, WaterBB, U) &&
+        WaterBB->getNumber() < U.CPEMI->getParent()->getNumber()) {
+      unsigned WBBId = WaterBB->getNumber();
+      if (isThumb &&
+          (BBOffsets[WBBId] + BBSizes[WBBId])%4 != 0) {
+        // This is valid Water, but would introduce padding.  Remember
+        // it in case we don't find any Water that doesn't do this.
+        if (!FoundWaterThatWouldPad) {
+          FoundWaterThatWouldPad = true;
+          IPThatWouldPad = IP;
         }
+      } else {
+        NewMBB = AcceptWater(IP);
+        return true;
       }
-      if (IP == B)
-        break;
     }
+    if (IP == B)
+      break;
   }
-  if (isThumb && WaterBBThatWouldPad) {
-    *NewMBB = AcceptWater(WaterBBThatWouldPad, IPThatWouldPad);
+  if (FoundWaterThatWouldPad) {
+    NewMBB = AcceptWater(IPThatWouldPad);
     return true;
   }
   return false;
@@ -1108,11 +1112,8 @@ bool ARMConstantIslands::HandleConstantPoolUser(MachineFunction &MF,
   // We will be generating a new clone.  Get a UID for it.
   unsigned ID = AFI->createConstPoolEntryUId();
 
-  // Look for water where we can place this CPE.  We look for the farthest one
-  // away that will work.  Forward references only for now (although later
-  // we might find some that are backwards).
-
-  if (!LookForWater(U, UserOffset, &NewMBB)) {
+  // Look for water where we can place this CPE.
+  if (!LookForWater(U, UserOffset, NewMBB)) {
     // No water found.
     DEBUG(errs() << "No water found\n");
     CreateNewWater(CPUserIndex, UserOffset, &NewMBB);
