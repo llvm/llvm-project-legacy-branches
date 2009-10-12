@@ -101,6 +101,20 @@ namespace {
         Add(I);
     }
     
+    /// AddInitialGroup - Add the specified batch of stuff in reverse order.
+    /// which should only be done when the worklist is empty and when the group
+    /// has no duplicates.
+    void AddInitialGroup(Instruction *const *List, unsigned NumEntries) {
+      assert(Worklist.empty() && "Worklist must be empty to add initial group");
+      Worklist.reserve(NumEntries+16);
+      DEBUG(errs() << "IC: ADDING: " << NumEntries << " instrs to worklist\n");
+      for (; NumEntries; --NumEntries) {
+        Instruction *I = List[NumEntries-1];
+        WorklistMap.insert(std::make_pair(I, Worklist.size()));
+        Worklist.push_back(I);
+      }
+    }
+    
     // Remove - remove I from the worklist if it exists.
     void Remove(Instruction *I) {
       DenseMap<Instruction*, unsigned>::iterator It = WorklistMap.find(I);
@@ -1047,6 +1061,33 @@ Value *InstCombiner::SimplifyDemandedUseBits(Value *V, APInt DemandedMask,
     if (ShrinkDemandedConstant(I, 1, DemandedMask))
       return I;
     
+    // If our LHS is an 'and' and if it has one use, and if any of the bits we
+    // are flipping are known to be set, then the xor is just resetting those
+    // bits to zero.  We can just knock out bits from the 'and' and the 'xor',
+    // simplifying both of them.
+    if (Instruction *LHSInst = dyn_cast<Instruction>(I->getOperand(0)))
+      if (LHSInst->getOpcode() == Instruction::And && LHSInst->hasOneUse() &&
+          isa<ConstantInt>(I->getOperand(1)) &&
+          isa<ConstantInt>(LHSInst->getOperand(1)) &&
+          (LHSKnownOne & RHSKnownOne & DemandedMask) != 0) {
+        ConstantInt *AndRHS = cast<ConstantInt>(LHSInst->getOperand(1));
+        ConstantInt *XorRHS = cast<ConstantInt>(I->getOperand(1));
+        APInt NewMask = ~(LHSKnownOne & RHSKnownOne & DemandedMask);
+        
+        Constant *AndC =
+          ConstantInt::get(I->getType(), NewMask & AndRHS->getValue());
+        Instruction *NewAnd = 
+          BinaryOperator::CreateAnd(I->getOperand(0), AndC, "tmp");
+        InsertNewInstBefore(NewAnd, *I);
+        
+        Constant *XorC =
+          ConstantInt::get(I->getType(), NewMask & XorRHS->getValue());
+        Instruction *NewXor =
+          BinaryOperator::CreateXor(NewAnd, XorC, "tmp");
+        return InsertNewInstBefore(NewXor, *I);
+      }
+          
+          
     RHSKnownZero = KnownZeroOut;
     RHSKnownOne  = KnownOneOut;
     break;
@@ -2656,14 +2697,14 @@ static bool isSignBitCheck(ICmpInst::Predicate pred, ConstantInt *RHS,
 
 Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   bool Changed = SimplifyCommutative(I);
-  Value *Op0 = I.getOperand(0);
+  Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
-  if (isa<UndefValue>(I.getOperand(1)))              // undef * X -> 0
+  if (isa<UndefValue>(Op1))              // undef * X -> 0
     return ReplaceInstUsesWith(I, Constant::getNullValue(I.getType()));
 
   // Simplify mul instructions with a constant RHS.
-  if (Constant *Op1 = dyn_cast<Constant>(I.getOperand(1))) {
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
+  if (Constant *Op1C = dyn_cast<Constant>(Op1)) {
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1C)) {
 
       // ((X << C1)*C2) == (X * (C2 << C1))
       if (BinaryOperator *SI = dyn_cast<BinaryOperator>(Op0))
@@ -2673,7 +2714,7 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
                                         ConstantExpr::getShl(CI, ShOp));
 
       if (CI->isZero())
-        return ReplaceInstUsesWith(I, Op1);  // X * 0  == 0
+        return ReplaceInstUsesWith(I, Op1C);  // X * 0  == 0
       if (CI->equalsInt(1))                  // X * 1  == X
         return ReplaceInstUsesWith(I, Op0);
       if (CI->isAllOnesValue())              // X * -1 == 0 - X
@@ -2684,11 +2725,11 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
         return BinaryOperator::CreateShl(Op0,
                  ConstantInt::get(Op0->getType(), Val.logBase2()));
       }
-    } else if (isa<VectorType>(Op1->getType())) {
-      if (Op1->isNullValue())
-        return ReplaceInstUsesWith(I, Op1);
+    } else if (isa<VectorType>(Op1C->getType())) {
+      if (Op1C->isNullValue())
+        return ReplaceInstUsesWith(I, Op1C);
 
-      if (ConstantVector *Op1V = dyn_cast<ConstantVector>(Op1)) {
+      if (ConstantVector *Op1V = dyn_cast<ConstantVector>(Op1C)) {
         if (Op1V->isAllOnesValue())              // X * -1 == 0 - X
           return BinaryOperator::CreateNeg(Op0, I.getName());
 
@@ -2703,10 +2744,10 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
     
     if (BinaryOperator *Op0I = dyn_cast<BinaryOperator>(Op0))
       if (Op0I->getOpcode() == Instruction::Add && Op0I->hasOneUse() &&
-          isa<ConstantInt>(Op0I->getOperand(1)) && isa<ConstantInt>(Op1)) {
+          isa<ConstantInt>(Op0I->getOperand(1)) && isa<ConstantInt>(Op1C)) {
         // Canonicalize (X+C1)*C2 -> X*C2+C1*C2.
-        Value *Add = Builder->CreateMul(Op0I->getOperand(0), Op1, "tmp");
-        Value *C1C2 = Builder->CreateMul(Op1, Op0I->getOperand(1));
+        Value *Add = Builder->CreateMul(Op0I->getOperand(0), Op1C, "tmp");
+        Value *C1C2 = Builder->CreateMul(Op1C, Op0I->getOperand(1));
         return BinaryOperator::CreateAdd(Add, C1C2);
         
       }
@@ -2722,23 +2763,23 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   }
 
   if (Value *Op0v = dyn_castNegVal(Op0))     // -X * -Y = X*Y
-    if (Value *Op1v = dyn_castNegVal(I.getOperand(1)))
+    if (Value *Op1v = dyn_castNegVal(Op1))
       return BinaryOperator::CreateMul(Op0v, Op1v);
 
   // (X / Y) *  Y = X - (X % Y)
   // (X / Y) * -Y = (X % Y) - X
   {
-    Value *Op1 = I.getOperand(1);
+    Value *Op1C = Op1;
     BinaryOperator *BO = dyn_cast<BinaryOperator>(Op0);
     if (!BO ||
         (BO->getOpcode() != Instruction::UDiv && 
          BO->getOpcode() != Instruction::SDiv)) {
-      Op1 = Op0;
-      BO = dyn_cast<BinaryOperator>(I.getOperand(1));
+      Op1C = Op0;
+      BO = dyn_cast<BinaryOperator>(Op1);
     }
-    Value *Neg = dyn_castNegVal(Op1);
+    Value *Neg = dyn_castNegVal(Op1C);
     if (BO && BO->hasOneUse() &&
-        (BO->getOperand(1) == Op1 || BO->getOperand(1) == Neg) &&
+        (BO->getOperand(1) == Op1C || BO->getOperand(1) == Neg) &&
         (BO->getOpcode() == Instruction::UDiv ||
          BO->getOpcode() == Instruction::SDiv)) {
       Value *Op0BO = BO->getOperand(0), *Op1BO = BO->getOperand(1);
@@ -2746,10 +2787,9 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
       // If the division is exact, X % Y is zero.
       if (SDivOperator *SDiv = dyn_cast<SDivOperator>(BO))
         if (SDiv->isExact()) {
-          if (Op1BO == Op1)
+          if (Op1BO == Op1C)
             return ReplaceInstUsesWith(I, Op0BO);
-          else
-            return BinaryOperator::CreateNeg(Op0BO);
+          return BinaryOperator::CreateNeg(Op0BO);
         }
 
       Value *Rem;
@@ -2759,7 +2799,7 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
         Rem = Builder->CreateSRem(Op0BO, Op1BO);
       Rem->takeName(BO);
 
-      if (Op1BO == Op1)
+      if (Op1BO == Op1C)
         return BinaryOperator::CreateSub(Op0BO, Rem);
       return BinaryOperator::CreateSub(Rem, Op0BO);
     }
@@ -2767,55 +2807,35 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
 
   /// i1 mul -> i1 and.
   if (I.getType() == Type::getInt1Ty(*Context))
-    return BinaryOperator::CreateAnd(Op0, I.getOperand(1));
+    return BinaryOperator::CreateAnd(Op0, Op1);
 
   // X*(1 << Y) --> X << Y
   // (1 << Y)*X --> X << Y
   {
     Value *Y;
     if (match(Op0, m_Shl(m_One(), m_Value(Y))))
-      return BinaryOperator::CreateShl(I.getOperand(1), Y);
-    if (match(I.getOperand(1), m_Shl(m_One(), m_Value(Y))))
+      return BinaryOperator::CreateShl(Op1, Y);
+    if (match(Op1, m_Shl(m_One(), m_Value(Y))))
       return BinaryOperator::CreateShl(Op0, Y);
   }
   
   // If one of the operands of the multiply is a cast from a boolean value, then
   // we know the bool is either zero or one, so this is a 'masking' multiply.
-  // See if we can simplify things based on how the boolean was originally
-  // formed.
-  CastInst *BoolCast = 0;
-  if (ZExtInst *CI = dyn_cast<ZExtInst>(Op0))
-    if (CI->getOperand(0)->getType() == Type::getInt1Ty(*Context))
-      BoolCast = CI;
-  if (!BoolCast)
-    if (ZExtInst *CI = dyn_cast<ZExtInst>(I.getOperand(1)))
-      if (CI->getOperand(0)->getType() == Type::getInt1Ty(*Context))
-        BoolCast = CI;
-  if (BoolCast) {
-    if (ICmpInst *SCI = dyn_cast<ICmpInst>(BoolCast->getOperand(0))) {
-      Value *SCIOp0 = SCI->getOperand(0), *SCIOp1 = SCI->getOperand(1);
-      const Type *SCOpTy = SCIOp0->getType();
-      bool TIS = false;
-      
-      // If the icmp is true iff the sign bit of X is set, then convert this
-      // multiply into a shift/and combination.
-      if (isa<ConstantInt>(SCIOp1) &&
-          isSignBitCheck(SCI->getPredicate(), cast<ConstantInt>(SCIOp1), TIS) &&
-          TIS) {
-        // Shift the X value right to turn it into "all signbits".
-        Constant *Amt = ConstantInt::get(SCIOp0->getType(),
-                                          SCOpTy->getPrimitiveSizeInBits()-1);
-        Value *V = Builder->CreateAShr(SCIOp0, Amt,
-                                    BoolCast->getOperand(0)->getName()+".mask");
+  //   X * Y (where Y is 0 or 1) -> X & (0-Y)
+  if (!isa<VectorType>(I.getType())) {
+    // -2 is "-1 << 1" so it is all bits set except the low one.
+    APInt Negative2(I.getType()->getPrimitiveSizeInBits(), (uint64_t)-2, true);
+    
+    Value *BoolCast = 0, *OtherOp = 0;
+    if (MaskedValueIsZero(Op0, Negative2))
+      BoolCast = Op0, OtherOp = Op1;
+    else if (MaskedValueIsZero(Op1, Negative2))
+      BoolCast = Op1, OtherOp = Op0;
 
-        // If the multiply type is not the same as the source type, sign extend
-        // or truncate to the multiply type.
-        if (I.getType() != V->getType())
-          V = Builder->CreateIntCast(V, I.getType(), true);
-
-        Value *OtherOp = Op0 == BoolCast ? I.getOperand(1) : Op0;
-        return BinaryOperator::CreateAnd(V, OtherOp);
-      }
+    if (BoolCast) {
+      Value *V = Builder->CreateSub(Constant::getNullValue(I.getType()),
+                                    BoolCast, "tmp");
+      return BinaryOperator::CreateAnd(V, OtherOp);
     }
   }
 
@@ -2824,17 +2844,17 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
 
 Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
   bool Changed = SimplifyCommutative(I);
-  Value *Op0 = I.getOperand(0);
+  Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
   // Simplify mul instructions with a constant RHS...
-  if (Constant *Op1 = dyn_cast<Constant>(I.getOperand(1))) {
-    if (ConstantFP *Op1F = dyn_cast<ConstantFP>(Op1)) {
+  if (Constant *Op1C = dyn_cast<Constant>(Op1)) {
+    if (ConstantFP *Op1F = dyn_cast<ConstantFP>(Op1C)) {
       // "In IEEE floating point, x*1 is not equivalent to x for nans.  However,
       // ANSI says we can drop signals, so we can do this anyway." (from GCC)
       if (Op1F->isExactlyValue(1.0))
         return ReplaceInstUsesWith(I, Op0);  // Eliminate 'mul double %X, 1.0'
-    } else if (isa<VectorType>(Op1->getType())) {
-      if (ConstantVector *Op1V = dyn_cast<ConstantVector>(Op1)) {
+    } else if (isa<VectorType>(Op1C->getType())) {
+      if (ConstantVector *Op1V = dyn_cast<ConstantVector>(Op1C)) {
         // As above, vector X*splat(1.0) -> X in all defined cases.
         if (Constant *Splat = Op1V->getSplatValue()) {
           if (ConstantFP *F = dyn_cast<ConstantFP>(Splat))
@@ -2855,7 +2875,7 @@ Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
   }
 
   if (Value *Op0v = dyn_castFNegVal(Op0))     // -X * -Y = X*Y
-    if (Value *Op1v = dyn_castFNegVal(I.getOperand(1)))
+    if (Value *Op1v = dyn_castFNegVal(Op1))
       return BinaryOperator::CreateFMul(Op0v, Op1v);
 
   return Changed ? &I : 0;
@@ -4062,34 +4082,32 @@ Instruction *InstCombiner::visitAnd(BinaryOperator &I) {
   }
 
   if (ConstantInt *AndRHS = dyn_cast<ConstantInt>(Op1)) {
-    const APInt& AndRHSMask = AndRHS->getValue();
+    const APInt &AndRHSMask = AndRHS->getValue();
     APInt NotAndRHS(~AndRHSMask);
 
     // Optimize a variety of ((val OP C1) & C2) combinations...
-    if (isa<BinaryOperator>(Op0)) {
-      Instruction *Op0I = cast<Instruction>(Op0);
+    if (BinaryOperator *Op0I = dyn_cast<BinaryOperator>(Op0)) {
       Value *Op0LHS = Op0I->getOperand(0);
       Value *Op0RHS = Op0I->getOperand(1);
       switch (Op0I->getOpcode()) {
+      default: break;
       case Instruction::Xor:
       case Instruction::Or:
         // If the mask is only needed on one incoming arm, push it up.
-        if (Op0I->hasOneUse()) {
-          if (MaskedValueIsZero(Op0LHS, NotAndRHS)) {
-            // Not masking anything out for the LHS, move to RHS.
-            Value *NewRHS = Builder->CreateAnd(Op0RHS, AndRHS,
-                                               Op0RHS->getName()+".masked");
-            return BinaryOperator::Create(
-                       cast<BinaryOperator>(Op0I)->getOpcode(), Op0LHS, NewRHS);
-          }
-          if (!isa<Constant>(Op0RHS) &&
-              MaskedValueIsZero(Op0RHS, NotAndRHS)) {
-            // Not masking anything out for the RHS, move to LHS.
-            Value *NewLHS = Builder->CreateAnd(Op0LHS, AndRHS,
-                                               Op0LHS->getName()+".masked");
-            return BinaryOperator::Create(
-                       cast<BinaryOperator>(Op0I)->getOpcode(), NewLHS, Op0RHS);
-          }
+        if (!Op0I->hasOneUse()) break;
+          
+        if (MaskedValueIsZero(Op0LHS, NotAndRHS)) {
+          // Not masking anything out for the LHS, move to RHS.
+          Value *NewRHS = Builder->CreateAnd(Op0RHS, AndRHS,
+                                             Op0RHS->getName()+".masked");
+          return BinaryOperator::Create(Op0I->getOpcode(), Op0LHS, NewRHS);
+        }
+        if (!isa<Constant>(Op0RHS) &&
+            MaskedValueIsZero(Op0RHS, NotAndRHS)) {
+          // Not masking anything out for the RHS, move to LHS.
+          Value *NewLHS = Builder->CreateAnd(Op0LHS, AndRHS,
+                                             Op0LHS->getName()+".masked");
+          return BinaryOperator::Create(Op0I->getOpcode(), NewLHS, Op0RHS);
         }
 
         break;
@@ -5066,7 +5084,7 @@ Instruction *InstCombiner::visitXor(BinaryOperator &I) {
   
   
   if (ConstantInt *RHS = dyn_cast<ConstantInt>(Op1)) {
-    if (RHS == ConstantInt::getTrue(*Context) && Op0->hasOneUse()) {
+    if (RHS->isOne() && Op0->hasOneUse()) {
       // xor (cmp A, B), true = not (cmp A, B) = !cmp A, B
       if (ICmpInst *ICI = dyn_cast<ICmpInst>(Op0))
         return new ICmpInst(ICI->getInversePredicate(),
@@ -12468,28 +12486,6 @@ Instruction *InstCombiner::visitInsertElementInst(InsertElementInst &IE) {
       if (EI->getOperand(0) == VecOp && ExtractedIdx == InsertedIdx)
         return ReplaceInstUsesWith(IE, VecOp);      
       
-      // We could theoretically do this for ANY input.  However, doing so could
-      // turn chains of insertelement instructions into a chain of shufflevector
-      // instructions, and right now we do not merge shufflevectors.  As such,
-      // only do this in a situation where it is clear that there is benefit.
-      if (isa<UndefValue>(VecOp) || isa<ConstantAggregateZero>(VecOp)) {
-        // Turn this into shuffle(EIOp0, VecOp, Mask).  The result has all of
-        // the values of VecOp, except then one read from EIOp0.
-        // Build a new shuffle mask.
-        std::vector<Constant*> Mask;
-        if (isa<UndefValue>(VecOp))
-          Mask.assign(NumVectorElts, UndefValue::get(Type::getInt32Ty(*Context)));
-        else {
-          assert(isa<ConstantAggregateZero>(VecOp) && "Unknown thing");
-          Mask.assign(NumVectorElts, ConstantInt::get(Type::getInt32Ty(*Context),
-                                                       NumVectorElts));
-        } 
-        Mask[InsertedIdx] = 
-                           ConstantInt::get(Type::getInt32Ty(*Context), ExtractedIdx);
-        return new ShuffleVectorInst(EI->getOperand(0), VecOp,
-                                     ConstantVector::get(Mask));
-      }
-      
       // If this insertelement isn't used by some other insertelement, turn it
       // (and any insertelements it points to), into one big shuffle.
       if (!IE.hasOneUse() || !isa<InsertElementInst>(IE.use_back())) {
@@ -12681,6 +12677,9 @@ static void AddReachableCodeToWorklist(BasicBlock *BB,
                                        const TargetData *TD) {
   SmallVector<BasicBlock*, 256> Worklist;
   Worklist.push_back(BB);
+  
+  std::vector<Instruction*> InstrsForInstCombineWorklist;
+  InstrsForInstCombineWorklist.reserve(128);
 
   while (!Worklist.empty()) {
     BB = Worklist.back();
@@ -12689,7 +12688,6 @@ static void AddReachableCodeToWorklist(BasicBlock *BB,
     // We have now visited this block!  If we've already been here, ignore it.
     if (!Visited.insert(BB)) continue;
 
-    DbgInfoIntrinsic *DBI_Prev = NULL;
     for (BasicBlock::iterator BBI = BB->begin(), E = BB->end(); BBI != E; ) {
       Instruction *Inst = BBI++;
       
@@ -12710,24 +12708,8 @@ static void AddReachableCodeToWorklist(BasicBlock *BB,
         Inst->eraseFromParent();
         continue;
       }
-     
-      // If there are two consecutive llvm.dbg.stoppoint calls then
-      // it is likely that the optimizer deleted code in between these
-      // two intrinsics. 
-      DbgInfoIntrinsic *DBI_Next = dyn_cast<DbgInfoIntrinsic>(Inst);
-      if (DBI_Next) {
-        if (DBI_Prev
-            && DBI_Prev->getIntrinsicID() == llvm::Intrinsic::dbg_stoppoint
-            && DBI_Next->getIntrinsicID() == llvm::Intrinsic::dbg_stoppoint) {
-          IC.Worklist.Remove(DBI_Prev);
-          DBI_Prev->eraseFromParent();
-        }
-        DBI_Prev = DBI_Next;
-      } else {
-        DBI_Prev = 0;
-      }
 
-      IC.Worklist.Add(Inst);
+      InstrsForInstCombineWorklist.push_back(Inst);
     }
 
     // Recursively visit successors.  If this is a branch or switch on a
@@ -12759,6 +12741,14 @@ static void AddReachableCodeToWorklist(BasicBlock *BB,
     for (unsigned i = 0, e = TI->getNumSuccessors(); i != e; ++i)
       Worklist.push_back(TI->getSuccessor(i));
   }
+  
+  // Once we've found all of the instructions to add to instcombine's worklist,
+  // add them in reverse order.  This way instcombine will visit from the top
+  // of the function down.  This jives well with the way that it adds all uses
+  // of instructions to the worklist after doing a transformation, thus avoiding
+  // some N^2 behavior in pathological cases.
+  IC.Worklist.AddInitialGroup(&InstrsForInstCombineWorklist[0],
+                              InstrsForInstCombineWorklist.size());
 }
 
 bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
