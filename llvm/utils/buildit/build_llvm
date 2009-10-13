@@ -56,9 +56,6 @@ DIR=`pwd`
 DARWIN_VERS=`uname -r | sed 's/\..*//'`
 echo DARWIN_VERS = $DARWIN_VERS
 
-# If the user has CC set in their environment unset it now
-unset CC
-
 DT_HOME=$DEST_DIR/Developer/usr
 DEST_ROOT="/Developer$DEST_ROOT"
 if [ "x$DEVELOPER_BIN" != "x" ]; then
@@ -80,6 +77,15 @@ ln -s $ORIG_SRC_DIR/* $SRC_DIR/ || exit 1
 # Build the LLVM tree universal.
 mkdir -p $DIR/obj-llvm || exit 1
 cd $DIR/obj-llvm || exit 1
+
+# If the user has set CC or CXX, respect their wishes.  If not,
+# compile with LLVM-GCC/LLVM-G++ if available; if LLVM is not
+# available, fall back to usual GCC/G++ default.
+XTMPCC=$(which llvm-gcc)
+if [ x$CC  = x -a x$XTMPCC != x ] ; then export CC=$XTMPCC  ; fi
+XTMPCC=$(which llvm-g++)
+if [ x$CXX = x -a x$XTMPCC != x ] ; then export CXX=$XTMPCC ; fi
+unset XTMPCC
 
 if [ \! -f Makefile.config ]; then
     $SRC_DIR/configure --prefix=$DT_HOME/local \
@@ -141,7 +147,7 @@ make $JOBS_FLAG $OPTIMIZE_OPTS UNIVERSAL=1 UNIVERSAL_ARCH="$TARGETS" \
     CXXFLAGS="-DLLVM_VERSION_INFO='\" Apple Build #$LLVM_VERSION\"'" \
     VERBOSE=1
 
-if ! test $? == 0 ; then
+if [ $? != 0 ] ; then
     echo "error: LLVM 'make' failed!"
     exit 1
 fi 
