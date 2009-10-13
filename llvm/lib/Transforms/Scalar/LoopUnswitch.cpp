@@ -793,7 +793,9 @@ void LoopUnswitch::RemoveBlockIfDead(BasicBlock *BB,
     
     // Anything that uses the instructions in this basic block should have their
     // uses replaced with undefs.
-    if (!I->use_empty())
+    // If I is not void type then replaceAllUsesWith undef.
+    // This allows ValueHandlers and custom metadata to adjust itself.
+    if (I->getType() != Type::getVoidTy(I->getContext()))
       I->replaceAllUsesWith(UndefValue::get(I->getType()));
   }
   

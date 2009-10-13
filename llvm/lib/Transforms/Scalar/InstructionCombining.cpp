@@ -9979,7 +9979,9 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
       new StoreInst(ConstantInt::getTrue(*Context),
                 UndefValue::get(Type::getInt1PtrTy(*Context)), 
                                   OldCall);
-      if (!OldCall->use_empty())
+      // If OldCall dues not return void then replaceAllUsesWith undef.
+      // This allows ValueHandlers and custom metadata to adjust itself.
+      if (OldCall->getType() != Type::getVoidTy(*Context))
         OldCall->replaceAllUsesWith(UndefValue::get(OldCall->getType()));
       if (isa<CallInst>(OldCall))   // Not worth removing an invoke here.
         return EraseInstFromFunction(*OldCall);
@@ -9994,7 +9996,9 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
                UndefValue::get(Type::getInt1PtrTy(*Context)),
                   CS.getInstruction());
 
-    if (!CS.getInstruction()->use_empty())
+    // If CS dues not return void then replaceAllUsesWith undef.
+    // This allows ValueHandlers and custom metadata to adjust itself.
+    if (CS.getInstruction()->getType() != Type::getVoidTy(*Context))
       CS.getInstruction()->
         replaceAllUsesWith(UndefValue::get(CS.getInstruction()->getType()));
 
@@ -10251,7 +10255,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
     }
   }
 
-  
+
   if (!Caller->use_empty())
     Caller->replaceAllUsesWith(NV);
   
@@ -10398,7 +10402,7 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
           setCallingConv(cast<CallInst>(Caller)->getCallingConv());
         cast<CallInst>(NewCaller)->setAttributes(NewPAL);
       }
-      if (Caller->getType() != Type::getVoidTy(*Context) && !Caller->use_empty())
+      if (Caller->getType() != Type::getVoidTy(*Context))
         Caller->replaceAllUsesWith(NewCaller);
       Caller->eraseFromParent();
       Worklist.Remove(Caller);
@@ -12781,7 +12785,11 @@ bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
             ++NumDeadInst;
             MadeIRChange = true;
           }
-          if (!I->use_empty())
+
+
+          // If I is not void type then replaceAllUsesWith undef.
+          // This allows ValueHandlers and custom metadata to adjust itself.
+          if (I->getType() != Type::getVoidTy(*Context))
             I->replaceAllUsesWith(UndefValue::get(I->getType()));
           I->eraseFromParent();
         }
