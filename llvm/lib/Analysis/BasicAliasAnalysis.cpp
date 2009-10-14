@@ -27,6 +27,7 @@
 #include "llvm/Operator.h"
 #include "llvm/Pass.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
@@ -201,7 +202,12 @@ namespace {
     static char ID; // Class identification, replacement for typeinfo
     BasicAliasAnalysis() : NoAA(&ID) {}
     AliasResult alias(const Value *V1, unsigned V1Size,
-                      const Value *V2, unsigned V2Size);
+                      const Value *V2, unsigned V2Size) {
+      assert(VisitedPHIs.empty() && "VisitedPHIs must be cleared after use!");
+      AliasResult Alias = aliasCheck(V1, V1Size, V2, V2Size);
+      VisitedPHIs.clear();
+      return Alias;
+    }
 
     ModRefResult getModRefInfo(CallSite CS, Value *P, unsigned Size);
     ModRefResult getModRefInfo(CallSite CS1, CallSite CS2);
@@ -215,6 +221,22 @@ namespace {
     bool pointsToConstantMemory(const Value *P);
 
   private:
+    // VisitedPHIs - Track PHI nodes visited by a aliasCheck() call.
+    SmallSet<const PHINode*, 16> VisitedPHIs;
+
+    // aliasGEP - Provide a bunch of ad-hoc rules to disambiguate a GEP instruction
+    // against another.
+    AliasResult aliasGEP(const Value *V1, unsigned V1Size,
+                         const Value *V2, unsigned V2Size);
+
+    // aliasPHI - Provide a bunch of ad-hoc rules to disambiguate a PHI instruction
+    // against another.
+    AliasResult aliasPHI(const PHINode *PN, unsigned PNSize,
+                         const Value *V2, unsigned V2Size);
+
+    AliasResult aliasCheck(const Value *V1, unsigned V1Size,
+                           const Value *V2, unsigned V2Size);
+
     // CheckGEPInstructions - Check two GEP instructions with known
     // must-aliasing base pointers.  This checks to see if the index expressions
     // preclude the pointers from aliasing...
@@ -308,13 +330,186 @@ BasicAliasAnalysis::getModRefInfo(CallSite CS1, CallSite CS2) {
   return NoAA::getModRefInfo(CS1, CS2);
 }
 
-
-// alias - Provide a bunch of ad-hoc rules to disambiguate in common cases, such
-// as array references.
+// aliasGEP - Provide a bunch of ad-hoc rules to disambiguate a GEP instruction
+// against another.
 //
 AliasAnalysis::AliasResult
-BasicAliasAnalysis::alias(const Value *V1, unsigned V1Size,
-                          const Value *V2, unsigned V2Size) {
+BasicAliasAnalysis::aliasGEP(const Value *V1, unsigned V1Size,
+                             const Value *V2, unsigned V2Size) {
+  // If we have two gep instructions with must-alias'ing base pointers, figure
+  // out if the indexes to the GEP tell us anything about the derived pointer.
+  // Note that we also handle chains of getelementptr instructions as well as
+  // constant expression getelementptrs here.
+  //
+  if (isGEP(V1) && isGEP(V2)) {
+    const User *GEP1 = cast<User>(V1);
+    const User *GEP2 = cast<User>(V2);
+    
+    // If V1 and V2 are identical GEPs, just recurse down on both of them.
+    // This allows us to analyze things like:
+    //   P = gep A, 0, i, 1
+    //   Q = gep B, 0, i, 1
+    // by just analyzing A and B.  This is even safe for variable indices.
+    if (GEP1->getType() == GEP2->getType() &&
+        GEP1->getNumOperands() == GEP2->getNumOperands() &&
+        GEP1->getOperand(0)->getType() == GEP2->getOperand(0)->getType() &&
+        // All operands are the same, ignoring the base.
+        std::equal(GEP1->op_begin()+1, GEP1->op_end(), GEP2->op_begin()+1))
+      return aliasCheck(GEP1->getOperand(0), V1Size,
+                        GEP2->getOperand(0), V2Size);
+    
+    // Drill down into the first non-gep value, to test for must-aliasing of
+    // the base pointers.
+    while (isGEP(GEP1->getOperand(0)) &&
+           GEP1->getOperand(1) ==
+           Constant::getNullValue(GEP1->getOperand(1)->getType()))
+      GEP1 = cast<User>(GEP1->getOperand(0));
+    const Value *BasePtr1 = GEP1->getOperand(0);
+
+    while (isGEP(GEP2->getOperand(0)) &&
+           GEP2->getOperand(1) ==
+           Constant::getNullValue(GEP2->getOperand(1)->getType()))
+      GEP2 = cast<User>(GEP2->getOperand(0));
+    const Value *BasePtr2 = GEP2->getOperand(0);
+
+    // Do the base pointers alias?
+    AliasResult BaseAlias = aliasCheck(BasePtr1, ~0U, BasePtr2, ~0U);
+    if (BaseAlias == NoAlias) return NoAlias;
+    if (BaseAlias == MustAlias) {
+      // If the base pointers alias each other exactly, check to see if we can
+      // figure out anything about the resultant pointers, to try to prove
+      // non-aliasing.
+
+      // Collect all of the chained GEP operands together into one simple place
+      SmallVector<Value*, 16> GEP1Ops, GEP2Ops;
+      BasePtr1 = GetGEPOperands(V1, GEP1Ops);
+      BasePtr2 = GetGEPOperands(V2, GEP2Ops);
+
+      // If GetGEPOperands were able to fold to the same must-aliased pointer,
+      // do the comparison.
+      if (BasePtr1 == BasePtr2) {
+        AliasResult GAlias =
+          CheckGEPInstructions(BasePtr1->getType(),
+                               &GEP1Ops[0], GEP1Ops.size(), V1Size,
+                               BasePtr2->getType(),
+                               &GEP2Ops[0], GEP2Ops.size(), V2Size);
+        if (GAlias != MayAlias)
+          return GAlias;
+      }
+    }
+  }
+
+  // Check to see if these two pointers are related by a getelementptr
+  // instruction.  If one pointer is a GEP with a non-zero index of the other
+  // pointer, we know they cannot alias.
+  //
+  if (V1Size == ~0U || V2Size == ~0U)
+    return MayAlias;
+
+  SmallVector<Value*, 16> GEPOperands;
+  const Value *BasePtr = GetGEPOperands(V1, GEPOperands);
+
+  AliasResult R = aliasCheck(BasePtr, ~0U, V2, V2Size);
+  if (R != MustAlias)
+    // If V2 may alias GEP base pointer, conservatively returns MayAlias.
+    // If V2 is known not to alias GEP base pointer, then the two values
+    // cannot alias per GEP semantics: "A pointer value formed from a
+    // getelementptr instruction is associated with the addresses associated
+    // with the first operand of the getelementptr".
+    return R;
+
+  // If there is at least one non-zero constant index, we know they cannot
+  // alias.
+  bool ConstantFound = false;
+  bool AllZerosFound = true;
+  for (unsigned i = 0, e = GEPOperands.size(); i != e; ++i)
+    if (const Constant *C = dyn_cast<Constant>(GEPOperands[i])) {
+      if (!C->isNullValue()) {
+        ConstantFound = true;
+        AllZerosFound = false;
+        break;
+      }
+    } else {
+      AllZerosFound = false;
+    }
+
+  // If we have getelementptr <ptr>, 0, 0, 0, 0, ... and V2 must aliases
+  // the ptr, the end result is a must alias also.
+  if (AllZerosFound)
+    return MustAlias;
+
+  if (ConstantFound) {
+    if (V2Size <= 1 && V1Size <= 1)  // Just pointer check?
+      return NoAlias;
+
+    // Otherwise we have to check to see that the distance is more than
+    // the size of the argument... build an index vector that is equal to
+    // the arguments provided, except substitute 0's for any variable
+    // indexes we find...
+    if (TD &&
+        cast<PointerType>(BasePtr->getType())->getElementType()->isSized()) {
+      for (unsigned i = 0; i != GEPOperands.size(); ++i)
+        if (!isa<ConstantInt>(GEPOperands[i]))
+          GEPOperands[i] = Constant::getNullValue(GEPOperands[i]->getType());
+      int64_t Offset = TD->getIndexedOffset(BasePtr->getType(),
+                                            &GEPOperands[0],
+                                            GEPOperands.size());
+
+      if (Offset >= (int64_t)V2Size || Offset <= -(int64_t)V1Size)
+        return NoAlias;
+    }
+  }
+
+  return MayAlias;
+}
+
+// aliasPHI - Provide a bunch of ad-hoc rules to disambiguate a PHI instruction
+// against another.
+AliasAnalysis::AliasResult
+BasicAliasAnalysis::aliasPHI(const PHINode *PN, unsigned PNSize,
+                             const Value *V2, unsigned V2Size) {
+  // The PHI node has already been visited, avoid recursion any further.
+  if (!VisitedPHIs.insert(PN))
+    return MayAlias;
+
+  SmallSet<Value*, 4> UniqueSrc;
+  SmallVector<Value*, 4> V1Srcs;
+  for (unsigned i = 0, e = PN->getNumIncomingValues(); i != e; ++i) {
+    Value *PV1 = PN->getIncomingValue(i);
+    if (isa<PHINode>(PV1))
+      // If any of the source itself is a PHI, return MayAlias conservatively
+      // to avoid compile time explosion. The worst possible case is if both
+      // sides are PHI nodes. In which case, this is O(m x n) time where 'm'
+      // and 'n' are the number of PHI sources.
+      return MayAlias;
+    if (UniqueSrc.insert(PV1))
+      V1Srcs.push_back(PV1);
+  }
+
+  AliasResult Alias = aliasCheck(V1Srcs[0], PNSize, V2, V2Size);
+  // Early exit if the check of the first PHI source against V2 is MayAlias.
+  // Other results are not possible.
+  if (Alias == MayAlias)
+    return MayAlias;
+
+  // If all sources of the PHI node NoAlias or MustAlias V2, then returns
+  // NoAlias / MustAlias. Otherwise, returns MayAlias.
+  for (unsigned i = 1, e = V1Srcs.size(); i != e; ++i) {
+    Value *V = V1Srcs[i];
+    AliasResult ThisAlias = aliasCheck(V, PNSize, V2, V2Size);
+    if (ThisAlias != Alias || ThisAlias == MayAlias)
+      return MayAlias;
+  }
+
+  return Alias;
+}
+
+// aliasCheck - Provide a bunch of ad-hoc rules to disambiguate in common cases,
+// such as array references.
+//
+AliasAnalysis::AliasResult
+BasicAliasAnalysis::aliasCheck(const Value *V1, unsigned V1Size,
+                               const Value *V2, unsigned V2Size) {
   // Strip off any casts if they exist.
   V1 = V1->stripPointerCasts();
   V2 = V2->stripPointerCasts();
@@ -362,131 +557,20 @@ BasicAliasAnalysis::alias(const Value *V1, unsigned V1Size,
   if ((isa<CallInst>(O2) || isa<InvokeInst>(O2)) &&
       isNonEscapingLocalObject(O1) && O1 != O2)
     return NoAlias;
-  
-  // If we have two gep instructions with must-alias'ing base pointers, figure
-  // out if the indexes to the GEP tell us anything about the derived pointer.
-  // Note that we also handle chains of getelementptr instructions as well as
-  // constant expression getelementptrs here.
-  //
-  if (isGEP(V1) && isGEP(V2)) {
-    const User *GEP1 = cast<User>(V1);
-    const User *GEP2 = cast<User>(V2);
-    
-    // If V1 and V2 are identical GEPs, just recurse down on both of them.
-    // This allows us to analyze things like:
-    //   P = gep A, 0, i, 1
-    //   Q = gep B, 0, i, 1
-    // by just analyzing A and B.  This is even safe for variable indices.
-    if (GEP1->getType() == GEP2->getType() &&
-        GEP1->getNumOperands() == GEP2->getNumOperands() &&
-        GEP1->getOperand(0)->getType() == GEP2->getOperand(0)->getType() &&
-        // All operands are the same, ignoring the base.
-        std::equal(GEP1->op_begin()+1, GEP1->op_end(), GEP2->op_begin()+1))
-      return alias(GEP1->getOperand(0), V1Size, GEP2->getOperand(0), V2Size);
-    
-    
-    // Drill down into the first non-gep value, to test for must-aliasing of
-    // the base pointers.
-    while (isGEP(GEP1->getOperand(0)) &&
-           GEP1->getOperand(1) ==
-           Constant::getNullValue(GEP1->getOperand(1)->getType()))
-      GEP1 = cast<User>(GEP1->getOperand(0));
-    const Value *BasePtr1 = GEP1->getOperand(0);
 
-    while (isGEP(GEP2->getOperand(0)) &&
-           GEP2->getOperand(1) ==
-           Constant::getNullValue(GEP2->getOperand(1)->getType()))
-      GEP2 = cast<User>(GEP2->getOperand(0));
-    const Value *BasePtr2 = GEP2->getOperand(0);
-
-    // Do the base pointers alias?
-    AliasResult BaseAlias = alias(BasePtr1, ~0U, BasePtr2, ~0U);
-    if (BaseAlias == NoAlias) return NoAlias;
-    if (BaseAlias == MustAlias) {
-      // If the base pointers alias each other exactly, check to see if we can
-      // figure out anything about the resultant pointers, to try to prove
-      // non-aliasing.
-
-      // Collect all of the chained GEP operands together into one simple place
-      SmallVector<Value*, 16> GEP1Ops, GEP2Ops;
-      BasePtr1 = GetGEPOperands(V1, GEP1Ops);
-      BasePtr2 = GetGEPOperands(V2, GEP2Ops);
-
-      // If GetGEPOperands were able to fold to the same must-aliased pointer,
-      // do the comparison.
-      if (BasePtr1 == BasePtr2) {
-        AliasResult GAlias =
-          CheckGEPInstructions(BasePtr1->getType(),
-                               &GEP1Ops[0], GEP1Ops.size(), V1Size,
-                               BasePtr2->getType(),
-                               &GEP2Ops[0], GEP2Ops.size(), V2Size);
-        if (GAlias != MayAlias)
-          return GAlias;
-      }
-    }
-  }
-
-  // Check to see if these two pointers are related by a getelementptr
-  // instruction.  If one pointer is a GEP with a non-zero index of the other
-  // pointer, we know they cannot alias.
-  //
-  if (isGEP(V2)) {
+  if (!isGEP(V1) && isGEP(V2)) {
     std::swap(V1, V2);
     std::swap(V1Size, V2Size);
   }
+  if (isGEP(V1))
+    return aliasGEP(V1, V1Size, V2, V2Size);
 
-  if (V1Size != ~0U && V2Size != ~0U)
-    if (isGEP(V1)) {
-      SmallVector<Value*, 16> GEPOperands;
-      const Value *BasePtr = GetGEPOperands(V1, GEPOperands);
-
-      AliasResult R = alias(BasePtr, V1Size, V2, V2Size);
-      if (R == MustAlias) {
-        // If there is at least one non-zero constant index, we know they cannot
-        // alias.
-        bool ConstantFound = false;
-        bool AllZerosFound = true;
-        for (unsigned i = 0, e = GEPOperands.size(); i != e; ++i)
-          if (const Constant *C = dyn_cast<Constant>(GEPOperands[i])) {
-            if (!C->isNullValue()) {
-              ConstantFound = true;
-              AllZerosFound = false;
-              break;
-            }
-          } else {
-            AllZerosFound = false;
-          }
-
-        // If we have getelementptr <ptr>, 0, 0, 0, 0, ... and V2 must aliases
-        // the ptr, the end result is a must alias also.
-        if (AllZerosFound)
-          return MustAlias;
-
-        if (ConstantFound) {
-          if (V2Size <= 1 && V1Size <= 1)  // Just pointer check?
-            return NoAlias;
-
-          // Otherwise we have to check to see that the distance is more than
-          // the size of the argument... build an index vector that is equal to
-          // the arguments provided, except substitute 0's for any variable
-          // indexes we find...
-          if (TD && cast<PointerType>(
-                BasePtr->getType())->getElementType()->isSized()) {
-            for (unsigned i = 0; i != GEPOperands.size(); ++i)
-              if (!isa<ConstantInt>(GEPOperands[i]))
-                GEPOperands[i] =
-                  Constant::getNullValue(GEPOperands[i]->getType());
-            int64_t Offset =
-              TD->getIndexedOffset(BasePtr->getType(),
-                                   &GEPOperands[0],
-                                   GEPOperands.size());
-
-            if (Offset >= (int64_t)V2Size || Offset <= -(int64_t)V1Size)
-              return NoAlias;
-          }
-        }
-      }
-    }
+  if (isa<PHINode>(V2) && !isa<PHINode>(V1)) {
+    std::swap(V1, V2);
+    std::swap(V1Size, V2Size);
+  }
+  if (const PHINode *PN = dyn_cast<PHINode>(V1))
+    return aliasPHI(PN, V1Size, V2, V2Size);
 
   return MayAlias;
 }
