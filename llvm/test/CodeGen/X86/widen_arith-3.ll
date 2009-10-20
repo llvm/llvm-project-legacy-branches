@@ -1,7 +1,7 @@
-; RUN: llc < %s -march=x86 -mattr=+sse42 -disable-mmx -o %t
-; RUN: grep paddw  %t | count 1
-; RUN: grep movd %t | count 2
-; RUN: grep pextrw %t | count 1
+; RUN: llc < %s -march=x86 -mattr=+sse42 -disable-mmx | FileCheck %s
+; CHECK: paddw
+; CHECK: pextrw
+; CHECK: movd
 
 ; Widen a v3i16 to v8i16 to do a vector add
 
