@@ -3314,6 +3314,9 @@ bool LLParser::ParsePHI(Instruction *&Inst, PerFunctionState &PFS) {
     if (!EatIfPresent(lltok::comma))
       break;
 
+    if (Lex.getKind() == lltok::NamedOrCustomMD)
+      break;
+
     if (ParseToken(lltok::lsquare, "expected '[' in phi value list") ||
         ParseValue(Ty, Op0, PFS) ||
         ParseToken(lltok::comma, "expected ',' after insertelement value") ||
@@ -3321,6 +3324,9 @@ bool LLParser::ParsePHI(Instruction *&Inst, PerFunctionState &PFS) {
         ParseToken(lltok::rsquare, "expected ']' in phi value list"))
       return true;
   }
+
+  if (Lex.getKind() == lltok::NamedOrCustomMD)
+    if (ParseOptionalCustomMetadata()) return true;
 
   if (!Ty->isFirstClassType())
     return Error(TypeLoc, "phi node must have first class type");
