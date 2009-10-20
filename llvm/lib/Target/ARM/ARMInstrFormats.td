@@ -1220,6 +1220,10 @@ class NLdSt<bit op23, bits<2> op21_20, bits<4> op11_8, bits<4> op7_4,
             string asm, string cstr, list<dag> pattern>
   : NeonI<oops, iops, AddrMode6, IndexModeNone, itin, asm, cstr, pattern> {
   let Inst{31-24} = 0b11110100;
+  let Inst{23} = op23;
+  let Inst{21-20} = op21_20;
+  let Inst{11-8} = op11_8;
+  let Inst{7-4} = op7_4;
 }
 
 class NDataI<dag oops, dag iops, InstrItinClass itin,
@@ -1282,6 +1286,20 @@ class N3V<bit op24, bit op23, bits<2> op21_20, bits<4> op11_8, bit op6, bit op4,
   let Inst{23} = op23;
   let Inst{21-20} = op21_20;
   let Inst{11-8} = op11_8;
+  let Inst{6} = op6;
+  let Inst{4} = op4;
+}
+
+// NEON 3 vector register with immediate.  This is only used for VEXT where
+// op11_8 represents the starting byte index of the extracted result in the
+// concatenation of the operands and is left unspecified.
+class N3VImm<bit op24, bit op23, bits<2> op21_20, bit op6, bit op4,
+             dag oops, dag iops, InstrItinClass itin,
+             string asm, string cstr, list<dag> pattern>
+  : NDataI<oops, iops, itin, asm, cstr, pattern> {
+  let Inst{24} = op24;
+  let Inst{23} = op23;
+  let Inst{21-20} = op21_20;
   let Inst{6} = op6;
   let Inst{4} = op4;
 }
