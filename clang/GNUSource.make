@@ -173,6 +173,11 @@ ifneq ($(GnuNoConfigure),YES)
 endif
 	$(_v) touch $@
 
+clean::
+	if [ "$(SRCROOT)" != . ]; then \
+	  rm -rf "$(SRCROOT)/clang/test/Archive"; \
+	fi
+
 almostclean::
 ifneq ($(GnuNoClean),YES)
 	@echo "Cleaning $(Project)..."
