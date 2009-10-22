@@ -19,7 +19,12 @@ LEVEL := .
 #
 # When cross-compiling, there are some things (tablegen) that need to
 # be build for the build system first.
-ifndef RC_ARCHS  # Normal build (not "Apple-style").
+
+# If "RC_ProjectName" exists in the environment, and its value is
+# "llvmCore", then this is an "Apple-style" build; search for
+# "Apple-style" in the comments for more info.  Anything else is a
+# normal build.
+ifneq ($(RC_ProjectName),llvmCore)  # Normal build (not "Apple-style").
 ifeq ($(BUILD_DIRS_ONLY),1)
   DIRS := lib/System lib/Support utils
   OPTIONAL_DIRS :=
@@ -213,7 +218,8 @@ happiness: update all check unittests
 .NOTPARALLEL:
 
 else # Building "Apple-style."
-# N.B. In an Apple-style build, once configuration is done, lines
-# marked "Apple-style" are removed with sed!  See utils/buildit/build_llvm.
-include utils/buildit/GNUmakefile # Building "Apple-style."
+# In an Apple-style build, once configuration is done, lines marked
+# "Apple-style" are removed with sed!  Please don't remove these!
+# Look for the string "Apple-style" in utils/buildit/build_llvm.
+include $(shell find . -name GNUmakefile) # Building "Apple-style."
 endif # Building "Apple-style."
