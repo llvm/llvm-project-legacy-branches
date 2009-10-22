@@ -52,7 +52,8 @@ Darwin_X86::Darwin_X86(const HostInfo &Host, const char *Arch,
   ToolChainDir += llvm::utostr(GCCVersion[2]);
   
   // Try the next major version if that tool chain dir is invalid.
-  if (!llvm::sys::Path(ToolChainDir).exists()) {
+  std::string Tmp = "/usr/lib/gcc/" + ToolChainDir;
+  if (!llvm::sys::Path(Tmp).exists()) {
     std::string Next = "i686-apple-darwin";
     Next += llvm::utostr(DarwinVersion[0] + 1);
     Next += "/";
@@ -62,10 +63,11 @@ Darwin_X86::Darwin_X86(const HostInfo &Host, const char *Arch,
     Next += '.';
     Next += llvm::utostr(GCCVersion[2]);
 
-  // Use that if it exists, otherwise hope the user isn't linking.
-  //
-  // FIXME: Drop dependency on gcc's tool chain.
-    if (llvm::sys::Path(Next).exists())
+    // Use that if it exists, otherwise hope the user isn't linking.
+    //
+    // FIXME: Drop dependency on gcc's tool chain.
+    Tmp = "/usr/lib/gcc/" + Next;
+    if (llvm::sys::Path(Tmp).exists())
       ToolChainDir = Next;
   }
 
