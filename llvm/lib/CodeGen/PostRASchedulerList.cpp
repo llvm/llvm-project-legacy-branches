@@ -241,12 +241,12 @@ bool PostRAScheduler::runOnMachineFunction(MachineFunction &Fn) {
   TargetSubtarget::AntiDepBreakMode AntiDepMode = TargetSubtarget::ANTIDEP_NONE;
   if (EnablePostRAScheduler.getPosition() > 0) {
     if (!EnablePostRAScheduler)
-      return true;
+      return false;
   } else {
-    // Check that post-RA scheduling is enabled for this function
+    // Check that post-RA scheduling is enabled for this target.
     const TargetSubtarget &ST = Fn.getTarget().getSubtarget<TargetSubtarget>();
     if (!ST.enablePostRAScheduler(OptLevel, AntiDepMode))
-      return true;
+      return false;
   }
 
   // Check for antidep breaking override...
