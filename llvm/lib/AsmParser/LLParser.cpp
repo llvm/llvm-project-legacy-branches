@@ -1029,13 +1029,11 @@ bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
 ///   ::= /* empty */
 ///   ::= !dbg !42
 bool LLParser::ParseOptionalCustomMetadata() {
-
-  std::string Name;
-  if (Lex.getKind() == lltok::NamedOrCustomMD) {
-    Name = Lex.getStrVal();
-    Lex.Lex();
-  } else
+  if (Lex.getKind() != lltok::NamedOrCustomMD)
     return false;
+
+  std::string Name = Lex.getStrVal();
+  Lex.Lex();
 
   if (Lex.getKind() != lltok::Metadata)
     return TokError("Expected '!' here");
@@ -1047,7 +1045,7 @@ bool LLParser::ParseOptionalCustomMetadata() {
   MetadataContext &TheMetadata = M->getContext().getMetadata();
   unsigned MDK = TheMetadata.getMDKind(Name.c_str());
   if (!MDK)
-    MDK = TheMetadata.RegisterMDKind(Name.c_str());
+    MDK = TheMetadata.registerMDKind(Name.c_str());
   MDsOnInst.push_back(std::make_pair(MDK, cast<MDNode>(Node)));
 
   return false;
@@ -2857,8 +2855,6 @@ bool LLParser::ParseRet(Instruction *&Inst, BasicBlock *BB,
   if (ParseType(Ty, true /*void allowed*/)) return true;
 
   if (Ty->isVoidTy()) {
-    if (EatIfPresent(lltok::comma))
-      if (ParseOptionalCustomMetadata()) return true;
     Inst = ReturnInst::Create(Context);
     return false;
   }
@@ -2894,8 +2890,6 @@ bool LLParser::ParseRet(Instruction *&Inst, BasicBlock *BB,
       }
     }
   }
-  if (EatIfPresent(lltok::comma))
-    if (ParseOptionalCustomMetadata()) return true;
 
   Inst = ReturnInst::Create(Context, RV);
   return false;

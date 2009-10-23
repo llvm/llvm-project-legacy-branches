@@ -517,9 +517,7 @@ static void WriteModuleMetadata(const ValueEnumerator &VE,
       }
 
       // Code: [strchar x N]
-      const char *StrBegin = MDS->begin();
-      for (unsigned i = 0, e = MDS->length(); i != e; ++i)
-        Record.push_back(StrBegin[i]);
+      Record.append(MDS->begin(), MDS->end());
 
       // Emit the finished record.
       Stream.EmitRecord(bitc::METADATA_STRING, Record, MDSAbbrev);
@@ -563,22 +561,22 @@ static void WriteMetadataAttachment(const Function &F,
   // Write metadata attachments
   // METADATA_ATTACHMENT - [m x [value, [n x [id, mdnode]]]
   MetadataContext &TheMetadata = F.getContext().getMetadata();
+  typedef SmallVector<std::pair<unsigned, TrackingVH<MDNode> >, 2> MDMapTy;
+  MDMapTy MDs;
   for (Function::const_iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
     for (BasicBlock::const_iterator I = BB->begin(), E = BB->end();
          I != E; ++I) {
-      const MetadataContext::MDMapTy *P = TheMetadata.getMDs(I);
-      if (!P) continue;
+      MDs.clear();
+      TheMetadata.getMDs(I, MDs);
       bool RecordedInstruction = false;
-      for (MetadataContext::MDMapTy::const_iterator PI = P->begin(), 
-             PE = P->end(); PI != PE; ++PI) {
-        if (MDNode *ND = dyn_cast_or_null<MDNode>(PI->second)) {
-          if (RecordedInstruction == false) {
-            Record.push_back(VE.getInstructionID(I));
-            RecordedInstruction = true;
-          }
-          Record.push_back(PI->first);
-          Record.push_back(VE.getValueID(ND));
+      for (MDMapTy::const_iterator PI = MDs.begin(), PE = MDs.end();
+             PI != PE; ++PI) {
+        if (RecordedInstruction == false) {
+          Record.push_back(VE.getInstructionID(I));
+          RecordedInstruction = true;
         }
+        Record.push_back(PI->first);
+        Record.push_back(VE.getValueID(PI->second));
       }
       if (!Record.empty()) {
         if (!StartedMetadataBlock)  {
@@ -604,11 +602,13 @@ static void WriteModuleMetadataStore(const Module *M,
   // Write metadata kinds
   // METADATA_KIND - [n x [id, name]]
   MetadataContext &TheMetadata = M->getContext().getMetadata();
-  const StringMap<unsigned> *Kinds = TheMetadata.getHandlerNames();
-  for (StringMap<unsigned>::const_iterator
-         I = Kinds->begin(), E = Kinds->end(); I != E; ++I) {
-    Record.push_back(I->second);
-    StringRef KName = I->first();
+  SmallVector<std::pair<unsigned, StringRef>, 4> Names;
+  TheMetadata.getHandlerNames(Names);
+  for (SmallVector<std::pair<unsigned, StringRef>, 4>::iterator 
+         I = Names.begin(),
+         E = Names.end(); I != E; ++I) {
+    Record.push_back(I->first);
+    StringRef KName = I->second;
     for (unsigned i = 0, e = KName.size(); i != e; ++i)
       Record.push_back(KName[i]);
     if (!StartedMetadataBlock)  {

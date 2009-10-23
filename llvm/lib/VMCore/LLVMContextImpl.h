@@ -204,9 +204,6 @@ public:
     AggZeroConstants.freeConstants();
     NullPtrConstants.freeConstants();
     UndefValueConstants.freeConstants();
-    for (FoldingSet<MDNode>::iterator I = MDNodeSet.begin(), 
-           E = MDNodeSet.end(); I != E; ++I)
-      I->dropAllReferences();
     for (IntMapTy::iterator I = IntConstants.begin(), E = IntConstants.end(); 
          I != E; ++I) {
       if (I->second->use_empty())
@@ -217,6 +214,7 @@ public:
       if (I->second->use_empty())
         delete I->second;
     }
+    MDNodeSet.clear();
   }
 };
 
