@@ -242,7 +242,9 @@ static const Type *isSingleElementStruct(QualType T, ASTContext &Context) {
 }
 
 static bool is32Or64BitBasicType(QualType Ty, ASTContext &Context) {
-  if (!Ty->getAsBuiltinType() && !Ty->isPointerType())
+  if (!Ty->getAsBuiltinType() && !Ty->isPointerType() &&
+      !Ty->isAnyComplexType() && !Ty->isEnumeralType() &&
+      !Ty->isBlockPointerType())
     return false;
 
   uint64_t Size = Context.getTypeSize(Ty);
@@ -345,8 +347,10 @@ bool X86_32ABIInfo::shouldReturnTypeInRegister(QualType Ty,
     return true;
   }
 
-  // If this is a builtin, pointer, or complex type, it is ok.
-  if (Ty->getAsBuiltinType() || Ty->isPointerType() || Ty->isAnyComplexType())
+  // If this is a builtin, pointer, enum, or complex type, it is ok.
+  if (Ty->getAsBuiltinType() || Ty->isPointerType() || 
+      Ty->isAnyComplexType() || Ty->isEnumeralType() ||
+      Ty->isBlockPointerType())
     return true;
 
   // Arrays are treated like records.
