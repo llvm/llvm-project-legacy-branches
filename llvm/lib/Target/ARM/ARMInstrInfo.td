@@ -398,6 +398,7 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc, PatFrag opnode,
   def ri : AI1<opcod, (outs GPR:$dst), (ins GPR:$a, so_imm:$b), DPFrm,
                IIC_iALUi, opc, "s\t$dst, $a, $b",
                [(set GPR:$dst, (opnode GPR:$a, so_imm:$b))]> {
+    let Inst{20} = 1;
     let Inst{25} = 1;
   }
   def rr : AI1<opcod, (outs GPR:$dst), (ins GPR:$a, GPR:$b), DPFrm,
@@ -405,6 +406,7 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc, PatFrag opnode,
                [(set GPR:$dst, (opnode GPR:$a, GPR:$b))]> {
     let isCommutable = Commutable;
     let Inst{4} = 0;
+    let Inst{20} = 1;
     let Inst{25} = 0;
   }
   def rs : AI1<opcod, (outs GPR:$dst), (ins GPR:$a, so_reg:$b), DPSoRegFrm,
@@ -412,6 +414,7 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc, PatFrag opnode,
                [(set GPR:$dst, (opnode GPR:$a, so_reg:$b))]> {
     let Inst{4} = 1;
     let Inst{7} = 0;
+    let Inst{20} = 1;
     let Inst{25} = 0;
   }
 }
@@ -456,14 +459,15 @@ multiclass AI_unary_rrot<bits<8> opcod, string opc, PatFrag opnode> {
                  IIC_iUNAr, opc, "\t$dst, $src",
                  [(set GPR:$dst, (opnode GPR:$src))]>,
               Requires<[IsARM, HasV6]> {
-                let Inst{19-16} = 0b1111;
-              }
+    let Inst{11-10} = 0b00;
+    let Inst{19-16} = 0b1111;
+  }
   def r_rot : AExtI<opcod, (outs GPR:$dst), (ins GPR:$src, i32imm:$rot),
                  IIC_iUNAsi, opc, "\t$dst, $src, ror $rot",
                  [(set GPR:$dst, (opnode (rotr GPR:$src, rot_imm:$rot)))]>,
               Requires<[IsARM, HasV6]> {
-                let Inst{19-16} = 0b1111;
-              }
+    let Inst{19-16} = 0b1111;
+  }
 }
 
 /// AI_bin_rrot - A binary operation with two forms: one whose operand is a
@@ -472,7 +476,9 @@ multiclass AI_bin_rrot<bits<8> opcod, string opc, PatFrag opnode> {
   def rr     : AExtI<opcod, (outs GPR:$dst), (ins GPR:$LHS, GPR:$RHS),
                   IIC_iALUr, opc, "\t$dst, $LHS, $RHS",
                   [(set GPR:$dst, (opnode GPR:$LHS, GPR:$RHS))]>,
-                  Requires<[IsARM, HasV6]>;
+               Requires<[IsARM, HasV6]> {
+    let Inst{11-10} = 0b00;
+  }
   def rr_rot : AExtI<opcod, (outs GPR:$dst), (ins GPR:$LHS, GPR:$RHS, i32imm:$rot),
                   IIC_iALUsi, opc, "\t$dst, $LHS, $RHS, ror $rot",
                   [(set GPR:$dst, (opnode GPR:$LHS,
@@ -512,6 +518,7 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
                [(set GPR:$dst, (opnode GPR:$a, so_imm:$b))]>,
                Requires<[IsARM, CarryDefIsUsed]> {
     let Defs = [CPSR];
+    let Inst{20} = 1;
     let Inst{25} = 1;
   }
   def Srr : AXI1<opcod, (outs GPR:$dst), (ins GPR:$a, GPR:$b),
@@ -520,6 +527,7 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
                Requires<[IsARM, CarryDefIsUsed]> {
     let Defs = [CPSR];
     let Inst{4} = 0;
+    let Inst{20} = 1;
     let Inst{25} = 0;
   }
   def Srs : AXI1<opcod, (outs GPR:$dst), (ins GPR:$a, so_reg:$b),
@@ -529,6 +537,7 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
     let Defs = [CPSR];
     let Inst{4} = 1;
     let Inst{7} = 0;
+    let Inst{20} = 1;
     let Inst{25} = 0;
   }
 }
@@ -1086,23 +1095,35 @@ defm SBC : AI1_adde_sube_irs<0b0110, "sbc",
 def RSBri : AsI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_imm:$b), DPFrm,
                   IIC_iALUi, "rsb", "\t$dst, $a, $b",
                   [(set GPR:$dst, (sub so_imm:$b, GPR:$a))]> {
+    let Inst{20} = 0;
     let Inst{25} = 1;
 }
 
 def RSBrs : AsI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_reg:$b), DPSoRegFrm,
                   IIC_iALUsr, "rsb", "\t$dst, $a, $b",
-                  [(set GPR:$dst, (sub so_reg:$b, GPR:$a))]>;
+                  [(set GPR:$dst, (sub so_reg:$b, GPR:$a))]> {
+    let Inst{4} = 1;
+    let Inst{7} = 0;
+    let Inst{20} = 0;
+    let Inst{25} = 0;
+}
 
 // RSB with 's' bit set.
 let Defs = [CPSR] in {
 def RSBSri : AI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_imm:$b), DPFrm,
                  IIC_iALUi, "rsb", "s\t$dst, $a, $b",
                  [(set GPR:$dst, (subc so_imm:$b, GPR:$a))]> {
+    let Inst{20} = 1;
     let Inst{25} = 1;
 }
 def RSBSrs : AI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_reg:$b), DPSoRegFrm,
                  IIC_iALUsr, "rsb", "s\t$dst, $a, $b",
-                 [(set GPR:$dst, (subc so_reg:$b, GPR:$a))]>;
+                 [(set GPR:$dst, (subc so_reg:$b, GPR:$a))]> {
+    let Inst{4} = 1;
+    let Inst{7} = 0;
+    let Inst{20} = 1;
+    let Inst{25} = 0;
+}
 }
 
 let Uses = [CPSR] in {
@@ -1110,12 +1131,18 @@ def RSCri : AsI1<0b0111, (outs GPR:$dst), (ins GPR:$a, so_imm:$b),
                  DPFrm, IIC_iALUi, "rsc", "\t$dst, $a, $b",
                  [(set GPR:$dst, (sube so_imm:$b, GPR:$a))]>,
                  Requires<[IsARM, CarryDefIsUnused]> {
+    let Inst{20} = 0;
     let Inst{25} = 1;
 }
 def RSCrs : AsI1<0b0111, (outs GPR:$dst), (ins GPR:$a, so_reg:$b),
                  DPSoRegFrm, IIC_iALUsr, "rsc", "\t$dst, $a, $b",
                  [(set GPR:$dst, (sube so_reg:$b, GPR:$a))]>,
-                 Requires<[IsARM, CarryDefIsUnused]>;
+                 Requires<[IsARM, CarryDefIsUnused]> {
+    let Inst{4} = 1;
+    let Inst{7} = 0;
+    let Inst{20} = 0;
+    let Inst{25} = 0;
+}
 }
 
 // FIXME: Allow these to be predicated.
@@ -1124,12 +1151,18 @@ def RSCSri : AXI1<0b0111, (outs GPR:$dst), (ins GPR:$a, so_imm:$b),
                   DPFrm, IIC_iALUi, "rscs\t$dst, $a, $b",
                   [(set GPR:$dst, (sube so_imm:$b, GPR:$a))]>,
                   Requires<[IsARM, CarryDefIsUnused]> {
+    let Inst{20} = 1;
     let Inst{25} = 1;
 }
 def RSCSrs : AXI1<0b0111, (outs GPR:$dst), (ins GPR:$a, so_reg:$b),
                   DPSoRegFrm, IIC_iALUsr, "rscs\t$dst, $a, $b",
                   [(set GPR:$dst, (sube so_reg:$b, GPR:$a))]>,
-                  Requires<[IsARM, CarryDefIsUnused]>;
+                  Requires<[IsARM, CarryDefIsUnused]> {
+    let Inst{4} = 1;
+    let Inst{7} = 0;
+    let Inst{20} = 1;
+    let Inst{25} = 0;
+}
 }
 
 // (sub X, imm) gets canonicalized to (add X, -imm).  Match this form.
