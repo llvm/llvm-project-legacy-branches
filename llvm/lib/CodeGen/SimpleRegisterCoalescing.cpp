@@ -922,7 +922,7 @@ static void PropagateDeadness(LiveInterval &li, MachineInstr *CopyMI,
       DefMI->getOperand(DeadIdx).setIsDead();
     else
       DefMI->addOperand(MachineOperand::CreateReg(li.reg,
-                                                  true, true, false, true));
+                   /*def*/true, /*implicit*/true, /*kill*/false, /*dead*/true));
     LRStart = li_->getNextSlot(LRStart);
   }
 }
@@ -2556,6 +2556,7 @@ static bool isZeroLengthInterval(LiveInterval *li, LiveIntervals *li_) {
   return true;
 }
 
+
 void SimpleRegisterCoalescing::CalculateSpillWeights() {
   SmallSet<unsigned, 4> Processed;
   for (MachineFunction::iterator mbbi = mf_->begin(), mbbe = mf_->end();
@@ -2566,9 +2567,14 @@ void SimpleRegisterCoalescing::CalculateSpillWeights() {
     unsigned loopDepth = loop ? loop->getLoopDepth() : 0;
     bool isExit = loop ? loop->isLoopExit(MBB) : false;
 
-    for (MachineBasicBlock::iterator mii = MBB->begin(), mie = MBB->end();
+    for (MachineBasicBlock::const_iterator mii = MBB->begin(), mie = MBB->end();
          mii != mie; ++mii) {
-      MachineInstr *MI = mii;
+      const MachineInstr *MI = mii;
+      if (tii_->isIdentityCopy(*MI))
+        continue;
+
+      if (MI->getOpcode() == TargetInstrInfo::IMPLICIT_DEF)
+        continue;
 
       for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
         const MachineOperand &mopi = MI->getOperand(i);
@@ -2598,8 +2604,7 @@ void SimpleRegisterCoalescing::CalculateSpillWeights() {
         float Weight = li_->getSpillWeight(HasDef, HasUse, loopDepth);
         if (HasDef && isExit) {
           // Looks like this is a loop count variable update.
-          LiveIndex DefIdx =
-            li_->getDefIndex(li_->getInstructionIndex(MI));
+          LiveIndex DefIdx = li_->getDefIndex(li_->getInstructionIndex(MI));
           const LiveRange *DLR =
             li_->getInterval(Reg).getLiveRangeContaining(DefIdx);
           if (DLR->end > MBBEnd)
@@ -2706,7 +2711,7 @@ bool SimpleRegisterCoalescing::runOnMachineFunction(MachineFunction &fn) {
             // registers unless the definition is dead. e.g.
             // %DO<def> = INSERT_SUBREG %D0<undef>, %S0<kill>, 1
             // or else the scavenger may complain. LowerSubregs will
-            // change this to an IMPLICIT_DEF later.
+            // delete them later.
             DoDelete = false;
         }
         if (MI->registerDefIsDead(DstReg)) {

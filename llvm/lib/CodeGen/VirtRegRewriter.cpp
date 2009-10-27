@@ -614,7 +614,7 @@ static void ReMaterialize(MachineBasicBlock &MBB,
     assert(MO.isUse());
     unsigned SubIdx = MO.getSubReg();
     unsigned Phys = VRM.getPhys(VirtReg);
-    assert(Phys);
+    assert(Phys && "Virtual register is not assigned a register?");
     unsigned RReg = SubIdx ? TRI->getSubReg(Phys, SubIdx) : Phys;
     MO.setReg(RReg);
     MO.setSubReg(0);
@@ -857,7 +857,7 @@ unsigned ReuseInfo::GetRegForReload(const TargetRegisterClass *RC,
         Spills.ClobberPhysReg(NewPhysReg);
         Spills.ClobberPhysReg(NewOp.PhysRegReused);
 
-        unsigned RReg = SubIdx ? TRI->getSubReg(NewPhysReg, SubIdx) : NewPhysReg;
+        unsigned RReg = SubIdx ? TRI->getSubReg(NewPhysReg, SubIdx) :NewPhysReg;
         MI->getOperand(NewOp.Operand).setReg(RReg);
         MI->getOperand(NewOp.Operand).setSubReg(0);
 
