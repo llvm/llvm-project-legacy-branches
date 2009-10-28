@@ -18,6 +18,7 @@
 
 #define DEBUG_TYPE "branchfolding"
 #include "BranchFolding.h"
+#include "llvm/Function.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -50,9 +51,8 @@ TailMergeThreshold("tail-merge-threshold",
 
 char BranchFolderPass::ID = 0;
 
-FunctionPass *llvm::createBranchFoldingPass(bool DefaultEnableTailMerge,
-                                            CodeGenOpt::Level OptLevel) { 
-  return new BranchFolderPass(DefaultEnableTailMerge, OptLevel);
+FunctionPass *llvm::createBranchFoldingPass(bool DefaultEnableTailMerge) { 
+  return new BranchFolderPass(DefaultEnableTailMerge);
 }
 
 bool BranchFolderPass::runOnMachineFunction(MachineFunction &MF) {
@@ -64,8 +64,7 @@ bool BranchFolderPass::runOnMachineFunction(MachineFunction &MF) {
 
 
 
-BranchFolder::BranchFolder(bool defaultEnableTailMerge, CodeGenOpt::Level OL) {
-  OptLevel = OL;
+BranchFolder::BranchFolder(bool defaultEnableTailMerge) {
   switch (FlagEnableTailMerge) {
   case cl::BOU_UNSET: EnableTailMerge = defaultEnableTailMerge; break;
   case cl::BOU_TRUE: EnableTailMerge = true; break;
@@ -467,24 +466,23 @@ unsigned BranchFolder::ComputeSameTails(unsigned CurHash,
        CurMPIter!=B && CurMPIter->first==CurHash;
        --CurMPIter) {
     for (MPIterator I = prior(CurMPIter); I->first==CurHash ; --I) {
-      unsigned CommonTailLen = ComputeCommonTailLength(
-                                        CurMPIter->second,
-                                        I->second,
-                                        TrialBBI1, TrialBBI2);
+      unsigned CommonTailLen = ComputeCommonTailLength(CurMPIter->second,
+                                                       I->second,
+                                                       TrialBBI1, TrialBBI2);
       // If we will have to split a block, there should be at least
-      // minCommonTailLength instructions in common; if not, and if we are not
-      // optimizing for performance at the expense of code size, at worst
-      // we will be replacing a fallthrough into the common tail with a
-      // branch, which at worst breaks even with falling through into
-      // the duplicated common tail, so 1 instruction in common is enough.
-      // We will always pick a block we do not have to split as the common
-      // tail if there is one.
-      // (Empty blocks will get forwarded and need not be considered.)
+      // minCommonTailLength instructions in common.  Otherwise, if we are
+      // optimizing for code size, 1 instruction in common is enough.  At
+      // worst we will be replacing a fallthrough into the common tail with a
+      // branch, which at worst breaks even with falling through into the
+      // duplicated common tail.  We will always pick a block we do not have
+      // to split as the common tail if there is one.  (Empty blocks will get
+      // forwarded and need not be considered.)
+      MachineFunction *MF = CurMPIter->second->getParent();
       if (CommonTailLen >= minCommonTailLength ||
-          (OptLevel != CodeGenOpt::Aggressive &&
-           CommonTailLen > 0 &&
-           (TrialBBI1==CurMPIter->second->begin() ||
-            TrialBBI2==I->second->begin()))) {
+          (CommonTailLen > 0 &&
+           MF->getFunction()->hasFnAttr(Attribute::OptimizeForSize) &&
+           (TrialBBI1 == CurMPIter->second->begin() ||
+            TrialBBI2 == I->second->begin()))) {
         if (CommonTailLen > maxCommonTailLength) {
           SameTails.clear();
           maxCommonTailLength = CommonTailLen;
