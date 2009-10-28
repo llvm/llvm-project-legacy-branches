@@ -174,7 +174,8 @@ def fp32imm0 : PatLeaf<(f32 fpimm), [{
   return N->isExactlyValue(+0.0);
 }]>;
 
-def PSxLDQ_imm  : SDNodeXForm<imm, [{
+// BYTE_imm - Transform bit immediates into byte immediates.
+def BYTE_imm  : SDNodeXForm<imm, [{
   // Transformation function: imm >> 3
   return getI32Imm(N->getZExtValue() >> 3);
 }]>;
@@ -195,6 +196,12 @@ def SHUFFLE_get_pshufhw_imm : SDNodeXForm<vector_shuffle, [{
 // PSHUFLW imm.
 def SHUFFLE_get_pshuflw_imm : SDNodeXForm<vector_shuffle, [{
   return getI8Imm(X86::getShufflePSHUFLWImmediate(N));
+}]>;
+
+// SHUFFLE_get_palign_imm xform function: convert vector_shuffle mask to
+// a PALIGNR imm.
+def SHUFFLE_get_palign_imm : SDNodeXForm<vector_shuffle, [{
+  return getI8Imm(X86::getShufflePALIGNRImmediate(N));
 }]>;
 
 def splat_lo : PatFrag<(ops node:$lhs, node:$rhs),
@@ -282,6 +289,11 @@ def pshuflw : PatFrag<(ops node:$lhs, node:$rhs),
                       (vector_shuffle node:$lhs, node:$rhs), [{
   return X86::isPSHUFLWMask(cast<ShuffleVectorSDNode>(N));
 }], SHUFFLE_get_pshuflw_imm>;
+
+def palign : PatFrag<(ops node:$lhs, node:$rhs),
+                     (vector_shuffle node:$lhs, node:$rhs), [{
+  return X86::isPALIGNRMask(cast<ShuffleVectorSDNode>(N));
+}], SHUFFLE_get_palign_imm>;
 
 //===----------------------------------------------------------------------===//
 // SSE scalar FP Instructions
@@ -1985,21 +1997,21 @@ let Constraints = "$src1 = $dst", neverHasSideEffects = 1 in {
 
 let Predicates = [HasSSE2] in {
   def : Pat<(int_x86_sse2_psll_dq VR128:$src1, imm:$src2),
-            (v2i64 (PSLLDQri VR128:$src1, (PSxLDQ_imm imm:$src2)))>;
+            (v2i64 (PSLLDQri VR128:$src1, (BYTE_imm imm:$src2)))>;
   def : Pat<(int_x86_sse2_psrl_dq VR128:$src1, imm:$src2),
-            (v2i64 (PSRLDQri VR128:$src1, (PSxLDQ_imm imm:$src2)))>;
+            (v2i64 (PSRLDQri VR128:$src1, (BYTE_imm imm:$src2)))>;
   def : Pat<(int_x86_sse2_psll_dq_bs VR128:$src1, imm:$src2),
             (v2i64 (PSLLDQri VR128:$src1, imm:$src2))>;
   def : Pat<(int_x86_sse2_psrl_dq_bs VR128:$src1, imm:$src2),
             (v2i64 (PSRLDQri VR128:$src1, imm:$src2))>;
   def : Pat<(v2f64 (X86fsrl VR128:$src1, i32immSExt8:$src2)),
-            (v2f64 (PSRLDQri VR128:$src1, (PSxLDQ_imm imm:$src2)))>;
+            (v2f64 (PSRLDQri VR128:$src1, (BYTE_imm imm:$src2)))>;
 
   // Shift up / down and insert zero's.
   def : Pat<(v2i64 (X86vshl  VR128:$src, (i8 imm:$amt))),
-            (v2i64 (PSLLDQri VR128:$src, (PSxLDQ_imm imm:$amt)))>;
+            (v2i64 (PSLLDQri VR128:$src, (BYTE_imm imm:$amt)))>;
   def : Pat<(v2i64 (X86vshr  VR128:$src, (i8 imm:$amt))),
-            (v2i64 (PSRLDQri VR128:$src, (PSxLDQ_imm imm:$amt)))>;
+            (v2i64 (PSRLDQri VR128:$src, (BYTE_imm imm:$amt)))>;
 }
 
 // Logical
@@ -2062,6 +2074,7 @@ defm PACKSSDW : PDI_binop_rm_int<0x6B, "packssdw", int_x86_sse2_packssdw_128>;
 defm PACKUSWB : PDI_binop_rm_int<0x67, "packuswb", int_x86_sse2_packuswb_128>;
 
 // Shuffle and unpack instructions
+let AddedComplexity = 5 in {
 def PSHUFDri : PDIi8<0x70, MRMSrcReg,
                      (outs VR128:$dst), (ins VR128:$src1, i8imm:$src2),
                      "pshufd\t{$src2, $src1, $dst|$dst, $src1, $src2}",
@@ -2073,6 +2086,7 @@ def PSHUFDmi : PDIi8<0x70, MRMSrcMem,
                      [(set VR128:$dst, (v4i32 (pshufd:$src2
                                              (bc_v4i32(memopv2i64 addr:$src1)),
                                              (undef))))]>;
+}                                             
 
 // SSE2 with ImmT == Imm8 and XS prefix.
 def PSHUFHWri : Ii8<0x70, MRMSrcReg,
@@ -2809,35 +2823,59 @@ let Constraints = "$src1 = $dst" in {
   def PALIGNR64rr  : SS3AI<0x0F, MRMSrcReg, (outs VR64:$dst),
                            (ins VR64:$src1, VR64:$src2, i16imm:$src3),
                            "palignr\t{$src3, $src2, $dst|$dst, $src2, $src3}",
-                           [(set VR64:$dst,
-                             (int_x86_ssse3_palign_r
-                              VR64:$src1, VR64:$src2,
-                              imm:$src3))]>;
+                           []>;
   def PALIGNR64rm  : SS3AI<0x0F, MRMSrcMem, (outs VR64:$dst),
                            (ins VR64:$src1, i64mem:$src2, i16imm:$src3),
                            "palignr\t{$src3, $src2, $dst|$dst, $src2, $src3}",
-                           [(set VR64:$dst,
-                             (int_x86_ssse3_palign_r
-                              VR64:$src1,
-                              (bitconvert (memopv2i32 addr:$src2)),
-                              imm:$src3))]>;
+                           []>;
 
   def PALIGNR128rr : SS3AI<0x0F, MRMSrcReg, (outs VR128:$dst),
                            (ins VR128:$src1, VR128:$src2, i32imm:$src3),
                            "palignr\t{$src3, $src2, $dst|$dst, $src2, $src3}",
-                           [(set VR128:$dst,
-                             (int_x86_ssse3_palign_r_128
-                              VR128:$src1, VR128:$src2,
-                              imm:$src3))]>, OpSize;
+                           []>, OpSize;
   def PALIGNR128rm : SS3AI<0x0F, MRMSrcMem, (outs VR128:$dst),
                            (ins VR128:$src1, i128mem:$src2, i32imm:$src3),
                            "palignr\t{$src3, $src2, $dst|$dst, $src2, $src3}",
-                           [(set VR128:$dst,
-                             (int_x86_ssse3_palign_r_128
-                              VR128:$src1,
-                              (bitconvert (memopv4i32 addr:$src2)),
-                              imm:$src3))]>, OpSize;
+                           []>, OpSize;
 }
+
+// palignr patterns.
+def : Pat<(int_x86_ssse3_palign_r VR64:$src1, VR64:$src2, (i16 imm:$src3)),
+          (PALIGNR64rr VR64:$src1, VR64:$src2, (BYTE_imm imm:$src3))>,
+          Requires<[HasSSSE3]>;
+def : Pat<(int_x86_ssse3_palign_r VR64:$src1,
+                                      (memop64 addr:$src2),
+                                      (i16 imm:$src3)),
+          (PALIGNR64rm VR64:$src1, addr:$src2, (BYTE_imm imm:$src3))>,
+          Requires<[HasSSSE3]>;
+
+def : Pat<(int_x86_ssse3_palign_r_128 VR128:$src1, VR128:$src2, (i32 imm:$src3)),
+          (PALIGNR128rr VR128:$src1, VR128:$src2, (BYTE_imm imm:$src3))>,
+          Requires<[HasSSSE3]>;
+def : Pat<(int_x86_ssse3_palign_r_128 VR128:$src1,
+                                      (memopv2i64 addr:$src2),
+                                      (i32 imm:$src3)),
+          (PALIGNR128rm VR128:$src1, addr:$src2, (BYTE_imm imm:$src3))>,
+          Requires<[HasSSSE3]>;
+
+let AddedComplexity = 5 in {
+def : Pat<(v4i32 (palign:$src3 VR128:$src1, VR128:$src2)),
+          (PALIGNR128rr VR128:$src2, VR128:$src1,
+                        (SHUFFLE_get_palign_imm VR128:$src3))>,
+      Requires<[HasSSSE3]>;
+def : Pat<(v4f32 (palign:$src3 VR128:$src1, VR128:$src2)),
+          (PALIGNR128rr VR128:$src2, VR128:$src1,
+                        (SHUFFLE_get_palign_imm VR128:$src3))>,
+      Requires<[HasSSSE3]>;
+def : Pat<(v8i16 (palign:$src3 VR128:$src1, VR128:$src2)),
+          (PALIGNR128rr VR128:$src2, VR128:$src1,
+                        (SHUFFLE_get_palign_imm VR128:$src3))>,
+      Requires<[HasSSSE3]>;
+def : Pat<(v16i8 (palign:$src3 VR128:$src1, VR128:$src2)),
+          (PALIGNR128rr VR128:$src2, VR128:$src1,
+                        (SHUFFLE_get_palign_imm VR128:$src3))>,
+      Requires<[HasSSSE3]>;
+}      
 
 def : Pat<(X86pshufb VR128:$src, VR128:$mask),
           (PSHUFBrr128 VR128:$src, VR128:$mask)>, Requires<[HasSSSE3]>;
