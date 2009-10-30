@@ -167,7 +167,7 @@ SDValue DAGTypeLegalizer::ScalarizeVecRes_LOAD(LoadSDNode *N) {
                                DAG.getUNDEF(N->getBasePtr().getValueType()),
                                N->getSrcValue(), N->getSrcValueOffset(),
                                N->getMemoryVT().getVectorElementType(),
-                               N->isVolatile(), N->getAlignment());
+                               N->isVolatile(), N->getOriginalAlignment());
 
   // Legalized the chain result - switch anything that used the old chain to
   // use the new one.
@@ -347,7 +347,7 @@ SDValue DAGTypeLegalizer::ScalarizeVecOp_STORE(StoreSDNode *N, unsigned OpNo){
 
   return DAG.getStore(N->getChain(), dl, GetScalarizedVector(N->getOperand(1)),
                       N->getBasePtr(), N->getSrcValue(), N->getSrcValueOffset(),
-                      N->isVolatile(), N->getAlignment());
+                      N->isVolatile(), N->getOriginalAlignment());
 }
 
 
@@ -690,7 +690,7 @@ void DAGTypeLegalizer::SplitVecRes_LOAD(LoadSDNode *LD, SDValue &Lo,
   const Value *SV = LD->getSrcValue();
   int SVOffset = LD->getSrcValueOffset();
   MVT MemoryVT = LD->getMemoryVT();
-  unsigned Alignment = LD->getAlignment();
+  unsigned Alignment = LD->getOriginalAlignment();
   bool isVolatile = LD->isVolatile();
 
   MVT LoMemVT, HiMemVT;
@@ -1044,7 +1044,7 @@ SDValue DAGTypeLegalizer::SplitVecOp_STORE(StoreSDNode *N, unsigned OpNo) {
   SDValue Ptr = N->getBasePtr();
   int SVOffset = N->getSrcValueOffset();
   MVT MemoryVT = N->getMemoryVT();
-  unsigned Alignment = N->getAlignment();
+  unsigned Alignment = N->getOriginalAlignment();
   bool isVol = N->isVolatile();
   SDValue Lo, Hi;
   GetSplitVector(N->getOperand(1), Lo, Hi);

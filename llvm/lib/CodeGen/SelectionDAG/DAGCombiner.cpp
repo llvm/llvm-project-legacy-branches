@@ -41,7 +41,8 @@ STATISTIC(PostIndexedNodes, "Number of post-indexed nodes created");
 namespace {
   static cl::opt<bool>
     CombinerAA("combiner-alias-analysis", cl::Hidden,
-               cl::desc("Turn on alias analysis during testing"));
+               cl::desc("Turn on alias analysis during testing"),
+               cl::init(true));
 
   static cl::opt<bool>
     CombinerGlobalAA("combiner-global-alias-analysis", cl::Hidden,
@@ -230,14 +231,17 @@ namespace {
     /// overlap.
     bool isAlias(SDValue Ptr1, int64_t Size1,
                  const Value *SrcValue1, int SrcValueOffset1,
+                 unsigned SrcValueAlign1,
                  SDValue Ptr2, int64_t Size2,
-                 const Value *SrcValue2, int SrcValueOffset2) const;
+                 const Value *SrcValue2, int SrcValueOffset2,
+                 unsigned SrcValueAlign2) const;
 
     /// FindAliasInfo - Extracts the relevant alias information from the memory
     /// node.  Returns true if the operand was a load.
     bool FindAliasInfo(SDNode *N,
                        SDValue &Ptr, int64_t &Size,
-                       const Value *&SrcValue, int &SrcValueOffset) const;
+                       const Value *&SrcValue, int &SrcValueOffset,
+                       unsigned &SrcValueAlignment) const;
 
     /// FindBetterChain - Walk up chain skipping non-aliasing memory nodes,
     /// looking for a better chain (aliasing node.)
@@ -871,7 +875,7 @@ SDValue DAGCombiner::visitTokenFactor(SDNode *N) {
         break;
 
       case ISD::TokenFactor:
-        if ((CombinerAA || Op.hasOneUse()) &&
+        if (Op.hasOneUse() &&
             std::find(TFs.begin(), TFs.end(), Op.getNode()) == TFs.end()) {
           // Queue up for processing.
           TFs.push_back(Op.getNode());
@@ -892,7 +896,7 @@ SDValue DAGCombiner::visitTokenFactor(SDNode *N) {
       }
     }
   }
-
+  
   SDValue Result;
 
   // If we've change things around then replace token factor.
@@ -4890,7 +4894,10 @@ SDValue DAGCombiner::visitLOAD(SDNode *N) {
       // Create token factor to keep old chain connected.
       SDValue Token = DAG.getNode(ISD::TokenFactor, N->getDebugLoc(),
                                   MVT::Other, Chain, ReplLoad.getValue(1));
-
+      
+      // Make sure the new and old chains are cleaned up.
+      AddToWorkList(Token.getNode());
+      
       // Replace uses with load result and token factor. Don't add users
       // to work list.
       return CombineTo(N, ReplLoad.getValue(0), Token, false);
@@ -5013,8 +5020,9 @@ SDValue DAGCombiner::visitSTORE(SDNode *N) {
 
     // If there is a better chain.
     if (Chain != BetterChain) {
-      // Replace the chain to avoid dependency.
       SDValue ReplStore;
+
+      // Replace the chain to avoid dependency.
       if (ST->isTruncatingStore()) {
         ReplStore = DAG.getTruncStore(BetterChain, N->getDebugLoc(), Value, Ptr,
                                       ST->getSrcValue(),ST->getSrcValueOffset(),
@@ -5029,6 +5037,9 @@ SDValue DAGCombiner::visitSTORE(SDNode *N) {
       // Create token to keep both nodes around.
       SDValue Token = DAG.getNode(ISD::TokenFactor, N->getDebugLoc(),
                                   MVT::Other, Chain, ReplStore);
+
+      // Make sure the new and old chains are cleaned up.
+      AddToWorkList(Token.getNode());
 
       // Don't add users to work list.
       return CombineTo(N, Token, false);
@@ -5906,11 +5917,12 @@ SDValue DAGCombiner::BuildUDIV(SDNode *N) {
   return S;
 }
 
-/// FindBaseOffset - Return true if base is known not to alias with anything
-/// but itself.  Provides base object and offset as results.
-static bool FindBaseOffset(SDValue Ptr, SDValue &Base, int64_t &Offset) {
+/// FindBaseOffset - Return true if base is a frame index, which is known not
+// to alias with anything but itself.  Provides base object and offset as results.
+static bool FindBaseOffset(SDValue Ptr, SDValue &Base, int64_t &Offset,
+                           GlobalValue *&GV, void *&CV) {
   // Assume it is a primitive operation.
-  Base = Ptr; Offset = 0;
+  Base = Ptr; Offset = 0; GV = 0; CV = 0;
 
   // If it's an adding a simple constant then integrate the offset.
   if (Base.getOpcode() == ISD::ADD) {
@@ -5919,36 +5931,73 @@ static bool FindBaseOffset(SDValue Ptr, SDValue &Base, int64_t &Offset) {
       Offset += C->getZExtValue();
     }
   }
+  
+  // Return the underlying GlobalValue, and update the Offset.  Return false
+  // for GlobalAddressSDNode since the same GlobalAddress may be represented
+  // by multiple nodes with different offsets.
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Base)) {
+    GV = G->getGlobal();
+    Offset += G->getOffset();
+    return false;
+  }
 
+  // Return the underlying Constant value, and update the Offset.  Return false
+  // for ConstantSDNodes since the same constant pool entry may be represented
+  // by multiple nodes with different offsets.
+  if (ConstantPoolSDNode *C = dyn_cast<ConstantPoolSDNode>(Base)) {
+    CV = C->isMachineConstantPoolEntry() ? (void *)C->getMachineCPVal()
+                                         : (void *)C->getConstVal();
+    Offset += C->getOffset();
+    return false;
+  }
   // If it's any of the following then it can't alias with anything but itself.
-  return isa<FrameIndexSDNode>(Base) ||
-         isa<ConstantPoolSDNode>(Base) ||
-         isa<GlobalAddressSDNode>(Base);
+  return isa<FrameIndexSDNode>(Base);
 }
 
 /// isAlias - Return true if there is any possibility that the two addresses
 /// overlap.
 bool DAGCombiner::isAlias(SDValue Ptr1, int64_t Size1,
                           const Value *SrcValue1, int SrcValueOffset1,
+                          unsigned SrcValueAlign1,
                           SDValue Ptr2, int64_t Size2,
-                          const Value *SrcValue2, int SrcValueOffset2) const {
+                          const Value *SrcValue2, int SrcValueOffset2,
+                          unsigned SrcValueAlign2) const {
   // If they are the same then they must be aliases.
   if (Ptr1 == Ptr2) return true;
 
   // Gather base node and offset information.
   SDValue Base1, Base2;
   int64_t Offset1, Offset2;
-  bool KnownBase1 = FindBaseOffset(Ptr1, Base1, Offset1);
-  bool KnownBase2 = FindBaseOffset(Ptr2, Base2, Offset2);
+  GlobalValue *GV1, *GV2;
+  void *CV1, *CV2;
+  bool isFrameIndex1 = FindBaseOffset(Ptr1, Base1, Offset1, GV1, CV1);
+  bool isFrameIndex2 = FindBaseOffset(Ptr2, Base2, Offset2, GV2, CV2);
 
-  // If they have a same base address then...
-  if (Base1 == Base2)
-    // Check to see if the addresses overlap.
+  // If they have a same base address then check to see if they overlap.
+  if (Base1 == Base2 || (GV1 && (GV1 == GV2)) || (CV1 && (CV1 == CV2)))
     return !((Offset1 + Size1) <= Offset2 || (Offset2 + Size2) <= Offset1);
 
-  // If we know both bases then they can't alias.
-  if (KnownBase1 && KnownBase2) return false;
+  // If we know what the bases are, and they aren't identical, then we know they
+  // cannot alias.
+  if ((isFrameIndex1 || CV1 || GV1) && (isFrameIndex2 || CV2 || GV2))
+    return false;
 
+  // If we know required SrcValue1 and SrcValue2 have relatively large alignment
+  // compared to the size and offset of the access, we may be able to prove they
+  // do not alias.  This check is conservative for now to catch cases created by
+  // splitting vector types.
+  if ((SrcValueAlign1 == SrcValueAlign2) &&
+      (SrcValueOffset1 != SrcValueOffset2) &&
+      (Size1 == Size2) && (SrcValueAlign1 > Size1)) {
+    int64_t OffAlign1 = SrcValueOffset1 % SrcValueAlign1;
+    int64_t OffAlign2 = SrcValueOffset2 % SrcValueAlign1;
+    
+    // There is no overlap between these relatively aligned accesses of similar
+    // size, return no alias.
+    if ((OffAlign1 + Size1) <= OffAlign2 || (OffAlign2 + Size2) <= OffAlign1)
+      return false;
+  }
+  
   if (CombinerGlobalAA) {
     // Use alias analysis information.
     int64_t MinOffset = std::min(SrcValueOffset1, SrcValueOffset2);
@@ -5968,18 +6017,22 @@ bool DAGCombiner::isAlias(SDValue Ptr1, int64_t Size1,
 /// node.  Returns true if the operand was a load.
 bool DAGCombiner::FindAliasInfo(SDNode *N,
                         SDValue &Ptr, int64_t &Size,
-                        const Value *&SrcValue, int &SrcValueOffset) const {
+                        const Value *&SrcValue, 
+                        int &SrcValueOffset,
+                        unsigned &SrcValueAlign) const {
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
     Ptr = LD->getBasePtr();
     Size = LD->getMemoryVT().getSizeInBits() >> 3;
     SrcValue = LD->getSrcValue();
     SrcValueOffset = LD->getSrcValueOffset();
+    SrcValueAlign = LD->getOriginalAlignment();
     return true;
   } else if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N)) {
     Ptr = ST->getBasePtr();
     Size = ST->getMemoryVT().getSizeInBits() >> 3;
     SrcValue = ST->getSrcValue();
     SrcValueOffset = ST->getSrcValueOffset();
+    SrcValueAlign = ST->getOriginalAlignment();
   } else {
     assert(0 && "FindAliasInfo expected a memory operand");
   }
@@ -5992,28 +6045,45 @@ bool DAGCombiner::FindAliasInfo(SDNode *N,
 void DAGCombiner::GatherAllAliases(SDNode *N, SDValue OriginalChain,
                                    SmallVector<SDValue, 8> &Aliases) {
   SmallVector<SDValue, 8> Chains;     // List of chains to visit.
-  std::set<SDNode *> Visited;           // Visited node set.
+  SmallPtrSet<SDNode *, 16> Visited;  // Visited node set.
 
   // Get alias information for node.
   SDValue Ptr;
   int64_t Size;
   const Value *SrcValue;
   int SrcValueOffset;
-  bool IsLoad = FindAliasInfo(N, Ptr, Size, SrcValue, SrcValueOffset);
+  unsigned SrcValueAlign;
+  bool IsLoad = FindAliasInfo(N, Ptr, Size, SrcValue, SrcValueOffset, 
+                              SrcValueAlign);
 
   // Starting off.
   Chains.push_back(OriginalChain);
-
+  unsigned Depth = 0;
+  
   // Look at each chain and determine if it is an alias.  If so, add it to the
   // aliases list.  If not, then continue up the chain looking for the next
   // candidate.
   while (!Chains.empty()) {
     SDValue Chain = Chains.back();
     Chains.pop_back();
+    
+    // For TokenFactor nodes, look at each operand and only continue up the 
+    // chain until we find two aliases.  If we've seen two aliases, assume we'll 
+    // find more and revert to original chain since the xform is unlikely to be
+    // profitable.
+    // 
+    // FIXME: The depth check could be made to return the last non-aliasing 
+    // chain we found before we hit a tokenfactor rather than the original
+    // chain.
+    if (Depth > 6 || Aliases.size() == 2) {
+      Aliases.clear();
+      Aliases.push_back(OriginalChain);
+      break;
+    }
 
-     // Don't bother if we've been before.
-    if (Visited.find(Chain.getNode()) != Visited.end()) continue;
-    Visited.insert(Chain.getNode());
+    // Don't bother if we've been before.
+    if (!Visited.insert(Chain.getNode()))
+      continue;
 
     switch (Chain.getOpcode()) {
     case ISD::EntryToken:
@@ -6027,32 +6097,37 @@ void DAGCombiner::GatherAllAliases(SDNode *N, SDValue OriginalChain,
       int64_t OpSize;
       const Value *OpSrcValue;
       int OpSrcValueOffset;
+      unsigned OpSrcValueAlign;
       bool IsOpLoad = FindAliasInfo(Chain.getNode(), OpPtr, OpSize,
-                                    OpSrcValue, OpSrcValueOffset);
+                                    OpSrcValue, OpSrcValueOffset,
+                                    OpSrcValueAlign);
 
       // If chain is alias then stop here.
       if (!(IsLoad && IsOpLoad) &&
-          isAlias(Ptr, Size, SrcValue, SrcValueOffset,
-                  OpPtr, OpSize, OpSrcValue, OpSrcValueOffset)) {
+          isAlias(Ptr, Size, SrcValue, SrcValueOffset, SrcValueAlign,
+                  OpPtr, OpSize, OpSrcValue, OpSrcValueOffset,
+                  OpSrcValueAlign)) {
         Aliases.push_back(Chain);
       } else {
         // Look further up the chain.
         Chains.push_back(Chain.getOperand(0));
-        // Clean up old chain.
-        AddToWorkList(Chain.getNode());
+        ++Depth;
       }
       break;
     }
 
     case ISD::TokenFactor:
-      // We have to check each of the operands of the token factor, so we queue
-      // then up.  Adding the  operands to the queue (stack) in reverse order
-      // maintains the original order and increases the likelihood that getNode
-      // will find a matching token factor (CSE.)
+      // We have to check each of the operands of the token factor for "small"
+      // token factors, so we queue them up.  Adding the operands to the queue
+      // (stack) in reverse order maintains the original order and increases the
+      // likelihood that getNode will find a matching token factor (CSE.)
+      if (Chain.getNumOperands() > 16) {
+        Aliases.push_back(Chain);
+        break;
+      }
       for (unsigned n = Chain.getNumOperands(); n;)
         Chains.push_back(Chain.getOperand(--n));
-      // Eliminate the token factor if we can.
-      AddToWorkList(Chain.getNode());
+      ++Depth;
       break;
 
     default:
@@ -6078,15 +6153,10 @@ SDValue DAGCombiner::FindBetterChain(SDNode *N, SDValue OldChain) {
     // If a single operand then chain to it.  We don't need to revisit it.
     return Aliases[0];
   }
-
+  
   // Construct a custom tailored token factor.
-  SDValue NewChain = DAG.getNode(ISD::TokenFactor, N->getDebugLoc(), MVT::Other,
-                                 &Aliases[0], Aliases.size());
-
-  // Make sure the old chain gets cleaned up.
-  if (NewChain != OldChain) AddToWorkList(OldChain.getNode());
-
-  return NewChain;
+  return DAG.getNode(ISD::TokenFactor, N->getDebugLoc(), MVT::Other, 
+                     &Aliases[0], Aliases.size());
 }
 
 // SelectionDAG::Combine - This is the entry point for the file.

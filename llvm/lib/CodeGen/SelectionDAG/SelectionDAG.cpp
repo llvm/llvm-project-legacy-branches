@@ -4908,25 +4908,25 @@ GlobalAddressSDNode::GlobalAddressSDNode(bool isTarget, const GlobalValue *GA,
 }
 
 MemSDNode::MemSDNode(unsigned Opc, DebugLoc dl, SDVTList VTs, MVT memvt,
-                     const Value *srcValue, int SVO,
-                     unsigned alignment, bool vol)
+                     const Value *srcValue, int SVO, unsigned alignment,
+                     bool vol)
  : SDNode(Opc, dl, VTs), MemoryVT(memvt), SrcValue(srcValue), SVOffset(SVO) {
   SubclassData = encodeMemSDNodeFlags(0, ISD::UNINDEXED, vol, alignment);
   assert(isPowerOf2_32(alignment) && "Alignment is not a power of 2!");
-  assert(getAlignment() == alignment && "Alignment representation error!");
-  assert(isVolatile() == vol && "Volatile representation error!");
+  assert(getOriginalAlignment() == alignment && "Alignment encoding error!");
+  assert(isVolatile() == vol && "Volatile encoding error!");
 }
 
 MemSDNode::MemSDNode(unsigned Opc, DebugLoc dl, SDVTList VTs,
-                     const SDValue *Ops,
-                     unsigned NumOps, MVT memvt, const Value *srcValue,
-                     int SVO, unsigned alignment, bool vol)
+                     const SDValue *Ops, unsigned NumOps, MVT memvt, 
+                     const Value *srcValue, int SVO, unsigned alignment, 
+                     bool vol)
    : SDNode(Opc, dl, VTs, Ops, NumOps),
      MemoryVT(memvt), SrcValue(srcValue), SVOffset(SVO) {
   SubclassData = encodeMemSDNodeFlags(0, ISD::UNINDEXED, vol, alignment);
   assert(isPowerOf2_32(alignment) && "Alignment is not a power of 2!");
-  assert(getAlignment() == alignment && "Alignment representation error!");
-  assert(isVolatile() == vol && "Volatile representation error!");
+  assert(getOriginalAlignment() == alignment && "Alignment encoding error!");
+  assert(isVolatile() == vol && "Volatile encoding error!");
 }
 
 /// getMemOperand - Return a MachineMemOperand object describing the memory
@@ -4955,10 +4955,10 @@ MachineMemOperand MemSDNode::getMemOperand() const {
   dyn_cast<const FrameIndexSDNode>(getBasePtr().getNode());
   if (!getSrcValue() && FI)
     return MachineMemOperand(PseudoSourceValue::getFixedStack(FI->getIndex()),
-                             Flags, 0, Size, getAlignment());
+                             Flags, 0, Size, getOriginalAlignment());
   else
     return MachineMemOperand(getSrcValue(), Flags, getSrcValueOffset(),
-                             Size, getAlignment());
+                             Size, getOriginalAlignment());
 }
 
 /// Profile - Gather unique data for the node.
