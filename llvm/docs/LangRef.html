@@ -83,6 +83,7 @@
       <li><a href="#complexconstants">Complex Constants</a></li>
       <li><a href="#globalconstants">Global Variable and Function Addresses</a></li>
       <li><a href="#undefvalues">Undefined Values</a></li>
+      <li><a href="#blockaddress">Addresses of Basic Blocks</a></li>
       <li><a href="#constantexprs">Constant Expressions</a></li>
       <li><a href="#metadata">Embedded Metadata</a></li>
     </ol>
@@ -110,6 +111,7 @@
           <li><a href="#i_ret">'<tt>ret</tt>' Instruction</a></li>
           <li><a href="#i_br">'<tt>br</tt>' Instruction</a></li>
           <li><a href="#i_switch">'<tt>switch</tt>' Instruction</a></li>
+          <li><a href="#i_indbr">'<tt>indbr</tt>' Instruction</a></li>
           <li><a href="#i_invoke">'<tt>invoke</tt>' Instruction</a></li>
           <li><a href="#i_unwind">'<tt>unwind</tt>'  Instruction</a></li>
           <li><a href="#i_unreachable">'<tt>unreachable</tt>' Instruction</a></li>
@@ -2164,6 +2166,34 @@ has undefined behavior.</p>
 </div>
 
 <!-- ======================================================================= -->
+<div class="doc_subsection"><a name="blockaddress">Addresses of Basic
+    Blocks</a></div>
+<div class="doc_text">
+
+<p><b><tt>blockaddress(@function, %block)</tt></b></p>
+
+<p>The '<tt>blockaddress</tt>' constant computes the address of the specified
+   basic block in the specified function, and always has an i8* type.  Taking
+   the address of the entry block is illegal.</p>
+     
+<p>This value only has defined behavior when used as an operand to the
+   '<a href="#i_indbr"><tt>indbr</tt></a>' instruction or for comparisons
+   against null.  Pointer equality tests between labels addresses is undefined
+   behavior - though, again, comparison against null is ok, and no label is
+   equal to the null pointer.  This may also be passed around as an opaque
+   pointer sized value as long as the bits are not inspected.  This allows
+   <tt>ptrtoint</tt> and arithmetic to be performed on these values so long as
+   the original value is reconstituted before the <tt>indbr</tt>.</p>
+   
+<p>Finally, some targets may provide defined semantics when
+   using the value as the operand to an inline assembly, but that is target
+   specific.
+   </p>
+
+</div>
+
+
+<!-- ======================================================================= -->
 <div class="doc_subsection"><a name="constantexprs">Constant Expressions</a>
 </div>
 
@@ -2487,6 +2517,7 @@ Instructions</a> </div>
    '<a href="#i_ret"><tt>ret</tt></a>' instruction, the
    '<a href="#i_br"><tt>br</tt></a>' instruction, the
    '<a href="#i_switch"><tt>switch</tt></a>' instruction, the
+   '<a href="#i_indbr">'<tt>indbr</tt>' Instruction, the
    '<a href="#i_invoke"><tt>invoke</tt></a>' instruction, the
    '<a href="#i_unwind"><tt>unwind</tt></a>' instruction, and the
    '<a href="#i_unreachable"><tt>unreachable</tt></a>' instruction.</p>
@@ -2644,6 +2675,55 @@ IfUnequal:
 </pre>
 
 </div>
+
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection">
+   <a name="i_indbr">'<tt>indbr</tt>' Instruction</a>
+</div>
+
+<div class="doc_text">
+
+<h5>Syntax:</h5>
+<pre>
+  indbr &lt;somety&gt;* &lt;address&gt;, [ label &lt;dest1&gt;, label &lt;dest2&gt;, ... ]
+</pre>
+
+<h5>Overview:</h5>
+
+<p>The '<tt>indbr</tt>' instruction implements an indirect branch to a label
+   within the current function, whose address is specified by
+   "<tt>address</tt>".  Address must be derived from a <a
+   href="#blockaddress">blockaddress</a> constant.</p>
+
+<h5>Arguments:</h5>
+
+<p>The '<tt>address</tt>' argument is the address of the label to jump to.  The
+   rest of the arguments indicate the full set of possible destinations that the
+   address may point to.  Blocks are allowed to occur multiple times in the
+   destination list, though this isn't particularly useful.</p>
+   
+<p>This destination list is required so that dataflow analysis has an accurate
+   understanding of the CFG.</p>
+
+<h5>Semantics:</h5>
+
+<p>Control transfers to the block specified in the address argument.  All
+   possible destination blocks must be listed in the label list, otherwise this
+   instruction has undefined behavior.  This implies that jumps to labels
+   defined in other functions have undefined behavior as well.</p>
+
+<h5>Implementation:</h5>
+
+<p>This is typically implemented with a jump through a register.</p>
+
+<h5>Example:</h5>
+<pre>
+ indbr i8* %Addr, [ label %bb1, label %bb2, label %bb3 ]
+</pre>
+
+</div>
+
 
 <!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection">

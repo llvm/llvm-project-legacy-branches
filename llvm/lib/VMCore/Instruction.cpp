@@ -103,6 +103,7 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case Ret:    return "ret";
   case Br:     return "br";
   case Switch: return "switch";
+  case IndBr:  return "indbr";
   case Invoke: return "invoke";
   case Unwind: return "unwind";
   case Unreachable: return "unreachable";
@@ -454,4 +455,12 @@ bool Instruction::isSafeToSpeculativelyExecute() const {
   case Unreachable:
     return false; // Misc instructions which have effects
   }
+}
+
+Instruction *Instruction::clone() const {
+  Instruction *New = clone_impl();
+  New->SubclassOptionalData = SubclassOptionalData;
+  if (hasMetadata())
+    getContext().pImpl->TheMetadata.ValueIsCloned(this, New);
+  return New;
 }
