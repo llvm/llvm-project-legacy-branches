@@ -24,7 +24,8 @@
 using namespace llvm;
 
 MachineBasicBlock::MachineBasicBlock(MachineFunction &mf, const BasicBlock *bb)
-  : BB(bb), Number(-1), xParent(&mf), Alignment(0), IsLandingPad(false) {
+  : BB(bb), Number(-1), xParent(&mf), Alignment(0), IsLandingPad(false),
+    AddressTaken(false) {
   Insts.Parent = this;
 }
 
@@ -184,6 +185,7 @@ void MachineBasicBlock::print(raw_ostream &OS) const {
      << ", LLVM BB @" << (const void*) LBB << ", ID#" << getNumber();
   if (Alignment) OS << ", Alignment " << Alignment;
   if (isLandingPad()) OS << ", EH LANDING PAD";
+  if (hasAddressTaken()) OS << ", ADDRESS TAKEN";
   OS << ":\n";
 
   const TargetRegisterInfo *TRI = MF->getTarget().getRegisterInfo();  

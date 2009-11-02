@@ -322,6 +322,12 @@ void FunctionLoweringInfo::set(Function &fn, MachineFunction &mf,
     MBBMap[BB] = MBB;
     MF->push_back(MBB);
 
+    // Transfer the address-taken flag. This is necessary because there could
+    // be multiple MachineBasicBlocks corresponding to one BasicBlock, and only
+    // the first one should be marked.
+    if (BB->hasAddressTaken())
+      MBB->setHasAddressTaken();
+
     // Create Machine PHI nodes for LLVM PHI nodes, lowering them as
     // appropriate.
     PHINode *PN;
@@ -894,6 +900,9 @@ SDValue SelectionDAGLowering::getValue(const Value *V) {
       }
       return DAG.getMergeValues(&Constants[0], NumElts, getCurDebugLoc());
     }
+
+    if (BlockAddress *BA = dyn_cast<BlockAddress>(C))
+      return DAG.getBlockAddress(BA, getCurDebugLoc());
 
     const VectorType *VecTy = cast<VectorType>(V->getType());
     unsigned NumElements = VecTy->getNumElements();
@@ -2142,7 +2151,7 @@ void SelectionDAGLowering::visitSwitch(SwitchInst &SI) {
   }
 }
 
-void SelectionDAGLowering::visitIndBr(IndBrInst &I) {
+void SelectionDAGLowering::visitIndirectBr(IndirectBrInst &I) {
   // Update machine-CFG edges.
   for (unsigned i = 0, e = I.getNumSuccessors(); i != e; ++i)
     CurMBB->addSuccessor(FuncInfo.MBBMap[I.getSuccessor(i)]);
@@ -5837,8 +5846,7 @@ void SelectionDAGLowering::CopyValueToVirtualRegister(Value *V, unsigned Reg) {
 
 #include "llvm/CodeGen/SelectionDAGISel.h"
 
-void SelectionDAGISel::
-LowerArguments(BasicBlock *LLVMBB) {
+void SelectionDAGISel::LowerArguments(BasicBlock *LLVMBB) {
   // If this is the entry block, emit arguments.
   Function &F = *LLVMBB->getParent();
   SelectionDAG &DAG = SDL->DAG;

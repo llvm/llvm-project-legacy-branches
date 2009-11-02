@@ -1059,6 +1059,15 @@ static void WriteConstantInt(raw_ostream &Out, const Constant *CV,
     Out << "zeroinitializer";
     return;
   }
+  
+  if (const BlockAddress *BA = dyn_cast<BlockAddress>(CV)) {
+    Out << "blockaddress(";
+    WriteAsOperandInternal(Out, BA->getFunction(), &TypePrinter, Machine);
+    Out << ", ";
+    WriteAsOperandInternal(Out, BA->getBasicBlock(), &TypePrinter, Machine);
+    Out << ")";
+    return;
+  }
 
   if (const ConstantArray *CA = dyn_cast<ConstantArray>(CV)) {
     // As a special case, print the array as a string if it is an array of
@@ -1843,8 +1852,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(I.getOperand(op+1), true);
     }
     Out << "\n  ]";
-  } else if (isa<IndBrInst>(I)) {
-    // Special case indbr instruction to get formatting nice and correct.
+  } else if (isa<IndirectBrInst>(I)) {
+    // Special case indirectbr instruction to get formatting nice and correct.
     Out << ' ';
     writeOperand(Operand, true);
     Out << ", ";

@@ -29,34 +29,6 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
-namespace llvm {
-  /// ValID - Represents a reference of a definition of some sort with no type.
-  /// There are several cases where we have to parse the value but where the
-  /// type can depend on later context.  This may either be a numeric reference
-  /// or a symbolic (%var) reference.  This is just a discriminated union.
-  struct ValID {
-    enum {
-      t_LocalID, t_GlobalID,      // ID in UIntVal.
-      t_LocalName, t_GlobalName,  // Name in StrVal.
-      t_APSInt, t_APFloat,        // Value in APSIntVal/APFloatVal.
-      t_Null, t_Undef, t_Zero,    // No value.
-      t_EmptyArray,               // No value:  []
-      t_Constant,                 // Value in ConstantVal.
-      t_InlineAsm,                // Value in StrVal/StrVal2/UIntVal.
-      t_Metadata                  // Value in MetadataVal.
-    } Kind;
-
-    LLParser::LocTy Loc;
-    unsigned UIntVal;
-    std::string StrVal, StrVal2;
-    APSInt APSIntVal;
-    APFloat APFloatVal;
-    Constant *ConstantVal;
-    MetadataBase *MetadataVal;
-    ValID() : APFloatVal(0.0) {}
-  };
-}
-
 /// Run: module ::= toplevelentity*
 bool LLParser::Run() {
   // Prime the lexer.
@@ -69,6 +41,29 @@ bool LLParser::Run() {
 /// ValidateEndOfModule - Do final validity and sanity checks at the end of the
 /// module.
 bool LLParser::ValidateEndOfModule() {
+  // If there are entries in ForwardRefBlockAddresses at this point, they are
+  // references after the function was defined.  Resolve those now.
+  while (!ForwardRefBlockAddresses.empty()) {
+    // Okay, we are referencing an already-parsed function, resolve them now.
+    Function *TheFn = 0;
+    const ValID &Fn = ForwardRefBlockAddresses.begin()->first;
+    if (Fn.Kind == ValID::t_GlobalName)
+      TheFn = M->getFunction(Fn.StrVal);
+    else if (Fn.UIntVal < NumberedVals.size())
+      TheFn = dyn_cast<Function>(NumberedVals[Fn.UIntVal]);
+    
+    if (TheFn == 0)
+      return Error(Fn.Loc, "unknown function referenced by blockaddress");
+    
+    // Resolve all these references.
+    if (ResolveForwardRefBlockAddresses(TheFn, 
+                                      ForwardRefBlockAddresses.begin()->second,
+                                        0))
+      return true;
+    
+    ForwardRefBlockAddresses.erase(ForwardRefBlockAddresses.begin());
+  }
+  
   if (!ForwardRefTypes.empty())
     return Error(ForwardRefTypes.begin()->second.second,
                  "use of undefined type named '" +
@@ -102,6 +97,38 @@ bool LLParser::ValidateEndOfModule() {
   CheckDebugInfoIntrinsics(M);
   return false;
 }
+
+bool LLParser::ResolveForwardRefBlockAddresses(Function *TheFn, 
+                             std::vector<std::pair<ValID, GlobalValue*> > &Refs,
+                                               PerFunctionState *PFS) {
+  // Loop over all the references, resolving them.
+  for (unsigned i = 0, e = Refs.size(); i != e; ++i) {
+    BasicBlock *Res;
+    if (PFS) {
+      if (Refs[i].first.Kind == ValID::t_LocalName)
+        Res = PFS->GetBB(Refs[i].first.StrVal, Refs[i].first.Loc);
+      else
+        Res = PFS->GetBB(Refs[i].first.UIntVal, Refs[i].first.Loc);
+    } else if (Refs[i].first.Kind == ValID::t_LocalID) {
+      return Error(Refs[i].first.Loc,
+       "cannot take address of numeric label after it the function is defined");
+    } else {
+      Res = dyn_cast_or_null<BasicBlock>(
+                     TheFn->getValueSymbolTable().lookup(Refs[i].first.StrVal));
+    }
+    
+    if (Res == 0)
+      return Error(Refs[i].first.Loc,
+                   "referenced value is not a basic block");
+    
+    // Get the BlockAddress for this and update references to use it.
+    BlockAddress *BA = BlockAddress::get(TheFn, Res);
+    Refs[i].second->replaceAllUsesWith(BA);
+    Refs[i].second->eraseFromParent();
+  }
+  return false;
+}
+
 
 //===----------------------------------------------------------------------===//
 // Top-Level Entities
@@ -1557,8 +1584,9 @@ bool LLParser::ParseArrayVectorType(PATypeHolder &Result, bool isVector) {
 // Function Semantic Analysis.
 //===----------------------------------------------------------------------===//
 
-LLParser::PerFunctionState::PerFunctionState(LLParser &p, Function &f)
-  : P(p), F(f) {
+LLParser::PerFunctionState::PerFunctionState(LLParser &p, Function &f,
+                                             int functionNumber)
+  : P(p), F(f), FunctionNumber(functionNumber) {
 
   // Insert unnamed arguments into the NumberedVals list.
   for (Function::arg_iterator AI = F.arg_begin(), E = F.arg_end();
@@ -1588,7 +1616,29 @@ LLParser::PerFunctionState::~PerFunctionState() {
     }
 }
 
-bool LLParser::PerFunctionState::VerifyFunctionComplete() {
+bool LLParser::PerFunctionState::FinishFunction() {
+  // Check to see if someone took the address of labels in this block.
+  if (!P.ForwardRefBlockAddresses.empty()) {
+    ValID FunctionID;
+    if (!F.getName().empty()) {
+      FunctionID.Kind = ValID::t_GlobalName;
+      FunctionID.StrVal = F.getName();
+    } else {
+      FunctionID.Kind = ValID::t_GlobalID;
+      FunctionID.UIntVal = FunctionNumber;
+    }
+  
+    std::map<ValID, std::vector<std::pair<ValID, GlobalValue*> > >::iterator
+      FRBAI = P.ForwardRefBlockAddresses.find(FunctionID);
+    if (FRBAI != P.ForwardRefBlockAddresses.end()) {
+      // Resolve all these references.
+      if (P.ResolveForwardRefBlockAddresses(&F, FRBAI->second, this))
+        return true;
+      
+      P.ForwardRefBlockAddresses.erase(FRBAI);
+    }
+  }
+  
   if (!ForwardRefVals.empty())
     return P.Error(ForwardRefVals.begin()->second.second,
                    "use of undefined value '%" + ForwardRefVals.begin()->first +
@@ -1971,6 +2021,35 @@ bool LLParser::ParseValID(ValID &ID) {
     return false;
   }
 
+  case lltok::kw_blockaddress: {
+    // ValID ::= 'blockaddress' '(' @foo ',' %bar ')'
+    Lex.Lex();
+
+    ValID Fn, Label;
+    LocTy FnLoc, LabelLoc;
+    
+    if (ParseToken(lltok::lparen, "expected '(' in block address expression") ||
+        ParseValID(Fn) ||
+        ParseToken(lltok::comma, "expected comma in block address expression")||
+        ParseValID(Label) ||
+        ParseToken(lltok::rparen, "expected ')' in block address expression"))
+      return true;
+    
+    if (Fn.Kind != ValID::t_GlobalID && Fn.Kind != ValID::t_GlobalName)
+      return Error(Fn.Loc, "expected function name in blockaddress");
+    if (Label.Kind != ValID::t_LocalID && Label.Kind != ValID::t_LocalName)
+      return Error(Label.Loc, "expected basic block name in blockaddress");
+    
+    // Make a global variable as a placeholder for this reference.
+    GlobalVariable *FwdRef = new GlobalVariable(*M, Type::getInt8Ty(Context),
+                                           false, GlobalValue::InternalLinkage,
+                                                0, "");
+    ForwardRefBlockAddresses[Fn].push_back(std::make_pair(Label, FwdRef));
+    ID.ConstantVal = FwdRef;
+    ID.Kind = ValID::t_Constant;
+    return false;
+  }
+      
   case lltok::kw_trunc:
   case lltok::kw_zext:
   case lltok::kw_sext:
@@ -2616,7 +2695,10 @@ bool LLParser::ParseFunctionBody(Function &Fn) {
     return TokError("expected '{' in function body");
   Lex.Lex();  // eat the {.
 
-  PerFunctionState PFS(*this, Fn);
+  int FunctionNumber = -1;
+  if (!Fn.hasName()) FunctionNumber = NumberedVals.size()-1;
+  
+  PerFunctionState PFS(*this, Fn, FunctionNumber);
 
   while (Lex.getKind() != lltok::rbrace && Lex.getKind() != lltok::kw_end)
     if (ParseBasicBlock(PFS)) return true;
@@ -2625,7 +2707,7 @@ bool LLParser::ParseFunctionBody(Function &Fn) {
   Lex.Lex();
 
   // Verify function is ok.
-  return PFS.VerifyFunctionComplete();
+  return PFS.FinishFunction();
 }
 
 /// ParseBasicBlock
@@ -2710,7 +2792,7 @@ bool LLParser::ParseInstruction(Instruction *&Inst, BasicBlock *BB,
   case lltok::kw_ret:         return ParseRet(Inst, BB, PFS);
   case lltok::kw_br:          return ParseBr(Inst, PFS);
   case lltok::kw_switch:      return ParseSwitch(Inst, PFS);
-  case lltok::kw_indbr:       return ParseIndBr(Inst, PFS);
+  case lltok::kw_indirectbr:  return ParseIndirectBr(Inst, PFS);
   case lltok::kw_invoke:      return ParseInvoke(Inst, PFS);
   // Binary Operators.
   case lltok::kw_add:
@@ -2983,19 +3065,19 @@ bool LLParser::ParseSwitch(Instruction *&Inst, PerFunctionState &PFS) {
   return false;
 }
 
-/// ParseIndBr
+/// ParseIndirectBr
 ///  Instruction
-///    ::= 'indbr' TypeAndValue ',' '[' LabelList ']'
-bool LLParser::ParseIndBr(Instruction *&Inst, PerFunctionState &PFS) {
+///    ::= 'indirectbr' TypeAndValue ',' '[' LabelList ']'
+bool LLParser::ParseIndirectBr(Instruction *&Inst, PerFunctionState &PFS) {
   LocTy AddrLoc;
   Value *Address;
   if (ParseTypeAndValue(Address, AddrLoc, PFS) ||
-      ParseToken(lltok::comma, "expected ',' after indbr address") ||
-      ParseToken(lltok::lsquare, "expected '[' with indbr"))
+      ParseToken(lltok::comma, "expected ',' after indirectbr address") ||
+      ParseToken(lltok::lsquare, "expected '[' with indirectbr"))
     return true;
   
   if (!isa<PointerType>(Address->getType()))
-    return Error(AddrLoc, "indbr address must have pointer type");
+    return Error(AddrLoc, "indirectbr address must have pointer type");
   
   // Parse the destination list.
   SmallVector<BasicBlock*, 16> DestList;
@@ -3016,7 +3098,7 @@ bool LLParser::ParseIndBr(Instruction *&Inst, PerFunctionState &PFS) {
   if (ParseToken(lltok::rsquare, "expected ']' at end of block list"))
     return true;
 
-  IndBrInst *IBI = IndBrInst::Create(Address, DestList.size());
+  IndirectBrInst *IBI = IndirectBrInst::Create(Address, DestList.size());
   for (unsigned i = 0, e = DestList.size(); i != e; ++i)
     IBI->addDestination(DestList[i]);
   Inst = IBI;

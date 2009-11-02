@@ -3016,8 +3016,9 @@ void SwitchInst::setSuccessorV(unsigned idx, BasicBlock *B) {
 //                        SwitchInst Implementation
 //===----------------------------------------------------------------------===//
 
-void IndBrInst::init(Value *Address, unsigned NumDests) {
-  assert(Address);
+void IndirectBrInst::init(Value *Address, unsigned NumDests) {
+  assert(Address && isa<PointerType>(Address->getType()) &&
+         "Address of indirectbr must be a pointer");
   ReservedSpace = 1+NumDests;
   NumOperands = 1;
   OperandList = allocHungoffUses(ReservedSpace);
@@ -3033,7 +3034,7 @@ void IndBrInst::init(Value *Address, unsigned NumDests) {
 ///   2. If NumOps > NumOperands, reserve space for NumOps operands.
 ///   3. If NumOps == NumOperands, trim the reserved space.
 ///
-void IndBrInst::resizeOperands(unsigned NumOps) {
+void IndirectBrInst::resizeOperands(unsigned NumOps) {
   unsigned e = getNumOperands();
   if (NumOps == 0) {
     NumOps = e*2;
@@ -3055,21 +3056,22 @@ void IndBrInst::resizeOperands(unsigned NumOps) {
   if (OldOps) Use::zap(OldOps, OldOps + e, true);
 }
 
-IndBrInst::IndBrInst(Value *Address, unsigned NumCases,
-                     Instruction *InsertBefore)
-: TerminatorInst(Type::getVoidTy(Address->getContext()), Instruction::IndBr,
+IndirectBrInst::IndirectBrInst(Value *Address, unsigned NumCases,
+                               Instruction *InsertBefore)
+: TerminatorInst(Type::getVoidTy(Address->getContext()),Instruction::IndirectBr,
                  0, 0, InsertBefore) {
   init(Address, NumCases);
 }
 
-IndBrInst::IndBrInst(Value *Address, unsigned NumCases, BasicBlock *InsertAtEnd)
-: TerminatorInst(Type::getVoidTy(Address->getContext()), Instruction::IndBr,
+IndirectBrInst::IndirectBrInst(Value *Address, unsigned NumCases,
+                               BasicBlock *InsertAtEnd)
+: TerminatorInst(Type::getVoidTy(Address->getContext()),Instruction::IndirectBr,
                  0, 0, InsertAtEnd) {
   init(Address, NumCases);
 }
 
-IndBrInst::IndBrInst(const IndBrInst &IBI)
-  : TerminatorInst(Type::getVoidTy(IBI.getContext()), Instruction::IndBr,
+IndirectBrInst::IndirectBrInst(const IndirectBrInst &IBI)
+  : TerminatorInst(Type::getVoidTy(IBI.getContext()), Instruction::IndirectBr,
                    allocHungoffUses(IBI.getNumOperands()),
                    IBI.getNumOperands()) {
   Use *OL = OperandList, *InOL = IBI.OperandList;
@@ -3078,13 +3080,13 @@ IndBrInst::IndBrInst(const IndBrInst &IBI)
   SubclassOptionalData = IBI.SubclassOptionalData;
 }
 
-IndBrInst::~IndBrInst() {
+IndirectBrInst::~IndirectBrInst() {
   dropHungoffUses(OperandList);
 }
 
 /// addDestination - Add a destination.
 ///
-void IndBrInst::addDestination(BasicBlock *DestBB) {
+void IndirectBrInst::addDestination(BasicBlock *DestBB) {
   unsigned OpNo = NumOperands;
   if (OpNo+1 > ReservedSpace)
     resizeOperands(0);  // Get more space!
@@ -3095,8 +3097,8 @@ void IndBrInst::addDestination(BasicBlock *DestBB) {
 }
 
 /// removeDestination - This method removes the specified successor from the
-/// indbr instruction.
-void IndBrInst::removeDestination(unsigned idx) {
+/// indirectbr instruction.
+void IndirectBrInst::removeDestination(unsigned idx) {
   assert(idx < getNumOperands()-1 && "Successor index out of range!");
   
   unsigned NumOps = getNumOperands();
@@ -3110,13 +3112,13 @@ void IndBrInst::removeDestination(unsigned idx) {
   NumOperands = NumOps-1;
 }
 
-BasicBlock *IndBrInst::getSuccessorV(unsigned idx) const {
+BasicBlock *IndirectBrInst::getSuccessorV(unsigned idx) const {
   return getSuccessor(idx);
 }
-unsigned IndBrInst::getNumSuccessorsV() const {
+unsigned IndirectBrInst::getNumSuccessorsV() const {
   return getNumSuccessors();
 }
-void IndBrInst::setSuccessorV(unsigned idx, BasicBlock *B) {
+void IndirectBrInst::setSuccessorV(unsigned idx, BasicBlock *B) {
   setSuccessor(idx, B);
 }
 
@@ -3271,8 +3273,8 @@ SwitchInst *SwitchInst::clone_impl() const {
   return new SwitchInst(*this);
 }
 
-IndBrInst *IndBrInst::clone_impl() const {
-  return new IndBrInst(*this);
+IndirectBrInst *IndirectBrInst::clone_impl() const {
+  return new IndirectBrInst(*this);
 }
 
 
