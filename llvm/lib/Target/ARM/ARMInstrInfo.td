@@ -685,7 +685,9 @@ let isCall = 1,
   def BL  : ABXI<0b1011, (outs), (ins i32imm:$func, variable_ops),
                 IIC_Br, "bl\t${func:call}",
                 [(ARMcall tglobaladdr:$func)]>,
-            Requires<[IsARM, IsNotDarwin]>;
+            Requires<[IsARM, IsNotDarwin]> {
+    let Inst{31-28} = 0b1110;
+  }
 
   def BL_pred : ABI<0b1011, (outs), (ins i32imm:$func, variable_ops),
                    IIC_Br, "bl", "\t${func:call}",
@@ -721,7 +723,9 @@ let isCall = 1,
           D24, D25, D26, D27, D28, D29, D30, D31, CPSR, FPSCR] in {
   def BLr9  : ABXI<0b1011, (outs), (ins i32imm:$func, variable_ops),
                 IIC_Br, "bl\t${func:call}",
-                [(ARMcall tglobaladdr:$func)]>, Requires<[IsARM, IsDarwin]>;
+                [(ARMcall tglobaladdr:$func)]>, Requires<[IsARM, IsDarwin]> {
+    let Inst{31-28} = 0b1110;
+  }
 
   def BLr9_pred : ABI<0b1011, (outs), (ins i32imm:$func, variable_ops),
                    IIC_Br, "bl", "\t${func:call}",
@@ -1105,7 +1109,6 @@ defm SBC : AI1_adde_sube_irs<0b0110, "sbc",
 def RSBri : AsI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_imm:$b), DPFrm,
                   IIC_iALUi, "rsb", "\t$dst, $a, $b",
                   [(set GPR:$dst, (sub so_imm:$b, GPR:$a))]> {
-    let Inst{20} = 0;
     let Inst{25} = 1;
 }
 
@@ -1114,7 +1117,6 @@ def RSBrs : AsI1<0b0011, (outs GPR:$dst), (ins GPR:$a, so_reg:$b), DPSoRegFrm,
                   [(set GPR:$dst, (sub so_reg:$b, GPR:$a))]> {
     let Inst{4} = 1;
     let Inst{7} = 0;
-    let Inst{20} = 0;
     let Inst{25} = 0;
 }
 
