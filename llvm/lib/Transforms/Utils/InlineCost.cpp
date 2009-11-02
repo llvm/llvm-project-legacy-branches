@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/InlineCost.h"
+#include "llvm/Transforms/Utils/InlineCost.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/CallingConv.h"
 #include "llvm/IntrinsicInst.h"
@@ -31,9 +31,6 @@ unsigned InlineCostAnalyzer::FunctionInfo::
       // Eliminating a switch is a big win, proportional to the number of edges
       // deleted.
       Reduction += (SI->getNumSuccessors()-1) * 40;
-    else if (isa<IndirectBrInst>(*UI))
-      // Eliminating an indirect branch is a big win.
-      Reduction += 200;
     else if (CallInst *CI = dyn_cast<CallInst>(*UI)) {
       // Turning an indirect call into a direct call is a BIG win
       Reduction += CI->getCalledValue() == V ? 500 : 0;
@@ -102,94 +99,84 @@ unsigned InlineCostAnalyzer::FunctionInfo::
   return Reduction;
 }
 
-/// analyzeBasicBlock - Fill in the current structure with information gleaned
-/// from the specified block.
-void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB) {
-  ++NumBlocks;
-
-  for (BasicBlock::const_iterator II = BB->begin(), E = BB->end();
-       II != E; ++II) {
-    if (isa<PHINode>(II)) continue;           // PHI nodes don't count.
-
-    // Special handling for calls.
-    if (isa<CallInst>(II) || isa<InvokeInst>(II)) {
-      if (isa<DbgInfoIntrinsic>(II))
-        continue;  // Debug intrinsics don't count as size.
-      
-      CallSite CS = CallSite::get(const_cast<Instruction*>(&*II));
-      
-      // If this function contains a call to setjmp or _setjmp, never inline
-      // it.  This is a hack because we depend on the user marking their local
-      // variables as volatile if they are live across a setjmp call, and they
-      // probably won't do this in callers.
-      if (Function *F = CS.getCalledFunction())
-        if (F->isDeclaration() && 
-            (F->getName() == "setjmp" || F->getName() == "_setjmp"))
-          NeverInline = true;
-
-      // Calls often compile into many machine instructions.  Bump up their
-      // cost to reflect this.
-      if (!isa<IntrinsicInst>(II))
-        NumInsts += InlineConstants::CallPenalty;
-    }
-    
-    // These, too, are calls.
-    if (isa<MallocInst>(II) || isa<FreeInst>(II))
-      NumInsts += InlineConstants::CallPenalty;
-
-    if (const AllocaInst *AI = dyn_cast<AllocaInst>(II)) {
-      if (!AI->isStaticAlloca())
-        this->usesDynamicAlloca = true;
-    }
-
-    if (isa<ExtractElementInst>(II) || isa<VectorType>(II->getType()))
-      ++NumVectorInsts; 
-    
-    // Noop casts, including ptr <-> int,  don't count.
-    if (const CastInst *CI = dyn_cast<CastInst>(II)) {
-      if (CI->isLosslessCast() || isa<IntToPtrInst>(CI) || 
-          isa<PtrToIntInst>(CI))
-        continue;
-    } else if (const GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(II)){
-      // If a GEP has all constant indices, it will probably be folded with
-      // a load/store.
-      if (GEPI->hasAllConstantIndices())
-        continue;
-    }
-
-    ++NumInsts;
-  }
-  
-  if (isa<ReturnInst>(BB->getTerminator()))
-    ++NumRets;
-  
-  // We never want to inline functions that contain an indirectbr.  This is
-  // incorrect because all the blockaddress's (e.g. in static global
-  // initializers would be referring to the original function, and this indirect
-  // jump would jump from the inlined copy of the function into the original
-  // function which is extremely undefined behavior.
-  if (isa<IndirectBrInst>(BB->getTerminator()))
-    NeverInline = true;
-}
-
-/// analyzeFunction - Fill in the current structure with information gleaned
-/// from the specified function.
-void CodeMetrics::analyzeFunction(Function *F) {
-  // Look at the size of the callee.
-  for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
-    analyzeBasicBlock(&*BB);
-}
-
 /// analyzeFunction - Fill in the current structure with information gleaned
 /// from the specified function.
 void InlineCostAnalyzer::FunctionInfo::analyzeFunction(Function *F) {
-  Metrics.analyzeFunction(F);
+  unsigned NumInsts = 0, NumBlocks = 0, NumVectorInsts = 0, NumRets = 0;
+
+  // Look at the size of the callee.  Each basic block counts as 20 units, and
+  // each instruction counts as 5.
+  for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB) {
+    for (BasicBlock::const_iterator II = BB->begin(), E = BB->end();
+         II != E; ++II) {
+      if (isa<PHINode>(II)) continue;           // PHI nodes don't count.
+
+      // Special handling for calls.
+      if (isa<CallInst>(II) || isa<InvokeInst>(II)) {
+        if (isa<DbgInfoIntrinsic>(II))
+          continue;  // Debug intrinsics don't count as size.
+        
+        CallSite CS = CallSite::get(const_cast<Instruction*>(&*II));
+        
+        // If this function contains a call to setjmp or _setjmp, never inline
+        // it.  This is a hack because we depend on the user marking their local
+        // variables as volatile if they are live across a setjmp call, and they
+        // probably won't do this in callers.
+        if (Function *F = CS.getCalledFunction())
+          if (F->isDeclaration() && 
+              (F->getName() == "setjmp" || F->getName() == "_setjmp")) {
+            NeverInline = true;
+            return;
+          }
+
+        // Calls often compile into many machine instructions.  Bump up their
+        // cost to reflect this.
+        if (!isa<IntrinsicInst>(II))
+          NumInsts += InlineConstants::CallPenalty;
+      }
+      
+      // These, too, are calls.
+      if (isa<MallocInst>(II) || isa<FreeInst>(II))
+	NumInsts += InlineConstants::CallPenalty;
+
+      if (const AllocaInst *AI = dyn_cast<AllocaInst>(II)) {
+        if (!AI->isStaticAlloca())
+          this->usesDynamicAlloca = true;
+      }
+
+      if (isa<ExtractElementInst>(II) || isa<VectorType>(II->getType()))
+        ++NumVectorInsts; 
+      
+      // Noop casts, including ptr <-> int,  don't count.
+      if (const CastInst *CI = dyn_cast<CastInst>(II)) {
+        if (CI->isLosslessCast() || isa<IntToPtrInst>(CI) || 
+            isa<PtrToIntInst>(CI))
+          continue;
+      } else if (const GetElementPtrInst *GEPI =
+                 dyn_cast<GetElementPtrInst>(II)) {
+        // If a GEP has all constant indices, it will probably be folded with
+        // a load/store.
+        if (GEPI->hasAllConstantIndices())
+          continue;
+      }
+
+      if (isa<ReturnInst>(II))
+        ++NumRets;
+      
+      ++NumInsts;
+    }
+
+    ++NumBlocks;
+  }
 
   // A function with exactly one return has it removed during the inlining
   // process (see InlineFunction), so don't count it.
-  // FIXME: This knowledge should really be encoded outside of FunctionInfo.
-  if (Metrics.NumRets==1)
-    --Metrics.NumInsts;
+  if (NumRets==1)
+    --NumInsts;
+
+  this->NumBlocks      = NumBlocks;
+  this->NumInsts       = NumInsts;
+  this->NumVectorInsts = NumVectorInsts;
 
   // Check out all of the arguments to the function, figuring out how much
   // code can be eliminated if one of the arguments is a constant.
@@ -197,6 +184,8 @@ void InlineCostAnalyzer::FunctionInfo::analyzeFunction(Function *F) {
     ArgumentWeights.push_back(ArgInfo(CountCodeReductionForConstant(I),
                                       CountCodeReductionForAlloca(I)));
 }
+
+
 
 // getInlineCost - The heuristic used to determine if we should inline the
 // function call or not.
@@ -243,11 +232,11 @@ InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
   FunctionInfo &CalleeFI = CachedFunctionInfo[Callee];
   
   // If we haven't calculated this information yet, do so now.
-  if (CalleeFI.Metrics.NumBlocks == 0)
+  if (CalleeFI.NumBlocks == 0)
     CalleeFI.analyzeFunction(Callee);
 
   // If we should never inline this, return a huge cost.
-  if (CalleeFI.Metrics.NeverInline)
+  if (CalleeFI.NeverInline)
     return InlineCost::getNever();
 
   // FIXME: It would be nice to kill off CalleeFI.NeverInline. Then we
@@ -257,18 +246,18 @@ InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
   if (!Callee->isDeclaration() && Callee->hasFnAttr(Attribute::AlwaysInline))
     return InlineCost::getAlways();
     
-  if (CalleeFI.Metrics.usesDynamicAlloca) {
+  if (CalleeFI.usesDynamicAlloca) {
     // Get infomation about the caller...
     FunctionInfo &CallerFI = CachedFunctionInfo[Caller];
 
     // If we haven't calculated this information yet, do so now.
-    if (CallerFI.Metrics.NumBlocks == 0)
+    if (CallerFI.NumBlocks == 0)
       CallerFI.analyzeFunction(Caller);
 
     // Don't inline a callee with dynamic alloca into a caller without them.
     // Functions containing dynamic alloca's are inefficient in various ways;
     // don't create more inefficiency.
-    if (!CallerFI.Metrics.usesDynamicAlloca)
+    if (!CallerFI.usesDynamicAlloca)
       return InlineCost::getNever();
   }
 
@@ -316,7 +305,7 @@ InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
   InlineCost += Caller->size()/15;
   
   // Look at the size of the callee. Each instruction counts as 5.
-  InlineCost += CalleeFI.Metrics.NumInsts*5;
+  InlineCost += CalleeFI.NumInsts*5;
 
   return llvm::InlineCost::get(InlineCost);
 }
@@ -330,19 +319,19 @@ float InlineCostAnalyzer::getInlineFudgeFactor(CallSite CS) {
   FunctionInfo &CalleeFI = CachedFunctionInfo[Callee];
   
   // If we haven't calculated this information yet, do so now.
-  if (CalleeFI.Metrics.NumBlocks == 0)
+  if (CalleeFI.NumBlocks == 0)
     CalleeFI.analyzeFunction(Callee);
 
   float Factor = 1.0f;
   // Single BB functions are often written to be inlined.
-  if (CalleeFI.Metrics.NumBlocks == 1)
+  if (CalleeFI.NumBlocks == 1)
     Factor += 0.5f;
 
   // Be more aggressive if the function contains a good chunk (if it mades up
   // at least 10% of the instructions) of vector instructions.
-  if (CalleeFI.Metrics.NumVectorInsts > CalleeFI.Metrics.NumInsts/2)
+  if (CalleeFI.NumVectorInsts > CalleeFI.NumInsts/2)
     Factor += 2.0f;
-  else if (CalleeFI.Metrics.NumVectorInsts > CalleeFI.Metrics.NumInsts/10)
+  else if (CalleeFI.NumVectorInsts > CalleeFI.NumInsts/10)
     Factor += 1.5f;
   return Factor;
 }

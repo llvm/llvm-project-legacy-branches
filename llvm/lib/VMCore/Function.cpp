@@ -217,20 +217,7 @@ void Function::setParent(Module *parent) {
 void Function::dropAllReferences() {
   for (iterator I = begin(), E = end(); I != E; ++I)
     I->dropAllReferences();
-  
-  // Delete all basic blocks.
-  while (!BasicBlocks.empty()) {
-    // If there is still a reference to the block, it must be a 'blockaddress'
-    // constant pointing to it.  Just replace the BlockAddress with undef.
-    BasicBlock *BB = BasicBlocks.begin();
-    if (!BB->use_empty()) {
-      BlockAddress *BA = cast<BlockAddress>(BB->use_back());
-      BA->replaceAllUsesWith(UndefValue::get(BA->getType()));
-      BA->destroyConstant();
-    }
-    
-    BB->eraseFromParent();
-  }
+  BasicBlocks.clear();    // Delete all basic blocks...
 }
 
 void Function::addAttribute(unsigned i, Attributes attr) {

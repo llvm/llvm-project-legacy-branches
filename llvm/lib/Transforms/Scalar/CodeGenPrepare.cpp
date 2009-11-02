@@ -318,7 +318,6 @@ static void SplitEdgeNicely(TerminatorInst *TI, unsigned SuccNum,
     if (Invoke->getSuccessor(1) == Dest)
       return;
   }
-  
 
   // As a hack, never split backedges of loops.  Even though the copy for any
   // PHIs inserted on the backedge would be dead for exits from the loop, we
@@ -853,7 +852,7 @@ bool CodeGenPrepare::OptimizeBlock(BasicBlock &BB) {
 
   // Split all critical edges where the dest block has a PHI.
   TerminatorInst *BBTI = BB.getTerminator();
-  if (BBTI->getNumSuccessors() > 1 && !isa<IndirectBrInst>(BBTI)) {
+  if (BBTI->getNumSuccessors() > 1) {
     for (unsigned i = 0, e = BBTI->getNumSuccessors(); i != e; ++i) {
       BasicBlock *SuccBB = BBTI->getSuccessor(i);
       if (isa<PHINode>(SuccBB->begin()) && isCriticalEdge(BBTI, i, true))

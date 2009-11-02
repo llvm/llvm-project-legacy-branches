@@ -51,8 +51,9 @@ protected:
   virtual BasicBlock *getSuccessorV(unsigned idx) const = 0;
   virtual unsigned getNumSuccessorsV() const = 0;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B) = 0;
-  virtual TerminatorInst *clone_impl() const = 0;
 public:
+
+  virtual TerminatorInst *clone() const = 0;
 
   /// getNumSuccessors - Return the number of successors that this terminator
   /// has.
@@ -146,7 +147,6 @@ protected:
                  const Twine &Name, Instruction *InsertBefore);
   BinaryOperator(BinaryOps iType, Value *S1, Value *S2, const Type *Ty,
                  const Twine &Name, BasicBlock *InsertAtEnd);
-  virtual BinaryOperator *clone_impl() const;
 public:
   // allocate space for exactly two operands
   void *operator new(size_t s) {
@@ -298,6 +298,8 @@ public:
   BinaryOps getOpcode() const {
     return static_cast<BinaryOps>(Instruction::getOpcode());
   }
+
+  virtual BinaryOperator *clone() const;
 
   /// swapOperands - Exchange the two operands to this instruction.
   /// This instruction is safe to use on any binary instruction and

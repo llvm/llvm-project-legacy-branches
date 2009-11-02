@@ -446,16 +446,10 @@ void SCCPSolver::getFeasibleSuccessors(TerminatorInst &TI,
         Succs[BCValue.getConstant() == ConstantInt::getFalse(*Context)] = true;
       }
     }
-    return;
-  }
-  
-  if (isa<InvokeInst>(&TI)) {
+  } else if (isa<InvokeInst>(&TI)) {
     // Invoke instructions successors are always executable.
     Succs[0] = Succs[1] = true;
-    return;
-  }
-  
-  if (SwitchInst *SI = dyn_cast<SwitchInst>(&TI)) {
+  } else if (SwitchInst *SI = dyn_cast<SwitchInst>(&TI)) {
     LatticeVal &SCValue = getValueState(SI->getCondition());
     if (SCValue.isOverdefined() ||   // Overdefined condition?
         (SCValue.isConstant() && !isa<ConstantInt>(SCValue.getConstant()))) {
@@ -463,20 +457,9 @@ void SCCPSolver::getFeasibleSuccessors(TerminatorInst &TI,
       Succs.assign(TI.getNumSuccessors(), true);
     } else if (SCValue.isConstant())
       Succs[SI->findCaseValue(cast<ConstantInt>(SCValue.getConstant()))] = true;
-    return;
+  } else {
+    llvm_unreachable("SCCP: Don't know how to handle this terminator!");
   }
-  
-  // TODO: This could be improved if the operand is a [cast of a] BlockAddress.
-  if (isa<IndirectBrInst>(&TI)) {
-    // Just mark all destinations executable!
-    Succs.assign(TI.getNumSuccessors(), true);
-    return;
-  }
-  
-#ifndef NDEBUG
-  errs() << "Unknown terminator instruction: " << TI << '\n';
-#endif
-  llvm_unreachable("SCCP: Don't know how to handle this terminator!");
 }
 
 
@@ -494,27 +477,25 @@ bool SCCPSolver::isEdgeFeasible(BasicBlock *From, BasicBlock *To) {
   if (BranchInst *BI = dyn_cast<BranchInst>(TI)) {
     if (BI->isUnconditional())
       return true;
-    
-    LatticeVal &BCValue = getValueState(BI->getCondition());
-    if (BCValue.isOverdefined()) {
-      // Overdefined condition variables mean the branch could go either way.
-      return true;
-    } else if (BCValue.isConstant()) {
-      // Not branching on an evaluatable constant?
-      if (!isa<ConstantInt>(BCValue.getConstant())) return true;
+    else {
+      LatticeVal &BCValue = getValueState(BI->getCondition());
+      if (BCValue.isOverdefined()) {
+        // Overdefined condition variables mean the branch could go either way.
+        return true;
+      } else if (BCValue.isConstant()) {
+        // Not branching on an evaluatable constant?
+        if (!isa<ConstantInt>(BCValue.getConstant())) return true;
 
-      // Constant condition variables mean the branch can only go a single way
-      return BI->getSuccessor(BCValue.getConstant() ==
-                                     ConstantInt::getFalse(*Context)) == To;
+        // Constant condition variables mean the branch can only go a single way
+        return BI->getSuccessor(BCValue.getConstant() ==
+                                       ConstantInt::getFalse(*Context)) == To;
+      }
+      return false;
     }
-    return false;
-  }
-  
-  // Invoke instructions successors are always executable.
-  if (isa<InvokeInst>(TI))
+  } else if (isa<InvokeInst>(TI)) {
+    // Invoke instructions successors are always executable.
     return true;
-  
-  if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
+  } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
     LatticeVal &SCValue = getValueState(SI->getCondition());
     if (SCValue.isOverdefined()) {  // Overdefined condition?
       // All destinations are executable!
@@ -534,17 +515,12 @@ bool SCCPSolver::isEdgeFeasible(BasicBlock *From, BasicBlock *To) {
       return SI->getDefaultDest() == To;
     }
     return false;
-  }
-  
-  // Just mark all destinations executable!
-  // TODO: This could be improved if the operand is a [cast of a] BlockAddress.
-  if (isa<IndirectBrInst>(&TI))
-    return true;
-  
+  } else {
 #ifndef NDEBUG
-  errs() << "Unknown terminator instruction: " << *TI << '\n';
+    errs() << "Unknown terminator instruction: " << *TI << '\n';
 #endif
-  llvm_unreachable(0);
+    llvm_unreachable(0);
+  }
 }
 
 // visit Implementations - Something changed in this instruction... Either an

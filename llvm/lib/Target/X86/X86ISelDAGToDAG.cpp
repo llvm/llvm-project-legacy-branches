@@ -72,7 +72,6 @@ namespace {
     SDValue Segment;
     GlobalValue *GV;
     Constant *CP;
-    BlockAddress *BlockAddr;
     const char *ES;
     int JT;
     unsigned Align;    // CP alignment.
@@ -80,12 +79,12 @@ namespace {
 
     X86ISelAddressMode()
       : BaseType(RegBase), Scale(1), IndexReg(), Disp(0),
-        Segment(), GV(0), CP(0), BlockAddr(0), ES(0), JT(-1), Align(0),
+        Segment(), GV(0), CP(0), ES(0), JT(-1), Align(0),
         SymbolFlags(X86II::MO_NO_FLAG) {
     }
 
     bool hasSymbolicDisplacement() const {
-      return GV != 0 || CP != 0 || ES != 0 || JT != -1 || BlockAddr != 0;
+      return GV != 0 || CP != 0 || ES != 0 || JT != -1;
     }
     
     bool hasBaseOrIndexReg() const {
@@ -243,9 +242,6 @@ namespace {
         Disp = CurDAG->getTargetExternalSymbol(AM.ES, MVT::i32, AM.SymbolFlags);
       else if (AM.JT != -1)
         Disp = CurDAG->getTargetJumpTable(AM.JT, MVT::i32, AM.SymbolFlags);
-      else if (AM.BlockAddr)
-        Disp = CurDAG->getBlockAddress(AM.BlockAddr, DebugLoc()/*MVT::i32*/,
-                                       true /*AM.SymbolFlags*/);
       else
         Disp = CurDAG->getTargetConstant(AM.Disp, MVT::i32);
 
@@ -765,12 +761,10 @@ bool X86DAGToDAGISel::MatchWrapper(SDValue N, X86ISelAddressMode &AM) {
     } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(N0)) {
       AM.ES = S->getSymbol();
       AM.SymbolFlags = S->getTargetFlags();
-    } else if (JumpTableSDNode *J = dyn_cast<JumpTableSDNode>(N0)) {
+    } else {
+      JumpTableSDNode *J = cast<JumpTableSDNode>(N0);
       AM.JT = J->getIndex();
       AM.SymbolFlags = J->getTargetFlags();
-    } else {
-      AM.BlockAddr = cast<BlockAddressSDNode>(N0)->getBlockAddress();
-      //AM.SymbolFlags = cast<BlockAddressSDNode>(N0)->getTargetFlags();
     }
 
     if (N.getOpcode() == X86ISD::WrapperRIP)
@@ -796,12 +790,10 @@ bool X86DAGToDAGISel::MatchWrapper(SDValue N, X86ISelAddressMode &AM) {
     } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(N0)) {
       AM.ES = S->getSymbol();
       AM.SymbolFlags = S->getTargetFlags();
-    } else if (JumpTableSDNode *J = dyn_cast<JumpTableSDNode>(N0)) {
+    } else {
+      JumpTableSDNode *J = cast<JumpTableSDNode>(N0);
       AM.JT = J->getIndex();
       AM.SymbolFlags = J->getTargetFlags();
-    } else {
-      AM.BlockAddr = cast<BlockAddressSDNode>(N0)->getBlockAddress();
-      //AM.SymbolFlags = cast<BlockAddressSDNode>(N0)->getTargetFlags();
     }
     return false;
   }

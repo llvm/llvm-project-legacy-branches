@@ -15,7 +15,7 @@
 #ifndef LLVM_TARGET_IBMCELLSPU_H
 #define LLVM_TARGET_IBMCELLSPU_H
 
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {

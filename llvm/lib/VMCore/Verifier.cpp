@@ -659,12 +659,6 @@ void Verifier::visitFunction(Function &F) {
     BasicBlock *Entry = &F.getEntryBlock();
     Assert1(pred_begin(Entry) == pred_end(Entry),
             "Entry block to function must not have predecessors!", Entry);
-    
-    // The address of the entry block cannot be taken, unless it is dead.
-    if (Entry->hasAddressTaken()) {
-      Assert1(!BlockAddress::get(Entry)->isConstantUsed(),
-              "blockaddress may not be used with the entry block!", Entry);
-    }
   }
   
   // If this function is actually an intrinsic, verify that it is only used in

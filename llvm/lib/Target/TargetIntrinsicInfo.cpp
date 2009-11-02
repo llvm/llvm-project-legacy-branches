@@ -12,19 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Target/TargetIntrinsicInfo.h"
-#include "llvm/Function.h"
-#include "llvm/ADT/StringMap.h"
 using namespace llvm;
 
-TargetIntrinsicInfo::TargetIntrinsicInfo() {
+TargetIntrinsicInfo::TargetIntrinsicInfo(const char **desc, unsigned count)
+  : Intrinsics(desc), NumIntrinsics(count) {
 }
 
 TargetIntrinsicInfo::~TargetIntrinsicInfo() {
-}
-
-unsigned TargetIntrinsicInfo::getIntrinsicID(Function *F) const {
-  const ValueName *ValName = F->getValueName();
-  if (!ValName)
-    return 0;
-  return lookupName(ValName->getKeyData(), ValName->getKeyLength());
 }

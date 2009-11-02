@@ -109,26 +109,25 @@ public:
   
   FoldingSet<MDNode> MDNodeSet;
   
-  ConstantUniqueMap<char, Type, ConstantAggregateZero> AggZeroConstants;
+  ValueMap<char, Type, ConstantAggregateZero> AggZeroConstants;
 
-  typedef ConstantUniqueMap<std::vector<Constant*>, ArrayType,
+  typedef ValueMap<std::vector<Constant*>, ArrayType, 
     ConstantArray, true /*largekey*/> ArrayConstantsTy;
   ArrayConstantsTy ArrayConstants;
   
-  typedef ConstantUniqueMap<std::vector<Constant*>, StructType,
-    ConstantStruct, true /*largekey*/> StructConstantsTy;
+  typedef ValueMap<std::vector<Constant*>, StructType,
+                   ConstantStruct, true /*largekey*/> StructConstantsTy;
   StructConstantsTy StructConstants;
   
-  typedef ConstantUniqueMap<std::vector<Constant*>, VectorType,
-                            ConstantVector> VectorConstantsTy;
+  typedef ValueMap<std::vector<Constant*>, VectorType,
+                   ConstantVector> VectorConstantsTy;
   VectorConstantsTy VectorConstants;
   
-  ConstantUniqueMap<char, PointerType, ConstantPointerNull> NullPtrConstants;
+  ValueMap<char, PointerType, ConstantPointerNull> NullPtrConstants;
   
-  ConstantUniqueMap<char, Type, UndefValue> UndefValueConstants;
+  ValueMap<char, Type, UndefValue> UndefValueConstants;
   
-  DenseMap<std::pair<Function*, BasicBlock*> , BlockAddress*> BlockAddresses;
-  ConstantUniqueMap<ExprMapKeyType, Type, ConstantExpr> ExprConstants;
+  ValueMap<ExprMapKeyType, Type, ConstantExpr> ExprConstants;
   
   ConstantInt *TheTrueVal;
   ConstantInt *TheFalseVal;

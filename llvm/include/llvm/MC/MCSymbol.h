@@ -16,7 +16,7 @@
 
 #include <string>
 #include "llvm/ADT/StringRef.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
   class MCAsmInfo;

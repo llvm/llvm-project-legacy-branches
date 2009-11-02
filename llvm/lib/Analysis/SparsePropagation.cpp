@@ -166,11 +166,6 @@ void SparseSolver::getFeasibleSuccessors(TerminatorInst &TI,
     return;
   }
   
-  if (isa<IndirectBrInst>(TI)) {
-    Succs.assign(Succs.size(), true);
-    return;
-  }
-  
   SwitchInst &SI = cast<SwitchInst>(TI);
   LatticeVal SCValue;
   if (AggressiveUndef)

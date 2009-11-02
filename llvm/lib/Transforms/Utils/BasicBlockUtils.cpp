@@ -97,14 +97,10 @@ void llvm::DeleteDeadPHIs(BasicBlock *BB) {
 
 /// MergeBlockIntoPredecessor - Attempts to merge a block into its predecessor,
 /// if possible.  The return value indicates success or failure.
-bool llvm::MergeBlockIntoPredecessor(BasicBlock *BB, Pass *P) {
+bool llvm::MergeBlockIntoPredecessor(BasicBlock* BB, Pass* P) {
   pred_iterator PI(pred_begin(BB)), PE(pred_end(BB));
-  // Can't merge the entry block.  Don't merge away blocks who have their
-  // address taken: this is a bug if the predecessor block is the entry node
-  // (because we'd end up taking the address of the entry) and undesirable in
-  // any case.
-  if (pred_begin(BB) == pred_end(BB) ||
-      BB->hasAddressTaken()) return false;
+  // Can't merge the entry block.
+  if (pred_begin(BB) == pred_end(BB)) return false;
   
   BasicBlock *PredBB = *PI++;
   for (; PI != PE; ++PI)  // Search all predecessors, see if they are all same
@@ -278,8 +274,6 @@ void llvm::RemoveSuccessor(TerminatorInst *TI, unsigned SuccNum) {
 /// SplitEdge -  Split the edge connecting specified block. Pass P must 
 /// not be NULL. 
 BasicBlock *llvm::SplitEdge(BasicBlock *BB, BasicBlock *Succ, Pass *P) {
-  assert(!isa<IndirectBrInst>(BB->getTerminator()) &&
-         "Cannot split an edge from an IndirectBrInst");
   TerminatorInst *LatchTerm = BB->getTerminator();
   unsigned SuccNum = 0;
 #ifndef NDEBUG
@@ -669,7 +663,7 @@ void llvm::CopyPrecedingStopPoint(Instruction *I,
   if (I != I->getParent()->begin()) {
     BasicBlock::iterator BBI = I;  --BBI;
     if (DbgStopPointInst *DSPI = dyn_cast<DbgStopPointInst>(BBI)) {
-      CallInst *newDSPI = cast<CallInst>(DSPI->clone());
+      CallInst *newDSPI = DSPI->clone();
       newDSPI->insertBefore(InsertPos);
     }
   }

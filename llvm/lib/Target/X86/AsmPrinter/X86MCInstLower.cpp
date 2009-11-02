@@ -329,10 +329,6 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     case MachineOperand::MO_ConstantPoolIndex:
       MCOp = LowerSymbolOperand(MO, GetConstantPoolIndexSymbol(MO));
       break;
-    case MachineOperand::MO_BlockAddress:
-      MCOp = LowerSymbolOperand(MO, AsmPrinter.GetBlockAddressSymbol(
-                                                 MO.getBlockAddress()));
-      break;
     }
     
     OutMI.addOperand(MCOp);

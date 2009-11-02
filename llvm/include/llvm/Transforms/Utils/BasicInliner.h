@@ -15,7 +15,7 @@
 #ifndef BASICINLINER_H
 #define BASICINLINER_H
 
-#include "llvm/Analysis/InlineCost.h"
+#include "llvm/Transforms/Utils/InlineCost.h"
 
 namespace llvm {
 

@@ -22,7 +22,6 @@
 #include "llvm/ADT/DenseMap.h"
 
 namespace llvm {
-  class BlockAddress;
   class GCStrategy;
   class Constant;
   class ConstantArray;
@@ -335,12 +334,6 @@ namespace llvm {
     /// block label.
     MCSymbol *GetMBBSymbol(unsigned MBBID) const;
     
-    /// GetBlockAddressSymbol - Return the MCSymbol used to satisfy BlockAddress
-    /// uses of the specified basic block.
-    MCSymbol *GetBlockAddressSymbol(const BlockAddress *BA) const;
-    MCSymbol *GetBlockAddressSymbol(const Function *F,
-                                    const BasicBlock *BB) const;
-
     /// EmitBasicBlockStart - This method prints the label for the specified
     /// MachineBasicBlock, an alignment (if present) and a comment describing
     /// it if appropriate.

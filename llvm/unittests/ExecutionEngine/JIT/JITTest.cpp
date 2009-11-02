@@ -9,7 +9,6 @@
 
 #include "gtest/gtest.h"
 #include "llvm/ADT/OwningPtr.h"
-#include "llvm/Assembly/Parser.h"
 #include "llvm/BasicBlock.h"
 #include "llvm/Constant.h"
 #include "llvm/Constants.h"
@@ -23,7 +22,6 @@
 #include "llvm/Module.h"
 #include "llvm/ModuleProvider.h"
 #include "llvm/Support/IRBuilder.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TypeBuilder.h"
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Type.h"
@@ -51,25 +49,14 @@ class JITTest : public testing::Test {
  protected:
   virtual void SetUp() {
     M = new Module("<main>", Context);
-    MP = new ExistingModuleProvider(M);
     std::string Error;
-    TheJIT.reset(EngineBuilder(MP).setEngineKind(EngineKind::JIT)
+    TheJIT.reset(EngineBuilder(M).setEngineKind(EngineKind::JIT)
                  .setErrorStr(&Error).create());
     ASSERT_TRUE(TheJIT.get() != NULL) << Error;
   }
 
-  void LoadAssembly(const char *assembly) {
-    SMDiagnostic Error;
-    bool success = NULL != ParseAssemblyString(assembly, M, Error, Context);
-    std::string errMsg;
-    raw_string_ostream os(errMsg);
-    Error.Print("", os);
-    ASSERT_TRUE(success) << os.str();
-  }
-
   LLVMContext Context;
-  Module *M;  // Owned by MP.
-  ModuleProvider *MP;  // Owned by ExecutionEngine.
+  Module *M;  // Owned by ExecutionEngine.
   OwningPtr<ExecutionEngine> TheJIT;
 };
 
@@ -177,20 +164,6 @@ TEST_F(JITTest, FarCallToKnownFunction) {
       (intptr_t)TheJIT->getPointerToFunction(TestFunction));
   // This used to crash in trying to call PlusOne().
   EXPECT_EQ(8, TestFunctionPtr());
-}
-
-TEST_F(JITTest, ModuleDeletion) {
-  LoadAssembly("define void @main() { "
-               "  call i32 @computeVal() "
-               "  ret void "
-               "} "
-               " "
-               "define internal i32 @computeVal()  { "
-               "  ret i32 0 "
-               "} ");
-  Function *func = M->getFunction("main");
-  TheJIT->getPointerToFunction(func);
-  TheJIT->deleteModuleProvider(MP);
 }
 
 // This code is copied from JITEventListenerTest, but it only runs once for all

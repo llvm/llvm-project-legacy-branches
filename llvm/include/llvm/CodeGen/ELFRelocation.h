@@ -14,7 +14,7 @@
 #ifndef LLVM_CODEGEN_ELF_RELOCATION_H
 #define LLVM_CODEGEN_ELF_RELOCATION_H
 
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
 
