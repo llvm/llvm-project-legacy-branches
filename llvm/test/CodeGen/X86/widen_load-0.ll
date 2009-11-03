@@ -1,11 +1,14 @@
 ; RUN: llc < %s -o - -march=x86-64 | FileCheck %s
 ; PR4891
 
+; Due to splatting the last value <rdar://problem/7098635>, the loads are
+; widened before the store.
+
 ; Both loads should happen before either store.
 
-; CHECK: movl  (%rdi), %eax
-; CHECK: movl  (%rsi), %ecx
-; CHECK: movl  %ecx, (%rdi)
+; CHECK: movd  (%rsi), %mm0
+; CHECK: movd  (%rdi), %mm0
+; CHECK: movl  %eax, (%rdi)
 ; CHECK: movl  %eax, (%rsi)
 
 define void @short2_int_swap(<2 x i16>* nocapture %b, i32* nocapture %c) nounwind {
