@@ -265,16 +265,25 @@ ARMBaseRegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
   case 4:
     // S sub-registers.
     if (A->getSize() == 8) {
+      if (B == &ARM::SPR_8RegClass)
+        return &ARM::DPR_8RegClass;
+      assert(B == &ARM::SPRRegClass && "Expecting SPR register class!");
       if (A == &ARM::DPR_8RegClass)
         return A;
       return &ARM::DPR_VFP2RegClass;
     }
 
     assert(A->getSize() == 16 && "Expecting a Q register class!");
+    if (B == &ARM::SPR_8RegClass)
+      return &ARM::QPR_8RegClass;
     return &ARM::QPR_VFP2RegClass;
   case 5:
   case 6:
     // D sub-registers.
+    if (B == &ARM::DPR_VFP2RegClass)
+      return &ARM::QPR_VFP2RegClass;
+    if (B == &ARM::DPR_8RegClass)
+      return &ARM::QPR_8RegClass;
     return A;
   }
   return 0;

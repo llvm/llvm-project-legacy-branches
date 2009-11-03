@@ -182,7 +182,7 @@ let isReturn = 1, isTerminator = 1, isBarrier = 1 in {
 
 // Indirect branches
 let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
-  def tBRIND : TI<(outs), (ins GPR:$dst), IIC_Br, "bx\t$dst",
+  def tBRIND : TI<(outs), (ins GPR:$dst), IIC_Br, "mov\tpc, $dst",
                   [(brind GPR:$dst)]>;
 }
 
@@ -685,7 +685,6 @@ def : T1Pat<(subc   tGPR:$lhs, tGPR:$rhs),
 // ConstantPool, GlobalAddress
 def : T1Pat<(ARMWrapper  tglobaladdr :$dst), (tLEApcrel tglobaladdr :$dst)>;
 def : T1Pat<(ARMWrapper  tconstpool  :$dst), (tLEApcrel tconstpool  :$dst)>;
-def : T1Pat<(ARMWrapper  tblockaddress:$dst), (tLEApcrel tblockaddress:$dst)>;
 
 // JumpTable
 def : T1Pat<(ARMWrapperJT tjumptable:$dst, imm:$id),

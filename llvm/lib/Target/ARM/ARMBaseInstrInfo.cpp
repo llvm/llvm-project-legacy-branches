@@ -16,15 +16,18 @@
 #include "ARMAddressingModes.h"
 #include "ARMGenInstrInfo.inc"
 #include "ARMMachineFunctionInfo.h"
+#include "ARMRegisterInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 using namespace llvm;
 
@@ -32,8 +35,9 @@ static cl::opt<bool>
 EnableARM3Addr("enable-arm-3-addr-conv", cl::Hidden,
                cl::desc("Enable ARM 2-addr to 3-addr conv"));
 
-ARMBaseInstrInfo::ARMBaseInstrInfo()
-  : TargetInstrInfoImpl(ARMInsts, array_lengthof(ARMInsts)) {
+ARMBaseInstrInfo::ARMBaseInstrInfo(const ARMSubtarget& STI)
+  : TargetInstrInfoImpl(ARMInsts, array_lengthof(ARMInsts)),
+    Subtarget(STI) {
 }
 
 MachineInstr *
@@ -504,7 +508,7 @@ ARMBaseInstrInfo::isMoveInstr(const MachineInstr &MI,
   case ARM::FCPYS:
   case ARM::FCPYD:
   case ARM::VMOVD:
-  case  ARM::VMOVQ: {
+  case ARM::VMOVQ: {
     SrcReg = MI.getOperand(1).getReg();
     DstReg = MI.getOperand(0).getReg();
     return true;
@@ -616,28 +620,12 @@ ARMBaseInstrInfo::copyRegToReg(MachineBasicBlock &MBB,
   if (I != MBB.end()) DL = I->getDebugLoc();
 
   if (DestRC != SrcRC) {
-    // Allow DPR / DPR_VFP2 / DPR_8 cross-class copies
-    // Allow QPR / QPR_VFP2 cross-class copies
-    if (DestRC == ARM::DPRRegisterClass) {
-      if (SrcRC == ARM::DPR_VFP2RegisterClass ||
-          SrcRC == ARM::DPR_8RegisterClass) {
-      } else
-        return false;
-    } else if (DestRC == ARM::DPR_VFP2RegisterClass) {
-      if (SrcRC == ARM::DPRRegisterClass ||
-          SrcRC == ARM::DPR_8RegisterClass) {
-      } else
-        return false;
-    } else if (DestRC == ARM::DPR_8RegisterClass) {
-      if (SrcRC == ARM::DPRRegisterClass ||
-          SrcRC == ARM::DPR_VFP2RegisterClass) {
-      } else
-        return false;
-    } else if ((DestRC == ARM::QPRRegisterClass &&
-                SrcRC == ARM::QPR_VFP2RegisterClass) ||
-               (DestRC == ARM::QPR_VFP2RegisterClass &&
-                SrcRC == ARM::QPRRegisterClass)) {
-    } else
+    if (DestRC->getSize() != SrcRC->getSize())
+      return false;
+
+    // Allow DPR / DPR_VFP2 / DPR_8 cross-class copies.
+    // Allow QPR / QPR_VFP2 / QPR_8 cross-class copies.
+    if (DestRC->getSize() != 8 && DestRC->getSize() != 16)
       return false;
   }
 
@@ -647,13 +635,18 @@ ARMBaseInstrInfo::copyRegToReg(MachineBasicBlock &MBB,
   } else if (DestRC == ARM::SPRRegisterClass) {
     AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::FCPYS), DestReg)
                    .addReg(SrcReg));
-  } else if ((DestRC == ARM::DPRRegisterClass) ||
-             (DestRC == ARM::DPR_VFP2RegisterClass) ||
-             (DestRC == ARM::DPR_8RegisterClass)) {
+  } else if (DestRC == ARM::DPRRegisterClass) {
     AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::FCPYD), DestReg)
                    .addReg(SrcReg));
+  } else if (DestRC == ARM::DPR_VFP2RegisterClass ||
+             DestRC == ARM::DPR_8RegisterClass ||
+             SrcRC == ARM::DPR_VFP2RegisterClass ||
+             SrcRC == ARM::DPR_8RegisterClass) {
+    // Always use neon reg-reg move if source or dest is NEON-only regclass.
+    BuildMI(MBB, I, DL, get(ARM::VMOVD), DestReg).addReg(SrcReg);
   } else if (DestRC == ARM::QPRRegisterClass ||
-             DestRC == ARM::QPR_VFP2RegisterClass) {
+             DestRC == ARM::QPR_VFP2RegisterClass ||
+             DestRC == ARM::QPR_8RegisterClass) {
     BuildMI(MBB, I, DL, get(ARM::VMOVQ), DestReg).addReg(SrcReg);
   } else {
     return false;
@@ -728,7 +721,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                    .addFrameIndex(FI).addImm(0).addMemOperand(MMO));
   } else {
     assert((RC == ARM::QPRRegisterClass ||
-            RC == ARM::QPR_VFP2RegisterClass) && "Unknown regclass!");
+            RC == ARM::QPR_VFP2RegisterClass ||
+            RC == ARM::QPR_8RegisterClass) && "Unknown regclass!");
     // FIXME: Neon instructions should support predicates
     BuildMI(MBB, I, DL, get(ARM::VLDRQ), DestReg).addFrameIndex(FI).addImm(0).
       addMemOperand(MMO);
