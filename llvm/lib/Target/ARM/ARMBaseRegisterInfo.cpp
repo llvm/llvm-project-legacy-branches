@@ -514,6 +514,7 @@ needsStackRealignment(const MachineFunction &MF) const {
   unsigned StackAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
   return (RealignStack &&
           !AFI->isThumb1OnlyFunction() &&
+          AFI->hasStackFrame() &&
           (MFI->getMaxAlignment() > StackAlign) &&
           !MFI->hasVarSizedObjects());
 }
@@ -1339,10 +1340,10 @@ emitPrologue(MachineFunction &MF) const {
   AFI->setGPRCalleeSavedArea2Offset(GPRCS2Offset);
   AFI->setDPRCalleeSavedAreaOffset(DPRCSOffset);
 
+  movePastCSLoadStoreOps(MBB, MBBI, ARM::FSTD, 0, 3, STI);
   NumBytes = DPRCSOffset;
   if (NumBytes) {
-    // Insert it after all the callee-save spills.
-    movePastCSLoadStoreOps(MBB, MBBI, ARM::FSTD, 0, 3, STI);
+    // Adjust SP after all the callee-save spills.
     emitSPUpdate(isARM, MBB, MBBI, dl, TII, -NumBytes);
   }
 
