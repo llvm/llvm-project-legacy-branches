@@ -559,7 +559,7 @@ void RewriteObjC::Initialize(ASTContext &context) {
   Preamble += "  void *FuncPtr;\n";
   Preamble += "};\n";
   Preamble += "// Runtime copy/destroy helper functions (from Block_private.h)\n";
-  Preamble += "#ifdef CF_EXPORT_CONSTANT_STRING\n";
+  Preamble += "#ifdef __OBJC_EXPORT_BLOCKS\n";
   Preamble += "extern \"C\" __declspec(dllexport) void _Block_object_assign(void *, const void *, const int);\n";
   Preamble += "extern \"C\" __declspec(dllexport) void _Block_object_dispose(const void *, const int);\n";
   Preamble += "extern \"C\" __declspec(dllexport) void *_NSConcreteGlobalBlock[32];\n";
@@ -687,7 +687,7 @@ void RewriteObjC::RewriteTabs() {
 static std::string getIvarAccessString(ObjCInterfaceDecl *ClassDecl,
                                        ObjCIvarDecl *OID) {
   std::string S;
-  S = "((struct ";
+  S = "((p";
   S += ClassDecl->getIdentifier()->getName();
   S += "_IMPL *)self)->";
   S += OID->getNameAsCString();
@@ -1161,14 +1161,23 @@ Stmt *RewriteObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV,
       iFaceDecl->getDecl()->lookupInstanceVariable(D->getIdentifier(), clsDeclared);
       assert(clsDeclared && "RewriteObjCIvarRefExpr(): Can't find class");
       
-      // Synthesize an explicit cast to gain access to the ivar.
       std::string RecName = clsDeclared->getIdentifier()->getName();
       RecName += "_IMPL";
       IdentifierInfo *II = &Context->Idents.get(RecName.c_str());
       RecordDecl *RD = RecordDecl::Create(*Context, TagDecl::TK_struct, TUDecl,
                                           SourceLocation(), II);
       assert(RD && "RewriteObjCIvarRefExpr(): Can't find RecordDecl");
-      QualType castT = Context->getPointerType(Context->getTagDeclType(RD));
+      QualType RDT = Context->getTagDeclType(RD);
+      
+      // Synthesize an explicit cast to gain access to the ivar.
+      RecName = "p";
+      RecName += clsDeclared->getIdentifier()->getName();
+      RecName += "_IMPL";
+      II = &Context->Idents.get(RecName.c_str());
+      TypedefDecl *TD = TypedefDecl::Create(*Context, TUDecl,
+                                          SourceLocation(), II, RDT);
+      assert(TD && "RewriteObjCIvarRefExpr(): Can't find TypedefDecl");
+      QualType castT = Context->getTypedefType(TD);
       CastExpr *castExpr = new CStyleCastExpr(castT, IV->getBase(), castT,
                                                  SourceLocation(), SourceLocation());
       // Don't forget the parens to enforce the proper binding.
@@ -1210,7 +1219,17 @@ Stmt *RewriteObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV,
       RecordDecl *RD = RecordDecl::Create(*Context, TagDecl::TK_struct, TUDecl,
                                           SourceLocation(), II);
       assert(RD && "RewriteObjCIvarRefExpr(): Can't find RecordDecl");
-      QualType castT = Context->getPointerType(Context->getTagDeclType(RD));
+      QualType RDT = Context->getTagDeclType(RD);
+      
+      // Synthesize an explicit cast to gain access to the ivar.
+      RecName = "p";
+      RecName += clsDeclared->getIdentifier()->getName();
+      RecName += "_IMPL";
+      II = &Context->Idents.get(RecName.c_str());
+      TypedefDecl *TD = TypedefDecl::Create(*Context, TUDecl,
+                                          SourceLocation(), II, RDT);
+      assert(TD && "RewriteObjCIvarRefExpr(): Can't find TypedefDecl");
+      QualType castT = Context->getTypedefType(TD);
       CastExpr *castExpr = new CStyleCastExpr(castT, IV->getBase(), castT,
                                                  SourceLocation(), SourceLocation());
       // Don't forget the parens to enforce the proper binding.
@@ -2772,10 +2791,7 @@ void RewriteObjC::SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
   
   // FIXME: This has potential of causing problem. If 
   // SynthesizeObjCInternalStruct is ever called recursively.
-  Result += "\nstruct ";
-  Result += CDecl->getNameAsString();
-  if (LangOpts.Microsoft)
-    Result += "_IMPL";
+  Result += "\ntypedef struct ";
 
   if (NumIvars > 0) {
     const char *cursor = strchr(startBuf, '{');
@@ -2814,7 +2830,7 @@ void RewriteObjC::SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
       ReplaceText(LocStart, cursor-startBuf, Result.c_str(), Result.size());
     }
     if (RCDecl && ObjCSynthesizedStructs.count(RCDecl)) {
-      Result = "\n    struct ";
+      Result = "\n    ";
       Result += RCDecl->getNameAsString();
       Result += "_IMPL ";
       Result += RCDecl->getNameAsString();
@@ -2859,11 +2875,21 @@ void RewriteObjC::SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
       }
       cursor++;
     }
-    // Don't forget to add a ';'!!
-    InsertText(LocEnd.getFileLocWithOffset(1), ";", 1);
+    // Don't forget to add the typedef name and a ';'!!
+    Result = " ";
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL;";
+    // Now generate a typedef for the pointer to the "IMPL". For some reason,
+    // The Microsoft compiler want to see this in a separate declaration.
+    Result += "\ntypedef ";
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL *p";
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL;";
+    InsertText(LocEnd.getFileLocWithOffset(1), Result.c_str(), Result.size());
   } else { // we don't have any instance variables - insert super struct.
     endBuf += Lexer::MeasureTokenLength(LocEnd, *SM);
-    Result += " {\n    struct ";
+    Result += " {\n    ";
     Result += RCDecl->getNameAsString();
     Result += "_IMPL ";
     Result += RCDecl->getNameAsString();
@@ -3237,7 +3263,7 @@ void RewriteObjC::SynthesizeIvarOffsetComputation(ObjCImplementationDecl *IDecl,
     // place all bitfields at offset 0.
     Result += "0";
   } else {
-    Result += "__OFFSETOFIVAR__(struct ";
+    Result += "__OFFSETOFIVAR__(";
     Result += IDecl->getNameAsString();
     if (LangOpts.Microsoft)
       Result += "_IMPL";
@@ -3452,7 +3478,7 @@ void RewriteObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
     Result += ",0";
   else {
     // class has size. Must synthesize its size.
-    Result += ",sizeof(struct ";
+    Result += ",sizeof(";
     Result += CDecl->getNameAsString();
     if (LangOpts.Microsoft)
       Result += "_IMPL";
