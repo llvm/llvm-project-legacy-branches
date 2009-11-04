@@ -1138,9 +1138,7 @@ DIE *DwarfDebug::CreateMemberDIE(CompileUnit *DW_Unit, const DIDerivedType &DT){
   AddSourceLine(MemberDie, &DT);
 
   uint64_t Size = DT.getSizeInBits();
-  uint64_t FieldSize = Size;
-  if (DT.getTypeDerivedFrom().getTag() != dwarf::DW_TAG_array_type)
-    FieldSize = DT.getOriginalTypeSize();
+  uint64_t FieldSize = DT.getOriginalTypeSize();
 
   if (Size != FieldSize) {
     // Handle bitfield.
