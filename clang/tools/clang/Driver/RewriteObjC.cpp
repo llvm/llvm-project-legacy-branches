@@ -2889,11 +2889,21 @@ void RewriteObjC::SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
     InsertText(LocEnd.getFileLocWithOffset(1), Result.c_str(), Result.size());
   } else { // we don't have any instance variables - insert super struct.
     endBuf += Lexer::MeasureTokenLength(LocEnd, *SM);
-    Result += " {\n    ";
+    Result += "{\n    ";
     Result += RCDecl->getNameAsString();
     Result += "_IMPL ";
     Result += RCDecl->getNameAsString();
-    Result += "_IVARS;\n};\n";
+    Result += "_IVARS;\n} ";
+    // Don't forget to add the typedef name and a ';'!!
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL;";
+    // Now generate a typedef for the pointer to the "IMPL". For some reason,
+    // The Microsoft compiler want to see this in a separate declaration.
+    Result += "\ntypedef ";
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL *p";
+    Result += CDecl->getNameAsString();
+    Result += "_IMPL;";
     ReplaceText(LocStart, endBuf-startBuf, Result.c_str(), Result.size());
   }
   // Mark this struct as having been generated.
