@@ -1396,8 +1396,9 @@ SDValue DAGTypeLegalizer::WidenVecRes_BUILD_VECTOR(SDNode *N) {
 
   SmallVector<SDValue, 16> NewOps(N->op_begin(), N->op_end());
   NewOps.reserve(WidenNumElts);
+  SDValue LastElt = NewOps[NumElts - 1];
   for (unsigned i = NumElts; i < WidenNumElts; ++i)
-    NewOps.push_back(DAG.getUNDEF(EltVT));
+    NewOps.push_back(LastElt);
 
   return DAG.getNode(ISD::BUILD_VECTOR, dl, WidenVT, &NewOps[0], NewOps.size());
 }
@@ -1651,10 +1652,11 @@ SDValue DAGTypeLegalizer::WidenVecRes_LOAD(SDNode *N) {
       LdChain.push_back(Ops[i].getValue(1));
     }
 
-    // Fill the rest with undefs
-    SDValue UndefVal = DAG.getUNDEF(EltVT);
+    // Fill the rest with the last element instead of undefs in case the
+    // widen operation can trap.
+    unsigned last_i = i - 1;
     for (; i != WidenNumElts; ++i)
-      Ops[i] = UndefVal;
+      Ops[i] = Ops[last_i];
 
     Result =  DAG.getNode(ISD::BUILD_VECTOR, dl, WidenVT, &Ops[0], Ops.size());
   } else {
@@ -1662,6 +1664,18 @@ SDValue DAGTypeLegalizer::WidenVecRes_LOAD(SDNode *N) {
     unsigned int LdWidth = LdVT.getSizeInBits();
     Result = GenWidenVectorLoads(LdChain, Chain, BasePtr, SV, SVOffset,
                                  Align, isVolatile, LdWidth, WidenVT, dl);
+    // Splat the last element instead of leaving the values undefined in case
+    // the widen operation can trap.
+    unsigned WidenNumElts = WidenVT.getVectorNumElements();
+    unsigned NumElts = LdVT.getVectorNumElements();
+    SmallVector<int, 16> Mask;
+    unsigned i = 0;
+    for (i = 0; i < NumElts; ++i)
+      Mask.push_back(i);
+    for (; i < WidenNumElts; ++i)
+      Mask.push_back(NumElts - 1);
+    Result = DAG.getVectorShuffle(WidenVT, dl, Result, DAG.getUNDEF(WidenVT),
+                                  &Mask[0]);
   }
 
  // If we generate a single load, we can use that for the chain.  Otherwise,
