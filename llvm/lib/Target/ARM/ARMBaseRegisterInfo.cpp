@@ -514,7 +514,6 @@ needsStackRealignment(const MachineFunction &MF) const {
   unsigned StackAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
   return (RealignStack &&
           !AFI->isThumb1OnlyFunction() &&
-          AFI->hasStackFrame() &&
           (MFI->getMaxAlignment() > StackAlign) &&
           !MFI->hasVarSizedObjects());
 }
@@ -523,7 +522,8 @@ bool ARMBaseRegisterInfo::cannotEliminateFrame(const MachineFunction &MF) const 
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   if (NoFramePointerElim && MFI->hasCalls())
     return true;
-  return MFI->hasVarSizedObjects() || MFI->isFrameAddressTaken();
+  return MFI->hasVarSizedObjects() || MFI->isFrameAddressTaken()
+    || needsStackRealignment(MF);
 }
 
 /// estimateStackSize - Estimate and return the size of the frame.
