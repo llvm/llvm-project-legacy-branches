@@ -45,7 +45,7 @@ ReuseFrameIndexVals("arm-reuse-frame-index-vals", cl::Hidden, cl::init(true),
           cl::desc("Reuse repeated frame index values"));
 
 static cl::opt<bool>
-ARMDynamicStackAlign("arm-dynamic-stack-alignment", cl::Hidden, cl::init(false),
+ARMDynamicStackAlign("arm-dynamic-stack-alignment", cl::Hidden, cl::init(true),
           cl::desc("Dynamically re-align the stack as needed"));
 
 unsigned ARMBaseRegisterInfo::getRegisterNumbering(unsigned RegEnum,
@@ -504,8 +504,6 @@ bool ARMBaseRegisterInfo::hasFP(const MachineFunction &MF) const {
 
 bool ARMBaseRegisterInfo::
 needsStackRealignment(const MachineFunction &MF) const {
-  // Only do this for ARM if explicitly enabled
-  // FIXME: Once it's passing all the tests, enable by default
   if (!ARMDynamicStackAlign)
     return false;
 
