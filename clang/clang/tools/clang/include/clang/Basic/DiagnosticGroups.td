@@ -67,6 +67,7 @@ def PointerArith : DiagGroup<"pointer-arith">;
 def : DiagGroup<"pointer-to-int-cast">;
 def : DiagGroup<"redundant-decls">;
 def ReturnType : DiagGroup<"return-type">;
+def SemiBeforeMethodBody : DiagGroup<"semicolon-before-method-body">;
 def : DiagGroup<"sequence-point">;
 def : DiagGroup<"shadow">;
 def : DiagGroup<"shorten-64-to-32">;
@@ -129,6 +130,7 @@ def Format2 : DiagGroup<"format=2",
 
 
 def Extra : DiagGroup<"extra", [
+    SemiBeforeMethodBody,
     UnusedParameter
   ]>;
 
