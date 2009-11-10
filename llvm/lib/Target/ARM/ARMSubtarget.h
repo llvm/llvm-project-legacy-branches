@@ -17,6 +17,7 @@
 #include "llvm/Target/TargetInstrItineraries.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSubtarget.h"
+#include "ARMBaseRegisterInfo.h"
 #include <string>
 
 namespace llvm {
@@ -126,13 +127,10 @@ protected:
 
   const std::string & getCPUString() const { return CPUString; }
   
-  /// enablePostRAScheduler - True at 'More' optimization except
-  /// for Thumb1.
+  /// enablePostRAScheduler - True at 'More' optimization.
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtarget::AntiDepBreakMode& mode) const {
-    mode = TargetSubtarget::ANTIDEP_CRITICAL;
-    return PostRAScheduler && OptLevel >= CodeGenOpt::Default;
-  }
+                             TargetSubtarget::AntiDepBreakMode& Mode,
+                             ExcludedRCVector& ExcludedRCs) const;
 
   /// getInstrItins - Return the instruction itineraies based on subtarget
   /// selection.

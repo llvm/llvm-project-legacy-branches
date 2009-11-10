@@ -219,10 +219,8 @@ public:
   /// enablePostRAScheduler - X86 target is enabling post-alloc scheduling
   /// at 'More' optimization level.
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtarget::AntiDepBreakMode& mode) const {
-    mode = TargetSubtarget::ANTIDEP_CRITICAL;
-    return OptLevel >= CodeGenOpt::Default;
-  }
+                             TargetSubtarget::AntiDepBreakMode& Mode,
+                             ExcludedRCVector& ExcludedRCs) const;
 };
 
 } // End llvm namespace
