@@ -109,7 +109,7 @@ static bool isObjectSmallerThan(const Value *V, unsigned Size,
     else
       return false;
   } else if (const CallInst* CI = extractMallocCall(V)) {
-    if (!isArrayMalloc(V, Context, &TD))
+    if (!isArrayMalloc(V, &TD))
       // The size is the argument to the malloc call.
       if (const ConstantInt* C = dyn_cast<ConstantInt>(CI->getOperand(1)))
         return (C->getZExtValue() < Size);

@@ -101,7 +101,7 @@ const SCEV *PointerTracking::computeAllocationCount(Value *P,
   }
 
   if (CallInst *CI = extractMallocCall(V)) {
-    Value *arraySize = getMallocArraySize(CI, P->getContext(), TD);
+    Value *arraySize = getMallocArraySize(CI, TD);
     const Type* AllocTy = getMallocAllocatedType(CI);
     if (!AllocTy || !arraySize) return SE->getCouldNotCompute();
     Ty = AllocTy;

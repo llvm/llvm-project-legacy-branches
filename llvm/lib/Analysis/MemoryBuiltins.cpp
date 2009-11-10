@@ -16,7 +16,8 @@
 #include "llvm/Constants.h"
 #include "llvm/Instructions.h"
 #include "llvm/Module.h"
-#include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Target/TargetData.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -86,115 +87,38 @@ const CallInst *llvm::extractMallocCallFromBitCast(const Value *I) {
                                       : NULL;
 }
 
-/// isConstantOne - Return true only if val is constant int 1.
-static bool isConstantOne(Value *val) {
-  return isa<ConstantInt>(val) && cast<ConstantInt>(val)->isOne();
-}
-
-static Value *isArrayMallocHelper(const CallInst *CI, LLVMContext &Context,
-                                  const TargetData *TD) {
+static Value *computeArraySize(const CallInst *CI, const TargetData *TD,
+                               bool LookThroughSExt = false) {
   if (!CI)
     return NULL;
 
-  // Type must be known to determine array size.
+  // The size of the malloc's result type must be known to determine array size.
   const Type *T = getMallocAllocatedType(CI);
-  if (!T)
+  if (!T || !T->isSized() || !TD)
     return NULL;
 
+  unsigned ElementSize = TD->getTypeAllocSize(T);
+  if (const StructType *ST = dyn_cast<StructType>(T))
+    ElementSize = TD->getStructLayout(ST)->getSizeInBytes();
+
+  // If malloc calls' arg can be determined to be a multiple of ElementSize,
+  // return the multiple.  Otherwise, return NULL.
   Value *MallocArg = CI->getOperand(1);
-  ConstantExpr *CO = dyn_cast<ConstantExpr>(MallocArg);
-  BinaryOperator *BO = dyn_cast<BinaryOperator>(MallocArg);
+  Value *Multiple = NULL;
+  APInt Val(TD->getTypeSizeInBits(MallocArg->getType()->getScalarType()), 0);
+  if (ComputeMultiple(MallocArg, ElementSize, Multiple,
+                      Val, LookThroughSExt, TD))
+    return Multiple;
 
-  Constant *ElementSize = ConstantExpr::getSizeOf(T);
-  ElementSize = ConstantExpr::getTruncOrBitCast(ElementSize, 
-                                                MallocArg->getType());
-  Constant *FoldedElementSize =
-   ConstantFoldConstantExpression(cast<ConstantExpr>(ElementSize), Context, TD);
-
-  // First, check if CI is a non-array malloc.
-  if (CO && ((CO == ElementSize) ||
-             (FoldedElementSize && (CO == FoldedElementSize))))
-    // Match CreateMalloc's use of constant 1 array-size for non-array mallocs.
-    return ConstantInt::get(MallocArg->getType(), 1);
-
-  // Second, check if CI is an array malloc whose array size can be determined.
-  if (isConstantOne(ElementSize) || 
-      (FoldedElementSize && isConstantOne(FoldedElementSize)))
-    return MallocArg;
-
-  if (!CO && !BO)
-    return NULL;
-
-  Value *Op0 = NULL;
-  Value *Op1 = NULL;
-  unsigned Opcode = 0;
-  if (CO && ((CO->getOpcode() == Instruction::Mul) || 
-             (CO->getOpcode() == Instruction::Shl))) {
-    Op0 = CO->getOperand(0);
-    Op1 = CO->getOperand(1);
-    Opcode = CO->getOpcode();
-  }
-  if (BO && ((BO->getOpcode() == Instruction::Mul) || 
-             (BO->getOpcode() == Instruction::Shl))) {
-    Op0 = BO->getOperand(0);
-    Op1 = BO->getOperand(1);
-    Opcode = BO->getOpcode();
-  }
-
-  // Determine array size if malloc's argument is the product of a mul or shl.
-  if (Op0) {
-    if (Opcode == Instruction::Mul) {
-      if ((Op1 == ElementSize) ||
-          (FoldedElementSize && (Op1 == FoldedElementSize)))
-        // ArraySize * ElementSize
-        return Op0;
-      if ((Op0 == ElementSize) ||
-          (FoldedElementSize && (Op0 == FoldedElementSize)))
-        // ElementSize * ArraySize
-        return Op1;
-    }
-    if (Opcode == Instruction::Shl) {
-      ConstantInt *Op1CI = dyn_cast<ConstantInt>(Op1);
-      if (!Op1CI) return NULL;
-      
-      APInt Op1Int = Op1CI->getValue();
-      uint64_t BitToSet = Op1Int.getLimitedValue(Op1Int.getBitWidth() - 1);
-      Value *Op1Pow = ConstantInt::get(Context, 
-                                  APInt(Op1Int.getBitWidth(), 0).set(BitToSet));
-      if (Op0 == ElementSize || (FoldedElementSize && Op0 == FoldedElementSize))
-        // ArraySize << log2(ElementSize)
-        return Op1Pow;
-      if (Op1Pow == ElementSize ||
-          (FoldedElementSize && Op1Pow == FoldedElementSize))
-        // ElementSize << log2(ArraySize)
-        return Op0;
-    }
-  }
-
-  // We could not determine the malloc array size from MallocArg.
   return NULL;
 }
 
 /// isArrayMalloc - Returns the corresponding CallInst if the instruction 
 /// is a call to malloc whose array size can be determined and the array size
 /// is not constant 1.  Otherwise, return NULL.
-CallInst *llvm::isArrayMalloc(Value *I, LLVMContext &Context,
-                              const TargetData *TD) {
-  CallInst *CI = extractMallocCall(I);
-  Value *ArraySize = isArrayMallocHelper(CI, Context, TD);
-
-  if (ArraySize &&
-      ArraySize != ConstantInt::get(CI->getOperand(1)->getType(), 1))
-    return CI;
-
-  // CI is a non-array malloc or we can't figure out that it is an array malloc.
-  return NULL;
-}
-
-const CallInst *llvm::isArrayMalloc(const Value *I, LLVMContext &Context,
-                                    const TargetData *TD) {
+const CallInst *llvm::isArrayMalloc(const Value *I, const TargetData *TD) {
   const CallInst *CI = extractMallocCall(I);
-  Value *ArraySize = isArrayMallocHelper(CI, Context, TD);
+  Value *ArraySize = computeArraySize(CI, TD);
 
   if (ArraySize &&
       ArraySize != ConstantInt::get(CI->getOperand(1)->getType(), 1))
@@ -205,35 +129,41 @@ const CallInst *llvm::isArrayMalloc(const Value *I, LLVMContext &Context,
 }
 
 /// getMallocType - Returns the PointerType resulting from the malloc call.
-/// This PointerType is the result type of the call's only bitcast use.
-/// If there is no unique bitcast use, then return NULL.
+/// The PointerType depends on the number of bitcast uses of the malloc call:
+///   0: PointerType is the calls' return type.
+///   1: PointerType is the bitcast's result type.
+///  >1: Unique PointerType cannot be determined, return NULL.
 const PointerType *llvm::getMallocType(const CallInst *CI) {
-  assert(isMalloc(CI) && "GetMallocType and not malloc call");
+  assert(isMalloc(CI) && "getMallocType and not malloc call");
   
-  const BitCastInst *BCI = NULL;
-  
+  const PointerType *MallocType = NULL;
+  unsigned NumOfBitCastUses = 0;
+
   // Determine if CallInst has a bitcast use.
   for (Value::use_const_iterator UI = CI->use_begin(), E = CI->use_end();
        UI != E; )
-    if ((BCI = dyn_cast<BitCastInst>(cast<Instruction>(*UI++))))
-      break;
+    if (const BitCastInst *BCI = dyn_cast<BitCastInst>(*UI++)) {
+      MallocType = cast<PointerType>(BCI->getDestTy());
+      NumOfBitCastUses++;
+    }
 
-  // Malloc call has 1 bitcast use and no other uses, so type is the bitcast's
-  // destination type.
-  if (BCI && CI->hasOneUse())
-    return cast<PointerType>(BCI->getDestTy());
+  // Malloc call has 1 bitcast use, so type is the bitcast's destination type.
+  if (NumOfBitCastUses == 1)
+    return MallocType;
 
   // Malloc call was not bitcast, so type is the malloc function's return type.
-  if (!BCI)
+  if (NumOfBitCastUses == 0)
     return cast<PointerType>(CI->getType());
 
   // Type could not be determined.
   return NULL;
 }
 
-/// getMallocAllocatedType - Returns the Type allocated by malloc call. This
-/// Type is the result type of the call's only bitcast use. If there is no
-/// unique bitcast use, then return NULL.
+/// getMallocAllocatedType - Returns the Type allocated by malloc call.
+/// The Type depends on the number of bitcast uses of the malloc call:
+///   0: PointerType is the malloc calls' return type.
+///   1: PointerType is the bitcast's result type.
+///  >1: Unique PointerType cannot be determined, return NULL.
 const Type *llvm::getMallocAllocatedType(const CallInst *CI) {
   const PointerType *PT = getMallocType(CI);
   return PT ? PT->getElementType() : NULL;
@@ -244,9 +174,10 @@ const Type *llvm::getMallocAllocatedType(const CallInst *CI) {
 /// then return that multiple.  For non-array mallocs, the multiple is
 /// constant 1.  Otherwise, return NULL for mallocs whose array size cannot be
 /// determined.
-Value *llvm::getMallocArraySize(CallInst *CI, LLVMContext &Context,
-                                const TargetData *TD) {
-  return isArrayMallocHelper(CI, Context, TD);
+Value *llvm::getMallocArraySize(CallInst *CI, const TargetData *TD,
+                                bool LookThroughSExt) {
+  assert(isMalloc(CI) && "getMallocArraySize and not malloc call");
+  return computeArraySize(CI, TD, LookThroughSExt);
 }
 
 //===----------------------------------------------------------------------===//
