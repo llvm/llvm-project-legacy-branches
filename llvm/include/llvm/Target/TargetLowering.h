@@ -1502,6 +1502,14 @@ public:
     return false;
   }
 
+  /// isLegalICmpImmediate - Return true if the specified immediate is legal
+  /// icmp immediate, that is the target has icmp instructions which can compare
+  /// a register against the immediate without having to materialize the
+  /// immediate into a register.
+  virtual bool isLegalICmpImmediate(int64_t Imm) const {
+    return true;
+  }
+
   //===--------------------------------------------------------------------===//
   // Div utility functions
   //
