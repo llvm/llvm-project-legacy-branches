@@ -747,15 +747,18 @@ void *JITEmitter::getPointerToGlobal(GlobalValue *V, void *Reference,
 
   // If we have already compiled the function, return a pointer to its body.
   Function *F = cast<Function>(V);
-  void *ResultPtr;
-  if (!DoesntNeedStub) {
-    // Return the function stub if it's already created.
-    ResultPtr = Resolver.getFunctionStubIfAvailable(F);
-    if (ResultPtr)
-      AddStubToCurrentFunction(ResultPtr);
-  } else {
-    ResultPtr = TheJIT->getPointerToGlobalIfAvailable(F);
+
+  void *FnStub = Resolver.getFunctionStubIfAvailable(F);
+  if (FnStub) {
+    // Return the function stub if it's already created.  We do this first
+    // so that we're returning the same address for the function as any
+    // previous call.
+    AddStubToCurrentFunction(FnStub);
+    return FnStub;
   }
+
+  // Otherwise if we have code, go ahead and return that.
+  void *ResultPtr = TheJIT->getPointerToGlobalIfAvailable(F);
   if (ResultPtr) return ResultPtr;
 
   // If this is an external function pointer, we can force the JIT to
