@@ -56,6 +56,20 @@ TailMergeSize("tail-merge-size",
           cl::desc("Min number of instructions to consider tail merging"),
                               cl::init(3), cl::Hidden);
 
+namespace {
+  /// BranchFolderPass - Wrap branch folder in a machine function pass.
+  class BranchFolderPass : public MachineFunctionPass,
+                           public BranchFolder {
+  public:
+    static char ID;
+    explicit BranchFolderPass(bool defaultEnableTailMerge)
+      : MachineFunctionPass(&ID), BranchFolder(defaultEnableTailMerge) {}
+
+    virtual bool runOnMachineFunction(MachineFunction &MF);
+    virtual const char *getPassName() const { return "Control Flow Optimizer"; }
+  };
+}
+
 char BranchFolderPass::ID = 0;
 
 FunctionPass *llvm::createBranchFoldingPass(bool DefaultEnableTailMerge) {
@@ -380,7 +394,7 @@ MachineBasicBlock *BranchFolder::SplitMBBAt(MachineBasicBlock &CurMBB,
       RS->forward(prior(CurMBB.end()));
     BitVector RegsLiveAtExit(TRI->getNumRegs());
     RS->getRegsUsed(RegsLiveAtExit, false);
-    for (unsigned int i=0, e=TRI->getNumRegs(); i!=e; i++)
+    for (unsigned int i = 0, e = TRI->getNumRegs(); i != e; i++)
       if (RegsLiveAtExit[i])
         NewMBB->addLiveIn(i);
   }
@@ -505,21 +519,24 @@ static bool ProfitableToMerge(MachineBasicBlock *MBB1,
     return true;
 
   // If both blocks have an unconditional branch temporarily stripped out,
-  // treat that as an additional common instruction.
-  if (MBB1 != PredBB && MBB2 != PredBB && 
+  // count that as an additional common instruction for the following
+  // heuristics.
+  unsigned EffectiveTailLen = CommonTailLen;
+  if (SuccBB && MBB1 != PredBB && MBB2 != PredBB && 
       !MBB1->back().getDesc().isBarrier() &&
       !MBB2->back().getDesc().isBarrier())
-    --minCommonTailLength;
+    ++EffectiveTailLen;
 
   // Check if the common tail is long enough to be worthwhile.
-  if (CommonTailLen >= minCommonTailLength)
+  if (EffectiveTailLen >= minCommonTailLength)
     return true;
 
-  // If we are optimizing for code size, 1 instruction in common is enough if
-  // we don't have to split a block.  At worst we will be replacing a
-  // fallthrough into the common tail with a branch, which at worst breaks
-  // even with falling through into the duplicated common tail.
-  if (MF->getFunction()->hasFnAttr(Attribute::OptimizeForSize) &&
+  // If we are optimizing for code size, 2 instructions in common is enough if
+  // we don't have to split a block.  At worst we will be introducing 1 new
+  // branch instruction, which is likely to be smaller than the 2
+  // instructions that would be deleted in the merge.
+  if (EffectiveTailLen >= 2 &&
+      MF->getFunction()->hasFnAttr(Attribute::OptimizeForSize) &&
       (I1 == MBB1->begin() || I2 == MBB2->begin()))
     return true;
 
@@ -546,7 +563,7 @@ unsigned BranchFolder::ComputeSameTails(unsigned CurHash,
   MPIterator HighestMPIter = prior(MergePotentials.end());
   for (MPIterator CurMPIter = prior(MergePotentials.end()),
                   B = MergePotentials.begin();
-       CurMPIter!=B && CurMPIter->getHash() == CurHash;
+       CurMPIter != B && CurMPIter->getHash() == CurHash;
        --CurMPIter) {
     for (MPIterator I = prior(CurMPIter); I->getHash() == CurHash ; --I) {
       unsigned CommonTailLen;
@@ -596,9 +613,9 @@ void BranchFolder::RemoveBlocksWithHash(unsigned CurHash,
 /// only of the common tail.  Create a block that does by splitting one.
 unsigned BranchFolder::CreateCommonTailOnlyBlock(MachineBasicBlock *&PredBB,
                                              unsigned maxCommonTailLength) {
-  unsigned i, commonTailIndex;
+  unsigned commonTailIndex = 0;
   unsigned TimeEstimate = ~0U;
-  for (i=0, commonTailIndex=0; i<SameTails.size(); i++) {
+  for (unsigned i = 0, e = SameTails.size(); i != e; ++i) {
     // Use PredBB if possible; that doesn't require a new branch.
     if (SameTails[i].getBlock() == PredBB) {
       commonTailIndex = i;
@@ -856,19 +873,19 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
           if (IBB->isLandingPad()) {
             MachineFunction::iterator IP = PBB;  IP++;
             MachineBasicBlock* PredNextBB = NULL;
-            if (IP!=MF.end())
+            if (IP != MF.end())
               PredNextBB = IP;
             if (TBB == NULL) {
-              if (IBB!=PredNextBB)      // fallthrough
+              if (IBB != PredNextBB)      // fallthrough
                 continue;
             } else if (FBB) {
-              if (TBB!=IBB && FBB!=IBB)   // cbr then ubr
+              if (TBB != IBB && FBB != IBB)   // cbr then ubr
                 continue;
             } else if (Cond.empty()) {
-              if (TBB!=IBB)               // ubr
+              if (TBB != IBB)               // ubr
                 continue;
             } else {
-              if (TBB!=IBB && IBB!=PredNextBB)  // cbr
+              if (TBB != IBB && IBB != PredNextBB)  // cbr
                 continue;
             }
           }
