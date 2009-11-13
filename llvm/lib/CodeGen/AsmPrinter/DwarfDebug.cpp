@@ -1349,10 +1349,12 @@ DbgScope *DwarfDebug::getDbgScope(MDNode *N, const MachineInstr *MI,
 
   if (Parent)
     Parent->AddScope(NScope);
-  else
-    // First function is top level function.
-    if (!FunctionDbgScope)
+  else {
+    DISubprogram SP(N);
+    if (!SP.isNull() &&
+        !strcmp(SP.getLinkageName(), MF->getFunction()->getNameStr().c_str()))
       FunctionDbgScope = NScope;
+  }
 
   DbgScopeMap.insert(std::make_pair(N, NScope));
   return NScope;
@@ -2053,18 +2055,16 @@ void DwarfDebug::EndFunction(MachineFunction *MF) {
                                                MMI->getFrameMoves()));
 
   // Clear debug info
-  if (FunctionDbgScope) {
-    delete FunctionDbgScope;
-    DbgScopeMap.clear();
-    DbgScopeBeginMap.clear();
-    DbgScopeEndMap.clear();
-    DbgAbstractScopeMap.clear();
-    DbgConcreteScopeMap.clear();
-    FunctionDbgScope = NULL;
-    LexicalScopeStack.clear();
-    AbstractInstanceRootList.clear();
-    AbstractInstanceRootMap.clear();
-  }
+  delete FunctionDbgScope;
+  DbgScopeMap.clear();
+  DbgScopeBeginMap.clear();
+  DbgScopeEndMap.clear();
+  DbgAbstractScopeMap.clear();
+  DbgConcreteScopeMap.clear();
+  FunctionDbgScope = NULL;
+  LexicalScopeStack.clear();
+  AbstractInstanceRootList.clear();
+  AbstractInstanceRootMap.clear();
 
   Lines.clear();
 
