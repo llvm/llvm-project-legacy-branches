@@ -1,4 +1,4 @@
-// RUN: clang-cc -verify -analyze -checker-cfref -analyzer-store=region %s
+// RUN: clang-cc -analyzer-experimental-checks -verify -analyze -checker-cfref -analyzer-store=region %s
 
 struct tea_cheese { unsigned magic; };
 typedef struct tea_cheese kernel_tea_cheese_t;

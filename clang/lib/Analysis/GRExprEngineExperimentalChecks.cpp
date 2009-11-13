@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "GRExprEngineInternalChecks.h"
 #include "GRExprEngineExperimentalChecks.h"
 #include "clang/Analysis/LocalCheckers.h"
 
@@ -19,5 +20,14 @@ using namespace clang;
 
 void clang::RegisterExperimentalChecks(GRExprEngine &Eng) {
   RegisterPthreadLockChecker(Eng);  
+  
+  RegisterPointerSubChecker(Eng);
+  RegisterPointerArithChecker(Eng);
+  RegisterFixedAddressChecker(Eng);
+  // Note that this must be registered after ReturnStackAddressChecker.
+  RegisterReturnPointerRangeChecker(Eng);
+  
+  RegisterCastToStructChecker(Eng);
+  RegisterArrayBoundChecker(Eng);
 }
 
