@@ -529,10 +529,6 @@ void MachineFrameInfo::dump(const MachineFunction &MF) const {
 unsigned MachineJumpTableInfo::getJumpTableIndex(
                                const std::vector<MachineBasicBlock*> &DestBBs) {
   assert(!DestBBs.empty() && "Cannot create an empty jump table!");
-  for (unsigned i = 0, e = JumpTables.size(); i != e; ++i)
-    if (JumpTables[i].MBBs == DestBBs)
-      return i;
-  
   JumpTables.push_back(MachineJumpTableEntry(DestBBs));
   return JumpTables.size()-1;
 }
@@ -544,14 +540,25 @@ MachineJumpTableInfo::ReplaceMBBInJumpTables(MachineBasicBlock *Old,
                                              MachineBasicBlock *New) {
   assert(Old != New && "Not making a change?");
   bool MadeChange = false;
-  for (size_t i = 0, e = JumpTables.size(); i != e; ++i) {
-    MachineJumpTableEntry &JTE = JumpTables[i];
-    for (size_t j = 0, e = JTE.MBBs.size(); j != e; ++j)
-      if (JTE.MBBs[j] == Old) {
-        JTE.MBBs[j] = New;
-        MadeChange = true;
-      }
-  }
+  for (size_t i = 0, e = JumpTables.size(); i != e; ++i)
+    ReplaceMBBInJumpTable(i, Old, New);
+  return MadeChange;
+}
+
+/// ReplaceMBBInJumpTable - If Old is a target of the jump tables, update
+/// the jump table to branch to New instead.
+bool
+MachineJumpTableInfo::ReplaceMBBInJumpTable(unsigned Idx,
+                                            MachineBasicBlock *Old,
+                                            MachineBasicBlock *New) {
+  assert(Old != New && "Not making a change?");
+  bool MadeChange = false;
+  MachineJumpTableEntry &JTE = JumpTables[Idx];
+  for (size_t j = 0, e = JTE.MBBs.size(); j != e; ++j)
+    if (JTE.MBBs[j] == Old) {
+      JTE.MBBs[j] = New;
+      MadeChange = true;
+    }
   return MadeChange;
 }
 

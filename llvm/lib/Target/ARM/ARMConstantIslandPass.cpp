@@ -48,7 +48,7 @@ STATISTIC(NumJTInserted, "Number of jump table intermediate blocks inserted");
 
 
 static cl::opt<bool>
-AdjustJumpTableBlocks("arm-adjust-jump-tables", cl::Hidden, cl::init(false),
+AdjustJumpTableBlocks("arm-adjust-jump-tables", cl::Hidden, cl::init(true),
           cl::desc("Adjust basic block layout to better use TB[BH]"));
 
 namespace {
@@ -1749,7 +1749,7 @@ bool ARMConstantIslands::ReorderThumb2JumpTables(MachineFunction &MF) {
         MachineBasicBlock *NewBB =
           AdjustJTTargetBlockForward(MBB, MI->getParent());
         if (NewBB)
-          MJTI->ReplaceMBBInJumpTables(JTBBs[j], NewBB);
+          MJTI->ReplaceMBBInJumpTable(JTI, JTBBs[j], NewBB);
         MadeChange = true;
       }
     }
@@ -1772,16 +1772,16 @@ AdjustJTTargetBlockForward(MachineBasicBlock *BB, MachineBasicBlock *JTBB)
   int Size = BBSizes[BBI];
   MachineBasicBlock *TBB = 0, *FBB = 0;
   SmallVector<MachineOperand, 4> Cond;
-  // If the block terminator isn't analyzable, don't try to move the block
-  if (TII->AnalyzeBranch(*BB, TBB, FBB, Cond))
-    return NULL;
-
   // If the block is small and ends in an unconditional branch, move it.
   if (Size < 50 && Cond.empty()) {
+    // If the block terminator isn't analyzable, don't try to move the block
+    if (TII->AnalyzeBranch(*BB, TBB, FBB, Cond))
+      return NULL;
+
     MachineFunction::iterator OldPrior = prior(BB);
     BB->moveAfter(JTBB);
     OldPrior->updateTerminator();
-    //BB->updateTerminator();
+    BB->updateTerminator();
     ++NumJTMoved;
     return NULL;
   }
@@ -1798,13 +1798,13 @@ AdjustJTTargetBlockForward(MachineBasicBlock *BB, MachineBasicBlock *JTBB)
   assert (isThumb2 && "Adjusting for TB[BH] but not in Thumb2?");
   BuildMI(NewBB, DebugLoc::getUnknownLoc(), TII->get(ARM::t2B)).addMBB(BB);
 
+  // Update internal data structures to account for the newly inserted MBB.
+  MF.RenumberBlocks(NewBB);
+
   // Update the CFG.
   NewBB->addSuccessor(BB);
   JTBB->removeSuccessor(BB);
   JTBB->addSuccessor(NewBB);
-
-  // Update internal data structures to account for the newly inserted MBB.
-  MF.RenumberBlocks();
 
   // Insert a size into BBSizes to align it properly with the (newly
   // renumbered) block numbers.
