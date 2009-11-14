@@ -21,6 +21,7 @@ namespace llvm {
 
 class MCAsmInfo;
 class TargetRegisterClass;
+class TargetRegisterInfo;
 class LiveVariables;
 class CalleeSavedInfo;
 class SDNode;
@@ -186,7 +187,8 @@ public:
   virtual void reMaterialize(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator MI,
                              unsigned DestReg, unsigned SubIdx,
-                             const MachineInstr *Orig) const = 0;
+                             const MachineInstr *Orig,
+                             const TargetRegisterInfo *TRI) const = 0;
 
   /// convertToThreeAddress - This method must be implemented by targets that
   /// set the M_CONVERTIBLE_TO_3_ADDR flag.  When this flag is set, the target
@@ -516,7 +518,8 @@ public:
   virtual void reMaterialize(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator MI,
                              unsigned DestReg, unsigned SubReg,
-                             const MachineInstr *Orig) const;
+                             const MachineInstr *Orig,
+                             const TargetRegisterInfo *TRI) const;
   virtual bool isIdentical(const MachineInstr *MI,
                            const MachineInstr *Other,
                            const MachineRegisterInfo *MRI) const;
