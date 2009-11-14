@@ -50,6 +50,14 @@ void LiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
+MachineInstr *
+LiveVariables::VarInfo::findKill(const MachineBasicBlock *MBB) const {
+  for (unsigned i = 0, e = Kills.size(); i != e; ++i)
+    if (Kills[i]->getParent() == MBB)
+      return Kills[i];
+  return NULL;
+}
+
 void LiveVariables::VarInfo::dump() const {
   errs() << "  Alive in blocks: ";
   for (SparseBitVector<>::iterator I = AliveBlocks.begin(),
@@ -646,4 +654,37 @@ void LiveVariables::analyzePHINodes(const MachineFunction& Fn) {
       for (unsigned i = 1, e = BBI->getNumOperands(); i != e; i += 2)
         PHIVarInfo[BBI->getOperand(i + 1).getMBB()->getNumber()]
           .push_back(BBI->getOperand(i).getReg());
+}
+
+/// addNewBlock - Add a new basic block BB as an empty succcessor to DomBB. All
+/// variables that are live out of DomBB will be marked as passing live through
+/// BB.
+void LiveVariables::addNewBlock(MachineBasicBlock *BB,
+                                MachineBasicBlock *DomBB) {
+  const unsigned NumNew = BB->getNumber();
+  const unsigned NumDom = DomBB->getNumber();
+
+  // Update info for all live variables
+  for (unsigned Reg = TargetRegisterInfo::FirstVirtualRegister,
+         E = MRI->getLastVirtReg()+1; Reg != E; ++Reg) {
+    VarInfo &VI = getVarInfo(Reg);
+
+    // Anything live through DomBB is also live through BB.
+    if (VI.AliveBlocks.test(NumDom)) {
+      VI.AliveBlocks.set(NumNew);
+      continue;
+    }
+
+    // Variables not defined in DomBB cannot be live out.
+    const MachineInstr *Def = MRI->getVRegDef(Reg);
+    if (!Def || Def->getParent() != DomBB)
+      continue;
+
+    // Killed by DomBB?
+    if (VI.findKill(DomBB))
+      continue;
+
+    // This register is defined in DomBB and live out
+    VI.AliveBlocks.set(NumNew);
+  }
 }
