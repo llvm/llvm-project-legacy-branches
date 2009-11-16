@@ -128,6 +128,7 @@ void LiveIntervals::processImplicitDefs() {
   SmallVector<MachineInstr*, 8> ImpDefMIs;
   MachineBasicBlock *Entry = mf_->begin();
   SmallPtrSet<MachineBasicBlock*,16> Visited;
+  SmallPtrSet<MachineInstr*, 8> ModInsts;
   for (df_ext_iterator<MachineBasicBlock*, SmallPtrSet<MachineBasicBlock*,16> >
          DFI = df_ext_begin(Entry, Visited), E = df_ext_end(Entry, Visited);
        DFI != E; ++DFI) {
@@ -246,6 +247,8 @@ void LiveIntervals::processImplicitDefs() {
         MachineOperand &RMO = UI.getOperand();
         MachineInstr *RMI = &*UI;
         ++UI;
+        if (ModInsts.count(RMI))
+          continue;
         MachineBasicBlock *RMBB = RMI->getParent();
         if (RMBB == MBB)
           continue;
@@ -257,6 +260,7 @@ void LiveIntervals::processImplicitDefs() {
           RMI->setDesc(tii_->get(TargetInstrInfo::IMPLICIT_DEF));
           for (int j = RMI->getNumOperands() - 1, ee = 0; j > ee; --j)
             RMI->RemoveOperand(j);
+          ModInsts.insert(RMI);
           continue;
         }
 
