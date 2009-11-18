@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/RegAllocRegistry.h"
 #include "llvm/Function.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -47,10 +48,21 @@ X("phi-node-elimination", "Eliminate PHI nodes for register allocation");
 
 const PassInfo *const llvm::PHIEliminationID = &X;
 
+namespace llvm { FunctionPass *createLocalRegisterAllocator(); }
+
+// Should we run edge splitting?
+static bool shouldSplitEdges() {
+  // Edge splitting breaks the local register allocator. It cannot tolerate
+  // LiveVariables being run.
+  if (RegisterRegAlloc::getDefault() == createLocalRegisterAllocator)
+    return false;
+  return SplitEdges;
+}
+
 void llvm::PHIElimination::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<LiveVariables>();
   AU.addPreserved<MachineDominatorTree>();
-  if (SplitEdges) {
+  if (shouldSplitEdges()) {
     AU.addRequired<LiveVariables>();
   } else {
     AU.setPreservesCFG();
@@ -67,7 +79,7 @@ bool llvm::PHIElimination::runOnMachineFunction(MachineFunction &Fn) {
   bool Changed = false;
 
   // Split critical edges to help the coalescer
-  if (SplitEdges)
+  if (shouldSplitEdges())
     for (MachineFunction::iterator I = Fn.begin(), E = Fn.end(); I != E; ++I)
       Changed |= SplitPHIEdges(Fn, *I);
 
@@ -433,9 +445,21 @@ bool llvm::PHIElimination::isLiveIn(unsigned Reg, const MachineBasicBlock &MBB,
 MachineBasicBlock *PHIElimination::SplitCriticalEdge(MachineBasicBlock *A,
                                                      MachineBasicBlock *B) {
   assert(A && B && "Missing MBB end point");
-  ++NumSplits;
 
   MachineFunction *MF = A->getParent();
+
+  // We may need to update A's terminator, but we can't do that if AnalyzeBranch
+  // fails.
+  if (A->isLayoutSuccessor(B)) {
+    const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
+    MachineBasicBlock *TBB = 0, *FBB = 0;
+    SmallVector<MachineOperand, 4> Cond;
+    if (!TII->AnalyzeBranch(*A, TBB, FBB, Cond))
+      return NULL;
+  }
+
+  ++NumSplits;
+
   MachineBasicBlock *NMBB = MF->CreateMachineBasicBlock();
   MF->push_back(NMBB);
   const unsigned NewNum = NMBB->getNumber();
