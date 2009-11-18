@@ -91,9 +91,6 @@ namespace llvm {
 
     DenseMap<MachineBasicBlock*, LiveIndex> terminatorGaps;
 
-    /// phiJoinCopies - Copy instructions which are PHI joins.
-    SmallVector<MachineInstr*, 16> phiJoinCopies;
-
     /// allocatableRegs_ - A bit vector of allocatable registers.
     BitVector allocatableRegs_;
 
@@ -431,12 +428,6 @@ namespace llvm {
   private:      
     /// computeIntervals - Compute live intervals.
     void computeIntervals();
-
-    bool isProfitableToCoalesce(LiveInterval &DstInt, LiveInterval &SrcInt,
-                                SmallVector<MachineInstr*,16> &IdentCopies,
-                                SmallVector<MachineInstr*,16> &OtherCopies);
-
-    void performEarlyCoalescing();
 
     /// handleRegisterDef - update intervals for a register def
     /// (calls handlePhysicalRegisterDef and
