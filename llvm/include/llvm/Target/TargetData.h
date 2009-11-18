@@ -33,6 +33,7 @@ class Type;
 class IntegerType;
 class StructType;
 class StructLayout;
+class StructLayoutMap;
 class GlobalVariable;
 class LLVMContext;
 
@@ -91,8 +92,8 @@ private:
    */
   static const TargetAlignElem InvalidAlignmentElem;
 
-  // Opaque pointer for the StructType -> StructLayout map.
-  mutable void* LayoutMap;
+  // The StructType -> StructLayout map.
+  mutable StructLayoutMap *LayoutMap;
 
   //! Set/initialize target alignments
   void setAlignment(AlignTypeEnum align_type, unsigned char abi_align,
