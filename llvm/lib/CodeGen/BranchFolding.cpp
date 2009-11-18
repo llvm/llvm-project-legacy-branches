@@ -52,7 +52,7 @@ TailMergeThreshold("tail-merge-threshold",
 // Heuristic for tail merging (and, inversely, tail duplication).
 // TODO: This should be replaced with a target query.
 static cl::opt<unsigned>
-TailMergeSize("tail-merge-size", 
+TailMergeSize("tail-merge-size",
           cl::desc("Min number of instructions to consider tail merging"),
                               cl::init(3), cl::Hidden);
 
@@ -201,6 +201,11 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
     MadeChangeThisIteration |= OptimizeBranches(MF);
     MadeChange |= MadeChangeThisIteration;
   }
+
+  // Do tail duplication once after tail merging is done.  Otherwise it is
+  // tough to avoid situations where tail duplication and tail merging undo
+  // each other's transformations ad infinitum.
+  MadeChange |= TailDuplicateBlocks(MF);
 
   // See if any jump tables have become mergable or dead as the code generator
   // did its thing.
@@ -423,7 +428,7 @@ static unsigned EstimateRuntime(MachineBasicBlock::iterator I,
 // branches temporarily for tail merging).  In the case where CurMBB ends
 // with a conditional branch to the next block, optimize by reversing the
 // test and conditionally branching to SuccMBB instead.
-static void FixTail(MachineBasicBlock* CurMBB, MachineBasicBlock *SuccBB,
+static void FixTail(MachineBasicBlock *CurMBB, MachineBasicBlock *SuccBB,
                     const TargetInstrInfo *TII) {
   MachineFunction *MF = CurMBB->getParent();
   MachineFunction::iterator I = next(MachineFunction::iterator(CurMBB));
@@ -522,7 +527,7 @@ static bool ProfitableToMerge(MachineBasicBlock *MBB1,
   // count that as an additional common instruction for the following
   // heuristics.
   unsigned EffectiveTailLen = CommonTailLen;
-  if (SuccBB && MBB1 != PredBB && MBB2 != PredBB && 
+  if (SuccBB && MBB1 != PredBB && MBB2 != PredBB &&
       !MBB1->back().getDesc().isBarrier() &&
       !MBB2->back().getDesc().isBarrier())
     ++EffectiveTailLen;
@@ -591,8 +596,8 @@ unsigned BranchFolder::ComputeSameTails(unsigned CurHash,
 /// RemoveBlocksWithHash - Remove all blocks with hash CurHash from
 /// MergePotentials, restoring branches at ends of blocks as appropriate.
 void BranchFolder::RemoveBlocksWithHash(unsigned CurHash,
-                                        MachineBasicBlock* SuccBB,
-                                        MachineBasicBlock* PredBB) {
+                                        MachineBasicBlock *SuccBB,
+                                        MachineBasicBlock *PredBB) {
   MPIterator CurMPIter, B;
   for (CurMPIter = prior(MergePotentials.end()), B = MergePotentials.begin();
        CurMPIter->getHash() == CurHash;
@@ -658,45 +663,12 @@ unsigned BranchFolder::CreateCommonTailOnlyBlock(MachineBasicBlock *&PredBB,
 // if any, is given in PredBB.
 
 bool BranchFolder::TryTailMergeBlocks(MachineBasicBlock *SuccBB,
-                                      MachineBasicBlock* PredBB) {
+                                      MachineBasicBlock *PredBB) {
   bool MadeChange = false;
 
   // Except for the special cases below, tail-merge if there are at least
   // this many instructions in common.
   unsigned minCommonTailLength = TailMergeSize;
-
-  // If there's a successor block, there are some cases which don't require
-  // new branching and as such are very likely to be profitable.
-  if (SuccBB) {
-    if (SuccBB->pred_size() == MergePotentials.size() &&
-        !MergePotentials[0].getBlock()->empty()) {
-      // If all the predecessors have at least one tail instruction in common,
-      // merging is very likely to be a win since it won't require an increase
-      // in static branches, and it will decrease the static instruction count.
-      bool AllPredsMatch = true;
-      MachineBasicBlock::iterator FirstNonTerm;
-      unsigned MinNumTerms = CountTerminators(MergePotentials[0].getBlock(),
-                                              FirstNonTerm);
-      if (FirstNonTerm != MergePotentials[0].getBlock()->end()) {
-        for (unsigned i = 1, e = MergePotentials.size(); i != e; ++i) {
-          MachineBasicBlock::iterator OtherFirstNonTerm;
-          unsigned NumTerms = CountTerminators(MergePotentials[0].getBlock(),
-                                               OtherFirstNonTerm);
-          if (NumTerms < MinNumTerms)
-            MinNumTerms = NumTerms;
-          if (OtherFirstNonTerm == MergePotentials[i].getBlock()->end() ||
-              OtherFirstNonTerm->isIdenticalTo(FirstNonTerm)) {
-            AllPredsMatch = false;
-            break;
-          }
-        }
-
-        // If they all have an instruction in common, do any amount of merging.
-        if (AllPredsMatch)
-          minCommonTailLength = MinNumTerms + 1;
-      }
-    }
-  }
 
   DEBUG(errs() << "\nTryTailMergeBlocks: ";
         for (unsigned i = 0, e = MergePotentials.size(); i != e; ++i)
@@ -847,7 +819,7 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
       for (MachineBasicBlock::pred_iterator P = I->pred_begin(),
                                             E2 = I->pred_end();
            P != E2; ++P) {
-        MachineBasicBlock* PBB = *P;
+        MachineBasicBlock *PBB = *P;
         // Skip blocks that loop to themselves, can't tail merge these.
         if (PBB == IBB)
           continue;
@@ -872,7 +844,7 @@ bool BranchFolder::TailMergeBlocks(MachineFunction &MF) {
           // to have a bit in the edge so we didn't have to do all this.
           if (IBB->isLandingPad()) {
             MachineFunction::iterator IP = PBB;  IP++;
-            MachineBasicBlock* PredNextBB = NULL;
+            MachineBasicBlock *PredNextBB = NULL;
             if (IP != MF.end())
               PredNextBB = IP;
             if (TBB == NULL) {
@@ -970,7 +942,7 @@ bool BranchFolder::CanFallThrough(MachineBasicBlock *CurBB,
   if (BranchUnAnalyzable)
     return CurBB->empty() || !CurBB->back().getDesc().isBarrier() ||
            CurBB->back().getDesc().isPredicable();
-  
+
   // If there is no branch, control always falls through.
   if (TBB == 0) return true;
 
@@ -1025,30 +997,52 @@ static bool IsBetterFallthrough(MachineBasicBlock *MBB1,
   return MBB2I->getDesc().isCall() && !MBB1I->getDesc().isCall();
 }
 
-/// TailDuplicate - MBB unconditionally branches to SuccBB. If it is profitable,
-/// duplicate SuccBB's contents in MBB to eliminate the branch.
+/// TailDuplicateBlocks - Look for small blocks that are unconditionally
+/// branched to and do not fall through. Tail-duplicate their instructions
+/// into their predecessors to eliminate (dynamic) branches.
+bool BranchFolder::TailDuplicateBlocks(MachineFunction &MF) {
+  bool MadeChange = false;
+
+  // Make sure blocks are numbered in order
+  MF.RenumberBlocks();
+
+  for (MachineFunction::iterator I = ++MF.begin(), E = MF.end(); I != E; ) {
+    MachineBasicBlock *MBB = I++;
+
+    // Only duplicate blocks that end with unconditional branches.
+    if (CanFallThrough(MBB))
+      continue;
+
+    MadeChange |= TailDuplicate(MBB, MF);
+
+    // If it is dead, remove it.
+    if (MBB->pred_empty()) {
+      RemoveDeadBlock(MBB);
+      MadeChange = true;
+      ++NumDeadBlocks;
+    }
+  }
+  return MadeChange;
+}
+
+/// TailDuplicate - If it is profitable, duplicate TailBB's contents in each
+/// of its predecessors.
 bool BranchFolder::TailDuplicate(MachineBasicBlock *TailBB,
-                                 bool PrevFallsThrough,
                                  MachineFunction &MF) {
   // Don't try to tail-duplicate single-block loops.
   if (TailBB->isSuccessor(TailBB))
     return false;
 
-  // Don't tail-duplicate a block which will soon be folded into its successor.
-  if (TailBB->succ_size() == 1 &&
-      TailBB->succ_begin()[0]->pred_size() == 1)
-    return false;
-
-  // Duplicate up to one less that the tail-merge threshold, so that we don't
-  // get into an infinite loop between duplicating and merging. When optimizing
-  // for size, duplicate only one, because one branch instruction can be
-  // eliminated to compensate for the duplication.
-  unsigned MaxDuplicateCount = 
+  // Set the limit on the number of instructions to duplicate, with a default
+  // of one less than the tail-merge threshold. When optimizing for size,
+  // duplicate only one, because one branch instruction can be eliminated to
+  // compensate for the duplication.
+  unsigned MaxDuplicateCount =
     MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize) ?
-      1 : (TailMergeSize - 1);
+    1 : TII->TailDuplicationLimit(*TailBB, TailMergeSize - 1);
 
   // Check the instructions in the block to determine whether tail-duplication
-  // is invalid or unlikely to be unprofitable.
+  // is invalid or unlikely to be profitable.
   unsigned i = 0;
   bool HasCall = false;
   for (MachineBasicBlock::iterator I = TailBB->begin();
@@ -1088,11 +1082,8 @@ bool BranchFolder::TailDuplicate(MachineBasicBlock *TailBB,
     // EH edges are ignored by AnalyzeBranch.
     if (PredBB->succ_size() != 1)
       continue;
-    // Don't duplicate into a fall-through predecessor unless its the
-    // only predecessor.
-    if (PredBB->isLayoutSuccessor(TailBB) &&
-        PrevFallsThrough &&
-        TailBB->pred_size() != 1)
+    // Don't duplicate into a fall-through predecessor (at least for now).
+    if (PredBB->isLayoutSuccessor(TailBB) && CanFallThrough(PredBB))
       continue;
 
     DEBUG(errs() << "\nTail-duplicating into PredBB: " << *PredBB
@@ -1115,6 +1106,28 @@ bool BranchFolder::TailDuplicate(MachineBasicBlock *TailBB,
          E = TailBB->succ_end(); I != E; ++I)
        PredBB->addSuccessor(*I);
 
+    Changed = true;
+  }
+
+  // If TailBB was duplicated into all its predecessors except for the prior
+  // block, which falls through unconditionally, move the contents of this
+  // block into the prior block.
+  MachineBasicBlock &PrevBB = *prior(MachineFunction::iterator(TailBB));
+  MachineBasicBlock *PriorTBB = 0, *PriorFBB = 0;
+  SmallVector<MachineOperand, 4> PriorCond;
+  bool PriorUnAnalyzable =
+    TII->AnalyzeBranch(PrevBB, PriorTBB, PriorFBB, PriorCond, true);
+  // This has to check PrevBB->succ_size() because EH edges are ignored by
+  // AnalyzeBranch.
+  if (!PriorUnAnalyzable && PriorCond.empty() && !PriorTBB &&
+      TailBB->pred_size() == 1 && PrevBB.succ_size() == 1 &&
+      !TailBB->hasAddressTaken()) {
+    DEBUG(errs() << "\nMerging into block: " << PrevBB
+          << "From MBB: " << *TailBB);
+    PrevBB.splice(PrevBB.end(), TailBB, TailBB->begin(), TailBB->end());
+    PrevBB.removeSuccessor(PrevBB.succ_begin());;
+    assert(PrevBB.succ_empty());
+    PrevBB.transferSuccessors(TailBB);
     Changed = true;
   }
 
@@ -1185,8 +1198,8 @@ ReoptimizeBlock:
     // If the previous block unconditionally falls through to this block and
     // this block has no other predecessors, move the contents of this block
     // into the prior block. This doesn't usually happen when SimplifyCFG
-    // has been used, but it can happen tail duplication eliminates all the
-    // non-branch predecessors of a block leaving only the fall-through edge.
+    // has been used, but it can happen if tail merging splits a fall-through
+    // predecessor of a block.
     // This has to check PrevBB->succ_size() because EH edges are ignored by
     // AnalyzeBranch.
     if (PriorCond.empty() && !PriorTBB && MBB->pred_size() == 1 &&
@@ -1201,7 +1214,7 @@ ReoptimizeBlock:
       MadeChange = true;
       return MadeChange;
     }
-    
+
     // If the previous branch *only* branches to *this* block (conditional or
     // not) remove the branch.
     if (PriorTBB == MBB && PriorFBB == 0) {
@@ -1317,7 +1330,6 @@ ReoptimizeBlock:
       }
     }
 
-
     // If this branch is the only thing in its block, see if we can forward
     // other blocks across it.
     if (CurTBB && CurCond.empty() && CurFBB == 0 &&
@@ -1399,26 +1411,17 @@ ReoptimizeBlock:
     }
   }
 
-  // Now we know that there was no fall-through into this block, check to
-  // see if it has a fall-through into its successor.
-  bool CurFallsThru = CanFallThrough(MBB, CurUnAnalyzable, CurTBB, CurFBB, 
-                                     CurCond);
-  bool PrevFallsThru = CanFallThrough(&PrevBB, PriorUnAnalyzable,
-                                      PriorTBB, PriorFBB, PriorCond);
-
-  // If this block is small, unconditionally branched to, and does not
-  // fall through, tail-duplicate its instructions into its predecessors
-  // to eliminate a (dynamic) branch.
-  if (!CurFallsThru)
-    if (TailDuplicate(MBB, PrevFallsThru, MF)) {
-      MadeChange = true;
-      return MadeChange;
-    }
-
   // If the prior block doesn't fall through into this block, and if this
   // block doesn't fall through into some other block, see if we can find a
   // place to move this block where a fall-through will happen.
-  if (!PrevFallsThru) {
+  if (!CanFallThrough(&PrevBB, PriorUnAnalyzable,
+                      PriorTBB, PriorFBB, PriorCond)) {
+
+    // Now we know that there was no fall-through into this block, check to
+    // see if it has a fall-through into its successor.
+    bool CurFallsThru = CanFallThrough(MBB, CurUnAnalyzable, CurTBB, CurFBB,
+                                       CurCond);
+
     if (!MBB->isLandingPad()) {
       // Check all the predecessors of this block.  If one of them has no fall
       // throughs, move this block right after it.
