@@ -1293,8 +1293,9 @@ DIE *DwarfDebug::CreateDbgScopeVariable(DbgVariable *DV, CompileUnit *Unit) {
   // Variables for abstract instances of inlined functions don't get a
   // location.
   MachineLocation Location;
-  Location.set(RI->getFrameRegister(*MF),
-               RI->getFrameIndexOffset(*MF, DV->getFrameIndex()));
+  unsigned FrameReg;
+  int Offset = RI->getFrameIndexReference(*MF, DV->getFrameIndex(), FrameReg);
+  Location.set(FrameReg, Offset);
   
   
   if (VD.hasComplexAddress())
@@ -1564,10 +1565,10 @@ DIE *DwarfDebug::ConstructVariableDIE(DbgVariable *DV,
   // Add variable address.
   if (!Scope->isAbstractScope()) {
     MachineLocation Location;
-    Location.set(RI->getFrameRegister(*MF),
-                 RI->getFrameIndexOffset(*MF, DV->getFrameIndex()));
-    
-    
+    unsigned FrameReg;
+    int Offset = RI->getFrameIndexReference(*MF, DV->getFrameIndex(), FrameReg);
+    Location.set(FrameReg, Offset);
+
     if (VD.hasComplexAddress())
       AddComplexAddress(DV, VariableDie, dwarf::DW_AT_location, Location);
     else if (VD.isBlockByrefVariable())
