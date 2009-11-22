@@ -524,10 +524,10 @@ void MachineLICM::Hoist(MachineInstr *MI) {
       errs() << *MI;
       if (CurPreheader->getBasicBlock())
         errs() << " to MachineBasicBlock "
-               << CurPreheader->getBasicBlock()->getName();
+               << CurPreheader->getName();
       if (MI->getParent()->getBasicBlock())
         errs() << " from MachineBasicBlock "
-               << MI->getParent()->getBasicBlock()->getName();
+               << MI->getParent()->getName();
       errs() << "\n";
     });
 
