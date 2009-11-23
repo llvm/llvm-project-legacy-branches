@@ -1,5 +1,0 @@
-add_subdirectory(clang-cc)
-add_subdirectory(driver)
-add_subdirectory(index-test)
-add_subdirectory(CIndex)
-add_subdirectory(c-index-test)
