@@ -33,7 +33,7 @@ static RegisterPass<IVUsers>
 X("iv-users", "Induction Variable Users", false, true);
 
 static cl::opt<bool>
-SimplifyIVUsers("simplify-iv-users", cl::Hidden, cl::init(false),
+SimplifyIVUsers("simplify-iv-users", cl::Hidden, cl::init(true),
           cl::desc("Restrict IV Users to loop-invariant strides"));
 
 Pass *llvm::createIVUsersPass() {

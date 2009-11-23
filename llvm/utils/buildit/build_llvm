@@ -203,7 +203,7 @@ if [ "x$MAJ_VER" != "x4" -o "x$MIN_VER" != "x0" ]; then
         SYSCTL=2
     fi
 
-    JOBS_FLAG="-j $SYSCTL"
+    JOBS_FLAG="-j 2"
 fi
 
 make $JOBS_FLAG $OPTIMIZE_OPTS UNIVERSAL=1 UNIVERSAL_ARCH="$TARGETS" \
