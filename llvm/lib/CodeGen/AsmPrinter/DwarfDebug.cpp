@@ -493,7 +493,7 @@ DIType DwarfDebug::getBlockByrefType(DIType Ty, std::string Name) {
   for (unsigned i = 0, N = Elements.getNumElements(); i < N; ++i) {
     DIDescriptor Element = Elements.getElement(i);
     DIDerivedType DT = DIDerivedType(Element.getNode());
-    if (strcmp(Name.c_str(), DT.getName()) == 0)
+    if (Name == DT.getName())
       return (DT.getTypeDerivedFrom());
   }
 
@@ -619,7 +619,7 @@ void DwarfDebug::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
   unsigned Tag = Ty.getTag();
   bool isPointer = false;
 
-  const char *varName = VD.getName();
+  StringRef varName = VD.getName();
 
   if (Tag == dwarf::DW_TAG_pointer_type) {
     DIDerivedType DTy = DIDerivedType(Ty.getNode());
@@ -639,10 +639,10 @@ void DwarfDebug::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
   for (unsigned i = 0, N = Fields.getNumElements(); i < N; ++i) {
     DIDescriptor Element = Fields.getElement(i);
     DIDerivedType DT = DIDerivedType(Element.getNode());
-    const char *fieldName = DT.getName();
-    if (strcmp(fieldName, "__forwarding") == 0)
+    StringRef fieldName = DT.getName();
+    if (fieldName == "__forwarding")
       forwardingField = Element;
-    else if (strcmp(fieldName, varName) == 0)
+    else if (fieldName == varName)
       varField = Element;
   }
 
@@ -784,13 +784,13 @@ void DwarfDebug::addType(CompileUnit *DW_Unit, DIE *Entity, DIType Ty) {
 void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
                                   DIBasicType BTy) {
   // Get core information.
-  const char *Name = BTy.getName();
+  StringRef Name = BTy.getName();
   Buffer.setTag(dwarf::DW_TAG_base_type);
   addUInt(&Buffer, dwarf::DW_AT_encoding,  dwarf::DW_FORM_data1,
           BTy.getEncoding());
 
   // Add name if not anonymous or intermediate type.
-  if (Name)
+  if (!Name.empty())
     addString(&Buffer, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
   uint64_t Size = BTy.getSizeInBits() >> 3;
   addUInt(&Buffer, dwarf::DW_AT_byte_size, 0, Size);
@@ -800,7 +800,7 @@ void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
 void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
                                   DIDerivedType DTy) {
   // Get core information.
-  const char *Name = DTy.getName();
+  StringRef Name = DTy.getName();
   uint64_t Size = DTy.getSizeInBits() >> 3;
   unsigned Tag = DTy.getTag();
 
@@ -814,7 +814,7 @@ void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
   addType(DW_Unit, &Buffer, FromTy);
 
   // Add name if not anonymous or intermediate type.
-  if (Name && Tag != dwarf::DW_TAG_pointer_type)
+  if (!Name.empty() && Tag != dwarf::DW_TAG_pointer_type)
     addString(&Buffer, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
 
   // Add size if non-zero (derived types might be zero-sized.)
@@ -830,7 +830,7 @@ void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
 void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
                                   DICompositeType CTy) {
   // Get core information.
-  const char *Name = CTy.getName();
+  StringRef Name = CTy.getName();
 
   uint64_t Size = CTy.getSizeInBits() >> 3;
   unsigned Tag = CTy.getTag();
@@ -912,7 +912,7 @@ void DwarfDebug::constructTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
   }
 
   // Add name if not anonymous or intermediate type.
-  if (Name)
+  if (!Name.empty())
     addString(&Buffer, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
 
   if (Tag == dwarf::DW_TAG_enumeration_type ||
@@ -983,7 +983,7 @@ void DwarfDebug::constructArrayTypeDIE(CompileUnit *DW_Unit, DIE &Buffer,
 /// constructEnumTypeDIE - Construct enum type DIE from DIEnumerator.
 DIE *DwarfDebug::constructEnumTypeDIE(CompileUnit *DW_Unit, DIEnumerator *ETy) {
   DIE *Enumerator = new DIE(dwarf::DW_TAG_enumerator);
-  const char *Name = ETy->getName();
+  StringRef Name = ETy->getName();
   addString(Enumerator, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
   int64_t Value = ETy->getEnumValue();
   addSInt(Enumerator, dwarf::DW_AT_const_value, dwarf::DW_FORM_sdata, Value);
@@ -995,20 +995,20 @@ DIE *DwarfDebug::createGlobalVariableDIE(CompileUnit *DW_Unit,
                                          const DIGlobalVariable &GV) {
   // If the global variable was optmized out then no need to create debug info entry.
   if (!GV.getGlobal()) return NULL;
-  if (!GV.getDisplayName()) return NULL;
+  if (GV.getDisplayName().empty()) return NULL;
 
   DIE *GVDie = new DIE(dwarf::DW_TAG_variable);
   addString(GVDie, dwarf::DW_AT_name, dwarf::DW_FORM_string, 
             GV.getDisplayName());
 
-  const char *LinkageName = GV.getLinkageName();
-  if (LinkageName) {
+  StringRef LinkageName = GV.getLinkageName();
+  if (!LinkageName.empty()) {
     // Skip special LLVM prefix that is used to inform the asm printer to not
     // emit usual symbol prefix before the symbol name. This happens for
     // Objective-C symbol names and symbol whose name is replaced using GCC's
     // __asm__ attribute.
     if (LinkageName[0] == 1)
-      LinkageName = &LinkageName[1];
+      LinkageName = LinkageName.data() + 1;
     addString(GVDie, dwarf::DW_AT_MIPS_linkage_name, dwarf::DW_FORM_string,
               LinkageName);
   }
@@ -1030,9 +1030,10 @@ DIE *DwarfDebug::createGlobalVariableDIE(CompileUnit *DW_Unit,
 /// createMemberDIE - Create new member DIE.
 DIE *DwarfDebug::createMemberDIE(CompileUnit *DW_Unit, const DIDerivedType &DT){
   DIE *MemberDie = new DIE(DT.getTag());
-  if (const char *Name = DT.getName())
+  StringRef Name = DT.getName();
+  if (!Name.empty())
     addString(MemberDie, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
-
+  
   addType(DW_Unit, MemberDie, DT.getTypeDerivedFrom());
 
   addSourceLine(MemberDie, &DT);
@@ -1085,17 +1086,15 @@ DIE *DwarfDebug::createSubprogramDIE(CompileUnit *DW_Unit,
                                      bool IsConstructor,
                                      bool IsInlined) {
   DIE *SPDie = new DIE(dwarf::DW_TAG_subprogram);
+  addString(SPDie, dwarf::DW_AT_name, dwarf::DW_FORM_string, SP.getName());
 
-  const char * Name = SP.getName();
-  addString(SPDie, dwarf::DW_AT_name, dwarf::DW_FORM_string, Name);
-
-  const char *LinkageName = SP.getLinkageName();
-  if (LinkageName) {
+  StringRef LinkageName = SP.getLinkageName();
+  if (!LinkageName.empty()) {
     // Skip special LLVM prefix that is used to inform the asm printer to not emit
     // usual symbol prefix before the symbol name. This happens for Objective-C
     // symbol names and symbol whose name is replaced using GCC's __asm__ attribute.
     if (LinkageName[0] == 1)
-      LinkageName = &LinkageName[1];
+      LinkageName = LinkageName.data() + 1;
     addString(SPDie, dwarf::DW_AT_MIPS_linkage_name, dwarf::DW_FORM_string,
               LinkageName);
   }
@@ -1152,8 +1151,8 @@ CompileUnit &DwarfDebug::findCompileUnit(DICompileUnit Unit) const {
 DIE *DwarfDebug::createDbgScopeVariable(DbgVariable *DV, CompileUnit *Unit) {
   // Get the descriptor.
   const DIVariable &VD = DV->getVariable();
-  const char *Name = VD.getName();
-  if (!Name)
+  StringRef Name = VD.getName();
+  if (Name.empty())
     return NULL;
 
   // Translate tag to proper Dwarf tag.  The result variable is dropped for
@@ -1402,8 +1401,8 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV,
                                       DbgScope *Scope, CompileUnit *Unit) {
   // Get the descriptor.
   const DIVariable &VD = DV->getVariable();
-  const char *Name = VD.getName();
-  if (!Name)
+  StringRef Name = VD.getName();
+  if (Name.empty())
     return NULL;
 
   // Translate tag to proper Dwarf tag.  The result variable is dropped for
@@ -1487,7 +1486,7 @@ void DwarfDebug::addPubTypes(DISubprogram SP) {
     if (ATy.isNull())
       continue;
     DICompositeType CATy = getDICompositeType(ATy);
-    if (!CATy.isNull() && CATy.getName()) {
+    if (!CATy.isNull() && !CATy.getName().empty()) {
       if (DIEEntry *Entry = ModuleCU->getDIEEntry(CATy.getNode()))
         ModuleCU->addGlobalType(CATy.getName(), Entry->getEntry());
     }
@@ -1543,8 +1542,7 @@ DIE *DwarfDebug::constructScopeDIE(DbgScope *Scope) {
 /// source file names. If none currently exists, create a new id and insert it
 /// in the SourceIds map. This can update DirectoryNames and SourceFileNames
 /// maps as well.
-unsigned DwarfDebug::GetOrCreateSourceID(const char *DirName,
-                                         const char *FileName) {
+unsigned DwarfDebug::GetOrCreateSourceID(StringRef DirName, StringRef FileName) {
   unsigned DId;
   StringMap<unsigned>::iterator DI = DirectoryIdMap.find(DirName);
   if (DI != DirectoryIdMap.end()) {
@@ -1579,8 +1577,8 @@ unsigned DwarfDebug::GetOrCreateSourceID(const char *DirName,
 
 void DwarfDebug::constructCompileUnit(MDNode *N) {
   DICompileUnit DIUnit(N);
-  const char *FN = DIUnit.getFilename();
-  const char *Dir = DIUnit.getDirectory();
+  StringRef FN = DIUnit.getFilename();
+  StringRef Dir = DIUnit.getDirectory();
   unsigned ID = GetOrCreateSourceID(Dir, FN);
 
   DIE *Die = new DIE(dwarf::DW_TAG_compile_unit);
@@ -1593,12 +1591,13 @@ void DwarfDebug::constructCompileUnit(MDNode *N) {
           DIUnit.getLanguage());
   addString(Die, dwarf::DW_AT_name, dwarf::DW_FORM_string, FN);
 
-  if (Dir)
+  if (!Dir.empty())
     addString(Die, dwarf::DW_AT_comp_dir, dwarf::DW_FORM_string, Dir);
   if (DIUnit.isOptimized())
     addUInt(Die, dwarf::DW_AT_APPLE_optimized, dwarf::DW_FORM_flag, 1);
 
-  if (const char *Flags = DIUnit.getFlags())
+  StringRef Flags = DIUnit.getFlags();
+  if (!Flags.empty())
     addString(Die, dwarf::DW_AT_APPLE_flags, dwarf::DW_FORM_string, Flags);
 
   unsigned RVer = DIUnit.getRunTimeVersion();
@@ -1640,7 +1639,7 @@ void DwarfDebug::constructGlobalVariableDIE(MDNode *N) {
   ModuleCU->addGlobal(DI_GV.getName(), VariableDie);
 
   DIType GTy = DI_GV.getType();
-  if (GTy.isCompositeType() && GTy.getName()) {
+  if (GTy.isCompositeType() && !GTy.getName().empty()) {
     DIEEntry *Entry = ModuleCU->getDIEEntry(GTy.getNode());
     assert (Entry && "Missing global type!");
     ModuleCU->addGlobalType(GTy.getName(), Entry->getEntry());
@@ -2113,8 +2112,8 @@ unsigned DwarfDebug::recordSourceLine(unsigned Line, unsigned Col,
   if (TimePassesIsEnabled)
     DebugTimer->startTimer();
 
-  const char *Dir = NULL;
-  const char *Fn = NULL;
+  StringRef Dir;
+  StringRef Fn;
 
   DIDescriptor Scope(S);
   if (Scope.isCompileUnit()) {
@@ -2881,10 +2880,10 @@ void DwarfDebug::emitDebugInlineInfo() {
     ValueMap<MDNode *, SmallVector<InlineInfoLabels, 4> >::iterator II = InlineInfo.find(Node);
     SmallVector<InlineInfoLabels, 4> &Labels = II->second;
     DISubprogram SP(Node);
-    const char *LName = SP.getLinkageName();
-    const char *Name = SP.getName();
+    StringRef LName = SP.getLinkageName();
+    StringRef Name = SP.getName();
 
-    if (!LName)
+    if (LName.empty())
       Asm->EmitString(Name);
     else {
       // Skip special LLVM prefix that is used to inform the asm printer to not
@@ -2892,7 +2891,7 @@ void DwarfDebug::emitDebugInlineInfo() {
       // Objective-C symbol names and symbol whose name is replaced using GCC's
       // __asm__ attribute.
       if (LName[0] == 1)
-        LName = &LName[1];
+        LName = LName.data() + 1;
 //      Asm->EmitString(LName);
       EmitSectionOffset("string", "section_str",
                         StringPool.idFor(LName), false, true);
