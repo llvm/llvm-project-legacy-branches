@@ -20,7 +20,7 @@
 using namespace clang;
 
 namespace {
-class VISIBILITY_HIDDEN UndefResultChecker 
+class UndefResultChecker 
   : public CheckerVisitor<UndefResultChecker> {
 
   BugType *BT;
@@ -76,9 +76,10 @@ void UndefResultChecker::PostVisitBinaryOperator(CheckerContext &C,
     }
     EnhancedBugReport *report = new EnhancedBugReport(*BT, 
                                                     OS.str().str().c_str(), N);
-    report->addRange(Ex->getSourceRange());
-    if (Ex)
+    if (Ex) {
+      report->addRange(Ex->getSourceRange());
       report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, Ex);
+    }
     else
       report->addVisitorCreator(bugreporter::registerTrackNullOrUndefValue, B);
     C.EmitReport(report);
