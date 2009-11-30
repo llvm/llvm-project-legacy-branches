@@ -274,8 +274,6 @@ public:
 
   virtual bool isIdentical(const MachineInstr *MI, const MachineInstr *Other,
                            const MachineRegisterInfo *MRI) const;
-
-  virtual bool isProfitableToDuplicateIndirectBranch() const;
 };
 
 static inline
