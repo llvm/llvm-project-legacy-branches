@@ -616,6 +616,11 @@ void JIT::runJITOnFunctionUnlocked(Function *F, const MutexGuard &locked) {
     // the stub with real address of the function.
     updateFunctionStub(PF);
   }
+  
+  // If the JIT is configured to emit info so that dlsym can be used to
+  // rewrite stubs to external globals, do so now.
+  if (areDlsymStubsEnabled() && !isCompilingLazily())
+    updateDlsymStubTable();
 }
 
 /// getPointerToFunction - This method is used to get the address of the
@@ -658,7 +663,8 @@ void *JIT::getPointerToFunction(Function *F) {
   }
 
   if (F->isDeclaration() || F->hasAvailableExternallyLinkage()) {
-    bool AbortOnFailure = !F->hasExternalWeakLinkage();
+    bool AbortOnFailure =
+      !areDlsymStubsEnabled() && !F->hasExternalWeakLinkage();
     void *Addr = getPointerToNamedFunction(F->getName(), AbortOnFailure);
     addGlobalMapping(F, Addr);
     return Addr;
@@ -687,7 +693,7 @@ void *JIT::getOrEmitGlobalVariable(const GlobalVariable *GV) {
       return (void*)&__dso_handle;
 #endif
     Ptr = sys::DynamicLibrary::SearchForAddressOfSymbol(GV->getName());
-    if (Ptr == 0) {
+    if (Ptr == 0 && !areDlsymStubsEnabled()) {
       llvm_report_error("Could not resolve external global address: "
                         +GV->getName());
     }

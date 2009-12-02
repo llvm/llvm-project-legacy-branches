@@ -53,6 +53,7 @@ ExecutionEngine::ExecutionEngine(ModuleProvider *P)
   CompilingLazily         = false;
   GVCompilationDisabled   = false;
   SymbolSearchingDisabled = false;
+  DlsymStubsEnabled       = false;
   Modules.push_back(P);
   assert(P && "ModuleProvider is null?");
 }
