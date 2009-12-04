@@ -157,21 +157,15 @@ bool LiveIntervals::conflictsWithPhysRegDef(const LiveInterval &li,
          I = li.ranges.begin(), E = li.ranges.end(); I != E; ++I) {
     for (SlotIndex index = I->start.getBaseIndex(),
            end = I->end.getPrevSlot().getBaseIndex().getNextIndex();
-           index != end;
-           index = index.getNextIndex()) {
-      // skip deleted instructions
-      while (index != end && !getInstructionFromIndex(index))
-        index = index.getNextIndex();
-      if (index == end) break;
-
+         index != end;
+         index = index.getNextIndex()) {
       MachineInstr *MI = getInstructionFromIndex(index);
-      unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
-      if (tii_->isMoveInstr(*MI, SrcReg, DstReg, SrcSubReg, DstSubReg))
-        if (SrcReg == li.reg || DstReg == li.reg)
-          continue;
+      if (!MI)
+        continue;               // skip deleted instructions
+
       for (unsigned i = 0; i != MI->getNumOperands(); ++i) {
         MachineOperand& mop = MI->getOperand(i);
-        if (!mop.isReg())
+        if (!mop.isReg() || mop.isUse())
           continue;
         unsigned PhysReg = mop.getReg();
         if (PhysReg == 0 || PhysReg == li.reg)
@@ -190,6 +184,50 @@ bool LiveIntervals::conflictsWithPhysRegDef(const LiveInterval &li,
   return false;
 }
 
+/// conflictsWithPhysRegUse - Returns true if the specified register is used or
+/// defined during the duration of the specified interval. Copies to and from
+/// li.reg are allowed.
+bool LiveIntervals::conflictsWithPhysRegUse(const LiveInterval &li,
+                                            VirtRegMap &vrm, unsigned reg) {
+  for (LiveInterval::Ranges::const_iterator
+         I = li.ranges.begin(), E = li.ranges.end(); I != E; ++I) {
+    for (SlotIndex index = I->start.getBaseIndex(),
+           end = I->end.getPrevSlot().getBaseIndex().getNextIndex();
+         index != end;
+         index = index.getNextIndex()) {
+      MachineInstr *MI = getInstructionFromIndex(index);
+      if (!MI)
+        continue;               // skip deleted instructions
+
+      // Terminators are considered conflicts since reg may be used at the
+      // destination.
+      if (MI->getDesc().isTerminator())
+        return true;
+
+      for (unsigned i = 0, e = MI->getNumOperands(); i != e;  ++i) {
+        MachineOperand& mop = MI->getOperand(i);
+        if (!mop.isReg() || mop.isUndef())
+          continue;
+        unsigned PhysReg = mop.getReg();
+        if (PhysReg == 0 || PhysReg == li.reg)
+          continue;
+        if (TargetRegisterInfo::isVirtualRegister(PhysReg)) {
+          if (!vrm.hasPhys(PhysReg))
+            continue;
+          PhysReg = vrm.getPhys(PhysReg);
+        }
+        if (PhysReg && tri_->regsOverlap(PhysReg, reg)) {
+          unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
+          if (!tii_->isMoveInstr(*MI, SrcReg, DstReg, SrcSubReg, DstSubReg) ||
+              (SrcReg != li.reg && DstReg != li.reg))
+            return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 /// conflictsWithPhysRegRef - Similar to conflictsWithPhysRegRef except
 /// it can check use as well.
 bool LiveIntervals::conflictsWithPhysRegRef(LiveInterval &li,
@@ -201,15 +239,9 @@ bool LiveIntervals::conflictsWithPhysRegRef(LiveInterval &li,
            end = I->end.getPrevSlot().getBaseIndex().getNextIndex();
            index != end;
            index = index.getNextIndex()) {
-      // Skip deleted instructions.
-      MachineInstr *MI = 0;
-      while (index != end) {
-        MI = getInstructionFromIndex(index);
-        if (MI)
-          break;
-        index = index.getNextIndex();
-      }
-      if (index == end) break;
+      MachineInstr *MI = getInstructionFromIndex(index);
+      if (!MI)
+        continue;               // skip deleted instructions
 
       if (JoinedCopies.count(MI))
         continue;
