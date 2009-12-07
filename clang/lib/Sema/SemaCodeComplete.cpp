@@ -778,7 +778,7 @@ static unsigned CollectLookupResults(Scope *S,
 }
 
 /// \brief Add type specifiers for the current language as keyword results.
-static void AddTypeSpecifierResults(const LangOptions &LangOpts, unsigned Rank, 
+static void AddTypeSpecifierResults(const LangOptions &LangOpts, unsigned Rank,
                                     ResultBuilder &Results) {
   typedef CodeCompleteConsumer::Result Result;
   Results.MaybeAddResult(Result("short", Rank));
@@ -1356,9 +1356,23 @@ static void HandleCodeCompleteResults(Sema *S,
 }
 
 void Sema::CodeCompleteOrdinaryName(Scope *S) {
+  typedef CodeCompleteConsumer::Result Result;
   ResultBuilder Results(*this, &ResultBuilder::IsOrdinaryName);
   unsigned NextRank = CollectLookupResults(S, Context.getTranslationUnitDecl(), 
                                            0, CurContext, Results);
+
+  Results.EnterNewScope();
+  AddTypeSpecifierResults(getLangOptions(), NextRank, Results);
+  
+  if (getLangOptions().ObjC1) {
+    // Add the "super" keyword, if appropriate.
+    if (ObjCMethodDecl *Method = dyn_cast<ObjCMethodDecl>(CurContext))
+      if (Method->getClassInterface()->getSuperClass())
+        Results.MaybeAddResult(Result("super", NextRank));
+  }
+
+  Results.ExitScope();
+
   if (CodeCompleter->includeMacros())
     AddMacroResults(PP, NextRank, Results);
   HandleCodeCompleteResults(this, CodeCompleter, Results.data(),Results.size());
@@ -1844,6 +1858,183 @@ void Sema::CodeCompleteOperatorName(Scope *S) {
   
   if (CodeCompleter->includeMacros())
     AddMacroResults(PP, NextRank, Results);
+  HandleCodeCompleteResults(this, CodeCompleter, Results.data(),Results.size());
+}
+
+void Sema::CodeCompleteObjCAtDirective(Scope *S, DeclPtrTy ObjCImpDecl,
+                                       bool InInterface) {
+  typedef CodeCompleteConsumer::Result Result;
+  ResultBuilder Results(*this);
+  Results.EnterNewScope();
+  if (ObjCImpDecl) {
+    // Since we have an implementation, we can end it.
+    Results.MaybeAddResult(Result("end", 0));
+
+    CodeCompletionString *Pattern = 0;
+    Decl *ImpDecl = ObjCImpDecl.getAs<Decl>();
+    if (isa<ObjCImplementationDecl>(ImpDecl) || 
+        isa<ObjCCategoryImplDecl>(ImpDecl)) {
+      // @dynamic
+      Pattern = new CodeCompletionString;
+      Pattern->AddTypedTextChunk("dynamic");
+      Pattern->AddTextChunk(" ");
+      Pattern->AddPlaceholderChunk("property");
+      Results.MaybeAddResult(Result(Pattern, 0));
+
+      // @synthesize
+      Pattern = new CodeCompletionString;
+      Pattern->AddTypedTextChunk("synthesize");
+      Pattern->AddTextChunk(" ");
+      Pattern->AddPlaceholderChunk("property");
+      Results.MaybeAddResult(Result(Pattern, 0));
+    }
+  } else if (InInterface) {
+    // Since we have an interface or protocol, we can end it.
+    Results.MaybeAddResult(Result("end", 0));
+
+    if (LangOpts.ObjC2) {
+      // @property
+      Results.MaybeAddResult(Result("property", 0));
+    }
+
+    // @required
+    Results.MaybeAddResult(Result("required", 0));
+
+    // @optional
+    Results.MaybeAddResult(Result("optional", 0));
+  } else {
+    CodeCompletionString *Pattern = 0;
+
+    // @class name ;
+    Pattern = new CodeCompletionString;
+    Pattern->AddTypedTextChunk("class");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("identifier");
+    Pattern->AddTextChunk(";"); // add ';' chunk
+    Results.MaybeAddResult(Result(Pattern, 0));
+
+    // @interface name 
+    // FIXME: Could introduce the whole pattern, including superclasses and 
+    // such.
+    Pattern = new CodeCompletionString;
+    Pattern->AddTypedTextChunk("interface");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("class");
+    Results.MaybeAddResult(Result(Pattern, 0));
+
+    // @protocol name
+    Pattern = new CodeCompletionString;
+    Pattern->AddTypedTextChunk("protocol");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("protocol");
+    Results.MaybeAddResult(Result(Pattern, 0));
+
+    // @implementation name
+    Pattern = new CodeCompletionString;
+    Pattern->AddTypedTextChunk("implementation");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("class");
+    Results.MaybeAddResult(Result(Pattern, 0));
+
+    // @compatibility_alias name
+    Pattern = new CodeCompletionString;
+    Pattern->AddTypedTextChunk("compatibility_alias");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("alias");
+    Pattern->AddTextChunk(" ");
+    Pattern->AddPlaceholderChunk("class");
+    Results.MaybeAddResult(Result(Pattern, 0));
+  }
+  Results.ExitScope();
+  HandleCodeCompleteResults(this, CodeCompleter, Results.data(),Results.size());
+}
+
+static void AddObjCExpressionResults(unsigned Rank, ResultBuilder &Results) {
+  typedef CodeCompleteConsumer::Result Result;
+  CodeCompletionString *Pattern = 0;
+
+  // @encode ( type-name )
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("encode");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftParen);
+  Pattern->AddPlaceholderChunk("type-name");
+  Pattern->AddChunk(CodeCompletionString::CK_RightParen);
+  Results.MaybeAddResult(Result(Pattern, Rank));
+  
+  // @protocol ( protocol-name )
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("protocol");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftParen);
+  Pattern->AddPlaceholderChunk("protocol-name");
+  Pattern->AddChunk(CodeCompletionString::CK_RightParen);
+  Results.MaybeAddResult(Result(Pattern, Rank));
+
+  // @selector ( selector )
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("selector");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftParen);
+  Pattern->AddPlaceholderChunk("selector");
+  Pattern->AddChunk(CodeCompletionString::CK_RightParen);
+  Results.MaybeAddResult(Result(Pattern, Rank));
+}
+
+void Sema::CodeCompleteObjCAtStatement(Scope *S) {
+  typedef CodeCompleteConsumer::Result Result;
+  ResultBuilder Results(*this);
+  Results.EnterNewScope();
+
+  CodeCompletionString *Pattern = 0;
+
+  // @try { statements } @catch ( declaration ) { statements } @finally
+  //   { statements }
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("try");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftBrace);
+  Pattern->AddPlaceholderChunk("statements");
+  Pattern->AddChunk(CodeCompletionString::CK_RightBrace);
+  Pattern->AddTextChunk("@catch");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftParen);
+  Pattern->AddPlaceholderChunk("parameter");
+  Pattern->AddChunk(CodeCompletionString::CK_RightParen);
+  Pattern->AddChunk(CodeCompletionString::CK_LeftBrace);
+  Pattern->AddPlaceholderChunk("statements");
+  Pattern->AddChunk(CodeCompletionString::CK_RightBrace);
+  Pattern->AddTextChunk("@finally");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftBrace);
+  Pattern->AddPlaceholderChunk("statements");
+  Pattern->AddChunk(CodeCompletionString::CK_RightBrace);
+  Results.MaybeAddResult(Result(Pattern, 0));
+
+  // @throw
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("throw");
+  Pattern->AddTextChunk(" ");
+  Pattern->AddPlaceholderChunk("expression");
+  Pattern->AddTextChunk(";");
+  Results.MaybeAddResult(Result(Pattern, 0)); // FIXME: add ';' chunk
+
+  // @synchronized ( expression ) { statements }
+  Pattern = new CodeCompletionString;
+  Pattern->AddTypedTextChunk("synchronized");
+  Pattern->AddTextChunk(" ");
+  Pattern->AddChunk(CodeCompletionString::CK_LeftParen);
+  Pattern->AddPlaceholderChunk("expression");
+  Pattern->AddChunk(CodeCompletionString::CK_RightParen);
+  Pattern->AddChunk(CodeCompletionString::CK_LeftBrace);
+  Pattern->AddPlaceholderChunk("statements");
+  Pattern->AddChunk(CodeCompletionString::CK_RightBrace);
+  Results.MaybeAddResult(Result(Pattern, 0)); // FIXME: add ';' chunk
+
+  AddObjCExpressionResults(0, Results);
+  Results.ExitScope();
+  HandleCodeCompleteResults(this, CodeCompleter, Results.data(),Results.size());
+}
+
+void Sema::CodeCompleteObjCAtExpression(Scope *S) {
+  ResultBuilder Results(*this);
+  Results.EnterNewScope();
+  AddObjCExpressionResults(0, Results);
+  Results.ExitScope();
   HandleCodeCompleteResults(this, CodeCompleter, Results.data(),Results.size());
 }
 
