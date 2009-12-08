@@ -68,6 +68,8 @@ static cl::opt<cl::boolOrDefault>
 EnableFastISelOption("fast-isel", cl::Hidden,
   cl::desc("Enable the \"fast\" instruction selector"));
 
+static cl::opt<bool> PreAllocTailDup("pre-regalloc-taildup", cl::Hidden,
+    cl::desc("Pre-register allocation tail duplication"));
 
 LLVMTargetMachine::LLVMTargetMachine(const Target &T,
                                      const std::string &TargetTriple)
@@ -289,6 +291,13 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
       PM.add(createMachineSinkingPass());
     printAndVerify(PM, "After MachineLICM and MachineSinking",
                    /* allowDoubleDefs= */ true);
+  }
+
+  // Pre-ra tail duplication.
+  if (OptLevel != CodeGenOpt::None &&
+      !DisableTailDuplicate && PreAllocTailDup) {
+    PM.add(createTailDuplicatePass(true));
+    printAndVerify(PM, "After Pre-RegAlloc TailDuplicate");
   }
 
   // Run pre-ra passes.
