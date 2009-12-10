@@ -1032,18 +1032,17 @@ PPCRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
 
   //  Save R31 if necessary
   int FPSI = FI->getFramePointerSaveIndex();
-  bool IsPPC64 = Subtarget.isPPC64();
-  bool IsSVR4ABI = Subtarget.isSVR4ABI();
+  bool isPPC64 = Subtarget.isPPC64();
   bool isDarwinABI  = Subtarget.isDarwinABI();
   MachineFrameInfo *MFI = MF.getFrameInfo();
  
   // If the frame pointer save index hasn't been defined yet.
-  if (!FPSI && needsFP(MF) && IsSVR4ABI) {
+  if (!FPSI && needsFP(MF)) {
     // Find out what the fix offset of the frame pointer save area.
-    int FPOffset = PPCFrameInfo::getFramePointerSaveOffset(IsPPC64,
+    int FPOffset = PPCFrameInfo::getFramePointerSaveOffset(isPPC64,
                                                            isDarwinABI);
     // Allocate the frame index for frame pointer save area.
-    FPSI = MF.getFrameInfo()->CreateFixedObject(IsPPC64? 8 : 4, FPOffset);
+    FPSI = MF.getFrameInfo()->CreateFixedObject(isPPC64? 8 : 4, FPOffset);
     // Save the result.
     FI->setFramePointerSaveIndex(FPSI);                      
   }
@@ -1065,7 +1064,7 @@ PPCRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
     if (needsFP(MF) || spillsCR(MF)) {
       const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
       const TargetRegisterClass *G8RC = &PPC::G8RCRegClass;
-      const TargetRegisterClass *RC = IsPPC64 ? G8RC : GPRC;
+      const TargetRegisterClass *RC = isPPC64 ? G8RC : GPRC;
       RS->setScavengingFrameIndex(MFI->CreateStackObject(RC->getSize(),
                                                          RC->getAlignment()));
     }
@@ -1294,7 +1293,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
   int NegFrameSize = -FrameSize;
   
   // Get processor type.
-  bool IsPPC64 = Subtarget.isPPC64();
+  bool isPPC64 = Subtarget.isPPC64();
   // Get operating system
   bool isDarwinABI = Subtarget.isDarwinABI();
   // Check if the link register (LR) must be saved.
@@ -1303,7 +1302,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
   // Do we have a frame pointer for this function?
   bool HasFP = hasFP(MF) && FrameSize;
   
-  int LROffset = PPCFrameInfo::getReturnSaveOffset(IsPPC64, isDarwinABI);
+  int LROffset = PPCFrameInfo::getReturnSaveOffset(isPPC64, isDarwinABI);
 
   int FPOffset = 0;
   if (HasFP) {
@@ -1313,11 +1312,11 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
       assert(FPIndex && "No Frame Pointer Save Slot!");
       FPOffset = FFI->getObjectOffset(FPIndex);
     } else {
-      FPOffset = PPCFrameInfo::getFramePointerSaveOffset(IsPPC64, isDarwinABI);
+      FPOffset = PPCFrameInfo::getFramePointerSaveOffset(isPPC64, isDarwinABI);
     }
   }
 
-  if (IsPPC64) {
+  if (isPPC64) {
     if (MustSaveLR)
       BuildMI(MBB, MBBI, dl, TII.get(PPC::MFLR8), PPC::X0);
       
@@ -1364,7 +1363,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
   
   // Adjust stack pointer: r1 += NegFrameSize.
   // If there is a preferred stack alignment, align R1 now
-  if (!IsPPC64) {
+  if (!isPPC64) {
     // PPC32.
     if (ALIGN_STACK && MaxAlign > TargetAlign) {
       assert(isPowerOf2_32(MaxAlign)&&isInt16(MaxAlign)&&"Invalid alignment!");
@@ -1441,13 +1440,13 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
       MachineLocation SPSrc(MachineLocation::VirtualFP, NegFrameSize);
       Moves.push_back(MachineMove(FrameLabelId, SPDst, SPSrc));
     } else {
-      MachineLocation SP(IsPPC64 ? PPC::X31 : PPC::R31);
+      MachineLocation SP(isPPC64 ? PPC::X31 : PPC::R31);
       Moves.push_back(MachineMove(FrameLabelId, SP, SP));
     }
     
     if (HasFP) {
       MachineLocation FPDst(MachineLocation::VirtualFP, FPOffset);
-      MachineLocation FPSrc(IsPPC64 ? PPC::X31 : PPC::R31);
+      MachineLocation FPSrc(isPPC64 ? PPC::X31 : PPC::R31);
       Moves.push_back(MachineMove(FrameLabelId, FPDst, FPSrc));
     }
 
@@ -1463,22 +1462,22 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
     }
     
     MachineLocation LRDst(MachineLocation::VirtualFP, LROffset);
-    MachineLocation LRSrc(IsPPC64 ? PPC::LR8 : PPC::LR);
+    MachineLocation LRSrc(isPPC64 ? PPC::LR8 : PPC::LR);
     Moves.push_back(MachineMove(FrameLabelId, LRDst, LRSrc));
     
     // Mark effective beginning of when frame pointer is ready.
     unsigned ReadyLabelId = MMI->NextLabelID();
     BuildMI(MBB, MBBI, dl, TII.get(PPC::DBG_LABEL)).addImm(ReadyLabelId);
     
-    MachineLocation FPDst(HasFP ? (IsPPC64 ? PPC::X31 : PPC::R31) :
-                                  (IsPPC64 ? PPC::X1 : PPC::R1));
+    MachineLocation FPDst(HasFP ? (isPPC64 ? PPC::X31 : PPC::R31) :
+                                  (isPPC64 ? PPC::X1 : PPC::R1));
     MachineLocation FPSrc(MachineLocation::VirtualFP);
     Moves.push_back(MachineMove(ReadyLabelId, FPDst, FPSrc));
   }
 
   // If there is a frame pointer, copy R1 into R31
   if (HasFP) {
-    if (!IsPPC64) {
+    if (!isPPC64) {
       BuildMI(MBB, MBBI, dl, TII.get(PPC::OR), PPC::R31)
         .addReg(PPC::R1)
         .addReg(PPC::R1);
@@ -1514,7 +1513,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
   int FrameSize = MFI->getStackSize();
 
   // Get processor type.
-  bool IsPPC64 = Subtarget.isPPC64();
+  bool isPPC64 = Subtarget.isPPC64();
   // Get operating system
   bool isDarwinABI = Subtarget.isDarwinABI();
   // Check if the link register (LR) has been saved.
@@ -1523,7 +1522,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
   // Do we have a frame pointer for this function?
   bool HasFP = hasFP(MF) && FrameSize;
   
-  int LROffset = PPCFrameInfo::getReturnSaveOffset(IsPPC64, isDarwinABI);
+  int LROffset = PPCFrameInfo::getReturnSaveOffset(isPPC64, isDarwinABI);
 
   int FPOffset = 0;
   if (HasFP) {
@@ -1533,7 +1532,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
       assert(FPIndex && "No Frame Pointer Save Slot!");
       FPOffset = FFI->getObjectOffset(FPIndex);
     } else {
-      FPOffset = PPCFrameInfo::getFramePointerSaveOffset(IsPPC64, isDarwinABI);
+      FPOffset = PPCFrameInfo::getFramePointerSaveOffset(isPPC64, isDarwinABI);
     }
   }
   
@@ -1561,7 +1560,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
   if (FrameSize) {
     // The loaded (or persistent) stack pointer value is offset by the 'stwu'
     // on entry to the function.  Add this offset back now.
-    if (!IsPPC64) {
+    if (!isPPC64) {
       // If this function contained a fastcc call and PerformTailCallOpt is
       // enabled (=> hasFastCall()==true) the fastcc call might contain a tail
       // call which invalidates the stack pointer value in SP(0). So we use the
@@ -1615,7 +1614,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
     }
   }
 
-  if (IsPPC64) {
+  if (isPPC64) {
     if (MustSaveLR)
       BuildMI(MBB, MBBI, dl, TII.get(PPC::LD), PPC::X0)
         .addImm(LROffset/4).addReg(PPC::X1);
@@ -1645,13 +1644,13 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
       MF.getFunction()->getCallingConv() == CallingConv::Fast) {
      PPCFunctionInfo *FI = MF.getInfo<PPCFunctionInfo>();
      unsigned CallerAllocatedAmt = FI->getMinReservedArea();
-     unsigned StackReg = IsPPC64 ? PPC::X1 : PPC::R1;
-     unsigned FPReg = IsPPC64 ? PPC::X31 : PPC::R31;
-     unsigned TmpReg = IsPPC64 ? PPC::X0 : PPC::R0;
-     unsigned ADDIInstr = IsPPC64 ? PPC::ADDI8 : PPC::ADDI;
-     unsigned ADDInstr = IsPPC64 ? PPC::ADD8 : PPC::ADD4;
-     unsigned LISInstr = IsPPC64 ? PPC::LIS8 : PPC::LIS;
-     unsigned ORIInstr = IsPPC64 ? PPC::ORI8 : PPC::ORI;
+     unsigned StackReg = isPPC64 ? PPC::X1 : PPC::R1;
+     unsigned FPReg = isPPC64 ? PPC::X31 : PPC::R31;
+     unsigned TmpReg = isPPC64 ? PPC::X0 : PPC::R0;
+     unsigned ADDIInstr = isPPC64 ? PPC::ADDI8 : PPC::ADDI;
+     unsigned ADDInstr = isPPC64 ? PPC::ADD8 : PPC::ADD4;
+     unsigned LISInstr = isPPC64 ? PPC::LIS8 : PPC::LIS;
+     unsigned ORIInstr = isPPC64 ? PPC::ORI8 : PPC::ORI;
 
      if (CallerAllocatedAmt && isInt16(CallerAllocatedAmt)) {
        BuildMI(MBB, MBBI, dl, TII.get(ADDIInstr), StackReg)
