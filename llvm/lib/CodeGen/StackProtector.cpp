@@ -112,6 +112,10 @@ bool StackProtector::RequiresStackProtector() const {
           return true;
 
         if (const ArrayType *AT = dyn_cast<ArrayType>(AI->getAllocatedType())) {
+          // We apparently only care about character arrays.
+          if (AT->getElementType() != Type::getInt8Ty(AT->getContext()))
+            continue;
+
           // If an array has more than SSPBufferSize bytes of allocated space,
           // then we emit stack protectors.
           if (SSPBufferSize <= TD->getTypeAllocSize(AT))
