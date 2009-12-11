@@ -2419,9 +2419,15 @@ void SimpleRegisterCoalescing::CopyCoalesceInMBB(MachineBasicBlock *MBB,
 
     // If this isn't a copy nor a extract_subreg, we can't join intervals.
     unsigned SrcReg, DstReg, SrcSubIdx, DstSubIdx;
+    bool isInsUndef = false;
     if (Inst->getOpcode() == TargetInstrInfo::EXTRACT_SUBREG) {
       DstReg = Inst->getOperand(0).getReg();
       SrcReg = Inst->getOperand(1).getReg();
+    } else if (Inst->getOpcode() == TargetInstrInfo::INSERT_SUBREG) {
+      DstReg = Inst->getOperand(0).getReg();
+      SrcReg = Inst->getOperand(2).getReg();
+      if (Inst->getOperand(1).isUndef())
+        isInsUndef = true;
     } else if (Inst->getOpcode() == TargetInstrInfo::INSERT_SUBREG ||
                Inst->getOpcode() == TargetInstrInfo::SUBREG_TO_REG) {
       DstReg = Inst->getOperand(0).getReg();
@@ -2431,7 +2437,8 @@ void SimpleRegisterCoalescing::CopyCoalesceInMBB(MachineBasicBlock *MBB,
 
     bool SrcIsPhys = TargetRegisterInfo::isPhysicalRegister(SrcReg);
     bool DstIsPhys = TargetRegisterInfo::isPhysicalRegister(DstReg);
-    if (li_->hasInterval(SrcReg) && li_->getInterval(SrcReg).empty())
+    if (isInsUndef ||
+        (li_->hasInterval(SrcReg) && li_->getInterval(SrcReg).empty()))
       ImpDefCopies.push_back(CopyRec(Inst, 0));
     else if (SrcIsPhys || DstIsPhys)
       PhysCopies.push_back(CopyRec(Inst, 0));
@@ -2439,9 +2446,9 @@ void SimpleRegisterCoalescing::CopyCoalesceInMBB(MachineBasicBlock *MBB,
       VirtCopies.push_back(CopyRec(Inst, 0));
   }
 
-  // Try coalescing implicit copies first, followed by copies to / from
-  // physical registers, then finally copies from virtual registers to
-  // virtual registers.
+  // Try coalescing implicit copies and insert_subreg <undef> first,
+  // followed by copies to / from physical registers, then finally copies
+  // from virtual registers to virtual registers.
   for (unsigned i = 0, e = ImpDefCopies.size(); i != e; ++i) {
     CopyRec &TheCopy = ImpDefCopies[i];
     bool Again = false;

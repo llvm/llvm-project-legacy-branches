@@ -633,6 +633,11 @@ public:
   unsigned getGlobalBaseReg(MachineFunction *MF) const;
 
 private:
+  MachineInstr * convertToThreeAddressWithLEA(unsigned MIOpc,
+                                              MachineFunction::iterator &MFI,
+                                              MachineBasicBlock::iterator &MBBI,
+                                              LiveVariables *LV) const;
+
   MachineInstr* foldMemoryOperandImpl(MachineFunction &MF,
                                      MachineInstr* MI,
                                      unsigned OpNum,
