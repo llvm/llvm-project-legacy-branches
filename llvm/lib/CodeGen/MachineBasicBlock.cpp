@@ -457,9 +457,16 @@ MachineBasicBlock::BranchesToLandingPad(const MachineBasicBlock *MBB) const {
   SmallSet<const MachineBasicBlock*, 32> Visited;
   const MachineBasicBlock *CurMBB = MBB;
 
-  while (!CurMBB->isLandingPad()) {
-    if (CurMBB->succ_size() != 1) break;
-    if (!Visited.insert(CurMBB)) break;
+  while (!Visited.count(CurMBB) && !CurMBB->isLandingPad()) {
+    if (CurMBB->size() != 1 || CurMBB->succ_empty() || CurMBB->succ_size() != 1)
+      break;
+
+    const TargetInstrInfo *TII =
+      CurMBB->getParent()->getTarget().getInstrInfo();
+    if (!TII->isUnpredicatedTerminator(CurMBB->begin()))
+      break;
+
+    Visited.insert(CurMBB);
     CurMBB = *CurMBB->succ_begin();
   }
 

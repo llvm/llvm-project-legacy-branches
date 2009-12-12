@@ -87,6 +87,8 @@ public:
                                          MachineBasicBlock::iterator MI,
                                const std::vector<CalleeSavedInfo> &CSI) const;
 
+  virtual bool BlockHasNoFallThrough(const MachineBasicBlock &MBB) const;
+
   virtual bool ReverseBranchCondition(
                             SmallVectorImpl<MachineOperand> &Cond) const;
 };

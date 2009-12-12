@@ -78,6 +78,7 @@ public:
   unsigned RemoveBranch(MachineBasicBlock &MBB) const;
   void insertNoop(MachineBasicBlock &MBB, 
                   MachineBasicBlock::iterator MI) const;
+  bool BlockHasNoFallThrough(const MachineBasicBlock &MBB) const;
   bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const;
 
   /// getGlobalBaseReg - Return a virtual register initialized with the
