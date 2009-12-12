@@ -180,9 +180,9 @@ slow-build:
 	cd .. && BUILDIT_DIR=`pwd`/build $(SUDO) /usr/local/bin/buildit -arch i386 -arch x86_64 `pwd`/clang
 
 install-check-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=/Developer/usr/bin/clang CLANGCC=/Developer/usr/libexec/clang-cc $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
+	cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
 install-check-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=/Developer/usr/bin/clang CLANGCC=/Developer/usr/libexec/clang-cc $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
+	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
 
 check: llvm-binaries-i386 llvm-binaries-x86_64 check-i386 check-x86_64 unittests-i386 unittests-x86_64 clang-i386 clang-x86_64
 llvm-binaries-i386:
@@ -198,6 +198,6 @@ unittests-i386: llvm-binaries-i386
 unittests-x86_64: llvm-binaries-x86_64
 	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make unittests && echo PASS: $@ || echo FAIL: $@
 clang-i386: llvm-binaries-i386
-	pwd=`pwd`; cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=$$pwd/../build/llvm-i386/Developer/usr/bin/clang CLANGCC=$$pwd/../build/llvm-i386/Developer/usr/libexec/clang-cc $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
+	pwd=`pwd`; cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=$$pwd/../build/llvm-i386/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
 clang-x86_64: llvm-binaries-x86_64
-	pwd=`pwd`; cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=$$pwd/../build/llvm-x86_64/Developer/usr/bin/clang CLANGCC=$$pwd/../build/llvm-x86_64/Developer/usr/libexec/clang-cc $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
+	pwd=`pwd`; cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=$$pwd/../build/llvm-x86_64/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
