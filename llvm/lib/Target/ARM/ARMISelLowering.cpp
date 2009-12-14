@@ -3047,13 +3047,23 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
     .createVirtualRegister(ARM::GPRRegisterClass);
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
+  bool isThumb2 = Subtarget->isThumb2();
 
   unsigned ldrOpc, strOpc;
   switch (Size) {
   default: llvm_unreachable("unsupported size for AtomicCmpSwap!");
-  case 1: ldrOpc = ARM::LDREXB; strOpc = ARM::STREXB; break;
-  case 2: ldrOpc = ARM::LDREXH; strOpc = ARM::STREXH; break;
-  case 4: ldrOpc = ARM::LDREX;  strOpc = ARM::STREX;  break;
+  case 1:
+    ldrOpc = isThumb2 ? ARM::t2LDREXB : ARM::LDREXB;
+    strOpc = isThumb2 ? ARM::t2LDREXB : ARM::STREXB;
+    break;
+  case 2:
+    ldrOpc = isThumb2 ? ARM::t2LDREXH : ARM::LDREXH;
+    strOpc = isThumb2 ? ARM::t2STREXH : ARM::STREXH;
+    break;
+  case 4:
+    ldrOpc = isThumb2 ? ARM::t2LDREX : ARM::LDREX;
+    strOpc = isThumb2 ? ARM::t2STREX : ARM::STREX;
+    break;
   }
 
   MachineFunction *MF = BB->getParent();
@@ -3080,10 +3090,10 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
   //   bne exitMBB
   BB = loop1MBB;
   AddDefaultPred(BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr));
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ARM::CMPrr))
+  AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPrr : ARM::CMPrr))
                  .addReg(dest).addReg(oldval));
-  BuildMI(BB, dl, TII->get(ARM::Bcc)).addMBB(exitMBB).addImm(ARMCC::NE)
-    .addReg(ARM::CPSR);
+  BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
+    .addMBB(exitMBB).addImm(ARMCC::NE).addReg(ARM::CPSR);
   BB->addSuccessor(loop2MBB);
   BB->addSuccessor(exitMBB);
 
@@ -3094,10 +3104,10 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
   BB = loop2MBB;
   AddDefaultPred(BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(newval)
                  .addReg(ptr));
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ARM::CMPri))
+  AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPri : ARM::CMPri))
                  .addReg(scratch).addImm(0));
-  BuildMI(BB, dl, TII->get(ARM::Bcc)).addMBB(loop1MBB).addImm(ARMCC::NE)
-    .addReg(ARM::CPSR);
+  BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
+    .addMBB(loop1MBB).addImm(ARMCC::NE).addReg(ARM::CPSR);
   BB->addSuccessor(loop1MBB);
   BB->addSuccessor(exitMBB);
 
@@ -3122,12 +3132,22 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   unsigned ptr = MI->getOperand(1).getReg();
   unsigned incr = MI->getOperand(2).getReg();
   DebugLoc dl = MI->getDebugLoc();
+  bool isThumb2 = Subtarget->isThumb2();
   unsigned ldrOpc, strOpc;
   switch (Size) {
   default: llvm_unreachable("unsupported size for AtomicCmpSwap!");
-  case 1: ldrOpc = ARM::LDREXB; strOpc = ARM::STREXB; break;
-  case 2: ldrOpc = ARM::LDREXH; strOpc = ARM::STREXH; break;
-  case 4: ldrOpc = ARM::LDREX;  strOpc = ARM::STREX;  break;
+  case 1:
+    ldrOpc = isThumb2 ? ARM::t2LDREXB : ARM::LDREXB;
+    strOpc = isThumb2 ? ARM::t2LDREXB : ARM::STREXB;
+    break;
+  case 2:
+    ldrOpc = isThumb2 ? ARM::t2LDREXH : ARM::LDREXH;
+    strOpc = isThumb2 ? ARM::t2STREXH : ARM::STREXH;
+    break;
+  case 4:
+    ldrOpc = isThumb2 ? ARM::t2LDREX : ARM::LDREX;
+    strOpc = isThumb2 ? ARM::t2STREX : ARM::STREX;
+    break;
   }
 
   MachineBasicBlock *loopMBB = F->CreateMachineBasicBlock(LLVM_BB);
@@ -3148,8 +3168,8 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
 
   //  loopMBB:
   //   ldrex dest, ptr
-  //   add tmp, dest, incr
-  //   strex scratch, tmp, ptr
+  //   <binop> scratch2, dest, incr
+  //   strex scratch, scratch2, ptr
   //   cmp scratch, #0
   //   bne- loopMBB
   //   fallthrough --> exitMBB
@@ -3161,10 +3181,10 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
 
   AddDefaultPred(BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(scratch2)
                  .addReg(ptr));
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ARM::CMPri))
+  AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPri : ARM::CMPri))
                  .addReg(scratch).addImm(0));
-  BuildMI(BB, dl, TII->get(ARM::Bcc)).addMBB(loopMBB).addImm(ARMCC::NE)
-    .addReg(ARM::CPSR);
+  BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
+    .addMBB(loopMBB).addImm(ARMCC::NE).addReg(ARM::CPSR);
 
   BB->addSuccessor(loopMBB);
   BB->addSuccessor(exitMBB);
@@ -3181,38 +3201,57 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const {
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
+  bool isThumb2 = Subtarget->isThumb2();
   switch (MI->getOpcode()) {
   default:
     MI->dump();
     llvm_unreachable("Unexpected instr type to insert");
 
-  case ARM::ATOMIC_LOAD_ADD_I8:  return EmitAtomicBinary(MI, BB, 1, ARM::ADDrr);
-  case ARM::ATOMIC_LOAD_ADD_I16: return EmitAtomicBinary(MI, BB, 2, ARM::ADDrr);
-  case ARM::ATOMIC_LOAD_ADD_I32: return EmitAtomicBinary(MI, BB, 4, ARM::ADDrr);
+  case ARM::ATOMIC_LOAD_ADD_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2ADDrr : ARM::ADDrr);
+  case ARM::ATOMIC_LOAD_ADD_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2ADDrr : ARM::ADDrr);
+  case ARM::ATOMIC_LOAD_ADD_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2ADDrr : ARM::ADDrr);
 
-  case ARM::ATOMIC_LOAD_AND_I8:  return EmitAtomicBinary(MI, BB, 1, ARM::ANDrr);
-  case ARM::ATOMIC_LOAD_AND_I16: return EmitAtomicBinary(MI, BB, 2, ARM::ANDrr);
-  case ARM::ATOMIC_LOAD_AND_I32: return EmitAtomicBinary(MI, BB, 4, ARM::ANDrr);
+  case ARM::ATOMIC_LOAD_AND_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2ANDrr : ARM::ANDrr);
+  case ARM::ATOMIC_LOAD_AND_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2ANDrr : ARM::ANDrr);
+  case ARM::ATOMIC_LOAD_AND_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2ANDrr : ARM::ANDrr);
 
-  case ARM::ATOMIC_LOAD_OR_I8:   return EmitAtomicBinary(MI, BB, 1, ARM::ORRrr);
-  case ARM::ATOMIC_LOAD_OR_I16:  return EmitAtomicBinary(MI, BB, 2, ARM::ORRrr);
-  case ARM::ATOMIC_LOAD_OR_I32:  return EmitAtomicBinary(MI, BB, 4, ARM::ORRrr);
+  case ARM::ATOMIC_LOAD_OR_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2ORRrr : ARM::ORRrr);
+  case ARM::ATOMIC_LOAD_OR_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2ORRrr : ARM::ORRrr);
+  case ARM::ATOMIC_LOAD_OR_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2ORRrr : ARM::ORRrr);
 
-  case ARM::ATOMIC_LOAD_XOR_I8:  return EmitAtomicBinary(MI, BB, 1, ARM::EORrr);
-  case ARM::ATOMIC_LOAD_XOR_I16: return EmitAtomicBinary(MI, BB, 2, ARM::EORrr);
-  case ARM::ATOMIC_LOAD_XOR_I32: return EmitAtomicBinary(MI, BB, 4, ARM::EORrr);
+  case ARM::ATOMIC_LOAD_XOR_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2EORrr : ARM::EORrr);
+  case ARM::ATOMIC_LOAD_XOR_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2EORrr : ARM::EORrr);
+  case ARM::ATOMIC_LOAD_XOR_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2EORrr : ARM::EORrr);
 
-  case ARM::ATOMIC_LOAD_NAND_I8: return EmitAtomicBinary(MI, BB, 1, ARM::BICrr);
-  case ARM::ATOMIC_LOAD_NAND_I16:return EmitAtomicBinary(MI, BB, 2, ARM::BICrr);
-  case ARM::ATOMIC_LOAD_NAND_I32:return EmitAtomicBinary(MI, BB, 4, ARM::BICrr);
+  case ARM::ATOMIC_LOAD_NAND_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2BICrr : ARM::BICrr);
+  case ARM::ATOMIC_LOAD_NAND_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2BICrr : ARM::BICrr);
+  case ARM::ATOMIC_LOAD_NAND_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2BICrr : ARM::BICrr);
 
-  case ARM::ATOMIC_LOAD_SUB_I8:  return EmitAtomicBinary(MI, BB, 1, ARM::SUBrr);
-  case ARM::ATOMIC_LOAD_SUB_I16: return EmitAtomicBinary(MI, BB, 2, ARM::SUBrr);
-  case ARM::ATOMIC_LOAD_SUB_I32: return EmitAtomicBinary(MI, BB, 4, ARM::SUBrr);
+  case ARM::ATOMIC_LOAD_SUB_I8:
+     return EmitAtomicBinary(MI, BB, 1, isThumb2 ? ARM::t2SUBrr : ARM::SUBrr);
+  case ARM::ATOMIC_LOAD_SUB_I16:
+     return EmitAtomicBinary(MI, BB, 2, isThumb2 ? ARM::t2SUBrr : ARM::SUBrr);
+  case ARM::ATOMIC_LOAD_SUB_I32:
+     return EmitAtomicBinary(MI, BB, 4, isThumb2 ? ARM::t2SUBrr : ARM::SUBrr);
 
-  case ARM::ATOMIC_SWAP_I8:      return EmitAtomicBinary(MI, BB, 1, 0);
-  case ARM::ATOMIC_SWAP_I16:     return EmitAtomicBinary(MI, BB, 2, 0);
-  case ARM::ATOMIC_SWAP_I32:     return EmitAtomicBinary(MI, BB, 4, 0);
+  case ARM::ATOMIC_SWAP_I8:  return EmitAtomicBinary(MI, BB, 1, 0);
+  case ARM::ATOMIC_SWAP_I16: return EmitAtomicBinary(MI, BB, 2, 0);
+  case ARM::ATOMIC_SWAP_I32: return EmitAtomicBinary(MI, BB, 4, 0);
 
   case ARM::ATOMIC_CMP_SWAP_I8:  return EmitAtomicCmpSwap(MI, BB, 1);
   case ARM::ATOMIC_CMP_SWAP_I16: return EmitAtomicCmpSwap(MI, BB, 2);
