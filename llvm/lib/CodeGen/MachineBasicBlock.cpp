@@ -449,34 +449,10 @@ void MachineBasicBlock::ReplaceUsesOfBlockWith(MachineBasicBlock *Old,
   addSuccessor(New);
 }
 
-/// BranchesToLandingPad - The basic block is a landing pad or branches only to
-/// a landing pad. No other instructions are present other than the
-/// unconditional branch.
-bool
-MachineBasicBlock::BranchesToLandingPad(const MachineBasicBlock *MBB) const {
-  SmallSet<const MachineBasicBlock*, 32> Visited;
-  const MachineBasicBlock *CurMBB = MBB;
-
-  while (!Visited.count(CurMBB) && !CurMBB->isLandingPad()) {
-    if (CurMBB->size() != 1 || CurMBB->succ_empty() || CurMBB->succ_size() != 1)
-      break;
-
-    const TargetInstrInfo *TII =
-      CurMBB->getParent()->getTarget().getInstrInfo();
-    if (!TII->isUnpredicatedTerminator(CurMBB->begin()))
-      break;
-
-    Visited.insert(CurMBB);
-    CurMBB = *CurMBB->succ_begin();
-  }
-
-  return CurMBB->isLandingPad();
-}
-
 /// CorrectExtraCFGEdges - Various pieces of code can cause excess edges in the
 /// CFG to be inserted.  If we have proven that MBB can only branch to DestA and
-/// DestB, remove any other MBB successors from the CFG.  DestA and DestB can
-/// be null.
+/// DestB, remove any other MBB successors from the CFG.  DestA and DestB can be
+/// null.
 /// 
 /// Besides DestA and DestB, retain other edges leading to LandingPads
 /// (currently there can be only one; we don't check or require that here).
@@ -484,21 +460,35 @@ MachineBasicBlock::BranchesToLandingPad(const MachineBasicBlock *MBB) const {
 bool MachineBasicBlock::CorrectExtraCFGEdges(MachineBasicBlock *DestA,
                                              MachineBasicBlock *DestB,
                                              bool isCond) {
+  // The values of DestA and DestB frequently come from a call to the
+  // 'TargetInstrInfo::AnalyzeBranch' method. We take our meaning of the initial
+  // values from there.
+  //
+  // 1. If both DestA and DestB are null, then the block ends with no branches
+  //    (it falls through to its successor).
+  // 2. If DestA is set, DestB is null, and isCond is false, then the block ends
+  //    with only an unconditional branch.
+  // 3. If DestA is set, DestB is null, and isCond is true, then the block ends
+  //    with a conditional branch that falls through to a successor (DestB).
+  // 4. If DestA and DestB is set and isCond is true, then the block ends with a
+  //    conditional branch followed by an unconditional branch. DestA is the
+  //    'true' destination and DestB is the 'false' destination.
+
   bool MadeChange = false;
   bool AddedFallThrough = false;
 
   MachineFunction::iterator FallThru = next(MachineFunction::iterator(this));
   
-  // If this block ends with a conditional branch that falls through to its
-  // successor, set DestB as the successor.
   if (isCond) {
+    // If this block ends with a conditional branch that falls through to its
+    // successor, set DestB as the successor.
     if (DestB == 0 && FallThru != getParent()->end()) {
       DestB = FallThru;
       AddedFallThrough = true;
     }
   } else {
     // If this is an unconditional branch with no explicit dest, it must just be
-    // a fallthrough into DestB.
+    // a fallthrough into DestA.
     if (DestA == 0 && FallThru != getParent()->end()) {
       DestA = FallThru;
       AddedFallThrough = true;
@@ -515,8 +505,8 @@ bool MachineBasicBlock::CorrectExtraCFGEdges(MachineBasicBlock *DestA,
     } else if (MBB == DestB) {
       DestB = 0;
       ++SI;
-    } else if (MBB != OrigDestA && MBB != OrigDestB &&
-               BranchesToLandingPad(MBB)) {
+    } else if (MBB->isLandingPad() && 
+               MBB != OrigDestA && MBB != OrigDestB) {
       ++SI;
     } else {
       // Otherwise, this is a superfluous edge, remove it.
@@ -525,12 +515,10 @@ bool MachineBasicBlock::CorrectExtraCFGEdges(MachineBasicBlock *DestA,
     }
   }
 
-  if (!AddedFallThrough) {
-    assert(DestA == 0 && DestB == 0 &&
-           "MachineCFG is missing edges!");
-  } else if (isCond) {
+  if (!AddedFallThrough)
+    assert(DestA == 0 && DestB == 0 && "MachineCFG is missing edges!");
+  else if (isCond)
     assert(DestA == 0 && "MachineCFG is missing edges!");
-  }
 
   return MadeChange;
 }
