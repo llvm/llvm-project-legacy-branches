@@ -1106,7 +1106,7 @@ def t2LDREXD : Thumb2I<(outs GPR:$dest, GPR:$dest2), (ins GPR:$ptr),
                       []>;
 }
 
-let mayStore = 1 in {
+let mayStore = 1, Constraints = "@earlyclobber $success" in {
 def t2STREXB : Thumb2I<(outs GPR:$success), (ins GPR:$src, GPR:$ptr),
                       AddrModeNone, Size4Bytes, NoItinerary,
                       "strexb", "\t$success, $src, [$ptr]", "",
