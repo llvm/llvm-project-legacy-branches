@@ -2353,7 +2353,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   // Check switch flag 
   if (NoFusing) return NULL;
 
-  if (TM.getSubtarget<X86Subtarget>().shouldBreakSSEDep())
+  if (!MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize))
     switch (MI->getOpcode()) {
     case X86::CVTSD2SSrr:
     case X86::Int_CVTSD2SSrr:
@@ -2405,7 +2405,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   // Check switch flag 
   if (NoFusing) return NULL;
 
-  if (TM.getSubtarget<X86Subtarget>().shouldBreakSSEDep())
+  if (!MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize))
     switch (MI->getOpcode()) {
     case X86::CVTSD2SSrr:
     case X86::Int_CVTSD2SSrr:
