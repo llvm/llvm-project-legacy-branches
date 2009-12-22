@@ -832,8 +832,12 @@ SDValue SelectionDAG::getZExtOrTrunc(SDValue Op, DebugLoc DL, EVT VT) {
 }
 
 SDValue SelectionDAG::getZeroExtendInReg(SDValue Op, DebugLoc DL, EVT VT) {
+  assert(!VT.isVector() &&
+         "getZeroExtendInReg should use the vector element type instead of "
+         "the vector type!");
   if (Op.getValueType() == VT) return Op;
-  APInt Imm = APInt::getLowBitsSet(Op.getValueSizeInBits(),
+  unsigned BitWidth = Op.getValueType().getScalarType().getSizeInBits();
+  APInt Imm = APInt::getLowBitsSet(BitWidth,
                                    VT.getSizeInBits());
   return getNode(ISD::AND, DL, Op.getValueType(), Op,
                  getConstant(Imm, Op.getValueType()));
@@ -1481,7 +1485,7 @@ bool SelectionDAG::SignBitIsZero(SDValue Op, unsigned Depth) const {
   if (Op.getValueType().isVector())
     return false;
 
-  unsigned BitWidth = Op.getValueSizeInBits();
+  unsigned BitWidth = Op.getValueType().getScalarType().getSizeInBits();
   return MaskedValueIsZero(Op, APInt::getSignBit(BitWidth), Depth);
 }
 
@@ -1504,7 +1508,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
                                      APInt &KnownZero, APInt &KnownOne,
                                      unsigned Depth) const {
   unsigned BitWidth = Mask.getBitWidth();
-  assert(BitWidth == Op.getValueType().getSizeInBits() &&
+  assert(BitWidth == Op.getValueType().getScalarType().getSizeInBits() &&
          "Mask size mismatches value type size!");
 
   KnownZero = KnownOne = APInt(BitWidth, 0);   // Don't know anything.
@@ -1761,7 +1765,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
   }
   case ISD::ZERO_EXTEND: {
     EVT InVT = Op.getOperand(0).getValueType();
-    unsigned InBits = InVT.getSizeInBits();
+    unsigned InBits = InVT.getScalarType().getSizeInBits();
     APInt NewBits   = APInt::getHighBitsSet(BitWidth, BitWidth - InBits) & Mask;
     APInt InMask    = Mask;
     InMask.trunc(InBits);
@@ -1775,7 +1779,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
   }
   case ISD::SIGN_EXTEND: {
     EVT InVT = Op.getOperand(0).getValueType();
-    unsigned InBits = InVT.getSizeInBits();
+    unsigned InBits = InVT.getScalarType().getSizeInBits();
     APInt InSignBit = APInt::getSignBit(InBits);
     APInt NewBits   = APInt::getHighBitsSet(BitWidth, BitWidth - InBits) & Mask;
     APInt InMask = Mask;
@@ -1816,7 +1820,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
   }
   case ISD::ANY_EXTEND: {
     EVT InVT = Op.getOperand(0).getValueType();
-    unsigned InBits = InVT.getSizeInBits();
+    unsigned InBits = InVT.getScalarType().getSizeInBits();
     APInt InMask = Mask;
     InMask.trunc(InBits);
     KnownZero.trunc(InBits);
@@ -1828,7 +1832,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
   }
   case ISD::TRUNCATE: {
     EVT InVT = Op.getOperand(0).getValueType();
-    unsigned InBits = InVT.getSizeInBits();
+    unsigned InBits = InVT.getScalarType().getSizeInBits();
     APInt InMask = Mask;
     InMask.zext(InBits);
     KnownZero.zext(InBits);
@@ -1961,7 +1965,7 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
 unsigned SelectionDAG::ComputeNumSignBits(SDValue Op, unsigned Depth) const{
   EVT VT = Op.getValueType();
   assert(VT.isInteger() && "Invalid VT!");
-  unsigned VTBits = VT.getSizeInBits();
+  unsigned VTBits = VT.getScalarType().getSizeInBits();
   unsigned Tmp, Tmp2;
   unsigned FirstAnswer = 1;
 
@@ -1988,7 +1992,7 @@ unsigned SelectionDAG::ComputeNumSignBits(SDValue Op, unsigned Depth) const{
   }
 
   case ISD::SIGN_EXTEND:
-    Tmp = VTBits-Op.getOperand(0).getValueType().getSizeInBits();
+    Tmp = VTBits-Op.getOperand(0).getValueType().getScalarType().getSizeInBits();
     return ComputeNumSignBits(Op.getOperand(0), Depth+1) + Tmp;
 
   case ISD::SIGN_EXTEND_INREG:
@@ -2350,6 +2354,10 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     assert(VT.isFloatingPoint() &&
            Operand.getValueType().isFloatingPoint() && "Invalid FP cast!");
     if (Operand.getValueType() == VT) return Operand;  // noop conversion.
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() ==
+            Operand.getValueType().getVectorNumElements()) &&
+           "Vector element count mismatch!");
     if (Operand.getOpcode() == ISD::UNDEF)
       return getUNDEF(VT);
     break;
@@ -2357,8 +2365,12 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     assert(VT.isInteger() && Operand.getValueType().isInteger() &&
            "Invalid SIGN_EXTEND!");
     if (Operand.getValueType() == VT) return Operand;   // noop extension
-    assert(Operand.getValueType().bitsLT(VT)
-           && "Invalid sext node, dst < src!");
+    assert(Operand.getValueType().getScalarType().bitsLT(VT.getScalarType()) &&
+           "Invalid sext node, dst < src!");
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() ==
+            Operand.getValueType().getVectorNumElements()) &&
+           "Vector element count mismatch!");
     if (OpOpcode == ISD::SIGN_EXTEND || OpOpcode == ISD::ZERO_EXTEND)
       return getNode(OpOpcode, DL, VT, Operand.getNode()->getOperand(0));
     break;
@@ -2366,8 +2378,12 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     assert(VT.isInteger() && Operand.getValueType().isInteger() &&
            "Invalid ZERO_EXTEND!");
     if (Operand.getValueType() == VT) return Operand;   // noop extension
-    assert(Operand.getValueType().bitsLT(VT)
-           && "Invalid zext node, dst < src!");
+    assert(Operand.getValueType().getScalarType().bitsLT(VT.getScalarType()) &&
+           "Invalid zext node, dst < src!");
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() ==
+            Operand.getValueType().getVectorNumElements()) &&
+           "Vector element count mismatch!");
     if (OpOpcode == ISD::ZERO_EXTEND)   // (zext (zext x)) -> (zext x)
       return getNode(ISD::ZERO_EXTEND, DL, VT,
                      Operand.getNode()->getOperand(0));
@@ -2376,8 +2392,12 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     assert(VT.isInteger() && Operand.getValueType().isInteger() &&
            "Invalid ANY_EXTEND!");
     if (Operand.getValueType() == VT) return Operand;   // noop extension
-    assert(Operand.getValueType().bitsLT(VT)
-           && "Invalid anyext node, dst < src!");
+    assert(Operand.getValueType().getScalarType().bitsLT(VT.getScalarType()) &&
+           "Invalid anyext node, dst < src!");
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() ==
+            Operand.getValueType().getVectorNumElements()) &&
+           "Vector element count mismatch!");
     if (OpOpcode == ISD::ZERO_EXTEND || OpOpcode == ISD::SIGN_EXTEND)
       // (ext (zext x)) -> (zext x)  and  (ext (sext x)) -> (sext x)
       return getNode(OpOpcode, DL, VT, Operand.getNode()->getOperand(0));
@@ -2386,14 +2406,19 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     assert(VT.isInteger() && Operand.getValueType().isInteger() &&
            "Invalid TRUNCATE!");
     if (Operand.getValueType() == VT) return Operand;   // noop truncate
-    assert(Operand.getValueType().bitsGT(VT)
-           && "Invalid truncate node, src < dst!");
+    assert(Operand.getValueType().getScalarType().bitsGT(VT.getScalarType()) &&
+           "Invalid truncate node, src < dst!");
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() ==
+            Operand.getValueType().getVectorNumElements()) &&
+           "Vector element count mismatch!");
     if (OpOpcode == ISD::TRUNCATE)
       return getNode(ISD::TRUNCATE, DL, VT, Operand.getNode()->getOperand(0));
     else if (OpOpcode == ISD::ZERO_EXTEND || OpOpcode == ISD::SIGN_EXTEND ||
              OpOpcode == ISD::ANY_EXTEND) {
       // If the source is smaller than the dest, we still need an extend.
-      if (Operand.getNode()->getOperand(0).getValueType().bitsLT(VT))
+      if (Operand.getNode()->getOperand(0).getValueType().getScalarType()
+            .bitsLT(VT.getScalarType()))
         return getNode(OpOpcode, DL, VT, Operand.getNode()->getOperand(0));
       else if (Operand.getNode()->getOperand(0).getValueType().bitsGT(VT))
         return getNode(ISD::TRUNCATE, DL, VT, Operand.getNode()->getOperand(0));
@@ -2624,6 +2649,9 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     assert(VT == N1.getValueType() && "Not an inreg extend!");
     assert(VT.isInteger() && EVT.isInteger() &&
            "Cannot *_EXTEND_INREG FP types");
+    assert(!EVT.isVector() &&
+           "AssertSExt/AssertZExt type should be the vector element type "
+           "rather than the vector type!");
     assert(EVT.bitsLE(VT) && "Not extending!");
     if (VT == EVT) return N1; // noop assertion.
     break;
@@ -2633,12 +2661,15 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     assert(VT == N1.getValueType() && "Not an inreg extend!");
     assert(VT.isInteger() && EVT.isInteger() &&
            "Cannot *_EXTEND_INREG FP types");
-    assert(EVT.bitsLE(VT) && "Not extending!");
+    assert(!EVT.isVector() &&
+           "SIGN_EXTEND_INREG type should be the vector element type rather "
+           "than the vector type!");
+    assert(EVT.bitsLE(VT.getScalarType()) && "Not extending!");
     if (EVT == VT) return N1;  // Not actually extending
 
     if (N1C) {
       APInt Val = N1C->getAPIntValue();
-      unsigned FromBits = cast<VTSDNode>(N2)->getVT().getSizeInBits();
+      unsigned FromBits = EVT.getSizeInBits();
       Val <<= Val.getBitWidth()-FromBits;
       Val = Val.ashr(Val.getBitWidth()-FromBits);
       return getConstant(Val, VT);
@@ -3733,16 +3764,15 @@ SelectionDAG::getLoad(ISD::MemIndexedMode AM, DebugLoc dl,
     assert(VT == MemVT && "Non-extending load from different memory type!");
   } else {
     // Extending load.
-    if (VT.isVector())
-      assert(MemVT.getVectorNumElements() == VT.getVectorNumElements() &&
-             "Invalid vector extload!");
-    else
-      assert(MemVT.bitsLT(VT) &&
-             "Should only be an extending load, not truncating!");
-    assert((ExtType == ISD::EXTLOAD || VT.isInteger()) &&
-           "Cannot sign/zero extend a FP/Vector load!");
+    assert(MemVT.getScalarType().bitsLT(VT.getScalarType()) &&
+           "Should only be an extending load, not truncating!");
     assert(VT.isInteger() == MemVT.isInteger() &&
            "Cannot convert from FP to Int or Int -> FP!");
+    assert(VT.isVector() == MemVT.isVector() &&
+           "Cannot use trunc store to convert to or from a vector!");
+    assert((!VT.isVector() ||
+            VT.getVectorNumElements() == MemVT.getVectorNumElements()) &&
+           "Cannot use trunc store to change the number of vector elements!");
   }
 
   bool Indexed = AM != ISD::UNINDEXED;
@@ -3875,10 +3905,15 @@ SDValue SelectionDAG::getTruncStore(SDValue Chain, DebugLoc dl, SDValue Val,
   if (VT == SVT)
     return getStore(Chain, dl, Val, Ptr, MMO);
 
-  assert(VT.bitsGT(SVT) && "Not a truncation?");
+  assert(SVT.getScalarType().bitsLT(VT.getScalarType()) &&
+         "Should only be a truncating store, not extending!");
   assert(VT.isInteger() == SVT.isInteger() &&
          "Can't do FP-INT conversion!");
-
+  assert(VT.isVector() == SVT.isVector() &&
+         "Cannot use trunc store to convert to or from a vector!");
+  assert((!VT.isVector() ||
+          VT.getVectorNumElements() == SVT.getVectorNumElements()) &&
+         "Cannot use trunc store to change the number of vector elements!");
 
   SDVTList VTs = getVTList(MVT::Other);
   SDValue Undef = getUNDEF(Ptr.getValueType());
