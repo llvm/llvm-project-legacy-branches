@@ -517,7 +517,6 @@ private:
   SDValue ScalarizeVecRes_INSERT_VECTOR_ELT(SDNode *N);
   SDValue ScalarizeVecRes_LOAD(LoadSDNode *N);
   SDValue ScalarizeVecRes_SCALAR_TO_VECTOR(SDNode *N);
-  SDValue ScalarizeVecRes_SIGN_EXTEND_INREG(SDNode *N);
   SDValue ScalarizeVecRes_SELECT(SDNode *N);
   SDValue ScalarizeVecRes_SELECT_CC(SDNode *N);
   SDValue ScalarizeVecRes_SETCC(SDNode *N);
@@ -561,7 +560,6 @@ private:
   void SplitVecRes_INSERT_VECTOR_ELT(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_LOAD(LoadSDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_SCALAR_TO_VECTOR(SDNode *N, SDValue &Lo, SDValue &Hi);
-  void SplitVecRes_SIGN_EXTEND_INREG(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_SETCC(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_UNDEF(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_VECTOR_SHUFFLE(ShuffleVectorSDNode *N, SDValue &Lo,
@@ -604,7 +602,6 @@ private:
   SDValue WidenVecRes_INSERT_VECTOR_ELT(SDNode* N);
   SDValue WidenVecRes_LOAD(SDNode* N);
   SDValue WidenVecRes_SCALAR_TO_VECTOR(SDNode* N);
-  SDValue WidenVecRes_SIGN_EXTEND_INREG(SDNode* N);
   SDValue WidenVecRes_SELECT(SDNode* N);
   SDValue WidenVecRes_SELECT_CC(SDNode* N);
   SDValue WidenVecRes_UNDEF(SDNode *N);
