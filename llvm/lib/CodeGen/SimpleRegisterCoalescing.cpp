@@ -2243,8 +2243,9 @@ SimpleRegisterCoalescing::JoinIntervals(LiveInterval &LHS, LiveInterval &RHS,
         continue;
 
       // Figure out the value # from the RHS.
-      LHSValsDefinedFromRHS[VNI]=
-        RHS.getLiveRangeContaining(VNI->def.getPrevSlot())->valno;
+      LiveRange *lr = RHS.getLiveRangeContaining(VNI->def.getPrevSlot());
+      assert(lr && "Cannot find live range");
+      LHSValsDefinedFromRHS[VNI] = lr->valno;
     }
 
     // Loop over the value numbers of the RHS, seeing if any are defined from
@@ -2261,8 +2262,9 @@ SimpleRegisterCoalescing::JoinIntervals(LiveInterval &LHS, LiveInterval &RHS,
         continue;
 
       // Figure out the value # from the LHS.
-      RHSValsDefinedFromLHS[VNI]=
-        LHS.getLiveRangeContaining(VNI->def.getPrevSlot())->valno;
+      LiveRange *lr = LHS.getLiveRangeContaining(VNI->def.getPrevSlot());
+      assert(lr && "Cannot find live range");
+      RHSValsDefinedFromLHS[VNI] = lr->valno;
     }
 
     LHSValNoAssignments.resize(LHS.getNumValNums(), -1);
