@@ -1,0 +1,26 @@
+CMAKE=cmake
+VCBUILD="$(VS80COMNTOOLS)\..\..\VC\VCPackages\vcbuild"
+JOBS=1
+
+#CMAKE="c:\program files\CMake 2.8\bin\cmake"
+#JOBS=4
+
+all:
+	@echo "usage: make [target]"
+	@echo
+	@echo "Available Targets:"
+	@echo "  configure: configure using CMake (inside OBJROOT)"
+	@echo "  build    : build using vcbuild.exe (inside OBJROOT)"
+	@echo "  install  : configure, build and install"
+
+configure:
+	cd "$(OBJROOT)"
+	$(CMAKE) -DCMAKE_INSTALL_PREFIX:=$(DSTROOT) -DLLVM_TARGETS_TO_BUILD:=X86 -G "Visual Studio 8 2005" $(SRCROOT)\src
+
+build: configure
+	cd "$(OBJROOT)"
+	$(VCBUILD) /M$(JOBS) /r LLVM.sln "Release|Win32"
+
+install: build
+	cd "$(OBJROOT)"
+	$(VCBUILD) /M$(JOBS) /r INSTALL.vcproj "Release|Win32"
