@@ -6,6 +6,8 @@
 // RUN: grep '__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__' %t | count 0 &&
 // RUN: clang-cc -triple armv6-apple-darwin9 -miphoneos-version-min=2.2 -dM -E -o %t - < /dev/null &&
 // RUN: grep '__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__' %t | grep '20200' | count 1 &&
+// RUN: clang-cc -triple armv6-apple-darwin9 -miphoneos-version-min=2.2.2 -dM -E -o %t - < /dev/null &&
+// RUN: grep '__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__' %t | grep '20200' | count 1 &&
 // RUN: clang-cc -triple i686-apple-darwin8 -dM -E -o %t - < /dev/null &&
 // RUN: grep '__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__' %t | count 0 &&
 // RUN: grep '__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__' %t | grep '1040' | count 1 &&

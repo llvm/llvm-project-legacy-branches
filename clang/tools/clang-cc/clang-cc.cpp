@@ -927,7 +927,8 @@ static void HandleIPhoneOSVersionMin(std::string &Triple) {
   // Remove the number.
   Triple.resize(DarwinNumIdx);
   
-  // Validate that IPhoneOSVersionMin is a 'version number', starting with [2-9].[0-9]
+  // Validate that IPhoneOSVersionMin is a 'version number', matching
+  // '[2-9].[0-9](.[0-9])?'.
   bool IPhoneOSVersionMinIsInvalid = false;
   int VersionNum = 0;
   if (IPhoneOSVersionMin.size() < 3 ||
@@ -944,13 +945,20 @@ static void HandleIPhoneOSVersionMin(std::string &Triple) {
     // Turn IPhoneOSVersionMin into a darwin number: e.g. 2.0 is 2 -> 9.2.
     Triple += "9." + llvm::itostr(VersionNum);
     
-    if (End[0] == '.' && isdigit(End[1]) && End[2] == '\0') {   // 2.2 is ok.
+    if (End[0] == '.' && isdigit(End[1])) { // 2.2 is ok.
       // Add the period piece (.2) to the end of the triple.  This gives us
       // something like ...-darwin9.2.2
-      Triple += End;
-    } else if (End[0] != '\0') { // "2.2" is ok.  2x is not.
-      IPhoneOSVersionMinIsInvalid = true;
+      Triple += End[0];
+      Triple += End[1];
+      End += 2;
     }
+
+    // Ignore final component, if any.
+    if (End[0] == '.' && isdigit(End[1]))
+      End += 2;
+
+    if (End[0] != '\0') // Check that there is no trailing garbage.
+      IPhoneOSVersionMinIsInvalid = true;
   }
   
   if (IPhoneOSVersionMinIsInvalid) {
