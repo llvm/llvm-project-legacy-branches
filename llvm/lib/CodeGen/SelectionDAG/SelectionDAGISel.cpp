@@ -446,7 +446,8 @@ void SelectionDAGISel::ShrinkDemandedOps() {
     Worklist.pop_back();
 
     if (N->use_empty() && N != CurDAG->getRoot().getNode()) {
-      CurDAG->DeleteNode(N);
+      if (N->getOpcode() != ISD::DELETED_NODE)
+        CurDAG->DeleteNode(N);
       continue;
     }
 
