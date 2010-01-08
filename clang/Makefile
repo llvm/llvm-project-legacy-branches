@@ -17,9 +17,9 @@ all:
 	@echo "  update-sources: update LLVM and Clang sources"
 
 update-sources:
-	echo svn rm -m 'Update.' $(SVN_CLANG)/src
-	echo svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
-	echo svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
+	svn rm -m 'Update.' $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
 
 ###
 # Debugging

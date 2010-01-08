@@ -1,5 +1,5 @@
 CMAKE=cmake
-VCBUILD="$(VS80COMNTOOLS)\..\..\VC\VCPackages\vcbuild"
+VCBUILD="$(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild"
 JOBS=1
 
 #CMAKE="c:\program files\CMake 2.8\bin\cmake"
@@ -15,7 +15,7 @@ all:
 
 configure:
 	cd "$(OBJROOT)"
-	$(CMAKE) -DCMAKE_INSTALL_PREFIX:=$(DSTROOT) -DLLVM_TARGETS_TO_BUILD:=X86 -G "Visual Studio 8 2005" $(SRCROOT)\src
+	$(CMAKE) -DCMAKE_INSTALL_PREFIX:=$(DSTROOT) -DLLVM_TARGETS_TO_BUILD:=X86 -G "Visual Studio 9 2008" $(SRCROOT)\src
 
 build: configure
 	cd "$(OBJROOT)"
