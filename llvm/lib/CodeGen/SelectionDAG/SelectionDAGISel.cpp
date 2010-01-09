@@ -424,6 +424,25 @@ void SelectionDAGISel::SelectBasicBlock(BasicBlock *LLVMBB,
   SDL->clear();
 }
 
+namespace {
+/// WorkListRemover - This class is a DAGUpdateListener that removes any deleted
+/// nodes from the worklist.
+class SDOPsWorkListRemover : public SelectionDAG::DAGUpdateListener {
+  SmallVector<SDNode*, 128> &Worklist;
+public:
+  SDOPsWorkListRemover(SmallVector<SDNode*, 128> &wl) : Worklist(wl) {}
+
+  virtual void NodeDeleted(SDNode *N, SDNode *E) {
+    Worklist.erase(std::remove(Worklist.begin(), Worklist.end(), N),
+                   Worklist.end());
+  }
+
+  virtual void NodeUpdated(SDNode *N) {
+    // Ignore updates.
+  }
+};
+}
+
 /// ShrinkDemandedOps - A late transformation pass that shrink expressions
 /// using TargetLowering::TargetLoweringOpt::ShrinkDemandedOp. It converts
 /// x+y to (VT)((SmallVT)x+(SmallVT)y) if the casts are free.
@@ -446,8 +465,7 @@ void SelectionDAGISel::ShrinkDemandedOps() {
     Worklist.pop_back();
 
     if (N->use_empty() && N != CurDAG->getRoot().getNode()) {
-      if (N->getOpcode() != ISD::DELETED_NODE)
-        CurDAG->DeleteNode(N);
+      CurDAG->DeleteNode(N);
       continue;
     }
 
@@ -473,7 +491,9 @@ void SelectionDAGISel::ShrinkDemandedOps() {
               errs() << '\n');
 
         Worklist.push_back(TLO.New.getNode());
-        CurDAG->ReplaceAllUsesOfValueWith(TLO.Old, TLO.New);
+
+        SDOPsWorkListRemover DeadNodes(Worklist);
+        CurDAG->ReplaceAllUsesOfValueWith(TLO.Old, TLO.New, &DeadNodes);
 
         if (TLO.Old.getNode()->use_empty()) {
           for (unsigned i = 0, e = TLO.Old.getNode()->getNumOperands();
@@ -481,15 +501,13 @@ void SelectionDAGISel::ShrinkDemandedOps() {
             SDNode *OpNode = TLO.Old.getNode()->getOperand(i).getNode(); 
             if (OpNode->hasOneUse()) {
               Worklist.erase(std::remove(Worklist.begin(), Worklist.end(),
-                                         OpNode),
-                             Worklist.end());
-              Worklist.push_back(TLO.Old.getNode()->getOperand(i).getNode());
+                                         OpNode), Worklist.end());
+              Worklist.push_back(OpNode);
             }
           }
 
           Worklist.erase(std::remove(Worklist.begin(), Worklist.end(),
-                                     TLO.Old.getNode()),
-                         Worklist.end());
+                                     TLO.Old.getNode()), Worklist.end());
           CurDAG->DeleteNode(TLO.Old.getNode());
         }
       }
