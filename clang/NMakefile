@@ -16,27 +16,52 @@ STAGEROOT=$(OBJROOT)\install
 
 BINDEST=$(DSTROOT)\AppleInternal\bin
 
-all:
+# Override default CMake flags to use static C run-time library.
+#
+# FIXME: Currently clang is miscompiled with the default release settings. For
+# now, force optimization off. :(
+CXXFLAGS=/MT /Od /Ob0 /D NDEBUG
+
+# Override CMake default libraries list, which is much larger than we need.
+CXXLIBS=kernel32.lib user32.lib advapi32.lib
+
+TARGET=Release|Win32
+
+all:: help
+
+help:
 	@echo "usage: make [target]"
 	@echo
 	@echo "Available Targets:"
+	@echo "  clean    : clean the build (removes OBJROOT)"
 	@echo "  configure: configure using CMake (inside OBJROOT)"
 	@echo "  build    : build using vcbuild.exe (inside OBJROOT)"
-	@echo "  install  : configure, build and install"
+	@echo "  test     : run the clang regression tests"
+	@echo "  install  : configure, build, test and install"
+
+clean:
+	del /s/q "$(OBJROOT)"
 
 configure:
 	"$(CMAKE)" -E make_directory "$(OBJROOT)"
 	cd "$(OBJROOT)"
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
-	         -DLLVM_TARGETS_TO_BUILD:=X86 \
-	         -G "Visual Studio 9 2008" \
-	         "$(SRCROOT)\src"
+	           -DLLVM_TARGETS_TO_BUILD:=X86 \
+	           "-DCMAKE_CXX_FLAGS_RELEASE:STRING=$(CXXFLAGS)" \
+	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
+	           -G "Visual Studio 9 2008" \
+	           "$(SRCROOT)\src"
 
+# FIXME: Only build clang.
 build: configure
 	cd "$(OBJROOT)"
-	"$(VCBUILD)" /M$(JOBS) /r LLVM.sln "Release|Win32"
-	"$(VCBUILD)" /M$(JOBS) /r INSTALL.vcproj "Release|Win32"
+	"$(VCBUILD)" /M$(JOBS) LLVM.sln "$(TARGET)"
+	"$(VCBUILD)" /M$(JOBS) INSTALL.vcproj "$(TARGET)"
 
-install: build
+test: build
+	cd "$(OBJROOT)"
+	"$(VCBUILD)" /M$(JOBS) tools\clang\test\clang-test.vcproj "$(TARGET)"
+
+install: test
 	"$(CMAKE)" -E make_directory "$(BINDEST)"
 	xcopy /i/y "$(STAGEROOT)\bin\clang.exe" "$(BINDEST)"
