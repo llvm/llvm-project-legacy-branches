@@ -124,7 +124,9 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
           (TargetRegisterInfo::isPhysicalRegister(SrcReg) &&
            isARMLowRegister(SrcReg))) && "Unknown regclass!");
 
-  if (RC == ARM::tGPRRegisterClass) {
+  if (RC == ARM::tGPRRegisterClass ||
+      (TargetRegisterInfo::isPhysicalRegister(SrcReg) &&
+       isARMLowRegister(SrcReg))) {
     MachineFunction &MF = *MBB.getParent();
     MachineFrameInfo &MFI = *MF.getFrameInfo();
     MachineMemOperand *MMO =
@@ -149,7 +151,9 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
           (TargetRegisterInfo::isPhysicalRegister(DestReg) &&
            isARMLowRegister(DestReg))) && "Unknown regclass!");
 
-  if (RC == ARM::tGPRRegisterClass) {
+  if (RC == ARM::tGPRRegisterClass ||
+      (TargetRegisterInfo::isPhysicalRegister(DestReg) &&
+       isARMLowRegister(DestReg))) {
     MachineFunction &MF = *MBB.getParent();
     MachineFrameInfo &MFI = *MF.getFrameInfo();
     MachineMemOperand *MMO =
