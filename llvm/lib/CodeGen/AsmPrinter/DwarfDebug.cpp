@@ -1826,7 +1826,8 @@ void DwarfDebug::endModule() {
     DIE *NDie = ModuleCU->getDIE(N);
     if (!NDie) continue;
     addDIEEntry(SPDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
-    addDIEEntry(NDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
+    // FIXME - This is not the correct approach.
+    // addDIEEntry(NDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
   }
 
   // Standard sections final addresses.
