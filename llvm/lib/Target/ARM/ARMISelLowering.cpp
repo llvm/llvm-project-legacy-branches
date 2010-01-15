@@ -3140,8 +3140,6 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   unsigned incr = MI->getOperand(2).getReg();
   DebugLoc dl = MI->getDebugLoc();
 
-  F->DeleteMachineInstr(MI);   // The instruction is gone now.
-
   bool isThumb2 = Subtarget->isThumb2();
   unsigned ldrOpc, strOpc;
   switch (Size) {
@@ -3208,6 +3206,9 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   //  exitMBB:
   //   ...
   BB = exitMBB;
+
+  F->DeleteMachineInstr(MI);   // The instruction is gone now.
+
   return BB;
 }
 
