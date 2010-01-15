@@ -3121,6 +3121,9 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
   //  exitMBB:
   //   ...
   BB = exitMBB;
+
+  MF->DeleteMachineInstr(MI);   // The instruction is gone now.
+
   return BB;
 }
 
@@ -3131,7 +3134,7 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
 
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
-  MachineFunction *F = BB->getParent();
+  MachineFunction *MF = BB->getParent();
   MachineFunction::iterator It = BB;
   ++It;
 
@@ -3158,13 +3161,13 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
     break;
   }
 
-  MachineBasicBlock *loopMBB = F->CreateMachineBasicBlock(LLVM_BB);
-  MachineBasicBlock *exitMBB = F->CreateMachineBasicBlock(LLVM_BB);
-  F->insert(It, loopMBB);
-  F->insert(It, exitMBB);
+  MachineBasicBlock *loopMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+  MachineBasicBlock *exitMBB = MF->CreateMachineBasicBlock(LLVM_BB);
+  MF->insert(It, loopMBB);
+  MF->insert(It, exitMBB);
   exitMBB->transferSuccessors(BB);
 
-  MachineRegisterInfo &RegInfo = F->getRegInfo();
+  MachineRegisterInfo &RegInfo = MF->getRegInfo();
   unsigned scratch = RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
   unsigned scratch2 = (!BinOpcode) ? incr :
     RegInfo.createVirtualRegister(ARM::GPRRegisterClass);
@@ -3207,7 +3210,7 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   //   ...
   BB = exitMBB;
 
-  F->DeleteMachineInstr(MI);   // The instruction is gone now.
+  MF->DeleteMachineInstr(MI);   // The instruction is gone now.
 
   return BB;
 }
