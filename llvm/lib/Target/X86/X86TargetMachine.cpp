@@ -240,3 +240,10 @@ bool X86TargetMachine::addSimpleCodeEmitter(PassManagerBase &PM,
   PM.add(createX86ObjectCodeEmitterPass(*this, OCE));
   return false;
 }
+
+DwarfLSDAEncoding::Encoding X86TargetMachine::getLSDAEncoding() const {
+  if (Subtarget.isTargetDarwin() && Subtarget.getDarwinVers() > 10)
+    return DwarfLSDAEncoding::FourByte;
+
+  return DwarfLSDAEncoding::Default;
+}
