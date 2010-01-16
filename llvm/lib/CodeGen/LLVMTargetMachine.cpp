@@ -37,6 +37,8 @@ static cl::opt<bool> DisableBranchFold("disable-branch-fold", cl::Hidden,
     cl::desc("Disable branch folding"));
 static cl::opt<bool> DisableTailDuplicate("disable-tail-duplicate", cl::Hidden,
     cl::desc("Disable tail duplication"));
+static cl::opt<bool> DisableEarlyTailDup("disable-early-taildup", cl::Hidden,
+    cl::desc("Disable pre-register allocation tail duplication"));
 static cl::opt<bool> DisableCodePlace("disable-code-place", cl::Hidden,
     cl::desc("Disable code placement"));
 static cl::opt<bool> DisableSSC("disable-ssc", cl::Hidden,
@@ -67,9 +69,6 @@ static cl::opt<bool> VerifyMachineCode("verify-machineinstrs", cl::Hidden,
 static cl::opt<cl::boolOrDefault>
 EnableFastISelOption("fast-isel", cl::Hidden,
   cl::desc("Enable the \"fast\" instruction selector"));
-
-static cl::opt<bool> PreAllocTailDup("pre-regalloc-taildup", cl::Hidden,
-    cl::desc("Pre-register allocation tail duplication"));
 
 LLVMTargetMachine::LLVMTargetMachine(const Target &T,
                                      const std::string &TargetTriple)
@@ -299,8 +298,7 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   }
 
   // Pre-ra tail duplication.
-  if (OptLevel != CodeGenOpt::None &&
-      !DisableTailDuplicate && PreAllocTailDup) {
+  if (OptLevel != CodeGenOpt::None && !DisableEarlyTailDup) {
     PM.add(createTailDuplicatePass(true));
     printAndVerify(PM, "After Pre-RegAlloc TailDuplicate",
                    /* allowDoubleDefs= */ true);
