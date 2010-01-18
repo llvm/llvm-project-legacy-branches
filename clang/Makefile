@@ -117,6 +117,9 @@ post-install: $(Post_Install_Targets)
 post-install-rootlinks:
 	$(MKDIR) -p $(DSTROOT)/usr/bin
 	ln -sf ../../$(Install_Prefix)/bin/clang $(DSTROOT)/usr/bin/clang
+	if [ -f ../../$(Install_Prefix)/bin/clang++ ]; then \
+	  ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
+	fi
 	$(MKDIR) -p $(DSTROOT)/usr/share/man/man1/
 	cp $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
 
