@@ -1,9 +1,6 @@
 CMAKE=cmake
 VCBUILD=$(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild
-JOBS=1
-
-#CMAKE=c:\program files\CMake 2.8\bin\cmake
-#JOBS=4
+JOBS=$(NUMBER_OF_PROCESSORS)
 
 ###
 
