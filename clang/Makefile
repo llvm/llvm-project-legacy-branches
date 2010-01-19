@@ -7,14 +7,77 @@ Project                := objc_translate
 
 ##
 
+CMAKE := $(CMAKE)
+ifeq ($(strip $(CMAKE)),)
+CMAKE := cmake
+endif
+
+VCBUILD := $(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild
+JOBS := $(NUMBER_OF_PROCESSORS)
+
+##
+
 SVN_BASE = $(shell svn info | sed -n "s/^URL: //; s,/llvm-project/.*$$,/llvm-project,p")
 SVN_CLANG = $(shell svn info | sed -n "s/^URL: //p")
 
-all:
+# Instead of jiggling the project files to only install the bits we want, we do
+# a real install into the OBJROOT, and then copy the exact bits we want to the
+# DSTROOT.
+#
+# It would be nice to not build unnecessary stuff though, to save build time.
+STAGEROOT := $(OBJROOT)\install
+
+BINDEST := $(DSTROOT)\AppleInternal\bin
+
+# Override default CMake flags to use static C run-time library.
+#
+# FIXME: Currently clang is miscompiled with the default release settings. For
+# now, force optimization off. :(
+CXXFLAGS := /MT /Od /Ob0 /D NDEBUG
+
+# Override CMake default libraries list, which is much larger than we need.
+CXXLIBS := kernel32.lib user32.lib advapi32.lib
+
+TARGET := Release|Win32
+
+all:: help
+
+help:
 	@echo "usage: make [target]"
 	@echo ""
 	@echo "Available Targets:"
+	@echo "  clean    : clean the build (removes OBJROOT)"
+	@echo "  configure: configure using CMake (inside OBJROOT)"
+	@echo "  build    : build using vcbuild.exe (inside OBJROOT)"
+	@echo "  test     : run the clang regression tests"
+	@echo "  install  : configure, build, test and install"
+	@echo ""
 	@echo "  update-sources: update LLVM and Clang sources"
+
+clean:
+	del /s/q "$(OBJROOT)"
+
+configure:
+	"$(CMAKE)" -E make_directory "$(OBJROOT)"
+	cd "$(OBJROOT)" && \
+	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
+	           -DLLVM_TARGETS_TO_BUILD:=X86 \
+	           "-DCMAKE_CXX_FLAGS_RELEASE:STRING=$(CXXFLAGS)" \
+	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
+	           -G "Visual Studio 9 2008" \
+	           "$(SRCROOT)\src"
+
+# FIXME: Only build clang.
+build: configure
+	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\LLVM.sln "$(TARGET)"
+	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\INSTALL.vcproj "$(TARGET)"
+
+test: build
+	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\tools\clang\test\clang-test.vcproj "$(TARGET)"
+
+install: test
+	"$(CMAKE)" -E make_directory "$(BINDEST)"
+	xcopy /i/y "$(STAGEROOT)\bin\clang.exe" "$(BINDEST)"
 
 update-sources:
 	svn rm -m 'Update.' $(SVN_CLANG)/src
