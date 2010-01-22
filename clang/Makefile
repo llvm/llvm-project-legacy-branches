@@ -142,6 +142,7 @@ update-clang-branch:
 	  svn rm -m 'Update.' $(SVN_CLANG)/clang; \
 	  svn cp -m 'Update.' $(SVN_BASE)/llvm/tags/Apple/llvmCore-$(LLVM_VERSION) $(SVN_CLANG)/clang; \
 	  svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/Dib $(SVN_CLANG)/clang/tools/clang; \
+	  svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/branches/Apple/Dib $(SVN_CLANG)/clang/projects/compiler-rt; \
 	else \
 	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
 	fi
@@ -150,6 +151,7 @@ update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
 
 update-to-tot:
 	rm -rf clang
