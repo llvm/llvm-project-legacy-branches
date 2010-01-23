@@ -127,6 +127,9 @@ ifneq ($(GnuNoInstall),YES)
 	done
 	$(_v) rm -rf $(DSTROOT)
 	$(_v) mkdir -p $(DSTROOT)
+	$(_v) for arch in $(filter-out $(firstword $(RC_ARCHS)),$(RC_ARCHS)); do \
+		rm -rf $(BuildDirectory)/install-$$arch; \
+	done
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(BuildDirectory)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
