@@ -2065,9 +2065,8 @@ unsigned CastInst::isEliminableCastPair(
       return secondOp;
     case 3: 
       // no-op cast in second op implies firstOp as long as the DestTy 
-      // is integer and we are not converting between a vector and a
-      // non vector type
-      if (SrcTy->getTypeID() != Type::VectorTyID && DstTy->isInteger())
+      // is integer
+      if (DstTy->isInteger())
         return firstOp;
       return 0;
     case 4:
