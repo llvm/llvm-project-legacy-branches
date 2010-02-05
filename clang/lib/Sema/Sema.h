@@ -3245,6 +3245,9 @@ public:
   /// variables.
   LocalInstantiationScope *CurrentInstantiationScope;
 
+  /// \brief The number of typos corrected by CorrectTypo.
+  unsigned TyposCorrected;
+
   /// \brief An entity for which implicit template instantiation is required.
   ///
   /// The source location associated with the declaration is the first place in
