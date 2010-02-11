@@ -213,6 +213,9 @@ bool TwoAddressInstructionPass::Sink3AddrInstruction(MachineBasicBlock *MBB,
   unsigned NumVisited = 0;
   for (MachineBasicBlock::iterator I = llvm::next(OldPos); I != KillPos; ++I) {
     MachineInstr *OtherMI = I;
+    // DBG_VALUE cannot be counted against the limit.
+    if (OtherMI->isDebugValue())
+      continue;
     if (NumVisited > 30)  // FIXME: Arbitrary limit to reduce compile time cost.
       return false;
     ++NumVisited;
@@ -451,11 +454,11 @@ MachineInstr *findOnlyInterestingUse(unsigned Reg, MachineBasicBlock *MBB,
                                      const TargetInstrInfo *TII,
                                      bool &IsCopy,
                                      unsigned &DstReg, bool &IsDstPhys) {
-  MachineRegisterInfo::use_iterator UI = MRI->use_begin(Reg);
-  if (UI == MRI->use_end())
+  MachineRegisterInfo::use_nodbg_iterator UI = MRI->use_nodbg_begin(Reg);
+  if (UI == MRI->use_nodbg_end())
     return 0;
   MachineInstr &UseMI = *UI;
-  if (++UI != MRI->use_end())
+  if (++UI != MRI->use_nodbg_end())
     // More than one use.
     return 0;
   if (UseMI.getParent() != MBB)
@@ -923,6 +926,10 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
     for (MachineBasicBlock::iterator mi = mbbi->begin(), me = mbbi->end();
          mi != me; ) {
       MachineBasicBlock::iterator nmi = llvm::next(mi);
+      if (mi->isDebugValue()) {
+        mi = nmi;
+        continue;
+      }
       const TargetInstrDesc &TID = mi->getDesc();
       bool FirstTied = true;
 

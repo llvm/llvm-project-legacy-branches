@@ -220,7 +220,6 @@ public:
 
   bool isDebug() const {
     assert(isReg() && "Wrong MachineOperand accessor");
-    assert(!isDef() && "Wrong MachineOperand accessor");
     return IsDebug;
   }
 
@@ -246,11 +245,13 @@ public:
   
   void setIsUse(bool Val = true) {
     assert(isReg() && "Wrong MachineOperand accessor");
+    assert((Val || !isDebug()) && "Marking a debug operation as def");
     IsDef = !Val;
   }
   
   void setIsDef(bool Val = true) {
     assert(isReg() && "Wrong MachineOperand accessor");
+    assert((!Val || !isDebug()) && "Marking a debug operation as def");
     IsDef = Val;
   }
 
@@ -261,6 +262,7 @@ public:
 
   void setIsKill(bool Val = true) {
     assert(isReg() && !IsDef && "Wrong MachineOperand accessor");
+    assert((!Val || !isDebug()) && "Marking a debug operation as kill");
     IsKill = Val;
   }
   
@@ -376,7 +378,7 @@ public:
   /// the setReg method should be used.
   void ChangeToRegister(unsigned Reg, bool isDef, bool isImp = false,
                         bool isKill = false, bool isDead = false,
-                        bool isUndef = false);
+                        bool isUndef = false, bool isDebug = false);
   
   //===--------------------------------------------------------------------===//
   // Construction methods.
