@@ -1404,9 +1404,9 @@ PCHReader::ReadPCHBlock() {
       break;
         
     case pch::VERSION_CONTROL_BRANCH_REVISION: {
-      llvm::StringRef CurBranch = getClangFullRepositoryVersion();
+      const std::string &CurBranch = getClangFullRepositoryVersion();
       llvm::StringRef PCHBranch(BlobStart, BlobLen);
-      if (CurBranch != PCHBranch) {
+      if (llvm::StringRef(CurBranch) != PCHBranch) {
         Diag(diag::warn_pch_different_branch) << PCHBranch << CurBranch;
         return IgnorePCH;
       }

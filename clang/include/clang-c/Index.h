@@ -1260,7 +1260,7 @@ void clang_disposeCodeCompleteResults(CXCodeCompleteResults *Results);
  * \brief Return a version string, suitable for showing to a user, but not
  *        intended to be parsed (the format is not guaranteed to be stable).
  */
-CINDEX_LINKAGE const char *clang_getClangVersion();
+CINDEX_LINKAGE CXString clang_getClangVersion();
 
 /**
  * @}
