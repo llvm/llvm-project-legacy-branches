@@ -31,10 +31,9 @@ cond.false:
   ret i8* %2;
 }
 
-; FIXME: Should be ret i32 0
 define i32 @f() nounwind {
 ; CHECK: @f
-; CHECK-NEXT: llvm.objectsize.i32
+; CHECK-NEXT: ret i32 0
   %1 = call i32 @llvm.objectsize.i32(i8* getelementptr ([60 x i8]* @a, i32 1, i32 0), i1 false)
   ret i32 %1
 }
@@ -47,6 +46,21 @@ define i1 @baz() nounwind {
   %1 = tail call i32 @llvm.objectsize.i32(i8* getelementptr inbounds ([0 x i8]* @window, i32 0, i32 0), i1 false)
   %2 = icmp eq i32 %1, -1
   ret i1 %2
+}
+
+define void @test1(i8* %q, i32 %x) nounwind noinline {
+; CHECK: @test1
+; CHECK: objectsize.i32
+entry:
+  %0 = call i32 @llvm.objectsize.i32(i8* getelementptr inbounds ([0 x i8]* @window, i32 0, i32 10), i1 false) ; <i64> [#uses=1]
+  %1 = icmp eq i32 %0, -1                         ; <i1> [#uses=1]
+  br i1 %1, label %"47", label %"46"
+
+"46":                                             ; preds = %entry
+  unreachable
+
+"47":                                             ; preds = %entry
+  unreachable
 }
 
 declare i32 @llvm.objectsize.i32(i8*, i1) nounwind readonly
