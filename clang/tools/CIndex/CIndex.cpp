@@ -1910,7 +1910,8 @@ void clang_disposeString(CXString string) {
 extern "C" {
 
 const CXString clang_getClangVersion() {
-  return CIndexer::createCXString(getClangFullVersion(), true);
+  const std::string &s = getClangFullVersion();
+  return CIndexer::createCXString(s.c_str(), true);
 }
 
 } // end: extern "C"
