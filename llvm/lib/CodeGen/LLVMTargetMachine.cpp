@@ -314,6 +314,10 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   printAndVerify(PM, "After Instruction Selection",
                  /* allowDoubleDefs= */ true);
 
+  // Optimize PHIs before DCE: removing dead PHI cycles may make more
+  // instructions dead.
+  if (OptLevel != CodeGenOpt::None)
+    PM.add(createOptimizePHIsPass());
 
   // Delete dead machine instructions regardless of optimization level.
   PM.add(createDeadMachineInstructionElimPass());
@@ -321,7 +325,6 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
                  /* allowDoubleDefs= */ true);
 
   if (OptLevel != CodeGenOpt::None) {
-    PM.add(createOptimizePHIsPass());
     if (!DisableMachineLICM)
       PM.add(createMachineLICMPass());
     if (!DisableMachineSink)
