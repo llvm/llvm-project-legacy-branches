@@ -321,6 +321,7 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
                  /* allowDoubleDefs= */ true);
 
   if (OptLevel != CodeGenOpt::None) {
+    PM.add(createOptimizePHIsPass());
     if (!DisableMachineLICM)
       PM.add(createMachineLICMPass());
     if (!DisableMachineSink)
