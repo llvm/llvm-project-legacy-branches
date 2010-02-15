@@ -1151,7 +1151,7 @@ getPICJumpTableRelocBaseExpr(const MachineFunction *MF, unsigned JTI,
 
 /// getFunctionAlignment - Return the Log2 alignment of this function.
 unsigned X86TargetLowering::getFunctionAlignment(const Function *F) const {
-  return F->hasFnAttr(Attribute::OptimizeForSize) ? 0 : 4;
+  return F->hasFnAttr(Attribute::OptimizeForSize) ? 1 : 4;
 }
 
 //===----------------------------------------------------------------------===//
