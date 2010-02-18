@@ -223,3 +223,17 @@ void test12() {
       break;
   }
 }
+
+// <rdar://problem/7658121>
+enum {
+  EC0 = 0xFFFF0000,
+  EC1 = 0xFFFF0001,
+};
+
+int test14(int a) {
+  switch(a) {
+  case EC0: return 0;
+  case EC1: return 1;
+  }
+  return 0;
+}
