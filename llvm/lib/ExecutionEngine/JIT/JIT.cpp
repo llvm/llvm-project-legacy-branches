@@ -18,6 +18,7 @@
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/Instructions.h"
+#include "llvm/ModuleProvider.h"
 #include "llvm/CodeGen/JITCodeEmitter.h"
 #include "llvm/CodeGen/MachineCodeInfo.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
@@ -189,6 +190,15 @@ void DarwinRegisterFrame(void* FrameBegin) {
 }
 #endif // __APPLE__
 #endif // __GNUC__
+
+ExecutionEngine *ExecutionEngine::createJIT(ModuleProvider *MP,
+                                            std::string *ErrorStr,
+                                            JITMemoryManager *JMM,
+                                            CodeGenOpt::Level OptLevel,
+                                            bool GVsWithCode,
+					    CodeModel::Model CMM) {
+  return createJIT(MP->getModule(), ErrorStr, JMM, OptLevel, GVsWithCode, CMM);
+}
 
 /// createJIT - This is the factory method for creating a JIT for the current
 /// machine, it does not fall back to the interpreter.  This takes ownership

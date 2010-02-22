@@ -18,6 +18,7 @@
 #include "llvm/InlineAsm.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Module.h"
+#include "llvm/ModuleProvider.h"
 #include "llvm/Operator.h"
 #include "llvm/AutoUpgrade.h"
 #include "llvm/ADT/SmallString.h"
@@ -2394,8 +2395,120 @@ bool BitcodeReader::MaterializeModule(Module *M, std::string *ErrInfo) {
 
 
 //===----------------------------------------------------------------------===//
+// ModuleProvider implementation
+//===----------------------------------------------------------------------===//
+
+
+bool BitcodeReader::materializeFunction(Function *F, std::string *ErrInfo) {
+  // If it already is material, ignore the request.
+  if (!F || !F->isMaterializable()) return false;
+
+  DenseMap<Function*, uint64_t>::iterator DFII = DeferredFunctionInfo.find(F);
+  assert(DFII != DeferredFunctionInfo.end() && "Deferred function not found!");
+
+  // Move the bit stream to the saved position of the deferred function body.
+  Stream.JumpToBit(DFII->second);
+
+  if (ParseFunctionBody(F)) {
+    if (ErrInfo) *ErrInfo = ErrorString;
+    return true;
+  }
+
+  // Upgrade any old intrinsic calls in the function.
+  for (UpgradedIntrinsicMap::iterator I = UpgradedIntrinsics.begin(),
+       E = UpgradedIntrinsics.end(); I != E; ++I) {
+    if (I->first != I->second) {
+      for (Value::use_iterator UI = I->first->use_begin(),
+           UE = I->first->use_end(); UI != UE; ) {
+        if (CallInst* CI = dyn_cast<CallInst>(*UI++))
+          UpgradeIntrinsicCall(CI, I->second);
+      }
+    }
+  }
+
+  return false;
+}
+
+void BitcodeReader::dematerializeFunction(Function *F) {
+  // If this function isn't dematerializable, this is a noop.
+  if (!F || !isDematerializable(F))
+    return;
+
+  assert(DeferredFunctionInfo.count(F) && "No info to read function later?");
+
+  // Just forget the function body, we can remat it later.
+  F->deleteBody();
+}
+
+
+Module *BitcodeReader::materializeModule(std::string *ErrInfo) {
+  // Iterate over the module, deserializing any functions that are still on
+  // disk.
+  for (Module::iterator F = TheModule->begin(), E = TheModule->end();
+       F != E; ++F)
+    if (F->isMaterializable() &&
+        Materialize(F, ErrInfo))
+      return 0;
+
+  // Upgrade any intrinsic calls that slipped through (should not happen!) and
+  // delete the old functions to clean up. We can't do this unless the entire
+  // module is materialized because there could always be another function body
+  // with calls to the old function.
+  for (std::vector<std::pair<Function*, Function*> >::iterator I =
+       UpgradedIntrinsics.begin(), E = UpgradedIntrinsics.end(); I != E; ++I) {
+    if (I->first != I->second) {
+      for (Value::use_iterator UI = I->first->use_begin(),
+           UE = I->first->use_end(); UI != UE; ) {
+        if (CallInst* CI = dyn_cast<CallInst>(*UI++))
+          UpgradeIntrinsicCall(CI, I->second);
+      }
+      if (!I->first->use_empty())
+        I->first->replaceAllUsesWith(I->second);
+      I->first->eraseFromParent();
+    }
+  }
+  std::vector<std::pair<Function*, Function*> >().swap(UpgradedIntrinsics);
+
+  // Check debug info intrinsics.
+  CheckDebugInfoIntrinsics(TheModule);
+
+  return false;
+}
+
+
+/// This method is provided by the parent ModuleProvde class and overriden
+/// here. It simply releases the module from its provided and frees up our
+/// state.
+/// @brief Release our hold on the generated module
+Module *BitcodeReader::releaseModule(std::string *ErrInfo) {
+  // Since we're losing control of this Module, we must hand it back complete
+  Module *M = ModuleProvider::releaseModule(ErrInfo);
+  FreeState();
+  return M;
+}
+
+
+//===----------------------------------------------------------------------===//
 // External interface
 //===----------------------------------------------------------------------===//
+
+/// getBitcodeModuleProvider - lazy function-at-a-time loading from a file.
+///
+ModuleProvider *llvm::getBitcodeModuleProvider(MemoryBuffer *Buffer,
+                                               LLVMContext& Context,
+                                               std::string *ErrMsg) {
+  BitcodeReader *R = new BitcodeReader(Buffer, Context);
+  if (R->ParseBitcodeInto(0)) {
+    if (ErrMsg)
+      *ErrMsg = R->getErrorString();
+
+    // Don't let the BitcodeReader dtor delete 'Buffer'.
+    R->releaseMemoryBuffer();
+    delete R;
+    return 0;
+  }
+  return R;
+}
 
 /// getLazyBitcodeModule - lazy function-at-a-time loading from a file.
 ///

@@ -37,6 +37,7 @@ class JITEventListener;
 class JITMemoryManager;
 class MachineCodeInfo;
 class Module;
+class ModuleProvider;
 class MutexGuard;
 class TargetData;
 class Type;
@@ -168,6 +169,15 @@ public:
   ///
   /// Clients should make sure to initialize targets prior to calling this
   /// function.
+  static ExecutionEngine *createJIT(ModuleProvider *MP,
+                                    std::string *ErrorStr = 0,
+                                    JITMemoryManager *JMM = 0,
+                                    CodeGenOpt::Level OptLevel =
+                                      CodeGenOpt::Default,
+                                    bool GVsWithCode = true,
+				    CodeModel::Model CMM =
+				      CodeModel::Default);
+
   static ExecutionEngine *createJIT(Module *M,
                                     std::string *ErrorStr = 0,
                                     JITMemoryManager *JMM = 0,

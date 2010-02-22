@@ -14,6 +14,7 @@
 #ifndef BITCODE_READER_H
 #define BITCODE_READER_H
 
+#include "llvm/ModuleProvider.h"
 #include "llvm/GVMaterializer.h"
 #include "llvm/Attributes.h"
 #include "llvm/Type.h"
@@ -121,7 +122,7 @@ public:
   void AssignValue(Value *V, unsigned Idx);
 };
 
-class BitcodeReader : public GVMaterializer {
+class BitcodeReader : public GVMaterializer, public ModuleProvider {
   LLVMContext &Context;
   Module *TheModule;
   MemoryBuffer *Buffer;
@@ -183,10 +184,22 @@ public:
   
   void FreeState();
   
+  /// releaseMemoryBuffer - This causes the reader to completely forget about
+  /// the memory buffer it contains, which prevents the buffer from being
+  /// destroyed when it is deleted.
+  void releaseMemoryBuffer() {
+    Buffer = 0;
+  }
+  
   /// setBufferOwned - If this is true, the reader will destroy the MemoryBuffer
   /// when the reader is destroyed.
   void setBufferOwned(bool Owned) { BufferOwned = Owned; }
   
+  virtual bool materializeFunction(Function *F, std::string *ErrInfo = 0);
+  virtual Module *materializeModule(std::string *ErrInfo = 0);
+  virtual void dematerializeFunction(Function *F);
+  virtual Module *releaseModule(std::string *ErrInfo = 0);
+
   virtual bool isMaterializable(const GlobalValue *GV) const;
   virtual bool isDematerializable(const GlobalValue *GV) const;
   virtual bool Materialize(GlobalValue *GV, std::string *ErrInfo = 0);
