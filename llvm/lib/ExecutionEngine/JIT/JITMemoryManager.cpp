@@ -296,6 +296,7 @@ namespace {
     MemoryRangeHeader *CurBlock;
 
     uint8_t *GOTBase;     // Target Specific reserved memory
+    void *DlsymTable;     // Stub external symbol information
   public:
     DefaultJITMemoryManager();
     ~DefaultJITMemoryManager();
@@ -317,6 +318,7 @@ namespace {
     static const size_t DefaultSizeThreshold;
 
     void AllocateGOT();
+    void SetDlsymTable(void *);
 
     // Testing methods.
     virtual bool CheckInvariants(std::string &ErrorStr);
@@ -467,6 +469,10 @@ namespace {
       return GOTBase;
     }
 
+    void *getDlsymTable() const {
+      return DlsymTable;
+    }
+
     void deallocateBlock(void *Block) {
       // Find the block that is allocated for this function.
       MemoryRangeHeader *MemRange = static_cast<MemoryRangeHeader*>(Block) - 1;
@@ -593,12 +599,17 @@ DefaultJITMemoryManager::DefaultJITMemoryManager()
   FreeMemoryList = Mem0;
 
   GOTBase = NULL;
+  DlsymTable = NULL;
 }
 
 void DefaultJITMemoryManager::AllocateGOT() {
   assert(GOTBase == 0 && "Cannot allocate the got multiple times");
   GOTBase = new uint8_t[sizeof(void*) * 8192];
   HasGOT = true;
+}
+
+void DefaultJITMemoryManager::SetDlsymTable(void *ptr) {
+  DlsymTable = ptr;
 }
 
 DefaultJITMemoryManager::~DefaultJITMemoryManager() {
