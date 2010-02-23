@@ -1559,6 +1559,10 @@ bool BitcodeReader::ParseBitcodeInto(Module *M) {
       if (TheModule)
         return Error("Multiple MODULE_BLOCKs in same stream");
       TheModule = M;
+      if (!TheModule) {
+        TheModule = new Module(Buffer->getBufferIdentifier(), Context);
+        TheModule->setMaterializer(this);
+      }
       if (ParseModule())
         return true;
       break;

@@ -124,7 +124,6 @@ public:
 
 class BitcodeReader : public GVMaterializer, public ModuleProvider {
   LLVMContext &Context;
-  Module *TheModule;
   MemoryBuffer *Buffer;
   bool BufferOwned;
   BitstreamReader StreamFile;
@@ -174,7 +173,7 @@ class BitcodeReader : public GVMaterializer, public ModuleProvider {
   
 public:
   explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C)
-    : Context(C), TheModule(0), Buffer(buffer), BufferOwned(false),
+    : Context(C), Buffer(buffer), BufferOwned(false),
       ErrorString(0), ValueList(C), MDValueList(C) {
     HasReversedFunctionsWithBodies = false;
   }

@@ -18,6 +18,7 @@
 #include <vector>
 #include <map>
 #include <string>
+#include "llvm/ModuleProvider.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/ValueMap.h"
@@ -37,7 +38,6 @@ class JITEventListener;
 class JITMemoryManager;
 class MachineCodeInfo;
 class Module;
-class ModuleProvider;
 class MutexGuard;
 class TargetData;
 class Type;
@@ -188,6 +188,13 @@ public:
 				    CodeModel::Model CMM =
 				      CodeModel::Default);
 
+  /// addModuleProvider - Add a ModuleProvider to the list of modules that we
+  /// can JIT from.  Note that this takes ownership of the ModuleProvider: when
+  /// the ExecutionEngine is destroyed, it destroys the MP as well.
+  virtual void addModuleProvider(ModuleProvider *P) {
+    Modules.push_back(P->getModule());
+  }
+  
   /// addModule - Add a Module to the list of modules that we can JIT from.
   /// Note that this takes ownership of the Module: when the ExecutionEngine is
   /// destroyed, it destroys the Module as well.
@@ -199,6 +206,13 @@ public:
 
   const TargetData *getTargetData() const { return TD; }
 
+
+
+  /// removeModuleProvider - Remove a ModuleProvider from the list of modules.
+  /// Relases the Module from the ModuleProvider, materializing it in the
+  /// process, and returns the materialized Module.
+  virtual Module* removeModuleProvider(ModuleProvider *P,
+                                       std::string *ErrInfo = 0);
 
   /// removeModule - Remove a Module from the list of modules.  Returns true if
   /// M is found.
@@ -456,6 +470,13 @@ class EngineBuilder {
   }
 
  public:
+  /// EngineBuilder - Constructor for EngineBuilder.  If create() is called and
+  /// is successful, the created engine takes ownership of the module
+  /// provider.
+  EngineBuilder(ModuleProvider *mp) : M(mp->getModule()) {
+    InitEngine();
+  }
+
   /// EngineBuilder - Constructor for EngineBuilder.  If create() is called and
   /// is successful, the created engine takes ownership of the module.
   EngineBuilder(Module *m) : M(m) {
