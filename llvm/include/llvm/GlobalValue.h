@@ -173,6 +173,8 @@ public:
   /// to see if the function has been read in yet or not.
   bool isMaterializable() const;
 
+  bool hasNotBeenReadFromBitcode() const { return isMaterializable(); }
+
   /// isDematerializable - Returns true if this function was loaded from a
   /// GVMaterializer that's still attached to its Module and that knows how to
   /// dematerialize the function.
