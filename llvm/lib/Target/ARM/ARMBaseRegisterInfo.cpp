@@ -1085,6 +1085,15 @@ hasReservedCallFrame(MachineFunction &MF) const {
   return !MF.getFrameInfo()->hasVarSizedObjects();
 }
 
+// canSimplifyCallFramePseudos - If there is a reserved call frame, the
+// call frame pseudos can be simplified. Unlike most targets, having a FP
+// is not sufficient here since we still may reference some objects via SP
+// even when FP is available in Thumb2 mode.
+bool ARMBaseRegisterInfo::
+canSimplifyCallFramePseudos(MachineFunction &MF) const {
+  return hasReservedCallFrame(MF) || MF.getFrameInfo()->hasVarSizedObjects();
+}
+
 static void
 emitSPUpdate(bool isARM,
              MachineBasicBlock &MBB, MachineBasicBlock::iterator &MBBI,
@@ -1119,13 +1128,14 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
 
       ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
       assert(!AFI->isThumb1OnlyFunction() &&
-             "This eliminateCallFramePseudoInstr does not suppor Thumb1!");
+             "This eliminateCallFramePseudoInstr does not support Thumb1!");
       bool isARM = !AFI->isThumbFunction();
 
       // Replace the pseudo instruction with a new instruction...
       unsigned Opc = Old->getOpcode();
-      ARMCC::CondCodes Pred = (ARMCC::CondCodes)Old->getOperand(1).getImm();
-      // FIXME: Thumb2 version of ADJCALLSTACKUP and ADJCALLSTACKDOWN?
+      int PIdx = Old->findFirstPredOperandIdx();
+      ARMCC::CondCodes Pred = (PIdx == -1)
+        ? ARMCC::AL : (ARMCC::CondCodes)Old->getOperand(PIdx).getImm();
       if (Opc == ARM::ADJCALLSTACKDOWN || Opc == ARM::tADJCALLSTACKDOWN) {
         // Note: PredReg is operand 2 for ADJCALLSTACKDOWN.
         unsigned PredReg = Old->getOperand(2).getReg();
@@ -1149,7 +1159,6 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineInstr &MI = *II;
   MachineBasicBlock &MBB = *MI.getParent();
   MachineFunction &MF = *MBB.getParent();
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   assert(!AFI->isThumb1OnlyFunction() &&
          "This eliminateFrameIndex does not support Thumb1!");
@@ -1160,12 +1169,12 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   }
 
   int FrameIndex = MI.getOperand(i).getIndex();
-  int Offset = MFI->getObjectOffset(FrameIndex) + MFI->getStackSize() + SPAdj;
   unsigned FrameReg;
 
-  Offset = getFrameIndexReference(MF, FrameIndex, FrameReg);
+  int Offset = getFrameIndexReference(MF, FrameIndex, FrameReg);
   if (FrameReg != ARM::SP)
     SPAdj = 0;
+  Offset += SPAdj;
 
   // Modify MI as necessary to handle as much of 'Offset' as possible
   bool Done = false;
@@ -1256,7 +1265,7 @@ emitPrologue(MachineFunction &MF) const {
   MachineFrameInfo  *MFI = MF.getFrameInfo();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   assert(!AFI->isThumb1OnlyFunction() &&
-         "This emitPrologue does not suppor Thumb1!");
+         "This emitPrologue does not support Thumb1!");
   bool isARM = !AFI->isThumbFunction();
   unsigned VARegSaveSize = AFI->getVarArgsRegSaveSize();
   unsigned NumBytes = MFI->getStackSize();
@@ -1417,7 +1426,7 @@ emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const {
   MachineFrameInfo *MFI = MF.getFrameInfo();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   assert(!AFI->isThumb1OnlyFunction() &&
-         "This emitEpilogue does not suppor Thumb1!");
+         "This emitEpilogue does not support Thumb1!");
   bool isARM = !AFI->isThumbFunction();
 
   unsigned VARegSaveSize = AFI->getVarArgsRegSaveSize();
