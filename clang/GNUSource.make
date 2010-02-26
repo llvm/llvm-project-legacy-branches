@@ -128,7 +128,7 @@ ifneq ($(GnuNoInstall),YES)
 	$(_v) rm -rf $(DSTROOT)
 	$(_v) mkdir -p $(DSTROOT)
 	$(_v) for arch in $(filter-out $(firstword $(RC_ARCHS)),$(RC_ARCHS)); do \
-		rm -rf $(BuildDirectory)/install-$$arch/Developer/usr/lib/clang/*/lib; \
+		rm -rf $(BuildDirectory)/install-$$arch$(Install_Prefix)/lib/clang/*/lib; \
 	done
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(BuildDirectory)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
