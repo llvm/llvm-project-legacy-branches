@@ -8,23 +8,24 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass mulches exception handling code into a form adapted to code
-// generation.  Required if using dwarf exception handling.
+// generation. Required if using dwarf exception handling.
 //
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "dwarfehprepare"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/Analysis/Dominators.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Analysis/Dominators.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
+#include "llvm/ADT/Statistic.h"
 using namespace llvm;
 
 STATISTIC(NumLandingPadsSplit,     "Number of landing pads split");
@@ -39,6 +40,12 @@ namespace {
 
     // The eh.exception intrinsic.
     Function *ExceptionValueIntrinsic;
+
+    // The eh.selector intrinsic.
+    Function *SelectorIntrinsic;
+
+    // _Unwind_Resume_or_Rethrow call.
+    Constant *URoR;
 
     // _Unwind_Resume or the target equivalent.
     Constant *RewindFunction;
@@ -74,11 +81,125 @@ namespace {
         CreateExceptionValueCall(BB) : CreateValueLoad(BB);
     }
 
+    /// FarmCatchTypesAndFilterIDs - Get all of the catch types and filter IDs
+    /// from an eh.selector call.
+    void FarmCatchTypesAndFilterIDs(Instruction *Sel,
+                                    SmallVectorImpl<Value*> &CatchTys,
+                                    SmallVectorImpl<Value*> &FilterIDs,
+                                    Value *&CatchAll,
+                                    bool &CleanupSpecified);
+
+    /// MergeSelectors - Take two selectors and merge them: combine their catch
+    /// types, filter IDs, and whether it should act like a catch-all or
+    /// clean-up. The new selector is inserted before Sel1.
+    CallInst *MergeSelectors(Instruction *Sel1, Instruction *Sel2);
+
+    /// HandleURoRInvokes - Handle invokes of "_Unwind_Resume_or_Rethrow"
+    /// calls. The "unwind" part of these invokes jump to a landing pad within
+    /// the current function. This is a candidate to merge the selector
+    /// associated with the URoR invoke with the one from the URoR's landing
+    /// pad.
+    bool HandleURoRInvokes();
+
+    /// IsEHExceptionIntrinsic - Return "true" if this is a call to the
+    /// eh.exception intrinsic.
+    bool IsEHExceptionIntrinsic(const Value *I) const {
+      const IntrinsicInst *EH = dyn_cast<IntrinsicInst>(I);
+      return EH && EH->getIntrinsicID() == Intrinsic::eh_exception;
+    }
+
+    /// FindEHExceptionCall - Find the eh.exception call in the landing pad.
+    IntrinsicInst *FindEHExceptionCall(BasicBlock *LandingPad) {
+      for (BasicBlock::iterator
+             I = LandingPad->getFirstNonPHI(), E = LandingPad->end();
+           I != E; ++I)
+        if (IsEHExceptionIntrinsic(I))
+          return cast<IntrinsicInst>(I);
+
+      assert(0 && "Could not find eh.exception call in landing pad!");
+      return 0;
+    }
+
+    /// FindEHSelector - Find the eh.selector intrinsic call associated with the
+    /// eh.exception intrinsic call. We're making the assumption that there's
+    /// one and only one eh.selector call associated with a call to
+    /// eh.exception.
+    IntrinsicInst *FindEHSelector(Value *EHPtrVal) {
+      for (Value::use_iterator
+             I = EHPtrVal->use_begin(), E = EHPtrVal->use_end(); I != E; ++I)
+        if (IntrinsicInst *EH = dyn_cast<IntrinsicInst>(I))
+          if (EH->getIntrinsicID() == Intrinsic::eh_selector)
+            return EH;
+
+      return 0;
+    }
+
+    /// DoMem2RegPromotion - Take an alloca call and promote it from memory to a
+    /// register.
+    bool DoMem2RegPromotion(Value *V) {
+      AllocaInst *AI = dyn_cast<AllocaInst>(V);
+      if (!AI || !isAllocaPromotable(AI)) return false;
+
+      // Turn the alloca into a register.
+      std::vector<AllocaInst*> Allocas(1, AI);
+      PromoteMemToReg(Allocas, *DT, *DF);
+      return true;
+    }
+
+    /// PromoteEHPointer - Promote the EH pointer, that the URoR invoke
+    /// reference and which is begin stored and loaded via a temporary, into
+    /// registers. This makes it much easier to find all of it's definitions and
+    /// uses.
+    bool PromoteEHPointer(InvokeInst *II) {
+      if (!DT || !DF) return false;
+
+      bool Changed = false;
+      Value *EHPtr = II->getOperand(3);
+
+      while (LoadInst *LI = dyn_cast<LoadInst>(EHPtr))
+        if (DoMem2RegPromotion(LI->getOperand(0))) {
+          EHPtr = II->getOperand(3); // Get new EH pointer.
+          Changed = true;
+        } else {
+          return Changed;
+        }
+
+      return Changed;
+    }
+
+    /// PromoteEHPtrStore - Promote the storing of an EH pointer into a
+    /// register. This should get rid of the store and subsequent loads.
+    bool PromoteEHPtrStore(IntrinsicInst *II) {
+      if (!DT || !DF) return false;
+
+      bool Changed = false;
+      StoreInst *SI;
+
+      while (1) {
+        SI = 0;
+        for (Value::use_iterator
+               I = II->use_begin(), E = II->use_end(); I != E; ++I) {
+          SI = dyn_cast<StoreInst>(I);
+          if (SI) break;
+        }
+
+        if (!SI) break;
+
+        if (DoMem2RegPromotion(SI->getOperand(1)))
+          Changed = true;
+        else
+          break;                // Bail.
+      }
+
+      return Changed;
+    }
+
   public:
     static char ID; // Pass identification, replacement for typeid.
     DwarfEHPrepare(const TargetLowering *tli, bool fast) :
       FunctionPass(&ID), TLI(tli), CompileFast(fast),
-      ExceptionValueIntrinsic(0), RewindFunction(0) {}
+      ExceptionValueIntrinsic(0), SelectorIntrinsic(0),
+      URoR(0), RewindFunction(0) {}
 
     virtual bool runOnFunction(Function &Fn);
 
@@ -103,6 +224,192 @@ char DwarfEHPrepare::ID = 0;
 
 FunctionPass *llvm::createDwarfEHPass(const TargetLowering *tli, bool fast) {
   return new DwarfEHPrepare(tli, fast);
+}
+
+/// FarmCatchTypesAndFilterIDs - Get all of the catch types and filter IDs from
+/// an eh.selector call.
+void
+DwarfEHPrepare::FarmCatchTypesAndFilterIDs(Instruction *Sel,
+                                           SmallVectorImpl<Value*> &CatchTys,
+                                           SmallVectorImpl<Value*> &FilterIDs,
+                                           Value *&CatchAll,
+                                           bool &CleanupSpecified) {
+  assert(isa<IntrinsicInst>(Sel) &&
+         cast<IntrinsicInst>(Sel)->getIntrinsicID() ==
+         Intrinsic::eh_selector && "Expected a selector call!");
+  
+  unsigned NumOps = Sel->getNumOperands();
+  for (unsigned I = 3; I < NumOps; ++I) {
+    Value *Val = Sel->getOperand(I)->stripPointerCasts();
+
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(Val)) {
+      const APInt &Num = CI->getValue();
+      if (Num.isStrictlyPositive()) {
+        // A list of filter IDs follows.
+        uint64_t NumIDs = CI->getZExtValue() - 1; // 1-based counting.
+
+        for (uint64_t J = 0; J < NumIDs; ++J) {
+          Value *ID = Sel->getOperand(++I)->stripPointerCasts();
+
+          // We want the filter ID to be in the list only once.
+          bool IDExists = false;
+          for (SmallVectorImpl<Value*>::iterator
+                 FI = FilterIDs.begin(), FE = FilterIDs.end(); FI != FE; ++FI) {
+            if (*FI == ID) {
+              IDExists = true;
+              break;
+            }
+          }
+
+          if (!IDExists) FilterIDs.push_back(ID);
+        }
+      } else if (Num == 0) {
+        CleanupSpecified = true;
+      } else {
+        llvm_report_error("Negative entry in eh.selector call!");
+      }
+    } else if (isa<ConstantPointerNull>(Val)) {
+      // This is a catch-all. Get the original, non-stripped value so that we
+      // can cast it correctly in the new eh.selector call.
+      CatchAll = Sel->getOperand(I);
+    } else {
+      // We want the type to be in the list only once.
+      bool TypeExists = false;
+      for (SmallVectorImpl<Value*>::iterator
+             CI = CatchTys.begin(), CE = CatchTys.end(); CI != CE; ++CI)
+        if (*CI == Val) {
+          TypeExists = true;
+          break;
+        }
+
+      if (!TypeExists) CatchTys.push_back(Val);
+    }
+  }
+}
+
+/// MergeSelectors - Take two selectors and merge them: combine their catch
+/// types, filter IDs, and whether it should act like a catch-all or
+/// clean-up. The new selector is inserted before Sel1.
+CallInst *DwarfEHPrepare::MergeSelectors(Instruction *Sel1, Instruction *Sel2) {
+  LLVMContext &Ctx = F->getContext();
+
+  if (!SelectorIntrinsic)
+    SelectorIntrinsic = Intrinsic::getDeclaration(F->getParent(),
+                                                  Intrinsic::eh_selector);
+
+  SmallVector<Value*, 8> Args;
+
+  // Use the exception object pointer and the personality function from the LHS
+  // selector.
+  Args.push_back(Sel1->getOperand(1)); // Exception object pointer.
+  Args.push_back(Sel1->getOperand(2)); // Personality function.
+
+  // Gather all of the catch type and filter ID information from the original
+  // eh.selector calls. We'll use them to construct the new eh.selector call in
+  // the same format.
+  SmallVector<Value*, 8> CatchTys;
+  SmallVector<Value*, 8> FilterIDs;
+  Value *CatchAll = 0;
+  bool CleanupSpecified = false;
+
+  FarmCatchTypesAndFilterIDs(Sel1, CatchTys, FilterIDs, CatchAll,
+                             CleanupSpecified);
+  FarmCatchTypesAndFilterIDs(Sel2, CatchTys, FilterIDs, CatchAll,
+                             CleanupSpecified);
+
+  for (SmallVectorImpl<Value*>::iterator
+         I = CatchTys.begin(), E = CatchTys.end(); I != E; ++I)
+    Args.push_back(new BitCastInst(*I, Type::getInt8PtrTy(Ctx),
+                                   "", Sel1));
+
+  if (!FilterIDs.empty()) {
+    // Indicate the length of the filter IDs.
+    Args.push_back(ConstantInt::get(Type::getInt32Ty(Ctx),
+                                    FilterIDs.size() + 1));
+
+    for (SmallVectorImpl<Value*>::iterator
+           I = FilterIDs.begin(), E = FilterIDs.end(); I != E; ++I)
+      Args.push_back(new BitCastInst(*I, Type::getInt8PtrTy(Ctx),
+                                     "", Sel1));
+  }
+
+  // If there was a catch-all associated with either of the eh.selector calls,
+  // add it to the new one. Same for clean-ups. No need to add both. The
+  // catch-all should run any clean-ups automatically.
+  if (CatchAll)
+    Args.push_back(CatchAll);
+  else if (CleanupSpecified)
+    Args.push_back(ConstantInt::get(Type::getInt32Ty(Ctx), 0));
+
+  // Create the call.
+  return CallInst::Create(SelectorIntrinsic, Args.begin(), Args.end(),
+                          "eh.sel.merge", Sel1);
+}
+
+/// HandleURoRInvokes - Handle invokes of "_Unwind_Resume_or_Rethrow" calls. The
+/// "unwind" part of these invokes jump to a landing pad within the current
+/// function. This is a candidate to merge the selector associated with the URoR
+/// invoke with the one from the URoR's landing pad.
+bool DwarfEHPrepare::HandleURoRInvokes() {
+  if (!URoR) {
+    LLVMContext &Ctx = F->getContext();
+    std::vector<const Type*> Params(1, Type::getInt8PtrTy(Ctx));
+    FunctionType *FTy = FunctionType::get(Type::getVoidTy(Ctx), Params, false);
+    URoR =
+      F->getParent()->getOrInsertFunction("_Unwind_Resume_or_Rethrow", FTy);
+  }
+
+  bool Changed = false;
+
+  for (Value::use_iterator
+         I = URoR->use_begin(), E = URoR->use_end(); I != E; ++I) {
+    // A function that inlines another function through an "invoke" will turn
+    // it's calls into invokes. If we have an "invoke" of _URoR, then it was
+    // inlined into this function through an invoke.
+    InvokeInst *II = dyn_cast<InvokeInst>(I);
+    if (!II || II->getParent()->getParent() != F) continue;
+
+    BasicBlock *UnwindBB = II->getUnwindDest();
+
+    // Promote the EH pointer the URoR call uses to registers if need be.
+    Changed |= PromoteEHPointer(II);
+    Value *URoREHPtr = II->getOperand(3);
+
+    // FIXME: Handle PHI nodes?
+    if (isa<PHINode>(URoREHPtr)) continue;
+
+    assert(IsEHExceptionIntrinsic(URoREHPtr) &&
+           "URoR invoke not directly using the EH pointer!");
+
+    IntrinsicInst *URoRSel = FindEHSelector(URoREHPtr);
+    assert(URoRSel && "No eh.selector associated with the eh.exception!");
+
+    // At this point, the calls to eh.exception are in the landing pads
+    // themselves.
+    IntrinsicInst *LPadEHPtr = FindEHExceptionCall(UnwindBB);
+    Changed |= PromoteEHPtrStore(LPadEHPtr);
+
+    // Try to find the eh.selector call associated with this eh.exception. If we
+    // don't find one, we can't process this further.
+    IntrinsicInst *LPadSel = FindEHSelector(LPadEHPtr);
+    if (!LPadSel) continue;     // Bail.
+
+    // After this point, we want to convert the selectors.
+    Changed = true;
+
+    // Merge the URoR's selector and the one from the landing pad for LRoR into
+    // one selector.
+    CallInst *NewSelector = MergeSelectors(URoRSel, LPadSel);
+    NewSelector->setTailCall(URoRSel->isTailCall());
+    NewSelector->setAttributes(URoRSel->getAttributes());
+    NewSelector->setCallingConv(URoRSel->getCallingConv());
+
+    // Replace URoR's selector with new selector.
+    URoRSel->replaceAllUsesWith(NewSelector);
+    URoRSel->eraseFromParent();
+  }
+
+  return Changed;
 }
 
 /// NormalizeLandingPads - Normalize and discover landing pads, noting them
@@ -269,6 +576,7 @@ bool DwarfEHPrepare::LowerUnwinds() {
                                     CreateReadOfExceptionValue(TI->getParent()),
                                     "", TI);
     CI->setCallingConv(TLI->getLibcallCallingConv(RTLIB::UNWIND_RESUME));
+
     // ...followed by an UnreachableInst.
     new UnreachableInst(TI->getContext(), TI);
 
@@ -421,6 +729,9 @@ bool DwarfEHPrepare::runOnFunction(Function &Fn) {
   // Turn any stack temporaries into registers if possible.
   if (!CompileFast)
     Changed |= PromoteStackTemporaries();
+
+  //  if (false)
+    Changed |= HandleURoRInvokes();
 
   LandingPads.clear();
 
