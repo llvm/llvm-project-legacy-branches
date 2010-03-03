@@ -2492,8 +2492,8 @@ def warn_printf_write_back : Warning<
   InGroup<FormatSecurity>;
 def warn_printf_insufficient_data_args : Warning<
   "more '%%' conversions than data arguments">, InGroup<Format>;
-def warn_printf_too_many_data_args : Warning<
-  "more data arguments than format specifiers">, InGroup<FormatExtraArgs>;
+def warn_printf_data_arg_not_used : Warning<
+  "data argument not used by format string">, InGroup<FormatExtraArgs>;
 def warn_printf_invalid_conversion : Warning<
   "invalid conversion specifier '%0'">, InGroup<Format>;
 def warn_printf_incomplete_specifier : Warning<
@@ -2502,6 +2502,15 @@ def warn_printf_missing_format_string : Warning<
   "format string missing">, InGroup<Format>;
 def warn_printf_conversion_argument_type_mismatch : Warning<
   "conversion specifies type %0 but the argument has type %1">,
+  InGroup<Format>;
+def warn_printf_zero_positional_specifier : Warning<
+  "position arguments in format strings start counting at 1 (not 0)">,
+  InGroup<Format>;
+def warn_printf_invalid_positional_specifier : Warning<
+  "invalid position specified for %select{field width|field precision}0">,
+  InGroup<Format>;
+def warn_printf_mix_positional_nonpositional_args : Warning<
+  "cannot mix positional and non-positional arguments in format string">,
   InGroup<Format>;
 def warn_null_arg : Warning<
   "null passed to a callee which requires a non-null argument">,
@@ -2512,15 +2521,10 @@ def warn_printf_format_string_is_wide_literal : Warning<
   "format string should not be a wide string">, InGroup<Format>;
 def warn_printf_format_string_contains_null_char : Warning<
   "format string contains '\\0' within the string body">, InGroup<Format>;
-def warn_printf_asterisk_width_missing_arg : Warning<
-  "'*' specified field width is missing a matching 'int' argument">;
-def warn_printf_asterisk_precision_missing_arg : Warning<
-  "'.*' specified field precision is missing a matching 'int' argument">;
-def warn_printf_asterisk_width_wrong_type : Warning<
-  "field width should have type %0, but argument has type %1">,
-  InGroup<Format>;
-def warn_printf_asterisk_precision_wrong_type : Warning<
-  "field precision should have type %0, but argument has type %1">,
+def warn_printf_asterisk_missing_arg : Warning<
+  "'%select{*|.*}0' specified field %select{width|precision}0 is missing a matching 'int' argument">;
+def warn_printf_asterisk_wrong_type : Warning<
+  "field %select{width|precision}0 should have type %1, but argument has type %2">,
   InGroup<Format>;
 def warn_printf_nonsensical_precision: Warning<
   "precision used in '%0' conversion specifier (where it has no meaning)">,
@@ -2528,7 +2532,7 @@ def warn_printf_nonsensical_precision: Warning<
 def warn_printf_nonsensical_flag: Warning<
   "flag '%0' results in undefined behavior in '%1' conversion specifier">,
   InGroup<Format>;
-  
+
 // CHECK: returning address/reference of stack memory
 def warn_ret_stack_addr : Warning<
   "address of stack memory associated with local variable %0 returned">;

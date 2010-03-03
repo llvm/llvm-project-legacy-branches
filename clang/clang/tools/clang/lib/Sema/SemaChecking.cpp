@@ -1043,13 +1043,15 @@ class CheckPrintfHandler : public analyze_printf::FormatStringHandler {
   Sema &S;
   const StringLiteral *FExpr;
   const Expr *OrigFormatExpr;
-  unsigned NumConversions;
   const unsigned NumDataArgs;
   const bool IsObjCLiteral;
   const char *Beg; // Start of format string.
   const bool HasVAListArg;
   const CallExpr *TheCall;
   unsigned FormatIdx;
+  llvm::BitVector CoveredArgs;
+  bool usesPositionalArgs;
+  bool atFirstArg;
 public:
   CheckPrintfHandler(Sema &s, const StringLiteral *fexpr,
                      const Expr *origFormatExpr,
@@ -1057,20 +1059,30 @@ public:
                      const char *beg, bool hasVAListArg,
                      const CallExpr *theCall, unsigned formatIdx)
     : S(s), FExpr(fexpr), OrigFormatExpr(origFormatExpr),
-      NumConversions(0), NumDataArgs(numDataArgs),
+      NumDataArgs(numDataArgs),
       IsObjCLiteral(isObjCLiteral), Beg(beg),
       HasVAListArg(hasVAListArg),
-      TheCall(theCall), FormatIdx(formatIdx) {}
+      TheCall(theCall), FormatIdx(formatIdx),
+      usesPositionalArgs(false), atFirstArg(true) {
+        CoveredArgs.resize(numDataArgs);
+        CoveredArgs.reset();
+      }
 
   void DoneProcessing();
 
   void HandleIncompleteFormatSpecifier(const char *startSpecifier,
                                        unsigned specifierLen);
 
-  void
+  bool
   HandleInvalidConversionSpecifier(const analyze_printf::FormatSpecifier &FS,
                                    const char *startSpecifier,
                                    unsigned specifierLen);
+
+  virtual void HandleInvalidPosition(const char *startSpecifier,
+                                     unsigned specifierLen,
+                                     analyze_printf::PositionContext p);
+
+  virtual void HandleZeroPosition(const char *startPos, unsigned posLen);
 
   void HandleNullChar(const char *nullCharacter);
 
@@ -1083,9 +1095,8 @@ private:
                                       unsigned specifierLen);
   SourceLocation getLocationOfByte(const char *x);
 
-  bool HandleAmount(const analyze_printf::OptionalAmount &Amt,
-                    unsigned MissingArgDiag, unsigned BadTypeDiag,
-          const char *startSpecifier, unsigned specifierLen);
+  bool HandleAmount(const analyze_printf::OptionalAmount &Amt, unsigned k,
+                    const char *startSpecifier, unsigned specifierLen);
   void HandleFlags(const analyze_printf::FormatSpecifier &FS,
                    llvm::StringRef flag, llvm::StringRef cspec,
                    const char *startSpecifier, unsigned specifierLen);
@@ -1116,18 +1127,50 @@ HandleIncompleteFormatSpecifier(const char *startSpecifier,
     << getFormatSpecifierRange(startSpecifier, specifierLen);
 }
 
-void CheckPrintfHandler::
+void
+CheckPrintfHandler::HandleInvalidPosition(const char *startPos, unsigned posLen,
+                                          analyze_printf::PositionContext p) {
+  SourceLocation Loc = getLocationOfByte(startPos);
+  S.Diag(Loc, diag::warn_printf_invalid_positional_specifier)
+    << (unsigned) p << getFormatSpecifierRange(startPos, posLen);
+}
+
+void CheckPrintfHandler::HandleZeroPosition(const char *startPos,
+                                            unsigned posLen) {
+  SourceLocation Loc = getLocationOfByte(startPos);
+  S.Diag(Loc, diag::warn_printf_zero_positional_specifier)
+    << getFormatSpecifierRange(startPos, posLen);
+}
+
+bool CheckPrintfHandler::
 HandleInvalidConversionSpecifier(const analyze_printf::FormatSpecifier &FS,
                                  const char *startSpecifier,
                                  unsigned specifierLen) {
 
-  ++NumConversions;
+  unsigned argIndex = FS.getArgIndex();
+  bool keepGoing = true;
+  if (argIndex < NumDataArgs) {
+    // Consider the argument coverered, even though the specifier doesn't
+    // make sense.
+    CoveredArgs.set(argIndex);
+  }
+  else {
+    // If argIndex exceeds the number of data arguments we
+    // don't issue a warning because that is just a cascade of warnings (and
+    // they may have intended '%%' anyway). We don't want to continue processing
+    // the format string after this point, however, as we will like just get
+    // gibberish when trying to match arguments.
+    keepGoing = false;
+  }
+
   const analyze_printf::ConversionSpecifier &CS =
     FS.getConversionSpecifier();
   SourceLocation Loc = getLocationOfByte(CS.getStart());
   S.Diag(Loc, diag::warn_printf_invalid_conversion)
       << llvm::StringRef(CS.getStart(), CS.getLength())
       << getFormatSpecifierRange(startSpecifier, specifierLen);
+
+  return keepGoing;
 }
 
 void CheckPrintfHandler::HandleNullChar(const char *nullCharacter) {
@@ -1138,7 +1181,7 @@ void CheckPrintfHandler::HandleNullChar(const char *nullCharacter) {
 }
 
 const Expr *CheckPrintfHandler::getDataArg(unsigned i) const {
-  return TheCall->getArg(FormatIdx + i);
+  return TheCall->getArg(FormatIdx + i + 1);
 }
 
 
@@ -1155,17 +1198,16 @@ void CheckPrintfHandler::HandleFlags(const analyze_printf::FormatSpecifier &FS,
 
 bool
 CheckPrintfHandler::HandleAmount(const analyze_printf::OptionalAmount &Amt,
-                                 unsigned MissingArgDiag,
-                                 unsigned BadTypeDiag,
-                                 const char *startSpecifier,
+                                 unsigned k, const char *startSpecifier,
                                  unsigned specifierLen) {
 
   if (Amt.hasDataArgument()) {
-    ++NumConversions;
     if (!HasVAListArg) {
-      if (NumConversions > NumDataArgs) {
-        S.Diag(getLocationOfByte(Amt.getStart()), MissingArgDiag)
-          << getFormatSpecifierRange(startSpecifier, specifierLen);
+      unsigned argIndex = Amt.getArgIndex();
+      if (argIndex >= NumDataArgs) {
+        S.Diag(getLocationOfByte(Amt.getStart()),
+               diag::warn_printf_asterisk_missing_arg)
+          << k << getFormatSpecifierRange(startSpecifier, specifierLen);
         // Don't do any more checking.  We will just emit
         // spurious errors.
         return false;
@@ -1175,14 +1217,17 @@ CheckPrintfHandler::HandleAmount(const analyze_printf::OptionalAmount &Amt,
       // Although not in conformance with C99, we also allow the argument to be
       // an 'unsigned int' as that is a reasonably safe case.  GCC also
       // doesn't emit a warning for that case.
-      const Expr *Arg = getDataArg(NumConversions);
+      CoveredArgs.set(argIndex);
+      const Expr *Arg = getDataArg(argIndex);
       QualType T = Arg->getType();
 
       const analyze_printf::ArgTypeResult &ATR = Amt.getArgType(S.Context);
       assert(ATR.isValid());
 
       if (!ATR.matchesType(S.Context, T)) {
-        S.Diag(getLocationOfByte(Amt.getStart()), BadTypeDiag)
+        S.Diag(getLocationOfByte(Amt.getStart()),
+               diag::warn_printf_asterisk_wrong_type)
+          << k
           << ATR.getRepresentativeType(S.Context) << T
           << getFormatSpecifierRange(startSpecifier, specifierLen)
           << Arg->getSourceRange();
@@ -1201,32 +1246,31 @@ CheckPrintfHandler::HandleFormatSpecifier(const analyze_printf::FormatSpecifier
                                           const char *startSpecifier,
                                           unsigned specifierLen) {
 
-  using namespace analyze_printf;
+  using namespace analyze_printf;  
   const ConversionSpecifier &CS = FS.getConversionSpecifier();
+
+  if (atFirstArg) {
+    atFirstArg = false;
+    usesPositionalArgs = FS.usesPositionalArg();
+  }
+  else if (usesPositionalArgs != FS.usesPositionalArg()) {
+    // Cannot mix-and-match positional and non-positional arguments.
+    S.Diag(getLocationOfByte(CS.getStart()),
+           diag::warn_printf_mix_positional_nonpositional_args)
+      << getFormatSpecifierRange(startSpecifier, specifierLen);
+    return false;
+  }
 
   // First check if the field width, precision, and conversion specifier
   // have matching data arguments.
-  if (!HandleAmount(FS.getFieldWidth(),
-                    diag::warn_printf_asterisk_width_missing_arg,
-                    diag::warn_printf_asterisk_width_wrong_type,
-          startSpecifier, specifierLen)) {
+  if (!HandleAmount(FS.getFieldWidth(), /* field width */ 0,
+                    startSpecifier, specifierLen)) {
     return false;
   }
 
-  if (!HandleAmount(FS.getPrecision(),
-                    diag::warn_printf_asterisk_precision_missing_arg,
-                    diag::warn_printf_asterisk_precision_wrong_type,
-          startSpecifier, specifierLen)) {
+  if (!HandleAmount(FS.getPrecision(), /* precision */ 1,
+                    startSpecifier, specifierLen)) {
     return false;
-  }
-
-  // Check for using an Objective-C specific conversion specifier
-  // in a non-ObjC literal.
-  if (!IsObjCLiteral && CS.isObjCArg()) {
-    HandleInvalidConversionSpecifier(FS, startSpecifier, specifierLen);
-
-    // Continue checking the other format specifiers.
-    return true;
   }
 
   if (!CS.consumesDataArgument()) {
@@ -1235,7 +1279,20 @@ CheckPrintfHandler::HandleFormatSpecifier(const analyze_printf::FormatSpecifier
     return true;
   }
 
-  ++NumConversions;
+  // Consume the argument.
+  unsigned argIndex = FS.getArgIndex();
+  if (argIndex < NumDataArgs) {
+    // The check to see if the argIndex is valid will come later.
+    // We set the bit here because we may exit early from this
+    // function if we encounter some other error.
+    CoveredArgs.set(argIndex);
+  }
+
+  // Check for using an Objective-C specific conversion specifier
+  // in a non-ObjC literal.
+  if (!IsObjCLiteral && CS.isObjCArg()) {
+    return HandleInvalidConversionSpecifier(FS, startSpecifier, specifierLen);
+  }
 
   // Are we using '%n'?  Issue a warning about this being
   // a possible security issue.
@@ -1269,7 +1326,7 @@ CheckPrintfHandler::HandleFormatSpecifier(const analyze_printf::FormatSpecifier
   if (HasVAListArg)
     return true;
 
-  if (NumConversions > NumDataArgs) {
+  if (argIndex >= NumDataArgs) {
     S.Diag(getLocationOfByte(CS.getStart()),
            diag::warn_printf_insufficient_data_args)
       << getFormatSpecifierRange(startSpecifier, specifierLen);
@@ -1279,7 +1336,7 @@ CheckPrintfHandler::HandleFormatSpecifier(const analyze_printf::FormatSpecifier
 
   // Now type check the data expression that matches the
   // format specifier.
-  const Expr *Ex = getDataArg(NumConversions);
+  const Expr *Ex = getDataArg(argIndex);
   const analyze_printf::ArgTypeResult &ATR = FS.getArgType(S.Context);
   if (ATR.isValid() && !ATR.matchesType(S.Context, Ex->getType())) {
     // Check if we didn't match because of an implicit cast from a 'char'
@@ -1303,10 +1360,17 @@ CheckPrintfHandler::HandleFormatSpecifier(const analyze_printf::FormatSpecifier
 void CheckPrintfHandler::DoneProcessing() {
   // Does the number of data arguments exceed the number of
   // format conversions in the format string?
-  if (!HasVAListArg && NumConversions < NumDataArgs)
-    S.Diag(getDataArg(NumConversions+1)->getLocStart(),
-           diag::warn_printf_too_many_data_args)
-      << getFormatStringRange();
+  if (!HasVAListArg) {
+    // Find any arguments that weren't covered.
+    CoveredArgs.flip();
+    signed notCoveredArg = CoveredArgs.find_first();
+    if (notCoveredArg >= 0) {
+      assert((unsigned)notCoveredArg < NumDataArgs);
+      S.Diag(getDataArg((unsigned) notCoveredArg)->getLocStart(),
+             diag::warn_printf_data_arg_not_used)
+        << getFormatStringRange();
+    }
+  }
 }
 
 void Sema::CheckPrintfString(const StringLiteral *FExpr,
