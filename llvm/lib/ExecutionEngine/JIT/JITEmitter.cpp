@@ -775,7 +775,7 @@ void *JITEmitter::getPointerToGlobal(GlobalValue *V, void *Reference,
     // If this is an external function pointer, we can force the JIT to
     // 'compile' it, which really just adds it to the map.  In dlsym mode, 
     // external functions are forced through a stub, regardless of reloc type.
-    if (isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage() &&
+    if ((isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage()) &&
         !TheJIT->areDlsymStubsEnabled())
       return TheJIT->getPointerToFunction(F);
   }
