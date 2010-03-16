@@ -57,6 +57,7 @@ ExecutionEngine::ExecutionEngine(Module *M)
   CompilingLazily         = false;
   GVCompilationDisabled   = false;
   SymbolSearchingDisabled = false;
+  DlsymStubsEnabled       = false;
   Modules.push_back(M);
   assert(M && "Module is null?");
 }

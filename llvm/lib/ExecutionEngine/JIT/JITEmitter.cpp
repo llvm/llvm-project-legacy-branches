@@ -369,6 +369,10 @@ namespace {
     ValueMap<const Function *, EmittedCode,
              EmittedFunctionConfig> EmittedFunctions;
 
+    // ExtFnStubs - A map of external function names to stubs which have entries
+    // in the JITResolver's ExternalFnToStubMap.
+    StringMap<void *> ExtFnStubs;
+
     DILocation PrevDLT;
 
     /// Instance of the JIT
@@ -413,7 +417,7 @@ namespace {
     void startGVStub(const GlobalValue* GV,
                      unsigned StubSize, unsigned Alignment = 1);
     void startGVStub(void *Buffer, unsigned StubSize);
-    void finishGVStub();
+    void *finishGVStub();
     virtual void *allocIndirectGV(const GlobalValue *GV,
                                   const uint8_t *Buffer, size_t Size,
                                   unsigned Alignment);
@@ -456,6 +460,10 @@ namespace {
     /// deallocateMemForFunction - Deallocate all memory for the specified
     /// function body.
     void deallocateMemForFunction(const Function *F);
+
+    /// getExternalFnStubs - Accessor for the JIT to find stubs emitted for
+    /// MachineRelocations that reference external functions by name.
+    const StringMap<void*> &getExternalFnStubs() const { return ExtFnStubs; }
 
     virtual void processDebugLoc(DebugLoc DL, bool BeforePrintingInsn);
 
@@ -595,8 +603,10 @@ void *JITResolver::getLazyFunctionStub(Function *F) {
     Actual = TheJIT->getPointerToFunction(F);
 
     // If we resolved the symbol to a null address (eg. a weak external)
-    // don't emit a stub. Return a null pointer to the application.
-    if (!Actual) return 0;
+    // don't emit a stub. Return a null pointer to the application.  If dlsym
+    // stubs are enabled, not being able to resolve the address is not
+    // meaningful.
+    if (!Actual && !TheJIT->areDlsymStubsEnabled()) return 0;
   }
 
   TargetJITInfo::StubLayout SL = TheJIT->getJITInfo().getStubLayout();
@@ -801,8 +811,10 @@ void *JITEmitter::getPointerToGlobal(GlobalValue *V, void *Reference,
     if (ResultPtr) return ResultPtr;
 
     // If this is an external function pointer, we can force the JIT to
-    // 'compile' it, which really just adds it to the map.
-    if (isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage())
+    // 'compile' it, which really just adds it to the map.  In dlsym mode,
+    // external functions are forced through a stub, regardless of reloc type.
+    if (isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage() &&
+        !TheJIT->areDlsymStubsEnabled())
       return TheJIT->getPointerToFunction(F);
   }
 
@@ -825,7 +837,7 @@ void JITEmitter::processDebugLoc(DebugLoc DL, bool BeforePrintingInsn) {
     DILocation CurDLT = EmissionDetails.MF->getDILocation(DL);
 
     if (BeforePrintingInsn) {
-      if (CurDLT.getScope().getNode() != 0 
+      if (CurDLT.getScope().getNode() != 0
           && PrevDLT.getNode() != CurDLT.getNode()) {
         JITEvent_EmittedFunctionDetails::LineStart NextLine;
         NextLine.Address = getCurrentPCValue();
@@ -1139,7 +1151,15 @@ bool JITEmitter::finishFunction(MachineFunction &F) {
 
           // If the target REALLY wants a stub for this function, emit it now.
           if (MR.mayNeedFarStub()) {
-            ResultPtr = Resolver.getExternalFunctionStub(ResultPtr);
+            if (!TheJIT->areDlsymStubsEnabled()) {
+              ResultPtr = Resolver.getExternalFunctionStub(ResultPtr);
+            } else {
+              void *&Stub = ExtFnStubs[MR.getExternalSymbol()];
+              if (!Stub) {
+                Stub = Resolver.getExternalFunctionStub((void *)&Stub);
+              }
+              ResultPtr = Stub;
+            }
           }
         } else if (MR.isGlobalValue()) {
           ResultPtr = getPointerToGlobal(MR.getGlobalValue(),
@@ -1417,7 +1437,7 @@ void JITEmitter::emitJumpTableInfo(MachineJumpTableInfo *MJTI) {
   const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
   if (JT.empty() || JumpTableBase == 0) return;
 
-  
+
   switch (MJTI->getEntryKind()) {
   case MachineJumpTableInfo::EK_Inline:
     return;
@@ -1426,11 +1446,11 @@ void JITEmitter::emitJumpTableInfo(MachineJumpTableInfo *MJTI) {
     //     .word LBB123
     assert(MJTI->getEntrySize(*TheJIT->getTargetData()) == sizeof(void*) &&
            "Cross JIT'ing?");
-    
+
     // For each jump table, map each target in the jump table to the address of
     // an emitted MachineBasicBlock.
     intptr_t *SlotPtr = (intptr_t*)JumpTableBase;
-    
+
     for (unsigned i = 0, e = JT.size(); i != e; ++i) {
       const std::vector<MachineBasicBlock*> &MBBs = JT[i].MBBs;
       // Store the address of the basic block for this jump table slot in the
@@ -1440,7 +1460,7 @@ void JITEmitter::emitJumpTableInfo(MachineJumpTableInfo *MJTI) {
     }
     break;
   }
-      
+
   case MachineJumpTableInfo::EK_Custom32:
   case MachineJumpTableInfo::EK_GPRel32BlockAddress:
   case MachineJumpTableInfo::EK_LabelDifference32: {
@@ -1484,12 +1504,13 @@ void JITEmitter::startGVStub(void *Buffer, unsigned StubSize) {
   BufferEnd = BufferBegin+StubSize+1;
 }
 
-void JITEmitter::finishGVStub() {
+void *JITEmitter::finishGVStub() {
   assert(CurBufferPtr != BufferEnd && "Stub overflowed allocated space.");
   NumBytes += getCurrentPCOffset();
-  BufferBegin = SavedBufferBegin;
+  std::swap(SavedBufferBegin, BufferBegin);
   BufferEnd = SavedBufferEnd;
   CurBufferPtr = SavedCurBufferPtr;
+  return SavedBufferBegin;
 }
 
 void *JITEmitter::allocIndirectGV(const GlobalValue *GV,
@@ -1577,6 +1598,92 @@ void JIT::updateFunctionStub(Function *F) {
   JE->startGVStub(Stub, layout.Size);
   getJITInfo().emitFunctionStub(F, Addr, *getCodeEmitter());
   JE->finishGVStub();
+}
+
+/// updateDlsymStubTable - Emit the data necessary to relocate the stubs
+/// that were emitted during code generation.
+///
+void JIT::updateDlsymStubTable() {
+  assert(isa<JITEmitter>(JCE) && "Unexpected MCE?");
+  JITEmitter *JE = cast<JITEmitter>(getCodeEmitter());
+
+  SmallVector<GlobalValue*, 8> GVs;
+  SmallVector<void*, 8> Ptrs;
+  const StringMap<void *> &ExtFns = JE->getExternalFnStubs();
+
+  JE->getJITResolver().getRelocatableGVs(GVs, Ptrs);
+
+  unsigned nStubs = GVs.size() + ExtFns.size();
+
+  // If there are no relocatable stubs, return.
+  if (nStubs == 0)
+    return;
+
+  // If there are no new relocatable stubs, return.
+  void *CurTable = JE->getMemMgr()->getDlsymTable();
+  if (CurTable && (*(unsigned *)CurTable == nStubs))
+    return;
+
+  // Calculate the size of the stub info
+  unsigned offset = 4 + 4 * nStubs + sizeof(intptr_t) * nStubs;
+
+  SmallVector<unsigned, 8> Offsets;
+  for (unsigned i = 0; i != GVs.size(); ++i) {
+    Offsets.push_back(offset);
+    offset += GVs[i]->getName().size() + 1;
+  }
+  for (StringMapConstIterator<void*> i = ExtFns.begin(), e = ExtFns.end();
+       i != e; ++i) {
+    Offsets.push_back(offset);
+    offset += strlen(i->first()) + 1;
+  }
+
+  // Allocate space for the new "stub", which contains the dlsym table.
+  JE->startGVStub(0, offset, 4);
+
+  // Emit the number of records
+  JE->emitInt32(nStubs);
+
+  // Emit the string offsets
+  for (unsigned i = 0; i != nStubs; ++i)
+    JE->emitInt32(Offsets[i]);
+
+  // Emit the pointers.  Verify that they are at least 2-byte aligned, and set
+  // the low bit to 0 == GV, 1 == Function, so that the client code doing the
+  // relocation can write the relocated pointer at the appropriate place in
+  // the stub.
+  for (unsigned i = 0; i != GVs.size(); ++i) {
+    intptr_t Ptr = (intptr_t)Ptrs[i];
+    assert((Ptr & 1) == 0 && "Stub pointers must be at least 2-byte aligned!");
+
+    if (isa<Function>(GVs[i]))
+      Ptr |= (intptr_t)1;
+
+    if (sizeof(Ptr) == 8)
+      JE->emitInt64(Ptr);
+    else
+      JE->emitInt32(Ptr);
+  }
+  for (StringMapConstIterator<void*> i = ExtFns.begin(), e = ExtFns.end();
+       i != e; ++i) {
+    intptr_t Ptr = (intptr_t)i->second | 1;
+
+    if (sizeof(Ptr) == 8)
+      JE->emitInt64(Ptr);
+    else
+      JE->emitInt32(Ptr);
+  }
+
+  // Emit the strings.
+  for (unsigned i = 0; i != GVs.size(); ++i)
+    JE->emitString(GVs[i]->getName());
+  for (StringMapConstIterator<void*> i = ExtFns.begin(), e = ExtFns.end();
+       i != e; ++i)
+    JE->emitString(i->first());
+
+  // Tell the JIT memory manager where it is.  The JIT Memory Manager will
+  // deallocate space for the old one, if one existed.
+  JE->getMemMgr()->SetDlsymTable(JE->finishGVStub());
 }
 
 /// freeMachineCodeForFunction - release machine code memory for given Function.

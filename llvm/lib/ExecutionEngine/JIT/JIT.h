@@ -202,6 +202,7 @@ private:
                                        TargetMachine &tm);
   void runJITOnFunctionUnlocked(Function *F, const MutexGuard &locked);
   void updateFunctionStub(Function *F);
+  void updateDlsymStubTable();
 
 protected:
 
