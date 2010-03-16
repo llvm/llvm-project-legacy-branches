@@ -18,6 +18,7 @@
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
+#include "llvm/ModuleProvider.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Debug.h"
@@ -70,6 +71,23 @@ char* ExecutionEngine::getMemoryForGV(const GlobalVariable* GV) {
   const Type *ElTy = GV->getType()->getElementType();
   size_t GVSize = (size_t)getTargetData()->getTypeAllocSize(ElTy);
   return new char[GVSize];
+}
+
+/// removeModuleProvider - Remove a ModuleProvider from the list of modules.
+/// Relases the Module from the ModuleProvider, materializing it in the
+/// process, and returns the materialized Module.
+Module* ExecutionEngine::removeModuleProvider(ModuleProvider *P, 
+                                              std::string *ErrInfo) {
+  for(SmallVector<Module *, 1>::iterator I = Modules.begin(), 
+        E = Modules.end(); I != E; ++I) {
+    Module *Found = *I;
+    if (Found == P->getModule()) {
+      Modules.erase(I);
+      clearGlobalMappingsFromModule(P->getModule());
+      return P->getModule();
+    }
+  }
+  return NULL;
 }
 
 /// removeModule - Remove a Module from the list of modules.
