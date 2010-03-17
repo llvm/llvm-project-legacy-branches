@@ -1124,17 +1124,15 @@ bool JITEmitter::finishFunction(MachineFunction &F) {
                        << ResultPtr << "]\n");
 
           // If the target REALLY wants a stub for this function, emit it now.
-          if (MR.mayNeedFarStub()) {
-            if (!TheJIT->areDlsymStubsEnabled()) {
+          if (MR.mayNeedFarStub() && !TheJIT->areDlsymStubsEnabled()) {
               ResultPtr = Resolver.getExternalFunctionStub(ResultPtr);
-            } else {
-              void *&Stub = ExtFnStubs[MR.getExternalSymbol()];
-              if (!Stub) {
-                Stub = Resolver.getExternalFunctionStub((void *)&Stub);
-                AddStubToCurrentFunction(Stub);
-              }
-              ResultPtr = Stub;
+          } else if (TheJIT->areDlsymStubsEnabled()) {
+            void *&Stub = ExtFnStubs[MR.getExternalSymbol()];
+            if (!Stub) {
+              Stub = Resolver.getExternalFunctionStub((void *)&Stub);
+              AddStubToCurrentFunction(Stub);
             }
+            ResultPtr = Stub;
           }
         } else if (MR.isGlobalValue()) {
           ResultPtr = getPointerToGlobal(MR.getGlobalValue(),
