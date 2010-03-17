@@ -2524,10 +2524,10 @@ public:
     return cast<BasicBlock>(Op<-1>());
   }
   void setNormalDest(BasicBlock *B) {
-    Op<-2>() = B;
+    Op<-2>() = reinterpret_cast<Value*>(B);
   }
   void setUnwindDest(BasicBlock *B) {
-    Op<-1>() = B;
+    Op<-1>() = reinterpret_cast<Value*>(B);
   }
 
   BasicBlock *getSuccessor(unsigned i) const {
@@ -2537,7 +2537,7 @@ public:
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < 2 && "Successor # out of range for invoke!");
-    *(&Op<-2>() + idx) = NewSucc;
+    *(&Op<-2>() + idx) = reinterpret_cast<Value*>(NewSucc);
   }
 
   unsigned getNumSuccessors() const { return 2; }
