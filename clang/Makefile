@@ -30,10 +30,7 @@ STAGEROOT := $(OBJROOT)\install
 BINDEST := $(DSTROOT)\AppleInternal\bin
 
 # Override default CMake flags to use static C run-time library.
-#
-# FIXME: Currently clang is miscompiled with the default release settings. For
-# now, force optimization off. :(
-CXXFLAGS := /MT /Od /Ob0 /D NDEBUG
+MSVC_CRT := MT
 
 # Override CMake default libraries list, which is much larger than we need.
 CXXLIBS := kernel32.lib user32.lib advapi32.lib
@@ -62,7 +59,7 @@ configure:
 	cd "$(OBJROOT)" && \
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
 	           -DLLVM_TARGETS_TO_BUILD:=X86 \
-	           "-DCMAKE_CXX_FLAGS_RELEASE:STRING=$(CXXFLAGS)" \
+	           "-DLLVM_USE_CRT:=$(MSVC_CRT)" \
 	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
 	           -G "Visual Studio 9 2008" \
 	           "$(SRCROOT)\src"
@@ -83,6 +80,7 @@ update-sources:
 	svn rm -m 'Update.' $(SVN_CLANG)/src
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
+	svn up
 
 ###
 # Debugging
