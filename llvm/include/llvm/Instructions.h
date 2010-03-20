@@ -2516,6 +2516,11 @@ public:
   const Value *getCalledValue() const { return Op<-3>(); }
         Value *getCalledValue()       { return Op<-3>(); }
 
+  /// setCalledFunction - Set the function called.
+  void setCalledFunction(Value* Fn) {
+    Op<-3>() = Fn;
+  }
+
   // get*Dest - Return the destination basic blocks...
   BasicBlock *getNormalDest() const {
     return cast<BasicBlock>(Op<-2>());
