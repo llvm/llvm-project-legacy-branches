@@ -192,6 +192,9 @@ public:
   bool isCallee(Value::use_iterator UI) const {
     return getCallee() == &UI.getUse();
   }
+  bool isCallee(Value::use_const_iterator UI) const {
+    return getCallee() == &UI.getUse();
+  }
 private:
   /// Returns the operand number of the first argument
   unsigned getArgumentOffset() const {
