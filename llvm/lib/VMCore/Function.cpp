@@ -403,13 +403,14 @@ Function *Intrinsic::getDeclaration(Module *M, ID id, const Type **Tys,
 
 /// hasAddressTaken - returns true if there are any uses of this function
 /// other than direct calls or invokes to it.
-bool Function::hasAddressTaken() const {
+bool Function::hasAddressTaken(const User* *PutOffender) const {
   for (Value::use_const_iterator I = use_begin(), E = use_end(); I != E; ++I) {
-    if (!isa<CallInst>(*I) && !isa<InvokeInst>(*I))
-      return true;
-    CallSite CS(const_cast<Instruction*>(static_cast<const Instruction*>(*I)));
+    const User *U = *I;
+    if (!isa<CallInst>(U) && !isa<InvokeInst>(U))
+      return PutOffender ? (*PutOffender = U, true) : true;
+    CallSite CS(const_cast<Instruction*>(static_cast<const Instruction*>(U)));
     if (!CS.isCallee(I))
-      return true;
+      return PutOffender ? (*PutOffender = U, true) : true;
   }
   return false;
 }
