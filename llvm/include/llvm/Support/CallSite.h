@@ -176,11 +176,10 @@ private:
 
 
 class CallSite : public CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> {
-	//  PointerIntPair<Instruction*, 1, bool> I;
   typedef CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> _Base;
 public:
-	CallSite() {}
-	CallSite(_Base B) : _Base(B) {}
+  CallSite() {}
+  CallSite(_Base B) : _Base(B) {}
   CallSite(CallInst *CI) : _Base(CI) {}
   CallSite(InvokeInst *II) : _Base(II) {}
   CallSite(Instruction *II) : _Base(II) {}
@@ -194,14 +193,6 @@ public:
   /// NOT a call site.
   ///
   static CallSite get(Value *V) {
-		/*
-    if (Instruction *I = dyn_cast<Instruction>(V)) {
-      if (I->getOpcode() == Instruction::Call)
-        return CallSite(reinterpret_cast<CallInst*>(I));
-      else if (I->getOpcode() == Instruction::Invoke)
-        return CallSite(reinterpret_cast<InvokeInst*>(I));
-				}
-				return CallSite();*/
     return _Base::get(V);
   }
 
@@ -243,131 +234,24 @@ public:
 
   /// getType - Return the type of the instruction that generated this call site
   ///
-  const Type *getType() const { return getInstruction()->getType(); }
-	/*
-  /// isCall - true if a CallInst is enclosed.
-  /// Note that !isCall() does not mean it is an InvokeInst enclosed,
-  /// it also could signify a NULL Instruction pointer.
-  bool isCall() const { return I.getInt(); }
+  const Type *getType() const { return (*this)->getType(); }
 
-  /// isInvoke - true if a InvokeInst is enclosed.
-  ///
-  bool isInvoke() const { return getInstruction() && !I.getInt(); }
-
-  /// getInstruction - Return the instruction this call site corresponds to
-  ///
-  Instruction *getInstruction() const { return I.getPointer(); }
-*/
   /// getCaller - Return the caller function for this call site
   ///
   Function *getCaller() const { return (*this)->getParent()->getParent(); }
 
- /* /// getCalledValue - Return the pointer to function that is being called...
-  ///
-  Value *getCalledValue() const {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    return *getCallee();
-  }
-
-  /// getCalledFunction - Return the function being called if this is a direct
-  /// call, otherwise return null (if it's an indirect call).
-  ///
-  Function *getCalledFunction() const {
-    return dyn_cast<Function>(getCalledValue());
-  }
-
-  /// setCalledFunction - Set the callee to the specified value...
-  ///
-  void setCalledFunction(Value *V) {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    *getCallee() = V;
-  }
-
-  Value *getArgument(unsigned ArgNo) const {
-    assert(arg_begin() + ArgNo < arg_end() && "Argument # out of range!");
-    return *(arg_begin()+ArgNo);
-  }
-
-  void setArgument(unsigned ArgNo, Value* newVal) {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    assert(arg_begin() + ArgNo < arg_end() && "Argument # out of range!");
-    getInstruction()->setOperand(getArgumentOffset() + ArgNo, newVal);
-  }
-
-  /// Given a value use iterator, returns the argument that corresponds to it.
-  /// Iterator must actually correspond to an argument.
-  unsigned getArgumentNo(Value::use_iterator I) const {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    assert(arg_begin() <= &I.getUse() && &I.getUse() < arg_end()
-           && "Argument # out of range!");
-
-    return &I.getUse() - arg_begin();
-  }
-  unsigned getArgumentNo(Value::use_const_iterator I) const {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    assert(arg_begin() <= &I.getUse() && &I.getUse() < arg_end()
-           && "Argument # out of range!");
-
-    return &I.getUse() - arg_begin();
-  }
-
-  /// Given an operand number, returns the argument that corresponds to it.
-  /// OperandNo must be a valid operand number that actually corresponds to an
-  /// argument.
-  unsigned getArgumentNo(unsigned OperandNo) const {
-    assert(OperandNo >= getArgumentOffset() && "Operand number passed was not "
-                                               "a valid argument");
-    return OperandNo - getArgumentOffset();
-  }
-	*/
   /// hasArgument - Returns true if this CallSite passes the given Value* as an
   /// argument to the called function.
   bool hasArgument(const Value *Arg) const;
-	/*
-  /// arg_iterator - The type of iterator to use when looping over actual
-  /// arguments at this call site...
-  typedef User::op_iterator arg_iterator;
 
-  /// arg_begin/arg_end - Return iterators corresponding to the actual argument
-  /// list for a call site.
-  arg_iterator arg_begin() const {
-    assert(getInstruction() && "Not a call or invoke instruction!");
-    // Skip non-arguments
-    return getInstruction()->op_begin() + getArgumentOffset();
-  }
-
-  arg_iterator arg_end() const { return getInstruction()->op_end() - getArgumentEndOffset(); }
-	*/
   bool arg_empty() const { return arg_end() == arg_begin(); }
   unsigned arg_size() const { return unsigned(arg_end() - arg_begin()); }
 
   bool operator<(const CallSite &CS) const {
     return getInstruction() < CS.getInstruction();
   }
-	/*
-  bool isCallee(Value::use_iterator UI) const {
-    return getCallee() == &UI.getUse();
-  }
-  bool isCallee(Value::use_const_iterator UI) const {
-    return getCallee() == &UI.getUse();
-		}*/
-private:
-	/*
-  /// Returns the operand number of the first argument
-  unsigned getArgumentOffset() const {
-    if (isCall())
-      return 1; // Skip Function
-    else
-      return 0; // Args are at the front
-  }
 
-  unsigned getArgumentEndOffset() const {
-    if (isCall())
-      return 0; // Unchanged
-    else
-      return 3; // Skip BB, BB, Function
-  }
-	*/
+private:
   User::op_iterator getCallee() const;
 };
 
