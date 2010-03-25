@@ -244,9 +244,6 @@ public:
   /// argument to the called function.
   bool hasArgument(const Value *Arg) const;
 
-  bool arg_empty() const { return arg_end() == arg_begin(); }
-  unsigned arg_size() const { return unsigned(arg_end() - arg_begin()); }
-
   bool operator<(const CallSite &CS) const {
     return getInstruction() < CS.getInstruction();
   }
