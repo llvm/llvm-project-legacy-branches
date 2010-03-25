@@ -26,6 +26,10 @@ static cl::opt<bool>
 UseNEONFP("arm-use-neon-fp",
           cl::desc("Use NEON for single-precision FP"),
           cl::init(false), cl::Hidden);
+static cl::opt<bool>
+UseVMLxInstructions("arm-use-vmlx",
+                    cl::desc("Use VFP vmla and vmls instructions"),
+                    cl::init(true), cl::Hidden);
 
 static cl::opt<bool>
 UseMOVT("arm-use-movt",
@@ -36,6 +40,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   : ARMArchVersion(V4)
   , ARMFPUType(None)
   , UseNEONForSinglePrecisionFP(UseNEONFP)
+  , UseVMLx(UseVMLxInstructions)
   , IsThumb(isT)
   , ThumbMode(Thumb1)
   , PostRAScheduler(false)
@@ -122,6 +127,12 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
     // operations with NEON instructions.
     if (UseNEONFP.getPosition() == 0)
       UseNEONForSinglePrecisionFP = true;
+    // The VFP vlma and vlms instructions don't play nicely with others;
+    // disable them.
+    // FIXME: This may be true for other variants as well. Get benchmark
+    // numbers and add them if determined that's the case.
+    if (UseVMLxInstructions.getPosition() == 0)
+      UseVMLx = false;
   }
 }
 
