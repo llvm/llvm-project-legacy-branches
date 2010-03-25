@@ -72,7 +72,8 @@ build: configure
 test: build
 	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\tools\clang\test\clang-test.vcproj "$(TARGET)"
 
-install: test
+# FIXME: Don't require 'test' as part of build, Python may not be available.
+install: build
 	"$(CMAKE)" -E make_directory "$(BINDEST)"
 	xcopy /i/y "$(STAGEROOT)\bin\clang.exe" "$(BINDEST)"
 
