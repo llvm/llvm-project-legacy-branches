@@ -34,7 +34,8 @@ namespace llvm {
 class CallInst;
 class InvokeInst;
 
-template <typename ValTy = const Value,
+template <typename FunTy = const Function,
+          typename ValTy = const Value,
           typename UserTy = const User,
           typename InstrTy = const Instruction,
           typename CallTy = const CallInst,
@@ -44,8 +45,8 @@ class CallSiteBase {
   PointerIntPair<InstrTy*, 1, bool> I;
 public:
   CallSiteBase() : I(0, false) {}
-  CallSiteBase(CallInst *CI) : I(reinterpret_cast<InstrTy*>(CI), true) {}
-  CallSiteBase(InvokeInst *II) : I(reinterpret_cast<InstrTy*>(II), false) {}
+  CallSiteBase(CallTy *CI) : I(reinterpret_cast<InstrTy*>(CI), true) {}
+  CallSiteBase(InvokeTy *II) : I(reinterpret_cast<InstrTy*>(II), false) {}
   CallSiteBase(ValTy *II) { *this = get(II); }
   CallSiteBase(InstrTy *II) {
     assert(II && "Null instruction given?");
@@ -83,7 +84,7 @@ public:
 
   /// getCalledValue - Return the pointer to function that is being called...
   ///
-  Value *getCalledValue() const {
+  ValTy *getCalledValue() const {
     assert(getInstruction() && "Not a call or invoke instruction!");
     return *getCallee();
   }
@@ -91,8 +92,8 @@ public:
   /// getCalledFunction - Return the function being called if this is a direct
   /// call, otherwise return null (if it's an indirect call).
   ///
-  Function *getCalledFunction() const {
-    return dyn_cast<Function>(getCalledValue());
+  FunTy *getCalledFunction() const {
+    return dyn_cast<FunTy>(getCalledValue());
   }
 
   /// setCalledFunction - Set the callee to the specified value...
@@ -109,7 +110,7 @@ public:
     return getCallee() == &UI.getUse();
   }
 
-  Value *getArgument(unsigned ArgNo) const {
+  ValTy *getArgument(unsigned ArgNo) const {
     assert(arg_begin() + ArgNo < arg_end() && "Argument # out of range!");
     return *(arg_begin()+ArgNo);
   }
@@ -128,6 +129,10 @@ public:
            && "Argument # out of range!");
     return &I.getUse() - arg_begin();
   }
+
+  /// arg_iterator - The type of iterator to use when looping over actual
+  /// arguments at this call site...
+  typedef IterTy arg_iterator;
 
   /// arg_begin/arg_end - Return iterators corresponding to the actual argument
   /// list for a call site.
