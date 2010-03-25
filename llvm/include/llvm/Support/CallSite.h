@@ -158,6 +158,9 @@ private:
   }
 
   IterTy getCallee() const {
+      // FIXME: this is slow, since we do not have the fast versions
+      // of the op_*() functions here. See CallSite::getCallee.
+      //
     if (isCall())
       return getInstruction()->op_begin(); // Unchanged (ATM)
     else
