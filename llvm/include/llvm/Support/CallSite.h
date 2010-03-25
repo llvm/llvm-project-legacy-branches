@@ -42,6 +42,7 @@ template <typename FunTy = const Function,
           typename InvokeTy = const InvokeInst,
           typename IterTy = User::const_op_iterator>
 class CallSiteBase {
+protected:
   PointerIntPair<InstrTy*, 1, bool> I;
 public:
   CallSiteBase() : I(0, false) {}
@@ -174,13 +175,15 @@ private:
 };
 
 
-class CallSite {
-  PointerIntPair<Instruction*, 1, bool> I;
+class CallSite : public CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> {
+	//  PointerIntPair<Instruction*, 1, bool> I;
+  typedef CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> _Base;
 public:
-  CallSite() : I(0, false) {}
-  CallSite(CallInst *CI) : I(reinterpret_cast<Instruction*>(CI), true) {}
-  CallSite(InvokeInst *II) : I(reinterpret_cast<Instruction*>(II), false) {}
-  CallSite(Instruction*);
+	CallSite() {}
+	CallSite(_Base B) : _Base(B) {}
+  CallSite(CallInst *CI) : _Base(CI) {}
+  CallSite(InvokeInst *II) : _Base(II) {}
+  CallSite(Instruction *II) : _Base(II) {}
 
   bool operator==(const CallSite &CS) const { return I == CS.I; }
   bool operator!=(const CallSite &CS) const { return I != CS.I; }
@@ -191,13 +194,15 @@ public:
   /// NOT a call site.
   ///
   static CallSite get(Value *V) {
+		/*
     if (Instruction *I = dyn_cast<Instruction>(V)) {
       if (I->getOpcode() == Instruction::Call)
         return CallSite(reinterpret_cast<CallInst*>(I));
       else if (I->getOpcode() == Instruction::Invoke)
         return CallSite(reinterpret_cast<InvokeInst*>(I));
-    }
-    return CallSite();
+				}
+				return CallSite();*/
+    return _Base::get(V);
   }
 
   /// getCallingConv/setCallingConv - get or set the calling convention of the
@@ -239,7 +244,7 @@ public:
   /// getType - Return the type of the instruction that generated this call site
   ///
   const Type *getType() const { return getInstruction()->getType(); }
-
+	/*
   /// isCall - true if a CallInst is enclosed.
   /// Note that !isCall() does not mean it is an InvokeInst enclosed,
   /// it also could signify a NULL Instruction pointer.
@@ -252,13 +257,12 @@ public:
   /// getInstruction - Return the instruction this call site corresponds to
   ///
   Instruction *getInstruction() const { return I.getPointer(); }
-
+*/
   /// getCaller - Return the caller function for this call site
   ///
-  Function *getCaller() const { return getInstruction()
-                                  ->getParent()->getParent(); }
+  Function *getCaller() const { return (*this)->getParent()->getParent(); }
 
-  /// getCalledValue - Return the pointer to function that is being called...
+ /* /// getCalledValue - Return the pointer to function that is being called...
   ///
   Value *getCalledValue() const {
     assert(getInstruction() && "Not a call or invoke instruction!");
@@ -315,11 +319,11 @@ public:
                                                "a valid argument");
     return OperandNo - getArgumentOffset();
   }
-
+	*/
   /// hasArgument - Returns true if this CallSite passes the given Value* as an
   /// argument to the called function.
   bool hasArgument(const Value *Arg) const;
-
+	/*
   /// arg_iterator - The type of iterator to use when looping over actual
   /// arguments at this call site...
   typedef User::op_iterator arg_iterator;
@@ -333,20 +337,22 @@ public:
   }
 
   arg_iterator arg_end() const { return getInstruction()->op_end() - getArgumentEndOffset(); }
+	*/
   bool arg_empty() const { return arg_end() == arg_begin(); }
   unsigned arg_size() const { return unsigned(arg_end() - arg_begin()); }
 
   bool operator<(const CallSite &CS) const {
     return getInstruction() < CS.getInstruction();
   }
-
+	/*
   bool isCallee(Value::use_iterator UI) const {
     return getCallee() == &UI.getUse();
   }
   bool isCallee(Value::use_const_iterator UI) const {
     return getCallee() == &UI.getUse();
-  }
+		}*/
 private:
+	/*
   /// Returns the operand number of the first argument
   unsigned getArgumentOffset() const {
     if (isCall())
@@ -361,7 +367,7 @@ private:
     else
       return 3; // Skip BB, BB, Function
   }
-
+	*/
   User::op_iterator getCallee() const;
 };
 
