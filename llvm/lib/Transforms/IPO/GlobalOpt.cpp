@@ -140,11 +140,11 @@ struct GlobalStatus {
 // by constants itself.  Note that constants cannot be cyclic, so this test is
 // pretty easy to implement recursively.
 //
-static bool SafeToDestroyConstant(Constant *C) {
+static bool SafeToDestroyConstant(const Constant *C) {
   if (isa<GlobalValue>(C)) return false;
 
-  for (Value::use_iterator UI = C->use_begin(), E = C->use_end(); UI != E; ++UI)
-    if (Constant *CU = dyn_cast<Constant>(*UI)) {
+  for (Value::const_use_iterator UI = C->use_begin(), E = C->use_end(); UI != E; ++UI)
+    if (const Constant *CU = dyn_cast<Constant>(*UI)) {
       if (!SafeToDestroyConstant(CU)) return false;
     } else
       return false;
