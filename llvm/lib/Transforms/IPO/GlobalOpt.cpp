@@ -1029,23 +1029,23 @@ static void ReplaceUsesOfMallocWithGlobal(Instruction *Alloc,
 /// LoadUsesSimpleEnoughForHeapSRA - Verify that all uses of V (a load, or a phi
 /// of a load) are simple enough to perform heap SRA on.  This permits GEP's
 /// that index through the array and struct field, icmps of null, and PHIs.
-static bool LoadUsesSimpleEnoughForHeapSRA(Value *V,
-                              SmallPtrSet<PHINode*, 32> &LoadUsingPHIs,
-                              SmallPtrSet<PHINode*, 32> &LoadUsingPHIsPerLoad) {
+static bool LoadUsesSimpleEnoughForHeapSRA(const Value *V,
+                              SmallPtrSet<const PHINode*, 32> &LoadUsingPHIs,
+                              SmallPtrSet<const PHINode*, 32> &LoadUsingPHIsPerLoad) {
   // We permit two users of the load: setcc comparing against the null
   // pointer, and a getelementptr of a specific form.
-  for (Value::use_iterator UI = V->use_begin(), E = V->use_end(); UI != E;++UI){
-    Instruction *User = cast<Instruction>(*UI);
+  for (Value::const_use_iterator UI = V->use_begin(), E = V->use_end(); UI != E;++UI){
+    const Instruction *User = cast<Instruction>(*UI);
     
     // Comparison against null is ok.
-    if (ICmpInst *ICI = dyn_cast<ICmpInst>(User)) {
+    if (const ICmpInst *ICI = dyn_cast<ICmpInst>(User)) {
       if (!isa<ConstantPointerNull>(ICI->getOperand(1)))
         return false;
       continue;
     }
     
     // getelementptr is also ok, but only a simple form.
-    if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(User)) {
+    if (const GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(User)) {
       // Must index into the array and into the struct.
       if (GEPI->getNumOperands() < 3)
         return false;
@@ -1054,7 +1054,7 @@ static bool LoadUsesSimpleEnoughForHeapSRA(Value *V,
       continue;
     }
     
-    if (PHINode *PN = dyn_cast<PHINode>(User)) {
+    if (const PHINode *PN = dyn_cast<PHINode>(User)) {
       if (!LoadUsingPHIsPerLoad.insert(PN))
         // This means some phi nodes are dependent on each other.
         // Avoid infinite looping!
@@ -1081,13 +1081,13 @@ static bool LoadUsesSimpleEnoughForHeapSRA(Value *V,
 
 /// AllGlobalLoadUsesSimpleEnoughForHeapSRA - If all users of values loaded from
 /// GV are simple enough to perform HeapSRA, return true.
-static bool AllGlobalLoadUsesSimpleEnoughForHeapSRA(GlobalVariable *GV,
+static bool AllGlobalLoadUsesSimpleEnoughForHeapSRA(const GlobalVariable *GV,
                                                     Instruction *StoredVal) {
-  SmallPtrSet<PHINode*, 32> LoadUsingPHIs;
-  SmallPtrSet<PHINode*, 32> LoadUsingPHIsPerLoad;
-  for (Value::use_iterator UI = GV->use_begin(), E = GV->use_end(); UI != E; 
+  SmallPtrSet<const PHINode*, 32> LoadUsingPHIs;
+  SmallPtrSet<const PHINode*, 32> LoadUsingPHIsPerLoad;
+  for (Value::const_use_iterator UI = GV->use_begin(), E = GV->use_end(); UI != E; 
        ++UI)
-    if (LoadInst *LI = dyn_cast<LoadInst>(*UI)) {
+    if (const LoadInst *LI = dyn_cast<LoadInst>(*UI)) {
       if (!LoadUsesSimpleEnoughForHeapSRA(LI, LoadUsingPHIs,
                                           LoadUsingPHIsPerLoad))
         return false;
@@ -1099,16 +1099,16 @@ static bool AllGlobalLoadUsesSimpleEnoughForHeapSRA(GlobalVariable *GV,
   // that all inputs the to the PHI nodes are in the same equivalence sets. 
   // Check to verify that all operands of the PHIs are either PHIS that can be
   // transformed, loads from GV, or MI itself.
-  for (SmallPtrSet<PHINode*, 32>::iterator I = LoadUsingPHIs.begin(),
+  for (SmallPtrSet<const PHINode*, 32>::const_iterator I = LoadUsingPHIs.begin(),
        E = LoadUsingPHIs.end(); I != E; ++I) {
-    PHINode *PN = *I;
+    const PHINode *PN = *I;
     for (unsigned op = 0, e = PN->getNumIncomingValues(); op != e; ++op) {
       Value *InVal = PN->getIncomingValue(op);
       
       // PHI of the stored value itself is ok.
       if (InVal == StoredVal) continue;
       
-      if (PHINode *InPN = dyn_cast<PHINode>(InVal)) {
+      if (const PHINode *InPN = dyn_cast<PHINode>(InVal)) {
         // One of the PHIs in our set is (optimistically) ok.
         if (LoadUsingPHIs.count(InPN))
           continue;
@@ -1116,7 +1116,7 @@ static bool AllGlobalLoadUsesSimpleEnoughForHeapSRA(GlobalVariable *GV,
       }
       
       // Load from GV is ok.
-      if (LoadInst *LI = dyn_cast<LoadInst>(InVal))
+      if (const LoadInst *LI = dyn_cast<LoadInst>(InVal))
         if (LI->getOperand(0) == GV)
           continue;
       
