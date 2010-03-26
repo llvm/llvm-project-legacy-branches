@@ -96,8 +96,8 @@ else
 AEP_ExtractOption = z
 endif
 
-Install_Target = $(Clang_Make_Variables) -s --no-print-directory install-clang
-Build_Target = $(Clang_Make_Variables) -s --no-print-directory clang-only
+Install_Target = $(Clang_Make_Variables) install-clang
+Build_Target = $(Clang_Make_Variables) clang-only
 
 # Extract the source.
 install_source::
