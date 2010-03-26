@@ -129,7 +129,7 @@ namespace {
 
   private:
     Liveness MarkIfNotLive(RetOrArg Use, UseVector &MaybeLiveUses);
-    Liveness SurveyUse(Value::use_const_iterator U, UseVector &MaybeLiveUses,
+    Liveness SurveyUse(Value::const_use_iterator U, UseVector &MaybeLiveUses,
                        unsigned RetValNum = 0);
     Liveness SurveyUses(const Value *V, UseVector &MaybeLiveUses);
 
@@ -310,7 +310,7 @@ DAE::Liveness DAE::MarkIfNotLive(RetOrArg Use, UseVector &MaybeLiveUses) {
 /// RetValNum is the return value number to use when this use is used in a
 /// return instruction. This is used in the recursion, you should always leave
 /// it at 0.
-DAE::Liveness DAE::SurveyUse(Value::use_const_iterator U, UseVector &MaybeLiveUses,
+DAE::Liveness DAE::SurveyUse(Value::const_use_iterator U, UseVector &MaybeLiveUses,
                              unsigned RetValNum) {
     const User *V = *U;
     if (const ReturnInst *RI = dyn_cast<ReturnInst>(V)) {
@@ -334,7 +334,7 @@ DAE::Liveness DAE::SurveyUse(Value::use_const_iterator U, UseVector &MaybeLiveUs
       // we don't change RetValNum, but do survey all our uses.
 
       Liveness Result = MaybeLive;
-      for (Value::use_const_iterator I = IV->use_begin(),
+      for (Value::const_use_iterator I = IV->use_begin(),
            E = V->use_end(); I != E; ++I) {
         Result = SurveyUse(I, MaybeLiveUses, RetValNum);
         if (Result == Live)
@@ -382,7 +382,7 @@ DAE::Liveness DAE::SurveyUses(const Value *V, UseVector &MaybeLiveUses) {
   // Assume it's dead (which will only hold if there are no uses at all..).
   Liveness Result = MaybeLive;
   // Check each use.
-  for (Value::use_const_iterator I = V->use_begin(),
+  for (Value::const_use_iterator I = V->use_begin(),
        E = V->use_end(); I != E; ++I) {
     Result = SurveyUse(I, MaybeLiveUses);
     if (Result == Live)
@@ -431,7 +431,7 @@ void DAE::SurveyFunction(const Function &F) {
   unsigned NumLiveRetVals = 0;
   const Type *STy = dyn_cast<StructType>(F.getReturnType());
   // Loop all uses of the function.
-  for (Value::use_const_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I) {
+  for (Value::const_use_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I) {
     // If the function is PASSED IN as an argument, its address has been
     // taken.
     CallSiteBase<> CS(*I);
@@ -454,7 +454,7 @@ void DAE::SurveyFunction(const Function &F) {
     if (NumLiveRetVals != RetCount) {
       if (STy) {
         // Check all uses of the return value.
-        for (Value::use_const_iterator I = TheCall->use_begin(),
+        for (Value::const_use_iterator I = TheCall->use_begin(),
              E = TheCall->use_end(); I != E; ++I) {
           const ExtractValueInst *Ext = dyn_cast<ExtractValueInst>(*I);
           if (Ext && Ext->hasIndices()) {
