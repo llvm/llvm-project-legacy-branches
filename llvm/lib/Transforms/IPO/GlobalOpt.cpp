@@ -119,7 +119,7 @@ struct GlobalStatus {
   /// null/false.  When the first accessing function is noticed, it is recorded.
   /// When a second different accessing function is noticed,
   /// HasMultipleAccessingFunctions is set to true.
-  Function *AccessingFunction;
+  const Function *AccessingFunction;
   bool HasMultipleAccessingFunctions;
 
   /// HasNonInstructionUser - Set to true if this global has a user that is not
@@ -156,26 +156,26 @@ static bool SafeToDestroyConstant(const Constant *C) {
 /// structure.  If the global has its address taken, return true to indicate we
 /// can't do anything with it.
 ///
-static bool AnalyzeGlobal(Value *V, GlobalStatus &GS,
-                          SmallPtrSet<PHINode*, 16> &PHIUsers) {
-  for (Value::use_iterator UI = V->use_begin(), E = V->use_end(); UI != E; ++UI)
-    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(*UI)) {
+static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
+                          SmallPtrSet<const PHINode*, 16> &PHIUsers) {
+  for (Value::const_use_iterator UI = V->use_begin(), E = V->use_end(); UI != E; ++UI)
+    if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(*UI)) {
       GS.HasNonInstructionUser = true;
 
       if (AnalyzeGlobal(CE, GS, PHIUsers)) return true;
 
-    } else if (Instruction *I = dyn_cast<Instruction>(*UI)) {
+    } else if (const Instruction *I = dyn_cast<Instruction>(*UI)) {
       if (!GS.HasMultipleAccessingFunctions) {
-        Function *F = I->getParent()->getParent();
+        const Function *F = I->getParent()->getParent();
         if (GS.AccessingFunction == 0)
           GS.AccessingFunction = F;
         else if (GS.AccessingFunction != F)
           GS.HasMultipleAccessingFunctions = true;
       }
-      if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+      if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         GS.isLoaded = true;
         if (LI->isVolatile()) return true;  // Don't hack on volatile loads.
-      } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+      } else if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
         // Don't allow a store OF the address, only stores TO the address.
         if (SI->getOperand(0) == V) return true;
 
@@ -185,14 +185,13 @@ static bool AnalyzeGlobal(Value *V, GlobalStatus &GS,
         // value, not an aggregate), keep more specific information about
         // stores.
         if (GS.StoredType != GlobalStatus::isStored) {
-          if (GlobalVariable *GV = dyn_cast<GlobalVariable>(SI->getOperand(1))){
+          if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(SI->getOperand(1))){
             Value *StoredVal = SI->getOperand(0);
             if (StoredVal == GV->getInitializer()) {
               if (GS.StoredType < GlobalStatus::isInitializerStored)
                 GS.StoredType = GlobalStatus::isInitializerStored;
             } else if (isa<LoadInst>(StoredVal) &&
                        cast<LoadInst>(StoredVal)->getOperand(0) == GV) {
-              // G = G
               if (GS.StoredType < GlobalStatus::isInitializerStored)
                 GS.StoredType = GlobalStatus::isInitializerStored;
             } else if (GS.StoredType < GlobalStatus::isStoredOnce) {
@@ -212,7 +211,7 @@ static bool AnalyzeGlobal(Value *V, GlobalStatus &GS,
         if (AnalyzeGlobal(I, GS, PHIUsers)) return true;
       } else if (isa<SelectInst>(I)) {
         if (AnalyzeGlobal(I, GS, PHIUsers)) return true;
-      } else if (PHINode *PN = dyn_cast<PHINode>(I)) {
+      } else if (const PHINode *PN = dyn_cast<PHINode>(I)) {
         // PHI nodes we can check just like select or GEP instructions, but we
         // have to be careful about infinite recursion.
         if (PHIUsers.insert(PN))  // Not already visited.
@@ -230,7 +229,7 @@ static bool AnalyzeGlobal(Value *V, GlobalStatus &GS,
       } else {
         return true;  // Any other non-load instruction might take address!
       }
-    } else if (Constant *C = dyn_cast<Constant>(*UI)) {
+    } else if (const Constant *C = dyn_cast<Constant>(*UI)) {
       GS.HasNonInstructionUser = true;
       // We might have a dead and dangling constant hanging off of here.
       if (!SafeToDestroyConstant(C))
@@ -1664,7 +1663,7 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
 /// it if possible.  If we make a change, return true.
 bool GlobalOpt::ProcessInternalGlobal(GlobalVariable *GV,
                                       Module::global_iterator &GVI) {
-  SmallPtrSet<PHINode*, 16> PHIUsers;
+  SmallPtrSet<const PHINode*, 16> PHIUsers;
   GlobalStatus GS;
   GV->removeDeadConstantUsers();
 
@@ -1715,12 +1714,13 @@ bool GlobalOpt::ProcessInternalGlobal(GlobalVariable *GV,
         GS.AccessingFunction->hasExternalLinkage() &&
         GV->getType()->getAddressSpace() == 0) {
       DEBUG(dbgs() << "LOCALIZING GLOBAL: " << *GV);
-      Instruction* FirstI = GS.AccessingFunction->getEntryBlock().begin();
+      Instruction& FirstI = const_cast<Instruction&>(*GS.AccessingFunction
+                                                     ->getEntryBlock().begin());
       const Type* ElemTy = GV->getType()->getElementType();
       // FIXME: Pass Global's alignment when globals have alignment
-      AllocaInst* Alloca = new AllocaInst(ElemTy, NULL, GV->getName(), FirstI);
+      AllocaInst* Alloca = new AllocaInst(ElemTy, NULL, GV->getName(), &FirstI);
       if (!isa<UndefValue>(GV->getInitializer()))
-        new StoreInst(GV->getInitializer(), Alloca, FirstI);
+        new StoreInst(GV->getInitializer(), Alloca, &FirstI);
 
       GV->replaceAllUsesWith(Alloca);
       GV->eraseFromParent();
