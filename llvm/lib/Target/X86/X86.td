@@ -160,8 +160,8 @@ def X86InstrInfo : InstrInfo {
                        "hasAdSizePrefix",
                        "Prefix",
                        "hasREX_WPrefix",
-                       "ImmTypeBits",
-                       "FPFormBits",
+                       "ImmT.Value",
+                       "FPForm.Value",
                        "hasLockPrefix",
                        "SegOvrBits",
                        "Opcode"];
