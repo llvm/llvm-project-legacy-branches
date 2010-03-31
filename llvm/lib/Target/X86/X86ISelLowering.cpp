@@ -1418,8 +1418,7 @@ CreateCopyOfByValArgument(SDValue Src, SDValue Dst, SDValue Chain,
                           DebugLoc dl) {
   SDValue SizeNode     = DAG.getConstant(Flags.getByValSize(), MVT::i32);
   return DAG.getMemcpy(Chain, dl, Dst, Src, SizeNode, Flags.getByValAlign(),
-                       /*isVolatile*/false, /*AlwaysInline=*/true,
-                       NULL, 0, NULL, 0);
+                       /*AlwaysInline=*/true, NULL, 0, NULL, 0);
 }
 
 /// IsTailCallConvention - Return true if the calling convention is one that
@@ -6521,7 +6520,6 @@ X86TargetLowering::EmitTargetCodeForMemset(SelectionDAG &DAG, DebugLoc dl,
                                            SDValue Chain,
                                            SDValue Dst, SDValue Src,
                                            SDValue Size, unsigned Align,
-                                           bool isVolatile,
                                            const Value *DstSV,
                                            uint64_t DstSVOff) {
   ConstantSDNode *ConstantSize = dyn_cast<ConstantSDNode>(Size);
@@ -6650,7 +6648,7 @@ X86TargetLowering::EmitTargetCodeForMemset(SelectionDAG &DAG, DebugLoc dl,
                                       DAG.getConstant(Offset, AddrVT)),
                           Src,
                           DAG.getConstant(BytesLeft, SizeVT),
-                          Align, isVolatile, DstSV, DstSVOff + Offset);
+                          Align, DstSV, DstSVOff + Offset);
   }
 
   // TODO: Use a Tokenfactor, as in memcpy, instead of a single chain.
@@ -6661,7 +6659,7 @@ SDValue
 X86TargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
                                       SDValue Chain, SDValue Dst, SDValue Src,
                                       SDValue Size, unsigned Align,
-                                      bool isVolatile, bool AlwaysInline,
+                                      bool AlwaysInline,
                                       const Value *DstSV, uint64_t DstSVOff,
                                       const Value *SrcSV, uint64_t SrcSVOff) {
   // This requires the copy size to be a constant, preferrably
@@ -6720,7 +6718,7 @@ X86TargetLowering::EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
                                     DAG.getNode(ISD::ADD, dl, SrcVT, Src,
                                                 DAG.getConstant(Offset, SrcVT)),
                                     DAG.getConstant(BytesLeft, SizeVT),
-                                    Align, isVolatile, AlwaysInline,
+                                    Align, AlwaysInline,
                                     DstSV, DstSVOff + Offset,
                                     SrcSV, SrcSVOff + Offset));
   }
@@ -6803,8 +6801,8 @@ SDValue X86TargetLowering::LowerVACOPY(SDValue Op, SelectionDAG &DAG) {
   DebugLoc dl = Op.getDebugLoc();
 
   return DAG.getMemcpy(Chain, dl, DstPtr, SrcPtr,
-                       DAG.getIntPtrConstant(24), 8, /*isVolatile*/false,
-                       false, DstSV, 0, SrcSV, 0);
+                       DAG.getIntPtrConstant(24), 8, false,
+                       DstSV, 0, SrcSV, 0);
 }
 
 SDValue
