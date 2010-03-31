@@ -1115,15 +1115,19 @@ def STMXCSR : PSI<0xAE, MRM3m, (outs), (ins i32mem:$dst),
 // load of an all-zeros value if folding it would be beneficial.
 // FIXME: Change encoding to pseudo!
 let isReMaterializable = 1, isAsCheapAsAMove = 1, canFoldAsLoad = 1,
-    isCodeGenOnly = 1 in
-def V_SET0 : PSI<0x57, MRMInitReg, (outs VR128:$dst), (ins), "",
+    isCodeGenOnly = 1 in {
+def V_SET0PS : PSI<0x57, MRMInitReg, (outs VR128:$dst), (ins), "",
+                 [(set VR128:$dst, (v4f32 immAllZerosV))]>;
+def V_SET0PD : PDI<0x57, MRMInitReg, (outs VR128:$dst), (ins), "",
+                 [(set VR128:$dst, (v2f64 immAllZerosV))]>;
+let ExeDomain = SSEPackedInt in
+def V_SET0PI : PDI<0xEF, MRMInitReg, (outs VR128:$dst), (ins), "",
                  [(set VR128:$dst, (v4i32 immAllZerosV))]>;
+}
 
-def : Pat<(v2i64 immAllZerosV), (V_SET0)>;
-def : Pat<(v8i16 immAllZerosV), (V_SET0)>;
-def : Pat<(v16i8 immAllZerosV), (V_SET0)>;
-def : Pat<(v2f64 immAllZerosV), (V_SET0)>;
-def : Pat<(v4f32 immAllZerosV), (V_SET0)>;
+def : Pat<(v2i64 immAllZerosV), (V_SET0PI)>;
+def : Pat<(v8i16 immAllZerosV), (V_SET0PI)>;
+def : Pat<(v16i8 immAllZerosV), (V_SET0PI)>;
 
 def : Pat<(f32 (vector_extract (v4f32 VR128:$src), (iPTR 0))),
           (f32 (EXTRACT_SUBREG (v4f32 VR128:$src), x86_subreg_ss))>;
@@ -1937,6 +1941,7 @@ let Constraints = "$src1 = $dst" in {
 
 //===---------------------------------------------------------------------===//
 // SSE integer instructions
+let ExeDomain = SSEPackedInt in {
 
 // Move Instructions
 let neverHasSideEffects = 1 in
@@ -2045,6 +2050,7 @@ multiclass PDI_binop_rm_v2i64<bits<8> opc, string OpcodeStr, SDNode OpNode,
 }
 
 } // Constraints = "$src1 = $dst"
+} // ExeDomain = SSEPackedInt
 
 // 128-bit Integer Arithmetic
 
@@ -2107,7 +2113,8 @@ defm PSRAD : PDI_binop_rmi_int<0xE2, 0x72, MRM4r, "psrad",
                                int_x86_sse2_psra_d, int_x86_sse2_psrai_d>;
 
 // 128-bit logical shifts.
-let Constraints = "$src1 = $dst", neverHasSideEffects = 1 in {
+let Constraints = "$src1 = $dst", neverHasSideEffects = 1,
+    ExeDomain = SSEPackedInt in {
   def PSLLDQri : PDIi8<0x73, MRM7r,
                        (outs VR128:$dst), (ins VR128:$src1, i32i8imm:$src2),
                        "pslldq\t{$src2, $dst|$dst, $src2}", []>;
@@ -2141,7 +2148,7 @@ defm PAND : PDI_binop_rm_v2i64<0xDB, "pand", and, 1>;
 defm POR  : PDI_binop_rm_v2i64<0xEB, "por" , or , 1>;
 defm PXOR : PDI_binop_rm_v2i64<0xEF, "pxor", xor, 1>;
 
-let Constraints = "$src1 = $dst" in {
+let Constraints = "$src1 = $dst", ExeDomain = SSEPackedInt in {
   def PANDNrr : PDI<0xDF, MRMSrcReg,
                     (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
                     "pandn\t{$src2, $dst|$dst, $src2}",
@@ -2194,6 +2201,8 @@ def : Pat<(v4i32 (X86pcmpgtd VR128:$src1, (memop addr:$src2))),
 defm PACKSSWB : PDI_binop_rm_int<0x63, "packsswb", int_x86_sse2_packsswb_128>;
 defm PACKSSDW : PDI_binop_rm_int<0x6B, "packssdw", int_x86_sse2_packssdw_128>;
 defm PACKUSWB : PDI_binop_rm_int<0x67, "packuswb", int_x86_sse2_packuswb_128>;
+
+let ExeDomain = SSEPackedInt in {
 
 // Shuffle and unpack instructions
 let AddedComplexity = 5 in {
@@ -2371,10 +2380,13 @@ def MASKMOVDQU64 : PDI<0xF7, MRMSrcReg, (outs), (ins VR128:$src, VR128:$mask),
                      "maskmovdqu\t{$mask, $src|$src, $mask}",
                      [(int_x86_sse2_maskmov_dqu VR128:$src, VR128:$mask, RDI)]>;
 
+} // ExeDomain = SSEPackedInt
+
 // Non-temporal stores
 def MOVNTPDmr_Int : PDI<0x2B, MRMDestMem, (outs), (ins i128mem:$dst, VR128:$src),
                         "movntpd\t{$src, $dst|$dst, $src}",
                         [(int_x86_sse2_movnt_pd addr:$dst, VR128:$src)]>;
+let ExeDomain = SSEPackedInt in
 def MOVNTDQmr_Int : PDI<0xE7, MRMDestMem, (outs), (ins f128mem:$dst, VR128:$src),
                         "movntdq\t{$src, $dst|$dst, $src}",
                         [(int_x86_sse2_movnt_dq addr:$dst, VR128:$src)]>;
@@ -2388,6 +2400,7 @@ def MOVNTPDmr : PDI<0x2B, MRMDestMem, (outs), (ins f128mem:$dst, VR128:$src),
                     "movntpd\t{$src, $dst|$dst, $src}",
                     [(alignednontemporalstore(v2f64 VR128:$src), addr:$dst)]>;
 
+let ExeDomain = SSEPackedInt in
 def MOVNTDQmr : PDI<0xE7, MRMDestMem, (outs), (ins f128mem:$dst, VR128:$src),
                     "movntdq\t{$src, $dst|$dst, $src}",
                     [(alignednontemporalstore (v4f32 VR128:$src), addr:$dst)]>;
@@ -2416,7 +2429,7 @@ def : Pat<(membarrier (i8 imm), (i8 imm), (i8 imm), (i8 imm),
 // We set canFoldAsLoad because this can be converted to a constant-pool
 // load of an all-ones value if folding it would be beneficial.
 let isReMaterializable = 1, isAsCheapAsAMove = 1, canFoldAsLoad = 1,
-    isCodeGenOnly = 1 in
+    isCodeGenOnly = 1, ExeDomain = SSEPackedInt in
   // FIXME: Change encoding to pseudo.
   def V_SETALLONES : PDI<0x76, MRMInitReg, (outs VR128:$dst), (ins), "",
                          [(set VR128:$dst, (v4i32 immAllOnesV))]>;
@@ -3018,14 +3031,14 @@ let Predicates = [HasSSE2] in {
 let AddedComplexity = 15 in {
 // Zeroing a VR128 then do a MOVS{S|D} to the lower bits.
 def : Pat<(v2f64 (X86vzmovl (v2f64 (scalar_to_vector FR64:$src)))),
-          (MOVSDrr (v2f64 (V_SET0)), FR64:$src)>;
+          (MOVSDrr (v2f64 (V_SET0PS)), FR64:$src)>;
 def : Pat<(v4f32 (X86vzmovl (v4f32 (scalar_to_vector FR32:$src)))),
-          (MOVSSrr (v4f32 (V_SET0)), FR32:$src)>;
+          (MOVSSrr (v4f32 (V_SET0PS)), FR32:$src)>;
 def : Pat<(v4f32 (X86vzmovl (v4f32 VR128:$src))),
-          (MOVSSrr (v4f32 (V_SET0)),
+          (MOVSSrr (v4f32 (V_SET0PS)),
                    (f32 (EXTRACT_SUBREG (v4f32 VR128:$src), x86_subreg_ss)))>;
 def : Pat<(v4i32 (X86vzmovl (v4i32 VR128:$src))),
-          (MOVSSrr (v4i32 (V_SET0)),
+          (MOVSSrr (v4i32 (V_SET0PI)),
                    (EXTRACT_SUBREG (v4i32 VR128:$src), x86_subreg_ss))>;
 }
 

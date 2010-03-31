@@ -2514,7 +2514,9 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     Alignment = (*LoadMI->memoperands_begin())->getAlignment();
   else
     switch (LoadMI->getOpcode()) {
-    case X86::V_SET0:
+    case X86::V_SET0PS:
+    case X86::V_SET0PD:
+    case X86::V_SET0PI:
     case X86::V_SETALLONES:
       Alignment = 16;
       break;
@@ -2544,11 +2546,13 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
 
   SmallVector<MachineOperand,X86AddrNumOperands> MOs;
   switch (LoadMI->getOpcode()) {
-  case X86::V_SET0:
+  case X86::V_SET0PS:
+  case X86::V_SET0PD:
+  case X86::V_SET0PI:
   case X86::V_SETALLONES:
   case X86::FsFLD0SD:
   case X86::FsFLD0SS: {
-    // Folding a V_SET0 or V_SETALLONES as a load, to ease register pressure.
+    // Folding a V_SET0P? or V_SETALLONES as a load, to ease register pressure.
     // Create a constant-pool entry and operands to load from it.
 
     // Medium and large mode can't fold loads this way.
@@ -3656,4 +3660,52 @@ unsigned X86InstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
 
   X86FI->setGlobalBaseReg(GlobalBaseReg);
   return GlobalBaseReg;
+}
+
+// These are the replaceable SSE instructions. Some of these have Int variants
+// that we don't include here. We don't want to replace instructions selected
+// by intrinsics.
+static const unsigned ReplaceableInstrs[][3] = {
+  //PackedInt       PackedSingle     PackedDouble
+  { X86::MOVAPSmr,   X86::MOVAPDmr,  X86::MOVDQAmr  },
+  { X86::MOVAPSrm,   X86::MOVAPDrm,  X86::MOVDQArm  },
+  { X86::MOVAPSrr,   X86::MOVAPDrr,  X86::MOVDQArr  },
+  { X86::MOVUPSmr,   X86::MOVUPDmr,  X86::MOVDQUmr  },
+  { X86::MOVUPSrm,   X86::MOVUPDrm,  X86::MOVDQUrm  },
+  { X86::MOVNTPSmr,  X86::MOVNTPDmr, X86::MOVNTDQmr },
+  { X86::ANDNPSrm,   X86::ANDNPDrm,  X86::PANDNrm   },
+  { X86::ANDNPSrr,   X86::ANDNPDrr,  X86::PANDNrr   },
+  { X86::ANDPSrm,    X86::ANDPDrm,   X86::PANDrm    },
+  { X86::ANDPSrr,    X86::ANDPDrr,   X86::PANDrr    },
+  { X86::ORPSrm,     X86::ORPDrm,    X86::PORrm     },
+  { X86::ORPSrr,     X86::ORPDrr,    X86::PORrr     },
+  { X86::V_SET0PS,   X86::V_SET0PD,  X86::V_SET0PI  },
+  { X86::XORPSrm,    X86::XORPDrm,   X86::PXORrm    },
+  { X86::XORPSrr,    X86::XORPDrr,   X86::PXORrr    },
+};
+
+// FIXME: Some shuffle and unpack instructions have equivalents in different
+// domains, but they require a bit more work than just switching opcodes.
+
+static const unsigned *lookup(unsigned opcode, unsigned domain) {
+  for (unsigned i = 0, e = array_lengthof(ReplaceableInstrs); i != e; ++i)
+    if (ReplaceableInstrs[i][domain-1] == opcode)
+      return ReplaceableInstrs[i];
+  return 0;
+}
+
+std::pair<uint16_t, uint16_t>
+X86InstrInfo::GetSSEDomain(const MachineInstr *MI) const {
+  uint16_t domain = (MI->getDesc().TSFlags >> X86II::SSEDomainShift) & 3;
+  return std::make_pair(domain,
+                        domain && lookup(MI->getOpcode(), domain) ? 0xe : 0);
+}
+
+void X86InstrInfo::SetSSEDomain(MachineInstr *MI, unsigned Domain) const {
+  assert(Domain>0 && Domain<4 && "Invalid execution domain");
+  uint16_t dom = (MI->getDesc().TSFlags >> X86II::SSEDomainShift) & 3;
+  assert(dom && "Not an SSE instruction");
+  const unsigned *table = lookup(MI->getOpcode(), dom);
+  assert(table && "Cannot change domain");
+  MI->setDesc(get(table[Domain-1]));
 }
