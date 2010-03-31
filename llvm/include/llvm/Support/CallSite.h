@@ -140,10 +140,10 @@ public:
   IterTy arg_begin() const {
     assert(getInstruction() && "Not a call or invoke instruction!");
     // Skip non-arguments
-    return getInstruction()->op_begin() + getArgumentOffset();
+    return (this*)->op_begin() + getArgumentOffset();
   }
 
-  IterTy arg_end() const { return getInstruction()->op_end() - getArgumentEndOffset(); }
+  IterTy arg_end() const { return (this*)->op_end() - getArgumentEndOffset(); }
   bool arg_empty() const { return arg_end() == arg_begin(); }
   unsigned arg_size() const { return unsigned(arg_end() - arg_begin()); }
   
@@ -174,9 +174,20 @@ private:
   }
 };
 
+/// ImmutableCallSite - establish a view to a call site for examination
+class ImmutableCallSite : public CallSiteBase<> {
+  typedef CallSiteBase<> _Base;
+public:
+  ImmutableCallSite(const Value* V) : _Base(V) {}
+  ImmutableCallSite(const CallInst *CI) : _Base(CI) {}
+  ImmutableCallSite(const InvokeInst *II) : _Base(II) {}
+  ImmutableCallSite(const Instruction *II) : _Base(II) {}
+};
 
-class CallSite : public CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> {
-  typedef CallSiteBase<Function, Value, User , Instruction, CallInst, InvokeInst, User::op_iterator> _Base;
+class CallSite : public CallSiteBase<Function, Value, User, Instruction,
+                                     CallInst, InvokeInst, User::op_iterator> {
+  typedef CallSiteBase<Function, Value, User, Instruction,
+                       CallInst, InvokeInst, User::op_iterator> _Base;
 public:
   CallSite() {}
   CallSite(_Base B) : _Base(B) {}
