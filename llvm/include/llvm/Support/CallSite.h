@@ -8,15 +8,18 @@
 //===----------------------------------------------------------------------===//
 //
 // This file defines the CallSite class, which is a handy wrapper for code that
-// wants to treat Call and Invoke instructions in a generic way.
+// wants to treat Call and Invoke instructions in a generic way. When in non-
+// mutation context (e.g. an analysis) ImmutableCallSite should be used.
+// Finally, when some degree of customization is necessary between these two
+// extremes, CallSiteBase<> can be supplied with fine-tuned parameters.
 //
-// NOTE: This class is supposed to have "value semantics". So it should be
-// passed by value, not by reference; it should not be "new"ed or "delete"d. It
-// is efficiently copyable, assignable and constructable, with cost equivalent
-// to copying a pointer (notice that it has only a single data member).
-// The internal representation carries a flag which indicates which of the two
-// variants is enclosed. This allows for cheaper checks when various accessors
-// of CallSite are employed.
+// NOTE: These classes are supposed to have "value semantics". So they should be
+// passed by value, not by reference; they should not be "new"ed or "delete"d.
+// They are efficiently copyable, assignable and constructable, with cost
+// equivalent to copying a pointer (notice that they have only a single data
+// member). The internal representation carries a flag which indicates which of
+// the two variants is enclosed. This allows for cheaper checks when various
+// accessors of CallSite are employed.
 //
 //===----------------------------------------------------------------------===//
 
