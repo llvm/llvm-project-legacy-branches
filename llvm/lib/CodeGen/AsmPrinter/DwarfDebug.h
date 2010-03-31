@@ -141,11 +141,20 @@ class DwarfDebug : public DwarfPrinter {
   /// AbstractScopes - Tracks the abstract scopes a module. These scopes are
   /// not included DbgScopeMap.  AbstractScopes owns its DbgScope*s.
   DenseMap<MDNode *, DbgScope *> AbstractScopes;
+
+  /// AbstractScopesList - Tracks abstract scopes constructed while processing
+  /// a function. This list is cleared during endFunction().
   SmallVector<DbgScope *, 4>AbstractScopesList;
 
   /// AbstractVariables - Collection on abstract variables.  Owned by the
   /// DbgScopes in AbstractScopes.
   DenseMap<MDNode *, DbgVariable *> AbstractVariables;
+
+  /// DbgValueStartMap - Tracks starting scope of variable DIEs.
+  /// If the scope of an object begins sometime after the low pc value for the 
+  /// scope most closely enclosing the object, the object entry may have a 
+  /// DW_AT_start_scope attribute.
+  DenseMap<const MachineInstr *, DbgVariable *> DbgValueStartMap;
 
   /// InliendSubprogramDIEs - Collection of subprgram DIEs that are marked
   /// (at the end of the module) as DW_AT_inline.
@@ -180,6 +189,10 @@ class DwarfDebug : public DwarfPrinter {
   /// used when calculating the "origin" of a concrete instance of an inlined
   /// function.
   DenseMap<CompileUnit *, unsigned> CompileUnitOffsets;
+
+  /// Previous instruction's location information. This is used to determine
+  /// label location to indicate scope boundries in dwarf debug info.
+  mutable const MDNode *PrevDILoc;
 
   /// DebugTimer - Timer for the Dwarf debug writer.
   Timer *DebugTimer;
@@ -539,8 +552,8 @@ public:
   /// collectVariableInfo - Populate DbgScope entries with variables' info.
   void collectVariableInfo();
 
-  /// beginScope - Process beginning of a scope starting at Label.
-  void beginScope(const MachineInstr *MI, MCSymbol *Label);
+  /// beginScope - Process beginning of a scope.
+  void beginScope(const MachineInstr *MI);
 
   /// endScope - Prcess end of a scope.
   void endScope(const MachineInstr *MI);

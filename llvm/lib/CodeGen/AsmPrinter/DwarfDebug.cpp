@@ -149,20 +149,26 @@ class DbgVariable {
   DIVariable Var;                    // Variable Descriptor.
   unsigned FrameIndex;               // Variable frame index.
   const MachineInstr *DbgValueMInsn; // DBG_VALUE
+  // DbgValueLabel - DBG_VALUE is effective from this label.
+  MCSymbol *DbgValueLabel;
   DbgVariable *const AbstractVar;    // Abstract variable for this variable.
   DIE *TheDIE;
 public:
   // AbsVar may be NULL.
   DbgVariable(DIVariable V, unsigned I, DbgVariable *AbsVar)
-    : Var(V), FrameIndex(I), DbgValueMInsn(0), AbstractVar(AbsVar), TheDIE(0) {}
+    : Var(V), FrameIndex(I), DbgValueMInsn(0), 
+      DbgValueLabel(0), AbstractVar(AbsVar), TheDIE(0) {}
   DbgVariable(DIVariable V, const MachineInstr *MI, DbgVariable *AbsVar)
-    : Var(V), FrameIndex(0), DbgValueMInsn(MI), AbstractVar(AbsVar), TheDIE(0)
+    : Var(V), FrameIndex(0), DbgValueMInsn(MI), DbgValueLabel(0),
+      AbstractVar(AbsVar), TheDIE(0)
     {}
 
   // Accessors.
   DIVariable getVariable()           const { return Var; }
   unsigned getFrameIndex()           const { return FrameIndex; }
   const MachineInstr *getDbgValue()  const { return DbgValueMInsn; }
+  MCSymbol *getDbgValueLabel()       const { return DbgValueLabel; }
+  void setDbgValueLabel(MCSymbol *L)       { DbgValueLabel = L; }
   DbgVariable *getAbstractVariable() const { return AbstractVar; }
   void setDIE(DIE *D)                      { TheDIE = D; }
   DIE *getDIE()                      const { return TheDIE; }
@@ -296,7 +302,7 @@ DwarfDebug::DwarfDebug(raw_ostream &OS, AsmPrinter *A, const MCAsmInfo *T)
   : DwarfPrinter(OS, A, T), ModuleCU(0),
     AbbreviationsSet(InitAbbreviationsSetSize), Abbreviations(),
     DIEValues(), SectionSourceLines(), didInitial(false), shouldEmit(false),
-    CurrentFnDbgScope(0), DebugTimer(0) {
+    CurrentFnDbgScope(0), PrevDILoc(0), DebugTimer(0) {
   NextStringPoolNumber = 0;
   if (TimePassesIsEnabled)
     DebugTimer = new Timer("Dwarf Debug Writer");
@@ -1367,7 +1373,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(MDNode *SPNode) {
 DIE *DwarfDebug::constructLexicalScopeDIE(DbgScope *Scope) {
   MCSymbol *Start = Scope->getStartLabel();
   MCSymbol *End = Scope->getEndLabel();
-  if (Start == 0) return 0;
+  if (Start == 0 || End == 0) return 0;
 
   assert(Start->isDefined() && "Invalid starting label for an inlined scope!");
   assert(End->isDefined() && "Invalid end label for an inlined scope!");
@@ -1390,7 +1396,7 @@ DIE *DwarfDebug::constructLexicalScopeDIE(DbgScope *Scope) {
 DIE *DwarfDebug::constructInlinedScopeDIE(DbgScope *Scope) {
   MCSymbol *StartLabel = Scope->getStartLabel();
   MCSymbol *EndLabel = Scope->getEndLabel();
-  if (StartLabel == 0) return 0;
+  if (StartLabel == 0 || EndLabel == 0) return 0;
   
   assert(StartLabel->isDefined() &&
          "Invalid starting label for an inlined scope!");
@@ -1498,12 +1504,18 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
           MachineLocation Location;
           Location.set(DbgValueInsn->getOperand(0).getReg());
           addAddress(VariableDie, dwarf::DW_AT_location, Location);
+          if (MCSymbol *VS = DV->getDbgValueLabel())
+            addLabel(VariableDie, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr,
+                     VS);
         } else if (DbgValueInsn->getOperand(0).getType() == 
                    MachineOperand::MO_Immediate) {
           DIEBlock *Block = new DIEBlock();
           unsigned Imm = DbgValueInsn->getOperand(0).getImm();
           addUInt(Block, 0, dwarf::DW_FORM_udata, Imm);
           addBlock(VariableDie, dwarf::DW_AT_const_value, 0, Block);
+          if (MCSymbol *VS = DV->getDbgValueLabel())
+            addLabel(VariableDie, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr,
+                     VS);
         } else {
           //FIXME : Handle other operand types.
           delete VariableDie;
@@ -1566,10 +1578,9 @@ DIE *DwarfDebug::constructScopeDIE(DbgScope *Scope) {
     else
       ScopeDIE = updateSubprogramScopeDIE(DS.getNode());
   }
-  else {
+  else
     ScopeDIE = constructLexicalScopeDIE(Scope);
-    if (!ScopeDIE) return NULL;
-  }
+  if (!ScopeDIE) return NULL;
   
   // Add variables to scope.
   const SmallVector<DbgVariable *, 8> &Variables = Scope->getVariables();
@@ -1965,10 +1976,11 @@ DbgVariable *DwarfDebug::findAbstractVariable(DIVariable &Var,
   if (!Scope)
     return NULL;
 
-  AbsDbgVariable = new DbgVariable(Var, MI, 
+  AbsDbgVariable = new DbgVariable(Var, MI,
                                    NULL /* No more-abstract variable*/);
   Scope->addVariable(AbsDbgVariable);
   AbstractVariables[Var.getNode()] = AbsDbgVariable;
+  DbgValueStartMap[MI] = AbsDbgVariable;
   return AbsDbgVariable;
 }
 
@@ -2006,6 +2018,7 @@ void DwarfDebug::collectVariableInfo() {
       const MachineInstr *MInsn = II;
       if (MInsn->getOpcode() != TargetOpcode::DBG_VALUE)
         continue;
+
       // FIXME : Lift this restriction.
       if (MInsn->getNumOperands() != 3)
         continue;
@@ -2014,6 +2027,7 @@ void DwarfDebug::collectVariableInfo() {
         // FIXME Handle inlined subroutine arguments.
         DbgVariable *ArgVar = new DbgVariable(DV, MInsn, NULL);
         CurrentFnDbgScope->addVariable(ArgVar);
+        DbgValueStartMap[MInsn] = ArgVar;
         continue;
       }
 
@@ -2028,19 +2042,53 @@ void DwarfDebug::collectVariableInfo() {
       if (!Scope)
         continue;
 
-      DbgVariable *AbsDbgVariable = findAbstractVariable(DV, MInsn,
-                                                         ScopeLoc);
+      DbgVariable *AbsDbgVariable = findAbstractVariable(DV, MInsn, ScopeLoc);
       DbgVariable *RegVar = new DbgVariable(DV, MInsn, AbsDbgVariable);
+      DbgValueStartMap[MInsn] = RegVar;
       Scope->addVariable(RegVar);
     }
   }
 }
 
-/// beginScope - Process beginning of a scope starting at Label.
-void DwarfDebug::beginScope(const MachineInstr *MI, MCSymbol *Label) {
+/// beginScope - Process beginning of a scope.
+void DwarfDebug::beginScope(const MachineInstr *MI) {
+  // Check location.
+  DebugLoc DL = MI->getDebugLoc();
+  if (DL.isUnknown())
+    return;
+  DILocation DILoc = MF->getDILocation(DL);
+  if (!DILoc.getScope().Verify())
+    return;
+
+  // Check and update last known location info.
+  if(DILoc.getNode() == PrevDILoc)
+    return;
+  PrevDILoc = DILoc.getNode();
+
+  // DBG_VALUE instruction establishes new value.
+  if (MI->getOpcode() == TargetOpcode::DBG_VALUE) {
+    DenseMap<const MachineInstr *, DbgVariable *>::iterator DI
+      = DbgValueStartMap.find(MI);
+    if (DI != DbgValueStartMap.end()) {
+      MCSymbol *Label = recordSourceLine(DILoc.getLineNumber(),
+                                         DILoc.getColumnNumber(),
+                                         DILoc.getScope().getNode());
+      DI->second->setDbgValueLabel(Label);
+    }
+    return;
+  }
+
+  // Emit a label to indicate location change. This is used for line 
+  // table even if this instruction does start a new scope.
+  MCSymbol *Label = recordSourceLine(DILoc.getLineNumber(),
+                                     DILoc.getColumnNumber(),
+                                     DILoc.getScope().getNode());
+
+  // update DbgScope if this instruction starts a new scope.
   InsnToDbgScopeMapTy::iterator I = DbgScopeBeginMap.find(MI);
   if (I == DbgScopeBeginMap.end())
     return;
+
   ScopeVector &SD = I->second;
   for (ScopeVector::iterator SDI = SD.begin(), SDE = SD.end();
        SDI != SDE; ++SDI)
@@ -2049,6 +2097,19 @@ void DwarfDebug::beginScope(const MachineInstr *MI, MCSymbol *Label) {
 
 /// endScope - Process end of a scope.
 void DwarfDebug::endScope(const MachineInstr *MI) {
+  // Ignore DBG_VALUE instruction.
+  if (MI->getOpcode() == TargetOpcode::DBG_VALUE)
+    return;
+
+  // Check location.
+  DebugLoc DL = MI->getDebugLoc();
+  if (DL.isUnknown())
+    return;
+  DILocation DILoc = MF->getDILocation(DL);
+  if (!DILoc.getScope().Verify())
+    return;
+  
+  // Emit a label and update DbgScope if this instruction ends a scope.
   InsnToDbgScopeMapTy::iterator I = DbgScopeEndMap.find(MI);
   if (I == DbgScopeEndMap.end())
     return;
@@ -2267,6 +2328,7 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   DeleteContainerSeconds(DbgScopeMap);
   DbgScopeBeginMap.clear();
   DbgScopeEndMap.clear();
+  DbgValueStartMap.clear();
   ConcreteScopes.clear();
   DeleteContainerSeconds(AbstractScopes);
   AbstractScopesList.clear();
