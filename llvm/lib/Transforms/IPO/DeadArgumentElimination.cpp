@@ -310,8 +310,8 @@ DAE::Liveness DAE::MarkIfNotLive(RetOrArg Use, UseVector &MaybeLiveUses) {
 /// RetValNum is the return value number to use when this use is used in a
 /// return instruction. This is used in the recursion, you should always leave
 /// it at 0.
-DAE::Liveness DAE::SurveyUse(Value::const_use_iterator U, UseVector &MaybeLiveUses,
-                             unsigned RetValNum) {
+DAE::Liveness DAE::SurveyUse(Value::const_use_iterator U,
+                             UseVector &MaybeLiveUses, unsigned RetValNum) {
     const User *V = *U;
     if (const ReturnInst *RI = dyn_cast<ReturnInst>(V)) {
       // The value is returned from a function. It's only live when the
@@ -343,7 +343,7 @@ DAE::Liveness DAE::SurveyUse(Value::const_use_iterator U, UseVector &MaybeLiveUs
       return Result;
     }
 
-    if (CallSiteBase<> CS = V) {
+    if (ImmutableCallSite CS = V) {
       const Function *F = CS.getCalledFunction();
       if (F) {
         // Used in a direct call.
@@ -431,10 +431,11 @@ void DAE::SurveyFunction(const Function &F) {
   unsigned NumLiveRetVals = 0;
   const Type *STy = dyn_cast<StructType>(F.getReturnType());
   // Loop all uses of the function.
-  for (Value::const_use_iterator I = F.use_begin(), E = F.use_end(); I != E; ++I) {
+  for (Value::const_use_iterator I = F.use_begin(), E = F.use_end();
+       I != E; ++I) {
     // If the function is PASSED IN as an argument, its address has been
     // taken.
-    CallSiteBase<> CS(*I);
+    ImmutableCallSite CS(*I);
     if (!CS || !CS.isCallee(I)) {
       MarkLive(F);
       return;
@@ -690,7 +691,8 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
     AttributesVec.push_back(AttributeWithIndex::get(~0, FnAttrs));
 
   // Reconstruct the AttributesList based on the vector we constructed.
-  AttrListPtr NewPAL = AttrListPtr::get(AttributesVec.begin(), AttributesVec.end());
+  AttrListPtr NewPAL = AttrListPtr::get(AttributesVec.begin(),
+                                        AttributesVec.end());
 
   // Work around LLVM bug PR56: the CWriter cannot emit varargs functions which
   // have zero fixed arguments.
