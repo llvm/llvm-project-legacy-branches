@@ -140,10 +140,10 @@ public:
   IterTy arg_begin() const {
     assert(getInstruction() && "Not a call or invoke instruction!");
     // Skip non-arguments
-    return (this*)->op_begin() + getArgumentOffset();
+    return (*this)->op_begin() + getArgumentOffset();
   }
 
-  IterTy arg_end() const { return (this*)->op_end() - getArgumentEndOffset(); }
+  IterTy arg_end() const { return (*this)->op_end() - getArgumentEndOffset(); }
   bool arg_empty() const { return arg_end() == arg_begin(); }
   unsigned arg_size() const { return unsigned(arg_end() - arg_begin()); }
   
