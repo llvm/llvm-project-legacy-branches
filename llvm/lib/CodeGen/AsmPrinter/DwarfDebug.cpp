@@ -230,14 +230,14 @@ public:
 
   void fixInstructionMarkers(DenseMap<const MachineInstr *, 
                              unsigned> &MIIndexMap) {
-    assert (getFirstInsn() && "First instruction is missing!");
+    assert(getFirstInsn() && "First instruction is missing!");
     
     // Use the end of last child scope as end of this scope.
     const SmallVector<DbgScope *, 4> &Scopes = getScopes();
     const MachineInstr *LastInsn = getFirstInsn();
     unsigned LIndex = 0;
     if (Scopes.empty()) {
-      assert (getLastInsn() && "Inner most scope does not have last insn!");
+      assert(getLastInsn() && "Inner most scope does not have last insn!");
       return;
     }
     for (SmallVector<DbgScope *, 4>::const_iterator SI = Scopes.begin(),
@@ -692,9 +692,9 @@ void DwarfDebug::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
   }
 
   // Get the offsets for the forwarding field and the variable field.
-  unsigned int forwardingFieldOffset =
+  unsigned forwardingFieldOffset =
     DIDerivedType(forwardingField.getNode()).getOffsetInBits() >> 3;
-  unsigned int varFieldOffset =
+  unsigned varFieldOffset =
     DIDerivedType(varField.getNode()).getOffsetInBits() >> 3;
 
   // Decode the original location, and use that as the start of the byref
@@ -1243,10 +1243,10 @@ DIE *DwarfDebug::createSubprogramDIE(const DISubprogram &SP, bool MakeDecl) {
 /// getUpdatedDbgScope - Find or create DbgScope assicated with the instruction.
 /// Initialize scope and update scope hierarchy.
 DbgScope *DwarfDebug::getUpdatedDbgScope(MDNode *N, const MachineInstr *MI,
-  MDNode *InlinedAt) {
-  assert (N && "Invalid Scope encoding!");
-  assert (MI && "Missing machine instruction!");
-  bool GetConcreteScope = (MI && InlinedAt);
+                                         MDNode *InlinedAt) {
+  assert(N && "Invalid Scope encoding!");
+  assert(MI && "Missing machine instruction!");
+  bool GetConcreteScope = InlinedAt != 0;
 
   DbgScope *NScope = NULL;
 
@@ -1254,7 +1254,7 @@ DbgScope *DwarfDebug::getUpdatedDbgScope(MDNode *N, const MachineInstr *MI,
     NScope = DbgScopeMap.lookup(InlinedAt);
   else
     NScope = DbgScopeMap.lookup(N);
-  assert (NScope && "Unable to find working scope!");
+  assert(NScope && "Unable to find working scope!");
 
   if (NScope->getFirstInsn())
     return NScope;
@@ -1264,7 +1264,7 @@ DbgScope *DwarfDebug::getUpdatedDbgScope(MDNode *N, const MachineInstr *MI,
     DILocation IL(InlinedAt);
     Parent = getUpdatedDbgScope(IL.getScope().getNode(), MI,
                          IL.getOrigLocation().getNode());
-    assert (Parent && "Unable to find Parent scope!");
+    assert(Parent && "Unable to find Parent scope!");
     NScope->setParent(Parent);
     Parent->addScope(NScope);
   } else if (DIDescriptor(N).isLexicalBlock()) {
@@ -1291,7 +1291,7 @@ DbgScope *DwarfDebug::getUpdatedDbgScope(MDNode *N, const MachineInstr *MI,
 }
 
 DbgScope *DwarfDebug::getOrCreateAbstractScope(MDNode *N) {
-  assert (N && "Invalid Scope encoding!");
+  assert(N && "Invalid Scope encoding!");
 
   DbgScope *AScope = AbstractScopes.lookup(N);
   if (AScope)
@@ -1409,7 +1409,7 @@ DIE *DwarfDebug::constructInlinedScopeDIE(DbgScope *Scope) {
 
   DISubprogram InlinedSP = getDISubprogram(DS.getNode());
   DIE *OriginDIE = ModuleCU->getDIE(InlinedSP.getNode());
-  assert (OriginDIE && "Unable to find Origin DIE!");
+  assert(OriginDIE && "Unable to find Origin DIE!");
   addDIEEntry(ScopeDIE, dwarf::DW_AT_abstract_origin,
               dwarf::DW_FORM_ref4, OriginDIE);
 
@@ -1473,9 +1473,9 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
     DISubprogram InlinedSP = getDISubprogram(DS.getNode());
     DIE *OriginSPDIE = ModuleCU->getDIE(InlinedSP.getNode());
     (void) OriginSPDIE;
-    assert (OriginSPDIE && "Unable to find Origin DIE for the SP!");
+    assert(OriginSPDIE && "Unable to find Origin DIE for the SP!");
     DIE *AbsDIE = DV->getAbstractVariable()->getDIE();
-    assert (AbsDIE && "Unable to find Origin DIE for the Variable!");
+    assert(AbsDIE && "Unable to find Origin DIE for the Variable!");
     addDIEEntry(VariableDie, dwarf::DW_AT_abstract_origin,
                 dwarf::DW_FORM_ref4, AbsDIE);
   }
@@ -1525,7 +1525,8 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
     } else {
       MachineLocation Location;
       unsigned FrameReg;
-      int Offset = RI->getFrameIndexReference(*MF, DV->getFrameIndex(), FrameReg);
+      int Offset = RI->getFrameIndexReference(*MF, DV->getFrameIndex(),
+                                              FrameReg);
       Location.set(FrameReg, Offset);
       
       if (VD.hasComplexAddress())
@@ -1609,7 +1610,7 @@ DIE *DwarfDebug::constructScopeDIE(DbgScope *Scope) {
 /// source file names. If none currently exists, create a new id and insert it
 /// in the SourceIds map. This can update DirectoryNames and SourceFileNames
 /// maps as well.
-unsigned DwarfDebug::GetOrCreateSourceID(StringRef DirName, StringRef FileName) {
+unsigned DwarfDebug::GetOrCreateSourceID(StringRef DirName, StringRef FileName){
   unsigned DId;
   StringMap<unsigned>::iterator DI = DirectoryIdMap.find(DirName);
   if (DI != DirectoryIdMap.end()) {
@@ -1722,8 +1723,8 @@ void DwarfDebug::constructGlobalVariableDIE(MDNode *N) {
   DIDescriptor GVContext = DI_GV.getContext();
   // Do not create specification DIE if context is either compile unit
   // or a subprogram.
-  if (DI_GV.isDefinition() && !GVContext.isCompileUnit()
-      && !GVContext.isFile() && !GVContext.isSubprogram()) {
+  if (DI_GV.isDefinition() && !GVContext.isCompileUnit() &&
+      !GVContext.isFile() && !GVContext.isSubprogram()) {
     // Create specification DIE.
     DIE *VariableSpecDIE = new DIE(dwarf::DW_TAG_variable);
     addDIEEntry(VariableSpecDIE, dwarf::DW_AT_specification,
@@ -1750,7 +1751,7 @@ void DwarfDebug::constructGlobalVariableDIE(MDNode *N) {
   DIType GTy = DI_GV.getType();
   if (GTy.isCompositeType() && !GTy.getName().empty()) {
     DIEEntry *Entry = ModuleCU->getDIEEntry(GTy.getNode());
-    assert (Entry && "Missing global type!");
+    assert(Entry && "Missing global type!");
     ModuleCU->addGlobalType(GTy.getName(), Entry->getEntry());
   }
   return;
@@ -1876,7 +1877,7 @@ void DwarfDebug::endModule() {
     if (!NDie) continue;
     addDIEEntry(SPDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
     // FIXME - This is not the correct approach.
-    // addDIEEntry(NDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
+    //addDIEEntry(NDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie
   }
 
   // Standard sections final addresses.
@@ -2016,13 +2017,14 @@ void DwarfDebug::collectVariableInfo() {
     for (MachineBasicBlock::const_iterator II = I->begin(), IE = I->end();
          II != IE; ++II) {
       const MachineInstr *MInsn = II;
-      if (MInsn->getOpcode() != TargetOpcode::DBG_VALUE)
+      if (!MInsn->isDebugValue())
         continue;
 
       // FIXME : Lift this restriction.
       if (MInsn->getNumOperands() != 3)
         continue;
-      DIVariable DV((MDNode*)(MInsn->getOperand(MInsn->getNumOperands() - 1).getMetadata()));
+      DIVariable DV((MDNode*)(MInsn->getOperand(MInsn->getNumOperands()
+                                                - 1).getMetadata()));
       if (DV.getTag() == dwarf::DW_TAG_arg_variable)  {
         // FIXME Handle inlined subroutine arguments.
         DbgVariable *ArgVar = new DbgVariable(DV, MInsn, NULL);
@@ -2066,7 +2068,7 @@ void DwarfDebug::beginScope(const MachineInstr *MI) {
   PrevDILoc = DILoc.getNode();
 
   // DBG_VALUE instruction establishes new value.
-  if (MI->getOpcode() == TargetOpcode::DBG_VALUE) {
+  if (MI->isDebugValue()) {
     DenseMap<const MachineInstr *, DbgVariable *>::iterator DI
       = DbgValueStartMap.find(MI);
     if (DI != DbgValueStartMap.end()) {
@@ -2098,7 +2100,7 @@ void DwarfDebug::beginScope(const MachineInstr *MI) {
 /// endScope - Process end of a scope.
 void DwarfDebug::endScope(const MachineInstr *MI) {
   // Ignore DBG_VALUE instruction.
-  if (MI->getOpcode() == TargetOpcode::DBG_VALUE)
+  if (MI->isDebugValue())
     return;
 
   // Check location.
@@ -2149,7 +2151,7 @@ void DwarfDebug::createDbgScope(MDNode *Scope, MDNode *InlinedAt) {
 }
 
 /// extractScopeInformation - Scan machine instructions in this function
-/// and collect DbgScopes. Return true, if atleast one scope was found.
+/// and collect DbgScopes. Return true, if at least one scope was found.
 bool DwarfDebug::extractScopeInformation() {
   // If scope information was extracted using .dbg intrinsics then there is not
   // any need to extract these information by scanning each instruction.
@@ -2165,7 +2167,7 @@ bool DwarfDebug::extractScopeInformation() {
          II != IE; ++II) {
       const MachineInstr *MInsn = II;
       // FIXME : Remove DBG_VALUE check.
-      if (MInsn->getOpcode() == TargetOpcode::DBG_VALUE) continue;
+      if (MInsn->isDebugValue()) continue;
       MIIndexMap[MInsn] = MIIndex++;
       DebugLoc DL = MInsn->getDebugLoc();
       if (DL.isUnknown()) continue;
@@ -2188,7 +2190,7 @@ bool DwarfDebug::extractScopeInformation() {
          II != IE; ++II) {
       const MachineInstr *MInsn = II;
       // FIXME : Remove DBG_VALUE check.
-      if (MInsn->getOpcode() == TargetOpcode::DBG_VALUE) continue;
+      if (MInsn->isDebugValue()) continue;
       DebugLoc DL = MInsn->getDebugLoc();
       if (DL.isUnknown())  continue;
       DILocation DLT = MF->getDILocation(DL);
@@ -2216,7 +2218,7 @@ bool DwarfDebug::extractScopeInformation() {
   SmallVector<DbgScope *, 4> WorkList;
   WorkList.push_back(CurrentFnDbgScope);
   while (!WorkList.empty()) {
-    DbgScope *S = WorkList.back(); WorkList.pop_back();
+    DbgScope *S = WorkList.pop_back_val();
 
     const SmallVector<DbgScope *, 4> &Children = S->getScopes();
     if (!Children.empty()) 
@@ -2227,7 +2229,7 @@ bool DwarfDebug::extractScopeInformation() {
     if (S->isAbstractScope())
       continue;
     const MachineInstr *MI = S->getFirstInsn();
-    assert (MI && "DbgScope does not have first instruction!");
+    assert(MI && "DbgScope does not have first instruction!");
 
     InsnToDbgScopeMapTy::iterator IDI = DbgScopeBeginMap.find(MI);
     if (IDI != DbgScopeBeginMap.end())
@@ -2236,7 +2238,7 @@ bool DwarfDebug::extractScopeInformation() {
       DbgScopeBeginMap[MI].push_back(S);
 
     MI = S->getLastInsn();
-    assert (MI && "DbgScope does not have last instruction!");
+    assert(MI && "DbgScope does not have last instruction!");
     IDI = DbgScopeEndMap.find(MI);
     if (IDI != DbgScopeEndMap.end())
       IDI->second.push_back(S);
@@ -2409,7 +2411,8 @@ DwarfDebug::computeSizeAndOffset(DIE *Die, unsigned Offset, bool Last) {
   const std::vector<DIE *> &Children = Die->getChildren();
 
   // If not last sibling and has children then add sibling offset attribute.
-  if (!Last && !Children.empty()) Die->addSiblingOffset();
+  if (!Last && !Children.empty())
+    DIEValues.push_back(Die->addSiblingOffset());
 
   // Record the abbreviation.
   assignAbbrevNumber(Die->getAbbrev());
@@ -2523,7 +2526,7 @@ void DwarfDebug::emitDIE(DIE *Die) {
                                 dwarf::TagString(Abbrev->getTag()));
   EmitULEB128(AbbrevNumber);
 
-  SmallVector<DIEValue*, 32> &Values = Die->getValues();
+  const SmallVector<DIEValue*, 32> &Values = Die->getValues();
   const SmallVector<DIEAbbrevData, 8> &AbbrevData = Abbrev->getData();
 
   // Emit the DIE attribute values.
