@@ -81,35 +81,11 @@ include ./GNUSource.make
 
 CXX := /usr/bin/g++
 
-# Automatic Extract & Patch
-#AEP            = YES
-#AEP_Project    = clang
-#AEP_Version    = 090201
-#AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
-#AEP_Filename   = $(AEP_ProjVers).tar.bz2
-#AEP_ExtractDir = $(AEP_ProjVers)
-#AEP_Patches    = 
-
-ifeq ($(suffix $(AEP_Filename)),.bz2)
-AEP_ExtractOption = j
-else
-AEP_ExtractOption = z
-endif
-
 Install_Target = $(Clang_Make_Variables) install-clang
 Build_Target = $(Clang_Make_Variables) clang-only
 
 # Extract the source.
 install_source::
-ifeq ($(AEP),YES)
-	$(TAR) -C $(SRCROOT) -$(AEP_ExtractOption)xf $(SRCROOT)/$(AEP_Filename)
-	$(RMDIR) $(SRCROOT)/$(Project)
-	$(MV) $(SRCROOT)/$(AEP_ExtractDir) $(SRCROOT)/$(Project)
-	for patchfile in $(AEP_Patches); do \
-		cd $(SRCROOT)/$(Project) && \
-		patch -p0 < $(SRCROOT)/patches/$$patchfile || exit 1 ;  \
-	done
-endif
 
 # Available post install targets.
 post-install: $(Post_Install_Targets)
