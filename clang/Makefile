@@ -31,6 +31,7 @@ endif
 Clang_Make_Variables := KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
+Clang_Make_Variables += CLANGXX_IS_PRODUCTION=1
 else ifeq ($(Clang_Driver_Mode), Development)
 # ... this is the default ...
 else
@@ -55,12 +56,12 @@ ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
 endif
 
 # Set configure flags.
-Extra_Configure_Flags = --enable-targets=x86,arm \
-			--enable-optimized \
-			$(Assertions_Configure_Flag) \
-                        --with-optimize-option="$(Clang_Optimize_Option)" \
-                        --with-extra-options="$(Clang_Extra_Options)" \
-			--disable-doxygen
+Configure_Flags = --enable-targets=x86,arm \
+		  --enable-optimized \
+		  $(Assertions_Configure_Flag) \
+                  --with-optimize-option="$(Clang_Optimize_Option)" \
+                  --with-extra-options="$(Clang_Extra_Options)" \
+		  --disable-doxygen
 
 # Set up post install targets.
 Post_Install_Targets :=
@@ -130,26 +131,6 @@ retag-clang:
 	fi
 
 ##
-# Check that expected RC variables are set and sane.
-
-ifneq (OK, $(shell test -d $(SRCROOT) && echo "OK"))
-  $(error "invalid SRCROOT: '$(SRCROOT)'")
-endif
-
-ifeq ($(RC_ARCHS),)
-  $(error "RC_ARCHS must be set")
-endif
-ifeq ($(OBJROOT),)
-  $(error "OBJROOT must be set")
-endif
-ifeq ($(SYMROOT),)
-  $(error "SYMROOT must be set")
-endif
-ifeq ($(DSTROOT),)
-  $(error "DSTROOT must be set")
-endif
-
-##
 # Additional Tool Paths
 
 CHOWN		= /usr/sbin/chown
@@ -173,9 +154,7 @@ Find_Cruft = '(' $(Cruft:%=-name '%' -or) -name '' ')' -print
 
 Sources		= $(SRCROOT)/$(Project)
 Configure	= $(Sources)/configure
-Environment	= CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" ONLY_MAN_DOCS=1
-Configure_Flags = --prefix="$(Install_Prefix)" $(Extra_Configure_Flags)
-Install_Flags	= DESTDIR=$(OBJROOT)/install-$$arch
+Install_Flags	= DESTDIR=$(OBJROOT)/install-$$arch ONLY_MAN_DOCS=1
 
 OSV		= $(DSTROOT)/usr/local/OpenSourceVersions
 OSL		= $(DSTROOT)/usr/local/OpenSourceLicenses
@@ -196,8 +175,8 @@ install:: build
 		echo "Installing $(Project) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
 		umask 0022 && \
-		$(MAKE) -C $(OBJROOT)/$$arch $(Environment) \
-			$(Install_Flags) $(Install_Target) || exit 1 ; \
+		$(MAKE) -C $(OBJROOT)/$$arch \
+		  $(Install_Flags) $(Install_Target) || exit 1 ; \
 	done
 	$(_v) rm -rf $(DSTROOT)
 	$(_v) mkdir -p $(DSTROOT)
@@ -214,19 +193,40 @@ install:: build
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 	$(_v) $(MAKE) post-install
 
-build:: configure
+build:: build_final
+
+build_final:: configure_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building $(Project) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Environment) $(Build_Target) || exit 1; \
+		echo "Building (Final) $(Project) for $$arch..." && \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
 	done
 
-configure:: lazy_install_source
+configure_final:: build_stage1
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring $(Project) for $$arch..." && \
+		echo "Configuring (Final) $(Project) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
-		$(Environment) $(Configure) $(Configure_Flags) || exit 1 ; \
+		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
+		  CC="$(OBJROOT)/stage1-install-$$arch/bin/clang -arch $$arch" \
+		  CXX="$(OBJROOT)/stage1-install-$$arch/bin/clang++ -arch $$arch" || exit 1 ; \
+	done
+
+build_stage1:: configure_stage1
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Building (Stage 1) $(Project) for $$arch..." && \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target) || exit 1; \
+	done
+
+configure_stage1:: 
+	$(_v) $(MKDIR) $(OBJROOT)
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Configuring (Stage 1) $(Project) for $$arch..." && \
+		$(MKDIR) $(OBJROOT)/stage1-$$arch && \
+		cd $(OBJROOT)/stage1-$$arch && \
+		$(Configure) --prefix="$(OBJROOT)/stage1-install-$$arch" $(Configure_Flags) \
+		  CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
 
 lazy_install_source::
