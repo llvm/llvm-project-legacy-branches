@@ -290,11 +290,11 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     if (isLoadH || isLoadL || isMovL || isMovSD || isShufPD ||
         isUnpckhPD || isUnpcklPD || isPunpckhQPD || isPunpcklQPD) {
       std::vector<Constant*> Idxs;
-      Value *Op0 = CI->getOperand(1);
+      Value *Op0 = CI->getOperand(0);
       ShuffleVectorInst *SI = NULL;
       if (isLoadH || isLoadL) {
         Value *Op1 = UndefValue::get(Op0->getType());
-        Value *Addr = new BitCastInst(CI->getOperand(2), 
+        Value *Addr = new BitCastInst(CI->getOperand(1), 
                                   Type::getDoublePtrTy(C),
                                       "upgraded.", CI);
         Value *Load = new LoadInst(Addr, "upgraded.", false, 8, CI);
@@ -327,7 +327,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
         SI = new ShuffleVectorInst(ZeroV, Op0, Mask, "upgraded.", CI);
       } else if (isMovSD ||
                  isUnpckhPD || isUnpcklPD || isPunpckhQPD || isPunpcklQPD) {
-        Value *Op1 = CI->getOperand(2);
+        Value *Op1 = CI->getOperand(1);
         if (isMovSD) {
           Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), 2));
           Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), 1));
@@ -341,8 +341,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
         Value *Mask = ConstantVector::get(Idxs);
         SI = new ShuffleVectorInst(Op0, Op1, Mask, "upgraded.", CI);
       } else if (isShufPD) {
-        Value *Op1 = CI->getOperand(2);
-        unsigned MaskVal = cast<ConstantInt>(CI->getOperand(3))->getZExtValue();
+        Value *Op1 = CI->getOperand(1);
+        unsigned MaskVal = cast<ConstantInt>(CI->getOperand(2))->getZExtValue();
         Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), MaskVal & 1));
         Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C),
                                                ((MaskVal >> 1) & 1)+2));
@@ -390,10 +390,10 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::x86_mmx_psrl_w: {
     Value *Operands[2];
     
-    Operands[0] = CI->getOperand(1);
+    Operands[0] = CI->getOperand(0);
     
     // Cast the second parameter to the correct type.
-    BitCastInst *BC = new BitCastInst(CI->getOperand(2), 
+    BitCastInst *BC = new BitCastInst(CI->getOperand(1), 
                                       NewFn->getFunctionType()->getParamType(1),
                                       "upgraded.", CI);
     Operands[1] = BC;
@@ -417,9 +417,9 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::ctlz:
   case Intrinsic::ctpop:
   case Intrinsic::cttz: {
-    //  Build a small vector of the 1..(N-1) operands, which are the 
+    //  Build a small vector of the 0..(N-1) operands, which are the 
     //  parameters.
-    SmallVector<Value*, 8> Operands(CI->op_begin()+1, CI->op_end());
+    SmallVector<Value*, 8> Operands(CI->op_begin(), CI->op_end() - 1);
 
     //  Construct a new CallInst
     CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),

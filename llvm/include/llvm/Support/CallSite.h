@@ -153,15 +153,12 @@ public:
 private:
   /// Returns the operand number of the first argument
   unsigned getArgumentOffset() const {
-    if (isCall())
-      return 1; // Skip Function (ATM)
-    else
       return 0; // Args are at the front
   }
 
   unsigned getArgumentEndOffset() const {
     if (isCall())
-      return 0; // Unchanged (ATM)
+      return 1; // Skip Function
     else
       return 3; // Skip BB, BB, Function
   }
