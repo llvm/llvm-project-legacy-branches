@@ -345,10 +345,13 @@ bool FastISel::SelectCall(User *I) {
     
     // Building the map above is target independent.  Generating DBG_VALUE
     // inline is target dependent; do this now.
-    (void)TargetSelectInstruction(cast<Instruction>(I));
+    // FIXME: We are not yet ready to handle dbg_value.
+    // (void)TargetSelectInstruction(cast<Instruction>(I));
     return true;
   }
   case Intrinsic::dbg_value: {
+    // FIXME: We are not yet ready to handle dbg_value.
+    return 0;
     // This requires target support, but right now X86 is the only Fast target.
     DbgValueInst *DI = cast<DbgValueInst>(I);
     const TargetInstrDesc &II = TII.get(TargetOpcode::DBG_VALUE);

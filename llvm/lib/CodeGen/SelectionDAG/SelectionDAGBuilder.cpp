@@ -3800,6 +3800,8 @@ SelectionDAGBuilder::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     return 0;
   }
   case Intrinsic::dbg_value: {
+    // FIXME: We are not yet ready to handle dbg_value.
+    return 0;
     DwarfWriter *DW = DAG.getDwarfWriter();
     if (!DW)
       return 0;
