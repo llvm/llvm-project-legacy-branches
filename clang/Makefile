@@ -15,6 +15,8 @@ Clang_Driver_Mode      := Production
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
 Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS
+# Build all LLVM tools; not just clang?
+Clang_Build_All        := 1
 
 ##
 
@@ -25,6 +27,15 @@ else ifeq ($(Clang_Use_Assertions), 0)
 Assertions_Configure_Flag :=  --disable-assertions
 else
 $(error "invalid setting for clang assertions: '$(Clang_Use_Assertions)'")
+endif
+
+# Select whether to build everything (for testing purposes).
+ifeq ($(Clang_Build_All), 1)
+Clang_Build_Target := all
+else ifeq ($(Clang_Build_All), 0)
+Clang_Build_Target := clang-only
+else
+$(error "invalid setting for clang build all mode: '$(Clang_Build_All)'")
 endif
 
 # Set makefile variables to pass during build and install.
@@ -81,7 +92,7 @@ $(error "unknown value for post install of open source license: '$(Post_Install_
 endif
 
 Install_Target = $(Clang_Make_Variables) install-clang
-Build_Target = $(Clang_Make_Variables) clang-only
+Build_Target = $(Clang_Make_Variables) $(Clang_Build_Target)
 
 # Set default target.
 
