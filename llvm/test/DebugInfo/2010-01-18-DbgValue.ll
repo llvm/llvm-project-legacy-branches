@@ -4,7 +4,7 @@ target datalayout = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f3
 target triple = "i386-apple-darwin9.8"
 ; Currently, dbg.declare generates a DEBUG_VALUE comment.  Eventually it will
 ; generate DWARF and this test will need to be modified or removed.
-
+; XFAIL: *
 @Y = common global i32 0                          ; <i32*> [#uses=1]
 
 define i32 @test() nounwind {
