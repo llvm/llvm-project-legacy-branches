@@ -83,7 +83,7 @@ namespace llvm {
   class DbgDeclareInst : public DbgInfoIntrinsic {
   public:
     Value *getAddress() const;
-    MDNode *getVariable() const { return cast<MDNode>(getOperand(2)); }
+    MDNode *getVariable() const { return cast<MDNode>(getOperand(1)); }
 
     // Methods for support type inquiry through isa, cast, and dyn_cast:
     static inline bool classof(const DbgDeclareInst *) { return true; }
@@ -103,10 +103,10 @@ namespace llvm {
     Value *getValue();
     uint64_t getOffset() const {
       return cast<ConstantInt>(
-                             const_cast<Value*>(getOperand(2)))->getZExtValue();
+                             const_cast<Value*>(getOperand(1)))->getZExtValue();
     }
-    const MDNode *getVariable() const { return cast<MDNode>(getOperand(3)); }
-    MDNode *getVariable() { return cast<MDNode>(getOperand(3)); }
+    const MDNode *getVariable() const { return cast<MDNode>(getOperand(2)); }
+    MDNode *getVariable() { return cast<MDNode>(getOperand(2)); }
 
     // Methods for support type inquiry through isa, cast, and dyn_cast:
     static inline bool classof(const DbgValueInst *) { return true; }
@@ -122,11 +122,11 @@ namespace llvm {
   ///
   class MemIntrinsic : public IntrinsicInst {
   public:
-    Value *getRawDest() const { return const_cast<Value*>(getOperand(1)); }
+    Value *getRawDest() const { return const_cast<Value*>(getOperand(0)); }
 
-    Value *getLength() const { return const_cast<Value*>(getOperand(3)); }
+    Value *getLength() const { return const_cast<Value*>(getOperand(2)); }
     ConstantInt *getAlignmentCst() const {
-      return cast<ConstantInt>(const_cast<Value*>(getOperand(4)));
+      return cast<ConstantInt>(const_cast<Value*>(getOperand(3)));
     }
     
     unsigned getAlignment() const {
@@ -143,21 +143,21 @@ namespace llvm {
     void setDest(Value *Ptr) {
       assert(getRawDest()->getType() == Ptr->getType() &&
              "setDest called with pointer of wrong type!");
-      setOperand(1, Ptr);
+      setOperand(0, Ptr);
     }
 
     void setLength(Value *L) {
       assert(getLength()->getType() == L->getType() &&
              "setLength called with value of wrong type!");
-      setOperand(3, L);
+      setOperand(2, L);
     }
     
     void setAlignment(Constant* A) {
-      setOperand(4, A);
+      setOperand(3, A);
     }
     
     const Type *getAlignmentType() const {
-      return getOperand(4)->getType();
+      return getOperand(3)->getType();
     }
     
     // Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -182,12 +182,12 @@ namespace llvm {
   public:
     /// get* - Return the arguments to the instruction.
     ///
-    Value *getValue() const { return const_cast<Value*>(getOperand(2)); }
+    Value *getValue() const { return const_cast<Value*>(getOperand(1)); }
     
     void setValue(Value *Val) {
       assert(getValue()->getType() == Val->getType() &&
              "setSource called with pointer of wrong type!");
-      setOperand(2, Val);
+      setOperand(1, Val);
     }
     
     // Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -206,7 +206,7 @@ namespace llvm {
   public:
     /// get* - Return the arguments to the instruction.
     ///
-    Value *getRawSource() const { return const_cast<Value*>(getOperand(2)); }
+    Value *getRawSource() const { return const_cast<Value*>(getOperand(1)); }
     
     /// getSource - This is just like getRawSource, but it strips off any cast
     /// instructions that feed it, giving the original input.  The returned
@@ -216,7 +216,7 @@ namespace llvm {
     void setSource(Value *Ptr) {
       assert(getRawSource()->getType() == Ptr->getType() &&
              "setSource called with pointer of wrong type!");
-      setOperand(2, Ptr);
+      setOperand(1, Ptr);
     }
     
     // Methods for support type inquiry through isa, cast, and dyn_cast:
