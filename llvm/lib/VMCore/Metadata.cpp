@@ -469,7 +469,7 @@ MDNode *Instruction::getMetadataImpl(const char *Kind) const {
 }
 
 void Instruction::setDbgMetadata(MDNode *Node) {
-  DbgInfo = Node;
+  DbgLoc = DebugLoc::getFromDILocation(Node);
 }
 
 /// setMetadata - Set the metadata of of the specified kind to the specified
@@ -480,7 +480,7 @@ void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
 
   // Handle 'dbg' as a special case since it is not stored in the hash table.
   if (KindID == LLVMContext::MD_dbg) {
-    DbgInfo = Node;
+    DbgLoc = DebugLoc::getFromDILocation(Node);
     return;
   }
   
@@ -532,7 +532,7 @@ void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
 MDNode *Instruction::getMetadataImpl(unsigned KindID) const {
   // Handle 'dbg' as a special case since it is not stored in the hash table.
   if (KindID == LLVMContext::MD_dbg)
-    return DbgInfo;
+    return DbgLoc.getAsMDNode(getContext());
   
   if (!hasMetadataHashEntry()) return 0;
   
@@ -551,8 +551,9 @@ void Instruction::getAllMetadataImpl(SmallVectorImpl<std::pair<unsigned,
   Result.clear();
   
   // Handle 'dbg' as a special case since it is not stored in the hash table.
-  if (DbgInfo) {
-    Result.push_back(std::make_pair((unsigned)LLVMContext::MD_dbg, DbgInfo));
+  if (!DbgLoc.isUnknown()) {
+    Result.push_back(std::make_pair((unsigned)LLVMContext::MD_dbg,
+                                    DbgLoc.getAsMDNode(getContext())));
     if (!hasMetadataHashEntry()) return;
   }
   
@@ -570,10 +571,29 @@ void Instruction::getAllMetadataImpl(SmallVectorImpl<std::pair<unsigned,
     array_pod_sort(Result.begin(), Result.end());
 }
 
+void Instruction::
+getAllMetadataOtherThanDebugLocImpl(SmallVectorImpl<std::pair<unsigned,
+                                    MDNode*> > &Result) const {
+  Result.clear();
+  assert(hasMetadataHashEntry() &&
+         getContext().pImpl->MetadataStore.count(this) &&
+         "Shouldn't have called this");
+  const LLVMContextImpl::MDMapTy &Info =
+  getContext().pImpl->MetadataStore.find(this)->second;
+  assert(!Info.empty() && "Shouldn't have called this");
+  
+  Result.append(Info.begin(), Info.end());
+  
+  // Sort the resulting array so it is stable.
+  if (Result.size() > 1)
+    array_pod_sort(Result.begin(), Result.end());
+}
+
+
 /// removeAllMetadata - Remove all metadata from this instruction.
 void Instruction::removeAllMetadata() {
   assert(hasMetadata() && "Caller should check");
-  DbgInfo = 0;
+  DbgLoc = DebugLoc();
   if (hasMetadataHashEntry()) {
     getContext().pImpl->MetadataStore.erase(this);
     setHasMetadataHashEntry(false);
