@@ -168,7 +168,7 @@ private:
       // of the op_*() functions here. See CallSite::getCallee.
       //
     if (isCall())
-      return getInstruction()->op_begin(); // Unchanged (ATM)
+      return getInstruction()->op_end() - 1; // Skip Function
     else
       return getInstruction()->op_end() - 3; // Skip BB, BB, Function
   }
