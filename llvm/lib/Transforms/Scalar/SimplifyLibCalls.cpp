@@ -852,7 +852,7 @@ struct IsAsciiOpt : public LibCallOptimization {
       return 0;
 
     // isascii(c) -> c <u 128
-    Value *Op = CI->getOperand(1);
+    Value *Op = CI->getOperand(0);
     Op = B.CreateICmpULT(Op, ConstantInt::get(Type::getInt32Ty(*Context), 128),
                          "isascii");
     return B.CreateZExt(Op, CI->getType());
@@ -871,7 +871,7 @@ struct AbsOpt : public LibCallOptimization {
       return 0;
 
     // abs(x) -> x >s -1 ? x : -x
-    Value *Op = CI->getOperand(1);
+    Value *Op = CI->getOperand(0);
     Value *Pos = B.CreateICmpSGT(Op,
                              Constant::getAllOnesValue(Op->getType()),
                                  "ispos");
@@ -893,7 +893,7 @@ struct ToAsciiOpt : public LibCallOptimization {
       return 0;
 
     // isascii(c) -> c & 0x7f
-    return B.CreateAnd(CI->getOperand(1),
+    return B.CreateAnd(CI->getOperand(0),
                        ConstantInt::get(CI->getType(),0x7F));
   }
 };
@@ -916,7 +916,7 @@ struct PrintFOpt : public LibCallOptimization {
 
     // Check for a fixed format string.
     std::string FormatStr;
-    if (!GetConstantStringInfo(CI->getOperand(1), FormatStr))
+    if (!GetConstantStringInfo(CI->getOperand(0), FormatStr))
       return 0;
 
     // Empty format string -> noop.
@@ -948,7 +948,7 @@ struct PrintFOpt : public LibCallOptimization {
     }
 
     // Optimize specific format strings.
-    // printf("%c", chr) --> putchar(*(i8*)dst)
+    // printf("%c", chr) --> putchar(chr)
     if (FormatStr == "%c" && CI->getNumOperands() > 2 &&
         CI->getOperand(1)->getType()->isIntegerTy()) {
       Value *Res = EmitPutChar(CI->getOperand(1), B, TD);
@@ -997,7 +997,7 @@ struct SPrintFOpt : public LibCallOptimization {
       if (!TD) return 0;
 
       // sprintf(str, fmt) -> llvm.memcpy(str, fmt, strlen(fmt)+1, 1)
-      EmitMemCpy(CI->getOperand(1), CI->getOperand(1), // Copy the nul byte.
+      EmitMemCpy(CI->getOperand(0), CI->getOperand(1), // Copy the nul byte.
                  ConstantInt::get(TD->getIntPtrType(*Context),
                  FormatStr.size()+1), 1, B, TD);
       return ConstantInt::get(CI->getType(), FormatStr.size());
@@ -1014,7 +1014,7 @@ struct SPrintFOpt : public LibCallOptimization {
       if (!CI->getOperand(2)->getType()->isIntegerTy()) return 0;
       Value *V = B.CreateTrunc(CI->getOperand(2),
 			       Type::getInt8Ty(*Context), "char");
-      Value *Ptr = CastToCStr(CI->getOperand(1), B);
+      Value *Ptr = CastToCStr(CI->getOperand(0), B);
       B.CreateStore(V, Ptr);
       Ptr = B.CreateGEP(Ptr, ConstantInt::get(Type::getInt32Ty(*Context), 1),
 			"nul");
@@ -1034,7 +1034,7 @@ struct SPrintFOpt : public LibCallOptimization {
       Value *IncLen = B.CreateAdd(Len,
                                   ConstantInt::get(Len->getType(), 1),
                                   "leninc");
-      EmitMemCpy(CI->getOperand(1), CI->getOperand(2), IncLen, 1, B, TD);
+      EmitMemCpy(CI->getOperand(0), CI->getOperand(2), IncLen, 1, B, TD);
 
       // The sprintf result is the unincremented number of bytes in the string.
       return B.CreateIntCast(Len, CI->getType(), false);
@@ -1069,7 +1069,7 @@ struct FWriteOpt : public LibCallOptimization {
 
     // If this is writing one byte, turn it into fputc.
     if (Bytes == 1) {  // fwrite(S,1,1,F) -> fputc(S[0],F)
-      Value *Char = B.CreateLoad(CastToCStr(CI->getOperand(1), B), "char");
+      Value *Char = B.CreateLoad(CastToCStr(CI->getOperand(0), B), "char");
       EmitFPutC(Char, CI->getOperand(3), B, TD);
       return ConstantInt::get(CI->getType(), 1);
     }
@@ -1094,9 +1094,9 @@ struct FPutsOpt : public LibCallOptimization {
       return 0;
 
     // fputs(s,F) --> fwrite(s,1,strlen(s),F)
-    uint64_t Len = GetStringLength(CI->getOperand(1));
+    uint64_t Len = GetStringLength(CI->getOperand(0));
     if (!Len) return 0;
-    EmitFWrite(CI->getOperand(1),
+    EmitFWrite(CI->getOperand(0),
                ConstantInt::get(TD->getIntPtrType(*Context), Len-1),
                CI->getOperand(1), B, TD);
     return CI;  // Known to have no uses (see above).
@@ -1132,7 +1132,7 @@ struct FPrintFOpt : public LibCallOptimization {
       EmitFWrite(CI->getOperand(1),
                  ConstantInt::get(TD->getIntPtrType(*Context),
                                   FormatStr.size()),
-                 CI->getOperand(1), B, TD);
+                 CI->getOperand(0), B, TD);
       return ConstantInt::get(CI->getType(), FormatStr.size());
     }
 
@@ -1143,17 +1143,17 @@ struct FPrintFOpt : public LibCallOptimization {
 
     // Decode the second character of the format string.
     if (FormatStr[1] == 'c') {
-      // fprintf(F, "%c", chr) --> *(i8*)dst = chr
+      // fprintf(F, "%c", chr) --> fputc(chr, F)
       if (!CI->getOperand(2)->getType()->isIntegerTy()) return 0;
-      EmitFPutC(CI->getOperand(2), CI->getOperand(1), B, TD);
+      EmitFPutC(CI->getOperand(2), CI->getOperand(0), B, TD);
       return ConstantInt::get(CI->getType(), 1);
     }
 
     if (FormatStr[1] == 's') {
-      // fprintf(F, "%s", str) -> fputs(str, F)
+      // fprintf(F, "%s", str) --> fputs(str, F)
       if (!CI->getOperand(2)->getType()->isPointerTy() || !CI->use_empty())
         return 0;
-      EmitFPutS(CI->getOperand(2), CI->getOperand(1), B, TD);
+      EmitFPutS(CI->getOperand(2), CI->getOperand(0), B, TD);
       return CI;
     }
     return 0;
