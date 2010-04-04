@@ -2827,7 +2827,7 @@ void SelectionDAGBuilder::visitTargetIntrinsic(CallInst &I,
     Ops.push_back(DAG.getConstant(Intrinsic, TLI.getPointerTy()));
 
   // Add all operands of the call to the operand list.
-  for (unsigned i = 1, e = I.getNumOperands(); i != e; ++i) {
+  for (unsigned i = 0, e = I.getNumOperands()-1; i != e; ++i) {
     SDValue Op = getValue(I.getOperand(i));
     assert(TLI.isTypeLegal(Op.getValueType()) &&
            "Intrinsic uses a non-legal type?");
@@ -2932,11 +2932,11 @@ SelectionDAGBuilder::implVisitBinaryAtomic(CallInst& I, ISD::NodeType Op) {
   SDValue Root = getRoot();
   SDValue L =
     DAG.getAtomic(Op, getCurDebugLoc(),
-                  getValue(I.getOperand(2)).getValueType().getSimpleVT(),
+                  getValue(I.getOperand(1)).getValueType().getSimpleVT(),
                   Root,
+                  getValue(I.getOperand(0)),
                   getValue(I.getOperand(1)),
-                  getValue(I.getOperand(2)),
-                  I.getOperand(1));
+                  I.getOperand(0));
   setValue(&I, L);
   DAG.setRoot(L.getValue(1));
   return 0;
@@ -2945,8 +2945,8 @@ SelectionDAGBuilder::implVisitBinaryAtomic(CallInst& I, ISD::NodeType Op) {
 // implVisitAluOverflow - Lower arithmetic overflow instrinsics.
 const char *
 SelectionDAGBuilder::implVisitAluOverflow(CallInst &I, ISD::NodeType Op) {
-  SDValue Op1 = getValue(I.getOperand(1));
-  SDValue Op2 = getValue(I.getOperand(2));
+  SDValue Op1 = getValue(I.getOperand(0));
+  SDValue Op2 = getValue(I.getOperand(1));
 
   SDVTList VTs = DAG.getVTList(Op1.getValueType(), MVT::i1);
   setValue(&I, DAG.getNode(Op, getCurDebugLoc(), VTs, Op1, Op2));
@@ -2960,9 +2960,9 @@ SelectionDAGBuilder::visitExp(CallInst &I) {
   SDValue result;
   DebugLoc dl = getCurDebugLoc();
 
-  if (getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
+  if (getValue(I.getOperand(0)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(1));
+    SDValue Op = getValue(I.getOperand(0));
 
     // Put the exponent in the right bit position for later addition to the
     // final result:
@@ -3072,8 +3072,8 @@ SelectionDAGBuilder::visitExp(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FEXP, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)));
   }
 
   setValue(&I, result);
@@ -3086,9 +3086,9 @@ SelectionDAGBuilder::visitLog(CallInst &I) {
   SDValue result;
   DebugLoc dl = getCurDebugLoc();
 
-  if (getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
+  if (getValue(I.getOperand(0)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(1));
+    SDValue Op = getValue(I.getOperand(0));
     SDValue Op1 = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i32, Op);
 
     // Scale the exponent by log(2) [0.69314718f].
@@ -3182,8 +3182,8 @@ SelectionDAGBuilder::visitLog(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FLOG, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)));
   }
 
   setValue(&I, result);
@@ -3196,9 +3196,9 @@ SelectionDAGBuilder::visitLog2(CallInst &I) {
   SDValue result;
   DebugLoc dl = getCurDebugLoc();
 
-  if (getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
+  if (getValue(I.getOperand(0)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(1));
+    SDValue Op = getValue(I.getOperand(0));
     SDValue Op1 = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i32, Op);
 
     // Get the exponent.
@@ -3291,8 +3291,8 @@ SelectionDAGBuilder::visitLog2(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FLOG2, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)));
   }
 
   setValue(&I, result);
@@ -3305,9 +3305,9 @@ SelectionDAGBuilder::visitLog10(CallInst &I) {
   SDValue result;
   DebugLoc dl = getCurDebugLoc();
 
-  if (getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
+  if (getValue(I.getOperand(0)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(1));
+    SDValue Op = getValue(I.getOperand(0));
     SDValue Op1 = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i32, Op);
 
     // Scale the exponent by log10(2) [0.30102999f].
@@ -3393,8 +3393,8 @@ SelectionDAGBuilder::visitLog10(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FLOG10, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)));
   }
 
   setValue(&I, result);
@@ -3407,9 +3407,9 @@ SelectionDAGBuilder::visitExp2(CallInst &I) {
   SDValue result;
   DebugLoc dl = getCurDebugLoc();
 
-  if (getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
+  if (getValue(I.getOperand(0)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(1));
+    SDValue Op = getValue(I.getOperand(0));
 
     SDValue IntegerPartOfX = DAG.getNode(ISD::FP_TO_SINT, dl, MVT::i32, Op);
 
@@ -3507,8 +3507,8 @@ SelectionDAGBuilder::visitExp2(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FEXP2, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)));
   }
 
   setValue(&I, result);
@@ -3519,12 +3519,12 @@ SelectionDAGBuilder::visitExp2(CallInst &I) {
 void
 SelectionDAGBuilder::visitPow(CallInst &I) {
   SDValue result;
-  Value *Val = I.getOperand(1);
+  Value *Val = I.getOperand(0);
   DebugLoc dl = getCurDebugLoc();
   bool IsExp10 = false;
 
   if (getValue(Val).getValueType() == MVT::f32 &&
-      getValue(I.getOperand(2)).getValueType() == MVT::f32 &&
+      getValue(I.getOperand(1)).getValueType() == MVT::f32 &&
       LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
     if (Constant *C = const_cast<Constant*>(dyn_cast<Constant>(Val))) {
       if (ConstantFP *CFP = dyn_cast<ConstantFP>(C)) {
@@ -3535,7 +3535,7 @@ SelectionDAGBuilder::visitPow(CallInst &I) {
   }
 
   if (IsExp10 && LimitFloatPrecision > 0 && LimitFloatPrecision <= 18) {
-    SDValue Op = getValue(I.getOperand(2));
+    SDValue Op = getValue(I.getOperand(1));
 
     // Put the exponent in the right bit position for later addition to the
     // final result:
@@ -3640,9 +3640,9 @@ SelectionDAGBuilder::visitPow(CallInst &I) {
   } else {
     // No special expansion.
     result = DAG.getNode(ISD::FPOW, dl,
-                         getValue(I.getOperand(1)).getValueType(),
-                         getValue(I.getOperand(1)),
-                         getValue(I.getOperand(2)));
+                         getValue(I.getOperand(0)).getValueType(),
+                         getValue(I.getOperand(0)),
+                         getValue(I.getOperand(1)));
   }
 
   setValue(&I, result);
