@@ -1126,7 +1126,7 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
   IntrinsicInst *Tramp =
     cast<IntrinsicInst>(cast<BitCastInst>(Callee)->getOperand(0));
 
-  Function *NestF = cast<Function>(Tramp->getOperand(2)->stripPointerCasts());
+  Function *NestF = cast<Function>(Tramp->getOperand(1)->stripPointerCasts());
   const PointerType *NestFPTy = cast<PointerType>(NestF->getType());
   const FunctionType *NestFTy = cast<FunctionType>(NestFPTy->getElementType());
 
@@ -1167,7 +1167,7 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
         do {
           if (Idx == NestIdx) {
             // Add the chain argument and attributes.
-            Value *NestVal = Tramp->getOperand(3);
+            Value *NestVal = Tramp->getOperand(2);
             if (NestVal->getType() != NestTy)
               NestVal = new BitCastInst(NestVal, NestTy, "nest", Caller);
             NewArgs.push_back(NestVal);
