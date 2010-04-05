@@ -390,7 +390,7 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
     // bswap(bswap(x)) -> x
     if (IntrinsicInst *Operand = dyn_cast<IntrinsicInst>(II->getOperand(0)))
       if (Operand->getIntrinsicID() == Intrinsic::bswap)
-        return ReplaceInstUsesWith(CI, Operand->getOperand(1));
+        return ReplaceInstUsesWith(CI, Operand->getOperand(0));
       
     // bswap(trunc(bswap(x))) -> trunc(lshr(x, c))
     if (TruncInst *TI = dyn_cast<TruncInst>(II->getOperand(0))) {
@@ -399,7 +399,7 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
           unsigned C = Operand->getType()->getPrimitiveSizeInBits() -
                        TI->getType()->getPrimitiveSizeInBits();
           Value *CV = ConstantInt::get(Operand->getType(), C);
-          Value *V = Builder->CreateLShr(Operand->getOperand(1), CV);
+          Value *V = Builder->CreateLShr(Operand->getOperand(0), CV);
           return new TruncInst(V, TI->getType());
         }
     }
