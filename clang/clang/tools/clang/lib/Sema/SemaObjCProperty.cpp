@@ -44,9 +44,6 @@ Sema::DeclPtrTy Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
     Diag(AtLoc, diag::error_reference_property);
     return DeclPtrTy();
   }
-  // Validate the attributes on the @property.
-  CheckObjCPropertyAttributes(T, AtLoc, Attributes);
-
   // Proceed with constructing the ObjCPropertDecls.
   ObjCContainerDecl *ClassDecl =
     cast<ObjCContainerDecl>(ClassCategory.getAs<Decl>());
@@ -60,10 +57,13 @@ Sema::DeclPtrTy Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
                                             isOverridingProperty, T,
                                             MethodImplKind);
 
-  return DeclPtrTy::make(CreatePropertyDecl(S, ClassDecl, AtLoc, FD,
+  DeclPtrTy Res =  DeclPtrTy::make(CreatePropertyDecl(S, ClassDecl, AtLoc, FD,
                                             GetterSel, SetterSel,
                                             isAssign, isReadWrite,
                                             Attributes, T, MethodImplKind));
+  // Validate the attributes on the @property.
+  CheckObjCPropertyAttributes(Res, AtLoc, Attributes);
+  return Res;
 }
 
 Sema::DeclPtrTy
@@ -160,7 +160,7 @@ Sema::HandlePropertyInClassExtension(Scope *S, ObjCCategoryDecl *CDecl,
                       PIDecl->getSetterName(),
                       DeclPtrTy::make(CCPrimary), isOverridingProperty,
                       MethodImplKind);
-      PIDecl = ProtocolPtrTy.getAs<ObjCPropertyDecl>();
+      PIDecl = cast<ObjCPropertyDecl>(ProtocolPtrTy.getAs<Decl>());
     }
     PIDecl->makeitReadWriteAttribute();
     if (Attributes & ObjCDeclSpec::DQ_PR_retain)
@@ -281,7 +281,8 @@ Sema::DeclPtrTy Sema::ActOnPropertyImplDecl(SourceLocation AtLoc,
                                             DeclPtrTy ClassCatImpDecl,
                                             IdentifierInfo *PropertyId,
                                             IdentifierInfo *PropertyIvar) {
-  Decl *ClassImpDecl = ClassCatImpDecl.getAs<Decl>();
+  ObjCContainerDecl *ClassImpDecl =
+    cast_or_null<ObjCContainerDecl>(ClassCatImpDecl.getAs<Decl>());
   // Make sure we have a context for the property implementation declaration.
   if (!ClassImpDecl) {
     Diag(AtLoc, diag::error_missing_property_context);
@@ -982,10 +983,16 @@ void Sema::ProcessPropertyDecl(ObjCPropertyDecl *property,
     AddInstanceMethodToGlobalPool(SetterMethod);
 }
 
-void Sema::CheckObjCPropertyAttributes(QualType PropertyTy,
+void Sema::CheckObjCPropertyAttributes(DeclPtrTy PropertyPtrTy,
                                        SourceLocation Loc,
                                        unsigned &Attributes) {
   // FIXME: Improve the reported location.
+  Decl *PDecl = PropertyPtrTy.getAs<Decl>();
+  if (!PDecl)
+    return;
+
+  ObjCPropertyDecl *PropertyDecl = cast<ObjCPropertyDecl>(PDecl);
+  QualType PropertyTy = PropertyDecl->getType(); 
 
   // readonly and readwrite/assign/retain/copy conflict.
   if ((Attributes & ObjCDeclSpec::DQ_PR_readonly) &&
@@ -1010,7 +1017,8 @@ void Sema::CheckObjCPropertyAttributes(QualType PropertyTy,
   if ((Attributes & (ObjCDeclSpec::DQ_PR_copy | ObjCDeclSpec::DQ_PR_retain)) &&
       !PropertyTy->isObjCObjectPointerType() &&
       !PropertyTy->isBlockPointerType() &&
-      !Context.isObjCNSObjectType(PropertyTy)) {
+      !Context.isObjCNSObjectType(PropertyTy) &&
+      !PropertyDecl->getAttr<ObjCNSObjectAttr>()) {
     Diag(Loc, diag::err_objc_property_requires_object)
       << (Attributes & ObjCDeclSpec::DQ_PR_copy ? "copy" : "retain");
     Attributes &= ~(ObjCDeclSpec::DQ_PR_copy | ObjCDeclSpec::DQ_PR_retain);
