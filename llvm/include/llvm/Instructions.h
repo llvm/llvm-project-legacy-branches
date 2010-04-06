@@ -1041,7 +1041,7 @@ public:
 
   /// setCalledFunction - Set the function called.
   void setCalledFunction(Value* Fn) {
-    Op<0>() = Fn;
+    Op<-1>() = Fn;
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
