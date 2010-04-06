@@ -219,12 +219,12 @@ static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
         GS.HasPHIUser = true;
       } else if (isa<CmpInst>(I)) {
       } else if (isa<MemTransferInst>(I)) {
-        if (I->getOperand(1) == V)
+        if (I->getOperand(0) == V)
           GS.StoredType = GlobalStatus::isStored;
-        if (I->getOperand(2) == V)
+        if (I->getOperand(1) == V)
           GS.isLoaded = true;
       } else if (isa<MemSetInst>(I)) {
-        assert(I->getOperand(1) == V && "Memset only takes one pointer!");
+        assert(I->getOperand(0) == V && "Memset only takes one pointer!");
         GS.StoredType = GlobalStatus::isStored;
       } else {
         return true;  // Any other non-load instruction might take address!
