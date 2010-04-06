@@ -454,7 +454,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::eh_selector:
   case Intrinsic::eh_typeid_for: {
     // Only the return type changed.
-    SmallVector<Value*, 8> Operands(CI->op_begin() + 1, CI->op_end());
+    SmallVector<Value*, 8> Operands(CI->op_begin(), CI->op_end() - 1);
     CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),
                                        "upgraded." + CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
