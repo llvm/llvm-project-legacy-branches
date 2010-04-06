@@ -1625,7 +1625,7 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
         // bool.
         Instruction *StoredVal = cast<Instruction>(SI->getOperand(0));
 
-        // If we're already replaced the input, StoredVal will be a cast or
+        // If we've already replaced the input, StoredVal will be a cast or
         // select instruction.  If not, it will be a load of the original
         // global.
         if (LoadInst *LI = dyn_cast<LoadInst>(StoredVal)) {
@@ -2286,7 +2286,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
       if (!Callee) return false;  // Cannot resolve.
 
       SmallVector<Constant*, 8> Formals;
-      for (User::op_iterator i = CI->op_begin() + 1, e = CI->op_end();
+      for (User::op_iterator i = CI->op_begin(), e = CI->op_end() - 1;
            i != e; ++i)
         Formals.push_back(getVal(Values, *i));
 
