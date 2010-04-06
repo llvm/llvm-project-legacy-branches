@@ -3947,7 +3947,7 @@ SelectionDAGBuilder::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::eh_sjlj_callsite: {
     MachineModuleInfo *MMI = DAG.getMachineModuleInfo();
-    ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(1));
+    ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(0));
     assert(CI && "Non-constant call site value in eh.sjlj.callsite!");
     assert(MMI->getCurrentCallSite() == 0 && "Overlapping call sites!");
 
@@ -4026,11 +4026,11 @@ SelectionDAGBuilder::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
     return 0;
   case Intrinsic::convert_to_fp16:
     setValue(&I, DAG.getNode(ISD::FP32_TO_FP16, dl,
-                             MVT::i16, getValue(I.getOperand(1))));
+                             MVT::i16, getValue(I.getOperand(0))));
     return 0;
   case Intrinsic::convert_from_fp16:
     setValue(&I, DAG.getNode(ISD::FP16_TO_FP32, dl,
-                             MVT::f32, getValue(I.getOperand(1))));
+                             MVT::f32, getValue(I.getOperand(0))));
     return 0;
   case Intrinsic::pcmarker: {
     SDValue Tmp = getValue(I.getOperand(0));
@@ -4571,13 +4571,13 @@ bool SelectionDAGBuilder::visitMemCmpCall(CallInst &I) {
   if (I.getNumOperands() != 4)
     return false;
 
-  Value *LHS = I.getOperand(1), *RHS = I.getOperand(2);
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
   if (!LHS->getType()->isPointerTy() || !RHS->getType()->isPointerTy() ||
-      !I.getOperand(3)->getType()->isIntegerTy() ||
+      !I.getOperand(2)->getType()->isIntegerTy() ||
       !I.getType()->isIntegerTy())
     return false;
 
-  ConstantInt *Size = dyn_cast<ConstantInt>(I.getOperand(3));
+  ConstantInt *Size = dyn_cast<ConstantInt>(I.getOperand(2));
 
   // memcmp(S1,S2,2) != 0 -> (*(short*)LHS != *(short*)RHS)  != 0
   // memcmp(S1,S2,4) != 0 -> (*(int*)LHS != *(int*)RHS)  != 0
@@ -5672,8 +5672,8 @@ void SelectionDAGBuilder::visitInlineAsm(CallSite CS) {
 void SelectionDAGBuilder::visitVAStart(CallInst &I) {
   DAG.setRoot(DAG.getNode(ISD::VASTART, getCurDebugLoc(),
                           MVT::Other, getRoot(),
-                          getValue(I.getOperand(1)),
-                          DAG.getSrcValue(I.getOperand(1))));
+                          getValue(I.getOperand(0)),
+                          DAG.getSrcValue(I.getOperand(0))));
 }
 
 void SelectionDAGBuilder::visitVAArg(VAArgInst &I) {
@@ -5687,17 +5687,17 @@ void SelectionDAGBuilder::visitVAArg(VAArgInst &I) {
 void SelectionDAGBuilder::visitVAEnd(CallInst &I) {
   DAG.setRoot(DAG.getNode(ISD::VAEND, getCurDebugLoc(),
                           MVT::Other, getRoot(),
-                          getValue(I.getOperand(1)),
-                          DAG.getSrcValue(I.getOperand(1))));
+                          getValue(I.getOperand(0)),
+                          DAG.getSrcValue(I.getOperand(0))));
 }
 
 void SelectionDAGBuilder::visitVACopy(CallInst &I) {
   DAG.setRoot(DAG.getNode(ISD::VACOPY, getCurDebugLoc(),
                           MVT::Other, getRoot(),
+                          getValue(I.getOperand(0)),
                           getValue(I.getOperand(1)),
-                          getValue(I.getOperand(2)),
-                          DAG.getSrcValue(I.getOperand(1)),
-                          DAG.getSrcValue(I.getOperand(2))));
+                          DAG.getSrcValue(I.getOperand(0)),
+                          DAG.getSrcValue(I.getOperand(1))));
 }
 
 /// TargetLowering::LowerCallTo - This is the default LowerCallTo
