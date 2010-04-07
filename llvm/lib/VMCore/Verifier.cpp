@@ -1664,12 +1664,12 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
   case Intrinsic::lifetime_start:
   case Intrinsic::lifetime_end:
   case Intrinsic::invariant_start:
-    Assert1(isa<ConstantInt>(CI.getOperand(1)),
+    Assert1(isa<ConstantInt>(CI.getOperand(0)),
             "size argument of memory use markers must be a constant integer",
             &CI);
     break;
   case Intrinsic::invariant_end:
-    Assert1(isa<ConstantInt>(CI.getOperand(2)),
+    Assert1(isa<ConstantInt>(CI.getOperand(1)),
             "llvm.invariant.end parameter #2 must be a constant integer", &CI);
     break;
   }
