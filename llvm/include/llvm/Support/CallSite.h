@@ -164,13 +164,10 @@ private:
   }
 
   IterTy getCallee() const {
-      // FIXME: this is slow, since we do not have the fast versions
-      // of the op_*() functions here. See CallSite::getCallee.
-      //
-    if (isCall())
-      return getInstruction()->op_end() - 1; // Skip Function
-    else
-      return getInstruction()->op_end() - 3; // Skip BB, BB, Function
+    // FIXME: this is slow, since we do not have the fast versions
+		// of the op_*() functions here. See CallSite::getCallee.
+		//
+    return arg_end();
   }
 };
 
