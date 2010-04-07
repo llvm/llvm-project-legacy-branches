@@ -362,8 +362,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       CI->eraseFromParent();
     } else if (F->getName() == "llvm.x86.sse41.pmulld") {
       // Upgrade this set of intrinsics into vector multiplies.
-      Instruction *Mul = BinaryOperator::CreateMul(CI->getOperand(1),
-                                                   CI->getOperand(2),
+      Instruction *Mul = BinaryOperator::CreateMul(CI->getOperand(0),
+                                                   CI->getOperand(1),
                                                    CI->getName(),
                                                    CI);
       // Fix up all the uses with our new multiply.
