@@ -249,7 +249,7 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
   
   IntrinsicInst *II = dyn_cast<IntrinsicInst>(&CI);
   if (!II) return visitCallSite(&CI);
-  
+
   // Intrinsics cannot occur in an invoke, so handle them here instead of in
   // visitCallSite.
   if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II)) {
@@ -273,11 +273,12 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
     if (MemMoveInst *MMI = dyn_cast<MemMoveInst>(MI)) {
       if (GlobalVariable *GVSrc = dyn_cast<GlobalVariable>(MMI->getSource()))
         if (GVSrc->isConstant()) {
-          Module *M = CI.getParent()->getParent()->getParent();
+          Module *M = MMI->getParent()->getParent()->getParent();
           Intrinsic::ID MemCpyID = Intrinsic::memcpy;
           const Type *Tys[1];
-          Tys[0] = CI.getOperand(2)->getType();
-          CI.setCalledFunction(Intrinsic::getDeclaration(M, MemCpyID, Tys, 1));
+          Tys[0] = MMI->getOperand(2)->getType();
+          MMI->setCalledFunction(Intrinsic::getDeclaration(M, MemCpyID, Tys,
+                                                           1));
           Changed = true;
         }
     }
@@ -286,21 +287,19 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       // memmove(x,x,size) -> noop.
       if (MTI->getSource() == MTI->getDest())
         return EraseInstFromFunction(CI);
-    }
 
-    // If we can determine a pointer alignment that is bigger than currently
-    // set, update the alignment.
-    if (isa<MemTransferInst>(MI)) {
-      if (Instruction *I = SimplifyMemTransfer(MI))
+      // If we can determine a pointer alignment that is bigger than currently
+      // set, update the alignment.
+      if (Instruction *I = SimplifyMemTransfer(MTI))
         return I;
     } else if (MemSetInst *MSI = dyn_cast<MemSetInst>(MI)) {
       if (Instruction *I = SimplifyMemSet(MSI))
         return I;
     }
-          
+
     if (Changed) return II;
   }
-  
+
   switch (II->getIntrinsicID()) {
   default: break;
   case Intrinsic::objectsize: {
