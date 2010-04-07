@@ -287,7 +287,7 @@ bool DSE::runOnBasicBlock(BasicBlock &BB) {
 
 /// handleFreeWithNonTrivialDependency - Handle frees of entire structures whose
 /// dependency is a store to a field of that structure.
-bool DSE::handleFreeWithNonTrivialDependency(Instruction *F, MemDepResult Dep) {
+bool DSE::handleFreeWithNonTrivialDependency(/*FIXME: Call*/Instruction *F, MemDepResult Dep) {
   AliasAnalysis &AA = getAnalysis<AliasAnalysis>();
   
   Instruction *Dependency = Dep.getInst();
@@ -297,7 +297,7 @@ bool DSE::handleFreeWithNonTrivialDependency(Instruction *F, MemDepResult Dep) {
   Value *DepPointer = getPointerOperand(Dependency)->getUnderlyingObject();
 
   // Check for aliasing.
-  if (AA.alias(F->getOperand(1), 1, DepPointer, 1) !=
+  if (AA.alias(F->getOperand(0), 1, DepPointer, 1) !=
          AliasAnalysis::MustAlias)
     return false;
   
