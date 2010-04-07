@@ -378,7 +378,6 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       
       Constant *RetVal = ConstantInt::get(ReturnTy, Size-Offset);
       return ReplaceInstUsesWith(CI, RetVal);
-      
     } 
 
     // Do not return "I don't know" here. Later optimization passes could
