@@ -3211,7 +3211,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
       DestVal = ResultVals[ValueCount].first;
       DestValNo = ResultVals[ValueCount].second;
     } else
-      DestVal = CI.getOperand(ValueCount-ResultVals.size()+1);
+      DestVal = CI.getOperand(ValueCount-ResultVals.size());
 
     if (I->isEarlyClobber)
       C = "&"+C;
@@ -3245,7 +3245,7 @@ void CWriter::visitInlineAsm(CallInst &CI) {
     }
     
     assert(ValueCount >= ResultVals.size() && "Input can't refer to result");
-    Value *SrcVal = CI.getOperand(ValueCount-ResultVals.size()+1);
+    Value *SrcVal = CI.getOperand(ValueCount-ResultVals.size());
     
     Out << "\"" << C << "\"(";
     if (!I->isIndirect)
