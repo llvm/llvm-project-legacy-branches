@@ -108,7 +108,7 @@ PrintModRefResults(const char *Msg, bool P, Instruction *I, Value *Ptr,
   }
 }
 
-static inline bool isProperPointer(Value *V) {
+static inline bool isInterestingPointer(Value *V) {
   return V->getType()->isPointerTy()
       && !isa<ConstantPointerNull>(V);
 }
@@ -131,18 +131,18 @@ bool AAEval::runOnFunction(Function &F) {
     if (CS) {
       Value *Callee = CS.getCalledValue();
       // Skip actual functions for direct function calls.
-      if (!isa<Function>(Callee) && isProperPointer(Callee))
+      if (!isa<Function>(Callee) && isInterestingPointer(Callee))
         Pointers.insert(Callee);
       // Consider formals.
       for (CallSite::arg_iterator AI = CS.arg_begin(), AE = CS.arg_end();
            AI != AE; ++AI)
-        if (isProperPointer(*AI))
+        if (isInterestingPointer(*AI))
           Pointers.insert(*AI);
     } else {
       // Consider all operands.
       for (Instruction::op_iterator OI = Inst.op_begin(), OE = Inst.op_end();
            OI != OE; ++OI)
-        if (isProperPointer(*OI))
+        if (isInterestingPointer(*OI))
           Pointers.insert(*OI);
     }
 
