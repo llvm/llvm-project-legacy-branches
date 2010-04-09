@@ -68,6 +68,9 @@ public:
   /// all.
   virtual bool isVerboseAsm() const { return IsVerboseAsm; }
 
+  /// hasRawTextSupport - We support EmitRawText.
+  virtual bool hasRawTextSupport() const { return true; }
+
   /// AddComment - Add a comment that can be emitted to the generated .s
   /// file if applicable as a QoI issue to make the output of the compiler
   /// more readable.  This only affects the MCAsmStreamer, and only when
@@ -143,6 +146,11 @@ public:
   virtual void EmitDwarfFileDirective(unsigned FileNo, StringRef Filename);
 
   virtual void EmitInstruction(const MCInst &Inst);
+  
+  /// EmitRawText - If this file is backed by a assembly streamer, this dumps
+  /// the specified string in the output .s file.  This capability is
+  /// indicated by the hasRawTextSupport() predicate.
+  virtual void EmitRawText(StringRef String);
   
   virtual void Finish();
   
@@ -644,6 +652,16 @@ void MCAsmStreamer::EmitInstruction(const MCInst &Inst) {
     InstPrinter->printInst(&Inst);
   else
     Inst.print(OS, &MAI);
+  EmitEOL();
+}
+
+/// EmitRawText - If this file is backed by a assembly streamer, this dumps
+/// the specified string in the output .s file.  This capability is
+/// indicated by the hasRawTextSupport() predicate.
+void MCAsmStreamer::EmitRawText(StringRef String) {
+  if (!String.empty() && String.back() == '\n')
+    String = String.substr(0, String.size()-1);
+  OS << String;
   EmitEOL();
 }
 
