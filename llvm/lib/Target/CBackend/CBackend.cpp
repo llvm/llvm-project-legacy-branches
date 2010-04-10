@@ -2930,7 +2930,7 @@ void CWriter::visitCallInst(CallInst &I) {
 
   unsigned NumDeclaredParams = FTy->getNumParams();
 
-  CallSite::arg_iterator AI = I.op_begin()+1, AE = I.op_end();
+  CallInst::op_iterator AI = I.op_begin(), AE = I.op_end() - 1;
   unsigned ArgNo = 0;
   if (isStructRet) {   // Skip struct return argument.
     ++AI;
