@@ -244,14 +244,14 @@ Expression::ExpressionOpcode ValueTable::getOpcode(CastInst* C) {
   }
 }
 
-Expression ValueTable::create_expression(CallInst* C) {
+Expression ValueTable::create_expression(CallInst* CI) {
   Expression e;
 
-  e.type = C->getType();
+  e.type = CI->getType();
   e.opcode = Expression::CALL;
 
-  e.varargs.push_back(lookup(C->getCalledFunction()));
-  for (CallInst::op_iterator I = C->op_begin()+1, E = C->op_end();
+  e.varargs.push_back(lookup(CI->getCalledFunction()));
+  for (CallInst::op_iterator I = CI->op_begin(), E = CI->op_end() - 1;
        I != E; ++I)
     e.varargs.push_back(lookup(*I));
 

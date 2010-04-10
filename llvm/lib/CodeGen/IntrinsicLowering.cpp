@@ -311,17 +311,17 @@ static void ReplaceFPIntrinsicWithCall(CallInst *CI, const char *Fname,
   switch (CI->getOperand(0)->getType()->getTypeID()) {
   default: llvm_unreachable("Invalid type in intrinsic");
   case Type::FloatTyID:
-    ReplaceCallWith(Fname, CI, CI->op_begin() + 1, CI->op_end(),
+    ReplaceCallWith(Fname, CI, CI->op_begin(), CI->op_end() - 1,
                   Type::getFloatTy(CI->getContext()));
     break;
   case Type::DoubleTyID:
-    ReplaceCallWith(Dname, CI, CI->op_begin() + 1, CI->op_end(),
+    ReplaceCallWith(Dname, CI, CI->op_begin(), CI->op_end() - 1,
                   Type::getDoubleTy(CI->getContext()));
     break;
   case Type::X86_FP80TyID:
   case Type::FP128TyID:
   case Type::PPC_FP128TyID:
-    ReplaceCallWith(LDname, CI, CI->op_begin() + 1, CI->op_end(),
+    ReplaceCallWith(LDname, CI, CI->op_begin(), CI->op_end() - 1,
                   CI->getOperand(0)->getType());
     break;
   }
@@ -347,7 +347,7 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
     // by the lowerinvoke pass.  In both cases, the right thing to do is to
     // convert the call to an explicit setjmp or longjmp call.
   case Intrinsic::setjmp: {
-    Value *V = ReplaceCallWith("setjmp", CI, CI->op_begin() + 1, CI->op_end(),
+    Value *V = ReplaceCallWith("setjmp", CI, CI->op_begin(), CI->op_end() - 1,
                                Type::getInt32Ty(Context));
     if (!CI->getType()->isVoidTy())
       CI->replaceAllUsesWith(V);
@@ -359,7 +359,7 @@ void IntrinsicLowering::LowerIntrinsicCall(CallInst *CI) {
      break;
 
   case Intrinsic::longjmp: {
-    ReplaceCallWith("longjmp", CI, CI->op_begin() + 1, CI->op_end(),
+    ReplaceCallWith("longjmp", CI, CI->op_begin(), CI->op_end() - 1,
                     Type::getVoidTy(Context));
     break;
   }

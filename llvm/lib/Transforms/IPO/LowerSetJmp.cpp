@@ -473,7 +473,7 @@ void LowerSetJmp::visitCallInst(CallInst& CI)
 
   // Construct the new "invoke" instruction.
   TerminatorInst* Term = OldBB->getTerminator();
-  std::vector<Value*> Params(CI.op_begin() + 1, CI.op_end());
+  std::vector<Value*> Params(CI.op_begin(), CI.op_end() - 1);
   InvokeInst* II =
     InvokeInst::Create(CI.getCalledValue(), NewBB, PrelimBBMap[Func],
                        Params.begin(), Params.end(), CI.getName(), Term);
