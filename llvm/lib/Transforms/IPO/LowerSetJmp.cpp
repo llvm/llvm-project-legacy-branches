@@ -262,8 +262,8 @@ void LowerSetJmp::TransformLongJmpCall(CallInst* Inst)
   // char*. It returns "void", so it doesn't need to replace any of
   // Inst's uses and doesn't get a name.
   CastInst* CI = 
-    new BitCastInst(Inst->getOperand(1), SBPTy, "LJBuf", Inst);
-  Value *Args[] = { CI, Inst->getOperand(2) };
+    new BitCastInst(Inst->getOperand(0), SBPTy, "LJBuf", Inst);
+  Value *Args[] = { CI, Inst->getOperand(1) };
   CallInst::Create(ThrowLongJmp, Args, Args + 2, "", Inst);
 
   SwitchValuePair& SVP = SwitchValMap[Inst->getParent()->getParent()];
@@ -378,7 +378,7 @@ void LowerSetJmp::TransformSetJmpCall(CallInst* Inst)
   const Type* SBPTy =
           Type::getInt8PtrTy(Inst->getContext());
   CastInst* BufPtr = 
-    new BitCastInst(Inst->getOperand(1), SBPTy, "SBJmpBuf", Inst);
+    new BitCastInst(Inst->getOperand(0), SBPTy, "SBJmpBuf", Inst);
   Value *Args[] = {
     GetSetJmpMap(Func), BufPtr,
     ConstantInt::get(Type::getInt32Ty(Inst->getContext()), SetJmpIDMap[Func]++)
