@@ -358,6 +358,9 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     // kill markers.
     PM.add(createStackSlotColoringPass(false));
     printAndVerify(PM, "After StackSlotColoring");
+
+    // Run post-ra machine LICM to hoist reloads / remats.
+    PM.add(createMachineLICMPass(false));
   }
 
   // Run post-ra passes.
