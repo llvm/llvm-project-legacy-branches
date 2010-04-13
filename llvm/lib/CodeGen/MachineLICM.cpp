@@ -280,7 +280,7 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
                             SmallSet<int, 32> &StoredFIs,
                             SmallVector<CandidateInfo, 32> &Candidates) {
   bool RuledOut = false;
-  bool HasRegFIUse = false;
+  bool HasNonInvariantUse = false;
   unsigned Def = 0;
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
@@ -291,7 +291,7 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
           MFI->isSpillSlotObjectIndex(FI) &&
           InstructionStoresToFI(MI, FI))
         StoredFIs.insert(FI);
-      HasRegFIUse = true;
+      HasNonInvariantUse = true;
       continue;
     }
 
@@ -304,7 +304,10 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
            "Not expecting virtual register!");
 
     if (!MO.isDef()) {
-      HasRegFIUse = true;
+      if (Reg && PhysRegDefs[Reg])
+        // If it's using a non-loop-invariant register, then it's obviously not
+        // safe to hoist.
+        HasNonInvariantUse = true;
       continue;
     }
 
@@ -342,9 +345,7 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
   // operands. FIXME: Consider unfold load folding instructions.
   if (Def && !RuledOut) {
     int FI = INT_MIN;
-    // FIXME: Also hoist instructions if all source operands are live in
-    // to the loop.
-    if ((!HasRegFIUse && IsLICMCandidate(*MI)) ||
+    if ((!HasNonInvariantUse && IsLICMCandidate(*MI)) ||
         (TII->isLoadFromStackSlot(MI, FI) && MFI->isSpillSlotObjectIndex(FI)))
       Candidates.push_back(CandidateInfo(MI, Def, FI));
   }
@@ -404,8 +405,23 @@ void MachineLICM::HoistRegionPostRA(MachineDomTreeNode *N) {
         StoredFIs.count(Candidates[i].FI))
       continue;
 
-    if (PhysRegDefs[Candidates[i].Def] == 1)
-      HoistPostRA(Candidates[i].MI, Candidates[i].Def);
+    if (PhysRegDefs[Candidates[i].Def] == 1) {
+      bool Safe = true;
+      MachineInstr *MI = Candidates[i].MI;
+      for (unsigned j = 0, ee = MI->getNumOperands(); j != ee; ++j) {
+        const MachineOperand &MO = MI->getOperand(j);
+        if (!MO.isReg() || MO.isDef() || !MO.getReg())
+          continue;
+        if (PhysRegDefs[MO.getReg()]) {
+          // If it's using a non-loop-invariant register, then it's obviously
+          // not safe to hoist.
+          Safe = false;
+          break;
+        }
+      }
+      if (Safe)
+        HoistPostRA(MI, Candidates[i].Def);
+    }
   }
 }
 
@@ -488,6 +504,9 @@ void MachineLICM::HoistRegion(MachineDomTreeNode *N) {
 /// candidate for LICM. e.g. If the instruction is a call, then it's obviously
 /// not safe to hoist it.
 bool MachineLICM::IsLICMCandidate(MachineInstr &I) {
+  if (I.isImplicitDef())
+    return false;
+
   const TargetInstrDesc &TID = I.getDesc();
   
   // Ignore stuff that we obviously can't hoist.
@@ -606,9 +625,6 @@ bool MachineLICM::isLoadFromConstantMemory(MachineInstr *MI) {
 /// IsProfitableToHoist - Return true if it is potentially profitable to hoist
 /// the given loop invariant.
 bool MachineLICM::IsProfitableToHoist(MachineInstr &MI) {
-  if (MI.isImplicitDef())
-    return false;
-
   // FIXME: For now, only hoist re-materilizable instructions. LICM will
   // increase register pressure. We want to make sure it doesn't increase
   // spilling.
