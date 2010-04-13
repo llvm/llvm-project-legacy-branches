@@ -1758,7 +1758,6 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
         BranchCode = GetOppositeBranchCondition(BranchCode);
         unsigned JNCC = GetCondBranchFromCond(BranchCode);
         MachineBasicBlock::iterator OldInst = I;
-        --I;
 
         BuildMI(MBB, UnCondBrIter, MBB.findDebugLoc(I), get(JNCC))
           .addMBB(UnCondBrIter->getOperand(0).getMBB());
@@ -1776,7 +1775,6 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       }
 
       FBB = TBB;
-      TBB = TargetBB;
       TBB = I->getOperand(0).getMBB();
       Cond.push_back(MachineOperand::CreateImm(BranchCode));
       continue;
