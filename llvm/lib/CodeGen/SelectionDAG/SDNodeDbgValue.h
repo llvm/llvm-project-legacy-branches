@@ -61,7 +61,7 @@ public:
 
   // Constructor for constants.
   SDDbgValue(MDNode *mdP, Value *C, uint64_t off, DebugLoc dl, unsigned O) : 
-    mdPtr(mdP), Offset(off), DL(dl), Order(O) {
+    mdPtr(mdP), Offset(off), DL(dl), Order(O), Invalid(false) {
     kind = CONST;
     u.Const = C;
   }
