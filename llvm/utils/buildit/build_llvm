@@ -59,8 +59,10 @@ echo DARWIN_VERS = $DARWIN_VERS
 # If the user has CC set in their environment unset it now
 unset CC
 
-DT_HOME=$DEST_DIR/Developer/usr
-DEST_ROOT="/Developer$DEST_ROOT"
+# Install special OpenGL version to AppleInternal directory.  Radar 7864940.
+LLVM_ROOT_PATH=/AppleInternal/Developer/LLVM_For_OpenGL_Sim
+DT_HOME=$DEST_DIR$LLVM_ROOT_PATH/Developer/usr
+DEST_ROOT="$LLVM_ROOT_PATH/Developer$DEST_ROOT"
 if [ "x$DEVELOPER_BIN" != "x" ]; then
     DT_HOME=$DEST_DIR/$DEVELOPER_DIR/usr
     DEST_ROOT="/$DEVELOPER_DIR$DEST_ROOT"
