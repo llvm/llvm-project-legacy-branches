@@ -163,24 +163,14 @@ class DwarfDebug : public DwarfPrinter {
   /// (at the end of the module) as DW_AT_inline.
   SmallPtrSet<DIE *, 4> InlinedSubprogramDIEs;
 
+  /// ContainingTypeMap - This map is used to keep track of subprogram DIEs that
+  /// need DW_AT_containing_type attribute. This attribute points to a DIE that
+  /// corresponds to the MDNode mapped with the subprogram DIE.
   DenseMap<DIE *, MDNode *> ContainingTypeMap;
 
-  /// AbstractSubprogramDIEs - Collection of abstruct subprogram DIEs.
-  SmallPtrSet<DIE *, 4> AbstractSubprogramDIEs;
-
-  /// TopLevelDIEs - Collection of top level DIEs. 
-  SmallPtrSet<DIE *, 4> TopLevelDIEs;
-  SmallVector<DIE *, 4> TopLevelDIEsVector;
-
   typedef SmallVector<DbgScope *, 2> ScopeVector;
-  typedef DenseMap<const MachineInstr *, ScopeVector>
-    InsnToDbgScopeMapTy;
-
-  /// DbgScopeBeginMap - Maps instruction with a list of DbgScopes it starts.
-  InsnToDbgScopeMapTy DbgScopeBeginMap;
-
-  /// DbgScopeEndMap - Maps instruction with a list DbgScopes it ends.
-  InsnToDbgScopeMapTy DbgScopeEndMap;
+  SmallPtrSet<const MachineInstr *, 8> InsnsBeginScopeSet;
+  SmallPtrSet<const MachineInstr *, 8> InsnsEndScopeSet;
 
   /// InlineInfo - Keep track of inlined functions and their location.  This
   /// information is used to populate debug_inlined section.
@@ -188,10 +178,13 @@ class DwarfDebug : public DwarfPrinter {
   DenseMap<MDNode*, SmallVector<InlineInfoLabels, 4> > InlineInfo;
   SmallVector<MDNode *, 4> InlinedSPNodes;
 
-  /// CompileUnitOffsets - A vector of the offsets of the compile units. This is
-  /// used when calculating the "origin" of a concrete instance of an inlined
-  /// function.
-  DenseMap<CompileUnit *, unsigned> CompileUnitOffsets;
+  /// InsnBeforeLabelMap - Maps instruction with label emitted before 
+  /// instruction.
+  DenseMap<const MachineInstr *, MCSymbol *> InsnBeforeLabelMap;
+
+  /// InsnAfterLabelMap - Maps instruction with label emitted after
+  /// instruction.
+  DenseMap<const MachineInstr *, MCSymbol *> InsnAfterLabelMap;
 
   /// Previous instruction's location information. This is used to determine
   /// label location to indicate scope boundries in dwarf debug info.
@@ -503,6 +496,28 @@ class DwarfDebug : public DwarfPrinter {
   ///
   DIType getBlockByrefType(DIType Ty, std::string Name);
 
+  /// recordSourceLine - Register a source line with debug info. Returns the
+  /// unique label that was emitted and which provides correspondence to
+  /// the source line list.
+  MCSymbol *recordSourceLine(unsigned Line, unsigned Col, MDNode *Scope);
+  
+  /// getSourceLineCount - Return the number of source lines in the debug
+  /// info.
+  unsigned getSourceLineCount() const {
+    return Lines.size();
+  }
+  
+  /// identifyScopeMarkers() - Indentify instructions that are marking
+  /// beginning of or end of a scope.
+  void identifyScopeMarkers();
+
+  /// extractScopeInformation - Scan machine instructions in this function
+  /// and collect DbgScopes. Return true, if atleast one scope was found.
+  bool extractScopeInformation();
+  
+  /// collectVariableInfo - Populate DbgScope entries with variables' info.
+  void collectVariableInfo();
+  
 public:
   //===--------------------------------------------------------------------===//
   // Main entry points.
@@ -529,32 +544,6 @@ public:
   /// endFunction - Gather and emit post-function debug information.
   ///
   void endFunction(const MachineFunction *MF);
-
-  /// recordSourceLine - Register a source line with debug info. Returns the
-  /// unique label that was emitted and which provides correspondence to
-  /// the source line list.
-  MCSymbol *recordSourceLine(unsigned Line, unsigned Col, MDNode *Scope);
-
-  /// getSourceLineCount - Return the number of source lines in the debug
-  /// info.
-  unsigned getSourceLineCount() const {
-    return Lines.size();
-  }
-                            
-  /// getOrCreateSourceID - Public version of GetOrCreateSourceID. This can be
-  /// timed. Look up the source id with the given directory and source file
-  /// names. If none currently exists, create a new id and insert it in the
-  /// SourceIds map. This can update DirectoryNames and SourceFileNames maps as
-  /// well.
-  unsigned getOrCreateSourceID(const std::string &DirName,
-                               const std::string &FileName);
-
-  /// extractScopeInformation - Scan machine instructions in this function
-  /// and collect DbgScopes. Return true, if atleast one scope was found.
-  bool extractScopeInformation();
-
-  /// collectVariableInfo - Populate DbgScope entries with variables' info.
-  void collectVariableInfo();
 
   /// beginScope - Process beginning of a scope.
   void beginScope(const MachineInstr *MI);
