@@ -1037,8 +1037,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       CPAddr = DAG.getNode(ARMISD::Wrapper, dl, MVT::i32, CPAddr);
       Callee = DAG.getLoad(getPointerTy(), dl,
                            DAG.getEntryNode(), CPAddr,
-                           PseudoSourceValue::getConstantPool(), 0,
-                           false, false, 0);
+                           PseudoSourceValue::getConstantPool(), 0);
     } else if (ExternalSymbolSDNode *S=dyn_cast<ExternalSymbolSDNode>(Callee)) {
       const char *Sym = S->getSymbol();
 
@@ -1051,8 +1050,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       CPAddr = DAG.getNode(ARMISD::Wrapper, dl, MVT::i32, CPAddr);
       Callee = DAG.getLoad(getPointerTy(), dl,
                            DAG.getEntryNode(), CPAddr,
-                           PseudoSourceValue::getConstantPool(), 0,
-                           false, false, 0);
+                           PseudoSourceValue::getConstantPool(), 0);
     }
   } else if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
     GlobalValue *GV = G->getGlobal();
