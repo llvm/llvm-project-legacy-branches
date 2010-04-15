@@ -352,7 +352,7 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
 
   if (N > 2) {
     TyInfo.reserve(N - 2);
-    for (unsigned j = 2; j < N - 1; ++j)
+    for (unsigned j = 2; j < N; ++j)
       TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
     MMI->addCatchTypeInfo(MBB, TyInfo);
   }
