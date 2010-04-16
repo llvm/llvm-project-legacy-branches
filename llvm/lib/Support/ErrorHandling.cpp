@@ -57,6 +57,16 @@ void llvm_report_error(const Twine &reason) {
   exit(1);
 }
 
+void report_fatal_error(const char *reason) {
+  llvm_report_error(reason);
+}
+void report_fatal_error(const std::string &reason) {
+  llvm_report_error(reason);
+}
+void report_fatal_error(const Twine &reason) {
+  llvm_report_error(reason);
+}
+
 void llvm_unreachable_internal(const char *msg, const char *file, 
                                unsigned line) {
   // This code intentionally doesn't call the ErrorHandler callback, because
