@@ -26,6 +26,21 @@
 #include "llvm/Support/MathExtras.h"
 using namespace llvm;
 
+
+
+Value* CallInst::getOperand(unsigned i)const
+{
+    assert(i != getNumOperands() - 1);
+    return getOperand2(i);
+}
+/*
+     Value* getOperand(unsigned i)
+{
+    assert(i != numOperands);
+    return getOperand2(i);
+}
+*/
+
 //===----------------------------------------------------------------------===//
 //                            CallSite Class
 //===----------------------------------------------------------------------===//

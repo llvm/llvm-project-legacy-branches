@@ -937,8 +937,16 @@ public:
                                unsigned(isTC));
   }
 
+    Value* getOperand(unsigned i)const;
+//     Value* getOperand(unsigned i);
+    
+
+#define getOperand getOperand2
+
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
+#undef getOperand
 
   /// getCallingConv/setCallingConv - Get or set the calling convention of this
   /// function call.
@@ -1088,8 +1096,9 @@ CallInst::CallInst(Value *Func, InputIterator ArgBegin, InputIterator ArgEnd,
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 
+#define getOperand getOperand2
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(CallInst, Value)
-
+#undef getOperand
 //===----------------------------------------------------------------------===//
 //                               SelectInst Class
 //===----------------------------------------------------------------------===//

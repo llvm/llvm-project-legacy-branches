@@ -1605,7 +1605,7 @@ void Verifier::visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI) {
   // If the intrinsic takes MDNode arguments, verify that they are either global
   // or are local to *this* function.
   for (unsigned i = 1, e = CI.getNumOperands(); i != e; ++i)
-    if (MDNode *MD = dyn_cast<MDNode>(CI.getOperand(i))) {
+    if (MDNode *MD = dyn_cast<MDNode>(CI.getOperand2(i))) {
       if (!MD->isFunctionLocal()) continue;
       SmallPtrSet<MDNode *, 32> Visited;
       VerifyFunctionLocalMetadata(MD, CI.getParent()->getParent(), Visited);
