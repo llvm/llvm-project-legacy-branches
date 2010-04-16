@@ -4052,11 +4052,11 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::objectsize: {
     // If we don't know by now, we're never going to know.
-    ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(2));
+    ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(1));
 
     assert(CI && "Non-constant type in __builtin_object_size?");
 
-    SDValue Arg = getValue(I.getOperand(0));
+    SDValue Arg = getValue(I.getCalledValue());
     EVT Ty = Arg.getValueType();
 
     if (CI->getZExtValue() == 0)
