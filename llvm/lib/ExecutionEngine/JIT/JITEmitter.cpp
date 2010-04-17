@@ -231,6 +231,9 @@ namespace {
     /// contents of the slots or the memory associated with the GOT.
     unsigned getGOTIndexForAddr(void *addr);
 
+    /// Clear lazy sub map
+    void clearLazyStubMap();
+
     /// JITCompilerFn - This function is called to resolve a stub to a compiled
     /// address.  If the LLVM Function corresponding to the stub has not yet
     /// been compiled, this function compiles it first.
@@ -461,6 +464,9 @@ namespace {
     /// function body.
     void deallocateMemForFunction(const Function *F);
 
+    /// clearLazyStubMap - clear the LazyStubMap
+    void clearLazyStubMap() { Resolver.clearLazyStubMap(); }
+
     /// getExternalFnStubs - Accessor for the JIT to find stubs emitted for
     /// MachineRelocations that reference external functions by name.
     const StringMap<void*> &getExternalFnStubs() const { return ExtFnStubs; }
@@ -642,9 +648,13 @@ void *JITResolver::getLazyFunctionStub(Function *F) {
     // If we are JIT'ing non-lazily but need to call a function that does not
     // exist yet, add it to the JIT's work list so that we can fill in the
     // stub address later.
-    assert(!isNonGhostDeclaration(F) && !F->hasAvailableExternallyLinkage() &&
-           "'Actual' should have been set above.");
-    TheJIT->addPendingFunction(F);
+
+    // We can't assert here with
+    // assert(!isNonGhostDeclaration(F) && !F->hasAvailableExternallyLinkage() &&
+    //       "'Actual' should have been set above.");
+    // because we can enter this case when TheJIT->areDlsymStubsEnabled()
+    if (!isNonGhostDeclaration(F) && !F->hasAvailableExternallyLinkage())
+      TheJIT->addPendingFunction(F);
   }
 
   return Stub;
@@ -695,6 +705,12 @@ unsigned JITResolver::getGOTIndexForAddr(void* addr) {
                  << addr << "]\n");
   }
   return idx;
+}
+
+void JITResolver::clearLazyStubMap() {
+  MutexGuard locked(TheJIT->lock);
+  FunctionToLazyStubMapTy &FM = state.getFunctionToLazyStubMap(locked);
+  FM.clear();
 }
 
 void JITResolver::getRelocatableGVs(SmallVectorImpl<GlobalValue*> &GVs,
@@ -817,8 +833,8 @@ void *JITEmitter::getPointerToGlobal(GlobalValue *V, void *Reference,
     // If this is an external function pointer, we can force the JIT to
     // 'compile' it, which really just adds it to the map.  In dlsym mode,
     // external functions are forced through a stub, regardless of reloc type.
-    if (isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage() &&
-        !TheJIT->areDlsymStubsEnabled())
+    if ((isNonGhostDeclaration(F) || F->hasAvailableExternallyLinkage()) &&
+         !TheJIT->areDlsymStubsEnabled())
       return TheJIT->getPointerToFunction(F);
   }
 
@@ -1154,8 +1170,8 @@ bool JITEmitter::finishFunction(MachineFunction &F) {
 
           // If the target REALLY wants a stub for this function, emit it now.
           if (MR.mayNeedFarStub() && !TheJIT->areDlsymStubsEnabled()) {
-	    ResultPtr = Resolver.getExternalFunctionStub(ResultPtr);
-	  } else if (TheJIT->areDlsymStubsEnabled()) {
+            ResultPtr = Resolver.getExternalFunctionStub(ResultPtr);
+          } else if (TheJIT->areDlsymStubsEnabled()) {
               void *&Stub = ExtFnStubs[MR.getExternalSymbol()];
               if (!Stub) {
                 Stub = Resolver.getExternalFunctionStub((void *)&Stub);
@@ -1686,6 +1702,13 @@ void JIT::updateDlsymStubTable() {
   // deallocate space for the old one, if one existed.
   JE->getMemMgr()->SetDlsymTable(JE->finishGVStub());
 }
+
+/// clear the lazy stub map.
+void JIT::clearLazyStubMap() {
+  assert(isa<JITEmitter>(JCE) && "Unexpected MCE?");
+  cast<JITEmitter>(JCE)->clearLazyStubMap();
+}
+
 
 /// freeMachineCodeForFunction - release machine code memory for given Function.
 ///

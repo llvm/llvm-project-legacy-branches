@@ -151,6 +151,9 @@ public:
   ///
   void *recompileAndRelinkFunction(Function *F);
 
+  /// clearLazyStubMap - clears the lazy stub map.
+  void clearLazyStubMap();
+
   /// freeMachineCodeForFunction - deallocate memory used to code-generate this
   /// Function.
   ///
