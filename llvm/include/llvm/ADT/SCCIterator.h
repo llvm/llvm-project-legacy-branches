@@ -66,7 +66,7 @@ class scc_iterator
   std::vector<unsigned> MinVisitNumStack;
 
   // A single "visit" within the non-recursive DFS traversal.
-  void DFSVisitOne(NodeType* N) {
+  void DFSVisitOne(NodeType *N) {
     ++visitNum;                         // Global counter for the visit order
     nodeVisitNumbers[N] = visitNum;
     SCCNodeStack.push_back(N);
@@ -83,7 +83,7 @@ class scc_iterator
       // TOS has at least one more child so continue DFS
       NodeType *childN = *VisitStack.back().second++;
       if (!nodeVisitNumbers.count(childN)) {
-        // this node has never been seen
+        // this node has never been seen.
         DFSVisitOne(childN);
       } else {
         unsigned childNum = nodeVisitNumbers[childN];
@@ -136,11 +136,11 @@ public:
   typedef scc_iterator<GraphT, GT> _Self;
 
   // Provide static "constructors"...
-  static inline _Self begin(const GraphT& G) { return _Self(GT::getEntryNode(G)); }
-  static inline _Self end  (const GraphT& G) { return _Self(); }
+  static inline _Self begin(const GraphT &G){return _Self(GT::getEntryNode(G));}
+  static inline _Self end  (const GraphT &G) { return _Self(); }
 
-  // Direct loop termination test (I.fini() is more efficient than I == end())
-  inline bool fini() const {
+  // Direct loop termination test: I.isAtEnd() is more efficient than I == end()
+  inline bool isAtEnd() const {
     assert(!CurrentSCC.empty() || VisitStack.empty());
     return CurrentSCC.empty();
   }
@@ -180,6 +180,14 @@ public:
       if (*CI == N)
         return true;
     return false;
+  }
+                           
+  /// ReplaceNode - This informs the scc_iterator that the specified Old node
+  /// has been deleted, and New is to be used in its place.
+  void ReplaceNode(NodeType *Old, NodeType *New) {
+    assert(nodeVisitNumbers.count(Old) && "Old not in scc_iterator?");
+    nodeVisitNumbers[New] = nodeVisitNumbers[Old];
+    nodeVisitNumbers.erase(Old);
   }
 };
 
