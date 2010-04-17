@@ -13,6 +13,8 @@ ToolType               := Commands
 Clang_Use_Assertions   := 1
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
+# Build all LLVM tools; not just clang?
+Clang_Build_All        := 0
 
 ##
 
@@ -23,6 +25,15 @@ else ifeq ($(Clang_Use_Assertions), 0)
 Assertions_Configure_Flag :=  --disable-assertions
 else
 $(error "invalid setting for clang assertions: '$(Clang_Use_Assertions)'")
+endif
+
+# Select whether to build everything (for testing purposes).
+ifeq ($(Clang_Build_All), 1)
+Clang_Build_Target := all
+else ifeq ($(Clang_Build_All), 0)
+Clang_Build_Target := clang-only
+else
+$(error "invalid setting for clang build all mode: '$(Clang_Build_All)'")
 endif
 
 # Set makefile variables to pass during build and install.
@@ -97,7 +108,7 @@ AEP_ExtractOption = z
 endif
 
 Install_Target = $(Clang_Make_Variables) install-clang
-Build_Target = $(Clang_Make_Variables) clang-only
+Build_Target = $(Clang_Make_Variables) $(Clang_Build_Target)
 
 # Extract the source.
 install_source::
@@ -137,26 +148,12 @@ SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-pro
 SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
-update-clang-branch:
-	if [ -n "$(LLVM_VERSION)" ]; then \
-	  svn rm -m 'Update.' $(SVN_CLANG)/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/llvm/tags/Apple/llvmCore-$(LLVM_VERSION) $(SVN_CLANG)/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/Dib $(SVN_CLANG)/clang/tools/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/branches/Apple/Dib $(SVN_CLANG)/clang/projects/compiler-rt; \
-	else \
-	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
-	fi
-
+# FIXME: Switch to LLVM tag ASAP.
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/Morbo@101600 $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/williamson $(SVN_CLANG)/clang/tools/clang
 	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
-
-update-to-tot:
-	rm -rf clang
-	svn co $(SVN_BASE)/llvm/trunk clang
-	svn co $(SVN_BASE)/cfe/trunk clang/tools/clang
 
 tag-clang:
 	if [ -n "$(VERSION)" ]; then \
@@ -172,37 +169,3 @@ retag-clang:
 	else \
 	  echo Usage: make VERSION=25 retag-clang; \
 	fi
-
-build-and-test: fast-build
-
-SUDO := sudo
-
-fast-build:
-	svn up .
-	cd .. && BUILDIT_DIR=`pwd`/build $(SUDO) /usr/local/bin/buildit -arch i386 -arch x86_64 -noinstallsrc -noinstallhdrs -nosum -noverify `pwd`/clang -noclean
-
-slow-build:
-	cd .. && BUILDIT_DIR=`pwd`/build $(SUDO) /usr/local/bin/buildit -arch i386 -arch x86_64 `pwd`/clang
-
-install-check-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
-install-check-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
-
-check: llvm-binaries-i386 llvm-binaries-x86_64 check-i386 check-x86_64 unittests-i386 unittests-x86_64 clang-i386 clang-x86_64
-llvm-binaries-i386:
-	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make DESTDIR=`pwd`/../../../llvm-i386 install
-llvm-binaries-x86_64:
-	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make DESTDIR=`pwd`/../../../llvm-x86_64 install
-check-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make check && echo PASS: $@ || echo FAIL: $@
-check-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make check && echo PASS: $@ || echo FAIL: $@
-unittests-i386: llvm-binaries-i386
-	cd ../build/clang.roots/clang~obj/i386 && $(SUDO) make unittests && echo PASS: $@ || echo FAIL: $@
-unittests-x86_64: llvm-binaries-x86_64
-	cd ../build/clang.roots/clang~obj/x86_64 && $(SUDO) make unittests && echo PASS: $@ || echo FAIL: $@
-clang-i386: llvm-binaries-i386
-	pwd=`pwd`; cd ../build/clang.roots/clang~obj/i386/tools/clang && { CLANG=$$pwd/../build/llvm-i386/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
-clang-x86_64: llvm-binaries-x86_64
-	pwd=`pwd`; cd ../build/clang.roots/clang~obj/x86_64/tools/clang && { CLANG=$$pwd/../build/llvm-x86_64/Developer/usr/bin/clang $(SUDO) make VERBOSE=0 test && echo PASS: $@ || { echo FAIL: $@; make report; } }
