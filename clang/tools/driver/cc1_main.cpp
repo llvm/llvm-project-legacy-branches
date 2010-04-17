@@ -259,10 +259,18 @@ int cc1_main(const char **ArgBegin, const char **ArgEnd,
   if (!Clang->hasDiagnostics())
     return 1;
 
+  // Conditionalized for use with older LLVM.
+#if 0
   // Set an error handler, so that any LLVM backend diagnostics go through our
   // error handler.
   llvm::install_fatal_error_handler(LLVMErrorHandler,
                                   static_cast<void*>(&Clang->getDiagnostics()));
+#else
+  // Set an error handler, so that any LLVM backend diagnostics go through our
+  // error handler.
+  llvm::llvm_install_error_handler(LLVMErrorHandler,
+                                  static_cast<void*>(&Clang->getDiagnostics()));
+#endif
 
   DiagsBuffer.FlushDiagnostics(Clang->getDiagnostics());
 
@@ -287,14 +295,20 @@ int cc1_main(const char **ArgBegin, const char **ArgEnd,
     }
   }
 
+  // Disabled for use with older LLVM.
+#if 0
   // If any timers were active but haven't been destroyed yet, print their
   // results now.  This happens in -disable-free mode.
   llvm::TimerGroup::printAll(llvm::errs());
+#endif
   
   // When running with -disable-free, don't do any destruction or shutdown.
   if (Clang->getFrontendOpts().DisableFree) {
+    // Disabled for use with older LLVM.
+#if 0
     if (Clang->getFrontendOpts().ShowStats)
       llvm::PrintStatistics();
+#endif
     Clang.take();
     return !Success;
   }

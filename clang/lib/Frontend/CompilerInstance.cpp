@@ -481,9 +481,12 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   if (getFrontendOpts().ShowTimers)
     createFrontendTimer();
 
+  // Disabled for use with older LLVM.
+#if 0
   if (getFrontendOpts().ShowStats)
     llvm::EnableStatistics();
-    
+#endif
+
   for (unsigned i = 0, e = getFrontendOpts().Inputs.size(); i != e; ++i) {
     const std::string &InFile = getFrontendOpts().Inputs[i].second;
 

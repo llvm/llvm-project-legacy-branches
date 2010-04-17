@@ -274,10 +274,12 @@ int main(int argc, const char **argv) {
   if (C.get())
     Res = TheDriver.ExecuteCompilation(*C);
 
-  
+  // Disabled for use with older LLVM.
+#if 0
   // If any timers were active but haven't been destroyed yet, print their
   // results now.  This happens in -disable-free mode.
   llvm::TimerGroup::printAll(llvm::errs());
+#endif
   
   llvm::llvm_shutdown();
 
