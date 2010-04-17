@@ -33,6 +33,11 @@ Value* CallInst::getOperand(unsigned i)const
     assert(i != getNumOperands() - 1);
     return getOperand2(i);
 }
+void  CallInst::setOperand(unsigned i,Value* v)
+{
+    assert(i != getNumOperands() - 1);
+    return setOperand2(i, v);
+}
 /*
      Value* getOperand(unsigned i)
 {
