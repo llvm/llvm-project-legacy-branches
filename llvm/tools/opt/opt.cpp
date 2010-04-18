@@ -142,14 +142,15 @@ struct CallGraphSCCPassPrinter : public CallGraphSCCPass {
   CallGraphSCCPassPrinter(const PassInfo *PI) :
     CallGraphSCCPass(&ID), PassToPrint(PI) {}
 
-  virtual bool runOnSCC(CallGraphSCC &SCC) {
+  virtual bool runOnSCC(std::vector<CallGraphNode *>&SCC) {
     if (!Quiet) {
       outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
 
-      for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
-        Function *F = (*I)->getFunction();
-        if (F)
+      for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
+        Function *F = SCC[i]->getFunction();
+        if (F) {
           getAnalysisID<Pass>(PassToPrint).print(outs(), F->getParent());
+        }
       }
     }
     // Get and print pass...

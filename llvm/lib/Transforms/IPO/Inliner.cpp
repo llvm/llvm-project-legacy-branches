@@ -292,14 +292,14 @@ bool Inliner::shouldInline(CallSite CS) {
   return true;
 }
 
-bool Inliner::runOnSCC(CallGraphSCC &SCC) {
+bool Inliner::runOnSCC(std::vector<CallGraphNode*> &SCC) {
   CallGraph &CG = getAnalysis<CallGraph>();
   const TargetData *TD = getAnalysisIfAvailable<TargetData>();
 
   SmallPtrSet<Function*, 8> SCCFunctions;
   DEBUG(dbgs() << "Inliner visiting SCC:");
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
-    Function *F = (*I)->getFunction();
+  for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
+    Function *F = SCC[i]->getFunction();
     if (F) SCCFunctions.insert(F);
     DEBUG(dbgs() << " " << (F ? F->getName() : "INDIRECTNODE"));
   }
@@ -309,8 +309,8 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
   // from inlining other functions.
   SmallVector<CallSite, 16> CallSites;
 
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
-    Function *F = (*I)->getFunction();
+  for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
+    Function *F = SCC[i]->getFunction();
     if (!F) continue;
     
     for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
@@ -417,7 +417,7 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
       // swap/pop_back for efficiency, but do not use it if doing so would
       // move a call site to a function in this SCC before the
       // 'FirstCallInSCC' barrier.
-      if (SCC.isSingular()) {
+      if (SCC.size() == 1) {
         std::swap(CallSites[CSi], CallSites.back());
         CallSites.pop_back();
       } else {

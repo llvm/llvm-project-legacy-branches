@@ -40,7 +40,7 @@ namespace {
     PruneEH() : CallGraphSCCPass(&ID) {}
 
     // runOnSCC - Analyze the SCC, performing the transformation if possible.
-    bool runOnSCC(CallGraphSCC &SCC);
+    bool runOnSCC(std::vector<CallGraphNode *> &SCC);
 
     bool SimplifyFunction(Function *F);
     void DeleteBasicBlock(BasicBlock *BB);
@@ -54,20 +54,20 @@ X("prune-eh", "Remove unused exception handling info");
 Pass *llvm::createPruneEHPass() { return new PruneEH(); }
 
 
-bool PruneEH::runOnSCC(CallGraphSCC &SCC) {
+bool PruneEH::runOnSCC(std::vector<CallGraphNode *> &SCC) {
   SmallPtrSet<CallGraphNode *, 8> SCCNodes;
   CallGraph &CG = getAnalysis<CallGraph>();
   bool MadeChange = false;
 
   // Fill SCCNodes with the elements of the SCC.  Used for quickly
   // looking up whether a given CallGraphNode is in this SCC.
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I)
-    SCCNodes.insert(*I);
+  for (unsigned i = 0, e = SCC.size(); i != e; ++i)
+    SCCNodes.insert(SCC[i]);
 
   // First pass, scan all of the functions in the SCC, simplifying them
   // according to what we know.
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I)
-    if (Function *F = (*I)->getFunction())
+  for (unsigned i = 0, e = SCC.size(); i != e; ++i)
+    if (Function *F = SCC[i]->getFunction())
       MadeChange |= SimplifyFunction(F);
 
   // Next, check to see if any callees might throw or if there are any external
@@ -78,9 +78,9 @@ bool PruneEH::runOnSCC(CallGraphSCC &SCC) {
   // obviously the SCC might throw.
   //
   bool SCCMightUnwind = false, SCCMightReturn = false;
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); 
-       (!SCCMightUnwind || !SCCMightReturn) && I != E; ++I) {
-    Function *F = (*I)->getFunction();
+  for (unsigned i = 0, e = SCC.size();
+       (!SCCMightUnwind || !SCCMightReturn) && i != e; ++i) {
+    Function *F = SCC[i]->getFunction();
     if (F == 0) {
       SCCMightUnwind = true;
       SCCMightReturn = true;
@@ -132,7 +132,7 @@ bool PruneEH::runOnSCC(CallGraphSCC &SCC) {
 
   // If the SCC doesn't unwind or doesn't throw, note this fact.
   if (!SCCMightUnwind || !SCCMightReturn)
-    for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
+    for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
       Attributes NewAttributes = Attribute::None;
 
       if (!SCCMightUnwind)
@@ -140,20 +140,19 @@ bool PruneEH::runOnSCC(CallGraphSCC &SCC) {
       if (!SCCMightReturn)
         NewAttributes |= Attribute::NoReturn;
 
-      Function *F = (*I)->getFunction();
-      const AttrListPtr &PAL = F->getAttributes();
+      const AttrListPtr &PAL = SCC[i]->getFunction()->getAttributes();
       const AttrListPtr &NPAL = PAL.addAttr(~0, NewAttributes);
       if (PAL != NPAL) {
         MadeChange = true;
-        F->setAttributes(NPAL);
+        SCC[i]->getFunction()->setAttributes(NPAL);
       }
     }
 
-  for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
+  for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
     // Convert any invoke instructions to non-throwing functions in this node
     // into call instructions with a branch.  This makes the exception blocks
     // dead.
-    if (Function *F = (*I)->getFunction())
+    if (Function *F = SCC[i]->getFunction())
       MadeChange |= SimplifyFunction(F);
   }
 

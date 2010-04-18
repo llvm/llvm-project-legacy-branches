@@ -64,7 +64,7 @@ namespace {
       CallGraphSCCPass::getAnalysisUsage(AU);
     }
 
-    virtual bool runOnSCC(CallGraphSCC &SCC);
+    virtual bool runOnSCC(std::vector<CallGraphNode *> &SCC);
     static char ID; // Pass identification, replacement for typeid
     explicit ArgPromotion(unsigned maxElements = 3)
       : CallGraphSCCPass(&ID), maxElements(maxElements) {}
@@ -91,18 +91,17 @@ Pass *llvm::createArgumentPromotionPass(unsigned maxElements) {
   return new ArgPromotion(maxElements);
 }
 
-bool ArgPromotion::runOnSCC(CallGraphSCC &SCC) {
+bool ArgPromotion::runOnSCC(std::vector<CallGraphNode *> &SCC) {
   bool Changed = false, LocalChange;
 
   do {  // Iterate until we stop promoting from this SCC.
     LocalChange = false;
     // Attempt to promote arguments from all functions in this SCC.
-    for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
-      if (CallGraphNode *CGN = PromoteArguments(*I)) {
+    for (unsigned i = 0, e = SCC.size(); i != e; ++i)
+      if (CallGraphNode *CGN = PromoteArguments(SCC[i])) {
         LocalChange = true;
-        SCC.ReplaceNode(*I, CGN);
+        SCC[i] = CGN;
       }
-    }
     Changed |= LocalChange;               // Remember that we changed something.
   } while (LocalChange);
 
