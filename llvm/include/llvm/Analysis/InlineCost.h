@@ -19,7 +19,6 @@
 #include <map>
 #include <vector>
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/ValueMap.h"
 
 namespace llvm {
 
@@ -166,9 +165,7 @@ namespace llvm {
       void analyzeFunction(Function *F);
     };
 
-    // The Function* for a function can be changed (by ArgumentPromotion);
-    // the ValueMap will update itself when this happens.
-    ValueMap<const Function *, FunctionInfo> CachedFunctionInfo;
+    std::map<const Function *, FunctionInfo> CachedFunctionInfo;
 
   public:
 
