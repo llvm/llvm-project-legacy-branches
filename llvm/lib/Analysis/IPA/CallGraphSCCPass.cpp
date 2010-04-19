@@ -80,9 +80,9 @@ public:
   }
   
 private:
-  bool RunPassOnSCC(Pass *P, std::vector<CallGraphNode*> &CurSCC,
+  bool RunPassOnSCC(Pass *P, CallGraphSCC &CurSCC,
                     CallGraph &CG, bool &CallGraphUpToDate);
-  void RefreshCallGraph(std::vector<CallGraphNode*> &CurSCC, CallGraph &CG,
+  void RefreshCallGraph(CallGraphSCC &CurSCC, CallGraph &CG,
                         bool IsCheckingMode);
 };
 
@@ -90,7 +90,7 @@ private:
 
 char CGPassManager::ID = 0;
 
-bool CGPassManager::RunPassOnSCC(Pass *P, std::vector<CallGraphNode*> &CurSCC,
+bool CGPassManager::RunPassOnSCC(Pass *P, CallGraphSCC &CurSCC,
                                  CallGraph &CG, bool &CallGraphUpToDate) {
   bool Changed = false;
   PMDataManager *PM = P->getAsPMDataManager();
@@ -122,8 +122,9 @@ bool CGPassManager::RunPassOnSCC(Pass *P, std::vector<CallGraphNode*> &CurSCC,
   FPPassManager *FPP = (FPPassManager*)P;
   
   // Run pass P on all functions in the current SCC.
-  for (unsigned i = 0, e = CurSCC.size(); i != e; ++i) {
-    if (Function *F = CurSCC[i]->getFunction()) {
+  for (CallGraphSCC::iterator I = CurSCC.begin(), E = CurSCC.end();
+       I != E; ++I) {
+    if (Function *F = (*I)->getFunction()) {
       dumpPassInfo(P, EXECUTION_MSG, ON_FUNCTION_MSG, F->getName());
       Timer *T = StartPassTimer(FPP);
       Changed |= FPP->runOnFunction(*F);
@@ -147,21 +148,24 @@ bool CGPassManager::RunPassOnSCC(Pass *P, std::vector<CallGraphNode*> &CurSCC,
 /// FunctionPasses have potentially munged the callgraph, and can be used after
 /// CallGraphSCC passes to verify that they correctly updated the callgraph.
 ///
-void CGPassManager::RefreshCallGraph(std::vector<CallGraphNode*> &CurSCC,
+void CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
                                      CallGraph &CG, bool CheckingMode) {
   DenseMap<Value*, CallGraphNode*> CallSites;
   
   DEBUG(dbgs() << "CGSCCPASSMGR: Refreshing SCC with " << CurSCC.size()
                << " nodes:\n";
-        for (unsigned i = 0, e = CurSCC.size(); i != e; ++i)
-          CurSCC[i]->dump();
+        for (CallGraphSCC::iterator I = CurSCC.begin(), E = CurSCC.end();
+             I != E; ++I)
+          (*I)->dump();
         );
 
   bool MadeChange = false;
   
   // Scan all functions in the SCC.
-  for (unsigned sccidx = 0, e = CurSCC.size(); sccidx != e; ++sccidx) {
-    CallGraphNode *CGN = CurSCC[sccidx];
+  unsigned FunctionNo = 0;
+  for (CallGraphSCC::iterator SCCIdx = CurSCC.begin(), E = CurSCC.end();
+       SCCIdx != E; ++SCCIdx, ++FunctionNo) {
+    CallGraphNode *CGN = *SCCIdx;
     Function *F = CGN->getFunction();
     if (F == 0 || F->isDeclaration()) continue;
     
@@ -280,14 +284,15 @@ void CGPassManager::RefreshCallGraph(std::vector<CallGraphNode*> &CurSCC,
     
     // Periodically do an explicit clear to remove tombstones when processing
     // large scc's.
-    if ((sccidx & 15) == 0)
+    if ((FunctionNo & 15) == 15)
       CallSites.clear();
   }
 
   DEBUG(if (MadeChange) {
           dbgs() << "CGSCCPASSMGR: Refreshed SCC is now:\n";
-          for (unsigned i = 0, e = CurSCC.size(); i != e; ++i)
-            CurSCC[i]->dump();
+          for (CallGraphSCC::iterator I = CurSCC.begin(), E = CurSCC.end();
+            I != E; ++I)
+              (*I)->dump();
          } else {
            dbgs() << "CGSCCPASSMGR: SCC Refresh didn't change call graph.\n";
          }
@@ -300,16 +305,16 @@ bool CGPassManager::runOnModule(Module &M) {
   CallGraph &CG = getAnalysis<CallGraph>();
   bool Changed = doInitialization(CG);
 
-  std::vector<CallGraphNode*> CurSCC;
-  
   // Walk the callgraph in bottom-up SCC order.
-  for (scc_iterator<CallGraph*> CGI = scc_begin(&CG), E = scc_end(&CG);
-       CGI != E;) {
+  scc_iterator<CallGraph*> CGI = scc_begin(&CG);
+
+  CallGraphSCC CurSCC(&CGI);
+  while (!CGI.isAtEnd()) {
     // Copy the current SCC and increment past it so that the pass can hack
     // on the SCC if it wants to without invalidating our iterator.
-    CurSCC = *CGI;
+    std::vector<CallGraphNode*> &NodeVec = *CGI;
+    CurSCC.initialize(&NodeVec[0], &NodeVec[0]+NodeVec.size());
     ++CGI;
-    
     
     // CallGraphUpToDate - Keep track of whether the callgraph is known to be
     // up-to-date or not.  The CGSSC pass manager runs two types of passes:
@@ -331,9 +336,10 @@ bool CGPassManager::runOnModule(Module &M) {
         std::string Functions;
 #ifndef NDEBUG
         raw_string_ostream OS(Functions);
-        for (unsigned i = 0, e = CurSCC.size(); i != e; ++i) {
-          if (i) OS << ", ";
-          CurSCC[i]->print(OS);
+        for (CallGraphSCC::iterator I = CurSCC.begin(), E = CurSCC.end();
+             I != E; ++I) {
+          if (I != CurSCC.begin()) OS << ", ";
+          (*I)->print(OS);
         }
         OS.flush();
 #endif
@@ -394,6 +400,32 @@ bool CGPassManager::doFinalization(CallGraph &CG) {
   }
   return Changed;
 }
+
+//===----------------------------------------------------------------------===//
+// CallGraphSCC Implementation
+//===----------------------------------------------------------------------===//
+
+/// ReplaceNode - This informs the SCC and the pass manager that the specified
+/// Old node has been deleted, and New is to be used in its place.
+void CallGraphSCC::ReplaceNode(CallGraphNode *Old, CallGraphNode *New) {
+  assert(Old != New && "Should not replace node with self");
+  for (unsigned i = 0; ; ++i) {
+    assert(i != Nodes.size() && "Node not in SCC");
+    if (Nodes[i] != Old) continue;
+    Nodes[i] = New;
+    break;
+  }
+  
+  // Update the active scc_iterator so that it doesn't contain dangling
+  // pointers to the old CallGraphNode.
+  scc_iterator<CallGraph*> *CGI = (scc_iterator<CallGraph*>*)Context;
+  CGI->ReplaceNode(Old, New);
+}
+
+
+//===----------------------------------------------------------------------===//
+// CallGraphSCCPass Implementation
+//===----------------------------------------------------------------------===//
 
 /// Assign pass manager to manage this pass.
 void CallGraphSCCPass::assignPassManager(PMStack &PMS,
