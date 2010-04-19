@@ -765,12 +765,9 @@ class X86TargetInfo : public TargetInfo {
     NoAMD3DNow, AMD3DNow, AMD3DNowAthlon
   } AMD3DNowLevel;
 
-  bool HasAES;
-  
 public:
   X86TargetInfo(const std::string& triple)
-    : TargetInfo(triple), SSELevel(NoMMXSSE), AMD3DNowLevel(NoAMD3DNow),
-      HasAES(false) {
+    : TargetInfo(triple), SSELevel(NoMMXSSE), AMD3DNowLevel(NoAMD3DNow) {
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -816,7 +813,6 @@ void X86TargetInfo::getDefaultFeatures(const std::string &CPU,
   Features["ssse3"] = false;
   Features["sse41"] = false;
   Features["sse42"] = false;
-  Features["aes"] = false;
 
   // LLVM does not currently recognize this.
   // Features["sse4a"] = false;
@@ -845,10 +841,8 @@ void X86TargetInfo::getDefaultFeatures(const std::string &CPU,
     Features["sse42"] = false;
   } else if (CPU == "atom")
     setFeatureEnabled(Features, "sse3", true);
-  else if (CPU == "corei7") {
+  else if (CPU == "corei7")
     setFeatureEnabled(Features, "sse4", true);
-    setFeatureEnabled(Features, "aes", true);
-  }
   else if (CPU == "k6" || CPU == "winchip-c6")
     setFeatureEnabled(Features, "mmx", true);
   else if (CPU == "k6-2" || CPU == "k6-3" || CPU == "athlon" ||
@@ -898,8 +892,6 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["3dnowa"] = true;
     else if (Name == "3dnowa")
       Features["3dnow"] = Features["3dnowa"] = true;
-    else if (Name == "aes")
-      Features["aes"] = true;
   } else {
     if (Name == "mmx")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
@@ -925,8 +917,6 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["3dnow"] = Features["3dnowa"] = false;
     else if (Name == "3dnowa")
       Features["3dnowa"] = false;
-    else if (Name == "aes")
-      Features["aes"] = false;
   }
 
   return true;
@@ -940,11 +930,6 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
     // Ignore disabled features.
     if (Features[i][0] == '-')
       continue;
-
-    if (Features[i].substr(1) == "aes") {
-      HasAES = true;
-      continue;
-    }
 
     assert(Features[i][0] == '+' && "Invalid target feature!");
     X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Features[i].substr(1))
@@ -983,9 +968,6 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   } else {
     DefineStd(Builder, "i386", Opts);
   }
-
-  if (HasAES)
-    Builder.defineMacro("__AES__");
 
   // Target properties.
   Builder.defineMacro("__LITTLE_ENDIAN__");
