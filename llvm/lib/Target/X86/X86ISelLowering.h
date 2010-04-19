@@ -455,6 +455,18 @@ namespace llvm {
     
     virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
+    /// isTypeDesirableForOp - Return true if the target has native support for
+    /// the specified value type and it is 'desirable' to use the type for the
+    /// given node type. e.g. On x86 i16 is legal, but undesirable since i16
+    /// instruction encodings are longer and some i16 instructions are slow.
+    virtual bool isTypeDesirableForOp(unsigned Opc, EVT VT) const;
+
+    /// isTypeDesirable - Return true if the target has native support for the
+    /// specified value type and it is 'desirable' to use the type. e.g. On x86
+    /// i16 is legal, but undesirable since i16 instruction encodings are longer
+    /// and some i16 instructions are slow.
+    virtual bool IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const;
+
     virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
                                                          MachineBasicBlock *MBB,
                     DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
