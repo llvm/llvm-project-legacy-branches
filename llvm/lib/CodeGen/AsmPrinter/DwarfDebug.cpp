@@ -26,6 +26,7 @@
 #include "llvm/Target/TargetFrameInfo.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
@@ -1224,6 +1225,10 @@ DIE *DwarfDebug::createSubprogramDIE(const DISubprogram &SP, bool MakeDecl) {
 
   // DW_TAG_inlined_subroutine may refer to this DIE.
   ModuleCU->insertDIE(SP.getNode(), SPDie);
+  
+  if (NoFramePointerElim == false)
+    addUInt(SPDie, dwarf::DW_AT_APPLE_omit_frame_ptr, dwarf::DW_FORM_flag, 1);
+
   return SPDie;
 }
 
