@@ -324,6 +324,20 @@ class SS42AI<bits<8> o, Format F, dag outs, dag ins, string asm,
       : I<o, F, outs, ins, asm, pattern, SSEPackedInt>, TA,
         Requires<[HasSSE42]>;
 
+// AES Instruction Templates:
+//
+// AES8I
+// These use the same encoding as the SSE4.2 T8 and TA encodings.
+class AES8I<bits<8> o, Format F, dag outs, dag ins, string asm,
+            list<dag>pattern>
+      : I<o, F, outs, ins, asm, pattern, SSEPackedInt>, T8,
+        Requires<[HasAES]>;
+
+class AESAI<bits<8> o, Format F, dag outs, dag ins, string asm,
+            list<dag> pattern>
+      : Ii8<o, F, outs, ins, asm, pattern, SSEPackedInt>, TA,
+        Requires<[HasAES]>;
+
 // X86-64 Instruction templates...
 //
 
