@@ -411,6 +411,8 @@ void MachineLICM::HoistRegionPostRA() {
         HoistPostRA(MI, Candidates[i].Def);
     }
   }
+
+  delete[] PhysRegDefs;
 }
 
 /// AddToLiveIns - Add register 'Reg' to the livein sets of BBs in the
