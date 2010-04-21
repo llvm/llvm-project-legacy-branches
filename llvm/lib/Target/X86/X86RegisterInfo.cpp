@@ -445,7 +445,7 @@ bool X86RegisterInfo::hasFP(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const MachineModuleInfo *MMI = MFI->getMachineModuleInfo();
 
-  return (NoFramePointerElim ||
+  return (DisableFramePointerElim(MF) ||
           needsStackRealignment(MF) ||
           MFI->hasVarSizedObjects() ||
           MFI->isFrameAddressTaken() ||
