@@ -211,6 +211,11 @@ bool Sema::CheckMessageArgumentTypes(Expr **Args, unsigned NumArgs,
 
     AssignConvertType Result =
       CheckSingleAssignmentConstraints(lhsType, argExpr);
+    if (Result == Incompatible && !getLangOptions().CPlusPlus &&
+        CheckTransparentUnionArgumentConstraints(lhsType, argExpr)
+        == Sema::Compatible)
+      Result = Compatible;
+        
     if (Args[i] != argExpr) // The expression was converted.
       Args[i] = argExpr; // Make sure we store the converted expression.
 
