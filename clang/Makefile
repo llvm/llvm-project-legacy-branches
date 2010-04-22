@@ -10,7 +10,7 @@ ToolType               := Commands
 # LLVM/Clang default configuration.
 
 # Select default assertion mode, valid values are '0' and '1'.
-Clang_Use_Assertions   := 1
+Clang_Use_Assertions   := 0
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
 # Enable use of clang++?
