@@ -250,13 +250,7 @@ void CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
             CalleeNode = CG.getCallsExternalNode();
 
           // Update the edge target in CGN.
-          for (CallGraphNode::iterator I = CGN->begin(); ; ++I) {
-            assert(I != CGN->end() && "Didn't find call entry");
-            if (I->first == CS.getInstruction()) {
-              I->second = CalleeNode;
-              break;
-            }
-          }
+          CGN->replaceCallEdge(CS, CS, CalleeNode);
           MadeChange = true;
           continue;
         }
