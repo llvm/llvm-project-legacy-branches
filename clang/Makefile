@@ -13,6 +13,8 @@ ToolType               := Commands
 Clang_Use_Assertions   := 1
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
+# Enable use of clang++?
+Clang_Enable_CXX       := 0
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
 
@@ -39,7 +41,16 @@ endif
 # Set makefile variables to pass during build and install.
 Clang_Make_Variables := KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
 ifeq ($(Clang_Driver_Mode), Production)
+
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
+ifeq ($(Clang_Enable_CXX), 1)
+Clang_Make_Variables += CLANGXX_IS_PRODUCTION=1
+else ifeq ($(Clang_Enable_CXX), 0)
+# ... this is the default ...
+else
+$(error "invalid setting for clang enable C++: '$(Clang_Enable_CXX)'")
+endif
+
 else ifeq ($(Clang_Driver_Mode), Development)
 # ... this is the default ...
 else
