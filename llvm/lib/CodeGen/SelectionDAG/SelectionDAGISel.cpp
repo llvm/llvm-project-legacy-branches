@@ -241,6 +241,30 @@ static void EmitLiveInCopy(MachineBasicBlock *MBB,
   }
 }
 
+/// InsertLiveInDbgValue - Insert a DBG_VALUE instruction for each live-in
+/// register that has a corresponding source information metadata. e.g.
+/// function parameters.
+static void InsertLiveInDbgValue(MachineBasicBlock *MBB,
+                                 MachineBasicBlock::iterator InsertPos,
+                                 unsigned LiveInReg, unsigned VirtReg,
+                                 const MachineRegisterInfo &MRI,
+                                 const TargetInstrInfo &TII) {
+  for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(VirtReg),
+         UE = MRI.use_end(); UI != UE; ++UI) {
+    MachineInstr *UseMI = &*UI;
+    if (!UseMI->isDebugValue() || UseMI->getParent() != MBB)
+      continue;
+    // Found local dbg_value. FIXME: Verify it's not possible to have multiple
+    // dbg_value's which reference the vr in the same mbb.
+    uint64_t Offset = UseMI->getOperand(1).getImm();
+    const MDNode *MDPtr = UseMI->getOperand(2).getMetadata();    
+    BuildMI(*MBB, InsertPos, InsertPos->getDebugLoc(),
+            TII.get(TargetOpcode::DBG_VALUE))
+      .addReg(LiveInReg).addImm(Offset).addMetadata(MDPtr);
+    return;
+  }
+}
+
 /// EmitLiveInCopies - If this is the first basic block in the function,
 /// and if it has live ins that need to be copied into vregs, emit the
 /// copies into the block.
@@ -258,6 +282,8 @@ static void EmitLiveInCopies(MachineBasicBlock *EntryMBB,
         const TargetRegisterClass *RC = MRI.getRegClass(LI->second);
         EmitLiveInCopy(EntryMBB, InsertPos, LI->second, LI->first,
                        RC, CopyRegMap, MRI, TRI, TII);
+        InsertLiveInDbgValue(EntryMBB, InsertPos,
+                             LI->first, LI->second, MRI, TII);
       }
   } else {
     // Emit the copies into the top of the block.
@@ -269,6 +295,8 @@ static void EmitLiveInCopies(MachineBasicBlock *EntryMBB,
                                         LI->second, LI->first, RC, RC);
         assert(Emitted && "Unable to issue a live-in copy instruction!\n");
         (void) Emitted;
+        InsertLiveInDbgValue(EntryMBB, EntryMBB->begin(),
+                             LI->first, LI->second, MRI, TII);
       }
   }
 }
