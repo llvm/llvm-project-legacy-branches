@@ -337,6 +337,8 @@ bool FastISel::SelectCall(User *I) {
       return true;
     AllocaInst *AI = dyn_cast<AllocaInst>(Address);
     // Don't handle byval struct arguments or VLAs, for example.
+    // Note that if we have a byval struct argument, fast ISel is turned off;
+    // those are handled in SelectionDAGBuilder.
     if (!AI) break;
     DenseMap<const AllocaInst*, int>::iterator SI =
       StaticAllocaMap.find(AI);
@@ -344,7 +346,7 @@ bool FastISel::SelectCall(User *I) {
     int FI = SI->second;
     if (!DI->getDebugLoc().isUnknown())
       MMI->setVariableDbgInfo(DI->getVariable(), FI, DI->getDebugLoc());
-    
+
     // Building the map above is target independent.  Generating DBG_VALUE
     // inline is target dependent; do this now.
     (void)TargetSelectInstruction(cast<Instruction>(I));
