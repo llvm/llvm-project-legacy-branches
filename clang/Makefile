@@ -115,11 +115,11 @@ update-clang-branch:
 	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
 	fi
 
+# FIXME: Switch to LLVM tag ASAP.
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
-	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/Morbo@101744 $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/williamson $(SVN_CLANG)/clang/tools/clang
 
 update-to-tot:
 	rm -rf clang
