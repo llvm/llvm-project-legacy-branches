@@ -16,7 +16,7 @@ Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
 Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS
 # Build all LLVM tools; not just clang?
-Clang_Build_All        := 1
+Clang_Build_All        := 0
 
 ##
 
