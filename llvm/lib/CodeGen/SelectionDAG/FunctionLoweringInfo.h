@@ -33,6 +33,7 @@ class GlobalVariable;
 class Instruction;
 class MachineBasicBlock;
 class MachineFunction;
+class MachineInstr;
 class MachineModuleInfo;
 class MachineRegisterInfo;
 class TargetLowering;
@@ -76,6 +77,8 @@ public:
   /// the entry block.  This allows the allocas to be efficiently referenced
   /// anywhere in the function.
   DenseMap<const AllocaInst*, int> StaticAllocaMap;
+
+  SmallVector<MachineInstr*, 8> ArgDbgValues;
 
 #ifndef NDEBUG
   SmallSet<Instruction*, 8> CatchInfoLost;

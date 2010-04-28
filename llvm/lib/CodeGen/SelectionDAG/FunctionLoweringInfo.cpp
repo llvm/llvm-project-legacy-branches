@@ -246,6 +246,7 @@ void FunctionLoweringInfo::clear() {
   CatchInfoFound.clear();
 #endif
   LiveOutRegInfo.clear();
+  ArgDbgValues.clear();
 }
 
 unsigned FunctionLoweringInfo::MakeReg(EVT VT) {

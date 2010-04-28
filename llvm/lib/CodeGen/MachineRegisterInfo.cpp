@@ -136,3 +136,12 @@ void MachineRegisterInfo::dumpUses(unsigned Reg) const {
     I.getOperand().getParent()->dump();
 }
 #endif
+
+/// getLiveInPhysReg - If VReg is a live-in virtual register, return the
+/// corresponding live-in physical register.
+unsigned MachineRegisterInfo::getLiveInPhysReg(unsigned VReg) const {
+  for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
+    if (I->second == VReg)
+      return I->first;
+  return 0;
+}

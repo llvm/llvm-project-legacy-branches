@@ -36,6 +36,7 @@ class BasicBlock;
 class BitCastInst;
 class BranchInst;
 class CallInst;
+class DbgValueInst;
 class ExtractElementInst;
 class ExtractValueInst;
 class FCmpInst;
@@ -59,6 +60,7 @@ class MachineBasicBlock;
 class MachineFunction;
 class MachineInstr;
 class MachineRegisterInfo;
+class MDNode;
 class PHINode;
 class PtrToIntInst;
 class ReturnInst;
@@ -493,6 +495,14 @@ private:
   
   const char *implVisitBinaryAtomic(CallInst& I, ISD::NodeType Op);
   const char *implVisitAluOverflow(CallInst &I, ISD::NodeType Op);
+
+   /// EmitFuncArgumentDbgValue - If the DbgValueInst is a dbg_value of a
+   /// function argument, create the corresponding DBG_VALUE machine instruction
+   /// for it now. At the end of instruction selection, they will be inserted to
+   /// the entry BB.
+   void EmitFuncArgumentDbgValue(const DbgValueInst &DI,
+                                 const Value *V, MDNode *Variable,
+                                 uint64_t Offset, SDValue &N);
 };
 
 } // end namespace llvm
