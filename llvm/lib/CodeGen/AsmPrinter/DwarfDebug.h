@@ -178,17 +178,20 @@ class DwarfDebug : public DwarfPrinter {
   DenseMap<MDNode*, SmallVector<InlineInfoLabels, 4> > InlineInfo;
   SmallVector<MDNode *, 4> InlinedSPNodes;
 
-  /// InsnBeforeLabelMap - Maps instruction with label emitted before 
+  /// LabelsBeforeInsn - Maps instruction with label emitted before 
   /// instruction.
-  DenseMap<const MachineInstr *, MCSymbol *> InsnBeforeLabelMap;
+  DenseMap<const MachineInstr *, MCSymbol *> LabelsBeforeInsn;
 
-  /// InsnAfterLabelMap - Maps instruction with label emitted after
+  /// LabelsAfterInsn - Maps instruction with label emitted after
   /// instruction.
-  DenseMap<const MachineInstr *, MCSymbol *> InsnAfterLabelMap;
+  DenseMap<const MachineInstr *, MCSymbol *> LabelsAfterInsn;
+
+  SmallVector<const MCSymbol *, 8> DebugRangeSymbols;
 
   /// Previous instruction's location information. This is used to determine
   /// label location to indicate scope boundries in dwarf debug info.
   DebugLoc PrevInstLoc;
+  MCSymbol *PrevLabel;
 
   /// DebugTimer - Timer for the Dwarf debug writer.
   Timer *DebugTimer;
@@ -352,13 +355,8 @@ class DwarfDebug : public DwarfPrinter {
   /// createSubprogramDIE - Create new DIE using SP.
   DIE *createSubprogramDIE(const DISubprogram &SP, bool MakeDecl = false);
 
-  /// getUpdatedDbgScope - Find or create DbgScope assicated with 
-  /// the instruction. Initialize scope and update scope hierarchy.
-  DbgScope *getUpdatedDbgScope(MDNode *N, const MachineInstr *MI,
-                               MDNode *InlinedAt);
-
-  /// createDbgScope - Create DbgScope for the scope.
-  void createDbgScope(MDNode *Scope, MDNode *InlinedAt);
+  /// getOrCreateDbgScope - Create DbgScope for the scope.
+  DbgScope *getOrCreateDbgScope(MDNode *Scope, MDNode *InlinedAt);
 
   DbgScope *getOrCreateAbstractScope(MDNode *N);
 
