@@ -15,6 +15,10 @@ Clang_Driver_Mode      := Production
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
 Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS
+# Enable use of clang++?
+Clang_Enable_CXX       := 1
+# Enable bootstrap build.
+Clang_Enable_Bootstrap := 1
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
 
@@ -42,7 +46,15 @@ endif
 Clang_Make_Variables := KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
+
+ifeq ($(Clang_Enable_CXX), 1)
 Clang_Make_Variables += CLANGXX_IS_PRODUCTION=1
+else ifeq ($(Clang_Enable_CXX), 0)
+# ... this is the default ...
+else
+$(error "invalid setting for clang enable C++: '$(Clang_Enable_CXX)'")
+endif
+
 else ifeq ($(Clang_Driver_Mode), Development)
 # ... this is the default ...
 else
@@ -91,6 +103,16 @@ else ifneq ($(Post_Install_OpenSourceLicense),0)
 $(error "unknown value for post install of open source license: '$(Post_Install_OpenSourceLicense)'")
 endif
 
+# Select final configure target.
+ifeq ($(Clang_Enable_Bootstrap), 1)
+Final_Configure_Target := configure_stage2
+else ifeq ($(Clang_Enable_Bootstrap), 0)
+Final_Configure_Target := configure_singlestage
+else
+$(error "invalid setting for clang enable bootstrap: '$(Clang_Enable_Bootstrap)'")
+endif
+
+# Set install and build targets.
 Install_Target = $(Clang_Make_Variables) install-clang
 Build_Target = $(Clang_Make_Variables) $(Clang_Build_Target)
 
@@ -105,26 +127,11 @@ SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-pro
 SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
-update-clang-branch:
-	if [ -n "$(LLVM_VERSION)" ]; then \
-	  svn rm -m 'Update.' $(SVN_CLANG)/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/llvm/tags/Apple/llvmCore-$(LLVM_VERSION) $(SVN_CLANG)/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/Dib $(SVN_CLANG)/clang/tools/clang; \
-	  svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/branches/Apple/Dib $(SVN_CLANG)/clang/projects/compiler-rt; \
-	else \
-	  echo "Usage: make LLVM_VERSION=2108 update-clang"; \
-	fi
-
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
 	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
-
-update-to-tot:
-	rm -rf clang
-	svn co $(SVN_BASE)/llvm/trunk clang
-	svn co $(SVN_BASE)/cfe/trunk clang/tools/clang
 
 tag-clang:
 	if [ -n "$(VERSION)" ]; then \
@@ -173,7 +180,10 @@ OSL		= $(DSTROOT)/usr/local/OpenSourceLicenses
 ##
 # Build Logic
 
-.PHONY: install installsrc installhdrs build configure lazy_install_source install_source clean
+.PHONY: install installsrc installhdrs \
+	build build_final build_stage1 \
+	configure_final configure_singlestage configure_stage2 configure_stage1 \
+	lazy_install_source install_source clean
 
 SYSCTL := $(shell if [ `sysctl -n hw.activecpu` -ge 8 -a `sysctl -n hw.memsize` -le 2147483648 ]; then echo 4; else sysctl -n hw.activecpu; fi)
 
@@ -212,7 +222,16 @@ build_final:: configure_final
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
 	done
 
-configure_final:: build_stage1
+build_stage1:: configure_stage1
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Building (Stage 1) $(Project) for $$arch..." && \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target) || exit 1; \
+	done
+
+configure_final:: $(Final_Configure_Target)
+
+configure_stage2:: build_stage1
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Configuring (Final) $(Project) for $$arch..." && \
@@ -223,11 +242,15 @@ configure_final:: build_stage1
 		  CXX="$(OBJROOT)/stage1-install-$$arch/bin/clang++ -arch $$arch" || exit 1 ; \
 	done
 
-build_stage1:: configure_stage1
+configure_singlestage::
+	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Stage 1) $(Project) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target) || exit 1; \
+		echo "Configuring (Final) $(Project) for $$arch..." && \
+		$(MKDIR) $(OBJROOT)/$$arch && \
+		cd $(OBJROOT)/$$arch && \
+		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
+		  CC="$(CC) -arch $$arch" \
+		  CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
 
 configure_stage1:: 
