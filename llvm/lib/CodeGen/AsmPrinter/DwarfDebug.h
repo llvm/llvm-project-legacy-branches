@@ -36,6 +36,7 @@ class DbgScope;
 class DbgVariable;
 class MachineFrameInfo;
 class MachineModuleInfo;
+class MachineOperand;
 class MCAsmInfo;
 class Timer;
 
@@ -289,6 +290,15 @@ class DwarfDebug : public DwarfPrinter {
   /// provided.
   void addAddress(DIE *Die, unsigned Attribute,
                   const MachineLocation &Location);
+
+  /// addRegisterAddress - Add register location entry in variable DIE.
+  bool addRegisterAddress(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
+
+  /// addConstantValue - Add constant value entry in variable DIE.
+  bool addConstantValue(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
+
+  /// addConstantFPValue - Add constant value entry in variable DIE.
+  bool addConstantFPValue(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
 
   /// addComplexAddress - Start with the address based on the location provided,
   /// and generate the DWARF information necessary to find the actual variable

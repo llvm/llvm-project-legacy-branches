@@ -36,6 +36,7 @@ namespace llvm {
   class MachineBasicBlock;
   class MachineFunction;
   class MachineInstr;
+  class MachineLocation;
   class MachineLoopInfo;
   class MachineLoop;
   class MachineConstantPool;
@@ -355,6 +356,12 @@ namespace llvm {
     /// exactly one predecessor and the control transfer mechanism between
     /// the predecessor and this block is a fall-through.
     virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const;
+
+  public:
+
+    /// getDebugValueLocation - Get location information encoded by DBG_VALUE
+    /// operands.
+    virtual MachineLocation getDebugValueLocation(const MachineInstr *MI) const;
 
   private:
 

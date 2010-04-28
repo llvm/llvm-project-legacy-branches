@@ -126,6 +126,8 @@ class VISIBILITY_HIDDEN X86AsmPrinter : public AsmPrinter {
   void PrintPICBaseSymbol() const;
   
   bool runOnMachineFunction(MachineFunction &F);
+
+  MachineLocation getDebugValueLocation(const MachineInstr *MI) const;
 };
 
 } // end namespace llvm

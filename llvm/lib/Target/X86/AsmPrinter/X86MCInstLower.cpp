@@ -335,6 +335,17 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   }
 }
 
+MachineLocation 
+X86AsmPrinter::getDebugValueLocation(const MachineInstr *MI) const {
+  MachineLocation Location;
+  assert (MI->getNumOperands() == 7 && "Invalid no. of machine operands!");
+  // Frame address.  Currently handles register +- offset only.
+  assert(MI->getOperand(0).isReg() && MI->getOperand(3).isImm());
+  Location.set(MI->getOperand(0).getReg(), MI->getOperand(3).getImm());
+  return Location;
+}
+
+
 void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
   X86MCInstLower MCInstLowering(OutContext, Mang, *this);
   switch (MI->getOpcode()) {
