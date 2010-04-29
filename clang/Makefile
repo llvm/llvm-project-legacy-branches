@@ -61,6 +61,11 @@ else
 $(error "invalid setting for clang driver mode: '$(Clang_Driver_Mode)'")
 endif
 
+# Additional build logic when building as a cross compiler.
+ifeq ($(MAKECMDGOALS),install-cross)
+INSTALL_LOCATION := /
+endif
+
 # Set destination information.
 ifneq ($(INSTALL_LOCATION),)
 Install_Root := $(INSTALL_LOCATION)
