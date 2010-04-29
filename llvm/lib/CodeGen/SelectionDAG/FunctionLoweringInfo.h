@@ -17,6 +17,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #ifndef NDEBUG
 #include "llvm/ADT/SmallSet.h"
 #endif
