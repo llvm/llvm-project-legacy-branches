@@ -3724,6 +3724,8 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const DbgValueInst &DI,
 
   if (!Reg)
     Reg = FuncInfo.ValueMap[V];
+  if (!Reg)
+    return;
 
   const TargetInstrInfo *TII = DAG.getTarget().getInstrInfo();
   MachineInstrBuilder MIB = BuildMI(MF, getCurDebugLoc(),
