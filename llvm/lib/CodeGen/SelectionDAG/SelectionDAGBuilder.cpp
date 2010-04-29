@@ -3722,15 +3722,17 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const DbgValueInst &DI,
     }
   }
 
-  if (!Reg)
-    Reg = FuncInfo.ValueMap[V];
-  if (!Reg)
-    return false;
+  if (!Reg) {
+    DenseMap<const Value *, unsigned>::iterator VMI = FuncInfo.ValueMap.find(V);
+    if (VMI == FuncInfo.ValueMap.end())
+      return false;
+    Reg = VMI->second;
+  }
 
   const TargetInstrInfo *TII = DAG.getTarget().getInstrInfo();
   MachineInstrBuilder MIB = BuildMI(MF, getCurDebugLoc(),
                                     TII->get(TargetOpcode::DBG_VALUE))
-    .addReg(Reg).addImm(Offset).addMetadata(Variable);
+    .addReg(Reg, RegState::Debug).addImm(Offset).addMetadata(Variable);
   FuncInfo.ArgDbgValues.push_back(&*MIB);
   return true;
 }
