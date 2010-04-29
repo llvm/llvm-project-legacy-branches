@@ -226,8 +226,6 @@ install-cross:: build-cross
 	$(_v) find $(DSTROOT) -perm -0111 ! -name ccc -type f -print | xargs -P $(SYSCTL) strip
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
-	$(_v) $(MAKE) post-install
-
 
 build-cross:: configure-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
