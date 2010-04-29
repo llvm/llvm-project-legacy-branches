@@ -134,7 +134,7 @@ SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
 update-clang:
 	svn rm -m 'Update.' $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/williamson-llvm $(SVN_CLANG)/clang
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/williamson $(SVN_CLANG)/clang
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/williamson $(SVN_CLANG)/clang/tools/clang
 	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
 
