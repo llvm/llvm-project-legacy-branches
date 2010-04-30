@@ -2,9 +2,6 @@
 # Clang Makefile
 ##
 
-# Project info
-Project                := clang
-
 # LLVM/Clang default configuration.
 
 # Select default assertion mode, valid values are '0' and '1'.
@@ -175,7 +172,7 @@ Find_Cruft = '(' $(Cruft:%=-name '%' -or) -name '' ')' -print
 ##
 # Assorted variables
 
-Sources		= $(SRCROOT)/$(Project)
+Sources		= $(SRCROOT)/clang
 Configure	= $(Sources)/configure
 Install_Flags	= DESTDIR=$(OBJROOT)/install-$$arch ONLY_MAN_DOCS=1
 
@@ -200,7 +197,7 @@ install: install-clang
 clean: clean-clang
 
 installsrc:
-	@echo "Installing source for $(Project)..."
+	@echo "Installing source..."
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
@@ -219,7 +216,7 @@ install-clang: install-clang_final $(Extra_Clang_Install_Targets)
 
 install-clang_final: build-clang
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Installing $(Project) for $$arch..." && \
+		echo "Installing for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
 		umask 0022 && \
 		$(MAKE) -C $(OBJROOT)/$$arch \
@@ -243,13 +240,13 @@ build-clang: build-clang_final
 
 build-clang_final: configure-clang_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Final) $(Project) for $$arch..." && \
+		echo "Building (Final) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
 	done
 
 build-clang_stage1: configure-clang_stage1
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Stage 1) $(Project) for $$arch..." && \
+		echo "Building (Stage 1) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch install || exit 1; \
 	done
@@ -259,7 +256,7 @@ configure-clang_final: $(Final_Configure_Target)
 configure-clang_stage2: build-clang_stage1
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Final) $(Project) for $$arch..." && \
+		echo "Configuring (Final) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
@@ -270,7 +267,7 @@ configure-clang_stage2: build-clang_stage1
 configure-clang_singlestage:
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Final) $(Project) for $$arch..." && \
+		echo "Configuring (Final) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
@@ -281,7 +278,7 @@ configure-clang_singlestage:
 configure-clang_stage1: 
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Stage 1) $(Project) for $$arch..." && \
+		echo "Configuring (Stage 1) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/stage1-$$arch && \
 		cd $(OBJROOT)/stage1-$$arch && \
 		$(Configure) --prefix="$(OBJROOT)/stage1-install-$$arch" $(Configure_Flags) \
@@ -305,10 +302,10 @@ install-clang-rootlinks: install-clang_final
 
 install-clang-opensourcelicense: install-clang_final
 	$(MKDIR) $(OSV)
-	$(INSTALL_FILE) $(SRCROOT)/$(Project).plist $(OSV)/$(Project).plist
+	$(INSTALL_FILE) $(SRCROOT)/clang.plist $(OSV)/clang.plist
 	$(MKDIR) $(OSL)
-	$(INSTALL_FILE) $(Sources)/LICENSE.TXT $(OSL)/$(Project)-llvm.txt
-	$(INSTALL_FILE) $(Sources)/tools/clang/LICENSE.TXT $(OSL)/$(Project).txt
+	$(INSTALL_FILE) $(Sources)/LICENSE.TXT $(OSL)/clang-llvm.txt
+	$(INSTALL_FILE) $(Sources)/tools/clang/LICENSE.TXT $(OSL)/clang.txt
 
 ##
 # Cross Compilation Build Support
@@ -317,7 +314,7 @@ install-clang-opensourcelicense: install-clang_final
 
 install-cross: build-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Installing $(Project) for $$arch..." && \
+		echo "Installing for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
 		umask 0022 && \
 		$(MAKE) -C $(OBJROOT)/$$arch \
@@ -339,13 +336,13 @@ install-cross: build-cross
 
 build-cross: configure-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Cross) $(Project) for $$arch..." && \
+		echo "Building (Cross) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= CLANG_NO_RUNTIME=1 || exit 1; \
 	done
 
 configure-cross: setup-tools-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Cross) $(Project) for $$arch..." && \
+		echo "Configuring (Cross) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
