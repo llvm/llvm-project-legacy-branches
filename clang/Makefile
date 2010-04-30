@@ -208,72 +208,6 @@ installsrc:
 installhdrs:
 
 ##
-# Cross Compilation Build Support
-
-.PHONY: install-cross build-cross configure-cross setup-tools-cross
-
-install-cross: build-cross
-	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Installing $(Project) for $$arch..." && \
-		$(MKDIR) $(OBJROOT)/install-$$arch && \
-		umask 0022 && \
-		$(MAKE) -C $(OBJROOT)/$$arch \
-		  $(Install_Flags) $(Install_Target) CLANG_NO_RUNTIME=1 || exit 1 ; \
-	done
-	$(_v) rm -rf $(DSTROOT)
-	$(_v) mkdir -p $(DSTROOT)
-	$(_v) for arch in $(filter-out $(firstword $(RC_ARCHS)),$(RC_ARCHS)); do \
-		rm -rf $(OBJROOT)/install-$$arch$(Install_Prefix)/lib/clang/*/lib; \
-	done
-	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(OBJROOT)/install-$$arch ; done` $(DSTROOT)
-	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
-	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
-	$(_v) $(FIND) $(DSTROOT) -perm -0111 ! -name ccc -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
-	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
-	$(_v) find $(DSTROOT) -perm -0111 ! -name ccc -type f -print | xargs -P $(SYSCTL) strip
-	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
-	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
-
-build-cross: configure-cross
-	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Cross) $(Project) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= CLANG_NO_RUNTIME=1 || exit 1; \
-	done
-
-configure-cross: setup-tools-cross
-	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Cross) $(Project) for $$arch..." && \
-		$(MKDIR) $(OBJROOT)/$$arch && \
-		cd $(OBJROOT)/$$arch && \
-		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
-			--host=arm-apple-darwin10 \
-			--target=arm-apple-darwin10 \
-			--build=i686-apple-darwin10 \
-		  || exit 1 ; \
-	done
-
-# A cross-compiler configure will expect to find tools under names like
-# arm-apple-darwin10-gcc, so make sure we have them. Note that -marm
-# is added to the gcc/g++ command line due to rdar://7353031
-setup-tools-cross:
-	$(_v) $(MKDIR) $(OBJROOT)/bin
-	$(_v) for prog in ar nm ranlib strip lipo ld as ; do \
-	  echo '#!/bin/sh' > $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo 'exec '`xcrun -sdk $(SDKROOT) -find $$prog` '"$$@"' \
-	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1; \
-	done
-	$(_v) for prog in gcc g++ ; do \
-	  echo '#!/bin/sh' > $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo "ARCH='-arch armv6'" >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo 'for i in $$@ ; do if [ "$$i" == "-arch" ] ; then ARCH= ; fi ; done' >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo 'exec '`xcrun -find $$prog` \
-	    ' $$ARCH -isysroot '$(SDKROOT)' "$$@" -marm' \
-	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1 ; \
-	done
-
-##
 # Standard Clang Build Support
 
 .PHONY: install-clang install-clang_final build-clang build-clang_final build-clang_stage1
@@ -375,3 +309,69 @@ install-clang-opensourcelicense: install-clang_final
 	$(MKDIR) $(OSL)
 	$(INSTALL_FILE) $(Sources)/LICENSE.TXT $(OSL)/$(Project)-llvm.txt
 	$(INSTALL_FILE) $(Sources)/tools/clang/LICENSE.TXT $(OSL)/$(Project).txt
+
+##
+# Cross Compilation Build Support
+
+.PHONY: install-cross build-cross configure-cross setup-tools-cross
+
+install-cross: build-cross
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Installing $(Project) for $$arch..." && \
+		$(MKDIR) $(OBJROOT)/install-$$arch && \
+		umask 0022 && \
+		$(MAKE) -C $(OBJROOT)/$$arch \
+		  $(Install_Flags) $(Install_Target) CLANG_NO_RUNTIME=1 || exit 1 ; \
+	done
+	$(_v) rm -rf $(DSTROOT)
+	$(_v) mkdir -p $(DSTROOT)
+	$(_v) for arch in $(filter-out $(firstword $(RC_ARCHS)),$(RC_ARCHS)); do \
+		rm -rf $(OBJROOT)/install-$$arch$(Install_Prefix)/lib/clang/*/lib; \
+	done
+	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(OBJROOT)/install-$$arch ; done` $(DSTROOT)
+	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
+	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
+	$(_v) $(FIND) $(DSTROOT) -perm -0111 ! -name ccc -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
+	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
+	$(_v) find $(DSTROOT) -perm -0111 ! -name ccc -type f -print | xargs -P $(SYSCTL) strip
+	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
+	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
+
+build-cross: configure-cross
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Building (Cross) $(Project) for $$arch..." && \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= CLANG_NO_RUNTIME=1 || exit 1; \
+	done
+
+configure-cross: setup-tools-cross
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Configuring (Cross) $(Project) for $$arch..." && \
+		$(MKDIR) $(OBJROOT)/$$arch && \
+		cd $(OBJROOT)/$$arch && \
+		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
+			--host=arm-apple-darwin10 \
+			--target=arm-apple-darwin10 \
+			--build=i686-apple-darwin10 \
+		  || exit 1 ; \
+	done
+
+# A cross-compiler configure will expect to find tools under names like
+# arm-apple-darwin10-gcc, so make sure we have them. Note that -marm
+# is added to the gcc/g++ command line due to rdar://7353031
+setup-tools-cross:
+	$(_v) $(MKDIR) $(OBJROOT)/bin
+	$(_v) for prog in ar nm ranlib strip lipo ld as ; do \
+	  echo '#!/bin/sh' > $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  echo 'exec '`xcrun -sdk $(SDKROOT) -find $$prog` '"$$@"' \
+	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1; \
+	done
+	$(_v) for prog in gcc g++ ; do \
+	  echo '#!/bin/sh' > $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  echo "ARCH='-arch armv6'" >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  echo 'for i in $$@ ; do if [ "$$i" == "-arch" ] ; then ARCH= ; fi ; done' >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  echo 'exec '`xcrun -find $$prog` \
+	    ' $$ARCH -isysroot '$(SDKROOT)' "$$@" -marm' \
+	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1 ; \
+	done
