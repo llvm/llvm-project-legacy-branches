@@ -197,7 +197,11 @@ SYSCTL := $(shell if [ `sysctl -n hw.activecpu` -ge 8 -a `sysctl -n hw.memsize` 
 
 install: install-clang
 
-installsrc: install_source
+installsrc:
+	@echo "Installing source for $(Project)..."
+	$(_v) $(MKDIR) "$(SRCROOT)"
+	$(_v) $(PAX) -rw . "$(SRCROOT)"
+	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
 
 installhdrs:
 
@@ -275,7 +279,6 @@ setup-tools-cross::
 .PHONY: install-clang install-clang_final build-clang build-clang_final build-clang_stage1
 .PHONY: configure-clang_final configure-clang_singlestage configure-clang_stage2
 .PHONY: configure-clang_stage1
-.PHONY: lazy_install_source install_source
 .PHONY: install-clang-rootlinks install-clang-opensourcelicense
 
 install-clang: install-clang_final $(Extra_Clang_Install_Targets)
@@ -350,15 +353,6 @@ configure-clang_stage1::
 		$(Configure) --prefix="$(OBJROOT)/stage1-install-$$arch" $(Configure_Flags) \
 		  CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
-
-lazy_install_source::
-	$(_v) if [ ! -f "$(SRCROOT)/Makefile" ]; then $(MAKE) install_source; fi
-
-install_source::
-	@echo "Installing source for $(Project)..."
-	$(_v) $(MKDIR) "$(SRCROOT)"
-	$(_v) $(PAX) -rw . "$(SRCROOT)"
-	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
 
 # FIXME: Eliminate this step.
 clean::
