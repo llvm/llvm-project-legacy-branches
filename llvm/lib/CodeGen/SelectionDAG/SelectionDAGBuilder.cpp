@@ -3707,6 +3707,11 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const DbgValueInst &DI,
     return false;
 
   MachineFunction &MF = DAG.getMachineFunction();
+  // Ignore inlined function arguments here.
+  DIVariable DV(Variable);
+  if (DV.isInlinedFnArgument(MF.getFunction()))
+    return false;
+
   MachineBasicBlock *MBB = FuncInfo.MBBMap[DI.getParent()];
   if (MBB != &MF.front())
     return false;
@@ -3837,14 +3842,8 @@ SelectionDAGBuilder::visitIntrinsicCall(CallInst &I, unsigned Intrinsic) {
 
     MDNode *Variable = DI.getVariable();
     // Parameters are handled specially.
-    bool isParameter = false;
-    ConstantInt *CI = dyn_cast_or_null<ConstantInt>(Variable->getOperand(0));
-    if (CI) {
-      unsigned Val = CI->getZExtValue();
-      unsigned Tag = Val & ~LLVMDebugVersionMask;
-      if (Tag == dwarf::DW_TAG_arg_variable)
-        isParameter = true;
-    }
+    bool isParameter = 
+      DIVariable(Variable).getTag() == dwarf::DW_TAG_arg_variable;
     const Value *Address = DI.getAddress();
     if (!Address)
       return 0;

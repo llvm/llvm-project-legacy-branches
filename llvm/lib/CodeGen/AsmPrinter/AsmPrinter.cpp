@@ -406,6 +406,10 @@ static bool EmitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
 
   // cast away const; DIetc do not take const operands for some reason.
   DIVariable V((MDNode*)(MI->getOperand(2).getMetadata()));
+  if (V.getContext().isSubprogram()) {
+    Str += DISubprogram(V.getContext().getNode()).getDisplayName();
+    Str += ":";
+  }	
   Str += V.getName();
   Str += " <- ";
 
