@@ -129,11 +129,12 @@ SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-pro
 SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
-update-clang:
-	svn rm -m 'Update.' $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/clang
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/clang/tools/clang
-	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/clang/projects/compiler-rt
+update-sources:
+	svn rm -m 'Update.' $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/src/projects/compiler-rt
+	svn up
 
 tag-clang:
 	if [ -n "$(VERSION)" ]; then \
@@ -172,7 +173,7 @@ Find_Cruft = '(' $(Cruft:%=-name '%' -or) -name '' ')' -print
 ##
 # Assorted variables
 
-Sources		= $(SRCROOT)/clang
+Sources		= $(SRCROOT)/src
 Configure	= $(Sources)/configure
 Install_Flags	= DESTDIR=$(OBJROOT)/install-$$arch ONLY_MAN_DOCS=1
 
