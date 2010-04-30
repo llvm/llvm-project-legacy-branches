@@ -194,13 +194,15 @@ SYSCTL := $(shell if [ `sysctl -n hw.activecpu` -ge 8 -a `sysctl -n hw.memsize` 
 
 # Default is to build Clang.
 install: install-clang
-clean: clean-clang
+
+clean:
 
 installsrc:
 	@echo "Installing source..."
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
+	$(_v) rm -rf "$(SRCROOT)/src/test/Archive"
 
 installhdrs:
 
@@ -284,12 +286,6 @@ configure-clang_stage1:
 		$(Configure) --prefix="$(OBJROOT)/stage1-install-$$arch" $(Configure_Flags) \
 		  CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
-
-# FIXME: Eliminate this step.
-clean-clang:
-	if [ "$(SRCROOT)" != . ]; then \
-	  rm -rf "$(SRCROOT)/clang/test/Archive"; \
-	fi
 
 install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
