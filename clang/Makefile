@@ -91,19 +91,19 @@ Configure_Flags = --enable-targets=x86,arm \
                   --with-extra-options="$(Clang_Extra_Options)" \
 		  --disable-doxygen
 
-# Set up post install targets.
-Post_Install_Targets :=
+# Set up any additional Clang install targets.
+Extra_Clang_Install_Targets :=
 
 # Install /usr/... symlinks?
 ifeq ($(Post_Install_RootLinks),1)
-Post_Install_Targets += post-install-rootlinks
+Extra_Clang_Install_Targets += install-clang-rootlinks
 else ifneq ($(Post_Install_RootLinks),0)
 $(error "unknown value for post install of root symlinks: '$(Post_Install_RootLinks)'")
 endif
 
 # Install open source license?
 ifeq ($(Post_Install_OpenSourceLicense),1)
-Post_Install_Targets += post-install-opensourcelicense
+Extra_Clang_Install_Targets += install-clang-opensourcelicense
 else ifneq ($(Post_Install_OpenSourceLicense),0)
 $(error "unknown value for post install of open source license: '$(Post_Install_OpenSourceLicense)'")
 endif
@@ -272,14 +272,15 @@ setup-tools-cross::
 ##
 # Standard Build Support
 
-.PHONY: install-clang build-clang build-clang_final build-clang_stage1
+.PHONY: install-clang install-clang_final build-clang build-clang_final build-clang_stage1
 .PHONY: configure-clang_final configure-clang_singlestage configure-clang_stage2
 .PHONY: configure-clang_stage1
-	build build_final build_stage1 \
-	configure_final configure_singlestage configure_stage2 configure_stage1 \
-	lazy_install_source install_source clean
+.PHONY: lazy_install_source install_source
+.PHONY: install-clang-rootlinks install-clang-opensourcelicense
 
-install-clang:: build-clang
+install-clang: install-clang_final $(Extra_Clang_Install_Targets)
+
+install-clang_final:: build-clang
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Installing $(Project) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
@@ -300,7 +301,6 @@ install-clang:: build-clang
 	$(_v) find $(DSTROOT) -perm -0111 ! -name ccc -type f -print | xargs -P $(SYSCTL) strip
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
-	$(_v) $(MAKE) post-install
 
 build-clang:: build-clang_final
 
@@ -366,9 +366,7 @@ clean::
 	  rm -rf "$(SRCROOT)/clang/test/Archive"; \
 	fi
 
-post-install: $(Post_Install_Targets)
-
-post-install-rootlinks:
+install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
 	ln -sf ../../$(Install_Prefix)/bin/clang $(DSTROOT)/usr/bin/clang
 	if [ -f $(DSTROOT)/$(Install_Prefix)/bin/clang++ ]; then \
@@ -377,7 +375,7 @@ post-install-rootlinks:
 	$(MKDIR) -p $(DSTROOT)/usr/share/man/man1/
 	cp $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
 
-post-install-opensourcelicense:
+install-clang-opensourcelicense: install-clang_final
 	$(MKDIR) $(OSV)
 	$(INSTALL_FILE) $(SRCROOT)/$(Project).plist $(OSV)/$(Project).plist
 	$(MKDIR) $(OSL)
