@@ -46,6 +46,19 @@ Default_Install_Root := /
 # Don't build compiler-rt.
 Extra_Make_Variables += CLANG_NO_RUNTIME=1
 
+else ifeq ($(MAKECMDGOALS),install-libclang)
+
+# Install to 'clang-ide' subdirectory.
+Install_Path_Suffix := usr/clang-ide
+# Only include x86 backend.
+LLVM_Backends := x86
+# Don't build compiler-rt.
+Extra_Make_Variables += CLANG_NO_RUNTIME=1
+# Don't install any archive files.
+Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
+# Use install-clang-c install target.
+LLVM_Install_Target := install-clang-c
+
 else
 
 # Default project (clang).
@@ -109,7 +122,7 @@ $(error "invalid setting for default install root: '$(Default_Install_Root)'")
 endif
 
 # Set Install_Prefix and validate it exists.
-Install_Prefix := $(Install_Root)/usr
+Install_Prefix := $(Install_Root)
 ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
   $(error "invalid install prefix: '$(Install_Prefix)'")
 endif
@@ -250,12 +263,15 @@ installhdrs:
 ##
 # Standard Clang Build Support
 
-.PHONY: install-clang install-clang_final build-clang build-clang_final build-clang_stage1
+.PHONY: install-clang install-libclang
+.PHONY: install-clang_final build-clang build-clang_final build-clang_stage1
 .PHONY: configure-clang_final configure-clang_singlestage configure-clang_stage2
 .PHONY: configure-clang_stage1
 .PHONY: install-clang-rootlinks install-clang-opensourcelicense
 
 install-clang: install-clang_final $(Extra_Clang_Install_Targets)
+
+install-libclang: install-clang_final $(Extra_Clang_Install_Targets)
 
 install-clang_final: build-clang
 	$(_v) for arch in $(RC_ARCHS) ; do \
