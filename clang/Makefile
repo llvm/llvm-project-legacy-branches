@@ -29,6 +29,10 @@ Post_Install_RootLinks := 0
 Post_Install_OpenSourceLicense := 0
 # Include x86 and ARM backends.
 LLVM_Backends := x86,arm
+# Don't use extra make variables.
+Extra_Make_Variables :=
+# LLVM level install target is 'install-clang.
+LLVM_Install_Target := install-clang
 
 ##
 # Per Project/Target Configuration
@@ -37,6 +41,8 @@ ifeq ($(MAKECMDGOALS),install-cross)
 
 # Install to / by default.
 Default_Install_Root := /
+# Don't build compiler-rt.
+Extra_Make_Variables += CLANG_NO_RUNTIME=1
 
 else
 
@@ -71,7 +77,7 @@ $(error "invalid setting for clang build all mode: '$(Clang_Build_All)'")
 endif
 
 # Set makefile variables to pass during build and install.
-Clang_Make_Variables := KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
+Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
 
@@ -139,7 +145,7 @@ $(error "invalid setting for clang enable bootstrap: '$(Clang_Enable_Bootstrap)'
 endif
 
 # Set install and build targets.
-Install_Target = $(Clang_Make_Variables) install-clang
+Install_Target = $(Clang_Make_Variables) $(LLVM_Install_Target)
 Build_Target = $(Clang_Make_Variables) $(Clang_Build_Target)
 
 # Set default target.
@@ -339,7 +345,7 @@ install-cross: build-cross
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
 		umask 0022 && \
 		$(MAKE) -C $(OBJROOT)/$$arch \
-		  $(Install_Flags) $(Install_Target) CLANG_NO_RUNTIME=1 || exit 1 ; \
+		  $(Install_Flags) $(Install_Target) || exit 1 ; \
 	done
 	$(_v) rm -rf $(DSTROOT)
 	$(_v) mkdir -p $(DSTROOT)
@@ -358,7 +364,7 @@ install-cross: build-cross
 build-cross: configure-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Cross) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= CLANG_NO_RUNTIME=1 || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= || exit 1; \
 	done
 
 configure-cross: setup-tools-cross
