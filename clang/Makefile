@@ -20,6 +20,37 @@ Clang_Enable_Bootstrap := 1
 Clang_Build_All        := 0
 
 ##
+# Variable defaults.
+
+# Install to /Developer by default.
+Default_Install_Root := /Developer
+# Don't install root links or license.
+Post_Install_RootLinks := 0
+Post_Install_OpenSourceLicense := 0
+# Include x86 and ARM backends.
+LLVM_Backends := x86,arm
+
+##
+# Per Project/Target Configuration
+
+ifeq ($(MAKECMDGOALS),install-cross)
+
+# Install to / by default.
+Default_Install_Root := /
+
+else
+
+# Default project (clang).
+
+# Install root links and license.
+Post_Install_RootLinks := 1
+Post_Install_OpenSourceLicense := 1
+
+endif
+
+##
+# B&I Build Logic
+##
 
 # Selection assertions mode.
 ifeq ($(Clang_Use_Assertions), 1)
@@ -58,20 +89,13 @@ else
 $(error "invalid setting for clang driver mode: '$(Clang_Driver_Mode)'")
 endif
 
-# Additional build logic when building as a cross compiler.
-ifeq ($(MAKECMDGOALS),install-cross)
-INSTALL_LOCATION := /
-endif
-
 # Set destination information.
 ifneq ($(INSTALL_LOCATION),)
 Install_Root := $(INSTALL_LOCATION)
-Post_Install_RootLinks := 0
-Post_Install_OpenSourceLicense := 0
+else ifneq ($(Default_Install_Root),)
+Install_Root := $(Default_Install_Root)
 else
-Install_Root := /Developer
-Post_Install_RootLinks := 1
-Post_Install_OpenSourceLicense := 1
+$(error "invalid setting for default install root: '$(Default_Install_Root)'")
 endif
 
 # Set Install_Prefix and validate it exists.
@@ -81,7 +105,7 @@ ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
 endif
 
 # Set configure flags.
-Configure_Flags = --enable-targets=x86,arm \
+Configure_Flags = --enable-targets=$(LLVM_Backends) \
 		  --enable-optimized \
 		  $(Assertions_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
