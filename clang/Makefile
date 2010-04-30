@@ -133,6 +133,18 @@ else
 $(error "invalid setting for install path suffix: '$(Install_Path_Suffix)'")
 endif
 
+# Set build version and subversion, for embedding into dylibs.
+SourceVersion := $(shell echo $(RC_ProjectSourceVersion) | sed -e 's/\([0-9]*\).*/\1/')
+SourceSubversion := $(shell echo $(RC_ProjectSourceVersion) | sed -e 's/[^.]*\.\([0-9]*\)/\1/')
+ifneq ($(SourceVersion),)
+Clang_Make_Variables += LLVM_SUBMIT_VERSION=$(SourceVersion)
+ifneq ($(SourceVersion),$(RC_ProjectSourceVersion))
+Clang_Make_Variables += LLVM_SUBMIT_SUBVERSION=$(SourceSubversion)
+else
+Clang_Make_Variables += LLVM_SUBMIT_SUBVERSION=
+endif
+endif
+
 # Set configure flags.
 Configure_Flags = --enable-targets=$(LLVM_Backends) \
 		  --enable-optimized \
