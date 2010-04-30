@@ -108,11 +108,11 @@ else ifneq ($(Post_Install_OpenSourceLicense),0)
 $(error "unknown value for post install of open source license: '$(Post_Install_OpenSourceLicense)'")
 endif
 
-# Select final configure target.
+# Select final configure target for clang builds.
 ifeq ($(Clang_Enable_Bootstrap), 1)
-Final_Configure_Target := configure_stage2
+Final_Configure_Target := configure-clang_stage2
 else ifeq ($(Clang_Enable_Bootstrap), 0)
-Final_Configure_Target := configure_singlestage
+Final_Configure_Target := configure-clang_singlestage
 else
 $(error "invalid setting for clang enable bootstrap: '$(Clang_Enable_Bootstrap)'")
 endif
@@ -191,19 +191,22 @@ PATH := ${OBJROOT}/bin:${PATH}
 ##
 # Build Logic
 
-.PHONY: install installsrc installhdrs \
-	build build_final build_stage1 \
-	configure_final configure_singlestage configure_stage2 configure_stage1 \
-	lazy_install_source install_source clean
+.PHONY: all install installsrc installhdrs clean
 
 SYSCTL := $(shell if [ `sysctl -n hw.activecpu` -ge 8 -a `sysctl -n hw.memsize` -le 2147483648 ]; then echo 4; else sysctl -n hw.activecpu; fi)
+
+install: install-clang
 
 installsrc: install_source
 
 installhdrs:
 
+clean: clean-clang
+
 ##
 # Cross Compilation Build Support
+
+.PHONY: install-cross build-cross configure-cross setup-tools-cross
 
 install-cross:: build-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
@@ -269,7 +272,14 @@ setup-tools-cross::
 ##
 # Standard Build Support
 
-install:: build
+.PHONY: install-clang build-clang build-clang_final build-clang_stage1
+.PHONY: configure-clang_final configure-clang_singlestage configure-clang_stage2
+.PHONY: configure-clang_stage1
+	build build_final build_stage1 \
+	configure_final configure_singlestage configure_stage2 configure_stage1 \
+	lazy_install_source install_source clean
+
+install-clang:: build-clang
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Installing $(Project) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/install-$$arch && \
@@ -292,24 +302,24 @@ install:: build
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 	$(_v) $(MAKE) post-install
 
-build:: build_final
+build-clang:: build-clang_final
 
-build_final:: configure_final
+build-clang_final:: configure-clang_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Final) $(Project) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
 	done
 
-build_stage1:: configure_stage1
+build-clang_stage1:: configure-clang_stage1
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Stage 1) $(Project) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target) || exit 1; \
 	done
 
-configure_final:: $(Final_Configure_Target)
+configure-clang_final:: $(Final_Configure_Target)
 
-configure_stage2:: build_stage1
+configure-clang_stage2:: build-clang_stage1
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Configuring (Final) $(Project) for $$arch..." && \
@@ -320,7 +330,7 @@ configure_stage2:: build_stage1
 		  CXX="$(OBJROOT)/stage1-install-$$arch/bin/clang++ -arch $$arch" || exit 1 ; \
 	done
 
-configure_singlestage::
+configure-clang_singlestage::
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Configuring (Final) $(Project) for $$arch..." && \
@@ -331,7 +341,7 @@ configure_singlestage::
 		  CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
 
-configure_stage1:: 
+configure-clang_stage1:: 
 	$(_v) $(MKDIR) $(OBJROOT)
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Configuring (Stage 1) $(Project) for $$arch..." && \
@@ -350,6 +360,7 @@ install_source::
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
 
+# FIXME: Eliminate this step.
 clean::
 	if [ "$(SRCROOT)" != . ]; then \
 	  rm -rf "$(SRCROOT)/clang/test/Archive"; \
