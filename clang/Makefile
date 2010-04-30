@@ -14,8 +14,6 @@ Clang_Optimize_Option  := -O2
 Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS
 # Enable use of clang++?
 Clang_Enable_CXX       := 1
-# Enable bootstrap build.
-Clang_Enable_Bootstrap := 1
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
 
@@ -27,12 +25,16 @@ Default_Install_Root := /Developer
 # Don't install root links or license.
 Post_Install_RootLinks := 0
 Post_Install_OpenSourceLicense := 0
+# Install to .../usr
+Install_Path_Suffix := usr
 # Include x86 and ARM backends.
 LLVM_Backends := x86,arm
 # Don't use extra make variables.
 Extra_Make_Variables :=
 # LLVM level install target is 'install-clang.
 LLVM_Install_Target := install-clang
+# Don't bootstrap by default.
+Clang_Enable_Bootstrap := 0
 
 ##
 # Per Project/Target Configuration
@@ -51,6 +53,8 @@ else
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
+# Enable bootstrap build.
+Clang_Enable_Bootstrap := 1
 
 endif
 
@@ -108,6 +112,12 @@ endif
 Install_Prefix := $(Install_Root)/usr
 ifneq (OK, $(shell test -d $(Install_Prefix) && echo "OK"))
   $(error "invalid install prefix: '$(Install_Prefix)'")
+endif
+
+ifneq ($(Install_Path_Suffix),)
+Install_Prefix := $(Install_Prefix)/$(Install_Path_Suffix)
+else
+$(error "invalid setting for install path suffix: '$(Install_Path_Suffix)'")
 endif
 
 # Set configure flags.
