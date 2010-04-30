@@ -251,7 +251,7 @@ build-clang_stage1: configure-clang_stage1
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Stage 1) $(Project) for $$arch..." && \
 		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target) || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch install || exit 1; \
 	done
 
 configure-clang_final: $(Final_Configure_Target)
