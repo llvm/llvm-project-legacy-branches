@@ -470,7 +470,7 @@ void AsmPrinter::EmitFunctionBody() {
     for (MachineBasicBlock::const_iterator II = I->begin(), IE = I->end();
          II != IE; ++II) {
       // Print the assembly for the instruction.
-      if (!II->isLabel())
+      if (!II->isLabel() && !II->isDebugValue())
         HasAnyRealCode = true;
       
       ++EmittedInsts;
