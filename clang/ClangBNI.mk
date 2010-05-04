@@ -214,41 +214,45 @@ SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
 update-sources:
+	@if ! [ -n "$(REVISION)" ]; then \
+	  echo Usage: make $@ REVISION=102052; \
+	  false; \
+	fi
 	svn rm -m 'Update.' $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
-	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk $(SVN_CLANG)/src/projects/compiler-rt
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk@$(REVISION) $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
 	svn up
 
 tag-clang:
-	if [ -n "$(VERSION)" ]; then \
-	  svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION); \
-	else \
-	  echo Usage: make VERSION=25 tag-clang; \
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=25; \
+	  false; \
 	fi
+	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 retag-clang:
-	if [ -n "$(VERSION)" ]; then \
-	  svn rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION) && \
-	  svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION); \
-	else \
-	  echo Usage: make VERSION=25 retag-clang; \
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=25; \
+	  false; \
 	fi
+	svn rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
+	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 tag-clang_ide:
-	if [ -n "$(VERSION)" ]; then \
-	  svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
-	else \
-	  echo Usage: make VERSION=25 tag-clang_ide; \
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=25; \
+	  false; \
 	fi
+	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION)
 
 retag-clang_ide:
-	if [ -n "$(VERSION)" ]; then \
-	  svn rm -m 'Retag.' $(SVN_TAGS)/clang_ide-$(VERSION) && \
-	  svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
-	else \
-	  echo Usage: make VERSION=25 retag-clang_ide; \
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=25; \
+	  false; \
 	fi
+	svn rm -m 'Retag.' $(SVN_TAGS)/clang_ide-$(VERSION) && \
+	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
 
 ##
 # Additional Tool Paths
