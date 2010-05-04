@@ -170,6 +170,8 @@ Configure_Flags = --enable-targets=$(LLVM_Backends) \
 		  $(Assertions_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
                   --with-extra-options="$(Clang_Extra_Options)" \
+		  --without-llvmgcc --without-llvmgxx \
+		  --disable-bindings \
 		  --disable-doxygen
 
 # Set up any additional Clang install targets.
@@ -337,8 +339,8 @@ build-clang_final: configure-clang_final
 build-clang_stage1: configure-clang_stage1
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Stage 1) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target) || exit 1; \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch install || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch clang-only || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch install-clang || exit 1; \
 	done
 
 configure-clang_final: $(Final_Configure_Target)
