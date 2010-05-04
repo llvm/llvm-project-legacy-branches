@@ -1308,9 +1308,6 @@ DIE *DwarfDebug::createSubprogramDIE(const DISubprogram &SP, bool MakeDecl) {
   if (SP.isOptimized())
     addUInt(SPDie, dwarf::DW_AT_APPLE_optimized, dwarf::DW_FORM_flag, 1);
 
-  if (!DisableFramePointerElim(*Asm->MF))
-    addUInt(SPDie, dwarf::DW_AT_APPLE_omit_frame_ptr, dwarf::DW_FORM_flag, 1);
-
   // DW_TAG_inlined_subroutine may refer to this DIE.
   ModuleCU->insertDIE(SP.getNode(), SPDie);
 
@@ -2510,8 +2507,12 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
            AE = AbstractScopesList.end(); AI != AE; ++AI)
       constructScopeDIE(*AI);
     
-    constructScopeDIE(CurrentFnDbgScope);
+    DIE *CurFnDIE = constructScopeDIE(CurrentFnDbgScope);
     
+    if (!DisableFramePointerElim(*MF))
+      addUInt(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr, 
+              dwarf::DW_FORM_flag, 1);
+
     DebugFrames.push_back(FunctionDebugFrameInfo(SubprogramCount,
                                                  MMI->getFrameMoves()));
   }
