@@ -85,8 +85,6 @@ else
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
-# Enable bootstrap build.
-Clang_Enable_Bootstrap := 1
 
 endif
 
@@ -235,6 +233,21 @@ retag-clang:
 	  svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION); \
 	else \
 	  echo Usage: make VERSION=25 retag-clang; \
+	fi
+
+tag-clang_ide:
+	if [ -n "$(VERSION)" ]; then \
+	  svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
+	else \
+	  echo Usage: make VERSION=25 tag-clang_ide; \
+	fi
+
+retag-clang_ide:
+	if [ -n "$(VERSION)" ]; then \
+	  svn rm -m 'Retag.' $(SVN_TAGS)/clang_ide-$(VERSION) && \
+	  svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
+	else \
+	  echo Usage: make VERSION=25 retag-clang_ide; \
 	fi
 
 ##
