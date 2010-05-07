@@ -1064,7 +1064,7 @@ void X86InstrInfo::reMaterialize(MachineBasicBlock &MBB,
                                  unsigned DestReg, unsigned SubIdx,
                                  const MachineInstr *Orig,
                                  const TargetRegisterInfo *TRI) const {
-  DebugLoc DL = MBB.findDebugLoc(I);
+  DebugLoc DL = Orig->getDebugLoc();
 
   if (SubIdx && TargetRegisterInfo::isPhysicalRegister(DestReg)) {
     DestReg = TRI->getSubReg(DestReg, SubIdx);
