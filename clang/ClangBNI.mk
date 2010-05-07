@@ -85,6 +85,8 @@ else
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
+# Enable bootstrap build.
+Clang_Enable_Bootstrap := 1
 
 endif
 
