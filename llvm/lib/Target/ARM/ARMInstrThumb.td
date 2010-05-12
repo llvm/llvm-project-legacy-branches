@@ -335,6 +335,14 @@ let isBranch = 1, isTerminator = 1 in {
               T1Misc<{1,0,?,1,?,?,?}>;
 }
 
+// A8.6.16 B: Encoding T1
+// If Inst{11-8} == 0b1110 then UNDEFINED
+let isBarrier = 1, isTerminator = 1 in
+def tTRAP : TI<(outs), (ins), IIC_Br, "trap", [(trap)]>, Encoding16 {
+  let Inst{15-12} = 0b1101;
+  let Inst{11-8} = 0b1110;
+}
+
 //===----------------------------------------------------------------------===//
 //  Load Store Instructions.
 //

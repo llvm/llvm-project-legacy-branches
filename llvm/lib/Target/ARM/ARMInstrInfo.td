@@ -610,6 +610,16 @@ PseudoInst<(outs), (ins i32imm:$amt, pred:$p), NoItinerary,
            [(ARMcallseq_start timm:$amt)]>;
 }
 
+// A5.4 Permanently UNDEFINED instructions.
+let isBarrier = 1, isTerminator = 1 in
+def TRAP : AXI<(outs), (ins), MiscFrm, NoItinerary, "trap", [(trap)]>,
+           Requires<[IsARM]> {
+  let Inst{27-25} = 0b011;
+  let Inst{24-20} = 0b11111;
+  let Inst{7-5} = 0b111;
+  let Inst{4} = 0b1;
+}
+
 // Address computation and loads and stores in PIC mode.
 let isNotDuplicable = 1 in {
 def PICADD : AXI1<0b0100, (outs GPR:$dst), (ins GPR:$a, pclabel:$cp, pred:$p),
