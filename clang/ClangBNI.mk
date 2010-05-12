@@ -167,6 +167,7 @@ endif
 # Set configure flags.
 Configure_Flags = --enable-targets=$(LLVM_Backends) \
 		  --enable-optimized \
+		  --disable-timestamps \
 		  $(Assertions_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
                   --with-extra-options="$(Clang_Extra_Options)" \
