@@ -64,8 +64,8 @@ class DwarfDebug : public DwarfPrinter {
   // Attributes used to construct specific Dwarf sections.
   //
 
-  /// ModuleCU - All DIEs are inserted in ModuleCU.
-  CompileUnit *ModuleCU;
+  CompileUnit *FirstCU;
+  DenseMap <MDNode *, CompileUnit *> CUMap;
 
   /// AbbreviationsSet - Used to uniquely define abbreviations.
   ///
@@ -495,6 +495,9 @@ class DwarfDebug : public DwarfPrinter {
   void constructCompileUnit(MDNode *N);
 
   void constructGlobalVariableDIE(MDNode *N);
+
+  /// getCompielUnit - Get CompileUnit DIE.
+  CompileUnit *getCompileUnit(MDNode *N) const;
 
   void constructSubprogramDIE(MDNode *N);
 
