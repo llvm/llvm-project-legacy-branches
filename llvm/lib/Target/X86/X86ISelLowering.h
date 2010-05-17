@@ -699,6 +699,8 @@ namespace llvm {
     SDValue LowerFABS(SDValue Op, SelectionDAG &DAG);
     SDValue LowerFNEG(SDValue Op, SelectionDAG &DAG);
     SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG);
+    SDValue LowerToBT(SDValue And, ISD::CondCode CC,
+                      DebugLoc dl, SelectionDAG &DAG);
     SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG);
     SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG);
     SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG);
@@ -720,7 +722,6 @@ namespace llvm {
     SDValue LowerCTTZ(SDValue Op, SelectionDAG &DAG);
     SDValue LowerMUL_V2I64(SDValue Op, SelectionDAG &DAG);
     SDValue LowerXALUO(SDValue Op, SelectionDAG &DAG);
-
     SDValue LowerCMP_SWAP(SDValue Op, SelectionDAG &DAG);
     SDValue LowerLOAD_SUB(SDValue Op, SelectionDAG &DAG);
     SDValue LowerREADCYCLECOUNTER(SDValue Op, SelectionDAG &DAG);
