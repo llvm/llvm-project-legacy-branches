@@ -31,6 +31,7 @@
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/GCStrategy.h"
 #include "llvm/CodeGen/GCMetadata.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -797,6 +798,19 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
 
   DEBUG(dbgs() << "Selected machine code:\n");
   DEBUG(BB->dump());
+
+  // Determine if there are any calls in this machine function.
+  MachineFrameInfo *MFI = MF->getFrameInfo();
+  if (!MFI->hasCalls()) {
+    for (MachineBasicBlock::iterator
+           I = BB->begin(), E = BB->end(); I != E; ++I) {
+      const TargetInstrDesc &TID = TM.getInstrInfo()->get(I->getOpcode());
+      if (I->isInlineAsm() || (TID.isCall() && !TID.isReturn())) {
+        MFI->setHasCalls(true);
+        break;
+      }
+    }
+  }
 }
 
 void SelectionDAGISel::DoInstructionSelection() {

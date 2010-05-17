@@ -37,7 +37,7 @@ class DwarfException : public DwarfPrinter {
     MCSymbol *FunctionEHSym;  // L_foo.eh
     unsigned Number;
     unsigned PersonalityIndex;
-    bool hasCalls;
+    bool adjustsStack;
     bool hasLandingPads;
     std::vector<MachineMove> Moves;
     const Function *function;
@@ -47,7 +47,7 @@ class DwarfException : public DwarfPrinter {
                         const std::vector<MachineMove> &M,
                         const Function *f):
       FunctionEHSym(EHSym), Number(Num), PersonalityIndex(P),
-      hasCalls(hC), hasLandingPads(hL), Moves(M), function (f) { }
+      adjustsStack(hC), hasLandingPads(hL), Moves(M), function (f) { }
   };
 
   std::vector<FunctionEHFrameInfo> EHFrames;

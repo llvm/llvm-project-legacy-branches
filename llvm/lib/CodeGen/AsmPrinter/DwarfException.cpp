@@ -192,7 +192,7 @@ void DwarfException::EmitFDE(const FunctionEHFrameInfo &EHFrameInfo) {
   // EH Frame, but some environments do not handle weak absolute symbols. If
   // UnwindTablesMandatory is set we cannot do this optimization; the unwind
   // info is to be available for non-EH uses.
-  if (!EHFrameInfo.hasCalls && !UnwindTablesMandatory &&
+  if (!EHFrameInfo.adjustsStack && !UnwindTablesMandatory &&
       (!TheFunc->isWeakForLinker() ||
        !MAI->getWeakDefDirective() ||
        TLOF.getSupportsWeakOmittedEHFrame())) {
@@ -958,7 +958,7 @@ void DwarfException::EndFunction() {
   // Save EH frame information
   EHFrames.push_back(FunctionEHFrameInfo(FunctionEHSym, SubprogramCount,
                                          MMI->getPersonalityIndex(),
-                                         MF->getFrameInfo()->hasCalls(),
+                                         MF->getFrameInfo()->adjustsStack(),
                                          !MMI->getLandingPads().empty(),
                                          MMI->getFrameMoves(),
                                          MF->getFunction()));
