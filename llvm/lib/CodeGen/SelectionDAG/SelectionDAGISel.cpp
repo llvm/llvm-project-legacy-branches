@@ -374,6 +374,24 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
     }
   }
 
+  // Determine if there are any calls in this machine function.
+  MachineFrameInfo *MFI = MF->getFrameInfo();
+  if (!MFI->hasCalls()) {
+    for (MachineFunction::const_iterator
+           I = MF->begin(), E = MF->end(); I != E; ++I) {
+      const MachineBasicBlock *MBB = I;
+      for (MachineBasicBlock::const_iterator
+             II = MBB->begin(), IE = MBB->end(); II != IE; ++II) {
+        const TargetInstrDesc &TID = TM.getInstrInfo()->get(II->getOpcode());
+        if (II->isInlineAsm() || (TID.isCall() && !TID.isReturn())) {
+          MFI->setHasCalls(true);
+          goto done;
+        }
+      }
+    }
+  done:;
+  }
+
   FuncInfo->clear();
 
   return true;
@@ -795,22 +813,6 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
   } else {
     delete Scheduler;
   }
-
-  DEBUG(dbgs() << "Selected machine code:\n");
-  DEBUG(BB->dump());
-
-  // Determine if there are any calls in this machine function.
-  MachineFrameInfo *MFI = MF->getFrameInfo();
-  if (!MFI->hasCalls()) {
-    for (MachineBasicBlock::iterator
-           I = BB->begin(), E = BB->end(); I != E; ++I) {
-      const TargetInstrDesc &TID = TM.getInstrInfo()->get(I->getOpcode());
-      if (I->isInlineAsm() || (TID.isCall() && !TID.isReturn())) {
-        MFI->setHasCalls(true);
-        break;
-      }
-    }
-  }
 }
 
 void SelectionDAGISel::DoInstructionSelection() {
@@ -864,6 +866,7 @@ void SelectionDAGISel::DoInstructionSelection() {
     
     CurDAG->setRoot(Dummy.getValue());
   }    
+
   DEBUG(errs() << "===== Instruction selection ends:\n");
 
   PostprocessISelDAG();
