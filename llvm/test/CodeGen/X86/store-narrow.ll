@@ -50,8 +50,12 @@ entry:
   %D = or i32 %B, %CS
   store i32 %D, i32* %a0, align 4
   ret void
-; CHECK: test4:
-; CHECK: movw	%si, 2(%rdi)
+; X64: test4:
+; X64: movw	%si, 2(%rdi)
+
+; X32: test4:
+; X32: movzwl	8(%esp), %eax
+; X32: movw	%ax, 2(%{{.*}})
 }
 
 define void @test5(i64* nocapture %a0, i16 zeroext %a1) nounwind ssp {
@@ -63,8 +67,12 @@ entry:
   %D = or i64 %B, %CS
   store i64 %D, i64* %a0, align 4
   ret void
-; CHECK: test5:
-; CHECK: movw	%si, 2(%rdi)
+; X64: test5:
+; X64: movw	%si, 2(%rdi)
+
+; X32: test5:
+; X32: movzwl	8(%esp), %eax
+; X32: movw	%ax, 2(%{{.*}})
 }
 
 define void @test6(i64* nocapture %a0, i8 zeroext %a1) nounwind ssp {

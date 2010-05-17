@@ -6102,7 +6102,7 @@ SDValue X86TargetLowering::LowerToBT(SDValue And, ISD::CondCode CC,
     // the encoding for the i16 version is larger than the i32 version.
     // Also promote i16 to i32 for performance / code size reason.
     if (LHS.getValueType() == MVT::i8 ||
-        (Subtarget->shouldPromote16Bit() && LHS.getValueType() == MVT::i16))
+        LHS.getValueType() == MVT::i16)
       LHS = DAG.getNode(ISD::ANY_EXTEND, dl, MVT::i32, LHS);
 
     // If the operand types disagree, extend the shift amount to match.  Since
@@ -9610,9 +9610,13 @@ static SDValue PerformShiftCombine(SDNode* N, SelectionDAG &DAG,
 }
 
 static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
+                                TargetLowering::DAGCombinerInfo &DCI,
                                 const X86Subtarget *Subtarget) {
+  if (DCI.isBeforeLegalizeOps())
+    return SDValue();
+
   EVT VT = N->getValueType(0);
-  if (VT != MVT::i64 || !Subtarget->is64Bit())
+  if (VT != MVT::i16 && VT != MVT::i32 && VT != MVT::i64)
     return SDValue();
 
   // fold (or (x << c) | (y >> (64 - c))) ==> (shld64 x, y, c)
@@ -9621,6 +9625,8 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
   if (N0.getOpcode() == ISD::SRL && N1.getOpcode() == ISD::SHL)
     std::swap(N0, N1);
   if (N0.getOpcode() != ISD::SHL || N1.getOpcode() != ISD::SRL)
+    return SDValue();
+  if (!N0.hasOneUse() || !N1.hasOneUse())
     return SDValue();
 
   SDValue ShAmt0 = N0.getOperand(1);
@@ -9644,10 +9650,11 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
     std::swap(ShAmt0, ShAmt1);
   }
 
+  unsigned Bits = VT.getSizeInBits();
   if (ShAmt1.getOpcode() == ISD::SUB) {
     SDValue Sum = ShAmt1.getOperand(0);
     if (ConstantSDNode *SumC = dyn_cast<ConstantSDNode>(Sum)) {
-      if (SumC->getSExtValue() == 64 &&
+      if (SumC->getSExtValue() == Bits &&
           ShAmt1.getOperand(1) == ShAmt0)
         return DAG.getNode(Opc, DL, VT,
                            Op0, Op1,
@@ -9657,7 +9664,7 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
   } else if (ConstantSDNode *ShAmt1C = dyn_cast<ConstantSDNode>(ShAmt1)) {
     ConstantSDNode *ShAmt0C = dyn_cast<ConstantSDNode>(ShAmt0);
     if (ShAmt0C &&
-        ShAmt0C->getSExtValue() + ShAmt1C->getSExtValue() == 64)
+        ShAmt0C->getSExtValue() + ShAmt1C->getSExtValue() == Bits)
       return DAG.getNode(Opc, DL, VT,
                          N0.getOperand(0), N1.getOperand(0),
                          DAG.getNode(ISD::TRUNCATE, DL,
@@ -9936,7 +9943,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::SHL:
   case ISD::SRA:
   case ISD::SRL:            return PerformShiftCombine(N, DAG, Subtarget);
-  case ISD::OR:             return PerformOrCombine(N, DAG, Subtarget);
+  case ISD::OR:             return PerformOrCombine(N, DAG, DCI, Subtarget);
   case ISD::STORE:          return PerformSTORECombine(N, DAG, Subtarget);
   case X86ISD::FXOR:
   case X86ISD::FOR:         return PerformFORCombine(N, DAG);
@@ -9957,7 +9964,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
 bool X86TargetLowering::isTypeDesirableForOp(unsigned Opc, EVT VT) const {
   if (!isTypeLegal(VT))
     return false;
-  if (!Subtarget->shouldPromote16Bit() || VT != MVT::i16)
+  if (VT != MVT::i16)
     return true;
 
   switch (Opc) {
@@ -9968,7 +9975,6 @@ bool X86TargetLowering::isTypeDesirableForOp(unsigned Opc, EVT VT) const {
   case ISD::ZERO_EXTEND:
   case ISD::ANY_EXTEND:
   case ISD::SHL:
-  case ISD::SRA:
   case ISD::SRL:
   case ISD::SUB:
   case ISD::ADD:
@@ -9992,9 +9998,6 @@ static bool MayFoldIntoStore(SDValue Op) {
 /// beneficial for dag combiner to promote the specified node. If true, it
 /// should return the desired promotion type by reference.
 bool X86TargetLowering::IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const {
-  if (!Subtarget->shouldPromote16Bit())
-    return false;
-
   EVT VT = Op.getValueType();
   if (VT != MVT::i16)
     return false;
@@ -10007,10 +10010,16 @@ bool X86TargetLowering::IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const {
     LoadSDNode *LD = cast<LoadSDNode>(Op);
     // If the non-extending load has a single use and it's not live out, then it
     // might be folded.
-    if (LD->getExtensionType() == ISD::NON_EXTLOAD &&
-        Op.hasOneUse() &&
-        Op.getNode()->use_begin()->getOpcode() != ISD::CopyToReg)
-      return false;
+    if (LD->getExtensionType() == ISD::NON_EXTLOAD /*&&
+                                                     Op.hasOneUse()*/) {
+      for (SDNode::use_iterator UI = Op.getNode()->use_begin(),
+             UE = Op.getNode()->use_end(); UI != UE; ++UI) {
+        // The only case where we'd want to promote LOAD (rather then it being
+        // promoted as an operand is when it's only use is liveout.
+        if (UI->getOpcode() != ISD::CopyToReg)
+          return false;
+      }
+    }
     Promote = true;
     break;
   }
@@ -10020,7 +10029,6 @@ bool X86TargetLowering::IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const {
     Promote = true;
     break;
   case ISD::SHL:
-  case ISD::SRA:
   case ISD::SRL: {
     SDValue N0 = Op.getOperand(0);
     // Look out for (store (shl (load), x)).
