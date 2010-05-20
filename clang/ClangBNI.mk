@@ -400,11 +400,11 @@ configure-clang_stage1:
 install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
 	ln -sf ../../$(Install_Prefix)/bin/clang $(DSTROOT)/usr/bin/clang
-	if [ -f $(DSTROOT)/$(Install_Prefix)/bin/clang++ ]; then \
-	  ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
-	fi
+	ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
 	$(MKDIR) -p $(DSTROOT)/usr/share/man/man1/
 	cp $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
+	ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang++.1
+	ln -sf clang.1 $(DSTROOT)/usr/share/man/man1/clang++.1
 
 install-clang-opensourcelicense: install-clang_final
 	$(MKDIR) $(OSV)
