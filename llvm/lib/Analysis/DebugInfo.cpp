@@ -1010,7 +1010,7 @@ DIVariable DIFactory::CreateVariable(unsigned Tag, DIDescriptor Context,
                                      StringRef Name,
                                      DIFile F,
                                      unsigned LineNo,
-                                     DIType Ty) {
+                                     DIType Ty, bool OptimizedBuild) {
   Value *Elts[] = {
     GetTagConstant(Tag),
     Context.getNode(),
@@ -1019,7 +1019,12 @@ DIVariable DIFactory::CreateVariable(unsigned Tag, DIDescriptor Context,
     ConstantInt::get(Type::getInt32Ty(VMContext), LineNo),
     Ty.getNode(),
   };
-  return DIVariable(MDNode::get(VMContext, &Elts[0], 6));
+  MDNode *Node = MDNode::get(VMContext, &Elts[0], 6);
+  if (OptimizedBuild) {
+    NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.lv");
+    NMD->addOperand(Node);
+  }
+  return DIVariable(Node);
 }
 
 
