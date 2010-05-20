@@ -376,7 +376,7 @@ namespace {
     // in the JITResolver's ExternalFnToStubMap.
     StringMap<void *> ExtFnStubs;
 
-    DILocation PrevDLT;
+    DebugLoc PrevDL;
 
     /// Instance of the JIT
     JIT *TheJIT;
@@ -384,7 +384,7 @@ namespace {
   public:
     JITEmitter(JIT &jit, JITMemoryManager *JMM, TargetMachine &TM)
       : SizeEstimate(0), Resolver(jit, *this), MMI(0), CurFn(0),
-        EmittedFunctions(this), PrevDLT(NULL), TheJIT(&jit) {
+        EmittedFunctions(this), TheJIT(&jit) {
       MemMgr = JMM ? JMM : JITMemoryManager::CreateDefaultMemManager();
       if (jit.getJITInfo().needsGOT()) {
         MemMgr->AllocateGOT();
@@ -856,17 +856,16 @@ void JITEmitter::processDebugLoc(DebugLoc DL, bool BeforePrintingInsn) {
   if (DL.isUnknown()) return;
   if (!BeforePrintingInsn) return;
 
-  // FIXME: This is horribly inefficient.
-  DILocation CurDLT(DL.getAsMDNode(CurFn->getContext()));
-  
-  if (CurDLT.getScope().getNode() != 0 && PrevDLT.getNode() !=CurDLT.getNode()){
+  const LLVMContext& Context = EmissionDetails.MF->getFunction()->getContext();
+
+  if (DL.getScope(Context) != 0 && PrevDL != DL) {
     JITEvent_EmittedFunctionDetails::LineStart NextLine;
     NextLine.Address = getCurrentPCValue();
     NextLine.Loc = DL;
     EmissionDetails.LineStarts.push_back(NextLine);
   }
 
-  PrevDLT = CurDLT;
+  PrevDL = DL;
 }
 
 static unsigned GetConstantPoolSizeInBytes(MachineConstantPool *MCP,
@@ -1248,6 +1247,9 @@ bool JITEmitter::finishFunction(MachineFunction &F) {
 
   TheJIT->NotifyFunctionEmitted(*F.getFunction(), FnStart, FnEnd-FnStart,
                                 EmissionDetails);
+
+  // Reset the previous debug location.
+  PrevDL = DebugLoc();
 
   DEBUG(dbgs() << "JIT: Finished CodeGen of [" << (void*)FnStart
         << "] Function: " << F.getFunction()->getName()
