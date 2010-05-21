@@ -1,0 +1,52 @@
+# <rdar://problem/7986634> llvm-mc doesn't recognize instructions case insensitively
+104183
+
+# <rdar://problem/7973870> integrated-as crashes with "sfence"
+104203
+
+# <rdar://problem/7995898> llvm-mc doesn't recognize "pause"
+104204
+
+# <rdar://problem/7973752> pushf/popf not recognized
+104228
+104231
+
+# <rdar://problem/7997760> ... misencode of 'movq %mm0,0x10(%rdi)
+104244
+
+# <rdar://problem/8009352> MC misassembles movq of 64-bit constant
+104270
+104271
+104272
+104275
+
+# PR7135 - cast unsigned long -> double -> int gets assertion with -mno-mmx
+104308
+104336
+104337
+
+# PR7167 - Assertion failure "Unexpected illegal type!" in LegalizeDAG.cpp when using shufflevector
+104257
+
+# <rdar://problem/7739628> llvmgcc42-2324.6 causing PPC/Altivec mismatches?
+104238
+
+# TLS
+104163
+104197
+104201
+
+# String trashing cleanup.
+104223
+
+# llvm-mc option cleanup.
+104303
+
+# llvm-mc ELF prep work from mfleming.
+104264
+104316
+104317
+104318
+
+# Test XFAIL line fix.
+104190
