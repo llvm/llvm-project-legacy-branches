@@ -1383,8 +1383,7 @@ void AsmPrinter::PrintSpecial(const MachineInstr *MI, const char *Code) const {
   if (!strcmp(Code, "private")) {
     O << MAI->getPrivateGlobalPrefix();
   } else if (!strcmp(Code, "comment")) {
-    if (VerboseAsm)
-      O << MAI->getCommentString();
+    O << MAI->getCommentString();
   } else if (!strcmp(Code, "uid")) {
     // Comparing the address of MI isn't sufficient, because machineinstrs may
     // be allocated to the same address across functions.
