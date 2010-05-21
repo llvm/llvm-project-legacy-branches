@@ -1124,7 +1124,7 @@ def MTCRF : XFXForm_5<31, 144, (outs), (ins crbitm:$FXM, GPRC:$rS),
 // we're only interested in one subregister of it.  Represent this in the
 // instruction to keep the register allocator from becoming confused.
 def MFCRpseud: XFXForm_3<31, 19, (outs GPRC:$rT), (ins crbitm:$FXM),
-                       "mfcr $rT", SprMFCR>,
+                       "mfcr $rT ${:comment} $FXM", SprMFCR>,
             PPC970_MicroCode, PPC970_Unit_CRU;
 def MFOCRF: XFXForm_5a<31, 19, (outs GPRC:$rT), (ins crbitm:$FXM),
                        "mfcr $rT, $FXM", SprMFCR>,
