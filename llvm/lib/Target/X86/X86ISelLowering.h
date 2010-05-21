@@ -690,6 +690,7 @@ namespace llvm {
     SDValue LowerShift(SDValue Op, SelectionDAG &DAG);
     SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
                       SelectionDAG &DAG);
+    SDValue LowerBIT_CONVERT(SDValue op, SelectionDAG &DAG);
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG);
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG);
     SDValue LowerUINT_TO_FP_i64(SDValue Op, SelectionDAG &DAG);
