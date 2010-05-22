@@ -298,6 +298,7 @@ namespace llvm {
     SDValue LowerBR_JT(SDValue Op, SelectionDAG &DAG);
     SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG);
     SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG);
+    SDValue LowerRETURNADDR(SDValue Op, SelectionDAG &DAG);
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG);
     SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG);
     SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG);

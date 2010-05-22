@@ -5498,6 +5498,9 @@ SDValue PPCTargetLowering::LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) {
   // Make sure the function does not optimize away the store of the RA to
   // the stack.
   MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  MFI->setReturnAddressIsTaken(true);
+
   PPCFunctionInfo *FuncInfo = MF.getInfo<PPCFunctionInfo>();
   FuncInfo->setLRStoreRequired();
   bool isPPC64 = PPCSubTarget.isPPC64();
