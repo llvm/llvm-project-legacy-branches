@@ -532,6 +532,11 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(alignstack);
   KEYWORD(gc);
 
+  // EH keywords.
+  KEYWORD(catches);
+  KEYWORD(catchall);
+  KEYWORD(personality);
+
   KEYWORD(ccc);
   KEYWORD(fastcc);
   KEYWORD(coldcc);

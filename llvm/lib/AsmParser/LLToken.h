@@ -22,12 +22,12 @@ namespace lltok {
 
     // Tokens with no info.
     dotdotdot,         // ...
-    equal, comma,      // =  ,
+    equal,   comma,    // =  ,
     star,              // *
     lsquare, rsquare,  // [  ]
-    lbrace, rbrace,    // {  }
-    less, greater,     // <  >
-    lparen, rparen,    // (  )
+    lbrace,  rbrace,   // {  }
+    less,    greater,  // <  >
+    lparen,  rparen,   // (  )
     backslash,         // \    (not /)
     exclaim,           // !
 
@@ -37,69 +37,101 @@ namespace lltok {
     kw_declare, kw_define,
     kw_global,  kw_constant,
 
-    kw_private, kw_linker_private, kw_internal, kw_linkonce, kw_linkonce_odr,
-    kw_weak, kw_weak_odr, kw_appending, kw_dllimport, kw_dllexport, kw_common,
+    // Linkage tokens.
+    kw_appending,
     kw_available_externally,
-    kw_default, kw_hidden, kw_protected,
+    kw_common,
+    kw_dllexport,
+    kw_dllimport,
     kw_extern_weak,
-    kw_external, kw_thread_local,
-    kw_zeroinitializer,
-    kw_undef, kw_null,
-    kw_to,
-    kw_tail,
-    kw_target,
-    kw_triple,
-    kw_deplibs,
+    kw_external,
+    kw_internal,
+    kw_linker_private,
+    kw_linkonce,
+    kw_linkonce_odr,
+    kw_private,
+    kw_weak,
+    kw_weak_odr,
+
+    // Visibility tokens.
+    kw_default,
+    kw_hidden,
+    kw_protected,
+
+    kw_addrspace,
+    kw_alias,
+    kw_align,
+    kw_alignstack,
+    kw_asm,
+    kw_c,
     kw_datalayout,
-    kw_volatile,
-    kw_nuw,
-    kw_nsw,
+    kw_deplibs,
     kw_exact,
     kw_inbounds,
-    kw_align,
-    kw_addrspace,
-    kw_section,
-    kw_alias,
-    kw_module,
-    kw_asm,
-    kw_sideeffect,
-    kw_alignstack,
     kw_gc,
-    kw_c,
+    kw_module,
+    kw_nsw,
+    kw_null,
+    kw_nuw,
+    kw_section,
+    kw_sideeffect,
+    kw_tail,
+    kw_target,
+    kw_thread_local,
+    kw_triple,
+    kw_to,
+    kw_undef,
+    kw_volatile,
+    kw_zeroinitializer,
 
-    kw_cc, kw_ccc, kw_fastcc, kw_coldcc,
-    kw_x86_stdcallcc, kw_x86_fastcallcc, kw_x86_thiscallcc,
-    kw_arm_apcscc, kw_arm_aapcscc, kw_arm_aapcs_vfpcc,
+    // Exception handling tokens.
+    kw_catchall,
+    kw_catches,
+    kw_personality,
+
+    // Calling convention tokens.
+    kw_arm_aapcs_vfpcc,
+    kw_arm_aapcscc,
+    kw_arm_apcscc,
+    kw_cc,
+    kw_ccc,
+    kw_coldcc,
+    kw_fastcc,
     kw_msp430_intrcc,
+    kw_x86_fastcallcc,
+    kw_x86_stdcallcc,
+    kw_x86_thiscallcc,
 
-    kw_signext,
-    kw_zeroext,
+    // Attribute tokens.
+    kw_alwaysinline,
+    kw_byval,
+    kw_inlinehint,
     kw_inreg,
-    kw_sret,
-    kw_nounwind,
-    kw_noreturn,
+    kw_naked,
+    kw_nest,
     kw_noalias,
     kw_nocapture,
-    kw_byval,
-    kw_nest,
+    kw_noimplicitfloat,
+    kw_noinline,
+    kw_noredzone,
+    kw_noreturn,
+    kw_nounwind,
+    kw_optsize,
     kw_readnone,
     kw_readonly,
-
-    kw_inlinehint,
-    kw_noinline,
-    kw_alwaysinline,
-    kw_optsize,
+    kw_signext,
+    kw_sret,
     kw_ssp,
     kw_sspreq,
-    kw_noredzone,
-    kw_noimplicitfloat,
-    kw_naked,
+    kw_zeroext,
 
-    kw_type,
+    // Type tokens.
     kw_opaque,
+    kw_type,
     kw_union,
 
-    kw_eq, kw_ne, kw_slt, kw_sgt, kw_sle, kw_sge, kw_ult, kw_ugt, kw_ule,
+    // Binary operator tokens.
+    kw_eq,  kw_ne,  kw_slt, kw_sgt, kw_sle, kw_sge, kw_ult, kw_ugt, kw_ule,
     kw_uge, kw_oeq, kw_one, kw_olt, kw_ogt, kw_ole, kw_oge, kw_ord, kw_uno,
     kw_ueq, kw_une,
 
@@ -109,18 +141,48 @@ namespace lltok {
     kw_urem, kw_srem, kw_frem, kw_shl,  kw_lshr, kw_ashr,
     kw_and,  kw_or,   kw_xor,  kw_icmp, kw_fcmp,
 
-    kw_phi, kw_call,
-    kw_trunc, kw_zext, kw_sext, kw_fptrunc, kw_fpext, kw_uitofp, kw_sitofp,
-    kw_fptoui, kw_fptosi, kw_inttoptr, kw_ptrtoint, kw_bitcast,
-    kw_select, kw_va_arg,
+    kw_bitcast,
+    kw_call,
+    kw_indirectbr,
+    kw_fpext,
+    kw_fptosi,
+    kw_fptoui,
+    kw_fptrunc,
+    kw_inttoptr,
+    kw_ptrtoint,
+    kw_select,
+    kw_sext,
+    kw_sitofp,
+    kw_uitofp,
+    kw_va_arg,
+    kw_zext,
 
-    kw_ret, kw_br, kw_switch, kw_indirectbr, kw_invoke, kw_unwind,
+    // Terminator instruction tokens.
+    kw_br,
+    kw_invoke,
+    kw_phi,
+    kw_ret,
+    kw_switch,
+    kw_trunc,
     kw_unreachable,
+    kw_unwind,
 
-    kw_malloc, kw_alloca, kw_free, kw_load, kw_store, kw_getelementptr,
+    // Memory instruction tokens.
+    kw_alloca,
+    kw_blockaddress,
+    kw_free,
+    kw_getelementptr,
+    kw_load,
+    kw_malloc,
+    kw_store,
 
-    kw_extractelement, kw_insertelement, kw_shufflevector, kw_getresult,
-    kw_extractvalue, kw_insertvalue, kw_blockaddress,
+    // Vector instruction tokens.
+    kw_extractelement,
+    kw_extractvalue,
+    kw_getresult,
+    kw_insertelement,
+    kw_insertvalue,
+    kw_shufflevector,
 
     // Unsigned Valued tokens (UIntVal).
     GlobalID,          // @42
@@ -136,8 +198,8 @@ namespace lltok {
     // Type valued tokens (TyVal).
     Type,
 
-    APFloat,  // APFloatVal
-    APSInt // APSInt
+    APFloat,           // APFloatVal
+    APSInt             // APSInt
   };
 } // end namespace lltok
 } // end namespace llvm

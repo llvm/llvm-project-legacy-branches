@@ -93,6 +93,7 @@ SpecializeFunction(Function* F,
           InvokeInst *II = cast<InvokeInst>(i);
           NCall = InvokeInst::Create(NF, II->getNormalDest(),
                                      II->getUnwindDest(),
+                                     II->getPersonalityFn(),
                                      args.begin(), args.end(), 
                                      II->getName(), II);
           cast<InvokeInst>(NCall)->setCallingConv(II->getCallingConv());

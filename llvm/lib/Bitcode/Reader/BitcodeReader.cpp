@@ -2114,6 +2114,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       }
 
       I = InvokeInst::Create(Callee, NormalBB, UnwindBB,
+                             0, // EH-FIXME!
                              Ops.begin(), Ops.end());
       InstructionList.push_back(I);
       cast<InvokeInst>(I)->setCallingConv(

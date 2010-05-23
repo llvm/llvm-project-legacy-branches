@@ -714,6 +714,7 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
     Instruction *New;
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
       New = InvokeInst::Create(NF, II->getNormalDest(), II->getUnwindDest(),
+                               II->getPersonalityFn(),
                                Args.begin(), Args.end(), "", Call);
       cast<InvokeInst>(New)->setCallingConv(CS.getCallingConv());
       cast<InvokeInst>(New)->setAttributes(AttrListPtr::get(AttributesVec.begin(),

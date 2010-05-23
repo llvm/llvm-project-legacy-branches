@@ -3316,20 +3316,85 @@ bool LLParser::ParseIndirectBr(Instruction *&Inst, PerFunctionState &PFS) {
   return false;
 }
 
+/// ParseCatchClauses
+///  ::= /*empty*/
+///  ::= 'catches' '[' (TypeAndValue ',' TypeAndValue)+ ']'
+bool LLParser::ParseCatchClauses(SmallVectorImpl<ValueBBPair> &Catches,
+                                 PerFunctionState &PFS) {
+  if (Lex.getKind() != lltok::kw_catches)
+    // There are no catch clauses.
+    return false;
+
+  Lex.Lex();  // Eat 'catches' token.
+
+  // Gather up all of the catches.
+  if (ParseToken(lltok::lsquare,
+                 "expected '[' in catch clause of invoke"))
+    return true;
+
+  while (Lex.getKind() != lltok::rsquare) {
+    Value *CatchTy;
+    BasicBlock *CatchBB = 0;
+
+    if (ParseTypeAndValue(CatchTy, PFS) ||
+        ParseToken(lltok::comma,
+                   "expected comma in catch clause of invoke") ||
+        ParseTypeAndBasicBlock(CatchBB, PFS))
+      return true;
+
+    Catches.push_back(ValueBBPair(CatchTy, CatchBB));
+  }
+
+  Lex.Lex();  // Eat ']' token.
+  return false;
+}
+
+/// ParseCatchAllClause
+///  ::= /*empty*/
+///  ::= 'with' 'catchall' '[' TypeAndValue ',' TypeAndValue ']'
+bool LLParser::ParseCatchAllClause(Value *&CatchAllVal, BasicBlock *&CatchAllBB,
+                                   PerFunctionState &PFS) {
+  if (Lex.getKind() != lltok::kw_catchall)
+    // There isn't a catch-all clause.
+    return false;
+
+  // Gather up the catch-all.
+  Lex.Lex();  // Eat 'catchall' token.
+  LocTy CatchAllLoc;
+
+  if (ParseToken(lltok::lsquare,
+                 "expected '[' in catch-all clause of invoke") ||
+      ParseTypeAndValue(CatchAllVal, CatchAllLoc, PFS) ||
+      ParseToken(lltok::comma,
+                 "expected ',' in catch-all clause of invoke") ||
+      ParseTypeAndBasicBlock(CatchAllBB, PFS) ||
+      ParseToken(lltok::rsquare,
+                 "expected ']' in catch-all clause of invoke"))
+    return true;
+
+  return false;
+}
 
 /// ParseInvoke
 ///   ::= 'invoke' OptionalCallingConv OptionalAttrs Type Value ParamList
-///       OptionalAttrs 'to' TypeAndValue 'unwind' TypeAndValue
+///       OptionalAttrs 'to' TypeAndValue 'personality' TypeAndValue
+///       OptionalCatches OptionalCatchAll 'unwind' 'to' TypeAndValue
 bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   LocTy CallLoc = Lex.getLoc();
   unsigned RetAttrs, FnAttrs;
   CallingConv::ID CC;
   PATypeHolder RetType(Type::getVoidTy(Context));
   LocTy RetTypeLoc;
+  LocTy PersLoc;
   ValID CalleeID;
   SmallVector<ParamInfo, 16> ArgList;
 
-  BasicBlock *NormalBB, *UnwindBB;
+  Value *PersFn = 0;
+  SmallVector<ValueBBPair, 16> Catches;
+  BasicBlock *NormalBB = 0, *UnwindBB = 0;
+  Value *CatchAllVal = 0;
+  BasicBlock *CatchAllBB = 0;
+
   if (ParseOptionalCallingConv(CC) ||
       ParseOptionalAttrs(RetAttrs, 1) ||
       ParseType(RetType, RetTypeLoc, true /*void allowed*/) ||
@@ -3338,9 +3403,21 @@ bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
       ParseOptionalAttrs(FnAttrs, 2) ||
       ParseToken(lltok::kw_to, "expected 'to' in invoke") ||
       ParseTypeAndBasicBlock(NormalBB, PFS) ||
+      ParseToken(lltok::kw_personality,
+                 "expected 'personality' clause in invoke") ||
+      ParseToken(lltok::lsquare,
+                 "expected '[' in personality clause in invoke") ||
+      ParseTypeAndValue(PersFn, PersLoc, PFS) ||
+      ParseToken(lltok::rsquare,
+                 "expected ']' in personality clause in invoke") ||
+      ParseCatchClauses(Catches, PFS) ||
+      ParseCatchAllClause(CatchAllVal, CatchAllBB, PFS) ||
       ParseToken(lltok::kw_unwind, "expected 'unwind' in invoke") ||
+      ParseToken(lltok::kw_to, "expected 'to' in invoke") ||
       ParseTypeAndBasicBlock(UnwindBB, PFS))
     return true;
+
+  // EH-FIXME: If there are no catches, should this be an error?
 
   // If RetType is a non-function pointer type, then this is the short syntax
   // for the call, which means that RetType is just the return type.  Infer the
@@ -3409,7 +3486,7 @@ bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   // Finish off the Attributes and check them
   AttrListPtr PAL = AttrListPtr::get(Attrs.begin(), Attrs.end());
 
-  InvokeInst *II = InvokeInst::Create(Callee, NormalBB, UnwindBB,
+  InvokeInst *II = InvokeInst::Create(Callee, NormalBB, UnwindBB, PersFn,
                                       Args.begin(), Args.end());
   II->setCallingConv(CC);
   II->setAttributes(PAL);

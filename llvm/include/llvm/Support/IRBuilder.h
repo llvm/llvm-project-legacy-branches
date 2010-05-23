@@ -277,33 +277,36 @@ public:
   }
 
   InvokeInst *CreateInvoke(Value *Callee, BasicBlock *NormalDest,
-                           BasicBlock *UnwindDest, const Twine &Name = "") {
+                           BasicBlock *UnwindDest, Value *PersonalityFn,
+                           const Twine &Name = "") {
     Value *Args[] = { 0 };
-    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest, Args,
-                                     Args), Name);
+    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest,
+                                     PersonalityFn, Args, Args), Name);
   }
   InvokeInst *CreateInvoke(Value *Callee, BasicBlock *NormalDest,
-                           BasicBlock *UnwindDest, Value *Arg1,
+                           BasicBlock *UnwindDest, Value *PersonalityFn,
+                           Value *Arg1,
                            const Twine &Name = "") {
     Value *Args[] = { Arg1 };
-    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest, Args,
-                                     Args+1), Name);
+    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest,
+                                     PersonalityFn, Args, Args+1), Name);
   }
   InvokeInst *CreateInvoke3(Value *Callee, BasicBlock *NormalDest,
-                            BasicBlock *UnwindDest, Value *Arg1,
-                            Value *Arg2, Value *Arg3,
+                            BasicBlock *UnwindDest, Value *PersonalityFn,
+                            Value *Arg1, Value *Arg2, Value *Arg3,
                             const Twine &Name = "") {
     Value *Args[] = { Arg1, Arg2, Arg3 };
-    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest, Args,
-                                     Args+3), Name);
+    return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest,
+                                     PersonalityFn, Args, Args+3), Name);
   }
   /// CreateInvoke - Create an invoke instruction.
   template<typename InputIterator>
   InvokeInst *CreateInvoke(Value *Callee, BasicBlock *NormalDest,
-                           BasicBlock *UnwindDest, InputIterator ArgBegin,
-                           InputIterator ArgEnd, const Twine &Name = "") {
+                           BasicBlock *UnwindDest, Value *PersonalityFn,
+                           InputIterator ArgBegin, InputIterator ArgEnd,
+                           const Twine &Name = "") {
     return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest,
-                                     ArgBegin, ArgEnd), Name);
+                                     PersonalityFn, ArgBegin, ArgEnd), Name);
   }
 
   UnwindInst *CreateUnwind() {

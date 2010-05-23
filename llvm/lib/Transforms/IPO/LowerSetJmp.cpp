@@ -476,6 +476,7 @@ void LowerSetJmp::visitCallInst(CallInst& CI)
   std::vector<Value*> Params(CI.op_begin() + 1, CI.op_end());
   InvokeInst* II =
     InvokeInst::Create(CI.getCalledValue(), NewBB, PrelimBBMap[Func],
+                       0, // EH-FIXME!
                        Params.begin(), Params.end(), CI.getName(), Term);
   II->setCallingConv(CI.getCallingConv());
   II->setAttributes(CI.getAttributes());

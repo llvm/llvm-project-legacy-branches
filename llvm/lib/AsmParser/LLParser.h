@@ -303,6 +303,13 @@ namespace llvm {
     bool ParseParameterList(SmallVectorImpl<ParamInfo> &ArgList,
                             PerFunctionState &PFS);
 
+    // Parse the (optional) catch clauses of the invoke call.
+    typedef std::pair<Value*, BasicBlock*> ValueBBPair;
+    bool ParseCatchClauses(SmallVectorImpl<ValueBBPair> &Catches,
+                           PerFunctionState &PFS);
+    bool ParseCatchAllClause(Value *&CatchAllVal, BasicBlock *&CatchAllBB,
+                             PerFunctionState &PFS);
+
     // Constant Parsing.
     bool ParseValID(ValID &ID, PerFunctionState *PFS = NULL);
     bool ParseGlobalValue(const Type *Ty, Constant *&V);

@@ -291,6 +291,10 @@ let Properties = [IntrNoMem] in {
 
 //===------------------ Exception Handling Intrinsics----------------------===//
 //
+
+// llvm.eh.filter - A list of one or more types that the function can throw.
+def int_eh_filter    : Intrinsic<[], [llvm_ptr_ty, llvm_vararg_ty]>;
+
 def int_eh_exception : Intrinsic<[llvm_ptr_ty], [], [IntrReadMem]>;
 def int_eh_selector  : Intrinsic<[llvm_i32_ty],
                                  [llvm_ptr_ty, llvm_ptr_ty, llvm_vararg_ty]>;

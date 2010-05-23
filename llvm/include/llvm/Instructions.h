@@ -2411,6 +2411,7 @@ public:
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
+                            Value *PersFn,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr = "",
                             Instruction *InsertBefore = 0) {
@@ -2421,6 +2422,7 @@ public:
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
+                            Value *PersFn,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr,
                             BasicBlock *InsertAtEnd) {
@@ -2547,6 +2549,13 @@ public:
   }
   void setUnwindDest(BasicBlock *B) {
     Op<-1>() = reinterpret_cast<Value*>(B);
+  }
+
+  Value *getPersonalityFn() const {
+    return 0; // EH-FIXME: Implement.
+  }
+  void setPersonalityFn(Value *P) {
+    P = P; // EH-FIXME: Implement.
   }
 
   BasicBlock *getSuccessor(unsigned i) const {
