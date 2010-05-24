@@ -50,3 +50,20 @@
 
 # Test XFAIL line fix.
 104190
+
+# <rdar://oblrem/8014869> ... unrecognized instructions 'retl'
+104394
+
+# <rdar://problem/7966070> ... 'setz' is unrecognized
+# <rdar://problem/8013393> llvm-mc does not recognize "jz"/"jnz"
+104435
+
+# <rdar://problem/7749809> sext checking for immediates isinstruction dependent
+104452
+104453
+
+# Misc streamer patches.
+104334
+104463
+104466
+104467
