@@ -263,6 +263,10 @@ public:
     return false;
   }
 
+  /// getLiveInVirtReg - If PReg is a live-in physical register, return the
+  /// corresponding live-in physical register.
+  unsigned getLiveInVirtReg(unsigned PReg) const;
+
 private:
   void HandleVRegListReallocation();
   

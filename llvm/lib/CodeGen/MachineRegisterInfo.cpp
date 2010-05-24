@@ -117,6 +117,15 @@ MachineInstr *MachineRegisterInfo::getVRegDef(unsigned Reg) const {
 }
 
 
+/// getLiveInVirtReg - If PReg is a live-in physical register, return the
+/// corresponding live-in physical register.
+unsigned MachineRegisterInfo::getLiveInVirtReg(unsigned PReg) const {
+  for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
+    if (I->first == PReg)
+      return I->second;
+  return 0;
+}
+
 #ifndef NDEBUG
 void MachineRegisterInfo::dumpUses(unsigned Reg) const {
   for (use_iterator I = use_begin(Reg), E = use_end(); I != E; ++I)
