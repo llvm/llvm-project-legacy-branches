@@ -2055,10 +2055,7 @@ SDValue ARMTargetLowering::LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) {
   }
 
   // Return LR, which contains the return address. Mark it an implicit live-in.
-  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
-  TargetRegisterClass *RC = AFI->isThumb1OnlyFunction()
-    ? ARM::tGPRRegisterClass : ARM::GPRRegisterClass;
-  unsigned Reg = MF.addLiveIn(ARM::LR, RC); 
+  unsigned Reg = MF.addLiveIn(ARM::LR, ARM::GPRRegisterClass); 
   return DAG.getCopyFromReg(DAG.getEntryNode(), dl, Reg, VT);
 }
 
