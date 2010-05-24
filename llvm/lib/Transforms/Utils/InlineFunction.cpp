@@ -66,7 +66,7 @@ static void HandleCallsInBlockInlinedThroughInvoke(BasicBlock *BB,
     SmallVector<Value*, 8> InvokeArgs(CI->op_begin()+1, CI->op_end());
     InvokeInst *II =
       InvokeInst::Create(CI->getCalledValue(), Split, InvokeDest,
-                         0, // EH-FIXME!
+                         0, 0, 0, // EH-FIXME!
                          InvokeArgs.begin(), InvokeArgs.end(),
                          CI->getName(), BB->getTerminator());
     II->setCallingConv(CI->getCallingConv());

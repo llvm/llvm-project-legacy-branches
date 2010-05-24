@@ -34,7 +34,7 @@ User::op_iterator CallSite::getCallee() const {
   Instruction *II(getInstruction());
   return isCall()
     ? cast<CallInst>(II)->op_begin()
-    : cast<InvokeInst>(II)->op_end() - 3; // Skip BB, BB, Function
+    : cast<InvokeInst>(II)->op_end() - 4; // Skip PersFn, BB, BB, Function
 }
 
 //===----------------------------------------------------------------------===//
@@ -545,11 +545,15 @@ Instruction* CallInst::CreateFree(Value* Source, BasicBlock *InsertAtEnd) {
 //===----------------------------------------------------------------------===//
 
 void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
+                      Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                       Value* const *Args, unsigned NumArgs) {
   assert(NumOperands == 3+NumArgs && "NumOperands not set up?");
-  Op<-3>() = Fn;
-  Op<-2>() = IfNormal;
-  Op<-1>() = IfException;
+  Op<-6>() = Fn;
+  Op<-5>() = IfNormal;
+  Op<-4>() = IfException;
+  Op<-3>() = PersFn;
+  Op<-2>() = CatchAllTy;
+  Op<-1>() = CatchAll;
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Fn->getType())->getElementType());
   FTy = FTy;  // silence warning.

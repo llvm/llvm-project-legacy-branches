@@ -3487,6 +3487,7 @@ bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   AttrListPtr PAL = AttrListPtr::get(Attrs.begin(), Attrs.end());
 
   InvokeInst *II = InvokeInst::Create(Callee, NormalBB, UnwindBB, PersFn,
+                                      CatchAllVal, CatchAllBB,
                                       Args.begin(), Args.end());
   II->setCallingConv(CC);
   II->setAttributes(PAL);

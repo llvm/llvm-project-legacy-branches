@@ -1725,9 +1725,11 @@ LLVMValueRef LLVMBuildIndirectBr(LLVMBuilderRef B, LLVMValueRef Addr,
 LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef B, LLVMValueRef Fn,
                              LLVMValueRef *Args, unsigned NumArgs,
                              LLVMBasicBlockRef Then, LLVMBasicBlockRef Catch,
-                             LLVMValueRef PersFn, const char *Name) {
+                             LLVMValueRef PersFn, LLVMValueRef CatchAllTy,
+                             LLVMBasicBlockRef CatchAll, const char *Name) {
   return wrap(unwrap(B)->CreateInvoke(unwrap(Fn), unwrap(Then), unwrap(Catch),
-                                      unwrap(PersFn), unwrap(Args),
+                                      unwrap(PersFn), unwrap(CatchAllTy),
+                                      unwrap(CatchAll), unwrap(Args),
                                       unwrap(Args) + NumArgs, Name));
 }
 

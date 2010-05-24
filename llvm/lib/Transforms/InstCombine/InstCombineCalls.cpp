@@ -1078,7 +1078,8 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   Instruction *NC;
   if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
     NC = InvokeInst::Create(Callee, II->getNormalDest(), II->getUnwindDest(),
-                            II->getPersonalityFn(),
+                            II->getPersonalityFn(), II->getCatchAllType(),
+                            II->getCatchAllDest(),
                             Args.begin(), Args.end(),
                             Caller->getName(), Caller);
     cast<InvokeInst>(NC)->setCallingConv(II->getCallingConv());
@@ -1251,6 +1252,8 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
         NewCaller = InvokeInst::Create(NewCallee,
                                        II->getNormalDest(), II->getUnwindDest(),
                                        II->getPersonalityFn(),
+                                       II->getCatchAllType(),
+                                       II->getCatchAllDest(),
                                        NewArgs.begin(), NewArgs.end(),
                                        Caller->getName(), Caller);
         cast<InvokeInst>(NewCaller)->setCallingConv(II->getCallingConv());

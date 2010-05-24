@@ -2364,10 +2364,12 @@ class InvokeInst : public TerminatorInst {
   AttrListPtr AttributeList;
   InvokeInst(const InvokeInst &BI);
   void init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
+            Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
             Value* const *Args, unsigned NumArgs);
 
   template<typename InputIterator>
   void init(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+            Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
             InputIterator ArgBegin, InputIterator ArgEnd,
             const Twine &NameStr,
             // This argument ensures that we have an iterator we can
@@ -2376,7 +2378,8 @@ class InvokeInst : public TerminatorInst {
     unsigned NumArgs = (unsigned)std::distance(ArgBegin, ArgEnd);
 
     // This requires that the iterator points to contiguous memory.
-    init(Func, IfNormal, IfException, NumArgs ? &*ArgBegin : 0, NumArgs);
+    init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
+         NumArgs ? &*ArgBegin : 0, NumArgs);
     setName(NameStr);
   }
 
@@ -2389,6 +2392,7 @@ class InvokeInst : public TerminatorInst {
   /// @brief Construct an InvokeInst from a range of arguments
   template<typename InputIterator>
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                    Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                     InputIterator ArgBegin, InputIterator ArgEnd,
                     unsigned Values,
                     const Twine &NameStr, Instruction *InsertBefore);
@@ -2402,6 +2406,7 @@ class InvokeInst : public TerminatorInst {
   /// @brief Construct an InvokeInst from a range of arguments
   template<typename InputIterator>
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
+                    Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                     InputIterator ArgBegin, InputIterator ArgEnd,
                     unsigned Values,
                     const Twine &NameStr, BasicBlock *InsertAtEnd);
@@ -2411,23 +2416,29 @@ public:
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
-                            Value *PersFn,
+                            Value *PersFn, Value *CatchAllTy,
+                            BasicBlock *CatchAll,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr = "",
                             Instruction *InsertBefore = 0) {
-    unsigned Values(ArgEnd - ArgBegin + 3);
-    return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
+    unsigned Values(ArgEnd - ArgBegin + 6);
+    return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
+                                  CatchAllTy, CatchAll,
+                                  ArgBegin, ArgEnd,
                                   Values, NameStr, InsertBefore);
   }
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
-                            Value *PersFn,
+                            Value *PersFn, Value *CatchAllTy,
+                            BasicBlock *CatchAll,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr,
                             BasicBlock *InsertAtEnd) {
-    unsigned Values(ArgEnd - ArgBegin + 3);
-    return new(Values) InvokeInst(Func, IfNormal, IfException, ArgBegin, ArgEnd,
+    unsigned Values(ArgEnd - ArgBegin + 6);
+    return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
+                                  CatchAllTy, CatchAll,
+                                  ArgBegin, ArgEnd,
                                   Values, NameStr, InsertAtEnd);
   }
 
@@ -2524,40 +2535,53 @@ public:
   /// indirect function invocation.
   ///
   Function *getCalledFunction() const {
-    return dyn_cast<Function>(Op<-3>());
+    return dyn_cast<Function>(Op<-6>());
   }
 
   /// getCalledValue - Get a pointer to the function that is invoked by this
   /// instruction
-  const Value *getCalledValue() const { return Op<-3>(); }
-        Value *getCalledValue()       { return Op<-3>(); }
+  const Value *getCalledValue() const { return Op<-6>(); }
+        Value *getCalledValue()       { return Op<-6>(); }
 
   /// setCalledFunction - Set the function called.
   void setCalledFunction(Value* Fn) {
-    Op<-3>() = Fn;
+    Op<-6>() = Fn;
   }
 
-  // get*Dest - Return the destination basic blocks...
+  // Getter/Setters for EH information from the invoke statement.
   BasicBlock *getNormalDest() const {
-    return cast<BasicBlock>(Op<-2>());
-  }
-  BasicBlock *getUnwindDest() const {
-    return cast<BasicBlock>(Op<-1>());
+    return cast<BasicBlock>(Op<-5>());
   }
   void setNormalDest(BasicBlock *B) {
-    Op<-2>() = reinterpret_cast<Value*>(B);
+    Op<-5>() = reinterpret_cast<Value*>(B);
+  }
+  BasicBlock *getUnwindDest() const {
+    return cast<BasicBlock>(Op<-4>());
   }
   void setUnwindDest(BasicBlock *B) {
-    Op<-1>() = reinterpret_cast<Value*>(B);
+    Op<-4>() = reinterpret_cast<Value*>(B);
   }
 
   Value *getPersonalityFn() const {
-    return 0; // EH-FIXME: Implement.
+    return Op<-3>();
   }
-  void setPersonalityFn(Value *P) {
-    P = P; // EH-FIXME: Implement.
+  void setPersonalityFn(Value *V) {
+    Op<-3>() = V;
+  }
+  Value *getCatchAllType() const {
+    return Op<-2>();
+  }
+  void setCatchAllType(Value *V) {
+    Op<-2>() = V;
+  }
+  BasicBlock *getCatchAllDest() const {
+    return cast<BasicBlock>(Op<-1>());
+  }
+  void setCatchAllDest(BasicBlock *B) {
+    Op<-1>() = reinterpret_cast<Value*>(B);
   }
 
+  // Successor accessors.
   BasicBlock *getSuccessor(unsigned i) const {
     assert(i < 2 && "Successor # out of range for invoke!");
     return i == 0 ? getNormalDest() : getUnwindDest();
@@ -2565,7 +2589,7 @@ public:
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < 2 && "Successor # out of range for invoke!");
-    *(&Op<-2>() + idx) = reinterpret_cast<Value*>(NewSucc);
+    *(&Op<-5>() + idx) = reinterpret_cast<Value*>(NewSucc);
   }
 
   unsigned getNumSuccessors() const { return 2; }
@@ -2598,6 +2622,7 @@ struct OperandTraits<InvokeInst> : public VariadicOperandTraits<3> {
 template<typename InputIterator>
 InvokeInst::InvokeInst(Value *Func,
                        BasicBlock *IfNormal, BasicBlock *IfException,
+                       Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                        InputIterator ArgBegin, InputIterator ArgEnd,
                        unsigned Values,
                        const Twine &NameStr, Instruction *InsertBefore)
@@ -2606,12 +2631,14 @@ InvokeInst::InvokeInst(Value *Func,
                    Instruction::Invoke,
                    OperandTraits<InvokeInst>::op_end(this) - Values,
                    Values, InsertBefore) {
-  init(Func, IfNormal, IfException, ArgBegin, ArgEnd, NameStr,
+  init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
+       ArgBegin, ArgEnd, NameStr,
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 template<typename InputIterator>
 InvokeInst::InvokeInst(Value *Func,
                        BasicBlock *IfNormal, BasicBlock *IfException,
+                       Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                        InputIterator ArgBegin, InputIterator ArgEnd,
                        unsigned Values,
                        const Twine &NameStr, BasicBlock *InsertAtEnd)
@@ -2620,7 +2647,8 @@ InvokeInst::InvokeInst(Value *Func,
                    Instruction::Invoke,
                    OperandTraits<InvokeInst>::op_end(this) - Values,
                    Values, InsertAtEnd) {
-  init(Func, IfNormal, IfException, ArgBegin, ArgEnd, NameStr,
+  init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
+       ArgBegin, ArgEnd, NameStr,
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 

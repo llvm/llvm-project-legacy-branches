@@ -162,7 +162,7 @@ namespace {
 
           InvokeInst *II = InvokeInst::Create(CI->getCalledValue(),
                                               NewBB, CleanupBB,
-                                              0, // EH-FIXME!
+                                              0, 0, 0, // EH-FIXME!
                                               Args.begin(), Args.end(),
                                               CI->getName(), CallBB);
           II->setCallingConv(CI->getCallingConv());

@@ -304,7 +304,8 @@ CallGraphNode *SRETPromotion::updateCallSites(Function *F, Function *NF) {
     Instruction *New;
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
       New = InvokeInst::Create(NF, II->getNormalDest(), II->getUnwindDest(),
-                               II->getPersonalityFn(),
+                               II->getPersonalityFn(), II->getCatchAllType(),
+                               II->getCatchAllDest(),
                                Args.begin(), Args.end(), "", Call);
       cast<InvokeInst>(New)->setCallingConv(CS.getCallingConv());
       cast<InvokeInst>(New)->setAttributes(NewPAL);
