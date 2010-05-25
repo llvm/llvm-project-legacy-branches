@@ -67,3 +67,12 @@
 104463
 104466
 104467
+
+# <rdar://problem/7973854> llvm-mc does not recognize many "cmov" variants
+104549
+
+# <rdar://problem/8017582> [vecLib] misencode of 'movd %r8, %mm'
+104552
+
+# <rdar://problem/7928306> Add categories to diagnostics
+104567
