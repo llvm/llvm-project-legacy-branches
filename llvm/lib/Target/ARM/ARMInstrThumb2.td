@@ -1853,7 +1853,7 @@ let Defs =
                                AddrModeNone, SizeSpecial, NoItinerary,
                                "str\t$val, [$src, #8]\t@ begin eh.setjmp\n"
                                "\tmov\t$val, pc\n"
-                               "\tadds\t$val, #9\n"
+                               "\tadds\t$val, #7\n"
                                "\tstr\t$val, [$src, #4]\n"
                                "\tmovs\tr0, #0\n"
                                "\tb\t1f\n"
@@ -1869,7 +1869,7 @@ let Defs =
                                AddrModeNone, SizeSpecial, NoItinerary,
                                "str\t$val, [$src, #8]\t@ begin eh.setjmp\n"
                                "\tmov\t$val, pc\n"
-                               "\tadds\t$val, #9\n"
+                               "\tadds\t$val, #7\n"
                                "\tstr\t$val, [$src, #4]\n"
                                "\tmovs\tr0, #0\n"
                                "\tb\t1f\n"
