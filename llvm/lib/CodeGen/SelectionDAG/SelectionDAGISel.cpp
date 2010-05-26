@@ -28,6 +28,7 @@
 #include "llvm/Intrinsics.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/Module.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/GCStrategy.h"
 #include "llvm/CodeGen/GCMetadata.h"
@@ -308,6 +309,34 @@ void SelectionDAGISel::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
+/// FunctionCallsSetJmp - Return true if the function has a call to setjmp or
+/// sigsetjmp. This is used to limit code-gen optimizations on the machine
+/// function.
+static bool FunctionCallsSetJmp(const Function *F) {
+  const Module *M = F->getParent();
+  const Function *SetJmp = M->getFunction("setjmp");
+  const Function *SigSetJmp = M->getFunction("sigsetjmp");
+
+  if (!SetJmp && !SigSetJmp)
+    return false;
+
+  if (SetJmp && !SetJmp->use_empty())
+    for (Value::use_const_iterator
+           I = SetJmp->use_begin(), E = SetJmp->use_end(); I != E; ++I)
+      if (const CallInst *CI = dyn_cast<CallInst>(I))
+        if (CI->getParent()->getParent() == F)
+          return true;
+
+  if (SigSetJmp && !SigSetJmp->use_empty())
+    for (Value::use_const_iterator
+           I = SigSetJmp->use_begin(), E = SigSetJmp->use_end(); I != E; ++I)
+      if (const CallInst *CI = dyn_cast<CallInst>(I))
+        if (CI->getParent()->getParent() == F)
+          return true;
+
+  return false;
+}
+
 bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   Function &Fn = *mf.getFunction();
 
@@ -391,6 +420,9 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
     }
   done:;
   }
+
+  // Determine if there is a call to setjmp in the machine function.
+  MF->setCallsSetJmp(FunctionCallsSetJmp(&Fn));
 
   // Release function-specific state. SDB and CurDAG are already cleared
   // at this point.
