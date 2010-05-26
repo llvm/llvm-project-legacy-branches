@@ -116,8 +116,12 @@ class MachineFunction {
   ///
   unsigned FunctionNumber;
   
-  // The alignment of the function.
+  /// Alignment - The alignment of the function.
   unsigned Alignment;
+
+  /// HasReturnsTwiceCall - Returns true if there's a call with a
+  /// "returns_twice" attribute, like setjmp.
+  bool HasReturnsTwiceCall;
 
   MachineFunction(const MachineFunction &); // DO NOT IMPLEMENT
   void operator=(const MachineFunction&);   // DO NOT IMPLEMENT
@@ -182,6 +186,15 @@ public:
   /// EnsureAlignment - Make sure the function is at least 'A' bits aligned.
   void EnsureAlignment(unsigned A) {
     if (Alignment < A) Alignment = A;
+  }
+
+  /// hasReturnsTwiceCall - Returns true if there's a call with a
+  /// "returns_twice" attribute, like setjmp.
+  bool hasReturnsTwiceCall() const {
+    return HasReturnsTwiceCall;
+  }
+  void setReturnsTwiceCall(bool B) {
+    HasReturnsTwiceCall = B;
   }
   
   /// getInfo - Keep track of various per-function pieces of information for
