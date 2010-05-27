@@ -989,20 +989,10 @@ bool ARMAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
       printOperand(MI, OpNum);
       return false;
     case 'Q':
-      if (TM.getTargetData()->isLittleEndian())
-        break;
-      // Fallthrough
     case 'R':
-      if (TM.getTargetData()->isBigEndian())
-        break;
-      // Fallthrough
-    case 'H': // Write second word of DI / DF reference.
-      // Verify that this operand has two consecutive registers.
-      if (!MI->getOperand(OpNum).isReg() ||
-          OpNum+1 == MI->getNumOperands() ||
-          !MI->getOperand(OpNum+1).isReg())
-        return true;
-      ++OpNum;   // Return the high-part.
+    case 'H':
+      llvm_unreachable("llvm does not support 'Q', 'R', and 'H' modifiers!");
+      return true;
     }
   }
 
