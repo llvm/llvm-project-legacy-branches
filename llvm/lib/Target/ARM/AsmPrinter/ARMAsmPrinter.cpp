@@ -1005,7 +1005,7 @@ bool ARMAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
     case 'Q':
     case 'R':
     case 'H': // Write second word of DI / DF reference.
-      llvm_unreachable("llvm does not support 'Q', 'R', and 'H' modifiers!");
+      report_fatal_error("llvm does not support 'Q', 'R', and 'H' modifiers!");
       return true;
     }
   }
