@@ -14,6 +14,7 @@
 #ifndef CODEGEN_ASMPRINTER_DWARFDEBUG_H__
 #define CODEGEN_ASMPRINTER_DWARFDEBUG_H__
 
+#include "llvm/CodeGen/MachineLocation.h"
 #include "DIE.h"
 #include "DwarfPrinter.h"
 #include "llvm/CodeGen/AsmPrinter.h"
@@ -154,11 +155,41 @@ class DwarfDebug : public DwarfPrinter {
   /// DbgScopes in AbstractScopes.
   DenseMap<MDNode *, DbgVariable *> AbstractVariables;
 
-  /// DbgValueStartMap - Tracks starting scope of variable DIEs.
-  /// If the scope of an object begins sometime after the low pc value for the 
-  /// scope most closely enclosing the object, the object entry may have a 
-  /// DW_AT_start_scope attribute.
-  DenseMap<const MachineInstr *, DbgVariable *> DbgValueStartMap;
+  /// DbgVariableToFrameIndexMap - Tracks frame index used to find 
+  /// variable's value.
+  DenseMap<const DbgVariable *, int> DbgVariableToFrameIndexMap;
+
+  /// DbgVariableToDbgInstMap - Maps DbgVariable to corresponding DBG_VALUE
+  /// machine instruction.
+  DenseMap<const DbgVariable *, const MachineInstr *> DbgVariableToDbgInstMap;
+
+  /// DbgVariableLabelsMap - Maps DbgVariable to corresponding MCSymbol.
+  DenseMap<const DbgVariable *, const MCSymbol *> DbgVariableLabelsMap;
+
+  /// DotDebugLocEntry - This struct describes location entries emitted in
+  /// .debug_loc section.
+  typedef struct DotDebugLocEntry {
+    const MCSymbol *Begin;
+    const MCSymbol *End;
+    MachineLocation Loc;
+    DotDebugLocEntry() : Begin(0), End(0) {}
+    DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, 
+                  MachineLocation &L) : Begin(B), End(E), Loc(L) {}
+    /// Empty entries are also used as a trigger to emit temp label. Such
+    /// labels are referenced is used to find debug_loc offset for a given DIE.
+    bool isEmpty() { return Begin == 0 && End == 0; }
+  } DotDebugLocEntry;
+
+  /// DotDebugLocEntries - Collection of DotDebugLocEntry.
+  SmallVector<DotDebugLocEntry, 4> DotDebugLocEntries;
+
+  /// UseDotDebugLocEntry - DW_AT_location attributes for the DIEs in this set
+  /// idetifies corresponding .debug_loc entry offset.
+  SmallPtrSet<const DIE *, 4> UseDotDebugLocEntry;
+
+  /// VarToAbstractVarMap - Maps DbgVariable with corresponding Abstract
+  /// DbgVariable, if any.
+  DenseMap<const DbgVariable *, const DbgVariable *> VarToAbstractVarMap;
 
   /// InliendSubprogramDIEs - Collection of subprgram DIEs that are marked
   /// (at the end of the module) as DW_AT_inline.
@@ -187,12 +218,20 @@ class DwarfDebug : public DwarfPrinter {
   /// instruction.
   DenseMap<const MachineInstr *, MCSymbol *> LabelsAfterInsn;
 
+  /// insnNeedsLabel - Collection of instructions that need a label to mark
+  /// a debuggging information entity.
+  SmallPtrSet<const MachineInstr *, 8> InsnNeedsLabel;
+
+  /// ProcessedArgs - Collection of arguments already processed.
+  SmallPtrSet<const MDNode *, 8> ProcessedArgs;
+
   SmallVector<const MCSymbol *, 8> DebugRangeSymbols;
 
   /// Previous instruction's location information. This is used to determine
   /// label location to indicate scope boundries in dwarf debug info.
   DebugLoc PrevInstLoc;
   MCSymbol *PrevLabel;
+  MCSymbol *DwarfDebugLocSectionSym;
 
   /// DebugTimer - Timer for the Dwarf debug writer.
   Timer *DebugTimer;
@@ -292,13 +331,13 @@ class DwarfDebug : public DwarfPrinter {
                   const MachineLocation &Location);
 
   /// addRegisterAddress - Add register location entry in variable DIE.
-  bool addRegisterAddress(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
+  bool addRegisterAddress(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
 
   /// addConstantValue - Add constant value entry in variable DIE.
-  bool addConstantValue(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
+  bool addConstantValue(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
 
   /// addConstantFPValue - Add constant value entry in variable DIE.
-  bool addConstantFPValue(DIE *Die, DbgVariable *DV, const MachineOperand &MO);
+  bool addConstantFPValue(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
 
   /// addComplexAddress - Start with the address based on the location provided,
   /// and generate the DWARF information necessary to find the actual variable
@@ -371,10 +410,7 @@ class DwarfDebug : public DwarfPrinter {
   DbgScope *getOrCreateAbstractScope(MDNode *N);
 
   /// findAbstractVariable - Find abstract variable associated with Var.
-  DbgVariable *findAbstractVariable(DIVariable &Var, unsigned FrameIdx, 
-                                    DebugLoc Loc);
-  DbgVariable *findAbstractVariable(DIVariable &Var, const MachineInstr *MI,
-                                    DebugLoc Loc);
+  DbgVariable *findAbstractVariable(DIVariable &Var, DebugLoc Loc);
 
   /// updateSubprogramScopeDIE - Find DIE for the given subprogram and 
   /// attach appropriate DW_AT_low_pc and DW_AT_high_pc attributes.
@@ -518,17 +554,35 @@ class DwarfDebug : public DwarfPrinter {
     return Lines.size();
   }
   
+  /// recordVariableFrameIndex - Record a variable's index.
+  void recordVariableFrameIndex(const DbgVariable *V, int Index);
+
+  /// findVariableFrameIndex - Return true if frame index for the variable
+  /// is found. Update FI to hold value of the index.
+  bool findVariableFrameIndex(const DbgVariable *V, int *FI);
+
+  /// findVariableLabel - Find MCSymbol for the variable.
+  const MCSymbol *findVariableLabel(const DbgVariable *V);
+
+  /// findDbgScope - Find DbgScope for the debug loc attached with an 
+  /// instruction.
+  DbgScope *findDbgScope(const MachineInstr *MI);
+
   /// identifyScopeMarkers() - Indentify instructions that are marking
   /// beginning of or end of a scope.
   void identifyScopeMarkers();
 
   /// extractScopeInformation - Scan machine instructions in this function
   /// and collect DbgScopes. Return true, if atleast one scope was found.
-  bool extractScopeInformation();
+  bool extractScopeInformation(const MachineFunction *MF);
   
   /// collectVariableInfo - Populate DbgScope entries with variables' info.
   void collectVariableInfo(const MachineFunction *);
   
+  /// collectVariableInfoFromMMITable - Collect variable information from
+  /// side table maintained by MMI.
+  void collectVariableInfoFromMMITable(const MachineFunction * MF,
+                                       SmallPtrSet<const MDNode *, 16> &P);
 public:
   //===--------------------------------------------------------------------===//
   // Main entry points.
@@ -555,6 +609,12 @@ public:
   /// endFunction - Gather and emit post-function debug information.
   ///
   void endFunction(const MachineFunction *MF);
+
+  /// getLabelBeforeInsn - Return Label preceding the instruction.
+  const MCSymbol *getLabelBeforeInsn(const MachineInstr *MI);
+
+  /// getLabelAfterInsn - Return Label immediately following the instruction.
+  const MCSymbol *getLabelAfterInsn(const MachineInstr *MI);
 
   /// beginScope - Process beginning of a scope.
   void beginScope(const MachineInstr *MI);

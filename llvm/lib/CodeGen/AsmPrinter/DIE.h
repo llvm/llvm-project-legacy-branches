@@ -316,6 +316,10 @@ namespace llvm {
     ///
     virtual void EmitValue(DwarfPrinter *D, unsigned Form) const;
 
+    /// getValue - Get MCSymbol.
+    ///
+    const MCSymbol *getValue()       const { return Label; }
+
     /// SizeOf - Determine size of label value in bytes.
     ///
     virtual unsigned SizeOf(const TargetData *TD, unsigned Form) const;
