@@ -1559,9 +1559,7 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
     return Result;
   }
   case Intrinsic::eh_sjlj_setjmp:
-    SDValue Val = Subtarget->isThumb() ?
-      DAG.getCopyFromReg(DAG.getEntryNode(), dl, ARM::SP, MVT::i32) :
-      DAG.getConstant(0, MVT::i32);
+    SDValue Val = DAG.getConstant(0, MVT::i32);
     return DAG.getNode(ARMISD::EH_SJLJ_SETJMP, dl, MVT::i32, Op.getOperand(1),
                        Val);
   }
