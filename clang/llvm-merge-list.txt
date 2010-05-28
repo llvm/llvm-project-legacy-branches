@@ -108,3 +108,12 @@
 
 # Random ambiguous instr fix.
 104757
+
+# <rdar://problem/8017595> llvm-mc doesn't recognize "jc"
+104890
+
+# <rdar://problem/8033374> mov %cr0, foo gets: Assertion failed: (isVirtualRegister(RegNo) && "Unknown physical register!")
+104994
+
+# <rdar://problem/8017522> [Libm] fwait unrecognized
+105001
