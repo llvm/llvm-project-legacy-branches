@@ -1843,7 +1843,7 @@ let isCall = 1,
 //   except for our own input by listing the relevant registers in Defs. By
 //   doing so, we also cause the prologue/epilogue code to actively preserve
 //   all of the callee-saved resgisters, which is exactly what we want.
-//   The current SP is passed in $val, and we reuse the reg as a scratch.
+//   $val is a scratch register for our use.
 let Defs =
   [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR,  D0,
     D1,  D2,  D3,  D4,  D5,  D6,  D7,  D8,  D9,  D10, D11, D12, D13, D14, D15,
@@ -1851,8 +1851,7 @@ let Defs =
     D31 ] in {
   def t2Int_eh_sjlj_setjmp : Thumb2XI<(outs), (ins GPR:$src, tGPR:$val),
                                AddrModeNone, SizeSpecial, NoItinerary,
-                               "str\t$val, [$src, #8]\t@ begin eh.setjmp\n"
-                               "\tmov\t$val, pc\n"
+                               "mov\t$val, pc\t@ begin eh.setjmp\n"
                                "\tadds\t$val, #7\n"
                                "\tstr\t$val, [$src, #4]\n"
                                "\tmovs\tr0, #0\n"
@@ -1867,8 +1866,7 @@ let Defs =
   [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR ] in {
   def t2Int_eh_sjlj_setjmp_nofp : Thumb2XI<(outs), (ins GPR:$src, tGPR:$val),
                                AddrModeNone, SizeSpecial, NoItinerary,
-                               "str\t$val, [$src, #8]\t@ begin eh.setjmp\n"
-                               "\tmov\t$val, pc\n"
+                               "mov\t$val, pc\t@ begin eh.setjmp\n"
                                "\tadds\t$val, #7\n"
                                "\tstr\t$val, [$src, #4]\n"
                                "\tmovs\tr0, #0\n"
