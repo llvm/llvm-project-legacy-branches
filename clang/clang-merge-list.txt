@@ -113,3 +113,6 @@
 104865
 104998
 105000
+
+# <rdar://problem/8042105> valgrind errors in ElaboratedTypeLoc
+105062
