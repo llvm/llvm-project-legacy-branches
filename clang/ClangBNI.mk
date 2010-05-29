@@ -223,7 +223,7 @@ update-sources:
 	fi
 	svn rm -m 'Update.' $(SVN_CLANG)/src
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/branches/Apple/whitney@$(REVISION) $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/branches/Apple/whitney@$(REVISION) $(SVN_CLANG)/src/tools/clang
 	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/trunk@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
 	svn up
 
