@@ -210,7 +210,7 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
       assert(TRI->isPhysicalRegister(Reg) && "Virtual register encountered!");
 
       if (MO.isDef() && DanglingDebugValue[Reg].first!=0) {
-        SU->DbgInstrList.push_back(DanglingDebugValue[Reg].first);
+        SU->setDbgInstr(DanglingDebugValue[Reg].first);
         DbgValueVec[DanglingDebugValue[Reg].second] = 0;
         DanglingDebugValue[Reg] = std::make_pair((MachineInstr*)0, 0);
       }
@@ -599,8 +599,8 @@ MachineBasicBlock *ScheduleDAGInstrs::EmitSchedule() {
     }
 
     BB->insert(InsertPos, SU->getInstr());
-    for (unsigned i = 0, e = SU->DbgInstrList.size() ; i < e ; ++i)
-      BB->insert(InsertPos, SU->DbgInstrList[i]);
+    if (SU->getDbgInstr())
+      BB->insert(InsertPos, SU->getDbgInstr());
   }
 
   // Update the Begin iterator, as the first instruction in the block
