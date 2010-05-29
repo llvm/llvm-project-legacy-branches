@@ -62,6 +62,7 @@ namespace {
 
     // State that is updated as we process loops
     bool         Changed;          // True if a loop is changed.
+    bool         FirstInLoop;      // True if it's the first LICM in the loop.
     MachineLoop *CurLoop;          // The current loop we are working on.
     MachineBasicBlock *CurPreheader; // The preheader for CurLoop.
 
@@ -211,7 +212,7 @@ bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
   else
     DEBUG(dbgs() << "******** Post-regalloc Machine LICM ********\n");
 
-  Changed = false;
+  Changed = FirstInLoop = false;
   TM = &MF.getTarget();
   TII = TM->getInstrInfo();
   TRI = TM->getRegisterInfo();
@@ -248,6 +249,7 @@ bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
       // CSEMap is initialized for loop header when the first instruction is
       // being hoisted.
       MachineDomTreeNode *N = DT->getNode(CurLoop->getHeader());
+      FirstInLoop = true;
       HoistRegion(N);
       CSEMap.clear();
     }
@@ -778,7 +780,10 @@ void MachineLICM::Hoist(MachineInstr *MI) {
 
   // If this is the first instruction being hoisted to the preheader,
   // initialize the CSE map with potential common expressions.
-  InitCSEMap(CurPreheader);
+  if (FirstInLoop) {
+    InitCSEMap(CurPreheader);
+    FirstInLoop = false;
+  }
 
   // Look for opportunity to CSE the hoisted instruction.
   unsigned Opcode = MI->getOpcode();
