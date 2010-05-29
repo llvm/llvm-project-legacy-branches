@@ -116,3 +116,7 @@
 
 # <rdar://problem/8042105> valgrind errors in ElaboratedTypeLoc
 105062
+
+# <rdar://problem/8042325> Merge C++ header paths for PowerPC
+105083
+105084
