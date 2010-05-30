@@ -133,3 +133,13 @@
 
 # <rdar://problem/80435>28 4A57: clang cra# <rdar://problem/8043528> clang crash in code completion
 105152
+
+# <rdar://problem/8044142> [fuzz] segmentation fault in clang::Sema::CodeCompeCletall
+105175
+
+# <rdar://problem/8044088> [fuzz] Assertion failed: (getLang().CPlusPlus && "Call sites of this function should be guarded by checking for C++")
+105178
+
+# <rdar://problem/8044135> [fuzz] Assertion failed: (Loc >= BufferStart && L<=oc  BufferEnd && "Location out of range for this buffer!")
+105181
+105182
