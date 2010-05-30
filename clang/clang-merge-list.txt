@@ -130,3 +130,6 @@
 # <rdar://problem/8043418> Use expected type to adjust priorities of code-completion results
 105128
 105137
+
+# <rdar://problem/80435>28 4A57: clang cra# <rdar://problem/8043528> clang crash in code completion
+105152
