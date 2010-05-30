@@ -120,3 +120,12 @@
 # <rdar://problem/8042325> Merge C++ header paths for PowerPC
 105083
 105084
+
+# <rdar://problem/8041787> crash in clang_getTypeDeclaration
+105111
+
+# <rdar://problem/8043322> accept '#pragma options align=mac68k' on powerpc
+105116
+
+# <rdar://problem/8043418> Use expected type to adjust priorities of code-completion results
+105128
