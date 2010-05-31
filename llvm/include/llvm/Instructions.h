@@ -2361,16 +2361,20 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(IndirectBrInst, Value)
 /// calling convention of the call.
 ///
 class InvokeInst : public TerminatorInst {
+  /// CatchList - This is a pointer to the array of catches.
+  Use *CatchList;
+  unsigned NumCatches;
+
   AttrListPtr AttributeList;
   InvokeInst(const InvokeInst &BI);
   void init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
             Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-            Value* const *Args, unsigned NumArgs);
+            unsigned NumCatches, Value * const *Args, unsigned NumArgs);
 
   template<typename InputIterator>
   void init(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
             Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-            InputIterator ArgBegin, InputIterator ArgEnd,
+            unsigned NumCatches, InputIterator ArgBegin, InputIterator ArgEnd,
             const Twine &NameStr,
             // This argument ensures that we have an iterator we can
             // do arithmetic on in constant time
@@ -2379,7 +2383,7 @@ class InvokeInst : public TerminatorInst {
 
     // This requires that the iterator points to contiguous memory.
     init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
-         NumArgs ? &*ArgBegin : 0, NumArgs);
+         NumCatches, NumArgs ? &*ArgBegin : 0, NumArgs);
     setName(NameStr);
   }
 
@@ -2393,8 +2397,8 @@ class InvokeInst : public TerminatorInst {
   template<typename InputIterator>
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
                     Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-                    InputIterator ArgBegin, InputIterator ArgEnd,
-                    unsigned Values,
+                    unsigned NumCatches, InputIterator ArgBegin,
+                    InputIterator ArgEnd, unsigned Values,
                     const Twine &NameStr, Instruction *InsertBefore);
 
   /// Construct an InvokeInst given a range of arguments.
@@ -2407,23 +2411,24 @@ class InvokeInst : public TerminatorInst {
   template<typename InputIterator>
   inline InvokeInst(Value *Func, BasicBlock *IfNormal, BasicBlock *IfException,
                     Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-                    InputIterator ArgBegin, InputIterator ArgEnd,
-                    unsigned Values,
-                    const Twine &NameStr, BasicBlock *InsertAtEnd);
+                    unsigned NumCatches, InputIterator ArgBegin,
+                    InputIterator ArgEnd, unsigned Values, const Twine &NameStr,
+                    BasicBlock *InsertAtEnd);
 protected:
   virtual InvokeInst *clone_impl() const;
 public:
+  ~InvokeInst();
   template<typename InputIterator>
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
                             Value *PersFn, Value *CatchAllTy,
-                            BasicBlock *CatchAll,
+                            BasicBlock *CatchAll, unsigned NumCatches,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr = "",
                             Instruction *InsertBefore = 0) {
     unsigned Values(ArgEnd - ArgBegin + 6);
     return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
-                                  CatchAllTy, CatchAll,
+                                  CatchAllTy, CatchAll, NumCatches,
                                   ArgBegin, ArgEnd,
                                   Values, NameStr, InsertBefore);
   }
@@ -2431,13 +2436,13 @@ public:
   static InvokeInst *Create(Value *Func,
                             BasicBlock *IfNormal, BasicBlock *IfException,
                             Value *PersFn, Value *CatchAllTy,
-                            BasicBlock *CatchAll,
+                            BasicBlock *CatchAll, unsigned NumCatches,
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr,
                             BasicBlock *InsertAtEnd) {
     unsigned Values(ArgEnd - ArgBegin + 6);
     return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
-                                  CatchAllTy, CatchAll,
+                                  CatchAllTy, CatchAll, NumCatches,
                                   ArgBegin, ArgEnd,
                                   Values, NameStr, InsertAtEnd);
   }
@@ -2581,6 +2586,13 @@ public:
     Op<-1>() = reinterpret_cast<Value*>(B);
   }
 
+  unsigned getNumCatches() const {
+    return NumCatches;          // EH-FIXME: Correct value?
+  }
+
+  /// addCatch - Add a catch to the invoke instruction.
+  void addCatch(ConstantInt *, BasicBlock *) {} // EH-FIXME: Implement.
+
   // Successor accessors.
   BasicBlock *getSuccessor(unsigned i) const {
     assert(i < 2 && "Successor # out of range for invoke!");
@@ -2623,8 +2635,8 @@ template<typename InputIterator>
 InvokeInst::InvokeInst(Value *Func,
                        BasicBlock *IfNormal, BasicBlock *IfException,
                        Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-                       InputIterator ArgBegin, InputIterator ArgEnd,
-                       unsigned Values,
+                       unsigned NumCatches, InputIterator ArgBegin,
+                       InputIterator ArgEnd, unsigned Values,
                        const Twine &NameStr, Instruction *InsertBefore)
   : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
                                       ->getElementType())->getReturnType(),
@@ -2632,15 +2644,15 @@ InvokeInst::InvokeInst(Value *Func,
                    OperandTraits<InvokeInst>::op_end(this) - Values,
                    Values, InsertBefore) {
   init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
-       ArgBegin, ArgEnd, NameStr,
+       NumCatches, ArgBegin, ArgEnd, NameStr,
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 template<typename InputIterator>
 InvokeInst::InvokeInst(Value *Func,
                        BasicBlock *IfNormal, BasicBlock *IfException,
                        Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-                       InputIterator ArgBegin, InputIterator ArgEnd,
-                       unsigned Values,
+                       unsigned NumCatches, InputIterator ArgBegin,
+                       InputIterator ArgEnd, unsigned Values,
                        const Twine &NameStr, BasicBlock *InsertAtEnd)
   : TerminatorInst(cast<FunctionType>(cast<PointerType>(Func->getType())
                                       ->getElementType())->getReturnType(),
@@ -2648,7 +2660,7 @@ InvokeInst::InvokeInst(Value *Func,
                    OperandTraits<InvokeInst>::op_end(this) - Values,
                    Values, InsertAtEnd) {
   init(Func, IfNormal, IfException, PersFn, CatchAllTy, CatchAll,
-       ArgBegin, ArgEnd, NameStr,
+       NumCatches, ArgBegin, ArgEnd, NameStr,
        typename std::iterator_traits<InputIterator>::iterator_category());
 }
 

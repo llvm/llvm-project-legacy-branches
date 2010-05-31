@@ -546,8 +546,9 @@ Instruction* CallInst::CreateFree(Value* Source, BasicBlock *InsertAtEnd) {
 
 void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
                       Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
-                      Value* const *Args, unsigned NumArgs) {
-  assert(NumOperands == 3+NumArgs && "NumOperands not set up?");
+                      unsigned NumCatches, Value * const *Args,
+                      unsigned NumArgs) {
+  assert(NumOperands == 6 + NumArgs && "NumOperands not set up?");
   Op<-6>() = Fn;
   Op<-5>() = IfNormal;
   Op<-4>() = IfException;
@@ -556,7 +557,7 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
   Op<-1>() = CatchAll;
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Fn->getType())->getElementType());
-  FTy = FTy;  // silence warning.
+  FTy = FTy;  // Silence warning.
 
   assert(((NumArgs == FTy->getNumParams()) ||
           (FTy->isVarArg() && NumArgs > FTy->getNumParams())) &&
@@ -583,6 +584,10 @@ InvokeInst::InvokeInst(const InvokeInst &II)
   for (unsigned i = 0, e = II.getNumOperands(); i != e; ++i)
     OL[i] = InOL[i];
   SubclassOptionalData = II.SubclassOptionalData;
+}
+
+InvokeInst::~InvokeInst() {
+  dropHungoffUses(CatchList);
 }
 
 BasicBlock *InvokeInst::getSuccessorV(unsigned idx) const {

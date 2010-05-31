@@ -715,8 +715,9 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
       New = InvokeInst::Create(NF, II->getNormalDest(), II->getUnwindDest(),
                                II->getPersonalityFn(), II->getCatchAllType(),
-                               II->getCatchAllDest(),
+                               II->getCatchAllDest(), II->getNumCatches(),
                                Args.begin(), Args.end(), "", Call);
+      // EH-FIXME: Add catches.
       cast<InvokeInst>(New)->setCallingConv(CS.getCallingConv());
       cast<InvokeInst>(New)->setAttributes(AttrListPtr::get(AttributesVec.begin(),
                                                           AttributesVec.end()));

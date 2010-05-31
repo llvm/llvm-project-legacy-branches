@@ -96,8 +96,10 @@ SpecializeFunction(Function* F,
                                      II->getPersonalityFn(),
                                      II->getCatchAllType(),
                                      II->getCatchAllDest(),
+                                     II->getNumCatches(),
                                      args.begin(), args.end(), 
                                      II->getName(), II);
+          // EH-FIXME: Add catches.
           cast<InvokeInst>(NCall)->setCallingConv(II->getCallingConv());
         }
         CS.getInstruction()->replaceAllUsesWith(NCall);

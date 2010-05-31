@@ -1726,11 +1726,13 @@ LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef B, LLVMValueRef Fn,
                              LLVMValueRef *Args, unsigned NumArgs,
                              LLVMBasicBlockRef Then, LLVMBasicBlockRef Catch,
                              LLVMValueRef PersFn, LLVMValueRef CatchAllTy,
-                             LLVMBasicBlockRef CatchAll, const char *Name) {
+                             LLVMBasicBlockRef CatchAll, unsigned NumCatches,
+                             const char *Name) {
   return wrap(unwrap(B)->CreateInvoke(unwrap(Fn), unwrap(Then), unwrap(Catch),
                                       unwrap(PersFn), unwrap(CatchAllTy),
-                                      unwrap(CatchAll), unwrap(Args),
-                                      unwrap(Args) + NumArgs, Name));
+                                      unwrap(CatchAll), NumCatches,
+                                      unwrap(Args), unwrap(Args) + NumArgs,
+                                      Name));
 }
 
 LLVMValueRef LLVMBuildUnwind(LLVMBuilderRef B) {

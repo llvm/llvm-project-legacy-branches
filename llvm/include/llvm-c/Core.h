@@ -812,9 +812,11 @@ LLVMValueRef LLVMBuildSwitch(LLVMBuilderRef, LLVMValueRef V,
                              LLVMBasicBlockRef Else, unsigned NumCases);
 LLVMValueRef LLVMBuildIndirectBr(LLVMBuilderRef B, LLVMValueRef Addr,
                                  unsigned NumDests);
-LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef, LLVMValueRef Fn,
+LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef B, LLVMValueRef Fn,
                              LLVMValueRef *Args, unsigned NumArgs,
                              LLVMBasicBlockRef Then, LLVMBasicBlockRef Catch,
+                             LLVMValueRef PersFn, LLVMValueRef CatchAllTy,
+                             LLVMBasicBlockRef CatchAll, unsigned NumCatches,
                              const char *Name);
 LLVMValueRef LLVMBuildUnwind(LLVMBuilderRef);
 LLVMValueRef LLVMBuildUnreachable(LLVMBuilderRef);

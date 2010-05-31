@@ -1081,9 +1081,10 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
     NC = InvokeInst::Create(Callee, II->getNormalDest(), II->getUnwindDest(),
                             II->getPersonalityFn(), II->getCatchAllType(),
-                            II->getCatchAllDest(),
+                            II->getCatchAllDest(), II->getNumCatches(),
                             Args.begin(), Args.end(),
                             Caller->getName(), Caller);
+    // EH-FIXME: Add catches.
     cast<InvokeInst>(NC)->setCallingConv(II->getCallingConv());
     cast<InvokeInst>(NC)->setAttributes(NewCallerPAL);
   } else {
@@ -1256,8 +1257,10 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
                                        II->getPersonalityFn(),
                                        II->getCatchAllType(),
                                        II->getCatchAllDest(),
+                                       II->getNumCatches(),
                                        NewArgs.begin(), NewArgs.end(),
                                        Caller->getName(), Caller);
+        // EH-FIXME: Add catches.
         cast<InvokeInst>(NewCaller)->setCallingConv(II->getCallingConv());
         cast<InvokeInst>(NewCaller)->setAttributes(NewPAL);
       } else {
