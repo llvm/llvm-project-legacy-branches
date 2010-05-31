@@ -146,3 +146,8 @@
 
 # <rdar://problem/8042673> #warning is no longer a separate 'type' of warning
 105188
+
+# <rdar://problem/7905186> missing ';' not reported before Objective-C message expressions
+105221
+105222
+105229
