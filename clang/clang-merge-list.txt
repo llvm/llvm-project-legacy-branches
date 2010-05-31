@@ -143,3 +143,6 @@
 # <rdar://problem/8044135> [fuzz] Assertion failed: (Loc >= BufferStart && L<=oc  BufferEnd && "Location out of range for this buffer!")
 105181
 105182
+
+# <rdar://problem/8042673> #warning is no longer a separate 'type' of warning
+105188
