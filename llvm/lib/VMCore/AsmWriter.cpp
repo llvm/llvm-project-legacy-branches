@@ -1935,21 +1935,47 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     if (PAL.getFnAttributes() != Attribute::None)
       Out << ' ' << Attribute::getAsString(PAL.getFnAttributes());
 
-    Out << "\n          to ";
+    Out << "\n    to ";
     writeOperand(II->getNormalDest(), true);
-    Out << " unwind ";
-    writeOperand(II->getUnwindDest(), true);
+    Out << "\n      personality [";
+    writeOperand(II->getPersonalityFn(), true);
+    Out << "]\n";
 
+    unsigned e = II->getNumCatches();
+
+    if (e) {
+      Out << "      catches [\n";
+      for (unsigned i = 0; i != e; ++i) {
+        Out << "        ";
+        writeOperand(II->getCatchType(i), true);
+        Out << ", ";
+        writeOperand(II->getCatchDest(i), true);
+        Out << "\n";
+      }
+      Out << "      ]\n";
+    }
+
+    if (II->getCatchAllType()) {
+      Out << "      catchall [";
+      writeOperand(II->getCatchAllType(), true);
+      Out << ", ";
+      writeOperand(II->getCatchAllDest(), true);
+      Out << "]\n";
+    }
+
+    Out << "      unwind to ";
+    writeOperand(II->getUnwindDest(), true);
   } else if (const AllocaInst *AI = dyn_cast<AllocaInst>(&I)) {
     Out << ' ';
     TypePrinter.print(AI->getType()->getElementType(), Out);
+
     if (!AI->getArraySize() || AI->isArrayAllocation()) {
       Out << ", ";
       writeOperand(AI->getArraySize(), true);
     }
-    if (AI->getAlignment()) {
+
+    if (AI->getAlignment())
       Out << ", align " << AI->getAlignment();
-    }
   } else if (isa<CastInst>(I)) {
     if (Operand) {
       Out << ' ';

@@ -2595,21 +2595,21 @@ public:
 
   /// getCatchType - Return the specified catch type.
   Value *getCatchType(unsigned I) {
-    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    assert(I < getNumCatches() && "Illegal catch type to get!");
     return CatchList[I * 2];
   }
   const Value *getCatchType(unsigned I) const {
-    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    assert(I < getNumCatches() && "Illegal catch type to get!");
     return CatchList[I * 2];
   }
 
   /// getCatchDest - Return the specified catch's landing pad.
   BasicBlock *getCatchDest(unsigned I) {
-    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    assert(I < getNumCatches() && "Illegal catch destination to get!");
     return cast<BasicBlock>(CatchList[I * 2 + 1]);
   }
   const BasicBlock *getCatchDest(unsigned I) const {
-    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    assert(I < getNumCatches() && "Illegal catch destination to get!");
     return cast<BasicBlock>(CatchList[I * 2 + 1]);
   }
 
