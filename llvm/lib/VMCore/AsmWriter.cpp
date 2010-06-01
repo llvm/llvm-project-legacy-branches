@@ -1890,13 +1890,13 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     const PointerType    *PTy = cast<PointerType>(Operand->getType());
     const FunctionType   *FTy = cast<FunctionType>(PTy->getElementType());
     const Type         *RetTy = FTy->getReturnType();
-    const AttrListPtr &PAL = II->getAttributes();
+    const AttrListPtr    &PAL = II->getAttributes();
 
     // Print the calling convention being used.
     switch (II->getCallingConv()) {
     case CallingConv::C: break;   // default
-    case CallingConv::Fast:  Out << " fastcc"; break;
-    case CallingConv::Cold:  Out << " coldcc"; break;
+    case CallingConv::Fast:         Out << " fastcc"; break;
+    case CallingConv::Cold:         Out << " coldcc"; break;
     case CallingConv::X86_StdCall:  Out << " x86_stdcallcc"; break;
     case CallingConv::X86_FastCall: Out << " x86_fastcallcc"; break;
     case CallingConv::X86_ThisCall: Out << " x86_thiscallcc"; break;
@@ -1925,7 +1925,7 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(Operand, true);
     }
     Out << '(';
-    for (unsigned op = 0, Eop = I.getNumOperands() - 3; op < Eop; ++op) {
+    for (unsigned op = 0, Eop = I.getNumOperands() - 4; op < Eop; ++op) {
       if (op)
         Out << ", ";
       writeParamOperand(I.getOperand(op), PAL.getParamAttributes(op + 1));

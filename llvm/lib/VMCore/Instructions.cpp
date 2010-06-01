@@ -548,13 +548,11 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
                       Value *PersFn, Value *CatchAllTy, BasicBlock *CatchAll,
                       unsigned NumCatches, Value * const *Args,
                       unsigned NumArgs) {
-  assert(NumOperands == 6 + NumArgs && "NumOperands not set up?");
-  Op<-6>() = Fn;
-  Op<-5>() = IfNormal;
-  Op<-4>() = IfException;
-  Op<-3>() = PersFn;
-  Op<-2>() = CatchAllTy;
-  Op<-1>() = CatchAll;
+  assert(NumOperands == 4 + NumArgs && "NumOperands not set up?");
+  Op<-4>() = Fn;
+  Op<-3>() = IfNormal;
+  Op<-2>() = IfException;
+  Op<-1>() = PersFn;
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Fn->getType())->getElementType());
   FTy = FTy;  // Silence warning.
@@ -562,6 +560,9 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
   assert(((NumArgs == FTy->getNumParams()) ||
           (FTy->isVarArg() && NumArgs > FTy->getNumParams())) &&
          "Invoking a function with bad signature");
+
+  CatchAllType = CatchAllTy;
+  CatchAllDest = CatchAll;
 
   // Allocate space for the catches.
   ReservedSpace = NumCatches * 2;

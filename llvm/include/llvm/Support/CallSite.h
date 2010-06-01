@@ -265,17 +265,18 @@ private:
     if (isCall())
       return 0; // Unchanged (ATM)
     else
-      return 3; // Skip BB, BB, Function
+      // An invoke.
+      return 4; // Skip PersFn, BB, BB, Function
   }
 
   IterTy getCallee() const {
-      // FIXME: this is slow, since we do not have the fast versions
-      // of the op_*() functions here. See CallSite::getCallee.
-      //
+    // FIXME: this is slow, since we do not have the fast versions of the op_*()
+    // functions here. See CallSite::getCallee.
     if (isCall())
-      return getInstruction()->op_begin(); // Unchanged (ATM)
+      return getInstruction()->op_begin();   // Unchanged (ATM)
     else
-      return getInstruction()->op_end() - 3; // Skip BB, BB, Function
+      // An invoke.
+      return getInstruction()->op_end() - 4; // Skip PersFn, BB, BB, Function
   }
 };
 

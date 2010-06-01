@@ -2366,6 +2366,9 @@ class InvokeInst : public TerminatorInst {
   unsigned ReservedSpace;
   unsigned NumCatches;
 
+  Value *CatchAllType;
+  BasicBlock *CatchAllDest;
+
   AttrListPtr AttributeList;
   InvokeInst(const InvokeInst &BI);
   void init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
@@ -2427,7 +2430,7 @@ public:
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr = "",
                             Instruction *InsertBefore = 0) {
-    unsigned Values(ArgEnd - ArgBegin + 6);
+    unsigned Values(ArgEnd - ArgBegin + 4);
     return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
                                   CatchAllTy, CatchAll, NumCatches,
                                   ArgBegin, ArgEnd,
@@ -2441,7 +2444,7 @@ public:
                             InputIterator ArgBegin, InputIterator ArgEnd,
                             const Twine &NameStr,
                             BasicBlock *InsertAtEnd) {
-    unsigned Values(ArgEnd - ArgBegin + 6);
+    unsigned Values(ArgEnd - ArgBegin + 4);
     return new(Values) InvokeInst(Func, IfNormal, IfException, PersFn,
                                   CatchAllTy, CatchAll, NumCatches,
                                   ArgBegin, ArgEnd,
@@ -2541,50 +2544,50 @@ public:
   /// indirect function invocation.
   ///
   Function *getCalledFunction() const {
-    return dyn_cast<Function>(Op<-6>());
+    return dyn_cast<Function>(Op<-4>());
   }
 
   /// getCalledValue - Get a pointer to the function that is invoked by this
   /// instruction
-  const Value *getCalledValue() const { return Op<-6>(); }
-        Value *getCalledValue()       { return Op<-6>(); }
+  const Value *getCalledValue() const { return Op<-4>(); }
+        Value *getCalledValue()       { return Op<-4>(); }
 
   /// setCalledFunction - Set the function called.
   void setCalledFunction(Value* Fn) {
-    Op<-6>() = Fn;
+    Op<-4>() = Fn;
   }
 
   // Getter/Setters for EH information from the invoke statement.
   BasicBlock *getNormalDest() const {
-    return cast<BasicBlock>(Op<-5>());
+    return cast<BasicBlock>(Op<-3>());
   }
   void setNormalDest(BasicBlock *B) {
-    Op<-5>() = reinterpret_cast<Value*>(B);
+    Op<-3>() = reinterpret_cast<Value*>(B);
   }
   BasicBlock *getUnwindDest() const {
-    return cast<BasicBlock>(Op<-4>());
+    return cast<BasicBlock>(Op<-2>());
   }
   void setUnwindDest(BasicBlock *B) {
-    Op<-4>() = reinterpret_cast<Value*>(B);
+    Op<-2>() = reinterpret_cast<Value*>(B);
   }
 
   Value *getPersonalityFn() const {
-    return Op<-3>();
+    return Op<-1>();
   }
   void setPersonalityFn(Value *V) {
-    Op<-3>() = V;
+    Op<-1>() = V;
   }
   Value *getCatchAllType() const {
-    return Op<-2>();
+    return CatchAllType;
   }
   void setCatchAllType(Value *V) {
-    Op<-2>() = V;
+    CatchAllType = V;
   }
   BasicBlock *getCatchAllDest() const {
-    return cast<BasicBlock>(Op<-1>());
+    return CatchAllDest;
   }
   void setCatchAllDest(BasicBlock *B) {
-    Op<-1>() = reinterpret_cast<Value*>(B);
+    CatchAllDest = B;
   }
 
   /// getNumCatches - Return the number of catch blocks for this invoke
@@ -2598,7 +2601,7 @@ public:
     assert(I < getNumCatches() && "Illegal catch type to get!");
     return CatchList[I * 2];
   }
-  const Value *getCatchType(unsigned I) const {
+  Value *getCatchType(unsigned I) const {
     assert(I < getNumCatches() && "Illegal catch type to get!");
     return CatchList[I * 2];
   }
@@ -2608,7 +2611,7 @@ public:
     assert(I < getNumCatches() && "Illegal catch destination to get!");
     return cast<BasicBlock>(CatchList[I * 2 + 1]);
   }
-  const BasicBlock *getCatchDest(unsigned I) const {
+  BasicBlock *getCatchDest(unsigned I) const {
     assert(I < getNumCatches() && "Illegal catch destination to get!");
     return cast<BasicBlock>(CatchList[I * 2 + 1]);
   }
@@ -2618,16 +2621,25 @@ public:
 
   // Successor accessors.
   BasicBlock *getSuccessor(unsigned i) const {
-    assert(i < 2 && "Successor # out of range for invoke!");
-    return i == 0 ? getNormalDest() : getUnwindDest();
+    assert(i < 2 + getNumCatches() && "Successor # out of range for invoke!");
+
+    if (i == 0)
+      return getNormalDest();
+
+    if (i == 1)
+      return getUnwindDest();
+
+    return getCatchDest(i - 2);
   }
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
     assert(idx < 2 && "Successor # out of range for invoke!");
-    *(&Op<-5>() + idx) = reinterpret_cast<Value*>(NewSucc);
+    *(&Op<-3>() + idx) = reinterpret_cast<Value*>(NewSucc);
   }
 
-  unsigned getNumSuccessors() const { return 2; }
+  unsigned getNumSuccessors() const {
+    return 2 + getNumCatches();
+  }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const InvokeInst *) { return true; }

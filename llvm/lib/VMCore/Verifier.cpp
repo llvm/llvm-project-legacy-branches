@@ -1200,6 +1200,10 @@ void Verifier::visitCallInst(CallInst &CI) {
 }
 
 void Verifier::visitInvokeInst(InvokeInst &II) {
+  for (unsigned I = 0, E = II.getNumCatches(); I != E; ++I)
+    Assert1(II.getCatchType(I) != 0 && II.getCatchDest(I) != 0,
+            "Catches are not correct in invoke instruction!", &II);
+
   VerifyCallSite(&II);
 }
 
