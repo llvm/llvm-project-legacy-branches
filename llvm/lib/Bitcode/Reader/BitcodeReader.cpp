@@ -2074,7 +2074,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         
     case bitc::FUNC_CODE_INST_INVOKE: {
       // INVOKE: [attrs, cc, normBB, unwindBB, fnty, op0,op1,op2, ...]
-      if (Record.size() < 4) return Error("Invalid INVOKE record");
+      if (Record.size() < 6) return Error("Invalid INVOKE record");
       AttrListPtr PAL = getAttributes(Record[0]);
       unsigned CCInfo = Record[1];
       BasicBlock *NormalBB = getBasicBlock(Record[2]);
@@ -2089,10 +2089,38 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       const FunctionType *FTy = !CalleeTy ? 0 :
         dyn_cast<FunctionType>(CalleeTy->getElementType());
 
-      // Check that the right number of fixed parameters are here.
-      if (FTy == 0 || NormalBB == 0 || UnwindBB == 0 ||
-          Record.size() < OpNum+FTy->getNumParams())
+      Value *PersFn;
+      if (getValueTypePair(Record, OpNum, NextValueNo, PersFn))
         return Error("Invalid INVOKE record");
+
+      // Check that the right number of fixed parameters are here.
+      if (FTy == 0 || NormalBB == 0 || UnwindBB == 0 || PersFn == 0 ||
+          Record.size() < OpNum + FTy->getNumParams())
+        return Error("Invalid INVOKE record");
+
+      // Read the (possibly empty) list of catches.
+      unsigned NumCatches = Record[OpNum++];
+      typedef std::pair<Value*, BasicBlock*> ValueBBPair;
+      SmallVector<ValueBBPair, 8> Catches;
+
+      for (unsigned i = 0; i != NumCatches; ++i) {
+        Value *CatchTy;
+        if (getValueTypePair(Record, OpNum, NextValueNo, CatchTy))
+          return Error("Invalid INVOKE record");
+        BasicBlock *CatchDest = getBasicBlock(Record[OpNum++]);
+        Catches.push_back(ValueBBPair(CatchTy, CatchDest));
+      }
+
+      Value *CatchAllTy = 0;
+      BasicBlock *CatchAllDest = 0;
+      unsigned HasCatchAll = Record[OpNum++];
+
+      if (HasCatchAll) {
+        if (getValueTypePair(Record, OpNum, NextValueNo, CatchAllTy))
+          return Error("Invalid INVOKE record");
+
+        CatchAllDest = getBasicBlock(Record[OpNum++]);
+      }
 
       SmallVector<Value*, 16> Ops;
       for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i, ++OpNum) {
@@ -2114,8 +2142,15 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       }
 
       I = InvokeInst::Create(Callee, NormalBB, UnwindBB,
-                             0, 0, 0, 0, // EH-FIXME!
+                             PersFn, CatchAllTy, CatchAllDest,
+                             Catches.size(),
                              Ops.begin(), Ops.end());
+
+      // Now add the catch blocks.
+      for (SmallVectorImpl<ValueBBPair>::iterator
+             CI = Catches.begin(), CE = Catches.end(); CI != CE; ++CI)
+        cast<InvokeInst>(I)->addCatch(CI->first, CI->second);
+
       InstructionList.push_back(I);
       cast<InvokeInst>(I)->setCallingConv(
         static_cast<CallingConv::ID>(CCInfo));

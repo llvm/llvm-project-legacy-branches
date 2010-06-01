@@ -1083,6 +1083,22 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     Vals.push_back(VE.getValueID(II->getNormalDest()));
     Vals.push_back(VE.getValueID(II->getUnwindDest()));
     PushValueAndType(Callee, InstID, Vals, VE);
+    PushValueAndType(II->getPersonalityFn(), InstID, Vals, VE);
+
+    Vals.push_back(II->getNumCatches());
+    for (unsigned i = 0, e = II->getNumCatches(); i != e; ++i) {
+      PushValueAndType(II->getCatchType(i), InstID, Vals, VE);
+      Vals.push_back(VE.getValueID(II->getCatchDest(i)));
+    }
+
+    if (II->getCatchAllType()) {
+      Vals.push_back(1);
+      PushValueAndType(II->getCatchAllType(), InstID, Vals, VE);
+      Vals.push_back(VE.getValueID(II->getCatchAllDest()));
+    } else {
+      // There isn't a catch-all associated with this invoke.
+      Vals.push_back(0);
+    }
 
     // Emit value #'s for the fixed parameters.
     for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i)
@@ -1094,6 +1110,7 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
            i != e; ++i)
         PushValueAndType(I.getOperand(i), InstID, Vals, VE); // vararg
     }
+
     break;
   }
   case Instruction::Unwind:
