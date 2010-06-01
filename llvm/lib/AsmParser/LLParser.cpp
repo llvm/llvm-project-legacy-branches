@@ -3489,6 +3489,13 @@ bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   InvokeInst *II = InvokeInst::Create(Callee, NormalBB, UnwindBB, PersFn,
                                       CatchAllVal, CatchAllBB, Catches.size(),
                                       Args.begin(), Args.end());
+
+  // Now add the catch blockes.
+  for (SmallVectorImpl<ValueBBPair>::iterator
+         CI = Catches.begin(), CE = Catches.end(); CI != CE; ++CI)
+    II->addCatch(CI->first, CI->second);
+
+  // Lastly, set the CC and attributes.
   II->setCallingConv(CC);
   II->setAttributes(PAL);
   Inst = II;

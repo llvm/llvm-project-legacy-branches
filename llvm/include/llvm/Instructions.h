@@ -2363,6 +2363,7 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(IndirectBrInst, Value)
 class InvokeInst : public TerminatorInst {
   /// CatchList - This is a pointer to the array of catches.
   Use *CatchList;
+  unsigned ReservedSpace;
   unsigned NumCatches;
 
   AttrListPtr AttributeList;
@@ -2586,12 +2587,34 @@ public:
     Op<-1>() = reinterpret_cast<Value*>(B);
   }
 
+  /// getNumCatches - Return the number of catch blocks for this invoke
+  /// instruction.
   unsigned getNumCatches() const {
-    return NumCatches;          // EH-FIXME: Correct value?
+    return NumCatches / 2;
   }
 
-  /// addCatch - Add a catch to the invoke instruction.
-  void addCatch(ConstantInt *, BasicBlock *) {} // EH-FIXME: Implement.
+  /// getCatchType - Return the specified catch type.
+  Value *getCatchType(unsigned I) {
+    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    return CatchList[I * 2];
+  }
+  const Value *getCatchType(unsigned I) const {
+    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    return CatchList[I * 2];
+  }
+
+  /// getCatchDest - Return the specified catch's landing pad.
+  BasicBlock *getCatchDest(unsigned I) {
+    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    return cast<BasicBlock>(CatchList[I * 2 + 1]);
+  }
+  const BasicBlock *getCatchDest(unsigned I) const {
+    assert(I && I < getNumCatches() && "Illegal catch type to get!");
+    return cast<BasicBlock>(CatchList[I * 2 + 1]);
+  }
+
+  /// addCatch - Add a catch block to the invoke instruction.
+  void addCatch(Value *V, BasicBlock *BB);
 
   // Successor accessors.
   BasicBlock *getSuccessor(unsigned i) const {

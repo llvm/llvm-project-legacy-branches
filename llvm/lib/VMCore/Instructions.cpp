@@ -563,6 +563,11 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
           (FTy->isVarArg() && NumArgs > FTy->getNumParams())) &&
          "Invoking a function with bad signature");
 
+  // Allocate space for the catches.
+  ReservedSpace = NumCatches * 2;
+  this->NumCatches = 0;
+  CatchList = allocHungoffUses(ReservedSpace);
+
   Use *OL = OperandList;
   for (unsigned i = 0, e = NumArgs; i != e; i++) {
     assert((i >= FTy->getNumParams() || 
@@ -620,6 +625,14 @@ void InvokeInst::removeAttribute(unsigned i, Attributes attr) {
   setAttributes(PAL);
 }
 
+void InvokeInst::addCatch(Value *V, BasicBlock *BB) {
+  unsigned OpNo = NumCatches;
+  assert(OpNo + 1 < ReservedSpace &&
+         "Adding too many catches to invoke instruction!");
+  NumCatches += 2;
+  CatchList[OpNo    ] = V;
+  CatchList[OpNo + 1] = BB;
+}
 
 //===----------------------------------------------------------------------===//
 //                        ReturnInst Implementation
