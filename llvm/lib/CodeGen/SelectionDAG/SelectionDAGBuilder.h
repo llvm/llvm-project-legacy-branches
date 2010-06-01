@@ -92,6 +92,10 @@ class SelectionDAGBuilder {
   DebugLoc CurDebugLoc;
 
   DenseMap<const Value*, SDValue> NodeMap;
+  
+  /// UnusedArgNodeMap - Maps argument value for unused arguments. This is used
+  /// to preserve debug information for incoming arguments.
+  DenseMap<const Value*, SDValue> UnusedArgNodeMap;
 
 public:
   /// PendingLoads - Loads are not emitted to the program immediately.  We bunch
@@ -357,6 +361,12 @@ public:
 
   void setValue(const Value *V, SDValue NewN) {
     SDValue &N = NodeMap[V];
+    assert(N.getNode() == 0 && "Already set a value for this node!");
+    N = NewN;
+  }
+  
+  void setUnusedArgValue(const Value *V, SDValue NewN) {
+    SDValue &N = UnusedArgNodeMap[V];
     assert(N.getNode() == 0 && "Already set a value for this node!");
     N = NewN;
   }

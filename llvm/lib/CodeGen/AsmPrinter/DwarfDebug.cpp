@@ -2173,7 +2173,11 @@ void DwarfDebug::collectVariableInfo(const MachineFunction *MF) {
     }
 
     DbgScope *Scope = findDbgScope(MInsn);
-    if (!Scope && DV.getTag() == dwarf::DW_TAG_arg_variable)
+    bool CurFnArg = false;
+    if (DV.getTag() == dwarf::DW_TAG_arg_variable &&
+        DISubprogram(DV.getContext().getNode()).describes(MF->getFunction()))
+      CurFnArg = true;
+    if (!Scope && CurFnArg)
       Scope = CurrentFnDbgScope;
     // If variable scope is not found then skip this variable.
     if (!Scope)
@@ -2182,7 +2186,7 @@ void DwarfDebug::collectVariableInfo(const MachineFunction *MF) {
     Processed.insert(DVNode);
     DbgVariable *RegVar = new DbgVariable(DV);
     Scope->addVariable(RegVar);
-    if (DV.getTag() != dwarf::DW_TAG_arg_variable)
+    if (!CurFnArg)
       DbgVariableLabelsMap[RegVar] = getLabelBeforeInsn(MInsn); 
     if (DbgVariable *AbsVar = findAbstractVariable(DV, MInsn->getDebugLoc())) {
       DbgVariableToDbgInstMap[AbsVar] = MInsn;
@@ -2590,6 +2594,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
         assert (MI->getNumOperands() > 1 && "Invalid machine instruction!");
         DIVariable DV(const_cast<MDNode*>(MI->getOperand(MI->getNumOperands() - 1).getMetadata()));
         if (!DV.Verify()) continue;
+        if (isDbgValueInUndefinedReg(MI)) continue;
         // If DBG_VALUE is for a local variable then it needs a label.
         if (DV.getTag() != dwarf::DW_TAG_arg_variable)
           InsnNeedsLabel.insert(MI);
