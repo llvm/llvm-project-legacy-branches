@@ -514,7 +514,14 @@ bool IfConverter::ValidDiamond(BBInfo &TrueBBI, BBInfo &FalseBBI,
 
   MachineBasicBlock::iterator TI = TrueBBI.BB->begin();
   MachineBasicBlock::iterator FI = FalseBBI.BB->begin();
-  while (TI != TrueBBI.BB->end() && FI != FalseBBI.BB->end()) {
+  MachineBasicBlock::iterator TIE = TrueBBI.BB->end();
+  MachineBasicBlock::iterator FIE = FalseBBI.BB->end();
+  // Skip dbg_value instructions
+  while (TI != TIE && TI->isDebugValue())
+    ++TI;
+  while (FI != FIE && FI->isDebugValue())
+    ++FI;
+  while (TI != TIE && FI != FIE) {
     if (!TI->isIdenticalTo(FI))
       break;
     ++Dups1;
@@ -524,7 +531,14 @@ bool IfConverter::ValidDiamond(BBInfo &TrueBBI, BBInfo &FalseBBI,
 
   TI = firstNonBranchInst(TrueBBI.BB, TII);
   FI = firstNonBranchInst(FalseBBI.BB, TII);
-  while (TI != TrueBBI.BB->begin() && FI != FalseBBI.BB->begin()) {
+  MachineBasicBlock::iterator TIB = TrueBBI.BB->begin();
+  MachineBasicBlock::iterator FIB = FalseBBI.BB->begin();
+  // Skip dbg_value instructions
+  while (TI != TIB && TI->isDebugValue())
+    --TI;
+  while (FI != FIB && FI->isDebugValue())
+    --FI;
+  while (TI != TIB && FI != FIB) {
     if (!TI->isIdenticalTo(FI))
       break;
     ++Dups2;
@@ -569,6 +583,9 @@ void IfConverter::ScanInstructions(BBInfo &BBI) {
   BBI.ClobbersPred = false;
   for (MachineBasicBlock::iterator I = BBI.BB->begin(), E = BBI.BB->end();
        I != E; ++I) {
+    if (I->isDebugValue())
+      continue;
+
     const TargetInstrDesc &TID = I->getDesc();
     if (TID.isNotDuplicable())
       BBI.CannotBeCopied = true;
@@ -1137,7 +1154,7 @@ void IfConverter::PredicateBlock(BBInfo &BBI,
                                  MachineBasicBlock::iterator E,
                                  SmallVectorImpl<MachineOperand> &Cond) {
   for (MachineBasicBlock::iterator I = BBI.BB->begin(); I != E; ++I) {
-    if (TII->isPredicated(I))
+    if (I->isDebugValue() || TII->isPredicated(I))
       continue;
     if (!TII->PredicateInstruction(I, Cond)) {
 #ifndef NDEBUG
@@ -1174,7 +1191,7 @@ void IfConverter::CopyAndPredicateBlock(BBInfo &ToBBI, BBInfo &FromBBI,
     ToBBI.BB->insert(ToBBI.BB->end(), MI);
     ToBBI.NonPredSize++;
 
-    if (!isPredicated)
+    if (!isPredicated && !MI->isDebugValue())
       if (!TII->PredicateInstruction(MI, Cond)) {
 #ifndef NDEBUG
         dbgs() << "Unable to predicate " << *I << "!\n";

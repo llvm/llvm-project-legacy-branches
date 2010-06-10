@@ -56,7 +56,7 @@ ARMBaseInstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
 
   MachineInstr *MI = MBBI;
   MachineFunction &MF = *MI->getParent()->getParent();
-  unsigned TSFlags = MI->getDesc().TSFlags;
+  uint64_t TSFlags = MI->getDesc().TSFlags;
   bool isPre = false;
   switch ((TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift) {
   default: return NULL;
@@ -199,9 +199,9 @@ ARMBaseInstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
 
 bool
 ARMBaseInstrInfo::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                            MachineBasicBlock::iterator MI,
-                                            const std::vector<CalleeSavedInfo> &CSI,
-                                            const TargetRegisterInfo *TRI) const {
+                                        MachineBasicBlock::iterator MI,
+                                        const std::vector<CalleeSavedInfo> &CSI,
+                                        const TargetRegisterInfo *TRI) const {
   if (CSI.empty())
     return false;
 
@@ -227,8 +227,9 @@ ARMBaseInstrInfo::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
 
     // Insert the spill to the stack frame. The register is killed at the spill
     // 
+    const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
     storeRegToStackSlot(MBB, MI, Reg, isKill,
-                        CSI[i].getFrameIdx(), CSI[i].getRegClass(), TRI);
+                        CSI[i].getFrameIdx(), RC, TRI);
   }
   return true;
 }
@@ -346,8 +347,8 @@ unsigned ARMBaseInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
 
 unsigned
 ARMBaseInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                               MachineBasicBlock *FBB,
-                             const SmallVectorImpl<MachineOperand> &Cond) const {
+                            MachineBasicBlock *FBB,
+                            const SmallVectorImpl<MachineOperand> &Cond) const {
   // FIXME this should probably have a DebugLoc argument
   DebugLoc dl;
 
@@ -487,7 +488,7 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
 
   // Basic size info comes from the TSFlags field.
   const TargetInstrDesc &TID = MI->getDesc();
-  unsigned TSFlags = TID.TSFlags;
+  uint64_t TSFlags = TID.TSFlags;
 
   unsigned Opc = MI->getOpcode();
   switch ((TSFlags & ARMII::SizeMask) >> ARMII::SizeShift) {
@@ -1211,17 +1212,12 @@ reMaterialize(MachineBasicBlock &MBB,
               MachineBasicBlock::iterator I,
               unsigned DestReg, unsigned SubIdx,
               const MachineInstr *Orig,
-              const TargetRegisterInfo *TRI) const {
-  if (SubIdx && TargetRegisterInfo::isPhysicalRegister(DestReg)) {
-    DestReg = TRI->getSubReg(DestReg, SubIdx);
-    SubIdx = 0;
-  }
-
+              const TargetRegisterInfo &TRI) const {
   unsigned Opcode = Orig->getOpcode();
   switch (Opcode) {
   default: {
     MachineInstr *MI = MBB.getParent()->CloneMachineInstr(Orig);
-    MI->getOperand(0).setReg(DestReg);
+    MI->substituteRegister(Orig->getOperand(0).getReg(), DestReg, SubIdx, TRI);
     MBB.insert(I, MI);
     break;
   }
@@ -1237,9 +1233,6 @@ reMaterialize(MachineBasicBlock &MBB,
     break;
   }
   }
-
-  MachineInstr *NewMI = prior(I);
-  NewMI->getOperand(0).setSubReg(SubIdx);
 }
 
 MachineInstr *

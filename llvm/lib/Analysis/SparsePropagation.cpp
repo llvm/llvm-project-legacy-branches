@@ -159,9 +159,9 @@ void SparseSolver::getFeasibleSuccessors(TerminatorInst &TI,
   }
   
   if (isa<InvokeInst>(TI)) {
-    // Invoke instructions successors are always executable.
+    // Invoke instructions' successors are always executable.
     // TODO: Could ask the lattice function if the value can throw.
-    Succs[0] = Succs[1] = true;
+    Succs.assign(Succs.size(), true);
     return;
   }
   

@@ -2858,8 +2858,8 @@ Instructions</a> </div>
 <p>As mentioned <a href="#functionstructure">previously</a>, every basic block
    in a program ends with a "Terminator" instruction, which indicates which
    block should be executed after the current block is finished. These
-   terminator instructions typically yield a '<tt>void</tt>' value: they produce
-   control flow, not values (the one exception being the
+   terminator instructions typically yield a '<tt>void</tt>' value&mdash;they
+   produce control flow, not values (the one exception being the
    '<a href="#i_invoke"><tt>invoke</tt></a>' instruction).</p>
 
 <p>There are seven different terminator instructions: the
@@ -3076,7 +3076,13 @@ IfUnequal:
 <h5>Syntax:</h5>
 <pre>
   &lt;result&gt; = invoke [<a href="#callingconv">cconv</a>] [<a href="#paramattrs">ret attrs</a>] &lt;ptr to function ty&gt; &lt;function ptr val&gt;(&lt;function args&gt;) [<a href="#fnattrs">fn attrs</a>]
-                to label &lt;normal label&gt; unwind label &lt;exception label&gt;
+               to label &lt;normal label&gt;
+                 personality [ &lt;ty&gt; &lt;val&gt; ]
+                 catches [
+                   &lt;ty&gt; &lt;val&gt;, label &lt;dest&gt; ...
+                 ]
+                 catchall [ &lt;ty&gt; &lt;val&gt;, label &lt;dest&gt; ]
+                 unwind to label &lt;exception label&gt;
 </pre>
 
 <h5>Overview:</h5>
@@ -3088,6 +3094,8 @@ IfUnequal:
    indirect callees) returns with the "<a href="#i_unwind"><tt>unwind</tt></a>"
    instruction, control is interrupted and continued at the dynamically nearest
    "exception" label.</p>
+
+<p>The '<tt>catches</tt>' and '<tt>catchall</tt>' clauses are optional.</p>
 
 <h5>Arguments:</h5>
 <p>This instruction requires several arguments:</p>

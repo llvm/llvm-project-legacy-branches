@@ -55,6 +55,7 @@ enum ActionType {
   GenCallingConv,
   GenClangDiagsDefs,
   GenClangDiagGroups,
+  GenClangDeclNodes,
   GenClangStmtNodes,
   GenDAGISel,
   GenFastISel,
@@ -65,6 +66,7 @@ enum ActionType {
   GenLLVMCConf,
   GenEDHeader, GenEDInfo,
   GenNeonHeader,
+  GenNeonBuiltinsDef,
   PrintEnums
 };
 
@@ -113,6 +115,8 @@ namespace {
                                "Generate Clang diagnostics definitions"),
                     clEnumValN(GenClangDiagGroups, "gen-clang-diag-groups",
                                "Generate Clang diagnostic groups"),
+                    clEnumValN(GenClangDeclNodes, "gen-clang-decl-nodes",
+                               "Generate Clang AST statement nodes"),
                     clEnumValN(GenClangStmtNodes, "gen-clang-stmt-nodes",
                                "Generate Clang AST statement nodes"),
                     clEnumValN(GenLLVMCConf, "gen-llvmc",
@@ -123,6 +127,8 @@ namespace {
                                "Generate enhanced disassembly info"),
                     clEnumValN(GenNeonHeader, "gen-arm-neon-header",
                                "Generate arm_neon.h for clang"),
+                    clEnumValN(GenNeonBuiltinsDef, "gen-arm-neon-builtins-def",
+                               "Generate NEON BuiltinsARM.def for clang"),
                     clEnumValN(PrintEnums, "print-enums",
                                "Print enum values for a class"),
                     clEnumValEnd));
@@ -248,8 +254,12 @@ int main(int argc, char **argv) {
     case GenClangDiagGroups:
       ClangDiagGroupsEmitter(Records).run(Out);
       break;
+    case GenClangDeclNodes:
+      ClangASTNodesEmitter(Records, "Decl", "Decl").run(Out);
+      ClangDeclContextEmitter(Records).run(Out);
+      break;
     case GenClangStmtNodes:
-      ClangStmtNodesEmitter(Records).run(Out);
+      ClangASTNodesEmitter(Records, "Stmt", "").run(Out);
       break;
     case GenDisassembler:
       DisassemblerEmitter(Records).run(Out);
@@ -286,6 +296,9 @@ int main(int argc, char **argv) {
       break;
     case GenNeonHeader:
       NeonEmitter(Records).run(Out);
+      break;
+    case GenNeonBuiltinsDef:
+      NeonEmitter(Records).runHeader(Out);
       break;
     case PrintEnums:
     {

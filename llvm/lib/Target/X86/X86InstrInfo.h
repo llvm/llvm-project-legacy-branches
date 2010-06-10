@@ -173,7 +173,19 @@ namespace X86II {
     /// indicates that the reference is actually to "FOO$non_lazy_ptr -PICBASE",
     /// which is a PIC-base-relative reference to a hidden dyld lazy pointer
     /// stub.
-    MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE
+    MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE,
+    
+    /// MO_TLVP - On a symbol operand this indicates that the immediate is
+    /// some TLS offset.
+    ///
+    /// This is the TLS offset for the Darwin TLS mechanism.
+    MO_TLVP,
+    
+    /// MO_TLVP_PIC_BASE - On a symbol operand this indicates that the immediate
+    /// is some TLS offset from the picbase.
+    ///
+    /// This is the 32-bit TLS offset for Darwin TLS in PIC mode.
+    MO_TLVP_PIC_BASE
   };
 }
 
@@ -203,6 +215,7 @@ inline static bool isGlobalRelativeToPICBase(unsigned char TargetFlag) {
   case X86II::MO_PIC_BASE_OFFSET:                // Darwin local global.
   case X86II::MO_DARWIN_NONLAZY_PIC_BASE:        // Darwin/32 external global.
   case X86II::MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE: // Darwin/32 hidden global.
+  case X86II::MO_TLVP:                           // ??? Pretty sure..
     return true;
   default:
     return false;
@@ -404,22 +417,36 @@ namespace X86II {
 
     OpcodeShift   = 24,
     OpcodeMask    = 0xFF << OpcodeShift
+
   };
   
+  // FIXME: The enum opcode space is over and more bits are needed. Anywhere
+  // those enums below are used, TSFlags must be shifted right by 32 first.
+  enum {
+    //===------------------------------------------------------------------===//
+    // VEX_4V - VEX prefixes are instruction prefixes used in AVX.
+    // VEX_4V is used to specify an additional AVX/SSE register. Several 2
+    // address instructions in SSE are represented as 3 address ones in AVX
+    // and the additional register is encoded in VEX_VVVV prefix.
+    //
+    VEXShift    = 0,
+    VEX_4V      = 1 << VEXShift
+  };
+
   // getBaseOpcodeFor - This function returns the "base" X86 opcode for the
   // specified machine instruction.
   //
-  static inline unsigned char getBaseOpcodeFor(unsigned TSFlags) {
+  static inline unsigned char getBaseOpcodeFor(uint64_t TSFlags) {
     return TSFlags >> X86II::OpcodeShift;
   }
   
-  static inline bool hasImm(unsigned TSFlags) {
+  static inline bool hasImm(uint64_t TSFlags) {
     return (TSFlags & X86II::ImmMask) != 0;
   }
   
   /// getSizeOfImm - Decode the "size of immediate" field from the TSFlags field
   /// of the specified instruction.
-  static inline unsigned getSizeOfImm(unsigned TSFlags) {
+  static inline unsigned getSizeOfImm(uint64_t TSFlags) {
     switch (TSFlags & X86II::ImmMask) {
     default: assert(0 && "Unknown immediate size");
     case X86II::Imm8:
@@ -433,7 +460,7 @@ namespace X86II {
   
   /// isImmPCRel - Return true if the immediate of the specified instruction's
   /// TSFlags indicates that it is pc relative.
-  static inline unsigned isImmPCRel(unsigned TSFlags) {
+  static inline unsigned isImmPCRel(uint64_t TSFlags) {
     switch (TSFlags & X86II::ImmMask) {
       default: assert(0 && "Unknown immediate size");
       case X86II::Imm8PCRel:
@@ -555,7 +582,7 @@ public:
   void reMaterialize(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
                      unsigned DestReg, unsigned SubIdx,
                      const MachineInstr *Orig,
-                     const TargetRegisterInfo *TRI) const;
+                     const TargetRegisterInfo &TRI) const;
 
   /// convertToThreeAddress - This method must be implemented by targets that
   /// set the M_CONVERTIBLE_TO_3_ADDR flag.  When this flag is set, the target

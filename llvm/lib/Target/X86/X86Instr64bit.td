@@ -66,7 +66,7 @@ def lea64addr : ComplexPattern<i64, 4, "SelectLEAAddr",
 
 def tls64addr : ComplexPattern<i64, 4, "SelectTLSADDRAddr",
                                [tglobaltlsaddr], []>;
-
+                               
 //===----------------------------------------------------------------------===//
 // Pattern fragments.
 //
@@ -1707,6 +1707,19 @@ def TLS_addr64 : I<0, Pseudo, (outs), (ins lea64mem:$sym),
                    "rex64; "
                    "call\t__tls_get_addr@PLT",
                   [(X86tlsaddr tls64addr:$sym)]>,
+                  Requires<[In64BitMode]>;
+
+// FIXME: Not true for darwin
+let Defs = [RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11,
+            FP0, FP1, FP2, FP3, FP4, FP5, FP6, ST0, ST1,
+            MM0, MM1, MM2, MM3, MM4, MM5, MM6, MM7,
+            XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
+            XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15, EFLAGS],
+    Uses = [RSP],
+    usesCustomInserter = 1 in
+def TLSCall_64 : I<0, Pseudo, (outs), (ins i64mem:$sym),
+                  "# Fixme into a call",
+                  [(X86TLSCall addr:$sym)]>,
                   Requires<[In64BitMode]>;
 
 let AddedComplexity = 5, isCodeGenOnly = 1 in

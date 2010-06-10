@@ -3266,6 +3266,15 @@ static bool FindOptimalMemOpLowering(std::vector<EVT> &MemOps,
     if (VT.bitsGT(LVT))
       VT = LVT;
   }
+  
+  // If we're optimizing for size, and there is a limit, bump the maximum number
+  // of operations inserted down to 4.  This is a wild guess that approximates
+  // the size of a call to memcpy or memset (3 arguments + call).
+  if (Limit != ~0U) {
+    const Function *F = DAG.getMachineFunction().getFunction();
+    if (F->hasFnAttr(Attribute::OptimizeForSize))
+      Limit = 4;
+  }
 
   unsigned NumMemOps = 0;
   while (Size != 0) {
@@ -3320,9 +3329,8 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   std::string Str;
   bool CopyFromStr = isMemSrcFromString(Src, Str);
   bool isZeroStr = CopyFromStr && Str.empty();
-  uint64_t Limit = -1ULL;
-  if (!AlwaysInline)
-    Limit = TLI.getMaxStoresPerMemcpy();
+  unsigned Limit = AlwaysInline ? ~0U : TLI.getMaxStoresPerMemcpy();
+  
   if (!FindOptimalMemOpLowering(MemOps, Limit, Size,
                                 (DstAlignCanChange ? 0 : Align),
                                 (isZeroStr ? 0 : SrcAlign),
@@ -3400,9 +3408,6 @@ static SDValue getMemmoveLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   // below a certain threshold.
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
   std::vector<EVT> MemOps;
-  uint64_t Limit = -1ULL;
-  if (!AlwaysInline)
-    Limit = TLI.getMaxStoresPerMemmove();
   bool DstAlignCanChange = false;
   MachineFrameInfo *MFI = DAG.getMachineFunction().getFrameInfo();
   FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(Dst);
@@ -3411,6 +3416,7 @@ static SDValue getMemmoveLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   unsigned SrcAlign = DAG.InferPtrAlignment(Src);
   if (Align > SrcAlign)
     SrcAlign = Align;
+  unsigned Limit = AlwaysInline ? ~0U : TLI.getMaxStoresPerMemmove();
 
   if (!FindOptimalMemOpLowering(MemOps, Limit, Size,
                                 (DstAlignCanChange ? 0 : Align),
@@ -5668,13 +5674,16 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FSQRT:  return "fsqrt";
   case ISD::FSIN:   return "fsin";
   case ISD::FCOS:   return "fcos";
-  case ISD::FPOWI:  return "fpowi";
-  case ISD::FPOW:   return "fpow";
   case ISD::FTRUNC: return "ftrunc";
   case ISD::FFLOOR: return "ffloor";
   case ISD::FCEIL:  return "fceil";
   case ISD::FRINT:  return "frint";
   case ISD::FNEARBYINT: return "fnearbyint";
+  case ISD::FEXP:   return "fexp";
+  case ISD::FEXP2:  return "fexp2";
+  case ISD::FLOG:   return "flog";
+  case ISD::FLOG2:  return "flog2";
+  case ISD::FLOG10: return "flog10";
 
   // Binary operators
   case ISD::ADD:    return "add";
@@ -5705,7 +5714,9 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FREM:   return "frem";
   case ISD::FCOPYSIGN: return "fcopysign";
   case ISD::FGETSIGN:  return "fgetsign";
+  case ISD::FPOW:   return "fpow";
 
+  case ISD::FPOWI:  return "fpowi";
   case ISD::SETCC:       return "setcc";
   case ISD::VSETCC:      return "vsetcc";
   case ISD::SELECT:      return "select";
