@@ -204,6 +204,8 @@ endif
 # Set install and build targets.
 Install_Target = $(Clang_Make_Variables) $(LLVM_Install_Target)
 Build_Target = $(Clang_Make_Variables) $(Clang_Build_Target)
+Install_Target_Stage1 = $(Clang_Make_Variables) install-clang
+Build_Target_Stage1 = $(Clang_Make_Variables) clang-only
 
 # Set default target.
 
@@ -359,8 +361,8 @@ build-clang_final: configure-clang_final
 build-clang_stage1: configure-clang_stage1
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Stage 1) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch clang-only || exit 1; \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch install-clang || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target_Stage1) || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target_Stage1) || exit 1; \
 	done
 
 configure-clang_final: $(Final_Configure_Target)
