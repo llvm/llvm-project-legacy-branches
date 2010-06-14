@@ -2627,7 +2627,7 @@ public:
 
   // Successor accessors.
   BasicBlock *getSuccessor(unsigned i) const {
-    assert(i < 2 + getNumCatches() && "Successor # out of range for invoke!");
+    assert(i < getNumSuccessors() && "Successor # out of range for invoke!");
 
     if (i == 0)
       return getNormalDest();
@@ -2635,7 +2635,10 @@ public:
     if (i == 1)
       return getUnwindDest();
 
-    return getCatchDest(i - 2);
+    if (CatchAllDest != 0 && i == 2)
+      return getCatchAllDest();
+
+    return getCatchDest(i - (CatchAllDest != 0 ? 3 : 2));
   }
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
@@ -2644,7 +2647,7 @@ public:
   }
 
   unsigned getNumSuccessors() const {
-    return 2 + getNumCatches();
+    return (CatchAllDest != 0 ? 3 : 2) + getNumCatches();
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
