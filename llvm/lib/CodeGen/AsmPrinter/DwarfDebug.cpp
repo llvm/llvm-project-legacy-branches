@@ -839,8 +839,12 @@ void DwarfDebug::addToContextOwner(DIE *Die, DIDescriptor Context) {
   } else if (Context.isNameSpace()) {
     DIE *ContextDIE = getOrCreateNameSpace(DINameSpace(Context.getNode()));
     ContextDIE->addChild(Die);
-  } else if (DIE *ContextDIE = 
-             getCompileUnit(Context.getNode())->getDIE(Context.getNode()))
+  } else if (Context.isSubprogram()) {
+    DIE *ContextDIE = createSubprogramDIE(DISubprogram(Context.getNode()),
+                                          /*MakeDecl=*/false);
+    ContextDIE->addChild(Die);
+  } else if (DIE *ContextDIE = getCompileUnit(Context.getNode())->getDIE(Context.getNode()))
+    //} else if (DIE *ContextDIE = getCompileUnit(Context)->getDIE(Context))
     ContextDIE->addChild(Die);
   else 
     getCompileUnit(Context.getNode())->addDie(Die);
@@ -1029,6 +1033,10 @@ void DwarfDebug::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     if (DIDescriptor(ContainingType.getNode()).isCompositeType())
       addDIEEntry(&Buffer, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, 
                   getOrCreateTypeDIE(DIType(ContainingType.getNode())));
+    else {
+      DIDescriptor Context = CTy.getContext();
+      addToContextOwner(&Buffer, Context);
+    }
     break;
   }
   default:
@@ -1301,6 +1309,9 @@ DIE *DwarfDebug::createSubprogramDIE(const DISubprogram &SP, bool MakeDecl) {
 
   // DW_TAG_inlined_subroutine may refer to this DIE.
   SPCU->insertDIE(SP.getNode(), SPDie);
+
+  // Add to context owner.
+  addToContextOwner(SPDie, SP.getContext());
 
   return SPDie;
 }
@@ -2317,7 +2328,13 @@ DbgScope *DwarfDebug::getOrCreateDbgScope(MDNode *Scope, MDNode *InlinedAt) {
 
     if (!WScope->getParent()) {
       StringRef SPName = DISubprogram(Scope).getLinkageName();
-      if (SPName == Asm->MF->getFunction()->getName())
+      // We used to check only for a linkage name, but that fails
+      // since we began omitting the linkage name for private
+      // functions.  The new way is to check for the name in metadata,
+      // but that's not supported in old .ll test cases.  Ergo, we
+      // check both.
+      if (SPName == Asm->MF->getFunction()->getName() ||
+          DISubprogram(Scope).getFunction() == Asm->MF->getFunction())
         CurrentFnDbgScope = WScope;
     }
     
