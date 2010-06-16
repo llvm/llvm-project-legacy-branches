@@ -33,19 +33,19 @@ using namespace llvm;
 static cl::opt<int> IfCvtFnStart("ifcvt-fn-start", cl::init(-1), cl::Hidden);
 static cl::opt<int> IfCvtFnStop("ifcvt-fn-stop", cl::init(-1), cl::Hidden);
 static cl::opt<int> IfCvtLimit("ifcvt-limit", cl::init(-1), cl::Hidden);
-static cl::opt<bool> DisableSimple("disable-ifcvt-simple", 
+static cl::opt<bool> DisableSimple("disable-ifcvt-simple",
                                    cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableSimpleF("disable-ifcvt-simple-false", 
+static cl::opt<bool> DisableSimpleF("disable-ifcvt-simple-false",
                                     cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableTriangle("disable-ifcvt-triangle", 
+static cl::opt<bool> DisableTriangle("disable-ifcvt-triangle",
                                      cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableTriangleR("disable-ifcvt-triangle-rev", 
+static cl::opt<bool> DisableTriangleR("disable-ifcvt-triangle-rev",
                                       cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableTriangleF("disable-ifcvt-triangle-false", 
+static cl::opt<bool> DisableTriangleF("disable-ifcvt-triangle-false",
                                       cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableTriangleFR("disable-ifcvt-triangle-false-rev", 
+static cl::opt<bool> DisableTriangleFR("disable-ifcvt-triangle-false-rev",
                                        cl::init(false), cl::Hidden);
-static cl::opt<bool> DisableDiamond("disable-ifcvt-diamond", 
+static cl::opt<bool> DisableDiamond("disable-ifcvt-diamond",
                                     cl::init(false), cl::Hidden);
 
 STATISTIC(NumSimple,       "Number of simple if-conversions performed");
@@ -115,7 +115,7 @@ namespace {
                  BB(0), TrueBB(0), FalseBB(0) {}
     };
 
-    /// IfcvtToken - Record information about pending if-conversions to attemp:
+    /// IfcvtToken - Record information about pending if-conversions to attempt:
     /// BBI             - Corresponding BBInfo.
     /// Kind            - Type of block. See IfcvtKind.
     /// NeedSubsumption - True if the to-be-predicated BB has already been
@@ -167,8 +167,7 @@ namespace {
                          std::vector<IfcvtToken*> &Tokens);
     bool FeasibilityAnalysis(BBInfo &BBI, SmallVectorImpl<MachineOperand> &Cond,
                              bool isTriangle = false, bool RevBranch = false);
-    bool AnalyzeBlocks(MachineFunction &MF,
-                       std::vector<IfcvtToken*> &Tokens);
+    void AnalyzeBlocks(MachineFunction &MF, std::vector<IfcvtToken*> &Tokens);
     void InvalidatePreds(MachineBasicBlock *BB);
     void RemoveExtraEdges(BBInfo &BBI);
     bool IfConvertSimple(BBInfo &BBI, IfcvtKind Kind);
@@ -253,7 +252,8 @@ bool IfConverter::runOnMachineFunction(MachineFunction &MF) {
   while (IfCvtLimit == -1 || (int)NumIfCvts < IfCvtLimit) {
     // Do an initial analysis for each basic block and find all the potential
     // candidates to perform if-conversion.
-    bool Change = AnalyzeBlocks(MF, Tokens);
+    bool Change = false;
+    AnalyzeBlocks(MF, Tokens);
     while (!Tokens.empty()) {
       IfcvtToken *Token = Tokens.back();
       Tokens.pop_back();
@@ -281,7 +281,8 @@ bool IfConverter::runOnMachineFunction(MachineFunction &MF) {
       case ICSimpleFalse: {
         bool isFalse = Kind == ICSimpleFalse;
         if ((isFalse && DisableSimpleF) || (!isFalse && DisableSimple)) break;
-        DEBUG(dbgs() << "Ifcvt (Simple" << (Kind == ICSimpleFalse ? " false" :"")
+        DEBUG(dbgs() << "Ifcvt (Simple" << (Kind == ICSimpleFalse ?
+                                            " false" : "")
                      << "): BB#" << BBI.BB->getNumber() << " ("
                      << ((Kind == ICSimpleFalse)
                          ? BBI.FalseBB->getNumber()
@@ -431,7 +432,7 @@ bool IfConverter::ValidSimple(BBInfo &TrueBBI, unsigned &Dups) const {
 /// ValidTriangle - Returns true if the 'true' and 'false' blocks (along
 /// with their common predecessor) forms a valid triangle shape for ifcvt.
 /// If 'FalseBranch' is true, it checks if 'true' block's false branch
-/// branches to the false branch rather than the other way around. It also
+/// branches to the 'false' block rather than the other way around. It also
 /// returns the number of instructions that the ifcvt would need to duplicate
 /// if performed in 'Dups'.
 bool IfConverter::ValidTriangle(BBInfo &TrueBBI, BBInfo &FalseBBI,
@@ -570,7 +571,7 @@ void IfConverter::ScanInstructions(BBInfo &BBI) {
     // No false branch. This BB must end with a conditional branch and a
     // fallthrough.
     if (!BBI.FalseBB)
-      BBI.FalseBB = findFalseBlock(BBI.BB, BBI.TrueBB);  
+      BBI.FalseBB = findFalseBlock(BBI.BB, BBI.TrueBB);
     if (!BBI.FalseBB) {
       // Malformed bcc? True and false blocks are the same?
       BBI.IsUnpredicable = true;
@@ -749,7 +750,7 @@ IfConverter::BBInfo &IfConverter::AnalyzeBlock(MachineBasicBlock *BB,
     Tokens.push_back(new IfcvtToken(BBI, ICTriangle, TNeedSub, Dups));
     Enqueued = true;
   }
-  
+
   if (ValidTriangle(TrueBBI, FalseBBI, true, Dups) &&
       MeetIfcvtSizeLimit(TrueBBI.NonPredSize) &&
       FeasibilityAnalysis(TrueBBI, BBI.BrCond, true, true)) {
@@ -765,7 +766,7 @@ IfConverter::BBInfo &IfConverter::AnalyzeBlock(MachineBasicBlock *BB,
     //   | \_
     //   |  |
     //   | TBB---> exit
-    //   |    
+    //   |
     //   FBB
     Tokens.push_back(new IfcvtToken(BBI, ICSimple, TNeedSub, Dups));
     Enqueued = true;
@@ -802,11 +803,9 @@ IfConverter::BBInfo &IfConverter::AnalyzeBlock(MachineBasicBlock *BB,
 }
 
 /// AnalyzeBlocks - Analyze all blocks and find entries for all if-conversion
-/// candidates. It returns true if any CFG restructuring is done to expose more
-/// if-conversion opportunities.
-bool IfConverter::AnalyzeBlocks(MachineFunction &MF,
+/// candidates.
+void IfConverter::AnalyzeBlocks(MachineFunction &MF,
                                 std::vector<IfcvtToken*> &Tokens) {
-  bool Change = false;
   std::set<MachineBasicBlock*> Visited;
   for (unsigned i = 0, e = Roots.size(); i != e; ++i) {
     for (idf_ext_iterator<MachineBasicBlock*> I=idf_ext_begin(Roots[i],Visited),
@@ -818,8 +817,6 @@ bool IfConverter::AnalyzeBlocks(MachineFunction &MF,
 
   // Sort to favor more complex ifcvt scheme.
   std::stable_sort(Tokens.begin(), Tokens.end(), IfcvtTokenCmp);
-
-  return Change;
 }
 
 /// canFallThroughTo - Returns true either if ToBB is the next block after BB or
@@ -1026,7 +1023,7 @@ bool IfConverter::IfConvertTriangle(BBInfo &BBI, IfcvtKind Kind) {
   RemoveExtraEdges(BBI);
 
   // Update block info. BB can be iteratively if-converted.
-  if (!IterIfcvt) 
+  if (!IterIfcvt)
     BBI.IsDone = true;
   InvalidatePreds(BBI.BB);
   CvtBBI->IsDone = true;
@@ -1257,7 +1254,7 @@ void IfConverter::MergeBlocks(BBInfo &ToBBI, BBInfo &FromBBI) {
       continue;
     Pred->ReplaceUsesOfBlockWith(FromBBI.BB, ToBBI.BB);
   }
- 
+
   std::vector<MachineBasicBlock *> Succs(FromBBI.BB->succ_begin(),
                                          FromBBI.BB->succ_end());
   MachineBasicBlock *NBB = getNextBlock(FromBBI.BB);
