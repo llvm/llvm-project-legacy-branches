@@ -1187,7 +1187,7 @@ SDNode *ARMDAGToDAGISel::SelectVST(SDNode *N, unsigned NumVecs,
   // where one stores the even registers and the other stores the odd registers.
 
   // Enable writeback to the address register.
-  MemOpc = CurDAG->getTargetConstant(ARM_AM::getAM6Opc(true), MVT::i32);
+  Ops[2] = CurDAG->getTargetConstant(ARM_AM::getAM6Opc(true), MVT::i32);
 
   // Store the even subregs.
   for (unsigned Vec = 0; Vec < NumVecs; ++Vec)
