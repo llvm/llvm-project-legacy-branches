@@ -320,6 +320,12 @@ public:
     assert(0 && "Target didn't implement TargetInstrInfo::InsertBranch!"); 
     return 0;
   }
+
+  /// ReplaceTailWithBranchTo - Delete the instruction OldInst and everything
+  /// after it, replacing it with an unconditional branch to NewDest. This is
+  /// used by the tail merging pass.
+  virtual void ReplaceTailWithBranchTo(MachineBasicBlock::iterator Tail,
+                                       MachineBasicBlock *NewDest) const = 0;
   
   /// copyRegToReg - Emit instructions to copy between a pair of registers. It
   /// returns false if the target does not how to copy between the specified
@@ -561,6 +567,13 @@ public:
     return true;
   }
 
+  /// isSchedulingBoundary - Test if the given instruction should be
+  /// considered a scheduling boundary. This primarily includes labels and
+  /// terminators.
+  virtual bool isSchedulingBoundary(const MachineInstr *MI,
+                                    const MachineBasicBlock *MBB,
+                                    const MachineFunction &MF) const = 0;
+
   /// GetInstSize - Returns the size of the specified Instruction.
   /// 
   virtual unsigned GetInstSizeInBytes(const MachineInstr *MI) const {
@@ -594,6 +607,8 @@ protected:
   TargetInstrInfoImpl(const TargetInstrDesc *desc, unsigned NumOpcodes)
   : TargetInstrInfo(desc, NumOpcodes) {}
 public:
+  virtual void ReplaceTailWithBranchTo(MachineBasicBlock::iterator OldInst,
+                                       MachineBasicBlock *NewDest) const;
   virtual MachineInstr *commuteInstruction(MachineInstr *MI,
                                            bool NewMI = false) const;
   virtual bool findCommutedOpIndices(MachineInstr *MI, unsigned &SrcOpIdx1,
@@ -609,6 +624,9 @@ public:
                                   MachineFunction &MF) const;
   virtual bool produceSameValue(const MachineInstr *MI0,
                                 const MachineInstr *MI1) const;
+  virtual bool isSchedulingBoundary(const MachineInstr *MI,
+                                    const MachineBasicBlock *MBB,
+                                    const MachineFunction &MF) const;
   virtual unsigned GetFunctionSizeInBytes(const MachineFunction &MF) const;
 
   virtual ScheduleHazardRecognizer *
