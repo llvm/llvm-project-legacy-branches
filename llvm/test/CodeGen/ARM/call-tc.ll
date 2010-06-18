@@ -14,10 +14,10 @@ define void @f() {
 }
 
 define void @g.upgrd.1() {
-; CHECKV4: mov lr, pc
-; CHECKV5: blx
+; CHECKV4: bx r0 @ TAILCALL
+; CHECKV5: bx r0 @ TAILCALL
         %tmp = load i32 ()** @t         ; <i32 ()*> [#uses=1]
-        %tmp.upgrd.2 = call i32 %tmp( )            ; <i32> [#uses=0]
+        %tmp.upgrd.2 = tail call i32 %tmp( )            ; <i32> [#uses=0]
         ret void
 }
 

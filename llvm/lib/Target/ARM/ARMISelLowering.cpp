@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "arm-isel"
 #include "ARM.h"
 #include "ARMAddressingModes.h"
 #include "ARMConstantPoolValue.h"
@@ -40,12 +41,21 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/ADT/VectorExtras.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <sstream>
 using namespace llvm;
+
+STATISTIC(NumTailCalls, "Number of tail calls");
+
+// This option should go away when tail calls fully work.
+static cl::opt<bool>
+EnableARMTailCalls("arm-tail-calls", cl::Hidden,
+  cl::desc("Generate tail calls (TEMPORARY OPTION)."),
+  cl::init(true));
 
 static cl::opt<bool>
 EnableARMLongCalls("arm-long-calls", cl::Hidden,
@@ -537,6 +547,8 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::EH_SJLJ_SETJMP: return "ARMISD::EH_SJLJ_SETJMP";
   case ARMISD::EH_SJLJ_LONGJMP:return "ARMISD::EH_SJLJ_LONGJMP";
 
+  case ARMISD::TC_RETURN:     return "ARMISD::TC_RETURN";
+  
   case ARMISD::THREAD_POINTER:return "ARMISD::THREAD_POINTER";
 
   case ARMISD::DYN_ALLOC:     return "ARMISD::DYN_ALLOC";
@@ -986,8 +998,24 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                              const SmallVectorImpl<ISD::InputArg> &Ins,
                              DebugLoc dl, SelectionDAG &DAG,
                              SmallVectorImpl<SDValue> &InVals) const {
-  // ARM target does not yet support tail call optimization.
-  isTailCall = false;
+  MachineFunction &MF = DAG.getMachineFunction();
+  bool IsStructRet    = (Outs.empty()) ? false : Outs[0].Flags.isSRet();
+  bool IsSibCall = false;
+  // Temporarily disable tail calls so things don't break.
+  if (!EnableARMTailCalls)
+    isTailCall = false;
+  if (isTailCall) {
+    // Check if it's really possible to do a tail call.
+    isTailCall = IsEligibleForTailCallOptimization(Callee, CallConv,
+                    isVarArg, IsStructRet, MF.getFunction()->hasStructRetAttr(),
+                                                   Outs, Ins, DAG);
+    // We don't support GuaranteedTailCallOpt for ARM, only automatically
+    // detected sibcalls.
+    if (isTailCall) {
+      ++NumTailCalls;
+      IsSibCall = true;
+    }
+  }
 
   // Analyze operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
@@ -1000,9 +1028,14 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = CCInfo.getNextStackOffset();
 
+  // For tail calls, memory operands are available in our caller's stack.
+  if (IsSibCall)
+    NumBytes = 0;
+
   // Adjust the stack pointer for the new arguments...
   // These operations are automatically eliminated by the prolog/epilog pass
-  Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, true));
+  if (!IsSibCall)
+    Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, true));
 
   SDValue StackPtr = DAG.getCopyFromReg(Chain, dl, ARM::SP, getPointerTy());
 
@@ -1063,7 +1096,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       }
     } else if (VA.isRegLoc()) {
       RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
-    } else {
+    } else if (!IsSibCall) {
       assert(VA.isMemLoc());
 
       MemOpChains.push_back(LowerMemOpCallTo(Chain, StackPtr, Arg,
@@ -1078,10 +1111,32 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // Build a sequence of copy-to-reg nodes chained together with token chain
   // and flag operands which copy the outgoing args into the appropriate regs.
   SDValue InFlag;
-  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
-    Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
-                             RegsToPass[i].second, InFlag);
-    InFlag = Chain.getValue(1);
+  // Tail call byval lowering might overwrite argument registers so in case of
+  // tail call optimization the copies to registers are lowered later.
+  if (!isTailCall)
+    for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
+      Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
+                               RegsToPass[i].second, InFlag);
+      InFlag = Chain.getValue(1);
+    }
+
+  // For tail calls lower the arguments to the 'real' stack slot.
+  if (isTailCall) {
+    // Force all the incoming stack arguments to be loaded from the stack
+    // before any new outgoing arguments are stored to the stack, because the
+    // outgoing stack slots may alias the incoming argument stack slots, and
+    // the alias isn't otherwise explicit. This is slightly more conservative
+    // than necessary, because it means that each store effectively depends
+    // on every argument instead of just those arguments it would clobber.
+
+    // Do not flag preceeding copytoreg stuff together with the following stuff.
+    InFlag = SDValue();
+    for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
+      Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
+                               RegsToPass[i].second, InFlag);
+      InFlag = Chain.getValue(1);
+    }
+    InFlag =SDValue();
   }
 
   // If the callee is a GlobalAddress/ExternalSymbol node (quite common, every
@@ -1090,7 +1145,6 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   bool isDirect = false;
   bool isARMFunc = false;
   bool isLocalARMFunc = false;
-  MachineFunction &MF = DAG.getMachineFunction();
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
 
   if (EnableARMLongCalls) {
@@ -1208,9 +1262,13 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   if (InFlag.getNode())
     Ops.push_back(InFlag);
+
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Flag);
+  if (isTailCall)
+    return DAG.getNode(ARMISD::TC_RETURN, dl, NodeTys, &Ops[0], Ops.size());
+
   // Returns a chain and a flag for retval copy to use.
-  Chain = DAG.getNode(CallOpc, dl, DAG.getVTList(MVT::Other, MVT::Flag),
-                      &Ops[0], Ops.size());
+  Chain = DAG.getNode(CallOpc, dl, NodeTys, &Ops[0], Ops.size());
   InFlag = Chain.getValue(1);
 
   Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
@@ -1222,6 +1280,184 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // return.
   return LowerCallResult(Chain, InFlag, CallConv, isVarArg, Ins,
                          dl, DAG, InVals);
+}
+
+/// MatchingStackOffset - Return true if the given stack call argument is
+/// already available in the same position (relatively) of the caller's
+/// incoming argument stack.
+static
+bool MatchingStackOffset(SDValue Arg, unsigned Offset, ISD::ArgFlagsTy Flags,
+                         MachineFrameInfo *MFI, const MachineRegisterInfo *MRI,
+                         const ARMInstrInfo *TII) {
+  unsigned Bytes = Arg.getValueType().getSizeInBits() / 8;
+  int FI = INT_MAX;
+  if (Arg.getOpcode() == ISD::CopyFromReg) {
+    unsigned VR = cast<RegisterSDNode>(Arg.getOperand(1))->getReg();
+    if (!VR || TargetRegisterInfo::isPhysicalRegister(VR))
+      return false;
+    MachineInstr *Def = MRI->getVRegDef(VR);
+    if (!Def)
+      return false;
+    if (!Flags.isByVal()) {
+      if (!TII->isLoadFromStackSlot(Def, FI))
+        return false;
+    } else {
+//      unsigned Opcode = Def->getOpcode();
+//      if ((Opcode == X86::LEA32r || Opcode == X86::LEA64r) &&
+//          Def->getOperand(1).isFI()) {
+//        FI = Def->getOperand(1).getIndex();
+//        Bytes = Flags.getByValSize();
+//      } else
+        return false;
+    }
+  } else if (LoadSDNode *Ld = dyn_cast<LoadSDNode>(Arg)) {
+    if (Flags.isByVal())
+      // ByVal argument is passed in as a pointer but it's now being
+      // dereferenced. e.g.
+      // define @foo(%struct.X* %A) {
+      //   tail call @bar(%struct.X* byval %A)
+      // }
+      return false;
+    SDValue Ptr = Ld->getBasePtr();
+    FrameIndexSDNode *FINode = dyn_cast<FrameIndexSDNode>(Ptr);
+    if (!FINode)
+      return false;
+    FI = FINode->getIndex();
+  } else
+    return false;
+
+  assert(FI != INT_MAX);
+  if (!MFI->isFixedObjectIndex(FI))
+    return false;
+  return Offset == MFI->getObjectOffset(FI) && Bytes == MFI->getObjectSize(FI);
+}
+
+/// IsEligibleForTailCallOptimization - Check whether the call is eligible
+/// for tail call optimization. Targets which want to do tail call
+/// optimization should implement this function.
+bool
+ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
+                                                     CallingConv::ID CalleeCC,
+                                                     bool isVarArg,
+                                                     bool isCalleeStructRet,
+                                                     bool isCallerStructRet,
+                                    const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                    const SmallVectorImpl<ISD::InputArg> &Ins,
+                                                     SelectionDAG& DAG) const {
+
+  const Function *CallerF = DAG.getMachineFunction().getFunction();
+  CallingConv::ID CallerCC = CallerF->getCallingConv();
+  bool CCMatch = CallerCC == CalleeCC;
+
+  // Look for obvious safe cases to perform tail call optimization that do not
+  // require ABI changes. This is what gcc calls sibcall.
+
+  // Do not sibcall optimize vararg calls unless the call site is not passing any
+  // arguments.
+  if (isVarArg && !Outs.empty())
+    return false;
+
+  // Also avoid sibcall optimization if either caller or callee uses struct
+  // return semantics.
+  if (isCalleeStructRet || isCallerStructRet)
+    return false;
+
+  // On Thumb, for the moment, we can only do this to functions defined in this
+  // compilation, or to indirect calls.  A Thumb B to an ARM function is not
+  // easily fixed up in the linker, unlike BL.
+  if (Subtarget->isThumb()) {
+    if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+      const GlobalValue *GV = G->getGlobal();
+      if (GV->isDeclaration() || GV->isWeakForLinker())
+        return false;
+    } else if (isa<ExternalSymbolSDNode>(Callee)) {
+      return false;
+    }
+  }
+
+  // If the calling conventions do not match, then we'd better make sure the
+  // results are returned in the same way as what the caller expects.
+  if (!CCMatch) {
+    SmallVector<CCValAssign, 16> RVLocs1;
+    CCState CCInfo1(CalleeCC, false, getTargetMachine(),
+                    RVLocs1, *DAG.getContext());
+    CCInfo1.AnalyzeCallResult(Ins, CCAssignFnForNode(CalleeCC, true, isVarArg));
+
+    SmallVector<CCValAssign, 16> RVLocs2;
+    CCState CCInfo2(CallerCC, false, getTargetMachine(),
+                    RVLocs2, *DAG.getContext());
+    CCInfo2.AnalyzeCallResult(Ins, CCAssignFnForNode(CallerCC, true, isVarArg));
+
+    if (RVLocs1.size() != RVLocs2.size())
+      return false;
+    for (unsigned i = 0, e = RVLocs1.size(); i != e; ++i) {
+      if (RVLocs1[i].isRegLoc() != RVLocs2[i].isRegLoc())
+        return false;
+      if (RVLocs1[i].getLocInfo() != RVLocs2[i].getLocInfo())
+        return false;
+      if (RVLocs1[i].isRegLoc()) {
+        if (RVLocs1[i].getLocReg() != RVLocs2[i].getLocReg())
+          return false;
+      } else {
+        if (RVLocs1[i].getLocMemOffset() != RVLocs2[i].getLocMemOffset())
+          return false;
+      }
+    }
+  }
+
+  // If the callee takes no arguments then go on to check the results of the
+  // call.
+  if (!Outs.empty()) {
+    // Check if stack adjustment is needed. For now, do not do this if any
+    // argument is passed on the stack.
+    SmallVector<CCValAssign, 16> ArgLocs;
+    CCState CCInfo(CalleeCC, isVarArg, getTargetMachine(),
+                   ArgLocs, *DAG.getContext());
+    CCInfo.AnalyzeCallOperands(Outs,
+                               CCAssignFnForNode(CalleeCC, false, isVarArg));
+    if (CCInfo.getNextStackOffset()) {
+      MachineFunction &MF = DAG.getMachineFunction();
+
+      // Check if the arguments are already laid out in the right way as
+      // the caller's fixed stack objects.
+      MachineFrameInfo *MFI = MF.getFrameInfo();
+      const MachineRegisterInfo *MRI = &MF.getRegInfo();
+      const ARMInstrInfo *TII =
+        ((ARMTargetMachine&)getTargetMachine()).getInstrInfo();
+      for (unsigned i = 0, realArgIdx = 0, e = ArgLocs.size();
+           i != e;
+           ++i, ++realArgIdx) {
+        CCValAssign &VA = ArgLocs[i];
+        EVT RegVT = VA.getLocVT();
+        SDValue Arg = Outs[realArgIdx].Val;
+        ISD::ArgFlagsTy Flags = Outs[realArgIdx].Flags;
+        if (VA.getLocInfo() == CCValAssign::Indirect)
+          return false;
+        if (VA.needsCustom()) {
+          // f64 and vector types are split into multiple registers or
+          // register/stack-slot combinations.  The types will not match
+          // the registers; give up on memory f64 refs until we figure
+          // out what to do about this.
+          if (!VA.isRegLoc())
+            return false;
+          if (!ArgLocs[++i].isRegLoc())
+            return false; 
+          if (RegVT == MVT::v2f64) {
+            if (!ArgLocs[++i].isRegLoc())
+              return false;
+            if (!ArgLocs[++i].isRegLoc())
+              return false;
+          }
+        } else if (!VA.isRegLoc()) {
+          if (!MatchingStackOffset(Arg, VA.getLocMemOffset(), Flags,
+                                   MFI, MRI, TII))
+            return false;
+        }
+      }
+    }
+  }
+
+  return true;
 }
 
 SDValue

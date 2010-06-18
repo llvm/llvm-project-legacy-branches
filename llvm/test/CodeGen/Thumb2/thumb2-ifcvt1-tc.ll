@@ -67,16 +67,18 @@ entry:
 	ret void
 }
 
+; Tail call prevents use of ifcvt in this one.  Seems like a win though.
 define void @t3(i32 %a, i32 %b) nounwind {
 entry:
 ; CHECK: t3:
-; CHECK: it lt
-; CHECK: poplt {r7, pc}
+; CHECK-NOT: it lt
+; CHECK-NOT: poplt
+; CHECK: b.w _foo @ TAILCALL
 	%tmp1 = icmp sgt i32 %a, 10		; <i1> [#uses=1]
 	br i1 %tmp1, label %cond_true, label %UnifiedReturnBlock
 
 cond_true:		; preds = %entry
-	call void @foo( i32 %b )
+	tail call void @foo( i32 %b )
 	ret void
 
 UnifiedReturnBlock:		; preds = %entry
