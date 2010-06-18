@@ -91,8 +91,9 @@ namespace llvm {
     virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
 
     virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                              MachineBasicBlock *FBB,
-                              const SmallVectorImpl<MachineOperand> &Cond) const;
+                                  MachineBasicBlock *FBB,
+                                  const SmallVectorImpl<MachineOperand> &Cond,
+                                  DebugLoc DL) const;
    };
 }
 
