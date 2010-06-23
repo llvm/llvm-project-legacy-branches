@@ -1,4 +1,6 @@
 ; RUN: llc < %s -mtriple=thumbv7-apple-darwin | FileCheck %s
+; Tail calls are disabled in this branch, which may not be permanent.
+; XFAIL: *
 
 define i32 @t1(i32 %a, i32 %b, i32 %c, i32 %d) nounwind {
 ; CHECK: t1:

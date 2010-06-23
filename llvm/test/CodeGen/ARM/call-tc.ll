@@ -2,6 +2,8 @@
 ; RUN: llc < %s -march=arm -mattr=+v5t | FileCheck %s -check-prefix=CHECKV5
 ; RUN: llc < %s -march=arm -mtriple=arm-linux-gnueabi\
 ; RUN:   -relocation-model=pic | FileCheck %s -check-prefix=CHECKELF
+; Tail calls are disabled in this branch, which may not be permanent.
+; XFAIL: *
 
 @t = weak global i32 ()* null           ; <i32 ()**> [#uses=1]
 
