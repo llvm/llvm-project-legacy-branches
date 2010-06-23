@@ -55,7 +55,7 @@ STATISTIC(NumTailCalls, "Number of tail calls");
 static cl::opt<bool>
 EnableARMTailCalls("arm-tail-calls", cl::Hidden,
   cl::desc("Generate tail calls (TEMPORARY OPTION)."),
-  cl::init(true));
+  cl::init(false));
 
 static cl::opt<bool>
 EnableARMLongCalls("arm-long-calls", cl::Hidden,
