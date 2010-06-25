@@ -5,7 +5,7 @@
 # LLVM/Clang default configuration.
 
 # Select default assertion mode, valid values are '0' and '1'.
-Clang_Use_Assertions   := 0
+Clang_Use_Assertions   := 1
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
 # Select optimization flags to use.
@@ -16,6 +16,8 @@ Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS -DDISABLE_DEFAULT_INTEGRAT
 Clang_Enable_CXX       := 1
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
+# Set the Clang version.
+Clang_Version          := 2.0
 
 ##
 # Source Info

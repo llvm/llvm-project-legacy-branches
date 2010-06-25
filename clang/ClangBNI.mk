@@ -94,7 +94,12 @@ endif
 # B&I Build Logic
 ##
 
-# Selection assertions mode.
+# Require Clang_Version to be set.
+ifeq ($(Clang_Version),)
+$(error "invalid setting for clang version: '$(Clang_Version)'")
+endif
+
+# Select assertions mode.
 ifeq ($(Clang_Use_Assertions), 1)
 Assertions_Configure_Flag :=  --enable-assertions
 else ifeq ($(Clang_Use_Assertions), 0)
@@ -114,6 +119,7 @@ endif
 
 # Set makefile variables to pass during build and install.
 Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
+Clang_Make_Variables += CLANG_VERSION=$(Clang_Version)
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
 
