@@ -2793,8 +2793,8 @@ bool SimpleRegisterCoalescing::runOnMachineFunction(MachineFunction &fn) {
         if (li_->hasInterval(SrcReg)) {
           LiveInterval &RegInt = li_->getInterval(SrcReg);
           // If def of this move instruction is dead, remove its live range
-          // from the dstination register's live interval.
-          if (MI->registerDefIsDead(DstReg)) {
+          // from the destination register's live interval.
+          if (MI->allDefsAreDead()) {
             if (!ShortenDeadCopySrcLiveRange(RegInt, MI))
               ShortenDeadCopyLiveRange(RegInt, MI);
           }
