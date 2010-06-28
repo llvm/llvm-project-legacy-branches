@@ -203,6 +203,8 @@ void DIEInteger::EmitValue(DwarfPrinter *D, unsigned Form) const {
   case dwarf::DW_FORM_data8: Size = 8; break;
   case dwarf::DW_FORM_udata: D->EmitULEB128(Integer); return;
   case dwarf::DW_FORM_sdata: D->EmitSLEB128(Integer, ""); return;
+  case dwarf::DW_FORM_addr:  Size = Asm->TM.getTargetData()->getPointerSize(); 
+    break;
   default: llvm_unreachable("DIE Value form not supported yet");
   }
   Asm->OutStreamer.EmitIntValue(Integer, Size, 0/*addrspace*/);
@@ -223,6 +225,7 @@ unsigned DIEInteger::SizeOf(const TargetData *TD, unsigned Form) const {
   case dwarf::DW_FORM_data8: return sizeof(int64_t);
   case dwarf::DW_FORM_udata: return MCAsmInfo::getULEB128Size(Integer);
   case dwarf::DW_FORM_sdata: return MCAsmInfo::getSLEB128Size(Integer);
+  case dwarf::DW_FORM_addr:  return TD->getPointerSize();
   default: llvm_unreachable("DIE Value form not supported yet"); break;
   }
   return 0;
