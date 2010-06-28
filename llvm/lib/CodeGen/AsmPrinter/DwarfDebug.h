@@ -201,7 +201,7 @@ class DwarfDebug : public DwarfPrinter {
   DenseMap<DIE *, MDNode *> ContainingTypeMap;
 
   typedef SmallVector<DbgScope *, 2> ScopeVector;
-  SmallPtrSet<const MachineInstr *, 8> InsnsBeginScopeSet;
+
   SmallPtrSet<const MachineInstr *, 8> InsnsEndScopeSet;
 
   /// InlineInfo - Keep track of inlined functions and their location.  This
@@ -209,6 +209,10 @@ class DwarfDebug : public DwarfPrinter {
   typedef std::pair<MCSymbol*, DIE *> InlineInfoLabels;
   DenseMap<MDNode*, SmallVector<InlineInfoLabels, 4> > InlineInfo;
   SmallVector<MDNode *, 4> InlinedSPNodes;
+
+  // ProcessedSPNodes - This is a collection of subprogram MDNodes that
+  // are processed to create DIEs.
+  SmallPtrSet<const MDNode *, 16> ProcessedSPNodes;
 
   /// LabelsBeforeInsn - Maps instruction with label emitted before 
   /// instruction.
@@ -577,7 +581,8 @@ class DwarfDebug : public DwarfPrinter {
   bool extractScopeInformation(const MachineFunction *MF);
   
   /// collectVariableInfo - Populate DbgScope entries with variables' info.
-  void collectVariableInfo(const MachineFunction *);
+  void collectVariableInfo(const MachineFunction *,
+                           SmallPtrSet<const MDNode *, 16> &ProcessedVars);
   
   /// collectVariableInfoFromMMITable - Collect variable information from
   /// side table maintained by MMI.

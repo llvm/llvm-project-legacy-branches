@@ -1667,6 +1667,7 @@ DIE *DwarfDebug::constructScopeDIE(DbgScope *Scope) {
   if (Scope->getInlinedAt())
     ScopeDIE = constructInlinedScopeDIE(Scope);
   else if (DS.isSubprogram()) {
+    ProcessedSPNodes.insert(DS.getNode());
     if (Scope->isAbstractScope())
       ScopeDIE = getCompileUnit(DS.getNode())->getDIE(DS.getNode());
     else
@@ -1980,10 +1981,42 @@ void DwarfDebug::beginModule(Module *M, MachineModuleInfo *mmi) {
 /// endModule - Emit all Dwarf sections that should come after the content.
 ///
 void DwarfDebug::endModule() {
-  if (!FirstCU) return;
 
   if (TimePassesIsEnabled)
     DebugTimer->startTimer();
+
+  if (!FirstCU) return;
+  if (NamedMDNode *AllSPs = M->getNamedMetadata("llvm.dbg.sp")) {
+    for (unsigned SI = 0, SE = AllSPs->getNumOperands(); SI != SE; ++SI) {
+      if (ProcessedSPNodes.count(AllSPs->getOperand(SI)) != 0) continue;
+      DISubprogram SP(AllSPs->getOperand(SI));
+      if (!SP.Verify()) continue;
+      // Collect info for variables that were optimized out.
+      StringRef FName = SP.getLinkageName();
+      if (FName.empty())
+        FName = SP.getName();
+      NamedMDNode *NMD = M->getNamedMetadata(Twine("llvm.dbg.lv." + FName));
+      if (!NMD) continue;
+      unsigned E = NMD->getNumOperands();
+      if (!E) continue;
+      DbgScope *Scope = new DbgScope(NULL, DIDescriptor(SP), NULL);
+      for (unsigned I = 0; I != E; ++I) {
+        DIVariable DV(NMD->getOperand(I));
+        if (!DV.Verify()) continue;
+        Scope->addVariable(new DbgVariable(DV));
+      }
+      
+      // Construct subprogram DIE and add variables DIEs.
+      constructSubprogramDIE(SP.getNode());
+      DIE *ScopeDIE = getCompileUnit(SP.getNode())->getDIE(SP.getNode());
+      const SmallVector<DbgVariable *, 8> &Variables = Scope->getVariables();
+      for (unsigned i = 0, N = Variables.size(); i < N; ++i) {
+        DIE *VariableDIE = constructVariableDIE(Variables[i], Scope);
+        if (VariableDIE)
+          ScopeDIE->addChild(VariableDIE);
+      }
+    }
+  }
 
   // Attach DW_AT_inline attribute with inlined subprogram DIEs.
   for (SmallPtrSet<DIE *, 4>::iterator AI = InlinedSubprogramDIEs.begin(),
@@ -2143,8 +2176,9 @@ static bool isDbgValueInDefinedReg(const MachineInstr *MI) {
 }
 
 /// collectVariableInfo - Populate DbgScope entries with variables' info.
-void DwarfDebug::collectVariableInfo(const MachineFunction *MF) {
-  SmallPtrSet<const MDNode *, 16> Processed;
+void 
+DwarfDebug::collectVariableInfo(const MachineFunction *MF,
+                                SmallPtrSet<const MDNode *, 16> &Processed) {
   
   /// collection info from MMI table.
   collectVariableInfoFromMMITable(MF, Processed);
@@ -2242,8 +2276,11 @@ void DwarfDebug::collectVariableInfo(const MachineFunction *MF) {
   }
 
   // Collect info for variables that were optimized out.
+  const Function *F = MF->getFunction();
+  const Module *M = F->getParent();
   if (NamedMDNode *NMD = 
-      MF->getFunction()->getParent()->getNamedMetadata("llvm.dbg.lv")) {
+      M->getNamedMetadata(Twine("llvm.dbg.lv.", 
+                                getRealLinkageName(F->getName())))) {
     for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
       DIVariable DV(cast_or_null<MDNode>(NMD->getOperand(i)));
       if (!DV.getNode() || !Processed.insert(DV.getNode()))
@@ -2341,6 +2378,7 @@ DbgScope *DwarfDebug::getOrCreateDbgScope(MDNode *Scope, MDNode *InlinedAt) {
     return WScope;
   }
 
+  getOrCreateAbstractScope(Scope);
   DbgScope *WScope = DbgScopeMap.lookup(InlinedAt);
   if (WScope)
     return WScope;
@@ -2354,7 +2392,6 @@ DbgScope *DwarfDebug::getOrCreateDbgScope(MDNode *Scope, MDNode *InlinedAt) {
   Parent->addScope(WScope);
 
   ConcreteScopes[InlinedAt] = WScope;
-  getOrCreateAbstractScope(Scope);
 
   return WScope;
 }
@@ -2364,8 +2401,6 @@ DbgScope *DwarfDebug::getOrCreateDbgScope(MDNode *Scope, MDNode *InlinedAt) {
 static bool hasValidLocation(LLVMContext &Ctx,
                              const MachineInstr *MInsn,
                              MDNode *&Scope, MDNode *&InlinedAt) {
-  if (MInsn->isDebugValue())
-    return false;
   DebugLoc DL = MInsn->getDebugLoc();
   if (DL.isUnknown()) return false;
       
@@ -2564,7 +2599,6 @@ void DwarfDebug::identifyScopeMarkers() {
            RE = Ranges.end(); RI != RE; ++RI) {
       assert(RI->first && "DbgRange does not have first instruction!");      
       assert(RI->second && "DbgRange does not have second instruction!");      
-      InsnsBeginScopeSet.insert(RI->first);
       InsnsEndScopeSet.insert(RI->second);
     }
   }
@@ -2611,7 +2645,6 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
         assert (MI->getNumOperands() > 1 && "Invalid machine instruction!");
         DIVariable DV(const_cast<MDNode*>(MI->getOperand(MI->getNumOperands() - 1).getMetadata()));
         if (!DV.Verify()) continue;
-        if (isDbgValueInUndefinedReg(MI)) continue;
         // If DBG_VALUE is for a local variable then it needs a label.
         if (DV.getTag() != dwarf::DW_TAG_arg_variable)
           InsnNeedsLabel.insert(MI);
@@ -2619,7 +2652,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
         else if (!DISubprogram(DV.getContext().getNode()).describes(MF->getFunction()))
           InsnNeedsLabel.insert(MI);
         // DBG_VALUE indicating argument location change needs a label.
-        else if (!ProcessedArgs.insert(DV.getNode()))
+        else if (isDbgValueInUndefinedReg(MI) == false && !ProcessedArgs.insert(DV.getNode()))
           InsnNeedsLabel.insert(MI);
       } else if (DL != PrevLoc && !DL.isUnknown())
         // Otherwise, instruction needs a location only if it is new location.
@@ -2648,7 +2681,8 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
     // Define end label for subprogram.
     Asm->OutStreamer.EmitLabel(getDWLabel("func_end", SubprogramCount));
     
-    collectVariableInfo(MF);
+    SmallPtrSet<const MDNode *, 16> ProcessedVars;
+    collectVariableInfo(MF, ProcessedVars);
 
     // Get function line info.
     if (!Lines.empty()) {
@@ -2663,8 +2697,27 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
     
     // Construct abstract scopes.
     for (SmallVector<DbgScope *, 4>::iterator AI = AbstractScopesList.begin(),
-           AE = AbstractScopesList.end(); AI != AE; ++AI)
+           AE = AbstractScopesList.end(); AI != AE; ++AI) {
       constructScopeDIE(*AI);
+      DISubprogram SP((*AI)->getScopeNode());
+      if (SP.Verify()) {
+        // Collect info for variables that were optimized out.
+        StringRef FName = SP.getLinkageName();
+        if (FName.empty())
+          FName = SP.getName();
+        const Module *M = MF->getFunction()->getParent();
+        if (NamedMDNode *NMD = M->getNamedMetadata(Twine("llvm.dbg.lv." + FName))) {
+          for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
+          DIVariable DV(cast_or_null<MDNode>(NMD->getOperand(i)));
+          if (!DV.getNode() || !ProcessedVars.insert(DV.getNode()))
+            continue;
+          DbgScope *Scope = DbgScopeMap.lookup(DV.getContext().getNode());
+          if (Scope)
+            Scope->addVariable(new DbgVariable(DV));
+          }
+        }
+      }
+    }
     
     DIE *CurFnDIE = constructScopeDIE(CurrentFnDbgScope);
     
@@ -2685,7 +2738,6 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   DbgVariableToDbgInstMap.clear();
   DbgVariableLabelsMap.clear();
   DeleteContainerSeconds(DbgScopeMap);
-  InsnsBeginScopeSet.clear();
   InsnsEndScopeSet.clear();
   ConcreteScopes.clear();
   DeleteContainerSeconds(AbstractScopes);
