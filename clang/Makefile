@@ -18,6 +18,8 @@ Clang_Enable_CXX       := 1
 Clang_Build_All        := 0
 # Set the Clang version.
 Clang_Version          := 2.0
+# Enable bootstrap.
+Clang_Enable_Bootstrap := 1
 
 ##
 # Source Info
