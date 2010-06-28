@@ -52,8 +52,6 @@ LLVM_Backends := x86,arm
 Extra_Make_Variables :=
 # LLVM level install target is 'install-clang.
 LLVM_Install_Target := install-clang
-# Don't bootstrap by default.
-Clang_Enable_Bootstrap := 0
 
 ##
 # Per Project/Target Configuration
@@ -64,6 +62,8 @@ ifeq ($(MAKECMDGOALS),install-cross)
 Default_Install_Root := /
 # Don't build compiler-rt.
 Extra_Make_Variables += CLANG_NO_RUNTIME=1
+# Never bootstrap.
+Clang_Enable_Bootstrap := 0
 
 else ifeq ($(MAKECMDGOALS),install-libclang)
 
@@ -77,6 +77,8 @@ Extra_Make_Variables += CLANG_NO_RUNTIME=1
 Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Use install-clang-c install target.
 LLVM_Install_Target := install-clang-c
+# Never bootstrap.
+Clang_Enable_Bootstrap := 0
 
 else
 
@@ -85,10 +87,6 @@ else
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
-# Enable bootstrap build.
-ifeq ($(Clang_Enable_Bootstrap),)
-Clang_Enable_Bootstrap := 1
-endif
 
 endif
 
