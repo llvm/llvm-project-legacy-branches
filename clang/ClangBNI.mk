@@ -413,7 +413,7 @@ install-clang-rootlinks: install-clang_final
 	if [ -f $(DSTROOT)/$(Install_Prefix)/bin/clang++ ]; then \
 	  ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
 	  ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang++.1; \
-	  ln -sf clang.1 $(DSTROOT)/usr/share/man/man1/clang++.1
+	  ln -sf clang.1 $(DSTROOT)/usr/share/man/man1/clang++.1; \
 	fi
 
 install-clang-opensourcelicense: install-clang_final
