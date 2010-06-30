@@ -2698,7 +2698,6 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
     // Construct abstract scopes.
     for (SmallVector<DbgScope *, 4>::iterator AI = AbstractScopesList.begin(),
            AE = AbstractScopesList.end(); AI != AE; ++AI) {
-      constructScopeDIE(*AI);
       DISubprogram SP((*AI)->getScopeNode());
       if (SP.Verify()) {
         // Collect info for variables that were optimized out.
@@ -2711,12 +2710,14 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
           DIVariable DV(cast_or_null<MDNode>(NMD->getOperand(i)));
           if (!DV.getNode() || !ProcessedVars.insert(DV.getNode()))
             continue;
-          DbgScope *Scope = DbgScopeMap.lookup(DV.getContext().getNode());
+          DbgScope *Scope = AbstractScopes.lookup(DV.getContext().getNode());
           if (Scope)
             Scope->addVariable(new DbgVariable(DV));
           }
         }
       }
+      if (ProcessedSPNodes.count((*AI)->getScopeNode()) == 0)
+        constructScopeDIE(*AI);
     }
     
     DIE *CurFnDIE = constructScopeDIE(CurrentFnDbgScope);
