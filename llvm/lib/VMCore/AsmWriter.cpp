@@ -1419,6 +1419,9 @@ static void PrintLinkage(GlobalValue::LinkageTypes LT,
   case GlobalValue::ExternalLinkage: break;
   case GlobalValue::PrivateLinkage:       Out << "private ";        break;
   case GlobalValue::LinkerPrivateLinkage: Out << "linker_private "; break;
+  case GlobalValue::LinkerPrivateWeakLinkage:
+    Out << "linker_private_weak ";
+    break;
   case GlobalValue::InternalLinkage:      Out << "internal ";       break;
   case GlobalValue::LinkOnceAnyLinkage:   Out << "linkonce ";       break;
   case GlobalValue::LinkOnceODRLinkage:   Out << "linkonce_odr ";   break;
@@ -1854,6 +1857,7 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     default: Out << " cc" << CI->getCallingConv(); break;
     }
 
+    Operand = CI->getCalledValue();
     const PointerType    *PTy = cast<PointerType>(Operand->getType());
     const FunctionType   *FTy = cast<FunctionType>(PTy->getElementType());
     const Type         *RetTy = FTy->getReturnType();
@@ -1877,10 +1881,10 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(Operand, true);
     }
     Out << '(';
-    for (unsigned op = 1, Eop = I.getNumOperands(); op < Eop; ++op) {
-      if (op > 1)
+    for (unsigned op = 0, Eop = CI->getNumArgOperands(); op < Eop; ++op) {
+      if (op > 0)
         Out << ", ";
-      writeParamOperand(I.getOperand(op), PAL.getParamAttributes(op));
+      writeParamOperand(CI->getArgOperand(op), PAL.getParamAttributes(op + 1));
     }
     Out << ')';
     if (PAL.getFnAttributes() != Attribute::None)
@@ -1925,10 +1929,10 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(Operand, true);
     }
     Out << '(';
-    for (unsigned op = 0, Eop = I.getNumOperands() - 4; op < Eop; ++op) {
+    for (unsigned op = 0, Eop = II->getNumArgOperands(); op < Eop; ++op) {
       if (op)
         Out << ", ";
-      writeParamOperand(I.getOperand(op), PAL.getParamAttributes(op + 1));
+      writeParamOperand(II->getArgOperand(op), PAL.getParamAttributes(op + 1));
     }
 
     Out << ')';

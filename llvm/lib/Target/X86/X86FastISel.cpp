@@ -342,6 +342,12 @@ bool X86FastISel::X86SelectAddress(const Value *V, X86AddressMode &AM) {
   const User *U = NULL;
   unsigned Opcode = Instruction::UserOp1;
   if (const Instruction *I = dyn_cast<Instruction>(V)) {
+    // Don't walk into other basic blocks; it's possible we haven't
+    // visited them yet, so the instructions may not yet be assigned
+    // virtual registers.
+    if (MBBMap[I->getParent()] != MBB)
+      return false;
+
     Opcode = I->getOpcode();
     U = I;
   } else if (const ConstantExpr *C = dyn_cast<ConstantExpr>(V)) {
@@ -351,7 +357,8 @@ bool X86FastISel::X86SelectAddress(const Value *V, X86AddressMode &AM) {
 
   if (const PointerType *Ty = dyn_cast<PointerType>(V->getType()))
     if (Ty->getAddressSpace() > 255)
-      // Fast instruction selection doesn't support pointers through %fs or %gs
+      // Fast instruction selection doesn't support the special
+      // address spaces.
       return false;
 
   switch (Opcode) {
@@ -416,20 +423,33 @@ bool X86FastISel::X86SelectAddress(const Value *V, X86AddressMode &AM) {
         Disp += SL->getElementOffset(Idx);
       } else {
         uint64_t S = TD.getTypeAllocSize(GTI.getIndexedType());
-        if (const ConstantInt *CI = dyn_cast<ConstantInt>(Op)) {
-          // Constant-offset addressing.
-          Disp += CI->getSExtValue() * S;
-        } else if (IndexReg == 0 &&
-                   (!AM.GV || !Subtarget->isPICStyleRIPRel()) &&
-                   (S == 1 || S == 2 || S == 4 || S == 8)) {
-          // Scaled-index addressing.
-          Scale = S;
-          IndexReg = getRegForGEPIndex(Op).first;
-          if (IndexReg == 0)
-            return false;
-        } else
-          // Unsupported.
-          goto unsupported_gep;
+        SmallVector<const Value *, 4> Worklist;
+        Worklist.push_back(Op);
+        do {
+          Op = Worklist.pop_back_val();
+          if (const ConstantInt *CI = dyn_cast<ConstantInt>(Op)) {
+            // Constant-offset addressing.
+            Disp += CI->getSExtValue() * S;
+          } else if (isa<AddOperator>(Op) &&
+                     isa<ConstantInt>(cast<AddOperator>(Op)->getOperand(1))) {
+            // An add with a constant operand. Fold the constant.
+            ConstantInt *CI =
+              cast<ConstantInt>(cast<AddOperator>(Op)->getOperand(1));
+            Disp += CI->getSExtValue() * S;
+            // Add the other operand back to the work list.
+            Worklist.push_back(cast<AddOperator>(Op)->getOperand(0));
+          } else if (IndexReg == 0 &&
+                     (!AM.GV || !Subtarget->isPICStyleRIPRel()) &&
+                     (S == 1 || S == 2 || S == 4 || S == 8)) {
+            // Scaled-index addressing.
+            Scale = S;
+            IndexReg = getRegForGEPIndex(Op).first;
+            if (IndexReg == 0)
+              return false;
+          } else
+            // Unsupported.
+            goto unsupported_gep;
+        } while (!Worklist.empty());
       }
     }
     // Check for displacement overflow.
@@ -915,7 +935,7 @@ bool X86FastISel::X86SelectBranch(const Instruction *I) {
       if (CI->getIntrinsicID() == Intrinsic::sadd_with_overflow ||
           CI->getIntrinsicID() == Intrinsic::uadd_with_overflow) {
         const MachineInstr *SetMI = 0;
-        unsigned Reg = lookUpRegForValue(EI);
+        unsigned Reg = getRegForValue(EI);
 
         for (MachineBasicBlock::const_reverse_iterator
                RI = MBB->rbegin(), RE = MBB->rend(); RI != RE; ++RI) {
@@ -1179,8 +1199,8 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     // Emit code inline code to store the stack guard onto the stack.
     EVT PtrTy = TLI.getPointerTy();
 
-    const Value *Op1 = I.getOperand(1); // The guard's value.
-    const AllocaInst *Slot = cast<AllocaInst>(I.getOperand(2));
+    const Value *Op1 = I.getArgOperand(0); // The guard's value.
+    const AllocaInst *Slot = cast<AllocaInst>(I.getArgOperand(1));
 
     // Grab the frame index.
     X86AddressMode AM;
@@ -1191,7 +1211,7 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     return true;
   }
   case Intrinsic::objectsize: {
-    ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(2));
+    ConstantInt *CI = dyn_cast<ConstantInt>(I.getArgOperand(1));
     const Type *Ty = I.getCalledFunction()->getReturnType();
     
     assert(CI && "Non-constant type in Intrinsic::objectsize?");
@@ -1246,8 +1266,8 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     if (!isTypeLegal(RetTy, VT))
       return false;
 
-    const Value *Op1 = I.getOperand(1);
-    const Value *Op2 = I.getOperand(2);
+    const Value *Op1 = I.getArgOperand(0);
+    const Value *Op2 = I.getArgOperand(1);
     unsigned Reg1 = getRegForValue(Op1);
     unsigned Reg2 = getRegForValue(Op2);
 
@@ -1290,7 +1310,7 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
 
 bool X86FastISel::X86SelectCall(const Instruction *I) {
   const CallInst *CI = cast<CallInst>(I);
-  const Value *Callee = I->getOperand(0);
+  const Value *Callee = CI->getCalledValue();
 
   // Can't handle inline asm yet.
   if (isa<InlineAsm>(Callee))
@@ -1548,6 +1568,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
   BuildMI(MBB, DL, TII.get(AdjStackUp)).addImm(NumBytes).addImm(0);
 
   // Now handle call return value (if any).
+  SmallVector<unsigned, 4> UsedRegs;
   if (RetVT.getSimpleVT().SimpleTy != MVT::isVoid) {
     SmallVector<CCValAssign, 16> RVLocs;
     CCState CCInfo(CC, false, TM, RVLocs, I->getParent()->getContext());
@@ -1575,6 +1596,8 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
                                     RVLocs[0].getLocReg(), DstRC, SrcRC, DL);
     assert(Emitted && "Failed to emit a copy instruction!"); Emitted=Emitted;
     Emitted = true;
+    UsedRegs.push_back(RVLocs[0].getLocReg());
+
     if (CopyVT != RVLocs[0].getValVT()) {
       // Round the F80 the right size, which also moves to the appropriate xmm
       // register. This is accomplished by storing the F80 value in memory and
@@ -1601,6 +1624,9 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
 
     UpdateValueMap(I, ResultReg);
   }
+
+  // Set all unused physreg defs as dead.
+  static_cast<MachineInstr *>(MIB)->setPhysRegsDeadExcept(UsedRegs, TRI);
 
   return true;
 }

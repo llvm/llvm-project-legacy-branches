@@ -1284,6 +1284,9 @@ if test "$llvm_cv_enable_libffi" = "yes" ; then
   AC_CHECK_HEADERS([ffi.h ffi/ffi.h])
 fi
 
+dnl Try to find Darwin specific crash reporting library.
+AC_CHECK_HEADERS([CrashReporterClient.h])
+
 dnl===-----------------------------------------------------------------------===
 dnl===
 dnl=== SECTION 7: Check for types and structures

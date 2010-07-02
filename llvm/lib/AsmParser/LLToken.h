@@ -47,6 +47,7 @@ namespace lltok {
     kw_external,
     kw_internal,
     kw_linker_private,
+    kw_linker_private_weak,
     kw_linkonce,
     kw_linkonce_odr,
     kw_private,

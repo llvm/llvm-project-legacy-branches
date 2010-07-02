@@ -62,6 +62,7 @@ namespace {
     void TransferKillFlag(MachineInstr *MI, unsigned SrcReg,
                           const TargetRegisterInfo *TRI,
                           bool AddIfNotFound = false);
+    void TransferImplicitDefs(MachineInstr *MI);
   };
 
   char LowerSubregsInstructionPass::ID = 0;
@@ -101,6 +102,22 @@ LowerSubregsInstructionPass::TransferKillFlag(MachineInstr *MI,
       break;
     assert(MII != MI->getParent()->begin() &&
            "copyRegToReg output doesn't reference source register!");
+  }
+}
+
+/// TransferImplicitDefs - MI is a pseudo-instruction, and the lowered
+/// replacement instructions immediately precede it.  Copy any implicit-def
+/// operands from MI to the replacement instruction.
+void
+LowerSubregsInstructionPass::TransferImplicitDefs(MachineInstr *MI) {
+  MachineBasicBlock::iterator CopyMI = MI;
+  --CopyMI;
+
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = MI->getOperand(i);
+    if (!MO.isReg() || !MO.isImplicit() || MO.isUse())
+      continue;
+    CopyMI->addOperand(MachineOperand::CreateReg(MO.getReg(), true, true));
   }
 }
 
@@ -149,6 +166,7 @@ bool LowerSubregsInstructionPass::LowerExtract(MachineInstr *MI) {
       TransferDeadFlag(MI, DstReg, TRI);
     if (MI->getOperand(1).isKill())
       TransferKillFlag(MI, SuperReg, TRI, true);
+    TransferImplicitDefs(MI);
     DEBUG({
         MachineBasicBlock::iterator dMI = MI;
         dbgs() << "subreg: " << *(--dMI);
@@ -166,10 +184,10 @@ bool LowerSubregsInstructionPass::LowerSubregToReg(MachineInstr *MI) {
          MI->getOperand(1).isImm() &&
          (MI->getOperand(2).isReg() && MI->getOperand(2).isUse()) &&
           MI->getOperand(3).isImm() && "Invalid subreg_to_reg");
-          
+
   unsigned DstReg  = MI->getOperand(0).getReg();
   unsigned InsReg  = MI->getOperand(2).getReg();
-  unsigned InsSIdx = MI->getOperand(2).getSubReg();
+  assert(!MI->getOperand(2).getSubReg() && "SubIdx on physreg?");
   unsigned SubIdx  = MI->getOperand(3).getImm();
 
   assert(SubIdx != 0 && "Invalid index for insert_subreg");
@@ -182,13 +200,18 @@ bool LowerSubregsInstructionPass::LowerSubregToReg(MachineInstr *MI) {
 
   DEBUG(dbgs() << "subreg: CONVERTING: " << *MI);
 
-  if (DstSubReg == InsReg && InsSIdx == 0) {
+  if (DstSubReg == InsReg) {
     // No need to insert an identify copy instruction.
     // Watch out for case like this:
-    // %RAX<def> = ...
-    // %RAX<def> = SUBREG_TO_REG 0, %EAX:3<kill>, 3
-    // The first def is defining RAX, not EAX so the top bits were not
-    // zero extended.
+    // %RAX<def> = SUBREG_TO_REG 0, %EAX<kill>, 3
+    // We must leave %RAX live.
+    if (DstReg != InsReg) {
+      MI->setDesc(TII->get(TargetOpcode::KILL));
+      MI->RemoveOperand(3);     // SubIdx
+      MI->RemoveOperand(1);     // Imm
+      DEBUG(dbgs() << "subreg: replace by: " << *MI);
+      return true;
+    }
     DEBUG(dbgs() << "subreg: eliminated!");
   } else {
     // Insert sub-register copy

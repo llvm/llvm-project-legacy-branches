@@ -22,6 +22,7 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
@@ -87,12 +88,13 @@ namespace {
     /// CleanupSelectors - Any remaining eh.selector intrinsic calls which still
     /// use the ".llvm.eh.catch.all.value" call need to convert to using its
     /// initializer instead.
-    bool CleanupSelectors();
+    bool CleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels);
 
-    bool IsACleanupSelector(IntrinsicInst *);
+    bool HasCatchAllInSelector(IntrinsicInst *);
 
     /// FindAllCleanupSelectors - Find all eh.selector calls that are clean-ups.
-    void FindAllCleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels);
+    void FindAllCleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels,
+                                 SmallPtrSet<IntrinsicInst*, 32> &CatchAllSels);
 
     /// FindAllURoRInvokes - Find all URoR invokes in the function.
     void FindAllURoRInvokes(SmallPtrSet<InvokeInst*, 32> &URoRInvokes);
@@ -152,7 +154,7 @@ namespace {
         Changed = true;
       }
 
-      return false;
+      return Changed;
     }
 
   public:
@@ -188,39 +190,20 @@ FunctionPass *llvm::createDwarfEHPass(const TargetMachine *tm, bool fast) {
   return new DwarfEHPrepare(tm, fast);
 }
 
-/// IsACleanupSelector - Return true if the intrinsic instruction is a clean-up
-/// selector instruction.
-bool DwarfEHPrepare::IsACleanupSelector(IntrinsicInst *II) {
-  unsigned NumOps = II->getNumOperands();
-  bool IsCleanUp = (NumOps == 3);
+/// HasCatchAllInSelector - Return true if the intrinsic instruction has a
+/// catch-all.
+bool DwarfEHPrepare::HasCatchAllInSelector(IntrinsicInst *II) {
+  if (!EHCatchAllValue) return false;
 
-  if (IsCleanUp)
-    return true;
-
-  if (ConstantInt *CI = dyn_cast<ConstantInt>(II->getOperand(3))) {
-    unsigned Val = CI->getZExtValue();
-
-    if (Val == 0 || Val + 3 == NumOps) {
-      // If the value is 0 or the selector has only filters in it, then it's
-      // a cleanup.
-      return true;
-    } else {
-      assert(Val + 3 < NumOps && "Ill-formed eh.selector!");
-
-      if (Val + 4 == NumOps) {
-        if (ConstantInt *FinalVal =
-            dyn_cast<ConstantInt>(II->getOperand(NumOps - 1)))
-          return FinalVal->isZero();
-      }
-    }
-  }
-
-  return false;
+  unsigned ArgIdx = II->getNumArgOperands() - 1;
+  GlobalVariable *GV = dyn_cast<GlobalVariable>(II->getArgOperand(ArgIdx));
+  return GV == EHCatchAllValue;
 }
 
 /// FindAllCleanupSelectors - Find all eh.selector calls that are clean-ups.
 void DwarfEHPrepare::
-FindAllCleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels) {
+FindAllCleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels,
+                        SmallPtrSet<IntrinsicInst*, 32> &CatchAllSels) {
   for (Value::use_iterator
          I = SelectorIntrinsic->use_begin(),
          E = SelectorIntrinsic->use_end(); I != E; ++I) {
@@ -229,8 +212,10 @@ FindAllCleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels) {
     if (II->getParent()->getParent() != F)
       continue;
 
-    if (IsACleanupSelector(II))
+    if (!HasCatchAllInSelector(II))
       Sels.insert(II);
+    else
+      CatchAllSels.insert(II);
   }
 }
 
@@ -248,7 +233,7 @@ FindAllURoRInvokes(SmallPtrSet<InvokeInst*, 32> &URoRInvokes) {
 /// CleanupSelectors - Any remaining eh.selector intrinsic calls which still use
 /// the ".llvm.eh.catch.all.value" call need to convert to using its
 /// initializer instead.
-bool DwarfEHPrepare::CleanupSelectors() {
+bool DwarfEHPrepare::CleanupSelectors(SmallPtrSet<IntrinsicInst*, 32> &Sels) {
   if (!EHCatchAllValue) return false;
 
   if (!SelectorIntrinsic) {
@@ -258,17 +243,15 @@ bool DwarfEHPrepare::CleanupSelectors() {
   }
 
   bool Changed = false;
-  for (Value::use_iterator
-         I = SelectorIntrinsic->use_begin(),
-         E = SelectorIntrinsic->use_end(); I != E; ++I) {
-    IntrinsicInst *Sel = dyn_cast<IntrinsicInst>(I);
-    if (!Sel || Sel->getParent()->getParent() != F) continue;
+  for (SmallPtrSet<IntrinsicInst*, 32>::iterator
+         I = Sels.begin(), E = Sels.end(); I != E; ++I) {
+    IntrinsicInst *Sel = *I;
 
     // Index of the ".llvm.eh.catch.all.value" variable.
-    unsigned OpIdx = Sel->getNumOperands() - 1;
-    GlobalVariable *GV = dyn_cast<GlobalVariable>(Sel->getOperand(OpIdx));
+    unsigned OpIdx = Sel->getNumArgOperands() - 1;
+    GlobalVariable *GV = dyn_cast<GlobalVariable>(Sel->getArgOperand(OpIdx));
     if (GV != EHCatchAllValue) continue;
-    Sel->setOperand(OpIdx, EHCatchAllValue->getInitializer());
+    Sel->setArgOperand(OpIdx, EHCatchAllValue->getInitializer());
     Changed = true;
   }
 
@@ -319,8 +302,6 @@ DwarfEHPrepare::FindSelectorAndURoR(Instruction *Inst, bool &URoRInvoke,
 /// function. This is a candidate to merge the selector associated with the URoR
 /// invoke with the one from the URoR's landing pad.
 bool DwarfEHPrepare::HandleURoRInvokes() {
-  if (!DT) return CleanupSelectors(); // We require DominatorTree information.
-
   if (!EHCatchAllValue) {
     EHCatchAllValue =
       F->getParent()->getNamedGlobal(".llvm.eh.catch.all.value");
@@ -333,14 +314,20 @@ bool DwarfEHPrepare::HandleURoRInvokes() {
     if (!SelectorIntrinsic) return false;
   }
 
+  SmallPtrSet<IntrinsicInst*, 32> Sels;
+  SmallPtrSet<IntrinsicInst*, 32> CatchAllSels;
+  FindAllCleanupSelectors(Sels, CatchAllSels);
+
+  if (!DT)
+    // We require DominatorTree information.
+    return CleanupSelectors(CatchAllSels);
+
   if (!URoR) {
     URoR = F->getParent()->getFunction("_Unwind_Resume_or_Rethrow");
-    if (!URoR) return CleanupSelectors();
+    if (!URoR) return CleanupSelectors(CatchAllSels);
   }
 
-  SmallPtrSet<IntrinsicInst*, 32> Sels;
   SmallPtrSet<InvokeInst*, 32> URoRInvokes;
-  FindAllCleanupSelectors(Sels);
   FindAllURoRInvokes(URoRInvokes);
 
   SmallPtrSet<IntrinsicInst*, 32> SelsToConvert;
@@ -366,7 +353,8 @@ bool DwarfEHPrepare::HandleURoRInvokes() {
     if (!ExceptionValueIntrinsic) {
       ExceptionValueIntrinsic =
         Intrinsic::getDeclaration(F->getParent(), Intrinsic::eh_exception);
-      if (!ExceptionValueIntrinsic) return CleanupSelectors();
+      if (!ExceptionValueIntrinsic)
+        return CleanupSelectors(CatchAllSels);
     }
 
     for (Value::use_iterator
@@ -387,7 +375,7 @@ bool DwarfEHPrepare::HandleURoRInvokes() {
         // need to convert it to a 'catch-all'.
         for (SmallPtrSet<IntrinsicInst*, 8>::iterator
                SI = SelCalls.begin(), SE = SelCalls.end(); SI != SE; ++SI)
-          if (IsACleanupSelector(*SI))
+          if (!HasCatchAllInSelector(*SI))
               SelsToConvert.insert(*SI);
       }
     }
@@ -402,20 +390,21 @@ bool DwarfEHPrepare::HandleURoRInvokes() {
            SI = SelsToConvert.begin(), SE = SelsToConvert.end();
          SI != SE; ++SI) {
       IntrinsicInst *II = *SI;
-      SmallVector<Value*, 8> Args;
 
       // Use the exception object pointer and the personality function
       // from the original selector.
-      Args.push_back(II->getOperand(1)); // Exception object pointer.
-      Args.push_back(II->getOperand(2)); // Personality function.
+      CallSite CS(II);
+      IntrinsicInst::op_iterator I = CS.arg_begin();
+      IntrinsicInst::op_iterator E = CS.arg_end();
+      IntrinsicInst::op_iterator B = prior(E);
 
-      unsigned I = 3;
-      unsigned E = II->getNumOperands() -
-        (isa<ConstantInt>(II->getOperand(II->getNumOperands() - 1)) ? 1 : 0);
+      // Exclude last argument if it is an integer.
+      if (isa<ConstantInt>(B)) E = B;
 
-      // Add in any filter IDs.
-      for (; I < E; ++I)
-        Args.push_back(II->getOperand(I));
+      // Add exception object pointer (front).
+      // Add personality function (next).
+      // Add in any filter IDs (rest).
+      SmallVector<Value*, 8> Args(I, E);
 
       Args.push_back(EHCatchAllValue->getInitializer()); // Catch-all indicator.
 
@@ -432,7 +421,7 @@ bool DwarfEHPrepare::HandleURoRInvokes() {
     }
   }
 
-  Changed |= CleanupSelectors();
+  Changed |= CleanupSelectors(CatchAllSels);
   return Changed;
 }
 

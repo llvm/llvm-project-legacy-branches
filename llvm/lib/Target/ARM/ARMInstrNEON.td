@@ -2268,7 +2268,7 @@ def  VCEQfq   : N3VQ<0,0,0b00,0b1110,0, IIC_VBINQ, "vceq", "f32", v4i32, v4f32,
                      NEONvceq, 1>;
 // For disassembly only.
 defm VCEQz    : N2V_QHS_cmp<0b11, 0b11, 0b01, 0b00010, 0, "vceq", "i",
-                           "$dst, $src, #0">;
+                            "$dst, $src, #0">;
 
 //   VCGE     : Vector Compare Greater Than or Equal
 defm VCGEs    : N3V_QHS<0, 0, 0b0011, 1, IIC_VSUBi4D, IIC_VSUBi4D, IIC_VSUBi4Q,
@@ -2849,9 +2849,6 @@ def VMOV_get_imm64 : SDNodeXForm<build_vector, [{
 def vmovImm64 : PatLeaf<(build_vector), [{
   return ARM::getNEONModImm(N, 8, true, *CurDAG).getNode() != 0;
 }], VMOV_get_imm64>;
-
-// Note: Some of the cmode bits in the following VMOV instructions need to
-// be encoded based on the immed values.
 
 let isReMaterializable = 1 in {
 def VMOVv8i8  : N1ModImm<1, 0b000, 0b1110, 0, 0, 0, 1, (outs DPR:$dst),

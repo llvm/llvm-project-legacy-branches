@@ -2286,7 +2286,6 @@ bool SelectionDAG::isVerifiedDebugInfoDesc(SDValue Op) const {
 SDValue SelectionDAG::getShuffleScalarElt(const ShuffleVectorSDNode *N,
                                           unsigned i) {
   EVT VT = N->getValueType(0);
-  DebugLoc dl = N->getDebugLoc();
   if (N->getMaskElt(i) < 0)
     return getUNDEF(VT.getVectorElementType());
   unsigned Index = N->getMaskElt(i);
@@ -2626,7 +2625,7 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     if (N1.getOpcode() == ISD::BUILD_VECTOR &&
         N2.getOpcode() == ISD::BUILD_VECTOR) {
       SmallVector<SDValue, 16> Elts(N1.getNode()->op_begin(), N1.getNode()->op_end());
-      Elts.insert(Elts.end(), N2.getNode()->op_begin(), N2.getNode()->op_end());
+      Elts.append(N2.getNode()->op_begin(), N2.getNode()->op_end());
       return getNode(ISD::BUILD_VECTOR, DL, VT, &Elts[0], Elts.size());
     }
     break;
@@ -3015,7 +3014,6 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
                               SDValue N1, SDValue N2, SDValue N3) {
   // Perform various simplifications.
   ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(N1.getNode());
-  ConstantSDNode *N2C = dyn_cast<ConstantSDNode>(N2.getNode());
   switch (Opcode) {
   case ISD::CONCAT_VECTORS:
     // A CONCAT_VECTOR with all operands BUILD_VECTOR can be simplified to
@@ -3024,8 +3022,8 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
         N2.getOpcode() == ISD::BUILD_VECTOR &&
         N3.getOpcode() == ISD::BUILD_VECTOR) {
       SmallVector<SDValue, 16> Elts(N1.getNode()->op_begin(), N1.getNode()->op_end());
-      Elts.insert(Elts.end(), N2.getNode()->op_begin(), N2.getNode()->op_end());
-      Elts.insert(Elts.end(), N3.getNode()->op_begin(), N3.getNode()->op_end());
+      Elts.append(N2.getNode()->op_begin(), N2.getNode()->op_end());
+      Elts.append(N3.getNode()->op_begin(), N3.getNode()->op_end());
       return getNode(ISD::BUILD_VECTOR, DL, VT, &Elts[0], Elts.size());
     }
     break;
@@ -3044,14 +3042,6 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     }
 
     if (N2 == N3) return N2;   // select C, X, X -> X
-    break;
-  case ISD::BRCOND:
-    if (N2C) {
-      if (N2C->getZExtValue()) // Unconditional branch
-        return getNode(ISD::BR, DL, MVT::Other, N1, N3);
-      else
-        return N1;         // Never-taken branch
-    }
     break;
   case ISD::VECTOR_SHUFFLE:
     llvm_unreachable("should use getVectorShuffle constructor!");
@@ -4151,9 +4141,10 @@ SelectionDAG::getIndexedStore(SDValue OrigStore, DebugLoc dl, SDValue Base,
 
 SDValue SelectionDAG::getVAArg(EVT VT, DebugLoc dl,
                                SDValue Chain, SDValue Ptr,
-                               SDValue SV) {
-  SDValue Ops[] = { Chain, Ptr, SV };
-  return getNode(ISD::VAARG, dl, getVTList(VT, MVT::Other), Ops, 3);
+                               SDValue SV,
+                               unsigned Align) {
+  SDValue Ops[] = { Chain, Ptr, SV, getTargetConstant(Align, MVT::i32) };
+  return getNode(ISD::VAARG, dl, getVTList(VT, MVT::Other), Ops, 4);
 }
 
 SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,

@@ -83,7 +83,6 @@ def SSEPackedInt    : Domain<3>;
 class OpSize { bit hasOpSizePrefix = 1; }
 class AdSize { bit hasAdSizePrefix = 1; }
 class REX_W  { bit hasREX_WPrefix = 1; }
-class VEX_4V { bit hasVEX_4VPrefix = 1; }
 class LOCK   { bit hasLockPrefix = 1; }
 class SegFS  { bits<2> SegOvrBits = 1; }
 class SegGS  { bits<2> SegOvrBits = 2; }
@@ -102,6 +101,9 @@ class XS     { bits<4> Prefix = 12; }
 class T8     { bits<4> Prefix = 13; }
 class TA     { bits<4> Prefix = 14; }
 class TF     { bits<4> Prefix = 15; }
+class VEX    { bit hasVEXPrefix = 1; }
+class VEX_W  { bit hasVEX_WPrefix = 1; }
+class VEX_4V : VEX { bit hasVEX_4VPrefix = 1; }
 
 class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
               string AsmStr, Domain d = GenericDomain>
@@ -125,11 +127,13 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
 
   bits<4> Prefix = 0;       // Which prefix byte does this inst have?
   bit hasREX_WPrefix  = 0;  // Does this inst requires the REX.W prefix?
-  bit hasVEX_4VPrefix  = 0;  // Does this inst requires the VEX.VVVV prefix?
   FPFormat FPForm = NotFP;  // What flavor of FP instruction is this?
   bit hasLockPrefix = 0;    // Does this inst have a 0xF0 prefix?
   bits<2> SegOvrBits = 0;   // Segment override prefix.
   Domain ExeDomain = d;
+  bit hasVEXPrefix = 0;     // Does this inst requires a VEX prefix?
+  bit hasVEX_WPrefix = 0;   // Does this inst set the VEX_W field?
+  bit hasVEX_4VPrefix = 0;  // Does this inst requires the VEX.VVVV field?
 
   // TSFlags layout should be kept in sync with X86InstrInfo.h.
   let TSFlags{5-0}   = FormBits;
@@ -143,7 +147,9 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
   let TSFlags{21-20} = SegOvrBits;
   let TSFlags{23-22} = ExeDomain.Value;
   let TSFlags{31-24} = Opcode;
-  let TSFlags{32}    = hasVEX_4VPrefix;
+  let TSFlags{32}    = hasVEXPrefix;
+  let TSFlags{33}    = hasVEX_WPrefix;
+  let TSFlags{34}    = hasVEX_4VPrefix;
 }
 
 class I<bits<8> o, Format f, dag outs, dag ins, string asm,
@@ -217,9 +223,45 @@ class Iseg32 <bits<8> o, Format f, dag outs, dag ins, string asm,
 // SI - SSE 1 & 2 scalar instructions
 class SI<bits<8> o, Format F, dag outs, dag ins, string asm, list<dag> pattern>
       : I<o, F, outs, ins, asm, pattern> {
-  let Predicates = !if(hasVEX_4VPrefix /* VEX_4V */,
+  let Predicates = !if(hasVEXPrefix /* VEX_4V */,
             !if(!eq(Prefix, 11 /* XD */), [HasAVX, HasSSE2], [HasAVX, HasSSE1]),
-            !if(!eq(Prefix, 12 /* XS */), [HasSSE2], [HasSSE1]));
+            !if(!eq(Prefix, 12 /* XS */), [HasSSE1], [HasSSE2]));
+
+  // AVX instructions have a 'v' prefix in the mnemonic
+  let AsmString = !if(hasVEXPrefix, !strconcat("v", asm), asm);
+}
+
+// SIi8 - SSE 1 & 2 scalar instructions
+class SIi8<bits<8> o, Format F, dag outs, dag ins, string asm,
+           list<dag> pattern>
+      : Ii8<o, F, outs, ins, asm, pattern> {
+  let Predicates = !if(hasVEXPrefix /* VEX_4V */,
+            !if(!eq(Prefix, 11 /* XD */), [HasAVX, HasSSE2], [HasAVX, HasSSE1]),
+            !if(!eq(Prefix, 12 /* XS */), [HasSSE1], [HasSSE2]));
+
+  // AVX instructions have a 'v' prefix in the mnemonic
+  let AsmString = !if(hasVEXPrefix, !strconcat("v", asm), asm);
+}
+
+// PI - SSE 1 & 2 packed instructions
+class PI<bits<8> o, Format F, dag outs, dag ins, string asm, list<dag> pattern,
+         Domain d>
+      : I<o, F, outs, ins, asm, pattern, d> {
+  let Predicates = !if(hasVEXPrefix /* VEX_4V */,
+        !if(hasOpSizePrefix /* OpSize */, [HasAVX, HasSSE2], [HasAVX, HasSSE1]),
+        !if(hasOpSizePrefix /* OpSize */, [HasSSE2], [HasSSE1]));
+
+  // AVX instructions have a 'v' prefix in the mnemonic
+  let AsmString = !if(hasVEXPrefix, !strconcat("v", asm), asm);
+}
+
+// PIi8 - SSE 1 & 2 packed instructions with immediate
+class PIi8<bits<8> o, Format F, dag outs, dag ins, string asm,
+           list<dag> pattern, Domain d>
+      : Ii8<o, F, outs, ins, asm, pattern, d> {
+  let Predicates = !if(hasVEX_4VPrefix /* VEX_4V */,
+        !if(hasOpSizePrefix /* OpSize */, [HasAVX, HasSSE2], [HasAVX, HasSSE1]),
+        !if(hasOpSizePrefix /* OpSize */, [HasSSE2], [HasSSE1]));
 
   // AVX instructions have a 'v' prefix in the mnemonic
   let AsmString = !if(hasVEX_4VPrefix, !strconcat("v", asm), asm);
@@ -247,12 +289,12 @@ class PSIi8<bits<8> o, Format F, dag outs, dag ins, string asm,
         Requires<[HasSSE1]>;
 class VSSI<bits<8> o, Format F, dag outs, dag ins, string asm,
            list<dag> pattern>
-      : I<o, F, outs, ins, !strconcat("v", asm), pattern>, XS, VEX_4V,
+      : I<o, F, outs, ins, !strconcat("v", asm), pattern>, XS,
         Requires<[HasAVX, HasSSE1]>;
 class VPSI<bits<8> o, Format F, dag outs, dag ins, string asm,
            list<dag> pattern>
       : I<o, F, outs, ins, !strconcat("v", asm), pattern, SSEPackedSingle>,
-        VEX_4V, Requires<[HasAVX, HasSSE1]>;
+        Requires<[HasAVX, HasSSE1]>;
 
 // SSE2 Instruction Templates:
 // 
@@ -281,12 +323,12 @@ class PDIi8<bits<8> o, Format F, dag outs, dag ins, string asm,
         Requires<[HasSSE2]>;
 class VSDI<bits<8> o, Format F, dag outs, dag ins, string asm,
            list<dag> pattern>
-      : I<o, F, outs, ins, !strconcat("v", asm), pattern>, XD, VEX_4V,
+      : I<o, F, outs, ins, !strconcat("v", asm), pattern>, XD,
         Requires<[HasAVX, HasSSE2]>;
 class VPDI<bits<8> o, Format F, dag outs, dag ins, string asm,
            list<dag> pattern>
       : I<o, F, outs, ins, !strconcat("v", asm), pattern, SSEPackedDouble>,
-        VEX_4V, OpSize, Requires<[HasAVX, HasSSE2]>;
+        OpSize, Requires<[HasAVX, HasSSE2]>;
 
 // SSE3 Instruction Templates:
 // 

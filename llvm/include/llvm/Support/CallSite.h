@@ -273,7 +273,9 @@ private:
     // FIXME: this is slow, since we do not have the fast versions of the op_*()
     // functions here. See CallSite::getCallee.
     if (isCall())
-      return getInstruction()->op_begin();   // Unchanged (ATM)
+      return CallInst::ArgOffset
+             ? getInstruction()->op_begin() // Unchanged
+             : getInstruction()->op_end() - 1; // Skip Function
     else
       // An invoke.
       return getInstruction()->op_end() - 4; // Skip PersFn, BB, BB, Function

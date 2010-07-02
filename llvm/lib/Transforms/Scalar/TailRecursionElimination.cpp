@@ -253,7 +253,7 @@ static bool isDynamicConstant(Value *V, CallInst *CI, ReturnInst *RI) {
     // If we are passing this argument into call as the corresponding
     // argument operand, then the argument is dynamically constant.
     // Otherwise, we cannot transform this function safely.
-    if (CI->getOperand(ArgNo+1) == Arg)
+    if (CI->getArgOperand(ArgNo) == Arg)
       return true;
   }
 
@@ -270,16 +270,16 @@ static bool isDynamicConstant(Value *V, CallInst *CI, ReturnInst *RI) {
 }
 
 // getCommonReturnValue - Check to see if the function containing the specified
-// return instruction and tail call consistently returns the same
-// runtime-constant value at all exit points.  If so, return the returned value.
+// tail call consistently returns the same runtime-constant value at all exit
+// points except for IgnoreRI.  If so, return the returned value.
 //
-static Value *getCommonReturnValue(ReturnInst *TheRI, CallInst *CI) {
-  Function *F = TheRI->getParent()->getParent();
+static Value *getCommonReturnValue(ReturnInst *IgnoreRI, CallInst *CI) {
+  Function *F = CI->getParent()->getParent();
   Value *ReturnedValue = 0;
 
   for (Function::iterator BBI = F->begin(), E = F->end(); BBI != E; ++BBI)
     if (ReturnInst *RI = dyn_cast<ReturnInst>(BBI->getTerminator()))
-      if (RI != TheRI) {
+      if (RI != IgnoreRI) {
         Value *RetOp = RI->getOperand(0);
 
         // We can only perform this transformation if the value returned is
@@ -404,7 +404,7 @@ bool TailCallElim::ProcessReturningBlock(ReturnInst *Ret, BasicBlock *&OldEntry,
   if (Ret->getNumOperands() == 1 && Ret->getReturnValue() != CI &&
       !isa<UndefValue>(Ret->getReturnValue()) &&
       AccumulatorRecursionEliminationInitVal == 0 &&
-      !getCommonReturnValue(Ret, CI))
+      !getCommonReturnValue(0, CI))
     return false;
 
   // OK! We can transform this tail call.  If this is the first one found,
@@ -454,8 +454,8 @@ bool TailCallElim::ProcessReturningBlock(ReturnInst *Ret, BasicBlock *&OldEntry,
   // Ok, now that we know we have a pseudo-entry block WITH all of the
   // required PHI nodes, add entries into the PHI node for the actual
   // parameters passed into the tail-recursive call.
-  for (unsigned i = 0, e = CI->getNumOperands()-1; i != e; ++i)
-    ArgumentPHIs[i]->addIncoming(CI->getOperand(i+1), BB);
+  for (unsigned i = 0, e = CI->getNumArgOperands(); i != e; ++i)
+    ArgumentPHIs[i]->addIncoming(CI->getArgOperand(i), BB);
 
   // If we are introducing an accumulator variable to eliminate the recursion,
   // do so now.  Note that we _know_ that no subsequent tail recursion

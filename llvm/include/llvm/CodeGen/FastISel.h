@@ -36,6 +36,7 @@ class TargetInstrInfo;
 class TargetLowering;
 class TargetMachine;
 class TargetRegisterClass;
+class TargetRegisterInfo;
 
 /// FastISel - This is a fast-path instruction selection class that
 /// generates poor code and doesn't support illegal types or non-trivial
@@ -60,6 +61,7 @@ protected:
   const TargetData &TD;
   const TargetInstrInfo &TII;
   const TargetLowering &TLI;
+  const TargetRegisterInfo &TRI;
   bool IsBottomUp;
 
 public:
@@ -305,6 +307,8 @@ protected:
   }
 
 private:
+  bool SelectLoad(const User *I);
+
   bool SelectBinaryOp(const User *I, unsigned ISDOpcode);
 
   bool SelectFNeg(const User *I);

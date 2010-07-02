@@ -48,6 +48,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Analysis/Loads.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetLowering.h"
@@ -161,8 +162,11 @@ unsigned FastISel::materializeRegForValue(const Value *V, MVT VT) {
       }
     }
   } else if (const Operator *Op = dyn_cast<Operator>(V)) {
-    if (!SelectOperator(Op, Op->getOpcode())) return 0;
-    Reg = LocalValueMap[Op];
+    if (!SelectOperator(Op, Op->getOpcode()))
+      if (!isa<Instruction>(Op) ||
+          !TargetSelectInstruction(cast<Instruction>(Op)))
+        return 0;
+    Reg = lookUpRegForValue(Op);
   } else if (isa<UndefValue>(V)) {
     Reg = createResultReg(TLI.getRegClassFor(VT));
     BuildMI(MBB, DL, TII.get(TargetOpcode::IMPLICIT_DEF), Reg);
@@ -185,8 +189,9 @@ unsigned FastISel::lookUpRegForValue(const Value *V) {
   // cache values defined by Instructions across blocks, and other values
   // only locally. This is because Instructions already have the SSA
   // def-dominates-use requirement enforced.
-  if (ValueMap.count(V))
-    return ValueMap[V];
+  DenseMap<const Value *, unsigned>::iterator I = ValueMap.find(V);
+  if (I != ValueMap.end())
+    return I->second;
   return LocalValueMap[V];
 }
 
@@ -712,8 +717,31 @@ FastISel::SelectFNeg(const User *I) {
 }
 
 bool
+FastISel::SelectLoad(const User *I) {
+  LoadInst *LI = const_cast<LoadInst *>(cast<LoadInst>(I));
+
+  // For a load from an alloca, make a limited effort to find the value
+  // already available in a register, avoiding redundant loads.
+  if (!LI->isVolatile() && isa<AllocaInst>(LI->getPointerOperand())) {
+    BasicBlock::iterator ScanFrom = LI;
+    if (const Value *V = FindAvailableLoadedValue(LI->getPointerOperand(),
+                                                  LI->getParent(), ScanFrom)) {
+      unsigned ResultReg = getRegForValue(V);
+      if (ResultReg != 0) {
+        UpdateValueMap(I, ResultReg);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool
 FastISel::SelectOperator(const User *I, unsigned Opcode) {
   switch (Opcode) {
+  case Instruction::Load:
+    return SelectLoad(I);
   case Instruction::Add:
     return SelectBinaryOp(I, ISD::ADD);
   case Instruction::FAdd:
@@ -849,6 +877,7 @@ FastISel::FastISel(MachineFunction &mf,
     TD(*TM.getTargetData()),
     TII(*TM.getInstrInfo()),
     TLI(*TM.getTargetLowering()),
+    TRI(*TM.getRegisterInfo()),
     IsBottomUp(false) {
 }
 
@@ -1182,7 +1211,7 @@ bool FastISel::HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB) {
       // by bailing out early, we may leave behind some dead instructions,
       // since SelectionDAG's HandlePHINodesInSuccessorBlocks will insert its
       // own moves. Second, this check is necessary becuase FastISel doesn't
-      // use CreateRegForValue to create registers, so it always creates
+      // use CreateRegs to create registers, so it always creates
       // exactly one register for each non-void instruction.
       EVT VT = TLI.getValueType(PN->getType(), /*AllowUnknown=*/true);
       if (VT == MVT::Other || !TLI.isTypeLegal(VT)) {

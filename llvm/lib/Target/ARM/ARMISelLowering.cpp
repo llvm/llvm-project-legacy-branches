@@ -67,6 +67,11 @@ ARMInterworking("arm-interworking", cl::Hidden,
   cl::desc("Enable / disable ARM interworking (for debugging only)"),
   cl::init(true));
 
+static cl::opt<bool>
+EnableARMCodePlacement("arm-code-placement", cl::Hidden,
+  cl::desc("Enable code placement pass for ARM."),
+  cl::init(false));
+
 static bool CC_ARM_APCS_Custom_f64(unsigned &ValNo, EVT &ValVT, EVT &LocVT,
                                    CCValAssign::LocInfo &LocInfo,
                                    ISD::ArgFlagsTy &ArgFlags,
@@ -407,16 +412,55 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
   // Handle atomics directly for ARMv[67] (except for Thumb1), otherwise
   // use the default expansion.
-  TargetLowering::LegalizeAction AtomicAction =
+  bool canHandleAtomics =
     (Subtarget->hasV7Ops() ||
-      (Subtarget->hasV6Ops() && !Subtarget->isThumb1Only())) ? Custom : Expand;
-  setOperationAction(ISD::MEMBARRIER, MVT::Other, AtomicAction);
+      (Subtarget->hasV6Ops() && !Subtarget->isThumb1Only()));
+  if (canHandleAtomics) {
+    // membarrier needs custom lowering; the rest are legal and handled
+    // normally.
+    setOperationAction(ISD::MEMBARRIER, MVT::Other, Custom);
+  } else {
+    // Set them all for expansion, which will force libcalls.
+    setOperationAction(ISD::MEMBARRIER, MVT::Other, Expand);
+    setOperationAction(ISD::ATOMIC_CMP_SWAP,  MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_CMP_SWAP,  MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_CMP_SWAP,  MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_SWAP,      MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_SWAP,      MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_SWAP,      MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_ADD,  MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_ADD,  MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_ADD,  MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_SUB,  MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_SUB,  MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_SUB,  MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_AND,  MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_AND,  MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_AND,  MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_OR,   MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_OR,   MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_OR,   MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_XOR,  MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_XOR,  MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_XOR,  MVT::i32, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_NAND, MVT::i8,  Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_NAND, MVT::i16, Expand);
+    setOperationAction(ISD::ATOMIC_LOAD_NAND, MVT::i32, Expand);
+    // Since the libcalls include locking, fold in the fences
+    setShouldFoldAtomicFences(true);
+  }
+  // 64-bit versions are always libcalls (for now)
+  setOperationAction(ISD::ATOMIC_CMP_SWAP,  MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_SWAP,      MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_ADD,  MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_SUB,  MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_AND,  MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_OR,   MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_XOR,  MVT::i64, Expand);
+  setOperationAction(ISD::ATOMIC_LOAD_NAND, MVT::i64, Expand);
 
-  // If the subtarget does not have extract instructions, sign_extend_inreg
-  // needs to be expanded. Extract is available in ARM mode on v6 and up,
-  // and on most Thumb2 implementations.
-  if ((!Subtarget->isThumb() && !Subtarget->hasV6Ops())
-      || (Subtarget->isThumb2() && !Subtarget->hasT2ExtractPack())) {
+  // Requires SXTB/SXTH, available on v6 and up in both ARM and Thumb modes.
+  if (!Subtarget->hasV6Ops()) {
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Expand);
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8,  Expand);
   }
@@ -489,28 +533,10 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   else
     setSchedulingPreference(Sched::Hybrid);
 
-  // FIXME: If-converter should use instruction latency to determine
-  // profitability rather than relying on fixed limits.
-  if (Subtarget->getCPUString() == "generic") {
-    // Generic (and overly aggressive) if-conversion limits.
-    setIfCvtBlockSizeLimit(10);
-    setIfCvtDupBlockSizeLimit(2);
-  } else if (Subtarget->hasV7Ops()) {
-    setIfCvtBlockSizeLimit(3);
-    setIfCvtDupBlockSizeLimit(1);
-  } else if (Subtarget->hasV6Ops()) {
-    setIfCvtBlockSizeLimit(2);
-    setIfCvtDupBlockSizeLimit(1);
-  } else {
-    setIfCvtBlockSizeLimit(3);
-    setIfCvtDupBlockSizeLimit(2);
-  }
-
   maxStoresPerMemcpy = 1;   //// temporary - rewrite interface to use type
-  // Do not enable CodePlacementOpt for now: it currently runs after the
-  // ARMConstantIslandPass and messes up branch relaxation and placement
-  // of constant islands.
-  // benefitFromCodePlacementOpt = true;
+
+  if (EnableARMCodePlacement)
+    benefitFromCodePlacementOpt = true;
 }
 
 const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
@@ -621,7 +647,7 @@ TargetRegisterClass *ARMTargetLowering::getRegClassFor(EVT VT) const {
 
 /// getFunctionAlignment - Return the Log2 alignment of this function.
 unsigned ARMTargetLowering::getFunctionAlignment(const Function *F) const {
-  return getTargetMachine().getSubtarget<ARMSubtarget>().isThumb() ? 0 : 1;
+  return getTargetMachine().getSubtarget<ARMSubtarget>().isThumb() ? 1 : 2;
 }
 
 Sched::Preference ARMTargetLowering::getSchedulingPreference(SDNode *N) const {
@@ -1349,7 +1375,6 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
                                     const SmallVectorImpl<ISD::OutputArg> &Outs,
                                     const SmallVectorImpl<ISD::InputArg> &Ins,
                                                      SelectionDAG& DAG) const {
-
   const Function *CallerF = DAG.getMachineFunction().getFunction();
   CallingConv::ID CallerCC = CallerF->getCallingConv();
   bool CCMatch = CallerCC == CalleeCC;
@@ -1367,17 +1392,24 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
   if (isCalleeStructRet || isCallerStructRet)
     return false;
 
-  // On Thumb, for the moment, we can only do this to functions defined in this
-  // compilation, or to indirect calls.  A Thumb B to an ARM function is not
-  // easily fixed up in the linker, unlike BL.
-  if (Subtarget->isThumb()) {
-    if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
-      const GlobalValue *GV = G->getGlobal();
-      if (GV->isDeclaration() || GV->isWeakForLinker())
-        return false;
-    } else if (isa<ExternalSymbolSDNode>(Callee)) {
+  // FIXME: Completely disable sibcall for Thumb1 since Thumb1RegisterInfo::
+  // emitEpilogue is not ready for them.
+  if (Subtarget->isThumb1Only())
+    return false;
+
+  // For the moment, we can only do this to functions defined in this
+  // compilation, or to indirect calls.  A Thumb B to an ARM function,
+  // or vice versa, is not easily fixed up in the linker unlike BL.
+  // (We could do this by loading the address of the callee into a register;
+  // that is an extra instruction over the direct call and burns a register
+  // as well, so is not likely to be a win.)
+  if (isa<ExternalSymbolSDNode>(Callee))
       return false;
-    }
+
+  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+    const GlobalValue *GV = G->getGlobal();
+    if (GV->isDeclaration() || GV->isWeakForLinker())
+      return false;
   }
 
   // If the calling conventions do not match, then we'd better make sure the
@@ -1854,7 +1886,6 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
       DAG.getLoad(PtrVT, dl, DAG.getEntryNode(), CPAddr,
                   PseudoSourceValue::getConstantPool(), 0,
                   false, false, 0);
-    SDValue Chain = Result.getValue(1);
 
     if (RelocM == Reloc::PIC_) {
       SDValue PICLabel = DAG.getConstant(ARMPCLabelIndex, MVT::i32);
@@ -2900,7 +2931,7 @@ static SDValue isNEONModifiedImm(uint64_t SplatBits, uint64_t SplatUndef,
   }
 
   default:
-    llvm_unreachable("unexpected size for EncodeNEONModImm");
+    llvm_unreachable("unexpected size for isNEONModifiedImm");
     return SDValue();
   }
 
@@ -4489,14 +4520,13 @@ bool ARMTargetLowering::allowsUnalignedMemoryAccesses(EVT VT) const {
   if (!Subtarget->hasV6Ops())
     // Pre-v6 does not support unaligned mem access.
     return false;
-  else {
-    // v6+ may or may not support unaligned mem access depending on the system
-    // configuration.
-    // FIXME: This is pretty conservative. Should we provide cmdline option to
-    // control the behaviour?
-    if (!Subtarget->isTargetDarwin())
-      return false;
-  }
+
+  // v6+ may or may not support unaligned mem access depending on the system
+  // configuration.
+  // FIXME: This is pretty conservative. Should we provide cmdline option to
+  // control the behaviour?
+  if (!Subtarget->isTargetDarwin())
+    return false;
 
   switch (VT.getSimpleVT().SimpleTy) {
   default:
@@ -5002,7 +5032,6 @@ getRegClassForInlineAsmConstraint(const std::string &Constraint,
 /// vector.  If it is invalid, don't add anything to Ops.
 void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
                                                      char Constraint,
-                                                     bool hasMemory,
                                                      std::vector<SDValue>&Ops,
                                                      SelectionDAG &DAG) const {
   SDValue Result(0, 0);
@@ -5151,8 +5180,7 @@ void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
     Ops.push_back(Result);
     return;
   }
-  return TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, hasMemory,
-                                                      Ops, DAG);
+  return TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
 }
 
 bool

@@ -33,7 +33,9 @@ using namespace llvm;
 User::op_iterator CallSite::getCallee() const {
   Instruction *II(getInstruction());
   return isCall()
-    ? cast<CallInst>(II)->op_begin()
+    ? (CallInst::ArgOffset
+       ? cast</*FIXME: CallInst*/User>(II)->op_begin()
+       : cast</*FIXME: CallInst*/User>(II)->op_end() - 1)
     : cast<InvokeInst>(II)->op_end() - 4; // Skip PersFn, BB, BB, Function
 }
 
@@ -231,8 +233,7 @@ CallInst::~CallInst() {
 
 void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
   assert(NumOperands == NumParams+1 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
+  Op<ArgOffset -1>() = Func;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -245,16 +246,15 @@ void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
     assert((i >= FTy->getNumParams() || 
             FTy->getParamType(i) == Params[i]->getType()) &&
            "Calling a function with a bad signature!");
-    OL[i+1] = Params[i];
+    OperandList[i + ArgOffset] = Params[i];
   }
 }
 
 void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
   assert(NumOperands == 3 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
-  OL[1] = Actual1;
-  OL[2] = Actual2;
+  Op<ArgOffset -1>() = Func;
+  Op<ArgOffset + 0>() = Actual1;
+  Op<ArgOffset + 1>() = Actual2;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -273,9 +273,8 @@ void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
 
 void CallInst::init(Value *Func, Value *Actual) {
   assert(NumOperands == 2 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
-  OL[1] = Actual;
+  Op<ArgOffset -1>() = Func;
+  Op<ArgOffset + 0>() = Actual;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -291,8 +290,7 @@ void CallInst::init(Value *Func, Value *Actual) {
 
 void CallInst::init(Value *Func) {
   assert(NumOperands == 1 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
+  Op<ArgOffset -1>() = Func;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -1479,7 +1477,7 @@ void InsertValueInst::init(Value *Agg, Value *Val, const unsigned *Idx,
   Op<0>() = Agg;
   Op<1>() = Val;
 
-  Indices.insert(Indices.end(), Idx, Idx + NumIdx);
+  Indices.append(Idx, Idx + NumIdx);
   setName(Name);
 }
 
@@ -1532,7 +1530,7 @@ void ExtractValueInst::init(const unsigned *Idx, unsigned NumIdx,
                             const Twine &Name) {
   assert(NumOperands == 1 && "NumOperands not initialized?");
 
-  Indices.insert(Indices.end(), Idx, Idx + NumIdx);
+  Indices.append(Idx, Idx + NumIdx);
   setName(Name);
 }
 

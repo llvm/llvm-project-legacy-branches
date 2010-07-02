@@ -167,8 +167,6 @@ static char ModType(const char mod, char type, bool &quad, bool &poly,
     case 'c':
       cnst = true;
     case 'p':
-      usgn = false;
-      poly = false;
       pntr = true;
       scal = true;
       break;
@@ -189,7 +187,7 @@ static char ModType(const char mod, char type, bool &quad, bool &poly,
 
 /// TypeString - for a modifier and type, generate the name of the typedef for
 /// that type.  If generic is true, emit the generic vector type rather than
-/// the public NEON type. QUc -> uint8x8t_t / __neon_uint8x8_t.
+/// the public NEON type. QUc -> uint8x8_t / __neon_uint8x8_t.
 static std::string TypeString(const char mod, StringRef typestr,
                               bool generic = false) {
   bool quad = false;
@@ -279,9 +277,9 @@ static std::string TypeString(const char mod, StringRef typestr,
   return s.str();
 }
 
-/// TypeString - for a modifier and type, generate the clang BuiltinsARM.def 
-/// prototype code for the function.  See the top of clang's Builtins.def for
-/// a description of the type strings.
+/// BuiltinTypeString - for a modifier and type, generate the clang
+/// BuiltinsARM.def prototype code for the function.  See the top of clang's
+/// Builtins.def for a description of the type strings.
 static std::string BuiltinTypeString(const char mod, StringRef typestr,
                                      ClassKind ck, bool ret) {
   bool quad = false;
@@ -302,9 +300,11 @@ static std::string BuiltinTypeString(const char mod, StringRef typestr,
   // Based on the modifying character, change the type and width if necessary.
   type = ModType(mod, type, quad, poly, usgn, scal, cnst, pntr);
 
-  if (pntr)
+  if (pntr) {
+    usgn = false;
+    poly = false;
     type = 'v';
-  
+  }
   if (type == 'h') {
     type = 's';
     usgn = true;
@@ -330,14 +330,12 @@ static std::string BuiltinTypeString(const char mod, StringRef typestr,
   }
 
   // Since the return value must be one type, return a vector type of the
-  // appropriate width which we will bitcast.
+  // appropriate width which we will bitcast.  An exception is made for
+  // returning structs of 2, 3, or 4 vectors which are returned in a sret-like
+  // fashion, storing them to a pointer arg.
   if (ret) {
-    if (mod == '2')
-      return quad ? "V32c" : "V16c";
-    if (mod == '3')
-      return quad ? "V48c" : "V24c";
-    if (mod == '4')
-      return quad ? "V64c" : "V32c";
+    if (mod == '2' || mod == '3' || mod == '4')
+      return "vv*";
     if (mod == 'f' || (ck != ClassB && type == 'f'))
       return quad ? "V4f" : "V2f";
     if (ck != ClassB && type == 's')
@@ -368,6 +366,52 @@ static std::string BuiltinTypeString(const char mod, StringRef typestr,
     return quad ? "V2LLi" : "V1LLi";
   
   return quad ? "V16c" : "V8c";
+}
+
+/// StructTag - generate the name of the struct tag for a type.
+/// These names are mandated by ARM's ABI.
+static std::string StructTag(StringRef typestr) {
+  bool quad = false;
+  bool poly = false;
+  bool usgn = false;
+  
+  // base type to get the type string for.
+  char type = ClassifyType(typestr, quad, poly, usgn);
+  
+  SmallString<128> s;
+  s += "__simd";
+  s += quad ? "128_" : "64_";
+  if (usgn)
+    s.push_back('u');
+  
+  switch (type) {
+    case 'c':
+      s += poly ? "poly8" : "int8";
+      break;
+    case 's':
+      s += poly ? "poly16" : "int16";
+      break;
+    case 'i':
+      s += "int32";
+      break;
+    case 'l':
+      s += "int64";
+      break;
+    case 'h':
+      s += "float16";
+      break;
+    case 'f':
+      s += "float32";
+      break;
+    default:
+      throw "unhandled type!";
+      break;
+  }
+
+  // Append _t, finishing the struct tag name.
+  s += "_t";
+  
+  return s.str();
 }
 
 /// MangleName - Append a type or width suffix to a base neon function name, 
@@ -701,7 +745,13 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
   char arg = 'a';
   std::string s;
 
-  bool unioning = (proto[0] == '2' || proto[0] == '3' || proto[0] == '4');
+  // If this builtin returns a struct 2, 3, or 4 vectors, pass it as an implicit
+  // sret-like argument.
+  bool sret = (proto[0] == '2' || proto[0] == '3' || proto[0] == '4');
+
+  // If this builtin takes an immediate argument, we need to #define it rather
+  // than use a standard declaration, so that SemaChecking can range check
+  // the immediate passed by the user.
   bool define = proto.find('i') != std::string::npos;
 
   // If all types are the same size, bitcasting the args will take care 
@@ -714,19 +764,14 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
     std::string ts = TypeString(proto[0], typestr);
     
     if (define) {
-      if (proto[0] != 's')
+      if (sret)
+        s += "({ " + ts + " r; ";
+      else if (proto[0] != 's')
         s += "(" + ts + "){(__neon_" + ts + ")";
+    } else if (sret) {
+      s += ts + " r; ";
     } else {
-      if (unioning) {
-        s += "union { ";
-        s += TypeString(proto[0], typestr, true) + " val; ";
-        s += TypeString(proto[0], typestr, false) + " s; ";
-        s += "} r;";
-      } else {
-        s += ts;
-      }
-      
-      s += " r; r";
+      s += ts + " r; r";
       if (structTypes && proto[0] != 's' && proto[0] != 'i' && proto[0] != 'l')
         s += ".val";
       
@@ -744,6 +789,11 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
     s += MangleName(name, typestr, ck);
   }
   s += "(";
+
+  // Pass the address of the return variable as the first argument to sret-like
+  // builtins.
+  if (sret)
+    s += "&r, ";
   
   for (unsigned i = 1, e = proto.size(); i != e; ++i, ++arg) {
     std::string args = std::string(&arg, 1);
@@ -754,7 +804,7 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
     // argument to the __builtin.
     if (structTypes && (proto[i] == '2' || proto[i] == '3' || proto[i] == '4')){
       for (unsigned vi = 0, ve = proto[i] - '0'; vi != ve; ++vi) {
-        s += args + ".val[" + utostr(vi) + "]";
+        s += args + ".val[" + utostr(vi) + "].val";
         if ((vi + 1) < ve)
           s += ", ";
       }
@@ -788,13 +838,12 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
 
   if (proto[0] != 'v') {
     if (define) {
-      if (proto[0] != 's')
+      if (sret)
+        s += "; r; })";
+      else if (proto[0] != 's')
         s += "}";
     } else {
-      if (unioning)
-        s += " return r.s;";
-      else
-        s += " return r;";
+      s += " return r;";
     }
   }
   return s;
@@ -875,10 +924,11 @@ void NeonEmitter::run(raw_ostream &OS) {
   // Emit struct typedefs.
   for (unsigned vi = 1; vi != 5; ++vi) {
     for (unsigned i = 0, e = TDTypeVec.size(); i != e; ++i) {
-      std::string ts = TypeString('d', TDTypeVec[i]);
-      std::string vs = (vi > 1) ? TypeString('0' + vi, TDTypeVec[i]) : ts;
-      OS << "typedef struct __" << vs << " {\n";
-      OS << "  __neon_" << ts << " val";
+      std::string ts = TypeString('d', TDTypeVec[i], vi == 1);
+      std::string vs = TypeString((vi > 1) ? '0' + vi : 'd', TDTypeVec[i]);
+      std::string tag = (vi > 1) ? vs : StructTag(TDTypeVec[i]);
+      OS << "typedef struct " << tag << " {\n";
+      OS << "  " << ts << " val";
       if (vi > 1)
         OS << "[" << utostr(vi) << "]";
       OS << ";\n} " << vs << ";\n\n";
@@ -1119,13 +1169,22 @@ void NeonEmitter::runHeader(raw_ostream &OS) {
       } else {
         rangestr = "u = " + utostr(RangeFromType(TypeVec[ti]));
       }
-      // Make sure cases appear only once.
+      // Make sure cases appear only once by uniquing them in a string map.
       namestr = MangleName(name, TypeVec[ti], ck);
       if (EmittedMap.count(namestr))
         continue;
       EmittedMap[namestr] = OpNone;
-      
+
+      // Calculate the index of the immediate that should be range checked.
       unsigned immidx = 0;
+      
+      // Builtins that return a struct of multiple vectors have an extra
+      // leading arg for the struct return.
+      if (Proto[0] == '2' || Proto[0] == '3' || Proto[0] == '4')
+        ++immidx;
+      
+      // Add one to the index for each argument until we reach the immediate 
+      // to be checked.  Structs of vectors are passed as multiple arguments.
       for (unsigned ii = 1, ie = Proto.size(); ii != ie; ++ii) {
         switch (Proto[ii]) {
           default:  immidx += 1; break;
