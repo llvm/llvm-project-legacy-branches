@@ -570,6 +570,7 @@ static void X86ExtractSemantics(
 static int ARMFlagFromOpName(LiteralConstantEmitter *type,
                              const std::string &name) {
   REG("GPR");
+  REG("tcGPR");
   REG("cc_out");
   REG("s_cc_out");
   REG("tGPR");
@@ -592,10 +593,7 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("msr_mask");
   IMM("neg_zero");
   IMM("imm0_31");
-  IMM("h8imm");
-  IMM("h16imm");
-  IMM("h32imm");
-  IMM("h64imm");
+  IMM("nModImm");
   IMM("imm0_4095");
   IMM("jt2block_operand");
   IMM("t_imm_s4");

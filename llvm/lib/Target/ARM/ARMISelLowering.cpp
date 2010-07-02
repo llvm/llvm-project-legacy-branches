@@ -55,12 +55,17 @@ STATISTIC(NumTailCalls, "Number of tail calls");
 static cl::opt<bool>
 EnableARMTailCalls("arm-tail-calls", cl::Hidden,
   cl::desc("Generate tail calls (TEMPORARY OPTION)."),
-  cl::init(false));
+  cl::init(true));
 
 static cl::opt<bool>
 EnableARMLongCalls("arm-long-calls", cl::Hidden,
   cl::desc("Generate calls via indirect call instructions."),
   cl::init(false));
+
+static cl::opt<bool>
+ARMInterworking("arm-interworking", cl::Hidden,
+  cl::desc("Enable / disable ARM interworking (for debugging only)"),
+  cl::init(true));
 
 static bool CC_ARM_APCS_Custom_f64(unsigned &ValNo, EVT &ValVT, EVT &LocVT,
                                    CCValAssign::LocInfo &LocInfo,
@@ -104,10 +109,7 @@ void ARMTargetLowering::addTypeForNEON(EVT VT, EVT PromotedLdStVT,
   }
   setOperationAction(ISD::BUILD_VECTOR, VT.getSimpleVT(), Custom);
   setOperationAction(ISD::VECTOR_SHUFFLE, VT.getSimpleVT(), Custom);
-  if (llvm::ModelWithRegSequence())
-    setOperationAction(ISD::CONCAT_VECTORS, VT.getSimpleVT(), Legal);
-  else
-    setOperationAction(ISD::CONCAT_VECTORS, VT.getSimpleVT(), Custom);
+  setOperationAction(ISD::CONCAT_VECTORS, VT.getSimpleVT(), Legal);
   setOperationAction(ISD::EXTRACT_SUBVECTOR, VT.getSimpleVT(), Expand);
   setOperationAction(ISD::SELECT, VT.getSimpleVT(), Expand);
   setOperationAction(ISD::SELECT_CC, VT.getSimpleVT(), Expand);
@@ -403,7 +405,12 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   // doesn't yet know how to not do that for SjLj.
   setExceptionSelectorRegister(ARM::R0);
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
-  setOperationAction(ISD::MEMBARRIER,         MVT::Other, Custom);
+  // Handle atomics directly for ARMv[67] (except for Thumb1), otherwise
+  // use the default expansion.
+  TargetLowering::LegalizeAction AtomicAction =
+    (Subtarget->hasV7Ops() ||
+      (Subtarget->hasV6Ops() && !Subtarget->isThumb1Only())) ? Custom : Expand;
+  setOperationAction(ISD::MEMBARRIER, MVT::Other, AtomicAction);
 
   // If the subtarget does not have extract instructions, sign_extend_inreg
   // needs to be expanded. Extract is available in ARM mode on v6 and up,
@@ -1094,7 +1101,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
       }
     } else if (VA.isRegLoc()) {
       RegsToPass.push_back(std::make_pair(VA.getLocReg(), Arg));
-    } else {
+    } else if (!IsSibCall) {
       assert(VA.isMemLoc());
 
       MemOpChains.push_back(LowerMemOpCallTo(Chain, StackPtr, Arg,
@@ -1109,11 +1116,14 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // Build a sequence of copy-to-reg nodes chained together with token chain
   // and flag operands which copy the outgoing args into the appropriate regs.
   SDValue InFlag;
-  for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
-    Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
-                             RegsToPass[i].second, InFlag);
-    InFlag = Chain.getValue(1);
-  }
+  // Tail call byval lowering might overwrite argument registers so in case of
+  // tail call optimization the copies to registers are lowered later.
+  if (!isTailCall)
+    for (unsigned i = 0, e = RegsToPass.size(); i != e; ++i) {
+      Chain = DAG.getCopyToReg(Chain, dl, RegsToPass[i].first,
+                               RegsToPass[i].second, InFlag);
+      InFlag = Chain.getValue(1);
+    }
 
   // For tail calls lower the arguments to the 'real' stack slot.
   if (isTailCall) {
@@ -1185,7 +1195,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                    getTargetMachine().getRelocationModel() != Reloc::Static;
     isARMFunc = !Subtarget->isThumb() || isStub;
     // ARM call to a local ARM function is predicable.
-    isLocalARMFunc = !Subtarget->isThumb() && !isExt;
+    isLocalARMFunc = !Subtarget->isThumb() && (!isExt || !ARMInterworking);
     // tBX takes a register source operand.
     if (isARMFunc && Subtarget->isThumb1Only() && !Subtarget->hasV5TOps()) {
       unsigned ARMPCLabelIndex = AFI->createConstPoolEntryUId();
@@ -1347,14 +1357,8 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
   // Look for obvious safe cases to perform tail call optimization that do not
   // require ABI changes. This is what gcc calls sibcall.
 
-  // Can't do sibcall if stack needs to be dynamically re-aligned. PEI needs to
-  // emit a special epilogue.
-  // Not sure yet if this is true on ARM.
-//??  if (RegInfo->needsStackRealignment(MF))
-//??    return false;
-
-  // Do not sibcall optimize vararg calls unless the call site is not passing any
-  // arguments.
+  // Do not sibcall optimize vararg calls unless the call site is not passing
+  // any arguments.
   if (isVarArg && !Outs.empty())
     return false;
 
@@ -1362,6 +1366,19 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
   // return semantics.
   if (isCalleeStructRet || isCallerStructRet)
     return false;
+
+  // On Thumb, for the moment, we can only do this to functions defined in this
+  // compilation, or to indirect calls.  A Thumb B to an ARM function is not
+  // easily fixed up in the linker, unlike BL.
+  if (Subtarget->isThumb()) {
+    if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+      const GlobalValue *GV = G->getGlobal();
+      if (GV->isDeclaration() || GV->isWeakForLinker())
+        return false;
+    } else if (isa<ExternalSymbolSDNode>(Callee)) {
+      return false;
+    }
+  }
 
   // If the calling conventions do not match, then we'd better make sure the
   // results are returned in the same way as what the caller expects.
@@ -1809,8 +1826,7 @@ ARMTargetLowering::LowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue
 ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
-                                           const ARMSubtarget *Subtarget)
-                                             const {
+                                          const ARMSubtarget *Subtarget) const {
   unsigned IntNo = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   DebugLoc dl = Op.getDebugLoc();
   switch (IntNo) {
@@ -1850,25 +1866,21 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
 }
 
 static SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG,
-                          const ARMSubtarget *Subtarget) {
+                               const ARMSubtarget *Subtarget) {
   DebugLoc dl = Op.getDebugLoc();
   SDValue Op5 = Op.getOperand(5);
-  SDValue Res;
   unsigned isDeviceBarrier = cast<ConstantSDNode>(Op5)->getZExtValue();
-  if (isDeviceBarrier) {
-    if (Subtarget->hasV7Ops())
-      Res = DAG.getNode(ARMISD::SYNCBARRIER, dl, MVT::Other, Op.getOperand(0));
-    else
-      Res = DAG.getNode(ARMISD::SYNCBARRIER, dl, MVT::Other, Op.getOperand(0),
-                        DAG.getConstant(0, MVT::i32));
-  } else {
-    if (Subtarget->hasV7Ops())
-      Res = DAG.getNode(ARMISD::MEMBARRIER, dl, MVT::Other, Op.getOperand(0));
-    else
-      Res = DAG.getNode(ARMISD::MEMBARRIER, dl, MVT::Other, Op.getOperand(0),
-                        DAG.getConstant(0, MVT::i32));
-  }
-  return Res;
+  // v6 and v7 can both handle barriers directly, but need handled a bit
+  // differently. Thumb1 and pre-v6 ARM mode use a libcall instead and should
+  // never get here.
+  unsigned Opc = isDeviceBarrier ? ARMISD::SYNCBARRIER : ARMISD::MEMBARRIER;
+  if (Subtarget->hasV7Ops())
+    return DAG.getNode(Opc, dl, MVT::Other, Op.getOperand(0));
+  else if (Subtarget->hasV6Ops() && !Subtarget->isThumb1Only())
+    return DAG.getNode(Opc, dl, MVT::Other, Op.getOperand(0),
+                       DAG.getConstant(0, MVT::i32));
+  assert(0 && "Unexpected ISD::MEMBARRIER encountered. Should be libcall!");
+  return SDValue();
 }
 
 static SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) {
@@ -2447,7 +2459,8 @@ static SDValue ExpandBIT_CONVERT(SDNode *N, SelectionDAG &DAG) {
                              DAG.getConstant(0, MVT::i32));
     SDValue Hi = DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32, Op,
                              DAG.getConstant(1, MVT::i32));
-    return DAG.getNode(ARMISD::VMOVDRR, dl, MVT::f64, Lo, Hi);
+    return DAG.getNode(ISD::BIT_CONVERT, dl, DstVT,
+                       DAG.getNode(ARMISD::VMOVDRR, dl, MVT::f64, Lo, Hi));
   }
 
   // Turn f64->i64 into VMOVRRD.
@@ -2757,76 +2770,152 @@ static SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
   return Result;
 }
 
-/// isVMOVSplat - Check if the specified splat value corresponds to an immediate
-/// VMOV instruction, and if so, return the constant being splatted.
-static SDValue isVMOVSplat(uint64_t SplatBits, uint64_t SplatUndef,
-                           unsigned SplatBitSize, SelectionDAG &DAG) {
+/// isNEONModifiedImm - Check if the specified splat value corresponds to a
+/// valid vector constant for a NEON instruction with a "modified immediate"
+/// operand (e.g., VMOV).  If so, return either the constant being
+/// splatted or the encoded value, depending on the DoEncode parameter.  The
+/// format of the encoded value is: bit12=Op, bits11-8=Cmode,
+/// bits7-0=Immediate.
+static SDValue isNEONModifiedImm(uint64_t SplatBits, uint64_t SplatUndef,
+                                 unsigned SplatBitSize, SelectionDAG &DAG,
+                                 bool isVMOV, bool DoEncode) {
+  unsigned Op, Cmode, Imm;
+  EVT VT;
+
+  // SplatBitSize is set to the smallest size that splats the vector, so a
+  // zero vector will always have SplatBitSize == 8.  However, NEON modified
+  // immediate instructions others than VMOV do not support the 8-bit encoding
+  // of a zero vector, and the default encoding of zero is supposed to be the
+  // 32-bit version.
+  if (SplatBits == 0)
+    SplatBitSize = 32;
+
+  Op = 0;
   switch (SplatBitSize) {
   case 8:
-    // Any 1-byte value is OK.
+    // Any 1-byte value is OK.  Op=0, Cmode=1110.
     assert((SplatBits & ~0xff) == 0 && "one byte splat value is too big");
-    return DAG.getTargetConstant(SplatBits, MVT::i8);
+    Cmode = 0xe;
+    Imm = SplatBits;
+    VT = MVT::i8;
+    break;
 
   case 16:
     // NEON's 16-bit VMOV supports splat values where only one byte is nonzero.
-    if ((SplatBits & ~0xff) == 0 ||
-        (SplatBits & ~0xff00) == 0)
-      return DAG.getTargetConstant(SplatBits, MVT::i16);
-    break;
+    VT = MVT::i16;
+    if ((SplatBits & ~0xff) == 0) {
+      // Value = 0x00nn: Op=x, Cmode=100x.
+      Cmode = 0x8;
+      Imm = SplatBits;
+      break;
+    }
+    if ((SplatBits & ~0xff00) == 0) {
+      // Value = 0xnn00: Op=x, Cmode=101x.
+      Cmode = 0xa;
+      Imm = SplatBits >> 8;
+      break;
+    }
+    return SDValue();
 
   case 32:
     // NEON's 32-bit VMOV supports splat values where:
     // * only one byte is nonzero, or
     // * the least significant byte is 0xff and the second byte is nonzero, or
     // * the least significant 2 bytes are 0xff and the third is nonzero.
-    if ((SplatBits & ~0xff) == 0 ||
-        (SplatBits & ~0xff00) == 0 ||
-        (SplatBits & ~0xff0000) == 0 ||
-        (SplatBits & ~0xff000000) == 0)
-      return DAG.getTargetConstant(SplatBits, MVT::i32);
+    VT = MVT::i32;
+    if ((SplatBits & ~0xff) == 0) {
+      // Value = 0x000000nn: Op=x, Cmode=000x.
+      Cmode = 0;
+      Imm = SplatBits;
+      break;
+    }
+    if ((SplatBits & ~0xff00) == 0) {
+      // Value = 0x0000nn00: Op=x, Cmode=001x.
+      Cmode = 0x2;
+      Imm = SplatBits >> 8;
+      break;
+    }
+    if ((SplatBits & ~0xff0000) == 0) {
+      // Value = 0x00nn0000: Op=x, Cmode=010x.
+      Cmode = 0x4;
+      Imm = SplatBits >> 16;
+      break;
+    }
+    if ((SplatBits & ~0xff000000) == 0) {
+      // Value = 0xnn000000: Op=x, Cmode=011x.
+      Cmode = 0x6;
+      Imm = SplatBits >> 24;
+      break;
+    }
 
     if ((SplatBits & ~0xffff) == 0 &&
-        ((SplatBits | SplatUndef) & 0xff) == 0xff)
-      return DAG.getTargetConstant(SplatBits | 0xff, MVT::i32);
+        ((SplatBits | SplatUndef) & 0xff) == 0xff) {
+      // Value = 0x0000nnff: Op=x, Cmode=1100.
+      Cmode = 0xc;
+      Imm = SplatBits >> 8;
+      SplatBits |= 0xff;
+      break;
+    }
 
     if ((SplatBits & ~0xffffff) == 0 &&
-        ((SplatBits | SplatUndef) & 0xffff) == 0xffff)
-      return DAG.getTargetConstant(SplatBits | 0xffff, MVT::i32);
+        ((SplatBits | SplatUndef) & 0xffff) == 0xffff) {
+      // Value = 0x00nnffff: Op=x, Cmode=1101.
+      Cmode = 0xd;
+      Imm = SplatBits >> 16;
+      SplatBits |= 0xffff;
+      break;
+    }
 
     // Note: there are a few 32-bit splat values (specifically: 00ffff00,
     // ff000000, ff0000ff, and ffff00ff) that are valid for VMOV.I64 but not
     // VMOV.I32.  A (very) minor optimization would be to replicate the value
     // and fall through here to test for a valid 64-bit splat.  But, then the
     // caller would also need to check and handle the change in size.
-    break;
+    return SDValue();
 
   case 64: {
     // NEON has a 64-bit VMOV splat where each byte is either 0 or 0xff.
+    if (!isVMOV)
+      return SDValue();
     uint64_t BitMask = 0xff;
     uint64_t Val = 0;
+    unsigned ImmMask = 1;
+    Imm = 0;
     for (int ByteNum = 0; ByteNum < 8; ++ByteNum) {
-      if (((SplatBits | SplatUndef) & BitMask) == BitMask)
+      if (((SplatBits | SplatUndef) & BitMask) == BitMask) {
         Val |= BitMask;
-      else if ((SplatBits & BitMask) != 0)
+        Imm |= ImmMask;
+      } else if ((SplatBits & BitMask) != 0) {
         return SDValue();
+      }
       BitMask <<= 8;
+      ImmMask <<= 1;
     }
-    return DAG.getTargetConstant(Val, MVT::i64);
-  }
-
-  default:
-    llvm_unreachable("unexpected size for isVMOVSplat");
+    // Op=1, Cmode=1110.
+    Op = 1;
+    Cmode = 0xe;
+    SplatBits = Val;
+    VT = MVT::i64;
     break;
   }
 
-  return SDValue();
+  default:
+    llvm_unreachable("unexpected size for EncodeNEONModImm");
+    return SDValue();
+  }
+
+  if (DoEncode)
+    return DAG.getTargetConstant((Op << 12) | (Cmode << 8) | Imm, MVT::i32);
+  return DAG.getTargetConstant(SplatBits, VT);
 }
 
-/// getVMOVImm - If this is a build_vector of constants which can be
-/// formed by using a VMOV instruction of the specified element size,
-/// return the constant being splatted.  The ByteSize field indicates the
-/// number of bytes of each element [1248].
-SDValue ARM::getVMOVImm(SDNode *N, unsigned ByteSize, SelectionDAG &DAG) {
+
+/// getNEONModImm - If this is a valid vector constant for a NEON instruction
+/// with a "modified immediate" operand (e.g., VMOV) of the specified element
+/// size, return the encoded value for that immediate.  The ByteSize field
+/// indicates the number of bytes of each element [1248].
+SDValue ARM::getNEONModImm(SDNode *N, unsigned ByteSize, bool isVMOV,
+                           SelectionDAG &DAG) {
   BuildVectorSDNode *BVN = dyn_cast<BuildVectorSDNode>(N);
   APInt SplatBits, SplatUndef;
   unsigned SplatBitSize;
@@ -2838,8 +2927,8 @@ SDValue ARM::getVMOVImm(SDNode *N, unsigned ByteSize, SelectionDAG &DAG) {
   if (SplatBitSize > ByteSize * 8)
     return SDValue();
 
-  return isVMOVSplat(SplatBits.getZExtValue(), SplatUndef.getZExtValue(),
-                     SplatBitSize, DAG);
+  return isNEONModifiedImm(SplatBits.getZExtValue(), SplatUndef.getZExtValue(),
+                           SplatBitSize, DAG, isVMOV, true);
 }
 
 static bool isVEXTMask(const SmallVectorImpl<int> &M, EVT VT,
@@ -3079,8 +3168,10 @@ static SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) {
   bool HasAnyUndefs;
   if (BVN->isConstantSplat(SplatBits, SplatUndef, SplatBitSize, HasAnyUndefs)) {
     if (SplatBitSize <= 64) {
-      SDValue Val = isVMOVSplat(SplatBits.getZExtValue(),
-                                SplatUndef.getZExtValue(), SplatBitSize, DAG);
+      // Check if an immediate VMOV works.
+      SDValue Val = isNEONModifiedImm(SplatBits.getZExtValue(),
+                                      SplatUndef.getZExtValue(),
+                                      SplatBitSize, DAG, true, false);
       if (Val.getNode())
         return BuildSplat(Val, VT, DAG, dl);
     }
@@ -4861,7 +4952,7 @@ ARMTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
     }
   }
   if (StringRef("{cc}").equals_lower(Constraint))
-    return std::make_pair(0U, ARM::CCRRegisterClass);
+    return std::make_pair(unsigned(ARM::CPSR), ARM::CCRRegisterClass);
 
   return TargetLowering::getRegForInlineAsmConstraint(Constraint, VT);
 }

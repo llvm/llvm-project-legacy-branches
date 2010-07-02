@@ -322,11 +322,9 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   DwarfStrSectionSym = TextSectionSym = 0;
   DwarfDebugRangeSectionSym = DwarfDebugLocSectionSym = 0; 
   FunctionBeginSym = FunctionEndSym = 0;
-  if (TimePassesIsEnabled) {
-      NamedRegionTimer T(DbgTimerName, DWARFGroupName);
-      beginModule(M);
-  } else {
-      beginModule(M);
+  {
+    NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
+    beginModule(M);
   }
 }
 DwarfDebug::~DwarfDebug() {
@@ -866,6 +864,10 @@ void DwarfDebug::addToContextOwner(DIE *Die, DIDescriptor Context) {
   } else if (Context.isNameSpace()) {
     DIE *ContextDIE = getOrCreateNameSpace(DINameSpace(Context));
     ContextDIE->addChild(Die);
+  } else if (Context.isSubprogram()) {
+    DIE *ContextDIE = createSubprogramDIE(DISubprogram(Context),
+                                          /*MakeDecl=*/false);
+    ContextDIE->addChild(Die);
   } else if (DIE *ContextDIE = getCompileUnit(Context)->getDIE(Context))
     ContextDIE->addChild(Die);
   else 
@@ -1055,6 +1057,10 @@ void DwarfDebug::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     if (DIDescriptor(ContainingType).isCompositeType())
       addDIEEntry(&Buffer, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, 
                   getOrCreateTypeDIE(DIType(ContainingType)));
+    else {
+      DIDescriptor Context = CTy.getContext();
+      addToContextOwner(&Buffer, Context);
+    }
     break;
   }
   default:
@@ -1328,6 +1334,9 @@ DIE *DwarfDebug::createSubprogramDIE(const DISubprogram &SP, bool MakeDecl) {
 
   // DW_TAG_inlined_subroutine may refer to this DIE.
   SPCU->insertDIE(SP, SPDie);
+
+  // Add to context owner.
+  addToContextOwner(SPDie, SP.getContext());
 
   return SPDie;
 }
@@ -2248,8 +2257,9 @@ void DwarfDebug::collectVariableInfo(const MachineFunction *MF) {
   }
 
   // Collect info for variables that were optimized out.
-  if (NamedMDNode *NMD = 
-      MF->getFunction()->getParent()->getNamedMetadata("llvm.dbg.lv")) {
+  const Twine FnLVName = Twine("llvm.dbg.lv.", MF->getFunction()->getName());
+  if (NamedMDNode *NMD =
+      MF->getFunction()->getParent()->getNamedMetadataUsingTwine(FnLVName)) {
     for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
       DIVariable DV(cast_or_null<MDNode>(NMD->getOperand(i)));
       if (!DV || !Processed.insert(DV))
@@ -2342,7 +2352,13 @@ DbgScope *DwarfDebug::getOrCreateDbgScope(const MDNode *Scope, const MDNode *Inl
 
     if (!WScope->getParent()) {
       StringRef SPName = DISubprogram(Scope).getLinkageName();
-      if (SPName == Asm->MF->getFunction()->getName())
+      // We used to check only for a linkage name, but that fails
+      // since we began omitting the linkage name for private
+      // functions.  The new way is to check for the name in metadata,
+      // but that's not supported in old .ll test cases.  Ergo, we
+      // check both.
+      if (SPName == Asm->MF->getFunction()->getName() ||
+          DISubprogram(Scope).getFunction() == Asm->MF->getFunction())
         CurrentFnDbgScope = WScope;
     }
     
@@ -2802,6 +2818,16 @@ MCSymbol *DwarfDebug::recordSourceLine(unsigned Line, unsigned Col, const MDNode
 
     Src = GetOrCreateSourceID(Dir, Fn);
   }
+
+#if 0
+  if (!Lines.empty()) {
+    SrcLineInfo lastSrcLineInfo = Lines.back();
+    // Emitting sequential line records with the same line number (but
+    // different addresses) seems to confuse GDB.  Avoid this.
+    if (lastSrcLineInfo.getLine() == Line)
+      return NULL;
+  }
+#endif
 
   MCSymbol *Label = MMI->getContext().CreateTempSymbol();
   Lines.push_back(SrcLineInfo(Line, Col, Src, Label));

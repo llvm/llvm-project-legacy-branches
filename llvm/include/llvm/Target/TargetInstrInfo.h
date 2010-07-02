@@ -20,12 +20,14 @@
 namespace llvm {
 
 class CalleeSavedInfo;
+class InstrItineraryData;
 class LiveVariables;
 class MCAsmInfo;
 class MachineMemOperand;
 class MDNode;
 class MCInst;
 class SDNode;
+class ScheduleHazardRecognizer;
 class SelectionDAG;
 class TargetRegisterClass;
 class TargetRegisterInfo;
@@ -203,6 +205,14 @@ public:
                              const MachineInstr *Orig,
                              const TargetRegisterInfo &TRI) const = 0;
 
+  /// scheduleTwoAddrSource - Schedule the copy / re-mat of the source of the
+  /// two-addrss instruction inserted by two-address pass.
+  virtual void scheduleTwoAddrSource(MachineInstr *SrcMI,
+                                     MachineInstr *UseMI,
+                                     const TargetRegisterInfo &TRI) const {
+    // Do nothing.
+  }
+
   /// duplicate - Create a duplicate of the Orig instruction in MF. This is like
   /// MachineFunction::CloneMachineInstr(), but the target may update operands
   /// that are required to be unique.
@@ -305,8 +315,9 @@ public:
   /// branch to analyze.  At least this much must be implemented, else tail
   /// merging needs to be disabled.
   virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                            MachineBasicBlock *FBB,
-                            const SmallVectorImpl<MachineOperand> &Cond) const {
+                                MachineBasicBlock *FBB,
+                                const SmallVectorImpl<MachineOperand> &Cond,
+                                DebugLoc DL) const {
     assert(0 && "Target didn't implement TargetInstrInfo::InsertBranch!"); 
     return 0;
   }
@@ -567,6 +578,12 @@ public:
   /// length.
   virtual unsigned getInlineAsmLength(const char *Str,
                                       const MCAsmInfo &MAI) const;
+
+  /// CreateTargetHazardRecognizer - Allocate and return a hazard recognizer
+  /// to use for this target when scheduling the machine instructions after
+  /// register allocation.
+  virtual ScheduleHazardRecognizer*
+  CreateTargetPostRAHazardRecognizer(const InstrItineraryData&) const = 0;
 };
 
 /// TargetInstrInfoImpl - This is the default implementation of
@@ -594,6 +611,9 @@ public:
   virtual bool produceSameValue(const MachineInstr *MI0,
                                 const MachineInstr *MI1) const;
   virtual unsigned GetFunctionSizeInBytes(const MachineFunction &MF) const;
+
+  virtual ScheduleHazardRecognizer *
+  CreateTargetPostRAHazardRecognizer(const InstrItineraryData&) const;
 };
 
 } // End llvm namespace

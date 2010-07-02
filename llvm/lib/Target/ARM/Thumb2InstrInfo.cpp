@@ -42,8 +42,8 @@ Thumb2InstrInfo::copyRegToReg(MachineBasicBlock &MBB,
                               const TargetRegisterClass *DestRC,
                               const TargetRegisterClass *SrcRC,
                               DebugLoc DL) const {
-  if (DestRC == ARM::GPRRegisterClass) {
-    if (SrcRC == ARM::GPRRegisterClass) {
+  if (DestRC == ARM::GPRRegisterClass || DestRC == ARM::tcGPRRegisterClass) {
+    if (SrcRC == ARM::GPRRegisterClass || SrcRC == ARM::tcGPRRegisterClass) {
       BuildMI(MBB, I, DL, get(ARM::tMOVgpr2gpr), DestReg).addReg(SrcReg);
       return true;
     } else if (SrcRC == ARM::tGPRRegisterClass) {
@@ -51,7 +51,7 @@ Thumb2InstrInfo::copyRegToReg(MachineBasicBlock &MBB,
       return true;
     }
   } else if (DestRC == ARM::tGPRRegisterClass) {
-    if (SrcRC == ARM::GPRRegisterClass) {
+    if (SrcRC == ARM::GPRRegisterClass || SrcRC == ARM::tcGPRRegisterClass) {
       BuildMI(MBB, I, DL, get(ARM::tMOVgpr2tgpr), DestReg).addReg(SrcReg);
       return true;
     } else if (SrcRC == ARM::tGPRRegisterClass) {
@@ -70,7 +70,8 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                     unsigned SrcReg, bool isKill, int FI,
                     const TargetRegisterClass *RC,
                     const TargetRegisterInfo *TRI) const {
-  if (RC == ARM::GPRRegisterClass || RC == ARM::tGPRRegisterClass) {
+  if (RC == ARM::GPRRegisterClass || RC == ARM::tGPRRegisterClass ||
+      RC == ARM::tcGPRRegisterClass) {
     DebugLoc DL;
     if (I != MBB.end()) DL = I->getDebugLoc();
 
@@ -95,7 +96,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                      unsigned DestReg, int FI,
                      const TargetRegisterClass *RC,
                      const TargetRegisterInfo *TRI) const {
-  if (RC == ARM::GPRRegisterClass || RC == ARM::tGPRRegisterClass) {
+  if (RC == ARM::GPRRegisterClass || RC == ARM::tGPRRegisterClass ||
+      RC == ARM::tcGPRRegisterClass) {
     DebugLoc DL;
     if (I != MBB.end()) DL = I->getDebugLoc();
 
@@ -502,4 +504,47 @@ bool llvm::rewriteT2FrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 
   Offset = (isSub) ? -Offset : Offset;
   return Offset == 0;
+}
+
+/// scheduleTwoAddrSource - Schedule the copy / re-mat of the source of the
+/// two-addrss instruction inserted by two-address pass.
+void
+Thumb2InstrInfo::scheduleTwoAddrSource(MachineInstr *SrcMI,
+                                       MachineInstr *UseMI,
+                                       const TargetRegisterInfo &TRI) const {
+  if (SrcMI->getOpcode() != ARM::tMOVgpr2gpr ||
+      SrcMI->getOperand(1).isKill())
+    return;
+
+  unsigned PredReg = 0;
+  ARMCC::CondCodes CC = llvm::getInstrPredicate(UseMI, PredReg);
+  if (CC == ARMCC::AL || PredReg != ARM::CPSR)
+    return;
+
+  // Schedule the copy so it doesn't come between previous instructions
+  // and UseMI which can form an IT block.
+  unsigned SrcReg = SrcMI->getOperand(1).getReg();
+  ARMCC::CondCodes OCC = ARMCC::getOppositeCondition(CC);
+  MachineBasicBlock *MBB = UseMI->getParent();
+  MachineBasicBlock::iterator MBBI = SrcMI;
+  unsigned NumInsts = 0;
+  while (--MBBI != MBB->begin()) {
+    if (MBBI->isDebugValue())
+      continue;
+
+    MachineInstr *NMI = &*MBBI;
+    ARMCC::CondCodes NCC = llvm::getInstrPredicate(NMI, PredReg);
+    if (!(NCC == CC || NCC == OCC) ||
+        NMI->modifiesRegister(SrcReg, &TRI) ||
+        NMI->definesRegister(ARM::CPSR))
+      break;
+    if (++NumInsts == 4)
+      // Too many in a row!
+      return;
+  }
+
+  if (NumInsts) {
+    MBB->remove(SrcMI);
+    MBB->insert(++MBBI, SrcMI);
+  }
 }

@@ -357,7 +357,7 @@ static SDValue ExpandConstantFP(ConstantFPSDNode *CFP, bool UseCP,
   EVT SVT = VT;
   while (SVT != MVT::f32) {
     SVT = (MVT::SimpleValueType)(SVT.getSimpleVT().SimpleTy - 1);
-    if (CFP->isValueValidForType(SVT, CFP->getValueAPF()) &&
+    if (ConstantFPSDNode::isValueValidForType(SVT, CFP->getValueAPF()) &&
         // Only do this if the target has a native EXTLOAD instruction from
         // smaller type.
         TLI.isLoadExtLegal(ISD::EXTLOAD, SVT) &&
@@ -927,8 +927,8 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       break;
     }
 
-    Result = DAG.UpdateNodeOperands(Result.getValue(0), Ops.data(),
-                                    Ops.size());
+    Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(), Ops.data(),
+                                            Ops.size()), 0);
     switch (Action) {
     case TargetLowering::Legal:
       for (unsigned i = 0, e = Node->getNumValues(); i != e; ++i)
@@ -1018,7 +1018,8 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     if (Tmp1 != Node->getOperand(0)) {
       SmallVector<SDValue, 8> Ops(Node->op_begin(), Node->op_end());
       Ops[0] = Tmp1;
-      Result = DAG.UpdateNodeOperands(Result, &Ops[0], Ops.size());
+      Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(), &Ops[0], Ops.size()),
+                       Result.getResNo());
     }
 
     // Remember that the CALLSEQ_START is legalized.
@@ -1060,7 +1061,9 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       if (Tmp1 != Node->getOperand(0)) {
         SmallVector<SDValue, 8> Ops(Node->op_begin(), Node->op_end());
         Ops[0] = Tmp1;
-        Result = DAG.UpdateNodeOperands(Result, &Ops[0], Ops.size());
+        Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                                &Ops[0], Ops.size()),
+                         Result.getResNo());
       }
     } else {
       Tmp2 = LegalizeOp(Node->getOperand(Node->getNumOperands()-1));
@@ -1069,7 +1072,9 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
         SmallVector<SDValue, 8> Ops(Node->op_begin(), Node->op_end());
         Ops[0] = Tmp1;
         Ops.back() = Tmp2;
-        Result = DAG.UpdateNodeOperands(Result, &Ops[0], Ops.size());
+        Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                                &Ops[0], Ops.size()),
+                         Result.getResNo());
       }
     }
     assert(IsLegalizingCall && "Call sequence imbalance between start/end?");
@@ -1089,7 +1094,9 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
     ISD::LoadExtType ExtType = LD->getExtensionType();
     if (ExtType == ISD::NON_EXTLOAD) {
       EVT VT = Node->getValueType(0);
-      Result = DAG.UpdateNodeOperands(Result, Tmp1, Tmp2, LD->getOffset());
+      Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                              Tmp1, Tmp2, LD->getOffset()),
+                       Result.getResNo());
       Tmp3 = Result.getValue(0);
       Tmp4 = Result.getValue(1);
 
@@ -1269,7 +1276,9 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
           isCustom = true;
           // FALLTHROUGH
         case TargetLowering::Legal:
-          Result = DAG.UpdateNodeOperands(Result, Tmp1, Tmp2, LD->getOffset());
+          Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                                  Tmp1, Tmp2, LD->getOffset()),
+                           Result.getResNo());
           Tmp1 = Result.getValue(0);
           Tmp2 = Result.getValue(1);
 
@@ -1357,8 +1366,10 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
 
       {
         Tmp3 = LegalizeOp(ST->getValue());
-        Result = DAG.UpdateNodeOperands(Result, Tmp1, Tmp3, Tmp2,
-                                        ST->getOffset());
+        Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                                Tmp1, Tmp3, Tmp2,
+                                                ST->getOffset()),
+                         Result.getResNo());
 
         EVT VT = Tmp3.getValueType();
         switch (TLI.getOperationAction(ISD::STORE, VT)) {
@@ -1461,8 +1472,10 @@ SDValue SelectionDAGLegalize::LegalizeOp(SDValue Op) {
       } else {
         if (Tmp1 != ST->getChain() || Tmp3 != ST->getValue() ||
             Tmp2 != ST->getBasePtr())
-          Result = DAG.UpdateNodeOperands(Result, Tmp1, Tmp3, Tmp2,
-                                          ST->getOffset());
+          Result = SDValue(DAG.UpdateNodeOperands(Result.getNode(),
+                                                  Tmp1, Tmp3, Tmp2,
+                                                  ST->getOffset()),
+                           Result.getResNo());
 
         switch (TLI.getTruncStoreAction(ST->getValue().getValueType(), StVT)) {
         default: assert(0 && "This action is not supported yet!");
@@ -2359,10 +2372,42 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node,
   case ISD::EH_RETURN:
   case ISD::EH_LABEL:
   case ISD::PREFETCH:
-  case ISD::MEMBARRIER:
   case ISD::VAEND:
     Results.push_back(Node->getOperand(0));
     break;
+  case ISD::MEMBARRIER: {
+    // If the target didn't lower this, lower it to '__sync_synchronize()' call
+    TargetLowering::ArgListTy Args;
+    std::pair<SDValue, SDValue> CallResult =
+      TLI.LowerCallTo(Node->getOperand(0), Type::getVoidTy(*DAG.getContext()),
+                      false, false, false, false, 0, CallingConv::C, false,
+                      /*isReturnValueUsed=*/true,
+                      DAG.getExternalSymbol("__sync_synchronize",
+                                            TLI.getPointerTy()),
+                      Args, DAG, dl);
+    Results.push_back(CallResult.second);
+    break;
+  }
+  // By default, atomic intrinsics are marked Legal and lowered. Targets
+  // which don't support them directly, however, may want libcalls, in which
+  // case they mark them Expand, and we get here.
+  // FIXME: Unimplemented for now. Add libcalls.
+  case ISD::ATOMIC_SWAP:
+  case ISD::ATOMIC_LOAD_ADD:
+  case ISD::ATOMIC_LOAD_SUB:
+  case ISD::ATOMIC_LOAD_AND:
+  case ISD::ATOMIC_LOAD_OR:
+  case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_NAND:
+  case ISD::ATOMIC_LOAD_MIN:
+  case ISD::ATOMIC_LOAD_MAX:
+  case ISD::ATOMIC_LOAD_UMIN:
+  case ISD::ATOMIC_LOAD_UMAX:
+  case ISD::ATOMIC_CMP_SWAP: {
+    assert (0 && "atomic intrinsic not lowered!");
+    Results.push_back(Node->getOperand(0));
+    break;
+  }
   case ISD::DYNAMIC_STACKALLOC:
     ExpandDYNAMIC_STACKALLOC(Node, Results);
     break;

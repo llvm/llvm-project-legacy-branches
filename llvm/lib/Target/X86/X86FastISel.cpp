@@ -349,6 +349,11 @@ bool X86FastISel::X86SelectAddress(const Value *V, X86AddressMode &AM) {
     U = C;
   }
 
+  if (const PointerType *Ty = dyn_cast<PointerType>(V->getType()))
+    if (Ty->getAddressSpace() > 255)
+      // Fast instruction selection doesn't support pointers through %fs or %gs
+      return false;
+
   switch (Opcode) {
   default: break;
   case Instruction::BitCast:
@@ -886,7 +891,7 @@ bool X86FastISel::X86SelectBranch(const Instruction *I) {
         BuildMI(MBB, DL, TII.get(X86::JP_4)).addMBB(TrueMBB);
       }
 
-      FastEmitBranch(FalseMBB);
+      FastEmitBranch(FalseMBB, DL);
       MBB->addSuccessor(TrueMBB);
       return true;
     }
@@ -941,7 +946,7 @@ bool X86FastISel::X86SelectBranch(const Instruction *I) {
             BuildMI(MBB, DL, TII.get(OpCode == X86::SETOr ?
                                         X86::JO_4 : X86::JB_4))
               .addMBB(TrueMBB);
-            FastEmitBranch(FalseMBB);
+            FastEmitBranch(FalseMBB, DL);
             MBB->addSuccessor(TrueMBB);
             return true;
           }
@@ -956,7 +961,7 @@ bool X86FastISel::X86SelectBranch(const Instruction *I) {
 
   BuildMI(MBB, DL, TII.get(X86::TEST8rr)).addReg(OpReg).addReg(OpReg);
   BuildMI(MBB, DL, TII.get(X86::JNE_4)).addMBB(TrueMBB);
-  FastEmitBranch(FalseMBB);
+  FastEmitBranch(FalseMBB, DL);
   MBB->addSuccessor(TrueMBB);
   return true;
 }
@@ -1205,7 +1210,7 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     
     unsigned ResultReg = createResultReg(TLI.getRegClassFor(VT));
     BuildMI(MBB, DL, TII.get(OpC), ResultReg).
-                                  addImm(CI->getZExtValue() == 0 ? -1ULL : 0);
+                                  addImm(CI->isZero() ? -1ULL : 0);
     UpdateValueMap(&I, ResultReg);
     return true;
   }

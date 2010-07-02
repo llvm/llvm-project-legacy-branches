@@ -1602,7 +1602,7 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
   MachineBasicBlock *Return = FuncInfo.MBBMap[I.getSuccessor(0)];
   MachineBasicBlock *LandingPad = FuncInfo.MBBMap[I.getSuccessor(1)];
 
-  const Value *Callee(I.getCalledValue());
+  const Value *Callee = I.getCalledValue();
   if (isa<InlineAsm>(Callee))
     visitInlineAsm(&I);
   else
@@ -2734,7 +2734,7 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
 
       // If this is a constant subscript, handle it quickly.
       if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
-        if (CI->getZExtValue() == 0) continue;
+        if (CI->isZero()) continue;
         uint64_t Offs =
             TD->getTypeAllocSize(Ty)*cast<ConstantInt>(CI)->getSExtValue();
         SDValue OffsVal;
@@ -4118,8 +4118,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     assert(FuncInfo.MBBMap[I.getParent()]->isLandingPad() &&
            "Call to eh.exception not in landing pad!");
     SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
-    SDValue Ops[1];
-    Ops[0] = DAG.getRoot();
+    SDValue Ops[1] = { DAG.getRoot() };
     SDValue Op = DAG.getNode(ISD::EXCEPTIONADDR, dl, VTs, Ops, 1);
     setValue(&I, Op);
     DAG.setRoot(Op.getValue(1));
@@ -4367,7 +4366,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     SDValue Arg = getValue(I.getOperand(0));
     EVT Ty = Arg.getValueType();
 
-    if (CI->getZExtValue() == 0)
+    if (CI->isZero())
       Res = DAG.getConstant(-1ULL, Ty);
     else
       Res = DAG.getConstant(0, Ty);

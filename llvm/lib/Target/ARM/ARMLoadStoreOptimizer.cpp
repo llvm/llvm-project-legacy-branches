@@ -1024,10 +1024,6 @@ bool ARMLoadStoreOpt::LoadStoreMultipleOpti(MachineBasicBlock &MBB) {
   RS->enterBasicBlock(&MBB);
   MachineBasicBlock::iterator MBBI = MBB.begin(), E = MBB.end();
   while (MBBI != E) {
-    if (MBBI->isDebugValue()) {
-      ++MBBI;
-      continue;
-    }
     if (FixInvalidRegPairOp(MBB, MBBI))
       continue;
 
@@ -1094,7 +1090,12 @@ bool ARMLoadStoreOpt::LoadStoreMultipleOpti(MachineBasicBlock &MBB) {
       }
     }
 
-    if (Advance) {
+    if (MBBI->isDebugValue()) {
+      ++MBBI;
+      if (MBBI == E)
+        // Reach the end of the block, try merging the memory instructions.
+        TryMerge = true;
+    } else if (Advance) {
       ++Position;
       ++MBBI;
       if (MBBI == E)
@@ -1490,7 +1491,8 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(MachineBasicBlock *MBB,
       } else {
         // This is the new location for the loads / stores.
         MachineBasicBlock::iterator InsertPos = isLd ? FirstOp : LastOp;
-        while (InsertPos != MBB->end() && MemOps.count(InsertPos))
+        while (InsertPos != MBB->end()
+               && (MemOps.count(InsertPos) || InsertPos->isDebugValue()))
           ++InsertPos;
 
         // If we are moving a pair of loads / stores, see if it makes sense

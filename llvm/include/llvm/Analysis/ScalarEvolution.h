@@ -54,10 +54,6 @@ namespace llvm {
     /// The ScalarEvolution's BumpPtrAllocator holds the data.
     FoldingSetNodeIDRef FastID;
 
-    /// AllocationSequenceNumber - This is used as a deterministic tie
-    /// breaker when sorting SCEVs.
-    unsigned AllocationSequenceNumber;
-
     // The SCEV baseclass this node corresponds to
     const unsigned short SCEVType;
 
@@ -72,17 +68,10 @@ namespace llvm {
   protected:
     virtual ~SCEV();
   public:
-    explicit SCEV(const FoldingSetNodeIDRef ID, unsigned num, unsigned SCEVTy) :
-      FastID(ID), AllocationSequenceNumber(num),
-      SCEVType(SCEVTy), SubclassData(0) {}
+    explicit SCEV(const FoldingSetNodeIDRef ID, unsigned SCEVTy) :
+      FastID(ID), SCEVType(SCEVTy), SubclassData(0) {}
 
     unsigned getSCEVType() const { return SCEVType; }
-
-    /// getAllocationSequenceNumber - Return an arbitrary value which can be
-    /// used to deterministically order a sequence of SCEVs.
-    unsigned getAllocationSequenceNumber() const {
-      return AllocationSequenceNumber;
-    }
 
     /// Profile - FoldingSet support.
     void Profile(FoldingSetNodeID& ID) { ID = FastID; }
@@ -541,10 +530,6 @@ namespace llvm {
     /// widening.
     const SCEV *getTruncateOrNoop(const SCEV *V, const Type *Ty);
 
-    /// getIntegerSCEV - Given a SCEVable type, create a constant for the
-    /// specified signed integer value and return a SCEV for the constant.
-    const SCEV *getIntegerSCEV(int64_t Val, const Type *Ty);
-
     /// getUMaxFromMismatchedTypes - Promote the operands to the wider of
     /// the types using zero-extension, and then perform a umax operation
     /// with them.
@@ -678,7 +663,6 @@ namespace llvm {
   private:
     FoldingSet<SCEV> UniqueSCEVs;
     BumpPtrAllocator SCEVAllocator;
-    unsigned CurAllocationSequenceNumber;
   };
 }
 

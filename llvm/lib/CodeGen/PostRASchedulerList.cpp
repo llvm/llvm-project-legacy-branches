@@ -22,8 +22,6 @@
 #include "AntiDepBreaker.h"
 #include "AggressiveAntiDepBreaker.h"
 #include "CriticalAntiDepBreaker.h"
-#include "ExactHazardRecognizer.h"
-#include "SimpleHazardRecognizer.h"
 #include "ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/LatencyPriorityQueue.h"
@@ -65,10 +63,6 @@ EnableAntiDepBreaking("break-anti-dependencies",
                       cl::desc("Break post-RA scheduling anti-dependencies: "
                                "\"critical\", \"all\", or \"none\""),
                       cl::init("none"), cl::Hidden);
-static cl::opt<bool>
-EnablePostRAHazardAvoidance("avoid-hazards",
-                      cl::desc("Enable exact hazard avoidance"),
-                      cl::init(true), cl::Hidden);
 
 // If DebugDiv > 0 then only schedule MBB with (ID % DebugDiv) == DebugMod
 static cl::opt<int>
@@ -237,10 +231,10 @@ bool PostRAScheduler::runOnMachineFunction(MachineFunction &Fn) {
 
   const MachineLoopInfo &MLI = getAnalysis<MachineLoopInfo>();
   const MachineDominatorTree &MDT = getAnalysis<MachineDominatorTree>();
-  const InstrItineraryData &InstrItins = Fn.getTarget().getInstrItineraryData();
-  ScheduleHazardRecognizer *HR = EnablePostRAHazardAvoidance ?
-    (ScheduleHazardRecognizer *)new ExactHazardRecognizer(InstrItins) :
-    (ScheduleHazardRecognizer *)new SimpleHazardRecognizer();
+  const TargetMachine &TM = Fn.getTarget();
+  const InstrItineraryData &InstrItins = TM.getInstrItineraryData();
+  ScheduleHazardRecognizer *HR =
+    TM.getInstrInfo()->CreateTargetPostRAHazardRecognizer(InstrItins);
   AntiDepBreaker *ADB =
     ((AntiDepMode == TargetSubtarget::ANTIDEP_ALL) ?
      (AntiDepBreaker *)new AggressiveAntiDepBreaker(Fn, CriticalPathRCs) :
@@ -680,15 +674,6 @@ void SchedulePostRATDList::ListScheduleTopDown() {
       ScheduleNodeTopDown(FoundSUnit, CurCycle);
       HazardRec->EmitInstruction(FoundSUnit);
       CycleHasInsts = true;
-
-      // If we are using the target-specific hazards, then don't
-      // advance the cycle time just because we schedule a node. If
-      // the target allows it we can schedule multiple nodes in the
-      // same cycle.
-      if (!EnablePostRAHazardAvoidance) {
-        if (FoundSUnit->Latency)  // Don't increment CurCycle for pseudo-ops!
-          ++CurCycle;
-      }
     } else {
       if (CycleHasInsts) {
         DEBUG(dbgs() << "*** Finished cycle " << CurCycle << '\n');
