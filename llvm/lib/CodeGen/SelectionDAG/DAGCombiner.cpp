@@ -2319,7 +2319,8 @@ SDValue DAGCombiner::visitOR(SDNode *N) {
   }
 
   // fold (or x, undef) -> -1
-  if (N0.getOpcode() == ISD::UNDEF || N1.getOpcode() == ISD::UNDEF) {
+  if (!LegalOperations &&
+      (N0.getOpcode() == ISD::UNDEF || N1.getOpcode() == ISD::UNDEF)) {
     EVT EltVT = VT.isVector() ? VT.getVectorElementType() : VT;
     return DAG.getConstant(APInt::getAllOnesValue(EltVT.getSizeInBits()), VT);
   }
