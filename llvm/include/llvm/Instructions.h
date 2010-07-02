@@ -2473,7 +2473,7 @@ public:
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
-  unsigned getNumArgOperands() const { return getNumOperands() - 3; }
+  unsigned getNumArgOperands() const { return getNumOperands() - 4; }
   Value *getArgOperand(unsigned i) const { return getOperand(i); }
   void setArgOperand(unsigned i, Value *v) { setOperand(i, v); }
 
