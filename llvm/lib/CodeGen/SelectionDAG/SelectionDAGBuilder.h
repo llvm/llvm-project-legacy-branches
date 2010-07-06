@@ -376,8 +376,9 @@ public:
   bool isExportableFromCurrentBlock(const Value *V, const BasicBlock *FromBB);
   void CopyToExportRegsIfNeeded(const Value *V);
   void ExportFromCurrentBlock(const Value *V);
+  void LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool IsTailCall);
   void LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool IsTailCall,
-                   MachineBasicBlock *LandingPad = NULL);
+                   SmallVectorImpl<MachineBasicBlock*> &CatchBlocks);
 
 private:
   // Terminator instructions.
@@ -385,7 +386,7 @@ private:
   void visitBr(const BranchInst &I);
   void visitSwitch(const SwitchInst &I);
   void visitIndirectBr(const IndirectBrInst &I);
-  void visitUnreachable(const UnreachableInst &I) { /* noop */ }
+  void visitUnreachable(const UnreachableInst &) { /* noop */ }
 
   // Helpers for visitSwitch
   bool handleSmallSwitchRange(CaseRec& CR,
@@ -494,10 +495,10 @@ private:
   void visitVAEnd(const CallInst &I);
   void visitVACopy(const CallInst &I);
 
-  void visitUserOp1(const Instruction &I) {
+  void visitUserOp1(const Instruction &) {
     llvm_unreachable("UserOp1 should not exist at instruction selection time!");
   }
-  void visitUserOp2(const Instruction &I) {
+  void visitUserOp2(const Instruction &) {
     llvm_unreachable("UserOp2 should not exist at instruction selection time!");
   }
   
