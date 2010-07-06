@@ -2378,11 +2378,9 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(IndirectBrInst, Value)
 class InvokeInst : public TerminatorInst {
   /// CatchList - This is a pointer to the array of catches.
   Use *CatchList;
+  Use *CatchAllList;
   unsigned ReservedSpace;
   unsigned NumCatches;
-
-  Value *CatchAllType;
-  BasicBlock *CatchAllDest;
 
   AttrListPtr AttributeList;
   InvokeInst(const InvokeInst &BI);
@@ -2592,17 +2590,12 @@ public:
   void setPersonalityFn(Value *V) {
     Op<-1>() = V;
   }
+
   Value *getCatchAllType() const {
-    return CatchAllType;
-  }
-  void setCatchAllType(Value *V) {
-    CatchAllType = V;
+    return CatchAllList[0];
   }
   BasicBlock *getCatchAllDest() const {
-    return CatchAllDest;
-  }
-  void setCatchAllDest(BasicBlock *B) {
-    CatchAllDest = B;
+    return cast<BasicBlock>(CatchAllList[1]);
   }
 
   /// getNumCatches - Return the number of catch blocks for this invoke
@@ -2644,10 +2637,10 @@ public:
     if (i == 1)
       return getUnwindDest();
 
-    if (CatchAllDest != 0 && i == 2)
+    if (CatchAllList != 0 && i == 2)
       return getCatchAllDest();
 
-    return getCatchDest(i - (CatchAllDest != 0 ? 3 : 2));
+    return getCatchDest(i - (CatchAllList != 0 ? 3 : 2));
   }
 
   void setSuccessor(unsigned idx, BasicBlock *NewSucc) {
@@ -2656,7 +2649,7 @@ public:
   }
 
   unsigned getNumSuccessors() const {
-    return (CatchAllDest != 0 ? 3 : 2) + getNumCatches();
+    return (CatchAllList != 0 ? 3 : 2) + getNumCatches();
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:

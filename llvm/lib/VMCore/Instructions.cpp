@@ -559,13 +559,18 @@ void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
           (FTy->isVarArg() && NumArgs > FTy->getNumParams())) &&
          "Invoking a function with bad signature");
 
-  CatchAllType = CatchAllTy;
-  CatchAllDest = CatchAll;
-
   // Allocate space for the catches.
   ReservedSpace = NumCatches * 2;
   this->NumCatches = 0;
   CatchList = allocHungoffUses(ReservedSpace);
+
+  if (CatchAllTy && CatchAll) {
+    CatchAllList = allocHungoffUses(2);
+    CatchAllList[0] = CatchAllTy;
+    CatchAllList[1] = CatchAll;
+  } else {
+    CatchAllList = 0;
+  }
 
   Use *OL = OperandList;
   for (unsigned i = 0, e = NumArgs; i != e; i++) {
@@ -592,6 +597,7 @@ InvokeInst::InvokeInst(const InvokeInst &II)
 
 InvokeInst::~InvokeInst() {
   dropHungoffUses(CatchList);
+  if (CatchAllList) dropHungoffUses(CatchAllList);
 }
 
 BasicBlock *InvokeInst::getSuccessorV(unsigned idx) const {
