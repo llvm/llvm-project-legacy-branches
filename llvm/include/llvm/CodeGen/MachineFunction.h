@@ -256,6 +256,8 @@ public:
   filter_iterator filter_begin() const { return EHFilters.begin(); }
   filter_iterator   filter_end() const { return EHFilters.end(); }
 
+  bool            filter_empty() const { return EHFilters.empty(); }
+
   /// print - Print out the MachineFunction in a format suitable for debugging
   /// to the specified stream.
   ///
