@@ -296,6 +296,7 @@ void MachineFunction::print(raw_ostream &OS) const {
   
   if (RegInfo && !RegInfo->livein_empty()) {
     OS << "Function Live Ins: ";
+
     for (MachineRegisterInfo::livein_iterator
          I = RegInfo->livein_begin(), E = RegInfo->livein_end(); I != E; ++I) {
       if (TRI)
@@ -309,8 +310,10 @@ void MachineFunction::print(raw_ostream &OS) const {
       if (llvm::next(I) != E)
         OS << ", ";
     }
+
     OS << '\n';
   }
+
   if (RegInfo && !RegInfo->liveout_empty()) {
     OS << "Function Live Outs: ";
     for (MachineRegisterInfo::liveout_iterator
@@ -323,6 +326,20 @@ void MachineFunction::print(raw_ostream &OS) const {
       if (llvm::next(I) != E)
         OS << " ";
     }
+
+    OS << '\n';
+  }
+
+  if (!filter_empty()) {
+    OS << "Function Filter IDs: ";
+
+    for (filter_iterator I = filter_begin(), E = filter_end(); I != E; ++I) {
+      OS << (*I)->getName();
+
+      if (llvm::next(I) != E)
+        OS << ", ";
+    }
+
     OS << '\n';
   }
   
