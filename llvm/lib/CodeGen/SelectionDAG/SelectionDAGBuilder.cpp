@@ -4173,6 +4173,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::eh_exception: {
     // Insert the EXCEPTIONADDR instruction.
+    // EH-FIXME: I don't think that this should be a hard/fast rule anymore.
     assert(FuncInfo.MBBMap[I.getParent()]->isLandingPad() &&
            "Call to eh.exception not in landing pad!");
     SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);

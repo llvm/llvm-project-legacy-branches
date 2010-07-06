@@ -453,11 +453,20 @@ bool FastISel::SelectCall(const User *I) {
     }     
     return true;
   }
+  case Intrinsic::eh_filter: {
+    // Add the filter IDs to the machine function.
+    const IntrinsicInst *II = cast<IntrinsicInst>(I);
+    for (unsigned i = 0, e = II->getNumArgOperands(); i != e; ++i)
+      MF.addFilterID(II->getArgOperand(i)->stripPointerCasts());
+
+    return true;
+  }
   case Intrinsic::eh_exception: {
     EVT VT = TLI.getValueType(I->getType());
     switch (TLI.getOperationAction(ISD::EXCEPTIONADDR, VT)) {
     default: break;
     case TargetLowering::Expand: {
+      // EH-FIXME: I don't think that this should be a hard/fast rule anymore.
       assert(MBB->isLandingPad() && "Call to eh.exception not in landing pad!");
       unsigned Reg = TLI.getExceptionAddressRegister();
       const TargetRegisterClass *RC = TLI.getRegClassFor(VT);
