@@ -272,7 +272,8 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
     break;
   case ExceptionHandling::Dwarf:
-    PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
+///EH-FIXME: Try to get by without the DwarfEHPass.
+///EH-FIXME:    PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
     break;
   case ExceptionHandling::None:
     PM.add(createLowerInvokePass(getTargetLowering()));

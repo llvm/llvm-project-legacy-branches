@@ -256,14 +256,14 @@ private:
   /// Returns the operand number of the first argument
   unsigned getArgumentOffset() const {
     if (isCall())
-      return 1; // Skip Function (ATM)
+      return CallInst::ArgOffset; // Skip Function (ATM)
     else
       return 0; // Args are at the front
   }
 
   unsigned getArgumentEndOffset() const {
     if (isCall())
-      return 0; // Unchanged (ATM)
+      return CallInst::ArgOffset ? 0 : 1; // Unchanged (ATM)
     else
       // An invoke.
       return 4; // Skip PersFn, BB, BB, Function
