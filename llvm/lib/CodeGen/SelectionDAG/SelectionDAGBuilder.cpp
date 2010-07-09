@@ -5533,6 +5533,10 @@ void SelectionDAGBuilder::visitInlineAsm(CallSite CS) {
                                       TLI.getPointerTy()));
 
 
+  // Remember the AlignStack bit as operand 3.
+  AsmNodeOperands.push_back(DAG.getTargetConstant(IA->isAlignStack() ? 1 : 0,
+                                            MVT::i1));
+
   // Loop over all of the inputs, copying the operand values into the
   // appropriate registers and processing the output regs.
   RegsForValue RetValRegs;
@@ -5600,7 +5604,7 @@ void SelectionDAGBuilder::visitInlineAsm(CallSite CS) {
 
         // Scan until we find the definition we already emitted of this operand.
         // When we find it, create a RegsForValue operand.
-        unsigned CurOp = 2;  // The first operand.
+        unsigned CurOp = 3;  // The first operand.
         for (; OperandNo; --OperandNo) {
           // Advance to the next operand.
           unsigned OpFlag =

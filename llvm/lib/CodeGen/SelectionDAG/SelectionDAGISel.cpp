@@ -1438,8 +1438,9 @@ SelectInlineAsmMemoryOperands(std::vector<SDValue> &Ops) {
 
   Ops.push_back(InOps[0]);  // input chain.
   Ops.push_back(InOps[1]);  // input asm string.
+  Ops.push_back(InOps[2]);  // isAlignStack bit
 
-  unsigned i = 2, e = InOps.size();
+  unsigned i = 3, e = InOps.size();
   if (InOps[e-1].getValueType() == MVT::Flag)
     --e;  // Don't process a flag operand if it is here.
 

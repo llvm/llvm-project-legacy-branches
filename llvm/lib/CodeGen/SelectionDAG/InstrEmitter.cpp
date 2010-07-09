@@ -719,8 +719,13 @@ void InstrEmitter::EmitNode(SDNode *Node, bool IsClone, bool IsCloned,
       cast<ExternalSymbolSDNode>(Node->getOperand(1))->getSymbol();
     MI->addOperand(MachineOperand::CreateES(AsmStr));
       
+    // Add the isAlignStack bit.
+    int64_t isAlignStack =
+      cast<ConstantSDNode>(Node->getOperand(2))->getZExtValue();
+    MI->addOperand(MachineOperand::CreateImm(isAlignStack));
+
     // Add all of the operand registers to the instruction.
-    for (unsigned i = 2; i != NumOps;) {
+    for (unsigned i = 3; i != NumOps;) {
       unsigned Flags =
         cast<ConstantSDNode>(Node->getOperand(i))->getZExtValue();
       unsigned NumVals = InlineAsm::getNumOperandRegisters(Flags);
