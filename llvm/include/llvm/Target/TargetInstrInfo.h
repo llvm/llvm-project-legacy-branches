@@ -122,10 +122,6 @@ public:
         SrcReg == DstReg)
       return true;
 
-    if (MI.getOpcode() == TargetOpcode::EXTRACT_SUBREG &&
-        MI.getOperand(0).getReg() == MI.getOperand(1).getReg())
-    return true;
-
     if ((MI.getOpcode() == TargetOpcode::INSERT_SUBREG ||
          MI.getOpcode() == TargetOpcode::SUBREG_TO_REG) &&
         MI.getOperand(0).getReg() == MI.getOperand(2).getReg())
@@ -442,19 +438,17 @@ public:
   /// foldMemoryOperand - Attempt to fold a load or store of the specified stack
   /// slot into the specified machine instruction for the specified operand(s).
   /// If this is possible, a new instruction is returned with the specified
-  /// operand folded, otherwise NULL is returned. The client is responsible for
-  /// removing the old instruction and adding the new one in the instruction
-  /// stream.
-  MachineInstr* foldMemoryOperand(MachineFunction &MF,
-                                  MachineInstr* MI,
+  /// operand folded, otherwise NULL is returned.
+  /// The new instruction is inserted before MI, and the client is responsible
+  /// for removing the old instruction.
+  MachineInstr* foldMemoryOperand(MachineBasicBlock::iterator MI,
                                   const SmallVectorImpl<unsigned> &Ops,
                                   int FrameIndex) const;
 
   /// foldMemoryOperand - Same as the previous version except it allows folding
   /// of any load and store from / to any address, not just from a specific
   /// stack slot.
-  MachineInstr* foldMemoryOperand(MachineFunction &MF,
-                                  MachineInstr* MI,
+  MachineInstr* foldMemoryOperand(MachineBasicBlock::iterator MI,
                                   const SmallVectorImpl<unsigned> &Ops,
                                   MachineInstr* LoadMI) const;
 
@@ -484,9 +478,7 @@ public:
   /// folding is possible.
   virtual
   bool canFoldMemoryOperand(const MachineInstr *MI,
-                            const SmallVectorImpl<unsigned> &Ops) const {
-    return false;
-  }
+                            const SmallVectorImpl<unsigned> &Ops) const =0;
 
   /// unfoldMemoryOperand - Separate a single instruction which folded a load or
   /// a store or a load and a store into two or more instruction. If this is
@@ -649,6 +641,8 @@ public:
                                            bool NewMI = false) const;
   virtual bool findCommutedOpIndices(MachineInstr *MI, unsigned &SrcOpIdx1,
                                      unsigned &SrcOpIdx2) const;
+  virtual bool canFoldMemoryOperand(const MachineInstr *MI,
+                                    const SmallVectorImpl<unsigned> &Ops) const;
   virtual bool PredicateInstruction(MachineInstr *MI,
                             const SmallVectorImpl<MachineOperand> &Pred) const;
   virtual void reMaterialize(MachineBasicBlock &MBB,

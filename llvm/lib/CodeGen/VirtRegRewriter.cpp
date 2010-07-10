@@ -1409,25 +1409,25 @@ OptimizeByUnfold(MachineBasicBlock::iterator &MII,
     if (TII->unfoldMemoryOperand(MF, &MI, UnfoldVR, false, false, NewMIs)) {
       assert(NewMIs.size() == 1);
       MachineInstr *NewMI = NewMIs.back();
+      MBB->insert(MII, NewMI);
       NewMIs.clear();
       int Idx = NewMI->findRegisterUseOperandIdx(VirtReg, false);
       assert(Idx != -1);
       SmallVector<unsigned, 1> Ops;
       Ops.push_back(Idx);
-      MachineInstr *FoldedMI = TII->foldMemoryOperand(MF, NewMI, Ops, SS);
+      MachineInstr *FoldedMI = TII->foldMemoryOperand(NewMI, Ops, SS);
+      NewMI->eraseFromParent();
       if (FoldedMI) {
         VRM->addSpillSlotUse(SS, FoldedMI);
         if (!VRM->hasPhys(UnfoldVR))
           VRM->assignVirt2Phys(UnfoldVR, UnfoldPR);
         VRM->virtFolded(VirtReg, FoldedMI, VirtRegMap::isRef);
-        MII = MBB->insert(MII, FoldedMI);
+        MII = FoldedMI;
         InvalidateKills(MI, TRI, RegKills, KillOps);
         VRM->RemoveMachineInstrFromMaps(&MI);
         MBB->erase(&MI);
-        MF.DeleteMachineInstr(NewMI);
         return true;
       }
-      MF.DeleteMachineInstr(NewMI);
     }
   }
 
@@ -1479,7 +1479,6 @@ CommuteToFoldReload(MachineBasicBlock::iterator &MII,
   if (MII == MBB->begin() || !MII->killsRegister(SrcReg))
     return false;
 
-  MachineFunction &MF = *MBB->getParent();
   MachineInstr &MI = *MII;
   MachineBasicBlock::iterator DefMII = prior(MII);
   MachineInstr *DefMI = DefMII;
@@ -1510,11 +1509,12 @@ CommuteToFoldReload(MachineBasicBlock::iterator &MII,
     MachineInstr *CommutedMI = TII->commuteInstruction(DefMI, true);
     if (!CommutedMI)
       return false;
+    MBB->insert(MII, CommutedMI);
     SmallVector<unsigned, 1> Ops;
     Ops.push_back(NewDstIdx);
-    MachineInstr *FoldedMI = TII->foldMemoryOperand(MF, CommutedMI, Ops, SS);
+    MachineInstr *FoldedMI = TII->foldMemoryOperand(CommutedMI, Ops, SS);
     // Not needed since foldMemoryOperand returns new MI.
-    MF.DeleteMachineInstr(CommutedMI);
+    CommutedMI->eraseFromParent();
     if (!FoldedMI)
       return false;
 
@@ -1527,7 +1527,7 @@ CommuteToFoldReload(MachineBasicBlock::iterator &MII,
     MachineInstr *StoreMI = MII;
     VRM->addSpillSlotUse(SS, StoreMI);
     VRM->virtFolded(VirtReg, StoreMI, VirtRegMap::isMod);
-    MII = MBB->insert(MII, FoldedMI);  // Update MII to backtrack.
+    MII = FoldedMI;  // Update MII to backtrack.
 
     // Delete all 3 old instructions.
     InvalidateKills(*ReloadMI, TRI, RegKills, KillOps);
@@ -2012,7 +2012,7 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
       //       = EXTRACT_SUBREG fi#1
       // fi#1 is available in EDI, but it cannot be reused because it's not in
       // the right register file.
-      if (PhysReg && !AvoidReload && (SubIdx || MI.isExtractSubreg())) {
+      if (PhysReg && !AvoidReload && SubIdx) {
         const TargetRegisterClass* RC = MRI->getRegClass(VirtReg);
         if (!RC->contains(PhysReg))
           PhysReg = 0;
@@ -2443,6 +2443,24 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
         // Also check if it's copying from an "undef", if so, we can't
         // eliminate this or else the undef marker is lost and it will
         // confuses the scavenger. This is extremely rare.
+        if (MI.isIdentityCopy() && !MI.getOperand(1).isUndef() &&
+            MI.getNumOperands() == 2) {
+          ++NumDCE;
+          DEBUG(dbgs() << "Removing now-noop copy: " << MI);
+          SmallVector<unsigned, 2> KillRegs;
+          InvalidateKills(MI, TRI, RegKills, KillOps, &KillRegs);
+          if (MO.isDead() && !KillRegs.empty()) {
+            // Source register or an implicit super/sub-register use is killed.
+            assert(TRI->regsOverlap(KillRegs[0], MI.getOperand(0).getReg()));
+            // Last def is now dead.
+            TransferDeadness(MI.getOperand(1).getReg(), RegKills, KillOps);
+          }
+          VRM->RemoveMachineInstrFromMaps(&MI);
+          MBB->erase(&MI);
+          Erased = true;
+          Spills.disallowClobberPhysReg(VirtReg);
+          goto ProcessNextInst;
+        }
         unsigned Src, Dst, SrcSR, DstSR;
         if (TII->isMoveInstr(MI, Src, Dst, SrcSR, DstSR) &&
             Src == Dst && SrcSR == DstSR &&
@@ -2532,6 +2550,16 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
 
         // Check to see if this is a noop copy.  If so, eliminate the
         // instruction before considering the dest reg to be changed.
+        if (MI.isIdentityCopy()) {
+          ++NumDCE;
+          DEBUG(dbgs() << "Removing now-noop copy: " << MI);
+          InvalidateKills(MI, TRI, RegKills, KillOps);
+          VRM->RemoveMachineInstrFromMaps(&MI);
+          MBB->erase(&MI);
+          Erased = true;
+          UpdateKills(*LastStore, TRI, RegKills, KillOps);
+          goto ProcessNextInst;
+        }
         {
           unsigned Src, Dst, SrcSR, DstSR;
           if (TII->isMoveInstr(MI, Src, Dst, SrcSR, DstSR) &&
