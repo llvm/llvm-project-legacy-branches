@@ -17,12 +17,12 @@ sub testfiles($$) {
   @files = `ls test/*/*.$suffix`;
   foreach $file (@files) {
     chomp($file);
-    my $code = system("clang- -fsyntax-only -x $language $file > /dev/null 2>&1");
+    my $code = system("/Xcode4/usr/bin/clang -fsyntax-only -x $language $file > /dev/null 2>&1");
     if ($code == 0) {
       print(".");
-      $code = system("clang -cc1 -emit-pch -x $language -o $file.pch $file > /dev/null 2>&1");
+      $code = system("/Xcode4/usr/bin/clang -cc1 -emit-pch -x $language -o $file.pch $file > /dev/null 2>&1");
       if ($code == 0) {
-        $code = system("clang -cc1 -include-pch $file.pch -x $language -ast-dump /dev/null > /dev/null 2>&1");
+        $code = system("/Xcode4/usr/bin/clang -cc1 -include-pch $file.pch -x $language -ast-dump /dev/null > /dev/null 2>&1");
         if ($code == 0) {
           $passed++;
         } elsif (($code & 0xFF) == SIGINT) {
