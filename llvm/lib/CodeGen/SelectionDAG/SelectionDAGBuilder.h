@@ -394,7 +394,7 @@ private:
   void visitBr(BranchInst &I);
   void visitSwitch(SwitchInst &I);
   void visitIndirectBr(IndirectBrInst &I);
-  void visitUnreachable(UnreachableInst &I) { /* noop */ }
+  void visitUnreachable(UnreachableInst &I);
 
   // Helpers for visitSwitch
   bool handleSmallSwitchRange(CaseRec& CR,
