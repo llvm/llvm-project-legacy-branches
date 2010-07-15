@@ -118,7 +118,9 @@ $(error "invalid setting for clang build all mode: '$(Clang_Build_All)'")
 endif
 
 # Set makefile variables to pass during build and install.
-Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 CLANG_VENDOR=Apple
+Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 \
+                        CLANG_VENDOR=Apple \
+                        CLANG_VENDOR_UTI=com.apple.compilers.llvm.clang
 Clang_Make_Variables += CLANG_VERSION=$(Clang_Version)
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
