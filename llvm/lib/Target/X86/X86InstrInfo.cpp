@@ -1891,177 +1891,6 @@ static bool isHReg(unsigned Reg) {
   return X86::GR8_ABCD_HRegClass.contains(Reg);
 }
 
-bool X86InstrInfo::copyRegToReg(MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator MI,
-                                unsigned DestReg, unsigned SrcReg,
-                                const TargetRegisterClass *DestRC,
-                                const TargetRegisterClass *SrcRC,
-                                DebugLoc DL) const {
-
-  // Determine if DstRC and SrcRC have a common superclass in common.
-  const TargetRegisterClass *CommonRC = DestRC;
-  if (DestRC == SrcRC)
-    /* Source and destination have the same register class. */;
-  else if (CommonRC->hasSuperClass(SrcRC))
-    CommonRC = SrcRC;
-  else if (!DestRC->hasSubClass(SrcRC)) {
-    // Neither of GR64_NOREX or GR64_NOSP is a superclass of the other,
-    // but we want to copy them as GR64. Similarly, for GR32_NOREX and
-    // GR32_NOSP, copy as GR32.
-    if (SrcRC->hasSuperClass(&X86::GR64RegClass) &&
-        DestRC->hasSuperClass(&X86::GR64RegClass))
-      CommonRC = &X86::GR64RegClass;
-    else if (SrcRC->hasSuperClass(&X86::GR32RegClass) &&
-             DestRC->hasSuperClass(&X86::GR32RegClass))
-      CommonRC = &X86::GR32RegClass;
-    else if (SrcRC->hasSuperClass(&X86::GR8RegClass) &&
-             DestRC->hasSuperClass(&X86::GR8RegClass))
-      CommonRC = &X86::GR8RegClass;
-    else
-      CommonRC = 0;
-  }
-
-  if (CommonRC) {
-    unsigned Opc;
-    if (CommonRC == &X86::GR64RegClass || CommonRC == &X86::GR64_NOSPRegClass) {
-      Opc = X86::MOV64rr;
-    } else if (CommonRC == &X86::GR32RegClass ||
-               CommonRC == &X86::GR32_NOSPRegClass) {
-      Opc = X86::MOV32rr;
-    } else if (CommonRC == &X86::GR16RegClass) {
-      Opc = X86::MOV16rr;
-    } else if (CommonRC == &X86::GR8RegClass) {
-      // Copying to or from a physical H register on x86-64 requires a NOREX
-      // move.  Otherwise use a normal move.
-      if ((isHReg(DestReg) || isHReg(SrcReg) ||
-           SrcRC == &X86::GR8_ABCD_HRegClass ||
-           DestRC == &X86::GR8_ABCD_HRegClass) &&
-          TM.getSubtarget<X86Subtarget>().is64Bit())
-        Opc = X86::MOV8rr_NOREX;
-      else
-        Opc = X86::MOV8rr;
-    } else if (CommonRC == &X86::GR64_ABCDRegClass) {
-      Opc = X86::MOV64rr;
-    } else if (CommonRC == &X86::GR32_ABCDRegClass) {
-      Opc = X86::MOV32rr;
-    } else if (CommonRC == &X86::GR16_ABCDRegClass) {
-      Opc = X86::MOV16rr;
-    } else if (CommonRC == &X86::GR8_ABCD_LRegClass) {
-      Opc = X86::MOV8rr;
-    } else if (CommonRC == &X86::GR8_ABCD_HRegClass) {
-      if (TM.getSubtarget<X86Subtarget>().is64Bit())
-        Opc = X86::MOV8rr_NOREX;
-      else
-        Opc = X86::MOV8rr;
-    } else if (CommonRC == &X86::GR64_NOREXRegClass ||
-               CommonRC == &X86::GR64_NOREX_NOSPRegClass) {
-      Opc = X86::MOV64rr;
-    } else if (CommonRC == &X86::GR32_NOREXRegClass) {
-      Opc = X86::MOV32rr;
-    } else if (CommonRC == &X86::GR16_NOREXRegClass) {
-      Opc = X86::MOV16rr;
-    } else if (CommonRC == &X86::GR8_NOREXRegClass) {
-      Opc = X86::MOV8rr;
-    } else if (CommonRC == &X86::GR64_TCRegClass) {
-      Opc = X86::MOV64rr_TC;
-    } else if (CommonRC == &X86::GR32_TCRegClass) {
-      Opc = X86::MOV32rr_TC;
-    } else if (CommonRC == &X86::RFP32RegClass) {
-      Opc = X86::MOV_Fp3232;
-    } else if (CommonRC == &X86::RFP64RegClass || CommonRC == &X86::RSTRegClass) {
-      Opc = X86::MOV_Fp6464;
-    } else if (CommonRC == &X86::RFP80RegClass) {
-      Opc = X86::MOV_Fp8080;
-    } else if (CommonRC == &X86::FR32RegClass) {
-      Opc = X86::FsMOVAPSrr;
-    } else if (CommonRC == &X86::FR64RegClass) {
-      Opc = X86::FsMOVAPDrr;
-    } else if (CommonRC == &X86::VR128RegClass) {
-      Opc = X86::MOVAPSrr;
-    } else if (CommonRC == &X86::VR64RegClass) {
-      Opc = X86::MMX_MOVQ64rr;
-    } else {
-      return false;
-    }
-    BuildMI(MBB, MI, DL, get(Opc), DestReg).addReg(SrcReg);
-    return true;
-  }
-
-  // Moving EFLAGS to / from another register requires a push and a pop.
-  if (SrcRC == &X86::CCRRegClass) {
-    if (SrcReg != X86::EFLAGS)
-      return false;
-    if (DestRC == &X86::GR64RegClass || DestRC == &X86::GR64_NOSPRegClass) {
-      BuildMI(MBB, MI, DL, get(X86::PUSHF64));
-      BuildMI(MBB, MI, DL, get(X86::POP64r), DestReg);
-      return true;
-    } else if (DestRC == &X86::GR32RegClass ||
-               DestRC == &X86::GR32_NOSPRegClass) {
-      BuildMI(MBB, MI, DL, get(X86::PUSHF32));
-      BuildMI(MBB, MI, DL, get(X86::POP32r), DestReg);
-      return true;
-    }
-  } else if (DestRC == &X86::CCRRegClass) {
-    if (DestReg != X86::EFLAGS)
-      return false;
-    if (SrcRC == &X86::GR64RegClass || DestRC == &X86::GR64_NOSPRegClass) {
-      BuildMI(MBB, MI, DL, get(X86::PUSH64r)).addReg(SrcReg);
-      BuildMI(MBB, MI, DL, get(X86::POPF64));
-      return true;
-    } else if (SrcRC == &X86::GR32RegClass ||
-               DestRC == &X86::GR32_NOSPRegClass) {
-      BuildMI(MBB, MI, DL, get(X86::PUSH32r)).addReg(SrcReg);
-      BuildMI(MBB, MI, DL, get(X86::POPF32));
-      return true;
-    }
-  }
-
-  // Moving from ST(0) turns into FpGET_ST0_32 etc.
-  if (SrcRC == &X86::RSTRegClass) {
-    // Copying from ST(0)/ST(1).
-    if (SrcReg != X86::ST0 && SrcReg != X86::ST1)
-      // Can only copy from ST(0)/ST(1) right now
-      return false;
-    bool isST0 = SrcReg == X86::ST0;
-    unsigned Opc;
-    if (DestRC == &X86::RFP32RegClass)
-      Opc = isST0 ? X86::FpGET_ST0_32 : X86::FpGET_ST1_32;
-    else if (DestRC == &X86::RFP64RegClass)
-      Opc = isST0 ? X86::FpGET_ST0_64 : X86::FpGET_ST1_64;
-    else {
-      if (DestRC != &X86::RFP80RegClass)
-        return false;
-      Opc = isST0 ? X86::FpGET_ST0_80 : X86::FpGET_ST1_80;
-    }
-    BuildMI(MBB, MI, DL, get(Opc), DestReg);
-    return true;
-  }
-
-  // Moving to ST(0) turns into FpSET_ST0_32 etc.
-  if (DestRC == &X86::RSTRegClass) {
-    // Copying to ST(0) / ST(1).
-    if (DestReg != X86::ST0 && DestReg != X86::ST1)
-      // Can only copy to TOS right now
-      return false;
-    bool isST0 = DestReg == X86::ST0;
-    unsigned Opc;
-    if (SrcRC == &X86::RFP32RegClass)
-      Opc = isST0 ? X86::FpSET_ST0_32 : X86::FpSET_ST1_32;
-    else if (SrcRC == &X86::RFP64RegClass)
-      Opc = isST0 ? X86::FpSET_ST0_64 : X86::FpSET_ST1_64;
-    else {
-      if (SrcRC != &X86::RFP80RegClass)
-        return false;
-      Opc = isST0 ? X86::FpSET_ST0_80 : X86::FpSET_ST1_80;
-    }
-    BuildMI(MBB, MI, DL, get(Opc)).addReg(SrcReg);
-    return true;
-  }
-  
-  // Not yet supported!
-  return false;
-}
-
 void X86InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                MachineBasicBlock::iterator MI, DebugLoc DL,
                                unsigned DestReg, unsigned SrcReg,
@@ -2129,13 +1958,19 @@ static unsigned getLoadStoreRegOpcode(unsigned Reg,
                                       bool isStackAligned,
                                       const TargetMachine &TM,
                                       bool load) {
-  if (RC == &X86::GR64RegClass || RC == &X86::GR64_NOSPRegClass) {
+  switch (RC->getID()) {
+  default:
+    llvm_unreachable("Unknown regclass");
+  case X86::GR64RegClassID:
+  case X86::GR64_NOSPRegClassID:
     return load ? X86::MOV64rm : X86::MOV64mr;
-  } else if (RC == &X86::GR32RegClass || RC == &X86::GR32_NOSPRegClass) {
+  case X86::GR32RegClassID:
+  case X86::GR32_NOSPRegClassID:
+  case X86::GR32_ADRegClassID:
     return load ? X86::MOV32rm : X86::MOV32mr;
-  } else if (RC == &X86::GR16RegClass) {
+  case X86::GR16RegClassID:
     return load ? X86::MOV16rm : X86::MOV16mr;
-  } else if (RC == &X86::GR8RegClass) {
+  case X86::GR8RegClassID:
     // Copying to or from a physical H register on x86-64 requires a NOREX
     // move.  Otherwise use a normal move.
     if (isHReg(Reg) &&
@@ -2143,52 +1978,50 @@ static unsigned getLoadStoreRegOpcode(unsigned Reg,
       return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
     else
       return load ? X86::MOV8rm : X86::MOV8mr;
-  } else if (RC == &X86::GR64_ABCDRegClass) {
+  case X86::GR64_ABCDRegClassID:
     return load ? X86::MOV64rm : X86::MOV64mr;
-  } else if (RC == &X86::GR32_ABCDRegClass) {
+  case X86::GR32_ABCDRegClassID:
     return load ? X86::MOV32rm : X86::MOV32mr;
-  } else if (RC == &X86::GR16_ABCDRegClass) {
+  case X86::GR16_ABCDRegClassID:
     return load ? X86::MOV16rm : X86::MOV16mr;
-  } else if (RC == &X86::GR8_ABCD_LRegClass) {
+  case X86::GR8_ABCD_LRegClassID:
     return load ? X86::MOV8rm :X86::MOV8mr;
-  } else if (RC == &X86::GR8_ABCD_HRegClass) {
+  case X86::GR8_ABCD_HRegClassID:
     if (TM.getSubtarget<X86Subtarget>().is64Bit())
       return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
     else
       return load ? X86::MOV8rm : X86::MOV8mr;
-  } else if (RC == &X86::GR64_NOREXRegClass ||
-             RC == &X86::GR64_NOREX_NOSPRegClass) {
+  case X86::GR64_NOREXRegClassID:
+  case X86::GR64_NOREX_NOSPRegClassID:
     return load ? X86::MOV64rm : X86::MOV64mr;
-  } else if (RC == &X86::GR32_NOREXRegClass) {
+  case X86::GR32_NOREXRegClassID:
     return load ? X86::MOV32rm : X86::MOV32mr;
-  } else if (RC == &X86::GR16_NOREXRegClass) {
+  case X86::GR16_NOREXRegClassID:
     return load ? X86::MOV16rm : X86::MOV16mr;
-  } else if (RC == &X86::GR8_NOREXRegClass) {
+  case X86::GR8_NOREXRegClassID:
     return load ? X86::MOV8rm : X86::MOV8mr;
-  } else if (RC == &X86::GR64_TCRegClass) {
+  case X86::GR64_TCRegClassID:
     return load ? X86::MOV64rm_TC : X86::MOV64mr_TC;
-  } else if (RC == &X86::GR32_TCRegClass) {
+  case X86::GR32_TCRegClassID:
     return load ? X86::MOV32rm_TC : X86::MOV32mr_TC;
-  } else if (RC == &X86::RFP80RegClass) {
+  case X86::RFP80RegClassID:
     return load ? X86::LD_Fp80m : X86::ST_FpP80m;
-  } else if (RC == &X86::RFP64RegClass) {
+  case X86::RFP64RegClassID:
     return load ? X86::LD_Fp64m : X86::ST_Fp64m;
-  } else if (RC == &X86::RFP32RegClass) {
+  case X86::RFP32RegClassID:
     return load ? X86::LD_Fp32m : X86::ST_Fp32m;
-  } else if (RC == &X86::FR32RegClass) {
+  case X86::FR32RegClassID:
     return load ? X86::MOVSSrm : X86::MOVSSmr;
-  } else if (RC == &X86::FR64RegClass) {
+  case X86::FR64RegClassID:
     return load ? X86::MOVSDrm : X86::MOVSDmr;
-  } else if (RC == &X86::VR128RegClass) {
+  case X86::VR128RegClassID:
     // If stack is realigned we can use aligned stores.
     if (isStackAligned)
       return load ? X86::MOVAPSrm : X86::MOVAPSmr;
     else
       return load ? X86::MOVUPSrm : X86::MOVUPSmr;
-  } else if (RC == &X86::VR64RegClass) {
+  case X86::VR64RegClassID:
     return load ? X86::MMX_MOVQ64rm : X86::MMX_MOVQ64mr;
-  } else {
-    llvm_unreachable("Unknown regclass");
   }
 }
 
@@ -2227,7 +2060,7 @@ void X86InstrInfo::storeRegToAddr(MachineFunction &MF, unsigned SrcReg,
                                   MachineInstr::mmo_iterator MMOBegin,
                                   MachineInstr::mmo_iterator MMOEnd,
                                   SmallVectorImpl<MachineInstr*> &NewMIs) const {
-  bool isAligned = *MMOBegin && (*MMOBegin)->getAlignment() >= 16;
+  bool isAligned = MMOBegin != MMOEnd && (*MMOBegin)->getAlignment() >= 16;
   unsigned Opc = getStoreRegOpcode(SrcReg, RC, isAligned, TM);
   DebugLoc DL;
   MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc));
@@ -2257,7 +2090,7 @@ void X86InstrInfo::loadRegFromAddr(MachineFunction &MF, unsigned DestReg,
                                  MachineInstr::mmo_iterator MMOBegin,
                                  MachineInstr::mmo_iterator MMOEnd,
                                  SmallVectorImpl<MachineInstr*> &NewMIs) const {
-  bool isAligned = *MMOBegin && (*MMOBegin)->getAlignment() >= 16;
+  bool isAligned = MMOBegin != MMOEnd && (*MMOBegin)->getAlignment() >= 16;
   unsigned Opc = getLoadRegOpcode(DestReg, RC, isAligned, TM);
   DebugLoc DL;
   MachineInstrBuilder MIB = BuildMI(MF, DL, get(Opc), DestReg);
@@ -2642,7 +2475,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       if (TM.getSubtarget<X86Subtarget>().is64Bit())
         PICBase = X86::RIP;
       else
-        // FIXME: PICBase = TM.getInstrInfo()->getGlobalBaseReg(&MF);
+        // FIXME: PICBase = getGlobalBaseReg(&MF);
         // This doesn't work for several reasons.
         // 1. GlobalBaseReg may have been spilled.
         // 2. It may not be live at MI.
@@ -3717,6 +3550,8 @@ unsigned X86InstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
 /// the global base register value. Output instructions required to
 /// initialize the register in the function entry block, if necessary.
 ///
+/// TODO: Eliminate this and move the code to X86MachineFunctionInfo.
+///
 unsigned X86InstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
   assert(!TM.getSubtarget<X86Subtarget>().is64Bit() &&
          "X86-64 PIC uses RIP relative addressing");
@@ -3726,30 +3561,10 @@ unsigned X86InstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
   if (GlobalBaseReg != 0)
     return GlobalBaseReg;
 
-  // Insert the set of GlobalBaseReg into the first MBB of the function
-  MachineBasicBlock &FirstMBB = MF->front();
-  MachineBasicBlock::iterator MBBI = FirstMBB.begin();
-  DebugLoc DL = FirstMBB.findDebugLoc(MBBI);
+  // Create the register. The code to initialize it is inserted
+  // later, by the CGBR pass (below).
   MachineRegisterInfo &RegInfo = MF->getRegInfo();
-  unsigned PC = RegInfo.createVirtualRegister(X86::GR32RegisterClass);
-  
-  const TargetInstrInfo *TII = TM.getInstrInfo();
-  // Operand of MovePCtoStack is completely ignored by asm printer. It's
-  // only used in JIT code emission as displacement to pc.
-  BuildMI(FirstMBB, MBBI, DL, TII->get(X86::MOVPC32r), PC).addImm(0);
-  
-  // If we're using vanilla 'GOT' PIC style, we should use relative addressing
-  // not to pc, but to _GLOBAL_OFFSET_TABLE_ external.
-  if (TM.getSubtarget<X86Subtarget>().isPICStyleGOT()) {
-    GlobalBaseReg = RegInfo.createVirtualRegister(X86::GR32RegisterClass);
-    // Generate addl $__GLOBAL_OFFSET_TABLE_ + [.-piclabel], %some_register
-    BuildMI(FirstMBB, MBBI, DL, TII->get(X86::ADD32ri), GlobalBaseReg)
-      .addReg(PC).addExternalSymbol("_GLOBAL_OFFSET_TABLE_",
-                                    X86II::MO_GOT_ABSOLUTE_ADDRESS);
-  } else {
-    GlobalBaseReg = PC;
-  }
-
+  GlobalBaseReg = RegInfo.createVirtualRegister(X86::GR32RegisterClass);
   X86FI->setGlobalBaseReg(GlobalBaseReg);
   return GlobalBaseReg;
 }
@@ -3806,3 +3621,66 @@ void X86InstrInfo::SetSSEDomain(MachineInstr *MI, unsigned Domain) const {
 void X86InstrInfo::getNoopForMachoTarget(MCInst &NopInst) const {
   NopInst.setOpcode(X86::NOOP);
 }
+
+namespace {
+  /// CGBR - Create Global Base Reg pass. This initializes the PIC
+  /// global base register for x86-32.
+  struct CGBR : public MachineFunctionPass {
+    static char ID;
+    CGBR() : MachineFunctionPass(&ID) {}
+
+    virtual bool runOnMachineFunction(MachineFunction &MF) {
+      const X86TargetMachine *TM =
+        static_cast<const X86TargetMachine *>(&MF.getTarget());
+
+      assert(!TM->getSubtarget<X86Subtarget>().is64Bit() &&
+             "X86-64 PIC uses RIP relative addressing");
+
+      // Only emit a global base reg in PIC mode.
+      if (TM->getRelocationModel() != Reloc::PIC_)
+        return false;
+
+      // Insert the set of GlobalBaseReg into the first MBB of the function
+      MachineBasicBlock &FirstMBB = MF.front();
+      MachineBasicBlock::iterator MBBI = FirstMBB.begin();
+      DebugLoc DL = FirstMBB.findDebugLoc(MBBI);
+      MachineRegisterInfo &RegInfo = MF.getRegInfo();
+      const X86InstrInfo *TII = TM->getInstrInfo();
+
+      unsigned PC;
+      if (TM->getSubtarget<X86Subtarget>().isPICStyleGOT())
+        PC = RegInfo.createVirtualRegister(X86::GR32RegisterClass);
+      else
+        PC = TII->getGlobalBaseReg(&MF);
+  
+      // Operand of MovePCtoStack is completely ignored by asm printer. It's
+      // only used in JIT code emission as displacement to pc.
+      BuildMI(FirstMBB, MBBI, DL, TII->get(X86::MOVPC32r), PC).addImm(0);
+  
+      // If we're using vanilla 'GOT' PIC style, we should use relative addressing
+      // not to pc, but to _GLOBAL_OFFSET_TABLE_ external.
+      if (TM->getSubtarget<X86Subtarget>().isPICStyleGOT()) {
+        unsigned GlobalBaseReg = TII->getGlobalBaseReg(&MF);
+        // Generate addl $__GLOBAL_OFFSET_TABLE_ + [.-piclabel], %some_register
+        BuildMI(FirstMBB, MBBI, DL, TII->get(X86::ADD32ri), GlobalBaseReg)
+          .addReg(PC).addExternalSymbol("_GLOBAL_OFFSET_TABLE_",
+                                        X86II::MO_GOT_ABSOLUTE_ADDRESS);
+      }
+
+      return true;
+    }
+
+    virtual const char *getPassName() const {
+      return "X86 PIC Global Base Reg Initialization";
+    }
+
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.setPreservesCFG();
+      MachineFunctionPass::getAnalysisUsage(AU);
+    }
+  };
+}
+
+char CGBR::ID = 0;
+FunctionPass*
+llvm::createGlobalBaseRegPass() { return new CGBR(); }

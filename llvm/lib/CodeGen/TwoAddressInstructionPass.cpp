@@ -1154,10 +1154,8 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
             ReMatRegs.set(regB);
             ++NumReMats;
           } else {
-            bool Emitted = TII->copyRegToReg(*mbbi, mi, regA, regB, rc, rc,
-                                             mi->getDebugLoc());
-            (void)Emitted;
-            assert(Emitted && "Unable to issue a copy instruction!\n");
+            BuildMI(*mbbi, mi, mi->getDebugLoc(), TII->get(TargetOpcode::COPY),
+                    regA).addReg(regB);
           }
 
           MachineBasicBlock::iterator prevMI = prior(mi);
@@ -1436,13 +1434,12 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
       IsImpDef = false;
 
       // Remember COPY sources. These might be candidate for coalescing.
-      if (DefMI->isCopy())
+      if (DefMI->isCopy() && DefMI->getOperand(1).getSubReg())
         RealSrcs.push_back(DefMI->getOperand(1).getReg());
 
-      if (!Seen.insert(SrcReg) ||
-          MI->getParent() != DefMI->getParent() ||
-          !MI->getOperand(i).isKill() ||
-          HasOtherRegSequenceUses(SrcReg, MI, MRI)) {
+      bool isKill = MI->getOperand(i).isKill();
+      if (!Seen.insert(SrcReg) || MI->getParent() != DefMI->getParent() ||
+          !isKill || HasOtherRegSequenceUses(SrcReg, MI, MRI)) {
         // REG_SEQUENCE cannot have duplicated operands, add a copy.
         // Also add an copy if the source is live-in the block. We don't want
         // to end up with a partial-redef of a livein, e.g.
@@ -1458,28 +1455,21 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
         // If the REG_SEQUENCE doesn't kill its source, keeping live variables
         // correctly up to date becomes very difficult. Insert a copy.
         //
-        const TargetRegisterClass *RC = MRI->getRegClass(SrcReg);
-        unsigned NewReg = MRI->createVirtualRegister(RC);
         MachineBasicBlock::iterator InsertLoc = MI;
-        bool Emitted =
-          TII->copyRegToReg(*MI->getParent(), InsertLoc, NewReg, SrcReg, RC, RC,
-                            MI->getDebugLoc());
-        (void)Emitted;
-        assert(Emitted && "Unable to issue a copy instruction!\n");
-        MI->getOperand(i).setReg(NewReg);
-        if (MI->getOperand(i).isKill()) {
-          MachineBasicBlock::iterator CopyMI = prior(InsertLoc);
-          MachineOperand *KillMO = CopyMI->findRegisterUseOperand(SrcReg);
-          KillMO->setIsKill();
-          if (LV)
-            // Update live variables
-            LV->replaceKillInstruction(SrcReg, MI, &*CopyMI);
-        }
+        MachineInstr *CopyMI = BuildMI(*MI->getParent(), InsertLoc,
+                                MI->getDebugLoc(), TII->get(TargetOpcode::COPY))
+            .addReg(DstReg, RegState::Define, MI->getOperand(i+1).getImm())
+            .addReg(SrcReg, getKillRegState(isKill));
+        MI->getOperand(i).setReg(0);
+        if (LV && isKill)
+          LV->replaceKillInstruction(SrcReg, MI, CopyMI);
+        DEBUG(dbgs() << "Inserted: " << *CopyMI);
       }
     }
 
     for (unsigned i = 1, e = MI->getNumOperands(); i < e; i += 2) {
       unsigned SrcReg = MI->getOperand(i).getReg();
+      if (!SrcReg) continue;
       unsigned SubIdx = MI->getOperand(i+1).getImm();
       UpdateRegSequenceSrcs(SrcReg, DstReg, SubIdx, MRI, *TRI);
     }

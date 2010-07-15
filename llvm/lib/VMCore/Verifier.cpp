@@ -1361,7 +1361,7 @@ void Verifier::visitLoadInst(LoadInst &LI) {
 
 void Verifier::visitStoreInst(StoreInst &SI) {
   const PointerType *PTy = dyn_cast<PointerType>(SI.getOperand(1)->getType());
-  Assert1(PTy, "Load operand must be a pointer.", &SI);
+  Assert1(PTy, "Store operand must be a pointer.", &SI);
   const Type *ElTy = PTy->getElementType();
   Assert2(ElTy == SI.getOperand(0)->getType(),
           "Stored value type does not match pointer operand type!",
@@ -1458,7 +1458,7 @@ void Verifier::visitInstruction(Instruction &I) {
     if (Function *F = dyn_cast<Function>(I.getOperand(i))) {
       // Check to make sure that the "address of" an intrinsic function is never
       // taken.
-      Assert1(!F->isIntrinsic() || (i == 0 && isa<CallInst>(I)),
+      Assert1(!F->isIntrinsic() || (i + 1 == e && isa<CallInst>(I)),
               "Cannot take the address of an intrinsic!", &I);
       Assert1(F->getParent() == Mod, "Referencing function in another module!",
               &I);
@@ -1541,7 +1541,8 @@ void Verifier::visitInstruction(Instruction &I) {
                 "Instruction does not dominate all uses!", Op, &I);
       }
     } else if (isa<InlineAsm>(I.getOperand(i))) {
-      Assert1((i == 0 && isa<CallInst>(I)) || (i + 3 == e && isa<InvokeInst>(I)),
+      Assert1((i + 1 == e && isa<CallInst>(I)) ||
+              (i + 3 == e && isa<InvokeInst>(I)),
               "Cannot take the address of an inline asm!", &I);
     }
   }

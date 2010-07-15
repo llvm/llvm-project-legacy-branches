@@ -602,12 +602,8 @@ void ARMAsmPrinter::printAddrMode6Operand(const MachineInstr *MI, int Op,
 
   O << "[" << getRegisterName(MO1.getReg());
   if (MO2.getImm()) {
-    unsigned Align = MO2.getImm();
-    assert((Align == 8 || Align == 16 || Align == 32) &&
-           "unexpected NEON load/store alignment");
-    Align <<= 3;
     // FIXME: Both darwin as and GNU as violate ARM docs here.
-    O << ", :" << Align;
+    O << ", :" << (MO2.getImm() << 3);
   }
   O << "]";
 }
@@ -1030,35 +1026,9 @@ void ARMAsmPrinter::printVFPf64ImmOperand(const MachineInstr *MI, int OpNum,
 
 void ARMAsmPrinter::printNEONModImmOperand(const MachineInstr *MI, int OpNum,
                                            raw_ostream &O) {
-  unsigned Imm = MI->getOperand(OpNum).getImm();
-  unsigned OpCmode = (Imm >> 8) & 0x1f;
-  unsigned Imm8 = Imm & 0xff;
-  uint64_t Val = 0;
-
-  if (OpCmode == 0xe) {
-    // 8-bit vector elements
-    Val = Imm8;
-  } else if ((OpCmode & 0xc) == 0x8) {
-    // 16-bit vector elements
-    unsigned ByteNum = (OpCmode & 0x6) >> 1;
-    Val = Imm8 << (8 * ByteNum);
-  } else if ((OpCmode & 0x8) == 0) {
-    // 32-bit vector elements, zero with one byte set
-    unsigned ByteNum = (OpCmode & 0x6) >> 1;
-    Val = Imm8 << (8 * ByteNum);
-  } else if ((OpCmode & 0xe) == 0xc) {
-    // 32-bit vector elements, one byte with low bits set
-    unsigned ByteNum = 1 + (OpCmode & 0x1);
-    Val = (Imm8 << (8 * ByteNum)) | (0xffff >> (8 * (2 - ByteNum)));
-  } else if (OpCmode == 0x1e) {
-    // 64-bit vector elements
-    for (unsigned ByteNum = 0; ByteNum < 8; ++ByteNum) {
-      if ((Imm >> ByteNum) & 1)
-        Val |= (uint64_t)0xff << (8 * ByteNum);
-    }
-  } else {
-    assert(false && "Unsupported NEON immediate");
-  }
+  unsigned EncodedImm = MI->getOperand(OpNum).getImm();
+  unsigned EltBits;
+  uint64_t Val = ARM_AM::decodeNEONModImm(EncodedImm, EltBits);
   O << "#0x" << utohexstr(Val);
 }
 
@@ -1397,11 +1367,11 @@ void ARMAsmPrinter::printInstructionThroughMCStreamer(const MachineInstr *MI) {
     } else if (MO.isGlobal()) {
       MCSymbol *Symbol = MCInstLowering.GetGlobalAddressSymbol(MO);
       const MCSymbolRefExpr *SymRef1 =
-	MCSymbolRefExpr::Create(Symbol,
-				MCSymbolRefExpr::VK_ARM_LO16, OutContext);
+        MCSymbolRefExpr::Create(Symbol,
+                                MCSymbolRefExpr::VK_ARM_LO16, OutContext);
       const MCSymbolRefExpr *SymRef2 =
-	MCSymbolRefExpr::Create(Symbol,
-				MCSymbolRefExpr::VK_ARM_HI16, OutContext);
+        MCSymbolRefExpr::Create(Symbol,
+                                MCSymbolRefExpr::VK_ARM_HI16, OutContext);
       V1 = MCOperand::CreateExpr(SymRef1);
       V2 = MCOperand::CreateExpr(SymRef2);
     } else {

@@ -127,8 +127,8 @@ namespace {
     void AddToLiveIns(unsigned Reg);
 
     /// IsLICMCandidate - Returns true if the instruction may be a suitable
-    /// candidate for LICM. e.g. If the instruction is a call, then it's obviously
-    /// not safe to hoist it.
+    /// candidate for LICM. e.g. If the instruction is a call, then it's
+    /// obviously not safe to hoist it.
     bool IsLICMCandidate(MachineInstr &I);
 
     /// IsLoopInvariantInst - Returns true if the instruction is loop
@@ -497,26 +497,11 @@ void MachineLICM::HoistRegion(MachineDomTreeNode *N) {
 /// candidate for LICM. e.g. If the instruction is a call, then it's obviously
 /// not safe to hoist it.
 bool MachineLICM::IsLICMCandidate(MachineInstr &I) {
-  if (I.isImplicitDef())
+  // Check if it's safe to move the instruction.
+  bool DontMoveAcrossStore = true;
+  if (!I.isSafeToMove(TII, AA, DontMoveAcrossStore))
     return false;
-
-  const TargetInstrDesc &TID = I.getDesc();
   
-  // Ignore stuff that we obviously can't hoist.
-  if (TID.mayStore() || TID.isCall() || TID.isTerminator() ||
-      TID.hasUnmodeledSideEffects())
-    return false;
-
-  if (TID.mayLoad()) {
-    // Okay, this instruction does a load. As a refinement, we allow the target
-    // to decide whether the loaded value is actually a constant. If so, we can
-    // actually use it as a load.
-    if (!I.isInvariantLoad(AA))
-      // FIXME: we should be able to hoist loads with no other side effects if
-      // there are no other instructions which can change memory in this loop.
-      // This is a trivial form of alias analysis.
-      return false;
-  }
   return true;
 }
 
@@ -727,7 +712,9 @@ MachineLICM::LookForDuplicate(const MachineInstr *MI,
 
 bool MachineLICM::EliminateCSE(MachineInstr *MI,
           DenseMap<unsigned, std::vector<const MachineInstr*> >::iterator &CI) {
-  if (CI == CSEMap.end())
+  // Do not CSE implicit_def so ProcessImplicitDefs can properly propagate
+  // the undef property onto uses.
+  if (CI == CSEMap.end() || MI->isImplicitDef())
     return false;
 
   if (const MachineInstr *Dup = LookForDuplicate(MI, CI->second)) {

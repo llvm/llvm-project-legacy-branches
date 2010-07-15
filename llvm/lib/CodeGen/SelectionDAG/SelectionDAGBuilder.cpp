@@ -820,7 +820,7 @@ SDValue SelectionDAGBuilder::getValue(const Value *V) {
     unsigned InReg = It->second;
     RegsForValue RFV(*DAG.getContext(), TLI, InReg, V->getType());
     SDValue Chain = DAG.getEntryNode();
-    return N = RFV.getCopyFromRegs(DAG, FuncInfo, getCurDebugLoc(), Chain, NULL);
+    return N = RFV.getCopyFromRegs(DAG, FuncInfo, getCurDebugLoc(), Chain,NULL);
   }
 
   // Otherwise create a new SDValue and remember it.
@@ -951,77 +951,14 @@ SDValue SelectionDAGBuilder::getValueImpl(const Value *V) {
 
   // If this is an instruction which fast-isel has deferred, select it now.
   if (const Instruction *Inst = dyn_cast<Instruction>(V)) {
-    assert(Inst->isSafeToSpeculativelyExecute() &&
-           "Instruction with side effects deferred!");
-    visit(*Inst);
-    DenseMap<const Value *, SDValue>::iterator NIt = NodeMap.find(Inst);
-    if (NIt != NodeMap.end() && NIt->second.getNode())
-      return NIt->second;
+    unsigned InReg = FuncInfo.InitializeRegForValue(Inst);
+    RegsForValue RFV(*DAG.getContext(), TLI, InReg, Inst->getType());
+    SDValue Chain = DAG.getEntryNode();
+    return RFV.getCopyFromRegs(DAG, FuncInfo, getCurDebugLoc(), Chain, NULL);
   }
 
   llvm_unreachable("Can't get register for value!");
   return SDValue();
-}
-
-/// Get the EVTs and ArgFlags collections that represent the legalized return 
-/// type of the given function.  This does not require a DAG or a return value,
-/// and is suitable for use before any DAGs for the function are constructed.
-static void getReturnInfo(const Type* ReturnType,
-                   Attributes attr, SmallVectorImpl<EVT> &OutVTs,
-                   SmallVectorImpl<ISD::ArgFlagsTy> &OutFlags,
-                   const TargetLowering &TLI,
-                   SmallVectorImpl<uint64_t> *Offsets = 0) {
-  SmallVector<EVT, 4> ValueVTs;
-  ComputeValueVTs(TLI, ReturnType, ValueVTs);
-  unsigned NumValues = ValueVTs.size();
-  if (NumValues == 0) return;
-  unsigned Offset = 0;
-
-  for (unsigned j = 0, f = NumValues; j != f; ++j) {
-    EVT VT = ValueVTs[j];
-    ISD::NodeType ExtendKind = ISD::ANY_EXTEND;
-
-    if (attr & Attribute::SExt)
-      ExtendKind = ISD::SIGN_EXTEND;
-    else if (attr & Attribute::ZExt)
-      ExtendKind = ISD::ZERO_EXTEND;
-
-    // FIXME: C calling convention requires the return type to be promoted to
-    // at least 32-bit. But this is not necessary for non-C calling
-    // conventions. The frontend should mark functions whose return values
-    // require promoting with signext or zeroext attributes.
-    if (ExtendKind != ISD::ANY_EXTEND && VT.isInteger()) {
-      EVT MinVT = TLI.getRegisterType(ReturnType->getContext(), MVT::i32);
-      if (VT.bitsLT(MinVT))
-        VT = MinVT;
-    }
-
-    unsigned NumParts = TLI.getNumRegisters(ReturnType->getContext(), VT);
-    EVT PartVT = TLI.getRegisterType(ReturnType->getContext(), VT);
-    unsigned PartSize = TLI.getTargetData()->getTypeAllocSize(
-                        PartVT.getTypeForEVT(ReturnType->getContext()));
-
-    // 'inreg' on function refers to return value
-    ISD::ArgFlagsTy Flags = ISD::ArgFlagsTy();
-    if (attr & Attribute::InReg)
-      Flags.setInReg();
-
-    // Propagate extension type if any
-    if (attr & Attribute::SExt)
-      Flags.setSExt();
-    else if (attr & Attribute::ZExt)
-      Flags.setZExt();
-
-    for (unsigned i = 0; i < NumParts; ++i) {
-      OutVTs.push_back(PartVT);
-      OutFlags.push_back(Flags);
-      if (Offsets)
-      {
-        Offsets->push_back(Offset);
-        Offset += PartSize;
-      }
-    }
-  }
 }
 
 void SelectionDAGBuilder::visitRet(const ReturnInst &I) {
@@ -1320,7 +1257,7 @@ SelectionDAGBuilder::ShouldEmitAsBranches(const std::vector<CaseBlock> &Cases){
 }
 
 void SelectionDAGBuilder::visitBr(const BranchInst &I) {
-  MachineBasicBlock *BrMBB = FuncInfo.MBBMap[I.getParent()];
+  MachineBasicBlock *BrMBB = FuncInfo.MBB;
 
   // Update machine-CFG edges.
   MachineBasicBlock *Succ0MBB = FuncInfo.MBBMap[I.getSuccessor(0)];
@@ -1646,7 +1583,7 @@ void SelectionDAGBuilder::visitBitTestCase(MachineBasicBlock* NextMBB,
 }
 
 void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
-  MachineBasicBlock *InvokeMBB = FuncInfo.MBBMap[I.getParent()];
+  MachineBasicBlock *InvokeMBB = FuncInfo.MBB;
 
   // Retrieve successors.
   MachineBasicBlock *Return = FuncInfo.MBBMap[I.getSuccessor(0)];
@@ -2180,7 +2117,7 @@ size_t SelectionDAGBuilder::Clusterify(CaseVector& Cases,
 }
 
 void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
-  MachineBasicBlock *SwitchMBB = FuncInfo.MBBMap[SI.getParent()];
+  MachineBasicBlock *SwitchMBB = FuncInfo.MBB;
 
   // Figure out which block is immediately after the current one.
   MachineBasicBlock *NextBlock = 0;
@@ -2246,7 +2183,7 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
 }
 
 void SelectionDAGBuilder::visitIndirectBr(const IndirectBrInst &I) {
-  MachineBasicBlock *IndirectBrMBB = FuncInfo.MBBMap[I.getParent()];
+  MachineBasicBlock *IndirectBrMBB = FuncInfo.MBB;
 
   // Update machine-CFG edges with unique successors.
   SmallVector<BasicBlock*, 32> succs;
@@ -3906,7 +3843,7 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const DbgValueInst &DI,
   if (DV.isInlinedFnArgument(MF.getFunction()))
     return false;
 
-  MachineBasicBlock *MBB = FuncInfo.MBBMap[DI.getParent()];
+  MachineBasicBlock *MBB = FuncInfo.MBB;
   if (MBB != &MF.front())
     return false;
 
@@ -4024,7 +3961,8 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     if (AA->alias(I.getArgOperand(0), Size, I.getArgOperand(1), Size) ==
         AliasAnalysis::NoAlias) {
       DAG.setRoot(DAG.getMemcpy(getRoot(), dl, Op1, Op2, Op3, Align, isVol, 
-                                false, I.getArgOperand(0), 0, I.getArgOperand(1), 0));
+                                false, I.getArgOperand(0), 0,
+                                I.getArgOperand(1), 0));
       return 0;
     }
 
@@ -4190,7 +4128,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
 
 ///EH-FIXME: Remove eh_selector and eh_typeid_for.
   case Intrinsic::eh_selector: {
-    MachineBasicBlock *CallMBB = FuncInfo.MBBMap[I.getParent()];
+    MachineBasicBlock *CallMBB = FuncInfo.MBB;
     MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
     if (CallMBB->isLandingPad())
       AddCatchInfo(I, &MMI, CallMBB);
@@ -4200,7 +4138,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
 #endif
       // FIXME: Mark exception selector register as live in.  Hack for PR1508.
       unsigned Reg = TLI.getExceptionSelectorRegister();
-      if (Reg) FuncInfo.MBBMap[I.getParent()]->addLiveIn(Reg);
+      if (Reg) FuncInfo.MBB->addLiveIn(Reg);
     }
 
     // Insert the EHSELECTION instruction.
@@ -4580,14 +4518,13 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
   Args.reserve(CS.arg_size());
 
   // Check whether the function can return without sret-demotion.
-  SmallVector<EVT, 4> OutVTs;
-  SmallVector<ISD::ArgFlagsTy, 4> OutsFlags;
+  SmallVector<ISD::OutputArg, 4> Outs;
   SmallVector<uint64_t, 4> Offsets;
-  getReturnInfo(RetTy, CS.getAttributes().getRetAttributes(),
-                OutVTs, OutsFlags, TLI, &Offsets);
+  GetReturnInfo(RetTy, CS.getAttributes().getRetAttributes(),
+                Outs, TLI, &Offsets);
 
   bool CanLowerReturn = TLI.CanLowerReturn(CS.getCallingConv(),
-                        FTy->isVarArg(), OutVTs, OutsFlags, FTy->getContext());
+                        FTy->isVarArg(), Outs, FTy->getContext());
 
   SDValue DemoteStackSlot;
 
@@ -4683,7 +4620,7 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
     ComputeValueVTs(TLI, PtrRetTy, PVTs);
     assert(PVTs.size() == 1 && "Pointers should fit in one register");
     EVT PtrVT = PVTs[0];
-    unsigned NumValues = OutVTs.size();
+    unsigned NumValues = Outs.size();
     SmallVector<SDValue, 4> Values(NumValues);
     SmallVector<SDValue, 4> Chains(NumValues);
 
@@ -4691,7 +4628,7 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
       SDValue Add = DAG.getNode(ISD::ADD, getCurDebugLoc(), PtrVT,
                                 DemoteStackSlot,
                                 DAG.getConstant(Offsets[i], PtrVT));
-      SDValue L = DAG.getLoad(OutVTs[i], getCurDebugLoc(), Result.second,
+      SDValue L = DAG.getLoad(Outs[i].VT, getCurDebugLoc(), Result.second,
                               Add, NULL, Offsets[i], false, false, 1);
       Values[i] = L;
       Chains[i] = L.getValue(1);
@@ -5610,10 +5547,12 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
         break;
       }
 
-      if (OpInfo.ConstraintType == TargetLowering::C_Other) {
-        assert(!OpInfo.isIndirect &&
-               "Don't know how to handle indirect other inputs yet!");
+      // Treat indirect 'X' constraint as memory.
+      if (OpInfo.ConstraintType == TargetLowering::C_Other && 
+          OpInfo.isIndirect) 
+        OpInfo.ConstraintType = TargetLowering::C_Memory;
 
+      if (OpInfo.ConstraintType == TargetLowering::C_Other) {
         std::vector<SDValue> Ops;
         TLI.LowerAsmOperandForConstraint(InOperandVal, OpInfo.ConstraintCode[0],
                                          Ops, DAG);
@@ -5758,9 +5697,11 @@ void SelectionDAGBuilder::visitVAStart(const CallInst &I) {
 }
 
 void SelectionDAGBuilder::visitVAArg(const VAArgInst &I) {
+  const TargetData &TD = *TLI.getTargetData();
   SDValue V = DAG.getVAArg(TLI.getValueType(I.getType()), getCurDebugLoc(),
                            getRoot(), getValue(I.getOperand(0)),
-                           DAG.getSrcValue(I.getOperand(0)));
+                           DAG.getSrcValue(I.getOperand(0)),
+                           TD.getABITypeAlignment(I.getType()));
   setValue(&I, V);
   DAG.setRoot(V.getValue(1));
 }
@@ -5983,15 +5924,10 @@ void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
   SmallVector<ISD::InputArg, 16> Ins;
 
   // Check whether the function can return without sret-demotion.
-  SmallVector<EVT, 4> OutVTs;
-  SmallVector<ISD::ArgFlagsTy, 4> OutsFlags;
-  getReturnInfo(F.getReturnType(), F.getAttributes().getRetAttributes(),
-                OutVTs, OutsFlags, TLI);
+  SmallVector<ISD::OutputArg, 4> Outs;
+  GetReturnInfo(F.getReturnType(), F.getAttributes().getRetAttributes(),
+                Outs, TLI);
 
-  FuncInfo->CanLowerReturn = TLI.CanLowerReturn(F.getCallingConv(),
-                                                F.isVarArg(),
-                                                OutVTs, OutsFlags,
-                                                F.getContext());
   if (!FuncInfo->CanLowerReturn) {
     // Put in an sret pointer parameter before all the other parameters.
     SmallVector<EVT, 1> ValueVTs;
