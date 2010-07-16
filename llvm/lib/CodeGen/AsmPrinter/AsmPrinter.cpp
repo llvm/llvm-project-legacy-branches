@@ -484,7 +484,7 @@ void AsmPrinter::EmitFunctionBody() {
         EmitComments(*II, OutStreamer.GetCommentOS());
 
       switch (II->getOpcode()) {
-      case TargetOpcode::DBG_LABEL:
+      case TargetOpcode::PROLOG_LABEL:
       case TargetOpcode::EH_LABEL:
       case TargetOpcode::GC_LABEL:
         printLabelInst(II);

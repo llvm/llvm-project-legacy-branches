@@ -26,7 +26,7 @@ void CodeEmitterGen::reverseBits(std::vector<Record*> &Insts) {
     Record *R = *I;
     if (R->getName() == "PHI" ||
         R->getName() == "INLINEASM" ||
-        R->getName() == "DBG_LABEL" ||
+        R->getName() == "PROLOG_LABEL" ||
         R->getName() == "EH_LABEL" ||
         R->getName() == "GC_LABEL" ||
         R->getName() == "KILL" ||
@@ -104,7 +104,7 @@ void CodeEmitterGen::run(raw_ostream &o) {
     
     if (R->getName() == "PHI" ||
         R->getName() == "INLINEASM" ||
-        R->getName() == "DBG_LABEL" ||
+        R->getName() == "PROLOG_LABEL" ||
         R->getName() == "EH_LABEL" ||
         R->getName() == "GC_LABEL" ||
         R->getName() == "KILL" ||
@@ -143,7 +143,7 @@ void CodeEmitterGen::run(raw_ostream &o) {
     
     if (InstName == "PHI" ||
         InstName == "INLINEASM" ||
-        InstName == "DBG_LABEL"||
+        InstName == "PROLOG_LABEL"||
         InstName == "EH_LABEL"||
         InstName == "GC_LABEL"||
         InstName == "KILL"||

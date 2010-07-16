@@ -396,7 +396,7 @@ def INLINEASM : Instruction {
   let AsmString = "";
   let Namespace = "TargetOpcode";
 }
-def DBG_LABEL : Instruction {
+def PROLOG_LABEL : Instruction {
   let OutOperandList = (ops);
   let InOperandList = (ops i32imm:$id);
   let AsmString = "";

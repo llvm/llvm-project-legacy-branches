@@ -296,9 +296,9 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   if (I == Instructions.end()) throw "Could not find 'INLINEASM' instruction!";
   const CodeGenInstruction *INLINEASM = &I->second;
   
-  I = getInstructions().find("DBG_LABEL");
-  if (I == Instructions.end()) throw "Could not find 'DBG_LABEL' instruction!";
-  const CodeGenInstruction *DBG_LABEL = &I->second;
+  I = getInstructions().find("PROLOG_LABEL");
+  if (I==Instructions.end()) throw "Could not find PROLOG_LABEL' instruction!";
+  const CodeGenInstruction *PROLOG_LABEL = &I->second;
   
   I = getInstructions().find("EH_LABEL");
   if (I == Instructions.end()) throw "Could not find 'EH_LABEL' instruction!";
@@ -345,7 +345,7 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   // Print out the rest of the instructions now.
   NumberedInstructions.push_back(PHI);
   NumberedInstructions.push_back(INLINEASM);
-  NumberedInstructions.push_back(DBG_LABEL);
+  NumberedInstructions.push_back(PROLOG_LABEL);
   NumberedInstructions.push_back(EH_LABEL);
   NumberedInstructions.push_back(GC_LABEL);
   NumberedInstructions.push_back(KILL);
@@ -358,7 +358,7 @@ getInstructionsByEnumValue(std::vector<const CodeGenInstruction*>
   for (inst_iterator II = inst_begin(), E = inst_end(); II != E; ++II)
     if (&II->second != PHI &&
         &II->second != INLINEASM &&
-        &II->second != DBG_LABEL &&
+        &II->second != PROLOG_LABEL &&
         &II->second != EH_LABEL &&
         &II->second != GC_LABEL &&
         &II->second != KILL &&
