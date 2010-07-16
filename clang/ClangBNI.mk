@@ -84,6 +84,8 @@ else
 
 # Default project (clang).
 
+# Don't install any archive files.
+Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
@@ -416,6 +418,10 @@ install-clang-rootlinks: install-clang_final
 	  ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
 	  ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang++.1; \
 	  ln -sf clang.1 $(DSTROOT)/usr/share/man/man1/clang++.1; \
+	fi
+	if [ -f $(DSTROOT)/$(Install_Prefix)/lib/libLTO.dylib ]; then \
+	  $(MKDIR) -p $(DSTROOT)/usr/lib; \
+	  ln -sf ../../$(Install_Prefix)/lib/libLTO.dylib $(DSTROOT)/usr/lib/libLTO.dylib; \
 	fi
 
 install-clang-opensourcelicense: install-clang_final
