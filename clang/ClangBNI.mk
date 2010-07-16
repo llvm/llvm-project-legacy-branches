@@ -174,6 +174,10 @@ Clang_Make_Variables += LLVM_SUBMIT_SUBVERSION=
 endif
 endif
 
+# When building libLTO as part of Clang, we need to offset the version to keep
+# the sequencing monotonic.
+Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
+
 # Set configure flags.
 Configure_Flags = --enable-targets=$(LLVM_Backends) \
 		  --enable-optimized \
