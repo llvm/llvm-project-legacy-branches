@@ -50,6 +50,8 @@ Install_Path_Suffix := usr
 LLVM_Backends := x86,arm
 # Don't use extra make variables.
 Extra_Make_Variables :=
+# Don't install any archive files.
+Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # LLVM level install target is 'install-clang.
 LLVM_Install_Target := install-clang
 
@@ -73,8 +75,6 @@ Install_Path_Suffix := usr/clang-ide
 LLVM_Backends := x86
 # Don't build compiler-rt.
 Extra_Make_Variables += CLANG_NO_RUNTIME=1
-# Don't install any archive files.
-Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Use install-clang-c install target.
 LLVM_Install_Target := install-clang-c
 # Never bootstrap.
@@ -84,8 +84,6 @@ else
 
 # Default project (clang).
 
-# Don't install any archive files.
-Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
