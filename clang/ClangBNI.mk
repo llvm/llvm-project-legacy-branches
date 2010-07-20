@@ -88,7 +88,7 @@ else
 ifeq ($(INSTALL_LOCATION),)
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
-fi
+endif
 
 endif
 
