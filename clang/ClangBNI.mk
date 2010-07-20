@@ -50,6 +50,8 @@ Install_Path_Suffix := usr
 LLVM_Backends := x86,arm
 # Don't use extra make variables.
 Extra_Make_Variables :=
+# Don't install any archive files.
+Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # LLVM level install target is 'install-clang.
 LLVM_Install_Target := install-clang
 
@@ -73,8 +75,6 @@ Install_Path_Suffix := usr/clang-ide
 LLVM_Backends := x86
 # Don't build compiler-rt.
 Extra_Make_Variables += CLANG_NO_RUNTIME=1
-# Don't install any archive files.
-Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Use install-clang-c install target.
 LLVM_Install_Target := install-clang-c
 # Never bootstrap.
@@ -84,8 +84,6 @@ else
 
 # Default project (clang).
 
-# Don't install any archive files.
-Extra_Make_Variables += NO_INSTALL_ARCHIVES=1
 # Install root links and license.
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
@@ -360,7 +358,7 @@ install-clang_final: build-clang
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(DSTROOT) -perm -0111 -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
 	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
-	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -Sx
+	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -S
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 
@@ -458,7 +456,7 @@ install-cross: build-cross
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(DSTROOT) -perm -0111 -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
 	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
-	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -Sx
+	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -S
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 
