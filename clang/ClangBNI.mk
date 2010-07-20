@@ -84,9 +84,11 @@ else
 
 # Default project (clang).
 
-# Install root links and license.
+# Install root links and license when no install location is set.
+ifeq ($(INSTALL_LOCATION),)
 Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
+fi
 
 endif
 
