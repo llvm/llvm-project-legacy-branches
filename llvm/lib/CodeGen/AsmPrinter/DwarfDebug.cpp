@@ -2621,18 +2621,21 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   if (FDL.isUnknown()) return;
   
   MDNode *Scope = FDL.getScope(MF->getFunction()->getContext());
+  MDNode *TheScope = 0;
   
   DISubprogram SP = getDISubprogram(Scope);
   unsigned Line, Col;
   if (SP.Verify()) {
     Line = SP.getLineNumber();
     Col = 0;
+    TheScope = SP.getNode();
   } else {
     Line = FDL.getLine();
     Col = FDL.getCol();
+    TheScope = Scope;
   }
   
-  recordSourceLine(Line, Col, Scope);
+  recordSourceLine(Line, Col, TheScope);
 
   DebugLoc PrevLoc;
   for (MachineFunction::const_iterator I = MF->begin(), E = MF->end();
@@ -2814,23 +2817,28 @@ MCSymbol *DwarfDebug::recordSourceLine(unsigned Line, unsigned Col, MDNode *S) {
   StringRef Dir;
   StringRef Fn;
 
-  DIDescriptor Scope(S);
-  if (Scope.isCompileUnit()) {
-    DICompileUnit CU(S);
-    Dir = CU.getDirectory();
-    Fn = CU.getFilename();
-  } else if (Scope.isSubprogram()) {
-    DISubprogram SP(S);
-    Dir = SP.getDirectory();
-    Fn = SP.getFilename();
-  } else if (Scope.isLexicalBlock()) {
-    DILexicalBlock DB(S);
-    Dir = DB.getDirectory();
-    Fn = DB.getFilename();
-  } else
-    assert(0 && "Unexpected scope info");
+  unsigned Src = 1;
+  if (S) {
+    DIDescriptor Scope(S);
 
-  unsigned Src = GetOrCreateSourceID(Dir, Fn);
+    if (Scope.isCompileUnit()) {
+      DICompileUnit CU(S);
+      Dir = CU.getDirectory();
+      Fn = CU.getFilename();
+    } else if (Scope.isSubprogram()) {
+      DISubprogram SP(S);
+      Dir = SP.getDirectory();
+      Fn = SP.getFilename();
+    } else if (Scope.isLexicalBlock()) {
+      DILexicalBlock DB(S);
+      Dir = DB.getDirectory();
+      Fn = DB.getFilename();
+    } else
+      assert(0 && "Unexpected scope info");
+
+    Src = GetOrCreateSourceID(Dir, Fn);
+  }
+
   MCSymbol *Label = MMI->getContext().CreateTempSymbol();
   Lines.push_back(SrcLineInfo(Line, Col, Src, Label));
 
