@@ -24,7 +24,7 @@ Clang_Enable_Bootstrap := 1
 ##
 # Source Info
 
-LLVM_Source_Branch := trunk
+LLVM_Source_Branch := williamson
 Clang_Source_Branch := trunk
 CompilerRT_Source_Branch := trunk
 
