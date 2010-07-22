@@ -115,9 +115,9 @@ public:
   /// getPrefix - Return deletable pointer if appropriate
   Use *getPrefix();
 private:
-  enum { availableTagBits = sizeof(Use*) < 8 ? 2 : 3 };
+  enum { availableTagBits = PointerLikeTypeTraits<Use**>::NumLowBitsAvailable };
   template <unsigned>
-  struct Traits;
+  static const Use* getImpliedUser(const Use*);
   inline const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   
@@ -144,17 +144,11 @@ private:
   friend class User;
 };
 
-  template <>
-  struct Use::Traits<2> {
-    static const Use* getImpliedUser(const Use*);
-  };
-  template <>
-  struct Use::Traits<3> {
-    static const Use* getImpliedUser(const Use*);
-  };
-  inline const Use* Use::getImpliedUser() const {
-		return Traits<availableTagBits>::getImpliedUser(this);
-	}
+template <> const Use* Use::getImpliedUser<2>(const Use*);
+template <> const Use* Use::getImpliedUser<3>(const Use*);
+inline const Use* Use::getImpliedUser() const {
+  return getImpliedUser<availableTagBits>(this);
+}
 
 // simplify_type - Allow clients to treat uses just like values when using
 // casting operators.

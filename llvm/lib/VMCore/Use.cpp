@@ -48,11 +48,13 @@ void Use::swap(Use &RHS) {
 //                         Use getImpliedUser Implementations
 //===----------------------------------------------------------------------===//
 
-const Use *Use::Traits<3>::getImpliedUser(const Use *Current) {
-  return Traits<2>::getImpliedUser(Current);
+template <>
+const Use *Use::getImpliedUser<3>(const Use *Current) {
+  return getImpliedUser<2>(Current);
 }
 
-const Use *Use::Traits<2>::getImpliedUser(const Use *Current) {
+template <>
+const Use *Use::getImpliedUser<2>(const Use *Current) {
   while (true) {
     unsigned Tag = (Current++)->Prev.getInt();
     switch (Tag) {
