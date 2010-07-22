@@ -26,7 +26,7 @@ Clang_Enable_Bootstrap := 1
 ##
 # Source Info
 
-LLVM_Source_Branch := williamson
+LLVM_Source_Branch := branches/Apple/williamson
 Clang_Source_Branch := trunk
 CompilerRT_Source_Branch := trunk
 
