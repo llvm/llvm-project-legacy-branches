@@ -117,12 +117,8 @@ public:
 private:
   enum { availableTagBits = sizeof(Use*) < 8 ? 2 : 3 };
   template <unsigned>
-  struct UseTraits {
-    static const Use* getImpliedUser(const Use*);
-  };
-  inline const Use* getImpliedUser() const {
-		return UseTraits<availableTagBits>::getImpliedUser(this);
-	}
+  struct Traits;
+  inline const Use* getImpliedUser() const;
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   
   Value *Val;
@@ -147,6 +143,18 @@ private:
   friend class Value;
   friend class User;
 };
+
+  template <>
+  struct Use::Traits<2> {
+    static const Use* getImpliedUser(const Use*);
+  };
+  template <>
+  struct Use::Traits<3> {
+    static const Use* getImpliedUser(const Use*);
+  };
+  inline const Use* Use::getImpliedUser() const {
+		return Traits<availableTagBits>::getImpliedUser(this);
+	}
 
 // simplify_type - Allow clients to treat uses just like values when using
 // casting operators.
