@@ -206,6 +206,11 @@ else ifneq ($(Post_Install_OpenSourceLicense),0)
 $(error "unknown value for post install of open source license: '$(Post_Install_OpenSourceLicense)'")
 endif
 
+# Select stage1 compiler to build.
+ifeq ($(Clang_Enable_Bootstrap), 1)
+Stage1_Compiler_Arch := $(lastword $(RC_ARCHS))
+endif
+
 # Select final configure target for clang builds.
 ifeq ($(Clang_Enable_Bootstrap), 1)
 Final_Configure_Target := configure-clang_stage2
@@ -373,11 +378,9 @@ build-clang_final: configure-clang_final
 	done
 
 build-clang_stage1: configure-clang_stage1
-	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Building (Stage 1) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Build_Target_Stage1) || exit 1; \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$$arch $(Install_Target_Stage1) || exit 1; \
-	done
+	$(_v) echo "Building (Stage 1) for $(Stage1_Compiler_Arch)..."
+	$(_v) $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Build_Target_Stage1)
+	$(_v) $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Install_Target_Stage1)
 
 configure-clang_final: $(Final_Configure_Target)
 
@@ -388,8 +391,8 @@ configure-clang_stage2: build-clang_stage1
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
-		  CC="$(OBJROOT)/stage1-install-$$arch/bin/clang -arch $$arch" \
-		  CXX="$(OBJROOT)/stage1-install-$$arch/bin/clang++ -arch $$arch" || exit 1 ; \
+		  CC="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)/bin/clang -arch $$arch" \
+		  CXX="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)/bin/clang++ -arch $$arch" || exit 1 ; \
 	done
 
 configure-clang_singlestage:
@@ -405,13 +408,11 @@ configure-clang_singlestage:
 
 configure-clang_stage1: 
 	$(_v) $(MKDIR) $(OBJROOT)
-	$(_v) for arch in $(RC_ARCHS) ; do \
-		echo "Configuring (Stage 1) for $$arch..." && \
-		$(MKDIR) $(OBJROOT)/stage1-$$arch && \
-		cd $(OBJROOT)/stage1-$$arch && \
-		$(Configure) --prefix="$(OBJROOT)/stage1-install-$$arch" $(Configure_Flags) \
-		  CC="$(CC) -arch $$arch" CXX="$(CXX) -arch $$arch" || exit 1 ; \
-	done
+	$(_v) echo "Configuring (Stage 1) for $(Stage1_Compiler_Arch)..."
+	$(_v) $(MKDIR) $(OBJROOT)/stage1-$(Stage1_Compiler_Arch)
+	$(_v) cd $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) && \
+	      $(Configure) --prefix="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)" $(Configure_Flags) \
+	        CC="$(CC) -arch $(Stage1_Compiler_Arch)" CXX="$(CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
 
 install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
