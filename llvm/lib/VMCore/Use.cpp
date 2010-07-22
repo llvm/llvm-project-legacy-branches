@@ -90,7 +90,7 @@ const Use *Use::getImpliedUser<2>(const Use *Current) {
 //===----------------------------------------------------------------------===//
 
 template <>
-Use *Use::initTags<Use::availableTagBits>(Use * const Start, Use *Stop, ptrdiff_t Done) {
+Use *Use::initTags<2>(Use * const Start, Use *Stop, ptrdiff_t Done) {
   while (Done < 20) {
     if (Start == Stop--)
       return Start;
@@ -117,6 +117,33 @@ Use *Use::initTags<Use::availableTagBits>(Use * const Start, Use *Stop, ptrdiff_
     } else {
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(Count & 1));
       Count >>= 1;
+      ++Done;
+    }
+  }
+
+  return Start;
+}
+
+template <>
+Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
+  if (Done == 0) {
+    ++Done;
+    --Stop;
+    Stop->Val = 0;
+    Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(fullStop64Tag));
+	}
+
+  ptrdiff_t Count = Done;
+  while (Start != Stop) {
+    --Stop;
+    Stop->Val = 0;
+    if (!Count) {
+      Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(stop64Tag));
+      ++Done;
+      Count = Done;
+    } else {
+      Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(Count & 3));
+      Count >>= 2;
       ++Done;
     }
   }
