@@ -77,7 +77,15 @@ private:
   enum PrevPtrTag { zeroDigitTag = noTag
                   , oneDigitTag = tagOne
                   , stopTag = tagTwo
-                  , fullStopTag = tagThree };
+                  , fullStopTag = tagThree
+										, zero64Tag = 0
+										, one64Tag = 1
+										, two64Tag = 2
+										, three64Tag = 3
+										, stop64Tag = 4
+										, xStop64Tag = 5
+										, yStop64Tag = 6
+										, fullStop64Tag = 7 };
 
 public:
   /// Normally Use will just implicitly convert to a Value* that it holds.
