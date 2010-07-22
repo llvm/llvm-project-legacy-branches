@@ -781,7 +781,7 @@ BranchInst::BranchInst(const BranchInst &BI) :
 
 
 Use* Use::getPrefix() {
-  PointerIntPair<Use**, 2, PrevPtrTag> &PotentialPrefix(this[-1].Prev);
+  PointerIntPair<Use**, availableTagBits, PrevPtrTag> &PotentialPrefix(this[-1].Prev);
   if (PotentialPrefix.getOpaqueValue())
     return 0;
 

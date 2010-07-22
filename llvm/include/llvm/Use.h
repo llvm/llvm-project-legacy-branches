@@ -39,7 +39,7 @@ class Use;
 /// Tag - generic tag type for (at least 32 bit) pointers
 enum Tag { noTag, tagOne, tagTwo, tagThree };
 
-// Use** is only 4-byte aligned.
+// Use** is pointer-like aligned.
 template<>
 class PointerLikeTypeTraits<Use**> {
 public:
@@ -47,7 +47,7 @@ public:
   static inline Use **getFromVoidPointer(void *P) {
     return static_cast<Use**>(P);
   }
-  enum { NumLowBitsAvailable = 2 };
+  enum { NumLowBitsAvailable = sizeof(Use*) < 8 ? 2 : 3 };
 };
 
 //===----------------------------------------------------------------------===//
@@ -115,12 +115,19 @@ public:
   /// getPrefix - Return deletable pointer if appropriate
   Use *getPrefix();
 private:
-  const Use* getImpliedUser() const;
+  enum { availableTagBits = sizeof(Use*) < 8 ? 2 : 3 };
+  template <unsigned>
+  struct UseTraits {
+    static const Use* getImpliedUser(const Use*);
+  };
+  inline const Use* getImpliedUser() const {
+		return UseTraits<availableTagBits>::getImpliedUser(this);
+	}
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   
   Value *Val;
   Use *Next;
-  PointerIntPair<Use**, 2, PrevPtrTag> Prev;
+  PointerIntPair<Use**, availableTagBits, PrevPtrTag> Prev;
 
   void setPrev(Use **NewPrev) {
     Prev.setPointer(NewPrev);
