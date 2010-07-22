@@ -86,10 +86,11 @@ const Use *Use::getImpliedUser<2>(const Use *Current) {
 }
 
 //===----------------------------------------------------------------------===//
-//                         Use initTags Implementation
+//                         Use initTags Implementations
 //===----------------------------------------------------------------------===//
 
-Use *Use::initTags(Use * const Start, Use *Stop, ptrdiff_t Done) {
+template <>
+Use *Use::initTags<Use::availableTagBits>(Use * const Start, Use *Stop, ptrdiff_t Done) {
   while (Done < 20) {
     if (Start == Stop--)
       return Start;
@@ -177,7 +178,7 @@ Use *User::allocHungoffUses(unsigned N) const {
   PointerIntPair<User*, 1, Tag>& ref(static_cast<AugmentedUse&>(End[-1]).ref);
   ref.setPointer(const_cast<User*>(this));
   ref.setInt(tagOne);
-  return Use::initTags(Begin, End);
+  return Use::initTags<Use::availableTagBits>(Begin, End);
 }
 
 //===----------------------------------------------------------------------===//
@@ -191,7 +192,7 @@ void *User::operator new(size_t s, unsigned Us) {
   User *Obj = reinterpret_cast<User*>(End);
   Obj->OperandList = Start;
   Obj->NumOperands = Us;
-  Use::initTags(Start, End);
+  Use::initTags<Use::availableTagBits>(Start, End);
   return Obj;
 }
 
@@ -216,7 +217,7 @@ void *User::operator new(size_t s, unsigned Us, bool Prefix) {
   User *Obj = reinterpret_cast<User*>(End);
   Obj->OperandList = Start;
   Obj->NumOperands = Us;
-  Use::initTags(Start, End);
+  Use::initTags<Use::availableTagBits>(Start, End);
   return Obj;
 }
 

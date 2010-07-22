@@ -119,6 +119,7 @@ private:
   template <unsigned>
   static const Use* getImpliedUser(const Use*);
   inline const Use* getImpliedUser() const;
+  template <unsigned>
   static Use *initTags(Use *Start, Use *Stop, ptrdiff_t Done = 0);
   
   Value *Val;
@@ -149,6 +150,10 @@ template <> const Use* Use::getImpliedUser<3>(const Use*);
 inline const Use* Use::getImpliedUser() const {
   return getImpliedUser<availableTagBits>(this);
 }
+template <>
+Use *Use::initTags<2>(Use *Start, Use *Stop, ptrdiff_t Done);
+template <>
+Use *Use::initTags<3>(Use *Start, Use *Stop, ptrdiff_t Done);
 
 // simplify_type - Allow clients to treat uses just like values when using
 // casting operators.
