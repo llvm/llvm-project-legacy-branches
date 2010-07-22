@@ -50,7 +50,33 @@ void Use::swap(Use &RHS) {
 
 template <>
 const Use *Use::getImpliedUser<3>(const Use *Current) {
-  return getImpliedUser<2>(Current);
+  while (true) {
+    unsigned Tag = (Current++)->Prev.getInt();
+    if (Tag < stop64Tag)
+      continue;
+    switch (Tag) {
+      case stop64Tag: {
+        ptrdiff_t Offset = 0;
+        while (true) {
+          unsigned Tag = Current->Prev.getInt();
+          switch (Tag) {
+            case zero64Tag:
+            case one64Tag:
+            case two64Tag:
+            case three64Tag:
+              ++Current;
+              Offset = (Offset << 2) + Tag;
+              continue;
+            default:
+              return Current + Offset;
+          }
+        }
+      }
+
+      case fullStopTag:
+        return Current;
+    }
+  }
 }
 
 template <>
