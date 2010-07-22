@@ -1,3 +1,10 @@
 # <rdar://problem/8211986> [regression] [gcc.target/i386/sse3-lddqu.c]
 # unexpected illegal instruction with SSE
 109032
+
+# <rdar://problem/8220696> Merge debug info change to Williamson 
+108784
+
+# <rdar://problem/8213383> clang-109: Assembler fails with "invalid offset,
+# value too big (0x00000400)"
+109076
