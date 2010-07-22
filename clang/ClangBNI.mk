@@ -179,15 +179,19 @@ endif
 Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
 
 # Set configure flags.
-Configure_Flags = --enable-targets=$(LLVM_Backends) \
+Common_Configure_Flags = \
+		  --enable-targets=$(LLVM_Backends) \
 		  --enable-optimized \
 		  --disable-timestamps \
 		  $(Assertions_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
-                  --with-extra-options="$(Clang_Extra_Options)" \
 		  --without-llvmgcc --without-llvmgxx \
 		  --disable-bindings \
 		  --disable-doxygen
+Stage1_Configure_Flags = $(Common_Configure_Flags) \
+                  --with-extra-options="$(Clang_Extra_Options)"
+Configure_Flags = $(Common_Configure_Flags) \
+                  --with-extra-options="$(Clang_Extra_Options) $(Clang_Final_Extra_Options)"
 
 # Set up any additional Clang install targets.
 Extra_Clang_Install_Targets :=
@@ -374,13 +378,13 @@ build-clang: build-clang_final
 build-clang_final: configure-clang_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Final) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
+		time $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
 	done
 
 build-clang_stage1: configure-clang_stage1
 	$(_v) echo "Building (Stage 1) for $(Stage1_Compiler_Arch)..."
-	$(_v) $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Build_Target_Stage1)
-	$(_v) $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Install_Target_Stage1)
+	$(_v) time $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Build_Target_Stage1)
+	$(_v) time $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) $(Install_Target_Stage1)
 
 configure-clang_final: $(Final_Configure_Target)
 
@@ -390,7 +394,7 @@ configure-clang_stage2: build-clang_stage1
 		echo "Configuring (Final) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
-		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
+		time $(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
 		  CC="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)/bin/clang -arch $$arch" \
 		  CXX="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)/bin/clang++ -arch $$arch" || exit 1 ; \
 	done
@@ -401,7 +405,7 @@ configure-clang_singlestage:
 		echo "Configuring (Final) for $$arch..." && \
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
-		$(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
+		time $(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
 		  CC="$(CC) -arch $$arch" \
 		  CXX="$(CXX) -arch $$arch" || exit 1 ; \
 	done
@@ -411,7 +415,7 @@ configure-clang_stage1:
 	$(_v) echo "Configuring (Stage 1) for $(Stage1_Compiler_Arch)..."
 	$(_v) $(MKDIR) $(OBJROOT)/stage1-$(Stage1_Compiler_Arch)
 	$(_v) cd $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) && \
-	      $(Configure) --prefix="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)" $(Configure_Flags) \
+	      time $(Configure) --prefix="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)" $(Stage1_Configure_Flags) \
 	        CC="$(CC) -arch $(Stage1_Compiler_Arch)" CXX="$(CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
 
 install-clang-rootlinks: install-clang_final
