@@ -73,7 +73,7 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
         }
       }
 
-      case fullStopTag:
+      case fullStop64Tag:
         return Current;
     }
   }
@@ -152,6 +152,9 @@ Use *Use::initTags<2>(Use * const Start, Use *Stop, ptrdiff_t Done) {
 
 template <>
 Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
+  if (Start == Stop)
+    return Start;
+
   if (Done == 0) {
     ++Done;
     --Stop;
