@@ -1,0 +1,3 @@
+# <rdar://problem/8211986> [regression] [gcc.target/i386/sse3-lddqu.c]
+# unexpected illegal instruction with SSE
+109032
