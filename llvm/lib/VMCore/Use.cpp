@@ -189,10 +189,7 @@ Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
       continue;
     case 1:
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(xStop64Tag));
-      if ((Done & 3) == 1)
-        Count = Done >> 2;
-      else
-        Count = 0;
+      Count = (Done & 3) == 1 ? Done >> 2 : 0;
       ++Done;
       continue;
     case 2:
