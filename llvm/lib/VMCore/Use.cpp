@@ -57,9 +57,12 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
     ptrdiff_t Offset = Tag & 3;
     switch (Tag) {
       case stop64Tag:
-        if (!Current->Prev.getInt())
-          Offset = 1;
-          // fall thru...
+        switch (Current->Prev.getInt()) {
+				case 0: ++Current; Offset = 4; break;
+        case xStop64Tag: ++Current; Offset = 1; break;
+        case yStop64Tag: ++Current; Offset = 2; break;
+				}
+        // fall thru...
       case xStop64Tag:
       case yStop64Tag:
         while (true) {
