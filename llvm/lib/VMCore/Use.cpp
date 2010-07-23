@@ -60,11 +60,15 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
         switch (Current->Prev.getInt()) {
 				case 0: ++Current; Offset = 4; break;
         case xStop64Tag: ++Current; Offset = 1; break;
-        case yStop64Tag: ++Current; Offset = 2; break;
+        case yStop64Tag: return Current + 3;
 				}
         // fall thru...
       case xStop64Tag:
+        if (Current->Prev.getInt() == fullStop64Tag)
+          return Current + 1;
       case yStop64Tag:
+        if (Current->Prev.getInt() == xStop64Tag)
+          return Current + 2;
         while (true) {
           unsigned Tag = Current->Prev.getInt();
           switch (Tag) {
