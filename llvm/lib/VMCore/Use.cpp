@@ -66,6 +66,7 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
       case xStop64Tag:
         if (Current->Prev.getInt() == fullStop64Tag)
           return Current + 1;
+        // fall thru...
       case yStop64Tag:
         if (Current->Prev.getInt() == xStop64Tag)
           return Current + 2;
@@ -167,15 +168,16 @@ Use *Use::initTags<2>(Use * const Start, Use *Stop, ptrdiff_t Done) {
 
 template <>
 Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
-  if (Start == Stop)
-    return Start;
-
-  if (Done == 0) {
-    ++Done;
-    --Stop;
+  while (Done < 8) {
+    if (Start == Stop--)
+      return Start;
+    static const PrevPtrTag tags[8] = { fullStop64Tag, xStop64Tag, yStop64Tag,
+                                        stop64Tag, zero64Tag, xStop64Tag,
+                                        one64Tag, stop64Tag
+                                      };
+    Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(tags[Done++]));
     Stop->Val = 0;
-    Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(fullStop64Tag));
-	}
+  }
 
   ptrdiff_t Count = Done;
   while (Start != Stop) {
