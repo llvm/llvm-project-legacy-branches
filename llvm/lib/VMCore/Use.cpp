@@ -54,9 +54,13 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
     unsigned Tag = (Current++)->Prev.getInt();
     if (Tag < stop64Tag)
       continue;
+    ptrdiff_t Offset = Tag & 3;
     switch (Tag) {
-      case stop64Tag: {
-        ptrdiff_t Offset = Current->Prev.getInt() ? 0 : 1;
+      case stop64Tag:
+        if (!Current->Prev.getInt())
+          Offset = 1;
+      case xStop64Tag:
+      case yStop64Tag: {
         while (true) {
           unsigned Tag = Current->Prev.getInt();
           switch (Tag) {
