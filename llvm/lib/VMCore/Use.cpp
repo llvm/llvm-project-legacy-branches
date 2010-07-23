@@ -58,11 +58,11 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
     switch (Tag) {
       case stop64Tag:
         switch (Current->Prev.getInt()) {
-				case 0: ++Current; Offset = 4; break;
-        case xStop64Tag: ++Current; Offset = 1; break;
-        case yStop64Tag: return Current + 3;
-				}
-        // fall thru...
+          case 0: ++Current; Offset = 4; goto digits;
+          case xStop64Tag: ++Current; Offset = 1; goto digits;
+          case yStop64Tag: return Current + 3;
+          default: goto digits;
+        }
       case xStop64Tag:
         if (Current->Prev.getInt() == fullStop64Tag)
           return Current + 1;
@@ -70,6 +70,7 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
         if (Current->Prev.getInt() == xStop64Tag)
           return Current + 2;
         while (true) {
+          digits:
           unsigned Tag = Current->Prev.getInt();
           switch (Tag) {
             case zero64Tag:
