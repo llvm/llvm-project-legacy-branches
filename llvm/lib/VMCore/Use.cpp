@@ -285,11 +285,11 @@ void *User::operator new(size_t s, unsigned Us) {
 
 /// Prefixed allocation - just before the first Use, allocate a NULL pointer.
 /// The destructor can detect its presence and readjust the OperandList
-/// for deletition.
+/// for deletion.
 ///
 void *User::operator new(size_t s, unsigned Us, bool Prefix) {
-  // currently prefixed allocation only admissible for
-  // unconditional branch instructions
+  // Currently prefixed allocation only admissible for
+  // unconditional branch instructions.
   if (!Prefix)
     return operator new(s, Us);
 
@@ -316,22 +316,22 @@ void User::operator delete(void *Usr) {
   User *Start = static_cast<User*>(Usr);
   Use *Storage = static_cast<Use*>(Usr) - Start->NumOperands;
   //
-  // look for a variadic User
+  // Look for a variadic User.
   if (Storage == Start->OperandList) {
     ::operator delete(Storage);
     return;
   }
   //
-  // check for the flag whether the destructor has detected a prefixed
+  // Check for the flag whether the destructor has detected a prefixed
   // allocation, in which case we remove the flag and delete starting
-  // at OperandList
+  // at OperandList.
   if (reinterpret_cast<intptr_t>(Start->OperandList) & 1) {
     ::operator delete(reinterpret_cast<char*>(Start->OperandList) - 1);
     return;
   }
   //
-  // in all other cases just delete the nullary User (covers hung-off
-  // uses also
+  // In all other cases just delete the nullary User (covers hung-off
+  // uses also).
   ::operator delete(Usr);
 }
 
