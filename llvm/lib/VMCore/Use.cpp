@@ -187,6 +187,14 @@ Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(stop64Tag));
       Count = ++Done;
       continue;
+    case 1:
+      Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(xStop64Tag));
+      if ((Done & 3) == 1)
+        Count = Done >> 2;
+      else
+        Count = 0;
+      ++Done;
+      continue;
     case 2:
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(yStop64Tag));
       Count = ++Done;
