@@ -56,7 +56,7 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
       continue;
     switch (Tag) {
       case stop64Tag: {
-        ptrdiff_t Offset = 0;
+        ptrdiff_t Offset = Current->Prev.getInt() ? 0 : 1;
         while (true) {
           unsigned Tag = Current->Prev.getInt();
           switch (Tag) {
@@ -166,11 +166,18 @@ Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
   while (Start != Stop) {
     --Stop;
     Stop->Val = 0;
-    if (!Count) {
+    switch (Count) {
+    case 0:
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(stop64Tag));
       ++Done;
       Count = Done;
-    } else {
+      continue;
+    case 4:
+      Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(zero64Tag));
+      ++Done;
+      Count = 0;
+      continue;
+    default:
       Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(Count & 3));
       Count >>= 2;
       ++Done;
