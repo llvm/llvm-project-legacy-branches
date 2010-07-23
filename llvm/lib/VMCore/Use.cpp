@@ -82,8 +82,7 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
               Offset = (Offset << 2) + Tag;
               continue;
             case xStop64Tag:
-              Offset = (Offset << 2) + one64Tag;
-              // fall thru...
+              return Current + (Offset << 2) + one64Tag + 1;
             default:
               return Current + Offset;
           }
