@@ -8,3 +8,15 @@
 # <rdar://problem/8213383> clang-109: Assembler fails with "invalid offset,
 # value too big (0x00000400)"
 109076
+
+# <rdar://problem/8225273> clang never exits
+109242
+109265
+
+# <rdar://problem/8225024> clang armv6 failure causing assembr to say "invalid
+# offset, value too big (0x00000400)"
+109282
+
+# <rdar://problem/8224931> Assertion failed: RC == ARM::tGPRRegisterClass ...
+109291
+109293
