@@ -75,22 +75,27 @@ TEST(WaymarkTest, ThreeBit) {
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('2', result[49]);
   EXPECT_EQ(segment8000, result);
+
   n = 5000;
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('s', result[49]);
   EXPECT_EQ(segment5000, result);
+
   n = 3000;
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('1', result[49]);
   EXPECT_EQ(segment3000, result);
+
   n = 2000;
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('1', result[49]);
   EXPECT_EQ(segment2000, result);
+
   n = 100;
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('3', result[49]);
   EXPECT_EQ(segment100, result);
+
   n = 50;
 	std::transform(many + 8212 - n, many + 8212 - n + 50, result.begin(), m3);
   EXPECT_EQ('S', result[49]);
