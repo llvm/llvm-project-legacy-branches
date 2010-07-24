@@ -52,10 +52,13 @@ template <>
 const Use *Use::getImpliedUser<3>(const Use *Current) {
   while (true) {
     unsigned Tag = (Current++)->Prev.getInt();
-    if (Tag < stop64Tag)
-      continue;
     ptrdiff_t Offset;
     switch (Tag) {
+      case zero64Tag:
+      case one64Tag:
+      case two64Tag:
+      case three64Tag:
+        continue;
       case stop64Tag:
         switch (Current->Prev.getInt()) {
           case 0: ++Current; Offset = 4; goto digits;
