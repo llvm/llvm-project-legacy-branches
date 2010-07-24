@@ -167,13 +167,17 @@ Use *Use::initTags<2>(Use * const Start, Use *Stop, ptrdiff_t Done) {
 
 template <>
 Use *Use::initTags<3>(Use * const Start, Use *Stop, ptrdiff_t Done) {
-  while (Done < 8) {
+  while (Done < 21) {
     if (Start == Stop--)
       return Start;
-    static const PrevPtrTag tags[8] = { fullStop64Tag, xStop64Tag, yStop64Tag,
-                                        stop64Tag, zero64Tag, xStop64Tag,
-                                        one64Tag, stop64Tag
-                                      };
+    static const PrevPtrTag tags[21] = { fullStop64Tag, xStop64Tag, yStop64Tag,
+                                         stop64Tag, zero64Tag, xStop64Tag,
+                                         one64Tag, stop64Tag, zero64Tag,
+                                         yStop64Tag, two64Tag, yStop64Tag,
+                                         zero64Tag, three64Tag, stop64Tag,
+                                         three64Tag, three64Tag, stop64Tag,
+                                         two64Tag, zero64Tag, stop64Tag
+                                       };
     Stop->Prev.setFromOpaqueValue(reinterpret_cast<Use**>(tags[Done++]));
     Stop->Val = 0;
   }
