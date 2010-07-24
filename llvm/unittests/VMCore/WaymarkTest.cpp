@@ -22,8 +22,8 @@ namespace {
 
 TEST(WaymarkTest, NativeArray) {
   static char tail[22] = "s02s33s30y2y0s1x0syxS";
-	Constant *A = ConstantArray::get (getGlobalContext(), tail, false);
-  /*ASSERT_NE*/EXPECT_NE(A, (Constant*)NULL);
+	const Constant *A = ConstantArray::get (getGlobalContext(), tail, false);
+  ASSERT_NE(A, (const Constant*)NULL);
   EXPECT_EQ(21U, A->getNumOperands());
 	const Use *U = &A->getOperandUse(0);
 	const Use *Ue = &A->getOperandUse(20);
