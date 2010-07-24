@@ -54,22 +54,23 @@ const Use *Use::getImpliedUser<3>(const Use *Current) {
     unsigned Tag = (Current++)->Prev.getInt();
     if (Tag < stop64Tag)
       continue;
-    ptrdiff_t Offset = Tag & 3;
+    ptrdiff_t Offset;
     switch (Tag) {
       case stop64Tag:
         switch (Current->Prev.getInt()) {
           case 0: ++Current; Offset = 4; goto digits;
           case xStop64Tag: ++Current; Offset = 1; goto digits;
           case yStop64Tag: return Current + 3;
-          default: goto digits;
+          default: Offset = 0; goto digits;
         }
       case xStop64Tag:
         if (Current->Prev.getInt() == fullStop64Tag)
           return Current + 1;
-        // fall thru...
+        Offset = 1; goto digits;
       case yStop64Tag:
         if (Current->Prev.getInt() == xStop64Tag)
           return Current + 2;
+        Offset = 2;
         while (true) {
           digits:
           unsigned Tag = Current->Prev.getInt();
