@@ -50,6 +50,11 @@ char m3(const Use& U)
 }
 
 TEST(WaymarkTest, ThreeBit) {
+  // It is impossible to satisfy this test on
+  // a 32-bit system. Better quit now.
+  if (Use::availableTagBits < 3)
+		return;
+
   Use* many = new Use[8212];
   ASSERT_TRUE(many);
 	Use::initTags<3>(many, many + 8212, 0);
