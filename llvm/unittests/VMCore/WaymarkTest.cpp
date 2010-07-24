@@ -34,7 +34,8 @@ TEST(WaymarkTest, NativeArray) {
 }
 
 TEST(WaymarkTest, TwoBit) {
-  Use many[8212];
+  Use* many = new Use[8212];
+  ASSERT_TRUE(many);
 	Use::initTags<2>(many, many + 8212, 0);
   for (const Use *U = many, *Ue = many + 8212 - 1; U != Ue; ++U)
   {
@@ -42,8 +43,15 @@ TEST(WaymarkTest, TwoBit) {
   }
 }
 
+char m3(const Use& U)
+{
+  static char ms[9] = "0123sxyS";
+  return ms[U.Prev.getInt()];
+}
+
 TEST(WaymarkTest, ThreeBit) {
-  Use many[8212];
+  Use* many = new Use[8212];
+  ASSERT_TRUE(many);
 	Use::initTags<3>(many, many + 8212, 0);
   for (const Use *U = many, *Ue = many + 8212 - 1; U != Ue; ++U)
   {
@@ -56,6 +64,11 @@ TEST(WaymarkTest, ThreeBit) {
   std::string segment2000("3030sx3301x33000sx3232x32310sx3223x32220sx3220x321");
   std::string segment100 ("02sx13x122sx111sx100s030s020s010s000s330s320s310s3");
   std::string segment50  ("00y31y22y13y10y01sx31sx21sx11s02s33s30y2y0s1x0syxS");
+
+	std::string result(50, ' ');
+	std::transform(many + 8212 - 8000, many + 8212 - 7950, result.begin(), m3);
+  EXPECT_EQ('2', result[49]);
+  EXPECT_EQ(segment8000, result);
 }
 
 }  // end anonymous namespace
