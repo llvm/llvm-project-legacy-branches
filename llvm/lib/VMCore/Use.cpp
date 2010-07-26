@@ -51,51 +51,52 @@ void Use::swap(Use &RHS) {
 template <>
 const Use *Use::getImpliedUser<3>(const Use *Current) {
   while (true) {
-    unsigned Tag = (Current++)->Prev.getInt();
+    int Tag = (Current++)->Prev.getInt() - stop64Tag;
     ptrdiff_t Offset;
-    switch (Tag) {
-      case zero64Tag:
-      case one64Tag:
-      case two64Tag:
-      case three64Tag:
-        continue;
-      case stop64Tag:
+		if (Tag == 0) {
         switch (Current->Prev.getInt()) {
           case 0: ++Current; Offset = 4; goto digits;
           case xStop64Tag: ++Current; Offset = 1; goto digits;
           case yStop64Tag: return Current + 3;
-          default: Offset = 0; goto digits;
+				  default: Offset = 0; goto digits;
         }
-      case xStop64Tag:
-        if (Current->Prev.getInt() == fullStop64Tag)
-          return Current + 1;
-        Offset = 1; goto digits;
-      case yStop64Tag:
-        if (Current->Prev.getInt() == xStop64Tag)
-          return Current + 2;
-        Offset = 2;
-        while (true) {
-          digits:
-          unsigned Tag = Current->Prev.getInt();
-          switch (Tag) {
-            case zero64Tag:
-            case one64Tag:
-            case two64Tag:
-            case three64Tag:
-              ++Current;
-              Offset = (Offset << 2) + Tag;
-              continue;
-            case xStop64Tag:
-              return Current + (Offset << 2) + one64Tag + 1;
-            default:
-              return Current + Offset;
-          }
-        }
+		}
+		else if (Tag < 0)
+			continue;
+		else {
+			Tag -= 2;
+			if (Tag > 0)
+				return Current;
+			else if (Tag == 0) {
+				if (Current->Prev.getInt() == xStop64Tag)
+					return Current + 2;
+				Offset = 2;
+			}
+			else {
+				if (Current->Prev.getInt() == fullStop64Tag)
+					return Current + 1;
+				Offset = 1;
+			}
 
-      case fullStop64Tag:
-        return Current;
-    }
-  }
+			while (true) {
+				digits:
+						unsigned Tag = Current->Prev.getInt();
+						switch (Tag) {
+              case zero64Tag:
+              case one64Tag:
+              case two64Tag:
+              case three64Tag:
+                ++Current;
+                Offset = (Offset << 2) + Tag;
+                continue;
+              case xStop64Tag:
+                return Current + (Offset << 2) + one64Tag + 1;
+              default:
+                return Current + Offset;
+						}
+			}
+		}
+	}
 }
 
 template <>
