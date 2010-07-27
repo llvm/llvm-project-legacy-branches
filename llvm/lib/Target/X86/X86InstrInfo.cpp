@@ -822,7 +822,7 @@ static bool isFrameStoreOpcode(int Opcode) {
 unsigned X86InstrInfo::isLoadFromStackSlot(const MachineInstr *MI, 
                                            int &FrameIndex) const {
   if (isFrameLoadOpcode(MI->getOpcode()))
-    if (isFrameOperand(MI, 1, FrameIndex))
+    if (MI->getOperand(0).getSubReg() == 0 && isFrameOperand(MI, 1, FrameIndex))
       return MI->getOperand(0).getReg();
   return 0;
 }
@@ -861,7 +861,8 @@ bool X86InstrInfo::hasLoadFromStackSlot(const MachineInstr *MI,
 unsigned X86InstrInfo::isStoreToStackSlot(const MachineInstr *MI,
                                           int &FrameIndex) const {
   if (isFrameStoreOpcode(MI->getOpcode()))
-    if (isFrameOperand(MI, 0, FrameIndex))
+    if (MI->getOperand(X86AddrNumOperands).getSubReg() == 0 &&
+        isFrameOperand(MI, 0, FrameIndex))
       return MI->getOperand(X86AddrNumOperands).getReg();
   return 0;
 }
@@ -2129,6 +2130,8 @@ void X86InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                        unsigned SrcReg, bool isKill, int FrameIdx,
                                        const TargetRegisterClass *RC) const {
   const MachineFunction &MF = *MBB.getParent();
+  assert(MF.getFrameInfo()->getObjectSize(FrameIdx) >= RC->getSize() &&
+         "Stack slot too small for store");
   bool isAligned = (RI.getStackAlignment() >= 16) || RI.canRealignStack(MF);
   unsigned Opc = getStoreRegOpcode(SrcReg, RC, isAligned, TM);
   DebugLoc DL = MBB.findDebugLoc(MI);
@@ -2226,6 +2229,8 @@ void X86InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                         unsigned DestReg, int FrameIdx,
                                         const TargetRegisterClass *RC) const{
   const MachineFunction &MF = *MBB.getParent();
+  assert(MF.getFrameInfo()->getObjectSize(FrameIdx) >= RC->getSize() &&
+         "Stack slot too small for load");
   bool isAligned = (RI.getStackAlignment() >= 16) || RI.canRealignStack(MF);
   unsigned Opc = getLoadRegOpcode(DestReg, RC, isAligned, TM);
   DebugLoc DL = MBB.findDebugLoc(MI);
