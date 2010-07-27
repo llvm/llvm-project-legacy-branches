@@ -34,6 +34,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/ADT/IndexedMap.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include <climits>
 
@@ -552,9 +553,28 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
 
   // Make sure that the stack protector comes before the local variables on the
   // stack.
-  if (FFI->getStackProtectorIndex() >= 0)
+  SmallSet<int, 16> LargeStackObjs;
+  if (FFI->getStackProtectorIndex() >= 0) {
     AdjustStackOffset(FFI, FFI->getStackProtectorIndex(), StackGrowsDown,
                       Offset, MaxAlign);
+
+    // Assign large stack objects first.
+    for (unsigned i = 0, e = FFI->getObjectIndexEnd(); i != e; ++i) {
+      if (i >= MinCSFrameIndex && i <= MaxCSFrameIndex)
+        continue;
+      if (RS && (int)i == RS->getScavengingFrameIndex())
+        continue;
+      if (FFI->isDeadObjectIndex(i))
+        continue;
+      if (FFI->getStackProtectorIndex() == (int)i)
+        continue;
+      if (!FFI->MayNeedStackProtector(i))
+        continue;
+
+      AdjustStackOffset(FFI, i, StackGrowsDown, Offset, MaxAlign);
+      LargeStackObjs.insert(i);
+    }
+  }
 
   // Then assign frame offsets to stack objects that are not used to spill
   // callee saved registers.
@@ -566,6 +586,8 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
     if (FFI->isDeadObjectIndex(i))
       continue;
     if (FFI->getStackProtectorIndex() == (int)i)
+      continue;
+    if (LargeStackObjs.count(i))
       continue;
 
     AdjustStackOffset(FFI, i, StackGrowsDown, Offset, MaxAlign);
