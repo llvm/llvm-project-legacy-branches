@@ -522,7 +522,6 @@ namespace llvm {
   ///
   class SCEVUnknown : public SCEV {
     friend class ScalarEvolution;
-    friend class ScalarEvolution::SCEVCallbackVH;
 
     Value *V;
     SCEVUnknown(const FoldingSetNodeIDRef ID, Value *v) :
