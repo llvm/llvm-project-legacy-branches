@@ -212,7 +212,9 @@ endif
 
 # Select stage1 compiler to build.
 ifeq ($(Clang_Enable_Bootstrap), 1)
-Stage1_Compiler_Arch := $(lastword $(RC_ARCHS))
+# Always use an x86_64 stage1 compiler -- it is the most well tested and so most
+# likely to not be miscompiled by the host compiler.
+Stage1_Compiler_Arch := x86_64
 endif
 
 # Select final configure target for clang builds.
