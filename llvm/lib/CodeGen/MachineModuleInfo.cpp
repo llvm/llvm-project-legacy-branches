@@ -306,6 +306,7 @@ void MachineModuleInfo::EndFunction() {
   TypeInfos.clear();
   FilterIds.clear();
   FilterEnds.clear();
+  FilterMap.clear();
   CallsEHReturn = 0;
   CallsUnwindInit = 0;
   VariableDbgInfo.clear();
