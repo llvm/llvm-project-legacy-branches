@@ -460,7 +460,7 @@ public:
 /// blocks each of which is a successor of the specified BB and has no other
 /// predecessor.
 static void findSinglePredSuccessor(MachineBasicBlock *MBB,
-                                   SmallVectorImpl<MachineBasicBlock *> &Succs) {
+                                   SmallVectorImpl<MachineBasicBlock *> &Succs){
   for (MachineBasicBlock::succ_iterator SI = MBB->succ_begin(),
          SE = MBB->succ_end(); SI != SE; ++SI) {
     MachineBasicBlock *SuccMBB = *SI;
@@ -852,8 +852,8 @@ unsigned ReuseInfo::GetRegForReload(const TargetRegisterClass *RC,
       // Yup, use the reload register that we didn't use before.
       unsigned NewReg = Op.AssignedPhysReg;
       Rejected.insert(PhysReg);
-      return GetRegForReload(RC, NewReg, MF, MI, Spills, MaybeDeadStores, Rejected,
-                             RegKills, KillOps, VRM);
+      return GetRegForReload(RC, NewReg, MF, MI, Spills, MaybeDeadStores,
+                             Rejected, RegKills, KillOps, VRM);
     } else {
       // Otherwise, we might also have a problem if a previously reused
       // value aliases the new register. If so, codegen the previous reload
@@ -1864,7 +1864,7 @@ bool LocalRewriter::InsertSpills(MachineInstr *MI) {
 
 
 /// rewriteMBB - Keep track of which spills are available even after the
-/// register allocator is done with them.  If possible, avid reloading vregs.
+/// register allocator is done with them.  If possible, avoid reloading vregs.
 void
 LocalRewriter::RewriteMBB(LiveIntervals *LIs,
                           AvailableSpills &Spills, BitVector &RegKills,
@@ -2302,7 +2302,7 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
           unsigned PhysReg = Spills.getSpillSlotOrReMatPhysReg(SS);
           SmallVector<MachineInstr*, 4> NewMIs;
           if (PhysReg &&
-              TII->unfoldMemoryOperand(MF, &MI, PhysReg, false, false, NewMIs)) {
+              TII->unfoldMemoryOperand(MF, &MI, PhysReg, false, false, NewMIs)){
             MBB->insert(MII, NewMIs[0]);
             InvalidateKills(MI, TRI, RegKills, KillOps);
             VRM->RemoveMachineInstrFromMaps(&MI);
@@ -2442,28 +2442,6 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
           Spills.disallowClobberPhysReg(VirtReg);
           goto ProcessNextInst;
         }
-        unsigned Src, Dst, SrcSR, DstSR;
-        if (TII->isMoveInstr(MI, Src, Dst, SrcSR, DstSR) &&
-            Src == Dst && SrcSR == DstSR &&
-            !MI.findRegisterUseOperand(Src)->isUndef()) {
-          ++NumDCE;
-          DEBUG(dbgs() << "Removing now-noop copy: " << MI);
-          SmallVector<unsigned, 2> KillRegs;
-          InvalidateKills(MI, TRI, RegKills, KillOps, &KillRegs);
-          if (MO.isDead() && !KillRegs.empty()) {
-            // Source register or an implicit super/sub-register use is killed.
-            assert(KillRegs[0] == Dst ||
-                   TRI->isSubRegister(KillRegs[0], Dst) ||
-                   TRI->isSuperRegister(KillRegs[0], Dst));
-            // Last def is now dead.
-            TransferDeadness(Src, RegKills, KillOps);
-          }
-          VRM->RemoveMachineInstrFromMaps(&MI);
-          MBB->erase(&MI);
-          Erased = true;
-          Spills.disallowClobberPhysReg(VirtReg);
-          goto ProcessNextInst;
-        }
 
         // If it's not a no-op copy, it clobbers the value in the destreg.
         Spills.ClobberPhysReg(VirtReg);
@@ -2540,20 +2518,6 @@ LocalRewriter::RewriteMBB(LiveIntervals *LIs,
           Erased = true;
           UpdateKills(*LastStore, TRI, RegKills, KillOps);
           goto ProcessNextInst;
-        }
-        {
-          unsigned Src, Dst, SrcSR, DstSR;
-          if (TII->isMoveInstr(MI, Src, Dst, SrcSR, DstSR) &&
-              Src == Dst && SrcSR == DstSR) {
-            ++NumDCE;
-            DEBUG(dbgs() << "Removing now-noop copy: " << MI);
-            InvalidateKills(MI, TRI, RegKills, KillOps);
-            VRM->RemoveMachineInstrFromMaps(&MI);
-            MBB->erase(&MI);
-            Erased = true;
-            UpdateKills(*LastStore, TRI, RegKills, KillOps);
-            goto ProcessNextInst;
-          }
         }
       }
     }

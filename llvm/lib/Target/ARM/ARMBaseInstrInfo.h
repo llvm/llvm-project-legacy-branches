@@ -15,11 +15,12 @@
 #define ARMBASEINSTRUCTIONINFO_H
 
 #include "ARM.h"
-#include "ARMRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Target/TargetInstrInfo.h"
 
 namespace llvm {
+  class ARMSubtarget;
+  class ARMBaseRegisterInfo;
 
 /// ARMII - This namespace holds all of the target specific flags that
 /// instruction info tracks.
@@ -198,7 +199,7 @@ namespace ARMII {
 }
 
 class ARMBaseInstrInfo : public TargetInstrInfoImpl {
-  const ARMSubtarget& Subtarget;
+  const ARMSubtarget &Subtarget;
 protected:
   // Can be only subclassed.
   explicit ARMBaseInstrInfo(const ARMSubtarget &STI);
@@ -223,7 +224,7 @@ public:
   virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                              MachineBasicBlock *&FBB,
                              SmallVectorImpl<MachineOperand> &Cond,
-                             bool AllowModify) const;
+                             bool AllowModify = false) const;
   virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
   virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                                 MachineBasicBlock *FBB,
@@ -261,12 +262,6 @@ public:
   /// GetInstSize - Returns the size of the specified MachineInstr.
   ///
   virtual unsigned GetInstSizeInBytes(const MachineInstr* MI) const;
-
-  /// Return true if the instruction is a register to register move and return
-  /// the source and dest operands and their sub-register indices by reference.
-  virtual bool isMoveInstr(const MachineInstr &MI,
-                           unsigned &SrcReg, unsigned &DstReg,
-                           unsigned &SrcSubIdx, unsigned &DstSubIdx) const;
 
   virtual unsigned isLoadFromStackSlot(const MachineInstr *MI,
                                        int &FrameIndex) const;

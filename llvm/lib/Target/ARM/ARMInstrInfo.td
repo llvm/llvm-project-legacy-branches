@@ -61,6 +61,9 @@ def SDT_ARMSYNCBARRIERV6 : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
 def SDT_ARMTCRET : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
 
+def SDT_ARMBFI : SDTypeProfile<1, 3, [SDTCisVT<0, i32>, SDTCisVT<1, i32>,
+                                      SDTCisVT<2, i32>, SDTCisVT<3, i32>]>;
+
 // Node definitions.
 def ARMWrapper       : SDNode<"ARMISD::Wrapper",     SDTIntUnaryOp>;
 def ARMWrapperJT     : SDNode<"ARMISD::WrapperJT",   SDTIntBinOp>;
@@ -130,6 +133,9 @@ def ARMrbit          : SDNode<"ARMISD::RBIT", SDTIntUnaryOp>;
 
 def ARMtcret         : SDNode<"ARMISD::TC_RETURN", SDT_ARMTCRET, 
                         [SDNPHasChain,  SDNPOptInFlag, SDNPVariadic]>;
+
+
+def ARMbfi           : SDNode<"ARMISD::BFI", SDT_ARMBFI>;
 
 //===----------------------------------------------------------------------===//
 // ARM Instruction Predicate Definitions.
@@ -221,19 +227,7 @@ def sext_16_node : PatLeaf<(i32 GPR:$a), [{
 /// e.g., 0xf000ffff
 def bf_inv_mask_imm : Operand<i32>,
                       PatLeaf<(imm), [{
-  uint32_t v = (uint32_t)N->getZExtValue();
-  if (v == 0xffffffff)
-    return 0;
-  // there can be 1's on either or both "outsides", all the "inside"
-  // bits must be 0's
-  unsigned int lsb = 0, msb = 31;
-  while (v & (1 << msb)) --msb;
-  while (v & (1 << lsb)) ++lsb;
-  for (unsigned int i = lsb; i <= msb; ++i) {
-    if (v & (1 << i))
-      return 0;
-  }
-  return 1;
+  return ARM::isBitFieldInvertedMask(N->getZExtValue());
 }] > {
   let PrintMethod = "printBitfieldInvMaskImmOperand";
 }
@@ -1117,7 +1111,7 @@ let isBranch = 1, isTerminator = 1 in {
 
   let isNotDuplicable = 1, isIndirectBranch = 1 in {
   def BR_JTr : JTI<(outs), (ins GPR:$target, jtblock_operand:$jt, i32imm:$id),
-                    IIC_Br, "mov\tpc, $target \n$jt",
+                    IIC_Br, "mov\tpc, $target$jt",
                     [(ARMbrjt GPR:$target, tjumptable:$jt, imm:$id)]> {
     let Inst{11-4}  = 0b00000000;
     let Inst{15-12} = 0b1111;
@@ -1127,7 +1121,7 @@ let isBranch = 1, isTerminator = 1 in {
   }
   def BR_JTm : JTI<(outs),
                    (ins addrmode2:$target, jtblock_operand:$jt, i32imm:$id),
-                   IIC_Br, "ldr\tpc, $target \n$jt",
+                   IIC_Br, "ldr\tpc, $target$jt",
                    [(ARMbrjt (i32 (load addrmode2:$target)), tjumptable:$jt,
                      imm:$id)]> {
     let Inst{15-12} = 0b1111;
@@ -1139,7 +1133,7 @@ let isBranch = 1, isTerminator = 1 in {
   }
   def BR_JTadd : JTI<(outs),
                    (ins GPR:$target, GPR:$idx, jtblock_operand:$jt, i32imm:$id),
-                    IIC_Br, "add\tpc, $target, $idx \n$jt",
+                    IIC_Br, "add\tpc, $target, $idx$jt",
                     [(ARMbrjt (add GPR:$target, GPR:$idx), tjumptable:$jt,
                       imm:$id)]> {
     let Inst{15-12} = 0b1111;
@@ -1573,8 +1567,12 @@ defm UXTH   : AI_unary_rrot<0b01101111,
 defm UXTB16 : AI_unary_rrot<0b01101100,
                             "uxtb16", UnOpFrag<(and node:$Src, 0x00FF00FF)>>;
 
-def : ARMV6Pat<(and (shl GPR:$Src, (i32 8)), 0xFF00FF),
-               (UXTB16r_rot GPR:$Src, 24)>;
+// FIXME: This pattern incorrectly assumes the shl operator is a rotate.
+//        The transformation should probably be done as a combiner action
+//        instead so we can include a check for masking back in the upper
+//        eight bits of the source into the lower eight bits of the result.
+//def : ARMV6Pat<(and (shl GPR:$Src, (i32 8)), 0xFF00FF),
+//               (UXTB16r_rot GPR:$Src, 24)>;
 def : ARMV6Pat<(and (srl GPR:$Src, (i32 8)), 0xFF00FF),
                (UXTB16r_rot GPR:$Src, 8)>;
 
@@ -1716,24 +1714,26 @@ def : ARMPat<(adde   GPR:$src, so_imm_not:$imm),
 
 // ARM Arithmetic Instruction -- for disassembly only
 // GPR:$dst = GPR:$a op GPR:$b
-class AAI<bits<8> op27_20, bits<4> op7_4, string opc>
+class AAI<bits<8> op27_20, bits<4> op7_4, string opc,
+          list<dag> pattern = [/* For disassembly only; pattern left blank */]>
   : AI<(outs GPR:$dst), (ins GPR:$a, GPR:$b), DPFrm, IIC_iALUr,
-       opc, "\t$dst, $a, $b",
-       [/* For disassembly only; pattern left blank */]> {
+       opc, "\t$dst, $a, $b", pattern> {
   let Inst{27-20} = op27_20;
   let Inst{7-4} = op7_4;
 }
 
 // Saturating add/subtract -- for disassembly only
 
-def QADD    : AAI<0b00010000, 0b0101, "qadd">;
+def QADD    : AAI<0b00010000, 0b0101, "qadd",
+                  [(set GPR:$dst, (int_arm_qadd GPR:$a, GPR:$b))]>;
 def QADD16  : AAI<0b01100010, 0b0001, "qadd16">;
 def QADD8   : AAI<0b01100010, 0b1001, "qadd8">;
 def QASX    : AAI<0b01100010, 0b0011, "qasx">;
 def QDADD   : AAI<0b00010100, 0b0101, "qdadd">;
 def QDSUB   : AAI<0b00010110, 0b0101, "qdsub">;
 def QSAX    : AAI<0b01100010, 0b0101, "qsax">;
-def QSUB    : AAI<0b00010010, 0b0101, "qsub">;
+def QSUB    : AAI<0b00010010, 0b0101, "qsub",
+                  [(set GPR:$dst, (int_arm_qsub GPR:$a, GPR:$b))]>;
 def QSUB16  : AAI<0b01100010, 0b0111, "qsub16">;
 def QSUB8   : AAI<0b01100010, 0b1111, "qsub8">;
 def UQADD16 : AAI<0b01100110, 0b0001, "uqadd16">;
@@ -1835,6 +1835,9 @@ def USAT16 : AI<(outs GPR:$dst), (ins i32imm:$bit_pos, GPR:$a), DPFrm,
   let Inst{7-4} = 0b0011;
 }
 
+def : ARMV6Pat<(int_arm_ssat GPR:$a, imm:$pos), (SSATlsl imm:$pos, GPR:$a, 0)>;
+def : ARMV6Pat<(int_arm_usat GPR:$a, imm:$pos), (USATlsl imm:$pos, GPR:$a, 0)>;
+
 //===----------------------------------------------------------------------===//
 //  Bitwise Instructions.
 //
@@ -1858,11 +1861,11 @@ def BFC    : I<(outs GPR:$dst), (ins GPR:$src, bf_inv_mask_imm:$imm),
 }
 
 // A8.6.18  BFI - Bitfield insert (Encoding A1)
-// Added for disassembler with the pattern field purposely left blank.
-def BFI    : I<(outs GPR:$dst), (ins GPR:$src, bf_inv_mask_imm:$imm),
+def BFI    : I<(outs GPR:$dst), (ins GPR:$src, GPR:$val, bf_inv_mask_imm:$imm),
                AddrMode1, Size4Bytes, IndexModeNone, DPFrm, IIC_iUNAsi,
-               "bfi", "\t$dst, $src, $imm", "",
-               [/* For disassembly only; pattern left blank */]>,
+               "bfi", "\t$dst, $val, $imm", "$src = $dst",
+               [(set GPR:$dst, (ARMbfi GPR:$src, GPR:$val,
+                                bf_inv_mask_imm:$imm))]>,
                Requires<[IsARM, HasV6T2]> {
   let Inst{27-21} = 0b0111110;
   let Inst{6-4}   = 0b001; // Rn: Inst{3-0} != 15

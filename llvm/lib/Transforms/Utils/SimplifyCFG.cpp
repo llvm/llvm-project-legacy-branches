@@ -949,7 +949,7 @@ static bool SpeculativelyExecuteBB(BranchInst *BI, BasicBlock *BB1) {
        UI != E; ++UI) {
     // Ignore any user that is not a PHI node in BB2.  These can only occur in
     // unreachable blocks, because they would not be dominated by the instr.
-    PHINode *PN = dyn_cast<PHINode>(UI);
+    PHINode *PN = dyn_cast<PHINode>(*UI);
     if (!PN || PN->getParent() != BB2)
       return false;
     PHIUses.push_back(PN);
@@ -1395,9 +1395,8 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
   // register pressure or inhibit out-of-order execution.
   Instruction *BonusInst = 0;
   if (&*FrontIt != Cond &&
-      (*FrontIt).hasOneUse() && *(*FrontIt).use_begin() == Cond &&
-      (*FrontIt).isSafeToSpeculativelyExecute() &&
-      !(*FrontIt).mayReadFromMemory()) {
+      FrontIt->hasOneUse() && *FrontIt->use_begin() == Cond &&
+      FrontIt->isSafeToSpeculativelyExecute()) {
     BonusInst = &*FrontIt;
     ++FrontIt;
   }

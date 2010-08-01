@@ -627,12 +627,25 @@ bool ARMBaseRegisterInfo::canRealignStack(const MachineFunction &MF) const {
 bool ARMBaseRegisterInfo::
 needsStackRealignment(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const Function *F = MF.getFunction();
   const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   unsigned StackAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
-  return (RealignStack &&
-          !AFI->isThumb1OnlyFunction() &&
-          (MFI->getMaxAlignment() > StackAlign) &&
-          !MFI->hasVarSizedObjects());
+  bool requiresRealignment = ((MFI->getMaxAlignment() > StackAlign) ||
+                               F->hasFnAttr(Attribute::StackAlignment));
+    
+  // FIXME: Currently we don't support stack realignment for functions with
+  //        variable-sized allocas.
+  // FIXME: It's more complicated than this...
+  if (0 && requiresRealignment && MFI->hasVarSizedObjects())
+    report_fatal_error(
+      "Stack realignment in presense of dynamic allocas is not supported");
+  
+  // FIXME: This probably isn't the right place for this.
+  if (0 && requiresRealignment && AFI->isThumb1OnlyFunction())
+    report_fatal_error(
+      "Stack realignment in thumb1 functions is not supported");
+  
+  return requiresRealignment && canRealignStack(MF);
 }
 
 bool ARMBaseRegisterInfo::
@@ -708,6 +721,19 @@ ARMBaseRegisterInfo::estimateRSStackSizeLimit(MachineFunction &MF) const {
   }
 
   return Limit;
+}
+
+static unsigned GetFunctionSizeInBytes(const MachineFunction &MF,
+                                       const ARMBaseInstrInfo &TII) {
+  unsigned FnSize = 0;
+  for (MachineFunction::const_iterator MBBI = MF.begin(), E = MF.end();
+       MBBI != E; ++MBBI) {
+    const MachineBasicBlock &MBB = *MBBI;
+    for (MachineBasicBlock::const_iterator I = MBB.begin(),E = MBB.end();
+         I != E; ++I)
+      FnSize += TII.GetInstSizeInBytes(I);
+  }
+  return FnSize;
 }
 
 void
@@ -807,7 +833,7 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
 
   bool ForceLRSpill = false;
   if (!LRSpilled && AFI->isThumb1OnlyFunction()) {
-    unsigned FnSize = TII.GetFunctionSizeInBytes(MF);
+    unsigned FnSize = GetFunctionSizeInBytes(MF, TII);
     // Force LR to be spilled if the Thumb function size is > 2048. This enables
     // use of BL to implement far jump. If it turns out that it's not needed
     // then the branch fix up path will undo it.
@@ -1226,7 +1252,7 @@ requiresFrameIndexScavenging(const MachineFunction &MF) const {
 // add/sub sp brackets around call sites. Returns true if the call frame is
 // included as part of the stack frame.
 bool ARMBaseRegisterInfo::
-hasReservedCallFrame(MachineFunction &MF) const {
+hasReservedCallFrame(const MachineFunction &MF) const {
   const MachineFrameInfo *FFI = MF.getFrameInfo();
   unsigned CFSize = FFI->getMaxCallFrameSize();
   // It's not always a good idea to include the call frame as part of the
@@ -1244,7 +1270,7 @@ hasReservedCallFrame(MachineFunction &MF) const {
 // is not sufficient here since we still may reference some objects via SP
 // even when FP is available in Thumb2 mode.
 bool ARMBaseRegisterInfo::
-canSimplifyCallFramePseudos(MachineFunction &MF) const {
+canSimplifyCallFramePseudos(const MachineFunction &MF) const {
   return hasReservedCallFrame(MF) || MF.getFrameInfo()->hasVarSizedObjects();
 }
 

@@ -69,8 +69,8 @@ namespace {
 }
 
 char FunctionAttrs::ID = 0;
-static RegisterPass<FunctionAttrs>
-X("functionattrs", "Deduce function attributes");
+INITIALIZE_PASS(FunctionAttrs, "functionattrs",
+                "Deduce function attributes", false, false);
 
 Pass *llvm::createFunctionAttrsPass() { return new FunctionAttrs(); }
 
@@ -162,8 +162,8 @@ bool FunctionAttrs::AddReadAttrs(const CallGraphSCC &SCC) {
 
       // Some instructions can be ignored even if they read or write memory.
       // Detect these now, skipping to the next instruction if one is found.
-      CallSite CS = CallSite::get(I);
-      if (CS.getInstruction() && CS.getCalledFunction()) {
+      CallSite CS(cast<Value>(I));
+      if (CS && CS.getCalledFunction()) {
         // Ignore calls to functions in the same SCC.
         if (SCCNodes.count(CS.getCalledFunction()))
           continue;

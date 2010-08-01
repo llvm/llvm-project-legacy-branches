@@ -456,8 +456,7 @@ void AliasSetTracker::deleteValue(Value *PtrVal) {
 
   // If this is a call instruction, remove the callsite from the appropriate
   // AliasSet.
-  CallSite CS = CallSite::get(PtrVal);
-  if (CS.getInstruction())
+  if (CallSite CS = PtrVal)
     if (!AA.doesNotAccessMemory(CS))
       if (AliasSet *AS = findAliasSetForCallSite(CS))
         AS->removeCallSite(CS);
@@ -600,5 +599,5 @@ namespace {
 }
 
 char AliasSetPrinter::ID = 0;
-static RegisterPass<AliasSetPrinter>
-X("print-alias-sets", "Alias Set Printer", false, true);
+INITIALIZE_PASS(AliasSetPrinter, "print-alias-sets",
+                "Alias Set Printer", false, true);

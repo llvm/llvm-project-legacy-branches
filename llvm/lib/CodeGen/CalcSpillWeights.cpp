@@ -25,8 +25,8 @@
 using namespace llvm;
 
 char CalculateSpillWeights::ID = 0;
-static RegisterPass<CalculateSpillWeights> X("calcspillweights",
-                                             "Calculate spill weights");
+INITIALIZE_PASS(CalculateSpillWeights, "calcspillweights",
+                "Calculate spill weights", false, false);
 
 void CalculateSpillWeights::getAnalysisUsage(AnalysisUsage &au) const {
   au.addRequired<LiveIntervals>();
@@ -43,7 +43,6 @@ bool CalculateSpillWeights::runOnMachineFunction(MachineFunction &fn) {
 
   LiveIntervals *lis = &getAnalysis<LiveIntervals>();
   MachineLoopInfo *loopInfo = &getAnalysis<MachineLoopInfo>();
-  const TargetInstrInfo *tii = fn.getTarget().getInstrInfo();
   MachineRegisterInfo *mri = &fn.getRegInfo();
 
   SmallSet<unsigned, 4> processed;
@@ -58,7 +57,7 @@ bool CalculateSpillWeights::runOnMachineFunction(MachineFunction &fn) {
     for (MachineBasicBlock::const_iterator mii = mbb->begin(), mie = mbb->end();
          mii != mie; ++mii) {
       const MachineInstr *mi = mii;
-      if (tii->isIdentityCopy(*mi) || mi->isImplicitDef() || mi->isDebugValue())
+      if (mi->isIdentityCopy() || mi->isImplicitDef() || mi->isDebugValue())
         continue;
 
       for (unsigned i = 0, e = mi->getNumOperands(); i != e; ++i) {

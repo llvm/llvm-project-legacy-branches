@@ -111,8 +111,8 @@ namespace {
 }
 
 char JumpThreading::ID = 0;
-static RegisterPass<JumpThreading>
-X("jump-threading", "Jump Threading");
+INITIALIZE_PASS(JumpThreading, "jump-threading",
+                "Jump Threading", false, false);
 
 // Public interface to the Jump Threading pass
 FunctionPass *llvm::createJumpThreadingPass() { return new JumpThreading(); }
@@ -1313,6 +1313,9 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
         << SuccBB->getName() << "' with cost: " << JumpThreadCost
         << ", across block:\n    "
         << *BB << "\n");
+  
+  if (LVI)
+    LVI->threadEdge(PredBB, BB, SuccBB);
   
   // We are going to have to map operands from the original BB block to the new
   // copy of the block 'NewBB'.  If there are PHI nodes in BB, evaluate them to

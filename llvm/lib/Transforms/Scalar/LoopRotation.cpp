@@ -43,15 +43,15 @@ namespace {
 
     // LCSSA form makes instruction renaming easier.
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addPreserved<DominatorTree>();
+      AU.addPreserved<DominanceFrontier>();
+      AU.addRequired<LoopInfo>();
+      AU.addPreserved<LoopInfo>();
       AU.addRequiredID(LoopSimplifyID);
       AU.addPreservedID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
       AU.addPreservedID(LCSSAID);
       AU.addPreserved<ScalarEvolution>();
-      AU.addRequired<LoopInfo>();
-      AU.addPreserved<LoopInfo>();
-      AU.addPreserved<DominatorTree>();
-      AU.addPreserved<DominanceFrontier>();
     }
 
     // Helper functions
@@ -79,7 +79,7 @@ namespace {
 }
   
 char LoopRotate::ID = 0;
-static RegisterPass<LoopRotate> X("loop-rotate", "Rotate Loops");
+INITIALIZE_PASS(LoopRotate, "loop-rotate", "Rotate Loops", false, false);
 
 Pass *llvm::createLoopRotatePass() { return new LoopRotate(); }
 

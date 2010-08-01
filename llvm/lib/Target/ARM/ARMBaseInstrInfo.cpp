@@ -15,9 +15,9 @@
 #include "ARM.h"
 #include "ARMAddressingModes.h"
 #include "ARMConstantPoolValue.h"
-#include "ARMGenInstrInfo.inc"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMRegisterInfo.h"
+#include "ARMGenInstrInfo.inc"
 #include "llvm/Constants.h"
 #include "llvm/Function.h"
 #include "llvm/GlobalValue.h"
@@ -501,7 +501,7 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
       llvm_unreachable("Unknown or unset size field for instr!");
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:
-    case TargetOpcode::DBG_LABEL:
+    case TargetOpcode::PROLOG_LABEL:
     case TargetOpcode::EH_LABEL:
     case TargetOpcode::DBG_VALUE:
       return 0;
@@ -571,48 +571,6 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
   }
   }
   return 0; // Not reached
-}
-
-/// Return true if the instruction is a register to register move and
-/// leave the source and dest operands in the passed parameters.
-///
-bool
-ARMBaseInstrInfo::isMoveInstr(const MachineInstr &MI,
-                              unsigned &SrcReg, unsigned &DstReg,
-                              unsigned& SrcSubIdx, unsigned& DstSubIdx) const {
-  switch (MI.getOpcode()) {
-  default: break;
-  case ARM::VMOVS:
-  case ARM::VMOVD:
-  case ARM::VMOVDneon:
-  case ARM::VMOVQ:
-  case ARM::VMOVQQ : {
-    SrcReg = MI.getOperand(1).getReg();
-    DstReg = MI.getOperand(0).getReg();
-    SrcSubIdx = MI.getOperand(1).getSubReg();
-    DstSubIdx = MI.getOperand(0).getSubReg();
-    return true;
-  }
-  case ARM::MOVr:
-  case ARM::MOVr_TC:
-  case ARM::tMOVr:
-  case ARM::tMOVgpr2tgpr:
-  case ARM::tMOVtgpr2gpr:
-  case ARM::tMOVgpr2gpr:
-  case ARM::t2MOVr: {
-    assert(MI.getDesc().getNumOperands() >= 2 &&
-           MI.getOperand(0).isReg() &&
-           MI.getOperand(1).isReg() &&
-           "Invalid ARM MOV instruction");
-    SrcReg = MI.getOperand(1).getReg();
-    DstReg = MI.getOperand(0).getReg();
-    SrcSubIdx = MI.getOperand(1).getSubReg();
-    DstSubIdx = MI.getOperand(0).getSubReg();
-    return true;
-  }
-  }
-
-  return false;
 }
 
 unsigned
@@ -763,8 +721,9 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                             Align);
 
   // tGPR is used sometimes in ARM instructions that need to avoid using
-  // certain registers.  Just treat it as GPR here.
-  if (RC == ARM::tGPRRegisterClass || RC == ARM::tcGPRRegisterClass)
+  // certain registers.  Just treat it as GPR here. Likewise, rGPR.
+  if (RC == ARM::tGPRRegisterClass || RC == ARM::tcGPRRegisterClass
+      || RC == ARM::rGPRRegisterClass)
     RC = ARM::GPRRegisterClass;
 
   switch (RC->getID()) {
@@ -865,7 +824,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 
   // tGPR is used sometimes in ARM instructions that need to avoid using
   // certain registers.  Just treat it as GPR here.
-  if (RC == ARM::tGPRRegisterClass || RC == ARM::tcGPRRegisterClass)
+  if (RC == ARM::tGPRRegisterClass || RC == ARM::tcGPRRegisterClass
+      || RC == ARM::rGPRRegisterClass)
     RC = ARM::GPRRegisterClass;
 
   switch (RC->getID()) {

@@ -520,12 +520,9 @@ RAFast::defineVirtReg(MachineInstr *MI, unsigned OpNum,
     if ((!Hint || !TargetRegisterInfo::isPhysicalRegister(Hint)) &&
         MRI->hasOneNonDBGUse(VirtReg)) {
       const MachineInstr &UseMI = *MRI->use_nodbg_begin(VirtReg);
-      unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
       // It's a copy, use the destination register as a hint.
       if (UseMI.isCopyLike())
         Hint = UseMI.getOperand(0).getReg();
-      else if (TII->isMoveInstr(UseMI, SrcReg, DstReg, SrcSubReg, DstSubReg))
-        Hint = DstReg;
     }
     allocVirtReg(MI, *LRI, Hint);
   } else if (LR.LastUse) {
@@ -756,31 +753,39 @@ void RAFast::AllocateBasicBlock() {
 
     // Debug values are not allowed to change codegen in any way.
     if (MI->isDebugValue()) {
-      for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
-        MachineOperand &MO = MI->getOperand(i);
-        if (!MO.isReg()) continue;
-        unsigned Reg = MO.getReg();
-        if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
-        LiveRegMap::iterator LRI = LiveVirtRegs.find(Reg);
-        if (LRI != LiveVirtRegs.end())
-          setPhysReg(MI, i, LRI->second.PhysReg);
-        else {
-          int SS = StackSlotForVirtReg[Reg];
-          if (SS == -1)
-            MO.setReg(0); // We can't allocate a physreg for a DebugValue, sorry!
+      bool ScanDbgValue = true;
+      while (ScanDbgValue) {
+        ScanDbgValue = false;
+        for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+          MachineOperand &MO = MI->getOperand(i);
+          if (!MO.isReg()) continue;
+          unsigned Reg = MO.getReg();
+          if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
+          LiveRegMap::iterator LRI = LiveVirtRegs.find(Reg);
+          if (LRI != LiveVirtRegs.end())
+            setPhysReg(MI, i, LRI->second.PhysReg);
           else {
-            // Modify DBG_VALUE now that the value is in a spill slot.
-            uint64_t Offset = MI->getOperand(1).getImm();
-            const MDNode *MDPtr = 
-              MI->getOperand(MI->getNumOperands()-1).getMetadata();
-            DebugLoc DL = MI->getDebugLoc();
-            if (MachineInstr *NewDV = 
-                TII->emitFrameIndexDebugValue(*MF, SS, Offset, MDPtr, DL)) {
-              DEBUG(dbgs() << "Modifying debug info due to spill:" << "\t" << *MI);
-              MachineBasicBlock *MBB = MI->getParent();
-              MBB->insert(MBB->erase(MI), NewDV);
-            } else
+            int SS = StackSlotForVirtReg[Reg];
+            if (SS == -1)
               MO.setReg(0); // We can't allocate a physreg for a DebugValue, sorry!
+            else {
+              // Modify DBG_VALUE now that the value is in a spill slot.
+              uint64_t Offset = MI->getOperand(1).getImm();
+              const MDNode *MDPtr = 
+                MI->getOperand(MI->getNumOperands()-1).getMetadata();
+              DebugLoc DL = MI->getDebugLoc();
+              if (MachineInstr *NewDV = 
+                  TII->emitFrameIndexDebugValue(*MF, SS, Offset, MDPtr, DL)) {
+                DEBUG(dbgs() << "Modifying debug info due to spill:" << "\t" << *MI);
+                MachineBasicBlock *MBB = MI->getParent();
+                MBB->insert(MBB->erase(MI), NewDV);
+                // Scan NewDV operands from the beginning.
+                MI = NewDV;
+                ScanDbgValue = true;
+                break;
+              } else
+                MO.setReg(0); // We can't allocate a physreg for a DebugValue, sorry!
+            }
           }
         }
       }
@@ -789,14 +794,13 @@ void RAFast::AllocateBasicBlock() {
     }
 
     // If this is a copy, we may be able to coalesce.
-    unsigned CopySrc, CopyDst, CopySrcSub, CopyDstSub;
+    unsigned CopySrc = 0, CopyDst = 0, CopySrcSub = 0, CopyDstSub = 0;
     if (MI->isCopy()) {
       CopyDst = MI->getOperand(0).getReg();
       CopySrc = MI->getOperand(1).getReg();
       CopyDstSub = MI->getOperand(0).getSubReg();
       CopySrcSub = MI->getOperand(1).getSubReg();
-    } else if (!TII->isMoveInstr(*MI, CopySrc, CopyDst, CopySrcSub, CopyDstSub))
-      CopySrc = CopyDst = 0;
+    }
 
     // Track registers used by instruction.
     UsedInInstr.reset();
@@ -843,13 +847,18 @@ void RAFast::AllocateBasicBlock() {
     // operands. If there are also physical defs, these registers must avoid
     // both physical defs and uses, making them more constrained than normal
     // operands.
+    // Similarly, if there are multiple defs and tied operands, we must make sure
+    // the same register is allocated to uses and defs.
     // We didn't detect inline asm tied operands above, so just make this extra
     // pass for all inline asm.
     if (MI->isInlineAsm() || hasEarlyClobbers || hasPartialRedefs ||
-        (hasTiedOps && hasPhysDefs)) {
+        (hasTiedOps && (hasPhysDefs || TID.getNumDefs() > 1))) {
       handleThroughOperands(MI, VirtDead);
       // Don't attempt coalescing when we have funny stuff going on.
       CopyDst = 0;
+      // Pretend we have early clobbers so the use operands get marked below.
+      // This is not necessary for the common case of a single tied use.
+      hasEarlyClobbers = true;
     }
 
     // Second scan.
@@ -870,14 +879,17 @@ void RAFast::AllocateBasicBlock() {
 
     MRI->addPhysRegsUsed(UsedInInstr);
 
-    // Track registers defined by instruction - early clobbers at this point.
+    // Track registers defined by instruction - early clobbers and tied uses at
+    // this point.
     UsedInInstr.reset();
     if (hasEarlyClobbers) {
       for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
         MachineOperand &MO = MI->getOperand(i);
-        if (!MO.isReg() || !MO.isDef()) continue;
+        if (!MO.isReg()) continue;
         unsigned Reg = MO.getReg();
         if (!Reg || !TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
+        // Look for physreg defs and tied uses.
+        if (!MO.isDef() && !MI->isRegTiedToDefOperand(i)) continue;
         UsedInInstr.set(Reg);
         for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS)
           UsedInInstr.set(*AS);

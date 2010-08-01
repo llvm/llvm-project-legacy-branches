@@ -82,7 +82,7 @@ namespace {
 }
 
 char DSE::ID = 0;
-static RegisterPass<DSE> X("dse", "Dead Store Elimination");
+INITIALIZE_PASS(DSE, "dse", "Dead Store Elimination", false, false);
 
 FunctionPass *llvm::createDeadStoreEliminationPass() { return new DSE(); }
 
@@ -401,10 +401,9 @@ bool DSE::handleEndBlock(BasicBlock &BB) {
       }
       
       continue;
-    } else if (CallSite::get(BBI).getInstruction() != 0) {
+    } else if (CallSite CS = cast<Value>(BBI)) {
       // If this call does not access memory, it can't
       // be undeadifying any of our pointers.
-      CallSite CS = CallSite::get(BBI);
       if (AA.doesNotAccessMemory(CS))
         continue;
       

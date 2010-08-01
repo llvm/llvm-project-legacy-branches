@@ -46,6 +46,8 @@ static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
                                     bool RelaxAll) {
   Triple TheTriple(TT);
   switch (TheTriple.getOS()) {
+  case Triple::Win32:
+    return createWinCOFFStreamer(Ctx, TAB, *_Emitter, _OS, RelaxAll);
   default:
     return createMachOStreamer(Ctx, TAB, _OS, _Emitter, RelaxAll);
   }
@@ -182,9 +184,6 @@ bool X86TargetMachine::addInstSelector(PassManagerBase &PM,
 
 bool X86TargetMachine::addPreRegAlloc(PassManagerBase &PM,
                                       CodeGenOpt::Level OptLevel) {
-  // Install a pass to insert x87 FP_REG_KILL instructions, as needed.
-  PM.add(createX87FPRegKillInserterPass());
-
   PM.add(createX86MaxStackAlignmentHeuristicPass());
   return false;  // -print-machineinstr shouldn't print after this.
 }

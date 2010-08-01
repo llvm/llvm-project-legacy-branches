@@ -654,6 +654,19 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   switch (Opcode) {
   default:
     llvm_unreachable("ARMCodeEmitter::emitPseudoInstruction");
+  case ARM::BX:
+  case ARM::BMOVPCRX:
+  case ARM::BXr9:
+  case ARM::BMOVPCRXr9: {
+    // First emit mov lr, pc
+    unsigned Binary = 0x01a0e00f;
+    Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+    emitWordLE(Binary);
+
+    // and then emit the branch.
+    emitMiscBranchInstruction(MI);
+    break;
+  }
   case TargetOpcode::INLINEASM: {
     // We allow inline assembler nodes with empty bodies - they can
     // implicitly define registers, which is ok for JIT.
@@ -662,7 +675,7 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
     }
     break;
   }
-  case TargetOpcode::DBG_LABEL:
+  case TargetOpcode::PROLOG_LABEL:
   case TargetOpcode::EH_LABEL:
     MCE.emitLabel(MI.getOperand(0).getMCSymbol());
     break;

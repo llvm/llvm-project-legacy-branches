@@ -127,7 +127,7 @@ namespace {
     BitVector allocatableRegs_;
     LiveIntervals* li_;
     LiveStacks* ls_;
-    const MachineLoopInfo *loopInfo;
+    MachineLoopInfo *loopInfo;
 
     /// handled_ - Intervals are added to the handled_ set in the order of their
     /// start value.  This is uses for backtracking.
@@ -255,9 +255,9 @@ namespace {
                             SmallVector<LiveInterval*, 8> &SpillIntervals);
 
     /// attemptTrivialCoalescing - If a simple interval is defined by a copy,
-    /// try allocate the definition the same register as the source register
-    /// if the register is not defined during live time of the interval. This
-    /// eliminate a copy. This is used to coalesce copies which were not
+    /// try to allocate the definition to the same register as the source,
+    /// if the register is not defined during the life time of the interval.
+    /// This eliminates a copy, and is used to coalesce copies which were not
     /// coalesced away before allocation either due to dest and src being in
     /// different register classes or because the coalescer was overly
     /// conservative.
@@ -358,8 +358,8 @@ namespace {
   char RALinScan::ID = 0;
 }
 
-static RegisterPass<RALinScan>
-X("linearscan-regalloc", "Linear Scan Register Allocator");
+INITIALIZE_PASS(RALinScan, "linearscan-regalloc",
+                "Linear Scan Register Allocator", false, false);
 
 void RALinScan::ComputeRelatedRegClasses() {
   // First pass, add all reg classes to the union, and determine at least one
@@ -419,20 +419,15 @@ unsigned RALinScan::attemptTrivialCoalescing(LiveInterval &cur, unsigned Reg) {
   unsigned CandReg;
   {
     MachineInstr *CopyMI;
-    unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
     if (vni->def != SlotIndex() && vni->isDefAccurate() &&
-        (CopyMI = li_->getInstructionFromIndex(vni->def)) &&
-        (CopyMI->isCopy() ||
-         tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg)))
+        (CopyMI = li_->getInstructionFromIndex(vni->def)) && CopyMI->isCopy())
       // Defined by a copy, try to extend SrcReg forward
-      CandReg = CopyMI->isCopy() ? CopyMI->getOperand(1).getReg() : SrcReg;
+      CandReg = CopyMI->getOperand(1).getReg();
     else if (TrivCoalesceEnds &&
-             (CopyMI =
-              li_->getInstructionFromIndex(range.end.getBaseIndex())) &&
-             tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg) &&
-             cur.reg == SrcReg)
+            (CopyMI = li_->getInstructionFromIndex(range.end.getBaseIndex())) &&
+             CopyMI->isCopy() && cur.reg == CopyMI->getOperand(1).getReg())
       // Only used by a copy, try to extend DstReg backwards
-      CandReg = DstReg;
+      CandReg = CopyMI->getOperand(0).getReg();
     else
       return Reg;
   }
@@ -488,7 +483,7 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
   vrm_ = &getAnalysis<VirtRegMap>();
   if (!rewriter_.get()) rewriter_.reset(createVirtRegRewriter());
   
-  spiller_.reset(createSpiller(mf_, li_, loopInfo, vrm_));
+  spiller_.reset(createSpiller(*this, *mf_, *vrm_));
   
   initIntervalSets();
 
@@ -804,7 +799,7 @@ static void addStackInterval(LiveInterval *cur, LiveStacks *ls_,
 static
 float getConflictWeight(LiveInterval *cur, unsigned Reg, LiveIntervals *li_,
                         MachineRegisterInfo *mri_,
-                        const MachineLoopInfo *loopInfo) {
+                        MachineLoopInfo *loopInfo) {
   float Conflicts = 0;
   for (MachineRegisterInfo::reg_iterator I = mri_->reg_begin(Reg),
          E = mri_->reg_end(); I != E; ++I) {
@@ -978,27 +973,10 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
     if ((vni->def != SlotIndex()) && !vni->isUnused() &&
          vni->isDefAccurate()) {
       MachineInstr *CopyMI = li_->getInstructionFromIndex(vni->def);
-      unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
-      if (CopyMI &&
-          tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg)) {
-        unsigned Reg = 0;
-        if (TargetRegisterInfo::isPhysicalRegister(SrcReg))
-          Reg = SrcReg;
-        else if (vrm_->isAssignedReg(SrcReg))
-          Reg = vrm_->getPhys(SrcReg);
-        if (Reg) {
-          if (SrcSubReg)
-            Reg = tri_->getSubReg(Reg, SrcSubReg);
-          if (DstSubReg)
-            Reg = tri_->getMatchingSuperReg(Reg, DstSubReg, RC);
-          if (Reg && allocatableRegs_[Reg] && RC->contains(Reg))
-            mri_->setRegAllocationHint(cur->reg, 0, Reg);
-        }
-      } else if (CopyMI && CopyMI->isCopy()) {
-        DstReg = CopyMI->getOperand(0).getReg();
-        DstSubReg = CopyMI->getOperand(0).getSubReg();
-        SrcReg = CopyMI->getOperand(1).getReg();
-        SrcSubReg = CopyMI->getOperand(1).getSubReg();
+      if (CopyMI && CopyMI->isCopy()) {
+        unsigned DstSubReg = CopyMI->getOperand(0).getSubReg();
+        unsigned SrcReg = CopyMI->getOperand(1).getReg();
+        unsigned SrcSubReg = CopyMI->getOperand(1).getSubReg();
         unsigned Reg = 0;
         if (TargetRegisterInfo::isPhysicalRegister(SrcReg))
           Reg = SrcReg;

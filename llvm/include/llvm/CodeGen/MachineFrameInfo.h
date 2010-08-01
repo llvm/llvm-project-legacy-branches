@@ -94,13 +94,19 @@ class MachineFrameInfo {
     // default, fixed objects are immutable unless marked otherwise.
     bool isImmutable;
 
-    // isSpillSlot - If true, the stack object is used as spill slot. It
+    // isSpillSlot - If true the stack object is used as spill slot. It
     // cannot alias any other memory objects.
     bool isSpillSlot;
 
-    StackObject(uint64_t Sz, unsigned Al, int64_t SP, bool IM, bool isSS)
+    // MayNeedSP - If true the stack object triggered the creation of the stack
+    // protector. We should allocate this object right after the stack
+    // protector.
+    bool MayNeedSP;
+
+    StackObject(uint64_t Sz, unsigned Al, int64_t SP, bool IM,
+                bool isSS, bool NSP)
       : SPOffset(SP), Size(Sz), Alignment(Al), isImmutable(IM),
-        isSpillSlot(isSS) {}
+        isSpillSlot(isSS), MayNeedSP(NSP) {}
   };
 
   /// Objects - The list of stack objects allocated...
@@ -276,6 +282,14 @@ public:
     MaxAlignment = std::max(MaxAlignment, Align);
   }
 
+  /// NeedsStackProtector - Returns true if the object may need stack
+  /// protectors.
+  bool MayNeedStackProtector(int ObjectIdx) const {
+    assert(unsigned(ObjectIdx+NumFixedObjects) < Objects.size() &&
+           "Invalid Object Idx!");
+    return Objects[ObjectIdx+NumFixedObjects].MayNeedSP;
+  }
+
   /// getObjectOffset - Return the assigned stack offset of the specified object
   /// from the incoming stack pointer.
   ///
@@ -382,25 +396,26 @@ public:
     return Objects[ObjectIdx+NumFixedObjects].Size == ~0ULL;
   }
 
-  /// CreateStackObject - Create a new statically sized stack object,
-  /// returning a nonnegative identifier to represent it.
+  /// CreateStackObject - Create a new statically sized stack object, returning
+  /// a nonnegative identifier to represent it.
   ///
-  int CreateStackObject(uint64_t Size, unsigned Alignment, bool isSS) {
+  int CreateStackObject(uint64_t Size, unsigned Alignment, bool isSS,
+                        bool MayNeedSP = false) {
     assert(Size != 0 && "Cannot allocate zero size stack objects!");
-    Objects.push_back(StackObject(Size, Alignment, 0, false, isSS));
-    int Index = (int)Objects.size()-NumFixedObjects-1;
+    Objects.push_back(StackObject(Size, Alignment, 0, false, isSS, MayNeedSP));
+    int Index = (int)Objects.size() - NumFixedObjects - 1;
     assert(Index >= 0 && "Bad frame index!");
     MaxAlignment = std::max(MaxAlignment, Alignment);
     return Index;
   }
 
-  /// CreateSpillStackObject - Create a new statically sized stack
-  /// object that represents a spill slot, returning a nonnegative
-  /// identifier to represent it.
+  /// CreateSpillStackObject - Create a new statically sized stack object that
+  /// represents a spill slot, returning a nonnegative identifier to represent
+  /// it.
   ///
   int CreateSpillStackObject(uint64_t Size, unsigned Alignment) {
-    CreateStackObject(Size, Alignment, true);
-    int Index = (int)Objects.size()-NumFixedObjects-1;
+    CreateStackObject(Size, Alignment, true, false);
+    int Index = (int)Objects.size() - NumFixedObjects - 1;
     MaxAlignment = std::max(MaxAlignment, Alignment);
     return Index;
   }
@@ -417,9 +432,10 @@ public:
   /// variable sized object is created, whether or not the index returned is
   /// actually used.
   ///
-  int CreateVariableSizedObject() {
+  int CreateVariableSizedObject(unsigned Alignment) {
     HasVarSizedObjects = true;
-    Objects.push_back(StackObject(0, 1, 0, false, false));
+    Objects.push_back(StackObject(0, Alignment, 0, false, false, true));
+    MaxAlignment = std::max(MaxAlignment, Alignment);
     return (int)Objects.size()-NumFixedObjects-1;
   }
 
@@ -431,7 +447,7 @@ public:
 
   /// setCalleeSavedInfo - Used by prolog/epilog inserter to set the function's
   /// callee saved information.
-  void  setCalleeSavedInfo(const std::vector<CalleeSavedInfo> &CSI) {
+  void setCalleeSavedInfo(const std::vector<CalleeSavedInfo> &CSI) {
     CSInfo = CSI;
   }
 
@@ -452,7 +468,7 @@ public:
   BitVector getPristineRegs(const MachineBasicBlock *MBB) const;
 
   /// print - Used by the MachineFunction printer to print information about
-  /// stack objects.  Implemented in MachineFunction.cpp
+  /// stack objects. Implemented in MachineFunction.cpp
   ///
   void print(const MachineFunction &MF, raw_ostream &OS) const;
 

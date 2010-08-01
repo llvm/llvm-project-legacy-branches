@@ -34,8 +34,7 @@ using namespace llvm;
 // Handle the Pass registration stuff necessary to use TargetData's.
 
 // Register the default SparcV9 implementation...
-static RegisterPass<TargetData> X("targetdata", "Target Data Layout", false, 
-                                  true);
+INITIALIZE_PASS(TargetData, "targetdata", "Target Data Layout", false, true);
 char TargetData::ID = 0;
 
 //===----------------------------------------------------------------------===//
@@ -626,7 +625,7 @@ uint64_t TargetData::getIndexedOffset(const Type *ptrTy, Value* const* Indices,
 
       // Get the array index and the size of each array element.
       if (int64_t arrayIdx = cast<ConstantInt>(Indices[CurIDX])->getSExtValue())
-        Result += arrayIdx * (int64_t)getTypeAllocSize(Ty);
+        Result += (uint64_t)arrayIdx * getTypeAllocSize(Ty);
     }
   }
 

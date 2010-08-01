@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCParser/AsmParser.h"
 #include "llvm/Target/TargetAsmBackend.h"
 #include "llvm/Target/TargetAsmParser.h"
 #include "llvm/Target/TargetData.h"
@@ -165,9 +165,9 @@ static int AsLexInput(const char *ProgName) {
   assert(MAI && "Unable to create target asm info!");
 
   AsmLexer Lexer(*MAI);
-  
+  Lexer.setBuffer(SrcMgr.getMemoryBuffer(0));
+
   bool Error = false;
-  
   while (Lexer.Lex().isNot(AsmToken::Eof)) {
     switch (Lexer.getKind()) {
     default:
@@ -287,42 +287,42 @@ static int AssembleInput(const char *ProgName) {
     return 1;
   }
 
-  OwningPtr<MCCodeEmitter> CE;
   OwningPtr<MCStreamer> Str;
-  OwningPtr<TargetAsmBackend> TAB;
 
   if (FileType == OFT_AssemblyFile) {
     MCInstPrinter *IP =
       TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI);
+    MCCodeEmitter *CE = 0;
     if (ShowEncoding)
-      CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
+      CE = TheTarget->createCodeEmitter(*TM, Ctx);
     Str.reset(createAsmStreamer(Ctx, *Out,TM->getTargetData()->isLittleEndian(),
-                                /*asmverbose*/true, IP, CE.get(), ShowInst));
+                                /*asmverbose*/true, IP, CE, ShowInst));
   } else if (FileType == OFT_Null) {
     Str.reset(createNullStreamer(Ctx));
   } else {
     assert(FileType == OFT_ObjectFile && "Invalid file type!");
-    CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
-    TAB.reset(TheTarget->createAsmBackend(TripleName));
+    MCCodeEmitter *CE = TheTarget->createCodeEmitter(*TM, Ctx);
+    TargetAsmBackend *TAB = TheTarget->createAsmBackend(TripleName);
     Str.reset(TheTarget->createObjectStreamer(TripleName, Ctx, *TAB,
-                                              *Out, CE.get(), RelaxAll));
+                                              *Out, CE, RelaxAll));
   }
 
   if (EnableLogging) {
     Str.reset(createLoggingStreamer(Str.take(), errs()));
   }
 
-  AsmParser Parser(*TheTarget, SrcMgr, Ctx, *Str.get(), *MAI);
-  OwningPtr<TargetAsmParser> TAP(TheTarget->createAsmParser(Parser));
+  OwningPtr<MCAsmParser> Parser(createMCAsmParser(*TheTarget, SrcMgr, Ctx,
+                                                   *Str.get(), *MAI));
+  OwningPtr<TargetAsmParser> TAP(TheTarget->createAsmParser(*Parser, *TM));
   if (!TAP) {
     errs() << ProgName 
            << ": error: this target does not support assembly parsing.\n";
     return 1;
   }
 
-  Parser.setTargetParser(*TAP.get());
+  Parser->setTargetParser(*TAP.get());
 
-  int Res = Parser.Run(NoInitialTextSection);
+  int Res = Parser->Run(NoInitialTextSection);
   delete Out;
 
   // Delete output on errors.

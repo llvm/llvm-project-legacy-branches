@@ -139,8 +139,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
       getTarget().createMCInstPrinter(MAI.getAssemblerDialect(), MAI);
 
     // Create a code emitter if asked to show the encoding.
-    //
-    // FIXME: These are currently leaked.
     MCCodeEmitter *MCE = 0;
     if (ShowMCEncoding)
       MCE = getTarget().createCodeEmitter(*this, *Context);
@@ -154,8 +152,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   case CGFT_ObjectFile: {
     // Create the code emitter for the target if it exists.  If not, .o file
     // emission fails.
-    //
-    // FIXME: These are currently leaked.
     MCCodeEmitter *MCE = getTarget().createCodeEmitter(*this, *Context);
     TargetAsmBackend *TAB = getTarget().createAsmBackend(TargetTriple);
     if (MCE == 0 || TAB == 0)
@@ -212,6 +208,24 @@ bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
 
   addCodeEmitter(PM, OptLevel, JCE);
   PM.add(createGCInfoDeleter());
+
+  return false; // success!
+}
+
+/// addPassesToEmitMC - Add passes to the specified pass manager to get
+/// machine code emitted with the MCJIT. This method returns true if machine
+/// code is not supported. It fills the MCContext Ctx pointer which can be
+/// used to build custom MCStreamer.
+///
+bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM,
+                                          MCContext *&Ctx,
+                                          CodeGenOpt::Level OptLevel,
+                                          bool DisableVerify) {
+  // Add common CodeGen passes.
+  if (addCommonCodeGenPasses(PM, OptLevel, DisableVerify, Ctx))
+    return true;
+  // Make sure the code model is set.
+  setCodeModelForJIT();
 
   return false; // success!
 }
@@ -289,6 +303,8 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     PM.add(createCodeGenPreparePass(getTargetLowering()));
 
   PM.add(createStackProtectorPass(getTargetLowering()));
+
+  addPreISel(PM, OptLevel);
 
   if (PrintISelInput)
     PM.add(createPrintFunctionPass("\n\n"

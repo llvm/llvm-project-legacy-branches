@@ -193,6 +193,12 @@ unsigned X86RegisterInfo::getX86RegNum(unsigned RegNo) {
   case X86::DR7:
     return 7;
 
+  // Pseudo index registers are equivalent to a "none"
+  // scaled index (See Intel Manual 2A, table 2-3)
+  case X86::EIZ:
+  case X86::RIZ:
+    return 4;
+
   default:
     assert(isVirtualRegister(RegNo) && "Unknown physical register!");
     llvm_unreachable("Register allocator hasn't allocated reg correctly yet!");
@@ -456,26 +462,25 @@ bool X86RegisterInfo::canRealignStack(const MachineFunction &MF) const {
 bool X86RegisterInfo::needsStackRealignment(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const Function *F = MF.getFunction();
-  bool requiresRealignment =
-    RealignStack && ((MFI->getMaxAlignment() > StackAlign) ||
-                     F->hasFnAttr(Attribute::StackAlignment));
+  bool requiresRealignment = ((MFI->getMaxAlignment() > StackAlign) ||
+                               F->hasFnAttr(Attribute::StackAlignment));
 
   // FIXME: Currently we don't support stack realignment for functions with
   //        variable-sized allocas.
-  // FIXME: Temporary disable the error - it seems to be too conservative.
+  // FIXME: It's more complicated than this...
   if (0 && requiresRealignment && MFI->hasVarSizedObjects())
     report_fatal_error(
       "Stack realignment in presense of dynamic allocas is not supported");
 
-  return (requiresRealignment && !MFI->hasVarSizedObjects());
+  return requiresRealignment && canRealignStack(MF);
 }
 
-bool X86RegisterInfo::hasReservedCallFrame(MachineFunction &MF) const {
+bool X86RegisterInfo::hasReservedCallFrame(const MachineFunction &MF) const {
   return !MF.getFrameInfo()->hasVarSizedObjects();
 }
 
-bool X86RegisterInfo::hasReservedSpillSlot(MachineFunction &MF, unsigned Reg,
-                                           int &FrameIdx) const {
+bool X86RegisterInfo::hasReservedSpillSlot(const MachineFunction &MF,
+                                           unsigned Reg, int &FrameIdx) const {
   if (Reg == FramePtr && hasFP(MF)) {
     FrameIdx = MF.getFrameInfo()->getObjectIndexBegin();
     return true;
@@ -979,7 +984,7 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
     if (needsFrameMoves) {
       // Mark the place where EBP/RBP was saved.
       MCSymbol *FrameLabel = MMI.getContext().CreateTempSymbol();
-      BuildMI(MBB, MBBI, DL, TII.get(X86::DBG_LABEL)).addSym(FrameLabel);
+      BuildMI(MBB, MBBI, DL, TII.get(X86::PROLOG_LABEL)).addSym(FrameLabel);
 
       // Define the current CFA rule to use the provided offset.
       if (StackSize) {
@@ -1007,7 +1012,7 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
     if (needsFrameMoves) {
       // Mark effective beginning of when frame pointer becomes valid.
       MCSymbol *FrameLabel = MMI.getContext().CreateTempSymbol();
-      BuildMI(MBB, MBBI, DL, TII.get(X86::DBG_LABEL)).addSym(FrameLabel);
+      BuildMI(MBB, MBBI, DL, TII.get(X86::PROLOG_LABEL)).addSym(FrameLabel);
 
       // Define the current CFA to use the EBP/RBP register.
       MachineLocation FPDst(FramePtr);
@@ -1047,7 +1052,7 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
     if (!HasFP && needsFrameMoves) {
       // Mark callee-saved push instruction.
       MCSymbol *Label = MMI.getContext().CreateTempSymbol();
-      BuildMI(MBB, MBBI, DL, TII.get(X86::DBG_LABEL)).addSym(Label);
+      BuildMI(MBB, MBBI, DL, TII.get(X86::PROLOG_LABEL)).addSym(Label);
 
       // Define the current CFA rule to use the provided offset.
       unsigned Ptr = StackSize ?
@@ -1119,7 +1124,7 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
   if ((NumBytes || PushedRegs) && needsFrameMoves) {
     // Mark end of stack pointer adjustment.
     MCSymbol *Label = MMI.getContext().CreateTempSymbol();
-    BuildMI(MBB, MBBI, DL, TII.get(X86::DBG_LABEL)).addSym(Label);
+    BuildMI(MBB, MBBI, DL, TII.get(X86::PROLOG_LABEL)).addSym(Label);
 
     if (!HasFP && NumBytes) {
       // Define the current CFA rule to use the provided offset.

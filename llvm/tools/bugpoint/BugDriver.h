@@ -174,18 +174,21 @@ public:
   /// executeProgram - This method runs "Program", capturing the output of the
   /// program to a file.  A recommended filename may be optionally specified.
   ///
-  std::string executeProgram(std::string OutputFilename,
+  std::string executeProgram(const Module *Program,
+                             std::string OutputFilename,
                              std::string Bitcode,
                              const std::string &SharedObjects,
                              AbstractInterpreter *AI,
-                             std::string *Error);
+                             std::string *Error) const;
 
   /// executeProgramSafely - Used to create reference output with the "safe"
   /// backend, if reference output is not provided.  If there is a problem with
   /// the code generator (e.g., llc crashes), this will return false and set
   /// Error.
   ///
-  std::string executeProgramSafely(std::string OutputFile, std::string *Error);
+  std::string executeProgramSafely(const Module *Program,
+                                   std::string OutputFile,
+                                   std::string *Error) const;
 
   /// createReferenceFile - calls compileProgram and then records the output
   /// into ReferenceOutputFile. Returns true if reference file created, false 
@@ -200,15 +203,17 @@ public:
   /// is different, 1 is returned.  If there is a problem with the code
   /// generator (e.g., llc crashes), this will return -1 and set Error.
   ///
-  bool diffProgram(const std::string &BitcodeFile = "",
+  bool diffProgram(const Module *Program,
+                   const std::string &BitcodeFile = "",
                    const std::string &SharedObj = "",
                    bool RemoveBitcode = false,
-                   std::string *Error = 0);
+                   std::string *Error = 0) const;
 
-  /// EmitProgressBitcode - This function is used to output the current Program
-  /// to a file named "bugpoint-ID.bc".
+  /// EmitProgressBitcode - This function is used to output M to a file named
+  /// "bugpoint-ID.bc".
   ///
-  void EmitProgressBitcode(const std::string &ID, bool NoFlyer = false);
+  void EmitProgressBitcode(const Module *M, const std::string &ID,
+                           bool NoFlyer = false);
 
   /// deleteInstructionFromProgram - This method clones the current Program and
   /// deletes the specified instruction from the cloned module.  It then runs a
@@ -274,7 +279,7 @@ public:
   /// writeProgramToFile - This writes the current "Program" to the named
   /// bitcode file.  If an error occurs, true is returned.
   ///
-  bool writeProgramToFile(const std::string &Filename, Module *M = 0) const;
+  bool writeProgramToFile(const std::string &Filename, const Module *M) const;
 
 private:
   /// runPasses - Just like the method above, but this just returns true or

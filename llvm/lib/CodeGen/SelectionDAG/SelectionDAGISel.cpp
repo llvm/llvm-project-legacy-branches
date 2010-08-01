@@ -132,14 +132,16 @@ namespace llvm {
     const TargetLowering &TLI = IS->getTargetLowering();
 
     if (OptLevel == CodeGenOpt::None)
-      return createFastDAGScheduler(IS, OptLevel);
+      return createSourceListDAGScheduler(IS, OptLevel);
     if (TLI.getSchedulingPreference() == Sched::Latency)
       return createTDListDAGScheduler(IS, OptLevel);
     if (TLI.getSchedulingPreference() == Sched::RegPressure)
       return createBURRListDAGScheduler(IS, OptLevel);
-    assert(TLI.getSchedulingPreference() == Sched::Hybrid &&
+    if (TLI.getSchedulingPreference() == Sched::Hybrid)
+      return createHybridListDAGScheduler(IS, OptLevel);
+    assert(TLI.getSchedulingPreference() == Sched::ILP &&
            "Unknown sched type!");
-    return createHybridListDAGScheduler(IS, OptLevel);
+    return createILPListDAGScheduler(IS, OptLevel);
   }
 }
 
@@ -216,7 +218,7 @@ static bool FunctionCallsSetJmp(const Function *F) {
         for (Value::const_use_iterator
                I = Callee->use_begin(), E = Callee->use_end();
              I != E; ++I)
-          if (const CallInst *CI = dyn_cast<CallInst>(I))
+          if (const CallInst *CI = dyn_cast<CallInst>(*I))
             if (CI->getParent()->getParent() == F)
               return true;
     }

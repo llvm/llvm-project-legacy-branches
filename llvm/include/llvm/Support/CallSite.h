@@ -49,13 +49,13 @@ protected:
   PointerIntPair<InstrTy*, 1, bool> I;
 public:
   CallSiteBase() : I(0, false) {}
-  CallSiteBase(CallTy *CI) : I(reinterpret_cast<InstrTy*>(CI), true) {}
-  CallSiteBase(InvokeTy *II) : I(reinterpret_cast<InstrTy*>(II), false) {}
+  CallSiteBase(CallTy *CI) : I(CI, true) { assert(CI); }
+  CallSiteBase(InvokeTy *II) : I(II, false) { assert(II); }
   CallSiteBase(ValTy *II) { *this = get(II); }
   CallSiteBase(InstrTy *II) {
     assert(II && "Null instruction given?");
     *this = get(II);
-    assert(I.getPointer());
+    assert(I.getPointer() && "Not a call?");
   }
 
   /// CallSiteBase::get - This static method is sort of like a constructor.  It
@@ -66,9 +66,9 @@ public:
   static CallSiteBase get(ValTy *V) {
     if (InstrTy *II = dyn_cast<InstrTy>(V)) {
       if (II->getOpcode() == Instruction::Call)
-        return CallSiteBase(reinterpret_cast<CallTy*>(II));
+        return CallSiteBase(static_cast<CallTy*>(II));
       else if (II->getOpcode() == Instruction::Invoke)
-        return CallSiteBase(reinterpret_cast<InvokeTy*>(II));
+        return CallSiteBase(static_cast<InvokeTy*>(II));
     }
     return CallSiteBase();
   }
@@ -116,13 +116,13 @@ public:
 
   ValTy *getArgument(unsigned ArgNo) const {
     assert(arg_begin() + ArgNo < arg_end() && "Argument # out of range!");
-    return *(arg_begin()+ArgNo);
+    return *(arg_begin() + ArgNo);
   }
 
   void setArgument(unsigned ArgNo, Value* newVal) {
     assert(getInstruction() && "Not a call or invoke instruction!");
     assert(arg_begin() + ArgNo < arg_end() && "Argument # out of range!");
-    getInstruction()->setOperand(getArgumentOffset() + ArgNo, newVal);
+    getInstruction()->setOperand(ArgNo, newVal);
   }
 
   /// Given a value use iterator, returns the argument that corresponds to it.
@@ -143,7 +143,7 @@ public:
   IterTy arg_begin() const {
     assert(getInstruction() && "Not a call or invoke instruction!");
     // Skip non-arguments
-    return (*this)->op_begin() + getArgumentOffset();
+    return (*this)->op_begin();
   }
 
   IterTy arg_end() const { return (*this)->op_end() - getArgumentEndOffset(); }
@@ -253,17 +253,9 @@ public:
   }
 
 private:
-  /// Returns the operand number of the first argument
-  unsigned getArgumentOffset() const {
-    if (isCall())
-      return CallInst::ArgOffset; // Skip Function (ATM)
-    else
-      return 0; // Args are at the front
-  }
-
   unsigned getArgumentEndOffset() const {
     if (isCall())
-      return CallInst::ArgOffset ? 0 : 1; // Unchanged (ATM)
+      return 1; // Skip Callee
     else
       // An invoke.
       return 4; // Skip PersFn, BB, BB, Function
@@ -273,9 +265,7 @@ private:
     // FIXME: this is slow, since we do not have the fast versions of the op_*()
     // functions here. See CallSite::getCallee.
     if (isCall())
-      return CallInst::ArgOffset
-             ? getInstruction()->op_begin() // Unchanged
-             : getInstruction()->op_end() - 1; // Skip Function
+      return getInstruction()->op_end() - 1; // Skip Callee
     else
       // An invoke.
       return getInstruction()->op_end() - 4; // Skip PersFn, BB, BB, Function
@@ -299,6 +289,7 @@ class CallSite : public CallSiteBase<Function, Value, User, Instruction,
 public:
   CallSite() {}
   CallSite(Base B) : Base(B) {}
+  CallSite(Value* V) : Base(V) {}
   CallSite(CallInst *CI) : Base(CI) {}
   CallSite(InvokeInst *II) : Base(II) {}
   CallSite(Instruction *II) : Base(II) {}

@@ -203,7 +203,6 @@ ifdef LLVMC_PLUGIN
 
 LIBRARYNAME := $(patsubst %,plugin_llvmc_%,$(LLVMC_PLUGIN))
 CPP.Flags += -DLLVMC_PLUGIN_NAME=$(LLVMC_PLUGIN)
-REQUIRES_EH := 1
 
 ifeq ($(ENABLE_LLVMC_DYNAMIC),1)
   LD.Flags += -lCompilerDriver
@@ -225,8 +224,6 @@ endif # LLVMC_PLUGIN
 ifdef LLVMC_BASED_DRIVER
 
 TOOLNAME = $(LLVMC_BASED_DRIVER)
-
-REQUIRES_EH := 1
 
 ifeq ($(ENABLE_LLVMC_DYNAMIC),1)
   LD.Flags += -lCompilerDriver
@@ -621,8 +618,7 @@ ifndef KEEP_SYMBOLS
 endif
 
 # Adjust linker flags for building an executable
-ifneq ($(HOST_OS),Darwin)
-ifneq ($(DARWIN_MAJVERS),4)
+ifneq ($(HOST_OS), $(filter $(HOST_OS), Darwin Cygwin MingW))
 ifdef TOOLNAME
   LD.Flags += $(RPATH) -Wl,'$$ORIGIN/../lib'
   ifdef EXAMPLE_TOOL
@@ -631,8 +627,12 @@ ifdef TOOLNAME
     LD.Flags += $(RPATH) -Wl,$(ToolDir) $(RDYNAMIC)
   endif
 endif
+else
+ifneq ($(DARWIN_MAJVERS),4)
+  LD.Flags += $(RPATH) -Wl,@executable_path/../lib
 endif
 endif
+
 
 #----------------------------------------------------------
 # Options To Invoke Tools
@@ -1125,12 +1125,12 @@ SharedLibKindMessage := "Shared Library"
 endif
 $(LibName.SO): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths) $(LibDir)/.dir
 	$(Echo) Linking $(BuildMode) $(SharedLibKindMessage) \
-	  $(LIBRARYNAME)$(SHLIBEXT)
+	  $(notdir $@)
 	$(Verb) $(Link) $(SharedLinkOptions) -o $@ $(ObjectsO) \
 	  $(ProjLibsOptions) $(LLVMLibsOptions) $(LIBS)
 else
 $(LibName.SO): $(ObjectsO) $(LibDir)/.dir
-	$(Echo) Linking $(BuildMode) Shared Library $(basename $@)
+	$(Echo) Linking $(BuildMode) Shared Library $(notdir $@)
 	$(Verb) $(Link) $(SharedLinkOptions) -o $@ $(ObjectsO)
 endif
 
@@ -1336,10 +1336,33 @@ endif
 endif
 
 ifeq ($(HOST_OS), $(filter $(HOST_OS), Linux NetBSD FreeBSD))
+ifneq ($(ARCH), Mips)
   LD.Flags += -Wl,--version-script=$(LLVM_SRC_ROOT)/autoconf/ExportMap.map
 endif
 endif
+endif
 
+#---------------------------------------------------------
+# Tool Version Info Support
+#---------------------------------------------------------
+
+ifeq ($(HOST_OS),Darwin)
+ifdef TOOL_INFO_PLIST
+
+LD.Flags += -Wl,-sectcreate,__TEXT,__info_plist,$(ObjDir)/$(TOOL_INFO_PLIST)
+
+$(ToolBuildPath): $(ObjDir)/$(TOOL_INFO_PLIST)
+
+$(ObjDir)/$(TOOL_INFO_PLIST): $(PROJ_SRC_DIR)/$(TOOL_INFO_PLIST).in $(ObjDir)/.dir
+	$(Echo) "Creating $(TOOLNAME) '$(TOOL_INFO_PLIST)' file..."
+	$(Verb)sed -e "s#@TOOL_INFO_UTI@#$(TOOL_INFO_UTI)#g" \
+	           -e "s#@TOOL_INFO_NAME@#$(TOOL_INFO_NAME)#g" \
+	           -e "s#@TOOL_INFO_VERSION@#$(TOOL_INFO_VERSION)#g" \
+	         -e "s#@TOOL_INFO_BUILD_VERSION@#$(TOOL_INFO_BUILD_VERSION)#g" \
+	           $< > $@
+
+endif
+endif
 
 #---------------------------------------------------------
 # Provide targets for building the tools

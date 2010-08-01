@@ -28,8 +28,8 @@ using namespace llvm;
 using namespace llvm::dwarf;
 
 // Handle the Pass registration stuff necessary to use TargetData's.
-static RegisterPass<MachineModuleInfo>
-X("machinemoduleinfo", "Machine Module Information");
+INITIALIZE_PASS(MachineModuleInfo, "machinemoduleinfo",
+                "Machine Module Information", false, false);
 char MachineModuleInfo::ID = 0;
 
 // Out of line virtual method.
@@ -578,11 +578,4 @@ namespace {
        return false;
     }
   };
-}
-
-MachineModuleInfo::VariableDbgInfoMapTy &
-MachineModuleInfo::getVariableDbgInfo() {
-  std::stable_sort(VariableDbgInfo.begin(), VariableDbgInfo.end(),
-                   VariableDebugSorter());
-  return VariableDbgInfo;
 }

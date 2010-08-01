@@ -82,8 +82,8 @@ namespace {
 }
 
 char CodeGenPrepare::ID = 0;
-static RegisterPass<CodeGenPrepare> X("codegenprepare",
-                                      "Optimize for code generation");
+INITIALIZE_PASS(CodeGenPrepare, "codegenprepare",
+                "Optimize for code generation", false, false);
 
 FunctionPass *llvm::createCodeGenPreparePass(const TargetLowering *TLI) {
   return new CodeGenPrepare(TLI);
@@ -548,9 +548,9 @@ protected:
     CI->eraseFromParent();
   }
   bool isFoldable(unsigned SizeCIOp, unsigned, bool) const {
-      if (ConstantInt *SizeCI = dyn_cast<ConstantInt>(CI->getArgOperand(SizeCIOp
-                                                        - CallInst::ArgOffset)))
-      return SizeCI->isAllOnesValue();
+      if (ConstantInt *SizeCI =
+                             dyn_cast<ConstantInt>(CI->getArgOperand(SizeCIOp)))
+        return SizeCI->isAllOnesValue();
     return false;
   }
 };

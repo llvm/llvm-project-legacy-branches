@@ -14,10 +14,12 @@
 
 #define DEBUG_TYPE "spiller"
 #include "Spiller.h"
+#include "SplitKit.h"
 #include "VirtRegMap.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -30,12 +32,15 @@ namespace {
 class InlineSpiller : public Spiller {
   MachineFunction &mf_;
   LiveIntervals &lis_;
+  MachineLoopInfo &loops_;
   VirtRegMap &vrm_;
   MachineFrameInfo &mfi_;
   MachineRegisterInfo &mri_;
   const TargetInstrInfo &tii_;
   const TargetRegisterInfo &tri_;
   const BitVector reserved_;
+
+  SplitAnalysis splitAnalysis_;
 
   // Variables that are valid during spill(), but used by multiple methods.
   LiveInterval *li_;
@@ -53,13 +58,19 @@ class InlineSpiller : public Spiller {
   ~InlineSpiller() {}
 
 public:
-  InlineSpiller(MachineFunction *mf, LiveIntervals *lis, VirtRegMap *vrm)
-    : mf_(*mf), lis_(*lis), vrm_(*vrm),
-      mfi_(*mf->getFrameInfo()),
-      mri_(mf->getRegInfo()),
-      tii_(*mf->getTarget().getInstrInfo()),
-      tri_(*mf->getTarget().getRegisterInfo()),
-      reserved_(tri_.getReservedRegs(mf_)) {}
+  InlineSpiller(MachineFunctionPass &pass,
+                MachineFunction &mf,
+                VirtRegMap &vrm)
+    : mf_(mf),
+      lis_(pass.getAnalysis<LiveIntervals>()),
+      loops_(pass.getAnalysis<MachineLoopInfo>()),
+      vrm_(vrm),
+      mfi_(*mf.getFrameInfo()),
+      mri_(mf.getRegInfo()),
+      tii_(*mf.getTarget().getInstrInfo()),
+      tri_(*mf.getTarget().getRegisterInfo()),
+      reserved_(tri_.getReservedRegs(mf_)),
+      splitAnalysis_(mf, lis_, loops_) {}
 
   void spill(LiveInterval *li,
              std::vector<LiveInterval*> &newIntervals,
@@ -67,6 +78,8 @@ public:
              SlotIndex *earliestIndex);
 
 private:
+  bool split();
+
   bool allUsesAvailableAt(const MachineInstr *OrigMI, SlotIndex OrigIdx,
                           SlotIndex UseIdx);
   bool reMaterializeFor(MachineBasicBlock::iterator MI);
@@ -80,12 +93,27 @@ private:
 }
 
 namespace llvm {
-Spiller *createInlineSpiller(MachineFunction *mf,
-                             LiveIntervals *lis,
-                             const MachineLoopInfo *mli,
-                             VirtRegMap *vrm) {
-  return new InlineSpiller(mf, lis, vrm);
+Spiller *createInlineSpiller(MachineFunctionPass &pass,
+                             MachineFunction &mf,
+                             VirtRegMap &vrm) {
+  return new InlineSpiller(pass, mf, vrm);
 }
+}
+
+/// split - try splitting the current interval into pieces that may allocate
+/// separately. Return true if successful.
+bool InlineSpiller::split() {
+  // FIXME: Add intra-MBB splitting.
+  if (lis_.intervalIsInOneMBB(*li_))
+    return false;
+
+  splitAnalysis_.analyze(li_);
+
+  if (const MachineLoop *loop = splitAnalysis_.getBestSplitLoop()) {
+    SplitEditor(splitAnalysis_, lis_, vrm_).splitAroundLoop(loop);
+    return true;
+  }
+  return false;
 }
 
 /// allUsesAvailableAt - Return true if all registers used by OrigMI at
@@ -334,6 +362,9 @@ void InlineSpiller::spill(LiveInterval *li,
   newIntervals_ = &newIntervals;
   rc_ = mri_.getRegClass(li->reg);
   spillIs_ = &spillIs;
+
+  if (split())
+    return;
 
   reMaterializeAll();
 
