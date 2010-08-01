@@ -58,6 +58,7 @@ class Module;
 class PointerType;
 class StructType;
   
+//===----------------------------------------------------------------------===//
 /// MachineModuleInfoImpl - This class can be derived from and used by targets
 /// to hold private target-specific information for each Module.  Objects of
 /// type are accessed/created with MMI::getInfo and destroyed when the
@@ -70,8 +71,6 @@ public:
 protected:
   static SymbolListTy GetSortedStubs(const DenseMap<MCSymbol*, StubValueTy>&);
 };
-  
-  
 
 //===----------------------------------------------------------------------===//
 /// LandingPadInfo - This structure is used to retain landing pad info for
@@ -152,7 +151,12 @@ class MachineModuleInfo : public ImmutablePass {
   
   bool CallsEHReturn;
   bool CallsUnwindInit;
- 
+
+  /// FilterMap - Map of filter IDs for a function.
+  typedef SmallPtrSet<const Value*, 2> FilterListTy;
+  typedef DenseMap<const MachineFunction*, FilterListTy> FilterMapTy;
+  FilterMapTy FilterMap;
+
   /// DbgInfoAvailable - True if debugging information is available
   /// in this module.
   bool DbgInfoAvailable;
@@ -237,10 +241,12 @@ public:
   
   //===- EH ---------------------------------------------------------------===//
 
+private:
   /// getOrCreateLandingPadInfo - Find or create an LandingPadInfo for the
   /// specified MachineBasicBlock.
   LandingPadInfo &getOrCreateLandingPadInfo(MachineBasicBlock *LandingPad);
 
+public:
   /// addInvoke - Provide the begin and end labels of an invoke style call and
   /// associate it with a try landing pad block.
   void addInvoke(MachineBasicBlock *LandingPad,
@@ -260,7 +266,7 @@ public:
   unsigned getPersonalityIndex() const;
 
   /// getPersonalities - Return array of personality functions ever seen.
-  const std::vector<const Function *>& getPersonalities() const {
+  const std::vector<const Function*> &getPersonalities() const {
     return Personalities;
   }
 
@@ -276,10 +282,11 @@ public:
   void addCatchTypeInfo(MachineBasicBlock *LandingPad,
                         std::vector<const GlobalVariable *> &TyInfo);
 
-  /// addFilterTypeInfo - Provide the filter typeinfo for a landing pad.
+  /// addFilterTypeInfo - Provide the filter typeinfo for a machine function.
   ///
-  void addFilterTypeInfo(MachineBasicBlock *LandingPad,
-                         std::vector<const GlobalVariable *> &TyInfo);
+  void addFilterTypeInfo(const MachineFunction *MF, const Value *V) {
+    FilterMap[MF].insert(V);
+  }
 
   /// addCleanup - Add a cleanup action for a landing pad.
   ///

@@ -46,7 +46,7 @@ DwarfException::~DwarfException() {}
 
 /// EmitCIE - Emit a Common Information Entry (CIE). This holds information that
 /// is shared among many Frame Description Entries.  There is at least one CIE
-/// in every non-empty .debug_frame section.
+/// in every non-empty `.debug_frame' section.
 void DwarfException::EmitCIE(const Function *PersonalityFn, unsigned Index) {
   // Size and sign of stack growth.
   int stackGrowth = Asm->getTargetData().getPointerSize();
@@ -116,6 +116,7 @@ void DwarfException::EmitCIE(const Function *PersonalityFn, unsigned Index) {
   }
 
   if (APtr != Augmentation + 1)
+    // A uleb128 is present to size the augmentation section.
     Augmentation[0] = 'z';
 
   Asm->OutStreamer.AddComment("CIE Augmentation");
@@ -150,8 +151,8 @@ void DwarfException::EmitCIE(const Function *PersonalityFn, unsigned Index) {
   Asm->EmitFrameMoves(Moves, 0, true);
 
   // On Darwin the linker honors the alignment of eh_frame, which means it must
-  // be 8-byte on 64-bit targets to match what gcc does.  Otherwise you get
-  // holes which confuse readers of eh_frame.
+  // be 8-byte on 64-bit targets to match what gcc does. Otherwise you get holes
+  // which confuse readers of eh_frame.
   Asm->EmitAlignment(Asm->getTargetData().getPointerSize() == 4 ? 2 : 3);
   Asm->OutStreamer.EmitLabel(Asm->GetTempSymbol("eh_frame_common_end", Index));
 }
@@ -888,18 +889,16 @@ void DwarfException::EmitExceptionTable() {
 /// EndModule - Emit all exception information that should come after the
 /// content.
 void DwarfException::EndModule() {
-  if (Asm->MAI->getExceptionHandlingType() != ExceptionHandling::Dwarf)
+  if (Asm->MAI->getExceptionHandlingType() != ExceptionHandling::Dwarf ||
+      (!shouldEmitMovesModule && !shouldEmitTableModule))
     return;
 
-  if (!shouldEmitMovesModule && !shouldEmitTableModule)
-    return;
-
-  const std::vector<const Function *> Personalities = MMI->getPersonalities();
+  const std::vector<const Function*> &Personalities = MMI->getPersonalities();
 
   for (unsigned I = 0, E = Personalities.size(); I < E; ++I)
     EmitCIE(Personalities[I], I);
 
-  for (std::vector<FunctionEHFrameInfo>::iterator
+  for (std::vector<FunctionEHFrameInfo>::const_iterator
          I = EHFrames.begin(), E = EHFrames.end(); I != E; ++I)
     EmitFDE(*I);
 }

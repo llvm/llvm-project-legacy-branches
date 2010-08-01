@@ -330,18 +330,7 @@ void MachineFunction::print(raw_ostream &OS) const {
     OS << '\n';
   }
 
-  if (!filter_empty()) {
-    OS << "Function Filter IDs: ";
-
-    for (filter_iterator I = filter_begin(), E = filter_end(); I != E; ++I) {
-      OS << (*I)->getName();
-
-      if (llvm::next(I) != E)
-        OS << ", ";
-    }
-
-    OS << '\n';
-  }
+  /// EH-FIXME: Emit filter IDs for the function.
   
   for (const_iterator BB = begin(), E = end(); BB != E; ++BB) {
     OS << '\n';

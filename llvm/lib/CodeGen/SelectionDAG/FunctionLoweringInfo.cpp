@@ -288,13 +288,6 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
       if (!FilterLength) {
         // Cleanup.
         MMI->addCleanup(MBB);
-      } else {
-        // Filter.
-        TyInfo.reserve(FilterLength - 1);
-        for (unsigned j = i + 1; j < FirstCatch; ++j)
-          TyInfo.push_back(ExtractTypeInfo(I.getArgOperand(j)));
-        MMI->addFilterTypeInfo(MBB, TyInfo);
-        TyInfo.clear();
       }
 
       N = i;

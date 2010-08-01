@@ -515,8 +515,11 @@ bool FastISel::SelectCall(const User *I) {
   case Intrinsic::eh_filter: {
     // Add the filter IDs to the machine function.
     const IntrinsicInst *II = cast<IntrinsicInst>(I);
+    MachineModuleInfo &MMI = FuncInfo.MF->getMMI();
     for (unsigned i = 0, e = II->getNumArgOperands(); i != e; ++i)
-      FuncInfo.MF->addFilterID(II->getArgOperand(i)->stripPointerCasts());
+      MMI.addFilterTypeInfo(FuncInfo.MF,
+                            II->getArgOperand(i)->stripPointerCasts());
+
 
     return true;
   }

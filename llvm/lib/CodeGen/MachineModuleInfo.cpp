@@ -371,8 +371,8 @@ takeDeletedSymbolsForFunction(const Function *F,
 
 /// getOrCreateLandingPadInfo - Find or create an LandingPadInfo for the
 /// specified MachineBasicBlock.
-LandingPadInfo &MachineModuleInfo::getOrCreateLandingPadInfo
-    (MachineBasicBlock *LandingPad) {
+LandingPadInfo &MachineModuleInfo::
+getOrCreateLandingPadInfo(MachineBasicBlock *LandingPad) {
   unsigned N = LandingPads.size();
   for (unsigned i = 0; i < N; ++i) {
     LandingPadInfo &LP = LandingPads[i];
@@ -428,17 +428,6 @@ void MachineModuleInfo::addCatchTypeInfo(MachineBasicBlock *LandingPad,
   LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
   for (unsigned N = TyInfo.size(); N; --N)
     LP.TypeIds.push_back(getTypeIDFor(TyInfo[N - 1]));
-}
-
-/// addFilterTypeInfo - Provide the filter typeinfo for a landing pad.
-///
-void MachineModuleInfo::addFilterTypeInfo(MachineBasicBlock *LandingPad,
-                                  std::vector<const GlobalVariable *> &TyInfo) {
-  LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
-  std::vector<unsigned> IdsInFilter(TyInfo.size());
-  for (unsigned I = 0, E = TyInfo.size(); I != E; ++I)
-    IdsInFilter[I] = getTypeIDFor(TyInfo[I]);
-  LP.TypeIds.push_back(getFilterIDFor(IdsInFilter));
 }
 
 /// addCleanup - Add a cleanup action for a landing pad.

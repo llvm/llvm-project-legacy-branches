@@ -91,10 +91,6 @@ class MachineFunction {
   // Keep track of jump tables for switch instructions
   MachineJumpTableInfo *JumpTableInfo;
 
-  // Keep track of any exception handling filter IDs.
-  // EH-FIXME: This is pretty gross. Can we put this information somewhere else?
-  std::vector<const Value*> EHFilters;
-
   // Function-level unique numbering for MachineBasicBlocks.  When a
   // MachineBasicBlock is inserted into a MachineFunction is it automatically
   // numbered and this vector keeps track of the mapping from ID's to MBB's.
@@ -243,20 +239,6 @@ public:
   /// specific MachineBasicBlock is specified, only that block and those after
   /// it are renumbered.
   void RenumberBlocks(MachineBasicBlock *MBBFrom = 0);
-
-  /// addFilterID - Add the given filter ID to the list of types that the
-  /// function can throw.
-  void addFilterID(const Value *V) {
-    EHFilters.push_back(V);
-  }
-
-  // Accessors for the exception handling filters.
-  typedef std::vector<const Value*>::const_iterator filter_iterator;
-
-  filter_iterator filter_begin() const { return EHFilters.begin(); }
-  filter_iterator   filter_end() const { return EHFilters.end(); }
-
-  bool            filter_empty() const { return EHFilters.empty(); }
 
   /// print - Print out the MachineFunction in a format suitable for debugging
   /// to the specified stream.

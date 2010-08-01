@@ -4124,8 +4124,9 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   case Intrinsic::eh_filter: {
     // Add the filter IDs to the machine function.
     MachineFunction &MF = DAG.getMachineFunction();
+    MachineModuleInfo &MMI = MF.getMMI();
     for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i)
-      MF.addFilterID(I.getArgOperand(i)->stripPointerCasts());
+      MMI.addFilterTypeInfo(&MF, I.getArgOperand(i)->stripPointerCasts());
 
     return 0;
   }
