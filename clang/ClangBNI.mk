@@ -26,9 +26,11 @@
 
 # This makefile currently supports the following build targets:
 #
-#   install-clang    - Build the Clang compiler.
-#   install-cross    - Build the Clang compiler, for ARM.
-#   install-libclang - Build the libclang dylib.
+#   install-clang	 - Build the Clang compiler.
+#   install-cross	 - Build the Clang compiler, for ARM.
+#   install-libclang	 - Build the libclang dylib.
+#   install-clang-links	 - Install links from a platforms subdirectory to the
+#                          root clang.
 #
 # The default build target is 'install-clang'.
 #
@@ -79,6 +81,11 @@ Extra_Make_Variables += CLANG_NO_RUNTIME=1
 LLVM_Install_Target := install-clang-c
 # Never bootstrap.
 Clang_Enable_Bootstrap := 0
+
+else ifeq ($(MAKECMDGOALS),install-clang-links)
+
+# Dummy project which only installs compiler links from the INSTALL_LOCATION to
+# the primary SDK compiler.
 
 else
 
@@ -441,6 +448,13 @@ install-clang-opensourcelicense: install-clang_final
 	$(MKDIR) $(OSL)
 	$(INSTALL_FILE) $(Sources)/LICENSE.TXT $(OSL)/clang-llvm.txt
 	$(INSTALL_FILE) $(Sources)/tools/clang/LICENSE.TXT $(OSL)/clang.txt
+
+install-clang-links:
+	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/bin
+	ln -sf ../../../../../usr/bin/clang $(DSTROOT)/$(Install_Prefix)/bin/clang
+ifeq ($(Clang_Enable_CXX), 1)
+	ln -sf ../../../../../usr/bin/clang++ $(DSTROOT)/$(Install_Prefix)/bin/clang++
+fi
 
 ##
 # Cross Compilation Build Support
