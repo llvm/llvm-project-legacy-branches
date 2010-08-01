@@ -15,6 +15,12 @@ endif
 VCBUILD := $(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild
 JOBS := $(NUMBER_OF_PROCESSORS)
 
+ifeq ($(ENABLE_TESTS),1)
+BUILD_TARGET := test
+else
+BUILD_TARGET := build
+endif
+
 ##
 
 SVN_BASE = $(shell svn info | sed -n "s/^URL: //; s,/llvm-project/.*$$,/llvm-project,p")
@@ -47,7 +53,8 @@ help:
 	@echo "  configure: configure using CMake (inside OBJROOT)"
 	@echo "  build    : build using vcbuild.exe (inside OBJROOT)"
 	@echo "  test     : run the clang regression tests"
-	@echo "  install  : configure, build, test and install"
+	@echo "  install  : configure, build, and install (set ENABLE_TESTS=1"
+	@echo "             to also run tests)"
 	@echo ""
 	@echo "  update-sources: update LLVM and Clang sources"
 
@@ -72,7 +79,7 @@ build: configure
 test: build
 	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\tools\clang\test\clang-test.vcproj "$(TARGET)"
 
-install: test
+install: $(BUILD_TARGET)
 	"$(CMAKE)" -E make_directory "$(BINDEST)"
 	xcopy /i/y "$(STAGEROOT)\bin\clang.exe" "$(BINDEST)"
 
