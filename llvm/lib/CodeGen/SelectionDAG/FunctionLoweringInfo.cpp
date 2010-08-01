@@ -121,11 +121,12 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
            (TySize > 8 && isa<ArrayType>(Ty) &&
             cast<ArrayType>(Ty)->getElementType()->isIntegerTy(8)));
         StaticAllocaMap[AI] =
-          MF->getFrameInfo()->CreateStackObject(TySize, Align, false, MayNeedSP);
+          MF->getFrameInfo()->CreateStackObject(TySize, Align, false,MayNeedSP);
       }
 
   for (; BB != EB; ++BB)
-    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    for (BasicBlock::const_iterator
+           I = BB->begin(), E = BB->end(); I != E; ++I) {
       // Mark values used outside their block as exported, by allocating
       // a virtual register for them.
       if (isUsedOutsideOfDefiningBlock(I))
@@ -188,41 +189,52 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
 
       SmallVector<EVT, 4> ValueVTs;
       ComputeValueVTs(TLI, PN->getType(), ValueVTs);
+
       for (unsigned vti = 0, vte = ValueVTs.size(); vti != vte; ++vti) {
         EVT VT = ValueVTs[vti];
         unsigned NumRegisters = TLI.getNumRegisters(Fn->getContext(), VT);
         const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
+
         for (unsigned i = 0; i != NumRegisters; ++i)
           BuildMI(MBB, DL, TII->get(TargetOpcode::PHI), PHIReg + i);
+
         PHIReg += NumRegisters;
       }
     }
-  }
 
-  // Mark landing pad blocks.
-  for (BB = Fn->begin(); BB != EB; ++BB)
-    if (const InvokeInst *Invoke = dyn_cast<InvokeInst>(BB->getTerminator()))
+    if (const InvokeInst *Invoke = dyn_cast<InvokeInst>(BB->getTerminator())) {
+      MachineModuleInfo &MMI = MF->getMMI();
+
+      // Add personality function.
+      MMI.addPersonality(Invoke->getPersonalityFn()->stripPointerCasts());
+
+      // Mark landing pad blocks.
       for (unsigned I = 1, E = Invoke->getNumSuccessors(); I < E; ++I)
         MBBMap[Invoke->getSuccessor(I)]->setIsLandingPad();
+    }
+  }
 }
 
 /// clear - Clear out all the function-specific state. This returns this
 /// FunctionLoweringInfo to an empty state, ready to be used for a
 /// different function.
 void FunctionLoweringInfo::clear() {
+#if 0 ///EH-FIXME: Still valid?
   assert(CatchInfoFound.size() == CatchInfoLost.size() &&
          "Not all catch info was assigned to a landing pad!");
 
-  MBBMap.clear();
-  ValueMap.clear();
-  StaticAllocaMap.clear();
 #ifndef NDEBUG
-  CatchInfoLost.clear();
   CatchInfoFound.clear();
+  CatchInfoLost.clear();
 #endif
-  LiveOutRegInfo.clear();
+#endif
+
   ArgDbgValues.clear();
+  LiveOutRegInfo.clear();
+  MBBMap.clear();
   RegFixups.clear();
+  StaticAllocaMap.clear();
+  ValueMap.clear();
 }
 
 /// CreateReg - Allocate a single virtual register for the given type.
@@ -230,13 +242,12 @@ unsigned FunctionLoweringInfo::CreateReg(EVT VT) {
   return RegInfo->createVirtualRegister(TLI.getRegClassFor(VT));
 }
 
-/// CreateRegs - Allocate the appropriate number of virtual registers of
-/// the correctly promoted or expanded types.  Assign these registers
-/// consecutive vreg numbers and return the first assigned number.
+/// CreateRegs - Allocate the appropriate number of virtual registers of the
+/// correctly promoted or expanded types. Assign these registers consecutive
+/// vreg numbers and return the first assigned number.
 ///
 /// In the case that the given value has struct or array type, this function
 /// will assign registers for each member or element.
-///
 unsigned FunctionLoweringInfo::CreateRegs(const Type *Ty) {
   SmallVector<EVT, 4> ValueVTs;
   ComputeValueVTs(TLI, Ty, ValueVTs);
@@ -252,9 +263,11 @@ unsigned FunctionLoweringInfo::CreateRegs(const Type *Ty) {
       if (!FirstReg) FirstReg = R;
     }
   }
+
   return FirstReg;
 }
 
+#if 0///EH-FIXME:
 /// AddCatchInfo - Extract the personality and type infos from an eh.selector
 /// call, and add them to the specified machine basic block.
 void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
@@ -264,7 +277,7 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
   assert(CE->getOpcode() == Instruction::BitCast &&
          isa<Function>(CE->getOperand(0)) &&
          "Personality should be a function");
-  MMI->addPersonality(MBB, cast<Function>(CE->getOperand(0)));
+  MMI->addPersonality(MBB->getParent(), cast<Function>(CE->getOperand(0)));
 
   // Gather all the type infos for this landing pad and pass them along to
   // MachineModuleInfo.
@@ -315,3 +328,4 @@ void llvm::CopyCatchInfo(const BasicBlock *SrcBB, const BasicBlock *DestBB,
 #endif
     }
 }
+#endif

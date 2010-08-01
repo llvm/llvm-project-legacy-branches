@@ -306,10 +306,10 @@ void MachineModuleInfo::EndFunction() {
   TypeInfos.clear();
   FilterIds.clear();
   FilterEnds.clear();
-  FilterMap.clear();
-  CallsEHReturn = 0;
-  CallsUnwindInit = 0;
+  CallsEHReturn = false;
+  CallsUnwindInit = false;
   VariableDbgInfo.clear();
+  LandingPadInformation.clear();
 }
 
 /// AnalyzeModule - Scan the module for global debug information.
@@ -370,7 +370,7 @@ takeDeletedSymbolsForFunction(const Function *F,
 
 //===- EH -----------------------------------------------------------------===//
 
-/// getOrCreateLandingPadInfo - Find or create an LandingPadInfo for the
+/// getOrCreateLandingPadInfo - Find or create a LandingPadInfo for the
 /// specified MachineBasicBlock.
 LandingPadInfo &MachineModuleInfo::
 getOrCreateLandingPadInfo(MachineBasicBlock *LandingPad) {
@@ -395,7 +395,6 @@ void MachineModuleInfo::addInvoke(MachineBasicBlock *LandingPad,
 }
 
 /// addLandingPad - Provide the label of a try LandingPad block.
-///
 MCSymbol *MachineModuleInfo::addLandingPad(MachineBasicBlock *LandingPad) {
   MCSymbol *LandingPadLabel = Context.CreateTempSymbol();
   LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
@@ -403,27 +402,7 @@ MCSymbol *MachineModuleInfo::addLandingPad(MachineBasicBlock *LandingPad) {
   return LandingPadLabel;
 }
 
-/// addPersonality - Provide the personality function for the exception
-/// information.
-void MachineModuleInfo::addPersonality(MachineBasicBlock *LandingPad,
-                                       const Function *Personality) {
-  LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
-  LP.Personality = Personality;
-
-  for (unsigned i = 0; i < Personalities.size(); ++i)
-    if (Personalities[i] == Personality)
-      return;
-
-  // If this is the first personality we're adding go
-  // ahead and add it at the beginning.
-  if (Personalities[0] == NULL)
-    Personalities[0] = Personality;
-  else
-    Personalities.push_back(Personality);
-}
-
 /// addCatchTypeInfo - Provide the catch typeinfo for a landing pad.
-///
 void MachineModuleInfo::addCatchTypeInfo(MachineBasicBlock *LandingPad,
                                   std::vector<const GlobalVariable *> &TyInfo) {
   LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
@@ -432,7 +411,6 @@ void MachineModuleInfo::addCatchTypeInfo(MachineBasicBlock *LandingPad,
 }
 
 /// addCleanup - Add a cleanup action for a landing pad.
-///
 void MachineModuleInfo::addCleanup(MachineBasicBlock *LandingPad) {
   LandingPadInfo &LP = getOrCreateLandingPadInfo(LandingPad);
   LP.TypeIds.push_back(0);
@@ -522,13 +500,6 @@ try_next:;
   FilterEnds.push_back(FilterIds.size());
   FilterIds.push_back(0); // terminator
   return FilterID;
-}
-
-/// getPersonality - Return the personality function for the current function.
-const Function *MachineModuleInfo::getPersonality() const {
-  // FIXME: Until PR1414 will be fixed, we're using 1 personality function per
-  // function
-  return !LandingPads.empty() ? LandingPads[0].Personality : NULL;
 }
 
 /// getPersonalityIndex - Return unique index for current personality

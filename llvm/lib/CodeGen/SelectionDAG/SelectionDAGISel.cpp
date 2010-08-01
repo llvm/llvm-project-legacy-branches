@@ -667,6 +667,7 @@ void SelectionDAGISel::PrepareEHLandingPad() {
   Reg = TLI.getExceptionSelectorRegister();
   if (Reg) FuncInfo->MBB->addLiveIn(Reg);
 
+#if 0 ///EH-FIXME:
   // FIXME: Hack around an exception handling flaw (PR1508): the personality
   // function and list of typeids logically belong to the invoke (or, if you
   // like, the basic block containing the invoke), and need to be associated
@@ -691,6 +692,7 @@ void SelectionDAGISel::PrepareEHLandingPad() {
       // No catch info found - try to extract some from the successor.
       CopyCatchInfo(Br->getSuccessor(0), LLVMBB, &MF->getMMI(), *FuncInfo);
   }
+#endif
 }
 
 void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {

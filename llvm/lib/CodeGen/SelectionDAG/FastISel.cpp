@@ -516,10 +516,10 @@ bool FastISel::SelectCall(const User *I) {
     // Add the filter IDs to the machine function.
     const IntrinsicInst *II = cast<IntrinsicInst>(I);
     MachineModuleInfo &MMI = FuncInfo.MF->getMMI();
-    for (unsigned i = 0, e = II->getNumArgOperands(); i != e; ++i)
-      MMI.addFilterTypeInfo(FuncInfo.MF,
-                            II->getArgOperand(i)->stripPointerCasts());
-
+    for (unsigned i = 0, e = II->getNumArgOperands(); i != e; ++i) {
+      const Value *V = II->getArgOperand(i)->stripPointerCasts();
+      MMI.addFilterTypeInfo(cast<const GlobalVariable>(V));
+    }
 
     return true;
   }
@@ -537,49 +537,6 @@ bool FastISel::SelectCall(const User *I) {
       BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(TargetOpcode::COPY),
               ResultReg).addReg(Reg);
       UpdateValueMap(I, ResultReg);
-      return true;
-    }
-    }
-    break;
-  }
-  case Intrinsic::eh_selector: {
-    EVT VT = TLI.getValueType(I->getType());
-    switch (TLI.getOperationAction(ISD::EHSELECTION, VT)) {
-    default: break;
-    case TargetLowering::Expand: {
-      if (FuncInfo.MBB->isLandingPad())
-        AddCatchInfo(*cast<CallInst>(I), &FuncInfo.MF->getMMI(), FuncInfo.MBB);
-      else {
-#ifndef NDEBUG
-        FuncInfo.CatchInfoLost.insert(cast<CallInst>(I));
-#endif
-        // FIXME: Mark exception selector register as live in.  Hack for PR1508.
-        unsigned Reg = TLI.getExceptionSelectorRegister();
-        if (Reg) FuncInfo.MBB->addLiveIn(Reg);
-      }
-
-      unsigned Reg = TLI.getExceptionSelectorRegister();
-      EVT SrcVT = TLI.getPointerTy();
-      const TargetRegisterClass *RC = TLI.getRegClassFor(SrcVT);
-      unsigned ResultReg = createResultReg(RC);
-      BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(TargetOpcode::COPY),
-              ResultReg).addReg(Reg);
-
-      bool ResultRegIsKill = hasTrivialKill(I);
-
-      // Cast the register to the type of the selector.
-      if (SrcVT.bitsGT(MVT::i32))
-        ResultReg = FastEmit_r(SrcVT.getSimpleVT(), MVT::i32, ISD::TRUNCATE,
-                               ResultReg, ResultRegIsKill);
-      else if (SrcVT.bitsLT(MVT::i32))
-        ResultReg = FastEmit_r(SrcVT.getSimpleVT(), MVT::i32,
-                               ISD::SIGN_EXTEND, ResultReg, ResultRegIsKill);
-      if (ResultReg == 0)
-        // Unhandled operand. Halt "fast" selection and bail.
-        return false;
-
-      UpdateValueMap(I, ResultReg);
-
       return true;
     }
     }

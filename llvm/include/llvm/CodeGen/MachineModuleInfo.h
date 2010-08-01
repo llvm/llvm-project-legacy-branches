@@ -52,6 +52,7 @@ namespace llvm {
 class Constant;
 class GlobalVariable;
 class MDNode;
+class MMIAddrLabelMap;
 class MachineBasicBlock;
 class MachineFunction;
 class Module;
@@ -88,8 +89,6 @@ struct LandingPadInfo {
     : LandingPadBlock(MBB), LandingPadLabel(0), Personality(0) {}
 };
 
-class MMIAddrLabelMap;
-  
 //===----------------------------------------------------------------------===//
 /// MachineModuleInfo - This class contains meta information specific to a
 /// module.  Queries can be made by different debugging and exception handling 
@@ -144,7 +143,6 @@ class MachineModuleInfo : public ImmutablePass {
   /// llvm.compiler.used.
   SmallPtrSet<const Function *, 32> UsedFunctions;
 
-  
   /// AddrLabelSymbols - This map keeps track of which symbol is being used for
   /// the specified basic block's address of label.
   MMIAddrLabelMap *AddrLabelSymbols;
@@ -152,10 +150,23 @@ class MachineModuleInfo : public ImmutablePass {
   bool CallsEHReturn;
   bool CallsUnwindInit;
 
-  /// FilterMap - Map of filter IDs for a function.
-  typedef SmallPtrSet<const Value*, 2> FilterListTy;
-  typedef DenseMap<const MachineFunction*, FilterListTy> FilterMapTy;
-  FilterMapTy FilterMap;
+  struct LandingPadStuff {      // Rename.
+    /// FilterSet - A set of filter IDs for a function.
+    SmallPtrSet<const GlobalVariable*, 2> FilterSet;
+
+    /// PersonalityFn - PersonalityFunction associated with the machine
+    /// function.
+    /// FIXME: Could have more than one personality function per function.
+    const Value *PersonalityFnMap;
+
+    void clear() {
+      FilterSet.clear();
+      PersonalityFnMap = 0;
+    }
+  };
+
+  // FIXME: Do we need a map here?
+  LandingPadStuff LandingPadInformation;
 
   /// DbgInfoAvailable - True if debugging information is available
   /// in this module.
@@ -240,12 +251,10 @@ public:
 
   
   //===- EH ---------------------------------------------------------------===//
-
 private:
   /// getOrCreateLandingPadInfo - Find or create an LandingPadInfo for the
   /// specified MachineBasicBlock.
   LandingPadInfo &getOrCreateLandingPadInfo(MachineBasicBlock *LandingPad);
-
 public:
   /// addInvoke - Provide the begin and end labels of an invoke style call and
   /// associate it with a try landing pad block.
@@ -255,12 +264,18 @@ public:
   /// addLandingPad - Add a new panding pad.  Returns the label ID for the 
   /// landing pad entry.
   MCSymbol *addLandingPad(MachineBasicBlock *LandingPad);
-  
+
   /// addPersonality - Provide the personality function for the exception
   /// information.
-  void addPersonality(MachineBasicBlock *LandingPad,
-                      const Function *Personality);
-
+  void addPersonality(const Value *PersFn) {
+    // FIXME: This assert only holds if we have one personality function per
+    // function.
+    assert((LandingPadInformation.PersonalityFnMap == 0 ||
+            LandingPadInformation.PersonalityFnMap == PersFn) &&
+           "Trying to reset the personality fn with a different personality?!");
+    LandingPadInformation.PersonalityFnMap = PersFn;
+  }
+  
   /// getPersonalityIndex - Get index of the current personality function inside
   /// Personalitites array
   unsigned getPersonalityIndex() const;
@@ -284,8 +299,8 @@ public:
 
   /// addFilterTypeInfo - Provide the filter typeinfo for a machine function.
   ///
-  void addFilterTypeInfo(const MachineFunction *MF, const Value *V) {
-    FilterMap[MF].insert(V);
+  void addFilterTypeInfo(const GlobalVariable *GV) {
+    LandingPadInformation.FilterSet.insert(GV);
   }
 
   /// addCleanup - Add a cleanup action for a landing pad.
@@ -343,7 +358,11 @@ public:
 
   /// getPersonality - Return a personality function if available.  The presence
   /// of one is required to emit exception handling info.
-  const Function *getPersonality() const;
+  const Value *getPersonality() const {
+    // FIXME: Until PR1414 is fixed, we're using 1 personality function per
+    // function
+    return LandingPadInformation.PersonalityFnMap;
+  }
 
   /// setVariableDbgInfo - Collect information used to emit debugging
   /// information of a variable.

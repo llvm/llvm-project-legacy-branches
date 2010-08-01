@@ -4125,8 +4125,10 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     // Add the filter IDs to the machine function.
     MachineFunction &MF = DAG.getMachineFunction();
     MachineModuleInfo &MMI = MF.getMMI();
-    for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i)
-      MMI.addFilterTypeInfo(&MF, I.getArgOperand(i)->stripPointerCasts());
+    for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i) {
+      const Value *V = I.getArgOperand(i)->stripPointerCasts();
+      MMI.addFilterTypeInfo(cast<const GlobalVariable>(V));
+    }
 
     return 0;
   }
@@ -4140,41 +4142,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     SDValue Op = DAG.getNode(ISD::EXCEPTIONADDR, dl, VTs, Ops, 1);
     setValue(&I, Op);
     DAG.setRoot(Op.getValue(1));
-    return 0;
-  }
-
-///EH-FIXME: Remove eh_selector and eh_typeid_for.
-  case Intrinsic::eh_selector: {
-    MachineBasicBlock *CallMBB = FuncInfo.MBB;
-    MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
-    if (CallMBB->isLandingPad())
-      AddCatchInfo(I, &MMI, CallMBB);
-    else {
-#ifndef NDEBUG
-      FuncInfo.CatchInfoLost.insert(&I);
-#endif
-      // FIXME: Mark exception selector register as live in.  Hack for PR1508.
-      unsigned Reg = TLI.getExceptionSelectorRegister();
-      if (Reg) FuncInfo.MBB->addLiveIn(Reg);
-    }
-
-    // Insert the EHSELECTION instruction.
-    SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
-    SDValue Ops[2];
-    Ops[0] = getValue(I.getArgOperand(0));
-    Ops[1] = getRoot();
-    SDValue Op = DAG.getNode(ISD::EHSELECTION, dl, VTs, Ops, 2);
-    DAG.setRoot(Op.getValue(1));
-    setValue(&I, DAG.getSExtOrTrunc(Op, dl, MVT::i32));
-    return 0;
-  }
-
-  case Intrinsic::eh_typeid_for: {
-    // Find the type id for the given typeinfo.
-    GlobalVariable *GV = ExtractTypeInfo(I.getArgOperand(0));
-    unsigned TypeID = DAG.getMachineFunction().getMMI().getTypeIDFor(GV);
-    Res = DAG.getConstant(TypeID, MVT::i32);
-    setValue(&I, Res);
     return 0;
   }
 
