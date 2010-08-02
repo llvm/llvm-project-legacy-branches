@@ -25,6 +25,7 @@ endif
 
 SVN_BASE = $(shell svn info | sed -n "s/^URL: //; s,/llvm-project/.*$$,/llvm-project,p")
 SVN_CLANG = $(shell svn info | sed -n "s/^URL: //p")
+SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
 
 # Instead of jiggling the project files to only install the bits we want, we do
 # a real install into the OBJROOT, and then copy the exact bits we want to the
@@ -85,9 +86,16 @@ install: $(BUILD_TARGET)
 
 update-sources:
 	svn rm -m 'Update.' $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk $(SVN_CLANG)/src/tools/clang
+	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk@$(REVISION) $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk@$(REVISION) $(SVN_CLANG)/src/tools/clang
 	svn up
+
+tag-objc_translate:
+	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/objc_translate-$(VERSION)
+
+retag-objc_translate:
+	svn rm -m 'Retag.' $(SVN_TAGS)/objc_translate-$(VERSION) && \
+	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/objc_translate-$(VERSION); \
 
 ###
 # Debugging
