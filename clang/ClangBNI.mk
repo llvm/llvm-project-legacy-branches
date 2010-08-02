@@ -454,7 +454,7 @@ install-clang-links:
 	ln -sf ../../../../../usr/bin/clang $(DSTROOT)/$(Install_Prefix)/bin/clang
 ifeq ($(Clang_Enable_CXX), 1)
 	ln -sf ../../../../../usr/bin/clang++ $(DSTROOT)/$(Install_Prefix)/bin/clang++
-fi
+endif
 
 ##
 # Cross Compilation Build Support
