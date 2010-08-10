@@ -67,7 +67,7 @@ configure:
 	cd "$(OBJROOT)" && \
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
 	           -DLLVM_TARGETS_TO_BUILD:=X86 \
-	           "-DLLVM_USE_CRT:=$(MSVC_CRT)" \
+	           "-DLLVM_USE_CRT_RELEASE:=$(MSVC_CRT)" \
 	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
 	           -G "Visual Studio 9 2008" \
 	           "$(SRCROOT)\src"
