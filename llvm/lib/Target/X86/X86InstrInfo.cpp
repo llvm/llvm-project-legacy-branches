@@ -2607,6 +2607,11 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   } else if (Ops.size() != 1)
     return NULL;
 
+  // Make sure the subregisters match.
+  // Otherwise we risk changing the size of the load.
+  if (LoadMI->getOperand(0).getSubReg() != MI->getOperand(Ops[0]).getSubReg())
+    return NULL;
+
   SmallVector<MachineOperand,X86AddrNumOperands> MOs;
   switch (LoadMI->getOpcode()) {
   case X86::V_SET0PS:
