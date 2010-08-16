@@ -2229,8 +2229,6 @@ void X86InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                         unsigned DestReg, int FrameIdx,
                                         const TargetRegisterClass *RC) const{
   const MachineFunction &MF = *MBB.getParent();
-  assert(MF.getFrameInfo()->getObjectSize(FrameIdx) >= RC->getSize() &&
-         "Stack slot too small for load");
   bool isAligned = (RI.getStackAlignment() >= 16) || RI.canRealignStack(MF);
   unsigned Opc = getLoadRegOpcode(DestReg, RC, isAligned, TM);
   DebugLoc DL = MBB.findDebugLoc(MI);
