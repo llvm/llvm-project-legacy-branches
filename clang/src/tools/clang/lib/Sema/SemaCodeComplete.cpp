@@ -4118,7 +4118,7 @@ void Sema::CodeCompleteObjCMethodDecl(Scope *S,
         Pattern->AddChunk(CodeCompletionString::CK_Colon);
       else if (I < Sel.getNumArgs()) {
         Pattern->AddChunk(CodeCompletionString::CK_HorizontalSpace);
-        Pattern->AddTextChunk(Sel.getIdentifierInfoForSlot(1)->getName());
+        Pattern->AddTextChunk(Sel.getIdentifierInfoForSlot(I)->getName());
         Pattern->AddChunk(CodeCompletionString::CK_Colon);
       } else
         break;
