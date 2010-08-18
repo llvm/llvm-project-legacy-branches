@@ -43,3 +43,10 @@
 
 # Update LLVM APIs to match more recent Clang (MC memory management).
 109767
+
+# <rdar://problem/8212716> link failure when using LTO
+110604
+110751
+110752
+110756
+110757
