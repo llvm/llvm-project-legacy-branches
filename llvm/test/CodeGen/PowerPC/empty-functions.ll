@@ -6,7 +6,7 @@ entry:
   unreachable
 }
 ; CHECK-NO-FP:     _func:
-; CHECK-NO-FP:     nop
+; CHECK-NO-FP:     .byte 0
 
 ; CHECK-FP:      _func:
-; CHECK-FP:      nop
+; CHECK-FP:      .byte 0
