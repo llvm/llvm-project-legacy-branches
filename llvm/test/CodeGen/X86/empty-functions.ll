@@ -7,9 +7,9 @@ entry:
 }
 ; CHECK-NO-FP:     _func:
 ; CHECK-NO-FP-NOT: movq %rsp, %rbp
-; CHECK-NO-FP:     nop
+; CHECK-NO-FP:     .byte 0
 
 ; CHECK-FP:      _func:
 ; CHECK-FP:      movq %rsp, %rbp
 ; CHECK-FP-NEXT: Ltmp1:
-; CHECK-FP:      nop
+; CHECK-FP:      .byte 0
