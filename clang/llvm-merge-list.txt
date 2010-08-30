@@ -50,3 +50,6 @@
 110752
 110756
 110757
+
+# <rdar://problem/8360669> [regression] invalid reload of bool value in -O0 code
+111709

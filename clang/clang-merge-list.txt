@@ -22,3 +22,6 @@
 
 # <rdar://problem/8258844> x86_64 ABI miscompile
 109848
+
+# <rdar://problem/8360545> [IRgen] clang miscompiles pointer conversion to _Bool
+112021
