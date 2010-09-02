@@ -30,6 +30,8 @@ namespace clang {
 /// \brief Default priority values for code-completion results based
 /// on their kind.
 enum {
+  /// \brief Priority for a send-to-super completion.
+  CCP_SuperCompletion = 8,
   /// \brief Priority for a declaration that is in the local scope.
   CCP_LocalDeclaration = 8,
   /// \brief Priority for a member declaration found from the current
@@ -67,7 +69,11 @@ enum {
   CCD_VoidMatch = -5,
   /// \brief The result is a C++ non-static member function whose qualifiers
   /// exactly match the object type on which the member function can be called.
-  CCD_ObjectQualifierMatch = -1
+  CCD_ObjectQualifierMatch = -1,
+  /// \brief The selector of the given message exactly matches the selector
+  /// of the current method, which might imply that some kind of delegation
+  /// is occurring.
+  CCD_SelectorMatch = -3
 };
 
 /// \brief Priority value factors by which we will divide or multiply the
@@ -195,7 +201,9 @@ public:
     /// unless they come from an appropriate natural-language dictionary.
     CCC_NaturalLanguage,
     /// \brief Code completion for a selector, as in an @selector expression.
-    CCC_SelectorName
+    CCC_SelectorName,
+    /// \brief Code completion within a type-qualifier list.
+    CCC_TypeQualifiers
   };
 
 private:
