@@ -14,7 +14,7 @@ endif
 
 VSVARS := $(VS100COMNTOOLS)\vsvars32.bat
 MSBUILD := C:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\msbuild.exe
-JOBS := $(NUMBER_OF_PROCESSORS)
+JOBS := 1
 
 ifeq ($(ENABLE_TESTS),1)
 BUILD_TARGET := test
@@ -78,7 +78,7 @@ configure:
 # FIXME: Only build clang.
 build: configure
 	"$(MSBUILD)" /maxcpucount:$(JOBS) "$(OBJROOT)"\LLVM.sln $(TARGET)
-	"$(MSBUILD)" "$(OBJROOT)"\INSTALL.vcxproj $(TARGET)
+	"$(MSBUILD)" /maxcpucount:$(JOBS) "$(OBJROOT)"\INSTALL.vcxproj $(TARGET)
 
 test: build
 	"$(MSBUILD)" "$(OBJROOT)"\tools\clang\test\clang-test.vcxproj $(TARGET)
