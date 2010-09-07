@@ -12,7 +12,7 @@ ifeq ($(strip $(CMAKE)),)
 CMAKE := cmake
 endif
 
-VCBUILD := $(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild
+MSBUILD := msbuild.exe
 JOBS := $(NUMBER_OF_PROCESSORS)
 
 ifeq ($(ENABLE_TESTS),1)
@@ -42,7 +42,7 @@ MSVC_CRT := MT
 # Override CMake default libraries list, which is much larger than we need.
 CXXLIBS := kernel32.lib user32.lib advapi32.lib
 
-TARGET := Release|Win32
+TARGET := /p:Configuration=Release /p:Platform=Win32
 
 all:: help
 
@@ -68,17 +68,19 @@ configure:
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
 	           -DLLVM_TARGETS_TO_BUILD:=X86 \
 	           "-DLLVM_USE_CRT_RELEASE:=$(MSVC_CRT)" \
+	           "-DLLVM_USE_CRT_MINSIZEREL:=$(MSVC_CRT)" \
+	           "-DLLVM_USE_CRT_RELWITHDEBINFO:=$(MSVC_CRT)" \
 	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
-	           -G "Visual Studio 9 2008" \
+	           -G "Visual Studio 10" \
 	           "$(SRCROOT)\src"
 
 # FIXME: Only build clang.
 build: configure
-	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\LLVM.sln "$(TARGET)"
-	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\INSTALL.vcproj "$(TARGET)"
+	"$(MSBUILD)" /maxcpucount:$(JOBS) "$(OBJROOT)"\LLVM.sln $(TARGET)
+	"$(MSBUILD)" "$(OBJROOT)"\INSTALL.vcxproj $(TARGET)
 
 test: build
-	"$(VCBUILD)" /M$(JOBS) "$(OBJROOT)"\tools\clang\test\clang-test.vcproj "$(TARGET)"
+	"$(MSBUILD)" "$(OBJROOT)"\tools\clang\test\clang-test.vcxproj $(TARGET)
 
 install: $(BUILD_TARGET)
 	"$(CMAKE)" -E make_directory "$(BINDEST)"
