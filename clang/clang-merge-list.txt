@@ -25,3 +25,10 @@
 
 # <rdar://problem/8360545> [IRgen] clang miscompiles pointer conversion to _Bool
 112021
+
+# <rdar://problem/8401025> _Bool cast conversion expression is emitted twice
+112943
+
+# <rdar://problem/8360857> miscompile of Obj-C bitfield access
+112913
+112914 (manual)
