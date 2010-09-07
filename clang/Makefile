@@ -12,7 +12,8 @@ ifeq ($(strip $(CMAKE)),)
 CMAKE := cmake
 endif
 
-MSBUILD := msbuild.exe
+VSVARS := $(VS100COMNTOOLS)\vsvars32.bat
+MSBUILD := C:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\msbuild.exe
 JOBS := $(NUMBER_OF_PROCESSORS)
 
 ifeq ($(ENABLE_TESTS),1)
