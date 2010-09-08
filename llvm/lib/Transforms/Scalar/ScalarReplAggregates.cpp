@@ -216,6 +216,21 @@ static bool ShouldAttemptScalarRepl(AllocaInst *AI) {
   return false;
 }
 
+/// IsVerbotenVectorType - Return true if this is a vector type ScalarRepl isn't
+/// allowed to form.  We do this to avoid MMX types, which is a complete hack,
+/// but is required until the backend is fixed.
+static bool IsVerbotenVectorType(const VectorType *VTy) {
+  // Reject all the MMX vector types.
+  switch (VTy->getNumElements()) {
+  default: return false;
+  case 1: return VTy->getElementType()->isIntegerTy(64);
+  case 2: return VTy->getElementType()->isIntegerTy(32) ||
+                 VTy->getElementType()->isFloatTy();
+  case 4: return VTy->getElementType()->isIntegerTy(16);
+  case 8: return VTy->getElementType()->isIntegerTy(8);
+  }
+}
+
 // performScalarRepl - This algorithm is a simple worklist driven algorithm,
 // which runs on all of the malloc/alloca instructions in the function, removing
 // them if they are only used by getelementptr instructions.
@@ -302,7 +317,8 @@ bool SROA::performScalarRepl(Function &F) {
       // random stuff that doesn't use vectors (e.g. <9 x double>) because then
       // we just get a lot of insert/extracts.  If at least one vector is
       // involved, then we probably really do have a union of vector/array.
-      if (VectorTy && VectorTy->isVectorTy() && HadAVector) {
+      if (VectorTy && VectorTy->isVectorTy() && HadAVector &&
+          !IsVerbotenVectorType(cast<VectorType>(VectorTy))) {
         DEBUG(dbgs() << "CONVERT TO VECTOR: " << *AI << "\n  TYPE = "
                      << *VectorTy << '\n');
         
@@ -1098,6 +1114,12 @@ void SROA::RewriteLoadUserOfWholeAlloca(LoadInst *LI, AllocaInst *AI,
 /// HasPadding - Return true if the specified type has any structure or
 /// alignment padding, false otherwise.
 static bool HasPadding(const Type *Ty, const TargetData &TD) {
+  if (const ArrayType *ATy = dyn_cast<ArrayType>(Ty))
+    return HasPadding(ATy->getElementType(), TD);
+  
+  if (const VectorType *VTy = dyn_cast<VectorType>(Ty))
+    return HasPadding(VTy->getElementType(), TD);
+
   if (const StructType *STy = dyn_cast<StructType>(Ty)) {
     const StructLayout *SL = TD.getStructLayout(STy);
     unsigned PrevFieldBitOffset = 0;
@@ -1127,12 +1149,8 @@ static bool HasPadding(const Type *Ty, const TargetData &TD) {
       if (PrevFieldEnd < SL->getSizeInBits())
         return true;
     }
-
-  } else if (const ArrayType *ATy = dyn_cast<ArrayType>(Ty)) {
-    return HasPadding(ATy->getElementType(), TD);
-  } else if (const VectorType *VTy = dyn_cast<VectorType>(Ty)) {
-    return HasPadding(VTy->getElementType(), TD);
   }
+
   return TD.getTypeSizeInBits(Ty) != TD.getTypeAllocSizeInBits(Ty);
 }
 
