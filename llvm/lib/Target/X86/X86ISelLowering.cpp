@@ -633,7 +633,12 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     addRegisterClass(MVT::v8i8,  X86::VR64RegisterClass);
     addRegisterClass(MVT::v4i16, X86::VR64RegisterClass);
     addRegisterClass(MVT::v2i32, X86::VR64RegisterClass);
-    addRegisterClass(MVT::v2f32, X86::VR64RegisterClass);
+    
+    // FIXME: v2f32 isn't an MMX type.  We currently claim that it is legal
+    // because of some ABI issue, but this isn't the right fix.
+    bool IsV2F32Legal = !Subtarget->is64Bit();
+    if (IsV2F32Legal)
+      addRegisterClass(MVT::v2f32, X86::VR64RegisterClass);
     addRegisterClass(MVT::v1i64, X86::VR64RegisterClass);
 
     setOperationAction(ISD::ADD,                MVT::v8i8,  Legal);
@@ -679,14 +684,17 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     AddPromotedToType (ISD::LOAD,               MVT::v4i16, MVT::v1i64);
     setOperationAction(ISD::LOAD,               MVT::v2i32, Promote);
     AddPromotedToType (ISD::LOAD,               MVT::v2i32, MVT::v1i64);
-    setOperationAction(ISD::LOAD,               MVT::v2f32, Promote);
-    AddPromotedToType (ISD::LOAD,               MVT::v2f32, MVT::v1i64);
+    if (IsV2F32Legal) {
+      setOperationAction(ISD::LOAD,             MVT::v2f32, Promote);
+      AddPromotedToType (ISD::LOAD,             MVT::v2f32, MVT::v1i64);
+    }
     setOperationAction(ISD::LOAD,               MVT::v1i64, Legal);
 
     setOperationAction(ISD::BUILD_VECTOR,       MVT::v8i8,  Custom);
     setOperationAction(ISD::BUILD_VECTOR,       MVT::v4i16, Custom);
     setOperationAction(ISD::BUILD_VECTOR,       MVT::v2i32, Custom);
-    setOperationAction(ISD::BUILD_VECTOR,       MVT::v2f32, Custom);
+    if (IsV2F32Legal)
+      setOperationAction(ISD::BUILD_VECTOR,     MVT::v2f32, Custom);
     setOperationAction(ISD::BUILD_VECTOR,       MVT::v1i64, Custom);
 
     setOperationAction(ISD::VECTOR_SHUFFLE,     MVT::v8i8,  Custom);
@@ -694,7 +702,8 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     setOperationAction(ISD::VECTOR_SHUFFLE,     MVT::v2i32, Custom);
     setOperationAction(ISD::VECTOR_SHUFFLE,     MVT::v1i64, Custom);
 
-    setOperationAction(ISD::SCALAR_TO_VECTOR,   MVT::v2f32, Custom);
+    if (IsV2F32Legal)
+      setOperationAction(ISD::SCALAR_TO_VECTOR, MVT::v2f32, Custom);
     setOperationAction(ISD::SCALAR_TO_VECTOR,   MVT::v8i8,  Custom);
     setOperationAction(ISD::SCALAR_TO_VECTOR,   MVT::v4i16, Custom);
     setOperationAction(ISD::SCALAR_TO_VECTOR,   MVT::v1i64, Custom);
@@ -713,7 +722,8 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
       setOperationAction(ISD::BIT_CONVERT,        MVT::v8i8,  Custom);
       setOperationAction(ISD::BIT_CONVERT,        MVT::v4i16, Custom);
       setOperationAction(ISD::BIT_CONVERT,        MVT::v2i32, Custom);
-      setOperationAction(ISD::BIT_CONVERT,        MVT::v2f32, Custom);
+      if (IsV2F32Legal)
+        setOperationAction(ISD::BIT_CONVERT,      MVT::v2f32, Custom);
       setOperationAction(ISD::BIT_CONVERT,        MVT::v1i64, Custom);
     }
   }
