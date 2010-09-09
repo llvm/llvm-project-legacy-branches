@@ -51,52 +51,49 @@ void Use::swap(Use &RHS) {
 template <>
 const Use *Use::getImpliedUser<3>(const Use *Current) {
   while (true) {
-    int Tag = (Current++)->Prev.getInt() - stop64Tag;
+    unsigned Tag = (Current++)->Prev.getInt();
     ptrdiff_t Offset;
-		if (Tag == 0) {
-        switch (Current->Prev.getInt()) {
-          case 0: ++Current; Offset = 4; goto digits;
-          case xStop64Tag: ++Current; Offset = 1; goto digits;
-          case yStop64Tag: return Current + 3;
-				  default: Offset = 0; goto digits;
+    if (Tag & 4)
+    switch (Tag) {
+      case stop64Tag: {
+        PrevPtrTag nextTag = (Current++)->Prev.getInt();
+        switch (nextTag) {
+          case 0: Offset = 4; goto digits;
+          case xStop64Tag: Offset = 1; goto digits;
+          case yStop64Tag: return Current + 2;
+          default: Offset = nextTag; goto digits;
         }
-		}
-		else if (Tag < 0)
-			continue;
-		else {
-			Tag -= 2;
-			if (Tag > 0)
-				return Current;
-			else if (Tag == 0) {
-				if (Current->Prev.getInt() == xStop64Tag)
-					return Current + 2;
-				Offset = 2;
-			}
-			else {
-				if (Current->Prev.getInt() == fullStop64Tag)
-					return Current + 1;
-				Offset = 1;
-			}
+      }
+      case xStop64Tag:
+        if (Current->Prev.getInt() == fullStop64Tag)
+          return Current + 1;
+        Offset = 1; goto digits;
+      case yStop64Tag:
+        if (Current->Prev.getInt() == xStop64Tag)
+          return Current + 2;
+        Offset = 2;
+        while (true) {
+          digits:
+          unsigned Tag = Current->Prev.getInt();
+          switch (Tag) {
+            case zero64Tag:
+            case one64Tag:
+            case two64Tag:
+            case three64Tag:
+              ++Current;
+              Offset = (Offset << 2) + Tag;
+              continue;
+            case xStop64Tag:
+              return Current + (Offset << 2) + one64Tag + 1;
+            default:
+              return Current + Offset;
+          }
+        }
 
-			while (true) {
-				digits:
-						unsigned Tag = Current->Prev.getInt();
-						switch (Tag) {
-              case zero64Tag:
-              case one64Tag:
-              case two64Tag:
-              case three64Tag:
-                ++Current;
-                Offset = (Offset << 2) + Tag;
-                continue;
-              case xStop64Tag:
-                return Current + (Offset << 2) + one64Tag + 1;
-              default:
-                return Current + Offset;
-						}
-			}
-		}
-	}
+      case fullStop64Tag:
+        return Current;
+    }
+  }
 }
 
 template <>
@@ -253,7 +250,7 @@ struct AugmentedUse : public Use {
 //===----------------------------------------------------------------------===//
 
 User *Use::getUser() const {
-  const Use *End = getImpliedUser();
+  const Use *End = getImpliedUser<availableTagBits>(this);
   const PointerIntPair<User*, 1, Tag>& ref(
                                 static_cast<const AugmentedUse*>(End - 1)->ref);
   User *She = ref.getPointer();
