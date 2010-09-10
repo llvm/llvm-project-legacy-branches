@@ -308,6 +308,20 @@ bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
   return Upgraded;
 }
 
+bool llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
+  const std::string &Name = GV->getName();
+
+  // We are only upgrading one symbol here. If we upgrade more, we will want to
+  // perform some sort of short-circuiting like in the
+  // "UpgradeIntrinsicFunction1" function.
+  if (Name == ".llvm.eh.catch.all.value") {
+    GV->setName("llvm.eh.catch.all.value");
+    return true;
+  }
+
+  return false;
+}
+
 // UpgradeIntrinsicCall - Upgrade a call to an old intrinsic to be a call the 
 // upgraded intrinsic. All argument and return casting must be provided in 
 // order to seamlessly integrate with existing context.
