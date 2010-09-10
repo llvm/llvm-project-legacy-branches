@@ -343,8 +343,8 @@ installsrc:
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
-	$(_v) rm -rf "$(SRCROOT)/src/test"
-	$(_v) rm -rf "$(SRCROOT)/src/tools/clang/test"
+	$(_v) rm -rf "$(SRCROOT)"/src/test/*/
+	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
 
 installhdrs:
 
