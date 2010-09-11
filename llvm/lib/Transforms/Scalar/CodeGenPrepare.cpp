@@ -898,10 +898,7 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
   if (condition != --BasicBlock::iterator(I))
     return false;
 
-  static bool once(true);
   const Type *Ty = condition->getType();
-
-
 
   if (TruncInst *T = dyn_cast<TruncInst>(condition)) {
     condition = T->getOperand(0); 
@@ -913,23 +910,17 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
     if (A->getOpcode() == Instruction::And) {
       ConstantInt *Zero(cast<ConstantInt>(ConstantInt::get(Ty, 0)));
       if (unsigned Leg = I->findCaseValue(Zero)) {
-      //  I->removeCase(Leg);
-BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
-TerminatorInst *T = Old->getTerminator();
-T->eraseFromParent();
-Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, I->getCondition(), Zero, "tst");
-BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
-I->removeCase(Leg);
-return true;
+        BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
+        Old->getTerminator()->eraseFromParent();
+        Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, I->getCondition(), Zero, "tst");
+        BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
+        I->removeCase(Leg);
+        return true;
       }
     }
   }
 
-
-// unsigned 	findCaseValue (const ConstantInt *C) const
-//void 	removeCase (unsigned idx)
-
-  return false; // once | (once = false);
+  return false;
 }
 
 
