@@ -901,8 +901,13 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
   const Type *Ty = condition->getType();
 
   if (TruncInst *T = dyn_cast<TruncInst>(condition)) {
-    condition = T->getOperand(0); 
-    if (condition != --BasicBlock::iterator(T)/*&& TODO: CHEAP TRUNCATES*/)
+    if (Instruction *P = dyn_cast<Instruction>(T->getOperand(0))) { 
+      if (Old != P->getParent() ||
+	condition != --BasicBlock::iterator(T)/* TODO: CHEAP TRUNCATES*/)
+      return false;
+      condition = P;
+    }
+    else
       return false;
   }
 
