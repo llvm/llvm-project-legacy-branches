@@ -888,7 +888,7 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
 static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
   BasicBlock *Old = I->getParent();
 
-  if (Instruction *C = dyn_cast<TruncInst>(condition)) {
+  if (Instruction *C = dyn_cast<Instruction>(condition)) {
     if (Old != C->getParent())
       return false;
   }
