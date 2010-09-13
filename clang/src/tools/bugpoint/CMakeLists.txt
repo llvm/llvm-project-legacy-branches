@@ -1,0 +1,21 @@
+add_llvm_tool(bugpoint
+  BugDriver.cpp
+  CrashDebugger.cpp
+  ExecutionDriver.cpp
+  ExtractFunction.cpp
+  FindBugs.cpp
+  Miscompilation.cpp
+  OptimizerDriver.cpp
+  ToolRunner.cpp
+  bugpoint.cpp
+  )
+
+target_link_libraries(bugpoint
+  LLVMAsmParser
+  LLVMInstrumentation
+  LLVMScalarOpts
+  LLVMipo
+  LLVMLinker
+  LLVMBitReader
+  LLVMBitWriter
+  )
