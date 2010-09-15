@@ -32,8 +32,10 @@ namespace  {
 class AggExprEmitter : public StmtVisitor<AggExprEmitter> {
   CodeGenFunction &CGF;
   CGBuilderTy &Builder;
-  AggValueSlot Dest;
+  llvm::Value *DestPtr;
+  bool VolatileDest;
   bool IgnoreResult;
+  bool IsInitializer;
   bool RequiresGCollection;
 
   ReturnValueSlot getReturnValueSlot() const {
@@ -42,19 +44,15 @@ class AggExprEmitter : public StmtVisitor<AggExprEmitter> {
     // API.
     if (RequiresGCollection) return ReturnValueSlot();
 
-    return ReturnValueSlot(Dest.getAddr(), Dest.isVolatile());
-  }
-
-  AggValueSlot EnsureSlot(QualType T) {
-    if (!Dest.isIgnored()) return Dest;
-    return CGF.CreateAggTemp(T, "agg.tmp.ensured");
+    return ReturnValueSlot(DestPtr, VolatileDest);
   }
 
 public:
-  AggExprEmitter(CodeGenFunction &cgf, AggValueSlot Dest,
-                 bool ignore, bool requiresGCollection)
-    : CGF(cgf), Builder(CGF.Builder), Dest(Dest),
-      IgnoreResult(ignore), RequiresGCollection(requiresGCollection) {
+  AggExprEmitter(CodeGenFunction &cgf, llvm::Value *destPtr, bool v,
+                 bool ignore, bool isinit, bool requiresGCollection)
+    : CGF(cgf), Builder(CGF.Builder),
+      DestPtr(destPtr), VolatileDest(v), IgnoreResult(ignore),
+      IsInitializer(isinit), RequiresGCollection(requiresGCollection) {
   }
 
   //===--------------------------------------------------------------------===//
@@ -184,7 +182,7 @@ void AggExprEmitter::EmitGCMove(const Expr *E, RValue Src) {
     unsigned long size = TypeInfo.first/8;
     const llvm::Type *SizeTy = CGF.ConvertType(CGF.getContext().getSizeType());
     llvm::Value *SizeVal = llvm::ConstantInt::get(SizeTy, size);
-    CGF.CGM.getObjCRuntime().EmitGCMemmoveCollectable(CGF, Dest.getAddr(),
+    CGF.CGM.getObjCRuntime().EmitGCMemmoveCollectable(CGF, DestPtr,
                                                     Src.getAggregateAddr(),
                                                     SizeVal);
   }
@@ -194,13 +192,13 @@ void AggExprEmitter::EmitGCMove(const Expr *E, RValue Src) {
 void AggExprEmitter::EmitFinalDestCopy(const Expr *E, RValue Src, bool Ignore) {
   assert(Src.isAggregate() && "value must be aggregate value!");
 
-  // If Dest is ignored, then we're evaluating an aggregate expression
+  // If DestPtr is null, then we're evaluating an aggregate expression
   // in a context (like an expression statement) that doesn't care
   // about the result.  C says that an lvalue-to-rvalue conversion is
   // performed in these cases; C++ says that it is not.  In either
   // case, we don't actually need to do anything unless the value is
   // volatile.
-  if (Dest.isIgnored()) {
+  if (DestPtr == 0) {
     if (!Src.isVolatileQualified() ||
         CGF.CGM.getLangOptions().CPlusPlus ||
         (IgnoreResult && Ignore))
@@ -208,7 +206,7 @@ void AggExprEmitter::EmitFinalDestCopy(const Expr *E, RValue Src, bool Ignore) {
 
     // If the source is volatile, we must read from it; to do that, we need
     // some place to put it.
-    Dest = CGF.CreateAggTemp(E->getType(), "agg.tmp");
+    DestPtr = CGF.CreateMemTemp(E->getType(), "agg.tmp");
   }
 
   if (RequiresGCollection) {
@@ -218,17 +216,16 @@ void AggExprEmitter::EmitFinalDestCopy(const Expr *E, RValue Src, bool Ignore) {
     const llvm::Type *SizeTy = CGF.ConvertType(CGF.getContext().getSizeType());
     llvm::Value *SizeVal = llvm::ConstantInt::get(SizeTy, size);
     CGF.CGM.getObjCRuntime().EmitGCMemmoveCollectable(CGF,
-                                                      Dest.getAddr(),
-                                                      Src.getAggregateAddr(),
-                                                      SizeVal);
+                                              DestPtr, Src.getAggregateAddr(),
+                                              SizeVal);
     return;
   }
   // If the result of the assignment is used, copy the LHS there also.
   // FIXME: Pass VolatileDest as well.  I think we also need to merge volatile
   // from the source as well, as we can't eliminate it if either operand
   // is volatile, unless copy has volatile for both source and destination..
-  CGF.EmitAggregateCopy(Dest.getAddr(), Src.getAggregateAddr(), E->getType(),
-                        Dest.isVolatile()|Src.isVolatileQualified());
+  CGF.EmitAggregateCopy(DestPtr, Src.getAggregateAddr(), E->getType(),
+                        VolatileDest|Src.isVolatileQualified());
 }
 
 /// EmitFinalDestCopy - Perform the final copy to DestPtr, if desired.
@@ -245,7 +242,7 @@ void AggExprEmitter::EmitFinalDestCopy(const Expr *E, LValue Src, bool Ignore) {
 //===----------------------------------------------------------------------===//
 
 void AggExprEmitter::VisitCastExpr(CastExpr *E) {
-  if (Dest.isIgnored() && E->getCastKind() != CK_Dynamic) {
+  if (!DestPtr && E->getCastKind() != CK_Dynamic) {
     Visit(E->getSubExpr());
     return;
   }
@@ -262,8 +259,8 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     else
       CGF.CGM.ErrorUnsupported(E, "non-simple lvalue dynamic_cast");
     
-    if (!Dest.isIgnored())
-      CGF.CGM.ErrorUnsupported(E, "lvalue dynamic_cast with a destination");
+    if (DestPtr)
+      CGF.CGM.ErrorUnsupported(E, "lvalue dynamic_cast with a destination");      
     break;
   }
       
@@ -271,7 +268,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
     // GCC union extension
     QualType Ty = E->getSubExpr()->getType();
     QualType PtrTy = CGF.getContext().getPointerType(Ty);
-    llvm::Value *CastPtr = Builder.CreateBitCast(Dest.getAddr(),
+    llvm::Value *CastPtr = Builder.CreateBitCast(DestPtr,
                                                  CGF.ConvertType(PtrTy));
     EmitInitializationToLValue(E->getSubExpr(), CGF.MakeAddrLValue(CastPtr, Ty),
                                Ty);
@@ -330,12 +327,13 @@ void AggExprEmitter::VisitObjCImplicitSetterGetterRefExpr(
 }
 
 void AggExprEmitter::VisitBinComma(const BinaryOperator *E) {
-  CGF.EmitAnyExpr(E->getLHS(), AggValueSlot::ignored(), true);
-  Visit(E->getRHS());
+  CGF.EmitAnyExpr(E->getLHS(), 0, false, true);
+  CGF.EmitAggExpr(E->getRHS(), DestPtr, VolatileDest,
+                  /*IgnoreResult=*/false, IsInitializer);
 }
 
 void AggExprEmitter::VisitStmtExpr(const StmtExpr *E) {
-  CGF.EmitCompoundStmt(*E->getSubStmt(), true, Dest);
+  CGF.EmitCompoundStmt(*E->getSubStmt(), true, DestPtr, VolatileDest);
 }
 
 void AggExprEmitter::VisitBinaryOperator(const BinaryOperator *E) {
@@ -362,21 +360,27 @@ void AggExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   // We have to special case property setters, otherwise we must have
   // a simple lvalue (no aggregates inside vectors, bitfields).
   if (LHS.isPropertyRef()) {
-    AggValueSlot Slot = EnsureSlot(E->getRHS()->getType());
-    CGF.EmitAggExpr(E->getRHS(), Slot);
-    CGF.EmitObjCPropertySet(LHS.getPropertyRefExpr(), Slot.asRValue());
+    llvm::Value *AggLoc = DestPtr;
+    if (!AggLoc)
+      AggLoc = CGF.CreateMemTemp(E->getRHS()->getType());
+    CGF.EmitAggExpr(E->getRHS(), AggLoc, VolatileDest);
+    CGF.EmitObjCPropertySet(LHS.getPropertyRefExpr(),
+                            RValue::getAggregate(AggLoc, VolatileDest));
   } else if (LHS.isKVCRef()) {
-    AggValueSlot Slot = EnsureSlot(E->getRHS()->getType());
-    CGF.EmitAggExpr(E->getRHS(), Slot);
-    CGF.EmitObjCPropertySet(LHS.getKVCRefExpr(), Slot.asRValue());
+    llvm::Value *AggLoc = DestPtr;
+    if (!AggLoc)
+      AggLoc = CGF.CreateMemTemp(E->getRHS()->getType());
+    CGF.EmitAggExpr(E->getRHS(), AggLoc, VolatileDest);
+    CGF.EmitObjCPropertySet(LHS.getKVCRefExpr(),
+                            RValue::getAggregate(AggLoc, VolatileDest));
   } else {
     bool RequiresGCollection = false;
     if (CGF.getContext().getLangOptions().getGCMode())
       RequiresGCollection = TypeRequiresGCollection(E->getLHS()->getType());
 
     // Codegen the RHS so that it stores directly into the LHS.
-    AggValueSlot LHSSlot = AggValueSlot::forLValue(LHS, true);
-    CGF.EmitAggExpr(E->getRHS(), LHSSlot, false, RequiresGCollection);
+    CGF.EmitAggExpr(E->getRHS(), LHS.getAddress(), LHS.isVolatileQualified(),
+                    false, false, RequiresGCollection);
     EmitFinalDestCopy(E, LHS, true);
   }
 }
@@ -430,40 +434,58 @@ void AggExprEmitter::VisitVAArgExpr(VAArgExpr *VE) {
 }
 
 void AggExprEmitter::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
-  // Ensure that we have a slot, but if we already do, remember
-  // whether its lifetime was externally managed.
-  bool WasManaged = Dest.isLifetimeExternallyManaged();
-  Dest = EnsureSlot(E->getType());
-  Dest.setLifetimeExternallyManaged();
+  llvm::Value *Val = DestPtr;
 
-  Visit(E->getSubExpr());
+  if (!Val) {
+    // Create a temporary variable.
+    Val = CGF.CreateMemTemp(E->getType(), "tmp");
 
-  // Set up the temporary's destructor if its lifetime wasn't already
-  // being managed.
-  if (!WasManaged)
-    CGF.EmitCXXTemporary(E->getTemporary(), Dest.getAddr());
+    // FIXME: volatile
+    CGF.EmitAggExpr(E->getSubExpr(), Val, false);
+  } else
+    Visit(E->getSubExpr());
+
+  // Don't make this a live temporary if we're emitting an initializer expr.
+  if (!IsInitializer)
+    CGF.EmitCXXTemporary(E->getTemporary(), Val);
 }
 
 void
 AggExprEmitter::VisitCXXConstructExpr(const CXXConstructExpr *E) {
-  AggValueSlot Slot = EnsureSlot(E->getType());
-  CGF.EmitCXXConstructExpr(E, Slot);
+  llvm::Value *Val = DestPtr;
+
+  if (!Val) // Create a temporary variable.
+    Val = CGF.CreateMemTemp(E->getType(), "tmp");
+
+  CGF.EmitCXXConstructExpr(Val, E);
 }
 
 void AggExprEmitter::VisitCXXExprWithTemporaries(CXXExprWithTemporaries *E) {
-  CGF.EmitCXXExprWithTemporaries(E, Dest);
+  llvm::Value *Val = DestPtr;
+
+  CGF.EmitCXXExprWithTemporaries(E, Val, VolatileDest, IsInitializer);
 }
 
 void AggExprEmitter::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
-  QualType T = E->getType();
-  AggValueSlot Slot = EnsureSlot(T);
-  EmitNullInitializationToLValue(CGF.MakeAddrLValue(Slot.getAddr(), T), T);
+  llvm::Value *Val = DestPtr;
+
+  if (!Val) {
+    // Create a temporary variable.
+    Val = CGF.CreateMemTemp(E->getType(), "tmp");
+  }
+  EmitNullInitializationToLValue(CGF.MakeAddrLValue(Val, E->getType()),
+                                 E->getType());
 }
 
 void AggExprEmitter::VisitImplicitValueInitExpr(ImplicitValueInitExpr *E) {
-  QualType T = E->getType();
-  AggValueSlot Slot = EnsureSlot(T);
-  EmitNullInitializationToLValue(CGF.MakeAddrLValue(Slot.getAddr(), T), T);
+  llvm::Value *Val = DestPtr;
+
+  if (!Val) {
+    // Create a temporary variable.
+    Val = CGF.CreateMemTemp(E->getType(), "tmp");
+  }
+  EmitNullInitializationToLValue(CGF.MakeAddrLValue(Val, E->getType()),
+                                 E->getType());
 }
 
 void 
@@ -478,7 +500,7 @@ AggExprEmitter::EmitInitializationToLValue(Expr* E, LValue LV, QualType T) {
   } else if (T->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(E, LV.getAddress(), false);
   } else if (CGF.hasAggregateLLVMType(T)) {
-    CGF.EmitAggExpr(E, AggValueSlot::forAddr(LV.getAddress(), false, true));
+    CGF.EmitAnyExpr(E, LV.getAddress(), false);
   } else {
     CGF.EmitStoreThroughLValue(CGF.EmitAnyExpr(E), LV, T);
   }
@@ -514,8 +536,6 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
 #endif
   if (E->hadArrayRangeDesignator())
     CGF.ErrorUnsupported(E, "GNU array range designator extension");
-
-  llvm::Value *DestPtr = Dest.getAddr();
 
   // Handle initialization of an array.
   if (E->getType()->isArrayType()) {
@@ -640,20 +660,19 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
 /// type.  The result is computed into DestPtr.  Note that if DestPtr is null,
 /// the value of the aggregate expression is not needed.  If VolatileDest is
 /// true, DestPtr cannot be 0.
-///
-/// \param IsInitializer - true if this evaluation is initializing an
-/// object whose lifetime is already being managed.
 //
 // FIXME: Take Qualifiers object.
-void CodeGenFunction::EmitAggExpr(const Expr *E, AggValueSlot Slot,
-                                  bool IgnoreResult,
+void CodeGenFunction::EmitAggExpr(const Expr *E, llvm::Value *DestPtr,
+                                  bool VolatileDest, bool IgnoreResult,
+                                  bool IsInitializer,
                                   bool RequiresGCollection) {
   assert(E && hasAggregateLLVMType(E->getType()) &&
          "Invalid aggregate expression to emit");
-  assert((Slot.getAddr() != 0 || Slot.isIgnored())
-         && "slot has bits but no address");
+  assert ((DestPtr != 0 || VolatileDest == false)
+          && "volatile aggregate can't be 0");
 
-  AggExprEmitter(*this, Slot, IgnoreResult, RequiresGCollection)
+  AggExprEmitter(*this, DestPtr, VolatileDest, IgnoreResult, IsInitializer,
+                 RequiresGCollection)
     .Visit(const_cast<Expr*>(E));
 }
 
@@ -661,9 +680,7 @@ LValue CodeGenFunction::EmitAggExprToLValue(const Expr *E) {
   assert(hasAggregateLLVMType(E->getType()) && "Invalid argument!");
   llvm::Value *Temp = CreateMemTemp(E->getType());
   LValue LV = MakeAddrLValue(Temp, E->getType());
-  AggValueSlot Slot
-    = AggValueSlot::forAddr(Temp, LV.isVolatileQualified(), false);
-  EmitAggExpr(E, Slot);
+  EmitAggExpr(E, Temp, LV.isVolatileQualified());
   return LV;
 }
 

@@ -3303,7 +3303,8 @@ static ExprResult CopyObject(Sema &S,
   // elision for return statements and throw expressions are handled as part
   // of constructor initialization, while copy elision for exception handlers 
   // is handled by the run-time.
-  bool Elidable = CurInitExpr->isTemporaryObject(S.Context, Class);
+  bool Elidable = CurInitExpr->isTemporaryObject() &&
+     S.Context.hasSameUnqualifiedType(T, CurInitExpr->getType());
   SourceLocation Loc;
   switch (Entity.getKind()) {
   case InitializedEntity::EK_Result:

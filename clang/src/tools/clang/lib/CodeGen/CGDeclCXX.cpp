@@ -38,7 +38,7 @@ static void EmitDeclInit(CodeGenFunction &CGF, const VarDecl &D,
   } else if (T->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(Init, DeclPtr, isVolatile);
   } else {
-    CGF.EmitAggExpr(Init, AggValueSlot::forAddr(DeclPtr, isVolatile, true));
+    CGF.EmitAggExpr(Init, DeclPtr, isVolatile);
   }
 }
 
