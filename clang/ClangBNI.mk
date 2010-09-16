@@ -131,6 +131,7 @@ Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 \
                         CLANG_VENDOR=Apple \
                         CLANG_VENDOR_UTI=com.apple.compilers.llvm.clang
 Clang_Make_Variables += CLANG_VERSION=$(Clang_Version)
+Clang_Make_Variables += CLANG_ORDER_FILE=$(SRCROOT)/clang.order
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
 
