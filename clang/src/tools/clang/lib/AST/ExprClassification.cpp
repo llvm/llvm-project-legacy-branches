@@ -478,8 +478,7 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
 
   // Records with any const fields (recursively) are not modifiable.
   if (const RecordType *R = CT->getAs<RecordType>()) {
-    assert((isa<ObjCImplicitSetterGetterRefExpr>(E) ||
-            isa<ObjCPropertyRefExpr>(E) ||
+    assert((isa<ObjCImplicitSetterGetterRefExpr>(E) || 
             !Ctx.getLangOptions().CPlusPlus) &&
            "C++ struct assignment should be resolved by the "
            "copy assignment operator.");
