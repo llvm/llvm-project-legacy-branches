@@ -27,8 +27,7 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
 ; THUMB-NEXT: tst r4, r5
 ; THUMB-NEXT: beq .LBB0_5
 
-; T2:      and lr, r12, #3
-; T2-NEXT: tst.w r12, #3
+; T2:      ands r12, r12, #3
 ; T2-NEXT: beq .LBB0_5
 
   %and = and i32 %0, 3

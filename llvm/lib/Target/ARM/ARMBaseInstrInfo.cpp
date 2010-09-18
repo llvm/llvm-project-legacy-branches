@@ -1396,14 +1396,22 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask, int &CmpV
   return false;
 }
 
-static bool isSuitableForMask(const MachineInstr &MI, unsigned SrcReg,
+static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
                               int CmpMask) {
-  switch (MI.getOpcode()) {
+  switch (MI->getOpcode()) {
     case ARM::ANDri:
     case ARM::t2ANDri:
-      if (SrcReg == MI.getOperand(1).getReg() &&
-          CmpMask == MI.getOperand(2).getImm())
+      if (SrcReg == MI->getOperand(1).getReg() &&
+          CmpMask == MI->getOperand(2).getImm())
         return true;
+      break;
+    case ARM::COPY: {
+      // walk down
+      const MachineInstr &Copy = *MI;
+      MachineBasicBlock::iterator a(next(MachineBasicBlock::iterator(MI)));
+      MI = a;
+      return isSuitableForMask(MI, Copy.getOperand(0).getReg(), CmpMask);
+    }
   }
 
   return false;
@@ -1428,16 +1436,15 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
 
   // Masked compares sometimes use the same register as the corresponding 'and'.
   if (CmpMask != ~0) {
-    if (!isSuitableForMask(*MI, SrcReg, CmpMask)) {
+    if (!isSuitableForMask(MI, SrcReg, CmpMask)) {
       MI = 0;
       for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
            UE = MRI.use_end(); UI != UE; ++UI) {
         if (UI->getParent() != CmpInstr->getParent()) continue;
-        MachineInstr &PotentialAND = *UI;
+        MachineInstr *PotentialAND = &*UI;
         if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask))
           continue;
-        SrcReg = PotentialAND.getOperand(0).getReg();
-        MI = &PotentialAND;
+        MI = PotentialAND;
         break;
       }
       if (!MI) return false;
