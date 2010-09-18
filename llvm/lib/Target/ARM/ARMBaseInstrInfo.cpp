@@ -1402,7 +1402,8 @@ static bool isSuitableForMask(const MachineInstr &MI, unsigned SrcReg,
     case ARM::ANDri:
     case ARM::t2ANDri:
       if (SrcReg == MI.getOperand(1).getReg() &&
-          CmpMask == MI.getOperand(2).getImm())
+          CmpMask == (MI.getOperand(2).getImm() &
+                      (Relaxable ? CmpMask : ~0)))
         return true;
   }
 
