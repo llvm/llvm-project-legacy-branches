@@ -1397,13 +1397,12 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask, int &CmpV
 }
 
 static bool isSuitableForMask(const MachineInstr &MI, unsigned SrcReg,
-                              int CmpMask, bool Relaxable) {
+                              int CmpMask) {
   switch (MI.getOpcode()) {
     case ARM::ANDri:
     case ARM::t2ANDri:
       if (SrcReg == MI.getOperand(1).getReg() &&
-          CmpMask == (MI.getOperand(2).getImm() &
-                      (Relaxable ? CmpMask : ~0)))
+          CmpMask == MI.getOperand(2).getImm())
         return true;
   }
 
@@ -1429,13 +1428,13 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
 
   // Masked compares sometimes use the same register as the corresponding 'and'.
   if (CmpMask != ~0) {
-    if (!isSuitableForMask(*MI, SrcReg, CmpMask, true)) {
+    if (!isSuitableForMask(*MI, SrcReg, CmpMask)) {
       MI = 0;
       for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
            UE = MRI.use_end(); UI != UE; ++UI) {
         if (UI->getParent() != CmpInstr->getParent()) continue;
         MachineInstr &PotentialAND = *UI;
-        if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask, false))
+        if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask))
           continue;
         SrcReg = PotentialAND.getOperand(0).getReg();
         MI = &PotentialAND;
