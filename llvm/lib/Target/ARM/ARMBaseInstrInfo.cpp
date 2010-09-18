@@ -1386,26 +1386,24 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask, int &CmpV
     CmpValue = MI->getOperand(1).getImm();
     return true;
   case ARM::TSTri:
+  case ARM::t2TSTri:
     SrcReg = MI->getOperand(0).getReg();
     CmpMask = MI->getOperand(1).getImm();
     CmpValue = 0;
     return true;
-    /*
- {
-    MachineBasicBlock::const_iterator MII(MI);
-    if (MI->getParent()->begin() == MII)
-      return false;
-    const MachineInstr *AND = llvm::prior(MII);
-    if (AND->getOpcode() != ARM::ANDri)
-      return false;
-    if (MI->getOperand(0).getReg() == AND->getOperand(1).getReg() &&
-        MI->getOperand(1).getImm() == AND->getOperand(2).getImm()) {
-      SrcReg = AND->getOperand(0).getReg();
-      CmpValue = 0;
-      return true;
-    }
-    }
-    break;*/
+  }
+
+  return false;
+}
+
+static bool isSuitableForMask(const MachineInstr &MI, unsigned SrcReg,
+                              int CmpMask, bool Relaxable) {
+  switch (MI.getOpcode()) {
+    case ARM::ANDri:
+    case ARM::t2ANDri:
+      if (SrcReg == MI.getOperand(1).getReg() &&
+          CmpMask == MI.getOperand(2).getImm())
+        return true;
   }
 
   return false;
@@ -1427,26 +1425,22 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
     return false;
 
   MachineInstr *MI = &*DI;
+
   // Masked compares sometimes use the same register as the corresponding 'and'.
   if (CmpMask != ~0) {
-    for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
-         UE = MRI.use_end(); UI != UE; ++UI) {
-			if (UI->getParent() != CmpInstr->getParent()) continue;
-      switch (UI->getOpcode()) {
-      case ARM::ANDri: {
-        MachineInstr &AND = *UI;
-        if (SrcReg == AND.getOperand(1).getReg() &&
-            CmpMask == AND.getOperand(2).getImm()) {
-          SrcReg = AND.getOperand(0).getReg();
-          MI = &AND;
-          break;
-        }
-        continue;
+    if (!isSuitableForMask(*MI, SrcReg, CmpMask, true)) {
+      MI = 0;
+      for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
+           UE = MRI.use_end(); UI != UE; ++UI) {
+        if (UI->getParent() != CmpInstr->getParent()) continue;
+        MachineInstr &PotentialAND = *UI;
+        if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask, false))
+          continue;
+        SrcReg = PotentialAND.getOperand(0).getReg();
+        MI = &PotentialAND;
+        break;
       }
-      default:
-        continue;
-      }
-      break;
+      if (!MI) return false;
     }
   }
 
