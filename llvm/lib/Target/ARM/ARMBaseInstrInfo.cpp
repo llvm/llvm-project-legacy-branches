@@ -1374,7 +1374,7 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 }
 
 bool ARMBaseInstrInfo::
-AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpValue) const {
+AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask, int &CmpValue) const {
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
@@ -1382,9 +1382,16 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpValue) const {
   case ARM::t2CMPri:
   case ARM::t2CMPzri:
     SrcReg = MI->getOperand(0).getReg();
+    CmpMask = ~0;
     CmpValue = MI->getOperand(1).getImm();
     return true;
-  case ARM::TSTri: {
+  case ARM::TSTri:
+    SrcReg = MI->getOperand(0).getReg();
+    CmpMask = MI->getOperand(1).getImm();
+    CmpValue = 0;
+    return true;
+    /*
+ {
     MachineBasicBlock::const_iterator MII(MI);
     if (MI->getParent()->begin() == MII)
       return false;
@@ -1398,7 +1405,7 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpValue) const {
       return true;
     }
     }
-    break;
+    break;*/
   }
 
   return false;
@@ -1408,8 +1415,8 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpValue) const {
 /// comparison into one that sets the zero bit in the flags register. Update the
 /// iterator *only* if a transformation took place.
 bool ARMBaseInstrInfo::
-OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpValue,
-                     MachineBasicBlock::iterator &MII) const {
+OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
+                     int CmpValue, MachineBasicBlock::iterator &MII) const {
   if (CmpValue != 0)
     return false;
 
@@ -1420,6 +1427,28 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpValue,
     return false;
 
   MachineInstr *MI = &*DI;
+  // Masked compares sometimes use the same register as the corresponding 'and'.
+  if (CmpMask != ~0) {
+    for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
+         UE = MRI.use_end(); UI != UE; ++UI) {
+			if (UI->getParent() != CmpInstr->getParent()) continue;
+      switch (UI->getOpcode()) {
+      case ARM::ANDri: {
+        MachineInstr &AND = *UI;
+        if (SrcReg == AND.getOperand(1).getReg() &&
+            CmpMask == AND.getOperand(2).getImm()) {
+          SrcReg = AND.getOperand(0).getReg();
+          MI = &AND;
+          break;
+        }
+        continue;
+      }
+      default:
+        continue;
+      }
+      break;
+    }
+  }
 
   // Conservatively refuse to convert an instruction which isn't in the same BB
   // as the comparison.
