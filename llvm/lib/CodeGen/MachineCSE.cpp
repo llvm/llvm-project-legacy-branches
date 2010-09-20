@@ -50,6 +50,10 @@ namespace {
       AU.addPreserved<MachineDominatorTree>();
     }
 
+    virtual void releaseMemory() {
+      Exps.clear();
+    }
+
   private:
     unsigned CurrVN;
     ScopedHashTable<MachineInstr*, unsigned, MachineInstrExpressionTrait> VNT;
@@ -83,7 +87,7 @@ bool MachineCSE::PerformTrivialCoalescing(MachineInstr *MI,
     unsigned Reg = MO.getReg();
     if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg))
       continue;
-    if (!MRI->hasOneUse(Reg))
+    if (!MRI->hasOneNonDBGUse(Reg))
       // Only coalesce single use copies. This ensure the copy will be
       // deleted.
       continue;
@@ -370,5 +374,6 @@ bool MachineCSE::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
   AA = &getAnalysis<AliasAnalysis>();
   DT = &getAnalysis<MachineDominatorTree>();
+  CurrVN = 0;
   return ProcessBlock(DT->getRootNode());
 }
