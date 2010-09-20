@@ -12,10 +12,10 @@ define arm_aapcs_vfpcc float @aaa(%vec* nocapture %ustart, %vec* nocapture %udir
 ; CHECK: aaa:
 ; CHECK: vldr.32
 ; CHECK-NOT: vldrne
-; CHECK-NOT: vpopne
-; CHECK-NOT: popne
-; CHECK: vpop
-; CHECK: pop
+; CHECK-NOT: vldmiane
+; CHECK-NOT: ldmiane
+; CHECK: vldmia sp!
+; CHECK: ldmia sp!
 entry:
   br i1 undef, label %bb81, label %bb48
 
