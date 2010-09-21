@@ -1413,7 +1413,7 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
       if (a == MI->getParent()->end()) return false;
       MI = a;
       return isSuitableForMask(MI, Copy.getOperand(0).getReg(),
-                               CmpMask, CommonUse);
+                               CmpMask, true);
     }
   }
 
