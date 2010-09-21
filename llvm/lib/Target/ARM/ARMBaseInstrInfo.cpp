@@ -1410,6 +1410,7 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
       // walk down
       const MachineInstr &Copy = *MI;
       MachineBasicBlock::iterator a(next(MachineBasicBlock::iterator(MI)));
+      if (a == MI->getParent()->end()) return false;
       MI = a;
       return isSuitableForMask(MI, Copy.getOperand(0).getReg(),
                                CmpMask, CommonUse);
