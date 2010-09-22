@@ -425,6 +425,31 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
               TII.get(TargetOpcode::DBG_VALUE))
         .addReg(LDI->second, RegState::Debug)
         .addImm(Offset).addMetadata(Variable);
+
+      // If this vreg is directly copied into an exported register then
+      // that COPY instructions also need DBG_VALUE, if it is the only
+      // user of LDI->second.
+      if (RegInfo->hasOneNonDBGUse(LDI->second)) {
+        MachineInstr *CopyUseMI = NULL;
+        for (MachineRegisterInfo::use_iterator
+               UI = RegInfo->use_begin(LDI->second),
+               UE = RegInfo->use_end(); UI != UE; ++UI) {
+          MachineInstr *UseMI = &*UI;
+          if (UseMI->isDebugValue()) continue;
+          unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
+          if (TII.isMoveInstr(*UseMI, SrcReg, DstReg, SrcSubReg, DstSubReg) &&
+              SrcReg == LDI->second && !SrcSubReg && !DstSubReg)
+            CopyUseMI = UseMI;
+        }
+        if (CopyUseMI) {
+          MachineInstr *NewMI =
+            BuildMI(*MF, CopyUseMI->getDebugLoc(), 
+                    TII.get(TargetOpcode::DBG_VALUE))
+            .addReg(CopyUseMI->getOperand(0).getReg(), RegState::Debug)
+            .addImm(Offset).addMetadata(Variable);
+          EntryMBB->insertAfter(CopyUseMI, NewMI);
+        }
+      }
     }
   }
 

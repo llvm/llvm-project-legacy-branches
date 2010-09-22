@@ -1,5 +1,7 @@
-; RUN: llc -O2 < %s | grep debug_loc12
-; Test to check .debug_loc support. This test case emits 13 debug_loc entries.
+; RUN: llc -march=x86-64 -O2 < %s | FileCheck %s
+; Test to check .debug_loc support. This test case emits many debug_loc entries.
+
+; CHECK: Loc expr size
 
 %0 = type { double }
 
