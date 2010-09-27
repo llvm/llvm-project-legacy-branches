@@ -1,153 +1,22 @@
-# Darwin/ARM seems to support mac68k align as well.
-104828
+# <rdar://problem/8414119> enum >= (enum)0 comparison should not generate any warnings
+114695
 
-# Fixed missing initialization of member. Should we enable unused argument warning?.
-104829
+# <rdar://problem/8461525> Implement API to retrieve the lexical and semantic parents of a cursor
+114587
 
-# When we've parsed a nested-name-specifier in a member access expression,
-# "forget" about the object type; only the nested-name-specifier matters for name
-# lookup purposes. Fixes PR7239.
-104834
+# <rdar://problem/8467189> clang reports wrong container for @property declared in @protocol and class extension (but not @interface)
+114693
 
-# <rdar://problem/8027844> Clang does not compile for..in in Objective-C++ source correctly
-104837
+# <rdar://problem/8470644> Extraneous results with caching of global completions
+114704
 
-# Additional empty class layout tests.
-104838
-104839
+# <rdar://problem/8476497> libclang should enable LLVM multithreading
+114760
 
-# Fix 80-column.
-104847
+# <rdar://problem/8477345> Precompiled preambles are failing when prefix headers are involved
+114774
 
-# Remove clang_isFromMainFile().
-104849
+# <rdar://problem/8479999> Enable caching of global code completions in "editing" options
+114810
 
-# MemoryBuffer::getSTDIN may return a null pointer if an error occurs.
-104856
 
-# More work on the empty subobject map. This code is not yet used.
-104861
-
-# Silence warning about "enumeral and non-enumeral type in conditional expression".
-104863
-
-# When null-initializing bases with data member pointers, don't assert on
-# virtual bases. Just initialize them to null.
-104868
-
-# When handling raw_ostream errors manually, use clear_error() so that
-# raw_ostream doesn't try to do its own error handling.
-104880
-
-# Add a comment to mention the memory ownership situation.
-104886
-
-# Tweak the fix-it for a copy constructor declared to take its argument
-# by-value. We now only prepend a space if it is needed.
-104889
-
-# Implement a code-completion hook for the receiver of an Objective-C
-# message. This completion gives better results than just using the "expression"
-# completion, which is effectively what happened before.
-104895
-
-# Fix typo.
-104898
-
-# Make -code-completion-patterns only cover multi-line code completions. Plus,
-# tweak a few completion patterns to better reflect the language grammar.
-104905
-
-# Do not produce types as valid code completions when we're in an expression
-# context in C/Objective-C, or when we're in an
-# @interface/@implementation/@protocol in Objective-C(++).
-104908
-
-# Don't put method bodies into code completions unless code patterns are turned on.
-104909
-
-# PR7230.
-104917
-
-# Frontend: Sprinkle in some C++ header paths for ARM/Darwin. Also, don't add
-# x86 paths on non-x86.
-104921
-
-# When we complain about a member being inaccessible due to a constraint along
-# an access path, add another note pointing at the member we actually found.
-104937
-
-# Optimize and complete associated-class-and-namespace collection from a type.
-104938
-
-# Test case for r104938.
-104939
-
-# Don't just skip over the entire tag definition if the parser action didn't
-# give us a decl back.  Makes -cc1 -parse-noop handle a substantially larger
-# amount of the C++ grammar.
-104940
-
-# PR7243.
-104942
-
-# <rdar://problem/8037512> Crash in objc exception rethrow
-104964
-
-# PR6762.
-104991
-
-# <rdar://problem/8020384> [gcc testsuite] [clang-32 regression] miscompile of unicode pascal strings
-104996
-
-# Update "users manual", PR2461 has been fixed.
-104997
- personality function name when using SjLj exceptions.
-104999
-
-# <rdar://problem/8040273> [driver] clang is invoking -cc1as with wrong option
-104955
-
-# <rdar://problem/8033209> support #pragma options align=power
-104864
-104865
-104998
-105000
-
-# <rdar://problem/8042105> valgrind errors in ElaboratedTypeLoc
-105062
-
-# <rdar://problem/8042325> Merge C++ header paths for PowerPC
-105083
-105084
-
-# <rdar://problem/8041787> crash in clang_getTypeDeclaration
-105111
-
-# <rdar://problem/8043322> accept '#pragma options align=mac68k' on powerpc
-105116
-
-# <rdar://problem/8043418> Use expected type to adjust priorities of code-completion results
-105128
-105137
-
-# <rdar://problem/80435>28 4A57: clang cra# <rdar://problem/8043528> clang crash in code completion
-105152
-
-# <rdar://problem/8044142> [fuzz] segmentation fault in clang::Sema::CodeCompeCletall
-105175
-
-# <rdar://problem/8044088> [fuzz] Assertion failed: (getLang().CPlusPlus && "Call sites of this function should be guarded by checking for C++")
-105178
-
-# <rdar://problem/8044135> [fuzz] Assertion failed: (Loc >= BufferStart && L<=oc  BufferEnd && "Location out of range for this buffer!")
-105181
-105182
-
-# <rdar://problem/8042673> #warning is no longer a separate 'type' of warning
-105188
-
-# <rdar://problem/7905186> missing ';' not reported before Objective-C message expressions
-105221
-105222
-105229
