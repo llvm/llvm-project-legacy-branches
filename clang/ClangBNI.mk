@@ -247,50 +247,65 @@ all: install
 ###
 # Utility targets for managing the integration branch.
 
-SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
-SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
-SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
+# Determine if we are running an SVN utility target.
+SVN_UTILITY_TARGETS := update-sources tag-clang retag-clang test-svn
+ifneq ($(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
+SVN_UTILITY_MODE := 1
+$(warning "NOTE: Running SVN utility target. Be careful!")
+endif
+
+ifeq ($(SVN_UTILITY_MODE),1)
+SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
+SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
+SVN_TAGS := $(SVN_BASE)/cfe/tags/Apple
+
+$(warning Using SVN base   : $(SVN_BASE))
+$(warning Using Clang SVN  : $(SVN_CLANG))
+$(warning Using SVN tag dir: $(SVN_TAGS))
+$(warning )
+
+# Only actually do anything when EXECUTE=1
+ifeq ($(EXECUTE), 1)
+SVN_COMMAND := svn
+else
+$(warning Not in commit mode, only echoing commands (use EXECUTE=1) to execute.)
+$(warning )
+SVN_COMMAND := @echo svn
+endif
+
+else
+SVN_COMMAND := @echo "NOT IN SVN COMMAND MODE!!!"
+endif
+
+test-svn:
+	@echo "*** TESTING SVN UTILITY MODE ***"
+	$(SVN_COMMAND) info $(SVN_BASE)
 
 update-sources:
 	@if ! [ -n "$(REVISION)" ]; then \
 	  echo Usage: make $@ REVISION=102052; \
 	  false; \
 	fi
-	svn rm -m 'Update.' $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/$(LLVM_Source_Branch)@$(REVISION) $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/$(Clang_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/tools/clang
-	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/$(CompilerRT_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
-	svn up
+	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/llvm/$(LLVM_Source_Branch)@$(REVISION) $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/cfe/$(Clang_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/compiler-rt/$(CompilerRT_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
+	$(SVN_COMMAND) up
 
 tag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
 	  echo Usage: make $@ VERSION=25; \
 	  false; \
 	fi
-	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
+	$(SVN_COMMAND) cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 retag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
 	  echo Usage: make $@ VERSION=25; \
 	  false; \
 	fi
-	svn rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
-	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
-
-tag-clang_ide:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION)
-
-retag-clang_ide:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	svn rm -m 'Retag.' $(SVN_TAGS)/clang_ide-$(VERSION) && \
-	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
+	$(SVN_COMMAND) rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
+	$(SVN_COMMAND) cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 ##
 # Additional Tool Paths
@@ -523,3 +538,11 @@ setup-tools-cross:
 	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
 	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1 ; \
 	done
+
+###
+# Debugging
+
+# General debugging rule, use 'make dbg-print-XXX' to print the
+# definition, value and origin of XXX.
+make-print-%:
+	$(error PRINT: $(value $*) = "$($*)" (from $(origin $*)))
