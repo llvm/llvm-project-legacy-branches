@@ -267,8 +267,11 @@ all: install
 # Utility targets for managing the integration branch.
 
 # Determine if we are running an SVN utility target.
-SVN_UTILITY_TARGETS := update-sources tag-clang retag-clang test-svn
-ifneq ($(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
+SVN_UTILITY_TARGETS := \
+	test-svn update-sources \
+	rebranch-llvm-from-tag rebranch-clang-from-tag \
+	tag-clang retag-clang
+ifneq ($(strip $(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
 SVN_UTILITY_MODE := 1
 $(warning "NOTE: Running SVN utility target. Be careful!")
 endif
@@ -288,19 +291,25 @@ ifneq ($(SVN_CLANG),$(SVN_BASE)/cfe/branches/Apple/$(Train_Name)-IB)
 $(error Unable to recognize SVN layout, conservatively refusing to do anything.)
 endif
 
-# Define the source and target paths.
+# Define the upstream paths.
+LLVM_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+Clang_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+
 ifeq ($(Draw_LLVM_From_Trunk),1)
 LLVM_Upstream := $(SVN_BASE)/llvm/trunk
 else
-LLVM_Upstream := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+LLVM_Upstream := $(LLVM_Branch_Path)
 endif
+
 ifeq ($(Draw_Clang_From_Trunk),1)
 Clang_Upstream := $(SVN_BASE)/cfe/trunk
 else
-Clang_Upstream := $(SVN_BASE)/cfe/branches/Apple/$(Train_Name)
+Clang_Upstream := $(Clang_Branch_Path)
 endif
+
 CompilerRT_Upstream := $(SVN_BASE)/compiler-rt/trunk
 
+# Print information on the upstream sources.
 $(warning LLVM Upstream      : $(LLVM_Upstream))
 $(warning Clang Upstream     : $(Clang_Upstream))
 $(warning CompilerRT Upstream: $(CompilerRT_Upstream))
@@ -333,6 +342,24 @@ update-sources:
 	$(SVN_COMMAND) cp -m 'Update.' $(Clang_Upstream)@$(REVISION) $(SVN_CLANG)/src/tools/clang
 	$(SVN_COMMAND) cp -m 'Update.' $(CompilerRT_Upstream)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
 	$(SVN_COMMAND) up
+
+rebranch-llvm-from-tag:
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=65; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of LLVM.' $(LLVM_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch LLVM from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src $(LLVM_Branch_Path)
+	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 1/2)' $(LLVM_Branch_Path)/tools/clang
+	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 2/2)' $(LLVM_Branch_Path)/projects/compiler-rt
+
+rebranch-clang-from-tag:
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=65; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src/tools/clang $(Clang_Branch_Path)
 
 tag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
