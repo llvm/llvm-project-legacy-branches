@@ -273,7 +273,8 @@ SVN_UTILITY_TARGETS := \
 	tag-clang retag-clang
 ifneq ($(strip $(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
 SVN_UTILITY_MODE := 1
-$(warning "NOTE: Running SVN utility target. Be careful!")
+$(warning NOTE: Running SVN utility target. Be careful!)
+$(warning )
 endif
 
 ifeq ($(SVN_UTILITY_MODE),1)
@@ -293,7 +294,7 @@ endif
 
 # Define the upstream paths.
 LLVM_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
-Clang_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+Clang_Branch_Path := $(SVN_BASE)/cfe/branches/Apple/$(Train_Name)
 
 ifeq ($(Draw_LLVM_From_Trunk),1)
 LLVM_Upstream := $(SVN_BASE)/llvm/trunk
@@ -319,7 +320,7 @@ $(warning )
 ifeq ($(EXECUTE), 1)
 SVN_COMMAND := svn
 else
-$(warning Not in commit mode, only echoing commands (use EXECUTE=1) to execute.)
+$(warning Not in commit mode, only echoing commands (use EXECUTE=1 to execute).)
 $(warning )
 SVN_COMMAND := @echo svn
 endif
