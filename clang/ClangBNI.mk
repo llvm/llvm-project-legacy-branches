@@ -103,6 +103,25 @@ endif
 # B&I Build Logic
 ##
 
+# Require Train_Name to be set.
+ifeq ($(Train_Name),)
+$(error "invalid setting for train name: '$(Train_Name)'")
+endif
+
+# Require Source_To_Draw_From to be set to a known value.
+ifeq ($(Source_To_Draw_From),trunk)
+Draw_LLVM_From_Trunk := 1
+Draw_Clang_From_Trunk := 1
+else ifeq ($(Source_To_Draw_From),branch)
+Draw_LLVM_From_Trunk := 0
+Draw_Clang_From_Trunk := 0
+else ifeq ($(Source_To_Draw_From),branch-llvm-only)
+Draw_LLVM_From_Trunk := 0
+Draw_Clang_From_Trunk := 1
+else
+$(error "invalid setting for source to draw from: '$(Source_To_Draw_From)'")
+endif
+
 # Require Clang_Version to be set.
 ifeq ($(Clang_Version),)
 $(error "invalid setting for clang version: '$(Clang_Version)'")
@@ -259,9 +278,32 @@ SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-pr
 SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
 SVN_TAGS := $(SVN_BASE)/cfe/tags/Apple
 
-$(warning Using SVN base   : $(SVN_BASE))
-$(warning Using Clang SVN  : $(SVN_CLANG))
-$(warning Using SVN tag dir: $(SVN_TAGS))
+$(warning Using SVN base     : $(SVN_BASE))
+$(warning Using Clang SVN    : $(SVN_CLANG))
+$(warning Using SVN tag dir  : $(SVN_TAGS))
+$(warning )
+
+# Validate that we match the expected branch name, as a safety/sanity check.
+ifneq ($(SVN_CLANG),$(SVN_BASE)/cfe/branches/Apple/$(Train_Name)-IB)
+$(error Unable to recognize SVN layout, conservatively refusing to do anything.)
+endif
+
+# Define the source and target paths.
+ifeq ($(Draw_LLVM_From_Trunk),1)
+LLVM_Upstream := $(SVN_BASE)/llvm/trunk
+else
+LLVM_Upstream := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+endif
+ifeq ($(Draw_Clang_From_Trunk),1)
+Clang_Upstream := $(SVN_BASE)/cfe/trunk
+else
+Clang_Upstream := $(SVN_BASE)/cfe/branches/Apple/$(Train_Name)
+endif
+CompilerRT_Upstream := $(SVN_BASE)/compiler-rt/trunk
+
+$(warning LLVM Upstream      : $(LLVM_Upstream))
+$(warning Clang Upstream     : $(Clang_Upstream))
+$(warning CompilerRT Upstream: $(CompilerRT_Upstream))
 $(warning )
 
 # Only actually do anything when EXECUTE=1
@@ -287,9 +329,9 @@ update-sources:
 	  false; \
 	fi
 	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
-	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/llvm/$(LLVM_Source_Branch)@$(REVISION) $(SVN_CLANG)/src
-	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/cfe/$(Clang_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/tools/clang
-	$(SVN_COMMAND) cp -m 'Update.' $(SVN_BASE)/compiler-rt/$(CompilerRT_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
+	$(SVN_COMMAND) cp -m 'Update.' $(LLVM_Upstream)@$(REVISION) $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update.' $(Clang_Upstream)@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	$(SVN_COMMAND) cp -m 'Update.' $(CompilerRT_Upstream)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
 	$(SVN_COMMAND) up
 
 tag-clang:

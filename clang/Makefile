@@ -26,9 +26,10 @@ Clang_Enable_Bootstrap := 1
 ##
 # Source Info
 
-LLVM_Source_Branch := trunk
-Clang_Source_Branch := trunk
-CompilerRT_Source_Branch := trunk
+# The name used to identify this "train".
+Train_Name := whitney
+# Can be one of "trunk", "branch", or "branch-llvm-only".
+Source_To_Draw_From := branch
 
 ##
 # Include build logic.
