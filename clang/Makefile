@@ -72,6 +72,8 @@ configure:
 	           "-DLLVM_USE_CRT_MINSIZEREL:=$(MSVC_CRT)" \
 	           "-DLLVM_USE_CRT_RELWITHDEBINFO:=$(MSVC_CRT)" \
 	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
+	           "-DLLVM_INCLUDE_EXAMPLES:=OFF" \
+	           "-DLLVM_INCLUDE_TESTS:=OFF" \
 	           -G "Visual Studio 10" \
 	           "$(SRCROOT)\src"
 
