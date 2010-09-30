@@ -429,10 +429,8 @@ installsrc:
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
-ifndef No_Remove_Tests	
 	$(_v) rm -rf "$(SRCROOT)"/src/test/*/
 	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
-endif
 
 installhdrs:
 

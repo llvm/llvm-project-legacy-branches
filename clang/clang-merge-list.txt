@@ -19,4 +19,8 @@
 # <rdar://problem/8479999> Enable caching of global code completions in "editing" options
 114810
 
+# <rdar://problem/8470540> spurious property definitions reported due to auto-synthesized properties
+114714
 
+# <rdar://problem/8483253> clang-116 gets confused about ":" in ObjC++ code
+114968
