@@ -24,3 +24,18 @@
 
 # <rdar://problem/8483253> clang-116 gets confused about ":" in ObjC++ code
 114968
+
+# <rdar://problem/8488270> Preprocessor trace not serialized correctly
+114913
+114922
+
+# <rdar://problem/8488304> Preprocessor trace deserialized incorrectly
+114940
+
+# <rdar://problem/8488323> Use-after-free in deserializing declaration contexts lexical contents
+114937
+
+# <rdar://problem/8499034> Fix-it explosion opening Sketch
+115259
+115260
+115263
