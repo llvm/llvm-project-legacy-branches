@@ -1706,10 +1706,6 @@ DIE *DwarfDebug::constructScopeDIE(DbgScope *Scope) {
 /// maps as well.
 unsigned DwarfDebug::GetOrCreateSourceID(StringRef DirName, StringRef FileName){
   unsigned DId;
-  // If FE did not provide a file name, then assume stdin.
-  if (FileName.empty())
-    return GetOrCreateSourceID(DirName, "<stdin>");
-
   StringMap<unsigned>::iterator DI = DirectoryIdMap.find(DirName);
   if (DI != DirectoryIdMap.end()) {
     DId = DI->getValue();
