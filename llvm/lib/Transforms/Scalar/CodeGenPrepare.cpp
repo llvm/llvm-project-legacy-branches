@@ -874,6 +874,51 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
   return MadeChange;
 }
 
+
+static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
+  BasicBlock *Old = I->getParent();
+
+  if (Instruction *C = dyn_cast<Instruction>(condition)) {
+    if (Old != C->getParent())
+      return false;
+  }
+  else
+    return false;
+
+  if (condition != --BasicBlock::iterator(I))
+    return false;
+
+  const Type *Ty = condition->getType();
+
+  if (TruncInst *T = dyn_cast<TruncInst>(condition)) {
+    if (Instruction *P = dyn_cast<Instruction>(T->getOperand(0))) { 
+      if (Old != P->getParent() ||
+	condition != --BasicBlock::iterator(T)/* TODO: CHEAP TRUNCATES*/)
+      return false;
+      condition = P;
+    }
+    else
+      return false;
+  }
+
+  if (BinaryOperator *A = dyn_cast<BinaryOperator>(condition)) {
+    if (A->getOpcode() == Instruction::And) {
+      ConstantInt *Zero(cast<ConstantInt>(ConstantInt::get(Ty, 0)));
+      if (unsigned Leg = I->findCaseValue(Zero)) {
+        BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
+        Old->getTerminator()->eraseFromParent();
+        Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, I->getCondition(), Zero, "tst");
+        BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
+        I->removeCase(Leg);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
 // In this pass we look for GEP and cast instructions that are used
 // across basic blocks and rewrite them to improve basic-block-at-a-time
 // selection.
@@ -931,6 +976,10 @@ bool CodeGenPrepare::OptimizeBlock(BasicBlock &BB) {
         MadeChange |= OptimizeMemoryInst(I, SI->getOperand(1),
                                          SI->getOperand(0)->getType(),
                                          SunkAddrs);
+    } else if (SwitchInst *SwI = dyn_cast<SwitchInst>(I)) {
+      if (TLI)
+        /*MadeChange |=*/ if (OptimizeSwitchInst(SwI, SwI->getCondition()))
+          return true;
     } else if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(I)) {
       if (GEPI->hasAllZeroIndices()) {
         /// The GEP operand must be a pointer, so must its result -> BitCast
