@@ -912,9 +912,10 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
         BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
         I->removeCase(Leg);
 
-
-APInt KnownZero, KnownOne;
-ComputeMaskedBits(A, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
+const Type *Ty2 = A->getType();
+APInt Mask(cast<IntegerType>(Ty2)->getMask());
+APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
+ComputeMaskedBits(A, Mask, KnownZero, KnownOne);
 
 
         return true;
@@ -922,8 +923,8 @@ ComputeMaskedBits(A, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
     }
   }
   else {
-APInt KnownZero, KnownOne;
-ComputeMaskedBits(condition, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
+//APInt KnownZero, KnownOne;
+//ComputeMaskedBits(condition, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
 return false;
   }
 
