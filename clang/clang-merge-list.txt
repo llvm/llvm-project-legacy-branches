@@ -39,3 +39,21 @@
 115259
 115260
 115263
+
+# <rdar://problem/8506363> complaints about unused "-fno-spell-checking" argument
+115420
+
+# <rdar://problem/8274883> clang not providing sub/super/sibling classes info for C++
+115419
+
+# <rdar://problem/8506324> Spurious warnings with precompiled preambles
+115421
+
+# <rdar://problem/8506460> clang_getCursorReferenced() doesn't work for base classes that are templates
+115425
+
+# <rdar://problem/8461510> Implement API to retrieve the display name of a cursor
+115428
+
+# <rdar://problem/8504818> crash related to macro definitions
+115417
