@@ -23,6 +23,7 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Pass.h"
 #include "llvm/Analysis/ProfileInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Transforms/Utils/AddrModeMatcher.h"
@@ -893,7 +894,7 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
   if (TruncInst *T = dyn_cast<TruncInst>(condition)) {
     if (Instruction *P = dyn_cast<Instruction>(T->getOperand(0))) { 
       if (Old != P->getParent() ||
-	condition != --BasicBlock::iterator(T)/* TODO: CHEAP TRUNCATES*/)
+	condition != next(BasicBlock::iterator(P))/* TODO: CHEAP TRUNCATES*/)
       return false;
       condition = P;
     }
@@ -910,9 +911,20 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
         Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, I->getCondition(), Zero, "tst");
         BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
         I->removeCase(Leg);
+
+
+APInt KnownZero, KnownOne;
+ComputeMaskedBits(A, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
+
+
         return true;
       }
     }
+  }
+  else {
+APInt KnownZero, KnownOne;
+ComputeMaskedBits(condition, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
+return false;
   }
 
   return false;
