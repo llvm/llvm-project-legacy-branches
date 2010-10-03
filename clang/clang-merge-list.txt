@@ -57,3 +57,6 @@
 
 # <rdar://problem/8504818> crash related to macro definitions
 115417
+
+# <rdar://problem/8328709> autocompletion triggers compiler error
+115444
