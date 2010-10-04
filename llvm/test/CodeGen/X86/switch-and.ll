@@ -1,3 +1,5 @@
+;; RUN: llc -march=x86-64 %s -o /dev/null -print-after=codegenprepare |& FileCheck %s
+
 %struct.Foo = type { i8* }
 
 define %struct.Foo* @_ZN3Foo7collectEj(%struct.Foo* %this, i32 %acc) nounwind
@@ -14,7 +16,12 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
  %and = and i64 %0, 3
  %conv = trunc i64 %and to i32
  switch i32 %conv, label %sw.epilog [
+;; CHECK: %tst = icmp eq i32 %conv, 0
+;; CHECK-NEXT: br i1 %tst, label %sw.bb, label %tailrecurse.switch
    i32 0, label %sw.bb
+;; CHECK: tailrecurse.switch:
+;; CHECK-NEXT: switch i32 %conv, label %sw.epilog
+;; CHECK-NEXT: i32 1, label %sw.bb
    i32 1, label %sw.bb
    i32 3, label %sw.bb6
    i32 2, label %sw.bb8
