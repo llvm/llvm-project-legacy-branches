@@ -60,3 +60,6 @@
 
 # <rdar://problem/8328709> autocompletion triggers compiler error
 115444
+
+# <rdar://problem/8506806> memory growing completely out of control (16GB memory block allocated!)
+115527
