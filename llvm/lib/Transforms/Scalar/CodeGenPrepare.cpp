@@ -916,11 +916,13 @@ const Type *Ty2 = A->getType();
 APInt Mask(cast<IntegerType>(Ty2)->getMask());
 APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
 ComputeMaskedBits(A, Mask, KnownZero, KnownOne);
-unsigned unknown = (~KnownZero).countPopulation();
+APInt KnownZeroInverted(~KnownZero);
+unsigned unknown = KnownZeroInverted.countPopulation();
 if (unknown > 2) return true;
 unknown += KnownOne.countPopulation();
 if (unknown > 2) return true;
-
+APInt Middle(KnownZeroInverted | KnownOne);
+Middle.clear(KnownZeroInverted.countTrailingZeros());
         return true;
       }
     }
