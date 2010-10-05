@@ -63,3 +63,11 @@
 
 # <rdar://problem/8506806> memory growing completely out of control (16GB memory block allocated!)
 115527
+
+# <rdar://problem/8511624> Infinite loop in PrintStack(llvm::PrettyStackTraceEntry const*, llvm::raw_ostream&)
+115647
+
+# <rdar://problem/8075961> crash indexing Boost code (possible non-termination bug in TryCopyInitialization?)
+115617
+115618
+115621

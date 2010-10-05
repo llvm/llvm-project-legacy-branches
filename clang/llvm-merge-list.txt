@@ -6,3 +6,6 @@
 
 # <rdar://problem/8499254> [PR8247] JumpThreading Assertion `From != To && "ReplaceAndSimplifyAllUses(X,X) is not valid!"' failed.
 115082
+
+# <rdar://problem/8075961> crash indexing Boost code (possible non-termination bug in TryCopyInitialization?)
+115616
