@@ -876,25 +876,26 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
 }
 
 
-static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
+static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
   BasicBlock *Old = I->getParent();
 
-  if (Instruction *C = dyn_cast<Instruction>(condition)) {
+  if (Instruction *C = dyn_cast<Instruction>(OrigCondition)) {
     if (Old != C->getParent())
       return false;
   }
   else
     return false;
 
-  if (condition != --BasicBlock::iterator(I))
+  if (OrigCondition != --BasicBlock::iterator(I))
     return false;
 
-  const Type *Ty = condition->getType();
+  Value *condition = OrigCondition;
+  const Type *Ty = OrigCondition->getType();
 
   if (TruncInst *T = dyn_cast<TruncInst>(condition)) {
     if (Instruction *P = dyn_cast<Instruction>(T->getOperand(0))) { 
       if (Old != P->getParent() ||
-	condition != next(BasicBlock::iterator(P))/* TODO: CHEAP TRUNCATES*/)
+          condition != next(BasicBlock::iterator(P))/* TODO: CHEAP TRUNCATES*/)
       return false;
       condition = P;
     }
@@ -908,14 +909,14 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *condition) {
       if (unsigned Leg = I->findCaseValue(Zero)) {
         BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
         Old->getTerminator()->eraseFromParent();
-        Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, I->getCondition(), Zero, "tst");
+        Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, OrigCondition, Zero, "tst");
         BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
         I->removeCase(Leg);
 
-const Type *Ty2 = A->getType();
-APInt Mask(cast<IntegerType>(Ty2)->getMask());
+				//const Type *Ty2 = A->getType();
+APInt Mask(cast<IntegerType>(Ty)->getMask());
 APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
-ComputeMaskedBits(A, Mask, KnownZero, KnownOne);
+ComputeMaskedBits(OrigCondition, Mask, KnownZero, KnownOne);
 APInt KnownZeroInverted(~KnownZero);
 unsigned unknown = KnownZeroInverted.countPopulation();
 if (unknown > 2) return true;
@@ -923,6 +924,14 @@ unknown += KnownOne.countPopulation();
 if (unknown > 2) return true;
 APInt Middle(KnownZeroInverted | KnownOne);
 Middle.clear(KnownZeroInverted.countTrailingZeros());
+ ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
+if (unsigned MidLeg = I->findCaseValue(Mid)) {
+        BasicBlock *New2 = New->splitBasicBlock(I, New->getName()+".switch2");        
+        New->getTerminator()->eraseFromParent();
+				Instruction *MidCmp = new ICmpInst(*New, CmpInst::ICMP_EQ, OrigCondition, Mid, "mid?");
+        BranchInst::Create(I->getSuccessor(MidLeg), New2, MidCmp, New);
+        I->removeCase(MidLeg);
+}
         return true;
       }
     }
