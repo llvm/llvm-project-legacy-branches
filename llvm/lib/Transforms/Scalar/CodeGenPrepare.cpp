@@ -913,33 +913,27 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
         BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
         I->removeCase(Leg);
 
-				//const Type *Ty2 = A->getType();
-APInt Mask(cast<IntegerType>(Ty)->getMask());
-APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
-ComputeMaskedBits(OrigCondition, Mask, KnownZero, KnownOne);
-APInt KnownZeroInverted(~KnownZero);
-unsigned unknown = KnownZeroInverted.countPopulation();
-if (unknown > 2) return true;
-unknown += KnownOne.countPopulation();
-if (unknown > 2) return true;
-APInt Middle(KnownZeroInverted | KnownOne);
-Middle.clear(KnownZeroInverted.countTrailingZeros());
- ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
-if (unsigned MidLeg = I->findCaseValue(Mid)) {
-        BasicBlock *New2 = New->splitBasicBlock(I, New->getName()+".switch2");        
-        New->getTerminator()->eraseFromParent();
-				Instruction *MidCmp = new ICmpInst(*New, CmpInst::ICMP_EQ, OrigCondition, Mid, "mid?");
-        BranchInst::Create(I->getSuccessor(MidLeg), New2, MidCmp, New);
-        I->removeCase(MidLeg);
-}
+        APInt Mask(cast<IntegerType>(Ty)->getMask());
+        APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
+        ComputeMaskedBits(OrigCondition, Mask, KnownZero, KnownOne);
+        APInt KnownZeroInverted(~KnownZero);
+        unsigned unknown = KnownZeroInverted.countPopulation();
+        if (unknown > 2) return true;
+        unknown += KnownOne.countPopulation();
+        if (unknown > 2) return true;
+        APInt Middle(KnownZeroInverted | KnownOne);
+        Middle.clear(KnownZeroInverted.countTrailingZeros());
+        ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
+        if (unsigned MidLeg = I->findCaseValue(Mid)) {
+          BasicBlock *New2 = New->splitBasicBlock(I, New->getName()+".switch2");        
+          New->getTerminator()->eraseFromParent();
+          Instruction *MidCmp = new ICmpInst(*New, CmpInst::ICMP_EQ, OrigCondition, Mid, "mid?");
+          BranchInst::Create(I->getSuccessor(MidLeg), New2, MidCmp, New);
+          I->removeCase(MidLeg);
+        }
         return true;
       }
     }
-  }
-  else {
-//APInt KnownZero, KnownOne;
-//ComputeMaskedBits(condition, cast<IntegerType>(Ty)->getMask(), KnownZero, KnownOne);
-return false;
   }
 
   return false;
