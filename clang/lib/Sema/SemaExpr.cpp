@@ -7438,8 +7438,6 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
                                             SourceLocation RPLoc) {
   Expr *OrigExpr = E;
 
-  InitBuiltinVaListType();
-
   // Get the va_list type
   QualType VaListType = Context.getBuiltinVaListType();
   if (VaListType->isArrayType()) {
