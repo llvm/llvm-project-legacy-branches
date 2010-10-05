@@ -19,12 +19,19 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
 ;; CHECK: %tst = icmp eq i32 %conv, 0
 ;; CHECK-NEXT: br i1 %tst, label %sw.bb, label %tailrecurse.switch
    i32 0, label %sw.bb
+
 ;; CHECK: tailrecurse.switch:
+;; CHECK-NEXT: %"mid?" = icmp eq i32 %conv, 2
+;; CHECK-NEXT: br i1 %"mid?", label %sw.bb8, label %tailrecurse.switch.switch2
+
+;; CHECK: tailrecurse.switch.switch2:
 ;; CHECK-NEXT: switch i32 %conv, label %sw.epilog
 ;; CHECK-NEXT: i32 1, label %sw.bb
    i32 1, label %sw.bb
+;; CHECK-NEXT: i32 3, label %sw.bb6
    i32 3, label %sw.bb6
    i32 2, label %sw.bb8
+;; CHECK-NEXT: ]
  ]
 
 sw.bb:                                            ; preds = %tailrecurse
