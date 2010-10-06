@@ -27,15 +27,11 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
 
 ;; CHECK: nz.non-middle:
 ;; CHECK-NEXT: %"top?" = icmp ugt i32 %conv, 2
-;; CHECK-NEXT: br i1 %"top?", label %sw.bb6, label %nz.bottom
+;; CHECK-NEXT: br i1 %"top?", label %sw.bb6, label %sw.bb
 
-;; CHECK: nz.bottom:
-;; CHECK-NEXT: switch i32 %conv, label %sw.epilog
-;; CHECK-NEXT: i32 1, label %sw.bb
    i32 1, label %sw.bb
    i32 3, label %sw.bb6
    i32 2, label %sw.bb8
-;; CHECK-NEXT: ]
  ]
 
 sw.bb:                                            ; preds = %tailrecurse
@@ -55,6 +51,8 @@ sw.bb8:                                           ; preds = %tailrecurse
  %this.tr.sum = add i64 %indvar, %add.ptr9.sum
  %add.ptr11 = getelementptr inbounds %struct.Foo* %this, i64 %this.tr.sum
  ret %struct.Foo* %add.ptr11
+
+;; CHECK: sw.epilog: ; No predecessors!
 
 sw.epilog:                                        ; preds = %tailrecurse
  ret %struct.Foo* undef

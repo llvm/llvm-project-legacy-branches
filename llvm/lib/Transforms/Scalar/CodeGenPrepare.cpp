@@ -947,10 +947,12 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
             ConstantInt *Bot(cast<ConstantInt>(ConstantInt::get(Ty, Bottom)));
             if (unsigned BottomLeg = I->findCaseValue(Bot)) {
               // Replace nz.bottom BB with found leg.
+              New3->replaceAllUsesWith(I->getSuccessor(BottomLeg));
             } else {
               // Otherwise with default leg.
-              assert(0);
+              New3->replaceAllUsesWith(I->getDefaultDest());
             }
+            New3->eraseFromParent();
           }
         }
         return true;
