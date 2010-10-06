@@ -16,6 +16,7 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
  %and = and i64 %0, 3
  %conv = trunc i64 %and to i32
  switch i32 %conv, label %sw.epilog [
+
 ;; CHECK: %tst = icmp eq i32 %conv, 0
 ;; CHECK-NEXT: br i1 %tst, label %sw.bb, label %nz
    i32 0, label %sw.bb
@@ -25,10 +26,13 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
 ;; CHECK-NEXT: br i1 %"mid?", label %sw.bb8, label %nz.non-middle
 
 ;; CHECK: nz.non-middle:
+;; CHECK-NEXT: %"top?" = icmp ugt i32 %conv, 2
+;; CHECK-NEXT: br i1 %"top?", label %sw.bb6, label %nz.bottom
+
+;; CHECK: nz.bottom:
 ;; CHECK-NEXT: switch i32 %conv, label %sw.epilog
 ;; CHECK-NEXT: i32 1, label %sw.bb
    i32 1, label %sw.bb
-;; CHECK-NEXT: i32 3, label %sw.bb6
    i32 3, label %sw.bb6
    i32 2, label %sw.bb8
 ;; CHECK-NEXT: ]

@@ -878,11 +878,14 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
 static BasicBlock*
 ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
                  BasicBlock *Old, const char *CmpName, const char *BlockName,
-                 CmpInst::Predicate Crit = CmpInst::ICMP_EQ) {
+                 CmpInst::Predicate Crit = CmpInst::ICMP_EQ,
+								 ConstantInt *Against = 0) {
+  if (!Against) Against = Val;
+
   if (unsigned Leg = I->findCaseValue(Val)) {
     BasicBlock *New = Old->splitBasicBlock(I, BlockName);        
     Old->getTerminator()->eraseFromParent();
-    Instruction *Cmp = new ICmpInst(*Old, Crit, OrigCondition, Val, CmpName);
+    Instruction *Cmp = new ICmpInst(*Old, Crit, OrigCondition, Against, CmpName);
     BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
     I->removeCase(Leg);
     return New;
@@ -929,11 +932,16 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
         if (unknown > 2) return true;
         unknown += KnownOne.countPopulation();
         if (unknown > 2) return true;
-        APInt Middle(KnownZeroInverted | KnownOne);
+        APInt Top(KnownZeroInverted | KnownOne);
+        APInt Middle(Top);
         Middle.clear(KnownZeroInverted.countTrailingZeros());
         ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
 
         if (BasicBlock *New2 = ChopOffSwitchLeg(I, OrigCondition, Mid, New, "mid?", "nz.non-middle")) {
+					ConstantInt *T(cast<ConstantInt>(ConstantInt::get(Ty, Top)));
+					if (BasicBlock *New3 = ChopOffSwitchLeg(I, OrigCondition, T, New2,
+																									"top?", "nz.bottom", CmpInst::ICMP_UGT, Mid)) {
+					}
         }
         return true;
       }
