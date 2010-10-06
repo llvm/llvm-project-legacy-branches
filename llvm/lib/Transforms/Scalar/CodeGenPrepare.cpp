@@ -882,15 +882,20 @@ ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
                  ConstantInt *Against = 0) {
   if (!Against) Against = Val;
 
+  BasicBlock *New = Old->splitBasicBlock(I, BlockName);        
+  TerminatorInst *OldBranch = Old->getTerminator();
+  Instruction *Cmp = new ICmpInst(*Old, Crit, OrigCondition, Against, CmpName);
+
   if (unsigned Leg = I->findCaseValue(Val)) {
-    BasicBlock *New = Old->splitBasicBlock(I, BlockName);        
-    Old->getTerminator()->eraseFromParent();
-    Instruction *Cmp = new ICmpInst(*Old, Crit, OrigCondition, Against, CmpName);
     BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
     I->removeCase(Leg);
-    return New;
+  } else {
+    BranchInst::Create(I->getDefaultDest(), New, Cmp, Old);
   }
-  return 0;
+
+  OldBranch->replaceAllUsesWith(Old->getTerminator());
+  OldBranch->eraseFromParent();
+  return New;
 }
 
 static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
