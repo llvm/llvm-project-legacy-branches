@@ -875,12 +875,14 @@ bool CodeGenPrepare::OptimizeExtUses(Instruction *I) {
   return MadeChange;
 }
 
-BasicBlock *ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
-                             BasicBlock *Old, const char *CmpName) {
+static BasicBlock*
+ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
+                 BasicBlock *Old, const char *CmpName, const char *BlockName,
+                 CmpInst::Predicate Crit = CmpInst::ICMP_EQ) {
   if (unsigned Leg = I->findCaseValue(Val)) {
-    BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
+    BasicBlock *New = Old->splitBasicBlock(I, BlockName);        
     Old->getTerminator()->eraseFromParent();
-    Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, OrigCondition, Val, CmpName);
+    Instruction *Cmp = new ICmpInst(*Old, Crit, OrigCondition, Val, CmpName);
     BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
     I->removeCase(Leg);
     return New;
@@ -918,15 +920,7 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
   if (BinaryOperator *A = dyn_cast<BinaryOperator>(condition)) {
     if (A->getOpcode() == Instruction::And) {
       ConstantInt *Zero(cast<ConstantInt>(ConstantInt::get(Ty, 0)));
-      if (BasicBlock *New = ChopOffSwitchLeg(I, OrigCondition, Zero, Old, "tst")) {
-      /*
-      if (unsigned Leg = I->findCaseValue(Zero)) {
-        BasicBlock *New = Old->splitBasicBlock(I, Old->getName()+".switch");        
-        Old->getTerminator()->eraseFromParent();
-        Instruction *Cmp = new ICmpInst(*Old, CmpInst::ICMP_EQ, OrigCondition, Zero, "tst");
-        BranchInst::Create(I->getSuccessor(Leg), New, Cmp, Old);
-        I->removeCase(Leg);*/
-
+      if (BasicBlock *New = ChopOffSwitchLeg(I, OrigCondition, Zero, Old, "tst", "nz")) {
         APInt Mask(cast<IntegerType>(Ty)->getMask());
         APInt KnownZero(Mask.getBitWidth(), 0), KnownOne(Mask.getBitWidth(), 0);
         ComputeMaskedBits(OrigCondition, Mask, KnownZero, KnownOne);
@@ -939,16 +933,8 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
         Middle.clear(KnownZeroInverted.countTrailingZeros());
         ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
 
-        if (BasicBlock *New2 = ChopOffSwitchLeg(I, OrigCondition, Mid, New, "mid?")) {
+        if (BasicBlock *New2 = ChopOffSwitchLeg(I, OrigCondition, Mid, New, "mid?", "nz.non-middle")) {
         }
-        /*
-        if (unsigned MidLeg = I->findCaseValue(Mid)) {
-          BasicBlock *New2 = New->splitBasicBlock(I, New->getName()+".switch2");        
-          New->getTerminator()->eraseFromParent();
-          Instruction *MidCmp = new ICmpInst(*New, CmpInst::ICMP_EQ, OrigCondition, Mid, "mid?");
-          BranchInst::Create(I->getSuccessor(MidLeg), New2, MidCmp, New);
-          I->removeCase(MidLeg);
-          }*/
         return true;
       }
     }

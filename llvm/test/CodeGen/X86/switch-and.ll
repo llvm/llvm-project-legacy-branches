@@ -17,14 +17,14 @@ tailrecurse:                                      ; preds = %sw.bb, %entry
  %conv = trunc i64 %and to i32
  switch i32 %conv, label %sw.epilog [
 ;; CHECK: %tst = icmp eq i32 %conv, 0
-;; CHECK-NEXT: br i1 %tst, label %sw.bb, label %tailrecurse.switch
+;; CHECK-NEXT: br i1 %tst, label %sw.bb, label %nz
    i32 0, label %sw.bb
 
-;; CHECK: tailrecurse.switch:
+;; CHECK: nz:
 ;; CHECK-NEXT: %"mid?" = icmp eq i32 %conv, 2
-;; CHECK-NEXT: br i1 %"mid?", label %sw.bb8, label %tailrecurse.switch.switch2
+;; CHECK-NEXT: br i1 %"mid?", label %sw.bb8, label %nz.non-middle
 
-;; CHECK: tailrecurse.switch.switch2:
+;; CHECK: nz.non-middle:
 ;; CHECK-NEXT: switch i32 %conv, label %sw.epilog
 ;; CHECK-NEXT: i32 1, label %sw.bb
    i32 1, label %sw.bb
