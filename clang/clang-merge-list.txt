@@ -71,3 +71,6 @@
 115617
 115618
 115621
+
+# <rdar://problem/8519427> crash in clang::ASTUnit::~ASTUnit
+115838
