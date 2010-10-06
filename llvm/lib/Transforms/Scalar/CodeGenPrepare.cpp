@@ -879,7 +879,7 @@ static BasicBlock*
 ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
                  BasicBlock *Old, const char *CmpName, const char *BlockName,
                  CmpInst::Predicate Crit = CmpInst::ICMP_EQ,
-								 ConstantInt *Against = 0) {
+                 ConstantInt *Against = 0) {
   if (!Against) Against = Val;
 
   if (unsigned Leg = I->findCaseValue(Val)) {
@@ -938,10 +938,20 @@ static bool OptimizeSwitchInst(SwitchInst *I, Value *OrigCondition) {
         ConstantInt *Mid(cast<ConstantInt>(ConstantInt::get(Ty, Middle)));
 
         if (BasicBlock *New2 = ChopOffSwitchLeg(I, OrigCondition, Mid, New, "mid?", "nz.non-middle")) {
-					ConstantInt *T(cast<ConstantInt>(ConstantInt::get(Ty, Top)));
-					if (BasicBlock *New3 = ChopOffSwitchLeg(I, OrigCondition, T, New2,
-																									"top?", "nz.bottom", CmpInst::ICMP_UGT, Mid)) {
-					}
+          ConstantInt *T(cast<ConstantInt>(ConstantInt::get(Ty, Top)));
+          if (BasicBlock *New3 = ChopOffSwitchLeg(I, OrigCondition, T, New2,
+                                                  "top?", "nz.bottom", CmpInst::ICMP_UGT, Mid)) {
+            // The bottom value remains.
+            APInt Bottom(Top);
+            Bottom.clear(Mask.getBitWidth() - 1 - KnownZeroInverted.countLeadingZeros());
+            ConstantInt *Bot(cast<ConstantInt>(ConstantInt::get(Ty, Bottom)));
+            if (unsigned BottomLeg = I->findCaseValue(Bot)) {
+              // Replace nz.bottom BB with found leg.
+            } else {
+              // Otherwise with default leg.
+              assert(0);
+            }
+          }
         }
         return true;
       }
