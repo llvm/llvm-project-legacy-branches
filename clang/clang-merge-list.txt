@@ -32,3 +32,7 @@
 # <rdar://problem/8360857> miscompile of Obj-C bitfield access
 112913
 112914 (manual)
+
+# <rdar://problem/8516390> clang isn't setting up exception handlers as expected
+113889
+115730
