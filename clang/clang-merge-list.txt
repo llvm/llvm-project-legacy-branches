@@ -74,3 +74,6 @@
 
 # <rdar://problem/8519427> crash in clang::ASTUnit::~ASTUnit
 115838
+
+# <rdar://problem/8524895> Turn off typo correction by default
+115931
