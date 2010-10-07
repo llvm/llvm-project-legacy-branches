@@ -895,6 +895,18 @@ ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
 
   OldBranch->replaceAllUsesWith(Old->getTerminator());
   OldBranch->eraseFromParent();
+
+  BasicBlock *TrueBB = Old->getTerminator()->getSuccessor(0);
+	// Add incoming edges to PHIs where not yet present.
+	for (BasicBlock::use_iterator U = TrueBB->use_begin(),
+				 E = TrueBB->use_end(); U != E; ++U)
+		if (PHINode *PHI = dyn_cast<PHINode>(*U)) {
+			int IDX = PHI->getBasicBlockIndex(New);
+			if (IDX >= 0
+					&& PHI->getBasicBlockIndex(Old) < 0)
+				PHI->addIncoming(PHI->getIncomingValue(IDX), Old);
+		}
+
   return New;
 }
 
