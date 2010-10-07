@@ -1790,11 +1790,6 @@ void ASTUnit::CodeComplete(llvm::StringRef File, unsigned Line, unsigned Column,
   FrontendOpts.CodeCompletionAt.Line = Line;
   FrontendOpts.CodeCompletionAt.Column = Column;
 
-  // Turn on spell-checking when performing code completion. It leads
-  // to better results.
-  unsigned SpellChecking = CCInvocation.getLangOpts().SpellChecking;
-  CCInvocation.getLangOpts().SpellChecking = 1;
-
   // Set the language options appropriately.
   LangOpts = CCInvocation.getLangOpts();
 
@@ -1813,7 +1808,6 @@ void ASTUnit::CodeComplete(llvm::StringRef File, unsigned Line, unsigned Column,
                                                Clang.getTargetOpts()));
   if (!Clang.hasTarget()) {
     Clang.takeInvocation();
-    CCInvocation.getLangOpts().SpellChecking = SpellChecking;
     return;
   }
   
@@ -1910,7 +1904,6 @@ void ASTUnit::CodeComplete(llvm::StringRef File, unsigned Line, unsigned Column,
   Clang.takeSourceManager();
   Clang.takeInvocation();
   Clang.takeCodeCompletionConsumer();
-  CCInvocation.getLangOpts().SpellChecking = SpellChecking;
 }
 
 bool ASTUnit::Save(llvm::StringRef File) {
