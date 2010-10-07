@@ -900,6 +900,8 @@ ChopOffSwitchLeg(SwitchInst *I, Value *OrigCondition, ConstantInt *Val,
   for (BasicBlock::use_iterator U = New->use_begin(),
          E = New->use_end(); U != E; ++U)
     if (PHINode *PHI = dyn_cast<PHINode>(*U)) {
+      if (Old->getTerminator()->getSuccessor(0) != PHI->getParent())
+        continue;
       int IDX = PHI->getBasicBlockIndex(New);
       if (IDX >= 0 &&
           PHI->getBasicBlockIndex(Old) < 0)
