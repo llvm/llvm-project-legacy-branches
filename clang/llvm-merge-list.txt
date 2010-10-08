@@ -9,3 +9,6 @@
 
 # <rdar://problem/8075961> crash indexing Boost code (possible non-termination bug in TryCopyInitialization?)
 115616
+
+# <rdar://problem/8530444> libclang is reraising the wrong signal
+116072
