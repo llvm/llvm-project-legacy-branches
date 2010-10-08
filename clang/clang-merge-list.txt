@@ -77,3 +77,6 @@
 
 # <rdar://problem/8524895> Turn off typo correction by default
 115931
+
+# <rdar://problem/8519422> Explosion of spurious errors and warnings
+116041
