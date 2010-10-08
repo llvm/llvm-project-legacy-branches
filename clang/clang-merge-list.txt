@@ -80,3 +80,6 @@
 
 # <rdar://problem/8519422> Explosion of spurious errors and warnings
 116041
+
+# <rdar://problem/8521040> libclang inadvertently sets up signal handlers for SIGPIPE and friends
+116084
