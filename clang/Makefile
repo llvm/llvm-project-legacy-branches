@@ -5,7 +5,7 @@
 # LLVM/Clang default configuration.
 
 # Select default assertion mode, valid values are '0' and '1'.
-Clang_Use_Assertions   := 0
+Clang_Use_Assertions   := 1
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
 # Select optimization flags to use.
@@ -29,7 +29,7 @@ Clang_Enable_Bootstrap := 1
 # The name used to identify this "train".
 Train_Name := whitney
 # Can be one of "trunk", "branch", or "branch-llvm-only".
-Source_To_Draw_From := branch
+Source_To_Draw_From := trunk
 
 ##
 # Include build logic.
