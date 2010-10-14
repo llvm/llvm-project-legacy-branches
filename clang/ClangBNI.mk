@@ -224,7 +224,20 @@ Stage1_Configure_Flags = $(Common_Configure_Flags) \
 Configure_Flags = $(Common_Configure_Flags) \
                   --with-extra-options="$(Extra_Options) $(Clang_Final_Extra_Options)"
 
-# Select stage1 compiler.
+# Determine the /Developer/usr/bin/clang major build version number
+SysClangMajorBuildVersion := \
+  $(shell /Developer/usr/bin/clang -v 2>&1 | \
+	head -1 | \
+	sed -e "s@.*\(clang-[0-9]*\).*@\1@" \
+	    -e "s@\$$@-@" | \
+	cut -d- -f2 | \
+	cut -d. -f1)
+ifeq ($(shell test $(SysClangMajorBuildVersion) -ge 115 && echo OK),OK)
+CC := /Developer/usr/bin/clang
+CXX := /Developer/usr/bin/clang++
+endif
+
+# Set stage1 compiler.
 Stage1_CC := $(CC)
 Stage1_CXX := $(CXX)
 
