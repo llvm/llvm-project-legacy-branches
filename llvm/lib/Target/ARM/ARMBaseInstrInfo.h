@@ -328,7 +328,7 @@ public:
   /// in SrcReg and the value it compares against in CmpValue. Return true if
   /// the comparison instruction can be analyzed.
   virtual bool AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg,
-                              int &CmpMask, int &CmpValue) const;
+                              int &CmpMask, int &CmpValue, Opaque&) const;
 
   /// OptimizeCompareInstr - Convert the instruction to set the zero flag so
   /// that we can remove a "comparison with zero".

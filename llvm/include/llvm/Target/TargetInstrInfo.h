@@ -34,6 +34,15 @@ class TargetRegisterInfo;
 
 template<class T> class SmallVectorImpl;
 
+struct Opaque {
+	void (*dispach)(const Opaque&, int);
+	void *operator new(size_t, Opaque&);
+};
+
+struct MaxOpaque : Opaque {
+  enum { SomeSufficientNumber = sizeof(void*) * 10 };
+  char payload[SomeSufficientNumber];
+};
 
 //---------------------------------------------------------------------------
 ///
@@ -587,7 +596,7 @@ public:
   /// in SrcReg and the value it compares against in CmpValue. Return true if
   /// the comparison instruction can be analyzed.
   virtual bool AnalyzeCompare(const MachineInstr *MI,
-                              unsigned &SrcReg, int &Mask, int &Value) const {
+                              unsigned &SrcReg, int &Mask, int &Value, struct Opaque&) const {
     return false;
   }
 

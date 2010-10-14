@@ -239,7 +239,8 @@ bool PeepholeOptimizer::OptimizeCmpInstr(MachineInstr *MI,
   // physical register, we can try to optimize it.
   unsigned SrcReg;
   int CmpMask, CmpValue;
-  if (!TII->AnalyzeCompare(MI, SrcReg, CmpMask, CmpValue) ||
+  MaxOpaque Space;
+  if (!TII->AnalyzeCompare(MI, SrcReg, CmpMask, CmpValue, Space) ||
       TargetRegisterInfo::isPhysicalRegister(SrcReg))
     return false;
 

@@ -1429,24 +1429,23 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 }
 
 
-struct Opaque {
-	void (*dispach)(const Opaque&, int);
-	void *operator new(size_t, Opaque&);
-};
-
-struct MaxOpaque : Opaque {
-  enum { SomeSufficientNumber = sizeof(void*) * 10 };
-  char payload[SomeSufficientNumber];
-};
-
-void *Opaque::operator new(size_t need, Opaque& space) {
+void *llvm::Opaque::operator new(size_t need, Opaque& space) {
   assert(need <= sizeof(MaxOpaque));
   return &space;
 }
 
+
+struct ImmCmpOpaque : Opaque {
+	int CmpValue;
+};
+
+struct MaskOpaque : Opaque {
+	int CmpMask;
+};
+
 bool ARMBaseInstrInfo::
 AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask,
-               int &CmpValue) const {
+               int &CmpValue, Opaque& Opp) const {
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
@@ -1456,13 +1455,13 @@ AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask,
     SrcReg = MI->getOperand(0).getReg();
     CmpMask = ~0;
     CmpValue = MI->getOperand(1).getImm();
-    return true;
+    return new(Opp) ImmCmpOpaque;
   case ARM::TSTri:
   case ARM::t2TSTri:
     SrcReg = MI->getOperand(0).getReg();
     CmpMask = MI->getOperand(1).getImm();
     CmpValue = 0;
-    return true;
+    return new(Opp) MaskOpaque;
   }
 
   return false;
