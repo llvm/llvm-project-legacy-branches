@@ -224,6 +224,10 @@ Stage1_Configure_Flags = $(Common_Configure_Flags) \
 Configure_Flags = $(Common_Configure_Flags) \
                   --with-extra-options="$(Extra_Options) $(Clang_Final_Extra_Options)"
 
+# Select stage1 compiler.
+Stage1_CC := $(CC)
+Stage1_CXX := $(CXX)
+
 # Set up any additional Clang install targets.
 Extra_Clang_Install_Targets :=
 
@@ -384,15 +388,20 @@ retag-clang:
 ##
 # Additional Tool Paths
 
-CHOWN		= /usr/sbin/chown
-CXX             = /usr/bin/g++
-FIND		= /usr/bin/find
-INSTALL		= /usr/bin/install
-INSTALL_FILE	= $(INSTALL) -m 0444
-MKDIR		= /bin/mkdir -p -m 0755
-PAX		= /bin/pax
-RMDIR		= /bin/rm -fr
-XARGS		= /usr/bin/xargs
+CHOWN		:= /usr/sbin/chown
+CXX             := /usr/bin/g++
+FIND		:= /usr/bin/find
+INSTALL		:= /usr/bin/install
+INSTALL_FILE	:= $(INSTALL) -m 0444
+MKDIR		:= /bin/mkdir -p -m 0755
+PAX		:= /bin/pax
+RMDIR		:= /bin/rm -fr
+XARGS		:= /usr/bin/xargs
+
+# We aren't really a recursive make, rather we are a separate build which just
+# happens to use make for a sub-task. For that reason, we redefine MAKE to not
+# propagate overrides.
+MAKE            := env MAKEFLAGS= $(MAKE_COMMAND)
 
 ## 
 # Tool Variables
@@ -506,8 +515,8 @@ configure-clang_singlestage:
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		time $(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
-		  CC="$(CC) -arch $$arch" \
-		  CXX="$(CXX) -arch $$arch" || exit 1 ; \
+		  CC="$(Stage1_CC) -arch $$arch" \
+		  CXX="$(Stage1_CXX) -arch $$arch" || exit 1 ; \
 	done
 
 configure-clang_stage1: 
@@ -516,7 +525,8 @@ configure-clang_stage1:
 	$(_v) $(MKDIR) $(OBJROOT)/stage1-$(Stage1_Compiler_Arch)
 	$(_v) cd $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) && \
 	      time $(Configure) --prefix="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)" $(Stage1_Configure_Flags) \
-	        CC="$(CC) -arch $(Stage1_Compiler_Arch)" CXX="$(CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
+	        CC="$(Stage1_CC) -arch $(Stage1_Compiler_Arch)" \
+		CXX="$(Stage1_CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
 
 install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
