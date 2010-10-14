@@ -205,6 +205,10 @@ endif
 # the sequencing monotonic.
 Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
 
+# Set extra compile options.
+Extra_Options := $(Clang_Extra_Options)
+Extra_Options += -DLLVM_VERSION_INFO='\"from Apple Clang $(Clang_Version) (build $(SourceVersion))\"'
+
 # Set configure flags.
 Common_Configure_Flags = \
 		  --enable-targets=$(LLVM_Backends) \
@@ -216,9 +220,9 @@ Common_Configure_Flags = \
 		  --disable-bindings \
 		  --disable-doxygen
 Stage1_Configure_Flags = $(Common_Configure_Flags) \
-                  --with-extra-options="$(Clang_Extra_Options)"
+                  --with-extra-options="$(Extra_Options)"
 Configure_Flags = $(Common_Configure_Flags) \
-                  --with-extra-options="$(Clang_Extra_Options) $(Clang_Final_Extra_Options)"
+                  --with-extra-options="$(Extra_Options) $(Clang_Final_Extra_Options)"
 
 # Set up any additional Clang install targets.
 Extra_Clang_Install_Targets :=
