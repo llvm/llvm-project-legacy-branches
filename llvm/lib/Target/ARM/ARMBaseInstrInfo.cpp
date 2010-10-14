@@ -1435,33 +1435,44 @@ void *llvm::Opaque::operator new(size_t need, Opaque& space) {
 }
 
 
+bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
+                     MachineBasicBlock::iterator &MII); //FIXME
 struct ImmCmpOpaque : Opaque {
-	int CmpValue;
+  int CmpValue;
+  ImmCmpOpaque(unsigned SrcReg, int CmpValue) : Opaque(SrcReg), CmpValue(CmpValue) { Dispatch = dispatch; }
+  static bool dispatch(const Opaque& self, MachineInstr *CmpInstr, MachineInstr *MI,
+                       MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
+    return ConvertAndElide(CmpInstr, MI, MII);
+  }
 };
 
 struct MaskOpaque : Opaque {
-	int CmpMask;
+  int CmpMask;
+  MaskOpaque(unsigned SrcReg, int CmpMask) : Opaque(SrcReg), CmpMask(CmpMask) { Dispatch = static_cast<DispatchFun>(dispatch); }
+  static bool dispatch(const Opaque& self, MachineInstr *CmpInstr, MachineInstr *MI,
+                       MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
+    return static_cast<const MaskOpaque&>(self).FindCorrespondingAnd(CmpInstr, MI, MRI, MII);
+  }
+  bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
+                            MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) const;
 };
 
 bool ARMBaseInstrInfo::
-AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask,
-               int &CmpValue, Opaque& Opp) const {
+AnalyzeCompare(const MachineInstr *MI, Opaque& Opp) const {
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
   case ARM::CMPzri:
   case ARM::t2CMPri:
-  case ARM::t2CMPzri:
-    SrcReg = MI->getOperand(0).getReg();
-    CmpMask = ~0;
-    CmpValue = MI->getOperand(1).getImm();
-    return new(Opp) ImmCmpOpaque;
+  case ARM::t2CMPzri: {
+    int CmpValue = MI->getOperand(1).getImm();
+    return CmpValue == 0 &&
+      new(Opp) ImmCmpOpaque(MI->getOperand(0).getReg(), CmpValue);
+  }
   case ARM::TSTri:
   case ARM::t2TSTri:
-    SrcReg = MI->getOperand(0).getReg();
-    CmpMask = MI->getOperand(1).getImm();
-    CmpValue = 0;
-    return new(Opp) MaskOpaque;
+    return new(Opp) MaskOpaque(MI->getOperand(0).getReg(),
+                               MI->getOperand(1).getImm());
   }
 
   return false;
@@ -1499,21 +1510,23 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
 /// comparison into one that sets the zero bit in the flags register. Update the
 /// iterator *only* if a transformation took place.
 bool ARMBaseInstrInfo::
-OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
-                     int CmpValue, MachineBasicBlock::iterator &MII) const {
-  if (CmpValue != 0)
-    return false;
-
+OptimizeCompareInstr(MachineInstr *CmpInstr, const Opaque& Opp, MachineBasicBlock::iterator &MII) const {
   MachineRegisterInfo &MRI = CmpInstr->getParent()->getParent()->getRegInfo();
-  MachineRegisterInfo::def_iterator DI = MRI.def_begin(SrcReg);
+  MachineRegisterInfo::def_iterator DI = MRI.def_begin(Opp.SrcReg);
   if (llvm::next(DI) != MRI.def_end())
     // Only support one definition.
     return false;
 
   MachineInstr *MI = &*DI;
+  return Opp.Dispatch(Opp, CmpInstr, MI, MRI, MII);
+}
 
+bool MaskOpaque::FindCorrespondingAnd(MachineInstr *CmpInstr,
+                                      MachineInstr *MI,
+                                      MachineRegisterInfo &MRI,
+                                      MachineBasicBlock::iterator &MII) const {
   // Masked compares sometimes use the same register as the corresponding 'and'.
-  if (CmpMask != ~0) {
+  //  if (CmpMask != ~0) {
     if (!isSuitableForMask(MI, SrcReg, CmpMask, false)) {
       MI = 0;
       for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
@@ -1527,8 +1540,12 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
       }
       if (!MI) return false;
     }
-  }
+    //  }
+    return ConvertAndElide(CmpInstr, MI, MII);
+}
 
+bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
+                     MachineBasicBlock::iterator &MII) {
   // Conservatively refuse to convert an instruction which isn't in the same BB
   // as the comparison.
   if (MI->getParent() != CmpInstr->getParent())
