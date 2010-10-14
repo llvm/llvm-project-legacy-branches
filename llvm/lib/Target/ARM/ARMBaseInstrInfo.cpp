@@ -1428,6 +1428,22 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
   return Offset == 0;
 }
 
+
+struct Opaque {
+	void (*dispach)(const Opaque&, int);
+	void *operator new(size_t, Opaque&);
+};
+
+struct MaxOpaque : Opaque {
+  enum { SomeSufficientNumber = sizeof(void*) * 10 };
+  char payload[SomeSufficientNumber];
+};
+
+void *Opaque::operator new(size_t need, Opaque& space) {
+  assert(need <= sizeof(MaxOpaque));
+  return &space;
+}
+
 bool ARMBaseInstrInfo::
 AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg, int &CmpMask,
                int &CmpValue) const {
