@@ -1429,36 +1429,36 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 }
 
 
-void *llvm::Opaque::operator new(size_t need, Opaque& space) {
-  assert(need <= sizeof(MaxOpaque));
+void *llvm::Opportunity::operator new(size_t need, Opportunity& space) {
+  assert(need <= sizeof(MaxOpportunity));
   return &space;
 }
 
 
 bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
                      MachineBasicBlock::iterator &MII); //FIXME
-struct ImmCmpOpaque : Opaque {
+struct ImmCmpOpportunity : Opportunity {
   int CmpValue;
-  ImmCmpOpaque(unsigned SrcReg, int CmpValue) : Opaque(SrcReg), CmpValue(CmpValue) { Dispatch = dispatch; }
-  static bool dispatch(const Opaque& self, MachineInstr *CmpInstr, MachineInstr *MI,
+  ImmCmpOpportunity(unsigned SrcReg) : Opportunity(SrcReg), CmpValue(0) { Dispatch = dispatch; }
+  static bool dispatch(const Opportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
                        MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
     return ConvertAndElide(CmpInstr, MI, MII);
   }
 };
 
-struct MaskOpaque : Opaque {
+struct MaskOpportunity : Opportunity {
   int CmpMask;
-  MaskOpaque(unsigned SrcReg, int CmpMask) : Opaque(SrcReg), CmpMask(CmpMask) { Dispatch = static_cast<DispatchFun>(dispatch); }
-  static bool dispatch(const Opaque& self, MachineInstr *CmpInstr, MachineInstr *MI,
+  MaskOpportunity(unsigned SrcReg, int CmpMask) : Opportunity(SrcReg), CmpMask(CmpMask) { Dispatch = static_cast<DispatchFun>(dispatch); }
+  static bool dispatch(const Opportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
                        MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
-    return static_cast<const MaskOpaque&>(self).FindCorrespondingAnd(CmpInstr, MI, MRI, MII);
+    return static_cast<const MaskOpportunity&>(self).FindCorrespondingAnd(CmpInstr, MI, MRI, MII);
   }
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
                             MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) const;
 };
 
 bool ARMBaseInstrInfo::
-AnalyzeCompare(const MachineInstr *MI, Opaque& Opp) const {
+AnalyzeCompare(const MachineInstr *MI, Opportunity& Opp) const {
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
@@ -1467,12 +1467,12 @@ AnalyzeCompare(const MachineInstr *MI, Opaque& Opp) const {
   case ARM::t2CMPzri: {
     int CmpValue = MI->getOperand(1).getImm();
     return CmpValue == 0 &&
-      new(Opp) ImmCmpOpaque(MI->getOperand(0).getReg(), CmpValue);
+      new(Opp) ImmCmpOpportunity(MI->getOperand(0).getReg());
   }
   case ARM::TSTri:
   case ARM::t2TSTri:
-    return new(Opp) MaskOpaque(MI->getOperand(0).getReg(),
-                               MI->getOperand(1).getImm());
+    return new(Opp) MaskOpportunity(MI->getOperand(0).getReg(),
+                                    MI->getOperand(1).getImm());
   }
 
   return false;
@@ -1510,7 +1510,7 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
 /// comparison into one that sets the zero bit in the flags register. Update the
 /// iterator *only* if a transformation took place.
 bool ARMBaseInstrInfo::
-OptimizeCompareInstr(MachineInstr *CmpInstr, const Opaque& Opp, MachineBasicBlock::iterator &MII) const {
+OptimizeCompareInstr(MachineInstr *CmpInstr, const Opportunity& Opp, MachineBasicBlock::iterator &MII) const {
   MachineRegisterInfo &MRI = CmpInstr->getParent()->getParent()->getRegInfo();
   MachineRegisterInfo::def_iterator DI = MRI.def_begin(Opp.SrcReg);
   if (llvm::next(DI) != MRI.def_end())
@@ -1521,7 +1521,8 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, const Opaque& Opp, MachineBasicBloc
   return Opp.Dispatch(Opp, CmpInstr, MI, MRI, MII);
 }
 
-bool MaskOpaque::FindCorrespondingAnd(MachineInstr *CmpInstr,
+bool
+MaskOpportunity::FindCorrespondingAnd(MachineInstr *CmpInstr,
                                       MachineInstr *MI,
                                       MachineRegisterInfo &MRI,
                                       MachineBasicBlock::iterator &MII) const {
