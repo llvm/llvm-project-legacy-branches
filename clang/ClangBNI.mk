@@ -162,6 +162,12 @@ else
 $(error "invalid setting for clang enable C++: '$(Clang_Enable_CXX)'")
 endif
 
+# Set LLVM_VERSION_INFO make variable. We do this here because setting it in the
+# CC options for configure ends up breaking tests that can't be bothered to
+# quote things properly, and that is too hard to fix.
+Clang_Make_Variables += \
+  LLVM_VERSION_INFO="from Apple Clang $(Clang_Version) (build $(RC_ProjectSourceVersion))"
+
 else ifeq ($(Clang_Driver_Mode), Development)
 # ... this is the default ...
 else
@@ -207,10 +213,6 @@ Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
 
 # Set extra compile options.
 Extra_Options := $(Clang_Extra_Options)
-
-# Disabled for now, stupid LLVM tests mess up with embedded quotes.
-#
-#Extra_Options += -DLLVM_VERSION_INFO='\"from Apple Clang $(Clang_Version) (build $(SourceVersion))\"'
 
 # Set configure flags.
 Common_Configure_Flags = \
