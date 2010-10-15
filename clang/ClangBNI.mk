@@ -207,7 +207,10 @@ Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
 
 # Set extra compile options.
 Extra_Options := $(Clang_Extra_Options)
-Extra_Options += -DLLVM_VERSION_INFO='\"from Apple Clang $(Clang_Version) (build $(SourceVersion))\"'
+
+# Disabled for now, stupid LLVM tests mess up with embedded quotes.
+#
+#Extra_Options += -DLLVM_VERSION_INFO='\"from Apple Clang $(Clang_Version) (build $(SourceVersion))\"'
 
 # Set configure flags.
 Common_Configure_Flags = \
