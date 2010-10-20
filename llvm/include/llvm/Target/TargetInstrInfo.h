@@ -35,6 +35,22 @@ class TargetRegisterInfo;
 
 template<class T> class SmallVectorImpl;
 
+struct Opportunity {
+  typedef bool (*DispatchFun)(const Opportunity&,
+                              MachineInstr *CmpInstr, MachineInstr *MI,
+                              const MachineRegisterInfo &MRI,
+                              MachineBasicBlock::iterator &MII);
+  DispatchFun Dispatch;
+  unsigned SrcReg;
+  Opportunity() {}
+  Opportunity(unsigned SrcReg) : SrcReg(SrcReg) {}
+  void *operator new(size_t, Opportunity&);
+};
+
+struct MaxOpportunity : Opportunity {
+  enum { SomeSufficientNumber = sizeof(void*) * 10 };
+  char payload[SomeSufficientNumber];
+};
 
 //---------------------------------------------------------------------------
 ///
@@ -590,8 +606,7 @@ public:
   /// AnalyzeCompare - For a comparison instruction, return the source register
   /// in SrcReg and the value it compares against in CmpValue. Return true if
   /// the comparison instruction can be analyzed.
-  virtual bool AnalyzeCompare(const MachineInstr *MI,
-                              unsigned &SrcReg, int &Mask, int &Value) const {
+  virtual bool AnalyzeCompare(const MachineInstr *MI, Opportunity&) const {
     return false;
   }
 
@@ -600,7 +615,7 @@ public:
   /// flags register, obviating the need for a separate CMP. Update the iterator
   /// *only* if a transformation took place.
   virtual bool OptimizeCompareInstr(MachineInstr *CmpInstr,
-                                    unsigned SrcReg, int Mask, int Value,
+                                    const Opportunity&,
                                     const MachineRegisterInfo *MRI,
                                     MachineBasicBlock::iterator &) const {
     return false;
