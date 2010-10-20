@@ -57,7 +57,7 @@ struct MaxOpportunity : Opportunity {
   }
 };
 
-/// CmpOpportunity - Decribing opportunities for CMP(-like) instructions
+/// CmpOpportunity - Describing opportunities for CMP(-like) instructions
 struct CmpOpportunity : Opportunity {
   typedef bool (*DispatchFun)(const CmpOpportunity&, MachineInstr *CmpInstr,
                               MachineInstr *MI, const MachineRegisterInfo &MRI,
@@ -65,6 +65,35 @@ struct CmpOpportunity : Opportunity {
   DispatchFun Dispatch;
   unsigned SrcReg;
   CmpOpportunity(unsigned SrcReg) : SrcReg(SrcReg) {}
+  template <class SUB, bool (SUB::*FUN)(MachineInstr*, MachineInstr*,
+                                        const MachineRegisterInfo&,
+                                        MachineBasicBlock::iterator&) const>
+  void optimizeWith() {
+    Dispatch = &dispatch<SUB, FUN>;
+  }
+
+  template <class SUB, bool (SUB::*FUN)(MachineInstr*, MachineInstr*,
+                                        const MachineRegisterInfo&,
+                                        MachineBasicBlock::iterator&) const>
+  static bool dispatch(const CmpOpportunity& self, MachineInstr *CmpInstr,
+                       MachineInstr *MI, const MachineRegisterInfo &MRI,
+                       MachineBasicBlock::iterator &MII) {
+    return (static_cast<const SUB&>(self).*FUN)(CmpInstr, MI, MRI, MII);
+  }
+
+  template <bool (*FUN)(MachineInstr*, MachineInstr*,
+                        MachineBasicBlock::iterator&)>
+  void optimizeWith() {
+    Dispatch = &dispatch2<FUN>;
+  }
+
+  template <bool (*FUN)(MachineInstr*, MachineInstr*,
+                        MachineBasicBlock::iterator&)>
+  static bool dispatch2(const CmpOpportunity& self, MachineInstr *CmpInstr,
+                        MachineInstr *MI, const MachineRegisterInfo &MRI,
+                        MachineBasicBlock::iterator &MII) {
+    return FUN(CmpInstr, MI, MII);
+  }
 };
 
 

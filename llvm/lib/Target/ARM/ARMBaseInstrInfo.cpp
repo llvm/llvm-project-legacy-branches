@@ -1443,10 +1443,8 @@ bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
                      MachineBasicBlock::iterator &MII); //FIXME
 struct ImmCmpOpportunity : CmpOpportunity {
   int CmpValue;
-  ImmCmpOpportunity(unsigned SrcReg) : CmpOpportunity(SrcReg), CmpValue(0) { Dispatch = dispatch; }
-  static bool dispatch(const CmpOpportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
-                       const MachineRegisterInfo&, MachineBasicBlock::iterator &MII) {
-    return ConvertAndElide(CmpInstr, MI, MII);
+  ImmCmpOpportunity(unsigned SrcReg) : CmpOpportunity(SrcReg), CmpValue(0) {
+    optimizeWith<ConvertAndElide>();
   }
 };
 
@@ -1454,14 +1452,11 @@ struct MaskOpportunity : CmpOpportunity {
   int CmpMask;
   MaskOpportunity(unsigned SrcReg, int CmpMask)
     : CmpOpportunity(SrcReg), CmpMask(CmpMask) {
-    Dispatch = static_cast<DispatchFun>(dispatch);
-  }
-  static bool dispatch(const CmpOpportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
-                       const MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
-    return static_cast<const MaskOpportunity&>(self).FindCorrespondingAnd(CmpInstr, MI, MRI, MII);
+      optimizeWith<MaskOpportunity, &MaskOpportunity::FindCorrespondingAnd>();
   }
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
-                            const MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) const;
+                            const MachineRegisterInfo &MRI,
+                            MachineBasicBlock::iterator &MII) const;
 };
 
 bool ARMBaseInstrInfo::
