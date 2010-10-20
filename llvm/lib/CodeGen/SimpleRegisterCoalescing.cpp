@@ -2819,8 +2819,19 @@ bool SimpleRegisterCoalescing::runOnMachineFunction(MachineFunction &fn) {
         const LiveRange *LR = LI.getLiveRangeContaining(UseIdx);
         if (!LR ||
             (!LR->valno->isKill(UseIdx.getDefIndex()) &&
-             LR->valno->def != UseIdx.getDefIndex()))
+             LR->valno->def != UseIdx.getDefIndex())) {
           MO.setIsKill(false);
+          continue;
+        }
+        // When leaving a kill flag on a physreg, check if any subregs should
+        // remain alive.
+        if (!TargetRegisterInfo::isPhysicalRegister(reg))
+          continue;
+        for (const unsigned *SR = tri_->getSubRegisters(reg);
+             unsigned S = *SR; ++SR)
+          if (li_->hasInterval(S) &&
+              li_->getInterval(S).liveAt(UseIdx.getDefIndex()))
+            MI->addRegisterDefined(S, tri_);
       }
     }
   }
