@@ -1441,19 +1441,22 @@ void *llvm::Opportunity::operator new(size_t need, Opportunity& space) {
 
 bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
                      MachineBasicBlock::iterator &MII); //FIXME
-struct ImmCmpOpportunity : Opportunity {
+struct ImmCmpOpportunity : CmpOpportunity {
   int CmpValue;
-  ImmCmpOpportunity(unsigned SrcReg) : Opportunity(SrcReg), CmpValue(0) { Dispatch = dispatch; }
-  static bool dispatch(const Opportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
+  ImmCmpOpportunity(unsigned SrcReg) : CmpOpportunity(SrcReg), CmpValue(0) { Dispatch = dispatch; }
+  static bool dispatch(const CmpOpportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
                        const MachineRegisterInfo&, MachineBasicBlock::iterator &MII) {
     return ConvertAndElide(CmpInstr, MI, MII);
   }
 };
 
-struct MaskOpportunity : Opportunity {
+struct MaskOpportunity : CmpOpportunity {
   int CmpMask;
-  MaskOpportunity(unsigned SrcReg, int CmpMask) : Opportunity(SrcReg), CmpMask(CmpMask) { Dispatch = static_cast<DispatchFun>(dispatch); }
-  static bool dispatch(const Opportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
+  MaskOpportunity(unsigned SrcReg, int CmpMask)
+    : CmpOpportunity(SrcReg), CmpMask(CmpMask) {
+    Dispatch = static_cast<DispatchFun>(dispatch);
+  }
+  static bool dispatch(const CmpOpportunity& self, MachineInstr *CmpInstr, MachineInstr *MI,
                        const MachineRegisterInfo &MRI, MachineBasicBlock::iterator &MII) {
     return static_cast<const MaskOpportunity&>(self).FindCorrespondingAnd(CmpInstr, MI, MRI, MII);
   }
@@ -1462,7 +1465,7 @@ struct MaskOpportunity : Opportunity {
 };
 
 bool ARMBaseInstrInfo::
-AnalyzeCompare(const MachineInstr *MI, Opportunity& Opp) const {
+AnalyzeCompare(const MachineInstr *MI, CmpOpportunity& Opp) const {
   switch (MI->getOpcode()) {
   default: break;
   case ARM::CMPri:
@@ -1515,17 +1518,11 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
 /// comparison into one that sets the zero bit in the flags register. Update the
 /// iterator *only* if a transformation took place.
 bool ARMBaseInstrInfo::
-OptimizeCompareInstr(MachineInstr *CmpInstr, const Opportunity& Opp,
+OptimizeCompareInstr(MachineInstr *CmpInstr, const CmpOpportunity& Opp,
                      const MachineRegisterInfo *MRI,
                      MachineBasicBlock::iterator &MII) const {
-//<<<<<<< .working
-//  MachineRegisterInfo::def_iterator DI = MRI->def_begin(SrcReg);
-//  if (llvm::next(DI) != MRI->def_end())
-//=======
-//  MachineRegisterInfo &MRI = CmpInstr->getParent()->getParent()->getRegInfo();
   MachineRegisterInfo::def_iterator DI = MRI->def_begin(Opp.SrcReg);
   if (llvm::next(DI) != MRI->def_end())
-//>>>>>>> .merge-right.r116852
     // Only support one definition.
     return false;
 
@@ -1539,22 +1536,20 @@ MaskOpportunity::FindCorrespondingAnd(MachineInstr *CmpInstr,
                                       const MachineRegisterInfo &MRI,
                                       MachineBasicBlock::iterator &MII) const {
   // Masked compares sometimes use the same register as the corresponding 'and'.
-  //  if (CmpMask != ~0) {
-    if (!isSuitableForMask(MI, SrcReg, CmpMask, false)) {
-      MI = 0;
-      for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
-           UE = MRI.use_end(); UI != UE; ++UI) {
-        if (UI->getParent() != CmpInstr->getParent()) continue;
-        MachineInstr *PotentialAND = &*UI;
-        if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask, true))
-          continue;
-        MI = PotentialAND;
-        break;
-      }
-      if (!MI) return false;
+  if (!isSuitableForMask(MI, SrcReg, CmpMask, false)) {
+    MI = 0;
+    for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(SrcReg),
+         UE = MRI.use_end(); UI != UE; ++UI) {
+      if (UI->getParent() != CmpInstr->getParent()) continue;
+      MachineInstr *PotentialAND = &*UI;
+      if (!isSuitableForMask(PotentialAND, SrcReg, CmpMask, true))
+        continue;
+      MI = PotentialAND;
+      break;
     }
-    //  }
-    return ConvertAndElide(CmpInstr, MI, MII);
+    if (!MI) return false;
+  }
+  return ConvertAndElide(CmpInstr, MI, MII);
 }
 
 bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,

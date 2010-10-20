@@ -334,11 +334,11 @@ public:
   /// AnalyzeCompare - For a comparison instruction, return the source register
   /// in SrcReg and the value it compares against in CmpValue. Return true if
   /// the comparison instruction can be analyzed.
-  virtual bool AnalyzeCompare(const MachineInstr *MI, Opportunity&) const;
+  virtual bool AnalyzeCompare(const MachineInstr*, CmpOpportunity&) const;
 
   /// OptimizeCompareInstr - Convert the instruction to set the zero flag so
   /// that we can remove a "comparison with zero".
-  virtual bool OptimizeCompareInstr(MachineInstr *CmpInstr, const Opportunity&,
+  virtual bool OptimizeCompareInstr(MachineInstr*, const CmpOpportunity&,
                                     const MachineRegisterInfo *MRI,
                                     MachineBasicBlock::iterator &MII) const;
 

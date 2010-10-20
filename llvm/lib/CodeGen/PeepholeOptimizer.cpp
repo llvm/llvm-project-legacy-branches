@@ -240,15 +240,15 @@ OptimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
 bool PeepholeOptimizer::OptimizeCmpInstr(MachineInstr *MI,
                                          MachineBasicBlock *MBB,
                                          MachineBasicBlock::iterator &NextIter){
-  // If this instruction is a comparison against zero and isn't comparing a
-  // physical register, we can try to optimize it. FIXME!
+  // Try to obtain an optimization opportunity.
   MaxOpportunity Space;
-  if (!TII->AnalyzeCompare(MI, Space) ||
-      TargetRegisterInfo::isPhysicalRegister(Space.SrcReg))
+  CmpOpportunity &Opp = Space.as<CmpOpportunity>();
+  if (!TII->AnalyzeCompare(MI, Opp) ||
+      TargetRegisterInfo::isPhysicalRegister(Opp.SrcReg))
     return false;
 
   // Attempt to optimize the comparison instruction.
-  if (TII->OptimizeCompareInstr(MI, Space, MRI, NextIter)) {
+  if (TII->OptimizeCompareInstr(MI, Opp, MRI, NextIter)) {
     ++NumEliminated;
     return true;
   }

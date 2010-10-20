@@ -35,22 +35,38 @@ class TargetRegisterInfo;
 
 template<class T> class SmallVectorImpl;
 
+/// Opportunity - Base for all peephole opportunity descriptors
 struct Opportunity {
-  typedef bool (*DispatchFun)(const Opportunity&,
-                              MachineInstr *CmpInstr, MachineInstr *MI,
-                              const MachineRegisterInfo &MRI,
-                              MachineBasicBlock::iterator &MII);
-  DispatchFun Dispatch;
-  unsigned SrcReg;
   Opportunity() {}
-  Opportunity(unsigned SrcReg) : SrcReg(SrcReg) {}
   void *operator new(size_t, Opportunity&);
 };
 
+/// MaxOpportunity - Space reserved for Opportunity subclasses on stack
+/// @detail The intention is that MaxOpportunity provides sufficient space
+///         as an automatic variable on the stack and
+///         'Opportunity::operator new' allocates the object in-place.
 struct MaxOpportunity : Opportunity {
   enum { SomeSufficientNumber = sizeof(void*) * 10 };
-  char payload[SomeSufficientNumber];
+  char Payload[SomeSufficientNumber];
+
+  /// as - obtain space as any subclass
+  template <class SUB>
+  SUB &as() {
+    Opportunity &self(*this);
+    return static_cast<SUB&>(self);
+  }
 };
+
+/// CmpOpportunity - Decribing opportunities for CMP(-like) instructions
+struct CmpOpportunity : Opportunity {
+  typedef bool (*DispatchFun)(const CmpOpportunity&, MachineInstr *CmpInstr,
+                              MachineInstr *MI, const MachineRegisterInfo &MRI,
+                              MachineBasicBlock::iterator &MII);
+  DispatchFun Dispatch;
+  unsigned SrcReg;
+  CmpOpportunity(unsigned SrcReg) : SrcReg(SrcReg) {}
+};
+
 
 //---------------------------------------------------------------------------
 ///
@@ -606,7 +622,7 @@ public:
   /// AnalyzeCompare - For a comparison instruction, return the source register
   /// in SrcReg and the value it compares against in CmpValue. Return true if
   /// the comparison instruction can be analyzed.
-  virtual bool AnalyzeCompare(const MachineInstr *MI, Opportunity&) const {
+  virtual bool AnalyzeCompare(const MachineInstr*, CmpOpportunity&) const {
     return false;
   }
 
@@ -614,10 +630,10 @@ public:
   /// into something more efficient. E.g., on ARM most instructions can set the
   /// flags register, obviating the need for a separate CMP. Update the iterator
   /// *only* if a transformation took place.
-  virtual bool OptimizeCompareInstr(MachineInstr *CmpInstr,
-                                    const Opportunity&,
-                                    const MachineRegisterInfo *MRI,
-                                    MachineBasicBlock::iterator &) const {
+  virtual bool OptimizeCompareInstr(MachineInstr*,
+                                    const CmpOpportunity&,
+                                    const MachineRegisterInfo*,
+                                    MachineBasicBlock::iterator&) const {
     return false;
   }
 
