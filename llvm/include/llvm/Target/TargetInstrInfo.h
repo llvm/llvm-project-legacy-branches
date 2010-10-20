@@ -62,9 +62,11 @@ struct CmpOpportunity : Opportunity {
   typedef bool (*DispatchFun)(const CmpOpportunity&, MachineInstr *CmpInstr,
                               MachineInstr *MI, const MachineRegisterInfo &MRI,
                               MachineBasicBlock::iterator &MII);
-  DispatchFun Dispatch;
   unsigned SrcReg;
   CmpOpportunity(unsigned SrcReg) : SrcReg(SrcReg) {}
+
+  DispatchFun Dispatch;
+
   template <class SUB, bool (SUB::*FUN)(MachineInstr*, MachineInstr*,
                                         const MachineRegisterInfo&,
                                         MachineBasicBlock::iterator&) const>
@@ -72,6 +74,13 @@ struct CmpOpportunity : Opportunity {
     Dispatch = &dispatch<SUB, FUN>;
   }
 
+  template <bool (*FUN)(MachineInstr*, MachineInstr*,
+                        MachineBasicBlock::iterator&)>
+  void optimizeWith() {
+    Dispatch = &dispatch2<FUN>;
+  }
+
+private:
   template <class SUB, bool (SUB::*FUN)(MachineInstr*, MachineInstr*,
                                         const MachineRegisterInfo&,
                                         MachineBasicBlock::iterator&) const>
@@ -79,12 +88,6 @@ struct CmpOpportunity : Opportunity {
                        MachineInstr *MI, const MachineRegisterInfo &MRI,
                        MachineBasicBlock::iterator &MII) {
     return (static_cast<const SUB&>(self).*FUN)(CmpInstr, MI, MRI, MII);
-  }
-
-  template <bool (*FUN)(MachineInstr*, MachineInstr*,
-                        MachineBasicBlock::iterator&)>
-  void optimizeWith() {
-    Dispatch = &dispatch2<FUN>;
   }
 
   template <bool (*FUN)(MachineInstr*, MachineInstr*,
