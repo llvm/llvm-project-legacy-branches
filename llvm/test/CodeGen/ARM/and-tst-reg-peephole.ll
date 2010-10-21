@@ -12,6 +12,7 @@ entry:
 ; CHECK:      ldr r0
 ; CHECK-NEXT: ands r0, r0, r1
 ; CHECK-NEXT: moveq r0, #255
+; CHECK-NEXT: bx lr
 
 ; THUMB:      ldr r0
 ; THUMB-NEXT: ands r0, r1
