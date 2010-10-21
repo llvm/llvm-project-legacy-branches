@@ -1499,6 +1499,41 @@ struct MaskRegOpportunity : CmpOpportunity {
     return 0;
   }
 
+    /// Track equivalence classes of registers established
+    /// by chains of COPY instructions
+    struct CopyEquiv {
+        int Reg;
+        unsigned Eqiv;
+        const CopyEquiv *Next;
+        CopyEquiv(int Reg) : Reg(Reg), Eqiv(1), Next(0) {}
+        CopyEquiv(int Reg, const CopyEquiv &Next)
+          : Reg(Reg), Eqiv(2), Next(&Next) {}
+        CopyEquiv(int Reg, unsigned Eqiv, const CopyEquiv &Next)
+          : Reg(Reg), Eqiv(Eqiv), Next(&Next) {}
+        bool Class1() const { return this && (Eqiv & 1); }
+        bool Class2() const { return this && (Eqiv & 2); }
+        const CopyEquiv *operator [](int R) const {
+            return !this || R == Reg ? this : (*Next)[R];
+        }
+    };
+
+    /// Shows whether Reg1 is in the equivalence class 1 and
+    /// Reg2in the equivalence class 2. When COMMUTATIVE, it can
+    /// also be the other way 'round.
+    template <bool COMMUTATIVE>
+    static bool TrackCopyEquivalences(int Reg1, int Reg2, const CopyEquiv &Sofar, const MachineInstr *MI, unsigned EqivGen = 2) {
+        /// check whether Reg1 is in a class
+        const CopyEquiv *c1 = Sofar[Reg1];
+        const CopyEquiv *c2 = Sofar[Reg2];
+        if (c1->Class1() && c2->Class2() ||
+            COMMUTATIVE && c1->Class2() && c2->Class1())
+            return true;
+
+        
+        return false; /// FIXME
+    }
+    
+
   // Find an 'and' in close proximity.
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
                             const MachineRegisterInfo &MRI,
@@ -1670,11 +1705,19 @@ FindCorrespondingAnd(MachineInstr *TST, MachineInstr *MI,
     if (MachineInstr *AND = findPrior<5>(TST)) {
         unsigned op1Nr = AND->getOpcode() == ARM::tAND ? 2 : 1;
         // Check the case where both AND and TST use the same registers.
+        CopyEquiv c1(TST->getOperand(0).getReg());
+        CopyEquiv c2(TST->getOperand(1).getReg(), c1);
+        if (TrackCopyEquivalences<true>(AND->getOperand(op1Nr).getReg(),
+                                        AND->getOperand(op1Nr + 1).getReg(),
+                                        c2, TST))
+            return Elide(TST, AND, MII);
+
+/*
         if (TST->getOperand(0).getReg() == AND->getOperand(op1Nr).getReg() &&
             TST->getOperand(1).getReg() == AND->getOperand(op1Nr + 1).getReg()){
             // Let the 'ANDrr' supply the condition codes.
             return Elide(TST, AND, MII);
-        }
+        }*/
     }
 
     return false;
