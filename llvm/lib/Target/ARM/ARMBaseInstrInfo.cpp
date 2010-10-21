@@ -1474,6 +1474,7 @@ struct MaskRegOpportunity : CmpOpportunity {
     switch (MI->getOpcode()) {
       case ARM::ANDrr:
       case ARM::tAND:
+      case ARM::t2ANDrr:
         return MI;
       default:
         return 0;
