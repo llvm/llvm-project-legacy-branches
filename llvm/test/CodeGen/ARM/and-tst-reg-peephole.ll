@@ -9,10 +9,12 @@ entry:
   %ptr = getelementptr %struct.Foo* %this, i32 0, i32 0
 	%my = load i32* %ptr
 
-; CHECK:      tst r0, r1
-; CHECK-NEXT: andne r0, r0, r1
+; CHECK:      ldr r0
+; CHECK-NEXT: ands r0, r0, r1
+; CHECK-NEXT: moveq r0, #255
 
-; THUMB:      ands r0, r1
+; THUMB:      ldr r0
+; THUMB-NEXT: ands r0, r1
 ; THUMB-NEXT: bne
 
 ; T2:      tst r0, r1

@@ -1344,7 +1344,7 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
       return true;
     }
 
-    // Otherwise, pull as much of the immedidate into this ADDri/SUBri
+    // Otherwise, pull as much of the immediate into this ADDri/SUBri
     // as possible.
     unsigned RotAmt = ARM_AM::getSOImmValRotate(Offset);
     unsigned ThisImmVal = Offset & ARM_AM::rotr32(0xFF, RotAmt);
@@ -1470,33 +1470,33 @@ struct MaskRegOpportunity : CmpOpportunity {
       optimizeWith<MaskRegOpportunity, &MaskRegOpportunity::FindCorrespondingAnd>();
   }
 
-    static bool IsAnd(int opcode) {
-        switch (opcode) {
-            case ARM::ANDrr:
-            case ARM::tAND:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    template <unsigned MAX>
-    MachineInstr *findPrior(MachineInstr *CmpInstr) const {
-        MachineBasicBlock::iterator I(CmpInstr);
-        MachineBasicBlock::iterator BS = CmpInstr->getParent()->begin();
-        if (BS == I)
-            return 0;
-
-        unsigned iterations = MAX;
-        for (I = prior(I); iterations; --I, --iterations) {
-            if (MachineInstr *found = IsAnd(I->getOpcode()) ? I : 0) {
-                return found;
-            }
-
-            if (I == BS) break;
-        }
+  static MachineInstr *IsAnd(MachineInstr *MI) {
+    switch (MI->getOpcode()) {
+      case ARM::ANDrr:
+      case ARM::tAND:
+        return MI;
+      default:
         return 0;
     }
+  }
+
+  template <unsigned MAX>
+  MachineInstr *findPrior(MachineInstr *CmpInstr) const {
+    MachineBasicBlock::iterator I = CmpInstr;
+    MachineBasicBlock::iterator BS = CmpInstr->getParent()->begin();
+    if (I == BS)
+      return 0;
+
+    unsigned iterations = MAX;
+    for (I = prior(I); iterations; --I, --iterations) {
+      if (MachineInstr *found = IsAnd(I)) {
+        return found;
+      }
+
+      if (I == BS) break;
+    }
+    return 0;
+  }
 
   // Find an 'and' in close proximity.
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
@@ -1541,7 +1541,7 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
     case ARM::t2ANDri:
       if (CmpMask != MI->getOperand(2).getImm())
         return false;
-      if (SrcReg == MI->getOperand(CommonUse ? 1 : 0).getReg())
+      if (SrcReg == MI->getOperand(CommonUse).getReg())
         return true;
       break;
     case ARM::COPY: {
@@ -1643,6 +1643,8 @@ bool Elide(MachineInstr *CmpInstr, MachineInstr *MI,
   case ARM::ADDri:
   case ARM::ANDri:
   case ARM::t2ANDri:
+  case ARM::ANDrr:
+  case ARM::t2ANDrr:
   case ARM::SUBri:
   case ARM::t2ADDri:
   case ARM::t2SUBri:
@@ -1665,10 +1667,10 @@ FindCorrespondingAnd(MachineInstr *TST, MachineInstr *MI,
                      MachineBasicBlock::iterator &MII) const {
 
     if (MachineInstr *AND = findPrior<5>(TST)) {
-        unsigned opNr1 = AND->getOpcode() == ARM::tAND ? 2 : 1;
+        unsigned op1Nr = AND->getOpcode() == ARM::tAND ? 2 : 1;
         // Check the case where both AND and TST use the same registers.
-        if (TST->getOperand(0).getReg() == AND->getOperand(opNr1).getReg() &&
-            TST->getOperand(1).getReg() == AND->getOperand(opNr1 + 1).getReg()){
+        if (TST->getOperand(0).getReg() == AND->getOperand(op1Nr).getReg() &&
+            TST->getOperand(1).getReg() == AND->getOperand(op1Nr + 1).getReg()){
             // Let the 'ANDrr' supply the condition codes.
             return Elide(TST, AND, MII);
         }
