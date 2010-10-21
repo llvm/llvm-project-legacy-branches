@@ -13,7 +13,7 @@ entry:
 ; CHECK-NEXT: andne r0, r0, r1
 
 ; THUMB:      ands r0, r1
-; THUMB-NEXT: tst r2, r1
+; THUMB-NEXT: bne
 
 ; T2:      tst r0, r1
 ; T2-NEXT: bne

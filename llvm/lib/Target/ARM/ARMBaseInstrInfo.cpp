@@ -1439,8 +1439,12 @@ void *llvm::Opportunity::operator new(size_t need, Opportunity& space) {
 }
 
 
+/// temporarily forward declare here (to avoid merge conflicts)
 bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
                      MachineBasicBlock::iterator &MII); //FIXME
+bool Elide(MachineInstr *CmpInstr, MachineInstr *MI,
+           MachineBasicBlock::iterator &MII);           //FIXME
+
 struct ImmCmpOpportunity : CmpOpportunity {
   int CmpValue;
   ImmCmpOpportunity(unsigned SrcReg) : CmpOpportunity(SrcReg), CmpValue(0) {
@@ -1454,6 +1458,47 @@ struct MaskOpportunity : CmpOpportunity {
     : CmpOpportunity(SrcReg), CmpMask(CmpMask) {
       optimizeWith<MaskOpportunity, &MaskOpportunity::FindCorrespondingAnd>();
   }
+  bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
+                            const MachineRegisterInfo &MRI,
+                            MachineBasicBlock::iterator &MII) const;
+};
+
+struct MaskRegOpportunity : CmpOpportunity {
+  int MaskReg;
+  MaskRegOpportunity(unsigned SrcReg, int MaskReg)
+    : CmpOpportunity(SrcReg), MaskReg(MaskReg) {
+      optimizeWith<MaskRegOpportunity, &MaskRegOpportunity::FindCorrespondingAnd>();
+  }
+
+    static bool IsAnd(int opcode) {
+        switch (opcode) {
+            case ARM::ANDrr:
+            case ARM::tAND:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    template <unsigned MAX>
+    MachineInstr *findPrior(MachineInstr *CmpInstr) const {
+        MachineBasicBlock::iterator I(CmpInstr);
+        MachineBasicBlock::iterator BS = CmpInstr->getParent()->begin();
+        if (BS == I)
+            return 0;
+
+        unsigned iterations = MAX;
+        for (I = prior(I); iterations; --I, --iterations) {
+            if (MachineInstr *found = IsAnd(I->getOpcode()) ? I : 0) {
+                return found;
+            }
+
+            if (I == BS) break;
+        }
+        return 0;
+    }
+
+  // Find an 'and' in close proximity.
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
                             const MachineRegisterInfo &MRI,
                             MachineBasicBlock::iterator &MII) const;
@@ -1475,6 +1520,11 @@ AnalyzeCompare(const MachineInstr *MI, CmpOpportunity& Opp) const {
   case ARM::t2TSTri:
     return new(Opp) MaskOpportunity(MI->getOperand(0).getReg(),
                                     MI->getOperand(1).getImm());
+  case ARM::TSTrr:
+  case ARM::tTST:
+  case ARM::t2TSTrr:
+    return new(Opp) MaskRegOpportunity(MI->getOperand(0).getReg(),
+                                       MI->getOperand(1).getReg());
   }
 
   return false;
@@ -1581,6 +1631,12 @@ bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
       return false;
   }
 
+  return Elide(CmpInstr, MI, MII);
+}
+
+
+bool Elide(MachineInstr *CmpInstr, MachineInstr *MI,
+           MachineBasicBlock::iterator &MII) {
   // Set the "zero" bit in CPSR.
   switch (MI->getOpcode()) {
   default: break;
@@ -1593,6 +1649,8 @@ bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
     MI->RemoveOperand(5);
     MachineInstrBuilder(MI)
       .addReg(ARM::CPSR, RegState::Define | RegState::Implicit);
+    // fall through
+  case ARM::tAND:
     MII = llvm::next(MachineBasicBlock::iterator(CmpInstr));
     CmpInstr->eraseFromParent();
     return true;
@@ -1600,6 +1658,26 @@ bool ConvertAndElide(MachineInstr *CmpInstr, MachineInstr *MI,
 
   return false;
 }
+
+bool MaskRegOpportunity::
+FindCorrespondingAnd(MachineInstr *TST, MachineInstr *MI,
+                     const MachineRegisterInfo&,
+                     MachineBasicBlock::iterator &MII) const {
+
+    if (MachineInstr *AND = findPrior<5>(TST)) {
+        unsigned opNr1 = AND->getOpcode() == ARM::tAND ? 2 : 1;
+        // Check the case where both AND and TST use the same registers.
+        if (TST->getOperand(0).getReg() == AND->getOperand(opNr1).getReg() &&
+            TST->getOperand(1).getReg() == AND->getOperand(opNr1 + 1).getReg()){
+            // Let the 'ANDrr' supply the condition codes.
+            return Elide(TST, AND, MII);
+        }
+    }
+
+    return false;
+}
+
+
 
 unsigned
 ARMBaseInstrInfo::getNumMicroOps(const MachineInstr *MI,
