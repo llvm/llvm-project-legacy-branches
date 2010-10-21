@@ -1499,40 +1499,60 @@ struct MaskRegOpportunity : CmpOpportunity {
     return 0;
   }
 
-    /// Track equivalence classes of registers established
-    /// by chains of COPY instructions
-    struct CopyEquiv {
-        int Reg;
-        unsigned Eqiv;
-        const CopyEquiv *Next;
-        CopyEquiv(int Reg) : Reg(Reg), Eqiv(1), Next(0) {}
-        CopyEquiv(int Reg, const CopyEquiv &Next)
-          : Reg(Reg), Eqiv(2), Next(&Next) {}
-        CopyEquiv(int Reg, unsigned Eqiv, const CopyEquiv &Next)
-          : Reg(Reg), Eqiv(Eqiv), Next(&Next) {}
-        bool Class1() const { return this && (Eqiv & 1); }
-        bool Class2() const { return this && (Eqiv & 2); }
-        const CopyEquiv *operator [](int R) const {
-            return !this || R == Reg ? this : (*Next)[R];
-        }
-    };
+  /// Track equivalence classes of registers established
+  /// by chains of COPY instructions
+  struct CopyEquiv {
+    int Reg;
+    unsigned Eqiv; // FIXME uint32_t ?
+    const CopyEquiv *Next;
+    CopyEquiv(int Reg) : Reg(Reg), Eqiv(1), Next(0) {}
+    CopyEquiv(int Reg, const CopyEquiv &Next)
+      : Reg(Reg), Eqiv(2), Next(&Next) {}
+    CopyEquiv(int Reg, unsigned Eqiv, const CopyEquiv &Next)
+      : Reg(Reg), Eqiv(Eqiv), Next(&Next) {}
 
-    /// Shows whether Reg1 is in the equivalence class 1 and
-    /// Reg2in the equivalence class 2. When COMMUTATIVE, it can
-    /// also be the other way 'round.
-    template <bool COMMUTATIVE>
-    static bool TrackCopyEquivalences(int Reg1, int Reg2, const CopyEquiv &Sofar, const MachineInstr *MI, unsigned EqivGen = 2) {
-        /// check whether Reg1 is in a class
-        const CopyEquiv *c1 = Sofar[Reg1];
-        const CopyEquiv *c2 = Sofar[Reg2];
-        if (c1->Class1() && c2->Class2() ||
-            COMMUTATIVE && c1->Class2() && c2->Class1())
-            return true;
+    template <unsigned C>
+    bool IsClass() const { return this && (Eqiv & C); }
 
-        
-        return false; /// FIXME
+    const CopyEquiv *operator [](int R) const {
+      return !this || R == Reg ? this : (*Next)[R];
     }
-    
+  };
+
+  /// Shows whether Reg1 is in the equivalence class 1 and
+  /// Reg2in the equivalence class 2. When COMMUTATIVE, it can
+  /// also be the other way 'round.
+  template <bool COMMUTATIVE>
+  static bool
+  TrackCopyEquivalences(int Reg1, int Reg2, const CopyEquiv &Sofar,
+                        const MachineInstr *MI, unsigned EqivGen = 2) {
+    /// check whether Reg1 is in a class
+    const CopyEquiv *c1 = Sofar[Reg1];
+    const CopyEquiv *c2 = Sofar[Reg2];
+    if (c1->IsClass<1>() && c2->IsClass<2>() ||
+      COMMUTATIVE && c1->IsClass<2>() && c2->IsClass<1>())
+      return true;
+
+    const MachineBasicBlock *Parent = MI->getParent();
+    MachineBasicBlock::const_iterator B = Parent->begin();
+    MachineBasicBlock::const_iterator I(MI);
+    if (I == B) return false;
+    for (I = prior(I); I != B; I = prior(I))
+      if (I->getOpcode() == ARM::COPY) {
+        unsigned NextEquiv(EqivGen << 1);
+        // is it a valid value?
+        if ((NextEquiv >> 1) != EqivGen) return false;
+        if (const CopyEquiv *Equiv = Sofar[I->getOperand(0).getReg()]) {
+          CopyEquiv N(I->getOperand(1).getReg(), NextEquiv | Equiv->Eqiv, Sofar);
+          return TrackCopyEquivalences<COMMUTATIVE>(Reg1, Reg2, N, I, NextEquiv);
+        } else if (const CopyEquiv *Equiv = Sofar[I->getOperand(1).getReg()]) {
+          CopyEquiv N(I->getOperand(0).getReg(), NextEquiv | Equiv->Eqiv, Sofar);
+          return TrackCopyEquivalences<COMMUTATIVE>(Reg1, Reg2, N, I, NextEquiv);
+        }
+      }
+
+    return false;
+  }
 
   // Find an 'and' in close proximity.
   bool FindCorrespondingAnd(MachineInstr *CmpInstr, MachineInstr *MI,
@@ -1584,7 +1604,7 @@ static bool isSuitableForMask(MachineInstr *&MI, unsigned SrcReg,
       // Walk down one instruction which is potentially an 'and'.
       const MachineInstr &Copy = *MI;
       MachineBasicBlock::iterator AND(
-        llvm::next(MachineBasicBlock::iterator(MI)));
+        next(MachineBasicBlock::iterator(MI)));
       if (AND == MI->getParent()->end()) return false;
       MI = AND;
       return isSuitableForMask(MI, Copy.getOperand(0).getReg(),
@@ -1603,7 +1623,7 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, const CmpOpportunity& Opp,
                      const MachineRegisterInfo *MRI,
                      MachineBasicBlock::iterator &MII) const {
   MachineRegisterInfo::def_iterator DI = MRI->def_begin(Opp.SrcReg);
-  if (llvm::next(DI) != MRI->def_end())
+  if (next(DI) != MRI->def_end())
     // Only support one definition.
     return false;
 
@@ -1689,7 +1709,7 @@ bool Elide(MachineInstr *CmpInstr, MachineInstr *MI,
       .addReg(ARM::CPSR, RegState::Define | RegState::Implicit);
     // fall through
   case ARM::tAND:
-    MII = llvm::next(MachineBasicBlock::iterator(CmpInstr));
+    MII = next(MachineBasicBlock::iterator(CmpInstr));
     CmpInstr->eraseFromParent();
     return true;
   }
@@ -1711,18 +1731,10 @@ FindCorrespondingAnd(MachineInstr *TST, MachineInstr *MI,
                                         AND->getOperand(op1Nr + 1).getReg(),
                                         c2, TST))
             return Elide(TST, AND, MII);
-
-/*
-        if (TST->getOperand(0).getReg() == AND->getOperand(op1Nr).getReg() &&
-            TST->getOperand(1).getReg() == AND->getOperand(op1Nr + 1).getReg()){
-            // Let the 'ANDrr' supply the condition codes.
-            return Elide(TST, AND, MII);
-        }*/
     }
 
     return false;
 }
-
 
 
 unsigned

@@ -17,8 +17,11 @@ entry:
 ; THUMB-NEXT: ands r0, r1
 ; THUMB-NEXT: bne
 
-; T2:      tst r0, r1
-; T2-NEXT: bne
+; T2:      ldr r0
+; T2-NEXT: ands r0, r1
+; T2-NEXT: it eq
+; T2-NEXT: moveq r0, #255
+; T2-NEXT: bx lr
 
   %and = and i32 %my, %mask
   %tst = icmp eq i32 %and, 0
@@ -28,7 +31,6 @@ sw.bb:
   ret i32 255
 
 sw.bb2:
-; T2:      ands r0, r1
   ret i32 %and
 }
 
