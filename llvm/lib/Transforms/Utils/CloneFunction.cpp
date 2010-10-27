@@ -23,7 +23,7 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Metadata.h"
 #include "llvm/Support/CFG.h"
-#include "ValueMapper.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/ADT/SmallVector.h"
@@ -69,10 +69,11 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB,
 }
 
 // Clone OldFunc into NewFunc, transforming the old arguments into references to
-// ArgMap values.
+// VMap values.
 //
 void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
                              ValueToValueMapTy &VMap,
+                             bool ModuleLevelChanges,
                              SmallVectorImpl<ReturnInst*> &Returns,
                              const char *NameSuffix, ClonedCodeInfo *CodeInfo) {
   assert(NameSuffix && "NameSuffix cannot be null!");
@@ -126,7 +127,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
          BE = NewFunc->end(); BB != BE; ++BB)
     // Loop over all instructions, fixing each one as we find it...
     for (BasicBlock::iterator II = BB->begin(); II != BB->end(); ++II)
-      RemapInstruction(II, VMap);
+      RemapInstruction(II, VMap, ModuleLevelChanges);
 }
 
 /// CloneFunction - Return a copy of the specified function, but without
@@ -139,6 +140,7 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
 ///
 Function *llvm::CloneFunction(const Function *F,
                               ValueToValueMapTy &VMap,
+                              bool ModuleLevelChanges,
                               ClonedCodeInfo *CodeInfo) {
   std::vector<const Type*> ArgTypes;
 
@@ -167,7 +169,7 @@ Function *llvm::CloneFunction(const Function *F,
     }
 
   SmallVector<ReturnInst*, 8> Returns;  // Ignore returns cloned.
-  CloneFunctionInto(NewF, F, VMap, Returns, "", CodeInfo);
+  CloneFunctionInto(NewF, F, VMap, ModuleLevelChanges, Returns, "", CodeInfo);
   return NewF;
 }
 
@@ -180,6 +182,7 @@ namespace {
     Function *NewFunc;
     const Function *OldFunc;
     ValueToValueMapTy &VMap;
+    bool ModuleLevelChanges;
     SmallVectorImpl<ReturnInst*> &Returns;
     const char *NameSuffix;
     ClonedCodeInfo *CodeInfo;
@@ -187,12 +190,14 @@ namespace {
   public:
     PruningFunctionCloner(Function *newFunc, const Function *oldFunc,
                           ValueToValueMapTy &valueMap,
+                          bool moduleLevelChanges,
                           SmallVectorImpl<ReturnInst*> &returns,
                           const char *nameSuffix, 
                           ClonedCodeInfo *codeInfo,
                           const TargetData *td)
-    : NewFunc(newFunc), OldFunc(oldFunc), VMap(valueMap), Returns(returns),
-      NameSuffix(nameSuffix), CodeInfo(codeInfo), TD(td) {
+    : NewFunc(newFunc), OldFunc(oldFunc),
+      VMap(valueMap), ModuleLevelChanges(moduleLevelChanges),
+      Returns(returns), NameSuffix(nameSuffix), CodeInfo(codeInfo), TD(td) {
     }
 
     /// CloneBlock - The specified block is found to be reachable, clone it and
@@ -211,7 +216,7 @@ namespace {
 /// anything that it can reach.
 void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
                                        std::vector<const BasicBlock*> &ToClone){
-  Value *&BBEntry = VMap[BB];
+  TrackingVH<Value> &BBEntry = VMap[BB];
 
   // Have we already cloned this block?
   if (BBEntry) return;
@@ -257,8 +262,10 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
       // If the condition was a known constant in the callee...
       ConstantInt *Cond = dyn_cast<ConstantInt>(BI->getCondition());
       // Or is a known constant in the caller...
-      if (Cond == 0)  
-        Cond = dyn_cast_or_null<ConstantInt>(VMap[BI->getCondition()]);
+      if (Cond == 0) {
+        Value *V = VMap[BI->getCondition()];
+        Cond = dyn_cast_or_null<ConstantInt>(V);
+      }
 
       // Constant fold to uncond branch!
       if (Cond) {
@@ -271,8 +278,10 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
   } else if (const SwitchInst *SI = dyn_cast<SwitchInst>(OldTI)) {
     // If switching on a value known constant in the caller.
     ConstantInt *Cond = dyn_cast<ConstantInt>(SI->getCondition());
-    if (Cond == 0)  // Or known constant after constant prop in the callee...
-      Cond = dyn_cast_or_null<ConstantInt>(VMap[SI->getCondition()]);
+    if (Cond == 0) { // Or known constant after constant prop in the callee...
+      Value *V = VMap[SI->getCondition()];
+      Cond = dyn_cast_or_null<ConstantInt>(V);
+    }
     if (Cond) {     // Constant fold to uncond branch!
       BasicBlock *Dest = SI->getSuccessor(SI->findCaseValue(Cond));
       VMap[OldTI] = BranchInst::Create(Dest, NewBB);
@@ -313,7 +322,7 @@ ConstantFoldMappedInstruction(const Instruction *I) {
   SmallVector<Constant*, 8> Ops;
   for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
     if (Constant *Op = dyn_cast_or_null<Constant>(MapValue(I->getOperand(i),
-                                                           VMap)))
+                                                   VMap, ModuleLevelChanges)))
       Ops.push_back(Op);
     else
       return 0;  // All operands not constant!
@@ -355,6 +364,7 @@ UpdateInlinedAtInfo(const DebugLoc &InsnDL, const DebugLoc &TheCallDL,
 /// used for things like CloneFunction or CloneModule.
 void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
                                      ValueToValueMapTy &VMap,
+                                     bool ModuleLevelChanges,
                                      SmallVectorImpl<ReturnInst*> &Returns,
                                      const char *NameSuffix, 
                                      ClonedCodeInfo *CodeInfo,
@@ -368,8 +378,8 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
     assert(VMap.count(II) && "No mapping from source argument specified!");
 #endif
 
-  PruningFunctionCloner PFC(NewFunc, OldFunc, VMap, Returns,
-                            NameSuffix, CodeInfo, TD);
+  PruningFunctionCloner PFC(NewFunc, OldFunc, VMap, ModuleLevelChanges,
+                            Returns, NameSuffix, CodeInfo, TD);
 
   // Clone the entry block, and anything recursively reachable from it.
   std::vector<const BasicBlock*> CloneWorklist;
@@ -388,7 +398,8 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
   SmallVector<const PHINode*, 16> PHIToResolve;
   for (Function::const_iterator BI = OldFunc->begin(), BE = OldFunc->end();
        BI != BE; ++BI) {
-    BasicBlock *NewBB = cast_or_null<BasicBlock>(VMap[BI]);
+    Value *V = VMap[BI];
+    BasicBlock *NewBB = cast_or_null<BasicBlock>(V);
     if (NewBB == 0) continue;  // Dead block.
 
     // Add the new block to the new function.
@@ -449,7 +460,7 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
           I->setDebugLoc(DebugLoc());
         }
       }
-      RemapInstruction(I, VMap);
+      RemapInstruction(I, VMap, ModuleLevelChanges);
     }
   }
   
@@ -468,10 +479,11 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
       OPN = PHIToResolve[phino];
       PHINode *PN = cast<PHINode>(VMap[OPN]);
       for (unsigned pred = 0, e = NumPreds; pred != e; ++pred) {
+        Value *V = VMap[PN->getIncomingBlock(pred)];
         if (BasicBlock *MappedBlock = 
-            cast_or_null<BasicBlock>(VMap[PN->getIncomingBlock(pred)])) {
+            cast_or_null<BasicBlock>(V)) {
           Value *InVal = MapValue(PN->getIncomingValue(pred),
-                                  VMap);
+                                  VMap, ModuleLevelChanges);
           assert(InVal && "Unknown input value?");
           PN->setIncomingValue(pred, InVal);
           PN->setIncomingBlock(pred, MappedBlock);

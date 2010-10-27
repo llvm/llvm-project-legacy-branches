@@ -142,14 +142,22 @@ namespace llvm {
     /// operation, rather than as two operations (an insertion and a
     /// removal).
     ///
+    /// \param MaxEditDistance If non-zero, the maximum edit distance that
+    /// this routine is allowed to compute. If the edit distance will exceed
+    /// that maximum, returns \c MaxEditDistance+1.
+    ///
     /// \returns the minimum number of character insertions, removals,
     /// or (if \p AllowReplacements is \c true) replacements needed to
     /// transform one of the given strings into the other. If zero,
     /// the strings are identical.
-    unsigned edit_distance(StringRef Other, bool AllowReplacements = true);
+    unsigned edit_distance(StringRef Other, bool AllowReplacements = true,
+                           unsigned MaxEditDistance = 0);
 
     /// str - Get the contents as an std::string.
-    std::string str() const { return std::string(Data, Length); }
+    std::string str() const {
+      if (Data == 0) return std::string();
+      return std::string(Data, Length);
+    }
 
     /// @}
     /// @name Operator Overloads
@@ -228,12 +236,14 @@ namespace llvm {
 
     /// find_first_of - Find the first character in the string that is \arg C,
     /// or npos if not found. Same as find.
-    size_type find_first_of(char C, size_t = 0) const { return find(C); }
+    size_type find_first_of(char C, size_t From = 0) const {
+      return find(C, From);
+    }
 
     /// find_first_of - Find the first character in the string that is in \arg
     /// Chars, or npos if not found.
     ///
-    /// Note: O(size() * Chars.size())
+    /// Note: O(size() + Chars.size())
     size_type find_first_of(StringRef Chars, size_t From = 0) const;
 
     /// find_first_not_of - Find the first character in the string that is not
@@ -243,7 +253,7 @@ namespace llvm {
     /// find_first_not_of - Find the first character in the string that is not
     /// in the string \arg Chars, or npos if not found.
     ///
-    /// Note: O(size() * Chars.size())
+    /// Note: O(size() + Chars.size())
     size_type find_first_not_of(StringRef Chars, size_t From = 0) const;
 
     /// @}

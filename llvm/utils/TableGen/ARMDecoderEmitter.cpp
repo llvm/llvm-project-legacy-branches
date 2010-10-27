@@ -49,36 +49,35 @@ using namespace llvm;
   ENTRY(ARM_FORMAT_LDSTMULFRM,    10) \
   ENTRY(ARM_FORMAT_LDSTEXFRM,     11) \
   ENTRY(ARM_FORMAT_ARITHMISCFRM,  12) \
-  ENTRY(ARM_FORMAT_EXTFRM,        13) \
-  ENTRY(ARM_FORMAT_VFPUNARYFRM,   14) \
-  ENTRY(ARM_FORMAT_VFPBINARYFRM,  15) \
-  ENTRY(ARM_FORMAT_VFPCONV1FRM,   16) \
-  ENTRY(ARM_FORMAT_VFPCONV2FRM,   17) \
-  ENTRY(ARM_FORMAT_VFPCONV3FRM,   18) \
-  ENTRY(ARM_FORMAT_VFPCONV4FRM,   19) \
-  ENTRY(ARM_FORMAT_VFPCONV5FRM,   20) \
-  ENTRY(ARM_FORMAT_VFPLDSTFRM,    21) \
-  ENTRY(ARM_FORMAT_VFPLDSTMULFRM, 22) \
-  ENTRY(ARM_FORMAT_VFPMISCFRM,    23) \
-  ENTRY(ARM_FORMAT_THUMBFRM,      24) \
-  ENTRY(ARM_FORMAT_NEONFRM,       25) \
-  ENTRY(ARM_FORMAT_NEONGETLNFRM,  26) \
-  ENTRY(ARM_FORMAT_NEONSETLNFRM,  27) \
-  ENTRY(ARM_FORMAT_NEONDUPFRM,    28) \
-  ENTRY(ARM_FORMAT_MISCFRM,       29) \
-  ENTRY(ARM_FORMAT_THUMBMISCFRM,  30) \
-  ENTRY(ARM_FORMAT_NLdSt,         31) \
-  ENTRY(ARM_FORMAT_N1RegModImm,   32) \
-  ENTRY(ARM_FORMAT_N2Reg,         33) \
-  ENTRY(ARM_FORMAT_NVCVT,         34) \
-  ENTRY(ARM_FORMAT_NVecDupLn,     35) \
-  ENTRY(ARM_FORMAT_N2RegVecShL,   36) \
-  ENTRY(ARM_FORMAT_N2RegVecShR,   37) \
-  ENTRY(ARM_FORMAT_N3Reg,         38) \
-  ENTRY(ARM_FORMAT_N3RegVecSh,    39) \
-  ENTRY(ARM_FORMAT_NVecExtract,   40) \
-  ENTRY(ARM_FORMAT_NVecMulScalar, 41) \
-  ENTRY(ARM_FORMAT_NVTBL,         42)
+  ENTRY(ARM_FORMAT_SATFRM,        13) \
+  ENTRY(ARM_FORMAT_EXTFRM,        14) \
+  ENTRY(ARM_FORMAT_VFPUNARYFRM,   15) \
+  ENTRY(ARM_FORMAT_VFPBINARYFRM,  16) \
+  ENTRY(ARM_FORMAT_VFPCONV1FRM,   17) \
+  ENTRY(ARM_FORMAT_VFPCONV2FRM,   18) \
+  ENTRY(ARM_FORMAT_VFPCONV3FRM,   19) \
+  ENTRY(ARM_FORMAT_VFPCONV4FRM,   20) \
+  ENTRY(ARM_FORMAT_VFPCONV5FRM,   21) \
+  ENTRY(ARM_FORMAT_VFPLDSTFRM,    22) \
+  ENTRY(ARM_FORMAT_VFPLDSTMULFRM, 23) \
+  ENTRY(ARM_FORMAT_VFPMISCFRM,    24) \
+  ENTRY(ARM_FORMAT_THUMBFRM,      25) \
+  ENTRY(ARM_FORMAT_MISCFRM,       26) \
+  ENTRY(ARM_FORMAT_NEONGETLNFRM,  27) \
+  ENTRY(ARM_FORMAT_NEONSETLNFRM,  28) \
+  ENTRY(ARM_FORMAT_NEONDUPFRM,    29) \
+  ENTRY(ARM_FORMAT_NLdSt,         30) \
+  ENTRY(ARM_FORMAT_N1RegModImm,   31) \
+  ENTRY(ARM_FORMAT_N2Reg,         32) \
+  ENTRY(ARM_FORMAT_NVCVT,         33) \
+  ENTRY(ARM_FORMAT_NVecDupLn,     34) \
+  ENTRY(ARM_FORMAT_N2RegVecShL,   35) \
+  ENTRY(ARM_FORMAT_N2RegVecShR,   36) \
+  ENTRY(ARM_FORMAT_N3Reg,         37) \
+  ENTRY(ARM_FORMAT_N3RegVecSh,    38) \
+  ENTRY(ARM_FORMAT_NVecExtract,   39) \
+  ENTRY(ARM_FORMAT_NVecMulScalar, 40) \
+  ENTRY(ARM_FORMAT_NVTBL,         41)
 
 // ARM instruction format specifies the encoding used by the instruction.
 #define ENTRY(n, v) n = v,
@@ -241,7 +240,7 @@ typedef bit_value_t insn_t[BIT_WIDTH];
 /// the Filter/FilterChooser combo does not know how to distinguish among the
 /// Opcodes assigned.
 ///
-/// An example of a conflcit is 
+/// An example of a conflict is 
 ///
 /// Conflict:
 ///                     111101000.00........00010000....
@@ -802,7 +801,7 @@ void FilterChooser::emitTop(raw_ostream &o, unsigned &Indentation) {
 
   o << '\n';
 
-  o.indent(Indentation) << "static uint16_t decodeInstruction(field_t insn) {\n";
+  o.indent(Indentation) <<"static uint16_t decodeInstruction(field_t insn) {\n";
 
   ++Indentation; ++Indentation;
   // Emits code to decode the instructions.
@@ -1584,7 +1583,7 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
         Name == "MOVr_TC")
       return false;
 
-    // VLDMQ/VSTMQ can be hanlded with the more generic VLDMD/VSTMD.
+    // VLDMQ/VSTMQ can be handled with the more generic VLDMD/VSTMD.
     if (Name == "VLDMQ" || Name == "VLDMQ_UPD" ||
         Name == "VSTMQ" || Name == "VSTMQ_UPD")
       return false;
@@ -1611,13 +1610,13 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     // better off using the generic RSCri and RSCrs instructions.
     if (Name == "RSCSri" || Name == "RSCSrs") return false;
 
-    // MOVCCr, MOVCCs, MOVCCi, FCYPScc, FCYPDcc, FNEGScc, and FNEGDcc are used
-    // in the compiler to implement conditional moves.  We can ignore them in
-    // favor of their more generic versions of instructions.
-    // See also SDNode *ARMDAGToDAGISel::Select(SDValue Op).
-    if (Name == "MOVCCr" || Name == "MOVCCs" || Name == "MOVCCi" ||
-        Name == "FCPYScc" || Name == "FCPYDcc" ||
-        Name == "FNEGScc" || Name == "FNEGDcc")
+    // MOVCCr, MOVCCs, MOVCCi, MOVCCi16, FCYPScc, FCYPDcc, FNEGScc, and
+    // FNEGDcc are used in the compiler to implement conditional moves.
+    // We can ignore them in favor of their more generic versions of
+    // instructions. See also SDNode *ARMDAGToDAGISel::Select(SDValue Op).
+    if (Name == "MOVCCr"   || Name == "MOVCCs"  || Name == "MOVCCi" ||
+        Name == "MOVCCi16" || Name == "FCPYScc" || Name == "FCPYDcc" ||
+        Name == "FNEGScc"  || Name == "FNEGDcc")
       return false;
 
     // Ditto for VMOVDcc, VMOVScc, VNEGDcc, and VNEGScc.
@@ -1672,18 +1671,17 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     // VREV64qf is equivalent to VREV64q32.
     if (Name == "VREV64df" || Name == "VREV64qf") return false;
 
-    // VDUPLNfd is equivalent to VDUPLN32d; VDUPfdf is specialized VDUPLN32d.
-    // VDUPLNfq is equivalent to VDUPLN32q; VDUPfqf is specialized VDUPLN32q.
+    // VDUPLNfd is equivalent to VDUPLN32d.
+    // VDUPLNfq is equivalent to VDUPLN32q.
     // VLD1df is equivalent to VLD1d32.
     // VLD1qf is equivalent to VLD1q32.
     // VLD2d64 is equivalent to VLD1q64.
     // VST1df is equivalent to VST1d32.
     // VST1qf is equivalent to VST1q32.
     // VST2d64 is equivalent to VST1q64.
-    if (Name == "VDUPLNfd" || Name == "VDUPfdf" ||
-        Name == "VDUPLNfq" || Name == "VDUPfqf" ||
-        Name == "VLD1df" || Name == "VLD1qf" || Name == "VLD2d64" ||
-        Name == "VST1df" || Name == "VST1qf" || Name == "VST2d64")
+    if (Name == "VDUPLNfd" || Name == "VDUPLNfq" ||
+        Name == "VLD1df"   || Name == "VLD1qf"   || Name == "VLD2d64" ||
+        Name == "VST1df"   || Name == "VST1qf"   || Name == "VST2d64")
       return false;
   } else if (TN == TARGET_THUMB) {
     if (!thumbInstruction(Form))
@@ -1736,6 +1734,7 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
     //   tLDRcp conflicts with tLDRspi
     //   tRestore conflicts with tLDRspi
     //   t2LEApcrelJT conflicts with t2LEApcrel
+    //   t2MOVCCi16 conflicts with tMOVi16
     if (Name == "tBfar" ||
         /* Name == "tCMNz" || */ Name == "tCMPzi8" || Name == "tCMPzr" ||
         Name == "tCMPzhir" || /* Name == "t2CMNzrr" || Name == "t2CMNzrs" ||
@@ -1743,7 +1742,7 @@ bool ARMDecoderEmitter::ARMDEBackend::populateInstruction(
         Name == "t2CMPzri" || Name == "tPOP_RET" || Name == "t2LDM_RET" ||
         Name == "tMOVCCi" || Name == "tMOVCCr" || Name == "tBR_JTr" ||
         Name == "tSpill" || Name == "tLDRcp" || Name == "tRestore" ||
-        Name == "t2LEApcrelJT")
+        Name == "t2LEApcrelJT" || Name == "t2MOVCCi16")
       return false;
   }
 

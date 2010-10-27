@@ -64,6 +64,18 @@ Path::operator=(StringRef that) {
   return *this;
 }
 
+// push_back 0 on create, and pop_back on delete.
+struct ScopedNullTerminator {
+  std::string &str;
+  ScopedNullTerminator(std::string &s) : str(s) { str.push_back(0); }
+  ~ScopedNullTerminator() {
+    // str.pop_back(); But wait, C++03 doesn't have this...
+    assert(!str.empty() && str[str.size() - 1] == 0
+      && "Null char not present!");
+    str.resize(str.size() - 1);
+  }
+};
+
 bool
 Path::isValid() const {
   if (path.empty())
@@ -72,6 +84,8 @@ Path::isValid() const {
   // If there is a colon, it must be the second character, preceded by a letter
   // and followed by something.
   size_t len = path.size();
+  // This code assumes that path is null terminated, so make sure it is.
+  ScopedNullTerminator snt(path);
   size_t pos = path.rfind(':',len);
   size_t rootslash = 0;
   if (pos != std::string::npos) {
@@ -400,8 +414,10 @@ PathWithStatus::getFileStatus(bool update, std::string *ErrStr) const {
     for (unsigned i = 0; i < path.length(); ++i)
       status.uniqueID += path[i];
 
-    __int64 ft = *reinterpret_cast<__int64*>(&fi.ftLastWriteTime);
-    status.modTime.fromWin32Time(ft);
+    ULARGE_INTEGER ui;
+    ui.LowPart = fi.ftLastWriteTime.dwLowDateTime;
+    ui.HighPart = fi.ftLastWriteTime.dwHighDateTime;
+    status.modTime.fromWin32Time(ui.QuadPart);
 
     status.isDir = fi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     fsIsValid = true;
@@ -720,7 +736,7 @@ Path::eraseFromDisk(bool remove_contents, std::string *ErrStr) const {
 
 bool Path::getMagicNumber(std::string& Magic, unsigned len) const {
   assert(len < 1024 && "Request for magic string too long");
-  char* buf = (char*) alloca(1 + len);
+  char* buf = reinterpret_cast<char*>(alloca(len));
 
   HANDLE h = CreateFile(path.c_str(),
                         GENERIC_READ,
@@ -739,8 +755,7 @@ bool Path::getMagicNumber(std::string& Magic, unsigned len) const {
   if (!ret || nRead != len)
     return false;
 
-  buf[len] = '\0';
-  Magic = buf;
+  Magic = std::string(buf, len);
   return true;
 }
 
@@ -777,8 +792,11 @@ Path::setStatusInfoOnDisk(const FileStatus &si, std::string *ErrMsg) const {
     return MakeErrMsg(ErrMsg, path + ": GetFileInformationByHandle: ");
   }
 
+  ULARGE_INTEGER ui;
+  ui.QuadPart = si.modTime.toWin32Time();
   FILETIME ft;
-  (uint64_t&)ft = si.modTime.toWin32Time();
+  ft.dwLowDateTime = ui.LowPart;
+  ft.dwHighDateTime = ui.HighPart;
   BOOL ret = SetFileTime(h, NULL, &ft, &ft);
   DWORD err = GetLastError();
   CloseHandle(h);

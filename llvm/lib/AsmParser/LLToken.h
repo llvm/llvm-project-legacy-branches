@@ -48,6 +48,7 @@ namespace lltok {
     kw_internal,
     kw_linker_private,
     kw_linker_private_weak,
+    kw_linker_private_weak_def_auto,
     kw_linkonce,
     kw_linkonce_odr,
     kw_private,
@@ -99,6 +100,8 @@ namespace lltok {
     kw_coldcc,
     kw_fastcc,
     kw_msp430_intrcc,
+    kw_ptx_kernel,
+    kw_ptx_device,
     kw_x86_fastcallcc,
     kw_x86_stdcallcc,
     kw_x86_thiscallcc,
@@ -125,11 +128,11 @@ namespace lltok {
     kw_ssp,
     kw_sspreq,
     kw_zeroext,
+    kw_hotpatch,
 
     // Type tokens.
     kw_opaque,
     kw_type,
-    kw_union,
 
     // Binary operator tokens.
     kw_eq,  kw_ne,  kw_slt, kw_sgt, kw_sle, kw_sge, kw_ult, kw_ugt, kw_ule,

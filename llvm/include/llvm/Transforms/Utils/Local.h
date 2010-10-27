@@ -69,6 +69,10 @@ bool RecursivelyDeleteDeadPHINode(PHINode *PN);
 ///
 /// This returns true if it changed the code, note that it can delete
 /// instructions in other blocks as well in this block.
+///
+/// WARNING: Do not use this function on unreachable blocks, as recursive
+/// simplification is not able to handle corner-case scenarios that can
+/// arise in them.
 bool SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD = 0);
     
 //===----------------------------------------------------------------------===//
@@ -117,8 +121,6 @@ bool EliminateDuplicatePHINodes(BasicBlock *BB);
 /// eliminates unreachable basic blocks, and does other "peephole" optimization
 /// of the CFG.  It returns true if a modification was made, possibly deleting
 /// the basic block that was pointed to.
-///
-/// WARNING:  The entry node of a method may not be simplified.
 ///
 bool SimplifyCFG(BasicBlock *BB, const TargetData *TD = 0);
 

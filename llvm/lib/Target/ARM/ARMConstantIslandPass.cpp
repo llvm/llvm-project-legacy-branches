@@ -18,9 +18,9 @@
 #include "ARMAddressingModes.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMInstrInfo.h"
+#include "Thumb2InstrInfo.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
@@ -173,7 +173,7 @@ namespace {
     bool isThumb2;
   public:
     static char ID;
-    ARMConstantIslands() : MachineFunctionPass(&ID) {}
+    ARMConstantIslands() : MachineFunctionPass(ID) {}
 
     virtual bool runOnMachineFunction(MachineFunction &MF);
 
@@ -357,7 +357,7 @@ bool ARMConstantIslands::runOnMachineFunction(MachineFunction &MF) {
   }
 
   // Shrink 32-bit Thumb2 branch, load, and store instructions.
-  if (isThumb2)
+  if (isThumb2 && !STI->prefers32BitThumb())
     MadeChange |= OptimizeThumb2Instructions(MF);
 
   // After a while, this might be made debug-only, but it is not expensive.
@@ -603,7 +603,7 @@ void ARMConstantIslands::InitialFunctionScan(MachineFunction &MF,
             Scale = 4;
             break;
 
-          case ARM::LDR:
+          case ARM::LDRi12:
           case ARM::LDRcp:
           case ARM::t2LDRpci:
             Bits = 12;  // +-offset_12
@@ -1181,11 +1181,13 @@ void ARMConstantIslands::CreateNewWater(unsigned CPUserIndex,
     MachineBasicBlock::iterator MI = UserMI;
     ++MI;
     unsigned CPUIndex = CPUserIndex+1;
+    unsigned NumCPUsers = CPUsers.size();
+    MachineInstr *LastIT = 0;
     for (unsigned Offset = UserOffset+TII->GetInstSizeInBytes(UserMI);
          Offset < BaseInsertOffset;
          Offset += TII->GetInstSizeInBytes(MI),
-            MI = llvm::next(MI)) {
-      if (CPUIndex < CPUsers.size() && CPUsers[CPUIndex].MI == MI) {
+           MI = llvm::next(MI)) {
+      if (CPUIndex < NumCPUsers && CPUsers[CPUIndex].MI == MI) {
         CPUser &U = CPUsers[CPUIndex];
         if (!OffsetIsInRange(Offset, EndInsertOffset,
                              U.MaxDisp, U.NegOk, U.IsSoImm)) {
@@ -1197,9 +1199,23 @@ void ARMConstantIslands::CreateNewWater(unsigned CPUserIndex,
         EndInsertOffset += CPUsers[CPUIndex].CPEMI->getOperand(2).getImm();
         CPUIndex++;
       }
+
+      // Remember the last IT instruction.
+      if (MI->getOpcode() == ARM::t2IT)
+        LastIT = MI;
     }
+
     DEBUG(errs() << "Split in middle of big block\n");
-    NewMBB = SplitBlockBeforeInstr(prior(MI));
+    --MI;
+
+    // Avoid splitting an IT block.
+    if (LastIT) {
+      unsigned PredReg = 0;
+      ARMCC::CondCodes CC = llvm::getITInstrPredicate(MI, PredReg);
+      if (CC != ARMCC::AL)
+        MI = LastIT;
+    }
+    NewMBB = SplitBlockBeforeInstr(MI);
   }
 }
 

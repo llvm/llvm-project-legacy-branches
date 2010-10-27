@@ -91,7 +91,7 @@ static unsigned getGVAlignmentLog2(const GlobalValue *GV, const TargetData &TD,
 
 
 AsmPrinter::AsmPrinter(TargetMachine &tm, MCStreamer &Streamer)
-  : MachineFunctionPass(&ID),
+  : MachineFunctionPass(ID),
     TM(tm), MAI(tm.getMCAsmInfo()),
     OutContext(Streamer.getContext()),
     OutStreamer(Streamer),
@@ -200,11 +200,17 @@ void AsmPrinter::EmitLinkage(unsigned Linkage, MCSymbol *GVSym) const {
   case GlobalValue::WeakAnyLinkage:
   case GlobalValue::WeakODRLinkage:
   case GlobalValue::LinkerPrivateWeakLinkage:
+  case GlobalValue::LinkerPrivateWeakDefAutoLinkage:
     if (MAI->getWeakDefDirective() != 0) {
       // .globl _foo
       OutStreamer.EmitSymbolAttribute(GVSym, MCSA_Global);
-      // .weak_definition _foo
-      OutStreamer.EmitSymbolAttribute(GVSym, MCSA_WeakDefinition);
+
+      if ((GlobalValue::LinkageTypes)Linkage !=
+          GlobalValue::LinkerPrivateWeakDefAutoLinkage)
+        // .weak_definition _foo
+        OutStreamer.EmitSymbolAttribute(GVSym, MCSA_WeakDefinition);
+      else
+        OutStreamer.EmitSymbolAttribute(GVSym, MCSA_WeakDefAutoPrivate);
     } else if (MAI->getLinkOnceDirective() != 0) {
       // .globl _foo
       OutStreamer.EmitSymbolAttribute(GVSym, MCSA_Global);
@@ -276,8 +282,12 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     
     // Handle common symbols.
     if (GVKind.isCommon()) {
+      unsigned Align = 1 << AlignLog;
+      if (!getObjFileLowering().getCommDirectiveSupportsAlignment())
+        Align = 0;
+          
       // .comm _foo, 42, 4
-      OutStreamer.EmitCommonSymbol(GVSym, Size, 1 << AlignLog);
+      OutStreamer.EmitCommonSymbol(GVSym, Size, Align);
       return;
     }
     
@@ -295,11 +305,15 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
       OutStreamer.EmitLocalCommonSymbol(GVSym, Size);
       return;
     }
+
+    unsigned Align = 1 << AlignLog;
+    if (!getObjFileLowering().getCommDirectiveSupportsAlignment())
+      Align = 0;
     
     // .local _foo
     OutStreamer.EmitSymbolAttribute(GVSym, MCSA_Local);
     // .comm _foo, 42, 4
-    OutStreamer.EmitCommonSymbol(GVSym, Size, 1 << AlignLog);
+    OutStreamer.EmitCommonSymbol(GVSym, Size, Align);
     return;
   }
   
@@ -321,6 +335,13 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
   // Handle thread local data for mach-o which requires us to output an
   // additional structure of data and mangle the original symbol so that we
   // can reference it later.
+  //
+  // TODO: This should become an "emit thread local global" method on TLOF.
+  // All of this macho specific stuff should be sunk down into TLOFMachO and
+  // stuff like "TLSExtraDataSection" should no longer be part of the parent
+  // TLOF class.  This will also make it more obvious that stuff like
+  // MCStreamer::EmitTBSSSymbol is macho specific and only called from macho
+  // specific code.
   if (GVKind.isThreadLocal() && MAI->hasMachoTBSSDirective()) {
     // Emit the .tbss symbol
     MCSymbol *MangSym = 
@@ -617,7 +638,7 @@ void AsmPrinter::EmitFunctionBody() {
 
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
-        DD->beginScope(II);
+        DD->beginInstruction(II);
       }
       
       if (isVerbose())
@@ -651,7 +672,7 @@ void AsmPrinter::EmitFunctionBody() {
       
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
-        DD->endScope(II);
+        DD->endInstruction(II);
       }
     }
   }
@@ -1212,6 +1233,22 @@ void AsmPrinter::EmitLabelOffsetDifference(const MCSymbol *Hi, uint64_t Offset,
     OutStreamer.EmitSymbolValue(SetLabel, 4, 0/*AddrSpace*/);
   }
 }
+
+/// EmitLabelPlusOffset - Emit something like ".long Label+Offset" 
+/// where the size in bytes of the directive is specified by Size and Label
+/// specifies the label.  This implicitly uses .set if it is available.
+void AsmPrinter::EmitLabelPlusOffset(const MCSymbol *Label, uint64_t Offset,
+                                      unsigned Size) 
+  const {
+  
+  // Emit Label+Offset
+  const MCExpr *Plus =
+    MCBinaryExpr::CreateAdd(MCSymbolRefExpr::Create(Label, OutContext), 
+                            MCConstantExpr::Create(Offset, OutContext),
+                            OutContext);
+  
+  OutStreamer.EmitValue(Plus, 4, 0/*AddrSpace*/);
+}
     
 
 //===----------------------------------------------------------------------===//
@@ -1250,6 +1287,7 @@ static const MCExpr *LowerConstant(const Constant *CV, AsmPrinter &AP) {
   
   if (const GlobalValue *GV = dyn_cast<GlobalValue>(CV))
     return MCSymbolRefExpr::Create(AP.Mang->getSymbol(GV), Ctx);
+
   if (const BlockAddress *BA = dyn_cast<BlockAddress>(CV))
     return MCSymbolRefExpr::Create(AP.GetBlockAddressSymbol(BA), Ctx);
   
@@ -1268,10 +1306,17 @@ static const MCExpr *LowerConstant(const Constant *CV, AsmPrinter &AP) {
           ConstantFoldConstantExpression(CE, AP.TM.getTargetData()))
       if (C != CE)
         return LowerConstant(C, AP);
-#ifndef NDEBUG
-    CE->dump();
-#endif
-    llvm_unreachable("FIXME: Don't support this constant expr");
+
+    // Otherwise report the problem to the user.
+    {
+      std::string S;
+      raw_string_ostream OS(S);
+      OS << "Unsupported expression in static initializer: ";
+      WriteAsOperand(OS, CE, /*PrintType=*/false,
+                     !AP.MF ? 0 : AP.MF->getFunction()->getParent());
+      report_fatal_error(OS.str());
+    }
+    return MCConstantExpr::Create(0, Ctx);
   case Instruction::GetElementPtr: {
     const TargetData &TD = *AP.TM.getTargetData();
     // Generate a symbolic expression for the byte address
@@ -1419,21 +1464,6 @@ static void EmitGlobalConstantStruct(const ConstantStruct *CS,
          "Layout of constant struct may be incorrect!");
 }
 
-static void EmitGlobalConstantUnion(const ConstantUnion *CU, 
-                                    unsigned AddrSpace, AsmPrinter &AP) {
-  const TargetData *TD = AP.TM.getTargetData();
-  unsigned Size = TD->getTypeAllocSize(CU->getType());
-
-  const Constant *Contents = CU->getOperand(0);
-  unsigned FilledSize = TD->getTypeAllocSize(Contents->getType());
-    
-  // Print the actually filled part
-  EmitGlobalConstantImpl(Contents, AddrSpace, AP);
-
-  // And pad with enough zeroes
-  AP.OutStreamer.EmitZeros(Size-FilledSize, AddrSpace);
-}
-
 static void EmitGlobalConstantFP(const ConstantFP *CFP, unsigned AddrSpace,
                                  AsmPrinter &AP) {
   // FP Constants are printed as integer constants to avoid losing
@@ -1536,7 +1566,7 @@ static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
     case 8:
       if (AP.isVerbose())
         AP.OutStreamer.GetCommentOS() << format("0x%llx\n", CI->getZExtValue());
-        AP.OutStreamer.EmitIntValue(CI->getZExtValue(), Size, AddrSpace);
+      AP.OutStreamer.EmitIntValue(CI->getZExtValue(), Size, AddrSpace);
       return;
     default:
       EmitGlobalConstantLargeInt(CI, AddrSpace, AP);
@@ -1558,9 +1588,6 @@ static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
     AP.OutStreamer.EmitIntValue(0, Size, AddrSpace);
     return;
   }
-  
-  if (const ConstantUnion *CVU = dyn_cast<ConstantUnion>(CV))
-    return EmitGlobalConstantUnion(CVU, AddrSpace, AP);
   
   if (const ConstantVector *V = dyn_cast<ConstantVector>(CV))
     return EmitGlobalConstantVector(V, AddrSpace, AP);

@@ -107,6 +107,13 @@ namespace ISD {
     // and returns an outchain.
     EH_SJLJ_LONGJMP,
 
+    // OUTCHAIN = EH_SJLJ_DISPATCHSETUP(INCHAIN, context)
+    // This corresponds to the eh.sjlj.dispatchsetup intrinsic. It takes an
+    // input chain and a pointer to the sjlj function context as inputs and
+    // returns an outchain. By default, this does nothing. Targets can lower
+    // this to unwind setup code if needed.
+    EH_SJLJ_DISPATCHSETUP,
+
     // TargetConstant* - Like Constant*, but the DAG does not do any folding,
     // simplification, or lowering of the constant. They are used for constants
     // which are known to fit in the immediate fields of their users, or for
@@ -603,7 +610,7 @@ namespace ISD {
   /// which do not reference a specific memory location should be less than
   /// this value. Those that do must not be less than this value, and can
   /// be used with SelectionDAG::getMemIntrinsicNode.
-  static const int FIRST_TARGET_MEMORY_OPCODE = BUILTIN_OP_END+100;
+  static const int FIRST_TARGET_MEMORY_OPCODE = BUILTIN_OP_END+150;
 
   //===--------------------------------------------------------------------===//
   /// MemIndexedMode enum - This enum defines the load / store indexed
@@ -633,7 +640,6 @@ namespace ISD {
   ///              (the result of the load and the result of the base +/- offset
   ///              computation); a post-indexed store produces one value (the
   ///              the result of the base +/- offset computation).
-  ///
   enum MemIndexedMode {
     UNINDEXED = 0,
     PRE_INC,
@@ -651,10 +657,8 @@ namespace ISD {
   ///          integer result type.
   /// ZEXTLOAD loads the integer operand and zero extends it to a larger
   ///          integer result type.
-  /// EXTLOAD  is used for three things: floating point extending loads,
-  ///          integer extending loads [the top bits are undefined], and vector
-  ///          extending loads [load into low elt].
-  ///
+  /// EXTLOAD  is used for two things: floating point extending loads and
+  ///          integer extending loads [the top bits are undefined].
   enum LoadExtType {
     NON_EXTLOAD = 0,
     EXTLOAD,

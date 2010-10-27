@@ -1,4 +1,6 @@
 (* RUN: %ocamlopt -warn-error A llvm.cmxa llvm_scalar_opts.cmxa llvm_target.cmxa %s -o %t
+ * RUN: %t %t.bc
+ * XFAIL: vg_leak
  *)
 
 (* Note: It takes several seconds for ocamlopt to link an executable with
@@ -13,8 +15,11 @@ let context = global_context ()
 let void_type = Llvm.void_type context
 
 (* Tiny unit test framework - really just to help find which line is busted *)
+let print_checkpoints = false
+
 let suite name f =
-  prerr_endline (name ^ ":");
+  if print_checkpoints then
+    prerr_endline (name ^ ":");
   f ()
 
 
@@ -38,7 +43,7 @@ let test_transforms () =
   ignore (PassManager.create_function m
            ++ TargetData.add td
            ++ add_constant_propagation
-					 ++ add_sccp
+           ++ add_sccp
            ++ add_dead_store_elimination
            ++ add_aggressive_dce
            ++ add_scalar_repl_aggregation
@@ -48,7 +53,6 @@ let test_transforms () =
            ++ add_loop_unswitch
            ++ add_loop_unroll
            ++ add_loop_rotation
-           ++ add_loop_index_split
            ++ add_memory_to_register_promotion
            ++ add_memory_to_register_demotion
            ++ add_reassociation

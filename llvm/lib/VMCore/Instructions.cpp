@@ -33,7 +33,7 @@ using namespace llvm;
 User::op_iterator CallSite::getCallee() const {
   Instruction *II(getInstruction());
   return isCall()
-    ? cast</*FIXME: CallInst*/User>(II)->op_end() - 1 // Skip Callee
+    ? cast<CallInst>(II)->op_end() - 1 // Skip Callee
     : cast<InvokeInst>(II)->op_end() - 4; // Skip PersFn, BB, BB, Callee
 }
 
@@ -928,7 +928,7 @@ void AllocaInst::setAlignment(unsigned Align) {
 
 bool AllocaInst::isArrayAllocation() const {
   if (ConstantInt *CI = dyn_cast<ConstantInt>(getOperand(0)))
-    return CI->getZExtValue() != 1;
+    return !CI->isOne();
   return true;
 }
 
@@ -1459,9 +1459,24 @@ bool ShuffleVectorInst::isValidOperands(const Value *V1, const Value *V2,
     return false;
   
   const VectorType *MaskTy = dyn_cast<VectorType>(Mask->getType());
-  if (!isa<Constant>(Mask) || MaskTy == 0 ||
-      !MaskTy->getElementType()->isIntegerTy(32))
+  if (MaskTy == 0 || !MaskTy->getElementType()->isIntegerTy(32))
     return false;
+
+  // Check to see if Mask is valid.
+  if (const ConstantVector *MV = dyn_cast<ConstantVector>(Mask)) {
+    const VectorType *VTy = cast<VectorType>(V1->getType());
+    for (unsigned i = 0, e = MV->getNumOperands(); i != e; ++i) {
+      if (ConstantInt* CI = dyn_cast<ConstantInt>(MV->getOperand(i))) {
+        if (CI->uge(VTy->getNumElements()*2))
+          return false;
+      } else if (!isa<UndefValue>(MV->getOperand(i))) {
+        return false;
+      }
+    }
+  }
+  else if (!isa<UndefValue>(Mask) && !isa<ConstantAggregateZero>(Mask))
+    return false;
+  
   return true;
 }
 
@@ -2374,6 +2389,8 @@ bool CastInst::isCastable(const Type *SrcTy, const Type *DestTy) {
     } else {                                    // Casting from something else
       return false;
     }
+  } else if (DestTy->isX86_MMXTy()) {     
+    return SrcBits == 64;
   } else {                                      // Casting to something else
     return false;
   }
@@ -2455,6 +2472,10 @@ CastInst::getCastOpcode(
       return BitCast;                             // vector -> vector
     } else if (DestPTy->getBitWidth() == SrcBits) {
       return BitCast;                               // float/int -> vector
+    } else if (SrcTy->isX86_MMXTy()) {
+      assert(DestPTy->getBitWidth()==64 &&
+             "Casting X86_MMX to vector of wrong width");
+      return BitCast;                             // MMX to 64-bit vector
     } else {
       assert(!"Illegal cast to vector (wrong type or size)");
     }
@@ -2465,6 +2486,14 @@ CastInst::getCastOpcode(
       return IntToPtr;                              // int -> ptr
     } else {
       assert(!"Casting pointer to other than pointer or int");
+    }
+  } else if (DestTy->isX86_MMXTy()) {
+    if (isa<VectorType>(SrcTy)) {
+      assert(cast<VectorType>(SrcTy)->getBitWidth() == 64 &&
+             "Casting vector of wrong width to X86_MMX");
+      return BitCast;                               // 64-bit vector to MMX
+    } else {
+      assert(!"Illegal cast to X86_MMX");
     }
   } else {
     assert(!"Casting to type that is not first-class");

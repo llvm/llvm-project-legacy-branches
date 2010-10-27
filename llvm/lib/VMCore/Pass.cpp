@@ -14,36 +14,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Pass.h"
-#include "llvm/PassManager.h"
 #include "llvm/PassRegistry.h"
-#include "llvm/Module.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Atomic.h"
-#include "llvm/System/Mutex.h"
-#include "llvm/System/Threading.h"
-#include <algorithm>
-#include <map>
-#include <set>
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
 // Pass Implementation
 //
 
-Pass::Pass(PassKind K, intptr_t pid) : Resolver(0), PassID(pid), Kind(K) {
-  assert(pid && "pid cannot be 0");
-}
-
-Pass::Pass(PassKind K, const void *pid)
-  : Resolver(0), PassID((intptr_t)pid), Kind(K) {
-  assert(pid && "pid cannot be 0");
-}
+Pass::Pass(PassKind K, char &pid) : Resolver(0), PassID(&pid), Kind(K) { }
 
 // Force out-of-line virtual method.
 Pass::~Pass() { 
@@ -62,8 +44,8 @@ PassManagerType ModulePass::getPotentialPassManagerType() const {
   return PMT_ModulePassManager;
 }
 
-bool Pass::mustPreserveAnalysisID(const PassInfo *AnalysisID) const {
-  return Resolver->getAnalysisIfAvailable(AnalysisID, true) != 0;
+bool Pass::mustPreserveAnalysisID(char &AID) const {
+  return Resolver->getAnalysisIfAvailable(&AID, true) != 0;
 }
 
 // dumpPassStructure - Implement the -debug-passes=Structure option
@@ -76,7 +58,9 @@ void Pass::dumpPassStructure(unsigned Offset) {
 /// Registration templates, but can be overloaded directly.
 ///
 const char *Pass::getPassName() const {
-  if (const PassInfo *PI = getPassInfo())
+  AnalysisID AID =  getPassID();
+  const PassInfo *PI = PassRegistry::getPassRegistry()->getPassInfo(AID);
+  if (PI)
     return PI->getPassName();
   return "Unnamed pass: implement Pass::getPassName()";
 }
@@ -102,7 +86,7 @@ void Pass::verifyAnalysis() const {
   // By default, don't do anything.
 }
 
-void *Pass::getAdjustedAnalysisPointer(const PassInfo *) {
+void *Pass::getAdjustedAnalysisPointer(AnalysisID AID) {
   return this;
 }
 
@@ -151,30 +135,6 @@ Pass *FunctionPass::createPrinterPass(raw_ostream &O,
   return createPrintFunctionPass(Banner, &O);
 }
 
-// run - On a module, we run this pass by initializing, runOnFunction'ing once
-// for every function in the module, then by finalizing.
-//
-bool FunctionPass::runOnModule(Module &M) {
-  bool Changed = doInitialization(M);
-
-  for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I)
-    if (!I->isDeclaration())      // Passes are not run on external functions!
-    Changed |= runOnFunction(*I);
-
-  return Changed | doFinalization(M);
-}
-
-// run - On a function, we simply initialize, run the function, then finalize.
-//
-bool FunctionPass::run(Function &F) {
-  // Passes are not run on external functions!
-  if (F.isDeclaration()) return false;
-
-  bool Changed = doInitialization(*F.getParent());
-  Changed |= runOnFunction(F);
-  return Changed | doFinalization(*F.getParent());
-}
-
 bool FunctionPass::doInitialization(Module &) {
   // By default, don't do anything.
   return false;
@@ -198,16 +158,6 @@ Pass *BasicBlockPass::createPrinterPass(raw_ostream &O,
   
   llvm_unreachable("BasicBlockPass printing unsupported.");
   return 0;
-}
-
-// To run this pass on a function, we simply call runOnBasicBlock once for each
-// function.
-//
-bool BasicBlockPass::runOnFunction(Function &F) {
-  bool Changed = doInitialization(F);
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
-    Changed |= runOnBasicBlock(*I);
-  return Changed | doFinalization(F);
 }
 
 bool BasicBlockPass::doInitialization(Module &) {
@@ -234,13 +184,7 @@ PassManagerType BasicBlockPass::getPotentialPassManagerType() const {
   return PMT_BasicBlockPassManager; 
 }
 
-// getPassInfo - Return the PassInfo data structure that corresponds to this
-// pass...
-const PassInfo *Pass::getPassInfo() const {
-  return lookupPassInfo(PassID);
-}
-
-const PassInfo *Pass::lookupPassInfo(intptr_t TI) {
+const PassInfo *Pass::lookupPassInfo(const void *TI) {
   return PassRegistry::getPassRegistry()->getPassInfo(TI);
 }
 
@@ -262,13 +206,12 @@ Pass *PassInfo::createPass() const {
 
 // RegisterAGBase implementation
 //
-RegisterAGBase::RegisterAGBase(const char *Name, intptr_t InterfaceID,
-                               intptr_t PassID, bool isDefault)
+RegisterAGBase::RegisterAGBase(const char *Name, const void *InterfaceID,
+                               const void *PassID, bool isDefault)
     : PassInfo(Name, InterfaceID) {
   PassRegistry::getPassRegistry()->registerAnalysisGroup(InterfaceID, PassID,
                                                          *this, isDefault);
 }
-
 
 //===----------------------------------------------------------------------===//
 // PassRegistrationListener implementation
@@ -306,7 +249,7 @@ namespace {
     
     void passEnumerate(const PassInfo *P) {
       if (P->isCFGOnlyPass())
-        CFGOnlyList.push_back(P);
+        CFGOnlyList.push_back(P->getTypeInfo());
     }
   };
 }
@@ -326,15 +269,25 @@ void AnalysisUsage::setPreservesCFG() {
   GetCFGOnlyPasses(Preserved).enumeratePasses();
 }
 
-AnalysisUsage &AnalysisUsage::addRequiredID(AnalysisID ID) {
-  assert(ID && "Pass class not registered!");
+AnalysisUsage &AnalysisUsage::addPreserved(StringRef Arg) {
+  const PassInfo *PI = Pass::lookupPassInfo(Arg);
+  // If the pass exists, preserve it. Otherwise silently do nothing.
+  if (PI) Preserved.push_back(PI->getTypeInfo());
+  return *this;
+}
+
+AnalysisUsage &AnalysisUsage::addRequiredID(const void *ID) {
   Required.push_back(ID);
   return *this;
 }
 
-AnalysisUsage &AnalysisUsage::addRequiredTransitiveID(AnalysisID ID) {
-  assert(ID && "Pass class not registered!");
-  Required.push_back(ID);
-  RequiredTransitive.push_back(ID);
+AnalysisUsage &AnalysisUsage::addRequiredID(char &ID) {
+  Required.push_back(&ID);
+  return *this;
+}
+
+AnalysisUsage &AnalysisUsage::addRequiredTransitiveID(char &ID) {
+  Required.push_back(&ID);
+  RequiredTransitive.push_back(&ID);
   return *this;
 }

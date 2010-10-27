@@ -57,7 +57,7 @@ public:
     *this = get(II);
     assert(I.getPointer() && "Not a call?");
   }
-
+protected:
   /// CallSiteBase::get - This static method is sort of like a constructor.  It
   /// will create an appropriate call site for a Call or Invoke instruction, but
   /// it can also create a null initialized CallSiteBase object for something
@@ -72,7 +72,7 @@ public:
     }
     return CallSiteBase();
   }
-
+public:
   /// isCall - true if a CallInst is enclosed.
   /// Note that !isCall() does not mean it is an InvokeInst enclosed,
   /// it also could signify a NULL Instruction pointer.
@@ -262,24 +262,11 @@ private:
   }
 
   IterTy getCallee() const {
-    // FIXME: this is slow, since we do not have the fast versions of the op_*()
-    // functions here. See CallSite::getCallee.
-    if (isCall())
-      return getInstruction()->op_end() - 1; // Skip Callee
-    else
-      // An invoke.
-      return getInstruction()->op_end() - 4; // Skip PersFn, BB, BB, Function
+    if (isCall()) // Skip Callee
+      return cast<CallInst>(getInstruction())->op_end() - 1;
+    else // Skip PersFn, BB, BB, Callee
+      return cast<InvokeInst>(getInstruction())->op_end() - 4;
   }
-};
-
-/// ImmutableCallSite - establish a view to a call site for examination
-class ImmutableCallSite : public CallSiteBase<> {
-  typedef CallSiteBase<> Base;
-public:
-  ImmutableCallSite(const Value* V) : Base(V) {}
-  ImmutableCallSite(const CallInst *CI) : Base(CI) {}
-  ImmutableCallSite(const InvokeInst *II) : Base(II) {}
-  ImmutableCallSite(const Instruction *II) : Base(II) {}
 };
 
 class CallSite : public CallSiteBase<Function, Value, User, Instruction,
@@ -296,22 +283,23 @@ public:
 
   bool operator==(const CallSite &CS) const { return I == CS.I; }
   bool operator!=(const CallSite &CS) const { return I != CS.I; }
-
-  /// CallSite::get - This static method is sort of like a constructor.  It will
-  /// create an appropriate call site for a Call or Invoke instruction, but it
-  /// can also create a null initialized CallSite object for something which is
-  /// NOT a call site.
-  ///
-  static CallSite get(Value *V) {
-    return Base::get(V);
-  }
-
   bool operator<(const CallSite &CS) const {
     return getInstruction() < CS.getInstruction();
   }
 
 private:
   User::op_iterator getCallee() const;
+};
+
+/// ImmutableCallSite - establish a view to a call site for examination
+class ImmutableCallSite : public CallSiteBase<> {
+  typedef CallSiteBase<> Base;
+public:
+  ImmutableCallSite(const Value* V) : Base(V) {}
+  ImmutableCallSite(const CallInst *CI) : Base(CI) {}
+  ImmutableCallSite(const InvokeInst *II) : Base(II) {}
+  ImmutableCallSite(const Instruction *II) : Base(II) {}
+  ImmutableCallSite(CallSite CS) : Base(CS.getInstruction()) {}
 };
 
 } // End llvm namespace

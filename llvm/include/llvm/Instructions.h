@@ -941,28 +941,8 @@ public:
                                unsigned(isTC));
   }
 
-  /// @deprecated these "define hacks" will go away soon
-  /// @brief coerce out-of-tree code to abandon the low-level interfaces
-  /// @detail see below comments and update your code to high-level interfaces
-  ///    - getOperand(0)  --->  getCalledValue(), or possibly getCalledFunction
-  ///    - setOperand(0, V)  --->  setCalledFunction(V)
-  ///
-  ///    in LLVM v2.8-only code
-  ///    - getOperand(N+1)  --->  getArgOperand(N)
-  ///    - setOperand(N+1, V)  --->  setArgOperand(N, V)
-  ///    - getNumOperands()  --->  getNumArgOperands()+1  // note the "+1"!
-  ///
-  ///    in backward compatible code please consult llvm/Support/CallSite.h,
-  ///    you should create a callsite using the CallInst pointer and call its
-  ///    methods
-  ///
-# define public private
-# define protected private
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
-# undef public
-# undef protected
-public:
 
   /// getNumArgOperands - Return the number of call arguments.
   ///
@@ -1071,6 +1051,11 @@ public:
   /// setCalledFunction - Set the function called.
   void setCalledFunction(Value* Fn) {
     Op<-1>() = Fn;
+  }
+  
+  /// isInlineAsm - Check if this call is an inline asm statement.
+  bool isInlineAsm() const {
+    return isa<InlineAsm>(Op<-1>());
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -1221,6 +1206,10 @@ public:
     : UnaryInstruction(Ty, VAArg, List, InsertAtEnd) {
     setName(NameStr);
   }
+
+  Value *getPointerOperand() { return getOperand(0); }
+  const Value *getPointerOperand() const { return getOperand(0); }
+  static unsigned getPointerOperandIndex() { return 0U; }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VAArgInst *) { return true; }
@@ -2000,11 +1989,9 @@ public:
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
-  /// Convenience accessor
-  Value *getReturnValue(unsigned n = 0) const {
-    return n < getNumOperands()
-      ? getOperand(n)
-      : 0;
+  /// Convenience accessor. Returns null if there is no return value.
+  Value *getReturnValue() const {
+    return getNumOperands() != 0 ? getOperand(0) : 0;
   }
 
   unsigned getNumSuccessors() const { return 0; }

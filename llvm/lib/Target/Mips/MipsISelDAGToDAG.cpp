@@ -84,8 +84,7 @@ private:
   SDNode *Select(SDNode *N);
 
   // Complex Pattern.
-  bool SelectAddr(SDNode *Op, SDValue N, 
-                  SDValue &Base, SDValue &Offset);
+  bool SelectAddr(SDValue N, SDValue &Base, SDValue &Offset);
 
   SDNode *SelectLoadFp64(SDNode *N);
   SDNode *SelectStoreFp64(SDNode *N);
@@ -110,8 +109,7 @@ SDNode *MipsDAGToDAGISel::getGlobalBaseReg() {
 /// ComplexPattern used on MipsInstrInfo
 /// Used on Mips Load/Store instructions
 bool MipsDAGToDAGISel::
-SelectAddr(SDNode *Op, SDValue Addr, SDValue &Offset, SDValue &Base)
-{
+SelectAddr(SDValue Addr, SDValue &Offset, SDValue &Base) {
   // if Address is FI, get the TargetFrameIndex.
   if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
     Base   = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
@@ -137,7 +135,7 @@ SelectAddr(SDNode *Op, SDValue Addr, SDValue &Offset, SDValue &Base)
   // Operand is a result from an ADD.
   if (Addr.getOpcode() == ISD::ADD) {
     if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Addr.getOperand(1))) {
-      if (Predicate_immSExt16(CN)) {
+      if (isInt<16>(CN->getSExtValue())) {
 
         // If the first operand is a FI, get the TargetFI Node
         if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>
@@ -184,15 +182,16 @@ SDNode *MipsDAGToDAGISel::SelectLoadFp64(SDNode *N) {
   if (!Subtarget.isMips1() || NVT != MVT::f64)
     return NULL;
 
-  if (!Predicate_unindexedload(N) ||
-      !Predicate_load(N))
+  LoadSDNode *LN = cast<LoadSDNode>(N);
+  if (LN->getExtensionType() != ISD::NON_EXTLOAD ||
+      LN->getAddressingMode() != ISD::UNINDEXED)
     return NULL;
 
   SDValue Chain = N->getOperand(0);
   SDValue N1 = N->getOperand(1);
   SDValue Offset0, Offset1, Base;
 
-  if (!SelectAddr(N, N1, Offset0, Base) ||
+  if (!SelectAddr(N1, Offset0, Base) ||
       N1.getValueType() != MVT::i32)
     return NULL;
 
@@ -248,15 +247,15 @@ SDNode *MipsDAGToDAGISel::SelectStoreFp64(SDNode *N) {
 
   SDValue Chain = N->getOperand(0);
 
-  if (!Predicate_unindexedstore(N) ||
-      !Predicate_store(N))
+  StoreSDNode *SN = cast<StoreSDNode>(N);
+  if (SN->isTruncatingStore() || SN->getAddressingMode() != ISD::UNINDEXED)
     return NULL;
 
   SDValue N1 = N->getOperand(1);
   SDValue N2 = N->getOperand(2);
   SDValue Offset0, Offset1, Base;
 
-  if (!SelectAddr(N, N2, Offset0, Base) ||
+  if (!SelectAddr(N2, Offset0, Base) ||
       N1.getValueType() != MVT::f64 ||
       N2.getValueType() != MVT::i32)
     return NULL;

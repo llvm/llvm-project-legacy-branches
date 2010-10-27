@@ -190,20 +190,21 @@ MachineFunction::DeleteMachineBasicBlock(MachineBasicBlock *MBB) {
 }
 
 MachineMemOperand *
-MachineFunction::getMachineMemOperand(const Value *v, unsigned f,
-                                      int64_t o, uint64_t s,
-                                      unsigned base_alignment) {
-  return new (Allocator) MachineMemOperand(v, f, o, s, base_alignment);
+MachineFunction::getMachineMemOperand(MachinePointerInfo PtrInfo, unsigned f,
+                                      uint64_t s, unsigned base_alignment,
+                                      const MDNode *TBAAInfo) {
+  return new (Allocator) MachineMemOperand(PtrInfo, f, s, base_alignment,
+                                           TBAAInfo);
 }
 
 MachineMemOperand *
 MachineFunction::getMachineMemOperand(const MachineMemOperand *MMO,
                                       int64_t Offset, uint64_t Size) {
   return new (Allocator)
-             MachineMemOperand(MMO->getValue(), MMO->getFlags(),
-                               int64_t(uint64_t(MMO->getOffset()) +
-                                       uint64_t(Offset)),
-                               Size, MMO->getBaseAlignment());
+             MachineMemOperand(MachinePointerInfo(MMO->getValue(),
+                                                  MMO->getOffset()+Offset),
+                               MMO->getFlags(), Size,
+                               MMO->getBaseAlignment(), 0);
 }
 
 MachineInstr::mmo_iterator
@@ -231,10 +232,10 @@ MachineFunction::extractLoadMemRefs(MachineInstr::mmo_iterator Begin,
       else {
         // Clone the MMO and unset the store flag.
         MachineMemOperand *JustLoad =
-          getMachineMemOperand((*I)->getValue(),
+          getMachineMemOperand((*I)->getPointerInfo(),
                                (*I)->getFlags() & ~MachineMemOperand::MOStore,
-                               (*I)->getOffset(), (*I)->getSize(),
-                               (*I)->getBaseAlignment());
+                               (*I)->getSize(), (*I)->getBaseAlignment(),
+                               (*I)->getTBAAInfo());
         Result[Index] = JustLoad;
       }
       ++Index;
@@ -263,10 +264,10 @@ MachineFunction::extractStoreMemRefs(MachineInstr::mmo_iterator Begin,
       else {
         // Clone the MMO and unset the load flag.
         MachineMemOperand *JustStore =
-          getMachineMemOperand((*I)->getValue(),
+          getMachineMemOperand((*I)->getPointerInfo(),
                                (*I)->getFlags() & ~MachineMemOperand::MOLoad,
-                               (*I)->getOffset(), (*I)->getSize(),
-                               (*I)->getBaseAlignment());
+                               (*I)->getSize(), (*I)->getBaseAlignment(),
+                               (*I)->getTBAAInfo());
         Result[Index] = JustStore;
       }
       ++Index;
@@ -279,7 +280,7 @@ void MachineFunction::dump() const {
   print(dbgs());
 }
 
-void MachineFunction::print(raw_ostream &OS) const {
+void MachineFunction::print(raw_ostream &OS, SlotIndexes *Indexes) const {
   OS << "# Machine code for function " << Fn->getName() << ":\n";
 
   // Print Frame Information
@@ -334,7 +335,7 @@ void MachineFunction::print(raw_ostream &OS) const {
   
   for (const_iterator BB = begin(), E = end(); BB != E; ++BB) {
     OS << '\n';
-    BB->print(OS);
+    BB->print(OS, Indexes);
   }
 
   OS << "\n# End machine code for function " << Fn->getName() << ".\n\n";

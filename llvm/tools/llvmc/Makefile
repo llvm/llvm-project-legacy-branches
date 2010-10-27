@@ -9,9 +9,10 @@
 
 LEVEL = ../..
 
-export LLVMC_BASED_DRIVER_NAME = llvmc
-export LLVMC_BUILTIN_PLUGINS = Base Clang
+DIRS = src
 
-DIRS = plugins driver
+ifeq ($(BUILD_EXAMPLES),1)
+  OPTIONAL_DIRS += examples
+endif
 
 include $(LEVEL)/Makefile.common

@@ -31,7 +31,7 @@ dnl===
 dnl===-----------------------------------------------------------------------===
 dnl Initialize autoconf and define the package name, version number and
 dnl email address for reporting bugs.
-AC_INIT([[llvm]],[[2.8svn]],[llvmbugs@cs.uiuc.edu])
+AC_INIT([[llvm]],[[2.9svn]],[llvmbugs@cs.uiuc.edu])
 
 dnl Provide a copyright substitution and ensure the copyright notice is included
 dnl in the output of --version option of the generated configure script.
@@ -101,7 +101,6 @@ for i in `ls ${srcdir}/projects`
 do
   if test -d ${srcdir}/projects/${i} ; then
     case ${i} in
-      CVS) ;;
       sample)       AC_CONFIG_SUBDIRS([projects/sample])    ;;
       privbracket)  AC_CONFIG_SUBDIRS([projects/privbracket]) ;;
       llvm-stacker) AC_CONFIG_SUBDIRS([projects/llvm-stacker]) ;;
@@ -299,7 +298,7 @@ dnl Set the LINKALL and NOLINKALL Makefile variables based on the platform
 AC_SUBST(LINKALL,$llvm_cv_link_all_option)
 AC_SUBST(NOLINKALL,$llvm_cv_no_link_all_option)
 
-dnl Set the "LLVM_ON_*" variables based on llvm_cvs_platform_type
+dnl Set the "LLVM_ON_*" variables based on llvm_cv_platform_type
 dnl This is used by lib/System to determine the basic kind of implementation
 dnl to use.
 case $llvm_cv_platform_type in
@@ -327,12 +326,12 @@ AC_CACHE_CHECK([target architecture],[llvm_cv_target_arch],
   alpha*-*)               llvm_cv_target_arch="Alpha" ;;
   arm*-*)                 llvm_cv_target_arch="ARM" ;;
   mips-*)                 llvm_cv_target_arch="Mips" ;;
-  pic16-*)                llvm_cv_target_arch="PIC16" ;;
   xcore-*)                llvm_cv_target_arch="XCore" ;;
   msp430-*)               llvm_cv_target_arch="MSP430" ;;
   s390x-*)                llvm_cv_target_arch="SystemZ" ;;
   bfin-*)                 llvm_cv_target_arch="Blackfin" ;;
   mblaze-*)               llvm_cv_target_arch="MBlaze" ;;
+  ptx-*)                  llvm_cv_target_arch="PTX" ;;
   *)                      llvm_cv_target_arch="Unknown" ;;
 esac])
 
@@ -369,13 +368,13 @@ else
   AC_SUBST(LLVM_CROSS_COMPILING, [0])
 fi
 
-dnl Check to see if there's a "CVS" (or .svn or .git) directory indicating
-dnl that this build is being done from a checkout. This sets up several
-dnl defaults for the command line switches. When we build with a CVS directory,
+dnl Check to see if there's a .svn or .git directory indicating that this
+dnl build is being done from a checkout. This sets up several defaults for
+dnl the command line switches. When we build with a checkout directory,
 dnl we get a debug with assertions turned on. Without, we assume a source
 dnl release and we get an optimized build without assertions.
 dnl See --enable-optimized and --enable-assertions below
-if test -d "CVS" -o -d "${srcdir}/CVS" -o -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
+if test -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
   cvsbuild="yes"
   optimize="no"
   AC_SUBST(CVSBUILD,[[CVSBUILD=1]])
@@ -464,12 +463,12 @@ else
     Alpha)       AC_SUBST(TARGET_HAS_JIT,1) ;;
     ARM)         AC_SUBST(TARGET_HAS_JIT,1) ;;
     Mips)        AC_SUBST(TARGET_HAS_JIT,0) ;;
-    PIC16)       AC_SUBST(TARGET_HAS_JIT,0) ;;
     XCore)       AC_SUBST(TARGET_HAS_JIT,0) ;;
     MSP430)      AC_SUBST(TARGET_HAS_JIT,0) ;;
     SystemZ)     AC_SUBST(TARGET_HAS_JIT,0) ;;
     Blackfin)    AC_SUBST(TARGET_HAS_JIT,0) ;;
     MBlaze)      AC_SUBST(TARGET_HAS_JIT,0) ;;
+    PTX)         AC_SUBST(TARGET_HAS_JIT,0) ;;
     *)           AC_SUBST(TARGET_HAS_JIT,0) ;;
   esac
 fi
@@ -543,14 +542,14 @@ dnl Allow specific targets to be specified for building (or not)
 TARGETS_TO_BUILD=""
 AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-targets],
     [Build specific host targets: all or target1,target2,... Valid targets are:
-     host, x86, x86_64, sparc, powerpc, alpha, arm, mips, spu, pic16,
-     xcore, msp430, systemz, blackfin, cbe, msil, and cpp (default=all)]),,
+     host, x86, x86_64, sparc, powerpc, alpha, arm, mips, spu,
+     xcore, msp430, systemz, blackfin, ptx, cbe, and cpp (default=all)]),,
     enableval=all)
 if test "$enableval" = host-only ; then
   enableval=host
 fi
 case "$enableval" in
-  all) TARGETS_TO_BUILD="X86 Sparc PowerPC Alpha ARM Mips CellSPU PIC16 XCore MSP430 SystemZ Blackfin CBackend MSIL CppBackend MBlaze" ;;
+  all) TARGETS_TO_BUILD="X86 Sparc PowerPC Alpha ARM Mips CellSPU XCore MSP430 SystemZ Blackfin CBackend CppBackend MBlaze PTX" ;;
   *)for a_target in `echo $enableval|sed -e 's/,/ /g' ` ; do
       case "$a_target" in
         x86)      TARGETS_TO_BUILD="X86 $TARGETS_TO_BUILD" ;;
@@ -561,15 +560,14 @@ case "$enableval" in
         arm)      TARGETS_TO_BUILD="ARM $TARGETS_TO_BUILD" ;;
         mips)     TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
         spu)      TARGETS_TO_BUILD="CellSPU $TARGETS_TO_BUILD" ;;
-        pic16)    TARGETS_TO_BUILD="PIC16 $TARGETS_TO_BUILD" ;;
         xcore)    TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
         msp430)   TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
         systemz)  TARGETS_TO_BUILD="SystemZ $TARGETS_TO_BUILD" ;;
         blackfin) TARGETS_TO_BUILD="Blackfin $TARGETS_TO_BUILD" ;;
         cbe)      TARGETS_TO_BUILD="CBackend $TARGETS_TO_BUILD" ;;
-        msil)     TARGETS_TO_BUILD="MSIL $TARGETS_TO_BUILD" ;;
         cpp)      TARGETS_TO_BUILD="CppBackend $TARGETS_TO_BUILD" ;;
         mblaze)   TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
+        ptx)      TARGETS_TO_BUILD="PTX $TARGETS_TO_BUILD" ;;
         host) case "$llvm_cv_target_arch" in
             x86)         TARGETS_TO_BUILD="X86 $TARGETS_TO_BUILD" ;;
             x86_64)      TARGETS_TO_BUILD="X86 $TARGETS_TO_BUILD" ;;
@@ -580,11 +578,11 @@ case "$enableval" in
             Mips)        TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
             MBlaze)      TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
             CellSPU|SPU) TARGETS_TO_BUILD="CellSPU $TARGETS_TO_BUILD" ;;
-            PIC16)       TARGETS_TO_BUILD="PIC16 $TARGETS_TO_BUILD" ;;
             XCore)       TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
             MSP430)      TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
             s390x)       TARGETS_TO_BUILD="SystemZ $TARGETS_TO_BUILD" ;;
             Blackfin)    TARGETS_TO_BUILD="Blackfin $TARGETS_TO_BUILD" ;;
+            PTX)         TARGETS_TO_BUILD="PTX $TARGETS_TO_BUILD" ;;
             *)       AC_MSG_ERROR([Can not set target to build]) ;;
           esac ;;
         *) AC_MSG_ERROR([Unrecognized target $a_target]) ;;
@@ -598,9 +596,17 @@ AC_SUBST(TARGETS_TO_BUILD,$TARGETS_TO_BUILD)
 # If so, define LLVM_NATIVE_ARCH to that LLVM target.
 for a_target in $TARGETS_TO_BUILD; do
   if test "$a_target" = "$LLVM_NATIVE_ARCH"; then
-    LLVM_NATIVE_ARCHTARGET="${LLVM_NATIVE_ARCH}Target"
-    AC_DEFINE_UNQUOTED(LLVM_NATIVE_ARCH,$LLVM_NATIVE_ARCHTARGET,
+    AC_DEFINE_UNQUOTED(LLVM_NATIVE_ARCH, $LLVM_NATIVE_ARCH,
       [LLVM architecture name for the native architecture, if available])
+    LLVM_NATIVE_TARGET="LLVMInitialize${LLVM_NATIVE_ARCH}Target"
+    LLVM_NATIVE_TARGETINFO="LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo"
+    LLVM_NATIVE_ASMPRINTER="LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter"
+    AC_DEFINE_UNQUOTED(LLVM_NATIVE_TARGET, $LLVM_NATIVE_TARGET,
+      [LLVM name for the native Target init function, if available])
+    AC_DEFINE_UNQUOTED(LLVM_NATIVE_TARGETINFO, $LLVM_NATIVE_TARGETINFO,
+      [LLVM name for the native TargetInfo init function, if available])
+    AC_DEFINE_UNQUOTED(LLVM_NATIVE_ASMPRINTER, $LLVM_NATIVE_ASMPRINTER,
+      [LLVM name for the native AsmPrinter init function, if available])
   fi
 done
 
@@ -613,6 +619,10 @@ LLVM_ENUM_DISASSEMBLERS=""
 for target_to_build in $TARGETS_TO_BUILD; do
   LLVM_ENUM_TARGETS="LLVM_TARGET($target_to_build) $LLVM_ENUM_TARGETS"
   if test -f ${srcdir}/lib/Target/${target_to_build}/AsmPrinter/Makefile ; then
+    LLVM_ENUM_ASM_PRINTERS="LLVM_ASM_PRINTER($target_to_build) $LLVM_ENUM_ASM_PRINTERS";
+  fi
+  # MC-ized AsmPrinters live in TARGET/InstPrinter, not AsmPrinter
+  if test -f ${srcdir}/lib/Target/${target_to_build}/InstPrinter/Makefile ; then
     LLVM_ENUM_ASM_PRINTERS="LLVM_ASM_PRINTER($target_to_build) $LLVM_ENUM_ASM_PRINTERS";
   fi
   if test -f ${srcdir}/lib/Target/${target_to_build}/AsmParser/Makefile ; then
@@ -794,6 +804,13 @@ case "$withval" in
   *) AC_MSG_ERROR([Invalid path for --with-ocaml-libdir. Provide full path]) ;;
 esac
 
+AC_ARG_WITH(clang-resource-dir,
+  AS_HELP_STRING([--with-clang-resource-dir],
+    [Relative directory from the Clang binary for resource files]),,
+    withval="")
+AC_DEFINE_UNQUOTED(CLANG_RESOURCE_DIR,"$withval",
+                   [Relative directory for resource files])
+
 AC_ARG_WITH(c-include-dirs,
   AS_HELP_STRING([--with-c-include-dirs],
     [Colon separated list of directories clang will search for headers]),,
@@ -856,35 +873,6 @@ AC_ARG_ENABLE(libffi,AS_HELP_STRING(
     *) AC_MSG_ERROR([Invalid setting for --enable-libffi. Use "yes" or "no"]) ;;
   esac],
   llvm_cv_enable_libffi=no)
-
-dnl Only Windows needs dynamic libCompilerDriver to support plugins.
-if test "$llvm_cv_os_type" = "Win32" ; then
-   llvmc_dynamic="yes"
-else
-   llvmc_dynamic="no"
-fi
-
-dnl --enable-llvmc-dynamic : should LLVMC link libCompilerDriver dynamically?
-AC_ARG_ENABLE(llvmc-dynamic,AS_HELP_STRING(
---enable-llvmc-dynamic,
-[Link LLVMC dynamically (default is NO, unless on Win32)]),,
-enableval=$llvmc_dynamic)
-if test ${enableval} = "yes" && test "$ENABLE_PIC" -eq 1 ; then
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC,[[ENABLE_LLVMC_DYNAMIC=1]])
-else
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC,[[]])
-fi
-
-dnl --enable-llvmc-dynamic-plugins : should LLVMC support dynamic plugins?
-AC_ARG_ENABLE(llvmc-dynamic-plugins,AS_HELP_STRING(
---enable-llvmc-dynamic-plugins,
-[Enable dynamic LLVMC plugins (default is YES)]),,
-enableval=yes)
-if test ${enableval} = "yes" ; then
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC_PLUGINS,[[ENABLE_LLVMC_DYNAMIC_PLUGINS=1]])
-else
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC_PLUGINS,[[]])
-fi
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -998,6 +986,16 @@ if test "$DOTTY" != "echo dotty" ; then
   AC_DEFINE_UNQUOTED([LLVM_PATH_DOTTY],"$DOTTY${EXEEXT}",
    [Define to path to dotty program if found or 'echo dotty' otherwise])
 fi
+AC_PATH_PROG(XDOT_PY, [xdot.py], [echo xdot.py])
+if test "$XDOT_PY" != "echo xdot.py" ; then
+  AC_DEFINE([HAVE_XDOT_PY],[1],[Define if the xdot.py program is available])
+  dnl If we're targeting for mingw we should emit windows paths, not msys
+  if test "$llvm_cv_os_type" = "MingW" ; then
+    XDOT_PY=`echo $XDOT_PY | sed 's/^\/\([[A-Za-z]]\)\//\1:\//' `
+  fi
+  AC_DEFINE_UNQUOTED([LLVM_PATH_XDOT_PY],"$XDOT_PY${EXEEXT}",
+   [Define to path to xdot.py program if found or 'echo xdot.py' otherwise])
+fi
 
 dnl Look for a sufficiently recent version of Perl.
 LLVM_PROG_PERL([5.006])
@@ -1039,6 +1037,9 @@ AC_PATH_PROGS(OCAMLOPT, [ocamlopt])
 AC_PATH_PROGS(OCAMLDEP, [ocamldep])
 AC_PATH_PROGS(OCAMLDOC, [ocamldoc])
 AC_PATH_PROGS(GAS, [gas as])
+
+dnl Get the version of the linker in use.
+AC_LINK_GET_VERSION
 
 dnl Determine whether the linker supports the -R option.
 AC_LINK_USE_R
@@ -1278,6 +1279,7 @@ AC_CHECK_HEADERS([utime.h windows.h])
 AC_CHECK_HEADERS([sys/mman.h sys/param.h sys/resource.h sys/time.h])
 AC_CHECK_HEADERS([sys/types.h sys/ioctl.h malloc/malloc.h mach/mach.h])
 AC_CHECK_HEADERS([valgrind/valgrind.h])
+AC_CHECK_HEADERS([fenv.h])
 if test "$ENABLE_THREADS" -eq 1 ; then
   AC_CHECK_HEADERS(pthread.h,
                    AC_SUBST(HAVE_PTHREAD, 1),
@@ -1293,9 +1295,6 @@ fi
 
 dnl Try to find Darwin specific crash reporting library.
 AC_CHECK_HEADERS([CrashReporterClient.h])
-
-dnl Try to find Darwin specific linker-section library.
-AC_CHECK_HEADERS([mach-o/getsect.h])
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -1375,23 +1374,6 @@ AC_LINK_IFELSE(
   AC_MSG_RESULT(no)
   AC_DEFINE(LLVM_MULTITHREADED, 0, Build multithreading support into LLVM)
   AC_MSG_WARN([LLVM will be built thread-unsafe because atomic builtins are missing]))
-
-dnl Check for Darwin-specific getsect().
-AC_MSG_CHECKING(for getsect())
-AC_COMPILE_IFELSE(
-  AC_LANG_SOURCE(
-    [[#include <mach-o/getsect.h>
-      int main() {
-        unsigned long p;
-        return (int)getsect("__DATA","__pass_info", &p);
-      }
-    ]]),
-  AC_MSG_RESULT(yes)
-    AC_DEFINE(HAVE_GETSECT, 1, Have Darwin getsect() support),
-  AC_MSG_RESULT(no)
-    AC_DEFINE(HAVE_GETSECT, 1, Have Darwin getsect() support)
-)
-
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -1579,7 +1561,11 @@ dnl WARNING: dnl If you add or remove any of the following config headers, then
 dnl you MUST also update Makefile.rules so that the variable FilesToConfig
 dnl contains the same list of files as AC_CONFIG_HEADERS below. This ensures the
 dnl files can be updated automatically when their *.in sources change.
-AC_CONFIG_HEADERS([include/llvm/Config/config.h])
+AC_CONFIG_HEADERS([include/llvm/Config/config.h include/llvm/Config/llvm-config.h])
+AH_TOP([#ifndef CONFIG_H
+#define CONFIG_H])
+AH_BOTTOM([#endif])
+
 AC_CONFIG_FILES([include/llvm/Config/Targets.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmPrinters.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmParsers.def])
@@ -1593,7 +1579,7 @@ dnl Configure the RPM spec file for LLVM
 AC_CONFIG_FILES([llvm.spec])
 
 dnl Configure llvmc's Base plugin
-AC_CONFIG_FILES([tools/llvmc/plugins/Base/Base.td])
+AC_CONFIG_FILES([tools/llvmc/src/Base.td])
 
 dnl Do the first stage of configuration for llvm-config.in.
 AC_CONFIG_FILES([tools/llvm-config/llvm-config.in])

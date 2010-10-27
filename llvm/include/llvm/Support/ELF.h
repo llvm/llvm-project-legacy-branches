@@ -126,21 +126,22 @@ enum {
 
 // Machine architectures
 enum {
-  EM_NONE = 0,  // No machine
-  EM_M32 = 1,   // AT&T WE 32100
-  EM_SPARC = 2, // SPARC
-  EM_386 = 3,   // Intel 386
-  EM_68K = 4,   // Motorola 68000
-  EM_88K = 5,   // Motorola 88000
-  EM_486 = 6,   // Intel 486 (deprecated)
-  EM_860 = 7,   // Intel 80860
-  EM_MIPS = 8,     // MIPS R3000
-  EM_PPC = 20,     // PowerPC
-  EM_PPC64 = 21,   // PowerPC64
-  EM_ARM = 40,     // ARM
-  EM_ALPHA = 41,   // DEC Alpha
-  EM_SPARCV9 = 43, // SPARC V9
-  EM_X86_64 = 62   // AMD64
+  EM_NONE = 0,      // No machine
+  EM_M32 = 1,       // AT&T WE 32100
+  EM_SPARC = 2,     // SPARC
+  EM_386 = 3,       // Intel 386
+  EM_68K = 4,       // Motorola 68000
+  EM_88K = 5,       // Motorola 88000
+  EM_486 = 6,       // Intel 486 (deprecated)
+  EM_860 = 7,       // Intel 80860
+  EM_MIPS = 8,      // MIPS R3000
+  EM_PPC = 20,      // PowerPC
+  EM_PPC64 = 21,    // PowerPC64
+  EM_ARM = 40,      // ARM
+  EM_ALPHA = 41,    // DEC Alpha
+  EM_SPARCV9 = 43,  // SPARC V9
+  EM_X86_64 = 62,   // AMD64
+  EM_MBLAZE = 47787 // Xilinx MicroBlaze
 };
 
 // Object file classes.
@@ -216,6 +217,27 @@ enum {
   R_X86_64_TLSDESC    = 36
 };
 
+// i386 relocations.
+// TODO: this is just a subset
+enum {
+  R_386_NONE          = 0,
+  R_386_32            = 1,
+  R_386_PC32          = 2,
+  R_386_GOT32         = 3,
+  R_386_PLT32         = 4,
+  R_386_COPY          = 5,
+  R_386_GLOB_DAT      = 6,
+  R_386_JUMP_SLOT     = 7,
+  R_386_RELATIVE      = 8,
+  R_386_GOTOFF        = 9,
+  R_386_GOTPC         = 10,
+  R_386_32PLT         = 11,
+  R_386_16            = 20,
+  R_386_PC16          = 21,
+  R_386_8             = 22,
+  R_386_PC8           = 23
+};
+
 // Section header.
 struct Elf32_Shdr {
   Elf32_Word sh_name;      // Section name (index into string table)
@@ -277,6 +299,16 @@ enum {
   SHT_LOOS          = 0x60000000, // Lowest operating system-specific type.
   SHT_HIOS          = 0x6fffffff, // Highest operating system-specific type.
   SHT_LOPROC        = 0x70000000, // Lowest processor architecture-specific type.
+  // Fixme: All this is duplicated in MCSectionELF. Why??
+  // Exception Index table
+  SHT_ARM_EXIDX           = 0x70000001U,
+  // BPABI DLL dynamic linking pre-emption map
+  SHT_ARM_PREEMPTMAP      = 0x70000002U,
+  //  Object file compatibility attributes
+  SHT_ARM_ATTRIBUTES      = 0x70000003U,
+  SHT_ARM_DEBUGOVERLAY    = 0x70000004U,
+  SHT_ARM_OVERLAYSECTION  = 0x70000005U,
+
   SHT_HIPROC        = 0x7fffffff, // Highest processor architecture-specific type.
   SHT_LOUSER        = 0x80000000, // Lowest type reserved for applications.
   SHT_HIUSER        = 0xffffffff  // Highest type reserved for applications.
@@ -328,6 +360,12 @@ struct Elf64_Sym {
   void setBindingAndType(unsigned char b, unsigned char t) {
     st_info = (b << 4) + (t & 0x0f);
   }
+};
+
+// The size (in bytes) of symbol table entries.
+enum {
+  SYMENTRY_SIZE32 = 16, // 32-bit symbol entry size
+  SYMENTRY_SIZE64 = 24  // 64-bit symbol entry size.
 };
 
 // Symbol bindings.

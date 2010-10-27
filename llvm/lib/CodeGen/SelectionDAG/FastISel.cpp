@@ -146,7 +146,7 @@ unsigned FastISel::getRegForValue(const Value *V) {
   return Reg;
 }
 
-/// materializeRegForValue - Helper for getRegForVale. This function is
+/// materializeRegForValue - Helper for getRegForValue. This function is
 /// called when the value isn't already available in a register and must
 /// be materialized with new instructions.
 unsigned FastISel::materializeRegForValue(const Value *V, MVT VT) {
@@ -467,16 +467,28 @@ bool FastISel::SelectCall(const User *I) {
       return true;
 
     const Value *Address = DI->getAddress();
-    if (!Address)
+    if (!Address || isa<UndefValue>(Address) || isa<AllocaInst>(Address))
       return true;
-    if (isa<UndefValue>(Address))
-      return true;
-    const AllocaInst *AI = dyn_cast<AllocaInst>(Address);
-    // Don't handle byval struct arguments or VLAs, for example.
-    if (!AI)
-      // Building the map above is target independent.  Generating DBG_VALUE
-      // inline is target dependent; do this now.
-      (void)TargetSelectInstruction(cast<Instruction>(I));
+
+    unsigned Reg = 0;
+    unsigned Offset = 0;
+    if (const Argument *Arg = dyn_cast<Argument>(Address)) {
+      if (Arg->hasByValAttr()) {
+        // Byval arguments' frame index is recorded during argument lowering.
+        // Use this info directly.
+        Offset = FuncInfo.getByValArgumentFrameIndex(Arg);
+        if (Offset)
+          Reg = TRI.getFrameRegister(*FuncInfo.MF);
+      } 
+    }
+    if (!Reg)
+      Reg = getRegForValue(Address);
+    
+    if (Reg)
+      BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, 
+              TII.get(TargetOpcode::DBG_VALUE))
+        .addReg(Reg, RegState::Debug).addImm(Offset)
+        .addMetadata(DI->getVariable());
     return true;
   }
   case Intrinsic::dbg_value: {

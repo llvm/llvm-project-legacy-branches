@@ -23,6 +23,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/DebugLoc.h"
 
 namespace llvm {
 
@@ -261,7 +262,6 @@ class DwarfDebug {
   MCSymbol *DwarfFrameSectionSym, *DwarfInfoSectionSym, *DwarfAbbrevSectionSym;
   MCSymbol *DwarfStrSectionSym, *TextSectionSym, *DwarfDebugRangeSectionSym;
   MCSymbol *DwarfDebugLocSectionSym;
-  MCSymbol *DwarfDebugLineSectionSym, *CurrentLineSectionSym;
   MCSymbol *FunctionBeginSym, *FunctionEndSym;
 
   DIEInteger *DIEIntegerOne;
@@ -338,11 +338,11 @@ private:
 
   /// addSourceLine - Add location information to specified debug information
   /// entry.
-  void addSourceLine(DIE *Die, const DIVariable *V);
-  void addSourceLine(DIE *Die, const DIGlobalVariable *G);
-  void addSourceLine(DIE *Die, const DISubprogram *SP);
-  void addSourceLine(DIE *Die, const DIType *Ty);
-  void addSourceLine(DIE *Die, const DINameSpace *NS);
+  void addSourceLine(DIE *Die, DIVariable V);
+  void addSourceLine(DIE *Die, DIGlobalVariable G);
+  void addSourceLine(DIE *Die, DISubprogram SP);
+  void addSourceLine(DIE *Die, DIType Ty);
+  void addSourceLine(DIE *Die, DINameSpace NS);
 
   /// addAddress - Add an address attribute to a die based on the location
   /// provided.
@@ -375,6 +375,10 @@ private:
   ///
   void addBlockByrefAddress(DbgVariable *&DV, DIE *Die, unsigned Attribute,
                             const MachineLocation &Location);
+
+  /// addVariableAddress - Add DW_AT_location attribute for a DbgVariable based
+  /// on provided frame index.
+  void addVariableAddress(DbgVariable *&DV, DIE *Die, int64_t FI);
 
   /// addToContextOwner - Add Die into the list of its context owner's children.
   void addToContextOwner(DIE *Die, DIDescriptor Context);
@@ -414,14 +418,11 @@ private:
   /// constructEnumTypeDIE - Construct enum type DIE from DIEnumerator.
   DIE *constructEnumTypeDIE(DIEnumerator ETy);
 
-  /// createGlobalVariableDIE - Create new DIE using GV.
-  DIE *createGlobalVariableDIE(const DIGlobalVariable &GV);
-
   /// createMemberDIE - Create new member DIE.
-  DIE *createMemberDIE(const DIDerivedType &DT);
+  DIE *createMemberDIE(DIDerivedType DT);
 
   /// createSubprogramDIE - Create new DIE using SP.
-  DIE *createSubprogramDIE(const DISubprogram &SP, bool MakeDecl = false);
+  DIE *createSubprogramDIE(DISubprogram SP);
 
   /// getOrCreateDbgScope - Create DbgScope for the scope.
   DbgScope *getOrCreateDbgScope(const MDNode *Scope, const MDNode *InlinedAt);
@@ -560,12 +561,6 @@ private:
   /// construct SubprogramDIE - Construct subprogram DIE.
   void constructSubprogramDIE(const MDNode *N);
 
-  // FIXME: This should go away in favor of complex addresses.
-  /// Find the type the programmer originally declared the variable to be
-  /// and return that type.  Obsolete, use GetComplexAddrType instead.
-  ///
-  DIType getBlockByrefType(DIType Ty, std::string Name);
-
   /// recordSourceLine - Register a source line with debug info. Returns the
   /// unique label that was emitted and which provides correspondence to
   /// the source line list.
@@ -636,11 +631,11 @@ public:
   /// getLabelAfterInsn - Return Label immediately following the instruction.
   const MCSymbol *getLabelAfterInsn(const MachineInstr *MI);
 
-  /// beginScope - Process beginning of a scope.
-  void beginScope(const MachineInstr *MI);
+  /// beginInstruction - Process beginning of an instruction.
+  void beginInstruction(const MachineInstr *MI);
 
-  /// endScope - Prcess end of a scope.
-  void endScope(const MachineInstr *MI);
+  /// endInstruction - Prcess end of an instruction.
+  void endInstruction(const MachineInstr *MI);
 };
 } // End of namespace llvm
 

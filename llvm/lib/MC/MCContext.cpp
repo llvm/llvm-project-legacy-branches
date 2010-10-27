@@ -24,7 +24,8 @@ typedef StringMap<const MCSectionELF*> ELFUniqueMapTy;
 typedef StringMap<const MCSectionCOFF*> COFFUniqueMapTy;
 
 
-MCContext::MCContext(const MCAsmInfo &mai) : MAI(mai), NextUniqueID(0) {
+MCContext::MCContext(const MCAsmInfo &mai) : MAI(mai), NextUniqueID(0),
+                     CurrentDwarfLoc(0,0,0,0,0) {
   MachOUniquingMap = 0;
   ELFUniquingMap = 0;
   COFFUniquingMap = 0;
@@ -32,6 +33,8 @@ MCContext::MCContext(const MCAsmInfo &mai) : MAI(mai), NextUniqueID(0) {
   SecureLogFile = getenv("AS_SECURE_LOG_FILE");
   SecureLog = 0;
   SecureLogUsed = false;
+
+  DwarfLocSeen = false;
 }
 
 MCContext::~MCContext() {
@@ -148,7 +151,7 @@ getMachOSection(StringRef Segment, StringRef Section,
 
 const MCSection *MCContext::
 getELFSection(StringRef Section, unsigned Type, unsigned Flags,
-              SectionKind Kind, bool IsExplicit) {
+              SectionKind Kind, bool IsExplicit, unsigned EntrySize) {
   if (ELFUniquingMap == 0)
     ELFUniquingMap = new ELFUniqueMapTy();
   ELFUniqueMapTy &Map = *(ELFUniqueMapTy*)ELFUniquingMap;
@@ -157,8 +160,12 @@ getELFSection(StringRef Section, unsigned Type, unsigned Flags,
   StringMapEntry<const MCSectionELF*> &Entry = Map.GetOrCreateValue(Section);
   if (Entry.getValue()) return Entry.getValue();
   
+  // Possibly refine the entry size first.
+  if (!EntrySize) {
+    EntrySize = MCSectionELF::DetermineEntrySize(Kind);
+  }
   MCSectionELF *Result = new (*this) MCSectionELF(Entry.getKey(), Type, Flags,
-                                                  Kind, IsExplicit);
+                                                  Kind, IsExplicit, EntrySize);
   Entry.setValue(Result);
   return Result;
 }
@@ -222,15 +229,20 @@ unsigned MCContext::GetDwarfFile(StringRef FileName, unsigned FileNumber) {
   } else {
     StringRef Directory = Slash.first;
     Name = Slash.second;
-    for (DirIndex = 1; DirIndex < MCDwarfDirs.size(); DirIndex++) {
+    for (DirIndex = 0; DirIndex < MCDwarfDirs.size(); DirIndex++) {
       if (Directory == MCDwarfDirs[DirIndex])
-	break;
+        break;
     }
     if (DirIndex >= MCDwarfDirs.size()) {
       char *Buf = static_cast<char *>(Allocate(Directory.size()));
       memcpy(Buf, Directory.data(), Directory.size());
       MCDwarfDirs.push_back(StringRef(Buf, Directory.size()));
     }
+    // The DirIndex is one based, as DirIndex of 0 is used for FileNames with
+    // no directories.  MCDwarfDirs[] is unlike MCDwarfFiles[] in that the
+    // directory names are stored at MCDwarfDirs[DirIndex-1] where FileNames are
+    // stored at MCDwarfFiles[FileNumber].Name .
+    DirIndex++;
   }
   
   // Now make the MCDwarfFile entry and place it in the slot in the MCDwarfFiles
@@ -241,4 +253,13 @@ unsigned MCContext::GetDwarfFile(StringRef FileName, unsigned FileNumber) {
 
   // return the allocated FileNumber.
   return FileNumber;
+}
+
+/// isValidDwarfFileNumber - takes a dwarf file number and returns true if it
+/// currently is assigned and false otherwise.
+bool MCContext::isValidDwarfFileNumber(unsigned FileNumber) {
+  if(FileNumber == 0 || FileNumber >= MCDwarfFiles.size())
+    return false;
+
+  return MCDwarfFiles[FileNumber] != 0;
 }

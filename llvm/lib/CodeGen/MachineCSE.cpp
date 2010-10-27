@@ -41,7 +41,9 @@ namespace {
     MachineRegisterInfo *MRI;
   public:
     static char ID; // Pass identification
-    MachineCSE() : MachineFunctionPass(&ID), LookAheadLimit(5), CurrVN(0) {}
+    MachineCSE() : MachineFunctionPass(ID), LookAheadLimit(5), CurrVN(0) {
+      initializeMachineCSEPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual bool runOnMachineFunction(MachineFunction &MF);
     
@@ -49,8 +51,14 @@ namespace {
       AU.setPreservesCFG();
       MachineFunctionPass::getAnalysisUsage(AU);
       AU.addRequired<AliasAnalysis>();
+      AU.addPreservedID(MachineLoopInfoID);
       AU.addRequired<MachineDominatorTree>();
       AU.addPreserved<MachineDominatorTree>();
+    }
+
+    virtual void releaseMemory() {
+      ScopeMap.clear();
+      Exps.clear();
     }
 
   private:
@@ -85,8 +93,12 @@ namespace {
 } // end anonymous namespace
 
 char MachineCSE::ID = 0;
-INITIALIZE_PASS(MachineCSE, "machine-cse",
-                "Machine Common Subexpression Elimination", false, false);
+INITIALIZE_PASS_BEGIN(MachineCSE, "machine-cse",
+                "Machine Common Subexpression Elimination", false, false)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(MachineCSE, "machine-cse",
+                "Machine Common Subexpression Elimination", false, false)
 
 FunctionPass *llvm::createMachineCSEPass() { return new MachineCSE(); }
 
@@ -100,7 +112,7 @@ bool MachineCSE::PerformTrivialCoalescing(MachineInstr *MI,
     unsigned Reg = MO.getReg();
     if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg))
       continue;
-    if (!MRI->hasOneUse(Reg))
+    if (!MRI->hasOneNonDBGUse(Reg))
       // Only coalesce single use copies. This ensure the copy will be
       // deleted.
       continue;
@@ -114,17 +126,12 @@ bool MachineCSE::PerformTrivialCoalescing(MachineInstr *MI,
       continue;
     if (DefMI->getOperand(0).getSubReg() || DefMI->getOperand(1).getSubReg())
       continue;
-    const TargetRegisterClass *SRC   = MRI->getRegClass(SrcReg);
-    const TargetRegisterClass *RC    = MRI->getRegClass(Reg);
-    const TargetRegisterClass *NewRC = getCommonSubClass(RC, SRC);
-    if (!NewRC)
+    if (!MRI->constrainRegClass(SrcReg, MRI->getRegClass(Reg)))
       continue;
     DEBUG(dbgs() << "Coalescing: " << *DefMI);
-    DEBUG(dbgs() << "*** to: " << *MI);
+    DEBUG(dbgs() << "***     to: " << *MI);
     MO.setReg(SrcReg);
     MRI->clearKillFlags(SrcReg);
-    if (NewRC != SRC)
-      MRI->setRegClass(SrcReg, NewRC);
     DefMI->eraseFromParent();
     ++NumCoalesces;
     Changed = true;
@@ -467,6 +474,8 @@ bool MachineCSE::PerformCSE(MachineDomTreeNode *Node) {
   SmallVector<MachineDomTreeNode*, 8> WorkList;
   DenseMap<MachineDomTreeNode*, MachineDomTreeNode*> ParentMap;
   DenseMap<MachineDomTreeNode*, unsigned> OpenChildren;
+
+  CurrVN = 0;
 
   // Perform a DFS walk to determine the order of visit.
   WorkList.push_back(Node);

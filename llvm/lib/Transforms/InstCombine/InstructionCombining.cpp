@@ -48,6 +48,7 @@
 #include "llvm/Support/PatternMatch.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm-c/Initialization.h"
 #include <algorithm>
 #include <climits>
 using namespace llvm;
@@ -58,10 +59,18 @@ STATISTIC(NumConstProp, "Number of constant folds");
 STATISTIC(NumDeadInst , "Number of dead inst eliminated");
 STATISTIC(NumSunkInst , "Number of instructions sunk");
 
+// Initialization Routines
+void llvm::initializeInstCombine(PassRegistry &Registry) {
+  initializeInstCombinerPass(Registry);
+}
+
+void LLVMInitializeInstCombine(LLVMPassRegistryRef R) {
+  initializeInstCombine(*unwrap(R));
+}
 
 char InstCombiner::ID = 0;
 INITIALIZE_PASS(InstCombiner, "instcombine",
-                "Combine redundant instructions", false, false);
+                "Combine redundant instructions", false, false)
 
 void InstCombiner::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreservedID(LCSSAID);
@@ -1023,10 +1032,8 @@ static bool AddReachableCodeToWorklist(BasicBlock *BB,
   bool MadeIRChange = false;
   SmallVector<BasicBlock*, 256> Worklist;
   Worklist.push_back(BB);
-  
-  std::vector<Instruction*> InstrsForInstCombineWorklist;
-  InstrsForInstCombineWorklist.reserve(128);
 
+  SmallVector<Instruction*, 128> InstrsForInstCombineWorklist;
   SmallPtrSet<ConstantExpr*, 64> FoldedConstants;
   
   do {

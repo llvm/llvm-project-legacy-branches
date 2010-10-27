@@ -1,5 +1,11 @@
 /* include/llvm/Config/config.h.in.  Generated from autoconf/configure.ac by autoheader.  */
 
+#ifndef CONFIG_H
+#define CONFIG_H
+
+/* Relative directory for resource files */
+#undef CLANG_RESOURCE_DIR
+
 /* 32 bit multilib directory. */
 #undef CXX_INCLUDE_32BIT_DIR
 
@@ -115,6 +121,9 @@
 /* Define if the neat program is available */
 #undef HAVE_FDP
 
+/* Define to 1 if you have the <fenv.h> header file. */
+#undef HAVE_FENV_H
+
 /* Define if libffi is available on this platform. */
 #undef HAVE_FFI_CALL
 
@@ -144,9 +153,6 @@
 
 /* Define to 1 if you have the `getrusage' function. */
 #undef HAVE_GETRUSAGE
-
-/* Have Darwin getsect() support */
-#undef HAVE_GETSECT
 
 /* Define to 1 if you have the `gettimeofday' function. */
 #undef HAVE_GETTIMEOFDAY
@@ -220,9 +226,6 @@
 
 /* Define to 1 if you have the <mach-o/dyld.h> header file. */
 #undef HAVE_MACH_O_DYLD_H
-
-/* Define to 1 if you have the <mach-o/getsect.h> header file. */
-#undef HAVE_MACH_O_GETSECT_H
 
 /* Define if mallinfo() is available on this platform. */
 #undef HAVE_MALLINFO
@@ -461,8 +464,14 @@
 /* Define to 1 if you have the <windows.h> header file. */
 #undef HAVE_WINDOWS_H
 
+/* Define if the xdot.py program is available */
+#undef HAVE_XDOT_PY
+
 /* Define to 1 if you have the `__dso_handle' function. */
 #undef HAVE___DSO_HANDLE
+
+/* Linker version detected at compile time. */
+#undef HOST_LINK_VERSION
 
 /* Installation directory for binary executables */
 #undef LLVM_BINDIR
@@ -500,6 +509,15 @@
 /* LLVM architecture name for the native architecture, if available */
 #undef LLVM_NATIVE_ARCH
 
+/* LLVM name for the native AsmPrinter init function, if available */
+#undef LLVM_NATIVE_ASMPRINTER
+
+/* LLVM name for the native Target init function, if available */
+#undef LLVM_NATIVE_TARGET
+
+/* LLVM name for the native TargetInfo init function, if available */
+#undef LLVM_NATIVE_TARGETINFO
+
 /* Define if this is Unixish platform */
 #undef LLVM_ON_UNIX
 
@@ -529,6 +547,9 @@
 
 /* Define to path to twopi program if found or 'echo twopi' otherwise */
 #undef LLVM_PATH_TWOPI
+
+/* Define to path to xdot.py program if found or 'echo xdot.py' otherwise */
+#undef LLVM_PATH_XDOT_PY
 
 /* Installation prefix directory */
 #undef LLVM_PREFIX
@@ -604,3 +625,5 @@
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 #undef size_t
+
+#endif

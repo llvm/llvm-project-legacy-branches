@@ -232,6 +232,7 @@ void FunctionLoweringInfo::clear() {
   ArgDbgValues.clear();
   LiveOutRegInfo.clear();
   MBBMap.clear();
+  ByValArgFrameIndexMap.clear();
   RegFixups.clear();
   StaticAllocaMap.clear();
   ValueMap.clear();
@@ -267,7 +268,30 @@ unsigned FunctionLoweringInfo::CreateRegs(const Type *Ty) {
   return FirstReg;
 }
 
-#if 0///EH-FIXME:
+/// setByValArgumentFrameIndex - Record frame index for the byval
+/// argument. This overrides previous frame index entry for this argument,
+/// if any.
+void FunctionLoweringInfo::setByValArgumentFrameIndex(const Argument *A, 
+                                                      int FI) {
+  assert (A->hasByValAttr() && "Argument does not have byval attribute!");
+  ByValArgFrameIndexMap[A] = FI;
+}
+  
+/// getByValArgumentFrameIndex - Get frame index for the byval argument.
+/// If the argument does not have any assigned frame index then 0 is
+/// returned.
+int FunctionLoweringInfo::getByValArgumentFrameIndex(const Argument *A) {
+  assert (A->hasByValAttr() && "Argument does not have byval attribute!");
+  DenseMap<const Argument *, int>::iterator I = 
+    ByValArgFrameIndexMap.find(A);
+  if (I != ByValArgFrameIndexMap.end())
+    return I->second;
+  DEBUG(dbgs() << "Argument does not have assigned frame index!");
+  return 0;
+}
+
+#if 0 ///EH-FIXME:
+
 /// AddCatchInfo - Extract the personality and type infos from an eh.selector
 /// call, and add them to the specified machine basic block.
 void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,

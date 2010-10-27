@@ -224,12 +224,19 @@ def SDNPMayLoad     : SDNodeProperty;   // May read memory, sets 'mayLoad'.
 def SDNPSideEffect  : SDNodeProperty;   // Sets 'HasUnmodelledSideEffects'.
 def SDNPMemOperand  : SDNodeProperty;   // Touches memory, has assoc MemOperand
 def SDNPVariadic    : SDNodeProperty;   // Node has variable arguments.
+def SDNPWantRoot    : SDNodeProperty;   // ComplexPattern gets the root of match
+def SDNPWantParent  : SDNodeProperty;   // ComplexPattern gets the parent
+
+//===----------------------------------------------------------------------===//
+// Selection DAG Pattern Operations
+class SDPatternOperator;
 
 //===----------------------------------------------------------------------===//
 // Selection DAG Node definitions.
 //
 class SDNode<string opcode, SDTypeProfile typeprof,
-             list<SDNodeProperty> props = [], string sdclass = "SDNode"> {
+             list<SDNodeProperty> props = [], string sdclass = "SDNode"> 
+             : SDPatternOperator {
   string Opcode  = opcode;
   string SDClass = sdclass;
   list<SDNodeProperty> Properties = props;
@@ -469,10 +476,10 @@ def NOOP_SDNodeXForm : SDNodeXForm<imm, [{}]>;
 //
 
 /// PatFrag - Represents a pattern fragment.  This can match something on the
-/// DAG, frame a single node to multiply nested other fragments.
+/// DAG, from a single node to multiple nested other fragments.
 ///
 class PatFrag<dag ops, dag frag, code pred = [{}],
-              SDNodeXForm xform = NOOP_SDNodeXForm> {
+              SDNodeXForm xform = NOOP_SDNodeXForm> : SDPatternOperator {
   dag Operands = ops;
   dag Fragment = frag;
   code Predicate = pred;
@@ -822,7 +829,7 @@ def cvtfu : PatFrag<(ops node:$val, node:$dty, node:$sty, node:$rd, node:$sat),
 //===----------------------------------------------------------------------===//
 // Selection DAG Pattern Support.
 //
-// Patterns are what are actually matched against the target-flavored
+// Patterns are what are actually matched against by the target-flavored
 // instruction selection DAG.  Instructions defined by the target implicitly
 // define patterns in most cases, but patterns can also be explicitly added when
 // an operation is defined by a sequence of instructions (e.g. loading a large
@@ -834,7 +841,7 @@ class Pattern<dag patternToMatch, list<dag> resultInstrs> {
   dag             PatternToMatch  = patternToMatch;
   list<dag>       ResultInstrs    = resultInstrs;
   list<Predicate> Predicates      = [];  // See class Instruction in Target.td.
-  int             AddedComplexity = 0;  // See class Instruction in Target.td.
+  int             AddedComplexity = 0;   // See class Instruction in Target.td.
 }
 
 // Pat - A simple (but common) form of a pattern, which produces a simple result

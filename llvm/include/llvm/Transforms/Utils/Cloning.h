@@ -22,6 +22,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 
 namespace llvm {
 
@@ -46,7 +47,7 @@ class AllocaInst;
 /// CloneModule - Return an exact copy of the specified module
 ///
 Module *CloneModule(const Module *M);
-Module *CloneModule(const Module *M, ValueMap<const Value*, Value*> &VMap);
+Module *CloneModule(const Module *M, ValueToValueMapTy &VMap);
 
 /// ClonedCodeInfo - This struct can be used to capture information about code
 /// being cloned, while it is being cloned.
@@ -102,7 +103,7 @@ struct ClonedCodeInfo {
 /// parameter.
 ///
 BasicBlock *CloneBasicBlock(const BasicBlock *BB,
-                            ValueMap<const Value*, Value*> &VMap,
+                            ValueToValueMapTy &VMap,
                             const Twine &NameSuffix = "", Function *F = 0,
                             ClonedCodeInfo *CodeInfo = 0);
 
@@ -110,7 +111,7 @@ BasicBlock *CloneBasicBlock(const BasicBlock *BB,
 /// CloneLoop - Clone Loop. Clone dominator info for loop insiders. Populate
 /// VMap using old blocks to new blocks mapping.
 Loop *CloneLoop(Loop *L, LPPassManager *LPM, LoopInfo *LI, 
-                ValueMap<const Value *, Value *> &VMap, Pass *P);
+                ValueToValueMapTy &VMap, Pass *P);
 
 /// CloneFunction - Return a copy of the specified function, but without
 /// embedding the function into another module.  Also, any references specified
@@ -121,25 +122,33 @@ Loop *CloneLoop(Loop *L, LPPassManager *LPM, LoopInfo *LI,
 /// the function from their old to new values.  The final argument captures
 /// information about the cloned code if non-null.
 ///
+/// If ModuleLevelChanges is false, VMap contains no non-identity GlobalValue
+/// mappings.
+///
 Function *CloneFunction(const Function *F,
-                        ValueMap<const Value*, Value*> &VMap,
+                        ValueToValueMapTy &VMap,
+                        bool ModuleLevelChanges,
                         ClonedCodeInfo *CodeInfo = 0);
 
 /// CloneFunction - Version of the function that doesn't need the VMap.
 ///
 inline Function *CloneFunction(const Function *F, ClonedCodeInfo *CodeInfo = 0){
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   return CloneFunction(F, VMap, CodeInfo);
 }
 
 /// Clone OldFunc into NewFunc, transforming the old arguments into references
-/// to ArgMap values.  Note that if NewFunc already has basic blocks, the ones
+/// to VMap values.  Note that if NewFunc already has basic blocks, the ones
 /// cloned into it will be added to the end of the function.  This function
 /// fills in a list of return instructions, and can optionally append the
 /// specified suffix to all values cloned.
 ///
+/// If ModuleLevelChanges is false, VMap contains no non-identity GlobalValue
+/// mappings.
+///
 void CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
-                       ValueMap<const Value*, Value*> &VMap,
+                       ValueToValueMapTy &VMap,
+                       bool ModuleLevelChanges,
                        SmallVectorImpl<ReturnInst*> &Returns,
                        const char *NameSuffix = "", 
                        ClonedCodeInfo *CodeInfo = 0);
@@ -151,8 +160,13 @@ void CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
 /// constant arguments cause a significant amount of code in the callee to be
 /// dead.  Since this doesn't produce an exactly copy of the input, it can't be
 /// used for things like CloneFunction or CloneModule.
+///
+/// If ModuleLevelChanges is false, VMap contains no non-identity GlobalValue
+/// mappings.
+///
 void CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
-                               ValueMap<const Value*, Value*> &VMap,
+                               ValueToValueMapTy &VMap,
+                               bool ModuleLevelChanges,
                                SmallVectorImpl<ReturnInst*> &Returns,
                                const char *NameSuffix = "", 
                                ClonedCodeInfo *CodeInfo = 0,

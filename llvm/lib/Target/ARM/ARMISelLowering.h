@@ -71,8 +71,9 @@ namespace llvm {
       VMOVRRD,      // double to two gprs.
       VMOVDRR,      // Two gprs to double.
 
-      EH_SJLJ_SETJMP,    // SjLj exception handling setjmp.
-      EH_SJLJ_LONGJMP,   // SjLj exception handling longjmp.
+      EH_SJLJ_SETJMP,         // SjLj exception handling setjmp.
+      EH_SJLJ_LONGJMP,        // SjLj exception handling longjmp.
+      EH_SJLJ_DISPATCHSETUP,  // SjLj exception handling dispatch setup.
 
       TC_RETURN,    // Tail call return pseudo.
 
@@ -82,7 +83,7 @@ namespace llvm {
 
       MEMBARRIER,   // Memory barrier
       SYNCBARRIER,  // Memory sync barrier
-
+      
       VCEQ,         // Vector compare equal.
       VCGE,         // Vector compare greater than or equal.
       VCGEU,        // Vector compare unsigned greater than or equal.
@@ -142,6 +143,10 @@ namespace llvm {
       VZIP,         // zip (interleave)
       VUZP,         // unzip (deinterleave)
       VTRN,         // transpose
+
+      // Vector multiply long:
+      VMULLs,       // ...signed
+      VMULLu,       // ...unsigned
 
       // Operands of the standard BUILD_VECTOR node are not legalized, which
       // is fine if BUILD_VECTORs are always lowered to shuffles or other
@@ -284,6 +289,9 @@ namespace llvm {
     /// materialize the FP immediate as a load from a constant pool.
     virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const;
 
+    virtual bool getTgtMemIntrinsic(IntrinsicInfo &Info,
+                                    const CallInst &I,
+                                    unsigned Intrinsic) const;
   protected:
     std::pair<const TargetRegisterClass*, uint8_t>
     findRepresentativeClass(EVT VT) const;
@@ -294,6 +302,8 @@ namespace llvm {
     const ARMSubtarget *Subtarget;
 
     const TargetRegisterInfo *RegInfo;
+
+    const InstrItineraryData *Itins;
 
     /// ARMPCLabelIndex - Keep track of the number of ARM PC labels created.
     ///
@@ -323,6 +333,7 @@ namespace llvm {
                              ISD::ArgFlagsTy Flags) const;
     SDValue LowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerEH_SJLJ_DISPATCHSETUP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
                                     const ARMSubtarget *Subtarget) const;
     SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
@@ -335,6 +346,7 @@ namespace llvm {
                                    SelectionDAG &DAG) const;
     SDValue LowerGLOBAL_OFFSET_TABLE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
@@ -342,6 +354,7 @@ namespace llvm {
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
                             CallingConv::ID CallConv, bool isVarArg,

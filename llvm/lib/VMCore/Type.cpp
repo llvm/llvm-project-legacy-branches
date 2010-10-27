@@ -50,7 +50,7 @@ void AbstractTypeUser::setType(Value *V, const Type *NewTy) {
 
 /// Because of the way Type subclasses are allocated, this function is necessary
 /// to use the correct kind of "delete" operator to deallocate the Type object.
-/// Some type objects (FunctionTy, StructTy, UnionTy) allocate additional space
+/// Some type objects (FunctionTy, StructTy) allocate additional space
 /// after the space for their derived type to hold the contained types array of
 /// PATypeHandles. Using this allocation scheme means all the PATypeHandles are
 /// allocated with the type object, decreasing allocations and eliminating the
@@ -66,8 +66,7 @@ void Type::destroy() const {
   // Structures and Functions allocate their contained types past the end of
   // the type object itself. These need to be destroyed differently than the
   // other types.
-  if (this->isFunctionTy() || this->isStructTy() ||
-      this->isUnionTy()) {
+  if (this->isFunctionTy() || this->isStructTy()) {
     // First, make sure we destruct any PATypeHandles allocated by these
     // subclasses.  They must be manually destructed. 
     for (unsigned i = 0; i < NumContainedTys; ++i)
@@ -77,10 +76,10 @@ void Type::destroy() const {
     // to delete this as an array of char.
     if (this->isFunctionTy())
       static_cast<const FunctionType*>(this)->FunctionType::~FunctionType();
-    else if (this->isStructTy())
+    else {
+      assert(isStructTy());
       static_cast<const StructType*>(this)->StructType::~StructType();
-    else
-      static_cast<const UnionType*>(this)->UnionType::~UnionType();
+    }
 
     // Finally, remove the memory as an array deallocation of the chars it was
     // constructed from.
@@ -110,6 +109,7 @@ const Type *Type::getPrimitiveType(LLVMContext &C, TypeID IDNumber) {
   case PPC_FP128TyID : return getPPC_FP128Ty(C);
   case LabelTyID     : return getLabelTy(C);
   case MetadataTyID  : return getMetadataTy(C);
+  case X86_MMXTyID   : return getX86_MMXTy(C);
   default:
     return 0;
   }
@@ -173,10 +173,20 @@ bool Type::canLosslesslyBitCastTo(const Type *Ty) const {
     return false;
 
   // Vector -> Vector conversions are always lossless if the two vector types
-  // have the same size, otherwise not.
-  if (const VectorType *thisPTy = dyn_cast<VectorType>(this))
+  // have the same size, otherwise not.  Also, 64-bit vector types can be
+  // converted to x86mmx.
+  if (const VectorType *thisPTy = dyn_cast<VectorType>(this)) {
     if (const VectorType *thatPTy = dyn_cast<VectorType>(Ty))
       return thisPTy->getBitWidth() == thatPTy->getBitWidth();
+    if (Ty->getTypeID() == Type::X86_MMXTyID &&
+        thisPTy->getBitWidth() == 64)
+      return true;
+  }
+
+  if (this->getTypeID() == Type::X86_MMXTyID)
+    if (const VectorType *thatPTy = dyn_cast<VectorType>(Ty))
+      if (thatPTy->getBitWidth() == 64)
+        return true;
 
   // At this point we have only various mismatches of the first class types
   // remaining and ptr->ptr. Just select the lossless conversions. Everything
@@ -193,6 +203,7 @@ unsigned Type::getPrimitiveSizeInBits() const {
   case Type::X86_FP80TyID: return 80;
   case Type::FP128TyID: return 128;
   case Type::PPC_FP128TyID: return 128;
+  case Type::X86_MMXTyID: return 64;
   case Type::IntegerTyID: return cast<IntegerType>(this)->getBitWidth();
   case Type::VectorTyID:  return cast<VectorType>(this)->getBitWidth();
   default: return 0;
@@ -234,7 +245,7 @@ bool Type::isSizedDerivedType() const {
   if (const VectorType *PTy = dyn_cast<VectorType>(this))
     return PTy->getElementType()->isSized();
 
-  if (!this->isStructTy() && !this->isUnionTy()) 
+  if (!this->isStructTy()) 
     return false;
 
   // Okay, our struct is sized if all of the elements are...
@@ -319,31 +330,6 @@ const Type *StructType::getTypeAtIndex(unsigned Idx) const {
 }
 
 
-bool UnionType::indexValid(const Value *V) const {
-  // Union indexes require 32-bit integer constants.
-  if (V->getType()->isIntegerTy(32))
-    if (const ConstantInt *CU = dyn_cast<ConstantInt>(V))
-      return indexValid(CU->getZExtValue());
-  return false;
-}
-
-bool UnionType::indexValid(unsigned V) const {
-  return V < NumContainedTys;
-}
-
-// getTypeAtIndex - Given an index value into the type, return the type of the
-// element.  For a structure type, this must be a constant value...
-//
-const Type *UnionType::getTypeAtIndex(const Value *V) const {
-  unsigned Idx = (unsigned)cast<ConstantInt>(V)->getZExtValue();
-  return getTypeAtIndex(Idx);
-}
-
-const Type *UnionType::getTypeAtIndex(unsigned Idx) const {
-  assert(indexValid(Idx) && "Invalid structure index!");
-  return ContainedTys[Idx];
-}
-
 //===----------------------------------------------------------------------===//
 //                          Primitive 'Type' data
 //===----------------------------------------------------------------------===//
@@ -378,6 +364,10 @@ const Type *Type::getFP128Ty(LLVMContext &C) {
 
 const Type *Type::getPPC_FP128Ty(LLVMContext &C) {
   return &C.pImpl->PPC_FP128Ty;
+}
+
+const Type *Type::getX86_MMXTy(LLVMContext &C) {
+  return &C.pImpl->X86_MMXTy;
 }
 
 const IntegerType *Type::getIntNTy(LLVMContext &C, unsigned N) {
@@ -422,6 +412,10 @@ const PointerType *Type::getFP128PtrTy(LLVMContext &C, unsigned AS) {
 
 const PointerType *Type::getPPC_FP128PtrTy(LLVMContext &C, unsigned AS) {
   return getPPC_FP128Ty(C)->getPointerTo(AS);
+}
+
+const PointerType *Type::getX86_MMXPtrTy(LLVMContext &C, unsigned AS) {
+  return getX86_MMXTy(C)->getPointerTo(AS);
 }
 
 const PointerType *Type::getIntNPtrTy(LLVMContext &C, unsigned N, unsigned AS) {
@@ -499,23 +493,6 @@ StructType::StructType(LLVMContext &C,
     assert(Types[i] && "<null> type for structure field!");
     assert(isValidElementType(Types[i]) &&
            "Invalid type for structure element!");
-    new (&ContainedTys[i]) PATypeHandle(Types[i], this);
-    isAbstract |= Types[i]->isAbstract();
-  }
-
-  // Calculate whether or not this type is abstract
-  setAbstract(isAbstract);
-}
-
-UnionType::UnionType(LLVMContext &C,const Type* const* Types, unsigned NumTypes)
-  : CompositeType(C, UnionTyID) {
-  ContainedTys = reinterpret_cast<PATypeHandle*>(this + 1);
-  NumContainedTys = NumTypes;
-  bool isAbstract = false;
-  for (unsigned i = 0; i < NumTypes; ++i) {
-    assert(Types[i] && "<null> type for union field!");
-    assert(isValidElementType(Types[i]) &&
-           "Invalid type for union element!");
     new (&ContainedTys[i]) PATypeHandle(Types[i], this);
     isAbstract |= Types[i]->isAbstract();
   }
@@ -707,15 +684,6 @@ static bool TypesEqual(const Type *Ty, const Type *Ty2,
     if (STy->isPacked() != STy2->isPacked()) return false;
     for (unsigned i = 0, e = STy2->getNumElements(); i != e; ++i)
       if (!TypesEqual(STy->getElementType(i), STy2->getElementType(i), EqTypes))
-        return false;
-    return true;
-  }
-  
-  if (const UnionType *UTy = dyn_cast<UnionType>(Ty)) {
-    const UnionType *UTy2 = cast<UnionType>(Ty2);
-    if (UTy->getNumElements() != UTy2->getNumElements()) return false;
-    for (unsigned i = 0, e = UTy2->getNumElements(); i != e; ++i)
-      if (!TypesEqual(UTy->getElementType(i), UTy2->getElementType(i), EqTypes))
         return false;
     return true;
   }
@@ -987,60 +955,6 @@ bool StructType::isValidElementType(const Type *ElemTy) {
 
 
 //===----------------------------------------------------------------------===//
-// Union Type Factory...
-//
-
-UnionType *UnionType::get(const Type* const* Types, unsigned NumTypes) {
-  assert(NumTypes > 0 && "union must have at least one member type!");
-  UnionValType UTV(Types, NumTypes);
-  UnionType *UT = 0;
-  
-  LLVMContextImpl *pImpl = Types[0]->getContext().pImpl;
-  
-  UT = pImpl->UnionTypes.get(UTV);
-    
-  if (!UT) {
-    // Value not found.  Derive a new type!
-    UT = (UnionType*) operator new(sizeof(UnionType) +
-                                   sizeof(PATypeHandle) * NumTypes);
-    new (UT) UnionType(Types[0]->getContext(), Types, NumTypes);
-    pImpl->UnionTypes.add(UTV, UT);
-  }
-#ifdef DEBUG_MERGE_TYPES
-  DEBUG(dbgs() << "Derived new type: " << *UT << "\n");
-#endif
-  return UT;
-}
-
-UnionType *UnionType::get(const Type *type, ...) {
-  va_list ap;
-  SmallVector<const llvm::Type*, 8> UnionFields;
-  va_start(ap, type);
-  while (type) {
-    UnionFields.push_back(type);
-    type = va_arg(ap, llvm::Type*);
-  }
-  unsigned NumTypes = UnionFields.size();
-  assert(NumTypes > 0 && "union must have at least one member type!");
-  return llvm::UnionType::get(&UnionFields[0], NumTypes);
-}
-
-bool UnionType::isValidElementType(const Type *ElemTy) {
-  return !ElemTy->isVoidTy() && !ElemTy->isLabelTy() &&
-         !ElemTy->isMetadataTy() && !ElemTy->isFunctionTy();
-}
-
-int UnionType::getElementTypeIndex(const Type *ElemTy) const {
-  int index = 0;
-  for (UnionType::element_iterator I = element_begin(), E = element_end();
-       I != E; ++I, ++index) {
-     if (ElemTy == *I) return index;
-  }
-  
-  return -1;
-}
-
-//===----------------------------------------------------------------------===//
 // Pointer Type Factory...
 //
 
@@ -1285,21 +1199,6 @@ void StructType::refineAbstractType(const DerivedType *OldType,
 void StructType::typeBecameConcrete(const DerivedType *AbsTy) {
   LLVMContextImpl *pImpl = AbsTy->getContext().pImpl;
   pImpl->StructTypes.TypeBecameConcrete(this, AbsTy);
-}
-
-// refineAbstractType - Called when a contained type is found to be more
-// concrete - this could potentially change us from an abstract type to a
-// concrete type.
-//
-void UnionType::refineAbstractType(const DerivedType *OldType,
-                                    const Type *NewType) {
-  LLVMContextImpl *pImpl = OldType->getContext().pImpl;
-  pImpl->UnionTypes.RefineAbstractType(this, OldType, NewType);
-}
-
-void UnionType::typeBecameConcrete(const DerivedType *AbsTy) {
-  LLVMContextImpl *pImpl = AbsTy->getContext().pImpl;
-  pImpl->UnionTypes.TypeBecameConcrete(this, AbsTy);
 }
 
 // refineAbstractType - Called when a contained type is found to be more

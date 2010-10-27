@@ -15,18 +15,19 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Instruction.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Assembly/Parser.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Assembly/Parser.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 using namespace llvm;
 
-bool LLLexer::Error(LocTy ErrorLoc, const std::string &Msg) const {
+bool LLLexer::Error(LocTy ErrorLoc, const Twine &Msg) const {
   ErrorInfo = SM.GetMessage(ErrorLoc, Msg, "error");
   return true;
 }
@@ -493,6 +494,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(private);
   KEYWORD(linker_private);
   KEYWORD(linker_private_weak);
+  KEYWORD(linker_private_weak_def_auto);
   KEYWORD(internal);
   KEYWORD(available_externally);
   KEYWORD(linkonce);
@@ -548,6 +550,8 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(arm_aapcscc);
   KEYWORD(arm_aapcs_vfpcc);
   KEYWORD(msp430_intrcc);
+  KEYWORD(ptx_kernel);
+  KEYWORD(ptx_device);
 
   KEYWORD(cc);
   KEYWORD(c);
@@ -574,10 +578,10 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(noredzone);
   KEYWORD(noimplicitfloat);
   KEYWORD(naked);
+  KEYWORD(hotpatch);
 
   KEYWORD(type);
   KEYWORD(opaque);
-  KEYWORD(union);
 
   KEYWORD(eq); KEYWORD(ne); KEYWORD(slt); KEYWORD(sgt); KEYWORD(sle);
   KEYWORD(sge); KEYWORD(ult); KEYWORD(ugt); KEYWORD(ule); KEYWORD(uge);
@@ -600,6 +604,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   TYPEKEYWORD("ppc_fp128", Type::getPPC_FP128Ty(Context));
   TYPEKEYWORD("label",     Type::getLabelTy(Context));
   TYPEKEYWORD("metadata",  Type::getMetadataTy(Context));
+  TYPEKEYWORD("x86_mmx",   Type::getX86_MMXTy(Context));
 #undef TYPEKEYWORD
 
   // Handle special forms for autoupgrading.  Drop these in LLVM 3.0.  This is

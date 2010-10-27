@@ -42,8 +42,10 @@ class BasicCallGraph : public ModulePass, public CallGraph {
 
 public:
   static char ID; // Class identification, replacement for typeinfo
-  BasicCallGraph() : ModulePass(&ID), Root(0), 
-    ExternalCallingNode(0), CallsExternalNode(0) {}
+  BasicCallGraph() : ModulePass(ID), Root(0), 
+    ExternalCallingNode(0), CallsExternalNode(0) {
+      initializeBasicCallGraphPass(*PassRegistry::getPassRegistry());
+    }
 
   // runOnModule - Compute the call graph for the specified module.
   virtual bool runOnModule(Module &M) {
@@ -86,8 +88,8 @@ public:
   /// an analysis interface through multiple inheritance.  If needed, it should
   /// override this to adjust the this pointer as needed for the specified pass
   /// info.
-  virtual void *getAdjustedAnalysisPointer(const PassInfo *PI) {
-    if (PI->isPassID(&CallGraph::ID))
+  virtual void *getAdjustedAnalysisPointer(AnalysisID PI) {
+    if (PI == &CallGraph::ID)
       return (CallGraph*)this;
     return this;
   }
@@ -171,9 +173,9 @@ private:
 
 } //End anonymous namespace
 
-static RegisterAnalysisGroup<CallGraph> X("Call Graph");
+INITIALIZE_ANALYSIS_GROUP(CallGraph, "Call Graph", BasicCallGraph)
 INITIALIZE_AG_PASS(BasicCallGraph, CallGraph, "basiccg",
-                   "Basic CallGraph Construction", false, true, true);
+                   "Basic CallGraph Construction", false, true, true)
 
 char CallGraph::ID = 0;
 char BasicCallGraph::ID = 0;

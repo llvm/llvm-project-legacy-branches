@@ -8,13 +8,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCParser/MCAsmParserExtension.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/ADT/Twine.h"
 using namespace llvm;
 
 namespace {
@@ -48,10 +48,13 @@ public:
     AddDirectiveHandler<&ELFAsmParser::ParseSectionDirectiveEhFrame>(".eh_frame");
     AddDirectiveHandler<&ELFAsmParser::ParseDirectiveSection>(".section");
     AddDirectiveHandler<&ELFAsmParser::ParseDirectiveSize>(".size");
-    AddDirectiveHandler<&ELFAsmParser::ParseDirectiveLEB128>(".sleb128");
-    AddDirectiveHandler<&ELFAsmParser::ParseDirectiveLEB128>(".uleb128");
+    AddDirectiveHandler<&ELFAsmParser::ParseDirectivePrevious>(".previous");
+    AddDirectiveHandler<&ELFAsmParser::ParseDirectiveType>(".type");
+    AddDirectiveHandler<&ELFAsmParser::ParseDirectiveIdent>(".ident");
   }
 
+  // FIXME: Part of this logic is duplicated in the MCELFStreamer. What is
+  // the best way for us to get access to it?
   bool ParseSectionDirectiveData(StringRef, SMLoc) {
     return ParseSectionSwitch(".data", MCSectionELF::SHT_PROGBITS,
                               MCSectionELF::SHF_WRITE |MCSectionELF::SHF_ALLOC,
@@ -108,9 +111,14 @@ public:
                               MCSectionELF::SHF_WRITE,
                               SectionKind::getDataRel());
   }
-  bool ParseDirectiveLEB128(StringRef, SMLoc);
   bool ParseDirectiveSection(StringRef, SMLoc);
   bool ParseDirectiveSize(StringRef, SMLoc);
+  bool ParseDirectivePrevious(StringRef, SMLoc);
+  bool ParseDirectiveType(StringRef, SMLoc);
+  bool ParseDirectiveIdent(StringRef, SMLoc);
+
+private:
+  bool ParseSectionName(StringRef &SectionName);
 };
 
 }
@@ -148,11 +156,43 @@ bool ELFAsmParser::ParseDirectiveSize(StringRef, SMLoc) {
   return false;
 }
 
+bool ELFAsmParser::ParseSectionName(StringRef &SectionName) {
+  // A section name can contain -, so we cannot just use
+  // ParseIdentifier.
+  SMLoc FirstLoc = getLexer().getLoc();
+  unsigned Size = 0;
+
+  for (;;) {
+    StringRef Tmp;
+    unsigned CurSize;
+
+    SMLoc PrevLoc = getLexer().getLoc();
+    if (getLexer().is(AsmToken::Minus)) {
+      CurSize = 1;
+      Lex(); // Consume the "-".
+    } else if (!getParser().ParseIdentifier(Tmp))
+      CurSize = Tmp.size();
+    else
+      break;
+
+    Size += CurSize;
+    SectionName = StringRef(FirstLoc.getPointer(), Size);
+
+    // Make sure the following token is adjacent.
+    if (PrevLoc.getPointer() + CurSize != getTok().getLoc().getPointer())
+      break;
+  }
+  if (Size == 0)
+    return true;
+
+  return false;
+}
+
 // FIXME: This is a work in progress.
 bool ELFAsmParser::ParseDirectiveSection(StringRef, SMLoc) {
   StringRef SectionName;
-  // FIXME: This doesn't parse section names like ".note.GNU-stack" correctly.
-  if (getParser().ParseIdentifier(SectionName))
+
+  if (ParseSectionName(SectionName))
     return TokError("expected identifier in directive");
 
   std::string FlagsStr;
@@ -248,28 +288,93 @@ bool ELFAsmParser::ParseDirectiveSection(StringRef, SMLoc) {
                      ? SectionKind::getText()
                      : SectionKind::getDataRel();
   getStreamer().SwitchSection(getContext().getELFSection(SectionName, Type,
-                                                         Flags, Kind, false));
+                                                         Flags, Kind, false,
+                                                         Size));
   return false;
 }
 
-bool ELFAsmParser::ParseDirectiveLEB128(StringRef DirName, SMLoc) {
-  int64_t Value;
-  if (getParser().ParseAbsoluteExpression(Value))
-    return true;
+bool ELFAsmParser::ParseDirectivePrevious(StringRef DirName, SMLoc) {
+  const MCSection *PreviousSection = getStreamer().getPreviousSection();
+  if (PreviousSection != NULL)
+    getStreamer().SwitchSection(PreviousSection);
+
+  return false;
+}
+
+/// ParseDirectiveELFType
+///  ::= .type identifier , @attribute
+bool ELFAsmParser::ParseDirectiveType(StringRef, SMLoc) {
+  StringRef Name;
+  if (getParser().ParseIdentifier(Name))
+    return TokError("expected identifier in directive");
+
+  // Handle the identifier as the key symbol.
+  MCSymbol *Sym = getContext().GetOrCreateSymbol(Name);
+
+  if (getLexer().isNot(AsmToken::Comma))
+    return TokError("unexpected token in '.type' directive");
+  Lex();
+
+  if (getLexer().isNot(AsmToken::At))
+    return TokError("expected '@' before type");
+  Lex();
+
+  StringRef Type;
+  SMLoc TypeLoc;
+
+  TypeLoc = getLexer().getLoc();
+  if (getParser().ParseIdentifier(Type))
+    return TokError("expected symbol type in directive");
+
+  MCSymbolAttr Attr = StringSwitch<MCSymbolAttr>(Type)
+    .Case("function", MCSA_ELF_TypeFunction)
+    .Case("object", MCSA_ELF_TypeObject)
+    .Case("tls_object", MCSA_ELF_TypeTLS)
+    .Case("common", MCSA_ELF_TypeCommon)
+    .Case("notype", MCSA_ELF_TypeNoType)
+    .Default(MCSA_Invalid);
+
+  if (Attr == MCSA_Invalid)
+    return Error(TypeLoc, "unsupported attribute in '.type' directive");
 
   if (getLexer().isNot(AsmToken::EndOfStatement))
-    return TokError("unexpected token in directive");
+    return TokError("unexpected token in '.type' directive");
 
-  // FIXME: Add proper MC support.
-  if (getContext().getAsmInfo().hasLEB128()) {
-    if (DirName[1] == 's')
-      getStreamer().EmitRawText("\t.sleb128\t" + Twine(Value));
-    else
-      getStreamer().EmitRawText("\t.uleb128\t" + Twine(Value));
-    return false;
-  }
-  // FIXME: This shouldn't be an error!
-  return TokError("LEB128 not supported yet");
+  Lex();
+
+  getStreamer().EmitSymbolAttribute(Sym, Attr);
+
+  return false;
+}
+
+/// ParseDirectiveIdent
+///  ::= .ident string
+bool ELFAsmParser::ParseDirectiveIdent(StringRef, SMLoc) {
+  if (getLexer().isNot(AsmToken::String))
+    return TokError("unexpected token in '.ident' directive");
+
+  StringRef Data = getTok().getIdentifier();
+
+  Lex();
+
+  const MCSection *OldSection = getStreamer().getCurrentSection();
+  const MCSection *Comment =
+    getContext().getELFSection(".comment", MCSectionELF::SHT_PROGBITS,
+                               MCSectionELF::SHF_MERGE |
+                               MCSectionELF::SHF_STRINGS,
+                               SectionKind::getReadOnly(),
+                               false, 1);
+
+  static bool First = true;
+
+  getStreamer().SwitchSection(Comment);
+  if (First)
+    getStreamer().EmitIntValue(0, 1);
+  First = false;
+  getStreamer().EmitBytes(Data, 0);
+  getStreamer().EmitIntValue(0, 1);
+  getStreamer().SwitchSection(OldSection);
+  return false;
 }
 
 namespace llvm {

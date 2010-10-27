@@ -36,10 +36,28 @@ namespace llvm {
   class LLVMContext;
   class raw_ostream;
 
+  class DIFile;
+  class DISubprogram;
+  class DILexicalBlock;
+  class DIVariable;
+  class DIType;
+
   /// DIDescriptor - A thin wraper around MDNode to access encoded debug info.
   /// This should not be stored in a container, because underly MDNode may
   /// change in certain situations.
   class DIDescriptor {
+  public:
+    enum {
+      FlagPrivate          = 1 << 0,
+      FlagProtected        = 1 << 1,
+      FlagFwdDecl          = 1 << 2,
+      FlagAppleBlock       = 1 << 3,
+      FlagBlockByrefStruct = 1 << 4,
+      FlagVirtual          = 1 << 5,
+      FlagArtificial       = 1 << 6,
+      FlagExplicit         = 1 << 7,
+      FlagPrototyped       = 1 << 8
+    };
   protected:
     const MDNode *DbgNode;
 
@@ -56,11 +74,17 @@ namespace llvm {
     }
 
     GlobalVariable *getGlobalVariableField(unsigned Elt) const;
+    Constant *getConstantField(unsigned Elt) const;
     Function *getFunctionField(unsigned Elt) const;
 
   public:
     explicit DIDescriptor() : DbgNode(0) {}
     explicit DIDescriptor(const MDNode *N) : DbgNode(N) {}
+    explicit DIDescriptor(const DIFile F);
+    explicit DIDescriptor(const DISubprogram F);
+    explicit DIDescriptor(const DILexicalBlock F);
+    explicit DIDescriptor(const DIVariable F);
+    explicit DIDescriptor(const DIType F);
 
     bool Verify() const { return DbgNode != 0; }
 
@@ -96,6 +120,7 @@ namespace llvm {
     bool isEnumerator() const;
     bool isType() const;
     bool isGlobal() const;
+    bool isUnspecifiedParameter() const;
   };
 
   /// DISubrange - This is used to represent ranges, for array bounds.
@@ -148,8 +173,8 @@ namespace llvm {
     /// module does not contain any main compile unit then the code generator
     /// will emit multiple compile units in the output object file.
 
-    bool isMain() const                { return getUnsignedField(6); }
-    bool isOptimized() const           { return getUnsignedField(7); }
+    bool isMain() const                { return getUnsignedField(6) != 0; }
+    bool isOptimized() const           { return getUnsignedField(7) != 0; }
     StringRef getFlags() const       { return getStringField(8);   }
     unsigned getRunTimeVersion() const { return getUnsignedField(9); }
 
@@ -191,17 +216,6 @@ namespace llvm {
   /// others do not require a huge and empty descriptor full of zeros.
   class DIType : public DIScope {
   public:
-    enum {
-      FlagPrivate          = 1 << 0,
-      FlagProtected        = 1 << 1,
-      FlagFwdDecl          = 1 << 2,
-      FlagAppleBlock       = 1 << 3,
-      FlagBlockByrefStruct = 1 << 4,
-      FlagVirtual          = 1 << 5,
-      FlagArtificial       = 1 << 6  // To identify artificial arguments in
-                                     // a subroutine type. e.g. "this" in c++.
-    };
-
   protected:
     // This ctor is used when the Tag has already been validated by a derived
     // ctor.
@@ -260,6 +274,10 @@ namespace llvm {
     StringRef getFilename() const    { return getCompileUnit().getFilename();}
     StringRef getDirectory() const   { return getCompileUnit().getDirectory();}
 
+    /// replaceAllUsesWith - Replace all uses of debug info referenced by
+    /// this descriptor.
+    void replaceAllUsesWith(DIDescriptor &D);
+
     /// print - print type.
     void print(raw_ostream &OS) const;
 
@@ -273,6 +291,9 @@ namespace llvm {
     explicit DIBasicType(const MDNode *N = 0) : DIType(N) {}
 
     unsigned getEncoding() const { return getUnsignedField(9); }
+
+    /// Verify - Verify that a basic type descriptor is well formed.
+    bool Verify() const;
 
     /// print - print basic type.
     void print(raw_ostream &OS) const;
@@ -297,15 +318,14 @@ namespace llvm {
     /// return base type size.
     uint64_t getOriginalTypeSize() const;
 
+    /// Verify - Verify that a derived type descriptor is well formed.
+    bool Verify() const;
+
     /// print - print derived type.
     void print(raw_ostream &OS) const;
 
     /// dump - print derived type to dbgs() with a newline.
     void dump() const;
-
-    /// replaceAllUsesWith - Replace all uses of debug info referenced by
-    /// this descriptor.
-    void replaceAllUsesWith(DIDescriptor &D);
   };
 
   /// DICompositeType - This descriptor holds a type that can refer to multiple
@@ -378,7 +398,38 @@ namespace llvm {
     DICompositeType getContainingType() const {
       return getFieldAs<DICompositeType>(13);
     }
-    unsigned isArtificial() const    { return getUnsignedField(14); }
+    unsigned isArtificial() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return getUnsignedField(14); 
+      return (getUnsignedField(14) & FlagArtificial) != 0;
+    }
+    /// isPrivate - Return true if this subprogram has "private"
+    /// access specifier.
+    bool isPrivate() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return false;
+      return (getUnsignedField(14) & FlagPrivate) != 0;
+    }
+    /// isProtected - Return true if this subprogram has "protected"
+    /// access specifier.
+    bool isProtected() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return false;
+      return (getUnsignedField(14) & FlagProtected) != 0;
+    }
+    /// isExplicit - Return true if this subprogram is marked as explicit.
+    bool isExplicit() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return false;
+      return (getUnsignedField(14) & FlagExplicit) != 0;
+    }
+    /// isPrototyped - Return true if this subprogram is prototyped.
+    bool isPrototyped() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return false;
+      return (getUnsignedField(14) & FlagPrototyped) != 0;
+    }
+
     unsigned isOptimized() const;
 
     StringRef getFilename() const    { 
@@ -436,6 +487,7 @@ namespace llvm {
     unsigned isDefinition() const       { return getUnsignedField(10); }
 
     GlobalVariable *getGlobal() const { return getGlobalVariableField(11); }
+    Constant *getConstant() const   { return getConstantField(11); }
 
     /// Verify - Verify that a global variable descriptor is well formed.
     bool Verify() const;
@@ -465,6 +517,13 @@ namespace llvm {
     }
     unsigned getLineNumber() const      { return getUnsignedField(4); }
     DIType getType() const              { return getFieldAs<DIType>(5); }
+    
+    /// isArtificial - Return true if this variable is marked as "artificial".
+    bool isArtificial() const    { 
+      if (getVersion() <= llvm::LLVMDebugVersion8)
+        return false;
+      return (getUnsignedField(6) & FlagArtificial) != 0;
+    }
 
 
     /// Verify - Verify that a variable descriptor is well formed.
@@ -575,6 +634,10 @@ namespace llvm {
     /// implicitly uniques the values returned.
     DISubrange GetOrCreateSubrange(int64_t Lo, int64_t Hi);
 
+    /// CreateUnspecifiedParameter - Create unspeicified type descriptor
+    /// for a subroutine type.
+    DIDescriptor CreateUnspecifiedParameter();
+
     /// CreateCompileUnit - Create a new descriptor for the specified compile
     /// unit.
     DICompileUnit CreateCompileUnit(unsigned LangID,
@@ -641,6 +704,9 @@ namespace llvm {
                                         unsigned RunTimeLang = 0,
                                         MDNode *ContainingType = 0);
 
+    /// CreateTemporaryType - Create a temporary forward-declared type.
+    DIType CreateTemporaryType();
+
     /// CreateArtificialType - Create a new DIType with "artificial" flag set.
     DIType CreateArtificialType(DIType Ty);
 
@@ -655,7 +721,8 @@ namespace llvm {
                                           unsigned Flags,
                                           DIType DerivedFrom,
                                           DIArray Elements,
-                                          unsigned RunTimeLang = 0);
+                                          unsigned RunTimeLang = 0,
+                                          MDNode *ContainingType = 0);
 
     /// CreateSubprogram - Create a new descriptor for the specified subprogram.
     /// See comments in DISubprogram for descriptions of these fields.
@@ -668,7 +735,7 @@ namespace llvm {
                                   unsigned VK = 0,
                                   unsigned VIndex = 0,
                                   DIType = DIType(),
-                                  bool isArtificial = 0,
+                                  unsigned Flags = 0,
                                   bool isOptimized = false,
                                   Function *Fn = 0);
 
@@ -685,19 +752,28 @@ namespace llvm {
                          unsigned LineNo, DIType Ty, bool isLocalToUnit,
                          bool isDefinition, llvm::GlobalVariable *GV);
 
+    /// CreateGlobalVariable - Create a new descriptor for the specified constant.
+    DIGlobalVariable
+    CreateGlobalVariable(DIDescriptor Context, StringRef Name,
+                         StringRef DisplayName,
+                         StringRef LinkageName,
+                         DIFile F,
+                         unsigned LineNo, DIType Ty, bool isLocalToUnit,
+                         bool isDefinition, llvm::Constant *C);
+
     /// CreateVariable - Create a new descriptor for the specified variable.
     DIVariable CreateVariable(unsigned Tag, DIDescriptor Context,
                               StringRef Name,
                               DIFile F, unsigned LineNo,
-                              DIType Ty, bool AlwaysPreserve = false);
+                              DIType Ty, bool AlwaysPreserve = false,
+                              unsigned Flags = 0);
 
     /// CreateComplexVariable - Create a new descriptor for the specified
     /// variable which has a complex address expression for its address.
     DIVariable CreateComplexVariable(unsigned Tag, DIDescriptor Context,
-                                     const std::string &Name,
-                                     DIFile F, unsigned LineNo,
-                                     DIType Ty,
-                                     SmallVector<Value *, 9> &addr);
+                                     StringRef Name, DIFile F, unsigned LineNo,
+                                     DIType Ty, Value *const *Addr,
+                                     unsigned NumAddr);
 
     /// CreateLexicalBlock - This creates a descriptor for a lexical block
     /// with the specified parent context.
@@ -732,6 +808,11 @@ namespace llvm {
     /// InsertDbgValueIntrinsic - Insert a new llvm.dbg.value intrinsic call.
     Instruction *InsertDbgValueIntrinsic(llvm::Value *V, uint64_t Offset,
                                        DIVariable D, Instruction *InsertBefore);
+
+    // RecordType - Record DIType in a module such that it is not lost even if
+    // it is not referenced through debug info anchors.
+    void RecordType(DIType T);
+
   private:
     Constant *GetTagConstant(unsigned TAG);
   };

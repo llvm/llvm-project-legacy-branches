@@ -78,10 +78,13 @@ add_custom_command(OUTPUT ${LIBDEPS_TMP}
 add_custom_command(OUTPUT ${LIBDEPS}
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBDEPS_TMP} ${LIBDEPS}
   DEPENDS ${LIBDEPS_TMP}
-  COMMENT "Updated ${LIBDEPS} because dependencies changed")
+  COMMENT "Updating ${LIBDEPS} if necessary...")
 
+# This must stop the build if find-cycles.pl returns error:
 add_custom_command(OUTPUT ${FINAL_LIBDEPS}
-  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/find-cycles.pl < ${LIBDEPS} > ${FINAL_LIBDEPS} || ${CMAKE_COMMAND} -E remove -f ${FINAL_LIBDEPS}
+  COMMAND ${CMAKE_COMMAND} -E remove -f ${FINAL_LIBDEPS} ${FINAL_LIBDEPS}.tmp
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/find-cycles.pl < ${LIBDEPS} > ${FINAL_LIBDEPS}.tmp
+  COMMAND ${CMAKE_COMMAND} -E copy ${FINAL_LIBDEPS}.tmp ${FINAL_LIBDEPS}
   DEPENDS ${LIBDEPS}
   COMMENT "Checking for cyclic dependencies between LLVM libraries.")
 

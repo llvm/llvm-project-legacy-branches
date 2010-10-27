@@ -511,10 +511,6 @@ class AsmParser {
   // perform target specific instruction post-processing.
   string AsmParserInstCleanup  = "";
 
-  // MatchInstructionName - The name of the instruction matching function to
-  // generate.
-  string MatchInstructionName  = "MatchInstruction";
-
   // Variant - AsmParsers can be of multiple different variants.  Variants are
   // used to support targets that need to parser multiple formats for the
   // assembly language.
@@ -569,6 +565,11 @@ class AsmWriter {
   
   // OperandSpacing - Space between operand columns.
   int OperandSpacing = -1;
+
+  // isMCAsmWriter - Is this assembly writer for an MC emitter? This controls
+  // generation of the printInstruction() method. For MC printers, it takes
+  // an MCInstr* operand, otherwise it takes a MachineInstr*.
+  bit isMCAsmWriter = 0;
 }
 def DefaultAsmWriter : AsmWriter;
 

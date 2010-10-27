@@ -13,10 +13,7 @@
 //
 // SlotIndex is mostly a proxy for entries of the SlotIndexList, a class which
 // is held is LiveIntervals and provides the real numbering. This allows
-// LiveIntervals to perform largely transparent renumbering. The SlotIndex
-// class does hold a PHI bit, which determines whether the index relates to a
-// PHI use or def point, or an actual instruction. See the SlotIndex class
-// description for futher information.
+// LiveIntervals to perform largely transparent renumbering.
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CODEGEN_SLOTINDEXES_H
@@ -128,13 +125,12 @@ namespace llvm {
     friend class SlotIndexes;
     friend struct DenseMapInfo<SlotIndex>;
 
-  private:
-    static const unsigned PHI_BIT = 1 << 2;
+    enum Slot { LOAD, USE, DEF, STORE, NUM };
 
-    PointerIntPair<IndexListEntry*, 3, unsigned> lie;
+    PointerIntPair<IndexListEntry*, 2, unsigned> lie;
 
-    SlotIndex(IndexListEntry *entry, unsigned phiAndSlot)
-      : lie(entry, phiAndSlot) {
+    SlotIndex(IndexListEntry *entry, unsigned slot)
+      : lie(entry, slot) {
       assert(entry != 0 && "Attempt to construct index with 0 pointer.");
     }
 
@@ -146,6 +142,11 @@ namespace llvm {
       return entry().getIndex() | getSlot();
     }
 
+    /// Returns the slot for this SlotIndex.
+    Slot getSlot() const {
+      return static_cast<Slot>(lie.getInt());
+    }
+
     static inline unsigned getHashValue(const SlotIndex &v) {
       IndexListEntry *ptrVal = &v.entry();
       return (unsigned((intptr_t)ptrVal) >> 4) ^
@@ -153,11 +154,6 @@ namespace llvm {
     }
 
   public:
-
-    // FIXME: Ugh. This is public because LiveIntervalAnalysis is still using it
-    // for some spill weight stuff. Fix that, then make this private.
-    enum Slot { LOAD, USE, DEF, STORE, NUM };
-
     static inline SlotIndex getEmptyKey() {
       return SlotIndex(IndexListEntry::getEmptyKeyEntry(), 0);
     }
@@ -165,22 +161,13 @@ namespace llvm {
     static inline SlotIndex getTombstoneKey() {
       return SlotIndex(IndexListEntry::getTombstoneKeyEntry(), 0);
     }
-    
+
     /// Construct an invalid index.
     SlotIndex() : lie(IndexListEntry::getEmptyKeyEntry(), 0) {}
 
-    // Construct a new slot index from the given one, set the phi flag on the
-    // new index to the value of the phi parameter.
-    SlotIndex(const SlotIndex &li, bool phi)
-      : lie(&li.entry(), phi ? PHI_BIT | li.getSlot() : (unsigned)li.getSlot()){
-      assert(lie.getPointer() != 0 &&
-             "Attempt to construct index with 0 pointer.");
-    }
-
-    // Construct a new slot index from the given one, set the phi flag on the
-    // new index to the value of the phi parameter, and the slot to the new slot.
-    SlotIndex(const SlotIndex &li, bool phi, Slot s)
-      : lie(&li.entry(), phi ? PHI_BIT | s : (unsigned)s) {
+    // Construct a new slot index from the given one, and set the slot.
+    SlotIndex(const SlotIndex &li, Slot s)
+      : lie(&li.entry(), unsigned(s)) {
       assert(lie.getPointer() != 0 &&
              "Attempt to construct index with 0 pointer.");
     }
@@ -235,14 +222,24 @@ namespace llvm {
       return other.getIndex() - getIndex();
     }
 
-    /// Returns the slot for this SlotIndex.
-    Slot getSlot() const {
-      return static_cast<Slot>(lie.getInt()  & ~PHI_BIT);
+    /// isLoad - Return true if this is a LOAD slot.
+    bool isLoad() const {
+      return getSlot() == LOAD;
     }
 
-    /// Returns the state of the PHI bit.
-    bool isPHI() const {
-      return lie.getInt() & PHI_BIT;
+    /// isDef - Return true if this is a DEF slot.
+    bool isDef() const {
+      return getSlot() == DEF;
+    }
+
+    /// isUse - Return true if this is a USE slot.
+    bool isUse() const {
+      return getSlot() == USE;
+    }
+
+    /// isStore - Return true if this is a STORE slot.
+    bool isStore() const {
+      return getSlot() == STORE;
     }
 
     /// Returns the base index for associated with this index. The base index
@@ -389,9 +386,6 @@ namespace llvm {
     /// and MBB id.
     std::vector<IdxMBBPair> idx2MBBMap;
 
-    typedef DenseMap<const MachineBasicBlock*, SlotIndex> TerminatorGapsMap;
-    TerminatorGapsMap terminatorGaps;
-
     // IndexListEntry allocator.
     BumpPtrAllocator ileAllocator;
 
@@ -475,7 +469,9 @@ namespace llvm {
   public:
     static char ID;
 
-    SlotIndexes() : MachineFunctionPass(&ID), indexListHead(0) {}
+    SlotIndexes() : MachineFunctionPass(ID), indexListHead(0) {
+      initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual void getAnalysisUsage(AnalysisUsage &au) const;
     virtual void releaseMemory(); 
@@ -561,14 +557,6 @@ namespace llvm {
       MBB2IdxMap::const_iterator itr = mbb2IdxMap.find(mbb);
       assert(itr != mbb2IdxMap.end() && "MBB not found in maps.");
       return itr->second.second;
-    }
-
-    /// Returns the terminator gap for the given index.
-    SlotIndex getTerminatorGap(const MachineBasicBlock *mbb) {
-      TerminatorGapsMap::iterator itr = terminatorGaps.find(mbb);
-      assert(itr != terminatorGaps.end() &&
-             "All MBBs should have terminator gaps in their indexes.");
-      return itr->second;
     }
 
     /// Returns the basic block which the given index falls in.
@@ -773,7 +761,6 @@ namespace llvm {
       MachineFunction::iterator nextMBB =
         llvm::next(MachineFunction::iterator(mbb));
       IndexListEntry *startEntry = createEntry(0, 0);
-      IndexListEntry *terminatorEntry = createEntry(0, 0); 
       IndexListEntry *nextEntry = 0;
 
       if (nextMBB == mbb->getParent()->end()) {
@@ -783,14 +770,9 @@ namespace llvm {
       }
 
       insert(nextEntry, startEntry);
-      insert(nextEntry, terminatorEntry);
 
       SlotIndex startIdx(startEntry, SlotIndex::LOAD);
-      SlotIndex terminatorIdx(terminatorEntry, SlotIndex::PHI_BIT);
       SlotIndex endIdx(nextEntry, SlotIndex::LOAD);
-
-      terminatorGaps.insert(
-        std::make_pair(mbb, terminatorIdx));
 
       mbb2IdxMap.insert(
         std::make_pair(mbb, std::make_pair(startIdx, endIdx)));

@@ -16,7 +16,7 @@
 
 #include "llvm/Assembly/Writer.h"
 #include "llvm/Assembly/PrintModulePass.h"
-#include "llvm/Assembly/AsmAnnotationWriter.h"
+#include "llvm/Assembly/AssemblyAnnotationWriter.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
@@ -198,6 +198,7 @@ void TypePrinting::CalcTypeName(const Type *Ty,
   case Type::PPC_FP128TyID: OS << "ppc_fp128"; break;
   case Type::LabelTyID:     OS << "label"; break;
   case Type::MetadataTyID:  OS << "metadata"; break;
+  case Type::X86_MMXTyID:   OS << "x86_mmx"; break;
   case Type::IntegerTyID:
     OS << 'i' << cast<IntegerType>(Ty)->getBitWidth();
     break;
@@ -228,7 +229,7 @@ void TypePrinting::CalcTypeName(const Type *Ty,
          E = STy->element_end(); I != E; ++I) {
       OS << ' ';
       CalcTypeName(*I, TypeStack, OS);
-      if (next(I) == STy->element_end())
+      if (llvm::next(I) == STy->element_end())
         OS << ' ';
       else
         OS << ',';
@@ -236,21 +237,6 @@ void TypePrinting::CalcTypeName(const Type *Ty,
     OS << '}';
     if (STy->isPacked())
       OS << '>';
-    break;
-  }
-  case Type::UnionTyID: {
-    const UnionType *UTy = cast<UnionType>(Ty);
-    OS << "union {";
-    for (StructType::element_iterator I = UTy->element_begin(),
-         E = UTy->element_end(); I != E; ++I) {
-      OS << ' ';
-      CalcTypeName(*I, TypeStack, OS);
-      if (next(I) == UTy->element_end())
-        OS << ' ';
-      else
-        OS << ',';
-    }
-    OS << '}';
     break;
   }
   case Type::PointerTyID: {
@@ -1042,16 +1028,6 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
     return;
   }
 
-  if (const ConstantUnion *CU = dyn_cast<ConstantUnion>(CV)) {
-    Out << "{ ";
-    TypePrinter.print(CU->getOperand(0)->getType(), Out);
-    Out << ' ';
-    WriteAsOperandInternal(Out, CU->getOperand(0), &TypePrinter, Machine,
-                           Context);
-    Out << " }";
-    return;
-  }
-  
   if (const ConstantVector *CP = dyn_cast<ConstantVector>(CV)) {
     const Type *ETy = CP->getType()->getElementType();
     assert(CP->getNumOperands() > 0 &&
@@ -1079,11 +1055,6 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
 
   if (isa<UndefValue>(CV)) {
     Out << "undef";
-    return;
-  }
-
-  if (const MDNode *Node = dyn_cast<MDNode>(CV)) {
-    Out << "!" << Machine->getMetadataSlot(Node);
     return;
   }
 
@@ -1190,7 +1161,11 @@ static void WriteAsOperandInternal(raw_ostream &Out, const Value *V,
       else
         Machine = new SlotTracker(Context);
     }
-    Out << '!' << Machine->getMetadataSlot(N);
+    int Slot = Machine->getMetadataSlot(N);
+    if (Slot == -1)
+      Out << "<badref>";
+    else
+      Out << '!' << Slot;
     return;
   }
 
@@ -1420,7 +1395,11 @@ void AssemblyWriter::printNamedMDNode(const NamedMDNode *NMD) {
   Out << "!" << NMD->getName() << " = !{";
   for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
     if (i) Out << ", ";
-    Out << '!' << Machine.getMetadataSlot(NMD->getOperand(i));
+    int Slot = Machine.getMetadataSlot(NMD->getOperand(i));
+    if (Slot == -1)
+      Out << "<badref>";
+    else
+      Out << '!' << Slot;
   }
   Out << "}\n";
 }
@@ -1434,6 +1413,9 @@ static void PrintLinkage(GlobalValue::LinkageTypes LT,
   case GlobalValue::LinkerPrivateLinkage: Out << "linker_private "; break;
   case GlobalValue::LinkerPrivateWeakLinkage:
     Out << "linker_private_weak ";
+    break;
+  case GlobalValue::LinkerPrivateWeakDefAutoLinkage:
+    Out << "linker_private_weak_def_auto ";
     break;
   case GlobalValue::InternalLinkage:      Out << "internal ";       break;
   case GlobalValue::LinkOnceAnyLinkage:   Out << "linkonce ";       break;
@@ -1597,6 +1579,8 @@ void AssemblyWriter::printFunction(const Function *F) {
   case CallingConv::ARM_AAPCS:    Out << "arm_aapcscc "; break;
   case CallingConv::ARM_AAPCS_VFP:Out << "arm_aapcs_vfpcc "; break;
   case CallingConv::MSP430_INTR:  Out << "msp430_intrcc "; break;
+  case CallingConv::PTX_Kernel:   Out << "ptx_kernel"; break;
+  case CallingConv::PTX_Device:   Out << "ptx_device"; break;
   default: Out << "cc" << F->getCallingConv() << " "; break;
   }
 
@@ -1657,11 +1641,10 @@ void AssemblyWriter::printFunction(const Function *F) {
   if (F->hasGC())
     Out << " gc \"" << F->getGC() << '"';
   if (F->isDeclaration()) {
-    Out << "\n";
+    Out << '\n';
   } else {
     Out << " {";
-
-    // Output all of its basic blocks... for the function
+    // Output all of the function's basic blocks.
     for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)
       printBasicBlock(I);
 
@@ -1710,7 +1693,7 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
     Out.PadToColumn(50);
     Out << "; Error: Block without parent!";
   } else if (BB != &BB->getParent()->getEntryBlock()) {  // Not the entry block?
-    // Output predecessors for the block...
+    // Output predecessors for the block.
     Out.PadToColumn(50);
     Out << ";";
     const_pred_iterator PI = pred_begin(BB), PE = pred_end(BB);
@@ -1748,13 +1731,6 @@ void AssemblyWriter::printInfoComment(const Value &V) {
     AnnotationWriter->printInfoComment(V, Out);
     return;
   }
-
-  if (V.getType()->isVoidTy()) return;
-  
-  Out.PadToColumn(50);
-  Out << "; <";
-  TypePrinter.print(V.getType(), Out);
-  Out << "> [#uses=" << V.getNumUses() << ']';  // Output # uses
 }
 
 // This member is called for each Instruction in a function..
@@ -1873,6 +1849,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     case CallingConv::ARM_AAPCS:    Out << " arm_aapcscc "; break;
     case CallingConv::ARM_AAPCS_VFP:Out << " arm_aapcs_vfpcc "; break;
     case CallingConv::MSP430_INTR:  Out << " msp430_intrcc "; break;
+    case CallingConv::PTX_Kernel:   Out << " ptx_kernel"; break;
+    case CallingConv::PTX_Device:   Out << " ptx_device"; break;
     default: Out << " cc" << CI->getCallingConv(); break;
     }
 
@@ -1927,6 +1905,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     case CallingConv::ARM_AAPCS:    Out << " arm_aapcscc "; break;
     case CallingConv::ARM_AAPCS_VFP:Out << " arm_aapcs_vfpcc "; break;
     case CallingConv::MSP430_INTR:  Out << " msp430_intrcc "; break;
+    case CallingConv::PTX_Kernel:   Out << " ptx_kernel"; break;
+    case CallingConv::PTX_Device:   Out << " ptx_device"; break;
     default: Out << " cc" << II->getCallingConv(); break;
     }
 

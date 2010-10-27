@@ -20,8 +20,8 @@
 #include "llvm/Analysis/FindUsedTypes.h"
 #include "llvm/Analysis/IntervalPartition.h"
 #include "llvm/Analysis/Passes.h"
-#include "llvm/Analysis/PointerTracking.h"
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/Analysis/RegionPass.h"
 #include "llvm/Analysis/RegionPrinter.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/Lint.h"
@@ -53,6 +53,7 @@ namespace {
       (void) llvm::createBasicAliasAnalysisPass();
       (void) llvm::createLibCallAliasAnalysisPass(0);
       (void) llvm::createScalarEvolutionAliasAnalysisPass();
+      (void) llvm::createTypeBasedAliasAnalysisPass();
       (void) llvm::createBlockPlacementPass();
       (void) llvm::createBreakCriticalEdgesPass();
       (void) llvm::createCFGSimplificationPass();
@@ -90,7 +91,6 @@ namespace {
       (void) llvm::createLoopUnrollPass();
       (void) llvm::createLoopUnswitchPass();
       (void) llvm::createLoopRotatePass();
-      (void) llvm::createLoopIndexSplitPass();
       (void) llvm::createLowerInvokePass();
       (void) llvm::createLowerSetJmpPass();
       (void) llvm::createLowerSwitchPass();
@@ -141,20 +141,21 @@ namespace {
       (void) llvm::createDbgInfoPrinterPass();
       (void) llvm::createModuleDebugInfoPrinterPass();
       (void) llvm::createPartialInliningPass();
-      (void) llvm::createSSIPass();
-      (void) llvm::createSSIEverythingPass();
       (void) llvm::createGEPSplitterPass();
-      (void) llvm::createABCDPass();
       (void) llvm::createLintPass();
       (void) llvm::createSinkingPass();
+      (void) llvm::createLowerAtomicPass();
+      (void) llvm::createCorrelatedValuePropagationPass();
+      (void) llvm::createMemDepPrinter();
 
       (void)new llvm::IntervalPartition();
       (void)new llvm::FindUsedTypes();
       (void)new llvm::ScalarEvolution();
-      (void)new llvm::PointerTracking();
       ((llvm::Function*)0)->viewCFGOnly();
+      llvm::RGPassManager RGM(0);
+      ((llvm::RegionPass*)0)->runOnRegion((llvm::Region*)0, RGM);
       llvm::AliasSetTracker X(*(llvm::AliasAnalysis*)0);
-      X.add((llvm::Value*)0, 0);  // for -print-alias-sets
+      X.add((llvm::Value*)0, 0, 0);  // for -print-alias-sets
     }
   } ForcePassLinking; // Force link by creating a global definition.
 }

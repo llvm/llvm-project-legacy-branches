@@ -12,6 +12,7 @@
 #include "Spiller.h"
 #include "VirtRegMap.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
+#include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -74,7 +75,7 @@ protected:
   /// immediately before each use, and stores after each def. No folding or
   /// remat is attempted.
   void trivialSpillEverywhere(LiveInterval *li,
-                              std::vector<LiveInterval*> &newIntervals) {
+                              SmallVectorImpl<LiveInterval*> &newIntervals) {
     DEBUG(dbgs() << "Spilling everywhere " << *li << "\n");
 
     assert(li->weight != HUGE_VALF &&
@@ -144,7 +145,7 @@ protected:
         vrm->addSpillSlotUse(ss, loadInstr);
         SlotIndex endIndex = loadIndex.getNextIndex();
         VNInfo *loadVNI =
-          newLI->getNextValue(loadIndex, 0, true, lis->getVNInfoAllocator());
+          newLI->getNextValue(loadIndex, 0, lis->getVNInfoAllocator());
         newLI->addRange(LiveRange(loadIndex, endIndex, loadVNI));
       }
 
@@ -158,7 +159,7 @@ protected:
         vrm->addSpillSlotUse(ss, storeInstr);
         SlotIndex beginIndex = storeIndex.getPrevIndex();
         VNInfo *storeVNI =
-          newLI->getNextValue(beginIndex, 0, true, lis->getVNInfoAllocator());
+          newLI->getNextValue(beginIndex, 0, lis->getVNInfoAllocator());
         newLI->addRange(LiveRange(beginIndex, storeIndex, storeVNI));
       }
 
@@ -181,9 +182,8 @@ public:
     : SpillerBase(pass, mf, vrm) {}
 
   void spill(LiveInterval *li,
-             std::vector<LiveInterval*> &newIntervals,
-             SmallVectorImpl<LiveInterval*> &,
-             SlotIndex*) {
+             SmallVectorImpl<LiveInterval*> &newIntervals,
+             SmallVectorImpl<LiveInterval*> &) {
     // Ignore spillIs - we don't use it.
     trivialSpillEverywhere(li, newIntervals);
   }
@@ -196,24 +196,37 @@ namespace {
 /// Falls back on LiveIntervals::addIntervalsForSpills.
 class StandardSpiller : public Spiller {
 protected:
+  MachineFunction *mf;
   LiveIntervals *lis;
+  LiveStacks *lss;
   MachineLoopInfo *loopInfo;
   VirtRegMap *vrm;
 public:
   StandardSpiller(MachineFunctionPass &pass, MachineFunction &mf,
                   VirtRegMap &vrm)
-    : lis(&pass.getAnalysis<LiveIntervals>()),
+    : mf(&mf),
+      lis(&pass.getAnalysis<LiveIntervals>()),
+      lss(&pass.getAnalysis<LiveStacks>()),
       loopInfo(pass.getAnalysisIfAvailable<MachineLoopInfo>()),
       vrm(&vrm) {}
 
   /// Falls back on LiveIntervals::addIntervalsForSpills.
   void spill(LiveInterval *li,
-             std::vector<LiveInterval*> &newIntervals,
-             SmallVectorImpl<LiveInterval*> &spillIs,
-             SlotIndex*) {
+             SmallVectorImpl<LiveInterval*> &newIntervals,
+             SmallVectorImpl<LiveInterval*> &spillIs) {
     std::vector<LiveInterval*> added =
       lis->addIntervalsForSpills(*li, spillIs, loopInfo, *vrm);
     newIntervals.insert(newIntervals.end(), added.begin(), added.end());
+
+    // Update LiveStacks.
+    int SS = vrm->getStackSlot(li->reg);
+    if (SS == VirtRegMap::NO_STACK_SLOT)
+      return;
+    const TargetRegisterClass *RC = mf->getRegInfo().getRegClass(li->reg);
+    LiveInterval &SI = lss->getOrCreateInterval(SS, RC);
+    if (!SI.hasAtLeastOneValue())
+      SI.getNextValue(SlotIndex(), 0, lss->getVNInfoAllocator());
+    SI.MergeRangesInAsValue(*li, SI.getValNumInfo(0));
   }
 };
 
@@ -236,13 +249,12 @@ public:
   }
 
   void spill(LiveInterval *li,
-             std::vector<LiveInterval*> &newIntervals,
-             SmallVectorImpl<LiveInterval*> &spillIs,
-             SlotIndex *earliestStart) {
+             SmallVectorImpl<LiveInterval*> &newIntervals,
+             SmallVectorImpl<LiveInterval*> &spillIs) {
     if (worthTryingToSplit(li))
-      tryVNISplit(li, earliestStart);
+      tryVNISplit(li);
     else
-      StandardSpiller::spill(li, newIntervals, spillIs, earliestStart);
+      StandardSpiller::spill(li, newIntervals, spillIs);
   }
 
 private:
@@ -257,8 +269,7 @@ private:
   }
 
   /// Try to break a LiveInterval into its component values.
-  std::vector<LiveInterval*> tryVNISplit(LiveInterval *li,
-                                         SlotIndex *earliestStart) {
+  std::vector<LiveInterval*> tryVNISplit(LiveInterval *li) {
 
     DEBUG(dbgs() << "Trying VNI split of %reg" << *li << "\n");
 
@@ -282,10 +293,6 @@ private:
         DEBUG(dbgs() << *splitInterval << "\n");
         added.push_back(splitInterval);
         alreadySplit.insert(splitInterval);
-        if (earliestStart != 0) {
-          if (splitInterval->beginIndex() < *earliestStart)
-            *earliestStart = splitInterval->beginIndex();
-        }
       } else {
         DEBUG(dbgs() << "0\n");
       }
@@ -298,10 +305,6 @@ private:
     if (!li->empty()) {
       added.push_back(li);
       alreadySplit.insert(li);
-      if (earliestStart != 0) {
-        if (li->beginIndex() < *earliestStart)
-          *earliestStart = li->beginIndex();
-      }
     }
 
     return added;
@@ -309,7 +312,8 @@ private:
 
   /// Extract the given value number from the interval.
   LiveInterval* extractVNI(LiveInterval *li, VNInfo *vni) const {
-    assert(vni->isDefAccurate() || vni->isPHIDef());
+    assert((lis->getInstructionFromIndex(vni->def) != 0 || vni->isPHIDef()) &&
+           "Def index not sane?");
 
     // Create a new vreg and live interval, copy VNI ranges over.
     const TargetRegisterClass *trc = mri->getRegClass(li->reg);
@@ -347,8 +351,11 @@ private:
                                      tii->get(TargetOpcode::COPY), newVReg)
                                .addReg(li->reg, RegState::Kill);
       SlotIndex copyIdx = lis->InsertMachineInstrInMaps(copyMI);
-      VNInfo *phiDefVNI = li->getNextValue(lis->getMBBStartIdx(defMBB),
-                                           0, false, lis->getVNInfoAllocator());
+      SlotIndex phiDefIdx = lis->getMBBStartIdx(defMBB);
+      assert(lis->getInstructionFromIndex(phiDefIdx) == 0 &&
+             "PHI def index points at actual instruction.");
+      VNInfo *phiDefVNI = li->getNextValue(phiDefIdx,
+                                           0, lis->getVNInfoAllocator());
       phiDefVNI->setIsPHIDef(true);
       li->addRange(LiveRange(phiDefVNI->def, copyIdx.getDefIndex(), phiDefVNI));
       LiveRange *oldPHIDefRange =
@@ -370,7 +377,6 @@ private:
       newVNI->def = copyIdx.getDefIndex();
       newVNI->setCopy(copyMI);
       newVNI->setIsPHIDef(false); // not a PHI def anymore.
-      newVNI->setIsDefAccurate(true);
     } else {
       // non-PHI def. Rename the def. If it's two-addr that means renaming the
       // use and inserting a new copy too.
@@ -403,7 +409,7 @@ private:
           li->getLiveRangeContaining(newVNI->def.getUseIndex());
         origUseRange->end = copyIdx.getDefIndex();
         VNInfo *copyVNI = newLI->getNextValue(copyIdx.getDefIndex(), copyMI,
-                                              true, lis->getVNInfoAllocator());
+                                              lis->getVNInfoAllocator());
         LiveRange copyRange(copyIdx.getDefIndex(),defIdx.getDefIndex(),copyVNI);
         newLI->addRange(copyRange);
       }
@@ -460,7 +466,7 @@ private:
         // Insert a new range & vni for the two-address-to-copy value. This
         // will be attached to the new live interval.
         VNInfo *copyVNI =
-          newLI->getNextValue(useIdx.getDefIndex(), 0, true,
+          newLI->getNextValue(useIdx.getDefIndex(), 0,
                               lis->getVNInfoAllocator());
         LiveRange copyRange(useIdx.getDefIndex(),copyIdx.getDefIndex(),copyVNI);
         newLI->addRange(copyRange);
@@ -470,7 +476,7 @@ private:
     // Iterate over any PHI kills - we'll need to insert new copies for them.
     for (LiveInterval::iterator LRI = newLI->begin(), LRE = newLI->end();
          LRI != LRE; ++LRI) {
-      if (LRI->valno != newVNI || LRI->end.isPHI())
+      if (LRI->valno != newVNI)
         continue;
       SlotIndex killIdx = LRI->end;
       MachineBasicBlock *killMBB = lis->getMBBFromIndex(killIdx);
@@ -493,8 +499,7 @@ private:
       }
 
       VNInfo *newKillVNI = li->getNextValue(copyIdx.getDefIndex(),
-                                            copyMI, true,
-                                            lis->getVNInfoAllocator());
+                                            copyMI, lis->getVNInfoAllocator());
       newKillVNI->setHasPHIKill(true);
       li->addRange(LiveRange(copyIdx.getDefIndex(),
                              lis->getMBBEndIdx(killMBB),

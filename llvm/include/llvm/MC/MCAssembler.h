@@ -24,6 +24,7 @@ namespace llvm {
 class raw_ostream;
 class MCAsmLayout;
 class MCAssembler;
+class MCBinaryExpr;
 class MCContext;
 class MCCodeEmitter;
 class MCExpr;
@@ -48,7 +49,8 @@ public:
     FT_Data,
     FT_Fill,
     FT_Inst,
-    FT_Org
+    FT_Org,
+    FT_Dwarf
   };
 
 private:
@@ -163,7 +165,7 @@ class MCInstFragment : public MCFragment {
   /// Inst - The instruction this is a fragment for.
   MCInst Inst;
 
-  /// InstSize - The size of the currently encoded instruction.
+  /// Code - Binary data for the currently encoded instruction.
   SmallString<8> Code;
 
   /// Fixups - The list of fixups in this fragment.
@@ -336,6 +338,36 @@ public:
   static bool classof(const MCOrgFragment *) { return true; }
 };
 
+class MCDwarfLineAddrFragment : public MCFragment {
+  /// LineDelta - the value of the difference between the two line numbers
+  /// between two .loc dwarf directives.
+  int64_t LineDelta;
+
+  /// AddrDelta - The expression for the difference of the two symbols that
+  /// make up the address delta between two .loc dwarf directives.
+  const MCExpr *AddrDelta;
+
+public:
+  MCDwarfLineAddrFragment(int64_t _LineDelta, const MCExpr &_AddrDelta,
+                      MCSectionData *SD = 0)
+    : MCFragment(FT_Dwarf, SD),
+      LineDelta(_LineDelta), AddrDelta(&_AddrDelta) {}
+
+  /// @name Accessors
+  /// @{
+
+  int64_t getLineDelta() const { return LineDelta; }
+
+  const MCExpr &getAddrDelta() const { return *AddrDelta; }
+
+  /// @}
+
+  static bool classof(const MCFragment *F) {
+    return F->getKind() == MCFragment::FT_Dwarf;
+  }
+  static bool classof(const MCDwarfLineAddrFragment *) { return true; }
+};
+
 // FIXME: Should this be a separate class, or just merged into MCSection? Since
 // we anticipate the fast path being through an MCAssembler, the only reason to
 // keep it out is for API abstraction.
@@ -453,6 +485,10 @@ public:
   // common symbol can never get a definition.
   uint64_t CommonSize;
 
+  /// SymbolSize - An expression describing how to calculate the size of
+  /// a symbol. If a symbol has no size this field will be NULL.
+  const MCExpr *SymbolSize;
+
   /// CommonAlign - The alignment of the symbol, if it is 'common'.
   //
   // FIXME: Pack this in with other fields?
@@ -509,6 +545,15 @@ public:
     assert(isCommon() && "Not a 'common' symbol!");
     return CommonSize;
   }
+
+  void setSize(const MCExpr *SS) {
+    SymbolSize = SS;
+  }
+
+  const MCExpr *getSize() const {
+    return SymbolSize;
+  }
+
 
   /// getCommonAlignment - Return the alignment of a 'common' symbol.
   unsigned getCommonAlignment() const {
@@ -591,6 +636,7 @@ private:
 
   unsigned RelaxAll : 1;
   unsigned SubsectionsViaSymbols : 1;
+  unsigned PadSectionToAlignment : 1;
 
 private:
   /// Evaluate a fixup to a relocatable expression and the value which should be
@@ -606,17 +652,19 @@ private:
   /// \return Whether the fixup value was fully resolved. This is true if the
   /// \arg Value result is fixed, otherwise the value may change due to
   /// relocation.
-  bool EvaluateFixup(const MCAsmLayout &Layout,
+  bool EvaluateFixup(const MCObjectWriter &Writer, const MCAsmLayout &Layout,
                      const MCFixup &Fixup, const MCFragment *DF,
                      MCValue &Target, uint64_t &Value) const;
 
   /// Check whether a fixup can be satisfied, or whether it needs to be relaxed
   /// (increased in size, in order to hold its value correctly).
-  bool FixupNeedsRelaxation(const MCFixup &Fixup, const MCFragment *DF,
+  bool FixupNeedsRelaxation(const MCObjectWriter &Writer,
+                            const MCFixup &Fixup, const MCFragment *DF,
                             const MCAsmLayout &Layout) const;
 
   /// Check whether the given fragment needs relaxation.
-  bool FragmentNeedsRelaxation(const MCInstFragment *IF,
+  bool FragmentNeedsRelaxation(const MCObjectWriter &Writer,
+                               const MCInstFragment *IF,
                                const MCAsmLayout &Layout) const;
 
   /// Compute the effective fragment size assuming it is layed out at the given
@@ -627,7 +675,7 @@ private:
 
   /// LayoutOnce - Perform one layout iteration and return true if any offsets
   /// were adjusted.
-  bool LayoutOnce(MCAsmLayout &Layout);
+  bool LayoutOnce(const MCObjectWriter &Writer, MCAsmLayout &Layout);
 
   /// FinishLayout - Finalize a layout, including fragment lowering.
   void FinishLayout(MCAsmLayout &Layout);
@@ -635,8 +683,7 @@ private:
 public:
   /// Find the symbol which defines the atom containing the given symbol, or
   /// null if there is no such symbol.
-  const MCSymbolData *getAtom(const MCAsmLayout &Layout,
-                              const MCSymbolData *Symbol) const;
+  const MCSymbolData *getAtom(const MCSymbolData *Symbol) const;
 
   /// Check whether a particular symbol is visible to the linker and is required
   /// in the symbol table, or whether it can be discarded by the assembler. This
@@ -650,6 +697,9 @@ public:
   void WriteSectionData(const MCSectionData *Section, const MCAsmLayout &Layout,
                         MCObjectWriter *OW) const;
 
+  void AddSectionToTheEnd(const MCObjectWriter &Writer, MCSectionData &SD,
+                          MCAsmLayout &Layout);
+
 public:
   /// Construct a new assembler instance.
   ///
@@ -660,7 +710,8 @@ public:
   // option is to make this abstract, and have targets provide concrete
   // implementations as we do with AsmParser.
   MCAssembler(MCContext &_Context, TargetAsmBackend &_Backend,
-              MCCodeEmitter &_Emitter, raw_ostream &OS);
+              MCCodeEmitter &_Emitter, bool _PadSectionToAlignment,
+              raw_ostream &OS);
   ~MCAssembler();
 
   MCContext &getContext() const { return Context; }

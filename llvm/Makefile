@@ -170,7 +170,7 @@ FilesToConfig := \
   include/llvm/Config/AsmParsers.def \
   include/llvm/Config/Disassemblers.def \
   include/llvm/System/DataTypes.h \
-  tools/llvmc/plugins/Base/Base.td
+  tools/llvmc/src/Base.td
 FilesToConfigPATH  := $(addprefix $(LLVM_OBJ_ROOT)/,$(FilesToConfig))
 
 all-local:: $(FilesToConfigPATH)
@@ -194,9 +194,6 @@ endif
 
 check-llvm2cpp:
 	$(Verb)$(MAKE) check TESTSUITE=Feature RUNLLVM2CPP=1
-
-check-one:
-	$(Verb)$(MAKE) -C test check-one TESTONE=$(TESTONE)
 
 srpm: $(LLVM_OBJ_ROOT)/llvm.spec
 	rpmbuild -bs $(LLVM_OBJ_ROOT)/llvm.spec

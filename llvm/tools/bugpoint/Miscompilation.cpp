@@ -43,13 +43,13 @@ namespace {
         cl::desc("Don't extract blocks when searching for miscompilations"),
         cl::init(false));
 
-  class ReduceMiscompilingPasses : public ListReducer<const PassInfo*> {
+  class ReduceMiscompilingPasses : public ListReducer<std::string> {
     BugDriver &BD;
   public:
     ReduceMiscompilingPasses(BugDriver &bd) : BD(bd) {}
 
-    virtual TestResult doTest(std::vector<const PassInfo*> &Prefix,
-                              std::vector<const PassInfo*> &Suffix,
+    virtual TestResult doTest(std::vector<std::string> &Prefix,
+                              std::vector<std::string> &Suffix,
                               std::string &Error);
   };
 }
@@ -58,8 +58,8 @@ namespace {
 /// group, see if they still break the program.
 ///
 ReduceMiscompilingPasses::TestResult
-ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
-                                 std::vector<const PassInfo*> &Suffix,
+ReduceMiscompilingPasses::doTest(std::vector<std::string> &Prefix,
+                                 std::vector<std::string> &Suffix,
                                  std::string &Error) {
   // First, run the program with just the Suffix passes.  If it is still broken
   // with JUST the kept passes, discard the prefix passes.
@@ -67,7 +67,8 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
          << "' compiles correctly: ";
 
   std::string BitcodeResult;
-  if (BD.runPasses(Suffix, BitcodeResult, false/*delete*/, true/*quiet*/)) {
+  if (BD.runPasses(BD.getProgram(), Suffix, BitcodeResult, false/*delete*/,
+                   true/*quiet*/)) {
     errs() << " Error running this sequence of passes"
            << " on the input program!\n";
     BD.setPassesToRun(Suffix);
@@ -104,7 +105,8 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
   // kept passes, we can update our bitcode file to include the result of the
   // prefix passes, then discard the prefix passes.
   //
-  if (BD.runPasses(Prefix, BitcodeResult, false/*delete*/, true/*quiet*/)) {
+  if (BD.runPasses(BD.getProgram(), Prefix, BitcodeResult, false/*delete*/,
+                   true/*quiet*/)) {
     errs() << " Error running this sequence of passes"
            << " on the input program!\n";
     BD.setPassesToRun(Prefix);
@@ -144,7 +146,8 @@ ReduceMiscompilingPasses::doTest(std::vector<const PassInfo*> &Prefix,
             << getPassesString(Prefix) << "' passes: ";
 
   OwningPtr<Module> OriginalInput(BD.swapProgramIn(PrefixOutput.take()));
-  if (BD.runPasses(Suffix, BitcodeResult, false/*delete*/, true/*quiet*/)) {
+  if (BD.runPasses(BD.getProgram(), Suffix, BitcodeResult, false/*delete*/,
+                   true/*quiet*/)) {
     errs() << " Error running this sequence of passes"
            << " on the input program!\n";
     BD.setPassesToRun(Suffix);
@@ -258,7 +261,7 @@ bool ReduceMiscompilingFunctions::TestFuncs(const std::vector<Function*> &Funcs,
   //   a function, we want to continue with the original function. Otherwise
   //   we can conclude that a function triggers the bug when in fact one
   //   needs a larger set of original functions to do so.
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   Module *Clone = CloneModule(BD.getProgram(), VMap);
   Module *Orig = BD.swapProgramIn(Clone);
 
@@ -307,7 +310,7 @@ static bool ExtractLoops(BugDriver &BD,
   while (1) {
     if (BugpointIsInterrupted) return MadeChange;
     
-    ValueMap<const Value*, Value*> VMap;
+    ValueToValueMapTy VMap;
     Module *ToNotOptimize = CloneModule(BD.getProgram(), VMap);
     Module *ToOptimize = SplitFunctionsOutOfModule(ToNotOptimize,
                                                    MiscompiledFunctions,
@@ -473,7 +476,7 @@ bool ReduceMiscompiledBlocks::TestFuncs(const std::vector<BasicBlock*> &BBs,
   outs() << '\n';
 
   // Split the module into the two halves of the program we want.
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   Module *Clone = CloneModule(BD.getProgram(), VMap);
   Module *Orig = BD.swapProgramIn(Clone);
   std::vector<Function*> FuncsOnClone;
@@ -548,7 +551,7 @@ static bool ExtractBlocks(BugDriver &BD,
       return false;
   }
 
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   Module *ProgClone = CloneModule(BD.getProgram(), VMap);
   Module *ToExtract = SplitFunctionsOutOfModule(ProgClone,
                                                 MiscompiledFunctions,
@@ -735,7 +738,7 @@ void BugDriver::debugMiscompilation(std::string *Error) {
 
   // Output a bunch of bitcode files for the user...
   outs() << "Outputting reduced bitcode files which expose the problem:\n";
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   Module *ToNotOptimize = CloneModule(getProgram(), VMap);
   Module *ToOptimize = SplitFunctionsOutOfModule(ToNotOptimize,
                                                  MiscompiledFunctions,
@@ -1008,7 +1011,7 @@ bool BugDriver::debugCodeGenerator(std::string *Error) {
     return true;
 
   // Split the module into the two halves of the program we want.
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   Module *ToNotCodeGen = CloneModule(getProgram(), VMap);
   Module *ToCodeGen = SplitFunctionsOutOfModule(ToNotCodeGen, Funcs, VMap);
 

@@ -57,19 +57,13 @@ protected:
   // Allocate raw space for N elements of type T.  If T has a ctor or dtor, we
   // don't want it to be automatically run, so we need to represent the space as
   // something else.  An array of char would work great, but might not be
-  // aligned sufficiently.  Instead, we either use GCC extensions, or some
-  // number of union instances for the space, which guarantee maximal alignment.
-  struct U {
-#ifdef __GNUC__
-    char X __attribute__((aligned(8)));
-#else
-    union {
-      double D;
-      long double LD;
-      long long L;
-      void *P;
-    } X;
-#endif
+  // aligned sufficiently.  Instead we use some number of union instances for
+  // the space, which guarantee maximal alignment.
+  union U {
+    double D;
+    long double LD;
+    long long L;
+    void *P;
   } FirstEl;
   // Space after 'FirstEl' is clobbered, do not add any instance vars after it.
 
@@ -206,7 +200,7 @@ template <typename T, bool isPodLike>
 void SmallVectorTemplateBase<T, isPodLike>::grow(size_t MinSize) {
   size_t CurCapacity = this->capacity();
   size_t CurSize = this->size();
-  size_t NewCapacity = 2*CurCapacity;
+  size_t NewCapacity = 2*CurCapacity + 1; // Always grow, even from zero.
   if (NewCapacity < MinSize)
     NewCapacity = MinSize;
   T *NewElts = static_cast<T*>(malloc(NewCapacity*sizeof(T)));
@@ -703,6 +697,36 @@ public:
   const SmallVector &operator=(const SmallVector &RHS) {
     SmallVectorImpl<T>::operator=(RHS);
     return *this;
+  }
+
+};
+
+/// Specialize SmallVector at N=0.  This specialization guarantees
+/// that it can be instantiated at an incomplete T if none of its
+/// members are required.
+template <typename T>
+class SmallVector<T,0> : public SmallVectorImpl<T> {
+public:
+  SmallVector() : SmallVectorImpl<T>(0) {}
+
+  explicit SmallVector(unsigned Size, const T &Value = T())
+    : SmallVectorImpl<T>(0) {
+    this->reserve(Size);
+    while (Size--)
+      this->push_back(Value);
+  }
+
+  template<typename ItTy>
+  SmallVector(ItTy S, ItTy E) : SmallVectorImpl<T>(0) {
+    this->append(S, E);
+  }
+
+  SmallVector(const SmallVector &RHS) : SmallVectorImpl<T>(0) {
+    SmallVectorImpl<T>::operator=(RHS);
+  }
+
+  SmallVector &operator=(const SmallVectorImpl<T> &RHS) {
+    return SmallVectorImpl<T>::operator=(RHS);
   }
 
 };

@@ -36,7 +36,9 @@ STATISTIC(NumBroken, "Number of blocks inserted");
 namespace {
   struct BreakCriticalEdges : public FunctionPass {
     static char ID; // Pass identification, replacement for typeid
-    BreakCriticalEdges() : FunctionPass(&ID) {}
+    BreakCriticalEdges() : FunctionPass(ID) {
+      initializeBreakCriticalEdgesPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual bool runOnFunction(Function &F);
 
@@ -53,11 +55,11 @@ namespace {
 }
 
 char BreakCriticalEdges::ID = 0;
-static RegisterPass<BreakCriticalEdges>
-X("break-crit-edges", "Break critical edges in CFG");
+INITIALIZE_PASS(BreakCriticalEdges, "break-crit-edges",
+                "Break critical edges in CFG", false, false)
 
 // Publically exposed interface to pass...
-const PassInfo *const llvm::BreakCriticalEdgesID = &X;
+char &llvm::BreakCriticalEdgesID = BreakCriticalEdges::ID;
 FunctionPass *llvm::createBreakCriticalEdgesPass() {
   return new BreakCriticalEdges();
 }

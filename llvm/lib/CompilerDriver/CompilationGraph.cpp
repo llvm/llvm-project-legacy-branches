@@ -46,19 +46,25 @@ namespace llvmc {
 
 namespace {
 
-  /// ChooseEdge - Return the edge with the maximum weight.
+  /// ChooseEdge - Return the edge with the maximum weight. Returns 0 on error.
   template <class C>
   const Edge* ChooseEdge(const C& EdgesContainer,
                          const InputLanguagesSet& InLangs,
                          const std::string& NodeName = "root") {
     const Edge* MaxEdge = 0;
-    unsigned MaxWeight = 0;
+    int MaxWeight = 0;
     bool SingleMax = true;
 
+    // TODO: fix calculation of SingleMax.
     for (typename C::const_iterator B = EdgesContainer.begin(),
            E = EdgesContainer.end(); B != E; ++B) {
       const Edge* e = B->getPtr();
-      unsigned EW = e->Weight(InLangs);
+      int EW = e->Weight(InLangs);
+      if (EW < 0) {
+        // (error) invocation in TableGen -> we don't need to print an error
+        // message.
+        return 0;
+      }
       if (EW > MaxWeight) {
         MaxEdge = e;
         MaxWeight = EW;
@@ -212,10 +218,11 @@ FindToolChain(const sys::Path& In, const std::string* ForceLanguage,
               InputLanguagesSet& InLangs, const LanguageMap& LangMap) const {
 
   // Determine the input language.
-  const std::string* InLang = LangMap.GetLanguage(In);
+  const std::string* InLang = (ForceLanguage ? ForceLanguage
+                               : LangMap.GetLanguage(In));
   if (InLang == 0)
     return 0;
-  const std::string& InLanguage = (ForceLanguage ? *ForceLanguage : *InLang);
+  const std::string& InLanguage = *InLang;
 
   // Add the current input language to the input language set.
   InLangs.insert(InLanguage);
@@ -433,13 +440,17 @@ int CompilationGraph::CheckLanguageNames() const {
           continue;
         }
 
-        const char* OutLang = N1.ToolPtr->OutputLanguage();
+        const char** OutLangs = N1.ToolPtr->OutputLanguages();
         const char** InLangs = N2->ToolPtr->InputLanguages();
         bool eq = false;
-        for (;*InLangs; ++InLangs) {
-          if (std::strcmp(OutLang, *InLangs) == 0) {
-            eq = true;
-            break;
+        const char* OutLang = 0;
+        for (;*OutLangs; ++OutLangs) {
+          OutLang = *OutLangs;
+          for (;*InLangs; ++InLangs) {
+            if (std::strcmp(OutLang, *InLangs) == 0) {
+              eq = true;
+              break;
+            }
           }
         }
 
@@ -474,7 +485,7 @@ int CompilationGraph::CheckMultipleDefaultEdges() const {
   for (const_nodes_iterator B = this->NodesMap.begin(),
          E = this->NodesMap.end(); B != E; ++B) {
     const Node& N = B->second;
-    unsigned MaxWeight = 0;
+    int MaxWeight = -1024;
 
     // Ignore the root node.
     if (!N.ToolPtr)
@@ -482,7 +493,7 @@ int CompilationGraph::CheckMultipleDefaultEdges() const {
 
     for (Node::const_iterator EB = N.EdgesBegin(), EE = N.EdgesEnd();
          EB != EE; ++EB) {
-      unsigned EdgeWeight = (*EB)->Weight(Dummy);
+      int EdgeWeight = (*EB)->Weight(Dummy);
       if (EdgeWeight > MaxWeight) {
         MaxWeight = EdgeWeight;
       }
@@ -566,6 +577,26 @@ int CompilationGraph::Check () {
 
 // Code related to graph visualization.
 
+namespace {
+
+std::string SquashStrArray (const char** StrArr) {
+  std::string ret;
+
+  for (; *StrArr; ++StrArr) {
+    if (*(StrArr + 1)) {
+      ret += *StrArr;
+      ret +=  ", ";
+    }
+    else {
+      ret += *StrArr;
+    }
+  }
+
+  return ret;
+}
+
+} // End anonymous namespace.
+
 namespace llvm {
   template <>
   struct DOTGraphTraits<llvmc::CompilationGraph*>
@@ -580,7 +611,8 @@ namespace llvm {
         if (N->ToolPtr->IsJoin())
           return N->Name() + "\n (join" +
             (N->HasChildren() ? ")"
-             : std::string(": ") + N->ToolPtr->OutputLanguage() + ')');
+             : std::string(": ") +
+             SquashStrArray(N->ToolPtr->OutputLanguages()) + ')');
         else
           return N->Name();
       else
@@ -590,28 +622,15 @@ namespace llvm {
     template<typename EdgeIter>
     static std::string getEdgeSourceLabel(const Node* N, EdgeIter I) {
       if (N->ToolPtr) {
-        return N->ToolPtr->OutputLanguage();
+        return SquashStrArray(N->ToolPtr->OutputLanguages());
       }
       else {
-        const char** InLangs = I->ToolPtr->InputLanguages();
-        std::string ret;
-
-        for (; *InLangs; ++InLangs) {
-          if (*(InLangs + 1)) {
-            ret += *InLangs;
-            ret +=  ", ";
-          }
-          else {
-            ret += *InLangs;
-          }
-        }
-
-        return ret;
+        return SquashStrArray(I->ToolPtr->InputLanguages());
       }
     }
   };
 
-}
+} // End namespace llvm
 
 int CompilationGraph::writeGraph(const std::string& OutputFilename) {
   std::string ErrorInfo;

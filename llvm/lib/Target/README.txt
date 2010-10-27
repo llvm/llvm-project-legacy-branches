@@ -2,6 +2,38 @@ Target Independent Opportunities:
 
 //===---------------------------------------------------------------------===//
 
+We should recognize idioms for add-with-carry and turn it into the appropriate
+intrinsics.  This example:
+
+unsigned add32carry(unsigned sum, unsigned x) {
+ unsigned z = sum + x;
+ if (sum + x < x)
+     z++;
+ return z;
+}
+
+Compiles to: clang t.c -S -o - -O3 -fomit-frame-pointer -m64 -mkernel
+
+_add32carry:                            ## @add32carry
+	addl	%esi, %edi
+	cmpl	%esi, %edi
+	sbbl	%eax, %eax
+	andl	$1, %eax
+	addl	%edi, %eax
+	ret
+
+with clang, but to:
+
+_add32carry:
+	leal	(%rsi,%rdi), %eax
+	cmpl	%esi, %eax
+	adcl	$0, %eax
+	ret
+
+with gcc.
+
+//===---------------------------------------------------------------------===//
+
 Dead argument elimination should be enhanced to handle cases when an argument is
 dead to an externally visible function.  Though the argument can't be removed
 from the externally visible function, the caller doesn't need to pass it in.
@@ -1308,12 +1340,6 @@ void foo (int a, struct T b)
 
 simplifylibcalls should do several optimizations for strspn/strcspn:
 
-strcspn(x, "") -> strlen(x)
-strcspn("", x) -> 0
-strspn("", x) -> 0
-strspn(x, "") -> strlen(x)
-strspn(x, "a") -> strchr(x, 'a')-x
-
 strcspn(x, "a") -> inlined loop for up to 3 letters (similarly for strspn):
 
 size_t __strcspn_c3 (__const char *__s, int __reject1, int __reject2,
@@ -1919,5 +1945,21 @@ something like the following, which eliminates a branch:
 	ret
 .LBB0_2:
 	jmp	foo  # TAILCALL
+//===---------------------------------------------------------------------===//
+Given a branch where the two target blocks are identical ("ret i32 %b" in
+both), simplifycfg will simplify them away. But not so for a switch statement:
 
+define i32 @f(i32 %a, i32 %b) nounwind readnone {
+entry:
+        switch i32 %a, label %bb3 [
+                i32 4, label %bb
+                i32 6, label %bb
+        ]
+
+bb:             ; preds = %entry, %entry
+        ret i32 %b
+
+bb3:            ; preds = %entry
+        ret i32 %b
+}
 //===---------------------------------------------------------------------===//

@@ -22,6 +22,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/raw_ostream.h"
@@ -31,6 +32,21 @@ using namespace llvm::dwarf;
 //===----------------------------------------------------------------------===//
 // DIDescriptor
 //===----------------------------------------------------------------------===//
+
+DIDescriptor::DIDescriptor(const DIFile F) : DbgNode(F.DbgNode) {
+}
+
+DIDescriptor::DIDescriptor(const DISubprogram F) : DbgNode(F.DbgNode) {
+}
+
+DIDescriptor::DIDescriptor(const DILexicalBlock F) : DbgNode(F.DbgNode) {
+}
+
+DIDescriptor::DIDescriptor(const DIVariable F) : DbgNode(F.DbgNode) {
+}
+
+DIDescriptor::DIDescriptor(const DIType F) : DbgNode(F.DbgNode) {
+}
 
 StringRef
 DIDescriptor::getStringField(unsigned Elt) const {
@@ -74,6 +90,15 @@ GlobalVariable *DIDescriptor::getGlobalVariableField(unsigned Elt) const {
   return 0;
 }
 
+Constant *DIDescriptor::getConstantField(unsigned Elt) const {
+  if (DbgNode == 0)
+    return 0;
+
+  if (Elt < DbgNode->getNumOperands())
+      return dyn_cast_or_null<Constant>(DbgNode->getOperand(Elt));
+  return 0;
+}
+
 Function *DIDescriptor::getFunctionField(unsigned Elt) const {
   if (DbgNode == 0)
     return 0;
@@ -84,7 +109,9 @@ Function *DIDescriptor::getFunctionField(unsigned Elt) const {
 }
 
 unsigned DIVariable::getNumAddrElements() const {
-  return DbgNode->getNumOperands()-6;
+  if (getVersion() <= llvm::LLVMDebugVersion8)
+    return DbgNode->getNumOperands()-6;
+  return DbgNode->getNumOperands()-7;
 }
 
 
@@ -110,6 +137,7 @@ bool DIDescriptor::isDerivedType() const {
   case dwarf::DW_TAG_restrict_type:
   case dwarf::DW_TAG_member:
   case dwarf::DW_TAG_inheritance:
+  case dwarf::DW_TAG_friend:
     return true;
   default:
     // CompositeTypes are currently modelled as DerivedTypes.
@@ -162,12 +190,19 @@ bool DIDescriptor::isSubprogram() const {
 /// isGlobalVariable - Return true if the specified tag is legal for
 /// DIGlobalVariable.
 bool DIDescriptor::isGlobalVariable() const {
-  return DbgNode && getTag() == dwarf::DW_TAG_variable;
+  return DbgNode && (getTag() == dwarf::DW_TAG_variable ||
+                     getTag() == dwarf::DW_TAG_constant);
 }
 
 /// isGlobal - Return true if the specified tag is legal for DIGlobal.
 bool DIDescriptor::isGlobal() const {
   return isGlobalVariable();
+}
+
+/// isUnspecifiedParmeter - Return true if the specified tab is
+/// DW_TAG_unspecified_parameters.
+bool DIDescriptor::isUnspecifiedParameter() const {
+  return DbgNode && getTag() == dwarf::DW_TAG_unspecified_parameters;
 }
 
 /// isScope - Return true if the specified tag is one of the scope
@@ -235,7 +270,7 @@ unsigned DIArray::getNumElements() const {
 
 /// replaceAllUsesWith - Replace all uses of debug info referenced by
 /// this descriptor.
-void DIDerivedType::replaceAllUsesWith(DIDescriptor &D) {
+void DIType::replaceAllUsesWith(DIDescriptor &D) {
   if (!DbgNode)
     return;
 
@@ -249,6 +284,7 @@ void DIDerivedType::replaceAllUsesWith(DIDescriptor &D) {
     const MDNode *DN = D;
     const Value *V = cast_or_null<Value>(DN);
     Node->replaceAllUsesWith(const_cast<Value*>(V));
+    MDNode::deleteTemporary(Node);
   }
 }
 
@@ -274,6 +310,16 @@ bool DIType::Verify() const {
   if (!CU.Verify())
     return false;
   return true;
+}
+
+/// Verify - Verify that a basic type descriptor is well formed.
+bool DIBasicType::Verify() const {
+  return isBasicType();
+}
+
+/// Verify - Verify that a derived type descriptor is well formed.
+bool DIDerivedType::Verify() const {
+  return isDerivedType();
 }
 
 /// Verify - Verify that a composite type descriptor is well formed.
@@ -326,7 +372,7 @@ bool DIGlobalVariable::Verify() const {
   if (!Ty.Verify())
     return false;
 
-  if (!getGlobal())
+  if (!getGlobal() && !getConstant())
     return false;
 
   return true;
@@ -663,15 +709,13 @@ Constant *DIFactory::GetTagConstant(unsigned TAG) {
 /// GetOrCreateArray - Create an descriptor for an array of descriptors.
 /// This implicitly uniques the arrays created.
 DIArray DIFactory::GetOrCreateArray(DIDescriptor *Tys, unsigned NumTys) {
-  SmallVector<Value*, 16> Elts;
+  if (NumTys == 0) {
+    Value *Null = llvm::Constant::getNullValue(Type::getInt32Ty(VMContext));
+    return DIArray(MDNode::get(VMContext, &Null, 1));
+  }
 
-  if (NumTys == 0)
-    Elts.push_back(llvm::Constant::getNullValue(Type::getInt32Ty(VMContext)));
-  else
-    for (unsigned i = 0; i != NumTys; ++i)
-      Elts.push_back(Tys[i]);
-
-  return DIArray(MDNode::get(VMContext,Elts.data(), Elts.size()));
+  SmallVector<Value *, 16> Elts(Tys, Tys+NumTys);
+  return DIArray(MDNode::get(VMContext, Elts.data(), Elts.size()));
 }
 
 /// GetOrCreateSubrange - Create a descriptor for a value range.  This
@@ -686,7 +730,14 @@ DISubrange DIFactory::GetOrCreateSubrange(int64_t Lo, int64_t Hi) {
   return DISubrange(MDNode::get(VMContext, &Elts[0], 3));
 }
 
-
+/// CreateUnspecifiedParameter - Create unspeicified type descriptor
+/// for the subroutine type.
+DIDescriptor DIFactory::CreateUnspecifiedParameter() {
+  Value *Elts[] = {
+    GetTagConstant(dwarf::DW_TAG_unspecified_parameters)
+  };
+  return DIDescriptor(MDNode::get(VMContext, &Elts[0], 1));
+}
 
 /// CreateCompileUnit - Create a new descriptor for the specified compile
 /// unit.  Note that this does not unique compile units within the module.
@@ -898,7 +949,26 @@ DICompositeType DIFactory::CreateCompositeType(unsigned Tag,
     ConstantInt::get(Type::getInt32Ty(VMContext), RuntimeLang),
     ContainingType
   };
-  return DICompositeType(MDNode::get(VMContext, &Elts[0], 13));
+
+  MDNode *Node = MDNode::get(VMContext, &Elts[0], 13);
+  // Create a named metadata so that we do not lose this enum info.
+  if (Tag == dwarf::DW_TAG_enumeration_type) {
+    NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.enum");
+    NMD->addOperand(Node);
+  }
+  return DICompositeType(Node);
+}
+
+
+/// CreateTemporaryType - Create a temporary forward-declared type.
+DIType DIFactory::CreateTemporaryType() {
+  // Give the temporary MDNode a tag. It doesn't matter what tag we
+  // use here as long as DIType accepts it.
+  Value *Elts[] = {
+    GetTagConstant(DW_TAG_base_type)
+  };
+  MDNode *Node = MDNode::getTemporary(VMContext, Elts, array_lengthof(Elts));
+  return DIType(Node);
 }
 
 
@@ -914,8 +984,8 @@ DICompositeType DIFactory::CreateCompositeTypeEx(unsigned Tag,
                                                  unsigned Flags,
                                                  DIType DerivedFrom,
                                                  DIArray Elements,
-                                                 unsigned RuntimeLang) {
-
+                                                 unsigned RuntimeLang,
+                                                 MDNode *ContainingType) {
   Value *Elts[] = {
     GetTagConstant(Tag),
     Context,
@@ -928,9 +998,16 @@ DICompositeType DIFactory::CreateCompositeTypeEx(unsigned Tag,
     ConstantInt::get(Type::getInt32Ty(VMContext), Flags),
     DerivedFrom,
     Elements,
-    ConstantInt::get(Type::getInt32Ty(VMContext), RuntimeLang)
+    ConstantInt::get(Type::getInt32Ty(VMContext), RuntimeLang),
+    ContainingType
   };
-  return DICompositeType(MDNode::get(VMContext, &Elts[0], 12));
+  MDNode *Node = MDNode::get(VMContext, &Elts[0], 13);
+  // Create a named metadata so that we do not lose this enum info.
+  if (Tag == dwarf::DW_TAG_enumeration_type) {
+    NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.enum");
+    NMD->addOperand(Node);
+  }
+  return DICompositeType(Node);
 }
 
 
@@ -947,7 +1024,7 @@ DISubprogram DIFactory::CreateSubprogram(DIDescriptor Context,
                                          bool isDefinition,
                                          unsigned VK, unsigned VIndex,
                                          DIType ContainingType,
-                                         bool isArtificial,
+                                         unsigned Flags,
                                          bool isOptimized,
                                          Function *Fn) {
 
@@ -966,7 +1043,7 @@ DISubprogram DIFactory::CreateSubprogram(DIDescriptor Context,
     ConstantInt::get(Type::getInt32Ty(VMContext), (unsigned)VK),
     ConstantInt::get(Type::getInt32Ty(VMContext), VIndex),
     ContainingType,
-    ConstantInt::get(Type::getInt1Ty(VMContext), isArtificial),
+    ConstantInt::get(Type::getInt32Ty(VMContext), Flags),
     ConstantInt::get(Type::getInt1Ty(VMContext), isOptimized),
     Fn
   };
@@ -1000,7 +1077,7 @@ DISubprogram DIFactory::CreateSubprogramDefinition(DISubprogram &SPDeclaration){
     DeclNode->getOperand(11), // Virtuality
     DeclNode->getOperand(12), // VIndex
     DeclNode->getOperand(13), // Containting Type
-    DeclNode->getOperand(14), // isArtificial
+    DeclNode->getOperand(14), // Flags
     DeclNode->getOperand(15), // isOptimized
     SPDeclaration.getFunction()
   };
@@ -1045,13 +1122,46 @@ DIFactory::CreateGlobalVariable(DIDescriptor Context, StringRef Name,
   return DIGlobalVariable(Node);
 }
 
+/// CreateGlobalVariable - Create a new descriptor for the specified constant.
+DIGlobalVariable
+DIFactory::CreateGlobalVariable(DIDescriptor Context, StringRef Name,
+                                StringRef DisplayName,
+                                StringRef LinkageName,
+                                DIFile F,
+                                unsigned LineNo, DIType Ty,bool isLocalToUnit,
+                                bool isDefinition, llvm::Constant *Val) {
+  Value *Elts[] = {
+    GetTagConstant(dwarf::DW_TAG_variable),
+    llvm::Constant::getNullValue(Type::getInt32Ty(VMContext)),
+    Context,
+    MDString::get(VMContext, Name),
+    MDString::get(VMContext, DisplayName),
+    MDString::get(VMContext, LinkageName),
+    F,
+    ConstantInt::get(Type::getInt32Ty(VMContext), LineNo),
+    Ty,
+    ConstantInt::get(Type::getInt1Ty(VMContext), isLocalToUnit),
+    ConstantInt::get(Type::getInt1Ty(VMContext), isDefinition),
+    Val
+  };
+
+  Value *const *Vs = &Elts[0];
+  MDNode *Node = MDNode::get(VMContext,Vs, 12);
+
+  // Create a named metadata so that we do not lose this mdnode.
+  NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.gv");
+  NMD->addOperand(Node);
+
+  return DIGlobalVariable(Node);
+}
 
 /// CreateVariable - Create a new descriptor for the specified variable.
 DIVariable DIFactory::CreateVariable(unsigned Tag, DIDescriptor Context,
                                      StringRef Name,
                                      DIFile F,
                                      unsigned LineNo,
-                                     DIType Ty, bool AlwaysPreserve) {
+                                     DIType Ty, bool AlwaysPreserve,
+                                     unsigned Flags) {
   Value *Elts[] = {
     GetTagConstant(Tag),
     Context,
@@ -1059,8 +1169,9 @@ DIVariable DIFactory::CreateVariable(unsigned Tag, DIDescriptor Context,
     F,
     ConstantInt::get(Type::getInt32Ty(VMContext), LineNo),
     Ty,
+    ConstantInt::get(Type::getInt32Ty(VMContext), Flags)
   };
-  MDNode *Node = MDNode::get(VMContext, &Elts[0], 6);
+  MDNode *Node = MDNode::get(VMContext, &Elts[0], 7);
   if (AlwaysPreserve) {
     // The optimizer may remove local variable. If there is an interest
     // to preserve variable info in such situation then stash it in a
@@ -1085,21 +1196,20 @@ DIVariable DIFactory::CreateVariable(unsigned Tag, DIDescriptor Context,
 /// CreateComplexVariable - Create a new descriptor for the specified variable
 /// which has a complex address expression for its address.
 DIVariable DIFactory::CreateComplexVariable(unsigned Tag, DIDescriptor Context,
-                                            const std::string &Name,
-                                            DIFile F,
+                                            StringRef Name, DIFile F,
                                             unsigned LineNo,
-                                            DIType Ty,
-                                            SmallVector<Value *, 9> &addr) {
-  SmallVector<Value *, 9> Elts;
+                                            DIType Ty, Value *const *Addr,
+                                            unsigned NumAddr) {
+  SmallVector<Value *, 15> Elts;
   Elts.push_back(GetTagConstant(Tag));
   Elts.push_back(Context);
   Elts.push_back(MDString::get(VMContext, Name));
   Elts.push_back(F);
   Elts.push_back(ConstantInt::get(Type::getInt32Ty(VMContext), LineNo));
   Elts.push_back(Ty);
-  Elts.insert(Elts.end(), addr.begin(), addr.end());
+  Elts.append(Addr, Addr+NumAddr);
 
-  return DIVariable(MDNode::get(VMContext, &Elts[0], 6+addr.size()));
+  return DIVariable(MDNode::get(VMContext, Elts.data(), Elts.size()));
 }
 
 
@@ -1212,6 +1322,14 @@ Instruction *DIFactory::InsertDbgValueIntrinsic(Value *V, uint64_t Offset,
                     D };
   return CallInst::Create(ValueFn, Args, Args+3, "", InsertAtEnd);
 }
+
+// RecordType - Record DIType in a module such that it is not lost even if
+// it is not referenced through debug info anchors.
+void DIFactory::RecordType(DIType T) {
+  NamedMDNode *NMD = M.getOrInsertNamedMetadata("llvm.dbg.ty");
+  NMD->addOperand(T);
+}
+
 
 //===----------------------------------------------------------------------===//
 // DebugInfoFinder implementations.

@@ -33,7 +33,7 @@ namespace ARMII {
     //===------------------------------------------------------------------===//
     // This four-bit field describes the addressing mode used.
 
-    AddrModeMask  = 0xf,
+    AddrModeMask  = 0x1f,
     AddrModeNone    = 0,
     AddrMode1       = 1,
     AddrMode2       = 2,
@@ -50,9 +50,10 @@ namespace ARMII {
     AddrModeT2_so   = 13,
     AddrModeT2_pc   = 14, // +/- i12 for pc relative data
     AddrModeT2_i8s4 = 15, // i8 * 4
+    AddrMode_i12    = 16,
 
     // Size* - Flags to keep track of the size of an instruction.
-    SizeShift     = 4,
+    SizeShift     = 5,
     SizeMask      = 7 << SizeShift,
     SizeSpecial   = 1,   // 0 byte pseudo or special case.
     Size8Bytes    = 2,
@@ -61,7 +62,7 @@ namespace ARMII {
 
     // IndexMode - Unindex, pre-indexed, or post-indexed are valid for load
     // and store ops only.  Generic "updating" flag is used for ld/st multiple.
-    IndexModeShift = 7,
+    IndexModeShift = 8,
     IndexModeMask  = 3 << IndexModeShift,
     IndexModePre   = 1,
     IndexModePost  = 2,
@@ -70,7 +71,7 @@ namespace ARMII {
     //===------------------------------------------------------------------===//
     // Instruction encoding formats.
     //
-    FormShift     = 9,
+    FormShift     = 10,
     FormMask      = 0x3f << FormShift,
 
     // Pseudo instructions
@@ -98,59 +99,60 @@ namespace ARMII {
 
     // Miscellaneous arithmetic instructions
     ArithMiscFrm  = 12 << FormShift,
+    SatFrm        = 13 << FormShift,
 
     // Extend instructions
-    ExtFrm        = 13 << FormShift,
+    ExtFrm        = 14 << FormShift,
 
     // VFP formats
-    VFPUnaryFrm   = 14 << FormShift,
-    VFPBinaryFrm  = 15 << FormShift,
-    VFPConv1Frm   = 16 << FormShift,
-    VFPConv2Frm   = 17 << FormShift,
-    VFPConv3Frm   = 18 << FormShift,
-    VFPConv4Frm   = 19 << FormShift,
-    VFPConv5Frm   = 20 << FormShift,
-    VFPLdStFrm    = 21 << FormShift,
-    VFPLdStMulFrm = 22 << FormShift,
-    VFPMiscFrm    = 23 << FormShift,
+    VFPUnaryFrm   = 15 << FormShift,
+    VFPBinaryFrm  = 16 << FormShift,
+    VFPConv1Frm   = 17 << FormShift,
+    VFPConv2Frm   = 18 << FormShift,
+    VFPConv3Frm   = 19 << FormShift,
+    VFPConv4Frm   = 20 << FormShift,
+    VFPConv5Frm   = 21 << FormShift,
+    VFPLdStFrm    = 22 << FormShift,
+    VFPLdStMulFrm = 23 << FormShift,
+    VFPMiscFrm    = 24 << FormShift,
 
     // Thumb format
-    ThumbFrm      = 24 << FormShift,
+    ThumbFrm      = 25 << FormShift,
 
     // Miscelleaneous format
-    MiscFrm       = 25 << FormShift,
+    MiscFrm       = 26 << FormShift,
 
     // NEON formats
-    NGetLnFrm     = 26 << FormShift,
-    NSetLnFrm     = 27 << FormShift,
-    NDupFrm       = 28 << FormShift,
-    NLdStFrm      = 29 << FormShift,
-    N1RegModImmFrm= 30 << FormShift,
-    N2RegFrm      = 31 << FormShift,
-    NVCVTFrm      = 32 << FormShift,
-    NVDupLnFrm    = 33 << FormShift,
-    N2RegVShLFrm  = 34 << FormShift,
-    N2RegVShRFrm  = 35 << FormShift,
-    N3RegFrm      = 36 << FormShift,
-    N3RegVShFrm   = 37 << FormShift,
-    NVExtFrm      = 38 << FormShift,
-    NVMulSLFrm    = 39 << FormShift,
-    NVTBLFrm      = 40 << FormShift,
+    NGetLnFrm     = 27 << FormShift,
+    NSetLnFrm     = 28 << FormShift,
+    NDupFrm       = 29 << FormShift,
+    NLdStFrm      = 30 << FormShift,
+    N1RegModImmFrm= 31 << FormShift,
+    N2RegFrm      = 32 << FormShift,
+    NVCVTFrm      = 33 << FormShift,
+    NVDupLnFrm    = 34 << FormShift,
+    N2RegVShLFrm  = 35 << FormShift,
+    N2RegVShRFrm  = 36 << FormShift,
+    N3RegFrm      = 37 << FormShift,
+    N3RegVShFrm   = 38 << FormShift,
+    NVExtFrm      = 39 << FormShift,
+    NVMulSLFrm    = 40 << FormShift,
+    NVTBLFrm      = 41 << FormShift,
 
     //===------------------------------------------------------------------===//
     // Misc flags.
 
     // UnaryDP - Indicates this is a unary data processing instruction, i.e.
     // it doesn't have a Rn operand.
-    UnaryDP       = 1 << 15,
+    UnaryDP       = 1 << 16,
 
     // Xform16Bit - Indicates this Thumb2 instruction may be transformed into
     // a 16-bit Thumb instruction if certain conditions are met.
-    Xform16Bit    = 1 << 16,
+    Xform16Bit    = 1 << 17,
 
     //===------------------------------------------------------------------===//
     // Code domain.
-    DomainShift   = 17,
+    DomainShift   = 18,
     DomainMask    = 3 << DomainShift,
     DomainGeneral = 0 << DomainShift,
     DomainVFP     = 1 << DomainShift,
@@ -159,6 +161,11 @@ namespace ARMII {
     //===------------------------------------------------------------------===//
     // Field shifts - such shifts are used to set field while generating
     // machine instructions.
+    //
+    // FIXME: This list will need adjusting/fixing as the MC code emitter
+    // takes shape and the ARMCodeEmitter.cpp bits go away.
+    ShiftTypeShift = 4,
+
     M_BitShift     = 5,
     ShiftImmShift  = 5,
     ShiftShift     = 7,
@@ -179,22 +186,6 @@ namespace ARMII {
     P_BitShift     = 24,
     I_BitShift     = 25,
     CondShift      = 28
-  };
-
-  /// Target Operand Flag enum.
-  enum TOF {
-    //===------------------------------------------------------------------===//
-    // ARM Specific MachineOperand flags.
-
-    MO_NO_FLAG,
-
-    /// MO_LO16 - On a symbol operand, this represents a relocation containing
-    /// lower 16 bit of the address. Used only via movw instruction.
-    MO_LO16,
-
-    /// MO_HI16 - On a symbol operand, this represents a relocation containing
-    /// higher 16 bit of the address. Used only via movt instruction.
-    MO_HI16
   };
 }
 
@@ -327,15 +318,73 @@ public:
                                     const MachineFunction &MF) const;
 
   virtual bool isProfitableToIfCvt(MachineBasicBlock &MBB,
-                                   unsigned NumInstrs) const;
+                                   unsigned NumInstrs,
+                                   float Prob, float Confidence) const;
 
   virtual bool isProfitableToIfCvt(MachineBasicBlock &TMBB,unsigned NumT,
-                                   MachineBasicBlock &FMBB,unsigned NumF) const;
+                                   MachineBasicBlock &FMBB,unsigned NumF,
+                                   float Probability, float Confidence) const;
 
   virtual bool isProfitableToDupForIfCvt(MachineBasicBlock &MBB,
-                                         unsigned NumInstrs) const {
-    return NumInstrs && NumInstrs == 1;
+                                         unsigned NumInstrs,
+                                         float Probability,
+                                         float Confidence) const {
+    return NumInstrs == 1;
   }
+
+  /// AnalyzeCompare - For a comparison instruction, return the source register
+  /// in SrcReg and the value it compares against in CmpValue. Return true if
+  /// the comparison instruction can be analyzed.
+  virtual bool AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg,
+                              int &CmpMask, int &CmpValue) const;
+
+  /// OptimizeCompareInstr - Convert the instruction to set the zero flag so
+  /// that we can remove a "comparison with zero".
+  virtual bool OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg,
+                                    int CmpMask, int CmpValue,
+                                    const MachineRegisterInfo *MRI,
+                                    MachineBasicBlock::iterator &MII) const;
+
+  virtual unsigned getNumMicroOps(const MachineInstr *MI,
+                                  const InstrItineraryData *ItinData) const;
+
+  virtual
+  int getOperandLatency(const InstrItineraryData *ItinData,
+                        const MachineInstr *DefMI, unsigned DefIdx,
+                        const MachineInstr *UseMI, unsigned UseIdx) const;
+  virtual
+  int getOperandLatency(const InstrItineraryData *ItinData,
+                        SDNode *DefNode, unsigned DefIdx,
+                        SDNode *UseNode, unsigned UseIdx) const;
+private:
+  int getVLDMDefCycle(const InstrItineraryData *ItinData,
+                      const TargetInstrDesc &DefTID,
+                      unsigned DefClass,
+                      unsigned DefIdx, unsigned DefAlign) const;
+  int getLDMDefCycle(const InstrItineraryData *ItinData,
+                     const TargetInstrDesc &DefTID,
+                     unsigned DefClass,
+                     unsigned DefIdx, unsigned DefAlign) const;
+  int getVSTMUseCycle(const InstrItineraryData *ItinData,
+                      const TargetInstrDesc &UseTID,
+                      unsigned UseClass,
+                      unsigned UseIdx, unsigned UseAlign) const;
+  int getSTMUseCycle(const InstrItineraryData *ItinData,
+                     const TargetInstrDesc &UseTID,
+                     unsigned UseClass,
+                     unsigned UseIdx, unsigned UseAlign) const;
+  int getOperandLatency(const InstrItineraryData *ItinData,
+                        const TargetInstrDesc &DefTID,
+                        unsigned DefIdx, unsigned DefAlign,
+                        const TargetInstrDesc &UseTID,
+                        unsigned UseIdx, unsigned UseAlign) const;
+
+  bool hasHighOperandLatency(const InstrItineraryData *ItinData,
+                             const MachineRegisterInfo *MRI,
+                             const MachineInstr *DefMI, unsigned DefIdx,
+                             const MachineInstr *UseMI, unsigned UseIdx) const;
+  bool hasLowDefLatency(const InstrItineraryData *ItinData,
+                        const MachineInstr *DefMI, unsigned DefIdx) const;
 };
 
 static inline
@@ -401,6 +450,12 @@ void emitT2RegPlusImmediate(MachineBasicBlock &MBB,
                             unsigned DestReg, unsigned BaseReg, int NumBytes,
                             ARMCC::CondCodes Pred, unsigned PredReg,
                             const ARMBaseInstrInfo &TII);
+void emitThumbRegPlusImmediate(MachineBasicBlock &MBB,
+                               MachineBasicBlock::iterator &MBBI,
+                               unsigned DestReg, unsigned BaseReg,
+                               int NumBytes, const TargetInstrInfo &TII,
+                               const ARMBaseRegisterInfo& MRI,
+                               DebugLoc dl);
 
 
 /// rewriteARMFrameIndex / rewriteT2FrameIndex -

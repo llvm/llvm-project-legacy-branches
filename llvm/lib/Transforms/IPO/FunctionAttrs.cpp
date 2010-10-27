@@ -41,7 +41,9 @@ STATISTIC(NumNoAlias, "Number of function returns marked noalias");
 namespace {
   struct FunctionAttrs : public CallGraphSCCPass {
     static char ID; // Pass identification, replacement for typeid
-    FunctionAttrs() : CallGraphSCCPass(&ID) {}
+    FunctionAttrs() : CallGraphSCCPass(ID) {
+      initializeFunctionAttrsPass(*PassRegistry::getPassRegistry());
+    }
 
     // runOnSCC - Analyze the SCC, performing the transformation if possible.
     bool runOnSCC(CallGraphSCC &SCC);
@@ -69,8 +71,11 @@ namespace {
 }
 
 char FunctionAttrs::ID = 0;
-INITIALIZE_PASS(FunctionAttrs, "functionattrs",
-                "Deduce function attributes", false, false);
+INITIALIZE_PASS_BEGIN(FunctionAttrs, "functionattrs",
+                "Deduce function attributes", false, false)
+INITIALIZE_AG_DEPENDENCY(CallGraph)
+INITIALIZE_PASS_END(FunctionAttrs, "functionattrs",
+                "Deduce function attributes", false, false)
 
 Pass *llvm::createFunctionAttrsPass() { return new FunctionAttrs(); }
 
@@ -169,7 +174,7 @@ bool FunctionAttrs::AddReadAttrs(const CallGraphSCC &SCC) {
           continue;
         // Ignore intrinsics that only access local memory.
         if (unsigned id = CS.getCalledFunction()->getIntrinsicID())
-          if (AliasAnalysis::getModRefBehavior(id) ==
+          if (AliasAnalysis::getIntrinsicModRefBehavior(id) ==
               AliasAnalysis::AccessesArguments) {
             // Check that all pointer arguments point to local memory.
             for (CallSite::arg_iterator CI = CS.arg_begin(), CE = CS.arg_end();

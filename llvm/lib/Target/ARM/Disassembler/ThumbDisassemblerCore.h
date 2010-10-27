@@ -220,7 +220,7 @@ static inline unsigned decodeImmShift(unsigned bits2, unsigned imm5,
   switch (bits2) {
   default: assert(0 && "No such value");
   case 0:
-    ShOp = ARM_AM::lsl;
+    ShOp = (imm5 == 0 ? ARM_AM::no_shift : ARM_AM::lsl);
     return imm5;
   case 1:
     ShOp = ARM_AM::lsr;
@@ -959,22 +959,23 @@ static bool DisassembleThumb1Br(MCInst &MI, unsigned Opcode, uint32_t insn,
 // corresponding to op.
 //
 // Table A6-1 16-bit Thumb instruction encoding (abridged)
-// op		Instruction or instruction class
-// ------	--------------------------------------------------------------------
-// 00xxxx	Shift (immediate), add, subtract, move, and compare on page A6-7
-// 010000	Data-processing on page A6-8
-// 010001	Special data instructions and branch and exchange on page A6-9
-// 01001x	Load from Literal Pool, see LDR (literal) on page A8-122
-// 0101xx	Load/store single data item on page A6-10
+// op    Instruction or instruction class
+// ------  --------------------------------------------------------------------
+// 00xxxx  Shift (immediate), add, subtract, move, and compare on page A6-7
+// 010000  Data-processing on page A6-8
+// 010001  Special data instructions and branch and exchange on page A6-9
+// 01001x  Load from Literal Pool, see LDR (literal) on page A8-122
+// 0101xx  Load/store single data item on page A6-10
 // 011xxx
 // 100xxx
-// 10100x	Generate PC-relative address, see ADR on page A8-32
-// 10101x	Generate SP-relative address, see ADD (SP plus immediate) on page A8-28
-// 1011xx	Miscellaneous 16-bit instructions on page A6-11
-// 11000x	Store multiple registers, see STM / STMIA / STMEA on page A8-374
-// 11001x	Load multiple registers, see LDM / LDMIA / LDMFD on page A8-110 a
-// 1101xx	Conditional branch, and Supervisor Call on page A6-13
-// 11100x	Unconditional Branch, see B on page A8-44
+// 10100x  Generate PC-relative address, see ADR on page A8-32
+// 10101x  Generate SP-relative address, see ADD (SP plus immediate) on
+//         page A8-28
+// 1011xx  Miscellaneous 16-bit instructions on page A6-11
+// 11000x  Store multiple registers, see STM / STMIA / STMEA on page A8-374
+// 11001x  Load multiple registers, see LDM / LDMIA / LDMFD on page A8-110 a
+// 1101xx  Conditional branch, and Supervisor Call on page A6-13
+// 11100x  Unconditional Branch, see B on page A8-44
 //
 static bool DisassembleThumb1(uint16_t op, MCInst &MI, unsigned Opcode,
     uint32_t insn, unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
@@ -1389,14 +1390,7 @@ static bool DisassembleThumb2DPSoReg(MCInst &MI, unsigned Opcode, uint32_t insn,
       unsigned imm5 = getShiftAmtBits(insn);
       ARM_AM::ShiftOpc ShOp = ARM_AM::no_shift;
       unsigned ShAmt = decodeImmShift(bits2, imm5, ShOp);
-
-      // PKHBT/PKHTB are special in that we need the decodeImmShift() call to
-      // decode the shift amount from raw imm5 and bits2, but we DO NOT need
-      // to encode the ShOp, as it's in the asm string already.
-      if (Opcode == ARM::t2PKHBT || Opcode == ARM::t2PKHTB)
-        MI.addOperand(MCOperand::CreateImm(ShAmt));
-      else
-        MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(ShOp, ShAmt)));
+      MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(ShOp, ShAmt)));
     }
     ++OpIdx;
   }
@@ -1408,7 +1402,8 @@ static bool DisassembleThumb2DPSoReg(MCInst &MI, unsigned Opcode, uint32_t insn,
 //
 // Two register operands: Rs Rn ModImm
 // One register operands (Rs=0b1111 no explicit dest reg): Rn ModImm
-// One register operands (Rn=0b1111 no explicit src reg): Rs ModImm - {t2MOVi, t2MVNi}
+// One register operands (Rn=0b1111 no explicit src reg): Rs ModImm -
+// {t2MOVi, t2MVNi}
 //
 // ModImm = ThumbExpandImm(i:imm3:imm8)
 static bool DisassembleThumb2DPModImm(MCInst &MI, unsigned Opcode,
@@ -1462,30 +1457,48 @@ static bool DisassembleThumb2DPModImm(MCInst &MI, unsigned Opcode,
 
 static inline bool Thumb2SaturateOpcode(unsigned Opcode) {
   switch (Opcode) {
-  case ARM::t2SSATlsl: case ARM::t2SSATasr: case ARM::t2SSAT16:
-  case ARM::t2USATlsl: case ARM::t2USATasr: case ARM::t2USAT16:
+  case ARM::t2SSAT: case ARM::t2SSAT16:
+  case ARM::t2USAT: case ARM::t2USAT16:
     return true;
   default:
     return false;
   }
 }
 
-static inline unsigned decodeThumb2SaturatePos(unsigned Opcode, uint32_t insn) {
-  switch (Opcode) {
-  case ARM::t2SSATlsl:
-  case ARM::t2SSATasr:
-    return slice(insn, 4, 0) + 1;
-  case ARM::t2SSAT16:
-    return slice(insn, 3, 0) + 1;
-  case ARM::t2USATlsl:
-  case ARM::t2USATasr:
-    return slice(insn, 4, 0);
-  case ARM::t2USAT16:
-    return slice(insn, 3, 0);
-  default:
-    assert(0 && "Unexpected opcode");
-    return 0;
+/// DisassembleThumb2Sat - Disassemble Thumb2 saturate instructions:
+/// o t2SSAT, t2USAT: Rs sat_pos Rn shamt
+/// o t2SSAT16, t2USAT16: Rs sat_pos Rn
+static bool DisassembleThumb2Sat(MCInst &MI, unsigned Opcode, uint32_t insn,
+                                 unsigned &NumOpsAdded, BO B) {
+  const TargetInstrDesc &TID = ARMInsts[Opcode];
+  NumOpsAdded = TID.getNumOperands() - 2; // ignore predicate operands
+
+  // Disassemble the register def.
+  MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::rGPRRegClassID,
+                                                     decodeRs(insn))));
+
+  unsigned Pos = slice(insn, 4, 0);
+  if (Opcode == ARM::t2SSAT || Opcode == ARM::t2SSAT16)
+    Pos += 1;
+  MI.addOperand(MCOperand::CreateImm(Pos));
+
+  MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::rGPRRegClassID,
+                                                     decodeRn(insn))));
+
+  if (NumOpsAdded == 4) {
+    ARM_AM::ShiftOpc Opc = (slice(insn, 21, 21) != 0 ?
+                            ARM_AM::asr : ARM_AM::lsl);
+    // Inst{14-12:7-6} encodes the imm5 shift amount.
+    unsigned ShAmt = slice(insn, 14, 12) << 2 | slice(insn, 7, 6);
+    if (ShAmt == 0) {
+      if (Opc == ARM_AM::asr)
+        ShAmt = 32;
+      else
+        Opc = ARM_AM::no_shift;
+    }
+    MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(Opc, ShAmt)));
   }
+  return true;
 }
 
 // A6.3.3 Data-processing (plain binary immediate)
@@ -1499,11 +1512,6 @@ static inline unsigned decodeThumb2SaturatePos(unsigned Opcode, uint32_t insn) {
 // o t2SBFX (SBFX): Rs Rn lsb width
 // o t2UBFX (UBFX): Rs Rn lsb width
 // o t2BFI (BFI): Rs Rn lsb width
-//
-// [Signed|Unsigned] Saturate [16]
-//
-// o t2SSAT[lsl|asr], t2USAT[lsl|asr]: Rs sat_pos Rn shamt
-// o t2SSAT16, t2USAT16: Rs sat_pos Rn
 static bool DisassembleThumb2DPBinImm(MCInst &MI, unsigned Opcode,
     uint32_t insn, unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
@@ -1527,30 +1535,6 @@ static bool DisassembleThumb2DPBinImm(MCInst &MI, unsigned Opcode,
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, RdRegClassID,
                                                      decodeRs(insn))));
   ++OpIdx;
-
-  // t2SSAT/t2SSAT16/t2USAT/t2USAT16 has imm operand after Rd.
-  if (Thumb2SaturateOpcode(Opcode)) {
-    MI.addOperand(MCOperand::CreateImm(decodeThumb2SaturatePos(Opcode, insn)));
-
-    MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, RnRegClassID,
-                                                       decodeRn(insn))));
-
-    if (Opcode == ARM::t2SSAT16 || Opcode == ARM::t2USAT16) {
-      OpIdx += 2;
-      return true;
-    }
-
-    // For SSAT operand reg (Rn) has been disassembled above.
-    // Now disassemble the shift amount.
-
-    // Inst{14-12:7-6} encodes the imm5 shift amount.
-    unsigned ShAmt = slice(insn, 14, 12) << 2 | slice(insn, 7, 6);
-
-    MI.addOperand(MCOperand::CreateImm(ShAmt));
-
-    OpIdx += 3;
-    return true;
-  }
 
   if (TwoReg) {
     assert(NumOps >= 3 && "Expect >= 3 operands");
@@ -1629,8 +1613,8 @@ static inline bool t2MiscCtrlInstr(uint32_t insn) {
 // A8.6.26
 // t2BXJ -> Rn
 //
-// Miscellaneous control: t2Int_MemBarrierV7 (and its t2DMB variants),
-// t2Int_SyncBarrierV7 (and its t2DSB varianst), t2ISBsy, t2CLREX
+// Miscellaneous control: t2DMBsy (and its t2DMB variants),
+// t2DSBsy (and its t2DSB varianst), t2ISBsy, t2CLREX
 //   -> no operand (except pred-imm pred-ccr for CLREX, memory barrier variants)
 //
 // Hint: t2NOP, t2YIELD, t2WFE, t2WFI, t2SEV
@@ -1853,13 +1837,15 @@ static bool DisassembleThumb2Ldpci(MCInst &MI, unsigned Opcode,
 //
 // t2LDRi12:   Rd Rn (+)imm12
 // t2LDRi8:    Rd Rn (+/-)imm8 (+ if Inst{9} == 0b1)
-// t2LDRs:     Rd Rn Rm ConstantShiftSpecifier (see also DisassembleThumb2DPSoReg)
+// t2LDRs:     Rd Rn Rm ConstantShiftSpecifier (see also
+//             DisassembleThumb2DPSoReg)
 // t2LDR_POST: Rd Rn Rn(TIED_TO) (+/-)imm8 (+ if Inst{9} == 0b1)
 // t2LDR_PRE:  Rd Rn Rn(TIED_TO) (+/-)imm8 (+ if Inst{9} == 0b1)
 //
 // t2STRi12:   Rd Rn (+)imm12
 // t2STRi8:    Rd Rn (+/-)imm8 (+ if Inst{9} == 0b1)
-// t2STRs:     Rd Rn Rm ConstantShiftSpecifier (see also DisassembleThumb2DPSoReg)
+// t2STRs:     Rd Rn Rm ConstantShiftSpecifier (see also
+//             DisassembleThumb2DPSoReg)
 // t2STR_POST: Rn Rd Rn(TIED_TO) (+/-)imm8 (+ if Inst{9} == 0b1)
 // t2STR_PRE:  Rn Rd Rn(TIED_TO) (+/-)imm8 (+ if Inst{9} == 0b1)
 //
@@ -2099,25 +2085,29 @@ static bool DisassembleThumb2LongMul(MCInst &MI, unsigned Opcode, uint32_t insn,
 // corresponding to (op1, op2, op).
 //
 // Table A6-9 32-bit Thumb instruction encoding
-// op1	op2		op	Instruction class, see
-// ---	-------	--	------------------------------------------------------------
-// 01	00xx0xx	-	Load/store multiple on page A6-23
-// 		00xx1xx	-	Load/store dual, load/store exclusive, table branch on page A6-24
-// 		01xxxxx	-	Data-processing (shifted register) on page A6-31
-// 		1xxxxxx	-	Coprocessor instructions on page A6-40
-// 10	x0xxxxx	0	Data-processing (modified immediate) on page A6-15
-// 		x1xxxxx	0	Data-processing (plain binary immediate) on page A6-19
-// 		-		1	Branches and miscellaneous control on page A6-20
-// 11	000xxx0	-	Store single data item on page A6-30
-// 		001xxx0	-	Advanced SIMD element or structure load/store instructions on page A7-27
-// 		00xx001 -	Load byte, memory hints on page A6-28
-// 		00xx011	-	Load halfword, memory hints on page A6-26
-// 		00xx101	-	Load word on page A6-25
-// 		00xx111	-	UNDEFINED
-// 		010xxxx	-	Data-processing (register) on page A6-33
-// 		0110xxx	-	Multiply, multiply accumulate, and absolute difference on page A6-38
-// 		0111xxx	-	Long multiply, long multiply accumulate, and divide on page A6-39
-// 		1xxxxxx	-	Coprocessor instructions on page A6-40
+// op1  op2    op  Instruction class, see
+// ---  -------  --  -----------------------------------------------------------
+// 01  00xx0xx  -  Load/store multiple on page A6-23
+//     00xx1xx  -  Load/store dual, load/store exclusive, table branch on
+//                 page A6-24
+//     01xxxxx  -  Data-processing (shifted register) on page A6-31
+//     1xxxxxx  -  Coprocessor instructions on page A6-40
+// 10  x0xxxxx  0  Data-processing (modified immediate) on page A6-15
+//     x1xxxxx  0  Data-processing (plain binary immediate) on page A6-19
+//         -    1  Branches and miscellaneous control on page A6-20
+// 11  000xxx0  -  Store single data item on page A6-30
+//     001xxx0  -  Advanced SIMD element or structure load/store instructions
+//                 on page A7-27
+//     00xx001  - Load byte, memory hints on page A6-28
+//     00xx011  -  Load halfword, memory hints on page A6-26
+//     00xx101  -  Load word on page A6-25
+//     00xx111  -  UNDEFINED
+//     010xxxx  -  Data-processing (register) on page A6-33
+//     0110xxx  -  Multiply, multiply accumulate, and absolute difference on
+//                 page A6-38
+//     0111xxx  -  Long multiply, long multiply accumulate, and divide on
+//                 page A6-39
+//     1xxxxxx  -  Coprocessor instructions on page A6-40
 //
 static bool DisassembleThumb2(uint16_t op1, uint16_t op2, uint16_t op,
     MCInst &MI, unsigned Opcode, uint32_t insn, unsigned short NumOps,
@@ -2163,22 +2153,20 @@ static bool DisassembleThumb2(uint16_t op1, uint16_t op2, uint16_t op,
     break;
   case 2:
     if (op == 0) {
-      if (slice(op2, 5, 5) == 0) {
+      if (slice(op2, 5, 5) == 0)
         // Data-processing (modified immediate)
         return DisassembleThumb2DPModImm(MI, Opcode, insn, NumOps, NumOpsAdded,
                                          B);
-      } else {
-        // Data-processing (plain binary immediate)
-        return DisassembleThumb2DPBinImm(MI, Opcode, insn, NumOps, NumOpsAdded,
-                                         B);
-      }
-    } else {
-      // Branches and miscellaneous control on page A6-20.
-      return DisassembleThumb2BrMiscCtrl(MI, Opcode, insn, NumOps, NumOpsAdded,
-                                         B);
-    }
+      if (Thumb2SaturateOpcode(Opcode))
+        return DisassembleThumb2Sat(MI, Opcode, insn, NumOpsAdded, B);
 
-    break;
+      // Data-processing (plain binary immediate)
+      return DisassembleThumb2DPBinImm(MI, Opcode, insn, NumOps, NumOpsAdded,
+                                       B);
+    }
+    // Branches and miscellaneous control on page A6-20.
+    return DisassembleThumb2BrMiscCtrl(MI, Opcode, insn, NumOps, NumOpsAdded,
+                                       B);
   case 3:
     switch (slice(op2, 6, 5)) {
     case 0:
@@ -2195,7 +2183,8 @@ static bool DisassembleThumb2(uint16_t op1, uint16_t op2, uint16_t op,
         }
       } else {
         // Table A6-9 32-bit Thumb instruction encoding: Load byte|halfword|word
-        return DisassembleThumb2LdSt(true, MI,Opcode,insn,NumOps,NumOpsAdded, B);
+        return DisassembleThumb2LdSt(true, MI, Opcode, insn, NumOps,
+                                     NumOpsAdded, B);
       }
       break;
     case 1:

@@ -18,12 +18,9 @@
 //
 // This API represents memory as a (Pointer, Size) pair.  The Pointer component
 // specifies the base memory address of the region, the Size specifies how large
-// of an area is being queried.  If Size is 0, two pointers only alias if they
-// are exactly equal.  If size is greater than zero, but small, the two pointers
-// alias if the areas pointed to overlap.  If the size is very large (ie, ~0U),
-// then the two pointers alias if they may be pointing to components of the same
-// memory object.  Pointers that point to two completely different objects in
-// memory never alias, regardless of the value of the Size component.
+// of an area is being queried, or UnknownSize if the size is not known.
+// Pointers that point to two completely different objects in memory never
+// alias, regardless of the value of the Size component.
 //
 //===----------------------------------------------------------------------===//
 
@@ -31,7 +28,6 @@
 #define LLVM_ANALYSIS_ALIAS_ANALYSIS_H
 
 #include "llvm/Support/CallSite.h"
-#include "llvm/System/IncludeFile.h"
 #include <vector>
 
 namespace llvm {
@@ -46,8 +42,11 @@ class AnalysisUsage;
 class AliasAnalysis {
 protected:
   const TargetData *TD;
+
+private:
   AliasAnalysis *AA;       // Previous Alias Analysis to chain to.
 
+protected:
   /// InitializeAliasAnalysis - Subclasses must call this method to initialize
   /// the AliasAnalysis interface before any other methods are called.  This is
   /// typically called by the run* methods of these subclasses.  This may be
@@ -64,6 +63,11 @@ public:
   AliasAnalysis() : TD(0), AA(0) {}
   virtual ~AliasAnalysis();  // We want to be subclassed
 
+  /// UnknownSize - This is a special value which can be used with the
+  /// size arguments in alias queries to indicate that the caller does not
+  /// know the sizes of the potential memory references.
+  static uint64_t const UnknownSize = ~UINT64_C(0);
+
   /// getTargetData - Return a pointer to the current TargetData object, or
   /// null if no TargetData object is available.
   ///
@@ -72,11 +76,39 @@ public:
   /// getTypeStoreSize - Return the TargetData store size for the given type,
   /// if known, or a conservative value otherwise.
   ///
-  unsigned getTypeStoreSize(const Type *Ty);
+  uint64_t getTypeStoreSize(const Type *Ty);
 
   //===--------------------------------------------------------------------===//
   /// Alias Queries...
   ///
+
+  /// Location - A description of a memory location.
+  struct Location {
+    /// Ptr - The address of the start of the location.
+    const Value *Ptr;
+    /// Size - The size of the location.
+    uint64_t Size;
+    /// TBAATag - The metadata node which describes the TBAA type of
+    /// the location, or null if there is no (unique) tag.
+    const MDNode *TBAATag;
+
+    explicit Location(const Value *P = 0,
+                      uint64_t S = UnknownSize,
+                      const MDNode *N = 0)
+      : Ptr(P), Size(S), TBAATag(N) {}
+
+    Location getWithNewPtr(const Value *NewPtr) const {
+      Location Copy(*this);
+      Copy.Ptr = NewPtr;
+      return Copy;
+    }
+
+    Location getWithoutTBAATag() const {
+      Location Copy(*this);
+      Copy.TBAATag = 0;
+      return Copy;
+    }
+  };
 
   /// Alias analysis result - Either we know for sure that it does not alias, we
   /// know for sure it must alias, or we don't know anything: The two pointers
@@ -84,28 +116,50 @@ public:
   ///     if (AA.alias(P1, P2)) { ... }
   /// to check to see if two pointers might alias.
   ///
+  /// See docs/AliasAnalysis.html for more information on the specific meanings
+  /// of these values.
+  ///
   enum AliasResult { NoAlias = 0, MayAlias = 1, MustAlias = 2 };
 
   /// alias - The main low level interface to the alias analysis implementation.
   /// Returns a Result indicating whether the two pointers are aliased to each
   /// other.  This is the interface that must be implemented by specific alias
   /// analysis implementations.
-  ///
-  virtual AliasResult alias(const Value *V1, unsigned V1Size,
-                            const Value *V2, unsigned V2Size);
+  virtual AliasResult alias(const Location &LocA, const Location &LocB);
+
+  /// alias - A convenience wrapper.
+  AliasResult alias(const Value *V1, uint64_t V1Size,
+                    const Value *V2, uint64_t V2Size) {
+    return alias(Location(V1, V1Size), Location(V2, V2Size));
+  }
+
+  /// alias - A convenience wrapper.
+  AliasResult alias(const Value *V1, const Value *V2) {
+    return alias(V1, UnknownSize, V2, UnknownSize);
+  }
 
   /// isNoAlias - A trivial helper function to check to see if the specified
   /// pointers are no-alias.
-  bool isNoAlias(const Value *V1, unsigned V1Size,
-                 const Value *V2, unsigned V2Size) {
-    return alias(V1, V1Size, V2, V2Size) == NoAlias;
+  bool isNoAlias(const Location &LocA, const Location &LocB) {
+    return alias(LocA, LocB) == NoAlias;
   }
 
-  /// pointsToConstantMemory - If the specified pointer is known to point into
-  /// constant global memory, return true.  This allows disambiguation of store
+  /// isNoAlias - A convenience wrapper.
+  bool isNoAlias(const Value *V1, uint64_t V1Size,
+                 const Value *V2, uint64_t V2Size) {
+    return isNoAlias(Location(V1, V1Size), Location(V2, V2Size));
+  }
+
+  /// pointsToConstantMemory - If the specified memory location is known to be
+  /// constant, return true.  This allows disambiguation of store
   /// instructions from constant pointers.
   ///
-  virtual bool pointsToConstantMemory(const Value *P);
+  virtual bool pointsToConstantMemory(const Location &Loc);
+
+  /// pointsToConstantMemory - A convenient wrapper.
+  bool pointsToConstantMemory(const Value *P) {
+    return pointsToConstantMemory(Location(P));
+  }
 
   //===--------------------------------------------------------------------===//
   /// Simple mod/ref information...
@@ -130,17 +184,11 @@ public:
 
     // AccessesArguments - This function accesses function arguments in well
     // known (possibly volatile) ways, but does not access any other memory.
-    //
-    // Clients may use the Info parameter of getModRefBehavior to get specific
-    // information about how pointer arguments are used.
     AccessesArguments,
 
     // AccessesArgumentsAndGlobals - This function has accesses function
     // arguments and global variables well known (possibly volatile) ways, but
     // does not access any other memory.
-    //
-    // Clients may use the Info parameter of getModRefBehavior to get specific
-    // information about how pointer arguments are used.
     AccessesArgumentsAndGlobals,
 
     // OnlyReadsMemory - This function does not perform any non-local stores or
@@ -154,31 +202,17 @@ public:
     UnknownModRefBehavior
   };
 
-  /// PointerAccessInfo - This struct is used to return results for pointers,
-  /// globals, and the return value of a function.
-  struct PointerAccessInfo {
-    /// V - The value this record corresponds to.  This may be an Argument for
-    /// the function, a GlobalVariable, or null, corresponding to the return
-    /// value for the function.
-    Value *V;
-
-    /// ModRefInfo - Whether the pointer is loaded or stored to/from.
-    ///
-    ModRefResult ModRefInfo;
-  };
-
   /// getModRefBehavior - Return the behavior when calling the given call site.
-  virtual ModRefBehavior getModRefBehavior(CallSite CS,
-                                   std::vector<PointerAccessInfo> *Info = 0);
+  virtual ModRefBehavior getModRefBehavior(ImmutableCallSite CS);
 
   /// getModRefBehavior - Return the behavior when calling the given function.
   /// For use when the call site is not known.
-  virtual ModRefBehavior getModRefBehavior(Function *F,
-                                   std::vector<PointerAccessInfo> *Info = 0);
+  virtual ModRefBehavior getModRefBehavior(const Function *F);
 
-  /// getModRefBehavior - Return the modref behavior of the intrinsic with the
-  /// given id.
-  static ModRefBehavior getModRefBehavior(unsigned iid);
+  /// getIntrinsicModRefBehavior - Return the modref behavior of the intrinsic
+  /// with the given id.  Most clients won't need this, because the regular
+  /// getModRefBehavior incorporates this information.
+  static ModRefBehavior getIntrinsicModRefBehavior(unsigned iid);
 
   /// doesNotAccessMemory - If the specified call is known to never read or
   /// write memory, return true.  If the call only reads from known-constant
@@ -191,14 +225,14 @@ public:
   ///
   /// This property corresponds to the GCC 'const' attribute.
   ///
-  bool doesNotAccessMemory(CallSite CS) {
+  bool doesNotAccessMemory(ImmutableCallSite CS) {
     return getModRefBehavior(CS) == DoesNotAccessMemory;
   }
 
   /// doesNotAccessMemory - If the specified function is known to never read or
   /// write memory, return true.  For use when the call site is not known.
   ///
-  bool doesNotAccessMemory(Function *F) {
+  bool doesNotAccessMemory(const Function *F) {
     return getModRefBehavior(F) == DoesNotAccessMemory;
   }
 
@@ -211,7 +245,7 @@ public:
   ///
   /// This property corresponds to the GCC 'pure' attribute.
   ///
-  bool onlyReadsMemory(CallSite CS) {
+  bool onlyReadsMemory(ImmutableCallSite CS) {
     ModRefBehavior MRB = getModRefBehavior(CS);
     return MRB == DoesNotAccessMemory || MRB == OnlyReadsMemory;
   }
@@ -220,53 +254,101 @@ public:
   /// non-volatile memory (or not access memory at all), return true.  For use
   /// when the call site is not known.
   ///
-  bool onlyReadsMemory(Function *F) {
+  bool onlyReadsMemory(const Function *F) {
     ModRefBehavior MRB = getModRefBehavior(F);
     return MRB == DoesNotAccessMemory || MRB == OnlyReadsMemory;
   }
 
 
   /// getModRefInfo - Return information about whether or not an instruction may
-  /// read or write memory specified by the pointer operand.  An instruction
+  /// read or write the specified memory location.  An instruction
   /// that doesn't read or write memory may be trivially LICM'd for example.
-
-  /// getModRefInfo (for call sites) - Return whether information about whether
-  /// a particular call site modifies or reads the memory specified by the
-  /// pointer.
-  ///
-  virtual ModRefResult getModRefInfo(CallSite CS, Value *P, unsigned Size);
-
-  /// getModRefInfo - Return information about whether two call sites may refer
-  /// to the same set of memory locations.  This function returns NoModRef if
-  /// the two calls refer to disjoint memory locations, Ref if CS1 reads memory
-  /// written by CS2, Mod if CS1 writes to memory read or written by CS2, or
-  /// ModRef if CS1 might read or write memory accessed by CS2.
-  ///
-  virtual ModRefResult getModRefInfo(CallSite CS1, CallSite CS2);
-
-public:
-  /// Convenience functions...
-  ModRefResult getModRefInfo(LoadInst *L, Value *P, unsigned Size);
-  ModRefResult getModRefInfo(StoreInst *S, Value *P, unsigned Size);
-  ModRefResult getModRefInfo(CallInst *C, Value *P, unsigned Size) {
-    return getModRefInfo(CallSite(C), P, Size);
-  }
-  ModRefResult getModRefInfo(InvokeInst *I, Value *P, unsigned Size) {
-    return getModRefInfo(CallSite(I), P, Size);
-  }
-  ModRefResult getModRefInfo(VAArgInst* I, Value* P, unsigned Size) {
-    return AliasAnalysis::ModRef;
-  }
-  ModRefResult getModRefInfo(Instruction *I, Value *P, unsigned Size) {
+  ModRefResult getModRefInfo(const Instruction *I,
+                             const Location &Loc) {
     switch (I->getOpcode()) {
-    case Instruction::VAArg:  return getModRefInfo((VAArgInst*)I, P, Size);
-    case Instruction::Load:   return getModRefInfo((LoadInst*)I, P, Size);
-    case Instruction::Store:  return getModRefInfo((StoreInst*)I, P, Size);
-    case Instruction::Call:   return getModRefInfo((CallInst*)I, P, Size);
-    case Instruction::Invoke: return getModRefInfo((InvokeInst*)I, P, Size);
+    case Instruction::VAArg:  return getModRefInfo((const VAArgInst*)I, Loc);
+    case Instruction::Load:   return getModRefInfo((const LoadInst*)I,  Loc);
+    case Instruction::Store:  return getModRefInfo((const StoreInst*)I, Loc);
+    case Instruction::Call:   return getModRefInfo((const CallInst*)I,  Loc);
+    case Instruction::Invoke: return getModRefInfo((const InvokeInst*)I,Loc);
     default:                  return NoModRef;
     }
   }
+
+  /// getModRefInfo - A convenience wrapper.
+  ModRefResult getModRefInfo(const Instruction *I,
+                             const Value *P, uint64_t Size) {
+    return getModRefInfo(I, Location(P, Size));
+  }
+
+  /// getModRefInfo (for call sites) - Return whether information about whether
+  /// a particular call site modifies or reads the specified memory location.
+  virtual ModRefResult getModRefInfo(ImmutableCallSite CS,
+                                     const Location &Loc);
+
+  /// getModRefInfo (for call sites) - A convenience wrapper.
+  ModRefResult getModRefInfo(ImmutableCallSite CS,
+                             const Value *P, uint64_t Size) {
+    return getModRefInfo(CS, Location(P, Size));
+  }
+
+  /// getModRefInfo (for calls) - Return whether information about whether
+  /// a particular call modifies or reads the specified memory location.
+  ModRefResult getModRefInfo(const CallInst *C, const Location &Loc) {
+    return getModRefInfo(ImmutableCallSite(C), Loc);
+  }
+
+  /// getModRefInfo (for calls) - A convenience wrapper.
+  ModRefResult getModRefInfo(const CallInst *C, const Value *P, uint64_t Size) {
+    return getModRefInfo(C, Location(P, Size));
+  }
+
+  /// getModRefInfo (for invokes) - Return whether information about whether
+  /// a particular invoke modifies or reads the specified memory location.
+  ModRefResult getModRefInfo(const InvokeInst *I,
+                             const Location &Loc) {
+    return getModRefInfo(ImmutableCallSite(I), Loc);
+  }
+
+  /// getModRefInfo (for invokes) - A convenience wrapper.
+  ModRefResult getModRefInfo(const InvokeInst *I,
+                             const Value *P, uint64_t Size) {
+    return getModRefInfo(I, Location(P, Size));
+  }
+
+  /// getModRefInfo (for loads) - Return whether information about whether
+  /// a particular load modifies or reads the specified memory location.
+  ModRefResult getModRefInfo(const LoadInst *L, const Location &Loc);
+
+  /// getModRefInfo (for loads) - A convenience wrapper.
+  ModRefResult getModRefInfo(const LoadInst *L, const Value *P, uint64_t Size) {
+    return getModRefInfo(L, Location(P, Size));
+  }
+
+  /// getModRefInfo (for stores) - Return whether information about whether
+  /// a particular store modifies or reads the specified memory location.
+  ModRefResult getModRefInfo(const StoreInst *S, const Location &Loc);
+
+  /// getModRefInfo (for stores) - A convenience wrapper.
+  ModRefResult getModRefInfo(const StoreInst *S, const Value *P, uint64_t Size) {
+    return getModRefInfo(S, Location(P, Size));
+  }
+
+  /// getModRefInfo (for va_args) - Return whether information about whether
+  /// a particular va_arg modifies or reads the specified memory location.
+  ModRefResult getModRefInfo(const VAArgInst* I, const Location &Loc);
+
+  /// getModRefInfo (for va_args) - A convenience wrapper.
+  ModRefResult getModRefInfo(const VAArgInst* I, const Value* P, uint64_t Size) {
+    return getModRefInfo(I, Location(P, Size));
+  }
+
+  /// getModRefInfo - Return information about whether two call sites may refer
+  /// to the same set of memory locations.  See 
+  ///   http://llvm.org/docs/AliasAnalysis.html#ModRefInfo
+  /// for details.
+  virtual ModRefResult getModRefInfo(ImmutableCallSite CS1,
+                                     ImmutableCallSite CS2);
 
   //===--------------------------------------------------------------------===//
   /// Higher level methods for querying mod/ref information.
@@ -274,16 +356,25 @@ public:
 
   /// canBasicBlockModify - Return true if it is possible for execution of the
   /// specified basic block to modify the value pointed to by Ptr.
-  ///
-  bool canBasicBlockModify(const BasicBlock &BB, const Value *P, unsigned Size);
+  bool canBasicBlockModify(const BasicBlock &BB, const Location &Loc);
+
+  /// canBasicBlockModify - A convenience wrapper.
+  bool canBasicBlockModify(const BasicBlock &BB, const Value *P, uint64_t Size){
+    return canBasicBlockModify(BB, Location(P, Size));
+  }
 
   /// canInstructionRangeModify - Return true if it is possible for the
   /// execution of the specified instructions to modify the value pointed to by
   /// Ptr.  The instructions to consider are all of the instructions in the
   /// range of [I1,I2] INCLUSIVE.  I1 and I2 must be in the same basic block.
-  ///
   bool canInstructionRangeModify(const Instruction &I1, const Instruction &I2,
-                                 const Value *Ptr, unsigned Size);
+                                 const Location &Loc);
+
+  /// canInstructionRangeModify - A convenience wrapper.
+  bool canInstructionRangeModify(const Instruction &I1, const Instruction &I2,
+                                 const Value *Ptr, uint64_t Size) {
+    return canInstructionRangeModify(I1, I2, Location(Ptr, Size));
+  }
 
   //===--------------------------------------------------------------------===//
   /// Methods that clients should call when they transform the program to allow
@@ -329,12 +420,5 @@ bool isNoAliasCall(const Value *V);
 bool isIdentifiedObject(const Value *V);
 
 } // End llvm namespace
-
-// Because of the way .a files work, we must force the BasicAA implementation to
-// be pulled in if the AliasAnalysis header is included.  Otherwise we run
-// the risk of AliasAnalysis being used, but the default implementation not
-// being linked into the tool that uses it.
-FORCE_DEFINING_FILE_TO_BE_LINKED(AliasAnalysis)
-FORCE_DEFINING_FILE_TO_BE_LINKED(BasicAliasAnalysis)
 
 #endif

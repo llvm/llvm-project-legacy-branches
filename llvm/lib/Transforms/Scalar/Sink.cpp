@@ -35,7 +35,9 @@ namespace {
 
   public:
     static char ID; // Pass identification
-    Sinking() : FunctionPass(&ID) {}
+    Sinking() : FunctionPass(ID) {
+      initializeSinkingPass(*PassRegistry::getPassRegistry());
+    }
     
     virtual bool runOnFunction(Function &F);
     
@@ -56,7 +58,11 @@ namespace {
 } // end anonymous namespace
   
 char Sinking::ID = 0;
-INITIALIZE_PASS(Sinking, "sink", "Code sinking", false, false);
+INITIALIZE_PASS_BEGIN(Sinking, "sink", "Code sinking", false, false)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(Sinking, "sink", "Code sinking", false, false)
 
 FunctionPass *llvm::createSinkingPass() { return new Sinking(); }
 
@@ -151,7 +157,7 @@ static bool isSafeToMove(Instruction *Inst, AliasAnalysis *AA,
     if (L->isVolatile()) return false;
 
     Value *Ptr = L->getPointerOperand();
-    unsigned Size = AA->getTypeStoreSize(L->getType());
+    uint64_t Size = AA->getTypeStoreSize(L->getType());
     for (SmallPtrSet<Instruction *, 8>::iterator I = Stores.begin(),
          E = Stores.end(); I != E; ++I)
       if (AA->getModRefInfo(*I, Ptr, Size) & AliasAnalysis::Mod)

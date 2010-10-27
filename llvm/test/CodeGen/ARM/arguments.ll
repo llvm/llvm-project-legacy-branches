@@ -13,8 +13,8 @@ define i32 @f1(i32 %a, i64 %b) {
 ; test that allocating the double to r2/r3 makes r1 unavailable on gnueabi.
 define i32 @f2() nounwind optsize {
 ; ELF: f2:
-; ELF: mov  r0, #128
-; ELF: str  r0, [sp]
+; ELF: mov  [[REGISTER:(r[0-9]+)]], #128
+; ELF: str  [[REGISTER]], [sp]
 ; DARWIN: f2:
 ; DARWIN: mov	r3, #128
 entry:
@@ -22,6 +22,20 @@ entry:
   %not. = icmp ne i32 %0, 128                     ; <i1> [#uses=1]
   %.0 = zext i1 %not. to i32                      ; <i32> [#uses=1]
   ret i32 %.0
+}
+
+; test that on gnueabi a 64 bit value at this position will cause r3 to go
+; unused and the value stored in [sp]
+; ELF: f3:
+; ELF: ldr r0, [sp]
+; ELF-NEXT: mov pc, lr
+; DARWIN: f3:
+; DARWIN: mov r0, r3
+; DARWIN-NEXT: mov pc, lr
+define i32 @f3(i32 %i, i32 %j, i32 %k, i64 %l, ...) {
+entry:
+  %0 = trunc i64 %l to i32
+  ret i32 %0
 }
 
 declare i32 @g1(i64)

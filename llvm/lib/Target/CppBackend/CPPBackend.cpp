@@ -104,7 +104,7 @@ namespace {
   public:
     static char ID;
     explicit CppWriter(formatted_raw_ostream &o) :
-      ModulePass(&ID), Out(o), uniqueNum(0), is_inline(false), indent_level(0){}
+      ModulePass(ID), Out(o), uniqueNum(0), is_inline(false), indent_level(0){}
 
     virtual const char *getPassName() const { return "C++ backend"; }
 
@@ -288,6 +288,8 @@ void CppWriter::printLinkageType(GlobalValue::LinkageTypes LT) {
     Out << "GlobalValue::LinkerPrivateLinkage"; break;
   case GlobalValue::LinkerPrivateWeakLinkage:
     Out << "GlobalValue::LinkerPrivateWeakLinkage"; break;
+  case GlobalValue::LinkerPrivateWeakDefAutoLinkage:
+    Out << "GlobalValue::LinkerPrivateWeakDefAutoLinkage"; break;
   case GlobalValue::AvailableExternallyLinkage:
     Out << "GlobalValue::AvailableExternallyLinkage "; break;
   case GlobalValue::LinkOnceAnyLinkage:
@@ -356,6 +358,7 @@ std::string CppWriter::getCppName(const Type* Ty) {
     case Type::FloatTyID:    return "Type::getFloatTy(mod->getContext())";
     case Type::DoubleTyID:   return "Type::getDoubleTy(mod->getContext())";
     case Type::LabelTyID:    return "Type::getLabelTy(mod->getContext())";
+    case Type::X86_MMXTyID:  return "Type::getX86_MMXTy(mod->getContext())";
     default:
       error("Invalid primitive type");
       break;

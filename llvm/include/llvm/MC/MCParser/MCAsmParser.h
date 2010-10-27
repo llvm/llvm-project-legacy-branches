@@ -39,6 +39,8 @@ private:
 
   TargetAsmParser *TargetParser;
 
+  unsigned ShowParsedOperands : 1;
+
 protected: // Can only create subclasses.
   MCAsmParser();
 
@@ -60,6 +62,9 @@ public:
 
   TargetAsmParser &getTargetParser() const { return *TargetParser; }
   void setTargetParser(TargetAsmParser &P);
+
+  bool getShowParsedOperands() const { return ShowParsedOperands; }
+  void setShowParsedOperands(bool Value) { ShowParsedOperands = Value; }
 
   /// Run - Run the parser on the input source buffer.
   virtual bool Run(bool NoInitialTextSection, bool NoFinalize = false) = 0;
@@ -94,6 +99,10 @@ public:
   /// will be either the EndOfStatement or EOF.
   virtual StringRef ParseStringToEndOfStatement() = 0;
 
+  /// EatToEndOfStatement - Skip to the end of the current statement, for error
+  /// recovery.
+  virtual void EatToEndOfStatement() = 0;
+  
   /// ParseExpression - Parse an arbitrary expression.
   ///
   /// @param Res - The value of the expression. The result is undefined

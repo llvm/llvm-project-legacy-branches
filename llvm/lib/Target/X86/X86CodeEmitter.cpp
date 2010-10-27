@@ -53,12 +53,12 @@ namespace {
   public:
     static char ID;
     explicit Emitter(X86TargetMachine &tm, CodeEmitter &mce)
-      : MachineFunctionPass(&ID), II(0), TD(0), TM(tm), 
+      : MachineFunctionPass(ID), II(0), TD(0), TM(tm), 
       MCE(mce), PICBaseOffset(0), Is64BitMode(false),
       IsPIC(TM.getRelocationModel() == Reloc::PIC_) {}
     Emitter(X86TargetMachine &tm, CodeEmitter &mce,
             const X86InstrInfo &ii, const TargetData &td, bool is64)
-      : MachineFunctionPass(&ID), II(&ii), TD(&td), TM(tm), 
+      : MachineFunctionPass(ID), II(&ii), TD(&td), TM(tm), 
       MCE(mce), PICBaseOffset(0), Is64BitMode(is64),
       IsPIC(TM.getRelocationModel() == Reloc::PIC_) {}
 
@@ -68,8 +68,7 @@ namespace {
       return "X86 Machine Code Emitter";
     }
 
-    void emitInstruction(const MachineInstr &MI,
-                         const TargetInstrDesc *Desc);
+    void emitInstruction(MachineInstr &MI, const TargetInstrDesc *Desc);
     
     void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
@@ -131,7 +130,7 @@ bool Emitter<CodeEmitter>::runOnMachineFunction(MachineFunction &MF) {
     for (MachineFunction::iterator MBB = MF.begin(), E = MF.end(); 
          MBB != E; ++MBB) {
       MCE.StartMachineBasicBlock(MBB);
-      for (MachineBasicBlock::const_iterator I = MBB->begin(), E = MBB->end();
+      for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
            I != E; ++I) {
         const TargetInstrDesc &Desc = I->getDesc();
         emitInstruction(*I, &Desc);
@@ -598,9 +597,23 @@ void Emitter<CodeEmitter>::emitMemModRMByte(const MachineInstr &MI,
 }
 
 template<class CodeEmitter>
-void Emitter<CodeEmitter>::emitInstruction(const MachineInstr &MI,
+void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
                                            const TargetInstrDesc *Desc) {
   DEBUG(dbgs() << MI);
+  
+  // If this is a pseudo instruction, lower it.
+  switch (Desc->getOpcode()) {
+  case X86::ADD16rr_DB:   Desc = &II->get(X86::OR16rr); MI.setDesc(*Desc);break;
+  case X86::ADD32rr_DB:   Desc = &II->get(X86::OR32rr); MI.setDesc(*Desc);break;
+  case X86::ADD64rr_DB:   Desc = &II->get(X86::OR64rr); MI.setDesc(*Desc);break;
+  case X86::ADD16ri_DB:   Desc = &II->get(X86::OR16ri); MI.setDesc(*Desc);break;
+  case X86::ADD32ri_DB:   Desc = &II->get(X86::OR32ri); MI.setDesc(*Desc);break;
+  case X86::ADD64ri32_DB:Desc = &II->get(X86::OR64ri32);MI.setDesc(*Desc);break;
+  case X86::ADD16ri8_DB:  Desc = &II->get(X86::OR16ri8);MI.setDesc(*Desc);break;
+  case X86::ADD32ri8_DB:  Desc = &II->get(X86::OR32ri8);MI.setDesc(*Desc);break;
+  case X86::ADD64ri8_DB:  Desc = &II->get(X86::OR64ri8);MI.setDesc(*Desc);break;
+  }
+  
 
   MCE.processDebugLoc(MI.getDebugLoc(), true);
 
@@ -702,9 +715,15 @@ void Emitter<CodeEmitter>::emitInstruction(const MachineInstr &MI,
     // base address.
     switch (Opcode) {
     default: 
-      llvm_unreachable("psuedo instructions should be removed before code"
+      llvm_unreachable("pseudo instructions should be removed before code"
                        " emission");
       break;
+    // Do nothing for Int_MemBarrier - it's just a comment.  Add a debug
+    // to make it slightly easier to see.
+    case X86::Int_MemBarrier:
+      DEBUG(dbgs() << "#MEMBARRIER\n");
+      break;
+    
     case TargetOpcode::INLINEASM:
       // We allow inline assembler nodes with empty bodies - they can
       // implicitly define registers, which is ok for JIT.
@@ -716,7 +735,7 @@ void Emitter<CodeEmitter>::emitInstruction(const MachineInstr &MI,
     case TargetOpcode::EH_LABEL:
       MCE.emitLabel(MI.getOperand(0).getMCSymbol());
       break;
-        
+    
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:
       break;
@@ -770,7 +789,8 @@ void Emitter<CodeEmitter>::emitInstruction(const MachineInstr &MI,
     }
     
     assert(MO.isImm() && "Unknown RawFrm operand!");
-    if (Opcode == X86::CALLpcrel32 || Opcode == X86::CALL64pcrel32) {
+    if (Opcode == X86::CALLpcrel32 || Opcode == X86::CALL64pcrel32 ||
+        Opcode == X86::WINCALL64pcrel32) {
       // Fix up immediate operand for pc relative calls.
       intptr_t Imm = (intptr_t)MO.getImm();
       Imm = Imm - MCE.getCurrentPCValue() - 4;

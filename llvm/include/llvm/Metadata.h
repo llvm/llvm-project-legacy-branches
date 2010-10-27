@@ -38,7 +38,6 @@ class MDString : public Value {
   MDString(const MDString &);            // DO NOT IMPLEMENT
 
   StringRef Str;
-protected:
   explicit MDString(LLVMContext &C, StringRef S);
 
 public:
@@ -111,9 +110,8 @@ class MDNode : public Value, public FoldingSetNode {
   void replaceOperand(MDNodeOperand *Op, Value *NewVal);
   ~MDNode();
 
-protected:
-  explicit MDNode(LLVMContext &C, Value *const *Vals, unsigned NumVals,
-                  bool isFunctionLocal);
+  MDNode(LLVMContext &C, Value *const *Vals, unsigned NumVals,
+         bool isFunctionLocal);
   
   static MDNode *getMDNode(LLVMContext &C, Value *const *Vals, unsigned NumVals,
                            FunctionLocalness FL, bool Insert = true);
@@ -128,6 +126,16 @@ public:
                                        
   static MDNode *getIfExists(LLVMContext &Context, Value *const *Vals,
                              unsigned NumVals);
+
+  /// getTemporary - Return a temporary MDNode, for use in constructing
+  /// cyclic MDNode structures. A temporary MDNode is not uniqued,
+  /// may be RAUW'd, and must be manually deleted with deleteTemporary.
+  static MDNode *getTemporary(LLVMContext &Context, Value *const *Vals,
+                              unsigned NumVals);
+
+  /// deleteTemporary - Deallocate a node created by getTemporary. The
+  /// node must not have any users.
+  static void deleteTemporary(MDNode *N);
   
   /// getOperand - Return specified operand.
   Value *getOperand(unsigned i) const;
@@ -136,9 +144,6 @@ public:
   unsigned getNumOperands() const { return NumOperands; }
   
   /// isFunctionLocal - Return whether MDNode is local to a function.
-  /// Note: MDNodes are designated as function-local when created, and keep
-  ///       that designation even if their operands are modified to no longer
-  ///       refer to function-local IR.
   bool isFunctionLocal() const {
     return (getSubclassDataFromValue() & FunctionLocalBit) != 0;
   }
@@ -175,8 +180,9 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-/// NamedMDNode - a tuple of MDNodes.
-/// NamedMDNode is always named. All NamedMDNode operand has a type of metadata.
+/// NamedMDNode - a tuple of MDNodes. Despite its name, a NamedMDNode isn't
+/// itself an MDNode. NamedMDNodes belong to modules, have names, and contain
+/// lists of MDNodes.
 class NamedMDNode : public ilist_node<NamedMDNode> {
   friend class SymbolTableListTraits<NamedMDNode, Module>;
   friend struct ilist_traits<NamedMDNode>;
@@ -190,7 +196,6 @@ class NamedMDNode : public ilist_node<NamedMDNode> {
 
   void setParent(Module *M) { Parent = M; }
 
-protected:
   explicit NamedMDNode(const Twine &N);
 
 public:

@@ -16,6 +16,7 @@
 #include "llvm/BasicBlock.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
@@ -46,8 +47,11 @@ namespace {
   class RAFast : public MachineFunctionPass {
   public:
     static char ID;
-    RAFast() : MachineFunctionPass(&ID), StackSlotForVirtReg(-1),
-               isBulkSpilling(false) {}
+    RAFast() : MachineFunctionPass(ID), StackSlotForVirtReg(-1),
+               isBulkSpilling(false) {
+      initializePHIEliminationPass(*PassRegistry::getPassRegistry());
+      initializeTwoAddressInstructionPassPass(*PassRegistry::getPassRegistry());
+    }
   private:
     const TargetMachine *TM;
     MachineFunction *MF;
@@ -80,6 +84,8 @@ namespace {
     // that is currently available in a physical register.
     LiveRegMap LiveVirtRegs;
 
+    DenseMap<unsigned, MachineInstr *> LiveDbgValueMap;
+
     // RegState - Track the state of a physical register.
     enum RegState {
       // A disabled register is not available for allocation, but an alias may
@@ -110,9 +116,9 @@ namespace {
     // Allocatable - vector of allocatable physical registers.
     BitVector Allocatable;
 
-    // SkippedInstrs - Descriptors of instructions whose clobber list was ignored
-    // because all registers were spilled. It is still necessary to mark all the
-    // clobbered registers as used by the function.
+    // SkippedInstrs - Descriptors of instructions whose clobber list was
+    // ignored because all registers were spilled. It is still necessary to
+    // mark all the clobbered registers as used by the function.
     SmallPtrSet<const TargetInstrDesc*, 4> SkippedInstrs;
 
     // isBulkSpilling - This flag is set when LiveRegMap will be cleared
@@ -236,8 +242,7 @@ void RAFast::killVirtReg(unsigned VirtReg) {
 }
 
 /// spillVirtReg - This method spills the value specified by VirtReg into the
-/// corresponding stack slot if needed. If isKill is set, the register is also
-/// killed.
+/// corresponding stack slot if needed.
 void RAFast::spillVirtReg(MachineBasicBlock::iterator MI, unsigned VirtReg) {
   assert(TargetRegisterInfo::isVirtualRegister(VirtReg) &&
          "Spilling a physical register is illegal!");
@@ -265,6 +270,31 @@ void RAFast::spillVirtReg(MachineBasicBlock::iterator MI,
     TII->storeRegToStackSlot(*MBB, MI, LR.PhysReg, SpillKill, FI, RC, TRI);
     ++NumStores;   // Update statistics
 
+    // If this register is used by DBG_VALUE then insert new DBG_VALUE to
+    // identify spilled location as the place to find corresponding variable's
+    // value.
+    if (MachineInstr *DBG = LiveDbgValueMap.lookup(LRI->first)) {
+      const MDNode *MDPtr =
+        DBG->getOperand(DBG->getNumOperands()-1).getMetadata();
+      int64_t Offset = 0;
+      if (DBG->getOperand(1).isImm())
+        Offset = DBG->getOperand(1).getImm();
+      DebugLoc DL;
+      if (MI == MBB->end()) {
+        // If MI is at basic block end then use last instruction's location.
+        MachineBasicBlock::iterator EI = MI;
+        DL = (--EI)->getDebugLoc();
+      }
+      else
+        DL = MI->getDebugLoc();
+      if (MachineInstr *NewDV =
+          TII->emitFrameIndexDebugValue(*MF, FI, Offset, MDPtr, DL)) {
+        MachineBasicBlock *MBB = DBG->getParent();
+        MBB->insert(MI, NewDV);
+        DEBUG(dbgs() << "Inserting debug info due to spill:" << "\n" << *NewDV);
+        LiveDbgValueMap[LRI->first] = NewDV;
+      }
+    }
     if (SpillKill)
       LR.LastUse = 0; // Don't kill register again
   }
@@ -471,7 +501,8 @@ void RAFast::allocVirtReg(MachineInstr *MI, LiveRegEntry &LRE, unsigned Hint) {
   // First try to find a completely free register.
   for (TargetRegisterClass::iterator I = AOB; I != AOE; ++I) {
     unsigned PhysReg = *I;
-    if (PhysRegState[PhysReg] == regFree && !UsedInInstr.test(PhysReg))
+    if (PhysRegState[PhysReg] == regFree && !UsedInInstr.test(PhysReg) &&
+        Allocatable.test(PhysReg))
       return assignVirtToPhysReg(LRE, PhysReg);
   }
 
@@ -480,6 +511,8 @@ void RAFast::allocVirtReg(MachineInstr *MI, LiveRegEntry &LRE, unsigned Hint) {
 
   unsigned BestReg = 0, BestCost = spillImpossible;
   for (TargetRegisterClass::iterator I = AOB; I != AOE; ++I) {
+    if (!Allocatable.test(*I))
+      continue;
     unsigned Cost = calcSpillCost(*I);
     // Cost is 0 when all aliases are already disabled.
     if (Cost == 0)
@@ -709,7 +742,8 @@ void RAFast::AllocateBasicBlock() {
   // Add live-in registers as live.
   for (MachineBasicBlock::livein_iterator I = MBB->livein_begin(),
          E = MBB->livein_end(); I != E; ++I)
-    definePhysReg(MII, *I, regReserved);
+    if (Allocatable.test(*I))
+      definePhysReg(MII, *I, regReserved);
 
   SmallVector<unsigned, 8> VirtDead;
   SmallVector<MachineInstr*, 32> Coalesced;
@@ -761,30 +795,38 @@ void RAFast::AllocateBasicBlock() {
           if (!MO.isReg()) continue;
           unsigned Reg = MO.getReg();
           if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
+          LiveDbgValueMap[Reg] = MI;
           LiveRegMap::iterator LRI = LiveVirtRegs.find(Reg);
           if (LRI != LiveVirtRegs.end())
             setPhysReg(MI, i, LRI->second.PhysReg);
           else {
             int SS = StackSlotForVirtReg[Reg];
-            if (SS == -1)
-              MO.setReg(0); // We can't allocate a physreg for a DebugValue, sorry!
+            if (SS == -1) {
+              // We can't allocate a physreg for a DebugValue, sorry!
+              DEBUG(dbgs() << "Unable to allocate vreg used by DBG_VALUE");
+              MO.setReg(0);
+            }
             else {
               // Modify DBG_VALUE now that the value is in a spill slot.
-              uint64_t Offset = MI->getOperand(1).getImm();
-              const MDNode *MDPtr = 
+              int64_t Offset = MI->getOperand(1).getImm();
+              const MDNode *MDPtr =
                 MI->getOperand(MI->getNumOperands()-1).getMetadata();
               DebugLoc DL = MI->getDebugLoc();
-              if (MachineInstr *NewDV = 
+              if (MachineInstr *NewDV =
                   TII->emitFrameIndexDebugValue(*MF, SS, Offset, MDPtr, DL)) {
-                DEBUG(dbgs() << "Modifying debug info due to spill:" << "\t" << *MI);
+                DEBUG(dbgs() << "Modifying debug info due to spill:" <<
+                      "\t" << *MI);
                 MachineBasicBlock *MBB = MI->getParent();
                 MBB->insert(MBB->erase(MI), NewDV);
                 // Scan NewDV operands from the beginning.
                 MI = NewDV;
                 ScanDbgValue = true;
                 break;
-              } else
-                MO.setReg(0); // We can't allocate a physreg for a DebugValue, sorry!
+              } else {
+                // We can't allocate a physreg for a DebugValue; sorry!
+                DEBUG(dbgs() << "Unable to allocate vreg used by DBG_VALUE");
+                MO.setReg(0);
+              }
             }
           }
         }
@@ -847,8 +889,8 @@ void RAFast::AllocateBasicBlock() {
     // operands. If there are also physical defs, these registers must avoid
     // both physical defs and uses, making them more constrained than normal
     // operands.
-    // Similarly, if there are multiple defs and tied operands, we must make sure
-    // the same register is allocated to uses and defs.
+    // Similarly, if there are multiple defs and tied operands, we must make
+    // sure the same register is allocated to uses and defs.
     // We didn't detect inline asm tied operands above, so just make this extra
     // pass for all inline asm.
     if (MI->isInlineAsm() || hasEarlyClobbers || hasPartialRedefs ||
@@ -899,9 +941,9 @@ void RAFast::AllocateBasicBlock() {
     unsigned DefOpEnd = MI->getNumOperands();
     if (TID.isCall()) {
       // Spill all virtregs before a call. This serves two purposes: 1. If an
-      // exception is thrown, the landing pad is going to expect to find registers
-      // in their spill slots, and 2. we don't have to wade through all the
-      // <imp-def> operands on the call instruction.
+      // exception is thrown, the landing pad is going to expect to find
+      // registers in their spill slots, and 2. we don't have to wade through
+      // all the <imp-def> operands on the call instruction.
       DefOpEnd = VirtOpEnd;
       DEBUG(dbgs() << "  Spilling remaining registers before call.\n");
       spillAll(MI);
@@ -1004,6 +1046,7 @@ bool RAFast::runOnMachineFunction(MachineFunction &Fn) {
 
   SkippedInstrs.clear();
   StackSlotForVirtReg.clear();
+  LiveDbgValueMap.clear();
   return true;
 }
 

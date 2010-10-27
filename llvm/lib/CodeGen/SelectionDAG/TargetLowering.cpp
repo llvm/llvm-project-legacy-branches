@@ -697,6 +697,7 @@ TargetLowering::findRepresentativeClass(EVT VT) const {
   return std::make_pair(BestRC, 1);
 }
 
+
 /// computeRegisterProperties - Once all of the register classes are added,
 /// this allows us to compute derived properties we expose.
 void TargetLowering::computeRegisterProperties() {
@@ -782,6 +783,28 @@ void TargetLowering::computeRegisterProperties() {
     MVT VT = (MVT::SimpleValueType)i;
     if (isTypeLegal(VT)) continue;
     
+    // Determine if there is a legal wider type.  If so, we should promote to
+    // that wider vector type.
+    EVT EltVT = VT.getVectorElementType();
+    unsigned NElts = VT.getVectorNumElements();
+    if (NElts != 1) {
+      bool IsLegalWiderType = false;
+      for (unsigned nVT = i+1; nVT <= MVT::LAST_VECTOR_VALUETYPE; ++nVT) {
+        EVT SVT = (MVT::SimpleValueType)nVT;
+        if (SVT.getVectorElementType() == EltVT &&
+            SVT.getVectorNumElements() > NElts && 
+            isTypeLegal(SVT)) {
+          TransformToType[i] = SVT;
+          RegisterTypeForVT[i] = SVT;
+          NumRegistersForVT[i] = 1;
+          ValueTypeActions.setTypeAction(VT, Promote);
+          IsLegalWiderType = true;
+          break;
+        }
+      }
+      if (IsLegalWiderType) continue;
+    }
+    
     MVT IntermediateVT;
     EVT RegisterVT;
     unsigned NumIntermediates;
@@ -790,30 +813,14 @@ void TargetLowering::computeRegisterProperties() {
                                 RegisterVT, this);
     RegisterTypeForVT[i] = RegisterVT;
     
-    // Determine if there is a legal wider type.
-    bool IsLegalWiderType = false;
-    EVT EltVT = VT.getVectorElementType();
-    unsigned NElts = VT.getVectorNumElements();
-    for (unsigned nVT = i+1; nVT <= MVT::LAST_VECTOR_VALUETYPE; ++nVT) {
-      EVT SVT = (MVT::SimpleValueType)nVT;
-      if (isTypeSynthesizable(SVT) && SVT.getVectorElementType() == EltVT &&
-          SVT.getVectorNumElements() > NElts && NElts != 1) {
-        TransformToType[i] = SVT;
-        ValueTypeActions.setTypeAction(VT, Promote);
-        IsLegalWiderType = true;
-        break;
-      }
-    }
-    if (!IsLegalWiderType) {
-      EVT NVT = VT.getPow2VectorType();
-      if (NVT == VT) {
-        // Type is already a power of 2.  The default action is to split.
-        TransformToType[i] = MVT::Other;
-        ValueTypeActions.setTypeAction(VT, Expand);
-      } else {
-        TransformToType[i] = NVT;
-        ValueTypeActions.setTypeAction(VT, Promote);
-      }
+    EVT NVT = VT.getPow2VectorType();
+    if (NVT == VT) {
+      // Type is already a power of 2.  The default action is to split.
+      TransformToType[i] = MVT::Other;
+      ValueTypeActions.setTypeAction(VT, Expand);
+    } else {
+      TransformToType[i] = NVT;
+      ValueTypeActions.setTypeAction(VT, Promote);
     }
   }
 
@@ -857,8 +864,21 @@ unsigned TargetLowering::getVectorTypeBreakdown(LLVMContext &Context, EVT VT,
                                                 EVT &IntermediateVT,
                                                 unsigned &NumIntermediates,
                                                 EVT &RegisterVT) const {
-  // Figure out the right, legal destination reg to copy into.
   unsigned NumElts = VT.getVectorNumElements();
+  
+  // If there is a wider vector type with the same element type as this one,
+  // we should widen to that legal vector type.  This handles things like
+  // <2 x float> -> <4 x float>.
+  if (NumElts != 1 && getTypeAction(VT) == Promote) {
+    RegisterVT = getTypeToTransformTo(Context, VT);
+    if (isTypeLegal(RegisterVT)) {
+      IntermediateVT = RegisterVT;
+      NumIntermediates = 1;
+      return 1;
+    }
+  }
+  
+  // Figure out the right, legal destination reg to copy into.
   EVT EltTy = VT.getVectorElementType();
   
   unsigned NumVectorRegs = 1;
@@ -887,16 +907,12 @@ unsigned TargetLowering::getVectorTypeBreakdown(LLVMContext &Context, EVT VT,
 
   EVT DestVT = getRegisterType(Context, NewVT);
   RegisterVT = DestVT;
-  if (DestVT.bitsLT(NewVT)) {
-    // Value is expanded, e.g. i64 -> i16.
+  if (DestVT.bitsLT(NewVT))   // Value is expanded, e.g. i64 -> i16.
     return NumVectorRegs*(NewVT.getSizeInBits()/DestVT.getSizeInBits());
-  } else {
-    // Otherwise, promotion or legal types use the same number of registers as
-    // the vector decimated to the appropriate level.
-    return NumVectorRegs;
-  }
   
-  return 1;
+  // Otherwise, promotion or legal types use the same number of registers as
+  // the vector decimated to the appropriate level.
+  return NumVectorRegs;
 }
 
 /// Get the EVTs and ArgFlags collections that represent the legalized return 
@@ -1497,11 +1513,10 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     // present in the input.
     APInt NewBits =
       APInt::getHighBitsSet(BitWidth,
-                            BitWidth - EVT.getScalarType().getSizeInBits()) &
-      NewMask;
+                            BitWidth - EVT.getScalarType().getSizeInBits());
     
     // If none of the extended bits are demanded, eliminate the sextinreg.
-    if (NewBits == 0)
+    if ((NewBits & NewMask) == 0)
       return TLO.CombineTo(Op, Op.getOperand(0));
 
     APInt InSignBit = APInt::getSignBit(EVT.getScalarType().getSizeInBits());
@@ -1901,8 +1916,7 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
                               DAG.getConstant(bestOffset, PtrType));
           unsigned NewAlign = MinAlign(Lod->getAlignment(), bestOffset);
           SDValue NewLoad = DAG.getLoad(newVT, dl, Lod->getChain(), Ptr,
-                                        Lod->getSrcValue(), 
-                                        Lod->getSrcValueOffset() + bestOffset,
+                                Lod->getPointerInfo().getWithOffset(bestOffset),
                                         false, false, NewAlign);
           return DAG.getSetCC(dl, VT, 
                               DAG.getNode(ISD::AND, dl, newVT, NewLoad,
@@ -2482,7 +2496,10 @@ TargetLowering::getConstraintType(const std::string &Constraint) const {
       return C_Memory;
     case 'i':    // Simple Integer or Relocatable Constant
     case 'n':    // Simple Integer
+    case 'E':    // Floating Point Constant
+    case 'F':    // Floating Point Constant
     case 's':    // Relocatable Constant
+    case 'p':    // Address.
     case 'X':    // Allow ANY value.
     case 'I':    // Target registers.
     case 'J':
@@ -2492,6 +2509,8 @@ TargetLowering::getConstraintType(const std::string &Constraint) const {
     case 'N':
     case 'O':
     case 'P':
+    case '<':
+    case '>':
       return C_Other;
     }
   }
@@ -2639,6 +2658,158 @@ unsigned TargetLowering::AsmOperandInfo::getMatchedOperand() const {
   return atoi(ConstraintCode.c_str());
 }
 
+  
+/// ParseConstraints - Split up the constraint string from the inline
+/// assembly value into the specific constraints and their prefixes,
+/// and also tie in the associated operand values.
+/// If this returns an empty vector, and if the constraint string itself
+/// isn't empty, there was an error parsing.
+std::vector<TargetLowering::AsmOperandInfo> TargetLowering::ParseConstraints(
+    ImmutableCallSite CS) const {
+  /// ConstraintOperands - Information about all of the constraints.
+  std::vector<AsmOperandInfo> ConstraintOperands;
+  const InlineAsm *IA = cast<InlineAsm>(CS.getCalledValue());
+  unsigned maCount = 0; // Largest number of multiple alternative constraints.
+
+  // Do a prepass over the constraints, canonicalizing them, and building up the
+  // ConstraintOperands list.
+  std::vector<InlineAsm::ConstraintInfo>
+    ConstraintInfos = IA->ParseConstraints();
+    
+  unsigned ArgNo = 0;   // ArgNo - The argument of the CallInst.
+  unsigned ResNo = 0;   // ResNo - The result number of the next output.
+
+  for (unsigned i = 0, e = ConstraintInfos.size(); i != e; ++i) {
+    ConstraintOperands.push_back(AsmOperandInfo(ConstraintInfos[i]));
+    AsmOperandInfo &OpInfo = ConstraintOperands.back();
+
+    // Update multiple alternative constraint count.
+    if (OpInfo.multipleAlternatives.size() > maCount)
+      maCount = OpInfo.multipleAlternatives.size();
+
+    EVT OpVT = MVT::Other;
+
+    // Compute the value type for each operand.
+    switch (OpInfo.Type) {
+    case InlineAsm::isOutput:
+      // Indirect outputs just consume an argument.
+      if (OpInfo.isIndirect) {
+        OpInfo.CallOperandVal = const_cast<Value *>(CS.getArgument(ArgNo++));
+        break;
+      }
+
+      // The return value of the call is this value.  As such, there is no
+      // corresponding argument.
+      assert(!CS.getType()->isVoidTy() &&
+             "Bad inline asm!");
+      if (const StructType *STy = dyn_cast<StructType>(CS.getType())) {
+        OpVT = getValueType(STy->getElementType(ResNo));
+      } else {
+        assert(ResNo == 0 && "Asm only has one result!");
+        OpVT = getValueType(CS.getType());
+      }
+      ++ResNo;
+      break;
+    case InlineAsm::isInput:
+      OpInfo.CallOperandVal = const_cast<Value *>(CS.getArgument(ArgNo++));
+      break;
+    case InlineAsm::isClobber:
+      // Nothing to do.
+      break;
+    }
+  }
+
+  // If we have multiple alternative constraints, select the best alternative.
+  if (ConstraintInfos.size()) {
+    if (maCount) {
+      unsigned bestMAIndex = 0;
+      int bestWeight = -1;
+      // weight:  -1 = invalid match, and 0 = so-so match to 5 = good match.
+      int weight = -1;
+      unsigned maIndex;
+      // Compute the sums of the weights for each alternative, keeping track
+      // of the best (highest weight) one so far.
+      for (maIndex = 0; maIndex < maCount; ++maIndex) {
+        int weightSum = 0;
+        for (unsigned cIndex = 0, eIndex = ConstraintOperands.size();
+            cIndex != eIndex; ++cIndex) {
+          AsmOperandInfo& OpInfo = ConstraintOperands[cIndex];
+          if (OpInfo.Type == InlineAsm::isClobber)
+            continue;
+
+          // If this is an output operand with a matching input operand, look up the
+          // matching input. If their types mismatch, e.g. one is an integer, the
+          // other is floating point, or their sizes are different, flag it as an
+          // maCantMatch.
+          if (OpInfo.hasMatchingInput()) {
+            AsmOperandInfo &Input = ConstraintOperands[OpInfo.MatchingInput];
+            
+            if (OpInfo.ConstraintVT != Input.ConstraintVT) {
+              if ((OpInfo.ConstraintVT.isInteger() !=
+                   Input.ConstraintVT.isInteger()) ||
+                  (OpInfo.ConstraintVT.getSizeInBits() !=
+                   Input.ConstraintVT.getSizeInBits())) {
+                weightSum = -1;  // Can't match.
+                break;
+              }
+              Input.ConstraintVT = OpInfo.ConstraintVT;
+            }
+          }
+          
+          weight = getMultipleConstraintMatchWeight(OpInfo, maIndex);
+          if (weight == -1) {
+            weightSum = -1;
+            break;
+          }
+          weightSum += weight;
+        }
+        // Update best.
+        if (weightSum > bestWeight) {
+          bestWeight = weightSum;
+          bestMAIndex = maIndex;
+        }
+      }
+
+      // Now select chosen alternative in each constraint.
+      for (unsigned cIndex = 0, eIndex = ConstraintOperands.size();
+          cIndex != eIndex; ++cIndex) {
+        AsmOperandInfo& cInfo = ConstraintOperands[cIndex];
+        if (cInfo.Type == InlineAsm::isClobber)
+          continue;
+        cInfo.selectAlternative(bestMAIndex);
+      }
+    }
+  }
+
+  // Check and hook up tied operands, choose constraint code to use.
+  for (unsigned cIndex = 0, eIndex = ConstraintOperands.size();
+      cIndex != eIndex; ++cIndex) {
+    AsmOperandInfo& OpInfo = ConstraintOperands[cIndex];
+    
+    // If this is an output operand with a matching input operand, look up the
+    // matching input. If their types mismatch, e.g. one is an integer, the
+    // other is floating point, or their sizes are different, flag it as an
+    // error.
+    if (OpInfo.hasMatchingInput()) {
+      AsmOperandInfo &Input = ConstraintOperands[OpInfo.MatchingInput];
+      
+      if (OpInfo.ConstraintVT != Input.ConstraintVT) {
+        if ((OpInfo.ConstraintVT.isInteger() !=
+             Input.ConstraintVT.isInteger()) ||
+            (OpInfo.ConstraintVT.getSizeInBits() !=
+             Input.ConstraintVT.getSizeInBits())) {
+          report_fatal_error("Unsupported asm: input constraint"
+                             " with a matching output constraint of"
+                             " incompatible type!");
+        }
+        Input.ConstraintVT = OpInfo.ConstraintVT;
+      }
+    }
+  }
+
+  return ConstraintOperands;
+}
+
 
 /// getConstraintGenerality - Return an integer indicating how general CT
 /// is.
@@ -2655,6 +2826,78 @@ static unsigned getConstraintGenerality(TargetLowering::ConstraintType CT) {
   case TargetLowering::C_Memory:
     return 3;
   }
+}
+
+/// Examine constraint type and operand type and determine a weight value,
+/// where: -1 = invalid match, and 0 = so-so match to 3 = good match.
+/// This object must already have been set up with the operand type
+/// and the current alternative constraint selected.
+int TargetLowering::getMultipleConstraintMatchWeight(
+    AsmOperandInfo &info, int maIndex) const {
+  std::vector<std::string> *rCodes;
+  if (maIndex >= (int)info.multipleAlternatives.size())
+    rCodes = &info.Codes;
+  else
+    rCodes = &info.multipleAlternatives[maIndex].Codes;
+  int BestWeight = -1;
+
+  // Loop over the options, keeping track of the most general one.
+  for (unsigned i = 0, e = rCodes->size(); i != e; ++i) {
+    int weight = getSingleConstraintMatchWeight(info, (*rCodes)[i].c_str());
+    if (weight > BestWeight)
+      BestWeight = weight;
+  }
+
+  return BestWeight;
+}
+
+/// Examine constraint type and operand type and determine a weight value,
+/// where: -1 = invalid match, and 0 = so-so match to 3 = good match.
+/// This object must already have been set up with the operand type
+/// and the current alternative constraint selected.
+int TargetLowering::getSingleConstraintMatchWeight(
+    AsmOperandInfo &info, const char *constraint) const {
+  int weight = -1;
+  Value *CallOperandVal = info.CallOperandVal;
+    // If we don't have a value, we can't do a match,
+    // but allow it at the lowest weight.
+  if (CallOperandVal == NULL)
+    return 0;
+  // Look at the constraint type.
+  switch (*constraint) {
+    case 'i': // immediate integer.
+    case 'n': // immediate integer with a known value.
+      weight = 0;
+      if (info.CallOperandVal) {
+        if (isa<ConstantInt>(info.CallOperandVal))
+          weight = 3;
+        else
+          weight = -1;
+      }
+      break;
+    case 's': // non-explicit intregal immediate.
+      weight = 0;
+      if (info.CallOperandVal) {
+        if (isa<GlobalValue>(info.CallOperandVal))
+          weight = 3;
+        else
+          weight = -1;
+      }
+      break;
+    case 'm': // memory operand.
+    case 'o': // offsettable memory operand
+    case 'V': // non-offsettable memory operand
+      weight = 2;
+      break;
+    case 'g': // general register, memory operand or immediate integer.
+    case 'X': // any operand.
+      weight = 1;
+      break;
+    default:
+      weight = 0;
+      break;
+  }
+  return weight;
 }
 
 /// ChooseConstraint - If there are multiple different constraints that we

@@ -1720,16 +1720,15 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI) {
 
 bool SimplifyCFGOpt::run(BasicBlock *BB) {
   bool Changed = false;
-  Function *M = BB->getParent();
+  Function *Fn = BB->getParent();
 
-  assert(BB && BB->getParent() && "Block not embedded in function!");
+  assert(BB && Fn && "Block not embedded in function!");
   assert(BB->getTerminator() && "Degenerate basic block encountered!");
-  assert(&BB->getParent()->getEntryBlock() != BB &&
-         "Can't Simplify entry block!");
 
-  // Remove basic blocks that have no predecessors... or that just have themself
-  // as a predecessor.  These are unreachable.
-  if (pred_begin(BB) == pred_end(BB) || BB->getSinglePredecessor() == BB) {
+  // Remove basic blocks that have no predecessors (except the entry block)...
+  // or that just have themself as a predecessor.  These are unreachable.
+  if ((pred_begin(BB) == pred_end(BB) && BB != &Fn->getEntryBlock()) ||
+      BB->getSinglePredecessor() == BB) {
     DEBUG(dbgs() << "Removing BB: \n" << *BB);
     DeleteDeadBlock(BB);
     return true;
@@ -1798,7 +1797,7 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
         // If we eliminated all predecessors of the block, delete the block now.
         if (pred_begin(BB) == pred_end(BB))
           // We know there are no successors, so just nuke the block.
-          M->getBasicBlockList().erase(BB);
+          Fn->getBasicBlockList().erase(BB);
 
         return true;
       }
@@ -1847,10 +1846,10 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
       Preds.pop_back();
     }
 
-    // If this block is now dead, remove it.
-    if (pred_begin(BB) == pred_end(BB)) {
+    // If this block is now dead (and isn't the entry block), remove it.
+    if (pred_begin(BB) == pred_end(BB) && BB != &Fn->getEntryBlock()) {
       // We know there are no successors, so just nuke the block.
-      M->getBasicBlockList().erase(BB);
+      Fn->getBasicBlockList().erase(BB);
       return true;
     }
 
@@ -1880,8 +1879,9 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
       while (isa<DbgInfoIntrinsic>(BBI))
         ++BBI;
       if (BBI->isTerminator()) // Terminator is the only non-phi instruction!
-        if (TryToSimplifyUncondBranchFromEmptyBlock(BB))
-          return true;
+        if (BB != &Fn->getEntryBlock())
+          if (TryToSimplifyUncondBranchFromEmptyBlock(BB))
+            return true;
       
     } else {  // Conditional branch
       if (isValueEqualityComparison(BI)) {
@@ -2049,11 +2049,36 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
       }
 
       // If this block is now dead, remove it.
-      if (pred_begin(BB) == pred_end(BB)) {
+      if (pred_begin(BB) == pred_end(BB) && BB != &Fn->getEntryBlock()) {
         // We know there are no successors, so just nuke the block.
-        M->getBasicBlockList().erase(BB);
+        Fn->getBasicBlockList().erase(BB);
         return true;
       }
+    }
+  } else if (IndirectBrInst *IBI =
+               dyn_cast<IndirectBrInst>(BB->getTerminator())) {
+    // Eliminate redundant destinations.
+    SmallPtrSet<Value *, 8> Succs;
+    for (unsigned i = 0, e = IBI->getNumDestinations(); i != e; ++i) {
+      BasicBlock *Dest = IBI->getDestination(i);
+      if (!Dest->hasAddressTaken() || !Succs.insert(Dest)) {
+        Dest->removePredecessor(BB);
+        IBI->removeDestination(i);
+        --i; --e;
+        Changed = true;
+      }
+    } 
+
+    if (IBI->getNumDestinations() == 0) {
+      // If the indirectbr has no successors, change it to unreachable.
+      new UnreachableInst(IBI->getContext(), IBI);
+      IBI->eraseFromParent();
+      Changed = true;
+    } else if (IBI->getNumDestinations() == 1) {
+      // If the indirectbr has one successor, change it to a direct branch.
+      BranchInst::Create(IBI->getDestination(0), IBI);
+      IBI->eraseFromParent();
+      Changed = true;
     }
   }
 
@@ -2068,12 +2093,15 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
   // is a conditional branch, see if we can hoist any code from this block up
   // into our predecessor.
   pred_iterator PI(pred_begin(BB)), PE(pred_end(BB));
-  BasicBlock *OnlyPred = *PI++;
-  for (; PI != PE; ++PI)  // Search all predecessors, see if they are all same
-    if (*PI != OnlyPred) {
+  BasicBlock *OnlyPred = 0;
+  for (; PI != PE; ++PI) { // Search all predecessors, see if they are all same
+    if (!OnlyPred)
+      OnlyPred = *PI;
+    else if (*PI != OnlyPred) {
       OnlyPred = 0;       // There are multiple different predecessors...
       break;
     }
+  }
   
   if (OnlyPred)
     if (BranchInst *BI = dyn_cast<BranchInst>(OnlyPred->getTerminator()))
@@ -2171,8 +2199,6 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
 /// example, it adjusts branches to branches to eliminate the extra hop, it
 /// eliminates unreachable basic blocks, and does other "peephole" optimization
 /// of the CFG.  It returns true if a modification was made.
-///
-/// WARNING:  The entry node of a function may not be simplified.
 ///
 bool llvm::SimplifyCFG(BasicBlock *BB, const TargetData *TD) {
   return SimplifyCFGOpt(TD).run(BB);

@@ -33,6 +33,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/Triple.h"
 using namespace llvm;
 using namespace dwarf;
 
@@ -450,6 +451,19 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
   IsFunctionEHSymbolGlobal = true;
   IsFunctionEHFrameSymbolPrivate = false;
   SupportsWeakOmittedEHFrame = false;
+
+  Triple T(((LLVMTargetMachine&)TM).getTargetTriple());
+  if (T.getOS() == Triple::Darwin) {
+    switch (T.getDarwinMajorNumber()) {
+    case 7:  // 10.3 Panther.
+    case 8:  // 10.4 Tiger.
+      CommDirectiveSupportsAlignment = false;
+      break;
+    case 9:   // 10.5 Leopard.
+    case 10:  // 10.6 SnowLeopard.
+      break;
+    }
+  }
   
   TargetLoweringObjectFile::Initialize(Ctx, TM);
 
@@ -518,11 +532,6 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
                                    SectionKind::getText());
   ConstTextCoalSection
     = getContext().getMachOSection("__TEXT", "__const_coal", 
-                                   MCSectionMachO::S_COALESCED |
-                                   MCSectionMachO::S_ATTR_PURE_INSTRUCTIONS,
-                                   SectionKind::getText());
-  ConstDataCoalSection
-    = getContext().getMachOSection("__DATA","__const_coal",
                                    MCSectionMachO::S_COALESCED,
                                    SectionKind::getReadOnly());
   ConstDataSection  // .const_data
@@ -972,12 +981,12 @@ getExplicitSectionGlobal(const GlobalValue *GV, SectionKind Kind,
 
 static const char *getCOFFSectionPrefixForUniqueGlobal(SectionKind Kind) {
   if (Kind.isText())
-    return ".text$linkonce";
+    return ".text$";
   if (Kind.isBSS ())
-    return ".bss$linkonce";
+    return ".bss$";
   if (Kind.isWriteable())
-    return ".data$linkonce";
-  return ".rdata$linkonce";
+    return ".data$";
+  return ".rdata$";
 }
 
 
@@ -992,14 +1001,14 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
     const char *Prefix = getCOFFSectionPrefixForUniqueGlobal(Kind);
     SmallString<128> Name(Prefix, Prefix+strlen(Prefix));
     MCSymbol *Sym = Mang->getSymbol(GV);
-    Name.append(Sym->getName().begin(), Sym->getName().end());
+    Name.append(Sym->getName().begin() + 1, Sym->getName().end());
 
     unsigned Characteristics = getCOFFSectionFlags(Kind);
 
     Characteristics |= COFF::IMAGE_SCN_LNK_COMDAT;
 
     return getContext().getCOFFSection(Name.str(), Characteristics,
-                          COFF::IMAGE_COMDAT_SELECT_EXACT_MATCH, Kind);
+                          COFF::IMAGE_COMDAT_SELECT_ANY, Kind);
   }
 
   if (Kind.isText())

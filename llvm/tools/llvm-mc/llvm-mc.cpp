@@ -27,12 +27,13 @@
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
 #include "Disassembler.h"
@@ -50,6 +51,10 @@ ShowEncoding("show-encoding", cl::desc("Show instruction encodings"));
 
 static cl::opt<bool>
 ShowInst("show-inst", cl::desc("Show internal instruction representation"));
+
+static cl::opt<bool>
+ShowInstOperands("show-inst-operands",
+                 cl::desc("Show instructions operands as parsed"));
 
 static cl::opt<unsigned>
 OutputAsmVariant("output-asm-variant",
@@ -135,6 +140,22 @@ static const Target *GetTarget(const char *ProgName) {
   return 0;
 }
 
+static tool_output_file *GetOutputStream() {
+  if (OutputFilename == "")
+    OutputFilename = "-";
+
+  std::string Err;
+  tool_output_file *Out = new tool_output_file(OutputFilename.c_str(), Err,
+                                               raw_fd_ostream::F_Binary);
+  if (!Err.empty()) {
+    errs() << Err << '\n';
+    delete Out;
+    return 0;
+  }
+
+  return Out;
+}
+
 static int AsLexInput(const char *ProgName) {
   std::string ErrorMessage;
   MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(InputFilename,
@@ -167,9 +188,15 @@ static int AsLexInput(const char *ProgName) {
   AsmLexer Lexer(*MAI);
   Lexer.setBuffer(SrcMgr.getMemoryBuffer(0));
 
+  OwningPtr<tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
   bool Error = false;
   while (Lexer.Lex().isNot(AsmToken::Eof)) {
-    switch (Lexer.getKind()) {
+    AsmToken Tok = Lexer.getTok();
+
+    switch (Tok.getKind()) {
     default:
       SrcMgr.PrintMessage(Lexer.getLoc(), "unknown token", "warning");
       Error = true;
@@ -178,69 +205,69 @@ static int AsLexInput(const char *ProgName) {
       Error = true; // error already printed.
       break;
     case AsmToken::Identifier:
-      outs() << "identifier: " << Lexer.getTok().getString() << '\n';
-      break;
-    case AsmToken::String:
-      outs() << "string: " << Lexer.getTok().getString() << '\n';
+      Out->os() << "identifier: " << Lexer.getTok().getString();
       break;
     case AsmToken::Integer:
-      outs() << "int: " << Lexer.getTok().getString() << '\n';
+      Out->os() << "int: " << Lexer.getTok().getString();
+      break;
+    case AsmToken::Real:
+      Out->os() << "real: " << Lexer.getTok().getString();
+      break;
+    case AsmToken::Register:
+      Out->os() << "register: " << Lexer.getTok().getRegVal();
+      break;
+    case AsmToken::String:
+      Out->os() << "string: " << Lexer.getTok().getString();
       break;
 
-    case AsmToken::Amp:            outs() << "Amp\n"; break;
-    case AsmToken::AmpAmp:         outs() << "AmpAmp\n"; break;
-    case AsmToken::Caret:          outs() << "Caret\n"; break;
-    case AsmToken::Colon:          outs() << "Colon\n"; break;
-    case AsmToken::Comma:          outs() << "Comma\n"; break;
-    case AsmToken::Dollar:         outs() << "Dollar\n"; break;
-    case AsmToken::EndOfStatement: outs() << "EndOfStatement\n"; break;
-    case AsmToken::Eof:            outs() << "Eof\n"; break;
-    case AsmToken::Equal:          outs() << "Equal\n"; break;
-    case AsmToken::EqualEqual:     outs() << "EqualEqual\n"; break;
-    case AsmToken::Exclaim:        outs() << "Exclaim\n"; break;
-    case AsmToken::ExclaimEqual:   outs() << "ExclaimEqual\n"; break;
-    case AsmToken::Greater:        outs() << "Greater\n"; break;
-    case AsmToken::GreaterEqual:   outs() << "GreaterEqual\n"; break;
-    case AsmToken::GreaterGreater: outs() << "GreaterGreater\n"; break;
-    case AsmToken::LParen:         outs() << "LParen\n"; break;
-    case AsmToken::Less:           outs() << "Less\n"; break;
-    case AsmToken::LessEqual:      outs() << "LessEqual\n"; break;
-    case AsmToken::LessGreater:    outs() << "LessGreater\n"; break;
-    case AsmToken::LessLess:       outs() << "LessLess\n"; break;
-    case AsmToken::Minus:          outs() << "Minus\n"; break;
-    case AsmToken::Percent:        outs() << "Percent\n"; break;
-    case AsmToken::Pipe:           outs() << "Pipe\n"; break;
-    case AsmToken::PipePipe:       outs() << "PipePipe\n"; break;
-    case AsmToken::Plus:           outs() << "Plus\n"; break;
-    case AsmToken::RParen:         outs() << "RParen\n"; break;
-    case AsmToken::Slash:          outs() << "Slash\n"; break;
-    case AsmToken::Star:           outs() << "Star\n"; break;
-    case AsmToken::Tilde:          outs() << "Tilde\n"; break;
+    case AsmToken::Amp:            Out->os() << "Amp"; break;
+    case AsmToken::AmpAmp:         Out->os() << "AmpAmp"; break;
+    case AsmToken::At:             Out->os() << "At"; break;
+    case AsmToken::Caret:          Out->os() << "Caret"; break;
+    case AsmToken::Colon:          Out->os() << "Colon"; break;
+    case AsmToken::Comma:          Out->os() << "Comma"; break;
+    case AsmToken::Dollar:         Out->os() << "Dollar"; break;
+    case AsmToken::Dot:            Out->os() << "Dot"; break;
+    case AsmToken::EndOfStatement: Out->os() << "EndOfStatement"; break;
+    case AsmToken::Eof:            Out->os() << "Eof"; break;
+    case AsmToken::Equal:          Out->os() << "Equal"; break;
+    case AsmToken::EqualEqual:     Out->os() << "EqualEqual"; break;
+    case AsmToken::Exclaim:        Out->os() << "Exclaim"; break;
+    case AsmToken::ExclaimEqual:   Out->os() << "ExclaimEqual"; break;
+    case AsmToken::Greater:        Out->os() << "Greater"; break;
+    case AsmToken::GreaterEqual:   Out->os() << "GreaterEqual"; break;
+    case AsmToken::GreaterGreater: Out->os() << "GreaterGreater"; break;
+    case AsmToken::Hash:           Out->os() << "Hash"; break;
+    case AsmToken::LBrac:          Out->os() << "LBrac"; break;
+    case AsmToken::LCurly:         Out->os() << "LCurly"; break;
+    case AsmToken::LParen:         Out->os() << "LParen"; break;
+    case AsmToken::Less:           Out->os() << "Less"; break;
+    case AsmToken::LessEqual:      Out->os() << "LessEqual"; break;
+    case AsmToken::LessGreater:    Out->os() << "LessGreater"; break;
+    case AsmToken::LessLess:       Out->os() << "LessLess"; break;
+    case AsmToken::Minus:          Out->os() << "Minus"; break;
+    case AsmToken::Percent:        Out->os() << "Percent"; break;
+    case AsmToken::Pipe:           Out->os() << "Pipe"; break;
+    case AsmToken::PipePipe:       Out->os() << "PipePipe"; break;
+    case AsmToken::Plus:           Out->os() << "Plus"; break;
+    case AsmToken::RBrac:          Out->os() << "RBrac"; break;
+    case AsmToken::RCurly:         Out->os() << "RCurly"; break;
+    case AsmToken::RParen:         Out->os() << "RParen"; break;
+    case AsmToken::Slash:          Out->os() << "Slash"; break;
+    case AsmToken::Star:           Out->os() << "Star"; break;
+    case AsmToken::Tilde:          Out->os() << "Tilde"; break;
     }
+
+    // Print the token string.
+    Out->os() << " (\"";
+    Out->os().write_escaped(Tok.getString());
+    Out->os() << "\")\n";
   }
-  
+
+  // Keep output if no errors.
+  if (Error == 0) Out->keep();
+ 
   return Error;
-}
-
-static formatted_raw_ostream *GetOutputStream() {
-  if (OutputFilename == "")
-    OutputFilename = "-";
-
-  // Make sure that the Out file gets unlinked from the disk if we get a
-  // SIGINT.
-  if (OutputFilename != "-")
-    sys::RemoveFileOnSignal(sys::Path(OutputFilename));
-
-  std::string Err;
-  raw_fd_ostream *Out = new raw_fd_ostream(OutputFilename.c_str(), Err,
-                                           raw_fd_ostream::F_Binary);
-  if (!Err.empty()) {
-    errs() << Err << '\n';
-    delete Out;
-    return 0;
-  }
-  
-  return new formatted_raw_ostream(*Out, formatted_raw_ostream::DELETE_STREAM);
 }
 
 static int AssembleInput(const char *ProgName) {
@@ -273,10 +300,6 @@ static int AssembleInput(const char *ProgName) {
   assert(MAI && "Unable to create target asm info!");
   
   MCContext Ctx(*MAI);
-  formatted_raw_ostream *Out = GetOutputStream();
-  if (!Out)
-    return 1;
-
 
   // FIXME: We shouldn't need to do this (and link in codegen).
   OwningPtr<TargetMachine> TM(TheTarget->createTargetMachine(TripleName, ""));
@@ -287,6 +310,11 @@ static int AssembleInput(const char *ProgName) {
     return 1;
   }
 
+  OwningPtr<tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
+  formatted_raw_ostream FOS(Out->os());
   OwningPtr<MCStreamer> Str;
 
   if (FileType == OFT_AssemblyFile) {
@@ -295,7 +323,8 @@ static int AssembleInput(const char *ProgName) {
     MCCodeEmitter *CE = 0;
     if (ShowEncoding)
       CE = TheTarget->createCodeEmitter(*TM, Ctx);
-    Str.reset(createAsmStreamer(Ctx, *Out,TM->getTargetData()->isLittleEndian(),
+    Str.reset(createAsmStreamer(Ctx, FOS,
+                                TM->getTargetData()->isLittleEndian(),
                                 /*asmverbose*/true, IP, CE, ShowInst));
   } else if (FileType == OFT_Null) {
     Str.reset(createNullStreamer(Ctx));
@@ -304,7 +333,7 @@ static int AssembleInput(const char *ProgName) {
     MCCodeEmitter *CE = TheTarget->createCodeEmitter(*TM, Ctx);
     TargetAsmBackend *TAB = TheTarget->createAsmBackend(TripleName);
     Str.reset(TheTarget->createObjectStreamer(TripleName, Ctx, *TAB,
-                                              *Out, CE, RelaxAll));
+                                              FOS, CE, RelaxAll));
   }
 
   if (EnableLogging) {
@@ -320,14 +349,13 @@ static int AssembleInput(const char *ProgName) {
     return 1;
   }
 
+  Parser->setShowParsedOperands(ShowInstOperands);
   Parser->setTargetParser(*TAP.get());
 
   int Res = Parser->Run(NoInitialTextSection);
-  delete Out;
 
-  // Delete output on errors.
-  if (Res && OutputFilename != "-")
-    sys::Path(OutputFilename).eraseFromDisk();
+  // Keep output if no errors.
+  if (Res == 0) Out->keep();
 
   return Res;
 }
@@ -351,10 +379,20 @@ static int DisassembleInput(const char *ProgName, bool Enhanced) {
     return 1;
   }
   
+  OwningPtr<tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
+  int Res;
   if (Enhanced)
-    return Disassembler::disassembleEnhanced(TripleName, *Buffer);
+    Res = Disassembler::disassembleEnhanced(TripleName, *Buffer, Out->os());
   else
-    return Disassembler::disassemble(*TheTarget, TripleName, *Buffer);
+    Res = Disassembler::disassemble(*TheTarget, TripleName, *Buffer, Out->os());
+
+  // Keep output if no errors.
+  if (Res == 0) Out->keep();
+
+  return Res;
 }
 
 
@@ -373,6 +411,7 @@ int main(int argc, char **argv) {
   llvm::InitializeAllDisassemblers();
   
   cl::ParseCommandLineOptions(argc, argv, "llvm machine code playground\n");
+  TripleName = Triple::normalize(TripleName);
 
   switch (Action) {
   default:

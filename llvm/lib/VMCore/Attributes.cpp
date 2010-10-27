@@ -70,6 +70,8 @@ std::string Attribute::getAsString(Attributes Attrs) {
     Result += "noimplicitfloat ";
   if (Attrs & Attribute::Naked)
     Result += "naked ";
+  if (Attrs & Attribute::Hotpatch)
+    Result += "hotpatch ";
   if (Attrs & Attribute::StackAlignment) {
     Result += "alignstack(";
     Result += utostr(Attribute::getStackAlignmentFromAttrs(Attrs));
@@ -195,6 +197,7 @@ AttrListPtr::AttrListPtr(const AttrListPtr &P) : AttrList(P.AttrList) {
 }
 
 const AttrListPtr &AttrListPtr::operator=(const AttrListPtr &RHS) {
+  sys::SmartScopedLock<true> Lock(*ALMutex);
   if (AttrList == RHS.AttrList) return *this;
   if (AttrList) AttrList->DropRef();
   AttrList = RHS.AttrList;

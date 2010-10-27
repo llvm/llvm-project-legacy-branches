@@ -227,9 +227,12 @@ public:
   /// cheaper to allocate caller saved registers.
   ///
   /// These methods take a MachineFunction argument, which can be used to tune
-  /// the allocatable registers based on the characteristics of the function.
-  /// One simple example is that the frame pointer register can be used if
-  /// frame-pointer-elimination is performed.
+  /// the allocatable registers based on the characteristics of the function,
+  /// subtarget, or other criteria.
+  ///
+  /// Register allocators should account for the fact that an allocation
+  /// order iterator may return a reserved register and always check
+  /// if the register is allocatable (getAllocatableSet()) before using it.
   ///
   /// By default, these methods return all registers in the class.
   ///
@@ -301,7 +304,7 @@ public:
     /// considered to be a 'virtual' register, which is part of the SSA
     /// namespace.  This must be the same for all targets, which means that each
     /// target is limited to this fixed number of registers.
-    FirstVirtualRegister = 1024
+    FirstVirtualRegister = 16384
   };
 
   /// isPhysicalRegister - Return true if the specified register number is in
@@ -593,6 +596,13 @@ public:
     return false;
   }
 
+  /// requiresVirtualBaseRegisters - Returns true if the target wants the
+  /// LocalStackAllocation pass to be run and virtual base registers
+  /// used for more efficient stack access.
+  virtual bool requiresVirtualBaseRegisters(const MachineFunction &MF) const {
+    return false;
+  }
+
   /// hasFP - Return true if the specified function should have a dedicated
   /// frame pointer register. For most targets this is true only if the function
   /// has variable sized allocas or if frame pointer elimination is disabled.
@@ -636,6 +646,44 @@ public:
     return false;
   }
 
+  /// getFrameIndexInstrOffset - Get the offset from the referenced frame
+  /// index in the instruction, if the is one.
+  virtual int64_t getFrameIndexInstrOffset(const MachineInstr *MI,
+                                           int Idx) const {
+    return 0;
+  }
+
+  /// needsFrameBaseReg - Returns true if the instruction's frame index
+  /// reference would be better served by a base register other than FP
+  /// or SP. Used by LocalStackFrameAllocation to determine which frame index
+  /// references it should create new base registers for.
+  virtual bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const {
+    return false;
+  }
+
+  /// materializeFrameBaseRegister - Insert defining instruction(s) for
+  /// BaseReg to be a pointer to FrameIdx before insertion point I.
+  virtual void materializeFrameBaseRegister(MachineBasicBlock::iterator I,
+                                            unsigned BaseReg, int FrameIdx,
+                                            int64_t Offset) const {
+    assert(0 && "materializeFrameBaseRegister does not exist on this target");
+  }
+
+  /// resolveFrameIndex - Resolve a frame index operand of an instruction
+  /// to reference the indicated base register plus offset instead.
+  virtual void resolveFrameIndex(MachineBasicBlock::iterator I,
+                                 unsigned BaseReg, int64_t Offset) const {
+    assert(0 && "resolveFrameIndex does not exist on this target");
+  }
+
+  /// isFrameOffsetLegal - Determine whether a given offset immediate is
+  /// encodable to resolve a frame index.
+  virtual bool isFrameOffsetLegal(const MachineInstr *MI,
+                                  int64_t Offset) const {
+    assert(0 && "isFrameOffsetLegal does not exist on this target");
+    return false; // Must return a value in order to compile with VS 2005
+  }
+
   /// getCallFrameSetup/DestroyOpcode - These methods return the opcode of the
   /// frame setup/destroy instructions if they exist (-1 otherwise).  Some
   /// targets use pseudo instructions in order to abstract away the difference
@@ -671,7 +719,7 @@ public:
   }
 
   /// processFunctionBeforeFrameFinalized - This method is called immediately
-  /// before the specified functions frame layout (MF.getFrameInfo()) is
+  /// before the specified function's frame layout (MF.getFrameInfo()) is
   /// finalized.  Once the frame is finalized, MO_FrameIndex operands are
   /// replaced with direct constants.  This method is optional.
   ///
@@ -698,14 +746,8 @@ public:
   /// specified instruction, as long as it keeps the iterator pointing at the
   /// finished product. SPAdj is the SP adjustment due to call frame setup
   /// instruction.
-  ///
-  /// When -enable-frame-index-scavenging is enabled, the virtual register
-  /// allocated for this frame index is returned and its value is stored in
-  /// *Value.
-  typedef std::pair<unsigned, int> FrameIndexValue;
-  virtual unsigned eliminateFrameIndex(MachineBasicBlock::iterator MI,
-                                       int SPAdj, FrameIndexValue *Value = NULL,
-                                       RegScavenger *RS=NULL) const = 0;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator MI,
+                                   int SPAdj, RegScavenger *RS=NULL) const = 0;
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.

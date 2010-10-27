@@ -16,6 +16,7 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Type.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
@@ -32,6 +33,14 @@
 #include "llvm/System/Signals.h"
 #include "llvm/Target/TargetSelect.h"
 #include <cerrno>
+
+#ifdef __CYGWIN__
+#include <cygwin/version.h>
+#if defined(CYGWIN_VERSION_DLL_MAJOR) && CYGWIN_VERSION_DLL_MAJOR<1007
+#define DO_NOTHING_ATEXIT 1
+#endif
+#endif
+
 using namespace llvm;
 
 namespace {
@@ -98,8 +107,11 @@ namespace {
 static ExecutionEngine *EE = 0;
 
 static void do_shutdown() {
+  // Cygwin-1.5 invokes DLL's dtors before atexit handler.
+#ifndef DO_NOTHING_ATEXIT
   delete EE;
   llvm_shutdown();
+#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -157,7 +169,7 @@ int main(int argc, char **argv, char * const *envp) {
 
   // If we are supposed to override the target triple, do so now.
   if (!TargetTriple.empty())
-    Mod->setTargetTriple(TargetTriple);
+    Mod->setTargetTriple(Triple::normalize(TargetTriple));
 
   CodeGenOpt::Level OLvl = CodeGenOpt::Default;
   switch (OptLevel) {

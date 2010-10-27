@@ -45,6 +45,7 @@ namespace llvm {
   class Function;
   class FastISel;
   class FunctionLoweringInfo;
+  class ImmutableCallSite;
   class MachineBasicBlock;
   class MachineFunction;
   class MachineFrameInfo;
@@ -203,35 +204,57 @@ public:
     return VT.isSimple() && RegClassForVT[VT.getSimpleVT().SimpleTy] != 0;
   }
 
-  /// isTypeSynthesizable - Return true if it's OK for the compiler to create
-  /// new operations of this type.  All Legal types are synthesizable except
-  /// MMX vector types on X86.  Non-Legal types are not synthesizable.
-  bool isTypeSynthesizable(EVT VT) const {
-    return isTypeLegal(VT) && Synthesizable[VT.getSimpleVT().SimpleTy];
-  }
-
   class ValueTypeActionImpl {
     /// ValueTypeActions - For each value type, keep a LegalizeAction enum
     /// that indicates how instruction selection should deal with the type.
     uint8_t ValueTypeActions[MVT::LAST_VALUETYPE];
+    
+    LegalizeAction getExtendedTypeAction(EVT VT) const {
+      // Handle non-vector integers.
+      if (!VT.isVector()) {
+        assert(VT.isInteger() && "Unsupported extended type!");
+        unsigned BitSize = VT.getSizeInBits();
+        // First promote to a power-of-two size, then expand if necessary.
+        if (BitSize < 8 || !isPowerOf2_32(BitSize))
+          return Promote;
+        return Expand;
+      }
+      
+      // If this is a type smaller than a legal vector type, promote to that
+      // type, e.g. <2 x float> -> <4 x float>.
+      if (VT.getVectorElementType().isSimple() &&
+          VT.getVectorNumElements() != 1) {
+        MVT EltType = VT.getVectorElementType().getSimpleVT();
+        unsigned NumElts = VT.getVectorNumElements();
+        while (1) {
+          // Round up to the nearest power of 2.
+          NumElts = (unsigned)NextPowerOf2(NumElts);
+          
+          MVT LargerVector = MVT::getVectorVT(EltType, NumElts);
+          if (LargerVector == MVT()) break;
+          
+          // If this the larger type is legal, promote to it.
+          if (getTypeAction(LargerVector) == Legal) return Promote;
+        }
+      }
+      
+      return VT.isPow2VectorType() ? Expand : Promote;
+    }      
   public:
     ValueTypeActionImpl() {
       std::fill(ValueTypeActions, array_endof(ValueTypeActions), 0);
     }
-    LegalizeAction getTypeAction(LLVMContext &Context, EVT VT) const {
-      if (VT.isExtended()) {
-        if (VT.isVector()) {
-          return VT.isPow2VectorType() ? Expand : Promote;
-        }
-        if (VT.isInteger())
-          // First promote to a power-of-two size, then expand if necessary.
-          return VT == VT.getRoundIntegerType(Context) ? Expand : Promote;
-        assert(0 && "Unsupported extended type!");
-        return Legal;
-      }
-      unsigned I = VT.getSimpleVT().SimpleTy;
-      return (LegalizeAction)ValueTypeActions[I];
+    
+    LegalizeAction getTypeAction(EVT VT) const {
+      if (!VT.isExtended())
+        return getTypeAction(VT.getSimpleVT());
+      return getExtendedTypeAction(VT);
     }
+    
+    LegalizeAction getTypeAction(MVT VT) const {
+      return (LegalizeAction)ValueTypeActions[VT.SimpleTy];
+    }
+    
     void setTypeAction(EVT VT, LegalizeAction Action) {
       unsigned I = VT.getSimpleVT().SimpleTy;
       ValueTypeActions[I] = Action;
@@ -246,10 +269,13 @@ public:
   /// it is already legal (return 'Legal') or we need to promote it to a larger
   /// type (return 'Promote'), or we need to expand it into multiple registers
   /// of smaller integer type (return 'Expand').  'Custom' is not an option.
-  LegalizeAction getTypeAction(LLVMContext &Context, EVT VT) const {
-    return ValueTypeActions.getTypeAction(Context, VT);
+  LegalizeAction getTypeAction(EVT VT) const {
+    return ValueTypeActions.getTypeAction(VT);
   }
-
+  LegalizeAction getTypeAction(MVT VT) const {
+    return ValueTypeActions.getTypeAction(VT);
+  }
+  
   /// getTypeToTransformTo - For types supported by the target, this is an
   /// identity function.  For types that must be promoted to larger types, this
   /// returns the larger type to promote to.  For integer types that are larger
@@ -261,7 +287,7 @@ public:
       assert((unsigned)VT.getSimpleVT().SimpleTy <
              array_lengthof(TransformToType));
       EVT NVT = TransformToType[VT.getSimpleVT().SimpleTy];
-      assert(getTypeAction(Context, NVT) != Promote &&
+      assert(getTypeAction(NVT) != Promote &&
              "Promote may not follow Expand or Promote");
       return NVT;
     }
@@ -276,17 +302,16 @@ public:
           EltVT : EVT::getVectorVT(Context, EltVT, NumElts / 2);
       }
       // Promote to a power of two size, avoiding multi-step promotion.
-      return getTypeAction(Context, NVT) == Promote ?
+      return getTypeAction(NVT) == Promote ?
         getTypeToTransformTo(Context, NVT) : NVT;
     } else if (VT.isInteger()) {
       EVT NVT = VT.getRoundIntegerType(Context);
-      if (NVT == VT)
-        // Size is a power of two - expand to half the size.
+      if (NVT == VT)      // Size is a power of two - expand to half the size.
         return EVT::getIntegerVT(Context, VT.getSizeInBits() / 2);
-      else
-        // Promote to a power of two size, avoiding multi-step promotion.
-        return getTypeAction(Context, NVT) == Promote ?
-          getTypeToTransformTo(Context, NVT) : NVT;
+      
+      // Promote to a power of two size, avoiding multi-step promotion.
+      return getTypeAction(NVT) == Promote ?
+        getTypeToTransformTo(Context, NVT) : NVT;
     }
     assert(0 && "Unsupported extended type!");
     return MVT(MVT::Other); // Not reached
@@ -299,7 +324,7 @@ public:
   EVT getTypeToExpandTo(LLVMContext &Context, EVT VT) const {
     assert(!VT.isVector());
     while (true) {
-      switch (getTypeAction(Context, VT)) {
+      switch (getTypeAction(VT)) {
       case Legal:
         return VT;
       case Expand:
@@ -1005,12 +1030,10 @@ protected:
   /// addRegisterClass - Add the specified register class as an available
   /// regclass for the specified value type.  This indicates the selector can
   /// handle values of that class natively.
-  void addRegisterClass(EVT VT, TargetRegisterClass *RC,
-                        bool isSynthesizable = true) {
+  void addRegisterClass(EVT VT, TargetRegisterClass *RC) {
     assert((unsigned)VT.getSimpleVT().SimpleTy < array_lengthof(RegClassForVT));
     AvailableRegClasses.push_back(std::make_pair(VT, RC));
     RegClassForVT[VT.getSimpleVT().SimpleTy] = RC;
-    Synthesizable[VT.getSimpleVT().SimpleTy] = isSynthesizable;
   }
 
   /// findRepresentativeClass - Return the largest legal super-reg register class
@@ -1325,12 +1348,42 @@ public:
     /// returns the output operand it matches.
     unsigned getMatchedOperand() const;
 
+    /// Copy constructor for copying from an AsmOperandInfo.
+    AsmOperandInfo(const AsmOperandInfo &info)
+      : InlineAsm::ConstraintInfo(info),
+        ConstraintCode(info.ConstraintCode),
+        ConstraintType(info.ConstraintType),
+        CallOperandVal(info.CallOperandVal),
+        ConstraintVT(info.ConstraintVT) {
+    }
+
+    /// Copy constructor for copying from a ConstraintInfo.
     AsmOperandInfo(const InlineAsm::ConstraintInfo &info)
       : InlineAsm::ConstraintInfo(info),
         ConstraintType(TargetLowering::C_Unknown),
         CallOperandVal(0), ConstraintVT(MVT::Other) {
     }
   };
+  
+  /// ParseConstraints - Split up the constraint string from the inline
+  /// assembly value into the specific constraints and their prefixes,
+  /// and also tie in the associated operand values.
+  /// If this returns an empty vector, and if the constraint string itself
+  /// isn't empty, there was an error parsing.
+  virtual std::vector<AsmOperandInfo> ParseConstraints(
+    ImmutableCallSite CS) const;
+  
+  /// Examine constraint type and operand type and determine a weight value,
+  /// where: -1 = invalid match, and 0 = so-so match to 5 = good match.
+  /// The operand object must already have been set up with the operand type.
+  virtual int getMultipleConstraintMatchWeight(
+      AsmOperandInfo &info, int maIndex) const;
+  
+  /// Examine constraint string and operand type and determine a weight value,
+  /// where: -1 = invalid match, and 0 = so-so match to 3 = good match.
+  /// The operand object must already have been set up with the operand type.
+  virtual int getSingleConstraintMatchWeight(
+      AsmOperandInfo &info, const char *constraint) const;
 
   /// ComputeConstraintToUse - Determines the constraint code and constraint
   /// type to use for the specific AsmOperandInfo, setting
@@ -1611,11 +1664,6 @@ private:
   /// register class for each ValueType. The cost is used by the scheduler to
   /// approximate register pressure.
   uint8_t RepRegClassCostForVT[MVT::LAST_VALUETYPE];
-
-  /// Synthesizable indicates whether it is OK for the compiler to create new
-  /// operations using this type.  All Legal types are Synthesizable except
-  /// MMX types on X86.  Non-Legal types are not Synthesizable.
-  bool Synthesizable[MVT::LAST_VALUETYPE];
 
   /// TransformToType - For any value types we are promoting or expanding, this
   /// contains the value type that we are changing to.  For Expanded types, this

@@ -40,110 +40,27 @@
 #include "llvm/Support/CommandLine.h"
 
 namespace llvm {
-cl::opt<bool>
-ReuseFrameIndexVals("arm-reuse-frame-index-vals", cl::Hidden, cl::init(true),
-          cl::desc("Reuse repeated frame index values"));
+static cl::opt<bool>
+ForceAllBaseRegAlloc("arm-force-base-reg-alloc", cl::Hidden, cl::init(false),
+          cl::desc("Force use of virtual base registers for stack load/store"));
+static cl::opt<bool>
+EnableLocalStackAlloc("enable-local-stack-alloc", cl::init(true), cl::Hidden,
+          cl::desc("Enable pre-regalloc stack frame index allocation"));
 }
 
 using namespace llvm;
 
-unsigned ARMBaseRegisterInfo::getRegisterNumbering(unsigned RegEnum,
-                                                   bool *isSPVFP) {
-  if (isSPVFP)
-    *isSPVFP = false;
+static cl::opt<bool>
+EnableBasePointer("arm-use-base-pointer", cl::Hidden, cl::init(true),
+          cl::desc("Enable use of a base pointer for complex stack frames"));
 
-  using namespace ARM;
-  switch (RegEnum) {
-  default:
-    llvm_unreachable("Unknown ARM register!");
-  case R0:  case D0:  case Q0:  return 0;
-  case R1:  case D1:  case Q1:  return 1;
-  case R2:  case D2:  case Q2:  return 2;
-  case R3:  case D3:  case Q3:  return 3;
-  case R4:  case D4:  case Q4:  return 4;
-  case R5:  case D5:  case Q5:  return 5;
-  case R6:  case D6:  case Q6:  return 6;
-  case R7:  case D7:  case Q7:  return 7;
-  case R8:  case D8:  case Q8:  return 8;
-  case R9:  case D9:  case Q9:  return 9;
-  case R10: case D10: case Q10: return 10;
-  case R11: case D11: case Q11: return 11;
-  case R12: case D12: case Q12: return 12;
-  case SP:  case D13: case Q13: return 13;
-  case LR:  case D14: case Q14: return 14;
-  case PC:  case D15: case Q15: return 15;
-
-  case D16: return 16;
-  case D17: return 17;
-  case D18: return 18;
-  case D19: return 19;
-  case D20: return 20;
-  case D21: return 21;
-  case D22: return 22;
-  case D23: return 23;
-  case D24: return 24;
-  case D25: return 25;
-  case D26: return 26;
-  case D27: return 27;
-  case D28: return 28;
-  case D29: return 29;
-  case D30: return 30;
-  case D31: return 31;
-
-  case S0: case S1: case S2: case S3:
-  case S4: case S5: case S6: case S7:
-  case S8: case S9: case S10: case S11:
-  case S12: case S13: case S14: case S15:
-  case S16: case S17: case S18: case S19:
-  case S20: case S21: case S22: case S23:
-  case S24: case S25: case S26: case S27:
-  case S28: case S29: case S30: case S31: {
-    if (isSPVFP)
-      *isSPVFP = true;
-    switch (RegEnum) {
-    default: return 0; // Avoid compile time warning.
-    case S0: return 0;
-    case S1: return 1;
-    case S2: return 2;
-    case S3: return 3;
-    case S4: return 4;
-    case S5: return 5;
-    case S6: return 6;
-    case S7: return 7;
-    case S8: return 8;
-    case S9: return 9;
-    case S10: return 10;
-    case S11: return 11;
-    case S12: return 12;
-    case S13: return 13;
-    case S14: return 14;
-    case S15: return 15;
-    case S16: return 16;
-    case S17: return 17;
-    case S18: return 18;
-    case S19: return 19;
-    case S20: return 20;
-    case S21: return 21;
-    case S22: return 22;
-    case S23: return 23;
-    case S24: return 24;
-    case S25: return 25;
-    case S26: return 26;
-    case S27: return 27;
-    case S28: return 28;
-    case S29: return 29;
-    case S30: return 30;
-    case S31: return 31;
-    }
-  }
-  }
-}
 
 ARMBaseRegisterInfo::ARMBaseRegisterInfo(const ARMBaseInstrInfo &tii,
                                          const ARMSubtarget &sti)
   : ARMGenRegisterInfo(ARM::ADJCALLSTACKDOWN, ARM::ADJCALLSTACKUP),
     TII(tii), STI(sti),
-    FramePtr((STI.isTargetDarwin() || STI.isThumb()) ? ARM::R7 : ARM::R11) {
+    FramePtr((STI.isTargetDarwin() || STI.isThumb()) ? ARM::R7 : ARM::R11),
+    BasePtr(ARM::R6) {
 }
 
 const unsigned*
@@ -160,8 +77,8 @@ ARMBaseRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   static const unsigned DarwinCalleeSavedRegs[] = {
     // Darwin ABI deviates from ARM standard ABI. R9 is not a callee-saved
     // register.
-    ARM::LR,  ARM::R7,  ARM::R6, ARM::R5, ARM::R4,
-    ARM::R11, ARM::R10, ARM::R8,
+    ARM::LR, ARM::R11, ARM::R10, ARM::R8,
+    ARM::R7, ARM::R6,  ARM::R5,  ARM::R4,
 
     ARM::D15, ARM::D14, ARM::D13, ARM::D12,
     ARM::D11, ARM::D10, ARM::D9,  ARM::D8,
@@ -176,8 +93,11 @@ getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(ARM::SP);
   Reserved.set(ARM::PC);
-  if (STI.isTargetDarwin() || hasFP(MF))
+  Reserved.set(ARM::FPSCR);
+  if (hasFP(MF))
     Reserved.set(FramePtr);
+  if (hasBasePointer(MF))
+    Reserved.set(BasePtr);
   // Some targets reserve R9.
   if (STI.isR9Reserved())
     Reserved.set(ARM::R9);
@@ -191,9 +111,13 @@ bool ARMBaseRegisterInfo::isReservedReg(const MachineFunction &MF,
   case ARM::SP:
   case ARM::PC:
     return true;
+  case ARM::R6:
+    if (hasBasePointer(MF))
+      return true;
+    break;
   case ARM::R7:
   case ARM::R11:
-    if (FramePtr == Reg && (STI.isTargetDarwin() || hasFP(MF)))
+    if (FramePtr == Reg && hasFP(MF))
       return true;
     break;
   case ARM::R9:
@@ -510,7 +434,7 @@ ARMBaseRegisterInfo::getAllocationOrder(const TargetRegisterClass *RC,
       return std::make_pair(RC->allocation_order_begin(MF),
                             RC->allocation_order_end(MF));
 
-    if (!STI.isTargetDarwin() && !hasFP(MF)) {
+    if (!hasFP(MF)) {
       if (!STI.isR9Reserved())
         return std::make_pair(GPREven1,
                               GPREven1 + (sizeof(GPREven1)/sizeof(unsigned)));
@@ -539,7 +463,7 @@ ARMBaseRegisterInfo::getAllocationOrder(const TargetRegisterClass *RC,
       return std::make_pair(RC->allocation_order_begin(MF),
                             RC->allocation_order_end(MF));
 
-    if (!STI.isTargetDarwin() && !hasFP(MF)) {
+    if (!hasFP(MF)) {
       if (!STI.isR9Reserved())
         return std::make_pair(GPROdd1,
                               GPROdd1 + (sizeof(GPROdd1)/sizeof(unsigned)));
@@ -609,42 +533,67 @@ ARMBaseRegisterInfo::UpdateRegAllocHint(unsigned Reg, unsigned NewReg,
 /// or if frame pointer elimination is disabled.
 ///
 bool ARMBaseRegisterInfo::hasFP(const MachineFunction &MF) const {
+  // Mac OS X requires FP not to be clobbered for backtracing purpose.
+  if (STI.isTargetDarwin())
+    return true;
+
   const MachineFrameInfo *MFI = MF.getFrameInfo();
-  return ((DisableFramePointerElim(MF) && MFI->adjustsStack())||
+  // Always eliminate non-leaf frame pointers.
+  return ((DisableFramePointerElim(MF) && MFI->hasCalls()) ||
           needsStackRealignment(MF) ||
           MFI->hasVarSizedObjects() ||
           MFI->isFrameAddressTaken());
 }
 
+bool ARMBaseRegisterInfo::hasBasePointer(const MachineFunction &MF) const {
+  const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
+
+  if (!EnableBasePointer)
+    return false;
+
+  if (needsStackRealignment(MF) && MFI->hasVarSizedObjects())
+    return true;
+
+  // Thumb has trouble with negative offsets from the FP. Thumb2 has a limited
+  // negative range for ldr/str (255), and thumb1 is positive offsets only.
+  // It's going to be better to use the SP or Base Pointer instead. When there
+  // are variable sized objects, we can't reference off of the SP, so we
+  // reserve a Base Pointer.
+  if (AFI->isThumbFunction() && MFI->hasVarSizedObjects()) {
+    // Conservatively estimate whether the negative offset from the frame
+    // pointer will be sufficient to reach. If a function has a smallish
+    // frame, it's less likely to have lots of spills and callee saved
+    // space, so it's all more likely to be within range of the frame pointer.
+    // If it's wrong, the scavenger will still enable access to work, it just
+    // won't be optimal.
+    if (AFI->isThumb2Function() && MFI->getLocalFrameSize() < 128)
+      return false;
+    return true;
+  }
+
+  return false;
+}
+
 bool ARMBaseRegisterInfo::canRealignStack(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
-  return (RealignStack &&
-          !AFI->isThumb1OnlyFunction() &&
-          !MFI->hasVarSizedObjects());
+  // We can't realign the stack if:
+  // 1. Dynamic stack realignment is explicitly disabled,
+  // 2. This is a Thumb1 function (it's not useful, so we don't bother), or
+  // 3. There are VLAs in the function and the base pointer is disabled.
+  return (RealignStack && !AFI->isThumb1OnlyFunction() &&
+          (!MFI->hasVarSizedObjects() || EnableBasePointer));
 }
 
 bool ARMBaseRegisterInfo::
 needsStackRealignment(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const Function *F = MF.getFunction();
-  const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   unsigned StackAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
-  bool requiresRealignment = ((MFI->getMaxAlignment() > StackAlign) ||
+  bool requiresRealignment = ((MFI->getLocalFrameMaxAlign() > StackAlign) ||
                                F->hasFnAttr(Attribute::StackAlignment));
-    
-  // FIXME: Currently we don't support stack realignment for functions with
-  //        variable-sized allocas.
-  // FIXME: It's more complicated than this...
-  if (0 && requiresRealignment && MFI->hasVarSizedObjects())
-    report_fatal_error(
-      "Stack realignment in presense of dynamic allocas is not supported");
-  
-  // FIXME: This probably isn't the right place for this.
-  if (0 && requiresRealignment && AFI->isThumb1OnlyFunction())
-    report_fatal_error(
-      "Stack realignment in thumb1 functions is not supported");
-  
+
   return requiresRealignment && canRealignStack(MF);
 }
 
@@ -681,6 +630,7 @@ static unsigned estimateStackSize(MachineFunction &MF) {
 /// instructions will require a scratch register during their expansion later.
 unsigned
 ARMBaseRegisterInfo::estimateRSStackSizeLimit(MachineFunction &MF) const {
+  const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   unsigned Limit = (1 << 12) - 1;
   for (MachineFunction::iterator BB = MF.begin(),E = MF.end(); BB != E; ++BB) {
     for (MachineBasicBlock::iterator I = BB->begin(), E = BB->end();
@@ -706,10 +656,14 @@ ARMBaseRegisterInfo::estimateRSStackSizeLimit(MachineFunction &MF) const {
           Limit = std::min(Limit, ((1U << 8) - 1) * 4);
           break;
         case ARMII::AddrModeT2_i12:
-          if (hasFP(MF)) Limit = std::min(Limit, (1U << 8) - 1);
+          // i12 supports only positive offset so these will be converted to
+          // i8 opcodes. See llvm::rewriteT2FrameIndex.
+          if (hasFP(MF) && AFI->hasStackFrame())
+            Limit = std::min(Limit, (1U << 8) - 1);
           break;
+        case ARMII::AddrMode4:
         case ARMII::AddrMode6:
-          // Addressing mode 6 (load/store) instructions can't encode an
+          // Addressing modes 4 & 6 (load/store) instructions can't encode an
           // immediate offset for stack references.
           return 0;
         default:
@@ -748,7 +702,6 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   bool LRSpilled = false;
   unsigned NumGPRSpills = 0;
   SmallVector<unsigned, 4> UnspilledCS1GPRs;
-  SmallVector<unsigned, 4> UnspilledCS2GPRs;
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   MachineFrameInfo *MFI = MF.getFrameInfo();
 
@@ -762,6 +715,10 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   // Spill LR if Thumb1 function uses variable length argument lists.
   if (AFI->isThumb1OnlyFunction() && AFI->getVarArgsRegSaveSize() > 0)
     MF.getRegInfo().setPhysRegUsed(ARM::LR);
+
+  // Spill the BasePtr if it's used.
+  if (hasBasePointer(MF))
+    MF.getRegInfo().setPhysRegUsed(BasePtr);
 
   // Don't spill FP if the frame can be eliminated. This is determined
   // by scanning the callee-save registers to see if any is used.
@@ -811,23 +768,7 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
         break;
       }
     } else {
-      if (!STI.isTargetDarwin()) {
-        UnspilledCS1GPRs.push_back(Reg);
-        continue;
-      }
-
-      switch (Reg) {
-      case ARM::R4:
-      case ARM::R5:
-      case ARM::R6:
-      case ARM::R7:
-      case ARM::LR:
-        UnspilledCS1GPRs.push_back(Reg);
-        break;
-      default:
-        UnspilledCS2GPRs.push_back(Reg);
-        break;
-      }
+      UnspilledCS1GPRs.push_back(Reg);
     }
   }
 
@@ -850,13 +791,19 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   // slot of the previous FP. Also, if we have variable sized objects in the
   // function, stack slot references will often be negative, and some of
   // our instructions are positive-offset only, so conservatively consider
-  // that case to want a spill slot (or register) as well.
+  // that case to want a spill slot (or register) as well. Similarly, if
+  // the function adjusts the stack pointer during execution and the
+  // adjustments aren't already part of our stack size estimate, our offset
+  // calculations may be off, so be conservative.
   // FIXME: We could add logic to be more precise about negative offsets
   //        and which instructions will need a scratch register for them. Is it
   //        worth the effort and added fragility?
   bool BigStack =
-    (RS && (estimateStackSize(MF) + (hasFP(MF) ? 4:0) >=
-            estimateRSStackSizeLimit(MF))) || MFI->hasVarSizedObjects();
+    (RS &&
+     (estimateStackSize(MF) + ((hasFP(MF) && AFI->hasStackFrame()) ? 4:0) >=
+      estimateRSStackSizeLimit(MF)))
+    || MFI->hasVarSizedObjects()
+    || (MFI->adjustsStack() && !canSimplifyCallFramePseudos(MF));
 
   bool ExtraCSSpill = false;
   if (BigStack || !CanEliminateFrame || cannotEliminateFrame(MF)) {
@@ -874,15 +821,13 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
       ExtraCSSpill = true;
     }
 
-    // Darwin ABI requires FP to point to the stack slot that contains the
-    // previous FP.
-    if (STI.isTargetDarwin() || hasFP(MF)) {
+    if (hasFP(MF)) {
       MF.getRegInfo().setPhysRegUsed(FramePtr);
       NumGPRSpills++;
     }
 
     // If stack and double are 8-byte aligned and we are spilling an odd number
-    // of GPRs. Spill one extra callee save GPR so we won't have to pad between
+    // of GPRs, spill one extra callee save GPR so we won't have to pad between
     // the integer and double callee save areas.
     unsigned TargetAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
     if (TargetAlign == 8 && (NumGPRSpills & 1)) {
@@ -899,13 +844,6 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
             break;
           }
         }
-      } else if (!UnspilledCS2GPRs.empty() &&
-                 !AFI->isThumb1OnlyFunction()) {
-        unsigned Reg = UnspilledCS2GPRs.front();
-        MF.getRegInfo().setPhysRegUsed(Reg);
-        AFI->setCSRegisterIsSpilled(Reg);
-        if (!isReservedReg(MF, Reg))
-          ExtraCSSpill = true;
       }
     }
 
@@ -927,17 +865,6 @@ ARMBaseRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
              Reg == ARM::LR)) {
           Extras.push_back(Reg);
           NumExtras--;
-        }
-      }
-      // For non-Thumb1 functions, also check for hi-reg CS registers
-      if (!AFI->isThumb1OnlyFunction()) {
-        while (NumExtras && !UnspilledCS2GPRs.empty()) {
-          unsigned Reg = UnspilledCS2GPRs.back();
-          UnspilledCS2GPRs.pop_back();
-          if (!isReservedReg(MF, Reg)) {
-            Extras.push_back(Reg);
-            NumExtras--;
-          }
         }
       }
       if (Extras.size() && NumExtras == 0) {
@@ -967,54 +894,93 @@ unsigned ARMBaseRegisterInfo::getRARegister() const {
   return ARM::LR;
 }
 
-unsigned 
+unsigned
 ARMBaseRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  if (STI.isTargetDarwin() || hasFP(MF))
+  if (hasFP(MF))
     return FramePtr;
   return ARM::SP;
 }
 
+// Provide a base+offset reference to an FI slot for debug info. It's the
+// same as what we use for resolving the code-gen references for now.
+// FIXME: This can go wrong when references are SP-relative and simple call
+//        frames aren't used.
 int
 ARMBaseRegisterInfo::getFrameIndexReference(const MachineFunction &MF, int FI,
                                             unsigned &FrameReg) const {
+  return ResolveFrameIndexReference(MF, FI, FrameReg, 0);
+}
+
+int
+ARMBaseRegisterInfo::ResolveFrameIndexReference(const MachineFunction &MF,
+                                                int FI,
+                                                unsigned &FrameReg,
+                                                int SPAdj) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   int Offset = MFI->getObjectOffset(FI) + MFI->getStackSize();
+  int FPOffset = Offset - AFI->getFramePtrSpillOffset();
   bool isFixed = MFI->isFixedObjectIndex(FI);
 
   FrameReg = ARM::SP;
-  if (AFI->isGPRCalleeSavedArea1Frame(FI))
-    Offset -= AFI->getGPRCalleeSavedArea1Offset();
-  else if (AFI->isGPRCalleeSavedArea2Frame(FI))
-    Offset -= AFI->getGPRCalleeSavedArea2Offset();
+  Offset += SPAdj;
+  if (AFI->isGPRCalleeSavedAreaFrame(FI))
+    return Offset - AFI->getGPRCalleeSavedAreaOffset();
   else if (AFI->isDPRCalleeSavedAreaFrame(FI))
-    Offset -= AFI->getDPRCalleeSavedAreaOffset();
-  else if (needsStackRealignment(MF)) {
-    // When dynamically realigning the stack, use the frame pointer for
-    // parameters, and the stack pointer for locals.
+    return Offset - AFI->getDPRCalleeSavedAreaOffset();
+
+  // When dynamically realigning the stack, use the frame pointer for
+  // parameters, and the stack/base pointer for locals.
+  if (needsStackRealignment(MF)) {
     assert (hasFP(MF) && "dynamic stack realignment without a FP!");
     if (isFixed) {
       FrameReg = getFrameRegister(MF);
-      Offset -= AFI->getFramePtrSpillOffset();
+      Offset = FPOffset;
+    } else if (MFI->hasVarSizedObjects()) {
+      assert(hasBasePointer(MF) &&
+             "VLAs and dynamic stack alignment, but missing base pointer!");
+      FrameReg = BasePtr;
     }
-  } else if (hasFP(MF) && AFI->hasStackFrame()) {
-    if (isFixed || MFI->hasVarSizedObjects()) {
-      // Use frame pointer to reference fixed objects unless this is a
-      // frameless function.
+    return Offset;
+  }
+
+  // If there is a frame pointer, use it when we can.
+  if (hasFP(MF) && AFI->hasStackFrame()) {
+    // Use frame pointer to reference fixed objects. Use it for locals if
+    // there are VLAs (and thus the SP isn't reliable as a base).
+    if (isFixed || (MFI->hasVarSizedObjects() && !hasBasePointer(MF))) {
       FrameReg = getFrameRegister(MF);
-      Offset -= AFI->getFramePtrSpillOffset();
+      return FPOffset;
+    } else if (MFI->hasVarSizedObjects()) {
+      assert(hasBasePointer(MF) && "missing base pointer!");
+      // Try to use the frame pointer if we can, else use the base pointer
+      // since it's available. This is handy for the emergency spill slot, in
+      // particular.
+      if (AFI->isThumb2Function()) {
+        if (FPOffset >= -255 && FPOffset < 0) {
+          FrameReg = getFrameRegister(MF);
+          return FPOffset;
+        }
+      } else
+        FrameReg = BasePtr;
     } else if (AFI->isThumb2Function()) {
-      // In Thumb2 mode, the negative offset is very limited.
-      int FPOffset = Offset - AFI->getFramePtrSpillOffset();
+      // In Thumb2 mode, the negative offset is very limited. Try to avoid
+      // out of range references.
       if (FPOffset >= -255 && FPOffset < 0) {
         FrameReg = getFrameRegister(MF);
-        Offset = FPOffset;
+        return FPOffset;
       }
+    } else if (Offset > (FPOffset < 0 ? -FPOffset : FPOffset)) {
+      // Otherwise, use SP or FP, whichever is closer to the stack slot.
+      FrameReg = getFrameRegister(MF);
+      return FPOffset;
     }
   }
+  // Use the base pointer if we have one.
+  if (hasBasePointer(MF))
+    FrameReg = BasePtr;
   return Offset;
 }
-
 
 int
 ARMBaseRegisterInfo::getFrameIndexOffset(const MachineFunction &MF,
@@ -1050,7 +1016,8 @@ unsigned ARMBaseRegisterInfo::getRegisterPairEven(unsigned Reg,
   case ARM::R5:
     return ARM::R4;
   case ARM::R7:
-    return isReservedReg(MF, ARM::R7)  ? 0 : ARM::R6;
+    return (isReservedReg(MF, ARM::R7) || isReservedReg(MF, ARM::R6))
+      ? 0 : ARM::R6;
   case ARM::R9:
     return isReservedReg(MF, ARM::R9)  ? 0 :ARM::R8;
   case ARM::R11:
@@ -1139,7 +1106,8 @@ unsigned ARMBaseRegisterInfo::getRegisterPairOdd(unsigned Reg,
   case ARM::R4:
     return ARM::R5;
   case ARM::R6:
-    return isReservedReg(MF, ARM::R7)  ? 0 : ARM::R7;
+    return (isReservedReg(MF, ARM::R7) || isReservedReg(MF, ARM::R6))
+      ? 0 : ARM::R7;
   case ARM::R8:
     return isReservedReg(MF, ARM::R9)  ? 0 :ARM::R9;
   case ARM::R10:
@@ -1233,7 +1201,7 @@ emitLoadConstPool(MachineBasicBlock &MBB,
   BuildMI(MBB, MBBI, dl, TII.get(ARM::LDRcp))
     .addReg(DestReg, getDefRegState(true), SubIdx)
     .addConstantPoolIndex(Idx)
-    .addReg(0).addImm(0).addImm(Pred).addReg(PredReg);
+    .addImm(0).addImm(Pred).addReg(PredReg);
 }
 
 bool ARMBaseRegisterInfo::
@@ -1244,6 +1212,11 @@ requiresRegisterScavenging(const MachineFunction &MF) const {
 bool ARMBaseRegisterInfo::
 requiresFrameIndexScavenging(const MachineFunction &MF) const {
   return true;
+}
+
+bool ARMBaseRegisterInfo::
+requiresVirtualBaseRegisters(const MachineFunction &MF) const {
+  return EnableLocalStackAlloc;
 }
 
 // hasReservedCallFrame - Under normal circumstances, when a frame pointer is
@@ -1331,10 +1304,258 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   MBB.erase(I);
 }
 
-unsigned
+int64_t ARMBaseRegisterInfo::
+getFrameIndexInstrOffset(const MachineInstr *MI, int Idx) const {
+  const TargetInstrDesc &Desc = MI->getDesc();
+  unsigned AddrMode = (Desc.TSFlags & ARMII::AddrModeMask);
+  int64_t InstrOffs = 0;;
+  int Scale = 1;
+  unsigned ImmIdx = 0;
+  switch (AddrMode) {
+  case ARMII::AddrModeT2_i8:
+  case ARMII::AddrModeT2_i12:
+  case ARMII::AddrMode_i12:
+    InstrOffs = MI->getOperand(Idx+1).getImm();
+    Scale = 1;
+    break;
+  case ARMII::AddrMode5: {
+    // VFP address mode.
+    const MachineOperand &OffOp = MI->getOperand(Idx+1);
+    InstrOffs = ARM_AM::getAM5Offset(OffOp.getImm());
+    if (ARM_AM::getAM5Op(OffOp.getImm()) == ARM_AM::sub)
+      InstrOffs = -InstrOffs;
+    Scale = 4;
+    break;
+  }
+  case ARMII::AddrMode2: {
+    ImmIdx = Idx+2;
+    InstrOffs = ARM_AM::getAM2Offset(MI->getOperand(ImmIdx).getImm());
+    if (ARM_AM::getAM2Op(MI->getOperand(ImmIdx).getImm()) == ARM_AM::sub)
+      InstrOffs = -InstrOffs;
+    break;
+  }
+  case ARMII::AddrMode3: {
+    ImmIdx = Idx+2;
+    InstrOffs = ARM_AM::getAM3Offset(MI->getOperand(ImmIdx).getImm());
+    if (ARM_AM::getAM3Op(MI->getOperand(ImmIdx).getImm()) == ARM_AM::sub)
+      InstrOffs = -InstrOffs;
+    break;
+  }
+  case ARMII::AddrModeT1_s: {
+    ImmIdx = Idx+1;
+    InstrOffs = MI->getOperand(ImmIdx).getImm();
+    Scale = 4;
+    break;
+  }
+  default:
+    llvm_unreachable("Unsupported addressing mode!");
+    break;
+  }
+
+  return InstrOffs * Scale;
+}
+
+/// needsFrameBaseReg - Returns true if the instruction's frame index
+/// reference would be better served by a base register other than FP
+/// or SP. Used by LocalStackFrameAllocation to determine which frame index
+/// references it should create new base registers for.
+bool ARMBaseRegisterInfo::
+needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const {
+  for (unsigned i = 0; !MI->getOperand(i).isFI(); ++i) {
+    assert(i < MI->getNumOperands() &&"Instr doesn't have FrameIndex operand!");
+  }
+
+  // It's the load/store FI references that cause issues, as it can be difficult
+  // to materialize the offset if it won't fit in the literal field. Estimate
+  // based on the size of the local frame and some conservative assumptions
+  // about the rest of the stack frame (note, this is pre-regalloc, so
+  // we don't know everything for certain yet) whether this offset is likely
+  // to be out of range of the immediate. Return true if so.
+
+  // We only generate virtual base registers for loads and stores, so
+  // return false for everything else.
+  unsigned Opc = MI->getOpcode();
+  switch (Opc) {
+  case ARM::LDRi12: case ARM::LDRH: case ARM::LDRB:
+  case ARM::STR: case ARM::STRH: case ARM::STRB:
+  case ARM::t2LDRi12: case ARM::t2LDRi8:
+  case ARM::t2STRi12: case ARM::t2STRi8:
+  case ARM::VLDRS: case ARM::VLDRD:
+  case ARM::VSTRS: case ARM::VSTRD:
+  case ARM::tSTRspi: case ARM::tLDRspi:
+    if (ForceAllBaseRegAlloc)
+      return true;
+    break;
+  default:
+    return false;
+  }
+
+  // Without a virtual base register, if the function has variable sized
+  // objects, all fixed-size local references will be via the frame pointer,
+  // Approximate the offset and see if it's legal for the instruction.
+  // Note that the incoming offset is based on the SP value at function entry,
+  // so it'll be negative.
+  MachineFunction &MF = *MI->getParent()->getParent();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
+
+  // Estimate an offset from the frame pointer.
+  // Conservatively assume all callee-saved registers get pushed. R4-R6
+  // will be earlier than the FP, so we ignore those.
+  // R7, LR
+  int64_t FPOffset = Offset - 8;
+  // ARM and Thumb2 functions also need to consider R8-R11 and D8-D15
+  if (!AFI->isThumbFunction() || !AFI->isThumb1OnlyFunction())
+    FPOffset -= 80;
+  // Estimate an offset from the stack pointer.
+  // The incoming offset is relating to the SP at the start of the function,
+  // but when we access the local it'll be relative to the SP after local
+  // allocation, so adjust our SP-relative offset by that allocation size.
+  Offset = -Offset;
+  Offset += MFI->getLocalFrameSize();
+  // Assume that we'll have at least some spill slots allocated.
+  // FIXME: This is a total SWAG number. We should run some statistics
+  //        and pick a real one.
+  Offset += 128; // 128 bytes of spill slots
+
+  // If there is a frame pointer, try using it.
+  // The FP is only available if there is no dynamic realignment. We
+  // don't know for sure yet whether we'll need that, so we guess based
+  // on whether there are any local variables that would trigger it.
+  unsigned StackAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
+  if (hasFP(MF) &&
+      !((MFI->getLocalFrameMaxAlign() > StackAlign) && canRealignStack(MF))) {
+    if (isFrameOffsetLegal(MI, FPOffset))
+      return false;
+  }
+  // If we can reference via the stack pointer, try that.
+  // FIXME: This (and the code that resolves the references) can be improved
+  //        to only disallow SP relative references in the live range of
+  //        the VLA(s). In practice, it's unclear how much difference that
+  //        would make, but it may be worth doing.
+  if (!MFI->hasVarSizedObjects() && isFrameOffsetLegal(MI, Offset))
+    return false;
+
+  // The offset likely isn't legal, we want to allocate a virtual base register.
+  return true;
+}
+
+/// materializeFrameBaseRegister - Insert defining instruction(s) for
+/// BaseReg to be a pointer to FrameIdx before insertion point I.
+void ARMBaseRegisterInfo::
+materializeFrameBaseRegister(MachineBasicBlock::iterator I, unsigned BaseReg,
+                             int FrameIdx, int64_t Offset) const {
+  ARMFunctionInfo *AFI =
+    I->getParent()->getParent()->getInfo<ARMFunctionInfo>();
+  unsigned ADDriOpc = !AFI->isThumbFunction() ? ARM::ADDri :
+    (AFI->isThumb1OnlyFunction() ? ARM::tADDrSPi : ARM::t2ADDri);
+
+  MachineInstrBuilder MIB =
+    BuildMI(*I->getParent(), I, I->getDebugLoc(), TII.get(ADDriOpc), BaseReg)
+    .addFrameIndex(FrameIdx).addImm(Offset);
+  if (!AFI->isThumb1OnlyFunction())
+    AddDefaultCC(AddDefaultPred(MIB));
+}
+
+void
+ARMBaseRegisterInfo::resolveFrameIndex(MachineBasicBlock::iterator I,
+                                       unsigned BaseReg, int64_t Offset) const {
+  MachineInstr &MI = *I;
+  MachineBasicBlock &MBB = *MI.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
+  int Off = Offset; // ARM doesn't need the general 64-bit offsets
+  unsigned i = 0;
+
+  assert(!AFI->isThumb1OnlyFunction() &&
+         "This resolveFrameIndex does not support Thumb1!");
+
+  while (!MI.getOperand(i).isFI()) {
+    ++i;
+    assert(i < MI.getNumOperands() && "Instr doesn't have FrameIndex operand!");
+  }
+  bool Done = false;
+  if (!AFI->isThumbFunction())
+    Done = rewriteARMFrameIndex(MI, i, BaseReg, Off, TII);
+  else {
+    assert(AFI->isThumb2Function());
+    Done = rewriteT2FrameIndex(MI, i, BaseReg, Off, TII);
+  }
+  assert (Done && "Unable to resolve frame index!");
+}
+
+bool ARMBaseRegisterInfo::isFrameOffsetLegal(const MachineInstr *MI,
+                                             int64_t Offset) const {
+  const TargetInstrDesc &Desc = MI->getDesc();
+  unsigned AddrMode = (Desc.TSFlags & ARMII::AddrModeMask);
+  unsigned i = 0;
+
+  while (!MI->getOperand(i).isFI()) {
+    ++i;
+    assert(i < MI->getNumOperands() &&"Instr doesn't have FrameIndex operand!");
+  }
+
+  // AddrMode4 and AddrMode6 cannot handle any offset.
+  if (AddrMode == ARMII::AddrMode4 || AddrMode == ARMII::AddrMode6)
+    return Offset == 0;
+
+  unsigned NumBits = 0;
+  unsigned Scale = 1;
+  bool isSigned = true;
+  switch (AddrMode) {
+  case ARMII::AddrModeT2_i8:
+  case ARMII::AddrModeT2_i12:
+    // i8 supports only negative, and i12 supports only positive, so
+    // based on Offset sign, consider the appropriate instruction
+    Scale = 1;
+    if (Offset < 0) {
+      NumBits = 8;
+      Offset = -Offset;
+    } else {
+      NumBits = 12;
+    }
+    break;
+  case ARMII::AddrMode5:
+    // VFP address mode.
+    NumBits = 8;
+    Scale = 4;
+    break;
+  case ARMII::AddrMode_i12:
+  case ARMII::AddrMode2:
+    NumBits = 12;
+    break;
+  case ARMII::AddrMode3:
+    NumBits = 8;
+    break;
+  case ARMII::AddrModeT1_s:
+    NumBits = 5;
+    Scale = 4;
+    isSigned = false;
+    break;
+  default:
+    llvm_unreachable("Unsupported addressing mode!");
+    break;
+  }
+
+  Offset += getFrameIndexInstrOffset(MI, i);
+  // Make sure the offset is encodable for instructions that scale the
+  // immediate.
+  if ((Offset & (Scale-1)) != 0)
+    return false;
+
+  if (isSigned && Offset < 0)
+    Offset = -Offset;
+
+  unsigned Mask = (1 << NumBits) - 1;
+  if ((unsigned)Offset <= Mask * Scale)
+    return true;
+
+  return false;
+}
+
+void
 ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                         int SPAdj, FrameIndexValue *Value,
-                                         RegScavenger *RS) const {
+                                         int SPAdj, RegScavenger *RS) const {
   unsigned i = 0;
   MachineInstr &MI = *II;
   MachineBasicBlock &MBB = *MI.getParent();
@@ -1351,16 +1572,13 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = MI.getOperand(i).getIndex();
   unsigned FrameReg;
 
-  int Offset = getFrameIndexReference(MF, FrameIndex, FrameReg);
-  if (FrameReg != ARM::SP)
-    SPAdj = 0;
-  Offset += SPAdj;
+  int Offset = ResolveFrameIndexReference(MF, FrameIndex, FrameReg, SPAdj);
 
   // Special handling of dbg_value instructions.
   if (MI.isDebugValue()) {
     MI.getOperand(i).  ChangeToRegister(FrameReg, false /*isDef*/);
     MI.getOperand(i+1).ChangeToImmediate(Offset);
-    return 0;
+    return;
   }
 
   // Modify MI as necessary to handle as much of 'Offset' as possible
@@ -1372,7 +1590,7 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     Done = rewriteT2FrameIndex(MI, i, FrameReg, Offset, TII);
   }
   if (Done)
-    return 0;
+    return;
 
   // If we get here, the immediate doesn't fit into the instruction.  We folded
   // as much as possible above, handle the rest, providing a register that is
@@ -1392,10 +1610,6 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     MI.getOperand(i).ChangeToRegister(FrameReg, false, false, false);
   else {
     ScratchReg = MF.getRegInfo().createVirtualRegister(ARM::GPRRegisterClass);
-    if (Value) {
-      Value->first = FrameReg; // use the frame register as a kind indicator
-      Value->second = Offset;
-    }
     if (!AFI->isThumbFunction())
       emitARMRegPlusImmediate(MBB, II, MI.getDebugLoc(), ScratchReg, FrameReg,
                               Offset, Pred, PredReg, TII);
@@ -1405,15 +1619,11 @@ ARMBaseRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
                              Offset, Pred, PredReg, TII);
     }
     MI.getOperand(i).ChangeToRegister(ScratchReg, false, false, true);
-    if (!ReuseFrameIndexVals)
-      ScratchReg = 0;
   }
-  return ScratchReg;
 }
 
 /// Move iterator past the next bunch of callee save load / store ops for
-/// the particular spill area (1: integer area 1, 2: integer area 2,
-/// 3: fp area, 0: don't care).
+/// the particular spill area (1: integer area 1, 2: fp area, 0: don't care).
 static void movePastCSLoadStoreOps(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator &MBBI,
                                    int Opc1, int Opc2, unsigned Area,
@@ -1426,15 +1636,13 @@ static void movePastCSLoadStoreOps(MachineBasicBlock &MBB,
       unsigned Category = 0;
       switch (MBBI->getOperand(0).getReg()) {
       case ARM::R4:  case ARM::R5:  case ARM::R6: case ARM::R7:
+      case ARM::R8:  case ARM::R9:  case ARM::R10: case ARM::R11:
       case ARM::LR:
         Category = 1;
         break;
-      case ARM::R8:  case ARM::R9:  case ARM::R10: case ARM::R11:
-        Category = STI.isTargetDarwin() ? 2 : 1;
-        break;
       case ARM::D8:  case ARM::D9:  case ARM::D10: case ARM::D11:
       case ARM::D12: case ARM::D13: case ARM::D14: case ARM::D15:
-        Category = 3;
+        Category = 2;
         break;
       default:
         Done = true;
@@ -1464,7 +1672,7 @@ emitPrologue(MachineFunction &MF) const {
 
   // Determine the sizes of each callee-save spill areas and record which frame
   // belongs to which callee-save spill areas.
-  unsigned GPRCS1Size = 0, GPRCS2Size = 0, DPRCSSize = 0;
+  unsigned GPRCSSize = 0, DPRCSSize = 0;
   int FramePtrSpillFI = 0;
 
   // Allocate the vararg register save area. This is not counted in NumBytes.
@@ -1485,25 +1693,15 @@ emitPrologue(MachineFunction &MF) const {
     case ARM::R5:
     case ARM::R6:
     case ARM::R7:
-    case ARM::LR:
-      if (Reg == FramePtr)
-        FramePtrSpillFI = FI;
-      AFI->addGPRCalleeSavedArea1Frame(FI);
-      GPRCS1Size += 4;
-      break;
     case ARM::R8:
     case ARM::R9:
     case ARM::R10:
     case ARM::R11:
+    case ARM::LR:
       if (Reg == FramePtr)
         FramePtrSpillFI = FI;
-      if (STI.isTargetDarwin()) {
-        AFI->addGPRCalleeSavedArea2Frame(FI);
-        GPRCS2Size += 4;
-      } else {
-        AFI->addGPRCalleeSavedArea1Frame(FI);
-        GPRCS1Size += 4;
-      }
+      AFI->addGPRCalleeSavedAreaFrame(FI);
+      GPRCSSize += 4;
       break;
     default:
       AFI->addDPRCalleeSavedAreaFrame(FI);
@@ -1511,16 +1709,13 @@ emitPrologue(MachineFunction &MF) const {
     }
   }
 
-  // Build the new SUBri to adjust SP for integer callee-save spill area 1.
-  emitSPUpdate(isARM, MBB, MBBI, dl, TII, -GPRCS1Size);
+  // Build the new SUBri to adjust SP for integer callee-save spill area.
+  emitSPUpdate(isARM, MBB, MBBI, dl, TII, -GPRCSSize);
   movePastCSLoadStoreOps(MBB, MBBI, ARM::STR, ARM::t2STRi12, 1, STI);
 
   // Set FP to point to the stack slot that contains the previous FP.
-  // For Darwin, FP is R7, which has now been stored in spill area 1.
-  // Otherwise, if this is not Darwin, all the callee-saved registers go
-  // into spill area 1, including the FP in R11.  In either case, it is
-  // now safe to emit this assignment.
-  if (STI.isTargetDarwin() || hasFP(MF)) {
+  bool HasFP = hasFP(MF);
+  if (HasFP) {
     unsigned ADDriOpc = !AFI->isThumbFunction() ? ARM::ADDri : ARM::t2ADDri;
     MachineInstrBuilder MIB =
       BuildMI(MBB, MBBI, dl, TII.get(ADDriOpc), FramePtr)
@@ -1528,41 +1723,38 @@ emitPrologue(MachineFunction &MF) const {
     AddDefaultCC(AddDefaultPred(MIB));
   }
 
-  // Build the new SUBri to adjust SP for integer callee-save spill area 2.
-  emitSPUpdate(isARM, MBB, MBBI, dl, TII, -GPRCS2Size);
-
   // Build the new SUBri to adjust SP for FP callee-save spill area.
-  movePastCSLoadStoreOps(MBB, MBBI, ARM::STR, ARM::t2STRi12, 2, STI);
   emitSPUpdate(isARM, MBB, MBBI, dl, TII, -DPRCSSize);
 
   // Determine starting offsets of spill areas.
-  unsigned DPRCSOffset  = NumBytes - (GPRCS1Size + GPRCS2Size + DPRCSSize);
-  unsigned GPRCS2Offset = DPRCSOffset + DPRCSSize;
-  unsigned GPRCS1Offset = GPRCS2Offset + GPRCS2Size;
-  if (STI.isTargetDarwin() || hasFP(MF))
+  unsigned DPRCSOffset  = NumBytes - (GPRCSSize + DPRCSSize);
+  unsigned GPRCSOffset = DPRCSOffset + DPRCSSize;
+  if (HasFP)
     AFI->setFramePtrSpillOffset(MFI->getObjectOffset(FramePtrSpillFI) +
                                 NumBytes);
-  AFI->setGPRCalleeSavedArea1Offset(GPRCS1Offset);
-  AFI->setGPRCalleeSavedArea2Offset(GPRCS2Offset);
+  AFI->setGPRCalleeSavedAreaOffset(GPRCSOffset);
   AFI->setDPRCalleeSavedAreaOffset(DPRCSOffset);
 
-  movePastCSLoadStoreOps(MBB, MBBI, ARM::VSTRD, 0, 3, STI);
+  movePastCSLoadStoreOps(MBB, MBBI, ARM::VSTRD, 0, 2, STI);
   NumBytes = DPRCSOffset;
   if (NumBytes) {
     // Adjust SP after all the callee-save spills.
     emitSPUpdate(isARM, MBB, MBBI, dl, TII, -NumBytes);
+    if (HasFP)
+      AFI->setShouldRestoreSPFromFP(true);
   }
 
   if (STI.isTargetELF() && hasFP(MF)) {
     MFI->setOffsetAdjustment(MFI->getOffsetAdjustment() -
                              AFI->getFramePtrSpillOffset());
+    AFI->setShouldRestoreSPFromFP(true);
   }
 
-  AFI->setGPRCalleeSavedArea1Size(GPRCS1Size);
-  AFI->setGPRCalleeSavedArea2Size(GPRCS2Size);
+  AFI->setGPRCalleeSavedAreaSize(GPRCSSize);
   AFI->setDPRCalleeSavedAreaSize(DPRCSSize);
 
-  // If we need dynamic stack realignment, do it here.
+  // If we need dynamic stack realignment, do it here. Be paranoid and make
+  // sure if we also have VLAs, we have a base pointer for frame access.
   if (needsStackRealignment(MF)) {
     unsigned MaxAlign = MFI->getMaxAlignment();
     assert (!AFI->isThumb1OnlyFunction());
@@ -1588,7 +1780,28 @@ emitPrologue(MachineFunction &MF) const {
       BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVtgpr2gpr), ARM::SP)
         .addReg(ARM::R4, RegState::Kill);
     }
+
+    AFI->setShouldRestoreSPFromFP(true);
   }
+
+  // If we need a base pointer, set it up here. It's whatever the value
+  // of the stack pointer is at this point. Any variable size objects
+  // will be allocated after this, so we can still use the base pointer
+  // to reference locals.
+  if (hasBasePointer(MF)) {
+    if (isARM)
+      BuildMI(MBB, MBBI, dl, TII.get(ARM::MOVr), BasePtr)
+        .addReg(ARM::SP)
+        .addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
+    else
+      BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVgpr2gpr), BasePtr)
+        .addReg(ARM::SP);
+  }
+
+  // If the frame has variable sized objects then the epilogue must restore
+  // the sp from fp.
+  if (!AFI->shouldRestoreSPFromFP() && MFI->hasVarSizedObjects())
+    AFI->setShouldRestoreSPFromFP(true);
 }
 
 static bool isCalleeSavedRegister(unsigned Reg, const unsigned *CSRegs) {
@@ -1602,7 +1815,7 @@ static bool isCSRestore(MachineInstr *MI,
                         const ARMBaseInstrInfo &TII,
                         const unsigned *CSRegs) {
   return ((MI->getOpcode() == (int)ARM::VLDRD ||
-           MI->getOpcode() == (int)ARM::LDR ||
+           MI->getOpcode() == (int)ARM::LDRi12 ||
            MI->getOpcode() == (int)ARM::t2LDRi12) &&
           MI->getOperand(1).isFI() &&
           isCalleeSavedRegister(MI->getOperand(0).getReg(), CSRegs));
@@ -1639,53 +1852,39 @@ emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const {
     }
 
     // Move SP to start of FP callee save spill area.
-    NumBytes -= (AFI->getGPRCalleeSavedArea1Size() +
-                 AFI->getGPRCalleeSavedArea2Size() +
+    NumBytes -= (AFI->getGPRCalleeSavedAreaSize() +
                  AFI->getDPRCalleeSavedAreaSize());
 
-    // Darwin ABI requires FP to point to the stack slot that contains the
-    // previous FP.
-    bool HasFP = hasFP(MF);
-    if ((STI.isTargetDarwin() && NumBytes) || HasFP) {
+    // Reset SP based on frame pointer only if the stack frame extends beyond
+    // frame pointer stack slot or target is ELF and the function has FP.
+    if (AFI->shouldRestoreSPFromFP()) {
       NumBytes = AFI->getFramePtrSpillOffset() - NumBytes;
-      // Reset SP based on frame pointer only if the stack frame extends beyond
-      // frame pointer stack slot or target is ELF and the function has FP.
-      if (HasFP ||
-          AFI->getGPRCalleeSavedArea2Size() ||
-          AFI->getDPRCalleeSavedAreaSize()  ||
-          AFI->getDPRCalleeSavedAreaOffset()) {
-        if (NumBytes) {
-          if (isARM)
-            emitARMRegPlusImmediate(MBB, MBBI, dl, ARM::SP, FramePtr, -NumBytes,
-                                    ARMCC::AL, 0, TII);
-          else
-            emitT2RegPlusImmediate(MBB, MBBI, dl, ARM::SP, FramePtr, -NumBytes,
-                                    ARMCC::AL, 0, TII);
-        } else {
-          // Thumb2 or ARM.
-          if (isARM)
-            BuildMI(MBB, MBBI, dl, TII.get(ARM::MOVr), ARM::SP)
-              .addReg(FramePtr)
-              .addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
-          else
-            BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVgpr2gpr), ARM::SP)
-              .addReg(FramePtr);
-        }
+      if (NumBytes) {
+        if (isARM)
+          emitARMRegPlusImmediate(MBB, MBBI, dl, ARM::SP, FramePtr, -NumBytes,
+                                  ARMCC::AL, 0, TII);
+        else
+          emitT2RegPlusImmediate(MBB, MBBI, dl, ARM::SP, FramePtr, -NumBytes,
+                                 ARMCC::AL, 0, TII);
+      } else {
+        // Thumb2 or ARM.
+        if (isARM)
+          BuildMI(MBB, MBBI, dl, TII.get(ARM::MOVr), ARM::SP)
+            .addReg(FramePtr).addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
+        else
+          BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVgpr2gpr), ARM::SP)
+            .addReg(FramePtr);
       }
     } else if (NumBytes)
       emitSPUpdate(isARM, MBB, MBBI, dl, TII, NumBytes);
 
-    // Move SP to start of integer callee save spill area 2.
-    movePastCSLoadStoreOps(MBB, MBBI, ARM::VLDRD, 0, 3, STI);
+    // Move SP to start of integer callee save spill area.
+    movePastCSLoadStoreOps(MBB, MBBI, ARM::VLDRD, 0, 2, STI);
     emitSPUpdate(isARM, MBB, MBBI, dl, TII, AFI->getDPRCalleeSavedAreaSize());
 
-    // Move SP to start of integer callee save spill area 1.
-    movePastCSLoadStoreOps(MBB, MBBI, ARM::LDR, ARM::t2LDRi12, 2, STI);
-    emitSPUpdate(isARM, MBB, MBBI, dl, TII, AFI->getGPRCalleeSavedArea2Size());
-
     // Move SP to SP upon entry to the function.
-    movePastCSLoadStoreOps(MBB, MBBI, ARM::LDR, ARM::t2LDRi12, 1, STI);
-    emitSPUpdate(isARM, MBB, MBBI, dl, TII, AFI->getGPRCalleeSavedArea1Size());
+    movePastCSLoadStoreOps(MBB, MBBI, ARM::LDRi12, ARM::t2LDRi12, 1, STI);
+    emitSPUpdate(isARM, MBB, MBBI, dl, TII, AFI->getGPRCalleeSavedAreaSize());
   }
 
   if (RetOpcode == ARM::TCRETURNdi || RetOpcode == ARM::TCRETURNdiND ||
@@ -1696,7 +1895,7 @@ emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const {
 
     // Jump to label or value in register.
     if (RetOpcode == ARM::TCRETURNdi) {
-      BuildMI(MBB, MBBI, dl, 
+      BuildMI(MBB, MBBI, dl,
             TII.get(STI.isThumb() ? ARM::TAILJMPdt : ARM::TAILJMPd)).
         addGlobalAddress(JumpTarget.getGlobal(), JumpTarget.getOffset(),
                          JumpTarget.getTargetFlags());
@@ -1711,7 +1910,7 @@ emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const {
     } else if (RetOpcode == ARM::TCRETURNriND) {
       BuildMI(MBB, MBBI, dl, TII.get(ARM::TAILJMPrND)).
         addReg(JumpTarget.getReg(), RegState::Kill);
-    } 
+    }
 
     MachineInstr *NewMI = prior(MBBI);
     for (unsigned i = 1, e = MBBI->getNumOperands(); i != e; ++i)

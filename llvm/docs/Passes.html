@@ -167,6 +167,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 <tr><td><a href="#loop-unroll">-loop-unroll</a></td><td>Unroll loops</td></tr>
 <tr><td><a href="#loop-unswitch">-loop-unswitch</a></td><td>Unswitch loops</td></tr>
 <tr><td><a href="#loopsimplify">-loopsimplify</a></td><td>Canonicalize natural loops</td></tr>
+<tr><td><a href="#loweratomic">-loweratomic</a></td><td>Lower atomic intrinsics</td></tr>
 <tr><td><a href="#lowerinvoke">-lowerinvoke</a></td><td>Lower invoke and unwind, for unwindless code generators</td></tr>
 <tr><td><a href="#lowersetjmp">-lowersetjmp</a></td><td>Lower Set Jump</td></tr>
 <tr><td><a href="#lowerswitch">-lowerswitch</a></td><td>Lower SwitchInst's to branches</td></tr>
@@ -381,7 +382,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 
 <!-------------------------------------------------------------------------- -->
 <div class="doc_subsection">
-  <a name="dot-postdom">dot-postdom: Print post dominator tree of function to 'dot' file</a>
+  <a name="dot-postdom">-dot-postdom: Print post dominator tree of function to 'dot' file</a>
 </div>
 <div class="doc_text">
   <p>
@@ -393,7 +394,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 
 <!-------------------------------------------------------------------------- -->
 <div class="doc_subsection">
-  <a name="dot-postdom-only">dot-postdom-only: Print post dominator tree of function to 'dot' file
+  <a name="dot-postdom-only">-dot-postdom-only: Print post dominator tree of function to 'dot' file
   (with no function bodies)</a>
 </div>
 <div class="doc_text">
@@ -648,7 +649,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 <div class="doc_text">
   <p>
   This pass, only available in <code>opt</code>, prints the call graph to
-  standard output in a human-readable form.
+  standard error in a human-readable form.
   </p>
 </div>
 
@@ -659,7 +660,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 <div class="doc_text">
   <p>
   This pass, only available in <code>opt</code>, prints the SCCs of the call
-  graph to standard output in a human-readable form.
+  graph to standard error in a human-readable form.
   </p>
 </div>
 
@@ -670,7 +671,7 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
 <div class="doc_text">
   <p>
   This pass, only available in <code>opt</code>, prints the SCCs of each
-  function CFG to standard output in a human-readable form.
+  function CFG to standard error in a human-readable form.
   </p>
 </div>
 
@@ -679,15 +680,13 @@ perl -e '$/ = undef; for (split(/\n/, <>)) { s:^ *///? ?::; print "  <p>\n" if !
   <a name="print-dbginfo">-print-dbginfo: Print debug info in human readable form</a>
 </div>
 <div class="doc_text">
-  <p>Pass that prints instructions, and associated debug info:
+  <p>Pass that prints instructions, and associated debug info:</p>
   <ul>
   
   <li>source/line/col information</li>
   <li>original variable name</li>
   <li>original type name</li>
   </ul>
-
-  </p>
 </div>
 
 <!-------------------------------------------------------------------------- -->
@@ -1549,6 +1548,24 @@ if (X &lt; 3) {</pre>
 
 <!-------------------------------------------------------------------------- -->
 <div class="doc_subsection">
+  <a name="loweratomic">-loweratomic: Lower atomic intrinsics</a>
+</div>
+<div class="doc_text">
+  <p>
+  This pass lowers atomic intrinsics to non-atomic form for use in a known
+  non-preemptible environment.
+  </p>
+
+  <p>
+  The pass does not verify that the environment is non-preemptible (in
+  general this would require knowledge of the entire call graph of the
+  program including any libraries which may not be available in bitcode form);
+  it simply lowers every atomic intrinsic.
+  </p>
+</div>
+
+<!-------------------------------------------------------------------------- -->
+<div class="doc_subsection">
   <a name="lowerinvoke">-lowerinvoke: Lower invoke and unwind, for unwindless code generators</a>
 </div>
 <div class="doc_text">
@@ -1941,12 +1958,13 @@ if (X &lt; 3) {</pre>
   <a name="strip-debug-declare">-strip-debug-declare: Strip all llvm.dbg.declare intrinsics</a>
 </div>
 <div class="doc_text">
-  <p>This pass implements code stripping. Specifically, it can delete:
+  <p>This pass implements code stripping. Specifically, it can delete:</p>
   <ul>
   <li>names for virtual registers</li>
   <li>symbols for internal globals and functions</li>
   <li>debug information</li>
   </ul>
+  <p>
   Note that this transformation makes code much less readable, so it should
   only be used in situations where the 'strip' utility would be used, such as
   reducing code size or making it harder to reverse engineer code.
@@ -1958,12 +1976,13 @@ if (X &lt; 3) {</pre>
   <a name="strip-nondebug">-strip-nondebug: Strip all symbols, except dbg symbols, from a module</a>
 </div>
 <div class="doc_text">
-  <p>This pass implements code stripping. Specifically, it can delete:
+  <p>This pass implements code stripping. Specifically, it can delete:</p>
   <ul>
   <li>names for virtual registers</li>
   <li>symbols for internal globals and functions</li>
   <li>debug information</li>
   </ul>
+  <p>
   Note that this transformation makes code much less readable, so it should
   only be used in situations where the 'strip' utility would be used, such as
   reducing code size or making it harder to reverse engineer code.

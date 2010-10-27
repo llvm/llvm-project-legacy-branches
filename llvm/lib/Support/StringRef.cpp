@@ -9,6 +9,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/APInt.h"
+#include <bitset>
 
 using namespace llvm;
 
@@ -30,14 +31,14 @@ static bool ascii_isdigit(char x) {
 /// compare_lower - Compare strings, ignoring case.
 int StringRef::compare_lower(StringRef RHS) const {
   for (size_t I = 0, E = min(Length, RHS.Length); I != E; ++I) {
-    char LHC = ascii_tolower(Data[I]);
-    char RHC = ascii_tolower(RHS.Data[I]);
+    unsigned char LHC = ascii_tolower(Data[I]);
+    unsigned char RHC = ascii_tolower(RHS.Data[I]);
     if (LHC != RHC)
       return LHC < RHC ? -1 : 1;
   }
 
   if (Length == RHS.Length)
-        return 0;
+    return 0;
   return Length < RHS.Length ? -1 : 1;
 }
 
@@ -58,16 +59,17 @@ int StringRef::compare_numeric(StringRef RHS) const {
           break;
       }
     }
-    return Data[I] < RHS.Data[I] ? -1 : 1;
+    return (unsigned char)Data[I] < (unsigned char)RHS.Data[I] ? -1 : 1;
   }
   if (Length == RHS.Length)
-        return 0;
+    return 0;
   return Length < RHS.Length ? -1 : 1;
 }
 
 // Compute the edit distance between the two given strings.
 unsigned StringRef::edit_distance(llvm::StringRef Other, 
-                                  bool AllowReplacements) {
+                                  bool AllowReplacements,
+                                  unsigned MaxEditDistance) {
   // The algorithm implemented below is the "classic"
   // dynamic-programming algorithm for computing the Levenshtein
   // distance, which is described here:
@@ -93,6 +95,8 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
 
   for (size_type y = 1; y <= m; ++y) {
     current[0] = y;
+    unsigned BestThisRow = current[0];
+    
     for (size_type x = 1; x <= n; ++x) {
       if (AllowReplacements) {
         current[x] = min(previous[x-1] + ((*this)[y-1] == Other[x-1]? 0u:1u),
@@ -102,7 +106,11 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
         if ((*this)[y-1] == Other[x-1]) current[x] = previous[x-1];
         else current[x] = min(current[x-1], previous[x]) + 1;
       }
+      BestThisRow = min(BestThisRow, current[x]);
     }
+    
+    if (MaxEditDistance && BestThisRow > MaxEditDistance)
+      return MaxEditDistance + 1;
     
     unsigned *tmp = current;
     current = previous;
@@ -153,11 +161,15 @@ size_t StringRef::rfind(StringRef Str) const {
 /// find_first_of - Find the first character in the string that is in \arg
 /// Chars, or npos if not found.
 ///
-/// Note: O(size() * Chars.size())
+/// Note: O(size() + Chars.size())
 StringRef::size_type StringRef::find_first_of(StringRef Chars,
                                               size_t From) const {
+  std::bitset<1 << CHAR_BIT> CharBits;
+  for (size_type i = 0; i != Chars.size(); ++i)
+    CharBits.set((unsigned char)Chars[i]);
+
   for (size_type i = min(From, Length), e = Length; i != e; ++i)
-    if (Chars.find(Data[i]) != npos)
+    if (CharBits.test((unsigned char)Data[i]))
       return i;
   return npos;
 }
@@ -174,11 +186,15 @@ StringRef::size_type StringRef::find_first_not_of(char C, size_t From) const {
 /// find_first_not_of - Find the first character in the string that is not
 /// in the string \arg Chars, or npos if not found.
 ///
-/// Note: O(size() * Chars.size())
+/// Note: O(size() + Chars.size())
 StringRef::size_type StringRef::find_first_not_of(StringRef Chars,
                                                   size_t From) const {
+  std::bitset<1 << CHAR_BIT> CharBits;
+  for (size_type i = 0; i != Chars.size(); ++i)
+    CharBits.set((unsigned char)Chars[i]);
+
   for (size_type i = min(From, Length), e = Length; i != e; ++i)
-    if (Chars.find(Data[i]) == npos)
+    if (!CharBits.test((unsigned char)Data[i]))
       return i;
   return npos;
 }

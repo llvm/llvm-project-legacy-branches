@@ -42,8 +42,11 @@
 using namespace llvm;
 
 char LiveVariables::ID = 0;
-INITIALIZE_PASS(LiveVariables, "livevars",
-                "Live Variable Analysis", false, false);
+INITIALIZE_PASS_BEGIN(LiveVariables, "livevars",
+                "Live Variable Analysis", false, false)
+INITIALIZE_PASS_DEPENDENCY(UnreachableMachineBlockElim)
+INITIALIZE_PASS_END(LiveVariables, "livevars",
+                "Live Variable Analysis", false, false)
 
 
 void LiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -481,21 +484,6 @@ void LiveVariables::UpdatePhysRegDefs(MachineInstr *MI,
       PhysRegUse[SubReg]  = NULL;
     }
   }
-}
-
-namespace {
-  struct RegSorter {
-    const TargetRegisterInfo *TRI;
-
-    RegSorter(const TargetRegisterInfo *tri) : TRI(tri) { }
-    bool operator()(unsigned A, unsigned B) {
-      if (TRI->isSubRegister(A, B))
-        return true;
-      else if (TRI->isSubRegister(B, A))
-        return false;
-      return A < B;
-    }
-  };
 }
 
 bool LiveVariables::runOnMachineFunction(MachineFunction &mf) {

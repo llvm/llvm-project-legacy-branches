@@ -4,6 +4,7 @@ add_llvm_library(LLVMCodeGen
   BranchFolding.cpp
   CalcSpillWeights.cpp
   CallingConvLower.cpp
+  CodeGen.cpp
   CodePlacementOpt.cpp
   CriticalAntiDepBreaker.cpp
   DeadMachineInstructionElim.cpp
@@ -20,8 +21,11 @@ add_llvm_library(LLVMCodeGen
   LatencyPriorityQueue.cpp
   LiveInterval.cpp
   LiveIntervalAnalysis.cpp
+  LiveIntervalUnion.cpp
   LiveStackAnalysis.cpp
   LiveVariables.cpp
+  LiveRangeEdit.cpp
+  LocalStackSlotAllocation.cpp
   LowerSubregs.cpp
   MachineBasicBlock.cpp
   MachineCSE.cpp
@@ -42,16 +46,17 @@ add_llvm_library(LLVMCodeGen
   MachineVerifier.cpp
   ObjectCodeEmitter.cpp
   OcamlGC.cpp
-  OptimizeExts.cpp
   OptimizePHIs.cpp
   PHIElimination.cpp
   Passes.cpp
+  PeepholeOptimizer.cpp
   PostRAHazardRecognizer.cpp
   PostRASchedulerList.cpp
   PreAllocSplitting.cpp
   ProcessImplicitDefs.cpp
   PrologEpilogInserter.cpp
   PseudoSourceValue.cpp
+  RegAllocBasic.cpp
   RegAllocFast.cpp
   RegAllocLinearScan.cpp
   RegAllocPBQP.cpp
@@ -81,5 +86,3 @@ add_llvm_library(LLVMCodeGen
   VirtRegMap.cpp
   VirtRegRewriter.cpp
   )
-
-target_link_libraries (LLVMCodeGen LLVMCore LLVMScalarOpts)

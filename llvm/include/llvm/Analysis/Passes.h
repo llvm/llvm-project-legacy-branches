@@ -59,7 +59,7 @@ namespace llvm {
 
   //===--------------------------------------------------------------------===//
   //
-  // createBasicAliasAnalysisPass - This pass implements the default alias
+  // createBasicAliasAnalysisPass - This pass implements the stateless alias
   // analysis.
   //
   ImmutablePass *createBasicAliasAnalysisPass();
@@ -81,11 +81,18 @@ namespace llvm {
 
   //===--------------------------------------------------------------------===//
   //
+  // createTypeBasedAliasAnalysisPass - This pass implements metadata-based
+  // type-based alias analysis.
+  //
+  ImmutablePass *createTypeBasedAliasAnalysisPass();
+
+  //===--------------------------------------------------------------------===//
+  //
   // createProfileLoaderPass - This pass loads information from a profile dump
   // file.
   //
   ModulePass *createProfileLoaderPass();
-  extern const PassInfo *ProfileLoaderPassID;
+  extern char &ProfileLoaderPassID;
 
   //===--------------------------------------------------------------------===//
   //
@@ -99,7 +106,7 @@ namespace llvm {
   // instead of loading it from a previous run.
   //
   FunctionPass *createProfileEstimatorPass();
-  extern const PassInfo *ProfileEstimatorPassID;
+  extern char &ProfileEstimatorPassID;
 
   //===--------------------------------------------------------------------===//
   //
@@ -163,6 +170,13 @@ namespace llvm {
 
   // Print module-level debug info metadata in human-readable form.
   ModulePass *createModuleDebugInfoPrinterPass();
+
+  //===--------------------------------------------------------------------===//
+  //
+  // createMemDepPrinter - This pass exhaustively collects all memdep
+  // information and prints it with -analyze.
+  //
+  FunctionPass *createMemDepPrinter();
 }
 
 #endif

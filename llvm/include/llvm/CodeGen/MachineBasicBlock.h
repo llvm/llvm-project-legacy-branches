@@ -23,6 +23,7 @@ class Pass;
 class BasicBlock;
 class MachineFunction;
 class MCSymbol;
+class SlotIndexes;
 class StringRef;
 class raw_ostream;
 
@@ -308,6 +309,9 @@ public:
   template<typename IT>
   void insert(iterator I, IT S, IT E) { Insts.insert(I, S, E); }
   iterator insert(iterator I, MachineInstr *M) { return Insts.insert(I, M); }
+  iterator insertAfter(iterator I, MachineInstr *M) { 
+    return Insts.insertAfter(I, M); 
+  }
 
   // erase - Remove the specified element or range from the instruction list.
   // These functions delete any instructions removed.
@@ -358,7 +362,7 @@ public:
 
   // Debugging methods.
   void dump() const;
-  void print(raw_ostream &OS) const;
+  void print(raw_ostream &OS, SlotIndexes* = 0) const;
 
   /// getNumber - MachineBasicBlocks are uniquely numbered at the function
   /// level, unless they're not in a MachineFunction yet, in which case this

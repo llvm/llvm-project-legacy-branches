@@ -1,4 +1,4 @@
-//===- MBlazeCallingConv.td - Calling Conventions for MBlaze ----*- C++ -*-===//
+//===- MBlazeCallingConv.td - Calling Conventions for MBlaze -*- tablegen -*-=//
 // 
 //                     The LLVM Compiler Infrastructure
 //
@@ -21,6 +21,6 @@ def RetCC_MBlaze : CallingConv<[
   // i32 are returned in registers R3, R4
   CCIfType<[i32], CCAssignToReg<[R3, R4]>>,
 
-  // f32 are returned in registers F3, F4
-  CCIfType<[f32], CCAssignToReg<[F3, F4]>>
+  // f32 are returned in registers R3, R4
+  CCIfType<[f32], CCAssignToReg<[R3, R4]>>
 ]>;

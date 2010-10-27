@@ -37,6 +37,7 @@ class MCContext;
 class Pass;
 class TargetMachine;
 class TargetRegisterClass;
+struct MachinePointerInfo;
 
 template <>
 struct ilist_traits<MachineBasicBlock>
@@ -243,7 +244,7 @@ public:
   /// print - Print out the MachineFunction in a format suitable for debugging
   /// to the specified stream.
   ///
-  void print(raw_ostream &OS) const;
+  void print(raw_ostream &OS, SlotIndexes* = 0) const;
 
   /// viewCFG - This function is meant for use from the debugger.  You can just
   /// say 'call F->viewCFG()' and a ghostview window should pop up from the
@@ -266,7 +267,7 @@ public:
 
   /// verify - Run the current MachineFunction through the machine code
   /// verifier, useful for debugger use.
-  void verify(Pass *p=NULL, bool allowDoubleDefs=false) const;
+  void verify(Pass *p=NULL) const;
 
   // Provide accessors for the MachineBasicBlock list...
   typedef BasicBlockListType::iterator iterator;
@@ -368,10 +369,11 @@ public:
   /// getMachineMemOperand - Allocate a new MachineMemOperand.
   /// MachineMemOperands are owned by the MachineFunction and need not be
   /// explicitly deallocated.
-  MachineMemOperand *getMachineMemOperand(const Value *v, unsigned f,
-                                          int64_t o, uint64_t s,
-                                          unsigned base_alignment);
-
+  MachineMemOperand *getMachineMemOperand(MachinePointerInfo PtrInfo,
+                                          unsigned f, uint64_t s,
+                                          unsigned base_alignment,
+                                          const MDNode *TBAAInfo = 0);
+  
   /// getMachineMemOperand - Allocate a new MachineMemOperand by copying
   /// an existing one, adjusting by an offset and using the given size.
   /// MachineMemOperands are owned by the MachineFunction and need not be

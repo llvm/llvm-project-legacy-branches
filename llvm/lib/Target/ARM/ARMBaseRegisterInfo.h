@@ -52,6 +52,11 @@ protected:
   /// FramePtr - ARM physical register used as frame ptr.
   unsigned FramePtr;
 
+  /// BasePtr - ARM physical register used as a base ptr in complex stack
+  /// frames. I.e., when we need a 3rd base, not just SP and FP, due to
+  /// variable size stack objects.
+  unsigned BasePtr;
+
   // Can be only subclassed.
   explicit ARMBaseRegisterInfo(const ARMBaseInstrInfo &tii,
                                const ARMSubtarget &STI);
@@ -60,12 +65,6 @@ protected:
   unsigned getOpcode(int Op) const;
 
 public:
-  /// getRegisterNumbering - Given the enum value for some register, e.g.
-  /// ARM::LR, return the number that it corresponds to (e.g. 14). It
-  /// also returns true in isSPVFP if the register is a single precision
-  /// VFP register.
-  static unsigned getRegisterNumbering(unsigned RegEnum, bool *isSPVFP = 0);
-
   /// Code Generation virtual methods...
   const unsigned *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
@@ -102,9 +101,18 @@ public:
                           MachineFunction &MF) const;
 
   bool hasFP(const MachineFunction &MF) const;
+  bool hasBasePointer(const MachineFunction &MF) const;
 
   bool canRealignStack(const MachineFunction &MF) const;
   bool needsStackRealignment(const MachineFunction &MF) const;
+  int64_t getFrameIndexInstrOffset(const MachineInstr *MI, int Idx) const;
+  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const;
+  void materializeFrameBaseRegister(MachineBasicBlock::iterator I,
+                                    unsigned BaseReg, int FrameIdx,
+                                    int64_t Offset) const;
+  void resolveFrameIndex(MachineBasicBlock::iterator I,
+                         unsigned BaseReg, int64_t Offset) const;
+  bool isFrameOffsetLegal(const MachineInstr *MI, int64_t Offset) const;
 
   bool cannotEliminateFrame(const MachineFunction &MF) const;
 
@@ -116,6 +124,8 @@ public:
   unsigned getFrameRegister(const MachineFunction &MF) const;
   int getFrameIndexReference(const MachineFunction &MF, int FI,
                              unsigned &FrameReg) const;
+  int ResolveFrameIndexReference(const MachineFunction &MF, int FI,
+                                 unsigned &FrameReg, int SPAdj) const;
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
 
   // Exception handling queries.
@@ -144,6 +154,8 @@ public:
 
   virtual bool requiresFrameIndexScavenging(const MachineFunction &MF) const;
 
+  virtual bool requiresVirtualBaseRegisters(const MachineFunction &MF) const;
+
   virtual bool hasReservedCallFrame(const MachineFunction &MF) const;
   virtual bool canSimplifyCallFramePseudos(const MachineFunction &MF) const;
 
@@ -151,9 +163,8 @@ public:
                                            MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator I) const;
 
-  virtual unsigned eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                       int SPAdj, FrameIndexValue *Value = NULL,
-                                       RegScavenger *RS = NULL) const;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator II,
+                                   int SPAdj, RegScavenger *RS = NULL) const;
 
   virtual void emitPrologue(MachineFunction &MF) const;
   virtual void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;

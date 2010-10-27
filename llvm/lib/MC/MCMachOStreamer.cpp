@@ -18,6 +18,9 @@
 #include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCMachOSymbolFlags.h"
+#include "llvm/MC/MCSectionMachO.h"
+#include "llvm/MC/MCDwarf.h"
+#include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetAsmBackend.h"
@@ -34,11 +37,12 @@ private:
 public:
   MCMachOStreamer(MCContext &Context, TargetAsmBackend &TAB,
                   raw_ostream &OS, MCCodeEmitter *Emitter)
-    : MCObjectStreamer(Context, TAB, OS, Emitter) {}
+    : MCObjectStreamer(Context, TAB, OS, Emitter, true) {}
 
   /// @name MCStreamer Interface
   /// @{
 
+  virtual void InitSections();
   virtual void EmitLabel(MCSymbol *Symbol);
   virtual void EmitAssemblerFlag(MCAssemblerFlag Flag);
   virtual void EmitAssignment(MCSymbol *Symbol, const MCExpr *Value);
@@ -103,6 +107,13 @@ public:
 
 } // end anonymous namespace.
 
+void MCMachOStreamer::InitSections() {
+  SwitchSection(getContext().getMachOSection("__TEXT", "__text",
+                                    MCSectionMachO::S_ATTR_PURE_INSTRUCTIONS,
+                                    0, SectionKind::getText()));
+
+}
+
 void MCMachOStreamer::EmitLabel(MCSymbol *Symbol) {
   // TODO: This is almost exactly the same as WinCOFFStreamer. Consider merging
   // into MCObjectStreamer.
@@ -143,9 +154,9 @@ void MCMachOStreamer::EmitAssemblerFlag(MCAssemblerFlag Flag) {
   case MCAF_SubsectionsViaSymbols:
     getAssembler().setSubsectionsViaSymbols(true);
     return;
+  default:
+    llvm_unreachable("invalid assembler flag!");
   }
-
-  assert(0 && "invalid assembler flag!");
 }
 
 void MCMachOStreamer::EmitAssignment(MCSymbol *Symbol, const MCExpr *Value) {
@@ -403,6 +414,10 @@ void MCMachOStreamer::EmitInstruction(const MCInst &Inst) {
 
   getCurrentSectionData()->setHasInstructions(true);
 
+  // Now that a machine instruction has been assembled into this section, make
+  // a line entry for any .loc directive that has been seen.
+  MCLineEntry::Make(this, getCurrentSection());
+
   // If this instruction doesn't need relaxation, just emit it as data.
   if (!getAssembler().getBackend().MayNeedRelaxation(Inst)) {
     EmitInstToData(Inst);
@@ -425,6 +440,15 @@ void MCMachOStreamer::EmitInstruction(const MCInst &Inst) {
 }
 
 void MCMachOStreamer::Finish() {
+  // Dump out the dwarf file & directory tables and line tables.
+  if (getContext().hasDwarfFiles()) {
+    const MCSection *DwarfLineSection = getContext().getMachOSection("__DWARF",
+                                         "__debug_line",
+                                         MCSectionMachO::S_ATTR_DEBUG,
+                                         0, SectionKind::getDataRelLocal());
+    MCDwarfFileTable::Emit(this, DwarfLineSection);
+  }
+
   // We have to set the fragment atom associations so we can relax properly for
   // Mach-O.
 

@@ -16,6 +16,26 @@ function(get_system_libs return_var)
 endfunction(get_system_libs)
 
 
+function(is_llvm_target_library library return_var)
+  # Sets variable `return_var' to ON if `library' corresponds to a
+  # LLVM supported target. To OFF if it doesn't.
+  set(${return_var} OFF PARENT_SCOPE)
+  string(TOUPPER "${library}" capitalized_lib)
+  string(TOUPPER "${LLVM_ALL_TARGETS}" targets)
+  foreach(t ${targets})
+    if( capitalized_lib STREQUAL "LLVM${t}" OR
+	capitalized_lib STREQUAL "LLVM${t}CODEGEN" OR
+	capitalized_lib STREQUAL "LLVM${t}ASMPARSER" OR
+	capitalized_lib STREQUAL "LLVM${t}ASMPRINTER" OR
+	capitalized_lib STREQUAL "LLVM${t}DISASSEMBLER" OR
+	capitalized_lib STREQUAL "LLVM${t}INFO" )
+      set(${return_var} ON PARENT_SCOPE)
+      break()
+    endif()
+  endforeach()
+endfunction(is_llvm_target_library)
+
+
 macro(llvm_config executable)
   explicit_llvm_config(${executable} ${ARGN})
 endmacro(llvm_config)
@@ -29,8 +49,18 @@ function(explicit_llvm_config executable)
 endfunction(explicit_llvm_config)
 
 
+# This is a variant intended for the final user:
+function(llvm_map_components_to_libraries OUT_VAR)
+  explicit_map_components_to_libraries(result ${ARGN})
+  get_system_libs(sys_result)
+  set( ${OUT_VAR} ${result} ${sys_result} PARENT_SCOPE )
+endfunction(llvm_map_components_to_libraries)
+
+
 function(explicit_map_components_to_libraries out_libs)
   set( link_components ${ARGN} )
+  string(TOUPPER "${llvm_libs}" capitalized_libs)
+  # Translate symbolic component names to real libraries:
   foreach(c ${link_components})
     # add codegen, asmprinter, asmparser, disassembler
     list(FIND LLVM_TARGETS_TO_BUILD ${c} idx)
@@ -74,31 +104,48 @@ function(explicit_map_components_to_libraries out_libs)
     elseif( c STREQUAL "all" )
       list(APPEND expanded_components ${llvm_libs})
     else( NOT idx LESS 0 )
-      list(APPEND expanded_components LLVM${c})
+      # Canonize the component name:
+      string(TOUPPER "${c}" capitalized)
+      list(FIND capitalized_libs LLVM${capitalized} lib_idx)
+      if( lib_idx LESS 0 )
+	# The component is unkown. Maybe is an ommitted target?
+	is_llvm_target_library(${c} iltl_result)
+	if( NOT iltl_result )
+	  message(FATAL_ERROR "Library `${c}' not found in list of llvm libraries.")
+	endif()
+      else( lib_idx LESS 0 )
+	list(GET llvm_libs ${lib_idx} canonical_lib)
+	list(APPEND expanded_components ${canonical_lib})
+      endif( lib_idx LESS 0 )
     endif( NOT idx LESS 0 )
   endforeach(c)
-  # We must match capitalization.
-  string(TOUPPER "${llvm_libs}" capitalized_libs)
-  list(REMOVE_DUPLICATES expanded_components)
+  # Expand dependencies while topologically sorting the list of libraries:
   list(LENGTH expanded_components lst_size)
-  set(result "")
-  while( 0 LESS ${lst_size} )
-    list(GET expanded_components 0 c)
-    string(TOUPPER "${c}" capitalized)
-    list(FIND capitalized_libs ${capitalized} idx)
-    if( idx LESS 0 )
-      message(FATAL_ERROR "Library ${c} not found in list of llvm libraries.")
-    endif( idx LESS 0 )
-    list(GET llvm_libs ${idx} canonical_lib)
-    list(REMOVE_ITEM result ${canonical_lib})
-    list(APPEND result ${canonical_lib})
-    foreach(c ${MSVC_LIB_DEPS_${canonical_lib}})
-      list(REMOVE_ITEM expanded_components ${c})
-    endforeach()
-    list(APPEND expanded_components ${MSVC_LIB_DEPS_${canonical_lib}})
-    list(REMOVE_AT expanded_components 0)
+  set(cursor 0)
+  set(processed)
+  while( cursor LESS lst_size )
+    list(GET expanded_components ${cursor} lib)
+    list(APPEND expanded_components ${MSVC_LIB_DEPS_${lib}})
+    # Remove duplicates at the front:
+    list(REVERSE expanded_components)
+    list(REMOVE_DUPLICATES expanded_components)
+    list(REVERSE expanded_components)
+    list(APPEND processed ${lib})
+    # Find the maximum index that doesn't have to be re-processed:
+    while(NOT "${expanded_components}" MATCHES "^${processed}.*" )
+      list(REMOVE_AT processed -1)
+    endwhile()
+    list(LENGTH processed cursor)
     list(LENGTH expanded_components lst_size)
-  endwhile( 0 LESS ${lst_size} )
+  endwhile( cursor LESS lst_size )
+  # Return just the libraries included in this build:
+  set(result)
+  foreach(c ${expanded_components})
+    list(FIND llvm_libs ${c} lib_idx)
+    if( NOT lib_idx LESS 0 )
+      set(result ${result} ${c})
+    endif()
+  endforeach(c)
   set(${out_libs} ${result} PARENT_SCOPE)
 endfunction(explicit_map_components_to_libraries)
 

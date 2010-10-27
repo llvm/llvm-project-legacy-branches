@@ -1,4 +1,4 @@
-//===-- StructRetPromotion.cpp - Promote sret arguments ------------------===//
+//===-- StructRetPromotion.cpp - Promote sret arguments -------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -50,20 +50,24 @@ namespace {
 
     virtual bool runOnSCC(CallGraphSCC &SCC);
     static char ID; // Pass identification, replacement for typeid
-    SRETPromotion() : CallGraphSCCPass(&ID) {}
+    SRETPromotion() : CallGraphSCCPass(ID) {
+      initializeSRETPromotionPass(*PassRegistry::getPassRegistry());
+    }
 
   private:
     CallGraphNode *PromoteReturn(CallGraphNode *CGN);
     bool isSafeToUpdateAllCallers(Function *F);
     Function *cloneFunctionBody(Function *F, const StructType *STy);
     CallGraphNode *updateCallSites(Function *F, Function *NF);
-    bool nestedStructType(const StructType *STy);
   };
 }
 
 char SRETPromotion::ID = 0;
-INITIALIZE_PASS(SRETPromotion, "sretpromotion",
-                "Promote sret arguments to multiple ret values", false, false);
+INITIALIZE_PASS_BEGIN(SRETPromotion, "sretpromotion",
+                "Promote sret arguments to multiple ret values", false, false)
+INITIALIZE_AG_DEPENDENCY(CallGraph)
+INITIALIZE_PASS_END(SRETPromotion, "sretpromotion",
+                "Promote sret arguments to multiple ret values", false, false)
 
 Pass *llvm::createStructRetPromotionPass() {
   return new SRETPromotion();
@@ -354,14 +358,3 @@ CallGraphNode *SRETPromotion::updateCallSites(Function *F, Function *NF) {
   return NF_CGN;
 }
 
-/// nestedStructType - Return true if STy includes any
-/// other aggregate types
-bool SRETPromotion::nestedStructType(const StructType *STy) {
-  unsigned Num = STy->getNumElements();
-  for (unsigned i = 0; i < Num; i++) {
-    const Type *Ty = STy->getElementType(i);
-    if (!Ty->isSingleValueType() && !Ty->isVoidTy())
-      return true;
-  }
-  return false;
-}

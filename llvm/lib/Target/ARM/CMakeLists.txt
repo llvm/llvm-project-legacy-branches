@@ -7,19 +7,23 @@ tablegen(ARMGenInstrNames.inc -gen-instr-enums)
 tablegen(ARMGenInstrInfo.inc -gen-instr-desc)
 tablegen(ARMGenCodeEmitter.inc -gen-emitter)
 tablegen(ARMGenAsmWriter.inc -gen-asm-writer)
+tablegen(ARMGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(ARMGenDAGISel.inc -gen-dag-isel)
+tablegen(ARMGenFastISel.inc -gen-fast-isel)
 tablegen(ARMGenCallingConv.inc -gen-callingconv)
 tablegen(ARMGenSubtarget.inc -gen-subtarget)
 tablegen(ARMGenEDInfo.inc -gen-enhanced-disassembly-info)
-tablegen(ARMGenFastISel.inc -gen-fast-isel)
+tablegen(ARMGenDecoderTables.inc -gen-arm-decoder)
 
 add_llvm_target(ARMCodeGen
+  ARMAsmBackend.cpp
   ARMAsmPrinter.cpp
   ARMBaseInstrInfo.cpp
   ARMBaseRegisterInfo.cpp
   ARMCodeEmitter.cpp
   ARMConstantIslandPass.cpp
   ARMConstantPoolValue.cpp
+  ARMELFWriterInfo.cpp
   ARMExpandPseudoInsts.cpp
   ARMFastISel.cpp
   ARMGlobalMerge.cpp
@@ -27,6 +31,7 @@ add_llvm_target(ARMCodeGen
   ARMISelLowering.cpp
   ARMInstrInfo.cpp
   ARMJITInfo.cpp
+  ARMMCCodeEmitter.cpp
   ARMLoadStoreOptimizer.cpp
   ARMMCAsmInfo.cpp
   ARMMCInstLower.cpp
@@ -36,7 +41,6 @@ add_llvm_target(ARMCodeGen
   ARMTargetMachine.cpp
   ARMTargetObjectFile.cpp
   NEONMoveFix.cpp
-  NEONPreAllocPass.cpp
   Thumb1InstrInfo.cpp
   Thumb1RegisterInfo.cpp
   Thumb2HazardRecognizer.cpp
@@ -45,5 +49,3 @@ add_llvm_target(ARMCodeGen
   Thumb2RegisterInfo.cpp
   Thumb2SizeReduction.cpp
   )
-
-target_link_libraries (LLVMARMCodeGen LLVMARMAsmPrinter LLVMSelectionDAG)
