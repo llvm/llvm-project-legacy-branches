@@ -1958,7 +1958,7 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       Out << "      ]\n";
     }
 
-    if (II->getCatchAllType()) {
+    if (II->hasCatchAll()) {
       Out << "      catchall [";
       writeOperand(II->getCatchAllType(), true);
       Out << ", ";

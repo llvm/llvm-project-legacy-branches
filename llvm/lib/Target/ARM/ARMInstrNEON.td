@@ -1730,33 +1730,33 @@ class N2VNSh<bit op24, bit op23, bits<4> op11_8, bit op7, bit op6, bit op4,
 // both double- and quad-register.
 class N2VDShAdd<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
                 string OpcodeStr, string Dt, ValueType Ty, SDNode ShOp>
-  : N2VImm<op24, op23, op11_8, op7, 0, op4, (outs DPR:$dst),
-           (ins DPR:$src1, DPR:$src2, i32imm:$SIMM), N2RegVShRFrm, IIC_VPALiD,
-           OpcodeStr, Dt, "$dst, $src2, $SIMM", "$src1 = $dst",
-           [(set DPR:$dst, (Ty (add DPR:$src1,
-                                (Ty (ShOp DPR:$src2, (i32 imm:$SIMM))))))]>;
+  : N2VImm<op24, op23, op11_8, op7, 0, op4, (outs DPR:$Vd),
+           (ins DPR:$src1, DPR:$Vm, i32imm:$SIMM), N2RegVShRFrm, IIC_VPALiD,
+           OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "$src1 = $Vd",
+           [(set DPR:$Vd, (Ty (add DPR:$src1,
+                                (Ty (ShOp DPR:$Vm, (i32 imm:$SIMM))))))]>;
 class N2VQShAdd<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
                 string OpcodeStr, string Dt, ValueType Ty, SDNode ShOp>
-  : N2VImm<op24, op23, op11_8, op7, 1, op4, (outs QPR:$dst),
-           (ins QPR:$src1, QPR:$src2, i32imm:$SIMM), N2RegVShRFrm, IIC_VPALiD,
-           OpcodeStr, Dt, "$dst, $src2, $SIMM", "$src1 = $dst",
-           [(set QPR:$dst, (Ty (add QPR:$src1,
-                                (Ty (ShOp QPR:$src2, (i32 imm:$SIMM))))))]>;
+  : N2VImm<op24, op23, op11_8, op7, 1, op4, (outs QPR:$Vd),
+           (ins QPR:$src1, QPR:$Vm, i32imm:$SIMM), N2RegVShRFrm, IIC_VPALiD,
+           OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "$src1 = $Vd",
+           [(set QPR:$Vd, (Ty (add QPR:$src1,
+                                (Ty (ShOp QPR:$Vm, (i32 imm:$SIMM))))))]>;
 
 // Shift by immediate and insert,
 // both double- and quad-register.
 class N2VDShIns<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
                 Format f, string OpcodeStr, string Dt, ValueType Ty,SDNode ShOp>
-  : N2VImm<op24, op23, op11_8, op7, 0, op4, (outs DPR:$dst),
-           (ins DPR:$src1, DPR:$src2, i32imm:$SIMM), f, IIC_VSHLiD,
-           OpcodeStr, Dt, "$dst, $src2, $SIMM", "$src1 = $dst",
-           [(set DPR:$dst, (Ty (ShOp DPR:$src1, DPR:$src2, (i32 imm:$SIMM))))]>;
+  : N2VImm<op24, op23, op11_8, op7, 0, op4, (outs DPR:$Vd),
+           (ins DPR:$src1, DPR:$Vm, i32imm:$SIMM), f, IIC_VSHLiD,
+           OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "$src1 = $Vd",
+           [(set DPR:$Vd, (Ty (ShOp DPR:$src1, DPR:$Vm, (i32 imm:$SIMM))))]>;
 class N2VQShIns<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
                 Format f, string OpcodeStr, string Dt, ValueType Ty,SDNode ShOp>
-  : N2VImm<op24, op23, op11_8, op7, 1, op4, (outs QPR:$dst),
-           (ins QPR:$src1, QPR:$src2, i32imm:$SIMM), f, IIC_VSHLiQ,
-           OpcodeStr, Dt, "$dst, $src2, $SIMM", "$src1 = $dst",
-           [(set QPR:$dst, (Ty (ShOp QPR:$src1, QPR:$src2, (i32 imm:$SIMM))))]>;
+  : N2VImm<op24, op23, op11_8, op7, 1, op4, (outs QPR:$Vd),
+           (ins QPR:$src1, QPR:$Vm, i32imm:$SIMM), f, IIC_VSHLiQ,
+           OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "$src1 = $Vd",
+           [(set QPR:$Vd, (Ty (ShOp QPR:$src1, QPR:$Vm, (i32 imm:$SIMM))))]>;
 
 // Convert, with fractional bits immediate,
 // both double- and quad-register.
@@ -1764,16 +1764,16 @@ class N2VCvtD<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
               string OpcodeStr, string Dt, ValueType ResTy, ValueType OpTy,
               Intrinsic IntOp>
   : N2VImm<op24, op23, op11_8, op7, 0, op4,
-           (outs DPR:$dst), (ins DPR:$src, i32imm:$SIMM), NVCVTFrm,
-           IIC_VUNAD, OpcodeStr, Dt, "$dst, $src, $SIMM", "",
-           [(set DPR:$dst, (ResTy (IntOp (OpTy DPR:$src), (i32 imm:$SIMM))))]>;
+           (outs DPR:$Vd), (ins DPR:$Vm, neon_vcvt_imm32:$SIMM), NVCVTFrm,
+           IIC_VUNAD, OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "",
+           [(set DPR:$Vd, (ResTy (IntOp (OpTy DPR:$Vm), (i32 imm:$SIMM))))]>;
 class N2VCvtQ<bit op24, bit op23, bits<4> op11_8, bit op7, bit op4,
               string OpcodeStr, string Dt, ValueType ResTy, ValueType OpTy,
               Intrinsic IntOp>
   : N2VImm<op24, op23, op11_8, op7, 1, op4,
-           (outs QPR:$dst), (ins QPR:$src, i32imm:$SIMM), NVCVTFrm,
-           IIC_VUNAQ, OpcodeStr, Dt, "$dst, $src, $SIMM", "",
-           [(set QPR:$dst, (ResTy (IntOp (OpTy QPR:$src), (i32 imm:$SIMM))))]>;
+           (outs QPR:$Vd), (ins QPR:$Vm, neon_vcvt_imm32:$SIMM), NVCVTFrm,
+           IIC_VUNAQ, OpcodeStr, Dt, "$Vd, $Vm, $SIMM", "",
+           [(set QPR:$Vd, (ResTy (IntOp (OpTy QPR:$Vm), (i32 imm:$SIMM))))]>;
 
 //===----------------------------------------------------------------------===//
 // Multiclasses
@@ -3501,30 +3501,44 @@ def VMOVv2i64 : N1ModImm<1, 0b000, 0b1110, 0, 1, 1, 1, (outs QPR:$dst),
 //   VMOV     : Vector Get Lane (move scalar to ARM core register)
 
 def VGETLNs8  : NVGetLane<{1,1,1,0,0,1,?,1}, 0b1011, {?,?},
-                          (outs GPR:$dst), (ins DPR:$src, nohash_imm:$lane),
-                          IIC_VMOVSI, "vmov", "s8", "$dst, $src[$lane]",
-                          [(set GPR:$dst, (NEONvgetlanes (v8i8 DPR:$src),
-                                           imm:$lane))]>;
+                          (outs GPR:$R), (ins DPR:$V, nohash_imm:$lane),
+                          IIC_VMOVSI, "vmov", "s8", "$R, $V[$lane]",
+                          [(set GPR:$R, (NEONvgetlanes (v8i8 DPR:$V),
+                                           imm:$lane))]> {
+  let Inst{21}  = lane{2};
+  let Inst{6-5} = lane{1-0};
+}
 def VGETLNs16 : NVGetLane<{1,1,1,0,0,0,?,1}, 0b1011, {?,1},
-                          (outs GPR:$dst), (ins DPR:$src, nohash_imm:$lane),
-                          IIC_VMOVSI, "vmov", "s16", "$dst, $src[$lane]",
-                          [(set GPR:$dst, (NEONvgetlanes (v4i16 DPR:$src),
-                                           imm:$lane))]>;
+                          (outs GPR:$R), (ins DPR:$V, nohash_imm:$lane),
+                          IIC_VMOVSI, "vmov", "s16", "$R, $V[$lane]",
+                          [(set GPR:$R, (NEONvgetlanes (v4i16 DPR:$V),
+                                           imm:$lane))]> {
+  let Inst{21} = lane{1};
+  let Inst{6}  = lane{0};
+}
 def VGETLNu8  : NVGetLane<{1,1,1,0,1,1,?,1}, 0b1011, {?,?},
-                          (outs GPR:$dst), (ins DPR:$src, nohash_imm:$lane),
-                          IIC_VMOVSI, "vmov", "u8", "$dst, $src[$lane]",
-                          [(set GPR:$dst, (NEONvgetlaneu (v8i8 DPR:$src),
-                                           imm:$lane))]>;
+                          (outs GPR:$R), (ins DPR:$V, nohash_imm:$lane),
+                          IIC_VMOVSI, "vmov", "u8", "$R, $V[$lane]",
+                          [(set GPR:$R, (NEONvgetlaneu (v8i8 DPR:$V),
+                                           imm:$lane))]> {
+  let Inst{21}  = lane{2};
+  let Inst{6-5} = lane{1-0};
+}
 def VGETLNu16 : NVGetLane<{1,1,1,0,1,0,?,1}, 0b1011, {?,1},
-                          (outs GPR:$dst), (ins DPR:$src, nohash_imm:$lane),
-                          IIC_VMOVSI, "vmov", "u16", "$dst, $src[$lane]",
-                          [(set GPR:$dst, (NEONvgetlaneu (v4i16 DPR:$src),
-                                           imm:$lane))]>;
+                          (outs GPR:$R), (ins DPR:$V, nohash_imm:$lane),
+                          IIC_VMOVSI, "vmov", "u16", "$R, $V[$lane]",
+                          [(set GPR:$R, (NEONvgetlaneu (v4i16 DPR:$V),
+                                           imm:$lane))]> {
+  let Inst{21} = lane{1};
+  let Inst{6}  = lane{0};
+}
 def VGETLNi32 : NVGetLane<{1,1,1,0,0,0,?,1}, 0b1011, 0b00,
-                          (outs GPR:$dst), (ins DPR:$src, nohash_imm:$lane),
-                          IIC_VMOVSI, "vmov", "32", "$dst, $src[$lane]",
-                          [(set GPR:$dst, (extractelt (v2i32 DPR:$src),
-                                           imm:$lane))]>;
+                          (outs GPR:$R), (ins DPR:$V, nohash_imm:$lane),
+                          IIC_VMOVSI, "vmov", "32", "$R, $V[$lane]",
+                          [(set GPR:$R, (extractelt (v2i32 DPR:$V),
+                                           imm:$lane))]> {
+  let Inst{21} = lane{0};
+}
 // def VGETLNf32: see FMRDH and FMRDL in ARMInstrVFP.td
 def : Pat<(NEONvgetlanes (v16i8 QPR:$src), imm:$lane),
           (VGETLNs8 (v8i8 (EXTRACT_SUBREG QPR:$src,
@@ -3560,22 +3574,30 @@ def : Pat<(extractelt (v2f64 QPR:$src1), imm:$src2),
 
 //   VMOV     : Vector Set Lane (move ARM core register to scalar)
 
-let Constraints = "$src1 = $dst" in {
-def VSETLNi8  : NVSetLane<{1,1,1,0,0,1,?,0}, 0b1011, {?,?}, (outs DPR:$dst),
-                          (ins DPR:$src1, GPR:$src2, nohash_imm:$lane),
-                          IIC_VMOVISL, "vmov", "8", "$dst[$lane], $src2",
-                          [(set DPR:$dst, (vector_insert (v8i8 DPR:$src1),
-                                           GPR:$src2, imm:$lane))]>;
-def VSETLNi16 : NVSetLane<{1,1,1,0,0,0,?,0}, 0b1011, {?,1}, (outs DPR:$dst),
-                          (ins DPR:$src1, GPR:$src2, nohash_imm:$lane),
-                          IIC_VMOVISL, "vmov", "16", "$dst[$lane], $src2",
-                          [(set DPR:$dst, (vector_insert (v4i16 DPR:$src1),
-                                           GPR:$src2, imm:$lane))]>;
-def VSETLNi32 : NVSetLane<{1,1,1,0,0,0,?,0}, 0b1011, 0b00, (outs DPR:$dst),
-                          (ins DPR:$src1, GPR:$src2, nohash_imm:$lane),
-                          IIC_VMOVISL, "vmov", "32", "$dst[$lane], $src2",
-                          [(set DPR:$dst, (insertelt (v2i32 DPR:$src1),
-                                           GPR:$src2, imm:$lane))]>;
+let Constraints = "$src1 = $V" in {
+def VSETLNi8  : NVSetLane<{1,1,1,0,0,1,?,0}, 0b1011, {?,?}, (outs DPR:$V),
+                          (ins DPR:$src1, GPR:$R, nohash_imm:$lane),
+                          IIC_VMOVISL, "vmov", "8", "$V[$lane], $R",
+                          [(set DPR:$V, (vector_insert (v8i8 DPR:$src1),
+                                           GPR:$R, imm:$lane))]> {
+  let Inst{21}  = lane{2};
+  let Inst{6-5} = lane{1-0};
+}
+def VSETLNi16 : NVSetLane<{1,1,1,0,0,0,?,0}, 0b1011, {?,1}, (outs DPR:$V),
+                          (ins DPR:$src1, GPR:$R, nohash_imm:$lane),
+                          IIC_VMOVISL, "vmov", "16", "$V[$lane], $R",
+                          [(set DPR:$V, (vector_insert (v4i16 DPR:$src1),
+                                           GPR:$R, imm:$lane))]> {
+  let Inst{21} = lane{1};
+  let Inst{6}  = lane{0};
+}
+def VSETLNi32 : NVSetLane<{1,1,1,0,0,0,?,0}, 0b1011, 0b00, (outs DPR:$V),
+                          (ins DPR:$src1, GPR:$R, nohash_imm:$lane),
+                          IIC_VMOVISL, "vmov", "32", "$V[$lane], $R",
+                          [(set DPR:$V, (insertelt (v2i32 DPR:$src1),
+                                           GPR:$R, imm:$lane))]> {
+  let Inst{21} = lane{0};
+}
 }
 def : Pat<(vector_insert (v16i8 QPR:$src1), GPR:$src2, imm:$lane),
           (v16i8 (INSERT_SUBREG QPR:$src1, 
@@ -3679,14 +3701,30 @@ class VDUPLNQ<bits<4> op19_16, string OpcodeStr, string Dt,
 
 // Inst{19-16} is partially specified depending on the element size.
 
-def VDUPLN8d  : VDUPLND<{?,?,?,1}, "vdup", "8", v8i8>;
-def VDUPLN16d : VDUPLND<{?,?,1,0}, "vdup", "16", v4i16>;
-def VDUPLN32d : VDUPLND<{?,1,0,0}, "vdup", "32", v2i32>;
-def VDUPLNfd  : VDUPLND<{?,1,0,0}, "vdup", "32", v2f32>;
-def VDUPLN8q  : VDUPLNQ<{?,?,?,1}, "vdup", "8", v16i8, v8i8>;
-def VDUPLN16q : VDUPLNQ<{?,?,1,0}, "vdup", "16", v8i16, v4i16>;
-def VDUPLN32q : VDUPLNQ<{?,1,0,0}, "vdup", "32", v4i32, v2i32>;
-def VDUPLNfq  : VDUPLNQ<{?,1,0,0}, "vdup", "32", v4f32, v2f32>;
+def VDUPLN8d  : VDUPLND<{?,?,?,1}, "vdup", "8", v8i8> {
+  let Inst{19-17} = lane{2-0};
+}
+def VDUPLN16d : VDUPLND<{?,?,1,0}, "vdup", "16", v4i16> {
+  let Inst{19-18} = lane{1-0};
+}
+def VDUPLN32d : VDUPLND<{?,1,0,0}, "vdup", "32", v2i32> {
+  let Inst{19} = lane{0};
+}
+def VDUPLNfd  : VDUPLND<{?,1,0,0}, "vdup", "32", v2f32> {
+  let Inst{19} = lane{0};
+}
+def VDUPLN8q  : VDUPLNQ<{?,?,?,1}, "vdup", "8", v16i8, v8i8> {
+  let Inst{19-17} = lane{2-0};
+}
+def VDUPLN16q : VDUPLNQ<{?,?,1,0}, "vdup", "16", v8i16, v4i16> {
+  let Inst{19-18} = lane{1-0};
+}
+def VDUPLN32q : VDUPLNQ<{?,1,0,0}, "vdup", "32", v4i32, v2i32> {
+  let Inst{19} = lane{0};
+}
+def VDUPLNfq  : VDUPLNQ<{?,1,0,0}, "vdup", "32", v4f32, v2f32> {
+  let Inst{19} = lane{0};
+}
 
 def : Pat<(v16i8 (NEONvduplane (v16i8 QPR:$src), imm:$lane)),
           (v16i8 (VDUPLN8q (v8i8 (EXTRACT_SUBREG QPR:$src,
@@ -3833,14 +3871,20 @@ class VEXTd<string OpcodeStr, string Dt, ValueType Ty>
         (ins DPR:$lhs, DPR:$rhs, i32imm:$index), NVExtFrm,
         IIC_VEXTD, OpcodeStr, Dt, "$dst, $lhs, $rhs, $index", "",
         [(set DPR:$dst, (Ty (NEONvext (Ty DPR:$lhs),
-                                      (Ty DPR:$rhs), imm:$index)))]>;
+                                      (Ty DPR:$rhs), imm:$index)))]> {
+  bits<4> index;
+  let Inst{11-8} = index{3-0};
+}
 
 class VEXTq<string OpcodeStr, string Dt, ValueType Ty>
   : N3V<0,1,0b11,{?,?,?,?},1,0, (outs QPR:$dst),
         (ins QPR:$lhs, QPR:$rhs, i32imm:$index), NVExtFrm,
         IIC_VEXTQ, OpcodeStr, Dt, "$dst, $lhs, $rhs, $index", "",
         [(set QPR:$dst, (Ty (NEONvext (Ty QPR:$lhs),
-                                      (Ty QPR:$rhs), imm:$index)))]>;
+                                      (Ty QPR:$rhs), imm:$index)))]> {
+  bits<4> index;
+  let Inst{11-8} = index{3-0};
+}
 
 def VEXTd8  : VEXTd<"vext", "8",  v8i8>;
 def VEXTd16 : VEXTd<"vext", "16", v4i16>;
@@ -3886,24 +3930,24 @@ def  VZIPq32  : N2VQShuffle<0b10, 0b00011, IIC_VPERMQ3, "vzip", "32">;
 
 //   VTBL     : Vector Table Lookup
 def  VTBL1
-  : N3V<1,1,0b11,0b1000,0,0, (outs DPR:$dst),
-        (ins DPR:$tbl1, DPR:$src), NVTBLFrm, IIC_VTB1,
-        "vtbl", "8", "$dst, \\{$tbl1\\}, $src", "",
-        [(set DPR:$dst, (v8i8 (int_arm_neon_vtbl1 DPR:$tbl1, DPR:$src)))]>;
+  : N3V<1,1,0b11,0b1000,0,0, (outs DPR:$Vd),
+        (ins DPR:$Vn, DPR:$Vm), NVTBLFrm, IIC_VTB1,
+        "vtbl", "8", "$Vd, \\{$Vn\\}, $Vm", "",
+        [(set DPR:$Vd, (v8i8 (int_arm_neon_vtbl1 DPR:$Vn, DPR:$Vm)))]>;
 let hasExtraSrcRegAllocReq = 1 in {
 def  VTBL2
-  : N3V<1,1,0b11,0b1001,0,0, (outs DPR:$dst),
-        (ins DPR:$tbl1, DPR:$tbl2, DPR:$src), NVTBLFrm, IIC_VTB2,
-        "vtbl", "8", "$dst, \\{$tbl1, $tbl2\\}, $src", "", []>;
+  : N3V<1,1,0b11,0b1001,0,0, (outs DPR:$Vd),
+        (ins DPR:$Vn, DPR:$tbl2, DPR:$Vm), NVTBLFrm, IIC_VTB2,
+        "vtbl", "8", "$Vd, \\{$Vn, $tbl2\\}, $Vm", "", []>;
 def  VTBL3
-  : N3V<1,1,0b11,0b1010,0,0, (outs DPR:$dst),
-        (ins DPR:$tbl1, DPR:$tbl2, DPR:$tbl3, DPR:$src), NVTBLFrm, IIC_VTB3,
-        "vtbl", "8", "$dst, \\{$tbl1, $tbl2, $tbl3\\}, $src", "", []>;
+  : N3V<1,1,0b11,0b1010,0,0, (outs DPR:$Vd),
+        (ins DPR:$Vn, DPR:$tbl2, DPR:$tbl3, DPR:$Vm), NVTBLFrm, IIC_VTB3,
+        "vtbl", "8", "$Vd, \\{$Vn, $tbl2, $tbl3\\}, $Vm", "", []>;
 def  VTBL4
-  : N3V<1,1,0b11,0b1011,0,0, (outs DPR:$dst),
-        (ins DPR:$tbl1, DPR:$tbl2, DPR:$tbl3, DPR:$tbl4, DPR:$src),
+  : N3V<1,1,0b11,0b1011,0,0, (outs DPR:$Vd),
+        (ins DPR:$Vn, DPR:$tbl2, DPR:$tbl3, DPR:$tbl4, DPR:$Vm),
         NVTBLFrm, IIC_VTB4,
-        "vtbl", "8", "$dst, \\{$tbl1, $tbl2, $tbl3, $tbl4\\}, $src", "", []>;
+        "vtbl", "8", "$Vd, \\{$Vn, $tbl2, $tbl3, $tbl4\\}, $Vm", "", []>;
 } // hasExtraSrcRegAllocReq = 1
 
 def  VTBL2Pseudo
@@ -3915,27 +3959,27 @@ def  VTBL4Pseudo
 
 //   VTBX     : Vector Table Extension
 def  VTBX1
-  : N3V<1,1,0b11,0b1000,1,0, (outs DPR:$dst),
-        (ins DPR:$orig, DPR:$tbl1, DPR:$src), NVTBLFrm, IIC_VTBX1,
-        "vtbx", "8", "$dst, \\{$tbl1\\}, $src", "$orig = $dst",
-        [(set DPR:$dst, (v8i8 (int_arm_neon_vtbx1
-                               DPR:$orig, DPR:$tbl1, DPR:$src)))]>;
+  : N3V<1,1,0b11,0b1000,1,0, (outs DPR:$Vd),
+        (ins DPR:$orig, DPR:$Vn, DPR:$Vm), NVTBLFrm, IIC_VTBX1,
+        "vtbx", "8", "$Vd, \\{$Vn\\}, $Vm", "$orig = $Vd",
+        [(set DPR:$Vd, (v8i8 (int_arm_neon_vtbx1
+                               DPR:$orig, DPR:$Vn, DPR:$Vm)))]>;
 let hasExtraSrcRegAllocReq = 1 in {
 def  VTBX2
-  : N3V<1,1,0b11,0b1001,1,0, (outs DPR:$dst),
-        (ins DPR:$orig, DPR:$tbl1, DPR:$tbl2, DPR:$src), NVTBLFrm, IIC_VTBX2,
-        "vtbx", "8", "$dst, \\{$tbl1, $tbl2\\}, $src", "$orig = $dst", []>;
+  : N3V<1,1,0b11,0b1001,1,0, (outs DPR:$Vd),
+        (ins DPR:$orig, DPR:$Vn, DPR:$tbl2, DPR:$Vm), NVTBLFrm, IIC_VTBX2,
+        "vtbx", "8", "$Vd, \\{$Vn, $tbl2\\}, $Vm", "$orig = $Vd", []>;
 def  VTBX3
-  : N3V<1,1,0b11,0b1010,1,0, (outs DPR:$dst),
-        (ins DPR:$orig, DPR:$tbl1, DPR:$tbl2, DPR:$tbl3, DPR:$src),
+  : N3V<1,1,0b11,0b1010,1,0, (outs DPR:$Vd),
+        (ins DPR:$orig, DPR:$Vn, DPR:$tbl2, DPR:$tbl3, DPR:$Vm),
         NVTBLFrm, IIC_VTBX3,
-        "vtbx", "8", "$dst, \\{$tbl1, $tbl2, $tbl3\\}, $src",
-        "$orig = $dst", []>;
+        "vtbx", "8", "$Vd, \\{$Vn, $tbl2, $tbl3\\}, $Vm",
+        "$orig = $Vd", []>;
 def  VTBX4
-  : N3V<1,1,0b11,0b1011,1,0, (outs DPR:$dst), (ins DPR:$orig, DPR:$tbl1,
-        DPR:$tbl2, DPR:$tbl3, DPR:$tbl4, DPR:$src), NVTBLFrm, IIC_VTBX4,
-        "vtbx", "8", "$dst, \\{$tbl1, $tbl2, $tbl3, $tbl4\\}, $src",
-        "$orig = $dst", []>;
+  : N3V<1,1,0b11,0b1011,1,0, (outs DPR:$Vd), (ins DPR:$orig, DPR:$Vn,
+        DPR:$tbl2, DPR:$tbl3, DPR:$tbl4, DPR:$Vm), NVTBLFrm, IIC_VTBX4,
+        "vtbx", "8", "$Vd, \\{$Vn, $tbl2, $tbl3, $tbl4\\}, $Vm",
+        "$orig = $Vd", []>;
 } // hasExtraSrcRegAllocReq = 1
 
 def  VTBX2Pseudo

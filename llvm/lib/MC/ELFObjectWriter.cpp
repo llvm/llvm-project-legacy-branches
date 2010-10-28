@@ -79,12 +79,20 @@ static bool isFixupKindX86PCRel(unsigned Kind) {
 }
 
 static bool RelocNeedsGOT(unsigned Type) {
+  // FIXME: Can we use the VariantKind?
   switch (Type) {
   default:
     return false;
   case ELF::R_X86_64_GOT32:
   case ELF::R_X86_64_PLT32:
   case ELF::R_X86_64_GOTPCREL:
+  case ELF::R_X86_64_TPOFF32:
+  case ELF::R_X86_64_TLSGD:
+  case ELF::R_X86_64_GOTTPOFF:
+  case ELF::R_386_TLS_GD:
+  case ELF::R_386_TLS_LE_32:
+  case ELF::R_386_TLS_IE:
+  case ELF::R_386_TLS_LE:
     return true;
   }
 }
@@ -134,6 +142,7 @@ namespace {
     };
 
     SmallPtrSet<const MCSymbol *, 16> UsedInReloc;
+    DenseMap<const MCSymbol *, const MCSymbol *> Renames;
 
     llvm::DenseMap<const MCSectionData*,
                    std::vector<ELFRelocationEntry> > Relocations;
@@ -292,8 +301,7 @@ namespace {
 
     void CreateMetadataSections(MCAssembler &Asm, MCAsmLayout &Layout);
 
-    void ExecutePostLayoutBinding(MCAssembler &Asm) {
-    }
+    void ExecutePostLayoutBinding(MCAssembler &Asm);
 
     void WriteSecHdrEntry(uint32_t Name, uint32_t Type, uint64_t Flags,
                           uint64_t Address, uint64_t Offset,
@@ -441,11 +449,40 @@ static const MCSymbol &AliasedSymbol(const MCSymbol &Symbol) {
   const MCSymbol *S = &Symbol;
   while (S->isVariable()) {
     const MCExpr *Value = S->getVariableValue();
-    assert (Value->getKind() == MCExpr::SymbolRef && "Unimplemented");
+    if (Value->getKind() != MCExpr::SymbolRef)
+      return *S;
     const MCSymbolRefExpr *Ref = static_cast<const MCSymbolRefExpr*>(Value);
     S = &Ref->getSymbol();
   }
   return *S;
+}
+
+void ELFObjectWriterImpl::ExecutePostLayoutBinding(MCAssembler &Asm) {
+  // The presence of symbol versions causes undefined symbols and
+  // versions declared with @@@ to be renamed.
+
+  for (MCAssembler::symbol_iterator it = Asm.symbol_begin(),
+         ie = Asm.symbol_end(); it != ie; ++it) {
+    const MCSymbol &Alias = it->getSymbol();
+    if (!Alias.isVariable())
+      continue;
+    const MCSymbol &Symbol = AliasedSymbol(Alias);
+    StringRef AliasName = Alias.getName();
+    size_t Pos = AliasName.find('@');
+    if (Pos == StringRef::npos)
+      continue;
+
+    StringRef Rest = AliasName.substr(Pos);
+    if (!Symbol.isUndefined() && !Rest.startswith("@@@"))
+      continue;
+
+    // FIXME: produce a better error message.
+    if (Symbol.isUndefined() && Rest.startswith("@@") &&
+        !Rest.startswith("@@@"))
+      report_fatal_error("A @@ version cannot be undefined");
+
+    Renames.insert(std::make_pair(&Symbol, &Alias));
+  }
 }
 
 void ELFObjectWriterImpl::WriteSymbol(MCDataFragment *F, ELFSymbolData &MSD,
@@ -592,6 +629,9 @@ void ELFObjectWriterImpl::RecordRelocation(const MCAssembler &Asm,
   bool IsPCRel = isFixupKindX86PCRel(Fixup.getKind());
   if (!Target.isAbsolute()) {
     Symbol = &AliasedSymbol(Target.getSymA()->getSymbol());
+    const MCSymbol *Renamed = Renames.lookup(Symbol);
+    if (Renamed)
+      Symbol = Renamed;
     MCSymbolData &SD = Asm.getSymbolData(*Symbol);
     MCFragment *F = SD.getFragment();
 
@@ -655,6 +695,12 @@ void ELFObjectWriterImpl::RecordRelocation(const MCAssembler &Asm,
       case llvm::MCSymbolRefExpr::VK_GOTPCREL:
         Type = ELF::R_X86_64_GOTPCREL;
         break;
+      case MCSymbolRefExpr::VK_GOTTPOFF:
+        Type = ELF::R_X86_64_GOTTPOFF;
+        break;
+      case MCSymbolRefExpr::VK_TLSGD:
+        Type = ELF::R_X86_64_TLSGD;
+        break;
       }
     } else {
       switch ((unsigned)Fixup.getKind()) {
@@ -674,6 +720,9 @@ void ELFObjectWriterImpl::RecordRelocation(const MCAssembler &Asm,
           break;
         case MCSymbolRefExpr::VK_GOTPCREL:
           Type = ELF::R_X86_64_GOTPCREL;
+          break;
+        case MCSymbolRefExpr::VK_TPOFF:
+          Type = ELF::R_X86_64_TPOFF32;
           break;
         }
         break;
@@ -722,6 +771,18 @@ void ELFObjectWriterImpl::RecordRelocation(const MCAssembler &Asm,
         case MCSymbolRefExpr::VK_GOTOFF:
           Type = ELF::R_386_GOTOFF;
           break;
+        case MCSymbolRefExpr::VK_TLSGD:
+          Type = ELF::R_386_TLS_GD;
+          break;
+        case MCSymbolRefExpr::VK_TPOFF:
+          Type = ELF::R_386_TLS_LE_32;
+          break;
+        case MCSymbolRefExpr::VK_INDNTPOFF:
+          Type = ELF::R_386_TLS_IE;
+          break;
+        case MCSymbolRefExpr::VK_NTPOFF:
+          Type = ELF::R_386_TLS_LE;
+          break;
         }
         break;
       case FK_Data_2: Type = ELF::R_386_16; break;
@@ -764,11 +825,19 @@ ELFObjectWriterImpl::getSymbolIndexInSymbolTable(const MCAssembler &Asm,
 }
 
 static bool isInSymtab(const MCAssembler &Asm, const MCSymbolData &Data,
-                       bool Used) {
+                       bool Used, bool Renamed) {
   if (Used)
     return true;
 
+  if (Renamed)
+    return false;
+
   const MCSymbol &Symbol = Data.getSymbol();
+
+  const MCSymbol &A = AliasedSymbol(Symbol);
+  if (&A != &Symbol && A.isUndefined())
+    return false;
+
   if (!Asm.isSymbolLinkerVisible(Symbol) && !Symbol.isUndefined())
     return false;
 
@@ -815,57 +884,58 @@ void ELFObjectWriterImpl::ComputeSymbolTable(MCAssembler &Asm) {
          ie = Asm.symbol_end(); it != ie; ++it) {
     const MCSymbol &Symbol = it->getSymbol();
 
-    if (!isInSymtab(Asm, *it, UsedInReloc.count(&Symbol)))
+    if (!isInSymtab(Asm, *it, UsedInReloc.count(&Symbol),
+                    Renames.count(&Symbol)))
       continue;
 
     ELFSymbolData MSD;
     MSD.SymbolData = it;
     bool Local = isLocal(*it);
+    const MCSymbol &RefSymbol = AliasedSymbol(Symbol);
 
-    bool Add = false;
     if (it->isCommon()) {
       assert(!Local);
       MSD.SectionIndex = ELF::SHN_COMMON;
-      Add = true;
-    } else if (Symbol.isAbsolute()) {
+    } else if (Symbol.isAbsolute() || RefSymbol.isVariable()) {
       MSD.SectionIndex = ELF::SHN_ABS;
-      Add = true;
-    } else if (Symbol.isVariable()) {
-      const MCSymbol &RefSymbol = AliasedSymbol(Symbol);
-      if (RefSymbol.isDefined()) {
-        MSD.SectionIndex = SectionIndexMap.lookup(&RefSymbol.getSection());
-        assert(MSD.SectionIndex && "Invalid section index!");
-        Add = true;
-      }
-    } else if (Symbol.isUndefined()) {
-      assert(!Local);
+    } else if (RefSymbol.isUndefined()) {
       MSD.SectionIndex = ELF::SHN_UNDEF;
       // FIXME: Undefined symbols are global, but this is the first place we
       // are able to set it.
       if (GetBinding(*it) == ELF::STB_LOCAL)
         SetBinding(*it, ELF::STB_GLOBAL);
-      Add = true;
     } else {
-      MSD.SectionIndex = SectionIndexMap.lookup(&Symbol.getSection());
+      MSD.SectionIndex = SectionIndexMap.lookup(&RefSymbol.getSection());
       assert(MSD.SectionIndex && "Invalid section index!");
-      Add = true;
     }
 
-    if (Add) {
-      uint64_t &Entry = StringIndexMap[Symbol.getName()];
-      if (!Entry) {
-        Entry = StringTable.size();
-        StringTable += Symbol.getName();
-        StringTable += '\x00';
-      }
-      MSD.StringIndex = Entry;
-      if (MSD.SectionIndex == ELF::SHN_UNDEF)
-        UndefinedSymbolData.push_back(MSD);
-      else if (Local)
-        LocalSymbolData.push_back(MSD);
-      else
-        ExternalSymbolData.push_back(MSD);
+    // The @@@ in symbol version is replaced with @ in undefined symbols and
+    // @@ in defined ones.
+    StringRef Name = Symbol.getName();
+    size_t Pos = Name.find("@@@");
+    std::string FinalName;
+    if (Pos != StringRef::npos) {
+      StringRef Prefix = Name.substr(0, Pos);
+      unsigned n = MSD.SectionIndex == ELF::SHN_UNDEF ? 2 : 1;
+      StringRef Suffix = Name.substr(Pos + n);
+      FinalName = Prefix.str() + Suffix.str();
+    } else {
+      FinalName = Name.str();
     }
+
+    uint64_t &Entry = StringIndexMap[FinalName];
+    if (!Entry) {
+      Entry = StringTable.size();
+      StringTable += FinalName;
+      StringTable += '\x00';
+    }
+    MSD.StringIndex = Entry;
+    if (MSD.SectionIndex == ELF::SHN_UNDEF)
+      UndefinedSymbolData.push_back(MSD);
+    else if (Local)
+      LocalSymbolData.push_back(MSD);
+    else
+      ExternalSymbolData.push_back(MSD);
   }
 
   // Symbols are required to be in lexicographic order.

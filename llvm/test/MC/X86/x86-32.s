@@ -702,3 +702,91 @@ pshufw $90, %mm4, %mm0
 // CHECK: sidt	4(%eax)
 // CHECK:  encoding: [0x0f,0x01,0x48,0x04]
         	sidtl	4(%eax)
+
+// CHECK: fcomip	%st(2), %st(0)
+// CHECK:  encoding: [0xdf,0xf2]
+        	fcompi	%st(2),%st
+
+// CHECK: fcomip	%st(2), %st(0)
+// CHECK:  encoding: [0xdf,0xf2]
+        	fcompi	%st(2)
+
+// CHECK: fcomip	%st(1), %st(0)
+// CHECK:  encoding: [0xdf,0xf1]
+        	fcompi
+
+// CHECK: fucomip	%st(2), %st(0)
+// CHECK:  encoding: [0xdf,0xea]
+        	fucompi	%st(2),%st
+
+// CHECK: fucomip	%st(2), %st(0)
+// CHECK:  encoding: [0xdf,0xea]
+        	fucompi	%st(2)
+
+// CHECK: fucomip	%st(1), %st(0)
+// CHECK:  encoding: [0xdf,0xe9]
+        	fucompi
+
+// CHECK: fldcw	32493
+// CHECK:  encoding: [0xd9,0x2d,0xed,0x7e,0x00,0x00]
+        	fldcww	0x7eed
+
+// CHECK: fldcw	32493
+// CHECK:  encoding: [0xd9,0x2d,0xed,0x7e,0x00,0x00]
+        	fldcw	0x7eed
+
+// CHECK: fnstcw	32493
+// CHECK:  encoding: [0xd9,0x3d,0xed,0x7e,0x00,0x00]
+        	fnstcww	0x7eed
+
+// CHECK: fnstcw	32493
+// CHECK:  encoding: [0xd9,0x3d,0xed,0x7e,0x00,0x00]
+        	fnstcw	0x7eed
+
+// CHECK: wait
+// CHECK:  encoding: [0x9b]
+        	fstcww	0x7eed
+
+// CHECK: wait
+// CHECK:  encoding: [0x9b]
+        	fstcw	0x7eed
+
+// CHECK: fnstsw	32493
+// CHECK:  encoding: [0xdd,0x3d,0xed,0x7e,0x00,0x00]
+        	fnstsww	0x7eed
+
+// CHECK: fnstsw	32493
+// CHECK:  encoding: [0xdd,0x3d,0xed,0x7e,0x00,0x00]
+        	fnstsw	0x7eed
+
+// CHECK: wait
+// CHECK:  encoding: [0x9b]
+        	fstsww	0x7eed
+
+// CHECK: wait
+// CHECK:  encoding: [0x9b]
+        	fstsw	0x7eed
+
+// CHECK: verr	32493
+// CHECK:  encoding: [0x0f,0x00,0x25,0xed,0x7e,0x00,0x00]
+        	verrw	0x7eed
+
+// CHECK: verr	32493
+// CHECK:  encoding: [0x0f,0x00,0x25,0xed,0x7e,0x00,0x00]
+        	verr	0x7eed
+
+// CHECK: wait
+// CHECK:  encoding: [0x9b]
+        	fclex
+
+// CHECK: fnclex
+// CHECK:  encoding: [0xdb,0xe2]
+        	fnclex
+
+// CHECK: ud2
+// CHECK:  encoding: [0x0f,0x0b]
+        	ud2a
+
+// CHECK: ud2b
+// CHECK:  encoding: [0x0f,0xb9]
+        	ud2b

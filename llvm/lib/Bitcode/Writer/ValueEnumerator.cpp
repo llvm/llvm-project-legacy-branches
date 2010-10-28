@@ -425,13 +425,28 @@ void ValueEnumerator::incorporateFunction(const Function &F) {
 
   // Add all function-level constants to the value table.
   for (Function::const_iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I!=E; ++I)
+    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I!=E; ++I) {
       for (User::const_op_iterator OI = I->op_begin(), E = I->op_end();
            OI != E; ++OI) {
         if ((isa<Constant>(*OI) && !isa<GlobalValue>(*OI)) ||
             isa<InlineAsm>(*OI))
           EnumerateValue(*OI);
       }
+
+      if (const InvokeInst *II = dyn_cast<InvokeInst>(I)) {
+        for (unsigned i = 0, e = II->getNumCatches(); i != e; ++i) {
+          Value *V = II->getCatchType(i);
+          if ((isa<Constant>(V) && !isa<GlobalValue>(V)) || isa<InlineAsm>(V))
+            EnumerateValue(V);
+        }
+
+        if (II->hasCatchAll()) {
+          Value *V = II->getCatchAllType();
+          if ((isa<Constant>(V) && !isa<GlobalValue>(V)) || isa<InlineAsm>(V))
+            EnumerateValue(V);
+        }
+      }
+    }
     BasicBlocks.push_back(BB);
     ValueMap[BB] = BasicBlocks.size();
   }

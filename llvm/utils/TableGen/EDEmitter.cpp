@@ -582,9 +582,11 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("t_imm_s4");
   IMM("pclabel");
   IMM("shift_imm");
+  IMM("neon_vcvt_imm32");
 
   MISC("brtarget", "kOperandTypeARMBranchTarget");                // ?
   MISC("so_reg", "kOperandTypeARMSoReg");                         // R, R, I
+  MISC("shift_so_reg", "kOperandTypeARMSoReg");                   // R, R, I
   MISC("t2_so_reg", "kOperandTypeThumb2SoReg");                   // R, I
   MISC("so_imm", "kOperandTypeARMSoImm");                         // I
   MISC("rot_imm", "kOperandTypeARMRotImm");                       // I

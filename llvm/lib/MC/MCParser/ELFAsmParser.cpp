@@ -12,6 +12,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCStreamer.h"
@@ -51,6 +52,7 @@ public:
     AddDirectiveHandler<&ELFAsmParser::ParseDirectivePrevious>(".previous");
     AddDirectiveHandler<&ELFAsmParser::ParseDirectiveType>(".type");
     AddDirectiveHandler<&ELFAsmParser::ParseDirectiveIdent>(".ident");
+    AddDirectiveHandler<&ELFAsmParser::ParseDirectiveSymver>(".symver");
   }
 
   // FIXME: Part of this logic is duplicated in the MCELFStreamer. What is
@@ -116,6 +118,7 @@ public:
   bool ParseDirectivePrevious(StringRef, SMLoc);
   bool ParseDirectiveType(StringRef, SMLoc);
   bool ParseDirectiveIdent(StringRef, SMLoc);
+  bool ParseDirectiveSymver(StringRef, SMLoc);
 
 private:
   bool ParseSectionName(StringRef &SectionName);
@@ -237,6 +240,15 @@ bool ELFAsmParser::ParseDirectiveSection(StringRef, SMLoc) {
     return TokError("unexpected token in directive");
 
   unsigned Flags = 0;
+  unsigned Type = MCSectionELF::SHT_NULL;
+
+  // Set the defaults first.
+  if (SectionName == ".fini" || SectionName == ".init") {
+    Type = MCSectionELF::SHT_PROGBITS;
+    Flags |= MCSectionELF::SHF_ALLOC;
+    Flags |= MCSectionELF::SHF_EXECINSTR;
+  }
+
   for (unsigned i = 0; i < FlagsStr.size(); i++) {
     switch (FlagsStr[i]) {
     case 'a':
@@ -268,7 +280,6 @@ bool ELFAsmParser::ParseDirectiveSection(StringRef, SMLoc) {
     }
   }
 
-  unsigned Type = MCSectionELF::SHT_NULL;
   if (!TypeName.empty()) {
     if (TypeName == "init_array")
       Type = MCSectionELF::SHT_INIT_ARRAY;
@@ -374,6 +385,33 @@ bool ELFAsmParser::ParseDirectiveIdent(StringRef, SMLoc) {
   getStreamer().EmitBytes(Data, 0);
   getStreamer().EmitIntValue(0, 1);
   getStreamer().SwitchSection(OldSection);
+  return false;
+}
+
+/// ParseDirectiveSymver
+///  ::= .symver foo, bar2@zed
+bool ELFAsmParser::ParseDirectiveSymver(StringRef, SMLoc) {
+  StringRef Name;
+  if (getParser().ParseIdentifier(Name))
+    return TokError("expected identifier in directive");
+
+  if (getLexer().isNot(AsmToken::Comma))
+    return TokError("expected a comma");
+
+  Lex();
+
+  StringRef AliasName;
+  if (getParser().ParseIdentifier(AliasName))
+    return TokError("expected identifier in directive");
+
+  if (AliasName.find('@') == StringRef::npos)
+    return TokError("expected a '@' in the name");
+
+  MCSymbol *Alias = getContext().GetOrCreateSymbol(AliasName);
+  MCSymbol *Sym = getContext().GetOrCreateSymbol(Name);
+  const MCExpr *Value = MCSymbolRefExpr::Create(Sym, getContext());
+
+  getStreamer().EmitAssignment(Alias, Value);
   return false;
 }
 

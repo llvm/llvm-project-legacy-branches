@@ -684,9 +684,9 @@ bool ARMFastISel::ARMComputeRegOffset(const Value *Obj, unsigned &Base,
 }
 
 void ARMFastISel::ARMSimplifyRegOffset(unsigned &Base, int &Offset, EVT VT) {
-  
+
   assert(VT.isSimple() && "Non-simple types are invalid here!");
-  
+
   bool needsLowering = false;
   switch (VT.getSimpleVT().SimpleTy) {
     default:
@@ -704,7 +704,7 @@ void ARMFastISel::ARMSimplifyRegOffset(unsigned &Base, int &Offset, EVT VT) {
       needsLowering = ((Offset & 0xff) != Offset);
       break;
   }
-  
+
   // Since the offset is too large for the load/store instruction
   // get the reg+offset into a register.
   if (needsLowering) {
@@ -746,7 +746,7 @@ bool ARMFastISel::ARMEmitLoad(EVT VT, unsigned &ResultReg,
       RC = ARM::GPRRegisterClass;
       break;
     case MVT::i8:
-      Opc = isThumb ? ARM::t2LDRBi12 : ARM::LDRB;
+      Opc = isThumb ? ARM::t2LDRBi12 : ARM::LDRBi12;
       RC = ARM::GPRRegisterClass;
       break;
     case MVT::i32:
@@ -766,16 +766,14 @@ bool ARMFastISel::ARMEmitLoad(EVT VT, unsigned &ResultReg,
   }
 
   ResultReg = createResultReg(RC);
-  
+
   ARMSimplifyRegOffset(Base, Offset, VT);
-  
+
   // addrmode5 output depends on the selection dag addressing dividing the
   // offset by 4 that it then later multiplies. Do this here as well.
   if (isFloat)
     Offset /= 4;
-  
-  // The thumb and floating point instructions both take 2 operands, ARM takes
-  // another register.
+
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                           TII.get(Opc), ResultReg)
                   .addReg(Base).addImm(Offset));
@@ -807,17 +805,19 @@ bool ARMFastISel::ARMEmitStore(EVT VT, unsigned SrcReg,
                                unsigned Base, int Offset) {
   unsigned StrOpc;
   bool isFloat = false;
+  bool needReg0Op = false;
   switch (VT.getSimpleVT().SimpleTy) {
     default: return false;
     case MVT::i1:
     case MVT::i8:
-      StrOpc = isThumb ? ARM::t2STRBi12 : ARM::STRB;
+      StrOpc = isThumb ? ARM::t2STRBi12 : ARM::STRBi12;
       break;
     case MVT::i16:
       StrOpc = isThumb ? ARM::t2STRHi12 : ARM::STRH;
+      needReg0Op = true;
       break;
     case MVT::i32:
-      StrOpc = isThumb ? ARM::t2STRi12 : ARM::STR;
+      StrOpc = isThumb ? ARM::t2STRi12 : ARM::STRi12;
       break;
     case MVT::f32:
       if (!Subtarget->hasVFP2()) return false;
@@ -832,15 +832,16 @@ bool ARMFastISel::ARMEmitStore(EVT VT, unsigned SrcReg,
   }
 
   ARMSimplifyRegOffset(Base, Offset, VT);
-  
+
   // addrmode5 output depends on the selection dag addressing dividing the
   // offset by 4 that it then later multiplies. Do this here as well.
   if (isFloat)
     Offset /= 4;
-  
-  // The thumb addressing mode has operands swapped from the arm addressing
-  // mode, the floating point one only has two operands.
-  if (isFloat || isThumb)
+
+
+  // FIXME: The 'needReg0Op' bit goes away once STRH is converted to
+  // not use the mega-addrmode stuff.
+  if (!needReg0Op)
     AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                             TII.get(StrOpc))
                     .addReg(SrcReg).addReg(Base).addImm(Offset));
@@ -1244,12 +1245,12 @@ bool ARMFastISel::FastEmitExtend(ISD::NodeType Opc, EVT DstVT, unsigned Src,
                                  EVT SrcVT, unsigned &ResultReg) {
   unsigned RR = FastEmit_r(SrcVT.getSimpleVT(), DstVT.getSimpleVT(), Opc,
                            Src, /*TODO: Kill=*/false);
-  
+
   if (RR != 0) {
     ResultReg = RR;
     return true;
   } else
-    return false;                                   
+    return false;
 }
 
 // This is largely taken directly from CCAssignFnForNode - we don't support
@@ -1367,7 +1368,7 @@ bool ARMFastISel::ProcessCallArgs(SmallVectorImpl<Value*> &Args,
     } else if (VA.needsCustom()) {
       // TODO: We need custom lowering for vector (v2f64) args.
       if (VA.getLocVT() != MVT::f64) return false;
-      
+
       CCValAssign &NextVA = ArgLocs[++i];
 
       // TODO: Only handle register args for now.
@@ -1420,7 +1421,7 @@ bool ARMFastISel::FinishCall(EVT RetVT, SmallVectorImpl<unsigned> &UsedRegs,
 
       UsedRegs.push_back(RVLocs[0].getLocReg());
       UsedRegs.push_back(RVLocs[1].getLocReg());
-      
+
       // Finally update the result.
       UpdateValueMap(I, ResultReg);
     } else {
@@ -1444,10 +1445,10 @@ bool ARMFastISel::FinishCall(EVT RetVT, SmallVectorImpl<unsigned> &UsedRegs,
 bool ARMFastISel::SelectRet(const Instruction *I) {
   const ReturnInst *Ret = cast<ReturnInst>(I);
   const Function &F = *I->getParent()->getParent();
-  
+
   if (!FuncInfo.CanLowerReturn)
     return false;
-    
+
   if (F.isVarArg())
     return false;
 
@@ -1472,7 +1473,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
       return false;
 
     CCValAssign &VA = ValLocs[0];
-  
+
     // Don't bother handling odd stuff for now.
     if (VA.getLocInfo() != CCValAssign::Full)
       return false;
@@ -1483,7 +1484,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
     // says Full but the types don't match.
     if (VA.getValVT() != TLI.getValueType(RV->getType()))
       return false;
-    
+
     // Make the copy.
     unsigned SrcReg = Reg + VA.getValNo();
     unsigned DstReg = VA.getLocReg();
@@ -1497,7 +1498,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
     // Mark the register as live out of the function.
     MRI.addLiveOut(VA.getLocReg());
   }
-  
+
   unsigned RetOpc = isThumb ? ARM::tBX_RET : ARM::BX_RET;
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                           TII.get(RetOpc)));

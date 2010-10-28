@@ -1683,29 +1683,31 @@ void SelectionDAGBuilder::visitBitTestCase(MachineBasicBlock* NextMBB,
 void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
   MachineBasicBlock *InvokeMBB = FuncInfo.MBB;
 
-  // Retrieve successors.
-  MachineBasicBlock *Return = FuncInfo.MBBMap[I.getSuccessor(0)];
-  SmallVector<MachineBasicBlock*, 8> CatchBlocks;
-
-  for (unsigned i = 1, e = I.getNumSuccessors(); i != e; ++i)
-    CatchBlocks.push_back(FuncInfo.MBBMap[I.getSuccessor(i)]);
+  // Create a landing pad for the invoke instruction.
+  MachineFunction *MF = InvokeMBB->getParent();
+  MachineBasicBlock *LandingPad = MF->CreateMachineBasicBlock(I.getParent());
+  LandingPad->setIsLandingPad();
+  MF->insert(llvm::next(InvokeMBB), LandingPad);
 
   const Value *Callee = I.getCalledValue();
   if (isa<InlineAsm>(Callee))
     visitInlineAsm(&I);
   else
-    LowerCallTo(&I, getValue(Callee), false, CatchBlocks);
+    LowerCallTo(&I, getValue(Callee), false, LandingPad);
 
   // If the value of the invoke is used outside of its defining block, make it
   // available as a virtual register.
   CopyToExportRegsIfNeeded(&I);
 
+  MachineBasicBlock *Return = FuncInfo.MBBMap[I.getNormalDest()];
+
   // Update successor info
   InvokeMBB->addSuccessor(Return);
+  InvokeMBB->addSuccessor(LandingPad);
 
-  for (SmallVectorImpl<MachineBasicBlock*>::iterator
-         i = CatchBlocks.begin(), e = CatchBlocks.end(); i != e; ++i)
-    InvokeMBB->addSuccessor(*i);
+  // All of the catch blocks are successors to the landing pad.
+  for (unsigned i = 1, e = I.getNumSuccessors(); i != e; ++i)
+    LandingPad->addSuccessor(FuncInfo.MBBMap[I.getSuccessor(i)]);
 
   // Drop into normal successor.
   DAG.setRoot(DAG.getNode(ISD::BR, getCurDebugLoc(),
@@ -4243,20 +4245,19 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::eh_filter: {
     // Add the filter IDs to the machine function.
-    MachineFunction &MF = DAG.getMachineFunction();
-    MachineModuleInfo &MMI = MF.getMMI();
-    for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i) {
-      const Value *V = I.getArgOperand(i)->stripPointerCasts();
-      MMI.addFilterTypeInfo(cast<const GlobalVariable>(V));
-    }
+    MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
+    for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i)
+      MMI.addFilterTypeInfo(ExtractTypeInfo(I.getArgOperand(i)));
 
     return 0;
   }
   case Intrinsic::eh_exception: {
     // Insert the EXCEPTIONADDR instruction.
     // EH-FIXME: I don't think that this should be a hard/fast rule anymore.
+#if 0
     assert(FuncInfo.MBBMap[I.getParent()]->isLandingPad() &&
            "Call to eh.exception not in landing pad!");
+#endif
     SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
     SDValue Ops[1] = { DAG.getRoot() };
     SDValue Op = DAG.getNode(ISD::EXCEPTIONADDR, dl, VTs, Ops, 1);
@@ -4675,14 +4676,8 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
 }
 
 void SelectionDAGBuilder::
-LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall) {
-  SmallVector<MachineBasicBlock*, 1> CatchBlocks;
-  LowerCallTo(CS, Callee, isTailCall, CatchBlocks);
-}
-
-void SelectionDAGBuilder::
 LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
-            SmallVectorImpl<MachineBasicBlock*> &CatchBlocks) {
+            MachineBasicBlock *LandingPad) {
   const PointerType *PT = cast<PointerType>(CS.getCalledValue()->getType());
   const FunctionType *FTy = cast<FunctionType>(PT->getElementType());
   const Type *RetTy = FTy->getReturnType();
@@ -4744,7 +4739,7 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
     Args.push_back(Entry);
   }
 
-  if (!CatchBlocks.empty()) {
+  if (LandingPad) {
     // Insert a label before the invoke call to mark the try range.  This can be
     // used to detect deletion of the invoke via the MachineModuleInfo.
     BeginLabel = MMI.getContext().CreateTempSymbol();
@@ -4759,8 +4754,8 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
       MMI.setCurrentCallSite(0);
     }
 
-    // Both PendingLoads and PendingExports must be flushed here;
-    // this call might not return.
+    // Both PendingLoads and PendingExports must be flushed here. This call
+    // might not return.
     (void)getRoot();
     DAG.setRoot(DAG.getEHLabel(getCurDebugLoc(), getControlRoot(), BeginLabel));
   }
@@ -4856,14 +4851,14 @@ LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool isTailCall,
   else
     HasTailCall = true;
 
-  if (!CatchBlocks.empty()) {
+  if (LandingPad) {
     // Insert a label at the end of the invoke call to mark the try range.  This
     // can be used to detect deletion of the invoke via the MachineModuleInfo.
     MCSymbol *EndLabel = MMI.getContext().CreateTempSymbol();
     DAG.setRoot(DAG.getEHLabel(getCurDebugLoc(), getRoot(), EndLabel));
 
     // Inform MachineModuleInfo of range.
-///EH-FIXME:    MMI.addInvoke(LandingPad, BeginLabel, EndLabel);
+    MMI.addInvoke(LandingPad, BeginLabel, EndLabel);
   }
 }
 

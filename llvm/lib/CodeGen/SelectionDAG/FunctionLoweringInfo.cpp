@@ -82,6 +82,7 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
   Fn = &fn;
   MF = &mf;
   RegInfo = &MF->getRegInfo();
+  MachineModuleInfo &MMI = MF->getMMI();
 
   // Check whether the function can return without sret-demotion.
   SmallVector<ISD::OutputArg, 4> Outs;
@@ -138,7 +139,6 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
       // during the initial isel pass through the IR so that it is done
       // in a predictable order.
       if (const DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(I)) {
-        MachineModuleInfo &MMI = MF->getMMI();
         if (MMI.hasDebugInfo() &&
             DIVariable(DI->getVariable()).Verify() &&
             !DI->getDebugLoc().isUnknown()) {
@@ -163,9 +163,11 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
       }
     }
 
-  // Create an initial MachineBasicBlock for each LLVM BasicBlock in F.  This
+  // Create an initial MachineBasicBlock for each LLVM BasicBlock in F. This
   // also creates the initial PHI MachineInstrs, though none of the input
   // operands are populated.
+
+  //  SmallVector<const InvokeInst*, 16> Invokes;
   for (BB = Fn->begin(); BB != EB; ++BB) {
     MachineBasicBlock *MBB = mf.CreateMachineBasicBlock(BB);
     MBBMap[BB] = MBB;
@@ -201,18 +203,38 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
         PHIReg += NumRegisters;
       }
     }
+#if 0
+    if (const InvokeInst *Invoke = dyn_cast<InvokeInst>(BB->getTerminator()))
+      Invokes.push_back(Invoke);
+#endif
+  }
 
-    if (const InvokeInst *Invoke = dyn_cast<InvokeInst>(BB->getTerminator())) {
-      MachineModuleInfo &MMI = MF->getMMI();
+#if 0
+  for (SmallVectorImpl<const InvokeInst*>::iterator
+         I = Invokes.begin(), E = Invokes.end(); I != E; ++I) {
+    const InvokeInst *Invoke = *I;
 
-      // Add personality function.
-      MMI.addPersonality(Invoke->getPersonalityFn()->stripPointerCasts());
+    // Add personality function.
+    MMI.addPersonality(Invoke->getPersonalityFn()->stripPointerCasts());
 
-      // Mark landing pad blocks.
-      for (unsigned I = 1, E = Invoke->getNumSuccessors(); I < E; ++I)
-        MBBMap[Invoke->getSuccessor(I)]->setIsLandingPad();
+    // Mark landing pad blocks.
+    const Value *Ty = 0;
+    const BasicBlock *Dest = Invoke->getUnwindDest();
+    MBBMap[Dest]->setIsLandingPad();
+
+    if (Invoke->hasCatchAll()) {
+      Ty = Invoke->getCatchAllType()->stripPointerCasts();
+      Dest = Invoke->getCatchAllDest();
+      MBBMap[Dest]->setIsLandingPad();
+    }
+
+    for (unsigned CI = 0, CE = Invoke->getNumCatches(); CI < CE; ++CI) {
+      Ty = Invoke->getCatchType(CI)->stripPointerCasts();
+      Dest = Invoke->getCatchDest(CI);
+      MBBMap[Dest]->setIsLandingPad();
     }
   }
+#endif
 }
 
 /// clear - Clear out all the function-specific state. This returns this

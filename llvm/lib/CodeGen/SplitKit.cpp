@@ -155,7 +155,7 @@ void SplitAnalysis::getCriticalExits(const SplitAnalysis::LoopBlocks &Blocks,
                                      BlockPtrSet &CriticalExits) {
   CriticalExits.clear();
 
-  // A critical exit block has curli line-in, and has a predecessor that is not
+  // A critical exit block has curli live-in, and has a predecessor that is not
   // in the loop nor a loop predecessor. For such an exit block, the edges
   // carrying the new variable must be moved to a new pre-exit block.
   for (BlockPtrSet::iterator I = Blocks.Exits.begin(), E = Blocks.Exits.end();
@@ -176,6 +176,38 @@ void SplitAnalysis::getCriticalExits(const SplitAnalysis::LoopBlocks &Blocks,
         continue;
       // This is a critical exit block, and we need to split the exit edge.
       CriticalExits.insert(Exit);
+      break;
+    }
+  }
+}
+
+void SplitAnalysis::getCriticalPreds(const SplitAnalysis::LoopBlocks &Blocks,
+                                     BlockPtrSet &CriticalPreds) {
+  CriticalPreds.clear();
+
+  // A critical predecessor block has curli live-out, and has a successor that
+  // has curli live-in and is not in the loop nor a loop exit block. For such a
+  // predecessor block, we must carry the value in both the 'inside' and
+  // 'outside' registers.
+  for (BlockPtrSet::iterator I = Blocks.Preds.begin(), E = Blocks.Preds.end();
+       I != E; ++I) {
+    const MachineBasicBlock *Pred = *I;
+    // Definitely not a critical edge.
+    if (Pred->succ_size() == 1)
+      continue;
+    // This block may not have curli live out at all if there is a PHI.
+    if (!lis_.isLiveOutOfMBB(*curli_, Pred))
+      continue;
+    // Does this block have a successor outside the loop?
+    for (MachineBasicBlock::const_pred_iterator SI = Pred->succ_begin(),
+         SE = Pred->succ_end(); SI != SE; ++SI) {
+      const MachineBasicBlock *Succ = *SI;
+      if (Blocks.Loop.count(Succ) || Blocks.Exits.count(Succ))
+        continue;
+      if (!lis_.isLiveInToMBB(*curli_, Succ))
+        continue;
+      // This is a critical predecessor block.
+      CriticalPreds.insert(Pred);
       break;
     }
   }
@@ -480,7 +512,7 @@ VNInfo *LiveIntervalMap::mapValue(const VNInfo *ParentVNI, SlotIndex Idx,
 // extendTo - Find the last li_ value defined in MBB at or before Idx. The
 // parentli_ is assumed to be live at Idx. Extend the live range to Idx.
 // Return the found VNInfo, or NULL.
-VNInfo *LiveIntervalMap::extendTo(MachineBasicBlock *MBB, SlotIndex Idx) {
+VNInfo *LiveIntervalMap::extendTo(const MachineBasicBlock *MBB, SlotIndex Idx) {
   assert(li_ && "call reset first");
   LiveInterval::iterator I = std::upper_bound(li_->begin(), li_->end(), Idx);
   if (I == li_->begin())
@@ -829,6 +861,16 @@ void SplitEditor::computeRemainder() {
       dupli_.addSimpleRange(LR.start, LR.end, LR.valno);
     }
   }
+
+  // Extend dupli_ to be live out of any critical loop predecessors.
+  // This means we have multiple registers live out of those blocks.
+  // The alternative would be to split the critical edges.
+  if (criticalPreds_.empty())
+    return;
+  for (SplitAnalysis::BlockPtrSet::iterator I = criticalPreds_.begin(),
+       E = criticalPreds_.end(); I != E; ++I)
+     dupli_.extendTo(*I, lis_.getMBBEndIdx(*I).getPrevSlot());
+   criticalPreds_.clear();
 }
 
 void SplitEditor::finish() {
@@ -891,6 +933,9 @@ void SplitEditor::splitAroundLoop(const MachineLoop *Loop) {
   SplitAnalysis::BlockPtrSet CriticalExits;
   sa_.getCriticalExits(Blocks, CriticalExits);
   assert(CriticalExits.empty() && "Cannot break critical exits yet");
+
+  // Get critical predecessors so computeRemainder can deal with them.
+  sa_.getCriticalPreds(Blocks, criticalPreds_);
 
   // Create new live interval for the loop.
   openIntv();

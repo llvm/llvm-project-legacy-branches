@@ -703,6 +703,15 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
     .Case("fwait", "wait")
     .Case("movzx", "movzb")  // FIXME: Not correct.
     .Case("fildq", "fildll")
+    .Case("fcompi", "fcomip")
+    .Case("fucompi", "fucomip")
+    .Case("fldcww", "fldcw")
+    .Case("fnstcww", "fnstcw")
+    .Case("fstcww", "fstcw")
+    .Case("fnstsww", "fnstsw")
+    .Case("fstsww", "fstsw")
+    .Case("verrw", "verr")
+    .Case("ud2a", "ud2")
     .Default(Name);
 
   // FIXME: Hack to recognize cmp<comparison code>{ss,sd,ps,pd}.
@@ -991,9 +1000,20 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
                                              NameLoc, NameLoc));
   }
 
+  // The assembler accepts this instruction with no operand as a synonym for an
+  // instruction taking %st(1),%st(0). e.g. "fcompi" -> "fcompi %st(1),st(0)".
+  if (Name == "fcompi" && Operands.size() == 1) {
+    Operands.push_back(X86Operand::CreateReg(MatchRegisterName("st(1)"),
+                                             NameLoc, NameLoc));
+    Operands.push_back(X86Operand::CreateReg(MatchRegisterName("st(0)"),
+                                             NameLoc, NameLoc));
+  }
+
   // The assembler accepts these instructions with two few operands as a synonym
   // for taking %st(1),%st(0) or X, %st(0).
-  if ((Name == "fcomi" || Name == "fucomi") && Operands.size() < 3) {
+  if ((Name == "fcomi" || Name == "fucomi" || Name == "fucompi" ||
+       Name == "fcompi" ) &&
+      Operands.size() < 3) {
     if (Operands.size() == 1)
       Operands.push_back(X86Operand::CreateReg(MatchRegisterName("st(1)"),
                                                NameLoc, NameLoc));
@@ -1177,7 +1197,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   // FIXME: This should be replaced with a real .td file alias mechanism.
   if (Op->getToken() == "fstsw" || Op->getToken() == "fstcw" ||
       Op->getToken() == "finit" || Op->getToken() == "fsave" ||
-      Op->getToken() == "fstenv") {
+      Op->getToken() == "fstenv" || Op->getToken() == "fclex") {
     MCInst Inst;
     Inst.setOpcode(X86::WAIT);
     Out.EmitInstruction(Inst);
@@ -1189,6 +1209,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
         .Case("fstcw", "fnstcw")
         .Case("fstenv", "fnstenv")
         .Case("fstsw", "fnstsw")
+        .Case("fclex", "fnclex")
         .Default(0);
     assert(Repl && "Unknown wait-prefixed instruction");
     delete Operands[0];

@@ -1064,7 +1064,8 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
       Vals.push_back(VE.getValueID(II->getCatchDest(i)));
     }
 
-    if (II->getCatchAllType()) {
+
+    if (II->hasCatchAll()) {
       Vals.push_back(1);
       PushValueAndType(II->getCatchAllType(), InstID, Vals, VE);
       Vals.push_back(VE.getValueID(II->getCatchAllDest()));

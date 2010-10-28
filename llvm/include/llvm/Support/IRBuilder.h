@@ -46,50 +46,50 @@ protected:
   BasicBlock::iterator InsertPt;
   LLVMContext &Context;
 public:
-  
+
   IRBuilderBase(LLVMContext &context)
     : Context(context) {
     ClearInsertionPoint();
   }
-  
+
   //===--------------------------------------------------------------------===//
   // Builder configuration methods
   //===--------------------------------------------------------------------===//
-  
+
   /// ClearInsertionPoint - Clear the insertion point: created instructions will
   /// not be inserted into a block.
   void ClearInsertionPoint() {
     BB = 0;
   }
-  
+
   BasicBlock *GetInsertBlock() const { return BB; }
   BasicBlock::iterator GetInsertPoint() const { return InsertPt; }
   LLVMContext &getContext() const { return Context; }
-  
+
   /// SetInsertPoint - This specifies that created instructions should be
   /// appended to the end of the specified block.
   void SetInsertPoint(BasicBlock *TheBB) {
     BB = TheBB;
     InsertPt = BB->end();
   }
-  
+
   /// SetInsertPoint - This specifies that created instructions should be
   /// inserted at the specified point.
   void SetInsertPoint(BasicBlock *TheBB, BasicBlock::iterator IP) {
     BB = TheBB;
     InsertPt = IP;
   }
-  
+
   /// SetCurrentDebugLocation - Set location information used by debugging
   /// information.
   void SetCurrentDebugLocation(const DebugLoc &L) {
     CurDbgLocation = L;
   }
-  
+
   /// getCurrentDebugLocation - Get location information used by debugging
   /// information.
   const DebugLoc &getCurrentDebugLocation() const { return CurDbgLocation; }
-  
+
   /// SetInstDebugLocation - If this builder has a current debug location, set
   /// it on the specified instruction.
   void SetInstDebugLocation(Instruction *I) const {
@@ -142,7 +142,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Miscellaneous creation methods.
   //===--------------------------------------------------------------------===//
-  
+
   /// CreateGlobalString - Make a new global variable with an initializer that
   /// has array of i8 type filled in with the nul terminated string value
   /// specified.  If Name is specified, it is the name of the global variable
@@ -178,65 +178,65 @@ public:
   ConstantInt *getInt32(uint32_t C) {
     return ConstantInt::get(getInt32Ty(), C);
   }
-  
+
   /// getInt64 - Get a constant 64-bit value.
   ConstantInt *getInt64(uint64_t C) {
     return ConstantInt::get(getInt64Ty(), C);
   }
-  
+
   //===--------------------------------------------------------------------===//
   // Type creation methods
   //===--------------------------------------------------------------------===//
-  
+
   /// getInt1Ty - Fetch the type representing a single bit
   const IntegerType *getInt1Ty() {
     return Type::getInt1Ty(Context);
   }
-  
+
   /// getInt8Ty - Fetch the type representing an 8-bit integer.
   const IntegerType *getInt8Ty() {
     return Type::getInt8Ty(Context);
   }
-  
+
   /// getInt16Ty - Fetch the type representing a 16-bit integer.
   const IntegerType *getInt16Ty() {
     return Type::getInt16Ty(Context);
   }
-  
+
   /// getInt32Ty - Fetch the type resepresenting a 32-bit integer.
   const IntegerType *getInt32Ty() {
     return Type::getInt32Ty(Context);
   }
-  
+
   /// getInt64Ty - Fetch the type representing a 64-bit integer.
   const IntegerType *getInt64Ty() {
     return Type::getInt64Ty(Context);
   }
-  
+
   /// getFloatTy - Fetch the type representing a 32-bit floating point value.
   const Type *getFloatTy() {
     return Type::getFloatTy(Context);
   }
-  
+
   /// getDoubleTy - Fetch the type representing a 64-bit floating point value.
   const Type *getDoubleTy() {
     return Type::getDoubleTy(Context);
   }
-  
+
   /// getVoidTy - Fetch the type representing void.
   const Type *getVoidTy() {
     return Type::getVoidTy(Context);
   }
-  
+
   const PointerType *getInt8PtrTy() {
     return Type::getInt8PtrTy(Context);
   }
-  
+
   /// getCurrentFunctionReturnType - Get the return type of the current function
   /// that we're emitting into.
   const Type *getCurrentFunctionReturnType() const;
 };
-  
+
 /// IRBuilder - This provides a uniform API for creating instructions and
 /// inserting them into a basic block: either at the end of a BasicBlock, or
 /// at a specific iterator location in a block.
@@ -258,25 +258,25 @@ public:
   IRBuilder(LLVMContext &C, const T &F, const Inserter &I = Inserter())
     : IRBuilderBase(C), Inserter(I), Folder(F) {
   }
-  
+
   explicit IRBuilder(LLVMContext &C) : IRBuilderBase(C), Folder(C) {
   }
-  
+
   explicit IRBuilder(BasicBlock *TheBB, const T &F)
     : IRBuilderBase(TheBB->getContext()), Folder(F) {
     SetInsertPoint(TheBB);
   }
-  
+
   explicit IRBuilder(BasicBlock *TheBB)
     : IRBuilderBase(TheBB->getContext()), Folder(Context) {
     SetInsertPoint(TheBB);
   }
-  
+
   IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP, const T& F)
     : IRBuilderBase(TheBB->getContext()), Folder(F) {
     SetInsertPoint(TheBB, IP);
   }
-  
+
   IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP)
     : IRBuilderBase(TheBB->getContext()), Folder(Context) {
     SetInsertPoint(TheBB, IP);
@@ -288,7 +288,7 @@ public:
   /// isNamePreserving - Return true if this builder is configured to actually
   /// add the requested names to IR created through it.
   bool isNamePreserving() const { return preserveNames; }
-  
+
   /// Insert - Insert and return the specified instruction.
   template<typename InstTy>
   InstTy *Insert(InstTy *I, const Twine &Name = "") const {
@@ -313,7 +313,7 @@ public:
   ReturnInst *CreateRet(Value *V) {
     return Insert(ReturnInst::Create(Context, V));
   }
-  
+
   /// CreateAggregateRet - Create a sequence of N insertvalue instructions,
   /// with one Value from the retVals array each, that build a aggregate
   /// return value one value at a time, and a ret instruction to return
@@ -383,12 +383,14 @@ public:
                                      NumCatches, Args, Args+3), Name);
   }
   /// CreateInvoke - Create an invoke instruction.
-  template<typename InputIterator>
+  template<typename RandomAccessIterator>
   InvokeInst *CreateInvoke(Value *Callee, BasicBlock *NormalDest,
                            BasicBlock *UnwindDest, Value *PersonalityFn,
-                            Value *CatchAllTy, BasicBlock *CatchAll,
-                           unsigned NumCatches, InputIterator ArgBegin,
-                           InputIterator ArgEnd, const Twine &Name = "") {
+                           Value *CatchAllTy, BasicBlock *CatchAll,
+                           unsigned NumCatches,
+                           RandomAccessIterator ArgBegin,
+                           RandomAccessIterator ArgEnd,
+                           const Twine &Name = "") {
     return Insert(InvokeInst::Create(Callee, NormalDest, UnwindDest,
                                      PersonalityFn, CatchAllTy, CatchAll,
                                      NumCatches, ArgBegin, ArgEnd), Name);
@@ -697,12 +699,14 @@ public:
   StoreInst *CreateStore(Value *Val, Value *Ptr, bool isVolatile = false) {
     return Insert(new StoreInst(Val, Ptr, isVolatile));
   }
-  template<typename InputIterator>
-  Value *CreateGEP(Value *Ptr, InputIterator IdxBegin, InputIterator IdxEnd,
+  template<typename RandomAccessIterator>
+  Value *CreateGEP(Value *Ptr,
+                   RandomAccessIterator IdxBegin,
+                   RandomAccessIterator IdxEnd,
                    const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr)) {
       // Every index must be constant.
-      InputIterator i;
+      RandomAccessIterator i;
       for (i = IdxBegin; i < IdxEnd; ++i)
         if (!isa<Constant>(*i))
           break;
@@ -711,12 +715,13 @@ public:
     }
     return Insert(GetElementPtrInst::Create(Ptr, IdxBegin, IdxEnd), Name);
   }
-  template<typename InputIterator>
-  Value *CreateInBoundsGEP(Value *Ptr, InputIterator IdxBegin,
-                           InputIterator IdxEnd, const Twine &Name = "") {
+  template<typename RandomAccessIterator>
+  Value *CreateInBoundsGEP(Value *Ptr, RandomAccessIterator IdxBegin,
+                           RandomAccessIterator IdxEnd,
+                           const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr)) {
       // Every index must be constant.
-      InputIterator i;
+      RandomAccessIterator i;
       for (i = IdxBegin; i < IdxEnd; ++i)
         if (!isa<Constant>(*i))
           break;
@@ -746,7 +751,7 @@ public:
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       return Folder.CreateGetElementPtr(PC, &Idx, 1);
 
-    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);    
+    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);
   }
   Value *CreateConstInBoundsGEP1_32(Value *Ptr, unsigned Idx0,
                                     const Twine &Name = "") {
@@ -757,7 +762,7 @@ public:
 
     return Insert(GetElementPtrInst::CreateInBounds(Ptr, &Idx, &Idx+1), Name);
   }
-  Value *CreateConstGEP2_32(Value *Ptr, unsigned Idx0, unsigned Idx1, 
+  Value *CreateConstGEP2_32(Value *Ptr, unsigned Idx0, unsigned Idx1,
                     const Twine &Name = "") {
     Value *Idxs[] = {
       ConstantInt::get(Type::getInt32Ty(Context), Idx0),
@@ -767,7 +772,7 @@ public:
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       return Folder.CreateGetElementPtr(PC, Idxs, 2);
 
-    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);    
+    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);
   }
   Value *CreateConstInBoundsGEP2_32(Value *Ptr, unsigned Idx0, unsigned Idx1,
                                     const Twine &Name = "") {
@@ -787,7 +792,7 @@ public:
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       return Folder.CreateGetElementPtr(PC, &Idx, 1);
 
-    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);    
+    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);
   }
   Value *CreateConstInBoundsGEP1_64(Value *Ptr, uint64_t Idx0,
                                     const Twine &Name = "") {
@@ -808,7 +813,7 @@ public:
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       return Folder.CreateGetElementPtr(PC, Idxs, 2);
 
-    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);    
+    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);
   }
   Value *CreateConstInBoundsGEP2_64(Value *Ptr, uint64_t Idx0, uint64_t Idx1,
                                     const Twine &Name = "") {
@@ -825,7 +830,7 @@ public:
   Value *CreateStructGEP(Value *Ptr, unsigned Idx, const Twine &Name = "") {
     return CreateConstInBoundsGEP2_32(Ptr, 0, Idx, Name);
   }
-  
+
   /// CreateGlobalStringPtr - Same as CreateGlobalString, but return a pointer
   /// with "i8*" type instead of a pointer to array of i8.
   Value *CreateGlobalStringPtr(const char *Str = "", const Twine &Name = "") {
@@ -834,7 +839,7 @@ public:
     Value *Args[] = { zero, zero };
     return CreateInBoundsGEP(gv, Args, Args+2, Name);
   }
-  
+
   //===--------------------------------------------------------------------===//
   // Instruction creation methods: Cast/Conversion Operators
   //===--------------------------------------------------------------------===//
@@ -1068,9 +1073,9 @@ public:
     return Insert(CallInst::Create(Callee, Args, Args+5), Name);
   }
 
-  template<typename InputIterator>
-  CallInst *CreateCall(Value *Callee, InputIterator ArgBegin,
-                       InputIterator ArgEnd, const Twine &Name = "") {
+  template<typename RandomAccessIterator>
+  CallInst *CreateCall(Value *Callee, RandomAccessIterator ArgBegin,
+                       RandomAccessIterator ArgEnd, const Twine &Name = "") {
     return Insert(CallInst::Create(Callee, ArgBegin, ArgEnd), Name);
   }
 
@@ -1120,10 +1125,10 @@ public:
     return Insert(ExtractValueInst::Create(Agg, Idx), Name);
   }
 
-  template<typename InputIterator>
+  template<typename RandomAccessIterator>
   Value *CreateExtractValue(Value *Agg,
-                            InputIterator IdxBegin,
-                            InputIterator IdxEnd,
+                            RandomAccessIterator IdxBegin,
+                            RandomAccessIterator IdxEnd,
                             const Twine &Name = "") {
     if (Constant *AggC = dyn_cast<Constant>(Agg))
       return Folder.CreateExtractValue(AggC, IdxBegin, IdxEnd - IdxBegin);
@@ -1138,10 +1143,10 @@ public:
     return Insert(InsertValueInst::Create(Agg, Val, Idx), Name);
   }
 
-  template<typename InputIterator>
+  template<typename RandomAccessIterator>
   Value *CreateInsertValue(Value *Agg, Value *Val,
-                           InputIterator IdxBegin,
-                           InputIterator IdxEnd,
+                           RandomAccessIterator IdxBegin,
+                           RandomAccessIterator IdxEnd,
                            const Twine &Name = "") {
     if (Constant *AggC = dyn_cast<Constant>(Agg))
       if (Constant *ValC = dyn_cast<Constant>(Val))

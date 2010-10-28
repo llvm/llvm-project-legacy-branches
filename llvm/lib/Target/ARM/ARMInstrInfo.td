@@ -299,6 +299,10 @@ def pclabel : Operand<i32> {
   let PrintMethod = "printPCLabel";
 }
 
+def neon_vcvt_imm32 : Operand<i32> {
+  string EncoderMethod = "getNEONVcvtImm32";
+}
+
 // rot_imm: An integer that encodes a rotate amount. Must be 8, 16, or 24.
 def rot_imm : Operand<i32>, PatLeaf<(i32 imm), [{
   int32_t v = (int32_t)N->getZExtValue();
@@ -317,6 +321,13 @@ def shift_imm : Operand<i32> {
 def so_reg : Operand<i32>,    // reg reg imm
              ComplexPattern<i32, 3, "SelectShifterOperandReg",
                             [shl,srl,sra,rotr]> {
+  string EncoderMethod = "getSORegOpValue";
+  let PrintMethod = "printSORegOperand";
+  let MIOperandInfo = (ops GPR, GPR, i32imm);
+}
+def shift_so_reg : Operand<i32>,    // reg reg imm
+                   ComplexPattern<i32, 3, "SelectShiftShifterOperandReg",
+                                  [shl,srl,sra,rotr]> {
   string EncoderMethod = "getSORegOpValue";
   let PrintMethod = "printSORegOperand";
   let MIOperandInfo = (ops GPR, GPR, i32imm);
@@ -397,6 +408,7 @@ def addrmode_imm12 : Operand<i32>,
 def ldst_so_reg : Operand<i32>,
                   ComplexPattern<i32, 3, "SelectLdStSOReg", []> {
   // FIXME: Simplify the printer
+  // FIXME: Add EncoderMethod for this addressing mode
   let PrintMethod = "printAddrMode2Operand";
   let MIOperandInfo = (ops GPR:$base, GPR:$offsreg, i32imm:$offsimm);
 }
@@ -808,7 +820,7 @@ multiclass AI_ldr1<bit opc22, string opc, InstrItinClass iii,
   // Note: We use the complex addrmode_imm12 rather than just an input
   // GPR and a constrained immediate so that we can use this to match
   // frame index references and avoid matching constant pool references.
-  def i12 : AIldr1<0b010, opc22, (outs GPR:$Rt), (ins addrmode_imm12:$addr),
+  def i12 : AIldst1<0b010, opc22, 1, (outs GPR:$Rt), (ins addrmode_imm12:$addr),
                    AddrMode_i12, LdFrm, iii, opc, "\t$Rt, $addr",
                   [(set GPR:$Rt, (opnode addrmode_imm12:$addr))]> {
     bits<4> Rt;
@@ -818,7 +830,7 @@ multiclass AI_ldr1<bit opc22, string opc, InstrItinClass iii,
     let Inst{15-12} = Rt;
     let Inst{11-0}  = addr{11-0};   // imm12
   }
-  def rs : AIldr1<0b011, opc22, (outs GPR:$Rt), (ins ldst_so_reg:$shift),
+  def rs : AIldst1<0b011, opc22, 1, (outs GPR:$Rt), (ins ldst_so_reg:$shift),
                   AddrModeNone, LdFrm, iir, opc, "\t$Rt, $shift",
                  [(set GPR:$Rt, (opnode ldst_so_reg:$shift))]> {
     bits<4> Rt;
@@ -830,6 +842,32 @@ multiclass AI_ldr1<bit opc22, string opc, InstrItinClass iii,
 }
 }
 
+multiclass AI_str1<bit opc22, string opc, InstrItinClass iii,
+           InstrItinClass iir, PatFrag opnode> {
+  // Note: We use the complex addrmode_imm12 rather than just an input
+  // GPR and a constrained immediate so that we can use this to match
+  // frame index references and avoid matching constant pool references.
+  def i12 : AIldst1<0b010, opc22, 0, (outs),
+                   (ins GPR:$Rt, addrmode_imm12:$addr),
+                   AddrMode_i12, StFrm, iii, opc, "\t$Rt, $addr",
+                  [(opnode GPR:$Rt, addrmode_imm12:$addr)]> {
+    bits<4> Rt;
+    bits<17> addr;
+    let Inst{23}    = addr{12};     // U (add = ('U' == 1))
+    let Inst{19-16} = addr{16-13};  // Rn
+    let Inst{15-12} = Rt;
+    let Inst{11-0}  = addr{11-0};   // imm12
+  }
+  def rs : AIldst1<0b011, opc22, 0, (outs), (ins GPR:$Rt, ldst_so_reg:$shift),
+                  AddrModeNone, StFrm, iir, opc, "\t$Rt, $shift",
+                 [(opnode GPR:$Rt, ldst_so_reg:$shift)]> {
+    bits<4> Rt;
+    bits<17> shift;
+    let Inst{23}    = shift{12};    // U (add = ('U' == 1))
+    let Inst{19-16} = shift{16-13}; // Rn
+    let Inst{11-0}  = shift{11-0};
+  }
+}
 //===----------------------------------------------------------------------===//
 // Instructions
 //===----------------------------------------------------------------------===//
@@ -1400,13 +1438,19 @@ def RFE  : ABXI<{1,0,0,?}, (outs), (ins addrmode4:$addr, GPR:$base),
 // Load
 
 
-defm LDR : AI_ldr1<0, "ldr", IIC_iLoad_i, IIC_iLoad_r,
-                   UnOpFrag<(load node:$Src)>>;
+defm LDR  : AI_ldr1<0, "ldr", IIC_iLoad_i, IIC_iLoad_r,
+                    UnOpFrag<(load node:$Src)>>;
+defm LDRB : AI_ldr1<1, "ldrb", IIC_iLoad_bh_i, IIC_iLoad_bh_r,
+                    UnOpFrag<(zextloadi8 node:$Src)>>;
+defm STR  : AI_str1<0, "str", IIC_iStore_i, IIC_iStore_r,
+                   BinOpFrag<(store node:$LHS, node:$RHS)>>;
+defm STRB : AI_str1<1, "strb", IIC_iStore_bh_i, IIC_iStore_bh_r,
+                   BinOpFrag<(truncstorei8 node:$LHS, node:$RHS)>>;
 
 // Special LDR for loads from non-pc-relative constpools.
 let canFoldAsLoad = 1, mayLoad = 1, neverHasSideEffects = 1,
     isReMaterializable = 1 in
-def LDRcp : AIldr1<0b010, 0, (outs GPR:$Rt), (ins addrmode_imm12:$addr),
+def LDRcp : AIldst1<0b010, 0, 1, (outs GPR:$Rt), (ins addrmode_imm12:$addr),
                  AddrMode_i12, LdFrm, IIC_iLoad_r, "ldr", "\t$Rt, $addr", []> {
   bits<4> Rt;
   bits<17> addr;
@@ -1420,10 +1464,6 @@ def LDRcp : AIldr1<0b010, 0, (outs GPR:$Rt), (ins addrmode_imm12:$addr),
 def LDRH  : AI3ldh<(outs GPR:$dst), (ins addrmode3:$addr), LdMiscFrm,
                   IIC_iLoad_bh_r, "ldrh", "\t$dst, $addr",
                   [(set GPR:$dst, (zextloadi16 addrmode3:$addr))]>;
-
-def LDRB  : AI2ldb<(outs GPR:$dst), (ins addrmode2:$addr), LdFrm,
-                  IIC_iLoad_bh_r, "ldrb", "\t$dst, $addr",
-                  [(set GPR:$dst, (zextloadi8 addrmode2:$addr))]>;
 
 // Loads with sign extension
 def LDRSH : AI3ldsh<(outs GPR:$dst), (ins addrmode3:$addr), LdMiscFrm,
@@ -1528,18 +1568,11 @@ def LDRSHT : AI3ldshpo<(outs GPR:$dst, GPR:$base_wb),
 }
 
 // Store
-def STR  : AI2stw<(outs), (ins GPR:$src, addrmode2:$addr), StFrm, IIC_iStore_r,
-               "str", "\t$src, $addr",
-               [(store GPR:$src, addrmode2:$addr)]>;
 
 // Stores with truncate
 def STRH : AI3sth<(outs), (ins GPR:$src, addrmode3:$addr), StMiscFrm,
                IIC_iStore_bh_r, "strh", "\t$src, $addr",
                [(truncstorei16 GPR:$src, addrmode3:$addr)]>;
-
-def STRB : AI2stb<(outs), (ins GPR:$src, addrmode2:$addr), StFrm,
-               IIC_iStore_bh_r, "strb", "\t$src, $addr",
-               [(truncstorei8 GPR:$src, addrmode2:$addr)]>;
 
 // Store doubleword
 let mayStore = 1, neverHasSideEffects = 1, hasExtraSrcRegAllocReq = 1 in
@@ -1689,9 +1722,10 @@ def MOVr_TC : AsI1<0b1101, (outs tcGPR:$Rd), (ins tcGPR:$Rm), DPFrm,
   let Inst{15-12} = Rd;
 }
 
-def MOVs : AsI1<0b1101, (outs GPR:$Rd), (ins so_reg:$src),
+def MOVs : AsI1<0b1101, (outs GPR:$Rd), (ins shift_so_reg:$src),
                 DPSoRegFrm, IIC_iMOVsr,
-                "mov", "\t$Rd, $src", [(set GPR:$Rd, so_reg:$src)]>, UnaryDP {
+                "mov", "\t$Rd, $src", [(set GPR:$Rd, shift_so_reg:$src)]>,
+                UnaryDP {
   bits<4> Rd;
   bits<12> src;
   let Inst{15-12} = Rd;
@@ -3165,11 +3199,16 @@ def : ARMPat<(ARMcall texternalsym:$func), (BLr9 texternalsym:$func)>,
       Requires<[IsARM, IsDarwin]>;
 
 // zextload i1 -> zextload i8
-def : ARMPat<(zextloadi1 addrmode2:$addr),  (LDRB addrmode2:$addr)>;
+//def : ARMPat<(zextloadi1 addrmode2:$addr),  (LDRB addrmode2:$addr)>;
+def : ARMPat<(zextloadi1 addrmode_imm12:$addr), (LDRBi12 addrmode_imm12:$addr)>;
+def : ARMPat<(zextloadi1 ldst_so_reg:$addr),    (LDRBrs ldst_so_reg:$addr)>;
 
 // extload -> zextload
-def : ARMPat<(extloadi1  addrmode2:$addr),  (LDRB addrmode2:$addr)>;
-def : ARMPat<(extloadi8  addrmode2:$addr),  (LDRB addrmode2:$addr)>;
+def : ARMPat<(extloadi1 addrmode_imm12:$addr),  (LDRBi12 addrmode_imm12:$addr)>;
+def : ARMPat<(extloadi1 ldst_so_reg:$addr),     (LDRBrs ldst_so_reg:$addr)>;
+def : ARMPat<(extloadi8 addrmode_imm12:$addr),  (LDRBi12 addrmode_imm12:$addr)>;
+def : ARMPat<(extloadi8 ldst_so_reg:$addr),     (LDRBrs ldst_so_reg:$addr)>;
+
 def : ARMPat<(extloadi16 addrmode3:$addr),  (LDRH addrmode3:$addr)>;
 
 def : ARMPat<(extloadi8  addrmodepc:$addr), (PICLDRB addrmodepc:$addr)>;

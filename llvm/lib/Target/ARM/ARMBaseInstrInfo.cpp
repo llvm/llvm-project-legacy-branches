@@ -676,9 +676,9 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 
   switch (RC->getID()) {
   case ARM::GPRRegClassID:
-    AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::STR))
+    AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::STRi12))
                    .addReg(SrcReg, getKillRegState(isKill))
-                   .addFrameIndex(FI).addReg(0).addImm(0).addMemOperand(MMO));
+                   .addFrameIndex(FI).addImm(0).addMemOperand(MMO));
     break;
   case ARM::SPRRegClassID:
     AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VSTRS))
@@ -755,7 +755,7 @@ ARMBaseInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
                                      int &FrameIndex) const {
   switch (MI->getOpcode()) {
   default: break;
-  case ARM::STR:
+  case ARM::STRrs:
   case ARM::t2STRs: // FIXME: don't use t2STRs to access frame.
     if (MI->getOperand(1).isFI() &&
         MI->getOperand(2).isReg() &&
@@ -766,6 +766,7 @@ ARMBaseInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
       return MI->getOperand(0).getReg();
     }
     break;
+  case ARM::STRi12:
   case ARM::t2STRi12:
   case ARM::tSpill:
   case ARM::VSTRD:
@@ -1080,7 +1081,7 @@ bool ARMBaseInstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   default:
     return false;
   case ARM::LDRi12:
-  case ARM::LDRB:
+  case ARM::LDRBi12:
   case ARM::LDRD:
   case ARM::LDRH:
   case ARM::LDRSB:
@@ -1099,7 +1100,7 @@ bool ARMBaseInstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   default:
     return false;
   case ARM::LDRi12:
-  case ARM::LDRB:
+  case ARM::LDRBi12:
   case ARM::LDRD:
   case ARM::LDRH:
   case ARM::LDRSB:
@@ -1419,8 +1420,15 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
       if ((unsigned)Offset <= Mask * Scale) {
         // Replace the FrameIndex with sp
         MI.getOperand(FrameRegIdx).ChangeToRegister(FrameReg, false);
-        if (isSub)
-          ImmedOffset |= 1 << NumBits;
+        // FIXME: When addrmode2 goes away, this will simplify (like the
+        // T2 version), as the LDR.i12 versions don't need the encoding
+        // tricks for the offset value.
+        if (isSub) {
+          if (AddrMode == ARMII::AddrMode_i12)
+            ImmedOffset = -ImmedOffset;
+          else
+            ImmedOffset |= 1 << NumBits;
+        }
         ImmOp.ChangeToImmediate(ImmedOffset);
         Offset = 0;
         return true;
@@ -1428,8 +1436,12 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 
       // Otherwise, it didn't fit. Pull in what we can to simplify the immed.
       ImmedOffset = ImmedOffset & Mask;
-      if (isSub)
-        ImmedOffset |= 1 << NumBits;
+      if (isSub) {
+        if (AddrMode == ARMII::AddrMode_i12)
+          ImmedOffset = -ImmedOffset;
+        else
+          ImmedOffset |= 1 << NumBits;
+      }
       ImmOp.ChangeToImmediate(ImmedOffset);
       Offset &= ~(Mask*Scale);
     }

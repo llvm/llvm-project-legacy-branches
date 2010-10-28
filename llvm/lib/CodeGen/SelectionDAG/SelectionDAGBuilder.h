@@ -395,9 +395,8 @@ public:
   bool isExportableFromCurrentBlock(const Value *V, const BasicBlock *FromBB);
   void CopyToExportRegsIfNeeded(const Value *V);
   void ExportFromCurrentBlock(const Value *V);
-  void LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool IsTailCall);
   void LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool IsTailCall,
-                   SmallVectorImpl<MachineBasicBlock*> &CatchBlocks);
+                   MachineBasicBlock *CatchBlocks = 0);
 
   /// UpdateSplitBlock - When an MBB was split during scheduling, update the
   /// references that ned to refer to the last resulting block.

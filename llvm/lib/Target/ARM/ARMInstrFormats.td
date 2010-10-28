@@ -401,9 +401,10 @@ class AI2<dag oops, dag iops, Format f, InstrItinClass itin,
 
 // loads
 
-// LDR/LDRB
-class AIldr1<bits<3> op, bit opc22, dag oops, dag iops, AddrMode am, Format f,
-             InstrItinClass itin, string opc, string asm, list<dag> pattern>
+// LDR/LDRB/STR/STRB
+class AIldst1<bits<3> op, bit opc22, bit isLd, dag oops, dag iops, AddrMode am,
+             Format f, InstrItinClass itin, string opc, string asm,
+             list<dag> pattern>
   : I<oops, iops, am, Size4Bytes, IndexModeNone, f, itin, opc, asm,
       "", pattern> {
   let Inst{27-25} = op;
@@ -411,7 +412,7 @@ class AIldr1<bits<3> op, bit opc22, dag oops, dag iops, AddrMode am, Format f,
   // 23 == U
   let Inst{22} = opc22;
   let Inst{21} = 0;  // 21 == W
-  let Inst{20} = 1;
+  let Inst{20} = isLd;
 }
 // LDRH/LDRSB/LDRSH/LDRD
 class AIldr2<bits<4> op, bit opc22, bit opc20, dag oops, dag iops, AddrMode am,
@@ -1867,6 +1868,16 @@ class NVLaneOp<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
   let AsmString = !strconcat(opc, "${p}", ".", dt, "\t", asm);
   let Pattern = pattern;
   list<Predicate> Predicates = [HasNEON];
+  
+  bits<5> V;
+  bits<4> R;
+  bits<4> p;
+  bits<4> lane;
+  
+  let Inst{31-28} = p{3-0};
+  let Inst{7}     = V{4};
+  let Inst{19-16} = V{3-0};
+  let Inst{15-12} = R{3-0};
 }
 class NVGetLane<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
                 dag oops, dag iops, InstrItinClass itin,
@@ -1895,6 +1906,15 @@ class NVDupLane<bits<4> op19_16, bit op6, dag oops, dag iops,
   let Inst{11-7}  = 0b11000;
   let Inst{6}     = op6;
   let Inst{4}     = 0;
+  
+  bits<5> Vd;
+  bits<5> Vm;
+  bits<4> lane;
+  
+  let Inst{22}     = Vd{4};
+  let Inst{15-12} = Vd{3-0};
+  let Inst{5}     = Vm{4};
+  let Inst{3-0} = Vm{3-0};
 }
 
 // NEONFPPat - Same as Pat<>, but requires that the compiler be using NEON
