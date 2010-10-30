@@ -1,14 +1,8 @@
-# <rdar://problem/8400094> [regression] [MultiSource/Benchmarks/Bullet/bullet.exec] inliner miscompile of btGjkEpa2 at -O3 -flto
-114781
+# alignof rename.
+117774
 
-# <rdar://problem/8487514> [PR8250] valueprop assertion
-114972
+# <rdar://problem/8611144> [PR8506] valueprop crash
+117709
 
-# <rdar://problem/8499254> [PR8247] JumpThreading Assertion `From != To && "ReplaceAndSimplifyAllUses(X,X) is not valid!"' failed.
-115082
-
-# <rdar://problem/8075961> crash indexing Boost code (possible non-termination bug in TryCopyInitialization?)
-115616
-
-# <rdar://problem/8530444> libclang is reraising the wrong signal
-116072
+# <rdar://problem/8611556> [PR8471] - [scev] clang segfaults while optimizing a snippet of C code
+117698
