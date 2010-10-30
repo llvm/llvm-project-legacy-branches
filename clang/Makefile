@@ -29,7 +29,7 @@ Clang_Enable_Bootstrap := 1
 # The name used to identify this "train".
 Train_Name := whitney
 # Can be one of "trunk", "branch", or "branch-llvm-only".
-Source_To_Draw_From := trunk
+Source_To_Draw_From := branch
 
 ##
 # Include build logic.
