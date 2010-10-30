@@ -296,6 +296,7 @@ all: install
 SVN_UTILITY_TARGETS := \
 	test-svn update-sources \
 	rebranch-llvm-from-tag rebranch-clang-from-tag \
+	rebranch-clang-from-revision \
 	tag-clang retag-clang
 ifneq ($(strip $(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
 SVN_UTILITY_MODE := 1
@@ -387,6 +388,14 @@ rebranch-clang-from-tag:
 	fi
 	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
 	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src/tools/clang $(Clang_Branch_Path)
+
+rebranch-clang-from-revision:
+	@if ! [ -n "$(REVISION)" ]; then \
+	  echo Usage: make $@ REVISION=100000; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang trunk at r$(REVISION).' $(SVN_BASE)/cfe/trunk@$(REVISION) $(Clang_Branch_Path)
 
 tag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
