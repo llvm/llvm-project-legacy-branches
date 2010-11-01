@@ -1,2 +1,8 @@
 # Reversion of r117678, which broke various projects.
 117829
+
+# <rdar://problem/8614832> Massive log spam of entries like "0.0579 (100.0%"
+117910
+
+# <rdar://problem/8614470> linker crash during project build
+117887
