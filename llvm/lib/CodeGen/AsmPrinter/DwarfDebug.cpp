@@ -753,6 +753,17 @@ void DwarfDebug::addAddress(DIE *Die, unsigned Attribute,
                             const MachineLocation &Location) {
   unsigned Reg = RI->getDwarfRegNum(Location.getReg(), false);
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
+  const TargetRegisterInfo *TRI = Asm->TM.getRegisterInfo();
+
+  if (TRI->getFrameRegister(*Asm->MF) == Location.getReg()
+      && Location.getOffset()) {
+    // If variable offset is based in frame register then use fbreg.                                            
+    addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_fbreg);
+    addSInt(Block, 0, dwarf::DW_FORM_sdata, Location.getOffset());
+    addBlock(Die, Attribute, 0, Block);
+    return;
+  }
+
 
   if (Location.isReg()) {
     if (Reg < 32) {
@@ -1589,8 +1600,23 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
     bool updated = false;
     // FIXME : Handle getNumOperands != 3 
     if (DVInsn->getNumOperands() == 3) {
-      if (DVInsn->getOperand(0).isReg())
+      if (DVInsn->getOperand(0).isReg()) {
+        const MachineOperand RegOp = DVInsn->getOperand(0);
+        const TargetRegisterInfo *TRI = Asm->TM.getRegisterInfo();
+        if (DVInsn->getOperand(1).isImm() &&
+            TRI->getFrameRegister(*Asm->MF) == RegOp.getReg()) {
+          MachineLocation Location;
+          unsigned FrameReg;
+          int Offset = 
+            RI->getFrameIndexReference(*Asm->MF, 
+                                       DVInsn->getOperand(1).getImm(),
+                                       FrameReg);
+          Location.set(FrameReg, Offset);
+          addAddress(VariableDie, dwarf::DW_AT_location, Location);
+          updated = true;
+        } else
         updated = addRegisterAddress(VariableDie, DVLabel, DVInsn->getOperand(0));
+      }
       else if (DVInsn->getOperand(0).isImm())
         updated = addConstantValue(VariableDie, DVLabel, DVInsn->getOperand(0));
       else if (DVInsn->getOperand(0).isFPImm()) 

@@ -3728,6 +3728,21 @@ SelectionDAGBuilder::EmitFuncArgumentDbgValue(const DbgValueInst &DI,
     }
   }
 
+  if (!Reg && N.getNode())
+    if (LoadSDNode *LNode = dyn_cast<LoadSDNode>(N.getNode()))
+      if (FrameIndexSDNode *FINode = 
+          dyn_cast<FrameIndexSDNode>(LNode->getBasePtr().getNode())) {
+        const TargetRegisterInfo *TRI = DAG.getTarget().getRegisterInfo();
+        const TargetInstrInfo *TII = DAG.getTarget().getInstrInfo();
+        MachineInstrBuilder MIB = BuildMI(MF, getCurDebugLoc(),
+                                          TII->get(TargetOpcode::DBG_VALUE))
+          .addReg(TRI->getFrameRegister(MF), RegState::Debug)
+          .addImm(FINode->getIndex())
+          .addMetadata(Variable);
+        FuncInfo.ArgDbgValues.push_back(&*MIB);
+        return true;
+      }
+
   if (!Reg) {
     DenseMap<const Value *, unsigned>::iterator VMI = FuncInfo.ValueMap.find(V);
     if (VMI == FuncInfo.ValueMap.end())
