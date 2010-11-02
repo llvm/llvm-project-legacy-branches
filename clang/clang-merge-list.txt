@@ -24,3 +24,6 @@
 
 # <rdar://problem/8621026> stop erroring on -fasm-blocks
 118037
+
+# <rdar://problem/8622647> visibility of static locals is wrong
+118065
