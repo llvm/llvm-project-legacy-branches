@@ -2492,6 +2492,11 @@ X86TargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
     }
   }
 
+  // An stdcall caller is expected to clean up its arguments; the callee
+  // isn't going to do that.   PR 8461.
+  if (!CCMatch && CallerCC==CallingConv::X86_StdCall)
+    return false;
+
   return true;
 }
 
