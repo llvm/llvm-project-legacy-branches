@@ -2931,9 +2931,8 @@ public:
     HadArrayRangeDesignator = ARD;
   }
 
-  virtual SourceRange getSourceRange() const {
-    return SourceRange(LBraceLoc, RBraceLoc);
-  }
+  virtual SourceRange getSourceRange() const;
+
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == InitListExprClass;
   }
