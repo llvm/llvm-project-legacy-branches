@@ -27,3 +27,137 @@
 
 # <rdar://problem/8622647> visibility of static locals is wrong
 118065
+
+# <rdar://problem/7824372> [sema] [diags] poor recovery with missing @end
+117991
+
+# <rdar://problem/8435969> #pragma clang diagnostic ... in prefix header has no effect when prefix header is precompiled
+118303
+
+# <rdar://problem/8437790> clang issues unfixable double warnings for static locals
+118500
+
+# <rdar://problem/8494798> Synthesized ivars aren't added as completions
+118052
+
+# <rdar://problem/8510737> Emit RTTI info for nullptr_t
+118236
+118238
+
+# <rdar://problem/8540491> [g++.dg/ext/asm6.C] Assertion failed: (ExprTemporaries.empty() && "Leftover temporaries in function")
+117961
+118001
+
+# <rdar://problem/8583824> Implement -fworking-directory=path
+118203
+
+# <rdar://problem/8595462> problems coloring functions inside an @implementation (clang_annotateTokens())
+118109
+118111
+
+# <rdar://problem/8595749> clang_getCursor() returns the wrong def when there's more than one in a statement
+117973
+
+# <rdar://problem/8600419> crash in clang::ASTContext::getASTRecordLayout()
+117942
+
+# <rdar://problem/8605692> Documentation: allow deprecating enumerators
+118435
+
+# <rdar://problem/8608173> Execute clang_parseTranslationUnit() on a separate thread with a larger stack
+118223
+118224
+118273
+118274
+118278
+
+# <rdar://problem/8611113> [PR8507] crash when using double pointer-to-member in if clause
+117850
+
+# <rdar://problem/8611125> [PR8505] compiler crash with forward declarations and templates
+118235
+
+# <rdar://problem/8617189> invalid SourceRange object
+118132
+118297
+
+# <rdar://problem/8618574> [PR8462] Argument deduction failure in function templates
+117983
+
+# <rdar://problem/8620459> [PR7419] Fail to recognize that return types match through two typedefs
+118211
+
+# <rdar://problem/8620467> [PR7425] function arguments which are const references fail to compile when passed an instantiation of a template function
+118407
+
+# <rdar://problem/8620492> [PR7611] Not emitting covariant thunk
+118466
+
+# <rdar://problem/8620510> [PR7666] Variable size array function parameters cause clang to segfault
+118019
+
+# <rdar://problem/8620524> [PR7851] clang++ can't compile CryptoPP 5.6.0
+118066
+
+# <rdar://problem/8620546> [PR7896] c++ crash with overloading and using decl in class template
+118239
+
+# <rdar://problem/8620582> [PR7905] clang c++ crash with compound literal with array with templated element type
+118428
+
+# <rdar://problem/8620692> [PR8013] clang c++ calling address of overload set fails
+118508
+
+# <rdar://problem/8620772> [PR8182] wrong constructor choice (templates)
+118418
+
+# <rdar://problem/8620775> [PR8234] Assertion when instantiating template
+118314
+
+# <rdar://problem/8620812> [PR8477] "overloaded operator '[]' is ambiguous" error, probably false
+118178
+
+# <rdar://problem/8621849> build failure
+118366
+
+# <rdar://problem/8627225> No completion for class method declared in class extension
+118443
+
+# <rdar://problem/8635664> crash in clang at clang: clang::Sema::InstantiateMemInitializers + 729
+118306
+118313
+
+# <rdar://problem/8639728> IdentifierIterator object always leaked (leak during code completion)
+118371
+
+# <rdar://problem/8639730> StringSet<> possibly leaking in CaclulateHiddenNames (leak during code completion)
+118372
+
+# <rdar://problem/8640439> [PR8230] invalid cast to reference to function is allowed
+118400
+
+# <rdar://problem/8642434> AttrNonNullChecker crashes when reasoning about transparent unions
+118472
+118473
+
+# <rdar://problem/8644056> [libc++ support] Add __nullptr keyword (available in all C++ modes)
+118482
+
+# <rdar://problem/8644873> [PR8567] Incorrect code for VLA pointers
+118468
+118483
+
+# <rdar://problem/8645186> Integrate fix for PR8001: not seeing declaration of constructors for previously declared template class
+118454
+
+# <rdar://problem/8645331> [PR8025] clang c++ diagnostic for bitfield with non-integral type missing source location
+118481
+
+# <rdar://problem/8645380> Out-of-line declarations/definitions show up in code-completion results
+118484
+
+# <rdar://problem/8645527> Add clang_getSpellingLocation() API
+118495
+
+# Patch from dchisnall (for clean merges).
+118170
