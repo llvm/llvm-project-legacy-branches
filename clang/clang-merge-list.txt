@@ -161,3 +161,6 @@
 
 # Patch from dchisnall (for clean merges).
 118170
+
+# <rdar://problem/8621295> disable Clang 2.0 ObjC extensions (-fnon-fragile-abi2)
+118786
