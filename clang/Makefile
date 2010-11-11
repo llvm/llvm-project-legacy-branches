@@ -11,7 +11,7 @@ Clang_Driver_Mode      := Production
 # Select optimization flags to use.
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
-Clang_Extra_Options    := -DDISABLE_SMART_POINTERS -DDISABLE_DEFAULT_INTEGRATED_ASSEMBLER
+Clang_Extra_Options    := -DDISABLE_SMART_POINTERS -DDISABLE_DEFAULT_INTEGRATED_ASSEMBLER -DDISABLE_DEFAULT_NONFRAGILEABI_TWO
 # Additional arbitrary compiler options, only passed to final configure stage.
 Clang_Final_Extra_Options := -g
 # Enable use of clang++?
