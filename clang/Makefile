@@ -11,7 +11,9 @@ Clang_Driver_Mode      := Production
 # Select optimization flags to use.
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
-Clang_Extra_Options    := -g -DDISABLE_SMART_POINTERS -DDISABLE_DEFAULT_INTEGRATED_ASSEMBLER
+Clang_Extra_Options    := -DDISABLE_SMART_POINTERS -DDISABLE_DEFAULT_INTEGRATED_ASSEMBLER
+# Additional arbitrary compiler options, only passed to final configure stage.
+Clang_Final_Extra_Options := -g
 # Enable use of clang++?
 Clang_Enable_CXX       := 0
 # Build all LLVM tools; not just clang?
@@ -24,9 +26,10 @@ Clang_Enable_Bootstrap := 0
 ##
 # Source Info
 
-LLVM_Source_Branch := branches/Apple/williamson
-Clang_Source_Branch := branches/Apple/williamson
-CompilerRT_Source_Branch := trunk
+# The name used to identify this "train".
+Train_Name := williamson
+# Can be one of "trunk", "branch", or "branch-llvm-only".
+Source_To_Draw_From := branch
 
 ##
 # Include build logic.

@@ -103,6 +103,25 @@ endif
 # B&I Build Logic
 ##
 
+# Require Train_Name to be set.
+ifeq ($(Train_Name),)
+$(error "invalid setting for train name: '$(Train_Name)'")
+endif
+
+# Require Source_To_Draw_From to be set to a known value.
+ifeq ($(Source_To_Draw_From),trunk)
+Draw_LLVM_From_Trunk := 1
+Draw_Clang_From_Trunk := 1
+else ifeq ($(Source_To_Draw_From),branch)
+Draw_LLVM_From_Trunk := 0
+Draw_Clang_From_Trunk := 0
+else ifeq ($(Source_To_Draw_From),branch-llvm-only)
+Draw_LLVM_From_Trunk := 0
+Draw_Clang_From_Trunk := 1
+else
+$(error "invalid setting for source to draw from: '$(Source_To_Draw_From)'")
+endif
+
 # Require Clang_Version to be set.
 ifeq ($(Clang_Version),)
 $(error "invalid setting for clang version: '$(Clang_Version)'")
@@ -131,6 +150,7 @@ Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 \
                         CLANG_VENDOR=Apple \
                         CLANG_VENDOR_UTI=com.apple.compilers.llvm.clang
 Clang_Make_Variables += CLANG_VERSION=$(Clang_Version)
+Clang_Make_Variables += CLANG_ORDER_FILE=$(SRCROOT)/clang.order
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
 
@@ -141,6 +161,12 @@ else ifeq ($(Clang_Enable_CXX), 0)
 else
 $(error "invalid setting for clang enable C++: '$(Clang_Enable_CXX)'")
 endif
+
+# Set LLVM_VERSION_INFO make variable. We do this here because setting it in the
+# CC options for configure ends up breaking tests that can't be bothered to
+# quote things properly, and that is too hard to fix.
+Clang_Make_Variables += \
+  LLVM_VERSION_INFO="from Apple Clang $(Clang_Version) (build $(RC_ProjectSourceVersion))"
 
 else ifeq ($(Clang_Driver_Mode), Development)
 # ... this is the default ...
@@ -185,6 +211,9 @@ endif
 # the sequencing monotonic.
 Clang_Make_Variables += LLVM_LTO_VERSION_OFFSET=3000
 
+# Set extra compile options.
+Extra_Options := $(Clang_Extra_Options)
+
 # Set configure flags.
 Common_Configure_Flags = \
 		  --enable-targets=$(LLVM_Backends) \
@@ -196,9 +225,26 @@ Common_Configure_Flags = \
 		  --disable-bindings \
 		  --disable-doxygen
 Stage1_Configure_Flags = $(Common_Configure_Flags) \
-                  --with-extra-options="$(Clang_Extra_Options)"
+                  --with-extra-options="$(Extra_Options)"
 Configure_Flags = $(Common_Configure_Flags) \
-                  --with-extra-options="$(Clang_Extra_Options) $(Clang_Final_Extra_Options)"
+                  --with-extra-options="$(Extra_Options) $(Clang_Final_Extra_Options)"
+
+# Determine the /Developer/usr/bin/clang major build version number
+SysClangMajorBuildVersion := \
+  $(shell /Developer/usr/bin/clang -v 2>&1 | \
+	head -1 | \
+	sed -e "s@.*\(clang-[0-9]*\).*@\1@" \
+	    -e "s@\$$@-@" | \
+	cut -d- -f2 | \
+	cut -d. -f1)
+ifeq ($(shell test $(SysClangMajorBuildVersion) -ge 115 && echo OK),OK)
+CC := /Developer/usr/bin/clang
+CXX := /Developer/usr/bin/clang++
+endif
+
+# Set stage1 compiler.
+Stage1_CC := $(CC)
+Stage1_CXX := $(CXX)
 
 # Set up any additional Clang install targets.
 Extra_Clang_Install_Targets :=
@@ -246,63 +292,143 @@ all: install
 ###
 # Utility targets for managing the integration branch.
 
-SVN_BASE = $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
-SVN_CLANG = $(shell svn info | sed -n 's/^URL: //p')
-SVN_TAGS = $(SVN_BASE)/cfe/tags/Apple
+# Determine if we are running an SVN utility target.
+SVN_UTILITY_TARGETS := \
+	test-svn update-sources \
+	rebranch-llvm-from-tag rebranch-clang-from-tag \
+	rebranch-clang-from-revision \
+	tag-clang retag-clang
+ifneq ($(strip $(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
+SVN_UTILITY_MODE := 1
+$(warning NOTE: Running SVN utility target. Be careful!)
+$(warning )
+endif
+
+ifeq ($(SVN_UTILITY_MODE),1)
+SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
+SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
+SVN_TAGS := $(SVN_BASE)/cfe/tags/Apple
+
+$(warning Using SVN base     : $(SVN_BASE))
+$(warning Using Clang SVN    : $(SVN_CLANG))
+$(warning Using SVN tag dir  : $(SVN_TAGS))
+$(warning )
+
+# Validate that we match the expected branch name, as a safety/sanity check.
+ifneq ($(SVN_CLANG),$(SVN_BASE)/cfe/branches/Apple/$(Train_Name)-IB)
+$(error Unable to recognize SVN layout, conservatively refusing to do anything.)
+endif
+
+# Define the upstream paths.
+LLVM_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
+Clang_Branch_Path := $(SVN_BASE)/cfe/branches/Apple/$(Train_Name)
+
+ifeq ($(Draw_LLVM_From_Trunk),1)
+LLVM_Upstream := $(SVN_BASE)/llvm/trunk
+else
+LLVM_Upstream := $(LLVM_Branch_Path)
+endif
+
+ifeq ($(Draw_Clang_From_Trunk),1)
+Clang_Upstream := $(SVN_BASE)/cfe/trunk
+else
+Clang_Upstream := $(Clang_Branch_Path)
+endif
+
+CompilerRT_Upstream := $(SVN_BASE)/compiler-rt/trunk
+
+# Print information on the upstream sources.
+$(warning LLVM Upstream      : $(LLVM_Upstream))
+$(warning Clang Upstream     : $(Clang_Upstream))
+$(warning CompilerRT Upstream: $(CompilerRT_Upstream))
+$(warning )
+
+# Only actually do anything when EXECUTE=1
+ifeq ($(EXECUTE), 1)
+SVN_COMMAND := svn
+else
+$(warning Not in commit mode, only echoing commands (use EXECUTE=1 to execute).)
+$(warning )
+SVN_COMMAND := @echo svn
+endif
+
+else
+SVN_COMMAND := @echo "NOT IN SVN COMMAND MODE!!!"
+endif
+
+test-svn:
+	@echo "*** TESTING SVN UTILITY MODE ***"
+	$(SVN_COMMAND) info $(SVN_BASE)
 
 update-sources:
 	@if ! [ -n "$(REVISION)" ]; then \
 	  echo Usage: make $@ REVISION=102052; \
 	  false; \
 	fi
-	svn rm -m 'Update.' $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/llvm/$(LLVM_Source_Branch)@$(REVISION) $(SVN_CLANG)/src
-	svn cp -m 'Update.' $(SVN_BASE)/cfe/$(Clang_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/tools/clang
-	svn cp -m 'Update.' $(SVN_BASE)/compiler-rt/$(CompilerRT_Source_Branch)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
-	svn up
+	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update.' $(LLVM_Upstream)@$(REVISION) $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update.' $(Clang_Upstream)@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	$(SVN_COMMAND) cp -m 'Update.' $(CompilerRT_Upstream)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
+	$(SVN_COMMAND) up
+
+rebranch-llvm-from-tag:
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=65; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of LLVM.' $(LLVM_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch LLVM from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src $(LLVM_Branch_Path)
+	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 1/2)' $(LLVM_Branch_Path)/tools/clang
+	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 2/2)' $(LLVM_Branch_Path)/projects/compiler-rt
+
+rebranch-clang-from-tag:
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=65; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src/tools/clang $(Clang_Branch_Path)
+
+rebranch-clang-from-revision:
+	@if ! [ -n "$(REVISION)" ]; then \
+	  echo Usage: make $@ REVISION=100000; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
+	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang trunk at r$(REVISION).' $(SVN_BASE)/cfe/trunk@$(REVISION) $(Clang_Branch_Path)
 
 tag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
 	  echo Usage: make $@ VERSION=25; \
 	  false; \
 	fi
-	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
+	$(SVN_COMMAND) cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 retag-clang:
 	@if ! [ -n "$(VERSION)" ]; then \
 	  echo Usage: make $@ VERSION=25; \
 	  false; \
 	fi
-	svn rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
-	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
-
-tag-clang_ide:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION)
-
-retag-clang_ide:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	svn rm -m 'Retag.' $(SVN_TAGS)/clang_ide-$(VERSION) && \
-	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang_ide-$(VERSION); \
+	$(SVN_COMMAND) rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
+	$(SVN_COMMAND) cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
 
 ##
 # Additional Tool Paths
 
-CHOWN		= /usr/sbin/chown
-CXX             = /usr/bin/g++
-FIND		= /usr/bin/find
-INSTALL		= /usr/bin/install
-INSTALL_FILE	= $(INSTALL) -m 0444
-MKDIR		= /bin/mkdir -p -m 0755
-PAX		= /bin/pax
-RMDIR		= /bin/rm -fr
-XARGS		= /usr/bin/xargs
+CHOWN		:= /usr/sbin/chown
+CXX             := /usr/bin/g++
+FIND		:= /usr/bin/find
+INSTALL		:= /usr/bin/install
+INSTALL_FILE	:= $(INSTALL) -m 0444
+MKDIR		:= /bin/mkdir -p -m 0755
+PAX		:= /bin/pax
+RMDIR		:= /bin/rm -fr
+XARGS		:= /usr/bin/xargs
+
+# We aren't really a recursive make, rather we are a separate build which just
+# happens to use make for a sub-task. For that reason, we redefine MAKE to not
+# propagate overrides.
+MAKE            := env MAKEFLAGS= $(MAKE_COMMAND)
 
 ## 
 # Tool Variables
@@ -343,7 +469,8 @@ installsrc:
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
-	$(_v) rm -rf "$(SRCROOT)/src/test/Archive"
+	$(_v) rm -rf "$(SRCROOT)"/src/test/*/
+	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
 
 installhdrs:
 
@@ -415,8 +542,8 @@ configure-clang_singlestage:
 		$(MKDIR) $(OBJROOT)/$$arch && \
 		cd $(OBJROOT)/$$arch && \
 		time $(Configure) --prefix="$(Install_Prefix)" $(Configure_Flags) \
-		  CC="$(CC) -arch $$arch" \
-		  CXX="$(CXX) -arch $$arch" || exit 1 ; \
+		  CC="$(Stage1_CC) -arch $$arch" \
+		  CXX="$(Stage1_CXX) -arch $$arch" || exit 1 ; \
 	done
 
 configure-clang_stage1: 
@@ -425,7 +552,8 @@ configure-clang_stage1:
 	$(_v) $(MKDIR) $(OBJROOT)/stage1-$(Stage1_Compiler_Arch)
 	$(_v) cd $(OBJROOT)/stage1-$(Stage1_Compiler_Arch) && \
 	      time $(Configure) --prefix="$(OBJROOT)/stage1-install-$(Stage1_Compiler_Arch)" $(Stage1_Configure_Flags) \
-	        CC="$(CC) -arch $(Stage1_Compiler_Arch)" CXX="$(CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
+	        CC="$(Stage1_CC) -arch $(Stage1_Compiler_Arch)" \
+		CXX="$(Stage1_CXX) -arch $(Stage1_Compiler_Arch)" || exit 1
 
 install-clang-rootlinks: install-clang_final
 	$(MKDIR) -p $(DSTROOT)/usr/bin
@@ -521,3 +649,11 @@ setup-tools-cross:
 	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
 	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1 ; \
 	done
+
+###
+# Debugging
+
+# General debugging rule, use 'make dbg-print-XXX' to print the
+# definition, value and origin of XXX.
+make-print-%:
+	$(error PRINT: $(value $*) = "$($*)" (from $(origin $*)))
