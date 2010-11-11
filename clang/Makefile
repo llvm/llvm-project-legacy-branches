@@ -19,7 +19,7 @@ Clang_Enable_CXX       := 0
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
 # Set the Clang version.
-Clang_Version          := 1.6
+Clang_Version          := 1.7
 # Never bootstrap.
 Clang_Enable_Bootstrap := 0
 
