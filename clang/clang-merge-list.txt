@@ -164,3 +164,98 @@
 
 # <rdar://problem/8621295> disable Clang 2.0 ObjC extensions (-fnon-fragile-abi2)
 118786
+
+# <rdar://problem/6839683> analyzer treats load from non-null, harded coded address as an 'undefined value'
+118852
+
+# <rdar://problem/8592657> [qoi] Clang should do something with -Oz
+119003
+
+# <rdar://problem/8608293> cant use a.b.c syntax inside a for (x in y) loop in a block
+118425
+
+# <rdar://problem/8608902> Cannot use static type enforcement in a block type definition
+118205
+118208
+118286
+
+# <rdar://problem/8620540> [PR7863] Function template and ?: causes segfault
+118631
+
+# <rdar://problem/8620732> [PR8130] Clang fails to partially order overloaded operators correctly
+118944
+
+# <rdar://problem/8629498> crash in clang::TextDiagnosticPrinter::HandleDiagnostic + 1847
+118751
+
+# <rdar://problem/8648004> [regression] Revert erroneous fix for PR8013
+118620
+
+# <rdar://problem/8648607> [PR8380] Assertion `StartColNo <= EndColNo && "Invalid range!"' on invalid code
+118625
+
+# <rdar://problem/8649963> UsingDecl leaks memory
+118674
+
+# <rdar://problem/8650003> AttributeLists still leaked in random places in Parser and Sema
+118675
+
+# <rdar://problem/8650865> CursorVisitor blowing out the stack with deeply nested member expressions (llvm::StringSwitch)
+118782
+118783
+118785
+#correct to merge???
+
+# <rdar://problem/8651930> [regression][Boost] spurious error "class template partial specialization cannot be redeclared"
+118704
+
+# <rdar://problem/8653761> use of invalid presumed location
+118885
+
+# <rdar://problem/8656118> crash in clang::CodeGen::CGDebugInfo::getOrCreateFile + 344
+118834
+
+# <rdar://problem/8656560> DeclarationNameLocInfo fails to zero out all fields, leading to use of uninitialize SourceLocation
+118881
+
+# <rdar://problem/8659019> Nested CXXOperatorCallExprs can blow the stack in CursorVisitor
+118853
+
+# <rdar://problem/8660822> [PR8342] Direct-initialization of class object in second step of copy-initialization fails for explicit copy-constructor.
+118880
+
+# <rdar://problem/8663596> False idempotent operation warning because the worklist is not empty (and can influence the result)
+118982
+118983
+118984
+
+# <rdar://problem/8665922> [PR8425] clang rejects valid implicit conversion sequence in templates
+119005
+
+# <rdar://problem/8667976> Fix for C++ DR532
+119145
+
+# <rdar://problem/8653152> llc rejects -emit-llvm output
+118727
+
+# <rdar://problem/8289205> Stack overflow in CursorVisitor due to deeply nested BinaryOperator expressions
+118444
+
+# <rdar://problem/8617301> Deprecated ObjC properties don't generate warnings if [] syntax is used
+118676
+
+# <rdar://problem/8663544> analyzer crashes when casting the result of a function via a function pointer
+119177
+
+# <rdar://problem/8632525> Incompatible redeclaration of library function 'objc_msgSend'
+118634
+118635
+
+# <rdar://problem/8620705> [PR8022] clang c++ assertion "Invalid Scope." on invalid template using directive
+118669
+
+# <rdar://problem/8620586> [PR7915] clang c++ crash declaring friend with same name as containing class
+118670
+
+# <rdar://problem/8283484> Bad error message for missing @end before implementation
+118629

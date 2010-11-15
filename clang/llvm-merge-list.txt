@@ -41,3 +41,63 @@
 
 # <rdar://problem/8639732> StringRef::edit_distance leaks memory (leak during code completion)
 118370
+
+# <rdar://problem/8017633> "movzx" and "movsx" not recognized
+117901
+
+# <rdar://problem/8398679> need a general alias mechanism for the assembler
+
+# For clean merges:
+117724
+
+117773
+117803
+117815
+117816
+117817
+117818
+117819
+117820
+117821
+117822
+117823
+117824
+117826
+117827
+117828
+117830
+117831
+117840
+117843
+117844
+117845
+117846
+117847
+
+117857
+117858
+117859
+117860
+117861
+117862
+117863
+
+117884
+117885
+117886
+
+117888
+117889
+117890
+117891
+117892
+117893
+117894
+117895
+
+117897
+117898
+117899
+
+# <rdar://problem/8653152> llc rejects -emit-llvm output
+118726
