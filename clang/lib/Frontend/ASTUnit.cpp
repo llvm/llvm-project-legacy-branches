@@ -336,7 +336,6 @@ void ASTUnit::CacheCodeCompletionResults() {
 
   // Make a note of the state when we performed this caching.
   NumTopLevelDeclsAtLastCompletionCache = top_level_size();
-  CacheCodeCompletionCoolDown = 15;
 }
 
 void ASTUnit::ClearCachedCompletionResults() {
@@ -834,12 +833,6 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   }
 
   Invocation.reset(Clang.takeInvocation());
-  
-  // If we were asked to cache code-completion results and don't have any
-  // results yet, do so now.
-  if (ShouldCacheCodeCompletionResults && CachedCompletionResults.empty())
-    CacheCodeCompletionResults();
-
   return false;
   
 error:
@@ -1361,7 +1354,7 @@ bool ASTUnit::LoadFromCompilerInvocation(bool PrecompilePreamble) {
 
   llvm::MemoryBuffer *OverrideMainBuffer = 0;
   if (PrecompilePreamble) {
-    PreambleRebuildCounter = 1;
+    PreambleRebuildCounter = 2;
     OverrideMainBuffer
       = getMainBufferWithPrecompiledPreamble(*Invocation);
   }
@@ -1389,6 +1382,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
   AST->CaptureDiagnostics = CaptureDiagnostics;
   AST->CompleteTranslationUnit = CompleteTranslationUnit;
   AST->ShouldCacheCodeCompletionResults = CacheCodeCompletionResults;
+  AST->CacheCodeCompletionCoolDown = 1;
   AST->Invocation.reset(CI);
   
   return AST->LoadFromCompilerInvocation(PrecompilePreamble)? 0 : AST.take();
@@ -1493,6 +1487,7 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST->CaptureDiagnostics = CaptureDiagnostics;
   AST->CompleteTranslationUnit = CompleteTranslationUnit;
   AST->ShouldCacheCodeCompletionResults = CacheCodeCompletionResults;
+  AST->CacheCodeCompletionCoolDown = 1;
   AST->NumStoredDiagnosticsFromDriver = StoredDiagnostics.size();
   AST->NumStoredDiagnosticsInPreamble = StoredDiagnostics.size();
   AST->StoredDiagnostics.swap(StoredDiagnostics);
