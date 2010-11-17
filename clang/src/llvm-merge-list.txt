@@ -1,0 +1,107 @@
+# alignof rename.
+117774
+
+# <rdar://problem/8611144> [PR8506] valueprop crash
+117709
+
+# <rdar://problem/8611556> [PR8471] - [scev] clang segfaults while optimizing a snippet of C code
+117698
+
+# Test fix needed for <rdar://problem/8611144> [PR8506] valueprop crash
+117712
+
+# <rdar://problem/8606584> [PR8336] clang hangs while optimizing a snippet of C code
+118133
+118143
+
+# <rdar://problem/8606771> instcombine miscompilation
+117953
+
+# <rdar://problem/8608173> Execute clang_parseTranslationUnit() on a separate thread with a larger stack
+118222
+118272
+
+# <rdar://problem/8616046> [PR8522] Use-after-free in VMCore library (ConstantUniqueMap::refineAbstractType)
+118030
+
+# <rdar://problem/8613782> Merge ARM fast-isel fixes
+# <rdar://problem/8617794> thumb conditional instruction not in IT block error
+117710
+117848
+117994
+117995
+117996
+118126
+118148
+118192
+118333
+
+# <rdar://problem/8636812> [regression] 20020614-1.c fails
+118471
+
+# <rdar://problem/8639732> StringRef::edit_distance leaks memory (leak during code completion)
+118370
+
+# <rdar://problem/8017633> "movzx" and "movsx" not recognized
+117901
+
+# <rdar://problem/8398679> need a general alias mechanism for the assembler
+
+# For clean merges:
+117724
+
+117773
+117803
+117815
+117816
+117817
+117818
+117819
+117820
+117821
+117822
+117823
+117824
+117826
+117827
+117828
+117830
+117831
+117840
+117843
+117844
+117845
+117846
+117847
+
+117857
+117858
+117859
+117860
+117861
+117862
+117863
+
+117884
+117885
+117886
+
+117888
+117889
+117890
+117891
+117892
+117893
+117894
+117895
+
+117897
+117898
+117899
+
+# <rdar://problem/8653152> llc rejects -emit-llvm output
+118726
+
+# <rdar://problem/8662359> [regression] major (90% user time) performance regression on -O0 -g on automative-susan
+119382
+119400

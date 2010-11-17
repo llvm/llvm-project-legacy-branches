@@ -1,0 +1,292 @@
+# Reversion of r117678, which broke various projects.
+117829
+
+# <rdar://problem/8614832> Massive log spam of entries like "0.0579 (100.0%"
+117910
+
+# <rdar://problem/8614470> linker crash during project build
+117887
+
+# <rdar://problem/8613075> clang is leaking a ton of small allocations
+117912
+
+# <rdar://problem/8580129> crash at clang::SourceManager::isBeforeInTranslationUnit const + 509
+117946
+
+# <rdar://problem/8084251> crash at clang::Sema::MaybeBindToTemporary
+117954
+
+# <rdar://problem/8501494> crash at clang::TextDiagnosticPrinter::HandleDiagnostic + 153
+117990
+
+# <rdar://problem/8622014> private extern visibility is wrong
+118034
+
+# <rdar://problem/8621026> stop erroring on -fasm-blocks
+118037
+
+# <rdar://problem/8622647> visibility of static locals is wrong
+118065
+
+# <rdar://problem/7824372> [sema] [diags] poor recovery with missing @end
+117991
+
+# <rdar://problem/8435969> #pragma clang diagnostic ... in prefix header has no effect when prefix header is precompiled
+118303
+
+# <rdar://problem/8437790> clang issues unfixable double warnings for static locals
+118500
+
+# <rdar://problem/8494798> Synthesized ivars aren't added as completions
+118052
+
+# <rdar://problem/8510737> Emit RTTI info for nullptr_t
+118236
+118238
+
+# <rdar://problem/8540491> [g++.dg/ext/asm6.C] Assertion failed: (ExprTemporaries.empty() && "Leftover temporaries in function")
+117961
+118001
+
+# <rdar://problem/8583824> Implement -fworking-directory=path
+118203
+
+# <rdar://problem/8595462> problems coloring functions inside an @implementation (clang_annotateTokens())
+118109
+118111
+
+# <rdar://problem/8595749> clang_getCursor() returns the wrong def when there's more than one in a statement
+117973
+
+# <rdar://problem/8600419> crash in clang::ASTContext::getASTRecordLayout()
+117942
+
+# <rdar://problem/8605692> Documentation: allow deprecating enumerators
+118435
+
+# <rdar://problem/8608173> Execute clang_parseTranslationUnit() on a separate thread with a larger stack
+118223
+118224
+118273
+118274
+118278
+
+# <rdar://problem/8611113> [PR8507] crash when using double pointer-to-member in if clause
+117850
+
+# <rdar://problem/8611125> [PR8505] compiler crash with forward declarations and templates
+118235
+
+# <rdar://problem/8617189> invalid SourceRange object
+118132
+118297
+
+# <rdar://problem/8618574> [PR8462] Argument deduction failure in function templates
+117983
+
+# <rdar://problem/8620459> [PR7419] Fail to recognize that return types match through two typedefs
+118211
+
+# <rdar://problem/8620467> [PR7425] function arguments which are const references fail to compile when passed an instantiation of a template function
+118407
+
+# <rdar://problem/8620492> [PR7611] Not emitting covariant thunk
+118466
+
+# <rdar://problem/8620510> [PR7666] Variable size array function parameters cause clang to segfault
+118019
+
+# <rdar://problem/8620524> [PR7851] clang++ can't compile CryptoPP 5.6.0
+118066
+
+# <rdar://problem/8620546> [PR7896] c++ crash with overloading and using decl in class template
+118239
+
+# <rdar://problem/8620582> [PR7905] clang c++ crash with compound literal with array with templated element type
+118428
+
+# <rdar://problem/8620692> [PR8013] clang c++ calling address of overload set fails
+118508
+
+# <rdar://problem/8620772> [PR8182] wrong constructor choice (templates)
+118418
+
+# <rdar://problem/8620775> [PR8234] Assertion when instantiating template
+118314
+
+# <rdar://problem/8620812> [PR8477] "overloaded operator '[]' is ambiguous" error, probably false
+118178
+
+# <rdar://problem/8621849> build failure
+118366
+
+# <rdar://problem/8627225> No completion for class method declared in class extension
+118443
+
+# <rdar://problem/8635664> crash in clang at clang: clang::Sema::InstantiateMemInitializers + 729
+118306
+118313
+
+# <rdar://problem/8639728> IdentifierIterator object always leaked (leak during code completion)
+118371
+
+# <rdar://problem/8639730> StringSet<> possibly leaking in CaclulateHiddenNames (leak during code completion)
+118372
+
+# <rdar://problem/8640439> [PR8230] invalid cast to reference to function is allowed
+118400
+
+# <rdar://problem/8642434> AttrNonNullChecker crashes when reasoning about transparent unions
+118472
+118473
+
+# <rdar://problem/8644056> [libc++ support] Add __nullptr keyword (available in all C++ modes)
+118482
+
+# <rdar://problem/8644873> [PR8567] Incorrect code for VLA pointers
+118468
+118483
+
+# <rdar://problem/8645186> Integrate fix for PR8001: not seeing declaration of constructors for previously declared template class
+118454
+
+# <rdar://problem/8645331> [PR8025] clang c++ diagnostic for bitfield with non-integral type missing source location
+118481
+
+# <rdar://problem/8645380> Out-of-line declarations/definitions show up in code-completion results
+118484
+
+# <rdar://problem/8645527> Add clang_getSpellingLocation() API
+118495
+
+# Patch from dchisnall (for clean merges).
+118170
+
+# <rdar://problem/8621295> disable Clang 2.0 ObjC extensions (-fnon-fragile-abi2)
+118786
+
+# <rdar://problem/6839683> analyzer treats load from non-null, harded coded address as an 'undefined value'
+118852
+
+# <rdar://problem/8592657> [qoi] Clang should do something with -Oz
+119003
+
+# <rdar://problem/8608293> cant use a.b.c syntax inside a for (x in y) loop in a block
+118425
+
+# <rdar://problem/8608902> Cannot use static type enforcement in a block type definition
+118205
+118208
+118286
+
+# <rdar://problem/8620540> [PR7863] Function template and ?: causes segfault
+118631
+
+# <rdar://problem/8620732> [PR8130] Clang fails to partially order overloaded operators correctly
+118944
+
+# <rdar://problem/8629498> crash in clang::TextDiagnosticPrinter::HandleDiagnostic + 1847
+118751
+
+# <rdar://problem/8648004> [regression] Revert erroneous fix for PR8013
+118620
+
+# <rdar://problem/8648607> [PR8380] Assertion `StartColNo <= EndColNo && "Invalid range!"' on invalid code
+118625
+
+# <rdar://problem/8649963> UsingDecl leaks memory
+118674
+
+# <rdar://problem/8650003> AttributeLists still leaked in random places in Parser and Sema
+118675
+
+# <rdar://problem/8650865> CursorVisitor blowing out the stack with deeply nested member expressions (llvm::StringSwitch)
+118782
+118783
+118785
+#correct to merge???
+
+# <rdar://problem/8651930> [regression][Boost] spurious error "class template partial specialization cannot be redeclared"
+118704
+
+# <rdar://problem/8653761> use of invalid presumed location
+118885
+
+# <rdar://problem/8656118> crash in clang::CodeGen::CGDebugInfo::getOrCreateFile + 344
+118834
+
+# <rdar://problem/8656560> DeclarationNameLocInfo fails to zero out all fields, leading to use of uninitialize SourceLocation
+118881
+
+# <rdar://problem/8659019> Nested CXXOperatorCallExprs can blow the stack in CursorVisitor
+118853
+
+# <rdar://problem/8660822> [PR8342] Direct-initialization of class object in second step of copy-initialization fails for explicit copy-constructor.
+118880
+
+# <rdar://problem/8663596> False idempotent operation warning because the worklist is not empty (and can influence the result)
+118982
+118983
+118984
+
+# <rdar://problem/8665922> [PR8425] clang rejects valid implicit conversion sequence in templates
+119005
+
+# <rdar://problem/8667976> Fix for C++ DR532
+119145
+
+# <rdar://problem/8653152> llc rejects -emit-llvm output
+118727
+
+# <rdar://problem/8289205> Stack overflow in CursorVisitor due to deeply nested BinaryOperator expressions
+118444
+
+# <rdar://problem/8617301> Deprecated ObjC properties don't generate warnings if [] syntax is used
+118676
+
+# <rdar://problem/8663544> analyzer crashes when casting the result of a function via a function pointer
+119177
+
+# <rdar://problem/8632525> Incompatible redeclaration of library function 'objc_msgSend'
+118634
+118635
+
+# <rdar://problem/8620705> [PR8022] clang c++ assertion "Invalid Scope." on invalid template using directive
+118669
+
+# <rdar://problem/8620586> [PR7915] clang c++ crash declaring friend with same name as containing class
+118670
+
+# <rdar://problem/8283484> Bad error message for missing @end before implementation
+118629
+
+xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling method on const object
+119336
+
+# <rdar://problem/8563176> Incomplete Code Completion / Syntax Highlighting
+119285
+
+# <rdar://problem/8643016> Repeated USR generation results in many small mallocs
+119319
+119322
+119337
+119338
+
+# <rdar://problem/8658491> global completion results shouldn't be cached before being requested
+119285
+
+# <rdar://problem/8662359> [regression] major (90% user time) performance regression on -O0 -g on automative-susan
+119284
+
+# <rdar://problem/8669977> [PR8619] [clang cfg] Assertion failed: (ConfluenceBlock->pred_size() == 2), function VisitConditionalOperator, file /Volumes/Data/g/clang/lib/Analysis/CFG.cpp, line 1207.
+119284
+
+# <rdar://problem/8670542> ASTUnit::getMainBufferWithPrecompiledPreamble() leaking MemoryBuffers
+119379
+
+# <rdar://problem/8673180> [PR8625] Incorrect warning with -Wformat=2
+119339
+119340
+
+# <rdar://problem/8674865> [PR8623] destructor not called on temporary in ternary
+119408
