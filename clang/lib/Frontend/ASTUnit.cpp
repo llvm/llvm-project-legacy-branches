@@ -840,7 +840,6 @@ error:
   if (OverrideMainBuffer) {
     PreprocessorOpts.eraseRemappedFile(
                                PreprocessorOpts.remapped_file_buffer_end() - 1);
-    PreprocessorOpts.DisablePCHValidation = true;
     PreprocessorOpts.ImplicitPCHInclude = PriorImplicitPCHInclude;
     delete OverrideMainBuffer;
     SavedMainFileBuffer = 0;
@@ -963,7 +962,6 @@ ASTUnit::ComputePreamble(CompilerInvocation &Invocation,
 }
 
 static llvm::MemoryBuffer *CreatePaddedMainFileBuffer(llvm::MemoryBuffer *Old,
-                                                      bool DeleteOld,
                                                       unsigned NewSize,
                                                       llvm::StringRef NewName) {
   llvm::MemoryBuffer *Result
@@ -973,9 +971,6 @@ static llvm::MemoryBuffer *CreatePaddedMainFileBuffer(llvm::MemoryBuffer *Old,
   memset(const_cast<char*>(Result->getBufferStart()) + Old->getBufferSize(), 
          ' ', NewSize - Old->getBufferSize() - 1);
   const_cast<char*>(Result->getBufferEnd())[-1] = '\n';  
-  
-  if (DeleteOld)
-    delete Old;
   
   return Result;
 }
@@ -1012,6 +1007,11 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   std::pair<llvm::MemoryBuffer *, std::pair<unsigned, bool> > NewPreamble 
     = ComputePreamble(PreambleInvocation, MaxLines, CreatedPreambleBuffer);
 
+  // If ComputePreamble() Take ownership of the
+  llvm::OwningPtr<llvm::MemoryBuffer> OwnedPreambleBuffer;
+  if (CreatedPreambleBuffer)
+    OwnedPreambleBuffer.reset(NewPreamble.first);
+
   if (!NewPreamble.second.first) {
     // We couldn't find a preamble in the main source. Clear out the current
     // preamble, if we have one. It's obviously no good any more.
@@ -1020,8 +1020,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
       llvm::sys::Path(PreambleFile).eraseFromDisk();
       PreambleFile.clear();
     }
-    if (CreatedPreambleBuffer)
-      delete NewPreamble.first;
 
     // The next time we actually see a preamble, precompile it.
     PreambleRebuildCounter = 1;
@@ -1118,7 +1116,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
         // Create a version of the main file buffer that is padded to
         // buffer size we reserved when creating the preamble.
         return CreatePaddedMainFileBuffer(NewPreamble.first, 
-                                          CreatedPreambleBuffer,
                                           PreambleReservedSize,
                                           FrontendOpts.Inputs[0].second);
       }
@@ -1214,8 +1211,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   if (!Clang.hasTarget()) {
     llvm::sys::Path(FrontendOpts.OutputFile).eraseFromDisk();
     Preamble.clear();
-    if (CreatedPreambleBuffer)
-      delete NewPreamble.first;
     PreambleRebuildCounter = DefaultPreambleRebuildInterval;
     PreprocessorOpts.eraseRemappedFile(
                                PreprocessorOpts.remapped_file_buffer_end() - 1);
@@ -1259,8 +1254,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
     Clang.takeInvocation();
     llvm::sys::Path(FrontendOpts.OutputFile).eraseFromDisk();
     Preamble.clear();
-    if (CreatedPreambleBuffer)
-      delete NewPreamble.first;
     PreambleRebuildCounter = DefaultPreambleRebuildInterval;
     PreprocessorOpts.eraseRemappedFile(
                                PreprocessorOpts.remapped_file_buffer_end() - 1);
@@ -1277,8 +1270,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
     // FIXME: Should we leave a note for ourselves to try again?
     llvm::sys::Path(FrontendOpts.OutputFile).eraseFromDisk();
     Preamble.clear();
-    if (CreatedPreambleBuffer)
-      delete NewPreamble.first;
     TopLevelDeclsInPreamble.clear();
     PreambleRebuildCounter = DefaultPreambleRebuildInterval;
     PreprocessorOpts.eraseRemappedFile(
@@ -1313,7 +1304,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   PreprocessorOpts.eraseRemappedFile(
                                PreprocessorOpts.remapped_file_buffer_end() - 1);
   return CreatePaddedMainFileBuffer(NewPreamble.first, 
-                                    CreatedPreambleBuffer,
                                     PreambleReservedSize,
                                     FrontendOpts.Inputs[0].second);
 }
