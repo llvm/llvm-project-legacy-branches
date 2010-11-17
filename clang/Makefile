@@ -67,13 +67,15 @@ configure:
 	"$(CMAKE)" -E make_directory "$(OBJROOT)"
 	cd "$(OBJROOT)" && \
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
-	           -DLLVM_TARGETS_TO_BUILD:=X86 \
+	           "-DLLVM_TARGETS_TO_BUILD:=X86;ARM" \
 	           "-DLLVM_USE_CRT_RELEASE:=$(MSVC_CRT)" \
 	           "-DLLVM_USE_CRT_MINSIZEREL:=$(MSVC_CRT)" \
 	           "-DLLVM_USE_CRT_RELWITHDEBINFO:=$(MSVC_CRT)" \
 	           "-DCMAKE_CXX_STANDARD_LIBRARIES:STRING=$(CXXLIBS)" \
 	           "-DLLVM_INCLUDE_EXAMPLES:=OFF" \
 	           "-DLLVM_INCLUDE_TESTS:=OFF" \
+	           "-DLLVM_BUILD_EXAMPLES:=OFF" \
+	           "-DLLVM_BUILD_TESTS:=OFF" \
 	           -G "Visual Studio 10" \
 	           "$(SRCROOT)\src"
 
@@ -93,6 +95,11 @@ update-sources:
 	svn rm -m 'Update.' $(SVN_CLANG)/src
 	svn cp -m 'Update.' $(SVN_BASE)/llvm/trunk@$(REVISION) $(SVN_CLANG)/src
 	svn cp -m 'Update.' $(SVN_BASE)/cfe/trunk@$(REVISION) $(SVN_CLANG)/src/tools/clang
+	svn up
+
+update-sources-from-tag:
+	svn rm -m 'Update.' $(SVN_CLANG)/src
+	svn cp -m 'Update.' $(SVN_BASE)/cfe/tags/Apple/clang-$(VERSION)/src $(SVN_CLANG)/src
 	svn up
 
 tag-objc_translate:
