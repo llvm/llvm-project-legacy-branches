@@ -101,3 +101,7 @@
 
 # <rdar://problem/8653152> llc rejects -emit-llvm output
 118726
+
+# <rdar://problem/8662359> [regression] major (90% user time) performance regression on -O0 -g on automative-susan
+119382
+119400

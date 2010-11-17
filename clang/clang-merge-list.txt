@@ -259,3 +259,34 @@
 
 # <rdar://problem/8283484> Bad error message for missing @end before implementation
 118629
+
+xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling method on const object
+119336
+
+# <rdar://problem/8563176> Incomplete Code Completion / Syntax Highlighting
+119285
+
+# <rdar://problem/8643016> Repeated USR generation results in many small mallocs
+119319
+119322
+119337
+119338
+
+# <rdar://problem/8658491> global completion results shouldn't be cached before being requested
+119285
+
+# <rdar://problem/8662359> [regression] major (90% user time) performance regression on -O0 -g on automative-susan
+119284
+
+# <rdar://problem/8669977> [PR8619] [clang cfg] Assertion failed: (ConfluenceBlock->pred_size() == 2), function VisitConditionalOperator, file /Volumes/Data/g/clang/lib/Analysis/CFG.cpp, line 1207.
+119284
+
+# <rdar://problem/8670542> ASTUnit::getMainBufferWithPrecompiledPreamble() leaking MemoryBuffers
+119379
+
+# <rdar://problem/8673180> [PR8625] Incorrect warning with -Wformat=2
+119339
+119340
+
+# <rdar://problem/8674865> [PR8623] destructor not called on temporary in ternary
+119408
