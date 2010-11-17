@@ -106,8 +106,8 @@ tag-objc_translate:
 	svn cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/objc_translate-$(VERSION)
 
 retag-objc_translate:
-	svn rm -m 'Retag.' $(SVN_TAGS)/objc_translate-$(VERSION) && \
-	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/objc_translate-$(VERSION); \
+	svn rm -m 'Retag.' $(SVN_TAGS)/objc_translate-$(VERSION)
+	svn cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/objc_translate-$(VERSION)
 
 ###
 # Debugging
