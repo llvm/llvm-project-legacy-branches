@@ -136,7 +136,7 @@ namespace {
   
 class VisitorJob {
 public:
-  enum Kind { StmtVisitKind, MemberExprPartsKind };
+  enum Kind { DeclVisitKind, StmtVisitKind, MemberExprPartsKind };
 protected:
   void *data;
   CXCursor parent;
@@ -158,9 +158,9 @@ public:\
   DATA *get() const { return static_cast<DATA*>(data); }\
 };
 
+DEF_JOB(DeclVisit, Decl, DeclVisitKind)
 DEF_JOB(StmtVisit, Stmt, StmtVisitKind)
 DEF_JOB(MemberExprParts, MemberExpr, MemberExprPartsKind)
-  
 #undef DEF_JOB
 
 
@@ -337,8 +337,6 @@ public:
   bool VisitDeclStmt(DeclStmt *S);
   bool VisitGotoStmt(GotoStmt *S);
   bool VisitIfStmt(IfStmt *S);
-  bool VisitSwitchStmt(SwitchStmt *S);
-  bool VisitCaseStmt(CaseStmt *S);
   bool VisitWhileStmt(WhileStmt *S);
   bool VisitForStmt(ForStmt *S);
 
@@ -376,6 +374,7 @@ bool Visit##NAME(NAME *S) { return VisitDataRecursive(S); }
   DATA_RECURSIVE_VISIT(MemberExpr)
   DATA_RECURSIVE_VISIT(CXXMemberCallExpr)
   DATA_RECURSIVE_VISIT(CXXOperatorCallExpr)
+  DATA_RECURSIVE_VISIT(SwitchStmt)
   
   // Data-recursive visitor functions.
   bool IsInRegionOfInterest(CXCursor C);
@@ -1464,52 +1463,6 @@ bool CursorVisitor::VisitStmt(Stmt *S) {
   return false;
 }
 
-bool CursorVisitor::VisitCaseStmt(CaseStmt *S) {
-  // Specially handle CaseStmts because they can be nested, e.g.:
-  //
-  //    case 1:
-  //    case 2:
-  //
-  // In this case the second CaseStmt is the child of the first.  Walking
-  // these recursively can blow out the stack.
-  CXCursor Cursor = MakeCXCursor(S, StmtParent, TU);
-  while (true) {
-    // Set the Parent field to Cursor, then back to its old value once we're
-    //   done.
-    SetParentRAII SetParent(Parent, StmtParent, Cursor);
-
-    if (Stmt *LHS = S->getLHS())
-      if (Visit(MakeCXCursor(LHS, StmtParent, TU)))
-        return true;
-    if (Stmt *RHS = S->getRHS())
-      if (Visit(MakeCXCursor(RHS, StmtParent, TU)))
-        return true;
-    if (Stmt *SubStmt = S->getSubStmt()) {
-      if (!isa<CaseStmt>(SubStmt))
-        return Visit(MakeCXCursor(SubStmt, StmtParent, TU));
-
-      // Specially handle 'CaseStmt' so that we don't blow out the stack.
-      CaseStmt *CS = cast<CaseStmt>(SubStmt);
-      Cursor = MakeCXCursor(CS, StmtParent, TU);
-      if (RegionOfInterest.isValid()) {
-        SourceRange Range = CS->getSourceRange();
-        if (Range.isInvalid() || CompareRegionOfInterest(Range))
-          return false;
-      }
-
-      switch (Visitor(Cursor, Parent, ClientData)) {
-        case CXChildVisit_Break: return true;
-        case CXChildVisit_Continue: return false;
-        case CXChildVisit_Recurse:
-          // Perform tail-recursion manually.
-          S = CS;
-          continue;
-      }
-    }
-    return false;
-  }
-}
-
 bool CursorVisitor::VisitDeclStmt(DeclStmt *S) {
   bool isFirst = true;
   for (DeclStmt::decl_iterator D = S->decl_begin(), DEnd = S->decl_end();
@@ -1537,20 +1490,6 @@ bool CursorVisitor::VisitIfStmt(IfStmt *S) {
   if (S->getThen() && Visit(MakeCXCursor(S->getThen(), StmtParent, TU)))
     return true;
   if (S->getElse() && Visit(MakeCXCursor(S->getElse(), StmtParent, TU)))
-    return true;
-
-  return false;
-}
-
-bool CursorVisitor::VisitSwitchStmt(SwitchStmt *S) {
-  if (VarDecl *Var = S->getConditionVariable()) {
-    if (Visit(MakeCXCursor(Var, TU)))
-      return true;
-  }
-
-  if (S->getCond() && Visit(MakeCXCursor(S->getCond(), StmtParent, TU)))
-    return true;
-  if (S->getBody() && Visit(MakeCXCursor(S->getBody(), StmtParent, TU)))
     return true;
 
   return false;
@@ -1976,9 +1915,17 @@ void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
       VisitorWorkList::iterator I = WL.begin() + size, E = WL.end();
       std::reverse(I, E);
       break;
-    }      
-    case Stmt::ParenExprClass: {
-      WL.push_back(StmtVisit(cast<ParenExpr>(S)->getSubExpr(), C));
+    }
+    case Stmt::CXXOperatorCallExprClass: {
+      CXXOperatorCallExpr *CE = cast<CXXOperatorCallExpr>(S);
+      // Note that we enqueue things in reverse order so that
+      // they are visited correctly by the DFS.
+
+      for (unsigned I = 1, N = CE->getNumArgs(); I != N; ++I)
+        WL.push_back(StmtVisit(CE->getArg(N-I), C));
+
+      WL.push_back(StmtVisit(CE->getCallee(), C));
+      WL.push_back(StmtVisit(CE->getArg(0), C));
       break;
     }
     case Stmt::BinaryOperatorClass: {
@@ -1993,16 +1940,18 @@ void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
       WL.push_back(StmtVisit(M->getBase(), C));
       break;
     }
-    case Stmt::CXXOperatorCallExprClass: {
-      CXXOperatorCallExpr *CE = cast<CXXOperatorCallExpr>(S);
-      // Note that we enqueue things in reverse order so that
-      // they are visited correctly by the DFS.
-
-      for (unsigned I = 1, N = CE->getNumArgs(); I != N; ++I)
-        WL.push_back(StmtVisit(CE->getArg(N-I), C));
-
-      WL.push_back(StmtVisit(CE->getCallee(), C));
-      WL.push_back(StmtVisit(CE->getArg(0), C));
+    case Stmt::ParenExprClass: {
+      WL.push_back(StmtVisit(cast<ParenExpr>(S)->getSubExpr(), C));
+      break;
+    }
+    case Stmt::SwitchStmtClass: {
+      SwitchStmt *SS = cast<SwitchStmt>(S);
+      if (Stmt *Body = SS->getBody())
+        WL.push_back(StmtVisit(Body, C));
+      if (Stmt *Cond = SS->getCond())
+        WL.push_back(StmtVisit(Cond, C));
+      if (VarDecl *Var = SS->getConditionVariable())
+        WL.push_back(DeclVisit(Var, C));
       break;
     }
   }
@@ -2026,12 +1975,23 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
     SetParentRAII SetParent(Parent, StmtParent, LI.getParent());
   
     switch (LI.getKind()) {
+      case VisitorJob::DeclVisitKind: {
+        Decl *D = cast<DeclVisit>(LI).get();
+        if (!D)
+          continue;
+
+        // For now, perform default visitation for Decls.
+        if (Visit(MakeCXCursor(D, TU)))
+            return true;
+
+        continue;
+      }
       case VisitorJob::StmtVisitKind: {
-        // Update the current cursor.
         Stmt *S = cast<StmtVisit>(LI).get();
         if (!S)
           continue;
 
+        // Update the current cursor.
         CXCursor Cursor = MakeCXCursor(S, StmtParent, TU);
         
         switch (S->getStmtClass()) {
@@ -2041,12 +2001,17 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
               return true;
             continue;
           }
+          case Stmt::BinaryOperatorClass:
           case Stmt::CallExprClass:
+          case Stmt::CaseStmtClass:
+          case Stmt::CompoundStmtClass:
           case Stmt::CXXMemberCallExprClass:
           case Stmt::CXXOperatorCallExprClass:
-          case Stmt::ParenExprClass:
+          case Stmt::DefaultStmtClass:
           case Stmt::MemberExprClass:
-          case Stmt::BinaryOperatorClass: {
+          case Stmt::ParenExprClass:
+          case Stmt::SwitchStmtClass:
+          {
             if (!IsInRegionOfInterest(Cursor))
               continue;
             switch (Visitor(Cursor, Parent, ClientData)) {
