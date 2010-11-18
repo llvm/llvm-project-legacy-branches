@@ -136,12 +136,15 @@ namespace {
   
 class VisitorJob {
 public:
-  enum Kind { DeclVisitKind, StmtVisitKind, MemberExprPartsKind };
+  enum Kind { DeclVisitKind, StmtVisitKind, MemberExprPartsKind,
+              TypeLocVisitKind };
 protected:
-  void *data;
+  void *dataA;
+  void *dataB;
   CXCursor parent;
   Kind K;
-  VisitorJob(void *d, CXCursor C, Kind k) : data(d), parent(C), K(k) {}
+  VisitorJob(CXCursor C, Kind k, void *d1, void *d2 = 0)
+    : dataA(d1), dataB(d2), parent(C), K(k) {}
 public:
   Kind getKind() const { return K; }
   const CXCursor &getParent() const { return parent; }
@@ -153,15 +156,31 @@ typedef llvm::SmallVector<VisitorJob, 10> VisitorWorkList;
 #define DEF_JOB(NAME, DATA, KIND)\
 class NAME : public VisitorJob {\
 public:\
-  NAME(DATA *d, CXCursor parent) : VisitorJob(d, parent, VisitorJob::KIND) {}\
+  NAME(DATA *d, CXCursor parent) : VisitorJob(parent, VisitorJob::KIND, d) {} \
   static bool classof(const VisitorJob *VJ) { return VJ->getKind() == KIND; }\
-  DATA *get() const { return static_cast<DATA*>(data); }\
+  DATA *get() const { return static_cast<DATA*>(dataA); }\
 };
 
 DEF_JOB(DeclVisit, Decl, DeclVisitKind)
 DEF_JOB(StmtVisit, Stmt, StmtVisitKind)
 DEF_JOB(MemberExprParts, MemberExpr, MemberExprPartsKind)
 #undef DEF_JOB
+
+class TypeLocVisit : public VisitorJob {
+public:
+  TypeLocVisit(TypeLoc tl, CXCursor parent) :
+    VisitorJob(parent, VisitorJob::TypeLocVisitKind,
+               tl.getType().getAsOpaquePtr(), tl.getOpaqueData()) {}
+
+  static bool classof(const VisitorJob *VJ) {
+    return VJ->getKind() == TypeLocVisitKind;
+  }
+
+  TypeLoc get() { 
+    QualType T = QualType::getFromOpaquePtr(dataA);
+    return TypeLoc(T, dataB);
+  }
+};
 
 static inline void WLAddStmt(VisitorWorkList &WL, CXCursor Parent, Stmt *S) {
   if (S)
@@ -170,6 +189,11 @@ static inline void WLAddStmt(VisitorWorkList &WL, CXCursor Parent, Stmt *S) {
 static inline void WLAddDecl(VisitorWorkList &WL, CXCursor Parent, Decl *D) {
   if (D)
     WL.push_back(DeclVisit(D, Parent));
+}
+static inline void WLAddTypeLoc(VisitorWorkList &WL, CXCursor Parent,
+                                TypeSourceInfo *TI) {
+  if (TI)
+    WL.push_back(TypeLocVisit(TI->getTypeLoc(), Parent));
 }
 
 // Cursor visitor.
@@ -348,7 +372,6 @@ public:
   // Expression visitors
   bool VisitDeclRefExpr(DeclRefExpr *E);
   bool VisitBlockExpr(BlockExpr *B);
-  bool VisitCompoundLiteralExpr(CompoundLiteralExpr *E);
   bool VisitExplicitCastExpr(ExplicitCastExpr *E);
   bool VisitObjCMessageExpr(ObjCMessageExpr *E);
   bool VisitObjCEncodeExpr(ObjCEncodeExpr *E);
@@ -375,6 +398,7 @@ public:
 #define DATA_RECURSIVE_VISIT(NAME)\
 bool Visit##NAME(NAME *S) { return VisitDataRecursive(S); }
   DATA_RECURSIVE_VISIT(BinaryOperator)
+  DATA_RECURSIVE_VISIT(CompoundLiteralExpr)
   DATA_RECURSIVE_VISIT(CXXMemberCallExpr)
   DATA_RECURSIVE_VISIT(CXXOperatorCallExpr)
   DATA_RECURSIVE_VISIT(DoStmt)
@@ -1578,14 +1602,6 @@ bool CursorVisitor::VisitExplicitCastExpr(ExplicitCastExpr *E) {
   return VisitCastExpr(E);
 }
 
-bool CursorVisitor::VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
-  if (TypeSourceInfo *TSInfo = E->getTypeSourceInfo())
-    if (Visit(TSInfo->getTypeLoc()))
-      return true;
-
-  return VisitExpr(E);
-}
-
 bool CursorVisitor::VisitAddrLabelExpr(AddrLabelExpr *E) {
   return Visit(MakeCursorLabelRef(E->getLabel(), E->getLabelLoc(), TU));
 }
@@ -1868,6 +1884,12 @@ void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
     default:
       EnqueueChildren(WL, C, S);
       break;
+    case Stmt::CompoundLiteralExprClass: {
+      CompoundLiteralExpr *CL = cast<CompoundLiteralExpr>(S);
+      EnqueueChildren(WL, C, CL);
+      WLAddTypeLoc(WL, C, CL->getTypeSourceInfo());
+      break;
+    }
     case Stmt::CXXOperatorCallExprClass: {
       CXXOperatorCallExpr *CE = cast<CXXOperatorCallExpr>(S);
       // Note that we enqueue things in reverse order so that
@@ -1966,6 +1988,12 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
 
         continue;
       }
+      case VisitorJob::TypeLocVisitKind: {
+        // Perform default visitation for TypeLocs.
+        if (Visit(cast<TypeLocVisit>(LI).get()))
+          return true;
+        continue;
+      }
       case VisitorJob::StmtVisitKind: {
         Stmt *S = cast<StmtVisit>(LI).get();
         if (!S)
@@ -1984,6 +2012,7 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
           case Stmt::BinaryOperatorClass:
           case Stmt::CallExprClass:
           case Stmt::CaseStmtClass:
+          case Stmt::CompoundLiteralExprClass:
           case Stmt::CompoundStmtClass:
           case Stmt::CXXMemberCallExprClass:
           case Stmt::CXXOperatorCallExprClass:
