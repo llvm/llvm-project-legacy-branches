@@ -3782,7 +3782,8 @@ public:
                               SourceLocation PropertyLoc,
                               bool ImplKind,Decl *ClassImplDecl,
                               IdentifierInfo *PropertyId,
-                              IdentifierInfo *PropertyIvar);
+                              IdentifierInfo *PropertyIvar,
+                              SourceLocation PropertyIvarLoc);
 
   struct ObjCArgInfo {
     IdentifierInfo *Name;
