@@ -90,6 +90,11 @@ namespace {
 /// preamble.
 const unsigned DefaultPreambleRebuildInterval = 5;
 
+/// \brief Tracks the number of ASTUnit objects that are currently active.
+///
+/// Used for debugging purposes only.
+static unsigned ActiveASTUnitObjects;
+
 ASTUnit::ASTUnit(bool _MainFileIsAST)
   : CaptureDiagnostics(false), MainFileIsAST(_MainFileIsAST), 
     CompleteTranslationUnit(true), WantTiming(getenv("LIBCLANG_TIMING")),
@@ -100,6 +105,10 @@ ASTUnit::ASTUnit(bool _MainFileIsAST)
     NumTopLevelDeclsAtLastCompletionCache(0),
     CacheCodeCompletionCoolDown(0),
     UnsafeToFree(false) { 
+  if (getenv("LIBCLANG_OBJTRACKING")) {
+    ++ActiveASTUnitObjects;
+    fprintf(stderr, "+++ %d translation units\n", ActiveASTUnitObjects);
+  }    
 }
 
 ASTUnit::~ASTUnit() {
@@ -126,6 +135,11 @@ ASTUnit::~ASTUnit() {
   delete PreambleBuffer;
 
   ClearCachedCompletionResults();  
+  
+  if (getenv("LIBCLANG_OBJTRACKING")) {
+    --ActiveASTUnitObjects;
+    fprintf(stderr, "--- %d translation units\n", ActiveASTUnitObjects);
+  }    
 }
 
 void ASTUnit::CleanTemporaryFiles() {
