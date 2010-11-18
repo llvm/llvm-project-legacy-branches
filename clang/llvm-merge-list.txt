@@ -105,3 +105,20 @@
 # <rdar://problem/8662359> [regression] major (90% user time) performance regression on -O0 -g on automative-susan
 119382
 119400
+
+# <rdar://problem/8673083> /tmp/cc-EaE6Vo.s:7187:unsupported relocation on symbol d18
+118888
+
+# <rdar://problem/8674684> elapsed Time regression in PostgreSQL build
+119455
+119550
+119554
+119562
+119570
+119578
+119584
+119587
+119595
+
+# <rdar://problem/8675131> PR8366: -march=native on i5 emits unaligned movaps
+119605

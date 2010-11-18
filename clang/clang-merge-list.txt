@@ -290,3 +290,56 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8674865> [PR8623] destructor not called on temporary in ternary
 119408
+
+# <rdar://problem/8595386> Issues doing syntax coloring of properties (with clang_annotateTokens())
+119409
+119447
+
+# <rdar://problem/8664972> Convert statement-visitation in CursorVisitor to being data-recursive
+118909
+118910
+118911
+118912
+118927
+118928
+118929
+118933
+118934
+118947
+118956
+118957
+118960
+118961
+118964
+118986
+118989
+118990
+119028
+119030
+119047
+119281
+119282
+119287
+119290
+119349
+119437
+119438
+119439
+119440
+119441
+119442
+119443
+119444
+119452
+119585
+119591
+119596
+
+# <rdar://problem/8674564> warnings from code completion
+119569
+
+# <rdar://problem/8678408> Jump To Definition fails for implicit member accesses
+119516
+
+# <rdar://problem/8678459> clang_getCursor() broken in the return types of functions
+119514
