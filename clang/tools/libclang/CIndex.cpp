@@ -44,9 +44,6 @@
 #include "llvm/System/Signals.h"
 #include "llvm/System/Threading.h"
 
-// Needed to define L_TMPNAM on some systems.
-#include <cstdio>
-
 using namespace clang;
 using namespace clang::cxcursor;
 using namespace clang::cxstring;
