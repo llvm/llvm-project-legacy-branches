@@ -1053,13 +1053,13 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
 
 StoredDiagnostic::StoredDiagnostic() { }
 
-StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, unsigned ID, 
+StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, 
                                    llvm::StringRef Message)
-  : Level(Level), ID(ID), Loc(), Message(Message) { }
+  : Level(Level), Loc(), Message(Message) { }
 
 StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, 
                                    const DiagnosticInfo &Info)
-  : ID(Info.getID()), Level(Level), Loc(Info.getLocation()) {
+  : Level(Level), Loc(Info.getLocation()) {
   llvm::SmallString<64> Message;
   Info.FormatDiagnostic(Message);
   this->Message.assign(Message.begin(), Message.end());
