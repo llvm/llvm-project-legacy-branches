@@ -343,3 +343,18 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8678459> clang_getCursor() broken in the return types of functions
 119514
+
+# <rdar://problem/8631263> bogus warning on ill-formed protocol-qualifer list
+119805
+
+# <rdar://problem/8686426> Need API to get a category number from CXDiagnostic
+119802
+
+# <rdar://problem/8681766> iVar getting clobbered when compile under "LLVM Compiler 2.0"
+119751
+
+# <rdar://problem/8556628> linker error passing -demangle
+119809
+
+# <rdar://problem/8686888> crash in CheckBuiltinFunctionCall
+119813

@@ -122,3 +122,6 @@
 
 # <rdar://problem/8675131> PR8366: -march=native on i5 emits unaligned movaps
 119605
+
+# <rdar://problem/8673046> support .symbol_resolver directive
+119816
