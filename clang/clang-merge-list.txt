@@ -358,3 +358,48 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8686888> crash in CheckBuiltinFunctionCall
 119813
+
+# <rdar://problem/7629420> Clang missing "error: duplicate property declaration 'foo'"
+118689
+
+# <rdar://problem/8707031> [PR8694] Sema crashes when forward enum pointer is passed as int pointer
+120345
+
+# <rdar://problem/8713442> [PR8707] Blocks cannot contain static variables when compiled with clang, works with LLVM-GCC 4.2
+120486
+
+# <rdar://problem/8691746> crash at clang: clang::CodeGen::CGDebugInfo::CreateType + 81
+120401
+
+# <rdar://problem/8689703> don't warn on -force_cpusubtype_ALL
+119803
+
+# <rdar://problem/8692502> r118203 introduced a ton of sys::Path allocations in the hot preprocessor file lookup path
+#119934
+#119995
+
+# <rdar://problem/8681958> [PR8641] Clang incorrectly warns of undefined behavior with printf specifier %#X
+119946
+
+# <rdar://problem/8673791> LLVM 1.6 backing ivar 'fix' needs to be 'unfixable'
+119543
+
+# <rdar://problem/8714395> "use of overloaded operator '<<' is ambiguous" using NSString*
+120607
+
+# <rdar://problem/8716974> [PR8479] clang evaluates visibility of default parameters at the call site instead of at parameter definition site
+120299
+120389
+
+# <rdar://problem/7581226> implement CXCursor hash function
+119876
+
+# <rdar://problem/8690481> Introduce clang_getCanonicalCursor()
+119874
+
+# <rdar://problem/8554072> Need API to look up file paths of imported files by name or import string
+120390
+120392
+120395
+120396
+120397

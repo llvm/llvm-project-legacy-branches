@@ -125,3 +125,21 @@
 
 # <rdar://problem/8673046> support .symbol_resolver directive
 119816
+
+# <rdar://problem/8692109> merge fast-isel change for t2STRHi12
+119810
+119856
+119859
+119861
+119862
+119911
+
+# <rdar://problem/7920815> Exception handling is incorrect under 32-bit
+# <rdar://problem/8687257> i386 backend reuses spill slot after setjmp
+119875
+
+# <rdar://problem/8581401> bad source location in assembler diagnostic
+119676
+
+# <rdar://problem/8716642> bogus function prologues
+118026
