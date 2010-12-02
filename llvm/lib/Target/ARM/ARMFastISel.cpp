@@ -645,8 +645,7 @@ bool ARMFastISel::ARMComputeAddress(const Value *Obj, Address &Addr) {
       break;
     }
     case Instruction::GetElementPtr: {
-      int SavedOffset = Addr.Offset;
-      unsigned SavedBase = Addr.Base.Reg;
+      Address SavedAddr = Addr;
       int TmpOffset = Addr.Offset;
 
       // Iterate through the GEP folding the constants into offsets where
@@ -687,8 +686,7 @@ bool ARMFastISel::ARMComputeAddress(const Value *Obj, Address &Addr) {
       if (ARMComputeAddress(U->getOperand(0), Addr)) return true;
 
       // We failed, restore everything and try the other options.
-      Addr.Offset = SavedOffset;
-      Addr.Base.Reg = SavedBase;
+      Addr = SavedAddr;
 
       unsupported_gep:
       break;
