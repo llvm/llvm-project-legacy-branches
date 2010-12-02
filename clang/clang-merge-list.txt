@@ -403,3 +403,6 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 120395
 120396
 120397
+
+# <rdar://problem/8722589> [regression] Silence warning about explicit conversion with incompatible Objective-C pointer types
+120744
