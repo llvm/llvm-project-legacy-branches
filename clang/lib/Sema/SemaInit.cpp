@@ -3230,6 +3230,8 @@ getAssignmentAction(const InitializedEntity &Entity) {
   switch(Entity.getKind()) {
   case InitializedEntity::EK_Variable:
   case InitializedEntity::EK_New:
+  case InitializedEntity::EK_Exception:
+  case InitializedEntity::EK_Base:
     return Sema::AA_Initializing;
 
   case InitializedEntity::EK_Parameter:
@@ -3241,11 +3243,6 @@ getAssignmentAction(const InitializedEntity &Entity) {
 
   case InitializedEntity::EK_Result:
     return Sema::AA_Returning;
-
-  case InitializedEntity::EK_Exception:
-  case InitializedEntity::EK_Base:
-    llvm_unreachable("No assignment action for C++-specific initialization");
-    break;
 
   case InitializedEntity::EK_Temporary:
     // FIXME: Can we tell apart casting vs. converting?
@@ -3865,7 +3862,8 @@ InitializationSequence::Perform(Sema &S,
       bool IgnoreBaseAccess = Kind.isCStyleOrFunctionalCast();
 
       if (S.PerformImplicitConversion(CurInitExpr, Step->Type, *Step->ICS,
-                                      Sema::AA_Converting, IgnoreBaseAccess))
+                                      getAssignmentAction(Entity),
+                                      IgnoreBaseAccess))
         return ExprError();
         
       CurInit.release();

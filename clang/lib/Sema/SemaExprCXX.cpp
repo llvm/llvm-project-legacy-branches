@@ -1730,7 +1730,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
       }    
       else
         assert(0 && "Unknown conversion function kind!");
-      // Whatch out for elipsis conversion.
+      // Watch out for elipsis conversion.
       if (!ICS.UserDefined.EllipsisConversion) {
         if (PerformImplicitConversion(From, BeforeToType, 
                                       ICS.UserDefined.Before, AA_Converting,
@@ -1909,7 +1909,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
     break;
 
   case ICK_Pointer_Conversion: {
-    if (SCS.IncompatibleObjC) {
+    if (SCS.IncompatibleObjC && Action != AA_Casting) {
       // Diagnose incompatible Objective-C conversions
       Diag(From->getSourceRange().getBegin(),
            diag::ext_typecheck_convert_incompatible_pointer)
