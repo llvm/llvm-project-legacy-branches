@@ -31,7 +31,6 @@ PCHGenerator::PCHGenerator(const Preprocessor &PP,
                            llvm::raw_ostream *OS)
   : PP(PP), isysroot(isysroot), Out(OS), SemaPtr(0),
     StatCalls(0), Stream(Buffer), Writer(Stream), Chaining(Chaining) {
-
   // Install a stat() listener to keep track of all of the stat()
   // calls.
   StatCalls = new MemorizeStatCalls;
@@ -45,6 +44,9 @@ void PCHGenerator::HandleTranslationUnit(ASTContext &Ctx) {
   if (PP.getDiagnostics().hasErrorOccurred())
     return;
 
+  // Set up the serialization listener.
+  Writer.SetSerializationListener(GetASTSerializationListener());
+  
   // Emit the PCH file
   assert(SemaPtr && "No Sema?");
   Writer.WriteAST(*SemaPtr, StatCalls, isysroot);
@@ -62,6 +64,10 @@ void PCHGenerator::HandleTranslationUnit(ASTContext &Ctx) {
 ASTMutationListener *PCHGenerator::GetASTMutationListener() {
   if (Chaining)
     return &Writer;
+  return 0;
+}
+
+ASTSerializationListener *PCHGenerator::GetASTSerializationListener() {
   return 0;
 }
 

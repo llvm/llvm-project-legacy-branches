@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Serialization/ASTWriter.h"
+#include "clang/Serialization/ASTSerializationListener.h"
 #include "ASTCommon.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/IdentifierResolver.h"
@@ -1364,33 +1365,28 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
          E != EEnd; ++E) {
       Record.clear();
 
-      if (MacroInstantiation *MI = dyn_cast<MacroInstantiation>(*E)) {
-        Record.push_back(IndexBase + NumPreprocessingRecords++);
-        AddSourceLocation(MI->getSourceRange().getBegin(), Record);
-        AddSourceLocation(MI->getSourceRange().getEnd(), Record);
-        AddIdentifierRef(MI->getName(), Record);
-        Record.push_back(getMacroDefinitionID(MI->getDefinition()));
-        Stream.EmitRecord(PP_MACRO_INSTANTIATION, Record);
-        continue;
-      }
-
       if (MacroDefinition *MD = dyn_cast<MacroDefinition>(*E)) {
         // Record this macro definition's location.
         MacroID ID = getMacroDefinitionID(MD);
-
+        
         // Don't write the macro definition if it is from another AST file.
         if (ID < FirstMacroID)
           continue;
+        
+        // Notify the serialization listener that we're serializing this entity.
+        if (SerializationListener)
+          SerializationListener->SerializedPreprocessedEntity(*E, 
+                                                      Stream.GetCurrentBitNo());
 
         unsigned Position = ID - FirstMacroID;
         if (Position != MacroDefinitionOffsets.size()) {
           if (Position > MacroDefinitionOffsets.size())
             MacroDefinitionOffsets.resize(Position + 1);
-
+          
           MacroDefinitionOffsets[Position] = Stream.GetCurrentBitNo();
         } else
           MacroDefinitionOffsets.push_back(Stream.GetCurrentBitNo());
-
+        
         Record.push_back(IndexBase + NumPreprocessingRecords++);
         Record.push_back(ID);
         AddSourceLocation(MD->getSourceRange().getBegin(), Record);
@@ -1398,6 +1394,21 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
         AddIdentifierRef(MD->getName(), Record);
         AddSourceLocation(MD->getLocation(), Record);
         Stream.EmitRecord(PP_MACRO_DEFINITION, Record);
+        continue;
+      }
+
+      // Notify the serialization listener that we're serializing this entity.
+      if (SerializationListener)
+        SerializationListener->SerializedPreprocessedEntity(*E, 
+                                                      Stream.GetCurrentBitNo());
+
+      if (MacroInstantiation *MI = dyn_cast<MacroInstantiation>(*E)) {          
+        Record.push_back(IndexBase + NumPreprocessingRecords++);
+        AddSourceLocation(MI->getSourceRange().getBegin(), Record);
+        AddSourceLocation(MI->getSourceRange().getEnd(), Record);
+        AddIdentifierRef(MI->getName(), Record);
+        Record.push_back(getMacroDefinitionID(MI->getDefinition()));
+        Stream.EmitRecord(PP_MACRO_INSTANTIATION, Record);
         continue;
       }
 
@@ -1415,6 +1426,8 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
         Stream.EmitRecordWithBlob(InclusionAbbrev, Record, Buffer);
         continue;
       }
+      
+      llvm_unreachable("Unhandled PreprocessedEntity in ASTWriter");
     }
   }
 
@@ -2237,7 +2250,8 @@ void ASTWriter::SetSelectorOffset(Selector Sel, uint32_t Offset) {
 }
 
 ASTWriter::ASTWriter(llvm::BitstreamWriter &Stream)
-  : Stream(Stream), Chain(0), FirstDeclID(1), NextDeclID(FirstDeclID),
+  : Stream(Stream), Chain(0), SerializationListener(0), 
+    FirstDeclID(1), NextDeclID(FirstDeclID),
     FirstTypeID(NUM_PREDEF_TYPE_IDS), NextTypeID(FirstTypeID),
     FirstIdentID(1), NextIdentID(FirstIdentID), FirstSelectorID(1),
     NextSelectorID(FirstSelectorID), FirstMacroID(1), NextMacroID(FirstMacroID),
@@ -3420,3 +3434,5 @@ void ASTWriter::AddedCXXTemplateSpecialization(const ClassTemplateDecl *TD,
   Record.push_back(UPD_CXX_ADDED_TEMPLATE_SPECIALIZATION);
   AddDeclRef(D, Record);
 }
+
+ASTSerializationListener::~ASTSerializationListener() { }
