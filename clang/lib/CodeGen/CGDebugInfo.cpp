@@ -1102,6 +1102,9 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCObjectType *Ty,
 llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
                                      llvm::DIFile Unit) {
   ObjCInterfaceDecl *ID = Ty->getDecl();
+  if (!ID)
+    return llvm::DIType();
+  
   unsigned Tag = llvm::dwarf::DW_TAG_structure_type;
 
   // Get overall information about the record type for the debug info.
@@ -1144,6 +1147,9 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   if (SClass) {
     llvm::DIType SClassTy =
       getOrCreateType(CGM.getContext().getObjCInterfaceType(SClass), Unit);
+    if (!SClassTy.isValid())
+      return llvm::DIType();
+    
     llvm::DIType InhTag =
       DebugFactory.CreateDerivedType(llvm::dwarf::DW_TAG_inheritance,
                                      Unit, "", Unit, 0, 0, 0,
@@ -1157,7 +1163,9 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   for (ObjCIvarDecl *Field = ID->all_declared_ivar_begin(); Field;
        Field = Field->getNextIvar(), ++FieldNo) {
     llvm::DIType FieldTy = getOrCreateType(Field->getType(), Unit);
-
+    if (!FieldTy.isValid())
+      return llvm::DIType();
+    
     llvm::StringRef FieldName = Field->getName();
 
     // Ignore unnamed fields.
