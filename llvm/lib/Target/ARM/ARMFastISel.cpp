@@ -602,7 +602,7 @@ bool ARMFastISel::isLoadTypeLegal(const Type *Ty, EVT &VT) {
   return false;
 }
 
-// Computes the Reg+Offset to get to an object.
+// Computes the address to get to an object.
 bool ARMFastISel::ARMComputeAddress(const Value *Obj, Address &Addr) {
   // Some boilerplate from the X86 FastISel.
   const User *U = NULL;
