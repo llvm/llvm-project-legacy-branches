@@ -461,6 +461,13 @@ public:
     return MainFileID;
   }
 
+  /// \brief Set the file ID for the precompiled preamble, which is also the
+  /// main file.
+  void SetPreambleFileID(FileID Preamble) {
+    assert(MainFileID.isInvalid() && "MainFileID already set!");
+    MainFileID = Preamble;
+  }
+  
   //===--------------------------------------------------------------------===//
   // Methods to create new FileID's and instantiations.
   //===--------------------------------------------------------------------===//
