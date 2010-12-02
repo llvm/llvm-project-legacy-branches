@@ -1347,10 +1347,14 @@ bool Sema::IsComplexPromotion(QualType FromType, QualType ToType) {
 /// if non-empty, will be a pointer to ToType that may or may not have
 /// the right set of qualifiers on its pointee.
 static QualType
-BuildSimilarlyQualifiedPointerType(const PointerType *FromPtr,
+BuildSimilarlyQualifiedPointerType(const Type *FromPtr,
                                    QualType ToPointee, QualType ToType,
                                    ASTContext &Context) {
-  QualType CanonFromPointee = Context.getCanonicalType(FromPtr->getPointeeType());
+  assert((FromPtr->getTypeClass() == Type::Pointer ||
+          FromPtr->getTypeClass() == Type::ObjCObjectPointer) &&
+         "Invalid similarly-qualified pointer type");
+  QualType CanonFromPointee 
+    = Context.getCanonicalType(FromPtr->getPointeeType());
   QualType CanonToPointee = Context.getCanonicalType(ToPointee);
   Qualifiers Quals = CanonFromPointee.getQualifiers();
 
@@ -1362,32 +1366,18 @@ BuildSimilarlyQualifiedPointerType(const PointerType *FromPtr,
 
     // Build a pointer to ToPointee. It has the right qualifiers
     // already.
+    if (isa<ObjCObjectPointerType>(ToType))
+      return Context.getObjCObjectPointerType(ToPointee);
     return Context.getPointerType(ToPointee);
   }
 
   // Just build a canonical type that has the right qualifiers.
-  return Context.getPointerType(
-         Context.getQualifiedType(CanonToPointee.getLocalUnqualifiedType(), 
-                                  Quals));
-}
-
-/// BuildSimilarlyQualifiedObjCObjectPointerType - In a pointer conversion from
-/// the FromType, which is an objective-c pointer, to ToType, which may or may
-/// not have the right set of qualifiers.
-static QualType
-BuildSimilarlyQualifiedObjCObjectPointerType(QualType FromType,
-                                             QualType ToType,
-                                             ASTContext &Context) {
-  QualType CanonFromType = Context.getCanonicalType(FromType);
-  QualType CanonToType = Context.getCanonicalType(ToType);
-  Qualifiers Quals = CanonFromType.getQualifiers();
-    
-  // Exact qualifier match -> return the pointer type we're converting to.
-  if (CanonToType.getLocalQualifiers() == Quals)
-    return ToType;
+  QualType QualifiedCanonToPointee
+    = Context.getQualifiedType(CanonToPointee.getLocalUnqualifiedType(), Quals);
   
-  // Just build a canonical type that has the right qualifiers.
-  return Context.getQualifiedType(CanonToType.getLocalUnqualifiedType(), Quals);
+  if (isa<ObjCObjectPointerType>(ToType))
+    return Context.getObjCObjectPointerType(QualifiedCanonToPointee);
+  return Context.getPointerType(QualifiedCanonToPointee);
 }
   
 static bool isNullPointerConstantForConversion(Expr *Expr,
@@ -1471,10 +1461,11 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
   // , including objective-c pointers.
   QualType ToPointeeType = ToTypePtr->getPointeeType();
   if (FromType->isObjCObjectPointerType() && ToPointeeType->isVoidType()) {
-    ConvertedType = BuildSimilarlyQualifiedObjCObjectPointerType(FromType,
+    ConvertedType = BuildSimilarlyQualifiedPointerType(
+                                      FromType->getAs<ObjCObjectPointerType>(),
+                                                       ToPointeeType,
                                                        ToType, Context);
     return true;
-    
   }
   const PointerType *FromTypePtr = FromType->getAs<PointerType>();
   if (!FromTypePtr)
@@ -1550,6 +1541,12 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
     FromType->getAs<ObjCObjectPointerType>();
 
   if (ToObjCPtr && FromObjCPtr) {
+    // If the pointee types are the same (ignoring qualifications),
+    // then this is not a pointer conversion.
+    if (Context.hasSameUnqualifiedType(ToObjCPtr->getPointeeType(),
+                                       FromObjCPtr->getPointeeType()))
+      return false;
+
     // Objective C++: We're able to convert between "id" or "Class" and a
     // pointer to any interface (in both directions).
     if (ToObjCPtr->isObjCBuiltinType() && FromObjCPtr->isObjCBuiltinType()) {
@@ -1573,7 +1570,9 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
           !ToObjCPtr->getPointeeType().isAtLeastAsQualifiedAs(
                                                 FromObjCPtr->getPointeeType()))
         return false;
-      ConvertedType = ToType;
+      ConvertedType = BuildSimilarlyQualifiedPointerType(FromObjCPtr, 
+                                                   ToObjCPtr->getPointeeType(),
+                                                         ToType, Context);
       return true;
     }
 
@@ -1582,7 +1581,9 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
       // interfaces, which is permitted. However, we're going to
       // complain about it.
       IncompatibleObjC = true;
-      ConvertedType = FromType;
+      ConvertedType = BuildSimilarlyQualifiedPointerType(FromObjCPtr, 
+                                                   ToObjCPtr->getPointeeType(),
+                                                         ToType, Context);
       return true;
     }
   }
@@ -1625,7 +1626,7 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
                               IncompatibleObjC)) {
     // We always complain about this conversion.
     IncompatibleObjC = true;
-    ConvertedType = ToType;
+    ConvertedType = Context.getPointerType(ConvertedType);
     return true;
   }
   // Allow conversion of pointee being objective-c pointer to another one;
@@ -1634,7 +1635,7 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
       ToPointeeType->getAs<ObjCObjectPointerType>() &&
       isObjCPointerConversion(FromPointeeType, ToPointeeType, ConvertedType,
                               IncompatibleObjC)) {
-    ConvertedType = ToType;
+    ConvertedType = Context.getPointerType(ConvertedType);
     return true;
   }
   
