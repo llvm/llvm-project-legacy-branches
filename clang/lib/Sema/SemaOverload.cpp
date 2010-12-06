@@ -1353,6 +1353,11 @@ BuildSimilarlyQualifiedPointerType(const Type *FromPtr,
   assert((FromPtr->getTypeClass() == Type::Pointer ||
           FromPtr->getTypeClass() == Type::ObjCObjectPointer) &&
          "Invalid similarly-qualified pointer type");
+  
+  /// \brief Conversions to 'id' subsume cv-qualifier conversions.
+  if (ToType->isObjCIdType() || ToType->isObjCQualifiedIdType())
+    return ToType.getUnqualifiedType();
+  
   QualType CanonFromPointee 
     = Context.getCanonicalType(FromPtr->getPointeeType());
   QualType CanonToPointee = Context.getCanonicalType(ToPointee);
