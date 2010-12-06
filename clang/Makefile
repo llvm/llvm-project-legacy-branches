@@ -12,10 +12,40 @@ ifeq ($(strip $(CMAKE)),)
 CMAKE := cmake
 endif
 
+# Default to using VS 9 2008.
+VS_VERSION := 9
+
+# Determine the build information for the VS_VERSION.
+ifeq ($(VS_VERSION),9)
+
+VSVARS := $(VS90COMNTOOLS)\vsvars32.bat
+VCBUILD := $(VS90COMNTOOLS)\..\..\VC\VCPackages\vcbuild
+GENERATOR_NAME := Visual Studio 9 2008
+JOBS := $(NUMBER_OF_PROCESSORS)
+BUILD_COMMAND := "$(VCBUILD)"
+PARALLEL_ARGS := /M$(JOBS)
+TARGET := "Release|Win32"
+PROJ_EXT := vcproj
+
+else ifeq ($(VS_VERSION),10)
+
 VSVARS := $(VS100COMNTOOLS)\vsvars32.bat
 MSBUILD := C:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\msbuild.exe
+GENERATOR_NAME := Visual Studio 10
+# FIXME: Parallel builds are borked in VS10?
 JOBS := 1
+BUILD_COMMAND := "$(MSBUILD)"
+PARALLEL_BUILD_ARGS := /maxcpucount:$(JOBS)
+TARGET := /p:Configuration=Release /p:Platform=Win32
+PROJ_EXT := vcxproj
 
+else
+
+$(error Invalid VS_VERSION: $(VS_VERSION))
+
+endif
+
+# Determine the build target.
 ifeq ($(ENABLE_TESTS),1)
 BUILD_TARGET := test
 else
@@ -42,8 +72,6 @@ MSVC_CRT := MT
 
 # Override CMake default libraries list, which is much larger than we need.
 CXXLIBS := kernel32.lib user32.lib advapi32.lib
-
-TARGET := /p:Configuration=Release /p:Platform=Win32
 
 all:: help
 
@@ -76,16 +104,16 @@ configure:
 	           "-DLLVM_INCLUDE_TESTS:=OFF" \
 	           "-DLLVM_BUILD_EXAMPLES:=OFF" \
 	           "-DLLVM_BUILD_TESTS:=OFF" \
-	           -G "Visual Studio 10" \
+	           -G "$(GENERATOR_NAME)" \
 	           "$(SRCROOT)\src"
 
 # FIXME: Only build clang.
 build: configure
-	"$(MSBUILD)" /maxcpucount:$(JOBS) "$(OBJROOT)"\LLVM.sln $(TARGET)
-	"$(MSBUILD)" /maxcpucount:$(JOBS) "$(OBJROOT)"\INSTALL.vcxproj $(TARGET)
+	$(BUILD_COMMAND) $(PARALLEL_BUILD_ARGS) "$(OBJROOT)"\LLVM.sln $(TARGET)
+	$(BUILD_COMMAND) $(PARALLEL_BUILD_ARGS) "$(OBJROOT)"\INSTALL.$(PROJ_EXT) $(TARGET)
 
 test: build
-	"$(MSBUILD)" "$(OBJROOT)"\tools\clang\test\clang-test.vcxproj $(TARGET)
+	$(BUILD_COMMAND) "$(OBJROOT)"\tools\clang\test\clang-test.$(PROJ_EXT) $(TARGET)
 
 install: $(BUILD_TARGET)
 	"$(CMAKE)" -E make_directory "$(BINDEST)"
