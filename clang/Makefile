@@ -27,7 +27,8 @@ PARALLEL_ARGS := /M$(JOBS)
 TARGET := "Release|Win32"
 PROJ_EXT := vcproj
 
-else ifeq ($(VS_VERSION),10)
+else
+ifeq ($(VS_VERSION),10)
 
 VSVARS := $(VS100COMNTOOLS)\vsvars32.bat
 MSBUILD := C:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\msbuild.exe
@@ -43,6 +44,7 @@ else
 
 $(error Invalid VS_VERSION: $(VS_VERSION))
 
+endif
 endif
 
 # Determine the build target.
