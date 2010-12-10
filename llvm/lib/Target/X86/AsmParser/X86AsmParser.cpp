@@ -752,6 +752,8 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
 
   if (getLexer().is(AsmToken::EndOfStatement))
     Parser.Lex(); // Consume the EndOfStatement
+  else if (isPrefix && getLexer().is(AsmToken::Slash))
+    Parser.Lex(); // Consume the prefix separator Slash
 
   // Hack to allow 'movq <largeimm>, <reg>' as an alias for movabsq.
   if ((Name == "movq" || Name == "mov") && Operands.size() == 3 &&
