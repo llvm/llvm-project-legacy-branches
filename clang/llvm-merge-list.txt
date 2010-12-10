@@ -143,3 +143,31 @@
 
 # <rdar://problem/8716642> bogus function prologues
 118026
+
+# <rdar://problem/8730409> dwarf writer generates invalid .byte directives (>255)
+121323
+
+# <rdar://problem/8739316> miscompilation in instcombine
+121353
+
+# <rdar://problem/8740754> libclang should not be built using flat namespaces
+121223
+121231
+
+# <rdar://problem/8741045> [Adobe] Inline assembly parser rejecting lock/ prefix
+121320
+
+# <rdar://problem/8741810> [PR8735] c++ miscompile at -O2
+120995
+
+# <rdar://problem/8742570> Merge data structure speedups in backend
+120003
+120440
+
+# <rdar://problem/8745191> clang-124 broke thread local variable support
+121330
+
+# <rdar://problem/8747933> tls dag combine broken
+121316
+121340
+121358

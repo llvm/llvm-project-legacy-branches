@@ -409,3 +409,78 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8734046> allow dropping cv-qualifiers on conversion to id
 121047
+
+# <rdar://problem/8560647> Implement support for __attribute__((common)) and __attribute__((nocommon))
+120650
+
+# <rdar://problem/8592641> Support objc_getClass as a builtin
+120437
+
+# <rdar://problem/8594790> Clang fails to call copy constructor with byref blocks
+118745
+119011
+119014
+119027
+119174
+119368
+119411
+120617
+120713
+
+# <rdar://problem/8688179> insane build time on PostgreSQL
+#121023
+#121025
+
+# <rdar://problem/8689273> Improve on flagging language-dependent builtin functions
+120429
+
+# <rdar://problem/8703553> clang frontend command failed due to signal 11: clang::CodeGen::CodeGenFunction::EmitLoadOfLValue(clang::CodeGen::LValue, clang::QualType)
+120855
+
+# <rdar://problem/8721692> Improve error: existing ivar '_bar' for a __strong property 'bar' must be garbage collectable
+120737
+
+# <rdar://problem/8724287> static analyzer failed to process function
+120795
+120796
+
+# <rdar://problem/8730409> dwarf writer generates invalid .byte directives (>255)
+121324
+
+# <rdar://problem/8735441> uniquing hash is causing way too many allocations
+121318
+121321
+121334
+121341
+
+# <rdar://problem/8736900> clang++-built kernel hangs because of c++ global variable initialization issues
+117868
+
+# <rdar://problem/8739801> ADOBE: Tentative parsing for function/variable disambiguation fails in the presence of parameter attributes
+121228
+
+# <rdar://problem/8740363> ADOBE: C++ inline function is not getting weak linkage
+121373
+
+# <rdar://problem/8740998> [Adobe] Crash in template code
+121322
+
+# <rdar://problem/8742144> Duplicate completions
+121416
+121424
+
+# <rdar://problem/8744712> VALVE: Add warning flag for "using 'typename' outside of a template" diagnostic
+121290
+
+# <rdar://problem/8744831> [verified onsite] VALVE: Driver bug: preprocessor flag -MM does not override -M
+121284
+
+# <rdar://problem/8745206> [VERIFIED onsite] VALVE: Incorrect packing of polymorphic class
+121335
+121352
+
+# <rdar://problem/8751176> Gather completions after the first reparse, not the second
+121413
+
+# <rdar://problem/8753080> Jump to Definition jumps to wrong definition
+121470
