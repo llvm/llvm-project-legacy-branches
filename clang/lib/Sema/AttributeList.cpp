@@ -118,6 +118,8 @@ AttributeList::Kind AttributeList::getKind(const IdentifierInfo *Name) {
     .Case("no_instrument_function", AT_no_instrument_function)
     .Case("thiscall", AT_thiscall)
     .Case("pascal", AT_pascal)
+    .Case("common", AT_common)
+    .Case("nocommon", AT_nocommon)
     .Case("__cdecl", AT_cdecl)
     .Case("__stdcall", AT_stdcall)
     .Case("__fastcall", AT_fastcall)
