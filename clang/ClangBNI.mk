@@ -127,6 +127,12 @@ ifeq ($(Clang_Version),)
 $(error "invalid setting for clang version: '$(Clang_Version)'")
 endif
 
+# Set RC_ProjectSourceVersion, if unspecified.
+ifeq ($(RC_ProjectSourceVersion),)
+RC_ProjectSourceVersion := 99999.99
+$(warning "setting dummy RC_ProjectSourceVersion: '$(RC_ProjectSourceVersion)'")
+endif
+
 # Select assertions mode.
 ifeq ($(Clang_Use_Assertions), 1)
 Assertions_Configure_Flag :=  --enable-assertions
@@ -294,7 +300,7 @@ all: install
 
 # Determine if we are running an SVN utility target.
 SVN_UTILITY_TARGETS := \
-	test-svn update-sources \
+	test-svn update-sources update-sources-from-tag \
 	rebranch-llvm-from-tag rebranch-clang-from-tag \
 	rebranch-clang-from-revision \
 	tag-clang retag-clang
@@ -369,6 +375,15 @@ update-sources:
 	$(SVN_COMMAND) cp -m 'Update.' $(LLVM_Upstream)@$(REVISION) $(SVN_CLANG)/src
 	$(SVN_COMMAND) cp -m 'Update.' $(Clang_Upstream)@$(REVISION) $(SVN_CLANG)/src/tools/clang
 	$(SVN_COMMAND) cp -m 'Update.' $(CompilerRT_Upstream)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
+	$(SVN_COMMAND) up
+
+update-sources-from-tag:
+	@if ! [ -n "$(VERSION)" ]; then \
+	  echo Usage: make $@ VERSION=122; \
+	  false; \
+	fi
+	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
+	$(SVN_COMMAND) cp -m 'Update from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src $(SVN_CLANG)/src
 	$(SVN_COMMAND) up
 
 rebranch-llvm-from-tag:
