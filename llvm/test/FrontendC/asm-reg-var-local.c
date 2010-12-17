@@ -10,7 +10,7 @@ int foo() {
 // CHECK: store i32 5, i32* %a, align 4
 
   asm volatile("; %0 This asm defines rsi" : "=r"(a));
-// CHECK: %asmtmp = call i32 asm sideeffect "; $0 This asm defines rsi", "={rsi}
+// CHECK: %asmtmp = call i32 asm sideeffect "; $0 This asm defines rsi", "=={rsi}
 // CHECK: store i32 %asmtmp, i32* %a
 
   a = 42;
