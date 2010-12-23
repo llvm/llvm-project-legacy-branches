@@ -358,7 +358,7 @@ public:
 
   QualType getDesugaredValueType() const {
     QualType T = getValueType();
-    return T.getTypePtr() ? T.getDesugaredType() : T;
+    return T.getTypePtrOrNull() ? T.getDesugaredType() : T;
   }
 
   QualType getDesugaredLocationType() const {

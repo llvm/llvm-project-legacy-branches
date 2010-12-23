@@ -958,7 +958,7 @@ class TemplateTypeParmDecl : public TypeDecl {
                        bool Typename, QualType Type, bool ParameterPack)
     : TypeDecl(TemplateTypeParm, DC, L, Id), Typename(Typename),
       InheritedDefault(false), ParameterPack(ParameterPack), DefaultArgument() {
-    TypeForDecl = Type.getTypePtr();
+    TypeForDecl = Type.getTypePtrOrNull();
   }
 
 public:
