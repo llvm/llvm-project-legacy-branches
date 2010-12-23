@@ -7,6 +7,10 @@
 #include <typeinfo>
 
 // CHECK-WITH-HIDDEN: _ZTSFN12_GLOBAL__N_11DEvE = internal constant
+// CHECK-WITH-HIDDEN: @_ZTSPK2T4 = weak_odr hidden constant 
+// CHECK-WITH-HIDDEN: @_ZTS2T4 = weak_odr hidden constant 
+// CHECK-WITH-HIDDEN: @_ZTI2T4 = weak_odr hidden constant 
+// CHECK-WITH-HIDDEN: @_ZTIPK2T4 = weak_odr hidden constant 
 
 // CHECK: _ZTIN12_GLOBAL__N_11DE to
 
@@ -132,4 +136,10 @@ void t3() {
   (void) typeid(T<0>);
   (void) typeid(T<1>);
   (void) typeid(T<2>);
+}
+
+// rdar://problem/8778973
+struct T4 {};
+void t4(const T4 *ptr) {
+  const void *value = &typeid(ptr);
 }
