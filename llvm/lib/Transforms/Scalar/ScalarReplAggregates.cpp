@@ -1419,8 +1419,14 @@ void SROA::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI, uint64_t Offset) {
         // pointer (bitcasted), then a store to our new alloca.
         assert(MTI->getRawDest() == Ptr && "Neither use is of pointer?");
         Value *SrcPtr = MTI->getSource();
-        SrcPtr = Builder.CreateBitCast(SrcPtr, NewAI->getType());
-        
+        const PointerType* SPTy = cast<PointerType>(SrcPtr->getType());
+        const PointerType* AIPTy = cast<PointerType>(NewAI->getType());
+        if (SPTy->getAddressSpace() != AIPTy->getAddressSpace()) {
+          AIPTy = PointerType::get(AIPTy->getElementType(),
+                                   SPTy->getAddressSpace());
+        }
+        SrcPtr = Builder.CreateBitCast(SrcPtr, AIPTy);
+
         LoadInst *SrcVal = Builder.CreateLoad(SrcPtr, "srcval");
         SrcVal->setAlignment(MTI->getAlignment());
         Builder.CreateStore(SrcVal, NewAI);
@@ -1430,7 +1436,14 @@ void SROA::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI, uint64_t Offset) {
         assert(MTI->getRawSource() == Ptr && "Neither use is of pointer?");
         LoadInst *SrcVal = Builder.CreateLoad(NewAI, "srcval");
 
-        Value *DstPtr = Builder.CreateBitCast(MTI->getDest(), NewAI->getType());
+        const PointerType* DPTy = cast<PointerType>(MTI->getDest()->getType());
+        const PointerType* AIPTy = cast<PointerType>(NewAI->getType());
+        if (DPTy->getAddressSpace() != AIPTy->getAddressSpace()) {
+          AIPTy = PointerType::get(AIPTy->getElementType(),
+                                   DPTy->getAddressSpace());
+        }
+        Value *DstPtr = Builder.CreateBitCast(MTI->getDest(), AIPTy);
+
         StoreInst *NewStore = Builder.CreateStore(SrcVal, DstPtr);
         NewStore->setAlignment(MTI->getAlignment());
       } else {
