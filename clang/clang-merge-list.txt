@@ -428,8 +428,9 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 120713
 
 # <rdar://problem/8688179> insane build time on PostgreSQL
-#121023
-#121025
+117998
+121023
+121025
 
 # <rdar://problem/8689273> Improve on flagging language-dependent builtin functions
 120429
@@ -484,3 +485,35 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8753080> Jump to Definition jumps to wrong definition
 121470
+
+# <rdar://problem/8062781> method's not stored in source order
+122347
+122348
+
+# <rdar://problem/8722072> [PR8124] copy is only important at the start of a method name
+122036
+122040
+122046
+
+# <rdar://problem/8753949> [Performance] Consider 16-byte alignment for type nodes
+121473
+121474
+
+# <rdar://problem/8754101> Eliminate branches from QualType::getTypePtr()
+121489
+120562
+121495
+
+# <rdar://problem/8778404> Blocks don't get colored if annotation starts within the block itself
+122338
+
+# <rdar://problem/8778497> visibility and templates in clang++ - again
+122136
+122137
+
+# <rdar://problem/8778973> Some symbols are "weak external" unexpectedly
+122033
+
+# <rdar://problem/8779113> no syntax coloring inside a do/while loop
+122062
+
