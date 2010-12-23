@@ -4269,6 +4269,9 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
     }
   }
 
+  if (Attr)
+    ProcessDeclAttributeList(S, Specialization, Attr);
+
   // Build the fully-sugared type for this class template
   // specialization as the user wrote in the specialization
   // itself. This means that we'll pretty-print the type retrieved
