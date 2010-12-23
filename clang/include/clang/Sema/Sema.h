@@ -4417,12 +4417,8 @@ public:
   void CodeCompleteObjCAtStatement(Scope *S);
   void CodeCompleteObjCAtExpression(Scope *S);
   void CodeCompleteObjCPropertyFlags(Scope *S, ObjCDeclSpec &ODS);
-  void CodeCompleteObjCPropertyGetter(Scope *S, Decl *ClassDecl,
-                                      Decl **Methods,
-                                      unsigned NumMethods);
-  void CodeCompleteObjCPropertySetter(Scope *S, Decl *ClassDecl,
-                                      Decl **Methods,
-                                      unsigned NumMethods);
+  void CodeCompleteObjCPropertyGetter(Scope *S, Decl *ClassDecl);
+  void CodeCompleteObjCPropertySetter(Scope *S, Decl *ClassDecl);
   void CodeCompleteObjCPassingType(Scope *S, ObjCDeclSpec &DS);
   void CodeCompleteObjCMessageReceiver(Scope *S);
   void CodeCompleteObjCSuperMessage(Scope *S, SourceLocation SuperLoc,

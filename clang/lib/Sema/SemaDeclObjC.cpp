@@ -1459,8 +1459,6 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
     Diag(L, diag::warn_missing_atend);
   }
   
-  DeclContext *DC = dyn_cast<DeclContext>(ClassDecl);
-
   // FIXME: Remove these and use the ObjCContainerDecl/DeclContext.
   llvm::DenseMap<Selector, const ObjCMethodDecl*> InsMap;
   llvm::DenseMap<Selector, const ObjCMethodDecl*> ClsMap;
@@ -1480,8 +1478,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
           Diag(Method->getLocation(), diag::err_duplicate_method_decl)
             << Method->getDeclName();
           Diag(PrevMethod->getLocation(), diag::note_previous_declaration);
+        Method->setInvalidDecl();
       } else {
-        DC->addDecl(Method);
         InsMap[Method->getSelector()] = Method;
         /// The following allows us to typecheck messages to "id".
         AddInstanceMethodToGlobalPool(Method);
@@ -1499,8 +1497,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
         Diag(Method->getLocation(), diag::err_duplicate_method_decl)
           << Method->getDeclName();
         Diag(PrevMethod->getLocation(), diag::note_previous_declaration);
+        Method->setInvalidDecl();
       } else {
-        DC->addDecl(Method);
         ClsMap[Method->getSelector()] = Method;
         /// The following allows us to typecheck messages to "Class".
         AddFactoryMethodToGlobalPool(Method);
@@ -1723,10 +1721,7 @@ Decl *Sema::ActOnMethodDeclaration(
 
   const ObjCMethodDecl *InterfaceMD = 0;
 
-  // For implementations (which can be very "coarse grain"), we add the
-  // method now. This allows the AST to implement lookup methods that work
-  // incrementally (without waiting until we parse the @end). It also allows
-  // us to flag multiple declaration errors as they occur.
+  // Add the method now.
   if (ObjCImplementationDecl *ImpDecl =
         dyn_cast<ObjCImplementationDecl>(ClassDecl)) {
     if (MethodType == tok::minus) {
@@ -1753,6 +1748,8 @@ Decl *Sema::ActOnMethodDeclaration(
     if (ObjCMethod->hasAttrs() &&
         containsInvalidMethodImplAttribute(ObjCMethod->getAttrs()))
       Diag(EndLoc, diag::warn_attribute_method_def);
+  } else {
+    cast<DeclContext>(ClassDecl)->addDecl(ObjCMethod);
   }
   if (PrevMethod) {
     // You can never have two method definitions with the same name.
