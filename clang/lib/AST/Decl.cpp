@@ -1985,6 +1985,9 @@ unsigned BlockDecl::getNumParams() const {
   return NumParams;
 }
 
+SourceRange BlockDecl::getSourceRange() const {
+  return SourceRange(getLocation(), Body? Body->getLocEnd() : getLocation());
+}
 
 //===----------------------------------------------------------------------===//
 // Other Decl Allocation/Deallocation Method Implementations
