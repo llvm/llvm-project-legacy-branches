@@ -1538,13 +1538,13 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
   if (ObjCImplementationDecl *IC=dyn_cast<ObjCImplementationDecl>(ClassDecl)) {
     IC->setAtEndRange(AtEnd);
     if (ObjCInterfaceDecl* IDecl = IC->getClassInterface()) {
-      if (LangOpts.ObjCNonFragileABI2)
+      if (LangOpts.ObjCDefaultSynthProperties &&
+          LangOpts.ObjCNonFragileABI2)
         DefaultSynthesizeProperties(S, IC, IDecl);
       ImplMethodsVsClassMethods(S, IC, IDecl);
       AtomicPropertySetterGetterRules(IC, IDecl);
   
-      if (LangOpts.ObjCDefaultSynthProperties &&
-          LangOpts.ObjCNonFragileABI2)
+      if (LangOpts.ObjCNonFragileABI2)
         while (IDecl->getSuperClass()) {
           DiagnoseDuplicateIvars(IDecl, IDecl->getSuperClass());
           IDecl = IDecl->getSuperClass();
