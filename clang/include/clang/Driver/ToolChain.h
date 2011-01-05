@@ -113,10 +113,6 @@ public:
   /// by default.
   virtual bool IsIntegratedAssemblerDefault() const { return false; }
 
-  /// IsObjCDefaultSynthPropertiesDefault - Does this tool chain enable
-  /// -fobjc-default-synthesize-properties by default.
-  virtual bool IsObjCDefaultSynthPropertiesDefault() const { return false; }
-
   /// IsObjCNonFragileABIDefault - Does this tool chain set
   /// -fobjc-nonfragile-abi by default.
   virtual bool IsObjCNonFragileABIDefault() const { return false; }
