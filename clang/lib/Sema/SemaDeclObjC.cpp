@@ -1094,7 +1094,8 @@ void Sema::ImplMethodsVsClassMethods(Scope *S, ObjCImplDecl* IMPDecl,
   // Check and see if properties declared in the interface have either 1)
   // an implementation or 2) there is a @synthesize/@dynamic implementation
   // of the property in the @implementation.
-  if (isa<ObjCInterfaceDecl>(CDecl) && !LangOpts.ObjCNonFragileABI2)
+  if (isa<ObjCInterfaceDecl>(CDecl) &&
+        !(LangOpts.ObjCDefaultSynthProperties && LangOpts.ObjCNonFragileABI2))
     DiagnoseUnimplementedProperties(S, IMPDecl, CDecl, InsMap);
       
   llvm::DenseSet<Selector> ClsMap;
@@ -1542,7 +1543,8 @@ void Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
       ImplMethodsVsClassMethods(S, IC, IDecl);
       AtomicPropertySetterGetterRules(IC, IDecl);
   
-      if (LangOpts.ObjCNonFragileABI2)
+      if (LangOpts.ObjCDefaultSynthProperties &&
+          LangOpts.ObjCNonFragileABI2)
         while (IDecl->getSuperClass()) {
           DiagnoseDuplicateIvars(IDecl, IDecl->getSuperClass());
           IDecl = IDecl->getSuperClass();
