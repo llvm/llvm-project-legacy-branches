@@ -517,3 +517,13 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 # <rdar://problem/8779113> no syntax coloring inside a do/while loop
 122062
 
+# <rdar://problem/8820901> Protect default synthesize under a LangOption flag
+122519
+122757
+122519
+
+# <rdar://problem/8818375> Remove -fnon-fragile-abi2 flag
+122831
+
+# <rdar://problem/8769582> Auto-synthesized ivars should be @private by default
+121913
