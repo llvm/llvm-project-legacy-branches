@@ -527,3 +527,6 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8769582> Auto-synthesized ivars should be @private by default
 121913
+
+# <rdar://problem/8790245> [PR8821] clang crashes when compiling webkit
+122536
