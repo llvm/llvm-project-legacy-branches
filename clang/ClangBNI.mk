@@ -243,9 +243,11 @@ SysClangMajorBuildVersion := \
 	    -e "s@\$$@-@" | \
 	cut -d- -f2 | \
 	cut -d. -f1)
+ifneq (x$(SysClangMajorBuildVersion),x)
 ifeq ($(shell test $(SysClangMajorBuildVersion) -ge 115 && echo OK),OK)
 CC := /Developer/usr/bin/clang
 CXX := /Developer/usr/bin/clang++
+endif
 endif
 
 # Set stage1 compiler.
