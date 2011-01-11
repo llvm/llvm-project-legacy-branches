@@ -56,6 +56,8 @@ STATISTIC(NumTailCalls, "Number of tail calls");
 
 static cl::opt<bool>
 DisableMMX("disable-mmx", cl::Hidden, cl::desc("Disable use of MMX"));
+static cl::opt<bool>
+DisableAVX("disable-avx", cl::Hidden, cl::desc("Disable use of AVX"));
 
 // Forward declarations.
 static SDValue getMOVL(SelectionDAG &DAG, DebugLoc dl, EVT VT, SDValue V1,
@@ -840,7 +842,7 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     setOperationAction(ISD::VSETCC,             MVT::v2i64, Custom);
   }
 
-  if (!UseSoftFloat && Subtarget->hasAVX()) {
+  if (!UseSoftFloat && !DisableAVX && Subtarget->hasAVX()) {
     addRegisterClass(MVT::v8f32, X86::VR256RegisterClass);
     addRegisterClass(MVT::v4f64, X86::VR256RegisterClass);
     addRegisterClass(MVT::v8i32, X86::VR256RegisterClass);

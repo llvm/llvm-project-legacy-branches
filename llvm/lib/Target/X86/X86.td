@@ -114,7 +114,7 @@ def : Proc<"westmere",         [FeatureSSE42,  Feature64Bit, FeatureSlowBTMem,
                                 FeatureFastUAMem, FeatureAES]>;
 // Sandy Bridge does not have FMA
 // FIXME: Wikipedia says it does... it should have AES as well.
-def : Proc<"sandybridge",     [FeatureSSE42,  FeatureAVX,   Feature64Bit]>;
+def : Proc<"sandybridge",     [FeatureSSE42,  Feature64Bit, FeatureAES]>;
 
 def : Proc<"k6",              [FeatureMMX]>;
 def : Proc<"k6-2",            [FeatureMMX,    Feature3DNow]>;
