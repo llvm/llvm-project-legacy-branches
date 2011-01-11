@@ -8846,12 +8846,17 @@ bool X86TargetLowering::isGAPlusOffset(SDNode *N,
 /// if the load addresses are consecutive, non-overlapping, and in the right
 /// order.
 static SDValue PerformShuffleCombine(SDNode *N, SelectionDAG &DAG,
-                                     const TargetLowering &TLI) {
+                                     TargetLowering::DAGCombinerInfo &DCI) {
   DebugLoc dl = N->getDebugLoc();
   EVT VT = N->getValueType(0);
   ShuffleVectorSDNode *SVN = cast<ShuffleVectorSDNode>(N);
 
   if (VT.getSizeInBits() != 128)
+    return SDValue();
+
+  // Don't create instructions with illegal types after legalize types has run.
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
+  if (!DCI.isBeforeLegalize() && !TLI.isTypeLegal(VT.getVectorElementType()))
     return SDValue();
 
   SmallVector<SDValue, 16> Elts;
@@ -9838,7 +9843,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   SelectionDAG &DAG = DCI.DAG;
   switch (N->getOpcode()) {
   default: break;
-  case ISD::VECTOR_SHUFFLE: return PerformShuffleCombine(N, DAG, *this);
+  case ISD::VECTOR_SHUFFLE: return PerformShuffleCombine(N, DAG, DCI);
   case ISD::EXTRACT_VECTOR_ELT:
                         return PerformEXTRACT_VECTOR_ELTCombine(N, DAG, *this);
   case ISD::SELECT:         return PerformSELECTCombine(N, DAG, Subtarget);
