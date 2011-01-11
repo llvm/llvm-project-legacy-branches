@@ -258,7 +258,8 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
   bool IsAMD   = !IsIntel && memcmp(text.c, "AuthenticAMD", 12) == 0;
 
   HasFMA3 = IsIntel && ((ECX >> 12) & 0x1);
-  HasAVX = ((ECX >> 28) & 0x1);
+  // FIXME: AVX codegen support is not ready.
+  //HasAVX = ((ECX >> 28) & 0x1);
   HasAES = IsIntel && ((ECX >> 25) & 0x1);
 
   if (IsIntel || IsAMD) {
