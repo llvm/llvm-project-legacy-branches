@@ -486,7 +486,7 @@ clean:
 installsrc:
 	@echo "Installing source..."
 	$(_v) $(MKDIR) "$(SRCROOT)"
-	$(_v) $(TAR) -cL --exclude src/test/ --exclude src/projects/test-suite --exclude src/projects/compiler-rt -f - .  | (cd "$(SRCROOT)"; $(TAR) xpf - )
+	$(_v) $(TAR) -cL --exclude src/test/ --exclude src/projects/test-suite -f - .  | (cd "$(SRCROOT)"; $(TAR) xpf - )
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
 	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
 
