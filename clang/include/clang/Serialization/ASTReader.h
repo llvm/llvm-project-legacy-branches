@@ -570,9 +570,6 @@ private:
 
   //@}
 
-  /// \brief Diagnostic IDs and their mappings that the user changed.
-  llvm::SmallVector<uint64_t, 8> UserDiagMappings;
-
   /// \brief The original file name that was used to build the primary AST file,
   /// which may have been modified for relocatable-pch support.
   std::string OriginalFileName;
@@ -854,8 +851,6 @@ public:
 
   /// \brief Read the preprocessed entity at the given offset.
   virtual PreprocessedEntity *ReadPreprocessedEntity(uint64_t Offset);
-
-  void ReadUserDiagnosticMappings(Diagnostic &Diag);
 
   /// \brief Returns the number of source locations found in the chain.
   unsigned getTotalNumSLocs() const {

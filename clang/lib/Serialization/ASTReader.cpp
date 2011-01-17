@@ -2134,18 +2134,6 @@ ASTReader::ReadASTBlock(PerFileData &F) {
       F.CXXBaseSpecifiersOffsets = (const uint32_t *)BlobStart;
       break;
     }
-
-    case DIAG_USER_MAPPINGS:
-      if (Record.size() % 2 != 0) {
-        Error("invalid DIAG_USER_MAPPINGS block in AST file");
-        return Failure;
-      }
-      if (UserDiagMappings.empty())
-        UserDiagMappings.swap(Record);
-      else
-        UserDiagMappings.insert(UserDiagMappings.end(),
-                                Record.begin(), Record.end());
-      break;
     }
     First = false;
   }
@@ -2486,8 +2474,6 @@ void ASTReader::InitializeContext(ASTContext &Ctx) {
 
   if (SpecialTypes[SPECIAL_TYPE_INT128_INSTALLED])
     Context->setInt128Installed();
-
-  ReadUserDiagnosticMappings(Context->getDiagnostics());
 }
 
 /// \brief Retrieve the name of the original source file name
@@ -2672,15 +2658,6 @@ PreprocessedEntity *ASTReader::ReadPreprocessedEntity(uint64_t Offset) {
   }
 
   return ReadMacroRecord(*F, Offset);
-}
-
-void ASTReader::ReadUserDiagnosticMappings(Diagnostic &Diag) {
-  unsigned Idx = 0;
-  while (Idx < UserDiagMappings.size()) {
-    unsigned DiagID = UserDiagMappings[Idx++];
-    unsigned Map = UserDiagMappings[Idx++];
-    Diag.setDiagnosticMappingInternal(DiagID, Map, /*isUser=*/true);
-  }
 }
 
 /// \brief Get the correct cursor and offset for loading a type.

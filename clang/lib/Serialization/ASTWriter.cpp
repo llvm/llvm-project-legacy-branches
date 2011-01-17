@@ -1456,19 +1456,6 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP) {
   }
 }
 
-void ASTWriter::WriteUserDiagnosticMappings(const Diagnostic &Diag) {
-  RecordData Record;
-  for (unsigned i = 0; i != diag::DIAG_UPPER_LIMIT; ++i) {
-    diag::Mapping Map = Diag.getDiagnosticMappingInfo(i);
-    if (Map & 0x8) { // user mapping.
-      Record.push_back(i);
-      Record.push_back(Map & 0x7);
-    }
-  }
-
-  Stream.EmitRecord(DIAG_USER_MAPPINGS, Record);
-}
-
 //===----------------------------------------------------------------------===//
 // Type Serialization
 //===----------------------------------------------------------------------===//
@@ -2431,7 +2418,6 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteIdentifierTable(PP);
 
   WriteTypeDeclOffsets();
-  WriteUserDiagnosticMappings(Context.getDiagnostics());
 
   // Write the C++ base-specifier set offsets.
   if (!CXXBaseSpecifiersOffsets.empty()) {
@@ -2665,9 +2651,6 @@ void ASTWriter::WriteASTChain(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteReferencedSelectorsPool(SemaRef);
   WriteIdentifierTable(PP);
   WriteTypeDeclOffsets();
-  // FIXME: For chained PCH only write the new mappings (we currently
-  // write all of them again).
-  WriteUserDiagnosticMappings(Context.getDiagnostics());
 
   /// Build a record containing first declarations from a chained PCH and the
   /// most recent declarations in this AST that they point to.
