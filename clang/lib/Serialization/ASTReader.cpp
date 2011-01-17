@@ -2621,6 +2621,7 @@ bool ASTReader::ParseLanguageOptions(
     PARSE_LANGOPT(AccessControl);
     PARSE_LANGOPT(CharIsSigned);
     PARSE_LANGOPT(ShortWChar);
+    PARSE_LANGOPT(ShortEnums);
     LangOpts.setGCMode((LangOptions::GCMode)Record[Idx++]);
     LangOpts.setVisibilityMode((Visibility)Record[Idx++]);
     LangOpts.setStackProtectorMode((LangOptions::StackProtectorMode)
