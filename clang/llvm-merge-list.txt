@@ -176,6 +176,7 @@
 122529
 
 # <rdar://problem/8813415> [regression] [nt] External/SPEC/CINT2000/164_gzip/164_gzip.exec miscompile
+122771
 122772
 
 # <rdar://problem/8792542> misaligned branch destination

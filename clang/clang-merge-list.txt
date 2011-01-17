@@ -530,3 +530,18 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8790245> [PR8821] clang crashes when compiling webkit
 122536
+
+# <rdar://problem/8554072> Need API to look up file paths of imported files by name or import string
+122350
+
+# <rdar://problem/8759653> crashes consistently compiling source code
+122756
+
+# <rdar://problem/8761767> Assigning to static global doesn't use _objc_assign_global
+123391
+
+# <rdar://problem/8852495> cannot override warnings on per-file basis with Clang
+-118303
+
+# <rdar://problem/8854933> short enums do not work with llvm
+123510
