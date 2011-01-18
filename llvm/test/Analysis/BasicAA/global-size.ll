@@ -12,8 +12,9 @@ define i16 @test1(i32* %P) {
         store i32 7, i32* %P
         %Y = load i16* @B
         %Z = sub i16 %Y, %X
+; CHECK: sub i16 %X, %X
         ret i16 %Z
-; CHECK: ret i16 0
+; CHECK: ret i16 %Z
 }
 
 ; Cannot know anything about the size of this global.
