@@ -548,3 +548,6 @@ xclang# <rdar://problem/7743000> [qoi] [diags] [c++] lame diagnostic calling met
 
 # <rdar://problem/8845786> Remove -fobjc-default-synthesize-properties flag
 Custom: 123697
+
+# <rdar://problem/8858342> libclang does not honor -W/-w flags
+123793
