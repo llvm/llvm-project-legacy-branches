@@ -19,7 +19,7 @@ Clang_Enable_CXX       := 1
 # Build all LLVM tools; not just clang?
 Clang_Build_All        := 0
 # Set the Clang version.
-Clang_Version          := 2.0
+Clang_Version          := 2.1
 # Enable bootstrap.
 Clang_Enable_Bootstrap := 1
 
@@ -27,7 +27,7 @@ Clang_Enable_Bootstrap := 1
 # Source Info
 
 # The name used to identify this "train".
-Train_Name := whitney
+Train_Name := sill
 # Can be one of "trunk", "branch", or "branch-llvm-only".
 Source_To_Draw_From := branch
 
