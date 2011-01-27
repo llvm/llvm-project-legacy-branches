@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CGDebugInfo.h"
 #include "CGObjCRuntime.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
@@ -783,6 +784,12 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
                               llvm::ConstantInt::get(UnsignedLongLTy, 1));
   Builder.CreateStore(Counter, CounterPtr);
 
+  CGDebugInfo *DI = getDebugInfo();
+  if (DI) {
+    DI->setLocation(S.getSourceRange().getBegin());
+    DI->EmitRegionStart(Builder);
+  }
+
   JumpDest LoopEnd = getJumpDestInCurrentScope("loopend");
   JumpDest AfterBody = getJumpDestInCurrentScope("afterbody");
 
@@ -826,6 +833,11 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     // Set the value to null.
     Builder.CreateStore(llvm::Constant::getNullValue(ConvertType(ElementTy)),
                         LV.getAddress());
+  }
+
+  if (DI) {
+    DI->setLocation(S.getSourceRange().getEnd());
+    DI->EmitRegionEnd(Builder);
   }
 
   EmitBlock(LoopEnd.getBlock());
