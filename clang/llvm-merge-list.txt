@@ -189,3 +189,7 @@ Custom: 123696
 
 # <rdar://problem/8876232> __thread implementation doesn't preserve enough registers (ABI issue)
 123712
+
+# <rdar://problem/8898416> build failure at -O0
+#
+# Required reversion of 123010 and 123008. Manually patched via Eric in r124427.
