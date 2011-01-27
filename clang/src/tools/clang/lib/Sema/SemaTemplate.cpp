@@ -2882,7 +2882,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
 
   if (ParamType->isPointerType() && 
       !ParamType->getAs<PointerType>()->getPointeeType()->isFunctionType() &&
-      S.IsQualificationConversion(ArgType, ParamType)) {
+      S.IsQualificationConversion(ArgType, ParamType, false)) {
     // For pointer-to-object types, qualification conversions are
     // permitted.
   } else {
@@ -3223,7 +3223,8 @@ bool Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
                                                             ParamType, 
                                                             Arg, Converted);
 
-    if (IsQualificationConversion(ArgType, ParamType.getNonReferenceType())) {
+    if (IsQualificationConversion(ArgType, ParamType.getNonReferenceType(),
+                                  false)) {
       ImpCastExprToType(Arg, ParamType, CK_NoOp, CastCategory(Arg));
     } else if (!Context.hasSameUnqualifiedType(ArgType,
                                            ParamType.getNonReferenceType())) {
@@ -3286,7 +3287,7 @@ bool Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
 
   if (Context.hasSameUnqualifiedType(ParamType, ArgType)) {
     // Types match exactly: nothing more to do here.
-  } else if (IsQualificationConversion(ArgType, ParamType)) {
+  } else if (IsQualificationConversion(ArgType, ParamType, false)) {
     ImpCastExprToType(Arg, ParamType, CK_NoOp, CastCategory(Arg));
   } else {
     // We can't perform this conversion.
@@ -3382,7 +3383,7 @@ Sema::BuildExpressionFromDeclTemplateArgument(const TemplateArgument &Arg,
       // the element type on the parameter could be more qualified than the
       // element type in the expression we constructed.
       if (IsQualificationConversion(((Expr*) RefExpr.get())->getType(),
-                                    ParamType.getUnqualifiedType())) {
+                                    ParamType.getUnqualifiedType(), false)) {
         Expr *RefE = RefExpr.takeAs<Expr>();
         ImpCastExprToType(RefE, ParamType.getUnqualifiedType(), CK_NoOp);
         RefExpr = Owned(RefE);
