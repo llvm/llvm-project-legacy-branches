@@ -1697,11 +1697,11 @@ static ExprResult BuildCXXCastArgument(Sema &S,
 bool
 Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
                                 const ImplicitConversionSequence &ICS,
-                                AssignmentAction Action, bool IgnoreBaseAccess) {
+                                AssignmentAction Action, bool CStyle) {
   switch (ICS.getKind()) {
   case ImplicitConversionSequence::StandardConversion:
     if (PerformImplicitConversion(From, ToType, ICS.Standard, Action,
-                                  IgnoreBaseAccess))
+                                  CStyle))
       return true;
     break;
 
@@ -1734,7 +1734,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
       if (!ICS.UserDefined.EllipsisConversion) {
         if (PerformImplicitConversion(From, BeforeToType, 
                                       ICS.UserDefined.Before, AA_Converting,
-                                      IgnoreBaseAccess))
+                                      CStyle))
           return true;
       }
     
@@ -1751,7 +1751,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
       From = CastArg.takeAs<Expr>();
 
       return PerformImplicitConversion(From, ToType, ICS.UserDefined.After,
-                                       AA_Converting, IgnoreBaseAccess);
+                                       AA_Converting, CStyle);
   }
 
   case ImplicitConversionSequence::AmbiguousConversion:
@@ -1781,7 +1781,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
 bool
 Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
                                 const StandardConversionSequence& SCS,
-                                AssignmentAction Action, bool IgnoreBaseAccess) {
+                                AssignmentAction Action, bool CStyle) {
   // Overall FIXME: we are recomputing too many types here and doing far too
   // much extra work. What this means is that we need to keep track of more
   // information that is computed when we try the implicit conversion initially,
@@ -1920,7 +1920,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
     
     CastKind Kind = CK_Unknown;
     CXXCastPath BasePath;
-    if (CheckPointerConversion(From, ToType, Kind, BasePath, IgnoreBaseAccess))
+    if (CheckPointerConversion(From, ToType, Kind, BasePath, CStyle))
       return true;
     ImpCastExprToType(From, ToType, Kind, VK_RValue, &BasePath);
     break;
@@ -1929,8 +1929,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
   case ICK_Pointer_Member: {
     CastKind Kind = CK_Unknown;
     CXXCastPath BasePath;
-    if (CheckMemberPointerConversion(From, ToType, Kind, BasePath,
-                                     IgnoreBaseAccess))
+    if (CheckMemberPointerConversion(From, ToType, Kind, BasePath, CStyle))
       return true;
     if (CheckExceptionSpecCompatibility(From, ToType))
       return true;
@@ -1953,7 +1952,7 @@ Sema::PerformImplicitConversion(Expr *&From, QualType ToType,
                                      From->getLocStart(),
                                      From->getSourceRange(), 
                                      &BasePath,
-                                     IgnoreBaseAccess))
+                                     CStyle))
       return true;
 
     ImpCastExprToType(From, ToType.getNonReferenceType(),

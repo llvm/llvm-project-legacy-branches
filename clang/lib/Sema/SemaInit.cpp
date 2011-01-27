@@ -2547,7 +2547,9 @@ static void TryReferenceInitialization(Sema &S,
   bool T1Function = T1->isFunctionType();
   if (isLValueRef || T1Function) {
     if (InitCategory.isLValue() && 
-        RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification) {
+        (RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification ||
+         (Kind.isCStyleOrFunctionalCast() && 
+          RefRelationship == Sema::Ref_Related))) {
       //   - is an lvalue (but is not a bit-field), and "cv1 T1" is 
       //     reference-compatible with "cv2 T2," or
       //
@@ -2628,7 +2630,9 @@ static void TryReferenceInitialization(Sema &S,
     //       - the initializer expression is an rvalue and "cv1 T1" is 
     //         reference-compatible with "cv2 T2", or
     if (InitCategory.isRValue() && 
-        RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification) {
+        (RefRelationship >= Sema::Ref_Compatible_With_Added_Qualification ||
+         Kind.isCStyleOrFunctionalCast() && 
+         RefRelationship == Sema::Ref_Related)) {
       // The corresponding bullet in C++03 [dcl.init.ref]p5 gives the
       // compiler the freedom to perform a copy here or bind to the
       // object, while C++0x requires that we bind directly to the
@@ -2698,7 +2702,8 @@ static void TryReferenceInitialization(Sema &S,
   if (S.TryImplicitConversion(Sequence, TempEntity, Initializer,
                               /*SuppressUserConversions*/ false,
                               AllowExplicit,
-                              /*FIXME:InOverloadResolution=*/false)) {
+                              /*FIXME:InOverloadResolution=*/false,
+                              /*CStyle=*/Kind.isCStyleOrFunctionalCast())) {
     // FIXME: Use the conversion function set stored in ICS to turn
     // this into an overloading ambiguity diagnostic. However, we need
     // to keep that set as an OverloadCandidateSet rather than as some
@@ -3204,7 +3209,8 @@ InitializationSequence::InitializationSequence(Sema &S,
   if (S.TryImplicitConversion(*this, Entity, Initializer,
                               /*SuppressUserConversions*/ true,
                               /*AllowExplicitConversions*/ false,
-                              /*InOverloadResolution*/ false))
+                              /*InOverloadResolution*/ false,
+                              /*CStyle=*/Kind.isCStyleOrFunctionalCast()))
   {
     if (Initializer->getType() == Context.OverloadTy )
       SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
@@ -3859,11 +3865,9 @@ InitializationSequence::Perform(Sema &S,
     }
 
     case SK_ConversionSequence: {
-      bool IgnoreBaseAccess = Kind.isCStyleOrFunctionalCast();
-
       if (S.PerformImplicitConversion(CurInitExpr, Step->Type, *Step->ICS,
                                       getAssignmentAction(Entity),
-                                      IgnoreBaseAccess))
+                                      Kind.isCStyleOrFunctionalCast()))
         return ExprError();
         
       CurInit.release();
