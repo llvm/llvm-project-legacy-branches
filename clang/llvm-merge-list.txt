@@ -187,6 +187,5 @@ Custom: 123696
 # <rdar://problem/8795958> clang crash
 122104
 
-# <rdar://problem/8913298> Upcasts which discard qualifiers are treated as bitcasts
-124340
-
+# <rdar://problem/8876232> __thread implementation doesn't preserve enough registers (ABI issue)
+123712

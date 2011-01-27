@@ -551,3 +551,18 @@ Custom: 123697
 
 # <rdar://problem/8858342> libclang does not honor -W/-w flags
 123793
+
+# <rdar://problem/8494734> clang doesn't support register pinning
+122643
+
+# <rdar://problem/8910446> clang fails to build Firefox 4
+123871
+
+## <rdar://problem/8913298> Upcasts which discard qualifiers are treated as bitcasts
+#124340 (custom merge)
+
+# <rdar://problem/8757124> Wrong value showing in debugger when variable name reused.
+123802
+
+# <rdar://problem/8807535> Compile-as-you-type doesn't use same SSE options as real build
+124382
