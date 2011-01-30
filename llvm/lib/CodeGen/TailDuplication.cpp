@@ -457,7 +457,8 @@ TailDuplicatePass::TailDuplicate(MachineBasicBlock *TailBB, MachineFunction &MF,
   // duplicate only one, because one branch instruction can be eliminated to
   // compensate for the duplication.
   unsigned MaxDuplicateCount;
-  if (MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize))
+  if (TailDuplicateSize.getNumOccurrences() == 0 &&
+      MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize))
     MaxDuplicateCount = 1;
   else
     MaxDuplicateCount = TailDuplicateSize;
