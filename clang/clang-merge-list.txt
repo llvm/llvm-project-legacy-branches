@@ -568,3 +568,10 @@ Custom: 123697
 
 # <rdar://problem/8807535> Compile-as-you-type doesn't use same SSE options as real build
 124382
+
+# <rdar://problem/8925013> deadlock due to unsafe signal handler
+124612
+124613
+
+# <rdar://problem/8918721> crash at clang::SrcMgr::ContentCache::getBuffer const + 68
+124616
