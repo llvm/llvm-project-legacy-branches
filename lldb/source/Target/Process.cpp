@@ -2811,7 +2811,11 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             if (single_thread_timeout_usec != 0)
             {
                 real_timeout = TimeValue::Now();
-                real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
+                if (first_timeout)
+                    real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
+                else
+                    real_timeout.OffsetWithSeconds(2);
+                    
                 timeout_ptr = &real_timeout;
             }
         }
