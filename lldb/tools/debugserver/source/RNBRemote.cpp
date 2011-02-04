@@ -3134,6 +3134,7 @@ RNBRemote::HandlePacket_k (const char *p)
 rnb_err_t
 RNBRemote::HandlePacket_stop_process (const char *p)
 {
+    DNBLogThreadedIf(LOG_PROCESS, "About to send SIGSTOP to process.");
     DNBProcessSignal (m_ctx.ProcessID(), SIGSTOP);
     //DNBProcessSignal (m_ctx.ProcessID(), SIGINT);
     // Do not send any response packet! Wait for the stop reply packet to naturally happen

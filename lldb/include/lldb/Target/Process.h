@@ -1666,6 +1666,26 @@ public:
     PeekAtStateChangedEvents ();
     
 
+    class
+    ProcessEventHijacker
+    {
+    public:
+        ProcessEventHijacker (Process &process, Listener *listener) :
+            m_process (process),
+            m_listener (listener)
+        {
+            m_process.HijackProcessEvents (listener);
+        }
+        ~ProcessEventHijacker ()
+        {
+            m_process.RestoreProcessEvents();
+        }
+         
+    private:
+        Process &m_process;
+        Listener *m_listener;
+    };
+    friend class ProcessEventHijacker;
     //------------------------------------------------------------------
     /// If you need to ensure that you and only you will hear about some public
     /// event, then make a new listener, set to listen to process events, and
@@ -1882,6 +1902,11 @@ protected:
         DISALLOW_COPY_AND_ASSIGN (MemoryCache);
     };
 
+    bool 
+    HijackPrivateProcessEvents (Listener *listener);
+    
+    void 
+    RestorePrivateProcessEvents ();
 
     //------------------------------------------------------------------
     // Member variables

@@ -195,9 +195,6 @@ public:
     bool
     RemoveListener (Listener* listener, uint32_t event_mask = UINT32_MAX);
     
-protected:
-
-    
     //------------------------------------------------------------------
     /// Provides a simple mechanism to temporarily redirect events from 
     /// broadcaster.  When you call this function passing in a listener and
@@ -237,6 +234,9 @@ protected:
     void
     RestoreBroadcaster ();
 
+protected:
+
+    
     void
     PrivateBroadcastEvent (lldb::EventSP &event_sp, bool unique);
 
