@@ -5,13 +5,13 @@
 # LLVM/Clang default configuration.
 
 # Select default assertion mode, valid values are '0' and '1'.
-Clang_Use_Assertions   := 1
+Clang_Use_Assertions   := 0
 # Select clang driver mode, valid values are 'Production' and 'Development'.
 Clang_Driver_Mode      := Production
 # Select optimization flags to use.
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
-Clang_Extra_Options    :=
+Clang_Extra_Options    := -DDISABLE_DEFAULT_STRICT_ALIASING
 # Additional arbitrary compiler options, only passed to final configure stage.
 Clang_Final_Extra_Options := -g
 # Enable use of clang++?
