@@ -2814,7 +2814,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
                 if (first_timeout)
                     real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
                 else
-                    real_timeout.OffsetWithSeconds(2);
+                    real_timeout.OffsetWithSeconds(10);
                     
                 timeout_ptr = &real_timeout;
             }
