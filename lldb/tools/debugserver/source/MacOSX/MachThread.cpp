@@ -193,22 +193,22 @@ MachThread::InferiorThreadID() const
 bool
 MachThread::IsUserReady()
 {
-    if (m_basicInfo.run_state == 0)
-        GetBasicInfo ();
-    
-    switch (m_basicInfo.run_state)
-    {
-    default: 
-    case TH_STATE_UNINTERRUPTIBLE:  
-        break;
-
-    case TH_STATE_RUNNING:
-    case TH_STATE_STOPPED:
-    case TH_STATE_WAITING:
-    case TH_STATE_HALTED:
+//    if (m_basicInfo.run_state == 0)
+//        GetBasicInfo ();
+//    
+//    switch (m_basicInfo.run_state)
+//    {
+//    default: 
+//    case TH_STATE_UNINTERRUPTIBLE:  
+//        break;
+//
+//    case TH_STATE_RUNNING:
+//    case TH_STATE_STOPPED:
+//    case TH_STATE_WAITING:
+//    case TH_STATE_HALTED:
         return true;
-    }
-    return false;
+//    }
+//    return false;
 }
 
 struct thread_basic_info *
