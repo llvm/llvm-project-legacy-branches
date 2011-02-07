@@ -222,8 +222,8 @@ public:
     bool
     IsHijackedForEvent (uint32_t event_mask)
     {
-        if (m_hijacking_listener)
-            return (event_mask & m_hijacking_mask) != 0;
+        if (m_hijacking_listeners.size() > 0)
+            return (event_mask & m_hijacking_masks.back()) != 0;
         return false;
     }
 
@@ -251,8 +251,8 @@ protected:
     event_names_map m_event_names;  ///< Optionally define event names for readability and logging for each event bit
     collection m_listeners;     ///< A list of Listener / event_mask pairs that are listening to this broadcaster.
     Mutex m_listeners_mutex;    ///< A mutex that protects \a m_listeners.
-    Listener *m_hijacking_listener;         // A simple mechanism to intercept events in lieu of a real Listener collection stack.
-    uint32_t m_hijacking_mask;
+    std::vector<Listener *> m_hijacking_listeners;  // A simple mechanism to intercept events in 
+    std::vector<uint32_t> m_hijacking_masks;
     
 private:
     //------------------------------------------------------------------
