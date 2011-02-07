@@ -228,14 +228,15 @@ UnresolvedLookupExpr::Create(ASTContext &C, bool Dependent,
 }
 
 UnresolvedLookupExpr *
-UnresolvedLookupExpr::CreateEmpty(ASTContext &C, unsigned NumTemplateArgs) {
+UnresolvedLookupExpr::CreateEmpty(ASTContext &C, bool HasExplicitTemplateArgs, 
+                                  unsigned NumTemplateArgs) {
   std::size_t size = sizeof(UnresolvedLookupExpr);
-  if (NumTemplateArgs != 0)
+  if (HasExplicitTemplateArgs)
     size += ExplicitTemplateArgumentList::sizeFor(NumTemplateArgs);
 
   void *Mem = C.Allocate(size, llvm::alignOf<UnresolvedLookupExpr>());
   UnresolvedLookupExpr *E = new (Mem) UnresolvedLookupExpr(EmptyShell());
-  E->HasExplicitTemplateArgs = NumTemplateArgs != 0;
+  E->HasExplicitTemplateArgs = HasExplicitTemplateArgs;
   return E;
 }
 
@@ -327,15 +328,15 @@ DependentScopeDeclRefExpr::Create(ASTContext &C,
 
 DependentScopeDeclRefExpr *
 DependentScopeDeclRefExpr::CreateEmpty(ASTContext &C,
+                                       bool HasExplicitTemplateArgs,
                                        unsigned NumTemplateArgs) {
   std::size_t size = sizeof(DependentScopeDeclRefExpr);
-  if (NumTemplateArgs)
+  if (HasExplicitTemplateArgs)
     size += ExplicitTemplateArgumentList::sizeFor(NumTemplateArgs);
   void *Mem = C.Allocate(size);
-
   return new (Mem) DependentScopeDeclRefExpr(QualType(), 0, SourceRange(),
-                                             DeclarationNameInfo(),
-                                             NumTemplateArgs != 0);
+                                             DeclarationNameInfo(), 
+                                             HasExplicitTemplateArgs);
 }
 
 StmtIterator DependentScopeDeclRefExpr::child_begin() {
@@ -762,8 +763,9 @@ CXXDependentScopeMemberExpr::Create(ASTContext &C,
 
 CXXDependentScopeMemberExpr *
 CXXDependentScopeMemberExpr::CreateEmpty(ASTContext &C,
+                                         bool HasExplicitTemplateArgs,
                                          unsigned NumTemplateArgs) {
-  if (NumTemplateArgs == 0)
+  if (!HasExplicitTemplateArgs)
     return new (C) CXXDependentScopeMemberExpr(C, 0, QualType(),
                                                0, SourceLocation(), 0,
                                                SourceRange(), 0,
@@ -836,14 +838,15 @@ UnresolvedMemberExpr::Create(ASTContext &C, bool Dependent,
 }
 
 UnresolvedMemberExpr *
-UnresolvedMemberExpr::CreateEmpty(ASTContext &C, unsigned NumTemplateArgs) {
+UnresolvedMemberExpr::CreateEmpty(ASTContext &C, bool HasExplicitTemplateArgs,
+                                  unsigned NumTemplateArgs) {
   std::size_t size = sizeof(UnresolvedMemberExpr);
-  if (NumTemplateArgs != 0)
+  if (HasExplicitTemplateArgs)
     size += ExplicitTemplateArgumentList::sizeFor(NumTemplateArgs);
 
   void *Mem = C.Allocate(size, llvm::alignOf<UnresolvedMemberExpr>());
   UnresolvedMemberExpr *E = new (Mem) UnresolvedMemberExpr(EmptyShell());
-  E->HasExplicitTemplateArgs = NumTemplateArgs != 0;
+  E->HasExplicitTemplateArgs = HasExplicitTemplateArgs;
   return E;
 }
 
