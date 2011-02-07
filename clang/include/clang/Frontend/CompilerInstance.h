@@ -544,6 +544,7 @@ public:
   /// context.
   void createPCHExternalASTSource(llvm::StringRef Path,
                                   bool DisablePCHValidation,
+                                  bool DisableStatCache,
                                   void *DeserializationListener);
 
   /// Create an external AST source to read a PCH file.
@@ -552,6 +553,7 @@ public:
   static ExternalASTSource *
   createPCHExternalASTSource(llvm::StringRef Path, const std::string &Sysroot,
                              bool DisablePCHValidation,
+                             bool DisableStatCache,
                              Preprocessor &PP, ASTContext &Context,
                              void *DeserializationListener, bool Preamble);
 

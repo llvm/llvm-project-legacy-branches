@@ -361,32 +361,40 @@ FileManager::getVirtualFile(llvm::StringRef Filename, off_t Size,
   // By default, initialize it to invalid.
   NamedFileEnt.setValue(NON_EXISTENT_FILE);
 
+  // We allow the directory to not exist. If it does exist we store it.
+  FileEntry *UFE = 0;
   const DirectoryEntry *DirInfo
     = getDirectoryFromFile(*this, NameStart, NameEnd, FileSystemOpts);
-  if (DirInfo == 0)  // Directory doesn't exist, file can't exist.
-    return 0;
+  if (DirInfo) {
+    // Check to see if the file exists. If so, drop the virtual file
+    struct stat StatBuf;
+    const char *InterndFileName = NamedFileEnt.getKeyData();
+    if (stat_cached(InterndFileName, &StatBuf, FileSystemOpts) == 0 &&
+        !S_ISDIR(StatBuf.st_mode)) {
+      StatBuf.st_size = Size;
+      StatBuf.st_mtime = ModificationTime;
+      UFE = &UniqueFiles.getFile(InterndFileName, StatBuf);
+      NamedFileEnt.setValue(UFE);
 
-  FileEntry *UFE = new FileEntry();
-  VirtualFileEntries.push_back(UFE);
-  NamedFileEnt.setValue(UFE);
+      // If we already have an entry with this inode, return it.
+      if (UFE->getName()) 
+        return UFE;
+    }
+  }
 
+  if (!UFE) {
+    UFE = new FileEntry();
+    VirtualFileEntries.push_back(UFE);
+    NamedFileEnt.setValue(UFE);
+  }
+
+  // Get the null-terminated file name as stored as the key of the
+  // FileEntries map.
   UFE->Name    = NamedFileEnt.getKeyData();
   UFE->Size    = Size;
   UFE->ModTime = ModificationTime;
   UFE->Dir     = DirInfo;
   UFE->UID     = NextFileUID++;
-  
-  // If this virtual file resolves to a file, also map that file to the 
-  // newly-created file entry.
-  const char *InterndFileName = NamedFileEnt.getKeyData();
-  struct stat StatBuf;
-  if (!stat_cached(InterndFileName, &StatBuf, FileSystemOpts) &&
-      !S_ISDIR(StatBuf.st_mode)) {
-    llvm::sys::Path FilePath(InterndFileName);
-    FilePath.makeAbsolute();
-    FileEntries[FilePath.str()] = UFE;
-  }
-  
   return UFE;
 }
 

@@ -223,11 +223,13 @@ void CompilerInstance::createASTContext() {
 
 void CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
                                                   bool DisablePCHValidation,
+                                                  bool DisableStatCache,
                                                  void *DeserializationListener){
   llvm::OwningPtr<ExternalASTSource> Source;
   bool Preamble = getPreprocessorOpts().PrecompiledPreambleBytes.first != 0;
   Source.reset(createPCHExternalASTSource(Path, getHeaderSearchOpts().Sysroot,
-                                          DisablePCHValidation,
+                                          DisablePCHValidation, 
+                                          DisableStatCache,
                                           getPreprocessor(), getASTContext(),
                                           DeserializationListener,
                                           Preamble));
@@ -238,6 +240,7 @@ ExternalASTSource *
 CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
                                              const std::string &Sysroot,
                                              bool DisablePCHValidation,
+                                             bool DisableStatCache,
                                              Preprocessor &PP,
                                              ASTContext &Context,
                                              void *DeserializationListener,
@@ -245,7 +248,7 @@ CompilerInstance::createPCHExternalASTSource(llvm::StringRef Path,
   llvm::OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, &Context,
                              Sysroot.empty() ? 0 : Sysroot.c_str(),
-                             DisablePCHValidation));
+                             DisablePCHValidation, DisableStatCache));
 
   Reader->setDeserializationListener(
             static_cast<ASTDeserializationListener *>(DeserializationListener));
