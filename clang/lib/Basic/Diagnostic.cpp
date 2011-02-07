@@ -613,6 +613,19 @@ bool Diagnostic::ProcessDiag() {
       SetDelayedDiagnostic(diag::fatal_too_many_errors);
   }
 
+  // If we have any Fix-Its, make sure that all of the Fix-Its point into
+  // source locations that aren't macro instantiations. If any point into
+  // macro instantiations, remove all of the Fix-Its.
+  for (unsigned I = 0, N = NumFixItHints; I != N; ++I) {
+    const FixItHint &FixIt = FixItHints[I];
+    if (FixIt.RemoveRange.isInvalid() ||
+        FixIt.RemoveRange.getBegin().isMacroID() ||
+        FixIt.RemoveRange.getEnd().isMacroID()) {
+      NumFixItHints = 0;
+      break;
+    }    
+  }
+  
   // Finally, report it.
   Client->HandleDiagnostic(DiagLevel, Info);
   if (Client->IncludeInDiagnosticCounts()) {
