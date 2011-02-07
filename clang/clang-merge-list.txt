@@ -575,3 +575,22 @@ Custom: 123697
 
 # <rdar://problem/8918721> crash at clang::SrcMgr::ContentCache::getBuffer const + 68
 124616
+
+# <rdar://problem/8940150> Fixits replace too much text when showing suggestion
+124833 (custom patch: clang-8940150.patch)
+
+# <rdar://problem/8958461> C++ PCH reader/writer can't handle empty explicit template argument lists
+124862 (custom patch: clang-8958461.patch)
+
+# <rdar://problem/8928220> AST re-parsing broken when file has ".." in path
+124800
+
+# <rdar://problem/8949262> USRs for methods shouldn't include category name
+124859
+124920
+
+# <rdar://problem/8855151> missing symbol highlights in source editor
+124858
+
+# <rdar://problem/8939444> clang loses symbol coloring & index support
+124971 (custom patch: clang-8939444.patch)
