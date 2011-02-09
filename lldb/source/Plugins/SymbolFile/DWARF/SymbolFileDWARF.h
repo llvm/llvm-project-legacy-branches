@@ -32,6 +32,7 @@
 // Project includes
 #include "DWARFDefines.h"
 #include "NameToDIE.h"
+#include "UniqueDWARFASTType.h"
 
 
 //----------------------------------------------------------------------
@@ -216,7 +217,7 @@ protected:
         flagsGotDebugPubNamesData   = (1 << 7),
         flagsGotDebugPubTypesData   = (1 << 8),
         flagsGotDebugRangesData     = (1 << 9),
-        flagsGotDebugStrData        = (1 << 10),
+        flagsGotDebugStrData        = (1 << 10)
     };
 
     DISALLOW_COPY_AND_ASSIGN (SymbolFileDWARF);
@@ -350,7 +351,7 @@ protected:
          m_is_external_ast_source:1;
 
     std::auto_ptr<DWARFDebugRanges>     m_ranges;
-
+    UniqueDWARFASTTypeMap m_unique_ast_type_map;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, clang::DeclContext *> DIEToDeclContextMap;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, lldb_private::Type *> DIEToTypePtr;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, lldb::VariableSP> DIEToVariableSP;

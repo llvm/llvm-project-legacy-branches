@@ -179,7 +179,8 @@ SymbolFileDWARF::SymbolFileDWARF(ObjectFile* objfile) :
     m_namespace_index(),
     m_indexed (false),
     m_is_external_ast_source (false),
-    m_ranges()
+    m_ranges(),
+    m_unique_ast_type_map ()
 {
 }
 
@@ -3168,6 +3169,28 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         }
                     }
 
+                    UniqueDWARFASTType unique_ast_entry;
+                    if (decl.IsValid())
+                    {
+                        if (m_unique_ast_type_map.Find (type_name_const_str,
+                                                        die,
+                                                        decl,
+                                                        unique_ast_entry))
+                        {
+                            // We have already parsed this type or from another 
+                            // compile unit. GCC loves to use the "one definition
+                            // rule" which can result in multiple definitions
+                            // of the same class over and over in each compile
+                            // unit.
+                            type_sp = unique_ast_entry.m_type_sp;
+                            if (type_sp)
+                            {
+                                m_die_to_type[die] = type_sp.get();
+                                return type_sp;
+                            }
+                        }
+                    }
+                    
                     DEBUG_PRINTF ("0x%8.8x: %s (\"%s\")\n", die->GetOffset(), DW_TAG_value_to_name(tag), type_name_cstr);
 
                     int tag_decl_kind = -1;
@@ -3242,9 +3265,17 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                              &decl, 
                                              clang_type, 
                                              Type::eResolveStateForward));
-                    
-                    m_die_to_type[die] = type_sp.get();
 
+
+                    // Add our type to the unique type map so we don't
+                    // end up creating many copies of the same type over
+                    // and over in the ASTContext for our module
+                    unique_ast_entry.m_type_sp = type_sp;
+                    unique_ast_entry.m_die = die;
+                    unique_ast_entry.m_declaration = decl;
+                    m_unique_ast_type_map.Insert (type_name_const_str, 
+                                                  unique_ast_entry);
+                    
                     if (die->HasChildren() == false && is_forward_declaration == false)
                     {
                         // No children for this struct/union/class, lets finish it
@@ -3262,7 +3293,6 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         m_forward_decl_clang_type_to_die[ClangASTType::RemoveFastQualifiers (clang_type)] = die;
                         ClangASTContext::SetHasExternalStorage (clang_type, true);
                     }
-                    
                 }
                 break;
 
@@ -3346,8 +3376,6 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                                  &decl, 
                                                  clang_type, 
                                                  Type::eResolveStateForward));
-                        
-                        m_die_to_type[die] = type_sp.get();
 
 #if LEAVE_ENUMS_FORWARD_DECLARED
                         // Leave this as a forward declaration until we need
@@ -3618,9 +3646,7 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                              Type::eEncodingIsUID, 
                                              &decl, 
                                              clang_type, 
-                                             Type::eResolveStateFull));
-                    
-                    m_die_to_type[die] = type_sp.get();
+                                             Type::eResolveStateFull));                    
                     assert(type_sp.get());
                 }
                 break;
@@ -3715,7 +3741,6 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                                      clang_type, 
                                                      Type::eResolveStateFull));
                             type_sp->SetEncodingType (element_type);
-                            m_die_to_type[die] = type_sp.get();
                         }
                     }
                 }
@@ -3768,7 +3793,6 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                                  NULL, 
                                                  clang_type, 
                                                  Type::eResolveStateForward));
-                        m_die_to_type[die] = type_sp.get();
                     }
                                             
                     break;
@@ -3800,20 +3824,10 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                     type_sp->SetSymbolContextScope(symbol_context_scope);
                 }
 
-//              if (udt_sp.get())
-//              {
-//                  if (is_forward_declaration)
-//                      udt_sp->GetFlags().Set(UserDefType::flagIsForwardDefinition);
-//                  type_sp->SetUserDefinedType(udt_sp);
-//              }
+                // We are ready to put this type into the uniqued list up at the module level
+                type_list->Insert (type_sp);
 
-                if (type_sp.unique())
-                {
-                    // We are ready to put this type into the uniqued list up at the module level
-                    type_list->Insert (type_sp);
-
-                    m_die_to_type[die] = type_sp.get();
-                }
+                m_die_to_type[die] = type_sp.get();
             }
         }
         else if (type_ptr != DIE_IS_BEING_PARSED)

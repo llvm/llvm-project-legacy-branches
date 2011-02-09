@@ -173,3 +173,14 @@ Declaration::Compare(const Declaration& a, const Declaration& b)
         return 1;
     return 0;
 }
+
+bool
+lldb_private::operator == (const Declaration &lhs, const Declaration &rhs)
+{
+    if (lhs.GetColumn () == rhs.GetColumn ())
+        if (lhs.GetLine () == rhs.GetLine ())
+            return lhs.GetFile() == rhs.GetFile();
+    return false;
+}
+
+

@@ -67,6 +67,8 @@
 		26680336116005EF008E1FE4 /* SBBreakpointLocation.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9AF16CC7114086A1007A7B3F /* SBBreakpointLocation.cpp */; };
 		26680337116005F1008E1FE4 /* SBBreakpoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9AF16A9C11402D5B007A7B3F /* SBBreakpoint.cpp */; };
 		2668035C11601108008E1FE4 /* LLDB.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 26680207115FD0ED008E1FE4 /* LLDB.framework */; };
+		266847D413031C98002262D6 /* UniqueDWARFASTType.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 266847D213031C98002262D6 /* UniqueDWARFASTType.cpp */; };
+		266847D513031C98002262D6 /* UniqueDWARFASTType.h in Headers */ = {isa = PBXBuildFile; fileRef = 266847D313031C98002262D6 /* UniqueDWARFASTType.h */; };
 		266A42D6128E3FFB0090CF7C /* ClangNamespaceDecl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 266A42D5128E3FFB0090CF7C /* ClangNamespaceDecl.cpp */; };
 		266A42D8128E40040090CF7C /* ClangNamespaceDecl.h in Headers */ = {isa = PBXBuildFile; fileRef = 266A42D7128E40040090CF7C /* ClangNamespaceDecl.h */; };
 		268F9D53123AA15200B91E9B /* SBSymbolContextList.h in Headers */ = {isa = PBXBuildFile; fileRef = 268F9D52123AA15200B91E9B /* SBSymbolContextList.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -569,6 +571,8 @@
 		2660D9F711922A1300958FBD /* StringExtractor.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = StringExtractor.h; path = source/Utility/StringExtractor.h; sourceTree = "<group>"; };
 		2660D9FE11922A7F00958FBD /* ThreadPlanStepUntil.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ThreadPlanStepUntil.cpp; path = source/Target/ThreadPlanStepUntil.cpp; sourceTree = "<group>"; };
 		26680207115FD0ED008E1FE4 /* LLDB.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLDB.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		266847D213031C98002262D6 /* UniqueDWARFASTType.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = UniqueDWARFASTType.cpp; path = ../../../../../../../../../../../private/tmp/lldb/source/Plugins/SymbolFile/DWARF/UniqueDWARFASTType.cpp; sourceTree = "<group>"; };
+		266847D313031C98002262D6 /* UniqueDWARFASTType.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = UniqueDWARFASTType.h; path = ../../../../../../../../../../../private/tmp/lldb/source/Plugins/SymbolFile/DWARF/UniqueDWARFASTType.h; sourceTree = "<group>"; };
 		266960591199F4230075C61A /* build-llvm.pl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = "build-llvm.pl"; sourceTree = "<group>"; };
 		2669605A1199F4230075C61A /* build-swig-wrapper-classes.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = "build-swig-wrapper-classes.sh"; sourceTree = "<group>"; };
 		2669605B1199F4230075C61A /* checkpoint-llvm.pl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; path = "checkpoint-llvm.pl"; sourceTree = "<group>"; };
@@ -1371,6 +1375,8 @@
 		260C89B210F57C5600BB2B04 /* DWARF */ = {
 			isa = PBXGroup;
 			children = (
+				266847D213031C98002262D6 /* UniqueDWARFASTType.cpp */,
+				266847D313031C98002262D6 /* UniqueDWARFASTType.h */,
 				260C89B310F57C5600BB2B04 /* DWARFAbbreviationDeclaration.cpp */,
 				260C89B410F57C5600BB2B04 /* DWARFAbbreviationDeclaration.h */,
 				260C89B610F57C5600BB2B04 /* DWARFAttribute.h */,
@@ -2315,6 +2321,7 @@
 				B23DD25012EDFAC1000C3894 /* ARMUtils.h in Headers */,
 				B2D3033712EFA5C500F84EB3 /* InstructionUtils.h in Headers */,
 				B287E63F12EFAE2C00C9BEFE /* ARMDefines.h in Headers */,
+				266847D513031C98002262D6 /* UniqueDWARFASTType.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2818,6 +2825,7 @@
 				B296983712C2FB98002D92C3 /* CommandObjectVersion.cpp in Sources */,
 				2621C9CD12EA009300711A30 /* EmulateInstructionARM.cpp in Sources */,
 				2621CA0B12EA107700711A30 /* EmulateInstruction.cpp in Sources */,
+				266847D413031C98002262D6 /* UniqueDWARFASTType.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

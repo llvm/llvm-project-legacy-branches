@@ -199,6 +199,10 @@ protected:
                         ///< zero indicates no column information is available.
 };
 
+    
+bool
+operator == (const Declaration &lhs, const Declaration &rhs);
+
 } // namespace lldb_private
 
 #endif  // liblldb_Declaration_h_
