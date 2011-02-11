@@ -1130,6 +1130,16 @@ static llvm::Optional<ino_t> getActualFileInode(const FileEntry *File) {
   return StatBuf.st_ino;
 }
 
+template<typename T>
+bool operator==(const llvm::Optional<T> &X, const llvm::Optional<T> &Y) {
+  return (!X && !Y) || (X && Y && *X == *Y);
+}
+
+template<typename T>
+bool operator!=(const llvm::Optional<T> &X, const llvm::Optional<T> &Y) {
+  return !(X == Y);
+}
+
 /// \brief Get the source location for the given file:line:col triplet.
 ///
 /// If the source file is included multiple times, the source location will
@@ -1145,15 +1155,17 @@ SourceLocation SourceManager::getLocation(const FileEntry *SourceFile,
   // First, check the main file ID, since it is common to look for a
   // location in the main file.
   llvm::Optional<ino_t> SourceFileInode;
-  llvm::Optional<llvm::StringRef> SourceFileName;
+  llvm::Optional<std::string> SourceFileName;
   if (!MainFileID.isInvalid()) {
     const SLocEntry &MainSLoc = getSLocEntry(MainFileID);
     if (MainSLoc.isFile()) {
       const ContentCache *MainContentCache
         = MainSLoc.getFile().getContentCache();
-      if (MainContentCache->Entry == SourceFile)
+      if (!MainContentCache) {
+        // Can't do anything
+      } else if (MainContentCache->Entry == SourceFile) {
         FirstFID = MainFileID;
-      else if (MainContentCache) {
+      } else {
         // Fall back: check whether we have the same base name and inode
         // as the main file.
         const FileEntry *MainFile = MainContentCache->Entry;
