@@ -551,3 +551,6 @@ Custom: 123697
 
 # <rdar://problem/8858342> libclang does not honor -W/-w flags
 123793
+
+# <rdar://problem/8981530> use most recent 'as' for compiler-rt build
+125328
