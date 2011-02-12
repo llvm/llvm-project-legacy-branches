@@ -484,7 +484,7 @@ IRForTarget::RewriteObjCConstString (llvm::Module &llvm_module,
     
     Constant *alloc_arg         = Constant::getNullValue(i8_ptr_ty);
     Constant *bytes_arg         = ConstantExpr::getBitCast(cstr, i8_ptr_ty);
-    Constant *numBytes_arg      = ConstantInt::get(intptr_ty, string_array->getType()->getNumElements(), false);
+    Constant *numBytes_arg      = ConstantInt::get(intptr_ty, string_array->getType()->getNumElements() - 1, false);
     Constant *encoding_arg      = ConstantInt::get(i32_ty, 0x0600, false); /* 0x0600 is kCFStringEncodingASCII */
     Constant *isExternal_arg    = ConstantInt::get(i8_ty, 0x0, false); /* 0x0 is false */
     
