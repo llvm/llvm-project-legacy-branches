@@ -255,7 +255,7 @@ Stage1_CC := $(CC)
 Stage1_CXX := $(CXX)
 
 # Set up any additional Clang install targets.
-Extra_Clang_Install_Targets :=
+Extra_Clang_Install_Targets := install-lto-h
 
 # Install /usr/... symlinks?
 ifeq ($(Post_Install_RootLinks),1)
@@ -438,7 +438,7 @@ FIND		:= /usr/bin/find
 INSTALL		:= /usr/bin/install
 INSTALL_FILE	:= $(INSTALL) -m 0444
 MKDIR		:= /bin/mkdir -p -m 0755
-TAR		:= /usr/bin/tar
+PAX		:= /bin/pax
 RMDIR		:= /bin/rm -fr
 XARGS		:= /usr/bin/xargs
 
@@ -481,13 +481,12 @@ install: install-clang
 
 clean:
 
-# We can --exclude src/tools/clang/test/ when the top level makefile stops
-# trying to create a test directory when IS_TOP_LEVEL.
 installsrc:
 	@echo "Installing source..."
 	$(_v) $(MKDIR) "$(SRCROOT)"
-	$(_v) $(TAR) -cL --exclude src/test/ --exclude src/projects/test-suite -f - .  | (cd "$(SRCROOT)"; $(TAR) xpf - )
+	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
+	$(_v) rm -rf "$(SRCROOT)"/src/test/*/
 	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
 
 installhdrs:
@@ -601,6 +600,10 @@ install-clang-links:
 ifeq ($(Clang_Enable_CXX), 1)
 	ln -sf ../../../../../usr/bin/clang++ $(DSTROOT)/$(Install_Prefix)/bin/clang++
 endif
+
+install-lto-h:
+	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
+	$(INSTALL_FILE) $(Sources)/include/llvm-c/lto.h $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
 
 ##
 # Cross Compilation Build Support
