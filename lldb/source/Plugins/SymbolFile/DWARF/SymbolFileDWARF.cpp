@@ -197,6 +197,14 @@ GetDWARFMachOSegmentName ()
     return g_dwarf_section_name;
 }
 
+UniqueDWARFASTTypeMap &
+SymbolFileDWARF::GetUniqueDWARFASTTypeMap ()
+{
+    if (m_debug_map_symfile)
+        return m_debug_map_symfile->GetUniqueDWARFASTTypeMap ();
+    return m_unique_ast_type_map;
+}
+
 ClangASTContext &       
 SymbolFileDWARF::GetClangASTContext ()
 {
@@ -559,7 +567,7 @@ SymbolFileDWARF::ParseCompileUnit (DWARFCompileUnit* curr_cu, CompUnitSP& compil
             {
                 FileSpec cu_file_spec;
 
-                if (cu_die_name[0] == '/' || cu_comp_dir == NULL && cu_comp_dir[0])
+                if (cu_die_name[0] == '/' || cu_comp_dir == NULL || cu_comp_dir[0] == '\0')
                 {
                     // If we have a full path to the compile unit, we don't need to resolve
                     // the file.  This can be expensive e.g. when the source files are NFS mounted.
@@ -3172,10 +3180,10 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                     UniqueDWARFASTType unique_ast_entry;
                     if (decl.IsValid())
                     {
-                        if (m_unique_ast_type_map.Find (type_name_const_str,
-                                                        die,
-                                                        decl,
-                                                        unique_ast_entry))
+                        if (GetUniqueDWARFASTTypeMap().Find (type_name_const_str,
+                                                             die,
+                                                             decl,
+                                                             unique_ast_entry))
                         {
                             // We have already parsed this type or from another 
                             // compile unit. GCC loves to use the "one definition
@@ -3273,8 +3281,8 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                     unique_ast_entry.m_type_sp = type_sp;
                     unique_ast_entry.m_die = die;
                     unique_ast_entry.m_declaration = decl;
-                    m_unique_ast_type_map.Insert (type_name_const_str, 
-                                                  unique_ast_entry);
+                    GetUniqueDWARFASTTypeMap().Insert (type_name_const_str, 
+                                                       unique_ast_entry);
                     
                     if (die->HasChildren() == false && is_forward_declaration == false)
                     {
