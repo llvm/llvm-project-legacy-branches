@@ -600,3 +600,6 @@ Custom: 123697
 
 # <rdar://problem/8984201> ObjC syntax coloring seems arbitrary(?)
 124800 (custom patch: clang-8984201.patch)
+
+# <rdar://problem/8956193> crash on AST load
+125434
