@@ -603,3 +603,6 @@ Custom: 123697
 
 # <rdar://problem/8956193> crash on AST load
 125434
+
+# <rdar://problem/8939352> missing completion for -observeValueForKeyPath:ofObject:change:context:
+125977 (custom patch: rdar-8939352.patch)
