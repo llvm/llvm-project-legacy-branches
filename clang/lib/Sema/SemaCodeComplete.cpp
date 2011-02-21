@@ -2319,11 +2319,11 @@ CodeCompletionResult::CreateCodeCompletionString(Sema &S,
   if (ObjCMethodDecl *Method = dyn_cast<ObjCMethodDecl>(ND)) {
     Selector Sel = Method->getSelector();
     if (Sel.isUnarySelector()) {
-      Result->AddTypedTextChunk(Sel.getIdentifierInfoForSlot(0)->getName());
+      Result->AddTypedTextChunk(Sel.getNameForSlot(0));
       return Result;
     }
 
-    std::string SelName = Sel.getIdentifierInfoForSlot(0)->getName().str();
+    std::string SelName = Sel.getNameForSlot(0).str();
     SelName += ':';
     if (StartParameter == 0)
       Result->AddTypedTextChunk(SelName);
@@ -4414,9 +4414,9 @@ static ObjCMethodDecl *AddSuperSendCompletion(Sema &S, bool NeedSuperKeyword,
   Selector Sel = CurMethod->getSelector();
   if (Sel.isUnarySelector()) {
     if (NeedSuperKeyword)
-      Pattern->AddTextChunk(Sel.getIdentifierInfoForSlot(0)->getName());
+      Pattern->AddTextChunk(Sel.getNameForSlot(0));
     else
-      Pattern->AddTypedTextChunk(Sel.getIdentifierInfoForSlot(0)->getName());
+      Pattern->AddTypedTextChunk(Sel.getNameForSlot(0));
   } else {
     ObjCMethodDecl::param_iterator CurP = CurMethod->param_begin();
     for (unsigned I = 0, N = Sel.getNumArgs(); I != N; ++I, ++CurP) {
@@ -4424,15 +4424,14 @@ static ObjCMethodDecl *AddSuperSendCompletion(Sema &S, bool NeedSuperKeyword,
         Pattern->AddChunk(CodeCompletionString::CK_HorizontalSpace);
       
       if (I < NumSelIdents)
-        Pattern->AddInformativeChunk(
-                       Sel.getIdentifierInfoForSlot(I)->getName().str() + ":");
+        Pattern->AddInformativeChunk(Sel.getNameForSlot(I).str() + ":");
       else if (NeedSuperKeyword || I > NumSelIdents) {
         Pattern->AddTextChunk(
-                        Sel.getIdentifierInfoForSlot(I)->getName().str() + ":");
+                        Sel.getNameForSlot(I).str() + ":");
         Pattern->AddPlaceholderChunk((*CurP)->getIdentifier()->getName());
       } else {
         Pattern->AddTypedTextChunk(
-                              Sel.getIdentifierInfoForSlot(I)->getName().str() + ":");
+                              Sel.getNameForSlot(I).str() + ":");
         Pattern->AddPlaceholderChunk((*CurP)->getIdentifier()->getName());        
       }
     }
@@ -4874,7 +4873,7 @@ void Sema::CodeCompleteObjCSelector(Scope *S, IdentifierInfo **SelIdents,
 
     CodeCompletionString *Pattern = new CodeCompletionString;
     if (Sel.isUnarySelector()) {
-      Pattern->AddTypedTextChunk(Sel.getIdentifierInfoForSlot(0)->getName());
+      Pattern->AddTypedTextChunk(Sel.getNameForSlot(0));
       Results.AddResult(Pattern);
       continue;
     }
@@ -4888,7 +4887,7 @@ void Sema::CodeCompleteObjCSelector(Scope *S, IdentifierInfo **SelIdents,
         }
       }
       
-      Accumulator += Sel.getIdentifierInfoForSlot(I)->getName().str();
+      Accumulator += Sel.getNameForSlot(I).str();
       Accumulator += ':';
     }
     Pattern->AddTypedTextChunk(Accumulator);
@@ -5354,7 +5353,7 @@ void Sema::CodeCompleteObjCMethodDecl(Scope *S,
     Selector Sel = Method->getSelector();
 
     // Add the first part of the selector to the pattern.
-    Pattern->AddTypedTextChunk(Sel.getIdentifierInfoForSlot(0)->getName());
+    Pattern->AddTypedTextChunk(Sel.getNameForSlot(0));
 
     // Add parameters to the pattern.
     unsigned I = 0;
@@ -5366,8 +5365,7 @@ void Sema::CodeCompleteObjCMethodDecl(Scope *S,
         Pattern->AddTypedTextChunk(":");
       else if (I < Sel.getNumArgs()) {
         Pattern->AddChunk(CodeCompletionString::CK_HorizontalSpace);
-        Pattern->AddTypedTextChunk((Sel.getIdentifierInfoForSlot(I)->getName()
-                                    + ":").str());
+        Pattern->AddTypedTextChunk((Sel.getNameForSlot(I) + ":").str());
       } else
         break;
 
