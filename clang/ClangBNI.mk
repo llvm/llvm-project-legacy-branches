@@ -127,10 +127,14 @@ ifeq ($(Clang_Version),)
 $(error "invalid setting for clang version: '$(Clang_Version)'")
 endif
 
-# Set RC_ProjectSourceVersion, if unspecified.
+# Set RC_ProjectSourceVersion, if unspecified, and a real target.
 ifeq ($(RC_ProjectSourceVersion),)
+ifeq ($(MAKECMDGOALS),installsrc)
+else ifeq ($(MAKECMDGOALS),clean)
+else
 RC_ProjectSourceVersion := 99999.99
 $(warning "setting dummy RC_ProjectSourceVersion: '$(RC_ProjectSourceVersion)'")
+endif
 endif
 
 # Select assertions mode.
