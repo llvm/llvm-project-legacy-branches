@@ -1,0 +1,14 @@
+# <rdar://problem/9027636> [regression] undefined symbol 6 (_rvi_start) can't be private external symbol (N_PEXT)
+126297
+
+# <rdar://problem/9027648> [regression] non-relocatable subtraction expression, "__ZTV18URLProtectionSpace" minus "LPC2_0"
+126191
+
+# <rdar://problem/9030770> [regression] [debug info] incorrect condition in IT block
+126159
+
+# <rdar://problem/9049528> incorrect and inefficient codgen for copysign on armv7
+126295
+
+# <rdar://problem/9045024> [PR9305] Assertion failed: (i < getNumOperands() && "getOperand() out of range!")
+126359
