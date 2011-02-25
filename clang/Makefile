@@ -73,7 +73,7 @@ BINDEST := $(DSTROOT)\AppleInternal\bin
 MSVC_CRT := MT
 
 # Override CMake default libraries list, which is much larger than we need.
-CXXLIBS := kernel32.lib user32.lib advapi32.lib
+CXXLIBS := kernel32.lib user32.lib advapi32.lib shell32.lib
 
 all:: help
 
