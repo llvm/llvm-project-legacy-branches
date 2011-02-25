@@ -106,6 +106,7 @@ configure:
 	           "-DLLVM_INCLUDE_TESTS:=OFF" \
 	           "-DLLVM_BUILD_EXAMPLES:=OFF" \
 	           "-DLLVM_BUILD_TESTS:=OFF" \
+	           "-DCLANG_EXECUTABLE_VERSION:STRING=$(RC_PROJECTSOURCEVERSION)" \
 	           -G "$(GENERATOR_NAME)" \
 	           "$(SRCROOT)\src"
 
