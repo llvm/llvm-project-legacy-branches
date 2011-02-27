@@ -199,3 +199,6 @@ Custom: 123696
 
 # <rdar://problem/8960959> crash during thumb isel
 123864
+
+# <rdar://problem/9060168> lto.h shouldn't depend on System/DataTypes.h
+123038
