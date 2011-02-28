@@ -594,3 +594,15 @@ Custom: 123697
 
 # <rdar://problem/8939444> clang loses symbol coloring & index support
 124971 (custom patch: clang-8939444.patch)
+
+# <rdar://problem/8981530> use most recent 'as' for compiler-rt build
+125328
+
+# <rdar://problem/8984201> ObjC syntax coloring seems arbitrary(?)
+124800 (custom patch: clang-8984201.patch)
+
+# <rdar://problem/8956193> crash on AST load
+125434
+
+# <rdar://problem/8939352> missing completion for -observeValueForKeyPath:ofObject:change:context:
+125977 (custom patch: rdar-8939352.patch)
