@@ -255,7 +255,7 @@ Stage1_CC := $(CC)
 Stage1_CXX := $(CXX)
 
 # Set up any additional Clang install targets.
-Extra_Clang_Install_Targets :=
+Extra_Clang_Install_Targets := install-lto-h
 
 # Install /usr/... symlinks?
 ifeq ($(Post_Install_RootLinks),1)
@@ -600,6 +600,10 @@ install-clang-links:
 ifeq ($(Clang_Enable_CXX), 1)
 	ln -sf ../../../../../usr/bin/clang++ $(DSTROOT)/$(Install_Prefix)/bin/clang++
 endif
+
+install-lto-h:
+	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
+	$(INSTALL_FILE) $(Sources)/include/llvm-c/lto.h $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
 
 ##
 # Cross Compilation Build Support
