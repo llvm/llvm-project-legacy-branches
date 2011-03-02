@@ -126,6 +126,10 @@ public:
   ///
   unsigned short getAsmPrinterFlags() const { return AsmPrinterFlags; }
 
+  /// clearAsmPrinterFlags - clear the AsmPrinter bitvector
+  ///
+  void clearAsmPrinterFlags() { AsmPrinterFlags = 0; }
+  
   /// getAsmPrinterFlag - Return whether an AsmPrinter flag is set.
   ///
   bool getAsmPrinterFlag(CommentFlag Flag) const {
@@ -136,6 +140,12 @@ public:
   ///
   void setAsmPrinterFlag(CommentFlag Flag) {
     AsmPrinterFlags |= (unsigned short)Flag;
+  }
+  
+  /// clearAsmPrinterFlag - clear specific AsmPrinter flags
+  ///
+  void clearAsmPrinterFlag(CommentFlag Flag) {
+    AsmPrinterFlags &= ~Flag;
   }
 
   /// getDebugLoc - Returns the debug location id of this MachineInstr.
