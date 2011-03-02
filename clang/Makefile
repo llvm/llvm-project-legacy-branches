@@ -11,7 +11,9 @@ Clang_Driver_Mode      := Production
 # Select optimization flags to use.
 Clang_Optimize_Option  := -O2
 # Additional arbitrary compiler options.
-Clang_Extra_Options    := -DDISABLE_DEFAULT_STRICT_ALIASING
+Clang_Extra_Options    := \
+	-DDISABLE_DEFAULT_STRICT_ALIASING \
+	-DDISABLE_ARM_DARWIN_USE_MOVT
 # Additional arbitrary compiler options, only passed to final configure stage.
 Clang_Final_Extra_Options := -g
 # Enable use of clang++?
