@@ -373,16 +373,18 @@ void ASTStmtWriter::VisitDeclRefExpr(DeclRefExpr *E) {
   Record.push_back(E->hasQualifier());
   Record.push_back(E->hasExplicitTemplateArgs());
 
+  if (E->hasExplicitTemplateArgs()) {
+    unsigned NumTemplateArgs = E->getNumTemplateArgs();
+    Record.push_back(NumTemplateArgs);
+  }
+
   if (E->hasQualifier()) {
     Writer.AddNestedNameSpecifier(E->getQualifier(), Record);
     Writer.AddSourceRange(E->getQualifierRange(), Record);
   }
 
-  if (E->hasExplicitTemplateArgs()) {
-    unsigned NumTemplateArgs = E->getNumTemplateArgs();
-    Record.push_back(NumTemplateArgs);
+  if (E->hasExplicitTemplateArgs())
     AddExplicitTemplateArgumentList(E->getExplicitTemplateArgs());
-  }
 
   Writer.AddDeclRef(E->getDecl(), Record);
   Writer.AddSourceLocation(E->getLocation(), Record);

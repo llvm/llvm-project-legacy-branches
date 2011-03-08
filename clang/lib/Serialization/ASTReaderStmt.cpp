@@ -412,7 +412,10 @@ void ASTStmtReader::VisitDeclRefExpr(DeclRefExpr *E) {
 
   bool HasQualifier = Record[Idx++];
   bool HasExplicitTemplateArgs = Record[Idx++];
-  
+  unsigned NumTemplateArgs = 0;
+  if (HasExplicitTemplateArgs)
+    NumTemplateArgs = Record[Idx++];
+
   E->DecoratedD.setInt((HasQualifier? DeclRefExpr::HasQualifierFlag : 0) |
       (HasExplicitTemplateArgs 
          ? DeclRefExpr::HasExplicitTemplateArgumentListFlag : 0));
@@ -422,11 +425,9 @@ void ASTStmtReader::VisitDeclRefExpr(DeclRefExpr *E) {
     E->getNameQualifier()->Range = ReadSourceRange(Record, Idx);
   }
 
-  if (HasExplicitTemplateArgs) {
-    unsigned NumTemplateArgs = Record[Idx++];
+  if (HasExplicitTemplateArgs)
     ReadExplicitTemplateArgumentList(E->getExplicitTemplateArgs(),
                                      NumTemplateArgs);
-  }
 
   E->setDecl(cast<ValueDecl>(Reader.GetDecl(Record[Idx++])));
   E->setLocation(ReadSourceLocation(Record, Idx));
