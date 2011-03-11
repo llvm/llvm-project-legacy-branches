@@ -150,7 +150,7 @@ if [ "x$RC_ProjectName" = "xllvmCore_EmbeddedHosted" ]; then
 else
   if [ \! -f Makefile.config ]; then
       $SRC_DIR/configure --prefix=$DT_HOME/local \
-          --enable-targets=arm,x86,powerpc,cbe \
+          --enable-targets=arm,x86,cbe \
           --enable-assertions=$LLVM_ASSERTIONS \
           --enable-optimized=$LLVM_OPTIMIZED \
           --disable-bindings \
@@ -282,7 +282,7 @@ elif [ $MACOSX_DEPLOYMENT_TARGET = "10.5" ]; then
         -exec lipo -extract ppc7400 -extract i386 {} -output {} \;
 else
     find . -perm 755 -type f \! \( -name '*gccas' -o -name '*gccld' -o -name llvm-config \) \
-        -exec lipo -extract ppc7400 -extract i386 -extract x86_64 {} -output {} \;
+        -exec lipo -extract i386 -extract x86_64 {} -output {} \;
 fi
 
 # The Hello dylib is an example of how to build a pass. No need to install it.
