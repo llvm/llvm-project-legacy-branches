@@ -273,6 +273,7 @@ protected:
     lldb_private::Mutex m_sequence_mutex;    // Restrict access to sending/receiving packets to a single thread at a time
     lldb_private::Predicate<bool> m_public_is_running;
     lldb_private::Predicate<bool> m_private_is_running;
+    lldb_private::Predicate<bool> m_interrupt_in_progress;
 
     // If we need to send a packet while the target is running, the m_async_XXX
     // member variables take care of making this happen.

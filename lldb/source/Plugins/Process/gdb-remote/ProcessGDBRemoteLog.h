@@ -38,6 +38,9 @@ public:
     static lldb::LogSP
     GetLogIfAllCategoriesSet(uint32_t mask = 0);
 
+    static lldb::LogSP
+    GetLogIfAnyCategoriesSet (uint32_t mask = UINT32_MAX);
+
     static void
     DisableLog (lldb_private::Args &args, lldb_private::Stream *feedback_strm);
 

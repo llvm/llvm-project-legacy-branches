@@ -1492,7 +1492,7 @@ ProcessGDBRemote::EnableBreakpoint (BreakpointSite *bp_site)
                 {
                     uint8_t error_byte = response.GetError();
                     if (error_byte)
-                        error.SetErrorStringWithFormat("%x packet failed with error: %i (0x%2.2x).\n", packet, error_byte, error_byte);
+                        error.SetErrorStringWithFormat("'%s' packet failed with error: %i (0x%2.2x).\n", packet, error_byte, error_byte);
                 }
             }
         }

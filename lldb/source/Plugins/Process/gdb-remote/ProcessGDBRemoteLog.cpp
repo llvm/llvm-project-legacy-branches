@@ -42,6 +42,19 @@ ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (uint32_t mask)
     return log;
 }
 
+LogSP
+ProcessGDBRemoteLog::GetLogIfAnyCategoriesSet (uint32_t mask)
+{
+    LogSP log(GetLog ());
+    if (log)
+    {
+        uint32_t log_mask = log->GetMask().Get();
+        if (log_mask & mask)
+            return log; 
+    }
+    return LogSP();
+}
+
 void
 ProcessGDBRemoteLog::DisableLog (Args &args, Stream *feedback_strm)
 {

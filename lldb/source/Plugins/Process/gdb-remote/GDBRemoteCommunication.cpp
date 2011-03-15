@@ -39,6 +39,7 @@ GDBRemoteCommunication::GDBRemoteCommunication() :
     m_sequence_mutex (Mutex::eMutexTypeRecursive),
     m_public_is_running (false),
     m_private_is_running (false),
+    m_interrupt_in_progress (false),
     m_async_mutex (Mutex::eMutexTypeRecursive),
     m_async_packet_predicate (false),
     m_async_packet (),
@@ -134,7 +135,7 @@ GDBRemoteCommunication::SendPacketAndWaitForResponse
     TimeValue timeout_time;
     timeout_time = TimeValue::Now();
     timeout_time.OffsetWithSeconds (timeout_seconds);
-    LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
+    LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoriesSet (GDBR_LOG_PROCESS | GDBR_LOG_ASYNC));
 
     if (GetSequenceMutex (locker))
     {
@@ -284,6 +285,9 @@ GDBRemoteCommunication::SendContinuePacketAndWaitForResponse
                         process->BuildDynamicRegisterInfo (true);
                     }
 
+                    // If we are interrupting by sending a CTRL+C (0x03), the
+                    // we need to let the sender know that the interrupt happened
+                    m_interrupt_in_progress.SetValue (false, eBroadcastAlways);
                     // Privately notify any internal threads that we have stopped
                     // in case we wanted to interrupt our process, yet we might
                     // send a packet and continue without returning control to the
@@ -370,6 +374,10 @@ GDBRemoteCommunication::SendContinuePacketAndWaitForResponse
 
                 case 'W':
                 case 'X':
+                    // If we are interrupting by sending a CTRL+C (0x03), the
+                    // we need to let the sender know that the interrupt happened
+                    m_interrupt_in_progress.SetValue (false, eBroadcastAlways);
+
                     // process exited
                     state = eStateExited;
                     break;
@@ -408,6 +416,7 @@ GDBRemoteCommunication::SendContinuePacketAndWaitForResponse
     if (log)
         log->Printf ("GDBRemoteCommunication::%s () => %s", __FUNCTION__, StateAsCString(state));
     response.SetFilePos(0);
+    m_interrupt_in_progress.SetValue (false, eBroadcastAlways);
     m_private_is_running.SetValue (false, eBroadcastAlways);
     m_public_is_running.SetValue (false, eBroadcastAlways);
     return state;
@@ -508,61 +517,76 @@ GDBRemoteCommunication::SendInterrupt
 {
     sent_interrupt = false;
     timed_out = false;
-    LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
-
     if (IsRunning())
     {
+        LogSP process_or_async_log (ProcessGDBRemoteLog::GetLogIfAnyCategoriesSet (GDBR_LOG_PROCESS | GDBR_LOG_ASYNC));
+
         // Only send an interrupt if our debugserver is running...
         if (GetSequenceMutex (locker) == false)
         {
             // Someone has the mutex locked waiting for a response or for the
             // inferior to stop, so send the interrupt on the down low...
             char ctrl_c = '\x03';
+            bool success = false;
             ConnectionStatus status = eConnectionStatusSuccess;
-            TimeValue timeout;
-            if (seconds_to_wait_for_stop)
+            LogSP async_or_packet_log (ProcessGDBRemoteLog::GetLogIfAnyCategoriesSet (GDBR_LOG_PACKETS | GDBR_LOG_ASYNC));
+
+            if (m_interrupt_in_progress.GetValue())
             {
-                timeout = TimeValue::Now();
-                timeout.OffsetWithSeconds (seconds_to_wait_for_stop);
+                success = true;
+                if (async_or_packet_log)
+                    async_or_packet_log->Printf ("interrupt already in progress");
             }
-            ProcessGDBRemoteLog::LogIf (GDBR_LOG_PACKETS | GDBR_LOG_PROCESS, "sending packet: \\x03");
-            size_t bytes_written = Write (&ctrl_c, 1, status, NULL);
-            ProcessGDBRemoteLog::LogIf (GDBR_LOG_PACKETS | GDBR_LOG_PROCESS, "sent packet: \\x03");
-            if (bytes_written > 0)
+            else
+            {
+                m_interrupt_in_progress.SetValue (true, eBroadcastNever);
+                if (async_or_packet_log)
+                    async_or_packet_log->Printf ("send packet: \\x03");
+                size_t bytes_written = Write (&ctrl_c, 1, status, NULL);
+                if (async_or_packet_log)
+                    async_or_packet_log->Printf ("send packet returned %zu", bytes_written);
+                success = bytes_written > 0;
+            }
+            
+            if (success)
             {
                 sent_interrupt = true;
                 if (seconds_to_wait_for_stop)
                 {
-                    if (m_private_is_running.WaitForValueEqualTo (false, &timeout, &timed_out))
+                    TimeValue timeout;
+                    timeout = TimeValue::Now();
+                    timeout.OffsetWithSeconds (seconds_to_wait_for_stop);
+                    if (m_interrupt_in_progress.WaitForValueEqualTo (false, &timeout, &timed_out))
                     {
-                        if (log)
-                            log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, private state stopped", __FUNCTION__);
-                        return true;
+                        if (process_or_async_log)
+                            process_or_async_log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, private state stopped", __FUNCTION__);
                     }
                     else
                     {
-                        if (log)
-                            log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, timed out wating for async thread resume", __FUNCTION__);
+                        if (process_or_async_log)
+                            process_or_async_log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, timed out wating for async thread resume", __FUNCTION__);
+                        success = false;
                     }
                 }
                 else
                 {
-                    if (log)
-                        log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, not waiting for stop...", __FUNCTION__);                    
-                    return true;
+                    if (process_or_async_log)
+                        process_or_async_log->Printf ("GDBRemoteCommunication::%s () - sent interrupt, not waiting for stop...", __FUNCTION__);                    
                 }
             }
             else
             {
-                if (log)
-                    log->Printf ("GDBRemoteCommunication::%s () - failed to write interrupt", __FUNCTION__);
+                if (process_or_async_log)
+                    process_or_async_log->Printf ("GDBRemoteCommunication::%s () - failed to write interrupt", __FUNCTION__);
             }
-            return false;
+            
+            m_interrupt_in_progress.SetValue (false, eBroadcastNever);
+            return success;
         }
         else
         {
-            if (log)
-                log->Printf ("GDBRemoteCommunication::%s () - got sequence mutex without having to interrupt", __FUNCTION__);
+            if (process_or_async_log)
+                process_or_async_log->Printf ("GDBRemoteCommunication::%s () - got sequence mutex without having to interrupt", __FUNCTION__);
         }
     }
     return true;
