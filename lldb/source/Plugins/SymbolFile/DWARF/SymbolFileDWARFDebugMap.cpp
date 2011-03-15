@@ -72,6 +72,14 @@ SymbolFileDWARFDebugMap::SymbolFileDWARFDebugMap (ObjectFile* ofile) :
 
 SymbolFileDWARFDebugMap::~SymbolFileDWARFDebugMap()
 {
+    // Release all .o files so they don't persist in the shared cache
+    std::vector<CompileUnitInfo>::iterator pos, end;
+    for (pos = m_compile_unit_infos.begin(), end = m_compile_unit_infos.end();
+         pos != end;
+         ++pos)
+    {
+        ModuleList::RemoveSharedModule (pos->oso_module_sp);
+    }
 }
 
 void
@@ -166,6 +174,11 @@ SymbolFileDWARFDebugMap::GetModuleByCompUnitInfo (CompileUnitInfo *comp_unit_inf
         {
             FileSpec oso_file_spec(oso_symbol->GetMangled().GetName().AsCString(), true);
 
+            // Don't allow cached .o files since we dress up each .o file with
+            // new sections. We want them to be in the module list so we can 
+            // always find a shared pointer to the module (in Module::GetSP()),
+            // but just don't share them.
+            const bool always_create = true;
             ModuleList::GetSharedModule (oso_file_spec,
                                          m_obj_file->GetModule()->GetArchitecture(),
                                          NULL,  // UUID pointer
@@ -173,7 +186,8 @@ SymbolFileDWARFDebugMap::GetModuleByCompUnitInfo (CompileUnitInfo *comp_unit_inf
                                          0,     // object offset
                                          comp_unit_info->oso_module_sp,
                                          NULL,
-                                         NULL);
+                                         NULL,
+                                         always_create);
             //comp_unit_info->oso_module_sp.reset(new Module (oso_file_spec, m_obj_file->GetModule()->GetArchitecture()));
         }
     }
