@@ -774,7 +774,7 @@ protected:
       if (SizeCI->isAllOnesValue())
         return true;
       if (isString) {
-      	uint64_t Len = GetStringLength(CI->getArgOperand(SizeArgOp));
+      	uint64_t Len = GetStringLength(CI->getOperand(SizeArgOp));
         // If the length is 0 we don't know how long it is and so we can't
         // remove the check.
         if (Len == 0) return false;
