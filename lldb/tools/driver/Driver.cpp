@@ -1115,6 +1115,7 @@ Driver::MainLoop ()
     }
     
     m_debugger.PushInputReader (m_editline_reader);
+    m_debugger.GetCommandInterpreter().SetInputReader (m_editline_reader);
 
     SBListener listener(m_debugger.GetListener());
     if (listener.IsValid())

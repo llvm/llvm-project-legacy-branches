@@ -64,6 +64,7 @@ public:
 
 protected:
     friend class SBDebugger;
+    friend class SBCommandInterpreter;
 
 #ifndef SWIG
 

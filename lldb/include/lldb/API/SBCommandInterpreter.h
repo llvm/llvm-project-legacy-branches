@@ -87,6 +87,9 @@ public:
                       int match_start_point,
                       int max_return_elements,
                       lldb::SBStringList &matches);
+                      
+    void
+    SetInputReader (lldb::SBInputReader &reader);
 
 protected:
 

@@ -360,6 +360,12 @@ public:
     
     void
     SetBatchCommandMode (bool value) { m_batch_command_mode = value; }
+    
+    lldb::InputReaderSP &
+    GetInputReader () { return m_default_input_reader; }
+    
+    void
+    SetInputReader (lldb::InputReaderSP &reader_sp) { m_default_input_reader = reader_sp; }
 
 protected:
     friend class Debugger;
@@ -385,6 +391,7 @@ private:
     std::auto_ptr<ScriptInterpreter> m_script_interpreter_ap;
     char m_comment_char;
     bool m_batch_command_mode;
+    lldb::InputReaderSP m_default_input_reader;
 };
 
 

@@ -429,6 +429,7 @@ public:
     SetCloseInputOnEOF (bool b);
 
 protected:
+    friend class CommandInterpreter;
 
     static void
     DispatchInputCallback (void *baton, const void *bytes, size_t bytes_len);

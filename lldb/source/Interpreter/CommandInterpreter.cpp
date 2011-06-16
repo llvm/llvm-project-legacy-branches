@@ -70,7 +70,8 @@ CommandInterpreter::CommandInterpreter
     m_skip_lldbinit_files (false),
     m_script_interpreter_ap (),
     m_comment_char ('#'),
-    m_batch_command_mode (false)
+    m_batch_command_mode (false),
+    m_default_input_reader ()
 {
     const char *dbg_name = debugger.GetInstanceName().AsCString();
     std::string lang_name = ScriptInterpreter::LanguageToString (script_language);
@@ -1874,16 +1875,71 @@ CommandInterpreter::HandleCommandsFromFile (FileSpec &cmd_file,
 {
     if (cmd_file.Exists())
     {
-        bool success;
         StringList commands;
-        success = commands.ReadFileLines(cmd_file);
+        InputReaderSP cmd_input_reader = GetInputReader();
+
+        bool success = commands.ReadFileLines(cmd_file);
         if (!success)
         {
             result.AppendErrorWithFormat ("Error reading commands from file: %s.\n", cmd_file.GetFilename().AsCString());
             result.SetStatus (eReturnStatusFailed);
             return;
         }
-        HandleCommands (commands, context, stop_on_continue, stop_on_error, echo_command, print_result, result);
+        
+        bool old_async_execution = m_debugger.GetAsyncExecution();
+        if (!stop_on_continue)
+            m_debugger.SetAsyncExecution (false);
+            
+        bool save_auto_confirm = m_debugger.GetAutoConfirm();
+        m_debugger.SetAutoConfirm (true);
+            
+        bool save_batch_command_mode = GetBatchCommandMode();
+        SetBatchCommandMode (true);
+            
+        size_t num_lines = commands.GetSize();
+        StreamString input_stream;
+        for (size_t i = 0; i < num_lines;++i)
+        {
+            const char *cmd = commands.GetStringAtIndex (i);
+            if (m_debugger.InputReaderIsTopReader (cmd_input_reader))
+            {
+                CommandReturnObject tmp_result;
+
+                if (!cmd || (strlen(cmd) == 0))  // Do NOT interpreter blank lines as 'repeat'
+                    continue;
+            
+               if (echo_command)
+                    result.AppendMessageWithFormat ("%s\n", cmd);
+                success = HandleCommand(cmd, false, tmp_result, NULL);
+                if (!success || !tmp_result.Succeeded())
+                {
+                    if (stop_on_error)
+                    {
+                        result.AppendErrorWithFormat ("Aborting reading of commands after command #%d: '%s' failed.\n",
+                                                       i, cmd);
+                        result.SetStatus (eReturnStatusFailed);
+                        m_debugger.SetAsyncExecution (old_async_execution);
+                        SetBatchCommandMode (save_batch_command_mode);
+                        return;
+                    } else if (print_result)
+                    {
+                        result.AppendMessageWithFormat ("Command #%d '%s' failed with error: %s.\n",
+                                                        i + 1,
+                                                        cmd,
+                                                        tmp_result.GetErrorData());
+                    }
+                }
+            }
+            else
+            {
+                if (echo_command)
+                    result.AppendMessageWithFormat ("%s\n", cmd);
+                m_debugger.DispatchInput (cmd, strlen(cmd));
+                m_debugger.DispatchInput ("\n", 1);
+            }
+        }
+        SetBatchCommandMode (save_batch_command_mode);
+        m_debugger.SetAutoConfirm (save_auto_confirm);
     }
     else
     {

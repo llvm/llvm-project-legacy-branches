@@ -18,6 +18,7 @@
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBCommandReturnObject.h"
+#include "lldb/API/SBInputReader.h"
 #include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBCommandInterpreter.h"
 #include "lldb/API/SBProcess.h"
@@ -304,6 +305,13 @@ SBCommandInterpreter::GetArgumentDescriptionAsCString (const lldb::CommandArgume
     return CommandObject::GetArgumentDescriptionAsCString (arg_type);
 }
 
+void
+SBCommandInterpreter::SetInputReader (lldb::SBInputReader &reader)
+{
+    InputReaderSP reader_sp (reader.get());
+    if (m_opaque_ptr)
+        m_opaque_ptr->SetInputReader (reader_sp);
+}
 
 extern "C" bool
 LLDBSwigPythonBreakpointCallbackFunction 
