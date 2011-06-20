@@ -63,10 +63,6 @@ void LLVMAddDeadArgEliminationPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createDeadArgEliminationPass());
 }
 
-void LLVMAddDeadTypeEliminationPass(LLVMPassManagerRef PM) {
-  unwrap(PM)->add(createDeadTypeEliminationPass());
-}
-
 void LLVMAddFunctionAttrsPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createFunctionAttrsPass());
 }

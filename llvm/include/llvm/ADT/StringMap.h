@@ -307,7 +307,7 @@ public:
     return ValueTy();
   }
 
-  ValueTy& operator[](StringRef Key) {
+  ValueTy &operator[](StringRef Key) {
     return GetOrCreateValue(Key).getValue();
   }
 

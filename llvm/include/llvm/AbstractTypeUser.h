@@ -11,6 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+
+#error REMOVE ME!
+
+
+
 #ifndef LLVM_ABSTRACT_TYPE_USER_H
 #define LLVM_ABSTRACT_TYPE_USER_H
 

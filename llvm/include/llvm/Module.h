@@ -28,6 +28,10 @@ namespace llvm {
 class FunctionType;
 class GVMaterializer;
 class LLVMContext;
+class StructType;
+template<typename T> struct DenseMapInfo;
+template<typename KeyT, typename ValueT, 
+         typename KeyInfoT, typename ValueInfoT> class DenseMap;
 
 template<> struct ilist_traits<Function>
   : public SymbolTableListTraits<Function, Module> {
@@ -145,7 +149,6 @@ private:
   NamedMDListType NamedMDList;    ///< The named metadata in the module
   std::string GlobalScopeAsm;     ///< Inline Asm at global scope.
   ValueSymbolTable *ValSymTab;    ///< Symbol table for values
-  TypeSymbolTable *TypeSymTab;    ///< Symbol table for types
   OwningPtr<GVMaterializer> Materializer;  ///< Used to materialize GlobalValues
   std::string ModuleID;           ///< Human readable identifier for the module
   std::string TargetTriple;       ///< Platform target triple Module compiled on
@@ -244,6 +247,18 @@ public:
   /// custom metadata IDs registered in this LLVMContext.
   void getMDKindNames(SmallVectorImpl<StringRef> &Result) const;
 
+  
+  typedef DenseMap<StructType*, unsigned, DenseMapInfo<StructType*>,
+                   DenseMapInfo<unsigned> > NumeredTypesMapTy;
+
+  /// findUsedStructTypes - Walk the entire module and find all of the
+  /// struct types that are in use, returning them in a vector.
+  void findUsedStructTypes(std::vector<StructType*> &StructTypes) const;
+  
+  /// getTypeByName - Return the type with the specified name, or null if there
+  /// is none by that name.
+  const Type *getTypeByName(StringRef Name) const;
+
 /// @}
 /// @name Function Accessors
 /// @{
@@ -340,23 +355,6 @@ public:
   void eraseNamedMetadata(NamedMDNode *NMD);
 
 /// @}
-/// @name Type Accessors
-/// @{
-
-  /// addTypeName - Insert an entry in the symbol table mapping Str to Type.  If
-  /// there is already an entry for this name, true is returned and the symbol
-  /// table is not modified.
-  bool addTypeName(StringRef Name, const Type *Ty);
-
-  /// getTypeName - If there is at least one entry in the symbol table for the
-  /// specified type, return it.
-  std::string getTypeName(const Type *Ty) const;
-
-  /// getTypeByName - Return the type with the specified name in this module, or
-  /// null if there is none by that name.
-  const Type *getTypeByName(StringRef Name) const;
-
-/// @}
 /// @name Materialization
 /// @{
 
@@ -429,10 +427,6 @@ public:
   const ValueSymbolTable &getValueSymbolTable() const { return *ValSymTab; }
   /// Get the Module's symbol table of global variable and function identifiers.
   ValueSymbolTable       &getValueSymbolTable()       { return *ValSymTab; }
-  /// Get the symbol table of types
-  const TypeSymbolTable  &getTypeSymbolTable() const  { return *TypeSymTab; }
-  /// Get the Module's symbol table of types
-  TypeSymbolTable        &getTypeSymbolTable()        { return *TypeSymTab; }
 
 /// @}
 /// @name Global Variable Iteration
@@ -535,6 +529,7 @@ public:
 
   /// Dump the module to stderr (for debugging).
   void dump() const;
+  
   /// This function causes all the subinstructions to "let go" of all references
   /// that they are maintaining.  This allows one to 'delete' a whole class at
   /// a time, even though there may be circular references... first all

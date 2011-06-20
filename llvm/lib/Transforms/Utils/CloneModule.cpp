@@ -15,7 +15,6 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Module.h"
 #include "llvm/DerivedTypes.h"
-#include "llvm/TypeSymbolTable.h"
 #include "llvm/Constant.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 using namespace llvm;
@@ -32,20 +31,13 @@ Module *llvm::CloneModule(const Module *M) {
   return CloneModule(M, VMap);
 }
 
-Module *llvm::CloneModule(const Module *M,
-                          ValueToValueMapTy &VMap) {
-  // First off, we need to create the new module...
+Module *llvm::CloneModule(const Module *M, ValueToValueMapTy &VMap) {
+  // First off, we need to create the new module.
   Module *New = new Module(M->getModuleIdentifier(), M->getContext());
   New->setDataLayout(M->getDataLayout());
   New->setTargetTriple(M->getTargetTriple());
   New->setModuleInlineAsm(M->getModuleInlineAsm());
-
-  // Copy all of the type symbol table entries over.
-  const TypeSymbolTable &TST = M->getTypeSymbolTable();
-  for (TypeSymbolTable::const_iterator TI = TST.begin(), TE = TST.end(); 
-       TI != TE; ++TI)
-    New->addTypeName(TI->first, TI->second);
-  
+   
   // Copy all of the dependent libraries over.
   for (Module::lib_iterator I = M->lib_begin(), E = M->lib_end(); I != E; ++I)
     New->addLibrary(*I);

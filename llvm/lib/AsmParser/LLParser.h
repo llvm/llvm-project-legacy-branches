@@ -18,6 +18,7 @@
 #include "llvm/Module.h"
 #include "llvm/Type.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/ValueHandle.h"
 #include <map>
 
@@ -32,6 +33,7 @@ namespace llvm {
   class GlobalValue;
   class MDString;
   class MDNode;
+  class StructType;
 
   /// ValID - Represents a reference of a definition of some sort with no type.
   /// There are several cases where we have to parse the value but where the
@@ -93,33 +95,13 @@ namespace llvm {
     };
     DenseMap<Instruction*, std::vector<MDRef> > ForwardRefInstMetadata;
 
-    // Type resolution handling data structures.
-    std::map<std::string, std::pair<PATypeHolder, LocTy> > ForwardRefTypes;
-    std::map<unsigned, std::pair<PATypeHolder, LocTy> > ForwardRefTypeIDs;
-    std::vector<PATypeHolder> NumberedTypes;
+    // Type resolution handling data structures.  The location is set when we
+    // have processed a use of the type but not a definition yet.
+    StringMap<std::pair<StructType*, LocTy> > NamedTypes;
+    std::vector<std::pair<StructType*, LocTy> > NumberedTypes;
+    
     std::vector<TrackingVH<MDNode> > NumberedMetadata;
     std::map<unsigned, std::pair<TrackingVH<MDNode>, LocTy> > ForwardRefMDNodes;
-    struct UpRefRecord {
-      /// Loc - This is the location of the upref.
-      LocTy Loc;
-
-      /// NestingLevel - The number of nesting levels that need to be popped
-      /// before this type is resolved.
-      unsigned NestingLevel;
-
-      /// LastContainedTy - This is the type at the current binding level for
-      /// the type.  Every time we reduce the nesting level, this gets updated.
-      const Type *LastContainedTy;
-
-      /// UpRefTy - This is the actual opaque type that the upreference is
-      /// represented with.
-      OpaqueType *UpRefTy;
-
-      UpRefRecord(LocTy L, unsigned NL, OpaqueType *URTy)
-        : Loc(L), NestingLevel(NL), LastContainedTy((Type*)URTy),
-          UpRefTy(URTy) {}
-    };
-    std::vector<UpRefRecord> UpRefs;
 
     // Global Value reference information.
     std::map<std::string, std::pair<GlobalValue*, LocTy> > ForwardRefVals;
@@ -137,7 +119,7 @@ namespace llvm {
       M(m) {}
     bool Run();
 
-    LLVMContext& getContext() { return Context; }
+    LLVMContext &getContext() { return Context; }
 
   private:
 
@@ -222,16 +204,17 @@ namespace llvm {
     bool ParseMDNodeID(MDNode *&Result, unsigned &SlotNo);
 
     // Type Parsing.
-    bool ParseType(PATypeHolder &Result, bool AllowVoid = false);
-    bool ParseType(PATypeHolder &Result, LocTy &Loc, bool AllowVoid = false) {
+    bool ParseType(Type *&Result, bool AllowVoid = false);
+    bool ParseType(Type *&Result, LocTy &Loc, bool AllowVoid = false) {
       Loc = Lex.getLoc();
       return ParseType(Result, AllowVoid);
     }
-    bool ParseTypeRec(PATypeHolder &H);
-    bool ParseStructType(PATypeHolder &H, bool Packed);
-    bool ParseArrayVectorType(PATypeHolder &H, bool isVector);
-    bool ParseFunctionType(PATypeHolder &Result);
-    PATypeHolder HandleUpRefs(const Type *Ty);
+    bool ParseAnonStructType(Type *&Result, bool Packed);
+    bool ParseStructBody(SmallVectorImpl<Type*> &Body);
+    bool ParseStructDefinition(StructType *STy);
+
+    bool ParseArrayVectorType(Type *&Result, bool isVector);
+    bool ParseFunctionType(Type *&Result);
 
     // Function Semantic Analysis.
     class PerFunctionState {
@@ -278,14 +261,20 @@ namespace llvm {
     bool ConvertValIDToValue(const Type *Ty, ValID &ID, Value *&V,
                              PerFunctionState *PFS);
 
-    bool ParseValue(const Type *Ty, Value *&V, PerFunctionState &PFS);
+    bool ParseValue(const Type *Ty, Value *&V, PerFunctionState *PFS);
+    bool ParseValue(const Type *Ty, Value *&V, PerFunctionState &PFS) {
+      return ParseValue(Ty, V, &PFS);
+    }
     bool ParseValue(const Type *Ty, Value *&V, LocTy &Loc,
                     PerFunctionState &PFS) {
       Loc = Lex.getLoc();
-      return ParseValue(Ty, V, PFS);
+      return ParseValue(Ty, V, &PFS);
     }
 
-    bool ParseTypeAndValue(Value *&V, PerFunctionState &PFS);
+    bool ParseTypeAndValue(Value *&V, PerFunctionState *PFS);
+    bool ParseTypeAndValue(Value *&V, PerFunctionState &PFS) {
+      return ParseTypeAndValue(V, &PFS);
+    }
     bool ParseTypeAndValue(Value *&V, LocTy &Loc, PerFunctionState &PFS) {
       Loc = Lex.getLoc();
       return ParseTypeAndValue(V, PFS);
@@ -321,14 +310,13 @@ namespace llvm {
     // Function Parsing.
     struct ArgInfo {
       LocTy Loc;
-      PATypeHolder Type;
+      Type *Ty;
       unsigned Attrs;
       std::string Name;
-      ArgInfo(LocTy L, PATypeHolder Ty, unsigned Attr, const std::string &N)
-        : Loc(L), Type(Ty), Attrs(Attr), Name(N) {}
+      ArgInfo(LocTy L, Type *ty, unsigned Attr, const std::string &N)
+        : Loc(L), Ty(ty), Attrs(Attr), Name(N) {}
     };
-    bool ParseArgumentList(std::vector<ArgInfo> &ArgList,
-                           bool &isVarArg, bool inType);
+    bool ParseArgumentList(SmallVectorImpl<ArgInfo> &ArgList, bool &isVarArg);
     bool ParseFunctionHeader(Function *&Fn, bool isDefine);
     bool ParseFunctionBody(Function &Fn);
     bool ParseBasicBlock(PerFunctionState &PFS);

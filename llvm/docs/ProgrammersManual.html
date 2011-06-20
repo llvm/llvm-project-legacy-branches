@@ -168,7 +168,7 @@ with another <tt>Value</tt></a> </li>
     <li><a href="#AbstractTypeUser">The AbstractTypeUser Class</a></li>
   </ul></li>
 
-  <li><a href="#SymbolTable">The <tt>ValueSymbolTable</tt> and <tt>TypeSymbolTable</tt> classes</a></li>
+  <li><a href="#SymbolTable">The <tt>ValueSymbolTable</tt> class</a></li>
   <li><a href="#UserLayout">The <tt>User</tt> and owned <tt>Use</tt> classes' memory layout</a></li>
   </ul></li>
 
@@ -2810,8 +2810,7 @@ objects) can never be refined.
 
 <!-- ======================================================================= -->
 <h3>
-  <a name="SymbolTable">The <tt>ValueSymbolTable</tt> and
-   <tt>TypeSymbolTable</tt> classes</a>
+  <a name="SymbolTable">The <tt>ValueSymbolTable</tt> class</a>
 </h3>
 
 <div>
@@ -2820,9 +2819,7 @@ ValueSymbolTable</a></tt> class provides a symbol table that the <a
 href="#Function"><tt>Function</tt></a> and <a href="#Module">
 <tt>Module</tt></a> classes use for naming value definitions. The symbol table
 can provide a name for any <a href="#Value"><tt>Value</tt></a>. 
-The <tt><a href="http://llvm.org/doxygen/classllvm_1_1TypeSymbolTable.html">
-TypeSymbolTable</a></tt> class is used by the <tt>Module</tt> class to store
-names for types.</p>
+</p>
 
 <p>Note that the <tt>SymbolTable</tt> class should not be directly accessed 
 by most clients.  It should only be used when iteration over the symbol table 
@@ -2832,13 +2829,12 @@ all LLVM
 an empty name) do not exist in the symbol table.
 </p>
 
-<p>These symbol tables support iteration over the values/types in the symbol
+<p>Symbol tables support iteration over the values in the symbol
 table with <tt>begin/end/iterator</tt> and supports querying to see if a
 specific name is in the symbol table (with <tt>lookup</tt>).  The
 <tt>ValueSymbolTable</tt> class exposes no public mutator methods, instead,
 simply call <tt>setName</tt> on a value, which will autoinsert it into the
-appropriate symbol table.  For types, use the Module::addTypeName method to
-insert entries into the symbol table.</p>
+appropriate symbol table.</p>
 
 </div>
 
