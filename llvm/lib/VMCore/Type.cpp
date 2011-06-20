@@ -415,12 +415,11 @@ StructType *StructType::createNamed(LLVMContext &Context, StringRef Name) {
 void StructType::setName(StringRef Name) {
   if (Name == getName()) return;
 
+  // If this struct already had a name, remove its symbol table entry.
   if (SymbolTableEntry) {
-    // REMOVE 
-    
+    getContext().pImpl->NamedStructTypes.erase(getName());
     SymbolTableEntry = 0;
   }
-  
   
   // If this is just removing the name, we're done.
   if (Name.empty())
