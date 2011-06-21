@@ -31,7 +31,7 @@ void BitcodeReader::FreeState() {
   if (BufferOwned)
     delete Buffer;
   Buffer = 0;
-  std::vector<PATypeHolder>().swap(TypeList);
+  std::vector<Type*>().swap(TypeList);
   ValueList.clear();
   MDValueList.clear();
 
@@ -352,17 +352,17 @@ Value *BitcodeReaderMDValueList::getValueFwdRef(unsigned Idx) {
   return V;
 }
 
-const Type *BitcodeReader::getTypeByID(unsigned ID, bool isTypeTable) {
+Type *BitcodeReader::getTypeByID(unsigned ID) {
   // If the TypeID is in range, return it.
-  if (ID < TypeList.size())
-    return TypeList[ID].get();
-  if (!isTypeTable) return 0;
+  if (ID >= TypeList.size())
+    TypeList.resize(ID+1);
+  
+  if (Type *Ty = TypeList[ID])
+    return Ty;
 
-  // The type table allows forward references.  Push as many Opaque types as
-  // needed to get up to ID.
-  while (TypeList.size() <= ID)
-    TypeList.push_back(OpaqueType::get(Context));
-  return TypeList.back().get();
+  // If we have a forward reference, the only possible case is when it is to a
+  // named struct.  Just create a placeholder for now.
+  return TypeList[ID] = StructType::createNamed(Context, "");
 }
 
 //===----------------------------------------------------------------------===//
@@ -471,17 +471,22 @@ bool BitcodeReader::ParseAttributeBlock() {
   }
 }
 
-
 bool BitcodeReader::ParseTypeTable() {
-  if (Stream.EnterSubBlock(bitc::TYPE_BLOCK_ID))
+  if (Stream.EnterSubBlock(bitc::TYPE_BLOCK_ID_NEW))
     return Error("Malformed block record");
+  
+  return ParseTypeTableBody();
+}
 
+bool BitcodeReader::ParseTypeTableBody() {
   if (!TypeList.empty())
     return Error("Multiple TYPE_BLOCKs found!");
 
   SmallVector<uint64_t, 64> Record;
   unsigned NumRecords = 0;
 
+  SmallString<64> TypeName;
+  
   // Read all the records for this type table.
   while (1) {
     unsigned Code = Stream.ReadCode();
@@ -508,17 +513,15 @@ bool BitcodeReader::ParseTypeTable() {
 
     // Read a record.
     Record.clear();
-    const Type *ResultTy = 0;
+    Type *ResultTy = 0;
     switch (Stream.ReadRecord(Code, Record)) {
-    default:  // Default behavior: unknown type.
-      ResultTy = 0;
-      break;
+    default: return Error("unknown type in type table");
     case bitc::TYPE_CODE_NUMENTRY: // TYPE_CODE_NUMENTRY: [numentries]
       // TYPE_CODE_NUMENTRY contains a count of the number of types in the
       // type list.  This allows us to reserve space.
       if (Record.size() < 1)
         return Error("Invalid TYPE_CODE_NUMENTRY record");
-      TypeList.reserve(Record[0]);
+      TypeList.resize(Record[0]);
       continue;
     case bitc::TYPE_CODE_VOID:      // VOID
       ResultTy = Type::getVoidTy(Context);
@@ -541,9 +544,11 @@ bool BitcodeReader::ParseTypeTable() {
     case bitc::TYPE_CODE_LABEL:     // LABEL
       ResultTy = Type::getLabelTy(Context);
       break;
-    case bitc::TYPE_CODE_OPAQUE:    // OPAQUE
+#if 0
+    case bitc::TYPE_CODE_OPAQUE_OLD:    // OPAQUE
       ResultTy = 0;
       break;
+#endif
     case bitc::TYPE_CODE_METADATA:  // METADATA
       ResultTy = Type::getMetadataTy(Context);
       break;
@@ -563,8 +568,7 @@ bool BitcodeReader::ParseTypeTable() {
       unsigned AddressSpace = 0;
       if (Record.size() == 2)
         AddressSpace = Record[1];
-      ResultTy = PointerType::get(getTypeByID(Record[0], true),
-                                        AddressSpace);
+      ResultTy = PointerType::get(getTypeByID(Record[0]), AddressSpace);
       break;
     }
     case bitc::TYPE_CODE_FUNCTION: {
@@ -574,66 +578,79 @@ bool BitcodeReader::ParseTypeTable() {
         return Error("Invalid FUNCTION type record");
       std::vector<const Type*> ArgTys;
       for (unsigned i = 3, e = Record.size(); i != e; ++i)
-        ArgTys.push_back(getTypeByID(Record[i], true));
+        ArgTys.push_back(getTypeByID(Record[i]));
 
-      ResultTy = FunctionType::get(getTypeByID(Record[2], true), ArgTys,
-                                   Record[0]);
+      ResultTy = FunctionType::get(getTypeByID(Record[2]), ArgTys, Record[0]);
       break;
     }
-    case bitc::TYPE_CODE_STRUCT: {  // STRUCT: [ispacked, eltty x N]
+    case bitc::TYPE_CODE_STRUCT_ANON: {  // STRUCT: [ispacked, eltty x N]
       if (Record.size() < 1)
         return Error("Invalid STRUCT type record");
       std::vector<const Type*> EltTys;
       for (unsigned i = 1, e = Record.size(); i != e; ++i)
-        EltTys.push_back(getTypeByID(Record[i], true));
+        EltTys.push_back(getTypeByID(Record[i]));
       ResultTy = StructType::get(Context, EltTys, Record[0]);
+      break;
+    }
+    case bitc::TYPE_CODE_STRUCT_NAME:   // STRUCT_NAME: [strchr x N]
+      if (ConvertToString(Record, 0, TypeName))
+        return Error("Invalid STRUCT_NAME record");
+      continue;
+
+    case bitc::TYPE_CODE_STRUCT_NAMED: { // STRUCT: [ispacked, eltty x N]
+      if (Record.size() < 1)
+        return Error("Invalid STRUCT type record");
+      
+      if (NumRecords >= TypeList.size())
+        return Error("invalid TYPE table");
+
+      // Check to see if this was forward referenced, if so fill in the temp.
+      StructType *Res = cast_or_null<StructType>(TypeList[NumRecords]);
+      if (Res) {
+        Res->setName(TypeName);
+        TypeList[NumRecords] = 0;
+      } else  // Otherwise, create a new struct.
+        Res = StructType::createNamed(Context, TypeName);
+      TypeName.clear();
+      
+      SmallVector<Type*, 8> EltTys;
+      for (unsigned i = 1, e = Record.size(); i != e; ++i)
+        EltTys.push_back(getTypeByID(Record[i]));
+      Res->setBody(EltTys, Record[0]);
+      ResultTy = Res;
       break;
     }
     case bitc::TYPE_CODE_ARRAY:     // ARRAY: [numelts, eltty]
       if (Record.size() < 2)
         return Error("Invalid ARRAY type record");
-      ResultTy = ArrayType::get(getTypeByID(Record[1], true), Record[0]);
+      ResultTy = ArrayType::get(getTypeByID(Record[1]), Record[0]);
       break;
     case bitc::TYPE_CODE_VECTOR:    // VECTOR: [numelts, eltty]
       if (Record.size() < 2)
         return Error("Invalid VECTOR type record");
-      ResultTy = VectorType::get(getTypeByID(Record[1], true), Record[0]);
+      ResultTy = VectorType::get(getTypeByID(Record[1]), Record[0]);
       break;
     }
 
-    if (NumRecords == TypeList.size()) {
-      // If this is a new type slot, just append it.
-      TypeList.push_back(ResultTy ? ResultTy : OpaqueType::get(Context));
-      ++NumRecords;
-    } else if (ResultTy == 0) {
-      // Otherwise, this was forward referenced, so an opaque type was created,
-      // but the result type is actually just an opaque.  Leave the one we
-      // created previously.
-      ++NumRecords;
-    } else {
-      // Otherwise, this was forward referenced, so an opaque type was created.
-      // Resolve the opaque type to the real type now.
-      assert(NumRecords < TypeList.size() && "Typelist imbalance");
-      const OpaqueType *OldTy = cast<OpaqueType>(TypeList[NumRecords++].get());
-
-      // Don't directly push the new type on the Tab. Instead we want to replace
-      // the opaque type we previously inserted with the new concrete value. The
-      // refinement from the abstract (opaque) type to the new type causes all
-      // uses of the abstract type to use the concrete type (NewTy). This will
-      // also cause the opaque type to be deleted.
-      const_cast<OpaqueType*>(OldTy)->refineAbstractTypeTo(ResultTy);
-
-      // This should have replaced the old opaque type with the new type in the
-      // value table... or with a preexisting type that was already in the
-      // system.  Let's just make sure it did.
-      assert(TypeList[NumRecords-1].get() != OldTy &&
-             "refineAbstractType didn't work!");
-    }
+    if (NumRecords >= TypeList.size())
+      return Error("invalid TYPE table");
+    assert(ResultTy && "Didn't read a type?");
+    assert(TypeList[NumRecords] == 0 && "Already read type?");
+    TypeList[NumRecords++] = ResultTy;
   }
 }
 
+// FIXME: Remove in LLVM 3.1
+bool BitcodeReader::ParseOldTypeTable() {
+  if (Stream.EnterSubBlock(bitc::TYPE_BLOCK_ID_OLD))
+    return Error("Malformed block record");
 
-bool BitcodeReader::ParseTypeSymbolTable() {
+  return ParseTypeTableBody();
+}
+
+
+bool BitcodeReader::ParseOldTypeSymbolTable() {
+#if 0
   if (Stream.EnterSubBlock(bitc::TYPE_SYMTAB_BLOCK_ID))
     return Error("Malformed block record");
 
@@ -679,6 +696,7 @@ bool BitcodeReader::ParseTypeSymbolTable() {
       break;
     }
   }
+#endif
 }
 
 bool BitcodeReader::ParseValueSymbolTable() {
@@ -1310,12 +1328,16 @@ bool BitcodeReader::ParseModule() {
         if (ParseAttributeBlock())
           return true;
         break;
-      case bitc::TYPE_BLOCK_ID:
+      case bitc::TYPE_BLOCK_ID_NEW:
         if (ParseTypeTable())
           return true;
         break;
-      case bitc::TYPE_SYMTAB_BLOCK_ID:
-        if (ParseTypeSymbolTable())
+      case bitc::TYPE_BLOCK_ID_OLD:
+        if (ParseOldTypeTable())
+          return true;
+        break;
+      case bitc::TYPE_SYMTAB_BLOCK_ID_OLD:
+        if (ParseOldTypeSymbolTable())
           return true;
         break;
       case bitc::VALUE_SYMTAB_BLOCK_ID:
