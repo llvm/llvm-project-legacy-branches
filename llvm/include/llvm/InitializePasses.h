@@ -83,7 +83,6 @@ void initializeDAEPass(PassRegistry&);
 void initializeDAHPass(PassRegistry&);
 void initializeDCEPass(PassRegistry&);
 void initializeDSEPass(PassRegistry&);
-void initializeDTEPass(PassRegistry&);
 void initializeDeadInstEliminationPass(PassRegistry&);
 void initializeDeadMachineInstructionElimPass(PassRegistry&);
 void initializeDomOnlyPrinterPass(PassRegistry&);

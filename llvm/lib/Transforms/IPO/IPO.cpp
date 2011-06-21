@@ -25,7 +25,6 @@ void llvm::initializeIPO(PassRegistry &Registry) {
   initializeConstantMergePass(Registry);
   initializeDAEPass(Registry);
   initializeDAHPass(Registry);
-  initializeDTEPass(Registry);
   initializeFunctionAttrsPass(Registry);
   initializeGlobalDCEPass(Registry);
   initializeGlobalOptPass(Registry);
