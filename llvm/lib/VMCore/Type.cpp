@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMContextImpl.h"
+#include "llvm/Module.h"
 #include <algorithm>
 #include <cstdarg>
 #include "llvm/ADT/SmallString.h"
@@ -514,6 +515,17 @@ bool StructType::isLayoutIdentical(const StructType *Other) const {
     return false;
   
   return std::equal(element_begin(), element_end(), Other->element_begin());
+}
+
+
+/// getTypeByName - Return the type with the specified name, or null if there
+/// is none by that name.
+StructType *Module::getTypeByName(StringRef Name) const {
+  StringMap<StructType*>::iterator I =
+    getContext().pImpl->NamedStructTypes.find(Name);
+  if (I != getContext().pImpl->NamedStructTypes.end())
+    return I->second;
+  return 0;
 }
 
 

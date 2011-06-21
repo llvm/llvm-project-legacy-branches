@@ -257,7 +257,7 @@ public:
   
   /// getTypeByName - Return the type with the specified name, or null if there
   /// is none by that name.
-  const Type *getTypeByName(StringRef Name) const;
+  StructType *getTypeByName(StringRef Name) const;
 
 /// @}
 /// @name Function Accessors

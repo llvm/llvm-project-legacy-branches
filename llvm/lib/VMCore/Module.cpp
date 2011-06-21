@@ -519,3 +519,5 @@ namespace {
 void Module::findUsedStructTypes(std::vector<StructType*> &StructTypes) const {
   TypeFinder(StructTypes).run(*this);
 }
+
+
