@@ -1473,11 +1473,12 @@ bool LLParser::ParseStructDefinition(StructType *STy) {
   
   bool isPacked = false;
   if (EatIfPresent(lltok::less)) {
-    if (Lex.getKind() != lltok::lbrace)
-      return TokError("expected packed struct type in definition");
     isPacked = true;
   }
-  
+
+  if (Lex.getKind() != lltok::lbrace)
+    return TokError("expected '{' in struct type definition");
+
   SmallVector<Type*, 8> Body;
   if (ParseStructBody(Body) ||
       (isPacked && ParseToken(lltok::greater, "expected '>' in packed struct")))
