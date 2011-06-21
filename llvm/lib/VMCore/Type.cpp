@@ -400,7 +400,7 @@ void StructType::setBody(ArrayRef<Type*> Elements, bool isPacked) {
     setSubclassData(getSubclassData() | SCDB_Packed);
   
   Type **Elts = new Type*[Elements.size()];
-  memcpy(Elts, Elements.data(), sizeof(Elements[0])*sizeof(Type*));
+  memcpy(Elts, Elements.data(), sizeof(Elements[0])*Elements.size());
   
   ContainedTys = Elts;
   NumContainedTys = Elements.size();
