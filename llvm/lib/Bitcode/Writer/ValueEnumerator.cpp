@@ -316,15 +316,18 @@ void ValueEnumerator::EnumerateValue(const Value *V) {
 
 
 void ValueEnumerator::EnumerateType(const Type *Ty) {
-  unsigned &TypeID = TypeMap[Ty];
+  unsigned *TypeID = &TypeMap[Ty];
 
   // We've already seen this type.
-  if (TypeID)
+  if (*TypeID)
     return;
 
-  // Mark the type as being visited so that we don't recursively visit it.  This
-  // only matters for struct types, but doesn't hurt anything else.
-  TypeID = ~0U;
+  // If it is a non-anonymous struct, mark the type as being visited so that we
+  // don't recursively visit it.  This is safe because we allow forward
+  // references of these in the bitcode reader.
+  if (const StructType *STy = dyn_cast<StructType>(Ty))
+    if (!STy->isAnonymous())
+      *TypeID = ~0U;
   
   // Enumerate all of the subtypes before we enumerate this type.  This ensures
   // that the type will be enumerated in an order that can be directly built.
@@ -332,11 +335,21 @@ void ValueEnumerator::EnumerateType(const Type *Ty) {
        I != E; ++I)
     EnumerateType(*I);
   
+  // Refresh the TypeID pointer in case the table rehashed.
+  TypeID = &TypeMap[Ty];
+  
+  // Check to see if we got the pointer another way.  This can happen when
+  // enumerating recursive types that hit the base case deeper than they start.
+  //
+  // If this is actually a struct that we are treating as forward ref'able,
+  // then emit the definition now that all of its contents are available.
+  if (*TypeID && *TypeID != ~0U)
+    return;
+  
   // Add this type now that its contents are all happily enumerated.
   Types.push_back(Ty);
   
-  // Note, can't use TypeID reference here as the map may have reallocated.
-  TypeMap[Ty] = Types.size();
+  *TypeID = Types.size();
 }
 
 // Enumerate the types for the specified value.  If the value is a constant,
