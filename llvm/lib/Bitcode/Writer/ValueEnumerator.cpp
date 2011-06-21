@@ -322,14 +322,21 @@ void ValueEnumerator::EnumerateType(const Type *Ty) {
   if (TypeID)
     return;
 
-  // First time we saw this type, add it.
-  Types.push_back(Ty);
-  TypeID = Types.size();
-
-  // Enumerate subtypes.
+  // Mark the type as being visited so that we don't recursively visit it.  This
+  // only matters for struct types, but doesn't hurt anything else.
+  TypeID = ~0U;
+  
+  // Enumerate all of the subtypes before we enumerate this type.  This ensures
+  // that the type will be enumerated in an order that can be directly built.
   for (Type::subtype_iterator I = Ty->subtype_begin(), E = Ty->subtype_end();
        I != E; ++I)
     EnumerateType(*I);
+  
+  // Add this type now that its contents are all happily enumerated.
+  Types.push_back(Ty);
+  
+  // Note, can't use TypeID reference here as the map may have reallocated.
+  TypeMap[Ty] = Types.size();
 }
 
 // Enumerate the types for the specified value.  If the value is a constant,
