@@ -1882,9 +1882,10 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
         ParseToken(lltok::rbrace, "expected end of struct constant"))
       return true;
 
-    // FIXME: Get this type from context instead of reconstructing it!
-    ID.ConstantVal = ConstantStruct::getAnon(Context, Elts);
-    ID.Kind = ValID::t_Constant;
+    ID.ConstantStructElts = new Constant*[Elts.size()];
+    ID.UIntVal = Elts.size();
+    memcpy(ID.ConstantStructElts, Elts.data(), Elts.size()*sizeof(Elts[0]));
+    ID.Kind = ValID::t_ConstantStruct;
     return false;
   }
   case lltok::less: {
@@ -1902,9 +1903,10 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
       return true;
 
     if (isPackedStruct) {
-      // FIXME: Get this type from context instead of reconstructing it!
-      ID.ConstantVal = ConstantStruct::getAnon(Context, Elts, true);
-      ID.Kind = ValID::t_Constant;
+      ID.ConstantStructElts = new Constant*[Elts.size()];
+      memcpy(ID.ConstantStructElts, Elts.data(), Elts.size()*sizeof(Elts[0]));
+      ID.UIntVal = Elts.size();
+      ID.Kind = ValID::t_PackedConstantStruct;
       return false;
     }
 
@@ -2477,6 +2479,20 @@ bool LLParser::ConvertValIDToValue(const Type *Ty, ValID &ID, Value *&V,
       return Error(ID.Loc, "constant expression type mismatch");
 
     V = ID.ConstantVal;
+    return false;
+  case ValID::t_ConstantStruct:
+  case ValID::t_PackedConstantStruct:
+    if (const StructType *ST = dyn_cast<StructType>(Ty)) {
+      if (ST->getNumElements() != ID.UIntVal)
+        return Error(ID.Loc,
+                     "initializer with struct type has wrong # elements");
+      if (ST->isPacked() != (ID.Kind == ValID::t_PackedConstantStruct))
+        return Error(ID.Loc, "packed'ness of initializer and type don't match");
+        
+      V = ConstantStruct::get(ST, ArrayRef<Constant*>(ID.ConstantStructElts,
+                                                      ID.UIntVal));
+    } else
+      return Error(ID.Loc, "constant expression type mismatch");
     return false;
   }
 }

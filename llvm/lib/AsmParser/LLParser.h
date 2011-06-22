@@ -49,7 +49,9 @@ namespace llvm {
       t_Constant,                 // Value in ConstantVal.
       t_InlineAsm,                // Value in StrVal/StrVal2/UIntVal.
       t_MDNode,                   // Value in MDNodeVal.
-      t_MDString                  // Value in MDStringVal.
+      t_MDString,                 // Value in MDStringVal.
+      t_ConstantStruct,           // Value in ConstantStructElts.
+      t_PackedConstantStruct      // Value in ConstantStructElts.
     } Kind;
     
     LLLexer::LocTy Loc;
@@ -60,12 +62,19 @@ namespace llvm {
     Constant *ConstantVal;
     MDNode *MDNodeVal;
     MDString *MDStringVal;
-    ValID() : APFloatVal(0.0) {}
+    Constant **ConstantStructElts;
+    
+    ValID() : Kind(t_LocalID), APFloatVal(0.0) {}
+    ~ValID() {
+      if (Kind == t_ConstantStruct || Kind == t_PackedConstantStruct)
+        delete [] ConstantStructElts;
+    }
     
     bool operator<(const ValID &RHS) const {
       if (Kind == t_LocalID || Kind == t_GlobalID)
         return UIntVal < RHS.UIntVal;
-      assert((Kind == t_LocalName || Kind == t_GlobalName) && 
+      assert((Kind == t_LocalName || Kind == t_GlobalName ||
+              Kind == t_ConstantStruct || Kind == t_PackedConstantStruct) && 
              "Ordering not defined for this ValID kind yet");
       return StrVal < RHS.StrVal;
     }
