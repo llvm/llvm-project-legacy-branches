@@ -2961,11 +2961,18 @@ bool LLParser::ParseCmpPredicate(unsigned &P, unsigned Opc) {
 ///   ::= 'ret' void (',' !dbg, !1)*
 ///   ::= 'ret' TypeAndValue (',' !dbg, !1)*
 bool LLParser::ParseRet(Instruction *&Inst, BasicBlock *BB,
-                       PerFunctionState &PFS) {
+                        PerFunctionState &PFS) {
+  SMLoc TypeLoc = Lex.getLoc();
   Type *Ty = 0;
   if (ParseType(Ty, true /*void allowed*/)) return true;
 
+  Type *ResType = PFS.getFunction().getReturnType();
+  
   if (Ty->isVoidTy()) {
+    if (!ResType->isVoidTy())
+      return Error(TypeLoc, "value doesn't match function result type '" +
+                   getTypeString(ResType) + "'");
+    
     Inst = ReturnInst::Create(Context);
     return false;
   }
@@ -2973,6 +2980,10 @@ bool LLParser::ParseRet(Instruction *&Inst, BasicBlock *BB,
   Value *RV;
   if (ParseValue(Ty, RV, PFS)) return true;
 
+  if (ResType != RV->getType())
+    return Error(TypeLoc, "value doesn't match function result type '" +
+                 getTypeString(ResType) + "'");
+  
   Inst = ReturnInst::Create(Context, RV);
   return false;
 }
