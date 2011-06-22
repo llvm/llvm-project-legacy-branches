@@ -172,7 +172,7 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     case bitc::TYPE_CODE_FLOAT:        return "FLOAT";
     case bitc::TYPE_CODE_DOUBLE:       return "DOUBLE";
     case bitc::TYPE_CODE_LABEL:        return "LABEL";
-    case bitc::TYPE_CODE_OPAQUE_OLD:   return "OPAQUE_OLD";
+    case bitc::TYPE_CODE_OPAQUE:       return "OPAQUE";
     case bitc::TYPE_CODE_INTEGER:      return "INTEGER";
     case bitc::TYPE_CODE_POINTER:      return "POINTER";
     case bitc::TYPE_CODE_FUNCTION:     return "FUNCTION";

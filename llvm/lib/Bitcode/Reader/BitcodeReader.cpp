@@ -597,7 +597,7 @@ bool BitcodeReader::ParseTypeTableBody() {
         return Error("Invalid STRUCT_NAME record");
       continue;
 
-    case bitc::TYPE_CODE_STRUCT_NAMED: { // STRUCT: [ispacked, eltty x N]
+     case bitc::TYPE_CODE_STRUCT_NAMED: { // STRUCT: [ispacked, eltty x N]
       if (Record.size() < 1)
         return Error("Invalid STRUCT type record");
       
@@ -620,6 +620,24 @@ bool BitcodeReader::ParseTypeTableBody() {
       ResultTy = Res;
       break;
     }
+    case bitc::TYPE_CODE_OPAQUE: {       // OPAQUE: []
+      if (Record.size() != 1)
+        return Error("Invalid OPAQUE type record");
+
+      if (NumRecords >= TypeList.size())
+        return Error("invalid TYPE table");
+      
+      // Check to see if this was forward referenced, if so fill in the temp.
+      StructType *Res = cast_or_null<StructType>(TypeList[NumRecords]);
+      if (Res) {
+        Res->setName(TypeName);
+        TypeList[NumRecords] = 0;
+      } else  // Otherwise, create a new struct with no body.
+        Res = StructType::createNamed(Context, TypeName);
+      TypeName.clear();
+      ResultTy = Res;
+      break;
+    }        
     case bitc::TYPE_CODE_ARRAY:     // ARRAY: [numelts, eltty]
       if (Record.size() < 2)
         return Error("Invalid ARRAY type record");

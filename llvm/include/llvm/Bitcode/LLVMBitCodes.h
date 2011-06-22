@@ -89,7 +89,7 @@ namespace bitc {
     TYPE_CODE_FLOAT    =  3,    // FLOAT
     TYPE_CODE_DOUBLE   =  4,    // DOUBLE
     TYPE_CODE_LABEL    =  5,    // LABEL
-    TYPE_CODE_OPAQUE_OLD = 6,   // OPAQUE
+    TYPE_CODE_OPAQUE   =  6,    // OPAQUE
     TYPE_CODE_INTEGER  =  7,    // INTEGER: [width]
     TYPE_CODE_POINTER  =  8,    // POINTER: [pointee type]
     TYPE_CODE_FUNCTION =  9,    // FUNCTION: [vararg, retty, paramty x N]

@@ -271,8 +271,12 @@ static void WriteTypeTable(const ValueEnumerator &VE, BitstreamWriter &Stream) {
         Code = bitc::TYPE_CODE_STRUCT_ANON;
         AbbrevToUse = StructAnonAbbrev;
       } else {
-        Code = bitc::TYPE_CODE_STRUCT_NAMED;
-        AbbrevToUse = StructNamedAbbrev;
+        if (ST->isOpaque()) {
+          Code = bitc::TYPE_CODE_OPAQUE;
+        } else {
+          Code = bitc::TYPE_CODE_STRUCT_NAMED;
+          AbbrevToUse = StructNamedAbbrev;
+        }
 
         // Emit the name if it is present.
         if (!ST->getName().empty())
