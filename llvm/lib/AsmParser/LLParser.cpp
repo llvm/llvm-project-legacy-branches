@@ -294,7 +294,7 @@ bool LLParser::ParseDepLibs() {
 ///   ::= LocalVarID '=' 'type' StructType
 bool LLParser::ParseUnnamedType() {
   LocTy TypeLoc = Lex.getLoc();
-  unsigned TypeID = NumberedTypes.size();
+  unsigned TypeID = Lex.getUIntVal();
   Lex.Lex(); // eat LocalVarID;
 
   if (ParseToken(lltok::equal, "expected '=' after name") ||
