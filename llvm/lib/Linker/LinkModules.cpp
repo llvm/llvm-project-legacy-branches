@@ -35,34 +35,74 @@ static inline bool Error(std::string *E, const Twine &Message) {
   return true;
 }
 
+namespace {
+class TypeMap {
+  /// MappedTypes - This is a mapping from a source type to a destination type
+  /// to use.
+  DenseMap<Type*, Type*> MappedTypes;
+public:
+  
+  /// addTypeMapping - Indicate that the specified type in the destination
+  /// module is conceptually equivalent to the specified type in the source
+  /// module.  This updates the type mapping for equivalent types, and returns
+  /// false.  If there is a hard type conflict (maybe merging "int x" with
+  /// "extern float x") this returns true.
+  bool addTypeMapping(Type *DstTy, Type *SrcTy);
+  
+  //void mapTypes(Value *Dst, Value *Src);
 
-// RecursiveResolveTypes - This is just like ResolveTypes, except that it
-// recurses down into derived types, merging the used types if the parent types
-// are compatible.
-static bool RecursiveResolveTypesI(Type *DstTy, Type *SrcTy,
-                                   DenseMap<Type*, Type*> &MappedTypes) {
-  if (DstTy == SrcTy) return false;       // If already equal, noop
+private:
+  bool addTypeMappingRec(Type *DstTy, Type *SrcTy);
+};
+}
 
-#if 0
-  // If we found our opaque type, resolve it now!
-  if (DstTy->isOpaqueTy() || SrcTy->isOpaqueTy())
-    return ResolveTypes(DstTy, SrcTy);
-#endif
+bool TypeMap::addTypeMapping(Type *DstTy, Type *SrcTy) {
+  if (DstTy == SrcTy) return false;       // If already equal, noop.
 
+  if (Type *T = MappedTypes[SrcTy])
+    return T != DstTy;
+  
+  return addTypeMappingRec(DstTy, SrcTy);
+}
+
+/// addTypeMappingRec - This is the implementation function for addTypeMapping,
+/// which optimizes out the map lookup in the recursive walk.  
+bool TypeMap::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
   // Two types cannot be resolved together if they are of different primitive
   // type.  For example, we cannot resolve an int to a float.
   if (DstTy->getTypeID() != SrcTy->getTypeID()) return true;
-
-#if 0
-  // If neither type is abstract, then they really are just different types.
-  if (!DstTy->isAbstract() && !SrcTy->isAbstract())
-    return true;
-#endif
 
   // Otherwise, resolve the used type used by this derived type...
   switch (DstTy->getTypeID()) {
   default:
     return true;
+  case Type::StructTyID: {
+    StructType *DstST = cast<StructType>(DstTy);
+    StructType *SrcST = cast<StructType>(SrcTy);
+    
+    // If the destination type is opaque, then it should be resolved to the
+    // input type.  If the source type is opaque, then it gets whatever the
+    // destination type is.
+    if (DstST->isOpaque() || SrcST->isOpaque())
+      break;
+    
+    if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes() ||
+        DstST->isPacked() != SrcST->isPacked())
+      return true;
+    
+    // Otherwise, we speculatively assume that the structs can be merged, add an
+    // entry to the type map so we don't infinitely recurse.
+    MappedTypes[SrcST] = DstST;
+
+    // Then call addTypeMapping on each entry (not "Rec") so that we get the
+    // caching behavior of the map check for each element.
+    for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
+      Type *SE = SrcST->getContainedType(i), *DE = DstST->getContainedType(i);
+      if (SE != DE && addTypeMapping(DE, SE))
+        return true;
+    }
+    return false;
+  }
   case Type::FunctionTyID: {
     const FunctionType *DstFT = cast<FunctionType>(DstTy);
     const FunctionType *SrcFT = cast<FunctionType>(SrcTy);
@@ -70,81 +110,42 @@ static bool RecursiveResolveTypesI(Type *DstTy, Type *SrcTy,
         DstFT->getNumContainedTypes() != SrcFT->getNumContainedTypes())
       return true;
 
-    // Use TypeHolder's so recursive resolution won't break us.
     for (unsigned i = 0, e = DstFT->getNumContainedTypes(); i != e; ++i) {
       Type *SE = SrcFT->getContainedType(i), *DE = DstFT->getContainedType(i);
-      if (SE != DE && RecursiveResolveTypesI(DE, SE, MappedTypes))
+      if (SE != DE && addTypeMappingRec(DE, SE))
         return true;
     }
-    return false;
-  }
-  case Type::StructTyID: {
-    StructType *DstST = cast<StructType>(DstTy);
-    StructType *SrcST = cast<StructType>(SrcTy);
-    if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes())
-      return true;
-
-    for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
-      Type *SE = SrcST->getContainedType(i), *DE = DstST->getContainedType(i);
-      if (SE != DE && RecursiveResolveTypesI(DE, SE, MappedTypes))
-        return true;
-    }
-    return false;
+    break;
   }
   case Type::ArrayTyID: {
     ArrayType *DAT = cast<ArrayType>(DstTy);
     ArrayType *SAT = cast<ArrayType>(SrcTy);
-    if (DAT->getNumElements() != SAT->getNumElements()) return true;
-    return RecursiveResolveTypesI(DAT->getElementType(), SAT->getElementType(),
-                                  MappedTypes);
+    if (DAT->getNumElements() != SAT->getNumElements() ||
+        addTypeMappingRec(DAT->getElementType(), SAT->getElementType()))
+      return true;
+    break;
   }
   case Type::VectorTyID: {
     VectorType *DVT = cast<VectorType>(DstTy);
     VectorType *SVT = cast<VectorType>(SrcTy);
-    if (DVT->getNumElements() != SVT->getNumElements()) return true;
-    return RecursiveResolveTypesI(DVT->getElementType(), SVT->getElementType(),
-                                  MappedTypes);
+    if (DVT->getNumElements() != SVT->getNumElements() ||
+        addTypeMappingRec(DVT->getElementType(), SVT->getElementType()))
+      return true;
+    break;
   }
   case Type::PointerTyID: {
     PointerType *DstPT = cast<PointerType>(DstTy);
     PointerType *SrcPT = cast<PointerType>(SrcTy);
-
-    if (DstPT->getAddressSpace() != SrcPT->getAddressSpace())
+    if (DstPT->getAddressSpace() != SrcPT->getAddressSpace() ||
+        addTypeMappingRec(DstPT->getElementType(), SrcPT->getElementType()))
       return true;
-
-    
-#if 0
-    // If this is a pointer type, check to see if we have already seen it.  If
-    // so, we are in a recursive branch.  Cut off the search now.  We cannot use
-    // an associative container for this search, because the type pointers (keys
-    // in the container) change whenever types get resolved.
-    if (SrcPT->isAbstract())
-      if (const Type *ExistingDestTy = Pointers.lookup(SrcPT))
-        return ExistingDestTy != DstPT;
-
-    if (DstPT->isAbstract())
-      if (const Type *ExistingSrcTy = Pointers.lookup(DstPT))
-        return ExistingSrcTy != SrcPT;
-    // Otherwise, add the current pointers to the vector to stop recursion on
-    // this pair.
-    if (DstPT->isAbstract())
-      Pointers.insert(DstPT, SrcPT);
-    if (SrcPT->isAbstract())
-      Pointers.insert(SrcPT, DstPT);
-#endif
-
-    return RecursiveResolveTypesI(DstPT->getElementType(),
-                                  SrcPT->getElementType(), MappedTypes);
+    break;
   }
   }
+  
+  MappedTypes[SrcTy] = DstTy;
+  return false;
 }
-
-static bool RecursiveResolveTypes(Type *DestTy, Type *SrcTy) {
-  return true;
-  DenseMap<Type*, Type*> MappedTypes;
-  return RecursiveResolveTypesI(DestTy, SrcTy, MappedTypes);
-}
-
 
 /// ForceRenaming - The LLVM SymbolTable class autorenames globals that conflict
 /// in the symbol table.  This is good for all clients except for us.  Go
@@ -276,7 +277,7 @@ static void LinkNamedMDNodes(Module *Dest, Module *Src,
 // LinkGlobals - Loop through the global variables in the src module and merge
 // them into the dest module.
 static bool LinkGlobals(Module *Dest, const Module *Src,
-                        ValueToValueMapTy &ValueMap,
+                        ValueToValueMapTy &ValueMap, TypeMap &MappedTypes,
                     std::multimap<std::string, GlobalVariable *> &AppendingVars,
                         std::string *Err) {
   ValueSymbolTable &DestSymTab = Dest->getValueSymbolTable();
@@ -299,7 +300,7 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
 
     // If types don't agree due to opaque types, try to resolve them.
     if (DGV && DGV->getType() != SGV->getType())
-      RecursiveResolveTypes(SGV->getType(), DGV->getType());
+      MappedTypes.addTypeMapping(DGV->getType(), SGV->getType());
 
     assert((SGV->hasInitializer() || SGV->hasExternalWeakLinkage() ||
             SGV->hasExternalLinkage() || SGV->hasDLLImportLinkage()) &&
@@ -476,7 +477,7 @@ CalculateAliasLinkage(const GlobalValue *SGV, const GlobalValue *DGV) {
 /// the dest module. We're assuming that all functions/global variables were
 /// already linked in.
 static bool LinkAliases(Module *Dest, const Module *Src,
-                        ValueToValueMapTy &ValueMap,
+                        ValueToValueMapTy &ValueMap, TypeMap &MappedTypes,
                         std::string *Err) {
   // Loop over all alias in the src module
   for (Module::const_alias_iterator I = Src->alias_begin(),
@@ -505,7 +506,7 @@ static bool LinkAliases(Module *Dest, const Module *Src,
 
       // If types don't agree due to opaque types, try to resolve them.
       if (DGV && DGV->getType() != SGA->getType())
-        RecursiveResolveTypes(SGA->getType(), DGV->getType());
+        MappedTypes.addTypeMapping(DGV->getType(), SGA->getType());
     }
 
     if (!DGV && !SGA->hasLocalLinkage()) {
@@ -513,7 +514,7 @@ static bool LinkAliases(Module *Dest, const Module *Src,
 
       // If types don't agree due to opaque types, try to resolve them.
       if (DGV && DGV->getType() != SGA->getType())
-        RecursiveResolveTypes(SGA->getType(), DGV->getType());
+        MappedTypes.addTypeMapping(DGV->getType(), SGA->getType());
     }
 
     if (!DGV && !SGA->hasLocalLinkage()) {
@@ -521,7 +522,7 @@ static bool LinkAliases(Module *Dest, const Module *Src,
 
       // If types don't agree due to opaque types, try to resolve them.
       if (DGV && DGV->getType() != SGA->getType())
-        RecursiveResolveTypes(SGA->getType(), DGV->getType());
+        MappedTypes.addTypeMapping(DGV->getType(), SGA->getType());
     }
 
     // No linking to be performed on internal stuff.
@@ -662,10 +663,10 @@ static void LinkGlobalInits(Module *Dest, const Module *Src,
 
 // LinkFunctionProtos - Link the functions together between the two modules,
 // without doing function bodies... this just adds external function prototypes
-// to the Dest function...
+// to the Dest function.
 //
 static bool LinkFunctionProtos(Module *Dest, const Module *Src,
-                               ValueToValueMapTy &ValueMap,
+                               ValueToValueMapTy &ValueMap,TypeMap &MappedTypes,
                                std::string *Err) {
   ValueSymbolTable &DestSymTab = Dest->getValueSymbolTable();
 
@@ -686,7 +687,7 @@ static bool LinkFunctionProtos(Module *Dest, const Module *Src,
 
     // If types don't agree due to opaque types, try to resolve them.
     if (DGV && DGV->getType() != SF->getType())
-      RecursiveResolveTypes(SF->getType(), DGV->getType());
+      MappedTypes.addTypeMapping(DGV->getType(), SF->getType());
 
     GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
     bool LinkFromSrc = false;
@@ -1030,21 +1031,25 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
       AppendingVars.insert(std::make_pair(I->getName(), I));
   }
 
+  TypeMap TheTypeMap;
+  
   // Insert all of the globals in src into the Dest module... without linking
   // initializers (which could refer to functions not yet mapped over).
-  if (LinkGlobals(Dest, Src, ValueMap, AppendingVars, ErrorMsg)) return true;
+  if (LinkGlobals(Dest, Src, ValueMap, TheTypeMap, AppendingVars, ErrorMsg))
+    return true;
 
   // Link the functions together between the two modules, without doing function
   // bodies... this just adds external function prototypes to the Dest
   // function...  We do this so that when we begin processing function bodies,
   // all of the global values that may be referenced are available in our
   // ValueMap.
-  if (LinkFunctionProtos(Dest, Src, ValueMap, ErrorMsg)) return true;
+  if (LinkFunctionProtos(Dest, Src, ValueMap, TheTypeMap, ErrorMsg))
+    return true;
 
   // If there were any aliases, link them now. We really need to do this now,
   // because all of the aliases that may be referenced need to be available in
   // ValueMap
-  if (LinkAliases(Dest, Src, ValueMap, ErrorMsg)) return true;
+  if (LinkAliases(Dest, Src, ValueMap, TheTypeMap, ErrorMsg)) return true;
 
   // Update the initializers in the Dest module now that all globals that may
   // be referenced are in Dest.
