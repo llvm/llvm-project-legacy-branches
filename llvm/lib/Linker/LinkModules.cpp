@@ -214,91 +214,11 @@ static bool RecursiveResolveTypesI(const Type *DstTy, const Type *SrcTy,
 }
 
 static bool RecursiveResolveTypes(const Type *DestTy, const Type *SrcTy) {
+  return true;
   LinkerTypeMap PointerTypes;
   return RecursiveResolveTypesI(DestTy, SrcTy, PointerTypes);
 }
 
-
-// LinkTypes - Go through the symbol table of the Src module and see if any
-// types are named in the src module that are not named in the Dst module.
-// Make sure there are no type name conflicts.
-static bool LinkTypes(Module *Dest, const Module *Src, std::string *Err) {
-#if 0
-        TypeSymbolTable *DestST = &Dest->getTypeSymbolTable();
-  const TypeSymbolTable *SrcST  = &Src->getTypeSymbolTable();
-
-  // Look for a type plane for Type's...
-  TypeSymbolTable::const_iterator TI = SrcST->begin();
-  TypeSymbolTable::const_iterator TE = SrcST->end();
-  if (TI == TE) return false;  // No named types, do nothing.
-
-  // Some types cannot be resolved immediately because they depend on other
-  // types being resolved to each other first.  This contains a list of types we
-  // are waiting to recheck.
-  std::vector<std::string> DelayedTypesToResolve;
-
-  for ( ; TI != TE; ++TI ) {
-    const std::string &Name = TI->first;
-    const Type *RHS = TI->second;
-
-    // Check to see if this type name is already in the dest module.
-    Type *Entry = DestST->lookup(Name);
-
-    // If the name is just in the source module, bring it over to the dest.
-    if (Entry == 0) {
-      if (!Name.empty())
-        DestST->insert(Name, const_cast<Type*>(RHS));
-    } else if (ResolveTypes(Entry, RHS)) {
-      // They look different, save the types 'till later to resolve.
-      DelayedTypesToResolve.push_back(Name);
-    }
-  }
-
-  // Iteratively resolve types while we can...
-  while (!DelayedTypesToResolve.empty()) {
-    // Loop over all of the types, attempting to resolve them if possible...
-    unsigned OldSize = DelayedTypesToResolve.size();
-
-    // Try direct resolution by name...
-    for (unsigned i = 0; i != DelayedTypesToResolve.size(); ++i) {
-      const std::string &Name = DelayedTypesToResolve[i];
-      Type *T1 = SrcST->lookup(Name);
-      Type *T2 = DestST->lookup(Name);
-      if (!ResolveTypes(T2, T1)) {
-        // We are making progress!
-        DelayedTypesToResolve.erase(DelayedTypesToResolve.begin()+i);
-        --i;
-      }
-    }
-
-    // Did we not eliminate any types?
-    if (DelayedTypesToResolve.size() == OldSize) {
-      // Attempt to resolve subelements of types.  This allows us to merge these
-      // two types: { int* } and { opaque* }
-      for (unsigned i = 0, e = DelayedTypesToResolve.size(); i != e; ++i) {
-        const std::string &Name = DelayedTypesToResolve[i];
-        if (!RecursiveResolveTypes(SrcST->lookup(Name), DestST->lookup(Name))) {
-          // We are making progress!
-          DelayedTypesToResolve.erase(DelayedTypesToResolve.begin()+i);
-
-          // Go back to the main loop, perhaps we can resolve directly by name
-          // now...
-          break;
-        }
-      }
-
-      // If we STILL cannot resolve the types, then there is something wrong.
-      if (DelayedTypesToResolve.size() == OldSize) {
-        // Remove the symbol name from the destination.
-        DelayedTypesToResolve.pop_back();
-      }
-    }
-  }
-
-#endif
-  
-  return false;
-}
 
 /// ForceRenaming - The LLVM SymbolTable class autorenames globals that conflict
 /// in the symbol table.  This is good for all clients except for us.  Go
@@ -1201,12 +1121,6 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
   for (Module::lib_iterator SI = Src->lib_begin(), SE = Src->lib_end();
        SI != SE; ++SI)
     Dest->addLibrary(*SI);
-
-  // LinkTypes - Go through the symbol table of the Src module and see if any
-  // types are named in the src module that are not named in the Dst module.
-  // Make sure there are no type name conflicts.
-  if (LinkTypes(Dest, Src, ErrorMsg))
-    return true;
 
   // ValueMap - Mapping of values from what they used to be in Src, to what they
   // are now in Dest.  ValueToValueMapTy is a ValueMap, which involves some
