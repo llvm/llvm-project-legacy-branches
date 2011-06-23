@@ -9,11 +9,6 @@
 //
 // This file implements the LLVM module linker.
 //
-// Specifically, this:
-//  * Merges global variables between the two modules
-//    * Uninit + Uninit = Init, Init + Uninit = Init, Init + Init = Error if !=
-//  * Merges functions between two modules
-//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Linker.h"
@@ -38,39 +33,6 @@ using namespace llvm;
 static inline bool Error(std::string *E, const Twine &Message) {
   if (E) *E = Message.str();
   return true;
-}
-
-// Function: ResolveTypes()
-//
-// Description:
-//  Attempt to link the two specified types together.
-//
-// Inputs:
-//  DestTy - The type to which we wish to resolve.
-//  SrcTy  - The original type which we want to resolve.
-//
-// Outputs:
-//  DestST - The symbol table in which the new type should be placed.
-//
-// Return value:
-//  true  - There is an error and the types cannot yet be linked.
-//  false - No errors.
-//
-static bool ResolveTypes(const Type *DestTy, const Type *SrcTy) {
-  if (DestTy == SrcTy) return false;       // If already equal, noop
-  assert(DestTy && SrcTy && "Can't handle null types");
-
-#if 0
-  if (const OpaqueType *OT = dyn_cast<OpaqueType>(DestTy)) {
-    // Type _is_ in module, just opaque...
-    const_cast<OpaqueType*>(OT)->refineAbstractTypeTo(SrcTy);
-  } else if (const OpaqueType *OT = dyn_cast<OpaqueType>(SrcTy)) {
-    const_cast<OpaqueType*>(OT)->refineAbstractTypeTo(DestTy);
-  } else {
-    return true;  // Cannot link types... not-equal and neither is opaque.
-  }
-#endif
-  return false;
 }
 
 
@@ -278,14 +240,10 @@ static bool GetLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
       LT = GlobalValue::ExternalLinkage;
     }
   } else {
-    assert((Dest->hasExternalLinkage() ||
-            Dest->hasDLLImportLinkage() ||
-            Dest->hasDLLExportLinkage() ||
-            Dest->hasExternalWeakLinkage()) &&
-           (Src->hasExternalLinkage() ||
-            Src->hasDLLImportLinkage() ||
-            Src->hasDLLExportLinkage() ||
-            Src->hasExternalWeakLinkage()) &&
+    assert((Dest->hasExternalLinkage()  || Dest->hasDLLImportLinkage() ||
+            Dest->hasDLLExportLinkage() || Dest->hasExternalWeakLinkage()) &&
+           (Src->hasExternalLinkage()   || Src->hasDLLImportLinkage() ||
+            Src->hasDLLExportLinkage()  || Src->hasExternalWeakLinkage()) &&
            "Unexpected linkage type!");
     return Error(Err, "Linking globals named '" + Src->getName() +
                  "': symbol multiply defined!");
@@ -617,7 +575,7 @@ static bool LinkAliases(Module *Dest, const Module *Src,
       // The only allowed way is to link alias with external declaration or weak
       // symbol...
       if (DF->isDeclaration() || DF->isWeakForLinker()) {
-        // But only if aliasee is function too...
+        // But only if aliasee is function too.
         if (!isa<Function>(DAliasee))
           return Error(Err, "Function-Alias Collision on '" + SGA->getName() +
                        "': aliasee is not function");
@@ -860,7 +818,7 @@ static void LinkFunctionBodies(Module *Dest, Module *Src,
                                ValueToValueMapTy &ValueMap) {
 
   // Loop over all of the functions in the src module, mapping them over as we
-  // go
+  // go.
   for (Module::iterator SF = Src->begin(), E = Src->end(); SF != E; ++SF) {
     if (!SF->isDeclaration()) {               // No body if function is external
       Function *DF = dyn_cast<Function>(ValueMap[SF]); // Destination function
@@ -885,18 +843,18 @@ static bool LinkAppendingVars(Module *M,
   // and delete them.
   std::vector<Constant*> Inits;
   while (AppendingVars.size() > 1) {
-    // Get the first two elements in the map...
+    // Get the first two elements in the map.
     std::multimap<std::string,
       GlobalVariable*>::iterator Second = AppendingVars.begin(), First=Second++;
 
-    // If the first two elements are for different names, there is no pair...
+    // If the first two elements are for different names, there is no pair.
     // Otherwise there is a pair, so link them together...
     if (First->first == Second->first) {
       GlobalVariable *G1 = First->second, *G2 = Second->second;
       const ArrayType *T1 = cast<ArrayType>(G1->getType()->getElementType());
       const ArrayType *T2 = cast<ArrayType>(G2->getType()->getElementType());
 
-      // Check to see that they two arrays agree on type...
+      // Check to see that they two arrays agree on type.
       if (T1->getElementType() != T2->getElementType())
         return Error(ErrorMsg,
          "Appending variables with different element types need to be linked!");
@@ -922,7 +880,7 @@ static bool LinkAppendingVars(Module *M,
 
       G1->setName("");   // Clear G1's name in case of a conflict!
 
-      // Create the new global variable...
+      // Create the new global variable.
       GlobalVariable *NG =
         new GlobalVariable(*M, NewType, G1->isConstant(), G1->getLinkage(),
                            /*init*/0, First->first, 0, G1->isThreadLocal(),
@@ -931,7 +889,7 @@ static bool LinkAppendingVars(Module *M,
       // Propagate alignment, visibility and section info.
       CopyGVAttributes(NG, G1);
 
-      // Merge the initializer...
+      // Merge the initializer.
       Inits.reserve(NewSize);
       if (ConstantArray *I = dyn_cast<ConstantArray>(G1->getInitializer())) {
         for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
@@ -955,21 +913,18 @@ static bool LinkAppendingVars(Module *M,
       Inits.clear();
 
       // Replace any uses of the two global variables with uses of the new
-      // global...
-
-      // FIXME: This should rewrite simple/straight-forward uses such as
-      // getelementptr instructions to not use the Cast!
+      // global.
       G1->replaceAllUsesWith(ConstantExpr::getBitCast(NG,
                              G1->getType()));
       G2->replaceAllUsesWith(ConstantExpr::getBitCast(NG,
                              G2->getType()));
 
-      // Remove the two globals from the module now...
+      // Remove the two globals from the module now.
       M->getGlobalList().erase(G1);
       M->getGlobalList().erase(G2);
 
       // Put the new global into the AppendingVars map so that we can handle
-      // linking of more than two vars...
+      // linking of more than two vars.
       Second->second = NG;
     }
     AppendingVars.erase(First);
