@@ -46,6 +46,7 @@ namespace {
     /// StackEntryTy - Abstract type of a link in the shadow stack.
     ///
     StructType *StackEntryTy;
+    StructType *FrameMapTy;
 
     /// Roots - GC roots in the current function. Each is a pair of the
     /// intrinsic call and its corresponding alloca.
@@ -210,7 +211,7 @@ Constant *ShadowStackGC::GetFrameMap(Function &F) {
   };
 
   Constant *DescriptorElts[] = {
-    ConstantStruct::get(StructType::get(Int32Ty, Int32Ty, NULL), BaseElts),
+    ConstantStruct::get(FrameMapTy, BaseElts),
     ConstantArray::get(ArrayType::get(VoidPtr, NumMeta),
                        Metadata.begin(), NumMeta)
   };
@@ -267,7 +268,7 @@ bool ShadowStackGC::initializeCustomLowering(Module &M) {
   EltTys.push_back(Type::getInt32Ty(M.getContext()));
   // Specifies length of variable length array. 
   EltTys.push_back(Type::getInt32Ty(M.getContext()));
-  StructType *FrameMapTy = StructType::createNamed("gc_map", EltTys);
+  FrameMapTy = StructType::createNamed("gc_map", EltTys);
   PointerType *FrameMapPtrTy = PointerType::getUnqual(FrameMapTy);
 
   // struct StackEntry {
@@ -389,7 +390,7 @@ bool ShadowStackGC::performCustomLowering(Function &F) {
   Instruction *CurrentHead  = AtEntry.CreateLoad(Head, "gc_currhead");
   Instruction *EntryMapPtr  = CreateGEP(Context, AtEntry, StackEntry,
                                         0,1,"gc_frame.map");
-                              AtEntry.CreateStore(FrameMap, EntryMapPtr);
+  AtEntry.CreateStore(FrameMap, EntryMapPtr);
 
   // After all the allocas...
   for (unsigned I = 0, E = Roots.size(); I != E; ++I) {
