@@ -74,45 +74,11 @@ static bool ResolveTypes(const Type *DestTy, const Type *SrcTy) {
 }
 
 
-/// LinkerTypeMap - This implements a map of types that is stable
-/// even if types are resolved/refined to other types.  This is not a general
-/// purpose map, it is specific to the linker's use.
-namespace {
-#if 0
-  REMOVE ME.
-#endif
-class LinkerTypeMap {
-  typedef DenseMap<const Type*, const Type*> TheMapTy;
-  TheMapTy TheMap;
-
-  LinkerTypeMap(const LinkerTypeMap&); // DO NOT IMPLEMENT
-  void operator=(const LinkerTypeMap&); // DO NOT IMPLEMENT
-public:
-  LinkerTypeMap() {}
-  ~LinkerTypeMap() {}
-
-  /// lookup - Return the value for the specified type or null if it doesn't
-  /// exist.
-  const Type *lookup(const Type *Ty) const {
-    TheMapTy::const_iterator I = TheMap.find(Ty);
-    if (I != TheMap.end()) return I->second;
-    return 0;
-  }
-
-  /// insert - This returns true if the pointer was new to the set, false if it
-  /// was already in the set.
-  bool insert(const Type *Src, const Type *Dst) {
-    return TheMap.insert(std::make_pair(Src, Dst)).second;
-  }
-};
-}
-
-
 // RecursiveResolveTypes - This is just like ResolveTypes, except that it
 // recurses down into derived types, merging the used types if the parent types
 // are compatible.
-static bool RecursiveResolveTypesI(const Type *DstTy, const Type *SrcTy,
-                                   LinkerTypeMap &Pointers) {
+static bool RecursiveResolveTypesI(Type *DstTy, Type *SrcTy,
+                                   DenseMap<Type*, Type*> &MappedTypes) {
   if (DstTy == SrcTy) return false;       // If already equal, noop
 
 #if 0
@@ -144,44 +110,42 @@ static bool RecursiveResolveTypesI(const Type *DstTy, const Type *SrcTy,
 
     // Use TypeHolder's so recursive resolution won't break us.
     for (unsigned i = 0, e = DstFT->getNumContainedTypes(); i != e; ++i) {
-      const Type *SE = SrcFT->getContainedType(i),
-                 *DE = DstFT->getContainedType(i);
-      if (SE != DE && RecursiveResolveTypesI(DE, SE, Pointers))
+      Type *SE = SrcFT->getContainedType(i), *DE = DstFT->getContainedType(i);
+      if (SE != DE && RecursiveResolveTypesI(DE, SE, MappedTypes))
         return true;
     }
     return false;
   }
   case Type::StructTyID: {
-    const StructType *DstST = cast<StructType>(DstTy);
-    const StructType *SrcST = cast<StructType>(SrcTy);
+    StructType *DstST = cast<StructType>(DstTy);
+    StructType *SrcST = cast<StructType>(SrcTy);
     if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes())
       return true;
 
     for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
-      const Type *SE = SrcST->getContainedType(i),
-                 *DE = DstST->getContainedType(i);
-      if (SE != DE && RecursiveResolveTypesI(DE, SE, Pointers))
+      Type *SE = SrcST->getContainedType(i), *DE = DstST->getContainedType(i);
+      if (SE != DE && RecursiveResolveTypesI(DE, SE, MappedTypes))
         return true;
     }
     return false;
   }
   case Type::ArrayTyID: {
-    const ArrayType *DAT = cast<ArrayType>(DstTy);
-    const ArrayType *SAT = cast<ArrayType>(SrcTy);
+    ArrayType *DAT = cast<ArrayType>(DstTy);
+    ArrayType *SAT = cast<ArrayType>(SrcTy);
     if (DAT->getNumElements() != SAT->getNumElements()) return true;
     return RecursiveResolveTypesI(DAT->getElementType(), SAT->getElementType(),
-                                  Pointers);
+                                  MappedTypes);
   }
   case Type::VectorTyID: {
-    const VectorType *DVT = cast<VectorType>(DstTy);
-    const VectorType *SVT = cast<VectorType>(SrcTy);
+    VectorType *DVT = cast<VectorType>(DstTy);
+    VectorType *SVT = cast<VectorType>(SrcTy);
     if (DVT->getNumElements() != SVT->getNumElements()) return true;
     return RecursiveResolveTypesI(DVT->getElementType(), SVT->getElementType(),
-                                  Pointers);
+                                  MappedTypes);
   }
   case Type::PointerTyID: {
-    const PointerType *DstPT = cast<PointerType>(DstTy);
-    const PointerType *SrcPT = cast<PointerType>(SrcTy);
+    PointerType *DstPT = cast<PointerType>(DstTy);
+    PointerType *SrcPT = cast<PointerType>(SrcTy);
 
     if (DstPT->getAddressSpace() != SrcPT->getAddressSpace())
       return true;
@@ -208,15 +172,15 @@ static bool RecursiveResolveTypesI(const Type *DstTy, const Type *SrcTy,
 #endif
 
     return RecursiveResolveTypesI(DstPT->getElementType(),
-                                  SrcPT->getElementType(), Pointers);
+                                  SrcPT->getElementType(), MappedTypes);
   }
   }
 }
 
-static bool RecursiveResolveTypes(const Type *DestTy, const Type *SrcTy) {
+static bool RecursiveResolveTypes(Type *DestTy, Type *SrcTy) {
   return true;
-  LinkerTypeMap PointerTypes;
-  return RecursiveResolveTypesI(DestTy, SrcTy, PointerTypes);
+  DenseMap<Type*, Type*> MappedTypes;
+  return RecursiveResolveTypesI(DestTy, SrcTy, MappedTypes);
 }
 
 
@@ -550,12 +514,12 @@ CalculateAliasLinkage(const GlobalValue *SGV, const GlobalValue *DGV) {
   }
 }
 
-// LinkAlias - Loop through the alias in the src module and link them into the
-// dest module. We're assuming, that all functions/global variables were already
-// linked in.
-static bool LinkAlias(Module *Dest, const Module *Src,
-                      ValueToValueMapTy &ValueMap,
-                      std::string *Err) {
+/// LinkAliases - Loop through the aliases in the src module and link them into
+/// the dest module. We're assuming that all functions/global variables were
+/// already linked in.
+static bool LinkAliases(Module *Dest, const Module *Src,
+                        ValueToValueMapTy &ValueMap,
+                        std::string *Err) {
   // Loop over all alias in the src module
   for (Module::const_alias_iterator I = Src->alias_begin(),
          E = Src->alias_end(); I != E; ++I) {
@@ -567,8 +531,8 @@ static bool LinkAlias(Module *Dest, const Module *Src,
     // of SAliasee in Dest.
     ValueToValueMapTy::const_iterator VMI = ValueMap.find(SAliasee);
     assert(VMI != ValueMap.end() && "Aliasee not linked");
-    GlobalValue* DAliasee = cast<GlobalValue>(VMI->second);
-    GlobalValue* DGV = NULL;
+    GlobalValue *DAliasee = cast<GlobalValue>(VMI->second);
+    GlobalValue *DGV = NULL;
 
     // Fixup aliases to bitcasts.  Note that aliases to GEPs are still broken
     // by this, but aliases to GEPs are broken to a lot of other things, so
@@ -707,9 +671,8 @@ static bool LinkAlias(Module *Dest, const Module *Src,
 
 // LinkGlobalInits - Update the initializers in the Dest module now that all
 // globals that may be referenced are in Dest.
-static bool LinkGlobalInits(Module *Dest, const Module *Src,
-                            ValueToValueMapTy &ValueMap,
-                            std::string *Err) {
+static void LinkGlobalInits(Module *Dest, const Module *Src,
+                            ValueToValueMapTy &ValueMap) {
   // Loop over all of the globals in the src module, mapping them over as we go
   for (Module::const_global_iterator I = Src->global_begin(),
        E = Src->global_end(); I != E; ++I) {
@@ -724,27 +687,9 @@ static bool LinkGlobalInits(Module *Dest, const Module *Src,
 
       // If dest if global variable, check that initializers match.
       if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV)) {
-        if (DGVar->hasInitializer()) {
-          if (SGV->hasExternalLinkage()) {
-            if (DGVar->getInitializer() != SInit)
-              return Error(Err, "Global Variable Collision on '" +
-                           SGV->getName() +
-                           "': global variables have different initializers");
-          } else if (DGVar->isWeakForLinker()) {
-            // Nothing is required, mapped values will take the new global
-            // automatically.
-          } else if (SGV->isWeakForLinker()) {
-            // Nothing is required, mapped values will take the new global
-            // automatically.
-          } else if (DGVar->hasAppendingLinkage()) {
-            llvm_unreachable("Appending linkage unimplemented!");
-          } else {
-            llvm_unreachable("Unknown linkage!");
-          }
-        } else {
-          // Copy the initializer over now...
+        if (!DGVar->hasInitializer())
+          // Copy the initializer over now.
           DGVar->setInitializer(SInit);
-        }
       } else {
         // Destination is alias, the only valid situation is when source is
         // weak. Also, note, that we already checked linkage in LinkGlobals(),
@@ -755,7 +700,6 @@ static bool LinkGlobalInits(Module *Dest, const Module *Src,
       }
     }
   }
-  return false;
 }
 
 // LinkFunctionProtos - Link the functions together between the two modules,
@@ -877,9 +821,8 @@ static bool LinkFunctionProtos(Module *Dest, const Module *Src,
 // LinkFunctionBody - Copy the source function over into the dest function and
 // fix up references to values.  At this point we know that Dest is an external
 // function, and that Src is not.
-static bool LinkFunctionBody(Function *Dest, Function *Src,
-                             ValueToValueMapTy &ValueMap,
-                             std::string *Err) {
+static void LinkFunctionBody(Function *Dest, Function *Src,
+                             ValueToValueMapTy &ValueMap) {
   assert(Src && Dest && Dest->isDeclaration() && !Src->isDeclaration());
 
   // Go through and convert function arguments over, remembering the mapping.
@@ -907,17 +850,14 @@ static bool LinkFunctionBody(Function *Dest, Function *Src,
   for (Function::arg_iterator I = Src->arg_begin(), E = Src->arg_end();
        I != E; ++I)
     ValueMap.erase(I);
-
-  return false;
 }
 
 
 // LinkFunctionBodies - Link in the function bodies that are defined in the
 // source module into the DestModule.  This consists basically of copying the
 // function over and fixing up references to values.
-static bool LinkFunctionBodies(Module *Dest, Module *Src,
-                               ValueToValueMapTy &ValueMap,
-                               std::string *Err) {
+static void LinkFunctionBodies(Module *Dest, Module *Src,
+                               ValueToValueMapTy &ValueMap) {
 
   // Loop over all of the functions in the src module, mapping them over as we
   // go
@@ -925,14 +865,11 @@ static bool LinkFunctionBodies(Module *Dest, Module *Src,
     if (!SF->isDeclaration()) {               // No body if function is external
       Function *DF = dyn_cast<Function>(ValueMap[SF]); // Destination function
 
-      // DF not external SF external?
+      // Only provide the function body if there isn't one already.
       if (DF && DF->isDeclaration())
-        // Only provide the function body if there isn't one already.
-        if (LinkFunctionBody(DF, SF, ValueMap, Err))
-          return true;
+        LinkFunctionBody(DF, SF, ValueMap);
     }
   }
-  return false;
 }
 
 // LinkAppendingVars - If there were any appending global variables, link them
@@ -1041,7 +978,7 @@ static bool LinkAppendingVars(Module *M,
   return false;
 }
 
-static bool ResolveAliases(Module *Dest) {
+static void ResolveAliases(Module *Dest) {
   for (Module::alias_iterator I = Dest->alias_begin(), E = Dest->alias_end();
        I != E; ++I)
     // We can't sue resolveGlobalAlias here because we need to preserve
@@ -1053,8 +990,6 @@ static bool ResolveAliases(Module *Dest) {
       if (C != I && !(GV && GV->isDeclaration()))
         I->replaceAllUsesWith(const_cast<Constant*>(C));
     }
-
-  return false;
 }
 
 // LinkModules - This function links two modules together, with the resulting
@@ -1142,36 +1077,34 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
 
   // Insert all of the globals in src into the Dest module... without linking
   // initializers (which could refer to functions not yet mapped over).
-  if (LinkGlobals(Dest, Src, ValueMap, AppendingVars, ErrorMsg))
-    return true;
+  if (LinkGlobals(Dest, Src, ValueMap, AppendingVars, ErrorMsg)) return true;
 
   // Link the functions together between the two modules, without doing function
   // bodies... this just adds external function prototypes to the Dest
   // function...  We do this so that when we begin processing function bodies,
   // all of the global values that may be referenced are available in our
   // ValueMap.
-  if (LinkFunctionProtos(Dest, Src, ValueMap, ErrorMsg))
-    return true;
+  if (LinkFunctionProtos(Dest, Src, ValueMap, ErrorMsg)) return true;
 
-  // If there were any alias, link them now. We really need to do this now,
+  // If there were any aliases, link them now. We really need to do this now,
   // because all of the aliases that may be referenced need to be available in
   // ValueMap
-  if (LinkAlias(Dest, Src, ValueMap, ErrorMsg)) return true;
+  if (LinkAliases(Dest, Src, ValueMap, ErrorMsg)) return true;
 
   // Update the initializers in the Dest module now that all globals that may
   // be referenced are in Dest.
-  if (LinkGlobalInits(Dest, Src, ValueMap, ErrorMsg)) return true;
+  LinkGlobalInits(Dest, Src, ValueMap);
 
   // Link in the function bodies that are defined in the source module into the
   // DestModule.  This consists basically of copying the function over and
   // fixing up references to values.
-  if (LinkFunctionBodies(Dest, Src, ValueMap, ErrorMsg)) return true;
+  LinkFunctionBodies(Dest, Src, ValueMap);
 
   // If there were any appending global variables, link them together now.
   if (LinkAppendingVars(Dest, AppendingVars, ErrorMsg)) return true;
 
-  // Resolve all uses of aliases with aliasees
-  if (ResolveAliases(Dest)) return true;
+  // Resolve all uses of aliases with aliasees.
+  ResolveAliases(Dest);
 
   // Remap all of the named mdnoes in Src into the Dest module. We do this
   // after linking GlobalValues so that MDNodes that reference GlobalValues
