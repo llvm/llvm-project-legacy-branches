@@ -106,8 +106,8 @@ namespace llvm {
 
     // Type resolution handling data structures.  The location is set when we
     // have processed a use of the type but not a definition yet.
-    StringMap<std::pair<StructType*, LocTy> > NamedTypes;
-    std::vector<std::pair<StructType*, LocTy> > NumberedTypes;
+    StringMap<std::pair<Type*, LocTy> > NamedTypes;
+    std::vector<std::pair<Type*, LocTy> > NumberedTypes;
     
     std::vector<TrackingVH<MDNode> > NumberedMetadata;
     std::map<unsigned, std::pair<TrackingVH<MDNode>, LocTy> > ForwardRefMDNodes;
@@ -220,7 +220,9 @@ namespace llvm {
     }
     bool ParseAnonStructType(Type *&Result, bool Packed);
     bool ParseStructBody(SmallVectorImpl<Type*> &Body);
-    bool ParseStructDefinition(StructType *STy);
+    bool ParseStructDefinition(SMLoc TypeLoc, StringRef Name,
+                               std::pair<Type*, LocTy> &Entry,
+                               Type *&ResultTy);
 
     bool ParseArrayVectorType(Type *&Result, bool isVector);
     bool ParseFunctionType(Type *&Result);

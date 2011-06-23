@@ -94,7 +94,7 @@ bool LLParser::ValidateEndOfModule() {
       return Error(NumberedTypes[i].second,
                    "use of undefined type '%" + Twine(i) + "'");
 
-  for (StringMap<std::pair<StructType*, LocTy> >::iterator I =
+  for (StringMap<std::pair<Type*, LocTy> >::iterator I =
        NamedTypes.begin(), E = NamedTypes.end(); I != E; ++I)
     if (I->second.second.isValid())
       return Error(I->second.second,
@@ -291,7 +291,7 @@ bool LLParser::ParseDepLibs() {
 }
 
 /// ParseUnnamedType:
-///   ::= LocalVarID '=' 'type' StructType
+///   ::= LocalVarID '=' 'type' type
 bool LLParser::ParseUnnamedType() {
   LocTy TypeLoc = Lex.getLoc();
   unsigned TypeID = Lex.getUIntVal();
@@ -304,19 +304,19 @@ bool LLParser::ParseUnnamedType() {
   if (TypeID >= NumberedTypes.size())
     NumberedTypes.resize(TypeID+1);
   
-  // If the type was already defined, diagnose the redefinition.
-  if (NumberedTypes[TypeID].first && 
-      !NumberedTypes[TypeID].second.isValid())
-    return Error(TypeLoc, "redefinition of type %" + Twine(TypeID));
+  Type *Result = 0;
+  if (ParseStructDefinition(TypeLoc, "",
+                            NumberedTypes[TypeID], Result)) return true;
   
-  // If this type number has never been uttered, create it.
-  if (NumberedTypes[TypeID].first == 0)
-    NumberedTypes[TypeID].first = StructType::createNamed(Context, "");
-  
-  // This type is being defined, so clear the location to indicate this.
-  NumberedTypes[TypeID].second = SMLoc();
-  
-  return ParseStructDefinition(NumberedTypes[TypeID].first);
+  if (!isa<StructType>(Result)) {
+    std::pair<Type*, LocTy> &Entry = NumberedTypes[TypeID];
+    if (Entry.first)
+      return Error(TypeLoc, "non-struct types may not be recursive");
+    Entry.first = Result;
+    Entry.second = SMLoc();
+  }
+
+  return false;
 }
 
 
@@ -331,22 +331,19 @@ bool LLParser::ParseNamedType() {
       ParseToken(lltok::kw_type, "expected 'type' after name"))
     return true;
   
-  std::pair<StructType*, LocTy> &Entry = NamedTypes[Name];
+  Type *Result = 0;
+  if (ParseStructDefinition(NameLoc, Name,
+                            NamedTypes[Name], Result)) return true;
   
-  // If the type was already defined, diagnose the redefinition.
-  if (Entry.first && !Entry.second.isValid())
-    return Error(NameLoc, "redefinition of type %" + Name);
+  if (!isa<StructType>(Result)) {
+    std::pair<Type*, LocTy> &Entry = NamedTypes[Name];
+    if (Entry.first)
+      return Error(NameLoc, "non-struct types may not be recursive");
+    Entry.first = Result;
+    Entry.second = SMLoc();
+  }
   
-  // If this type number has never been uttered, create it.  Note that this can
-  // end up with a different name than we request if there is another type of
-  // this name in the context.
-  if (Entry.first == 0)
-    Entry.first = StructType::createNamed(Context, Name);
-  
-  // This type is being defined, so clear the location to indicate this.
-  Entry.second = SMLoc();
-  
-  return ParseStructDefinition(Entry.first);
+  return false;
 }
 
 
@@ -1235,7 +1232,7 @@ bool LLParser::ParseType(Type *&Result, bool AllowVoid) {
     break;
   case lltok::LocalVar: {
     // Type ::= %foo
-    std::pair<StructType*, LocTy> &Entry = NamedTypes[Lex.getStrVal()];
+    std::pair<Type*, LocTy> &Entry = NamedTypes[Lex.getStrVal()];
     
     // If the type hasn't been defined yet, create a forward definition and
     // remember where that forward def'n was seen (in case it never is defined).
@@ -1252,7 +1249,7 @@ bool LLParser::ParseType(Type *&Result, bool AllowVoid) {
     // Type ::= %4
     if (Lex.getUIntVal() >= NumberedTypes.size())
       NumberedTypes.resize(Lex.getUIntVal()+1);
-    std::pair<StructType*, LocTy> &Entry = NumberedTypes[Lex.getUIntVal()];
+    std::pair<Type*, LocTy> &Entry = NumberedTypes[Lex.getUIntVal()];
     
     // If the type hasn't been defined yet, create a forward definition and
     // remember where that forward def'n was seen (in case it never is defined).
@@ -1464,27 +1461,58 @@ bool LLParser::ParseAnonStructType(Type *&Result, bool Packed) {
 }
 
 /// ParseStructDefinition - Parse a struct in a 'type' definition.
-bool LLParser::ParseStructDefinition(StructType *STy) {
-  // The definition must be a (possibly) struct type or the 'opaque' keyword.
+bool LLParser::ParseStructDefinition(SMLoc TypeLoc, StringRef Name,
+                                     std::pair<Type*, LocTy> &Entry,
+                                     Type *&ResultTy) {
+  // If the type was already defined, diagnose the redefinition.
+  if (Entry.first && !Entry.second.isValid())
+    return Error(TypeLoc, "redefinition of type");
+  
   // If we have opaque, just return without filling in the definition for the
   // struct.  This counts as a definition as far as the .ll file goes.
-  if (EatIfPresent(lltok::kw_opaque))
+  if (EatIfPresent(lltok::kw_opaque)) {
+    // This type is being defined, so clear the location to indicate this.
+    Entry.second = SMLoc();
+    
+    // If this type number has never been uttered, create it.
+    if (Entry.first == 0)
+      Entry.first = StructType::createNamed(Context, Name);
+    ResultTy = Entry.first;
     return false;
-  
-  bool isPacked = false;
-  if (EatIfPresent(lltok::less)) {
-    isPacked = true;
   }
+  
+  // If the type starts with '<', then it is either a packed struct or a vector.
+  bool isPacked = EatIfPresent(lltok::less);
 
-  if (Lex.getKind() != lltok::lbrace)
-    return TokError("expected '{' in struct type definition");
-
+  // If we don't have a struct, then we have a random type alias, which we
+  // accept for compatibility with old files.  These types are not allowed to be
+  // forward referenced and not allowed to be recursive.
+  if (Lex.getKind() != lltok::lbrace) {
+    if (Entry.first)
+      return Error(TypeLoc, "forward references to non-struct type");
+  
+    ResultTy = 0;
+    if (isPacked)
+      return ParseArrayVectorType(ResultTy, true);
+    return ParseType(ResultTy);
+  }
+                               
+  // This type is being defined, so clear the location to indicate this.
+  Entry.second = SMLoc();
+  
+  // If this type number has never been uttered, create it.
+  if (Entry.first == 0)
+    Entry.first = StructType::createNamed(Context, Name);
+  
+  StructType *STy = cast<StructType>(Entry.first);
+ 
   SmallVector<Type*, 8> Body;
   if (ParseStructBody(Body) ||
       (isPacked && ParseToken(lltok::greater, "expected '>' in packed struct")))
     return true;
   
   STy->setBody(Body, isPacked);
+  ResultTy = STy;
   return false;
 }
 
