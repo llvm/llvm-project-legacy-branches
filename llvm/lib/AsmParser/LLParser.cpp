@@ -2517,6 +2517,12 @@ bool LLParser::ConvertValIDToValue(const Type *Ty, ValID &ID, Value *&V,
       if (ST->isPacked() != (ID.Kind == ValID::t_PackedConstantStruct))
         return Error(ID.Loc, "packed'ness of initializer and type don't match");
         
+      // Verify that the elements are compatible with the structtype.
+      for (unsigned i = 0, e = ID.UIntVal; i != e; ++i)
+        if (ID.ConstantStructElts[i]->getType() != ST->getElementType(i))
+          return Error(ID.Loc, "element " + Twine(i) +
+                    " of struct initializer doesn't match struct element type");
+      
       V = ConstantStruct::get(ST, ArrayRef<Constant*>(ID.ConstantStructElts,
                                                       ID.UIntVal));
     } else
