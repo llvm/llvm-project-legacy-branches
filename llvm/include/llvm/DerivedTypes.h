@@ -213,6 +213,7 @@ public:
   static StructType *createNamed(LLVMContext &Context, StringRef Name,
                                  ArrayRef<Type*> Elements,
                                  bool isPacked = false);
+  static StructType *createNamed(StringRef Name, Type *elt1, ...) END_WITH_NULL;
 
   /// StructType::get - This static method is the primary way to create a
   /// StructType.
@@ -259,6 +260,7 @@ public:
 
   /// setBody - Specify a body for an opaque type.
   void setBody(ArrayRef<Type*> Elements, bool isPacked = false);
+  void setBody(Type *elt1, ...) END_WITH_NULL;
   
   /// isValidElementType - Return true if the specified type is valid as a
   /// element type.

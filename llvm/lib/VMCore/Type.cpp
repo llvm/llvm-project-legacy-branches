@@ -493,11 +493,36 @@ StructType *StructType::createNamed(StringRef Name, ArrayRef<Type*> Elements,
   return createNamed(Elements[0]->getContext(), Name, Elements, isPacked);
 }
 
+StructType *StructType::createNamed(StringRef Name, Type *type, ...) {
+  assert(type != 0 && "Cannot create a struct type with no elements with this");
+  LLVMContext &Ctx = type->getContext();
+  va_list ap;
+  SmallVector<llvm::Type*, 8> StructFields;
+  va_start(ap, type);
+  while (type) {
+    StructFields.push_back(type);
+    type = va_arg(ap, llvm::Type*);
+  }
+  return llvm::StructType::createNamed(Ctx, Name, StructFields);
+}
+
 StringRef StructType::getName() const {
   assert(!isAnonymous() && "Anonymous structs never have names");
   if (SymbolTableEntry == 0) return StringRef();
   
   return ((StringMapEntry<StructType*> *)SymbolTableEntry)->getKey();
+}
+
+void StructType::setBody(Type *type, ...) {
+  assert(type != 0 && "Cannot create a struct type with no elements with this");
+  va_list ap;
+  SmallVector<llvm::Type*, 8> StructFields;
+  va_start(ap, type);
+  while (type) {
+    StructFields.push_back(type);
+    type = va_arg(ap, llvm::Type*);
+  }
+  setBody(StructFields);
 }
 
 bool StructType::isValidElementType(const Type *ElemTy) {
