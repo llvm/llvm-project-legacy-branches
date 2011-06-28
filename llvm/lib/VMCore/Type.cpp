@@ -458,8 +458,8 @@ void StructType::setName(StringRef Name) {
 // FIXME: Remove this version.
 StructType *StructType::get(LLVMContext &Context, ArrayRef<const Type*>Elements,
                             bool isPacked) {
-  return get(Context, ArrayRef<Type*>((Type**)Elements.data(), Elements.size()),
-             isPacked);
+  return get(Context, ArrayRef<Type*>(const_cast<Type**>(Elements.data()),
+             Elements.size()), isPacked);
 }
 
 StructType *StructType::get(LLVMContext &Context, bool isPacked) {
