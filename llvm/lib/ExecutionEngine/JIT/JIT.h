@@ -17,6 +17,9 @@
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MutexGuard.h"
 
 namespace llvm {
 
@@ -29,18 +32,216 @@ class TargetMachine;
 
 class JITState {
 private:
-  FunctionPassManager PM;  // Passes to compile a function
+
+  // JIT adaptive compilation. Different pass managers with different levels of
+  // optimizations
+  // Pass manager for passes to compile functions at CodeGen::OptLevel == NONE
+  bool PMOptNoneInited;
+  FunctionPassManager PMOptNone;
+
+  // Pass manager for passes to compile functions at CodeGen::OptLevel == LESS
+  bool PMOptLessInited;
+  FunctionPassManager PMOptLess;
+
+  // Pass manager for passes to compile functions at CodeGen::OptLevel == DEFAULT
+  bool PMOptDftInited;
+  FunctionPassManager PMOptDft;
+
+  // Pass manager for passes to compile functions at CodeGen::OptLevel == AGGRESSIVE
+  bool PMOptAggrInited;
+  FunctionPassManager PMOptAggr;
+
   Module *M;               // Module used to create the PM
 
   /// PendingFunctions - Functions which have not been code generated yet, but
   /// were called from a function being code generated.
   std::vector<AssertingVH<Function> > PendingFunctions;
 
-public:
-  explicit JITState(Module *M) : PM(M), M(M) {}
+  /// FunctionToCallCountMap - Function and the number of times it gets called from the time
+  /// it is compiled
+  std::map<Function*, int*> FunctionToCallCountMap;
 
-  FunctionPassManager &getPM(const MutexGuard &L) {
-    return PM;
+  /// FunctionToCompLevelMap - Function and the current compilation level map
+  std::map<Function*, CodeGenOpt::Level> FunctionToCompLevelMap;
+
+  /// FunctionToJITTimeMap - Function and whether it has been JITted before
+  std::map<Function*, bool> FunctionToJITTimeMap;
+
+public:
+
+  /// Recompilation threshold for the adaptive compilation framework
+  enum JITReCompCount {
+    CompilationNone = 100,         // Compile at -O0
+    CompilationLess = 1000,        // Compile at -O1
+    CompilationDefault = 10000,    // Compile at -O2
+    CompilationAggressive = 100000 // Compile at -O3
+  };
+
+  /// isPMInited - Return whether the pass manager with the given optimization level
+  /// is initialized
+  bool isPMInited(CodeGenOpt::Level OptLevel) {
+      switch (OptLevel) {
+        case CodeGenOpt::None :
+             return PMOptNoneInited;
+        case CodeGenOpt::Less:
+             return PMOptLessInited;
+        case CodeGenOpt::Default:
+             return PMOptDftInited;
+        case CodeGenOpt::Aggressive:
+             return PMOptNoneInited;
+        default:
+            break;
+     }
+     return false;
+   }
+
+  /// setPMInited - Mark the pass manager with the given optimization level
+  /// as initialized
+  void setPMInited(CodeGenOpt::Level OptLevel) {
+      switch (OptLevel) {
+        case CodeGenOpt::None :
+             PMOptNoneInited = true;
+             break;
+        case CodeGenOpt::Less:
+             PMOptLessInited = true;
+             break;
+        case CodeGenOpt::Default:
+             PMOptDftInited = true;
+             break;
+        case CodeGenOpt::Aggressive:
+             PMOptAggrInited = true;
+             break;
+        default:
+            break;
+     }
+   }
+
+  /// getSingleInitJIT - Return the optimization level associated with the one and
+  /// only one initialized pass manager. Panic if multiple pass managers are
+  /// initialized
+  CodeGenOpt::Level getSingleInitJIT() {
+      int InitedPMCount = 0;
+      CodeGenOpt::Level InitedOpt;
+
+      if (PMOptNoneInited) {
+         InitedPMCount ++;
+         InitedOpt = CodeGenOpt::None;
+      }
+      if (PMOptLessInited) {
+         InitedPMCount ++;
+         InitedOpt = CodeGenOpt::Less;
+      }
+      if (PMOptDftInited) {
+         InitedPMCount ++;
+         InitedOpt = CodeGenOpt::Default;
+      }
+      if (PMOptAggrInited) {
+         InitedPMCount ++;
+         InitedOpt = CodeGenOpt::Aggressive;
+      }
+      assert(InitedPMCount == 1 && "Invalid number of Pass Managers Initialized");
+      return InitedOpt;
+   }
+
+  /// getNextCompThrhold - Get the compilation threshold based on the
+  /// compilation level given
+  int getCompThreshold(CodeGenOpt::Level OptLevel) const {
+      switch (OptLevel) {
+        case CodeGenOpt::None :
+            return CompilationNone;
+        case CodeGenOpt::Less:
+            return CompilationLess;
+        case CodeGenOpt::Default:
+            return CompilationDefault;
+        case  CodeGenOpt::Aggressive:
+            return CompilationAggressive;
+        default:
+            break;
+     }
+     return CompilationNone;
+  }
+
+  explicit JITState(Module *M)
+           : PMOptNoneInited(false), PMOptNone(M), PMOptLessInited(false), PMOptLess(M),
+             PMOptDftInited(false), PMOptDft(M), PMOptAggrInited(false), PMOptAggr(M),
+             M(M) {}
+
+  /// PopulateFunctionToCallCountMap - Find all the functions in the modules
+  /// and allocate an invocation counter to it
+  void PopulateFunctionToCallCountMap(bool AdaptiveCompDebug);
+
+  /// isFirstTimeJITed - Return true when this function has not been JITted
+  bool isFirstTimeJITed(const MutexGuard &L, Function *F) {
+      bool firstTime = FunctionToJITTimeMap.find(F)->second;
+      FunctionToJITTimeMap.find(F)->second = false;
+      return firstTime;
+  }
+
+  /// hasReachedAggrComp - Return true if the last compilation for the function
+  /// was an aggressive compilation
+  bool hasReachedAggrComp(const MutexGuard &L, Function *F) {
+      return FunctionToCompLevelMap.find(F)->second == CodeGenOpt::Aggressive;
+  }
+
+  /// getNextCompLevel - Return the next compilation for the function
+  CodeGenOpt::Level getNextCompLevel(const MutexGuard &L, Function *F) {
+   // Determine the next compilation level based on the current
+   // invocation counter
+   CodeGenOpt::Level nextCompLevel = CodeGenOpt::None;
+   CodeGenOpt::Level CurrentLevel = FunctionToCompLevelMap.find(F)->second;
+   switch (CurrentLevel) {
+      case CodeGenOpt::None :
+        nextCompLevel = CodeGenOpt::Less;
+        break;
+      case CodeGenOpt::Less :
+        nextCompLevel = CodeGenOpt::Default;
+        break;
+      case CodeGenOpt::Default :
+        nextCompLevel = CodeGenOpt::Aggressive;
+        break;
+      case CodeGenOpt::Aggressive :
+        nextCompLevel = CodeGenOpt::Aggressive;
+        break;
+      default :
+        assert(false && "Invalid compilation level given");
+   }
+   return nextCompLevel;
+  }
+
+  // setNextCompLevel - Set the next compilation level for the function
+  void setNextCompLevel(const MutexGuard &L, Function *F,
+                        CodeGenOpt::Level nextCompLevel) {
+      FunctionToCompLevelMap.find(F)->second = nextCompLevel;
+  }
+
+  /// getCounterForFunction - Return the invocation counter address
+  /// for the given function
+  void *getCounterForFunction(const MutexGuard &L, Function *F) {
+       return FunctionToCallCountMap.find(F)->second;
+  }
+
+  /// setCounterForFunction - Set the invocation count for the given function
+  void setCounterForFunction(const MutexGuard &L, Function *F, int newCount) {
+     *((int *)FunctionToCallCountMap.find(F)->second) = newCount;
+  }
+
+  /// getPM - Return pass manager according to the level of the optimizations
+  /// specified. If no optimization level is specified, the pass manager with
+  /// CodeGenOpt::Default is returned
+  FunctionPassManager &getPM(const MutexGuard &L,
+                             CodeGenOpt::Level OptLevel = CodeGenOpt::Default) {
+    switch(OptLevel) {
+       case CodeGenOpt::None :
+          return PMOptNone;
+       case CodeGenOpt::Less :
+          return PMOptLess;
+       case CodeGenOpt::Default :
+          return PMOptDft;
+       case CodeGenOpt::Aggressive :
+          return PMOptAggr;
+       default :
+          assert(false && "Invalid optimization level given");
+    }
   }
 
   Module *getModule() const { return M; }
@@ -115,6 +316,56 @@ public:
   ///
   virtual GenericValue runFunction(Function *F,
                                    const std::vector<GenericValue> &ArgValues);
+
+  /// EnableAdaptiveCompilation - When adaptive compilation is on. The JIT will choose
+  /// to compile a function with regard to the number of times the function is called
+  /// previously. i.e. The JIT will first compile a function at the lowest level of
+  /// optimization, but will choose to recompile it at a higher optimization if it is
+  /// called frequently
+  virtual void EnableAdaptiveCompilation(bool Enabled = true) {
+     // Call the Execution Engine function first
+     ExecutionEngine::EnableAdaptiveCompilation(Enabled);
+
+     MutexGuard locked(lock);
+     // Then the adaptive compilation specific data structure needs
+     // to be initialized
+     InitializePM(locked, CodeGenOpt::None);
+     InitializePM(locked, CodeGenOpt::Less);
+     InitializePM(locked, CodeGenOpt::Default);
+     InitializePM(locked, CodeGenOpt::Aggressive);
+
+     jitstate->PopulateFunctionToCallCountMap(isAdaptiveCompDebug());
+  }
+
+  /// InitializePM - Initialize a pass manager with the given
+  /// optimization level
+  void InitializePM(MutexGuard &locked, CodeGenOpt::Level OptLevel) {
+
+     if (!jitstate->isPMInited(OptLevel)) {
+        // get the specified pass manager
+        FunctionPassManager &PM = jitstate->getPM(locked, OptLevel);
+        PM.add(new TargetData(*TM.getTargetData()));
+
+        // Turn the machine code intermediate representation into bytes in memory that
+        // may be executed.
+        if (TM.addPassesToEmitMachineCode(PM, *JCE, OptLevel)) {
+           report_fatal_error("Target does not support machine code emission!");
+        }
+        // Initialize passes.
+        PM.doInitialization();
+        jitstate->setPMInited(OptLevel);
+     }
+  }
+
+  /// InitializeAllAvailPMs - Initialize all the pass managers
+  /// in the jitstate
+  void InitializeAllAvailPMs(MutexGuard &locked) {
+     // Initialize all the pass managers available in the JITState
+     InitializePM(locked, CodeGenOpt::None);
+     InitializePM(locked, CodeGenOpt::Less);
+     InitializePM(locked, CodeGenOpt::Default);
+     InitializePM(locked, CodeGenOpt::Aggressive);
+  }
 
   /// getPointerToNamedFunction - This method returns the address of the
   /// specified function by using the dlsym function call.  As such it is only

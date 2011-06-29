@@ -102,6 +102,13 @@ class ExecutionEngine {
   /// The target data for the platform for which execution is being performed.
   const TargetData *TD;
 
+  /// CompilingAdaptively - True when adaptive compilation is enabled.
+  bool CompilingAdaptively;
+
+  /// AdaptiveCompDebug - Print adaptive compilation debug information, this
+  /// includes name of functions that get compiled and recompiled.
+  bool AdaptiveCompDebug;
+
   /// Whether lazy JIT compilation is enabled.
   bool CompilingLazily;
 
@@ -363,6 +370,25 @@ public:
   bool isCompilingLazily() const {
     return CompilingLazily;
   }
+
+  /// EnableAdaptiveCompilation - When adaptive compilation is on. The JIT will choose
+  /// to compile a function with regard to the number of times the function is called
+  /// previously. i.e. The JIT will first compile a function at the lowest level of
+  /// optimization, but will choose to recompile it at a higher optimization if it is
+  /// called frequently
+  virtual void EnableAdaptiveCompilation(bool Enabled = true) {
+    CompilingAdaptively = Enabled;
+  }
+  virtual bool isCompilingAdaptively() const {
+    return CompilingAdaptively;
+  }
+  virtual void EnableAdaptiveCompilationDebug(bool Enabled = true) {
+     AdaptiveCompDebug = Enabled;
+  }
+  virtual bool isAdaptiveCompDebug() {
+     return AdaptiveCompDebug;
+  }
+
   // Deprecated in favor of isCompilingLazily (to reduce double-negatives).
   // Remove this in LLVM 2.8.
   bool isLazyCompilationDisabled() const {

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "JIT.h"
+#include "llvm/Module.h"
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
@@ -267,6 +268,37 @@ extern "C" {
   }
 }
 
+/// PopulateFunctionToCallCountMap - Find all the functions in the modules and allocate
+/// an invocation counter to it.
+void JITState::PopulateFunctionToCallCountMap(bool AdaptiveCompDebug) {
+
+   // Iterate over all functions in the module and initialize its
+   // recompilation metadata
+   for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
+      if (!I->isDeclaration()) {
+         // Allocate an invocation counter for every function
+         FunctionToCallCountMap.insert(FunctionToCallCountMap.begin(),
+                            std::pair<Function*, int*>(&*I, new int));
+
+         // Assign the initial compilation level for every function
+         FunctionToCompLevelMap.insert(FunctionToCompLevelMap.begin(),
+                            std::pair<Function*, CodeGenOpt::Level>(&*I,
+                            CodeGenOpt::None));
+
+         // Initialize the function as unJITted before
+         FunctionToJITTimeMap.insert(FunctionToJITTimeMap.begin(),
+                              std::pair<Function*, bool>(&*I, true));
+      }
+   }
+
+   // Make sure to zero out every invocation counter
+   for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
+      if (!I->isDeclaration()) {
+        *((int*) FunctionToCallCountMap.find(&*I)->second) = 0;
+      }
+   }
+}
+
 JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
          JITMemoryManager *JMM, CodeGenOpt::Level OptLevel, bool GVsWithCode)
   : ExecutionEngine(M), TM(tm), TJI(tji), AllocateGVsWithCode(GVsWithCode),
@@ -283,7 +315,8 @@ JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
 
   // Add target data
   MutexGuard locked(lock);
-  FunctionPassManager &PM = jitstate->getPM(locked);
+  // Initialize the pass manager with the given optimization level
+  FunctionPassManager &PM = jitstate->getPM(locked, OptLevel);
   PM.add(new TargetData(*TM.getTargetData()));
 
   // Turn the machine code intermediate representation into bytes in memory that
@@ -314,6 +347,8 @@ JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
 
   // Initialize passes.
   PM.doInitialization();
+  // Set the pass manager to initialized
+  jitstate->setPMInited(OptLevel);
 }
 
 JIT::~JIT() {
@@ -335,20 +370,18 @@ void JIT::addModule(Module *M) {
     assert(!jitstate && "jitstate should be NULL if Modules vector is empty!");
 
     jitstate = new JITState(M);
-
-    FunctionPassManager &PM = jitstate->getPM(locked);
-    PM.add(new TargetData(*TM.getTargetData()));
-
-    // Turn the machine code intermediate representation into bytes in memory
-    // that may be executed.
-    if (TM.addPassesToEmitMachineCode(PM, *JCE, CodeGenOpt::Default)) {
-      report_fatal_error("Target does not support machine code emission!");
+    // Only populate the function to call count when adaptive compilation is used
+    if (isCompilingAdaptively()) {
+       jitstate->PopulateFunctionToCallCountMap(isAdaptiveCompDebug());
     }
 
-    // Initialize passes.
-    PM.doInitialization();
+    if (isCompilingAdaptively()) {
+      // Initialize all the pass managers
+      InitializeAllAvailPMs(locked);
+    } else {
+      InitializePM(locked, jitstate->getSingleInitJIT());
+    }
   }
-
   ExecutionEngine::addModule(M);
 }
 
@@ -367,17 +400,16 @@ bool JIT::removeModule(Module *M) {
   if (!jitstate && !Modules.empty()) {
     jitstate = new JITState(Modules[0]);
 
-    FunctionPassManager &PM = jitstate->getPM(locked);
-    PM.add(new TargetData(*TM.getTargetData()));
-
-    // Turn the machine code intermediate representation into bytes in memory
-    // that may be executed.
-    if (TM.addPassesToEmitMachineCode(PM, *JCE, CodeGenOpt::Default)) {
-      report_fatal_error("Target does not support machine code emission!");
+    // Only populate the function to call count when adaptive compilation is used
+    if (isCompilingAdaptively()) {
+       jitstate->PopulateFunctionToCallCountMap(isAdaptiveCompDebug());
     }
 
-    // Initialize passes.
-    PM.doInitialization();
+    if (isCompilingAdaptively()) {
+      InitializeAllAvailPMs(locked);
+    } else {
+      InitializePM(locked, jitstate->getSingleInitJIT());
+    }
   }
   return result;
 }
@@ -637,7 +669,25 @@ void JIT::runJITOnFunctionUnlocked(Function *F, const MutexGuard &locked) {
 
 void JIT::jitTheFunction(Function *F, const MutexGuard &locked) {
   isAlreadyCodeGenerating = true;
-  jitstate->getPM(locked).run(*F);
+  if (isCompilingAdaptively()) {
+     // This is the first time this function is compiled. Compile at
+     // CodeGenOpt::None
+     if (jitstate->isFirstTimeJITed(locked, F)) {
+        jitstate->getPM(locked, CodeGenOpt::None).run(*F);
+    } else {
+        // Compile with the next optimization level
+        CodeGenOpt::Level nextOptLevel = jitstate->getNextCompLevel(locked, F);
+        jitstate->setNextCompLevel(locked, F, nextOptLevel);
+
+        // Clear the invocation counter for the function
+        jitstate->setCounterForFunction(locked, F, 0);
+        jitstate->getPM(locked, nextOptLevel).run(*F);
+    }
+  } else {
+     // Adaptive compilation has not been enabled, there should only be one
+     // pass manager that is initialized. Get it and use it to compile the function
+     jitstate->getPM(locked, jitstate->getSingleInitJIT()).run(*F);
+  }
   isAlreadyCodeGenerating = false;
 
   // clear basic block addresses after this function is done

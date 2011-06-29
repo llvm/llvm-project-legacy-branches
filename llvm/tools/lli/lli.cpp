@@ -56,6 +56,15 @@ namespace {
                                  cl::desc("Force interpretation: disable JIT"),
                                  cl::init(false));
 
+  // Enable adaptive compilation (experimental).
+  cl::opt<bool> AdaptiveCompilation ("adaptive-comp",
+                                     cl::desc("Enable adaptive compilation"),
+                                     cl::init(false));
+  // Print adaptive compilation information. This includes the names of functions
+  // that get compiled and recompiled (experimental).
+  cl::opt<bool> AdaptiveCompilationDbg ("adaptive-comp-debug",
+                                        cl::desc("Enable adaptive compilation debug"),
+                                        cl::init(false));
   cl::opt<bool> UseMCJIT(
     "use-mcjit", cl::desc("Enable use of the MC-based JIT (if available)"),
     cl::init(false));
@@ -197,6 +206,24 @@ int main(int argc, char **argv, char * const *envp) {
     else
       errs() << argv[0] << ": unknown error creating EE!\n";
     exit(1);
+  }
+
+  // Enable adaptive compilation. Adaptive compilation can only be
+  // enabled when there is no optimization level given and JIT is
+  // chosen to execute the user program
+  if (AdaptiveCompilation) {
+    if (ForceInterpreter) {
+      errs() << "Adaptive compilation can not be enabled with interpreter.\n";
+      exit(1);
+    }
+    if (OptLevel != ' ') {
+      errs() << "Adaptive compilation can not be enabled with an optimization level given.\n";
+      exit(1);
+    }
+    EE->EnableAdaptiveCompilation(true);
+    if (AdaptiveCompilationDbg) {
+      EE->EnableAdaptiveCompilationDebug(true);
+    }
   }
 
   EE->RegisterJITEventListener(createOProfileJITEventListener());

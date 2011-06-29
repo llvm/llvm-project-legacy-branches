@@ -60,6 +60,7 @@ ExecutionEngine::ExecutionEngine(Module *M)
     ExceptionTableRegister(0),
     ExceptionTableDeregister(0) {
   CompilingLazily         = false;
+  CompilingAdaptively     = false;
   GVCompilationDisabled   = false;
   SymbolSearchingDisabled = false;
   Modules.push_back(M);
