@@ -304,6 +304,15 @@ public:
   /// load, store, and alloca instructions, and global values.
   static const unsigned MaximumAlignment = 1u << 29;
   
+  /// mutateType - Mutate the type of this Value to be of the specified type.
+  /// Note that this is an extremely dangerous operation which can create
+  /// completely invalid IR very easily.  It is strongly recommended that you
+  /// recreate IR objects with the right types instead of mutating them in
+  /// place.
+  void mutateType(Type *Ty) {
+    VTy = Ty;
+  }
+  
 protected:
   unsigned short getSubclassDataFromValue() const { return SubclassData; }
   void setValueSubclassData(unsigned short D) { SubclassData = D; }
