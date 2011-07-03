@@ -572,8 +572,7 @@ ConstantArray::ConstantArray(const ArrayType *T,
   }
 }
 
-Constant *ConstantArray::get(const ArrayType *Ty, 
-                             const std::vector<Constant*> &V) {
+Constant *ConstantArray::get(const ArrayType *Ty, ArrayRef<Constant*> V) {
   for (unsigned i = 0, e = V.size(); i != e; ++i) {
     assert(V[i]->getType() == Ty->getElementType() &&
            "Wrong type in array element initializer");
@@ -591,13 +590,6 @@ Constant *ConstantArray::get(const ArrayType *Ty,
   }
   
   return ConstantAggregateZero::get(Ty);
-}
-
-
-Constant *ConstantArray::get(const ArrayType* T, Constant *const* Vals,
-                             unsigned NumVals) {
-  // FIXME: make this the primary ctor method.
-  return get(T, std::vector<Constant*>(Vals, Vals+NumVals));
 }
 
 /// ConstantArray::get(const string&) - Return an array that is initialized to
@@ -667,10 +659,8 @@ Constant *ConstantStruct::get(const StructType *ST, ArrayRef<Constant*> V) {
   
   // Create a ConstantAggregateZero value if all elements are zeros.
   for (unsigned i = 0, e = V.size(); i != e; ++i)
-    if (!V[i]->isNullValue()) {
-      // FIXME: Eliminate temporary std::vector here!
-      return ST->getContext().pImpl->StructConstants.getOrCreate(ST, V.vec());
-    }
+    if (!V[i]->isNullValue())
+      return ST->getContext().pImpl->StructConstants.getOrCreate(ST, V);
 
   return ConstantAggregateZero::get(ST);
 }
@@ -701,9 +691,9 @@ ConstantVector::ConstantVector(const VectorType *T,
 }
 
 // ConstantVector accessors.
-Constant *ConstantVector::get(const VectorType *T,
-                              const std::vector<Constant*> &V) {
+Constant *ConstantVector::get(ArrayRef<Constant*> V) {
   assert(!V.empty() && "Vectors can't be empty");
+  const VectorType *T = VectorType::get(V.front()->getType(), V.size());
   LLVMContextImpl *pImpl = T->getContext().pImpl;
 
   // If this is an all-undef or all-zero vector, return a
@@ -726,12 +716,6 @@ Constant *ConstantVector::get(const VectorType *T,
     return UndefValue::get(T);
     
   return pImpl->VectorConstants.getOrCreate(T, V);
-}
-
-Constant *ConstantVector::get(ArrayRef<Constant*> V) {
-  // FIXME: make this the primary ctor method.
-  assert(!V.empty() && "Vectors cannot be empty");
-  return get(VectorType::get(V.front()->getType(), V.size()), V.vec());
 }
 
 // Utility function for determining if a ConstantExpr is a CastOp or not. This
@@ -1028,17 +1012,32 @@ bool ConstantArray::isCString() const {
 }
 
 
-/// getAsString - If the sub-element type of this array is i8
-/// then this method converts the array to an std::string and returns it.
-/// Otherwise, it asserts out.
+/// convertToString - Helper function for getAsString() and getAsCString().
+static std::string convertToString(const User *U, unsigned len)
+{
+  std::string Result;
+  Result.reserve(len);
+  for (unsigned i = 0; i != len; ++i)
+    Result.push_back((char)cast<ConstantInt>(U->getOperand(i))->getZExtValue());
+  return Result;
+}
+
+/// getAsString - If this array is isString(), then this method converts the
+/// array to an std::string and returns it.  Otherwise, it asserts out.
 ///
 std::string ConstantArray::getAsString() const {
   assert(isString() && "Not a string!");
-  std::string Result;
-  Result.reserve(getNumOperands());
-  for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
-    Result.push_back((char)cast<ConstantInt>(getOperand(i))->getZExtValue());
-  return Result;
+  return convertToString(this, getNumOperands());
+}
+
+
+/// getAsCString - If this array is isCString(), then this method converts the
+/// array (without the trailing null byte) to an std::string and returns it.
+/// Otherwise, it asserts out.
+///
+std::string ConstantArray::getAsCString() const {
+  assert(isCString() && "Not a string!");
+  return convertToString(this, getNumOperands() - 1);
 }
 
 
@@ -2121,7 +2120,7 @@ void ConstantVector::replaceUsesOfWithOnConstant(Value *From, Value *To,
     Values.push_back(Val);
   }
   
-  Constant *Replacement = get(cast<VectorType>(getType()), Values);
+  Constant *Replacement = get(Values);
   assert(Replacement != this && "I didn't contain From!");
   
   // Everyone using this now uses the replacement.

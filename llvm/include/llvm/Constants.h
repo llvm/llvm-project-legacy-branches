@@ -350,12 +350,7 @@ protected:
   ConstantArray(const ArrayType *T, const std::vector<Constant*> &Val);
 public:
   // ConstantArray accessors
-  static Constant *get(const ArrayType *T, const std::vector<Constant*> &V);
-  static Constant *get(const ArrayType *T, Constant *const *Vals, 
-                       unsigned NumVals);
-  static Constant *get(const ArrayType *T, ArrayRef<Constant*> V) {
-    return get(T, V.data(), V.size());
-  }
+  static Constant *get(const ArrayType *T, ArrayRef<Constant*> V);
                              
   /// This method constructs a ConstantArray and initializes it with a text
   /// string. The default behavior (AddNull==true) causes a null terminator to
@@ -391,6 +386,12 @@ public:
   /// array to an std::string and returns it.  Otherwise, it asserts out.
   ///
   std::string getAsString() const;
+
+  /// getAsCString - If this array is isCString(), then this method converts the
+  /// array (without the trailing null byte) to an std::string and returns it.
+  /// Otherwise, it asserts out.
+  ///
+  std::string getAsCString() const;
 
   /// isNullValue - Return true if this is the value that would be returned by
   /// getNullValue.  This always returns false because zero arrays are always
@@ -494,8 +495,6 @@ protected:
 public:
   // ConstantVector accessors
   static Constant *get(ArrayRef<Constant*> V);
-  // FIXME: Eliminate this constructor form.
-  static Constant *get(const VectorType *T, const std::vector<Constant*> &V);
   
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);

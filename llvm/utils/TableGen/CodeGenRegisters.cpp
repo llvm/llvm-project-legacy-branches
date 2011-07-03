@@ -14,6 +14,7 @@
 
 #include "CodeGenRegisters.h"
 #include "CodeGenTarget.h"
+#include "Error.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -236,7 +237,8 @@ struct TupleExpander : SetTheory::Expander {
         if (RV.getName() == "DwarfNumbers" ||
             RV.getName() == "DwarfAlias" ||
             RV.getName() == "Aliases") {
-          NewReg->addValue(*RegisterCl->getValue(RV.getName()));
+          if (const RecordVal *DefRV = RegisterCl->getValue(RV.getName()))
+            NewReg->addValue(*DefRV);
           continue;
         }
 

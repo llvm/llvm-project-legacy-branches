@@ -575,6 +575,8 @@ static bool EmitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     }
   } else if (MI->getOperand(0).isImm()) {
     OS << MI->getOperand(0).getImm();
+  } else if (MI->getOperand(0).isCImm()) {
+    MI->getOperand(0).getCImm()->getValue().print(OS, false /*isSigned*/);
   } else {
     assert(MI->getOperand(0).isReg() && "Unknown operand type");
     if (MI->getOperand(0).getReg() == 0) {
@@ -1516,6 +1518,13 @@ static void EmitGlobalConstantVector(const ConstantVector *CV,
                                      unsigned AddrSpace, AsmPrinter &AP) {
   for (unsigned i = 0, e = CV->getType()->getNumElements(); i != e; ++i)
     EmitGlobalConstantImpl(CV->getOperand(i), AddrSpace, AP);
+
+  const TargetData &TD = *AP.TM.getTargetData();
+  unsigned Size = TD.getTypeAllocSize(CV->getType());
+  unsigned EmittedSize = TD.getTypeAllocSize(CV->getType()->getElementType()) *
+                         CV->getType()->getNumElements();
+  if (unsigned Padding = Size - EmittedSize)
+    AP.OutStreamer.EmitZeros(Padding, AddrSpace);
 }
 
 static void EmitGlobalConstantStruct(const ConstantStruct *CS,
