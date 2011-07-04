@@ -14,7 +14,6 @@
 #include "llvm/Linker.h"
 #include "llvm/Constants.h"
 #include "llvm/Module.h"
-#include "llvm/ValueSymbolTable.h"
 #include "llvm/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Path.h"
@@ -188,20 +187,20 @@ namespace {
 
 
 
-/// ForceRenaming - The LLVM SymbolTable class autorenames globals that conflict
+/// forceRenaming - The LLVM SymbolTable class autorenames globals that conflict
 /// in the symbol table.  This is good for all clients except for us.  Go
 /// through the trouble to force this back.
-static void ForceRenaming(GlobalValue *GV, StringRef Name) {
+static void forceRenaming(GlobalValue *GV, StringRef Name) {
   assert(GV->getName() != Name && "Can't force rename to self");
-  ValueSymbolTable &ST = GV->getParent()->getValueSymbolTable();
+  Module *M = GV->getParent();
 
   // If there is a conflict, rename the conflict.
-  if (GlobalValue *ConflictGV = cast_or_null<GlobalValue>(ST.lookup(Name))) {
+  if (GlobalValue *ConflictGV = M->getNamedValue(Name)) {
     assert(ConflictGV->hasLocalLinkage() &&
            "Not conflicting with a static global, should link instead!");
     GV->takeName(ConflictGV);
     ConflictGV->setName(Name);    // This will cause ConflictGV to get renamed
-    assert(ConflictGV->getName() != Name && "ForceRenaming didn't work");
+    assert(ConflictGV->getName() != Name && "forceRenaming didn't work");
   } else {
     GV->setName(Name);              // Force the name back
   }
@@ -423,7 +422,7 @@ bool ModuleLinker::linkGlobals() {
       // symbol, DGV must be an existing global with internal linkage.  Rename
       // it.
       if (!NewDGV->hasLocalLinkage() && NewDGV->getName() != SGV->getName())
-        ForceRenaming(NewDGV, SGV->getName());
+        forceRenaming(NewDGV, SGV->getName());
 
       // Make sure to remember this mapping.
       ValueMap[SGV] = NewDGV;
@@ -468,7 +467,7 @@ bool ModuleLinker::linkGlobals() {
                                                               DGV->getType()));
 
       // DGV will conflict with NewDGV because they both had the same
-      // name. We must erase this now so ForceRenaming doesn't assert
+      // name. We must erase this now so forceRenaming doesn't assert
       // because DGV might not have internal linkage.
       if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
         Var->eraseFromParent();
@@ -478,7 +477,7 @@ bool ModuleLinker::linkGlobals() {
       // If the symbol table renamed the global, but it is an externally visible
       // symbol, DGV must be an existing global with internal linkage.  Rename.
       if (NewDGV->getName() != SGV->getName() && !NewDGV->hasLocalLinkage())
-        ForceRenaming(NewDGV, SGV->getName());
+        forceRenaming(NewDGV, SGV->getName());
 
       // Inherit const as appropriate.
       NewDGV->setConstant(SGV->isConstant());
@@ -558,7 +557,7 @@ bool ModuleLinker::linkFunctionProtos() {
       // visible symbol, DF must be an existing function with internal linkage.
       // Rename it.
       if (!NewDF->hasLocalLinkage() && NewDF->getName() != SF->getName())
-        ForceRenaming(NewDF, SF->getName());
+        forceRenaming(NewDF, SF->getName());
 
       // ... and remember this mapping...
       ValueMap[SF] = NewDF;
@@ -586,7 +585,7 @@ bool ModuleLinker::linkFunctionProtos() {
       DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDF, DGV->getType()));
 
       // DF will conflict with NewDF because they both had the same. We must
-      // erase this now so ForceRenaming doesn't assert because DF might
+      // erase this now so forceRenaming doesn't assert because DF might
       // not have internal linkage.
       if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
         Var->eraseFromParent();
@@ -597,7 +596,7 @@ bool ModuleLinker::linkFunctionProtos() {
       // visible symbol, DF must be an existing function with internal
       // linkage.  Rename it.
       if (NewDF->getName() != SF->getName() && !NewDF->hasLocalLinkage())
-        ForceRenaming(NewDF, SF->getName());
+        forceRenaming(NewDF, SF->getName());
 
       // Remember this mapping so uses in the source module get remapped
       // later by MapValue.
@@ -742,7 +741,7 @@ bool ModuleLinker::linkAliases() {
           DGVar->replaceAllUsesWith(NewGA);
 
         // DGVar will conflict with NewGA because they both had the same
-        // name. We must erase this now so ForceRenaming doesn't assert
+        // name. We must erase this now so forceRenaming doesn't assert
         // because DGV might not have internal linkage.
         DGVar->eraseFromParent();
 
@@ -770,7 +769,7 @@ bool ModuleLinker::linkAliases() {
           DF->replaceAllUsesWith(NewGA);
 
         // DF will conflict with NewGA because they both had the same
-        // name. We must erase this now so ForceRenaming doesn't assert
+        // name. We must erase this now so forceRenaming doesn't assert
         // because DF might not have internal linkage.
         DF->eraseFromParent();
 
@@ -793,7 +792,7 @@ bool ModuleLinker::linkAliases() {
     // If the symbol table renamed the alias, but it is an externally visible
     // symbol, DGA must be an global value with internal linkage. Rename it.
     if (NewGA->getName() != SGA->getName() && !NewGA->hasLocalLinkage())
-      ForceRenaming(NewGA, SGA->getName());
+      forceRenaming(NewGA, SGA->getName());
 
     // Remember this mapping so uses in the source module get remapped
     // later by MapValue.
