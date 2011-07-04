@@ -37,22 +37,29 @@ public:
   /// false.  If there is a hard type conflict (maybe merging "int x" with
   /// "extern float x") this returns true.
   bool addTypeMapping(Type *DstTy, Type *SrcTy);
-  
-  //void mapTypes(Value *Dst, Value *Src);
 
+  /// get - Return the mapped type to use for the specified input type from the
+  /// source module.
+  Type *get(Type *T);
+  
 private:
   bool addTypeMappingRec(Type *DstTy, Type *SrcTy);
 };
 }
 
 bool TypeMapTy::addTypeMapping(Type *DstTy, Type *SrcTy) {
-  if (DstTy == SrcTy) return false;       // If already equal, noop.
-
-  if (Type *T = MappedTypes[SrcTy])
+  Type *&T = MappedTypes[SrcTy];
+  if (T)
     return T != DstTy;
+  
+  if (DstTy == SrcTy) {
+    T = DstTy;
+    return false;
+  }
   
   return addTypeMappingRec(DstTy, SrcTy);
 }
+
 
 /// addTypeMappingRec - This is the implementation function for addTypeMapping,
 /// which optimizes out the map lookup in the recursive walk.  
@@ -79,9 +86,13 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
         DstST->isPacked() != SrcST->isPacked())
       return true;
     
+    Type *&Entry = MappedTypes[SrcST];
+    if (Entry)
+      return Entry != DstTy;
+    
     // Otherwise, we speculatively assume that the structs can be merged, add an
     // entry to the type map so we don't infinitely recurse.
-    MappedTypes[SrcST] = DstST;
+    Entry = DstST;
 
     // Then call addTypeMapping on each entry (not "Rec") so that we get the
     // caching behavior of the map check for each element.
@@ -135,6 +146,25 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
   MappedTypes[SrcTy] = DstTy;
   return false;
 }
+
+/// get - Return the mapped type to use for the specified input type from the
+/// source module.
+Type *TypeMapTy::get(Type *Ty) {
+  // If we already have an entry for this type, return it.
+  DenseMap<Type*, Type*>::iterator I = MappedTypes.find(Ty);
+  if (I != MappedTypes.end()) return I->second;
+  
+  // If this is an unmapped non-anonymous struct type, then it will come across
+  // like it did before.  However, its elements can still be potentially mapped.
+  
+  return Ty;
+  
+  // Otherwise, this may be a type wrapped around a mapped type.  Recurse down
+  // the type graph until we find something friendly to use.
+   
+}
+
+
 
 //===----------------------------------------------------------------------===//
 // ModuleLinker implementation.
@@ -409,29 +439,23 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
 
   // Check to see if may have to link the global with the global, alias or
   // function.
-  if (SGV->hasName() && !SGV->hasLocalLinkage())
+  if (SGV->hasName() && !SGV->hasLocalLinkage()) {
     DGV = DstM->getNamedValue(SGV->getName());
 
-  // If we found a global with the same name in the dest module, but it has
-  // internal linkage, we are really not doing any linkage here.
-  if (DGV && DGV->hasLocalLinkage())
-    DGV = 0;
+    // If we found a global with the same name in the dest module, but it has
+    // internal linkage, we are really not doing any linkage here.
+    if (DGV && DGV->hasLocalLinkage())
+      DGV = 0;
+  }
 
-  assert((SGV->hasInitializer() || SGV->hasExternalWeakLinkage() ||
-          SGV->hasExternalLinkage() || SGV->hasDLLImportLinkage()) &&
-         "Global must either be external or have an initializer!");
-
-  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-  bool LinkFromSrc = false;
-  if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
-    return true;
-
+  // If this isn't linkage, we're just copying the global over to the new
+  // module.  Handle this easy case first.
   if (DGV == 0) {
     // No linking to be performed, simply create an identical version of the
     // symbol over in the dest module... the initializer will be filled in
     // later by LinkGlobalInits.
     GlobalVariable *NewDGV =
-      new GlobalVariable(*DstM, SGV->getType()->getElementType(),
+      new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
                          SGV->isConstant(), SGV->getLinkage(), /*init*/0,
                          SGV->getName(), 0, false,
                          SGV->getType()->getAddressSpace());
@@ -449,6 +473,11 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     ValueMap[SGV] = NewDGV;
     return false;
   }
+
+  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+  bool LinkFromSrc = false;
+  if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
+    return true;
 
   // If the visibilities of the symbols disagree and the destination is a
   // prototype, take the visibility of its input.
