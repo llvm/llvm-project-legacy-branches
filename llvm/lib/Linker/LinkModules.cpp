@@ -161,8 +161,8 @@ namespace {
     bool run();
     
   private:
-    /// Error - Helper method for setting a message and returning an error code.
-    bool Error(const Twine &Message) {
+    /// error - Helper method for setting a message and returning an error code.
+    bool error(const Twine &Message) {
       ErrorMsg = Message.str();
       return true;
     }
@@ -254,7 +254,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
     LT = Src->getLinkage();
   } else if (Src->hasAppendingLinkage() || Dest->hasAppendingLinkage()) {
     if (Src->getLinkage() != Dest->getLinkage())
-      return Error("Linking globals named '" + Src->getName() +
+      return error("Linking globals named '" + Src->getName() +
             "': can only link appending global with another appending global!");
     LinkFromSrc = true; // Special cased.
     LT = Src->getLinkage();
@@ -286,7 +286,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
            (Src->hasExternalLinkage()   || Src->hasDLLImportLinkage() ||
             Src->hasDLLExportLinkage()  || Src->hasExternalWeakLinkage()) &&
            "Unexpected linkage type!");
-    return Error("Linking globals named '" + Src->getName() +
+    return error("Linking globals named '" + Src->getName() +
                  "': symbol multiply defined!");
   }
 
@@ -295,7 +295,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
       !Src->isDeclaration() && !Dest->isDeclaration() &&
       !Src->hasAvailableExternallyLinkage() &&
       !Dest->hasAvailableExternallyLinkage())
-      return Error("Linking globals named '" + Src->getName() +
+      return error("Linking globals named '" + Src->getName() +
                    "': symbols have different visibilities!");
   return false;
 }
@@ -312,20 +312,20 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   
   // Check to see that they two arrays agree on type.
   if (EltTy != SrcTy->getElementType())
-    return Error("Appending variables with different element types!");
+    return error("Appending variables with different element types!");
   if (DstGV->isConstant() != SrcGV->isConstant())
-    return Error("Appending variables linked with different const'ness!");
+    return error("Appending variables linked with different const'ness!");
   
   if (DstGV->getAlignment() != SrcGV->getAlignment())
-    return Error(
+    return error(
              "Appending variables with different alignment need to be linked!");
   
   if (DstGV->getVisibility() != SrcGV->getVisibility())
-    return Error(
+    return error(
             "Appending variables with different visibility need to be linked!");
   
   if (DstGV->getSection() != SrcGV->getSection())
-    return Error(
+    return error(
           "Appending variables with different section name need to be linked!");
   
   uint64_t NewSize = DstTy->getNumElements() + SrcTy->getNumElements();
@@ -445,7 +445,7 @@ bool ModuleLinker::linkGlobalProtos() {
 
     if (LinkFromSrc) {
       if (isa<GlobalAlias>(DGV))
-        return Error("Global-Alias Collision on '" + SGV->getName() +
+        return error("Global-Alias Collision on '" + SGV->getName() +
                      "': symbol multiple defined");
 
       // If the types don't match, and if we are to link from the source, nuke
@@ -501,7 +501,7 @@ bool ModuleLinker::linkGlobalProtos() {
       // - SGV is external declaration, which is effectively a no-op.
       // - SGV is weak, when we just need to throw SGV out.
       if (!SGV->isDeclaration() && !SGV->isWeakForLinker())
-        return Error("Global-Alias Collision on '" + SGV->getName() +
+        return error("Global-Alias Collision on '" + SGV->getName() +
                      "': symbol multiple defined");
     }
 
@@ -571,7 +571,7 @@ bool ModuleLinker::linkFunctionProtos() {
 
     if (LinkFromSrc) {
       if (isa<GlobalAlias>(DGV))
-        return Error("Function-Alias Collision on '" + SF->getName() +
+        return error("Function-Alias Collision on '" + SF->getName() +
                      "': symbol multiple defined");
 
       // We have a definition of the same name but different type in the
@@ -612,7 +612,7 @@ bool ModuleLinker::linkFunctionProtos() {
       // - SF is external declaration, which is effectively a no-op.
       // - SF is weak, when we just need to throw SF out.
       if (!SF->isDeclaration() && !SF->isWeakForLinker())
-        return Error("Function-Alias Collision on '" + SF->getName() +
+        return error("Function-Alias Collision on '" + SF->getName() +
                      "': symbol multiple defined");
     }
 
@@ -718,7 +718,7 @@ bool ModuleLinker::linkAliases() {
         NewGA = DGA;
         // Proceed to 'common' steps
       } else
-        return Error("Alias Collision on '"  + SGA->getName()+
+        return error("Alias Collision on '"  + SGA->getName()+
                      "': aliases have different aliasees");
     } else if (GlobalVariable *DGVar = dyn_cast_or_null<GlobalVariable>(DGV)) {
       // The only allowed way is to link alias with external declaration or weak
@@ -726,7 +726,7 @@ bool ModuleLinker::linkAliases() {
       if (DGVar->isDeclaration() || DGVar->isWeakForLinker()) {
         // But only if aliasee is global too...
         if (!isa<GlobalVariable>(DAliasee))
-          return Error("Global-Alias Collision on '" + SGA->getName() +
+          return error("Global-Alias Collision on '" + SGA->getName() +
                        "': aliasee is not global variable");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
@@ -747,7 +747,7 @@ bool ModuleLinker::linkAliases() {
 
         // Proceed to 'common' steps
       } else
-        return Error("Global-Alias Collision on '" + SGA->getName() +
+        return error("Global-Alias Collision on '" + SGA->getName() +
                      "': symbol multiple defined");
     } else if (Function *DF = dyn_cast_or_null<Function>(DGV)) {
       // The only allowed way is to link alias with external declaration or weak
@@ -755,7 +755,7 @@ bool ModuleLinker::linkAliases() {
       if (DF->isDeclaration() || DF->isWeakForLinker()) {
         // But only if aliasee is function too.
         if (!isa<Function>(DAliasee))
-          return Error("Function-Alias Collision on '" + SGA->getName() +
+          return error("Function-Alias Collision on '" + SGA->getName() +
                        "': aliasee is not function");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
@@ -775,7 +775,7 @@ bool ModuleLinker::linkAliases() {
 
         // Proceed to 'common' steps
       } else
-        return Error("Function-Alias Collision on '" + SGA->getName() +
+        return error("Function-Alias Collision on '" + SGA->getName() +
                      "': symbol multiple defined");
     } else {
       // No linking to be performed, simply create an identical version of the
