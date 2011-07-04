@@ -61,7 +61,7 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
   // type.  For example, we cannot resolve an int to a float.
   if (DstTy->getTypeID() != SrcTy->getTypeID()) return true;
 
-  // Otherwise, resolve the used type used by this derived type...
+  // Otherwise, resolve the used type used by this derived type.
   switch (DstTy->getTypeID()) {
   default:
     return true;
@@ -87,7 +87,7 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
     // caching behavior of the map check for each element.
     for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
       Type *SE = SrcST->getContainedType(i), *DE = DstST->getContainedType(i);
-      if (SE != DE && addTypeMapping(DE, SE))
+      if (addTypeMapping(DE, SE))
         return true;
     }
     return false;
@@ -927,28 +927,8 @@ bool ModuleLinker::run() {
 
   // Inherit the target data from the source module if the destination module
   // doesn't have one already.
-  if (DstM->getDataLayout().empty()) {
-    if (!SrcM->getDataLayout().empty()) {
-      DstM->setDataLayout(SrcM->getDataLayout());
-    } else {
-      std::string DataLayout;
-
-      if (DstM->getEndianness() == Module::AnyEndianness) {
-        if (SrcM->getEndianness() == Module::BigEndian)
-          DataLayout.append("E");
-        else if (SrcM->getEndianness() == Module::LittleEndian)
-          DataLayout.append("e");
-      }
-
-      if (DstM->getPointerSize() == Module::AnyPointerSize) {
-        if (SrcM->getPointerSize() == Module::Pointer64)
-          DataLayout.append(DataLayout.empty() ? "p:64:64" : "-p:64:64");
-        else if (SrcM->getPointerSize() == Module::Pointer32)
-          DataLayout.append(DataLayout.empty() ? "p:32:32" : "-p:32:32");
-      }
-      DstM->setDataLayout(DataLayout);
-    }
-  }
+  if (DstM->getDataLayout().empty() && !SrcM->getDataLayout().empty())
+    DstM->setDataLayout(SrcM->getDataLayout());
 
   // Copy the target triple from the source to dest if the dest's is empty.
   if (DstM->getTargetTriple().empty() && !SrcM->getTargetTriple().empty())
