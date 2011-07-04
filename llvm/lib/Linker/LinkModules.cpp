@@ -149,7 +149,7 @@ bool TypeMap::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
 /// ForceRenaming - The LLVM SymbolTable class autorenames globals that conflict
 /// in the symbol table.  This is good for all clients except for us.  Go
 /// through the trouble to force this back.
-static void ForceRenaming(GlobalValue *GV, const std::string &Name) {
+static void ForceRenaming(GlobalValue *GV, StringRef Name) {
   assert(GV->getName() != Name && "Can't force rename to self");
   ValueSymbolTable &ST = GV->getParent()->getValueSymbolTable();
 
@@ -663,8 +663,7 @@ static bool LinkAliases(Module *Dest, const Module *Src,
 
     // If the symbol table renamed the alias, but it is an externally visible
     // symbol, DGA must be an global value with internal linkage. Rename it.
-    if (NewGA->getName() != SGA->getName() &&
-        !NewGA->hasLocalLinkage())
+    if (NewGA->getName() != SGA->getName() && !NewGA->hasLocalLinkage())
       ForceRenaming(NewGA, SGA->getName());
 
     // Remember this mapping so uses in the source module get remapped
