@@ -2,11 +2,24 @@
 ; RUN: llvm-as < %p/testlink2.ll > %t2.bc
 ; RUN: llvm-link %t.bc %t2.bc -S | FileCheck %s
 
+; CHECK: %Ty2 = type { %Ty1* }
+; CHECK: %Ty1 = type { %Ty2* }
+%Ty1 = type opaque
+%Ty2 = type { %Ty1* }
+
 ; CHECK: %intlist = type { %intlist*, i32 }
 %intlist = type { %intlist*, i32 }
 
 ; The uses of intlist in the other file should be remapped.
-; CHECK-NOT: {{%intlist.[0-9]}}
+; XXHECK-NOT: {{%intlist.[0-9]}}
+
+%Struct1 = type opaque
+@S1GV = external global %Struct1*
+
+
+@GVTy1 = external global %Ty1*
+@GVTy2 = global %Ty2* null
+
 
 ; This should stay the same
 ; CHECK: @MyIntList = global %intlist { %intlist* null, i32 17 }

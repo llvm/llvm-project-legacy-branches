@@ -29,6 +29,10 @@ class TypeMapTy {
   /// MappedTypes - This is a mapping from a source type to a destination type
   /// to use.
   DenseMap<Type*, Type*> MappedTypes;
+
+  /// DefinitionsToResolve - This is a list of non-opaque structs in the source
+  /// module that are mapped to an opaque struct in the destination module.
+  std::vector<StructType*> DefinitionsToResolve;
 public:
   
   /// addTypeMapping - Indicate that the specified type in the destination
@@ -38,6 +42,10 @@ public:
   /// "extern float x") this returns true.
   bool addTypeMapping(Type *DstTy, Type *SrcTy);
 
+  /// linkDefinedTypeBodies - Produce a body for an opaque type in the dest
+  /// module from a type definition in the source module.
+  void linkDefinedTypeBodies();
+  
   /// get - Return the mapped type to use for the specified input type from the
   /// source module.
   Type *get(Type *T);
@@ -79,8 +87,14 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
     // If the destination type is opaque, then it should be resolved to the
     // input type.  If the source type is opaque, then it gets whatever the
     // destination type is.
-    if (DstST->isOpaque() || SrcST->isOpaque())
+    if (SrcST->isOpaque())
       break;
+    // If the type is opaque in the dest module but not the src module, then we
+    // should get the new type definition from the src module.
+    if (DstST->isOpaque()) { 
+      DefinitionsToResolve.push_back(SrcST);
+      break;
+    }
     
     if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes() ||
         DstST->isPacked() != SrcST->isPacked())
@@ -146,6 +160,33 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
   MappedTypes[SrcTy] = DstTy;
   return false;
 }
+
+/// linkDefinedTypeBodies - Produce a body for an opaque type in the dest
+/// module from a type definition in the source module.
+void TypeMapTy::linkDefinedTypeBodies() {
+  SmallVector<Type*, 16> Elements;
+  
+  for (unsigned i = 0, e = DefinitionsToResolve.size(); i != e; ++i) {
+    StructType *SrcSTy = DefinitionsToResolve[i];
+    StructType *DstSTy = cast<StructType>(MappedTypes[SrcSTy]);
+    
+    // TypeMap is a many-to-one mapping, if there were multiple types that
+    // provide a body for DstSTy then previous iterations of this loop may have
+    // already handled it.  Just ignore this case.
+    if (!DstSTy->isOpaque()) continue;
+    assert(!SrcSTy->isOpaque() && "Not resolving a definition?");
+    
+    // Map the body of the source type over to a new body for the dest type.
+    Elements.resize(SrcSTy->getNumElements());
+    for (unsigned i = 0, e = Elements.size(); i != e; ++i)
+      Elements[i] = get(SrcSTy->getElementType(i));
+    
+    DstSTy->setBody(Elements, SrcSTy->isPacked());
+  }
+  
+  DefinitionsToResolve.clear();
+}
+
 
 /// get - Return the mapped type to use for the specified input type from the
 /// source module.
@@ -430,6 +471,10 @@ void ModuleLinker::computeTypeMapping() {
   }
   
   // Don't bother incorporating aliases, they aren't generally typed well.
+  
+  // Now that we have discovered all of the type equivalences, get a body for
+  // any 'opaque' types in the dest module that are now resolved. 
+  TypeMap.linkDefinedTypeBodies();
 }
 
 /// linkGlobalProto - Loop through the global variables in the src module and

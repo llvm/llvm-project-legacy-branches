@@ -4,6 +4,14 @@
 
 %intlist = type { %intlist*, i32 }
 
+
+%Ty1 = type { %Ty2* }
+%Ty2 = type opaque
+
+@GVTy1 = global %Ty1* null
+@GVTy2 = external global %Ty2*
+
+
 @MyVar = global i32 4
 @MyIntList = external global %intlist
 @AConst = constant i32 1234
@@ -17,6 +25,10 @@
 @MyIntListPtr = constant { %intlist* } { %intlist* @MyIntList }
 @MyVarPtr = linkonce global { i32* } { i32* @MyVar }
 @0 = constant i32 412
+
+; Provides definition of Struct1 and of S1GV.
+%Struct1 = type { i32 }
+@S1GV = global %Struct1* null
 
 define i32 @foo(i32 %blah) {
   store i32 %blah, i32* @MyVar
