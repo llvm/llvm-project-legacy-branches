@@ -174,7 +174,7 @@ namespace {
     
     
     bool linkAppendingVars(GlobalVariable *DstGV, const GlobalVariable *SrcGV);
-    bool linkGlobals();
+    bool linkGlobalProtos();
     bool linkFunctionProtos();
     bool linkAliases();
     
@@ -300,7 +300,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
   return false;
 }
 
-/// LinkAppendingVars - If there were any appending global variables, link them
+/// linkAppendingVars - If there were any appending global variables, link them
 /// together now.  Return true on error.
 bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
                                      const GlobalVariable *SrcGV) {
@@ -373,9 +373,9 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
 }
 
 
-// linkGlobals - Loop through the global variables in the src module and merge
-// them into the dest module.
-bool ModuleLinker::linkGlobals() {
+/// linkGlobalProtos - Loop through the global variables in the src module and
+/// merge them into the dest module.
+bool ModuleLinker::linkGlobalProtos() {
   // Loop over all of the globals in the src module, mapping them over as we go
   for (Module::const_global_iterator I = SrcM->global_begin(),
        E = SrcM->global_end(); I != E; ++I) {
@@ -826,8 +826,8 @@ void ModuleLinker::linkGlobalInits() {
         DGVar->setInitializer(SInit);
     } else {
       // Destination is alias, the only valid situation is when source is
-      // weak. Also, note, that we already checked linkage in LinkGlobals(),
-      // thus we assert here.
+      // weak.  Also, note, that we already checked linkage in
+      // linkGlobalProtos(), thus we assert here.
       // FIXME: Should we weaken this assumption, 'dereference' alias and
       // check for initializer of aliasee?
       assert(SGV->isWeakForLinker());
@@ -978,7 +978,7 @@ bool ModuleLinker::run() {
 
   // Insert all of the globals in src into the DstM module... without linking
   // initializers (which could refer to functions not yet mapped over).
-  if (linkGlobals())
+  if (linkGlobalProtos())
     return true;
 
   // Link the functions together between the two modules, without doing function
