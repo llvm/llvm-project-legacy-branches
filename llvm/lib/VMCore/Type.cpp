@@ -302,7 +302,7 @@ APInt IntegerType::getMask() const {
 //                       FunctionType Implementation
 //===----------------------------------------------------------------------===//
 
-FunctionType::FunctionType(const Type *Result, ArrayRef<const Type*> Params,
+FunctionType::FunctionType(const Type *Result, ArrayRef<Type*> Params,
                            bool IsVarArgs)
   : DerivedType(Result->getContext(), FunctionTyID) {
   Type **SubTys = reinterpret_cast<Type**>(this+1);
@@ -314,17 +314,23 @@ FunctionType::FunctionType(const Type *Result, ArrayRef<const Type*> Params,
   for (unsigned i = 0, e = Params.size(); i != e; ++i) {
     assert(isValidArgumentType(Params[i]) &&
            "Not a valid type for function argument!");
-    SubTys[i+1] = const_cast<Type*>(Params[i]);
+    SubTys[i+1] = Params[i];
   }
 
   ContainedTys = SubTys;
   NumContainedTys = Params.size() + 1; // + 1 for result type
 }
 
+// FIXME: Remove this version.
+FunctionType *FunctionType::get(const Type *ReturnType,
+                                ArrayRef<const Type*> Params, bool isVarArg) {
+  return get(ReturnType, ArrayRef<Type*>(const_cast<Type**>(Params.data()),
+                                         Params.size()), isVarArg);
+}
 
 // FunctionType::get - The factory function for the FunctionType class.
 FunctionType *FunctionType::get(const Type *ReturnType,
-                                ArrayRef<const Type*> Params, bool isVarArg) {
+                                ArrayRef<Type*> Params, bool isVarArg) {
   // TODO: This is brutally slow.
   std::vector<Type*> Key;
   Key.reserve(Params.size()+2);

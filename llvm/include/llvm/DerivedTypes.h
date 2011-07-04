@@ -109,8 +109,7 @@ public:
 class FunctionType : public DerivedType {
   FunctionType(const FunctionType &);                   // Do not implement
   const FunctionType &operator=(const FunctionType &);  // Do not implement
-  FunctionType(const Type *Result, ArrayRef<const Type*> Params,
-               bool IsVarArgs);
+  FunctionType(const Type *Result, ArrayRef<Type*> Params, bool IsVarArgs);
 
 public:
   /// FunctionType::get - This static method is the primary way of constructing
@@ -118,6 +117,8 @@ public:
   ///
   static FunctionType *get(const Type *Result,
                            ArrayRef<const Type*> Params, bool isVarArg);
+  static FunctionType *get(const Type *Result,
+                           ArrayRef<Type*> Params, bool isVarArg);
 
   /// FunctionType::get - Create a FunctionType taking no parameters.
   ///
