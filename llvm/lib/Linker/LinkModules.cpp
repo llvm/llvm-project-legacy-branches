@@ -177,7 +177,7 @@ namespace {
     void computeTypeMapping();
     
     bool linkAppendingVars(GlobalVariable *DstGV, const GlobalVariable *SrcGV);
-    bool linkGlobalProtos();
+    bool linkGlobalProto(GlobalVariable *SrcGV);
     bool linkFunctionProtos();
     bool linkAliases();
     
@@ -402,141 +402,131 @@ void ModuleLinker::computeTypeMapping() {
   // Don't bother incorporating aliases, they aren't generally typed well.
 }
 
-/// linkGlobalProtos - Loop through the global variables in the src module and
+/// linkGlobalProto - Loop through the global variables in the src module and
 /// merge them into the dest module.
-bool ModuleLinker::linkGlobalProtos() {
-  // Loop over all of the globals in the src module, mapping them over as we go
-  for (Module::const_global_iterator I = SrcM->global_begin(),
-       E = SrcM->global_end(); I != E; ++I) {
-    const GlobalVariable *SGV = I;
-    GlobalValue *DGV = 0;
+bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
+  GlobalValue *DGV = 0;
 
-    // Check to see if may have to link the global with the global, alias or
-    // function.
-    if (SGV->hasName() && !SGV->hasLocalLinkage())
-      DGV = DstM->getNamedValue(SGV->getName());
+  // Check to see if may have to link the global with the global, alias or
+  // function.
+  if (SGV->hasName() && !SGV->hasLocalLinkage())
+    DGV = DstM->getNamedValue(SGV->getName());
 
-    // If we found a global with the same name in the dest module, but it has
-    // internal linkage, we are really not doing any linkage here.
-    if (DGV && DGV->hasLocalLinkage())
-      DGV = 0;
+  // If we found a global with the same name in the dest module, but it has
+  // internal linkage, we are really not doing any linkage here.
+  if (DGV && DGV->hasLocalLinkage())
+    DGV = 0;
 
-    assert((SGV->hasInitializer() || SGV->hasExternalWeakLinkage() ||
-            SGV->hasExternalLinkage() || SGV->hasDLLImportLinkage()) &&
-           "Global must either be external or have an initializer!");
+  assert((SGV->hasInitializer() || SGV->hasExternalWeakLinkage() ||
+          SGV->hasExternalLinkage() || SGV->hasDLLImportLinkage()) &&
+         "Global must either be external or have an initializer!");
 
-    GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-    bool LinkFromSrc = false;
-    if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
-      return true;
+  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+  bool LinkFromSrc = false;
+  if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
+    return true;
 
-    if (DGV == 0) {
-      // No linking to be performed, simply create an identical version of the
-      // symbol over in the dest module... the initializer will be filled in
-      // later by LinkGlobalInits.
-      GlobalVariable *NewDGV =
-        new GlobalVariable(*DstM, SGV->getType()->getElementType(),
-                           SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                           SGV->getName(), 0, false,
-                           SGV->getType()->getAddressSpace());
-      // Propagate alignment, visibility and section info.
-      CopyGVAttributes(NewDGV, SGV);
-      NewDGV->setUnnamedAddr(SGV->hasUnnamedAddr());
+  if (DGV == 0) {
+    // No linking to be performed, simply create an identical version of the
+    // symbol over in the dest module... the initializer will be filled in
+    // later by LinkGlobalInits.
+    GlobalVariable *NewDGV =
+      new GlobalVariable(*DstM, SGV->getType()->getElementType(),
+                         SGV->isConstant(), SGV->getLinkage(), /*init*/0,
+                         SGV->getName(), 0, false,
+                         SGV->getType()->getAddressSpace());
+    // Propagate alignment, visibility and section info.
+    CopyGVAttributes(NewDGV, SGV);
+    NewDGV->setUnnamedAddr(SGV->hasUnnamedAddr());
 
-      // If the LLVM runtime renamed the global, but it is an externally visible
-      // symbol, DGV must be an existing global with internal linkage.  Rename
-      // it.
-      if (!NewDGV->hasLocalLinkage() && NewDGV->getName() != SGV->getName())
-        forceRenaming(NewDGV, SGV->getName());
+    // If the LLVM runtime renamed the global, but it is an externally visible
+    // symbol, DGV must be an existing global with internal linkage.  Rename
+    // it.
+    if (!NewDGV->hasLocalLinkage() && NewDGV->getName() != SGV->getName())
+      forceRenaming(NewDGV, SGV->getName());
 
-      // Make sure to remember this mapping.
-      ValueMap[SGV] = NewDGV;
-
-      continue;
-    }
-
-    bool HasUnnamedAddr = SGV->hasUnnamedAddr() && DGV->hasUnnamedAddr();
-
-    // If the visibilities of the symbols disagree and the destination is a
-    // prototype, take the visibility of its input.
-    if (DGV->isDeclaration())
-      DGV->setVisibility(SGV->getVisibility());
-
-    if (DGV->hasAppendingLinkage()) {
-      if (linkAppendingVars(cast<GlobalVariable>(DGV), SGV))
-        return true;
-      continue;
-    }
-
-    if (LinkFromSrc) {
-      if (isa<GlobalAlias>(DGV))
-        return emitError("Global alias collision on '" + SGV->getName() +
-                     "': symbol multiple defined");
-
-      // If the types don't match, and if we are to link from the source, nuke
-      // DGV and create a new one of the appropriate type.  Note that the thing
-      // we are replacing may be a function (if a prototype, weak, etc) or a
-      // global variable.
-      GlobalVariable *NewDGV =
-        new GlobalVariable(*DstM, SGV->getType()->getElementType(),
-                           SGV->isConstant(), NewLinkage, /*init*/0,
-                           DGV->getName(), 0, false,
-                           SGV->getType()->getAddressSpace());
-
-      // Set the unnamed_addr.
-      NewDGV->setUnnamedAddr(HasUnnamedAddr);
-
-      // Propagate alignment, section, and visibility info.
-      CopyGVAttributes(NewDGV, SGV);
-      DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV,
-                                                              DGV->getType()));
-
-      // DGV will conflict with NewDGV because they both had the same
-      // name. We must erase this now so forceRenaming doesn't assert
-      // because DGV might not have internal linkage.
-      if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
-        Var->eraseFromParent();
-      else
-        cast<Function>(DGV)->eraseFromParent();
-
-      // If the symbol table renamed the global, but it is an externally visible
-      // symbol, DGV must be an existing global with internal linkage.  Rename.
-      if (NewDGV->getName() != SGV->getName() && !NewDGV->hasLocalLinkage())
-        forceRenaming(NewDGV, SGV->getName());
-
-      // Inherit const as appropriate.
-      NewDGV->setConstant(SGV->isConstant());
-
-      // Make sure to remember this mapping.
-      ValueMap[SGV] = NewDGV;
-      continue;
-    }
-
-    // Not "link from source", keep the one in the DestModule and remap the
-    // input onto it.
-
-    // Special case for const propagation.
-    if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV))
-      if (DGVar->isDeclaration() && SGV->isConstant() && !DGVar->isConstant())
-        DGVar->setConstant(true);
-
-    // SGV is global, but DGV is alias.
-    if (isa<GlobalAlias>(DGV)) {
-      // The only valid mappings are:
-      // - SGV is external declaration, which is effectively a no-op.
-      // - SGV is weak, when we just need to throw SGV out.
-      if (!SGV->isDeclaration() && !SGV->isWeakForLinker())
-        return emitError("Global alias collision on '" + SGV->getName() +
-                     "': symbol multiple defined");
-    }
-
-    // Set calculated linkage and unnamed_addr
-    DGV->setLinkage(NewLinkage);
-    DGV->setUnnamedAddr(HasUnnamedAddr);
-
-    // Make sure to remember this mapping...
-    ValueMap[SGV] = ConstantExpr::getBitCast(DGV, SGV->getType());
+    // Make sure to remember this mapping.
+    ValueMap[SGV] = NewDGV;
+    return false;
   }
+
+  // If the visibilities of the symbols disagree and the destination is a
+  // prototype, take the visibility of its input.
+  if (DGV->isDeclaration())
+    DGV->setVisibility(SGV->getVisibility());
+
+  if (DGV->hasAppendingLinkage())
+    return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
+
+  bool HasUnnamedAddr = SGV->hasUnnamedAddr() && DGV->hasUnnamedAddr();
+
+  if (LinkFromSrc) {
+    if (isa<GlobalAlias>(DGV))
+      return emitError("Global alias collision on '" + SGV->getName() +
+                   "': symbol multiple defined");
+
+    // If the types don't match, and if we are to link from the source, nuke
+    // DGV and create a new one of the appropriate type.  Note that the thing
+    // we are replacing may be a function (if a prototype, weak, etc) or a
+    // global variable.
+    GlobalVariable *NewDGV =
+      new GlobalVariable(*DstM, SGV->getType()->getElementType(),
+                         SGV->isConstant(), NewLinkage, /*init*/0,
+                         DGV->getName(), 0, false,
+                         SGV->getType()->getAddressSpace());
+
+    // Set the unnamed_addr.
+    NewDGV->setUnnamedAddr(HasUnnamedAddr);
+
+    // Propagate alignment, section, and visibility info.
+    CopyGVAttributes(NewDGV, SGV);
+    DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV, DGV->getType()));
+
+    // DGV will conflict with NewDGV because they both had the same
+    // name. We must erase this now so forceRenaming doesn't assert
+    // because DGV might not have internal linkage.
+    if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
+      Var->eraseFromParent();
+    else
+      cast<Function>(DGV)->eraseFromParent();
+
+    // If the symbol table renamed the global, but it is an externally visible
+    // symbol, DGV must be an existing global with internal linkage.  Rename.
+    if (NewDGV->getName() != SGV->getName() && !NewDGV->hasLocalLinkage())
+      forceRenaming(NewDGV, SGV->getName());
+
+    // Inherit const as appropriate.
+    NewDGV->setConstant(SGV->isConstant());
+
+    // Make sure to remember this mapping.
+    ValueMap[SGV] = NewDGV;
+    return false;
+  }
+
+  // Not "link from source", keep the one in DstM and remap the input onto it.
+
+  // Special case for const propagation.
+  if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV))
+    if (DGVar->isDeclaration() && SGV->isConstant() && !DGVar->isConstant())
+      DGVar->setConstant(true);
+
+  // SGV is global, but DGV is alias.
+  if (isa<GlobalAlias>(DGV)) {
+    // The only valid mappings are:
+    // - SGV is external declaration, which is effectively a no-op.
+    // - SGV is weak, when we just need to throw SGV out.
+    if (!SGV->isDeclaration() && !SGV->isWeakForLinker())
+      return emitError("Global alias collision on '" + SGV->getName() +
+                       "': symbol multiple defined");
+  }
+
+  // Set calculated linkage and unnamed_addr
+  DGV->setLinkage(NewLinkage);
+  DGV->setUnnamedAddr(HasUnnamedAddr);
+
+  // Make sure to remember this mapping...
+  ValueMap[SGV] = ConstantExpr::getBitCast(DGV, SGV->getType());
+  
   return false;
 }
 
@@ -962,21 +952,29 @@ bool ModuleLinker::run() {
        SI != SE; ++SI)
     DstM->addLibrary(*SI);
   
+  // If the source library's module id is in the dependent library list of the
+  // destination library, remove it since that module is now linked in.
+  StringRef ModuleId = SrcM->getModuleIdentifier();
+  if (!ModuleId.empty())
+    DstM->removeLibrary(sys::path::stem(ModuleId));
+
+  
   // Loop over all of the linked values to compute type mappings.
   computeTypeMapping();
 
   // Insert all of the globals in src into the DstM module... without linking
   // initializers (which could refer to functions not yet mapped over).
-  if (linkGlobalProtos())
-    return true;
+  for (Module::global_iterator I = SrcM->global_begin(),
+       E = SrcM->global_end(); I != E; ++I)
+    if (linkGlobalProto(I))
+      return true;
 
   // Link the functions together between the two modules, without doing function
   // bodies... this just adds external function prototypes to the DstM
   // function...  We do this so that when we begin processing function bodies,
   // all of the global values that may be referenced are available in our
   // ValueMap.
-  if (linkFunctionProtos())
-    return true;
+  if (linkFunctionProtos()) return true;
 
   // If there were any aliases, link them now. We really need to do this now,
   // because all of the aliases that may be referenced need to be available in
@@ -1000,13 +998,7 @@ bool ModuleLinker::run() {
   // are properly remapped.
   linkNamedMDNodes();
 
-  // If the source library's module id is in the dependent library list of the
-  // destination library, remove it since that module is now linked in.
-  StringRef ModuleId = SrcM->getModuleIdentifier();
-  if (!ModuleId.empty())
-    DstM->removeLibrary(sys::path::stem(ModuleId));
-
-  return false;
+   return false;
 }
 
 //===----------------------------------------------------------------------===//
