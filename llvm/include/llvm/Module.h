@@ -234,7 +234,7 @@ public:
 /// @name Generic Value Accessors
 /// @{
 
-  /// getNamedValue - Return the first global value in the module with
+  /// getNamedValue - Return the global value in the module with
   /// the specified name, of arbitrary type.  This method returns null
   /// if a global with the specified name is not found.
   GlobalValue *getNamedValue(StringRef Name) const;
@@ -311,7 +311,7 @@ public:
   GlobalVariable *getGlobalVariable(StringRef Name,
                                     bool AllowInternal = false) const;
 
-  /// getNamedGlobal - Return the first global variable in the module with the
+  /// getNamedGlobal - Return the global variable in the module with the
   /// specified name, of arbitrary type.  This method returns null if a global
   /// with the specified name is not found.
   GlobalVariable *getNamedGlobal(StringRef Name) const {
@@ -331,7 +331,7 @@ public:
 /// @name Global Alias Accessors
 /// @{
 
-  /// getNamedAlias - Return the first global alias in the module with the
+  /// getNamedAlias - Return the global alias in the module with the
   /// specified name, of arbitrary type.  This method returns null if a global
   /// with the specified name is not found.
   GlobalAlias *getNamedAlias(StringRef Name) const;
@@ -340,12 +340,12 @@ public:
 /// @name Named Metadata Accessors
 /// @{
 
-  /// getNamedMetadata - Return the first NamedMDNode in the module with the
+  /// getNamedMetadata - Return the NamedMDNode in the module with the
   /// specified name. This method returns null if a NamedMDNode with the
   /// specified name is not found.
   NamedMDNode *getNamedMetadata(const Twine &Name) const;
 
-  /// getOrInsertNamedMetadata - Return the first named MDNode in the module
+  /// getOrInsertNamedMetadata - Return the named MDNode in the module
   /// with the specified name. This method returns a new NamedMDNode if a
   /// NamedMDNode with the specified name is not found.
   NamedMDNode *getOrInsertNamedMetadata(StringRef Name);
@@ -432,32 +432,21 @@ public:
 /// @name Global Variable Iteration
 /// @{
 
-  /// Get an iterator to the first global variable
   global_iterator       global_begin()       { return GlobalList.begin(); }
-  /// Get a constant iterator to the first global variable
   const_global_iterator global_begin() const { return GlobalList.begin(); }
-  /// Get an iterator to the last global variable
   global_iterator       global_end  ()       { return GlobalList.end(); }
-  /// Get a constant iterator to the last global variable
   const_global_iterator global_end  () const { return GlobalList.end(); }
-  /// Determine if the list of globals is empty.
   bool                  global_empty() const { return GlobalList.empty(); }
 
 /// @}
 /// @name Function Iteration
 /// @{
 
-  /// Get an iterator to the first function.
   iterator                begin()       { return FunctionList.begin(); }
-  /// Get a constant iterator to the first function.
   const_iterator          begin() const { return FunctionList.begin(); }
-  /// Get an iterator to the last function.
   iterator                end  ()       { return FunctionList.end();   }
-  /// Get a constant iterator to the last function.
   const_iterator          end  () const { return FunctionList.end();   }
-  /// Determine how many functions are in the Module's list of functions.
   size_t                  size() const  { return FunctionList.size(); }
-  /// Determine if the list of functions is empty.
   bool                    empty() const { return FunctionList.empty(); }
 
 /// @}
@@ -481,17 +470,11 @@ public:
 /// @name Alias Iteration
 /// @{
 
-  /// Get an iterator to the first alias.
   alias_iterator       alias_begin()            { return AliasList.begin(); }
-  /// Get a constant iterator to the first alias.
   const_alias_iterator alias_begin() const      { return AliasList.begin(); }
-  /// Get an iterator to the last alias.
   alias_iterator       alias_end  ()            { return AliasList.end();   }
-  /// Get a constant iterator to the last alias.
   const_alias_iterator alias_end  () const      { return AliasList.end();   }
-  /// Determine how many aliases are in the Module's list of aliases.
   size_t               alias_size () const      { return AliasList.size();  }
-  /// Determine if the list of aliases is empty.
   bool                 alias_empty() const      { return AliasList.empty(); }
 
 
@@ -499,24 +482,17 @@ public:
 /// @name Named Metadata Iteration
 /// @{
 
-  /// Get an iterator to the first named metadata.
   named_metadata_iterator named_metadata_begin() { return NamedMDList.begin(); }
-  /// Get a constant iterator to the first named metadata.
   const_named_metadata_iterator named_metadata_begin() const {
     return NamedMDList.begin();
   }
 
-  /// Get an iterator to the last named metadata.
   named_metadata_iterator named_metadata_end() { return NamedMDList.end(); }
-  /// Get a constant iterator to the last named metadata.
   const_named_metadata_iterator named_metadata_end() const {
     return NamedMDList.end();
   }
 
-  /// Determine how many NamedMDNodes are in the Module's list of named
-  /// metadata.
   size_t named_metadata_size() const { return NamedMDList.size();  }
-  /// Determine if the list of named metadata is empty.
   bool named_metadata_empty() const { return NamedMDList.empty(); }
 
 
@@ -524,7 +500,8 @@ public:
 /// @name Utility functions for printing and dumping Module objects
 /// @{
 
-  /// Print the module to an output stream with AssemblyAnnotationWriter.
+  /// Print the module to an output stream with an optional
+  /// AssemblyAnnotationWriter.
   void print(raw_ostream &OS, AssemblyAnnotationWriter *AAW) const;
 
   /// Dump the module to stderr (for debugging).
