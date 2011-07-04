@@ -195,14 +195,64 @@ Type *TypeMapTy::get(Type *Ty) {
   DenseMap<Type*, Type*>::iterator I = MappedTypes.find(Ty);
   if (I != MappedTypes.end()) return I->second;
   
-  // If this is an unmapped non-anonymous struct type, then it will come across
-  // like it did before.  However, its elements can still be potentially mapped.
+  // If this is not a named struct type, then just map all of the elements and
+  // then rebuild the type from inside out.
+  if (!isa<StructType>(Ty) || cast<StructType>(Ty)->isAnonymous()) {
+    // If there are no element types to map, then the type is itself.  This is
+    // true for the anonymous {} struct, things like 'float', integers, etc.
+    if (Ty->getNumContainedTypes() == 0)
+      return MappedTypes[Ty] = Ty;
+    
+    // Remap all of the elements, keeping track of whether any of them change.
+    bool AnyChange = false;
+    SmallVector<Type*, 4> ElementTypes;
+    ElementTypes.resize(Ty->getNumContainedTypes());
+    for (unsigned i = 0, e = Ty->getNumContainedTypes(); i != e; ++i) {
+      ElementTypes[i] = get(Ty->getContainedType(i));
+      AnyChange |= ElementTypes[i] != Ty->getContainedType(i);
+    }
+    
+    // If we found our type while recursively processing stuff, just use it.
+    Type *&Entry = MappedTypes[Ty];
+    if (Entry) return Entry;
+    
+    // If all of the element types mapped directly over, then the type is usable
+    // as-is.
+    if (!AnyChange)
+      return Entry = Ty;
+    
+    // Otherwise, rebuild a modified type.
+    switch (Ty->getTypeID()) {
+    default: assert(0 && "unknown derived type to remap");
+    case Type::ArrayTyID:
+      return Entry = ArrayType::get(ElementTypes[0],
+                                    cast<ArrayType>(Ty)->getNumElements());
+    case Type::VectorTyID: 
+      return Entry = VectorType::get(ElementTypes[0],
+                                     cast<VectorType>(Ty)->getNumElements());
+    case Type::PointerTyID:
+      return Entry = PointerType::get(ElementTypes[0],
+                                      cast<PointerType>(Ty)->getAddressSpace());
+    case Type::FunctionTyID:
+      return Entry = FunctionType::get(ElementTypes[0],
+                                       ArrayRef<Type*>(ElementTypes).slice(1),
+                                       cast<FunctionType>(Ty)->isVarArg());
+    case Type::StructTyID:
+      // Note that this is only reached for anonymous structs.
+      return Entry = StructType::get(Ty->getContext(),  ElementTypes,
+                                     cast<StructType>(Ty)->isPacked());
+    }
+  }
+
+  StructType *STy = cast<StructType>(Ty);
+  // Otherwise, this is an unmapped named struct.  If the struct can be directly
+  // mapped over, just use it.  Otherwise, we have to make a new struct and
+  // transfer the name over.
+
   
-  return Ty;
   
-  // Otherwise, this may be a type wrapped around a mapped type.  Recurse down
-  // the type graph until we find something friendly to use.
-   
+  
+  return STy;
 }
 
 
