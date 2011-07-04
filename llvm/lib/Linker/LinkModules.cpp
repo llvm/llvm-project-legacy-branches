@@ -174,6 +174,8 @@ namespace {
                           GlobalValue::LinkageTypes &LT, bool &LinkFromSrc);
     
     
+    void computeTypeMapping();
+    
     bool linkAppendingVars(GlobalVariable *DstGV, const GlobalVariable *SrcGV);
     bool linkGlobalProtos();
     bool linkFunctionProtos();
@@ -373,6 +375,32 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   return false;
 }
 
+/// computeTypeMapping - Loop over all of the linked values to compute type mappings.  For example,
+// if we link "extern Foo *x" and "Foo *x = NULL", then we have two struct
+// types 'Foo' but one got renamed when the module was loaded into the same
+// LLVMContext.
+void ModuleLinker::computeTypeMapping() {
+  // Incorporate globals.
+  for (Module::global_iterator I = SrcM->global_begin(),
+       E = SrcM->global_end(); I != E; ++I) {
+    if (I->hasLocalLinkage() || I->getName().empty()) continue;
+    
+    GlobalValue *DstGV = DstM->getNamedValue(I->getName());
+    if (DstGV && !DstGV->hasLocalLinkage())
+      TypeMap.addTypeMapping(DstGV->getType(), I->getType());
+  }
+  
+  // Incorporate functions.
+  for (Module::iterator I = SrcM->begin(), E = SrcM->end(); I != E; ++I) {
+    if (I->hasLocalLinkage() || I->getName().empty()) continue;
+    
+    GlobalValue *DstF = DstM->getNamedValue(I->getName());
+    if (DstF && !DstF->hasLocalLinkage())
+      TypeMap.addTypeMapping(DstF->getType(), I->getType());
+  }
+  
+  // Don't bother incorporating aliases, they aren't generally typed well.
+}
 
 /// linkGlobalProtos - Loop through the global variables in the src module and
 /// merge them into the dest module.
@@ -392,10 +420,6 @@ bool ModuleLinker::linkGlobalProtos() {
     // internal linkage, we are really not doing any linkage here.
     if (DGV && DGV->hasLocalLinkage())
       DGV = 0;
-
-    // If types don't agree due to opaque types, try to resolve them.
-    if (DGV && DGV->getType() != SGV->getType())
-      TypeMap.addTypeMapping(DGV->getType(), SGV->getType());
 
     assert((SGV->hasInitializer() || SGV->hasExternalWeakLinkage() ||
             SGV->hasExternalLinkage() || SGV->hasDLLImportLinkage()) &&
@@ -536,10 +560,6 @@ bool ModuleLinker::linkFunctionProtos() {
     if (DGV && DGV->hasLocalLinkage())
       DGV = 0;
 
-    // If types don't agree due to opaque types, try to resolve them.
-    if (DGV && DGV->getType() != SF->getType())
-      TypeMap.addTypeMapping(DGV->getType(), SF->getType());
-
     GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
     bool LinkFromSrc = false;
     if (getLinkageResult(DGV, SF, NewLinkage, LinkFromSrc))
@@ -679,29 +699,14 @@ bool ModuleLinker::linkAliases() {
       DAliaseeConst = ConstantExpr::getBitCast(DAliasee, SGA->getType());
 
     // Try to find something 'similar' to SGA in destination module.
-    if (!DGV && !SGA->hasLocalLinkage()) {
+    if (!DGV && !SGA->hasLocalLinkage())
       DGV = DstM->getNamedAlias(SGA->getName());
 
-      // If types don't agree due to opaque types, try to resolve them.
-      if (DGV && DGV->getType() != SGA->getType())
-        TypeMap.addTypeMapping(DGV->getType(), SGA->getType());
-    }
-
-    if (!DGV && !SGA->hasLocalLinkage()) {
+    if (!DGV && !SGA->hasLocalLinkage())
       DGV = DstM->getGlobalVariable(SGA->getName());
 
-      // If types don't agree due to opaque types, try to resolve them.
-      if (DGV && DGV->getType() != SGA->getType())
-        TypeMap.addTypeMapping(DGV->getType(), SGA->getType());
-    }
-
-    if (!DGV && !SGA->hasLocalLinkage()) {
+    if (!DGV && !SGA->hasLocalLinkage())
       DGV = DstM->getFunction(SGA->getName());
-
-      // If types don't agree due to opaque types, try to resolve them.
-      if (DGV && DGV->getType() != SGA->getType())
-        TypeMap.addTypeMapping(DGV->getType(), SGA->getType());
-    }
 
     // No linking to be performed on internal stuff.
     if (DGV && DGV->hasLocalLinkage())
@@ -976,6 +981,9 @@ bool ModuleLinker::run() {
   for (Module::lib_iterator SI = SrcM->lib_begin(), SE = SrcM->lib_end();
        SI != SE; ++SI)
     DstM->addLibrary(*SI);
+  
+  // Loop over all of the linked values to compute type mappings.
+  computeTypeMapping();
 
   // Insert all of the globals in src into the DstM module... without linking
   // initializers (which could refer to functions not yet mapped over).
