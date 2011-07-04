@@ -13,8 +13,8 @@
 
 #include "llvm/Linker.h"
 #include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
-#include "llvm/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
