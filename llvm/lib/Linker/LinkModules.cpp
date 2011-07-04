@@ -25,7 +25,6 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/ADT/DenseMap.h"
-#include <map>
 using namespace llvm;
 
 // Error - Simple wrapper function to conditionally assign to E and return true.
@@ -274,11 +273,85 @@ static void LinkNamedMDNodes(Module *Dest, Module *Src,
   }
 }
 
+/// LinkAppendingVars - If there were any appending global variables, link them
+/// together now.  Return true on error.
+static bool LinkAppendingVars(GlobalVariable *DstGV,const GlobalVariable *SrcGV,
+                              ValueToValueMapTy &ValueMap,
+                              std::string *ErrorMsg) {
+ 
+  ArrayType *DstTy = cast<ArrayType>(DstGV->getType()->getElementType());
+  ArrayType *SrcTy = cast<ArrayType>(SrcGV->getType()->getElementType());
+  // FIXME: Should map element type.
+  Type *EltTy = DstTy->getElementType();
+  
+  // Check to see that they two arrays agree on type.
+  if (EltTy != SrcTy->getElementType())
+    return Error(ErrorMsg, "Appending variables with different element types!");
+  if (DstGV->isConstant() != SrcGV->isConstant())
+    return Error(ErrorMsg,
+                 "Appending variables linked with different const'ness!");
+  
+  if (DstGV->getAlignment() != SrcGV->getAlignment())
+    return Error(ErrorMsg,
+             "Appending variables with different alignment need to be linked!");
+  
+  if (DstGV->getVisibility() != SrcGV->getVisibility())
+    return Error(ErrorMsg,
+            "Appending variables with different visibility need to be linked!");
+  
+  if (DstGV->getSection() != SrcGV->getSection())
+    return Error(ErrorMsg,
+          "Appending variables with different section name need to be linked!");
+  
+  uint64_t NewSize = DstTy->getNumElements() + SrcTy->getNumElements();
+  ArrayType *NewType = ArrayType::get(EltTy, NewSize);
+  
+  DstGV->setName("");
+  
+  // Create the new global variable.
+  GlobalVariable *NG =
+    new GlobalVariable(*DstGV->getParent(), NewType, SrcGV->isConstant(),
+                       DstGV->getLinkage(), /*init*/0, SrcGV->getName(), DstGV,
+                       DstGV->isThreadLocal(),
+                       DstGV->getType()->getAddressSpace());
+  
+  // Propagate alignment, visibility and section info.
+  CopyGVAttributes(NG, DstGV);
+  
+  // Merge the initializer.
+  SmallVector<Constant*, 16> Elements;
+  Elements.reserve(NewSize);
+  if (ConstantArray *I = dyn_cast<ConstantArray>(DstGV->getInitializer())) {
+    for (unsigned i = 0, e = DstTy->getNumElements(); i != e; ++i)
+      Elements.push_back(I->getOperand(i));
+  } else {
+    assert(isa<ConstantAggregateZero>(DstGV->getInitializer()));
+    Elements.append(DstTy->getNumElements(), Constant::getNullValue(EltTy));
+  }
+  if (const ConstantArray *I =dyn_cast<ConstantArray>(SrcGV->getInitializer())){
+    // FIXME: Should map values from src to dest.
+    for (unsigned i = 0, e = SrcTy->getNumElements(); i != e; ++i)
+      Elements.push_back(I->getOperand(i));
+  } else {
+    assert(isa<ConstantAggregateZero>(SrcGV->getInitializer()));
+    Elements.append(SrcTy->getNumElements(), Constant::getNullValue(EltTy));
+  }
+  NG->setInitializer(ConstantArray::get(NewType, Elements));
+  
+  // Replace any uses of the two global variables with uses of the new
+  // global.
+  ValueMap[SrcGV] = ConstantExpr::getBitCast(NG, SrcGV->getType());
+
+  DstGV->replaceAllUsesWith(ConstantExpr::getBitCast(NG, DstGV->getType()));
+  DstGV->eraseFromParent();
+  return false;
+}
+
+
 // LinkGlobals - Loop through the global variables in the src module and merge
 // them into the dest module.
 static bool LinkGlobals(Module *Dest, const Module *Src,
                         ValueToValueMapTy &ValueMap, TypeMap &MappedTypes,
-                    std::multimap<std::string, GlobalVariable *> &AppendingVars,
                         std::string *Err) {
   ValueSymbolTable &DestSymTab = Dest->getValueSymbolTable();
 
@@ -333,9 +406,6 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       // Make sure to remember this mapping.
       ValueMap[SGV] = NewDGV;
 
-      // Keep track that this is an appending variable.
-      if (SGV->hasAppendingLinkage())
-        AppendingVars.insert(std::make_pair(SGV->getName(), NewDGV));
       continue;
     }
 
@@ -347,26 +417,8 @@ static bool LinkGlobals(Module *Dest, const Module *Src,
       DGV->setVisibility(SGV->getVisibility());
 
     if (DGV->hasAppendingLinkage()) {
-      // No linking is performed yet.  Just insert a new copy of the global, and
-      // keep track of the fact that it is an appending variable in the
-      // AppendingVars map.  The name is cleared out so that no linkage is
-      // performed.
-      GlobalVariable *NewDGV =
-        new GlobalVariable(*Dest, SGV->getType()->getElementType(),
-                           SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                           "", 0, false,
-                           SGV->getType()->getAddressSpace());
-
-      // Set alignment allowing CopyGVAttributes merge it with alignment of SGV.
-      NewDGV->setAlignment(DGV->getAlignment());
-      // Propagate alignment, section and visibility info.
-      CopyGVAttributes(NewDGV, SGV);
-
-      // Make sure to remember this mapping...
-      ValueMap[SGV] = NewDGV;
-
-      // Keep track that this is an appending variable...
-      AppendingVars.insert(std::make_pair(SGV->getName(), NewDGV));
+      if (LinkAppendingVars(cast<GlobalVariable>(DGV), SGV, ValueMap, Err))
+        return true;
       continue;
     }
 
@@ -448,29 +500,25 @@ CalculateAliasLinkage(const GlobalValue *SGV, const GlobalValue *DGV) {
   GlobalValue::LinkageTypes DL = DGV->getLinkage();
   if (SL == GlobalValue::ExternalLinkage || DL == GlobalValue::ExternalLinkage)
     return GlobalValue::ExternalLinkage;
-  else if (SL == GlobalValue::WeakAnyLinkage ||
-           DL == GlobalValue::WeakAnyLinkage)
+  if (SL == GlobalValue::WeakAnyLinkage || DL == GlobalValue::WeakAnyLinkage)
     return GlobalValue::WeakAnyLinkage;
-  else if (SL == GlobalValue::WeakODRLinkage ||
-           DL == GlobalValue::WeakODRLinkage)
+  if (SL == GlobalValue::WeakODRLinkage || DL == GlobalValue::WeakODRLinkage)
     return GlobalValue::WeakODRLinkage;
-  else if (SL == GlobalValue::InternalLinkage &&
-           DL == GlobalValue::InternalLinkage)
+  if (SL == GlobalValue::InternalLinkage && DL == GlobalValue::InternalLinkage)
     return GlobalValue::InternalLinkage;
-  else if (SL == GlobalValue::LinkerPrivateLinkage &&
-           DL == GlobalValue::LinkerPrivateLinkage)
+  if (SL == GlobalValue::LinkerPrivateLinkage &&
+      DL == GlobalValue::LinkerPrivateLinkage)
     return GlobalValue::LinkerPrivateLinkage;
-  else if (SL == GlobalValue::LinkerPrivateWeakLinkage &&
-           DL == GlobalValue::LinkerPrivateWeakLinkage)
+  if (SL == GlobalValue::LinkerPrivateWeakLinkage &&
+      DL == GlobalValue::LinkerPrivateWeakLinkage)
     return GlobalValue::LinkerPrivateWeakLinkage;
-  else if (SL == GlobalValue::LinkerPrivateWeakDefAutoLinkage &&
-           DL == GlobalValue::LinkerPrivateWeakDefAutoLinkage)
+  if (SL == GlobalValue::LinkerPrivateWeakDefAutoLinkage &&
+      DL == GlobalValue::LinkerPrivateWeakDefAutoLinkage)
     return GlobalValue::LinkerPrivateWeakDefAutoLinkage;
-  else {
-    assert (SL == GlobalValue::PrivateLinkage &&
-            DL == GlobalValue::PrivateLinkage && "Unexpected linkage type");
-    return GlobalValue::PrivateLinkage;
-  }
+
+  assert(SL == GlobalValue::PrivateLinkage &&
+         DL == GlobalValue::PrivateLinkage && "Unexpected linkage type");
+  return GlobalValue::PrivateLinkage;
 }
 
 /// LinkAliases - Loop through the aliases in the src module and link them into
@@ -700,8 +748,7 @@ static bool LinkFunctionProtos(Module *Dest, const Module *Src,
       // Function does not already exist, simply insert an function signature
       // identical to SF into the dest module.
       Function *NewDF = Function::Create(SF->getFunctionType(),
-                                         SF->getLinkage(),
-                                         SF->getName(), Dest);
+                                         SF->getLinkage(), SF->getName(), Dest);
       CopyGVAttributes(NewDF, SF);
 
       // If the LLVM runtime renamed the function, but it is an externally
@@ -831,108 +878,6 @@ static void LinkFunctionBodies(Module *Dest, Module *Src,
   }
 }
 
-// LinkAppendingVars - If there were any appending global variables, link them
-// together now.  Return true on error.
-static bool LinkAppendingVars(Module *M,
-                  std::multimap<std::string, GlobalVariable *> &AppendingVars,
-                              std::string *ErrorMsg) {
-  if (AppendingVars.empty()) return false; // Nothing to do.
-
-  // Loop over the multimap of appending vars, processing any variables with the
-  // same name, forming a new appending global variable with both of the
-  // initializers merged together, then rewrite references to the old variables
-  // and delete them.
-  std::vector<Constant*> Inits;
-  while (AppendingVars.size() > 1) {
-    // Get the first two elements in the map.
-    std::multimap<std::string,
-      GlobalVariable*>::iterator Second = AppendingVars.begin(), First=Second++;
-
-    // If the first two elements are for different names, there is no pair.
-    // Otherwise there is a pair, so link them together...
-    if (First->first == Second->first) {
-      GlobalVariable *G1 = First->second, *G2 = Second->second;
-      const ArrayType *T1 = cast<ArrayType>(G1->getType()->getElementType());
-      const ArrayType *T2 = cast<ArrayType>(G2->getType()->getElementType());
-
-      // Check to see that they two arrays agree on type.
-      if (T1->getElementType() != T2->getElementType())
-        return Error(ErrorMsg,
-         "Appending variables with different element types need to be linked!");
-      if (G1->isConstant() != G2->isConstant())
-        return Error(ErrorMsg,
-                     "Appending variables linked with different const'ness!");
-
-      if (G1->getAlignment() != G2->getAlignment())
-        return Error(ErrorMsg,
-         "Appending variables with different alignment need to be linked!");
-
-      if (G1->getVisibility() != G2->getVisibility())
-        return Error(ErrorMsg,
-         "Appending variables with different visibility need to be linked!");
-
-      if (G1->getSection() != G2->getSection())
-        return Error(ErrorMsg,
-         "Appending variables with different section name need to be linked!");
-
-      unsigned NewSize = T1->getNumElements() + T2->getNumElements();
-      ArrayType *NewType = ArrayType::get(T1->getElementType(),
-                                                         NewSize);
-
-      G1->setName("");   // Clear G1's name in case of a conflict!
-
-      // Create the new global variable.
-      GlobalVariable *NG =
-        new GlobalVariable(*M, NewType, G1->isConstant(), G1->getLinkage(),
-                           /*init*/0, First->first, 0, G1->isThreadLocal(),
-                           G1->getType()->getAddressSpace());
-
-      // Propagate alignment, visibility and section info.
-      CopyGVAttributes(NG, G1);
-
-      // Merge the initializer.
-      Inits.reserve(NewSize);
-      if (ConstantArray *I = dyn_cast<ConstantArray>(G1->getInitializer())) {
-        for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
-          Inits.push_back(I->getOperand(i));
-      } else {
-        assert(isa<ConstantAggregateZero>(G1->getInitializer()));
-        Constant *CV = Constant::getNullValue(T1->getElementType());
-        for (unsigned i = 0, e = T1->getNumElements(); i != e; ++i)
-          Inits.push_back(CV);
-      }
-      if (ConstantArray *I = dyn_cast<ConstantArray>(G2->getInitializer())) {
-        for (unsigned i = 0, e = T2->getNumElements(); i != e; ++i)
-          Inits.push_back(I->getOperand(i));
-      } else {
-        assert(isa<ConstantAggregateZero>(G2->getInitializer()));
-        Constant *CV = Constant::getNullValue(T2->getElementType());
-        for (unsigned i = 0, e = T2->getNumElements(); i != e; ++i)
-          Inits.push_back(CV);
-      }
-      NG->setInitializer(ConstantArray::get(NewType, Inits));
-      Inits.clear();
-
-      // Replace any uses of the two global variables with uses of the new
-      // global.
-      G1->replaceAllUsesWith(ConstantExpr::getBitCast(NG,
-                             G1->getType()));
-      G2->replaceAllUsesWith(ConstantExpr::getBitCast(NG,
-                             G2->getType()));
-
-      // Remove the two globals from the module now.
-      M->getGlobalList().erase(G1);
-      M->getGlobalList().erase(G2);
-
-      // Put the new global into the AppendingVars map so that we can handle
-      // linking of more than two vars.
-      Second->second = NG;
-    }
-    AppendingVars.erase(First);
-  }
-
-  return false;
-}
 
 static void ResolveAliases(Module *Dest) {
   for (Module::alias_iterator I = Dest->alias_begin(), E = Dest->alias_end();
@@ -953,11 +898,12 @@ static void ResolveAliases(Module *Dest) {
 // error occurs, true is returned and ErrorMsg (if not null) is set to indicate
 // the problem.  Upon failure, the Dest module could be in a modified state, and
 // shouldn't be relied on to be consistent.
-bool
-Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
-  assert(Dest != 0 && "Invalid Destination module");
-  assert(Src  != 0 && "Invalid Source Module");
+bool Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
+  assert(Dest && "Null Destination module");
+  assert(Src && "Null Source Module");
 
+  // Inherit the target data from the source module if the destination module
+  // doesn't have one already.
   if (Dest->getDataLayout().empty()) {
     if (!Src->getDataLayout().empty()) {
       Dest->setDataLayout(Src->getDataLayout());
@@ -973,9 +919,9 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
 
       if (Dest->getPointerSize() == Module::AnyPointerSize) {
         if (Src->getPointerSize() == Module::Pointer64)
-          DataLayout.append(DataLayout.length() == 0 ? "p:64:64" : "-p:64:64");
+          DataLayout.append(DataLayout.empty() ? "p:64:64" : "-p:64:64");
         else if (Src->getPointerSize() == Module::Pointer32)
-          DataLayout.append(DataLayout.length() == 0 ? "p:32:32" : "-p:32:32");
+          DataLayout.append(DataLayout.empty() ? "p:32:32" : "-p:32:32");
       }
       Dest->setDataLayout(DataLayout);
     }
@@ -1019,23 +965,11 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
   // need, but this allows us to reuse the ValueMapper code.
   ValueToValueMapTy ValueMap;
 
-  // AppendingVars - Keep track of global variables in the destination module
-  // with appending linkage.  After the module is linked together, they are
-  // appended and the module is rewritten.
-  std::multimap<std::string, GlobalVariable *> AppendingVars;
-  for (Module::global_iterator I = Dest->global_begin(), E = Dest->global_end();
-       I != E; ++I) {
-    // Add all of the appending globals already in the Dest module to
-    // AppendingVars.
-    if (I->hasAppendingLinkage())
-      AppendingVars.insert(std::make_pair(I->getName(), I));
-  }
-
   TypeMap TheTypeMap;
   
   // Insert all of the globals in src into the Dest module... without linking
   // initializers (which could refer to functions not yet mapped over).
-  if (LinkGlobals(Dest, Src, ValueMap, TheTypeMap, AppendingVars, ErrorMsg))
+  if (LinkGlobals(Dest, Src, ValueMap, TheTypeMap, ErrorMsg))
     return true;
 
   // Link the functions together between the two modules, without doing function
@@ -1059,9 +993,6 @@ Linker::LinkModules(Module *Dest, Module *Src, std::string *ErrorMsg) {
   // DestModule.  This consists basically of copying the function over and
   // fixing up references to values.
   LinkFunctionBodies(Dest, Src, ValueMap);
-
-  // If there were any appending global variables, link them together now.
-  if (LinkAppendingVars(Dest, AppendingVars, ErrorMsg)) return true;
 
   // Resolve all uses of aliases with aliasees.
   ResolveAliases(Dest);
