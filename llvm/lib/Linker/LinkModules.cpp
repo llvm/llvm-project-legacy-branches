@@ -330,7 +330,27 @@ namespace {
     /// what the result will look like in the destination module.
     bool getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
                           GlobalValue::LinkageTypes &LT, bool &LinkFromSrc);
-    
+
+    /// getLinkedToGlobal - Given a global in the source module, return the
+    /// global in the destination module that is being linked to, if any.
+    GlobalValue *getLinkedToGlobal(GlobalValue *SrcGV) {
+      // If the source has no name it can't link.  If it has local linkage,
+      // there is no name match-up going on.
+      if (!SrcGV->hasName() || SrcGV->hasLocalLinkage())
+        return 0;
+      
+      // Otherwise see if we have a match in the destination module's symtab.
+      GlobalValue *DGV = DstM->getNamedValue(SrcGV->getName());
+      if (DGV == 0) return 0;
+        
+      // If we found a global with the same name in the dest module, but it has
+      // internal linkage, we are really not doing any linkage here.
+      if (DGV->hasLocalLinkage())
+        return 0;
+
+      // Otherwise, we do in fact link to the destination global.
+      return DGV;
+    }
     
     void computeTypeMapping();
     
@@ -540,20 +560,14 @@ void ModuleLinker::computeTypeMapping() {
   // Incorporate globals.
   for (Module::global_iterator I = SrcM->global_begin(),
        E = SrcM->global_end(); I != E; ++I) {
-    if (I->hasLocalLinkage() || I->getName().empty()) continue;
-    
-    GlobalValue *DstGV = DstM->getNamedValue(I->getName());
-    if (DstGV && !DstGV->hasLocalLinkage())
-      TypeMap.addTypeMapping(DstGV->getType(), I->getType());
+    if (GlobalValue *DGV = getLinkedToGlobal(I))
+      TypeMap.addTypeMapping(DGV->getType(), I->getType());
   }
   
   // Incorporate functions.
   for (Module::iterator I = SrcM->begin(), E = SrcM->end(); I != E; ++I) {
-    if (I->hasLocalLinkage() || I->getName().empty()) continue;
-    
-    GlobalValue *DstF = DstM->getNamedValue(I->getName());
-    if (DstF && !DstF->hasLocalLinkage())
-      TypeMap.addTypeMapping(DstF->getType(), I->getType());
+    if (GlobalValue *DGV = getLinkedToGlobal(I))
+      TypeMap.addTypeMapping(DGV->getType(), I->getType());
   }
   
   // Don't bother incorporating aliases, they aren't generally typed well.
@@ -566,18 +580,7 @@ void ModuleLinker::computeTypeMapping() {
 /// linkGlobalProto - Loop through the global variables in the src module and
 /// merge them into the dest module.
 bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
-  GlobalValue *DGV = 0;
-
-  // Check to see if may have to link the global with the global, alias or
-  // function.
-  if (SGV->hasName() && !SGV->hasLocalLinkage()) {
-    DGV = DstM->getNamedValue(SGV->getName());
-
-    // If we found a global with the same name in the dest module, but it has
-    // internal linkage, we are really not doing any linkage here.
-    if (DGV && DGV->hasLocalLinkage())
-      DGV = 0;
-  }
+  GlobalValue *DGV = getLinkedToGlobal(SGV);
 
   // If this isn't linkage, we're just copying the global over to the new
   // module.  Handle this easy case first.
@@ -681,18 +684,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
 /// linkFunctionProto - Link the function in the source module into the
 /// destination module if needed, setting up mapping information.
 bool ModuleLinker::linkFunctionProto(Function *SF) {
-  GlobalValue *DGV = 0;
-
-  // Check to see if may have to link the function with the global, alias or
-  // function.
-  if (SF->hasName() && !SF->hasLocalLinkage()) {
-    DGV = DstM->getNamedValue(SF->getName());
-
-    // If we found a global with the same name in the dest module, but it has
-    // internal linkage, we are really not doing any linkage here.
-    if (DGV && DGV->hasLocalLinkage())
-      DGV = 0;
-  }
+  GlobalValue *DGV = getLinkedToGlobal(SF);
 
   // If there is no linkage to be performed, just bring over SF without
   // modifying it.
