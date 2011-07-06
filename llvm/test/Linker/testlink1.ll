@@ -11,7 +11,7 @@
 %intlist = type { %intlist*, i32 }
 
 ; The uses of intlist in the other file should be remapped.
-; XXHECK-NOT: {{%intlist.[0-9]}}
+; CHECK-NOT: {{%intlist.[0-9]}}
 
 %Struct1 = type opaque
 @S1GV = external global %Struct1*
