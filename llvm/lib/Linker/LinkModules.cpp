@@ -361,7 +361,6 @@ namespace {
     
     void linkGlobalInits();
     void linkFunctionBody(Function *Dst, Function *Src);
-    void linkFunctionBodies();
     void linkAliasBodies();
     void linkNamedMDNodes();
   };
@@ -373,13 +372,15 @@ namespace {
 /// in the symbol table.  This is good for all clients except for us.  Go
 /// through the trouble to force this back.
 static void forceRenaming(GlobalValue *GV, StringRef Name) {
-  assert(GV->getName() != Name && "Can't force rename to self");
+  // If the global doesn't force its name or if it already has the right name,
+  // there is nothing for us to do.
+  if (GV->hasLocalLinkage() || GV->getName() == Name)
+    return;
+
   Module *M = GV->getParent();
 
   // If there is a conflict, rename the conflict.
   if (GlobalValue *ConflictGV = M->getNamedValue(Name)) {
-    assert(ConflictGV->hasLocalLinkage() &&
-           "Not conflicting with a static global, should link instead!");
     GV->takeName(ConflictGV);
     ConflictGV->setName(Name);    // This will cause ConflictGV to get renamed
     assert(ConflictGV->getName() != Name && "forceRenaming didn't work");
@@ -585,79 +586,62 @@ void ModuleLinker::computeTypeMapping() {
 bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   GlobalValue *DGV = getLinkedToGlobal(SGV);
 
-  // If this isn't linkage, we're just copying the global over to the new
-  // module.  Handle this easy case first.
-  if (DGV == 0) {
-    // No linking to be performed, simply create an identical version of the
-    // symbol over in the dest module... the initializer will be filled in
-    // later by LinkGlobalInits.
-    GlobalVariable *NewDGV =
-      new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
-                         SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                         SGV->getName(), /*insertbefore*/0,
-                         SGV->isThreadLocal(),
-                         SGV->getType()->getAddressSpace());
-    // Propagate alignment, visibility and section info.
-    CopyGVAttributes(NewDGV, SGV);
+  if (DGV) {
+    // Concatenation of appending linkage variables is magic.
+    if (DGV->hasAppendingLinkage() || SGV->hasAppendingLinkage())
+      return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
+    
+    // Determine whether linkage of these two globals follows the source
+    // module's definition or the destination module's definition.
+    GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+    bool LinkFromSrc = false;
+    if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
+      return true;
 
-    // If the LLVM runtime renamed the global, but it is an externally visible
-    // symbol, DGV must be an existing global with internal linkage.  Rename it.
-    if (!NewDGV->hasLocalLinkage() && NewDGV->getName() != SGV->getName())
-      forceRenaming(NewDGV, SGV->getName());
-
-    // Make sure to remember this mapping.
-    ValueMap[SGV] = NewDGV;
-    return false;
+    // If we're not linking from the source, then keep the definition that we
+    // have.
+    if (!LinkFromSrc) {
+      // Special case for const propagation.
+      if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV))
+        if (DGVar->isDeclaration() && SGV->isConstant() && !DGVar->isConstant())
+          DGVar->setConstant(true);
+      
+      // Set calculated linkage.
+      DGV->setLinkage(NewLinkage);
+      
+      // Make sure to remember this mapping.
+      ValueMap[SGV] = ConstantExpr::getBitCast(DGV,TypeMap.get(SGV->getType()));
+      
+      // Destroy the source global's initializer (and convert it to a prototype)
+      // so that we don't attempt to copy it over when processing global
+      // initializers.
+      SGV->setInitializer(0);
+      SGV->setLinkage(GlobalValue::ExternalLinkage);
+      return false;
+    }
   }
+  
+  // No linking to be performed or linking from the source: simply create an
+  // identical version of the symbol over in the dest module... the
+  // initializer will be filled in later by LinkGlobalInits.
+  GlobalVariable *NewDGV =
+    new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
+                       SGV->isConstant(), SGV->getLinkage(), /*init*/0,
+                       SGV->getName(), /*insertbefore*/0,
+                       SGV->isThreadLocal(),
+                       SGV->getType()->getAddressSpace());
+  // Propagate alignment, visibility and section info.
+  CopyGVAttributes(NewDGV, SGV);
 
-  // Concatenation of appending linkage variables is magic.
-  if (DGV->hasAppendingLinkage() || SGV->hasAppendingLinkage())
-    return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
+  forceRenaming(NewDGV, SGV->getName());
 
-  // Determine whether linkage of these two globals follows the source module's
-  // definition or the destination module's definition.
-  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-  bool LinkFromSrc = false;
-  if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
-    return true;
-
-  if (LinkFromSrc) {
-    // Clear the name of DGV so we don't get a name conflict.
-    DGV->setName("");
-    GlobalVariable *NewDGV =
-      new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
-                         SGV->isConstant(), NewLinkage, /*init*/0,
-                         SGV->getName(), 0, false,
-                         SGV->getType()->getAddressSpace());
-
-    // Propagate alignment, section, visibility info, unnamed_addr, etc.
-    CopyGVAttributes(NewDGV, SGV);
-
+  if (DGV) {
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV, DGV->getType()));
     DGV->eraseFromParent();
-
-    // Make sure to remember this mapping.
-    ValueMap[SGV] = NewDGV;
-    return false;
   }
-
-  // Not "link from source", keep the one in DstM and remap the input onto it.
-
-  // Special case for const propagation.
-  if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV))
-    if (DGVar->isDeclaration() && SGV->isConstant() && !DGVar->isConstant())
-      DGVar->setConstant(true);
-
-  // Set calculated linkage.
-  DGV->setLinkage(NewLinkage);
-
-  // Make sure to remember this mapping.
-  ValueMap[SGV] = ConstantExpr::getBitCast(DGV, TypeMap.get(SGV->getType()));
   
-  // Destroy the source global's initializer (and convert it to a prototype) so
-  // that we don't attempt to copy it over when processing global initializers.
-  SGV->setInitializer(0);
-  SGV->setLinkage(GlobalValue::ExternalLinkage);
+  // Make sure to remember this mapping.
+  ValueMap[SGV] = NewDGV;
   return false;
 }
 
@@ -825,21 +809,6 @@ void ModuleLinker::linkFunctionBody(Function *Dst, Function *Src) {
 }
 
 
-// linkFunctionBodies - Link in the function bodies that are defined in the
-// source module into the DestModule.  This consists basically of copying the
-// function over and fixing up references to values.
-void ModuleLinker::linkFunctionBodies() {
-
-  // Loop over all of the functions in the src module, mapping them over as we
-  // go.
-  for (Module::iterator SF = SrcM->begin(), E = SrcM->end(); SF != E; ++SF) {
-    if (SF->isDeclaration()) continue;      // No body if function is external.
-
-    linkFunctionBody(cast<Function>(ValueMap[SF]), SF);
-  }
-}
-
-
 void ModuleLinker::linkAliasBodies() {
   for (Module::alias_iterator I = SrcM->alias_begin(), E = SrcM->alias_end();
        I != E; ++I)
@@ -940,9 +909,12 @@ bool ModuleLinker::run() {
   linkGlobalInits();
 
   // Link in the function bodies that are defined in the source module into
-  // DstM.  This consists basically of copying the function over and
-  // fixing up references to values.
-  linkFunctionBodies();
+  // DstM.
+  for (Module::iterator SF = SrcM->begin(), E = SrcM->end(); SF != E; ++SF) {
+    if (SF->isDeclaration()) continue;      // No body if function is external.
+    
+    linkFunctionBody(cast<Function>(ValueMap[SF]), SF);
+  }
 
   // Resolve all uses of aliases with aliasees.
   linkAliasBodies();
