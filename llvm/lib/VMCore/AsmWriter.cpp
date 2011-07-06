@@ -1359,7 +1359,10 @@ void AssemblyWriter::printAlias(const GlobalAlias *GA) {
 
   const Constant *Aliasee = GA->getAliasee();
 
-  if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Aliasee)) {
+  if (Aliasee == 0) {
+    TypePrinter.print(GA->getType(), Out);
+    Out << " <<NULL ALIASEE>>";
+  } else if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Aliasee)) {
     TypePrinter.print(GV->getType(), Out);
     Out << ' ';
     PrintLLVMName(Out, GV);

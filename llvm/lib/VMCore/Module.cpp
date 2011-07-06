@@ -456,7 +456,8 @@ namespace {
       for (Module::const_alias_iterator I = M.alias_begin(),
            E = M.alias_end(); I != E; ++I) {
         incorporateType(I->getType());
-        incorporateValue(I->getAliasee());
+        if (const Value *Aliasee = I->getAliasee())
+          incorporateValue(Aliasee);
       }
       
       // Get types from functions.
