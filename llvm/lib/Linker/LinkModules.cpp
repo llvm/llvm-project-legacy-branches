@@ -288,6 +288,12 @@ Type *TypeMapTy::get(Type *Ty) {
   // and is not required for the prettiness of the linked module, we just skip
   // it and always rebuild a type here.
   StructType *STy = cast<StructType>(Ty);
+  
+  // If the type is opaque, we can just use it directly.  Otherwise we create a
+  // new type and resolve its body later.
+  if (STy->isOpaque())
+    return *Entry = STy;
+  
   DefinitionsToResolve.push_back(STy);
   return *Entry = StructType::createNamed(STy->getContext(), "");
 }
