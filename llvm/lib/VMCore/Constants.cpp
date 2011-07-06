@@ -839,17 +839,15 @@ ConstantExpr::getWithOperandReplaced(unsigned OpNo, Constant *Op) const {
 }
 
 /// getWithOperands - This returns the current constant expression with the
-/// operands replaced with the specified values.  The specified operands must
-/// match count and type with the existing ones.
+/// operands replaced with the specified values.  The specified array must
+/// have the same number of operands as our current one.
 Constant *ConstantExpr::
 getWithOperands(ArrayRef<Constant*> Ops) const {
   assert(Ops.size() == getNumOperands() && "Operand count mismatch!");
   bool AnyChange = false;
-  for (unsigned i = 0; i != Ops.size(); ++i) {
-    assert(Ops[i]->getType() == getOperand(i)->getType() &&
-           "Operand type mismatch!");
+  for (unsigned i = 0; i != Ops.size(); ++i)
     AnyChange |= Ops[i] != getOperand(i);
-  }
+  
   if (!AnyChange)  // No operands changed, return self.
     return const_cast<ConstantExpr*>(this);
 
