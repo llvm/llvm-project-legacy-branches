@@ -671,9 +671,6 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
   
   // If there is no linkage to be performed or we are linking from the source,
   // bring SF over.
-
-  // Function does not already exist, simply insert an function signature
-  // identical to SF into the dest module.
   Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
                                      SF->getLinkage(), SF->getName(), DstM);
   CopyGVAttributes(NewDF, SF);
@@ -736,7 +733,7 @@ void ModuleLinker::linkGlobalInits() {
   // Loop over all of the globals in the src module, mapping them over as we go
   for (Module::const_global_iterator I = SrcM->global_begin(),
        E = SrcM->global_end(); I != E; ++I) {
-    if (!I->hasInitializer()) continue;      // Only process initialized GV's
+    if (!I->hasInitializer()) continue;      // Only process initialized GV's.
     
     // Grab destination global variable.
     GlobalVariable *DGV = cast<GlobalVariable>(ValueMap[I]);
