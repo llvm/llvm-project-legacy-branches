@@ -526,10 +526,10 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   return false;
 }
 
-/// computeTypeMapping - Loop over all of the linked values to compute type mappings.  For example,
-// if we link "extern Foo *x" and "Foo *x = NULL", then we have two struct
-// types 'Foo' but one got renamed when the module was loaded into the same
-// LLVMContext.
+/// computeTypeMapping - Loop over all of the linked values to compute type
+/// mappings.  For example, if we link "extern Foo *x" and "Foo *x = NULL", then
+/// we have two struct types 'Foo' but one got renamed when the module was
+/// loaded into the same LLVMContext.
 void ModuleLinker::computeTypeMapping() {
   // Incorporate globals.
   for (Module::global_iterator I = SrcM->global_begin(),
@@ -964,8 +964,7 @@ void ModuleLinker::linkGlobalInits() {
     if (!SGV->hasInitializer()) continue;      // Only process initialized GV's
     
     // Figure out what the initializer looks like in the dest module.
-    Constant *SInit =
-      cast<Constant>(MapValue(SGV->getInitializer(), ValueMap));
+    Constant *SInit = MapValue(SGV->getInitializer(), ValueMap);
     // Grab destination global variable or alias.
     GlobalValue *DGV = cast<GlobalValue>(ValueMap[SGV]->stripPointerCasts());
 
@@ -1061,7 +1060,7 @@ void ModuleLinker::linkNamedMDNodes() {
     NamedMDNode *DestNMD = DstM->getOrInsertNamedMetadata(I->getName());
     // Add Src elements into Dest node.
     for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
-      DestNMD->addOperand(cast<MDNode>(MapValue(I->getOperand(i), ValueMap)));
+      DestNMD->addOperand(MapValue(I->getOperand(i), ValueMap));
   }
 }
   
