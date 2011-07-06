@@ -523,8 +523,6 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   uint64_t NewSize = DstTy->getNumElements() + SrcTy->getNumElements();
   ArrayType *NewType = ArrayType::get(EltTy, NewSize);
   
-  DstGV->setName("");
-  
   // Create the new global variable.
   GlobalVariable *NG =
     new GlobalVariable(*DstGV->getParent(), NewType, SrcGV->isConstant(),
