@@ -589,7 +589,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     GlobalVariable *NewDGV =
       new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
                          SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                         SGV->getName(), 0, false,
+                         SGV->getName(), 0, SGV->isThreadLocal(),
                          SGV->getType()->getAddressSpace());
     // Propagate alignment, visibility and section info.
     CopyGVAttributes(NewDGV, SGV);
