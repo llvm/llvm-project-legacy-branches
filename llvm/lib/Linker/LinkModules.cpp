@@ -407,18 +407,21 @@ static void CopyGVAttributes(GlobalValue *DestGV, const GlobalValue *SrcGV) {
 bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
                                     GlobalValue::LinkageTypes &LT, 
                                     bool &LinkFromSrc) {
-  assert((!Dest || !Src->hasLocalLinkage()) &&
+  assert(Dest && "Must have two globals being queried");
+  assert(!Src->hasLocalLinkage() &&
          "If Src has internal linkage, Dest shouldn't be set!");
-  if (!Dest) {
-    // Linking something to nothing.
-    LinkFromSrc = true;
-    LT = Src->getLinkage();
-  } else if (Src->isDeclaration()) {
+  
+  // FIXME: GlobalAlias::isDeclaration is broken, should always be
+  // false.
+  bool SrcIsDeclaration = Src->isDeclaration() && !isa<GlobalAlias>(Src);
+  bool DestIsDeclaration = Dest->isDeclaration() && !isa<GlobalAlias>(Dest);
+  
+  if (SrcIsDeclaration) {
     // If Src is external or if both Src & Dest are external..  Just link the
     // external globals, we aren't adding anything.
     if (Src->hasDLLImportLinkage()) {
       // If one of GVs has DLLImport linkage, result should be dllimport'ed.
-      if (Dest->isDeclaration()) {
+      if (DestIsDeclaration) {
         LinkFromSrc = true;
         LT = Src->getLinkage();
       }
@@ -430,7 +433,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
       LinkFromSrc = false;
       LT = Dest->getLinkage();
     }
-  } else if (Dest->isDeclaration() && !Dest->hasDLLImportLinkage()) {
+  } else if (DestIsDeclaration && !Dest->hasDLLImportLinkage()) {
     // If Dest is external but Src is not:
     LinkFromSrc = true;
     LT = Src->getLinkage();
@@ -467,11 +470,11 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
   }
 
   // Check visibility
-  if (Dest && Src->getVisibility() != Dest->getVisibility() &&
-      !Src->isDeclaration() && !Dest->isDeclaration() &&
+  if (Src->getVisibility() != Dest->getVisibility() &&
+      !SrcIsDeclaration && !DestIsDeclaration &&
       !Src->hasAvailableExternallyLinkage() &&
       !Dest->hasAvailableExternallyLinkage())
-      return emitError("Linking globals named '" + Src->getName() +
+    return emitError("Linking globals named '" + Src->getName() +
                    "': symbols have different visibilities!");
   return false;
 }
@@ -619,10 +622,6 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     return true;
 
   if (LinkFromSrc) {
-    if (isa<GlobalAlias>(DGV))
-      return emitError("Global alias collision on '" + SGV->getName() +
-                   "': symbol multiple defined");
-
     // Clear the name of DGV so we don't get a name conflict.
     DGV->setName("");
     
@@ -640,11 +639,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     CopyGVAttributes(NewDGV, SGV);
 
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV, DGV->getType()));
-
-    if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
-      Var->eraseFromParent();
-    else
-      cast<Function>(DGV)->eraseFromParent();
+    DGV->eraseFromParent();
 
     // Make sure to remember this mapping.
     ValueMap[SGV] = NewDGV;
@@ -657,16 +652,6 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV))
     if (DGVar->isDeclaration() && SGV->isConstant() && !DGVar->isConstant())
       DGVar->setConstant(true);
-
-  // SGV is global, but DGV is alias.
-  if (isa<GlobalAlias>(DGV)) {
-    // The only valid mappings are:
-    // - SGV is external declaration, which is effectively a no-op.
-    // - SGV is weak, when we just need to throw SGV out.
-    if (!SGV->isDeclaration() && !SGV->isWeakForLinker())
-      return emitError("Global alias collision on '" + SGV->getName() +
-                       "': symbol multiple defined");
-  }
 
   // Set calculated linkage.
   DGV->setLinkage(NewLinkage);
@@ -711,10 +696,6 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
     return true;
 
   if (LinkFromSrc) {
-    if (isa<GlobalAlias>(DGV))
-      return emitError("Function alias collision on '" + SF->getName() +
-                   "': symbol multiple defined");
-
     // Clear the name so we don't get a conflict.
     DGV->setName("");
     
@@ -727,27 +708,12 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
 
     // Any uses of DF need to change to NewDF, with cast.
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDF, DGV->getType()));
-
-    if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
-      Var->eraseFromParent();
-    else
-      cast<Function>(DGV)->eraseFromParent();
+    DGV->eraseFromParent();
 
     // Remember this mapping so uses in the source module get remapped
     // later by MapValue.
     ValueMap[SF] = NewDF;
     return false;
-  }
-
-  // Not "link from source", keep the one in the DestModule and remap the
-  // input onto it.
-  if (isa<GlobalAlias>(DGV)) {
-    // The only valid mappings are:
-    // - SF is external declaration, which is effectively a no-op.
-    // - SF is weak, when we just need to throw SF out.
-    if (!SF->isDeclaration() && !SF->isWeakForLinker())
-      return emitError("Function alias collision on '" + SF->getName() +
-                   "': symbol multiple defined");
   }
 
   // Set calculated linkage
@@ -782,7 +748,7 @@ CalculateAliasLinkage(const GlobalValue *SGV, const GlobalValue *DGV) {
   if (SL == GlobalValue::LinkerPrivateWeakDefAutoLinkage &&
       DL == GlobalValue::LinkerPrivateWeakDefAutoLinkage)
     return GlobalValue::LinkerPrivateWeakDefAutoLinkage;
-
+  
   assert(SL == GlobalValue::PrivateLinkage &&
          DL == GlobalValue::PrivateLinkage && "Unexpected linkage type");
   return GlobalValue::PrivateLinkage;
