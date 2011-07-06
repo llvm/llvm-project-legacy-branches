@@ -25,7 +25,7 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 
 namespace {
-class TypeMapTy {
+class TypeMapTy : public ValueMapTypeRemapper {
   /// MappedTypes - This is a mapping from a source type to a destination type
   /// to use.
   DenseMap<Type*, Type*> MappedTypes;
@@ -50,7 +50,13 @@ public:
   /// source module.
   Type *get(Type *T);
   
+
 private:
+  /// remapType - Implement the ValueMapTypeRemapper interface.
+  Type *remapType(Type *SrcTy) {
+    return get(SrcTy);
+  }
+  
   bool addTypeMappingRec(Type *DstTy, Type *SrcTy);
 };
 }
@@ -333,6 +339,7 @@ namespace {
     bool linkAliases();
     
     void linkGlobalInits();
+    void linkFunctionBody(Function *Dst, Function *Src);
     void linkFunctionBodies();
     void resolveAliases();
     void linkNamedMDNodes();
@@ -624,7 +631,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     // we are replacing may be a function (if a prototype, weak, etc) or a
     // global variable.
     GlobalVariable *NewDGV =
-      new GlobalVariable(*DstM, SGV->getType()->getElementType(),
+      new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
                          SGV->isConstant(), NewLinkage, /*init*/0,
                          DGV->getName(), 0, false,
                          SGV->getType()->getAddressSpace());
@@ -964,7 +971,8 @@ void ModuleLinker::linkGlobalInits() {
     if (!SGV->hasInitializer()) continue;      // Only process initialized GV's
     
     // Figure out what the initializer looks like in the dest module.
-    Constant *SInit = MapValue(SGV->getInitializer(), ValueMap);
+    Constant *SInit = MapValue(SGV->getInitializer(), ValueMap,
+                               RF_None, &TypeMap);
     // Grab destination global variable or alias.
     GlobalValue *DGV = cast<GlobalValue>(ValueMap[SGV]->stripPointerCasts());
 
@@ -987,17 +995,16 @@ void ModuleLinker::linkGlobalInits() {
 // LinkFunctionBody - Copy the source function over into the dest function and
 // fix up references to values.  At this point we know that Dest is an external
 // function, and that Src is not.
-static void linkFunctionBody(Function *Dst, Function *Src,
-                             ValueToValueMapTy &ValueMap) {
+void ModuleLinker::linkFunctionBody(Function *Dst, Function *Src) {
   assert(Src && Dst && Dst->isDeclaration() && !Src->isDeclaration());
 
   // Go through and convert function arguments over, remembering the mapping.
   Function::arg_iterator DI = Dst->arg_begin();
   for (Function::arg_iterator I = Src->arg_begin(), E = Src->arg_end();
        I != E; ++I, ++DI) {
-    DI->setName(I->getName());  // Copy the name information over...
+    DI->setName(I->getName());  // Copy the name over.
 
-    // Add a mapping to our local map
+    // Add a mapping to our mapping.
     ValueMap[I] = DI;
   }
 
@@ -1010,7 +1017,7 @@ static void linkFunctionBody(Function *Dst, Function *Src,
   // functions and patch them up to point to the local versions.
   for (Function::iterator BB = Dst->begin(), BE = Dst->end(); BB != BE; ++BB)
     for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I)
-      RemapInstruction(I, ValueMap, RF_IgnoreMissingEntries);
+      RemapInstruction(I, ValueMap, RF_IgnoreMissingEntries, &TypeMap);
 
   // There is no need to map the arguments anymore.
   for (Function::arg_iterator I = Src->arg_begin(), E = Src->arg_end();
@@ -1033,7 +1040,7 @@ void ModuleLinker::linkFunctionBodies() {
 
     // Only provide the function body if there isn't one already.
     if (DF && DF->isDeclaration())
-      linkFunctionBody(DF, SF, ValueMap);
+      linkFunctionBody(DF, SF);
   }
 }
 
@@ -1060,7 +1067,8 @@ void ModuleLinker::linkNamedMDNodes() {
     NamedMDNode *DestNMD = DstM->getOrInsertNamedMetadata(I->getName());
     // Add Src elements into Dest node.
     for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
-      DestNMD->addOperand(MapValue(I->getOperand(i), ValueMap));
+      DestNMD->addOperand(MapValue(I->getOperand(i), ValueMap,
+                                   RF_None, &TypeMap));
   }
 }
   
