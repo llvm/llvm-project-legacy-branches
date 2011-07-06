@@ -32,7 +32,7 @@ class TypeMapTy {
 
   /// DefinitionsToResolve - This is a list of non-opaque structs in the source
   /// module that are mapped to an opaque struct in the destination module.
-  std::vector<StructType*> DefinitionsToResolve;
+  SmallVector<StructType*, 16> DefinitionsToResolve;
 public:
   
   /// addTypeMapping - Indicate that the specified type in the destination
@@ -165,9 +165,12 @@ bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
 /// module from a type definition in the source module.
 void TypeMapTy::linkDefinedTypeBodies() {
   SmallVector<Type*, 16> Elements;
+  SmallString<16> TmpName;
   
-  for (unsigned i = 0, e = DefinitionsToResolve.size(); i != e; ++i) {
-    StructType *SrcSTy = DefinitionsToResolve[i];
+  // Note that processing entries in this loop (calling 'get') can add new
+  // entries to the DefinitionsToResolve vector.
+  while (!DefinitionsToResolve.empty()) {
+    StructType *SrcSTy = DefinitionsToResolve.pop_back_val();
     StructType *DstSTy = cast<StructType>(MappedTypes[SrcSTy]);
     
     // TypeMap is a many-to-one mapping, if there were multiple types that
@@ -182,9 +185,19 @@ void TypeMapTy::linkDefinedTypeBodies() {
       Elements[i] = get(SrcSTy->getElementType(i));
     
     DstSTy->setBody(Elements, SrcSTy->isPacked());
+    
+    // If DstSTy has no name or has a longer name than STy, then viciously steal
+    // STy's name.
+    if (!SrcSTy->hasName()) continue;
+    StringRef SrcName = SrcSTy->getName();
+    
+    if (!DstSTy->hasName() || DstSTy->getName().size() > SrcName.size()) {
+      TmpName.insert(TmpName.end(), SrcName.begin(), SrcName.end());
+      SrcSTy->setName("");
+      DstSTy->setName(TmpName.str());
+      TmpName.clear();
+    }
   }
-  
-  DefinitionsToResolve.clear();
 }
 
 
@@ -192,8 +205,8 @@ void TypeMapTy::linkDefinedTypeBodies() {
 /// source module.
 Type *TypeMapTy::get(Type *Ty) {
   // If we already have an entry for this type, return it.
-  DenseMap<Type*, Type*>::iterator I = MappedTypes.find(Ty);
-  if (I != MappedTypes.end()) return I->second;
+  Type **Entry = &MappedTypes[Ty];
+  if (*Entry) return *Entry;
   
   // If this is not a named struct type, then just map all of the elements and
   // then rebuild the type from inside out.
@@ -201,7 +214,7 @@ Type *TypeMapTy::get(Type *Ty) {
     // If there are no element types to map, then the type is itself.  This is
     // true for the anonymous {} struct, things like 'float', integers, etc.
     if (Ty->getNumContainedTypes() == 0)
-      return MappedTypes[Ty] = Ty;
+      return *Entry = Ty;
     
     // Remap all of the elements, keeping track of whether any of them change.
     bool AnyChange = false;
@@ -213,46 +226,63 @@ Type *TypeMapTy::get(Type *Ty) {
     }
     
     // If we found our type while recursively processing stuff, just use it.
-    Type *&Entry = MappedTypes[Ty];
-    if (Entry) return Entry;
+    Entry = &MappedTypes[Ty];
+    if (*Entry) return *Entry;
     
     // If all of the element types mapped directly over, then the type is usable
     // as-is.
     if (!AnyChange)
-      return Entry = Ty;
+      return *Entry = Ty;
     
     // Otherwise, rebuild a modified type.
     switch (Ty->getTypeID()) {
     default: assert(0 && "unknown derived type to remap");
     case Type::ArrayTyID:
-      return Entry = ArrayType::get(ElementTypes[0],
-                                    cast<ArrayType>(Ty)->getNumElements());
+      return *Entry = ArrayType::get(ElementTypes[0],
+                                     cast<ArrayType>(Ty)->getNumElements());
     case Type::VectorTyID: 
-      return Entry = VectorType::get(ElementTypes[0],
-                                     cast<VectorType>(Ty)->getNumElements());
+      return *Entry = VectorType::get(ElementTypes[0],
+                                      cast<VectorType>(Ty)->getNumElements());
     case Type::PointerTyID:
-      return Entry = PointerType::get(ElementTypes[0],
+      return *Entry = PointerType::get(ElementTypes[0],
                                       cast<PointerType>(Ty)->getAddressSpace());
     case Type::FunctionTyID:
-      return Entry = FunctionType::get(ElementTypes[0],
-                                       ArrayRef<Type*>(ElementTypes).slice(1),
-                                       cast<FunctionType>(Ty)->isVarArg());
+      return *Entry = FunctionType::get(ElementTypes[0],
+                                        ArrayRef<Type*>(ElementTypes).slice(1),
+                                        cast<FunctionType>(Ty)->isVarArg());
     case Type::StructTyID:
       // Note that this is only reached for anonymous structs.
-      return Entry = StructType::get(Ty->getContext(),  ElementTypes,
-                                     cast<StructType>(Ty)->isPacked());
+      return *Entry = StructType::get(Ty->getContext(),  ElementTypes,
+                                      cast<StructType>(Ty)->isPacked());
     }
   }
 
-  StructType *STy = cast<StructType>(Ty);
   // Otherwise, this is an unmapped named struct.  If the struct can be directly
-  // mapped over, just use it.  Otherwise, we have to make a new struct and
-  // transfer the name over.
-
-  
-  
-  
-  return STy;
+  // mapped over, just use it as-is.  This happens in a case when the linked-in
+  // module has something like:
+  //   %T = type {%T*, i32}
+  //   @GV = global %T* null
+  // where T does not exist at all in the destination module.
+  //
+  // The other case we watch for is when the type is not in the destination
+  // module, but that it has to be rebuilt because it refers to something that
+  // is already mapped.  For example, if the destination module has:
+  //  %A = type { i32 }
+  // and the source module has something like
+  //  %A' = type { i32 }
+  //  %B = type { %A'* }
+  //  @GV = global %B* null
+  // then we want to create a new type: "%B = type { %A*}" and have it take the
+  // pristine "%B" name from the source module.
+  //
+  // To determine which case this is, we have to recursively walk the type graph
+  // speculating that we'll be able to reuse it unmodified.  Only if this is
+  // safe would we map the entire thing over.  Because this is an optimization,
+  // and is not required for the prettiness of the linked module, we just skip
+  // it and always rebuild a type here.
+  StructType *STy = cast<StructType>(Ty);
+  DefinitionsToResolve.push_back(STy);
+  return *Entry = StructType::createNamed(STy->getContext(), "");
 }
 
 
@@ -1122,7 +1152,11 @@ bool ModuleLinker::run() {
   // are properly remapped.
   linkNamedMDNodes();
 
-   return false;
+  // Now that all of the types from the source are used, resolve any structs
+  // copied over to the dest that didn't exist there.
+  TypeMap.linkDefinedTypeBodies();
+  
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
