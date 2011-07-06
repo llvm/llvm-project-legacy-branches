@@ -396,6 +396,8 @@ static void CopyGVAttributes(GlobalValue *DestGV, const GlobalValue *SrcGV) {
   unsigned Alignment = std::max(DestGV->getAlignment(), SrcGV->getAlignment());
   DestGV->copyAttributesFrom(SrcGV);
   DestGV->setAlignment(Alignment);
+  
+  forceRenaming(DestGV, SrcGV->getName());
 }
 
 /// getLinkageResult - This analyzes the two global values and determines what
@@ -633,8 +635,6 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   // Propagate alignment, visibility and section info.
   CopyGVAttributes(NewDGV, SGV);
 
-  forceRenaming(NewDGV, SGV->getName());
-
   if (DGV) {
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV, DGV->getType()));
     DGV->eraseFromParent();
@@ -650,55 +650,41 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
 bool ModuleLinker::linkFunctionProto(Function *SF) {
   GlobalValue *DGV = getLinkedToGlobal(SF);
 
-  // If there is no linkage to be performed, just bring over SF without
-  // modifying it.
-  if (DGV == 0) {
-    // Function does not already exist, simply insert an function signature
-    // identical to SF into the dest module.
-    Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
-                                       SF->getLinkage(), SF->getName(), DstM);
-    CopyGVAttributes(NewDF, SF);
+  if (DGV) {
+    GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+    bool LinkFromSrc = false;
+    if (getLinkageResult(DGV, SF, NewLinkage, LinkFromSrc))
+      return true;
     
-    // If the LLVM runtime renamed the function, but it is an externally
-    // visible symbol, DF must be an existing function with internal linkage.
-    // Rename it.
-    if (!NewDF->hasLocalLinkage() && NewDF->getName() != SF->getName())
-      forceRenaming(NewDF, SF->getName());
-    
-    ValueMap[SF] = NewDF;
-    return false;
+    if (!LinkFromSrc) {
+      // Set calculated linkage
+      DGV->setLinkage(NewLinkage);
+      
+      // Make sure to remember this mapping.
+      ValueMap[SF] = ConstantExpr::getBitCast(DGV, TypeMap.get(SF->getType()));
+      
+      // Remove the body from the source module so we don't attempt to remap it.
+      SF->deleteBody();
+      return false;
+    }
   }
   
-  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-  bool LinkFromSrc = false;
-  if (getLinkageResult(DGV, SF, NewLinkage, LinkFromSrc))
-    return true;
+  // If there is no linkage to be performed or we are linking from the source,
+  // bring SF over.
 
-  if (LinkFromSrc) {
-    // Clear the name so we don't get a conflict.
-    DGV->setName("");
-    Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
-                                       NewLinkage, SF->getName(), DstM);
-    CopyGVAttributes(NewDF, SF);
+  // Function does not already exist, simply insert an function signature
+  // identical to SF into the dest module.
+  Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
+                                     SF->getLinkage(), SF->getName(), DstM);
+  CopyGVAttributes(NewDF, SF);
 
+  if (DGV) {
     // Any uses of DF need to change to NewDF, with cast.
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDF, DGV->getType()));
     DGV->eraseFromParent();
-
-    // Remember this mapping so uses in the source module get remapped
-    // later by MapValue.
-    ValueMap[SF] = NewDF;
-    return false;
   }
-
-  // Set calculated linkage
-  DGV->setLinkage(NewLinkage);
-
-  // Make sure to remember this mapping.
-  ValueMap[SF] = ConstantExpr::getBitCast(DGV, TypeMap.get(SF->getType()));
   
-  // Remove the body from the source module so we don't attempt to remap it.
-  SF->deleteBody();
+  ValueMap[SF] = NewDF;
   return false;
 }
 
@@ -707,54 +693,39 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
 bool ModuleLinker::linkAliasProto(GlobalAlias *SGA) {
   GlobalValue *DGV = getLinkedToGlobal(SGA);
   
-  // If there is no linkage to be performed, just bring over SGA without
-  // modifying it.
-  if (DGV == 0) {
-    // Alias does not already exist, simply insert an alias identical to SGA.
-    GlobalAlias *NewDA = new GlobalAlias(TypeMap.get(SGA->getType()),
-                                         SGA->getLinkage(), SGA->getName(),
-                                         /*aliasee*/0, DstM);
-    CopyGVAttributes(NewDA, SGA);
+  if (DGV) {
+    GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+    bool LinkFromSrc = false;
+    if (getLinkageResult(DGV, SGA, NewLinkage, LinkFromSrc))
+      return true;
     
-    if (!NewDA->hasLocalLinkage() && NewDA->getName() != SGA->getName())
-      forceRenaming(NewDA, SGA->getName());
-    
-    ValueMap[SGA] = NewDA;
-    return false;
+    if (!LinkFromSrc) {
+      // Set calculated linkage.
+      DGV->setLinkage(NewLinkage);
+      
+      // Make sure to remember this mapping.
+      ValueMap[SGA] = ConstantExpr::getBitCast(DGV,TypeMap.get(SGA->getType()));
+      
+      // Remove the body from the source module so we don't attempt to remap it.
+      SGA->setAliasee(0);
+      return false;
+    }
   }
   
-  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-  bool LinkFromSrc = false;
-  if (getLinkageResult(DGV, SGA, NewLinkage, LinkFromSrc))
-    return true;
-  
-  if (LinkFromSrc) {
-    // Clear the name so we don't get a conflict.
-    DGV->setName("");
-    
-    GlobalAlias *NewDA = new GlobalAlias(TypeMap.get(SGA->getType()),
-                                         SGA->getLinkage(), SGA->getName(),
-                                         /*aliasee*/0, DstM);
-    CopyGVAttributes(NewDA, SGA);
-    
+  // If there is no linkage to be performed or we're linking from the source,
+  // bring over SGA.
+  GlobalAlias *NewDA = new GlobalAlias(TypeMap.get(SGA->getType()),
+                                       SGA->getLinkage(), SGA->getName(),
+                                       /*aliasee*/0, DstM);
+  CopyGVAttributes(NewDA, SGA);
+
+  if (DGV) {
     // Any uses of DGV need to change to NewDA, with cast.
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDA, DGV->getType()));
     DGV->eraseFromParent();
-    
-    // Remember this mapping so uses in the source module get remapped
-    // later by MapValue.
-    ValueMap[SGA] = NewDA;
-    return false;
   }
   
-  // Set calculated linkage
-  DGV->setLinkage(NewLinkage);
-  
-  // Make sure to remember this mapping.
-  ValueMap[SGA] = ConstantExpr::getBitCast(DGV, TypeMap.get(SGA->getType()));
-  
-  // Remove the body from the source module so we don't attempt to remap it.
-  SGA->setAliasee(0);
+  ValueMap[SGA] = NewDA;
   return false;
 }
 
