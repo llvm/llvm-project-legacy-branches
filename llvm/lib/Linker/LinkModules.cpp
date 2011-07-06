@@ -258,7 +258,7 @@ Type *TypeMapTy::get(Type *Ty) {
                                         cast<FunctionType>(Ty)->isVarArg());
     case Type::StructTyID:
       // Note that this is only reached for anonymous structs.
-      return *Entry = StructType::get(Ty->getContext(),  ElementTypes,
+      return *Entry = StructType::get(Ty->getContext(), ElementTypes,
                                       cast<StructType>(Ty)->isPacked());
     }
   }
@@ -672,7 +672,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   DGV->setLinkage(NewLinkage);
 
   // Make sure to remember this mapping.
-  ValueMap[SGV] = ConstantExpr::getBitCast(DGV, SGV->getType());
+  ValueMap[SGV] = ConstantExpr::getBitCast(DGV, TypeMap.get(SGV->getType()));
   
   // Destroy the source global's initializer (and convert it to a prototype) so
   // that we don't attempt to copy it over when processing global initializers.
