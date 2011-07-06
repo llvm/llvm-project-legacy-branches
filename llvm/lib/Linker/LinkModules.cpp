@@ -49,7 +49,8 @@ public:
   /// get - Return the mapped type to use for the specified input type from the
   /// source module.
   Type *get(Type *T);
-  
+
+  FunctionType *get(FunctionType *T) {return cast<FunctionType>(get((Type*)T));}
 
 private:
   /// remapType - Implement the ValueMapTypeRemapper interface.
@@ -684,72 +685,61 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
 
   // Check to see if may have to link the function with the global, alias or
   // function.
-  if (SF->hasName() && !SF->hasLocalLinkage())
+  if (SF->hasName() && !SF->hasLocalLinkage()) {
     DGV = DstM->getNamedValue(SF->getName());
 
-  // If we found a global with the same name in the dest module, but it has
-  // internal linkage, we are really not doing any linkage here.
-  if (DGV && DGV->hasLocalLinkage())
-    DGV = 0;
-
-  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
-  bool LinkFromSrc = false;
-  if (getLinkageResult(DGV, SF, NewLinkage, LinkFromSrc))
-    return true;
+    // If we found a global with the same name in the dest module, but it has
+    // internal linkage, we are really not doing any linkage here.
+    if (DGV && DGV->hasLocalLinkage())
+      DGV = 0;
+  }
 
   // If there is no linkage to be performed, just bring over SF without
   // modifying it.
   if (DGV == 0) {
     // Function does not already exist, simply insert an function signature
     // identical to SF into the dest module.
-    Function *NewDF = Function::Create(SF->getFunctionType(),
+    Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
                                        SF->getLinkage(), SF->getName(), DstM);
     CopyGVAttributes(NewDF, SF);
-
+    
     // If the LLVM runtime renamed the function, but it is an externally
     // visible symbol, DF must be an existing function with internal linkage.
     // Rename it.
     if (!NewDF->hasLocalLinkage() && NewDF->getName() != SF->getName())
       forceRenaming(NewDF, SF->getName());
-
-    // ... and remember this mapping...
+    
     ValueMap[SF] = NewDF;
     return false;
   }
-
-  // If the visibilities of the symbols disagree and the destination is a
-  // prototype, take the visibility of its input.
-  if (DGV->isDeclaration())
-    DGV->setVisibility(SF->getVisibility());
+  
+  GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
+  bool LinkFromSrc = false;
+  if (getLinkageResult(DGV, SF, NewLinkage, LinkFromSrc))
+    return true;
 
   if (LinkFromSrc) {
     if (isa<GlobalAlias>(DGV))
       return emitError("Function alias collision on '" + SF->getName() +
                    "': symbol multiple defined");
 
+    // Clear the name so we don't get a conflict.
+    DGV->setName("");
+    
     // We have a definition of the same name but different type in the
     // source module. Copy the prototype to the destination and replace
     // uses of the destination's prototype with the new prototype.
-    Function *NewDF = Function::Create(SF->getFunctionType(), NewLinkage,
-                                       SF->getName(), DstM);
+    Function *NewDF = Function::Create(TypeMap.get(SF->getFunctionType()),
+                                       NewLinkage, SF->getName(), DstM);
     CopyGVAttributes(NewDF, SF);
 
-    // Any uses of DF need to change to NewDF, with cast
+    // Any uses of DF need to change to NewDF, with cast.
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDF, DGV->getType()));
 
-    // DF will conflict with NewDF because they both had the same. We must
-    // erase this now so forceRenaming doesn't assert because DF might
-    // not have internal linkage.
     if (GlobalVariable *Var = dyn_cast<GlobalVariable>(DGV))
       Var->eraseFromParent();
     else
       cast<Function>(DGV)->eraseFromParent();
-
-    // If the symbol table renamed the function, but it is an externally
-    // visible symbol, DF must be an existing function with internal
-    // linkage.  Rename it.
-    if (NewDF->getName() != SF->getName() && !NewDF->hasLocalLinkage())
-      forceRenaming(NewDF, SF->getName());
 
     // Remember this mapping so uses in the source module get remapped
     // later by MapValue.
@@ -759,7 +749,6 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
 
   // Not "link from source", keep the one in the DestModule and remap the
   // input onto it.
-
   if (isa<GlobalAlias>(DGV)) {
     // The only valid mappings are:
     // - SF is external declaration, which is effectively a no-op.
@@ -773,7 +762,10 @@ bool ModuleLinker::linkFunctionProto(Function *SF) {
   DGV->setLinkage(NewLinkage);
 
   // Make sure to remember this mapping.
-  ValueMap[SF] = ConstantExpr::getBitCast(DGV, SF->getType());
+  ValueMap[SF] = ConstantExpr::getBitCast(DGV, TypeMap.get(SF->getType()));
+  
+  // Remove the body from the source module so we don't attempt to remap it.
+  SF->deleteBody();
   return false;
 }
 
@@ -956,7 +948,7 @@ void ModuleLinker::linkGlobalInits() {
   }
 }
 
-// LinkFunctionBody - Copy the source function over into the dest function and
+// linkFunctionBody - Copy the source function over into the dest function and
 // fix up references to values.  At this point we know that Dest is an external
 // function, and that Src is not.
 void ModuleLinker::linkFunctionBody(Function *Dst, Function *Src) {
