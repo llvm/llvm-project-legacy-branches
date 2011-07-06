@@ -337,12 +337,12 @@ namespace {
     bool linkAppendingVars(GlobalVariable *DstGV, const GlobalVariable *SrcGV);
     bool linkGlobalProto(GlobalVariable *SrcGV);
     bool linkFunctionProto(Function *SrcF);
-    bool linkAliases();
+    bool linkAliasProto(GlobalAlias *SrcA);
     
     void linkGlobalInits();
     void linkFunctionBody(Function *Dst, Function *Src);
     void linkFunctionBodies();
-    void resolveAliases();
+    void linkAliasBodies();
     void linkNamedMDNodes();
   };
 }
@@ -796,138 +796,131 @@ CalculateAliasLinkage(const GlobalValue *SGV, const GlobalValue *DGV) {
   return GlobalValue::PrivateLinkage;
 }
 
-/// LinkAliases - Loop through the aliases in the src module and link them into
-/// the dest module. We're assuming that all functions/global variables were
-/// already linked in.
-bool ModuleLinker::linkAliases() {
-  // Loop over all alias in the src module
-  for (Module::const_alias_iterator I = SrcM->alias_begin(),
-         E = SrcM->alias_end(); I != E; ++I) {
-    const GlobalAlias *SGA = I;
-    const GlobalValue *SAliasee = SGA->getAliasedGlobal();
-    GlobalAlias *NewGA = 0;
+/// LinkAliasProto - Set up prototypes for any aliases that come over from the
+/// source module.
+bool ModuleLinker::linkAliasProto(GlobalAlias *SGA) {
+  const GlobalValue *SAliasee = SGA->getAliasedGlobal();
+  GlobalAlias *NewGA = 0;
 
-    // Globals were already linked, thus we can just query ValueMap for variant
-    // of SAliasee in Dest.
-    ValueToValueMapTy::const_iterator VMI = ValueMap.find(SAliasee);
-    assert(VMI != ValueMap.end() && "Aliasee not linked");
-    GlobalValue *DAliasee = cast<GlobalValue>(VMI->second);
-    GlobalValue *DGV = 0;
+  // Globals were already linked, thus we can just query ValueMap for variant
+  // of SAliasee in Dest.
+  ValueToValueMapTy::const_iterator VMI = ValueMap.find(SAliasee);
+  assert(VMI != ValueMap.end() && "Aliasee not linked");
+  GlobalValue *DAliasee = cast<GlobalValue>(VMI->second);
+  GlobalValue *DGV = 0;
 
-    // Fixup aliases to bitcasts.  Note that aliases to GEPs are still broken
-    // by this, but aliases to GEPs are broken to a lot of other things, so
-    // it's less important.
-    Constant *DAliaseeConst = DAliasee;
-    if (SGA->getType() != DAliasee->getType())
-      DAliaseeConst = ConstantExpr::getBitCast(DAliasee, SGA->getType());
+  // Fixup aliases to bitcasts.  Note that aliases to GEPs are still broken
+  // by this, but aliases to GEPs are broken to a lot of other things, so
+  // it's less important.
+  Constant *DAliaseeConst = DAliasee;
+  if (SGA->getType() != DAliasee->getType())
+    DAliaseeConst = ConstantExpr::getBitCast(DAliasee, SGA->getType());
 
-    // Try to find something 'similar' to SGA in destination module.
-    if (!DGV && !SGA->hasLocalLinkage())
-      DGV = DstM->getNamedAlias(SGA->getName());
+  // Try to find something 'similar' to SGA in destination module.
+  if (!DGV && !SGA->hasLocalLinkage())
+    DGV = DstM->getNamedAlias(SGA->getName());
 
-    if (!DGV && !SGA->hasLocalLinkage())
-      DGV = DstM->getGlobalVariable(SGA->getName());
+  if (!DGV && !SGA->hasLocalLinkage())
+    DGV = DstM->getGlobalVariable(SGA->getName());
 
-    if (!DGV && !SGA->hasLocalLinkage())
-      DGV = DstM->getFunction(SGA->getName());
+  if (!DGV && !SGA->hasLocalLinkage())
+    DGV = DstM->getFunction(SGA->getName());
 
-    // No linking to be performed on internal stuff.
-    if (DGV && DGV->hasLocalLinkage())
-      DGV = NULL;
+  // No linking to be performed on internal stuff.
+  if (DGV && DGV->hasLocalLinkage())
+    DGV = NULL;
 
-    if (GlobalAlias *DGA = dyn_cast_or_null<GlobalAlias>(DGV)) {
-      // Types are known to be the same, check whether aliasees equal. As
-      // globals are already linked we just need query ValueMap to find the
-      // mapping.
-      if (DAliasee == DGA->getAliasedGlobal()) {
-        // This is just two copies of the same alias. Propagate linkage, if
-        // necessary.
-        DGA->setLinkage(CalculateAliasLinkage(SGA, DGA));
+  if (GlobalAlias *DGA = dyn_cast_or_null<GlobalAlias>(DGV)) {
+    // Types are known to be the same, check whether aliasees equal. As
+    // globals are already linked we just need query ValueMap to find the
+    // mapping.
+    if (DAliasee == DGA->getAliasedGlobal()) {
+      // This is just two copies of the same alias. Propagate linkage, if
+      // necessary.
+      DGA->setLinkage(CalculateAliasLinkage(SGA, DGA));
 
-        NewGA = DGA;
-        // Proceed to 'common' steps
-      } else
-        return emitError("Alias collision on '"  + SGA->getName()+
-                     "': aliases have different aliasees");
-    } else if (GlobalVariable *DGVar = dyn_cast_or_null<GlobalVariable>(DGV)) {
-      // The only allowed way is to link alias with external declaration or weak
-      // symbol..
-      if (DGVar->isDeclaration() || DGVar->isWeakForLinker()) {
-        // But only if aliasee is global too...
-        if (!isa<GlobalVariable>(DAliasee))
-          return emitError("Global alias collision on '" + SGA->getName() +
-                       "': aliasee is not global variable");
-
-        NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
-                                SGA->getName(), DAliaseeConst, DstM);
-        CopyGVAttributes(NewGA, SGA);
-
-        // Any uses of DGV need to change to NewGA, with cast, if needed.
-        if (SGA->getType() != DGVar->getType())
-          DGVar->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,
-                                                             DGVar->getType()));
-        else
-          DGVar->replaceAllUsesWith(NewGA);
-
-        // DGVar will conflict with NewGA because they both had the same
-        // name. We must erase this now so forceRenaming doesn't assert
-        // because DGV might not have internal linkage.
-        DGVar->eraseFromParent();
-
-        // Proceed to 'common' steps
-      } else
+      NewGA = DGA;
+      // Proceed to 'common' steps
+    } else
+      return emitError("Alias collision on '"  + SGA->getName()+
+                   "': aliases have different aliasees");
+  } else if (GlobalVariable *DGVar = dyn_cast_or_null<GlobalVariable>(DGV)) {
+    // The only allowed way is to link alias with external declaration or weak
+    // symbol..
+    if (DGVar->isDeclaration() || DGVar->isWeakForLinker()) {
+      // But only if aliasee is global too...
+      if (!isa<GlobalVariable>(DAliasee))
         return emitError("Global alias collision on '" + SGA->getName() +
-                     "': symbol multiple defined");
-    } else if (Function *DF = dyn_cast_or_null<Function>(DGV)) {
-      // The only allowed way is to link alias with external declaration or weak
-      // symbol...
-      if (DF->isDeclaration() || DF->isWeakForLinker()) {
-        // But only if aliasee is function too.
-        if (!isa<Function>(DAliasee))
-          return emitError("Function alias collision on '" + SGA->getName() +
-                       "': aliasee is not function");
+                     "': aliasee is not global variable");
 
-        NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
-                                SGA->getName(), DAliaseeConst, DstM);
-        CopyGVAttributes(NewGA, SGA);
-
-        // Any uses of DF need to change to NewGA, with cast, if needed.
-        if (SGA->getType() != DF->getType())
-          DF->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,DF->getType()));
-        else
-          DF->replaceAllUsesWith(NewGA);
-
-        // DF will conflict with NewGA because they both had the same
-        // name. We must erase this now so forceRenaming doesn't assert
-        // because DF might not have internal linkage.
-        DF->eraseFromParent();
-
-        // Proceed to 'common' steps
-      } else
-        return emitError("Function alias collision on '" + SGA->getName() +
-                     "': symbol multiple defined");
-    } else {
-      // No linking to be performed, simply create an identical version of the
-      // alias over in the dest module...
       NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
                               SGA->getName(), DAliaseeConst, DstM);
       CopyGVAttributes(NewGA, SGA);
 
-      // Proceed to 'common' steps.
-    }
+      // Any uses of DGV need to change to NewGA, with cast, if needed.
+      if (SGA->getType() != DGVar->getType())
+        DGVar->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,
+                                                           DGVar->getType()));
+      else
+        DGVar->replaceAllUsesWith(NewGA);
 
-    assert(NewGA && "No alias was created in destination module!");
+      // DGVar will conflict with NewGA because they both had the same
+      // name. We must erase this now so forceRenaming doesn't assert
+      // because DGV might not have internal linkage.
+      DGVar->eraseFromParent();
 
-    // If the symbol table renamed the alias, but it is an externally visible
-    // symbol, DGA must be an global value with internal linkage. Rename it.
-    if (NewGA->getName() != SGA->getName() && !NewGA->hasLocalLinkage())
-      forceRenaming(NewGA, SGA->getName());
+      // Proceed to 'common' steps
+    } else
+      return emitError("Global alias collision on '" + SGA->getName() +
+                   "': symbol multiple defined");
+  } else if (Function *DF = dyn_cast_or_null<Function>(DGV)) {
+    // The only allowed way is to link alias with external declaration or weak
+    // symbol...
+    if (DF->isDeclaration() || DF->isWeakForLinker()) {
+      // But only if aliasee is function too.
+      if (!isa<Function>(DAliasee))
+        return emitError("Function alias collision on '" + SGA->getName() +
+                     "': aliasee is not function");
 
-    // Remember this mapping so uses in the source module get remapped
-    // later by MapValue.
-    ValueMap[SGA] = NewGA;
+      NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
+                              SGA->getName(), DAliaseeConst, DstM);
+      CopyGVAttributes(NewGA, SGA);
+
+      // Any uses of DF need to change to NewGA, with cast, if needed.
+      if (SGA->getType() != DF->getType())
+        DF->replaceAllUsesWith(ConstantExpr::getBitCast(NewGA,DF->getType()));
+      else
+        DF->replaceAllUsesWith(NewGA);
+
+      // DF will conflict with NewGA because they both had the same
+      // name. We must erase this now so forceRenaming doesn't assert
+      // because DF might not have internal linkage.
+      DF->eraseFromParent();
+
+      // Proceed to 'common' steps
+    } else
+      return emitError("Function alias collision on '" + SGA->getName() +
+                   "': symbol multiple defined");
+  } else {
+    // No linking to be performed, simply create an identical version of the
+    // alias over in the dest module...
+    NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
+                            SGA->getName(), DAliaseeConst, DstM);
+    CopyGVAttributes(NewGA, SGA);
+
+    // Proceed to 'common' steps.
   }
 
+  assert(NewGA && "No alias was created in destination module!");
+
+  // If the symbol table renamed the alias, but it is an externally visible
+  // symbol, DGA must be an global value with internal linkage. Rename it.
+  if (NewGA->getName() != SGA->getName() && !NewGA->hasLocalLinkage())
+    forceRenaming(NewGA, SGA->getName());
+
+  // Remember this mapping so uses in the source module get remapped
+  // later by MapValue.
+  ValueMap[SGA] = NewGA;
   return false;
 }
 
@@ -1001,7 +994,7 @@ void ModuleLinker::linkFunctionBodies() {
 }
 
 
-void ModuleLinker::resolveAliases() {
+void ModuleLinker::linkAliasBodies() {
   for (Module::alias_iterator I = DstM->alias_begin(), E = DstM->alias_end();
        I != E; ++I)
     // We can't sue resolveGlobalAlias here because we need to preserve
@@ -1095,10 +1088,11 @@ bool ModuleLinker::run() {
     if (linkFunctionProto(I))
       return true;
 
-  // If there were any aliases, link them now. We really need to do this now,
-  // because all of the aliases that may be referenced need to be available in
-  // ValueMap
-  if (linkAliases()) return true;
+  // If there were any aliases, link them now.
+  for (Module::alias_iterator I = SrcM->alias_begin(),
+       E = SrcM->alias_end(); I != E; ++I)
+    if (linkAliasProto(I))
+      return true;
 
   // Update the initializers in the DstM module now that all globals that may
   // be referenced are in DstM.
@@ -1110,7 +1104,7 @@ bool ModuleLinker::run() {
   linkFunctionBodies();
 
   // Resolve all uses of aliases with aliasees.
-  resolveAliases();
+  linkAliasBodies();
 
   // Remap all of the named mdnoes in Src into the DstM module. We do this
   // after linking GlobalValues so that MDNodes that reference GlobalValues
