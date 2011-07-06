@@ -640,13 +640,13 @@ ConstantStruct::ConstantStruct(const StructType *T,
   : Constant(T, ConstantStructVal,
              OperandTraits<ConstantStruct>::op_end(this) - V.size(),
              V.size()) {
-  assert(V.size() == T->getNumElements() &&
+  assert((T->isOpaque() || V.size() == T->getNumElements()) &&
          "Invalid initializer vector for constant structure");
   Use *OL = OperandList;
   for (std::vector<Constant*>::const_iterator I = V.begin(), E = V.end();
        I != E; ++I, ++OL) {
     Constant *C = *I;
-    assert(C->getType() == T->getElementType(I-V.begin()) &&
+    assert((T->isOpaque() || C->getType() == T->getElementType(I-V.begin())) &&
            "Initializer for struct element doesn't match struct element type!");
     *OL = C;
   }
@@ -654,14 +654,13 @@ ConstantStruct::ConstantStruct(const StructType *T,
 
 // ConstantStruct accessors.
 Constant *ConstantStruct::get(const StructType *ST, ArrayRef<Constant*> V) {
-  assert(ST->getNumElements() == V.size() &&
-         "Incorrect # elements specified to ConstantStruct::get");
-  
   // Create a ConstantAggregateZero value if all elements are zeros.
   for (unsigned i = 0, e = V.size(); i != e; ++i)
     if (!V[i]->isNullValue())
       return ST->getContext().pImpl->StructConstants.getOrCreate(ST, V);
 
+  assert((ST->isOpaque() || ST->getNumElements() == V.size()) &&
+         "Incorrect # elements specified to ConstantStruct::get");
   return ConstantAggregateZero::get(ST);
 }
 
