@@ -13,16 +13,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include "llvm/Type.h"
 #include "llvm/Constants.h"
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/Metadata.h"
-#include "llvm/ADT/SmallVector.h"
 using namespace llvm;
 
-Value *llvm::MapValue(const Value *V, ValueToValueMapTy &VM,
-                      RemapFlags Flags) {
+Value *llvm::MapValue(const Value *V, ValueToValueMapTy &VM, RemapFlags Flags) {
   ValueToValueMapTy::iterator I = VM.find(V);
   
   // If the value already exists in the map, use it.
@@ -89,7 +86,7 @@ Value *llvm::MapValue(const Value *V, ValueToValueMapTy &VM,
     
     // Okay, the operands don't all match.  We've already processed some or all
     // of the operands, set them up now.
-    std::vector<Constant*> Ops;
+    SmallVector<Constant*, 8> Ops;
     Ops.reserve(C->getNumOperands());
     for (unsigned j = 0; j != i; ++j)
       Ops.push_back(cast<Constant>(C->getOperand(i)));
