@@ -589,11 +589,11 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     GlobalVariable *NewDGV =
       new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
                          SGV->isConstant(), SGV->getLinkage(), /*init*/0,
-                         SGV->getName(), 0, SGV->isThreadLocal(),
+                         SGV->getName(), /*insertbefore*/0,
+                         SGV->isThreadLocal(),
                          SGV->getType()->getAddressSpace());
     // Propagate alignment, visibility and section info.
     CopyGVAttributes(NewDGV, SGV);
-    NewDGV->setUnnamedAddr(SGV->hasUnnamedAddr());
 
     // If the LLVM runtime renamed the global, but it is an externally visible
     // symbol, DGV must be an existing global with internal linkage.  Rename
@@ -611,15 +611,8 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
     return true;
 
-  // If the visibilities of the symbols disagree and the destination is a
-  // prototype, take the visibility of its input.
-  if (DGV->isDeclaration())
-    DGV->setVisibility(SGV->getVisibility());
-
   if (DGV->hasAppendingLinkage())
     return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
-
-  bool HasUnnamedAddr = SGV->hasUnnamedAddr() && DGV->hasUnnamedAddr();
 
   if (LinkFromSrc) {
     if (isa<GlobalAlias>(DGV))
@@ -636,11 +629,9 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
                          DGV->getName(), 0, false,
                          SGV->getType()->getAddressSpace());
 
-    // Set the unnamed_addr.
-    NewDGV->setUnnamedAddr(HasUnnamedAddr);
-
-    // Propagate alignment, section, and visibility info.
+    // Propagate alignment, section, visibility info, unnamed_addr, etc.
     CopyGVAttributes(NewDGV, SGV);
+
     DGV->replaceAllUsesWith(ConstantExpr::getBitCast(NewDGV, DGV->getType()));
 
     // DGV will conflict with NewDGV because they both had the same
@@ -681,9 +672,8 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
                        "': symbol multiple defined");
   }
 
-  // Set calculated linkage and unnamed_addr
+  // Set calculated linkage and unnamed_addr.
   DGV->setLinkage(NewLinkage);
-  DGV->setUnnamedAddr(HasUnnamedAddr);
 
   // Make sure to remember this mapping...
   ValueMap[SGV] = ConstantExpr::getBitCast(DGV, SGV->getType());
