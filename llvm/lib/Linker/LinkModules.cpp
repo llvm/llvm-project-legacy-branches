@@ -668,12 +668,16 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
                        "': symbol multiple defined");
   }
 
-  // Set calculated linkage and unnamed_addr.
+  // Set calculated linkage.
   DGV->setLinkage(NewLinkage);
 
-  // Make sure to remember this mapping...
+  // Make sure to remember this mapping.
   ValueMap[SGV] = ConstantExpr::getBitCast(DGV, SGV->getType());
   
+  // Destroy the source global's initializer (and convert it to a prototype) so
+  // that we don't attempt to copy it over when processing global initializers.
+  SGV->setInitializer(0);
+  SGV->setLinkage(GlobalValue::ExternalLinkage);
   return false;
 }
 
@@ -927,7 +931,7 @@ bool ModuleLinker::linkAliases() {
                               SGA->getName(), DAliaseeConst, DstM);
       CopyGVAttributes(NewGA, SGA);
 
-      // Proceed to 'common' steps
+      // Proceed to 'common' steps.
     }
 
     assert(NewGA && "No alias was created in destination module!");
@@ -952,29 +956,13 @@ void ModuleLinker::linkGlobalInits() {
   // Loop over all of the globals in the src module, mapping them over as we go
   for (Module::const_global_iterator I = SrcM->global_begin(),
        E = SrcM->global_end(); I != E; ++I) {
-    const GlobalVariable *SGV = I;
-
-    if (!SGV->hasInitializer()) continue;      // Only process initialized GV's
+    if (!I->hasInitializer()) continue;      // Only process initialized GV's
     
+    // Grab destination global variable.
+    GlobalVariable *DGV = cast<GlobalVariable>(ValueMap[I]);
     // Figure out what the initializer looks like in the dest module.
-    Constant *SInit = MapValue(SGV->getInitializer(), ValueMap,
-                               RF_None, &TypeMap);
-    // Grab destination global variable or alias.
-    GlobalValue *DGV = cast<GlobalValue>(ValueMap[SGV]->stripPointerCasts());
-
-    // If dest if global variable, check that initializers match.
-    if (GlobalVariable *DGVar = dyn_cast<GlobalVariable>(DGV)) {
-      if (!DGVar->hasInitializer())
-        // Copy the initializer over now.
-        DGVar->setInitializer(SInit);
-    } else {
-      // Destination is alias, the only valid situation is when source is
-      // weak.  Also, note, that we already checked linkage in
-      // linkGlobalProtos(), thus we assert here.
-      // FIXME: Should we weaken this assumption, 'dereference' alias and
-      // check for initializer of aliasee?
-      assert(SGV->isWeakForLinker());
-    }
+    DGV->setInitializer(MapValue(I->getInitializer(), ValueMap,
+                                 RF_None, &TypeMap));
   }
 }
 
