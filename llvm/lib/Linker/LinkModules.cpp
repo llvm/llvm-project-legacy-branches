@@ -413,12 +413,6 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
     // If Dest is external but Src is not:
     LinkFromSrc = true;
     LT = Src->getLinkage();
-  } else if (Src->hasAppendingLinkage() || Dest->hasAppendingLinkage()) {
-    if (Src->getLinkage() != Dest->getLinkage())
-      return emitError("Linking globals named '" + Src->getName() +
-            "': can only link appending global with another appending global!");
-    LinkFromSrc = true; // Special cased.
-    LT = Src->getLinkage();
   } else if (Src->isWeakForLinker()) {
     // At this point we know that Dest has LinkOnce, External*, Weak, Common,
     // or DLL* linkage.
@@ -466,6 +460,10 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
 bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
                                      const GlobalVariable *SrcGV) {
  
+  if (!SrcGV->hasAppendingLinkage() || !DstGV->hasAppendingLinkage())
+    return emitError("Linking globals named '" + SrcGV->getName() +
+           "': can only link appending global with another appending global!");
+  
   ArrayType *DstTy = cast<ArrayType>(DstGV->getType()->getElementType());
   ArrayType *SrcTy = cast<ArrayType>(SrcGV->getType()->getElementType());
   // FIXME: Should map element type.
@@ -606,13 +604,14 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     return false;
   }
 
+  // Concatenation of appending linkage variables is magic.
+  if (DGV->hasAppendingLinkage() || SGV->hasAppendingLinkage())
+    return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
+
   GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
   bool LinkFromSrc = false;
   if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
     return true;
-
-  if (DGV->hasAppendingLinkage())
-    return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
 
   if (LinkFromSrc) {
     if (isa<GlobalAlias>(DGV))
