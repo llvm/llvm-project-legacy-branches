@@ -608,6 +608,8 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   if (DGV->hasAppendingLinkage() || SGV->hasAppendingLinkage())
     return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
 
+  // Determine whether linkage of these two globals follows the source module's
+  // definition or the destination module's definition.
   GlobalValue::LinkageTypes NewLinkage = GlobalValue::InternalLinkage;
   bool LinkFromSrc = false;
   if (getLinkageResult(DGV, SGV, NewLinkage, LinkFromSrc))
@@ -618,6 +620,9 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
       return emitError("Global alias collision on '" + SGV->getName() +
                    "': symbol multiple defined");
 
+    // Clear the name of DGV so we don't get a name conflict.
+    DGV->setName("");
+    
     // If the types don't match, and if we are to link from the source, nuke
     // DGV and create a new one of the appropriate type.  Note that the thing
     // we are replacing may be a function (if a prototype, weak, etc) or a
@@ -625,7 +630,7 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
     GlobalVariable *NewDGV =
       new GlobalVariable(*DstM, TypeMap.get(SGV->getType()->getElementType()),
                          SGV->isConstant(), NewLinkage, /*init*/0,
-                         DGV->getName(), 0, false,
+                         SGV->getName(), 0, false,
                          SGV->getType()->getAddressSpace());
 
     // Propagate alignment, section, visibility info, unnamed_addr, etc.
@@ -640,14 +645,6 @@ bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
       Var->eraseFromParent();
     else
       cast<Function>(DGV)->eraseFromParent();
-
-    // If the symbol table renamed the global, but it is an externally visible
-    // symbol, DGV must be an existing global with internal linkage.  Rename.
-    if (NewDGV->getName() != SGV->getName() && !NewDGV->hasLocalLinkage())
-      forceRenaming(NewDGV, SGV->getName());
-
-    // Inherit const as appropriate.
-    NewDGV->setConstant(SGV->isConstant());
 
     // Make sure to remember this mapping.
     ValueMap[SGV] = NewDGV;
