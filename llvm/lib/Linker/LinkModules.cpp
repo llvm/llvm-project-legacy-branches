@@ -360,7 +360,7 @@ namespace {
     
     void computeTypeMapping();
     
-    bool linkAppendingVars(GlobalVariable *DstGV, const GlobalVariable *SrcGV);
+    bool linkAppendingVars(GlobalVariable *DstGV, GlobalVariable *SrcGV);
     bool linkGlobalProto(GlobalVariable *SrcGV);
     bool linkFunctionProto(Function *SrcF);
     bool linkAliasProto(GlobalAlias *SrcA);
@@ -491,7 +491,7 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
 /// linkAppendingVars - If there were any appending global variables, link them
 /// together now.  Return true on error.
 bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
-                                     const GlobalVariable *SrcGV) {
+                                     GlobalVariable *SrcGV) {
  
   if (!SrcGV->hasAppendingLinkage() || !DstGV->hasAppendingLinkage())
     return emitError("Linking globals named '" + SrcGV->getName() +
@@ -561,6 +561,10 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
 
   DstGV->replaceAllUsesWith(ConstantExpr::getBitCast(NG, DstGV->getType()));
   DstGV->eraseFromParent();
+  
+  // Zap the initializer in the source variable so we don't try to link it.
+  SrcGV->setInitializer(0);
+  SrcGV->setLinkage(GlobalValue::ExternalLinkage);
   return false;
 }
 
