@@ -914,8 +914,16 @@ public:
   /// getWithOperands - This returns the current constant expression with the
   /// operands replaced with the specified values.  The specified array must
   /// have the same number of operands as our current one.
-  Constant *getWithOperands(ArrayRef<Constant*> Ops) const;
-  
+  Constant *getWithOperands(ArrayRef<Constant*> Ops) const {
+    return getWithOperands(Ops, getType());
+  }
+
+  /// getWithOperands - This returns the current constant expression with the
+  /// operands replaced with the specified values and with the specified result
+  /// type.  The specified array must have the same number of operands as our
+  /// current one.
+  Constant *getWithOperands(ArrayRef<Constant*> Ops, const Type *Ty) const;
+
   virtual void destroyConstant();
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To, Use *U);
 

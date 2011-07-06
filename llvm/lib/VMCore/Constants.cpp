@@ -842,7 +842,7 @@ ConstantExpr::getWithOperandReplaced(unsigned OpNo, Constant *Op) const {
 /// operands replaced with the specified values.  The specified array must
 /// have the same number of operands as our current one.
 Constant *ConstantExpr::
-getWithOperands(ArrayRef<Constant*> Ops) const {
+getWithOperands(ArrayRef<Constant*> Ops, const Type *Ty) const {
   assert(Ops.size() == getNumOperands() && "Operand count mismatch!");
   bool AnyChange = false;
   for (unsigned i = 0; i != Ops.size(); ++i)
@@ -864,7 +864,7 @@ getWithOperands(ArrayRef<Constant*> Ops) const {
   case Instruction::PtrToInt:
   case Instruction::IntToPtr:
   case Instruction::BitCast:
-    return ConstantExpr::getCast(getOpcode(), Ops[0], getType());
+    return ConstantExpr::getCast(getOpcode(), Ops[0], Ty);
   case Instruction::Select:
     return ConstantExpr::getSelect(Ops[0], Ops[1], Ops[2]);
   case Instruction::InsertElement:

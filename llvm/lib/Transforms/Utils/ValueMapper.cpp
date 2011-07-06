@@ -122,7 +122,7 @@ Value *llvm::MapValue(const Value *V, ValueToValueMapTy &VM, RemapFlags Flags,
   }
   
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
-    return VM[V] = CE->getWithOperands(Ops);
+    return VM[V] = CE->getWithOperands(Ops, NewTy);
   if (isa<ConstantArray>(C))
     return VM[V] = ConstantArray::get(cast<ArrayType>(NewTy), Ops);
   if (isa<ConstantStruct>(C))
