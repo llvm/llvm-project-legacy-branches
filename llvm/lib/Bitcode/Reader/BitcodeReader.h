@@ -211,6 +211,7 @@ public:
   bool ParseTriple(std::string &Triple);
 private:
   Type *getTypeByID(unsigned ID);
+  Type *getTypeByIDOrNull(unsigned ID);
   Value *getFnValueByID(unsigned ID, const Type *Ty) {
     if (Ty == Type::getMetadataTy(Context))
       return MDValueList.getValueFwdRef(ID);
