@@ -796,6 +796,16 @@ RestartScan:
         ResultTy = StructType::createNamed(Context, "");
       break;
     case bitc::TYPE_CODE_STRUCT_OLD: {// STRUCT_OLD
+      if (NextTypeID >= TypeList.size()) break;
+      // If we already read it, don't reprocess.
+      if (TypeList[NextTypeID] &&
+          !cast<StructType>(TypeList[NextTypeID])->isOpaque())
+        break;
+
+      // Set a type.
+      if (TypeList[NextTypeID] == 0)
+        TypeList[NextTypeID] = StructType::createNamed(Context, "");
+
       std::vector<Type*> EltTys;
       for (unsigned i = 1, e = Record.size(); i != e; ++i) {
         if (Type *Elt = getTypeByIDOrNull(Record[i]))
@@ -803,19 +813,13 @@ RestartScan:
         else
           break;
       }
+
+      if (EltTys.size() != Record.size()-1)
+        break;      // Not all elements are ready.
       
-      if (NextTypeID >= TypeList.size()) break;
-      
-      if (EltTys.size() != Record.size()-1) {
-        if (TypeList[NextTypeID] == 0)
-          ResultTy = StructType::createNamed(Context, "");
-        break;
-      }
-      
-      if (TypeList[NextTypeID] == 0)
-        ResultTy = StructType::createNamed(Context, "", EltTys, Record[0]);
-      else if (cast<StructType>(TypeList[NextTypeID])->isOpaque())
-        cast<StructType>(TypeList[NextTypeID])->setBody(EltTys, Record[0]);
+      cast<StructType>(TypeList[NextTypeID])->setBody(EltTys, Record[0]);
+      ResultTy = TypeList[NextTypeID];
+      TypeList[NextTypeID] = 0;
       break;
     }
     case bitc::TYPE_CODE_POINTER: { // POINTER: [pointee type] or
