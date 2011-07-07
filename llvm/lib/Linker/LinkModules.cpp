@@ -329,6 +329,15 @@ namespace {
     /// some overhead due to the use of Value handles which the Linker doesn't
     /// actually need, but this allows us to reuse the ValueMapper code.
     ValueToValueMapTy ValueMap;
+    
+    struct AppendingVarInfo {
+      GlobalVariable *NewGV;  // New aggregate global in dest module.
+      Constant *DstInit;      // Old initializer from dest module.
+      Constant *SrcInit;      // Old initializer from src module.
+    };
+    
+    std::vector<AppendingVarInfo> AppendingVars;
+    
   public:
     std::string ErrorMsg;
     
@@ -372,11 +381,12 @@ namespace {
     
     void computeTypeMapping();
     
-    bool linkAppendingVars(GlobalVariable *DstGV, GlobalVariable *SrcGV);
+    bool linkAppendingVarProto(GlobalVariable *DstGV, GlobalVariable *SrcGV);
     bool linkGlobalProto(GlobalVariable *SrcGV);
     bool linkFunctionProto(Function *SrcF);
     bool linkAliasProto(GlobalAlias *SrcA);
     
+    void linkAppendingVarInit(const AppendingVarInfo &AVI);
     void linkGlobalInits();
     void linkFunctionBody(Function *Dst, Function *Src);
     void linkAliasBodies();
@@ -500,18 +510,53 @@ bool ModuleLinker::getLinkageResult(GlobalValue *Dest, const GlobalValue *Src,
   return false;
 }
 
-/// linkAppendingVars - If there were any appending global variables, link them
-/// together now.  Return true on error.
-bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
-                                     GlobalVariable *SrcGV) {
+/// computeTypeMapping - Loop over all of the linked values to compute type
+/// mappings.  For example, if we link "extern Foo *x" and "Foo *x = NULL", then
+/// we have two struct types 'Foo' but one got renamed when the module was
+/// loaded into the same LLVMContext.
+void ModuleLinker::computeTypeMapping() {
+  // Incorporate globals.
+  for (Module::global_iterator I = SrcM->global_begin(),
+       E = SrcM->global_end(); I != E; ++I) {
+    GlobalValue *DGV = getLinkedToGlobal(I);
+    if (DGV == 0) continue;
+    
+    if (!DGV->hasAppendingLinkage() || !I->hasAppendingLinkage()) {
+      TypeMap.addTypeMapping(DGV->getType(), I->getType());
+      continue;      
+    }
+    
+    // Unify the element type of appending arrays.
+    ArrayType *DAT = cast<ArrayType>(DGV->getType()->getElementType());
+    ArrayType *SAT = cast<ArrayType>(I->getType()->getElementType());
+    TypeMap.addTypeMapping(DAT->getElementType(), SAT->getElementType());
+  }
+  
+  // Incorporate functions.
+  for (Module::iterator I = SrcM->begin(), E = SrcM->end(); I != E; ++I) {
+    if (GlobalValue *DGV = getLinkedToGlobal(I))
+      TypeMap.addTypeMapping(DGV->getType(), I->getType());
+  }
+  
+  // Don't bother incorporating aliases, they aren't generally typed well.
+  
+  // Now that we have discovered all of the type equivalences, get a body for
+  // any 'opaque' types in the dest module that are now resolved. 
+  TypeMap.linkDefinedTypeBodies();
+}
+
+/// linkAppendingVarProto - If there were any appending global variables, link
+/// them together now.  Return true on error.
+bool ModuleLinker::linkAppendingVarProto(GlobalVariable *DstGV,
+                                         GlobalVariable *SrcGV) {
  
   if (!SrcGV->hasAppendingLinkage() || !DstGV->hasAppendingLinkage())
     return emitError("Linking globals named '" + SrcGV->getName() +
            "': can only link appending global with another appending global!");
   
   ArrayType *DstTy = cast<ArrayType>(DstGV->getType()->getElementType());
-  ArrayType *SrcTy = cast<ArrayType>(SrcGV->getType()->getElementType());
-  // FIXME: Should map element type.
+  ArrayType *SrcTy =
+    cast<ArrayType>(TypeMap.get(SrcGV->getType()->getElementType()));
   Type *EltTy = DstTy->getElementType();
   
   // Check to see that they two arrays agree on type.
@@ -538,36 +583,22 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   // Create the new global variable.
   GlobalVariable *NG =
     new GlobalVariable(*DstGV->getParent(), NewType, SrcGV->isConstant(),
-                       DstGV->getLinkage(), /*init*/0, SrcGV->getName(), DstGV,
+                       DstGV->getLinkage(), /*init*/0, /*name*/"", DstGV,
                        DstGV->isThreadLocal(),
                        DstGV->getType()->getAddressSpace());
   
   // Propagate alignment, visibility and section info.
   CopyGVAttributes(NG, DstGV);
   
-  // Merge the initializer.
-  SmallVector<Constant*, 16> Elements;
-  Elements.reserve(NewSize);
-  if (ConstantArray *I = dyn_cast<ConstantArray>(DstGV->getInitializer())) {
-    for (unsigned i = 0, e = DstTy->getNumElements(); i != e; ++i)
-      Elements.push_back(I->getOperand(i));
-  } else {
-    assert(isa<ConstantAggregateZero>(DstGV->getInitializer()));
-    Elements.append(DstTy->getNumElements(), Constant::getNullValue(EltTy));
-  }
-  if (const ConstantArray *I =dyn_cast<ConstantArray>(SrcGV->getInitializer())){
-    // FIXME: Should map values from src to dest.
-    for (unsigned i = 0, e = SrcTy->getNumElements(); i != e; ++i)
-      Elements.push_back(I->getOperand(i));
-  } else {
-    assert(isa<ConstantAggregateZero>(SrcGV->getInitializer()));
-    Elements.append(SrcTy->getNumElements(), Constant::getNullValue(EltTy));
-  }
-  NG->setInitializer(ConstantArray::get(NewType, Elements));
-  
+  AppendingVarInfo AVI;
+  AVI.NewGV = NG;
+  AVI.DstInit = DstGV->getInitializer();
+  AVI.SrcInit = SrcGV->getInitializer();
+  AppendingVars.push_back(AVI);
+
   // Replace any uses of the two global variables with uses of the new
   // global.
-  ValueMap[SrcGV] = ConstantExpr::getBitCast(NG, SrcGV->getType());
+  ValueMap[SrcGV] = ConstantExpr::getBitCast(NG, TypeMap.get(SrcGV->getType()));
 
   DstGV->replaceAllUsesWith(ConstantExpr::getBitCast(NG, DstGV->getType()));
   DstGV->eraseFromParent();
@@ -578,40 +609,15 @@ bool ModuleLinker::linkAppendingVars(GlobalVariable *DstGV,
   return false;
 }
 
-/// computeTypeMapping - Loop over all of the linked values to compute type
-/// mappings.  For example, if we link "extern Foo *x" and "Foo *x = NULL", then
-/// we have two struct types 'Foo' but one got renamed when the module was
-/// loaded into the same LLVMContext.
-void ModuleLinker::computeTypeMapping() {
-  // Incorporate globals.
-  for (Module::global_iterator I = SrcM->global_begin(),
-       E = SrcM->global_end(); I != E; ++I) {
-    if (GlobalValue *DGV = getLinkedToGlobal(I))
-      TypeMap.addTypeMapping(DGV->getType(), I->getType());
-  }
-  
-  // Incorporate functions.
-  for (Module::iterator I = SrcM->begin(), E = SrcM->end(); I != E; ++I) {
-    if (GlobalValue *DGV = getLinkedToGlobal(I))
-      TypeMap.addTypeMapping(DGV->getType(), I->getType());
-  }
-  
-  // Don't bother incorporating aliases, they aren't generally typed well.
-  
-  // Now that we have discovered all of the type equivalences, get a body for
-  // any 'opaque' types in the dest module that are now resolved. 
-  TypeMap.linkDefinedTypeBodies();
-}
-
 /// linkGlobalProto - Loop through the global variables in the src module and
 /// merge them into the dest module.
 bool ModuleLinker::linkGlobalProto(GlobalVariable *SGV) {
   GlobalValue *DGV = getLinkedToGlobal(SGV);
 
   if (DGV) {
-    // Concatenation of appending linkage variables is magic.
+    // Concatenation of appending linkage variables is magic and handled later.
     if (DGV->hasAppendingLinkage() || SGV->hasAppendingLinkage())
-      return linkAppendingVars(cast<GlobalVariable>(DGV), SGV);
+      return linkAppendingVarProto(cast<GlobalVariable>(DGV), SGV);
     
     // Determine whether linkage of these two globals follows the source
     // module's definition or the destination module's definition.
@@ -744,6 +750,33 @@ bool ModuleLinker::linkAliasProto(GlobalAlias *SGA) {
   
   ValueMap[SGA] = NewDA;
   return false;
+}
+
+void ModuleLinker::linkAppendingVarInit(const AppendingVarInfo &AVI) {
+  // Merge the initializer.
+  SmallVector<Constant*, 16> Elements;
+  if (ConstantArray *I = dyn_cast<ConstantArray>(AVI.DstInit)) {
+    for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
+      Elements.push_back(I->getOperand(i));
+  } else {
+    assert(isa<ConstantAggregateZero>(AVI.DstInit));
+    ArrayType *DstAT = cast<ArrayType>(AVI.DstInit->getType());
+    Type *EltTy = DstAT->getElementType();
+    Elements.append(DstAT->getNumElements(), Constant::getNullValue(EltTy));
+  }
+  
+  Constant *SrcInit = MapValue(AVI.SrcInit, ValueMap, RF_None, &TypeMap);
+  if (const ConstantArray *I = dyn_cast<ConstantArray>(SrcInit)) {
+    for (unsigned i = 0, e = I->getNumOperands(); i != e; ++i)
+      Elements.push_back(I->getOperand(i));
+  } else {
+    assert(isa<ConstantAggregateZero>(SrcInit));
+    ArrayType *SrcAT = cast<ArrayType>(SrcInit->getType());
+    Type *EltTy = SrcAT->getElementType();
+    Elements.append(SrcAT->getNumElements(), Constant::getNullValue(EltTy));
+  }
+  ArrayType *NewType = cast<ArrayType>(AVI.NewGV->getType()->getElementType());
+  AVI.NewGV->setInitializer(ConstantArray::get(NewType, Elements));
 }
 
 
@@ -892,6 +925,9 @@ bool ModuleLinker::run() {
     if (linkAliasProto(I))
       return true;
 
+  for (unsigned i = 0, e = AppendingVars.size(); i != e; ++i)
+    linkAppendingVarInit(AppendingVars[i]);
+  
   // Update the initializers in the DstM module now that all globals that may
   // be referenced are in DstM.
   linkGlobalInits();
