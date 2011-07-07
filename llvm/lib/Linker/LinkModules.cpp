@@ -53,6 +53,7 @@ public:
   FunctionType *get(FunctionType *T) {return cast<FunctionType>(get((Type*)T));}
 
 private:
+  Type *getImpl(Type *T);
   /// remapType - Implement the ValueMapTypeRemapper interface.
   Type *remapType(Type *SrcTy) {
     return get(SrcTy);
@@ -189,7 +190,7 @@ void TypeMapTy::linkDefinedTypeBodies() {
     // Map the body of the source type over to a new body for the dest type.
     Elements.resize(SrcSTy->getNumElements());
     for (unsigned i = 0, e = Elements.size(); i != e; ++i)
-      Elements[i] = get(SrcSTy->getElementType(i));
+      Elements[i] = getImpl(SrcSTy->getElementType(i));
     
     DstSTy->setBody(Elements, SrcSTy->isPacked());
     
@@ -211,6 +212,16 @@ void TypeMapTy::linkDefinedTypeBodies() {
 /// get - Return the mapped type to use for the specified input type from the
 /// source module.
 Type *TypeMapTy::get(Type *Ty) {
+  Type *Result = getImpl(Ty);
+  
+  // If this caused a reference to any struct type, resolve it before returning.
+  if (!DefinitionsToResolve.empty())
+    linkDefinedTypeBodies();
+  return Result;
+}
+
+/// getImpl - This is the recursive version of get().
+Type *TypeMapTy::getImpl(Type *Ty) {
   // If we already have an entry for this type, return it.
   Type **Entry = &MappedTypes[Ty];
   if (*Entry) return *Entry;
@@ -228,7 +239,7 @@ Type *TypeMapTy::get(Type *Ty) {
     SmallVector<Type*, 4> ElementTypes;
     ElementTypes.resize(Ty->getNumContainedTypes());
     for (unsigned i = 0, e = Ty->getNumContainedTypes(); i != e; ++i) {
-      ElementTypes[i] = get(Ty->getContainedType(i));
+      ElementTypes[i] = getImpl(Ty->getContainedType(i));
       AnyChange |= ElementTypes[i] != Ty->getContainedType(i);
     }
     
@@ -289,11 +300,12 @@ Type *TypeMapTy::get(Type *Ty) {
   // it and always rebuild a type here.
   StructType *STy = cast<StructType>(Ty);
   
-  // If the type is opaque, we can just use it directly.  Otherwise we create a
-  // new type and resolve its body later.
+  // If the type is opaque, we can just use it directly.
   if (STy->isOpaque())
     return *Entry = STy;
   
+  // Otherwise we create a new type and resolve its body later.  This will be
+  // resolved by the top level of get().
   DefinitionsToResolve.push_back(STy);
   return *Entry = StructType::createNamed(STy->getContext(), "");
 }
