@@ -844,7 +844,7 @@ ConstantExpr::getWithOperandReplaced(unsigned OpNo, Constant *Op) const {
 Constant *ConstantExpr::
 getWithOperands(ArrayRef<Constant*> Ops, const Type *Ty) const {
   assert(Ops.size() == getNumOperands() && "Operand count mismatch!");
-  bool AnyChange = false;
+  bool AnyChange = Ty != getType();
   for (unsigned i = 0; i != Ops.size(); ++i)
     AnyChange |= Ops[i] != getOperand(i);
   
