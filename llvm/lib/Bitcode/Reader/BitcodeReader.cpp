@@ -877,14 +877,7 @@ RestartScan:
 
 
 bool BitcodeReader::ParseOldTypeSymbolTable() {
-  // Just skip the old type symbol table entirely.
-  Stream.ReadSubBlockID();
-  if (Stream.SkipBlock())
-    return Error("Malformed block record");
-  return false;
-  
-#if 0
-  if (Stream.EnterSubBlock(bitc::TYPE_SYMTAB_BLOCK_ID))
+  if (Stream.EnterSubBlock(bitc::TYPE_SYMTAB_BLOCK_ID_OLD))
     return Error("Malformed block record");
 
   SmallVector<uint64_t, 64> Record;
@@ -924,12 +917,14 @@ bool BitcodeReader::ParseOldTypeSymbolTable() {
       if (TypeID >= TypeList.size())
         return Error("Invalid Type ID in TST_ENTRY record");
 
-      TheModule->addTypeName(TypeName, TypeList[TypeID].get());
+      // Only apply the type name to a struct type with no name.
+      if (StructType *STy = dyn_cast<StructType>(TypeList[TypeID]))
+        if (!STy->isAnonymous() && !STy->hasName())
+          STy->setName(TypeName);
       TypeName.clear();
       break;
     }
   }
-#endif
 }
 
 bool BitcodeReader::ParseValueSymbolTable() {
