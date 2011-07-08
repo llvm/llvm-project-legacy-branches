@@ -1613,10 +1613,12 @@ llvm::Value *CodeGenModule::getBuiltinLibFunction(const FunctionDecl *FD,
   return GetOrCreateLLVMFunction(Name, Ty, D, /*ForVTable=*/false);
 }
 
-llvm::Function *CodeGenModule::getIntrinsic(unsigned IID,const llvm::Type **Tys,
+llvm::Function *CodeGenModule::getIntrinsic(unsigned IID, llvm::Type **Tys,
                                             unsigned NumTys) {
   return llvm::Intrinsic::getDeclaration(&getModule(),
-                                         (llvm::Intrinsic::ID)IID, Tys, NumTys);
+                                         (llvm::Intrinsic::ID)IID,
+                                         const_cast<const llvm::Type **>(Tys),
+                                         NumTys);
 }
 
 static llvm::StringMapEntry<llvm::Constant*> &

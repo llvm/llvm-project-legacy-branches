@@ -208,8 +208,8 @@ private:
   bool IsZeroInitializableAsBase : 1;
 
 public:
-  CGRecordLayout(const llvm::StructType *CompleteObjectType,
-                 const llvm::StructType *BaseSubobjectType,
+  CGRecordLayout(llvm::StructType *CompleteObjectType,
+                 llvm::StructType *BaseSubobjectType,
                  bool IsZeroInitializable,
                  bool IsZeroInitializableAsBase)
     : CompleteObjectType(CompleteObjectType),
@@ -219,13 +219,13 @@ public:
 
   /// \brief Return the "complete object" LLVM type associated with
   /// this record.
-  const llvm::StructType *getLLVMType() const {
+  llvm::StructType *getLLVMType() const {
     return cast<llvm::StructType>(CompleteObjectType.get());
   }
 
   /// \brief Return the "base subobject" LLVM type associated with
   /// this record.
-  const llvm::StructType *getBaseSubobjectLLVMType() const {
+  llvm::StructType *getBaseSubobjectLLVMType() const {
     return cast<llvm::StructType>(BaseSubobjectType.get());
   }
 

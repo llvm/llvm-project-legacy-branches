@@ -97,8 +97,8 @@ void CodeGenTypes::addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
 }
 
 /// ConvertType - Convert the specified type to its LLVM form.
-const llvm::Type *CodeGenTypes::ConvertType(QualType T, bool IsRecursive) {
-  const llvm::Type *Result = ConvertTypeRecursive(T);
+llvm::Type *CodeGenTypes::ConvertType(QualType T, bool IsRecursive) {
+  llvm::Type *Result = ConvertTypeRecursive(T);
   
   // If this is a top-level call to ConvertType and sub-conversions caused
   // pointers to get lazily built as opaque types, resolve the pointers, which
@@ -111,7 +111,7 @@ const llvm::Type *CodeGenTypes::ConvertType(QualType T, bool IsRecursive) {
   return Result;
 }
 
-const llvm::Type *CodeGenTypes::ConvertTypeRecursive(QualType T) {
+llvm::Type *CodeGenTypes::ConvertTypeRecursive(QualType T) {
   T = Context.getCanonicalType(T);
 
   // See if type is already cached.
@@ -122,7 +122,7 @@ const llvm::Type *CodeGenTypes::ConvertTypeRecursive(QualType T) {
   if (I != TypeCache.end())
     return I->second.get();
 
-  const llvm::Type *ResultType = ConvertNewType(T);
+  llvm::Type *ResultType = ConvertNewType(T);
   TypeCache.insert(std::make_pair(T.getTypePtr(),
                                   llvm::PATypeHolder(ResultType)));
   return ResultType;
@@ -132,8 +132,8 @@ const llvm::Type *CodeGenTypes::ConvertTypeRecursive(QualType T) {
 /// ConvertType in that it is used to convert to the memory representation for
 /// a type.  For example, the scalar representation for _Bool is i1, but the
 /// memory representation is usually i8 or i32, depending on the target.
-const llvm::Type *CodeGenTypes::ConvertTypeForMem(QualType T, bool IsRecursive){
-  const llvm::Type *R = ConvertType(T, IsRecursive);
+llvm::Type *CodeGenTypes::ConvertTypeForMem(QualType T, bool IsRecursive){
+  llvm::Type *R = ConvertType(T, IsRecursive);
 
   // If this is a non-bool type, don't map it.
   if (!R->isIntegerTy(1))

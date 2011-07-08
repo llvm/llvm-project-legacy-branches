@@ -123,15 +123,15 @@ public:
   llvm::LLVMContext &getLLVMContext() { return TheModule.getContext(); }
 
   /// ConvertType - Convert type T into a llvm::Type.
-  const llvm::Type *ConvertType(QualType T, bool IsRecursive = false);
-  const llvm::Type *ConvertTypeRecursive(QualType T);
+  llvm::Type *ConvertType(QualType T, bool IsRecursive = false);
+  llvm::Type *ConvertTypeRecursive(QualType T);
 
   /// ConvertTypeForMem - Convert type T into a llvm::Type.  This differs from
   /// ConvertType in that it is used to convert to the memory representation for
   /// a type.  For example, the scalar representation for _Bool is i1, but the
   /// memory representation is usually i8 or i32, depending on the target.
-  const llvm::Type *ConvertTypeForMem(QualType T, bool IsRecursive = false);
-  const llvm::Type *ConvertTypeForMemRecursive(QualType T) {
+  llvm::Type *ConvertTypeForMem(QualType T, bool IsRecursive = false);
+  llvm::Type *ConvertTypeForMemRecursive(QualType T) {
     return ConvertTypeForMem(T, true);
   }
 
