@@ -181,7 +181,11 @@ bool Type::isSizedDerivedType() const {
   if (!this->isStructTy()) 
     return false;
 
-  // Okay, our struct is sized if all of the elements are...
+  // Opaque structs have no size.
+  if (cast<StructType>(this)->isOpaque())
+    return false;
+  
+  // Okay, our struct is sized if all of the elements are.
   for (subtype_iterator I = subtype_begin(), E = subtype_end(); I != E; ++I)
     if (!(*I)->isSized()) 
       return false;
