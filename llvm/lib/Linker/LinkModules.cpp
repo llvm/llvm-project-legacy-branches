@@ -30,6 +30,11 @@ class TypeMapTy : public ValueMapTypeRemapper {
   /// to use.
   DenseMap<Type*, Type*> MappedTypes;
 
+  /// SpeculativeTypes - When checking to see if two subgraphs are isomorphic,
+  /// we speculatively add types to MappedTypes, but keep track of them here in
+  /// case we need to roll back.
+  SmallVector<Type*, 16> SpeculativeTypes;
+  
   /// DefinitionsToResolve - This is a list of non-opaque structs in the source
   /// module that are mapped to an opaque struct in the destination module.
   SmallVector<StructType*, 16> DefinitionsToResolve;
@@ -37,10 +42,8 @@ public:
   
   /// addTypeMapping - Indicate that the specified type in the destination
   /// module is conceptually equivalent to the specified type in the source
-  /// module.  This updates the type mapping for equivalent types, and returns
-  /// false.  If there is a hard type conflict (maybe merging "int x" with
-  /// "extern float x") this returns true.
-  bool addTypeMapping(Type *DstTy, Type *SrcTy);
+  /// module.
+  void addTypeMapping(Type *DstTy, Type *SrcTy);
 
   /// linkDefinedTypeBodies - Produce a body for an opaque type in the dest
   /// module from a type definition in the source module.
@@ -48,7 +51,7 @@ public:
   
   /// get - Return the mapped type to use for the specified input type from the
   /// source module.
-  Type *get(Type *T);
+  Type *get(Type *SrcTy);
 
   FunctionType *get(FunctionType *T) {return cast<FunctionType>(get((Type*)T));}
 
@@ -59,114 +62,106 @@ private:
     return get(SrcTy);
   }
   
-  bool addTypeMappingRec(Type *DstTy, Type *SrcTy);
+  bool areTypesIsomorphic(Type *DstTy, Type *SrcTy);
 };
 }
 
-bool TypeMapTy::addTypeMapping(Type *DstTy, Type *SrcTy) {
-  Type *&T = MappedTypes[SrcTy];
-  if (T)
-    return T != DstTy;
+void TypeMapTy::addTypeMapping(Type *DstTy, Type *SrcTy) {
+  Type *&Entry = MappedTypes[SrcTy];
+  if (Entry) return;
   
   if (DstTy == SrcTy) {
-    T = DstTy;
-    return false;
+    Entry = DstTy;
+    return;
   }
   
-  return addTypeMappingRec(DstTy, SrcTy);
+  // Check to see if these types are recursively isomorphic and establish a
+  // mapping between them if so.
+  if (!areTypesIsomorphic(DstTy, SrcTy)) {
+    // Oops, they aren't isomorphic.  Just discard this request by rolling out
+    // any speculative mappings we've established.
+    for (unsigned i = 0, e = SpeculativeTypes.size(); i != e; ++i)
+      MappedTypes.erase(SpeculativeTypes[i]);
+  }
+  SpeculativeTypes.clear();
 }
 
+/// areTypesIsomorphic - Recursively walk this pair of types, returning true
+/// if they are isomorphic, false if they are not.
+bool TypeMapTy::areTypesIsomorphic(Type *DstTy, Type *SrcTy) {
+  // Two types with differing kinds are clearly not isomorphic.
+  if (DstTy->getTypeID() != SrcTy->getTypeID()) return false;
 
-/// addTypeMappingRec - This is the implementation function for addTypeMapping,
-/// which optimizes out the map lookup in the recursive walk.  
-bool TypeMapTy::addTypeMappingRec(Type *DstTy, Type *SrcTy) {
-  // Two types cannot be resolved together if they are of different primitive
-  // type.  For example, we cannot resolve an int to a float.
-  if (DstTy->getTypeID() != SrcTy->getTypeID()) return true;
+  // If we have an entry in the MappedTypes table, then we have our answer.
+  Type *&Entry = MappedTypes[SrcTy];
+  if (Entry)
+    return Entry == DstTy;
 
-  // Otherwise, resolve the used type used by this derived type.
-  switch (DstTy->getTypeID()) {
-  default:
+  // Two identical types are clearly isomorphic.  Remember this
+  // non-speculatively.
+  if (DstTy == SrcTy) {
+    Entry = DstTy;
     return true;
-  case Type::StructTyID: {
-    StructType *DstST = cast<StructType>(DstTy);
-    StructType *SrcST = cast<StructType>(SrcTy);
-    
-    // If the destination type is opaque, then it should be resolved to the
-    // input type.  If the source type is opaque, then it gets whatever the
-    // destination type is.
-    if (SrcST->isOpaque())
-      break;
-    // If the type is opaque in the dest module but not the src module, then we
-    // should get the new type definition from the src module.
-    if (DstST->isOpaque()) { 
-      DefinitionsToResolve.push_back(SrcST);
-      break;
-    }
-    
-    if (DstST->getNumContainedTypes() != SrcST->getNumContainedTypes() ||
-        DstST->isPacked() != SrcST->isPacked())
-      return true;
-    
-    Type *&Entry = MappedTypes[SrcST];
-    if (Entry)
-      return Entry != DstTy;
-    
-    // Otherwise, we speculatively assume that the structs can be merged, add an
-    // entry to the type map so we don't infinitely recurse.
-    Entry = DstST;
-
-    // Then call addTypeMapping on each entry (not "Rec") so that we get the
-    // caching behavior of the map check for each element.
-    for (unsigned i = 0, e = DstST->getNumContainedTypes(); i != e; ++i) {
-      Type *SE = SrcST->getContainedType(i), *DE = DstST->getContainedType(i);
-      if (addTypeMapping(DE, SE))
-        return true;
-    }
-    return false;
-  }
-  case Type::FunctionTyID: {
-    const FunctionType *DstFT = cast<FunctionType>(DstTy);
-    const FunctionType *SrcFT = cast<FunctionType>(SrcTy);
-    if (DstFT->isVarArg() != SrcFT->isVarArg() ||
-        DstFT->getNumContainedTypes() != SrcFT->getNumContainedTypes())
-      return true;
-
-    for (unsigned i = 0, e = DstFT->getNumContainedTypes(); i != e; ++i) {
-      Type *SE = SrcFT->getContainedType(i), *DE = DstFT->getContainedType(i);
-      if (SE != DE && addTypeMappingRec(DE, SE))
-        return true;
-    }
-    break;
-  }
-  case Type::ArrayTyID: {
-    ArrayType *DAT = cast<ArrayType>(DstTy);
-    ArrayType *SAT = cast<ArrayType>(SrcTy);
-    if (DAT->getNumElements() != SAT->getNumElements() ||
-        addTypeMappingRec(DAT->getElementType(), SAT->getElementType()))
-      return true;
-    break;
-  }
-  case Type::VectorTyID: {
-    VectorType *DVT = cast<VectorType>(DstTy);
-    VectorType *SVT = cast<VectorType>(SrcTy);
-    if (DVT->getNumElements() != SVT->getNumElements() ||
-        addTypeMappingRec(DVT->getElementType(), SVT->getElementType()))
-      return true;
-    break;
-  }
-  case Type::PointerTyID: {
-    PointerType *DstPT = cast<PointerType>(DstTy);
-    PointerType *SrcPT = cast<PointerType>(SrcTy);
-    if (DstPT->getAddressSpace() != SrcPT->getAddressSpace() ||
-        addTypeMappingRec(DstPT->getElementType(), SrcPT->getElementType()))
-      return true;
-    break;
-  }
   }
   
-  MappedTypes[SrcTy] = DstTy;
-  return false;
+  // Okay, we have two types with identical kinds that we haven't seen before.
+
+  // If this is an opaque struct type, special case it.
+  if (StructType *SSTy = dyn_cast<StructType>(SrcTy)) {
+    // Mapping an opaque type to any struct, just keep the dest struct.
+    if (SSTy->isOpaque()) {
+      Entry = DstTy;
+      SpeculativeTypes.push_back(SrcTy);
+      return true;
+    }
+
+    // Mapping a non-opaque source type to an opaque dest.  Keep the dest, but
+    // fill it in later.  This doesn't need to be speculative.
+    if (cast<StructType>(DstTy)->isOpaque()) {
+      Entry = DstTy;
+      DefinitionsToResolve.push_back(SSTy);
+      return true;
+    }
+  }
+  
+  // If the number of subtypes disagree between the two types, then we fail.
+  if (SrcTy->getNumContainedTypes() != DstTy->getNumContainedTypes())
+    return false;
+  
+  // Fail if any of the extra properties (e.g. array size) of the type disagree.
+  if (isa<IntegerType>(DstTy))
+    return false;  // bitwidth disagrees.
+  if (PointerType *PT = dyn_cast<PointerType>(DstTy)) {
+    if (PT->getAddressSpace() != cast<PointerType>(SrcTy)->getAddressSpace())
+      return false;
+  } else if (FunctionType *FT = dyn_cast<FunctionType>(DstTy)) {
+    if (FT->isVarArg() != cast<FunctionType>(SrcTy)->isVarArg())
+      return false;
+  } else if (StructType *DSTy = dyn_cast<StructType>(DstTy)) {
+    StructType *SSTy = cast<StructType>(SrcTy);
+    if (DSTy->isAnonymous() != SSTy->isAnonymous() ||
+        DSTy->isPacked() != SSTy->isPacked())
+      return false;
+  } else if (ArrayType *DATy = dyn_cast<ArrayType>(DstTy)) {
+    if (DATy->getNumElements() != cast<ArrayType>(SrcTy)->getNumElements())
+      return false;
+  } else if (VectorType *DVTy = dyn_cast<VectorType>(DstTy)) {
+    if (DVTy->getNumElements() != cast<ArrayType>(SrcTy)->getNumElements())
+      return false;
+  }
+
+  // Otherwise, we speculate that these two types will line up and recursively
+  // check the subelements.
+  Entry = DstTy;
+  SpeculativeTypes.push_back(SrcTy);
+
+  for (unsigned i = 0, e = SrcTy->getNumContainedTypes(); i != e; ++i)
+    if (!areTypesIsomorphic(DstTy->getContainedType(i),
+                            SrcTy->getContainedType(i)))
+      return false;
+  
+  // If everything seems to have lined up, then everything is great.
+  return true;
 }
 
 /// linkDefinedTypeBodies - Produce a body for an opaque type in the dest
