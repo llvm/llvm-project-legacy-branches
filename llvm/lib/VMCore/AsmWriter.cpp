@@ -1973,7 +1973,15 @@ void Type::print(raw_ostream &OS) const {
     OS << "<null Type>";
     return;
   }
-  TypePrinting().print(const_cast<Type*>(this), OS);
+  TypePrinting TP;
+  TP.print(const_cast<Type*>(this), OS);
+  
+  // If the type is a named struct type, print the body as well.
+  if (StructType *STy = dyn_cast<StructType>(const_cast<Type*>(this)))
+    if (!STy->isAnonymous()) {
+      OS << " = type ";
+      TP.printStructBody(STy, OS);
+    }
 }
 
 void Value::print(raw_ostream &ROS, AssemblyAnnotationWriter *AAW) const {
