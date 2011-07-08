@@ -42,6 +42,7 @@ char TargetData::ID = 0;
 //===----------------------------------------------------------------------===//
 
 StructLayout::StructLayout(const StructType *ST, const TargetData &TD) {
+  assert(!ST->isOpaque() && "Cannot get layout of opaque structs");
   StructAlignment = 0;
   StructSize = 0;
   NumElements = ST->getNumElements();
