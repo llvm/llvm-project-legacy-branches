@@ -1428,6 +1428,8 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
         SLabel = FunctionEndSym;
       else {
         const MachineInstr *End = HI[1];
+        DEBUG(dbgs() << "DotDebugLoc Pair:\n" 
+              << "\t" << *Begin << "\t" << *End << "\n");
         if (End->isDebugValue())
           SLabel = getLabelBeforeInsn(End);
         else {
@@ -1846,8 +1848,6 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
 
   assert(UserVariables.empty() && DbgValues.empty() && "Maps weren't cleaned");
 
-  /// ProcessedArgs - Collection of arguments already processed.
-  SmallPtrSet<const MDNode *, 8> ProcessedArgs;
   const TargetRegisterInfo *TRI = Asm->TM.getRegisterInfo();
   /// LiveUserVar - Map physreg numbers to the MDNode they contain.
   std::vector<const MDNode*> LiveUserVar(TRI->getNumRegs());
@@ -1887,8 +1887,12 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
           if (Prev->isDebugValue()) {
             // Coalesce identical entries at the end of History.
             if (History.size() >= 2 &&
-                Prev->isIdenticalTo(History[History.size() - 2]))
+                Prev->isIdenticalTo(History[History.size() - 2])) {
+              DEBUG(dbgs() << "Coalesce identical DBG_VALUE entries:\n"
+                    << "\t" << *Prev 
+                    << "\t" << *History[History.size() - 2] << "\n");
               History.pop_back();
+            }
 
             // Terminate old register assignments that don't reach MI;
             MachineFunction::const_iterator PrevMBB = Prev->getParent();
@@ -1898,9 +1902,12 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
               // its basic block.
               MachineBasicBlock::const_iterator LastMI =
                 PrevMBB->getLastNonDebugInstr();
-              if (LastMI == PrevMBB->end())
+              if (LastMI == PrevMBB->end()) {
                 // Drop DBG_VALUE for empty range.
+                DEBUG(dbgs() << "Drop DBG_VALUE for empty range:\n"
+                      << "\t" << *Prev << "\n");
                 History.pop_back();
+              }
               else {
                 // Terminate after LastMI.
                 History.push_back(LastMI);

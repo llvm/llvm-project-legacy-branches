@@ -44,9 +44,9 @@ class BitcodeReaderValueList {
   /// number that holds the resolved value.
   typedef std::vector<std::pair<Constant*, unsigned> > ResolveConstantsTy;
   ResolveConstantsTy ResolveConstants;
-  LLVMContext& Context;
+  LLVMContext &Context;
 public:
-  BitcodeReaderValueList(LLVMContext& C) : Context(C) {}
+  BitcodeReaderValueList(LLVMContext &C) : Context(C) {}
   ~BitcodeReaderValueList() {
     assert(ResolveConstants.empty() && "Constants not resolved?");
   }
@@ -213,10 +213,9 @@ private:
   Type *getTypeByID(unsigned ID);
   Type *getTypeByIDOrNull(unsigned ID);
   Value *getFnValueByID(unsigned ID, const Type *Ty) {
-    if (Ty == Type::getMetadataTy(Context))
+    if (Ty && Ty->isMetadataTy())
       return MDValueList.getValueFwdRef(ID);
-    else
-      return ValueList.getValueFwdRef(ID, Ty);
+    return ValueList.getValueFwdRef(ID, Ty);
   }
   BasicBlock *getBasicBlock(unsigned ID) const {
     if (ID >= FunctionBBs.size()) return 0; // Invalid ID

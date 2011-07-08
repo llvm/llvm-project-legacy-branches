@@ -654,7 +654,7 @@ void ARMAsmPrinter::emitAttributes() {
   }
 
   /* TODO: ARMBuildAttrs::Allowed is not completely accurate,
-   * since NEON can have 1 (allowed) or 2 (fused MAC operations) */
+   * since NEON can have 1 (allowed) or 2 (MAC operations) */
   if (Subtarget->hasNEON()) {
     AttrEmitter->EmitAttribute(ARMBuildAttrs::Advanced_SIMD_arch,
                                ARMBuildAttrs::Allowed);
@@ -1954,11 +1954,10 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 //===----------------------------------------------------------------------===//
 
 static MCInstPrinter *createARMMCInstPrinter(const Target &T,
-                                             TargetMachine &TM,
                                              unsigned SyntaxVariant,
                                              const MCAsmInfo &MAI) {
   if (SyntaxVariant == 0)
-    return new ARMInstPrinter(TM, MAI);
+    return new ARMInstPrinter(MAI);
   return 0;
 }
 

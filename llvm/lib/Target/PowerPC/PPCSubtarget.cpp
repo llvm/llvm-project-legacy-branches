@@ -17,9 +17,10 @@
 #include "llvm/Target/TargetMachine.h"
 #include <cstdlib>
 
-#define GET_SUBTARGETINFO_CTOR
+#define GET_SUBTARGETINFO_ENUM
 #define GET_SUBTARGETINFO_MC_DESC
 #define GET_SUBTARGETINFO_TARGET_DESC
+#define GET_SUBTARGETINFO_CTOR
 #include "PPCGenSubtargetInfo.inc"
 
 using namespace llvm;
@@ -64,7 +65,7 @@ static const char *GetCurrentPowerPCCPU() {
 
 PPCSubtarget::PPCSubtarget(const std::string &TT, const std::string &CPU,
                            const std::string &FS, bool is64Bit)
-  : PPCGenSubtargetInfo()
+  : PPCGenSubtargetInfo(TT, CPU, FS)
   , StackAlignment(16)
   , DarwinDirective(PPC::DIR_NONE)
   , IsGigaProcessor(false)
@@ -88,7 +89,7 @@ PPCSubtarget::PPCSubtarget(const std::string &TT, const std::string &CPU,
 #endif
 
   // Parse features string.
-  ParseSubtargetFeatures(FS, CPUName);
+  ParseSubtargetFeatures(CPUName, FS);
 
   // Initialize scheduling itinerary for the specified CPU.
   InstrItins = getInstrItineraryForCPU(CPUName);

@@ -117,7 +117,7 @@ error_code COFFObjectFile::getSymbolNext(DataRefImpl Symb,
 error_code COFFObjectFile::getSymbolAddress(DataRefImpl Symb,
                                             uint64_t &Result) const {
   const coff_symbol *symb = toSymb(Symb);
-  const coff_section *Section;
+  const coff_section *Section = NULL;
   if (error_code ec = getSection(symb->SectionNumber, Section))
     return ec;
   char Type;
@@ -138,7 +138,7 @@ error_code COFFObjectFile::getSymbolSize(DataRefImpl Symb,
   //        in the same section as this symbol, and looking for either the next
   //        symbol, or the end of the section.
   const coff_symbol *symb = toSymb(Symb);
-  const coff_section *Section;
+  const coff_section *Section = NULL;
   if (error_code ec = getSection(symb->SectionNumber, Section))
     return ec;
   char Type;
@@ -171,7 +171,7 @@ error_code COFFObjectFile::getSymbolNMTypeChar(DataRefImpl Symb,
 
   uint32_t Characteristics = 0;
   if (symb->SectionNumber > 0) {
-    const coff_section *Section;
+    const coff_section *Section = NULL;
     if (error_code ec = getSection(symb->SectionNumber, Section))
       return ec;
     Characteristics = Section->Characteristics;
@@ -309,8 +309,7 @@ COFFObjectFile::COFFObjectFile(MemoryBuffer *Object, error_code &ec)
     if (!checkSize(Data, ec, 0x3c + 8)) return;
     HeaderStart += *reinterpret_cast<const ulittle32_t *>(base() + 0x3c);
     // Check the PE header. ("PE\0\0")
-    if (StringRef(reinterpret_cast<const char *>(base() + HeaderStart), 4)
-        != "PE\0\0") {
+    if (std::memcmp(base() + HeaderStart, "PE\0\0", 4) != 0) {
       ec = object_error::parse_failed;
       return;
     }

@@ -9067,10 +9067,11 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) const {
 SDValue X86TargetLowering::LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const{
   DebugLoc dl = Op.getDebugLoc();
 
-  if (!Subtarget->hasSSE2()) {
+  // Go ahead and emit the fence on x86-64 even if we asked for no-sse2.
+  // There isn't any reason to disable it if the target processor supports it.
+  if (!Subtarget->hasSSE2() && !Subtarget->is64Bit()) {
     SDValue Chain = Op.getOperand(0);
-    SDValue Zero = DAG.getConstant(0,
-                                   Subtarget->is64Bit() ? MVT::i64 : MVT::i32);
+    SDValue Zero = DAG.getConstant(0, MVT::i32);
     SDValue Ops[] = {
       DAG.getRegister(X86::ESP, MVT::i32), // Base
       DAG.getTargetConstant(1, MVT::i8),   // Scale
@@ -12592,6 +12593,7 @@ X86TargetLowering::getConstraintType(const std::string &Constraint) const {
     case 'y':
     case 'x':
     case 'Y':
+    case 'l':
       return C_RegisterClass;
     case 'a':
     case 'b':
@@ -12889,19 +12891,19 @@ X86TargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
       // in the normal allocation?
     case 'q':   // GENERAL_REGS in 64-bit mode, Q_REGS in 32-bit mode.
       if (Subtarget->is64Bit()) {
-	if (VT == MVT::i32)
+	if (VT == MVT::i32 || VT == MVT::f32)
 	  return std::make_pair(0U, X86::GR32RegisterClass);
 	else if (VT == MVT::i16)
 	  return std::make_pair(0U, X86::GR16RegisterClass);
 	else if (VT == MVT::i8)
 	  return std::make_pair(0U, X86::GR8RegisterClass);
-	else if (VT == MVT::i64)
+	else if (VT == MVT::i64 || VT == MVT::f64)
 	  return std::make_pair(0U, X86::GR64RegisterClass);
 	break;
       }
       // 32-bit fallthrough
     case 'Q':   // Q_REGS
-      if (VT == MVT::i32)
+      if (VT == MVT::i32 || VT == MVT::f32)
 	return std::make_pair(0U, X86::GR32_ABCDRegisterClass);
       else if (VT == MVT::i16)
 	return std::make_pair(0U, X86::GR16_ABCDRegisterClass);

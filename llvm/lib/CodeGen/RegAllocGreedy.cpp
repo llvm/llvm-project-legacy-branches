@@ -649,8 +649,6 @@ void RAGreedy::growRegion(GlobalSplitCandidate &Cand,
 
   for (;;) {
     ArrayRef<unsigned> NewBundles = SpillPlacer->getRecentPositive();
-    if (NewBundles.empty())
-      break;
     // Find new through blocks in the periphery of PrefRegBundles.
     for (int i = 0, e = NewBundles.size(); i != e; ++i) {
       unsigned Bundle = NewBundles[i];
@@ -670,12 +668,12 @@ void RAGreedy::growRegion(GlobalSplitCandidate &Cand,
       }
     }
     // Any new blocks to add?
-    if (ActiveBlocks.size() > AddedTo) {
-      ArrayRef<unsigned> Add(&ActiveBlocks[AddedTo],
-                             ActiveBlocks.size() - AddedTo);
-      addThroughConstraints(Intf, Add);
-      AddedTo = ActiveBlocks.size();
-    }
+    if (ActiveBlocks.size() == AddedTo)
+      break;
+    addThroughConstraints(Intf,
+                          ArrayRef<unsigned>(ActiveBlocks).slice(AddedTo));
+    AddedTo = ActiveBlocks.size();
+
     // Perhaps iterating can enable more bundles?
     SpillPlacer->iterate();
   }
@@ -812,9 +810,9 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg,
     tie(Start, Stop) = Indexes->getMBBRange(BI.MBB);
     Intf.moveToBlock(BI.MBB->getNumber());
     DEBUG(dbgs() << "EB#" << Bundles->getBundle(BI.MBB->getNumber(), 0)
-                 << (RegIn ? " => " : " -- ")
+                 << (BI.LiveIn ? (RegIn ? " => " : " -> ") : "    ")
                  << "BB#" << BI.MBB->getNumber()
-                 << (RegOut ? " => " : " -- ")
+                 << (BI.LiveOut ? (RegOut ? " => " : " -> ") : "    ")
                  << " EB#" << Bundles->getBundle(BI.MBB->getNumber(), 1)
                  << " [" << Start << ';'
                  << SA->getLastSplitPoint(BI.MBB->getNumber()) << '-' << Stop
@@ -958,7 +956,8 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg,
     //
     //                 ~    Interference after last use.
     //     |---o---o--o|    Live-out on stack, late last use.
-    //     =========____    Copy to stack after LSP, overlap MainIntv.
+    //     ============     Copy to stack after LSP, overlap MainIntv.
+    //            \_____    Stack interval is live-out.
     //
     if (!RegOut && Intf.first() > BI.LastUse.getBoundaryIndex()) {
       assert(RegIn && "Stack-in, stack-out should already be handled");
@@ -998,8 +997,8 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg,
     // The interference is overlapping somewhere we wanted to use MainIntv. That
     // means we need to create a local interval that can be allocated a
     // different register.
-    DEBUG(dbgs() << ", creating local interval.\n");
     unsigned LocalIntv = SE->openIntv();
+    DEBUG(dbgs() << ", creating local interval " << LocalIntv << ".\n");
 
     // We may be creating copies directly between MainIntv and LocalIntv,
     // bypassing the stack interval. When we do that, we should never use the
@@ -1062,7 +1061,7 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg,
       //     |---o--    Live-in in MainIntv.
       //     ====---    Switch to LocalIntv before interference.
       //
-      SlotIndex Switch = SE->enterIntvBefore(Intf.first());
+      SlotIndex Switch = SE->enterIntvBefore(std::min(Pos, Intf.first()));
       assert(Switch <= Intf.first() && "Expected to avoid interference");
       SE->useIntv(Switch, Pos);
       SE->selectIntv(MainIntv);
@@ -1080,7 +1079,7 @@ void RAGreedy::splitAroundRegion(LiveInterval &VirtReg,
       //     |   o--    Defined in block.
       //         ---    Begin LocalIntv at first use.
       //
-      SlotIndex Switch = SE->enterIntvBefore(BI.FirstUse);
+      SlotIndex Switch = SE->enterIntvBefore(std::min(Pos, BI.FirstUse));
       SE->useIntv(Switch, Pos);
     }
   }

@@ -343,7 +343,7 @@ static int AssembleInput(const char *ProgName) {
   // FIXME: There is a bit of code duplication with addPassesToEmitFile.
   if (FileType == OFT_AssemblyFile) {
     MCInstPrinter *IP =
-      TheTarget->createMCInstPrinter(*TM, OutputAsmVariant, *MAI);
+      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI);
     MCCodeEmitter *CE = 0;
     TargetAsmBackend *TAB = 0;
     if (ShowEncoding) {
@@ -371,7 +371,8 @@ static int AssembleInput(const char *ProgName) {
 
   OwningPtr<MCAsmParser> Parser(createMCAsmParser(*TheTarget, SrcMgr, Ctx,
                                                    *Str.get(), *MAI));
-  OwningPtr<TargetAsmParser> TAP(TheTarget->createAsmParser(*Parser, *TM));
+  OwningPtr<TargetAsmParser>
+    TAP(TheTarget->createAsmParser(TripleName, MCPU, FeaturesStr, *Parser));
   if (!TAP) {
     errs() << ProgName
            << ": error: this target does not support assembly parsing.\n";
@@ -426,7 +427,7 @@ static int DisassembleInput(const char *ProgName, bool Enhanced) {
       return 1;
     }
 
-    Res = Disassembler::disassemble(*TheTarget, *TM, TripleName,
+    Res = Disassembler::disassemble(*TheTarget, TripleName,
                                     *Buffer.take(), Out->os());
   }
 
