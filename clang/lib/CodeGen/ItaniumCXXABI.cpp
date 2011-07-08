@@ -42,7 +42,7 @@ protected:
   llvm::IntegerType *getPtrDiffTy() {
     if (!PtrDiffTy) {
       QualType T = getContext().getPointerDiffType();
-      llvm::Type *Ty = CGM.getTypes().ConvertTypeRecursive(T);
+      llvm::Type *Ty = CGM.getTypes().ConvertType(T);
       PtrDiffTy = cast<llvm::IntegerType>(Ty);
     }
     return PtrDiffTy;

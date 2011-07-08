@@ -23,11 +23,10 @@
 namespace llvm {
   class FunctionType;
   class Module;
-  class OpaqueType;
-  class PATypeHolder;
   class TargetData;
   class Type;
   class LLVMContext;
+  class StructType;
 }
 
 namespace clang {
@@ -65,18 +64,11 @@ class CodeGenTypes {
   CGCXXABI &TheCXXABI;
   const CodeGenOptions &CodeGenOpts;
 
-  llvm::SmallVector<std::pair<QualType,
-                              llvm::OpaqueType *>, 8>  PointersToResolve;
-
-  llvm::DenseMap<const Type*, llvm::PATypeHolder> TagDeclTypes;
-
-  llvm::DenseMap<const Type*, llvm::PATypeHolder> FunctionTypes;
-
   /// The opaque type map for Objective-C interfaces. All direct
   /// manipulation is done by the runtime interfaces, which are
   /// responsible for coercing to the appropriate type; these opaque
   /// types are never refined.
-  llvm::DenseMap<const ObjCInterfaceType*, const llvm::Type *> InterfaceTypes;
+  llvm::DenseMap<const ObjCInterfaceType*, llvm::Type *> InterfaceTypes;
 
   /// CGRecordLayouts - This maps llvm struct type with corresponding
   /// record layout info.
@@ -86,22 +78,15 @@ class CodeGenTypes {
   llvm::FoldingSet<CGFunctionInfo> FunctionInfos;
 
 private:
-  /// TypeCache - This map keeps cache of llvm::Types (through PATypeHolder)
-  /// and maps llvm::Types to corresponding clang::Type. llvm::PATypeHolder is
-  /// used instead of llvm::Type because it allows us to bypass potential
-  /// dangling type pointers due to type refinement on llvm side.
-  llvm::DenseMap<const Type *, llvm::PATypeHolder> TypeCache;
+  /// TypeCache - This map keeps cache of llvm::Types
+  /// and maps llvm::Types to corresponding clang::Type.
+  llvm::DenseMap<const Type *, llvm::Type *> TypeCache;
 
   /// ConvertNewType - Convert type T into a llvm::Type. Do not use this
   /// method directly because it does not do any type caching. This method
   /// is available only for ConvertType(). CovertType() is preferred
   /// interface to convert type T into a llvm::Type.
-  const llvm::Type *ConvertNewType(QualType T);
-
-  /// HandleLateResolvedPointers - For top-level ConvertType calls, this handles
-  /// pointers that are referenced but have not been converted yet.  This is
-  /// used to handle cyclic structures properly.
-  void HandleLateResolvedPointers();
+  llvm::Type *ConvertNewType(QualType T);
 
   /// addRecordTypeName - Compute a name from the given record decl with an
   /// optional suffix and name the given LLVM type using it.
@@ -123,24 +108,19 @@ public:
   llvm::LLVMContext &getLLVMContext() { return TheModule.getContext(); }
 
   /// ConvertType - Convert type T into a llvm::Type.
-  llvm::Type *ConvertType(QualType T, bool IsRecursive = false);
-  llvm::Type *ConvertTypeRecursive(QualType T);
+  llvm::Type *ConvertType(QualType T);
 
   /// ConvertTypeForMem - Convert type T into a llvm::Type.  This differs from
   /// ConvertType in that it is used to convert to the memory representation for
   /// a type.  For example, the scalar representation for _Bool is i1, but the
   /// memory representation is usually i8 or i32, depending on the target.
-  llvm::Type *ConvertTypeForMem(QualType T, bool IsRecursive = false);
-  llvm::Type *ConvertTypeForMemRecursive(QualType T) {
-    return ConvertTypeForMem(T, true);
-  }
+  llvm::Type *ConvertTypeForMem(QualType T);
 
   /// GetFunctionType - Get the LLVM function type for \arg Info.
-  const llvm::FunctionType *GetFunctionType(const CGFunctionInfo &Info,
-                                            bool IsVariadic,
-                                            bool IsRecursive = false);
+  llvm::FunctionType *GetFunctionType(const CGFunctionInfo &Info,
+                                      bool IsVariadic);
 
-  const llvm::FunctionType *GetFunctionType(GlobalDecl GD);
+  llvm::FunctionType *GetFunctionType(GlobalDecl GD);
 
   /// VerifyFuncTypeComplete - Utility to check whether a function type can
   /// be converted to an LLVM type (i.e. doesn't depend on an incomplete tag
@@ -184,10 +164,8 @@ public:
                            Ty->getExtInfo());
   }
 
-  const CGFunctionInfo &getFunctionInfo(CanQual<FunctionProtoType> Ty,
-                                        bool IsRecursive = false);
-  const CGFunctionInfo &getFunctionInfo(CanQual<FunctionNoProtoType> Ty,
-                                        bool IsRecursive = false);
+  const CGFunctionInfo &getFunctionInfo(CanQual<FunctionProtoType> Ty);
+  const CGFunctionInfo &getFunctionInfo(CanQual<FunctionNoProtoType> Ty);
 
   /// getFunctionInfo - Get the function info for a member function of
   /// the given type.  This is used for calls through member function
@@ -210,23 +188,21 @@ public:
   /// \param ArgTys - must all actually be canonical as params
   const CGFunctionInfo &getFunctionInfo(CanQualType RetTy,
                                const llvm::SmallVectorImpl<CanQualType> &ArgTys,
-                                        const FunctionType::ExtInfo &Info,
-                                        bool IsRecursive = false);
+                                        const FunctionType::ExtInfo &Info);
 
   /// \brief Compute a new LLVM record layout object for the given record.
-  CGRecordLayout *ComputeRecordLayout(const RecordDecl *D);
+  CGRecordLayout *ComputeRecordLayout(const RecordDecl *D,
+                                      llvm::StructType *Ty);
 
 public:  // These are internal details of CGT that shouldn't be used externally.
-  /// ConvertTagDeclType - Lay out a tagged decl type like struct or union or
-  /// enum.
-  const llvm::Type *ConvertTagDeclType(const TagDecl *TD);
+  /// ConvertRecordDeclType - Lay out a tagged decl type like struct or union.
+  llvm::Type *ConvertRecordDeclType(const RecordDecl *TD);
 
   /// GetExpandedTypes - Expand the type \arg Ty into the LLVM
   /// argument types it would be passed as on the provided vector \arg
   /// ArgTys. See ABIArgInfo::Expand.
   void GetExpandedTypes(QualType type,
-                        llvm::SmallVectorImpl<const llvm::Type*> &expanded,
-                        bool isRecursive);
+                        llvm::SmallVectorImpl<llvm::Type*> &expanded);
 
   /// IsZeroInitializable - Return whether a type can be
   /// zero-initialized (in the C++ sense) with an LLVM zeroinitializer.

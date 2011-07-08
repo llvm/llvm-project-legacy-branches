@@ -856,9 +856,15 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
     if (Entry->getType()->getElementType() == Ty)
       return Entry;
 
+#if 0
     // Make sure the result is of the correct type.
-    const llvm::Type *PTy = llvm::PointerType::getUnqual(Ty);
+    const llvm::Type *PTy =
+      llvm::PointerType::getUnqual(Ty->isVoidTy() ? Int8Ty : Ty);
     return llvm::ConstantExpr::getBitCast(Entry, PTy);
+#else
+    abort();
+    return Entry;
+#endif
   }
 
   // This function doesn't have a complete type (for example, the return
@@ -928,7 +934,7 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
     return F;
   }
 
-  const llvm::Type *PTy = llvm::PointerType::getUnqual(Ty);
+  llvm::Type *PTy = llvm::PointerType::getUnqual(Ty);
   return llvm::ConstantExpr::getBitCast(F, PTy);
 }
 
@@ -1442,7 +1448,7 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
   bool variadic = false;
   if (const FunctionProtoType *fpt = D->getType()->getAs<FunctionProtoType>())
     variadic = fpt->isVariadic();
-  const llvm::FunctionType *Ty = getTypes().GetFunctionType(FI, variadic, false);
+  const llvm::FunctionType *Ty = getTypes().GetFunctionType(FI, variadic);
 
   // Get or create the prototype for the function.
   llvm::Constant *Entry = GetAddrOfFunction(GD, Ty);
@@ -1710,6 +1716,13 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   }
 
   QualType CFTy = getContext().getCFConstantStringType();
+
+#if 1
+  abort();
+#else
+    // Make sure the class has been laid out.
+  UpdateCompletedType(cast<RecordType>(CFTy.getTypePtr())->getDecl());
+#endif
 
   const llvm::StructType *STy =
     cast<llvm::StructType>(getTypes().ConvertType(CFTy));

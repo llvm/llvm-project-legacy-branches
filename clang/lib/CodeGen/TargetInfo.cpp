@@ -699,7 +699,7 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty) const {
                                                             Size));
     }
 
-    llvm::Type *IRType = CGT.ConvertTypeRecursive(Ty);
+    llvm::Type *IRType = CGT.ConvertType(Ty);
     if (UseX86_MMXType(IRType)) {
       ABIArgInfo AAI = ABIArgInfo::getDirect(IRType);
       AAI.setCoerceToType(llvm::Type::getX86_MMXTy(getVMContext()));
@@ -1325,7 +1325,7 @@ ABIArgInfo X86_64ABIInfo::getIndirectResult(QualType Ty) const {
 /// full vector XMM register.  Pick an LLVM IR type that will be passed as a
 /// vector register.
 llvm::Type *X86_64ABIInfo::Get16ByteVectorType(QualType Ty) const {
-  llvm::Type *IRType = CGT.ConvertTypeRecursive(Ty);
+  llvm::Type *IRType = CGT.ConvertType(Ty);
 
   // Wrapper structs that just contain vectors are passed just like vectors,
   // strip them off if present.
@@ -1637,8 +1637,7 @@ classifyReturnType(QualType RetTy) const {
     // AMD64-ABI 3.2.3p4: Rule 3. If the class is INTEGER, the next
     // available register of the sequence %rax, %rdx is used.
   case Integer:
-    ResType = GetINTEGERTypeAtOffset(CGT.ConvertTypeRecursive(RetTy), 0,
-                                     RetTy, 0);
+    ResType = GetINTEGERTypeAtOffset(CGT.ConvertType(RetTy), 0, RetTy, 0);
 
     // If we have a sign or zero extended integer, make sure to return Extend
     // so that the parameter gets the right LLVM IR attributes.
@@ -1656,7 +1655,7 @@ classifyReturnType(QualType RetTy) const {
     // AMD64-ABI 3.2.3p4: Rule 4. If the class is SSE, the next
     // available SSE register of the sequence %xmm0, %xmm1 is used.
   case SSE:
-    ResType = GetSSETypeAtOffset(CGT.ConvertTypeRecursive(RetTy), 0, RetTy, 0);
+    ResType = GetSSETypeAtOffset(CGT.ConvertType(RetTy), 0, RetTy, 0);
     break;
 
     // AMD64-ABI 3.2.3p4: Rule 6. If the class is X87, the value is
@@ -1689,13 +1688,12 @@ classifyReturnType(QualType RetTy) const {
     break;
 
   case Integer:
-    HighPart = GetINTEGERTypeAtOffset(CGT.ConvertTypeRecursive(RetTy),
-                                      8, RetTy, 8);
+    HighPart = GetINTEGERTypeAtOffset(CGT.ConvertType(RetTy), 8, RetTy, 8);
     if (Lo == NoClass)  // Return HighPart at offset 8 in memory.
       return ABIArgInfo::getDirect(HighPart, 8);
     break;
   case SSE:
-    HighPart = GetSSETypeAtOffset(CGT.ConvertTypeRecursive(RetTy), 8, RetTy, 8);
+    HighPart = GetSSETypeAtOffset(CGT.ConvertType(RetTy), 8, RetTy, 8);
     if (Lo == NoClass)  // Return HighPart at offset 8 in memory.
       return ABIArgInfo::getDirect(HighPart, 8);
     break;
@@ -1717,8 +1715,7 @@ classifyReturnType(QualType RetTy) const {
     // preceded by X87. In such situations we follow gcc and pass the
     // extra bits in an SSE reg.
     if (Lo != X87) {
-      HighPart = GetSSETypeAtOffset(CGT.ConvertTypeRecursive(RetTy),
-                                    8, RetTy, 8);
+      HighPart = GetSSETypeAtOffset(CGT.ConvertType(RetTy), 8, RetTy, 8);
       if (Lo == NoClass)  // Return HighPart at offset 8 in memory.
         return ABIArgInfo::getDirect(HighPart, 8);
     }
@@ -1780,7 +1777,7 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
     ++neededInt;
 
     // Pick an 8-byte type based on the preferred type.
-    ResType = GetINTEGERTypeAtOffset(CGT.ConvertTypeRecursive(Ty), 0, Ty, 0);
+    ResType = GetINTEGERTypeAtOffset(CGT.ConvertType(Ty), 0, Ty, 0);
 
     // If we have a sign or zero extended integer, make sure to return Extend
     // so that the parameter gets the right LLVM IR attributes.
@@ -1800,7 +1797,7 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
     // available SSE register is used, the registers are taken in the
     // order from %xmm0 to %xmm7.
   case SSE: {
-    llvm::Type *IRType = CGT.ConvertTypeRecursive(Ty);
+    llvm::Type *IRType = CGT.ConvertType(Ty);
     ResType = GetSSETypeAtOffset(IRType, 0, Ty, 0);
     ++neededSSE;
     break;
@@ -1823,7 +1820,7 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
   case Integer:
     ++neededInt;
     // Pick an 8-byte type based on the preferred type.
-    HighPart = GetINTEGERTypeAtOffset(CGT.ConvertTypeRecursive(Ty), 8, Ty, 8);
+    HighPart = GetINTEGERTypeAtOffset(CGT.ConvertType(Ty), 8, Ty, 8);
 
     if (Lo == NoClass)  // Pass HighPart at offset 8 in memory.
       return ABIArgInfo::getDirect(HighPart, 8);
@@ -1833,7 +1830,7 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(QualType Ty, unsigned &neededInt,
     // memory), except in situations involving unions.
   case X87Up:
   case SSE:
-    HighPart = GetSSETypeAtOffset(CGT.ConvertTypeRecursive(Ty), 8, Ty, 8);
+    HighPart = GetSSETypeAtOffset(CGT.ConvertType(Ty), 8, Ty, 8);
 
     if (Lo == NoClass)  // Pass HighPart at offset 8 in memory.
       return ABIArgInfo::getDirect(HighPart, 8);

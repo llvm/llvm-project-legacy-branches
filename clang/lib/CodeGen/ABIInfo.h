@@ -68,7 +68,7 @@ namespace clang {
 
   private:
     Kind TheKind;
-    llvm::PATypeHolder TypeData;
+    llvm::Type *TypeData;
     unsigned UIntData;
     bool BoolData0;
     bool BoolData1;

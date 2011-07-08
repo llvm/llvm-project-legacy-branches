@@ -1041,6 +1041,15 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
   // Otherwise, initialize the loop.
   EmitBlock(LoopInitBB);
 
+  
+#if 1
+  abort();
+#else
+  // Make sure StateTy has been laid out.
+  CodeGenTypes &Types = CGM.getTypes();
+  Types.UpdateCompletedType(cast<RecordType>(StateTy.getTypePtr())->getDecl());
+#endif
+
   // Save the initial mutations value.  This is the value at an
   // address that was written into the state object by
   // countByEnumeratingWithState:objects:count:.

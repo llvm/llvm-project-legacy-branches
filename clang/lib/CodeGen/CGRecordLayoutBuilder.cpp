@@ -230,7 +230,7 @@ CGBitFieldInfo CGBitFieldInfo::MakeInfo(CodeGenTypes &Types,
                                uint64_t FieldSize,
                                uint64_t ContainingTypeSizeInBits,
                                unsigned ContainingTypeAlign) {
-  const llvm::Type *Ty = Types.ConvertTypeForMemRecursive(FD->getType());
+  const llvm::Type *Ty = Types.ConvertTypeForMem(FD->getType());
   CharUnits TypeSizeInBytes =
     CharUnits::fromQuantity(Types.getTargetData().getTypeAllocSize(Ty));
   uint64_t TypeSizeInBits = Types.getContext().toBits(TypeSizeInBytes);
@@ -440,7 +440,7 @@ bool CGRecordLayoutBuilder::LayoutField(const FieldDecl *D,
   CharUnits fieldOffsetInBytes
     = Types.getContext().toCharUnitsFromBits(fieldOffset);
 
-  llvm::Type *Ty = Types.ConvertTypeForMemRecursive(D->getType());
+  llvm::Type *Ty = Types.ConvertTypeForMem(D->getType());
   CharUnits typeAlignment = getTypeAlignment(Ty);
 
   // If the type alignment is larger then the struct alignment, we must use
@@ -515,7 +515,7 @@ CGRecordLayoutBuilder::LayoutUnionField(const FieldDecl *Field,
 
   // This is a regular union field.
   Fields[Field] = 0;
-  return Types.ConvertTypeForMemRecursive(Field->getType());
+  return Types.ConvertTypeForMem(Field->getType());
 }
 
 void CGRecordLayoutBuilder::LayoutUnion(const RecordDecl *D) {
@@ -924,14 +924,13 @@ void CGRecordLayoutBuilder::CheckZeroInitializable(QualType T) {
   }
 }
 
-CGRecordLayout *CodeGenTypes::ComputeRecordLayout(const RecordDecl *D) {
+CGRecordLayout *CodeGenTypes::ComputeRecordLayout(const RecordDecl *D,
+                                                  llvm::StructType *Ty) {
   CGRecordLayoutBuilder Builder(*this);
 
   Builder.Layout(D);
 
-  llvm::StructType *Ty = llvm::StructType::get(getLLVMContext(),
-                                               Builder.FieldTypes,
-                                               Builder.Packed);
+  Ty->setBody(Builder.FieldTypes, Builder.Packed);
 
   // If we're in C++, compute the base subobject type.
   llvm::StructType *BaseTy = 0;
