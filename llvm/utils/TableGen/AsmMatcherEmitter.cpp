@@ -1153,7 +1153,7 @@ void AsmMatcherInfo::BuildInfo() {
     assert(FeatureNo < 32 && "Too many subtarget features!");
   }
 
-  StringRef CommentDelimiter = AsmParser->getValueAsString("CommentDelimiter");
+  std::string CommentDelimiter = AsmParser->getValueAsString("CommentDelimiter");
 
   // Parse the instructions; we need to do this first so that we can gather the
   // singleton register classes.
@@ -1825,7 +1825,8 @@ static void EmitComputeAvailableFeatures(AsmMatcherInfo &Info,
     SubtargetFeatureInfo &SFI = *it->second;
 
     OS << "  if (";
-    StringRef Conds = SFI.TheDef->getValueAsString("AssemblerCondString");
+    std::string CondStorage = SFI.TheDef->getValueAsString("AssemblerCondString");
+    StringRef Conds = CondStorage;
     std::pair<StringRef,StringRef> Comma = Conds.split(',');
     bool First = true;
     do {
