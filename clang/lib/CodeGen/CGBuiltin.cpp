@@ -314,7 +314,7 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   }
   case Builtin::BI__builtin_expect: {
     Value *ArgValue = EmitScalarExpr(E->getArg(0));
-    const llvm::Type *ArgType = ArgValue->getType();
+    llvm::Type *ArgType = ArgValue->getType();
 
     Value *FnExpect = CGM.getIntrinsic(Intrinsic::expect, &ArgType, 1);
     Value *ExpectedValue = EmitScalarExpr(E->getArg(1));
@@ -998,7 +998,7 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   case Builtin::BI__builtin_fmal: {
     // Rewrite fma to intrinsic.
     Value *FirstArg = EmitScalarExpr(E->getArg(0));
-    const llvm::Type *ArgType = FirstArg->getType();
+    llvm::Type *ArgType = FirstArg->getType();
     Value *F = CGM.getIntrinsic(Intrinsic::fma, &ArgType, 1);
     return RValue::get(Builder.CreateCall3(F, FirstArg,
                                               EmitScalarExpr(E->getArg(1)),
