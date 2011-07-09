@@ -1200,7 +1200,7 @@ void test38(void) {
   // CHECK-NEXT: call void @objc_release(i8* [[T1]])
 
   // CHECK:    define internal void @__test38_block_invoke_
-  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds [[BYREF_T]]* {{.*}}, i32 0, i32 6
+  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds {{.*}}, i32 0, i32 6
   // CHECK-NEXT: [[T0:%.*]] = load i8** [[SLOT]], align 8
   // CHECK-NEXT: store i8* null, i8** [[SLOT]],
   // CHECK-NEXT: call void @objc_release(i8* [[T0]])
@@ -1276,7 +1276,7 @@ void test40(void) {
   // CHECK-NEXT: call void @objc_destroyWeak(i8** [[T0]])
 
   // CHECK:    define internal void @__test40_block_invoke_
-  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds [[BYREF_T]]* {{%.*}}, i32 0, i32 6
+  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds {{.*}}, i32 0, i32 6
   // CHECK-NEXT: call i8* @objc_storeWeak(i8** [[SLOT]], i8* null)
   // CHECK-NEXT: ret void
 
