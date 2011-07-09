@@ -601,8 +601,6 @@ void CGRecordLayoutBuilder::LayoutBase(const CXXRecordDecl *base,
 
   llvm::StructType *subobjectType = baseLayout.getBaseSubobjectLLVMType();
   AppendField(baseOffset, subobjectType);
-
-  Types.addBaseSubobjectTypeName(base, baseLayout);
 }
 
 void CGRecordLayoutBuilder::LayoutNonVirtualBase(const CXXRecordDecl *base,
@@ -736,13 +734,14 @@ CGRecordLayoutBuilder::ComputeNonVirtualBaseType(const CXXRecordDecl *RD) {
     FieldTypes.push_back(getByteArrayType(NumBytes));
   }
 
-  BaseSubobjectType = llvm::StructType::get(Types.getLLVMContext(),
-                                            FieldTypes, Packed);
+  
+  BaseSubobjectType = llvm::StructType::createNamed(Types.getLLVMContext(), "",
+                                                    FieldTypes, Packed);
+  Types.addRecordTypeName(RD, BaseSubobjectType, ".base");
 
-  if (needsPadding) {
-    // Pull the padding back off.
+  // Pull the padding back off.
+  if (needsPadding)
     FieldTypes.pop_back();
-  }
 
   return true;
 }

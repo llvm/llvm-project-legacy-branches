@@ -44,7 +44,8 @@ CodeGenTypes::~CodeGenTypes() {
     delete &*I++;
 }
 
-void CodeGenTypes::addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
+void CodeGenTypes::addRecordTypeName(const RecordDecl *RD,
+                                     llvm::StructType *Ty,
                                      llvm::StringRef suffix) {
   llvm::SmallString<256> TypeName;
   llvm::raw_svector_ostream OS(TypeName);
@@ -72,12 +73,7 @@ void CodeGenTypes::addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
   if (!suffix.empty())
     OS << suffix;
 
-  // FIXME!
-#if 1
-  abort();
-#else
-  TheModule.addTypeName(OS.str(), Ty);
-#endif
+  Ty->setName(OS.str());
 }
 
 /// ConvertTypeForMem - Convert type T into a llvm::Type.  This differs from
@@ -455,17 +451,6 @@ CodeGenTypes::getCGRecordLayout(const RecordDecl *RD) {
 
   assert(Layout && "Unable to find record layout information for type");
   return *Layout;
-}
-
-void CodeGenTypes::addBaseSubobjectTypeName(const CXXRecordDecl *RD,
-                                            const CGRecordLayout &layout) {
-#if 0
-  llvm::StringRef suffix;
-  if (layout.getBaseSubobjectLLVMType() != layout.getLLVMType())
-    suffix = ".base";
-
-  addRecordTypeName(RD, layout.getBaseSubobjectLLVMType(), suffix);
-#endif
 }
 
 bool CodeGenTypes::isZeroInitializable(QualType T) {
