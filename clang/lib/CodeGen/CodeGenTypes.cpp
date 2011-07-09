@@ -334,7 +334,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     // these.
     llvm::Type *&T = InterfaceTypes[cast<ObjCInterfaceType>(Ty)];
     if (!T)
-      T = llvm::StructType::get(getLLVMContext());
+      T = llvm::StructType::createNamed(getLLVMContext(), "");
     ResultType = T;
     break;
   }
@@ -459,11 +459,13 @@ CodeGenTypes::getCGRecordLayout(const RecordDecl *RD) {
 
 void CodeGenTypes::addBaseSubobjectTypeName(const CXXRecordDecl *RD,
                                             const CGRecordLayout &layout) {
+#if 0
   llvm::StringRef suffix;
   if (layout.getBaseSubobjectLLVMType() != layout.getLLVMType())
     suffix = ".base";
 
   addRecordTypeName(RD, layout.getBaseSubobjectLLVMType(), suffix);
+#endif
 }
 
 bool CodeGenTypes::isZeroInitializable(QualType T) {

@@ -622,7 +622,7 @@ void test22(_Bool cond) {
 int (^test25(int x))(void) {
   // CHECK:    define i32 ()* @test25(
   // CHECK:      [[X:%.*]] = alloca i32,
-  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
   // CHECK-NEXT: store i32 {{%.*}}, i32* [[X]]
   // CHECK:      [[T0:%.*]] = bitcast [[BLOCK_T]]* [[BLOCK]] to i32 ()*
   // CHECK-NEXT: [[T1:%.*]] = bitcast i32 ()* [[T0]] to i8*
@@ -890,7 +890,7 @@ char *helper;
 void test31(id x) {
 // CHECK:    define void @test31(
 // CHECK:      [[X:%.*]] = alloca i8*,
-// CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+// CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
 // CHECK-NEXT: [[PARM:%.*]] = call i8* @objc_retain(i8* {{%.*}})
 // CHECK-NEXT: store i8* [[PARM]], i8** [[X]]
 // CHECK:      [[SLOT:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[BLOCK]], i32 0, i32 5
@@ -1165,7 +1165,7 @@ void test38(void) {
 
   // CHECK:    define void @test38()
   // CHECK:      [[VAR:%.*]] = alloca [[BYREF_T:%.*]],
-  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
   // CHECK:      [[T0:%.*]] = getelementptr inbounds [[BYREF_T]]* [[VAR]], i32 0, i32 2
   // 0x02000000 - has copy/dispose helpers
   // CHECK-NEXT: store i32 33554432, i32* [[T0]]
@@ -1200,7 +1200,7 @@ void test38(void) {
   // CHECK-NEXT: call void @objc_release(i8* [[T1]])
 
   // CHECK:    define internal void @__test38_block_invoke_
-  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds [[BYREF_T]]* {{%.*}}, i32 0, i32 6
+  // CHECK:      [[SLOT:%.*]] = getelementptr inbounds [[BYREF_T]]* {{.*}}, i32 0, i32 6
   // CHECK-NEXT: [[T0:%.*]] = load i8** [[SLOT]], align 8
   // CHECK-NEXT: store i8* null, i8** [[SLOT]],
   // CHECK-NEXT: call void @objc_release(i8* [[T0]])
@@ -1221,7 +1221,7 @@ void test39(void) {
 
   // CHECK:    define void @test39()
   // CHECK:      [[VAR:%.*]] = alloca i8*
-  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
   // CHECK-NEXT: [[T0:%.*]] = call i8* @test39_source()
   // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
   // CHECK-NEXT: store i8* [[T1]], i8** [[VAR]],
@@ -1244,7 +1244,7 @@ void test40(void) {
 
   // CHECK:    define void @test40()
   // CHECK:      [[VAR:%.*]] = alloca [[BYREF_T:%.*]],
-  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
   // CHECK:      [[T0:%.*]] = getelementptr inbounds [[BYREF_T]]* [[VAR]], i32 0, i32 2
   // 0x02000000 - has copy/dispose helpers
   // CHECK-NEXT: store i32 33554432, i32* [[T0]]
@@ -1298,7 +1298,7 @@ void test41(void) {
 
   // CHECK:    define void @test41()
   // CHECK:      [[VAR:%.*]] = alloca i8*,
-  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+  // CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
   // CHECK:      [[T0:%.*]] = call i8* @test41_source()
   // CHECK-NEXT: [[T1:%.*]] = call i8* @objc_retainAutoreleasedReturnValue(i8* [[T0]])
   // CHECK-NEXT: call i8* @objc_initWeak(i8** [[VAR]], i8* [[T1]])
@@ -1335,7 +1335,7 @@ void test41(void) {
 // CHECK:    define internal void @"\01-[Test42 test]"
 // CHECK:      [[SELF:%.*]] = alloca [[TEST42:%.*]]*,
 // CHECK-NEXT: alloca i8*
-// CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:%.*]],
+// CHECK-NEXT: [[BLOCK:%.*]] = alloca [[BLOCK_T:<{.*}>]],
 // CHECK-NEXT: store
 // CHECK-NEXT: store
 // CHECK:      [[T0:%.*]] = getelementptr inbounds [[BLOCK_T]]* [[BLOCK]], i32 0, i32 5
