@@ -361,27 +361,6 @@ def tADDspr : TIt<(outs GPR:$dst), (ins GPR:$lhs, GPR:$rhs), IIC_iALUr,
 //  Control Flow Instructions.
 //
 
-let isReturn = 1, isTerminator = 1, isBarrier = 1 in {
-  def tBX_RET : TI<(outs), (ins), IIC_Br, "bx\tlr",
-                   [(ARMretflag)]>,
-                T1Special<{1,1,0,?}> {
-    // A6.2.3 & A8.6.25
-    let Inst{6-3} = 0b1110; // Rm = lr
-    let Inst{2-0} = 0b000;
-  }
-
-  // Alternative return instruction used by vararg functions.
-  def tBX_RET_vararg : TI<(outs), (ins tGPR:$Rm),
-                          IIC_Br, "bx\t$Rm",
-                          []>,
-                       T1Special<{1,1,0,?}> {
-    // A6.2.3 & A8.6.25
-    bits<4> Rm;
-    let Inst{6-3} = Rm;
-    let Inst{2-0} = 0b000;
-  }
-}
-
 // Indirect branches
 let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
   def tBX : TI<(outs), (ins GPR:$Rm, pred:$p), IIC_Br, "bx${p}\t$Rm", []>,
@@ -391,18 +370,16 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
     let Inst{6-3} = Rm;
     let Inst{2-0} = 0b000;
   }
+}
 
-  def tBRIND : TI<(outs), (ins GPR:$Rm),
-                  IIC_Br,
-                  "mov\tpc, $Rm",
-                  [(brind GPR:$Rm)]>,
-               T1Special<{1,0,?,?}> {
-    // A8.6.97
-    bits<4> Rm;
-    let Inst{7}   = 1;          // <Rd> = Inst{7:2-0} = pc
-    let Inst{6-3} = Rm;
-    let Inst{2-0} = 0b111;
-  }
+let isReturn = 1, isTerminator = 1, isBarrier = 1 in {
+  def tBX_RET : tPseudoExpand<(outs), (ins pred:$p), Size2Bytes, IIC_Br,
+                   [(ARMretflag)], (tBX LR, pred:$p)>;
+
+  // Alternative return instruction used by vararg functions.
+  def tBX_RET_vararg : tPseudoExpand<(outs), (ins tGPR:$Rm, pred:$p),
+                   Size2Bytes, IIC_Br, [],
+                   (tBX GPR:$Rm, pred:$p)>;
 }
 
 // All calls clobber the non-callee saved registers. SP is marked as a use to
@@ -570,6 +547,33 @@ let isBranch = 1, isTerminator = 1 in {
     let Inst{2-0} = Rn;
   }
 }
+
+// Tail calls
+let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
+  // Darwin versions.
+  let Defs = [R0, R1, R2, R3, R9, R12, QQQQ0, QQQQ2, QQQQ3, PC],
+      Uses = [SP] in {
+    // tTAILJMPd: Darwin version uses a Thumb2 branch (no Thumb1 tail calls
+    // on Darwin), so it's in ARMInstrThumb2.td.
+    def tTAILJMPr : tPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br, [],
+                     (tBX GPR:$dst, (ops 14, zero_reg))>,
+                     Requires<[IsThumb, IsDarwin]>;
+  }
+  // Non-Darwin versions (the difference is R9).
+  let Defs = [R0, R1, R2, R3, R12, QQQQ0, QQQQ2, QQQQ3, PC],
+      Uses = [SP] in {
+    def tTAILJMPdND : tPseudoExpand<(outs), (ins t_brtarget:$dst, variable_ops),
+                   Size4Bytes, IIC_Br, [],
+                   (tB t_brtarget:$dst)>,
+                 Requires<[IsThumb, IsNotDarwin]>;
+    def tTAILJMPrND : tPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
+                     Size4Bytes, IIC_Br, [],
+                     (tBX GPR:$dst, (ops 14, zero_reg))>,
+                     Requires<[IsThumb, IsNotDarwin]>;
+  }
+}
+
 
 // A8.6.218 Supervisor Call (Software Interrupt) -- for disassembly only
 // A8.6.16 B: Encoding T1
@@ -1480,3 +1484,9 @@ def tPOP_RET : tPseudoExpand<(outs), (ins pred:$p, reglist:$regs, variable_ops),
                            Size2Bytes, IIC_iPop_Br, [],
                            (tPOP pred:$p, reglist:$regs)>;
 
+// Indirect branch using "mov pc, $Rm"
+let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
+  def tBRIND : tPseudoExpand<(outs), (ins GPR:$Rm, pred:$p),
+                  Size2Bytes, IIC_Br, [(brind GPR:$Rm)],
+                  (tMOVr PC, GPR:$Rm, pred:$p)>;
+}

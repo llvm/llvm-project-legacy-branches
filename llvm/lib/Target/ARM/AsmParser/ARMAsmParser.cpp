@@ -25,6 +25,7 @@
 #include "llvm/Target/TargetAsmParser.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -40,8 +41,8 @@ namespace {
 class ARMOperand;
 
 class ARMAsmParser : public TargetAsmParser {
+  MCSubtargetInfo &STI;
   MCAsmParser &Parser;
-  const MCSubtargetInfo *STI;
 
   MCAsmParser &getParser() const { return Parser; }
   MCAsmLexer &getLexer() const { return Parser.getLexer(); }
@@ -86,11 +87,14 @@ class ARMAsmParser : public TargetAsmParser {
 
   bool isThumb() const {
     // FIXME: Can tablegen auto-generate this?
-    return (STI->getFeatureBits() & ARM::ModeThumb) != 0;
+    return (STI.getFeatureBits() & ARM::ModeThumb) != 0;
   }
-
   bool isThumbOne() const {
-    return isThumb() && (STI->getFeatureBits() & ARM::FeatureThumb2) == 0;
+    return isThumb() && (STI.getFeatureBits() & ARM::FeatureThumb2) == 0;
+  }
+  void SwitchMode() {
+    unsigned FB = ComputeAvailableFeatures(STI.ToggleFeature(ARM::ModeThumb));
+    setAvailableFeatures(FB);
   }
 
   /// @name Auto-generated Match Functions
@@ -127,13 +131,12 @@ class ARMAsmParser : public TargetAsmParser {
                                   const SmallVectorImpl<MCParsedAsmOperand*> &);
 
 public:
-  ARMAsmParser(StringRef TT, StringRef CPU, StringRef FS, MCAsmParser &_Parser)
-    : TargetAsmParser(), Parser(_Parser) {
-    STI = ARM_MC::createARMMCSubtargetInfo(TT, CPU, FS);
-
+  ARMAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser)
+    : TargetAsmParser(), STI(_STI), Parser(_Parser) {
     MCAsmParserExtension::Initialize(_Parser);
+
     // Initialize the set of available features.
-    setAvailableFeatures(ComputeAvailableFeatures(STI->getFeatureBits()));
+    setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
   }
 
   virtual bool ParseInstruction(StringRef Name, SMLoc NameLoc,
@@ -2028,7 +2031,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
     // that updates the condition codes if it ends in 's'.  So see if the
     // mnemonic ends in 's' and if so try removing the 's' and adding a CCOut
     // operand with a value of CPSR.
-    else if(MatchResult == Match_MnemonicFail) {
+    else if (MatchResult == Match_MnemonicFail) {
       // Get the instruction mnemonic, which is the first token.
       StringRef Mnemonic = ((ARMOperand*)Operands[0])->getToken();
       if (Mnemonic.substr(Mnemonic.size()-1) == "s") {
@@ -2214,20 +2217,15 @@ bool ARMAsmParser::ParseDirectiveCode(SMLoc L) {
     return Error(Parser.getTok().getLoc(), "unexpected token in directive");
   Parser.Lex();
 
-  // FIXME: We need to be able switch subtargets at this point so that
-  // MatchInstructionImpl() will work when it gets the AvailableFeatures which
-  // includes Feature_IsThumb or not to match the right instructions.  This is
-  // blocked on the FIXME in llvm-mc.cpp when creating the TargetMachine.
-  if (Val == 16){
-    assert(isThumb() &&
-	   "switching between arm/thumb not yet suppported via .code 16)");
+  if (Val == 16) {
+    if (!isThumb())
+      SwitchMode();
     getParser().getStreamer().EmitAssemblerFlag(MCAF_Code16);
-  }
-  else{
-    assert(!isThumb() &&
-           "switching between thumb/arm not yet suppported via .code 32)");
+  } else {
+    if (isThumb())
+      SwitchMode();
     getParser().getStreamer().EmitAssemblerFlag(MCAF_Code32);
-   }
+  }
 
   return false;
 }
