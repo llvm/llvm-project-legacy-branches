@@ -239,6 +239,7 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
   }
   case Type::LValueReference:
   case Type::RValueReference: {
+    RecursionStatePointerRAII X(RecursionState);
     const ReferenceType &RTy = cast<ReferenceType>(Ty);
     QualType ETy = RTy.getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
@@ -246,6 +247,7 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     return llvm::PointerType::get(PointeeType, AS);
   }
   case Type::Pointer: {
+    RecursionStatePointerRAII X(RecursionState);
     const PointerType &PTy = cast<PointerType>(Ty);
     QualType ETy = PTy.getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
@@ -323,6 +325,7 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
   }
 
   case Type::ObjCObjectPointer: {
+    RecursionStatePointerRAII X(RecursionState);
     // Protocol qualifications do not influence the LLVM type, we just return a
     // pointer to the underlying interface type. We don't need to worry about
     // recursive conversion.
@@ -343,6 +346,7 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
   }
 
   case Type::BlockPointer: {
+    RecursionStatePointerRAII X(RecursionState);
     const QualType FTy = cast<BlockPointerType>(Ty).getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(FTy);
     unsigned AS = Context.getTargetAddressSpace(FTy);
@@ -359,30 +363,35 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
 }
 
 /// ConvertRecordDeclType - Lay out a tagged decl type like struct or union.
-llvm::Type *CodeGenTypes::ConvertRecordDeclType(const RecordDecl *RD) {
-  
+llvm::StructType *CodeGenTypes::ConvertRecordDeclType(const RecordDecl *RD) {
   // TagDecl's are not necessarily unique, instead use the (clang)
   // type connected to the decl.
-  QualType T = Context.getTagDeclType(RD);
-  const Type *Key = T.getTypePtr();
+  const Type *Key = Context.getTagDeclType(RD).getTypePtr();
 
-#if 0 
-  abort();
-#endif
-  
-  //std::string Name =
-  //std::string(RD->getKindName()) + "." + RD->getQualifiedNameAsString();
-  //llvm::StructType::createNamed(getLLVMContext(), Name);
+  llvm::StructType *&Entry = RecordDeclTypes[Key];
 
-  // Get the opaque LLVM type.
-  llvm::StructType *Ty = cast<llvm::StructType>(ConvertType(T));
+  // If we don't have a StructType at all yet, create the forward declaration.
+  if (Entry == 0)
+    Entry = llvm::StructType::createNamed(getLLVMContext(), 
+                                          std::string(RD->getKindName()) + "." +
+                                          RD->getQualifiedNameAsString());
+  llvm::StructType *Ty = Entry;
 
   // If this is still a forward declaration, or the LLVM type is already
   // complete, there's nothing more to do.
   if (!RD->isDefinition() || !Ty->isOpaque())
     return Ty;
+  
+  // If we're recursively nested inside the conversion of a pointer inside the
+  // struct, defer conversion.
+  if (RecursionState == RS_StructPointer) {
+    DeferredRecords.push_back(RD);
+    return Ty;
+  }
 
   // Okay, this is a definition of a type.  Compile the implementation now.
+  RecursionStateTy SavedRecursionState = RecursionState;
+  RecursionState = RS_Struct;
 
   // Force conversion of non-virtual base classes recursively.
   if (const CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
@@ -399,6 +408,14 @@ llvm::Type *CodeGenTypes::ConvertRecordDeclType(const RecordDecl *RD) {
   // Layout fields.
   CGRecordLayout *Layout = ComputeRecordLayout(RD, Ty);
   CGRecordLayouts[Key] = Layout;
+
+  
+  // Restore our recursion state.  If we're done converting the outer-most
+  // record, then convert any deferred structs as well.
+  RecursionState = SavedRecursionState;
+  if (RecursionState == RS_Normal)
+    while (!DeferredRecords.empty())
+      ConvertRecordDeclType(DeferredRecords.pop_back_val());
 
   return Ty;
 }

@@ -58,9 +58,9 @@ namespace CodeGen {
 class CodeGenTypes {
   ASTContext &Context;
   const TargetInfo &Target;
-  llvm::Module& TheModule;
-  const llvm::TargetData& TheTargetData;
-  const ABIInfo& TheABIInfo;
+  llvm::Module &TheModule;
+  const llvm::TargetData &TheTargetData;
+  const ABIInfo &TheABIInfo;
   CGCXXABI &TheCXXABI;
   const CodeGenOptions &CodeGenOpts;
 
@@ -74,9 +74,35 @@ class CodeGenTypes {
   /// record layout info.
   llvm::DenseMap<const Type*, CGRecordLayout *> CGRecordLayouts;
 
+  /// RecordDeclTypes - This contains the LLVM IR type for any converted
+  /// RecordDecl.
+  llvm::DenseMap<const Type*, llvm::StructType *> RecordDeclTypes;
+  
   /// FunctionInfos - Hold memoized CGFunctionInfo results.
   llvm::FoldingSet<CGFunctionInfo> FunctionInfos;
 
+  enum RecursionStateTy {
+    RS_Normal,        // Normal type conversion.
+    RS_Struct,        // Recursively inside a struct conversion.
+    RS_StructPointer  // Recursively inside a pointer in a struct.
+  } RecursionState;
+  
+  llvm::SmallVector<const RecordDecl *, 8> DeferredRecords;
+  
+  struct RecursionStatePointerRAII {
+    RecursionStateTy &Val;
+    RecursionStateTy Saved;
+    
+    RecursionStatePointerRAII(RecursionStateTy &V) : Val(V), Saved(V) {
+      if (Val == RS_Struct)
+        Val = RS_StructPointer;
+    }
+    
+    ~RecursionStatePointerRAII() {
+      Val = Saved;
+    }
+  };
+  
 private:
   /// TypeCache - This map keeps cache of llvm::Types
   /// and maps llvm::Types to corresponding clang::Type.
@@ -196,7 +222,7 @@ public:
 
 public:  // These are internal details of CGT that shouldn't be used externally.
   /// ConvertRecordDeclType - Lay out a tagged decl type like struct or union.
-  llvm::Type *ConvertRecordDeclType(const RecordDecl *TD);
+  llvm::StructType *ConvertRecordDeclType(const RecordDecl *TD);
 
   /// GetExpandedTypes - Expand the type \arg Ty into the LLVM
   /// argument types it would be passed as on the provided vector \arg
