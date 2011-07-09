@@ -80,22 +80,6 @@ void CodeGenTypes::addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
 #endif
 }
 
-/// ConvertType - Convert the specified type to its LLVM form.
-llvm::Type *CodeGenTypes::ConvertType(QualType T) {
-  T = Context.getCanonicalType(T);
-
-  // See if type is already cached.
-  llvm::DenseMap<const Type *, llvm::Type *>::iterator
-    I = TypeCache.find(T.getTypePtr());
-  // If type is found in map then use it. Otherwise, convert type T.
-  if (I != TypeCache.end())
-    return I->second;
-
-  llvm::Type *ResultType = ConvertNewType(T);
-  TypeCache.insert(std::make_pair(T.getTypePtr(), ResultType));
-  return ResultType;
-}
-
 /// ConvertTypeForMem - Convert type T into a llvm::Type.  This differs from
 /// ConvertType in that it is used to convert to the memory representation for
 /// a type.  For example, the scalar representation for _Bool is i1, but the
@@ -160,10 +144,21 @@ static llvm::Type *getTypeForFormat(llvm::LLVMContext &VMContext,
   return 0;
 }
 
-llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
-  const clang::Type &Ty = *Context.getCanonicalType(T).getTypePtr();
+/// ConvertType - Convert the specified type to its LLVM form.
+llvm::Type *CodeGenTypes::ConvertType(QualType T) {
+  T = Context.getCanonicalType(T);
 
-  switch (Ty.getTypeClass()) {
+  const clang::Type *Ty = T.getTypePtr();
+
+  // See if type is already cached.
+  llvm::DenseMap<const Type *, llvm::Type *>::iterator TCI = TypeCache.find(Ty);
+  // If type is found in map then use it. Otherwise, convert type T.
+  if (TCI != TypeCache.end())
+    return TCI->second;
+
+  // If we don't have it in the cache, convert it now.
+  llvm::Type *ResultType = 0;
+  switch (Ty->getTypeClass()) {
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
@@ -174,18 +169,20 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     break;
 
   case Type::Builtin: {
-    switch (cast<BuiltinType>(Ty).getKind()) {
+    switch (cast<BuiltinType>(Ty)->getKind()) {
     case BuiltinType::Void:
     case BuiltinType::ObjCId:
     case BuiltinType::ObjCClass:
     case BuiltinType::ObjCSel:
       // LLVM void type can only be used as the result of a function call.  Just
       // map to the same as char.
-      return llvm::Type::getInt8Ty(getLLVMContext());
+      ResultType = llvm::Type::getInt8Ty(getLLVMContext());
+      break;
 
     case BuiltinType::Bool:
       // Note that we always return bool as i1 for use as a scalar type.
-      return llvm::Type::getInt1Ty(getLLVMContext());
+      ResultType = llvm::Type::getInt1Ty(getLLVMContext());
+      break;
 
     case BuiltinType::Char_S:
     case BuiltinType::Char_U:
@@ -203,24 +200,26 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     case BuiltinType::WChar_U:
     case BuiltinType::Char16:
     case BuiltinType::Char32:
-      return llvm::IntegerType::get(getLLVMContext(),
-        static_cast<unsigned>(Context.getTypeSize(T)));
+      ResultType = llvm::IntegerType::get(getLLVMContext(),
+                                 static_cast<unsigned>(Context.getTypeSize(T)));
+      break;
 
     case BuiltinType::Float:
     case BuiltinType::Double:
     case BuiltinType::LongDouble:
-      return getTypeForFormat(getLLVMContext(),
-                              Context.getFloatTypeSemantics(T));
+      ResultType = getTypeForFormat(getLLVMContext(),
+                                    Context.getFloatTypeSemantics(T));
+      break;
 
-    case BuiltinType::NullPtr: {
+    case BuiltinType::NullPtr:
       // Model std::nullptr_t as i8*
-      const llvm::Type *Ty = llvm::Type::getInt8Ty(getLLVMContext());
-      return llvm::PointerType::getUnqual(Ty);
-    }
+      ResultType = llvm::Type::getInt8PtrTy(getLLVMContext());
+      break;
         
     case BuiltinType::UInt128:
     case BuiltinType::Int128:
-      return llvm::IntegerType::get(getLLVMContext(), 128);
+      ResultType = llvm::IntegerType::get(getLLVMContext(), 128);
+      break;
     
     case BuiltinType::Overload:
     case BuiltinType::Dependent:
@@ -229,99 +228,110 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
       llvm_unreachable("Unexpected placeholder builtin type!");
       break;
     }
-    llvm_unreachable("Unknown builtin type!");
     break;
   }
   case Type::Complex: {
     const llvm::Type *EltTy =
-      ConvertType(cast<ComplexType>(Ty).getElementType());
-    return llvm::StructType::get(EltTy, EltTy, NULL);
+      ConvertType(cast<ComplexType>(Ty)->getElementType());
+    ResultType = llvm::StructType::get(EltTy, EltTy, NULL);
+    break;
   }
   case Type::LValueReference:
   case Type::RValueReference: {
     RecursionStatePointerRAII X(RecursionState);
-    const ReferenceType &RTy = cast<ReferenceType>(Ty);
-    QualType ETy = RTy.getPointeeType();
+    const ReferenceType *RTy = cast<ReferenceType>(Ty);
+    QualType ETy = RTy->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
     unsigned AS = Context.getTargetAddressSpace(ETy);
-    return llvm::PointerType::get(PointeeType, AS);
+    ResultType = llvm::PointerType::get(PointeeType, AS);
+    break;
   }
   case Type::Pointer: {
     RecursionStatePointerRAII X(RecursionState);
-    const PointerType &PTy = cast<PointerType>(Ty);
-    QualType ETy = PTy.getPointeeType();
+    const PointerType *PTy = cast<PointerType>(Ty);
+    QualType ETy = PTy->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
     if (PointeeType->isVoidTy())
       PointeeType = llvm::Type::getInt8Ty(getLLVMContext());
     unsigned AS = Context.getTargetAddressSpace(ETy);
-    return llvm::PointerType::get(PointeeType, AS);
+    ResultType = llvm::PointerType::get(PointeeType, AS);
+    break;
   }
 
   case Type::VariableArray: {
-    const VariableArrayType &A = cast<VariableArrayType>(Ty);
-    assert(A.getIndexTypeCVRQualifiers() == 0 &&
+    const VariableArrayType *A = cast<VariableArrayType>(Ty);
+    assert(A->getIndexTypeCVRQualifiers() == 0 &&
            "FIXME: We only handle trivial array types so far!");
     // VLAs resolve to the innermost element type; this matches
     // the return of alloca, and there isn't any obviously better choice.
-    return ConvertTypeForMem(A.getElementType());
+    ResultType = ConvertTypeForMem(A->getElementType());
+    break;
   }
   case Type::IncompleteArray: {
-    const IncompleteArrayType &A = cast<IncompleteArrayType>(Ty);
-    assert(A.getIndexTypeCVRQualifiers() == 0 &&
+    const IncompleteArrayType *A = cast<IncompleteArrayType>(Ty);
+    assert(A->getIndexTypeCVRQualifiers() == 0 &&
            "FIXME: We only handle trivial array types so far!");
     // int X[] -> [0 x int]
-    return llvm::ArrayType::get(ConvertTypeForMem(A.getElementType()), 0);
+    ResultType = llvm::ArrayType::get(ConvertTypeForMem(A->getElementType()),0);
+    break;
   }
   case Type::ConstantArray: {
-    const ConstantArrayType &A = cast<ConstantArrayType>(Ty);
-    const llvm::Type *EltTy = ConvertTypeForMem(A.getElementType());
-    return llvm::ArrayType::get(EltTy, A.getSize().getZExtValue());
+    const ConstantArrayType *A = cast<ConstantArrayType>(Ty);
+    const llvm::Type *EltTy = ConvertTypeForMem(A->getElementType());
+    ResultType = llvm::ArrayType::get(EltTy, A->getSize().getZExtValue());
+    break;
   }
   case Type::ExtVector:
   case Type::Vector: {
-    const VectorType &VT = cast<VectorType>(Ty);
-    return llvm::VectorType::get(ConvertType(VT.getElementType()),
-                                 VT.getNumElements());
+    const VectorType *VT = cast<VectorType>(Ty);
+    ResultType = llvm::VectorType::get(ConvertType(VT->getElementType()),
+                                       VT->getNumElements());
+    break;
   }
   case Type::FunctionNoProto:
   case Type::FunctionProto: {
     // First, check whether we can build the full function type.  If the
     // function type depends on an incomplete type (e.g. a struct or enum), we
     // cannot lower the function type.
-    if (VerifyFuncTypeComplete(&Ty))
+    if (VerifyFuncTypeComplete(Ty)) {
       // This function's type depends on an incomplete tag type.
       // Return a placeholder type.
-      return llvm::StructType::get(getLLVMContext());
+      ResultType = llvm::StructType::get(getLLVMContext());
+      break;
+    }
 
     // The function type can be built; call the appropriate routines to
     // build it.
     const CGFunctionInfo *FI;
     bool isVariadic;
-    if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(&Ty)) {
+    if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(Ty)) {
       FI = &getFunctionInfo(
                    CanQual<FunctionProtoType>::CreateUnsafe(QualType(FPT, 0)));
       isVariadic = FPT->isVariadic();
     } else {
-      const FunctionNoProtoType *FNPT = cast<FunctionNoProtoType>(&Ty);
+      const FunctionNoProtoType *FNPT = cast<FunctionNoProtoType>(Ty);
       FI = &getFunctionInfo(
                 CanQual<FunctionNoProtoType>::CreateUnsafe(QualType(FNPT, 0)));
       isVariadic = true;
     }
 
-    return GetFunctionType(*FI, isVariadic);
+    ResultType = GetFunctionType(*FI, isVariadic);
+    break;
   }
 
   case Type::ObjCObject:
-    return ConvertType(cast<ObjCObjectType>(Ty).getBaseType());
+    ResultType = ConvertType(cast<ObjCObjectType>(Ty)->getBaseType());
+    break;
 
   case Type::ObjCInterface: {
     // Objective-C interfaces are always opaque (outside of the
     // runtime, which can do whatever it likes); we never refine
     // these.
-    llvm::Type *&T = InterfaceTypes[cast<ObjCInterfaceType>(&Ty)];
+    llvm::Type *&T = InterfaceTypes[cast<ObjCInterfaceType>(Ty)];
     if (!T)
       T = llvm::StructType::get(getLLVMContext());
-    return T;
+    ResultType = T;
+    break;
   }
 
   case Type::ObjCObjectPointer: {
@@ -330,36 +340,44 @@ llvm::Type *CodeGenTypes::ConvertNewType(QualType T) {
     // pointer to the underlying interface type. We don't need to worry about
     // recursive conversion.
     const llvm::Type *T =
-      ConvertType(cast<ObjCObjectPointerType>(Ty).getPointeeType());
-    return llvm::PointerType::getUnqual(T);
+      ConvertType(cast<ObjCObjectPointerType>(Ty)->getPointeeType());
+    ResultType = T->getPointerTo();
+    break;
   }
 
   case Type::Record:
-    return ConvertRecordDeclType(cast<RecordType>(Ty).getDecl());
+    ResultType = ConvertRecordDeclType(cast<RecordType>(Ty)->getDecl());
+    break;
 
   case Type::Enum: {
-    const EnumDecl *ED = cast<EnumType>(Ty).getDecl();
+    const EnumDecl *ED = cast<EnumType>(Ty)->getDecl();
     if (ED->isDefinition() || ED->isFixed())
       return ConvertType(ED->getIntegerType());
     // Return a placeholder type.
-    return llvm::Type::getVoidTy(getLLVMContext());
+    ResultType = llvm::Type::getVoidTy(getLLVMContext());
+    break;
   }
 
   case Type::BlockPointer: {
     RecursionStatePointerRAII X(RecursionState);
-    const QualType FTy = cast<BlockPointerType>(Ty).getPointeeType();
+    const QualType FTy = cast<BlockPointerType>(Ty)->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(FTy);
     unsigned AS = Context.getTargetAddressSpace(FTy);
-    return llvm::PointerType::get(PointeeType, AS);
+    ResultType = llvm::PointerType::get(PointeeType, AS);
+    break;
   }
 
   case Type::MemberPointer: {
-    return getCXXABI().ConvertMemberPointerType(cast<MemberPointerType>(&Ty));
+    ResultType = 
+      getCXXABI().ConvertMemberPointerType(cast<MemberPointerType>(Ty));
+    break;
   }
   }
-
-  // FIXME: implement.
-  return llvm::StructType::get(getLLVMContext());
+  
+  assert(ResultType && "Didn't convert a type?");
+  
+  TypeCache[Ty] = ResultType;
+  return ResultType;
 }
 
 /// ConvertRecordDeclType - Lay out a tagged decl type like struct or union.

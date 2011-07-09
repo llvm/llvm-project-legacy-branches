@@ -108,12 +108,6 @@ private:
   /// and maps llvm::Types to corresponding clang::Type.
   llvm::DenseMap<const Type *, llvm::Type *> TypeCache;
 
-  /// ConvertNewType - Convert type T into a llvm::Type. Do not use this
-  /// method directly because it does not do any type caching. This method
-  /// is available only for ConvertType(). CovertType() is preferred
-  /// interface to convert type T into a llvm::Type.
-  llvm::Type *ConvertNewType(QualType T);
-
   /// addRecordTypeName - Compute a name from the given record decl with an
   /// optional suffix and name the given LLVM type using it.
   void addRecordTypeName(const RecordDecl *RD, const llvm::Type *Ty,
