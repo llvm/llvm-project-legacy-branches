@@ -2741,10 +2741,12 @@ static void printLimitValue(const IntegerType &Ty, bool isSigned, bool isMax,
     Out << "U" << type << (isMax ? "_MAX" : "0");
 }
 
+#ifndef NDEBUG
 static bool isSupportedIntegerSize(const IntegerType &T) {
   return T.getBitWidth() == 8 || T.getBitWidth() == 16 ||
          T.getBitWidth() == 32 || T.getBitWidth() == 64;
 }
+#endif
 
 void CWriter::printIntrinsicDefinition(const Function &F, raw_ostream &Out) {
   const FunctionType *funT = F.getFunctionType();
