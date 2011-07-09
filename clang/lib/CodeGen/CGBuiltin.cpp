@@ -22,6 +22,7 @@
 #include "clang/Basic/TargetBuiltins.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Target/TargetData.h"
+
 using namespace clang;
 using namespace CodeGen;
 using namespace llvm;
@@ -312,11 +313,16 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     return RValue::get(Result);
   }
   case Builtin::BI__builtin_expect: {
-    // FIXME: pass expect through to LLVM
     Value *ArgValue = EmitScalarExpr(E->getArg(0));
-    if (E->getArg(1)->HasSideEffects(getContext()))
-      (void)EmitScalarExpr(E->getArg(1));
-    return RValue::get(ArgValue);
+    const llvm::Type *ArgType = ArgValue->getType();
+
+    Value *FnExpect = CGM.getIntrinsic(Intrinsic::expect, &ArgType, 1);
+    Value *ExpectedValue = EmitScalarExpr(E->getArg(1));
+
+    Value *Result = Builder.CreateCall2(FnExpect, ArgValue, ExpectedValue,
+                                        "expval");
+    return RValue::get(Result);
+
   }
   case Builtin::BI__builtin_bswap32:
   case Builtin::BI__builtin_bswap64: {
@@ -982,6 +988,22 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     llvm::Type *ArgType = Base->getType();
     Value *F = CGM.getIntrinsic(Intrinsic::pow, &ArgType, 1);
     return RValue::get(Builder.CreateCall2(F, Base, Exponent, "tmp"));
+  }
+
+  case Builtin::BIfma:
+  case Builtin::BIfmaf:
+  case Builtin::BIfmal:
+  case Builtin::BI__builtin_fma:
+  case Builtin::BI__builtin_fmaf:
+  case Builtin::BI__builtin_fmal: {
+    // Rewrite fma to intrinsic.
+    Value *FirstArg = EmitScalarExpr(E->getArg(0));
+    const llvm::Type *ArgType = FirstArg->getType();
+    Value *F = CGM.getIntrinsic(Intrinsic::fma, &ArgType, 1);
+    return RValue::get(Builder.CreateCall3(F, FirstArg,
+                                              EmitScalarExpr(E->getArg(1)),
+                                              EmitScalarExpr(E->getArg(2)),
+                                              "tmp"));
   }
 
   case Builtin::BI__builtin_signbit:
