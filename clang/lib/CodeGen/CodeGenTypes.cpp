@@ -148,8 +148,12 @@ static llvm::Type *getTypeForFormat(llvm::LLVMContext &VMContext,
 llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   T = Context.getCanonicalType(T);
 
-  const clang::Type *Ty = T.getTypePtr();
+  const Type *Ty = T.getTypePtr();
 
+  // RecordTypes are cached and processed specially.
+  if (const RecordType *RT = dyn_cast<RecordType>(Ty))
+    return ConvertRecordDeclType(RT->getDecl());
+  
   // See if type is already cached.
   llvm::DenseMap<const Type *, llvm::Type *>::iterator TCI = TypeCache.find(Ty);
   // If type is found in map then use it. Otherwise, convert type T.
@@ -159,6 +163,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   // If we don't have it in the cache, convert it now.
   llvm::Type *ResultType = 0;
   switch (Ty->getTypeClass()) {
+  case Type::Record: // Handled above.
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
 #define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
@@ -345,11 +350,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     break;
   }
 
-  case Type::Record:
-    ResultType = ConvertRecordDeclType(cast<RecordType>(Ty)->getDecl());
-    break;
-
-  case Type::Enum: {
+   case Type::Enum: {
     const EnumDecl *ED = cast<EnumType>(Ty)->getDecl();
     if (ED->isDefinition() || ED->isFixed())
       return ConvertType(ED->getIntegerType());
