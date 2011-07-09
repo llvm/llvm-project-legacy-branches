@@ -227,6 +227,6 @@ namespace test4 {
   struct C : virtual B { int    *C_p; };
   struct D :         C { int    *D_p; };
 
-  // CHECK-GLOBAL: @_ZN5test41dE = global %"struct.test4::D" { %"struct.test4::C.base" zeroinitializer, i32* null, %"struct.VirtualBases::C.base" { i32 (...)** null, i64 -1 }, %"struct.test4::A" zeroinitializer }, align 8
+  // CHECK-GLOBAL: @_ZN5test41dE = global %"struct.test4::D" { %"struct.test4::C.base" zeroinitializer, i32* null, %"struct.test4::B.base" { i32 (...)** null, i64 -1 }, %"struct.test4::A" zeroinitializer }, align 8
   D d;
 }
