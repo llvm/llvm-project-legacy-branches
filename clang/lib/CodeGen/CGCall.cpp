@@ -713,7 +713,7 @@ const llvm::Type *CodeGenTypes::GetFunctionTypeForVTable(GlobalDecl GD) {
     return GetFunctionType(*Info, FPT->isVariadic());
   }
 
-  return llvm::Type::getVoidTy(getLLVMContext());
+  return llvm::StructType::get(getLLVMContext());
 }
 
 void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
