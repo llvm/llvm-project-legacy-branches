@@ -856,15 +856,8 @@ CodeGenModule::GetOrCreateLLVMFunction(llvm::StringRef MangledName,
     if (Entry->getType()->getElementType() == Ty)
       return Entry;
 
-#if 0
     // Make sure the result is of the correct type.
-    const llvm::Type *PTy =
-      llvm::PointerType::getUnqual(Ty->isVoidTy() ? Int8Ty : Ty);
-    return llvm::ConstantExpr::getBitCast(Entry, PTy);
-#else
-    abort();
-    return Entry;
-#endif
+    return llvm::ConstantExpr::getBitCast(Entry, Ty->getPointerTo());
   }
 
   // This function doesn't have a complete type (for example, the return
