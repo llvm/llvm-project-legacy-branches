@@ -1710,13 +1710,6 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
 
   QualType CFTy = getContext().getCFConstantStringType();
 
-#if 1
-  abort();
-#else
-    // Make sure the class has been laid out.
-  UpdateCompletedType(cast<RecordType>(CFTy.getTypePtr())->getDecl());
-#endif
-
   const llvm::StructType *STy =
     cast<llvm::StructType>(getTypes().ConvertType(CFTy));
 
