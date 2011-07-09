@@ -460,6 +460,8 @@ namespace {
           incorporateValue(Aliasee);
       }
       
+      SmallVector<std::pair<unsigned, MDNode*>, 4> MDForInst;
+
       // Get types from functions.
       for (Module::const_iterator FI = M.begin(), E = M.end(); FI != E; ++FI) {
         incorporateType(FI->getType());
@@ -474,7 +476,20 @@ namespace {
             for (User::const_op_iterator OI = I.op_begin(), OE = I.op_end();
                  OI != OE; ++OI)
               incorporateValue(*OI);
+            
+            // Incorporate types hiding in metadata.
+            I.getAllMetadata(MDForInst);
+            for (unsigned i = 0, e = MDForInst.size(); i != e; ++i)
+              incorporateMDNode(MDForInst[i].second);
+            MDForInst.clear();
           }
+      }
+      
+      for (Module::const_named_metadata_iterator I = M.named_metadata_begin(),
+           E = M.named_metadata_end(); I != E; ++I) {
+        const NamedMDNode *NMD = I;
+        for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i)
+          incorporateMDNode(NMD->getOperand(i));
       }
     }
     
@@ -499,6 +514,8 @@ namespace {
     /// walked in other ways.  GlobalValues, basic blocks, instructions, and
     /// inst operands are all explicitly enumerated.
     void incorporateValue(const Value *V) {
+      if (const MDNode *M = dyn_cast<MDNode>(V))
+        return incorporateMDNode(M);
       if (!isa<Constant>(V) || isa<GlobalValue>(V)) return;
       
       // Already visited?
@@ -509,10 +526,22 @@ namespace {
       incorporateType(V->getType());
       
       // Look in operands for types.
-      const Constant *C = cast<Constant>(V);
-      for (Constant::const_op_iterator I = C->op_begin(),
-           E = C->op_end(); I != E;++I)
+      const User *U = cast<User>(V);
+      for (Constant::const_op_iterator I = U->op_begin(),
+           E = U->op_end(); I != E;++I)
         incorporateValue(*I);
+    }
+    
+    void incorporateMDNode(const MDNode *V) {
+      
+      // Already visited?
+      if (!VisitedConstants.insert(V).second)
+        return;
+      
+      // Look in operands for types.
+      for (unsigned i = 0, e = V->getNumOperands(); i != e; ++i)
+        if (Value *Op = V->getOperand(i))
+          incorporateValue(Op);
     }
   };
 } // end anonymous namespace
