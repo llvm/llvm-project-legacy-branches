@@ -354,8 +354,8 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     const EnumDecl *ED = cast<EnumType>(Ty)->getDecl();
     if (ED->isDefinition() || ED->isFixed())
       return ConvertType(ED->getIntegerType());
-    // Return a placeholder type.
-    ResultType = llvm::Type::getVoidTy(getLLVMContext());
+    // Return a placeholder '{}' type.
+    ResultType = llvm::StructType::get(getLLVMContext());
     break;
   }
 
