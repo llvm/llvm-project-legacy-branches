@@ -524,6 +524,7 @@ install-clang_final: build-clang
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(OBJROOT)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
+	$(_v) $(FIND) $(DSTROOT) -perm -0111 -name '*.a' | $(XARGS) chmod a-x
 	$(_v) $(FIND) $(DSTROOT) -perm -0111 -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
 	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
 	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -S
