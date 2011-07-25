@@ -1124,6 +1124,19 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     break;
   }
 
+  case Instruction::LandingPad: {
+    const LandingPadInst &LP = cast<LandingPadInst>(I);
+    Code = bitc::FUNC_CODE_INST_LANDINGPAD;
+    Vals.push_back(VE.getTypeID(LP.getType()));
+    PushValueAndType(LP.getPersonalityFn(), InstID, Vals, VE);
+    Vals.push_back(LP.getNumClauses());
+    for (unsigned I = 0, E = LP.getNumClauses(); I != E; ++I) {
+      Vals.push_back(LP.getClauseType(I));
+      PushValueAndType(LP.getClauseValue(I), InstID, Vals, VE);
+    }
+    break;
+  }
+
   case Instruction::Alloca:
     Code = bitc::FUNC_CODE_INST_ALLOCA;
     Vals.push_back(VE.getTypeID(I.getType()));

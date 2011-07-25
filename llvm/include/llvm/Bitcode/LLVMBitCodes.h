@@ -266,7 +266,9 @@ namespace bitc {
 
     FUNC_CODE_INST_CALL        = 34, // CALL:       [attr, fnty, fnid, args...]
 
-    FUNC_CODE_DEBUG_LOC        = 35  // DEBUG_LOC:  [Line,Col,ScopeVal, IAVal]
+    FUNC_CODE_INST_LANDINGPAD  = 35, // LANDINGPAD: [ty, val, num, id0,val0 ...]
+
+    FUNC_CODE_DEBUG_LOC        = 36  // DEBUG_LOC:  [Line,Col,ScopeVal, IAVal]
   };
 } // End bitc namespace
 } // End llvm namespace

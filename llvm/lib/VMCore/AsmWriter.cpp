@@ -1709,6 +1709,28 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     writeOperand(I.getOperand(1), true);
     for (const unsigned *i = IVI->idx_begin(), *e = IVI->idx_end(); i != e; ++i)
       Out << ", " << *i;
+  } else if (const LandingPadInst *LPI = dyn_cast<LandingPadInst>(&I)) {
+    Out << ' ';
+    TypePrinter.print(I.getType(), Out);
+    Out << " personality ";
+    writeOperand(LPI->getPersonalityFn(), true); Out << '\n';
+
+    for (unsigned i = 0, e = LPI->getNumClauses(); i != e; ) {
+      SmallVector<const Value*, 8> Vals;
+      LandingPadInst::ClauseType CT = LPI->getClauseType(i);
+      for (; i != e && LPI->getClauseType(i) == CT; ++i)
+        Vals.push_back(LPI->getClauseValue(i));
+
+      if (CT == LandingPadInst::Catch)
+        Out << "        catch ";
+      else
+        Out << "        filter ";
+
+      for (unsigned II = 0, IE = Vals.size(); II != IE; ++II) {
+        if (II != 0) Out << ", ";
+        writeOperand(Vals[II], true);
+      }
+    }
   } else if (isa<ReturnInst>(I) && !Operand) {
     Out << " void";
   } else if (const CallInst *CI = dyn_cast<CallInst>(&I)) {

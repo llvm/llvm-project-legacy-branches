@@ -2497,6 +2497,36 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       break;
     }
 
+    case bitc::FUNC_CODE_INST_LANDINGPAD: {
+      // LANDINGPAD: [ty, val, num, id0,val0 ...]
+      unsigned Idx = 0;
+      if (Record.size() < 3) ////////////////
+        return Error("Invalid LANDINGPAD record");
+      Type *Ty = getTypeByID(Record[Idx++]);
+      if (!Ty) return Error("Invalid LANDINGPAD record");
+      Value *PersFn = 0;
+      if (getValueTypePair(Record, Idx, NextValueNo, PersFn))
+        return Error("Invalid LANDINGPAD record");
+
+      unsigned NumClauses = Record[Idx++];
+      LandingPadInst *LP = LandingPadInst::Create(Ty, PersFn, NumClauses);
+
+      for (unsigned J = 0; J != NumClauses; ++J) {
+        LandingPadInst::ClauseType CT =
+          LandingPadInst::ClauseType(Record[Idx++]);
+        Value *Val = 0;
+        if (getValueTypePair(Record, Idx, NextValueNo, Val)) {
+          delete LP;
+          return Error("Invalid LANDINGPAD record");
+        }
+
+        LP->addClause(CT, Val);
+      }
+
+      I = LP;
+      break;
+    }
+
     case bitc::FUNC_CODE_INST_ALLOCA: { // ALLOCA: [instty, opty, op, align]
       if (Record.size() != 4)
         return Error("Invalid ALLOCA record");
