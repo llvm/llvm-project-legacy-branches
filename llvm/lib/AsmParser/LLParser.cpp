@@ -2920,6 +2920,7 @@ int LLParser::ParseInstruction(Instruction *&Inst, BasicBlock *BB,
   case lltok::kw_insertelement:  return ParseInsertElement(Inst, PFS);
   case lltok::kw_shufflevector:  return ParseShuffleVector(Inst, PFS);
   case lltok::kw_phi:            return ParsePHI(Inst, PFS);
+  case lltok::kw_landingpad:     return ParseLandingPad(Inst, PFS);
   case lltok::kw_call:           return ParseCall(Inst, PFS, false);
   case lltok::kw_tail:           return ParseCall(Inst, PFS, true);
   // Memory.
@@ -3468,6 +3469,53 @@ int LLParser::ParsePHI(Instruction *&Inst, PerFunctionState &PFS) {
     PN->addIncoming(PHIVals[i].first, PHIVals[i].second);
   Inst = PN;
   return AteExtraComma ? InstExtraComma : InstNormal;
+}
+
+/// ParseLandingPad
+///   ::= 'landingpad' Type 'personality' TypeAndValue (ClauseID ClauseList)+
+/// ClauseID
+///   ::= 'catch'
+///   ::= 'filter'
+/// ClauseList
+///   ::= TypeAndValue (',' TypeAndValue)*
+bool LLParser::ParseLandingPad(Instruction *&Inst, PerFunctionState &PFS) {
+  Type *Ty = 0; LocTy TyLoc;
+  Value *PersFn; LocTy PersFnLoc;
+  LocTy LPLoc = Lex.getLoc();
+
+  if (ParseType(Ty, TyLoc) ||
+      ParseToken(lltok::kw_personality, "expected 'personality'") ||
+      ParseTypeAndValue(PersFn, PersFnLoc, PFS))
+    return true;
+
+  SmallVector<std::pair<LandingPadInst::ClauseType, Value*>, 16> Clauses;
+
+  while (Lex.getKind() == lltok::kw_catch || Lex.getKind() == lltok::kw_filter){
+    LandingPadInst::ClauseType CT;
+    if (Lex.getKind() == lltok::kw_catch) {
+      CT = LandingPadInst::Catch;
+      ParseToken(lltok::kw_catch, "expected 'catch'");
+    } else {
+      CT = LandingPadInst::Filter;
+      ParseToken(lltok::kw_filter, "expected 'filter'");
+    }
+
+    do {
+      Value *V; LocTy VLoc;
+      if (ParseTypeAndValue(V, VLoc, PFS))
+        return true;
+      Clauses.push_back(std::make_pair(CT, V));
+    } while (EatIfPresent(lltok::comma));
+  }
+
+  LandingPadInst *LP = LandingPadInst::Create(Ty, PersFn, Clauses.size());
+
+  for (SmallVectorImpl<std::pair<LandingPadInst::ClauseType, Value*> >::iterator
+         I = Clauses.begin(), E = Clauses.end(); I != E; ++I)
+    LP->addClause(I->first, I->second);
+
+  Inst = LP;
+  return false;
 }
 
 /// ParseCall
