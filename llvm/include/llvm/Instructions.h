@@ -1862,6 +1862,10 @@ public:
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
+  /// getPersonalityFn - Get the personality function associated with this
+  /// landing pad.
+  const Value *getPersonalityFn() const { return getOperand(0); }
+
   /// addCatchTypes - Add catch types to the landing pad.
   void addCatchClauses(ArrayRef<Value*> Catches);
 
