@@ -1825,7 +1825,7 @@ private:
   void *operator new(size_t s) {
     return User::operator new(s, 0);
   }
-  void growOperands(unsigned Size);
+  void growOperands();
   void init(Value *PersFn, unsigned NumReservedValues, const Twine &NameStr);
 
   explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
@@ -1852,8 +1852,7 @@ public:
   }
   static LandingPadInst *Create(Type *RetTy, Value *PersonalityFn,
                                 unsigned NumReservedValues,
-                                const Twine &NameStr = "",
-                                BasicBlock *InsertAtEnd = 0) {
+                                const Twine &NameStr, BasicBlock *InsertAtEnd) {
     return new LandingPadInst(RetTy, PersonalityFn, NumReservedValues, NameStr,
                               InsertAtEnd);
   }
@@ -1866,11 +1865,8 @@ public:
   /// landing pad.
   const Value *getPersonalityFn() const { return getOperand(0); }
 
-  /// addCatchTypes - Add catch types to the landing pad.
-  void addCatchClauses(ArrayRef<Value*> Catches);
-
-  /// addCatchTypes - Add filter types to the landing pad.
-  void addFilterClauses(ArrayRef<Value*> Filters);
+  /// addClause - Add a clause to the landing pad.
+  void addClause(ClauseType CT, Value *ClauseVal);
 
   /// getClauseType - Return the type of the clause at this index. The two
   /// supported clauses are Catch and Filter.

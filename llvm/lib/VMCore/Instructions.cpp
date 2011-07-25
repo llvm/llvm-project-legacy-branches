@@ -198,9 +198,9 @@ LandingPadInst::~LandingPadInst() {
 
 /// growOperands - grow operands - This grows the operand list in response to a
 /// push_back style of operation. This grows the number of ops by 2 times.
-void LandingPadInst::growOperands(unsigned Size) {
+void LandingPadInst::growOperands() {
   unsigned e = getNumOperands();
-  ReservedSpace = (e + Size) * 2;
+  ReservedSpace = e * 2;
 
   Use *NewOps = allocHungoffUses(ReservedSpace);
   Use *OldOps = OperandList;
@@ -211,34 +211,13 @@ void LandingPadInst::growOperands(unsigned Size) {
   Use::zap(OldOps, OldOps + e, true);
 }
 
-void LandingPadInst::addCatchClauses(ArrayRef<Value*> Catches) {
-  unsigned Size = Catches.size();
+void LandingPadInst::addClause(ClauseType CT, Value *ClauseVal) {
   unsigned OpNo = getNumOperands();
-  if (OpNo + Size > ReservedSpace)
-    growOperands(Size);
-
-  assert(OpNo + Size - 1 < ReservedSpace && "Growing didn't work!");
-
-  unsigned Idx = OpNo;
-  for (unsigned I = 0; I < Size; ++I) {
-    ClauseIdxs.push_back(Catch);
-    OperandList[Idx++] = Catches[I];
-  }
-}
-
-void LandingPadInst::addFilterClauses(ArrayRef<Value*> Filters) {
-  unsigned Size = Filters.size();
-  unsigned OpNo = getNumOperands();
-  if (OpNo + Size > ReservedSpace)
-    growOperands(Size);
-
-  assert(OpNo + Size - 1 < ReservedSpace && "Growing didn't work!");
-
-  unsigned Idx = OpNo;
-  for (unsigned I = 0; I < Size; ++I) {
-    ClauseIdxs.push_back(Filter);
-    OperandList[Idx++] = Filters[I];
-  }
+  if (OpNo + 1 > ReservedSpace)
+    growOperands();
+  assert(OpNo + 1 < ReservedSpace && "Growing didn't work!");
+  ClauseIdxs.push_back(CT);
+  OperandList[OpNo] = ClauseVal;
 }
 
 //===----------------------------------------------------------------------===//
