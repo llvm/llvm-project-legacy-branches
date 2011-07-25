@@ -176,7 +176,6 @@ void LandingPadInst::init(Value *PersFn, unsigned NumReservedValues,
   ReservedSpace = NumReservedValues;
   NumOperands = 1;
   OperandList = allocHungoffUses(ReservedSpace);
-
   OperandList[0] = PersFn;
   setName(NameStr);
 }
@@ -215,8 +214,9 @@ void LandingPadInst::addClause(ClauseType CT, Value *ClauseVal) {
   unsigned OpNo = getNumOperands();
   if (OpNo + 1 > ReservedSpace)
     growOperands();
-  assert(OpNo + 1 < ReservedSpace && "Growing didn't work!");
+  assert(OpNo < ReservedSpace && "Growing didn't work!");
   ClauseIdxs.push_back(CT);
+  ++NumOperands;
   OperandList[OpNo] = ClauseVal;
 }
 

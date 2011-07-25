@@ -1882,7 +1882,7 @@ public:
   }
 
   /// getNumClauses - Get the number of clauses for this landing pad.
-  unsigned getNumClauses() const { return getNumOperands(); }
+  unsigned getNumClauses() const { return getNumOperands() - 1; }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const LandingPadInst *) { return true; }
