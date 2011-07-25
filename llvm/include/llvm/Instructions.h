@@ -1826,33 +1826,36 @@ private:
     return User::operator new(s, 0);
   }
   void growOperands(unsigned Size);
+  void init(Value *PersFn, unsigned NumReservedValues, const Twine &NameStr);
 
-  explicit LandingPadInst(Type *RetTy, unsigned NumReservedValues,
-                          const Twine &NameStr, Instruction *InsertBefore)
-    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertBefore),
-      ReservedSpace(NumReservedValues) {
-    setName(NameStr);
-    OperandList = allocHungoffUses(ReservedSpace);
+  explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
+                          unsigned NumReservedValues, const Twine &NameStr,
+                          Instruction *InsertBefore)
+    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertBefore) {
+    init(PersonalityFn, 1 + NumReservedValues, NameStr);
   }
-  explicit LandingPadInst(Type *RetTy, unsigned NumReservedValues,
-                          const Twine &NameStr, BasicBlock *InsertAtEnd)
-    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertAtEnd),
-      ReservedSpace(NumReservedValues) {
-    setName(NameStr);
-    OperandList = allocHungoffUses(ReservedSpace);
+  explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
+                          unsigned NumReservedValues, const Twine &NameStr,
+                          BasicBlock *InsertAtEnd)
+    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertAtEnd) {
+    init(PersonalityFn, 1 + NumReservedValues, NameStr);
   }
 protected:
   virtual LandingPadInst *clone_impl() const;
 public:
-  static LandingPadInst *Create(Type *RetTy, unsigned NumReservedValues,
+  static LandingPadInst *Create(Type *RetTy, Value *PersonalityFn,
+                                unsigned NumReservedValues,
                                 const Twine &NameStr = "",
                                 Instruction *InsertBefore = 0) {
-    return new LandingPadInst(RetTy, NumReservedValues, NameStr, InsertBefore);
+    return new LandingPadInst(RetTy, PersonalityFn, NumReservedValues, NameStr,
+                              InsertBefore);
   }
-  static LandingPadInst *Create(Type *RetTy, unsigned NumReservedValues,
+  static LandingPadInst *Create(Type *RetTy, Value *PersonalityFn,
+                                unsigned NumReservedValues,
                                 const Twine &NameStr = "",
                                 BasicBlock *InsertAtEnd = 0) {
-    return new LandingPadInst(RetTy, NumReservedValues, NameStr, InsertAtEnd);
+    return new LandingPadInst(RetTy, PersonalityFn, NumReservedValues, NameStr,
+                              InsertAtEnd);
   }
   ~LandingPadInst();
 
