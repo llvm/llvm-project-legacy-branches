@@ -158,6 +158,7 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case ShuffleVector:  return "shufflevector";
   case ExtractValue:   return "extractvalue";
   case InsertValue:    return "insertvalue";
+  case LandingPad:     return "landingpad";
 
   default: return "<Invalid operator> ";
   }
