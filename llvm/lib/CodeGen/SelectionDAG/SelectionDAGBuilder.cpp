@@ -914,6 +914,11 @@ void SelectionDAGBuilder::visitPHI(const PHINode &) {
   llvm_unreachable("SelectionDAGBuilder shouldn't visit PHI nodes!");
 }
 
+void SelectionDAGBuilder::visitLandingPad(const LandingPadInst &) {
+  // FIXME:
+  llvm_unreachable("SelectionDAGBuilder shouldn't visit LandingPad instrs!");
+}
+
 void SelectionDAGBuilder::visit(unsigned Opcode, const User &I) {
   // Note: this doesn't use InstVisitor, because it has to work with
   // ConstantExpr's in addition to instructions.

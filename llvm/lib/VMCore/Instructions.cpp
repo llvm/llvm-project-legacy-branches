@@ -166,6 +166,69 @@ Value *PHINode::hasConstantValue() const {
   return ConstantValue;
 }
 
+//===----------------------------------------------------------------------===//
+//                       LandingPadInst Implementation
+//===----------------------------------------------------------------------===//
+
+LandingPadInst::LandingPadInst(const LandingPadInst &LP)
+  : Instruction(LP.getType(), Instruction::LandingPad,
+                allocHungoffUses(LP.getNumOperands()), LP.getNumOperands()),
+    ReservedSpace(LP.getNumOperands()) {
+  Use *OL = OperandList, *InOL = LP.OperandList;
+  for (unsigned I = 0, E = ReservedSpace; I != E; ++I)
+    OL[I] = InOL[I];
+
+  SubclassOptionalData = LP.SubclassOptionalData;
+}
+
+LandingPadInst::~LandingPadInst() {
+  dropHungoffUses();
+}
+
+/// growOperands - grow operands - This grows the operand list in response to a
+/// push_back style of operation. This grows the number of ops by 2 times.
+void LandingPadInst::growOperands(unsigned Size) {
+  unsigned e = getNumOperands();
+  ReservedSpace = (e + Size) * 2;
+
+  Use *NewOps = allocHungoffUses(ReservedSpace);
+  Use *OldOps = OperandList;
+  for (unsigned i = 0; i != e; ++i)
+      NewOps[i] = OldOps[i];
+
+  OperandList = NewOps;
+  Use::zap(OldOps, OldOps + e, true);
+}
+
+void LandingPadInst::addCatchClauses(ArrayRef<Value*> Catches) {
+  unsigned Size = Catches.size();
+  unsigned OpNo = getNumOperands();
+  if (OpNo + Size > ReservedSpace)
+    growOperands(Size);
+
+  assert(OpNo + Size - 1 < ReservedSpace && "Growing didn't work!");
+
+  unsigned Idx = OpNo;
+  for (unsigned I = 0; I < Size; ++I) {
+    ClauseIdxs.push_back(Catch);
+    OperandList[Idx++] = Catches[I];
+  }
+}
+
+void LandingPadInst::addFilterClauses(ArrayRef<Value*> Filters) {
+  unsigned Size = Filters.size();
+  unsigned OpNo = getNumOperands();
+  if (OpNo + Size > ReservedSpace)
+    growOperands(Size);
+
+  assert(OpNo + Size - 1 < ReservedSpace && "Growing didn't work!");
+
+  unsigned Idx = OpNo;
+  for (unsigned I = 0; I < Size; ++I) {
+    ClauseIdxs.push_back(Filter);
+    OperandList[Idx++] = Filters[I];
+  }
+}
 
 //===----------------------------------------------------------------------===//
 //                        CallInst Implementation
@@ -3153,6 +3216,10 @@ ShuffleVectorInst *ShuffleVectorInst::clone_impl() const {
 
 PHINode *PHINode::clone_impl() const {
   return new PHINode(*this);
+}
+
+LandingPadInst *LandingPadInst::clone_impl() const {
+  return new LandingPadInst(*this);
 }
 
 ReturnInst *ReturnInst::clone_impl() const {
