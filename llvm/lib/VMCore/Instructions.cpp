@@ -172,7 +172,7 @@ Value *PHINode::hasConstantValue() const {
 
 void LandingPadInst::init(Value *PersFn, unsigned NumReservedValues,
                           const Twine &NameStr) {
-  assert(NumReservedValues);
+  assert(NumReservedValues > 1 && "Landingpad needs at least one clause!");
   ReservedSpace = NumReservedValues;
   NumOperands = 1;
   OperandList = allocHungoffUses(ReservedSpace);
