@@ -54,7 +54,7 @@ void SourceLocation::print(raw_ostream &OS, const SourceManager &SM)const{
     return;
   }
 
-  SM.getInstantiationLoc(*this).print(OS, SM);
+  SM.getExpansionLoc(*this).print(OS, SM);
 
   OS << " <Spelling=";
   SM.getSpellingLoc(*this).print(OS, SM);
@@ -75,9 +75,9 @@ FileID FullSourceLoc::getFileID() const {
 }
 
 
-FullSourceLoc FullSourceLoc::getInstantiationLoc() const {
+FullSourceLoc FullSourceLoc::getExpansionLoc() const {
   assert(isValid());
-  return FullSourceLoc(SrcMgr->getInstantiationLoc(*this), *SrcMgr);
+  return FullSourceLoc(SrcMgr->getExpansionLoc(*this), *SrcMgr);
 }
 
 FullSourceLoc FullSourceLoc::getSpellingLoc() const {
@@ -85,14 +85,14 @@ FullSourceLoc FullSourceLoc::getSpellingLoc() const {
   return FullSourceLoc(SrcMgr->getSpellingLoc(*this), *SrcMgr);
 }
 
-unsigned FullSourceLoc::getInstantiationLineNumber(bool *Invalid) const {
+unsigned FullSourceLoc::getExpansionLineNumber(bool *Invalid) const {
   assert(isValid());
-  return SrcMgr->getInstantiationLineNumber(*this, Invalid);
+  return SrcMgr->getExpansionLineNumber(*this, Invalid);
 }
 
-unsigned FullSourceLoc::getInstantiationColumnNumber(bool *Invalid) const {
+unsigned FullSourceLoc::getExpansionColumnNumber(bool *Invalid) const {
   assert(isValid());
-  return SrcMgr->getInstantiationColumnNumber(*this, Invalid);
+  return SrcMgr->getExpansionColumnNumber(*this, Invalid);
 }
 
 unsigned FullSourceLoc::getSpellingLineNumber(bool *Invalid) const {

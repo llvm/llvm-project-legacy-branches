@@ -723,24 +723,24 @@ public:
     return SourceLocation::getFileLoc(FileOffset);
   }
 
-  /// getInstantiationLoc - Given a SourceLocation object, return the
-  /// instantiation location referenced by the ID.
-  SourceLocation getInstantiationLoc(SourceLocation Loc) const {
+  /// getExpansionLoc - Given a SourceLocation object, return the expansion
+  /// location referenced by the ID.
+  SourceLocation getExpansionLoc(SourceLocation Loc) const {
     // Handle the non-mapped case inline, defer to out of line code to handle
-    // instantiations.
+    // expansions.
     if (Loc.isFileID()) return Loc;
-    return getInstantiationLocSlowCase(Loc);
+    return getExpansionLocSlowCase(Loc);
   }
 
-  /// getImmediateInstantiationRange - Loc is required to be an instantiation
-  /// location.  Return the start/end of the instantiation information.
+  /// getImmediateExpansionRange - Loc is required to be an expansion location.
+  /// Return the start/end of the expansion information.
   std::pair<SourceLocation,SourceLocation>
-  getImmediateInstantiationRange(SourceLocation Loc) const;
+  getImmediateExpansionRange(SourceLocation Loc) const;
 
-  /// getInstantiationRange - Given a SourceLocation object, return the
-  /// range of tokens covered by the instantiation in the ultimate file.
+  /// getExpansionRange - Given a SourceLocation object, return the range of
+  /// tokens covered by the expansion the ultimate file.
   std::pair<SourceLocation,SourceLocation>
-  getInstantiationRange(SourceLocation Loc) const;
+  getExpansionRange(SourceLocation Loc) const;
 
 
   /// getSpellingLoc - Given a SourceLocation object, return the spelling
@@ -767,11 +767,11 @@ public:
     return std::make_pair(FID, Loc.getOffset()-getSLocEntry(FID).getOffset());
   }
 
-  /// getDecomposedInstantiationLoc - Decompose the specified location into a
+  /// getDecomposedExpansionLoc - Decompose the specified location into a
   /// raw FileID + Offset pair.  If the location is an instantiation record,
   /// walk through it until we find the final location instantiated.
   std::pair<FileID, unsigned>
-  getDecomposedInstantiationLoc(SourceLocation Loc) const {
+  getDecomposedExpansionLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
     const SrcMgr::SLocEntry *E = &getSLocEntry(FID);
 
@@ -779,7 +779,7 @@ public:
     if (Loc.isFileID())
       return std::make_pair(FID, Offset);
 
-    return getDecomposedInstantiationLocSlowCase(E);
+    return getDecomposedExpansionLocSlowCase(E);
   }
 
   /// getDecomposedSpellingLoc - Decompose the specified location into a raw
@@ -828,8 +828,8 @@ public:
   unsigned getColumnNumber(FileID FID, unsigned FilePos, 
                            bool *Invalid = 0) const;
   unsigned getSpellingColumnNumber(SourceLocation Loc, bool *Invalid = 0) const;
-  unsigned getInstantiationColumnNumber(SourceLocation Loc,
-                                        bool *Invalid = 0) const;
+  unsigned getExpansionColumnNumber(SourceLocation Loc,
+                                    bool *Invalid = 0) const;
   unsigned getPresumedColumnNumber(SourceLocation Loc, bool *Invalid = 0) const;
 
 
@@ -839,8 +839,7 @@ public:
   /// about to emit a diagnostic.
   unsigned getLineNumber(FileID FID, unsigned FilePos, bool *Invalid = 0) const;
   unsigned getSpellingLineNumber(SourceLocation Loc, bool *Invalid = 0) const;
-  unsigned getInstantiationLineNumber(SourceLocation Loc, 
-                                      bool *Invalid = 0) const;
+  unsigned getExpansionLineNumber(SourceLocation Loc, bool *Invalid = 0) const;
   unsigned getPresumedLineNumber(SourceLocation Loc, bool *Invalid = 0) const;
 
   /// Return the filename or buffer identifier of the buffer the location is in.
@@ -1130,11 +1129,11 @@ private:
   FileID getFileIDLocal(unsigned SLocOffset) const;
   FileID getFileIDLoaded(unsigned SLocOffset) const;
 
-  SourceLocation getInstantiationLocSlowCase(SourceLocation Loc) const;
+  SourceLocation getExpansionLocSlowCase(SourceLocation Loc) const;
   SourceLocation getSpellingLocSlowCase(SourceLocation Loc) const;
 
   std::pair<FileID, unsigned>
-  getDecomposedInstantiationLocSlowCase(const SrcMgr::SLocEntry *E) const;
+  getDecomposedExpansionLocSlowCase(const SrcMgr::SLocEntry *E) const;
   std::pair<FileID, unsigned>
   getDecomposedSpellingLocSlowCase(const SrcMgr::SLocEntry *E,
                                    unsigned Offset) const;

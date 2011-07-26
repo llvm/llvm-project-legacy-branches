@@ -274,11 +274,11 @@ public:
 
   FileID getFileID() const;
 
-  FullSourceLoc getInstantiationLoc() const;
+  FullSourceLoc getExpansionLoc() const;
   FullSourceLoc getSpellingLoc() const;
 
-  unsigned getInstantiationLineNumber(bool *Invalid = 0) const;
-  unsigned getInstantiationColumnNumber(bool *Invalid = 0) const;
+  unsigned getExpansionLineNumber(bool *Invalid = 0) const;
+  unsigned getExpansionColumnNumber(bool *Invalid = 0) const;
 
   unsigned getSpellingLineNumber(bool *Invalid = 0) const;
   unsigned getSpellingColumnNumber(bool *Invalid = 0) const;
