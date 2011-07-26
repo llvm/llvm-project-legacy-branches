@@ -1742,10 +1742,10 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     writeOperand(LPI->getPersonalityFn(), true); Out << '\n';
 
     if (LPI->isCleanup())
-      Out << "          cleanup\n";
+      Out << "          cleanup";
 
     for (unsigned i = 0, e = LPI->getNumClauses(); i != e; ) {
-      if (i != 0) Out << "\n";
+      if (i != 0 || LPI->isCleanup()) Out << "\n";
 
       SmallVector<const Value*, 8> Vals;
       LandingPadInst::ClauseType CT = LPI->getClauseType(i);
