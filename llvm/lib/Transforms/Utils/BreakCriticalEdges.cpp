@@ -172,13 +172,17 @@ BasicBlock *llvm::SplitCriticalEdge(TerminatorInst *TI, unsigned SuccNum,
   
   assert(!isa<IndirectBrInst>(TI) &&
          "Cannot split critical edge from IndirectBrInst");
-  
+  assert((!isa<InvokeInst>(TI) ||
+          cast<InvokeInst>(TI)->getUnwindDest() != TI->getSuccessor(SuccNum)) &&
+         "Cannot split critical edge from InvokeInst's unwind edge!");
+
   BasicBlock *TIBB = TI->getParent();
   BasicBlock *DestBB = TI->getSuccessor(SuccNum);
 
   // Create a new basic block, linking it into the CFG.
   BasicBlock *NewBB = BasicBlock::Create(TI->getContext(),
                       TIBB->getName() + "." + DestBB->getName() + "_crit_edge");
+
   // Create our unconditional branch.
   BranchInst *NewBI = BranchInst::Create(DestBB, NewBB);
   NewBI->setDebugLoc(TI->getDebugLoc());
