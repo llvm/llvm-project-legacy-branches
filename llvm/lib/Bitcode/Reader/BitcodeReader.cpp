@@ -2500,7 +2500,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
     case bitc::FUNC_CODE_INST_LANDINGPAD: {
       // LANDINGPAD: [ty, val, num, id0,val0 ...]
       unsigned Idx = 0;
-      if (Record.size() < 3) ////////////////
+      if (Record.size() < 5)
         return Error("Invalid LANDINGPAD record");
       Type *Ty = getTypeByID(Record[Idx++]);
       if (!Ty) return Error("Invalid LANDINGPAD record");
