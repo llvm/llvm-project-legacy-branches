@@ -1351,7 +1351,7 @@ void Verifier::visitInsertValueInst(InsertValueInst &IVI) {
 void Verifier::visitLandingPadInst(LandingPadInst &LPI) {
   BasicBlock *BB = LPI.getParent();
 
-  // The landingpad instruction defines is parent as a landing pad block. The
+  // The landingpad instruction defines its parent as a landing pad block. The
   // landing pad block may be branched to only by the unwind edge of an invoke.
   for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
     const InvokeInst *II = dyn_cast<InvokeInst>((*I)->getTerminator());
