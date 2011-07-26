@@ -1198,6 +1198,11 @@ public:
     return Insert(InsertValueInst::Create(Agg, Val, Idxs), Name);
   }
 
+  Value *CreateLandingPad(Type *Ty, Value *PersFn, unsigned NumClauses,
+                          const Twine &Name = "") {
+    return Insert(LandingPadInst::Create(Ty, PersFn, NumClauses, Name));
+  }
+
   //===--------------------------------------------------------------------===//
   // Utility creation methods
   //===--------------------------------------------------------------------===//
