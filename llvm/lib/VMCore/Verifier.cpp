@@ -35,6 +35,10 @@
 //  * It is illegal to have a ret instruction that returns a value that does not
 //    agree with the function return value type.
 //  * Function call argument types match the function prototype
+//  * A landing pad is defined by a landingpad instruction, and can be jumped to
+//    only by the unwind edge of an invoke instruction.
+//  * A landingpad instruction must be the first non-PHI instruction in the
+//    block.
 //  * All other things that are tested by asserts spread about the code...
 //
 //===----------------------------------------------------------------------===//
@@ -282,6 +286,7 @@ namespace {
     void visitAllocaInst(AllocaInst &AI);
     void visitExtractValueInst(ExtractValueInst &EVI);
     void visitInsertValueInst(InsertValueInst &IVI);
+    void visitLandingPadInst(LandingPadInst &LPI);
 
     void VerifyCallSite(CallSite CS);
     bool PerformTypeCheck(Intrinsic::ID ID, Function *F, Type *Ty,
@@ -1321,7 +1326,7 @@ void Verifier::visitFenceInst(FenceInst &FI) {
   Assert1(Ordering == Acquire || Ordering == Release ||
           Ordering == AcquireRelease || Ordering == SequentiallyConsistent,
           "fence instructions may only have "
-          " acquire, release, acq_rel, or seq_cst ordering.", &FI);
+          "acquire, release, acq_rel, or seq_cst ordering.", &FI);
   visitInstruction(FI);
 }
 
@@ -1341,6 +1346,30 @@ void Verifier::visitInsertValueInst(InsertValueInst &IVI) {
           "Invalid InsertValueInst operands!", &IVI);
   
   visitInstruction(IVI);
+}
+
+void Verifier::visitLandingPadInst(LandingPadInst &LPI) {
+  BasicBlock *BB = LPI.getParent();
+
+  // The landingpad instruction defines is parent as a landing pad block. The
+  // landing pad block may be branched to only by the unwind edge of an invoke.
+  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+    const InvokeInst *II = dyn_cast<InvokeInst>((*I)->getTerminator());
+    Assert1(II && II->getUnwindDest() == BB,
+            "Block containing LandingPadInst must be jumped to "
+            "only by the unwind edge of an invoke.", &LPI);
+  }
+
+  // The landingpad instruction must be the first non-PHI instruction in the
+  // block.
+  BasicBlock::iterator I = BB->begin(), E = BB->end();
+  while (I != E && isa<PHINode>(I))
+    ++I;
+  Assert1(I != E && isa<LandingPadInst>(I) && I == LPI,
+          "LandingPadInst not the first non-PHI instruction in the block.",
+          &LPI);
+
+  visitInstruction(LPI);
 }
 
 /// verifyInstruction - Verify that an instruction is well formed.
