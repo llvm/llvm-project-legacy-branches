@@ -187,6 +187,11 @@ LandingPadInst::LandingPadInst(const LandingPadInst &LP)
   for (unsigned I = 0, E = ReservedSpace; I != E; ++I)
     OL[I] = InOL[I];
 
+  for (SmallVectorImpl<ClauseType>::const_iterator
+         I = LP.ClauseIdxs.begin(), E = LP.ClauseIdxs.end(); I != E; ++I)
+    ClauseIdxs.push_back(*I);
+
+  IsCleanup = LP.IsCleanup;
   SubclassOptionalData = LP.SubclassOptionalData;
 }
 
