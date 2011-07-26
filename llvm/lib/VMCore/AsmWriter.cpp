@@ -1716,15 +1716,17 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     writeOperand(LPI->getPersonalityFn(), true); Out << '\n';
 
     for (unsigned i = 0, e = LPI->getNumClauses(); i != e; ) {
+      if (i != 0) Out << "\n";
+
       SmallVector<const Value*, 8> Vals;
       LandingPadInst::ClauseType CT = LPI->getClauseType(i);
       for (; i != e && LPI->getClauseType(i) == CT; ++i)
         Vals.push_back(LPI->getClauseValue(i));
 
       if (CT == LandingPadInst::Catch)
-        Out << "        catch ";
+        Out << "          catch ";
       else
-        Out << "        filter ";
+        Out << "          filter ";
 
       for (unsigned II = 0, IE = Vals.size(); II != IE; ++II) {
         if (II != 0) Out << ", ";
