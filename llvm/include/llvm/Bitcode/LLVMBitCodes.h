@@ -285,7 +285,7 @@ namespace bitc {
 
     FUNC_CODE_DEBUG_LOC        = 35, // DEBUG_LOC:  [Line,Col,ScopeVal, IAVal]
     FUNC_CODE_INST_FENCE       = 36, // FENCE: [ordering, synchscope]
-    FUNC_CODE_INST_LANDINGPAD  = 37  // LANDINGPAD: [ty, val, num, id0,val0 ...]
+    FUNC_CODE_INST_LANDINGPAD  = 37  // LANDINGPAD: [ty,val,val,num,id0,val0...]
   };
 } // End bitc namespace
 } // End llvm namespace

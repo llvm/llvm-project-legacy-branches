@@ -1741,6 +1741,9 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     Out << " personality ";
     writeOperand(LPI->getPersonalityFn(), true); Out << '\n';
 
+    if (LPI->isCleanup())
+      Out << "          cleanup\n";
+
     for (unsigned i = 0, e = LPI->getNumClauses(); i != e; ) {
       if (i != 0) Out << "\n";
 

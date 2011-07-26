@@ -1789,6 +1789,9 @@ class LandingPadInst : public Instruction {
   /// ReservedSpace - The number of operands actually allocated.  NumOperands is
   /// the number actually in use.
   unsigned ReservedSpace;
+
+  /// IsCleanup - True if the landingpad instruction is also a cleanup.
+  bool IsCleanup;
   LandingPadInst(const LandingPadInst &LP);
 public:
   enum ClauseType { Catch, Filter };
@@ -1808,13 +1811,15 @@ private:
   explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
                           unsigned NumReservedValues, const Twine &NameStr,
                           Instruction *InsertBefore)
-    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertBefore) {
+    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertBefore),
+      IsCleanup(false) {
     init(PersonalityFn, 1 + NumReservedValues, NameStr);
   }
   explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
                           unsigned NumReservedValues, const Twine &NameStr,
                           BasicBlock *InsertAtEnd)
-    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertAtEnd) {
+    : Instruction(RetTy, Instruction::LandingPad, 0, 0, InsertAtEnd),
+      IsCleanup(false) {
     init(PersonalityFn, 1 + NumReservedValues, NameStr);
   }
 protected:
@@ -1841,6 +1846,10 @@ public:
   /// getPersonalityFn - Get the personality function associated with this
   /// landing pad.
   const Value *getPersonalityFn() const { return getOperand(0); }
+
+  // Simple accessors.
+  bool isCleanup() const { return IsCleanup; }
+  void setCleanup(bool Val) { IsCleanup = Val; }
 
   /// addClause - Add a clause to the landing pad.
   void addClause(ClauseType CT, Value *ClauseVal);

@@ -1154,6 +1154,7 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     Code = bitc::FUNC_CODE_INST_LANDINGPAD;
     Vals.push_back(VE.getTypeID(LP.getType()));
     PushValueAndType(LP.getPersonalityFn(), InstID, Vals, VE);
+    Vals.push_back(LP.isCleanup());
     Vals.push_back(LP.getNumClauses());
     for (unsigned I = 0, E = LP.getNumClauses(); I != E; ++I) {
       Vals.push_back(LP.getClauseType(I));

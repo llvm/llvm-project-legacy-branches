@@ -583,6 +583,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(blockaddress);
 
   KEYWORD(personality);
+  KEYWORD(cleanup);
   KEYWORD(catch);
   KEYWORD(filter);
 #undef KEYWORD

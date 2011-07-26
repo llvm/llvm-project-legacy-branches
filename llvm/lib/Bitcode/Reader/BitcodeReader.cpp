@@ -2527,9 +2527,9 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
     }
 
     case bitc::FUNC_CODE_INST_LANDINGPAD: {
-      // LANDINGPAD: [ty, val, num, id0,val0 ...]
+      // LANDINGPAD: [ty, val, val, num, id0,val0 ...]
       unsigned Idx = 0;
-      if (Record.size() < 5)
+      if (Record.size() < 6)
         return Error("Invalid LANDINGPAD record");
       Type *Ty = getTypeByID(Record[Idx++]);
       if (!Ty) return Error("Invalid LANDINGPAD record");
@@ -2537,9 +2537,10 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       if (getValueTypePair(Record, Idx, NextValueNo, PersFn))
         return Error("Invalid LANDINGPAD record");
 
+      bool IsCleanup = !!Record[Idx++];
       unsigned NumClauses = Record[Idx++];
       LandingPadInst *LP = LandingPadInst::Create(Ty, PersFn, NumClauses);
-
+      LP->setCleanup(IsCleanup);
       for (unsigned J = 0; J != NumClauses; ++J) {
         LandingPadInst::ClauseType CT =
           LandingPadInst::ClauseType(Record[Idx++]);
