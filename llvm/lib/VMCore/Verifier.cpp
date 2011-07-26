@@ -39,6 +39,8 @@
 //    only by the unwind edge of an invoke instruction.
 //  * A landingpad instruction must be the first non-PHI instruction in the
 //    block.
+//  * All landingpad instructions must use the same personality function with
+//    the same function.
 //  * All other things that are tested by asserts spread about the code...
 //
 //===----------------------------------------------------------------------===//
@@ -135,18 +137,22 @@ namespace {
     /// already.
     SmallPtrSet<MDNode *, 32> MDNodes;
 
+    /// PersonalityFn - The personality function referenced by the
+    /// LandingPadInsts. All LandingPadInsts within the same function must use
+    /// the same personality function.
+    const Value *PersonalityFn;
+
     Verifier()
-      : FunctionPass(ID), 
-      Broken(false), RealPass(true), action(AbortProcessAction),
-      Mod(0), Context(0), DT(0), MessagesStr(Messages) {
-        initializeVerifierPass(*PassRegistry::getPassRegistry());
-      }
+      : FunctionPass(ID), Broken(false), RealPass(true),
+        action(AbortProcessAction), Mod(0), Context(0), DT(0),
+        MessagesStr(Messages), PersonalityFn(0) {
+      initializeVerifierPass(*PassRegistry::getPassRegistry());
+    }
     explicit Verifier(VerifierFailureAction ctn)
-      : FunctionPass(ID), 
-      Broken(false), RealPass(true), action(ctn), Mod(0), Context(0), DT(0),
-      MessagesStr(Messages) {
-        initializeVerifierPass(*PassRegistry::getPassRegistry());
-      }
+      : FunctionPass(ID), Broken(false), RealPass(true), action(ctn), Mod(0),
+        Context(0), DT(0), MessagesStr(Messages), PersonalityFn(0) {
+      initializeVerifierPass(*PassRegistry::getPassRegistry());
+    }
 
     bool doInitialization(Module &M) {
       Mod = &M;
@@ -1373,6 +1379,13 @@ void Verifier::visitLandingPadInst(LandingPadInst &LPI) {
   Assert1(I != E && isa<LandingPadInst>(I) && I == LPI,
           "LandingPadInst not the first non-PHI instruction in the block.",
           &LPI);
+
+  // The personality functions for all landingpad instructions within the same
+  // function should match.
+  if (PersonalityFn)
+    Assert1(LPI.getPersonalityFn() == PersonalityFn,
+            "Personality function doesn't match others in function", &LPI);
+  PersonalityFn = LPI.getPersonalityFn();
 
   visitInstruction(LPI);
 }
