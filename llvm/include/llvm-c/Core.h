@@ -277,6 +277,11 @@ typedef enum {
   LLVMRealPredicateTrue   /**< Always true (always folded) */
 } LLVMRealPredicate;
 
+typedef enum {
+  LLVMCatch,              /**< A catch clause   */
+  LLVMFilter              /**< A filter clause  */
+} LLVMLandingPadClauseTy;
+
 void LLVMInitializeCore(LLVMPassRegistryRef R);
 
 
@@ -833,6 +838,13 @@ void LLVMAddCase(LLVMValueRef Switch, LLVMValueRef OnVal,
 
 /* Add a destination to the indirectbr instruction */
 void LLVMAddDestination(LLVMValueRef IndirectBr, LLVMBasicBlockRef Dest);
+
+/* Add a clause to the landingpad instruction */
+void LLVMAddClause(LLVMValueRef LandingPad, LLVMLandingPadClauseTy ClauseTy,
+                   LLVMValueRef ClauseVal);
+
+/* Set the 'cleanup' flag in the landingpad instruction */
+void LLVMSetCleanup(LLVMValueRef LandingPad, LLVMBool Val);
 
 /* Arithmetic */
 LLVMValueRef LLVMBuildAdd(LLVMBuilderRef, LLVMValueRef LHS, LLVMValueRef RHS,
