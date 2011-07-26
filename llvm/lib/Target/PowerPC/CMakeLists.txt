@@ -8,9 +8,9 @@ tablegen(PPCGenInstrInfo.inc -gen-instr-info)
 tablegen(PPCGenDAGISel.inc -gen-dag-isel)
 tablegen(PPCGenCallingConv.inc -gen-callingconv)
 tablegen(PPCGenSubtargetInfo.inc -gen-subtarget)
+add_public_tablegen_target(PowerPCCommonTableGen)
 
 add_llvm_target(PowerPCCodeGen
-  PPCAsmBackend.cpp
   PPCAsmPrinter.cpp
   PPCBranchSelector.cpp
   PPCCodeEmitter.cpp
@@ -20,9 +20,7 @@ add_llvm_target(PowerPCCodeGen
   PPCISelLowering.cpp
   PPCFrameLowering.cpp
   PPCJITInfo.cpp
-  PPCMCCodeEmitter.cpp
   PPCMCInstLower.cpp
-  PPCPredicates.cpp
   PPCRegisterInfo.cpp
   PPCSubtarget.cpp
   PPCTargetMachine.cpp

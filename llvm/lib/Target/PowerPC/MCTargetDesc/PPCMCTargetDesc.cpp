@@ -13,9 +13,11 @@
 
 #include "PPCMCTargetDesc.h"
 #include "PPCMCAsmInfo.h"
+#include "InstPrinter/PPCInstPrinter.h"
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Target/TargetRegistry.h"
 
@@ -87,6 +89,25 @@ static MCCodeGenInfo *createPPCMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
+// This is duplicated code. Refactor this.
+static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
+                                    MCContext &Ctx, MCAsmBackend &MAB,
+                                    raw_ostream &OS,
+                                    MCCodeEmitter *Emitter,
+                                    bool RelaxAll,
+                                    bool NoExecStack) {
+  if (Triple(TT).isOSDarwin())
+    return createMachOStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
+
+  return NULL;
+}
+
+static MCInstPrinter *createPPCMCInstPrinter(const Target &T,
+                                             unsigned SyntaxVariant,
+                                             const MCAsmInfo &MAI) {
+  return new PPCInstPrinter(MAI, SyntaxVariant);
+}
+
 extern "C" void LLVMInitializePowerPCTargetMC() {
   // Register the MC asm info.
   RegisterMCAsmInfoFn C(ThePPC32Target, createPPCMCAsmInfo);
@@ -109,4 +130,20 @@ extern "C" void LLVMInitializePowerPCTargetMC() {
                                           createPPCMCSubtargetInfo);
   TargetRegistry::RegisterMCSubtargetInfo(ThePPC64Target,
                                           createPPCMCSubtargetInfo);
+
+  // Register the MC Code Emitter
+  TargetRegistry::RegisterMCCodeEmitter(ThePPC32Target, createPPCMCCodeEmitter);
+  TargetRegistry::RegisterMCCodeEmitter(ThePPC64Target, createPPCMCCodeEmitter);
+  
+    // Register the asm backend.
+  TargetRegistry::RegisterMCAsmBackend(ThePPC32Target, createPPCAsmBackend);
+  TargetRegistry::RegisterMCAsmBackend(ThePPC64Target, createPPCAsmBackend);
+  
+  // Register the object streamer.
+  TargetRegistry::RegisterMCObjectStreamer(ThePPC32Target, createMCStreamer);
+  TargetRegistry::RegisterMCObjectStreamer(ThePPC64Target, createMCStreamer);
+
+  // Register the MCInstPrinter.
+  TargetRegistry::RegisterMCInstPrinter(ThePPC32Target, createPPCMCInstPrinter);
+  TargetRegistry::RegisterMCInstPrinter(ThePPC64Target, createPPCMCInstPrinter);
 }

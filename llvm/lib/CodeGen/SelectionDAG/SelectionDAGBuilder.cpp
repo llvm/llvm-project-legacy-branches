@@ -3220,6 +3220,10 @@ void SelectionDAGBuilder::visitStore(const StoreInst &I) {
   DAG.setRoot(StoreNode);
 }
 
+void SelectionDAGBuilder::visitFence(const FenceInst &I) {
+  llvm_unreachable("Not implemented yet");
+}
+
 /// visitTargetIntrinsic - Lower a call of a target intrinsic to an INTRINSIC
 /// node.
 void SelectionDAGBuilder::visitTargetIntrinsic(const CallInst &I,

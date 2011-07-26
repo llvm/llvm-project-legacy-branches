@@ -13,10 +13,13 @@
 
 #include "MBlazeMCTargetDesc.h"
 #include "MBlazeMCAsmInfo.h"
+#include "InstPrinter/MBlazeInstPrinter.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #define GET_INSTRINFO_MC_DESC
 #include "MBlazeGenInstrInfo.inc"
@@ -68,6 +71,35 @@ static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
+static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
+                                    MCContext &Ctx, MCAsmBackend &MAB,
+                                    raw_ostream &_OS,
+                                    MCCodeEmitter *_Emitter,
+                                    bool RelaxAll,
+                                    bool NoExecStack) {
+  Triple TheTriple(TT);
+
+  if (TheTriple.isOSDarwin()) {
+    llvm_unreachable("MBlaze does not support Darwin MACH-O format");
+    return NULL;
+  }
+
+  if (TheTriple.isOSWindows()) {
+    llvm_unreachable("MBlaze does not support Windows COFF format");
+    return NULL;
+  }
+
+  return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
+}
+
+static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
+                                                unsigned SyntaxVariant,
+                                                const MCAsmInfo &MAI) {
+  if (SyntaxVariant == 0)
+    return new MBlazeInstPrinter(MAI);
+  return 0;
+}
+
 // Force static initialization.
 extern "C" void LLVMInitializeMBlazeTargetMC() {
   // Register the MC asm info.
@@ -87,4 +119,20 @@ extern "C" void LLVMInitializeMBlazeTargetMC() {
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheMBlazeTarget,
                                           createMBlazeMCSubtargetInfo);
+
+  // Register the MC code emitter
+  TargetRegistry::RegisterMCCodeEmitter(TheMBlazeTarget,
+                                        llvm::createMBlazeMCCodeEmitter);
+
+  // Register the asm backend
+  TargetRegistry::RegisterMCAsmBackend(TheMBlazeTarget,
+                                       createMBlazeAsmBackend);
+
+  // Register the object streamer
+  TargetRegistry::RegisterMCObjectStreamer(TheMBlazeTarget,
+                                           createMCStreamer);
+
+  // Register the MCInstPrinter.
+  TargetRegistry::RegisterMCInstPrinter(TheMBlazeTarget,
+                                        createMBlazeMCInstPrinter);
 }

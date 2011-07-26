@@ -14,13 +14,20 @@
 #ifndef X86MCTARGETDESC_H
 #define X86MCTARGETDESC_H
 
+#include "llvm/Support/DataTypes.h"
 #include <string>
 
 namespace llvm {
+class MCAsmBackend;
+class MCCodeEmitter;
+class MCContext;
+class MCInstrInfo;
+class MCObjectWriter;
 class MCRegisterInfo;
 class MCSubtargetInfo;
 class Target;
 class StringRef;
+class raw_ostream;
 
 extern Target TheX86_32Target, TheX86_64Target;
 
@@ -62,6 +69,19 @@ namespace X86_MC {
   MCSubtargetInfo *createX86MCSubtargetInfo(StringRef TT, StringRef CPU,
                                             StringRef FS);
 }
+
+MCCodeEmitter *createX86MCCodeEmitter(const MCInstrInfo &MCII,
+                                      const MCSubtargetInfo &STI,
+                                      MCContext &Ctx);
+
+MCAsmBackend *createX86_32AsmBackend(const Target &T, StringRef TT);
+MCAsmBackend *createX86_64AsmBackend(const Target &T, StringRef TT);
+
+/// createX86MachObjectWriter - Construct an X86 Mach-O object writer.
+MCObjectWriter *createX86MachObjectWriter(raw_ostream &OS,
+                                          bool Is64Bit,
+                                          uint32_t CPUType,
+                                          uint32_t CPUSubtype);
 
 } // End llvm namespace
 

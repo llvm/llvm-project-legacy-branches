@@ -15,6 +15,7 @@
 #ifndef TARGET_X86_H
 #define TARGET_X86_H
 
+#include "MCTargetDesc/X86BaseInfo.h"
 #include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Target/TargetMachine.h"
@@ -24,16 +25,8 @@ namespace llvm {
 class FunctionPass;
 class JITCodeEmitter;
 class MachineCodeEmitter;
-class MCCodeEmitter;
-class MCContext;
-class MCInstrInfo;
-class MCObjectWriter;
-class MCSubtargetInfo;
 class Target;
-class TargetAsmBackend;
 class X86TargetMachine;
-class formatted_raw_ostream;
-class raw_ostream;
 
 /// createX86ISelDag - This pass converts a legalized DAG into a 
 /// X86-specific DAG, ready for instruction scheduling.
@@ -60,13 +53,6 @@ FunctionPass *createSSEDomainFixPass();
 FunctionPass *createX86JITCodeEmitterPass(X86TargetMachine &TM,
                                           JITCodeEmitter &JCE);
 
-MCCodeEmitter *createX86MCCodeEmitter(const MCInstrInfo &MCII,
-                                      const MCSubtargetInfo &STI,
-                                      MCContext &Ctx);
-
-TargetAsmBackend *createX86_32AsmBackend(const Target &, const std::string &);
-TargetAsmBackend *createX86_64AsmBackend(const Target &, const std::string &);
-
 /// createX86EmitCodeToMemory - Returns a pass that converts a register
 /// allocated function into raw machine code in a dynamically
 /// allocated chunk of memory.
@@ -78,13 +64,6 @@ FunctionPass *createEmitX86CodeToMemory();
 /// reserved in case dynamic stack alignment is later required.
 ///
 FunctionPass *createX86MaxStackAlignmentHeuristicPass();
-
-
-/// createX86MachObjectWriter - Construct an X86 Mach-O object writer.
-MCObjectWriter *createX86MachObjectWriter(raw_ostream &OS,
-                                          bool Is64Bit,
-                                          uint32_t CPUType,
-                                          uint32_t CPUSubtype);
 
 } // End llvm namespace
 

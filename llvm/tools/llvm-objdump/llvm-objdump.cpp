@@ -27,6 +27,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -280,12 +281,28 @@ static void DisassembleInput(const StringRef &Filename) {
         Out << "digraph " << f.getName() << " {\n";
         Out << "graph [ rankdir = \"LR\" ];\n";
         for (MCFunction::iterator i = f.begin(), e = f.end(); i != e; ++i) {
+          bool hasPreds = false;
+          // Only print blocks that have predecessors.
+          // FIXME: Slow.
+          for (MCFunction::iterator pi = f.begin(), pe = f.end(); pi != pe;
+               ++pi)
+            if (pi->second.contains(&i->second)) {
+              hasPreds = true;
+              break;
+            }
+
+          if (!hasPreds && i != f.begin())
+            continue;
+
           Out << '"' << (uintptr_t)&i->second << "\" [ label=\"<a>";
           // Print instructions.
           for (unsigned ii = 0, ie = i->second.getInsts().size(); ii != ie;
                ++ii) {
-            IP->printInst(&i->second.getInsts()[ii].Inst, Out);
-            Out << '|';
+            // Escape special chars and print the instruction in mnemonic form.
+            std::string Str;
+            raw_string_ostream OS(Str);
+            IP->printInst(&i->second.getInsts()[ii].Inst, OS);
+            Out << DOT::EscapeString(OS.str()) << '|';
           }
           Out << "<o>\" shape=\"record\" ];\n";
 
@@ -308,16 +325,9 @@ int main(int argc, char **argv) {
 
   // Initialize targets and assembly printers/parsers.
   llvm::InitializeAllTargetInfos();
-  // FIXME: We shouldn't need to initialize the Target(Machine)s.
-  llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllDisassemblers();
-
-  // Register the target printer for --version.
-  // FIXME: Remove when we stop initializing the Target(Machine)s above.
-  cl::AddExtraVersionPrinter(TargetRegistry::printRegisteredTargetsForVersion);
 
   cl::ParseCommandLineOptions(argc, argv, "llvm object file dumper\n");
   TripleName = Triple::normalize(TripleName);

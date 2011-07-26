@@ -278,6 +278,7 @@ namespace {
     void visitUserOp1(Instruction &I);
     void visitUserOp2(Instruction &I) { visitUserOp1(I); }
     void visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI);
+    void visitFenceInst(FenceInst &FI);
     void visitAllocaInst(AllocaInst &AI);
     void visitExtractValueInst(ExtractValueInst &EVI);
     void visitInsertValueInst(InsertValueInst &IVI);
@@ -1276,8 +1277,7 @@ void Verifier::visitShuffleVectorInst(ShuffleVectorInst &SV) {
 void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   SmallVector<Value*, 16> Idxs(GEP.idx_begin(), GEP.idx_end());
   Type *ElTy =
-    GetElementPtrInst::getIndexedType(GEP.getOperand(0)->getType(),
-                                      Idxs.begin(), Idxs.end());
+    GetElementPtrInst::getIndexedType(GEP.getOperand(0)->getType(), Idxs);
   Assert1(ElTy, "Invalid indices for GEP pointer type!", &GEP);
   Assert2(GEP.getType()->isPointerTy() &&
           cast<PointerType>(GEP.getType())->getElementType() == ElTy,
@@ -1314,6 +1314,15 @@ void Verifier::visitAllocaInst(AllocaInst &AI) {
   Assert1(AI.getArraySize()->getType()->isIntegerTy(),
           "Alloca array size must have integer type", &AI);
   visitInstruction(AI);
+}
+
+void Verifier::visitFenceInst(FenceInst &FI) {
+  const AtomicOrdering Ordering = FI.getOrdering();
+  Assert1(Ordering == Acquire || Ordering == Release ||
+          Ordering == AcquireRelease || Ordering == SequentiallyConsistent,
+          "fence instructions may only have "
+          " acquire, release, acq_rel, or seq_cst ordering.", &FI);
+  visitInstruction(FI);
 }
 
 void Verifier::visitExtractValueInst(ExtractValueInst &EVI) {

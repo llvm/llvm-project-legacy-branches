@@ -13,9 +13,12 @@
 
 #include "X86MCTargetDesc.h"
 #include "X86MCAsmInfo.h"
+#include "InstPrinter/X86ATTInstPrinter.h"
+#include "InstPrinter/X86IntelInstPrinter.h"
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/ADT/Triple.h"
@@ -363,6 +366,33 @@ static MCCodeGenInfo *createX86MCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
+static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
+                                    MCContext &Ctx, MCAsmBackend &MAB,
+                                    raw_ostream &_OS,
+                                    MCCodeEmitter *_Emitter,
+                                    bool RelaxAll,
+                                    bool NoExecStack) {
+  Triple TheTriple(TT);
+
+  if (TheTriple.isOSDarwin() || TheTriple.getEnvironment() == Triple::MachO)
+    return createMachOStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll);
+
+  if (TheTriple.isOSWindows())
+    return createWinCOFFStreamer(Ctx, MAB, *_Emitter, _OS, RelaxAll);
+
+  return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
+}
+
+static MCInstPrinter *createX86MCInstPrinter(const Target &T,
+                                             unsigned SyntaxVariant,
+                                             const MCAsmInfo &MAI) {
+  if (SyntaxVariant == 0)
+    return new X86ATTInstPrinter(MAI);
+  if (SyntaxVariant == 1)
+    return new X86IntelInstPrinter(MAI);
+  return 0;
+}
+
 // Force static initialization.
 extern "C" void LLVMInitializeX86TargetMC() {
   // Register the MC asm info.
@@ -386,4 +416,28 @@ extern "C" void LLVMInitializeX86TargetMC() {
                                           X86_MC::createX86MCSubtargetInfo);
   TargetRegistry::RegisterMCSubtargetInfo(TheX86_64Target,
                                           X86_MC::createX86MCSubtargetInfo);
+
+  // Register the code emitter.
+  TargetRegistry::RegisterMCCodeEmitter(TheX86_32Target,
+                                        createX86MCCodeEmitter);
+  TargetRegistry::RegisterMCCodeEmitter(TheX86_64Target,
+                                        createX86MCCodeEmitter);
+
+  // Register the asm backend.
+  TargetRegistry::RegisterMCAsmBackend(TheX86_32Target,
+                                       createX86_32AsmBackend);
+  TargetRegistry::RegisterMCAsmBackend(TheX86_64Target,
+                                       createX86_64AsmBackend);
+
+  // Register the object streamer.
+  TargetRegistry::RegisterMCObjectStreamer(TheX86_32Target,
+                                           createMCStreamer);
+  TargetRegistry::RegisterMCObjectStreamer(TheX86_64Target,
+                                           createMCStreamer);
+
+  // Register the MCInstPrinter.
+  TargetRegistry::RegisterMCInstPrinter(TheX86_32Target,
+                                        createX86MCInstPrinter);
+  TargetRegistry::RegisterMCInstPrinter(TheX86_64Target,
+                                        createX86MCInstPrinter);
 }

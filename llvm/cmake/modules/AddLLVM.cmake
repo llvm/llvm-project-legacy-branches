@@ -124,16 +124,9 @@ endmacro(add_llvm_utility name)
 
 
 macro(add_llvm_target target_name)
-  if( TABLEGEN_OUTPUT )
-    add_custom_target(${target_name}Table_gen
-      DEPENDS ${TABLEGEN_OUTPUT})
-    add_dependencies(${target_name}Table_gen ${LLVM_COMMON_DEPENDS})
-  endif( TABLEGEN_OUTPUT )
-  include_directories(BEFORE ${CMAKE_CURRENT_BINARY_DIR})
+  include_directories(BEFORE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR})
   add_llvm_library(LLVM${target_name} ${ARGN} ${TABLEGEN_OUTPUT})
-  if ( TABLEGEN_OUTPUT )
-    add_dependencies(LLVM${target_name} ${target_name}Table_gen)
-    set_target_properties(${target_name}Table_gen PROPERTIES FOLDER "Tablegenning")
-  endif (TABLEGEN_OUTPUT)
   set( CURRENT_LLVM_TARGET LLVM${target_name} )
 endmacro(add_llvm_target)

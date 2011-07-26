@@ -347,33 +347,21 @@ def bl_target : Operand<i32> {
 
 
 // A list of registers separated by comma. Used by load/store multiple.
-def RegListAsmOperand : AsmOperandClass {
-  let Name = "RegList";
-  let SuperClasses = [];
-}
-
-def DPRRegListAsmOperand : AsmOperandClass {
-  let Name = "DPRRegList";
-  let SuperClasses = [];
-}
-
-def SPRRegListAsmOperand : AsmOperandClass {
-  let Name = "SPRRegList";
-  let SuperClasses = [];
-}
-
+def RegListAsmOperand : AsmOperandClass { let Name = "RegList"; }
 def reglist : Operand<i32> {
   let EncoderMethod = "getRegisterListOpValue";
   let ParserMatchClass = RegListAsmOperand;
   let PrintMethod = "printRegisterList";
 }
 
+def DPRRegListAsmOperand : AsmOperandClass { let Name = "DPRRegList"; }
 def dpr_reglist : Operand<i32> {
   let EncoderMethod = "getRegisterListOpValue";
   let ParserMatchClass = DPRRegListAsmOperand;
   let PrintMethod = "printRegisterList";
 }
 
+def SPRRegListAsmOperand : AsmOperandClass { let Name = "SPRRegList"; }
 def spr_reglist : Operand<i32> {
   let EncoderMethod = "getRegisterListOpValue";
   let ParserMatchClass = SPRRegListAsmOperand;
@@ -406,44 +394,40 @@ def rot_imm : Operand<i32>, ImmLeaf<i32, [{
   let EncoderMethod = "getRotImmOpValue";
 }
 
-def ShifterAsmOperand : AsmOperandClass {
-  let Name = "Shifter";
-  let SuperClasses = [];
-}
-
 // shift_imm: An integer that encodes a shift amount and the type of shift
-// (currently either asr or lsl) using the same encoding used for the
-// immediates in so_reg operands.
+// (asr or lsl). The 6-bit immediate encodes as:
+//    {5}     0 ==> lsl
+//            1     asr
+//    {4-0}   imm5 shift amount.
+//            asr #32 encoded as imm5 == 0.
+def ShifterImmAsmOperand : AsmOperandClass {
+  let Name = "ShifterImm";
+  let ParserMethod = "parseShifterImm";
+}
 def shift_imm : Operand<i32> {
   let PrintMethod = "printShiftImmOperand";
-  let ParserMatchClass = ShifterAsmOperand;
-}
-
-def ShiftedRegAsmOperand : AsmOperandClass {
-  let Name = "ShiftedReg";
-}
-
-def ShiftedImmAsmOperand : AsmOperandClass {
-  let Name = "ShiftedImm";
+  let ParserMatchClass = ShifterImmAsmOperand;
 }
 
 // shifter_operand operands: so_reg_reg, so_reg_imm, and so_imm.
+def ShiftedRegAsmOperand : AsmOperandClass { let Name = "RegShiftedReg"; }
 def so_reg_reg : Operand<i32>,  // reg reg imm
                  ComplexPattern<i32, 3, "SelectRegShifterOperand",
                                 [shl, srl, sra, rotr]> {
   let EncoderMethod = "getSORegRegOpValue";
   let PrintMethod = "printSORegRegOperand";
   let ParserMatchClass = ShiftedRegAsmOperand;
-  let MIOperandInfo = (ops GPR, GPR, shift_imm);
+  let MIOperandInfo = (ops GPR, GPR, i32imm);
 }
 
+def ShiftedImmAsmOperand : AsmOperandClass { let Name = "RegShiftedImm"; }
 def so_reg_imm : Operand<i32>, // reg imm
                  ComplexPattern<i32, 2, "SelectImmShifterOperand",
                                 [shl, srl, sra, rotr]> {
   let EncoderMethod = "getSORegImmOpValue";
   let PrintMethod = "printSORegImmOperand";
   let ParserMatchClass = ShiftedImmAsmOperand;
-  let MIOperandInfo = (ops GPR, shift_imm);
+  let MIOperandInfo = (ops GPR, i32imm);
 }
 
 // FIXME: Does this need to be distinct from so_reg?
@@ -452,7 +436,7 @@ def shift_so_reg_reg : Operand<i32>,    // reg reg imm
                                   [shl,srl,sra,rotr]> {
   let EncoderMethod = "getSORegRegOpValue";
   let PrintMethod = "printSORegRegOperand";
-  let MIOperandInfo = (ops GPR, GPR, shift_imm);
+  let MIOperandInfo = (ops GPR, GPR, i32imm);
 }
 
 // FIXME: Does this need to be distinct from so_reg?
@@ -461,7 +445,7 @@ def shift_so_reg_imm : Operand<i32>,    // reg reg imm
                                   [shl,srl,sra,rotr]> {
   let EncoderMethod = "getSORegImmOpValue";
   let PrintMethod = "printSORegImmOperand";
-  let MIOperandInfo = (ops GPR, shift_imm);
+  let MIOperandInfo = (ops GPR, i32imm);
 }
 
 
@@ -559,24 +543,21 @@ def imm1_32_XFORM: SDNodeXForm<imm, [{
 def Imm1_32AsmOperand: AsmOperandClass { let Name = "Imm1_32"; }
 def imm1_32 : Operand<i32>, PatLeaf<(imm), [{ return Imm > 0 && Imm <= 32; }],
     imm1_32_XFORM> {
-  let PrintMethod = "printImm1_32Operand";
+  let PrintMethod = "printImmPlusOneOperand";
   let ParserMatchClass = Imm1_32AsmOperand;
 }
 
+def imm1_16_XFORM: SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant((int)N->getZExtValue() - 1, MVT::i32);
+}]>;
+def Imm1_16AsmOperand: AsmOperandClass { let Name = "Imm1_16"; }
+def imm1_16 : Operand<i32>, PatLeaf<(imm), [{ return Imm > 0 && Imm <= 16; }],
+    imm1_16_XFORM> {
+  let PrintMethod = "printImmPlusOneOperand";
+  let ParserMatchClass = Imm1_16AsmOperand;
+}
+
 // Define ARM specific addressing modes.
-
-def MemMode2AsmOperand : AsmOperandClass {
-  let Name = "MemMode2";
-  let SuperClasses = [];
-  let ParserMethod = "tryParseMemMode2Operand";
-}
-
-def MemMode3AsmOperand : AsmOperandClass {
-  let Name = "MemMode3";
-  let SuperClasses = [];
-  let ParserMethod = "tryParseMemMode3Operand";
-}
-
 // addrmode_imm12 := reg +/- imm12
 //
 def addrmode_imm12 : Operand<i32>,
@@ -602,6 +583,10 @@ def ldst_so_reg : Operand<i32>,
 // addrmode2 := reg +/- imm12
 //           := reg +/- reg shop imm
 //
+def MemMode2AsmOperand : AsmOperandClass {
+  let Name = "MemMode2";
+  let ParserMethod = "parseMemMode2Operand";
+}
 def addrmode2 : Operand<i32>,
                 ComplexPattern<i32, 3, "SelectAddrMode2", []> {
   let EncoderMethod = "getAddrMode2OpValue";
@@ -621,6 +606,10 @@ def am2offset : Operand<i32>,
 // addrmode3 := reg +/- reg
 // addrmode3 := reg +/- imm8
 //
+def MemMode3AsmOperand : AsmOperandClass {
+  let Name = "MemMode3";
+  let ParserMethod = "parseMemMode3Operand";
+}
 def addrmode3 : Operand<i32>,
                 ComplexPattern<i32, 3, "SelectAddrMode3", []> {
   let EncoderMethod = "getAddrMode3OpValue";
@@ -644,13 +633,9 @@ def ldstm_mode : OptionalDefOperand<OtherVT, (ops i32), (ops (i32 1))> {
   let PrintMethod = "printLdStmModeOperand";
 }
 
-def MemMode5AsmOperand : AsmOperandClass {
-  let Name = "MemMode5";
-  let SuperClasses = [];
-}
-
 // addrmode5 := reg +/- imm8*4
 //
+def MemMode5AsmOperand : AsmOperandClass { let Name = "MemMode5"; }
 def addrmode5 : Operand<i32>,
                 ComplexPattern<i32, 2, "SelectAddrMode5", []> {
   let PrintMethod = "printAddrMode5Operand";
@@ -702,15 +687,11 @@ def addrmodepc : Operand<i32>,
   let MIOperandInfo = (ops GPR, i32imm);
 }
 
-def MemMode7AsmOperand : AsmOperandClass {
-  let Name = "MemMode7";
-  let SuperClasses = [];
-}
-
 // addrmode7 := reg
 // Used by load/store exclusive instructions. Useful to enable right assembly
 // parsing and printing. Not used for any codegen matching.
 //
+def MemMode7AsmOperand : AsmOperandClass { let Name = "MemMode7"; }
 def addrmode7 : Operand<i32> {
   let PrintMethod = "printAddrMode7Operand";
   let MIOperandInfo = (ops GPR);
@@ -723,21 +704,17 @@ def nohash_imm : Operand<i32> {
 
 def CoprocNumAsmOperand : AsmOperandClass {
   let Name = "CoprocNum";
-  let SuperClasses = [];
-  let ParserMethod = "tryParseCoprocNumOperand";
+  let ParserMethod = "parseCoprocNumOperand";
 }
-
-def CoprocRegAsmOperand : AsmOperandClass {
-  let Name = "CoprocReg";
-  let SuperClasses = [];
-  let ParserMethod = "tryParseCoprocRegOperand";
-}
-
 def p_imm : Operand<i32> {
   let PrintMethod = "printPImmediate";
   let ParserMatchClass = CoprocNumAsmOperand;
 }
 
+def CoprocRegAsmOperand : AsmOperandClass {
+  let Name = "CoprocReg";
+  let ParserMethod = "parseCoprocRegOperand";
+}
 def c_imm : Operand<i32> {
   let PrintMethod = "printCImmediate";
   let ParserMatchClass = CoprocRegAsmOperand;
@@ -2727,8 +2704,8 @@ def USADA8 : AI<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm, GPR:$Ra),
 
 // Signed/Unsigned saturate -- for disassembly only
 
-def SSAT : AI<(outs GPR:$Rd), (ins imm1_32:$sat_imm, GPR:$a, shift_imm:$sh),
-              SatFrm, NoItinerary, "ssat", "\t$Rd, $sat_imm, $a$sh", []> {
+def SSAT : AI<(outs GPR:$Rd), (ins imm1_32:$sat_imm, GPR:$Rn, shift_imm:$sh),
+              SatFrm, NoItinerary, "ssat", "\t$Rd, $sat_imm, $Rn$sh", []> {
   bits<4> Rd;
   bits<5> sat_imm;
   bits<4> Rn;
@@ -2737,12 +2714,12 @@ def SSAT : AI<(outs GPR:$Rd), (ins imm1_32:$sat_imm, GPR:$a, shift_imm:$sh),
   let Inst{5-4} = 0b01;
   let Inst{20-16} = sat_imm;
   let Inst{15-12} = Rd;
-  let Inst{11-7} = sh{7-3};
-  let Inst{6} = sh{0};
+  let Inst{11-7} = sh{4-0};
+  let Inst{6} = sh{5};
   let Inst{3-0} = Rn;
 }
 
-def SSAT16 : AI<(outs GPR:$Rd), (ins imm1_32:$sat_imm, GPR:$Rn), SatFrm,
+def SSAT16 : AI<(outs GPR:$Rd), (ins imm1_16:$sat_imm, GPR:$Rn), SatFrm,
                 NoItinerary, "ssat16", "\t$Rd, $sat_imm, $Rn", []> {
   bits<4> Rd;
   bits<4> sat_imm;
@@ -2754,9 +2731,8 @@ def SSAT16 : AI<(outs GPR:$Rd), (ins imm1_32:$sat_imm, GPR:$Rn), SatFrm,
   let Inst{3-0} = Rn;
 }
 
-def USAT : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$a, shift_imm:$sh),
-              SatFrm, NoItinerary, "usat", "\t$Rd, $sat_imm, $a$sh",
-              [/* For disassembly only; pattern left blank */]> {
+def USAT : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$Rn, shift_imm:$sh),
+              SatFrm, NoItinerary, "usat", "\t$Rd, $sat_imm, $Rn$sh", []> {
   bits<4> Rd;
   bits<5> sat_imm;
   bits<4> Rn;
@@ -2764,8 +2740,8 @@ def USAT : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$a, shift_imm:$sh),
   let Inst{27-21} = 0b0110111;
   let Inst{5-4} = 0b01;
   let Inst{15-12} = Rd;
-  let Inst{11-7} = sh{7-3};
-  let Inst{6} = sh{0};
+  let Inst{11-7} = sh{4-0};
+  let Inst{6} = sh{5};
   let Inst{20-16} = sat_imm;
   let Inst{3-0} = Rn;
 }
@@ -3488,6 +3464,10 @@ def MVNCCi : ARMPseudoInst<(outs GPR:$Rd),
 // Atomic operations intrinsics
 //
 
+def MemBarrierOptOperand : AsmOperandClass {
+  let Name = "MemBarrierOpt";
+  let ParserMethod = "parseMemBarrierOptOperand";
+}
 def memb_opt : Operand<i32> {
   let PrintMethod = "printMemBOption";
   let ParserMatchClass = MemBarrierOptOperand;
@@ -4313,3 +4293,7 @@ def : InstAlias<"rsc${s}${p} $Rdn, $shift",
 def : InstAlias<"rsc${s}${p} $Rdn, $shift",
                 (RSCrsr GPR:$Rdn, GPR:$Rdn, so_reg_reg:$shift, pred:$p,
                         cc_out:$s)>, Requires<[IsARM]>;
+
+// SSAT optional shift operand.
+def : InstAlias<"ssat${p} $Rd, $sat_imm, $Rn",
+                (SSAT GPR:$Rd, imm1_32:$sat_imm, GPR:$Rn, 0, pred:$p)>;

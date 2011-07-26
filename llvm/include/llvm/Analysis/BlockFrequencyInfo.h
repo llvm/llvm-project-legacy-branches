@@ -1,4 +1,4 @@
-//====----- MachineBlockFrequency.h - MachineBlock Frequency Analysis ----====//
+//========-------- BlockFrequencyInfo.h - Block Frequency Analysis -------========//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,41 +11,41 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_MACHINEBLOCKFREQUENCY_H
-#define LLVM_CODEGEN_MACHINEBLOCKFREQUENCY_H
+#ifndef LLVM_ANALYSIS_BLOCKFREQUENCYINFO_H
+#define LLVM_ANALYSIS_BLOCKFREQUENCYINFO_H
 
-#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/Pass.h"
 #include <climits>
 
 namespace llvm {
 
-class MachineBranchProbabilityInfo;
+class BranchProbabilityInfo;
 template<class BlockT, class FunctionT, class BranchProbInfoT>
 class BlockFrequencyImpl;
 
-/// MachineBlockFrequency pass uses BlockFrequencyImpl implementation to estimate
-/// machine basic block frequencies.
-class MachineBlockFrequency : public MachineFunctionPass {
+/// BlockFrequencyInfo pass uses BlockFrequencyImpl implementation to estimate
+/// IR basic block frequencies.
+class BlockFrequencyInfo : public FunctionPass {
 
-  BlockFrequencyImpl<MachineBasicBlock, MachineFunction, MachineBranchProbabilityInfo> *MBFI;
+  BlockFrequencyImpl<BasicBlock, Function, BranchProbabilityInfo> *BFI;
 
 public:
   static char ID;
 
-  MachineBlockFrequency();
+  BlockFrequencyInfo();
 
-  ~MachineBlockFrequency();
+  ~BlockFrequencyInfo();
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
-  bool runOnMachineFunction(MachineFunction &F);
+  bool runOnFunction(Function &F);
 
   /// getblockFreq - Return block frequency. Return 0 if we don't have the
   /// information. Please note that initial frequency is equal to 1024. It means
   /// that we should not rely on the value itself, but only on the comparison to
   /// the other block frequencies. We do this to avoid using of floating points.
   ///
-  uint32_t getBlockFreq(MachineBasicBlock *MBB);
+  uint32_t getBlockFreq(BasicBlock *BB);
 };
 
 }

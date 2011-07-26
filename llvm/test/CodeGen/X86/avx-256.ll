@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=x86_64-apple-darwin -march=x86 -mcpu=corei7 -mattr=avx | FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-apple-darwin -mcpu=corei7-avx -mattr=+avx | FileCheck %s
 
 @x = common global <8 x float> zeroinitializer, align 32
 @y = common global <4 x double> zeroinitializer, align 32
@@ -13,3 +13,14 @@ entry:
   ret void
 }
 
+; CHECK: vpcmpeqd
+; CHECK: vinsertf128 $1
+define void @ones([0 x float]* nocapture %RET, [0 x float]* nocapture %aFOO) nounwind {
+allocas:
+  %ptr2vec615 = bitcast [0 x float]* %RET to <8 x float>*
+  store <8 x float> <float 0xFFFFFFFFE0000000, float 0xFFFFFFFFE0000000, float
+0xFFFFFFFFE0000000, float 0xFFFFFFFFE0000000, float 0xFFFFFFFFE0000000, float
+0xFFFFFFFFE0000000, float 0xFFFFFFFFE0000000, float 0xFFFFFFFFE0000000>, <8 x
+float>* %ptr2vec615, align 32
+  ret void
+}

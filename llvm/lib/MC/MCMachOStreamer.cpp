@@ -20,7 +20,7 @@
 #include "llvm/MC/MCMachOSymbolFlags.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCDwarf.h"
-#include "llvm/MC/TargetAsmBackend.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -34,9 +34,9 @@ private:
   virtual void EmitInstToData(const MCInst &Inst);
 
 public:
-  MCMachOStreamer(MCContext &Context, TargetAsmBackend &TAB,
+  MCMachOStreamer(MCContext &Context, MCAsmBackend &MAB,
                   raw_ostream &OS, MCCodeEmitter *Emitter)
-    : MCObjectStreamer(Context, TAB, OS, Emitter) {}
+    : MCObjectStreamer(Context, MAB, OS, Emitter) {}
 
   /// @name MCStreamer Interface
   /// @{
@@ -207,8 +207,8 @@ void MCMachOStreamer::EmitSymbolAttribute(MCSymbol *Symbol,
   case MCSA_ELF_TypeCommon:
   case MCSA_ELF_TypeNoType:
   case MCSA_ELF_TypeGnuUniqueObject:
-  case MCSA_IndirectSymbol:
   case MCSA_Hidden:
+  case MCSA_IndirectSymbol:
   case MCSA_Internal:
   case MCSA_Protected:
   case MCSA_Weak:
@@ -410,10 +410,10 @@ void MCMachOStreamer::Finish() {
   this->MCObjectStreamer::Finish();
 }
 
-MCStreamer *llvm::createMachOStreamer(MCContext &Context, TargetAsmBackend &TAB,
+MCStreamer *llvm::createMachOStreamer(MCContext &Context, MCAsmBackend &MAB,
                                       raw_ostream &OS, MCCodeEmitter *CE,
                                       bool RelaxAll) {
-  MCMachOStreamer *S = new MCMachOStreamer(Context, TAB, OS, CE);
+  MCMachOStreamer *S = new MCMachOStreamer(Context, MAB, OS, CE);
   if (RelaxAll)
     S->getAssembler().setRelaxAll(true);
   return S;

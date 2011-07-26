@@ -1085,31 +1085,34 @@ void StoreInst::setAlignment(unsigned Align) {
 }
 
 //===----------------------------------------------------------------------===//
+//                       FenceInst Implementation
+//===----------------------------------------------------------------------===//
+
+FenceInst::FenceInst(LLVMContext &C, AtomicOrdering Ordering, 
+                     SynchronizationScope SynchScope,
+                     Instruction *InsertBefore)
+  : Instruction(Type::getVoidTy(C), Fence, 0, 0, InsertBefore) {
+  setOrdering(Ordering);
+  setSynchScope(SynchScope);
+}
+
+FenceInst::FenceInst(LLVMContext &C, AtomicOrdering Ordering, 
+                     SynchronizationScope SynchScope,
+                     BasicBlock *InsertAtEnd)
+  : Instruction(Type::getVoidTy(C), Fence, 0, 0, InsertAtEnd) {
+  setOrdering(Ordering);
+  setSynchScope(SynchScope);
+}
+
+//===----------------------------------------------------------------------===//
 //                       GetElementPtrInst Implementation
 //===----------------------------------------------------------------------===//
 
-static unsigned retrieveAddrSpace(const Value *Val) {
-  return cast<PointerType>(Val->getType())->getAddressSpace();
-}
-
-void GetElementPtrInst::init(Value *Ptr, Value* const *Idx, unsigned NumIdx,
+void GetElementPtrInst::init(Value *Ptr, ArrayRef<Value *> IdxList,
                              const Twine &Name) {
-  assert(NumOperands == 1+NumIdx && "NumOperands not initialized?");
-  Use *OL = OperandList;
-  OL[0] = Ptr;
-
-  for (unsigned i = 0; i != NumIdx; ++i)
-    OL[i+1] = Idx[i];
-
-  setName(Name);
-}
-
-void GetElementPtrInst::init(Value *Ptr, Value *Idx, const Twine &Name) {
-  assert(NumOperands == 2 && "NumOperands not initialized?");
-  Use *OL = OperandList;
-  OL[0] = Ptr;
-  OL[1] = Idx;
-
+  assert(NumOperands == 1 + IdxList.size() && "NumOperands not initialized?");
+  OperandList[0] = Ptr;
+  std::copy(IdxList.begin(), IdxList.end(), op_begin() + 1);
   setName(Name);
 }
 
@@ -1118,32 +1121,8 @@ GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
                 OperandTraits<GetElementPtrInst>::op_end(this)
                 - GEPI.getNumOperands(),
                 GEPI.getNumOperands()) {
-  Use *OL = OperandList;
-  Use *GEPIOL = GEPI.OperandList;
-  for (unsigned i = 0, E = NumOperands; i != E; ++i)
-    OL[i] = GEPIOL[i];
+  std::copy(GEPI.op_begin(), GEPI.op_end(), op_begin());
   SubclassOptionalData = GEPI.SubclassOptionalData;
-}
-
-GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
-                                     const Twine &Name, Instruction *InBe)
-  : Instruction(PointerType::get(
-      checkGEPType(getIndexedType(Ptr->getType(),Idx)), retrieveAddrSpace(Ptr)),
-                GetElementPtr,
-                OperandTraits<GetElementPtrInst>::op_end(this) - 2,
-                2, InBe) {
-  init(Ptr, Idx, Name);
-}
-
-GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
-                                     const Twine &Name, BasicBlock *IAE)
-  : Instruction(PointerType::get(
-            checkGEPType(getIndexedType(Ptr->getType(),Idx)),  
-                retrieveAddrSpace(Ptr)),
-                GetElementPtr,
-                OperandTraits<GetElementPtrInst>::op_end(this) - 2,
-                2, IAE) {
-  init(Ptr, Idx, Name);
 }
 
 /// getIndexedType - Returns the type of the element that would be accessed with
@@ -1156,14 +1135,13 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr, Value *Idx,
 /// pointer type.
 ///
 template <typename IndexTy>
-static Type *getIndexedTypeInternal(Type *Ptr, IndexTy const *Idxs,
-                                    unsigned NumIdx) {
+static Type *getIndexedTypeInternal(Type *Ptr, ArrayRef<IndexTy> IdxList) {
   PointerType *PTy = dyn_cast<PointerType>(Ptr);
   if (!PTy) return 0;   // Type isn't a pointer type!
   Type *Agg = PTy->getElementType();
 
   // Handle the special case of the empty set index set, which is always valid.
-  if (NumIdx == 0)
+  if (IdxList.empty())
     return Agg;
   
   // If there is at least one index, the top level type must be sized, otherwise
@@ -1172,43 +1150,28 @@ static Type *getIndexedTypeInternal(Type *Ptr, IndexTy const *Idxs,
     return 0;
 
   unsigned CurIdx = 1;
-  for (; CurIdx != NumIdx; ++CurIdx) {
+  for (; CurIdx != IdxList.size(); ++CurIdx) {
     CompositeType *CT = dyn_cast<CompositeType>(Agg);
     if (!CT || CT->isPointerTy()) return 0;
-    IndexTy Index = Idxs[CurIdx];
+    IndexTy Index = IdxList[CurIdx];
     if (!CT->indexValid(Index)) return 0;
     Agg = CT->getTypeAtIndex(Index);
   }
-  return CurIdx == NumIdx ? Agg : 0;
+  return CurIdx == IdxList.size() ? Agg : 0;
 }
 
-Type *GetElementPtrInst::getIndexedType(Type *Ptr, Value* const *Idxs,
-                                        unsigned NumIdx) {
-  return getIndexedTypeInternal(Ptr, Idxs, NumIdx);
-}
-
-Type *GetElementPtrInst::getIndexedType(Type *Ptr,
-                                        Constant* const *Idxs,
-                                        unsigned NumIdx) {
-  return getIndexedTypeInternal(Ptr, Idxs, NumIdx);
+Type *GetElementPtrInst::getIndexedType(Type *Ptr, ArrayRef<Value *> IdxList) {
+  return getIndexedTypeInternal(Ptr, IdxList);
 }
 
 Type *GetElementPtrInst::getIndexedType(Type *Ptr,
-                                        uint64_t const *Idxs,
-                                        unsigned NumIdx) {
-  return getIndexedTypeInternal(Ptr, Idxs, NumIdx);
+                                        ArrayRef<Constant *> IdxList) {
+  return getIndexedTypeInternal(Ptr, IdxList);
 }
 
-Type *GetElementPtrInst::getIndexedType(Type *Ptr, Value *Idx) {
-  PointerType *PTy = dyn_cast<PointerType>(Ptr);
-  if (!PTy) return 0;   // Type isn't a pointer type!
-
-  // Check the pointer index.
-  if (!PTy->indexValid(Idx)) return 0;
-
-  return PTy->getElementType();
+Type *GetElementPtrInst::getIndexedType(Type *Ptr, ArrayRef<uint64_t> IdxList) {
+  return getIndexedTypeInternal(Ptr, IdxList);
 }
-
 
 /// hasAllZeroIndices - Return true if all of the indices of this GEP are
 /// zeros.  If so, the result pointer and the first operand have the same
@@ -3162,6 +3125,10 @@ LoadInst *LoadInst::clone_impl() const {
 StoreInst *StoreInst::clone_impl() const {
   return new StoreInst(getOperand(0), getOperand(1),
                        isVolatile(), getAlignment());
+}
+
+FenceInst *FenceInst::clone_impl() const {
+  return new FenceInst(getContext(), getOrdering(), getSynchScope());
 }
 
 TruncInst *TruncInst::clone_impl() const {

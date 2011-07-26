@@ -22,6 +22,7 @@
 #include "llvm/CallingConv.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <iterator>
 
 namespace llvm {
@@ -30,6 +31,22 @@ class ConstantInt;
 class ConstantRange;
 class APInt;
 class LLVMContext;
+
+enum AtomicOrdering {
+  NotAtomic = 0,
+  Unordered = 1,
+  Monotonic = 2,
+  // Consume = 3,  // Not specified yet.
+  Acquire = 4,
+  Release = 5,
+  AcquireRelease = 6,
+  SequentiallyConsistent = 7
+};
+
+enum SynchronizationScope {
+  SingleThread = 0,
+  CrossThread = 1
+};
 
 //===----------------------------------------------------------------------===//
 //                                AllocaInst Class
@@ -269,6 +286,82 @@ struct OperandTraits<StoreInst> : public FixedNumOperandTraits<StoreInst, 2> {
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(StoreInst, Value)
 
 //===----------------------------------------------------------------------===//
+//                                FenceInst Class
+//===----------------------------------------------------------------------===//
+
+/// FenceInst - an instruction for ordering other memory operations
+///
+class FenceInst : public Instruction {
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
+  void Init(AtomicOrdering Ordering, SynchronizationScope SynchScope);
+protected:
+  virtual FenceInst *clone_impl() const;
+public:
+  // allocate space for exactly zero operands
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
+
+  // Ordering may only be Acquire, Release, AcquireRelease, or
+  // SequentiallyConsistent.
+  FenceInst(LLVMContext &C, AtomicOrdering Ordering,
+            SynchronizationScope SynchScope = CrossThread,
+            Instruction *InsertBefore = 0);
+  FenceInst(LLVMContext &C, AtomicOrdering Ordering,
+            SynchronizationScope SynchScope,
+            BasicBlock *InsertAtEnd);
+
+  /// Returns the ordering effect of this fence.
+  AtomicOrdering getOrdering() const {
+    return AtomicOrdering(getSubclassDataFromInstruction() >> 1);
+  }
+
+  /// Set the ordering constraint on this fence.  May only be Acquire, Release,
+  /// AcquireRelease, or SequentiallyConsistent.
+  void setOrdering(AtomicOrdering Ordering) {
+    switch (Ordering) {
+    case Acquire:
+    case Release:
+    case AcquireRelease:
+    case SequentiallyConsistent:
+      setInstructionSubclassData((getSubclassDataFromInstruction() & 1) |
+                                 (Ordering << 1));
+      return;
+    default:
+      llvm_unreachable("FenceInst ordering must be Acquire, Release,"
+                       " AcquireRelease, or SequentiallyConsistent");
+    }
+  }
+
+  SynchronizationScope getSynchScope() const {
+    return SynchronizationScope(getSubclassDataFromInstruction() & 1);
+  }
+
+  /// Specify whether this fence orders other operations with respect to all
+  /// concurrently executing threads, or only with respect to signal handlers
+  /// executing in the same thread.
+  void setSynchScope(SynchronizationScope xthread) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~1) |
+                               xthread);
+  }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const FenceInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::Fence;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+private:
+  // Shadow Instruction::setInstructionSubclassData with a private forwarding
+  // method so that subclasses cannot accidentally use it.
+  void setInstructionSubclassData(unsigned short D) {
+    Instruction::setInstructionSubclassData(D);
+  }
+};
+
+//===----------------------------------------------------------------------===//
 //                             GetElementPtrInst Class
 //===----------------------------------------------------------------------===//
 
@@ -285,149 +378,51 @@ static inline Type *checkGEPType(Type *Ty) {
 ///
 class GetElementPtrInst : public Instruction {
   GetElementPtrInst(const GetElementPtrInst &GEPI);
-  void init(Value *Ptr, Value* const *Idx, unsigned NumIdx,
-            const Twine &NameStr);
-  void init(Value *Ptr, Value *Idx, const Twine &NameStr);
-
-  template<typename RandomAccessIterator>
-  void init(Value *Ptr,
-            RandomAccessIterator IdxBegin,
-            RandomAccessIterator IdxEnd,
-            const Twine &NameStr,
-            // This argument ensures that we have an iterator we can
-            // do arithmetic on in constant time
-            std::random_access_iterator_tag) {
-    unsigned NumIdx = static_cast<unsigned>(std::distance(IdxBegin, IdxEnd));
-
-    if (NumIdx > 0) {
-      // This requires that the iterator points to contiguous memory.
-      init(Ptr, &*IdxBegin, NumIdx, NameStr); // FIXME: for the general case
-                                     // we have to build an array here
-    }
-    else {
-      init(Ptr, 0, NumIdx, NameStr);
-    }
-  }
-
-  /// getIndexedType - Returns the type of the element that would be loaded with
-  /// a load instruction with the specified parameters.
-  ///
-  /// Null is returned if the indices are invalid for the specified
-  /// pointer type.
-  ///
-  template<typename RandomAccessIterator>
-  static Type *getIndexedType(Type *Ptr,
-                              RandomAccessIterator IdxBegin,
-                              RandomAccessIterator IdxEnd,
-                              // This argument ensures that we
-                              // have an iterator we can do
-                              // arithmetic on in constant time
-                              std::random_access_iterator_tag) {
-    unsigned NumIdx = static_cast<unsigned>(std::distance(IdxBegin, IdxEnd));
-
-    if (NumIdx > 0)
-      // This requires that the iterator points to contiguous memory.
-      return getIndexedType(Ptr, &*IdxBegin, NumIdx);
-    else
-      return getIndexedType(Ptr, (Value *const*)0, NumIdx);
-  }
+  void init(Value *Ptr, ArrayRef<Value *> IdxList, const Twine &NameStr);
 
   /// Constructors - Create a getelementptr instruction with a base pointer an
   /// list of indices. The first ctor can optionally insert before an existing
   /// instruction, the second appends the new instruction to the specified
   /// BasicBlock.
-  template<typename RandomAccessIterator>
-  inline GetElementPtrInst(Value *Ptr, RandomAccessIterator IdxBegin,
-                           RandomAccessIterator IdxEnd,
-                           unsigned Values,
-                           const Twine &NameStr,
+  inline GetElementPtrInst(Value *Ptr, ArrayRef<Value *> IdxList,
+                           unsigned Values, const Twine &NameStr,
                            Instruction *InsertBefore);
-  template<typename RandomAccessIterator>
-  inline GetElementPtrInst(Value *Ptr,
-                           RandomAccessIterator IdxBegin,
-                           RandomAccessIterator IdxEnd,
-                           unsigned Values,
-                           const Twine &NameStr, BasicBlock *InsertAtEnd);
-
-  /// Constructors - These two constructors are convenience methods because one
-  /// and two index getelementptr instructions are so common.
-  GetElementPtrInst(Value *Ptr, Value *Idx, const Twine &NameStr = "",
-                    Instruction *InsertBefore = 0);
-  GetElementPtrInst(Value *Ptr, Value *Idx,
-                    const Twine &NameStr, BasicBlock *InsertAtEnd);
+  inline GetElementPtrInst(Value *Ptr, ArrayRef<Value *> IdxList,
+                           unsigned Values, const Twine &NameStr,
+                           BasicBlock *InsertAtEnd);
 protected:
   virtual GetElementPtrInst *clone_impl() const;
 public:
-  template<typename RandomAccessIterator>
-  static GetElementPtrInst *Create(Value *Ptr, RandomAccessIterator IdxBegin,
-                                   RandomAccessIterator IdxEnd,
+  static GetElementPtrInst *Create(Value *Ptr, ArrayRef<Value *> IdxList,
                                    const Twine &NameStr = "",
                                    Instruction *InsertBefore = 0) {
-    typename std::iterator_traits<RandomAccessIterator>::difference_type
-      Values = 1 + std::distance(IdxBegin, IdxEnd);
+    unsigned Values = 1 + unsigned(IdxList.size());
     return new(Values)
-      GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, NameStr, InsertBefore);
+      GetElementPtrInst(Ptr, IdxList, Values, NameStr, InsertBefore);
   }
-  template<typename RandomAccessIterator>
-  static GetElementPtrInst *Create(Value *Ptr,
-                                   RandomAccessIterator IdxBegin,
-                                   RandomAccessIterator IdxEnd,
+  static GetElementPtrInst *Create(Value *Ptr, ArrayRef<Value *> IdxList,
                                    const Twine &NameStr,
                                    BasicBlock *InsertAtEnd) {
-    typename std::iterator_traits<RandomAccessIterator>::difference_type
-      Values = 1 + std::distance(IdxBegin, IdxEnd);
+    unsigned Values = 1 + unsigned(IdxList.size());
     return new(Values)
-      GetElementPtrInst(Ptr, IdxBegin, IdxEnd, Values, NameStr, InsertAtEnd);
-  }
-
-  /// Constructors - These two creators are convenience methods because one
-  /// index getelementptr instructions are so common.
-  static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
-                                   const Twine &NameStr = "",
-                                   Instruction *InsertBefore = 0) {
-    return new(2) GetElementPtrInst(Ptr, Idx, NameStr, InsertBefore);
-  }
-  static GetElementPtrInst *Create(Value *Ptr, Value *Idx,
-                                   const Twine &NameStr,
-                                   BasicBlock *InsertAtEnd) {
-    return new(2) GetElementPtrInst(Ptr, Idx, NameStr, InsertAtEnd);
+      GetElementPtrInst(Ptr, IdxList, Values, NameStr, InsertAtEnd);
   }
 
   /// Create an "inbounds" getelementptr. See the documentation for the
   /// "inbounds" flag in LangRef.html for details.
-  template<typename RandomAccessIterator>
   static GetElementPtrInst *CreateInBounds(Value *Ptr,
-                                           RandomAccessIterator IdxBegin,
-                                           RandomAccessIterator IdxEnd,
+                                           ArrayRef<Value *> IdxList,
                                            const Twine &NameStr = "",
                                            Instruction *InsertBefore = 0) {
-    GetElementPtrInst *GEP = Create(Ptr, IdxBegin, IdxEnd,
-                                    NameStr, InsertBefore);
+    GetElementPtrInst *GEP = Create(Ptr, IdxList, NameStr, InsertBefore);
     GEP->setIsInBounds(true);
     return GEP;
   }
-  template<typename RandomAccessIterator>
   static GetElementPtrInst *CreateInBounds(Value *Ptr,
-                                           RandomAccessIterator IdxBegin,
-                                           RandomAccessIterator IdxEnd,
+                                           ArrayRef<Value *> IdxList,
                                            const Twine &NameStr,
                                            BasicBlock *InsertAtEnd) {
-    GetElementPtrInst *GEP = Create(Ptr, IdxBegin, IdxEnd,
-                                    NameStr, InsertAtEnd);
-    GEP->setIsInBounds(true);
-    return GEP;
-  }
-  static GetElementPtrInst *CreateInBounds(Value *Ptr, Value *Idx,
-                                           const Twine &NameStr = "",
-                                           Instruction *InsertBefore = 0) {
-    GetElementPtrInst *GEP = Create(Ptr, Idx, NameStr, InsertBefore);
-    GEP->setIsInBounds(true);
-    return GEP;
-  }
-  static GetElementPtrInst *CreateInBounds(Value *Ptr, Value *Idx,
-                                           const Twine &NameStr,
-                                           BasicBlock *InsertAtEnd) {
-    GetElementPtrInst *GEP = Create(Ptr, Idx, NameStr, InsertAtEnd);
+    GetElementPtrInst *GEP = Create(Ptr, IdxList, NameStr, InsertAtEnd);
     GEP->setIsInBounds(true);
     return GEP;
   }
@@ -446,23 +441,9 @@ public:
   /// Null is returned if the indices are invalid for the specified
   /// pointer type.
   ///
-  template<typename RandomAccessIterator>
-  static Type *getIndexedType(Type *Ptr, RandomAccessIterator IdxBegin,
-                              RandomAccessIterator IdxEnd) {
-    return getIndexedType(Ptr, IdxBegin, IdxEnd,
-                          typename std::iterator_traits<RandomAccessIterator>::
-                          iterator_category());
-  }
-
-  // FIXME: Use ArrayRef
-  static Type *getIndexedType(Type *Ptr,
-                              Value* const *Idx, unsigned NumIdx);
-  static Type *getIndexedType(Type *Ptr,
-                              Constant* const *Idx, unsigned NumIdx);
-
-  static Type *getIndexedType(Type *Ptr,
-                              uint64_t const *Idx, unsigned NumIdx);
-  static Type *getIndexedType(Type *Ptr, Value *Idx);
+  static Type *getIndexedType(Type *Ptr, ArrayRef<Value *> IdxList);
+  static Type *getIndexedType(Type *Ptr, ArrayRef<Constant *> IdxList);
+  static Type *getIndexedType(Type *Ptr, ArrayRef<uint64_t> IdxList);
 
   inline op_iterator       idx_begin()       { return op_begin()+1; }
   inline const_op_iterator idx_begin() const { return op_begin()+1; }
@@ -530,43 +511,33 @@ struct OperandTraits<GetElementPtrInst> :
   public VariadicOperandTraits<GetElementPtrInst, 1> {
 };
 
-template<typename RandomAccessIterator>
 GetElementPtrInst::GetElementPtrInst(Value *Ptr,
-                                     RandomAccessIterator IdxBegin,
-                                     RandomAccessIterator IdxEnd,
+                                     ArrayRef<Value *> IdxList,
                                      unsigned Values,
                                      const Twine &NameStr,
                                      Instruction *InsertBefore)
   : Instruction(PointerType::get(checkGEPType(
-                                   getIndexedType(Ptr->getType(),
-                                                  IdxBegin, IdxEnd)),
+                                   getIndexedType(Ptr->getType(), IdxList)),
                                  cast<PointerType>(Ptr->getType())
                                    ->getAddressSpace()),
                 GetElementPtr,
                 OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertBefore) {
-  init(Ptr, IdxBegin, IdxEnd, NameStr,
-       typename std::iterator_traits<RandomAccessIterator>
-       ::iterator_category());
+  init(Ptr, IdxList, NameStr);
 }
-template<typename RandomAccessIterator>
 GetElementPtrInst::GetElementPtrInst(Value *Ptr,
-                                     RandomAccessIterator IdxBegin,
-                                     RandomAccessIterator IdxEnd,
+                                     ArrayRef<Value *> IdxList,
                                      unsigned Values,
                                      const Twine &NameStr,
                                      BasicBlock *InsertAtEnd)
   : Instruction(PointerType::get(checkGEPType(
-                                   getIndexedType(Ptr->getType(),
-                                                  IdxBegin, IdxEnd)),
+                                   getIndexedType(Ptr->getType(), IdxList)),
                                  cast<PointerType>(Ptr->getType())
                                    ->getAddressSpace()),
                 GetElementPtr,
                 OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertAtEnd) {
-  init(Ptr, IdxBegin, IdxEnd, NameStr,
-       typename std::iterator_traits<RandomAccessIterator>
-       ::iterator_category());
+  init(Ptr, IdxList, NameStr);
 }
 
 

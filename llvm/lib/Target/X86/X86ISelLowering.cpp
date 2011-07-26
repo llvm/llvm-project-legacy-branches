@@ -983,6 +983,7 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
       setOperationAction(ISD::VECTOR_SHUFFLE,     SVT, Custom);
       setOperationAction(ISD::INSERT_VECTOR_ELT,  SVT, Custom);
       setOperationAction(ISD::EXTRACT_VECTOR_ELT, SVT, Custom);
+      setOperationAction(ISD::SCALAR_TO_VECTOR,   SVT, Custom);
       setOperationAction(ISD::INSERT_SUBVECTOR,   SVT, Custom);
     }
 
@@ -3075,27 +3076,16 @@ static bool isPALIGNRMask(const SmallVectorImpl<int> &Mask, EVT VT,
   if (i == e)
     return false;
 
-  // Determine if it's ok to perform a palignr with only the LHS, since we
-  // don't have access to the actual shuffle elements to see if RHS is undef.
-  bool Unary = Mask[i] < (int)e;
-  bool NeedsUnary = false;
+  // Make sure we're shifting in the right direction.
+  if (Mask[i] <= i)
+    return false;
 
   int s = Mask[i] - i;
 
   // Check the rest of the elements to see if they are consecutive.
   for (++i; i != e; ++i) {
     int m = Mask[i];
-    if (m < 0)
-      continue;
-
-    Unary = Unary && (m < (int)e);
-    NeedsUnary = NeedsUnary || (m < s);
-
-    if (NeedsUnary && !Unary)
-      return false;
-    if (Unary && m != ((s+i) & (e-1)))
-      return false;
-    if (!Unary && m != (s+i))
+    if (m >= 0 && m != s+i)
       return false;
   }
   return true;
@@ -3631,6 +3621,7 @@ unsigned X86::getShufflePALIGNRImmediate(SDNode *N) {
     if (Val >= 0)
       break;
   }
+  assert(Val - i > 0 && "PALIGNR imm should be positive");
   return (Val - i) * EltSize;
 }
 
@@ -3840,21 +3831,25 @@ static SDValue getZeroVector(EVT VT, bool HasSSE2, SelectionDAG &DAG,
 }
 
 /// getOnesVector - Returns a vector of specified type with all bits set.
-/// Always build ones vectors as <4 x i32> or <8 x i32> bitcasted to
-/// their original type, ensuring they get CSE'd.
+/// Always build ones vectors as <4 x i32>. For 256-bit types, use two
+/// <4 x i32> inserted in a <8 x i32> appropriately. Then bitcast to their
+/// original type, ensuring they get CSE'd.
 static SDValue getOnesVector(EVT VT, SelectionDAG &DAG, DebugLoc dl) {
   assert(VT.isVector() && "Expected a vector type");
   assert((VT.is128BitVector() || VT.is256BitVector())
          && "Expected a 128-bit or 256-bit vector type");
 
   SDValue Cst = DAG.getTargetConstant(~0U, MVT::i32);
+  SDValue Vec = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v4i32,
+                            Cst, Cst, Cst, Cst);
 
-  SDValue Vec;
   if (VT.is256BitVector()) {
-    SDValue Ops[] = { Cst, Cst, Cst, Cst, Cst, Cst, Cst, Cst };
-    Vec = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v8i32, Ops, 8);
-  } else
-    Vec = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v4i32, Cst, Cst, Cst, Cst);
+    SDValue InsV = Insert128BitVector(DAG.getNode(ISD::UNDEF, dl, MVT::v8i32),
+                              Vec, DAG.getConstant(0, MVT::i32), DAG, dl);
+    Vec = Insert128BitVector(InsV, Vec,
+                  DAG.getConstant(4 /* NumElems/2 */, MVT::i32), DAG, dl);
+  }
+
   return DAG.getNode(ISD::BITCAST, dl, VT, Vec);
 }
 
@@ -3962,6 +3957,34 @@ static SDValue getLegalSplat(SelectionDAG &DAG, SDValue V, int EltNo) {
   }
 
   return DAG.getNode(ISD::BITCAST, dl, VT, V);
+}
+
+/// PromoteVectorToScalarSplat - Since there's no native support for
+/// scalar_to_vector for 256-bit AVX, a 128-bit scalar_to_vector +
+/// INSERT_SUBVECTOR is generated. Recognize this idiom and do the
+/// shuffle before the insertion, this yields less instructions in the end.
+static SDValue PromoteVectorToScalarSplat(ShuffleVectorSDNode *SV,
+                                          SelectionDAG &DAG) {
+  EVT SrcVT = SV->getValueType(0);
+  SDValue V1 = SV->getOperand(0);
+  DebugLoc dl = SV->getDebugLoc();
+  int NumElems = SrcVT.getVectorNumElements();
+
+  assert(SrcVT.is256BitVector() && "unknown howto handle vector type");
+
+  SmallVector<int, 4> Mask;
+  for (int i = 0; i < NumElems/2; ++i)
+    Mask.push_back(SV->getMaskElt(i));
+
+  EVT SVT = EVT::getVectorVT(*DAG.getContext(), SrcVT.getVectorElementType(),
+                             NumElems/2);
+  SDValue SV1 = DAG.getVectorShuffle(SVT, dl, V1.getOperand(1),
+                                     DAG.getUNDEF(SVT), &Mask[0]);
+  SDValue InsV = Insert128BitVector(DAG.getUNDEF(SrcVT), SV1,
+                                    DAG.getConstant(0, MVT::i32), DAG, dl);
+
+  return Insert128BitVector(InsV, SV1,
+                       DAG.getConstant(NumElems/2, MVT::i32), DAG, dl);
 }
 
 /// PromoteSplat - Promote a splat of v4i32, v8i16 or v16i8 to v4f32 and
@@ -5751,7 +5774,17 @@ SDValue NormalizeVectorShuffle(SDValue Op, SelectionDAG &DAG,
     if (NumElem <= 4 && CanXFormVExtractWithShuffleIntoLoad(Op, DAG, TLI))
       return Op;
 
-    // Handle splats by matching through known masks
+    // Since there's no native support for scalar_to_vector for 256-bit AVX, a
+    // 128-bit scalar_to_vector + INSERT_SUBVECTOR is generated. Recognize this
+    // idiom and do the shuffle before the insertion, this yields less
+    // instructions in the end.
+    if (VT.is256BitVector() &&
+        V1.getOpcode() == ISD::INSERT_SUBVECTOR &&
+        V1.getOperand(0).getOpcode() == ISD::UNDEF &&
+        V1.getOperand(1).getOpcode() == ISD::SCALAR_TO_VECTOR)
+      return PromoteVectorToScalarSplat(SVOp, DAG);
+
+    // Handle splats by matching through known shuffle masks
     if ((VT.is128BitVector() && NumElem <= 4) ||
         (VT.is256BitVector() && NumElem <= 8))
       return SDValue();
@@ -6334,8 +6367,25 @@ X86TargetLowering::LowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue
 X86TargetLowering::LowerSCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) const {
+  LLVMContext *Context = DAG.getContext();
   DebugLoc dl = Op.getDebugLoc();
   EVT OpVT = Op.getValueType();
+
+  // If this is a 256-bit vector result, first insert into a 128-bit
+  // vector and then insert into the 256-bit vector.
+  if (OpVT.getSizeInBits() > 128) {
+    // Insert into a 128-bit vector.
+    EVT VT128 = EVT::getVectorVT(*Context,
+                                 OpVT.getVectorElementType(),
+                                 OpVT.getVectorNumElements() / 2);
+
+    Op = DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, VT128, Op.getOperand(0));
+
+    // Insert the 128-bit vector.
+    return Insert128BitVector(DAG.getNode(ISD::UNDEF, dl, OpVT), Op,
+                              DAG.getConstant(0, MVT::i32),
+                              DAG, dl);
+  }
 
   if (Op.getValueType() == MVT::v1i64 &&
       Op.getOperand(0).getValueType() == MVT::i64)
@@ -11977,6 +12027,35 @@ static SDValue CMPEQCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+/// CanFoldXORWithAllOnes - Test whether the XOR operand is a AllOnes vector
+/// so it can be folded inside ANDNP.
+static bool CanFoldXORWithAllOnes(const SDNode *N) {
+  EVT VT = N->getValueType(0);
+
+  // Match direct AllOnes for 128 and 256-bit vectors
+  if (ISD::isBuildVectorAllOnes(N))
+    return true;
+
+  // Look through a bit convert.
+  if (N->getOpcode() == ISD::BITCAST)
+    N = N->getOperand(0).getNode();
+
+  // Sometimes the operand may come from a insert_subvector building a 256-bit
+  // allones vector
+  SDValue V1 = N->getOperand(0);
+  SDValue V2 = N->getOperand(1);
+
+  if (VT.getSizeInBits() == 256 &&
+      N->getOpcode() == ISD::INSERT_SUBVECTOR &&
+      V1.getOpcode() == ISD::INSERT_SUBVECTOR &&
+      V1.getOperand(0).getOpcode() == ISD::UNDEF &&
+      ISD::isBuildVectorAllOnes(V1.getOperand(1).getNode()) &&
+      ISD::isBuildVectorAllOnes(V2.getNode()))
+    return true;
+
+  return false;
+}
+
 static SDValue PerformAndCombine(SDNode *N, SelectionDAG &DAG,
                                  TargetLowering::DAGCombinerInfo &DCI,
                                  const X86Subtarget *Subtarget) {
@@ -12001,12 +12080,14 @@ static SDValue PerformAndCombine(SDNode *N, SelectionDAG &DAG,
 
   // Check LHS for vnot
   if (N0.getOpcode() == ISD::XOR &&
-      ISD::isBuildVectorAllOnes(N0.getOperand(1).getNode()))
+      //ISD::isBuildVectorAllOnes(N0.getOperand(1).getNode()))
+      CanFoldXORWithAllOnes(N0.getOperand(1).getNode()))
     return DAG.getNode(X86ISD::ANDNP, DL, VT, N0.getOperand(0), N1);
 
   // Check RHS for vnot
   if (N1.getOpcode() == ISD::XOR &&
-      ISD::isBuildVectorAllOnes(N1.getOperand(1).getNode()))
+      //ISD::isBuildVectorAllOnes(N1.getOperand(1).getNode()))
+      CanFoldXORWithAllOnes(N1.getOperand(1).getNode()))
     return DAG.getNode(X86ISD::ANDNP, DL, VT, N1.getOperand(0), N0);
 
   return SDValue();

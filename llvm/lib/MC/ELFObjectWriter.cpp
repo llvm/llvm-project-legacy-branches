@@ -15,12 +15,12 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCValue.h"
-#include "llvm/MC/TargetAsmBackend.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ELF.h"
@@ -28,7 +28,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringSwitch.h"
 
-#include "../Target/X86/X86FixupKinds.h"
+#include "../Target/X86/MCTargetDesc/X86FixupKinds.h"
 #include "../Target/ARM/MCTargetDesc/ARMFixupKinds.h"
 
 #include <vector>
