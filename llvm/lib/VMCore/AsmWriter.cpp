@@ -1687,6 +1687,9 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(I.getOperand(i), true);
     }
     Out << ']';
+  } else if (isa<ResumeInst>(I)) {
+    Out << ' ';
+    writeOperand(Operand, true);
   } else if (const PHINode *PN = dyn_cast<PHINode>(&I)) {
     Out << ' ';
     TypePrinter.print(I.getType(), Out);

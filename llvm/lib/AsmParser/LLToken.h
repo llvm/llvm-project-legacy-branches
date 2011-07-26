@@ -120,7 +120,7 @@ namespace lltok {
 
     kw_landingpad, kw_personality, kw_catch, kw_filter,
 
-    kw_ret, kw_br, kw_switch, kw_indirectbr, kw_invoke, kw_unwind,
+    kw_ret, kw_br, kw_switch, kw_indirectbr, kw_invoke, kw_unwind, kw_resume,
     kw_unreachable,
 
     kw_alloca, kw_load, kw_store, kw_getelementptr,

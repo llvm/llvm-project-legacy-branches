@@ -1813,6 +1813,10 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
 void SelectionDAGBuilder::visitUnwind(const UnwindInst &I) {
 }
 
+void SelectionDAGBuilder::visitResume(const ResumeInst &RI) {
+  // FIXME: Handle this
+}
+
 /// handleSmallSwitchCaseRange - Emit a series of specific tests (suitable for
 /// small case ranges).
 bool SelectionDAGBuilder::handleSmallSwitchRange(CaseRec& CR,

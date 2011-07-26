@@ -1808,6 +1808,12 @@ DEFINE_TRANSPARENT_OPERAND_ACCESSORS(PHINode, Value)
 //                           LandingPadInst Class
 //===----------------------------------------------------------------------===//
 
+//===---------------------------------------------------------------------------
+/// LandingPadInst - The landingpad instruction holds all of the information
+/// necessary to generate correct exception handling. The landingpad instruction
+/// cannot be moved from the top of a landing pad block, which itself is
+/// accessible only from the 'unwind' edge of an invoke.
+///
 class LandingPadInst : public Instruction {
   /// ReservedSpace - The number of operands actually allocated.  NumOperands is
   /// the number actually in use.
@@ -2585,6 +2591,59 @@ private:
   virtual unsigned getNumSuccessorsV() const;
   virtual void setSuccessorV(unsigned idx, BasicBlock *B);
 };
+
+//===----------------------------------------------------------------------===//
+//                              ResumeInst Class
+//===----------------------------------------------------------------------===//
+
+//===---------------------------------------------------------------------------
+/// ResumeInst - Resume the propagation of an exception.
+///
+class ResumeInst : public TerminatorInst {
+  ResumeInst(const ResumeInst &RI);
+
+  explicit ResumeInst(LLVMContext &C, Value *Exn, Instruction *InsertBefore=0);
+  ResumeInst(LLVMContext &C, Value *Exn, BasicBlock *InsertAtEnd);
+protected:
+  virtual ResumeInst *clone_impl() const;
+public:
+  static ResumeInst *Create(LLVMContext &C, Value *Exn,
+                            Instruction *InsertBefore = 0) {
+    return new(1) ResumeInst(C, Exn, InsertBefore);
+  }
+  static ResumeInst *Create(LLVMContext &C, Value *Exn,
+                            BasicBlock *InsertAtEnd) {
+    return new(1) ResumeInst(C, Exn, InsertAtEnd);
+  }
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
+  /// Convenience accessor.
+  Value *getResumeValue() const { return Op<0>(); }
+
+  unsigned getNumSuccessors() const { return 0; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const ResumeInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::Resume;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+private:
+  virtual BasicBlock *getSuccessorV(unsigned idx) const;
+  virtual unsigned getNumSuccessorsV() const;
+  virtual void setSuccessorV(unsigned idx, BasicBlock *B);
+};
+
+template <>
+struct OperandTraits<ResumeInst> :
+    public FixedNumOperandTraits<ResumeInst, 1> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ResumeInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                           UnreachableInst Class

@@ -2861,6 +2861,7 @@ int LLParser::ParseInstruction(Instruction *&Inst, BasicBlock *BB,
   case lltok::kw_switch:      return ParseSwitch(Inst, PFS);
   case lltok::kw_indirectbr:  return ParseIndirectBr(Inst, PFS);
   case lltok::kw_invoke:      return ParseInvoke(Inst, PFS);
+  case lltok::kw_resume:      return ParseResume(Inst, PFS);
   // Binary Operators.
   case lltok::kw_add:
   case lltok::kw_sub:
@@ -3223,7 +3224,18 @@ bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   return false;
 }
 
+/// ParseResume
+///   ::= 'resume' TypeAndValue
+bool LLParser::ParseResume(Instruction *&Inst, PerFunctionState &PFS) {
+  Value *Exn; LocTy ExnLoc;
+  LocTy Loc = Lex.getLoc();
+  if (ParseTypeAndValue(Exn, ExnLoc, PFS))
+    return true;
 
+  ResumeInst *RI = ResumeInst::Create(Context, Exn);
+  Inst = RI;
+  return false;
+}
 
 //===----------------------------------------------------------------------===//
 // Binary Operators.
