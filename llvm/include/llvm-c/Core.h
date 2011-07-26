@@ -126,64 +126,67 @@ typedef enum {
   LLVMIndirectBr     = 4,
   LLVMInvoke         = 5,
   LLVMUnwind         = 6,
-  LLVMUnreachable    = 7,
+  LLVMResume         = 7,
+  LLVMUnreachable    = 8,
 
   /* Standard Binary Operators */
-  LLVMAdd            = 8,
-  LLVMFAdd           = 9,
-  LLVMSub            = 10,
-  LLVMFSub           = 11,
-  LLVMMul            = 12,
-  LLVMFMul           = 13,
-  LLVMUDiv           = 14,
-  LLVMSDiv           = 15,
-  LLVMFDiv           = 16,
-  LLVMURem           = 17,
-  LLVMSRem           = 18,
-  LLVMFRem           = 19,
+  LLVMAdd            = 9,
+  LLVMFAdd           = 10,
+  LLVMSub            = 11,
+  LLVMFSub           = 12,
+  LLVMMul            = 13,
+  LLVMFMul           = 14,
+  LLVMUDiv           = 15,
+  LLVMSDiv           = 16,
+  LLVMFDiv           = 17,
+  LLVMURem           = 18,
+  LLVMSRem           = 19,
+  LLVMFRem           = 20,
 
   /* Logical Operators */
-  LLVMShl            = 20,
-  LLVMLShr           = 21,
-  LLVMAShr           = 22,
-  LLVMAnd            = 23,
-  LLVMOr             = 24,
-  LLVMXor            = 25,
+  LLVMShl            = 21,
+  LLVMLShr           = 22,
+  LLVMAShr           = 23,
+  LLVMAnd            = 24,
+  LLVMOr             = 25,
+  LLVMXor            = 26,
 
   /* Memory Operators */
-  LLVMAlloca         = 26,
-  LLVMLoad           = 27,
-  LLVMStore          = 28,
-  LLVMGetElementPtr  = 29,
+  LLVMAlloca         = 27,
+  LLVMLoad           = 28,
+  LLVMStore          = 29,
+  LLVMGetElementPtr  = 30,
+  LLVMFence          = 31,
 
   /* Cast Operators */
-  LLVMTrunc          = 30,
-  LLVMZExt           = 31,
-  LLVMSExt           = 32,
-  LLVMFPToUI         = 33,
-  LLVMFPToSI         = 34,
-  LLVMUIToFP         = 35,
-  LLVMSIToFP         = 36,
-  LLVMFPTrunc        = 37,
-  LLVMFPExt          = 38,
-  LLVMPtrToInt       = 39,
-  LLVMIntToPtr       = 40,
-  LLVMBitCast        = 41,
+  LLVMTrunc          = 32,
+  LLVMZExt           = 33,
+  LLVMSExt           = 34,
+  LLVMFPToUI         = 35,
+  LLVMFPToSI         = 36,
+  LLVMUIToFP         = 37,
+  LLVMSIToFP         = 38,
+  LLVMFPTrunc        = 39,
+  LLVMFPExt          = 40,
+  LLVMPtrToInt       = 41,
+  LLVMIntToPtr       = 42,
+  LLVMBitCast        = 43,
 
   /* Other Operators */
-  LLVMICmp           = 42,
-  LLVMFCmp           = 43,
-  LLVMPHI            = 44,
-  LLVMCall           = 45,
-  LLVMSelect         = 46,
+  LLVMICmp           = 44,
+  LLVMFCmp           = 45,
+  LLVMPHI            = 46,
+  LLVMCall           = 47,
+  LLVMSelect         = 48,
   /* UserOp1 */
   /* UserOp2 */
-  LLVMVAArg          = 49,
-  LLVMExtractElement = 50,
-  LLVMInsertElement  = 51,
-  LLVMShuffleVector  = 52,
-  LLVMExtractValue   = 53,
-  LLVMInsertValue    = 54
+  LLVMVAArg          = 51,
+  LLVMExtractElement = 52,
+  LLVMInsertElement  = 53,
+  LLVMShuffleVector  = 54,
+  LLVMExtractValue   = 55,
+  LLVMInsertValue    = 56,
+  LLVMLandingPad     = 57
 } LLVMOpcode;
 
 typedef enum {
@@ -460,6 +463,7 @@ LLVMTypeRef LLVMX86MMXType(void);
       macro(GetElementPtrInst)              \
       macro(InsertElementInst)              \
       macro(InsertValueInst)                \
+      macro(LandingPadInst)                 \
       macro(PHINode)                        \
       macro(SelectInst)                     \
       macro(ShuffleVectorInst)              \
@@ -471,6 +475,7 @@ LLVMTypeRef LLVMX86MMXType(void);
         macro(SwitchInst)                   \
         macro(UnreachableInst)              \
         macro(UnwindInst)                   \
+        macro(ResumeInst)                   \
     macro(UnaryInstruction)                 \
       macro(AllocaInst)                     \
       macro(CastInst)                       \
@@ -819,6 +824,7 @@ LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef, LLVMValueRef Fn,
                              LLVMBasicBlockRef Then, LLVMBasicBlockRef Catch,
                              const char *Name);
 LLVMValueRef LLVMBuildUnwind(LLVMBuilderRef);
+LLVMValueRef LLVMBuildResume(LLVMBuilderRef B, LLVMValueRef Exn);
 LLVMValueRef LLVMBuildUnreachable(LLVMBuilderRef);
 
 /* Add a case to the switch instruction */
