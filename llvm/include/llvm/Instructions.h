@@ -1862,7 +1862,7 @@ public:
   }
 
   /// getClauseValue - Return the value of the clause at this index.
-  const Value *getClauseValue(unsigned I) const {
+  Value *getClauseValue(unsigned I) const {
     assert(I + 1 < getNumOperands() && "Index too large!");
     return OperandList[I + 1];
   }
