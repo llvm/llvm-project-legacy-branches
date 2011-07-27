@@ -261,6 +261,8 @@ namespace llvm {
       VUNPCKLPDY,
       UNPCKHPS,
       UNPCKHPD,
+      VUNPCKHPSY,
+      VUNPCKHPDY,
       PUNPCKLBW,
       PUNPCKLWD,
       PUNPCKLDQ,
@@ -269,7 +271,10 @@ namespace llvm {
       PUNPCKHWD,
       PUNPCKHDQ,
       PUNPCKHQDQ,
-      VPERMIL,
+      VPERMILPS,
+      VPERMILPSY,
+      VPERMILPD,
+      VPERMILPDY,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
       // according to %al. An operator is needed so that this can be expanded
@@ -406,11 +411,11 @@ namespace llvm {
 
     /// isMOVSHDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVSHDUP.
-    bool isMOVSHDUPMask(ShuffleVectorSDNode *N);
+    bool isMOVSHDUPMask(ShuffleVectorSDNode *N, const X86Subtarget *Subtarget);
 
     /// isMOVSLDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVSLDUP.
-    bool isMOVSLDUPMask(ShuffleVectorSDNode *N);
+    bool isMOVSLDUPMask(ShuffleVectorSDNode *N, const X86Subtarget *Subtarget);
 
     /// isMOVDDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVDDUP.

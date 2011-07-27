@@ -2646,71 +2646,69 @@ let Predicates = [HasSSE2] in {
 
 let ExeDomain = SSEPackedInt in {
 multiclass sse2_unpack<bits<8> opc, string OpcodeStr, ValueType vt,
-                       PatFrag unp_frag, PatFrag bc_frag, bit Is2Addr = 1> {
+                       SDNode OpNode, PatFrag bc_frag, bit Is2Addr = 1> {
   def rr : PDI<opc, MRMSrcReg,
       (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
       !if(Is2Addr,
           !strconcat(OpcodeStr,"\t{$src2, $dst|$dst, $src2}"),
           !strconcat(OpcodeStr,"\t{$src2, $src1, $dst|$dst, $src1, $src2}")),
-      [(set VR128:$dst, (vt (unp_frag VR128:$src1, VR128:$src2)))]>;
+      [(set VR128:$dst, (vt (OpNode VR128:$src1, VR128:$src2)))]>;
   def rm : PDI<opc, MRMSrcMem,
       (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
       !if(Is2Addr,
           !strconcat(OpcodeStr,"\t{$src2, $dst|$dst, $src2}"),
           !strconcat(OpcodeStr,"\t{$src2, $src1, $dst|$dst, $src1, $src2}")),
-      [(set VR128:$dst, (unp_frag VR128:$src1,
+      [(set VR128:$dst, (OpNode VR128:$src1,
                                   (bc_frag (memopv2i64
                                                addr:$src2))))]>;
 }
 
 let Predicates = [HasAVX] in {
-  defm VPUNPCKLBW  : sse2_unpack<0x60, "vpunpcklbw", v16i8, unpckl, bc_v16i8,
-                                 0>, VEX_4V;
-  defm VPUNPCKLWD  : sse2_unpack<0x61, "vpunpcklwd", v8i16, unpckl, bc_v8i16,
-                                 0>, VEX_4V;
-  defm VPUNPCKLDQ  : sse2_unpack<0x62, "vpunpckldq", v4i32, unpckl, bc_v4i32,
-                                 0>, VEX_4V;
+  defm VPUNPCKLBW  : sse2_unpack<0x60, "vpunpcklbw", v16i8, X86Punpcklbw,
+                                 bc_v16i8, 0>, VEX_4V;
+  defm VPUNPCKLWD  : sse2_unpack<0x61, "vpunpcklwd", v8i16, X86Punpcklwd,
+                                 bc_v8i16, 0>, VEX_4V;
+  defm VPUNPCKLDQ  : sse2_unpack<0x62, "vpunpckldq", v4i32, X86Punpckldq,
+                                 bc_v4i32, 0>, VEX_4V;
 
   /// FIXME: we could eliminate this and use sse2_unpack instead if tblgen
   /// knew to collapse (bitconvert VT to VT) into its operand.
   def VPUNPCKLQDQrr : PDI<0x6C, MRMSrcReg,
-                         (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
-                         "vpunpcklqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
-                        [(set VR128:$dst,
-                          (v2i64 (unpckl VR128:$src1, VR128:$src2)))]>, VEX_4V;
+            (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
+            "vpunpcklqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
+            [(set VR128:$dst, (v2i64 (X86Punpcklqdq VR128:$src1,
+                                                    VR128:$src2)))]>, VEX_4V;
   def VPUNPCKLQDQrm : PDI<0x6C, MRMSrcMem,
-                         (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
-                         "vpunpcklqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
-                        [(set VR128:$dst,
-                          (v2i64 (unpckl VR128:$src1,
-                                         (memopv2i64 addr:$src2))))]>, VEX_4V;
+            (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
+            "vpunpcklqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
+            [(set VR128:$dst, (v2i64 (X86Punpcklqdq VR128:$src1,
+                                        (memopv2i64 addr:$src2))))]>, VEX_4V;
 
-  defm VPUNPCKHBW  : sse2_unpack<0x68, "vpunpckhbw", v16i8, unpckh, bc_v16i8,
-                                 0>, VEX_4V;
-  defm VPUNPCKHWD  : sse2_unpack<0x69, "vpunpckhwd", v8i16, unpckh, bc_v8i16,
-                                 0>, VEX_4V;
-  defm VPUNPCKHDQ  : sse2_unpack<0x6A, "vpunpckhdq", v4i32, unpckh, bc_v4i32,
-                                 0>, VEX_4V;
+  defm VPUNPCKHBW  : sse2_unpack<0x68, "vpunpckhbw", v16i8, X86Punpckhbw,
+                                 bc_v16i8, 0>, VEX_4V;
+  defm VPUNPCKHWD  : sse2_unpack<0x69, "vpunpckhwd", v8i16, X86Punpckhwd,
+                                 bc_v8i16, 0>, VEX_4V;
+  defm VPUNPCKHDQ  : sse2_unpack<0x6A, "vpunpckhdq", v4i32, X86Punpckhdq,
+                                 bc_v4i32, 0>, VEX_4V;
 
   /// FIXME: we could eliminate this and use sse2_unpack instead if tblgen
   /// knew to collapse (bitconvert VT to VT) into its operand.
   def VPUNPCKHQDQrr : PDI<0x6D, MRMSrcReg,
-                         (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
-                         "vpunpckhqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
-                        [(set VR128:$dst,
-                          (v2i64 (unpckh VR128:$src1, VR128:$src2)))]>, VEX_4V;
+             (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
+             "vpunpckhqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
+             [(set VR128:$dst, (v2i64 (X86Punpckhqdq VR128:$src1,
+                                                     VR128:$src2)))]>, VEX_4V;
   def VPUNPCKHQDQrm : PDI<0x6D, MRMSrcMem,
-                        (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
-                        "vpunpckhqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
-                        [(set VR128:$dst,
-                          (v2i64 (unpckh VR128:$src1,
-                                         (memopv2i64 addr:$src2))))]>, VEX_4V;
+             (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
+             "vpunpckhqdq\t{$src2, $src1, $dst|$dst, $src1, $src2}",
+             [(set VR128:$dst, (v2i64 (X86Punpckhqdq VR128:$src1,
+                                        (memopv2i64 addr:$src2))))]>, VEX_4V;
 }
 
 let Constraints = "$src1 = $dst" in {
-  defm PUNPCKLBW  : sse2_unpack<0x60, "punpcklbw", v16i8, unpckl, bc_v16i8>;
-  defm PUNPCKLWD  : sse2_unpack<0x61, "punpcklwd", v8i16, unpckl, bc_v8i16>;
-  defm PUNPCKLDQ  : sse2_unpack<0x62, "punpckldq", v4i32, unpckl, bc_v4i32>;
+  defm PUNPCKLBW  : sse2_unpack<0x60, "punpcklbw", v16i8, X86Punpcklbw, bc_v16i8>;
+  defm PUNPCKLWD  : sse2_unpack<0x61, "punpcklwd", v8i16, X86Punpcklwd, bc_v8i16>;
+  defm PUNPCKLDQ  : sse2_unpack<0x62, "punpckldq", v4i32, X86Punpckldq, bc_v4i32>;
 
   /// FIXME: we could eliminate this and use sse2_unpack instead if tblgen
   /// knew to collapse (bitconvert VT to VT) into its operand.
@@ -2718,17 +2716,17 @@ let Constraints = "$src1 = $dst" in {
                          (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
                          "punpcklqdq\t{$src2, $dst|$dst, $src2}",
                         [(set VR128:$dst,
-                          (v2i64 (unpckl VR128:$src1, VR128:$src2)))]>;
+                          (v2i64 (X86Punpcklqdq VR128:$src1, VR128:$src2)))]>;
   def PUNPCKLQDQrm : PDI<0x6C, MRMSrcMem,
                          (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
                          "punpcklqdq\t{$src2, $dst|$dst, $src2}",
                         [(set VR128:$dst,
-                          (v2i64 (unpckl VR128:$src1,
+                          (v2i64 (X86Punpcklqdq VR128:$src1,
                                          (memopv2i64 addr:$src2))))]>;
 
-  defm PUNPCKHBW  : sse2_unpack<0x68, "punpckhbw", v16i8, unpckh, bc_v16i8>;
-  defm PUNPCKHWD  : sse2_unpack<0x69, "punpckhwd", v8i16, unpckh, bc_v8i16>;
-  defm PUNPCKHDQ  : sse2_unpack<0x6A, "punpckhdq", v4i32, unpckh, bc_v4i32>;
+  defm PUNPCKHBW  : sse2_unpack<0x68, "punpckhbw", v16i8, X86Punpckhbw, bc_v16i8>;
+  defm PUNPCKHWD  : sse2_unpack<0x69, "punpckhwd", v8i16, X86Punpckhwd, bc_v8i16>;
+  defm PUNPCKHDQ  : sse2_unpack<0x6A, "punpckhdq", v4i32, X86Punpckhdq, bc_v4i32>;
 
   /// FIXME: we could eliminate this and use sse2_unpack instead if tblgen
   /// knew to collapse (bitconvert VT to VT) into its operand.
@@ -2736,12 +2734,12 @@ let Constraints = "$src1 = $dst" in {
                          (outs VR128:$dst), (ins VR128:$src1, VR128:$src2),
                          "punpckhqdq\t{$src2, $dst|$dst, $src2}",
                         [(set VR128:$dst,
-                          (v2i64 (unpckh VR128:$src1, VR128:$src2)))]>;
+                          (v2i64 (X86Punpckhqdq VR128:$src1, VR128:$src2)))]>;
   def PUNPCKHQDQrm : PDI<0x6D, MRMSrcMem,
                         (outs VR128:$dst), (ins VR128:$src1, i128mem:$src2),
                         "punpckhqdq\t{$src2, $dst|$dst, $src2}",
                         [(set VR128:$dst,
-                          (v2i64 (unpckh VR128:$src1,
+                          (v2i64 (X86Punpckhqdq VR128:$src1,
                                          (memopv2i64 addr:$src2))))]>;
 }
 
@@ -3219,37 +3217,68 @@ def : Pat<(int_x86_avx_cvt_pd2dq_256 (memopv4f64 addr:$src)),
 // SSE3 - Move Instructions
 //===---------------------------------------------------------------------===//
 
-// Replicate Single FP
-multiclass sse3_replicate_sfp<bits<8> op, PatFrag rep_frag, string OpcodeStr> {
-def rr : S3SI<op, MRMSrcReg, (outs VR128:$dst), (ins VR128:$src),
+//===---------------------------------------------------------------------===//
+// Replicate Single FP - MOVSHDUP and MOVSLDUP
+//
+multiclass sse3_replicate_sfp<bits<8> op, SDNode OpNode, string OpcodeStr,
+                              ValueType vt, RegisterClass RC, PatFrag mem_frag,
+                              X86MemOperand x86memop> {
+def rr : S3SI<op, MRMSrcReg, (outs RC:$dst), (ins RC:$src),
                     !strconcat(OpcodeStr, "\t{$src, $dst|$dst, $src}"),
-                      [(set VR128:$dst, (v4f32 (rep_frag
-                                                VR128:$src, (undef))))]>;
-def rm : S3SI<op, MRMSrcMem, (outs VR128:$dst), (ins f128mem:$src),
+                      [(set RC:$dst, (vt (OpNode RC:$src)))]>;
+def rm : S3SI<op, MRMSrcMem, (outs RC:$dst), (ins x86memop:$src),
                     !strconcat(OpcodeStr, "\t{$src, $dst|$dst, $src}"),
-                      [(set VR128:$dst, (rep_frag
-                                         (memopv4f32 addr:$src), (undef)))]>;
-}
-
-multiclass sse3_replicate_sfp_y<bits<8> op, PatFrag rep_frag,
-                                string OpcodeStr> {
-def rr : S3SI<op, MRMSrcReg, (outs VR256:$dst), (ins VR256:$src),
-              !strconcat(OpcodeStr, "\t{$src, $dst|$dst, $src}"), []>;
-def rm : S3SI<op, MRMSrcMem, (outs VR256:$dst), (ins f256mem:$src),
-              !strconcat(OpcodeStr, "\t{$src, $dst|$dst, $src}"), []>;
+                      [(set RC:$dst, (OpNode (mem_frag addr:$src)))]>;
 }
 
 let Predicates = [HasAVX] in {
-  // FIXME: Merge above classes when we have patterns for the ymm version
-  defm VMOVSHDUP  : sse3_replicate_sfp<0x16, movshdup, "vmovshdup">, VEX;
-  defm VMOVSLDUP  : sse3_replicate_sfp<0x12, movsldup, "vmovsldup">, VEX;
-  defm VMOVSHDUPY : sse3_replicate_sfp_y<0x16, movshdup, "vmovshdup">, VEX;
-  defm VMOVSLDUPY : sse3_replicate_sfp_y<0x12, movsldup, "vmovsldup">, VEX;
+  defm VMOVSHDUP  : sse3_replicate_sfp<0x16, X86Movshdup, "vmovshdup",
+                                       v4f32, VR128, memopv4f32, f128mem>, VEX;
+  defm VMOVSLDUP  : sse3_replicate_sfp<0x12, X86Movsldup, "vmovsldup",
+                                       v4f32, VR128, memopv4f32, f128mem>, VEX;
+  defm VMOVSHDUPY : sse3_replicate_sfp<0x16, X86Movshdup, "vmovshdup",
+                                       v8f32, VR256, memopv8f32, f256mem>, VEX;
+  defm VMOVSLDUPY : sse3_replicate_sfp<0x12, X86Movsldup, "vmovsldup",
+                                       v8f32, VR256, memopv8f32, f256mem>, VEX;
 }
-defm MOVSHDUP : sse3_replicate_sfp<0x16, movshdup, "movshdup">;
-defm MOVSLDUP : sse3_replicate_sfp<0x12, movsldup, "movsldup">;
+defm MOVSHDUP : sse3_replicate_sfp<0x16, X86Movshdup, "movshdup", v4f32, VR128,
+                                   memopv4f32, f128mem>;
+defm MOVSLDUP : sse3_replicate_sfp<0x12, X86Movsldup, "movsldup", v4f32, VR128,
+                                   memopv4f32, f128mem>;
 
-// Replicate Double FP
+let Predicates = [HasSSE3] in {
+  def : Pat<(v4i32 (X86Movshdup VR128:$src)),
+            (MOVSHDUPrr VR128:$src)>;
+  def : Pat<(v4i32 (X86Movshdup (bc_v4i32 (memopv2i64 addr:$src)))),
+            (MOVSHDUPrm addr:$src)>;
+  def : Pat<(v4i32 (X86Movsldup VR128:$src)),
+            (MOVSLDUPrr VR128:$src)>;
+  def : Pat<(v4i32 (X86Movsldup (bc_v4i32 (memopv2i64 addr:$src)))),
+            (MOVSLDUPrm addr:$src)>;
+}
+
+let Predicates = [HasAVX] in {
+  def : Pat<(v4i32 (X86Movshdup VR128:$src)),
+            (VMOVSHDUPrr VR128:$src)>;
+  def : Pat<(v4i32 (X86Movshdup (bc_v4i32 (memopv2i64 addr:$src)))),
+            (VMOVSHDUPrm addr:$src)>;
+  def : Pat<(v4i32 (X86Movsldup VR128:$src)),
+            (VMOVSLDUPrr VR128:$src)>;
+  def : Pat<(v4i32 (X86Movsldup (bc_v4i32 (memopv2i64 addr:$src)))),
+            (VMOVSLDUPrm addr:$src)>;
+  def : Pat<(v8i32 (X86Movshdup VR256:$src)),
+            (VMOVSHDUPYrr VR256:$src)>;
+  def : Pat<(v8i32 (X86Movshdup (bc_v8i32 (memopv4i64 addr:$src)))),
+            (VMOVSHDUPYrm addr:$src)>;
+  def : Pat<(v8i32 (X86Movsldup VR256:$src)),
+            (VMOVSLDUPYrr VR256:$src)>;
+  def : Pat<(v8i32 (X86Movsldup (bc_v8i32 (memopv4i64 addr:$src)))),
+            (VMOVSLDUPYrm addr:$src)>;
+}
+
+//===---------------------------------------------------------------------===//
+// Replicate Double FP - MOVDDUP
+//
 multiclass sse3_replicate_dfp<string OpcodeStr> {
 def rr  : S3DI<0x12, MRMSrcReg, (outs VR128:$dst), (ins VR128:$src),
                     !strconcat(OpcodeStr, "\t{$src, $dst|$dst, $src}"),
@@ -3305,22 +3334,6 @@ def : Pat<(movddup (memopv2i64 addr:$src), (undef)),
 def : Pat<(movddup (bc_v4i32 (memopv2i64 addr:$src)), (undef)),
           (MOVDDUPrm addr:$src)>, Requires<[HasSSE3]>;
 }
-
-// vector_shuffle v1, <undef> <1, 1, 3, 3>
-let AddedComplexity = 15 in
-def : Pat<(v4i32 (movshdup VR128:$src, (undef))),
-          (MOVSHDUPrr VR128:$src)>, Requires<[HasSSE3]>;
-let AddedComplexity = 20 in
-def : Pat<(v4i32 (movshdup (bc_v4i32 (memopv2i64 addr:$src)), (undef))),
-          (MOVSHDUPrm addr:$src)>, Requires<[HasSSE3]>;
-
-// vector_shuffle v1, <undef> <0, 0, 2, 2>
-let AddedComplexity = 15 in
-  def : Pat<(v4i32 (movsldup VR128:$src, (undef))),
-            (MOVSLDUPrr VR128:$src)>, Requires<[HasSSE3]>;
-let AddedComplexity = 20 in
-  def : Pat<(v4i32 (movsldup (bc_v4i32 (memopv2i64 addr:$src)), (undef))),
-            (MOVSLDUPrm addr:$src)>, Requires<[HasSSE3]>;
 
 //===---------------------------------------------------------------------===//
 // SSE3 - Arithmetic
@@ -3735,12 +3748,8 @@ def : Pat<(v4i32 (X86vzmovl (v4i32 VR128:$src))),
 let AddedComplexity = 10 in {
 def : Pat<(splat_lo (v2f64 VR128:$src), (undef)),
           (UNPCKLPDrr VR128:$src, VR128:$src)>,   Requires<[HasSSE2]>;
-def : Pat<(unpckh (v2f64 VR128:$src), (undef)),
-          (UNPCKHPDrr VR128:$src, VR128:$src)>,   Requires<[HasSSE2]>;
 def : Pat<(splat_lo (v2i64 VR128:$src), (undef)),
           (PUNPCKLQDQrr VR128:$src, VR128:$src)>, Requires<[HasSSE2]>;
-def : Pat<(unpckh (v2i64 VR128:$src), (undef)),
-          (PUNPCKHQDQrr VR128:$src, VR128:$src)>, Requires<[HasSSE2]>;
 }
 
 // Special unary SHUFPSrri case.
@@ -3780,46 +3789,6 @@ def : Pat<(v2i64 (shufp:$src3 VR128:$src1, VR128:$src2)),
           (SHUFPDrri VR128:$src1, VR128:$src2,
                      (SHUFFLE_get_shuf_imm VR128:$src3))>,
           Requires<[HasSSE2]>;
-
-// vector_shuffle v1, <undef>, <0, 0, 1, 1, ...>
-let AddedComplexity = 15 in {
-def : Pat<(v4i32 (unpckl_undef:$src2 VR128:$src, (undef))),
-          (PSHUFDri VR128:$src, (SHUFFLE_get_shuf_imm VR128:$src2))>,
-          Requires<[OptForSpeed, HasSSE2]>;
-def : Pat<(v4f32 (unpckl_undef:$src2 VR128:$src, (undef))),
-          (PSHUFDri VR128:$src, (SHUFFLE_get_shuf_imm VR128:$src2))>,
-          Requires<[OptForSpeed, HasSSE2]>;
-}
-let AddedComplexity = 10 in {
-def : Pat<(v4f32 (unpckl_undef VR128:$src, (undef))),
-          (UNPCKLPSrr VR128:$src, VR128:$src)>;
-def : Pat<(v16i8 (unpckl_undef VR128:$src, (undef))),
-          (PUNPCKLBWrr VR128:$src, VR128:$src)>;
-def : Pat<(v8i16 (unpckl_undef VR128:$src, (undef))),
-          (PUNPCKLWDrr VR128:$src, VR128:$src)>;
-def : Pat<(v4i32 (unpckl_undef VR128:$src, (undef))),
-          (PUNPCKLDQrr VR128:$src, VR128:$src)>;
-}
-
-// vector_shuffle v1, <undef>, <2, 2, 3, 3, ...>
-let AddedComplexity = 15 in {
-def : Pat<(v4i32 (unpckh_undef:$src2 VR128:$src, (undef))),
-          (PSHUFDri VR128:$src, (SHUFFLE_get_shuf_imm VR128:$src2))>,
-          Requires<[OptForSpeed, HasSSE2]>;
-def : Pat<(v4f32 (unpckh_undef:$src2 VR128:$src, (undef))),
-          (PSHUFDri VR128:$src, (SHUFFLE_get_shuf_imm VR128:$src2))>,
-          Requires<[OptForSpeed, HasSSE2]>;
-}
-let AddedComplexity = 10 in {
-def : Pat<(v4f32 (unpckh_undef VR128:$src, (undef))),
-          (UNPCKHPSrr VR128:$src, VR128:$src)>;
-def : Pat<(v16i8 (unpckh_undef VR128:$src, (undef))),
-          (PUNPCKHBWrr VR128:$src, VR128:$src)>;
-def : Pat<(v8i16 (unpckh_undef VR128:$src, (undef))),
-          (PUNPCKHWDrr VR128:$src, VR128:$src)>;
-def : Pat<(v4i32 (unpckh_undef VR128:$src, (undef))),
-          (PUNPCKHDQrr VR128:$src, VR128:$src)>;
-}
 
 let AddedComplexity = 20 in {
 // vector_shuffle v1, v2 <0, 1, 4, 5> using MOVLHPS
@@ -5553,6 +5522,12 @@ def : Pat<(int_x86_avx_vperm2f128_si_256
                   VR256:$src1, (memopv8i32 addr:$src2), imm:$src3),
           (VPERM2F128rm VR256:$src1, addr:$src2, imm:$src3)>;
 
+// Shuffle with VPERMIL instructions
+def : Pat<(v8f32 (X86VPermilpsy VR256:$src1, (i8 imm:$imm))),
+          (VPERMILPSYri VR256:$src1, imm:$imm)>;
+def : Pat<(v4f64 (X86VPermilpdy VR256:$src1, (i8 imm:$imm))),
+          (VPERMILPDYri VR256:$src1, imm:$imm)>;
+
 //===----------------------------------------------------------------------===//
 // VZERO - Zero YMM registers
 //
@@ -5573,10 +5548,6 @@ def VZEROUPPER : I<0x77, RawFrm, (outs), (ins), "vzeroupper",
 // directly matched by the patterns below (which can be changed along the way)
 // The AVX version of some but not all of them are described here, and more
 // should come in a near future.
-
-// Shuffle with VPERMIL instructions
-def : Pat<(v8f32 (X86VPermil VR256:$src1, (i8 imm:$imm))),
-          (VPERMILPSYri VR256:$src1, imm:$imm)>;
 
 // Shuffle with PSHUFD instruction folding loads. The first two patterns match
 // SSE2 loads, which are always promoted to v2i64. The last one should match
@@ -5708,6 +5679,12 @@ def : Pat<(v4f32 (X86Unpckhps VR128:$src1, VR128:$src2)),
 def : Pat<(v4f32 (X86Unpckhps VR128:$src1, VR128:$src2)),
           (UNPCKHPSrr VR128:$src1, VR128:$src2)>;
 
+// Shuffle with VUNPCKHPSY
+def : Pat<(v8f32 (X86Unpckhpsy VR256:$src1, (memopv8f32 addr:$src2))),
+          (VUNPCKHPSYrm VR256:$src1, addr:$src2)>, Requires<[HasAVX]>;
+def : Pat<(v8f32 (X86Unpckhpsy VR256:$src1, VR256:$src2)),
+          (VUNPCKHPSYrr VR256:$src1, VR256:$src2)>, Requires<[HasAVX]>;
+
 // Shuffle with UNPCKLPD
 def : Pat<(v2f64 (X86Unpcklpd VR128:$src1, (memopv2f64 addr:$src2))),
           (VUNPCKLPDrm VR128:$src1, addr:$src2)>, Requires<[HasAVX]>;
@@ -5734,59 +5711,11 @@ def : Pat<(v2f64 (X86Unpckhpd VR128:$src1, VR128:$src2)),
 def : Pat<(v2f64 (X86Unpckhpd VR128:$src1, VR128:$src2)),
           (UNPCKHPDrr VR128:$src1, VR128:$src2)>;
 
-// Shuffle with PUNPCKLBW
-def : Pat<(v16i8 (X86Punpcklbw VR128:$src1,
-                                   (bc_v16i8 (memopv2i64 addr:$src2)))),
-          (PUNPCKLBWrm VR128:$src1, addr:$src2)>;
-def : Pat<(v16i8 (X86Punpcklbw VR128:$src1, VR128:$src2)),
-          (PUNPCKLBWrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKLWD
-def : Pat<(v8i16 (X86Punpcklwd VR128:$src1,
-                                   (bc_v8i16 (memopv2i64 addr:$src2)))),
-          (PUNPCKLWDrm VR128:$src1, addr:$src2)>;
-def : Pat<(v8i16 (X86Punpcklwd VR128:$src1, VR128:$src2)),
-          (PUNPCKLWDrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKLDQ
-def : Pat<(v4i32 (X86Punpckldq VR128:$src1,
-                                   (bc_v4i32 (memopv2i64 addr:$src2)))),
-          (PUNPCKLDQrm VR128:$src1, addr:$src2)>;
-def : Pat<(v4i32 (X86Punpckldq VR128:$src1, VR128:$src2)),
-          (PUNPCKLDQrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKLQDQ
-def : Pat<(v2i64 (X86Punpcklqdq VR128:$src1, (memopv2i64 addr:$src2))),
-          (PUNPCKLQDQrm VR128:$src1, addr:$src2)>;
-def : Pat<(v2i64 (X86Punpcklqdq VR128:$src1, VR128:$src2)),
-          (PUNPCKLQDQrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKHBW
-def : Pat<(v16i8 (X86Punpckhbw VR128:$src1,
-                                   (bc_v16i8 (memopv2i64 addr:$src2)))),
-          (PUNPCKHBWrm VR128:$src1, addr:$src2)>;
-def : Pat<(v16i8 (X86Punpckhbw VR128:$src1, VR128:$src2)),
-          (PUNPCKHBWrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKHWD
-def : Pat<(v8i16 (X86Punpckhwd VR128:$src1,
-                                   (bc_v8i16 (memopv2i64 addr:$src2)))),
-          (PUNPCKHWDrm VR128:$src1, addr:$src2)>;
-def : Pat<(v8i16 (X86Punpckhwd VR128:$src1, VR128:$src2)),
-          (PUNPCKHWDrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKHDQ
-def : Pat<(v4i32 (X86Punpckhdq VR128:$src1,
-                                   (bc_v4i32 (memopv2i64 addr:$src2)))),
-          (PUNPCKHDQrm VR128:$src1, addr:$src2)>;
-def : Pat<(v4i32 (X86Punpckhdq VR128:$src1, VR128:$src2)),
-          (PUNPCKHDQrr VR128:$src1, VR128:$src2)>;
-
-// Shuffle with PUNPCKHQDQ
-def : Pat<(v2i64 (X86Punpckhqdq VR128:$src1, (memopv2i64 addr:$src2))),
-          (PUNPCKHQDQrm VR128:$src1, addr:$src2)>;
-def : Pat<(v2i64 (X86Punpckhqdq VR128:$src1, VR128:$src2)),
-          (PUNPCKHQDQrr VR128:$src1, VR128:$src2)>;
+// Shuffle with VUNPCKHPDY
+def : Pat<(v4f64 (X86Unpckhpdy VR256:$src1, (memopv4f64 addr:$src2))),
+          (VUNPCKHPDYrm VR256:$src1, addr:$src2)>, Requires<[HasAVX]>;
+def : Pat<(v4f64 (X86Unpckhpdy VR256:$src1, VR256:$src2)),
+          (VUNPCKHPDYrr VR256:$src1, VR256:$src2)>, Requires<[HasAVX]>;
 
 // Shuffle with MOVLHPS
 def : Pat<(X86Movlhps VR128:$src1,
@@ -5852,28 +5781,6 @@ def : Pat<(v4f32 (X86Movsd VR128:$src1, VR128:$src2)),
           (MOVSDrr VR128:$src1, (EXTRACT_SUBREG (v4f32 VR128:$src2), sub_sd))>;
 def : Pat<(v4i32 (X86Movsd VR128:$src1, VR128:$src2)),
           (MOVSDrr VR128:$src1, (EXTRACT_SUBREG (v4i32 VR128:$src2), sub_sd))>;
-
-// Shuffle with MOVSHDUP
-def : Pat<(v4i32 (X86Movshdup VR128:$src)),
-          (MOVSHDUPrr VR128:$src)>;
-def : Pat<(X86Movshdup (bc_v4i32 (memopv2i64 addr:$src))),
-          (MOVSHDUPrm addr:$src)>;
-
-def : Pat<(v4f32 (X86Movshdup VR128:$src)),
-          (MOVSHDUPrr VR128:$src)>;
-def : Pat<(X86Movshdup (memopv4f32 addr:$src)),
-          (MOVSHDUPrm addr:$src)>;
-
-// Shuffle with MOVSLDUP
-def : Pat<(v4i32 (X86Movsldup VR128:$src)),
-          (MOVSLDUPrr VR128:$src)>;
-def : Pat<(X86Movsldup (bc_v4i32 (memopv2i64 addr:$src))),
-          (MOVSLDUPrm addr:$src)>;
-
-def : Pat<(v4f32 (X86Movsldup VR128:$src)),
-          (MOVSLDUPrr VR128:$src)>;
-def : Pat<(X86Movsldup (memopv4f32 addr:$src)),
-          (MOVSLDUPrm addr:$src)>;
 
 // Shuffle with PSHUFHW
 def : Pat<(v8i16 (X86PShufhw VR128:$src, (i8 imm:$imm))),

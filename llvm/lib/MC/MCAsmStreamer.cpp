@@ -15,6 +15,7 @@
 #include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCSectionMachO.h"
@@ -28,7 +29,6 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
 #include <cctype>
 using namespace llvm;
 
@@ -335,8 +335,9 @@ void MCAsmStreamer::EmitAssemblerFlag(MCAssemblerFlag Flag) {
   default: assert(0 && "Invalid flag!");
   case MCAF_SyntaxUnified:         OS << "\t.syntax unified"; break;
   case MCAF_SubsectionsViaSymbols: OS << ".subsections_via_symbols"; break;
-  case MCAF_Code16:                OS << "\t.code\t16"; break;
-  case MCAF_Code32:                OS << "\t.code\t32"; break;
+  case MCAF_Code16:                OS << '\t'<< MAI.getCode16Directive(); break;
+  case MCAF_Code32:                OS << '\t'<< MAI.getCode32Directive(); break;
+  case MCAF_Code64:                OS << '\t'<< MAI.getCode64Directive(); break;
   }
   EmitEOL();
 }

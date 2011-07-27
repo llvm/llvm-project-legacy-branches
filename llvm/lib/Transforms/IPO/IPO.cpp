@@ -70,6 +70,10 @@ void LLVMAddFunctionInliningPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createFunctionInliningPass());
 }
 
+void LLVMAddAlwaysInlinerPass(LLVMPassManagerRef PM) {
+  unwrap(PM)->add(llvm::createAlwaysInlinerPass());
+}
+
 void LLVMAddGlobalDCEPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createGlobalDCEPass());
 }
@@ -96,11 +100,6 @@ void LLVMAddIPSCCPPass(LLVMPassManagerRef PM) {
 
 void LLVMAddInternalizePass(LLVMPassManagerRef PM, unsigned AllButMain) {
   unwrap(PM)->add(createInternalizePass(AllButMain != 0));
-}
-
-
-void LLVMAddRaiseAllocationsPass(LLVMPassManagerRef PM) {
-  // FIXME: Remove in LLVM 3.0.
 }
 
 void LLVMAddStripDeadPrototypesPass(LLVMPassManagerRef PM) {

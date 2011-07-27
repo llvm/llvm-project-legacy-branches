@@ -418,11 +418,11 @@ class AIldrex<bits<2> opcod, dag oops, dag iops, InstrItinClass itin,
   : I<oops, iops, AddrModeNone, 4, IndexModeNone, LdStExFrm, itin,
       opc, asm, "", pattern> {
   bits<4> Rt;
-  bits<4> Rn;
+  bits<4> addr;
   let Inst{27-23} = 0b00011;
   let Inst{22-21} = opcod;
   let Inst{20}    = 1;
-  let Inst{19-16} = Rn;
+  let Inst{19-16} = addr;
   let Inst{15-12} = Rt;
   let Inst{11-0}  = 0b111110011111;
 }
@@ -442,14 +442,14 @@ class AIstrex<bits<2> opcod, dag oops, dag iops, InstrItinClass itin,
   let Inst{3-0}   = Rt;
 }
 class AIswp<bit b, dag oops, dag iops, string opc, list<dag> pattern>
-  : AI<oops, iops, MiscFrm, NoItinerary, opc, "\t$Rt, $Rt2, [$Rn]", pattern> {
+  : AI<oops, iops, MiscFrm, NoItinerary, opc, "\t$Rt, $Rt2, $addr", pattern> {
   bits<4> Rt;
   bits<4> Rt2;
-  bits<4> Rn;
+  bits<4> addr;
   let Inst{27-23} = 0b00010;
   let Inst{22} = b;
   let Inst{21-20} = 0b00;
-  let Inst{19-16} = Rn;
+  let Inst{19-16} = addr;
   let Inst{15-12} = Rt;
   let Inst{11-4} = 0b00001001;
   let Inst{3-0} = Rt2;
@@ -507,22 +507,41 @@ class AI2ldstidx<bit isLd, bit isByte, bit isPre, dag oops, dag iops,
   let Inst{20}    = isLd; // L bit
   let Inst{15-12} = Rt;
 }
-class AI2stridx<bit isByte, bit isPre, dag oops, dag iops,
+class AI2stridx_reg<bit isByte, bit isPre, dag oops, dag iops,
                 IndexMode im, Format f, InstrItinClass itin, string opc,
                 string asm, string cstr, list<dag> pattern>
   : AI2ldstidx<0, isByte, isPre, oops, iops, im, f, itin, opc, asm, cstr,
                pattern> {
   // AM2 store w/ two operands: (GPR, am2offset)
-  // {13}     1 == Rm, 0 == imm12
   // {12}     isAdd
   // {11-0}   imm12/Rm
   bits<14> offset;
   bits<4> Rn;
-  let Inst{25} = offset{13};
+  let Inst{25} = 1;
+  let Inst{23} = offset{12};
+  let Inst{19-16} = Rn;
+  let Inst{11-5} = offset{11-5};
+  let Inst{4} = 0;
+  let Inst{3-0} = offset{3-0};
+}
+
+class AI2stridx_imm<bit isByte, bit isPre, dag oops, dag iops,
+                IndexMode im, Format f, InstrItinClass itin, string opc,
+                string asm, string cstr, list<dag> pattern>
+  : AI2ldstidx<0, isByte, isPre, oops, iops, im, f, itin, opc, asm, cstr,
+               pattern> {
+  // AM2 store w/ two operands: (GPR, am2offset)
+  // {12}     isAdd
+  // {11-0}   imm12/Rm
+  bits<14> offset;
+  bits<4> Rn;
+  let Inst{25} = 0;
   let Inst{23} = offset{12};
   let Inst{19-16} = Rn;
   let Inst{11-0} = offset{11-0};
 }
+
+
 // FIXME: Merge with the above class when addrmode2 gets used for STR, STRB
 // but for now use this class for STRT and STRBT.
 class AI2stridxT<bit isByte, bit isPre, dag oops, dag iops,
@@ -600,7 +619,7 @@ class AI3ldstidxT<bits<4> op, bit op20, bit isLd, bit isPre, dag oops, dag iops,
   let Inst{11-8}  = addr{7-4};    // imm7_4/zero
   let Inst{7-4}   = op;
   let Inst{3-0}   = addr{3-0};    // imm3_0/Rm
-  let AsmMatchConverter = "CvtLdWriteBackRegAddrMode3";
+  let AsmMatchConverter = "cvtLdWriteBackRegAddrMode3";
 }
 
 class AI3stridx<bits<4> op, bit isByte, bit isPre, dag oops, dag iops,

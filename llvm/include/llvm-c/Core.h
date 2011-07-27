@@ -159,34 +159,34 @@ typedef enum {
   LLVMFence          = 31,
 
   /* Cast Operators */
-  LLVMTrunc          = 32,
-  LLVMZExt           = 33,
-  LLVMSExt           = 34,
-  LLVMFPToUI         = 35,
-  LLVMFPToSI         = 36,
-  LLVMUIToFP         = 37,
-  LLVMSIToFP         = 38,
-  LLVMFPTrunc        = 39,
-  LLVMFPExt          = 40,
-  LLVMPtrToInt       = 41,
-  LLVMIntToPtr       = 42,
-  LLVMBitCast        = 43,
+  LLVMTrunc          = 33,
+  LLVMZExt           = 34,
+  LLVMSExt           = 35,
+  LLVMFPToUI         = 36,
+  LLVMFPToSI         = 37,
+  LLVMUIToFP         = 38,
+  LLVMSIToFP         = 39,
+  LLVMFPTrunc        = 40,
+  LLVMFPExt          = 41,
+  LLVMPtrToInt       = 42,
+  LLVMIntToPtr       = 43,
+  LLVMBitCast        = 44,
 
   /* Other Operators */
-  LLVMICmp           = 44,
-  LLVMFCmp           = 45,
-  LLVMPHI            = 46,
-  LLVMCall           = 47,
-  LLVMSelect         = 48,
+  LLVMICmp           = 45,
+  LLVMFCmp           = 46,
+  LLVMPHI            = 47,
+  LLVMCall           = 48,
+  LLVMSelect         = 49,
   /* UserOp1 */
   /* UserOp2 */
-  LLVMVAArg          = 51,
-  LLVMExtractElement = 52,
-  LLVMInsertElement  = 53,
-  LLVMShuffleVector  = 54,
-  LLVMExtractValue   = 55,
-  LLVMInsertValue    = 56,
-  LLVMLandingPad     = 57
+  LLVMVAArg          = 52,
+  LLVMExtractElement = 53,
+  LLVMInsertElement  = 54,
+  LLVMShuffleVector  = 55,
+  LLVMExtractValue   = 56,
+  LLVMInsertValue    = 57,
+  LLVMLandingPad     = 58
 } LLVMOpcode;
 
 typedef enum {

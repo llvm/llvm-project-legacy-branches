@@ -36,6 +36,9 @@ void LLVMAddFunctionAttrsPass(LLVMPassManagerRef PM);
 /** See llvm::createFunctionInliningPass function. */
 void LLVMAddFunctionInliningPass(LLVMPassManagerRef PM);
 
+/** See llvm::createAlwaysInlinerPass function. */
+void LLVMAddAlwaysInlinerPass(LLVMPassManagerRef PM);
+
 /** See llvm::createGlobalDCEPass function. */
 void LLVMAddGlobalDCEPass(LLVMPassManagerRef PM);
 
@@ -56,9 +59,6 @@ void LLVMAddIPSCCPPass(LLVMPassManagerRef PM);
 
 /** See llvm::createInternalizePass function. */
 void LLVMAddInternalizePass(LLVMPassManagerRef, unsigned AllButMain);
-
-// FIXME: Remove in LLVM 3.0.
-void LLVMAddRaiseAllocationsPass(LLVMPassManagerRef PM);
 
 /** See llvm::createStripDeadPrototypesPass function. */
 void LLVMAddStripDeadPrototypesPass(LLVMPassManagerRef PM);

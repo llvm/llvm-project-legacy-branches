@@ -49,16 +49,16 @@ def X86pshufb  : SDNode<"X86ISD::PSHUFB",
 def X86andnp   : SDNode<"X86ISD::ANDNP",
                  SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                                       SDTCisSameAs<0,2>]>>;
-def X86psignb  : SDNode<"X86ISD::PSIGNB", 
+def X86psignb  : SDNode<"X86ISD::PSIGNB",
                  SDTypeProfile<1, 2, [SDTCisVT<0, v16i8>, SDTCisSameAs<0,1>,
                                       SDTCisSameAs<0,2>]>>;
-def X86psignw  : SDNode<"X86ISD::PSIGNW", 
+def X86psignw  : SDNode<"X86ISD::PSIGNW",
                  SDTypeProfile<1, 2, [SDTCisVT<0, v8i16>, SDTCisSameAs<0,1>,
                                       SDTCisSameAs<0,2>]>>;
-def X86psignd  : SDNode<"X86ISD::PSIGND", 
+def X86psignd  : SDNode<"X86ISD::PSIGND",
                  SDTypeProfile<1, 2, [SDTCisVT<0, v4i32>, SDTCisSameAs<0,1>,
                                       SDTCisSameAs<0,2>]>>;
-def X86pblendv : SDNode<"X86ISD::PBLENDVB", 
+def X86pblendv : SDNode<"X86ISD::PBLENDVB",
                  SDTypeProfile<1, 3, [SDTCisVT<0, v16i8>, SDTCisSameAs<0,1>,
                                       SDTCisSameAs<0,2>, SDTCisSameAs<0,3>]>>;
 def X86pextrb  : SDNode<"X86ISD::PEXTRB",
@@ -133,12 +133,15 @@ def X86Movhlpd : SDNode<"X86ISD::MOVHLPD", SDTShuff2Op>;
 def X86Movlps : SDNode<"X86ISD::MOVLPS", SDTShuff2Op>;
 def X86Movlpd : SDNode<"X86ISD::MOVLPD", SDTShuff2Op>;
 
-def X86Unpcklps : SDNode<"X86ISD::UNPCKLPS", SDTShuff2Op>;
-def X86Unpcklpd : SDNode<"X86ISD::UNPCKLPD", SDTShuff2Op>;
+def X86Unpcklps  : SDNode<"X86ISD::UNPCKLPS", SDTShuff2Op>;
+def X86Unpcklpd  : SDNode<"X86ISD::UNPCKLPD", SDTShuff2Op>;
 def X86Unpcklpsy : SDNode<"X86ISD::VUNPCKLPSY", SDTShuff2Op>;
 def X86Unpcklpdy : SDNode<"X86ISD::VUNPCKLPDY", SDTShuff2Op>;
-def X86Unpckhps : SDNode<"X86ISD::UNPCKHPS", SDTShuff2Op>;
-def X86Unpckhpd : SDNode<"X86ISD::UNPCKHPD", SDTShuff2Op>;
+
+def X86Unpckhps  : SDNode<"X86ISD::UNPCKHPS", SDTShuff2Op>;
+def X86Unpckhpd  : SDNode<"X86ISD::UNPCKHPD", SDTShuff2Op>;
+def X86Unpckhpsy : SDNode<"X86ISD::VUNPCKHPSY", SDTShuff2Op>;
+def X86Unpckhpdy : SDNode<"X86ISD::VUNPCKHPDY", SDTShuff2Op>;
 
 def X86Punpcklbw  : SDNode<"X86ISD::PUNPCKLBW", SDTShuff2Op>;
 def X86Punpcklwd  : SDNode<"X86ISD::PUNPCKLWD", SDTShuff2Op>;
@@ -150,7 +153,10 @@ def X86Punpckhwd  : SDNode<"X86ISD::PUNPCKHWD", SDTShuff2Op>;
 def X86Punpckhdq  : SDNode<"X86ISD::PUNPCKHDQ", SDTShuff2Op>;
 def X86Punpckhqdq : SDNode<"X86ISD::PUNPCKHQDQ", SDTShuff2Op>;
 
-def X86VPermil : SDNode<"X86ISD::VPERMIL", SDTShuff2OpI>;
+def X86VPermilps  : SDNode<"X86ISD::VPERMILPS", SDTShuff2OpI>;
+def X86VPermilpsy : SDNode<"X86ISD::VPERMILPSY", SDTShuff2OpI>;
+def X86VPermilpd  : SDNode<"X86ISD::VPERMILPD", SDTShuff2OpI>;
+def X86VPermilpdy : SDNode<"X86ISD::VPERMILPDY", SDTShuff2OpI>;
 
 //===----------------------------------------------------------------------===//
 // SSE Complex Patterns
@@ -358,7 +364,7 @@ def EXTRACT_get_vextractf128_imm : SDNodeXForm<extract_subvector, [{
   return getI8Imm(X86::getExtractVEXTRACTF128Immediate(N));
 }]>;
 
-// INSERT_get_vinsertf128_imm xform function: convert insert_subvector index to 
+// INSERT_get_vinsertf128_imm xform function: convert insert_subvector index to
 // VINSERTF128 imm.
 def INSERT_get_vinsertf128_imm : SDNodeXForm<insert_subvector, [{
   return getI8Imm(X86::getInsertVINSERTF128Immediate(N));
@@ -400,16 +406,6 @@ def movl : PatFrag<(ops node:$lhs, node:$rhs),
   return X86::isMOVLMask(cast<ShuffleVectorSDNode>(N));
 }]>;
 
-def movshdup : PatFrag<(ops node:$lhs, node:$rhs),
-                       (vector_shuffle node:$lhs, node:$rhs), [{
-  return X86::isMOVSHDUPMask(cast<ShuffleVectorSDNode>(N));
-}]>;
-
-def movsldup : PatFrag<(ops node:$lhs, node:$rhs),
-                       (vector_shuffle node:$lhs, node:$rhs), [{
-  return X86::isMOVSLDUPMask(cast<ShuffleVectorSDNode>(N));
-}]>;
-
 def unpckl : PatFrag<(ops node:$lhs, node:$rhs),
                      (vector_shuffle node:$lhs, node:$rhs), [{
   return X86::isUNPCKLMask(cast<ShuffleVectorSDNode>(N));
@@ -418,16 +414,6 @@ def unpckl : PatFrag<(ops node:$lhs, node:$rhs),
 def unpckh : PatFrag<(ops node:$lhs, node:$rhs),
                      (vector_shuffle node:$lhs, node:$rhs), [{
   return X86::isUNPCKHMask(cast<ShuffleVectorSDNode>(N));
-}]>;
-
-def unpckl_undef : PatFrag<(ops node:$lhs, node:$rhs),
-                           (vector_shuffle node:$lhs, node:$rhs), [{
-  return X86::isUNPCKL_v_undef_Mask(cast<ShuffleVectorSDNode>(N));
-}]>;
-
-def unpckh_undef : PatFrag<(ops node:$lhs, node:$rhs),
-                           (vector_shuffle node:$lhs, node:$rhs), [{
-  return X86::isUNPCKH_v_undef_Mask(cast<ShuffleVectorSDNode>(N));
 }]>;
 
 def pshufd : PatFrag<(ops node:$lhs, node:$rhs),
