@@ -24,7 +24,7 @@ GENERATOR_NAME := Visual Studio 9 2008
 JOBS := $(NUMBER_OF_PROCESSORS)
 BUILD_COMMAND := "$(VCBUILD)"
 PARALLEL_ARGS := /M$(JOBS)
-TARGET := "RelWithDebInfo|Win32"
+TARGET := "Debug|Win32"
 PROJ_EXT := vcproj
 
 else
@@ -37,7 +37,7 @@ GENERATOR_NAME := Visual Studio 10
 JOBS := 1
 BUILD_COMMAND := "$(MSBUILD)"
 PARALLEL_BUILD_ARGS := /maxcpucount:$(JOBS)
-TARGET := /p:Configuration=RelWithDebInfo /p:Platform=Win32
+TARGET := /p:Configuration=Debug /p:Platform=Win32
 PROJ_EXT := vcxproj
 
 else
