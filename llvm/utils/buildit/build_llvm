@@ -123,7 +123,7 @@ if [ "x$RC_ProjectName" = "xllvmCore_EmbeddedHosted" ]; then
 # otherwise, try to use llvm-gcc if it's available
 elif [ $DARWIN_VERS -gt 9 ]; then
   # If the user has set CC or CXX, respect their wishes.  If not,
-  # compile with LLVM-GCC/LLVM-G++ if available; if LLVM is not
+  # compile with clang/clang++ if available; if LLVM is not
   # available, fall back to usual GCC/G++ default.
   savedPATH=$PATH ; PATH="/Developer/usr/bin:$PATH"
   XTMPCC=$(which clang)
