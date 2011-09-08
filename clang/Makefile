@@ -97,7 +97,7 @@ configure:
 	"$(CMAKE)" -E make_directory "$(OBJROOT)"
 	cd "$(OBJROOT)" && \
 	"$(CMAKE)" "-DCMAKE_INSTALL_PREFIX:=$(STAGEROOT)" \
-	           "-DLLVM_TARGETS_TO_BUILD:=X86;ARM" \
+	           "-DLLVM_TARGETS_TO_BUILD:=X86" \
 	           "-DLLVM_USE_CRT_RELEASE:=$(MSVC_CRT)" \
 	           "-DLLVM_USE_CRT_MINSIZEREL:=$(MSVC_CRT)" \
 	           "-DLLVM_USE_CRT_RELWITHDEBINFO:=$(MSVC_CRT)" \
