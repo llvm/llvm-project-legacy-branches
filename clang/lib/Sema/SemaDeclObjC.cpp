@@ -368,10 +368,10 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
   ObjCInterfaceDecl* IDecl = dyn_cast_or_null<ObjCInterfaceDecl>(PrevDecl);
   if (IDecl) {
     // Class already seen. Is it a forward declaration?
-    if (!IDecl->isForwardDecl()) {
+    if (ObjCInterfaceDecl *Def = IDecl->getDefinition()) {
       IDecl->setInvalidDecl();
       Diag(AtInterfaceLoc, diag::err_duplicate_class_def)<<IDecl->getDeclName();
-      Diag(IDecl->getLocation(), diag::note_previous_definition);
+      Diag(Def->getLocation(), diag::note_previous_definition);
 
       // Create a new one; the other may be in a different DeclContex, (e.g.
       // this one may be in a LinkageSpecDecl while the other is not) which
@@ -392,8 +392,6 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
       IDecl->setLexicalDeclContext(CurContext);
       CurContext->addDecl(IDecl);
 
-      IDecl->completedForwardDecl();
-
       if (AttrList)
         ProcessDeclAttributeList(TUScope, IDecl, AttrList);
     }
@@ -406,6 +404,9 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
     PushOnScopeChains(IDecl, TUScope);
   }
 
+  if (!IDecl->hasDefinition())
+    IDecl->startDefinition();
+  
   if (SuperName) {
     // Check if a different kind of symbol declared in this scope.
     PrevDecl = LookupSingleName(TUScope, SuperName, SuperLoc,
@@ -417,7 +418,7 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
           DeclarationNameInfo(SuperName, SuperLoc), LookupOrdinaryName, TUScope,
           NULL, NULL, false, CTC_NoKeywords);
       if ((PrevDecl = Corrected.getCorrectionDeclAs<ObjCInterfaceDecl>())) {
-        if (PrevDecl == IDecl) {
+        if (declaresSameEntity(PrevDecl, IDecl)) {
           // Don't correct to the class we're defining.
           PrevDecl = 0;
         } else {
@@ -429,7 +430,7 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
       }
     }
 
-    if (PrevDecl == IDecl) {
+    if (declaresSameEntity(PrevDecl, IDecl)) {
       Diag(SuperLoc, diag::err_recursive_superclass)
         << SuperName << ClassName << SourceRange(AtInterfaceLoc, ClassLoc);
       IDecl->setLocEnd(ClassLoc);
@@ -924,7 +925,7 @@ Decl *Sema::ActOnStartClassImplementation(
       if (!SDecl)
         Diag(SuperClassLoc, diag::err_undef_superclass)
           << SuperClassname << ClassName;
-      else if (IDecl && IDecl->getSuperClass() != SDecl) {
+      else if (IDecl && !declaresSameEntity(IDecl->getSuperClass(), SDecl)) {
         // This implementation and its interface do not have the same
         // super class.
         Diag(SuperClassLoc, diag::err_conflicting_super_class)
@@ -942,6 +943,7 @@ Decl *Sema::ActOnStartClassImplementation(
     // copy them over.
     IDecl = ObjCInterfaceDecl::Create(Context, CurContext, AtClassImplLoc,
                                       ClassName, ClassLoc, false, true);
+    IDecl->startDefinition();
     IDecl->setSuperClass(SDecl);
     IDecl->setLocEnd(ClassLoc);
 
@@ -950,8 +952,8 @@ Decl *Sema::ActOnStartClassImplementation(
     // Mark the interface as being completed, even if it was just as
     //   @class ....;
     // declaration; the user cannot reopen it.
-    if (IDecl->isForwardDecl())
-      IDecl->completedForwardDecl();
+    if (!IDecl->hasDefinition())
+      IDecl->startDefinition();
   }
 
   ObjCImplementationDecl* IMPDecl =
@@ -2439,7 +2441,7 @@ CheckRelatedResultTypeCompatibility(Sema &S, ObjCMethodDecl *Method,
       if (ObjCInterfaceDecl *ResultClass 
                                       = ResultObjectType->getInterfaceDecl()) {
         //   - it is the same as the method's class type, or
-        if (CurrentClass == ResultClass)
+        if (declaresSameEntity(CurrentClass, ResultClass))
           return RTC_Compatible;
         
         //   - it is a superclass of the method's class type
@@ -2540,7 +2542,9 @@ private:
 
   void searchFrom(ObjCInterfaceDecl *iface) {
     // A method in a class declaration overrides declarations from
-
+    if (!iface->hasDefinition())
+      return;
+    
     //   - categories,
     for (ObjCCategoryDecl *category = iface->getCategoryList();
            category; category = category->getNextClassCategory())

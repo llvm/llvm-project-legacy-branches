@@ -22,7 +22,7 @@ using namespace cxcursor;
 IndexingContext::ObjCProtocolListInfo::ObjCProtocolListInfo(
                                     const ObjCProtocolList &ProtList,
                                     IndexingContext &IdxCtx,
-                                    StrAdapter &SA) {
+                                    ScratchAlloc &SA) {
   ObjCInterfaceDecl::protocol_loc_iterator LI = ProtList.loc_begin();
   for (ObjCInterfaceDecl::protocol_iterator
          I = ProtList.begin(), E = ProtList.end(); I != E; ++I, ++LI) {
@@ -34,6 +34,9 @@ IndexingContext::ObjCProtocolListInfo::ObjCProtocolListInfo(
                                 MakeCursorObjCProtocolRef(PD, Loc, IdxCtx.CXTU),
                                 IdxCtx.getIndexLoc(Loc) };
     ProtInfos.push_back(ProtInfo);
+
+    if (IdxCtx.suppressRefs())
+      IdxCtx.markEntityOccurrenceInFile(PD, Loc);
   }
 
   for (unsigned i = 0, e = ProtInfos.size(); i != e; ++i)
@@ -43,9 +46,27 @@ IndexingContext::ObjCProtocolListInfo::ObjCProtocolListInfo(
     Prots.push_back(&ProtInfos[i]);
 }
 
-IndexingContext::AttrListInfo::AttrListInfo(const Decl *D,
-                                            IndexingContext &IdxCtx,
-                                            StrAdapter &SA) {
+
+IBOutletCollectionInfo::IBOutletCollectionInfo(
+                                          const IBOutletCollectionInfo &other)
+  : AttrInfo(CXIdxAttr_IBOutletCollection, other.cursor, other.loc, A) {
+
+  IBCollInfo.attrInfo = this;
+  IBCollInfo.classCursor = other.IBCollInfo.classCursor;
+  IBCollInfo.classLoc = other.IBCollInfo.classLoc;
+  if (other.IBCollInfo.objcClass) {
+    ClassInfo = other.ClassInfo;
+    IBCollInfo.objcClass = &ClassInfo;
+  } else
+    IBCollInfo.objcClass = 0;
+}
+
+AttrListInfo::AttrListInfo(const Decl *D,
+                           IndexingContext &IdxCtx,
+                           ScratchAlloc &SA) : ref_cnt(0) {
+  if (!D->hasAttrs())
+    return;
+
   for (AttrVec::const_iterator AttrI = D->attr_begin(), AttrE = D->attr_end();
          AttrI != AttrE; ++AttrI) {
     const Attr *A = *AttrI;
@@ -92,9 +113,24 @@ IndexingContext::AttrListInfo::AttrListInfo(const Decl *D,
     CXAttrs.push_back(&Attrs[i]);
 }
 
+AttrListInfo::AttrListInfo(const AttrListInfo &other) {
+  assert(other.ref_cnt == 0 &&
+         "Should not copy an AttrListInfo that is ref-counted");
+  ref_cnt = 0;
+
+  Attrs = other.Attrs;
+  IBCollAttrs = other.IBCollAttrs;
+
+  for (unsigned i = 0, e = IBCollAttrs.size(); i != e; ++i)
+    CXAttrs.push_back(&IBCollAttrs[i]);
+
+  for (unsigned i = 0, e = Attrs.size(); i != e; ++i)
+    CXAttrs.push_back(&Attrs[i]);
+}
+
 IndexingContext::CXXBasesListInfo::CXXBasesListInfo(const CXXRecordDecl *D,
                                    IndexingContext &IdxCtx,
-                                   IndexingContext::StrAdapter &SA) {
+                                   ScratchAlloc &SA) {
   for (CXXRecordDecl::base_class_const_iterator
          I = D->bases_begin(), E = D->bases_end(); I != E; ++I) {
     const CXXBaseSpecifier &Base = *I;
@@ -152,7 +188,7 @@ SourceLocation IndexingContext::CXXBasesListInfo::getBaseLoc(
   return Loc;
 }
 
-const char *IndexingContext::StrAdapter::toCStr(StringRef Str) {
+const char *ScratchAlloc::toCStr(StringRef Str) {
   if (Str.empty())
     return "";
   if (Str.data()[Str.size()] == '\0')
@@ -160,7 +196,7 @@ const char *IndexingContext::StrAdapter::toCStr(StringRef Str) {
   return copyCStr(Str);
 }
 
-const char *IndexingContext::StrAdapter::copyCStr(StringRef Str) {
+const char *ScratchAlloc::copyCStr(StringRef Str) {
   char *buf = IdxCtx.StrScratch.Allocate<char>(Str.size() + 1);
   std::uninitialized_copy(Str.begin(), Str.end(), buf);
   buf[Str.size()] = '\0';
@@ -192,7 +228,7 @@ void IndexingContext::ppIncludedFile(SourceLocation hashLoc,
   if (!CB.ppIncludedFile)
     return;
 
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   CXIdxIncludedFileInfo Info = { getIndexLoc(hashLoc),
                                  SA.toCStr(filename),
                                  (CXFile)File,
@@ -223,7 +259,7 @@ bool IndexingContext::handleDecl(const NamedDecl *D,
   if (D->isImplicit() && shouldIgnoreIfImplicit(D))
     return false;
 
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   getEntityInfo(D, DInfo.EntInfo, SA);
   if (!DInfo.EntInfo.USR || Loc.isInvalid())
     return false;
@@ -317,7 +353,7 @@ bool IndexingContext::handleObjCClass(const ObjCClassDecl *D) {
 }
 
 bool IndexingContext::handleObjCInterface(const ObjCInterfaceDecl *D) {
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
 
   CXIdxBaseClassInfo BaseClass;
   EntityInfo BaseEntity;
@@ -328,9 +364,15 @@ bool IndexingContext::handleObjCInterface(const ObjCInterfaceDecl *D) {
     BaseClass.base = &BaseEntity;
     BaseClass.cursor = MakeCursorObjCSuperClassRef(SuperD, SuperLoc, CXTU);
     BaseClass.loc = getIndexLoc(SuperLoc);
+
+    if (suppressRefs())
+      markEntityOccurrenceInFile(SuperD, SuperLoc);
   }
   
-  ObjCProtocolListInfo ProtInfo(D->getReferencedProtocols(), *this, SA);
+  ObjCProtocolList EmptyProtoList;
+  ObjCProtocolListInfo ProtInfo(D->hasDefinition()? D->getReferencedProtocols()
+                                                  : EmptyProtoList, 
+                                *this, SA);
   
   ObjCInterfaceDeclInfo InterInfo(D);
   InterInfo.ObjCProtoListInfo = ProtInfo.getListInfo();
@@ -360,7 +402,7 @@ bool IndexingContext::handleObjCForwardProtocol(const ObjCProtocolDecl *D,
 }
 
 bool IndexingContext::handleObjCProtocol(const ObjCProtocolDecl *D) {
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   ObjCProtocolListInfo ProtListInfo(D->getReferencedProtocols(), *this, SA);
   
   ObjCProtocolDeclInfo ProtInfo(D);
@@ -372,7 +414,7 @@ bool IndexingContext::handleObjCProtocol(const ObjCProtocolDecl *D) {
 bool IndexingContext::handleObjCCategory(const ObjCCategoryDecl *D) {
   ObjCCategoryDeclInfo CatDInfo(/*isImplementation=*/false);
   EntityInfo ClassEntity;
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   const ObjCInterfaceDecl *IFaceD = D->getClassInterface();
   SourceLocation ClassLoc = D->getLocation();
   SourceLocation CategoryLoc = D->IsClassExtension() ? ClassLoc
@@ -404,7 +446,7 @@ bool IndexingContext::handleObjCCategoryImpl(const ObjCCategoryImplDecl *D) {
   const ObjCCategoryDecl *CatD = D->getCategoryDecl();
   ObjCCategoryDeclInfo CatDInfo(/*isImplementation=*/true);
   EntityInfo ClassEntity;
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   const ObjCInterfaceDecl *IFaceD = CatD->getClassInterface();
   SourceLocation ClassLoc = D->getLocation();
   SourceLocation CategoryLoc = D->getCategoryNameLoc();
@@ -513,7 +555,7 @@ bool IndexingContext::handleReference(const NamedDecl *D, SourceLocation Loc,
       return false; // already occurred.
   }
 
-  StrAdapter SA(*this);
+  ScratchAlloc SA(*this);
   EntityInfo RefEntity, ParentEntity;
   getEntityInfo(D, RefEntity, SA);
   if (!RefEntity.USR)
@@ -580,7 +622,7 @@ void IndexingContext::setClientEntity(const Decl *D, CXIdxClientEntity client) {
 bool IndexingContext::handleCXXRecordDecl(const CXXRecordDecl *RD,
                                           const NamedDecl *OrigD) {
   if (RD->isThisDeclarationADefinition()) {
-    StrAdapter SA(*this);
+    ScratchAlloc SA(*this);
     CXXClassDeclInfo CXXDInfo(/*isRedeclaration=*/!OrigD->isCanonicalDecl(),
                            /*isDefinition=*/RD->isThisDeclarationADefinition());
     CXXBasesListInfo BaseList(RD, *this, SA);
@@ -725,7 +767,7 @@ void IndexingContext::translateLoc(SourceLocation Loc,
 
 void IndexingContext::getEntityInfo(const NamedDecl *D,
                                     EntityInfo &EntityInfo,
-                                    StrAdapter &SA) {
+                                    ScratchAlloc &SA) {
   if (!D)
     return;
 
@@ -736,6 +778,14 @@ void IndexingContext::getEntityInfo(const NamedDecl *D,
   EntityInfo.kind = CXIdxEntity_Unexposed;
   EntityInfo.templateKind = CXIdxEntity_NonTemplate;
   EntityInfo.lang = CXIdxEntityLang_C;
+
+  if (D->hasAttrs()) {
+    AttrListInfo *attrs = SA.allocate<AttrListInfo>();
+    new (attrs) AttrListInfo(D, *this, SA);
+    EntityInfo.AttrList = attrs;
+    EntityInfo.attributes = attrs->getAttrs();
+    EntityInfo.numAttributes = attrs->getNumAttrs();
+  }
 
   if (const TagDecl *TD = dyn_cast<TagDecl>(D)) {
     switch (TD->getTagKind()) {

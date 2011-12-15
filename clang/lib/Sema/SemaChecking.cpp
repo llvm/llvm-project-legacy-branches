@@ -2442,7 +2442,8 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
                          Str, HasVAListArg, TheCall, format_idx,
                          inFunctionCall);
   
-    if (!analyze_format_string::ParsePrintfString(H, Str, Str + StrLen))
+    if (!analyze_format_string::ParsePrintfString(H, Str, Str + StrLen,
+                                                  getLangOptions()))
       H.DoneProcessing();
   }
   else {
@@ -2451,7 +2452,8 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
                         Str, HasVAListArg, TheCall, format_idx,
                         inFunctionCall);
     
-    if (!analyze_format_string::ParseScanfString(H, Str, Str + StrLen))
+    if (!analyze_format_string::ParseScanfString(H, Str, Str + StrLen,
+                                                 getLangOptions()))
       H.DoneProcessing();
   }
 }
@@ -3257,7 +3259,7 @@ IntRange GetExprRange(ASTContext &C, Expr *E, unsigned MaxWidth) {
   // user has an explicit widening cast, we should treat the value as
   // being of the new, wider type.
   if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E)) {
-    if (CE->getCastKind() == CK_NoOp)
+    if (CE->getCastKind() == CK_NoOp || CE->getCastKind() == CK_LValueToRValue)
       return GetExprRange(C, CE->getSubExpr(), MaxWidth);
 
     IntRange OutputTypeRange = IntRange::forValueOfType(C, CE->getType());
