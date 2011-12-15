@@ -55,6 +55,11 @@ add_clang_unittest(AST
   USED_LIBS gtest gtest_main clangAST
  )
 
+add_clang_unittest(ASTMatchers
+  ASTMatchers/ASTMatchersTest.cpp
+  USED_LIBS gtest gtest_main clangASTMatchers clangTooling
+ )
+
 add_clang_unittest(Basic
   Basic/FileManagerTest.cpp
   USED_LIBS gtest gtest_main clangBasic
@@ -63,4 +68,10 @@ add_clang_unittest(Basic
 add_clang_unittest(Frontend
   Frontend/FrontendActionTest.cpp
   USED_LIBS gtest gtest_main clangFrontend
+ )
+
+add_clang_unittest(Tooling
+  Tooling/ToolingTest.cpp
+  Tooling/RefactoringTest.cpp
+  USED_LIBS gtest gtest_main clangTooling
  )

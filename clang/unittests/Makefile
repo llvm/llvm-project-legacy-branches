@@ -14,7 +14,7 @@ ifndef CLANG_LEVEL
 
 IS_UNITTEST_LEVEL := 1
 CLANG_LEVEL := ..
-PARALLEL_DIRS = AST Basic Frontend
+PARALLEL_DIRS = AST ASTMatchers Basic Frontend Tooling
 
 endif  # CLANG_LEVEL
 
