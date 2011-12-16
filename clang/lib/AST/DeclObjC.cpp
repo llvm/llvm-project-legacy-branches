@@ -224,7 +224,15 @@ void ObjCInterfaceDecl::mergeClassExtensionProtocolList(
 
 void ObjCInterfaceDecl::allocateDefinitionData() {
   assert(!hasDefinition() && "ObjC class already has a definition");
-  Definition = new (getASTContext()) DefinitionData();  
+  Data = new (getASTContext()) DefinitionData();
+  Data->Definition = this;
+  
+  // Update all of the declarations with a pointer to the definition.
+  for (redecl_iterator RD = redecls_begin(), RDEnd = redecls_end();
+       RD != RDEnd; ++RD) {
+    if (*RD != this)
+      RD->Data = Data;
+  }
 }
 
 void ObjCInterfaceDecl::startDefinition() {
@@ -667,16 +675,15 @@ ObjCInterfaceDecl *ObjCInterfaceDecl::Create(ASTContext &C,
                                              SourceLocation atLoc,
                                              IdentifierInfo *Id,
                                              SourceLocation ClassLoc,
-                                             bool ForwardDecl, bool isInternal){
-  return new (C) ObjCInterfaceDecl(DC, atLoc, Id, ClassLoc, ForwardDecl,
-                                     isInternal);
+                                             bool isInternal){
+  return new (C) ObjCInterfaceDecl(DC, atLoc, Id, ClassLoc, isInternal);
 }
 
 ObjCInterfaceDecl::
 ObjCInterfaceDecl(DeclContext *DC, SourceLocation atLoc, IdentifierInfo *Id,
-                  SourceLocation CLoc, bool FD, bool isInternal)
+                  SourceLocation CLoc, bool isInternal)
   : ObjCContainerDecl(ObjCInterface, DC, Id, CLoc, atLoc),
-    TypeForDecl(0), Definition(), InitiallyForwardDecl(FD) 
+    TypeForDecl(0), Data()
 {
   setImplicit(isInternal);
 }
@@ -697,19 +704,20 @@ void ObjCInterfaceDecl::setExternallyCompleted() {
 }
 
 ObjCImplementationDecl *ObjCInterfaceDecl::getImplementation() const {
+  if (const ObjCInterfaceDecl *Def = getDefinition()) {
+    if (data().ExternallyCompleted)
+      LoadExternalDefinition();
+    
+    return getASTContext().getObjCImplementation(
+             const_cast<ObjCInterfaceDecl*>(Def));
+  }
+  
   // FIXME: Should make sure no callers ever do this.
-  if (!hasDefinition())
-    return 0;
-      
-  if (data().ExternallyCompleted)
-    LoadExternalDefinition();
-
-  return getASTContext().getObjCImplementation(
-                                          const_cast<ObjCInterfaceDecl*>(this));
+  return 0;
 }
 
 void ObjCInterfaceDecl::setImplementation(ObjCImplementationDecl *ImplD) {
-  getASTContext().setObjCImplementation(this, ImplD);
+  getASTContext().setObjCImplementation(getDefinition(), ImplD);
 }
 
 /// all_declared_ivar_begin - return first ivar declared in this class,
@@ -841,6 +849,14 @@ bool ObjCInterfaceDecl::ClassImplementsProtocol(ObjCProtocolDecl *lProto,
                                                   RHSIsQualifiedID);
 
   return false;
+}
+
+void ObjCInterfaceDecl::setPreviousDeclaration(ObjCInterfaceDecl *PrevDecl) {
+  redeclarable_base::setPreviousDeclaration(PrevDecl);
+  
+  // Inherit the 'Data' pointer from the previous declaration.
+  if (PrevDecl)
+    Data = PrevDecl->Data;
 }
 
 //===----------------------------------------------------------------------===//

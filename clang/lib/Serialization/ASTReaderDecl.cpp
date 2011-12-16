@@ -554,6 +554,7 @@ void ASTDeclReader::VisitObjCContainerDecl(ObjCContainerDecl *CD) {
 }
 
 void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
+  VisitRedeclarable(ID);
   VisitObjCContainerDecl(ID);
   ID->setTypeForDecl(Reader.readType(F, Record, Idx).getTypePtrOrNull());
   
@@ -568,6 +569,8 @@ void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
     Data.SuperClass = ReadDeclAs<ObjCInterfaceDecl>(Record, Idx);
     Data.SuperClassLoc = ReadSourceLocation(Record, Idx);
 
+    Data.EndLoc = ReadSourceLocation(Record, Idx);
+    
     // Read the directly referenced protocols and their SourceLocations.
     unsigned NumProtocols = Record[Idx++];
     SmallVector<ObjCProtocolDecl *, 16> Protocols;
@@ -612,25 +615,21 @@ void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
       for (ASTReader::ForwardRefs::iterator I = Refs.begin(), 
                                             E = Refs.end(); 
            I != E; ++I)
-        cast<ObjCInterfaceDecl>(*I)->Definition = ID->Definition;
+        cast<ObjCInterfaceDecl>(*I)->Data = ID->Data;
 #ifndef NDEBUG
       // We later check whether PendingForwardRefs is empty to make sure all
       // pending references were linked.
       Reader.PendingForwardRefs.erase(ID);
 #endif
-    
     } else if (Def) {
-      if (Def->Definition) {
-        ID->Definition = Def->Definition;
+      if (Def->Data) {
+        ID->Data = Def->Data;
       } else {
         // The definition is still initializing.
         Reader.PendingForwardRefs[Def].push_back(ID);
       }
     }
   }
-  
-  ID->InitiallyForwardDecl = Record[Idx++];
-  ID->setLocEnd(ReadSourceLocation(Record, Idx));
 }
 
 void ASTDeclReader::VisitObjCIvarDecl(ObjCIvarDecl *IVD) {
@@ -2067,6 +2066,19 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
       cast<VarDecl>(D)->getMemberSpecializationInfo()->setPointOfInstantiation(
           Reader.ReadSourceLocation(ModuleFile, Record, Idx));
       break;
+    
+    case UPD_OBJC_SET_CLASS_DEFINITIONDATA: {
+      ObjCInterfaceDecl *ID = cast<ObjCInterfaceDecl>(D);
+      ObjCInterfaceDecl *Def
+        = Reader.ReadDeclAs<ObjCInterfaceDecl>(ModuleFile, Record, Idx);
+      if (Def->Data) {
+        ID->Data = Def->Data;
+      } else {
+        // The definition is still initializing.
+        Reader.PendingForwardRefs[Def].push_back(ID);
+      }
+      break;
+    }
     }
   }
 }

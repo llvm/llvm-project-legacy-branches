@@ -540,13 +540,18 @@ public:
 ///   Unlike C++, ObjC is a single-rooted class model. In Cocoa, classes
 ///   typically inherit from NSObject (an exception is NSProxy).
 ///
-class ObjCInterfaceDecl : public ObjCContainerDecl {
+class ObjCInterfaceDecl : public ObjCContainerDecl
+                        , public Redeclarable<ObjCInterfaceDecl> {
   /// TypeForDecl - This indicates the Type object that represents this
   /// TypeDecl.  It is a cache maintained by ASTContext::getObjCInterfaceType
   mutable const Type *TypeForDecl;
   friend class ASTContext;
   
   struct DefinitionData {
+    /// \brief The definition of this class, for quick access from any 
+    /// declaration.
+    ObjCInterfaceDecl *Definition;
+    
     /// Class's super class.
     ObjCInterfaceDecl *SuperClass;
 
@@ -571,49 +576,52 @@ class ObjCInterfaceDecl : public ObjCContainerDecl {
     /// completed by the external AST source when required.
     mutable bool ExternallyCompleted : 1;
 
-    SourceLocation SuperClassLoc; // location of the super class identifier.
+    /// \brief The location of the superclass, if any.
+    SourceLocation SuperClassLoc;
+    
+    /// \brief The location of the last location in this declaration, before
+    /// the properties/methods. For example, this will be the '>', '}', or 
+    /// identifier, 
+    SourceLocation EndLoc; 
+
+    DefinitionData() : Definition(), SuperClass(), CategoryList(), IvarList(), 
+                       ExternallyCompleted() { }
   };
 
   ObjCInterfaceDecl(DeclContext *DC, SourceLocation atLoc, IdentifierInfo *Id,
-                    SourceLocation CLoc, bool FD, bool isInternal);
+                    SourceLocation CLoc, bool isInternal);
 
   void LoadExternalDefinition() const;
 
   /// \brief Contains a pointer to the data associated with this class,
   /// which will be NULL if this class has not yet been defined.
-  DefinitionData *Definition;
-
-  /// \brief The location of the last location in this declaration, e.g.,
-  /// the '>', '}', or identifier.
-  /// FIXME: This seems like the wrong location to care about.
-  SourceLocation EndLoc; 
-
-  /// \brief True if it was initially declared with @class.
-  /// Differs with \see ForwardDecl in that \see ForwardDecl will change to
-  /// false when we see the @interface, but InitiallyForwardDecl will remain
-  /// true.
-  bool InitiallyForwardDecl : 1;
+  DefinitionData *Data;
 
   DefinitionData &data() const {
-    assert(Definition != 0 && "Declaration is not a definition!");
-    return *Definition;
+    assert(Data != 0 && "Declaration has no definition!");
+    return *Data;
   }
 
   /// \brief Allocate the definition data for this class.
   void allocateDefinitionData();
   
+  typedef Redeclarable<ObjCInterfaceDecl> redeclarable_base;
+  virtual ObjCInterfaceDecl *getNextRedeclaration() { 
+    return RedeclLink.getNext(); 
+  }
+
 public:
   static ObjCInterfaceDecl *Create(ASTContext &C, DeclContext *DC,
                                    SourceLocation atLoc,
                                    IdentifierInfo *Id,
                                    SourceLocation ClassLoc = SourceLocation(),
-                                   bool ForwardDecl = false,
                                    bool isInternal = false);
 
   virtual SourceRange getSourceRange() const {
-    if (isForwardDecl())
-      return SourceRange(getAtStartLoc(), getLocation());
-    return ObjCContainerDecl::getSourceRange();
+    if (isThisDeclarationADefinition())
+      return ObjCContainerDecl::getSourceRange();
+    
+    return SourceRange(getAtStartLoc(), getLocation());
   }
 
   /// \brief Indicate that this Objective-C class is complete, but that
@@ -759,32 +767,27 @@ public:
                                        unsigned Num,
                                        ASTContext &C);
 
-  /// \brief True if it was initially declared with @class.
-  /// Differs with \see isForwardDecl in that \see isForwardDecl will change to
-  /// false when we see the @interface, but this will remain true.
-  bool isInitiallyForwardDecl() const { 
-    return InitiallyForwardDecl; 
+  /// \brief Determine whether this particular declaration of this class is
+  /// actually also a definition.
+  bool isThisDeclarationADefinition() const { 
+    return Data && Data->Definition == this;
   }
-
-  /// \brief Determine whether this declaration is a forward declaration of
-  /// the class.
-  bool isForwardDecl() const { return Definition == 0; }
-
+                          
   /// \brief Determine whether this class has been defined.
-  bool hasDefinition() const { return Definition != 0; }
-  
+  bool hasDefinition() const { return Data; }
+                        
   /// \brief Retrieve the definition of this class, or NULL if this class 
   /// has been forward-declared (with @class) but not yet defined (with 
   /// @interface).
   ObjCInterfaceDecl *getDefinition() {
-    return hasDefinition()? this : 0;
+    return hasDefinition()? Data->Definition : 0;
   }
 
   /// \brief Retrieve the definition of this class, or NULL if this class 
   /// has been forward-declared (with @class) but not yet defined (with 
   /// @interface).
   const ObjCInterfaceDecl *getDefinition() const {
-    return hasDefinition()? this : 0;
+    return hasDefinition()? Data->Definition : 0;
   }
 
   /// \brief Starts the definition of this Objective-C class, taking it from
@@ -872,10 +875,14 @@ public:
   // Lookup a method in the classes implementation hierarchy.
   ObjCMethodDecl *lookupPrivateMethod(const Selector &Sel, bool Instance=true);
 
-  // Location information, modeled after the Stmt API.
-  SourceLocation getLocStart() const { return getAtStartLoc(); } // '@'interface
-  SourceLocation getLocEnd() const { return EndLoc; }
-  void setLocEnd(SourceLocation LE) { EndLoc = LE; }
+  SourceLocation getEndOfDefinitionLoc() const { 
+    if (!hasDefinition())
+      return getLocation();
+    
+    return data().EndLoc; 
+  }
+                          
+  void setEndOfDefinitionLoc(SourceLocation LE) { data().EndLoc = LE; }
 
   void setSuperClassLoc(SourceLocation Loc) { data().SuperClassLoc = Loc; }
   SourceLocation getSuperClassLoc() const { return data().SuperClassLoc; }
@@ -892,6 +899,24 @@ public:
   bool ClassImplementsProtocol(ObjCProtocolDecl *lProto,
                                bool lookupCategory,
                                bool RHSIsQualifiedID = false);
+
+  typedef redeclarable_base::redecl_iterator redecl_iterator;
+  redecl_iterator redecls_begin() const {
+    return redeclarable_base::redecls_begin();
+  }
+  redecl_iterator redecls_end() const {
+    return redeclarable_base::redecls_end();
+  }
+
+  /// Retrieves the canonical declaration of this Objective-C class.
+  ObjCInterfaceDecl *getCanonicalDecl() {
+    return getFirstDeclaration();
+  }
+  const ObjCInterfaceDecl *getCanonicalDecl() const {
+    return getFirstDeclaration();
+  }
+
+  void setPreviousDeclaration(ObjCInterfaceDecl *PrevDecl);
 
   // Low-level accessor
   const Type *getTypeForDecl() const { return TypeForDecl; }
