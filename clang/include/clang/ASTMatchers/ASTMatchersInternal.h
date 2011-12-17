@@ -713,16 +713,16 @@ private:
 /// T is dyn_cast'able into InnerT and all inner matchers match.
 template<typename T, typename InnerT>
 Matcher<T> MakeDynCastAllOfComposite(
-    const Matcher<InnerT> *const InnerMatchers[], int Count) {
-  if (Count == 0) {
+    ArrayRef<const Matcher<InnerT> *> InnerMatchers) {
+  if (InnerMatchers.empty()) {
     return ArgumentAdaptingMatcher<DynCastMatcher, InnerT>(
         MakeMatcher(new TrueMatcher<InnerT>));
   }
-  Matcher<InnerT> InnerMatcher = *InnerMatchers[Count-1];
-  for (int I = Count-2; I >= 0; --I) {
+  Matcher<InnerT> InnerMatcher = *InnerMatchers.back();
+  for (int i = InnerMatchers.size() - 2; i >= 0; --i) {
     InnerMatcher = MakeMatcher(
         new AllOfMatcher<InnerT, Matcher<InnerT>, Matcher<InnerT> >(
-            *InnerMatchers[I], InnerMatcher));
+            *InnerMatchers[i], InnerMatcher));
   }
   return ArgumentAdaptingMatcher<DynCastMatcher, InnerT>(InnerMatcher);
 }
