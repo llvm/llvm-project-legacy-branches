@@ -226,17 +226,22 @@ void ObjCInterfaceDecl::allocateDefinitionData() {
   assert(!hasDefinition() && "ObjC class already has a definition");
   Data = new (getASTContext()) DefinitionData();
   Data->Definition = this;
-  
+
+  // Make the type point at the definition, now that we have one.
+  if (TypeForDecl)
+    cast<ObjCInterfaceType>(TypeForDecl)->Decl = this;
+}
+
+void ObjCInterfaceDecl::startDefinition() {
+  allocateDefinitionData();
+
   // Update all of the declarations with a pointer to the definition.
   for (redecl_iterator RD = redecls_begin(), RDEnd = redecls_end();
        RD != RDEnd; ++RD) {
     if (*RD != this)
       RD->Data = Data;
   }
-}
 
-void ObjCInterfaceDecl::startDefinition() {
-  allocateDefinitionData();
   if (ASTMutationListener *L = getASTContext().getASTMutationListener())
     L->CompletedObjCForwardRef(this);
 }
@@ -674,17 +679,33 @@ ObjCInterfaceDecl *ObjCInterfaceDecl::Create(ASTContext &C,
                                              DeclContext *DC,
                                              SourceLocation atLoc,
                                              IdentifierInfo *Id,
+                                             ObjCInterfaceDecl *PrevDecl,
                                              SourceLocation ClassLoc,
                                              bool isInternal){
-  return new (C) ObjCInterfaceDecl(DC, atLoc, Id, ClassLoc, isInternal);
+  ObjCInterfaceDecl *Result = new (C) ObjCInterfaceDecl(DC, atLoc, Id, ClassLoc, 
+                                                        PrevDecl, isInternal);
+  C.getObjCInterfaceType(Result, PrevDecl);
+  return Result;
+}
+
+ObjCInterfaceDecl *ObjCInterfaceDecl::CreateEmpty(ASTContext &C) {
+  return new (C) ObjCInterfaceDecl(0, SourceLocation(), 0, SourceLocation(),
+                                   0, false);
 }
 
 ObjCInterfaceDecl::
 ObjCInterfaceDecl(DeclContext *DC, SourceLocation atLoc, IdentifierInfo *Id,
-                  SourceLocation CLoc, bool isInternal)
+                  SourceLocation CLoc, ObjCInterfaceDecl *PrevDecl,
+                  bool isInternal)
   : ObjCContainerDecl(ObjCInterface, DC, Id, CLoc, atLoc),
     TypeForDecl(0), Data()
 {
+  setPreviousDeclaration(PrevDecl);
+  
+  // Copy the 'data' pointer over.
+  if (PrevDecl)
+    Data = PrevDecl->Data;
+  
   setImplicit(isInternal);
 }
 
@@ -849,14 +870,6 @@ bool ObjCInterfaceDecl::ClassImplementsProtocol(ObjCProtocolDecl *lProto,
                                                   RHSIsQualifiedID);
 
   return false;
-}
-
-void ObjCInterfaceDecl::setPreviousDeclaration(ObjCInterfaceDecl *PrevDecl) {
-  redeclarable_base::setPreviousDeclaration(PrevDecl);
-  
-  // Inherit the 'Data' pointer from the previous declaration.
-  if (PrevDecl)
-    Data = PrevDecl->Data;
 }
 
 //===----------------------------------------------------------------------===//

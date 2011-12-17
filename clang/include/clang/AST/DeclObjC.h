@@ -589,7 +589,8 @@ class ObjCInterfaceDecl : public ObjCContainerDecl
   };
 
   ObjCInterfaceDecl(DeclContext *DC, SourceLocation atLoc, IdentifierInfo *Id,
-                    SourceLocation CLoc, bool isInternal);
+                    SourceLocation CLoc, ObjCInterfaceDecl *PrevDecl,
+                    bool isInternal);
 
   void LoadExternalDefinition() const;
 
@@ -614,8 +615,11 @@ public:
   static ObjCInterfaceDecl *Create(ASTContext &C, DeclContext *DC,
                                    SourceLocation atLoc,
                                    IdentifierInfo *Id,
+                                   ObjCInterfaceDecl *PrevDecl,
                                    SourceLocation ClassLoc = SourceLocation(),
                                    bool isInternal = false);
+
+  static ObjCInterfaceDecl *CreateEmpty(ASTContext &C);
 
   virtual SourceRange getSourceRange() const {
     if (isThisDeclarationADefinition())
@@ -915,8 +919,6 @@ public:
   const ObjCInterfaceDecl *getCanonicalDecl() const {
     return getFirstDeclaration();
   }
-
-  void setPreviousDeclaration(ObjCInterfaceDecl *PrevDecl);
 
   // Low-level accessor
   const Type *getTypeForDecl() const { return TypeForDecl; }

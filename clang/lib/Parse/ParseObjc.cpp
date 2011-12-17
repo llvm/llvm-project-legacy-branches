@@ -366,8 +366,12 @@ void Parser::ParseObjCInterfaceDeclList(tok::ObjCKeywordKind contextKey,
       allMethods.push_back(methodPrototype);
       // Consume the ';' here, since ParseObjCMethodPrototype() is re-used for
       // method definitions.
-      ExpectAndConsume(tok::semi, diag::err_expected_semi_after_method_proto,
-                       "", tok::semi);
+      if (ExpectAndConsumeSemi(diag::err_expected_semi_after_method_proto)) {
+        // We didn't find a semi and we error'ed out. Skip until a ';' or '@'.
+        SkipUntil(tok::at, /*StopAtSemi=*/true, /*DontConsume=*/true);
+        if (Tok.is(tok::semi))
+          ConsumeToken();
+      }
       continue;
     }
     if (Tok.is(tok::l_paren)) {
@@ -2564,7 +2568,10 @@ ExprResult Parser::ParseObjCSelectorExpression(SourceLocation AtLoc) {
  }
 
 Decl *Parser::ParseLexedObjCMethodDefs(LexedMethod &LM) {
-    
+
+  // Save the current token position.
+  SourceLocation OrigLoc = Tok.getLocation();
+
   assert(!LM.Toks.empty() && "ParseLexedObjCMethodDef - Empty body!");
   // Append the current token at the end of the new token stream so that it
   // doesn't get lost.
@@ -2603,5 +2610,19 @@ Decl *Parser::ParseLexedObjCMethodDefs(LexedMethod &LM) {
   // Leave the function body scope.
   BodyScope.Exit();
     
-  return Actions.ActOnFinishFunctionBody(MDecl, FnBody.take());
+  MDecl = Actions.ActOnFinishFunctionBody(MDecl, FnBody.take());
+
+  if (Tok.getLocation() != OrigLoc) {
+    // Due to parsing error, we either went over the cached tokens or
+    // there are still cached tokens left. If it's the latter case skip the
+    // leftover tokens.
+    // Since this is an uncommon situation that should be avoided, use the
+    // expensive isBeforeInTranslationUnit call.
+    if (PP.getSourceManager().isBeforeInTranslationUnit(Tok.getLocation(),
+                                                     OrigLoc))
+      while (Tok.getLocation() != OrigLoc && Tok.isNot(tok::eof))
+        ConsumeAnyToken();
+  }
+  
+  return MDecl;
 }
