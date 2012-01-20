@@ -57,7 +57,13 @@ add_clang_unittest(ASTMatchers
 
 add_clang_unittest(Basic
   Basic/FileManagerTest.cpp
-  USED_LIBS gtest gtest_main clangBasic
+  Basic/SourceManagerTest.cpp
+  USED_LIBS gtest gtest_main clangLex
+ )
+
+add_clang_unittest(Lex
+  Lex/LexerTest.cpp
+  USED_LIBS gtest gtest_main clangLex
  )
 
 add_clang_unittest(Frontend

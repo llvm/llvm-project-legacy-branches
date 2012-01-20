@@ -65,8 +65,6 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::AccessSpec:
   case Decl::LinkageSpec:
   case Decl::ObjCPropertyImpl:
-  case Decl::ObjCClass:
-  case Decl::ObjCForwardProtocol:
   case Decl::FileScopeAsm:
   case Decl::Friend:
   case Decl::FriendTemplate:
@@ -205,7 +203,7 @@ CodeGenFunction::CreateStaticVarDecl(const VarDecl &D,
 llvm::GlobalVariable *
 CodeGenFunction::AddInitializerToStaticVarDecl(const VarDecl &D,
                                                llvm::GlobalVariable *GV) {
-  llvm::Constant *Init = CGM.EmitConstantExpr(D.getInit(), D.getType(), this);
+  llvm::Constant *Init = CGM.EmitConstantInit(D, this);
 
   // If constant emission failed, then this should be a C++ static
   // initializer.
@@ -496,7 +494,7 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
     llvm::Value *value = EmitScalarExpr(init);
     if (capturedByInit)
       drillIntoBlockVariable(*this, lvalue, cast<VarDecl>(D));
-    EmitStoreThroughLValue(RValue::get(value), lvalue);
+    EmitStoreThroughLValue(RValue::get(value), lvalue, true);
     return;
   }
 
@@ -537,7 +535,7 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
 
     // Otherwise just do a simple store.
     else
-      EmitStoreOfScalar(zero, tempLV);
+      EmitStoreOfScalar(zero, tempLV, /* isInitialization */ true);
   }
 
   // Emit the initializer.
@@ -583,19 +581,19 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
   // both __weak and __strong, but __weak got filtered out above.
   if (accessedByInit && lifetime == Qualifiers::OCL_Strong) {
     llvm::Value *oldValue = EmitLoadOfScalar(lvalue);
-    EmitStoreOfScalar(value, lvalue);
+    EmitStoreOfScalar(value, lvalue, /* isInitialization */ true);
     EmitARCRelease(oldValue, /*precise*/ false);
     return;
   }
 
-  EmitStoreOfScalar(value, lvalue);
+  EmitStoreOfScalar(value, lvalue, /* isInitialization */ true);
 }
 
 /// EmitScalarInit - Initialize the given lvalue with the given object.
 void CodeGenFunction::EmitScalarInit(llvm::Value *init, LValue lvalue) {
   Qualifiers::ObjCLifetime lifetime = lvalue.getObjCLifetime();
   if (!lifetime)
-    return EmitStoreThroughLValue(RValue::get(init), lvalue);
+    return EmitStoreThroughLValue(RValue::get(init), lvalue, true);
 
   switch (lifetime) {
   case Qualifiers::OCL_None:
@@ -619,7 +617,7 @@ void CodeGenFunction::EmitScalarInit(llvm::Value *init, LValue lvalue) {
     break;
   }
 
-  EmitStoreOfScalar(init, lvalue);
+  EmitStoreOfScalar(init, lvalue, /* isInitialization */ true);
 }
 
 /// canEmitInitWithFewStoresAfterMemset - Decide whether we can emit the
@@ -971,7 +969,13 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   llvm::Value *Loc =
     capturedByInit ? emission.Address : emission.getObjectAddress(*this);
 
-  if (!emission.IsConstantAggregate) {
+  llvm::Constant *constant = 0;
+  if (emission.IsConstantAggregate) {
+    assert(!capturedByInit && "constant init contains a capturing block?");
+    constant = CGM.EmitConstantInit(D, this);
+  }
+
+  if (!constant) {
     LValue lv = MakeAddrLValue(Loc, type, alignment);
     lv.setNonGC(true);
     return EmitExprAsInit(Init, &D, lv, capturedByInit);
@@ -979,12 +983,7 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
 
   // If this is a simple aggregate initialization, we can optimize it
   // in various ways.
-  assert(!capturedByInit && "constant init contains a capturing block?");
-
   bool isVolatile = type.isVolatileQualified();
-
-  llvm::Constant *constant = CGM.EmitConstantExpr(D.getInit(), type, this);
-  assert(constant != 0 && "Wasn't a simple constant init?");
 
   llvm::Value *SizeVal =
     llvm::ConstantInt::get(IntPtrTy,
@@ -1046,7 +1045,7 @@ void CodeGenFunction::EmitExprAsInit(const Expr *init,
     RValue rvalue = EmitReferenceBindingToExpr(init, D);
     if (capturedByInit)
       drillIntoBlockVariable(*this, lvalue, cast<VarDecl>(D));
-    EmitStoreThroughLValue(rvalue, lvalue);
+    EmitStoreThroughLValue(rvalue, lvalue, true);
   } else if (!hasAggregateLLVMType(type)) {
     EmitScalarInit(init, D, lvalue, capturedByInit);
   } else if (type->isAnyComplexType()) {
@@ -1506,7 +1505,7 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, llvm::Value *Arg,
     if (doStore) {
       LValue lv = MakeAddrLValue(DeclPtr, Ty,
                                  getContext().getDeclAlign(&D));
-      EmitStoreOfScalar(Arg, lv);
+      EmitStoreOfScalar(Arg, lv, /* isInitialization */ true);
     }
   }
 

@@ -24,7 +24,6 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Config/config.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstdio>
@@ -390,7 +389,6 @@ PragmaDiagnostic(SourceLocation Loc, StringRef Namespace,
   MoveToLine(Loc);
   OS << "#pragma " << Namespace << " diagnostic ";
   switch (Map) {
-  default: llvm_unreachable("unexpected diagnostic kind");
   case diag::MAP_WARNING:
     OS << "warning";
     break;

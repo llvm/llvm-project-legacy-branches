@@ -67,17 +67,6 @@ static llvm::Optional<Visibility> getVisibilityOf(const Decl *D) {
 }
 
 typedef NamedDecl::LinkageInfo LinkageInfo;
-typedef std::pair<Linkage,Visibility> LVPair;
-
-static LVPair merge(LVPair L, LVPair R) {
-  return LVPair(minLinkage(L.first, R.first),
-                minVisibility(L.second, R.second));
-}
-
-static LVPair merge(LVPair L, LinkageInfo R) {
-  return LVPair(minLinkage(L.first, R.linkage()),
-                minVisibility(L.second, R.visibility()));
-}
 
 namespace {
 /// Flags controlling the computation of linkage and visibility.
@@ -113,11 +102,16 @@ struct LVFlags {
 }; 
 } // end anonymous namespace
 
+static LinkageInfo getLVForType(QualType T) {
+  std::pair<Linkage,Visibility> P = T->getLinkageAndVisibility();
+  return LinkageInfo(P.first, P.second, T->isVisibilityExplicit());
+}
+
 /// \brief Get the most restrictive linkage for the types in the given
 /// template parameter list.
-static LVPair 
+static LinkageInfo
 getLVForTemplateParameterList(const TemplateParameterList *Params) {
-  LVPair LV(ExternalLinkage, DefaultVisibility);
+  LinkageInfo LV(ExternalLinkage, DefaultVisibility, false);
   for (TemplateParameterList::const_iterator P = Params->begin(),
                                           PEnd = Params->end();
        P != PEnd; ++P) {
@@ -126,20 +120,20 @@ getLVForTemplateParameterList(const TemplateParameterList *Params) {
         for (unsigned I = 0, N = NTTP->getNumExpansionTypes(); I != N; ++I) {
           QualType T = NTTP->getExpansionType(I);
           if (!T->isDependentType())
-            LV = merge(LV, T->getLinkageAndVisibility());
+            LV.merge(getLVForType(T));
         }
         continue;
       }
-      
+
       if (!NTTP->getType()->isDependentType()) {
-        LV = merge(LV, NTTP->getType()->getLinkageAndVisibility());
+        LV.merge(getLVForType(NTTP->getType()));
         continue;
       }
     }
 
     if (TemplateTemplateParmDecl *TTP
                                    = dyn_cast<TemplateTemplateParmDecl>(*P)) {
-      LV = merge(LV, getLVForTemplateParameterList(TTP->getTemplateParameters()));
+      LV.merge(getLVForTemplateParameterList(TTP->getTemplateParameters()));
     }
   }
 
@@ -151,10 +145,10 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags F);
 
 /// \brief Get the most restrictive linkage for the types and
 /// declarations in the given template argument list.
-static LVPair getLVForTemplateArgumentList(const TemplateArgument *Args,
-                                           unsigned NumArgs,
-                                           LVFlags &F) {
-  LVPair LV(ExternalLinkage, DefaultVisibility);
+static LinkageInfo getLVForTemplateArgumentList(const TemplateArgument *Args,
+                                                unsigned NumArgs,
+                                                LVFlags &F) {
+  LinkageInfo LV(ExternalLinkage, DefaultVisibility, false);
 
   for (unsigned I = 0; I != NumArgs; ++I) {
     switch (Args[I].getKind()) {
@@ -162,9 +156,9 @@ static LVPair getLVForTemplateArgumentList(const TemplateArgument *Args,
     case TemplateArgument::Integral:
     case TemplateArgument::Expression:
       break;
-      
+
     case TemplateArgument::Type:
-      LV = merge(LV, Args[I].getAsType()->getLinkageAndVisibility());
+      LV.merge(getLVForType(Args[I].getAsType()));
       break;
 
     case TemplateArgument::Declaration:
@@ -178,15 +172,15 @@ static LVPair getLVForTemplateArgumentList(const TemplateArgument *Args,
 
     case TemplateArgument::Template:
     case TemplateArgument::TemplateExpansion:
-      if (TemplateDecl *Template 
+      if (TemplateDecl *Template
                 = Args[I].getAsTemplateOrTemplatePattern().getAsTemplateDecl())
-        LV = merge(LV, getLVForDecl(Template, F));
+        LV.merge(getLVForDecl(Template, F));
       break;
 
     case TemplateArgument::Pack:
-      LV = merge(LV, getLVForTemplateArgumentList(Args[I].pack_begin(),
-                                                  Args[I].pack_size(),
-                                                  F));
+      LV.merge(getLVForTemplateArgumentList(Args[I].pack_begin(),
+                                            Args[I].pack_size(),
+                                            F));
       break;
     }
   }
@@ -194,7 +188,7 @@ static LVPair getLVForTemplateArgumentList(const TemplateArgument *Args,
   return LV;
 }
 
-static LVPair
+static LinkageInfo
 getLVForTemplateArgumentList(const TemplateArgumentList &TArgs,
                              LVFlags &F) {
   return getLVForTemplateArgumentList(TArgs.data(), TArgs.size(), F);
@@ -235,9 +229,9 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
         Var->getStorageClass() != SC_Extern &&
         Var->getStorageClass() != SC_PrivateExtern) {
       bool FoundExtern = false;
-      for (const VarDecl *PrevVar = Var->getPreviousDeclaration();
+      for (const VarDecl *PrevVar = Var->getPreviousDecl();
            PrevVar && !FoundExtern; 
-           PrevVar = PrevVar->getPreviousDeclaration())
+           PrevVar = PrevVar->getPreviousDecl())
         if (isExternalLinkage(PrevVar->getLinkage()))
           FoundExtern = true;
       
@@ -245,8 +239,8 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
         return LinkageInfo::internal();
     }
     if (Var->getStorageClass() == SC_None) {
-      const VarDecl *PrevVar = Var->getPreviousDeclaration();
-      for (; PrevVar; PrevVar = PrevVar->getPreviousDeclaration())
+      const VarDecl *PrevVar = Var->getPreviousDecl();
+      for (; PrevVar; PrevVar = PrevVar->getPreviousDecl())
         if (PrevVar->getStorageClass() == SC_PrivateExtern)
           break;
         if (PrevVar)
@@ -275,7 +269,8 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
   if (D->isInAnonymousNamespace()) {
     const VarDecl *Var = dyn_cast<VarDecl>(D);
     const FunctionDecl *Func = dyn_cast<FunctionDecl>(D);
-    if ((!Var || !Var->isExternC()) && (!Func || !Func->isExternC()))
+    if ((!Var || !Var->getDeclContext()->isExternCContext()) &&
+        (!Func || !Func->getDeclContext()->isExternCContext()))
       return LinkageInfo::uniqueExternal();
   }
 
@@ -297,10 +292,10 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       for (const DeclContext *DC = D->getDeclContext();
            !isa<TranslationUnitDecl>(DC);
            DC = DC->getParent()) {
-        if (!isa<NamespaceDecl>(DC)) continue;
-        if (llvm::Optional<Visibility> Vis
-                           = cast<NamespaceDecl>(DC)->getExplicitVisibility()) {
-          LV.setVisibility(*Vis, false);
+        const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC);
+        if (!ND) continue;
+        if (llvm::Optional<Visibility> Vis = ND->getExplicitVisibility()) {
+          LV.setVisibility(*Vis, true);
           F.ConsiderGlobalVisibility = false;
           break;
         }
@@ -336,12 +331,13 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     //
     // Note that we don't want to make the variable non-external
     // because of this, but unique-external linkage suits us.
-    if (Context.getLangOptions().CPlusPlus && !Var->isExternC()) {
-      LVPair TypeLV = Var->getType()->getLinkageAndVisibility();
-      if (TypeLV.first != ExternalLinkage)
+    if (Context.getLangOptions().CPlusPlus &&
+        !Var->getDeclContext()->isExternCContext()) {
+      LinkageInfo TypeLV = getLVForType(Var->getType());
+      if (TypeLV.linkage() != ExternalLinkage)
         return LinkageInfo::uniqueExternal();
       if (!LV.visibilityExplicit())
-        LV.mergeVisibility(TypeLV.second);
+        LV.mergeVisibility(TypeLV.visibility(), TypeLV.visibilityExplicit());
     }
 
     if (Var->getStorageClass() == SC_PrivateExtern)
@@ -360,7 +356,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       //   specified at the prior declaration. If no prior declaration
       //   is visible, or if the prior declaration specifies no
       //   linkage, then the identifier has external linkage.
-      if (const VarDecl *PrevVar = Var->getPreviousDeclaration()) {
+      if (const VarDecl *PrevVar = Var->getPreviousDecl()) {
         LinkageInfo PrevLV = getLVForDecl(PrevVar, F);
         if (PrevLV.linkage()) LV.setLinkage(PrevLV.linkage());
         LV.mergeVisibility(PrevLV);
@@ -395,7 +391,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       //   specified at the prior declaration. If no prior declaration
       //   is visible, or if the prior declaration specifies no
       //   linkage, then the identifier has external linkage.
-      if (const FunctionDecl *PrevFunc = Function->getPreviousDeclaration()) {
+      if (const FunctionDecl *PrevFunc = Function->getPreviousDecl()) {
         LinkageInfo PrevLV = getLVForDecl(PrevFunc, F);
         if (PrevLV.linkage()) LV.setLinkage(PrevLV.linkage());
         LV.mergeVisibility(PrevLV);
@@ -406,7 +402,8 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     // unique-external linkage, it's not legally usable from outside
     // this translation unit.  However, we should use the C linkage
     // rules instead for extern "C" declarations.
-    if (Context.getLangOptions().CPlusPlus && !Function->isExternC() &&
+    if (Context.getLangOptions().CPlusPlus &&
+        !Function->getDeclContext()->isExternCContext() &&
         Function->getType()->getLinkage() == UniqueExternalLinkage)
       return LinkageInfo::uniqueExternal();
 
@@ -568,6 +565,7 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     // about whether containing classes have visibility attributes,
     // and that's intentional.
     if (TSK != TSK_ExplicitInstantiationDeclaration &&
+        TSK != TSK_ExplicitInstantiationDefinition &&
         F.ConsiderGlobalVisibility &&
         MD->getASTContext().getLangOptions().InlineVisibilityHidden) {
       // InlineVisibilityHidden only applies to definitions, and
@@ -598,11 +596,11 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
   } else if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
     // Modify the variable's linkage by its type, but ignore the
     // type's visibility unless it's a definition.
-    LVPair TypeLV = VD->getType()->getLinkageAndVisibility();
-    if (TypeLV.first != ExternalLinkage)
+    LinkageInfo TypeLV = getLVForType(VD->getType());
+    if (TypeLV.linkage() != ExternalLinkage)
       LV.mergeLinkage(UniqueExternalLinkage);
     if (!LV.visibilityExplicit())
-      LV.mergeVisibility(TypeLV.second);
+      LV.mergeVisibility(TypeLV.visibility(), TypeLV.visibilityExplicit());
   }
 
   F.ConsiderGlobalVisibility &= !LV.visibilityExplicit();
@@ -623,6 +621,8 @@ static void clearLinkageForClass(const CXXRecordDecl *record) {
       cast<NamedDecl>(child)->ClearLinkageCache();
   }
 }
+
+void NamedDecl::anchor() { }
 
 void NamedDecl::ClearLinkageCache() {
   // Note that we can't skip clearing the linkage of children just
@@ -684,13 +684,13 @@ LinkageInfo NamedDecl::getLinkageAndVisibility() const {
 llvm::Optional<Visibility> NamedDecl::getExplicitVisibility() const {
   // Use the most recent declaration of a variable.
   if (const VarDecl *var = dyn_cast<VarDecl>(this))
-    return getVisibilityOf(var->getMostRecentDeclaration());
+    return getVisibilityOf(var->getMostRecentDecl());
 
   // Use the most recent declaration of a function, and also handle
   // function template specializations.
   if (const FunctionDecl *fn = dyn_cast<FunctionDecl>(this)) {
     if (llvm::Optional<Visibility> V
-                            = getVisibilityOf(fn->getMostRecentDeclaration())) 
+                            = getVisibilityOf(fn->getMostRecentDecl())) 
       return V;
 
     // If the function is a specialization of a template with an
@@ -730,7 +730,6 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
     case Decl::ObjCCategory:
     case Decl::ObjCCategoryImpl:
     case Decl::ObjCCompatibleAlias:
-    case Decl::ObjCForwardProtocol:
     case Decl::ObjCImplementation:
     case Decl::ObjCMethod:
     case Decl::ObjCProperty:
@@ -766,7 +765,8 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
   //   external linkage.
   if (D->getLexicalDeclContext()->isFunctionOrMethod()) {
     if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
-      if (Function->isInAnonymousNamespace() && !Function->isExternC())
+      if (Function->isInAnonymousNamespace() &&
+          !Function->getDeclContext()->isExternCContext())
         return LinkageInfo::uniqueExternal();
 
       LinkageInfo LV;
@@ -775,7 +775,7 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
           LV.setVisibility(*Vis);
       }
       
-      if (const FunctionDecl *Prev = Function->getPreviousDeclaration()) {
+      if (const FunctionDecl *Prev = Function->getPreviousDecl()) {
         LinkageInfo PrevLV = getLVForDecl(Prev, Flags);
         if (PrevLV.linkage()) LV.setLinkage(PrevLV.linkage());
         LV.mergeVisibility(PrevLV);
@@ -787,7 +787,8 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
     if (const VarDecl *Var = dyn_cast<VarDecl>(D))
       if (Var->getStorageClass() == SC_Extern ||
           Var->getStorageClass() == SC_PrivateExtern) {
-        if (Var->isInAnonymousNamespace() && !Var->isExternC())
+        if (Var->isInAnonymousNamespace() &&
+            !Var->getDeclContext()->isExternCContext())
           return LinkageInfo::uniqueExternal();
 
         LinkageInfo LV;
@@ -798,7 +799,7 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
             LV.setVisibility(*Vis);
         }
         
-        if (const VarDecl *Prev = Var->getPreviousDeclaration()) {
+        if (const VarDecl *Prev = Var->getPreviousDecl()) {
           LinkageInfo PrevLV = getLVForDecl(Prev, Flags);
           if (PrevLV.linkage()) LV.setLinkage(PrevLV.linkage());
           LV.mergeVisibility(PrevLV);
@@ -907,7 +908,7 @@ bool NamedDecl::declarationReplaces(NamedDecl *OldD) const {
 
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(this))
     // For function declarations, we keep track of redeclarations.
-    return FD->getPreviousDeclaration() == OldD;
+    return FD->getPreviousDecl() == OldD;
 
   // For function templates, the underlying function declarations are linked.
   if (const FunctionTemplateDecl *FunctionTemplate
@@ -936,6 +937,12 @@ bool NamedDecl::declarationReplaces(NamedDecl *OldD) const {
                                         cast<UsingDecl>(OldD)->getQualifier());
   }
 
+  // A typedef of an Objective-C class type can replace an Objective-C class
+  // declaration or definition, and vice versa.
+  if ((isa<TypedefNameDecl>(this) && isa<ObjCInterfaceDecl>(OldD)) ||
+      (isa<ObjCInterfaceDecl>(this) && isa<TypedefNameDecl>(OldD)))
+    return true;
+  
   // For non-function declarations, if the declarations are of the
   // same kind then this must be a redeclaration, or semantic analysis
   // would not have given us the new declaration.
@@ -1144,6 +1151,12 @@ VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
   return new (C) VarDecl(Var, DC, StartL, IdL, Id, T, TInfo, S, SCAsWritten);
 }
 
+VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(VarDecl));
+  return new (Mem) VarDecl(Var, 0, SourceLocation(), SourceLocation(), 0, 
+                           QualType(), 0, SC_None, SC_None);
+}
+
 void VarDecl::setStorageClass(StorageClass SC) {
   assert(isLegalForVariable(SC));
   if (getStorageClass() != SC)
@@ -1159,27 +1172,17 @@ SourceRange VarDecl::getSourceRange() const {
 }
 
 bool VarDecl::isExternC() const {
-  ASTContext &Context = getASTContext();
-  if (!Context.getLangOptions().CPlusPlus)
-    return (getDeclContext()->isTranslationUnit() &&
-            getStorageClass() != SC_Static) ||
-      (getDeclContext()->isFunctionOrMethod() && hasExternalStorage());
-
-  const DeclContext *DC = getDeclContext();
-  if (DC->isFunctionOrMethod())
+  if (getLinkage() != ExternalLinkage)
     return false;
 
-  for (; !DC->isTranslationUnit(); DC = DC->getParent()) {
-    if (const LinkageSpecDecl *Linkage = dyn_cast<LinkageSpecDecl>(DC))  {
-      if (Linkage->getLanguage() == LinkageSpecDecl::lang_c)
-        return getStorageClass() != SC_Static;
+  const DeclContext *DC = getDeclContext();
+  if (DC->isRecord())
+    return false;
 
-      break;
-    }
-
-  }
-
-  return false;
+  ASTContext &Context = getASTContext();
+  if (!Context.getLangOptions().CPlusPlus)
+    return true;
+  return DC->isExternCContext();
 }
 
 VarDecl *VarDecl::getCanonicalDecl() {
@@ -1217,8 +1220,8 @@ VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition() const {
   
   if (getStorageClassAsWritten() == SC_Extern ||
        getStorageClassAsWritten() == SC_PrivateExtern) {
-    for (const VarDecl *PrevVar = getPreviousDeclaration();
-         PrevVar; PrevVar = PrevVar->getPreviousDeclaration()) {
+    for (const VarDecl *PrevVar = getPreviousDecl();
+         PrevVar; PrevVar = PrevVar->getPreviousDecl()) {
       if (PrevVar->getLinkage() == InternalLinkage && PrevVar->hasInit())
         return DeclarationOnly;
     }
@@ -1337,6 +1340,123 @@ void VarDecl::setInit(Expr *I) {
   Init = I;
 }
 
+bool VarDecl::isUsableInConstantExpressions() const {
+  const LangOptions &Lang = getASTContext().getLangOptions();
+
+  // Only const variables can be used in constant expressions in C++. C++98 does
+  // not require the variable to be non-volatile, but we consider this to be a
+  // defect.
+  if (!Lang.CPlusPlus ||
+      !getType().isConstQualified() || getType().isVolatileQualified())
+    return false;
+
+  // In C++, const, non-volatile variables of integral or enumeration types
+  // can be used in constant expressions.
+  if (getType()->isIntegralOrEnumerationType())
+    return true;
+
+  // Additionally, in C++11, non-volatile constexpr variables and references can
+  // be used in constant expressions.
+  return Lang.CPlusPlus0x && (isConstexpr() || getType()->isReferenceType());
+}
+
+/// Convert the initializer for this declaration to the elaborated EvaluatedStmt
+/// form, which contains extra information on the evaluated value of the
+/// initializer.
+EvaluatedStmt *VarDecl::ensureEvaluatedStmt() const {
+  EvaluatedStmt *Eval = Init.dyn_cast<EvaluatedStmt *>();
+  if (!Eval) {
+    Stmt *S = Init.get<Stmt *>();
+    Eval = new (getASTContext()) EvaluatedStmt;
+    Eval->Value = S;
+    Init = Eval;
+  }
+  return Eval;
+}
+
+APValue *VarDecl::evaluateValue() const {
+  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  return evaluateValue(Notes);
+}
+
+APValue *VarDecl::evaluateValue(
+    llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const {
+  EvaluatedStmt *Eval = ensureEvaluatedStmt();
+
+  // We only produce notes indicating why an initializer is non-constant the
+  // first time it is evaluated. FIXME: The notes won't always be emitted the
+  // first time we try evaluation, so might not be produced at all.
+  if (Eval->WasEvaluated)
+    return Eval->Evaluated.isUninit() ? 0 : &Eval->Evaluated;
+
+  const Expr *Init = cast<Expr>(Eval->Value);
+  assert(!Init->isValueDependent());
+
+  if (Eval->IsEvaluating) {
+    // FIXME: Produce a diagnostic for self-initialization.
+    Eval->CheckedICE = true;
+    Eval->IsICE = false;
+    return 0;
+  }
+
+  Eval->IsEvaluating = true;
+
+  bool Result = Init->EvaluateAsInitializer(Eval->Evaluated, getASTContext(),
+                                            this, Notes);
+
+  // Ensure the result is an uninitialized APValue if evaluation fails.
+  if (!Result)
+    Eval->Evaluated = APValue();
+
+  Eval->IsEvaluating = false;
+  Eval->WasEvaluated = true;
+
+  // In C++11, we have determined whether the initializer was a constant
+  // expression as a side-effect.
+  if (getASTContext().getLangOptions().CPlusPlus0x && !Eval->CheckedICE) {
+    Eval->CheckedICE = true;
+    Eval->IsICE = Notes.empty();
+  }
+
+  return Result ? &Eval->Evaluated : 0;
+}
+
+bool VarDecl::checkInitIsICE() const {
+  // Initializers of weak variables are never ICEs.
+  if (isWeak())
+    return false;
+
+  EvaluatedStmt *Eval = ensureEvaluatedStmt();
+  if (Eval->CheckedICE)
+    // We have already checked whether this subexpression is an
+    // integral constant expression.
+    return Eval->IsICE;
+
+  const Expr *Init = cast<Expr>(Eval->Value);
+  assert(!Init->isValueDependent());
+
+  // In C++11, evaluate the initializer to check whether it's a constant
+  // expression.
+  if (getASTContext().getLangOptions().CPlusPlus0x) {
+    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+    evaluateValue(Notes);
+    return Eval->IsICE;
+  }
+
+  // It's an ICE whether or not the definition we found is
+  // out-of-line.  See DR 721 and the discussion in Clang PR
+  // 6206 for details.
+
+  if (Eval->CheckingICE)
+    return false;
+  Eval->CheckingICE = true;
+
+  Eval->IsICE = Init->isIntegerConstantExpr(getASTContext());
+  Eval->CheckingICE = false;
+  Eval->CheckedICE = true;
+  return Eval->IsICE;
+}
+
 bool VarDecl::extendsLifetimeOfTemporary() const {
   assert(getType()->isReferenceType() &&"Non-references never extend lifetime");
   
@@ -1391,6 +1511,12 @@ ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                                  Expr *DefArg) {
   return new (C) ParmVarDecl(ParmVar, DC, StartLoc, IdLoc, Id, T, TInfo,
                              S, SCAsWritten, DefArg);
+}
+
+ParmVarDecl *ParmVarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ParmVarDecl));
+  return new (Mem) ParmVarDecl(ParmVar, 0, SourceLocation(), SourceLocation(),
+                               0, QualType(), 0, SC_None, SC_None, 0);
 }
 
 SourceRange ParmVarDecl::getSourceRange() const {
@@ -1556,27 +1682,21 @@ bool FunctionDecl::isReservedGlobalPlacementOperator() const {
 }
 
 bool FunctionDecl::isExternC() const {
-  ASTContext &Context = getASTContext();
-  // In C, any non-static, non-overloadable function has external
-  // linkage.
-  if (!Context.getLangOptions().CPlusPlus)
-    return getStorageClass() != SC_Static && !getAttr<OverloadableAttr>();
+  if (getLinkage() != ExternalLinkage)
+    return false;
+
+  if (getAttr<OverloadableAttr>())
+    return false;
 
   const DeclContext *DC = getDeclContext();
   if (DC->isRecord())
     return false;
 
-  for (; !DC->isTranslationUnit(); DC = DC->getParent()) {
-    if (const LinkageSpecDecl *Linkage = dyn_cast<LinkageSpecDecl>(DC))  {
-      if (Linkage->getLanguage() == LinkageSpecDecl::lang_c)
-        return getStorageClass() != SC_Static &&
-               !getAttr<OverloadableAttr>();
+  ASTContext &Context = getASTContext();
+  if (!Context.getLangOptions().CPlusPlus)
+    return true;
 
-      break;
-    }
-  }
-
-  return isMain();
+  return isMain() || DC->isExternCContext();
 }
 
 bool FunctionDecl::isGlobal() const {
@@ -2170,6 +2290,85 @@ SourceRange FunctionDecl::getSourceRange() const {
   return SourceRange(getOuterLocStart(), EndRangeLoc);
 }
 
+unsigned FunctionDecl::getMemoryFunctionKind() const {
+  IdentifierInfo *FnInfo = getIdentifier();
+
+  if (!FnInfo)
+    return 0;
+    
+  // Builtin handling.
+  switch (getBuiltinID()) {
+  case Builtin::BI__builtin_memset:
+  case Builtin::BI__builtin___memset_chk:
+  case Builtin::BImemset:
+    return Builtin::BImemset;
+
+  case Builtin::BI__builtin_memcpy:
+  case Builtin::BI__builtin___memcpy_chk:
+  case Builtin::BImemcpy:
+    return Builtin::BImemcpy;
+
+  case Builtin::BI__builtin_memmove:
+  case Builtin::BI__builtin___memmove_chk:
+  case Builtin::BImemmove:
+    return Builtin::BImemmove;
+
+  case Builtin::BIstrlcpy:
+    return Builtin::BIstrlcpy;
+  case Builtin::BIstrlcat:
+    return Builtin::BIstrlcat;
+
+  case Builtin::BI__builtin_memcmp:
+  case Builtin::BImemcmp:
+    return Builtin::BImemcmp;
+
+  case Builtin::BI__builtin_strncpy:
+  case Builtin::BI__builtin___strncpy_chk:
+  case Builtin::BIstrncpy:
+    return Builtin::BIstrncpy;
+
+  case Builtin::BI__builtin_strncmp:
+  case Builtin::BIstrncmp:
+    return Builtin::BIstrncmp;
+
+  case Builtin::BI__builtin_strncasecmp:
+  case Builtin::BIstrncasecmp:
+    return Builtin::BIstrncasecmp;
+
+  case Builtin::BI__builtin_strncat:
+  case Builtin::BIstrncat:
+    return Builtin::BIstrncat;
+
+  case Builtin::BI__builtin_strndup:
+  case Builtin::BIstrndup:
+    return Builtin::BIstrndup;
+
+  default:
+    if (isExternC()) {
+      if (FnInfo->isStr("memset"))
+        return Builtin::BImemset;
+      else if (FnInfo->isStr("memcpy"))
+        return Builtin::BImemcpy;
+      else if (FnInfo->isStr("memmove"))
+        return Builtin::BImemmove;
+      else if (FnInfo->isStr("memcmp"))
+        return Builtin::BImemcmp;
+      else if (FnInfo->isStr("strncpy"))
+        return Builtin::BIstrncpy;
+      else if (FnInfo->isStr("strncmp"))
+        return Builtin::BIstrncmp;
+      else if (FnInfo->isStr("strncasecmp"))
+        return Builtin::BIstrncasecmp;
+      else if (FnInfo->isStr("strncat"))
+        return Builtin::BIstrncat;
+      else if (FnInfo->isStr("strndup"))
+        return Builtin::BIstrndup;
+    }
+    break;
+  }
+  return 0;
+}
+
 //===----------------------------------------------------------------------===//
 // FieldDecl Implementation
 //===----------------------------------------------------------------------===//
@@ -2181,6 +2380,12 @@ FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
                              bool HasInit) {
   return new (C) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, Id, T, TInfo,
                            BW, Mutable, HasInit);
+}
+
+FieldDecl *FieldDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(FieldDecl));
+  return new (Mem) FieldDecl(Field, 0, SourceLocation(), SourceLocation(),
+                             0, QualType(), 0, 0, false, false);
 }
 
 bool FieldDecl::isAnonymousStructOrUnion() const {
@@ -2336,6 +2541,8 @@ void TagDecl::setTemplateParameterListsInfo(ASTContext &Context,
 // EnumDecl Implementation
 //===----------------------------------------------------------------------===//
 
+void EnumDecl::anchor() { }
+
 EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
                            IdentifierInfo *Id,
@@ -2347,9 +2554,10 @@ EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
   return Enum;
 }
 
-EnumDecl *EnumDecl::Create(ASTContext &C, EmptyShell Empty) {
-  return new (C) EnumDecl(0, SourceLocation(), SourceLocation(), 0, 0,
-                          false, false, false);
+EnumDecl *EnumDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(EnumDecl));
+  return new (Mem) EnumDecl(0, SourceLocation(), SourceLocation(), 0, 0,
+                            false, false, false);
 }
 
 void EnumDecl::completeDefinition(QualType NewType,
@@ -2389,9 +2597,10 @@ RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
   return R;
 }
 
-RecordDecl *RecordDecl::Create(const ASTContext &C, EmptyShell Empty) {
-  return new (C) RecordDecl(Record, TTK_Struct, 0, SourceLocation(),
-                            SourceLocation(), 0, 0);
+RecordDecl *RecordDecl::CreateDeserialized(const ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(RecordDecl));
+  return new (Mem) RecordDecl(Record, TTK_Struct, 0, SourceLocation(),
+                              SourceLocation(), 0, 0);
 }
 
 bool RecordDecl::isInjectedClassName() const {
@@ -2499,9 +2708,13 @@ SourceRange BlockDecl::getSourceRange() const {
 // Other Decl Allocation/Deallocation Method Implementations
 //===----------------------------------------------------------------------===//
 
+void TranslationUnitDecl::anchor() { }
+
 TranslationUnitDecl *TranslationUnitDecl::Create(ASTContext &C) {
   return new (C) TranslationUnitDecl(C);
 }
+
+void LabelDecl::anchor() { }
 
 LabelDecl *LabelDecl::Create(ASTContext &C, DeclContext *DC,
                              SourceLocation IdentL, IdentifierInfo *II) {
@@ -2515,23 +2728,26 @@ LabelDecl *LabelDecl::Create(ASTContext &C, DeclContext *DC,
   return new (C) LabelDecl(DC, IdentL, II, 0, GnuLabelL);
 }
 
-
-NamespaceDecl *NamespaceDecl::Create(ASTContext &C, DeclContext *DC,
-                                     SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id) {
-  return new (C) NamespaceDecl(DC, StartLoc, IdLoc, Id);
+LabelDecl *LabelDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(LabelDecl));
+  return new (Mem) LabelDecl(0, SourceLocation(), 0, 0, SourceLocation());
 }
 
-NamespaceDecl *NamespaceDecl::getNextNamespace() {
-  return dyn_cast_or_null<NamespaceDecl>(
-                       NextNamespace.get(getASTContext().getExternalSource()));
-}
+void ValueDecl::anchor() { }
+
+void ImplicitParamDecl::anchor() { }
 
 ImplicitParamDecl *ImplicitParamDecl::Create(ASTContext &C, DeclContext *DC,
                                              SourceLocation IdLoc,
                                              IdentifierInfo *Id,
                                              QualType Type) {
   return new (C) ImplicitParamDecl(DC, IdLoc, Id, Type);
+}
+
+ImplicitParamDecl *ImplicitParamDecl::CreateDeserialized(ASTContext &C, 
+                                                         unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ImplicitParamDecl));
+  return new (Mem) ImplicitParamDecl(0, SourceLocation(), 0, QualType());
 }
 
 FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
@@ -2550,8 +2766,20 @@ FunctionDecl *FunctionDecl::Create(ASTContext &C, DeclContext *DC,
   return New;
 }
 
+FunctionDecl *FunctionDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(FunctionDecl));
+  return new (Mem) FunctionDecl(Function, 0, SourceLocation(), 
+                                DeclarationNameInfo(), QualType(), 0,
+                                SC_None, SC_None, false, false);
+}
+
 BlockDecl *BlockDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L) {
   return new (C) BlockDecl(DC, L);
+}
+
+BlockDecl *BlockDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(BlockDecl));
+  return new (Mem) BlockDecl(0, SourceLocation());
 }
 
 EnumConstantDecl *EnumConstantDecl::Create(ASTContext &C, EnumDecl *CD,
@@ -2561,11 +2789,27 @@ EnumConstantDecl *EnumConstantDecl::Create(ASTContext &C, EnumDecl *CD,
   return new (C) EnumConstantDecl(CD, L, Id, T, E, V);
 }
 
+EnumConstantDecl *
+EnumConstantDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(EnumConstantDecl));
+  return new (Mem) EnumConstantDecl(0, SourceLocation(), 0, QualType(), 0, 
+                                    llvm::APSInt());
+}
+
+void IndirectFieldDecl::anchor() { }
+
 IndirectFieldDecl *
 IndirectFieldDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L,
                           IdentifierInfo *Id, QualType T, NamedDecl **CH,
                           unsigned CHS) {
   return new (C) IndirectFieldDecl(DC, L, Id, T, CH, CHS);
+}
+
+IndirectFieldDecl *IndirectFieldDecl::CreateDeserialized(ASTContext &C,
+                                                         unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(IndirectFieldDecl));
+  return new (Mem) IndirectFieldDecl(0, SourceLocation(), DeclarationName(),
+                                     QualType(), 0, 0);
 }
 
 SourceRange EnumConstantDecl::getSourceRange() const {
@@ -2575,10 +2819,19 @@ SourceRange EnumConstantDecl::getSourceRange() const {
   return SourceRange(getLocation(), End);
 }
 
+void TypeDecl::anchor() { }
+
 TypedefDecl *TypedefDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc, SourceLocation IdLoc,
                                  IdentifierInfo *Id, TypeSourceInfo *TInfo) {
   return new (C) TypedefDecl(DC, StartLoc, IdLoc, Id, TInfo);
+}
+
+void TypedefNameDecl::anchor() { }
+
+TypedefDecl *TypedefDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(TypedefDecl));
+  return new (Mem) TypedefDecl(0, SourceLocation(), SourceLocation(), 0, 0);
 }
 
 TypeAliasDecl *TypeAliasDecl::Create(ASTContext &C, DeclContext *DC,
@@ -2586,6 +2839,11 @@ TypeAliasDecl *TypeAliasDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation IdLoc, IdentifierInfo *Id,
                                      TypeSourceInfo *TInfo) {
   return new (C) TypeAliasDecl(DC, StartLoc, IdLoc, Id, TInfo);
+}
+
+TypeAliasDecl *TypeAliasDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(TypeAliasDecl));
+  return new (Mem) TypeAliasDecl(0, SourceLocation(), SourceLocation(), 0, 0);
 }
 
 SourceRange TypedefDecl::getSourceRange() const {
@@ -2604,11 +2862,19 @@ SourceRange TypeAliasDecl::getSourceRange() const {
   return SourceRange(getLocStart(), RangeEnd);
 }
 
+void FileScopeAsmDecl::anchor() { }
+
 FileScopeAsmDecl *FileScopeAsmDecl::Create(ASTContext &C, DeclContext *DC,
                                            StringLiteral *Str,
                                            SourceLocation AsmLoc,
                                            SourceLocation RParenLoc) {
   return new (C) FileScopeAsmDecl(DC, Str, AsmLoc, RParenLoc);
+}
+
+FileScopeAsmDecl *FileScopeAsmDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(FileScopeAsmDecl));
+  return new (Mem) FileScopeAsmDecl(0, 0, SourceLocation(), SourceLocation());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2626,10 +2892,10 @@ static unsigned getNumModuleIdentifiers(Module *Mod) {
   return Result;
 }
 
-ImportDecl::ImportDecl(DeclContext *DC, SourceLocation ImportLoc, 
+ImportDecl::ImportDecl(DeclContext *DC, SourceLocation StartLoc, 
                        Module *Imported,
                        ArrayRef<SourceLocation> IdentifierLocs)
-  : Decl(Import, DC, ImportLoc), ImportedAndComplete(Imported, true),
+  : Decl(Import, DC, StartLoc), ImportedAndComplete(Imported, true),
     NextLocalImport()
 {
   assert(getNumModuleIdentifiers(Imported) == IdentifierLocs.size());
@@ -2638,35 +2904,37 @@ ImportDecl::ImportDecl(DeclContext *DC, SourceLocation ImportLoc,
          IdentifierLocs.size() * sizeof(SourceLocation));
 }
 
-ImportDecl::ImportDecl(DeclContext *DC, SourceLocation ImportLoc, 
+ImportDecl::ImportDecl(DeclContext *DC, SourceLocation StartLoc, 
                        Module *Imported, SourceLocation EndLoc)
-  : Decl(Import, DC, ImportLoc), ImportedAndComplete(Imported, false),
+  : Decl(Import, DC, StartLoc), ImportedAndComplete(Imported, false),
     NextLocalImport()
 {
   *reinterpret_cast<SourceLocation *>(this + 1) = EndLoc;
 }
 
 ImportDecl *ImportDecl::Create(ASTContext &C, DeclContext *DC, 
-                               SourceLocation ImportLoc, Module *Imported,
+                               SourceLocation StartLoc, Module *Imported,
                                ArrayRef<SourceLocation> IdentifierLocs) {
   void *Mem = C.Allocate(sizeof(ImportDecl) + 
                          IdentifierLocs.size() * sizeof(SourceLocation));
-  return new (Mem) ImportDecl(DC, ImportLoc, Imported, IdentifierLocs);
+  return new (Mem) ImportDecl(DC, StartLoc, Imported, IdentifierLocs);
 }
 
 ImportDecl *ImportDecl::CreateImplicit(ASTContext &C, DeclContext *DC, 
-                                       SourceLocation ImportLoc,
+                                       SourceLocation StartLoc,
                                        Module *Imported, 
                                        SourceLocation EndLoc) {
   void *Mem = C.Allocate(sizeof(ImportDecl) + sizeof(SourceLocation));
-  ImportDecl *Import = new (Mem) ImportDecl(DC, ImportLoc, Imported, EndLoc);
+  ImportDecl *Import = new (Mem) ImportDecl(DC, StartLoc, Imported, EndLoc);
   Import->setImplicit();
   return Import;
 }
 
-ImportDecl *ImportDecl::CreateEmpty(ASTContext &C, unsigned NumLocations) {
-  void *Mem = C.Allocate(sizeof(ImportDecl) + 
-                         NumLocations * sizeof(SourceLocation));
+ImportDecl *ImportDecl::CreateDeserialized(ASTContext &C, unsigned ID,
+                                           unsigned NumLocations) {
+  void *Mem = AllocateDeserializedDecl(C, ID, 
+                                       (sizeof(ImportDecl) + 
+                                        NumLocations * sizeof(SourceLocation)));
   return new (Mem) ImportDecl(EmptyShell());  
 }
 
@@ -2687,4 +2955,3 @@ SourceRange ImportDecl::getSourceRange() const {
   
   return SourceRange(getLocation(), getIdentifierLocs().back());
 }
-

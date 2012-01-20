@@ -151,6 +151,15 @@ void stdinTest3() {
   int jjj = iii;// expected-warning + {{tainted}}
 }
 
+// Test that stdin does not get invalidated by calls.
+void foo();
+void stdinTest4() {
+  int i;
+  fscanf(stdin, "%d", &i);
+  foo();
+  int j = i; // expected-warning + {{tainted}}
+}
+
 // Test propagation functions - the ones that propagate taint from arguments to
 // return value, ptr arguments.
 
@@ -164,15 +173,10 @@ void atoiTest() {
   int d = atoi(s); // expected-warning + {{tainted}}
   int td = d; // expected-warning + {{tainted}}
 
-  // TODO: We shouldn't have to redefine the taint source here.
-  char sl[80];
-  scanf("%s", sl);
-  long l = atol(sl); // expected-warning + {{tainted}}
+  long l = atol(s); // expected-warning + {{tainted}}
   int tl = l; // expected-warning + {{tainted}}
 
-  char sll[80];
-  scanf("%s", sll);
-  long long ll = atoll(sll); // expected-warning + {{tainted}}
+  long long ll = atoll(s); // expected-warning + {{tainted}}
   int tll = ll; // expected-warning + {{tainted}}
 
 }

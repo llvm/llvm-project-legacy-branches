@@ -66,17 +66,16 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
     // FIXME: This should be generalized to more than just the AlignedAttr.
     if (const AlignedAttr *Aligned = dyn_cast<AlignedAttr>(TmplAttr)) {
       if (Aligned->isAlignmentDependent()) {
-        // The alignment expression is not potentially evaluated.
-        EnterExpressionEvaluationContext Unevaluated(*this,
-                                                     Sema::Unevaluated);
-
         if (Aligned->isAlignmentExpr()) {
+          // The alignment expression is a constant expression.
+          EnterExpressionEvaluationContext Unevaluated(*this,
+                                                       Sema::ConstantEvaluated);
+
           ExprResult Result = SubstExpr(Aligned->getAlignmentExpr(),
                                         TemplateArgs);
           if (!Result.isInvalid())
             AddAlignedAttr(Aligned->getLocation(), New, Result.takeAs<Expr>());
-        }
-        else {
+        } else {
           TypeSourceInfo *Result = SubstType(Aligned->getAlignmentType(),
                                              TemplateArgs,
                                              Aligned->getLocation(),
@@ -164,13 +163,18 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
     }
   }
 
-  if (TypedefNameDecl *Prev = D->getPreviousDeclaration()) {
+  if (TypedefNameDecl *Prev = D->getPreviousDecl()) {
     NamedDecl *InstPrev = SemaRef.FindInstantiatedDecl(D->getLocation(), Prev,
                                                        TemplateArgs);
     if (!InstPrev)
       return 0;
 
-    Typedef->setPreviousDeclaration(cast<TypedefNameDecl>(InstPrev));
+    TypedefNameDecl *InstPrevTypedef = cast<TypedefNameDecl>(InstPrev);
+
+    // If the typedef types are not identical, reject them.
+    SemaRef.isIncompatibleTypedef(InstPrevTypedef, Typedef);
+
+    Typedef->setPreviousDeclaration(InstPrevTypedef);
   }
 
   SemaRef.InstantiateAttrs(TemplateArgs, D, Typedef);
@@ -206,7 +210,7 @@ TemplateDeclInstantiator::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
   TypeAliasDecl *Pattern = D->getTemplatedDecl();
 
   TypeAliasTemplateDecl *PrevAliasTemplate = 0;
-  if (Pattern->getPreviousDeclaration()) {
+  if (Pattern->getPreviousDecl()) {
     DeclContext::lookup_result Found = Owner->lookup(Pattern->getDeclName());
     if (Found.first != Found.second) {
       PrevAliasTemplate = dyn_cast<TypeAliasTemplateDecl>(*Found.first);
@@ -326,6 +330,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
   Var->setThreadSpecified(D->isThreadSpecified());
   Var->setCXXDirectInitializer(D->hasCXXDirectInitializer());
   Var->setCXXForRangeDecl(D->isCXXForRangeDecl());
+  Var->setConstexpr(D->isConstexpr());
 
   // Substitute the nested name specifier, if any.
   if (SubstQualifier(D, Var))
@@ -360,8 +365,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
   SemaRef.CheckVariableDeclaration(Var, Previous);
 
   if (D->isOutOfLine()) {
-    if (!D->isStaticDataMember())
-      D->getLexicalDeclContext()->addDecl(Var);
+    D->getLexicalDeclContext()->addDecl(Var);
     Owner->makeDeclVisibleInContext(Var);
   } else {
     Owner->addDecl(Var);
@@ -380,7 +384,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
     // We already have an initializer in the class.
   } else if (D->getInit()) {
     if (Var->isStaticDataMember() && !D->isOutOfLine())
-      SemaRef.PushExpressionEvaluationContext(Sema::Unevaluated);
+      SemaRef.PushExpressionEvaluationContext(Sema::ConstantEvaluated);
     else
       SemaRef.PushExpressionEvaluationContext(Sema::PotentiallyEvaluated);
 
@@ -390,16 +394,15 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
     if (!SemaRef.InstantiateInitializer(D->getInit(), TemplateArgs, LParenLoc,
                                         InitArgs, RParenLoc)) {
       bool TypeMayContainAuto = true;
-      // Attach the initializer to the declaration, if we have one.
-      if (InitArgs.size() == 0)
-        SemaRef.ActOnUninitializedDecl(Var, TypeMayContainAuto);
-      else if (D->hasCXXDirectInitializer()) {
+      if (D->hasCXXDirectInitializer()) {
         // Add the direct initializer to the declaration.
         SemaRef.AddCXXDirectInitializerToDecl(Var,
                                               LParenLoc,
                                               move_arg(InitArgs),
                                               RParenLoc,
                                               TypeMayContainAuto);
+      } else if (InitArgs.size() == 0) {
+        SemaRef.ActOnUninitializedDecl(Var, TypeMayContainAuto);
       } else {
         assert(InitArgs.size() == 1);
         Expr *Init = InitArgs.take()[0];
@@ -462,8 +465,9 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   if (Invalid)
     BitWidth = 0;
   else if (BitWidth) {
-    // The bit-width expression is not potentially evaluated.
-    EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+    // The bit-width expression is a constant expression.
+    EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                                 Sema::ConstantEvaluated);
 
     ExprResult InstantiatedBitWidth
       = SemaRef.SubstExpr(BitWidth, TemplateArgs);
@@ -591,8 +595,9 @@ Decl *TemplateDeclInstantiator::VisitFriendDecl(FriendDecl *D) {
 Decl *TemplateDeclInstantiator::VisitStaticAssertDecl(StaticAssertDecl *D) {
   Expr *AssertExpr = D->getAssertExpr();
 
-  // The expression in a static assertion is not potentially evaluated.
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  // The expression in a static assertion is a constant expression.
+  EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                               Sema::ConstantEvaluated);
 
   ExprResult InstantiatedAssertExpr
     = SemaRef.SubstExpr(AssertExpr, TemplateArgs);
@@ -653,9 +658,9 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
     // The specified value for the enumerator.
     ExprResult Value = SemaRef.Owned((Expr *)0);
     if (Expr *UninstValue = EC->getInitExpr()) {
-      // The enumerator's value expression is not potentially evaluated.
+      // The enumerator's value expression is a constant expression.
       EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                                   Sema::Unevaluated);
+                                                   Sema::ConstantEvaluated);
 
       Value = SemaRef.SubstExpr(UninstValue, TemplateArgs);
     }
@@ -735,7 +740,7 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   CXXRecordDecl *PrevDecl = 0;
   ClassTemplateDecl *PrevClassTemplate = 0;
 
-  if (!isFriend && Pattern->getPreviousDeclaration()) {
+  if (!isFriend && Pattern->getPreviousDecl()) {
     DeclContext::lookup_result Found = Owner->lookup(Pattern->getDeclName());
     if (Found.first != Found.second) {
       PrevClassTemplate = dyn_cast<ClassTemplateDecl>(*Found.first);
@@ -972,9 +977,9 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   CXXRecordDecl *PrevDecl = 0;
   if (D->isInjectedClassName())
     PrevDecl = cast<CXXRecordDecl>(Owner);
-  else if (D->getPreviousDeclaration()) {
+  else if (D->getPreviousDecl()) {
     NamedDecl *Prev = SemaRef.FindInstantiatedDecl(D->getLocation(),
-                                                   D->getPreviousDeclaration(),
+                                                   D->getPreviousDecl(),
                                                    TemplateArgs);
     if (!Prev) return 0;
     PrevDecl = cast<CXXRecordDecl>(Prev);
@@ -1234,9 +1239,9 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   if (isFriend) {
     NamedDecl *PrevDecl;
     if (TemplateParams)
-      PrevDecl = FunctionTemplate->getPreviousDeclaration();
+      PrevDecl = FunctionTemplate->getPreviousDecl();
     else
-      PrevDecl = Function->getPreviousDeclaration();
+      PrevDecl = Function->getPreviousDecl();
 
     PrincipalDecl->setObjectOfFriendDecl(PrevDecl != 0);
     DC->makeDeclVisibleInContext(PrincipalDecl, /*Recoverable=*/ false);
@@ -2321,11 +2326,12 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
     }
     Expr *NoexceptExpr = 0;
     if (Expr *OldNoexceptExpr = Proto->getNoexceptExpr()) {
-      EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+      EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                                   Sema::ConstantEvaluated);
       ExprResult E = SemaRef.SubstExpr(OldNoexceptExpr, TemplateArgs);
       if (E.isUsable())
         E = SemaRef.CheckBooleanCondition(E.get(), E.get()->getLocStart());
-    
+
       if (E.isUsable()) {
         SourceLocation ErrLoc;
         llvm::APSInt NoexceptVal;
@@ -3335,12 +3341,12 @@ void Sema::PerformPendingInstantiations(bool LocalOnly) {
 
     // Don't try to instantiate declarations if the most recent redeclaration
     // is invalid.
-    if (Var->getMostRecentDeclaration()->isInvalidDecl())
+    if (Var->getMostRecentDecl()->isInvalidDecl())
       continue;
 
     // Check if the most recent declaration has changed the specialization kind
     // and removed the need for implicit instantiation.
-    switch (Var->getMostRecentDeclaration()->getTemplateSpecializationKind()) {
+    switch (Var->getMostRecentDecl()->getTemplateSpecializationKind()) {
     case TSK_Undeclared:
       llvm_unreachable("Cannot instantitiate an undeclared specialization.");
     case TSK_ExplicitInstantiationDeclaration:
@@ -3349,7 +3355,7 @@ void Sema::PerformPendingInstantiations(bool LocalOnly) {
     case TSK_ExplicitInstantiationDefinition:
       // We only need an instantiation if the pending instantiation *is* the
       // explicit instantiation.
-      if (Var != Var->getMostRecentDeclaration()) continue;
+      if (Var != Var->getMostRecentDecl()) continue;
     case TSK_ImplicitInstantiation:
       break;
     }

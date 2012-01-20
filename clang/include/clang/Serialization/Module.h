@@ -57,7 +57,7 @@ struct DeclContextInfo {
 /// other modules.
 class ModuleFile {
 public:
-  ModuleFile(ModuleKind Kind);
+  ModuleFile(ModuleKind Kind, unsigned Generation);
   ~ModuleFile();
 
   // === General information ===
@@ -72,6 +72,9 @@ public:
   /// user.
   bool DirectlyImported;
 
+  /// \brief The generation of which this module file is a part.
+  unsigned Generation;
+  
   /// \brief The memory buffer that stores the data associated with
   /// this AST file.
   llvm::OwningPtr<llvm::MemoryBuffer> Buffer;
@@ -260,6 +263,15 @@ public:
   /// \brief Remapping table for declaration IDs in this module.
   ContinuousRangeMap<uint32_t, int, 2> DeclRemap;
 
+  /// \brief Mapping from the module files that this module file depends on
+  /// to the base declaration ID for that module as it is understood within this
+  /// module.
+  ///
+  /// This is effectively a reverse global-to-local mapping for declaration
+  /// IDs, so that we can interpret a true global ID (for this translation unit)
+  /// as a local ID (for this module file).
+  llvm::DenseMap<ModuleFile *, serialization::DeclID> GlobalToLocalDeclIDs;
+
   /// \brief The number of C++ base specifier sets in this AST file.
   unsigned LocalNumCXXBaseSpecifiers;
 
@@ -286,6 +298,17 @@ public:
   /// \brief Array of file-level DeclIDs sorted by file.
   const serialization::DeclID *FileSortedDecls;
 
+  /// \brief Array of redeclaration chain location information within this 
+  /// module file, sorted by the first declaration ID.
+  const serialization::LocalRedeclarationsInfo *RedeclarationsMap;
+
+  /// \brief The number of redeclaration info entries in RedeclarationsInfo.
+  unsigned LocalNumRedeclarationsInMap;
+  
+  /// \brief The redeclaration chains for declarations local to this
+  /// module file.
+  SmallVector<uint64_t, 1> RedeclarationChains;
+  
   // === Types ===
 
   /// \brief The number of types in this AST file.

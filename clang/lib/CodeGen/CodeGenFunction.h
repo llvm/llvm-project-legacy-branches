@@ -43,7 +43,6 @@ namespace llvm {
 }
 
 namespace clang {
-  class APValue;
   class ASTContext;
   class BlockDecl;
   class CXXDestructorDecl;
@@ -1138,7 +1137,7 @@ private:
   };
   SmallVector<BreakContinue, 8> BreakContinueStack;
 
-  /// SwitchInsn - This is nearest current switch instruction. It is null if if
+  /// SwitchInsn - This is nearest current switch instruction. It is null if
   /// current context is not in a switch.
   llvm::SwitchInst *SwitchInsn;
 
@@ -1301,7 +1300,8 @@ public:
   void GenerateObjCGetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
 
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
                                   ObjCMethodDecl *MD, bool ctor);
@@ -1311,7 +1311,8 @@ public:
   void GenerateObjCSetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
   bool IndirectObjCSetterArg(const CGFunctionInfo &FI);
   bool IvarTypeWithAggrGCObjects(QualType Ty);
 
@@ -1334,6 +1335,10 @@ public:
 
   llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
   llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
+  llvm::Constant *GenerateObjCAtomicSetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
+  llvm::Constant *GenerateObjCAtomicGetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
 
   void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
 
@@ -2024,13 +2029,14 @@ public:
   /// the LLVM value representation.
   void EmitStoreOfScalar(llvm::Value *Value, llvm::Value *Addr,
                          bool Volatile, unsigned Alignment, QualType Ty,
-                         llvm::MDNode *TBAAInfo = 0);
+                         llvm::MDNode *TBAAInfo = 0, bool isInit=false);
 
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
   /// care to appropriately convert from the memory representation to
   /// the LLVM value representation.  The l-value must be a simple
-  /// l-value.
-  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue);
+  /// l-value.  The isInit flag indicates whether this is an initialization.
+  /// If so, atomic qualifiers are ignored and the store is always non-atomic.
+  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue, bool isInit=false);
 
   /// EmitLoadOfLValue - Given an expression that represents a value lvalue,
   /// this method emits the address of the lvalue, then loads the result as an
@@ -2042,7 +2048,7 @@ public:
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
   /// is 'Ty'.
-  void EmitStoreThroughLValue(RValue Src, LValue Dst);
+  void EmitStoreThroughLValue(RValue Src, LValue Dst, bool isInit=false);
   void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as

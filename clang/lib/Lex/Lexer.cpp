@@ -59,6 +59,8 @@ tok::ObjCKeywordKind Token::getObjCKeywordID() const {
 // Lexer Class Implementation
 //===----------------------------------------------------------------------===//
 
+void Lexer::anchor() { }
+
 void Lexer::InitLexer(const char *BufStart, const char *BufPtr,
                       const char *BufEnd) {
   InitCharacterInfo();
@@ -487,11 +489,11 @@ SourceLocation Lexer::GetBeginningOfToken(SourceLocation Loc,
  SourceLocation FileLoc = SM.getSpellingLoc(Loc);
  SourceLocation BeginFileLoc = getBeginningOfFileToken(FileLoc, SM, LangOpts);
  std::pair<FileID, unsigned> FileLocInfo = SM.getDecomposedLoc(FileLoc);
- std::pair<FileID, unsigned> BeginFileLocInfo= SM.getDecomposedLoc(BeginFileLoc);
+ std::pair<FileID, unsigned> BeginFileLocInfo
+   = SM.getDecomposedLoc(BeginFileLoc);
  assert(FileLocInfo.first == BeginFileLocInfo.first &&
         FileLocInfo.second >= BeginFileLocInfo.second);
- return Loc.getLocWithOffset(SM.getDecomposedLoc(BeginFileLoc).second -
-                                 SM.getDecomposedLoc(FileLoc).second);
+ return Loc.getLocWithOffset(BeginFileLocInfo.second - FileLocInfo.second);
 }
 
 namespace {
@@ -718,11 +720,8 @@ SourceLocation Lexer::getLocForEndOfToken(SourceLocation Loc, unsigned Offset,
     return SourceLocation();
 
   if (Loc.isMacroID()) {
-    if (Offset > 0 || !isAtEndOfMacroExpansion(Loc, SM, Features))
+    if (Offset > 0 || !isAtEndOfMacroExpansion(Loc, SM, Features, &Loc))
       return SourceLocation(); // Points inside the macro expansion.
-
-    // Continue and find the location just after the macro expansion.
-    Loc = SM.getExpansionRange(Loc).second;
   }
 
   unsigned Len = Lexer::MeasureTokenLength(Loc, SM, Features);
@@ -738,7 +737,8 @@ SourceLocation Lexer::getLocForEndOfToken(SourceLocation Loc, unsigned Offset,
 /// token of the macro expansion.
 bool Lexer::isAtStartOfMacroExpansion(SourceLocation loc,
                                       const SourceManager &SM,
-                                      const LangOptions &LangOpts) {
+                                      const LangOptions &LangOpts,
+                                      SourceLocation *MacroBegin) {
   assert(loc.isValid() && loc.isMacroID() && "Expected a valid macro loc");
 
   std::pair<FileID, unsigned> infoLoc = SM.getDecomposedLoc(loc);
@@ -749,17 +749,22 @@ bool Lexer::isAtStartOfMacroExpansion(SourceLocation loc,
 
   SourceLocation expansionLoc =
     SM.getSLocEntry(infoLoc.first).getExpansion().getExpansionLocStart();
-  if (expansionLoc.isFileID())
-    return true; // No other macro expansions, this is the first.
+  if (expansionLoc.isFileID()) {
+    // No other macro expansions, this is the first.
+    if (MacroBegin)
+      *MacroBegin = expansionLoc;
+    return true;
+  }
 
-  return isAtStartOfMacroExpansion(expansionLoc, SM, LangOpts);
+  return isAtStartOfMacroExpansion(expansionLoc, SM, LangOpts, MacroBegin);
 }
 
 /// \brief Returns true if the given MacroID location points at the last
 /// token of the macro expansion.
 bool Lexer::isAtEndOfMacroExpansion(SourceLocation loc,
-                                        const SourceManager &SM,
-                                        const LangOptions &LangOpts) {
+                                    const SourceManager &SM,
+                                    const LangOptions &LangOpts,
+                                    SourceLocation *MacroEnd) {
   assert(loc.isValid() && loc.isMacroID() && "Expected a valid macro loc");
 
   SourceLocation spellLoc = SM.getSpellingLoc(loc);
@@ -777,10 +782,106 @@ bool Lexer::isAtEndOfMacroExpansion(SourceLocation loc,
 
   SourceLocation expansionLoc =
     SM.getSLocEntry(FID).getExpansion().getExpansionLocEnd();
-  if (expansionLoc.isFileID())
-    return true; // No other macro expansions.
+  if (expansionLoc.isFileID()) {
+    // No other macro expansions.
+    if (MacroEnd)
+      *MacroEnd = expansionLoc;
+    return true;
+  }
 
-  return isAtEndOfMacroExpansion(expansionLoc, SM, LangOpts);
+  return isAtEndOfMacroExpansion(expansionLoc, SM, LangOpts, MacroEnd);
+}
+
+/// \brief Accepts a token source range and returns a character range with
+/// file locations.
+/// Returns a null range if a part of the range resides inside a macro
+/// expansion or the range does not reside on the same FileID.
+CharSourceRange Lexer::makeFileCharRange(SourceRange TokenRange,
+                                         const SourceManager &SM,
+                                         const LangOptions &LangOpts) {
+  SourceLocation Begin = TokenRange.getBegin();
+  if (Begin.isInvalid())
+    return CharSourceRange();
+
+  if (Begin.isMacroID())
+    if (!isAtStartOfMacroExpansion(Begin, SM, LangOpts, &Begin))
+      return CharSourceRange();
+
+  SourceLocation End = getLocForEndOfToken(TokenRange.getEnd(), 0, SM,LangOpts);
+  if (End.isInvalid())
+    return CharSourceRange();
+
+  // Break down the source locations.
+  std::pair<FileID, unsigned> beginInfo = SM.getDecomposedLoc(Begin);
+  if (beginInfo.first.isInvalid())
+    return CharSourceRange();
+
+  unsigned EndOffs;
+  if (!SM.isInFileID(End, beginInfo.first, &EndOffs) ||
+      beginInfo.second > EndOffs)
+    return CharSourceRange();
+
+  return CharSourceRange::getCharRange(Begin, End);
+}
+
+StringRef Lexer::getSourceText(CharSourceRange Range,
+                               const SourceManager &SM,
+                               const LangOptions &LangOpts,
+                               bool *Invalid) {
+  if (Range.isTokenRange())
+    Range = makeFileCharRange(Range.getAsRange(), SM, LangOpts);
+
+  if (Range.isInvalid() ||
+      Range.getBegin().isMacroID() || Range.getEnd().isMacroID()) {
+    if (Invalid) *Invalid = true;
+    return StringRef();
+  }
+
+  // Break down the source location.
+  std::pair<FileID, unsigned> beginInfo = SM.getDecomposedLoc(Range.getBegin());
+  if (beginInfo.first.isInvalid()) {
+    if (Invalid) *Invalid = true;
+    return StringRef();
+  }
+
+  unsigned EndOffs;
+  if (!SM.isInFileID(Range.getEnd(), beginInfo.first, &EndOffs) ||
+      beginInfo.second > EndOffs) {
+    if (Invalid) *Invalid = true;
+    return StringRef();
+  }
+
+  // Try to the load the file buffer.
+  bool invalidTemp = false;
+  StringRef file = SM.getBufferData(beginInfo.first, &invalidTemp);
+  if (invalidTemp) {
+    if (Invalid) *Invalid = true;
+    return StringRef();
+  }
+
+  if (Invalid) *Invalid = false;
+  return file.substr(beginInfo.second, EndOffs - beginInfo.second);
+}
+
+StringRef Lexer::getImmediateMacroName(SourceLocation Loc,
+                                       const SourceManager &SM,
+                                       const LangOptions &LangOpts) {
+  assert(Loc.isMacroID() && "Only reasonble to call this on macros");
+  // Walk past macro argument expanions.
+  while (SM.isMacroArgExpansion(Loc))
+    Loc = SM.getImmediateExpansionRange(Loc).first;
+
+  // Find the spelling location of the start of the non-argument expansion
+  // range. This is where the macro name was spelled in order to begin
+  // expanding this macro.
+  Loc = SM.getSpellingLoc(SM.getImmediateExpansionRange(Loc).first);
+
+  // Dig out the buffer where the macro name was spelled and the extents of the
+  // name so that we can render it into the expansion note.
+  std::pair<FileID, unsigned> ExpansionInfo = SM.getDecomposedLoc(Loc);
+  unsigned MacroTokenLength = Lexer::MeasureTokenLength(Loc, SM, LangOpts);
+  StringRef ExpansionBuffer = SM.getBufferData(ExpansionInfo.first);
+  return ExpansionBuffer.substr(ExpansionInfo.second, MacroTokenLength);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1085,9 +1186,8 @@ SourceLocation Lexer::findLocationAfterToken(SourceLocation Loc,
                                         const LangOptions &LangOpts,
                                         bool SkipTrailingWhitespaceAndNewLine) {
   if (Loc.isMacroID()) {
-    if (!Lexer::isAtEndOfMacroExpansion(Loc, SM, LangOpts))
+    if (!Lexer::isAtEndOfMacroExpansion(Loc, SM, LangOpts, &Loc))
       return SourceLocation();
-    Loc = SM.getExpansionRange(Loc).second;
   }
   Loc = Lexer::getLocForEndOfToken(Loc, 0, SM, LangOpts);
 
@@ -1169,6 +1269,13 @@ Slash:
       // Found backslash<whitespace><newline>.  Parse the char after it.
       Size += EscapedNewLineSize;
       Ptr  += EscapedNewLineSize;
+
+      // If the char that we finally got was a \n, then we must have had
+      // something like \<newline><newline>.  We don't want to consume the
+      // second newline.
+      if (*Ptr == '\n' || *Ptr == '\r' || *Ptr == '\0')
+        return ' ';
+
       // Use slow version to accumulate a correct size field.
       return getCharAndSizeSlow(Ptr, Size, Tok);
     }
@@ -1219,6 +1326,12 @@ Slash:
       // Found backslash<whitespace><newline>.  Parse the char after it.
       Size += EscapedNewLineSize;
       Ptr  += EscapedNewLineSize;
+
+      // If the char that we finally got was a \n, then we must have had
+      // something like \<newline><newline>.  We don't want to consume the
+      // second newline.
+      if (*Ptr == '\n' || *Ptr == '\r' || *Ptr == '\0')
+        return ' ';
 
       // Use slow version to accumulate a correct size field.
       return getCharAndSizeSlowNoWarn(Ptr, Size, Features);
@@ -1685,14 +1798,6 @@ bool Lexer::SkipBCPLComment(Token &Result, const char *CurPtr) {
     if (C != 0 && CurPtr == OldPtr+1) {
       CurPtr = NextLine;
       break;
-    }
-
-    // If the char that we finally got was a \n, then we must have had something
-    // like \<newline><newline>.  We don't want to have consumed the second
-    // newline, we want CurPtr, to end up pointing to it down below.
-    if (C == '\n' || C == '\r') {
-      --CurPtr;
-      C = 'x'; // doesn't matter what this is.
     }
 
     // If we read multiple characters, and one of those characters was a \r or

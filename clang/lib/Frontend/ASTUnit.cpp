@@ -262,6 +262,8 @@ ASTUnit::~ASTUnit() {
   }    
 }
 
+void ASTUnit::setPreprocessor(Preprocessor *pp) { PP = pp; }
+
 /// \brief Determine the set of code-completion contexts in which this 
 /// declaration should be shown.
 static unsigned getDeclShowContexts(NamedDecl *ND,
@@ -667,7 +669,8 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
   AST->SourceMgr = new SourceManager(AST->getDiagnostics(),
                                      AST->getFileManager());
   AST->HeaderInfo.reset(new HeaderSearch(AST->getFileManager(),
-                                         AST->getDiagnostics()));
+                                         AST->getDiagnostics(),
+                                         AST->ASTFileLangOpts));
   
   for (unsigned I = 0; I != NumRemappedFiles; ++I) {
     FilenameOrMemBuf fileOrBuf = RemappedFiles[I].second;
@@ -826,22 +829,7 @@ void AddTopLevelDeclarationToHash(Decl *D, unsigned &Hash) {
       Hash = llvm::HashString(NameStr, Hash);
     }
     return;
-  }
-  
-  if (ObjCForwardProtocolDecl *Forward 
-      = dyn_cast<ObjCForwardProtocolDecl>(D)) {
-    for (ObjCForwardProtocolDecl::protocol_iterator 
-         P = Forward->protocol_begin(),
-         PEnd = Forward->protocol_end();
-         P != PEnd; ++P)
-      AddTopLevelDeclarationToHash(*P, Hash);
-    return;
-  }
-  
-  if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(D)) {
-    AddTopLevelDeclarationToHash(Class->getForwardInterfaceDecl(), Hash);
-    return;
-  }
+  }  
 }
 
 class TopLevelDeclTrackerConsumer : public ASTConsumer {
@@ -2406,7 +2394,7 @@ CXSaveError ASTUnit::Save(StringRef File) {
   if (Out.has_error())
     return CXSaveError_Unknown;
 
-  if (llvm::error_code ec = llvm::sys::fs::rename(TempPath.str(), File)) {
+  if (llvm::sys::fs::rename(TempPath.str(), File)) {
     bool exists;
     llvm::sys::fs::remove(TempPath.str(), exists);
     return CXSaveError_Unknown;

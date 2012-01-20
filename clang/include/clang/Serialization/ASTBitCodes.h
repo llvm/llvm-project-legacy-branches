@@ -366,10 +366,11 @@ namespace clang {
       /// \brief Record code for an update to the TU's lexically contained
       /// declarations.
       TU_UPDATE_LEXICAL = 28,
-
-      /// \brief Record code for an update to first decls pointing to the
-      /// latest redeclarations.
-      REDECLS_UPDATE_LATEST = 29,
+      
+      /// \brief Record code for the array describing the locations (in the
+      /// LOCAL_REDECLARATIONS record) of the redeclaration chains, indexed by
+      /// the first known ID.
+      LOCAL_REDECLARATIONS_MAP = 29,
 
       /// \brief Record code for declarations that Sema keeps references of.
       SEMA_DECL_REFS = 30,
@@ -445,14 +446,23 @@ namespace clang {
 
       /// \brief Record code for ObjC categories in a module that are chained to
       /// an interface.
-      OBJC_CHAINED_CATEGORIES,
+      OBJC_CHAINED_CATEGORIES = 49,
 
       /// \brief Record code for a file sorted array of DeclIDs in a module.
-      FILE_SORTED_DECLS,
+      FILE_SORTED_DECLS = 50,
       
       /// \brief Record code for an array of all of the (sub)modules that were
       /// imported by the AST file.
-      IMPORTED_MODULES
+      IMPORTED_MODULES = 51,
+      
+      /// \brief Record code for the set of merged declarations in an AST file.
+      MERGED_DECLARATIONS = 52,
+      
+      /// \brief Record code for the array of redeclaration chains.
+      ///
+      /// This array can only be interpreted properly using the local 
+      /// redeclarations map.
+      LOCAL_REDECLARATIONS = 53
     };
 
     /// \brief Record types used within a source manager block.
@@ -524,7 +534,9 @@ namespace clang {
       SUBMODULE_IMPORTS = 5,
       /// \brief Specifies the submodules that are re-exported from this 
       /// submodule.
-      SUBMODULE_EXPORTS = 6
+      SUBMODULE_EXPORTS = 6,
+      /// \brief Specifies a required feature.
+      SUBMODULE_REQUIRES = 7
     };
     
     /// \defgroup ASTAST AST file AST constants
@@ -721,28 +733,26 @@ namespace clang {
     enum SpecialTypeIDs {
       /// \brief __builtin_va_list
       SPECIAL_TYPE_BUILTIN_VA_LIST             = 0,
-      /// \brief Objective-C Protocol type
-      SPECIAL_TYPE_OBJC_PROTOCOL               = 1,
       /// \brief CFConstantString type
-      SPECIAL_TYPE_CF_CONSTANT_STRING          = 2,
+      SPECIAL_TYPE_CF_CONSTANT_STRING          = 1,
       /// \brief C FILE typedef type
-      SPECIAL_TYPE_FILE                        = 3,
+      SPECIAL_TYPE_FILE                        = 2,
       /// \brief C jmp_buf typedef type
-      SPECIAL_TYPE_JMP_BUF                     = 4,
+      SPECIAL_TYPE_JMP_BUF                     = 3,
       /// \brief C sigjmp_buf typedef type
-      SPECIAL_TYPE_SIGJMP_BUF                  = 5,
+      SPECIAL_TYPE_SIGJMP_BUF                  = 4,
       /// \brief Objective-C "id" redefinition type
-      SPECIAL_TYPE_OBJC_ID_REDEFINITION        = 6,
+      SPECIAL_TYPE_OBJC_ID_REDEFINITION        = 5,
       /// \brief Objective-C "Class" redefinition type
-      SPECIAL_TYPE_OBJC_CLASS_REDEFINITION     = 7,
+      SPECIAL_TYPE_OBJC_CLASS_REDEFINITION     = 6,
       /// \brief Objective-C "SEL" redefinition type
-      SPECIAL_TYPE_OBJC_SEL_REDEFINITION       = 8,
+      SPECIAL_TYPE_OBJC_SEL_REDEFINITION       = 7,
       /// \brief C ucontext_t typedef type
-      SPECIAL_TYPE_UCONTEXT_T                  = 9
+      SPECIAL_TYPE_UCONTEXT_T                  = 8
     };
     
     /// \brief The number of special type IDs.
-    const unsigned NumSpecialTypeIDs = 0;
+    const unsigned NumSpecialTypeIDs = 9;
 
     /// \brief Predefined declaration IDs.
     ///
@@ -765,22 +775,25 @@ namespace clang {
       
       /// \brief The Objective-C 'Class' type.
       PREDEF_DECL_OBJC_CLASS_ID = 4,
+            
+      /// \brief The Objective-C 'Protocol' type.
+      PREDEF_DECL_OBJC_PROTOCOL_ID = 5,
       
       /// \brief The signed 128-bit integer type.
-      PREDEF_DECL_INT_128_ID = 5,
+      PREDEF_DECL_INT_128_ID = 6,
 
       /// \brief The unsigned 128-bit integer type.
-      PREDEF_DECL_UNSIGNED_INT_128_ID = 6,
+      PREDEF_DECL_UNSIGNED_INT_128_ID = 7,
       
       /// \brief The internal 'instancetype' typedef.
-      PREDEF_DECL_OBJC_INSTANCETYPE_ID = 7
+      PREDEF_DECL_OBJC_INSTANCETYPE_ID = 8
     };
 
     /// \brief The number of declaration IDs that are predefined.
     ///
     /// For more information about predefined declarations, see the
     /// \c PredefinedDeclIDs type and the PREDEF_DECL_*_ID constants.
-    const unsigned int NUM_PREDEF_DECL_IDS = 8;
+    const unsigned int NUM_PREDEF_DECL_IDS = 9;
     
     /// \brief Record codes for each kind of declaration.
     ///
@@ -811,10 +824,6 @@ namespace clang {
       DECL_OBJC_IVAR,
       /// \brief A ObjCAtDefsFieldDecl record.
       DECL_OBJC_AT_DEFS_FIELD,
-      /// \brief A ObjCClassDecl record.
-      DECL_OBJC_CLASS,
-      /// \brief A ObjCForwardProtocolDecl record.
-      DECL_OBJC_FORWARD_PROTOCOL,
       /// \brief A ObjCCategoryDecl record.
       DECL_OBJC_CATEGORY,
       /// \brief A ObjCCategoryImplDecl record.
@@ -1188,6 +1197,32 @@ namespace clang {
       CTOR_INITIALIZER_DELEGATING,
       CTOR_INITIALIZER_MEMBER,
       CTOR_INITIALIZER_INDIRECT_MEMBER
+    };
+
+    /// \brief Describes the redeclarations of a declaration.
+    struct LocalRedeclarationsInfo {
+      DeclID FirstID;      // The ID of the first declaration
+      unsigned Offset;     // Offset into the array of redeclaration chains.
+      
+      friend bool operator<(const LocalRedeclarationsInfo &X,
+                            const LocalRedeclarationsInfo &Y) {
+        return X.FirstID < Y.FirstID;
+      }
+      
+      friend bool operator>(const LocalRedeclarationsInfo &X,
+                            const LocalRedeclarationsInfo &Y) {
+        return X.FirstID > Y.FirstID;
+      }
+      
+      friend bool operator<=(const LocalRedeclarationsInfo &X,
+                             const LocalRedeclarationsInfo &Y) {
+        return X.FirstID <= Y.FirstID;
+      }
+      
+      friend bool operator>=(const LocalRedeclarationsInfo &X,
+                             const LocalRedeclarationsInfo &Y) {
+        return X.FirstID >= Y.FirstID;
+      }
     };
 
     /// @}

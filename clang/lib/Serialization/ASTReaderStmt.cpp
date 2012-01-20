@@ -879,6 +879,7 @@ void ASTStmtReader::VisitObjCMessageExpr(ObjCMessageExpr *E) {
   unsigned NumStoredSelLocs = Record[Idx++];
   E->SelLocsKind = Record[Idx++]; 
   E->setDelegateInitCall(Record[Idx++]);
+  E->IsImplicit = Record[Idx++];
   ObjCMessageExpr::ReceiverKind Kind
     = static_cast<ObjCMessageExpr::ReceiverKind>(Record[Idx++]);
   switch (Kind) {
@@ -1446,7 +1447,6 @@ Stmt *ASTReader::ReadStmt(ModuleFile &F) {
   }
 
   llvm_unreachable("ReadingKind not set ?");
-  return 0;
 }
 
 Expr *ASTReader::ReadExpr(ModuleFile &F) {
@@ -1811,7 +1811,6 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       break;
     case EXPR_OBJC_KVC_REF_EXPR:
       llvm_unreachable("mismatching AST file");
-      break;
     case EXPR_OBJC_MESSAGE_EXPR:
       S = ObjCMessageExpr::CreateEmpty(Context,
                                      Record[ASTStmtReader::NumExprFields],

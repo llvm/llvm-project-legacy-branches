@@ -288,10 +288,9 @@ private:
            Tok.getKind() == tok::utf32_string_literal;
   }
 
-  /// \brief Returns true if the current token is a '=' or '==' and
-  /// false otherwise. If it's '==', we assume that it's a typo and we emit
-  /// DiagID and a fixit hint to turn '==' -> '='.
-  bool isTokenEqualOrMistypedEqualEqual(unsigned DiagID);
+  /// \brief Returns true if the current token is '=' or is a type of '='.
+  /// For typos, give a fixit to '='
+  bool isTokenEqualOrEqualTypo();
 
   /// ConsumeToken - Consume the current 'peek token' and lex the next one.
   /// This does not work with all kinds of tokens: strings and specific other
@@ -1206,8 +1205,8 @@ private:
   ExprResult ParseAsmStringLiteral();
 
   // Objective-C External Declarations
-  Parser::DeclGroupPtrTy ParseObjCAtDirectives();
-  Parser::DeclGroupPtrTy ParseObjCAtClassDeclaration(SourceLocation atLoc);
+  DeclGroupPtrTy ParseObjCAtDirectives();
+  DeclGroupPtrTy ParseObjCAtClassDeclaration(SourceLocation atLoc);
   Decl *ParseObjCAtInterfaceDeclaration(SourceLocation AtLoc,
                                         ParsedAttributes &prefixAttrs);
   void ParseObjCClassInstanceVariables(Decl *interfaceDecl,
@@ -1221,8 +1220,8 @@ private:
   bool ParseObjCProtocolQualifiers(DeclSpec &DS);
   void ParseObjCInterfaceDeclList(tok::ObjCKeywordKind contextKey,
                                   Decl *CDecl);
-  Decl *ParseObjCAtProtocolDeclaration(SourceLocation atLoc,
-                                       ParsedAttributes &prefixAttrs);
+  DeclGroupPtrTy ParseObjCAtProtocolDeclaration(SourceLocation atLoc,
+                                                ParsedAttributes &prefixAttrs);
 
   Decl *ObjCImpDecl;
   SmallVector<Decl *, 4> PendingObjCImpDecl;
@@ -1466,9 +1465,9 @@ private:
   bool isSimpleObjCMessageExpression();
   ExprResult ParseObjCMessageExpression();
   ExprResult ParseObjCMessageExpressionBody(SourceLocation LBracloc,
-                                                  SourceLocation SuperLoc,
-                                                  ParsedType ReceiverType,
-                                                  ExprArg ReceiverExpr);
+                                            SourceLocation SuperLoc,
+                                            ParsedType ReceiverType,
+                                            ExprArg ReceiverExpr);
   ExprResult ParseAssignmentExprWithObjCMessageExprStart(
       SourceLocation LBracloc, SourceLocation SuperLoc,
       ParsedType ReceiverType, ExprArg ReceiverExpr);
@@ -1477,12 +1476,13 @@ private:
   //===--------------------------------------------------------------------===//
   // C99 6.8: Statements and Blocks.
 
-  StmtResult ParseStatement() {
+  StmtResult ParseStatement(SourceLocation *TrailingElseLoc = NULL) {
     StmtVector Stmts(Actions);
-    return ParseStatementOrDeclaration(Stmts, true);
+    return ParseStatementOrDeclaration(Stmts, true, TrailingElseLoc);
   }
   StmtResult ParseStatementOrDeclaration(StmtVector& Stmts,
-                                         bool OnlyStatement = false);
+                                         bool OnlyStatement,
+                                        SourceLocation *TrailingElseLoc = NULL);
   StmtResult ParseExprStatement(ParsedAttributes &Attrs);
   StmtResult ParseLabeledStatement(ParsedAttributes &Attr);
   StmtResult ParseCaseStatement(ParsedAttributes &Attr,
@@ -1499,11 +1499,15 @@ private:
                                  Decl *&DeclResult,
                                  SourceLocation Loc,
                                  bool ConvertToBoolean);
-  StmtResult ParseIfStatement(ParsedAttributes &Attr);
-  StmtResult ParseSwitchStatement(ParsedAttributes &Attr);
-  StmtResult ParseWhileStatement(ParsedAttributes &Attr);
+  StmtResult ParseIfStatement(ParsedAttributes &Attr,
+                              SourceLocation *TrailingElseLoc);
+  StmtResult ParseSwitchStatement(ParsedAttributes &Attr,
+                                  SourceLocation *TrailingElseLoc);
+  StmtResult ParseWhileStatement(ParsedAttributes &Attr,
+                                 SourceLocation *TrailingElseLoc);
   StmtResult ParseDoStatement(ParsedAttributes &Attr);
-  StmtResult ParseForStatement(ParsedAttributes &Attr);
+  StmtResult ParseForStatement(ParsedAttributes &Attr,
+                               SourceLocation *TrailingElseLoc);
   StmtResult ParseGotoStatement(ParsedAttributes &Attr);
   StmtResult ParseContinueStatement(ParsedAttributes &Attr);
   StmtResult ParseBreakStatement(ParsedAttributes &Attr);
@@ -1683,13 +1687,13 @@ private:
     return isDeclarationSpecifier(true);
   }
 
-  /// isSimpleDeclaration - Disambiguates between a declaration or an
-  /// expression, mainly used for the C 'clause-1' or the C++
+  /// isForInitDeclaration - Disambiguates between a declaration or an
+  /// expression in the context of the C 'clause-1' or the C++
   // 'for-init-statement' part of a 'for' statement.
   /// Returns true for declaration, false for expression.
-  bool isSimpleDeclaration() {
+  bool isForInitDeclaration() {
     if (getLang().CPlusPlus)
-      return isCXXSimpleDeclaration();
+      return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/true);
     return isDeclarationSpecifier(true);
   }
 
@@ -1734,7 +1738,7 @@ private:
   /// If during the disambiguation process a parsing error is encountered,
   /// the function returns true to let the declaration parsing code handle it.
   /// Returns false if the statement is disambiguated as expression.
-  bool isCXXSimpleDeclaration();
+  bool isCXXSimpleDeclaration(bool AllowForRangeDecl);
 
   /// isCXXFunctionDeclarator - Disambiguates between a function declarator or
   /// a constructor-style initializer, when parsing declaration statements.
@@ -1808,7 +1812,7 @@ private:
   // They all consume tokens, so backtracking should be used after calling them.
 
   TPResult TryParseDeclarationSpecifier();
-  TPResult TryParseSimpleDeclaration();
+  TPResult TryParseSimpleDeclaration(bool AllowForRangeDecl);
   TPResult TryParseTypeofSpecifier();
   TPResult TryParseProtocolQualifiers();
   TPResult TryParseInitDeclaratorList();
@@ -1919,7 +1923,10 @@ private:
   void ParseAlignmentSpecifier(ParsedAttributes &Attrs,
                                SourceLocation *endLoc = 0);
 
-  VirtSpecifiers::Specifier isCXX0XVirtSpecifier() const;
+  VirtSpecifiers::Specifier isCXX0XVirtSpecifier(const Token &Tok) const;
+  VirtSpecifiers::Specifier isCXX0XVirtSpecifier() const {
+    return isCXX0XVirtSpecifier(Tok);
+  }
   void ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS);
 
   bool isCXX0XFinalKeyword() const;
@@ -2114,13 +2121,15 @@ private:
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
   ParsedTemplateArgument ParseTemplateArgument();
-  Decl *ParseExplicitInstantiation(SourceLocation ExternLoc,
-                                        SourceLocation TemplateLoc,
-                                        SourceLocation &DeclEnd);
+  Decl *ParseExplicitInstantiation(unsigned Context,
+                                   SourceLocation ExternLoc,
+                                   SourceLocation TemplateLoc,
+                                   SourceLocation &DeclEnd,
+                                   AccessSpecifier AS = AS_none);
 
   //===--------------------------------------------------------------------===//
   // Modules
-  DeclGroupPtrTy ParseModuleImport();
+  DeclGroupPtrTy ParseModuleImport(SourceLocation AtLoc);
 
   //===--------------------------------------------------------------------===//
   // GNU G++: Type Traits [Type-Traits.html in the GCC manual]

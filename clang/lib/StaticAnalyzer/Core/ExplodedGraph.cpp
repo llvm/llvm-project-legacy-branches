@@ -91,7 +91,8 @@ void ExplodedGraph::reclaimRecentlyAllocatedNodes() {
 
     // Condition 3.
     ProgramPoint progPoint = node->getLocation();
-    if (!isa<PostStmt>(progPoint))
+    if (!isa<PostStmt>(progPoint) ||
+        (isa<CallEnter>(progPoint) || isa<CallExit>(progPoint)))
       continue;
     // Condition 4.
     PostStmt ps = cast<PostStmt>(progPoint);
@@ -378,6 +379,8 @@ ExplodedGraph::TrimInternal(const ExplodedNode* const* BeginSources,
 
   return G;
 }
+
+void InterExplodedGraphMap::anchor() { }
 
 ExplodedNode*
 InterExplodedGraphMap::getMappedNode(const ExplodedNode *N) const {

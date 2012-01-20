@@ -223,10 +223,11 @@ std::vector<std::string> UnescapeJsonCommandLine(
 CompileCommand FindCompileArgsInJsonDatabase(
     llvm::StringRef FileName, llvm::StringRef JsonDatabase,
     std::string &ErrorMessage) {
-  llvm::JSONParser Parser(JsonDatabase);
+  llvm::SourceMgr SM;
+  llvm::JSONParser Parser(JsonDatabase, &SM);
   llvm::JSONValue *Root = Parser.parseRoot();
   if (Root == NULL) {
-    ErrorMessage = Parser.getErrorMessage();
+    ErrorMessage = "Error while parsing JSON.";
     return CompileCommand();
   }
   llvm::JSONArray *Array = llvm::dyn_cast<llvm::JSONArray>(Root);

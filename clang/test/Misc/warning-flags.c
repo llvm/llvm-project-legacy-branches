@@ -17,7 +17,7 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (270):
+CHECK: Warnings without flags (266):
 CHECK-NEXT:   ext_anon_param_requires_type_specifier
 CHECK-NEXT:   ext_anonymous_struct_union_qualified
 CHECK-NEXT:   ext_array_init_copy
@@ -25,7 +25,6 @@ CHECK-NEXT:   ext_binary_literal
 CHECK-NEXT:   ext_cast_fn_obj
 CHECK-NEXT:   ext_delete_void_ptr_operand
 CHECK-NEXT:   ext_designated_init
-CHECK-NEXT:   ext_designated_init_cxx
 CHECK-NEXT:   ext_duplicate_declspec
 CHECK-NEXT:   ext_ellipsis_exception_spec
 CHECK-NEXT:   ext_empty_fnmacro_arg
@@ -36,7 +35,6 @@ CHECK-NEXT:   ext_enumerator_list_comma
 CHECK-NEXT:   ext_expected_semi_decl_list
 CHECK-NEXT:   ext_explicit_instantiation_without_qualified_id
 CHECK-NEXT:   ext_explicit_specialization_storage_class
-CHECK-NEXT:   ext_expr_not_ice
 CHECK-NEXT:   ext_extra_ivar_semi
 CHECK-NEXT:   ext_extra_struct_semi
 CHECK-NEXT:   ext_forward_ref_enum
@@ -56,7 +54,6 @@ CHECK-NEXT:   ext_missing_whitespace_after_macro_name
 CHECK-NEXT:   ext_new_paren_array_nonconst
 CHECK-NEXT:   ext_nonstandard_escape
 CHECK-NEXT:   ext_param_not_declared
-CHECK-NEXT:   ext_param_promoted_not_compatible_with_prototype
 CHECK-NEXT:   ext_paste_comma
 CHECK-NEXT:   ext_plain_complex
 CHECK-NEXT:   ext_pp_bad_vaargs_use
@@ -213,7 +210,6 @@ CHECK-NEXT:   warn_octal_escape_too_large
 CHECK-NEXT:   warn_odr_tag_type_inconsistent
 CHECK-NEXT:   warn_on_superclass_use
 CHECK-NEXT:   warn_param_default_argument_redefinition
-CHECK-NEXT:   warn_parens_disambiguated_as_function_decl
 CHECK-NEXT:   warn_partial_specs_not_deducible
 CHECK-NEXT:   warn_pointer_attribute_wrong_type
 CHECK-NEXT:   warn_pp_convert_lhs_to_positive

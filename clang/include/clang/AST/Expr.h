@@ -22,6 +22,7 @@
 #include "clang/AST/ASTVector.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/UsuallyTinyPtrVector.h"
+#include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/APFloat.h"
@@ -419,6 +420,11 @@ public:
                              bool isEvaluated = true) const;
   bool isIntegerConstantExpr(ASTContext &Ctx, SourceLocation *Loc = 0) const;
 
+  /// isCXX11ConstantExpr - Return true if this expression is a constant
+  /// expression in C++11. Can only be used in C++.
+  bool isCXX11ConstantExpr(ASTContext &Ctx, APValue *Result = 0,
+                           SourceLocation *Loc = 0) const;
+
   /// isConstantInitializer - Returns true if this expression can be emitted to
   /// IR as a constant, and thus can be used as a constant initializer in C.
   bool isConstantInitializer(ASTContext &Ctx, bool ForRef) const;
@@ -471,10 +477,12 @@ public:
   /// side-effects.
   bool EvaluateAsBooleanCondition(bool &Result, const ASTContext &Ctx) const;
 
+  enum SideEffectsKind { SE_NoSideEffects, SE_AllowSideEffects };
+
   /// EvaluateAsInt - Return true if this is a constant which we can fold and
-  /// convert to an integer without side-effects, using any crazy technique that
-  /// we want to.
-  bool EvaluateAsInt(llvm::APSInt &Result, const ASTContext &Ctx) const;
+  /// convert to an integer, using any crazy technique that we want to.
+  bool EvaluateAsInt(llvm::APSInt &Result, const ASTContext &Ctx,
+                     SideEffectsKind AllowSideEffects = SE_NoSideEffects) const;
 
   /// isEvaluatable - Call EvaluateAsRValue to see if this expression can be
   /// constant folded without side-effects, but discard the result.
@@ -494,6 +502,14 @@ public:
   /// EvaluateAsLValue - Evaluate an expression to see if we can fold it to an
   /// lvalue with link time known address, with no side-effects.
   bool EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const;
+
+  /// EvaluateAsInitializer - Evaluate an expression as if it were the
+  /// initializer of the given declaration. Returns true if the initializer
+  /// can be folded to a constant, and produces any relevant notes. In C++11,
+  /// notes will be produced if the expression is not a constant expression.
+  bool EvaluateAsInitializer(APValue &Result, const ASTContext &Ctx,
+                             const VarDecl *VD,
+                       llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 
   /// \brief Enumeration used to describe the kind of Null pointer constant
   /// returned from \c isNullPointerConstant().
@@ -1053,7 +1069,9 @@ public:
 
 class APFloatStorage : public APNumericStorage {
 public:
-  llvm::APFloat getValue() const { return llvm::APFloat(getIntValue()); }
+  llvm::APFloat getValue(bool IsIEEE) const {
+    return llvm::APFloat(getIntValue(), IsIEEE);
+  }
   void setValue(ASTContext &C, const llvm::APFloat &Val) {
     setIntValue(C, Val.bitcastToAPInt());
   }
@@ -1155,6 +1173,7 @@ public:
 
 class FloatingLiteral : public Expr {
   APFloatStorage Num;
+  bool IsIEEE : 1; // Distinguishes between PPC128 and IEEE128.
   bool IsExact : 1;
   SourceLocation Loc;
 
@@ -1162,20 +1181,25 @@ class FloatingLiteral : public Expr {
                   QualType Type, SourceLocation L)
     : Expr(FloatingLiteralClass, Type, VK_RValue, OK_Ordinary, false, false,
            false, false),
+      IsIEEE(&C.getTargetInfo().getLongDoubleFormat() ==
+             &llvm::APFloat::IEEEquad),
       IsExact(isexact), Loc(L) {
     setValue(C, V);
   }
 
   /// \brief Construct an empty floating-point literal.
-  explicit FloatingLiteral(EmptyShell Empty)
-    : Expr(FloatingLiteralClass, Empty), IsExact(false) { }
+  explicit FloatingLiteral(ASTContext &C, EmptyShell Empty)
+    : Expr(FloatingLiteralClass, Empty),
+      IsIEEE(&C.getTargetInfo().getLongDoubleFormat() ==
+             &llvm::APFloat::IEEEquad),
+      IsExact(false) { }
 
 public:
   static FloatingLiteral *Create(ASTContext &C, const llvm::APFloat &V,
                                  bool isexact, QualType Type, SourceLocation L);
   static FloatingLiteral *Create(ASTContext &C, EmptyShell Empty);
 
-  llvm::APFloat getValue() const { return Num.getValue(); }
+  llvm::APFloat getValue() const { return Num.getValue(IsIEEE); }
   void setValue(ASTContext &C, const llvm::APFloat &Val) {
     Num.setValue(C, Val);
   }
@@ -3940,9 +3964,9 @@ public:
 };
 
 
-/// \brief Represents a C1X generic selection.
+/// \brief Represents a C11 generic selection.
 ///
-/// A generic selection (C1X 6.5.1.1) contains an unevaluated controlling
+/// A generic selection (C11 6.5.1.1) contains an unevaluated controlling
 /// expression, followed by one or more generic associations.  Each generic
 /// association specifies a type name and an expression, or "default" and an
 /// expression (in which case it is known as a default generic association).
@@ -4391,7 +4415,7 @@ public:
 class AtomicExpr : public Expr {
 public:
   enum AtomicOp { Load, Store, CmpXchgStrong, CmpXchgWeak, Xchg,
-                  Add, Sub, And, Or, Xor };
+                  Add, Sub, And, Or, Xor, Init };
 private:
   enum { PTR, ORDER, VAL1, ORDER_FAIL, VAL2, END_EXPR };
   Stmt* SubExprs[END_EXPR];
@@ -4419,10 +4443,16 @@ public:
     SubExprs[ORDER] = E;
   }
   Expr *getVal1() const {
+    if (Op == Init)
+      return cast<Expr>(SubExprs[ORDER]);
     assert(NumSubExprs >= 3);
     return cast<Expr>(SubExprs[VAL1]);
   }
   void setVal1(Expr *E) {
+    if (Op == Init) {
+      SubExprs[ORDER] = E;
+      return;
+    }
     assert(NumSubExprs >= 3);
     SubExprs[VAL1] = E;
   }

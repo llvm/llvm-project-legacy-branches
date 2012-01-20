@@ -82,6 +82,8 @@ PathDiagnostic::PathDiagnostic(StringRef bugtype, StringRef desc,
     Desc(StripTrailingDots(desc)),
     Category(StripTrailingDots(category)) {}
 
+void PathDiagnosticConsumer::anchor() { }
+
 void PathDiagnosticConsumer::HandlePathDiagnostic(const PathDiagnostic *D) {
   // For now this simply forwards to HandlePathDiagnosticImpl.  In the future
   // we can use this indirection to control for multi-threaded access to
@@ -235,9 +237,15 @@ FullSourceLoc
     case RangeK:
       break;
     case StmtK:
+      // Defensive checking.
+      if (!S)
+        break;
       return FullSourceLoc(getValidSourceLocation(S, LAC),
                            const_cast<SourceManager&>(*SM));
     case DeclK:
+      // Defensive checking.
+      if (!D)
+        break;
       return FullSourceLoc(D->getLocation(), const_cast<SourceManager&>(*SM));
   }
 

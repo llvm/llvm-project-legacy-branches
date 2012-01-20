@@ -33,11 +33,11 @@ struct NonConstexpr3 {
   int m : NonConstexpr2().n; // expected-error {{constant expression}} expected-note {{undefined constructor 'NonConstexpr2'}}
 };
 struct NonConstexpr4 {
-  NonConstexpr4();
+  NonConstexpr4(); // expected-note {{declared here}}
   int n;
 };
 struct NonConstexpr5 {
-  int n : NonConstexpr4().n; // expected-error {{constant expression}} expected-note {{non-literal type 'NonConstexpr4' cannot be used in a constant expression}}
+  int n : NonConstexpr4().n; // expected-error {{constant expression}} expected-note {{non-constexpr constructor 'NonConstexpr4' cannot be used in a constant expression}}
 };
 
 // - an invocation of an undefined constexpr function or an undefined
@@ -78,13 +78,13 @@ namespace NonConstExprReturn {
 namespace NonConstExprCtor {
   struct T {
     constexpr T(const int &r) :
-      r(r) { // expected-note {{reference to temporary cannot be used to initialize a member in a constant expression}}
+      r(r) { // expected-note 2{{reference to temporary cannot be used to initialize a member in a constant expression}}
     }
     const int &r;
   };
   constexpr int n = 0;
   constexpr T t1(n); // ok
-  constexpr T t2(0); // expected-error {{must be initialized by a constant expression}}
+  constexpr T t2(0); // expected-error {{must be initialized by a constant expression}} expected-note {{temporary created here}} expected-note {{in call to 'T(0)'}}
 
   struct S {
     int n : T(4).r; // expected-error {{constant expression}} expected-note {{temporary created here}} expected-note {{in call to 'T(4)'}}
@@ -119,7 +119,7 @@ namespace UndefinedBehavior {
     switch (n) {
     case (int)4.4e9: // expected-error {{constant expression}} expected-note {{value 4.4E+9 is outside the range of representable values of type 'int'}}
     case (int)(unsigned)(long long)4.4e9: // ok
-    case (float)1e300: // expected-error {{constant expression}} expected-note {{value 1.0E+300 is outside the range of representable values of type 'float'}}
+    case (int)(float)1e300: // expected-error {{constant expression}} expected-note {{value 1.0E+300 is outside the range of representable values of type 'float'}}
     case (int)((float)1e37 / 1e30): // ok
     case (int)(__fp16)65536: // expected-error {{constant expression}} expected-note {{value 65536 is outside the range of representable values of type 'half'}}
       break;
@@ -134,9 +134,31 @@ namespace UndefinedBehavior {
   constexpr const int &f(const int *q) {
     return q[0]; // expected-note {{dereferenced pointer past the end of subobject of 's' is not a constant expression}}
   }
+  constexpr int n = (f(p), 0); // expected-error {{constant expression}} expected-note {{in call to 'f(&s.m + 1)'}}
   struct T {
-    int n : f(p); // expected-error {{not an integer constant expression}} expected-note {{in call to 'f(&s.m + 1)'}}
+    int n : f(p); // expected-error {{not an integral constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
   };
+
+  namespace Ptr {
+    struct A {};
+    struct B : A { int n; };
+    B a[3][3];
+    constexpr B *p = a[0] + 4; // expected-error {{constant expression}} expected-note {{element 4 of array of 3 elements}}
+    B b = {};
+    constexpr A *pa = &b + 1; // expected-error {{constant expression}} expected-note {{base class of pointer past the end}}
+    constexpr B *pb = (B*)((A*)&b + 1); // expected-error {{constant expression}} expected-note {{derived class of pointer past the end}}
+    constexpr const int *pn = &(&b + 1)->n; // expected-error {{constant expression}} expected-note {{field of pointer past the end}}
+    constexpr B *parr = &a[3][0]; // expected-error {{constant expression}} expected-note {{array element of pointer past the end}}
+
+    constexpr A *na = nullptr;
+    constexpr B *nb = nullptr;
+    constexpr A &ra = *nb; // expected-error {{constant expression}} expected-note {{cannot access base class of null pointer}}
+    constexpr B &rb = (B&)*na; // expected-error {{constant expression}} expected-note {{cannot access derived class of null pointer}}
+    static_assert((A*)nb == 0, "");
+    static_assert((B*)na == 0, "");
+    constexpr const int &nf = nb->n; // expected-error {{constant expression}} expected-note {{cannot access field of null pointer}}
+    constexpr const int &np = (*(int(*)[4])nullptr)[2]; // expected-error {{constant expression}} expected-note {{cannot access array element of null pointer}}
+  }
 }
 
 // - a lambda-expression (5.1.2);
@@ -146,26 +168,50 @@ struct Lambda {
   //int n : []{ return 1; }();
 };
 
-// FIXME:
 // - an lvalue-to-rvalue conversion (4.1) unless it is applied to
-//
-//   - a non-volatile glvalue of integral or enumeration type that refers to a
-//   non-volatile const object with a preceding initialization, initialized with
-//   a constant expression  [Note: a string literal (2.14.5 [lex.string])
-//   corresponds to an array of such objects. -end note], or
-//
-//   - a non-volatile glvalue of literal type that refers to a non-volatile
-//   object defined with constexpr, or that refers to a sub-object of such an
-//   object, or
-//
-//   - a non-volatile glvalue of literal type that refers to a non-volatile
-//   temporary object whose lifetime has not ended, initialized with a constant
-//   expression;
+namespace LValueToRValue {
+  // - a non-volatile glvalue of integral or enumeration type that refers to a
+  //   non-volatile const object with a preceding initialization, initialized
+  //   with a constant expression  [Note: a string literal (2.14.5 [lex.string])
+  //   corresponds to an array of such objects. -end note], or
+  volatile const int vi = 1; // expected-note {{here}}
+  const int ci = 1;
+  volatile const int &vrci = ci;
+  static_assert(vi, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type 'const volatile int'}}
+  static_assert(const_cast<int&>(vi), ""); // expected-error {{constant expression}} expected-note {{read of volatile object 'vi'}}
+  static_assert(vrci, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
+
+  // - a non-volatile glvalue of literal type that refers to a non-volatile
+  //   object defined with constexpr, or that refers to a sub-object of such an
+  //   object, or
+  struct S {
+    constexpr S(int=0) : i(1), v(1) {}
+    constexpr S(const S &s) : i(2), v(2) {}
+    int i;
+    volatile int v;
+  };
+  constexpr S s;
+  constexpr volatile S vs; // expected-note {{here}}
+  constexpr const volatile S &vrs = s;
+  static_assert(s.i, "");
+  static_assert(s.v, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
+  static_assert(vs.i, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
+  static_assert(const_cast<int&>(vs.i), ""); // expected-error {{constant expression}} expected-note {{read of volatile object 'vs'}}
+  static_assert(vrs.i, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
+
+  // - a non-volatile glvalue of literal type that refers to a non-volatile
+  //   temporary object whose lifetime has not ended, initialized with a
+  //   constant expression;
+  constexpr volatile S f() { return S(); }
+  static_assert(f().i, ""); // ok! there's no lvalue-to-rvalue conversion here!
+  static_assert(((volatile const S&&)(S)0).i, ""); // expected-error {{constant expression}} expected-note {{subexpression}}
+}
 
 // FIXME:
 //
-// DR1312: The proposed wording for this defect has issues, so we instead
-// prohibit casts from pointers to cv void (see core-20842 and core-20845).
+// DR1312: The proposed wording for this defect has issues, so we ignore this
+// bullet and instead prohibit casts from pointers to cv void (see core-20842
+// and core-20845).
 //
 // - an lvalue-to-rvalue conversion (4.1 [conv.lval]) that is applied to a
 // glvalue of type cv1 T that refers to an object of type cv2 U, where T and U
@@ -175,34 +221,33 @@ struct Lambda {
 // - an lvalue-to-rvalue conversion (4.1) that is applied to a glvalue that
 // refers to a non-active member of a union or a subobject thereof;
 
-// FIXME:
 // - an id-expression that refers to a variable or data member of reference type
 //   unless the reference has a preceding initialization, initialized with a
 //   constant expression;
 namespace References {
   const int a = 2;
   int &b = *const_cast<int*>(&a);
-  int c = 10;
+  int c = 10; // expected-note 2 {{here}}
   int &d = c;
   constexpr int e = 42;
   int &f = const_cast<int&>(e);
   extern int &g;
-  constexpr int &h(); // expected-note {{here}}
-  int &i = h();
+  constexpr int &h(); // expected-note 2{{here}}
+  int &i = h(); // expected-note {{here}} expected-note {{undefined function 'h' cannot be used in a constant expression}}
   constexpr int &j() { return b; }
   int &k = j();
 
   struct S {
     int A : a;
     int B : b;
-    int C : c; // expected-error {{constant expression}}
-    int D : d; // expected-error {{constant expression}}
+    int C : c; // expected-error {{constant expression}} expected-note {{read of non-const variable 'c'}}
+    int D : d; // expected-error {{constant expression}} expected-note {{read of non-const variable 'c'}}
     int D2 : &d - &c + 1;
     int E : e / 2;
     int F : f - 11;
     int G : g; // expected-error {{constant expression}}
     int H : h(); // expected-error {{constant expression}} expected-note {{undefined function 'h'}}
-    int I : i; // expected-error {{constant expression}}
+    int I : i; // expected-error {{constant expression}} expected-note {{initializer of 'i' is not a constant expression}}
     int J : j();
     int K : k;
   };
@@ -257,11 +302,10 @@ namespace std {
 namespace TypeId {
   struct S { virtual void f(); };
   constexpr S *p = 0;
-  constexpr const std::type_info &ti1 = typeid(*p); // expected-error {{must be initialized by a constant expression}}
+  constexpr const std::type_info &ti1 = typeid(*p); // expected-error {{must be initialized by a constant expression}} expected-note {{typeid applied to expression of polymorphic type 'TypeId::S'}}
 
-  // FIXME: Implement typeid evaluation.
   struct T {} t;
-  constexpr const std::type_info &ti2 = typeid(t); // unexpected-error {{must be initialized by a constant expression}}
+  constexpr const std::type_info &ti2 = typeid(t);
 }
 
 // - a new-expression (5.3.4);
@@ -354,7 +398,7 @@ namespace Throw {
 }
 
 // PR9999
-template<bool v>
+template<unsigned int v>
 class bitWidthHolding {
 public:
   static const
@@ -376,3 +420,6 @@ struct and_or {
 
 static const bool and_value = and_or<true>::and_value;
 static const bool or_value = and_or<true>::or_value;
+
+static_assert(and_value == false, "");
+static_assert(or_value == true, "");

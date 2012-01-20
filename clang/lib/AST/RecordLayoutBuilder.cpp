@@ -1869,12 +1869,12 @@ void RecordLayoutBuilder::LayoutField(const FieldDecl *D) {
   // Reserve space for this field.
   uint64_t FieldSizeInBits = Context.toBits(FieldSize);
   if (IsUnion)
-    setSize(std::max(getSizeInBits(), FieldSizeInBits));
+    setDataSize(std::max(getDataSizeInBits(), FieldSizeInBits));
   else
-    setSize(FieldOffset + FieldSize);
+    setDataSize(FieldOffset + FieldSize);
 
-  // Update the data size.
-  setDataSize(getSizeInBits());
+  // Update the size.
+  setSize(std::max(getSizeInBits(), getDataSizeInBits()));
 
   // Remember max struct/class alignment.
   UpdateAlignment(FieldAlign, UnpackedFieldAlign);
@@ -2153,6 +2153,28 @@ const CXXMethodDecl *ASTContext::getKeyFunction(const CXXRecordDecl *RD) {
   return Entry;
 }
 
+static uint64_t getFieldOffset(const ASTContext &C, const FieldDecl *FD) {
+  const ASTRecordLayout &Layout = C.getASTRecordLayout(FD->getParent());
+  return Layout.getFieldOffset(FD->getFieldIndex());
+}
+
+uint64_t ASTContext::getFieldOffset(const ValueDecl *VD) const {
+  uint64_t OffsetInBits;
+  if (const FieldDecl *FD = dyn_cast<FieldDecl>(VD)) {
+    OffsetInBits = ::getFieldOffset(*this, FD);
+  } else {
+    const IndirectFieldDecl *IFD = cast<IndirectFieldDecl>(VD);
+
+    OffsetInBits = 0;
+    for (IndirectFieldDecl::chain_iterator CI = IFD->chain_begin(),
+                                           CE = IFD->chain_end();
+         CI != CE; ++CI)
+      OffsetInBits += ::getFieldOffset(*this, cast<FieldDecl>(*CI));
+  }
+
+  return OffsetInBits;
+}
+
 /// getObjCLayout - Get or compute information about the layout of the
 /// given interface.
 ///
@@ -2161,7 +2183,9 @@ const CXXMethodDecl *ASTContext::getKeyFunction(const CXXRecordDecl *RD) {
 const ASTRecordLayout &
 ASTContext::getObjCLayout(const ObjCInterfaceDecl *D,
                           const ObjCImplementationDecl *Impl) const {
-  assert(D->isThisDeclarationADefinition() && "Invalid interface decl!");
+  // Retrieve the definition
+  D = D->getDefinition();
+  assert(D && D->isThisDeclarationADefinition() && "Invalid interface decl!");
 
   // Look up this layout, if already laid out, return what we have.
   ObjCContainerDecl *Key =

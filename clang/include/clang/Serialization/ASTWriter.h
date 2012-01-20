@@ -25,6 +25,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/Bitcode/BitstreamWriter.h"
 #include <map>
 #include <queue>
@@ -312,7 +313,12 @@ private:
   /// serialized again. In this case, it is registered here, so that the reader
   /// knows to read the updated version.
   SmallVector<ReplacedDeclInfo, 16> ReplacedDecls;
-
+                 
+  /// \brief The set of declarations that may have redeclaration chains that
+  /// need to be serialized.
+  llvm::SetVector<Decl *, llvm::SmallVector<Decl *, 4>, 
+                  llvm::SmallPtrSet<Decl *, 4> > Redeclarations;
+                                      
   /// \brief Statements that we've encountered while serializing a
   /// declaration or type.
   SmallVector<Stmt *, 16> StmtsToEmit;
@@ -411,7 +417,9 @@ private:
   void WriteDeclContextVisibleUpdate(const DeclContext *DC);
   void WriteFPPragmaOptions(const FPOptions &Opts);
   void WriteOpenCLExtensions(Sema &SemaRef);
-
+  void WriteRedeclarations();
+  void WriteMergedDecls();
+                        
   unsigned DeclParmVarAbbrev;
   unsigned DeclContextLexicalAbbrev;
   unsigned DeclContextVisibleLookupAbbrev;
@@ -663,10 +671,10 @@ public:
   void ReaderInitialized(ASTReader *Reader);
   void IdentifierRead(serialization::IdentID ID, IdentifierInfo *II);
   void TypeRead(serialization::TypeIdx Idx, QualType T);
-  void DeclRead(serialization::DeclID ID, const Decl *D);
   void SelectorRead(serialization::SelectorID ID, Selector Sel);
   void MacroDefinitionRead(serialization::PreprocessedEntityID ID,
                            MacroDefinition *MD);
+  void MacroVisible(IdentifierInfo *II);
   void ModuleRead(serialization::SubmoduleID ID, Module *Mod);
                     
   // ASTMutationListener implementation.
@@ -681,11 +689,9 @@ public:
   virtual void StaticDataMemberInstantiated(const VarDecl *D);
   virtual void AddedObjCCategoryToInterface(const ObjCCategoryDecl *CatD,
                                             const ObjCInterfaceDecl *IFD);
-  virtual void CompletedObjCForwardRef(const ObjCContainerDecl *D);
   virtual void AddedObjCPropertyInClassExtension(const ObjCPropertyDecl *Prop,
                                             const ObjCPropertyDecl *OrigProp,
                                             const ObjCCategoryDecl *ClassExt);
-  virtual void UpdatedAttributeList(const Decl *D);
 };
 
 /// \brief AST and semantic-analysis consumer that generates a

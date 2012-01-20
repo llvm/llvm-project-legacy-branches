@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
+#include "clang/AST/DeclCXX.h"
 
 using namespace clang;
 using namespace ento;
@@ -124,7 +125,7 @@ QualType CallOrObjCMessage::getResultType(ASTContext &ctx) const {
 
     isLVal = FunctionCall->isLValue();
     const Expr *Callee = FunctionCall->getCallee();
-    if (const FunctionDecl *FD = State->getSVal(Callee).getAsFunctionDecl())
+    if (const FunctionDecl *FD = State->getSVal(Callee, LCtx).getAsFunctionDecl())
       resultTy = FD->getResultType();
     else
       resultTy = FunctionCall->getType();
@@ -140,7 +141,7 @@ SVal CallOrObjCMessage::getFunctionCallee() const {
   assert(isFunctionCall());
   assert(!isCXXCall());
   const Expr *Fun = CallE.get<const CallExpr *>()->getCallee()->IgnoreParens();
-  return State->getSVal(Fun);
+  return State->getSVal(Fun, LCtx);
 }
 
 SVal CallOrObjCMessage::getCXXCallee() const {
@@ -154,7 +155,7 @@ SVal CallOrObjCMessage::getCXXCallee() const {
   if (!callee)
     return UnknownVal();
   
-  return State->getSVal(callee);
+  return State->getSVal(callee, LCtx);
 }
 
 SVal
@@ -162,3 +163,21 @@ CallOrObjCMessage::getInstanceMessageReceiver(const LocationContext *LC) const {
   assert(isObjCMessage());
   return Msg.getInstanceReceiverSVal(State, LC);
 }
+
+const Decl *CallOrObjCMessage::getDecl() const {
+  if (isCXXCall()) {
+    const CXXMemberCallExpr *CE =
+        cast<CXXMemberCallExpr>(CallE.dyn_cast<const CallExpr *>());
+    assert(CE);
+    return CE->getMethodDecl();
+  } else if (isObjCMessage()) {
+    return Msg.getMethodDecl();
+  } else if (isFunctionCall()) {
+    // In case of a C style call, use the path sensitive information to find
+    // the function declaration.
+    SVal CalleeVal = getFunctionCallee();
+    return CalleeVal.getAsFunctionDecl();
+  }
+  return 0;
+}
+

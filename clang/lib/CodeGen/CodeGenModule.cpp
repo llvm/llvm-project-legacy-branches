@@ -30,6 +30,7 @@
 #include "clang/AST/Mangle.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -863,20 +864,28 @@ namespace {
   struct FunctionIsDirectlyRecursive :
     public RecursiveASTVisitor<FunctionIsDirectlyRecursive> {
     const StringRef Name;
+    const Builtin::Context &BI;
     bool Result;
-    FunctionIsDirectlyRecursive(const FunctionDecl *F) :
-      Name(F->getName()), Result(false) {
+    FunctionIsDirectlyRecursive(StringRef N, const Builtin::Context &C) :
+      Name(N), BI(C), Result(false) {
     }
     typedef RecursiveASTVisitor<FunctionIsDirectlyRecursive> Base;
 
     bool TraverseCallExpr(CallExpr *E) {
-      const Decl *D = E->getCalleeDecl();
-      if (!D)
+      const FunctionDecl *FD = E->getDirectCallee();
+      if (!FD)
         return true;
-      AsmLabelAttr *Attr = D->getAttr<AsmLabelAttr>();
-      if (!Attr)
+      AsmLabelAttr *Attr = FD->getAttr<AsmLabelAttr>();
+      if (Attr && Name == Attr->getLabel()) {
+        Result = true;
+        return false;
+      }
+      unsigned BuiltinID = FD->getBuiltinID();
+      if (!BuiltinID)
         return true;
-      if (Name == Attr->getLabel()) {
+      StringRef BuiltinName = BI.GetName(BuiltinID);
+      if (BuiltinName.startswith("__builtin_") &&
+          Name == BuiltinName.slice(strlen("__builtin_"), StringRef::npos)) {
         Result = true;
         return false;
       }
@@ -885,15 +894,24 @@ namespace {
   };
 }
 
-// isTriviallyRecursiveViaAsm - Check if this function calls another
-// decl that, because of the asm attribute, ends up pointing to itself.
+// isTriviallyRecursive - Check if this function calls another
+// decl that, because of the asm attribute or the other decl being a builtin,
+// ends up pointing to itself.
 bool
-CodeGenModule::isTriviallyRecursiveViaAsm(const FunctionDecl *F) {
-  if (getCXXABI().getMangleContext().shouldMangleDeclName(F))
-    return false;
+CodeGenModule::isTriviallyRecursive(const FunctionDecl *FD) {
+  StringRef Name;
+  if (getCXXABI().getMangleContext().shouldMangleDeclName(FD)) {
+    // asm labels are a special kind of mangling we have to support.
+    AsmLabelAttr *Attr = FD->getAttr<AsmLabelAttr>();
+    if (!Attr)
+      return false;
+    Name = Attr->getLabel();
+  } else {
+    Name = FD->getName();
+  }
 
-  FunctionIsDirectlyRecursive Walker(F);
-  Walker.TraverseFunctionDecl(const_cast<FunctionDecl*>(F));
+  FunctionIsDirectlyRecursive Walker(Name, Context.BuiltinInfo);
+  Walker.TraverseFunctionDecl(const_cast<FunctionDecl*>(FD));
   return Walker.Result;
 }
 
@@ -909,7 +927,7 @@ CodeGenModule::shouldEmitFunction(const FunctionDecl *F) {
   // but a function that calls itself is clearly not equivalent to the real
   // implementation.
   // This happens in glibc's btowc and in some configure checks.
-  return !isTriviallyRecursiveViaAsm(F);
+  return !isTriviallyRecursive(F);
 }
 
 void CodeGenModule::EmitGlobalDefinition(GlobalDecl GD) {
@@ -1037,7 +1055,7 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
           break;
         }
       }
-      FD = FD->getPreviousDeclaration();
+      FD = FD->getPreviousDecl();
     } while (FD);
   }
 
@@ -1337,7 +1355,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   QualType ASTTy = D->getType();
   bool NonConstInit = false;
 
-  const Expr *InitExpr = D->getAnyInitializer();
+  const VarDecl *InitDecl;
+  const Expr *InitExpr = D->getAnyInitializer(InitDecl);
   
   if (!InitExpr) {
     // This is a tentative definition; tentative definitions are
@@ -1352,12 +1371,12 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
     assert(!ASTTy->isIncompleteType() && "Unexpected incomplete type");
     Init = EmitNullConstant(D->getType());
   } else {
-    Init = EmitConstantExpr(InitExpr, D->getType());       
+    Init = EmitConstantInit(*InitDecl);
     if (!Init) {
       QualType T = InitExpr->getType();
       if (D->getType()->isReferenceType())
         T = D->getType();
-      
+
       if (getLangOptions().CPlusPlus) {
         Init = EmitNullConstant(T);
         NonConstInit = true;
@@ -1831,24 +1850,20 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   llvm::Constant *C = llvm::ConstantArray::get(VMContext, Entry.getKey().str());
 
   llvm::GlobalValue::LinkageTypes Linkage;
-  bool isConstant;
-  if (isUTF16) {
+  if (isUTF16)
     // FIXME: why do utf strings get "_" labels instead of "L" labels?
     Linkage = llvm::GlobalValue::InternalLinkage;
-    // Note: -fwritable-strings doesn't make unicode CFStrings writable, but
-    // does make plain ascii ones writable.
-    isConstant = true;
-  } else {
+  else
     // FIXME: With OS X ld 123.2 (xcode 4) and LTO we would get a linker error
     // when using private linkage. It is not clear if this is a bug in ld
     // or a reasonable new restriction.
     Linkage = llvm::GlobalValue::LinkerPrivateLinkage;
-    isConstant = !Features.WritableStrings;
-  }
   
+  // Note: -fwritable-strings doesn't make the backing store strings of
+  // CFStrings writable. (See <rdar://problem/10657500>)
   llvm::GlobalVariable *GV =
-    new llvm::GlobalVariable(getModule(), C->getType(), isConstant, Linkage, C,
-                             ".str");
+    new llvm::GlobalVariable(getModule(), C->getType(), /*isConstant=*/true,
+                             Linkage, C, ".str");
   GV->setUnnamedAddr(true);
   if (isUTF16) {
     CharUnits Align = getContext().getTypeAlignInChars(getContext().ShortTy);
@@ -2105,6 +2120,7 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S) {
                              !Features.WritableStrings,
                              llvm::GlobalValue::PrivateLinkage,
                              C,".str");
+
   GV->setAlignment(Align.getQuantity());
   GV->setUnnamedAddr(true);
   
@@ -2358,8 +2374,6 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   // Objective-C Decls
 
   // Forward declarations, no (immediate) code generation.
-  case Decl::ObjCClass:
-  case Decl::ObjCForwardProtocol:
   case Decl::ObjCInterface:
     break;
   
@@ -2370,10 +2384,13 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
   }
 
-  case Decl::ObjCProtocol:
-    ObjCRuntime->GenerateProtocol(cast<ObjCProtocolDecl>(D));
+  case Decl::ObjCProtocol: {
+    ObjCProtocolDecl *Proto = cast<ObjCProtocolDecl>(D);
+    if (Proto->isThisDeclarationADefinition())
+      ObjCRuntime->GenerateProtocol(Proto);
     break;
-
+  }
+      
   case Decl::ObjCCategoryImpl:
     // Categories have properties but don't support synthesize so we
     // can ignore them here.

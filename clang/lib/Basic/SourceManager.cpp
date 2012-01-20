@@ -962,13 +962,13 @@ unsigned SourceManager::getColumnNumber(FileID FID, unsigned FilePos,
   if (MyInvalid)
     return 1;
 
-  const char *Buf = MemBuf->getBufferStart();
-  if (Buf + FilePos >= MemBuf->getBufferEnd()) {
+  if (FilePos >= MemBuf->getBufferSize()) {
     if (Invalid)
       *Invalid = MyInvalid;
     return 1;
   }
 
+  const char *Buf = MemBuf->getBufferStart();
   unsigned LineStart = FilePos;
   while (LineStart && Buf[LineStart-1] != '\n' && Buf[LineStart-1] != '\r')
     --LineStart;
@@ -1524,9 +1524,10 @@ SourceLocation SourceManager::translateLineCol(FileID FID,
     return FileLoc.getLocWithOffset(Size);
   }
 
+  const llvm::MemoryBuffer *Buffer = Content->getBuffer(Diag, *this);
   unsigned FilePos = Content->SourceLineCache[Line - 1];
-  const char *Buf = Content->getBuffer(Diag, *this)->getBufferStart() + FilePos;
-  unsigned BufLength = Content->getBuffer(Diag, *this)->getBufferEnd() - Buf;
+  const char *Buf = Buffer->getBufferStart() + FilePos;
+  unsigned BufLength = Buffer->getBufferSize() - FilePos;
   if (BufLength == 0)
     return FileLoc.getLocWithOffset(FilePos);
 
@@ -1584,14 +1585,31 @@ void SourceManager::computeMacroArgsCache(MacroArgsMap *&CachePtr,
       continue;
     }
 
-    if (!Entry.getExpansion().isMacroArgExpansion())
+    const ExpansionInfo &ExpInfo = Entry.getExpansion();
+
+    if (ExpInfo.getExpansionLocStart().isFileID()) {
+      if (!isInFileID(ExpInfo.getExpansionLocStart(), FID))
+        return; // No more files/macros that may be "contained" in this file.
+    }
+
+    if (!ExpInfo.isMacroArgExpansion())
       continue;
- 
-    SourceLocation SpellLoc =
-        getSpellingLoc(Entry.getExpansion().getSpellingLoc());
+
+    SourceLocation SpellLoc = ExpInfo.getSpellingLoc();
+    while (!SpellLoc.isFileID()) {
+      std::pair<FileID, unsigned> LocInfo = getDecomposedLoc(SpellLoc);
+      const ExpansionInfo &Info = getSLocEntry(LocInfo.first).getExpansion();
+      if (!Info.isMacroArgExpansion())
+        break;
+      SpellLoc = Info.getSpellingLoc().getLocWithOffset(LocInfo.second);
+    }
+    if (!SpellLoc.isFileID())
+      continue;
+    
     unsigned BeginOffs;
     if (!isInFileID(SpellLoc, FID, &BeginOffs))
-      return; // No more files/macros that may be "contained" in this file.
+      continue;
+
     unsigned EndOffs = BeginOffs + getFileIDSize(FileID::get(ID));
 
     // Add a new chunk for this macro argument. A previous macro argument chunk
@@ -1664,7 +1682,7 @@ static bool MoveUpIncludeHierarchy(std::pair<FileID, unsigned> &Loc,
   SourceLocation UpperLoc;
   const SrcMgr::SLocEntry &Entry = SM.getSLocEntry(Loc.first);
   if (Entry.isExpansion())
-    UpperLoc = Entry.getExpansion().getExpansionLocEnd();
+    UpperLoc = Entry.getExpansion().getExpansionLocStart();
   else
     UpperLoc = Entry.getFile().getIncludeLoc();
   

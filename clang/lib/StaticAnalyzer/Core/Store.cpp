@@ -23,7 +23,8 @@ StoreManager::StoreManager(ProgramStateManager &stateMgr)
     MRMgr(svalBuilder.getRegionManager()), Ctx(stateMgr.getContext()) {}
 
 StoreRef StoreManager::enterStackFrame(const ProgramState *state,
-                                       const StackFrameContext *frame) {
+                                       const LocationContext *callerCtx,
+                                       const StackFrameContext *calleeCtx) {
   return StoreRef(state->getStore(), *this);
 }
 
@@ -101,8 +102,10 @@ const MemRegion *StoreManager::castRegion(const MemRegion *R, QualType CastToTy)
     case MemRegion::StackArgumentsSpaceRegionKind:
     case MemRegion::HeapSpaceRegionKind:
     case MemRegion::UnknownSpaceRegionKind:
-    case MemRegion::NonStaticGlobalSpaceRegionKind:
-    case MemRegion::StaticGlobalSpaceRegionKind: {
+    case MemRegion::StaticGlobalSpaceRegionKind:
+    case MemRegion::GlobalInternalSpaceRegionKind:
+    case MemRegion::GlobalSystemSpaceRegionKind:
+    case MemRegion::GlobalImmutableSpaceRegionKind: {
       llvm_unreachable("Invalid region cast");
     }
 
@@ -331,3 +334,5 @@ SVal StoreManager::getLValueElement(QualType elementType, NonLoc Offset,
 
 StoreManager::BindingsHandler::~BindingsHandler() {}
 
+void SubRegionMap::anchor() { }
+void SubRegionMap::Visitor::anchor() { }

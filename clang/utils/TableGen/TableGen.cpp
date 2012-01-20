@@ -96,7 +96,6 @@ namespace {
   ClangComponent("clang-component",
                  cl::desc("Only use warnings from specified component"),
                  cl::value_desc("component"), cl::Hidden);
-}
 
 class ClangTableGenAction : public TableGenAction {
 public:
@@ -157,14 +156,12 @@ public:
     case GenArmNeonTest:
       NeonEmitter(Records).runTests(OS);
       break;
-    default:
-      assert(1 && "Invalid Action");
-      return true;
     }
 
     return false;
   }
 };
+}
 
 int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal();

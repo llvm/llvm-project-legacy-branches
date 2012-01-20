@@ -276,6 +276,9 @@ class CodeGenModule : public CodeGenTypeCache {
   llvm::StringMap<llvm::Constant*> CFConstantStringMap;
   llvm::StringMap<llvm::GlobalVariable*> ConstantStringMap;
   llvm::DenseMap<const Decl*, llvm::Value*> StaticLocalDeclMap;
+  
+  llvm::DenseMap<QualType, llvm::Constant *> AtomicSetterHelperFnMap;
+  llvm::DenseMap<QualType, llvm::Constant *> AtomicGetterHelperFnMap;
 
   /// CXXGlobalInits - Global variables with initializers that need to run
   /// before main.
@@ -323,7 +326,7 @@ class CodeGenModule : public CodeGenTypeCache {
   void createOpenCLRuntime();
   void createCUDARuntime();
 
-  bool isTriviallyRecursiveViaAsm(const FunctionDecl *F);
+  bool isTriviallyRecursive(const FunctionDecl *F);
   bool shouldEmitFunction(const FunctionDecl *F);
   llvm::LLVMContext &VMContext;
 
@@ -396,6 +399,22 @@ public:
   void setStaticLocalDeclAddress(const VarDecl *D, 
                              llvm::GlobalVariable *GV) {
     StaticLocalDeclMap[D] = GV;
+  }
+
+  llvm::Constant *getAtomicSetterHelperFnMap(QualType Ty) {
+    return AtomicSetterHelperFnMap[Ty];
+  }
+  void setAtomicSetterHelperFnMap(QualType Ty,
+                            llvm::Constant *Fn) {
+    AtomicSetterHelperFnMap[Ty] = Fn;
+  }
+
+  llvm::Constant *getAtomicGetterHelperFnMap(QualType Ty) {
+    return AtomicGetterHelperFnMap[Ty];
+  }
+  void setAtomicGetterHelperFnMap(QualType Ty,
+                            llvm::Constant *Fn) {
+    AtomicGetterHelperFnMap[Ty] = Fn;
   }
 
   CGDebugInfo *getModuleDebugInfo() { return DebugInfo; }
@@ -668,11 +687,21 @@ public:
 
   llvm::Constant *getMemberPointerConstant(const UnaryOperator *e);
 
+  /// EmitConstantInit - Try to emit the initializer for the given declaration
+  /// as a constant; returns 0 if the expression cannot be emitted as a
+  /// constant.
+  llvm::Constant *EmitConstantInit(const VarDecl &D, CodeGenFunction *CGF = 0);
+
   /// EmitConstantExpr - Try to emit the given expression as a
   /// constant; returns 0 if the expression cannot be emitted as a
   /// constant.
   llvm::Constant *EmitConstantExpr(const Expr *E, QualType DestType,
                                    CodeGenFunction *CGF = 0);
+
+  /// EmitConstantValue - Try to emit the given constant value as a
+  /// constant; returns 0 if the value cannot be emitted as a constant.
+  llvm::Constant *EmitConstantValue(const APValue &Value, QualType DestType,
+                                    CodeGenFunction *CGF = 0);
 
   /// EmitNullConstant - Return the result of value-initializing the given
   /// type, i.e. a null expression of the given type.  This is usually,

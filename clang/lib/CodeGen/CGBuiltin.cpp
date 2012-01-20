@@ -16,7 +16,6 @@
 #include "CodeGenModule.h"
 #include "CGObjCRuntime.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/Basic/TargetBuiltins.h"
@@ -215,7 +214,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     return RValue::get(Builder.CreateCall2(CGM.getIntrinsic(Intrinsic::vacopy),
                                            DstPtr, SrcPtr));
   }
-  case Builtin::BI__builtin_abs: {
+  case Builtin::BI__builtin_abs: 
+  case Builtin::BI__builtin_labs:
+  case Builtin::BI__builtin_llabs: {
     Value *ArgValue = EmitScalarExpr(E->getArg(0));
 
     Value *NegOp = Builder.CreateNeg(ArgValue, "neg");
@@ -1192,7 +1193,6 @@ Value *CodeGenFunction::EmitTargetBuiltinExpr(unsigned BuiltinID,
 static llvm::VectorType *GetNeonType(LLVMContext &C, NeonTypeFlags TypeFlags) {
   int IsQuad = TypeFlags.isQuad();
   switch (TypeFlags.getEltType()) {
-  default: break;
   case NeonTypeFlags::Int8:
   case NeonTypeFlags::Poly8:
     return llvm::VectorType::get(llvm::Type::getInt8Ty(C), 8 << IsQuad);
@@ -1206,8 +1206,8 @@ static llvm::VectorType *GetNeonType(LLVMContext &C, NeonTypeFlags TypeFlags) {
     return llvm::VectorType::get(llvm::Type::getInt64Ty(C), 1 << IsQuad);
   case NeonTypeFlags::Float32:
     return llvm::VectorType::get(llvm::Type::getFloatTy(C), 2 << IsQuad);
-  };
-  return 0;
+  }
+  llvm_unreachable("Invalid NeonTypeFlags element type!");
 }
 
 Value *CodeGenFunction::EmitNeonSplat(Value *V, Constant *C) {
@@ -2063,6 +2063,32 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
 
   switch (BuiltinID) {
   default: return 0;
+  case X86::BI__builtin_clzs: {
+    Value *ArgValue = EmitScalarExpr(E->getArg(0));
+
+    llvm::Type *ArgType = ArgValue->getType();
+    Value *F = CGM.getIntrinsic(Intrinsic::ctlz, ArgType);
+
+    llvm::Type *ResultType = ConvertType(E->getType());
+    Value *Result = Builder.CreateCall2(F, ArgValue, Builder.getTrue());
+    if (Result->getType() != ResultType)
+      Result = Builder.CreateIntCast(Result, ResultType, /*isSigned*/true,
+                                     "cast");
+    return Result;
+  }
+  case X86::BI__builtin_ctzs: {
+    Value *ArgValue = EmitScalarExpr(E->getArg(0));
+
+    llvm::Type *ArgType = ArgValue->getType();
+    Value *F = CGM.getIntrinsic(Intrinsic::cttz, ArgType);
+
+    llvm::Type *ResultType = ConvertType(E->getType());
+    Value *Result = Builder.CreateCall2(F, ArgValue, Builder.getTrue());
+    if (Result->getType() != ResultType)
+      Result = Builder.CreateIntCast(Result, ResultType, /*isSigned*/true,
+                                     "cast");
+    return Result;
+  }
   case X86::BI__builtin_ia32_pslldi128:
   case X86::BI__builtin_ia32_psllqi128:
   case X86::BI__builtin_ia32_psllwi128:
@@ -2285,6 +2311,44 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
       return Builder.CreateCall(F, makeArrayRef(&Ops[0], 2), "palignr");
     }
     
+    // If palignr is shifting the pair of vectors more than 32 bytes, emit zero.
+    return llvm::Constant::getNullValue(ConvertType(E->getType()));
+  }
+  case X86::BI__builtin_ia32_palignr256: {
+    unsigned shiftVal = cast<llvm::ConstantInt>(Ops[2])->getZExtValue();
+
+    // If palignr is shifting the pair of input vectors less than 17 bytes,
+    // emit a shuffle instruction.
+    if (shiftVal <= 16) {
+      SmallVector<llvm::Constant*, 32> Indices;
+      // 256-bit palignr operates on 128-bit lanes so we need to handle that
+      for (unsigned l = 0; l != 2; ++l) {
+        unsigned LaneStart = l * 16;
+        unsigned LaneEnd = (l+1) * 16;
+        for (unsigned i = 0; i != 16; ++i) {
+          unsigned Idx = shiftVal + i + LaneStart;
+          if (Idx >= LaneEnd) Idx += 16; // end of lane, switch operand
+          Indices.push_back(llvm::ConstantInt::get(Int32Ty, Idx));
+        }
+      }
+
+      Value* SV = llvm::ConstantVector::get(Indices);
+      return Builder.CreateShuffleVector(Ops[1], Ops[0], SV, "palignr");
+    }
+
+    // If palignr is shifting the pair of input vectors more than 16 but less
+    // than 32 bytes, emit a logical right shift of the destination.
+    if (shiftVal < 32) {
+      llvm::Type *VecTy = llvm::VectorType::get(Int64Ty, 4);
+
+      Ops[0] = Builder.CreateBitCast(Ops[0], VecTy, "cast");
+      Ops[1] = llvm::ConstantInt::get(Int32Ty, (shiftVal-16) * 8);
+
+      // create i32 constant
+      llvm::Function *F = CGM.getIntrinsic(Intrinsic::x86_avx2_psrl_dq);
+      return Builder.CreateCall(F, makeArrayRef(&Ops[0], 2), "palignr");
+    }
+
     // If palignr is shifting the pair of vectors more than 32 bytes, emit zero.
     return llvm::Constant::getNullValue(ConvertType(E->getType()));
   }

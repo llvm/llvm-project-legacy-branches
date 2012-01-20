@@ -46,6 +46,7 @@ class ExplodedNode;
 class PathDiagnostic;
 
 class PathDiagnosticConsumer {
+  virtual void anchor();
 public:
   PathDiagnosticConsumer() {}
 
@@ -128,6 +129,7 @@ public:
     : K(StmtK), S(s), D(0), SM(&sm),
       Loc(genLocation(SourceLocation(), lac)),
       Range(genRange(lac)) {
+    assert(S);
     assert(Loc.isValid());
     assert(Range.isValid());
   }
@@ -136,6 +138,7 @@ public:
   PathDiagnosticLocation(const Decl *d, const SourceManager &sm)
     : K(DeclK), S(0), D(d), SM(&sm),
       Loc(genLocation()), Range(genRange()) {
+    assert(D);
     assert(Loc.isValid());
     assert(Range.isValid());
   }

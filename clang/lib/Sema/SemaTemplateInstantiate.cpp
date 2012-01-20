@@ -163,8 +163,8 @@ bool Sema::ActiveTemplateInstantiation::isInstantiationRecord() const {
   case DefaultTemplateArgumentChecking:
     return false;
   }
-  
-  return true;
+
+  llvm_unreachable("Invalid InstantiationKind!");
 }
 
 Sema::InstantiatingTemplate::
@@ -1709,6 +1709,13 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
         << Context.getTypeDeclType(Instantiation);
       Diag(Pattern->getLocation(), diag::note_template_decl_here);
     }
+
+    // In general, Instantiation isn't marked invalid to get more than one
+    // error for multiple undefined instantiations. But the code that does
+    // explicit declaration -> explicit definition conversion can't handle
+    // invalid declarations, so mark as invalid in that case.
+    if (TSK == TSK_ExplicitInstantiationDeclaration)
+       Instantiation->setInvalidDecl();
     return true;
   }
   Pattern = PatternDef;
@@ -1719,7 +1726,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     MSInfo->setTemplateSpecializationKind(TSK);
     MSInfo->setPointOfInstantiation(PointOfInstantiation);
   } else if (ClassTemplateSpecializationDecl *Spec 
-               = dyn_cast<ClassTemplateSpecializationDecl>(Instantiation)) {
+        = dyn_cast<ClassTemplateSpecializationDecl>(Instantiation)) {
     Spec->setTemplateSpecializationKind(TSK);
     Spec->setPointOfInstantiation(PointOfInstantiation);
   }
@@ -1888,7 +1895,8 @@ Sema::InstantiateClassTemplateSpecialization(
       
       // If this is an explicit instantiation definition, mark the
       // vtable as used.
-      if (TSK == TSK_ExplicitInstantiationDefinition)
+      if (TSK == TSK_ExplicitInstantiationDefinition &&
+          !ClassTemplateSpec->isInvalidDecl())
         MarkVTableUsed(PointOfInstantiation, ClassTemplateSpec, true);
 
       return false;
@@ -2122,7 +2130,7 @@ Sema::InstantiateClassMembers(SourceLocation PointOfInstantiation,
       // Always skip the injected-class-name, along with any
       // redeclarations of nested classes, since both would cause us
       // to try to instantiate the members of a class twice.
-      if (Record->isInjectedClassName() || Record->getPreviousDeclaration())
+      if (Record->isInjectedClassName() || Record->getPreviousDecl())
         continue;
       
       MemberSpecializationInfo *MSInfo = Record->getMemberSpecializationInfo();
@@ -2289,7 +2297,7 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
       // If this is a tag declaration, it's possible that we need to look for
       // a previous declaration.
       if (const TagDecl *Tag = dyn_cast<TagDecl>(CheckD))
-        CheckD = Tag->getPreviousDeclaration();
+        CheckD = Tag->getPreviousDecl();
       else
         CheckD = 0;
     } while (CheckD);

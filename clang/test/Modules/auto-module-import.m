@@ -1,7 +1,7 @@
 // other file: expected-note{{'no_umbrella_A_private' declared here}}
 
 // RUN: rm -rf %t
-// RUN: %clang_cc1 -Wauto-import -fmodule-cache-path %t -fauto-module-import -F %S/Inputs %s -verify
+// RUN: %clang_cc1 -Wauto-import -fmodule-cache-path %t -fmodules -F %S/Inputs %s -verify
 
 #include <DependsOnModule/DependsOnModule.h> // expected-warning{{treating #include as an import of module 'DependsOnModule'}}
 
@@ -54,7 +54,7 @@ void testModuleSubFrameworkAgain() {
 
 int getDependsOnModulePrivate() { return depends_on_module_private; }
 
-#include <Module/ModulePrivate.h> // expected-warning{{treating #include as an import of module 'Module.Private.ModulePrivate'}}
+#include <Module/ModulePrivate.h> // includes the header
 
 int getModulePrivate() { return module_private; }
 
@@ -62,3 +62,12 @@ int getModulePrivate() { return module_private; }
 int getNoUmbrellaAPrivate() { return no_umbrella_A_private; }
 
 int getNoUmbrellaBPrivateFail() { return no_umbrella_B_private; } // expected-error{{use of undeclared identifier 'no_umbrella_B_private'; did you mean 'no_umbrella_A_private'?}}
+
+// Test inclusion of headers that are under an umbrella directory but
+// not actually part of the module.
+#include <Module/NotInModule.h> // expected-warning{{treating #include as an import of module 'Module.NotInModule'}} \
+  // expected-warning{{missing submodule 'Module.NotInModule'}}
+
+int getNotInModule() {
+  return not_in_module;
+}

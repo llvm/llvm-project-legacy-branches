@@ -1055,8 +1055,6 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
       }
       break;
     }
-    default:
-      llvm_unreachable("Unknown ownership attribute");
     } // switch
 
     // Check we don't have a conflict with another ownership attribute.
@@ -1107,7 +1105,6 @@ static bool hasEffectivelyInternalLinkage(NamedDecl *D) {
     return false;
   }
   llvm_unreachable("unknown linkage kind!");
-  return false;
 }
 
 static void handleWeakRefAttr(Sema &S, Decl *D, const AttributeList &Attr) {
@@ -1579,6 +1576,23 @@ static void handleArcWeakrefUnavailableAttr(Sema &S, Decl *D,
                                           Attr.getRange(), S.Context));
 }
 
+static void handleObjCRequiresPropertyDefsAttr(Sema &S, Decl *D, 
+                                            const AttributeList &Attr) {
+  if (!isa<ObjCInterfaceDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_suppress_autosynthesis);
+    return;
+  }
+  
+  unsigned NumArgs = Attr.getNumArgs();
+  if (NumArgs > 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_too_many_arguments) << 0;
+    return;
+  }
+  
+  D->addAttr(::new (S.Context) ObjCRequiresPropertyDefsAttr(
+                                 Attr.getRange(), S.Context));
+}
+
 static void handleAvailabilityAttr(Sema &S, Decl *D,
                                    const AttributeList &Attr) {
   IdentifierInfo *Platform = Attr.getParameterName();
@@ -1861,10 +1875,11 @@ static void handleSentinelAttr(Sema &S, Decl *D, const AttributeList &Attr) {
       S.Diag(Attr.getLoc(), diag::warn_attribute_sentinel_not_variadic) << 0;
       return;
     }
-  } else if (isa<BlockDecl>(D)) {
-    // Note! BlockDecl is typeless. Variadic diagnostics will be issued by the
-    // caller.
-    ;
+  } else if (BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
+    if (!BD->isVariadic()) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_sentinel_not_variadic) << 1;
+      return;
+    }
   } else if (const VarDecl *V = dyn_cast<VarDecl>(D)) {
     QualType Ty = V->getType();
     if (Ty->isBlockPointerType() || Ty->isFunctionPointerType()) {
@@ -2991,7 +3006,6 @@ static void handleCallConvAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
   default:
     llvm_unreachable("unexpected attribute kind");
-    return;
   }
 }
 
@@ -3040,7 +3054,7 @@ bool Sema::CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC) {
     }
     // FALLS THROUGH
   }
-  default: llvm_unreachable("unexpected attribute kind"); return true;
+  default: llvm_unreachable("unexpected attribute kind");
   }
 
   return false;
@@ -3226,7 +3240,7 @@ static void handleNSReturnsRetainedAttr(Sema &S, Decl *D,
   bool typeOK;
   bool cf;
   switch (Attr.getKind()) {
-  default: llvm_unreachable("invalid ownership attribute"); return;
+  default: llvm_unreachable("invalid ownership attribute");
   case AttributeList::AT_ns_returns_autoreleased:
   case AttributeList::AT_ns_returns_retained:
   case AttributeList::AT_ns_returns_not_retained:
@@ -3602,6 +3616,9 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_unavailable: handleUnavailableAttr (S, D, Attr); break;
   case AttributeList::AT_arc_weakref_unavailable: 
     handleArcWeakrefUnavailableAttr (S, D, Attr); 
+    break;
+  case AttributeList::AT_objc_requires_property_definitions: 
+    handleObjCRequiresPropertyDefsAttr (S, D, Attr); 
     break;
   case AttributeList::AT_unused:      handleUnusedAttr      (S, D, Attr); break;
   case AttributeList::AT_returns_twice:

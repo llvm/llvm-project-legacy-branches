@@ -423,7 +423,8 @@ public:
 };
 
 class LLVM_LIBRARY_VISIBILITY Generic_ELF : public Generic_GCC {
- public:
+  virtual void anchor();
+public:
   Generic_ELF(const HostInfo &Host, const llvm::Triple& Triple)
     : Generic_GCC(Host, Triple) {}
 
@@ -501,6 +502,11 @@ public:
 
   std::string Linker;
   std::vector<std::string> ExtraOpts;
+
+private:
+  static bool addLibStdCXXIncludePaths(Twine Base, Twine TargetArchDir,
+                                       const ArgList &DriverArgs,
+                                       ArgStringList &CC1Args);
 };
 
 

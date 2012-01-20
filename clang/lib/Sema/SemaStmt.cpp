@@ -16,7 +16,6 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
-#include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclObjC.h"
@@ -153,7 +152,8 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
 
   SourceLocation Loc;
   SourceRange R1, R2;
-  if (!E->isUnusedResultAWarning(Loc, R1, R2, Context))
+  if (SourceMgr.isInSystemMacro(E->getExprLoc()) ||
+      !E->isUnusedResultAWarning(Loc, R1, R2, Context))
     return;
 
   // Okay, we have an unused result.  Depending on what the base expression is,
@@ -266,22 +266,24 @@ Sema::ActOnCaseStmt(SourceLocation CaseLoc, Expr *LHSVal,
                     SourceLocation ColonLoc) {
   assert((LHSVal != 0) && "missing expression in case statement");
 
-  // C99 6.8.4.2p3: The expression shall be an integer constant.
-  // However, GCC allows any evaluatable integer expression.
-  if (!LHSVal->isTypeDependent() && !LHSVal->isValueDependent() &&
-      VerifyIntegerConstantExpression(LHSVal))
-    return StmtError();
-
-  // GCC extension: The expression shall be an integer constant.
-
-  if (RHSVal && !RHSVal->isTypeDependent() && !RHSVal->isValueDependent() &&
-      VerifyIntegerConstantExpression(RHSVal)) {
-    RHSVal = 0;  // Recover by just forgetting about it.
-  }
-
   if (getCurFunction()->SwitchStack.empty()) {
     Diag(CaseLoc, diag::err_case_not_in_switch);
     return StmtError();
+  }
+
+  if (!getLangOptions().CPlusPlus0x) {
+    // C99 6.8.4.2p3: The expression shall be an integer constant.
+    // However, GCC allows any evaluatable integer expression.
+    if (!LHSVal->isTypeDependent() && !LHSVal->isValueDependent() &&
+        VerifyIntegerConstantExpression(LHSVal))
+      return StmtError();
+
+    // GCC extension: The expression shall be an integer constant.
+
+    if (RHSVal && !RHSVal->isTypeDependent() && !RHSVal->isValueDependent() &&
+        VerifyIntegerConstantExpression(RHSVal)) {
+      RHSVal = 0;  // Recover by just forgetting about it.
+    }
   }
 
   CaseStmt *CS = new (Context) CaseStmt(LHSVal, RHSVal, CaseLoc, DotDotDotLoc,
@@ -622,8 +624,6 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     } else {
       CaseStmt *CS = cast<CaseStmt>(SC);
 
-      // We already verified that the expression has a i-c-e value (C99
-      // 6.8.4.2p3) - get that value now.
       Expr *Lo = CS->getLHS();
 
       if (Lo->isTypeDependent() || Lo->isValueDependent()) {
@@ -631,19 +631,39 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
         break;
       }
 
-      llvm::APSInt LoVal = Lo->EvaluateKnownConstInt(Context);
+      llvm::APSInt LoVal;
 
-      // Convert the value to the same width/sign as the condition.
+      if (getLangOptions().CPlusPlus0x) {
+        // C++11 [stmt.switch]p2: the constant-expression shall be a converted
+        // constant expression of the promoted type of the switch condition.
+        ExprResult ConvLo =
+          CheckConvertedConstantExpression(Lo, CondType, LoVal, CCEK_CaseValue);
+        if (ConvLo.isInvalid()) {
+          CaseListIsErroneous = true;
+          continue;
+        }
+        Lo = ConvLo.take();
+      } else {
+        // We already verified that the expression has a i-c-e value (C99
+        // 6.8.4.2p3) - get that value now.
+        LoVal = Lo->EvaluateKnownConstInt(Context);
+
+        // If the LHS is not the same type as the condition, insert an implicit
+        // cast.
+        Lo = DefaultLvalueConversion(Lo).take();
+        Lo = ImpCastExprToType(Lo, CondType, CK_IntegralCast).take();
+      }
+
+      // Convert the value to the same width/sign as the condition had prior to
+      // integral promotions.
+      //
+      // FIXME: This causes us to reject valid code:
+      //   switch ((char)c) { case 256: case 0: return 0; }
+      // Here we claim there is a duplicated condition value, but there is not.
       ConvertIntegerToTypeWarnOnOverflow(LoVal, CondWidth, CondIsSigned,
                                          Lo->getLocStart(),
                                          diag::warn_case_value_overflow);
 
-      // If the LHS is not the same type as the condition, insert an implicit
-      // cast.
-      // FIXME: In C++11, the value is a converted constant expression of the
-      // promoted type of the switch condition.
-      Lo = DefaultLvalueConversion(Lo).take();
-      Lo = ImpCastExprToType(Lo, CondType, CK_IntegralCast).take();
       CS->setLHS(Lo);
 
       // If this is a case range, remember it in CaseRanges, otherwise CaseVals.
@@ -664,20 +684,15 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
     // condition is constant.
     llvm::APSInt ConstantCondValue;
     bool HasConstantCond = false;
-    bool ShouldCheckConstantCond = false;
     if (!HasDependentValue && !TheDefaultStmt) {
-      Expr::EvalResult Result;
       HasConstantCond
-        = CondExprBeforePromotion->EvaluateAsRValue(Result, Context);
-      if (HasConstantCond) {
-        assert(Result.Val.isInt() && "switch condition evaluated to non-int");
-        ConstantCondValue = Result.Val.getInt();
-        ShouldCheckConstantCond = true;
-
-        assert(ConstantCondValue.getBitWidth() == CondWidth &&
-               ConstantCondValue.isSigned() == CondIsSigned);
-      }
+        = CondExprBeforePromotion->EvaluateAsInt(ConstantCondValue, Context,
+                                                 Expr::SE_AllowSideEffects);
+      assert(!HasConstantCond ||
+             (ConstantCondValue.getBitWidth() == CondWidth &&
+              ConstantCondValue.isSigned() == CondIsSigned));
     }
+    bool ShouldCheckConstantCond = HasConstantCond;
 
     // Sort all the scalar case values so we can easily detect duplicates.
     std::stable_sort(CaseVals.begin(), CaseVals.end(), CmpCaseVals);
@@ -714,19 +729,33 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
         llvm::APSInt &LoVal = CaseRanges[i].first;
         CaseStmt *CR = CaseRanges[i].second;
         Expr *Hi = CR->getRHS();
-        llvm::APSInt HiVal = Hi->EvaluateKnownConstInt(Context);
+        llvm::APSInt HiVal;
+
+        if (getLangOptions().CPlusPlus0x) {
+          // C++11 [stmt.switch]p2: the constant-expression shall be a converted
+          // constant expression of the promoted type of the switch condition.
+          ExprResult ConvHi =
+            CheckConvertedConstantExpression(Hi, CondType, HiVal,
+                                             CCEK_CaseValue);
+          if (ConvHi.isInvalid()) {
+            CaseListIsErroneous = true;
+            continue;
+          }
+          Hi = ConvHi.take();
+        } else {
+          HiVal = Hi->EvaluateKnownConstInt(Context);
+
+          // If the RHS is not the same type as the condition, insert an
+          // implicit cast.
+          Hi = DefaultLvalueConversion(Hi).take();
+          Hi = ImpCastExprToType(Hi, CondType, CK_IntegralCast).take();
+        }
 
         // Convert the value to the same width/sign as the condition.
         ConvertIntegerToTypeWarnOnOverflow(HiVal, CondWidth, CondIsSigned,
                                            Hi->getLocStart(),
                                            diag::warn_case_value_overflow);
 
-        // If the RHS is not the same type as the condition, insert an implicit
-        // cast.
-        // FIXME: In C++11, the value is a converted constant expression of the
-        // promoted type of the switch condition.
-        Hi = DefaultLvalueConversion(Hi).take();
-        Hi = ImpCastExprToType(Hi, CondType, CK_IntegralCast).take();
         CR->setRHS(Hi);
 
         // If the low value is bigger than the high value, the case is empty.
@@ -1169,7 +1198,7 @@ static bool FinishForRangeVarDecl(Sema &SemaRef, VarDecl *Decl, Expr *Init,
   // Deduce the type for the iterator variable now rather than leaving it to
   // AddInitializerToDecl, so we can produce a more suitable diagnostic.
   TypeSourceInfo *InitTSI = 0;
-  if (Init->getType()->isVoidType() ||
+  if ((!isa<InitListExpr>(Init) && Init->getType()->isVoidType()) ||
       !SemaRef.DeduceAutoType(Decl->getTypeSourceInfo(), Init, InitTSI))
     SemaRef.Diag(Loc, diag) << Init->getType();
   if (!InitTSI) {
@@ -1797,8 +1826,7 @@ Sema::ActOnBlockReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   QualType FnRetType = CurBlock->ReturnType;
 
   if (CurBlock->FunctionType->getAs<FunctionType>()->getNoReturnAttr()) {
-    Diag(ReturnLoc, diag::err_noreturn_block_has_return_expr)
-      << getCurFunctionOrMethodDecl()->getDeclName();
+    Diag(ReturnLoc, diag::err_noreturn_block_has_return_expr);
     return StmtError();
   }
 
@@ -1875,7 +1903,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
     if (FD->hasAttr<NoReturnAttr>() ||
         FD->getType()->getAs<FunctionType>()->getNoReturnAttr())
       Diag(ReturnLoc, diag::warn_noreturn_function_has_return_expr)
-        << getCurFunctionOrMethodDecl()->getDeclName();
+        << FD->getDeclName();
   } else if (ObjCMethodDecl *MD = getCurMethodDecl()) {
     DeclaredRetType = MD->getResultType();
     if (MD->hasRelatedResultType() && MD->getClassInterface()) {

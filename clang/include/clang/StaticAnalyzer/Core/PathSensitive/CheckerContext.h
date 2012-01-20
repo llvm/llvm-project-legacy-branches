@@ -66,7 +66,11 @@ public:
   ASTContext &getASTContext() {
     return Eng.getContext();
   }
-  
+
+  const LangOptions &getLangOptions() const {
+    return Eng.getContext().getLangOptions();
+  }
+
   const LocationContext *getLocationContext() const {
     return Pred->getLocationContext();
   }
@@ -149,7 +153,28 @@ public:
   const FunctionDecl *getCalleeDecl(const CallExpr *CE) const;
 
   /// \brief Get the name of the called function (path-sensitive).
-  StringRef getCalleeName(const CallExpr *CE) const;
+  StringRef getCalleeName(const FunctionDecl *FunDecl) const;
+
+  /// \brief Get the name of the called function (path-sensitive).
+  StringRef getCalleeName(const CallExpr *CE) const {
+    const FunctionDecl *FunDecl = getCalleeDecl(CE);
+    return getCalleeName(FunDecl);
+  }
+
+  /// Given a function declaration and a name checks if this is a C lib
+  /// function with the given name.
+  bool isCLibraryFunction(const FunctionDecl *FD, StringRef Name);
+
+  /// \brief Depending on wither the location corresponds to a macro, return 
+  /// either the macro name or the token spelling.
+  ///
+  /// This could be useful when checkers' logic depends on whether a function
+  /// is called with a given macro argument. For example:
+  ///   s = socket(AF_INET,..)
+  /// If AF_INET is a macro, the result should be treated as a source of taint.
+  ///
+  /// \sa clang::Lexer::getSpelling(), clang::Lexer::getImmediateMacroName().
+  StringRef getMacroNameOrSpelling(SourceLocation &Loc);
 
 private:
   ExplodedNode *addTransitionImpl(const ProgramState *State,

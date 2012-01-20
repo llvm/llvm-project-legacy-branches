@@ -14,6 +14,7 @@
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Parse/Parser.h"
 #include "RAIIObjectsForParser.h"
+#include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
@@ -563,6 +564,9 @@ ExprResult Parser::ParseLambdaExpression() {
   if (DiagID) {
     Diag(Tok, DiagID.getValue());
     SkipUntil(tok::r_square);
+    SkipUntil(tok::l_brace);
+    SkipUntil(tok::r_brace);
+    return ExprError();
   }
 
   return ParseLambdaExpressionAfterIntroducer(Intro);
@@ -591,14 +595,21 @@ ExprResult Parser::TryParseLambdaExpression() {
     return ParseLambdaExpression();
   }
 
-  // If lookahead indicates this is an Objective-C message...
+  // If lookahead indicates an ObjC message send...
+  // [identifier identifier
   if (Next.is(tok::identifier) && After.is(tok::identifier)) {
-    return ExprError();
+    return ExprEmpty();
   }
 
+  // Here, we're stuck: lambda introducers and Objective-C message sends are
+  // unambiguous, but it requires arbitrary lookhead.  [a,b,c,d,e,f,g] is a
+  // lambda, and [a,b,c,d,e,f,g h] is a Objective-C message send.  Instead of
+  // writing two routines to parse a lambda introducer, just try to parse
+  // a lambda introducer first, and fall back if that fails.
+  // (TryParseLambdaIntroducer never produces any diagnostic output.)
   LambdaIntroducer Intro;
   if (TryParseLambdaIntroducer(Intro))
-    return ExprError();
+    return ExprEmpty();
   return ParseLambdaExpressionAfterIntroducer(Intro);
 }
 
@@ -694,11 +705,15 @@ bool Parser::TryParseLambdaIntroducer(LambdaIntroducer &Intro) {
 /// expression.
 ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
                      LambdaIntroducer &Intro) {
-  Diag(Intro.Range.getBegin(), diag::warn_cxx98_compat_lambda);
+  SourceLocation LambdaBeginLoc = Intro.Range.getBegin();
+  Diag(LambdaBeginLoc, diag::warn_cxx98_compat_lambda);
+
+  PrettyStackTraceLoc CrashInfo(PP.getSourceManager(), LambdaBeginLoc,
+                                "lambda expression parsing");
 
   // Parse lambda-declarator[opt].
   DeclSpec DS(AttrFactory);
-  Declarator D(DS, Declarator::PrototypeContext);
+  Declarator D(DS, Declarator::LambdaExprContext);
 
   if (Tok.is(tok::l_paren)) {
     ParseScope PrototypeScope(this,
@@ -777,22 +792,30 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
                   Attr, DeclEndLoc);
   }
 
+  // FIXME: Rename BlockScope -> ClosureScope if we decide to continue using
+  // it.
+  ParseScope BodyScope(this, Scope::BlockScope | Scope::FnScope |
+                             Scope::BreakScope | Scope::ContinueScope |
+                             Scope::DeclScope);
+
+  Actions.ActOnStartOfLambdaDefinition(Intro, D, getCurScope());
+
   // Parse compound-statement.
-  if (Tok.is(tok::l_brace)) {
-    // FIXME: Rename BlockScope -> ClosureScope if we decide to continue using
-    // it.
-    ParseScope BodyScope(this, Scope::BlockScope | Scope::FnScope |
-                               Scope::BreakScope | Scope::ContinueScope |
-                               Scope::DeclScope);
-
-    StmtResult Stmt(ParseCompoundStatementBody());
-
-    BodyScope.Exit();
-  } else {
+  if (!Tok.is(tok::l_brace)) {
     Diag(Tok, diag::err_expected_lambda_body);
+    Actions.ActOnLambdaError(LambdaBeginLoc, getCurScope());
+    return ExprError();
   }
 
-  return ExprEmpty();
+  StmtResult Stmt(ParseCompoundStatementBody());
+  BodyScope.Exit();
+
+  if (!Stmt.isInvalid())
+    return Actions.ActOnLambdaExpr(LambdaBeginLoc, Stmt.take(),
+                                   getCurScope());
+ 
+  Actions.ActOnLambdaError(LambdaBeginLoc, getCurScope());
+  return ExprError();
 }
 
 /// ParseCXXCasts - This handles the various ways to cast expressions to another
@@ -901,10 +924,10 @@ ExprResult Parser::ParseCXXTypeid() {
     //   operand (Clause 5).
     //
     // Note that we can't tell whether the expression is an lvalue of a
-    // polymorphic class type until after we've parsed the expression, so
-    // we the expression is potentially potentially evaluated.
-    EnterExpressionEvaluationContext Unevaluated(Actions,
-                                       Sema::PotentiallyPotentiallyEvaluated);
+    // polymorphic class type until after we've parsed the expression; we
+    // speculatively assume the subexpression is unevaluated, and fix it up
+    // later.
+    EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated);
     Result = ParseExpression();
 
     // Match the ')'.
@@ -1022,7 +1045,7 @@ Parser::ParseCXXPseudoDestructor(ExprArg Base, SourceLocation OpLoc,
 
   if (Tok.is(tok::kw_decltype) && !FirstTypeName.isValid() && SS.isEmpty()) {
     DeclSpec DS(AttrFactory);
-    SourceLocation EndLoc = ParseDecltypeSpecifier(DS);
+    ParseDecltypeSpecifier(DS);
     if (DS.getTypeSpecType() == TST_error)
       return ExprError();
     return Actions.ActOnPseudoDestructorExpr(getCurScope(), Base, OpLoc, 
@@ -1236,8 +1259,8 @@ bool Parser::ParseCXXCondition(ExprResult &ExprOut,
   ExprOut = ExprError();
 
   // '=' assignment-expression
-  if (isTokenEqualOrMistypedEqualEqual(
-                               diag::err_invalid_equalequal_after_declarator)) {
+  // If a '==' or '+=' is found, suggest a fixit to '='.
+  if (isTokenEqualOrEqualTypo()) {
     ConsumeToken();
     ExprResult AssignExpr(ParseAssignmentExpression());
     if (!AssignExpr.isInvalid()) 
@@ -2440,8 +2463,6 @@ ExprResult Parser::ParseArrayTypeTrait() {
     return Actions.ActOnArrayTypeTrait(ATT, Loc, Ty.get(), DimExpr.get(),
                                        T.getCloseLocation());
   }
-  default:
-    break;
   }
   return ExprError();
 }

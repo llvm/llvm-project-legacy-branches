@@ -46,6 +46,8 @@ void ObjCProtocolList::set(ObjCProtocolDecl* const* InList, unsigned Elts,
 // ObjCInterfaceDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCContainerDecl::anchor() { }
+
 /// getIvarDecl - This method looks up an ivar in this ContextDecl.
 ///
 ObjCIvarDecl *
@@ -147,6 +149,8 @@ ObjCContainerDecl::FindPropertyDeclaration(IdentifierInfo *PropertyId) const {
   return 0;
 }
 
+void ObjCInterfaceDecl::anchor() { }
+
 /// FindPropertyVisibleInPrimaryClass - Finds declaration of the property
 /// with name 'PropertyId' in the primary class; including those in protocols
 /// (direct or indirect) used by the primary class.
@@ -241,9 +245,6 @@ void ObjCInterfaceDecl::startDefinition() {
     if (*RD != this)
       RD->Data = Data;
   }
-
-  if (ASTMutationListener *L = getASTContext().getASTMutationListener())
-    L->CompletedObjCForwardRef(this);
 }
 
 /// getFirstClassExtension - Find first class extension of the given class.
@@ -403,6 +404,12 @@ ObjCMethodDecl *ObjCMethodDecl::Create(ASTContext &C,
                                 isDefined,
                                 impControl,
                                 HasRelatedResultType);
+}
+
+ObjCMethodDecl *ObjCMethodDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCMethodDecl));
+  return new (Mem) ObjCMethodDecl(SourceLocation(), SourceLocation(), 
+                                  Selector(), QualType(), 0, 0);
 }
 
 void ObjCMethodDecl::setAsRedeclaration(const ObjCMethodDecl *PrevMethod) {
@@ -675,7 +682,7 @@ ObjCInterfaceDecl *ObjCMethodDecl::getClassInterface() {
 // ObjCInterfaceDecl
 //===----------------------------------------------------------------------===//
 
-ObjCInterfaceDecl *ObjCInterfaceDecl::Create(ASTContext &C,
+ObjCInterfaceDecl *ObjCInterfaceDecl::Create(const ASTContext &C,
                                              DeclContext *DC,
                                              SourceLocation atLoc,
                                              IdentifierInfo *Id,
@@ -688,9 +695,11 @@ ObjCInterfaceDecl *ObjCInterfaceDecl::Create(ASTContext &C,
   return Result;
 }
 
-ObjCInterfaceDecl *ObjCInterfaceDecl::CreateEmpty(ASTContext &C) {
-  return new (C) ObjCInterfaceDecl(0, SourceLocation(), 0, SourceLocation(),
-                                   0, false);
+ObjCInterfaceDecl *ObjCInterfaceDecl::CreateDeserialized(ASTContext &C, 
+                                                         unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCInterfaceDecl));
+  return new (Mem) ObjCInterfaceDecl(0, SourceLocation(), 0, SourceLocation(),
+                                     0, false);
 }
 
 ObjCInterfaceDecl::
@@ -876,6 +885,8 @@ bool ObjCInterfaceDecl::ClassImplementsProtocol(ObjCProtocolDecl *lProto,
 // ObjCIvarDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCIvarDecl::anchor() { }
+
 ObjCIvarDecl *ObjCIvarDecl::Create(ASTContext &C, ObjCContainerDecl *DC,
                                    SourceLocation StartLoc,
                                    SourceLocation IdLoc, IdentifierInfo *Id,
@@ -918,6 +929,12 @@ ObjCIvarDecl *ObjCIvarDecl::Create(ASTContext &C, ObjCContainerDecl *DC,
                               ac, BW, synthesized);
 }
 
+ObjCIvarDecl *ObjCIvarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCIvarDecl));
+  return new (Mem) ObjCIvarDecl(0, SourceLocation(), SourceLocation(), 0,
+                                QualType(), 0, ObjCIvarDecl::None, 0, false);
+}
+
 const ObjCInterfaceDecl *ObjCIvarDecl::getContainingInterface() const {
   const ObjCContainerDecl *DC = cast<ObjCContainerDecl>(getDeclContext());
 
@@ -946,6 +963,8 @@ const ObjCInterfaceDecl *ObjCIvarDecl::getContainingInterface() const {
 // ObjCAtDefsFieldDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCAtDefsFieldDecl::anchor() { }
+
 ObjCAtDefsFieldDecl
 *ObjCAtDefsFieldDecl::Create(ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc,  SourceLocation IdLoc,
@@ -953,16 +972,46 @@ ObjCAtDefsFieldDecl
   return new (C) ObjCAtDefsFieldDecl(DC, StartLoc, IdLoc, Id, T, BW);
 }
 
+ObjCAtDefsFieldDecl *ObjCAtDefsFieldDecl::CreateDeserialized(ASTContext &C, 
+                                                             unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCAtDefsFieldDecl));
+  return new (Mem) ObjCAtDefsFieldDecl(0, SourceLocation(), SourceLocation(),
+                                       0, QualType(), 0);
+}
+
 //===----------------------------------------------------------------------===//
 // ObjCProtocolDecl
 //===----------------------------------------------------------------------===//
+
+void ObjCProtocolDecl::anchor() { }
+
+ObjCProtocolDecl::ObjCProtocolDecl(DeclContext *DC, IdentifierInfo *Id,
+                                   SourceLocation nameLoc, 
+                                   SourceLocation atStartLoc,
+                                   ObjCProtocolDecl *PrevDecl)
+  : ObjCContainerDecl(ObjCProtocol, DC, Id, nameLoc, atStartLoc), Data()
+{
+  setPreviousDeclaration(PrevDecl);
+  if (PrevDecl)
+    Data = PrevDecl->Data;
+}
 
 ObjCProtocolDecl *ObjCProtocolDecl::Create(ASTContext &C, DeclContext *DC,
                                            IdentifierInfo *Id,
                                            SourceLocation nameLoc,
                                            SourceLocation atStartLoc,
-                                           bool isForwardDecl) {
-  return new (C) ObjCProtocolDecl(DC, Id, nameLoc, atStartLoc, isForwardDecl);
+                                           ObjCProtocolDecl *PrevDecl) {
+  ObjCProtocolDecl *Result 
+    = new (C) ObjCProtocolDecl(DC, Id, nameLoc, atStartLoc, PrevDecl);
+  
+  return Result;
+}
+
+ObjCProtocolDecl *ObjCProtocolDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCProtocolDecl));
+  return new (Mem) ObjCProtocolDecl(0, 0, SourceLocation(), SourceLocation(),
+                                    0);
 }
 
 ObjCProtocolDecl *ObjCProtocolDecl::lookupProtocolNamed(IdentifierInfo *Name) {
@@ -993,60 +1042,26 @@ ObjCMethodDecl *ObjCProtocolDecl::lookupMethod(Selector Sel,
   return NULL;
 }
 
-void ObjCProtocolDecl::completedForwardDecl() {
-  assert(isForwardDecl() && "Only valid to call for forward refs");
-  isForwardProtoDecl = false;
-  if (ASTMutationListener *L = getASTContext().getASTMutationListener())
-    L->CompletedObjCForwardRef(this);
+void ObjCProtocolDecl::allocateDefinitionData() {
+  assert(!Data && "Protocol already has a definition!");
+  Data = new (getASTContext()) DefinitionData;
+  Data->Definition = this;
 }
 
-//===----------------------------------------------------------------------===//
-// ObjCClassDecl
-//===----------------------------------------------------------------------===//
-
-ObjCClassDecl::ObjCClassDecl(DeclContext *DC, SourceLocation L,
-                             ObjCInterfaceDecl *Interface, 
-                             SourceLocation InterfaceLoc)
-  : Decl(ObjCClass, DC, L), Interface(Interface), InterfaceLoc(InterfaceLoc)
-{
-}
-
-ObjCClassDecl *ObjCClassDecl::Create(ASTContext &C, DeclContext *DC,
-                                     SourceLocation L,
-                                     ObjCInterfaceDecl *Interface,
-                                     SourceLocation InterfaceLoc) {
-  return new (C) ObjCClassDecl(DC, L, Interface, InterfaceLoc);
-}
-
-SourceRange ObjCClassDecl::getSourceRange() const {
-  return SourceRange(getLocation(), InterfaceLoc);
-}
-
-//===----------------------------------------------------------------------===//
-// ObjCForwardProtocolDecl
-//===----------------------------------------------------------------------===//
-
-ObjCForwardProtocolDecl::
-ObjCForwardProtocolDecl(DeclContext *DC, SourceLocation L,
-                        ObjCProtocolDecl *const *Elts, unsigned nElts,
-                        const SourceLocation *Locs, ASTContext &C)
-: Decl(ObjCForwardProtocol, DC, L) {
-  ReferencedProtocols.set(Elts, nElts, Locs, C);
-}
-
-
-ObjCForwardProtocolDecl *
-ObjCForwardProtocolDecl::Create(ASTContext &C, DeclContext *DC,
-                                SourceLocation L,
-                                ObjCProtocolDecl *const *Elts,
-                                unsigned NumElts,
-                                const SourceLocation *Locs) {
-  return new (C) ObjCForwardProtocolDecl(DC, L, Elts, NumElts, Locs, C);
+void ObjCProtocolDecl::startDefinition() {
+  allocateDefinitionData();
+  
+  // Update all of the declarations with a pointer to the definition.
+  for (redecl_iterator RD = redecls_begin(), RDEnd = redecls_end();
+       RD != RDEnd; ++RD)
+    RD->Data = this->Data;
 }
 
 //===----------------------------------------------------------------------===//
 // ObjCCategoryDecl
 //===----------------------------------------------------------------------===//
+
+void ObjCCategoryDecl::anchor() { }
 
 ObjCCategoryDecl *ObjCCategoryDecl::Create(ASTContext &C, DeclContext *DC,
                                            SourceLocation AtLoc, 
@@ -1070,9 +1085,11 @@ ObjCCategoryDecl *ObjCCategoryDecl::Create(ASTContext &C, DeclContext *DC,
   return CatDecl;
 }
 
-ObjCCategoryDecl *ObjCCategoryDecl::Create(ASTContext &C, EmptyShell Empty) {
-  return new (C) ObjCCategoryDecl(0, SourceLocation(), SourceLocation(),
-                                  SourceLocation(), 0, 0);
+ObjCCategoryDecl *ObjCCategoryDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCCategoryDecl));
+  return new (Mem) ObjCCategoryDecl(0, SourceLocation(), SourceLocation(),
+                                    SourceLocation(), 0, 0);
 }
 
 ObjCCategoryImplDecl *ObjCCategoryDecl::getImplementation() const {
@@ -1089,6 +1106,8 @@ void ObjCCategoryDecl::setImplementation(ObjCCategoryImplDecl *ImplD) {
 // ObjCCategoryImplDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCCategoryImplDecl::anchor() { }
+
 ObjCCategoryImplDecl *
 ObjCCategoryImplDecl::Create(ASTContext &C, DeclContext *DC,
                              IdentifierInfo *Id,
@@ -1096,8 +1115,17 @@ ObjCCategoryImplDecl::Create(ASTContext &C, DeclContext *DC,
                              SourceLocation nameLoc,
                              SourceLocation atStartLoc,
                              SourceLocation CategoryNameLoc) {
+  if (ClassInterface && ClassInterface->hasDefinition())
+    ClassInterface = ClassInterface->getDefinition();
   return new (C) ObjCCategoryImplDecl(DC, Id, ClassInterface,
                                       nameLoc, atStartLoc, CategoryNameLoc);
+}
+
+ObjCCategoryImplDecl *ObjCCategoryImplDecl::CreateDeserialized(ASTContext &C, 
+                                                               unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCCategoryImplDecl));
+  return new (Mem) ObjCCategoryImplDecl(0, 0, 0, SourceLocation(), 
+                                        SourceLocation(), SourceLocation());
 }
 
 ObjCCategoryDecl *ObjCCategoryImplDecl::getCategoryDecl() const {
@@ -1107,6 +1135,8 @@ ObjCCategoryDecl *ObjCCategoryImplDecl::getCategoryDecl() const {
   return 0;
 }
 
+
+void ObjCImplDecl::anchor() { }
 
 void ObjCImplDecl::addPropertyImplementation(ObjCPropertyImplDecl *property) {
   // FIXME: The context should be correct before we get here.
@@ -1170,14 +1200,25 @@ raw_ostream &clang::operator<<(raw_ostream &OS,
 // ObjCImplementationDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCImplementationDecl::anchor() { }
+
 ObjCImplementationDecl *
 ObjCImplementationDecl::Create(ASTContext &C, DeclContext *DC,
                                ObjCInterfaceDecl *ClassInterface,
                                ObjCInterfaceDecl *SuperDecl,
                                SourceLocation nameLoc,
                                SourceLocation atStartLoc) {
+  if (ClassInterface && ClassInterface->hasDefinition())
+    ClassInterface = ClassInterface->getDefinition();
   return new (C) ObjCImplementationDecl(DC, ClassInterface, SuperDecl,
                                         nameLoc, atStartLoc);
+}
+
+ObjCImplementationDecl *
+ObjCImplementationDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCImplementationDecl));
+  return new (Mem) ObjCImplementationDecl(0, 0, 0, SourceLocation(), 
+                                          SourceLocation());
 }
 
 void ObjCImplementationDecl::setIvarInitializers(ASTContext &C,
@@ -1203,6 +1244,8 @@ raw_ostream &clang::operator<<(raw_ostream &OS,
 // ObjCCompatibleAliasDecl
 //===----------------------------------------------------------------------===//
 
+void ObjCCompatibleAliasDecl::anchor() { }
+
 ObjCCompatibleAliasDecl *
 ObjCCompatibleAliasDecl::Create(ASTContext &C, DeclContext *DC,
                                 SourceLocation L,
@@ -1211,9 +1254,17 @@ ObjCCompatibleAliasDecl::Create(ASTContext &C, DeclContext *DC,
   return new (C) ObjCCompatibleAliasDecl(DC, L, Id, AliasedClass);
 }
 
+ObjCCompatibleAliasDecl *
+ObjCCompatibleAliasDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCCompatibleAliasDecl));
+  return new (Mem) ObjCCompatibleAliasDecl(0, SourceLocation(), 0, 0);
+}
+
 //===----------------------------------------------------------------------===//
 // ObjCPropertyDecl
 //===----------------------------------------------------------------------===//
+
+void ObjCPropertyDecl::anchor() { }
 
 ObjCPropertyDecl *ObjCPropertyDecl::Create(ASTContext &C, DeclContext *DC,
                                            SourceLocation L,
@@ -1222,6 +1273,13 @@ ObjCPropertyDecl *ObjCPropertyDecl::Create(ASTContext &C, DeclContext *DC,
                                            TypeSourceInfo *T,
                                            PropertyControl propControl) {
   return new (C) ObjCPropertyDecl(DC, L, Id, AtLoc, T);
+}
+
+ObjCPropertyDecl *ObjCPropertyDecl::CreateDeserialized(ASTContext &C, 
+                                                       unsigned ID) {
+  void * Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCPropertyDecl));
+  return new (Mem) ObjCPropertyDecl(0, SourceLocation(), 0, SourceLocation(),
+                                    0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1238,6 +1296,13 @@ ObjCPropertyImplDecl *ObjCPropertyImplDecl::Create(ASTContext &C,
                                                    SourceLocation ivarLoc) {
   return new (C) ObjCPropertyImplDecl(DC, atLoc, L, property, PK, ivar,
                                       ivarLoc);
+}
+
+ObjCPropertyImplDecl *ObjCPropertyImplDecl::CreateDeserialized(ASTContext &C, 
+                                                               unsigned ID) {
+  void *Mem = AllocateDeserializedDecl(C, ID, sizeof(ObjCPropertyImplDecl));
+  return new (Mem) ObjCPropertyImplDecl(0, SourceLocation(), SourceLocation(),
+                                        0, Dynamic, 0, SourceLocation());
 }
 
 SourceRange ObjCPropertyImplDecl::getSourceRange() const {
