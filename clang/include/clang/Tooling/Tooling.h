@@ -35,13 +35,14 @@ class FrontendAction;
 
 namespace tooling {
 
-/// Interface to generate clang::FrontendActions.
+/// \brief Interface to generate clang::FrontendActions.
 class FrontendActionFactory {
 public:
   virtual ~FrontendActionFactory();
 
-  /// Returns a new clang::FrontendAction. The caller takes ownership of the
-  /// returned action.
+  /// \brief Returns a new clang::FrontendAction.
+  ///
+  /// The caller takes ownership of the returned action.
   virtual clang::FrontendAction *New() = 0;
 };
 
@@ -55,7 +56,7 @@ public:
 template <typename T>
 FrontendActionFactory *NewFrontendActionFactory();
 
-/// \brief Returns a new FrontendActionFactory any type that provides an
+/// \brief Returns a new FrontendActionFactory for any type that provides an
 /// implementation of NewFrontendAction().
 ///
 /// FactoryT must implement: FrontendAction *NewFrontendAction().
@@ -92,6 +93,10 @@ struct CompileCommand {
 };
 
 /// \brief Converts a JSON escaped command line to a vector of arguments.
+///
+/// Note that for performance reasons this escapes both the JSON escape layer
+/// and the command line escape layer at the same time with a single pass over
+/// the string.
 ///
 /// \param JsonEscapedCommandLine The escaped command line as a string. This
 /// is assumed to be escaped as a JSON string (e.g. " and \ are escaped).

@@ -44,26 +44,19 @@ FrontendActionFactory::~FrontendActionFactory() {}
 // code that sets up a compiler to run tools on it, and we should refactor
 // it to be based on the same framework.
 
-// Exists solely for the purpose of lookup of the main executable.
-static int StaticSymbol;
-
 /// \brief Builds a clang driver initialized for running clang tools.
 static clang::driver::Driver *NewDriver(clang::DiagnosticsEngine *Diagnostics,
                                         const char *BinaryName) {
-  // This just needs to be some symbol in the binary.
-  void *const SymbolAddr = &StaticSymbol;
-  const llvm::sys::Path ExePath =
-      llvm::sys::Path::GetMainExecutable(BinaryName, SymbolAddr);
-
   const std::string DefaultOutputName = "a.out";
   clang::driver::Driver *CompilerDriver = new clang::driver::Driver(
-      ExePath.str(), llvm::sys::getDefaultTargetTriple(),
+      BinaryName, llvm::sys::getDefaultTargetTriple(),
       DefaultOutputName, false, *Diagnostics);
   CompilerDriver->setTitle("clang_based_tool");
   return CompilerDriver;
 }
 
 /// \brief Retrieves the clang CC1 specific flags out of the compilation's jobs.
+///
 /// Returns NULL on error.
 static const clang::driver::ArgStringList *GetCC1Arguments(
     clang::DiagnosticsEngine *Diagnostics,
@@ -135,8 +128,10 @@ bool RunSyntaxOnlyToolOnCode(
 
 namespace {
 
-// A parser for JSON escaped strings of command line arguments with \-escaping
-// for quoted arguments (see the documentation of UnescapeJsonCommandLine(...)).
+/// \brief A parser for JSON escaped strings of command line arguments.
+///
+/// Assumes \-escaping for quoted arguments (see the documentation of
+/// UnescapeJsonCommandLine(...)).
 class CommandLineArgumentParser {
  public:
   CommandLineArgumentParser(llvm::StringRef CommandLine)
@@ -283,7 +278,9 @@ CompileCommand FindCompileArgsInJsonDatabase(
 }
 
 /// \brief Returns the absolute path of 'File', by prepending it with
-/// 'BaseDirectory' if 'File' is not absolute. Otherwise returns 'File'.
+/// 'BaseDirectory' if 'File' is not absolute.
+///
+/// Otherwise returns 'File'.
 /// If 'File' starts with "./", the returned path will not contain the "./".
 /// Otherwise, the returned path will contain the literal path-concatenation of
 /// 'BaseDirectory' and 'File'.
@@ -342,6 +339,9 @@ bool ToolInvocation::Run() {
   return RunInvocation(BinaryName, Compilation.get(),
                        Invocation.take(), *CC1Args, ToolAction.take());
 }
+
+// Exists solely for the purpose of lookup of the resource path.
+static int StaticSymbol;
 
 bool ToolInvocation::RunInvocation(
     const char *BinaryName,
