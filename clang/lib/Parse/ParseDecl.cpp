@@ -857,7 +857,7 @@ void Parser::ParseThreadSafetyAttribute(IdentifierInfo &AttrName,
     ConsumeToken(); // Eat the comma, move to the next argument
   }
   // Match the ')'.
-  if (ArgExprsOk && !T.consumeClose() && ArgExprs.size() > 0) {
+  if (ArgExprsOk && !T.consumeClose()) {
     Attrs.addNew(&AttrName, AttrNameLoc, 0, AttrNameLoc, 0, SourceLocation(),
                  ArgExprs.take(), ArgExprs.size());
   }
@@ -4607,10 +4607,13 @@ void Parser::ParseBracketDeclarator(Declarator &D) {
 
     // Parse the constant-expression or assignment-expression now (depending
     // on dialect).
-    if (getLang().CPlusPlus)
+    if (getLang().CPlusPlus) {
       NumElements = ParseConstantExpression();
-    else
+    } else {
+      EnterExpressionEvaluationContext Unevaluated(Actions,
+                                                   Sema::ConstantEvaluated);
       NumElements = ParseAssignmentExpression();
+    }
   }
 
   // If there was an error parsing the assignment-expression, recover.
@@ -4647,6 +4650,8 @@ void Parser::ParseTypeofSpecifier(DeclSpec &DS) {
 
   const bool hasParens = Tok.is(tok::l_paren);
 
+  EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated);
+
   bool isCastExpr;
   ParsedType CastTy;
   SourceRange CastRange;
@@ -4677,6 +4682,13 @@ void Parser::ParseTypeofSpecifier(DeclSpec &DS) {
   }
 
   // If we get here, the operand to the typeof was an expresion.
+  if (Operand.isInvalid()) {
+    DS.SetTypeSpecError();
+    return;
+  }
+
+  // We might need to transform the operand if it is potentially evaluated.
+  Operand = Actions.HandleExprEvaluationContextForTypeof(Operand.get());
   if (Operand.isInvalid()) {
     DS.SetTypeSpecError();
     return;

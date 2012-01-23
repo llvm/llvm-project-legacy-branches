@@ -4053,6 +4053,9 @@ def err_operator_arrow_circular : Error<
 def err_pseudo_dtor_base_not_scalar : Error<
   "object expression of non-scalar type %0 cannot be used in a "
   "pseudo-destructor expression">;
+def ext_pseudo_dtor_on_void : ExtWarn<
+  "pseudo-destructors on type void are a Microsoft extension">,
+  InGroup<Microsoft>;
 def err_pseudo_dtor_type_mismatch : Error<
   "the type of object expression (%0) does not match the type being destroyed "
   "(%1) in pseudo-destructor expression">;
@@ -4791,7 +4794,7 @@ def warn_scanf_nonzero_width : Warning<
   "zero field width in scanf format string is unused">,
   InGroup<Format>;
 def warn_printf_conversion_argument_type_mismatch : Warning<
-  "conversion specifies type %0 but the argument has type %1">,
+  "format specifies type %0 but the argument has type %1">,
   InGroup<Format>;
 def warn_printf_positional_arg_exceeds_data_args : Warning <
   "data argument position '%0' exceeds the number of data arguments (%1)">,
@@ -4945,20 +4948,37 @@ def err_duplicate_case : Error<"duplicate case value '%0'">;
 def warn_case_empty_range : Warning<"empty case range specified">;
 def warn_missing_case_for_condition :
   Warning<"no case matching constant switch condition '%0'">;
+
+def warn_def_missing_case1 : Warning<
+  "enumeration value %0 not handled in switch">,
+  InGroup<SwitchEnum>, DefaultIgnore;
+def warn_def_missing_case2 : Warning<
+  "enumeration values %0 and %1 not handled in switch">,
+  InGroup<SwitchEnum>, DefaultIgnore;
+def warn_def_missing_case3 : Warning<
+  "enumeration values %0, %1, and %2 not handled in switch">,
+  InGroup<SwitchEnum>, DefaultIgnore;
+def warn_def_missing_cases : Warning<
+  "%0 enumeration values not handled in switch: %1, %2, %3...">,
+  InGroup<SwitchEnum>, DefaultIgnore;
+
 def warn_missing_case1 : Warning<"enumeration value %0 not handled in switch">,
-  InGroup<DiagGroup<"switch-enum"> >;
+  InGroup<Switch>;
 def warn_missing_case2 : Warning<
   "enumeration values %0 and %1 not handled in switch">,
-  InGroup<DiagGroup<"switch-enum"> >;
+  InGroup<Switch>;
 def warn_missing_case3 : Warning<
   "enumeration values %0, %1, and %2 not handled in switch">,
-  InGroup<DiagGroup<"switch-enum"> >;
+  InGroup<Switch>;
 def warn_missing_cases : Warning<
   "%0 enumeration values not handled in switch: %1, %2, %3...">,
-  InGroup<DiagGroup<"switch-enum"> >;
+  InGroup<Switch>;
 
+def warn_unreachable_default : Warning<
+  "default is unreachable as all enumeration values are accounted for">,
+  InGroup<SwitchRedundantDefault>;
 def warn_not_in_enum : Warning<"case value not in enumerated type %0">,
-  InGroup<DiagGroup<"switch-enum"> >; 
+  InGroup<Switch>; 
 def err_typecheck_statement_requires_scalar : Error<
   "statement requires expression of scalar type (%0 invalid)">;
 def err_typecheck_statement_requires_integer : Error<

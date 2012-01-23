@@ -1742,7 +1742,6 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
     return ActOnDependentIdExpression(SS, NameInfo, IsAddressOfOperand,
                                       TemplateArgs);
 
-  bool IvarLookupFollowUp = false;
   // Perform the required lookup.
   LookupResult R(*this, NameInfo, 
                  (Id.getKind() == UnqualifiedId::IK_ImplicitSelfParam) 
@@ -1762,7 +1761,7 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
       return ActOnDependentIdExpression(SS, NameInfo, IsAddressOfOperand,
                                         TemplateArgs);
   } else {
-    IvarLookupFollowUp = (!SS.isSet() && II && getCurMethodDecl());
+    bool IvarLookupFollowUp = II && !SS.isSet() && getCurMethodDecl();
     LookupParsedName(R, S, &SS, !IvarLookupFollowUp);
 
     // If the result might be in a dependent base class, this is a dependent 
@@ -1780,9 +1779,6 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
 
       if (Expr *Ex = E.takeAs<Expr>())
         return Owned(Ex);
-      
-      // for further use, this must be set to false if in class method.
-      IvarLookupFollowUp = getCurMethodDecl()->isInstanceMethod();
     }
   }
 
@@ -3016,6 +3012,12 @@ Sema::CreateUnaryExprOrTypeTraitExpr(Expr *E, SourceLocation OpLoc,
   if (isInvalid)
     return ExprError();
 
+  if (ExprKind == UETT_SizeOf && E->getType()->isVariableArrayType()) {
+    PE = TranformToPotentiallyEvaluated(E);
+    if (PE.isInvalid()) return ExprError();
+    E = PE.take();
+  }
+
   // C99 6.5.3.4p4: the type (an unsigned integer type) is size_t.
   return Owned(new (Context) UnaryExprOrTypeTraitExpr(
       ExprKind, E, Context.getSizeType(), OpLoc,
@@ -3722,6 +3724,7 @@ Sema::ActOnCUDAExecConfigExpr(Scope *S, SourceLocation LLLLoc,
 
   DeclRefExpr *ConfigDR = new (Context) DeclRefExpr(
       ConfigDecl, ConfigQTy, VK_LValue, LLLLoc);
+  MarkDeclarationReferenced(LLLLoc, ConfigDecl);
 
   return ActOnCallExpr(S, ConfigDR, LLLLoc, ExecConfig, GGGLoc, 0,
                        /*IsExecConfig=*/true);
@@ -9439,6 +9442,12 @@ void Sema::DiscardCleanupsInEvaluationContext() {
   ExprNeedsCleanups = false;
 }
 
+ExprResult Sema::HandleExprEvaluationContextForTypeof(Expr *E) {
+  if (!E->getType()->isVariablyModifiedType())
+    return E;
+  return TranformToPotentiallyEvaluated(E);
+}
+
 /// \brief Note that the given declaration was referenced in the source code.
 ///
 /// This routine should be invoke whenever a given declaration is referenced
@@ -9468,21 +9477,16 @@ void Sema::MarkDeclarationReferenced(SourceLocation Loc, Decl *D) {
   switch (ExprEvalContexts.back().Context) {
     case Unevaluated:
       // We are in an expression that is not potentially evaluated; do nothing.
+      // (Depending on how you read the standard, we actually do need to do
+      // something here for null pointer constants, but the standard's
+      // definition of a null pointer constant is completely crazy.)
       return;
 
     case ConstantEvaluated:
-      // We are in an expression that will be evaluated during translation; in
-      // C++11, we need to define any functions which are used in case they're
-      // constexpr, whereas in C++98, we only need to define static data members
-      // of class templates.
-      if (!getLangOptions().CPlusPlus ||
-          (!getLangOptions().CPlusPlus0x && !isa<VarDecl>(D)))
-        return;
-      break;
-
     case PotentiallyEvaluated:
-      // We are in a potentially-evaluated expression, so this declaration is
-      // "used"; handle this below.
+      // We are in a potentially evaluated expression (or a constant-expression
+      // in C++03); we need to do implicit template instantiation, implicitly
+      // define class members, and mark most declarations as used.
       break;
 
     case PotentiallyEvaluatedIfUsed:
@@ -9607,6 +9611,8 @@ void Sema::MarkDeclarationReferenced(SourceLocation Loc, Decl *D) {
     // Keep track of used but undefined variables.  We make a hole in
     // the warning for static const data members with in-line
     // initializers.
+    // FIXME: The hole we make for static const data members is too wide!
+    // We need to implement the C++11 rules for odr-used.
     if (Var->hasDefinition() == VarDecl::DeclarationOnly
         && Var->getLinkage() != ExternalLinkage
         && !(Var->isStaticDataMember() && Var->hasInit())) {

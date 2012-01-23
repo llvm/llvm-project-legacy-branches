@@ -225,14 +225,11 @@ GenericTaintChecker::TaintPropagationRule::getTaintPropagationRule(
     case Builtin::BIstrncpy:
     case Builtin::BIstrncat:
       return TaintPropagationRule(1, 2, 0, true);
-      break;
     case Builtin::BIstrlcpy:
     case Builtin::BIstrlcat:
       return TaintPropagationRule(1, 2, 0, false);
-      break;
     case Builtin::BIstrndup:
       return TaintPropagationRule(0, 1, ReturnValueIndex);
-      break;
 
     default:
       break;
@@ -409,8 +406,8 @@ SymbolRef GenericTaintChecker::getPointedToSymbol(CheckerContext &C,
 
   const PointerType *ArgTy =
     dyn_cast<PointerType>(Arg->getType().getCanonicalType().getTypePtr());
-  assert(ArgTy);
-  SVal Val = State->getSVal(*AddrLoc, ArgTy->getPointeeType());
+  SVal Val = State->getSVal(*AddrLoc,
+                            ArgTy ? ArgTy->getPointeeType(): QualType());
   return Val.getAsSymbol();
 }
 

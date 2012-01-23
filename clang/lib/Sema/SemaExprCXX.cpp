@@ -993,8 +993,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
   // C++ 5.3.4p6: "The expression in a direct-new-declarator shall have integral
   //   or enumeration type with a non-negative value."
   if (ArraySize && !ArraySize->isTypeDependent()) {
-    // Eliminate placeholders.
-    ExprResult ConvertedSize = CheckPlaceholderExpr(ArraySize);
+    ExprResult ConvertedSize = DefaultFunctionArrayLvalueConversion(ArraySize);
     if (ConvertedSize.isInvalid())
       return ExprError();
     ArraySize = ConvertedSize.take();
@@ -4381,8 +4380,11 @@ ExprResult Sema::BuildPseudoDestructorExpr(Expr *Base,
     return ExprError();
 
   if (!ObjectType->isDependentType() && !ObjectType->isScalarType()) {
-    Diag(OpLoc, diag::err_pseudo_dtor_base_not_scalar)
-      << ObjectType << Base->getSourceRange();
+    if (getLangOptions().MicrosoftMode && ObjectType->isVoidType())
+      Diag(OpLoc, diag::ext_pseudo_dtor_on_void) << Base->getSourceRange();
+    else
+      Diag(OpLoc, diag::err_pseudo_dtor_base_not_scalar)
+        << ObjectType << Base->getSourceRange();
     return ExprError();
   }
 

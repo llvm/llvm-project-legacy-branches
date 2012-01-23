@@ -495,7 +495,7 @@ Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc, Expr *Cond,
   if (!Cond)
     return StmtError();
 
-  CondResult = CheckPlaceholderExpr(Cond);
+  CondResult = DefaultFunctionArrayLvalueConversion(Cond);
   if (CondResult.isInvalid())
     return StmtError();
 
@@ -862,39 +862,35 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
         std::unique(EnumVals.begin(), EnumVals.end(), EqEnumVals);
 
       // See which case values aren't in enum.
-      // TODO: we might want to check whether case values are out of the
-      // enum even if we don't want to check whether all cases are handled.
-      if (!TheDefaultStmt) {
-        EnumValsTy::const_iterator EI = EnumVals.begin();
-        for (CaseValsTy::const_iterator CI = CaseVals.begin();
-             CI != CaseVals.end(); CI++) {
-          while (EI != EIend && EI->first < CI->first)
-            EI++;
-          if (EI == EIend || EI->first > CI->first)
-            Diag(CI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
-              << ED->getDeclName();
-        }
-        // See which of case ranges aren't in enum
-        EI = EnumVals.begin();
-        for (CaseRangesTy::const_iterator RI = CaseRanges.begin();
-             RI != CaseRanges.end() && EI != EIend; RI++) {
-          while (EI != EIend && EI->first < RI->first)
-            EI++;
+      EnumValsTy::const_iterator EI = EnumVals.begin();
+      for (CaseValsTy::const_iterator CI = CaseVals.begin();
+           CI != CaseVals.end(); CI++) {
+        while (EI != EIend && EI->first < CI->first)
+          EI++;
+        if (EI == EIend || EI->first > CI->first)
+          Diag(CI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
+            << ED->getDeclName();
+      }
+      // See which of case ranges aren't in enum
+      EI = EnumVals.begin();
+      for (CaseRangesTy::const_iterator RI = CaseRanges.begin();
+           RI != CaseRanges.end() && EI != EIend; RI++) {
+        while (EI != EIend && EI->first < RI->first)
+          EI++;
 
-          if (EI == EIend || EI->first != RI->first) {
-            Diag(RI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
-              << ED->getDeclName();
-          }
-
-          llvm::APSInt Hi = 
-            RI->second->getRHS()->EvaluateKnownConstInt(Context);
-          AdjustAPSInt(Hi, CondWidth, CondIsSigned);
-          while (EI != EIend && EI->first < Hi)
-            EI++;
-          if (EI == EIend || EI->first != Hi)
-            Diag(RI->second->getRHS()->getExprLoc(), diag::warn_not_in_enum)
-              << ED->getDeclName();
+        if (EI == EIend || EI->first != RI->first) {
+          Diag(RI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
+            << ED->getDeclName();
         }
+
+        llvm::APSInt Hi = 
+          RI->second->getRHS()->EvaluateKnownConstInt(Context);
+        AdjustAPSInt(Hi, CondWidth, CondIsSigned);
+        while (EI != EIend && EI->first < Hi)
+          EI++;
+        if (EI == EIend || EI->first != Hi)
+          Diag(RI->second->getRHS()->getExprLoc(), diag::warn_not_in_enum)
+            << ED->getDeclName();
       }
 
       // Check which enum vals aren't in switch
@@ -904,7 +900,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
       SmallVector<DeclarationName,8> UnhandledNames;
 
-      for (EnumValsTy::const_iterator EI = EnumVals.begin(); EI != EIend; EI++){
+      for (EI = EnumVals.begin(); EI != EIend; EI++){
         // Drop unneeded case values
         llvm::APSInt CIVal;
         while (CI != CaseVals.end() && CI->first < EI->first)
@@ -924,28 +920,34 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
         if (RI == CaseRanges.end() || EI->first < RI->first) {
           hasCasesNotInSwitch = true;
-          if (!TheDefaultStmt)
-            UnhandledNames.push_back(EI->second->getDeclName());
+          UnhandledNames.push_back(EI->second->getDeclName());
         }
       }
+
+      if (TheDefaultStmt && UnhandledNames.empty())
+        Diag(TheDefaultStmt->getDefaultLoc(), diag::warn_unreachable_default);
 
       // Produce a nice diagnostic if multiple values aren't handled.
       switch (UnhandledNames.size()) {
       case 0: break;
       case 1:
-        Diag(CondExpr->getExprLoc(), diag::warn_missing_case1)
+        Diag(CondExpr->getExprLoc(), TheDefaultStmt 
+          ? diag::warn_def_missing_case1 : diag::warn_missing_case1)
           << UnhandledNames[0];
         break;
       case 2:
-        Diag(CondExpr->getExprLoc(), diag::warn_missing_case2)
+        Diag(CondExpr->getExprLoc(), TheDefaultStmt 
+          ? diag::warn_def_missing_case2 : diag::warn_missing_case2)
           << UnhandledNames[0] << UnhandledNames[1];
         break;
       case 3:
-        Diag(CondExpr->getExprLoc(), diag::warn_missing_case3)
+        Diag(CondExpr->getExprLoc(), TheDefaultStmt
+          ? diag::warn_def_missing_case3 : diag::warn_missing_case3)
           << UnhandledNames[0] << UnhandledNames[1] << UnhandledNames[2];
         break;
       default:
-        Diag(CondExpr->getExprLoc(), diag::warn_missing_cases)
+        Diag(CondExpr->getExprLoc(), TheDefaultStmt
+          ? diag::warn_def_missing_cases : diag::warn_missing_cases)
           << (unsigned)UnhandledNames.size()
           << UnhandledNames[0] << UnhandledNames[1] << UnhandledNames[2];
         break;

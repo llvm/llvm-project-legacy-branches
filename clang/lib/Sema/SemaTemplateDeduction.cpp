@@ -278,7 +278,7 @@ checkDeducedTemplateArguments(ASTContext &Context,
     return X;
   }
 
-  return DeducedTemplateArgument();
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 /// \brief Deduce the value of the given non-type template parameter
@@ -1335,8 +1335,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
           SmallVector<const RecordType *, 8> ToVisit;
           ToVisit.push_back(RecordT);
           bool Successful = false;
-          SmallVectorImpl<DeducedTemplateArgument> DeducedOrig(0);
-          DeducedOrig = Deduced;
+          SmallVector<DeducedTemplateArgument, 8> DeducedOrig(Deduced.begin(),
+                                                              Deduced.end());
           while (!ToVisit.empty()) {
             // Retrieve the next class in the inheritance hierarchy.
             const RecordType *NextT = ToVisit.back();
@@ -1358,7 +1358,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
               // from this base class.
               if (BaseResult == Sema::TDK_Success) {
                 Successful = true;
-                DeducedOrig = Deduced;
+                DeducedOrig.clear();
+                DeducedOrig.append(Deduced.begin(), Deduced.end());
               }
               else
                 Deduced = DeducedOrig;
@@ -1528,7 +1529,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       return Sema::TDK_Success;
   }
 
-  return Sema::TDK_Success;
+  llvm_unreachable("Invalid Type Class!");
 }
 
 static Sema::TemplateDeductionResult
@@ -1569,7 +1570,6 @@ DeduceTemplateArguments(Sema &S,
 
   case TemplateArgument::TemplateExpansion:
     llvm_unreachable("caller should handle pack expansions");
-    break;
 
   case TemplateArgument::Declaration:
     if (Arg.getKind() == TemplateArgument::Declaration &&
@@ -1629,7 +1629,7 @@ DeduceTemplateArguments(Sema &S,
     llvm_unreachable("Argument packs should be expanded by the caller!");
   }
 
-  return Sema::TDK_Success;
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 /// \brief Determine whether there is a template argument to be used for
@@ -1879,7 +1879,7 @@ static bool isSameTemplateArg(ASTContext &Context,
       return true;
   }
 
-  return false;
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 /// \brief Allocate a TemplateArgumentLoc where all locations have
@@ -1904,7 +1904,6 @@ getTrivialTemplateArgumentLoc(Sema &S,
   switch (Arg.getKind()) {
   case TemplateArgument::Null:
     llvm_unreachable("Can't get a NULL template argument here");
-    break;
 
   case TemplateArgument::Type:
     return TemplateArgumentLoc(Arg,
@@ -1949,7 +1948,7 @@ getTrivialTemplateArgumentLoc(Sema &S,
     return TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
   }
 
-  return TemplateArgumentLoc();
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 

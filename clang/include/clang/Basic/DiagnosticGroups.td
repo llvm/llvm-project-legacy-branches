@@ -179,7 +179,8 @@ def : DiagGroup<"strict-prototypes">;
 def StrictSelector : DiagGroup<"strict-selector-match">;
 def MethodDuplicate : DiagGroup<"duplicate-method-match">;
 def SwitchEnum     : DiagGroup<"switch-enum">;
-def Switch         : DiagGroup<"switch", [SwitchEnum]>;
+def SwitchRedundantDefault : DiagGroup<"switch-redundant-default">;
+def Switch         : DiagGroup<"switch", [SwitchRedundantDefault]>;
 def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;

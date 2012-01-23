@@ -2505,9 +2505,12 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
       
       // Create a reference to the iteration variable.
       ExprResult IterationVarRef
-        = SemaRef.BuildDeclRefExpr(IterationVar, SizeType, VK_RValue, Loc);
+        = SemaRef.BuildDeclRefExpr(IterationVar, SizeType, VK_LValue, Loc);
       assert(!IterationVarRef.isInvalid() &&
              "Reference to invented variable cannot fail!");
+      IterationVarRef = SemaRef.DefaultLvalueConversion(IterationVarRef.take());
+      assert(!IterationVarRef.isInvalid() &&
+             "Conversion of invented variable cannot fail!");
 
       // Subscript the array with this iteration variable.
       CtorArg = SemaRef.CreateBuiltinArraySubscriptExpr(CtorArg.take(), Loc,
@@ -2673,8 +2676,8 @@ struct BaseAndFieldInfo {
     case IIK_Default:
       return false;
     }
-    
-    return false;
+
+    llvm_unreachable("Invalid ImplicitInitializerKind!");
   }
 };
 }
@@ -7630,9 +7633,11 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
   // Create a reference to the iteration variable; we'll use this several
   // times throughout.
   Expr *IterationVarRef
-    = S.BuildDeclRefExpr(IterationVar, SizeType, VK_RValue, Loc).take();
+    = S.BuildDeclRefExpr(IterationVar, SizeType, VK_LValue, Loc).take();
   assert(IterationVarRef && "Reference to invented variable cannot fail!");
-  
+  Expr *IterationVarRefRVal = S.DefaultLvalueConversion(IterationVarRef).take();
+  assert(IterationVarRefRVal && "Conversion of invented variable cannot fail!");
+
   // Create the DeclStmt that holds the iteration variable.
   Stmt *InitStmt = new (S.Context) DeclStmt(DeclGroupRef(IterationVar),Loc,Loc);
   
@@ -7640,7 +7645,7 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
   llvm::APInt Upper
     = ArrayTy->getSize().zextOrTrunc(S.Context.getTypeSize(SizeType));
   Expr *Comparison
-    = new (S.Context) BinaryOperator(IterationVarRef,
+    = new (S.Context) BinaryOperator(IterationVarRefRVal,
                      IntegerLiteral::Create(S.Context, Upper, SizeType, Loc),
                                      BO_NE, S.Context.BoolTy,
                                      VK_RValue, OK_Ordinary, Loc);
@@ -7652,9 +7657,11 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
   
   // Subscript the "from" and "to" expressions with the iteration variable.
   From = AssertSuccess(S.CreateBuiltinArraySubscriptExpr(From, Loc,
-                                                         IterationVarRef, Loc));
+                                                         IterationVarRefRVal,
+                                                         Loc));
   To = AssertSuccess(S.CreateBuiltinArraySubscriptExpr(To, Loc,
-                                                       IterationVarRef, Loc));
+                                                       IterationVarRefRVal,
+                                                       Loc));
   if (!Copying) // Cast to rvalue
     From = CastForMoving(S, From);
 
@@ -7839,11 +7846,13 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
     PushOnScopeChains(CopyAssignment, S, false);
   ClassDecl->addDecl(CopyAssignment);
   
-  // C++0x [class.copy]p18:
-  //   ... If the class definition declares a move constructor or move
-  //   assignment operator, the implicitly declared copy assignment operator is
-  //   defined as deleted; ...
-  if (ClassDecl->hasUserDeclaredMoveConstructor() ||
+  // C++0x [class.copy]p19:
+  //   ....  If the class definition does not explicitly declare a copy
+  //   assignment operator, there is no user-declared move constructor, and
+  //   there is no user-declared move assignment operator, a copy assignment
+  //   operator is implicitly declared as defaulted.
+  if ((ClassDecl->hasUserDeclaredMoveConstructor() &&
+          !getLangOptions().MicrosoftMode) ||
       ClassDecl->hasUserDeclaredMoveAssignment() ||
       ShouldDeleteCopyAssignmentOperator(CopyAssignment))
     CopyAssignment->setDeletedAsWritten();
@@ -8742,12 +8751,14 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
     PushOnScopeChains(CopyConstructor, S, false);
   ClassDecl->addDecl(CopyConstructor);
 
-  // C++0x [class.copy]p7:
-  //   ... If the class definition declares a move constructor or move
-  //   assignment operator, the implicitly declared constructor is defined as
-  //   deleted; ...
+  // C++11 [class.copy]p8:
+  //   ... If the class definition does not explicitly declare a copy
+  //   constructor, there is no user-declared move constructor, and there is no
+  //   user-declared move assignment operator, a copy constructor is implicitly
+  //   declared as defaulted.
   if (ClassDecl->hasUserDeclaredMoveConstructor() ||
-      ClassDecl->hasUserDeclaredMoveAssignment() ||
+      (ClassDecl->hasUserDeclaredMoveAssignment() &&
+          !getLangOptions().MicrosoftMode) ||
       ShouldDeleteSpecialMember(CopyConstructor, CXXCopyConstructor))
     CopyConstructor->setDeletedAsWritten();
   
@@ -10751,8 +10762,7 @@ void Sema::MarkVTableUsed(SourceLocation Loc, CXXRecordDecl *Class,
   // not have a vtable.
   if (!Class->isDynamicClass() || Class->isDependentContext() ||
       CurContext->isDependentContext() ||
-      ExprEvalContexts.back().Context == Unevaluated ||
-      ExprEvalContexts.back().Context == ConstantEvaluated)
+      ExprEvalContexts.back().Context == Unevaluated)
     return;
 
   // Try to insert this class into the map.

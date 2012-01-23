@@ -521,9 +521,9 @@ public:
     /// run time.
     Unevaluated,
 
-    /// \brief The current expression and its subexpressions occur within a
-    /// constant expression. Such a context is not potentially-evaluated in
-    /// C++98, but is potentially-evaluated in C++11.
+    /// \brief The current context is "potentially evaluated" in C++11 terms,
+    /// but the expression is evaluated at compile-time (like the values of
+    /// cases in a switch statment).
     ConstantEvaluated,
 
     /// \brief The current expression is potentially evaluated at run time,
@@ -2256,6 +2256,7 @@ public:
   void DiscardCleanupsInEvaluationContext();
 
   ExprResult TranformToPotentiallyEvaluated(Expr *E);
+  ExprResult HandleExprEvaluationContextForTypeof(Expr *E);
 
   void MarkDeclarationReferenced(SourceLocation Loc, Decl *D);
   void MarkDeclarationsReferencedInType(SourceLocation Loc, QualType T);
@@ -5131,8 +5132,22 @@ public:
                    TemplateSpecializationKind TSK,
                    bool Complain = true);
 
+  struct LateInstantiatedAttribute {
+    const Attr *TmplAttr;
+    LocalInstantiationScope *Scope;
+    Decl *NewDecl;
+
+    LateInstantiatedAttribute(const Attr *A, LocalInstantiationScope *S,
+                              Decl *D)
+      : TmplAttr(A), Scope(S), NewDecl(D)
+    { }
+  };
+  typedef SmallVector<LateInstantiatedAttribute, 16> LateInstantiatedAttrVec;
+
   void InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
-                        const Decl *Pattern, Decl *Inst);
+                        const Decl *Pattern, Decl *Inst,
+                        LateInstantiatedAttrVec *LateAttrs = 0,
+                        LocalInstantiationScope *OuterMostScope = 0);
 
   bool
   InstantiateClassTemplateSpecialization(SourceLocation PointOfInstantiation,
@@ -5538,7 +5553,7 @@ public:
                          SourceLocation PragmaLoc);
 
   /// ActOnPragmaVisibility - Called on well formed #pragma GCC visibility... .
-  void ActOnPragmaVisibility(bool IsPush, const IdentifierInfo* VisType,
+  void ActOnPragmaVisibility(const IdentifierInfo* VisType,
                              SourceLocation PragmaLoc);
 
   NamedDecl *DeclClonePragmaWeak(NamedDecl *ND, IdentifierInfo *II,
