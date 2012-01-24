@@ -57,6 +57,7 @@ Driver::Driver(StringRef ClangExecutable,
     DefaultImageName(DefaultImageName),
     DriverTitle("clang \"gcc-compatible\" driver"),
     Host(0),
+    TargetTriple(llvm::Triple::normalize(DefaultTargetTriple)),
     CCPrintOptionsFilename(0), CCPrintHeadersFilename(0),
     CCLogDiagnosticsFilename(0), CCCIsCXX(false),
     CCCIsCPP(false),CCCEcho(false), CCCPrintBindings(false),
@@ -321,7 +322,11 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   if (Args->hasArg(options::OPT_nostdlib))
     UseStdLib = false;
 
-  Host = GetHostInfo(DefaultTargetTriple.c_str());
+  // Reset the target triple here as we may have adjusted the
+  // DefaultTargetTriple string for flags above.
+  // FIXME: Same fix is needed here when the above flag management is fixed.
+  TargetTriple = llvm::Triple(llvm::Triple::normalize(DefaultTargetTriple));
+  Host = GetHostInfo(TargetTriple);
 
   // Perform the default argument translations.
   DerivedArgList *TranslatedArgs = TranslateInputArgs(*Args);
@@ -343,8 +348,9 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   InputList Inputs;
   BuildInputs(C->getDefaultToolChain(), C->getArgs(), Inputs);
 
-  // Construct the list of abstract actions to perform for this compilation.
-  if (Host->useDriverDriver())
+  // Construct the list of abstract actions to perform for this compilation. On
+  // Darwin target OSes this uses the driver-driver and universal actions.
+  if (TargetTriple.isOSDarwin())
     BuildUniversalActions(C->getDefaultToolChain(), C->getArgs(),
                           Inputs, C->getActions());
   else
@@ -432,8 +438,9 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
     return;
   }
 
-  // Construct the list of abstract actions to perform for this compilation.
-  if (Host->useDriverDriver())
+  // Construct the list of abstract actions to perform for this compilation. On
+  // Darwin OSes this uses the driver-driver and builds universal actions.
+  if (TargetTriple.isOSDarwin())
     BuildUniversalActions(C.getDefaultToolChain(), C.getArgs(),
                           Inputs, C.getActions());
   else
@@ -1571,9 +1578,8 @@ std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix)
   return P.str();
 }
 
-const HostInfo *Driver::GetHostInfo(const char *TripleStr) const {
+const HostInfo *Driver::GetHostInfo(const llvm::Triple &Triple) const {
   llvm::PrettyStackTraceString CrashInfo("Constructing host");
-  llvm::Triple Triple(llvm::Triple::normalize(TripleStr).c_str());
 
   // TCE is an osless target
   if (Triple.getArchName() == "tce")

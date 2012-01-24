@@ -1375,6 +1375,7 @@ public:
                                  QualType &ConvertedType);
   bool IsBlockPointerConversion(QualType FromType, QualType ToType,
                                 QualType& ConvertedType);
+  bool isSentinelNullExpr(const Expr *E) const;
   bool FunctionArgTypesAreEqual(const FunctionProtoType *OldType,
                                 const FunctionProtoType *NewType,
                                 unsigned *ArgPos = 0);
@@ -3506,6 +3507,7 @@ public:
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
                                     ParsedType TemplateTypeTy,
+                                    const DeclSpec &DS,
                                     SourceLocation IdLoc,
                                     SourceLocation LParenLoc,
                                     Expr **Args, unsigned NumArgs,
@@ -3517,6 +3519,7 @@ public:
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
                                     ParsedType TemplateTypeTy,
+                                    const DeclSpec &DS,
                                     SourceLocation IdLoc,
                                     Expr *InitList,
                                     SourceLocation EllipsisLoc);
@@ -3526,6 +3529,7 @@ public:
                                     CXXScopeSpec &SS,
                                     IdentifierInfo *MemberOrBase,
                                     ParsedType TemplateTypeTy,
+                                    const DeclSpec &DS,
                                     SourceLocation IdLoc,
                                     const MultiInitializer &Init,
                                     SourceLocation EllipsisLoc);
@@ -4643,8 +4647,15 @@ public:
                           FunctionDecl *&Specialization,
                           sema::TemplateDeductionInfo &Info);
 
-  bool DeduceAutoType(TypeSourceInfo *AutoType, Expr *&Initializer,
-                      TypeSourceInfo *&Result);
+  /// \brief Result type of DeduceAutoType.
+  enum DeduceAutoResult {
+    DAR_Succeeded,
+    DAR_Failed,
+    DAR_FailedAlreadyDiagnosed
+  };
+
+  DeduceAutoResult DeduceAutoType(TypeSourceInfo *AutoType, Expr *&Initializer,
+                                  TypeSourceInfo *&Result);
   void DiagnoseAutoDeductionFailure(VarDecl *VDecl, Expr *Init);
 
   FunctionTemplateDecl *getMoreSpecializedTemplate(FunctionTemplateDecl *FT1,

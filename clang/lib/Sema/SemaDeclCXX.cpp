@@ -1722,11 +1722,13 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
                           ParsedType TemplateTypeTy,
+                          const DeclSpec &DS,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
   return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             IdLoc, MultiInitializer(InitList), EllipsisLoc);
+                             DS, IdLoc, MultiInitializer(InitList), 
+                             EllipsisLoc);
 }
 
 /// \brief Handle a C++ member initializer using parentheses syntax.
@@ -1736,14 +1738,15 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
                           ParsedType TemplateTypeTy,
+                          const DeclSpec &DS,
                           SourceLocation IdLoc,
                           SourceLocation LParenLoc,
                           Expr **Args, unsigned NumArgs,
                           SourceLocation RParenLoc,
                           SourceLocation EllipsisLoc) {
   return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             IdLoc, MultiInitializer(LParenLoc, Args, NumArgs,
-                                                     RParenLoc),
+                             DS, IdLoc, MultiInitializer(LParenLoc, Args, 
+                                                         NumArgs, RParenLoc),
                              EllipsisLoc);
 }
 
@@ -1779,6 +1782,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
                           CXXScopeSpec &SS,
                           IdentifierInfo *MemberOrBase,
                           ParsedType TemplateTypeTy,
+                          const DeclSpec &DS,
                           SourceLocation IdLoc,
                           const MultiInitializer &Args,
                           SourceLocation EllipsisLoc) {
@@ -1831,6 +1835,8 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
 
   if (TemplateTypeTy) {
     BaseType = GetTypeFromParser(TemplateTypeTy, &TInfo);
+  } else if (DS.getTypeSpecType() == TST_decltype) {
+    BaseType = BuildDecltypeType(DS.getRepAsExpr(), DS.getTypeSpecTypeLoc());
   } else {
     LookupResult R(*this, MemberOrBase, IdLoc, LookupOrdinaryName);
     LookupParsedName(R, S, &SS);
@@ -5809,12 +5815,13 @@ bool Sema::isStdInitializerList(QualType Ty, QualType *Element) {
     CXXRecordDecl *TemplateClass = Template->getTemplatedDecl();
     if (TemplateClass->getIdentifier() !=
             &PP.getIdentifierTable().get("initializer_list") ||
-        !TemplateClass->getDeclContext()->Equals(getStdNamespace()))
+        !getStdNamespace()->InEnclosingNamespaceSetOf(
+            TemplateClass->getDeclContext()))
       return false;
     // This is a template called std::initializer_list, but is it the right
     // template?
     TemplateParameterList *Params = Template->getTemplateParameters();
-    if (Params->size() != 1)
+    if (Params->getMinRequiredArguments() != 1)
       return false;
     if (!isa<TemplateTypeParmDecl>(Params->getParam(0)))
       return false;
@@ -5857,7 +5864,8 @@ static ClassTemplateDecl *LookupStdInitializerList(Sema &S, SourceLocation Loc){
   // We found some template called std::initializer_list. Now verify that it's
   // correct.
   TemplateParameterList *Params = Template->getTemplateParameters();
-  if (Params->size() != 1 || !isa<TemplateTypeParmDecl>(Params->getParam(0))) {
+  if (Params->getMinRequiredArguments() != 1 ||
+      !isa<TemplateTypeParmDecl>(Params->getParam(0))) {
     S.Diag(Template->getLocation(), diag::err_malformed_std_initializer_list);
     return 0;
   }
@@ -9102,7 +9110,8 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
 
     Expr *Init = Exprs.get()[0];
     TypeSourceInfo *DeducedType = 0;
-    if (!DeduceAutoType(VDecl->getTypeSourceInfo(), Init, DeducedType))
+    if (DeduceAutoType(VDecl->getTypeSourceInfo(), Init, DeducedType) ==
+            DAR_Failed)
       DiagnoseAutoDeductionFailure(VDecl, Init);
     if (!DeducedType) {
       RealDecl->setInvalidDecl();
