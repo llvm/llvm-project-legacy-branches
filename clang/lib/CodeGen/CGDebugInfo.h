@@ -232,7 +232,11 @@ private:
   /// getContextDescriptor - Get context info for the decl.
   llvm::DIDescriptor getContextDescriptor(const Decl *Decl);
 
-  /// CreateContextChain - Create a set of decls for the context chain.
+  /// createRecordFwdDecl - Create a forward decl for a RecordType in a given
+  /// context.
+  llvm::DIType createRecordFwdDecl(const RecordDecl *, llvm::DIDescriptor);
+  
+  /// createContextChain - Create a set of decls for the context chain.
   llvm::DIDescriptor createContextChain(const Decl *Decl);
 
   /// getCurrentDirname - Return current directory name.

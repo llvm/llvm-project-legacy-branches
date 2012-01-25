@@ -604,19 +604,19 @@ Corrected:
         // Update the name, so that the caller has the new name.
         Name = Corrected.getCorrectionAsIdentifierInfo();
         
+        // Typo correction corrected to a keyword.
+        if (Corrected.isKeyword())
+          return Corrected.getCorrectionAsIdentifierInfo();
+
         // Also update the LookupResult...
         // FIXME: This should probably go away at some point
         Result.clear();
         Result.setLookupName(Corrected.getCorrection());
-        if (FirstDecl) Result.addDecl(FirstDecl);
-
-        // Typo correction corrected to a keyword.
-        if (Corrected.isKeyword())
-          return Corrected.getCorrectionAsIdentifierInfo();
-        
-        if (FirstDecl)
+        if (FirstDecl) {
+          Result.addDecl(FirstDecl);
           Diag(FirstDecl->getLocation(), diag::note_previous_decl)
             << CorrectedQuotedStr;
+        }
 
         // If we found an Objective-C instance variable, let
         // LookupInObjCMethod build the appropriate expression to
@@ -7420,10 +7420,16 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
     unsigned FormatIdx;
     bool HasVAListArg;
     if (Context.BuiltinInfo.isPrintfLike(BuiltinID, FormatIdx, HasVAListArg)) {
-      if (!FD->getAttr<FormatAttr>())
+      if (!FD->getAttr<FormatAttr>()) {
+        const char *fmt = "printf";
+        unsigned int NumParams = FD->getNumParams();
+        if (FormatIdx < NumParams && // NumParams may be 0 (e.g. vfprintf)
+            FD->getParamDecl(FormatIdx)->getType()->isObjCObjectPointerType())
+          fmt = "NSString";
         FD->addAttr(::new (Context) FormatAttr(FD->getLocation(), Context,
-                                                "printf", FormatIdx+1,
+                                               fmt, FormatIdx+1,
                                                HasVAListArg ? 0 : FormatIdx+2));
+      }
     }
     if (Context.BuiltinInfo.isScanfLike(BuiltinID, FormatIdx,
                                              HasVAListArg)) {
@@ -7464,16 +7470,7 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
   } else
     return;
 
-  if (Name->isStr("NSLog") || Name->isStr("NSLogv")) {
-    // FIXME: NSLog and NSLogv should be target specific
-    if (const FormatAttr *Format = FD->getAttr<FormatAttr>()) {
-      // FIXME: We known better than our headers.
-      const_cast<FormatAttr *>(Format)->setType(Context, "printf");
-    } else
-      FD->addAttr(::new (Context) FormatAttr(FD->getLocation(), Context,
-                                             "printf", 1,
-                                             Name->isStr("NSLogv") ? 0 : 2));
-  } else if (Name->isStr("asprintf") || Name->isStr("vasprintf")) {
+  if (Name->isStr("asprintf") || Name->isStr("vasprintf")) {
     // FIXME: asprintf and vasprintf aren't C99 functions. Should they be
     // target-specific builtins, perhaps?
     if (!FD->getAttr<FormatAttr>())

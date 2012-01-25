@@ -13,6 +13,7 @@ typedef signed char BOOL;
 typedef unsigned int NSUInteger;
 @class NSString, Protocol;
 extern void NSLog(NSString *format, ...) __attribute__((format(__NSString__, 1, 2)));
+extern void NSLog(NSString *format, ...) __attribute__((format(__NSString__, 1, 2)));
 typedef struct _NSZone NSZone;
 @class NSInvocation, NSMethodSignature, NSCoder, NSString, NSEnumerator;
 @protocol NSObject  - (BOOL)isEqual:(id)object; @end
@@ -81,4 +82,28 @@ void check_mylog() {
 void check_method() {
   [Foo fooWithFormat:@"%@"]; // expected-warning {{more '%' conversions than data arguments}}
   [Foo fooWithCStringFormat:"%@"]; // expected-warning {{invalid conversion specifier '@'}}
+}
+
+// Warn about using BOOL with %@
+void rdar10743758(id x) {
+  NSLog(@"%@ %@", x, (BOOL) 1); // expected-warning {{format specifies type 'id' but the argument has type 'BOOL' (aka 'signed char')}}
+}
+
+NSString *test_literal_propagation(void) {
+  const char * const s1 = "constant string %s"; // expected-note {{format string is defined here}}
+  printf(s1); // expected-warning {{more '%' conversions than data arguments}}
+  const char * const s5 = "constant string %s"; // expected-note {{format string is defined here}}
+  const char * const s2 = s5;
+  printf(s2); // expected-warning {{more '%' conversions than data arguments}}
+
+  const char * const s3 = (const char *)0;
+  printf(s3); // expected-warning {{format string is not a string literal}}
+
+  NSString * const ns1 = @"constant string %s"; // expected-note {{format string is defined here}}
+  NSLog(ns1); // expected-warning {{more '%' conversions than data arguments}}
+  NSString * const ns5 = @"constant string %s"; // expected-note {{format string is defined here}}
+  NSString * const ns2 = ns5;
+  NSLog(ns2); // expected-warning {{more '%' conversions than data arguments}}
+  NSString * ns3 = ns1;
+  NSLog(ns3); // expected-warning {{format string is not a string literal}}}
 }

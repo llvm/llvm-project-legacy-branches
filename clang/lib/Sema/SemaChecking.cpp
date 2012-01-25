@@ -508,11 +508,6 @@ bool Sema::CheckObjCMethodCall(ObjCMethodDecl *Method, SourceLocation lbrac,
 }
 
 bool Sema::CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall) {
-  // Printf checking.
-  const FormatAttr *Format = NDecl->getAttr<FormatAttr>();
-  if (!Format)
-    return false;
-
   const VarDecl *V = dyn_cast<VarDecl>(NDecl);
   if (!V)
     return false;
@@ -521,7 +516,12 @@ bool Sema::CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall) {
   if (!Ty->isBlockPointerType())
     return false;
 
-  CheckFormatArguments(Format, TheCall);
+  // format string checking.
+  for (specific_attr_iterator<FormatAttr>
+       i = NDecl->specific_attr_begin<FormatAttr>(),
+       e = NDecl->specific_attr_end<FormatAttr>(); i != e ; ++i) {
+    CheckFormatArguments(*i, TheCall);
+  }
 
   return false;
 }
@@ -1441,6 +1441,10 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
       } else if (const PointerType *PT = T->getAs<PointerType>()) {
         isConstant = T.isConstant(Context) &&
                      PT->getPointeeType().isConstant(Context);
+      } else if (T->isObjCObjectPointerType()) {
+        // In ObjC, there is usually no "const ObjectPointer" type,
+        // so don't check if the pointee type is constant.
+        isConstant = T.isConstant(Context);
       }
 
       if (isConstant) {

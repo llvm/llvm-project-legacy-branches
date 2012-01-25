@@ -20,6 +20,7 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/TemplateDeduction.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/CharUnits.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprCXX.h"
@@ -1102,6 +1103,21 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     NumPlaceArgs = AllPlaceArgs.size();
     if (NumPlaceArgs > 0)
       PlaceArgs = &AllPlaceArgs[0];
+  }
+
+  // Warn if the type is over-aligned and is being allocated by global operator
+  // new.
+  if (OperatorNew &&
+      (OperatorNew->isImplicit() ||
+       getSourceManager().isInSystemHeader(OperatorNew->getLocStart()))) {
+    if (unsigned Align = Context.getPreferredTypeAlign(AllocType.getTypePtr())){
+      unsigned SuitableAlign = Context.getTargetInfo().getSuitableAlign();
+      if (Align > SuitableAlign)
+        Diag(StartLoc, diag::warn_overaligned_type)
+            << AllocType
+            << unsigned(Align / Context.getCharWidth())
+            << unsigned(SuitableAlign / Context.getCharWidth());
+    }
   }
 
   bool Init = ConstructorLParen.isValid();
@@ -2308,12 +2324,14 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     // Nothing to do.
     break;
 
-  case ICK_Lvalue_To_Rvalue:
+  case ICK_Lvalue_To_Rvalue: {
     assert(From->getObjectKind() != OK_ObjCProperty);
     FromType = FromType.getUnqualifiedType();
-    From = ImplicitCastExpr::Create(Context, FromType, CK_LValueToRValue,
-                                    From, 0, VK_RValue);
+    ExprResult FromRes = DefaultLvalueConversion(From);
+    assert(!FromRes.isInvalid() && "Can't perform deduced conversion?!");
+    From = FromRes.take();
     break;
+  }
 
   case ICK_Array_To_Pointer:
     FromType = Context.getArrayDecayedType(FromType);
@@ -3148,8 +3166,9 @@ static bool EvaluateBinaryTypeTrait(Sema &Self, BinaryTypeTrait BTT,
     InitializationKind Kind(InitializationKind::CreateCopy(KeyLoc, 
                                                            SourceLocation()));
     
-    // Perform the initialization within a SFINAE trap at translation unit 
-    // scope.
+    // Perform the initialization in an unevaluated context within a SFINAE 
+    // trap at translation unit scope.
+    EnterExpressionEvaluationContext Unevaluated(Self, Sema::Unevaluated);
     Sema::SFINAETrap SFINAE(Self, /*AccessCheckingSFINAE=*/true);
     Sema::ContextRAII TUContext(Self, Self.Context.getTranslationUnitDecl());
     InitializationSequence Init(Self, To, Kind, &FromPtr, 1);
@@ -4341,12 +4360,21 @@ ExprResult Sema::DiagnoseDtorReference(SourceLocation NameLoc,
                        /*RPLoc*/ ExpectedLParenLoc);
 }
 
-static bool CheckArrow(Sema& S, QualType& ObjectType, Expr *Base, 
+static bool CheckArrow(Sema& S, QualType& ObjectType, Expr *&Base, 
                    tok::TokenKind& OpKind, SourceLocation OpLoc) {
+  if (Base->hasPlaceholderType()) {
+    ExprResult result = S.CheckPlaceholderExpr(Base);
+    if (result.isInvalid()) return true;
+    Base = result.take();
+  }
+  ObjectType = Base->getType();
+
   // C++ [expr.pseudo]p2:
   //   The left-hand side of the dot operator shall be of scalar type. The
   //   left-hand side of the arrow operator shall be of pointer to scalar type.
   //   This scalar type is the object type.
+  // Note that this is rather different from the normal handling for the
+  // arrow operator.
   if (OpKind == tok::arrow) {
     if (const PointerType *Ptr = ObjectType->getAs<PointerType>()) {
       ObjectType = Ptr->getPointeeType();
@@ -4376,7 +4404,7 @@ ExprResult Sema::BuildPseudoDestructorExpr(Expr *Base,
                                            bool HasTrailingLParen) {
   TypeSourceInfo *DestructedTypeInfo = Destructed.getTypeSourceInfo();
 
-  QualType ObjectType = Base->getType();
+  QualType ObjectType;
   if (CheckArrow(*this, ObjectType, Base, OpKind, OpLoc))
     return ExprError();
 
@@ -4481,7 +4509,7 @@ ExprResult Sema::ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
           SecondTypeName.getKind() == UnqualifiedId::IK_Identifier) &&
          "Invalid second type name in pseudo-destructor");
 
-  QualType ObjectType = Base->getType();
+  QualType ObjectType;
   if (CheckArrow(*this, ObjectType, Base, OpKind, OpLoc))
     return ExprError();
 
@@ -4609,8 +4637,7 @@ ExprResult Sema::ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
                                            SourceLocation TildeLoc, 
                                            const DeclSpec& DS,
                                            bool HasTrailingLParen) {
-  
-  QualType ObjectType = Base->getType();
+  QualType ObjectType;
   if (CheckArrow(*this, ObjectType, Base, OpKind, OpLoc))
     return ExprError();
 

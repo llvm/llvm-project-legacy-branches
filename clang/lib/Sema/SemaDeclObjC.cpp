@@ -1931,69 +1931,70 @@ bool Sema::MatchTwoMethodDeclarations(const ObjCMethodDecl *left,
   return true;
 }
 
+void Sema::addMethodToGlobalList(ObjCMethodList *List, ObjCMethodDecl *Method) {
+  // If the list is empty, make it a singleton list.
+  if (List->Method == 0) {
+    List->Method = Method;
+    List->Next = 0;
+    return;
+  }
+  
+  // We've seen a method with this name, see if we have already seen this type
+  // signature.
+  ObjCMethodList *Previous = List;
+  for (; List; Previous = List, List = List->Next) {
+    if (!MatchTwoMethodDeclarations(Method, List->Method))
+      continue;
+    
+    ObjCMethodDecl *PrevObjCMethod = List->Method;
+
+    // Propagate the 'defined' bit.
+    if (Method->isDefined())
+      PrevObjCMethod->setDefined(true);
+    
+    // If a method is deprecated, push it in the global pool.
+    // This is used for better diagnostics.
+    if (Method->isDeprecated()) {
+      if (!PrevObjCMethod->isDeprecated())
+        List->Method = Method;
+    }
+    // If new method is unavailable, push it into global pool
+    // unless previous one is deprecated.
+    if (Method->isUnavailable()) {
+      if (PrevObjCMethod->getAvailability() < AR_Deprecated)
+        List->Method = Method;
+    }
+    
+    return;
+  }
+  
+  // We have a new signature for an existing method - add it.
+  // This is extremely rare. Only 1% of Cocoa selectors are "overloaded".
+  ObjCMethodList *Mem = BumpAlloc.Allocate<ObjCMethodList>();
+  Previous->Next = new (Mem) ObjCMethodList(Method, 0);
+}
+
 /// \brief Read the contents of the method pool for a given selector from
 /// external storage.
-///
-/// This routine should only be called once, when the method pool has no entry
-/// for this selector.
-Sema::GlobalMethodPool::iterator Sema::ReadMethodPool(Selector Sel) {
+void Sema::ReadMethodPool(Selector Sel) {
   assert(ExternalSource && "We need an external AST source");
-  assert(MethodPool.find(Sel) == MethodPool.end() &&
-         "Selector data already loaded into the method pool");
-
-  // Read the method list from the external source.
-  GlobalMethods Methods = ExternalSource->ReadMethodPool(Sel);
-
-  return MethodPool.insert(std::make_pair(Sel, Methods)).first;
+  ExternalSource->ReadMethodPool(Sel);
 }
 
 void Sema::AddMethodToGlobalPool(ObjCMethodDecl *Method, bool impl,
                                  bool instance) {
+  if (ExternalSource)
+    ReadMethodPool(Method->getSelector());
+  
   GlobalMethodPool::iterator Pos = MethodPool.find(Method->getSelector());
-  if (Pos == MethodPool.end()) {
-    if (ExternalSource)
-      Pos = ReadMethodPool(Method->getSelector());
-    else
-      Pos = MethodPool.insert(std::make_pair(Method->getSelector(),
-                                             GlobalMethods())).first;
-  }
+  if (Pos == MethodPool.end())
+    Pos = MethodPool.insert(std::make_pair(Method->getSelector(),
+                                           GlobalMethods())).first;
+  
   Method->setDefined(impl);
+  
   ObjCMethodList &Entry = instance ? Pos->second.first : Pos->second.second;
-  if (Entry.Method == 0) {
-    // Haven't seen a method with this selector name yet - add it.
-    Entry.Method = Method;
-    Entry.Next = 0;
-    return;
-  }
-
-  // We've seen a method with this name, see if we have already seen this type
-  // signature.
-  for (ObjCMethodList *List = &Entry; List; List = List->Next) {
-    bool match = MatchTwoMethodDeclarations(Method, List->Method);
-
-    if (match) {
-      ObjCMethodDecl *PrevObjCMethod = List->Method;
-      PrevObjCMethod->setDefined(impl);
-      // If a method is deprecated, push it in the global pool.
-      // This is used for better diagnostics.
-      if (Method->isDeprecated()) {
-        if (!PrevObjCMethod->isDeprecated())
-          List->Method = Method;
-      }
-      // If new method is unavailable, push it into global pool
-      // unless previous one is deprecated.
-      if (Method->isUnavailable()) {
-        if (PrevObjCMethod->getAvailability() < AR_Deprecated)
-          List->Method = Method;
-      }
-      return;
-    }
-  }
-
-  // We have a new signature for an existing method - add it.
-  // This is extremely rare. Only 1% of Cocoa selectors are "overloaded".
-  ObjCMethodList *Mem = BumpAlloc.Allocate<ObjCMethodList>();
-  Entry.Next = new (Mem) ObjCMethodList(Method, Entry.Next);
+  addMethodToGlobalList(&Entry, Method);
 }
 
 /// Determines if this is an "acceptable" loose mismatch in the global
@@ -2018,13 +2019,12 @@ static bool isAcceptableMethodMismatch(ObjCMethodDecl *chosen,
 ObjCMethodDecl *Sema::LookupMethodInGlobalPool(Selector Sel, SourceRange R,
                                                bool receiverIdOrClass,
                                                bool warn, bool instance) {
+  if (ExternalSource)
+    ReadMethodPool(Sel);
+    
   GlobalMethodPool::iterator Pos = MethodPool.find(Sel);
-  if (Pos == MethodPool.end()) {
-    if (ExternalSource)
-      Pos = ReadMethodPool(Sel);
-    else
-      return 0;
-  }
+  if (Pos == MethodPool.end())
+    return 0;
 
   ObjCMethodList &MethList = instance ? Pos->second.first : Pos->second.second;
 
@@ -2484,7 +2484,11 @@ public:
     Sema::GlobalMethodPool::iterator it = S.MethodPool.find(selector);
     if (it == S.MethodPool.end()) {
       if (!S.ExternalSource) return;
-      it = S.ReadMethodPool(selector);
+      S.ReadMethodPool(selector);
+      
+      it = S.MethodPool.find(selector);
+      if (it == S.MethodPool.end())
+        return;
     }
     ObjCMethodList &list =
       method->isInstanceMethod() ? it->second.first : it->second.second;

@@ -337,7 +337,8 @@ bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
         argTy->isNullPtrType();
 
     case ObjCPointerTy:
-      return argTy->getAs<ObjCObjectPointerType>() != NULL;
+      return argTy->getAs<ObjCObjectPointerType>() ||
+             argTy->getAs<BlockPointerType>();
   }
 
   llvm_unreachable("Invalid ArgTypeResult Kind!");
@@ -547,6 +548,14 @@ bool FormatSpecifier::hasValidLengthModifier() const {
         case ConversionSpecifier::EArg:
         case ConversionSpecifier::gArg:
         case ConversionSpecifier::GArg:
+          return true;
+        // GNU extension.
+        case ConversionSpecifier::dArg:
+        case ConversionSpecifier::iArg:
+        case ConversionSpecifier::oArg:
+        case ConversionSpecifier::uArg:
+        case ConversionSpecifier::xArg:
+        case ConversionSpecifier::XArg:
           return true;
         default:
           return false;

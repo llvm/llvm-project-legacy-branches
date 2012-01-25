@@ -510,8 +510,10 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
     // For uninteresting identifiers, just build the IdentifierInfo
     // and associate it with the persistent ID.
     IdentifierInfo *II = KnownII;
-    if (!II)
+    if (!II) {
       II = &Reader.getIdentifierTable().getOwn(StringRef(k.first, k.second));
+      KnownII = II;
+    }
     Reader.SetIdentifierInfo(ID, II);
     II->setIsFromAST();
     Reader.markIdentifierUpToDate(II);    
@@ -538,8 +540,10 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
   // Build the IdentifierInfo itself and link the identifier ID with
   // the new IdentifierInfo.
   IdentifierInfo *II = KnownII;
-  if (!II)
+  if (!II) {
     II = &Reader.getIdentifierTable().getOwn(StringRef(k.first, k.second));
+    KnownII = II;
+  }
   Reader.markIdentifierUpToDate(II);
   II->setIsFromAST();
 
@@ -1362,7 +1366,7 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset) {
       }
 
       // Finally, install the macro.
-      PP.setMacroInfo(II, MI);
+      PP.setMacroInfo(II, MI, /*LoadedFromAST=*/true);
 
       // Remember that we saw this macro last so that we add the tokens that
       // form its body to it.
@@ -1541,7 +1545,7 @@ void ASTReader::ReadDefinedMacros() {
 }
 
 void ASTReader::LoadMacroDefinition(
-                     llvm::DenseMap<IdentifierInfo *, uint64_t>::iterator Pos) {
+                    llvm::DenseMap<IdentifierInfo *, uint64_t>::iterator Pos) {
   assert(Pos != UnreadMacroRecordOffsets.end() && "Unknown macro definition");
   uint64_t Offset = Pos->second;
   UnreadMacroRecordOffsets.erase(Pos);
@@ -1579,9 +1583,12 @@ namespace {
       if (!IdTable)
         return false;
       
+      ASTIdentifierLookupTrait Trait(IdTable->getInfoObj().getReader(),
+                                     M, This->Found);
+                                     
       std::pair<const char*, unsigned> Key(This->Name.begin(), 
                                            This->Name.size());
-      ASTIdentifierLookupTable::iterator Pos = IdTable->find(Key);
+      ASTIdentifierLookupTable::iterator Pos = IdTable->find(Key, &Trait);
       if (Pos == IdTable->end())
         return false;
       
@@ -5205,37 +5212,15 @@ IdentifierIterator *ASTReader::getIdentifiers() const {
 namespace clang { namespace serialization {
   class ReadMethodPoolVisitor {
     ASTReader &Reader;
-    Selector Sel;    
+    Selector Sel;
+    unsigned PriorGeneration;
     llvm::SmallVector<ObjCMethodDecl *, 4> InstanceMethods;
     llvm::SmallVector<ObjCMethodDecl *, 4> FactoryMethods;
 
-    /// \brief Build an ObjCMethodList from a vector of Objective-C method
-    /// declarations.
-    ObjCMethodList 
-    buildObjCMethodList(const SmallVectorImpl<ObjCMethodDecl *> &Vec) const
-    {
-      ObjCMethodList List;
-      ObjCMethodList *Prev = 0;
-      for (unsigned I = 0, N = Vec.size(); I != N; ++I) {
-        if (!List.Method) {
-          // This is the first method, which is the easy case.
-          List.Method = Vec[I];
-          Prev = &List;
-          continue;
-        }
-        
-        ObjCMethodList *Mem =
-          Reader.getSema()->BumpAlloc.Allocate<ObjCMethodList>();
-        Prev->Next = new (Mem) ObjCMethodList(Vec[I], 0);
-        Prev = Prev->Next;
-      }
-      
-      return List;
-    }
-    
   public:
-    ReadMethodPoolVisitor(ASTReader &Reader, Selector Sel)
-      : Reader(Reader), Sel(Sel) { }
+    ReadMethodPoolVisitor(ASTReader &Reader, Selector Sel, 
+                          unsigned PriorGeneration)
+      : Reader(Reader), Sel(Sel), PriorGeneration(PriorGeneration) { }
     
     static bool visit(ModuleFile &M, void *UserData) {
       ReadMethodPoolVisitor *This
@@ -5244,6 +5229,10 @@ namespace clang { namespace serialization {
       if (!M.SelectorLookupTable)
         return false;
       
+      // If we've already searched this module file, skip it now.
+      if (M.Generation <= This->PriorGeneration)
+        return true;
+
       ASTSelectorLookupTable *PoolTable
         = (ASTSelectorLookupTable*)M.SelectorLookupTable;
       ASTSelectorLookupTable::iterator Pos = PoolTable->find(This->Sel);
@@ -5266,28 +5255,50 @@ namespace clang { namespace serialization {
     }
     
     /// \brief Retrieve the instance methods found by this visitor.
-    ObjCMethodList getInstanceMethods() const { 
-      return buildObjCMethodList(InstanceMethods); 
+    ArrayRef<ObjCMethodDecl *> getInstanceMethods() const { 
+      return InstanceMethods; 
     }
 
     /// \brief Retrieve the instance methods found by this visitor.
-    ObjCMethodList getFactoryMethods() const { 
-      return buildObjCMethodList(FactoryMethods); 
+    ArrayRef<ObjCMethodDecl *> getFactoryMethods() const { 
+      return FactoryMethods;
     }
   };
 } } // end namespace clang::serialization
 
-std::pair<ObjCMethodList, ObjCMethodList>
-ASTReader::ReadMethodPool(Selector Sel) {
-  ReadMethodPoolVisitor Visitor(*this, Sel);
-  ModuleMgr.visit(&ReadMethodPoolVisitor::visit, &Visitor);
-  std::pair<ObjCMethodList, ObjCMethodList> Result;
-  Result.first = Visitor.getInstanceMethods();
-  Result.second = Visitor.getFactoryMethods();
+/// \brief Add the given set of methods to the method list.
+static void addMethodsToPool(Sema &S, ArrayRef<ObjCMethodDecl *> Methods,
+                             ObjCMethodList &List) {
+  for (unsigned I = 0, N = Methods.size(); I != N; ++I) {
+    S.addMethodToGlobalList(&List, Methods[I]);
+  }
+}
+                             
+void ASTReader::ReadMethodPool(Selector Sel) {
+  // Get the selector generation and update it to the current generation.
+  unsigned &Generation = SelectorGeneration[Sel];
+  unsigned PriorGeneration = Generation;
+  Generation = CurrentGeneration;
   
-  if (!Result.first.Method && !Result.second.Method)
+  // Search for methods defined with this selector.
+  ReadMethodPoolVisitor Visitor(*this, Sel, PriorGeneration);
+  ModuleMgr.visit(&ReadMethodPoolVisitor::visit, &Visitor);
+  
+  if (Visitor.getInstanceMethods().empty() &&
+      Visitor.getFactoryMethods().empty()) {
     ++NumMethodPoolMisses;
-  return Result;
+    return;
+  }
+  
+  if (!getSema())
+    return;
+  
+  Sema &S = *getSema();
+  Sema::GlobalMethodPool::iterator Pos
+    = S.MethodPool.insert(std::make_pair(Sel, Sema::GlobalMethods())).first;
+  
+  addMethodsToPool(S, Visitor.getInstanceMethods(), Pos->second.first);
+  addMethodsToPool(S, Visitor.getFactoryMethods(), Pos->second.second);
 }
 
 void ASTReader::ReadKnownNamespaces(
