@@ -19,11 +19,11 @@
 //  the match or construct changes that can be applied to the code.
 //
 //  Example:
-//  class HandleMatch : public clang::tooling::MatchFinder::MatchCallback {
+//  class HandleMatch : public MatchFinder::MatchCallback {
 //  public:
-//    virtual void Run(const clang::tooling::MatchFinder::MatchResult &Result) {
-//      const clang::CXXRecordDecl *Class =
-//          Result.Nodes.GetDeclAs<clang::CXXRecordDecl>("id");
+//    virtual void Run(const MatchFinder::MatchResult &Result) {
+//      const CXXRecordDecl *Class =
+//          Result.Nodes.GetDeclAs<CXXRecordDecl>("id");
 //      ...
 //    }
 //  };
@@ -63,27 +63,35 @@ namespace ast_matchers {
 /// Not intended to be subclassed.
 class MatchFinder {
 public:
+  /// \brief Contains all information for a given match.
+  ///
+  /// Every time a match is found, the MatchFinder will invoke the registered
+  /// MatchCallback with a MatchResult containing information about the match.
   struct MatchResult {
     MatchResult(const BoundNodes &Nodes, clang::ASTContext *Context,
                 clang::SourceManager *SourceManager);
 
+    /// \brief Contains the nodes bound on the current match.
+    ///
+    /// This allows user code to easily extract matched AST nodes.
     const BoundNodes Nodes;
 
-    ///@{
-    /// Utilities for interpreting the matched AST structures.
+    /// \brief Utilities for interpreting the matched AST structures.
+    /// @{
     clang::ASTContext * const Context;
     clang::SourceManager * const SourceManager;
-    ///@}
+    /// @}
   };
 
-  /// Called when the Match registered for it was successfully found in the AST.
+  /// \brief Called when the Match registered for it was successfully found
+  /// in the AST.
   class MatchCallback {
   public:
     virtual ~MatchCallback();
     virtual void Run(const MatchResult &Result) = 0;
   };
 
-  /// Called when parsing is finished. Intended for testing only.
+  /// \brief Called when parsing is finished. Intended for testing only.
   class ParsingDoneTestCallback {
   public:
     virtual ~ParsingDoneTestCallback();
@@ -93,7 +101,8 @@ public:
   MatchFinder();
   ~MatchFinder();
 
-  /// Adds a NodeMatcher to match when running over the AST.
+  /// \brief Adds a matcher to execute when running over the AST.
+  ///
   /// Calls 'Action' with the BoundNodes on every match.
   /// Adding more than one 'NodeMatch' allows finding different matches in a
   /// single pass over the AST.
@@ -106,22 +115,24 @@ public:
                   MatchCallback *Action);
   /// @}
 
-  /// Creates a clang FrontendAction that finds all matches.
+  /// \brief Creates a clang FrontendAction that finds all matches.
   FrontendAction *NewFrontendAction();
 
+  /// \brief Registers a callback to notify the end of parsing.
+  ///
   /// The provided closure is called after parsing is done, before the AST is
   /// traversed. Useful for benchmarking.
   /// Each call to FindAll(...) will call the closure once.
   void RegisterTestCallbackAfterParsing(ParsingDoneTestCallback *ParsingDone);
 
 private:
-  /// The MatchCallback*'s will be called every time the UntypedBaseMatcher
-  /// matches on the AST.
+  /// \brief The MatchCallback*'s will be called every time the
+  /// UntypedBaseMatcher matches on the AST.
   std::vector< std::pair<
     const internal::UntypedBaseMatcher*,
     MatchCallback*> > Triggers;
 
-  /// Called when parsing is done.
+  /// \brief Called when parsing is done.
   ParsingDoneTestCallback *ParsingDone;
 
   friend class MatchFinderFrontendActionFactory;

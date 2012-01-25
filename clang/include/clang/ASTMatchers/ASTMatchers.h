@@ -21,7 +21,7 @@
 //  For more complicated match expressions we're often interested in accessing
 //  multiple parts of the matched AST nodes once a match is found. In that case,
 //  use the Id(...) matcher around the match expressions that match the nodes
-//  which you want to access.
+//  you want to access.
 //
 //  For example, when we're interested in child classes of a certain class, we
 //  would write:
@@ -36,6 +36,9 @@
 //
 //  See ASTMatchersInternal.h for a more in-depth explanation of the
 //  implementation details of the matcher framework.
+//
+//  See ASTMatchFinder.h for how to use the generated matchers to run over
+//  an AST.
 //
 //===----------------------------------------------------------------------===//
 
@@ -55,7 +58,7 @@ namespace ast_matchers {
 /// match expression around the matchers for the nodes we want to access later.
 ///
 /// The instances of BoundNodes are created by MatchFinder when the user's
-/// callbacks are executed when a match is found.
+/// callbacks are executed every time a match is found.
 class BoundNodes {
 public:
   /// \brief Returns the AST node bound to 'ID'.
@@ -74,7 +77,7 @@ public:
   /// @}
 
 private:
-  /// Create BoundNodes from a pre-filled map of bindings.
+  /// \brief Create BoundNodes from a pre-filled map of bindings.
   BoundNodes(const std::map<std::string, const clang::Decl*> &DeclBindings,
              const std::map<std::string, const clang::Stmt*> &StmtBindings)
       : DeclBindings(DeclBindings), StmtBindings(StmtBindings) {}
@@ -95,6 +98,7 @@ private:
 };
 
 /// \brief If the provided matcher matches a node, binds the node to 'id'.
+///
 /// FIXME: Add example for accessing it.
 template <typename T>
 internal::Matcher<T> Id(const std::string &ID,
@@ -110,9 +114,11 @@ typedef internal::Matcher<clang::QualType> TypeMatcher;
 typedef internal::Matcher<clang::Stmt> StatementMatcher;
 /// @}
 
-/// Matches any node. Useful when another matcher requires a child matcher,
-/// but there's no additional constraint. This will often be used with an
-/// explicit conversion to a internal::Matcher<> type such as TypeMatcher.
+/// \brief Matches any node.
+///
+/// Useful when another matcher requires a child matcher, but there's no
+/// additional constraint. This will often be used with an explicit conversion
+/// to a internal::Matcher<> type such as TypeMatcher.
 ///
 /// Example: DeclarationMatcher(True()) matches all declarations, e.g.,
 /// "int* p" and "void f()" in
@@ -122,7 +128,7 @@ inline internal::PolymorphicMatcherWithParam0<internal::TrueMatcher> True() {
   return internal::PolymorphicMatcherWithParam0<internal::TrueMatcher>();
 }
 
-/// Matches a declaration of anything that could have a name.
+/// \brief Matches a declaration of anything that could have a name.
 ///
 /// Example matches X, S, the anonymous union type, i, and U;
 ///   typedef int X;
@@ -135,7 +141,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::NamedDecl> NameableDeclaration;
 
-/// Matches C++ class declarations.
+/// \brief Matches C++ class declarations.
 ///
 /// Example matches X, Z
 ///   class X;
@@ -144,7 +150,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::CXXRecordDecl> Class;
 
-/// Matches C++ constructor declarations.
+/// \brief Matches C++ constructor declarations.
 ///
 /// Example matches Foo::Foo() and Foo::Foo(int)
 ///   class Foo {
@@ -157,7 +163,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::CXXConstructorDecl> Constructor;
 
-/// Matches method declarations.
+/// \brief Matches method declarations.
 ///
 /// Example matches y
 ///   class X { void y() };
@@ -165,7 +171,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::CXXMethodDecl> Method;
 
-/// Matches variable declarations.
+/// \brief Matches variable declarations.
 ///
 /// Note: this does not match declarations of member variables, which are
 /// "field" declarations in Clang parlance.
@@ -176,7 +182,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::VarDecl> Variable;
 
-/// Matches field declarations.
+/// \brief Matches field declarations.
 ///
 /// Given
 ///   class X { int m; };
@@ -186,7 +192,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
   clang::FieldDecl> Field;
 
-/// Matches function declarations.
+/// \brief Matches function declarations.
 ///
 /// Example matches f
 ///   void f();
@@ -195,7 +201,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::FunctionDecl> Function;
 
 
-/// Matches statements.
+/// \brief Matches statements.
 ///
 /// Given
 ///   { ++a; }
@@ -203,7 +209,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   matches both the compound statement '{ ++a; }' and '++a'.
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::Stmt> Statement;
 
-/// Matches declaration statements.
+/// \brief Matches declaration statements.
 ///
 /// Given
 ///   int a;
@@ -213,7 +219,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::DeclStmt> DeclarationStatement;
 
-/// Matches member expressions.
+/// \brief Matches member expressions.
 ///
 /// Given
 ///   class Y {
@@ -226,14 +232,14 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::MemberExpr> MemberExpression;
 
-/// Matches call expressions.
+/// \brief Matches call expressions.
 ///
 /// Example matches x.y()
 ///   X x;
 ///   x.y();
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::CallExpr> Call;
 
-/// Matches constructor call expressions (including implicit ones).
+/// \brief Matches constructor call expressions (including implicit ones).
 ///
 /// Example matches string(ptr, n) and ptr within arguments of f
 ///     (matcher = ConstructorCall())
@@ -245,7 +251,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CXXConstructExpr> ConstructorCall;
 
-/// Matches nodes where temporaries are created.
+/// \brief Matches nodes where temporaries are created.
 ///
 /// Example matches FunctionTakesString(GetStringByValue())
 ///     (matcher = BindTemporaryExpr())
@@ -255,7 +261,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CXXBindTemporaryExpr> BindTemporaryExpression;
 
-/// Matches new expressions.
+/// \brief Matches new expressions.
 ///
 /// Given
 ///   new X;
@@ -265,7 +271,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CXXNewExpr> NewExpression;
 
-/// Matches the value of a default argument at the call site.
+/// \brief Matches the value of a default argument at the call site.
 ///
 /// Example matches the CXXDefaultArgExpr placeholder inserted for the
 ///     default value of the second parameter in the call expression f(42)
@@ -276,7 +282,8 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CXXDefaultArgExpr> DefaultArgument;
 
-/// Matches overloaded operator calls.
+/// \brief Matches overloaded operator calls.
+///
 /// Note that if an operator isn't overloaded, it won't match. Instead, use
 /// BinaryOperator matcher.
 /// Currently it does not match operators such as new delete.
@@ -291,7 +298,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CXXOperatorCallExpr> OverloadedOperatorCall;
 
-/// Matches expressions.
+/// \brief Matches expressions.
 ///
 /// Example matches x()
 ///   void f() { x(); }
@@ -299,7 +306,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::Expr> Expression;
 
-/// Matches expressions that refer to declarations.
+/// \brief Matches expressions that refer to declarations.
 ///
 /// Example matches x in if (x)
 ///   bool x;
@@ -308,19 +315,19 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::DeclRefExpr> DeclarationReference;
 
-/// Matches if statements.
+/// \brief Matches if statements.
 ///
 /// Example matches 'if (x) {}'
 ///   if (x) {}
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::IfStmt> If;
 
-/// Matches for statements.
+/// \brief Matches for statements.
 ///
 /// Example matches 'for (;;) {}'
 ///   for (;;) {}
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::ForStmt> For;
 
-/// Matches while statements.
+/// \brief Matches while statements.
 ///
 /// Given
 ///   while (true) {}
@@ -330,7 +337,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::WhileStmt> While;
 
-/// Matches do statements.
+/// \brief Matches do statements.
 ///
 /// Given
 ///   do {} while (true);
@@ -338,7 +345,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   matches 'do {} while(true)'
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> Do;
 
-/// Matches case and default statements inside switch statements.
+/// \brief Matches case and default statements inside switch statements.
 ///
 /// Given
 ///   switch(a) { case 42: break; default: break; }
@@ -348,7 +355,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::SwitchCase> SwitchCase;
 
-/// Matches compound statements.
+/// \brief Matches compound statements.
 ///
 /// Example matches '{}' and '{{}}'in 'for (;;) {{}}'
 ///   for (;;) {{}}
@@ -356,7 +363,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::CompoundStmt> CompoundStatement;
 
-/// Matches bool literals.
+/// \brief Matches bool literals.
 ///
 /// Example matches true
 ///   true
@@ -364,7 +371,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXBoolLiteralExpr> BoolLiteral;
 
-/// Matches string literals (also matches wide string literals).
+/// \brief Matches string literals (also matches wide string literals).
 ///
 /// Example matches "abcd", L"abcd"
 ///   char *s = "abcd"; wchar_t *ws = L"abcd"
@@ -372,7 +379,8 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::StringLiteral> StringLiteral;
 
-/// Matches character literals (also matches wchar_t).
+/// \brief Matches character literals (also matches wchar_t).
+///
 /// Not matching Hex-encoded chars (e.g. 0x1234, which is a IntegerLiteral),
 /// though.
 ///
@@ -382,7 +390,8 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CharacterLiteral> CharacterLiteral;
 
-/// Matches integer literals of all sizes / encodings.
+/// \brief Matches integer literals of all sizes / encodings.
+///
 /// Not matching character-encoded integers such as L'a'.
 ///
 /// Example matches 1, 1L, 0x1, 1U
@@ -390,7 +399,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::IntegerLiteral> IntegerLiteral;
 
-/// Matches binary operator expressions.
+/// \brief Matches binary operator expressions.
 ///
 /// Example matches a || b
 ///   !(a || b)
@@ -398,7 +407,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::BinaryOperator> BinaryOperator;
 
-/// Matches unary operator expressions.
+/// \brief Matches unary operator expressions.
 ///
 /// Example matches !a
 ///   !a || b
@@ -406,7 +415,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::UnaryOperator> UnaryOperator;
 
-/// Matches conditional operator expressions.
+/// \brief Matches conditional operator expressions.
 ///
 /// Example matches a ? b : c
 ///   (a ? b : c) + 42
@@ -414,7 +423,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
   clang::ConditionalOperator> ConditionalOperator;
 
-/// Matches a reinterpret_cast expression.
+/// \brief Matches a reinterpret_cast expression.
 ///
 /// Either the source expression or the destination type can be matched
 /// using Has(), but HasDestinationType() is more specific and can be
@@ -426,7 +435,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXReinterpretCastExpr> ReinterpretCast;
 
-/// Matches a C++ static_cast expression.
+/// \brief Matches a C++ static_cast expression.
 ///
 /// \see HasDestinationType
 /// \see ReinterpretCast
@@ -441,7 +450,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXStaticCastExpr> StaticCast;
 
-/// Matches a dynamic_cast expression.
+/// \brief Matches a dynamic_cast expression.
 ///
 /// Example:
 ///   DynamicCast()
@@ -455,7 +464,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXDynamicCastExpr> DynamicCast;
 
-/// Matches a const_cast expression.
+/// \brief Matches a const_cast expression.
 ///
 /// Example: Matches const_cast<int*>(&r) in
 ///   int n = 42;
@@ -465,6 +474,8 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXConstCastExpr> ConstCast;
 
+/// \brief Matches explicit cast expressions.
+///
 /// Matches any cast expression written in user code, whether it be a
 /// C-style cast, a functional-style cast, or a keyword cast.
 ///
@@ -474,7 +485,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// Clang uses the term "cast" to apply to implicit conversions as well as to
 /// actual cast expressions.
 ///
-/// See also: HasDestinationType.
+/// \see HasDestinationType.
 ///
 /// Example: matches all five of the casts in
 ///   int((int)(reinterpret_cast<int>(static_cast<int>(const_cast<int>(42)))))
@@ -484,7 +495,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::ExplicitCastExpr> ExplicitCast;
 
-/// Matches the implicit cast nodes of Clang's AST.
+/// \brief Matches the implicit cast nodes of Clang's AST.
 ///
 /// This matches many different places, including function call return value
 /// eliding, as well as any type conversions.
@@ -492,7 +503,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::ImplicitCastExpr> ImplicitCast;
 
-/// Matches functional cast expressions
+/// \brief Matches functional cast expressions
 ///
 /// Example: Matches Foo(bar);
 ///   Foo f = bar;
@@ -551,8 +562,10 @@ AllOf(const C1& P1, const C2& P2, const C3& P3) {
 }
 /// @}
 
-/// Matches NamedDecl nodes that have the specified name. Supports specifying
-/// enclosing namespaces or classes by prefixing the name with '<enclosing>::'.
+/// \brief Matches NamedDecl nodes that have the specified name.
+///
+/// Supports specifying enclosing namespaces or classes by prefixing the name
+/// with '<enclosing>::'.
 /// Does not match typedefs of an underlying type with the given name.
 ///
 /// Example matches X (name == "X")
@@ -572,8 +585,10 @@ AST_MATCHER_P(clang::NamedDecl, HasName, std::string, Name) {
   }
 }
 
-/// Matches overloaded operator name given in strings without the "operator"
-/// prefix, such as "<<", for OverloadedOperatorCall's.
+/// \brief Matches overloaded operator names.
+///
+/// Matches overloaded operator names specified in strings without the
+/// "operator" prefix, such as "<<", for OverloadedOperatorCall's.
 ///
 /// Example matches a << b
 ///     (matcher == OverloadedOperatorCall(HasOverloadedOperatorName("<<")))
@@ -585,11 +600,13 @@ AST_MATCHER_P(clang::CXXOperatorCallExpr,
   return clang::getOperatorSpelling(Node.getOperator()) == Name;
 }
 
-/// Matches C++ classes that are directly or indirectly derived from
-/// the given base class. Note that a class is considered to be also
-/// derived from itself. The parameter specified the name of the base
-/// type (either a class or a typedef), and does not allow structural
-/// matches for namespaces or template type parameters.
+/// \brief Matches C++ classes that are directly or indirectly derived from
+/// the given base class.
+///
+/// Note that a class is considered to be also derived from itself.
+/// The parameter specified the name of the base type (either a class or a
+/// typedef), and does not allow structural matches for namespaces or template
+/// type parameters.
 ///
 /// Example matches X, Y, Z, C (base == "X")
 ///   class X;                // A class is considered to be derived from itself.
@@ -608,7 +625,8 @@ AST_MATCHER_P(clang::CXXRecordDecl, IsDerivedFrom, std::string, Base) {
   return Finder->ClassIsDerivedFrom(&Node, Base);
 }
 
-/// Matches AST nodes that have child AST nodes that match the provided matcher.
+/// \brief Matches AST nodes that have child AST nodes that match the
+/// provided matcher.
 ///
 /// Example matches X, Y (matcher = Class(Has(Class(HasName("X")))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
@@ -623,8 +641,8 @@ internal::ArgumentAdaptingMatcher<internal::HasMatcher, ChildT> Has(
                                            ChildT>(ChildMatcher);
 }
 
-/// Matches AST nodes that have descendant AST nodes that match the provided
-/// matcher.
+/// \brief Matches AST nodes that have descendant AST nodes that match the
+/// provided matcher.
 ///
 /// Example matches X, Y, Z
 ///     (matcher = Class(HasDescendant(Class(HasName("X")))))
@@ -642,7 +660,8 @@ HasDescendant(const internal::Matcher<DescendantT> &DescendantMatcher) {
 }
 
 
-/// Matches AST nodes that have child AST nodes that match the provided matcher.
+/// \brief Matches AST nodes that have child AST nodes that match the
+/// provided matcher.
 ///
 /// Example matches X, Y (matcher = Class(ForEach(Class(HasName("X")))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
@@ -661,8 +680,8 @@ internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> ForEach(
     ChildT>(ChildMatcher);
 }
 
-/// Matches AST nodes that have descendant AST nodes that match the provided
-/// matcher.
+/// \brief Matches AST nodes that have descendant AST nodes that match the
+/// provided matcher.
 ///
 /// Example matches X, A, B, C
 ///     (matcher = Class(ForEachDescendant(Class(HasName("X")))))
@@ -688,7 +707,7 @@ ForEachDescendant(
     DescendantT>(DescendantMatcher);
 }
 
-/// Matches if the provided matcher does not match.
+/// \brief Matches if the provided matcher does not match.
 ///
 /// Example matches Y (matcher = Class(Not(HasName("X"))))
 ///   class X {};
@@ -699,7 +718,8 @@ internal::PolymorphicMatcherWithParam1<internal::NotMatcher, M> Not(const M &Inn
     internal::NotMatcher, M>(InnerMatcher);
 }
 
-/// Matches a type if the declaration of the type matches the given matcher.
+/// \brief Matches a type if the declaration of the type matches the given
+/// matcher.
 inline internal::PolymorphicMatcherWithParam1< internal::HasDeclarationMatcher,
                                      internal::Matcher<clang::Decl> >
     HasDeclaration(const internal::Matcher<clang::Decl> &InnerMatcher) {
@@ -708,7 +728,7 @@ inline internal::PolymorphicMatcherWithParam1< internal::HasDeclarationMatcher,
     internal::Matcher<clang::Decl> >(InnerMatcher);
 }
 
-/// Matches on the implicit object argument of a member call expression.
+/// \brief Matches on the implicit object argument of a member call expression.
 ///
 /// Example matches y.x() (matcher = Call(On(HasType(Class(HasName("Y"))))))
 ///   class Y { public: void x(); };
@@ -724,7 +744,7 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, On, internal::Matcher<clang::Expr>,
           InnerMatcher.Matches(*ExprNode, Finder, Builder));
 }
 
-/// Matches if the call expression's callee expression matches.
+/// \brief Matches if the call expression's callee expression matches.
 ///
 /// Given
 ///   class Y { void x() { this->x(); x(); Y y; y.x(); } };
@@ -745,8 +765,8 @@ AST_MATCHER_P(clang::CallExpr, Callee, internal::Matcher<clang::Stmt>,
           InnerMatcher.Matches(*ExprNode, Finder, Builder));
 }
 
-/// Matches if the call expression's callee's declaration matches the given
-/// matcher.
+/// \brief Matches if the call expression's callee's declaration matches the
+/// given matcher.
 ///
 /// Example matches y.x() (matcher = Call(Callee(Method(HasName("x")))))
 ///   class Y { public: void x(); };
