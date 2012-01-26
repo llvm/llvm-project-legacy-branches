@@ -25,11 +25,11 @@
 #ifndef LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_MACROS_H
 #define LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_MACROS_H
 
-/// AST_MATCHER(Type, DefineMatcher) { ... }
-///
+/// \brief AST_MATCHER(Type, DefineMatcher) { ... }
 /// defines a zero parameter function named DefineMatcher() that returns a
-/// Matcher<Type> object. The code between the curly braces has access
-/// to the following variables:
+/// Matcher<Type> object.
+///
+/// The code between the curly braces has access to the following variables:
 ///
 ///   Node:                  the AST node being matched; its type is Type.
 ///   Finder:                an ASTMatchFinder*.
@@ -55,11 +55,11 @@
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
-/// AST_MATCHER_P(Type, DefineMatcher, ParamType, Param) { ... }
-///
+/// \brief AST_MATCHER_P(Type, DefineMatcher, ParamType, Param) { ... }
 /// defines a single-parameter function named DefineMatcher() that returns a
-/// Matcher<Type> object. The code between the curly braces has access
-/// to the following variables:
+/// Matcher<Type> object.
+///
+/// The code between the curly braces has access to the following variables:
 ///
 ///   Node:                  the AST node being matched; its type is Type.
 ///   Param:                 the parameter passed to the function; its type
@@ -90,12 +90,12 @@
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
-/// AST_MATCHER_P2(Type, DefineMatcher, ParamType1, Param1, ParamType2, Param2)
-/// { ... }
-///
+/// \brief AST_MATCHER_P2(
+///     Type, DefineMatcher, ParamType1, Param1, ParamType2, Param2) { ... }
 /// defines a two-parameter function named DefineMatcher() that returns a
-/// Matcher<Type> object. The code between the curly braces has access
-/// to the following variables:
+/// Matcher<Type> object.
+///
+/// The code between the curly braces has access to the following variables:
 ///
 ///   Node:                  the AST node being matched; its type is Type.
 ///   Param1, Param2:        the parameters passed to the function; their types
@@ -131,10 +131,11 @@
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
-/// AST_POLYMORPHIC_MATCHER_P(DefineMatcher, ParamType, Param) { ... }
-///
+/// \brief AST_POLYMORPHIC_MATCHER_P(DefineMatcher, ParamType, Param) { ... }
 /// defines a single-parameter function named DefineMatcher() that is
-/// polymorphic in the return type. The variables are the same as for
+/// polymorphic in the return type.
+///
+/// The variables are the same as for
 /// AST_MATCHER_P, with the addition of NodeType, which specifies the node type
 /// of the matcher Matcher<NodeType> returned by the function matcher().
 ///
@@ -167,11 +168,12 @@
       const NodeType &Node, ASTMatchFinder *Finder,                            \
       BoundNodesTreeBuilder *Builder) const
 
-/// AST_POLYMORPHIC_MATCHER_P2(
+/// \brief AST_POLYMORPHIC_MATCHER_P2(
 ///     DefineMatcher, ParamType1, Param1, ParamType2, Param2) { ... }
-///
 /// defines a two-parameter function named matcher() that is polymorphic in
-/// the return type. The variables are the same as for AST_MATCHER_P2, with the
+/// the return type.
+///
+/// The variables are the same as for AST_MATCHER_P2, with the
 /// addition of NodeType, which specifies the node type of the matcher
 /// Matcher<NodeType> returned by the function DefineMatcher().
 #define AST_POLYMORPHIC_MATCHER_P2(                                            \
