@@ -851,6 +851,7 @@ public:
                          bool isClassName = false,
                          bool HasTrailingDot = false,
                          ParsedType ObjectType = ParsedType(),
+                         bool IsCtorOrDtorName = false,
                          bool WantNontrivialTypeSourceInfo = false,
                          IdentifierInfo **CorrectedII = 0);
   TypeSpecifierType isTagName(IdentifierInfo &II, Scope *S);
@@ -1583,7 +1584,8 @@ public:
                                      SourceLocation LParenLoc,
                                      Expr **Args, unsigned NumArgs,
                                      SourceLocation RParenLoc,
-                                     Expr *ExecConfig);
+                                     Expr *ExecConfig,
+                                     bool AllowTypoCorrection=true);
 
   ExprResult CreateOverloadedUnaryOp(SourceLocation OpLoc,
                                      unsigned Opc,
@@ -2136,7 +2138,7 @@ public:
                                          bool AllowFunctionParameters);
 
   StmtResult ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp);
-  StmtResult ActOnBlockReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp);
+  StmtResult ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp);
 
   StmtResult ActOnAsmStmt(SourceLocation AsmLoc,
                           bool IsSimple, bool IsVolatile,
@@ -2291,7 +2293,8 @@ public:
   SourceRange getExprRange(Expr *E) const;
 
   ExprResult ActOnIdExpression(Scope *S, CXXScopeSpec &SS, UnqualifiedId &Id,
-                               bool HasTrailingLParen, bool IsAddressOfOperand);
+                               bool HasTrailingLParen, bool IsAddressOfOperand,
+                               CorrectionCandidateCallback *CCC = 0);
 
   void DecomposeUnqualifiedId(const UnqualifiedId &Id,
                               TemplateArgumentListInfo &Buffer,
@@ -3939,7 +3942,8 @@ public:
                       TemplateTy Template, SourceLocation TemplateLoc,
                       SourceLocation LAngleLoc,
                       ASTTemplateArgsPtr TemplateArgs,
-                      SourceLocation RAngleLoc);
+                      SourceLocation RAngleLoc,
+                      bool IsCtorOrDtorName = false);
 
   /// \brief Parsed an elaborated-type-specifier that refers to a template-id,
   /// such as \c class T::template apply<U>.
@@ -5100,7 +5104,8 @@ public:
   ParmVarDecl *SubstParmVarDecl(ParmVarDecl *D,
                             const MultiLevelTemplateArgumentList &TemplateArgs,
                                 int indexAdjustment,
-                                llvm::Optional<unsigned> NumExpansions);
+                                llvm::Optional<unsigned> NumExpansions,
+                                bool ExpectParameterPack);
   bool SubstParmTypes(SourceLocation Loc,
                       ParmVarDecl **Params, unsigned NumParams,
                       const MultiLevelTemplateArgumentList &TemplateArgs,

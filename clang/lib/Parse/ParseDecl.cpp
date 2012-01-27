@@ -1110,6 +1110,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
     Decl *ThisDecl = Actions.ActOnDeclarator(getCurScope(), D);
     Actions.ActOnCXXForRangeDecl(ThisDecl);
     Actions.FinalizeDeclaration(ThisDecl);
+    D.complete(ThisDecl);
     return Actions.FinalizeDeclaratorGroup(getCurScope(), DS, &ThisDecl, 1);
   }
 
@@ -1845,6 +1846,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
                                                Next.getLocation(),
                                                getCurScope(), &SS,
                                                false, false, ParsedType(),
+                                               /*IsCtorOrDtorName=*/false,
                                                /*NonTrivialSourceInfo=*/true);
 
       // If the referenced identifier is not a type, then this declspec is

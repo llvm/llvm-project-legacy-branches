@@ -113,3 +113,47 @@ struct TestRedecl : public BaseDecl {
   void add_it(int i); // expected-note{{'add_it' declared here}}
 };
 void TestRedecl::add_in(int i) {} // expected-error{{out-of-line definition of 'add_in' does not match any declaration in 'TestRedecl'; did you mean 'add_it'?}}
+
+// Test the improved typo correction for the Parser::ParseCastExpr =>
+// Sema::ActOnIdExpression => Sema::DiagnoseEmptyLookup call path.
+class SomeNetMessage;
+class Message {};
+void foo(Message&);
+void foo(SomeNetMessage&);
+void doit(void *data) {
+  Message somenetmsg; // expected-note{{'somenetmsg' declared here}}
+  foo(somenetmessage); // expected-error{{use of undeclared identifier 'somenetmessage'; did you mean 'somenetmsg'?}}
+  foo((somenetmessage)data); // expected-error{{use of undeclared identifier 'somenetmessage'; did you mean 'SomeNetMessage'?}}
+}
+
+// Test the typo-correction callback in BuildRecoveryCallExpr.
+// Solves the main issue in PR 9320 of suggesting corrections that take the
+// wrong number of arguments.
+void revoke(const char*); // expected-note 2{{'revoke' declared here}}
+void Test() {
+  Invoke(); // expected-error{{use of undeclared identifier 'Invoke'}}
+  Invoke("foo"); // expected-error{{use of undeclared identifier 'Invoke'; did you mean 'revoke'?}}
+  Invoke("foo", "bar"); // expected-error{{use of undeclared identifier 'Invoke'}}
+}
+void Test2(void (*invoke)(const char *, int)) { // expected-note{{'invoke' declared here}}
+  Invoke(); // expected-error{{use of undeclared identifier 'Invoke'}}
+  Invoke("foo"); // expected-error{{use of undeclared identifier 'Invoke'; did you mean 'revoke'?}}
+  Invoke("foo", 7); // expected-error{{use of undeclared identifier 'Invoke'; did you mean 'invoke'?}}
+  Invoke("foo", 7, 22); // expected-error{{use of undeclared identifier 'Invoke'}}
+}
+
+void provoke(const char *x, bool y=false) {} // expected-note 2{{'provoke' declared here}}
+void Test3() {
+  Provoke(); // expected-error{{use of undeclared identifier 'Provoke'}}
+  Provoke("foo"); // expected-error{{use of undeclared identifier 'Provoke'; did you mean 'provoke'?}}
+  Provoke("foo", true); // expected-error{{use of undeclared identifier 'Provoke'; did you mean 'provoke'?}}
+  Provoke("foo", 7, 22); // expected-error{{use of undeclared identifier 'Provoke'}}
+}
+
+// PR 11737 - Don't try to typo-correct the implicit 'begin' and 'end' in a
+// C++11 for-range statement.
+struct R {};
+bool begun(R);
+void RangeTest() {
+  for (auto b : R()) {} // expected-error {{use of undeclared identifier 'begin'}} expected-note {{range has type}}
+}

@@ -76,7 +76,7 @@ namespace BaseClass {
 
   struct E {};
   struct Test2 : X<E,0>, X<E,1>, X<E,2>, X<E,3> {};
-  // CHECK: @_ZN9BaseClass2t2E = global {{.*}} { [4 x i8] undef }
+  // CHECK: @_ZN9BaseClass2t2E = global {{.*}} undef
   extern constexpr Test2 t2 = Test2();
 }
 
@@ -190,8 +190,8 @@ namespace MemberPtr {
 
 namespace CrossFuncLabelDiff {
   // Make sure we refuse to constant-fold the variable b.
-  constexpr long a() { return (long)&&lbl + (0 && ({lbl: 0;})); }
-  void test() { static long b = (long)&&lbl - a(); lbl: return; }
+  constexpr long a(bool x) { return x ? 0 : (long)&&lbl + (0 && ({lbl: 0;})); }
+  void test() { static long b = (long)&&lbl - a(false); lbl: return; }
   // CHECK: sub nsw i64 ptrtoint (i8* blockaddress(@_ZN18CrossFuncLabelDiff4testEv, {{.*}}) to i64),
   // CHECK: store i64 {{.*}}, i64* @_ZZN18CrossFuncLabelDiff4testEvE1b, align 8
 }

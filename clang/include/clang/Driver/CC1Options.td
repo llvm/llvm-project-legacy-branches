@@ -106,6 +106,9 @@ def analyzer_checker_help : Flag<"-analyzer-checker-help">,
 def migrator_no_nsalloc_error : Flag<"-no-ns-alloc-error">,
   HelpText<"Do not error on use of NSAllocateCollectable/NSReallocateCollectable">;
 
+def migrator_no_finalize_removal : Flag<"-no-finalize-removal">,
+  HelpText<"Do not remove finalize method in gc mode">;
+
 //===----------------------------------------------------------------------===//
 // CodeGen Options
 //===----------------------------------------------------------------------===//
@@ -448,14 +451,25 @@ def ftime_report : Flag<"-ftime-report">,
   HelpText<"Print the amount of time each phase of compilation takes">;
 def fdump_record_layouts : Flag<"-fdump-record-layouts">,
   HelpText<"Dump record layout information">;
+def fdump_record_layouts_simple : Flag<"-fdump-record-layouts-simple">,
+  HelpText<"Dump record layout information in a simple form used for testing">;
 def fix_what_you_can : Flag<"-fix-what-you-can">,
   HelpText<"Apply fix-it advice even in the presence of unfixable errors">;
+def fix_only_warnings : Flag<"-fix-only-warnings">,
+  HelpText<"Apply fix-it advice only for warnings, not errors">;
+def fixit_recompile : Flag<"-fixit-recompile">,
+  HelpText<"Apply fix-it changes and recompile">;
+def fixit_to_temp : Flag<"-fixit-to-temporary">,
+  HelpText<"Apply fix-it changes to temporary files">;
 
 // Generic forwarding to LLVM options. This should only be used for debugging
 // and experimental features.
 def mllvm : Separate<"-mllvm">,
   HelpText<"Additional arguments to forward to LLVM's option processing">;
 
+def foverride_record_layout_EQ : Joined<"-foverride-record-layout=">,
+  HelpText<"Override record layouts with those in the given file">;
+  
 //===----------------------------------------------------------------------===//
 // Language Options
 //===----------------------------------------------------------------------===//

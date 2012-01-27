@@ -2251,8 +2251,7 @@ static FormatAttrKind getFormatAttrKind(StringRef Format) {
 
   // Otherwise, check for supported formats.
   if (Format == "scanf" || Format == "printf" || Format == "printf0" ||
-      Format == "strfmon" || Format == "cmn_err" || Format == "strftime" ||
-      Format == "NSString" || Format == "CFString" || Format == "vcmn_err" ||
+      Format == "strfmon" || Format == "cmn_err" || Format == "vcmn_err" ||
       Format == "zcmn_err" ||
       Format == "kprintf")  // OpenBSD.
     return SupportedFormat;
@@ -4033,7 +4032,7 @@ void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
 
   // We only want to actually emit delayed diagnostics when we
   // successfully parsed a decl.
-  if (decl && !decl->isInvalidDecl()) {
+  if (decl) {
     // We emit all the active diagnostics, not just those starting
     // from the saved state.  The idea is this:  we get one push for a
     // decl spec and another for each declarator;  in a decl group like:
@@ -4048,7 +4047,9 @@ void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
 
       switch (diag.Kind) {
       case DelayedDiagnostic::Deprecation:
-        S.HandleDelayedDeprecationCheck(diag, decl);
+        // Don't bother giving deprecation diagnostics if the decl is invalid.
+        if (!decl->isInvalidDecl())
+          S.HandleDelayedDeprecationCheck(diag, decl);
         break;
 
       case DelayedDiagnostic::Access:

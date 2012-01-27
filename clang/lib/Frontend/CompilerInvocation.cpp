@@ -466,6 +466,12 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
     Res.push_back("-version");
   if (Opts.FixWhatYouCan)
     Res.push_back("-fix-what-you-can");
+  if (Opts.FixOnlyWarnings)
+    Res.push_back("-fix-only-warnings");
+  if (Opts.FixAndRecompile)
+    Res.push_back("-fixit-recompile");
+  if (Opts.FixToTemporaries)
+    Res.push_back("-fixit-to-temporary");
   switch (Opts.ARCMTAction) {
   case FrontendOptions::ARCMT_None:
     break;
@@ -545,6 +551,8 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
     Res.push_back("-mllvm");
     Res.push_back(Opts.LLVMArgs[i]);
   }
+  if (!Opts.OverrideRecordLayoutsFile.empty())
+    Res.push_back("-foverride-record-layout=" + Opts.OverrideRecordLayoutsFile);
 }
 
 static void HeaderSearchOptsToArgs(const HeaderSearchOptions &Opts,
@@ -741,7 +749,9 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-ffast-math");
   if (Opts.Static)
     Res.push_back("-static-define");
-  if (Opts.DumpRecordLayouts)
+  if (Opts.DumpRecordLayoutsSimple)
+    Res.push_back("-fdump-record-layouts-simple");
+  else if (Opts.DumpRecordLayouts)
     Res.push_back("-fdump-record-layouts");
   if (Opts.DumpVTableLayouts)
     Res.push_back("-fdump-vtable-layouts");
@@ -1055,6 +1065,7 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
 
 static bool ParseMigratorArgs(MigratorOptions &Opts, ArgList &Args) {
   Opts.NoNSAllocReallocError = Args.hasArg(OPT_migrator_no_nsalloc_error);
+  Opts.NoFinalizeRemoval = Args.hasArg(OPT_migrator_no_finalize_removal);
   return true;
 }
 
@@ -1401,7 +1412,11 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   Opts.ASTMergeFiles = Args.getAllArgValues(OPT_ast_merge);
   Opts.LLVMArgs = Args.getAllArgValues(OPT_mllvm);
   Opts.FixWhatYouCan = Args.hasArg(OPT_fix_what_you_can);
-
+  Opts.FixOnlyWarnings = Args.hasArg(OPT_fix_only_warnings);
+  Opts.FixAndRecompile = Args.hasArg(OPT_fixit_recompile);
+  Opts.FixToTemporaries = Args.hasArg(OPT_fixit_to_temp);
+  Opts.OverrideRecordLayoutsFile
+    = Args.getLastArgValue(OPT_foverride_record_layout_EQ);
   Opts.ARCMTAction = FrontendOptions::ARCMT_None;
   if (const Arg *A = Args.getLastArg(OPT_arcmt_check,
                                      OPT_arcmt_modify,
@@ -1854,7 +1869,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.PackStruct = Args.getLastArgIntValue(OPT_fpack_struct, 0, Diags);
   Opts.PICLevel = Args.getLastArgIntValue(OPT_pic_level, 0, Diags);
   Opts.Static = Args.hasArg(OPT_static_define);
-  Opts.DumpRecordLayouts = Args.hasArg(OPT_fdump_record_layouts);
+  Opts.DumpRecordLayoutsSimple = Args.hasArg(OPT_fdump_record_layouts_simple);
+  Opts.DumpRecordLayouts = Opts.DumpRecordLayoutsSimple 
+                        || Args.hasArg(OPT_fdump_record_layouts);
   Opts.DumpVTableLayouts = Args.hasArg(OPT_fdump_vtable_layouts);
   Opts.SpellChecking = !Args.hasArg(OPT_fno_spell_checking);
   Opts.NoBitFieldTypeAlign = Args.hasArg(OPT_fno_bitfield_type_align);

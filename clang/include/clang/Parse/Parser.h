@@ -410,6 +410,10 @@ private:
   /// \brief Handle the annotation token produced for #pragma unused(...)
   void HandlePragmaUnused();
 
+  /// \brief Handle the annotation token produced for
+  /// #pragma GCC visibility...
+  void HandlePragmaVisibility();
+
   /// GetLookAheadToken - This peeks ahead N tokens and returns that token
   /// without consuming any tokens.  LookAhead(0) returns 'Tok', LookAhead(1)
   /// returns the token after Tok, etc.
@@ -1260,10 +1264,17 @@ private:
   //===--------------------------------------------------------------------===//
   // C99 6.5: Expressions.
 
-  ExprResult ParseExpression();
+  /// TypeCastState - State whether an expression is or may be a type cast.
+  enum TypeCastState {
+    NotTypeCast = 0,
+    MaybeTypeCast,
+    IsTypeCast
+  };
+
+  ExprResult ParseExpression(TypeCastState isTypeCast = NotTypeCast);
   ExprResult ParseConstantExpression();
   // Expr that doesn't include commas.
-  ExprResult ParseAssignmentExpression();
+  ExprResult ParseAssignmentExpression(TypeCastState isTypeCast = NotTypeCast);
 
   ExprResult ParseExpressionWithLeadingAt(SourceLocation AtLoc);
 
@@ -1274,10 +1285,10 @@ private:
   ExprResult ParseCastExpression(bool isUnaryExpression,
                                  bool isAddressOfOperand,
                                  bool &NotCastExpr,
-                                 bool isTypeCast);
+                                 TypeCastState isTypeCast);
   ExprResult ParseCastExpression(bool isUnaryExpression,
                                  bool isAddressOfOperand = false,
-                                 bool isTypeCast = false);
+                                 TypeCastState isTypeCast = NotTypeCast);
 
   /// Returns true if the next token would start a postfix-expression
   /// suffix.

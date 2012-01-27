@@ -4801,10 +4801,17 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
   if (From->isTypeDependent())
     return Owned(From);
 
+  // Process placeholders immediately.
+  if (From->hasPlaceholderType()) {
+    ExprResult result = CheckPlaceholderExpr(From);
+    if (result.isInvalid()) return result;
+    From = result.take();
+  }
+
   // If the expression already has integral or enumeration type, we're golden.
   QualType T = From->getType();
   if (T->isIntegralOrEnumerationType())
-    return Owned(From);
+    return DefaultLvalueConversion(From);
 
   // FIXME: Check for missing '()' if T is a function type?
 
@@ -4933,7 +4940,7 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
     Diag(Loc, NotIntDiag)
       << From->getType() << From->getSourceRange();
 
-  return Owned(From);
+  return DefaultLvalueConversion(From);
 }
 
 /// AddOverloadCandidate - Adds the given function to the set of
@@ -9169,6 +9176,69 @@ DiagnoseTwoPhaseOperatorLookup(Sema &SemaRef, OverloadedOperatorKind Op,
                                 /*ExplicitTemplateArgs=*/0, Args, NumArgs);
 }
 
+namespace {
+// Callback to limit the allowed keywords and to only accept typo corrections
+// that are keywords or whose decls refer to functions (or template functions)
+// that accept the given number of arguments.
+class RecoveryCallCCC : public CorrectionCandidateCallback {
+ public:
+  RecoveryCallCCC(Sema &SemaRef, unsigned NumArgs, bool HasExplicitTemplateArgs)
+      : NumArgs(NumArgs), HasExplicitTemplateArgs(HasExplicitTemplateArgs) {
+    WantTypeSpecifiers = SemaRef.getLangOptions().CPlusPlus;
+    WantRemainingKeywords = false;
+  }
+
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    if (!candidate.getCorrectionDecl())
+      return candidate.isKeyword();
+
+    for (TypoCorrection::const_decl_iterator DI = candidate.begin(),
+           DIEnd = candidate.end(); DI != DIEnd; ++DI) {
+      FunctionDecl *FD = 0;
+      NamedDecl *ND = (*DI)->getUnderlyingDecl();
+      if (FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(ND))
+        FD = FTD->getTemplatedDecl();
+      if (!HasExplicitTemplateArgs && !FD) {
+        if (!(FD = dyn_cast<FunctionDecl>(ND)) && isa<ValueDecl>(ND)) {
+          // If the Decl is neither a function nor a template function,
+          // determine if it is a pointer or reference to a function. If so,
+          // check against the number of arguments expected for the pointee.
+          QualType ValType = cast<ValueDecl>(ND)->getType();
+          if (ValType->isAnyPointerType() || ValType->isReferenceType())
+            ValType = ValType->getPointeeType();
+          if (const FunctionProtoType *FPT = ValType->getAs<FunctionProtoType>())
+            if (FPT->getNumArgs() == NumArgs)
+              return true;
+        }
+      }
+      if (FD && FD->getNumParams() >= NumArgs &&
+          FD->getMinRequiredArguments() <= NumArgs)
+        return true;
+    }
+    return false;
+  }
+
+ private:
+  unsigned NumArgs;
+  bool HasExplicitTemplateArgs;
+};
+
+// Callback that effectively disabled typo correction
+class NoTypoCorrectionCCC : public CorrectionCandidateCallback {
+ public:
+  NoTypoCorrectionCCC() {
+    WantTypeSpecifiers = false;
+    WantExpressionKeywords = false;
+    WantCXXNamedCasts = false;
+    WantRemainingKeywords = false;
+  }
+
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    return false;
+  }
+};
+}
+
 /// Attempts to recover from a call where no functions were found.
 ///
 /// Returns true if new candidates were found.
@@ -9178,7 +9248,7 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
                       SourceLocation LParenLoc,
                       Expr **Args, unsigned NumArgs,
                       SourceLocation RParenLoc,
-                      bool EmptyLookup) {
+                      bool EmptyLookup, bool AllowTypoCorrection) {
 
   CXXScopeSpec SS;
   SS.Adopt(ULE->getQualifierLoc());
@@ -9192,13 +9262,15 @@ BuildRecoveryCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
 
   LookupResult R(SemaRef, ULE->getName(), ULE->getNameLoc(),
                  Sema::LookupOrdinaryName);
-  CorrectionCandidateCallback Validator;
-  Validator.WantTypeSpecifiers = SemaRef.getLangOptions().CPlusPlus;
-  Validator.WantRemainingKeywords = false;
+  RecoveryCallCCC Validator(SemaRef, NumArgs, ExplicitTemplateArgs != 0);
+  NoTypoCorrectionCCC RejectAll;
+  CorrectionCandidateCallback *CCC = AllowTypoCorrection ?
+      (CorrectionCandidateCallback*)&Validator :
+      (CorrectionCandidateCallback*)&RejectAll;
   if (!DiagnoseTwoPhaseLookup(SemaRef, Fn->getExprLoc(), SS, R,
                               ExplicitTemplateArgs, Args, NumArgs) &&
       (!EmptyLookup ||
-       SemaRef.DiagnoseEmptyLookup(S, SS, R, Validator,
+       SemaRef.DiagnoseEmptyLookup(S, SS, R, *CCC,
                                    ExplicitTemplateArgs, Args, NumArgs)))
     return ExprError();
 
@@ -9237,7 +9309,8 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
                               SourceLocation LParenLoc,
                               Expr **Args, unsigned NumArgs,
                               SourceLocation RParenLoc,
-                              Expr *ExecConfig) {
+                              Expr *ExecConfig,
+                              bool AllowTypoCorrection) {
 #ifndef NDEBUG
   if (ULE->requiresADL()) {
     // To do ADL, we must have found an unqualified name.
@@ -9285,7 +9358,8 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
       return Owned(CE);
     }
     return BuildRecoveryCallExpr(*this, S, Fn, ULE, LParenLoc, Args, NumArgs,
-                                 RParenLoc, /*EmptyLookup=*/true);
+                                 RParenLoc, /*EmptyLookup=*/true,
+                                 AllowTypoCorrection);
   }
 
   UnbridgedCasts.restore();
@@ -9307,7 +9381,8 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
     // have meant to call.
     ExprResult Recovery = BuildRecoveryCallExpr(*this, S, Fn, ULE, LParenLoc,
                                                 Args, NumArgs, RParenLoc,
-                                                /*EmptyLookup=*/false);
+                                                /*EmptyLookup=*/false,
+                                                AllowTypoCorrection);
     if (!Recovery.isInvalid())
       return Recovery;
 

@@ -1350,6 +1350,15 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
         CmdArgs.push_back("-analyzer-checker=osx");
       
       CmdArgs.push_back("-analyzer-checker=deadcode");
+      
+      // Enable the following experimental checkers for testing. 
+      CmdArgs.push_back("-analyzer-checker=experimental.osx.cocoa.ContainerAPI");
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.UncheckedReturn");
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.getpw");
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.gets");
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.mktemp");      
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.mkstemp");
+      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.vfork");
     }
 
     // Set the output format. The default is plist, for (lame) historical
@@ -4531,8 +4540,7 @@ void netbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   // When building 32-bit code on NetBSD/amd64, we have to explicitly
   // instruct as in the base system to assemble 32-bit code.
-  if (ToolTriple.getArch() == llvm::Triple::x86_64 &&
-      getToolChain().getArch() == llvm::Triple::x86)
+  if (getToolChain().getArch() == llvm::Triple::x86)
     CmdArgs.push_back("--32");
 
 
@@ -4585,8 +4593,7 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   // When building 32-bit code on NetBSD/amd64, we have to explicitly
   // instruct ld in the base system to link 32-bit code.
-  if (ToolTriple.getArch() == llvm::Triple::x86_64 &&
-      getToolChain().getArch() == llvm::Triple::x86) {
+  if (getToolChain().getArch() == llvm::Triple::x86) {
     CmdArgs.push_back("-m");
     CmdArgs.push_back("elf_i386");
   }

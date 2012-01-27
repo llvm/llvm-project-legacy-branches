@@ -43,6 +43,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   NoReturnFunctionChecker.cpp
   OSAtomicChecker.cpp
   ObjCAtSyncChecker.cpp
+  ObjCContainersASTChecker.cpp
   ObjCSelfInitChecker.cpp
   ObjCUnusedIVarsChecker.cpp
   PointerArithChecker.cpp

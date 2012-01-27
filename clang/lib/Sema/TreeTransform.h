@@ -530,7 +530,8 @@ public:
   ///   scope index;  can be negative
   ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                           int indexAdjustment,
-                                        llvm::Optional<unsigned> NumExpansions);
+                                        llvm::Optional<unsigned> NumExpansions,
+                                          bool ExpectParameterPack);
 
   QualType TransformReferenceType(TypeLocBuilder &TLB, ReferenceTypeLoc TL);
 
@@ -3592,8 +3593,12 @@ TreeTransform<Derived>::TransformConstantArrayType(TypeLocBuilder &TLB,
     if (Result.isNull())
       return QualType();
   }
-  
-  ConstantArrayTypeLoc NewTL = TLB.push<ConstantArrayTypeLoc>(Result);
+
+  // We might have either a ConstantArrayType or a VariableArrayType now:
+  // a ConstantArrayType is allowed to have an element type which is a
+  // VariableArrayType if the type is dependent.  Fortunately, all array
+  // types have the same location layout.
+  ArrayTypeLoc NewTL = TLB.push<ArrayTypeLoc>(Result);
   NewTL.setLBracketLoc(TL.getLBracketLoc());
   NewTL.setRBracketLoc(TL.getRBracketLoc());
 
@@ -3814,12 +3819,14 @@ template<typename Derived>
 ParmVarDecl *
 TreeTransform<Derived>::TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                                    int indexAdjustment,
-                                       llvm::Optional<unsigned> NumExpansions) {
+                                         llvm::Optional<unsigned> NumExpansions,
+                                                   bool ExpectParameterPack) {
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = 0;
   
   if (NumExpansions && isa<PackExpansionType>(OldDI->getType())) {
     // If we're substituting into a pack expansion type and we know the 
+    // length we want to expand to, just substitute for the pattern.
     TypeLoc OldTL = OldDI->getTypeLoc();
     PackExpansionTypeLoc OldExpansionTL = cast<PackExpansionTypeLoc>(OldTL);
     
@@ -3916,7 +3923,8 @@ bool TreeTransform<Derived>::
             ParmVarDecl *NewParm 
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
-                                                        OrigNumExpansions);
+                                                        OrigNumExpansions,
+                                                /*ExpectParameterPack=*/false);
             if (!NewParm)
               return true;
             
@@ -3932,7 +3940,8 @@ bool TreeTransform<Derived>::
             ParmVarDecl *NewParm 
               = getDerived().TransformFunctionTypeParam(OldParm,
                                                         indexAdjustment++,
-                                                        OrigNumExpansions);
+                                                        OrigNumExpansions,
+                                                /*ExpectParameterPack=*/false);
             if (!NewParm)
               return true;
             
@@ -3956,11 +3965,13 @@ bool TreeTransform<Derived>::
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
         NewParm = getDerived().TransformFunctionTypeParam(OldParm,
                                                           indexAdjustment,
-                                                          NumExpansions);
+                                                          NumExpansions,
+                                                  /*ExpectParameterPack=*/true);
       } else {
         NewParm = getDerived().TransformFunctionTypeParam(OldParm,
                                                           indexAdjustment,
-                                                  llvm::Optional<unsigned>());
+                                                          llvm::Optional<unsigned>(),
+                                                /*ExpectParameterPack=*/false);
       }
 
       if (!NewParm)
@@ -8131,30 +8142,20 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   }
 
   const FunctionType *exprFunctionType = E->getFunctionType();
-  QualType exprResultType = exprFunctionType->getResultType();
-  if (!exprResultType.isNull()) {
-    if (!exprResultType->isDependentType())
-      blockScope->ReturnType = exprResultType;
-    else if (exprResultType != getSema().Context.DependentTy)
-      blockScope->ReturnType = getDerived().TransformType(exprResultType);
-  }
-  
-  // If the return type has not been determined yet, leave it as a dependent
-  // type; it'll get set when we process the body.
-  if (blockScope->ReturnType.isNull())
-    blockScope->ReturnType = getSema().Context.DependentTy;
+  QualType exprResultType =
+      getDerived().TransformType(exprFunctionType->getResultType());
 
   // Don't allow returning a objc interface by value.
-  if (blockScope->ReturnType->isObjCObjectType()) {
+  if (exprResultType->isObjCObjectType()) {
     getSema().Diag(E->getCaretLocation(), 
                    diag::err_object_cannot_be_passed_returned_by_value) 
-      << 0 << blockScope->ReturnType;
+      << 0 << exprResultType;
     getSema().ActOnBlockError(E->getCaretLocation(), /*Scope=*/0);
     return ExprError();
   }
 
   QualType functionType = getDerived().RebuildFunctionProtoType(
-                                                        blockScope->ReturnType,
+                                                        exprResultType,
                                                         paramTypes.data(),
                                                         paramTypes.size(),
                                                         oldBlock->isVariadic(),
@@ -8165,12 +8166,11 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   // Set the parameters on the block decl.
   if (!params.empty())
     blockScope->TheDecl->setParams(params);
-  
-  // If the return type wasn't explicitly set, it will have been marked as a 
-  // dependent type (DependentTy); clear out the return type setting so 
-  // we will deduce the return type when type-checking the block's body.
-  if (blockScope->ReturnType == getSema().Context.DependentTy)
-    blockScope->ReturnType = QualType();
+
+  if (!oldBlock->blockMissingReturnType()) {
+    blockScope->HasImplicitReturnType = false;
+    blockScope->ReturnType = exprResultType;
+  }
   
   // Transform the body
   StmtResult body = getDerived().TransformStmt(E->getBody());
@@ -8314,9 +8314,12 @@ TreeTransform<Derived>::RebuildArrayType(QualType ElementType,
       break;
     }
 
-  IntegerLiteral ArraySize(SemaRef.Context, *Size, SizeType,
-                           /*FIXME*/BracketsRange.getBegin());
-  return SemaRef.BuildArrayType(ElementType, SizeMod, &ArraySize,
+  // Note that we can return a VariableArrayType here in the case where
+  // the element type was a dependent VariableArrayType.
+  IntegerLiteral *ArraySize
+      = IntegerLiteral::Create(SemaRef.Context, *Size, SizeType,
+                               /*FIXME*/BracketsRange.getBegin());
+  return SemaRef.BuildArrayType(ElementType, SizeMod, ArraySize,
                                 IndexTypeQuals, BracketsRange,
                                 getDerived().getBaseEntity());
 }

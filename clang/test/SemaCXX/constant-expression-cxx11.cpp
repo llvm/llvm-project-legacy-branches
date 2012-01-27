@@ -206,7 +206,9 @@ namespace ParameterScopes {
   constexpr int b = MaybeReturnNonstaticRef(true, 0); // expected-error {{constant expression}} expected-note {{in call to 'MaybeReturnNonstaticRef(1, 0)'}}
 
   constexpr int InternalReturnJunk(int n) {
-    // FIXME: We should reject this: it never produces a constant expression.
+    // TODO: We could reject this: it never produces a constant expression.
+    // However, we currently don't evaluate function calls while testing for
+    // potential constant expressions, for performance.
     return MaybeReturnJunk(true, n); // expected-note {{in call to 'MaybeReturnJunk(1, 0)'}}
   }
   constexpr int n3 = InternalReturnJunk(0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'InternalReturnJunk(0)'}}
@@ -737,6 +739,9 @@ constexpr int f(const S &s) {
 constexpr int n = f(T(5));
 static_assert(f(T(5)) == 5, "");
 
+constexpr bool b(int n) { return &n; }
+static_assert(b(0), "");
+
 }
 
 namespace Union {
@@ -966,10 +971,9 @@ namespace PR11595 {
   struct B { B(); A& x; };
   static_assert(B().x == 3, "");  // expected-error {{constant expression}} expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
 
-  constexpr bool f(int k) {
+  constexpr bool f(int k) { // expected-error {{constexpr function never produces a constant expression}}
     return B().x == k; // expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
   }
-  constexpr int n = f(1); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'f(1)'}}
 }
 
 namespace ExprWithCleanups {
@@ -1045,4 +1049,44 @@ namespace ConvertedConstantExpr {
           ),
     eq = reinterpret_cast<int>((int*)0) // expected-error {{not a constant expression}} expected-note {{reinterpret_cast}}
   };
+}
+
+namespace IndirectField {
+  struct S {
+    struct { // expected-warning {{GNU extension}}
+      union {
+        struct { // expected-warning {{GNU extension}}
+          int a;
+          int b;
+        };
+        int c;
+      };
+      int d;
+    };
+    union {
+      int e;
+      int f;
+    };
+    constexpr S(int a, int b, int d, int e) : a(a), b(b), d(d), e(e) {}
+    constexpr S(int c, int d, int f) : c(c), d(d), f(f) {}
+  };
+
+  constexpr S s1(1, 2, 3, 4);
+  constexpr S s2(5, 6, 7);
+
+  // FIXME: The diagnostics here do a very poor job of explaining which unnamed
+  // member is active and which is requested.
+  static_assert(s1.a == 1, "");
+  static_assert(s1.b == 2, "");
+  static_assert(s1.c == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s1.d == 3, "");
+  static_assert(s1.e == 4, "");
+  static_assert(s1.f == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+
+  static_assert(s2.a == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.b == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.c == 5, "");
+  static_assert(s2.d == 6, "");
+  static_assert(s2.e == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.f == 7, "");
 }
