@@ -7,14 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ASTConsumer.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclGroup.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/DiagnosticOptions.h"
+#include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Rewrite/Rewriter.h"
+#include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_os_ostream.h"
@@ -102,7 +108,7 @@ TEST_F(ReplacementTest, CanAddText) {
 
 TEST_F(ReplacementTest, CanReplaceTextAtPosition) {
   FileID ID = Context.CreateInMemoryFile("input.cpp",
-		                         "line1\nline2\nline3\nline4");
+                                         "line1\nline2\nline3\nline4");
   SourceLocation Location = Context.GetLocation(ID, 2, 3);
   Replacement Replace(Context.CreateReplacement(Location, 12, "x"));
   EXPECT_TRUE(Replace.Apply(Context.Rewrite));
@@ -128,6 +134,19 @@ TEST_F(ReplacementTest, CanReplaceTextAtPositionMultipleTimes) {
 TEST_F(ReplacementTest, ApplyFailsForNonExistentLocation) {
   Replacement Replace("nonexistent-file.cpp", 0, 1, "");
   EXPECT_FALSE(Replace.Apply(Context.Rewrite));
+}
+
+TEST_F(ReplacementTest, CanRetrivePath) {
+  Replacement Replace("/path/to/file.cpp", 0, 1, "");
+  EXPECT_EQ("/path/to/file.cpp", Replace.GetFilePath());
+}
+
+TEST_F(ReplacementTest, ReturnsInvalidPath) {
+  Replacement Replace1(Context.Sources, SourceLocation(), 0, "");
+  EXPECT_EQ("invalid-location", Replace1.GetFilePath());
+
+  Replacement Replace2;
+  EXPECT_EQ("invalid-location", Replace2.GetFilePath());
 }
 
 TEST_F(ReplacementTest, CanApplyReplacements) {
@@ -225,6 +244,71 @@ TEST_F(FlushRewrittenFilesTest, StoresChangesOnDisk) {
   EXPECT_TRUE(SaveRewrittenFiles(Context.Rewrite));
   EXPECT_EQ("line1\nreplaced\nline3\nline4",
             GetFileContentFromDisk("input.cpp"));
+}
+
+// FIXME: Copied from ToolingTest.cpp - put into a common header.
+namespace {
+class FindClassDeclXConsumer : public clang::ASTConsumer {
+ public:
+  FindClassDeclXConsumer(bool *FoundClassDeclX, StringRef ExpectedFile,
+                         unsigned ExpectedOffset, unsigned ExpectedLength)
+      : SM(NULL), FoundClassDeclX(FoundClassDeclX), ExpectedFile(ExpectedFile),
+        ExpectedOffset(ExpectedOffset), ExpectedLength(ExpectedLength) {}
+  virtual bool HandleTopLevelDecl(clang::DeclGroupRef GroupRef) {
+    if (CXXRecordDecl* Record = llvm::dyn_cast<clang::CXXRecordDecl>(
+            *GroupRef.begin())) {
+      if (Record->getName() == "X") {
+        Replacement Replace(*SM, Record, "");
+        EXPECT_EQ(ExpectedFile, Replace.GetFilePath());
+        EXPECT_EQ(ExpectedOffset, Replace.GetOffset());
+        EXPECT_EQ(ExpectedLength, Replace.GetLength());
+        *FoundClassDeclX = true;
+      }
+    }
+    return true;
+  }
+  clang::SourceManager *SM;
+ private:
+  bool *FoundClassDeclX;
+  std::string ExpectedFile;
+  unsigned ExpectedOffset;
+  unsigned ExpectedLength;
+};
+
+class TestAction : public clang::ASTFrontendAction {
+ public:
+  explicit TestAction(FindClassDeclXConsumer *TestConsumer)
+      : TestConsumer(TestConsumer) {}
+
+ protected:
+  virtual clang::ASTConsumer* CreateASTConsumer(
+      clang::CompilerInstance& compiler, llvm::StringRef dummy) {
+    TestConsumer->SM = &compiler.getSourceManager();
+    /// TestConsumer will be deleted by the framework calling us.
+    return TestConsumer;
+  }
+
+ private:
+  FindClassDeclXConsumer * const TestConsumer;
+};
+} // end namespace
+
+TEST(Replacement, CanBeConstructedFromNode) {
+  bool FoundClassDeclX = false;
+  EXPECT_TRUE(RunSyntaxOnlyToolOnCode(
+    new TestAction(
+      new FindClassDeclXConsumer(&FoundClassDeclX, "input.cc", 5, 7)),
+    "     class X;"));
+  EXPECT_TRUE(FoundClassDeclX);
+}
+
+TEST(Replacement, ReplacesAtSpellingLocation) {
+  bool FoundClassDeclX = false;
+  EXPECT_TRUE(RunSyntaxOnlyToolOnCode(
+    new TestAction(
+      new FindClassDeclXConsumer(&FoundClassDeclX, "input.cc", 17, 7)),
+    "#define A(Y) Y\nA(class X);"));
+  EXPECT_TRUE(FoundClassDeclX);
 }
 
 } // end namespace tooling

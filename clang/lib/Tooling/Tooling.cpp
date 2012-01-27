@@ -436,7 +436,8 @@ void ClangTool::AddTranslationUnits(
     if (!ErrorMessage.empty()) {
       llvm::outs() << "Error while parsing JSON database: " << ErrorMessage
                    << "\n";
-      exit(1);
+      llvm::outs() << "Skipping " << File << "\n";
+      continue;
     }
     if (!LookupResult.CommandLine.empty()) {
       if (!LookupResult.Directory.empty()) {

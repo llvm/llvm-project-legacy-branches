@@ -23,10 +23,15 @@
 namespace clang {
 namespace tooling {
 
+static const char * const InvalidLocation = "invalid-location";
+
+Replacement::Replacement()
+  : FilePath(InvalidLocation), Offset(0), Length(0) {}
+
 Replacement::Replacement(llvm::StringRef FilePath, unsigned Offset,
                          unsigned Length, llvm::StringRef ReplacementText)
-    : FilePath(FilePath), Offset(Offset),
-      Length(Length), ReplacementText(ReplacementText) {}
+  : FilePath(FilePath), Offset(Offset),
+    Length(Length), ReplacementText(ReplacementText) {}
 
 Replacement::Replacement(SourceManager &Sources, SourceLocation Start,
                          unsigned Length, llvm::StringRef ReplacementText) {
@@ -36,6 +41,10 @@ Replacement::Replacement(SourceManager &Sources, SourceLocation Start,
 Replacement::Replacement(SourceManager &Sources, const CharSourceRange &Range,
                          llvm::StringRef ReplacementText) {
   SetFromSourceRange(Sources, Range, ReplacementText);
+}
+
+bool Replacement::IsApplicable() const {
+  return FilePath != InvalidLocation;
 }
 
 bool Replacement::Apply(Rewriter &Rewrite) const {
@@ -76,7 +85,7 @@ void Replacement::SetFromSourceLocation(SourceManager &Sources,
   const std::pair<FileID, unsigned> DecomposedLocation =
       Sources.getDecomposedLoc(Start);
   const FileEntry *Entry = Sources.getFileEntryForID(DecomposedLocation.first);
-  this->FilePath = Entry != NULL ? Entry->getName() : "invalid-location";
+  this->FilePath = Entry != NULL ? Entry->getName() : InvalidLocation;
   this->Offset = DecomposedLocation.second;
   this->Length = Length;
   this->ReplacementText = ReplacementText;
@@ -85,7 +94,7 @@ void Replacement::SetFromSourceLocation(SourceManager &Sources,
 void Replacement::SetFromSourceRange(SourceManager &Sources,
                                      const CharSourceRange &Range,
                                      llvm::StringRef ReplacementText) {
-  SetFromSourceLocation(Sources, Range.getBegin(),
+  SetFromSourceLocation(Sources, Sources.getSpellingLoc(Range.getBegin()),
                         getRangeSize(Sources, Range), ReplacementText);
 }
 
@@ -94,7 +103,11 @@ bool ApplyAllReplacements(Replacements &Replaces, Rewriter &Rewrite) {
   for (Replacements::const_iterator I = Replaces.begin(),
                                     E = Replaces.end();
        I != E; ++I) {
-    Result = I->Apply(Rewrite) && Result;
+    if (I->IsApplicable()) {
+      Result = I->Apply(Rewrite) && Result;
+    } else {
+      Result = false;
+    }
   }
   return Result;
 }
@@ -120,14 +133,14 @@ bool SaveRewrittenFiles(Rewriter &Rewrite) {
 }
 
 int getRangeSize(SourceManager &Sources, const CharSourceRange &Range) {
-  std::pair<FileID, unsigned> Start =
-      Sources.getDecomposedLoc(Range.getBegin());
-  std::pair<FileID, unsigned> End =
-      Sources.getDecomposedLoc(Range.getEnd());
+  SourceLocation SpellingBegin = Sources.getSpellingLoc(Range.getBegin());
+  SourceLocation SpellingEnd = Sources.getSpellingLoc(Range.getEnd());
+  std::pair<FileID, unsigned> Start = Sources.getDecomposedLoc(SpellingBegin);
+  std::pair<FileID, unsigned> End = Sources.getDecomposedLoc(SpellingEnd);
   if (Start.first != End.first) return -1;
   if (Range.isTokenRange())
     // FIXME: Bring in the correct LangOptions.
-    End.second += Lexer::MeasureTokenLength(Range.getEnd(), Sources,
+    End.second += Lexer::MeasureTokenLength(SpellingEnd, Sources,
                                             LangOptions());
   return End.second - Start.second;
 }
@@ -148,8 +161,7 @@ int RefactoringTool::Run(FrontendActionFactory *ActionFactory) {
   SourceManager Sources(Diagnostics, Tool.GetFiles());
   Rewriter Rewrite(Sources, DefaultLangOptions);
   if (!ApplyAllReplacements(Replace, Rewrite)) {
-    llvm::errs() << "Could not apply replacements.\n";
-    return 1;
+    llvm::errs() << "Skipped some replacements.\n";
   }
   if (!SaveRewrittenFiles(Rewrite)) {
     llvm::errs() << "Could not save rewritten files.\n";

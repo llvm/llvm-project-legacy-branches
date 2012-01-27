@@ -35,6 +35,9 @@ namespace tooling {
 /// specific file.
 class Replacement {
 public:
+  /// \brief Creates an invalid (not applicable) replacement.
+  Replacement();
+
   /// \brief Creates a replacement of the range [Offset, Offset+Length) in
   /// FilePath with ReplacementText.
   ///
@@ -57,6 +60,18 @@ public:
   template <typename Node>
   Replacement(SourceManager &Sources, const Node &NodeToReplace,
               llvm::StringRef ReplacementText);
+
+  /// \brief Returns whether this replacement can be applied to a file.
+  ///
+  /// Only replacements that are in a valid file can be applied.
+  bool IsApplicable() const;
+
+  /// \brief Accessors.
+  /// @{
+  std::string GetFilePath() const { return FilePath; }
+  unsigned GetOffset() const { return Offset; }
+  unsigned GetLength() const { return Length; }
+  /// @}
 
   /// \brief Applies the replacement on the Rewriter.
   bool Apply(Rewriter &Rewrite) const;
