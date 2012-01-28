@@ -2947,7 +2947,6 @@
 			buildPhases = (
 				26DC6A0D1337FE6900FF7998 /* Sources */,
 				26DC6A0E1337FE6900FF7998 /* Frameworks */,
-				261CE9C014D327DE006D8EFE /* Codesign */,
 			);
 			buildRules = (
 			);
@@ -3078,20 +3077,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "cd \"${TARGET_BUILD_DIR}/${PUBLIC_HEADERS_FOLDER_PATH}\"\nfor file in *.h\ndo\n\t/usr/bin/sed -i '' 's/\\(#include\\)[ ]*\"lldb\\/\\(API\\/\\)\\{0,1\\}\\(.*\\)\"/\\1 <LLDB\\/\\3>/1' \"$file\"\n\t/usr/bin/sed -i '' 's|<LLDB/Utility|<LLDB|' \"$file\"\n\t/usr/bin/sed -i '' \"s|//#define LLDB_VERSION|#define LLDB_VERSION ${CURRENT_PROJECT_VERSION} |\" \"$file\"\ndone\n";
-		};
-		261CE9C014D327DE006D8EFE /* Codesign */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = Codesign;
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = "/bin/sh -x";
-			shellScript = "if [ $CONFIGURATION!=\"BuildAndIntegration\" ]; then\n  if [ $PLATFORM_NAME=\"macosx\" ]; then\n    /usr/bin/codesign -s lldb_codesign -f \"$TARGET_BUILD_DIR/$TARGET_NAME\"\n  fi\nfi";
 		};
 		261EECA21337D399001D193C /* Build llvm and clang */ = {
 			isa = PBXShellScriptBuildPhase;
