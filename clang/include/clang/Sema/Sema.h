@@ -2292,7 +2292,9 @@ public:
   // Primary Expressions.
   SourceRange getExprRange(Expr *E) const;
 
-  ExprResult ActOnIdExpression(Scope *S, CXXScopeSpec &SS, UnqualifiedId &Id,
+  ExprResult ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
+                               SourceLocation TemplateKWLoc,
+                               UnqualifiedId &Id,
                                bool HasTrailingLParen, bool IsAddressOfOperand,
                                CorrectionCandidateCallback *CCC = 0);
 
@@ -2311,6 +2313,7 @@ public:
                                 bool AllowBuiltinCreation=false);
 
   ExprResult ActOnDependentIdExpression(const CXXScopeSpec &SS,
+                                        SourceLocation TemplateKWLoc,
                                         const DeclarationNameInfo &NameInfo,
                                         bool isAddressOfOperand,
                                 const TemplateArgumentListInfo *TemplateArgs);
@@ -2330,9 +2333,11 @@ public:
                                            Expr *baseObjectExpr = 0,
                                       SourceLocation opLoc = SourceLocation());
   ExprResult BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
+                                             SourceLocation TemplateKWLoc,
                                              LookupResult &R,
                                 const TemplateArgumentListInfo *TemplateArgs);
   ExprResult BuildImplicitMemberExpr(const CXXScopeSpec &SS,
+                                     SourceLocation TemplateKWLoc,
                                      LookupResult &R,
                                 const TemplateArgumentListInfo *TemplateArgs,
                                      bool IsDefiniteInstance);
@@ -2341,8 +2346,10 @@ public:
                                   bool HasTrailingLParen);
 
   ExprResult BuildQualifiedDeclarationNameExpr(CXXScopeSpec &SS,
+                                               SourceLocation TemplateKWLoc,
                                          const DeclarationNameInfo &NameInfo);
   ExprResult BuildDependentDeclRefExpr(const CXXScopeSpec &SS,
+                                       SourceLocation TemplateKWLoc,
                                 const DeclarationNameInfo &NameInfo,
                                 const TemplateArgumentListInfo *TemplateArgs);
 
@@ -2423,6 +2430,7 @@ public:
   ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                       SourceLocation OpLoc, bool IsArrow,
                                       CXXScopeSpec &SS,
+                                      SourceLocation TemplateKWLoc,
                                       NamedDecl *FirstQualifierInScope,
                                 const DeclarationNameInfo &NameInfo,
                                 const TemplateArgumentListInfo *TemplateArgs);
@@ -2430,6 +2438,7 @@ public:
   ExprResult BuildMemberReferenceExpr(Expr *Base, QualType BaseType,
                                       SourceLocation OpLoc, bool IsArrow,
                                       const CXXScopeSpec &SS,
+                                      SourceLocation TemplateKWLoc,
                                       NamedDecl *FirstQualifierInScope,
                                       LookupResult &R,
                                  const TemplateArgumentListInfo *TemplateArgs,
@@ -2449,6 +2458,7 @@ public:
   ExprResult ActOnDependentMemberExpr(Expr *Base, QualType BaseType,
                                       bool IsArrow, SourceLocation OpLoc,
                                       const CXXScopeSpec &SS,
+                                      SourceLocation TemplateKWLoc,
                                       NamedDecl *FirstQualifierInScope,
                                const DeclarationNameInfo &NameInfo,
                                const TemplateArgumentListInfo *TemplateArgs);
@@ -2457,6 +2467,7 @@ public:
                                    SourceLocation OpLoc,
                                    tok::TokenKind OpKind,
                                    CXXScopeSpec &SS,
+                                   SourceLocation TemplateKWLoc,
                                    UnqualifiedId &Member,
                                    Decl *ObjCImpDecl,
                                    bool HasTrailingLParen);
@@ -3345,29 +3356,27 @@ public:
   ///
   /// \param S The scope in which this nested-name-specifier occurs.
   ///
-  /// \param TemplateLoc The location of the 'template' keyword, if any.
-  ///
   /// \param SS The nested-name-specifier, which is both an input
   /// parameter (the nested-name-specifier before this type) and an
   /// output parameter (containing the full nested-name-specifier,
   /// including this new type).
   ///
-  /// \param TemplateLoc the location of the 'template' keyword, if any.
+  /// \param TemplateKWLoc the location of the 'template' keyword, if any.
   /// \param TemplateName The template name.
   /// \param TemplateNameLoc The location of the template name.
   /// \param LAngleLoc The location of the opening angle bracket  ('<').
   /// \param TemplateArgs The template arguments.
   /// \param RAngleLoc The location of the closing angle bracket  ('>').
   /// \param CCLoc The location of the '::'.
-
+  ///
   /// \param EnteringContext Whether we're entering the context of the
   /// nested-name-specifier.
   ///
   ///
   /// \returns true if an error occurred, false otherwise.
   bool ActOnCXXNestedNameSpecifier(Scope *S,
-                                   SourceLocation TemplateLoc,
                                    CXXScopeSpec &SS,
+                                   SourceLocation TemplateKWLoc,
                                    TemplateTy Template,
                                    SourceLocation TemplateNameLoc,
                                    SourceLocation LAngleLoc,
@@ -3961,16 +3970,19 @@ public:
 
 
   ExprResult BuildTemplateIdExpr(const CXXScopeSpec &SS,
+                                 SourceLocation TemplateKWLoc,
                                  LookupResult &R,
                                  bool RequiresADL,
                                const TemplateArgumentListInfo &TemplateArgs);
+
   ExprResult BuildQualifiedTemplateIdExpr(CXXScopeSpec &SS,
+                                          SourceLocation TemplateKWLoc,
                                const DeclarationNameInfo &NameInfo,
                                const TemplateArgumentListInfo &TemplateArgs);
 
   TemplateNameKind ActOnDependentTemplateName(Scope *S,
-                                              SourceLocation TemplateKWLoc,
                                               CXXScopeSpec &SS,
+                                              SourceLocation TemplateKWLoc,
                                               UnqualifiedId &Name,
                                               ParsedType ObjectType,
                                               bool EnteringContext,
@@ -6147,6 +6159,7 @@ public:
     PCC_LocalDeclarationSpecifiers
   };
 
+  void CodeCompleteModuleImport(SourceLocation ImportLoc, ModuleIdPath Path);
   void CodeCompleteOrdinaryName(Scope *S,
                                 ParserCompletionContext CompletionContext);
   void CodeCompleteDeclSpec(Scope *S, DeclSpec &DS,
@@ -6265,8 +6278,6 @@ private:
                            Expr **Args, unsigned NumArgs);
   bool CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall);
 
-  bool CheckablePrintfAttr(const FormatAttr *Format, Expr **Args, 
-                           unsigned NumArgs, bool IsCXXMemberCall);
   bool CheckObjCString(Expr *Arg);
 
   ExprResult CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
@@ -6290,28 +6301,38 @@ private:
   bool SemaBuiltinConstantArg(CallExpr *TheCall, int ArgNum,
                               llvm::APSInt &Result);
 
+  enum FormatStringType {
+    FST_Scanf,
+    FST_Printf,
+    FST_NSString,
+    FST_Strftime,
+    FST_Strfmon,
+    FST_Kprintf,
+    FST_Unknown
+  };
+  static FormatStringType GetFormatStringType(const FormatAttr *Format);
   bool SemaCheckStringLiteral(const Expr *E, Expr **Args, unsigned NumArgs,
                               bool HasVAListArg, unsigned format_idx,
-                              unsigned firstDataArg, bool isPrintf,
+                              unsigned firstDataArg, FormatStringType Type,
                               bool inFunctionCall = true);
 
   void CheckFormatString(const StringLiteral *FExpr, const Expr *OrigFormatExpr,
                          Expr **Args, unsigned NumArgs, bool HasVAListArg,
                          unsigned format_idx, unsigned firstDataArg,
-                         bool isPrintf, bool inFunctionCall);
-
-  void CheckNonNullArguments(const NonNullAttr *NonNull,
-                             const Expr * const *ExprArgs,
-                             SourceLocation CallSiteLoc);
+                         FormatStringType Type, bool inFunctionCall);
 
   void CheckFormatArguments(const FormatAttr *Format, CallExpr *TheCall);
   void CheckFormatArguments(const FormatAttr *Format, Expr **Args,
                             unsigned NumArgs, bool IsCXXMember,
                             SourceLocation Loc, SourceRange Range);
-  void CheckPrintfScanfArguments(Expr **Args, unsigned NumArgs,
-                                 bool HasVAListArg, unsigned format_idx,
-                                 unsigned firstDataArg, bool isPrintf,
-                                 SourceLocation Loc, SourceRange range);
+  void CheckFormatArguments(Expr **Args, unsigned NumArgs,
+                            bool HasVAListArg, unsigned format_idx,
+                            unsigned firstDataArg, FormatStringType Type,
+                            SourceLocation Loc, SourceRange range);
+
+  void CheckNonNullArguments(const NonNullAttr *NonNull,
+                             const Expr * const *ExprArgs,
+                             SourceLocation CallSiteLoc);
 
   void CheckMemaccessArguments(const CallExpr *Call,
                                unsigned BId,

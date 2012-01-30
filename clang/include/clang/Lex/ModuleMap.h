@@ -39,7 +39,8 @@ class ModuleMap {
   SourceManager *SourceMgr;
   llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
   const LangOptions &LangOpts;
-
+  const TargetInfo *Target;
+  
   /// \brief Language options used to parse the module map itself.
   ///
   /// These are always simple C language options.
@@ -89,13 +90,18 @@ public:
   /// diagnostics.
   ///
   /// \param LangOpts Language options for this translation unit.
+  ///
+  /// \param Target The target for this translation unit.
   ModuleMap(FileManager &FileMgr, const DiagnosticConsumer &DC,
-            const LangOptions &LangOpts);
+            const LangOptions &LangOpts, const TargetInfo *Target);
 
   /// \brief Destroy the module map.
   ///
   ~ModuleMap();
-  
+
+  /// \brief Set the target information.
+  void setTarget(const TargetInfo &Target);
+
   /// \brief Retrieve the module that owns the given header file, if any.
   ///
   /// \param File The header file that is likely to be included.
@@ -159,7 +165,7 @@ public:
   /// framework directory.
   Module *inferFrameworkModule(StringRef ModuleName, 
                                const DirectoryEntry *FrameworkDir,
-                               Module *Parent);
+                               bool IsSystem, Module *Parent);
   
   /// \brief Retrieve the module map file containing the definition of the given
   /// module.
@@ -211,6 +217,10 @@ public:
     
   /// \brief Dump the contents of the module map, for debugging purposes.
   void dump();
+  
+  typedef llvm::StringMap<Module *>::const_iterator module_iterator;
+  module_iterator module_begin() const { return Modules.begin(); }
+  module_iterator module_end()   const { return Modules.end(); }
 };
   
 }

@@ -226,7 +226,8 @@ bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI,
   }
   
   // Dig out the module definition.
-  Module = HS.getModule(CI.getLangOpts().CurrentModule, /*AllowSearch=*/false);
+  Module = HS.lookupModule(CI.getLangOpts().CurrentModule, 
+                           /*AllowSearch=*/false);
   if (!Module) {
     CI.getDiagnostics().Report(diag::err_missing_module)
       << CI.getLangOpts().CurrentModule << Filename;
@@ -236,7 +237,7 @@ bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI,
 
   // Check whether we can build this module at all.
   StringRef Feature;
-  if (!Module->isAvailable(CI.getLangOpts(), Feature)) {
+  if (!Module->isAvailable(CI.getLangOpts(), CI.getTarget(), Feature)) {
     CI.getDiagnostics().Report(diag::err_module_unavailable)
       << Module->getFullModuleName()
       << Feature;
@@ -256,7 +257,8 @@ bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI,
     // Simple case: we have an umbrella header and there are no additional
     // includes, we can just parse the umbrella header directly.
     setCurrentInput(FrontendInputFile(UmbrellaHeader->getName(),
-                                      getCurrentFileKind()));
+                                      getCurrentFileKind(),
+                                      Module->IsSystem));
     return true;
   }
   
@@ -313,7 +315,8 @@ bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI,
   llvm::MemoryBuffer *HeaderContentsBuf
     = llvm::MemoryBuffer::getMemBufferCopy(HeaderContents);
   CI.getSourceManager().overrideFileContents(HeaderFile, HeaderContentsBuf);  
-  setCurrentInput(FrontendInputFile(HeaderName, getCurrentFileKind()));
+  setCurrentInput(FrontendInputFile(HeaderName, getCurrentFileKind(),
+                                    Module->IsSystem));
   return true;
 }
 

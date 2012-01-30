@@ -167,7 +167,9 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
     Ident__exception_info = Ident__exception_code = Ident__abnormal_termination = 0;
     Ident___exception_info = Ident___exception_code = Ident___abnormal_termination = 0;
     Ident_GetExceptionInfo = Ident_GetExceptionCode = Ident_AbnormalTermination = 0;
-  } 
+  }
+  
+  HeaderInfo.setTarget(Target);
 }
 
 void Preprocessor::setPTHManager(PTHManager* pm) {
@@ -383,7 +385,7 @@ Module *Preprocessor::getCurrentModule() {
   if (getLangOptions().CurrentModule.empty())
     return 0;
   
-  return getHeaderSearchInfo().getModule(getLangOptions().CurrentModule);
+  return getHeaderSearchInfo().lookupModule(getLangOptions().CurrentModule);
 }
 
 //===----------------------------------------------------------------------===//

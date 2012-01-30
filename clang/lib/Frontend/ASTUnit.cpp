@@ -576,6 +576,9 @@ public:
   DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const {
     // Just drop any diagnostics that come from cloned consumers; they'll
     // have different source managers anyway.
+    // FIXME: We'd like to be able to capture these somehow, even if it's just
+    // file/line/column, because they could occur when parsing module maps or
+    // building modules on-demand.
     return new IgnoringDiagConsumer();
   }
 };
@@ -670,7 +673,8 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
                                      AST->getFileManager());
   AST->HeaderInfo.reset(new HeaderSearch(AST->getFileManager(),
                                          AST->getDiagnostics(),
-                                         AST->ASTFileLangOpts));
+                                         AST->ASTFileLangOpts,
+                                         /*Target=*/0));
   
   for (unsigned I = 0; I != NumRemappedFiles; ++I) {
     FilenameOrMemBuf fileOrBuf = RemappedFiles[I].second;
