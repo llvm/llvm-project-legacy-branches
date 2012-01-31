@@ -20,6 +20,10 @@ def note_constexpr_invalid_downcast : Note<
   "cannot cast object of dynamic type %0 to type %1">;
 def note_constexpr_overflow : Note<
   "value %0 is outside the range of representable values of type %1">;
+def note_constexpr_negative_shift : Note<"negative shift count %0">;
+def note_constexpr_large_shift : Note<
+  "shift count %0 >= width of type %1 (%2 bit%s2)">;
+def note_constexpr_lshift_of_negative : Note<"left shift of negative value %0">;
 def note_constexpr_invalid_function : Note<
   "%select{non-constexpr|undefined}0 %select{function|constructor}1 %2 cannot "
   "be used in a constant expression">;
@@ -49,6 +53,8 @@ def note_constexpr_var_init_non_constant : Note<
 def note_constexpr_typeid_polymorphic : Note<
   "typeid applied to expression of polymorphic type %0 is "
   "not allowed in a constant expression">;
+def note_constexpr_void_comparison : Note<
+  "comparison between unequal pointers to void has unspecified result">;
 def note_constexpr_temporary_here : Note<"temporary created here">;
 def note_constexpr_literal_here : Note<"literal written here">;
 def note_constexpr_depth_limit_exceeded : Note<

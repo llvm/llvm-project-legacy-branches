@@ -348,6 +348,24 @@ namespace {
         *Diag << v;
       return *this;
     }
+
+    OptionalDiagnostic &operator<<(const APSInt &I) {
+      if (Diag) {
+        llvm::SmallVector<char, 32> Buffer;
+        I.toString(Buffer);
+        *Diag << StringRef(Buffer.data(), Buffer.size());
+      }
+      return *this;
+    }
+
+    OptionalDiagnostic &operator<<(const APFloat &F) {
+      if (Diag) {
+        llvm::SmallVector<char, 32> Buffer;
+        F.toString(Buffer);
+        *Diag << StringRef(Buffer.data(), Buffer.size());
+      }
+      return *this;
+    }
   };
 
   struct EvalInfo {
@@ -1052,10 +1070,8 @@ static bool EvaluateAsBooleanCondition(const Expr *E, bool &Result,
 template<typename T>
 static bool HandleOverflow(EvalInfo &Info, const Expr *E,
                            const T &SrcValue, QualType DestType) {
-  llvm::SmallVector<char, 32> Buffer;
-  SrcValue.toString(Buffer);
   Info.Diag(E->getExprLoc(), diag::note_constexpr_overflow)
-    << StringRef(Buffer.data(), Buffer.size()) << DestType;
+    << SrcValue << DestType;
   return false;
 }
 
@@ -1086,9 +1102,10 @@ static bool HandleFloatToFloatCast(EvalInfo &Info, const Expr *E,
   return true;
 }
 
-static APSInt HandleIntToIntCast(QualType DestType, QualType SrcType,
-                                 APSInt &Value, const ASTContext &Ctx) {
-  unsigned DestWidth = Ctx.getIntWidth(DestType);
+static APSInt HandleIntToIntCast(EvalInfo &Info, const Expr *E,
+                                 QualType DestType, QualType SrcType,
+                                 APSInt &Value) {
+  unsigned DestWidth = Info.Ctx.getIntWidth(DestType);
   APSInt Result = Value;
   // Figure out if this is a truncate, extend or noop cast.
   // If the input is signed, do a sign extend, noop, or truncate.
@@ -4314,6 +4331,18 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
 
       const CharUnits &LHSOffset = LHSValue.getLValueOffset();
       const CharUnits &RHSOffset = RHSValue.getLValueOffset();
+
+      // C++11 [expr.rel]p3:
+      //   Pointers to void (after pointer conversions) can be compared, with a
+      //   result defined as follows: If both pointers represent the same
+      //   address or are both the null pointer value, the result is true if the
+      //   operator is <= or >= and false otherwise; otherwise the result is
+      //   unspecified.
+      // We interpret this as applying to pointers to *cv* void.
+      if (LHSTy->isVoidPointerType() && LHSOffset != RHSOffset &&
+          E->getOpcode() != BO_EQ && E->getOpcode() != BO_NE)
+        CCEDiag(E, diag::note_constexpr_void_comparison);
+
       switch (E->getOpcode()) {
       default: llvm_unreachable("missing comparison operator");
       case BO_LT: return Success(LHSOffset < RHSOffset, E);
@@ -4404,33 +4433,60 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
   case BO_Div:
     if (RHS == 0)
       return Error(E, diag::note_expr_divide_by_zero);
+    // Check for overflow case: INT_MIN / -1.
+    if (RHS.isNegative() && RHS.isAllOnesValue() &&
+        LHS.isSigned() && LHS.isMinSignedValue())
+      HandleOverflow(Info, E, -LHS.extend(LHS.getBitWidth() + 1), E->getType());
     return Success(LHS / RHS, E);
   case BO_Rem:
     if (RHS == 0)
       return Error(E, diag::note_expr_divide_by_zero);
     return Success(LHS % RHS, E);
   case BO_Shl: {
-    // During constant-folding, a negative shift is an opposite shift.
+    // During constant-folding, a negative shift is an opposite shift. Such a
+    // shift is not a constant expression.
     if (RHS.isSigned() && RHS.isNegative()) {
+      CCEDiag(E, diag::note_constexpr_negative_shift) << RHS;
       RHS = -RHS;
       goto shift_right;
     }
 
   shift_left:
-    unsigned SA
-      = (unsigned) RHS.getLimitedValue(LHS.getBitWidth()-1);
+    // C++11 [expr.shift]p1: Shift width must be less than the bit width of the
+    // shifted type.
+    unsigned SA = (unsigned) RHS.getLimitedValue(LHS.getBitWidth()-1);
+    if (SA != RHS) {
+      CCEDiag(E, diag::note_constexpr_large_shift)
+        << RHS << E->getType() << LHS.getBitWidth();
+    } else if (LHS.isSigned()) {
+      // C++11 [expr.shift]p2: A signed left shift must have a non-negative
+      // operand, and must not overflow.
+      if (LHS.isNegative())
+        CCEDiag(E, diag::note_constexpr_lshift_of_negative) << LHS;
+      else if (LHS.countLeadingZeros() <= SA)
+        HandleOverflow(Info, E, LHS.extend(LHS.getBitWidth() + SA) << SA,
+                       E->getType());
+    }
+
     return Success(LHS << SA, E);
   }
   case BO_Shr: {
-    // During constant-folding, a negative shift is an opposite shift.
+    // During constant-folding, a negative shift is an opposite shift. Such a
+    // shift is not a constant expression.
     if (RHS.isSigned() && RHS.isNegative()) {
+      CCEDiag(E, diag::note_constexpr_negative_shift) << RHS;
       RHS = -RHS;
       goto shift_left;
     }
 
   shift_right:
-    unsigned SA =
-      (unsigned) RHS.getLimitedValue(LHS.getBitWidth()-1);
+    // C++11 [expr.shift]p1: Shift width must be less than the bit width of the
+    // shifted type.
+    unsigned SA = (unsigned) RHS.getLimitedValue(LHS.getBitWidth()-1);
+    if (SA != RHS)
+      CCEDiag(E, diag::note_constexpr_large_shift)
+        << RHS << E->getType() << LHS.getBitWidth();
+
     return Success(LHS >> SA, E);
   }
 
@@ -4604,7 +4660,11 @@ bool IntExprEvaluator::VisitUnaryOperator(const UnaryOperator *E) {
     if (!Visit(E->getSubExpr()))
       return false;
     if (!Result.isInt()) return Error(E);
-    return Success(-Result.getInt(), E);
+    const APSInt &Value = Result.getInt();
+    if (Value.isSigned() && Value.isMinSignedValue())
+      HandleOverflow(Info, E, -Value.extend(Value.getBitWidth() + 1),
+                     E->getType());
+    return Success(-Value, E);
   }
   case UO_Not: {
     if (!Visit(E->getSubExpr()))
@@ -4703,8 +4763,8 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return Info.Ctx.getTypeSize(DestType) == Info.Ctx.getTypeSize(SrcType);
     }
 
-    return Success(HandleIntToIntCast(DestType, SrcType,
-                                      Result.getInt(), Info.Ctx), E);
+    return Success(HandleIntToIntCast(Info, E, DestType, SrcType,
+                                      Result.getInt()), E);
   }
 
   case CK_PointerToIntegral: {
@@ -4716,6 +4776,9 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
 
     if (LV.getLValueBase()) {
       // Only allow based lvalue casts if they are lossless.
+      // FIXME: Allow a larger integer size than the pointer size, and allow
+      // narrowing back down to pointer width in subsequent integral casts.
+      // FIXME: Check integer type's active bits, not its type size.
       if (Info.Ctx.getTypeSize(DestType) != Info.Ctx.getTypeSize(SrcType))
         return Error(E);
 
@@ -4726,7 +4789,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
 
     APSInt AsInt = Info.Ctx.MakeIntValue(LV.getLValueOffset().getQuantity(), 
                                          SrcType);
-    return Success(HandleIntToIntCast(DestType, SrcType, AsInt, Info.Ctx), E);
+    return Success(HandleIntToIntCast(Info, E, DestType, SrcType, AsInt), E);
   }
 
   case CK_IntegralComplexToReal: {
@@ -5200,8 +5263,8 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
     QualType From
       = E->getSubExpr()->getType()->getAs<ComplexType>()->getElementType();
 
-    Result.IntReal = HandleIntToIntCast(To, From, Result.IntReal, Info.Ctx);
-    Result.IntImag = HandleIntToIntCast(To, From, Result.IntImag, Info.Ctx);
+    Result.IntReal = HandleIntToIntCast(Info, E, To, From, Result.IntReal);
+    Result.IntImag = HandleIntToIntCast(Info, E, To, From, Result.IntImag);
     return true;
   }
 
