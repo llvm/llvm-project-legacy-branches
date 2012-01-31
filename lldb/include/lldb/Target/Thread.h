@@ -769,6 +769,7 @@ public:
 protected:
 
     friend class ThreadPlan;
+    friend class ThreadList;
     friend class StackFrameList;
     
     // This is necessary to make sure thread assets get destroyed while the thread is still in good shape

@@ -375,7 +375,10 @@ SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
 lldb::SBValue
 SBValue::Cast (SBType type)
 {
-    return CreateChildAtOffset(m_opaque_sp->GetName().GetCString(), 0, type);
+    lldb::SBValue sb_value;
+    if (m_opaque_sp)
+        sb_value = CreateChildAtOffset(m_opaque_sp->GetName().GetCString(), 0, type);
+    return sb_value;
 }
 
 lldb::SBValue
@@ -1146,14 +1149,14 @@ lldb::SBWatchpoint
 SBValue::Watch (bool resolve_location, bool read, bool write)
 {
     lldb::SBWatchpoint sb_watchpoint;
-    if (!m_opaque_sp)
-        return sb_watchpoint;
-
-    Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-    if (target)
+    if (m_opaque_sp)
     {
-        Mutex::Locker api_locker (target->GetAPIMutex());
-        sb_watchpoint = WatchValue(read, write, false);
+        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
+        if (target)
+        {
+            Mutex::Locker api_locker (target->GetAPIMutex());
+            sb_watchpoint = WatchValue(read, write, false);
+        }
     }
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
@@ -1166,14 +1169,14 @@ lldb::SBWatchpoint
 SBValue::WatchPointee (bool resolve_location, bool read, bool write)
 {
     lldb::SBWatchpoint sb_watchpoint;
-    if (!m_opaque_sp)
-        return sb_watchpoint;
-
-    Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-    if (target)
+    if (m_opaque_sp)
     {
-        Mutex::Locker api_locker (target->GetAPIMutex());
-        sb_watchpoint = WatchValue(read, write, true);
+        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
+        if (target)
+        {
+            Mutex::Locker api_locker (target->GetAPIMutex());
+            sb_watchpoint = WatchValue(read, write, true);
+        }
     }
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)

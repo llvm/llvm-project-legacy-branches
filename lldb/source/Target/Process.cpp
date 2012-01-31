@@ -848,7 +848,7 @@ Process::Finalize()
     m_abi_sp.reset();
     m_os_ap.reset();
     m_dyld_ap.reset();
-    m_thread_list.Clear();
+    m_thread_list.Destroy();
     std::vector<Notifications> empty_notifications;
     m_notifications.swap(empty_notifications);
     m_image_tokens.clear();
@@ -2794,8 +2794,7 @@ Process::Destroy ()
             DidDestroy();
             StopPrivateStateThread();
         }
-        m_stdio_communication.StopReadThread();
-        m_stdio_communication.Disconnect();
+        m_stdio_communication.Clear();
         if (m_process_input_reader && m_process_input_reader->IsActive())
             m_target.GetDebugger().PopInputReader (m_process_input_reader);
         if (m_process_input_reader)
