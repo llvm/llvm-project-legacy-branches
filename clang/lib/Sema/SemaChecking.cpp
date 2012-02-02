@@ -456,6 +456,8 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall) {
   // Handle memory setting and copying functions.
   if (CMId == Builtin::BIstrlcpy || CMId == Builtin::BIstrlcat)
     CheckStrlcpycatArguments(TheCall, FnInfo);
+  else if (CMId == Builtin::BIstrncat)
+    CheckStrncatArguments(TheCall, FnInfo);
   else
     CheckMemaccessArguments(TheCall, CMId, FnInfo);
 
@@ -2198,11 +2200,14 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
           os.str()));
     }
     else {
-      S.Diag(getLocationOfByte(CS.getStart()),
-             diag::warn_printf_conversion_argument_type_mismatch)
-        << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
-        << getSpecifierRange(startSpecifier, specifierLen)
-        << Ex->getSourceRange();
+      EmitFormatDiagnostic(
+        S.PDiag(diag::warn_printf_conversion_argument_type_mismatch)
+          << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
+          << getSpecifierRange(startSpecifier, specifierLen)
+          << Ex->getSourceRange(),
+        getLocationOfByte(CS.getStart()),
+        true,
+        getSpecifierRange(startSpecifier, specifierLen));
     }
   }
 
@@ -2313,12 +2318,13 @@ bool CheckScanfHandler::HandleScanfSpecifier(
   // Check the length modifier is valid with the given conversion specifier.
   const LengthModifier &LM = FS.getLengthModifier();
   if (!FS.hasValidLengthModifier()) {
-    S.Diag(getLocationOfByte(LM.getStart()),
-           diag::warn_format_nonsensical_length)
-      << LM.toString() << CS.toString()
-      << getSpecifierRange(startSpecifier, specifierLen)
-      << FixItHint::CreateRemoval(getSpecifierRange(LM.getStart(),
-                                                    LM.getLength()));
+    const CharSourceRange &R = getSpecifierRange(LM.getStart(), LM.getLength());
+    EmitFormatDiagnostic(S.PDiag(diag::warn_format_nonsensical_length)
+                         << LM.toString() << CS.toString()
+                         << getSpecifierRange(startSpecifier, specifierLen),
+                         getLocationOfByte(LM.getStart()),
+                         /*IsStringLocation*/true, R,
+                         FixItHint::CreateRemoval(R));
   }
 
   // The remaining checks depend on the data arguments.
@@ -2352,11 +2358,13 @@ bool CheckScanfHandler::HandleScanfSpecifier(
           getSpecifierRange(startSpecifier, specifierLen),
           os.str()));
     } else {
-      S.Diag(getLocationOfByte(CS.getStart()),
-             diag::warn_printf_conversion_argument_type_mismatch)
+      EmitFormatDiagnostic(
+        S.PDiag(diag::warn_printf_conversion_argument_type_mismatch)
           << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
-          << getSpecifierRange(startSpecifier, specifierLen)
-          << Ex->getSourceRange();
+          << Ex->getSourceRange(),
+        getLocationOfByte(CS.getStart()),
+        /*IsStringLocation*/true,
+        getSpecifierRange(startSpecifier, specifierLen));
     }
   }
 
@@ -2674,6 +2682,99 @@ void Sema::CheckStrlcpycatArguments(const CallExpr *Call,
   
   Diag(OriginalSizeArg->getLocStart(), diag::note_strlcpycat_wrong_size)
     << FixItHint::CreateReplacement(OriginalSizeArg->getSourceRange(),
+                                    OS.str());
+}
+
+/// Check if two expressions refer to the same declaration.
+static bool referToTheSameDecl(const Expr *E1, const Expr *E2) {
+  if (const DeclRefExpr *D1 = dyn_cast_or_null<DeclRefExpr>(E1))
+    if (const DeclRefExpr *D2 = dyn_cast_or_null<DeclRefExpr>(E2))
+      return D1->getDecl() == D2->getDecl();
+  return false;
+}
+
+static const Expr *getStrlenExprArg(const Expr *E) {
+  if (const CallExpr *CE = dyn_cast<CallExpr>(E)) {
+    const FunctionDecl *FD = CE->getDirectCallee();
+    if (!FD || FD->getMemoryFunctionKind() != Builtin::BIstrlen)
+      return 0;
+    return CE->getArg(0)->IgnoreParenCasts();
+  }
+  return 0;
+}
+
+// Warn on anti-patterns as the 'size' argument to strncat.
+// The correct size argument should look like following:
+//   strncat(dst, src, sizeof(dst) - strlen(dest) - 1);
+void Sema::CheckStrncatArguments(const CallExpr *CE,
+                                 IdentifierInfo *FnName) {
+  // Don't crash if the user has the wrong number of arguments.
+  if (CE->getNumArgs() < 3)
+    return;
+  const Expr *DstArg = CE->getArg(0)->IgnoreParenCasts();
+  const Expr *SrcArg = CE->getArg(1)->IgnoreParenCasts();
+  const Expr *LenArg = CE->getArg(2)->IgnoreParenCasts();
+
+  // Identify common expressions, which are wrongly used as the size argument
+  // to strncat and may lead to buffer overflows.
+  unsigned PatternType = 0;
+  if (const Expr *SizeOfArg = getSizeOfExprArg(LenArg)) {
+    // - sizeof(dst)
+    if (referToTheSameDecl(SizeOfArg, DstArg))
+      PatternType = 1;
+    // - sizeof(src)
+    else if (referToTheSameDecl(SizeOfArg, SrcArg))
+      PatternType = 2;
+  } else if (const BinaryOperator *BE = dyn_cast<BinaryOperator>(LenArg)) {
+    if (BE->getOpcode() == BO_Sub) {
+      const Expr *L = BE->getLHS()->IgnoreParenCasts();
+      const Expr *R = BE->getRHS()->IgnoreParenCasts();
+      // - sizeof(dst) - strlen(dst)
+      if (referToTheSameDecl(DstArg, getSizeOfExprArg(L)) &&
+          referToTheSameDecl(DstArg, getStrlenExprArg(R)))
+        PatternType = 1;
+      // - sizeof(src) - (anything)
+      else if (referToTheSameDecl(SrcArg, getSizeOfExprArg(L)))
+        PatternType = 2;
+    }
+  }
+
+  if (PatternType == 0)
+    return;
+
+  if (PatternType == 1)
+    Diag(DstArg->getLocStart(), diag::warn_strncat_large_size)
+      << LenArg->getSourceRange();
+  else
+    Diag(DstArg->getLocStart(), diag::warn_strncat_src_size)
+      << LenArg->getSourceRange();
+
+  // Output a FIXIT hint if the destination is an array (rather than a
+  // pointer to an array).  This could be enhanced to handle some
+  // pointers if we know the actual size, like if DstArg is 'array+2'
+  // we could say 'sizeof(array)-2'.
+  QualType DstArgTy = DstArg->getType();
+
+  // Only handle constant-sized or VLAs, but not flexible members.
+  if (const ConstantArrayType *CAT = Context.getAsConstantArrayType(DstArgTy)) {
+    // Only issue the FIXIT for arrays of size > 1.
+    if (CAT->getSize().getSExtValue() <= 1)
+      return;
+  } else if (!DstArgTy->isVariableArrayType()) {
+    return;
+  }
+
+  llvm::SmallString<128> sizeString;
+  llvm::raw_svector_ostream OS(sizeString);
+  OS << "sizeof(";
+  DstArg->printPretty(OS, Context, 0, getPrintingPolicy());
+  OS << ") - ";
+  OS << "strlen(";
+  DstArg->printPretty(OS, Context, 0, getPrintingPolicy());
+  OS << ") - 1";
+
+  Diag(LenArg->getLocStart(), diag::note_strncat_wrong_size)
+    << FixItHint::CreateReplacement(LenArg->getSourceRange(),
                                     OS.str());
 }
 
@@ -3657,8 +3758,8 @@ static bool AnalyzeBitFieldAssignment(Sema &S, FieldDecl *Bitfield, Expr *Init,
     return false;
 
   // Special-case bitfields of width 1: booleans are naturally 0/1, and
-  // therefore don't strictly fit into a bitfield of width 1.
-  if (FieldWidth == 1 && Value.getBoolValue() == TruncatedValue.getBoolValue())
+  // therefore don't strictly fit into a signed bitfield of width 1.
+  if (FieldWidth == 1 && Value == 1)
     return false;
 
   std::string PrettyValue = Value.toString(10);

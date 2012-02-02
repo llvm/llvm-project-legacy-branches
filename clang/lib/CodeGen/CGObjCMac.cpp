@@ -1084,6 +1084,8 @@ public:
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
 
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
 
@@ -1336,6 +1338,9 @@ public:
   virtual void GenerateCategory(const ObjCCategoryImplDecl *CMD);
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
+
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
 
@@ -3714,8 +3719,8 @@ llvm::Constant *CGObjCCommonMac::GetClassName(IdentifierInfo *Ident) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_CLASS_NAME_",
-                              llvm::ConstantDataArray::getString(VMContext,
-                                                         Ident->getNameStart()),
+                          llvm::ConstantArray::get(VMContext,
+                                                   Ident->getNameStart()),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_classname,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -3923,7 +3928,7 @@ void CGObjCCommonMac::BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
 /// the given argument BitMap string container. Routine reads
 /// two containers, IvarsInfo and SkipIvars which are assumed to be
 /// filled already by the caller.
-llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string &BitMap) {
+llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string& BitMap) {
   unsigned int WordsToScan, WordsToSkip;
   llvm::Type *PtrTy = llvm::Type::getInt8PtrTy(VMContext);
   
@@ -4040,7 +4045,7 @@ llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string &BitMap) {
   
   llvm::GlobalVariable * Entry =
   CreateMetadataVar("\01L_OBJC_CLASS_NAME_",
-                    llvm::ConstantDataArray::getString(VMContext, BitMap,false),
+                    llvm::ConstantArray::get(VMContext, BitMap.c_str()),
                     ((ObjCABI == 2) ?
                      "__TEXT,__objc_classname,cstring_literals" :
                      "__TEXT,__cstring,cstring_literals"),
@@ -4129,7 +4134,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarName(Selector Sel) {
   // FIXME: Avoid std::string copying.
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_NAME_",
-               llvm::ConstantDataArray::getString(VMContext, Sel.getAsString()),
+                        llvm::ConstantArray::get(VMContext, Sel.getAsString()),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methname,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4151,7 +4156,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarType(const FieldDecl *Field) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_TYPE_",
-                         llvm::ConstantDataArray::getString(VMContext, TypeStr),
+                              llvm::ConstantArray::get(VMContext, TypeStr),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methtype,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4172,7 +4177,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarType(const ObjCMethodDecl *D,
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_TYPE_",
-                         llvm::ConstantDataArray::getString(VMContext, TypeStr),
+                              llvm::ConstantArray::get(VMContext, TypeStr),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methtype,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4187,8 +4192,8 @@ llvm::Constant *CGObjCCommonMac::GetPropertyName(IdentifierInfo *Ident) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_PROP_NAME_ATTR_",
-                        llvm::ConstantDataArray::getString(VMContext,
-                                                       Ident->getNameStart()),
+                          llvm::ConstantArray::get(VMContext,
+                                                   Ident->getNameStart()),
                               "__TEXT,__cstring,cstring_literals",
                               1, true);
 
