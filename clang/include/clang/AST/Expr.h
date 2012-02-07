@@ -415,6 +415,9 @@ public:
   /// constant expression, and, if so, return its value in Result.  If not a
   /// valid i-c-e, return false and fill in Loc (if specified) with the location
   /// of the invalid expression.
+  ///
+  /// Note: This does not perform the implicit conversions required by C++11
+  /// [expr.const]p5.
   bool isIntegerConstantExpr(llvm::APSInt &Result, ASTContext &Ctx,
                              SourceLocation *Loc = 0,
                              bool isEvaluated = true) const;
@@ -422,6 +425,9 @@ public:
 
   /// isCXX11ConstantExpr - Return true if this expression is a constant
   /// expression in C++11. Can only be used in C++.
+  ///
+  /// Note: This does not perform the implicit conversions required by C++11
+  /// [expr.const]p5.
   bool isCXX11ConstantExpr(ASTContext &Ctx, APValue *Result = 0,
                            SourceLocation *Loc = 0) const;
 
@@ -1363,31 +1369,25 @@ public:
   /// Allow clients that need the byte representation, such as ASTWriterStmt
   /// ::VisitStringLiteral(), access.
   StringRef getBytes() const {
-    // FIXME: StringRef may not be the right type to use as a result for this...
-    assert((CharByteWidth==1 || CharByteWidth==2 || CharByteWidth==4)
-           && "unsupported CharByteWidth");
-    if (CharByteWidth==4) {
+    // FIXME: StringRef may not be the right type to use as a result for this.
+    if (CharByteWidth == 1)
+      return StringRef(StrData.asChar, getByteLength());
+    if (CharByteWidth == 4)
       return StringRef(reinterpret_cast<const char*>(StrData.asUInt32),
                        getByteLength());
-    } else if (CharByteWidth==2) {
-      return StringRef(reinterpret_cast<const char*>(StrData.asUInt16),
-                       getByteLength());
-    } else {
-      return StringRef(StrData.asChar, getByteLength());
-    }
+    assert(CharByteWidth == 2 && "unsupported CharByteWidth");
+    return StringRef(reinterpret_cast<const char*>(StrData.asUInt16),
+                     getByteLength());
   }
 
   uint32_t getCodeUnit(size_t i) const {
-    assert(i<Length && "out of bounds access");
-    assert((CharByteWidth==1 || CharByteWidth==2 || CharByteWidth==4)
-           && "unsupported CharByteWidth");
-    if (CharByteWidth==4) {
-      return StrData.asUInt32[i];
-    } else if (CharByteWidth==2) {
-      return StrData.asUInt16[i];
-    } else {
+    assert(i < Length && "out of bounds access");
+    if (CharByteWidth == 1)
       return static_cast<unsigned char>(StrData.asChar[i]);
-    }
+    if (CharByteWidth == 4)
+      return StrData.asUInt32[i];
+    assert(CharByteWidth == 2 && "unsupported CharByteWidth");
+    return StrData.asUInt16[i];
   }
 
   unsigned getByteLength() const { return CharByteWidth*Length; }

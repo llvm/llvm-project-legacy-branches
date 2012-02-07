@@ -368,7 +368,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
     if (IT != PrettyFunction && IT != PrettyFunctionNoVirtual)
       return FD->getNameAsString();
 
-    llvm::SmallString<256> Name;
+    SmallString<256> Name;
     llvm::raw_svector_ostream Out(Name);
 
     if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(FD)) {
@@ -421,7 +421,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
     return Name.str().str();
   }
   if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(CurrentDecl)) {
-    llvm::SmallString<256> Name;
+    SmallString<256> Name;
     llvm::raw_svector_ostream Out(Name);
     Out << (MD->isInstanceMethod() ? '-' : '+');
     Out << '[';
@@ -433,7 +433,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
 
     if (const ObjCCategoryImplDecl *CID =
         dyn_cast<ObjCCategoryImplDecl>(MD->getDeclContext()))
-      Out << '(' << CID << ')';
+      Out << '(' << *CID << ')';
 
     Out <<  ' ';
     Out << MD->getSelector().getAsString();
@@ -2017,6 +2017,16 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     if (CT == CT_Can)
       return CT;
     return MergeCanThrow(CT, CanSubExprsThrow(C, this));
+  }
+
+  case LambdaExprClass: {
+    const LambdaExpr *Lambda = cast<LambdaExpr>(this);
+    CanThrowResult CT = Expr::CT_Cannot;
+    for (LambdaExpr::capture_init_iterator Cap = Lambda->capture_init_begin(),
+                                        CapEnd = Lambda->capture_init_end();
+         Cap != CapEnd; ++Cap)
+      CT = MergeCanThrow(CT, (*Cap)->CanThrow(C));
+    return CT;
   }
 
   case CXXNewExprClass: {

@@ -247,6 +247,7 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   }
 
   std::vector<const char *> BackendArgs;
+  BackendArgs.reserve(16);
   BackendArgs.push_back("clang"); // Fake program name.
   if (!CodeGenOpts.DebugPass.empty()) {
     BackendArgs.push_back("-debug-pass");
@@ -327,6 +328,7 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   Options.StackAlignmentOverride = CodeGenOpts.StackAlignment;
   Options.RealignStack = CodeGenOpts.StackRealignment;
   Options.DisableTailCalls = CodeGenOpts.DisableTailCalls;
+  Options.TrapFuncName = CodeGenOpts.TrapFuncName;
 
   TargetMachine *TM = TheTarget->createTargetMachine(Triple, TargetOpts.CPU,
                                                      FeaturesStr, Options,

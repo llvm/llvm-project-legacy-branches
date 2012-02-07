@@ -900,11 +900,11 @@ Sema::ActOnCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
       DeclaratorChunk::ArrayTypeInfo &Array = D.getTypeObject(I).Arr;
       if (Expr *NumElts = (Expr *)Array.NumElts) {
-        if (!NumElts->isTypeDependent() && !NumElts->isValueDependent() &&
-            !NumElts->isIntegerConstantExpr(Context)) {
-          Diag(D.getTypeObject(I).Loc, diag::err_new_array_nonconst)
-            << NumElts->getSourceRange();
-          return ExprError();
+        if (!NumElts->isTypeDependent() && !NumElts->isValueDependent()) {
+          Array.NumElts = VerifyIntegerConstantExpression(NumElts, 0,
+            PDiag(diag::err_new_array_nonconst)).take();
+          if (!Array.NumElts)
+            return ExprError();
         }
       }
     }
@@ -995,12 +995,15 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   QualType ResultType = Context.getPointerType(AllocType);
     
-  // C++ 5.3.4p6: "The expression in a direct-new-declarator shall have integral
-  //   or enumeration type with a non-negative value."
+  // C++98 5.3.4p6: "The expression in a direct-new-declarator shall have
+  //   integral or enumeration type with a non-negative value."
+  // C++11 [expr.new]p6: The expression [...] shall be of integral or unscoped
+  //   enumeration type, or a class type for which a single non-explicit
+  //   conversion function to integral or unscoped enumeration type exists.
   if (ArraySize && !ArraySize->isTypeDependent()) {
     ExprResult ConvertedSize = ConvertToIntegralOrEnumerationType(
       StartLoc, ArraySize,
-      PDiag(diag::err_array_size_not_integral),
+      PDiag(diag::err_array_size_not_integral) << getLangOptions().CPlusPlus0x,
       PDiag(diag::err_array_size_incomplete_type)
         << ArraySize->getSourceRange(),
       PDiag(diag::err_array_size_explicit_conversion),
@@ -1009,7 +1012,8 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
       PDiag(diag::note_array_size_conversion),
       PDiag(getLangOptions().CPlusPlus0x ?
               diag::warn_cxx98_compat_array_size_conversion :
-              diag::ext_array_size_conversion));
+              diag::ext_array_size_conversion),
+      /*AllowScopedEnumerations*/ false);
     if (ConvertedSize.isInvalid())
       return ExprError();
 
@@ -1018,28 +1022,46 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     if (!SizeType->isIntegralOrUnscopedEnumerationType())
       return ExprError();
 
-    // Let's see if this is a constant < 0. If so, we reject it out of hand.
-    // We don't care about special rules, so we tell the machinery it's not
-    // evaluated - it gives us a result in more cases.
+    // C++98 [expr.new]p7:
+    //   The expression in a direct-new-declarator shall have integral type
+    //   with a non-negative value.
+    //
+    // Let's see if this is a constant < 0. If so, we reject it out of
+    // hand. Otherwise, if it's not a constant, we must have an unparenthesized
+    // array type.
+    //
+    // Note: such a construct has well-defined semantics in C++11: it throws
+    // std::bad_array_new_length.
     if (!ArraySize->isValueDependent()) {
       llvm::APSInt Value;
-      if (ArraySize->isIntegerConstantExpr(Value, Context, 0, false)) {
+      // We've already performed any required implicit conversion to integer or
+      // unscoped enumeration type.
+      if (ArraySize->isIntegerConstantExpr(Value, Context)) {
         if (Value < llvm::APSInt(
                         llvm::APInt::getNullValue(Value.getBitWidth()),
-                                 Value.isUnsigned()))
-          return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
-                                diag::err_typecheck_negative_array_size)
-            << ArraySize->getSourceRange());
-
-        if (!AllocType->isDependentType()) {
-          unsigned ActiveSizeBits
-            = ConstantArrayType::getNumAddressingBits(Context, AllocType, Value);
-          if (ActiveSizeBits > ConstantArrayType::getMaxSizeBits(Context)) {
+                                 Value.isUnsigned())) {
+          if (getLangOptions().CPlusPlus0x)
             Diag(ArraySize->getSourceRange().getBegin(),
-                 diag::err_array_too_large)
-              << Value.toString(10)
+                 diag::warn_typecheck_negative_array_new_size)
               << ArraySize->getSourceRange();
-            return ExprError();
+          else
+            return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
+                                  diag::err_typecheck_negative_array_size)
+                             << ArraySize->getSourceRange());
+        } else if (!AllocType->isDependentType()) {
+          unsigned ActiveSizeBits =
+            ConstantArrayType::getNumAddressingBits(Context, AllocType, Value);
+          if (ActiveSizeBits > ConstantArrayType::getMaxSizeBits(Context)) {
+            if (getLangOptions().CPlusPlus0x)
+              Diag(ArraySize->getSourceRange().getBegin(),
+                   diag::warn_array_new_too_large)
+                << Value.toString(10)
+                << ArraySize->getSourceRange();
+            else
+              return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
+                                    diag::err_array_too_large)
+                               << Value.toString(10)
+                               << ArraySize->getSourceRange());
           }
         }
       } else if (TypeIdParens.isValid()) {
@@ -1105,7 +1127,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   // Warn if the type is over-aligned and is being allocated by global operator
   // new.
-  if (OperatorNew &&
+  if (NumPlaceArgs == 0 && OperatorNew && 
       (OperatorNew->isImplicit() ||
        getSourceManager().isInSystemHeader(OperatorNew->getLocStart()))) {
     if (unsigned Align = Context.getPreferredTypeAlign(AllocType.getTypePtr())){
@@ -3249,18 +3271,16 @@ static uint64_t EvaluateArrayTypeTrait(Sema &Self, ArrayTypeTrait ATT,
   case ATT_ArrayExtent: {
     llvm::APSInt Value;
     uint64_t Dim;
-    if (DimExpr->isIntegerConstantExpr(Value, Self.Context, 0, false)) {
-      if (Value < llvm::APSInt(Value.getBitWidth(), Value.isUnsigned())) {
-        Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer) <<
-          DimExpr->getSourceRange();
-        return false;
-      }
-      Dim = Value.getLimitedValue();
-    } else {
-      Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer) <<
+    if (Self.VerifyIntegerConstantExpression(DimExpr, &Value,
+          Self.PDiag(diag::err_dimension_expr_not_constant_integer),
+          false).isInvalid())
+      return 0;
+    if (Value.isSigned() && Value.isNegative()) {
+      Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer),
         DimExpr->getSourceRange();
-      return false;
+      return 0;
     }
+    Dim = Value.getLimitedValue();
 
     if (T->isArrayType()) {
       unsigned D = 0;
@@ -4232,6 +4252,8 @@ Sema::MaybeCreateExprWithCleanups(ExprResult SubExpr) {
 Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
   assert(SubExpr && "sub expression can't be null!");
 
+  CleanupVarDeclMarking();
+
   unsigned FirstCleanup = ExprEvalContexts.back().NumCleanupObjects;
   assert(ExprCleanupObjects.size() >= FirstCleanup);
   assert(ExprNeedsCleanups || ExprCleanupObjects.size() == FirstCleanup);
@@ -4250,6 +4272,8 @@ Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
 
 Stmt *Sema::MaybeCreateStmtWithCleanups(Stmt *SubStmt) {
   assert(SubStmt && "sub statement can't be null!");
+
+  CleanupVarDeclMarking();
 
   if (!ExprNeedsCleanups)
     return SubStmt;
@@ -4573,6 +4597,7 @@ ExprResult Sema::ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
                                        TemplateId->getTemplateArgs(),
                                        TemplateId->NumArgs);
     TypeResult T = ActOnTemplateIdType(TemplateId->SS,
+                                       TemplateId->TemplateKWLoc,
                                        TemplateId->Template,
                                        TemplateId->TemplateNameLoc,
                                        TemplateId->LAngleLoc,
@@ -4622,6 +4647,7 @@ ExprResult Sema::ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
                                          TemplateId->getTemplateArgs(),
                                          TemplateId->NumArgs);
       TypeResult T = ActOnTemplateIdType(TemplateId->SS,
+                                         TemplateId->TemplateKWLoc,
                                          TemplateId->Template,
                                          TemplateId->TemplateNameLoc,
                                          TemplateId->LAngleLoc,
@@ -4763,7 +4789,7 @@ ExprResult Sema::ActOnFinishFullExpr(Expr *FE) {
     return ExprError();
 
   // Top-level message sends default to 'id' when we're in a debugger.
-  if (getLangOptions().DebuggerSupport &&
+  if (getLangOptions().DebuggerCastResultToId &&
       FullExpr.get()->getType() == Context.UnknownAnyTy &&
       isa<ObjCMessageExpr>(FullExpr.get())) {
     FullExpr = forceUnknownAnyToType(FullExpr.take(), Context.getObjCIdType());
@@ -4869,6 +4895,7 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
   // at this point, but we need something to attach child declarations to.
   QualType MethodTy;
   TypeSourceInfo *MethodTyInfo;
+  bool ExplicitParams = true;
   if (ParamInfo.getNumTypeObjects() == 0) {
     // C++11 [expr.prim.lambda]p4:
     //   If a lambda-expression does not include a lambda-declarator, it is as 
@@ -4878,6 +4905,7 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
     MethodTy = Context.getFunctionType(Context.DependentTy,
                                        /*Args=*/0, /*NumArgs=*/0, EPI);
     MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
+    ExplicitParams = false;
   } else {
     assert(ParamInfo.isFunctionDeclarator() &&
            "lambda-declarator is a function");
@@ -4941,7 +4969,10 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
     LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByval;
   else if (Intro.Default == LCD_ByRef)
     LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByref;
-
+  LSI->IntroducerRange = Intro.Range;
+  LSI->ExplicitParams = ExplicitParams;
+  LSI->Mutable = (Method->getTypeQualifiers() & Qualifiers::Const) == 0;
+ 
   // Handle explicit captures.
   for (llvm::SmallVector<LambdaCapture, 4>::const_iterator
          C = Intro.Captures.begin(), 
@@ -5024,12 +5055,6 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
       Diag(Var->getLocation(), diag::note_previous_decl) << C->Id;
       continue;
     }
-    
-    if (Var->hasAttr<BlocksAttr>()) {
-      Diag(C->Loc, diag::err_lambda_capture_block) << C->Id;
-      Diag(Var->getLocation(), diag::note_previous_decl) << C->Id;
-      continue;
-    }
 
     // C++11 [expr.prim.lambda]p8:
     //   An identifier or this shall not appear more than once in a 
@@ -5040,12 +5065,10 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
         << SourceRange(LSI->getCapture(Var).getLocation());
       continue;
     }
-    
-    // FIXME: If this is capture by copy, make sure that we can in fact copy
-    // the variable.
-    // FIXME: Unify with normal capture path, so we get all of the necessary
-    // nested captures.
-    LSI->AddCapture(Var, C->Kind == LCK_ByRef, /*isNested=*/false, C->Loc, 0);
+
+    TryCaptureKind Kind = C->Kind == LCK_ByRef ? TryCapture_ExplicitByRef :
+                                                 TryCapture_ExplicitByVal;
+    TryCaptureVar(Var, C->Loc, Kind);
   }
   LSI->finishedExplicitCaptures();
 
@@ -5096,8 +5119,78 @@ void Sema::ActOnLambdaError(SourceLocation StartLoc, Scope *CurScope) {
 
 ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc,
                                  Stmt *Body, Scope *CurScope) {
-  // FIXME: Implement
+  // Leave the expression-evaluation context.
+  DiscardCleanupsInEvaluationContext();
+  PopExpressionEvaluationContext();
+
+  // Leave the context of the lambda.
+  PopDeclContext();
+
+  // FIXME: End-of-lambda checking
+
+  // Collect information from the lambda scope.
+  llvm::SmallVector<LambdaExpr::Capture, 4> Captures;
+  llvm::SmallVector<Expr *, 4> CaptureInits;
+  LambdaCaptureDefault CaptureDefault;
+  CXXRecordDecl *Class;
+  SourceRange IntroducerRange;
+  bool ExplicitParams;
+  {
+    LambdaScopeInfo *LSI = getCurLambda();
+    Class = LSI->Lambda;
+    IntroducerRange = LSI->IntroducerRange;
+    ExplicitParams = LSI->ExplicitParams;
+
+    // Translate captures.
+    for (unsigned I = 0, N = LSI->Captures.size(); I != N; ++I) {
+      LambdaScopeInfo::Capture From = LSI->Captures[I];
+      assert(!From.isBlockCapture() && "Cannot capture __block variables");
+      bool IsImplicit = I >= LSI->NumExplicitCaptures;
+
+      // Handle 'this' capture.
+      if (From.isThisCapture()) {
+        Captures.push_back(LambdaExpr::Capture(From.getLocation(),
+                                               IsImplicit,
+                                               LCK_This));
+        CaptureInits.push_back(new (Context) CXXThisExpr(From.getLocation(),
+                                                         getCurrentThisType(),
+                                                         /*isImplicit=*/true));
+        continue;
+      }
+
+      VarDecl *Var = From.getVariable();
+      // FIXME: Handle pack expansions.
+      LambdaCaptureKind Kind = From.isCopyCapture()? LCK_ByCopy : LCK_ByRef;
+      Captures.push_back(LambdaExpr::Capture(From.getLocation(), IsImplicit, 
+                                             Kind, Var));
+      CaptureInits.push_back(From.getCopyExpr());
+    }
+
+    switch (LSI->ImpCaptureStyle) {
+    case CapturingScopeInfo::ImpCap_None:
+      CaptureDefault = LCD_None;
+      break;
+
+    case CapturingScopeInfo::ImpCap_LambdaByval:
+      CaptureDefault = LCD_ByCopy;
+      break;
+
+    case CapturingScopeInfo::ImpCap_LambdaByref:
+      CaptureDefault = LCD_ByRef;
+      break;
+
+    case CapturingScopeInfo::ImpCap_Block:
+      llvm_unreachable("block capture in lambda");
+      break;
+    }
+
+    PopFunctionScopeInfo();
+  }
+
+  Expr *Lambda = LambdaExpr::Create(Context, Class, IntroducerRange, 
+                                    CaptureDefault, Captures, ExplicitParams, 
+                                    CaptureInits, Body->getLocEnd());
+  (void)Lambda;
   Diag(StartLoc, diag::err_lambda_unsupported);
-  ActOnLambdaError(StartLoc, CurScope);
   return ExprError();
 }

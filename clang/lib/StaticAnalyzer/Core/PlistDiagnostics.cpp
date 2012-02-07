@@ -30,7 +30,7 @@ namespace {
   class PlistDiagnostics : public PathDiagnosticConsumer {
     const std::string OutputFile;
     const LangOptions &LangOpts;
-    llvm::OwningPtr<PathDiagnosticConsumer> SubPD;
+    OwningPtr<PathDiagnosticConsumer> SubPD;
     bool flushed;
   public:
     PlistDiagnostics(const std::string& prefix, const LangOptions &LangOpts,
@@ -275,8 +275,10 @@ static void ReportDiag(raw_ostream &o, const PathDiagnosticPiece& P,
     ReportControlFlow(o, cast<PathDiagnosticControlFlowPiece>(P), FM, SM,
                       LangOpts, indent);
     break;
+  case PathDiagnosticPiece::CallEnter:
+  case PathDiagnosticPiece::CallExit:
   case PathDiagnosticPiece::Event:
-    ReportEvent(o, cast<PathDiagnosticEventPiece>(P), FM, SM, LangOpts,
+    ReportEvent(o, cast<PathDiagnosticSpotPiece>(P), FM, SM, LangOpts,
                 indent);
     break;
   case PathDiagnosticPiece::Macro:

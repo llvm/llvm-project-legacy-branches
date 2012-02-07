@@ -16,6 +16,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/StmtVisitor.h"
+#include "llvm/ADT/SmallString.h"
 using namespace clang;
 using namespace clang::serialization;
 
@@ -381,7 +382,7 @@ void ASTStmtReader::VisitStringLiteral(StringLiteral *E) {
   bool isPascal = Record[Idx++];
 
   // Read string data
-  llvm::SmallString<16> Str(&Record[Idx], &Record[Idx] + Len);
+  SmallString<16> Str(&Record[Idx], &Record[Idx] + Len);
   E->setString(Reader.getContext(), Str.str(), kind, isPascal);
   Idx += Len;
 
@@ -1045,6 +1046,11 @@ void ASTStmtReader::VisitCXXConstructExpr(CXXConstructExpr *E) {
 void ASTStmtReader::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
   VisitCXXConstructExpr(E);
   E->Type = GetTypeSourceInfo(Record, Idx);
+}
+
+void ASTStmtReader::VisitLambdaExpr(LambdaExpr *E) {
+  VisitExpr(E);
+  assert(false && "Cannot deserialize lambda expressions yet");
 }
 
 void ASTStmtReader::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {

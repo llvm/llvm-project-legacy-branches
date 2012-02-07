@@ -826,6 +826,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-funknown-anytype");
   if (Opts.DebuggerSupport)
     Res.push_back("-fdebugger-support");
+  if (Opts.DebuggerCastResultToId)
+    Res.push_back("-fdebugger-cast-result-to-id");
   if (Opts.DelayedTemplateParsing)
     Res.push_back("-fdelayed-template-parsing");
   if (Opts.Deprecated)
@@ -1074,13 +1076,14 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   using namespace cc1options;
   bool Success = true;
 
-  Opts.OptimizationLevel = getOptimizationLevel(Args, IK, Diags);
-  if (Opts.OptimizationLevel > 3) {
+  unsigned OptLevel = getOptimizationLevel(Args, IK, Diags);
+  if (OptLevel > 3) {
     Diags.Report(diag::err_drv_invalid_value)
-      << Args.getLastArg(OPT_O)->getAsString(Args) << Opts.OptimizationLevel;
-    Opts.OptimizationLevel = 3;
+      << Args.getLastArg(OPT_O)->getAsString(Args) << OptLevel;
+    OptLevel = 3;
     Success = false;
   }
+  Opts.OptimizationLevel = OptLevel;
 
   // We must always run at least the always inlining pass.
   Opts.Inlining = (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
@@ -1143,6 +1146,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
                       Args.hasArg(OPT_cl_fast_relaxed_math);
   Opts.UnwindTables = Args.hasArg(OPT_munwind_tables);
   Opts.RelocationModel = Args.getLastArgValue(OPT_mrelocation_model, "pic");
+  Opts.TrapFuncName = Args.getLastArgValue(OPT_ftrap_function_EQ);
 
   Opts.FunctionSections = Args.hasArg(OPT_ffunction_sections);
   Opts.DataSections = Args.hasArg(OPT_fdata_sections);
@@ -1191,7 +1195,7 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   Opts.ShowHeaderIncludes = Args.hasArg(OPT_H);
   Opts.HeaderIncludeOutputFile = Args.getLastArgValue(OPT_header_include_file);
   Opts.AddMissingHeaderDeps = Args.hasArg(OPT_MG);
-  Opts.GraphvizOutputFile = Args.getLastArgValue(OPT_dependency_graphviz);
+  Opts.DOTOutputFile = Args.getLastArgValue(OPT_dependency_dot);
 }
 
 static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
@@ -1884,6 +1888,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.FakeAddressSpaceMap = Args.hasArg(OPT_ffake_address_space_map);
   Opts.ParseUnknownAnytype = Args.hasArg(OPT_funknown_anytype);
   Opts.DebuggerSupport = Args.hasArg(OPT_fdebugger_support);
+  Opts.DebuggerCastResultToId = Args.hasArg(OPT_fdebugger_cast_result_to_id);
   Opts.AddressSanitizer = Args.hasArg(OPT_faddress_sanitizer);
   Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
   Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name);
@@ -2055,9 +2060,9 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   bool Success = true;
 
   // Parse the arguments.
-  llvm::OwningPtr<OptTable> Opts(createCC1OptTable());
+  OwningPtr<OptTable> Opts(createCC1OptTable());
   unsigned MissingArgIndex, MissingArgCount;
-  llvm::OwningPtr<InputArgList> Args(
+  OwningPtr<InputArgList> Args(
     Opts->ParseArgs(ArgBegin, ArgEnd,MissingArgIndex, MissingArgCount));
 
   // Check for missing argument error.

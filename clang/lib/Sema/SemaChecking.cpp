@@ -30,6 +30,7 @@
 #include "clang/AST/StmtObjC.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "clang/Basic/TargetBuiltins.h"
@@ -2184,7 +2185,7 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
 
     if (success) {
       // Get the fix string from the fixed format specifier
-      llvm::SmallString<128> buf;
+      SmallString<128> buf;
       llvm::raw_svector_ostream os(buf);
       fixedFS.toString(os);
 
@@ -2343,7 +2344,7 @@ bool CheckScanfHandler::HandleScanfSpecifier(
 
     if (success) {
       // Get the fix string from the fixed format specifier.
-      llvm::SmallString<128> buf;
+      SmallString<128> buf;
       llvm::raw_svector_ostream os(buf);
       fixedFS.toString(os);
 
@@ -2674,7 +2675,7 @@ void Sema::CheckStrlcpycatArguments(const CallExpr *Call,
     return;
   }
 
-  llvm::SmallString<128> sizeString;
+  SmallString<128> sizeString;
   llvm::raw_svector_ostream OS(sizeString);
   OS << "sizeof(";
   DstArg->printPretty(OS, Context, 0, getPrintingPolicy());
@@ -2742,12 +2743,22 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
   if (PatternType == 0)
     return;
 
+  // Generate the diagnostic.
+  SourceLocation SL = LenArg->getLocStart();
+  SourceRange SR = LenArg->getSourceRange();
+  SourceManager &SM  = PP.getSourceManager();
+
+  // If the function is defined as a builtin macro, do not show macro expansion.
+  if (SM.isMacroArgExpansion(SL)) {
+    SL = SM.getSpellingLoc(SL);
+    SR = SourceRange(SM.getSpellingLoc(SR.getBegin()),
+                     SM.getSpellingLoc(SR.getEnd()));
+  }
+
   if (PatternType == 1)
-    Diag(DstArg->getLocStart(), diag::warn_strncat_large_size)
-      << LenArg->getSourceRange();
+    Diag(SL, diag::warn_strncat_large_size) << SR;
   else
-    Diag(DstArg->getLocStart(), diag::warn_strncat_src_size)
-      << LenArg->getSourceRange();
+    Diag(SL, diag::warn_strncat_src_size) << SR;
 
   // Output a FIXIT hint if the destination is an array (rather than a
   // pointer to an array).  This could be enhanced to handle some
@@ -2764,7 +2775,7 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
     return;
   }
 
-  llvm::SmallString<128> sizeString;
+  SmallString<128> sizeString;
   llvm::raw_svector_ostream OS(sizeString);
   OS << "sizeof(";
   DstArg->printPretty(OS, Context, 0, getPrintingPolicy());
@@ -2773,9 +2784,8 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
   DstArg->printPretty(OS, Context, 0, getPrintingPolicy());
   OS << ") - 1";
 
-  Diag(LenArg->getLocStart(), diag::note_strncat_wrong_size)
-    << FixItHint::CreateReplacement(LenArg->getSourceRange(),
-                                    OS.str());
+  Diag(SL, diag::note_strncat_wrong_size)
+    << FixItHint::CreateReplacement(SR, OS.str());
 }
 
 //===--- CHECK: Return Address of Stack Variable --------------------------===//

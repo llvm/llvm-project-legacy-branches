@@ -14,7 +14,7 @@
 #ifndef LLVM_CLANG_PATH_DIAGNOSTIC_H
 #define LLVM_CLANG_PATH_DIAGNOSTIC_H
 
-#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerUnion.h"
 #include <deque>
@@ -261,12 +261,11 @@ public:
 
 class PathDiagnosticPiece {
 public:
-  enum Kind { ControlFlow, Event, Macro };
+  enum Kind { ControlFlow, Event, Macro, CallEnter, CallExit };
   enum DisplayHint { Above, Below };
 
 private:
   const std::string str;
-  std::vector<FixItHint> FixItHints;
   const Kind kind;
   const DisplayHint Hint;
   std::vector<SourceRange> ranges;
@@ -307,10 +306,6 @@ public:
     ranges.push_back(SourceRange(B,E));
   }
 
-  void addFixItHint(const FixItHint& Hint) {
-    FixItHints.push_back(Hint);
-  }
-
   typedef const SourceRange* range_iterator;
 
   range_iterator ranges_begin() const {
@@ -319,17 +314,6 @@ public:
 
   range_iterator ranges_end() const {
     return ranges_begin() + ranges.size();
-  }
-
-  typedef const FixItHint *fixit_iterator;
-
-  fixit_iterator fixit_begin() const {
-    return FixItHints.empty()? 0 : &FixItHints[0];
-  }
-
-  fixit_iterator fixit_end() const {
-    return FixItHints.empty()? 0
-                   : &FixItHints[0] + FixItHints.size();
   }
 
   static inline bool classof(const PathDiagnosticPiece *P) {
@@ -371,6 +355,32 @@ public:
   static inline bool classof(const PathDiagnosticPiece *P) {
     return P->getKind() == Event;
   }
+};
+  
+class PathDiagnosticCallEnterPiece : public PathDiagnosticSpotPiece {
+public:
+  PathDiagnosticCallEnterPiece(const PathDiagnosticLocation &pos,
+                              StringRef s)
+    : PathDiagnosticSpotPiece(pos, s, CallEnter, false) {}
+  
+  ~PathDiagnosticCallEnterPiece();
+  
+  static inline bool classof(const PathDiagnosticPiece *P) {
+    return P->getKind() == CallEnter;
+  }  
+};
+
+class PathDiagnosticCallExitPiece : public PathDiagnosticSpotPiece {
+public:
+  PathDiagnosticCallExitPiece(const PathDiagnosticLocation &pos,
+                             StringRef s)
+  : PathDiagnosticSpotPiece(pos, s, CallExit, false) {}
+  
+  ~PathDiagnosticCallExitPiece();
+  
+  static inline bool classof(const PathDiagnosticPiece *P) {
+    return P->getKind() == CallExit;
+  }  
 };
 
 class PathDiagnosticControlFlowPiece : public PathDiagnosticPiece {

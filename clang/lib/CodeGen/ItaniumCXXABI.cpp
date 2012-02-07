@@ -986,8 +986,7 @@ static llvm::Constant *getGuardReleaseFn(CodeGenModule &CGM,
                                          llvm::PointerType *GuardPtrTy) {
   // void __cxa_guard_release(__guard *guard_object);
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(CGM.getLLVMContext()),
-                            GuardPtrTy, /*isVarArg=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, GuardPtrTy, /*isVarArg=*/false);
   
   return CGM.CreateRuntimeFunction(FTy, "__cxa_guard_release");
 }
@@ -996,8 +995,7 @@ static llvm::Constant *getGuardAbortFn(CodeGenModule &CGM,
                                        llvm::PointerType *GuardPtrTy) {
   // void __cxa_guard_abort(__guard *guard_object);
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(CGM.getLLVMContext()),
-                            GuardPtrTy, /*isVarArg=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, GuardPtrTy, /*isVarArg=*/false);
   
   return CGM.CreateRuntimeFunction(FTy, "__cxa_guard_abort");
 }
@@ -1040,7 +1038,7 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   llvm::PointerType *GuardPtrTy = GuardTy->getPointerTo();
 
   // Create the guard variable.
-  llvm::SmallString<256> GuardVName;
+  SmallString<256> GuardVName;
   llvm::raw_svector_ostream Out(GuardVName);
   getMangleContext().mangleItaniumGuardVariable(&D, Out);
   Out.flush();

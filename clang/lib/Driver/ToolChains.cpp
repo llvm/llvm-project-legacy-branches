@@ -37,7 +37,7 @@
 # include "clang/Config/config.h"
 #endif
 
-#include "llvm/Config/config.h" // for CXX_INCLUDE_ROOT
+#include "llvm/Config/config.h" // for GCC_INSTALL_PREFIX
 
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
@@ -184,7 +184,7 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
   unsigned Version[3];
   getTargetVersion(Version);
 
-  llvm::SmallString<16> Str;
+  SmallString<16> Str;
   llvm::raw_svector_ostream(Str)
     << (isTargetIPhoneOS() ? "ios" : "macosx")
     << Version[0] << "." << Version[1] << "." << Version[2];
@@ -1116,34 +1116,6 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     const Driver &D,
     const llvm::Triple &TargetTriple)
     : IsValid(false) {
-  // FIXME: Using CXX_INCLUDE_ROOT is here is a bit of a hack, but
-  // avoids adding yet another option to configure/cmake.
-  // It would probably be cleaner to break it in two variables
-  // CXX_GCC_ROOT with just /foo/bar
-  // CXX_GCC_VER with 4.5.2
-  // Then we would have
-  // CXX_INCLUDE_ROOT = CXX_GCC_ROOT/include/c++/CXX_GCC_VER
-  // and this function would return
-  // CXX_GCC_ROOT/lib/gcc/CXX_INCLUDE_ARCH/CXX_GCC_VER
-  llvm::SmallString<128> CxxIncludeRoot(CXX_INCLUDE_ROOT);
-  if (CxxIncludeRoot != "") {
-    // This is of the form /foo/bar/include/c++/4.5.2/
-    if (CxxIncludeRoot.back() == '/')
-      llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the /
-    StringRef Version = llvm::sys::path::filename(CxxIncludeRoot);
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the version
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the c++
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the include
-    GCCInstallPath = CxxIncludeRoot.str();
-    GCCInstallPath.append("/lib/gcc/");
-    GCCInstallPath.append(CXX_INCLUDE_ARCH);
-    GCCInstallPath.append("/");
-    GCCInstallPath.append(Version);
-    GCCParentLibPath = GCCInstallPath + "/../../..";
-    IsValid = true;
-    return;
-  }
-
   llvm::Triple MultiarchTriple = getMultiarchAlternateTriple(TargetTriple);
   llvm::Triple::ArchType TargetArch = TargetTriple.getArch();
   // The library directories which may contain GCC installations.
@@ -1159,9 +1131,18 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
   // Compute the set of prefixes for our search.
   SmallVector<std::string, 8> Prefixes(D.PrefixDirs.begin(),
                                        D.PrefixDirs.end());
-  Prefixes.push_back(D.SysRoot);
-  Prefixes.push_back(D.SysRoot + "/usr");
-  Prefixes.push_back(D.InstalledDir + "/..");
+
+  SmallString<128> CxxInstallRoot(GCC_INSTALL_PREFIX);
+  if (CxxInstallRoot != "") {
+    if (CxxInstallRoot.back() == '/')
+      llvm::sys::path::remove_filename(CxxInstallRoot); // remove the /
+
+    Prefixes.push_back(CxxInstallRoot.str());
+  } else {
+    Prefixes.push_back(D.SysRoot);
+    Prefixes.push_back(D.SysRoot + "/usr");
+    Prefixes.push_back(D.InstalledDir + "/..");
+  }
 
   // Loop over the various components which exist and select the best GCC
   // installation available. GCC installs are ranked by version number.
@@ -1803,6 +1784,7 @@ enum LinuxDistro {
   Fedora13,
   Fedora14,
   Fedora15,
+  Fedora16,
   FedoraRawhide,
   OpenSuse11_3,
   OpenSuse11_4,
@@ -1815,62 +1797,55 @@ enum LinuxDistro {
   UbuntuMaverick,
   UbuntuNatty,
   UbuntuOneiric,
+  UbuntuPrecise,
   UnknownDistro
 };
 
 static bool IsRedhat(enum LinuxDistro Distro) {
-  return Distro == Fedora13 || Distro == Fedora14 ||
-         Distro == Fedora15 || Distro == FedoraRawhide ||
-         Distro == RHEL4 || Distro == RHEL5 || Distro == RHEL6;
+  return (Distro >= Fedora13 && Distro <= FedoraRawhide) ||
+         (Distro >= RHEL4    && Distro <= RHEL6);
 }
 
 static bool IsOpenSuse(enum LinuxDistro Distro) {
-  return Distro == OpenSuse11_3 || Distro == OpenSuse11_4 ||
-         Distro == OpenSuse12_1;
+  return Distro >= OpenSuse11_3 && Distro <= OpenSuse12_1;
 }
 
 static bool IsDebian(enum LinuxDistro Distro) {
-  return Distro == DebianLenny || Distro == DebianSqueeze ||
-         Distro == DebianWheezy;
+  return Distro >= DebianLenny && Distro <= DebianWheezy;
 }
 
 static bool IsUbuntu(enum LinuxDistro Distro) {
-  return Distro == UbuntuHardy  || Distro == UbuntuIntrepid ||
-         Distro == UbuntuLucid  || Distro == UbuntuMaverick ||
-         Distro == UbuntuJaunty || Distro == UbuntuKarmic ||
-         Distro == UbuntuNatty  || Distro == UbuntuOneiric;
+  return Distro >= UbuntuHardy && Distro <= UbuntuPrecise;
 }
 
 static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
-  llvm::OwningPtr<llvm::MemoryBuffer> File;
+  OwningPtr<llvm::MemoryBuffer> File;
   if (!llvm::MemoryBuffer::getFile("/etc/lsb-release", File)) {
     StringRef Data = File.get()->getBuffer();
     SmallVector<StringRef, 8> Lines;
     Data.split(Lines, "\n");
-    for (unsigned int i = 0, s = Lines.size(); i < s; ++ i) {
-      if (Lines[i] == "DISTRIB_CODENAME=hardy")
-        return UbuntuHardy;
-      else if (Lines[i] == "DISTRIB_CODENAME=intrepid")
-        return UbuntuIntrepid;
-      else if (Lines[i] == "DISTRIB_CODENAME=jaunty")
-        return UbuntuJaunty;
-      else if (Lines[i] == "DISTRIB_CODENAME=karmic")
-        return UbuntuKarmic;
-      else if (Lines[i] == "DISTRIB_CODENAME=lucid")
-        return UbuntuLucid;
-      else if (Lines[i] == "DISTRIB_CODENAME=maverick")
-        return UbuntuMaverick;
-      else if (Lines[i] == "DISTRIB_CODENAME=natty")
-        return UbuntuNatty;
-      else if (Lines[i] == "DISTRIB_CODENAME=oneiric")
-        return UbuntuOneiric;
-    }
-    return UnknownDistro;
+    LinuxDistro Version = UnknownDistro;
+    for (unsigned i = 0, s = Lines.size(); i != s; ++i)
+      if (Version == UnknownDistro && Lines[i].startswith("DISTRIB_CODENAME="))
+        Version = llvm::StringSwitch<LinuxDistro>(Lines[i].substr(17))
+          .Case("hardy", UbuntuHardy)
+          .Case("intrepid", UbuntuIntrepid)
+          .Case("jaunty", UbuntuJaunty)
+          .Case("karmic", UbuntuKarmic)
+          .Case("lucid", UbuntuLucid)
+          .Case("maverick", UbuntuMaverick)
+          .Case("natty", UbuntuNatty)
+          .Case("oneiric", UbuntuOneiric)
+          .Case("precise", UbuntuPrecise)
+          .Default(UnknownDistro);
+    return Version;
   }
 
   if (!llvm::MemoryBuffer::getFile("/etc/redhat-release", File)) {
     StringRef Data = File.get()->getBuffer();
-    if (Data.startswith("Fedora release 15"))
+    if (Data.startswith("Fedora release 16"))
+      return Fedora16;
+    else if (Data.startswith("Fedora release 15"))
       return Fedora15;
     else if (Data.startswith("Fedora release 14"))
       return Fedora14;
@@ -1904,16 +1879,12 @@ static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
     return UnknownDistro;
   }
 
-  if (!llvm::MemoryBuffer::getFile("/etc/SuSE-release", File)) {
-    StringRef Data = File.get()->getBuffer();
-    if (Data.startswith("openSUSE 11.3"))
-      return OpenSuse11_3;
-    else if (Data.startswith("openSUSE 11.4"))
-      return OpenSuse11_4;
-    else if (Data.startswith("openSUSE 12.1"))
-      return OpenSuse12_1;
-    return UnknownDistro;
-  }
+  if (!llvm::MemoryBuffer::getFile("/etc/SuSE-release", File))
+    return llvm::StringSwitch<LinuxDistro>(File.get()->getBuffer())
+      .StartsWith("openSUSE 11.3", OpenSuse11_3)
+      .StartsWith("openSUSE 11.4", OpenSuse11_4)
+      .StartsWith("openSUSE 12.1", OpenSuse12_1)
+      .Default(UnknownDistro);
 
   bool Exists;
   if (!llvm::sys::fs::exists("/etc/exherbo-release", Exists) && Exists)
@@ -2002,8 +1973,8 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple)
   // ABI requires a mapping between the GOT and the symbol table.
   // Android loader does not support .gnu.hash.
   if (!IsMips && !IsAndroid) {
-    if (IsRedhat(Distro) || IsOpenSuse(Distro) || Distro == UbuntuMaverick ||
-        Distro == UbuntuNatty || Distro == UbuntuOneiric)
+    if (IsRedhat(Distro) || IsOpenSuse(Distro) ||
+        (IsUbuntu(Distro) && Distro >= UbuntuMaverick))
       ExtraOpts.push_back("--hash-style=gnu");
 
     if (IsDebian(Distro) || IsOpenSuse(Distro) || Distro == UbuntuLucid ||
@@ -2017,9 +1988,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple)
   if (Distro == DebianSqueeze || Distro == DebianWheezy ||
       IsOpenSuse(Distro) ||
       (IsRedhat(Distro) && Distro != RHEL4 && Distro != RHEL5) ||
-      Distro == UbuntuLucid ||
-      Distro == UbuntuMaverick || Distro == UbuntuKarmic ||
-      Distro == UbuntuNatty || Distro == UbuntuOneiric)
+      (IsUbuntu(Distro) && Distro >= UbuntuKarmic))
     ExtraOpts.push_back("--build-id");
 
   if (IsOpenSuse(Distro))
@@ -2230,22 +2199,6 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
     // libc++ is always installed at a fixed path on Linux currently.
     addSystemInclude(DriverArgs, CC1Args,
                      getDriver().SysRoot + "/usr/include/c++/v1");
-    return;
-  }
-
-  const llvm::Triple &TargetTriple = getTriple();
-
-  StringRef CxxIncludeRoot(CXX_INCLUDE_ROOT);
-  if (!CxxIncludeRoot.empty()) {
-    StringRef CxxIncludeArch(CXX_INCLUDE_ARCH);
-    if (CxxIncludeArch.empty())
-      CxxIncludeArch = TargetTriple.str();
-
-    addLibStdCXXIncludePaths(
-      CxxIncludeRoot,
-      CxxIncludeArch + (isTarget64Bit() ? CXX_INCLUDE_64BIT_DIR
-                                        : CXX_INCLUDE_32BIT_DIR),
-      DriverArgs, CC1Args);
     return;
   }
 

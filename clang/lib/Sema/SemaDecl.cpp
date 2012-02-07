@@ -39,6 +39,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/ModuleLoader.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Triple.h"
 #include <algorithm>
 #include <cstring>
@@ -286,7 +287,7 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
         
         T = getElaboratedType(ETK_None, *SS, T);
         ElaboratedTypeLoc ElabTL = Builder.push<ElaboratedTypeLoc>(T);
-        ElabTL.setKeywordLoc(SourceLocation());
+        ElabTL.setElaboratedKeywordLoc(SourceLocation());
         ElabTL.setQualifierLoc(SS->getWithLocInContext(Context));
         return CreateParsedType(T, Builder.getTypeSourceInfo(Context, T));
       } else {
@@ -2679,18 +2680,20 @@ StorageClassSpecToFunctionDeclStorageClass(DeclSpec::SCS StorageClassSpec) {
 
 /// BuildAnonymousStructOrUnion - Handle the declaration of an
 /// anonymous structure or union. Anonymous unions are a C++ feature
-/// (C++ [class.union]) and a GNU C extension; anonymous structures
-/// are a GNU C and GNU C++ extension.
+/// (C++ [class.union]) and a C11 feature; anonymous structures
+/// are a C11 feature and GNU C++ extension.
 Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
                                              AccessSpecifier AS,
                                              RecordDecl *Record) {
   DeclContext *Owner = Record->getDeclContext();
 
   // Diagnose whether this anonymous struct/union is an extension.
-  if (Record->isUnion() && !getLangOptions().CPlusPlus)
+  if (Record->isUnion() && !getLangOptions().CPlusPlus && !getLangOptions().C11)
     Diag(Record->getLocation(), diag::ext_anonymous_union);
-  else if (!Record->isUnion())
-    Diag(Record->getLocation(), diag::ext_anonymous_struct);
+  else if (!Record->isUnion() && getLangOptions().CPlusPlus)
+    Diag(Record->getLocation(), diag::ext_gnu_anonymous_struct);
+  else if (!Record->isUnion() && !getLangOptions().C11)
+    Diag(Record->getLocation(), diag::ext_c11_anonymous_struct);
 
   // C and C++ require different kinds of checks for anonymous
   // structs/unions.
@@ -5776,8 +5779,8 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
 }
 
 void Sema::CheckMain(FunctionDecl* FD, const DeclSpec& DS) {
-  // C++ [basic.start.main]p3:  A program that declares main to be inline
-  //   or static is ill-formed.
+  // C++11 [basic.start.main]p3:  A program that declares main to be inline,
+  //   static or constexpr is ill-formed.
   // C99 6.7.4p4:  In a hosted environment, the inline function specifier
   //   shall not appear in a declaration of main.
   // static main is not an error under C99, but we should warn about it.
@@ -5788,6 +5791,11 @@ void Sema::CheckMain(FunctionDecl* FD, const DeclSpec& DS) {
   if (FD->isInlineSpecified())
     Diag(DS.getInlineSpecLoc(), diag::err_inline_main) 
       << FixItHint::CreateRemoval(DS.getInlineSpecLoc());
+  if (FD->isConstexpr()) {
+    Diag(DS.getConstexprSpecLoc(), diag::err_constexpr_main)
+      << FixItHint::CreateRemoval(DS.getConstexprSpecLoc());
+    FD->setConstexpr(false);
+  }
 
   QualType T = FD->getType();
   assert(T->isFunctionType() && "function decl is not of function type");
@@ -6958,7 +6966,7 @@ void Sema::ActOnFinishKNRParamDeclarations(Scope *S, Declarator &D,
     for (int i = FTI.NumArgs; i != 0; /* decrement in loop */) {
       --i;
       if (FTI.ArgInfo[i].Param == 0) {
-        llvm::SmallString<256> Code;
+        SmallString<256> Code;
         llvm::raw_svector_ostream(Code) << "  int "
                                         << FTI.ArgInfo[i].Ident->getName()
                                         << ";\n";
@@ -7294,11 +7302,13 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     }
 
     if (FD && FD->isConstexpr() && !FD->isInvalidDecl() &&
-        !CheckConstexprFunctionBody(FD, Body))
+        !CheckConstexprFunctionBody(FD, Body, IsInstantiation))
       FD->setInvalidDecl();
 
     assert(ExprCleanupObjects.empty() && "Leftover temporaries in function");
     assert(!ExprNeedsCleanups && "Unaccounted cleanups in function");
+    assert(MaybeODRUseExprs.empty() &&
+           "Leftover expressions for odr-use checking");
   }
   
   if (!IsInstantiation)
@@ -8456,9 +8466,10 @@ void Sema::ActOnTagDefinitionError(Scope *S, Decl *TagD) {
 }
 
 // Note that FieldName may be null for anonymous bitfields.
-bool Sema::VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
-                          QualType FieldTy, const Expr *BitWidth,
-                          bool *ZeroWidth) {
+ExprResult Sema::VerifyBitField(SourceLocation FieldLoc,
+                                IdentifierInfo *FieldName,
+                                QualType FieldTy, Expr *BitWidth,
+                                bool *ZeroWidth) {
   // Default to true; that shouldn't confuse checks for emptiness
   if (ZeroWidth)
     *ZeroWidth = true;
@@ -8468,7 +8479,7 @@ bool Sema::VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
   if (!FieldTy->isDependentType() && !FieldTy->isIntegralOrEnumerationType()) {
     // Handle incomplete types with specific error.
     if (RequireCompleteType(FieldLoc, FieldTy, diag::err_field_incomplete))
-      return true;
+      return ExprError();
     if (FieldName)
       return Diag(FieldLoc, diag::err_not_integral_type_bitfield)
         << FieldName << FieldTy << BitWidth->getSourceRange();
@@ -8476,16 +8487,18 @@ bool Sema::VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
       << FieldTy << BitWidth->getSourceRange();
   } else if (DiagnoseUnexpandedParameterPack(const_cast<Expr *>(BitWidth),
                                              UPPC_BitFieldWidth))
-    return true;
+    return ExprError();
 
   // If the bit-width is type- or value-dependent, don't try to check
   // it now.
   if (BitWidth->isValueDependent() || BitWidth->isTypeDependent())
-    return false;
+    return Owned(BitWidth);
 
   llvm::APSInt Value;
-  if (VerifyIntegerConstantExpression(BitWidth, &Value))
-    return true;
+  ExprResult ICE = VerifyIntegerConstantExpression(BitWidth, &Value);
+  if (ICE.isInvalid())
+    return ICE;
+  BitWidth = ICE.take();
 
   if (Value != 0 && ZeroWidth)
     *ZeroWidth = false;
@@ -8525,7 +8538,7 @@ bool Sema::VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
     }
   }
 
-  return false;
+  return Owned(BitWidth);
 }
 
 /// ActOnField - Each field of a C struct/union is passed into this in order
@@ -8691,11 +8704,13 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
 
   bool ZeroWidth = false;
   // If this is declared as a bit-field, check the bit-field.
-  if (!InvalidDecl && BitWidth &&
-      VerifyBitField(Loc, II, T, BitWidth, &ZeroWidth)) {
-    InvalidDecl = true;
-    BitWidth = 0;
-    ZeroWidth = false;
+  if (!InvalidDecl && BitWidth) {
+    BitWidth = VerifyBitField(Loc, II, T, BitWidth, &ZeroWidth).take();
+    if (!BitWidth) {
+      InvalidDecl = true;
+      BitWidth = 0;
+      ZeroWidth = false;
+    }
   }
 
   // Check that 'mutable' is consistent with the type of the declaration.
@@ -9018,10 +9033,9 @@ Decl *Sema::ActOnIvar(Scope *S,
 
   if (BitWidth) {
     // 6.7.2.1p3, 6.7.2.1p4
-    if (VerifyBitField(Loc, II, T, BitWidth)) {
+    BitWidth = VerifyBitField(Loc, II, T, BitWidth).take();
+    if (!BitWidth)
       D.setInvalidType();
-      BitWidth = 0;
-    }
   } else {
     // Not a bitfield.
 
@@ -9157,11 +9171,23 @@ void Sema::ActOnFields(Scope* S,
   if (EnclosingDecl->isInvalidDecl())
     return;
 
-  // Verify that all the fields are okay.
+  RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
+
+  // Start counting up the number of named members; make sure to include
+  // members of anonymous structs and unions in the total.
   unsigned NumNamedMembers = 0;
+  if (Record) {
+    for (RecordDecl::decl_iterator i = Record->decls_begin(),
+                                   e = Record->decls_end(); i != e; i++) {
+      if (IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(*i))
+        if (IFD->getDeclName())
+          ++NumNamedMembers;
+    }
+  }
+
+  // Verify that all the fields are okay.
   SmallVector<FieldDecl*, 32> RecFields;
 
-  RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
   bool ARCErrReported = false;
   for (llvm::ArrayRef<Decl *>::iterator i = Fields.begin(), end = Fields.end();
        i != end; ++i) {
@@ -9582,27 +9608,10 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
         else
           Val = Converted.take();
       } else if (!Val->isValueDependent() &&
-                 VerifyIntegerConstantExpression(Val, &EnumVal)) {
+                 !(Val = VerifyIntegerConstantExpression(Val,
+                                                         &EnumVal).take())) {
         // C99 6.7.2.2p2: Make sure we have an integer constant expression.
-        Val = 0;
       } else {
-        if (!getLangOptions().CPlusPlus) {
-          // C99 6.7.2.2p2:
-          //   The expression that defines the value of an enumeration constant
-          //   shall be an integer constant expression that has a value
-          //   representable as an int.
-
-          // Complain if the value is not representable in an int.
-          if (!isRepresentableIntegerValue(Context, EnumVal, Context.IntTy))
-            Diag(IdLoc, diag::ext_enum_value_not_int)
-              << EnumVal.toString(10) << Val->getSourceRange()
-              << (EnumVal.isUnsigned() || EnumVal.isNonNegative());
-          else if (!Context.hasSameType(Val->getType(), Context.IntTy)) {
-            // Force the type of the expression to 'int'.
-            Val = ImpCastExprToType(Val, Context.IntTy, CK_IntegralCast).take();
-          }
-        }
-
         if (Enum->isFixed()) {
           EltTy = Enum->getIntegerType();
 
@@ -9618,12 +9627,28 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
               Diag(IdLoc, diag::err_enumerator_too_large) << EltTy;
           } else
             Val = ImpCastExprToType(Val, EltTy, CK_IntegralCast).take();
-        } else {
+        } else if (getLangOptions().CPlusPlus) {
           // C++11 [dcl.enum]p5:
           //   If the underlying type is not fixed, the type of each enumerator
           //   is the type of its initializing value:
           //     - If an initializer is specified for an enumerator, the 
           //       initializing value has the same type as the expression.
+          EltTy = Val->getType();
+        } else {
+          // C99 6.7.2.2p2:
+          //   The expression that defines the value of an enumeration constant
+          //   shall be an integer constant expression that has a value
+          //   representable as an int.
+
+          // Complain if the value is not representable in an int.
+          if (!isRepresentableIntegerValue(Context, EnumVal, Context.IntTy))
+            Diag(IdLoc, diag::ext_enum_value_not_int)
+              << EnumVal.toString(10) << Val->getSourceRange()
+              << (EnumVal.isUnsigned() || EnumVal.isNonNegative());
+          else if (!Context.hasSameType(Val->getType(), Context.IntTy)) {
+            // Force the type of the expression to 'int'.
+            Val = ImpCastExprToType(Val, Context.IntTy, CK_IntegralCast).take();
+          }
           EltTy = Val->getType();
         }
       }
@@ -9712,7 +9737,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
   if (!EltTy->isDependentType()) {
     // Make the enumerator value match the signedness and size of the 
     // enumerator's type.
-    EnumVal = EnumVal.zextOrTrunc(Context.getIntWidth(EltTy));
+    EnumVal = EnumVal.extOrTrunc(Context.getIntWidth(EltTy));
     EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
   }
   

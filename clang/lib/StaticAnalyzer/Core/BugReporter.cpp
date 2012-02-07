@@ -21,11 +21,13 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/StmtObjC.h"
+#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Analysis/ProgramPoint.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/OwningPtr.h"
 #include <queue>
@@ -131,7 +133,7 @@ public:
 class PathDiagnosticBuilder : public BugReporterContext {
   BugReport *R;
   PathDiagnosticConsumer *PDC;
-  llvm::OwningPtr<ParentMap> PM;
+  OwningPtr<ParentMap> PM;
   NodeMapClosure NMC;
 public:
   PathDiagnosticBuilder(GRBugReporter &br,
@@ -439,7 +441,7 @@ public:
 
     // Create the diagnostic.
     if (Loc::isLocType(VD->getType())) {
-      llvm::SmallString<64> buf;
+      SmallString<64> buf;
       llvm::raw_svector_ostream os(buf);
       os << '\'' << *VD << "' now aliases '" << *MostRecent << '\'';
       PathDiagnosticLocation L =
@@ -925,6 +927,12 @@ public:
       rawAddEdge(L);
   }
 
+  void flushLocations() {
+    while (!CLocs.empty())
+      popLocation();
+    PrevLoc = PathDiagnosticLocation();
+  }
+  
   void addEdge(PathDiagnosticLocation NewLoc, bool alwaysAdd = false);
 
   void rawAddEdge(PathDiagnosticLocation NewLoc);
@@ -1130,8 +1138,27 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
     ProgramPoint P = N->getLocation();
 
     do {
+      if (const CallExit *CE = dyn_cast<CallExit>(&P)) {
+        const StackFrameContext *LCtx =
+        CE->getLocationContext()->getCurrentStackFrame();
+        PathDiagnosticLocation Loc(LCtx->getCallSite(),
+                                   PDB.getSourceManager(),
+                                   LCtx);
+        EB.addEdge(Loc, true);
+        EB.flushLocations();
+        break;
+      }
+      
+      // Was the predecessor in a different stack frame?
+      if (NextNode &&
+          !isa<CallExit>(NextNode->getLocation()) &&
+          NextNode->getLocationContext()->getCurrentStackFrame() !=
+          N->getLocationContext()->getCurrentStackFrame()) {
+        EB.flushLocations();
+      }
+
       // Block edges.
-      if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P)) {
+      if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P)) {        
         const CFGBlock &Blk = *BE->getSrc();
         const Stmt *Term = Blk.getTerminator();
 
@@ -1180,6 +1207,8 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
         
         break;
       }
+      
+      
     } while (0);
 
     if (!NextNode)
@@ -1401,8 +1430,8 @@ MakeReportGraph(const ExplodedGraph* G,
 
   // Create owning pointers for GTrim and NMap just to ensure that they are
   // released when this function exists.
-  llvm::OwningPtr<ExplodedGraph> AutoReleaseGTrim(GTrim);
-  llvm::OwningPtr<InterExplodedGraphMap> AutoReleaseNMap(NMap);
+  OwningPtr<ExplodedGraph> AutoReleaseGTrim(GTrim);
+  OwningPtr<InterExplodedGraphMap> AutoReleaseNMap(NMap);
 
   // Find the (first) error node in the trimmed graph.  We just need to consult
   // the node map (NMap) which maps from nodes in the original graph to nodes
@@ -1633,8 +1662,8 @@ void GRBugReporter::GeneratePathDiagnostic(PathDiagnostic& PD,
   BugReport *R = bugReports[GPair.second.second];
   assert(R && "No original report found for sliced graph.");
 
-  llvm::OwningPtr<ExplodedGraph> ReportGraph(GPair.first.first);
-  llvm::OwningPtr<NodeBackMap> BackMap(GPair.first.second);
+  OwningPtr<ExplodedGraph> ReportGraph(GPair.first.first);
+  OwningPtr<NodeBackMap> BackMap(GPair.first.second);
   const ExplodedNode *N = GPair.second.first;
 
   // Start building the path diagnostic...
@@ -1644,6 +1673,11 @@ void GRBugReporter::GeneratePathDiagnostic(PathDiagnostic& PD,
   // Register additional node visitors.
   R->addVisitor(new NilReceiverBRVisitor());
   R->addVisitor(new ConditionBRVisitor());
+  
+  // If inlining is turning out, emit diagnostics for CallEnter and
+  // CallExit at the top level.
+  bool showTopLevel = Eng.getAnalysisManager().shouldInlineCall();
+  R->addVisitor(new CallEnterExitBRVisitor(showTopLevel));
 
   // Generate the very last diagnostic piece - the piece is visible before 
   // the trace is expanded.
@@ -1864,7 +1898,7 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   // Probably doesn't make a difference in practice.
   BugType& BT = exampleReport->getBugType();
 
-  llvm::OwningPtr<PathDiagnostic>
+  OwningPtr<PathDiagnostic>
     D(new PathDiagnostic(exampleReport->getBugType().getName(),
                          !PD || PD->useVerboseDescription()
                          ? exampleReport->getDescription() 
@@ -1895,7 +1929,7 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   StringRef desc = exampleReport->getShortDescription();
   unsigned ErrorDiag;
   {
-    llvm::SmallString<512> TmpStr;
+    SmallString<512> TmpStr;
     llvm::raw_svector_ostream Out(TmpStr);
     for (StringRef::iterator I=desc.begin(), E=desc.end(); I!=E; ++I)
       if (*I == '%')
@@ -1950,7 +1984,7 @@ void BugReporter::EmitBasicReport(StringRef name,
 
 BugType *BugReporter::getBugTypeForName(StringRef name,
                                         StringRef category) {
-  llvm::SmallString<136> fullDesc;
+  SmallString<136> fullDesc;
   llvm::raw_svector_ostream(fullDesc) << name << ":" << category;
   llvm::StringMapEntry<BugType *> &
       entry = StrBugTypes.GetOrCreateValue(fullDesc);

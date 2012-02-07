@@ -80,7 +80,7 @@ Driver::Driver(StringRef ClangExecutable,
 
   // Compute the path to the resource directory.
   StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
-  llvm::SmallString<128> P(Dir);
+  SmallString<128> P(Dir);
   if (ClangResourceDir != "")
     llvm::sys::path::append(P, ClangResourceDir);
   else
@@ -853,35 +853,32 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
     else
       Actions.push_back(new LipoJobAction(Inputs, Act->getType()));
 
-    // Add a 'dsymutil' step if necessary, when debug info is enabled and we
-    // have a compile input. We need to run 'dsymutil' ourselves in such cases
-    // because the debug info will refer to a temporary object file which is
-    // will be removed at the end of the compilation process.
-    if (Act->getType() == types::TY_Image) {
-      Arg *A = Args.getLastArg(options::OPT_g_Group);
+    // Handle debug info queries.
+    Arg *A = Args.getLastArg(options::OPT_g_Group);
       if (A && !A->getOption().matches(options::OPT_g0) &&
           !A->getOption().matches(options::OPT_gstabs) &&
           ContainsCompileOrAssembleAction(Actions.back())) {
-        ActionList Inputs;
-        Inputs.push_back(Actions.back());
-        Actions.pop_back();
+   
+        // Add a 'dsymutil' step if necessary, when debug info is enabled and we
+        // have a compile input. We need to run 'dsymutil' ourselves in such cases
+        // because the debug info will refer to a temporary object file which is
+        // will be removed at the end of the compilation process.
+        if (Act->getType() == types::TY_Image) {
+          ActionList Inputs;
+          Inputs.push_back(Actions.back());
+          Actions.pop_back();
+          Actions.push_back(new DsymutilJobAction(Inputs, types::TY_dSYM));
+        }
 
-        Actions.push_back(new DsymutilJobAction(Inputs, types::TY_dSYM));
-
-	// Verify the debug output if we're in assert mode.
-	// TODO: The verifier is noisy by default so put this under an
-	// option for now.
-	#ifndef NDEBUG
-	if (Args.hasArg(options::OPT_verify)) {
-	  ActionList VerifyInputs;
+        // Verify the output (debug information only) if we passed '-verify'.
+        if (Args.hasArg(options::OPT_verify)) {
+          ActionList VerifyInputs;
 	  VerifyInputs.push_back(Actions.back());
 	  Actions.pop_back();
 	  Actions.push_back(new VerifyJobAction(VerifyInputs,
 						types::TY_Nothing));
 	}
-        #endif
       }
-    }
   }
 }
 
@@ -964,7 +961,7 @@ void Driver::BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
 
       // Check that the file exists, if enabled.
       if (CheckInputsExist && memcmp(Value, "-", 2) != 0) {
-        llvm::SmallString<64> Path(Value);
+        SmallString<64> Path(Value);
         if (Arg *WorkDir = Args.getLastArg(options::OPT_working_directory))
           if (llvm::sys::path::is_absolute(Path.str())) {
             Path = WorkDir->getValue(Args);
@@ -1061,7 +1058,7 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
     }
 
     // Build the pipeline for this file.
-    llvm::OwningPtr<Action> Current(new InputAction(*InputArg, InputType));
+    OwningPtr<Action> Current(new InputAction(*InputArg, InputType));
     for (unsigned i = 0; i != NumSteps; ++i) {
       phases::ID Phase = types::getCompilationPhase(InputType, i);
 
@@ -1408,7 +1405,7 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
   }
 
-  llvm::SmallString<128> BasePath(BaseInput);
+  SmallString<128> BasePath(BaseInput);
   StringRef BaseName;
 
   // Dsymutil actions should use the full path.

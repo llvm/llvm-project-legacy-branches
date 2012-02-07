@@ -560,6 +560,20 @@ bool CursorVisitor::VisitDeclContext(DeclContext *DC) {
     if (D->getLexicalDeclContext() != DC)
       continue;
     CXCursor Cursor = MakeCXCursor(D, TU, RegionOfInterest);
+
+    // FIXME: ObjCClassRef/ObjCProtocolRef for forward class/protocol
+    // declarations is a mismatch with the compiler semantics.
+    if (Cursor.kind == CXCursor_ObjCInterfaceDecl) {
+      ObjCInterfaceDecl *ID = cast<ObjCInterfaceDecl>(D);
+      if (!ID->isThisDeclarationADefinition())
+        Cursor = MakeCursorObjCClassRef(ID, ID->getLocation(), TU);
+
+    } else if (Cursor.kind == CXCursor_ObjCProtocolDecl) {
+      ObjCProtocolDecl *PD = cast<ObjCProtocolDecl>(D);
+      if (!PD->isThisDeclarationADefinition())
+        Cursor = MakeCursorObjCProtocolRef(PD, PD->getLocation(), TU);
+    }
+
     const llvm::Optional<bool> &V = shouldVisitCursor(Cursor);
     if (!V.hasValue())
       continue;
@@ -3028,7 +3042,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
   if (FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
     llvm::SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << Function->getNameAsString();
+    OS << *Function;
     if (Function->getPrimaryTemplate())
       OS << "<>";
     OS << "(";
@@ -3050,7 +3064,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
   if (ClassTemplateDecl *ClassTemplate = dyn_cast<ClassTemplateDecl>(D)) {
     llvm::SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << ClassTemplate->getNameAsString();
+    OS << *ClassTemplate;
     OS << "<";
     TemplateParameterList *Params = ClassTemplate->getTemplateParameters();
     for (unsigned I = 0, N = Params->size(); I != N; ++I) {
@@ -3086,7 +3100,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
     
     llvm::SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
-    OS << ClassSpec->getNameAsString();
+    OS << *ClassSpec;
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
                                       ClassSpec->getTemplateArgs().data(),
                                       ClassSpec->getTemplateArgs().size(),

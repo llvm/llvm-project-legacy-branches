@@ -31,6 +31,7 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/ImmutableList.h"
 #include "llvm/ADT/ImmutableMap.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include <cstdarg>
@@ -2204,7 +2205,7 @@ CFRefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
     else {
       const FunctionDecl *FD = cast<FunctionDecl>(D);
       os << " is returned from a function whose name ('"
-         << FD->getNameAsString()
+         << *FD
          << "') does not contain 'Copy' or 'Create'.  This violates the naming"
             " convention rules given in the Memory Management Guide for Core"
             " Foundation";
@@ -2286,19 +2287,19 @@ class RetainCountChecker
                     check::RegionChanges,
                     eval::Assume,
                     eval::Call > {
-  mutable llvm::OwningPtr<CFRefBug> useAfterRelease, releaseNotOwned;
-  mutable llvm::OwningPtr<CFRefBug> deallocGC, deallocNotOwned;
-  mutable llvm::OwningPtr<CFRefBug> overAutorelease, returnNotOwnedForOwned;
-  mutable llvm::OwningPtr<CFRefBug> leakWithinFunction, leakAtReturn;
-  mutable llvm::OwningPtr<CFRefBug> leakWithinFunctionGC, leakAtReturnGC;
+  mutable OwningPtr<CFRefBug> useAfterRelease, releaseNotOwned;
+  mutable OwningPtr<CFRefBug> deallocGC, deallocNotOwned;
+  mutable OwningPtr<CFRefBug> overAutorelease, returnNotOwnedForOwned;
+  mutable OwningPtr<CFRefBug> leakWithinFunction, leakAtReturn;
+  mutable OwningPtr<CFRefBug> leakWithinFunctionGC, leakAtReturnGC;
 
   typedef llvm::DenseMap<SymbolRef, const SimpleProgramPointTag *> SymbolTagMap;
 
   // This map is only used to ensure proper deletion of any allocated tags.
   mutable SymbolTagMap DeadSymbolTags;
 
-  mutable llvm::OwningPtr<RetainSummaryManager> Summaries;
-  mutable llvm::OwningPtr<RetainSummaryManager> SummariesGC;
+  mutable OwningPtr<RetainSummaryManager> Summaries;
+  mutable OwningPtr<RetainSummaryManager> SummariesGC;
 
   mutable ARCounts::Factory ARCountFactory;
 
@@ -3372,7 +3373,7 @@ RetainCountChecker::handleAutoreleaseCounts(ProgramStateRef state,
   state = state->set<RefBindings>(Sym, V);
 
   if (ExplodedNode *N = Bd.MakeNode(state, Pred, true)) {
-    llvm::SmallString<128> sbuf;
+    SmallString<128> sbuf;
     llvm::raw_svector_ostream os(sbuf);
     os << "Object over-autoreleased: object was sent -autorelease ";
     if (V.getAutoreleaseCount() > 1)
@@ -3453,6 +3454,13 @@ void RetainCountChecker::checkEndPath(CheckerContext &Ctx) const {
       return;
   }
 
+  // If the current LocationContext has a parent, don't check for leaks.
+  // We will do that later.
+  // FIXME: we should instead check for imblances of the retain/releases,
+  // and suggest annotations.
+  if (Ctx.getLocationContext()->getParent())
+    return;
+  
   B = state->get<RefBindings>();
   SmallVector<SymbolRef, 10> Leaked;
 
@@ -3466,7 +3474,7 @@ const ProgramPointTag *
 RetainCountChecker::getDeadSymbolTag(SymbolRef sym) const {
   const SimpleProgramPointTag *&tag = DeadSymbolTags[sym];
   if (!tag) {
-    llvm::SmallString<64> buf;
+    SmallString<64> buf;
     llvm::raw_svector_ostream out(buf);
     out << "RetainCountChecker : Dead Symbol : ";
     sym->dumpToStream(out);

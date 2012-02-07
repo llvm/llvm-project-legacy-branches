@@ -40,7 +40,7 @@ def OSXExperimental : Package<"osx">, InPackage<Experimental>, Hidden;
 def Cocoa : Package<"cocoa">, InPackage<OSX>;
 def CocoaExperimental : Package<"cocoa">, InPackage<OSXExperimental>, Hidden;
 def CoreFoundation : Package<"coreFoundation">, InPackage<OSX>;
-def Containers : Package<"Containers">, InPackage<CoreFoundation>;
+def Containers : Package<"containers">, InPackage<CoreFoundation>;
 
 def LLVM : Package<"llvm">;
 def Debug : Package<"debug">;
@@ -302,8 +302,20 @@ def StreamChecker : Checker<"Stream">,
 
 let ParentPackage = CString in {
 
-def CStringChecker : Checker<"Generic">,
-  HelpText<"Check calls to functions in <string.h>">,
+def CStringNullArg : Checker<"NullArg">,
+  HelpText<"Check for null pointers being passed as arguments to C string functions">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringOutOfBounds : Checker<"OutOfBounds">,
+  HelpText<"Check for out-of-bounds access in string functions">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringBufferOverlap : Checker<"BufferOverlap">,
+  HelpText<"Checks for overlap in two buffer arguments">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringNotNullTerm : Checker<"NotNullTerminated">,
+  HelpText<"Check for arguments which are not null-terminating strings">,
   DescFile<"CStringChecker.cpp">;
 
 def CStringSyntaxChecker : Checker<"BadSizeArg">,
@@ -364,7 +376,11 @@ def ObjCMethSigsChecker : Checker<"IncompatibleMethodTypes">,
 def ObjCUnusedIvarsChecker : Checker<"UnusedIvars">,
   HelpText<"Warn about private ivars that are never used">,
   DescFile<"ObjCUnusedIVarsChecker.cpp">;
- 
+
+def ObjCSelfInitChecker : Checker<"SelfInit">,
+  HelpText<"Check that 'self' is properly initialized inside an initializer method">,
+  DescFile<"ObjCSelfInitChecker.cpp">;
+
 def NSErrorChecker : Checker<"NSError">,
   HelpText<"Check usage of NSError** parameters">,
   DescFile<"NSErrorChecker.cpp">;
@@ -376,14 +392,6 @@ def RetainCountChecker : Checker<"RetainCount">,
 } // end "cocoa"
 
 let ParentPackage = CocoaExperimental in {
-
-def ObjCContainersChecker : Checker<"Containers">,
-  HelpText<"Deep checks for common pitfalls when using 'CFArray' APIs">,
-  DescFile<"ObjCContainersChecker.cpp">;
-
-def ObjCSelfInitChecker : Checker<"SelfInit">,
-  HelpText<"Check that 'self' is properly initialized inside an initializer method">,
-  DescFile<"ObjCSelfInitChecker.cpp">;
 
 def ObjCDeallocChecker : Checker<"Dealloc">,
   HelpText<"Warn about Objective-C classes that lack a correct implementation of -dealloc">,
@@ -409,7 +417,12 @@ def CFErrorChecker : Checker<"CFError">,
 let ParentPackage = Containers in {
 def ObjCContainersASTChecker : Checker<"PointerSizedValues">,
   HelpText<"Warns if 'CFArray', 'CFDictionary', 'CFSet' are created with non-pointer-size values">,
-  DescFile<"ObjCContainersASTChecker.cpp">;  
+  DescFile<"ObjCContainersASTChecker.cpp">;
+
+def ObjCContainersChecker : Checker<"OutOfBounds">,
+  HelpText<"Checks for index out-of-bounds when using 'CFArray' API">,
+  DescFile<"ObjCContainersChecker.cpp">;
+    
 }
 //===----------------------------------------------------------------------===//
 // Checkers for LLVM development.

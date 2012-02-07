@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -Wformat-nonliteral -fsyntax-only -verify %s
+// RUN: %clang_cc1 -triple x86_64-apple-darwin -Wformat-nonliteral -fsyntax-only -verify %s
 
 //===----------------------------------------------------------------------===//
 // The following code is reduced using delta-debugging from
@@ -118,7 +118,6 @@ void check_NSLocalizedString() {
 
 typedef __WCHAR_TYPE__ wchar_t;
 
-
 // Test that %S, %C, %ls check for 16 bit types in ObjC strings, as described at
 // http://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/Strings/Articles/formatSpecifiers.html#//apple_ref/doc/uid/TP40004265
 
@@ -146,4 +145,9 @@ void test_percent_C() {
 
   const wchar_t wchar_data = L'a';
   NSLog(@"%C", wchar_data);  // expected-warning{{format specifies type 'unsigned short' but the argument has type 'wchar_t'}}
+}
+
+// Test that %@ works with toll-free bridging (<rdar://problem/10814120>).
+void test_toll_free_bridging(CFStringRef x) {
+  NSLog(@"%@", x); // no-warning
 }

@@ -21,8 +21,9 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/RecordLayout.h"
-#include "clang/Basic/SourceManager.h"
+#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
+#include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/Constants.h"
@@ -35,7 +36,6 @@
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
 using namespace clang;
 using namespace clang::CodeGen;
 
@@ -131,7 +131,7 @@ StringRef CGDebugInfo::getFunctionName(const FunctionDecl *FD) {
 }
 
 StringRef CGDebugInfo::getObjCMethodName(const ObjCMethodDecl *OMD) {
-  llvm::SmallString<256> MethodName;
+  SmallString<256> MethodName;
   llvm::raw_svector_ostream OS(MethodName);
   OS << (OMD->isInstanceMethod() ? '-' : '+') << '[';
   const DeclContext *DC = OMD->getDeclContext();
@@ -233,7 +233,8 @@ llvm::DIFile CGDebugInfo::getOrCreateMainFile() {
 /// getLineNumber - Get line number for the location. If location is invalid
 /// then use current location.
 unsigned CGDebugInfo::getLineNumber(SourceLocation Loc) {
-  assert((Loc.isValid() || CurLoc.isValid()) && "Invalid current location!");
+  if (Loc.isInvalid() && CurLoc.isInvalid())
+    return 0;
   SourceManager &SM = CGM.getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(Loc.isValid() ? Loc : CurLoc);
   return PLoc.isValid()? PLoc.getLine() : 0;
@@ -242,7 +243,8 @@ unsigned CGDebugInfo::getLineNumber(SourceLocation Loc) {
 /// getColumnNumber - Get column number for the location. If location is 
 /// invalid then use current location.
 unsigned CGDebugInfo::getColumnNumber(SourceLocation Loc) {
-  assert((Loc.isValid() || CurLoc.isValid()) && "Invalid current location!");
+  if (Loc.isInvalid() && CurLoc.isInvalid())
+    return 0;
   SourceManager &SM = CGM.getContext().getSourceManager();
   PresumedLoc PLoc = SM.getPresumedLoc(Loc.isValid() ? Loc : CurLoc);
   return PLoc.isValid()? PLoc.getColumn() : 0;
@@ -254,7 +256,7 @@ StringRef CGDebugInfo::getCurrentDirname() {
 
   if (!CWDName.empty())
     return CWDName;
-  llvm::SmallString<256> CWD;
+  SmallString<256> CWD;
   llvm::sys::fs::current_path(CWD);
   char *CompDirnamePtr = DebugInfoNames.Allocate<char>(CWD.size());
   memcpy(CompDirnamePtr, CWD.data(), CWD.size());
@@ -1354,6 +1356,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
     StringRef PropertySetter;
     unsigned PropertyAttributes = 0;
     ObjCPropertyDecl *PD = NULL;
+    llvm::MDNode *PropertyNode = NULL;
     if (ImpD)
       if (ObjCPropertyImplDecl *PImpD = 
           ImpD->FindPropertyImplIvarDecl(Field->getIdentifier()))
@@ -1363,12 +1366,16 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
       PropertyGetter = getSelectorName(PD->getGetterName());
       PropertySetter = getSelectorName(PD->getSetterName());
       PropertyAttributes = PD->getPropertyAttributes();
-    } 
+      PropertyNode =
+	DBuilder.createObjCProperty(PropertyName, PropertyGetter, 
+                                    PropertySetter,
+                                    PropertyAttributes);
+      EltTys.push_back(PropertyNode);
+    }
     FieldTy = DBuilder.createObjCIVar(FieldName, FieldDefUnit,
                                       FieldLine, FieldSize, FieldAlign,
                                       FieldOffset, Flags, FieldTy,
-                                      PropertyName, PropertyGetter,
-                                      PropertySetter, PropertyAttributes);
+                                      PropertyNode);
     EltTys.push_back(FieldTy);
   }
 
@@ -2134,7 +2141,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
     if (VD->hasAttr<BlocksAttr>()) {
       CharUnits offset = CharUnits::fromQuantity(32);
       SmallVector<llvm::Value *, 9> addr;
-      llvm::Type *Int64Ty = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+      llvm::Type *Int64Ty = CGM.Int64Ty;
       addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
       // offset of __forwarding field
       offset = CGM.getContext().toCharUnitsFromBits(
@@ -2239,7 +2246,7 @@ void CGDebugInfo::EmitDeclareOfBlockDeclRefVariable(
           ->getElementOffset(blockInfo.getCapture(VD).getIndex()));
 
   SmallVector<llvm::Value *, 9> addr;
-  llvm::Type *Int64Ty = llvm::Type::getInt64Ty(CGM.getLLVMContext());
+  llvm::Type *Int64Ty = CGM.Int64Ty;
   addr.push_back(llvm::ConstantInt::get(Int64Ty, llvm::DIBuilder::OpPlus));
   addr.push_back(llvm::ConstantInt::get(Int64Ty, offset.getQuantity()));
   if (isByRef) {
@@ -2397,7 +2404,7 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
     fields.push_back(fieldType);
   }
 
-  llvm::SmallString<36> typeName;
+  SmallString<36> typeName;
   llvm::raw_svector_ostream(typeName)
     << "__block_literal_" << CGM.getUniqueBlockCount();
 

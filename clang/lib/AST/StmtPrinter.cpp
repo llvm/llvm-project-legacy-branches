@@ -17,9 +17,9 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/PrettyPrinter.h"
-#include "llvm/Support/Format.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "llvm/ADT/SmallString.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -666,7 +666,8 @@ void StmtPrinter::VisitCharacterLiteral(CharacterLiteral *Node) {
     if (value < 256 && isprint(value)) {
       OS << "'" << (char)value << "'";
     } else if (value < 256) {
-      OS << "'\\x" << llvm::format("%x", value) << "'";
+      OS << "'\\x";
+      OS.write_hex(value) << "'";
     } else {
       // FIXME what to really do here?
       OS << value;
@@ -697,7 +698,7 @@ void StmtPrinter::VisitIntegerLiteral(IntegerLiteral *Node) {
   }
 }
 void StmtPrinter::VisitFloatingLiteral(FloatingLiteral *Node) {
-  llvm::SmallString<16> Str;
+  SmallString<16> Str;
   Node->getValue().toString(Str);
   OS << Str;
 }
@@ -1262,6 +1263,98 @@ void StmtPrinter::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitLambdaExpr(LambdaExpr *Node) {
+  OS << '[';
+  bool NeedComma = false;
+  switch (Node->getCaptureDefault()) {
+  case LCD_None:
+    break;
+
+  case LCD_ByCopy:
+    OS << '=';
+    NeedComma = true;
+    break;
+
+  case LCD_ByRef:
+    OS << '&';
+    NeedComma = true;
+    break;
+  }
+  for (LambdaExpr::capture_iterator C = Node->explicit_capture_begin(),
+                                 CEnd = Node->explicit_capture_end();
+       C != CEnd;
+       ++C) {
+    if (NeedComma)
+      OS << ", ";
+    NeedComma = true;
+
+    switch (C->getCaptureKind()) {
+    case LCK_This:
+      OS << "this";
+      break;
+
+    case LCK_ByRef:
+      if (Node->getCaptureDefault() != LCD_ByRef)
+        OS << '&';
+      OS << C->getCapturedVar()->getName();
+      break;
+
+    case LCK_ByCopy:
+      if (Node->getCaptureDefault() != LCD_ByCopy)
+        OS << '=';
+      OS << C->getCapturedVar()->getName();
+      break;
+    }
+  }
+  OS << ']';
+
+  if (Node->hasExplicitParameters()) {
+    OS << " (";
+    CXXMethodDecl *Method = Node->getCallOperator();
+    NeedComma = false;
+    for (CXXMethodDecl::param_iterator P = Method->param_begin(),
+                                    PEnd = Method->param_end();
+         P != PEnd; ++P) {
+      if (NeedComma) {
+        OS << ", ";
+      } else {
+        NeedComma = true;
+      }
+      std::string ParamStr = (*P)->getNameAsString();
+      (*P)->getOriginalType().getAsStringInternal(ParamStr, Policy);
+      OS << ParamStr;
+    }
+    if (Method->isVariadic()) {
+      if (NeedComma)
+        OS << ", ";
+      OS << "...";
+    }
+    OS << ')';
+
+    if (Node->isMutable())
+      OS << " mutable";
+
+    const FunctionProtoType *Proto
+      = Method->getType()->getAs<FunctionProtoType>();
+    {
+      std::string ExceptionSpec;
+      Proto->printExceptionSpecification(ExceptionSpec, Policy);
+      OS << ExceptionSpec;
+    }
+
+    // FIXME: Attributes
+
+    // FIXME: Suppress trailing return type if it wasn't specified in
+    // the source.
+    OS << " -> " << Proto->getResultType().getAsString(Policy);
+  }
+
+  // Print the body.
+  CompoundStmt *Body = Node->getBody();
+  OS << ' ';
+  PrintStmt(Body);
+}
+
 void StmtPrinter::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *Node) {
   if (TypeSourceInfo *TSInfo = Node->getTypeSourceInfo())
     OS << TSInfo->getType().getAsString(Policy) << "()";
@@ -1515,12 +1608,12 @@ void StmtPrinter::VisitPackExpansionExpr(PackExpansionExpr *E) {
 }
 
 void StmtPrinter::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
-  OS << "sizeof...(" << E->getPack()->getNameAsString() << ")";
+  OS << "sizeof...(" << *E->getPack() << ")";
 }
 
 void StmtPrinter::VisitSubstNonTypeTemplateParmPackExpr(
                                        SubstNonTypeTemplateParmPackExpr *Node) {
-  OS << Node->getParameterPack()->getNameAsString();
+  OS << *Node->getParameterPack();
 }
 
 void StmtPrinter::VisitSubstNonTypeTemplateParmExpr(

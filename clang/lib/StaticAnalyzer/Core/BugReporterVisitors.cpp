@@ -20,6 +20,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "llvm/ADT/SmallString.h"
 
 using namespace clang;
 using namespace ento;
@@ -168,7 +169,7 @@ PathDiagnosticPiece *FindLastStoreBRVisitor::VisitNode(const ExplodedNode *N,
     return NULL;
 
   satisfied = true;
-  llvm::SmallString<256> sbuf;
+  SmallString<256> sbuf;
   llvm::raw_svector_ostream os(sbuf);
 
   if (const PostStmt *PS = N->getLocationAs<PostStmt>()) {
@@ -598,7 +599,7 @@ ConditionBRVisitor::VisitTrueTest(const Expr *Cond,
   
   bool shouldInvert = false;
   
-  llvm::SmallString<128> LhsString, RhsString;
+  SmallString<128> LhsString, RhsString;
   {
     llvm::raw_svector_ostream OutLHS(LhsString), OutRHS(RhsString);  
     const bool isVarLHS = patternMatch(BExpr->getLHS(), OutLHS, BRC);
@@ -622,7 +623,7 @@ ConditionBRVisitor::VisitTrueTest(const Expr *Cond,
     return 0;
   
   // Should we invert the strings if the LHS is not a variable name?
-  llvm::SmallString<256> buf;
+  SmallString<256> buf;
   llvm::raw_svector_ostream Out(buf);
   Out << "Assuming " << (shouldInvert ? RhsString : LhsString) << " is ";
 
@@ -672,7 +673,7 @@ ConditionBRVisitor::VisitConditionVariable(StringRef LhsString,
                                            const bool tookTrue,
                                            BugReporterContext &BRC,
                                            const LocationContext *LC) {
-  llvm::SmallString<256> buf;
+  SmallString<256> buf;
   llvm::raw_svector_ostream Out(buf);
   Out << "Assuming " << LhsString << " is ";
   
@@ -704,7 +705,7 @@ ConditionBRVisitor::VisitTrueTest(const Expr *Cond,
   if (!VD)
     return 0;
   
-  llvm::SmallString<256> Buf;
+  SmallString<256> Buf;
   llvm::raw_svector_ostream Out(Buf);
     
   Out << "Assuming '";
@@ -725,3 +726,52 @@ ConditionBRVisitor::VisitTrueTest(const Expr *Cond,
   PathDiagnosticLocation Loc(Cond, BRC.getSourceManager(), LC);
   return new PathDiagnosticEventPiece(Loc, Out.str());
 }
+
+static PathDiagnosticLocation getLastStmtLoc(const ExplodedNode *N,
+                                             const SourceManager &SM) {
+  while (N) {
+    ProgramPoint PP = N->getLocation();
+    if (const StmtPoint *SP = dyn_cast<StmtPoint>(&PP))
+      return PathDiagnosticLocation(SP->getStmt(), SM, PP.getLocationContext());
+    if (N->pred_empty())
+      break;
+    N = *N->pred_begin();
+  }
+  return PathDiagnosticLocation();
+}
+
+PathDiagnosticPiece *
+CallEnterExitBRVisitor::VisitNode(const ExplodedNode *N,
+                                  const ExplodedNode *PrevN,
+                                  BugReporterContext &BRC,
+                                  BugReport &BR) {
+  ProgramPoint PP = N->getLocation();
+  SmallString<256> buf;
+  llvm::raw_svector_ostream Out(buf);
+  PathDiagnosticLocation pos;
+
+  if (const CallEnter *CEnter = dyn_cast<CallEnter>(&PP)) {
+    const Decl *callee = CEnter->getCalleeContext()->getDecl();
+    pos = PathDiagnosticLocation(CEnter->getCallExpr(), BRC.getSourceManager(),
+                                 PP.getLocationContext());
+    if (isa<BlockDecl>(callee))
+      Out << "Entering call to block";
+    else if (const NamedDecl *ND = dyn_cast<NamedDecl>(callee))
+      Out << "Entering call to '" << *ND << "'";
+    StringRef msg = Out.str();
+    if (msg.empty())
+      return 0;
+    return new PathDiagnosticCallEnterPiece(pos, msg);
+  }
+  else if (const CallExit *CExit = dyn_cast<CallExit>(&PP)) {
+    const Decl *caller = CExit->getLocationContext()->getParent()->getDecl();
+    pos = getLastStmtLoc(PrevN, BRC.getSourceManager());
+    if (const NamedDecl *ND = dyn_cast<NamedDecl>(caller))
+      Out << "Returning to '" << *ND << "'";
+    else
+      Out << "Returning to caller";
+    return new PathDiagnosticCallExitPiece(pos, Out.str());
+  }
+
+  return 0;
+} 

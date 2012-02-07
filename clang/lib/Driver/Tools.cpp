@@ -234,13 +234,13 @@ void Clang::AddPreprocessingOptions(Compilation &C,
         // Otherwise derive from the base input.
         //
         // FIXME: This should use the computed output file location.
-        llvm::SmallString<128> P(Inputs[0].getBaseInput());
+        SmallString<128> P(Inputs[0].getBaseInput());
         llvm::sys::path::replace_extension(P, "o");
         DepTarget = Args.MakeArgString(llvm::sys::path::filename(P));
       }
 
       CmdArgs.push_back("-MT");
-      llvm::SmallString<128> Quoted;
+      SmallString<128> Quoted;
       QuoteTarget(DepTarget, Quoted);
       CmdArgs.push_back(Args.MakeArgString(Quoted));
     }
@@ -268,7 +268,7 @@ void Clang::AddPreprocessingOptions(Compilation &C,
 
     if (A->getOption().matches(options::OPT_MQ)) {
       CmdArgs.push_back("-MT");
-      llvm::SmallString<128> Quoted;
+      SmallString<128> Quoted;
       QuoteTarget(A->getValue(Args), Quoted);
       CmdArgs.push_back(Args.MakeArgString(Quoted));
 
@@ -379,7 +379,7 @@ void Clang::AddPreprocessingOptions(Compilation &C,
     A->claim();
     A->render(Args, CmdArgs);
   } else {
-    llvm::SmallString<128> DefaultModuleCache;
+    SmallString<128> DefaultModuleCache;
     llvm::sys::path::system_temp_directory(/*erasedOnReboot=*/false, 
                                            DefaultModuleCache);
     llvm::sys::path::append(DefaultModuleCache, "clang-module-cache");
@@ -1185,7 +1185,7 @@ static void addAsanRTLinux(const ToolChain &TC, const ArgList &Args,
 
   // LibAsan is "libclang_rt.asan-<ArchName>.a" in the Linux library resource
   // directory.
-  llvm::SmallString<128> LibAsan(TC.getDriver().ResourceDir);
+  SmallString<128> LibAsan(TC.getDriver().ResourceDir);
   llvm::sys::path::append(LibAsan, "lib", "linux",
                           (Twine("libclang_rt.asan-") +
                            TC.getArchName() + ".a"));
@@ -1947,12 +1947,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(A->getValue(Args));
   }
 
-  // Forward -ftrap_function= options to the backend.
-  if (Arg *A = Args.getLastArg(options::OPT_ftrap_function_EQ)) {
-    StringRef FuncName = A->getValue(Args);
-    CmdArgs.push_back("-backend-option");
-    CmdArgs.push_back(Args.MakeArgString("-trap-func=" + FuncName));
-  }
+  Args.AddLastArg(CmdArgs, options::OPT_ftrap_function_EQ);
 
   // -fno-strict-overflow implies -fwrapv if it isn't disabled, but
   // -fstrict-overflow won't turn off an explicitly enabled -fwrapv.
@@ -2516,7 +2511,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
            ie = Args.end(); it != ie; ++it)
       (*it)->render(Args, OriginalArgs);
 
-    llvm::SmallString<256> Flags;
+    SmallString<256> Flags;
     Flags += Exec;
     for (unsigned i = 0, e = OriginalArgs.size(); i != e; ++i) {
       Flags += " ";
@@ -2613,7 +2608,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
            ie = Args.end(); it != ie; ++it)
       (*it)->render(Args, OriginalArgs);
 
-    llvm::SmallString<256> Flags;
+    SmallString<256> Flags;
     const char *Exec = getToolChain().getDriver().getClangProgramPath();
     Flags += Exec;
     for (unsigned i = 0, e = OriginalArgs.size(); i != e; ++i) {
@@ -3008,11 +3003,25 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
     StringRef Option = *it;
     bool RemoveOption = false;
 
-    // Remove -faltivec
-    if (Option.equals("-faltivec")) {
-      it = CmdArgs.erase(it);
+    // Erase both -fmodule-cache-path and its argument.
+    if (Option.equals("-fmodule-cache-path") && it+2 != ie) {
+      it = CmdArgs.erase(it, it+2);
       ie = CmdArgs.end();
       continue;
+    }
+
+    // Remove unsupported -f options.
+    if (Option.startswith("-f")) {
+      // Remove -f/-fno- to reduce the number of cases.
+      if (Option.startswith("-fno-"))
+        Option = Option.substr(5);
+      else
+        Option = Option.substr(2);
+      RemoveOption = llvm::StringSwitch<bool>(Option)
+        .Case("altivec", true)
+        .Case("modules", true)
+        .Case("diagnostics-show-note-include-stack", true)
+        .Default(false);
     }
 
     // Handle machine specific options.
@@ -4084,6 +4093,9 @@ void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
 				       const char *LinkingOutput) const {
   ArgStringList CmdArgs;
   CmdArgs.push_back("--verify");
+  CmdArgs.push_back("--debug-info");
+  CmdArgs.push_back("--eh-frame");
+  CmdArgs.push_back("--quiet");
 
   assert(Inputs.size() == 1 && "Unable to handle multiple inputs.");
   const InputInfo &Input = Inputs[0];
