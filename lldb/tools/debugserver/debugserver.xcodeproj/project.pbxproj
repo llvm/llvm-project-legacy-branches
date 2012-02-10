@@ -475,7 +475,7 @@
 					i386,
 				);
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				SDKROOT = "";
@@ -494,7 +494,7 @@
 					x86_64,
 					i386,
 				);
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -515,7 +515,7 @@
 					x86_64,
 					i386,
 				);
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -534,7 +534,7 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
@@ -547,6 +547,7 @@
 				HEADER_SEARCH_PATHS = /System/Library/Frameworks/System.framework/PrivateHeaders;
 				INSTALL_PATH = /usr/bin;
 				LLDB_DEBUGSERVER = 1;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "-Wparentheses";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
@@ -574,7 +575,7 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
 					"$(SDKROOT)/System/Library/PrivateFrameworks",
@@ -587,6 +588,7 @@
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				INSTALL_PATH = /usr/bin;
 				LLDB_DEBUGSERVER = 1;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "-Wparentheses";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
@@ -613,7 +615,7 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 171;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
@@ -626,6 +628,7 @@
 				HEADER_SEARCH_PATHS = /System/Library/Frameworks/System.framework/PrivateHeaders;
 				INSTALL_PATH = /usr/bin;
 				LLDB_DEBUGSERVER = 1;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "-Wparentheses";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
