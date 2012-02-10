@@ -472,9 +472,9 @@ MachException::PortInfo::Save (task_t task)
     count = (sizeof (ports) / sizeof (ports[0]));
     DNBLogThreadedIf(LOG_EXCEPTIONS | LOG_VERBOSE, "MachException::PortInfo::Save ( task = 0x%4.4x )", task);
     DNBError err;
-    err = ::task_get_exception_ports (task, EXC_MASK_ALL, masks, &count, ports, behaviors, flavors);
+    err = ::task_get_exception_ports (task, LLDB_MACH_EXC_MASK_BASE, masks, &count, ports, behaviors, flavors);
     if (DNBLogCheckLogBit(LOG_EXCEPTIONS) || err.Fail())
-        err.LogThreaded("::task_get_exception_ports ( task = 0x%4.4x, mask = 0x%x, maskCnt => %u, ports, behaviors, flavors )", task, EXC_MASK_ALL, count);
+        err.LogThreaded("::task_get_exception_ports ( task = 0x%4.4x, mask = 0x%x, maskCnt => %u, ports, behaviors, flavors )", task, LLDB_MACH_EXC_MASK_BASE, count);
     if (err.Fail())
         count = 0;
     return err.Error();

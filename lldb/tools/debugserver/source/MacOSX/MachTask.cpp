@@ -30,6 +30,7 @@
 #include "DNBError.h"
 #include "DNBLog.h"
 #include "MachProcess.h"
+#include "MachException.h"
 #include "DNBDataRef.h"
 #include "stack_logging.h"
 
@@ -368,7 +369,7 @@ MachTask::StartExceptionThread(DNBError &err)
         SaveExceptionPortInfo();
 
         // Set the ability to get all exceptions on this port
-        err = ::task_set_exception_ports (task, EXC_MASK_ALL, m_exception_port, EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
+        err = ::task_set_exception_ports (task, LLDB_MACH_EXC_MASK_BASE, m_exception_port, EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
         if (err.Fail())
             return false;
 

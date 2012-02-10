@@ -22,6 +22,20 @@
 class MachProcess;
 class PThreadMutex;
 
+// This set of exceptions is common on 10.7 and up.  It is the
+// base exception set we should use, and then we can add others
+// as appropriate based on the system type.
+
+#define LLDB_MACH_EXC_MASK_BASE    (EXC_MASK_BAD_ACCESS |        \
+                         EXC_MASK_BAD_INSTRUCTION |             \
+                         EXC_MASK_ARITHMETIC |                  \
+                         EXC_MASK_EMULATION |                   \
+                         EXC_MASK_SOFTWARE |                    \
+                         EXC_MASK_BREAKPOINT |                  \
+                         EXC_MASK_SYSCALL |                     \
+                         EXC_MASK_MACH_SYSCALL |                \
+                         EXC_MASK_RPC_ALERT)
+
 typedef union MachMessageTag
 {
     mach_msg_header_t hdr;
