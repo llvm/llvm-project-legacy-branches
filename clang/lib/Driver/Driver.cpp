@@ -65,7 +65,7 @@ Driver::Driver(StringRef ClangExecutable,
     CCCUsePCH(true), SuppressMissingInputWarning(false) {
   if (IsProduction) {
     // In a "production" build, only use clang on architectures we expect to
-    // work, and don't use clang C++.
+    // work.
     //
     // During development its more convenient to always have the driver use
     // clang, but we don't want users to be confused when things don't work, or
@@ -410,20 +410,21 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   }
 
   // Don't attempt to generate preprocessed files if multiple -arch options are
-  // used.
-  int Archs = 0;
+  // used, unless they're all duplicates.
+  llvm::StringSet<> ArchNames;
   for (ArgList::const_iterator it = C.getArgs().begin(), ie = C.getArgs().end();
        it != ie; ++it) {
     Arg *A = *it;
     if (A->getOption().matches(options::OPT_arch)) {
-      Archs++;
-      if (Archs > 1) {
-        Diag(clang::diag::note_drv_command_failed_diag_msg)
-          << "Error generating preprocessed source(s) - cannot generate "
-          "preprocessed source with multiple -arch options.";
-        return;
-      }
+      StringRef ArchName = A->getValue(C.getArgs());
+      ArchNames.insert(ArchName);
     }
+  }
+  if (ArchNames.size() > 1) {
+    Diag(clang::diag::note_drv_command_failed_diag_msg)
+      << "Error generating preprocessed source(s) - cannot generate "
+      "preprocessed source with multiple -arch options.";
+    return;
   }
 
   if (Inputs.empty()) {

@@ -42,7 +42,6 @@
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Expr.h"
 #include "clang/Basic/Builtins.h"
-#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include <cstring>
@@ -856,7 +855,8 @@ static bool Evaluate(CCValue &Result, EvalInfo &Info, const Expr *E);
 static bool EvaluateConstantExpression(APValue &Result, EvalInfo &Info,
                                        const LValue &This, const Expr *E,
                                        CheckConstantExpressionKind CCEK
-                                        = CCEK_Constant);
+                                        = CCEK_Constant,
+                                       bool AllowNonLiteralTypes = false);
 static bool EvaluateLValue(const Expr *E, LValue &Result, EvalInfo &Info);
 static bool EvaluatePointer(const Expr *E, LValue &Result, EvalInfo &Info);
 static bool EvaluateMemberPointer(const Expr *E, MemberPtr &Result,
@@ -1454,6 +1454,13 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
         O = &O->getArrayFiller();
       ObjType = CAT->getElementType();
     } else if (const FieldDecl *Field = getAsField(Sub.Entries[I])) {
+      if (Field->isMutable()) {
+        Info.Diag(E->getExprLoc(), diag::note_constexpr_ltor_mutable, 1)
+          << Field;
+        Info.Note(Field->getLocation(), diag::note_declared_at);
+        return false;
+      }
+
       // Next subobject is a class, struct or union field.
       RecordDecl *RD = ObjType->castAs<RecordType>()->getDecl();
       if (RD->isUnion()) {
@@ -2027,6 +2034,12 @@ static bool HandleConstructorCall(SourceLocation CallLoc, const LValue &This,
   if (!Info.CheckCallLimit(CallLoc))
     return false;
 
+  const CXXRecordDecl *RD = Definition->getParent();
+  if (RD->getNumVBases()) {
+    Info.Diag(CallLoc, diag::note_constexpr_virtual_base) << RD;
+    return false;
+  }
+
   CallStackFrame Frame(Info, CallLoc, Definition, &This, ArgValues.data());
 
   // If it's a delegating constructor, just delegate.
@@ -2038,7 +2051,6 @@ static bool HandleConstructorCall(SourceLocation CallLoc, const LValue &This,
   // For a trivial copy or move constructor, perform an APValue copy. This is
   // essential for unions, where the operations performed by the constructor
   // cannot be represented by ctor-initializers.
-  const CXXRecordDecl *RD = Definition->getParent();
   if (Definition->isDefaulted() &&
       ((Definition->isCopyConstructor() && RD->hasTrivialCopyConstructor()) ||
        (Definition->isMoveConstructor() && RD->hasTrivialMoveConstructor()))) {
@@ -2077,7 +2089,7 @@ static bool HandleConstructorCall(SourceLocation CallLoc, const LValue &This,
       QualType BaseType((*I)->getBaseClass(), 0);
 #ifndef NDEBUG
       // Non-virtual base classes are initialized in the order in the class
-      // definition. We cannot have a virtual base class for a literal type.
+      // definition. We have already checked for virtual base classes.
       assert(!BaseIt->isVirtual() && "virtual base for literal type");
       assert(Info.Ctx.hasSameType(BaseIt->getType(), BaseType) &&
              "base class initializers not in expected order");
@@ -2408,6 +2420,7 @@ public:
     const FunctionDecl *FD = 0;
     LValue *This = 0, ThisVal;
     llvm::ArrayRef<const Expr*> Args(E->getArgs(), E->getNumArgs());
+    bool HasQualifier = false;
 
     // Extract function decl and 'this' pointer from the callee.
     if (CalleeType->isSpecificBuiltinType(BuiltinType::BoundMember)) {
@@ -2418,6 +2431,7 @@ public:
           return false;
         Member = ME->getMemberDecl();
         This = &ThisVal;
+        HasQualifier = ME->hasQualifier();
       } else if (const BinaryOperator *BE = dyn_cast<BinaryOperator>(Callee)) {
         // Indirect bound member calls ('.*' or '->*').
         Member = HandleMemberPointerAccess(Info, BE, ThisVal, false);
@@ -2465,6 +2479,12 @@ public:
 
     if (This && !This->checkSubobject(Info, E, CSK_This))
       return false;
+
+    // DR1358 allows virtual constexpr functions in some cases. Don't allow
+    // calls to such functions in constant expressions.
+    if (This && !HasQualifier &&
+        isa<CXXMethodDecl>(FD) && cast<CXXMethodDecl>(FD)->isVirtual())
+      return Error(E, diag::note_constexpr_virtual_call);
 
     const FunctionDecl *Definition = 0;
     Stmt *Body = FD->getBody(Definition);
@@ -4705,12 +4725,11 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
         << RHS << E->getType() << LHS.getBitWidth();
     } else if (LHS.isSigned()) {
       // C++11 [expr.shift]p2: A signed left shift must have a non-negative
-      // operand, and must not overflow.
+      // operand, and must not overflow the corresponding unsigned type.
       if (LHS.isNegative())
         CCEDiag(E, diag::note_constexpr_lshift_of_negative) << LHS;
-      else if (LHS.countLeadingZeros() <= SA)
-        HandleOverflow(Info, E, LHS.extend(LHS.getBitWidth() + SA) << SA,
-                       E->getType());
+      else if (LHS.countLeadingZeros() < SA)
+        CCEDiag(E, diag::note_constexpr_lshift_discards);
     }
 
     return Success(LHS << SA, E);
@@ -5811,8 +5830,9 @@ static bool Evaluate(CCValue &Result, EvalInfo &Info, const Expr *E) {
 /// which were initialized earlier.
 static bool EvaluateConstantExpression(APValue &Result, EvalInfo &Info,
                                        const LValue &This, const Expr *E,
-                                       CheckConstantExpressionKind CCEK) {
-  if (!CheckLiteralType(Info, E))
+                                       CheckConstantExpressionKind CCEK,
+                                       bool AllowNonLiteralTypes) {
+  if (!AllowNonLiteralTypes && !CheckLiteralType(Info, E))
     return false;
 
   if (E->isRValue()) {
@@ -5923,9 +5943,6 @@ bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
   EvalInfo InitInfo(Ctx, EStatus);
   InitInfo.setEvaluatingDecl(VD, Value);
 
-  if (!CheckLiteralType(InitInfo, this))
-    return false;
-
   LValue LVal;
   LVal.set(VD);
 
@@ -5936,11 +5953,13 @@ bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
   if (Ctx.getLangOptions().CPlusPlus && !VD->hasLocalStorage() &&
       !VD->getType()->isReferenceType()) {
     ImplicitValueInitExpr VIE(VD->getType());
-    if (!EvaluateConstantExpression(Value, InitInfo, LVal, &VIE))
+    if (!EvaluateConstantExpression(Value, InitInfo, LVal, &VIE, CCEK_Constant,
+                                    /*AllowNonLiteralTypes=*/true))
       return false;
   }
 
-  return EvaluateConstantExpression(Value, InitInfo, LVal, this) &&
+  return EvaluateConstantExpression(Value, InitInfo, LVal, this, CCEK_Constant,
+                                    /*AllowNonLiteralTypes=*/true) &&
          !EStatus.HasSideEffects;
 }
 

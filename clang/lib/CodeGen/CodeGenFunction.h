@@ -599,6 +599,9 @@ public:
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
+  llvm::DenseMap<const VarDecl *, FieldDecl *> LambdaCaptureFields;
+  FieldDecl *LambdaThisCaptureField;
+
   /// \brief A mapping from NRVO variables to the flags used to indicate
   /// when the NRVO has been applied to this variable.
   llvm::DenseMap<const VarDecl *, llvm::Value *> NRVOFlags;
@@ -1164,7 +1167,8 @@ private:
 
   /// CXXThisDecl - When generating code for a C++ member function,
   /// this will hold the implicit 'this' declaration.
-  ImplicitParamDecl *CXXThisDecl;
+  ImplicitParamDecl *CXXABIThisDecl;
+  llvm::Value *CXXABIThisValue;
   llvm::Value *CXXThisValue;
 
   /// CXXVTTDecl - When generating code for a base object constructor or
@@ -1389,6 +1393,9 @@ public:
 
   void EmitCtorPrologue(const CXXConstructorDecl *CD, CXXCtorType Type,
                         FunctionArgList &Args);
+
+  void EmitInitializerForField(FieldDecl *Field, LValue LHS, Expr *Init,
+                               ArrayRef<VarDecl *> ArrayIndexes);
 
   /// InitializeVTablePointer - Initialize the vtable pointer of the given
   /// subobject.
@@ -2117,6 +2124,7 @@ public:
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
+  LValue EmitLambdaLValue(const LambdaExpr *E);
   LValue EmitCXXTypeidLValue(const CXXTypeidExpr *E);
 
   LValue EmitObjCMessageExprLValue(const ObjCMessageExpr *E);
@@ -2356,7 +2364,8 @@ public:
 
   /// EmitCXXGlobalVarDeclInit - Create the initializer for a C++
   /// variable with global storage.
-  void EmitCXXGlobalVarDeclInit(const VarDecl &D, llvm::Constant *DeclPtr);
+  void EmitCXXGlobalVarDeclInit(const VarDecl &D, llvm::Constant *DeclPtr,
+                                bool PerformInit);
 
   /// EmitCXXGlobalDtorRegistration - Emits a call to register the global ptr
   /// with the C++ runtime so that its destructor will be called at exit.
@@ -2368,7 +2377,8 @@ public:
   /// possible to prove that an initialization will be done exactly
   /// once, e.g. with a static local variable or a static data member
   /// of a class template.
-  void EmitCXXGuardedInit(const VarDecl &D, llvm::GlobalVariable *DeclPtr);
+  void EmitCXXGuardedInit(const VarDecl &D, llvm::GlobalVariable *DeclPtr,
+                          bool PerformInit);
 
   /// GenerateCXXGlobalInitFunc - Generates code for initializing global
   /// variables.
@@ -2384,7 +2394,8 @@ public:
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,
-                                        llvm::GlobalVariable *Addr);
+                                        llvm::GlobalVariable *Addr,
+                                        bool PerformInit);
 
   void EmitCXXConstructExpr(const CXXConstructExpr *E, AggValueSlot Dest);
   
@@ -2398,6 +2409,8 @@ public:
   void enterNonTrivialFullExpression(const ExprWithCleanups *E);
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
+
+  void EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Dest);
 
   RValue EmitAtomicExpr(AtomicExpr *E, llvm::Value *Dest = 0);
 

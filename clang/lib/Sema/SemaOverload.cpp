@@ -2211,7 +2211,7 @@ bool Sema::isObjCWritebackConversion(QualType FromType, QualType ToType,
   Qualifiers ToQuals = ToPointee.getQualifiers();
   if (!ToPointee->isObjCLifetimeType() || 
       ToQuals.getObjCLifetime() != Qualifiers::OCL_Autoreleasing ||
-      !ToQuals.withoutObjCGLifetime().empty())
+      !ToQuals.withoutObjCLifetime().empty())
     return false;
   
   // Argument must be a pointer to __strong to __weak.
@@ -2750,6 +2750,76 @@ Sema::IsQualificationConversion(QualType FromType, QualType ToType,
   return UnwrappedAnyPointer && Context.hasSameUnqualifiedType(FromType,ToType);
 }
 
+static OverloadingResult
+IsInitializerListConstructorConversion(Sema &S, Expr *From, QualType ToType,
+                                       CXXRecordDecl *To,
+                                       UserDefinedConversionSequence &User,
+                                       OverloadCandidateSet &CandidateSet,
+                                       bool AllowExplicit) {
+  DeclContext::lookup_iterator Con, ConEnd;
+  for (llvm::tie(Con, ConEnd) = S.LookupConstructors(To);
+       Con != ConEnd; ++Con) {
+    NamedDecl *D = *Con;
+    DeclAccessPair FoundDecl = DeclAccessPair::make(D, D->getAccess());
+
+    // Find the constructor (which may be a template).
+    CXXConstructorDecl *Constructor = 0;
+    FunctionTemplateDecl *ConstructorTmpl
+      = dyn_cast<FunctionTemplateDecl>(D);
+    if (ConstructorTmpl)
+      Constructor
+        = cast<CXXConstructorDecl>(ConstructorTmpl->getTemplatedDecl());
+    else
+      Constructor = cast<CXXConstructorDecl>(D);
+
+    bool Usable = !Constructor->isInvalidDecl() &&
+                  S.isInitListConstructor(Constructor) &&
+                  (AllowExplicit || !Constructor->isExplicit());
+    if (Usable) {
+      if (ConstructorTmpl)
+        S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl,
+                                       /*ExplicitArgs*/ 0,
+                                       &From, 1, CandidateSet,
+                                       /*SuppressUserConversions=*/true);
+      else
+        S.AddOverloadCandidate(Constructor, FoundDecl,
+                               &From, 1, CandidateSet,
+                               /*SuppressUserConversions=*/true);
+    }
+  }
+
+  bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
+  OverloadCandidateSet::iterator Best;
+  switch (CandidateSet.BestViableFunction(S, From->getLocStart(), Best, true)) {
+  case OR_Success: {
+    // Record the standard conversion we used and the conversion function.
+    CXXConstructorDecl *Constructor = cast<CXXConstructorDecl>(Best->Function);
+    S.MarkFunctionReferenced(From->getLocStart(), Constructor);
+
+    QualType ThisType = Constructor->getThisType(S.Context);
+    // Initializer lists don't have conversions as such.
+    User.Before.setAsIdentityConversion();
+    User.HadMultipleCandidates = HadMultipleCandidates;
+    User.ConversionFunction = Constructor;
+    User.FoundConversionFunction = Best->FoundDecl;
+    User.After.setAsIdentityConversion();
+    User.After.setFromType(ThisType->getAs<PointerType>()->getPointeeType());
+    User.After.setAllToTypes(ToType);
+    return OR_Success;
+  }
+
+  case OR_No_Viable_Function:
+    return OR_No_Viable_Function;
+  case OR_Deleted:
+    return OR_Deleted;
+  case OR_Ambiguous:
+    return OR_Ambiguous;
+  }
+
+  llvm_unreachable("Invalid OverloadResult!");
+}
+
 /// Determines whether there is a user-defined conversion sequence
 /// (C++ [over.ics.user]) that converts expression From to the type
 /// ToType. If such a conversion exists, User will contain the
@@ -2762,8 +2832,8 @@ Sema::IsQualificationConversion(QualType FromType, QualType ToType,
 /// functions (C++0x [class.conv.fct]p2).
 static OverloadingResult
 IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
-                        UserDefinedConversionSequence& User,
-                        OverloadCandidateSet& CandidateSet,
+                        UserDefinedConversionSequence &User,
+                        OverloadCandidateSet &CandidateSet,
                         bool AllowExplicit) {
   // Whether we will only visit constructors.
   bool ConstructorsOnly = false;
@@ -2796,9 +2866,17 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
       Expr **Args = &From;
       unsigned NumArgs = 1;
       bool ListInitializing = false;
-      // If we're list-initializing, we pass the individual elements as
-      // arguments, not the entire list.
       if (InitListExpr *InitList = dyn_cast<InitListExpr>(From)) {
+        // But first, see if there is an init-list-contructor that will work.
+        OverloadingResult Result = IsInitializerListConstructorConversion(
+            S, From, ToType, ToRecordDecl, User, CandidateSet, AllowExplicit);
+        if (Result != OR_No_Viable_Function)
+          return Result;
+        // Never mind.
+        CandidateSet.clear();
+
+        // If we're list-initializing, we pass the individual elements as
+        // arguments, not the entire list.
         Args = InitList->getInits();
         NumArgs = InitList->getNumInits();
         ListInitializing = true;
@@ -7583,9 +7661,11 @@ OverloadCandidateKind ClassifyOverloadCandidate(Sema &S,
     if (Meth->isMoveAssignmentOperator())
       return oc_implicit_move_assignment;
 
-    assert(Meth->isCopyAssignmentOperator()
-           && "implicit method is not copy assignment operator?");
-    return oc_implicit_copy_assignment;
+    if (Meth->isCopyAssignmentOperator())
+      return oc_implicit_copy_assignment;
+
+    assert(isa<CXXConversionDecl>(Meth) && "expected conversion");
+    return oc_method;
   }
 
   return isTemplate ? oc_function_template : oc_function;
@@ -9585,7 +9665,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
 
       // Build the actual expression node.
       ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl,
-                                                HadMultipleCandidates);
+                                                HadMultipleCandidates, OpLoc);
       if (FnExpr.isInvalid())
         return ExprError();
 
@@ -10011,12 +10091,12 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
         ResultTy = ResultTy.getNonLValueExprType(Context);
 
         // Build the actual expression node.
-        DeclarationNameLoc LocInfo;
-        LocInfo.CXXOperatorName.BeginOpNameLoc = LLoc.getRawEncoding();
-        LocInfo.CXXOperatorName.EndOpNameLoc = RLoc.getRawEncoding();
+        DeclarationNameInfo OpLocInfo(OpName, LLoc);
+        OpLocInfo.setCXXOperatorNameRange(SourceRange(LLoc, RLoc));
         ExprResult FnExpr = CreateFunctionRefExpr(*this, FnDecl,
                                                   HadMultipleCandidates,
-                                                  LLoc, LocInfo);
+                                                  OpLocInfo.getLoc(),
+                                                  OpLocInfo.getInfo());
         if (FnExpr.isInvalid())
           return ExprError();
 
@@ -10521,8 +10601,13 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   for (unsigned ArgIdx = 0; ArgIdx < NumArgs; ++ArgIdx)
     MethodArgs[ArgIdx + 1] = Args[ArgIdx];
 
+  DeclarationNameInfo OpLocInfo(
+               Context.DeclarationNames.getCXXOperatorName(OO_Call), LParenLoc);
+  OpLocInfo.setCXXOperatorNameRange(SourceRange(LParenLoc, RParenLoc));
   ExprResult NewFn = CreateFunctionRefExpr(*this, Method,
-                                           HadMultipleCandidates);
+                                           HadMultipleCandidates,
+                                           OpLocInfo.getLoc(),
+                                           OpLocInfo.getInfo());
   if (NewFn.isInvalid())
     return true;
 
@@ -10698,7 +10783,7 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc) {
 
   // Build the operator call.
   ExprResult FnExpr = CreateFunctionRefExpr(*this, Method,
-                                            HadMultipleCandidates);
+                                            HadMultipleCandidates, OpLoc);
   if (FnExpr.isInvalid())
     return ExprError();
 

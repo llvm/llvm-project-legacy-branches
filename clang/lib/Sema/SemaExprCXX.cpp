@@ -686,11 +686,10 @@ void Sema::CheckCXXThisCapture(SourceLocation Loc, bool Explicit) {
       }
       
       if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByref ||
+          CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByval ||
           CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_Block ||
           Explicit) {
         // This closure can capture 'this'; continue looking upwards.
-        // FIXME: Is this check correct?  The rules in the standard are a bit
-        // unclear.
         NumClosures++;
         Explicit = false;
         continue;
@@ -708,8 +707,22 @@ void Sema::CheckCXXThisCapture(SourceLocation Loc, bool Explicit) {
   for (unsigned idx = FunctionScopes.size() - 1;
        NumClosures; --idx, --NumClosures) {
     CapturingScopeInfo *CSI = cast<CapturingScopeInfo>(FunctionScopes[idx]);
+    Expr *ThisExpr = 0;
+    if (LambdaScopeInfo *LSI = dyn_cast<LambdaScopeInfo>(CSI)) {
+      // For lambda expressions, build a field and an initializing expression.
+      QualType ThisTy = getCurrentThisType();
+      CXXRecordDecl *Lambda = LSI->Lambda;
+      FieldDecl *Field
+        = FieldDecl::Create(Context, Lambda, Loc, Loc, 0, ThisTy,
+                            Context.getTrivialTypeSourceInfo(ThisTy, Loc),
+                            0, false, false);
+      Field->setImplicit(true);
+      Field->setAccess(AS_private);
+      Lambda->addDecl(Field);
+      ThisExpr = new (Context) CXXThisExpr(Loc, ThisTy, /*isImplicit=*/true);
+    }
     bool isNested = NumClosures > 1;
-    CSI->AddThisCapture(isNested, Loc);
+    CSI->AddThisCapture(isNested, Loc, ThisExpr);
   }
 }
 
@@ -754,7 +767,6 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   unsigned NumExprs = exprs.size();
   Expr **Exprs = (Expr**)exprs.get();
   SourceLocation TyBeginLoc = TInfo->getTypeLoc().getBeginLoc();
-  SourceRange FullRange = SourceRange(TyBeginLoc, RParenLoc);
 
   if (Ty->isDependentType() ||
       CallExpr::hasAnyTypeDependentArguments(Exprs, NumExprs)) {
@@ -765,6 +777,12 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
                                                     Exprs, NumExprs,
                                                     RParenLoc));
   }
+
+  bool ListInitialization = LParenLoc.isInvalid();
+  assert((!ListInitialization || (NumExprs == 1 && isa<InitListExpr>(Exprs[0])))
+         && "List initialization must have initializer list as expression.");
+  SourceRange FullRange = SourceRange(TyBeginLoc,
+      ListInitialization ? Exprs[0]->getSourceRange().getEnd() : RParenLoc);
 
   if (Ty->isArrayType())
     return ExprError(Diag(TyBeginLoc,
@@ -784,7 +802,7 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   // If the expression list is a single expression, the type conversion
   // expression is equivalent (in definedness, and if defined in meaning) to the
   // corresponding cast expression.
-  if (NumExprs == 1) {
+  if (NumExprs == 1 && !ListInitialization) {
     Expr *Arg = Exprs[0];
     exprs.release();
     return BuildCXXFunctionalCastExpr(TInfo, LParenLoc, Arg, RParenLoc);
@@ -792,12 +810,27 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
 
   InitializedEntity Entity = InitializedEntity::InitializeTemporary(TInfo);
   InitializationKind Kind
-    = NumExprs ? InitializationKind::CreateDirect(TyBeginLoc,
-                                                  LParenLoc, RParenLoc)
+    = NumExprs ? ListInitialization
+                    ? InitializationKind::CreateDirectList(TyBeginLoc)
+                    : InitializationKind::CreateDirect(TyBeginLoc,
+                                                       LParenLoc, RParenLoc)
                : InitializationKind::CreateValue(TyBeginLoc,
                                                  LParenLoc, RParenLoc);
   InitializationSequence InitSeq(*this, Entity, Kind, Exprs, NumExprs);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind, move(exprs));
+
+  if (!Result.isInvalid() && ListInitialization &&
+      isa<InitListExpr>(Result.get())) {
+    // If the list-initialization doesn't involve a constructor call, we'll get
+    // the initializer-list (with corrected type) back, but that's not what we
+    // want, since it will be treated as an initializer list in further
+    // processing. Explicitly insert a cast here.
+    InitListExpr *List = cast<InitListExpr>(Result.take());
+    Result = Owned(CXXFunctionalCastExpr::Create(Context, List->getType(),
+                                    Expr::getValueKindForType(TInfo->getType()),
+                                                 TInfo, TyBeginLoc, CK_NoOp,
+                                                 List, /*Path=*/0, RParenLoc));
+  }
 
   // FIXME: Improve AST representation?
   return move(Result);
@@ -859,11 +892,24 @@ static bool doesUsualArrayDeleteWantSize(Sema &S, SourceLocation loc,
   return (del->getNumParams() == 2);
 }
 
-/// ActOnCXXNew - Parsed a C++ 'new' expression (C++ 5.3.4), as in e.g.:
+/// \brief Parsed a C++ 'new' expression (C++ 5.3.4).
+
+/// E.g.:
 /// @code new (memory) int[size][4] @endcode
 /// or
 /// @code ::new Foo(23, "hello") @endcode
-/// For the interpretation of this heap of arguments, consult the base version.
+///
+/// \param StartLoc The first location of the expression.
+/// \param UseGlobal True if 'new' was prefixed with '::'.
+/// \param PlacementLParen Opening paren of the placement arguments.
+/// \param PlacementArgs Placement new arguments.
+/// \param PlacementRParen Closing paren of the placement arguments.
+/// \param TypeIdParens If the type is in parens, the source range.
+/// \param D The type to be allocated, as well as array dimensions.
+/// \param ConstructorLParen Opening paren of the constructor args, empty if
+///                          initializer-list syntax is used.
+/// \param ConstructorArgs Constructor/initialization arguments.
+/// \param ConstructorRParen Closing paren of the constructor args.
 ExprResult
 Sema::ActOnCXXNew(SourceLocation StartLoc, bool UseGlobal,
                   SourceLocation PlacementLParen, MultiExprArg PlacementArgs,
@@ -955,21 +1001,25 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
                             diag::err_auto_new_ctor_multiple_expressions)
                        << AllocType << TypeRange);
     }
+    Expr *Deduce = ConstructorArgs.get()[0];
+    if (ConstructorLParen.isInvalid()) {
+      return ExprError(Diag(Deduce->getSourceRange().getBegin(),
+                            diag::err_auto_new_requires_parens)
+                       << AllocType << TypeRange);
+    }
     TypeSourceInfo *DeducedType = 0;
-    if (DeduceAutoType(AllocTypeInfo, ConstructorArgs.get()[0], DeducedType) ==
+    if (DeduceAutoType(AllocTypeInfo, Deduce, DeducedType) ==
             DAR_Failed)
       return ExprError(Diag(StartLoc, diag::err_auto_new_deduction_failure)
-                       << AllocType
-                       << ConstructorArgs.get()[0]->getType()
-                       << TypeRange
-                       << ConstructorArgs.get()[0]->getSourceRange());
+                       << AllocType << Deduce->getType()
+                       << TypeRange << Deduce->getSourceRange());
     if (!DeducedType)
       return ExprError();
 
     AllocTypeInfo = DeducedType;
     AllocType = AllocTypeInfo->getType();
   }
-  
+
   // Per C++0x [expr.new]p5, the type being constructed may be a
   // typedef of an array type.
   if (!ArraySize) {
@@ -984,6 +1034,17 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   if (CheckAllocatedType(AllocType, TypeRange.getBegin(), TypeRange))
     return ExprError();
+
+  bool ListInitialization = ConstructorLParen.isInvalid() &&
+                            ConstructorArgs.size() > 0;
+  assert((!ListInitialization || (ConstructorArgs.size() == 1 &&
+                                  isa<InitListExpr>(ConstructorArgs.get()[0])))
+         && "List initialization means a braced-init-list for arguments.");
+  if (ListInitialization && isStdInitializerList(AllocType, 0)) {
+    Diag(AllocTypeInfo->getTypeLoc().getBeginLoc(),
+         diag::warn_dangling_std_initializer_list)
+      << /*at end of FE*/0 << ConstructorArgs.get()[0]->getSourceRange();
+  }
 
   // In ARC, infer 'retaining' for the allocated 
   if (getLangOptions().ObjCAutoRefCount &&
@@ -1140,7 +1201,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     }
   }
 
-  bool Init = ConstructorLParen.isValid();
+  bool Init = ConstructorLParen.isValid() || ConstructorArgs.size() > 0;
   // --- Choosing a constructor ---
   CXXConstructorDecl *Constructor = 0;
   bool HadMultipleCandidates = false;
@@ -1159,7 +1220,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   if (!AllocType->isDependentType() &&
       !Expr::hasAnyTypeDependentArguments(ConsArgs, NumConsArgs)) {
-    // C++0x [expr.new]p15:
+    // C++11 [expr.new]p15:
     //   A new-expression that creates an object of type T initializes that
     //   object as follows:
     InitializationKind Kind
@@ -1169,9 +1230,12 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
       = !Init? InitializationKind::CreateDefault(TypeRange.getBegin())
     //     - Otherwise, the new-initializer is interpreted according to the
     //       initialization rules of 8.5 for direct-initialization.
-             : InitializationKind::CreateDirect(TypeRange.getBegin(),
-                                                ConstructorLParen,
-                                                ConstructorRParen);
+             : ListInitialization ? InitializationKind::CreateDirectList(
+                                                          TypeRange.getBegin())
+                                  : InitializationKind::CreateDirect(
+                                                          TypeRange.getBegin(),
+                                                          ConstructorLParen,
+                                                          ConstructorRParen);
 
     InitializedEntity Entity
       = InitializedEntity::InitializeNew(StartLoc, AllocType);
@@ -4869,328 +4933,4 @@ Sema::CheckMicrosoftIfExistsSymbol(Scope *S, SourceLocation KeywordLoc,
   }
   
   return CheckMicrosoftIfExistsSymbol(S, SS, TargetNameInfo);
-}
-
-//===----------------------------------------------------------------------===//
-// Lambdas.
-//===----------------------------------------------------------------------===//
-
-void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
-                                        Declarator &ParamInfo,
-                                        Scope *CurScope) {
-  DeclContext *DC = CurContext;
-  while (!(DC->isFunctionOrMethod() || DC->isRecord() || DC->isFileContext()))
-    DC = DC->getParent();
-
-  // Start constructing the lambda class.
-  CXXRecordDecl *Class = CXXRecordDecl::Create(Context, TTK_Class, DC,
-                                               Intro.Range.getBegin(),
-                                               /*IdLoc=*/SourceLocation(),
-                                               /*Id=*/0);
-  Class->startDefinition();
-  Class->setLambda(true);
-  CurContext->addDecl(Class);
-
-  // Build the call operator; we don't really have all the relevant information
-  // at this point, but we need something to attach child declarations to.
-  QualType MethodTy;
-  TypeSourceInfo *MethodTyInfo;
-  bool ExplicitParams = true;
-  if (ParamInfo.getNumTypeObjects() == 0) {
-    // C++11 [expr.prim.lambda]p4:
-    //   If a lambda-expression does not include a lambda-declarator, it is as 
-    //   if the lambda-declarator were ().
-    FunctionProtoType::ExtProtoInfo EPI;
-    EPI.TypeQuals |= DeclSpec::TQ_const;
-    MethodTy = Context.getFunctionType(Context.DependentTy,
-                                       /*Args=*/0, /*NumArgs=*/0, EPI);
-    MethodTyInfo = Context.getTrivialTypeSourceInfo(MethodTy);
-    ExplicitParams = false;
-  } else {
-    assert(ParamInfo.isFunctionDeclarator() &&
-           "lambda-declarator is a function");
-    DeclaratorChunk::FunctionTypeInfo &FTI = ParamInfo.getFunctionTypeInfo();
-    
-    // C++11 [expr.prim.lambda]p5:
-    //   This function call operator is declared const (9.3.1) if and only if 
-    //   the lambda-expression’s parameter-declaration-clause is not followed 
-    //   by mutable. It is neither virtual nor declared volatile. [...]
-    if (!FTI.hasMutableQualifier())
-      FTI.TypeQuals |= DeclSpec::TQ_const;
-    
-    // C++11 [expr.prim.lambda]p5:
-    //   [...] Default arguments (8.3.6) shall not be specified in the 
-    //   parameter-declaration-clause of a lambda-declarator.
-    CheckExtraCXXDefaultArguments(ParamInfo);
-    
-    MethodTyInfo = GetTypeForDeclarator(ParamInfo, CurScope);
-    // FIXME: Can these asserts actually fail?
-    assert(MethodTyInfo && "no type from lambda-declarator");
-    MethodTy = MethodTyInfo->getType();
-    assert(!MethodTy.isNull() && "no type from lambda declarator");
-  }
-  
-  // C++11 [expr.prim.lambda]p5:
-  //   The closure type for a lambda-expression has a public inline function 
-  //   call operator (13.5.4) whose parameters and return type are described by
-  //   the lambda-expression’s parameter-declaration-clause and 
-  //   trailing-return-type respectively.
-  DeclarationName MethodName
-    = Context.DeclarationNames.getCXXOperatorName(OO_Call);
-  CXXMethodDecl *Method
-    = CXXMethodDecl::Create(Context,
-                            Class,
-                            ParamInfo.getSourceRange().getEnd(),
-                            DeclarationNameInfo(MethodName,
-                                                /*NameLoc=*/SourceLocation()),
-                            MethodTy,
-                            MethodTyInfo,
-                            /*isStatic=*/false,
-                            SC_None,
-                            /*isInline=*/true,
-                            /*isConstExpr=*/false,
-                            ParamInfo.getSourceRange().getEnd());
-  Method->setAccess(AS_public);
-  Class->addDecl(Method);
-  Method->setLexicalDeclContext(DC); // FIXME: Minor hack.
-  
-  ProcessDeclAttributes(CurScope, Method, ParamInfo);
-  
-  // Enter a new evaluation context to insulate the block from any
-  // cleanups from the enclosing full-expression.
-  PushExpressionEvaluationContext(PotentiallyEvaluated);
-  
-  PushDeclContext(CurScope, Method);
-    
-  // Introduce the lambda scope.
-  PushLambdaScope(Class);
-  LambdaScopeInfo *LSI = getCurLambda();
-  if (Intro.Default == LCD_ByCopy)
-    LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByval;
-  else if (Intro.Default == LCD_ByRef)
-    LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByref;
-  LSI->IntroducerRange = Intro.Range;
-  LSI->ExplicitParams = ExplicitParams;
-  LSI->Mutable = (Method->getTypeQualifiers() & Qualifiers::Const) == 0;
- 
-  // Handle explicit captures.
-  for (llvm::SmallVector<LambdaCapture, 4>::const_iterator
-         C = Intro.Captures.begin(), 
-         E = Intro.Captures.end(); 
-       C != E; ++C) {
-    if (C->Kind == LCK_This) {
-      // C++11 [expr.prim.lambda]p8:
-      //   An identifier or this shall not appear more than once in a 
-      //   lambda-capture.
-      if (LSI->isCXXThisCaptured()) {
-        Diag(C->Loc, diag::err_capture_more_than_once) 
-          << "'this'"
-          << SourceRange(LSI->getCXXThisCapture().getLocation());
-        continue;
-      }
-
-      // C++11 [expr.prim.lambda]p8:
-      //   If a lambda-capture includes a capture-default that is =, the 
-      //   lambda-capture shall not contain this [...].
-      if (Intro.Default == LCD_ByCopy) {
-        Diag(C->Loc, diag::err_this_capture_with_copy_default);
-        continue;
-      }
-
-      // C++11 [expr.prim.lambda]p12:
-      //   If this is captured by a local lambda expression, its nearest
-      //   enclosing function shall be a non-static member function.
-      QualType ThisCaptureType = getCurrentThisType();
-      if (ThisCaptureType.isNull()) {
-        Diag(C->Loc, diag::err_this_capture) << true;
-        continue;
-      }
-      
-      CheckCXXThisCapture(C->Loc, /*Explicit=*/true);
-      continue;
-    }
-
-    assert(C->Id && "missing identifier for capture");
-
-    // C++11 [expr.prim.lambda]p8:
-    //   If a lambda-capture includes a capture-default that is &, the 
-    //   identifiers in the lambda-capture shall not be preceded by &.
-    //   If a lambda-capture includes a capture-default that is =, [...]
-    //   each identifier it contains shall be preceded by &.
-    if (C->Kind == LCK_ByRef && Intro.Default == LCD_ByRef) {
-      Diag(C->Loc, diag::err_reference_capture_with_reference_default);
-      continue;
-    } else if (C->Kind == LCK_ByCopy && Intro.Default == LCD_ByCopy) {
-      Diag(C->Loc, diag::err_copy_capture_with_copy_default);
-      continue;
-    }
-
-    DeclarationNameInfo Name(C->Id, C->Loc);
-    LookupResult R(*this, Name, LookupOrdinaryName);
-    LookupName(R, CurScope);
-    if (R.isAmbiguous())
-      continue;
-    if (R.empty()) {
-      // FIXME: Disable corrections that would add qualification?
-      CXXScopeSpec ScopeSpec;
-      DeclFilterCCC<VarDecl> Validator;
-      if (DiagnoseEmptyLookup(CurScope, ScopeSpec, R, Validator))
-        continue;
-    }
-
-    // C++11 [expr.prim.lambda]p10:
-    //   The identifiers in a capture-list are looked up using the usual rules
-    //   for unqualified name lookup (3.4.1); each such lookup shall find a 
-    //   variable with automatic storage duration declared in the reaching 
-    //   scope of the local lambda expression.
-    // FIXME: Check reaching scope. 
-    VarDecl *Var = R.getAsSingle<VarDecl>();
-    if (!Var) {
-      Diag(C->Loc, diag::err_capture_does_not_name_variable) << C->Id;
-      continue;
-    }
-
-    if (!Var->hasLocalStorage()) {
-      Diag(C->Loc, diag::err_capture_non_automatic_variable) << C->Id;
-      Diag(Var->getLocation(), diag::note_previous_decl) << C->Id;
-      continue;
-    }
-
-    // C++11 [expr.prim.lambda]p8:
-    //   An identifier or this shall not appear more than once in a 
-    //   lambda-capture.
-    if (LSI->isCaptured(Var)) {
-      Diag(C->Loc, diag::err_capture_more_than_once) 
-        << C->Id
-        << SourceRange(LSI->getCapture(Var).getLocation());
-      continue;
-    }
-
-    TryCaptureKind Kind = C->Kind == LCK_ByRef ? TryCapture_ExplicitByRef :
-                                                 TryCapture_ExplicitByVal;
-    TryCaptureVar(Var, C->Loc, Kind);
-  }
-  LSI->finishedExplicitCaptures();
-
-  // Set the parameters on the decl, if specified.
-  if (isa<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc())) {
-    FunctionProtoTypeLoc Proto =
-    cast<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc());
-    Method->setParams(Proto.getParams());
-    CheckParmsForFunctionDef(Method->param_begin(),
-                             Method->param_end(),
-                             /*CheckParameterNames=*/false);
-    
-    // Introduce our parameters into the function scope
-    for (unsigned p = 0, NumParams = Method->getNumParams(); p < NumParams; ++p) {
-      ParmVarDecl *Param = Method->getParamDecl(p);
-      Param->setOwningFunction(Method);
-      
-      // If this has an identifier, add it to the scope stack.
-      if (Param->getIdentifier()) {
-        CheckShadow(CurScope, Param);
-        
-        PushOnScopeChains(Param, CurScope);
-      }
-    }
-  }
-
-  const FunctionType *Fn = MethodTy->getAs<FunctionType>();
-  QualType RetTy = Fn->getResultType();
-  if (RetTy != Context.DependentTy) {
-    LSI->ReturnType = RetTy;
-  } else {
-    LSI->HasImplicitReturnType = true;
-  }
-
-  // FIXME: Check return type is complete, !isObjCObjectType
-  
-}
-
-void Sema::ActOnLambdaError(SourceLocation StartLoc, Scope *CurScope) {
-  // Leave the expression-evaluation context.
-  DiscardCleanupsInEvaluationContext();
-  PopExpressionEvaluationContext();
-
-  // Leave the context of the lambda.
-  PopDeclContext();
-  PopFunctionScopeInfo();
-}
-
-ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc,
-                                 Stmt *Body, Scope *CurScope) {
-  // Leave the expression-evaluation context.
-  DiscardCleanupsInEvaluationContext();
-  PopExpressionEvaluationContext();
-
-  // Leave the context of the lambda.
-  PopDeclContext();
-
-  // FIXME: End-of-lambda checking
-
-  // Collect information from the lambda scope.
-  llvm::SmallVector<LambdaExpr::Capture, 4> Captures;
-  llvm::SmallVector<Expr *, 4> CaptureInits;
-  LambdaCaptureDefault CaptureDefault;
-  CXXRecordDecl *Class;
-  SourceRange IntroducerRange;
-  bool ExplicitParams;
-  {
-    LambdaScopeInfo *LSI = getCurLambda();
-    Class = LSI->Lambda;
-    IntroducerRange = LSI->IntroducerRange;
-    ExplicitParams = LSI->ExplicitParams;
-
-    // Translate captures.
-    for (unsigned I = 0, N = LSI->Captures.size(); I != N; ++I) {
-      LambdaScopeInfo::Capture From = LSI->Captures[I];
-      assert(!From.isBlockCapture() && "Cannot capture __block variables");
-      bool IsImplicit = I >= LSI->NumExplicitCaptures;
-
-      // Handle 'this' capture.
-      if (From.isThisCapture()) {
-        Captures.push_back(LambdaExpr::Capture(From.getLocation(),
-                                               IsImplicit,
-                                               LCK_This));
-        CaptureInits.push_back(new (Context) CXXThisExpr(From.getLocation(),
-                                                         getCurrentThisType(),
-                                                         /*isImplicit=*/true));
-        continue;
-      }
-
-      VarDecl *Var = From.getVariable();
-      // FIXME: Handle pack expansions.
-      LambdaCaptureKind Kind = From.isCopyCapture()? LCK_ByCopy : LCK_ByRef;
-      Captures.push_back(LambdaExpr::Capture(From.getLocation(), IsImplicit, 
-                                             Kind, Var));
-      CaptureInits.push_back(From.getCopyExpr());
-    }
-
-    switch (LSI->ImpCaptureStyle) {
-    case CapturingScopeInfo::ImpCap_None:
-      CaptureDefault = LCD_None;
-      break;
-
-    case CapturingScopeInfo::ImpCap_LambdaByval:
-      CaptureDefault = LCD_ByCopy;
-      break;
-
-    case CapturingScopeInfo::ImpCap_LambdaByref:
-      CaptureDefault = LCD_ByRef;
-      break;
-
-    case CapturingScopeInfo::ImpCap_Block:
-      llvm_unreachable("block capture in lambda");
-      break;
-    }
-
-    PopFunctionScopeInfo();
-  }
-
-  Expr *Lambda = LambdaExpr::Create(Context, Class, IntroducerRange, 
-                                    CaptureDefault, Captures, ExplicitParams, 
-                                    CaptureInits, Body->getLocEnd());
-  (void)Lambda;
-  Diag(StartLoc, diag::err_lambda_unsupported);
-  return ExprError();
 }

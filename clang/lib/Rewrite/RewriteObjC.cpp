@@ -590,12 +590,7 @@ ASTConsumer *clang::CreateObjCRewriter(const std::string& InFile,
                                        DiagnosticsEngine &Diags,
                                        const LangOptions &LOpts,
                                        bool SilenceRewriteMacroWarning) {
-  if (true /*!LOpts.ObjCNonFragileABI*/)
-    return new RewriteObjCFragileABI(InFile, OS, Diags, LOpts, SilenceRewriteMacroWarning);
-  else {
-    assert(false && "objective-C rewriter for nonfragile ABI = NYI");
-    return 0;
-  }
+  return new RewriteObjCFragileABI(InFile, OS, Diags, LOpts, SilenceRewriteMacroWarning);
 }
 
 void RewriteObjC::InitializeCommon(ASTContext &context) {
@@ -4926,6 +4921,9 @@ void RewriteObjC::HandleDeclInMainFile(Decl *D) {
       // prototype. This enables us to rewrite function declarations and
       // definitions using the same code.
       RewriteBlocksInFunctionProtoType(FD->getType(), FD);
+
+      if (!FD->isThisDeclarationADefinition())
+        break;
 
       // FIXME: If this should support Obj-C++, support CXXTryStmt
       if (CompoundStmt *Body = dyn_cast_or_null<CompoundStmt>(FD->getBody())) {

@@ -471,6 +471,8 @@ void pr9751() {
 
   const char kFormat17[] = "%hu"; // expected-note{{format string is defined here}}}
   printf(kFormat17, (int[]){0}); // expected-warning{{format specifies type 'unsigned short' but the argument}}
+
+  printf("%a", (long double)0); // expected-warning{{format specifies type 'double' but the argument has type 'long double'}}
 }
 
 // PR 9466: clang: doesn't know about %Lu, %Ld, and %Lx 
@@ -491,6 +493,7 @@ void __attribute__((format(strftime,1,0))) dateformat(const char *fmt);
 void test_other_formats() {
   char *str = "";
   monformat("", 1); // expected-warning{{format string is empty}}
+  monformat(str); // expected-warning{{format string is not a string literal (potentially insecure)}}
   dateformat(""); // expected-warning{{format string is empty}}
-  dateformat(str); // expected-warning{{format string is not a string literal (potentially insecure)}}
+  dateformat(str); // no-warning (using strftime non literal is not unsafe)
 }

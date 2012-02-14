@@ -21,9 +21,8 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/RecordLayout.h"
-#include "clang/Basic/Diagnostic.h"
-#include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/FileManager.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/Constants.h"
@@ -75,7 +74,7 @@ void CGDebugInfo::setLocation(SourceLocation Loc) {
     llvm::DILexicalBlockFile LBF = llvm::DILexicalBlockFile(LB);
     llvm::DIDescriptor D
       = DBuilder.createLexicalBlockFile(LBF.getScope(),
-					getOrCreateFile(CurLoc));
+                                        getOrCreateFile(CurLoc));
     llvm::MDNode *N = D;
     LexicalBlockStack.pop_back();
     LexicalBlockStack.push_back(N);
@@ -164,8 +163,8 @@ StringRef CGDebugInfo::getSelectorName(Selector S) {
 
 /// getClassName - Get class name including template argument list.
 StringRef 
-CGDebugInfo::getClassName(RecordDecl *RD) {
-  ClassTemplateSpecializationDecl *Spec
+CGDebugInfo::getClassName(const RecordDecl *RD) {
+  const ClassTemplateSpecializationDecl *Spec
     = dyn_cast<ClassTemplateSpecializationDecl>(RD);
   if (!Spec)
     return RD->getName();
@@ -483,27 +482,28 @@ llvm::DIType CGDebugInfo::CreateType(const PointerType *Ty,
 
 // Creates a forward declaration for a RecordDecl in the given context.
 llvm::DIType CGDebugInfo::createRecordFwdDecl(const RecordDecl *RD,
-					      llvm::DIDescriptor Ctx) {
-
+                                              llvm::DIDescriptor Ctx) {
   llvm::DIFile DefUnit = getOrCreateFile(RD->getLocation());
   unsigned Line = getLineNumber(RD->getLocation());
+  StringRef RDName = RD->getName();
+
+  // Get the tag.
   const CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
-  
-  if (CXXDecl)
-    return DBuilder.createClassType(Ctx, RD->getName(), DefUnit,
-				    Line, 0, 0, 0,
-				    llvm::DIType::FlagFwdDecl,
-				    llvm::DIType(), llvm::DIArray());
+  unsigned Tag = 0;
+  if (CXXDecl) {
+    RDName = getClassName(RD);
+    Tag = llvm::dwarf::DW_TAG_class_type;
+  }
   else if (RD->isStruct())
-    return DBuilder.createStructType(Ctx, RD->getName(), DefUnit,
-				     Line, 0, 0, llvm::DIType::FlagFwdDecl,
-				     llvm::DIArray());
+    Tag = llvm::dwarf::DW_TAG_structure_type;
   else if (RD->isUnion())
-    return DBuilder.createUnionType(Ctx, RD->getName(), DefUnit,
-				    Line, 0, 0, llvm::DIType::FlagFwdDecl,
-				    llvm::DIArray());
+    Tag = llvm::dwarf::DW_TAG_union_type;
   else
     llvm_unreachable("Unknown RecordDecl type!");
+
+  // Create the type.
+  return DBuilder.createForwardDecl(Tag, RDName, DefUnit,
+				    Line);
 }
 
 // Walk up the context chain and create forward decls for record decls,
@@ -673,12 +673,8 @@ llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
   if (isa<FunctionNoProtoType>(Ty))
     EltTys.push_back(DBuilder.createUnspecifiedParameter());
   else if (const FunctionProtoType *FTP = dyn_cast<FunctionProtoType>(Ty)) {
-    for (unsigned i = 0, e = FTP->getNumArgs(); i != e; ++i) {
-      if (CGM.getCodeGenOpts().LimitDebugInfo)
-        EltTys.push_back(getOrCreateLimitedType(FTP->getArgType(i), Unit));
-      else
-        EltTys.push_back(getOrCreateType(FTP->getArgType(i), Unit));
-    }
+    for (unsigned i = 0, e = FTP->getNumArgs(); i != e; ++i)
+      EltTys.push_back(getOrCreateType(FTP->getArgType(i), Unit));
   }
 
   llvm::DIArray EltTypeArray = DBuilder.getOrCreateArray(EltTys);
@@ -686,6 +682,7 @@ llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
   llvm::DIType DbgTy = DBuilder.createSubroutineType(Unit, EltTypeArray);
   return DbgTy;
 }
+
 
 void CGDebugInfo::
 CollectRecordStaticVars(const RecordDecl *RD, llvm::DIType FwdDecl) {
@@ -828,15 +825,17 @@ CGDebugInfo::getOrCreateMethodType(const CXXMethodDecl *Method,
       uint64_t Size = CGM.getContext().getTargetInfo().getPointerWidth(AS);
       uint64_t Align = CGM.getContext().getTypeAlign(ThisPtrTy);
       llvm::DIType PointeeType = getOrCreateType(PointeeTy, Unit);
-      llvm::DIType ThisPtrType =
-        DBuilder.createArtificialType
-        (DBuilder.createPointerType(PointeeType, Size, Align));
+      llvm::DIType ThisPtrType = DBuilder.createPointerType(PointeeType, Size, Align);
       TypeCache[ThisPtr.getAsOpaquePtr()] = ThisPtrType;
+      // TODO: This and the artificial type below are misleading, the
+      // types aren't artificial the argument is, but the current
+      // metadata doesn't represent that.
+      ThisPtrType = DBuilder.createArtificialType(ThisPtrType);
       Elts.push_back(ThisPtrType);
     } else {
-      llvm::DIType ThisPtrType =
-        DBuilder.createArtificialType(getOrCreateType(ThisPtr, Unit));
+      llvm::DIType ThisPtrType = getOrCreateType(ThisPtr, Unit);
       TypeCache[ThisPtr.getAsOpaquePtr()] = ThisPtrType;
+      ThisPtrType = DBuilder.createArtificialType(ThisPtrType);
       Elts.push_back(ThisPtrType);
     }
   }
@@ -1307,8 +1306,18 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
     EltTys.push_back(InhTag);
   }
 
+  for (ObjCContainerDecl::prop_iterator I = ID->prop_begin(),
+         E = ID->prop_end(); I != E; ++I) {
+    const ObjCPropertyDecl *PD = *I;
+    llvm::MDNode *PropertyNode =
+      DBuilder.createObjCProperty(PD->getName(),
+                                  getSelectorName(PD->getGetterName()),
+                                  getSelectorName(PD->getSetterName()),
+                                  PD->getPropertyAttributes());
+    EltTys.push_back(PropertyNode);
+  }
+
   const ASTRecordLayout &RL = CGM.getContext().getASTObjCInterfaceLayout(ID);
-  ObjCImplementationDecl *ImpD = ID->getImplementation();
   unsigned FieldNo = 0;
   for (ObjCIvarDecl *Field = ID->all_declared_ivar_begin(); Field;
        Field = Field->getNextIvar(), ++FieldNo) {
@@ -1351,26 +1360,18 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
     else if (Field->getAccessControl() == ObjCIvarDecl::Private)
       Flags = llvm::DIDescriptor::FlagPrivate;
 
-    StringRef PropertyName;
-    StringRef PropertyGetter;
-    StringRef PropertySetter;
-    unsigned PropertyAttributes = 0;
-    ObjCPropertyDecl *PD = NULL;
     llvm::MDNode *PropertyNode = NULL;
-    if (ImpD)
+    if (ObjCImplementationDecl *ImpD = ID->getImplementation()) {
       if (ObjCPropertyImplDecl *PImpD = 
-          ImpD->FindPropertyImplIvarDecl(Field->getIdentifier()))
-        PD = PImpD->getPropertyDecl();
-    if (PD) {
-      PropertyName = PD->getName();
-      PropertyGetter = getSelectorName(PD->getGetterName());
-      PropertySetter = getSelectorName(PD->getSetterName());
-      PropertyAttributes = PD->getPropertyAttributes();
-      PropertyNode =
-	DBuilder.createObjCProperty(PropertyName, PropertyGetter, 
-                                    PropertySetter,
-                                    PropertyAttributes);
-      EltTys.push_back(PropertyNode);
+          ImpD->FindPropertyImplIvarDecl(Field->getIdentifier())) {
+        if (ObjCPropertyDecl *PD = PImpD->getPropertyDecl()) {
+          PropertyNode =
+            DBuilder.createObjCProperty(PD->getName(),
+                                        getSelectorName(PD->getGetterName()),
+                                        getSelectorName(PD->getSetterName()),
+                                        PD->getPropertyAttributes());
+        }
+      }
     }
     FieldTy = DBuilder.createObjCIVar(FieldName, FieldDefUnit,
                                       FieldLine, FieldSize, FieldAlign,
@@ -1644,12 +1645,9 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
 
   // Unwrap the type as needed for debug information.
   Ty = UnwrapTypeForDebugInfo(Ty);
-
-  // Check if we already have the type. If we've gotten here and
-  // have a forward declaration of the type we may want the full type.
-  // Go ahead and create it if that's the case.
+  
   llvm::DIType T = getTypeOrNull(Ty);
-  if (T.Verify() && !T.isForwardDecl()) return T;
+  if (T.Verify()) return T;
 
   // Otherwise create the type.
   llvm::DIType Res = CreateTypeNode(Ty, Unit);
@@ -1659,64 +1657,6 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
   return Res;
 }
 
-/// getOrCreateLimitedType - Get the type from the cache or create a new
-/// limited type if necessary.
-llvm::DIType CGDebugInfo::getOrCreateLimitedType(QualType Ty,
-						 llvm::DIFile Unit) {
-  if (Ty.isNull())
-    return llvm::DIType();
-
-  // Unwrap the type as needed for debug information.
-  Ty = UnwrapTypeForDebugInfo(Ty);
-
-  llvm::DIType T = getTypeOrNull(Ty);
-  if (T.Verify()) return T;
-
-  // Otherwise create the type.
-  llvm::DIType Res = CreateLimitedTypeNode(Ty, Unit);
-
-  // And update the type cache.
-  TypeCache[Ty.getAsOpaquePtr()] = Res;
-  return Res;
-}
-
-// TODO: Not safe to use for inner types or for fields. Currently only
-// used for by value arguments to functions anything else needs to be
-// audited carefully.
-llvm::DIType CGDebugInfo::CreateLimitedType(const RecordType *Ty) {
-  RecordDecl *RD = Ty->getDecl();
-
-  // For templated records we want the full type information and
-  // our forward decls don't handle this correctly.
-  if (isa<ClassTemplateSpecializationDecl>(RD))
-    return CreateType(Ty);
-
-  llvm::DIDescriptor RDContext
-    = createContextChain(cast<Decl>(RD->getDeclContext()));
-
-  return createRecordFwdDecl(RD, RDContext);
-}
-
-/// CreateLimitedTypeNode - Create a new debug type node, but only forward
-/// declare composite types that haven't been processed yet.
-llvm::DIType CGDebugInfo::CreateLimitedTypeNode(QualType Ty,llvm::DIFile Unit) {
-
-  // Work out details of type.
-  switch (Ty->getTypeClass()) {
-#define TYPE(Class, Base)
-#define ABSTRACT_TYPE(Class, Base)
-#define NON_CANONICAL_TYPE(Class, Base)
-#define DEPENDENT_TYPE(Class, Base) case Type::Class:
-    #include "clang/AST/TypeNodes.def"
-    llvm_unreachable("Dependent types cannot show up in debug information");
-
-  case Type::Record:
-    return CreateLimitedType(cast<RecordType>(Ty));
-  default:
-    return CreateTypeNode(Ty, Unit);
-  }
-}
- 
 /// CreateTypeNode - Create a new debug type node.
 llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile Unit) {
   // Handle qualifiers, which recursively handles what they refer to.
@@ -1979,11 +1919,11 @@ void CGDebugInfo::EmitLocation(CGBuilderTy &Builder, SourceLocation Loc) {
 void CGDebugInfo::CreateLexicalBlock(SourceLocation Loc) {
   llvm::DIDescriptor D =
     DBuilder.createLexicalBlock(LexicalBlockStack.empty() ?
-				llvm::DIDescriptor() :
-				llvm::DIDescriptor(LexicalBlockStack.back()),
-				getOrCreateFile(CurLoc),
-				getLineNumber(CurLoc),
-				getColumnNumber(CurLoc));
+                                llvm::DIDescriptor() :
+                                llvm::DIDescriptor(LexicalBlockStack.back()),
+                                getOrCreateFile(CurLoc),
+                                getLineNumber(CurLoc),
+                                getColumnNumber(CurLoc));
   llvm::MDNode *DN = D;
   LexicalBlockStack.push_back(DN);
 }
@@ -1999,8 +1939,8 @@ void CGDebugInfo::EmitLexicalBlockStart(CGBuilderTy &Builder, SourceLocation Loc
 
   // Emit a line table change for the current location inside the new scope.
   Builder.SetCurrentDebugLocation(llvm::DebugLoc::get(getLineNumber(Loc),
-  					      getColumnNumber(Loc),
-  					      LexicalBlockStack.back()));
+                                  getColumnNumber(Loc),
+                                  LexicalBlockStack.back()));
 }
 
 /// EmitLexicalBlockEnd - Constructs the debug code for exiting a declarative

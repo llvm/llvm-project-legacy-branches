@@ -24,7 +24,6 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/ABI.h"
-#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/StringExtras.h"
@@ -1656,8 +1655,8 @@ void CXXNameMangler::mangleType(QualType T) {
     } while (true);
   }
   SplitQualType split = T.split();
-  Qualifiers quals = split.second;
-  const Type *ty = split.first;
+  Qualifiers quals = split.Quals;
+  const Type *ty = split.Ty;
 
   bool isSubstitutable = quals || !isa<BuiltinType>(T);
   if (isSubstitutable && mangleSubstitution(T))

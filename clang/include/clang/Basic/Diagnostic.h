@@ -464,11 +464,19 @@ public:
   bool setDiagnosticGroupMapping(StringRef Group, diag::Mapping Map,
                                  SourceLocation Loc = SourceLocation());
 
+  /// \brief Set the warning-as-error flag for the given diagnostic. This
+  /// function always only operates on the current diagnostic state.
+  void setDiagnosticWarningAsError(diag::kind Diag, bool Enabled);
+
   /// \brief Set the warning-as-error flag for the given diagnostic group. This
   /// function always only operates on the current diagnostic state.
   ///
   /// \returns True if the given group is unknown, false otherwise.
   bool setDiagnosticGroupWarningAsError(StringRef Group, bool Enabled);
+
+  /// \brief Set the error-as-fatal flag for the given diagnostic. This function
+  /// always only operates on the current diagnostic state.
+  void setDiagnosticErrorAsFatal(diag::kind Diag, bool Enabled);
 
   /// \brief Set the error-as-fatal flag for the given diagnostic group. This
   /// function always only operates on the current diagnostic state.
@@ -593,7 +601,6 @@ private:
   friend class DiagnosticBuilder;
   friend class Diagnostic;
   friend class PartialDiagnostic;
-  friend struct PartialDiagnosticStorage;
   friend class DiagnosticErrorTrap;
   
   /// CurDiagLoc - This is the location of the current diagnostic that is in
@@ -1050,11 +1057,20 @@ public:
   range_iterator range_begin() const { return Ranges.begin(); }
   range_iterator range_end() const { return Ranges.end(); }
   unsigned range_size() const { return Ranges.size(); }
+  
+  ArrayRef<CharSourceRange> getRanges() const {
+    return llvm::makeArrayRef(Ranges);
+  }
+
 
   typedef std::vector<FixItHint>::const_iterator fixit_iterator;
   fixit_iterator fixit_begin() const { return FixIts.begin(); }
   fixit_iterator fixit_end() const { return FixIts.end(); }
   unsigned fixit_size() const { return FixIts.size(); }
+  
+  ArrayRef<FixItHint> getFixIts() const {
+    return llvm::makeArrayRef(FixIts);
+  }
 };
 
 /// DiagnosticConsumer - This is an abstract interface implemented by clients of

@@ -5,6 +5,8 @@ class NonCopyable {
 };
 
 void capture_by_ref(NonCopyable nc, NonCopyable &ncr) {
-  [&nc] {}; // expected-error{{lambda expressions are not supported yet}}
-  [&ncr] {}; // expected-error{{lambda expressions are not supported yet}}
+  int array[3];
+  (void)[&nc] () -> void {};
+  (void)[&ncr] () -> void {}; 
+  (void)[&array] () -> void {};
 }

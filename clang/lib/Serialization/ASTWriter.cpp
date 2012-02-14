@@ -29,7 +29,6 @@
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/HeaderSearch.h"
-#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemStatCache.h"
 #include "clang/Basic/OnDiskHashTable.h"
@@ -186,6 +185,7 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
   for (unsigned I = 0, N = T->getNumArgs(); I != N; ++I)
     Writer.AddTypeRef(T->getArgType(I), Record);
   Record.push_back(T->isVariadic());
+  Record.push_back(T->hasTrailingReturn());
   Record.push_back(T->getTypeQuals());
   Record.push_back(static_cast<unsigned>(T->getRefQualifier()));
   Record.push_back(T->getExceptionSpecType());
@@ -222,6 +222,7 @@ void ASTTypeWriter::VisitTypeOfType(const TypeOfType *T) {
 }
 
 void ASTTypeWriter::VisitDecltypeType(const DecltypeType *T) {
+  Writer.AddTypeRef(T->getUnderlyingType(), Record);
   Writer.AddStmt(T->getUnderlyingExpr());
   Code = TYPE_DECLTYPE;
 }
@@ -4501,4 +4502,3 @@ void ASTWriter::AddedObjCPropertyInClassExtension(const ObjCPropertyDecl *Prop,
 
   RewriteDecl(D);
 }
-

@@ -177,7 +177,7 @@ static bool performTransformations(StringRef resourcesPath,
                                  origCI.getMigratorOpts().NoFinalizeRemoval);
   assert(!transforms.empty());
 
-  llvm::OwningPtr<PrintTransforms> transformPrinter;
+  OwningPtr<PrintTransforms> transformPrinter;
   if (OutputTransformations)
     transformPrinter.reset(new PrintTransforms(llvm::outs()));
 
@@ -353,7 +353,7 @@ int main(int argc, const char **argv) {
     if (StringRef(argv[optargc]) == "--args")
       break;
   }
-  llvm::cl::ParseCommandLineOptions(optargc, const_cast<char **>(argv), "arcmt-test");
+  llvm::cl::ParseCommandLineOptions(optargc, argv, "arcmt-test");
 
   if (VerifyTransformedFiles) {
     if (ResultFiles.empty()) {

@@ -20,7 +20,6 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/IdentifierTable.h"
-#include "clang/Basic/PartialDiagnostic.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 using namespace clang;
@@ -35,7 +34,6 @@ AccessSpecDecl *AccessSpecDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   void *Mem = AllocateDeserializedDecl(C, ID, sizeof(AccessSpecDecl));
   return new (Mem) AccessSpecDecl(EmptyShell());
 }
-
 
 CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
   : UserDeclaredConstructor(false), UserDeclaredCopyConstructor(false),
@@ -81,6 +79,16 @@ CXXRecordDecl *CXXRecordDecl::Create(const ASTContext &C, TagKind TK,
   // FIXME: DelayTypeCreation seems like such a hack
   if (!DelayTypeCreation)
     C.getTypeDeclType(R, PrevDecl);
+  return R;
+}
+
+CXXRecordDecl *CXXRecordDecl::CreateLambda(const ASTContext &C, DeclContext *DC,
+                                           SourceLocation Loc) {
+  CXXRecordDecl* R = new (C) CXXRecordDecl(CXXRecord, TTK_Class, DC, Loc, Loc,
+                                           0, 0);
+  R->IsBeingDefined = true;
+  R->DefinitionData = new (C) struct LambdaDefinitionData(R);
+  C.getTypeDeclType(R, /*PrevDecl=*/0);
   return R;
 }
 
@@ -800,12 +808,8 @@ NotASpecialMember:;
       data().IsStandardLayout = false;
     }
 
-    // Record if this field is the first non-literal field or base.
-    // As a slight variation on the standard, we regard mutable members as being
-    // non-literal, since mutating a constexpr variable would break C++11
-    // constant expression semantics.
-    if ((!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType()) ||
-        Field->isMutable())
+    // Record if this field is the first non-literal or volatile field or base.
+    if (!T->isLiteralType() || T.isVolatileQualified())
       data().HasNonLiteralTypeFieldsOrBases = true;
 
     if (Field->hasInClassInitializer()) {
@@ -973,6 +977,26 @@ bool CXXRecordDecl::isCLike() const {
 
   return isPOD() && data().HasOnlyCMembers;
 }
+
+void CXXRecordDecl::getCaptureFields(
+       llvm::DenseMap<const VarDecl *, FieldDecl *> &Captures,
+       FieldDecl *&ThisCapture) const {
+  Captures.clear();
+  ThisCapture = 0;
+
+  LambdaDefinitionData &Lambda = getLambdaData();
+  RecordDecl::field_iterator Field = field_begin();
+  for (LambdaExpr::Capture *C = Lambda.Captures, *CEnd = C + Lambda.NumCaptures;
+       C != CEnd; ++C, ++Field) {
+    if (C->capturesThis()) {
+      ThisCapture = *Field;
+      continue;
+    }
+
+    Captures[C->getCapturedVar()] = *Field;
+  }
+}
+
 
 static CanQualType GetConversionType(ASTContext &Context, NamedDecl *Conv) {
   QualType T;

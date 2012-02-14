@@ -87,6 +87,10 @@ def StackAddrEscapeChecker : Checker<"StackAddressEscape">,
 
 let ParentPackage = CoreExperimental in {
 
+def BoolAssignmentChecker : Checker<"BoolAssignment">,
+  HelpText<"Warn about assigning non-{0,1} values to Boolean variables">,
+  DescFile<"BoolAssignmentChecker.cpp">;
+
 def CastSizeChecker : Checker<"CastSize">,
   HelpText<"Check when casting a malloc'ed type T, whether the size is a multiple of the size of T">,
   DescFile<"CastSizeChecker.cpp">;
@@ -282,8 +286,12 @@ def ChrootChecker : Checker<"Chroot">,
   HelpText<"Check improper use of chroot">,
   DescFile<"ChrootChecker.cpp">;
 
-def MallocChecker : Checker<"Malloc">,
-  HelpText<"Check for potential memory leaks, double free, and use-after-free problems">,
+def MallocOptimistic : Checker<"MallocWithAnnotations">,
+  HelpText<"Check for memory leaks, double free, and use-after-free problems. Assumes that all user-defined functions which might free a pointer are annotated.">,
+  DescFile<"MallocChecker.cpp">;
+
+def MallocPessimistic : Checker<"Malloc">,
+  HelpText<"Check for memory leaks, double free, and use-after-free problems.">,
   DescFile<"MallocChecker.cpp">;
 
 def MallocSizeofChecker : Checker<"MallocSizeof">,

@@ -95,7 +95,6 @@ def err_hex_escape_no_digits : Error<"\\x used with no following hex digits">;
 def err_ucn_escape_no_digits : Error<"\\u used with no following hex digits">;
 def err_ucn_escape_invalid : Error<"invalid universal character">;
 def err_ucn_escape_incomplete : Error<"incomplete universal character name">;
-def err_ucn_escape_too_big : Error<"universal character name is too long">;
 def err_invalid_decimal_digit : Error<"invalid digit '%0' in decimal constant">;
 def err_invalid_binary_digit : Error<"invalid digit '%0' in binary constant">;
 def err_invalid_octal_digit : Error<"invalid digit '%0' in octal constant">;
@@ -113,6 +112,8 @@ def err_exponent_has_no_digits : Error<"exponent has no digits">;
 def ext_imaginary_constant : Extension<"imaginary constants are an extension">;
 def err_hexconstant_requires_exponent : Error<
   "hexadecimal floating constants require an exponent">;
+def err_hexconstant_requires_digits : Error<
+  "hexadecimal floating constants require a significand">;
 def ext_hexconstant_invalid : Extension<
   "hexadecimal floating constants are a C99 feature">;
 def ext_binary_literal : Extension<
@@ -134,14 +135,19 @@ def err_unsupported_string_concat : Error<
   "unsupported non-standard concatenation of string literals">;
 def err_bad_string_encoding : Error<
   "illegal character encoding in string literal">;
+def warn_bad_string_encoding : ExtWarn<
+  "illegal character encoding in string literal">,
+  InGroup<DiagGroup<"invalid-source-encoding">>;
 def err_bad_character_encoding : Error<
   "illegal character encoding in character literal">;
-  
+def warn_bad_character_encoding : ExtWarn<
+  "illegal character encoding in character literal">,
+  InGroup<DiagGroup<"invalid-source-encoding">>;
+
+
 //===----------------------------------------------------------------------===//
 // PTH Diagnostics
 //===----------------------------------------------------------------------===//
-def err_pth_cannot_read : Error<
-    "PTH file '%0' could not be read">;
 def err_invalid_pth_file : Error<
     "invalid or corrupt PTH file '%0'">;
 
@@ -257,7 +263,6 @@ def pp_err_else_without_if : Error<"#else without #if">;
 def pp_err_elif_without_if : Error<"#elif without #if">;
 def err_pp_endif_without_if : Error<"#endif without #if">;
 def err_pp_expected_value_in_expr : Error<"expected value in expression">;
-def err_pp_missing_val_before_operator : Error<"missing value before operator">;
 def err_pp_expected_rparen : Error<"expected ')' in preprocessor expression">;
 def err_pp_expected_eol : Error<
   "expected end of line in preprocessor expression">;
@@ -400,7 +405,6 @@ def note_mmap_lsquare_match : Note<"to match this ']'">;
 def err_mmap_expected_member : Error<
   "expected umbrella, header, submodule, or module export">;
 def err_mmap_expected_header : Error<"expected a header name after '%0'">;
-def err_mmap_expected_dir : Error<"expected a directory name after '%0'">;
 def err_mmap_module_redefinition : Error<
   "redefinition of module '%0'">;
 def note_mmap_prev_definition : Note<"previously defined here">;

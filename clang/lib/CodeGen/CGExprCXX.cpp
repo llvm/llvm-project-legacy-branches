@@ -1764,3 +1764,19 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(llvm::Value *Value,
 
   return Value;
 }
+
+void CodeGenFunction::EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Slot) {
+  RunCleanupsScope Scope(*this);
+
+  CXXRecordDecl::field_iterator CurField = E->getLambdaClass()->field_begin();
+  for (LambdaExpr::capture_init_iterator i = E->capture_init_begin(),
+                                         e = E->capture_init_end();
+      i != e; ++i, ++CurField) {
+    // Emit initialization
+    LValue LV = EmitLValueForFieldInitialization(Slot.getAddr(), *CurField, 0);
+    ArrayRef<VarDecl *> ArrayIndexes;
+    if (CurField->getType()->isArrayType())
+      ArrayIndexes = E->getCaptureInitIndexVars(i);
+    EmitInitializerForField(*CurField, LV, *i, ArrayIndexes);
+  }
+}

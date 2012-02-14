@@ -418,6 +418,8 @@ void Sema::ActOnEndOfTranslationUnit() {
   // Only complete translation units define vtables and perform implicit
   // instantiations.
   if (TUKind == TU_Complete) {
+    DiagnoseUseOfUnimplementedSelectors();
+
     // If any dynamic classes have their key function defined within
     // this translation unit, then those vtables are considered "used" and must
     // be emitted.
@@ -633,6 +635,7 @@ DeclContext *Sema::getFunctionLevelDeclContext() {
     if (isa<BlockDecl>(DC) || isa<EnumDecl>(DC)) {
       DC = DC->getParent();
     } else if (isa<CXXMethodDecl>(DC) &&
+               cast<CXXMethodDecl>(DC)->getOverloadedOperator() == OO_Call &&
                cast<CXXRecordDecl>(DC->getParent())->isLambda()) {
       DC = DC->getParent()->getParent();
     }
@@ -829,8 +832,10 @@ void Sema::PushBlockScope(Scope *BlockScope, BlockDecl *Block) {
                                               BlockScope, Block));
 }
 
-void Sema::PushLambdaScope(CXXRecordDecl *Lambda) {
-  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics(), Lambda));
+void Sema::PushLambdaScope(CXXRecordDecl *Lambda, 
+                           CXXMethodDecl *CallOperator) {
+  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics(), Lambda,
+                                               CallOperator));
 }
 
 void Sema::PopFunctionScopeInfo(const AnalysisBasedWarnings::Policy *WP,

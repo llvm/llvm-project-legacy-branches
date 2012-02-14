@@ -75,7 +75,7 @@ static void AppendTypeQualList(std::string &S, unsigned TypeQuals) {
 
 void TypePrinter::print(QualType t, std::string &buffer) {
   SplitQualType split = t.split();
-  print(split.first, split.second, buffer);
+  print(split.Ty, split.Quals, buffer);
 }
 
 void TypePrinter::print(const Type *T, Qualifiers Quals, std::string &buffer) {
@@ -500,7 +500,12 @@ void TypePrinter::printFunctionProto(const FunctionProtoType *T,
     break;
   }
   T->printExceptionSpecification(S, Policy);
-  print(T->getResultType(), S);
+  if (T->hasTrailingReturn()) {
+    std::string ResultS;
+    print(T->getResultType(), ResultS);
+    S = "auto " + S + " -> " + ResultS;
+  } else
+    print(T->getResultType(), S);
 }
 
 void TypePrinter::printFunctionNoProto(const FunctionNoProtoType *T, 

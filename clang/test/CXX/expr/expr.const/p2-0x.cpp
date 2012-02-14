@@ -109,6 +109,23 @@ namespace RecursionLimits {
   };
 }
 
+// DR1458: taking the address of an object of incomplete class type
+namespace IncompleteClassTypeAddr {
+  struct S;
+  extern S s;
+  constexpr S *p = &s; // ok
+  static_assert(p, "");
+
+  extern S sArr[];
+  constexpr S (*p2)[] = &sArr; // ok
+
+  struct S {
+    constexpr S *operator&() { return nullptr; }
+  };
+  constexpr S *q = &s; // ok
+  static_assert(!q, "");
+}
+
 // - an operation that would have undefined behavior [Note: including, for
 //   example, signed integer overflow (Clause 5 [expr]), certain pointer
 //   arithmetic (5.7 [expr.add]), division by zero (5.6 [expr.mul]), or certain
@@ -144,8 +161,11 @@ namespace UndefinedBehavior {
   constexpr int shl_unsigned_overflow = 1024u << 31; // ok
   constexpr int shl_signed_negative = (-3) << 1; // expected-error {{constant expression}} expected-note {{left shift of negative value -3}}
   constexpr int shl_signed_ok = 1 << 30; // ok
-  constexpr int shl_signed_into_sign = 1 << 31; // expected-error {{constant expression}} expected-note {{value 2147483648 is outside the range}}
-  constexpr int shl_signed_overflow = 1024 << 31; // expected-error {{constant expression}} expected-note {{value 2199023255552 is outside the range}} expected-warning {{requires 43 bits to represent}}
+  constexpr int shl_signed_into_sign = 1 << 31; // ok (DR1457)
+  constexpr int shl_signed_into_sign_2 = 0x7fffffff << 1; // ok (DR1457)
+  constexpr int shl_signed_off_end = 2 << 31; // expected-error {{constant expression}} expected-note {{signed left shift discards bits}} expected-warning {{signed shift result (0x100000000) requires 34 bits to represent, but 'int' only has 32 bits}}
+  constexpr int shl_signed_off_end_2 = 0x7fffffff << 2; // expected-error {{constant expression}} expected-note {{signed left shift discards bits}} expected-warning {{signed shift result (0x1FFFFFFFC) requires 34 bits to represent, but 'int' only has 32 bits}}
+  constexpr int shl_signed_overflow = 1024 << 31; // expected-error {{constant expression}} expected-note {{signed left shift discards bits}} expected-warning {{requires 43 bits to represent}}
   constexpr int shl_signed_ok2 = 1024 << 20; // ok
 
   constexpr int shr_m1 = 0 >> -1; // expected-error {{constant expression}} expected-note {{negative shift count -1}} expected-warning {{negative}}
@@ -268,7 +288,7 @@ namespace LValueToRValue {
   //   non-volatile const object with a preceding initialization, initialized
   //   with a constant expression  [Note: a string literal (2.14.5 [lex.string])
   //   corresponds to an array of such objects. -end note], or
-  volatile const int vi = 1; // expected-note {{here}}
+  volatile const int vi = 1; // expected-note 2{{here}}
   const int ci = 1;
   volatile const int &vrci = ci;
   static_assert(vi, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
@@ -278,18 +298,23 @@ namespace LValueToRValue {
   // - a non-volatile glvalue of literal type that refers to a non-volatile
   //   object defined with constexpr, or that refers to a sub-object of such an
   //   object, or
-  struct S {
-    constexpr S(int=0) : i(1), v(1) {}
-    constexpr S(const S &s) : i(2), v(2) {}
-    int i;
-    volatile int v; // expected-note {{here}}
+  struct V {
+    constexpr V() : v(1) {}
+    volatile int v; // expected-note {{not literal because}}
   };
-  constexpr S s;
+  constexpr V v; // expected-error {{non-literal type}}
+  struct S {
+    constexpr S(int=0) : i(1), v(const_cast<volatile int&>(vi)) {}
+    constexpr S(const S &s) : i(2), v(const_cast<volatile int&>(vi)) {}
+    int i;
+    volatile int &v;
+  };
+  constexpr S s; // ok
   constexpr volatile S vs; // expected-note {{here}}
-  constexpr const volatile S &vrs = s;
+  constexpr const volatile S &vrs = s; // ok
   static_assert(s.i, "");
   static_assert(s.v, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
-  static_assert(const_cast<int&>(s.v), ""); // expected-error {{constant expression}} expected-note {{read of volatile member 'v'}}
+  static_assert(const_cast<int&>(s.v), ""); // expected-error {{constant expression}} expected-note {{read of volatile object 'vi'}}
   static_assert(vs.i, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
   static_assert(const_cast<int&>(vs.i), ""); // expected-error {{constant expression}} expected-note {{read of volatile object 'vs'}}
   static_assert(vrs.i, ""); // expected-error {{constant expression}} expected-note {{read of volatile-qualified type}}
