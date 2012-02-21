@@ -36,12 +36,9 @@
 #include "InputInfo.h"
 #include "ToolChains.h"
 
-#ifdef HAVE_CLANG_CONFIG_H
-# include "clang/Config/config.h"
-#endif
-#include "llvm/Config/config.h"
-
 #include <map>
+
+#include "clang/Config/config.h"
 
 using namespace clang::driver;
 using namespace clang;
@@ -1632,7 +1629,7 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
   if (!TC) {
     switch (Target.getOS()) {
     case llvm::Triple::AuroraUX:
-      TC = new toolchains::AuroraUX(*this, Target);
+      TC = new toolchains::AuroraUX(*this, Target, Args);
       break;
     case llvm::Triple::Darwin:
     case llvm::Triple::MacOSX:
@@ -1643,28 +1640,31 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
           Target.getArch() == llvm::Triple::thumb)
         TC = new toolchains::DarwinClang(*this, Target);
       else
-        TC = new toolchains::Darwin_Generic_GCC(*this, Target);
+        TC = new toolchains::Darwin_Generic_GCC(*this, Target, Args);
       break;
     case llvm::Triple::DragonFly:
-      TC = new toolchains::DragonFly(*this, Target);
+      TC = new toolchains::DragonFly(*this, Target, Args);
       break;
     case llvm::Triple::OpenBSD:
-      TC = new toolchains::OpenBSD(*this, Target);
+      TC = new toolchains::OpenBSD(*this, Target, Args);
       break;
     case llvm::Triple::NetBSD:
-      TC = new toolchains::NetBSD(*this, Target);
+      TC = new toolchains::NetBSD(*this, Target, Args);
       break;
     case llvm::Triple::FreeBSD:
-      TC = new toolchains::FreeBSD(*this, Target);
+      TC = new toolchains::FreeBSD(*this, Target, Args);
       break;
     case llvm::Triple::Minix:
-      TC = new toolchains::Minix(*this, Target);
+      TC = new toolchains::Minix(*this, Target, Args);
       break;
     case llvm::Triple::Linux:
       if (Target.getArch() == llvm::Triple::hexagon)
         TC = new toolchains::Hexagon_TC(*this, Target);
       else
-        TC = new toolchains::Linux(*this, Target);
+        TC = new toolchains::Linux(*this, Target, Args);
+      break;
+    case llvm::Triple::Solaris:
+      TC = new toolchains::Solaris(*this, Target, Args);
       break;
     case llvm::Triple::Win32:
       TC = new toolchains::Windows(*this, Target);
@@ -1678,7 +1678,7 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
         break;
       }
 
-      TC = new toolchains::Generic_GCC(*this, Target);
+      TC = new toolchains::Generic_GCC(*this, Target, Args);
       break;
     }
   }

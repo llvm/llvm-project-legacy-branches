@@ -2,7 +2,7 @@
 
 template<typename T>
 void test_attributes() {
-  auto nrl = []() [[noreturn]] {}; // expected-warning{{function declared 'noreturn' should not return}}
+  auto nrl = []() [[noreturn]] {}; // expected-error{{lambda declared 'noreturn' should not return}}
 }
 
 template void test_attributes<int>(); // expected-note{{in instantiation of function}}
@@ -113,4 +113,37 @@ namespace p5 {
   }
 
   template void double_capture(NonConstCopy&);
+}
+
+namespace NonLocalLambdaInstantation {
+  template<typename T>
+  struct X {
+    static int value;
+  };
+
+  template<typename T>
+  int X<T>::value = []{ return T(); }(); // expected-error{{cannot initialize a variable of type 'int' with an rvalue of type 'int *'}}
+
+  template int X<int>::value;
+  template int X<float>::value;
+  template int X<int*>::value; // expected-note{{in instantiation of static data member }}
+
+  template<typename T>
+  void defaults(int x = []{ return T(); }()) { }; // expected-error{{cannot initialize a parameter of type 'int' with an rvalue of type 'int *'}} \
+     // expected-note{{passing argument to parameter 'x' here}}
+
+  void call_defaults() {
+    defaults<int>();
+    defaults<float>();
+    defaults<int*>(); // expected-note{{in instantiation of default function argument expression for 'defaults<int *>' required here}}
+  }
+
+  template<typename T>
+  struct X2 {
+    int x = []{ return T(); }(); // expected-error{{cannot initialize a member subobject of type 'int' with an rvalue of type 'int *'}}
+  };
+
+  X2<int> x2i;
+  X2<float> x2f;
+  X2<int*> x2ip; // expected-note{{in instantiation of template class 'NonLocalLambdaInstantation::X2<int *>' requested here}}
 }

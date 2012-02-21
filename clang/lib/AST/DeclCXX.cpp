@@ -1455,6 +1455,12 @@ bool CXXMethodDecl::hasInlineBody() const {
   return CheckFn->hasBody(fn) && !fn->isOutOfLine();
 }
 
+bool CXXMethodDecl::isLambdaStaticInvoker() const {
+  return getParent()->isLambda() && 
+         getIdentifier() && getIdentifier()->getName() == "__invoke";
+}
+
+
 CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
                                        TypeSourceInfo *TInfo, bool IsVirtual,
                                        SourceLocation L, Expr *Init,
@@ -1757,6 +1763,21 @@ CXXConversionDecl::Create(ASTContext &C, CXXRecordDecl *RD,
   return new (C) CXXConversionDecl(RD, StartLoc, NameInfo, T, TInfo,
                                    isInline, isExplicit, isConstexpr,
                                    EndLocation);
+}
+
+bool CXXConversionDecl::isLambdaToBlockPointerConversion() const {
+  return isImplicit() && getParent()->isLambda() &&
+         getConversionType()->isBlockPointerType();
+}
+
+Expr *CXXConversionDecl::getLambdaToBlockPointerCopyInit() const {
+  assert(isLambdaToBlockPointerConversion());
+  return getASTContext().LambdaBlockPointerInits[this];
+}
+
+void CXXConversionDecl::setLambdaToBlockPointerCopyInit(Expr *Init) {
+  assert(isLambdaToBlockPointerConversion());
+  getASTContext().LambdaBlockPointerInits[this] = Init;
 }
 
 void LinkageSpecDecl::anchor() { }

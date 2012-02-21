@@ -346,6 +346,8 @@ def err_constexpr_main : Error<
   "'main' is not allowed to be declared constexpr">;
 def err_main_template_decl : Error<"'main' cannot be a template">;
 def err_main_returns_nonint : Error<"'main' must return 'int'">;
+def ext_main_returns_nonint : ExtWarn<"return type of 'main' is not 'int'">,
+    InGroup<MainReturnType>;
 def err_main_surplus_args : Error<"too many parameters (%0) for 'main': "
     "must be 0, 2, or 3">;
 def warn_main_one_arg : Warning<"only one parameter on 'main' declaration">,
@@ -971,8 +973,13 @@ def note_nontrivial_user_defined : Note<
   "because type %0 has a user-declared %select{constructor|copy constructor|"
   "move constructor|copy assignment operator|move assignment operator|"
   "destructor}1">;
-def err_static_data_member_not_allowed_in_union_or_anon_struct : Error<
-  "static data member %0 not allowed in %select{anonymous struct|union}1">; 
+def err_static_data_member_not_allowed_in_anon_struct : Error<
+  "static data member %0 not allowed in anonymous struct">;
+def ext_static_data_member_in_union : ExtWarn<
+  "static data member %0 in union is a C++11 extension">, InGroup<CXX11>;
+def warn_cxx98_compat_static_data_member_in_union : Warning<
+  "static data member %0 in union is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
 def err_union_member_of_reference_type : Error<
   "union member %0 has reference type %1">;
 def ext_anonymous_struct_union_qualified : Extension<
@@ -1139,24 +1146,24 @@ def err_temp_copy_no_viable : Error<
   "no viable constructor %select{copying variable|copying parameter|"
   "returning object|throwing object|copying member subobject|copying array "
   "element|allocating object|copying temporary|initializing base subobject|"
-  "initializing vector element}0 of type %1">;
+  "initializing vector element|capturing value}0 of type %1">;
 def ext_rvalue_to_reference_temp_copy_no_viable : ExtWarn<
   "no viable constructor %select{copying variable|copying parameter|"
   "returning object|throwing object|copying member subobject|copying array "
   "element|allocating object|copying temporary|initializing base subobject|"
-  "initializing vector element}0 of type %1; C++98 requires a copy "
+  "initializing vector element|capturing value}0 of type %1; C++98 requires a copy "
   "constructor when binding a reference to a temporary">,
   InGroup<BindToTemporaryCopy>;
 def err_temp_copy_ambiguous : Error<
   "ambiguous constructor call when %select{copying variable|copying "
   "parameter|returning object|throwing object|copying member subobject|copying "
   "array element|allocating object|copying temporary|initializing base subobject|"
-  "initializing vector element}0 of type %1">;
+  "initializing vector element|capturing value}0 of type %1">;
 def err_temp_copy_deleted : Error<
   "%select{copying variable|copying parameter|returning object|throwing "
   "object|copying member subobject|copying array element|allocating object|"
-  "copying temporary|initializing base subobject|initializing vector element}0 "
-  "of type %1 invokes deleted constructor">;
+  "copying temporary|initializing base subobject|initializing vector element|"
+  "capturing value}0 of type %1 invokes deleted constructor">;
 def err_temp_copy_incomplete : Error<
   "copying a temporary object of incomplete type %0">;
 def warn_cxx98_compat_temp_copy : Warning<
@@ -2102,6 +2109,10 @@ def err_ref_init_ambiguous : Error<
   "reference initialization of type %0 with initializer of type %1 is ambiguous">;
 def err_ovl_deleted_init : Error<
   "call to %select{unavailable|deleted}0 constructor of %1">;
+def err_ovl_deleted_special_init : Error<
+  "call to implicitly-deleted %select{default constructor|copy constructor|"
+  "move constructor|copy assignment operator|move assignment operator|"
+  "destructor|function}0 of %1">;
 def err_ovl_ambiguous_oper_unary : Error<
   "use of overloaded operator '%0' is ambiguous (operand type %1)">;
 def err_ovl_ambiguous_oper_binary : Error<
@@ -2109,6 +2120,10 @@ def err_ovl_ambiguous_oper_binary : Error<
 def err_ovl_no_viable_oper : Error<"no viable overloaded '%0'">;
 def err_ovl_deleted_oper : Error<
   "overload resolution selected %select{unavailable|deleted}0 operator '%1'%2">;
+def err_ovl_deleted_special_oper : Error<
+  "overload resolution selected implicitly-deleted %select{default constructor|"
+  "copy constructor|move constructor|copy assignment operator|move assignment "
+  "operator|destructor|'%1'}0%2">;
 def err_ovl_no_viable_subscript :
     Error<"no viable overloaded operator[] for type %0">;
 def err_ovl_no_oper :
@@ -3540,7 +3555,11 @@ def err_array_init_non_constant_array : Error<
   "cannot initialize array of type %0 with non-constant array of type %1">;
 def ext_array_init_copy : Extension<
   "initialization of an array of type %0 from a compound literal of type %1 is "
-  "a GNU extension">;
+  "a GNU extension">, InGroup<GNU>;
+// This is intentionally not disabled by -Wno-gnu.
+def ext_array_init_parens : ExtWarn<
+  "parenthesized initialization of a member array is a GNU extension">,
+  InGroup<DiagGroup<"gnu-array-member-paren-init">>, DefaultError;
 def warn_deprecated_string_literal_conversion : Warning<
   "conversion from string literal to %0 is deprecated">, InGroup<DeprecatedWritableStr>;
 def err_realimag_invalid_type : Error<"invalid type %0 to %1 operator">;
@@ -3997,41 +4016,70 @@ def err_throw_incomplete_ptr : Error<
 def err_return_in_constructor_handler : Error<
   "return in the catch of a function try block of a constructor is illegal">;
 
-def err_capture_more_than_once : Error<
-  "%0 can appear only once in a capture list">;
-def err_reference_capture_with_reference_default : Error<
-  "'&' cannot precede a capture when the capture default is '&'">;
-def err_this_capture_with_copy_default : Error<
-  "'this' cannot be explicitly captured when the capture default is '='">;
-def err_copy_capture_with_copy_default : Error<
-  "'&' must precede a capture when the capture default is '='">;
-def err_capture_does_not_name_variable : Error<
-  "%0 in capture list does not name a variable">;
-def err_capture_non_automatic_variable : Error<
-  "%0 cannot be captured because it does not have automatic storage duration">;
-def err_this_capture : Error<
-  "'this' cannot be %select{implicitly |}0captured in this context">;
-def err_lambda_capture_block : Error<
-  "__block variable %0 cannot be captured in a lambda expression">;
-def err_lambda_capture_anonymous_var : Error<
-  "unnamed variable cannot be implicitly captured in a lambda expression">;
-def err_lambda_capture_vm_type : Error<
-  "variable %0 with variably modified type cannot be captured in "
-  "a lambda expression">;
-def err_lambda_impcap : Error<
-  "variable %0 cannot be implicitly captured in a lambda with no "
-  "capture-default specified">;
-def note_lambda_decl : Note<"lambda expression begins here">;
-def err_lambda_unevaluated_operand : Error<
-  "lambda expression in an unevaluated operand">;
-def ext_lambda_implies_void_return : ExtWarn<
-  "C++11 requires lambda with omitted result type to consist of a single "
-  "return statement">,
-  InGroup<DiagGroup<"lambda-return">>;
-def err_lambda_return_init_list : Error<
-  "cannot deduce lambda return type from initializer list">;
-def err_lambda_capture_default_arg : Error<
-  "lambda expression in default argument cannot capture any entity">;
+let CategoryName = "Lambda Issue" in {
+  def err_capture_more_than_once : Error<
+    "%0 can appear only once in a capture list">;
+  def err_reference_capture_with_reference_default : Error<
+    "'&' cannot precede a capture when the capture default is '&'">;
+  def err_this_capture_with_copy_default : Error<
+    "'this' cannot be explicitly captured when the capture default is '='">;
+  def err_copy_capture_with_copy_default : Error<
+    "'&' must precede a capture when the capture default is '='">;
+  def err_capture_does_not_name_variable : Error<
+    "%0 in capture list does not name a variable">;
+  def err_capture_non_automatic_variable : Error<
+    "%0 cannot be captured because it does not have automatic storage "
+    "duration">;
+  def err_this_capture : Error<
+    "'this' cannot be %select{implicitly |}0captured in this context">;
+  def err_lambda_capture_block : Error<
+    "__block variable %0 cannot be captured in a lambda expression">;
+  def err_lambda_capture_anonymous_var : Error<
+    "unnamed variable cannot be implicitly captured in a lambda expression">;
+  def err_lambda_capture_vm_type : Error<
+    "variable %0 with variably modified type cannot be captured in "
+    "a lambda expression">;
+  def err_lambda_impcap : Error<
+    "variable %0 cannot be implicitly captured in a lambda with no "
+    "capture-default specified">;
+  def note_lambda_decl : Note<"lambda expression begins here">;
+  def err_lambda_unevaluated_operand : Error<
+    "lambda expression in an unevaluated operand">;
+  def ext_lambda_implies_void_return : ExtWarn<
+    "C++11 requires lambda with omitted result type to consist of a single "
+    "return statement">,
+    InGroup<LambdaExtensions>;
+  def err_lambda_return_init_list : Error<
+    "cannot deduce lambda return type from initializer list">;
+  def err_lambda_capture_default_arg : Error<
+    "lambda expression in default argument cannot capture any entity">;
+  def err_lambda_unexpanded_pack : Error<
+    "unexpanded function parameter pack capture is unsupported">;
+  def err_lambda_incomplete_result : Error<
+    "incomplete result type %0 in lambda expression">;
+  def err_lambda_objc_object_result : Error<
+    "non-pointer Objective-C class type %0 in lambda expression result">;
+  def ext_lambda_default_arguments : ExtWarn<
+    "C++11 forbids default arguments for lambda expressions">,
+    InGroup<LambdaExtensions>;
+  def err_noreturn_lambda_has_return_expr : Error<
+    "lambda declared 'noreturn' should not return">;
+  def warn_maybe_falloff_nonvoid_lambda : Warning<
+    "control may reach end of non-void lambda">,
+    InGroup<ReturnType>;
+  def warn_falloff_nonvoid_lambda : Warning<
+    "control reaches end of non-void lambda">,
+    InGroup<ReturnType>;
+  def err_access_lambda_capture : Error<
+    // The ERRORs represent other special members that aren't constructors, in
+    // hopes that someone will bother noticing and reporting if they appear
+    "capture of variable '%0' as type %1 calls %select{private|protected}3 "
+    "%select{default |copy |move |*ERROR* |*ERROR* |*ERROR* |}2constructor">,
+    AccessControl;
+  def note_lambda_to_block_conv : Note<
+    "implicit capture of lambda object due to conversion to block pointer "
+    "here">;
+}
 
 def err_operator_arrow_circular : Error<
   "circular pointer delegation detected">;
@@ -4128,8 +4176,8 @@ def err_typecheck_convert_incompatible : Error<
   "%select{none|const|restrict|const and restrict|volatile|const and volatile|"
   "volatile and restrict|const, volatile, and restrict}6)}4">;
 def err_typecheck_missing_return_type_incompatible : Error<
-  "return type %0 must match previous return type %1 when block"
-  " literal has unspecified explicit return type">;
+  "return type %0 must match previous return type %1 when %select{block "
+  "literal|lambda expression}2 has unspecified explicit return type">;
 
 def warn_incompatible_qualified_id : Warning<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4279,6 +4327,8 @@ def err_typecheck_call_too_many_args_at_most : Error<
   "expected at most %1, have %2">;
 def note_callee_decl : Note<
   "%0 declared here">;
+def note_defined_here : Note<"%0 defined here">;
+
 def warn_call_wrong_number_of_arguments : Warning<
   "too %select{few|many}0 arguments in call to %1">;
 def err_atomic_builtin_must_be_pointer : Error<
@@ -4955,8 +5005,20 @@ def err_switch_explicit_conversion : Error<
   "switch condition type %0 requires explicit conversion to %1">;
 def err_switch_incomplete_class_type : Error<
   "switch condition has incomplete class type %0">;
+
 def warn_empty_if_body : Warning<
   "if statement has empty body">, InGroup<EmptyBody>;
+def warn_empty_for_body : Warning<
+  "for loop has empty body">, InGroup<EmptyBody>;
+def warn_empty_range_based_for_body : Warning<
+  "range-based for loop has empty body">, InGroup<EmptyBody>;
+def warn_empty_while_body : Warning<
+  "while loop has empty body">, InGroup<EmptyBody>;
+def warn_empty_switch_body : Warning<
+  "switch statement has empty body">, InGroup<EmptyBody>;
+def note_empty_body_on_separate_line : Note<
+  "put the semicolon on a separate line to silence this warning">,
+  InGroup<EmptyBody>;
 
 def err_va_start_used_in_non_variadic_function : Error<
   "'va_start' used in function with fixed args">;

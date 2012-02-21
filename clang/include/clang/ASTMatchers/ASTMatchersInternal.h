@@ -304,16 +304,6 @@ private:
       InnerMatcher.Matches(*NodeAsDecl, Finder, Builder);
   }
 
-  /// \brief Extracts the Decl of the constructor ran by the new expression and
-  /// returns whether the inner matcher matches on it.
-  bool MatchesSpecialized(const clang::CXXNewExpr& Node,
-                          ASTMatchFinder* Finder,
-                          BoundNodesTreeBuilder* Builder) const {
-    const clang::Decl* NodeAsDecl = Node.getConstructor();
-    return NodeAsDecl != NULL &&
-        InnerMatcher.Matches(*NodeAsDecl, Finder, Builder);
-  }
-
   const Matcher<clang::Decl> InnerMatcher;
 };
 

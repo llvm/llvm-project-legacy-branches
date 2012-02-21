@@ -1122,6 +1122,13 @@ public:
   // (C++ [class.dtor]p3)
   bool hasTrivialDestructor() const { return data().HasTrivialDestructor; }
 
+  // hasIrrelevantDestructor - Whether this class has a destructor which has no
+  // semantic effect. Any such destructor will be trivial, public, defaulted
+  // and not deleted.
+  bool hasIrrelevantDestructor() const {
+    return hasTrivialDestructor() && !hasUserDeclaredDestructor();
+  }
+
   // hasNonLiteralTypeFieldsOrBases - Whether this class has a non-literal or
   // volatile type non-static data member or base class.
   bool hasNonLiteralTypeFieldsOrBases() const {
@@ -1565,6 +1572,15 @@ public:
 
   bool hasInlineBody() const;
 
+  /// \brief Determine whether this is a lambda closure type's static member
+  /// function that is used for the result of the lambda's conversion to
+  /// function pointer (for a lambda with no captures).
+  ///
+  /// The function itself, if used, will have a placeholder body that will be
+  /// supplied by IR generation to either forward to the function call operator
+  /// or clone the function call operator.
+  bool isLambdaStaticInvoker() const;
+  
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const CXXMethodDecl *D) { return true; }
@@ -2180,6 +2196,19 @@ public:
     return getType()->getAs<FunctionType>()->getResultType();
   }
 
+  /// \brief Determine whether this conversion function is a conversion from
+  /// a lambda closure type to a block pointer.
+  bool isLambdaToBlockPointerConversion() const;
+  
+  /// \brief For an implicit conversion function that converts a lambda
+  /// closure type to a block pointer, retrieve the expression used to
+  /// copy the closure object into the block.
+  Expr *getLambdaToBlockPointerCopyInit() const;
+  
+  /// \brief Set the copy-initialization expression to be used when converting
+  /// a lambda object to a block pointer.
+  void setLambdaToBlockPointerCopyInit(Expr *Init);
+  
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const CXXConversionDecl *D) { return true; }

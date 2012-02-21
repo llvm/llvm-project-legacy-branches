@@ -1289,7 +1289,7 @@ CodeGenFunction::EmitSynthesizedCXXCopyCtorCall(const CXXConstructorDecl *D,
     EmitCallArg(Args, *Arg, ArgType);
   }
   
-  EmitCall(CGM.getTypes().getFunctionInfo(Args, FPT), Callee,
+  EmitCall(CGM.getTypes().arrangeFunctionCall(Args, FPT), Callee,
            ReturnValueSlot(), Args, D);
 }
 
@@ -1325,7 +1325,7 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
     EmitDelegateCallArg(DelegateArgs, param);
   }
 
-  EmitCall(CGM.getTypes().getFunctionInfo(Ctor, CtorType),
+  EmitCall(CGM.getTypes().arrangeCXXConstructorDeclaration(Ctor, CtorType),
            CGM.GetAddrOfCXXConstructor(Ctor, CtorType), 
            ReturnValueSlot(), DelegateArgs, Ctor);
 }
@@ -1710,13 +1710,72 @@ llvm::Value *
 CodeGenFunction::EmitCXXOperatorMemberCallee(const CXXOperatorCallExpr *E,
                                              const CXXMethodDecl *MD,
                                              llvm::Value *This) {
-  const FunctionProtoType *FPT = MD->getType()->castAs<FunctionProtoType>();
-  llvm::Type *Ty =
-    CGM.getTypes().GetFunctionType(CGM.getTypes().getFunctionInfo(MD),
-                                   FPT->isVariadic());
+  llvm::FunctionType *fnType =
+    CGM.getTypes().GetFunctionType(
+                             CGM.getTypes().arrangeCXXMethodDeclaration(MD));
 
   if (UseVirtualCall(getContext(), E, MD))
-    return BuildVirtualCall(MD, This, Ty);
+    return BuildVirtualCall(MD, This, fnType);
 
-  return CGM.GetAddrOfFunction(MD, Ty);
+  return CGM.GetAddrOfFunction(MD, fnType);
+}
+
+void CodeGenFunction::EmitLambdaToBlockPointerBody(FunctionArgList &Args) {
+  CGM.ErrorUnsupported(CurFuncDecl, "lambda conversion to block");
+}
+
+void CodeGenFunction::EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD) {
+  const CXXRecordDecl *Lambda = MD->getParent();
+  DeclarationName Name
+    = getContext().DeclarationNames.getCXXOperatorName(OO_Call);
+  DeclContext::lookup_const_result Calls = Lambda->lookup(Name);
+  CXXMethodDecl *CallOperator = cast<CXXMethodDecl>(*Calls.first++);
+  const FunctionProtoType *FPT = MD->getType()->getAs<FunctionProtoType>();
+  QualType ResultType = FPT->getResultType();
+
+  // Start building arguments for forwarding call
+  CallArgList CallArgs;
+
+  QualType ThisType = getContext().getPointerType(getContext().getRecordType(Lambda));
+  llvm::Value *ThisPtr = llvm::UndefValue::get(getTypes().ConvertType(ThisType));
+  CallArgs.add(RValue::get(ThisPtr), ThisType);
+
+  // Add the rest of the parameters.
+  for (FunctionDecl::param_const_iterator I = MD->param_begin(),
+       E = MD->param_end(); I != E; ++I) {
+    ParmVarDecl *param = *I;
+    EmitDelegateCallArg(CallArgs, param);
+  }
+
+  // Get the address of the call operator.
+  GlobalDecl GD(CallOperator);
+  const CGFunctionInfo &CalleeFnInfo =
+    CGM.getTypes().arrangeFunctionCall(ResultType, CallArgs, FPT->getExtInfo(),
+                                       RequiredArgs::forPrototypePlus(FPT, 1));
+  llvm::Type *Ty = CGM.getTypes().GetFunctionType(CalleeFnInfo);
+  llvm::Value *Callee = CGM.GetAddrOfFunction(GD, Ty);
+
+  // Determine whether we have a return value slot to use.
+  ReturnValueSlot Slot;
+  if (!ResultType->isVoidType() &&
+      CurFnInfo->getReturnInfo().getKind() == ABIArgInfo::Indirect &&
+      hasAggregateLLVMType(CurFnInfo->getReturnType()))
+    Slot = ReturnValueSlot(ReturnValue, ResultType.isVolatileQualified());
+  
+  // Now emit our call.
+  RValue RV = EmitCall(CalleeFnInfo, Callee, Slot, CallArgs, CallOperator);
+
+  // Forward the returned value
+  if (!ResultType->isVoidType() && Slot.isNull())
+    EmitReturnOfRValue(RV, ResultType);
+}
+
+void CodeGenFunction::EmitLambdaStaticInvokeFunction(const CXXMethodDecl *MD) {
+  if (MD->isVariadic()) {
+    // FIXME: Making this work correctly is nasty because it requires either
+    // cloning the body of the call operator or making the call operator forward.
+    CGM.ErrorUnsupported(MD, "lambda conversion to variadic function");
+  }
+
+  EmitLambdaDelegatingInvokeBody(MD);
 }

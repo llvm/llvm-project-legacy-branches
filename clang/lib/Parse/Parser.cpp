@@ -64,6 +64,9 @@ Parser::Parser(Preprocessor &pp, Sema &actions)
   WeakHandler.reset(new PragmaWeakHandler(actions));
   PP.AddPragmaHandler(WeakHandler.get());
 
+  RedefineExtnameHandler.reset(new PragmaRedefineExtnameHandler(actions));
+  PP.AddPragmaHandler(RedefineExtnameHandler.get());
+
   FPContractHandler.reset(new PragmaFPContractHandler(actions, *this));
   PP.AddPragmaHandler("STDC", FPContractHandler.get());
 
@@ -382,6 +385,8 @@ Parser::~Parser() {
   UnusedHandler.reset();
   PP.RemovePragmaHandler(WeakHandler.get());
   WeakHandler.reset();
+  PP.RemovePragmaHandler(RedefineExtnameHandler.get());
+  RedefineExtnameHandler.reset();
 
   if (getLang().OpenCL) {
     PP.RemovePragmaHandler("OPENCL", OpenCLExtensionHandler.get());
@@ -821,7 +826,8 @@ Parser::ParseDeclarationOrFunctionDefinition(ParsedAttributes &attrs,
 ///         decl-specifier-seq[opt] declarator function-try-block
 ///
 Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
-                                      const ParsedTemplateInfo &TemplateInfo) {
+                                      const ParsedTemplateInfo &TemplateInfo,
+                                      LateParsedAttrList *LateParsedAttrs) {
   // Poison the SEH identifiers so they are flagged as illegal in function bodies
   PoisonSEHIdentifiersRAIIObject PoisonSEHIdentifiers(*this, true);
   const DeclaratorChunk::FunctionTypeInfo &FTI = D.getFunctionTypeInfo();
@@ -844,7 +850,6 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   if (FTI.isKNRPrototype())
     ParseKNRParamDeclarations(D);
 
-
   // We should have either an opening brace or, in a C++ constructor,
   // we may have a colon.
   if (Tok.isNot(tok::l_brace) && 
@@ -859,6 +864,19 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     // If we didn't find the '{', bail out.
     if (Tok.isNot(tok::l_brace))
       return 0;
+  }
+
+  // Check to make sure that any normal attributes are allowed to be on
+  // a definition.  Late parsed attributes are checked at the end.
+  if (Tok.isNot(tok::equal)) {
+    AttributeList *DtorAttrs = D.getAttributes();
+    while (DtorAttrs) {
+      if (!IsThreadSafetyAttribute(DtorAttrs->getName()->getName())) {
+        Diag(DtorAttrs->getLoc(), diag::warn_attribute_on_function_definition)
+          << DtorAttrs->getName()->getName();
+      }
+      DtorAttrs = DtorAttrs->getNext();
+    }
   }
 
   // In delayed template parsing mode, for function template we consume the
@@ -973,6 +991,10 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     }
   } else
     Actions.ActOnDefaultCtorInitializers(Res);
+
+  // Late attributes are parsed in the same scope as the function body.
+  if (LateParsedAttrs)
+    ParseLexedAttributeList(*LateParsedAttrs, Res, false, true);
 
   return ParseFunctionStatementBody(Res, BodyScope);
 }

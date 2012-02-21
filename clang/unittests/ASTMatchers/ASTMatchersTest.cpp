@@ -1221,8 +1221,8 @@ TEST(Matcher, NewExpression) {
 }
 
 TEST(Matcher, NewExpressionArgument) {
-  StatementMatcher New = Expression(NewExpression(
-      HasConstructorArgument(
+  StatementMatcher New = Expression(ConstructorCall(
+      HasArgument(
           0, DeclarationReference(To(Variable(HasName("y")))))));
 
   EXPECT_TRUE(
@@ -1235,8 +1235,8 @@ TEST(Matcher, NewExpressionArgument) {
       NotMatches("class X { public: X(int); }; void x() { int z; new X(z); }",
                  New));
 
-  StatementMatcher WrongIndex = Expression(NewExpression(
-      HasConstructorArgument(
+  StatementMatcher WrongIndex = Expression(ConstructorCall(
+      HasArgument(
           42, DeclarationReference(To(Variable(HasName("y")))))));
   EXPECT_TRUE(
       NotMatches("class X { public: X(int); }; void x() { int y; new X(y); }",
@@ -1244,8 +1244,7 @@ TEST(Matcher, NewExpressionArgument) {
 }
 
 TEST(Matcher, NewExpressionArgumentCount) {
-  StatementMatcher New = Expression(NewExpression(
-      ConstructorArgumentCountIs(1)));
+  StatementMatcher New = ConstructorCall(ArgumentCountIs(1));
 
   EXPECT_TRUE(
       Matches("class X { public: X(int); }; void x() { new X(0); }", New));

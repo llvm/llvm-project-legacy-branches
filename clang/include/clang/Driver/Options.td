@@ -301,7 +301,6 @@ def fdiagnostics_fixit_info : Flag<"-fdiagnostics-fixit-info">, Group<f_clang_Gr
 def fdiagnostics_print_source_range_info : Flag<"-fdiagnostics-print-source-range-info">, Group<f_clang_Group>;
 def fdiagnostics_parseable_fixits : Flag<"-fdiagnostics-parseable-fixits">, Group<f_clang_Group>;
 def fdiagnostics_show_option : Flag<"-fdiagnostics-show-option">, Group<f_Group>;
-def fdiagnostics_show_name : Flag<"-fdiagnostics-show-name">, Group<f_Group>;
 def fdiagnostics_show_note_include_stack : Flag<"-fdiagnostics-show-note-include-stack">, Group<f_Group>;
 def fdiagnostics_format_EQ : Joined<"-fdiagnostics-format=">, Group<f_clang_Group>;
 def fdiagnostics_show_category_EQ : Joined<"-fdiagnostics-show-category=">, Group<f_clang_Group>;
@@ -402,7 +401,6 @@ def fno_constant_cfstrings : Flag<"-fno-constant-cfstrings">, Group<f_Group>;
 def fno_cxx_exceptions: Flag<"-fno-cxx-exceptions">, Group<f_Group>;
 def fno_cxx_modules : Flag <"-fno-cxx-modules">, Group<f_Group>, Flags<[NoForward]>;
 def fno_diagnostics_fixit_info : Flag<"-fno-diagnostics-fixit-info">, Group<f_Group>;
-def fno_diagnostics_show_name : Flag<"-fno-diagnostics-show-name">, Group<f_Group>;
 def fno_diagnostics_show_option : Flag<"-fno-diagnostics-show-option">, Group<f_Group>;
 def fno_diagnostics_show_note_include_stack : Flag<"-fno-diagnostics-show-note-include-stack">, Group<f_Group>;
 def fno_dollars_in_identifiers : Flag<"-fno-dollars-in-identifiers">, Group<f_Group>;
@@ -758,6 +756,8 @@ def sub__umbrella : JoinedOrSeparate<"-sub_umbrella">;
 def s : Flag<"-s">;
 def target : Separate<"-target">, Flags<[DriverOption]>,
   HelpText<"Generate code for the given target">;
+def gcc_toolchain : Separate<"-gcc-toolchain">, Flags<[DriverOption]>,
+  HelpText<"Use the gcc toolchain at the given directory">;
 // We should deprecate the use of -ccc-host-triple, and then remove.
 def ccc_host_triple : Separate<"-ccc-host-triple">, Alias<target>;
 def time : Flag<"-time">,

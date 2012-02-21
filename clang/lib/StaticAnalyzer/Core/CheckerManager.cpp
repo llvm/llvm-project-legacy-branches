@@ -190,8 +190,10 @@ namespace {
                     NodeBuilder &Bldr, ExplodedNode *Pred) {
       ProgramPoint::Kind K =  IsPreVisit ? ProgramPoint::PreStmtKind :
                                            ProgramPoint::PostStmtKind;
-      const ProgramPoint &L = ProgramPoint::getProgramPoint(Msg.getOriginExpr(),
-                                K, Pred->getLocationContext(), checkFn.Checker);
+      const ProgramPoint &L =
+        ProgramPoint::getProgramPoint(Msg.getMessageExpr(),
+                                      K, Pred->getLocationContext(),
+                                      checkFn.Checker);
       CheckerContext C(Bldr, Eng, Pred, L);
 
       checkFn(Msg, C);
@@ -413,14 +415,15 @@ ProgramStateRef
 CheckerManager::runCheckersForRegionChanges(ProgramStateRef state,
                             const StoreManager::InvalidatedSymbols *invalidated,
                                     ArrayRef<const MemRegion *> ExplicitRegions,
-                                          ArrayRef<const MemRegion *> Regions) {
+                                          ArrayRef<const MemRegion *> Regions,
+                                          const CallOrObjCMessage *Call) {
   for (unsigned i = 0, e = RegionChangesCheckers.size(); i != e; ++i) {
     // If any checker declares the state infeasible (or if it starts that way),
     // bail out.
     if (!state)
       return NULL;
     state = RegionChangesCheckers[i].CheckFn(state, invalidated, 
-                                             ExplicitRegions, Regions);
+                                             ExplicitRegions, Regions, Call);
   }
   return state;
 }

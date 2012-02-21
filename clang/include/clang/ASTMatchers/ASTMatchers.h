@@ -923,17 +923,6 @@ AST_POLYMORPHIC_MATCHER_P(ArgumentCountIs, unsigned, N) {
   return Node.getNumArgs() == N;
 }
 
-/// \brief Checks that a new expression has a specific number of constructor
-/// arguments (including absent default arguments).
-///
-/// Given
-///   new X(1, 2);
-/// NewExpression(ConstructorArgumentCountIs(2))
-///   matches 'new X(1, 2)'.
-AST_MATCHER_P(clang::CXXNewExpr, ConstructorArgumentCountIs, unsigned, N) {
-  return Node.getNumConstructorArgs() == N;
-}
-
 /// \brief Matches the n'th argument of a call expression or a constructor
 /// call expression.
 ///
@@ -949,24 +938,6 @@ AST_POLYMORPHIC_MATCHER_P2(
   return (N < Node.getNumArgs() &&
           InnerMatcher.Matches(
               *Node.getArg(N)->IgnoreParenImpCasts(), Finder, Builder));
-}
-
-/// \brief Matches the n'th constructor argument of new expression.
-///
-/// Given
-///   int x;
-///   new X(1, y);
-/// NewExpression(HasConstructorArgument(1, DeclarationReference()))
-///   matches 'new X(1, y)',
-/// with DeclarationReference()
-///   matching 'y'.
-AST_MATCHER_P2(
-    clang::CXXNewExpr, HasConstructorArgument, unsigned, N,
-    internal::Matcher<clang::Expr>, InnerMatcher) {
-  return (N < Node.getNumConstructorArgs() &&
-          InnerMatcher.Matches(
-              *Node.getConstructorArg(N)->IgnoreParenImpCasts(),
-              Finder, Builder));
 }
 
 /// \brief Matches a constructor initializer.
