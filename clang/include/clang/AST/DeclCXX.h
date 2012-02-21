@@ -560,20 +560,41 @@ class CXXRecordDecl : public RecordDecl {
   struct LambdaDefinitionData : public DefinitionData {
     typedef LambdaExpr::Capture Capture;
     
-    LambdaDefinitionData(CXXRecordDecl *D) 
-      : DefinitionData(D), NumCaptures(0), NumExplicitCaptures(0), Captures(0) { 
+    LambdaDefinitionData(CXXRecordDecl *D, bool Dependent) 
+      : DefinitionData(D), Dependent(Dependent), NumCaptures(0), 
+        NumExplicitCaptures(0), ManglingNumber(0), ContextDecl(0), Captures(0) 
+    {
       IsLambda = true;
     }
 
+    /// \brief Whether this lambda is known to be dependent, even if its
+    /// context isn't dependent.
+    /// 
+    /// A lambda with a non-dependent context can be dependent if it occurs
+    /// within the default argument of a function template, because the
+    /// lambda will have been created with the enclosing context as its
+    /// declaration context, rather than function. This is an unfortunate
+    /// artifact of having to parse the default arguments before 
+    unsigned Dependent : 1;
+    
     /// \brief The number of captures in this lambda.
     unsigned NumCaptures : 16;
 
     /// \brief The number of explicit captures in this lambda.
     unsigned NumExplicitCaptures : 15;
 
-    /// \brief The "extra" data associated with the lambda, including
-    /// captures, capture initializers, the body of the lambda, and the
-    /// array-index variables for array captures.
+    /// \brief The number used to indicate this lambda expression for name 
+    /// mangling in the Itanium C++ ABI.
+    unsigned ManglingNumber;
+    
+    /// \brief The declaration that provides context for this lambda, if the
+    /// actual DeclContext does not suffice. This is used for lambdas that
+    /// occur within default arguments of function parameters within the class
+    /// or within a data member initializer.
+    Decl *ContextDecl;
+    
+    /// \brief The list of captures, both explicit and implicit, for this 
+    /// lambda.
     Capture *Captures;    
   };
 
@@ -678,7 +699,7 @@ public:
                                IdentifierInfo *Id, CXXRecordDecl* PrevDecl=0,
                                bool DelayTypeCreation = false);
   static CXXRecordDecl *CreateLambda(const ASTContext &C, DeclContext *DC,
-                                     SourceLocation Loc);
+                                     SourceLocation Loc, bool DependentLambda);
   static CXXRecordDecl *CreateDeserialized(const ASTContext &C, unsigned ID);
 
   bool isDynamicClass() const {
@@ -1442,6 +1463,46 @@ public:
   /// actually abstract.
   bool mayBeAbstract() const;
 
+  /// \brief If this is the closure type of a lambda expression, retrieve the
+  /// number to be used for name mangling in the Itanium C++ ABI.
+  ///
+  /// Zero indicates that this closure type has internal linkage, so the 
+  /// mangling number does not matter, while a non-zero value indicates which
+  /// lambda expression this is in this particular context.
+  unsigned getLambdaManglingNumber() const {
+    assert(isLambda() && "Not a lambda closure type!");
+    return getLambdaData().ManglingNumber;
+  }
+  
+  /// \brief Retrieve the declaration that provides additional context for a 
+  /// lambda, when the normal declaration context is not specific enough.
+  ///
+  /// Certain contexts (default arguments of in-class function parameters and 
+  /// the initializers of data members) have separate name mangling rules for
+  /// lambdas within the Itanium C++ ABI. For these cases, this routine provides
+  /// the declaration in which the lambda occurs, e.g., the function parameter 
+  /// or the non-static data member. Otherwise, it returns NULL to imply that
+  /// the declaration context suffices.
+  Decl *getLambdaContextDecl() const {
+    assert(isLambda() && "Not a lambda closure type!");
+    return getLambdaData().ContextDecl;    
+  }
+  
+  /// \brief Determine whether this lambda expression was known to be dependent
+  /// at the time it was created, even if its context does not appear to be
+  /// dependent.
+  ///
+  /// This flag is a workaround for an issue with parsing, where default
+  /// arguments are parsed before their enclosing function declarations have
+  /// been created. This means that any lambda expressions within those
+  /// default arguments will have as their DeclContext the context enclosing
+  /// the function declaration, which may be non-dependent even when the
+  /// function declaration itself is dependent. This flag indicates when we
+  /// know that the lambda is dependent despite that.
+  bool isDependentLambda() const {
+    return isLambda() && getLambdaData().Dependent;
+  }
+  
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
     return K >= firstCXXRecord && K <= lastCXXRecord;
