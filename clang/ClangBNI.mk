@@ -15,20 +15,19 @@
 #   Clang_Driver_Mode := {Production, Development}
 #     Enable/disable the "production" driver mode.
 #
-#   Clang_Enable_CXX := {0, 1}
-#     When in production driver mode, enable C++ support.
-#
 #   Clang_Extra_Options := ...
 #     Additional options to pass to make.
 #
 #   Clang_Optimize_Option := ...
 #     The optimization flags to use.
+#
+#   Clang_Linker_Options := ...
+#     The linker flags to use.
 
 # This makefile currently supports the following build targets:
 #
 #   install-clang	 - Build the Clang compiler.
 #   install-cross	 - Build the Clang compiler, for ARM.
-#   install-libclang	 - Build the libclang dylib.
 #   install-clang-links	 - Install links from a platforms subdirectory to the
 #                          root clang.
 #
@@ -41,8 +40,10 @@
 ##
 # Variable defaults.
 
-# Install to /Developer by default.
-Default_Install_Root := /Developer
+# Install to $DT_TOOLCHAIN_DIR if it is set, otherwise $DEVELOPER_DIR.
+DEVELOPER_DIR ?= /Developer
+DT_TOOLCHAIN_DIR ?= $(DEVELOPER_DIR)
+Default_Install_Root := $(DT_TOOLCHAIN_DIR)
 # Don't install root links or license.
 Post_Install_RootLinks := 0
 Post_Install_OpenSourceLicense := 0
@@ -69,19 +70,6 @@ Extra_Make_Variables += CLANG_NO_RUNTIME=1
 # Never bootstrap.
 Clang_Enable_Bootstrap := 0
 
-else ifeq ($(MAKECMDGOALS),install-libclang)
-
-# Install to 'clang-ide' subdirectory.
-Install_Path_Suffix := usr/clang-ide
-# Only include x86 backend.
-LLVM_Backends := x86
-# Don't build compiler-rt.
-Extra_Make_Variables += CLANG_NO_RUNTIME=1
-# Use install-clang-c install target.
-LLVM_Install_Target := install-clang-c
-# Never bootstrap.
-Clang_Enable_Bootstrap := 0
-
 else ifeq ($(MAKECMDGOALS),install-clang-links)
 
 # Dummy project which only installs compiler links from the INSTALL_LOCATION to
@@ -93,8 +81,11 @@ else
 
 # Install root links and license when no install location is set.
 ifeq ($(INSTALL_LOCATION),)
-Post_Install_RootLinks := 1
 Post_Install_OpenSourceLicense := 1
+endif
+
+ifneq ($(Clang_Extra_Backends),)
+LLVM_Backends := $(LLVM_Backends),$(Clang_Extra_Backends)
 endif
 
 endif
@@ -102,25 +93,6 @@ endif
 ##
 # B&I Build Logic
 ##
-
-# Require Train_Name to be set.
-ifeq ($(Train_Name),)
-$(error "invalid setting for train name: '$(Train_Name)'")
-endif
-
-# Require Source_To_Draw_From to be set to a known value.
-ifeq ($(Source_To_Draw_From),trunk)
-Draw_LLVM_From_Trunk := 1
-Draw_Clang_From_Trunk := 1
-else ifeq ($(Source_To_Draw_From),branch)
-Draw_LLVM_From_Trunk := 0
-Draw_Clang_From_Trunk := 0
-else ifeq ($(Source_To_Draw_From),branch-llvm-only)
-Draw_LLVM_From_Trunk := 0
-Draw_Clang_From_Trunk := 1
-else
-$(error "invalid setting for source to draw from: '$(Source_To_Draw_From)'")
-endif
 
 # Require Clang_Version to be set.
 ifeq ($(Clang_Version),)
@@ -132,14 +104,31 @@ ifeq ($(RC_ProjectSourceVersion),)
 ifeq ($(MAKECMDGOALS),installsrc)
 else ifeq ($(MAKECMDGOALS),clean)
 else
-RC_ProjectSourceVersion := 99999.99
-$(warning "setting dummy RC_ProjectSourceVersion: '$(RC_ProjectSourceVersion)'")
+$(error "B&I build variable RC_ProjectSourceVersion must be set")
 endif
+endif
+
+# Set the Clang_Tag based on RC_ProjectNameAndSourceVersion.
+ifeq ($(RC_ProjectNameAndSourceVersion),)
+RC_ProjectNameAndSourceVersion := "clang-$(RC_ProjectSourceVersion)"
+endif
+Clang_Tag := "tags/Apple/$(RC_ProjectNameAndSourceVersion)"
+
+# Select optimized mode.
+ifeq ($(Clang_Use_Optimized), 1)
+Optimized_Configure_Flag :=  --enable-optimized
+Build_Mode := Release
+else ifeq ($(Clang_Use_Optimized), 0)
+Optimized_Configure_Flag :=  --disable-optimized
+Build_Mode := Debug
+else
+$(error "invalid setting for clang optimized: '$(Clang_Use_Optimized)'")
 endif
 
 # Select assertions mode.
 ifeq ($(Clang_Use_Assertions), 1)
 Assertions_Configure_Flag :=  --enable-assertions
+Build_Mode := $(BuildMode)+Asserts
 else ifeq ($(Clang_Use_Assertions), 0)
 Assertions_Configure_Flag :=  --disable-assertions
 else
@@ -160,17 +149,9 @@ Clang_Make_Variables := $(Extra_Make_Variables) KEEP_SYMBOLS=1 \
                         CLANG_VENDOR=Apple \
                         CLANG_VENDOR_UTI=com.apple.compilers.llvm.clang
 Clang_Make_Variables += CLANG_VERSION=$(Clang_Version)
-Clang_Make_Variables += CLANG_ORDER_FILE=$(SRCROOT)/clang.order
+Clang_Make_Variables += CLANG_REPOSITORY_STRING=$(Clang_Tag)
 ifeq ($(Clang_Driver_Mode), Production)
 Clang_Make_Variables += CLANG_IS_PRODUCTION=1
-
-ifeq ($(Clang_Enable_CXX), 1)
-Clang_Make_Variables += CLANGXX_IS_PRODUCTION=1
-else ifeq ($(Clang_Enable_CXX), 0)
-# ... this is the default ...
-else
-$(error "invalid setting for clang enable C++: '$(Clang_Enable_CXX)'")
-endif
 
 # Set LLVM_VERSION_INFO make variable. We do this here because setting it in the
 # CC options for configure ends up breaking tests that can't be bothered to
@@ -227,39 +208,30 @@ Extra_Options := $(Clang_Extra_Options)
 # Set configure flags.
 Common_Configure_Flags = \
 		  --enable-targets=$(LLVM_Backends) \
-		  --enable-optimized \
 		  --disable-timestamps \
 		  $(Assertions_Configure_Flag) \
+		  $(Optimized_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
+                  --with-extra-ld-option="$(Clang_Linker_Options)" \
 		  --without-llvmgcc --without-llvmgxx \
 		  --disable-bindings \
-		  --disable-doxygen
+		  --disable-doxygen \
+		  --with-bug-report-url="http://developer.apple.com/bugreporter/"
 Stage1_Configure_Flags = $(Common_Configure_Flags) \
                   --with-extra-options="$(Extra_Options)"
 Configure_Flags = $(Common_Configure_Flags) \
+                  --with-internal-prefix="$(Install_Prefix)/local" \
                   --with-extra-options="$(Extra_Options) $(Clang_Final_Extra_Options)"
 
-# Determine the /Developer/usr/bin/clang major build version number
-SysClangMajorBuildVersion := \
-  $(shell /Developer/usr/bin/clang -v 2>&1 | \
-	head -1 | \
-	sed -e "s@.*\(clang-[0-9]*\).*@\1@" \
-	    -e "s@\$$@-@" | \
-	cut -d- -f2 | \
-	cut -d. -f1)
-ifneq (x$(SysClangMajorBuildVersion),x)
-ifeq ($(shell test $(SysClangMajorBuildVersion) -ge 115 && echo OK),OK)
-CC := /Developer/usr/bin/clang
-CXX := /Developer/usr/bin/clang++
-endif
-endif
+CC := $(shell xcrun -find clang)
+CXX := $(shell xcrun -find clang++)
 
 # Set stage1 compiler.
 Stage1_CC := $(CC)
 Stage1_CXX := $(CXX)
 
 # Set up any additional Clang install targets.
-Extra_Clang_Install_Targets := install-lto-h
+Extra_Clang_Install_Targets := install-lto-h install-clang-diagnostic
 
 # Install /usr/... symlinks?
 ifeq ($(Post_Install_RootLinks),1)
@@ -301,138 +273,6 @@ Build_Target_Stage1 = $(Clang_Make_Variables) clang-only
 
 all: install
 
-###
-# Utility targets for managing the integration branch.
-
-# Determine if we are running an SVN utility target.
-SVN_UTILITY_TARGETS := \
-	test-svn update-sources update-sources-from-tag \
-	rebranch-llvm-from-tag rebranch-clang-from-tag \
-	rebranch-clang-from-revision \
-	tag-clang retag-clang
-ifneq ($(strip $(foreach i,$(SVN_UTILITY_TARGETS), $(filter $(i),$(MAKECMDGOALS)))),)
-SVN_UTILITY_MODE := 1
-$(warning NOTE: Running SVN utility target. Be careful!)
-$(warning )
-endif
-
-ifeq ($(SVN_UTILITY_MODE),1)
-SVN_BASE := $(shell svn info | sed -n 's/^URL: //; s,/llvm-project/.*$$,/llvm-project,p')
-SVN_CLANG := $(shell svn info | sed -n 's/^URL: //p')
-SVN_TAGS := $(SVN_BASE)/cfe/tags/Apple
-
-$(warning Using SVN base     : $(SVN_BASE))
-$(warning Using Clang SVN    : $(SVN_CLANG))
-$(warning Using SVN tag dir  : $(SVN_TAGS))
-$(warning )
-
-# Validate that we match the expected branch name, as a safety/sanity check.
-ifneq ($(SVN_CLANG),$(SVN_BASE)/cfe/branches/Apple/$(Train_Name)-IB)
-$(error Unable to recognize SVN layout, conservatively refusing to do anything.)
-endif
-
-# Define the upstream paths.
-LLVM_Branch_Path := $(SVN_BASE)/llvm/branches/Apple/$(Train_Name)
-Clang_Branch_Path := $(SVN_BASE)/cfe/branches/Apple/$(Train_Name)
-
-ifeq ($(Draw_LLVM_From_Trunk),1)
-LLVM_Upstream := $(SVN_BASE)/llvm/trunk
-else
-LLVM_Upstream := $(LLVM_Branch_Path)
-endif
-
-ifeq ($(Draw_Clang_From_Trunk),1)
-Clang_Upstream := $(SVN_BASE)/cfe/trunk
-else
-Clang_Upstream := $(Clang_Branch_Path)
-endif
-
-CompilerRT_Upstream := $(SVN_BASE)/compiler-rt/trunk
-
-# Print information on the upstream sources.
-$(warning LLVM Upstream      : $(LLVM_Upstream))
-$(warning Clang Upstream     : $(Clang_Upstream))
-$(warning CompilerRT Upstream: $(CompilerRT_Upstream))
-$(warning )
-
-# Only actually do anything when EXECUTE=1
-ifeq ($(EXECUTE), 1)
-SVN_COMMAND := svn
-else
-$(warning Not in commit mode, only echoing commands (use EXECUTE=1 to execute).)
-$(warning )
-SVN_COMMAND := @echo svn
-endif
-
-else
-SVN_COMMAND := @echo "NOT IN SVN COMMAND MODE!!!"
-endif
-
-test-svn:
-	@echo "*** TESTING SVN UTILITY MODE ***"
-	$(SVN_COMMAND) info $(SVN_BASE)
-
-update-sources:
-	@if ! [ -n "$(REVISION)" ]; then \
-	  echo Usage: make $@ REVISION=102052; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
-	$(SVN_COMMAND) cp -m 'Update.' $(LLVM_Upstream)@$(REVISION) $(SVN_CLANG)/src
-	$(SVN_COMMAND) cp -m 'Update.' $(Clang_Upstream)@$(REVISION) $(SVN_CLANG)/src/tools/clang
-	$(SVN_COMMAND) cp -m 'Update.' $(CompilerRT_Upstream)@$(REVISION) $(SVN_CLANG)/src/projects/compiler-rt
-	$(SVN_COMMAND) up
-
-update-sources-from-tag:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=122; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Update.' $(SVN_CLANG)/src
-	$(SVN_COMMAND) cp -m 'Update from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src $(SVN_CLANG)/src
-	$(SVN_COMMAND) up
-
-rebranch-llvm-from-tag:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=65; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Remove for branch of LLVM.' $(LLVM_Branch_Path)
-	$(SVN_COMMAND) cp -m 'Rebranch LLVM from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src $(LLVM_Branch_Path)
-	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 1/2)' $(LLVM_Branch_Path)/tools/clang
-	$(SVN_COMMAND) rm -m 'Rebranch LLVM from clang-$(VERSION) (cleanup 2/2)' $(LLVM_Branch_Path)/projects/compiler-rt
-
-rebranch-clang-from-tag:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=65; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
-	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang-$(VERSION).' $(SVN_TAGS)/clang-$(VERSION)/src/tools/clang $(Clang_Branch_Path)
-
-rebranch-clang-from-revision:
-	@if ! [ -n "$(REVISION)" ]; then \
-	  echo Usage: make $@ REVISION=100000; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Remove for branch of Clang.' $(Clang_Branch_Path)
-	$(SVN_COMMAND) cp -m 'Rebranch Clang from clang trunk at r$(REVISION).' $(SVN_BASE)/cfe/trunk@$(REVISION) $(Clang_Branch_Path)
-
-tag-clang:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	$(SVN_COMMAND) cp -m 'Tag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
-
-retag-clang:
-	@if ! [ -n "$(VERSION)" ]; then \
-	  echo Usage: make $@ VERSION=25; \
-	  false; \
-	fi
-	$(SVN_COMMAND) rm -m 'Retag.' $(SVN_TAGS)/clang-$(VERSION)
-	$(SVN_COMMAND) cp -m 'Retag.' $(SVN_CLANG) $(SVN_TAGS)/clang-$(VERSION)
-
 ##
 # Additional Tool Paths
 
@@ -464,8 +304,8 @@ Sources		= $(SRCROOT)/src
 Configure	= $(Sources)/configure
 Install_Flags	= DESTDIR=$(OBJROOT)/install-$$arch ONLY_MAN_DOCS=1
 
-OSV		= $(DSTROOT)/usr/local/OpenSourceVersions
-OSL		= $(DSTROOT)/usr/local/OpenSourceLicenses
+OSV		= $(DSTROOT)/$(Install_Prefix)/local/OpenSourceVersions
+OSL		= $(DSTROOT)/$(Install_Prefix)/local/OpenSourceLicenses
 
 ##
 # Cross-builds need wrapper scripts on the path, so have a local directory
@@ -489,24 +329,41 @@ installsrc:
 	@echo "Installing source..."
 	$(_v) $(MKDIR) "$(SRCROOT)"
 	$(_v) $(PAX) -rw . "$(SRCROOT)"
+	$(_v) if [ ! -z "$(LLVM_SEPARATE_SOURCES)" ]; then \
+		$(MKDIR) "$(SRCROOT)/src"; \
+		rsync -ar "$(LLVM_SEPARATE_SOURCES)/" "$(SRCROOT)/src/"; \
+	fi
+	$(_v) if [ ! -z "$(CLANG_SEPARATE_SOURCES)" ]; then \
+		$(MKDIR) "$(SRCROOT)/src/tools/clang"; \
+		rsync -ar "$(CLANG_SEPARATE_SOURCES)/" "$(SRCROOT)/src/tools/clang/"; \
+	fi
+	$(_v) if [ ! -z "$(COMPILERRT_SEPARATE_SOURCES)" ]; then \
+		$(MKDIR) "$(SRCROOT)/src/projects/compiler-rt"; \
+		rsync -ar "$(COMPILERRT_SEPARATE_SOURCES)/" "$(SRCROOT)/src/projects/compiler-rt/"; \
+	fi
+	$(_v) if [ ! -z "$(LIBCXX_SEPARATE_SOURCES)" ]; then \
+		$(MKDIR) "$(SRCROOT)/src/projects/libcxx"; \
+		rsync -ar "$(LIBCXX_SEPARATE_SOURCES)/" "$(SRCROOT)/src/projects/libcxx/"; \
+	fi
+	$(_v) $(PAX) -rw . "$(SRCROOT)"
 	$(_v) $(FIND) "$(SRCROOT)" $(Find_Cruft) -depth -exec $(RMDIR) "{}" \;
 	$(_v) rm -rf "$(SRCROOT)"/src/test/*/
 	$(_v) rm -rf "$(SRCROOT)"/src/tools/clang/test/*/
+	$(_v) rm -rf "$(SRCROOT)"/src/projects/libcxx/test/*/
 
 installhdrs:
 
 ##
 # Standard Clang Build Support
 
-.PHONY: install-clang install-libclang
+.PHONY: install-clang
 .PHONY: install-clang_final build-clang build-clang_final build-clang_stage1
+.PHONY: build-clang_final_ordered
 .PHONY: configure-clang_final configure-clang_singlestage configure-clang_stage2
 .PHONY: configure-clang_stage1
 .PHONY: install-clang-rootlinks install-clang-opensourcelicense
 
 install-clang: install-clang_final $(Extra_Clang_Install_Targets)
-
-install-libclang: install-clang_final $(Extra_Clang_Install_Targets)
 
 install-clang_final: build-clang
 	$(_v) for arch in $(RC_ARCHS) ; do \
@@ -522,6 +379,13 @@ install-clang_final: build-clang
 		rm -rf $(OBJROOT)/install-$$arch$(Install_Prefix)/lib/clang/*/lib; \
 	done
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(OBJROOT)/install-$$arch ; done` $(DSTROOT)
+	$(_v) ln -sf clang $(DSTROOT)/$(Install_Prefix)/bin/cc
+	$(_v) ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/cc.1
+	$(_v) if [ -f $(DSTROOT)/$(Install_Prefix)/bin/clang++ ]; then \
+	  ln -sf clang++ $(DSTROOT)/$(Install_Prefix)/bin/c++; \
+	  ln -sf clang++.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/c++.1; \
+	  ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang++.1;\
+	fi
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(DSTROOT) -perm -0111 -name '*.a' | $(XARGS) chmod a-x
@@ -531,12 +395,40 @@ install-clang_final: build-clang
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 
-build-clang: build-clang_final
+build-clang: build-clang_final_ordered
 
 build-clang_final: configure-clang_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Final) for $$arch..." && \
 		time $(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) || exit 1; \
+	done
+
+# This is a special target which uses the build compiler to generate order file
+# information, and then rebuilds the compiler with the constructed order file.
+build-clang_final_ordered: build-clang_final
+	set -ex && \
+	$(_v) for arch in $(RC_ARCHS) ; do \
+		echo "Building (Final) (Ordered) for $$arch..." && \
+	        echo "Generating Order File Data for $$arch " && \
+	        $(SRCROOT)/order-files/gen-clang-order-data \
+	          --cc "$(OBJROOT)/$$arch/$(Build_Mode)/bin/clang" \
+		  --inputs "$(SRCROOT)/order-files/inputs" \
+		  --temps "$(OBJROOT)/order-data/$$arch/temps" \
+		  --outputs "$(OBJROOT)/order-data/$$arch/data"; \
+	        echo "Generating Order File for $$arch" && \
+	        $(SRCROOT)/order-files/gen-order-file \
+	          --binary "$(OBJROOT)/$$arch/$(Build_Mode)/bin/clang" \
+	          --output "$(OBJROOT)/order-data/$$arch/clang.order" \
+	          --output-unordered-symbols \
+		    "$(OBJROOT)/order-data/$$arch/unordered_symbols.txt" \
+	          --method "call_order" \
+		  "$(OBJROOT)/order-data/$$arch/"data*.log && \
+	        echo "Rebuilding With Order File" && \
+		mv "$(OBJROOT)/$$arch/$(Build_Mode)/bin/clang" \
+		  "$(OBJROOT)/$$arch/$(Build_Mode)/bin/clang.preorder" && \
+		$(MAKE) -j$(SYSCTL) \
+		  -C "$(OBJROOT)/$$arch/tools/clang/tools/driver" \
+		  "CLANG_ORDER_FILE=$(OBJROOT)/order-data/$$arch/clang.order"; \
 	done
 
 build-clang_stage1: configure-clang_stage1
@@ -584,7 +476,6 @@ install-clang-rootlinks: install-clang_final
 	cp $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang.1 $(DSTROOT)/usr/share/man/man1/
 	if [ -f $(DSTROOT)/$(Install_Prefix)/bin/clang++ ]; then \
 	  ln -sf ../../$(Install_Prefix)/bin/clang++ $(DSTROOT)/usr/bin/clang++; \
-	  ln -sf clang.1 $(DSTROOT)/$(Install_Prefix)/share/man/man1/clang++.1; \
 	  ln -sf clang.1 $(DSTROOT)/usr/share/man/man1/clang++.1; \
 	fi
 	if [ -f $(DSTROOT)/$(Install_Prefix)/lib/libLTO.dylib ]; then \
@@ -602,13 +493,15 @@ install-clang-opensourcelicense: install-clang_final
 install-clang-links:
 	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/bin
 	ln -sf ../../../../../usr/bin/clang $(DSTROOT)/$(Install_Prefix)/bin/clang
-ifeq ($(Clang_Enable_CXX), 1)
 	ln -sf ../../../../../usr/bin/clang++ $(DSTROOT)/$(Install_Prefix)/bin/clang++
-endif
 
 install-lto-h:
 	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
 	$(INSTALL_FILE) $(Sources)/include/llvm-c/lto.h $(DSTROOT)/$(Install_Prefix)/local/include/llvm-c
+
+install-clang-diagnostic:
+	$(MKDIR) -p $(DSTROOT)/$(Install_Prefix)/local/bin
+	$(INSTALL) $(Sources)/utils/clang-parse-diagnostics-file $(DSTROOT)/$(Install_Prefix)/local/bin/
 
 ##
 # Cross Compilation Build Support
@@ -631,6 +524,7 @@ install-cross: build-cross
 	./merge-lipo `for arch in $(RC_ARCHS) ; do echo $(OBJROOT)/install-$$arch ; done` $(DSTROOT)
 	$(_v) $(FIND) $(DSTROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
 	$(_v) $(FIND) $(SYMROOT) $(Find_Cruft) | $(XARGS) $(RMDIR)
+	$(_v) $(FIND) $(DSTROOT) -perm -0111 -name '*.a' | $(XARGS) chmod a-x
 	$(_v) $(FIND) $(DSTROOT) -perm -0111 -type f -print | $(XARGS) -n 1 -P $(SYSCTL) dsymutil
 	$(_v) cd $(DSTROOT) && find . -path \*.dSYM/\* -print | cpio -pdml $(SYMROOT)
 	$(_v) find $(DSTROOT) -perm -0111 -type f -print | xargs -P $(SYSCTL) strip -S
@@ -640,7 +534,7 @@ install-cross: build-cross
 build-cross: configure-cross
 	$(_v) for arch in $(RC_ARCHS) ; do \
 		echo "Building (Cross) for $$arch..." && \
-		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" OPTIONAL_DIRS= || exit 1; \
+		$(MAKE) -j$(SYSCTL) -C $(OBJROOT)/$$arch $(Build_Target) CFLAGS="-arch $$arch $(CFLAGS)" CXXFLAGS="-arch $$arch $(CXXFLAGS)" || exit 1; \
 	done
 
 configure-cross: setup-tools-cross
@@ -656,8 +550,7 @@ configure-cross: setup-tools-cross
 	done
 
 # A cross-compiler configure will expect to find tools under names like
-# arm-apple-darwin10-gcc, so make sure we have them. Note that -marm
-# is added to the gcc/g++ command line due to rdar://7353031
+# arm-apple-darwin10-gcc, so make sure we have them.
 setup-tools-cross:
 	$(_v) $(MKDIR) $(OBJROOT)/bin
 	$(_v) for prog in ar nm ranlib strip lipo ld as ; do \
@@ -667,11 +560,12 @@ setup-tools-cross:
 	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1; \
 	done
 	$(_v) for prog in gcc g++ ; do \
+	  ccprog=`echo $$prog | sed -e 's/gcc/cc/' -e 's/g/c/'` && \
 	  echo '#!/bin/sh' > $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo "ARCH='-arch armv6'" >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
+	  echo "ARCH='-arch armv7'" >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
 	  echo 'for i in $$@ ; do if [ "$$i" == "-arch" ] ; then ARCH= ; fi ; done' >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
-	  echo 'exec '`xcrun -find $$prog` \
-	    ' $$ARCH -isysroot '$(SDKROOT)' "$$@" -marm' \
+	  echo 'exec '`xcrun -sdk $(SDKROOT) -find $$ccprog` \
+	    ' $$ARCH -isysroot '$(SDKROOT)' "$$@"' \
 	    >> $(OBJROOT)/bin/arm-apple-darwin10-$$prog && \
 	  chmod a+x $(OBJROOT)/bin/arm-apple-darwin10-$$prog || exit 1 ; \
 	done
