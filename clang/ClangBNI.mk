@@ -226,6 +226,12 @@ Configure_Flags = $(Common_Configure_Flags) \
 CC := $(shell xcrun -find clang)
 CXX := $(shell xcrun -find clang++)
 
+# Use the /Developer versions if we didn't find a Clang compiler.
+ifeq ($(CC),)
+CC := /Developer/usr/bin/clang
+CXX := /Developer/usr/bin/clang++
+endif
+
 # Set stage1 compiler.
 Stage1_CC := $(CC)
 Stage1_CXX := $(CXX)
