@@ -1,6 +1,0 @@
-# <rdar://problem/9030668> code building with -pg doesn't link on Darwin
-126152
-
-# <rdar://problem/9027663> [regression] compiler crash in llvm::IRBuilder<false, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<false> >::CreateLoad(llvm::Value*, char const*)
-126189
-126193
