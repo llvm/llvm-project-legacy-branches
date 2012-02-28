@@ -401,7 +401,7 @@ install-clang_final: build-clang
 	$(_v) find $(DSTROOT) -name \*.dSYM -print | xargs rm -r
 	$(_v)- $(CHOWN) -R root:wheel $(DSTROOT) $(SYMROOT)
 
-build-clang: build-clang_final_ordered
+build-clang: build-clang_final
 
 build-clang_final: configure-clang_final
 	$(_v) for arch in $(RC_ARCHS) ; do \
