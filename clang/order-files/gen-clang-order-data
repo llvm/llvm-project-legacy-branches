@@ -27,7 +27,8 @@ def get_test_cases(opts):
         ('-c', 'trivial-input.cpp', '-O0', '-g'))
     yield (
         'trivial-c-armv7', None, False,
-        ('-c', 'trivial-input.c', '-O0', '-g', '-arch', 'armv7'))
+        ('-c', 'trivial-input.c', '-O0', '-g', '-arch', 'armv7',
+         '-integrated-as'))
     yield (
         'trivial-c-Os', None, False,
         ('-c', 'trivial-input.c', '-Os'))
@@ -74,11 +75,14 @@ def execute_dtrace_test(args, data_name, opts,
     dtrace_script = "%s { %s }" % (predicate, action)
 
     # Execute the script.
-    dtrace_args = [
-        'sudo', 'dtrace', '-xevaltime=exec', '-xmangled',
+    dtrace_args = []
+    if opts.use_sudo:
+        dtrace_args.append("sudo")
+    dtrace_args.extend((
+        'dtrace', '-xevaltime=exec', '-xmangled',
         '-xbufsize=%dm' % (opts.buffer_size),
         '-q', '-n', dtrace_script, 
-        '-c', ' '.join(args)]
+        '-c', ' '.join(args)))
     commands.note("generating dtrace data for test %r: %r" % (
             data_name, ' '.join('"%s"' % arg
                                 for arg in dtrace_args)))
@@ -142,6 +146,9 @@ def main():
     parser.add_option("", "--use-multishot", dest="use_multishot",
                       help="Record multiple function entry samples",
                       action="store_true", default=False)
+    parser.add_option("", "--no-sudo", dest="use_sudo",
+                      help="Don't automatically use sudo with dtrace",
+                      action="store_false", default=True)
     parser.add_option("", "--use-probefunc", dest="use_ustack",
                       help="Record probefunc instead of ustack(1)",
                       action="store_false", default=True)

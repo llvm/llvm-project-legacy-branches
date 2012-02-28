@@ -417,6 +417,7 @@ build-clang_final_ordered: build-clang_final
 		echo "Building (Final) (Ordered) for $$arch..." && \
 	        echo "Generating Order File Data for $$arch " && \
 	        $(SRCROOT)/order-files/gen-clang-order-data \
+		  --no-sudo \
 	          --cc "$(OBJROOT)/$$arch/$(Build_Mode)/bin/clang" \
 		  --inputs "$(SRCROOT)/order-files/inputs" \
 		  --temps "$(OBJROOT)/order-data/$$arch/temps" \
