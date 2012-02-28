@@ -212,7 +212,7 @@ Common_Configure_Flags = \
 		  $(Assertions_Configure_Flag) \
 		  $(Optimized_Configure_Flag) \
                   --with-optimize-option="$(Clang_Optimize_Option)" \
-                  --with-extra-ld-option="$(Clang_Linker_Options)" \
+                  --with-extra-ld-options="$(Clang_Linker_Options)" \
 		  --without-llvmgcc --without-llvmgxx \
 		  --disable-bindings \
 		  --disable-doxygen \
