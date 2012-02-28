@@ -261,6 +261,10 @@ public:
 
   ComplexPairTy VisitInitListExpr(InitListExpr *E);
 
+  ComplexPairTy VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
+    return EmitLoadOfLValue(E);
+  }
+
   ComplexPairTy VisitVAArgExpr(VAArgExpr *E);
 
   ComplexPairTy VisitAtomicExpr(AtomicExpr *E) {
@@ -413,6 +417,7 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
+  case CK_CopyAndAutoreleaseBlockObject:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_FloatingRealToComplex:

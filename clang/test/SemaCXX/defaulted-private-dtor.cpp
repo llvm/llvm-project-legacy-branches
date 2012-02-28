@@ -12,6 +12,15 @@ void f() {
   BadDtor dd; // expected-error {{private destructor}}
   throw dd; // expected-error {{private destructor}}
 }
+struct V { // expected-note {{here}}
+  V();
+  BadDtor bd;
+};
+V v; // expected-error {{deleted function}}
+struct W : BadDtor { // expected-note {{here}}
+  W();
+};
+W w; // expected-error {{deleted function}}
 struct X : BadDtor { // expected-error {{private destructor}}
   ~X() {}
 };

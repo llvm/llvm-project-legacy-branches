@@ -57,10 +57,10 @@ CXXNewExpr::CXXNewExpr(ASTContext &C, bool globalNew, FunctionDecl *operatorNew,
          ty->isDependentType(), ty->isDependentType(),
          ty->isInstantiationDependentType(),
          ty->containsUnexpandedParameterPack()),
-    GlobalNew(globalNew), UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize),
     SubExprs(0), OperatorNew(operatorNew), OperatorDelete(operatorDelete),
     AllocatedTypeInfo(allocatedTypeInfo), TypeIdParens(typeIdParens),
-    StartLoc(startLoc), DirectInitRange(directInitRange) {
+    StartLoc(startLoc), DirectInitRange(directInitRange),
+    GlobalNew(globalNew), UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize) {
   assert((initializer != 0 || initializationStyle == NoInit) &&
          "Only NoInit can have no initializer.");
   StoredInitializationStyle = initializer ? initializationStyle + 1 : 0;
@@ -199,7 +199,6 @@ SourceRange CXXPseudoDestructorExpr::getSourceRange() const {
   return SourceRange(Base->getLocStart(), End);
 }
 
-
 // UnresolvedLookupExpr
 UnresolvedLookupExpr *
 UnresolvedLookupExpr::Create(ASTContext &C, 
@@ -257,8 +256,8 @@ OverloadExpr::OverloadExpr(StmtClass K, ASTContext &C,
           (QualifierLoc && 
            QualifierLoc.getNestedNameSpecifier()
                                       ->containsUnexpandedParameterPack()))),
-    Results(0), NumResults(End - Begin), NameInfo(NameInfo),
-    QualifierLoc(QualifierLoc),
+    NameInfo(NameInfo), QualifierLoc(QualifierLoc),
+    Results(0), NumResults(End - Begin),
     HasTemplateKWAndArgsInfo(TemplateArgs != 0 || TemplateKWLoc.isValid())
 {
   NumResults = End - Begin;
@@ -1260,6 +1259,53 @@ SubstNonTypeTemplateParmPackExpr(QualType T,
 
 TemplateArgument SubstNonTypeTemplateParmPackExpr::getArgumentPack() const {
   return TemplateArgument(Arguments, NumArguments);
+}
+
+TypeTraitExpr::TypeTraitExpr(QualType T, SourceLocation Loc, TypeTrait Kind,
+                             ArrayRef<TypeSourceInfo *> Args,
+                             SourceLocation RParenLoc,
+                             bool Value)
+  : Expr(TypeTraitExprClass, T, VK_RValue, OK_Ordinary,
+         /*TypeDependent=*/false,
+         /*ValueDependent=*/false,
+         /*InstantiationDependent=*/false,
+         /*ContainsUnexpandedParameterPack=*/false),
+    Loc(Loc), RParenLoc(RParenLoc)
+{
+  TypeTraitExprBits.Kind = Kind;
+  TypeTraitExprBits.Value = Value;
+  TypeTraitExprBits.NumArgs = Args.size();
+
+  TypeSourceInfo **ToArgs = getTypeSourceInfos();
+  
+  for (unsigned I = 0, N = Args.size(); I != N; ++I) {
+    if (Args[I]->getType()->isDependentType())
+      setValueDependent(true);
+    if (Args[I]->getType()->isInstantiationDependentType())
+      setInstantiationDependent(true);
+    if (Args[I]->getType()->containsUnexpandedParameterPack())
+      setContainsUnexpandedParameterPack(true);
+    
+    ToArgs[I] = Args[I];
+  }
+}
+
+TypeTraitExpr *TypeTraitExpr::Create(ASTContext &C, QualType T, 
+                                     SourceLocation Loc, 
+                                     TypeTrait Kind,
+                                     ArrayRef<TypeSourceInfo *> Args,
+                                     SourceLocation RParenLoc,
+                                     bool Value) {
+  unsigned Size = sizeof(TypeTraitExpr) + sizeof(TypeSourceInfo*) * Args.size();
+  void *Mem = C.Allocate(Size);
+  return new (Mem) TypeTraitExpr(T, Loc, Kind, Args, RParenLoc, Value);
+}
+
+TypeTraitExpr *TypeTraitExpr::CreateDeserialized(ASTContext &C,
+                                                 unsigned NumArgs) {
+  unsigned Size = sizeof(TypeTraitExpr) + sizeof(TypeSourceInfo*) * NumArgs;
+  void *Mem = C.Allocate(Size);
+  return new (Mem) TypeTraitExpr(EmptyShell());
 }
 
 void ArrayTypeTraitExpr::anchor() { }

@@ -598,6 +598,7 @@ void ASTStmtWriter::VisitInitListExpr(InitListExpr *E) {
   else
     Writer.AddDeclRef(E->getInitializedFieldInUnion(), Record);
   Record.push_back(E->hadArrayRangeDesignator());
+  Record.push_back(E->initializesStdInitializerList());
   Record.push_back(E->getNumInits());
   if (isArrayFiller) {
     // ArrayFiller may have filled "holes" due to designated initializer.
@@ -1339,6 +1340,16 @@ void ASTStmtWriter::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   Writer.AddTypeSourceInfo(E->getLhsTypeSourceInfo(), Record);
   Writer.AddTypeSourceInfo(E->getRhsTypeSourceInfo(), Record);
   Code = serialization::EXPR_BINARY_TYPE_TRAIT;
+}
+
+void ASTStmtWriter::VisitTypeTraitExpr(TypeTraitExpr *E) {
+  VisitExpr(E);
+  Record.push_back(E->TypeTraitExprBits.NumArgs);
+  Record.push_back(E->TypeTraitExprBits.Kind); // FIXME: Stable encoding
+  Record.push_back(E->TypeTraitExprBits.Value);
+  for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
+    Writer.AddTypeSourceInfo(E->getArg(I), Record);
+  Code = serialization::EXPR_TYPE_TRAIT;
 }
 
 void ASTStmtWriter::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {

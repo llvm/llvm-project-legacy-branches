@@ -94,7 +94,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     ObjCShouldCallSuperDealloc(false),
     ObjCShouldCallSuperFinalize(false),
     TUKind(TUKind),
-    NumSFINAEErrors(0), SuppressAccessChecking(false), 
+    NumSFINAEErrors(0), InFunctionDeclarator(false), SuppressAccessChecking(false), 
     AccessCheckingSFINAE(false), InNonInstantiationSFINAEContext(false),
     NonInstantiationEntries(0), ArgumentPackSubstitutionIndex(-1),
     CurrentInstantiationScope(0), TyposCorrected(0),
@@ -111,7 +111,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
                                        &Context);
 
   ExprEvalContexts.push_back(
-        ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0, false, 0));
+        ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0,
+                                          false, 0, false));
 
   FunctionScopes.push_back(new FunctionScopeInfo(Diags));
 }

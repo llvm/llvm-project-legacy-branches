@@ -292,6 +292,7 @@ def fconstant_string_class_EQ : Joined<"-fconstant-string-class=">, Group<f_Grou
 def fconstexpr_depth_EQ : Joined<"-fconstexpr-depth=">, Group<f_Group>;
 def fconstexpr_backtrace_limit_EQ : Joined<"-fconstexpr-backtrace-limit=">,
                                     Group<f_Group>;
+def fno_crash_diagnostics : Flag<"-fno-crash-diagnostics">, Group<f_clang_Group>, Flags<[NoArgumentUnused]>;
 def fcreate_profile : Flag<"-fcreate-profile">, Group<f_Group>;
 def fcxx_exceptions: Flag<"-fcxx-exceptions">, Group<f_Group>;
 def fcxx_modules : Flag <"-fcxx-modules">, Group<f_Group>, Flags<[NoForward]>;
@@ -544,9 +545,11 @@ def ffunction_sections: Flag <"-ffunction-sections">, Group<f_Group>;
 def fdata_sections : Flag <"-fdata-sections">, Group<f_Group>;
 def f : Joined<"-f">, Group<f_Group>;
 def g0 : Flag<"-g0">, Group<g_Group>;
+def g2 : Flag<"-g2">, Group<g_Group>;
 def g3 : Flag<"-g3">, Group<g_Group>;
 def gdwarf2 : Flag<"-gdwarf-2">, Group<g_Group>;
 def gfull : Flag<"-gfull">, Group<g_Group>;
+def ggdb : Flag<"-ggdb">, Group<g_Group>;
 def gstabs : Flag<"-gstabs">, Group<g_Group>;
 def gstabsplus : Flag<"-gstabs+">, Group<g_Group>;
 def gstabs1 : Flag<"-gstabs1">, Group<g_Group>;

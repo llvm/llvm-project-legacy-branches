@@ -410,6 +410,10 @@ private:
   /// #pragma GCC visibility...
   void HandlePragmaVisibility();
 
+  /// \brief Handle the annotation token produced for
+  /// #pragma pack...
+  void HandlePragmaPack();
+
   /// GetLookAheadToken - This peeks ahead N tokens and returns that token
   /// without consuming any tokens.  LookAhead(0) returns 'Tok', LookAhead(1)
   /// returns the token after Tok, etc.
@@ -1288,7 +1292,7 @@ private:
   };
 
   ExprResult ParseExpression(TypeCastState isTypeCast = NotTypeCast);
-  ExprResult ParseConstantExpression();
+  ExprResult ParseConstantExpression(TypeCastState isTypeCast = NotTypeCast);
   // Expr that doesn't include commas.
   ExprResult ParseAssignmentExpression(TypeCastState isTypeCast = NotTypeCast);
 
@@ -1332,8 +1336,7 @@ private:
                            SmallVectorImpl<SourceLocation> &CommaLocs,
                            void (Sema::*Completer)(Scope *S,
                                                    Expr *Data,
-                                                   Expr **Args,
-                                                   unsigned NumArgs) = 0,
+                                             llvm::ArrayRef<Expr *> Args) = 0,
                            Expr *Data = 0);
 
   /// ParenParseOption - Control what ParseParenExpression will parse.
@@ -1828,9 +1831,11 @@ private:
   /// declaration specifier, TPResult::False() if it is not,
   /// TPResult::Ambiguous() if it could be either a decl-specifier or a
   /// function-style cast, and TPResult::Error() if a parsing error was
-  /// encountered.
+  /// encountered. If it could be a braced C++11 function-style cast, returns
+  /// BracedCastResult.
   /// Doesn't consume tokens.
-  TPResult isCXXDeclarationSpecifier();
+  TPResult
+  isCXXDeclarationSpecifier(TPResult BracedCastResult = TPResult::False());
 
   // "Tentative parsing" functions, used for disambiguation. If a parsing error
   // is encountered they will return TPResult::Error().
@@ -2164,7 +2169,8 @@ private:
   // GNU G++: Type Traits [Type-Traits.html in the GCC manual]
   ExprResult ParseUnaryTypeTrait();
   ExprResult ParseBinaryTypeTrait();
-
+  ExprResult ParseTypeTrait();
+  
   //===--------------------------------------------------------------------===//
   // Embarcadero: Arary and Expression Traits
   ExprResult ParseArrayTypeTrait();

@@ -324,6 +324,7 @@ void AggExprEmitter::EmitStdInitializerList(llvm::Value *destPtr,
   RecordDecl::field_iterator field = record->field_begin();
   if (field == record->field_end()) {
     CGF.ErrorUnsupported(initList, "weird std::initializer_list");
+    return;
   }
 
   QualType elementPtr = ctx.getPointerType(element.withConst());
@@ -331,6 +332,7 @@ void AggExprEmitter::EmitStdInitializerList(llvm::Value *destPtr,
   // Start pointer.
   if (!ctx.hasSameType(field->getType(), elementPtr)) {
     CGF.ErrorUnsupported(initList, "weird std::initializer_list");
+    return;
   }
   LValue start = CGF.EmitLValueForFieldInitialization(destPtr, *field, 0);
   llvm::Value *arrayStart = Builder.CreateStructGEP(alloc, 0, "arraystart");
@@ -339,6 +341,7 @@ void AggExprEmitter::EmitStdInitializerList(llvm::Value *destPtr,
 
   if (field == record->field_end()) {
     CGF.ErrorUnsupported(initList, "weird std::initializer_list");
+    return;
   }
   LValue endOrLength = CGF.EmitLValueForFieldInitialization(destPtr, *field, 0);
   if (ctx.hasSameType(field->getType(), elementPtr)) {
@@ -350,6 +353,7 @@ void AggExprEmitter::EmitStdInitializerList(llvm::Value *destPtr,
     CGF.EmitStoreThroughLValue(RValue::get(Builder.getInt(size)), endOrLength);
   } else {
     CGF.ErrorUnsupported(initList, "weird std::initializer_list");
+    return;
   }
 
   if (!Dest.isExternallyDestructed())
@@ -614,6 +618,7 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
+  case CK_CopyAndAutoreleaseBlockObject:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }
@@ -852,9 +857,16 @@ void AggExprEmitter::EmitNullInitializationToLValue(LValue lv) {
     return;
   
   if (!CGF.hasAggregateLLVMType(type)) {
-    // For non-aggregates, we can store zero
+    // For non-aggregates, we can store zero.
     llvm::Value *null = llvm::Constant::getNullValue(CGF.ConvertType(type));
-    CGF.EmitStoreThroughLValue(RValue::get(null), lv);
+    // Note that the following is not equivalent to
+    // EmitStoreThroughBitfieldLValue for ARC types.
+    if (lv.isBitField()) {
+      CGF.EmitStoreThroughBitfieldLValue(RValue::get(null), lv);
+    } else {
+      assert(lv.isSimple());
+      CGF.EmitStoreOfScalar(null, lv, /* isInitialization */ true);
+    }
   } else {
     // There's a potential optimization opportunity in combining
     // memsets; that would be easy for arrays, but relatively
@@ -899,10 +911,8 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
       }
     }
 
-    QualType elementType = E->getType().getCanonicalType();
-    elementType = CGF.getContext().getQualifiedType(
-                    cast<ArrayType>(elementType)->getElementType(),
-                    elementType.getQualifiers() + Dest.getQualifiers());
+    QualType elementType =
+        CGF.getContext().getAsArrayType(E->getType())->getElementType();
 
     llvm::PointerType *APType =
       cast<llvm::PointerType>(DestPtr->getType());

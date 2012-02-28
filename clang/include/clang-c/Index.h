@@ -993,28 +993,7 @@ enum CXTranslationUnit_Flags {
    * Note: this is a *temporary* option that is available only while
    * we are testing C++ precompiled preamble support. It is deprecated.
    */
-  CXTranslationUnit_CXXChainedPCH = 0x20,
-  
-  /**
-   * \brief Used to indicate that the "detailed" preprocessing record,
-   * if requested, should also contain nested macro expansions.
-   *
-   * Nested macro expansions (i.e., macro expansions that occur
-   * inside another macro expansion) can, in some code bases, require
-   * a large amount of storage to due preprocessor metaprogramming. Moreover,
-   * its fairly rare that this information is useful for libclang clients.
-   */
-  CXTranslationUnit_NestedMacroExpansions = 0x40,
-
-  /**
-   * \brief Legacy name to indicate that the "detailed" preprocessing record,
-   * if requested, should contain nested macro expansions.
-   *
-   * \see CXTranslationUnit_NestedMacroExpansions for the current name for this
-   * value, and its semantics. This is just an alias.
-   */
-  CXTranslationUnit_NestedMacroInstantiations =
-    CXTranslationUnit_NestedMacroExpansions
+  CXTranslationUnit_CXXChainedPCH = 0x20
 };
 
 /**
@@ -4293,6 +4272,12 @@ typedef struct {
 
 typedef struct {
   const CXIdxDeclInfo *declInfo;
+  const CXIdxEntityInfo *getter;
+  const CXIdxEntityInfo *setter;
+} CXIdxObjCPropertyDeclInfo;
+
+typedef struct {
+  const CXIdxDeclInfo *declInfo;
   const CXIdxBaseClassInfo *const *bases;
   unsigned numBases;
 } CXIdxCXXClassDeclInfo;
@@ -4407,6 +4392,9 @@ clang_index_getObjCCategoryDeclInfo(const CXIdxDeclInfo *);
 
 CINDEX_LINKAGE const CXIdxObjCProtocolRefListInfo *
 clang_index_getObjCProtocolRefListInfo(const CXIdxDeclInfo *);
+
+CINDEX_LINKAGE const CXIdxObjCPropertyDeclInfo *
+clang_index_getObjCPropertyDeclInfo(const CXIdxDeclInfo *);
 
 CINDEX_LINKAGE const CXIdxIBOutletCollectionAttrInfo *
 clang_index_getIBOutletCollectionAttrInfo(const CXIdxAttrInfo *);

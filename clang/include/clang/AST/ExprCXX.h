@@ -736,6 +736,9 @@ public:
                               const CXXDestructorDecl *Destructor);
 
   const CXXDestructorDecl *getDestructor() const { return Destructor; }
+  void setDestructor(const CXXDestructorDecl *Dtor) {
+    Destructor = Dtor;
+  }
 };
 
 /// \brief Represents binding an expression to a temporary.
@@ -1361,19 +1364,6 @@ public:
 /// CXXNewExpr - A new expression for memory allocation and constructor calls,
 /// e.g: "new CXXNewExpr(foo)".
 class CXXNewExpr : public Expr {
-  // Was the usage ::new, i.e. is the global new to be used?
-  bool GlobalNew : 1;
-  // Do we allocate an array? If so, the first SubExpr is the size expression.
-  bool Array : 1;
-  // If this is an array allocation, does the usual deallocation
-  // function for the allocated type want to know the allocated size?
-  bool UsualArrayDeleteWantsSize : 1;
-  // The number of placement new arguments.
-  unsigned NumPlacementArgs : 13;
-  // What kind of initializer do we have? Could be none, parens, or braces.
-  // In storage, we distinguish between "none, and no initializer expr", and
-  // "none, but an implicit initializer expr".
-  unsigned StoredInitializationStyle : 2;
   // Contains an optional array size expression, an optional initialization
   // expression, and any number of optional placement arguments, in that order.
   Stmt **SubExprs;
@@ -1394,6 +1384,20 @@ class CXXNewExpr : public Expr {
 
   /// \brief Source-range of a paren-delimited initializer.
   SourceRange DirectInitRange;
+
+  // Was the usage ::new, i.e. is the global new to be used?
+  bool GlobalNew : 1;
+  // Do we allocate an array? If so, the first SubExpr is the size expression.
+  bool Array : 1;
+  // If this is an array allocation, does the usual deallocation
+  // function for the allocated type want to know the allocated size?
+  bool UsualArrayDeleteWantsSize : 1;
+  // The number of placement new arguments.
+  unsigned NumPlacementArgs : 13;
+  // What kind of initializer do we have? Could be none, parens, or braces.
+  // In storage, we distinguish between "none, and no initializer expr", and
+  // "none, but an implicit initializer expr".
+  unsigned StoredInitializationStyle : 2;
 
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
@@ -1543,6 +1547,12 @@ public:
 /// CXXDeleteExpr - A delete expression for memory deallocation and destructor
 /// calls, e.g. "delete[] pArray".
 class CXXDeleteExpr : public Expr {
+  // Points to the operator delete overload that is used. Could be a member.
+  FunctionDecl *OperatorDelete;
+  // The pointer expression to be deleted.
+  Stmt *Argument;
+  // Location of the expression.
+  SourceLocation Loc;
   // Is this a forced global delete, i.e. "::delete"?
   bool GlobalDelete : 1;
   // Is this the array form of delete, i.e. "delete[]"?
@@ -1554,12 +1564,6 @@ class CXXDeleteExpr : public Expr {
   // Does the usual deallocation function for the element type require
   // a size_t argument?
   bool UsualArrayDeleteWantsSize : 1;
-  // Points to the operator delete overload that is used. Could be a member.
-  FunctionDecl *OperatorDelete;
-  // The pointer expression to be deleted.
-  Stmt *Argument;
-  // Location of the expression.
-  SourceLocation Loc;
 public:
   CXXDeleteExpr(QualType ty, bool globalDelete, bool arrayForm,
                 bool arrayFormAsWritten, bool usualArrayDeleteWantsSize,
@@ -1567,10 +1571,10 @@ public:
     : Expr(CXXDeleteExprClass, ty, VK_RValue, OK_Ordinary, false, false,
            arg->isInstantiationDependent(),
            arg->containsUnexpandedParameterPack()),
+      OperatorDelete(operatorDelete), Argument(arg), Loc(loc),
       GlobalDelete(globalDelete),
       ArrayForm(arrayForm), ArrayFormAsWritten(arrayFormAsWritten),
-      UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize),
-      OperatorDelete(operatorDelete), Argument(arg), Loc(loc) { }
+      UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize) { }
   explicit CXXDeleteExpr(EmptyShell Shell)
     : Expr(CXXDeleteExprClass, Shell), OperatorDelete(0), Argument(0) { }
 
@@ -1923,6 +1927,102 @@ public:
   friend class ASTStmtReader;
 };
 
+/// \brief A type trait used in the implementation of various C++11 and
+/// Library TR1 trait templates.
+///
+/// \code
+///   __is_trivially_constructible(vector<int>, int*, int*)
+/// \endcode
+class TypeTraitExpr : public Expr {
+  /// \brief The location of the type trait keyword.
+  SourceLocation Loc;
+  
+  /// \brief  The location of the closing parenthesis.
+  SourceLocation RParenLoc;
+  
+  // Note: The TypeSourceInfos for the arguments are allocated after the
+  // TypeTraitExpr.
+  
+  TypeTraitExpr(QualType T, SourceLocation Loc, TypeTrait Kind,
+                ArrayRef<TypeSourceInfo *> Args,
+                SourceLocation RParenLoc,
+                bool Value);
+
+  TypeTraitExpr(EmptyShell Empty) : Expr(TypeTraitExprClass, Empty) { }
+
+  /// \brief Retrieve the argument types.
+  TypeSourceInfo **getTypeSourceInfos() {
+    return reinterpret_cast<TypeSourceInfo **>(this+1);
+  }
+  
+  /// \brief Retrieve the argument types.
+  TypeSourceInfo * const *getTypeSourceInfos() const {
+    return reinterpret_cast<TypeSourceInfo * const*>(this+1);
+  }
+  
+public:
+  /// \brief Create a new type trait expression.
+  static TypeTraitExpr *Create(ASTContext &C, QualType T, SourceLocation Loc, 
+                               TypeTrait Kind,
+                               ArrayRef<TypeSourceInfo *> Args,
+                               SourceLocation RParenLoc,
+                               bool Value);
+
+  static TypeTraitExpr *CreateDeserialized(ASTContext &C, unsigned NumArgs);
+  
+  /// \brief Determine which type trait this expression uses.
+  TypeTrait getTrait() const {
+    return static_cast<TypeTrait>(TypeTraitExprBits.Kind);
+  }
+
+  bool getValue() const { 
+    assert(!isValueDependent()); 
+    return TypeTraitExprBits.Value; 
+  }
+  
+  /// \brief Determine the number of arguments to this type trait.
+  unsigned getNumArgs() const { return TypeTraitExprBits.NumArgs; }
+  
+  /// \brief Retrieve the Ith argument.
+  TypeSourceInfo *getArg(unsigned I) const {
+    assert(I < getNumArgs() && "Argument out-of-range");
+    return getArgs()[I];
+  }
+  
+  /// \brief Retrieve the argument types.
+  ArrayRef<TypeSourceInfo *> getArgs() const { 
+    return ArrayRef<TypeSourceInfo *>(getTypeSourceInfos(), getNumArgs());
+  }
+  
+  typedef TypeSourceInfo **arg_iterator;
+  arg_iterator arg_begin() { 
+    return getTypeSourceInfos(); 
+  }
+  arg_iterator arg_end() { 
+    return getTypeSourceInfos() + getNumArgs(); 
+  }
+
+  typedef TypeSourceInfo const * const *arg_const_iterator;
+  arg_const_iterator arg_begin() const { return getTypeSourceInfos(); }
+  arg_const_iterator arg_end() const { 
+    return getTypeSourceInfos() + getNumArgs(); 
+  }
+
+  SourceRange getSourceRange() const { return SourceRange(Loc, RParenLoc); }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == TypeTraitExprClass;
+  }
+  static bool classof(const TypeTraitExpr *) { return true; }
+  
+  // Iterators
+  child_range children() { return child_range(); }
+  
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+
+};
+  
 /// ArrayTypeTraitExpr - An Embarcadero array type trait, as used in the
 /// implementation of __array_rank and __array_extent.
 /// Example:
@@ -2050,18 +2150,18 @@ public:
 /// \brief A reference to an overloaded function set, either an
 /// \t UnresolvedLookupExpr or an \t UnresolvedMemberExpr.
 class OverloadExpr : public Expr {
+  /// The common name of these declarations.
+  DeclarationNameInfo NameInfo;
+
+  /// \brief The nested-name-specifier that qualifies the name, if any.
+  NestedNameSpecifierLoc QualifierLoc;
+
   /// The results.  These are undesugared, which is to say, they may
   /// include UsingShadowDecls.  Access is relative to the naming
   /// class.
   // FIXME: Allocate this data after the OverloadExpr subclass.
   DeclAccessPair *Results;
   unsigned NumResults;
-
-  /// The common name of these declarations.
-  DeclarationNameInfo NameInfo;
-
-  /// \brief The nested-name-specifier that qualifies the name, if any.
-  NestedNameSpecifierLoc QualifierLoc;
 
 protected:
   /// \brief Whether the name includes info for explicit template
@@ -2087,8 +2187,8 @@ protected:
                bool KnownContainsUnexpandedParameterPack);
 
   OverloadExpr(StmtClass K, EmptyShell Empty)
-    : Expr(K, Empty), Results(0), NumResults(0),
-      QualifierLoc(), HasTemplateKWAndArgsInfo(false) { }
+    : Expr(K, Empty), QualifierLoc(), Results(0), NumResults(0),
+      HasTemplateKWAndArgsInfo(false) { }
 
   void initializeResults(ASTContext &C,
                          UnresolvedSetIterator Begin,
@@ -3427,7 +3527,7 @@ public:
 class MaterializeTemporaryExpr : public Expr {
   /// \brief The temporary-generating expression whose value will be
   /// materialized.
- Stmt *Temporary;
+  Stmt *Temporary;
 
   friend class ASTStmtReader;
   friend class ASTStmtWriter;

@@ -369,7 +369,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   bool CacheCodeCompletionResults = false;
   PreprocessorOptions &PPOpts = CInvok->getPreprocessorOpts(); 
   PPOpts.DetailedRecord = false;
-  PPOpts.DetailedRecordIncludesNestedMacroExpansions = false;
 
   if (requestedToGetTU) {
     OnlyLocalDecls = CXXIdx->getOnlyLocalDecls();
@@ -379,8 +378,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
       = TU_options & CXTranslationUnit_CacheCompletionResults;
     if (TU_options & CXTranslationUnit_DetailedPreprocessingRecord) {
       PPOpts.DetailedRecord = true;
-      PPOpts.DetailedRecordIncludesNestedMacroExpansions
-          = (TU_options & CXTranslationUnit_NestedMacroExpansions);
     }
   }
 
@@ -607,6 +604,18 @@ clang_index_getObjCProtocolRefListInfo(const CXIdxDeclInfo *DInfo) {
 
   if (const ObjCCategoryDeclInfo *CatInfo = dyn_cast<ObjCCategoryDeclInfo>(DI))
     return CatInfo->ObjCCatDeclInfo.protocols;
+
+  return 0;
+}
+
+const CXIdxObjCPropertyDeclInfo *
+clang_index_getObjCPropertyDeclInfo(const CXIdxDeclInfo *DInfo) {
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  if (const ObjCPropertyDeclInfo *PropInfo = dyn_cast<ObjCPropertyDeclInfo>(DI))
+    return &PropInfo->ObjCPropDeclInfo;
 
   return 0;
 }

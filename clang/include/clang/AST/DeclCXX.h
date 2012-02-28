@@ -469,6 +469,10 @@ class CXXRecordDecl : public RecordDecl {
     ///   type (or array thereof), each such class has a trivial destructor.
     bool HasTrivialDestructor : 1;
 
+    /// HasIrrelevantDestructor - True when this class has a destructor with no
+    /// semantic effect.
+    bool HasIrrelevantDestructor : 1;
+
     /// HasNonLiteralTypeFieldsOrBases - True when this class contains at least
     /// one non-static data member or base class of non-literal or volatile
     /// type.
@@ -1145,9 +1149,9 @@ public:
 
   // hasIrrelevantDestructor - Whether this class has a destructor which has no
   // semantic effect. Any such destructor will be trivial, public, defaulted
-  // and not deleted.
+  // and not deleted, and will call only irrelevant destructors.
   bool hasIrrelevantDestructor() const {
-    return hasTrivialDestructor() && !hasUserDeclaredDestructor();
+    return data().HasIrrelevantDestructor;
   }
 
   // hasNonLiteralTypeFieldsOrBases - Whether this class has a non-literal or
@@ -2260,15 +2264,6 @@ public:
   /// \brief Determine whether this conversion function is a conversion from
   /// a lambda closure type to a block pointer.
   bool isLambdaToBlockPointerConversion() const;
-  
-  /// \brief For an implicit conversion function that converts a lambda
-  /// closure type to a block pointer, retrieve the expression used to
-  /// copy the closure object into the block.
-  Expr *getLambdaToBlockPointerCopyInit() const;
-  
-  /// \brief Set the copy-initialization expression to be used when converting
-  /// a lambda object to a block pointer.
-  void setLambdaToBlockPointerCopyInit(Expr *Init);
   
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

@@ -113,9 +113,21 @@ ExprResult Sema::ParseObjCStringLiteral(SourceLocation *AtLocs,
       Ty = Context.getObjCConstantStringInterface();
       Ty = Context.getObjCObjectPointerType(Ty);
     } else {
-      // If there is no NSString interface defined then treat constant
-      // strings as untyped objects and let the runtime figure it out later.
-      Ty = Context.getObjCIdType();
+      // If there is no NSString interface defined, implicitly declare
+      // a @class NSString; and use that instead. This is to make sure
+      // type of an NSString literal is represented correctly, instead of
+      // being an 'id' type.
+      Ty = Context.getObjCNSStringType();
+      if (Ty.isNull()) {
+        ObjCInterfaceDecl *NSStringIDecl = 
+          ObjCInterfaceDecl::Create (Context, 
+                                     Context.getTranslationUnitDecl(), 
+                                     SourceLocation(), NSIdent, 
+                                     0, SourceLocation());
+        Ty = Context.getObjCInterfaceType(NSStringIDecl);
+        Context.setObjCNSStringType(Ty);
+      }
+      Ty = Context.getObjCObjectPointerType(Ty);
     }
   }
 
@@ -1294,7 +1306,8 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
           if (Method) {
             Diag(Loc, diag::warn_instance_method_on_class_found)
               << Method->getSelector() << Sel;
-            Diag(Method->getLocation(), diag::note_method_declared_at);
+            Diag(Method->getLocation(), diag::note_method_declared_at)
+              << Method->getDeclName();
           }
         }
       } else {
@@ -1516,7 +1529,8 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
                   // selector names a +1 method 
                   Diag(SelLoc, 
                        diag::err_arc_perform_selector_retains);
-                  Diag(SelMethod->getLocation(), diag::note_method_declared_at);
+                  Diag(SelMethod->getLocation(), diag::note_method_declared_at)
+                    << SelMethod->getDeclName();
                 }
                 break;
               default:
@@ -1525,7 +1539,8 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
                   // selector names a +1 method
                   Diag(SelLoc, 
                        diag::err_arc_perform_selector_retains);
-                  Diag(SelMethod->getLocation(), diag::note_method_declared_at);
+                  Diag(SelMethod->getLocation(), diag::note_method_declared_at)
+                    << SelMethod->getDeclName();
                 }
                 break;
             }

@@ -601,6 +601,7 @@ public:
 
   llvm::DenseMap<const VarDecl *, FieldDecl *> LambdaCaptureFields;
   FieldDecl *LambdaThisCaptureField;
+  bool InLambdaConversionToBlock;
 
   /// \brief A mapping from NRVO variables to the flags used to indicate
   /// when the NRVO has been applied to this variable.
@@ -1335,7 +1336,8 @@ public:
   llvm::Function *GenerateBlockFunction(GlobalDecl GD,
                                         const CGBlockInfo &Info,
                                         const Decl *OuterFuncDecl,
-                                        const DeclMapTy &ldm);
+                                        const DeclMapTy &ldm,
+                                        bool IsLambdaConversionToBlock);
 
   llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
   llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
@@ -1343,6 +1345,7 @@ public:
                                              const ObjCPropertyImplDecl *PID);
   llvm::Constant *GenerateObjCAtomicGetterCopyHelperFunction(
                                              const ObjCPropertyImplDecl *PID);
+  llvm::Value *EmitBlockCopyAndAutorelease(llvm::Value *Block, QualType Ty);
 
   void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
 
@@ -1376,7 +1379,10 @@ public:
   void EmitDestructorBody(FunctionArgList &Args);
   void EmitFunctionBody(FunctionArgList &Args);
 
+  void EmitForwardingCallToLambda(const CXXRecordDecl *Lambda,
+                                  CallArgList &CallArgs);
   void EmitLambdaToBlockPointerBody(FunctionArgList &Args);
+  void EmitLambdaBlockInvokeBody();
   void EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD);
   void EmitLambdaStaticInvokeFunction(const CXXMethodDecl *MD);
 
@@ -2226,7 +2232,7 @@ public:
   llvm::Value *EmitNeonShiftVector(llvm::Value *V, llvm::Type *Ty,
                                    bool negateForRightShift);
 
-  llvm::Value *BuildVector(const SmallVectorImpl<llvm::Value*> &Ops);
+  llvm::Value *BuildVector(ArrayRef<llvm::Value*> Ops);
   llvm::Value *EmitX86BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitHexagonBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitPPCBuiltinExpr(unsigned BuiltinID, const CallExpr *E);

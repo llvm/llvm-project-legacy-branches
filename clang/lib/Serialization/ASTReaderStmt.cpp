@@ -618,6 +618,7 @@ void ASTStmtReader::VisitInitListExpr(InitListExpr *E) {
   } else
     E->ArrayFillerOrUnionFieldInit = ReadDeclAs<FieldDecl>(Record, Idx);
   E->sawArrayRangeDesignator(Record[Idx++]);
+  E->setInitializesStdInitializerList(Record[Idx++]);
   unsigned NumInits = Record[Idx++];
   E->reserveInits(Reader.getContext(), NumInits);
   if (isArrayFiller) {
@@ -1325,6 +1326,17 @@ void ASTStmtReader::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   E->RParen = Range.getEnd();
   E->LhsType = GetTypeSourceInfo(Record, Idx);
   E->RhsType = GetTypeSourceInfo(Record, Idx);
+}
+
+void ASTStmtReader::VisitTypeTraitExpr(TypeTraitExpr *E) {
+  VisitExpr(E);
+  E->TypeTraitExprBits.NumArgs = Record[Idx++];
+  E->TypeTraitExprBits.Kind = Record[Idx++];
+  E->TypeTraitExprBits.Value = Record[Idx++];
+  
+  TypeSourceInfo **Args = E->getTypeSourceInfos();
+  for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
+    Args[I] = GetTypeSourceInfo(Record, Idx);
 }
 
 void ASTStmtReader::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
@@ -2046,6 +2058,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) BinaryTypeTraitExpr(Empty);
       break;
 
+    case EXPR_TYPE_TRAIT:
+      S = TypeTraitExpr::CreateDeserialized(Context, 
+            Record[ASTStmtReader::NumExprFields]);
+      break;
+        
     case EXPR_ARRAY_TYPE_TRAIT:
       S = new (Context) ArrayTypeTraitExpr(Empty);
       break;

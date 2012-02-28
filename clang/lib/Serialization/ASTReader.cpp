@@ -27,7 +27,7 @@
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLocVisitor.h"
-#include "clang/Analysis/Support/SaveAndRestore.h"
+#include "llvm/ADT/SaveAndRestore.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
@@ -1744,7 +1744,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
           = F.PreprocessorDetailCursor.GetCurrentBitNo();
           
         if (!PP.getPreprocessingRecord())
-          PP.createPreprocessingRecord(true);
+          PP.createPreprocessingRecord();
         if (!PP.getPreprocessingRecord()->getExternalSource())
           PP.getPreprocessingRecord()->SetExternalSource(*this);
         break;
@@ -2288,7 +2288,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
       
       unsigned StartingID;
       if (!PP.getPreprocessingRecord())
-        PP.createPreprocessingRecord(true);
+        PP.createPreprocessingRecord();
       if (!PP.getPreprocessingRecord()->getExternalSource())
         PP.getPreprocessingRecord()->SetExternalSource(*this);
       StartingID 

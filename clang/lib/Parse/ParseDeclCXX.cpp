@@ -653,6 +653,9 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
       return EndLoc;
     }
   } else {
+    if (Tok.getIdentifierInfo()->isStr("decltype"))
+      Diag(Tok, diag::warn_cxx98_compat_decltype);
+
     ConsumeToken();
 
     BalancedDelimiterTracker T(*this, tok::l_paren);
@@ -667,13 +670,13 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
 
     // C++0x [dcl.type.simple]p4:
     //   The operand of the decltype specifier is an unevaluated operand.
-    EnterExpressionEvaluationContext Unevaluated(Actions,
-                                                 Sema::Unevaluated);
+    EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated,
+                                                 0, /*IsDecltype=*/true);
     Result = ParseExpression();
     if (Result.isInvalid()) {
-      SkipUntil(tok::r_paren, true, true);
+      SkipUntil(tok::r_paren);
       DS.SetTypeSpecError();
-      return Tok.is(tok::eof) ? Tok.getLocation() : ConsumeParen();
+      return StartLoc;
     }
 
     // Match the ')'
@@ -682,6 +685,12 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
       DS.SetTypeSpecError();
       // FIXME: this should return the location of the last token
       //        that was consumed (by "consumeClose()")
+      return T.getCloseLocation();
+    }
+
+    Result = Actions.ActOnDecltypeExpression(Result.take());
+    if (Result.isInvalid()) {
+      DS.SetTypeSpecError();
       return T.getCloseLocation();
     }
 
@@ -2006,7 +2015,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       if (Init.isInvalid())
         SkipUntil(tok::comma, true, true);
       else if (ThisDecl)
-        Actions.AddInitializerToDecl(ThisDecl, Init.get(), false,
+        Actions.AddInitializerToDecl(ThisDecl, Init.get(), EqualLoc.isInvalid(),
                                    DS.getTypeSpecType() == DeclSpec::TST_auto);      
     } else if (ThisDecl && DS.getStorageClassSpec() == DeclSpec::SCS_static) {
       // No initializer.
@@ -2081,15 +2090,15 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 ///
 ///   pure-specifier:
 ///     '= 0'
-///  
+///
 ///   brace-or-equal-initializer:
 ///     '=' initializer-expression
-///     braced-init-list                       [TODO]
-///  
+///     braced-init-list
+///
 ///   initializer-clause:
 ///     assignment-expression
-///     braced-init-list                       [TODO]
-///  
+///     braced-init-list
+///
 ///   defaulted/deleted function-definition:                                                                                                                                                                                               
 ///     '=' 'default'
 ///     '=' 'delete'
@@ -2131,9 +2140,8 @@ ExprResult Parser::ParseCXXMemberInitializer(Decl *D, bool IsFunction,
       return ExprResult();
     }
 
-    return ParseInitializer();
-  } else
-    return ExprError(Diag(Tok, diag::err_generalized_initializer_lists));
+  }
+  return ParseInitializer();
 }
 
 /// ParseCXXMemberSpecification - Parse the class definition.
@@ -2243,6 +2251,16 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
           << DeclSpec::getSpecifierName((DeclSpec::TST)TagType)
           << FixItHint::CreateRemoval(Tok.getLocation());
         ConsumeToken();
+        continue;
+      }
+
+      if (Tok.is(tok::annot_pragma_vis)) {
+        HandlePragmaVisibility();
+        continue;
+      }
+
+      if (Tok.is(tok::annot_pragma_pack)) {
+        HandlePragmaPack();
         continue;
       }
 

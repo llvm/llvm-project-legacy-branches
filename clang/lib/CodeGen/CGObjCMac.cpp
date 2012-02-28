@@ -831,7 +831,7 @@ protected:
   void BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
                            const llvm::StructLayout *Layout,
                            const RecordDecl *RD,
-                           const SmallVectorImpl<const FieldDecl*> &RecFields,
+                           ArrayRef<const FieldDecl*> RecFields,
                            unsigned int BytePos, bool ForStrongLayout,
                            bool &HasUnion);
 
@@ -1080,7 +1080,7 @@ public:
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
 
-  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {}
 
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
@@ -1335,7 +1335,7 @@ public:
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
 
-  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {}
 
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
@@ -2561,14 +2561,14 @@ CGObjCMac::EmitClassExtension(const ObjCImplementationDecl *ID) {
 
 /*
   struct objc_ivar {
-  char *ivar_name;
-  char *ivar_type;
-  int ivar_offset;
+    char *ivar_name;
+    char *ivar_type;
+    int ivar_offset;
   };
 
   struct objc_ivar_list {
-  int ivar_count;
-  struct objc_ivar list[count];
+    int ivar_count;
+    struct objc_ivar list[count];
   };
 */
 llvm::Constant *CGObjCMac::EmitIvarList(const ObjCImplementationDecl *ID,
@@ -3768,7 +3768,7 @@ void CGObjCCommonMac::BuildAggrIvarRecordLayout(const RecordType *RT,
 void CGObjCCommonMac::BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
                              const llvm::StructLayout *Layout,
                              const RecordDecl *RD,
-                             const SmallVectorImpl<const FieldDecl*> &RecFields,
+                             ArrayRef<const FieldDecl*> RecFields,
                              unsigned int BytePos, bool ForStrongLayout,
                              bool &HasUnion) {
   bool IsUnion = (RD && RD->isUnion());

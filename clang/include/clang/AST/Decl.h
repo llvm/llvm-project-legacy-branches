@@ -251,6 +251,10 @@ public:
       mergeLinkage(Other.linkage());
     }
 
+    // Merge the visibility V giving preference to explicit ones.
+    // This is used, for example, when merging the visibility of a class
+    // down to one of its members. If the member has no explicit visibility,
+    // the class visibility wins.
     void mergeVisibility(Visibility V, bool E = false) {
       // If one has explicit visibility and the other doesn't, keep the
       // explicit one.
@@ -262,13 +266,34 @@ public:
       // If both are explicit or both are implicit, keep the minimum.
       setVisibility(minVisibility(visibility(), V), visibilityExplicit() || E);
     }
+    // Merge the visibility V, keeping the most restrictive one.
+    // This is used for cases like merging the visibility of a template
+    // argument to an instantiation. If we already have a hidden class,
+    // no argument should give it default visibility.
+    void mergeVisibilityWithMin(Visibility V, bool E = false) {
+      // Never increase the visibility
+      if (visibility() < V)
+        return;
+
+      // If this visibility is explicit, keep it.
+      if (visibilityExplicit() && !E)
+        return;
+      setVisibility(V, E);
+    }
     void mergeVisibility(LinkageInfo Other) {
       mergeVisibility(Other.visibility(), Other.visibilityExplicit());
+    }
+    void mergeVisibilityWithMin(LinkageInfo Other) {
+      mergeVisibilityWithMin(Other.visibility(), Other.visibilityExplicit());
     }
 
     void merge(LinkageInfo Other) {
       mergeLinkage(Other);
       mergeVisibility(Other);
+    }
+    void mergeWithMin(LinkageInfo Other) {
+      mergeLinkage(Other);
+      mergeVisibilityWithMin(Other);
     }
 
     friend LinkageInfo merge(LinkageInfo L, LinkageInfo R) {
@@ -1406,6 +1431,11 @@ private:
   /// no formals.
   ParmVarDecl **ParamInfo;
 
+  /// DeclsInPrototypeScope - Array of pointers to NamedDecls for
+  /// decls defined in the function prototype that are not parameters. E.g.
+  /// 'enum Y' in 'void f(enum Y {AA} x) {}'.
+  llvm::ArrayRef<NamedDecl*> DeclsInPrototypeScope;
+
   LazyDeclStmtPtr Body;
 
   // FIXME: This can be packed into the bitfields in Decl.
@@ -1770,6 +1800,11 @@ public:
   void setParams(llvm::ArrayRef<ParmVarDecl *> NewParamInfo) {
     setParams(getASTContext(), NewParamInfo);
   }
+
+  const llvm::ArrayRef<NamedDecl*> &getDeclsInPrototypeScope() const {
+    return DeclsInPrototypeScope;
+  }
+  void setDeclsInPrototypeScope(llvm::ArrayRef<NamedDecl *> NewDecls);
 
   /// getMinRequiredArguments - Returns the minimum number of arguments
   /// needed to call this function. This may be fewer than the number of

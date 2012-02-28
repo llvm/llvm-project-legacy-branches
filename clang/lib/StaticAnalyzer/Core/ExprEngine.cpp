@@ -13,6 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "ExprEngine"
+
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
@@ -27,6 +29,7 @@
 #include "clang/Basic/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/ImmutableList.h"
+#include "llvm/ADT/Statistic.h"
 
 #ifndef NDEBUG
 #include "llvm/Support/GraphWriter.h"
@@ -35,6 +38,11 @@
 using namespace clang;
 using namespace ento;
 using llvm::APSInt;
+
+STATISTIC(NumRemoveDeadBindings,
+            "The # of times RemoveDeadBindings is called");
+STATISTIC(NumRemoveDeadBindingsSkipped,
+            "The # of times RemoveDeadBindings is skipped");
 
 //===----------------------------------------------------------------------===//
 // Utility functions.
@@ -230,7 +238,11 @@ static bool shouldRemoveDeadBindings(AnalysisManager &AMgr,
   // Is this on a non-expression?
   if (!isa<Expr>(S.getStmt()))
     return true;
-  
+    
+  // Run before processing a call.
+  if (isa<CallExpr>(S.getStmt()))
+    return true;
+
   // Is this an expression that is consumed by another expression?  If so,
   // postpone cleaning out the state.
   ParentMap &PM = LC->getAnalysisDeclContext()->getParentMap();
@@ -257,6 +269,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S,
   SymbolReaper SymReaper(LC, currentStmt, SymMgr, getStoreManager());
 
   if (shouldRemoveDeadBindings(AMgr, S, Pred, LC)) {
+    NumRemoveDeadBindings++;
     getCheckerManager().runCheckersForLiveSymbols(CleanedState, SymReaper);
 
     const StackFrameContext *SFC = LC->getCurrentStackFrame();
@@ -265,6 +278,8 @@ void ExprEngine::ProcessStmt(const CFGStmt S,
     // and the store. TODO: The function should just return new env and store,
     // not a new state.
     CleanedState = StateMgr.removeDeadBindings(CleanedState, SFC, SymReaper);
+  } else {
+    NumRemoveDeadBindingsSkipped++;
   }
 
   // Process any special transfer function for dead symbols.
@@ -478,6 +493,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::DependentScopeDeclRefExprClass:
     case Stmt::UnaryTypeTraitExprClass:
     case Stmt::BinaryTypeTraitExprClass:
+    case Stmt::TypeTraitExprClass:
     case Stmt::ArrayTypeTraitExprClass:
     case Stmt::ExpressionTraitExprClass:
     case Stmt::UnresolvedLookupExprClass:
@@ -571,7 +587,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::ObjCIsaExprClass:
     case Stmt::ObjCProtocolExprClass:
     case Stmt::ObjCSelectorExprClass:
-    case Stmt::ObjCStringLiteralClass:
     case Stmt::ParenListExprClass:
     case Stmt::PredefinedExprClass:
     case Stmt::ShuffleVectorExprClass:
@@ -590,6 +605,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXBoolLiteralExprClass:
     case Stmt::FloatingLiteralClass:
     case Stmt::SizeOfPackExprClass:
+    case Stmt::StringLiteralClass:
+    case Stmt::ObjCStringLiteralClass:
     case Stmt::CXXNullPtrLiteralExprClass: {
       Bldr.takeNodes(Pred);
       ExplodedNodeSet preVisit;
@@ -880,14 +897,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
                                                   Pred->getLocationContext())));
       }
       break;
-    }
-
-    case Stmt::StringLiteralClass: {
-      ProgramStateRef state = Pred->getState();
-      SVal V = state->getLValue(cast<StringLiteral>(S));
-      Bldr.generateNode(S, Pred, state->BindExpr(S, Pred->getLocationContext(),
-                                                 V));
-      return;
     }
 
     case Stmt::UnaryOperatorClass: {

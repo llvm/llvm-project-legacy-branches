@@ -1257,7 +1257,7 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
 bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                                CorrectionCandidateCallback &CCC,
                                TemplateArgumentListInfo *ExplicitTemplateArgs,
-                               Expr **Args, unsigned NumArgs) {
+                               llvm::ArrayRef<Expr *> Args) {
   DeclarationName Name = R.getLookupName();
 
   unsigned diagnostic = diag::err_undeclared_var_use;
@@ -1387,11 +1387,11 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                    dyn_cast<FunctionTemplateDecl>(*CD))
             AddTemplateOverloadCandidate(
                 FTD, DeclAccessPair::make(FTD, AS_none), ExplicitTemplateArgs,
-                Args, NumArgs, OCS);
+                Args, OCS);
           else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(*CD))
             if (!ExplicitTemplateArgs || ExplicitTemplateArgs->size() == 0)
               AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none),
-                                   Args, NumArgs, OCS);
+                                   Args, OCS);
         }
         switch (OCS.BestViableFunction(*this, R.getNameLoc(), Best)) {
           case OR_Success:
@@ -3248,7 +3248,8 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
                                   unsigned FirstProtoArg,
                                   Expr **Args, unsigned NumArgs,
                                   SmallVector<Expr *, 8> &AllArgs,
-                                  VariadicCallType CallType) {
+                                  VariadicCallType CallType,
+                                  bool AllowExplicit) {
   unsigned NumArgsInProto = Proto->getNumArgs();
   unsigned NumArgsToCheck = NumArgs;
   bool Invalid = false;
@@ -3288,7 +3289,9 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
                                                       Proto->isArgConsumed(i));
       ExprResult ArgE = PerformCopyInitialization(Entity,
                                                   SourceLocation(),
-                                                  Owned(Arg));
+                                                  Owned(Arg),
+                                                  /*TopLevelOfInitList=*/false,
+                                                  AllowExplicit);
       if (ArgE.isInvalid())
         return true;
 
@@ -3447,7 +3450,8 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
     bool Dependent = false;
     if (Fn->isTypeDependent())
       Dependent = true;
-    else if (Expr::hasAnyTypeDependentArguments(Args, NumArgs))
+    else if (Expr::hasAnyTypeDependentArguments(
+        llvm::makeArrayRef(Args, NumArgs)))
       Dependent = true;
 
     if (Dependent) {
@@ -4725,6 +4729,14 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
   }
   // Check Objective-C object pointer types and 'void *'
   if (LHSTy->isVoidPointerType() && RHSTy->isObjCObjectPointerType()) {
+    if (getLangOptions().ObjCAutoRefCount) {
+      // ARC forbids the implicit conversion of object pointers to 'void *',
+      // so these types are not compatible.
+      Diag(QuestionLoc, diag::err_cond_voidptr_arc) << LHSTy << RHSTy
+          << LHS.get()->getSourceRange() << RHS.get()->getSourceRange();
+      LHS = RHS = true;
+      return QualType();
+    }
     QualType lhptee = LHSTy->getAs<PointerType>()->getPointeeType();
     QualType rhptee = RHSTy->getAs<ObjCObjectPointerType>()->getPointeeType();
     QualType destPointee
@@ -4737,6 +4749,14 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
     return destType;
   }
   if (LHSTy->isObjCObjectPointerType() && RHSTy->isVoidPointerType()) {
+    if (getLangOptions().ObjCAutoRefCount) {
+      // ARC forbids the implicit conversion of object pointers to 'void *',
+      // so these types are not compatible.
+      Diag(QuestionLoc, diag::err_cond_voidptr_arc) << LHSTy << RHSTy
+          << LHS.get()->getSourceRange() << RHS.get()->getSourceRange();
+      LHS = RHS = true;
+      return QualType();
+    }
     QualType lhptee = LHSTy->getAs<ObjCObjectPointerType>()->getPointeeType();
     QualType rhptee = RHSTy->getAs<PointerType>()->getPointeeType();
     QualType destPointee
@@ -4899,7 +4919,8 @@ ExprResult Sema::ActOnConditionalOp(SourceLocation QuestionLoc,
     opaqueValue = new (Context) OpaqueValueExpr(commonExpr->getExprLoc(),
                                                 commonExpr->getType(),
                                                 commonExpr->getValueKind(),
-                                                commonExpr->getObjectKind());
+                                                commonExpr->getObjectKind(),
+                                                commonExpr);
     LHSExpr = CondExpr = opaqueValue;
   }
 
@@ -7591,6 +7612,25 @@ static void DiagnoseSelfAssignment(Sema &S, Expr *LHSExpr, Expr *RHSExpr,
 ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
                                     BinaryOperatorKind Opc,
                                     Expr *LHSExpr, Expr *RHSExpr) {
+  if (getLangOptions().CPlusPlus0x && isa<InitListExpr>(RHSExpr)) {
+    // The syntax only allows initializer lists on the RHS of assignment,
+    // so we don't need to worry about accepting invalid code for
+    // non-assignment operators.
+    // C++11 5.17p9:
+    //   The meaning of x = {v} [...] is that of x = T(v) [...]. The meaning
+    //   of x = {} is x = T().
+    InitializationKind Kind =
+        InitializationKind::CreateDirectList(RHSExpr->getLocStart());
+    InitializedEntity Entity =
+        InitializedEntity::InitializeTemporary(LHSExpr->getType());
+    InitializationSequence InitSeq(*this, Entity, Kind, &RHSExpr, 1);
+    ExprResult Init = InitSeq.Perform(*this, Entity, Kind,
+                                      MultiExprArg(&RHSExpr, 1));
+    if (Init.isInvalid())
+      return Init;
+    RHSExpr = Init.take();
+  }
+
   ExprResult LHS = Owned(LHSExpr), RHS = Owned(RHSExpr);
   QualType ResultTy;     // Result type of the binary operator.
   // The following two variables are used for compound assignment operators
@@ -9277,12 +9317,14 @@ ExprResult Sema::TranformToPotentiallyEvaluated(Expr *E) {
 
 void
 Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext,
-                                      Decl *LambdaContextDecl) {
+                                      Decl *LambdaContextDecl,
+                                      bool IsDecltype) {
   ExprEvalContexts.push_back(
              ExpressionEvaluationContextRecord(NewContext,
                                                ExprCleanupObjects.size(),
                                                ExprNeedsCleanups,
-                                               LambdaContextDecl));
+                                               LambdaContextDecl,
+                                               IsDecltype));
   ExprNeedsCleanups = false;
   if (!MaybeODRUseExprs.empty())
     std::swap(MaybeODRUseExprs, ExprEvalContexts.back().SavedMaybeODRUseExprs);
@@ -9397,7 +9439,7 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
 
   // Note that this declaration has been used.
   if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(Func)) {
-    if (Constructor->isDefaulted()) {
+    if (Constructor->isDefaulted() && !Constructor->isDeleted()) {
       if (Constructor->isDefaultConstructor()) {
         if (Constructor->isTrivial())
           return;
@@ -9415,12 +9457,14 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
     MarkVTableUsed(Loc, Constructor->getParent());
   } else if (CXXDestructorDecl *Destructor =
                  dyn_cast<CXXDestructorDecl>(Func)) {
-    if (Destructor->isDefaulted() && !Destructor->isUsed(false))
+    if (Destructor->isDefaulted() && !Destructor->isDeleted() &&
+        !Destructor->isUsed(false))
       DefineImplicitDestructor(Loc, Destructor);
     if (Destructor->isVirtual())
       MarkVTableUsed(Loc, Destructor->getParent());
   } else if (CXXMethodDecl *MethodDecl = dyn_cast<CXXMethodDecl>(Func)) {
-    if (MethodDecl->isDefaulted() && MethodDecl->isOverloadedOperator() &&
+    if (MethodDecl->isDefaulted() && !MethodDecl->isDeleted() &&
+        MethodDecl->isOverloadedOperator() &&
         MethodDecl->getOverloadedOperator() == OO_Equal) {
       if (!MethodDecl->isUsed(false)) {
         if (MethodDecl->isCopyAssignmentOperator())
@@ -10279,6 +10323,13 @@ bool Sema::CheckCallReturnType(QualType ReturnType, SourceLocation Loc,
                                CallExpr *CE, FunctionDecl *FD) {
   if (ReturnType->isVoidType() || !ReturnType->isIncompleteType())
     return false;
+
+  // If we're inside a decltype's expression, don't check for a valid return
+  // type or construct temporaries until we know whether this is the last call.
+  if (ExprEvalContexts.back().IsDecltype) {
+    ExprEvalContexts.back().DelayedDecltypeCalls.push_back(CE);
+    return false;
+  }
 
   PartialDiagnostic Note =
     FD ? PDiag(diag::note_function_with_incomplete_return_type_declared_here)

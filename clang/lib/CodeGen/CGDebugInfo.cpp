@@ -345,6 +345,7 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
     //  Class isa;
     // } *id;
 
+    // TODO: Cache these two types to avoid duplicates.
     llvm::DIType OCTy =
       DBuilder.createForwardDecl(llvm::dwarf::DW_TAG_structure_type,
                                  "objc_class", getOrCreateMainFile(),
@@ -1243,9 +1244,9 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
                               Line, Size, Align, Flags,
                               llvm::DIArray(), RuntimeLang);
   
-  // Otherwise, insert it into the TypeCache so that recursive uses will find
-  // it.
-  TypeCache[QualType(Ty, 0).getAsOpaquePtr()] = RealDecl;
+  // Otherwise, insert it into the CompletedTypeCache so that recursive uses
+  // will find it and we're emitting the complete type.
+  CompletedTypeCache[QualType(Ty, 0).getAsOpaquePtr()] = RealDecl;
   // Push the struct on region stack.
   llvm::MDNode *MN = RealDecl;
   llvm::TrackingVH<llvm::MDNode> FwdDeclNode = MN;

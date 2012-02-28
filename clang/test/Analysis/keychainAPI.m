@@ -275,7 +275,7 @@ void DellocWithCFStringCreate2(CFAllocatorRef alloc) {
   st = SecKeychainItemCopyContent(2, ptr, ptr, &length, &bytes);
   if (st == noErr) {
     CFStringRef userStr = CFStringCreateWithBytesNoCopy(alloc, bytes, length, 5, 0, kCFAllocatorNull); // expected-warning{{Allocated data is not released}}
-    CFRelease(userStr);
+    CFRelease(userStr); 
   }
 }
 
@@ -370,9 +370,18 @@ void allocAndFree1() {
       my_FreeParam(ptr, outData);
 }
 
-void allocNoFree2() {
+void consumeChar(char);
+
+void allocNoFree2(int x) {
     OSStatus st = 0;
-    void *outData = my_AllocateReturn(&st); // expected-warning{{Allocated data is not released:}}
+    void *outData = my_AllocateReturn(&st); 
+    if (x) {
+      consumeChar(*(char*)outData); // expected-warning{{Allocated data is not released:}}
+      return;
+    } else {
+      consumeChar(*(char*)outData);
+    }
+    return;
 }
 
 void allocAndFree2(void *attrList) {
@@ -384,8 +393,10 @@ void allocAndFree2(void *attrList) {
 
 void allocNoFree3() {
     UInt32 length = 32;
-    void *outData;
+    void *outData;    
+    void *outData2;
     OSStatus st = my_Allocate_Param(&outData, &length); // expected-warning{{Allocated data is not released}}
+    st = my_Allocate_Param(&outData2, &length); // expected-warning{{Allocated data is not released}}
 }
 
 void allocAndFree3(void *attrList) {
@@ -394,6 +405,5 @@ void allocAndFree3(void *attrList) {
     OSStatus st = my_Allocate_Param(&outData, &length); 
     if (st == noErr)
       SecKeychainItemFreeContent(attrList, outData);
-
 }
 
