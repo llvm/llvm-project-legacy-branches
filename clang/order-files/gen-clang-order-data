@@ -39,11 +39,11 @@ def get_test_cases(opts):
         'trivial-c-i386', None, False,
         ('-c', 'trivial-input.c', '-O0', '-g', '-arch', 'i386'))
 
-def get_cc1_command_for_args(cmd, cwd):
+def get_cc1_command_for_args(cmd, cwd, env):
     # Find the cc1 command used by the compiler. To do this we execute the
     # compiler with '-###' to figure out what it wants to do.
     cc_output = commands.capture(cmd + ['-###'],
-                                 include_stderr=True, cwd=cwd).strip()
+                                 include_stderr=True, cwd=cwd, env=env).strip()
     cc_commands = []
     for ln in cc_output.split('\n'):
         # Filter out known garbage.
@@ -60,7 +60,7 @@ def get_cc1_command_for_args(cmd, cwd):
 
     return shlex.split(cc_commands[0])
 
-def execute_dtrace_test(args, data_name, opts,
+def execute_dtrace_test(args, data_name, opts, env,
                         suppress_stderr=False):
     # Form the dtrace script to run.
     if opts.use_multishot:
@@ -94,7 +94,7 @@ def execute_dtrace_test(args, data_name, opts,
             stderr = None
         start_time = time.time()
         subprocess.check_call(dtrace_args, stdout=f, stderr=stderr,
-                              cwd=opts.inputs_path)
+                              cwd=opts.inputs_path, env=env)
         elapsed = time.time() - start_time
         commands.note("... data collection took %.4fs" % (elapsed,))
 
@@ -111,13 +111,17 @@ def execute_test_case(test_case, opts):
     full_args = [opts.cc] + list(actual_args) + [
         '-o', os.path.join(opts.temps_path, output_name)]
 
+    # Create a scrubbed environment to execute the tests in.
+    test_env = {
+        'PATH' : os.environ['PATH'] }
+
     # Gather data on the driver invocation.
     if opts.sample_driver and test_driver:
         execute_dtrace_test(full_args + ['-###'], "%s.driver" % (test_name),
-                            opts, suppress_stderr=True)
+                            opts, test_env, suppress_stderr=True)
 
     # Extract the cc1 level command.
-    cc1_cmd = get_cc1_command_for_args(full_args, opts.inputs_path)
+    cc1_cmd = get_cc1_command_for_args(full_args, opts.inputs_path, test_env)
 
     # We can't use dtrace's -c option if there are space in options.
     for arg in cc1_cmd:
@@ -126,7 +130,7 @@ def execute_test_case(test_case, opts):
                     cc1_cmd,))
 
     # Gather data on the cc1 invocation.
-    execute_dtrace_test(cc1_cmd, test_name, opts)
+    execute_dtrace_test(cc1_cmd, test_name, opts, test_env)
 
 def main():
     parser = OptionParser("%prog  [options]")

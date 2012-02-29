@@ -50,7 +50,7 @@ def mkdir_p(path):
         if e.errno != errno.EEXIST:
             raise
 
-def capture_with_result(args, include_stderr=False, cwd=None):
+def capture_with_result(args, include_stderr=False, cwd=None, env=None):
     import subprocess
     """capture_with_result(command) -> (output, exit code)
 
@@ -61,7 +61,7 @@ def capture_with_result(args, include_stderr=False, cwd=None):
         stderr = subprocess.STDOUT
     try:
         p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=stderr,
-                             cwd=cwd)
+                             cwd=cwd, env=env)
     except OSError,e:
         if e.errno == errno.ENOENT:
             fatal('no such file or directory: %r' % args[0])
@@ -69,11 +69,11 @@ def capture_with_result(args, include_stderr=False, cwd=None):
     out,_ = p.communicate()
     return out,p.wait()
 
-def capture(args, include_stderr=False, cwd=None):
+def capture(args, include_stderr=False, cwd=None, env=None):
     import subprocess
     """capture(command) - Run the given command (or argv list) in a shell and
     return the standard output."""
-    return capture_with_result(args, include_stderr, cwd)[0]
+    return capture_with_result(args, include_stderr, cwd, env)[0]
 
 def which(command, paths = None):
     """which(command, [paths]) - Look up the given command in the paths string
