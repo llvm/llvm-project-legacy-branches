@@ -10,6 +10,13 @@ from optparse import OptionParser, OptionGroup
 
 import commands
 
+def check_output(*popen_args, **popen_kwargs):
+    p = subprocess.Popen(stdout=subprocess.PIPE, *popen_args, **popen_kwargs)
+    stdout,stderr = p.communicate()
+    if p.wait() != 0:
+        raise RuntimeError("process failed")
+    return stdout
+
 def uniq(list):
     seen = set()
     for item in list:
@@ -188,7 +195,7 @@ def main():
     # If the user gave us a binary, get all the symbols in the binary by
     # snarfing 'nm' output.
     if opts.binary_path is not None:
-       output = subprocess.check_output(['nm', '-P', opts.binary_path])
+       output = check_output(['nm', '-P', opts.binary_path])
        lines = output.split("\n")
        all_symbols = [ln.split(' ',1)[0]
                       for ln in lines
