@@ -62,8 +62,7 @@ void testNSDatafFreeWhenDoneFN(NSUInteger dataLength) {
   free(data); // false negative
 }
 
-// Test CF/NS...NoCopy. PR12100.
-
+// Test CF/NS...NoCopy. PR12100: Pointers can escape when custom deallocators are provided.
 void testNSDatafFreeWhenDone(NSUInteger dataLength) {
   CFStringRef str;
   char *bytes = (char*)malloc(12);
@@ -83,3 +82,18 @@ void stringWithExternalContentsExample(void) {
     CFRelease(mutStr);
     //free(myBuffer);
 }
+
+// PR12101 : pointers can escape through custom deallocators set on creation of a container.
+void TestCallbackReleasesMemory(CFDictionaryKeyCallBacks keyCallbacks) {
+  void *key = malloc(12);
+  void *val = malloc(12);
+  CFMutableDictionaryRef x = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &keyCallbacks, &kCFTypeDictionaryValueCallBacks);
+  CFDictionarySetValue(x, key, val); 
+  return;// no-warning
+}
+
+NSData *radar10976702() {
+  void *bytes = malloc(10);
+  return [NSData dataWithBytesNoCopy:bytes length:10]; // no-warning
+}
+

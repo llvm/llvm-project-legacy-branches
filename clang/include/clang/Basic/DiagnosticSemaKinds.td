@@ -132,7 +132,11 @@ def warn_unused_variable : Warning<"unused variable %0">,
 def warn_unused_exception_param : Warning<"unused exception parameter %0">,
   InGroup<UnusedExceptionParameter>, DefaultIgnore;
 def warn_decl_in_param_list : Warning<
-  "declaration of %0 will not be visible outside of this function">;
+  "declaration of %0 will not be visible outside of this function">,
+  InGroup<Visibility>;
+def warn_redefinition_in_param_list : Warning<
+  "redefinition of %0 will not be visible outside of this function">,
+  InGroup<Visibility>;
 def warn_empty_parens_are_function_decl : Warning<
   "empty parentheses interpreted as a function declaration">,
   InGroup<VexingParse>;
@@ -684,7 +688,7 @@ def warn_unimplemented_protocol_method : Warning<
 // C++ declarations
 def err_static_assert_expression_is_not_constant : Error<
   "static_assert expression is not an integral constant expression">;
-def err_static_assert_failed : Error<"static_assert failed \"%0\"">;
+def err_static_assert_failed : Error<"static_assert failed %0">;
 
 def warn_inline_namespace_reopened_noninline : Warning<
   "inline namespace cannot be re-opened as a non-inline namespace">;
@@ -3426,6 +3430,12 @@ def warn_self_assignment : Warning<
   "explicitly assigning a variable of type %0 to itself">,
   InGroup<SelfAssignment>, DefaultIgnore;
 
+def warn_string_plus_int : Warning<
+  "adding %0 to a string does not append to the string">,
+  InGroup<StringPlusInt>;
+def note_string_plus_int_silence : Note<
+  "use array indexing to silence this warning">;
+
 def warn_sizeof_array_param : Warning<
   "sizeof on array function parameter will return size of %0 instead of %1">,
   InGroup<SizeofArrayArgument>;
@@ -4197,7 +4207,8 @@ def ext_typecheck_convert_pointer_int : ExtWarn<
   "%select{|dereference with *|"
   "take the address with &|"
   "remove *|"
-  "remove &}3">;
+  "remove &}3">,
+  InGroup<IntConversions>;
 def ext_typecheck_convert_int_pointer : ExtWarn<
   "incompatible integer to pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4207,7 +4218,8 @@ def ext_typecheck_convert_int_pointer : ExtWarn<
   "%select{|dereference with *|"
   "take the address with &|"
   "remove *|"
-  "remove &}3">;
+  "remove &}3">,
+  InGroup<IntConversions>;
 def ext_typecheck_convert_pointer_void_func : Extension<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
@@ -4672,6 +4684,8 @@ def err_literal_operator_outside_namespace : Error<
 // FIXME: This diagnostic sucks
 def err_literal_operator_params : Error<
   "parameter declaration for literal operator %0 is not valid">;
+def err_literal_operator_extern_c : Error<
+  "literal operator must have C++ linkage">;
 def warn_user_literal_hexfloat : Warning<
   "user-defined literal with suffix '%0' is preempted by C99 hexfloat "
   "extension">, InGroup<UserDefinedLiterals>;
@@ -4939,6 +4953,9 @@ def err_blocks_disable : Error<"blocks support disabled - compile with -fblocks"
   " or pick a deployment target that supports them">;
 def err_block_returning_array_function : Error<
   "block cannot return %select{array|function}0 type %1">;
+def warn_block_missing_return_type : Warning<
+  "block literal is missing explicit return type and "
+  "returns non-void values">, InGroup<BlockMissingReturnType>, DefaultIgnore;
 
 // Builtin annotation string.
 def err_builtin_annotation_not_string_constant : Error<

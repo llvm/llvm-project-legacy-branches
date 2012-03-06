@@ -272,6 +272,11 @@ Decl *Parser::ParseLinkage(ParsingDeclSpec &DS, unsigned Context) {
   if (Invalid)
     return 0;
 
+  // FIXME: This is incorrect: linkage-specifiers are parsed in translation
+  // phase 7, so string-literal concatenation is supposed to occur.
+  //   extern "" "C" "" "+" "+" { } is legal.
+  if (Tok.hasUDSuffix())
+    Diag(Tok, diag::err_invalid_string_udl);
   SourceLocation Loc = ConsumeStringToken();
 
   ParseScope LinkageScope(this, Scope::DeclScope);
@@ -610,15 +615,17 @@ Decl *Parser::ParseStaticAssertDeclaration(SourceLocation &DeclEnd){
   if (ExpectAndConsume(tok::comma, diag::err_expected_comma, "", tok::semi))
     return 0;
 
-  if (Tok.isNot(tok::string_literal)) {
+  if (!isTokenStringLiteral()) {
     Diag(Tok, diag::err_expected_string_literal);
     SkipUntil(tok::semi);
     return 0;
   }
 
   ExprResult AssertMessage(ParseStringLiteralExpression());
-  if (AssertMessage.isInvalid())
+  if (AssertMessage.isInvalid()) {
+    SkipUntil(tok::semi);
     return 0;
+  }
 
   T.consumeClose();
 
@@ -1782,11 +1789,15 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     return;
   }
 
+  // Hold late-parsed attributes so we can attach a Decl to them later.
+  LateParsedAttrList CommonLateParsedAttrs;
+
   // decl-specifier-seq:
   // Parse the common declaration-specifiers piece.
   ParsingDeclSpec DS(*this, TemplateDiags);
   DS.takeAttributesFrom(attrs);
-  ParseDeclarationSpecifiers(DS, TemplateInfo, AS, DSC_class);
+  ParseDeclarationSpecifiers(DS, TemplateInfo, AS, DSC_class,
+                             &CommonLateParsedAttrs);
 
   MultiTemplateParamsArg TemplateParams(Actions,
       TemplateInfo.TemplateParams? TemplateInfo.TemplateParams->data() : 0,
@@ -1893,8 +1904,11 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
         ParseCXXInlineMethodDef(AS, AccessAttrs, DeclaratorInfo, TemplateInfo,
                                 VS, DefinitionKind, Init);
 
+      for (unsigned i = 0, ni = CommonLateParsedAttrs.size(); i < ni; ++i) {
+        CommonLateParsedAttrs[i]->addDecl(FunDecl);
+      }
       for (unsigned i = 0, ni = LateParsedAttrs.size(); i < ni; ++i) {
-        LateParsedAttrs[i]->setDecl(FunDecl);
+        LateParsedAttrs[i]->addDecl(FunDecl);
       }
       LateParsedAttrs.clear();
 
@@ -1981,8 +1995,11 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     }
     
     // Set the Decl for any late parsed attributes
+    for (unsigned i = 0, ni = CommonLateParsedAttrs.size(); i < ni; ++i) {
+      CommonLateParsedAttrs[i]->addDecl(ThisDecl);
+    }
     for (unsigned i = 0, ni = LateParsedAttrs.size(); i < ni; ++i) {
-      LateParsedAttrs[i]->setDecl(ThisDecl);
+      LateParsedAttrs[i]->addDecl(ThisDecl);
     }
     LateParsedAttrs.clear();
 

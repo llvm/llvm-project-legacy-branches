@@ -658,6 +658,11 @@ public:
   /// EmitTopLevelDecl - Emit code for a single top level declaration.
   void EmitTopLevelDecl(Decl *D);
 
+  /// MarkVarRequired - Tell the consumer that this variable must be output.
+  /// This is needed when the definition is initially one that can be deferred,
+  /// but we then see an explicit template instantiation definition.
+  void MarkVarRequired(VarDecl *VD);
+
   /// AddUsedGlobal - Add a global which should be forced to be
   /// present in the object file; these are emitted to the llvm.used
   /// metadata global.
@@ -706,10 +711,16 @@ public:
   llvm::Constant *EmitConstantExpr(const Expr *E, QualType DestType,
                                    CodeGenFunction *CGF = 0);
 
-  /// EmitConstantValue - Try to emit the given constant value as a
-  /// constant; returns 0 if the value cannot be emitted as a constant.
+  /// EmitConstantValue - Emit the given constant value as a constant, in the
+  /// type's scalar representation.
   llvm::Constant *EmitConstantValue(const APValue &Value, QualType DestType,
                                     CodeGenFunction *CGF = 0);
+
+  /// EmitConstantValueForMemory - Emit the given constant value as a constant,
+  /// in the type's memory representation.
+  llvm::Constant *EmitConstantValueForMemory(const APValue &Value,
+                                             QualType DestType,
+                                             CodeGenFunction *CGF = 0);
 
   /// EmitNullConstant - Return the result of value-initializing the given
   /// type, i.e. a null expression of the given type.  This is usually,

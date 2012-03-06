@@ -1128,13 +1128,15 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
     QualType NewBaseType
       = Context.getCanonicalType(Bases[idx]->getType());
     NewBaseType = NewBaseType.getLocalUnqualifiedType();
-    if (KnownBaseTypes[NewBaseType]) {
+
+    CXXBaseSpecifier *&KnownBase = KnownBaseTypes[NewBaseType];
+    if (KnownBase) {
       // C++ [class.mi]p3:
       //   A class shall not be specified as a direct base class of a
       //   derived class more than once.
       Diag(Bases[idx]->getSourceRange().getBegin(),
            diag::err_duplicate_base_class)
-        << KnownBaseTypes[NewBaseType]->getType()
+        << KnownBase->getType()
         << Bases[idx]->getSourceRange();
 
       // Delete the duplicate base class specifier; we're going to
@@ -1144,7 +1146,7 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
       Invalid = true;
     } else {
       // Okay, add this new base class.
-      KnownBaseTypes[NewBaseType] = Bases[idx];
+      KnownBase = Bases[idx];
       Bases[NumGoodBases++] = Bases[idx];
       if (const RecordType *Record = NewBaseType->getAs<RecordType>())
         if (const CXXRecordDecl *RD = cast<CXXRecordDecl>(Record->getDecl()))
@@ -8825,15 +8827,6 @@ void Sema::DefineImplicitLambdaToBlockPointerConversion(
        SourceLocation CurrentLocation,
        CXXConversionDecl *Conv) 
 {
-  CXXRecordDecl *Lambda = Conv->getParent();
-  
-  // Make sure that the lambda call operator is marked used.
-  CXXMethodDecl *CallOperator 
-    = cast<CXXMethodDecl>(
-        *Lambda->lookup(
-          Context.DeclarationNames.getCXXOperatorName(OO_Call)).first);
-  CallOperator->setReferenced();
-  CallOperator->setUsed();
   Conv->setUsed();
   
   ImplicitlyDefinedFunctionScope Scope(*this, Conv);
@@ -8842,79 +8835,29 @@ void Sema::DefineImplicitLambdaToBlockPointerConversion(
   // Copy-initialize the lambda object as needed to capture it.
   Expr *This = ActOnCXXThis(CurrentLocation).take();
   Expr *DerefThis =CreateBuiltinUnaryOp(CurrentLocation, UO_Deref, This).take();
-  ExprResult Init = PerformCopyInitialization(
-                      InitializedEntity::InitializeBlock(CurrentLocation, 
-                                                         DerefThis->getType(), 
-                                                         /*NRVO=*/false),
-                      CurrentLocation, DerefThis);
-  if (!Init.isInvalid())
-    Init = ActOnFinishFullExpr(Init.take());
   
-  if (Init.isInvalid()) {
+  ExprResult BuildBlock = BuildBlockForLambdaConversion(CurrentLocation,
+                                                        Conv->getLocation(),
+                                                        Conv, DerefThis);
+
+  // If we're not under ARC, make sure we still get the _Block_copy/autorelease
+  // behavior.  Note that only the general conversion function does this
+  // (since it's unusable otherwise); in the case where we inline the
+  // block literal, it has block literal lifetime semantics.
+  if (!BuildBlock.isInvalid() && !getLangOptions().ObjCAutoRefCount)
+    BuildBlock = ImplicitCastExpr::Create(Context, BuildBlock.get()->getType(),
+                                          CK_CopyAndAutoreleaseBlockObject,
+                                          BuildBlock.get(), 0, VK_RValue);
+
+  if (BuildBlock.isInvalid()) {
     Diag(CurrentLocation, diag::note_lambda_to_block_conv);
     Conv->setInvalidDecl();
     return;
   }
-  
-  // Create the new block to be returned.
-  BlockDecl *Block = BlockDecl::Create(Context, Conv, Conv->getLocation());
-  
-  // Set the type information.
-  Block->setSignatureAsWritten(CallOperator->getTypeSourceInfo());
-  Block->setIsVariadic(CallOperator->isVariadic());
-  Block->setBlockMissingReturnType(false);
-  
-  // Add parameters.
-  SmallVector<ParmVarDecl *, 4> BlockParams;
-  for (unsigned I = 0, N = CallOperator->getNumParams(); I != N; ++I) {
-    ParmVarDecl *From = CallOperator->getParamDecl(I);
-    BlockParams.push_back(ParmVarDecl::Create(Context, Block,
-                                              From->getLocStart(),
-                                              From->getLocation(),
-                                              From->getIdentifier(),
-                                              From->getType(),
-                                              From->getTypeSourceInfo(),
-                                              From->getStorageClass(),
-                                            From->getStorageClassAsWritten(),
-                                              /*DefaultArg=*/0));
-  }
-  Block->setParams(BlockParams);
-  
-  // Add capture. The capture uses a fake variable, which doesn't correspond
-  // to any actual memory location. However, the initializer copy-initializes
-  // the lambda object.
-  TypeSourceInfo *CapVarTSI =
-      Context.getTrivialTypeSourceInfo(DerefThis->getType());
-  VarDecl *CapVar = VarDecl::Create(Context, Block, Conv->getLocation(),
-                                    Conv->getLocation(), 0,
-                                    DerefThis->getType(), CapVarTSI,
-                                    SC_None, SC_None);
-  BlockDecl::Capture Capture(/*Variable=*/CapVar, /*ByRef=*/false,
-                             /*Nested=*/false, /*Copy=*/Init.take());
-  Block->setCaptures(Context, &Capture, &Capture + 1, 
-                     /*CapturesCXXThis=*/false);
-  
-  // Add a fake function body to the block. IR generation is responsible
-  // for filling in the actual body, which cannot be expressed as an AST.
-  Block->setBody(new (Context) CompoundStmt(Context, 0, 0, 
-                                            Conv->getLocation(),
-                                            Conv->getLocation()));
 
-  // Create the block literal expression.
-  Expr *BuildBlock = new (Context) BlockExpr(Block, Conv->getConversionType());
-  ExprCleanupObjects.push_back(Block);
-  ExprNeedsCleanups = true;
-
-  // If we're not under ARC, make sure we still get the _Block_copy/autorelease
-  // behavior.
-  if (!getLangOptions().ObjCAutoRefCount)
-    BuildBlock = ImplicitCastExpr::Create(Context, BuildBlock->getType(),
-                                          CK_CopyAndAutoreleaseBlockObject,
-                                          BuildBlock, 0, VK_RValue);
-  
   // Create the return statement that returns the block from the conversion
   // function.
-  StmtResult Return = ActOnReturnStmt(Conv->getLocation(), BuildBlock);
+  StmtResult Return = ActOnReturnStmt(Conv->getLocation(), BuildBlock.get());
   if (Return.isInvalid()) {
     Diag(CurrentLocation, diag::note_lambda_to_block_conv);
     Conv->setInvalidDecl();
@@ -9356,12 +9299,17 @@ bool Sema::CheckLiteralOperatorDeclaration(FunctionDecl *FnDecl) {
     return true;
   }
 
+  if (FnDecl->isExternC()) {
+    Diag(FnDecl->getLocation(), diag::err_literal_operator_extern_c);
+    return true;
+  }
+
   bool Valid = false;
 
   // template <char...> type operator "" name() is the only valid template
   // signature, and the only valid signature with no parameters.
-  if (FnDecl->param_size() == 0) {
-    if (FunctionTemplateDecl *TpDecl = FnDecl->getDescribedFunctionTemplate()) {
+  if (FunctionTemplateDecl *TpDecl = FnDecl->getDescribedFunctionTemplate()) {
+    if (FnDecl->param_size() == 0) {
       // Must have only one template parameter
       TemplateParameterList *Params = TpDecl->getTemplateParameters();
       if (Params->size() == 1) {
@@ -9374,11 +9322,11 @@ bool Sema::CheckLiteralOperatorDeclaration(FunctionDecl *FnDecl) {
           Valid = true;
       }
     }
-  } else {
+  } else if (FnDecl->param_size()) {
     // Check the first parameter
     FunctionDecl::param_iterator Param = FnDecl->param_begin();
 
-    QualType T = (*Param)->getType();
+    QualType T = (*Param)->getType().getUnqualifiedType();
 
     // unsigned long long int, long double, and any character type are allowed
     // as the only parameters.
@@ -9398,7 +9346,7 @@ bool Sema::CheckLiteralOperatorDeclaration(FunctionDecl *FnDecl) {
     if (!PT)
       goto FinishedParams;
     T = PT->getPointeeType();
-    if (!T.isConstQualified())
+    if (!T.isConstQualified() || T.isVolatileQualified())
       goto FinishedParams;
     T = T.getUnqualifiedType();
 
@@ -9698,9 +9646,13 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
           /*AllowFold=*/false).isInvalid())
       return 0;
 
-    if (!Cond)
+    if (!Cond) {
+      llvm::SmallString<256> MsgBuffer;
+      llvm::raw_svector_ostream Msg(MsgBuffer);
+      AssertMessage->printPretty(Msg, Context, 0, getPrintingPolicy());
       Diag(StaticAssertLoc, diag::err_static_assert_failed)
-        << AssertMessage->getString() << AssertExpr->getSourceRange();
+        << Msg.str() << AssertExpr->getSourceRange();
+    }
   }
 
   if (DiagnoseUnexpandedParameterPack(AssertExpr, UPPC_StaticAssertExpression))

@@ -259,12 +259,6 @@ ASTContext::~ASTContext() {
   for (unsigned I = 0, N = Deallocations.size(); I != N; ++I)
     Deallocations[I].first(Deallocations[I].second);
   
-  // Release all of the memory associated with overridden C++ methods.
-  for (llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector>::iterator 
-         OM = OverriddenMethods.begin(), OMEnd = OverriddenMethods.end();
-       OM != OMEnd; ++OM)
-    OM->second.Destroy();
-  
   // ASTRecordLayout objects in ASTRecordLayouts must always be destroyed
   // because they can contain DenseMaps.
   for (llvm::DenseMap<const ObjCContainerDecl*,
@@ -2962,7 +2956,7 @@ QualType ASTContext::getUnaryTransformType(QualType BaseType,
     new (*this, TypeAlignment) UnaryTransformType (BaseType, UnderlyingType, 
                                                    Kind,
                                  UnderlyingType->isDependentType() ?
-                                    QualType() : UnderlyingType);
+                                 QualType() : getCanonicalType(UnderlyingType));
   Types.push_back(Ty);
   return QualType(Ty, 0);
 }
@@ -3376,26 +3370,13 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     // types, e.g.,
     //   typedef typename T::type T1;
     //   typedef typename T1::type T2;
-    if (const DependentNameType *DNT = T->getAs<DependentNameType>()) {
-      NestedNameSpecifier *Prefix
-        = getCanonicalNestedNameSpecifier(DNT->getQualifier());
-      return NestedNameSpecifier::Create(*this, Prefix, 
+    if (const DependentNameType *DNT = T->getAs<DependentNameType>())
+      return NestedNameSpecifier::Create(*this, DNT->getQualifier(), 
                            const_cast<IdentifierInfo *>(DNT->getIdentifier()));
-    }    
 
-    // Do the same thing as above, but with dependent-named specializations.
-    if (const DependentTemplateSpecializationType *DTST
-          = T->getAs<DependentTemplateSpecializationType>()) {
-      NestedNameSpecifier *Prefix
-        = getCanonicalNestedNameSpecifier(DTST->getQualifier());
-      
-      T = getDependentTemplateSpecializationType(DTST->getKeyword(),
-                                                 Prefix, DTST->getIdentifier(),
-                                                 DTST->getNumArgs(),
-                                                 DTST->getArgs());
-      T = getCanonicalType(T);
-    }
-    
+    // Otherwise, just canonicalize the type, and force it to be a TypeSpec.
+    // FIXME: Why are TypeSpec and TypeSpecWithTemplate distinct in the
+    // first place?
     return NestedNameSpecifier::Create(*this, 0, false,
                                        const_cast<Type*>(T.getTypePtr()));
   }

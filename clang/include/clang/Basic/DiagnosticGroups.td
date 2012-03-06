@@ -27,6 +27,7 @@ def : DiagGroup<"bad-function-cast">;
 def Availability : DiagGroup<"availability">;
 def AutoImport : DiagGroup<"auto-import">;
 def BoolConversions : DiagGroup<"bool-conversions">;
+def IntConversions : DiagGroup<"int-conversions">;
 def BuiltinRequiresHeader : DiagGroup<"builtin-requires-header">;
 def CXXCompat: DiagGroup<"c++-compat">;
 def CastAlign : DiagGroup<"cast-align">;
@@ -133,6 +134,7 @@ def OverloadedVirtual : DiagGroup<"overloaded-virtual">;
 def ObjCPropertyImpl : DiagGroup<"objc-property-implementation">;
 def ObjCMissingSuperCalls : DiagGroup<"objc-missing-super-calls">;
 def ObjCRetainBlockProperty : DiagGroup<"objc-noncopy-retain-block-property">;
+def BlockMissingReturnType : DiagGroup<"block-missing-explicit-return-type">;
 def ObjCReadonlyPropertyHasSetter : DiagGroup<"objc-readonly-with-setter-property">;
 def Packed : DiagGroup<"packed">;
 def Padded : DiagGroup<"padded">;
@@ -160,6 +162,7 @@ def : DiagGroup<"stack-protector">;
 def : DiagGroup<"switch-default">;
 def : DiagGroup<"synth">;
 def SizeofArrayArgument : DiagGroup<"sizeof-array-argument">;
+def StringPlusInt : DiagGroup<"string-plus-int">;
 def StrncatSize : DiagGroup<"strncat-size">;
 def TautologicalCompare : DiagGroup<"tautological-compare">;
 def HeaderHygiene : DiagGroup<"header-hygiene">;
@@ -244,6 +247,7 @@ def VectorConversions : DiagGroup<"vector-conversions">;      // clang specific
 def VexingParse : DiagGroup<"vexing-parse">;
 def VLA : DiagGroup<"vla">;
 def VolatileRegisterVar : DiagGroup<"volatile-register-var">;
+def Visibility : DiagGroup<"visibility">;
 
 // GCC calls -Wdeprecated-writable-strings -Wwrite-strings.
 def GCCWriteStrings : DiagGroup<"write-strings" , [DeprecatedWritableStr]>;
@@ -277,7 +281,8 @@ def Conversion : DiagGroup<"conversion",
                             DiagGroup<"literal-conversion">,
                             DiagGroup<"string-conversion">,
                             DiagGroup<"sign-conversion">,
-                            BoolConversions]>,
+                            BoolConversions,
+                            IntConversions]>,
                  DiagCategory<"Value Conversion Issue">;
 
 def Unused : DiagGroup<"unused",
@@ -323,6 +328,7 @@ def Most : DiagGroup<"most", [
     ReturnType,
     SelfAssignment,
     SizeofArrayArgument,
+    StringPlusInt,
     Trigraphs,
     Uninitialized,
     UnknownPragmas,

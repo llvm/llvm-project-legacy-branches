@@ -255,15 +255,23 @@ static void ReportCall(raw_ostream &o,
   
   IntrusiveRefCntPtr<PathDiagnosticEventPiece> callEnter =
     P.getCallEnterEvent();  
+
   if (callEnter)
     ReportPiece(o, *callEnter, FM, SM, LangOpts, indent, true);
 
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> callEnterWithinCaller =
+    P.getCallEnterWithinCallerEvent();
+  
+  if (callEnterWithinCaller)
+    ReportPiece(o, *callEnterWithinCaller, FM, SM, LangOpts, indent, true);
+  
   for (PathPieces::const_iterator I = P.path.begin(), E = P.path.end();I!=E;++I)
     ReportPiece(o, **I, FM, SM, LangOpts, indent, true);
   
   IntrusiveRefCntPtr<PathDiagnosticEventPiece> callExit =
     P.getCallExitEvent();
-  if (callExit)  
+
+  if (callExit)
     ReportPiece(o, *callExit, FM, SM, LangOpts, indent, true);
 }
 
@@ -324,19 +332,38 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
   if (!Diags.empty())
     SM = &(*(*Diags.begin())->path.begin())->getLocation().getManager();
 
+  
   for (std::vector<const PathDiagnostic*>::iterator DI = Diags.begin(),
        DE = Diags.end(); DI != DE; ++DI) {
 
     const PathDiagnostic *D = *DI;
 
-    for (PathPieces::const_iterator I = D->path.begin(), E = D->path.end();
-         I!=E; ++I) {
-      AddFID(FM, Fids, SM, (*I)->getLocation().asLocation());
+    llvm::SmallVector<const PathPieces *, 5> WorkList;
+    WorkList.push_back(&D->path);
 
-      for (PathDiagnosticPiece::range_iterator RI = (*I)->ranges_begin(),
-           RE= (*I)->ranges_end(); RI != RE; ++RI) {
-        AddFID(FM, Fids, SM, RI->getBegin());
-        AddFID(FM, Fids, SM, RI->getEnd());
+    while (!WorkList.empty()) {
+      const PathPieces &path = *WorkList.back();
+      WorkList.pop_back();
+    
+      for (PathPieces::const_iterator I = path.begin(), E = path.end();
+           I!=E; ++I) {
+        const PathDiagnosticPiece *piece = I->getPtr();
+        AddFID(FM, Fids, SM, piece->getLocation().asLocation());
+
+        for (PathDiagnosticPiece::range_iterator RI = piece->ranges_begin(),
+             RE= piece->ranges_end(); RI != RE; ++RI) {
+          AddFID(FM, Fids, SM, RI->getBegin());
+          AddFID(FM, Fids, SM, RI->getEnd());
+        }
+
+        if (const PathDiagnosticCallPiece *call =
+            dyn_cast<PathDiagnosticCallPiece>(piece)) {
+          WorkList.push_back(&call->path);
+        }
+        else if (const PathDiagnosticMacroPiece *macro =
+                 dyn_cast<PathDiagnosticMacroPiece>(piece)) {
+          WorkList.push_back(&macro->subPieces);
+        }
       }
     }
   }

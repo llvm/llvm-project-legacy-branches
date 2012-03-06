@@ -42,10 +42,8 @@ public:
   RefState(Kind k, const Stmt *s) : K(k), S(s) {}
 
   bool isAllocated() const { return K == AllocateUnchecked; }
-  //bool isFailed() const { return K == AllocateFailed; }
   bool isReleased() const { return K == Released; }
-  //bool isEscaped() const { return K == Escaped; }
-  //bool isRelinquished() const { return K == Relinquished; }
+
   const Stmt *getStmt() const { return S; }
 
   bool operator==(const RefState &X) const {
@@ -100,8 +98,6 @@ class MallocChecker : public Checker<check::DeadSymbols,
   mutable OwningPtr<BugType> BT_BadFree;
   mutable IdentifierInfo *II_malloc, *II_free, *II_realloc, *II_calloc,
                          *II_valloc, *II_reallocf, *II_strndup, *II_strdup;
-
-  static const unsigned InvalidArgIndex = UINT_MAX;
 
 public:
   MallocChecker() : II_malloc(0), II_free(0), II_realloc(0), II_calloc(0),
@@ -444,12 +440,16 @@ ProgramStateRef MallocChecker::FreeMemAttr(CheckerContext &C,
   if (Att->getModule() != "malloc")
     return 0;
 
+  ProgramStateRef State = C.getState();
+
   for (OwnershipAttr::args_iterator I = Att->args_begin(), E = Att->args_end();
        I != E; ++I) {
-    return FreeMemAux(C, CE, C.getState(), *I,
-                      Att->getOwnKind() == OwnershipAttr::Holds);
+    ProgramStateRef StateI = FreeMemAux(C, CE, State, *I,
+                               Att->getOwnKind() == OwnershipAttr::Holds);
+    if (StateI)
+      State = StateI;
   }
-  return 0;
+  return State;
 }
 
 ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
@@ -1084,7 +1084,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
   ASTContext &ASTC = State->getStateManager().getContext();
 
   // If it's one of the allocation functions we can reason about, we model
-  // it's behavior explicitly.
+  // its behavior explicitly.
   if (isa<FunctionDecl>(D) && isMemFunction(cast<FunctionDecl>(D), ASTC)) {
     return true;
   }
@@ -1095,7 +1095,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     return false;
 
   // Process C/ObjC functions.
-  if (const FunctionDecl *FD  = dyn_cast_or_null<FunctionDecl>(D)) {
+  if (const FunctionDecl *FD  = dyn_cast<FunctionDecl>(D)) {
     // White list the system functions whose arguments escape.
     const IdentifierInfo *II = FD->getIdentifier();
     if (!II)
@@ -1106,7 +1106,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     if (FName.equals("pthread_setspecific"))
       return false;
 
-    // White list the 'XXXNoCopy' ObjC Methods.
+    // White list the 'XXXNoCopy' ObjC functions.
     if (FName.endswith("NoCopy")) {
       // Look for the deallocator argument. We know that the memory ownership
       // is not transfered only if the deallocator argument is
@@ -1119,6 +1119,43 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
             return true;
         }
       }
+      return false;
+    }
+
+    // PR12101
+    // Many CoreFoundation and CoreGraphics might allow a tracked object 
+    // to escape.
+    if (Call->isCFCGAllowingEscape(FName))
+      return false;
+
+    // Associating streams with malloced buffers. The pointer can escape if
+    // 'closefn' is specified (and if that function does free memory).
+    // Currently, we do not inspect the 'closefn' function (PR12101).
+    if (FName == "funopen")
+      if (Call->getNumArgs() >= 4 && !Call->getArgSVal(4).isConstant(0))
+        return false;
+
+    // Do not warn on pointers passed to 'setbuf' when used with std streams,
+    // these leaks might be intentional when setting the buffer for stdio.
+    // http://stackoverflow.com/questions/2671151/who-frees-setvbuf-buffer
+    if (FName == "setbuf" || FName =="setbuffer" ||
+        FName == "setlinebuf" || FName == "setvbuf") {
+      if (Call->getNumArgs() >= 1)
+        if (const DeclRefExpr *Arg =
+              dyn_cast<DeclRefExpr>(Call->getArg(0)->IgnoreParenCasts()))
+          if (const VarDecl *D = dyn_cast<VarDecl>(Arg->getDecl()))
+              if (D->getCanonicalDecl()->getName().find("std")
+                                                   != StringRef::npos)
+                return false;
+    }
+
+    // A bunch of other functions, which take ownership of a pointer (See retain
+    // release checker). Not all the parameters here are invalidated, but the
+    // Malloc checker cannot differentiate between them. The right way of doing
+    // this would be to implement a pointer escapes callback.
+    if (FName == "CVPixelBufferCreateWithBytes" ||
+        FName == "CGBitmapContextCreateWithData" ||
+        FName == "CVPixelBufferCreateWithPlanarBytes") {
       return false;
     }
 
@@ -1137,7 +1174,16 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
       if (S.getNameForSlot(i).equals("freeWhenDone")) {
         if (Call->getArgSVal(i).isConstant(1))
           return false;
+        else
+          return true;
       }
+    }
+
+    // If the first selector ends with NoCopy, assume that the ownership is
+    // transfered as well.
+    // Ex:  [NSData dataWithBytesNoCopy:bytes length:10];
+    if (S.getNameForSlot(0).endswith("NoCopy")) {
+      return false;
     }
 
     // Otherwise, assume that the function does not free memory.

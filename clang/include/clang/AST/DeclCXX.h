@@ -997,6 +997,14 @@ public:
   void getCaptureFields(llvm::DenseMap<const VarDecl *, FieldDecl *> &Captures,
                         FieldDecl *&ThisCapture) const;
 
+  typedef const LambdaExpr::Capture* capture_const_iterator;
+  capture_const_iterator captures_begin() const {
+    return isLambda() ? getLambdaData().Captures : NULL;
+  }
+  capture_const_iterator captures_end() const {
+    return isLambda() ? captures_begin() + getLambdaData().NumCaptures : NULL;
+  }
+
   /// getConversions - Retrieve the overload set containing all of the
   /// conversion functions in this class.
   UnresolvedSetImpl *getConversionFunctions() {
@@ -1593,7 +1601,7 @@ public:
   ///
   void addOverriddenMethod(const CXXMethodDecl *MD);
 
-  typedef const CXXMethodDecl ** method_iterator;
+  typedef const CXXMethodDecl *const* method_iterator;
 
   method_iterator begin_overridden_methods() const;
   method_iterator end_overridden_methods() const;

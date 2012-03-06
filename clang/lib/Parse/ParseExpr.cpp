@@ -258,7 +258,8 @@ ExprResult Parser::ParseConstantExpression(TypeCastState isTypeCast) {
                                                Sema::ConstantEvaluated);
 
   ExprResult LHS(ParseCastExpression(false, false, isTypeCast));
-  return ParseRHSOfBinaryExpression(LHS, prec::Conditional);
+  ExprResult Res(ParseRHSOfBinaryExpression(LHS, prec::Conditional));
+  return Actions.ActOnConstantExpression(Res);
 }
 
 /// ParseRHSOfBinaryExpression - Parse a binary expression that starts with
@@ -352,22 +353,18 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
     // Therefore we need some special-casing here.
     // Also note that the third operand of the conditional operator is
     // an assignment-expression in C++, and in C++11, we can have a
-    // braced-init-list on the RHS of an assignment.
+    // braced-init-list on the RHS of an assignment. For better diagnostics,
+    // parse as if we were allowed braced-init-lists everywhere, and check that
+    // they only appear on the RHS of assignments later.
     ExprResult RHS;
-    if (getLang().CPlusPlus0x && MinPrec == prec::Assignment &&
-        Tok.is(tok::l_brace)) {
-      Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
+    bool RHSIsInitList = false;
+    if (getLang().CPlusPlus0x && Tok.is(tok::l_brace)) {
       RHS = ParseBraceInitializer();
-      if (LHS.isInvalid() || RHS.isInvalid())
-        return ExprError();
-      // A braced-init-list can never be followed by more operators.
-      return Actions.ActOnBinOp(getCurScope(), OpToken.getLocation(),
-                                OpToken.getKind(), LHS.take(), RHS.take());
-    } else if (getLang().CPlusPlus && NextTokPrec <= prec::Conditional) {
+      RHSIsInitList = true;
+    } else if (getLang().CPlusPlus && NextTokPrec <= prec::Conditional)
       RHS = ParseAssignmentExpression();
-    } else {
+    else
       RHS = ParseCastExpression(false);
-    }
 
     if (RHS.isInvalid())
       LHS = ExprError();
@@ -386,6 +383,11 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
     // more tightly with RHS than we do, evaluate it completely first.
     if (ThisPrec < NextTokPrec ||
         (ThisPrec == NextTokPrec && isRightAssoc)) {
+      if (!RHS.isInvalid() && RHSIsInitList) {
+        Diag(Tok, diag::err_init_list_bin_op)
+          << /*LHS*/0 << PP.getSpelling(Tok) << Actions.getExprRange(RHS.get());
+        RHS = ExprError();
+      }
       // If this is left-associative, only parse things on the RHS that bind
       // more tightly than the current operator.  If it is left-associative, it
       // is okay, to bind exactly as tightly.  For example, compile A=B=C=D as
@@ -393,6 +395,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
       // The function takes ownership of the RHS.
       RHS = ParseRHSOfBinaryExpression(RHS, 
                             static_cast<prec::Level>(ThisPrec + !isRightAssoc));
+      RHSIsInitList = false;
 
       if (RHS.isInvalid())
         LHS = ExprError();
@@ -401,6 +404,18 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
                                        getLang().CPlusPlus0x);
     }
     assert(NextTokPrec <= ThisPrec && "Recursion didn't work!");
+
+    if (!RHS.isInvalid() && RHSIsInitList) {
+      if (ThisPrec == prec::Assignment) {
+        Diag(OpToken, diag::warn_cxx98_compat_generalized_initializer_lists)
+          << Actions.getExprRange(RHS.get());
+      } else {
+        Diag(OpToken, diag::err_init_list_bin_op)
+          << /*RHS*/1 << PP.getSpelling(OpToken)
+          << Actions.getExprRange(RHS.get());
+        LHS = ExprError();
+      }
+    }
 
     if (!LHS.isInvalid()) {
       // Combine the LHS and RHS into the LHS (e.g. build AST).
@@ -482,14 +497,14 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///         unary-operator cast-expression
 ///         'sizeof' unary-expression
 ///         'sizeof' '(' type-name ')'
-/// [C++0x] 'sizeof' '...' '(' identifier ')'
+/// [C++11] 'sizeof' '...' '(' identifier ')'
 /// [GNU]   '__alignof' unary-expression
 /// [GNU]   '__alignof' '(' type-name ')'
-/// [C++0x] 'alignof' '(' type-id ')'
+/// [C++11] 'alignof' '(' type-id ')'
 /// [GNU]   '&&' identifier
+/// [C++11] 'noexcept' '(' expression ')' [C++11 5.3.7]
 /// [C++]   new-expression
 /// [C++]   delete-expression
-/// [C++0x] 'noexcept' '(' expression ')'
 ///
 ///       unary-operator: one of
 ///         '&'  '*'  '+'  '-'  '~'  '!'
@@ -501,7 +516,8 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 ///         constant
 ///         string-literal
 /// [C++]   boolean-literal  [C++ 2.13.5]
-/// [C++0x] 'nullptr'        [C++0x 2.14.7]
+/// [C++11] 'nullptr'        [C++11 2.14.7]
+/// [C++11] user-defined-literal
 ///         '(' expression ')'
 /// [C11]   generic-selection
 ///         '__func__'        [C99 6.4.2.2]
@@ -520,9 +536,9 @@ class CastExpressionIdValidator : public CorrectionCandidateCallback {
 /// [OBJC]  '@encode' '(' type-name ')'
 /// [OBJC]  objc-string-literal
 /// [C++]   simple-type-specifier '(' expression-list[opt] ')'      [C++ 5.2.3]
-/// [C++0x] simple-type-specifier braced-init-list                  [C++ 5.2.3]
+/// [C++11] simple-type-specifier braced-init-list                  [C++11 5.2.3]
 /// [C++]   typename-specifier '(' expression-list[opt] ')'         [C++ 5.2.3]
-/// [C++0x] typename-specifier braced-init-list                     [C++ 5.2.3]
+/// [C++11] typename-specifier braced-init-list                     [C++11 5.2.3]
 /// [C++]   'const_cast' '<' type-name '>' '(' expression ')'       [C++ 5.2p1]
 /// [C++]   'dynamic_cast' '<' type-name '>' '(' expression ')'     [C++ 5.2p1]
 /// [C++]   'reinterpret_cast' '<' type-name '>' '(' expression ')' [C++ 5.2p1]
@@ -835,7 +851,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::utf8_string_literal:
   case tok::utf16_string_literal:
   case tok::utf32_string_literal:
-    Res = ParseStringLiteralExpression();
+    Res = ParseStringLiteralExpression(true);
     break;
   case tok::kw__Generic:   // primary-expression: generic-selection [C11 6.5.1]
     Res = ParseGenericSelectionExpression();
@@ -2087,7 +2103,7 @@ Parser::ParseCompoundLiteralExpression(ParsedType Ty,
 ///
 ///       primary-expression: [C99 6.5.1]
 ///         string-literal
-ExprResult Parser::ParseStringLiteralExpression() {
+ExprResult Parser::ParseStringLiteralExpression(bool AllowUserDefinedLiteral) {
   assert(isTokenStringLiteral() && "Not a string literal!");
 
   // String concat.  Note that keywords like __func__ and __FUNCTION__ are not
@@ -2095,6 +2111,12 @@ ExprResult Parser::ParseStringLiteralExpression() {
   SmallVector<Token, 4> StringToks;
 
   do {
+    if (!AllowUserDefinedLiteral && Tok.hasUDSuffix()) {
+      Diag(Tok, diag::err_invalid_string_udl);
+      do ConsumeStringToken(); while (isTokenStringLiteral());
+      return ExprError();
+    }
+
     StringToks.push_back(Tok);
     ConsumeStringToken();
   } while (isTokenStringLiteral());

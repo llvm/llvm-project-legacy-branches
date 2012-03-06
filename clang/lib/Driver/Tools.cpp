@@ -1339,6 +1339,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
     CmdArgs.push_back("-analyzer-eagerly-assume");
 
+    CmdArgs.push_back("-analyzer-inline-call");
+
     // Add default argument set.
     if (!Args.hasArg(options::OPT__analyzer_no_default_checks)) {
       CmdArgs.push_back("-analyzer-checker=core");
@@ -1928,6 +1930,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_fno_address_sanitizer, false))
     CmdArgs.push_back("-faddress-sanitizer");
 
+  if (Args.hasFlag(options::OPT_fthread_sanitizer,
+                   options::OPT_fno_thread_sanitizer, false))
+    CmdArgs.push_back("-fthread-sanitizer");
+
   // -flax-vector-conversions is default.
   if (!Args.hasFlag(options::OPT_flax_vector_conversions,
                     options::OPT_fno_lax_vector_conversions))
@@ -2225,6 +2231,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // NOTE: This logic is duplicated in ToolChains.cpp.
   bool ARC = isObjCAutoRefCount(Args);
   if (ARC) {
+    if (!getToolChain().SupportsObjCARC())
+      D.Diag(diag::err_arc_unsupported);
+
     CmdArgs.push_back("-fobjc-arc");
 
     // FIXME: It seems like this entire block, and several around it should be
@@ -4216,6 +4225,9 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   ArgStringList CmdArgs;
+
+  // Demangle C++ names in errors
+  CmdArgs.push_back("-C");
 
   if ((!Args.hasArg(options::OPT_nostdlib)) &&
       (!Args.hasArg(options::OPT_shared))) {
