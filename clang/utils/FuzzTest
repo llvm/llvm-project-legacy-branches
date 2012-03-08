@@ -182,7 +182,7 @@ test and then leave the fuzzed inputs in place to examine the failure.
 For each fuzzed input, %prog will run the test command given on the command
 line. Each argument in the command is subject to string interpolation before
 being executed. The syntax is "%(VARIABLE)FORMAT" where FORMAT is a standard
-printf format, and VARIBLE is one of:
+printf format, and VARIABLE is one of:
 
   'index' - the test index being run
   'inputs' - the full list of test inputs
@@ -223,7 +223,7 @@ and you can run a particular test with '--test <index>'.
                      type=str, action="append", dest="input_files", default=[])
     group.add_option("", "--filelist", metavar="LIST",
                      help="Add a list of inputs files to fuzz (one per line)",
-                     type=int, action="append", dest="filelists", default=[])
+                     type=str, action="append", dest="filelists", default=[])
     parser.add_option_group(group)
 
     group = OptionGroup(parser, "Fuzz Options")

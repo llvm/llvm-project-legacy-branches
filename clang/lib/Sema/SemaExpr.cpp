@@ -1122,6 +1122,14 @@ Sema::CreateGenericSelectionExpr(SourceLocation KeyLoc,
                  ResultIndex));
 }
 
+/// getUDSuffixLoc - Create a SourceLocation for a ud-suffix, given the
+/// location of the token and the offset of the ud-suffix within it.
+static SourceLocation getUDSuffixLoc(Sema &S, SourceLocation TokLoc,
+                                     unsigned Offset) {
+  return Lexer::AdvanceToTokenCharacter(TokLoc, Offset, S.getSourceManager(),
+                                        S.getLangOptions());
+}
+
 /// ActOnStringLiteral - The specified tokens were lexed as pasted string
 /// fragments (e.g. "foo" "bar" L"baz").  The result string has to handle string
 /// concatenation ([C99 5.1.1.2, translation phase #6]), so it may come from
@@ -1172,10 +1180,28 @@ Sema::ActOnStringLiteral(const Token *StringToks, unsigned NumStringToks) {
                                        ArrayType::Normal, 0);
 
   // Pass &StringTokLocs[0], StringTokLocs.size() to factory!
-  return Owned(StringLiteral::Create(Context, Literal.GetString(),
-                                     Kind, Literal.Pascal, StrTy,
-                                     &StringTokLocs[0],
-                                     StringTokLocs.size()));
+  StringLiteral *Lit = StringLiteral::Create(Context, Literal.GetString(),
+                                             Kind, Literal.Pascal, StrTy,
+                                             &StringTokLocs[0],
+                                             StringTokLocs.size());
+  if (Literal.getUDSuffix().empty())
+    return Owned(Lit);
+
+  // We're building a user-defined literal.
+  IdentifierInfo *UDSuffix = &Context.Idents.get(Literal.getUDSuffix());
+  SourceLocation UDSuffixLoc =
+    getUDSuffixLoc(*this, StringTokLocs[Literal.getUDSuffixToken()],
+                   Literal.getUDSuffixOffset());
+
+  // C++11 [lex.ext]p5: The literal L is treated as a call of the form
+  //   operator "" X (str, len)
+  QualType SizeType = Context.getSizeType();
+  llvm::APInt Len(Context.getIntWidth(SizeType), Literal.GetNumStringChars());
+  IntegerLiteral *LenArg = IntegerLiteral::Create(Context, Len, SizeType,
+                                                  StringTokLocs[0]);
+  Expr *Args[] = { Lit, LenArg };
+  return BuildLiteralOperatorCall(UDSuffix, UDSuffixLoc, Args,
+                                  StringTokLocs.back());
 }
 
 ExprResult
@@ -1748,7 +1774,8 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
 
       // Diagnose the use of an ivar outside of the declaring class.
       if (IV->getAccessControl() == ObjCIvarDecl::Private &&
-          !declaresSameEntity(ClassDeclared, IFace))
+          !declaresSameEntity(ClassDeclared, IFace) &&
+          !getLangOptions().DebuggerSupport)
         Diag(Loc, diag::error_private_ivar_access) << IV->getDeclName();
 
       // FIXME: This should use a new expr for a direct reference, don't
@@ -2386,8 +2413,60 @@ ExprResult Sema::ActOnCharacterConstant(const Token &Tok) {
   else if (Literal.isUTF32())
     Kind = CharacterLiteral::UTF32;
 
-  return Owned(new (Context) CharacterLiteral(Literal.getValue(), Kind, Ty,
-                                              Tok.getLocation()));
+  Expr *Lit = new (Context) CharacterLiteral(Literal.getValue(), Kind, Ty,
+                                             Tok.getLocation());
+
+  if (Literal.getUDSuffix().empty())
+    return Owned(Lit);
+
+  // We're building a user-defined literal.
+  IdentifierInfo *UDSuffix = &Context.Idents.get(Literal.getUDSuffix());
+  SourceLocation UDSuffixLoc =
+    getUDSuffixLoc(*this, Tok.getLocation(), Literal.getUDSuffixOffset());
+
+  // C++11 [lex.ext]p6: The literal L is treated as a call of the form
+  //   operator "" X (ch)
+  return BuildLiteralOperatorCall(UDSuffix, UDSuffixLoc,
+                                  llvm::makeArrayRef(&Lit, 1),
+                                  Tok.getLocation());
+}
+
+ExprResult Sema::ActOnIntegerConstant(SourceLocation Loc, uint64_t Val) {
+  unsigned IntSize = Context.getTargetInfo().getIntWidth();
+  return Owned(IntegerLiteral::Create(Context, llvm::APInt(IntSize, Val),
+                                      Context.IntTy, Loc));
+}
+
+static Expr *BuildFloatingLiteral(Sema &S, NumericLiteralParser &Literal,
+                                  QualType Ty, SourceLocation Loc) {
+  const llvm::fltSemantics &Format = S.Context.getFloatTypeSemantics(Ty);
+
+  using llvm::APFloat;
+  APFloat Val(Format);
+
+  APFloat::opStatus result = Literal.GetFloatValue(Val);
+
+  // Overflow is always an error, but underflow is only an error if
+  // we underflowed to zero (APFloat reports denormals as underflow).
+  if ((result & APFloat::opOverflow) ||
+      ((result & APFloat::opUnderflow) && Val.isZero())) {
+    unsigned diagnostic;
+    SmallString<20> buffer;
+    if (result & APFloat::opOverflow) {
+      diagnostic = diag::warn_float_overflow;
+      APFloat::getLargest(Format).toString(buffer);
+    } else {
+      diagnostic = diag::warn_float_underflow;
+      APFloat::getSmallest(Format).toString(buffer);
+    }
+
+    S.Diag(Loc, diagnostic)
+      << Ty
+      << StringRef(buffer.data(), buffer.size());
+  }
+
+  bool isExact = (result == APFloat::opOK);
+  return FloatingLiteral::Create(S.Context, Val, isExact, Ty, Loc);
 }
 
 ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
@@ -2395,9 +2474,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
   // cannot have a trigraph, escaped newline, radix prefix, or type suffix.
   if (Tok.getLength() == 1) {
     const char Val = PP.getSpellingOfSingleCharacterNumericConstant(Tok);
-    unsigned IntSize = Context.getTargetInfo().getIntWidth();
-    return Owned(IntegerLiteral::Create(Context, llvm::APInt(IntSize, Val-'0'),
-                    Context.IntTy, Tok.getLocation()));
+    return ActOnIntegerConstant(Tok.getLocation(), Val-'0');
   }
 
   SmallString<512> IntegerBuffer;
@@ -2416,6 +2493,40 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
   if (Literal.hadError)
     return ExprError();
 
+  if (Literal.hasUDSuffix()) {
+    // We're building a user-defined literal.
+    IdentifierInfo *UDSuffix = &Context.Idents.get(Literal.getUDSuffix());
+    SourceLocation UDSuffixLoc =
+      getUDSuffixLoc(*this, Tok.getLocation(), Literal.getUDSuffixOffset());
+
+    // FIXME: Perform literal operator lookup now, and build a raw literal if
+    // there is no usable operator.
+
+    QualType Ty;
+    Expr *Lit;
+    if (Literal.isFloatingLiteral()) {
+      // C++11 [lex.ext]p4: If S contains a literal operator with parameter type
+      // long double, the literal is treated as a call of the form
+      //   operator "" X (f L)
+      Lit = BuildFloatingLiteral(*this, Literal, Context.LongDoubleTy,
+                                 Tok.getLocation());
+    } else {
+      // C++11 [lex.ext]p3: If S contains a literal operator with parameter type
+      // unsigned long long, the literal is treated as a call of the form
+      //   operator "" X (n ULL)
+      llvm::APInt ResultVal(Context.getTargetInfo().getLongLongWidth(), 0);
+      if (Literal.GetIntegerValue(ResultVal))
+        Diag(Tok.getLocation(), diag::warn_integer_too_large);
+
+      QualType Ty = Context.UnsignedLongLongTy;
+      Lit = IntegerLiteral::Create(Context, ResultVal, Ty, Tok.getLocation());
+    }
+
+    return BuildLiteralOperatorCall(UDSuffix, UDSuffixLoc,
+                                    llvm::makeArrayRef(&Lit, 1),
+                                    Tok.getLocation());
+  }
+
   Expr *Res;
 
   if (Literal.isFloatingLiteral()) {
@@ -2427,34 +2538,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
     else
       Ty = Context.LongDoubleTy;
 
-    const llvm::fltSemantics &Format = Context.getFloatTypeSemantics(Ty);
-
-    using llvm::APFloat;
-    APFloat Val(Format);
-
-    APFloat::opStatus result = Literal.GetFloatValue(Val);
-
-    // Overflow is always an error, but underflow is only an error if
-    // we underflowed to zero (APFloat reports denormals as underflow).
-    if ((result & APFloat::opOverflow) ||
-        ((result & APFloat::opUnderflow) && Val.isZero())) {
-      unsigned diagnostic;
-      SmallString<20> buffer;
-      if (result & APFloat::opOverflow) {
-        diagnostic = diag::warn_float_overflow;
-        APFloat::getLargest(Format).toString(buffer);
-      } else {
-        diagnostic = diag::warn_float_underflow;
-        APFloat::getSmallest(Format).toString(buffer);
-      }
-
-      Diag(Tok.getLocation(), diagnostic)
-        << Ty
-        << StringRef(buffer.data(), buffer.size());
-    }
-
-    bool isExact = (result == APFloat::opOK);
-    Res = FloatingLiteral::Create(Context, Val, isExact, Ty, Tok.getLocation());
+    Res = BuildFloatingLiteral(*this, Literal, Ty, Tok.getLocation());
 
     if (Ty == Context.DoubleTy) {
       if (getLangOptions().SinglePrecisionConstants) {
@@ -2926,7 +3010,8 @@ Sema::ActOnArraySubscriptExpr(Scope *S, Expr *Base, SourceLocation LLoc,
       (LHSExp->getType()->isRecordType() ||
        LHSExp->getType()->isEnumeralType() ||
        RHSExp->getType()->isRecordType() ||
-       RHSExp->getType()->isEnumeralType())) {
+       RHSExp->getType()->isEnumeralType()) &&
+      !LHSExp->getType()->isObjCObjectPointerType()) {
     return CreateOverloadedArraySubscriptExpr(LLoc, RLoc, Base, Idx);
   }
 
@@ -2979,6 +3064,9 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
                LHSTy->getAs<ObjCObjectPointerType>()) {
     BaseExpr = LHSExp;
     IndexExpr = RHSExp;
+    Result = BuildObjCSubscriptExpression(RLoc, BaseExpr, IndexExpr, 0, 0);
+    if (!Result.isInvalid())
+      return Owned(Result.take());
     ResultType = PTy->getPointeeType();
   } else if (const ObjCObjectPointerType *PTy =
                RHSTy->getAs<ObjCObjectPointerType>()) {
@@ -8902,12 +8990,7 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
     ExprCleanupObjects.push_back(Result->getBlockDecl());
     ExprNeedsCleanups = true;
   }
-  
-  if (BSI->TheDecl->blockMissingReturnType() &&
-      !RetTy->isDependentType() &&
-      !Context.getCanonicalType(RetTy)->isVoidType())
-    Diag(CaretLoc, diag::warn_block_missing_return_type);
-  
+
   return Owned(Result);
 }
 
@@ -10807,20 +10890,39 @@ ExprResult RebuildUnknownAnyExpr::VisitObjCMessageExpr(ObjCMessageExpr *E) {
 
 ExprResult RebuildUnknownAnyExpr::VisitImplicitCastExpr(ImplicitCastExpr *E) {
   // The only case we should ever see here is a function-to-pointer decay.
-  assert(E->getCastKind() == CK_FunctionToPointerDecay);
-  assert(E->getValueKind() == VK_RValue);
-  assert(E->getObjectKind() == OK_Ordinary);
+  if (E->getCastKind() == CK_FunctionToPointerDecay) {
+    assert(E->getValueKind() == VK_RValue);
+    assert(E->getObjectKind() == OK_Ordinary);
+  
+    E->setType(DestType);
+  
+    // Rebuild the sub-expression as the pointee (function) type.
+    DestType = DestType->castAs<PointerType>()->getPointeeType();
+  
+    ExprResult Result = Visit(E->getSubExpr());
+    if (!Result.isUsable()) return ExprError();
+  
+    E->setSubExpr(Result.take());
+    return S.Owned(E);
+  } else if (E->getCastKind() == CK_LValueToRValue) {
+    assert(E->getValueKind() == VK_RValue);
+    assert(E->getObjectKind() == OK_Ordinary);
 
-  E->setType(DestType);
+    assert(isa<BlockPointerType>(E->getType()));
 
-  // Rebuild the sub-expression as the pointee (function) type.
-  DestType = DestType->castAs<PointerType>()->getPointeeType();
+    E->setType(DestType);
 
-  ExprResult Result = Visit(E->getSubExpr());
-  if (!Result.isUsable()) return ExprError();
+    // The sub-expression has to be a lvalue reference, so rebuild it as such.
+    DestType = S.Context.getLValueReferenceType(DestType);
 
-  E->setSubExpr(Result.take());
-  return S.Owned(E);
+    ExprResult Result = Visit(E->getSubExpr());
+    if (!Result.isUsable()) return ExprError();
+
+    E->setSubExpr(Result.take());
+    return S.Owned(E);
+  } else {
+    llvm_unreachable("Unhandled cast type!");
+  }
 }
 
 ExprResult RebuildUnknownAnyExpr::resolveDecl(Expr *E, ValueDecl *VD) {
@@ -11005,4 +11107,13 @@ bool Sema::CheckCaseExpression(Expr *E) {
   if (E->isValueDependent() || E->isIntegerConstantExpr(Context))
     return E->getType()->isIntegralOrEnumerationType();
   return false;
+}
+
+/// ActOnObjCBoolLiteral - Parse {__objc_yes,__objc_no} literals.
+ExprResult
+Sema::ActOnObjCBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind) {
+  assert((Kind == tok::kw___objc_yes || Kind == tok::kw___objc_no) &&
+         "Unknown Objective-C Boolean value!");
+  return Owned(new (Context) ObjCBoolLiteralExpr(Kind == tok::kw___objc_yes,
+                                        Context.ObjCBuiltinBoolTy, OpLoc));
 }

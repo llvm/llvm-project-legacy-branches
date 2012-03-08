@@ -131,14 +131,24 @@ def warn_ucn_not_valid_in_c89 : ExtWarn<
 def warn_cxx98_compat_unicode_literal : Warning<
   "unicode literals are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx11_compat_user_defined_literal : Warning<
+  "identifier after literal will be treated as a user-defined literal suffix "
+  "in C++11">, InGroup<CXX11Compat>, DefaultIgnore;
+def warn_cxx11_compat_reserved_user_defined_literal : Warning<
+  "identifier after literal will be treated as a reserved user-defined literal "
+  "suffix in C++11">,
+  InGroup<CXX11CompatReservedUserDefinedLiteral>, DefaultIgnore;
+def ext_reserved_user_defined_literal : ExtWarn<
+  "invalid suffix on literal; C++11 requires a space between literal and "
+  "identifier">, InGroup<ReservedUserDefinedLiteral>, DefaultError;
 def err_unsupported_string_concat : Error<
   "unsupported non-standard concatenation of string literals">;
 def err_string_concat_mixed_suffix : Error<
   "differing user-defined suffixes ('%0' and '%1') in string literal "
   "concatenation">;
-def err_pp_invalid_char_udl : Error<
-  "character literal with user-defined suffix cannot be used in preprocessor "
-  "constant expression">;
+def err_pp_invalid_udl : Error<
+  "%select{character|integer}0 literal with user-defined suffix "
+  "cannot be used in preprocessor constant expression">;
 def err_bad_string_encoding : Error<
   "illegal character encoding in string literal">;
 def warn_bad_string_encoding : ExtWarn<

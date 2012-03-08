@@ -87,7 +87,7 @@ namespace {
 class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
  public:
   FixLLVMStyle(tooling::Replacements *Replace)
-      : Replace(Replace), EditFilesExpression(".*Tooling/.*") {}
+      : Replace(Replace), EditFilesExpression(".*ASTMatchers/.*") {}
 
   virtual void Run(const ast_matchers::MatchFinder::MatchResult &Result) {
     if (const CallExpr *Call = Result.Nodes.GetStmtAs<CallExpr>("call")) {
