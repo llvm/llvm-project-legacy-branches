@@ -88,6 +88,39 @@ static void QuoteTarget(StringRef Target,
   }
 }
 
+static void addDirectoryList(const ArgList &Args,
+                             ArgStringList &CmdArgs,
+                             const char *ArgName,
+                             const char *EnvVar) {
+  const char *DirList = ::getenv(EnvVar);
+  if (!DirList)
+    return; // Nothing to do.
+
+  StringRef Dirs(DirList);
+  if (Dirs.empty()) // Empty string should not add '.'.
+    return;
+
+  StringRef::size_type Delim;
+  while ((Delim = Dirs.find(llvm::sys::PathSeparator)) != StringRef::npos) {
+    if (Delim == 0) { // Leading colon.
+      CmdArgs.push_back(ArgName);
+      CmdArgs.push_back(".");
+    } else {
+      CmdArgs.push_back(ArgName);
+      CmdArgs.push_back(Args.MakeArgString(Dirs.substr(0, Delim)));
+    }
+    Dirs = Dirs.substr(Delim + 1);
+  }
+
+  if (Dirs.empty()) { // Trailing colon.
+    CmdArgs.push_back(ArgName);
+    CmdArgs.push_back(".");
+  } else { // Add the last path.
+    CmdArgs.push_back(ArgName);
+    CmdArgs.push_back(Args.MakeArgString(Dirs));
+  }
+}
+
 static void AddLinkerInputs(const ToolChain &TC,
                             const InputInfoList &Inputs, const ArgList &Args,
                             ArgStringList &CmdArgs) {
@@ -128,6 +161,9 @@ static void AddLinkerInputs(const ToolChain &TC,
     } else
       A.renderAsInput(Args, CmdArgs);
   }
+
+  // LIBRARY_PATH - included following the user specified library paths.
+  addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
 }
 
 /// \brief Determine whether Objective-C automated reference counting is
@@ -160,38 +196,6 @@ static void addProfileRT(const ToolChain &TC, const ArgList &Args,
     std::string(TC.getDriver().Dir) + "/../lib/libprofile_rt.a";
 
   CmdArgs.push_back(Args.MakeArgString(ProfileRT));
-}
-
-static void AddIncludeDirectoryList(const ArgList &Args,
-                                    ArgStringList &CmdArgs,
-                                    const char *ArgName,
-                                    const char *DirList) {
-  if (!DirList)
-    return; // Nothing to do.
-
-  StringRef Dirs(DirList);
-  if (Dirs.empty()) // Empty string should not add '.'.
-    return;
-
-  StringRef::size_type Delim;
-  while ((Delim = Dirs.find(llvm::sys::PathSeparator)) != StringRef::npos) {
-    if (Delim == 0) { // Leading colon.
-      CmdArgs.push_back(ArgName);
-      CmdArgs.push_back(".");
-    } else {
-      CmdArgs.push_back(ArgName);
-      CmdArgs.push_back(Args.MakeArgString(Dirs.substr(0, Delim)));
-    }
-    Dirs = Dirs.substr(Delim + 1);
-  }
-
-  if (Dirs.empty()) { // Trailing colon.
-    CmdArgs.push_back(ArgName);
-    CmdArgs.push_back(".");
-  } else { // Add the last path.
-    CmdArgs.push_back(ArgName);
-    CmdArgs.push_back(Args.MakeArgString(Dirs));
-  }
 }
 
 void Clang::AddPreprocessingOptions(Compilation &C,
@@ -399,19 +403,15 @@ void Clang::AddPreprocessingOptions(Compilation &C,
   // frontend into the driver. It will allow deleting 4 otherwise unused flags.
   // CPATH - included following the user specified includes (but prior to
   // builtin and standard includes).
-  AddIncludeDirectoryList(Args, CmdArgs, "-I", ::getenv("CPATH"));
+  addDirectoryList(Args, CmdArgs, "-I", "CPATH");
   // C_INCLUDE_PATH - system includes enabled when compiling C.
-  AddIncludeDirectoryList(Args, CmdArgs, "-c-isystem",
-                          ::getenv("C_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-c-isystem", "C_INCLUDE_PATH");
   // CPLUS_INCLUDE_PATH - system includes enabled when compiling C++.
-  AddIncludeDirectoryList(Args, CmdArgs, "-cxx-isystem",
-                          ::getenv("CPLUS_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-cxx-isystem", "CPLUS_INCLUDE_PATH");
   // OBJC_INCLUDE_PATH - system includes enabled when compiling ObjC.
-  AddIncludeDirectoryList(Args, CmdArgs, "-objc-isystem",
-                          ::getenv("OBJC_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-objc-isystem", "OBJC_INCLUDE_PATH");
   // OBJCPLUS_INCLUDE_PATH - system includes enabled when compiling ObjC++.
-  AddIncludeDirectoryList(Args, CmdArgs, "-objcxx-isystem",
-                          ::getenv("OBJCPLUS_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-objcxx-isystem", "OBJCPLUS_INCLUDE_PATH");
 
   // Add C++ include arguments, if needed.
   if (types::isCXX(Inputs[0].getType()))
@@ -1345,7 +1345,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
     CmdArgs.push_back("-analyzer-eagerly-assume");
 
-    CmdArgs.push_back("-analyzer-inline-call");
+    CmdArgs.push_back("-analyzer-ipa=inlining");
 
     // Add default argument set.
     if (!Args.hasArg(options::OPT__analyzer_no_default_checks)) {
@@ -1950,6 +1950,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_fno_limit_debug_info);
   Args.AddLastArg(CmdArgs, options::OPT_fno_operator_names);
   Args.AddLastArg(CmdArgs, options::OPT_faltivec);
+
+  // Report and error for -faltivec on anything other then PowerPC.
+  if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
+    if (!(getToolChain().getTriple().getArch() == llvm::Triple::ppc ||
+          getToolChain().getTriple().getArch() == llvm::Triple::ppc64))
+      D.Diag(diag::err_drv_argument_only_allowed_with)
+        << A->getAsString(Args) << "ppc/ppc64";
+
   if (getToolChain().SupportsProfiling())
     Args.AddLastArg(CmdArgs, options::OPT_pg);
 
@@ -2165,6 +2173,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    false))
     CmdArgs.push_back("-fgnu89-inline");
 
+  if (Args.hasArg(options::OPT_fno_inline))
+    CmdArgs.push_back("-fno-inline");
+
   if (Args.hasArg(options::OPT_fno_inline_functions))
     CmdArgs.push_back("-fno-inline-functions");
 
@@ -2250,7 +2261,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // -fobjc-default-synthesize-properties=0 is default.
+  // -fobjc-default-synthesize-properties=1 is default. This only has an effect
+  // if the nonfragile objc abi is used.
   if (Args.hasFlag(options::OPT_fobjc_default_synthesize_properties,
                    options::OPT_fno_objc_default_synthesize_properties,
                    getToolChain().IsObjCDefaultSynthPropertiesDefault())) {
@@ -3159,6 +3171,7 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
         .Case("c++11-narrowing", true)
         .Case("conditional-uninitialized", true)
         .Case("constant-conversion", true)
+        .Case("conversion-null", true)
         .Case("CFString-literal", true)
         .Case("constant-logical-operand", true)
         .Case("custom-atomic-properties", true)
@@ -3851,8 +3864,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
   Args.AddAllArgs(CmdArgs, options::OPT_init);
 
   // Add the deployment target.
-  unsigned TargetVersion[3];
-  DarwinTC.getTargetVersion(TargetVersion);
+  VersionTuple TargetVersion = DarwinTC.getTargetVersion();
 
   // If we had an explicit -mios-simulator-version-min argument, honor that,
   // otherwise use the traditional deployment targets. We can't just check the
@@ -3867,9 +3879,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
     CmdArgs.push_back("-iphoneos_version_min");
   else
     CmdArgs.push_back("-macosx_version_min");
-  CmdArgs.push_back(Args.MakeArgString(Twine(TargetVersion[0]) + "." +
-                                       Twine(TargetVersion[1]) + "." +
-                                       Twine(TargetVersion[2])));
+  CmdArgs.push_back(Args.MakeArgString(TargetVersion.getAsString()));
 
   Args.AddLastArg(CmdArgs, options::OPT_nomultidefs);
   Args.AddLastArg(CmdArgs, options::OPT_multi__module);
@@ -4303,11 +4313,12 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
       CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
     } else {
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "cxa_finalize.o"));
       CmdArgs.push_back(Args.MakeArgString(LibPath + "crti.o"));
       CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
       CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
     }
+    if (getToolChain().getDriver().CCCIsCXX)
+      CmdArgs.push_back(Args.MakeArgString(LibPath + "cxa_finalize.o"));
   }
 
   CmdArgs.push_back(Args.MakeArgString("-L" + GCCLibPath));

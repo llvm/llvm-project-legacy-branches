@@ -515,8 +515,9 @@ PathDiagnosticCallPiece::construct(const ExplodedNode *N,
 }
 
 PathDiagnosticCallPiece *
-PathDiagnosticCallPiece::construct(PathPieces &path) {
-  PathDiagnosticCallPiece *C = new PathDiagnosticCallPiece(path);
+PathDiagnosticCallPiece::construct(PathPieces &path,
+                                   const Decl *caller) {
+  PathDiagnosticCallPiece *C = new PathDiagnosticCallPiece(path, caller);
   path.clear();
   path.push_front(C);
   return C;
@@ -549,14 +550,12 @@ PathDiagnosticCallPiece::getCallEnterEvent() const {
 
 IntrusiveRefCntPtr<PathDiagnosticEventPiece>
 PathDiagnosticCallPiece::getCallEnterWithinCallerEvent() const {
-  if (!Callee)
-    return 0;
   SmallString<256> buf;
   llvm::raw_svector_ostream Out(buf);
-  if (isa<BlockDecl>(Callee))
-    Out << "Entered call to block";
-  else if (const NamedDecl *ND = dyn_cast<NamedDecl>(Callee))
-    Out << "Entered call to '" << *ND << "'";
+  if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(Caller))
+    Out << "Entered call from '" << *ND << "'";
+  else
+    Out << "Entered call";
   StringRef msg = Out.str();
   if (msg.empty())
     return 0;
@@ -565,12 +564,14 @@ PathDiagnosticCallPiece::getCallEnterWithinCallerEvent() const {
 
 IntrusiveRefCntPtr<PathDiagnosticEventPiece>
 PathDiagnosticCallPiece::getCallExitEvent() const {
-  if (!Caller)
+  if (NoExit)
     return 0;
   SmallString<256> buf;
   llvm::raw_svector_ostream Out(buf);
-  if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(Caller))
-    Out << "Returning to '" << *ND << "'";
+  if (!CallStackMessage.empty())
+    Out << CallStackMessage;
+  else if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(Callee))
+    Out << "Returning from '" << *ND << "'";
   else
     Out << "Returning to caller";
   return new PathDiagnosticEventPiece(callReturn, Out.str());
@@ -657,4 +658,95 @@ void PathDiagnostic::FullProfile(llvm::FoldingSetNodeID &ID) const {
     ID.Add(**I);
   for (meta_iterator I = meta_begin(), E = meta_end(); I != E; ++I)
     ID.AddString(*I);
+}
+
+StackHintGenerator::~StackHintGenerator() {}
+
+std::string StackHintGeneratorForSymbol::getMessage(const ExplodedNode *N){
+  ProgramPoint P = N->getLocation();
+  const CallExit *CExit = dyn_cast<CallExit>(&P);
+  assert(CExit && "Stack Hints should be constructed at CallExit points.");
+
+  const CallExpr *CE = dyn_cast_or_null<CallExpr>(CExit->getStmt());
+  if (!CE)
+    return "";
+
+  // Get the successor node to make sure the return statement is evaluated and
+  // CE is set to the result value.
+  N = *N->succ_begin();
+  if (!N)
+    return getMessageForSymbolNotFound();
+
+  // Check if one of the parameters are set to the interesting symbol.
+  ProgramStateRef State = N->getState();
+  const LocationContext *LCtx = N->getLocationContext();
+  unsigned ArgIndex = 0;
+  for (CallExpr::const_arg_iterator I = CE->arg_begin(),
+                                    E = CE->arg_end(); I != E; ++I, ++ArgIndex){
+    SVal SV = State->getSVal(*I, LCtx);
+
+    // Check if the variable corresponding to the symbol is passed by value.
+    SymbolRef AS = SV.getAsLocSymbol();
+    if (AS == Sym) {
+      return getMessageForArg(*I, ArgIndex);
+    }
+
+    // Check if the parameter is a pointer to the symbol.
+    if (const loc::MemRegionVal *Reg = dyn_cast<loc::MemRegionVal>(&SV)) {
+      SVal PSV = State->getSVal(Reg->getRegion());
+      SymbolRef AS = PSV.getAsLocSymbol();
+      if (AS == Sym) {
+        return getMessageForArg(*I, ArgIndex);
+      }
+    }
+  }
+
+  // Check if we are returning the interesting symbol.
+  SVal SV = State->getSVal(CE, LCtx);
+  SymbolRef RetSym = SV.getAsLocSymbol();
+  if (RetSym == Sym) {
+    return getMessageForReturn(CE);
+  }
+
+  return getMessageForSymbolNotFound();
+}
+
+/// TODO: This is copied from clang diagnostics. Maybe we could just move it to
+/// some common place. (Same as HandleOrdinalModifier.)
+void StackHintGeneratorForSymbol::printOrdinal(unsigned ValNo,
+                                               llvm::raw_svector_ostream &Out) {
+  assert(ValNo != 0 && "ValNo must be strictly positive!");
+
+  // We could use text forms for the first N ordinals, but the numeric
+  // forms are actually nicer in diagnostics because they stand out.
+  Out << ValNo;
+
+  // It is critically important that we do this perfectly for
+  // user-written sequences with over 100 elements.
+  switch (ValNo % 100) {
+  case 11:
+  case 12:
+  case 13:
+    Out << "th"; return;
+  default:
+    switch (ValNo % 10) {
+    case 1: Out << "st"; return;
+    case 2: Out << "nd"; return;
+    case 3: Out << "rd"; return;
+    default: Out << "th"; return;
+    }
+  }
+}
+
+std::string StackHintGeneratorForSymbol::getMessageForArg(const Expr *ArgE,
+                                                        unsigned ArgIndex) {
+  SmallString<200> buf;
+  llvm::raw_svector_ostream os(buf);
+
+  os << Msg << " via ";
+  // Printed parameters start at 1, not 0.
+  printOrdinal(++ArgIndex, os);
+  os << " parameter";
+
+  return os.str();
 }

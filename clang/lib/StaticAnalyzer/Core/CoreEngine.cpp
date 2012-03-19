@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "CoreEngine"
+
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CoreEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
@@ -20,8 +22,13 @@
 #include "clang/AST/StmtCXX.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Statistic.h"
+
 using namespace clang;
 using namespace ento;
+
+STATISTIC(NumReachedMaxSteps,
+            "The # of times we reached the max number of steps.");
 
 //===----------------------------------------------------------------------===//
 // Worklist classes for exploration of reachable states.
@@ -187,8 +194,10 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
 
   while (WList->hasWork()) {
     if (!UnlimitedSteps) {
-      if (Steps == 0)
+      if (Steps == 0) {
+        NumReachedMaxSteps++;
         break;
+      }
       --Steps;
     }
 
@@ -214,9 +223,16 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
         assert (false && "BlockExit location never occur in forward analysis.");
         break;
 
-      case ProgramPoint::CallEnterKind:
-        SubEng.processCallEnter(cast<CallEnter>(Node->getLocation()), Node);
+      case ProgramPoint::CallEnterKind: {
+        CallEnter CEnter = cast<CallEnter>(Node->getLocation());
+        if (AnalyzedCallees)
+          if (const CallExpr* CE =
+              dyn_cast_or_null<CallExpr>(CEnter.getCallExpr()))
+            if (const Decl *CD = CE->getCalleeDecl())
+              AnalyzedCallees->insert(CD);
+        SubEng.processCallEnter(CEnter, Node);
         break;
+      }
 
       case ProgramPoint::CallExitKind:
         SubEng.processCallExit(Node);
@@ -328,6 +344,19 @@ void CoreEngine::HandleBlockExit(const CFGBlock * B, ExplodedNode *Pred) {
         HandleBranch(cast<ChooseExpr>(Term)->getCond(), Term, B, Pred);
         return;
 
+      case Stmt::CXXTryStmtClass: {
+        // Generate a node for each of the successors.
+        // Our logic for EH analysis can certainly be improved.
+        for (CFGBlock::const_succ_iterator it = B->succ_begin(),
+             et = B->succ_end(); it != et; ++it) {
+          if (const CFGBlock *succ = *it) {
+            generateNode(BlockEdge(B, succ, Pred->getLocationContext()),
+                         Pred->State, Pred);
+          }
+        }
+        return;
+      }
+        
       case Stmt::DoStmtClass:
         HandleBranch(cast<DoStmt>(Term)->getCond(), Term, B, Pred);
         return;

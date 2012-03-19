@@ -2586,7 +2586,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
       for (ASTUnit::stored_diag_iterator D = Unit->stored_diag_begin(), 
                                       DEnd = Unit->stored_diag_end();
            D != DEnd; ++D) {
-        CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOptions());
+        CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOpts());
         CXString Msg = clang_formatDiagnostic(&Diag,
                                     clang_defaultDiagnosticDisplayOptions());
         fprintf(stderr, "%s\n", clang_getCString(Msg));
@@ -2819,8 +2819,6 @@ static Decl *getDeclFromExpr(Stmt *E) {
 
   if (DeclRefExpr *RefExpr = dyn_cast<DeclRefExpr>(E))
     return RefExpr->getDecl();
-  if (BlockDeclRefExpr *RefExpr = dyn_cast<BlockDeclRefExpr>(E))
-    return RefExpr->getDecl();
   if (MemberExpr *ME = dyn_cast<MemberExpr>(E))
     return ME->getMemberDecl();
   if (ObjCIvarRefExpr *RE = dyn_cast<ObjCIvarRefExpr>(E))
@@ -2862,8 +2860,6 @@ static SourceLocation getLocationFromExpr(Expr *E) {
     return /*FIXME:*/Msg->getLeftLoc();
   if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
     return DRE->getLocation();
-  if (BlockDeclRefExpr *RefExpr = dyn_cast<BlockDeclRefExpr>(E))
-    return RefExpr->getLocation();
   if (MemberExpr *Member = dyn_cast<MemberExpr>(E))
     return Member->getMemberLoc();
   if (ObjCIvarRefExpr *Ivar = dyn_cast<ObjCIvarRefExpr>(E))
@@ -3702,7 +3698,7 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
                                             TSInfo->getTypeLoc().getBeginLoc());
       
       return cxloc::translateSourceLocation(getCursorContext(C),
-                                        BaseSpec->getSourceRange().getBegin());
+                                        BaseSpec->getLocStart());
     }
 
     case CXCursor_LabelRef: {
@@ -3786,7 +3782,7 @@ CXCursor cxcursor::getCursor(CXTranslationUnit TU, SourceLocation SLoc) {
   // Translate the given source location to make it point at the beginning of
   // the token under the cursor.
   SLoc = Lexer::GetBeginningOfToken(SLoc, CXXUnit->getSourceManager(),
-                                    CXXUnit->getASTContext().getLangOptions());
+                                    CXXUnit->getASTContext().getLangOpts());
   
   CXCursor Result = MakeCXCursorInvalid(CXCursor_NoDeclFound);
   if (SLoc.isValid()) {
@@ -3908,10 +3904,10 @@ static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr) {
     SourceLocation StartLoc;
     if (const DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(D)) {
       if (TypeSourceInfo *TI = DD->getTypeSourceInfo())
-        StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
+        StartLoc = TI->getTypeLoc().getLocStart();
     } else if (TypedefDecl *Typedef = dyn_cast<TypedefDecl>(D)) {
       if (TypeSourceInfo *TI = Typedef->getTypeSourceInfo())
-        StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
+        StartLoc = TI->getTypeLoc().getLocStart();
     }
 
     if (StartLoc.isValid() && R.getBegin().isValid() &&
@@ -4491,7 +4487,7 @@ static void getTokens(ASTUnit *CXXUnit, SourceRange Range,
     return;
   
   Lexer Lex(SourceMgr.getLocForStartOfFile(BeginLocInfo.first),
-            CXXUnit->getASTContext().getLangOptions(),
+            CXXUnit->getASTContext().getLangOpts(),
             Buffer.begin(), Buffer.data() + BeginLocInfo.second, Buffer.end());
   Lex.SetCommentRetentionState(true);
 
@@ -4845,10 +4841,10 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
     SourceLocation StartLoc;
     if (const DeclaratorDecl *DD = dyn_cast_or_null<DeclaratorDecl>(D)) {
       if (TypeSourceInfo *TI = DD->getTypeSourceInfo())
-        StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
+        StartLoc = TI->getTypeLoc().getLocStart();
     } else if (TypedefDecl *Typedef = dyn_cast_or_null<TypedefDecl>(D)) {
       if (TypeSourceInfo *TI = Typedef->getTypeSourceInfo())
-        StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
+        StartLoc = TI->getTypeLoc().getLocStart();
     }
 
     if (StartLoc.isValid() && L.isValid() &&
@@ -5024,7 +5020,7 @@ static void annotatePreprocessorTokens(CXTranslationUnit TU,
     return;
 
   Lexer Lex(SourceMgr.getLocForStartOfFile(BeginLocInfo.first),
-            CXXUnit->getASTContext().getLangOptions(),
+            CXXUnit->getASTContext().getLangOpts(),
             Buffer.begin(), Buffer.data() + BeginLocInfo.second,
             Buffer.end());
   Lex.SetCommentRetentionState(true);

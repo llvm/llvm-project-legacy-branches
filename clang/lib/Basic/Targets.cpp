@@ -871,6 +871,11 @@ public:
     default:
       break;
     }
+
+    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+      LongDoubleWidth = LongDoubleAlign = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
   }
 
   virtual const char *getVAListDeclaration() const {
@@ -896,6 +901,11 @@ public:
     Int64Type = SignedLong;
     DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32:64";
+
+    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+      LongDoubleWidth = LongDoubleAlign = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -1884,8 +1894,10 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
                                      MacroBuilder &Builder) const {
   // Target identification.
   if (PointerWidth == 64) {
-    Builder.defineMacro("_LP64");
-    Builder.defineMacro("__LP64__");
+    if (getLongWidth() == 64) {
+      Builder.defineMacro("_LP64");
+      Builder.defineMacro("__LP64__");
+    }
     Builder.defineMacro("__amd64__");
     Builder.defineMacro("__amd64");
     Builder.defineMacro("__x86_64");
@@ -2653,6 +2665,12 @@ public:
     // ARM has atomics up to 8 bytes
     // FIXME: Set MaxAtomicInlineWidth if we have the feature v6e
     MaxAtomicPromoteWidth = 64;
+
+    // Do force alignment of members that follow zero length bitfields.  If
+    // the alignment of the zero-length bitfield is greater than the member 
+    // that follows it, `bar', `bar' will be aligned as the  type of the 
+    // zero length bitfield.
+    UseZeroLengthBitfieldAlignment = true;
   }
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) {
@@ -2672,12 +2690,6 @@ public:
       // Do not respect the alignment of bit-field types when laying out
       // structures. This corresponds to PCC_BITFIELD_TYPE_MATTERS in gcc.
       UseBitFieldTypeAlignment = false;
-
-      /// Do force alignment of members that follow zero length bitfields.  If
-      /// the alignment of the zero-length bitfield is greater than the member 
-      /// that follows it, `bar', `bar' will be aligned as the  type of the 
-      /// zero length bitfield.
-      UseZeroLengthBitfieldAlignment = true;
 
       /// gcc forces the alignment to 4 bytes, regardless of the type of the
       /// zero length bitfield.  This corresponds to EMPTY_FIELD_BOUNDARY in

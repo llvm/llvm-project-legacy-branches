@@ -39,7 +39,8 @@ void Lambda() {
   []{}(); // expected-warning {{lambda expressions are incompatible with C++98}}
 }
 
-int InitList() {
+int InitList(int i = {}) { // expected-warning {{generalized initializer lists are incompatible with C++98}} \
+                           // expected-warning {{scalar initialized from empty initializer list is incompatible with C++98}}
   (void)new int {}; // expected-warning {{generalized initializer lists are incompatible with C++98}} \
                     // expected-warning {{scalar initialized from empty initializer list is incompatible with C++98}}
   (void)int{}; // expected-warning {{generalized initializer lists are incompatible with C++98}} \
@@ -280,4 +281,11 @@ namespace UnevaluatedMemberAccess {
   };
   int k = sizeof(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
   const std::type_info &ti = typeid(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
+}
+
+namespace LiteralUCNs {
+  char c1 = '\u001e'; // expected-warning {{universal character name referring to a control character is incompatible with C++98}}
+  wchar_t c2 = L'\u0041'; // expected-warning {{specifying character 'A' with a universal character name is incompatible with C++98}}
+  const char *s1 = "foo\u0031"; // expected-warning {{specifying character '1' with a universal character name is incompatible with C++98}}
+  const wchar_t *s2 = L"bar\u0085"; // expected-warning {{universal character name referring to a control character is incompatible with C++98}}
 }

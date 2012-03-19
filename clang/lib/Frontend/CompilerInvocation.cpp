@@ -78,8 +78,29 @@ static const char *getAnalysisDiagClientName(AnalysisDiagClients Kind) {
 static const char *getAnalysisPurgeModeName(AnalysisPurgeMode Kind) {
   switch (Kind) {
   default:
-    llvm_unreachable("Unknown analysis client!");
+    llvm_unreachable("Unknown analysis purge mode!");
 #define ANALYSIS_PURGE(NAME, CMDFLAG, DESC) \
+  case NAME: return CMDFLAG;
+#include "clang/Frontend/Analyses.def"
+  }
+}
+
+static const char *getAnalysisIPAModeName(AnalysisIPAMode Kind) {
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown analysis ipa mode!");
+#define ANALYSIS_IPA(NAME, CMDFLAG, DESC) \
+  case NAME: return CMDFLAG;
+#include "clang/Frontend/Analyses.def"
+  }
+}
+
+static const char *
+  getAnalysisInliningModeName(AnalysisInliningMode Kind) {
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown analysis inlining mode!");
+#define ANALYSIS_INLINE_SELECTION(NAME, CMDFLAG, DESC) \
   case NAME: return CMDFLAG;
 #include "clang/Frontend/Analyses.def"
   }
@@ -113,6 +134,15 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyze-function");
     Res.push_back(Opts.AnalyzeSpecificFunction);
   }
+  if (Opts.IPAMode != Inlining) {
+    Res.push_back("-analyzer-ipa");
+    Res.push_back(getAnalysisIPAModeName(Opts.IPAMode));
+  }
+  if (Opts.InliningMode != NoRedundancy) {
+    Res.push_back("-analyzer-inlining-mode");
+    Res.push_back(getAnalysisInliningModeName(Opts.InliningMode));
+  }
+
   if (Opts.AnalyzeAll)
     Res.push_back("-analyzer-opt-analyze-headers");
   if (Opts.AnalyzerDisplayProgress)
@@ -1036,6 +1066,38 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
     }
   }
 
+  if (Arg *A = Args.getLastArg(OPT_analyzer_ipa)) {
+    StringRef Name = A->getValue(Args);
+    AnalysisIPAMode Value = llvm::StringSwitch<AnalysisIPAMode>(Name)
+#define ANALYSIS_IPA(NAME, CMDFLAG, DESC) \
+      .Case(CMDFLAG, NAME)
+#include "clang/Frontend/Analyses.def"
+      .Default(NumIPAModes);
+    if (Value == NumIPAModes) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << Name;
+      Success = false;
+    } else {
+      Opts.IPAMode = Value;
+    }
+  }
+
+  if (Arg *A = Args.getLastArg(OPT_analyzer_inlining_mode)) {
+    StringRef Name = A->getValue(Args);
+    AnalysisInliningMode Value = llvm::StringSwitch<AnalysisInliningMode>(Name)
+#define ANALYSIS_INLINING_MODE(NAME, CMDFLAG, DESC) \
+      .Case(CMDFLAG, NAME)
+#include "clang/Frontend/Analyses.def"
+      .Default(NumInliningModes);
+    if (Value == NumInliningModes) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << Name;
+      Success = false;
+    } else {
+      Opts.InliningMode = Value;
+    }
+  }
+
   Opts.ShowCheckerHelp = Args.hasArg(OPT_analyzer_checker_help);
   Opts.VisualizeEGDot = Args.hasArg(OPT_analyzer_viz_egraph_graphviz);
   Opts.VisualizeEGUbi = Args.hasArg(OPT_analyzer_viz_egraph_ubigraph);
@@ -1052,8 +1114,6 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.MaxNodes = Args.getLastArgIntValue(OPT_analyzer_max_nodes, 150000,Diags);
   Opts.MaxLoop = Args.getLastArgIntValue(OPT_analyzer_max_loop, 4, Diags);
   Opts.EagerlyTrimEGraph = !Args.hasArg(OPT_analyzer_no_eagerly_trim_egraph);
-  if (Args.hasArg(OPT_analyzer_inline_call))
-    Opts.InlineCall = 1;
   Opts.PrintStats = Args.hasArg(OPT_analyzer_stats);
   Opts.InlineMaxStackDepth =
     Args.getLastArgIntValue(OPT_analyzer_inline_max_stack_depth,
@@ -1105,6 +1165,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.Inlining = (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
     : CodeGenOptions::OnlyAlwaysInlining;
   // -fno-inline-functions overrides OptimizationLevel > 1.
+  Opts.NoInline = Args.hasArg(OPT_fno_inline);
   Opts.Inlining = Args.hasArg(OPT_fno_inline_functions) ? 
     CodeGenOptions::OnlyAlwaysInlining : Opts.Inlining;
 
@@ -1217,8 +1278,8 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   Opts.DOTOutputFile = Args.getLastArgValue(OPT_dependency_dot);
 }
 
-static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
-                                DiagnosticsEngine &Diags) {
+bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
+                                DiagnosticsEngine *Diags) {
   using namespace cc1options;
   bool Success = true;
 
@@ -1252,10 +1313,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (ShowOverloads == "all")
     Opts.ShowOverloads = DiagnosticsEngine::Ovl_All;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fshow_overloads_EQ)->getAsString(Args)
       << ShowOverloads;
-    Success = false;
   }
 
   StringRef ShowCategory =
@@ -1267,10 +1329,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (ShowCategory == "name")
     Opts.ShowCategories = 2;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fdiagnostics_show_category)->getAsString(Args)
       << ShowCategory;
-    Success = false;
   }
 
   StringRef Format =
@@ -1282,10 +1345,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (Format == "vi")
     Opts.Format = DiagnosticOptions::Vi;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fdiagnostics_format)->getAsString(Args)
       << Format;
-    Success = false;
   }
   
   Opts.ShowSourceRanges = Args.hasArg(OPT_fdiagnostics_print_source_range_info);
@@ -1306,13 +1370,23 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   Opts.TabStop = Args.getLastArgIntValue(OPT_ftabstop,
                                     DiagnosticOptions::DefaultTabStop, Diags);
   if (Opts.TabStop == 0 || Opts.TabStop > DiagnosticOptions::MaxTabStop) {
-    Diags.Report(diag::warn_ignoring_ftabstop_value)
-      << Opts.TabStop << DiagnosticOptions::DefaultTabStop;
     Opts.TabStop = DiagnosticOptions::DefaultTabStop;
+    if (Diags)
+      Diags->Report(diag::warn_ignoring_ftabstop_value)
+      << Opts.TabStop << DiagnosticOptions::DefaultTabStop;
   }
   Opts.MessageLength = Args.getLastArgIntValue(OPT_fmessage_length, 0, Diags);
   Opts.DumpBuildInformation = Args.getLastArgValue(OPT_dump_build_information);
-  Opts.Warnings = Args.getAllArgValues(OPT_W);
+
+  for (arg_iterator it = Args.filtered_begin(OPT_W),
+         ie = Args.filtered_end(); it != ie; ++it) {
+    StringRef V = (*it)->getValue(Args);
+    // "-Wl," and such are not warnings options.
+    if (V.startswith("l,") || V.startswith("a,") || V.startswith("p,"))
+      continue;
+
+    Opts.Warnings.push_back(V);
+  }
 
   return Success;
 }
@@ -1938,9 +2012,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // This is the __NO_INLINE__ define, which just depends on things like the
   // optimization level and -fno-inline, not actually whether the backend has
   // inlining enabled.
-  //
-  // FIXME: This is affected by other options (-fno-inline).
-  Opts.NoInline = !Opt;
+  Opts.NoInlineDefine = !Opt || Args.hasArg(OPT_fno_inline);
 
   Opts.FastMath = Args.hasArg(OPT_ffast_math);
 
@@ -2114,7 +2186,7 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   Success = ParseAnalyzerArgs(Res.getAnalyzerOpts(), *Args, Diags) && Success;
   Success = ParseMigratorArgs(Res.getMigratorOpts(), *Args) && Success;
   ParseDependencyOutputArgs(Res.getDependencyOutputOpts(), *Args);
-  Success = ParseDiagnosticArgs(Res.getDiagnosticOpts(), *Args, Diags)
+  Success = ParseDiagnosticArgs(Res.getDiagnosticOpts(), *Args, &Diags)
             && Success;
   ParseFileSystemArgs(Res.getFileSystemOpts(), *Args);
   // FIXME: We shouldn't have to pass the DashX option around here

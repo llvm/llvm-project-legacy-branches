@@ -13,6 +13,8 @@ using N::operator "" _b;
 class C {
   void operator "" _c(const char *); // expected-error {{must be in a namespace or global scope}}
 
+  static void operator "" _c(unsigned long long); // expected-error {{must be in a namespace or global scope}}
+
   friend void operator "" _d(const char *);
 };
 
@@ -25,3 +27,9 @@ void f() {
 extern "C++" {
   void operator "" _g(const char *);
 }
+
+template<char...> void operator "" _h() {}
+
+template<> void operator "" _h<'a', 'b', 'c'>() {}
+
+template void operator "" _h<'a', 'b', 'c', 'd'>();

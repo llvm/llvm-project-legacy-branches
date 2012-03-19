@@ -693,7 +693,6 @@ static void AddStmtsExprs(llvm::BitstreamWriter &Stream,
   RECORD(EXPR_GNU_NULL);
   RECORD(EXPR_SHUFFLE_VECTOR);
   RECORD(EXPR_BLOCK);
-  RECORD(EXPR_BLOCK_DECL_REF);
   RECORD(EXPR_GENERIC_SELECTION);
   RECORD(EXPR_OBJC_STRING_LITERAL);
   RECORD(EXPR_OBJC_NUMERIC_LITERAL);
@@ -2790,12 +2789,8 @@ uint64_t ASTWriter::WriteDeclContextVisibleBlock(ASTContext &Context,
   // IdentifierInfo chains, don't bother to build a visible-declarations table.
   // FIXME: In C++ we need the visible declarations in order to "see" the
   // friend declarations, is there a way to do this without writing the table ?
-  if (DC->isTranslationUnit() && !Context.getLangOptions().CPlusPlus)
+  if (DC->isTranslationUnit() && !Context.getLangOpts().CPlusPlus)
     return 0;
-
-  // Force the DeclContext to build a its name-lookup table.
-  if (!DC->hasExternalVisibleStorage())
-    DC->lookup(DeclarationName());
 
   // Serialize the contents of the mapping used for lookup. Note that,
   // although we have two very different code paths, the serialized
@@ -2803,7 +2798,7 @@ uint64_t ASTWriter::WriteDeclContextVisibleBlock(ASTContext &Context,
   // followed by a size, followed by references to the visible
   // declarations that have that name.
   uint64_t Offset = Stream.GetCurrentBitNo();
-  StoredDeclsMap *Map = static_cast<StoredDeclsMap*>(DC->getLookupPtr());
+  StoredDeclsMap *Map = DC->buildLookup();
   if (!Map || Map->empty())
     return 0;
 
@@ -2868,7 +2863,8 @@ uint64_t ASTWriter::WriteDeclContextVisibleBlock(ASTContext &Context,
 ///
 /// UPDATE_VISIBLE blocks contain the declarations that are added to an existing
 /// DeclContext in a dependent AST file. As such, they only exist for the TU
-/// (in C++) and for namespaces.
+/// (in C++), for namespaces, and for classes with forward-declared unscoped
+/// enumeration members (in C++11).
 void ASTWriter::WriteDeclContextVisibleUpdate(const DeclContext *DC) {
   StoredDeclsMap *Map = static_cast<StoredDeclsMap*>(DC->getLookupPtr());
   if (!Map || Map->empty())
@@ -2915,7 +2911,7 @@ void ASTWriter::WriteFPPragmaOptions(const FPOptions &Opts) {
 
 /// \brief Write an OPENCL_EXTENSIONS block for the given OpenCLOptions.
 void ASTWriter::WriteOpenCLExtensions(Sema &SemaRef) {
-  if (!SemaRef.Context.getLangOptions().OpenCL)
+  if (!SemaRef.Context.getLangOpts().OpenCL)
     return;
 
   const OpenCLOptions &Opts = SemaRef.getOpenCLOptions();
@@ -3223,7 +3219,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
     IdentifierTable &Table = PP.getIdentifierTable();
     SmallVector<const char *, 32> BuiltinNames;
     Context.BuiltinInfo.GetBuiltinNames(BuiltinNames,
-                                        Context.getLangOptions().NoBuiltin);
+                                        Context.getLangOpts().NoBuiltin);
     for (unsigned I = 0, N = BuiltinNames.size(); I != N; ++I)
       getIdentifierRef(&Table.get(BuiltinNames[I]));
   }
@@ -3337,7 +3333,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   RecordData Record;
   Stream.EnterSubblock(AST_BLOCK_ID, 5);
   WriteMetadata(Context, isysroot, OutputFile);
-  WriteLanguageOptions(Context.getLangOptions());
+  WriteLanguageOptions(Context.getLangOpts());
   if (StatCalls && isysroot.empty())
     WriteStatCache(*StatCalls);
 

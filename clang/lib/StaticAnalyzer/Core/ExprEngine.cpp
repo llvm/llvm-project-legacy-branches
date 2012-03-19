@@ -23,6 +23,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/StmtObjC.h"
+#include "clang/AST/StmtCXX.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
@@ -57,10 +58,11 @@ static inline Selector GetNullarySelector(const char* name, ASTContext &Ctx) {
 // Engine construction and deletion.
 //===----------------------------------------------------------------------===//
 
-ExprEngine::ExprEngine(AnalysisManager &mgr, bool gcEnabled)
+ExprEngine::ExprEngine(AnalysisManager &mgr, bool gcEnabled,
+                       SetOfDecls *VisitedCallees)
   : AMgr(mgr),
     AnalysisDeclContexts(mgr.getAnalysisDeclContextManager()),
-    Engine(*this),
+    Engine(*this, VisitedCallees),
     G(Engine.getGraph()),
     StateMgr(getContext(), mgr.getStoreManagerCreator(),
              mgr.getConstraintManagerCreator(), G.getAllocator(),
@@ -361,29 +363,22 @@ void ExprEngine::ProcessInitializer(const CFGInitializer Init,
   SVal thisVal = Pred->getState()->getSVal(thisReg);
 
   if (BMI->isAnyMemberInitializer()) {
-    ExplodedNodeSet AfterEval;
-
     // Evaluate the initializer.
-    Visit(BMI->getInit(), Pred, AfterEval);
 
-    StmtNodeBuilder Bldr(AfterEval, Dst, *currentBuilderContext);
-    for (ExplodedNodeSet::iterator I = AfterEval.begin(),
-                                   E = AfterEval.end(); I != E; ++I){
-      ExplodedNode *P = *I;
-      ProgramStateRef state = P->getState();
+    StmtNodeBuilder Bldr(Pred, Dst, *currentBuilderContext);
+    ProgramStateRef state = Pred->getState();
 
-      const FieldDecl *FD = BMI->getAnyMember();
+    const FieldDecl *FD = BMI->getAnyMember();
 
-      SVal FieldLoc = state->getLValue(FD, thisVal);
-      SVal InitVal = state->getSVal(BMI->getInit(), Pred->getLocationContext());
-      state = state->bindLoc(FieldLoc, InitVal);
+    SVal FieldLoc = state->getLValue(FD, thisVal);
+    SVal InitVal = state->getSVal(BMI->getInit(), Pred->getLocationContext());
+    state = state->bindLoc(FieldLoc, InitVal);
 
-      // Use a custom node building process.
-      PostInitializer PP(BMI, stackFrame);
-      // Builder automatically add the generated node to the deferred set,
-      // which are processed in the builder's dtor.
-      Bldr.generateNode(PP, P, state);
-    }
+    // Use a custom node building process.
+    PostInitializer PP(BMI, stackFrame);
+    // Builder automatically add the generated node to the deferred set,
+    // which are processed in the builder's dtor.
+    Bldr.generateNode(PP, Pred, state);
   } else {
     assert(BMI->isBaseInitializer());
 
@@ -480,10 +475,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
   switch (S->getStmtClass()) {
     // C++ and ARC stuff we don't support yet.
     case Expr::ObjCIndirectCopyRestoreExprClass:
-    case Stmt::CXXCatchStmtClass:
     case Stmt::CXXDependentScopeMemberExprClass:
     case Stmt::CXXPseudoDestructorExprClass:
-    case Stmt::CXXThrowExprClass:
     case Stmt::CXXTryStmtClass:
     case Stmt::CXXTypeidExprClass:
     case Stmt::CXXUuidofExprClass:
@@ -504,7 +497,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::SEHExceptStmtClass:
     case Stmt::LambdaExprClass:
     case Stmt::SEHFinallyStmtClass: {
-      const ExplodedNode *node = Bldr.generateNode(S, Pred, Pred->getState());
+      const ExplodedNode *node = Bldr.generateNode(S, Pred, Pred->getState(),
+                                                   /* sink */ true);
       Engine.addAbortedBlock(node, currentBuilderContext->getBlock());
       break;
     }
@@ -573,9 +567,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     }
       
     case Stmt::ExprWithCleanupsClass:
-      Bldr.takeNodes(Pred);
-      Visit(cast<ExprWithCleanups>(S)->getSubExpr(), Pred, Dst);
-      Bldr.addNodes(Dst);
+      // Handled due to fully linearised CFG.
       break;
 
     // Cases not handled yet; but will handle some day.
@@ -599,8 +591,13 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OpaqueValueExprClass:
     case Stmt::AsTypeExprClass:
     case Stmt::AtomicExprClass:
-        // Fall through.
+      // Fall through.
 
+    // Currently all handling of 'throw' just falls to the CFG.  We
+    // can consider doing more if necessary.
+    case Stmt::CXXThrowExprClass:
+      // Fall through.
+      
     // Cases we intentionally don't evaluate, since they don't need
     // to be explicitly evaluated.
     case Stmt::AddrLabelExprClass:
@@ -664,14 +661,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       Bldr.addNodes(Dst);
       break;
 
-    case Stmt::BlockDeclRefExprClass: {
-      Bldr.takeNodes(Pred);
-      const BlockDeclRefExpr *BE = cast<BlockDeclRefExpr>(S);
-      VisitCommonDeclRefExpr(BE, BE->getDecl(), Pred, Dst);
-      Bldr.addNodes(Dst);
-      break;
-    }
-
     case Stmt::BlockExprClass:
       Bldr.takeNodes(Pred);
       VisitBlockExpr(cast<BlockExpr>(S), Pred, Dst);
@@ -716,6 +705,13 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::UserDefinedLiteralClass: {
       Bldr.takeNodes(Pred);
       VisitCallExpr(cast<CallExpr>(S), Pred, Dst);
+      Bldr.addNodes(Dst);
+      break;
+    }
+    
+    case Stmt::CXXCatchStmtClass: {
+      Bldr.takeNodes(Pred);
+      VisitCXXCatchStmt(cast<CXXCatchStmt>(S), Pred, Dst);
       Bldr.addNodes(Dst);
       break;
     }
@@ -830,10 +826,10 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       Bldr.takeNodes(Pred);
       const MaterializeTemporaryExpr *Materialize
                                             = cast<MaterializeTemporaryExpr>(S);
-      if (!Materialize->getType()->isRecordType())
-        CreateCXXTemporaryObject(Materialize, Pred, Dst);
+      if (Materialize->getType()->isRecordType())
+        Dst.Add(Pred);
       else
-        Visit(Materialize->GetTemporaryExpr(), Pred, Dst);
+        CreateCXXTemporaryObject(Materialize, Pred, Dst);
       Bldr.addNodes(Dst);
       break;
     }

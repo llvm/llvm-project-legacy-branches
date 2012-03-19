@@ -279,7 +279,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // though.
   bool retainSelf =
     (!isDelegateInit &&
-     CGM.getLangOptions().ObjCAutoRefCount &&
+     CGM.getLangOpts().ObjCAutoRefCount &&
      method &&
      method->hasAttr<NSConsumesSelfAttr>());
 
@@ -333,7 +333,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // In ARC, we sometimes want to "extend the lifetime"
   // (i.e. retain+autorelease) of receivers of returns-inner-pointer
   // messages.
-  if (getLangOptions().ObjCAutoRefCount && method &&
+  if (getLangOpts().ObjCAutoRefCount && method &&
       method->hasAttr<ObjCReturnsInnerPointerAttr>() &&
       shouldExtendReceiverForInnerPointerMessage(E))
     Receiver = EmitARCRetainAutorelease(ReceiverType, Receiver);
@@ -352,7 +352,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // be an undefined read and write of an object in unordered
   // expressions.
   if (isDelegateInit) {
-    assert(getLangOptions().ObjCAutoRefCount &&
+    assert(getLangOpts().ObjCAutoRefCount &&
            "delegate init calls should only be marked in ARC");
 
     // Do an unsafe store of null into self.
@@ -458,7 +458,7 @@ void CodeGenFunction::StartObjCMethod(const ObjCMethodDecl *OMD,
   StartFunction(OMD, OMD->getResultType(), Fn, FI, args, StartLoc);
 
   // In ARC, certain methods get an extra cleanup.
-  if (CGM.getLangOptions().ObjCAutoRefCount &&
+  if (CGM.getLangOpts().ObjCAutoRefCount &&
       OMD->isInstanceMethod() &&
       OMD->getSelector().isUnarySelector()) {
     const IdentifierInfo *ident = 
@@ -604,13 +604,13 @@ PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
   // Handle retain.
   if (setterKind == ObjCPropertyDecl::Retain) {
     // In GC-only, there's nothing special that needs to be done.
-    if (CGM.getLangOptions().getGC() == LangOptions::GCOnly) {
+    if (CGM.getLangOpts().getGC() == LangOptions::GCOnly) {
       // fallthrough
 
     // In ARC, if the property is non-atomic, use expression emission,
     // which translates to objc_storeStrong.  This isn't required, but
     // it's slightly nicer.
-    } else if (CGM.getLangOptions().ObjCAutoRefCount && !IsAtomic) {
+    } else if (CGM.getLangOpts().ObjCAutoRefCount && !IsAtomic) {
       Kind = Expression;
       return;
 
@@ -645,14 +645,14 @@ PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
   // expressions.  This actually works out to being atomic anyway,
   // except for ARC __strong, but that should trigger the above code.
   if (ivarType.hasNonTrivialObjCLifetime() ||
-      (CGM.getLangOptions().getGC() &&
+      (CGM.getLangOpts().getGC() &&
        CGM.getContext().getObjCGCAttrKind(ivarType))) {
     Kind = Expression;
     return;
   }
 
   // Compute whether the ivar has strong members.
-  if (CGM.getLangOptions().getGC())
+  if (CGM.getLangOpts().getGC())
     if (const RecordType *recordType = ivarType->getAs<RecordType>())
       HasStrong = recordType->getDecl()->hasObjectMember();
 
@@ -931,7 +931,7 @@ static void emitStructSetterCall(CodeGenFunction &CGF, ObjCMethodDecl *OMD,
 
   // The second argument is the address of the parameter variable.
   ParmVarDecl *argVar = *OMD->param_begin();
-  DeclRefExpr argRef(argVar, argVar->getType().getNonReferenceType(), 
+  DeclRefExpr argRef(argVar, false, argVar->getType().getNonReferenceType(), 
                      VK_LValue, SourceLocation());
   llvm::Value *argAddr = CGF.EmitLValue(&argRef).getAddress();
   argAddr = CGF.Builder.CreateBitCast(argAddr, CGF.Int8PtrTy);
@@ -976,7 +976,7 @@ static void emitCPPObjectAtomicSetterCall(CodeGenFunction &CGF,
   
   // The second argument is the address of the parameter variable.
   ParmVarDecl *argVar = *OMD->param_begin();
-  DeclRefExpr argRef(argVar, argVar->getType().getNonReferenceType(), 
+  DeclRefExpr argRef(argVar, false, argVar->getType().getNonReferenceType(), 
                      VK_LValue, SourceLocation());
   llvm::Value *argAddr = CGF.EmitLValue(&argRef).getAddress();
   argAddr = CGF.Builder.CreateBitCast(argAddr, CGF.Int8PtrTy);
@@ -1020,24 +1020,15 @@ static bool hasTrivialSetExpr(const ObjCPropertyImplDecl *PID) {
   return false;
 }
 
-bool UseOptimizedSetter(CodeGenModule &CGM) {
-  if (CGM.getLangOptions().getGC() != LangOptions::NonGC)
+static bool UseOptimizedSetter(CodeGenModule &CGM) {
+  if (CGM.getLangOpts().getGC() != LangOptions::NonGC)
     return false;
   const TargetInfo &Target = CGM.getContext().getTargetInfo();
-  StringRef TargetPlatform = Target.getPlatformName();
-  if (TargetPlatform.empty())
+
+  if (Target.getPlatformName() != "macosx")
     return false;
-  VersionTuple TargetMinVersion = Target.getPlatformMinVersion();
-  
-  if (TargetPlatform.compare("macosx") ||
-      TargetMinVersion.getMajor() <= 9)
-    return false;
-  
-  unsigned minor = 0;
-  if (llvm::Optional<unsigned> Minor = TargetMinVersion.getMinor())
-    minor = *Minor;
-  
-  return (minor >= 8);
+
+  return Target.getPlatformMinVersion() >= VersionTuple(10, 8);
 }
 
 void
@@ -1163,7 +1154,8 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
 
   // Otherwise, fake up some ASTs and emit a normal assignment.
   ValueDecl *selfDecl = setterMethod->getSelfDecl();
-  DeclRefExpr self(selfDecl, selfDecl->getType(), VK_LValue, SourceLocation());
+  DeclRefExpr self(selfDecl, false, selfDecl->getType(),
+                   VK_LValue, SourceLocation());
   ImplicitCastExpr selfLoad(ImplicitCastExpr::OnStack,
                             selfDecl->getType(), CK_LValueToRValue, &self,
                             VK_RValue);
@@ -1172,7 +1164,7 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
 
   ParmVarDecl *argDecl = *setterMethod->param_begin();
   QualType argType = argDecl->getType().getNonReferenceType();
-  DeclRefExpr arg(argDecl, argType, VK_LValue, SourceLocation());
+  DeclRefExpr arg(argDecl, false, argType, VK_LValue, SourceLocation());
   ImplicitCastExpr argLoad(ImplicitCastExpr::OnStack,
                            argType.getUnqualifiedType(), CK_LValueToRValue,
                            &arg, VK_RValue);
@@ -1342,7 +1334,7 @@ bool CodeGenFunction::IndirectObjCSetterArg(const CGFunctionInfo &FI) {
 }
 
 bool CodeGenFunction::IvarTypeWithAggrGCObjects(QualType Ty) {
-  if (CGM.getLangOptions().getGC() == LangOptions::NonGC)
+  if (CGM.getLangOpts().getGC() == LangOptions::NonGC)
     return false;
   if (const RecordType *FDTTy = Ty.getTypePtr()->getAs<RecordType>())
     return FDTTy->getDecl()->hasObjectMember();
@@ -1407,7 +1399,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
 
   // Emit the collection pointer.  In ARC, we do a retain.
   llvm::Value *Collection;
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     Collection = EmitARCRetainScalarExpr(S.getCollection());
 
     // Enter a cleanup to do the release.
@@ -1525,7 +1517,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     EmitAutoVarInit(variable);
 
     const VarDecl* D = cast<VarDecl>(SD->getSingleDecl());
-    DeclRefExpr tempDRE(const_cast<VarDecl*>(D), D->getType(),
+    DeclRefExpr tempDRE(const_cast<VarDecl*>(D), false, D->getType(),
                         VK_LValue, SourceLocation());
     elementLValue = EmitLValue(&tempDRE);
     elementType = D->getType();
@@ -1632,7 +1624,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
 
   // Leave the cleanup we entered in ARC.
-  if (getLangOptions().ObjCAutoRefCount)
+  if (getLangOpts().ObjCAutoRefCount)
     PopCleanupBlock();
 
   EmitBlock(LoopEnd.getBlock());
@@ -2249,7 +2241,7 @@ namespace {
 }
 
 void CodeGenFunction::EmitObjCAutoreleasePoolCleanup(llvm::Value *Ptr) {
-  if (CGM.getLangOptions().ObjCAutoRefCount)
+  if (CGM.getLangOpts().ObjCAutoRefCount)
     EHStack.pushCleanup<CallObjCAutoreleasePoolObject>(NormalCleanup, Ptr);
   else
     EHStack.pushCleanup<CallObjCMRRAutoreleasePoolObject>(NormalCleanup, Ptr);
@@ -2300,7 +2292,7 @@ static TryEmitResult tryEmitARCRetainLoadOfScalar(CodeGenFunction &CGF,
   // As a very special optimization, in ARC++, if the l-value is the
   // result of a non-volatile assignment, do a simple retain of the
   // result of the call to objc_storeWeak instead of reloading.
-  if (CGF.getLangOptions().CPlusPlus &&
+  if (CGF.getLangOpts().CPlusPlus &&
       !type.isVolatileQualified() &&
       type.getObjCLifetime() == Qualifiers::OCL_Weak &&
       isa<BinaryOperator>(e) &&
@@ -2645,7 +2637,7 @@ llvm::Value *CodeGenFunction::EmitARCExtendBlockObject(const Expr *e) {
 
 llvm::Value *CodeGenFunction::EmitObjCThrowOperand(const Expr *expr) {
   // In ARC, retain and autorelease the expression.
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     // Do so before running any cleanups for the full-expression.
     // tryEmitARCRetainScalarExpr does make an effort to do things
     // inside cleanups, but there are crazy cases like
@@ -2762,7 +2754,7 @@ llvm::Constant *
 CodeGenFunction::GenerateObjCAtomicSetterCopyHelperFunction(
                                         const ObjCPropertyImplDecl *PID) {
   // FIXME. This api is for NeXt runtime only for now.
-  if (!getLangOptions().CPlusPlus || !getLangOptions().NeXTRuntime)
+  if (!getLangOpts().CPlusPlus || !getLangOpts().NeXTRuntime)
     return 0;
   QualType Ty = PID->getPropertyIvarDecl()->getType();
   if (!Ty->isRecordType())
@@ -2817,28 +2809,23 @@ CodeGenFunction::GenerateObjCAtomicSetterCopyHelperFunction(
   
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
   
-  DeclRefExpr *DstExpr = 
-    new (C) DeclRefExpr(&dstDecl, DestTy,
-                              VK_RValue, SourceLocation());
+  DeclRefExpr DstExpr(&dstDecl, false, DestTy,
+                      VK_RValue, SourceLocation());
+  UnaryOperator DST(&DstExpr, UO_Deref, DestTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
-  Expr* DST = new (C) UnaryOperator(DstExpr, UO_Deref, DestTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
+  DeclRefExpr SrcExpr(&srcDecl, false, SrcTy,
+                      VK_RValue, SourceLocation());
+  UnaryOperator SRC(&SrcExpr, UO_Deref, SrcTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
-  DeclRefExpr *SrcExpr = 
-    new (C) DeclRefExpr(&srcDecl, SrcTy,
-                        VK_RValue, SourceLocation());
-  
-  Expr* SRC = new (C) UnaryOperator(SrcExpr, UO_Deref, SrcTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
-  
-  Expr *Args[2] = { DST, SRC };
+  Expr *Args[2] = { &DST, &SRC };
   CallExpr *CalleeExp = cast<CallExpr>(PID->getSetterCXXAssignment());
-  CXXOperatorCallExpr *TheCall =
-    new (C) CXXOperatorCallExpr(C, OO_Equal, CalleeExp->getCallee(),
-                                Args, 2, DestTy->getPointeeType(), 
-                                VK_LValue, SourceLocation());
-
-  EmitStmt(TheCall);
+  CXXOperatorCallExpr TheCall(C, OO_Equal, CalleeExp->getCallee(),
+                              Args, 2, DestTy->getPointeeType(), 
+                              VK_LValue, SourceLocation());
+  
+  EmitStmt(&TheCall);
 
   FinishFunction();
   HelperFn = llvm::ConstantExpr::getBitCast(Fn, VoidPtrTy);
@@ -2850,7 +2837,7 @@ llvm::Constant *
 CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
                                             const ObjCPropertyImplDecl *PID) {
   // FIXME. This api is for NeXt runtime only for now.
-  if (!getLangOptions().CPlusPlus || !getLangOptions().NeXTRuntime)
+  if (!getLangOpts().CPlusPlus || !getLangOpts().NeXTRuntime)
     return 0;
   const ObjCPropertyDecl *PD = PID->getPropertyDecl();
   QualType Ty = PD->getType();
@@ -2907,18 +2894,17 @@ CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
   
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
   
-  DeclRefExpr *SrcExpr = 
-  new (C) DeclRefExpr(&srcDecl, SrcTy,
+  DeclRefExpr SrcExpr(&srcDecl, false, SrcTy,
                       VK_RValue, SourceLocation());
   
-  Expr* SRC = new (C) UnaryOperator(SrcExpr, UO_Deref, SrcTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
+  UnaryOperator SRC(&SrcExpr, UO_Deref, SrcTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
   CXXConstructExpr *CXXConstExpr = 
     cast<CXXConstructExpr>(PID->getGetterCXXConstructor());
   
   SmallVector<Expr*, 4> ConstructorArgs;
-  ConstructorArgs.push_back(SRC);
+  ConstructorArgs.push_back(&SRC);
   CXXConstructExpr::arg_iterator A = CXXConstExpr->arg_begin();
   ++A;
   
@@ -2936,11 +2922,10 @@ CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
                              CXXConstExpr->requiresZeroInitialization(),
                              CXXConstExpr->getConstructionKind(), SourceRange());
   
-  DeclRefExpr *DstExpr = 
-    new (C) DeclRefExpr(&dstDecl, DestTy,
-                        VK_RValue, SourceLocation());
+  DeclRefExpr DstExpr(&dstDecl, false, DestTy,
+                      VK_RValue, SourceLocation());
   
-  RValue DV = EmitAnyExpr(DstExpr);
+  RValue DV = EmitAnyExpr(&DstExpr);
   CharUnits Alignment = getContext().getTypeAlignInChars(TheCXXConstructExpr->getType());
   EmitAggExpr(TheCXXConstructExpr, 
               AggValueSlot::forAddr(DV.getScalarVal(), Alignment, Qualifiers(),

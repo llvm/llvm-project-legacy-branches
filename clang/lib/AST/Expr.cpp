@@ -94,6 +94,8 @@ bool Expr::isKnownToHaveBooleanValue() const {
 
 // Amusing macro metaprogramming hack: check whether a class provides
 // a more specific implementation of getExprLoc().
+//
+// See also Stmt.cpp:{getLocStart(),getLocEnd()}.
 namespace {
   /// This implementation is used when a class provides a custom
   /// implementation of getExprLoc.
@@ -110,7 +112,7 @@ namespace {
   template <class E>
   SourceLocation getExprLocImpl(const Expr *expr,
                                 SourceLocation (Expr::*v)() const) {
-    return static_cast<const E*>(expr)->getSourceRange().getBegin();
+    return static_cast<const E*>(expr)->getLocStart();
   }
 }
 
@@ -134,7 +136,7 @@ SourceLocation Expr::getExprLoc() const {
 /// \brief Compute the type-, value-, and instantiation-dependence of a 
 /// declaration reference
 /// based on the declaration being referenced.
-static void computeDeclRefDependence(NamedDecl *D, QualType T,
+static void computeDeclRefDependence(ASTContext &Ctx, NamedDecl *D, QualType T,
                                      bool &TypeDependent,
                                      bool &ValueDependent,
                                      bool &InstantiationDependent) {
@@ -191,7 +193,7 @@ static void computeDeclRefDependence(NamedDecl *D, QualType T,
   //       -  an entity with reference type and is initialized with an
   //          expression that is value-dependent [C++11]
   if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
-    if ((D->getASTContext().getLangOptions().CPlusPlus0x ?
+    if ((Ctx.getLangOpts().CPlusPlus0x ?
            Var->getType()->isLiteralType() :
            Var->getType()->isIntegralOrEnumerationType()) &&
         (Var->getType().getCVRQualifiers() == Qualifiers::Const ||
@@ -224,12 +226,12 @@ static void computeDeclRefDependence(NamedDecl *D, QualType T,
   }
 }
 
-void DeclRefExpr::computeDependence() {
+void DeclRefExpr::computeDependence(ASTContext &Ctx) {
   bool TypeDependent = false;
   bool ValueDependent = false;
   bool InstantiationDependent = false;
-  computeDeclRefDependence(getDecl(), getType(), TypeDependent, ValueDependent,
-                           InstantiationDependent);
+  computeDeclRefDependence(Ctx, getDecl(), getType(), TypeDependent,
+                           ValueDependent, InstantiationDependent);
   
   // (TD) C++ [temp.dep.expr]p3:
   //   An id-expression is type-dependent if it contains:
@@ -258,9 +260,11 @@ void DeclRefExpr::computeDependence() {
     ExprBits.ContainsUnexpandedParameterPack = true;
 }
 
-DeclRefExpr::DeclRefExpr(NestedNameSpecifierLoc QualifierLoc,
+DeclRefExpr::DeclRefExpr(ASTContext &Ctx,
+                         NestedNameSpecifierLoc QualifierLoc,
                          SourceLocation TemplateKWLoc,
-                         ValueDecl *D, const DeclarationNameInfo &NameInfo,
+                         ValueDecl *D, bool RefersToEnclosingLocal,
+                         const DeclarationNameInfo &NameInfo,
                          NamedDecl *FoundD,
                          const TemplateArgumentListInfo *TemplateArgs,
                          QualType T, ExprValueKind VK)
@@ -274,6 +278,7 @@ DeclRefExpr::DeclRefExpr(NestedNameSpecifierLoc QualifierLoc,
     getInternalFoundDecl() = FoundD;
   DeclRefExprBits.HasTemplateKWAndArgsInfo
     = (TemplateArgs || TemplateKWLoc.isValid()) ? 1 : 0;
+  DeclRefExprBits.RefersToEnclosingLocal = RefersToEnclosingLocal;
   if (TemplateArgs) {
     bool Dependent = false;
     bool InstantiationDependent = false;
@@ -289,19 +294,21 @@ DeclRefExpr::DeclRefExpr(NestedNameSpecifierLoc QualifierLoc,
   }
   DeclRefExprBits.HadMultipleCandidates = 0;
 
-  computeDependence();
+  computeDependence(Ctx);
 }
 
 DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
                                  NestedNameSpecifierLoc QualifierLoc,
                                  SourceLocation TemplateKWLoc,
                                  ValueDecl *D,
+                                 bool RefersToEnclosingLocal,
                                  SourceLocation NameLoc,
                                  QualType T,
                                  ExprValueKind VK,
                                  NamedDecl *FoundD,
                                  const TemplateArgumentListInfo *TemplateArgs) {
   return Create(Context, QualifierLoc, TemplateKWLoc, D,
+                RefersToEnclosingLocal,
                 DeclarationNameInfo(D->getDeclName(), NameLoc),
                 T, VK, FoundD, TemplateArgs);
 }
@@ -310,6 +317,7 @@ DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
                                  NestedNameSpecifierLoc QualifierLoc,
                                  SourceLocation TemplateKWLoc,
                                  ValueDecl *D,
+                                 bool RefersToEnclosingLocal,
                                  const DeclarationNameInfo &NameInfo,
                                  QualType T,
                                  ExprValueKind VK,
@@ -330,8 +338,9 @@ DeclRefExpr *DeclRefExpr::Create(ASTContext &Context,
     Size += ASTTemplateKWAndArgsInfo::sizeFor(0);
 
   void *Mem = Context.Allocate(Size, llvm::alignOf<DeclRefExpr>());
-  return new (Mem) DeclRefExpr(QualifierLoc, TemplateKWLoc, D, NameInfo,
-                               FoundD, TemplateArgs, T, VK);
+  return new (Mem) DeclRefExpr(Context, QualifierLoc, TemplateKWLoc, D,
+                               RefersToEnclosingLocal,
+                               NameInfo, FoundD, TemplateArgs, T, VK);
 }
 
 DeclRefExpr *DeclRefExpr::CreateEmpty(ASTContext &Context,
@@ -359,6 +368,16 @@ SourceRange DeclRefExpr::getSourceRange() const {
     R.setEnd(getRAngleLoc());
   return R;
 }
+SourceLocation DeclRefExpr::getLocStart() const {
+  if (hasQualifier())
+    return getQualifierLoc().getBeginLoc();
+  return getNameInfo().getLocStart();
+}
+SourceLocation DeclRefExpr::getLocEnd() const {
+  if (hasExplicitTemplateArgs())
+    return getRAngleLoc();
+  return getNameInfo().getLocEnd();
+}
 
 // FIXME: Maybe this should use DeclPrinter with a special "print predefined
 // expr" policy instead.
@@ -379,7 +398,7 @@ std::string PredefinedExpr::ComputeName(IdentType IT, const Decl *CurrentDecl) {
         Out << "static ";
     }
 
-    PrintingPolicy Policy(Context.getLangOptions());
+    PrintingPolicy Policy(Context.getLangOpts());
 
     std::string Proto = FD->getQualifiedNameAsString(Policy);
 
@@ -892,6 +911,24 @@ SourceRange CallExpr::getSourceRange() const {
     end = getArg(getNumArgs() - 1)->getLocEnd();
   return SourceRange(begin, end);
 }
+SourceLocation CallExpr::getLocStart() const {
+  if (isa<CXXOperatorCallExpr>(this))
+    return cast<CXXOperatorCallExpr>(this)->getSourceRange().getBegin();
+
+  SourceLocation begin = getCallee()->getLocStart();
+  if (begin.isInvalid() && getNumArgs() > 0)
+    begin = getArg(0)->getLocStart();
+  return begin;
+}
+SourceLocation CallExpr::getLocEnd() const {
+  if (isa<CXXOperatorCallExpr>(this))
+    return cast<CXXOperatorCallExpr>(this)->getSourceRange().getEnd();
+
+  SourceLocation end = getRParenLoc();
+  if (end.isInvalid() && getNumArgs() > 0)
+    end = getArg(getNumArgs() - 1)->getLocEnd();
+  return end;
+}
 
 OffsetOfExpr *OffsetOfExpr::Create(ASTContext &C, QualType type, 
                                    SourceLocation OperatorLoc,
@@ -1015,24 +1052,26 @@ MemberExpr *MemberExpr::Create(ASTContext &C, Expr *base, bool isarrow,
 }
 
 SourceRange MemberExpr::getSourceRange() const {
-  SourceLocation StartLoc;
+  return SourceRange(getLocStart(), getLocEnd());
+}
+SourceLocation MemberExpr::getLocStart() const {
   if (isImplicitAccess()) {
     if (hasQualifier())
-      StartLoc = getQualifierLoc().getBeginLoc();
-    else
-      StartLoc = MemberLoc;
-  } else {
-    // FIXME: We don't want this to happen. Rather, we should be able to
-    // detect all kinds of implicit accesses more cleanly.
-    StartLoc = getBase()->getLocStart();
-    if (StartLoc.isInvalid())
-      StartLoc = MemberLoc;
+      return getQualifierLoc().getBeginLoc();
+    return MemberLoc;
   }
 
-  SourceLocation EndLoc = hasExplicitTemplateArgs()
-    ? getRAngleLoc() : getMemberNameInfo().getEndLoc();
-
-  return SourceRange(StartLoc, EndLoc);
+  // FIXME: We don't want this to happen. Rather, we should be able to
+  // detect all kinds of implicit accesses more cleanly.
+  SourceLocation BaseStartLoc = getBase()->getLocStart();
+  if (BaseStartLoc.isValid())
+    return BaseStartLoc;
+  return MemberLoc;
+}
+SourceLocation MemberExpr::getLocEnd() const {
+  if (hasExplicitTemplateArgs())
+    return getRAngleLoc();
+  return getMemberNameInfo().getEndLoc();
 }
 
 void CastExpr::CheckCastConsistency() const {
@@ -1711,7 +1750,7 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
 
   case ObjCMessageExprClass: {
     const ObjCMessageExpr *ME = cast<ObjCMessageExpr>(this);
-    if (Ctx.getLangOptions().ObjCAutoRefCount &&
+    if (Ctx.getLangOpts().ObjCAutoRefCount &&
         ME->isInstanceMessage() &&
         !ME->getType()->isVoidType() &&
         ME->getSelector().getIdentifierInfoForSlot(0) &&
@@ -1834,14 +1873,8 @@ bool Expr::isOBJCGCCandidate(ASTContext &Ctx) const {
                                                       ->isOBJCGCCandidate(Ctx);
   case CStyleCastExprClass:
     return cast<CStyleCastExpr>(E)->getSubExpr()->isOBJCGCCandidate(Ctx);
-  case BlockDeclRefExprClass:
   case DeclRefExprClass: {
-    
-    const Decl *D;
-    if (const BlockDeclRefExpr *BDRE = dyn_cast<BlockDeclRefExpr>(E))
-        D = BDRE->getDecl();
-    else 
-        D = cast<DeclRefExpr>(E)->getDecl();
+    const Decl *D = cast<DeclRefExpr>(E)->getDecl();
         
     if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
       if (VD->hasGlobalStorage())
@@ -2098,7 +2131,6 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     // potentially throwing unless we decide to close off that
     // possibility.
   case ObjCArrayLiteralClass:
-  case ObjCBoolLiteralExprClass:
   case ObjCDictionaryLiteralClass:
   case ObjCNumericLiteralClass:
     return CT_Can;
@@ -2161,7 +2193,6 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
   case AsTypeExprClass:
   case BinaryConditionalOperatorClass:
   case BlockExprClass:
-  case BlockDeclRefExprClass:
   case CUDAKernelCallExprClass:
   case DeclRefExprClass:
   case ObjCBridgedCastExprClass:
@@ -2199,6 +2230,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
   case IntegerLiteralClass:
   case ObjCEncodeExprClass:
   case ObjCStringLiteralClass:
+  case ObjCBoolLiteralExprClass:
   case OpaqueValueExprClass:
   case PredefinedExprClass:
   case SizeOfPackExprClass:
@@ -2748,7 +2780,7 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
 
   // Strip off a cast to void*, if it exists. Except in C++.
   if (const ExplicitCastExpr *CE = dyn_cast<ExplicitCastExpr>(this)) {
-    if (!Ctx.getLangOptions().CPlusPlus) {
+    if (!Ctx.getLangOpts().CPlusPlus) {
       // Check that it is a cast to void*.
       if (const PointerType *PT = CE->getType()->getAs<PointerType>()) {
         QualType Pointee = PT->getPointeeType();
@@ -2796,14 +2828,14 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
       }
   // This expression must be an integer type.
   if (!getType()->isIntegerType() || 
-      (Ctx.getLangOptions().CPlusPlus && getType()->isEnumeralType()))
+      (Ctx.getLangOpts().CPlusPlus && getType()->isEnumeralType()))
     return NPCK_NotNull;
 
   // If we have an integer constant expression, we need to *evaluate* it and
   // test for the value 0. Don't use the C++11 constant expression semantics
   // for this, for now; once the dust settles on core issue 903, we might only
   // allow a literal 0 here in C++11 mode.
-  if (Ctx.getLangOptions().CPlusPlus0x) {
+  if (Ctx.getLangOpts().CPlusPlus0x) {
     if (!isCXX98IntegralConstantExpr(Ctx))
       return NPCK_NotNull;
   } else {
@@ -3629,24 +3661,6 @@ Stmt::child_range ObjCMessageExpr::children() {
     begin = reinterpret_cast<Stmt **>(getArgs());
   return child_range(begin,
                      reinterpret_cast<Stmt **>(getArgs() + getNumArgs()));
-}
-
-// Blocks
-BlockDeclRefExpr::BlockDeclRefExpr(VarDecl *d, QualType t, ExprValueKind VK,
-                                   SourceLocation l, bool ByRef, 
-                                   bool constAdded)
-  : Expr(BlockDeclRefExprClass, t, VK, OK_Ordinary, false, false, false,
-         d->isParameterPack()),
-    D(d), Loc(l), IsByRef(ByRef), ConstQualAdded(constAdded)
-{
-  bool TypeDependent = false;
-  bool ValueDependent = false;
-  bool InstantiationDependent = false;
-  computeDeclRefDependence(D, getType(), TypeDependent, ValueDependent,
-                           InstantiationDependent);
-  ExprBits.TypeDependent = TypeDependent;
-  ExprBits.ValueDependent = ValueDependent;
-  ExprBits.InstantiationDependent = InstantiationDependent;
 }
 
 ObjCArrayLiteral::ObjCArrayLiteral(llvm::ArrayRef<Expr *> Elements, 

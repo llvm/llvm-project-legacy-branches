@@ -55,7 +55,7 @@ Cl Expr::ClassifyImpl(ASTContext &Ctx, SourceLocation *Loc) const {
   Cl::Kinds kind = ClassifyInternal(Ctx, this);
   // C99 6.3.2.1: An lvalue is an expression with an object type or an
   //   incomplete type other than void.
-  if (!Ctx.getLangOptions().CPlusPlus) {
+  if (!Ctx.getLangOpts().CPlusPlus) {
     // Thus, no functions.
     if (TR->isFunctionType() || TR == Ctx.OverloadTy)
       kind = Cl::CL_Function;
@@ -89,7 +89,7 @@ Cl Expr::ClassifyImpl(ASTContext &Ctx, SourceLocation *Loc) const {
 
 static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
   // This function takes the first stab at classifying expressions.
-  const LangOptions &Lang = Ctx.getLangOptions();
+  const LangOptions &Lang = Ctx.getLangOpts();
 
   switch (E->getStmtClass()) {
   case Stmt::NoStmtClass:
@@ -126,7 +126,7 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
     // C99 6.5.2.5p5 says that compound literals are lvalues.
     // In C++, they're class temporaries.
   case Expr::CompoundLiteralExprClass:
-    return Ctx.getLangOptions().CPlusPlus? Cl::CL_ClassTemporary 
+    return Ctx.getLangOpts().CPlusPlus? Cl::CL_ClassTemporary 
                                          : Cl::CL_LValue;
 
     // Expressions that are prvalues.
@@ -189,9 +189,6 @@ static Cl::Kinds ClassifyInternal(ASTContext &Ctx, const Expr *E) {
       return isa<FunctionDecl>(cast<DeclRefExpr>(E)->getDecl())
                ? Cl::CL_PRValue : Cl::CL_LValue;
     return ClassifyDecl(Ctx, cast<DeclRefExpr>(E)->getDecl());
-    // We deal with names referenced from blocks the same way.
-  case Expr::BlockDeclRefExprClass:
-    return ClassifyDecl(Ctx, cast<BlockDeclRefExpr>(E)->getDecl());
 
     // Member access is complex.
   case Expr::MemberExprClass:
@@ -399,7 +396,7 @@ static Cl::Kinds ClassifyDecl(ASTContext &Ctx, const Decl *D) {
   else
     islvalue = isa<VarDecl>(D) || isa<FieldDecl>(D) ||
 	  isa<IndirectFieldDecl>(D) ||
-      (Ctx.getLangOptions().CPlusPlus &&
+      (Ctx.getLangOpts().CPlusPlus &&
         (isa<FunctionDecl>(D) || isa<FunctionTemplateDecl>(D)));
 
   return islvalue ? Cl::CL_LValue : Cl::CL_PRValue;
@@ -410,7 +407,7 @@ static Cl::Kinds ClassifyDecl(ASTContext &Ctx, const Decl *D) {
 /// calls and casts.
 static Cl::Kinds ClassifyUnnamed(ASTContext &Ctx, QualType T) {
   // In C, function calls are always rvalues.
-  if (!Ctx.getLangOptions().CPlusPlus) return Cl::CL_PRValue;
+  if (!Ctx.getLangOpts().CPlusPlus) return Cl::CL_PRValue;
 
   // C++ [expr.call]p10: A function call is an lvalue if the result type is an
   //   lvalue reference type or an rvalue reference to function type, an xvalue
@@ -431,7 +428,7 @@ static Cl::Kinds ClassifyMemberExpr(ASTContext &Ctx, const MemberExpr *E) {
               ? Cl::CL_PRValue : Cl::CL_LValue);
 
   // Handle C first, it's easier.
-  if (!Ctx.getLangOptions().CPlusPlus) {
+  if (!Ctx.getLangOpts().CPlusPlus) {
     // C99 6.5.2.3p3
     // For dot access, the expression is an lvalue if the first part is. For
     // arrow access, it always is an lvalue.
@@ -483,7 +480,7 @@ static Cl::Kinds ClassifyMemberExpr(ASTContext &Ctx, const MemberExpr *E) {
 }
 
 static Cl::Kinds ClassifyBinaryOp(ASTContext &Ctx, const BinaryOperator *E) {
-  assert(Ctx.getLangOptions().CPlusPlus &&
+  assert(Ctx.getLangOpts().CPlusPlus &&
          "This is only relevant for C++.");
   // C++ [expr.ass]p1: All [...] return an lvalue referring to the left operand.
   // Except we override this for writes to ObjC properties.
@@ -519,7 +516,7 @@ static Cl::Kinds ClassifyBinaryOp(ASTContext &Ctx, const BinaryOperator *E) {
 
 static Cl::Kinds ClassifyConditional(ASTContext &Ctx, const Expr *True,
                                      const Expr *False) {
-  assert(Ctx.getLangOptions().CPlusPlus &&
+  assert(Ctx.getLangOpts().CPlusPlus &&
          "This is only relevant for C++.");
 
   // C++ [expr.cond]p2
@@ -558,17 +555,8 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
 
   // This is the lvalue case.
   // Functions are lvalues in C++, but not modifiable. (C++ [basic.lval]p6)
-  if (Ctx.getLangOptions().CPlusPlus && E->getType()->isFunctionType())
+  if (Ctx.getLangOpts().CPlusPlus && E->getType()->isFunctionType())
     return Cl::CM_Function;
-
-  // You cannot assign to a variable outside a block from within the block if
-  // it is not marked __block, e.g.
-  //   void takeclosure(void (^C)(void));
-  //   void func() { int x = 1; takeclosure(^{ x = 7; }); }
-  if (const BlockDeclRefExpr *BDR = dyn_cast<BlockDeclRefExpr>(E)) {
-    if (!BDR->isByRef() && isa<VarDecl>(BDR->getDecl()))
-      return Cl::CM_NotBlockQualified;
-  }
 
   // Assignment to a property in ObjC is an implicit setter access. But a
   // setter might not exist.
@@ -581,6 +569,7 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
   // Const stuff is obviously not modifiable.
   if (CT.isConstQualified())
     return Cl::CM_ConstQualified;
+
   // Arrays are not modifiable, only their elements are.
   if (CT->isArrayType())
     return Cl::CM_ArrayType;
@@ -591,7 +580,7 @@ static Cl::ModifiableType IsModifiable(ASTContext &Ctx, const Expr *E,
   // Records with any const fields (recursively) are not modifiable.
   if (const RecordType *R = CT->getAs<RecordType>()) {
     assert((E->getObjectKind() == OK_ObjCProperty ||
-            !Ctx.getLangOptions().CPlusPlus) &&
+            !Ctx.getLangOpts().CPlusPlus) &&
            "C++ struct assignment should be resolved by the "
            "copy assignment operator.");
     if (R->hasConstFields())
@@ -646,7 +635,6 @@ Expr::isModifiableLvalue(ASTContext &Ctx, SourceLocation *Loc) const {
   case Cl::CM_Function: return MLV_NotObjectType;
   case Cl::CM_LValueCast:
     llvm_unreachable("CM_LValueCast and CL_LValue don't match");
-  case Cl::CM_NotBlockQualified: return MLV_NotBlockQualified;
   case Cl::CM_NoSetterProperty: return MLV_NoSetterProperty;
   case Cl::CM_ConstQualified: return MLV_ConstQualified;
   case Cl::CM_ArrayType: return MLV_ArrayType;

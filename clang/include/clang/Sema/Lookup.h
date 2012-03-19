@@ -550,6 +550,11 @@ public:
       return *I++;
     }
 
+    /// Restart the iteration.
+    void restart() {
+      I = Results.begin();
+    }
+
     /// Erase the last element returned from this iterator.
     void erase() {
       Results.Decls.erase(--I);
@@ -587,7 +592,7 @@ private:
   void diagnose() {
     if (isAmbiguous())
       SemaRef.DiagnoseAmbiguousLookup(*this);
-    else if (isClassLookup() && SemaRef.getLangOptions().AccessControl)
+    else if (isClassLookup() && SemaRef.getLangOpts().AccessControl)
       SemaRef.CheckLookupAccess(*this);
   }
 
