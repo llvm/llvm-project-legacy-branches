@@ -10,6 +10,7 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclGroup.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
@@ -246,69 +247,102 @@ TEST_F(FlushRewrittenFilesTest, StoresChangesOnDisk) {
             GetFileContentFromDisk("input.cpp"));
 }
 
-// FIXME: Copied from ToolingTest.cpp - put into a common header.
 namespace {
-class FindClassDeclXConsumer : public clang::ASTConsumer {
- public:
-  FindClassDeclXConsumer(bool *FoundClassDeclX, StringRef ExpectedFile,
-                         unsigned ExpectedOffset, unsigned ExpectedLength)
-      : SM(NULL), FoundClassDeclX(FoundClassDeclX), ExpectedFile(ExpectedFile),
-        ExpectedOffset(ExpectedOffset), ExpectedLength(ExpectedLength) {}
-  virtual bool HandleTopLevelDecl(clang::DeclGroupRef GroupRef) {
-    if (CXXRecordDecl* Record = llvm::dyn_cast<clang::CXXRecordDecl>(
-            *GroupRef.begin())) {
-      if (Record->getName() == "X") {
-        Replacement Replace(*SM, Record, "");
-        EXPECT_EQ(ExpectedFile, Replace.GetFilePath());
-        EXPECT_EQ(ExpectedOffset, Replace.GetOffset());
-        EXPECT_EQ(ExpectedLength, Replace.GetLength());
-        *FoundClassDeclX = true;
-      }
+template <typename T>
+class TestVisitor : public clang::RecursiveASTVisitor<T> {
+public:
+  bool runOver(StringRef Code) {
+    return RunSyntaxOnlyToolOnCode(new TestAction(this), Code);
+  }
+
+protected:
+  clang::SourceManager *SM;
+
+private:
+  class FindConsumer : public clang::ASTConsumer {
+  public:
+    FindConsumer(TestVisitor *Visitor) : Visitor(Visitor) {}
+    virtual void HandleTranslationUnit(clang::ASTContext &Context) {
+      Visitor->TraverseDecl(Context.getTranslationUnitDecl());
+    }
+
+  private:
+    TestVisitor *Visitor;
+  };
+
+  class TestAction : public clang::ASTFrontendAction {
+  public:
+    TestAction(TestVisitor *Visitor) : Visitor(Visitor) {}
+
+    virtual clang::ASTConsumer* CreateASTConsumer(
+        clang::CompilerInstance& compiler, llvm::StringRef dummy) {
+      Visitor->SM = &compiler.getSourceManager();
+      /// TestConsumer will be deleted by the framework calling us.
+      return new FindConsumer(Visitor);
+    }
+
+  private:
+    TestVisitor *Visitor;
+  };
+
+};
+
+} // end namespace
+
+void expectReplacementAt(const Replacement &Replace,
+                         StringRef File, unsigned Offset, unsigned Length) {
+  ASSERT_TRUE(Replace.IsApplicable());
+  EXPECT_EQ(File, Replace.GetFilePath());
+  EXPECT_EQ(Offset, Replace.GetOffset());
+  EXPECT_EQ(Length, Replace.GetLength());
+}
+
+class ClassDeclXVisitor : public TestVisitor<ClassDeclXVisitor> {
+public:
+  bool VisitCXXRecordDecl(CXXRecordDecl *Record) {
+    if (Record->getName() == "X") {
+      Replace = Replacement(*SM, Record, "");
     }
     return true;
   }
-  clang::SourceManager *SM;
- private:
-  bool *FoundClassDeclX;
-  std::string ExpectedFile;
-  unsigned ExpectedOffset;
-  unsigned ExpectedLength;
+  Replacement Replace;
 };
-
-class TestAction : public clang::ASTFrontendAction {
- public:
-  explicit TestAction(FindClassDeclXConsumer *TestConsumer)
-      : TestConsumer(TestConsumer) {}
-
- protected:
-  virtual clang::ASTConsumer* CreateASTConsumer(
-      clang::CompilerInstance& compiler, llvm::StringRef dummy) {
-    TestConsumer->SM = &compiler.getSourceManager();
-    /// TestConsumer will be deleted by the framework calling us.
-    return TestConsumer;
-  }
-
- private:
-  FindClassDeclXConsumer * const TestConsumer;
-};
-} // end namespace
 
 TEST(Replacement, CanBeConstructedFromNode) {
-  bool FoundClassDeclX = false;
-  EXPECT_TRUE(RunSyntaxOnlyToolOnCode(
-    new TestAction(
-      new FindClassDeclXConsumer(&FoundClassDeclX, "input.cc", 5, 7)),
-    "     class X;"));
-  EXPECT_TRUE(FoundClassDeclX);
+  ClassDeclXVisitor ClassDeclX;
+  EXPECT_TRUE(ClassDeclX.runOver("     class X;"));
+  expectReplacementAt(ClassDeclX.Replace, "input.cc", 5, 7);
 }
 
 TEST(Replacement, ReplacesAtSpellingLocation) {
-  bool FoundClassDeclX = false;
-  EXPECT_TRUE(RunSyntaxOnlyToolOnCode(
-    new TestAction(
-      new FindClassDeclXConsumer(&FoundClassDeclX, "input.cc", 17, 7)),
-    "#define A(Y) Y\nA(class X);"));
-  EXPECT_TRUE(FoundClassDeclX);
+  ClassDeclXVisitor ClassDeclX;
+  EXPECT_TRUE(ClassDeclX.runOver("#define A(Y) Y\nA(class X);"));
+  expectReplacementAt(ClassDeclX.Replace, "input.cc", 17, 7);
+}
+
+class CallToFVisitor : public TestVisitor<CallToFVisitor> {
+public:
+  bool VisitCallExpr(CallExpr *Call) {
+    llvm::errs() << Call->getDirectCallee()->getName() << "\n";
+    if (Call->getDirectCallee()->getName() == "F") {
+      Replace = Replacement(*SM, Call, "");
+    }
+    return true;
+  }
+  Replacement Replace;
+};
+
+TEST(Replacement, FunctionCall) {
+  CallToFVisitor CallToF;
+  EXPECT_TRUE(CallToF.runOver("void F(); void G() { F(); }"));
+  expectReplacementAt(CallToF.Replace, "input.cc", 21, 3);
+}
+
+TEST(Replacement, TemplatedFunctionCall) {
+  CallToFVisitor CallToF;
+  EXPECT_TRUE(CallToF.runOver(
+        "template <typename T> void F(); void G() { F<int>(); }"));
+  expectReplacementAt(CallToF.Replace, "input.cc", 43, 8);
 }
 
 } // end namespace tooling
