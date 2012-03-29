@@ -44,6 +44,14 @@ STATISTIC(NumRemoveDeadBindings,
             "The # of times RemoveDeadBindings is called");
 STATISTIC(NumRemoveDeadBindingsSkipped,
             "The # of times RemoveDeadBindings is skipped");
+STATISTIC(NumMaxBlockCountReached,
+            "The # of aborted paths due to reaching the maximum block count in "
+            "a top level function");
+STATISTIC(NumMaxBlockCountReachedInInlined,
+            "The # of aborted paths due to reaching the maximum block count in "
+            "an inlined function");
+STATISTIC(NumTimesRetriedWithoutInlining,
+            "The # of times we re-evaluated a call without inlining");
 
 //===----------------------------------------------------------------------===//
 // Utility functions.
@@ -966,15 +974,93 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
   }
 }
 
+bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
+                                       const LocationContext *CalleeLC) {
+  const StackFrameContext *CalleeSF = CalleeLC->getCurrentStackFrame();
+  const StackFrameContext *CallerSF = CalleeSF->getParent()->getCurrentStackFrame();
+  assert(CalleeSF && CallerSF);
+  ExplodedNode *BeforeProcessingCall = 0;
+
+  // Find the first node before we started processing the call expression.
+  while (N) {
+    ProgramPoint L = N->getLocation();
+    BeforeProcessingCall = N;
+    N = N->pred_empty() ? NULL : *(N->pred_begin());
+
+    // Skip the nodes corresponding to the inlined code.
+    if (L.getLocationContext()->getCurrentStackFrame() != CallerSF)
+      continue;
+    // We reached the caller. Find the node right before we started
+    // processing the CallExpr.
+    if (isa<PostPurgeDeadSymbols>(L))
+      continue;
+    if (const StmtPoint *SP = dyn_cast<StmtPoint>(&L))
+      if (SP->getStmt() == CalleeSF->getCallSite())
+        continue;
+    break;
+  }
+
+  if (!BeforeProcessingCall)
+    return false;
+
+  // TODO: Clean up the unneeded nodes.
+
+  // Build an Epsilon node from which we will restart the analyzes.
+  const Stmt *CE = CalleeSF->getCallSite();
+  ProgramPoint NewNodeLoc =
+               EpsilonPoint(BeforeProcessingCall->getLocationContext(), CE);
+  // Add the special flag to GDM to signal retrying with no inlining.
+  // Note, changing the state ensures that we are not going to cache out.
+  ProgramStateRef NewNodeState = BeforeProcessingCall->getState();
+  NewNodeState = NewNodeState->set<ReplayWithoutInlining>((void*)CE);
+
+  // Make the new node a successor of BeforeProcessingCall.
+  bool IsNew = false;
+  ExplodedNode *NewNode = G.getNode(NewNodeLoc, NewNodeState, false, &IsNew);
+  // We cached out at this point. Caching out is common due to us backtracking
+  // from the inlined function, which might spawn several paths.
+  if (!IsNew)
+    return true;
+
+  NewNode->addPredecessor(BeforeProcessingCall, G);
+
+  // Add the new node to the work list.
+  Engine.enqueueStmtNode(NewNode, CalleeSF->getCallSiteBlock(),
+                                  CalleeSF->getIndex());
+  NumTimesRetriedWithoutInlining++;
+  return true;
+}
+
 /// Block entrance.  (Update counters).
-void ExprEngine::processCFGBlockEntrance(NodeBuilderWithSinks &nodeBuilder) {
+void ExprEngine::processCFGBlockEntrance(const BlockEdge &L,
+                                         NodeBuilderWithSinks &nodeBuilder) {
   
   // FIXME: Refactor this into a checker.
   ExplodedNode *pred = nodeBuilder.getContext().getPred();
   
   if (nodeBuilder.getContext().getCurrentBlockCount() >= AMgr.getMaxVisit()) {
     static SimpleProgramPointTag tag("ExprEngine : Block count exceeded");
-    nodeBuilder.generateNode(pred->getState(), pred, &tag, true);
+    const ExplodedNode *Sink =
+                   nodeBuilder.generateNode(pred->getState(), pred, &tag, true);
+
+    // Check if we stopped at the top level function or not.
+    // Root node should have the location context of the top most function.
+    const LocationContext *CalleeLC = pred->getLocation().getLocationContext();
+    const LocationContext *RootLC =
+                        (*G.roots_begin())->getLocation().getLocationContext();
+    if (RootLC->getCurrentStackFrame() != CalleeLC->getCurrentStackFrame()) {
+      // Re-run the call evaluation without inlining it, by storing the
+      // no-inlining policy in the state and enqueuing the new work item on
+      // the list. Replay should almost never fail. Use the stats to catch it
+      // if it does.
+      if ((!AMgr.NoRetryExhausted && replayWithoutInlining(pred, CalleeLC)))
+        return;
+      NumMaxBlockCountReachedInInlined++;
+    } else
+      NumMaxBlockCountReached++;
+
+    // Make sink nodes as exhausted(for stats) only if retry failed.
+    Engine.blocksExhausted.push_back(std::make_pair(L, Sink));
   }
 }
 
@@ -1370,6 +1456,13 @@ void ExprEngine::VisitCommonDeclRefExpr(const Expr *Ex, const NamedDecl *D,
                       ProgramPoint::PostLValueKind);
     return;
   }
+  if (isa<FieldDecl>(D)) {
+    // FIXME: Compute lvalue of fields.
+    Bldr.generateNode(Ex, Pred, state->BindExpr(Ex, LCtx, UnknownVal()),
+		      false, 0, ProgramPoint::PostLValueKind);
+    return;
+  }
+
   assert (false &&
           "ValueDecl support for this ValueDecl not implemented.");
 }
@@ -1454,21 +1547,22 @@ void ExprEngine::VisitMemberExpr(const MemberExpr *M, ExplodedNode *Pred,
 ///  This method is used by evalStore and (soon) VisitDeclStmt, and others.
 void ExprEngine::evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE,
                           ExplodedNode *Pred,
-                          SVal location, SVal Val, bool atDeclInit,
-                          ProgramPoint::Kind PointKind) {
+                          SVal location, SVal Val, bool atDeclInit) {
 
   // Do a previsit of the bind.
   ExplodedNodeSet CheckedSet;
   getCheckerManager().runCheckersForBind(CheckedSet, Pred, location, Val,
-                                         StoreE, *this, PointKind);
+                                         StoreE, *this,
+                                         ProgramPoint::PostStmtKind);
 
-  // TODO:AZ Remove TmpDst after NB refactoring is done.
   ExplodedNodeSet TmpDst;
   StmtNodeBuilder Bldr(CheckedSet, TmpDst, *currentBuilderContext);
 
+  const LocationContext *LC = Pred->getLocationContext();
   for (ExplodedNodeSet::iterator I = CheckedSet.begin(), E = CheckedSet.end();
        I!=E; ++I) {
-    ProgramStateRef state = (*I)->getState();
+    ExplodedNode *PredI = *I;
+    ProgramStateRef state = PredI->getState();
 
     if (atDeclInit) {
       const VarRegion *VR =
@@ -1479,7 +1573,12 @@ void ExprEngine::evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE,
       state = state->bindLoc(location, Val);
     }
 
-    Bldr.generateNode(StoreE, *I, state, false, 0, PointKind);
+    const MemRegion *LocReg = 0;
+    if (loc::MemRegionVal *LocRegVal = dyn_cast<loc::MemRegionVal>(&location))
+      LocReg = LocRegVal->getRegion();
+
+    const ProgramPoint L = PostStore(StoreE, LC, LocReg, 0);
+    Bldr.generateNode(L, PredI, state, false);
   }
 
   Dst.insert(TmpDst);
@@ -1517,8 +1616,7 @@ void ExprEngine::evalStore(ExplodedNodeSet &Dst, const Expr *AssignE,
     return;
 
   for (ExplodedNodeSet::iterator NI=Tmp.begin(), NE=Tmp.end(); NI!=NE; ++NI)
-    evalBind(Dst, StoreE, *NI, location, Val, false,
-             ProgramPoint::PostStoreKind);
+    evalBind(Dst, StoreE, *NI, location, Val, false);
 }
 
 void ExprEngine::evalLoad(ExplodedNodeSet &Dst, const Expr *Ex,
@@ -1760,6 +1858,10 @@ struct DOTGraphTraits<ExplodedNode*> :
 
       case ProgramPoint::CallExitKind:
         Out << "CallExit";
+        break;
+
+      case ProgramPoint::EpsilonKind:
+        Out << "Epsilon Point";
         break;
 
       default: {

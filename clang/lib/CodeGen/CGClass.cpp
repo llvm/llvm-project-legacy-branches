@@ -401,7 +401,8 @@ static void EmitBaseInitializer(CodeGenFunction &CGF,
     AggValueSlot::forAddr(V, Alignment, Qualifiers(),
                           AggValueSlot::IsDestructed,
                           AggValueSlot::DoesNotNeedGCBarriers,
-                          AggValueSlot::IsNotAliased);
+                          AggValueSlot::IsNotAliased,
+                          AggValueSlot::IsNotCompleteObject);
 
   CGF.EmitAggExpr(BaseInit->getInit(), AggSlot);
   
@@ -449,7 +450,8 @@ static void EmitAggMemberInitializer(CodeGenFunction &CGF,
           AggValueSlot::forLValue(LV,
                                   AggValueSlot::IsDestructed,
                                   AggValueSlot::DoesNotNeedGCBarriers,
-                                  AggValueSlot::IsNotAliased);
+                                  AggValueSlot::IsNotAliased,
+                                  AggValueSlot::IsCompleteObject);
 
         CGF.EmitAggExpr(Init, Slot);
       }
@@ -589,7 +591,8 @@ static void EmitMemberInitializer(CodeGenFunction &CGF,
       
       // Copy the aggregate.
       CGF.EmitAggregateCopy(LHS.getAddress(), Src.getAddress(), FieldType,
-                            LHS.isVolatileQualified());
+                            LHS.isVolatileQualified(),
+                            /*destIsCompleteObject*/ true);
       return;
     }
   }
@@ -1371,7 +1374,10 @@ CodeGenFunction::EmitDelegatingCXXConstructorCall(const CXXConstructorDecl *Ctor
     AggValueSlot::forAddr(ThisPtr, Alignment, Qualifiers(),
                           AggValueSlot::IsDestructed,
                           AggValueSlot::DoesNotNeedGCBarriers,
-                          AggValueSlot::IsNotAliased);
+                          AggValueSlot::IsNotAliased,
+                          CurGD.getCtorType() == Ctor_Complete
+                            ? AggValueSlot::IsCompleteObject
+                            : AggValueSlot::IsNotCompleteObject);
 
   EmitAggExpr(Ctor->init_begin()[0]->getInit(), AggSlot);
 
@@ -1514,7 +1520,8 @@ CodeGenFunction::InitializeVTablePointer(BaseSubobject Base,
   llvm::Type *AddressPointPtrTy =
     VTableAddressPoint->getType()->getPointerTo();
   VTableField = Builder.CreateBitCast(VTableField, AddressPointPtrTy);
-  Builder.CreateStore(VTableAddressPoint, VTableField);
+  llvm::StoreInst *Store = Builder.CreateStore(VTableAddressPoint, VTableField);
+  CGM.DecorateInstruction(Store, CGM.getTBAAInfoForVTablePtr());
 }
 
 void
@@ -1597,7 +1604,9 @@ void CodeGenFunction::InitializeVTablePointers(const CXXRecordDecl *RD) {
 llvm::Value *CodeGenFunction::GetVTablePtr(llvm::Value *This,
                                            llvm::Type *Ty) {
   llvm::Value *VTablePtrSrc = Builder.CreateBitCast(This, Ty->getPointerTo());
-  return Builder.CreateLoad(VTablePtrSrc, "vtable");
+  llvm::Instruction *VTable = Builder.CreateLoad(VTablePtrSrc, "vtable");
+  CGM.DecorateInstruction(VTable, CGM.getTBAAInfoForVTablePtr());
+  return VTable;
 }
 
 static const CXXRecordDecl *getMostDerivedClassDecl(const Expr *Base) {

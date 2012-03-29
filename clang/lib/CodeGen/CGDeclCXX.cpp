@@ -46,9 +46,11 @@ static void EmitDeclInit(CodeGenFunction &CGF, const VarDecl &D,
   } else if (type->isAnyComplexType()) {
     CGF.EmitComplexExprIntoAddr(Init, DeclPtr, lv.isVolatile());
   } else {
-    CGF.EmitAggExpr(Init, AggValueSlot::forLValue(lv,AggValueSlot::IsDestructed,
-                                          AggValueSlot::DoesNotNeedGCBarriers,
-                                                  AggValueSlot::IsNotAliased));
+    CGF.EmitAggExpr(Init, AggValueSlot::forLValue(lv,
+                                           AggValueSlot::IsDestructed,
+                                           AggValueSlot::DoesNotNeedGCBarriers,
+                                           AggValueSlot::IsNotAliased,
+                                           AggValueSlot::IsCompleteObject));
   }
 }
 
@@ -195,7 +197,7 @@ void CodeGenFunction::EmitCXXGuardedInit(const VarDecl &D,
 static llvm::Function *
 CreateGlobalInitOrDestructFunction(CodeGenModule &CGM,
                                    llvm::FunctionType *FTy,
-                                   StringRef Name) {
+                                   const Twine &Name) {
   llvm::Function *Fn =
     llvm::Function::Create(FTy, llvm::GlobalValue::InternalLinkage,
                            Name, &CGM.getModule());

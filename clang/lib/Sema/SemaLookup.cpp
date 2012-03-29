@@ -1413,8 +1413,7 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
   assert((!isa<TagDecl>(LookupCtx) ||
           LookupCtx->isDependentContext() ||
           cast<TagDecl>(LookupCtx)->isCompleteDefinition() ||
-          Context.getTypeDeclType(cast<TagDecl>(LookupCtx))->getAs<TagType>()
-            ->isBeingDefined()) &&
+          cast<TagDecl>(LookupCtx)->isBeingDefined()) &&
          "Declaration context must already be complete!");
 
   // Perform qualified name lookup into the LookupCtx.
@@ -3807,7 +3806,13 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     }
   }
 
-  if (IsUnqualifiedLookup || (QualifiedDC && QualifiedDC->isNamespace())) {
+  // Determine whether we are going to search in the various namespaces for
+  // corrections.
+  bool SearchNamespaces
+    = getLangOpts().CPlusPlus && CCC.AllowAddedQualifier && 
+      (IsUnqualifiedLookup || (QualifiedDC && QualifiedDC->isNamespace()));
+  
+  if (IsUnqualifiedLookup || SearchNamespaces) {
     // For unqualified lookup, look through all of the names that we have
     // seen in this translation unit.
     // FIXME: Re-add the ability to skip very unlikely potential corrections.
@@ -3853,8 +3858,9 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     return TypoCorrection();
   }
 
-  // Build the NestedNameSpecifiers for the KnownNamespaces
-  if (getLangOpts().CPlusPlus) {
+  // Build the NestedNameSpecifiers for the KnownNamespaces, if we're going
+  // to search those namespaces.
+  if (SearchNamespaces) {
     // Load any externally-known namespaces.
     if (ExternalSource && !LoadedExternalKnownNamespaces) {
       SmallVector<NamespaceDecl *, 4> ExternalKnownNamespaces;
@@ -3949,7 +3955,7 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       break;
 
     // Only perform the qualified lookups for C++
-    if (getLangOpts().CPlusPlus) {
+    if (SearchNamespaces) {
       TmpRes.suppressDiagnostics();
       for (llvm::SmallVector<TypoCorrection,
                              16>::iterator QRI = QualifiedResults.begin(),

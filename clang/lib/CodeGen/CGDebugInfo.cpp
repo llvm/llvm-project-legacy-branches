@@ -165,15 +165,6 @@ StringRef CGDebugInfo::getObjCMethodName(const ObjCMethodDecl *OMD) {
   return StringRef(StrPtr, OS.tell());
 }
 
-/// getSelectorName - Return selector name. This is used for debugging
-/// info.
-StringRef CGDebugInfo::getSelectorName(Selector S) {
-  const std::string &SName = S.getAsString();
-  char *StrPtr = DebugInfoNames.Allocate<char>(SName.size());
-  memcpy(StrPtr, SName.data(), SName.size());
-  return StringRef(StrPtr, SName.size());
-}
-
 /// getClassName - Get class name including template argument list.
 StringRef 
 CGDebugInfo::getClassName(const RecordDecl *RD) {
@@ -1199,10 +1190,9 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
 
   if (FwdDecl.isForwardDecl())
     return FwdDecl;
-  
-  llvm::MDNode *MN = FwdDecl;
-  llvm::TrackingVH<llvm::MDNode> FwdDeclNode = MN;
-  
+
+  llvm::TrackingVH<llvm::MDNode> FwdDeclNode(FwdDecl);
+
   // Push the struct on region stack.
   LexicalBlockStack.push_back(FwdDeclNode);
   RegionMap[Ty->getDecl()] = llvm::WeakVH(FwdDecl);
@@ -1236,25 +1226,22 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   }
 
   LexicalBlockStack.pop_back();
-  llvm::DenseMap<const Decl *, llvm::WeakVH>::iterator RI = 
-    RegionMap.find(Ty->getDecl());
-  if (RI != RegionMap.end())
-    RegionMap.erase(RI);
+  RegionMap.erase(Ty->getDecl());
 
   llvm::DIArray Elements = DBuilder.getOrCreateArray(EltTys);
   // FIXME: Magic numbers ahoy! These should be changed when we
   // get some enums in llvm/Analysis/DebugInfo.h to refer to
   // them.
   if (RD->isUnion())
-    MN->replaceOperandWith(10, Elements);
+    FwdDeclNode->replaceOperandWith(10, Elements);
   else if (CXXDecl) {
-    MN->replaceOperandWith(10, Elements);
-    MN->replaceOperandWith(13, TParamsArray);
+    FwdDeclNode->replaceOperandWith(10, Elements);
+    FwdDeclNode->replaceOperandWith(13, TParamsArray);
   } else
-    MN->replaceOperandWith(10, Elements);
+    FwdDeclNode->replaceOperandWith(10, Elements);
 
-  RegionMap[Ty->getDecl()] = llvm::WeakVH(MN);
-  return llvm::DIType(MN);
+  RegionMap[Ty->getDecl()] = llvm::WeakVH(FwdDeclNode);
+  return llvm::DIType(FwdDeclNode);
 }
 
 /// CreateType - get objective-c object type.
@@ -1305,8 +1292,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   // will find it and we're emitting the complete type.
   CompletedTypeCache[QualType(Ty, 0).getAsOpaquePtr()] = RealDecl;
   // Push the struct on region stack.
-  llvm::MDNode *MN = RealDecl;
-  llvm::TrackingVH<llvm::MDNode> FwdDeclNode = MN;
+  llvm::TrackingVH<llvm::MDNode> FwdDeclNode(RealDecl);
 
   LexicalBlockStack.push_back(FwdDeclNode);
   RegionMap[Ty->getDecl()] = llvm::WeakVH(RealDecl);
@@ -1329,11 +1315,18 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   for (ObjCContainerDecl::prop_iterator I = ID->prop_begin(),
          E = ID->prop_end(); I != E; ++I) {
     const ObjCPropertyDecl *PD = *I;
+    SourceLocation Loc = PD->getLocation();
+    llvm::DIFile PUnit = getOrCreateFile(Loc);
+    unsigned PLine = getLineNumber(Loc);
+    ObjCMethodDecl *GDecl = PD->getGetterMethodDecl();
+    ObjCMethodDecl *SDecl = PD->getSetterMethodDecl();
     llvm::MDNode *PropertyNode =
       DBuilder.createObjCProperty(PD->getName(),
-                                  getSelectorName(PD->getGetterName()),
-                                  getSelectorName(PD->getSetterName()),
-                                  PD->getPropertyAttributes());
+				  PUnit, PLine,
+				  GDecl ? getObjCMethodName(GDecl) : "",
+				  SDecl ? getObjCMethodName(SDecl) : "",
+                                  PD->getPropertyAttributes(),
+				  getOrCreateType(PD->getType(), PUnit));
     EltTys.push_back(PropertyNode);
   }
 
@@ -1385,11 +1378,18 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
       if (ObjCPropertyImplDecl *PImpD = 
           ImpD->FindPropertyImplIvarDecl(Field->getIdentifier())) {
         if (ObjCPropertyDecl *PD = PImpD->getPropertyDecl()) {
-          PropertyNode =
-            DBuilder.createObjCProperty(PD->getName(),
-                                        getSelectorName(PD->getGetterName()),
-                                        getSelectorName(PD->getSetterName()),
-                                        PD->getPropertyAttributes());
+	  SourceLocation Loc = PD->getLocation();
+	  llvm::DIFile PUnit = getOrCreateFile(Loc);
+	  unsigned PLine = getLineNumber(Loc);
+	  ObjCMethodDecl *GDecl = PD->getGetterMethodDecl();
+	  ObjCMethodDecl *SDecl = PD->getSetterMethodDecl();
+	  PropertyNode =
+	    DBuilder.createObjCProperty(PD->getName(),
+					PUnit, PLine,
+					GDecl ? getObjCMethodName(GDecl) : "",
+					SDecl ? getObjCMethodName(SDecl) : "",
+					PD->getPropertyAttributes(),
+					getOrCreateType(PD->getType(),PUnit));
         }
       }
     }
@@ -1401,10 +1401,10 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   }
 
   llvm::DIArray Elements = DBuilder.getOrCreateArray(EltTys);
-  RealDecl->replaceOperandWith(10, Elements);
+  FwdDeclNode->replaceOperandWith(10, Elements);
   
   LexicalBlockStack.pop_back();
-  return RealDecl;
+  return llvm::DIType(FwdDeclNode);
 }
 
 llvm::DIType CGDebugInfo::CreateType(const VectorType *Ty, llvm::DIFile Unit) {
@@ -1814,7 +1814,7 @@ llvm::DIType CGDebugInfo::CreateLimitedType(const RecordType *Ty) {
   uint64_t Size = CGM.getContext().getTypeSize(Ty);
   uint64_t Align = CGM.getContext().getTypeAlign(Ty);
   const CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
-  llvm::MDNode *RealDecl = NULL;
+  llvm::TrackingVH<llvm::MDNode> RealDecl;
   
   if (RD->isUnion())
     RealDecl = DBuilder.createUnionType(RDContext, RDName, DefUnit, Line,
@@ -1953,8 +1953,7 @@ llvm::DIType CGDebugInfo::getOrCreateFunctionType(const Decl * D,
   return getOrCreateType(FnType, F);
 }
 
-/// EmitFunctionStart - Constructs the debug code for entering a function -
-/// "llvm.dbg.func.start.".
+/// EmitFunctionStart - Constructs the debug code for entering a function.
 void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, QualType FnType,
                                     llvm::Function *Fn,
                                     CGBuilderTy &Builder) {

@@ -381,6 +381,7 @@ void PrintDiagnostic(CXDiagnostic Diagnostic) {
     return;
 
   num_fixits = clang_getDiagnosticNumFixIts(Diagnostic);
+  fprintf(stderr, "Number FIX-ITs = %d\n", num_fixits);
   for (i = 0; i != num_fixits; ++i) {
     CXSourceRange range;
     CXString insertion_text = clang_getDiagnosticFixIt(Diagnostic, i, &range);
@@ -1081,7 +1082,9 @@ void print_completion_result(CXCompletionResult *completion_result,
   FILE *file = (FILE *)client_data;
   CXString ks = clang_getCursorKindSpelling(completion_result->CursorKind);
   unsigned annotationCount;
-
+  enum CXCursorKind ParentKind;
+  CXString ParentName;
+  
   fprintf(file, "%s:", clang_getCString(ks));
   clang_disposeString(ks);
 
@@ -1120,6 +1123,19 @@ void print_completion_result(CXCompletionResult *completion_result,
     fprintf(file, ")");
   }
 
+  if (!getenv("CINDEXTEST_NO_COMPLETION_PARENTS")) {
+    ParentName = clang_getCompletionParent(completion_result->CompletionString,
+                                           &ParentKind);
+    if (ParentKind != CXCursor_NotImplemented) {
+      CXString KindSpelling = clang_getCursorKindSpelling(ParentKind);
+      fprintf(file, " (parent: %s '%s')",
+              clang_getCString(KindSpelling),
+              clang_getCString(ParentName));
+      clang_disposeString(KindSpelling);
+    }
+    clang_disposeString(ParentName);
+  }
+  
   fprintf(file, "\n");
 }
 
@@ -2501,6 +2517,7 @@ static void printRanges(CXDiagnostic D, unsigned indent) {
 
 static void printFixIts(CXDiagnostic D, unsigned indent) {
   unsigned i, n = clang_getDiagnosticNumFixIts(D);
+  fprintf(stderr, "Number FIXITs = %d\n", n);
   for (i = 0 ; i < n; ++i) {
     CXSourceRange ReplacementRange;
     CXString text;

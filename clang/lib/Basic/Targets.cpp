@@ -509,7 +509,7 @@ public:
   SolarisTargetInfo(const std::string& triple)
     : OSTargetInfo<Target>(triple) {
     this->UserLabelPrefix = "";
-    this->WCharType = this->SignedLong;
+    this->WCharType = this->SignedInt;
     // FIXME: WIntType should be SignedLong
   }
 };
@@ -3440,11 +3440,19 @@ namespace {
 namespace {
 class MipsTargetInfoBase : public TargetInfo {
   std::string CPU;
+  bool SoftFloat;
+  bool SingleFloat;
+
 protected:
   std::string ABI;
+
 public:
   MipsTargetInfoBase(const std::string& triple, const std::string& ABIStr)
-    : TargetInfo(triple), ABI(ABIStr) {}
+    : TargetInfo(triple),
+      SoftFloat(false), SingleFloat(false),
+      ABI(ABIStr)
+  {}
+
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) = 0;
   virtual bool setCPU(const std::string &Name) {
@@ -3455,8 +3463,19 @@ public:
     Features[ABI] = true;
     Features[CPU] = true;
   }
+
   virtual void getArchDefines(const LangOptions &Opts,
-                              MacroBuilder &Builder) const = 0;
+                              MacroBuilder &Builder) const {
+    if (SoftFloat)
+      Builder.defineMacro("__mips_soft_float", Twine(1));
+    else if (SingleFloat)
+      Builder.defineMacro("__mips_single_float", Twine(1));
+    else if (!SoftFloat && !SingleFloat)
+      Builder.defineMacro("__mips_hard_float", Twine(1));
+    else
+      llvm_unreachable("Invalid float ABI for Mips.");
+  }
+
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const = 0;
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -3472,14 +3491,18 @@ public:
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const {
     static const char * const GCCRegNames[] = {
+      // CPU register names
+      // Must match second column of GCCRegAliases
       "$0",   "$1",   "$2",   "$3",   "$4",   "$5",   "$6",   "$7",
       "$8",   "$9",   "$10",  "$11",  "$12",  "$13",  "$14",  "$15",
       "$16",  "$17",  "$18",  "$19",  "$20",  "$21",  "$22",  "$23",
-      "$24",  "$25",  "$26",  "$27",  "$28",  "$sp",  "$fp",  "$31",
+      "$24",  "$25",  "$26",  "$27",  "$28",  "$29",  "$30",  "$31",
+      // Floating point register names
       "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
       "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
       "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
       "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
+      // Hi/lo and condition register names
       "hi",   "lo",   "",     "$fcc0","$fcc1","$fcc2","$fcc3","$fcc4",
       "$fcc5","$fcc6","$fcc7"
     };
@@ -3507,6 +3530,37 @@ public:
     // FIXME: Implement!
     return "";
   }
+
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const {
+    if (Name == "soft-float" || Name == "single-float") {
+      Features[Name] = Enabled;
+      return true;
+    }
+    return false;
+  }
+
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
+    SoftFloat = false;
+    SingleFloat = false;
+
+    for (std::vector<std::string>::iterator it = Features.begin(),
+         ie = Features.end(); it != ie; ++it) {
+      if (*it == "+single-float") {
+        SingleFloat = true;
+        break;
+      }
+
+      if (*it == "+soft-float") {
+        SoftFloat = true;
+        // This option is front-end specific.
+        // Do not need to pass it to the backend.
+        Features.erase(it);
+        break;
+      }
+    }
+  }
 };
 
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
@@ -3525,6 +3579,8 @@ public:
   }
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
+    MipsTargetInfoBase::getArchDefines(Opts, Builder);
+
     Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
     Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
     Builder.defineMacro("_MIPS_SZLONG", Twine(getLongWidth()));
@@ -3570,8 +3626,8 @@ public:
       { { "k0" }, "$26" },
       { { "k1" }, "$27" },
       { { "gp" }, "$28" },
-      { { "sp" }, "$29" },
-      { { "fp" }, "$30" },
+      { { "sp","$sp" }, "$29" },
+      { { "fp","$fp" }, "$30" },
       { { "ra" }, "$31" }
     };
     Aliases = GCCRegAliases;
@@ -3642,6 +3698,8 @@ public:
   }
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
+    MipsTargetInfoBase::getArchDefines(Opts, Builder);
+
     if (ABI == "n32") {
       Builder.defineMacro("__mips_n32");
       Builder.defineMacro("_ABIN32", "2");
@@ -3686,8 +3744,8 @@ public:
       { { "k0" }, "$26" },
       { { "k1" }, "$27" },
       { { "gp" }, "$28" },
-      { { "sp" }, "$29" },
-      { { "fp" }, "$30" },
+      { { "sp","$sp" }, "$29" },
+      { { "fp","$fp" }, "$30" },
       { { "ra" }, "$31" }
     };
     Aliases = GCCRegAliases;
@@ -3789,6 +3847,7 @@ public:
     if (Opts.CPlusPlus)
       Builder.defineMacro("_GNU_SOURCE");
 
+    Builder.defineMacro("__LITTLE_ENDIAN__");
     Builder.defineMacro("__native_client__");
     getArchDefines(Opts, Builder);
   }

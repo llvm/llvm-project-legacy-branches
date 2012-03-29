@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc -analyzer-store=region -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,unix.Malloc -analyzer-store=region -verify -fblocks %s
 #include "system-header-simulator-objc.h"
 
 typedef __typeof(sizeof(int)) size_t;
@@ -95,5 +95,25 @@ void TestCallbackReleasesMemory(CFDictionaryKeyCallBacks keyCallbacks) {
 NSData *radar10976702() {
   void *bytes = malloc(10);
   return [NSData dataWithBytesNoCopy:bytes length:10]; // no-warning
+}
+
+void testBlocks() {
+  int *x= (int*)malloc(sizeof(int));
+  int (^myBlock)(int) = ^(int num) {
+    free(x);
+    return num;
+  };
+  myBlock(3);
+}
+
+// Test that we handle pointer escaping through OSAtomicEnqueue.
+typedef volatile struct {
+ void *opaque1;
+ long opaque2;
+} OSQueueHead;
+void OSAtomicEnqueue( OSQueueHead *__list, void *__new, size_t __offset) __attribute__((weak_import));
+static inline void radar11111210(OSQueueHead *pool) {
+    void *newItem = malloc(4);
+    OSAtomicEnqueue(pool, newItem, 4);
 }
 

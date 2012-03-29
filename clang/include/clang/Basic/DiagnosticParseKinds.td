@@ -428,6 +428,9 @@ def err_default_arg_unparsed : Error<
   "unexpected end of default argument expression">;
 def err_parser_impl_limit_overflow : Error<
   "parser recursion limit reached, program too complex">, DefaultFatal;
+def err_misplaced_ellipsis_in_declaration : Error<
+  "'...' must %select{immediately precede declared identifier|"
+  "be innermost component of anonymous pack declaration}0">;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
@@ -500,6 +503,8 @@ def err_explicit_instantiation_with_definition : Error<
     "definition is meant to be an explicit specialization, add '<>' after the "
     "'template' keyword">;
 def err_enum_template : Error<"enumeration cannot be a template">;
+def err_explicit_instantiation_enum : Error<
+    "enumerations cannot be explicitly instantiated">;
 
 def err_missing_dependent_template_keyword : Error<
   "use 'template' keyword to treat '%0' as a dependent template name">;

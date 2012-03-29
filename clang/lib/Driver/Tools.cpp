@@ -483,6 +483,8 @@ static const char *getLLVMArchSuffixForARM(StringRef CPU) {
     .Cases("arm1176jzf-s",  "mpcorenovfp",  "mpcore", "v6")
     .Cases("arm1156t2-s",  "arm1156t2f-s", "v6t2")
     .Cases("cortex-a8", "cortex-a9", "v7")
+    .Case("cortex-m3", "v7m")
+    .Case("cortex-m0", "v6m")
     .Default("");
 }
 
@@ -785,31 +787,57 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   CmdArgs.push_back("-target-abi");
   CmdArgs.push_back(ABIName);
 
-  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  // Select the float ABI as determined by -msoft-float, -mhard-float,
+  // and -mfloat-abi=.
   StringRef FloatABI;
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
-                               options::OPT_mhard_float)) {
+                               options::OPT_mhard_float,
+                               options::OPT_mfloat_abi_EQ)) {
     if (A->getOption().matches(options::OPT_msoft_float))
       FloatABI = "soft";
     else if (A->getOption().matches(options::OPT_mhard_float))
       FloatABI = "hard";
+    else {
+      FloatABI = A->getValue(Args);
+      if (FloatABI != "soft" && FloatABI != "single" && FloatABI != "hard") {
+        D.Diag(diag::err_drv_invalid_mfloat_abi)
+          << A->getAsString(Args);
+        FloatABI = "hard";
+      }
+    }
   }
 
   // If unspecified, choose the default based on the platform.
   if (FloatABI.empty()) {
-    // Assume "soft", but warn the user we are guessing.
-    FloatABI = "soft";
-    D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+    // Assume "hard", because it's a default value used by gcc.
+    // When we start to recognize specific target MIPS processors,
+    // we will be able to select the default more correctly.
+    FloatABI = "hard";
   }
 
   if (FloatABI == "soft") {
     // Floating point operations and argument passing are soft.
-    //
-    // FIXME: This changes CPP defines, we need -target-soft-float.
     CmdArgs.push_back("-msoft-float");
-  } else {
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("soft");
+
+    // FIXME: Note, this is a hack. We need to pass the selected float
+    // mode to the MipsTargetInfoBase to define appropriate macros there.
+    // Now it is the only method.
+    CmdArgs.push_back("-target-feature");
+    CmdArgs.push_back("+soft-float");
+  }
+  else if (FloatABI == "single") {
+    // Restrict the use of hardware floating-point
+    // instructions to 32-bit operations.
+    CmdArgs.push_back("-target-feature");
+    CmdArgs.push_back("+single-float");
+  }
+  else {
+    // Floating point operations and argument passing are hard.
     assert(FloatABI == "hard" && "Invalid float abi!");
-    CmdArgs.push_back("-mhard-float");
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("hard");
   }
 }
 
@@ -1053,8 +1081,17 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
                              bool KernelOrKext, bool IsRewriter,
                              unsigned objcABIVersion,
                              ArgStringList &CmdArgs) {
-  if (KernelOrKext)
+  if (KernelOrKext) {
+    // -mkernel and -fapple-kext imply no exceptions, so claim exception related
+    // arguments now to avoid warnings about unused arguments.
+    Args.ClaimAllArgs(options::OPT_fexceptions);
+    Args.ClaimAllArgs(options::OPT_fno_exceptions);
+    Args.ClaimAllArgs(options::OPT_fobjc_exceptions);
+    Args.ClaimAllArgs(options::OPT_fno_objc_exceptions);
+    Args.ClaimAllArgs(options::OPT_fcxx_exceptions);
+    Args.ClaimAllArgs(options::OPT_fno_cxx_exceptions);
     return;
+  }
 
   // Exceptions are enabled by default.
   bool ExceptionsEnabled = true;
@@ -1450,6 +1487,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                     options::OPT_fno_strict_aliasing,
                     getToolChain().IsStrictAliasingDefault()))
     CmdArgs.push_back("-relaxed-aliasing");
+  if (Args.hasFlag(options::OPT_fstrict_enums, options::OPT_fno_strict_enums,
+                   false))
+    CmdArgs.push_back("-fstrict-enums");
   if (!Args.hasFlag(options::OPT_foptimize_sibling_calls,
                     options::OPT_fno_optimize_sibling_calls))
     CmdArgs.push_back("-mdisable-tail-calls");
@@ -1937,9 +1977,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_fvisibility_inlines_hidden);
 
   // -fhosted is default.
-  if (KernelOrKext || Args.hasFlag(options::OPT_ffreestanding,
-                                   options::OPT_fhosted,
-                                   false))
+  if (Args.hasFlag(options::OPT_ffreestanding, options::OPT_fhosted, false) ||
+      KernelOrKext)
     CmdArgs.push_back("-ffreestanding");
 
   // Forward -f (flag) options which we can pass directly.
@@ -2048,6 +2087,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-fapple-kext");
     if (!Args.hasArg(options::OPT_fbuiltin))
       CmdArgs.push_back("-fno-builtin");
+    Args.ClaimAllArgs(options::OPT_fno_builtin);
   }
   // -fbuiltin is default.
   else if (!Args.hasFlag(options::OPT_fbuiltin, options::OPT_fno_builtin))
@@ -2094,8 +2134,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-elide-constructors");
 
   // -frtti is default.
-  if (KernelOrKext ||
-      !Args.hasFlag(options::OPT_frtti, options::OPT_fno_rtti))
+  if (!Args.hasFlag(options::OPT_frtti, options::OPT_fno_rtti) ||
+      KernelOrKext)
     CmdArgs.push_back("-fno-rtti");
 
   // -fshort-enums=0 is default for all architectures except Hexagon.
@@ -2116,12 +2156,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fno-threadsafe-statics");
 
   // -fuse-cxa-atexit is default.
-  if (KernelOrKext ||
-    !Args.hasFlag(options::OPT_fuse_cxa_atexit, options::OPT_fno_use_cxa_atexit,
-                  getToolChain().getTriple().getOS() != llvm::Triple::Cygwin &&
+  if (!Args.hasFlag(options::OPT_fuse_cxa_atexit,
+                    options::OPT_fno_use_cxa_atexit,
+                   getToolChain().getTriple().getOS() != llvm::Triple::Cygwin &&
                   getToolChain().getTriple().getOS() != llvm::Triple::MinGW32 &&
-                  getToolChain().getTriple().getArch() !=
-                  llvm::Triple::hexagon))
+              getToolChain().getTriple().getArch() != llvm::Triple::hexagon) ||
+      KernelOrKext)
     CmdArgs.push_back("-fno-use-cxa-atexit");
 
   // -fms-extensions=0 is default.
@@ -2372,6 +2412,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       Args.hasArg(options::OPT_fapple_kext)) {
     if (!Args.hasArg(options::OPT_fcommon))
       CmdArgs.push_back("-fno-common");
+    Args.ClaimAllArgs(options::OPT_fno_common);
   }
 
   // -fcommon is default, only pass non-default.

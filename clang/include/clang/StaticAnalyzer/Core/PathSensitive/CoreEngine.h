@@ -42,6 +42,7 @@ class NodeBuilder;
 class CoreEngine {
   friend struct NodeBuilderContext;
   friend class NodeBuilder;
+  friend class ExprEngine;
   friend class CommonNodeBuilder;
   friend class IndirectGotoNodeBuilder;
   friend class SwitchNodeBuilder;
@@ -98,9 +99,6 @@ private:
   CoreEngine(const CoreEngine&); // Do not implement.
   CoreEngine& operator=(const CoreEngine&);
 
-  void enqueueStmtNode(ExplodedNode *N,
-                       const CFGBlock *Block, unsigned Idx);
-
   ExplodedNode *generateCallExitNode(ExplodedNode *N);
 
 public:
@@ -127,10 +125,16 @@ public:
   ///  steps.  Returns true if there is still simulation state on the worklist.
   bool ExecuteWorkList(const LocationContext *L, unsigned Steps,
                        ProgramStateRef InitState);
-  void ExecuteWorkListWithInitialState(const LocationContext *L,
+  /// Returns true if there is still simulation state on the worklist.
+  bool ExecuteWorkListWithInitialState(const LocationContext *L,
                                        unsigned Steps,
                                        ProgramStateRef InitState, 
                                        ExplodedNodeSet &Dst);
+
+  /// Dispatch the work list item based on the given location information.
+  /// Use Pred parameter as the predecessor state.
+  void dispatchWorkItem(ExplodedNode* Pred, ProgramPoint Loc,
+                        const WorkListUnit& WU);
 
   // Functions for external checking of whether we have unfinished work
   bool wasBlockAborted() const { return !blocksAborted.empty(); }
@@ -170,6 +174,9 @@ public:
   /// \brief enqueue the nodes corresponding to the end of function onto the
   /// end of path / work list.
   void enqueueEndOfFunction(ExplodedNodeSet &Set);
+
+  /// \brief Enqueue a single node created as a result of statement processing.
+  void enqueueStmtNode(ExplodedNode *N, const CFGBlock *Block, unsigned Idx);
 };
 
 // TODO: Turn into a calss.

@@ -722,7 +722,8 @@ void CodeGenFunction::EmitReturnOfRValue(RValue RV, QualType Ty) {
   if (RV.isScalar()) {
     Builder.CreateStore(RV.getScalarVal(), ReturnValue);
   } else if (RV.isAggregate()) {
-    EmitAggregateCopy(ReturnValue, RV.getAggregateAddr(), Ty);
+    EmitAggregateCopy(ReturnValue, RV.getAggregateAddr(), Ty,
+                      /*volatile*/ false, 0, /*destIsCompleteObject*/ true);
   } else {
     StoreComplexToAddr(RV.getComplexVal(), ReturnValue, false);
   }
@@ -769,7 +770,8 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
     EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, Alignment, Qualifiers(),
                                           AggValueSlot::IsDestructed,
                                           AggValueSlot::DoesNotNeedGCBarriers,
-                                          AggValueSlot::IsNotAliased));
+                                          AggValueSlot::IsNotAliased,
+                                          AggValueSlot::IsCompleteObject));
   }
 
   EmitBranchThroughCleanup(ReturnBlock);
@@ -1507,6 +1509,11 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       llvm::Value *Arg = EmitAsmInputLValue(S, Info, Dest, InputExpr->getType(),
                                             InOutConstraints);
 
+      if (llvm::Type* AdjTy =
+            getTargetHooks().adjustInlineAsmType(*this, OutputConstraint,
+                                                 Arg->getType()))
+        Arg = Builder.CreateBitCast(Arg, AdjTy);
+
       if (Info.allowsRegister())
         InOutConstraints += llvm::utostr(i);
       else
@@ -1565,7 +1572,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
         }
       }
     }
-    if (llvm::Type* AdjTy = 
+    if (llvm::Type* AdjTy =
               getTargetHooks().adjustInlineAsmType(*this, InputConstraint,
                                                    Arg->getType()))
       Arg = Builder.CreateBitCast(Arg, AdjTy);

@@ -236,3 +236,26 @@ namespace PR12167 {
 
   bool s = f(string<1>());
 }
+
+namespace PR12257_PR12241 {
+  struct command_pair
+  {
+    command_pair(int, int);
+  };
+
+  struct command_map
+  {
+    command_map(std::initializer_list<command_pair>);
+  };
+
+  struct generator_pair
+  {
+    generator_pair(const command_map);
+  };
+
+  // 5 levels: init list, gen_pair, command_map, init list, command_pair
+  const std::initializer_list<generator_pair> x = {{{{{3, 4}}}}};
+
+  // 4 levels: init list, gen_pair, command_map via init list, command_pair
+  const std::initializer_list<generator_pair> y = {{{{1, 2}}}};
+}
