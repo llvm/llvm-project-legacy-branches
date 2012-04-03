@@ -67,10 +67,11 @@ static inline Selector GetNullarySelector(const char* name, ASTContext &Ctx) {
 //===----------------------------------------------------------------------===//
 
 ExprEngine::ExprEngine(AnalysisManager &mgr, bool gcEnabled,
-                       SetOfDecls *VisitedCallees)
+                       SetOfDecls *VisitedCallees,
+                       FunctionSummariesTy *FS)
   : AMgr(mgr),
     AnalysisDeclContexts(mgr.getAnalysisDeclContextManager()),
-    Engine(*this, VisitedCallees),
+    Engine(*this, VisitedCallees, FS),
     G(Engine.getGraph()),
     StateMgr(getContext(), mgr.getStoreManagerCreator(),
              mgr.getConstraintManagerCreator(), G.getAllocator(),
@@ -1046,9 +1047,12 @@ void ExprEngine::processCFGBlockEntrance(const BlockEdge &L,
     // Check if we stopped at the top level function or not.
     // Root node should have the location context of the top most function.
     const LocationContext *CalleeLC = pred->getLocation().getLocationContext();
+    const LocationContext *CalleeSF = CalleeLC->getCurrentStackFrame();
     const LocationContext *RootLC =
                         (*G.roots_begin())->getLocation().getLocationContext();
-    if (RootLC->getCurrentStackFrame() != CalleeLC->getCurrentStackFrame()) {
+    if (RootLC->getCurrentStackFrame() != CalleeSF) {
+      Engine.FunctionSummaries->markReachedMaxBlockCount(CalleeSF->getDecl());
+
       // Re-run the call evaluation without inlining it, by storing the
       // no-inlining policy in the state and enqueuing the new work item on
       // the list. Replay should almost never fail. Use the stats to catch it
@@ -2022,9 +2026,7 @@ void ExprEngine::ViewGraph(bool trim) {
     // Iterate through the reports and get their nodes.
     for (BugReporter::EQClasses_iterator
            EI = BR.EQClasses_begin(), EE = BR.EQClasses_end(); EI != EE; ++EI) {
-      BugReportEquivClass& EQ = *EI;
-      const BugReport &R = **EQ.begin();
-      ExplodedNode *N = const_cast<ExplodedNode*>(R.getErrorNode());
+      ExplodedNode *N = const_cast<ExplodedNode*>(EI->begin()->getErrorNode());
       if (N) Src.push_back(N);
     }
 

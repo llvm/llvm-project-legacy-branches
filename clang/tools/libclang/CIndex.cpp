@@ -2901,8 +2901,17 @@ static Decl *getDeclFromExpr(Stmt *E) {
     return ME->getMemberDecl();
   if (ObjCIvarRefExpr *RE = dyn_cast<ObjCIvarRefExpr>(E))
     return RE->getDecl();
-  if (ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E))
-    return PRE->isExplicitProperty() ? PRE->getExplicitProperty() : 0;
+  if (ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E)) {
+    if (PRE->isExplicitProperty())
+      return PRE->getExplicitProperty();
+    // It could be messaging both getter and setter as in:
+    // ++myobj.myprop;
+    // in which case prefer to associate the setter since it is less obvious
+    // from inspecting the source that the setter is going to get called.
+    if (PRE->isMessagingSetter())
+      return PRE->getImplicitPropertySetter();
+    return PRE->getImplicitPropertyGetter();
+  }
   if (PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E))
     return getDeclFromExpr(POE->getSyntacticForm());
   if (OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E))
@@ -2944,6 +2953,8 @@ static SourceLocation getLocationFromExpr(Expr *E) {
     return Ivar->getLocation();
   if (SizeOfPackExpr *SizeOfPack = dyn_cast<SizeOfPackExpr>(E))
     return SizeOfPack->getPackLoc();
+  if (ObjCPropertyRefExpr *PropRef = dyn_cast<ObjCPropertyRefExpr>(E))
+    return PropRef->getLocation();
   
   return E->getLocStart();
 }
@@ -3154,6 +3165,63 @@ CXString clang_getCursorSpelling(CXCursor C) {
   }
 
   return createCXString("");
+}
+
+CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
+                                                unsigned pieceIndex,
+                                                unsigned options) {
+  if (clang_Cursor_isNull(C))
+    return clang_getNullRange();
+
+  ASTContext &Ctx = getCursorContext(C);
+
+  if (clang_isStatement(C.kind)) {
+    Stmt *S = getCursorStmt(C);
+    if (LabelStmt *Label = dyn_cast_or_null<LabelStmt>(S)) {
+      if (pieceIndex > 0)
+        return clang_getNullRange();
+      return cxloc::translateSourceRange(Ctx, Label->getIdentLoc());
+    }
+
+    return clang_getNullRange();
+  }
+
+  if (C.kind == CXCursor_ObjCMessageExpr) {
+    if (ObjCMessageExpr *
+          ME = dyn_cast_or_null<ObjCMessageExpr>(getCursorExpr(C))) {
+      if (pieceIndex >= ME->getNumSelectorLocs())
+        return clang_getNullRange();
+      return cxloc::translateSourceRange(Ctx, ME->getSelectorLoc(pieceIndex));
+    }
+  }
+
+  if (C.kind == CXCursor_ObjCInstanceMethodDecl ||
+      C.kind == CXCursor_ObjCClassMethodDecl) {
+    if (ObjCMethodDecl *
+          MD = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(C))) {
+      if (pieceIndex >= MD->getNumSelectorLocs())
+        return clang_getNullRange();
+      return cxloc::translateSourceRange(Ctx, MD->getSelectorLoc(pieceIndex));
+    }
+  }
+
+  // FIXME: A CXCursor_InclusionDirective should give the location of the
+  // filename, but we don't keep track of this.
+
+  // FIXME: A CXCursor_AnnotateAttr should give the location of the annotation
+  // but we don't keep track of this.
+
+  // FIXME: A CXCursor_AsmLabelAttr should give the location of the label
+  // but we don't keep track of this.
+
+  // Default handling, give the location of the cursor.
+
+  if (pieceIndex > 0)
+    return clang_getNullRange();
+
+  CXSourceLocation CXLoc = clang_getCursorLocation(C);
+  SourceLocation Loc = cxloc::translateSourceLocation(CXLoc);
+  return cxloc::translateSourceRange(Ctx, Loc);
 }
 
 CXString clang_getCursorDisplayName(CXCursor C) {
@@ -4356,6 +4424,10 @@ CXCursor clang_getCanonicalCursor(CXCursor C) {
   }
   
   return C;
+}
+
+int clang_Cursor_getObjCSelectorIndex(CXCursor cursor) {
+  return cxcursor::getSelectorIdentifierIndexAndLoc(cursor).first;
 }
   
 unsigned clang_getNumOverloadedDecls(CXCursor C) {

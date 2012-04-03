@@ -91,7 +91,8 @@ class ExprEngine : public SubEngine {
   GRBugReporter BR;
 
 public:
-  ExprEngine(AnalysisManager &mgr, bool gcEnabled, SetOfDecls *VisitedCallees);
+  ExprEngine(AnalysisManager &mgr, bool gcEnabled, SetOfDecls *VisitedCallees,
+             FunctionSummariesTy *FS);
 
   ~ExprEngine();
 

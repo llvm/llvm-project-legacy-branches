@@ -2904,6 +2904,21 @@ CINDEX_LINKAGE CXString clang_constructUSR_ObjCProperty(const char *property,
 CINDEX_LINKAGE CXString clang_getCursorSpelling(CXCursor);
 
 /**
+ * \brief Retrieve a range for a piece that forms the cursors spelling name.
+ * Most of the times there is only one range for the complete spelling but for
+ * objc methods and objc message expressions, there are multiple pieces for each
+ * selector identifier.
+ * 
+ * \param pieceIndex the index of the spelling name piece. If this is greater
+ * than the actual number of pieces, it will return a NULL (invalid) range.
+ *  
+ * \param options Reserved.
+ */
+CINDEX_LINKAGE CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor,
+                                                          unsigned pieceIndex,
+                                                          unsigned options);
+
+/**
  * \brief Retrieve the display name for the entity referenced by this cursor.
  *
  * The display name contains extra information that helps identify the cursor,
@@ -2985,6 +3000,20 @@ CINDEX_LINKAGE unsigned clang_isCursorDefinition(CXCursor);
  * \returns The canonical cursor for the entity referred to by the given cursor.
  */
 CINDEX_LINKAGE CXCursor clang_getCanonicalCursor(CXCursor);
+
+
+/**
+ * \brief If the cursor points to a selector identifier in a objc method or
+ * message expression, this returns the selector index.
+ *
+ * After getting a cursor with \see clang_getCursor, this can be called to
+ * determine if the location points to a selector identifier.
+ *
+ * \returns The selector index if the cursor is an objc method or message
+ * expression and the cursor is pointing to a selector identifier, or -1
+ * otherwise.
+ */
+CINDEX_LINKAGE int clang_Cursor_getObjCSelectorIndex(CXCursor);
 
 /**
  * @}
