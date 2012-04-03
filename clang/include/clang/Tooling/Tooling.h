@@ -260,7 +260,7 @@ FrontendActionFactory *NewFrontendActionFactory(FactoryT *ActionFactory) {
       : ActionFactory(ActionFactory) {}
 
     virtual clang::FrontendAction *New() {
-      return ActionFactory->NewFrontendAction();
+      return ActionFactory->newFrontendAction();
     }
 
   private:

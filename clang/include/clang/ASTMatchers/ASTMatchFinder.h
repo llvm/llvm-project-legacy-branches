@@ -88,14 +88,14 @@ public:
   class MatchCallback {
   public:
     virtual ~MatchCallback();
-    virtual void Run(const MatchResult &Result) = 0;
+    virtual void run(const MatchResult &Result) = 0;
   };
 
   /// \brief Called when parsing is finished. Intended for testing only.
   class ParsingDoneTestCallback {
   public:
     virtual ~ParsingDoneTestCallback();
-    virtual void Run() = 0;
+    virtual void run() = 0;
   };
 
   MatchFinder();
@@ -107,23 +107,23 @@ public:
   /// Adding more than one 'NodeMatch' allows finding different matches in a
   /// single pass over the AST.
   /// @{
-  void AddMatcher(const DeclarationMatcher &NodeMatch,
+  void addMatcher(const DeclarationMatcher &NodeMatch,
                   MatchCallback *Action);
-  void AddMatcher(const TypeMatcher &NodeMatch,
+  void addMatcher(const TypeMatcher &NodeMatch,
                   MatchCallback *Action);
-  void AddMatcher(const StatementMatcher &NodeMatch,
+  void addMatcher(const StatementMatcher &NodeMatch,
                   MatchCallback *Action);
   /// @}
 
   /// \brief Creates a clang FrontendAction that finds all matches.
-  FrontendAction *NewFrontendAction();
+  FrontendAction *newFrontendAction();
 
   /// \brief Registers a callback to notify the end of parsing.
   ///
   /// The provided closure is called after parsing is done, before the AST is
   /// traversed. Useful for benchmarking.
   /// Each call to FindAll(...) will call the closure once.
-  void RegisterTestCallbackAfterParsing(ParsingDoneTestCallback *ParsingDone);
+  void registerTestCallbackAfterParsing(ParsingDoneTestCallback *ParsingDone);
 
 private:
   /// \brief The MatchCallback*'s will be called every time the

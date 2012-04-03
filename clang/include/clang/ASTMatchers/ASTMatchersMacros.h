@@ -42,7 +42,7 @@
       : public MatcherInterface<Type> {                                        \
    public:                                                                     \
     explicit matcher_##DefineMatcher##Matcher() {}                             \
-    virtual bool Matches(                                                      \
+    virtual bool matches(                                                      \
         const Type &Node, ASTMatchFinder *Finder,                              \
         BoundNodesTreeBuilder *Builder) const;                                 \
   };                                                                           \
@@ -51,7 +51,7 @@
     return internal::MakeMatcher(                                              \
       new internal::matcher_##DefineMatcher##Matcher());                       \
   }                                                                            \
-  inline bool internal::matcher_##DefineMatcher##Matcher::Matches(             \
+  inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
@@ -75,7 +75,7 @@
    public:                                                                     \
     explicit matcher_##DefineMatcher##Matcher(                                 \
         const ParamType &A##Param) : Param(A##Param) {}                        \
-    virtual bool Matches(                                                      \
+    virtual bool matches(                                                      \
         const Type &Node, ASTMatchFinder *Finder,                              \
         BoundNodesTreeBuilder *Builder) const;                                 \
    private:                                                                    \
@@ -86,7 +86,7 @@
     return internal::MakeMatcher(                                              \
       new internal::matcher_##DefineMatcher##Matcher(Param));                  \
   }                                                                            \
-  inline bool internal::matcher_##DefineMatcher##Matcher::Matches(             \
+  inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
@@ -113,7 +113,7 @@
     matcher_##DefineMatcher##Matcher(                                          \
         const ParamType1 &A##Param1, const ParamType2 &A##Param2)              \
         : Param1(A##Param1), Param2(A##Param2) {}                              \
-    virtual bool Matches(                                                      \
+    virtual bool matches(                                                      \
         const Type &Node, ASTMatchFinder *Finder,                              \
         BoundNodesTreeBuilder *Builder) const;                                 \
    private:                                                                    \
@@ -127,7 +127,7 @@
       new internal::matcher_##DefineMatcher##Matcher(                          \
         Param1, Param2));                                                      \
   }                                                                            \
-  inline bool internal::matcher_##DefineMatcher##Matcher::Matches(             \
+  inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
       const Type &Node, ASTMatchFinder *Finder,                                \
       BoundNodesTreeBuilder *Builder) const
 
@@ -148,7 +148,7 @@
    public:                                                                     \
     explicit matcher_##DefineMatcher##Matcher(                                 \
         const ParamType &A##Param) : Param(A##Param) {}                        \
-    virtual bool Matches(                                                      \
+    virtual bool matches(                                                      \
         const NodeType &Node, ASTMatchFinder *Finder,                          \
         BoundNodesTreeBuilder *Builder) const;                                 \
    private:                                                                    \
@@ -164,7 +164,7 @@
         ParamType >(Param);                                                    \
   }                                                                            \
   template <typename NodeType, typename ParamT>                                \
-  bool internal::matcher_##DefineMatcher##Matcher<NodeType, ParamT>::Matches(  \
+  bool internal::matcher_##DefineMatcher##Matcher<NodeType, ParamT>::matches(  \
       const NodeType &Node, ASTMatchFinder *Finder,                            \
       BoundNodesTreeBuilder *Builder) const
 
@@ -186,7 +186,7 @@
     matcher_##DefineMatcher##Matcher(                                          \
         const ParamType1 &A##Param1, const ParamType2 &A##Param2)              \
         : Param1(A##Param1), Param2(A##Param2) {}                              \
-    virtual bool Matches(                                                      \
+    virtual bool matches(                                                      \
         const NodeType &Node, ASTMatchFinder *Finder,                          \
         BoundNodesTreeBuilder *Builder) const;                                 \
    private:                                                                    \
@@ -205,7 +205,7 @@
   }                                                                            \
   template <typename NodeType, typename ParamT1, typename ParamT2>             \
   bool internal::matcher_##DefineMatcher##Matcher<                             \
-      NodeType, ParamT1, ParamT2>::Matches(                                    \
+      NodeType, ParamT1, ParamT2>::matches(                                    \
       const NodeType &Node, ASTMatchFinder *Finder,                            \
       BoundNodesTreeBuilder *Builder) const
 

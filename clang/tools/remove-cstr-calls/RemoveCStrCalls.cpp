@@ -58,7 +58,7 @@ using clang::tooling::Replacement;
 // Returns the text that makes up 'node' in the source.
 // Returns an empty string if the text cannot be found.
 template <typename T>
-static std::string GetText(const SourceManager &SourceManager, const T &Node) {
+static std::string getText(const SourceManager &SourceManager, const T &Node) {
   SourceLocation StartSpellingLocatino =
       SourceManager.getSpellingLoc(Node.getLocStart());
   SourceLocation EndSpellingLocation =
@@ -91,7 +91,7 @@ static std::string GetText(const SourceManager &SourceManager, const T &Node) {
 // Return true if expr needs to be put in parens when it is an
 // argument of a prefix unary operator, e.g. when it is a binary or
 // ternary operator syntactically.
-static bool NeedParensAfterUnaryOperator(const Expr &ExprNode) {
+static bool needParensAfterUnaryOperator(const Expr &ExprNode) {
   if (dyn_cast<clang::BinaryOperator>(&ExprNode) ||
       dyn_cast<clang::ConditionalOperator>(&ExprNode)) {
     return true;
@@ -109,19 +109,19 @@ static bool NeedParensAfterUnaryOperator(const Expr &ExprNode) {
 
 // Format a pointer to an expression: prefix with '*' but simplify
 // when it already begins with '&'.  Return empty string on failure.
-static std::string FormatDereference(const SourceManager &SourceManager,
+static std::string formatDereference(const SourceManager &SourceManager,
                               const Expr &ExprNode) {
   if (const clang::UnaryOperator *Op =
       dyn_cast<clang::UnaryOperator>(&ExprNode)) {
     if (Op->getOpcode() == UO_AddrOf) {
       // Strip leading '&'.
-      return GetText(SourceManager, *Op->getSubExpr()->IgnoreParens());
+      return getText(SourceManager, *Op->getSubExpr()->IgnoreParens());
     }
   }
-  const std::string Text = GetText(SourceManager, ExprNode);
+  const std::string Text = getText(SourceManager, ExprNode);
   if (Text.empty()) return std::string();
   // Add leading '*'.
-  if (NeedParensAfterUnaryOperator(ExprNode)) {
+  if (needParensAfterUnaryOperator(ExprNode)) {
     return std::string("*(") + Text + ")";
   }
   return std::string("*") + Text;
@@ -133,18 +133,18 @@ class FixCStrCall : public ast_matchers::MatchFinder::MatchCallback {
   FixCStrCall(tooling::Replacements *Replace)
       : Replace(Replace) {}
 
-  virtual void Run(const ast_matchers::MatchFinder::MatchResult &Result) {
+  virtual void run(const ast_matchers::MatchFinder::MatchResult &Result) {
     const CallExpr *Call =
-        Result.Nodes.GetStmtAs<CallExpr>("call");
+        Result.Nodes.getStmtAs<CallExpr>("call");
     const Expr *Arg =
-        Result.Nodes.GetStmtAs<Expr>("arg");
+        Result.Nodes.getStmtAs<Expr>("arg");
     const bool Arrow =
-        Result.Nodes.GetStmtAs<MemberExpr>("member")->isArrow();
+        Result.Nodes.getStmtAs<MemberExpr>("member")->isArrow();
     // Replace the "call" node with the "arg" node, prefixed with '*'
     // if the call was using '->' rather than '.'.
     const std::string ArgText = Arrow ?
-        FormatDereference(*Result.SourceManager, *Arg) :
-        GetText(*Result.SourceManager, *Arg);
+        formatDereference(*Result.SourceManager, *Arg) :
+        getText(*Result.SourceManager, *Arg);
     if (ArgText.empty()) return;
 
     Replace->insert(Replacement(*Result.SourceManager, Call, ArgText));
@@ -166,7 +166,7 @@ const char *StringCStrMethod =
 int main(int argc, char **argv) {
   tooling::RefactoringTool Tool(argc, argv);
   ast_matchers::MatchFinder Finder;
-  Finder.AddMatcher(
+  Finder.addMatcher(
       ConstructorCall(
           HasDeclaration(Method(HasName(StringConstructor))),
           ArgumentCountIs(2),
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
               1,
               DefaultArgument())),
       new FixCStrCall(&Tool.GetReplacements()));
-  Finder.AddMatcher(
+  Finder.addMatcher(
       ConstructorCall(
           // Implicit constructors of these classes are overloaded
           // wrt. string types and they internally make a StringRef

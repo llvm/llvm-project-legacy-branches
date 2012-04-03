@@ -78,7 +78,7 @@ public:
     /// \brief Called multiple times during a single call to VisitMatches(...).
     ///
     /// 'BoundNodesView' contains the bound nodes for a single match.
-    virtual void VisitMatch(const BoundNodes& BoundNodesView) = 0;
+    virtual void visitMatch(const BoundNodes& BoundNodesView) = 0;
   };
 
   BoundNodesTree();
@@ -89,21 +89,21 @@ public:
                  const std::vector<BoundNodesTree> RecursiveBindings);
 
   /// \brief Adds all bound nodes to bound_nodes_builder.
-  void CopyTo(BoundNodesTreeBuilder* Builder) const;
+  void copyTo(BoundNodesTreeBuilder* Builder) const;
 
   /// \brief Visits all matches that this BoundNodesTree represents.
   ///
   /// The ownership of 'visitor' remains at the caller.
-  void VisitMatches(Visitor* ResultVisitor);
+  void visitMatches(Visitor* ResultVisitor);
 
 private:
-  void VisitMatchesRecursively(
+  void visitMatchesRecursively(
       Visitor* ResultVistior,
       std::map<std::string, const clang::Decl*> DeclBindings,
       std::map<std::string, const clang::Stmt*> StmtBindings);
 
   template <typename T>
-  void CopyBindingsTo(const T& bindings, BoundNodesTreeBuilder* Builder) const;
+  void copyBindingsTo(const T& bindings, BoundNodesTreeBuilder* Builder) const;
 
   // FIXME: Find out whether we want to use different data structures here -
   // first benchmarks indicate that it doesn't matter though.
@@ -126,17 +126,17 @@ public:
   ///
   /// FIXME: Add overloads for all AST base types.
   /// @{
-  void SetBinding(const std::pair<const std::string,
+  void setBinding(const std::pair<const std::string,
                                   const clang::Decl*>& binding);
-  void SetBinding(const std::pair<const std::string,
+  void setBinding(const std::pair<const std::string,
                                   const clang::Stmt*>& binding);
   /// @}
 
   /// \brief Adds a branch in the tree.
-  void AddMatch(const BoundNodesTree& Bindings);
+  void addMatch(const BoundNodesTree& Bindings);
 
   /// \brief Returns a BoundNodes object containing all current bindings.
-  BoundNodesTree Build() const;
+  BoundNodesTree build() const;
 
 private:
   BoundNodesTreeBuilder(const BoundNodesTreeBuilder&);  // DO NOT IMPLEMENT
@@ -166,7 +166,7 @@ public:
   ///
   /// May bind 'Node' to an ID via 'Builder', or recurse into
   /// the AST via 'Finder'.
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const = 0;
 };
@@ -178,14 +178,14 @@ public:
   /// \brief Returns true if the matcher matches the provided node.
   ///
   /// A subclass must implement this instead of Matches().
-  virtual bool MatchesNode(const T &Node) const = 0;
+  virtual bool matchesNode(const T &Node) const = 0;
 
 private:
   /// Implements MatcherInterface::Matches.
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder * /* Finder */,
                        BoundNodesTreeBuilder * /*  Builder */) const {
-    return MatchesNode(Node);
+    return matchesNode(Node);
   }
 };
 
@@ -205,10 +205,10 @@ public:
       : Implementation(Implementation) {}
 
   /// \brief Forwards the call to the underlying MatcherInterface<T> pointer.
-  bool Matches(const T &Node,
+  bool matches(const T &Node,
                ASTMatchFinder *Finder,
                BoundNodesTreeBuilder *Builder) const {
-    return Implementation->Matches(Node, Finder, Builder);
+    return Implementation->matches(Node, Finder, Builder);
   }
 
   /// \brief Implicitly converts this object to a Matcher<Derived>.
@@ -220,7 +220,7 @@ public:
   }
 
   /// \brief Returns an ID that uniquely identifies the matcher.
-  uint64_t GetID() const {
+  uint64_t getID() const {
     /// FIXME: Document the requirements this imposes on matcher
     /// implementations (no new() implementation_ during a Matches()).
     return reinterpret_cast<uint64_t>(Implementation.getPtr());
@@ -235,10 +235,10 @@ private:
     explicit ImplicitCastMatcher(const Matcher<T> &From)
         : From(From) {}
 
-    virtual bool Matches(const Derived &Node,
+    virtual bool matches(const Derived &Node,
                          ASTMatchFinder *Finder,
                          BoundNodesTreeBuilder *Builder) const {
-      return From.Matches(Node, Finder, Builder);
+      return From.matches(Node, Finder, Builder);
     }
 
   private:
@@ -268,40 +268,40 @@ public:
   explicit HasDeclarationMatcher(const Matcher<clang::Decl> &InnerMatcher)
       : InnerMatcher(InnerMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return MatchesSpecialized(Node, Finder, Builder);
+    return matchesSpecialized(Node, Finder, Builder);
   }
 
 private:
   /// \brief Extracts the CXXRecordDecl of a QualType and returns whether the
   /// inner matcher matches on it.
-  bool MatchesSpecialized(const clang::QualType &Node, ASTMatchFinder *Finder,
+  bool matchesSpecialized(const clang::QualType &Node, ASTMatchFinder *Finder,
                           BoundNodesTreeBuilder *Builder) const {
     /// FIXME: Add other ways to convert...
     clang::CXXRecordDecl *NodeAsRecordDecl = Node->getAsCXXRecordDecl();
     return NodeAsRecordDecl != NULL &&
-      InnerMatcher.Matches(*NodeAsRecordDecl, Finder, Builder);
+      InnerMatcher.matches(*NodeAsRecordDecl, Finder, Builder);
   }
 
   /// \brief Extracts the Decl of the callee of a CallExpr and returns whether
   /// the inner matcher matches on it.
-  bool MatchesSpecialized(const clang::CallExpr &Node, ASTMatchFinder *Finder,
+  bool matchesSpecialized(const clang::CallExpr &Node, ASTMatchFinder *Finder,
                           BoundNodesTreeBuilder *Builder) const {
     const clang::Decl *NodeAsDecl = Node.getCalleeDecl();
     return NodeAsDecl != NULL &&
-      InnerMatcher.Matches(*NodeAsDecl, Finder, Builder);
+      InnerMatcher.matches(*NodeAsDecl, Finder, Builder);
   }
 
   /// \brief Extracts the Decl of the constructor call and returns whether the
   /// inner matcher matches on it.
-  bool MatchesSpecialized(const clang::CXXConstructExpr &Node,
+  bool matchesSpecialized(const clang::CXXConstructExpr &Node,
                           ASTMatchFinder *Finder,
                           BoundNodesTreeBuilder *Builder) const {
     const clang::Decl *NodeAsDecl = Node.getConstructor();
     return NodeAsDecl != NULL &&
-      InnerMatcher.Matches(*NodeAsDecl, Finder, Builder);
+      InnerMatcher.matches(*NodeAsDecl, Finder, Builder);
   }
 
   const Matcher<clang::Decl> InnerMatcher;
@@ -324,21 +324,21 @@ class UntypedBaseMatcher {
 public:
   virtual ~UntypedBaseMatcher() {}
 
-  virtual bool Matches(const clang::Decl &DeclNode, ASTMatchFinder *Finder,
+  virtual bool matches(const clang::Decl &DeclNode, ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
     return false;
   }
-  virtual bool Matches(const clang::QualType &TypeNode, ASTMatchFinder *Finder,
+  virtual bool matches(const clang::QualType &TypeNode, ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
     return false;
   }
-  virtual bool Matches(const clang::Stmt &StmtNode, ASTMatchFinder *Finder,
+  virtual bool matches(const clang::Stmt &StmtNode, ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
     return false;
   }
 
   /// \brief Returns a unique ID for the matcher.
-  virtual uint64_t GetID() const = 0;
+  virtual uint64_t getID() const = 0;
 };
 
 /// \brief An UntypedBaseMatcher that overwrites the Matches(...) method for
@@ -351,21 +351,21 @@ public:
   explicit TypedBaseMatcher(const Matcher<T> &InnerMatcher)
       : InnerMatcher(InnerMatcher) {}
 
-  using UntypedBaseMatcher::Matches;
+  using UntypedBaseMatcher::matches;
   /// \brief Implements UntypedBaseMatcher::Matches.
   ///
   /// Since T is guaranteed to be a "base" AST node type, this method is
   /// guaranteed to override one of the Matches() methods from
   /// UntypedBaseMatcher.
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return InnerMatcher.Matches(Node, Finder, Builder);
+    return InnerMatcher.matches(Node, Finder, Builder);
   }
 
   /// \brief Implements UntypedBaseMatcher::GetID.
-  virtual uint64_t GetID() const {
-    return InnerMatcher.GetID();
+  virtual uint64_t getID() const {
+    return InnerMatcher.getID();
   }
 
 private:
@@ -407,26 +407,26 @@ public:
   /// from a base type with the given name.
   ///
   /// A class is considered to be also derived from itself.
-  virtual bool ClassIsDerivedFrom(const clang::CXXRecordDecl *Declaration,
+  virtual bool classIsDerivedFrom(const clang::CXXRecordDecl *Declaration,
                                   const std::string &BaseName) const = 0;
 
   // FIXME: Implement for other base nodes.
-  virtual bool MatchesChildOf(const clang::Decl &DeclNode,
+  virtual bool matchesChildOf(const clang::Decl &DeclNode,
                               const UntypedBaseMatcher &BaseMatcher,
                               BoundNodesTreeBuilder *Builder,
                               TraversalKind Traverse,
                               BindKind Bind) = 0;
-  virtual bool MatchesChildOf(const clang::Stmt &StmtNode,
+  virtual bool matchesChildOf(const clang::Stmt &StmtNode,
                               const UntypedBaseMatcher &BaseMatcher,
                               BoundNodesTreeBuilder *Builder,
                               TraversalKind Traverse,
                               BindKind Bind) = 0;
 
-  virtual bool MatchesDescendantOf(const clang::Decl &DeclNode,
+  virtual bool matchesDescendantOf(const clang::Decl &DeclNode,
                                    const UntypedBaseMatcher &BaseMatcher,
                                    BoundNodesTreeBuilder *Builder,
                                    BindKind Bind) = 0;
-  virtual bool MatchesDescendantOf(const clang::Stmt &StmtNode,
+  virtual bool matchesDescendantOf(const clang::Stmt &StmtNode,
                                    const UntypedBaseMatcher &BaseMatcher,
                                    BoundNodesTreeBuilder *Builder,
                                    BindKind Bind) = 0;
@@ -533,7 +533,7 @@ private:
 template <typename T>
 class TrueMatcher : public SingleNodeMatcherInterface<T>  {
 public:
-  virtual bool MatchesNode(const T &Node) const {
+  virtual bool matchesNode(const T &Node) const {
     return true;
   }
 };
@@ -547,12 +547,12 @@ public:
   explicit DynCastMatcher(const Matcher<To> &InnerMatcher)
       : InnerMatcher(InnerMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
     const To *InnerMatchValue = llvm::dyn_cast<To>(&Node);
     return InnerMatchValue != NULL &&
-      InnerMatcher.Matches(*InnerMatchValue, Finder, Builder);
+      InnerMatcher.matches(*InnerMatchValue, Finder, Builder);
   }
 
 private:
@@ -582,12 +582,12 @@ public:
   IdMatcher(const std::string &ID, const Matcher<T> &InnerMatcher)
       : ID(ID), InnerMatcher(InnerMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    bool Result = InnerMatcher.Matches(Node, Finder, Builder);
+    bool Result = InnerMatcher.matches(Node, Finder, Builder);
     if (Result) {
-      Builder->SetBinding(std::pair<const std::string, const T*>(ID, &Node));
+      Builder->setBinding(std::pair<const std::string, const T*>(ID, &Node));
     }
     return Result;
   }
@@ -609,10 +609,10 @@ public:
   explicit HasMatcher(const Matcher<ChildT> &ChildMatcher)
       : ChildMatcher(ChildMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return Finder->MatchesChildOf(
+    return Finder->matchesChildOf(
         Node, ChildMatcher, Builder,
         ASTMatchFinder::TK_IgnoreImplicitCastsAndParentheses,
         ASTMatchFinder::BK_First);
@@ -635,10 +635,10 @@ class ForEachMatcher : public MatcherInterface<T> {
   explicit ForEachMatcher(const Matcher<ChildT> &ChildMatcher)
       : ChildMatcher(ChildMatcher) {}
 
-  virtual bool Matches(const T& Node,
+  virtual bool matches(const T& Node,
                        ASTMatchFinder* Finder,
                        BoundNodesTreeBuilder* Builder) const {
-    return Finder->MatchesChildOf(
+    return Finder->matchesChildOf(
       Node, ChildMatcher, Builder,
       ASTMatchFinder::TK_IgnoreImplicitCastsAndParentheses,
       ASTMatchFinder::BK_All);
@@ -659,10 +659,10 @@ public:
   explicit NotMatcher(const Matcher<T> &InnerMatcher)
       : InnerMatcher(InnerMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return !InnerMatcher.Matches(Node, Finder, Builder);
+    return !InnerMatcher.matches(Node, Finder, Builder);
   }
 
 private:
@@ -680,11 +680,11 @@ public:
   AllOfMatcher(const Matcher<T> &InnerMatcher1, const Matcher<T> &InnerMatcher2)
       : InnerMatcher1(InnerMatcher1), InnerMatcher2(InnerMatcher2) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return InnerMatcher1.Matches(Node, Finder, Builder) &&
-           InnerMatcher2.Matches(Node, Finder, Builder);
+    return InnerMatcher1.matches(Node, Finder, Builder) &&
+           InnerMatcher2.matches(Node, Finder, Builder);
   }
 
 private:
@@ -705,11 +705,11 @@ public:
   AnyOfMatcher(const Matcher<T> &InnerMatcher1, const Matcher<T> &InnerMatcher2)
       : InnerMatcher1(InnerMatcher1), InnertMatcher2(InnerMatcher2) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return InnerMatcher1.Matches(Node, Finder, Builder) ||
-           InnertMatcher2.Matches(Node, Finder, Builder);
+    return InnerMatcher1.matches(Node, Finder, Builder) ||
+           InnertMatcher2.matches(Node, Finder, Builder);
   }
 
 private:
@@ -747,10 +747,10 @@ public:
   explicit HasDescendantMatcher(const Matcher<DescendantT> &DescendantMatcher)
       : DescendantMatcher(DescendantMatcher) {}
 
-  virtual bool Matches(const T &Node,
+  virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
-    return Finder->MatchesDescendantOf(
+    return Finder->matchesDescendantOf(
         Node, DescendantMatcher, Builder, ASTMatchFinder::BK_First);
   }
 
@@ -773,10 +773,10 @@ class ForEachDescendantMatcher : public MatcherInterface<T> {
       const Matcher<DescendantT>& DescendantMatcher)
       : DescendantMatcher(DescendantMatcher) {}
 
-  virtual bool Matches(const T& Node,
+  virtual bool matches(const T& Node,
                        ASTMatchFinder* Finder,
                        BoundNodesTreeBuilder* Builder) const {
-    return Finder->MatchesDescendantOf(Node, DescendantMatcher, Builder,
+    return Finder->matchesDescendantOf(Node, DescendantMatcher, Builder,
                                        ASTMatchFinder::BK_All);
   }
 
@@ -798,7 +798,7 @@ public:
   explicit ValueEqualsMatcher(const ValueT &ExpectedValue)
       : ExpectedValue(ExpectedValue) {}
 
-  virtual bool MatchesNode(const T &Node) const {
+  virtual bool matchesNode(const T &Node) const {
     return Node.getValue() == ExpectedValue;
   }
 
@@ -814,7 +814,7 @@ class IsDefinitionMatcher : public SingleNodeMatcherInterface<T> {
     (llvm::is_base_of<clang::FunctionDecl, T>::value),
     is_definition_requires_isThisDeclarationADefinition_method);
 public:
-  virtual bool MatchesNode(const T &Node) const {
+  virtual bool matchesNode(const T &Node) const {
     return Node.isThisDeclarationADefinition();
   }
 };
@@ -828,7 +828,7 @@ class IsTemplateInstantiationMatcher : public MatcherInterface<T> {
                          (llvm::is_base_of<clang::CXXRecordDecl, T>::value),
                          requires_getTemplateSpecializationKind_method);
  public:
-  virtual bool Matches(const T& Node,
+  virtual bool matches(const T& Node,
                        ASTMatchFinder* Finder,
                        BoundNodesTreeBuilder* Builder) const {
     return (Node.getTemplateSpecializationKind() ==
@@ -840,7 +840,7 @@ class IsTemplateInstantiationMatcher : public MatcherInterface<T> {
 
 class IsArrowMatcher : public SingleNodeMatcherInterface<clang::MemberExpr> {
 public:
-  virtual bool MatchesNode(const clang::MemberExpr &Node) const {
+  virtual bool matchesNode(const clang::MemberExpr &Node) const {
     return Node.isArrow();
   }
 };
@@ -848,7 +848,7 @@ public:
 class IsConstQualifiedMatcher
     : public SingleNodeMatcherInterface<clang::QualType> {
  public:
-  virtual bool MatchesNode(const clang::QualType& Node) const {
+  virtual bool matchesNode(const clang::QualType& Node) const {
     return Node.isConstQualified();
   }
 };

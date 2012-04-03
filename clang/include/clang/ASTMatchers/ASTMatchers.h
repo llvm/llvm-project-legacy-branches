@@ -67,12 +67,12 @@ public:
   /// FIXME: We'll need one of those for every base type.
   /// @{
   template <typename T>
-  const T *GetDeclAs(const std::string &ID) const {
-    return GetNodeAs<T>(DeclBindings, ID);
+  const T *getDeclAs(const std::string &ID) const {
+    return getNodeAs<T>(DeclBindings, ID);
   }
   template <typename T>
-  const T *GetStmtAs(const std::string &ID) const {
-    return GetNodeAs<T>(StmtBindings, ID);
+  const T *getStmtAs(const std::string &ID) const {
+    return getNodeAs<T>(StmtBindings, ID);
   }
   /// @}
 
@@ -83,7 +83,7 @@ private:
       : DeclBindings(DeclBindings), StmtBindings(StmtBindings) {}
 
   template <typename T, typename MapT>
-  const T *GetNodeAs(const MapT &Bindings, const std::string &ID) const {
+  const T *getNodeAs(const MapT &Bindings, const std::string &ID) const {
     typename MapT::const_iterator It = Bindings.find(ID);
     if (It == Bindings.end()) {
       return NULL;
@@ -622,7 +622,7 @@ AST_MATCHER_P(clang::CXXOperatorCallExpr,
 ///   class Bar : public Foo {};  // derived from a type that X is a typedef of
 AST_MATCHER_P(clang::CXXRecordDecl, IsDerivedFrom, std::string, Base) {
   assert(!Base.empty());
-  return Finder->ClassIsDerivedFrom(&Node, Base);
+  return Finder->classIsDerivedFrom(&Node, Base);
 }
 
 /// \brief Matches AST nodes that have child AST nodes that match the
@@ -635,7 +635,7 @@ AST_MATCHER_P(clang::CXXRecordDecl, IsDerivedFrom, std::string, Base) {
 ///
 /// ChildT must be an AST base type.
 template <typename ChildT>
-internal::ArgumentAdaptingMatcher<internal::HasMatcher, ChildT> Has(
+internal::ArgumentAdaptingMatcher<internal::HasMatcher, ChildT> has(
     const internal::Matcher<ChildT> &ChildMatcher) {
   return internal::ArgumentAdaptingMatcher<internal::HasMatcher,
                                            ChildT>(ChildMatcher);
@@ -653,7 +653,7 @@ internal::ArgumentAdaptingMatcher<internal::HasMatcher, ChildT> Has(
 /// DescendantT must be an AST base type.
 template <typename DescendantT>
 internal::ArgumentAdaptingMatcher<internal::HasDescendantMatcher, DescendantT>
-HasDescendant(const internal::Matcher<DescendantT> &DescendantMatcher) {
+hasDescendant(const internal::Matcher<DescendantT> &DescendantMatcher) {
   return internal::ArgumentAdaptingMatcher<
     internal::HasDescendantMatcher,
     DescendantT>(DescendantMatcher);
@@ -673,7 +673,7 @@ HasDescendant(const internal::Matcher<DescendantT> &DescendantMatcher) {
 /// As opposed to 'Has', 'ForEach' will cause a match for each result that
 /// matches instead of only on the first one.
 template <typename ChildT>
-internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> ForEach(
+internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> forEach(
     const internal::Matcher<ChildT>& ChildMatcher) {
   return internal::ArgumentAdaptingMatcher<
     internal::ForEachMatcher,
@@ -700,7 +700,7 @@ internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> ForEach(
 ///   class A { class B { class C { class D { class E {}; }; }; }; };
 template <typename DescendantT>
 internal::ArgumentAdaptingMatcher<internal::ForEachDescendantMatcher, DescendantT>
-ForEachDescendant(
+forEachDescendant(
     const internal::Matcher<DescendantT>& DescendantMatcher) {
   return internal::ArgumentAdaptingMatcher<
     internal::ForEachDescendantMatcher,
@@ -741,7 +741,7 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, On, internal::Matcher<clang::Expr>,
       .getImplicitObjectArgument()
       ->IgnoreParenImpCasts();
   return (ExprNode != NULL &&
-          InnerMatcher.Matches(*ExprNode, Finder, Builder));
+          InnerMatcher.matches(*ExprNode, Finder, Builder));
 }
 
 /// \brief Matches if the call expression's callee expression matches.
@@ -762,7 +762,7 @@ AST_MATCHER_P(clang::CallExpr, Callee, internal::Matcher<clang::Stmt>,
               InnerMatcher) {
   const clang::Expr *ExprNode = Node.getCallee();
   return (ExprNode != NULL &&
-          InnerMatcher.Matches(*ExprNode, Finder, Builder));
+          InnerMatcher.matches(*ExprNode, Finder, Builder));
 }
 
 /// \brief Matches if the call expression's callee's declaration matches the
@@ -790,7 +790,7 @@ AST_POLYMORPHIC_MATCHER_P(HasType, internal::Matcher<clang::QualType>,
   TOOLING_COMPILE_ASSERT((llvm::is_base_of<clang::Expr, NodeType>::value ||
                           llvm::is_base_of<clang::ValueDecl, NodeType>::value),
                          instantiated_with_wrong_types);
-  return InnerMatcher.Matches(Node.getType(), Finder, Builder);
+  return InnerMatcher.matches(Node.getType(), Finder, Builder);
 }
 
 /// \brief Overloaded to match the declaration of the expression's or value
@@ -825,7 +825,7 @@ AST_MATCHER_P(
     clang::QualType, PointsTo, internal::Matcher<clang::QualType>,
     InnerMatcher) {
   return (Node->isPointerType() &&
-          InnerMatcher.Matches(Node->getPointeeType(), Finder, Builder));
+          InnerMatcher.matches(Node->getPointeeType(), Finder, Builder));
 }
 
 /// \brief Overloaded to match the pointee type's declaration.
@@ -848,7 +848,7 @@ inline internal::Matcher<clang::QualType> PointsTo(
 AST_MATCHER_P(clang::QualType, References, internal::Matcher<clang::QualType>,
               InnerMatcher) {
   return (Node->isReferenceType() &&
-          InnerMatcher.Matches(Node->getPointeeType(), Finder, Builder));
+          InnerMatcher.matches(Node->getPointeeType(), Finder, Builder));
 }
 
 /// \brief Overloaded to match the referenced type's declaration.
@@ -863,7 +863,7 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, OnImplicitObjectArgument,
   const clang::Expr *ExprNode =
       const_cast<clang::CXXMemberCallExpr&>(Node).getImplicitObjectArgument();
   return (ExprNode != NULL &&
-          InnerMatcher.Matches(*ExprNode, Finder, Builder));
+          InnerMatcher.matches(*ExprNode, Finder, Builder));
 }
 
 /// \brief Matches if the expression's type either matches the specified
@@ -892,7 +892,7 @@ AST_MATCHER_P(clang::DeclRefExpr, To, internal::Matcher<clang::Decl>,
               InnerMatcher) {
   const clang::Decl *DeclNode = Node.getDecl();
   return (DeclNode != NULL &&
-          InnerMatcher.Matches(*DeclNode, Finder, Builder));
+          InnerMatcher.matches(*DeclNode, Finder, Builder));
 }
 
 /// \brief Matches a variable declaration that has an initializer expression
@@ -906,7 +906,7 @@ AST_MATCHER_P(
     InnerMatcher) {
   const clang::Expr *Initializer = Node.getAnyInitializer();
   return (Initializer != NULL &&
-          InnerMatcher.Matches(*Initializer, Finder, Builder));
+          InnerMatcher.matches(*Initializer, Finder, Builder));
 }
 
 /// \brief Checks that a call expression or a constructor call expression has
@@ -936,7 +936,7 @@ AST_POLYMORPHIC_MATCHER_P2(
                                           NodeType>::value),
                          instantiated_with_wrong_types);
   return (N < Node.getNumArgs() &&
-          InnerMatcher.Matches(
+          InnerMatcher.matches(
               *Node.getArg(N)->IgnoreParenImpCasts(), Finder, Builder));
 }
 
@@ -953,7 +953,7 @@ AST_MATCHER_P(clang::CXXConstructorDecl, HasAnyConstructorInitializer,
               internal::Matcher<clang::CXXCtorInitializer>, InnerMatcher) {
   for (clang::CXXConstructorDecl::init_const_iterator I = Node.init_begin();
        I != Node.init_end(); ++I) {
-    if (InnerMatcher.Matches(**I, Finder, Builder)) {
+    if (InnerMatcher.matches(**I, Finder, Builder)) {
       return true;
     }
   }
@@ -975,7 +975,7 @@ AST_MATCHER_P(clang::CXXCtorInitializer, ForField,
               internal::Matcher<clang::FieldDecl>, InnerMatcher) {
   const clang::FieldDecl *NodeAsDecl = Node.getMember();
   return (NodeAsDecl != NULL &&
-      InnerMatcher.Matches(*NodeAsDecl, Finder, Builder));
+      InnerMatcher.matches(*NodeAsDecl, Finder, Builder));
 }
 
 /// \brief Matches the initializer expression of a constructor initializer.
@@ -993,7 +993,7 @@ AST_MATCHER_P(clang::CXXCtorInitializer, WithInitializer,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   const clang::Expr* NodeAsExpr = Node.getInit();
   return (NodeAsExpr != NULL &&
-      InnerMatcher.Matches(*NodeAsExpr, Finder, Builder));
+      InnerMatcher.matches(*NodeAsExpr, Finder, Builder));
 }
 
 /// \brief Matches a contructor initializer if it is explicitly written in
@@ -1033,7 +1033,7 @@ AST_POLYMORPHIC_MATCHER_P(HasAnyArgument, internal::Matcher<clang::Expr>,
                                           NodeType>::value),
                          instantiated_with_wrong_types);
   for (unsigned I = 0; I < Node.getNumArgs(); ++I) {
-    if (InnerMatcher.Matches(*Node.getArg(I)->IgnoreParenImpCasts(),
+    if (InnerMatcher.matches(*Node.getArg(I)->IgnoreParenImpCasts(),
                              Finder, Builder)) {
       return true;
     }
@@ -1053,7 +1053,7 @@ AST_MATCHER_P2(clang::FunctionDecl, HasParameter,
                unsigned, N, internal::Matcher<clang::ParmVarDecl>,
                InnerMatcher) {
   return (N < Node.getNumParams() &&
-          InnerMatcher.Matches(
+          InnerMatcher.matches(
               *Node.getParamDecl(N), Finder, Builder));
 }
 
@@ -1070,7 +1070,7 @@ AST_MATCHER_P2(clang::FunctionDecl, HasParameter,
 AST_MATCHER_P(clang::FunctionDecl, HasAnyParameter,
               internal::Matcher<clang::ParmVarDecl>, InnerMatcher) {
   for (unsigned I = 0; I < Node.getNumParams(); ++I) {
-    if (InnerMatcher.Matches(*Node.getParamDecl(I), Finder, Builder)) {
+    if (InnerMatcher.matches(*Node.getParamDecl(I), Finder, Builder)) {
       return true;
     }
   }
@@ -1090,7 +1090,7 @@ AST_POLYMORPHIC_MATCHER_P(HasCondition, internal::Matcher<clang::Expr>,
     has_condition_requires_if_statement_or_conditional_operator);
   const clang::Expr *const Condition = Node.getCond();
   return (Condition != NULL &&
-          InnerMatcher.Matches(*Condition, Finder, Builder));
+          InnerMatcher.matches(*Condition, Finder, Builder));
 }
 
 /// \brief Matches the condition variable statement in an if statement.
@@ -1104,7 +1104,7 @@ AST_MATCHER_P(clang::IfStmt, HasConditionVariableStatement,
   const clang::DeclStmt* const DeclarationStatement =
     Node.getConditionVariableDeclStmt();
   return DeclarationStatement != NULL &&
-         InnerMatcher.Matches(*DeclarationStatement, Finder, Builder);
+         InnerMatcher.matches(*DeclarationStatement, Finder, Builder);
 }
 
 /// \brief Matches a 'for' statement that has a given body.
@@ -1119,7 +1119,7 @@ AST_MATCHER_P(clang::ForStmt, HasBody, internal::Matcher<clang::Stmt>,
               InnerMatcher) {
   const clang::Stmt *const Statement = Node.getBody();
   return (Statement != NULL &&
-          InnerMatcher.Matches(*Statement, Finder, Builder));
+          InnerMatcher.matches(*Statement, Finder, Builder));
 }
 
 /// \brief Matches compound statements where at least one substatement matches
@@ -1136,7 +1136,7 @@ AST_MATCHER_P(clang::CompoundStmt, HasAnySubstatement,
   for (clang::CompoundStmt::const_body_iterator It = Node.body_begin();
        It != Node.body_end();
        ++It) {
-    if (InnerMatcher.Matches(**It, Finder, Builder)) return true;
+    if (InnerMatcher.matches(**It, Finder, Builder)) return true;
   }
   return false;
 }
@@ -1186,7 +1186,7 @@ AST_MATCHER_P(clang::BinaryOperator, HasLHS,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   clang::Expr *LeftHandSide = Node.getLHS();
   return (LeftHandSide != NULL &&
-          InnerMatcher.Matches(*LeftHandSide, Finder, Builder));
+          InnerMatcher.matches(*LeftHandSide, Finder, Builder));
 }
 
 /// \brief Matches the right hand side of binary operator expressions.
@@ -1197,7 +1197,7 @@ AST_MATCHER_P(clang::BinaryOperator, HasRHS,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   clang::Expr *RightHandSide = Node.getRHS();
   return (RightHandSide != NULL &&
-          InnerMatcher.Matches(*RightHandSide, Finder, Builder));
+          InnerMatcher.matches(*RightHandSide, Finder, Builder));
 }
 
 /// \brief Matches if either the left hand side or the right hand side of a
@@ -1215,7 +1215,7 @@ AST_MATCHER_P(clang::UnaryOperator, HasUnaryOperand,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   const clang::Expr * const Operand = Node.getSubExpr();
   return (Operand != NULL &&
-          InnerMatcher.Matches(*Operand, Finder, Builder));
+          InnerMatcher.matches(*Operand, Finder, Builder));
 }
 
 /// Matches if the implicit cast's source expression matches the given matcher.
@@ -1229,7 +1229,7 @@ AST_MATCHER_P(clang::ImplicitCastExpr, HasSourceExpression,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   const clang::Expr* const SubExpression = Node.getSubExpr();
   return (SubExpression != NULL &&
-          InnerMatcher.Matches(*SubExpression, Finder, Builder));
+          InnerMatcher.matches(*SubExpression, Finder, Builder));
 }
 
 /// \brief Matches casts whose destination type matches a given matcher.
@@ -1239,7 +1239,7 @@ AST_MATCHER_P(clang::ImplicitCastExpr, HasSourceExpression,
 AST_MATCHER_P(clang::ExplicitCastExpr, HasDestinationType,
               internal::Matcher<clang::QualType>, InnerMatcher) {
   const clang::QualType NodeType = Node.getTypeAsWritten();
-  return InnerMatcher.Matches(NodeType, Finder, Builder);
+  return InnerMatcher.matches(NodeType, Finder, Builder);
 }
 
 /// \brief Matches implicit casts whose destination type matches a given
@@ -1248,7 +1248,7 @@ AST_MATCHER_P(clang::ExplicitCastExpr, HasDestinationType,
 /// FIXME: Unit test this matcher
 AST_MATCHER_P(clang::ImplicitCastExpr, HasImplicitDestinationType,
               internal::Matcher<clang::QualType>, InnerMatcher) {
-  return InnerMatcher.Matches(Node.getType(), Finder, Builder);
+  return InnerMatcher.matches(Node.getType(), Finder, Builder);
 }
 
 /// \brief Matches the true branch expression of a conditional operator.
@@ -1259,7 +1259,7 @@ AST_MATCHER_P(clang::ConditionalOperator, HasTrueExpression,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   clang::Expr *Expression = Node.getTrueExpr();
   return (Expression != NULL &&
-          InnerMatcher.Matches(*Expression, Finder, Builder));
+          InnerMatcher.matches(*Expression, Finder, Builder));
 }
 
 /// \brief Matches the false branch expression of a conditional operator.
@@ -1270,7 +1270,7 @@ AST_MATCHER_P(clang::ConditionalOperator, HasFalseExpression,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   clang::Expr *Expression = Node.getFalseExpr();
   return (Expression != NULL &&
-          InnerMatcher.Matches(*Expression, Finder, Builder));
+          InnerMatcher.matches(*Expression, Finder, Builder));
 }
 
 /// \brief Matches if a declaration has a body attached.
@@ -1307,7 +1307,7 @@ AST_MATCHER_P(clang::CXXMethodDecl, OfClass,
               internal::Matcher<clang::CXXRecordDecl>, InnerMatcher) {
   const clang::CXXRecordDecl *Parent = Node.getParent();
   return (Parent != NULL &&
-          InnerMatcher.Matches(*Parent, Finder, Builder));
+          InnerMatcher.matches(*Parent, Finder, Builder));
 }
 
 /// \brief Matches member expressions that are called with '->' as opposed
@@ -1356,7 +1356,7 @@ inline internal::Matcher<clang::QualType> IsConstQualified() {
 ///   but not first.second (because the member name there is "second").
 AST_MATCHER_P(clang::MemberExpr, Member,
               internal::Matcher<clang::ValueDecl>, InnerMatcher) {
-  return InnerMatcher.Matches(*Node.getMemberDecl(), Finder, Builder);
+  return InnerMatcher.matches(*Node.getMemberDecl(), Finder, Builder);
 }
 
 /// \brief Matches a member expression where the object expression is
@@ -1371,7 +1371,7 @@ AST_MATCHER_P(clang::MemberExpr, Member,
 ///   matching "x" and the implicit object expression of "m" which has type X*.
 AST_MATCHER_P(clang::MemberExpr, HasObjectExpression,
               internal::Matcher<clang::Expr>, InnerMatcher) {
-  return InnerMatcher.Matches(*Node.getBase(), Finder, Builder);
+  return InnerMatcher.matches(*Node.getBase(), Finder, Builder);
 }
 
 /// \brief Matches template instantiations of function, class, or static

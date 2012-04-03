@@ -26,6 +26,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/system_error.h"
 
+#include "clang/AST/DeclTemplate.h"
+
 using namespace clang;
 using namespace clang::ast_matchers;
 using clang::tooling::NewFrontendActionFactory;
@@ -34,7 +36,7 @@ using clang::tooling::Replacement;
 // FIXME: Pull out helper methods in here into more fitting places.
 
 template <typename T>
-std::string GetFile(const clang::SourceManager& source_manager, const T& node) {
+std::string getFile(const clang::SourceManager& source_manager, const T& node) {
   clang::SourceLocation start_spelling_location =
       source_manager.getSpellingLoc(node.getLocStart());
   if (!start_spelling_location.isValid()) return std::string();
@@ -47,7 +49,7 @@ std::string GetFile(const clang::SourceManager& source_manager, const T& node) {
 
 // Returns the text that makes up 'node' in the source.
 // Returns an empty string if the text cannot be found.
-static std::string GetText(const SourceManager &SourceManager,
+static std::string getText(const SourceManager &SourceManager,
                            SourceLocation LocStart, SourceLocation LocEnd) {
   SourceLocation StartSpellingLocatino =
       SourceManager.getSpellingLoc(LocStart);
@@ -79,14 +81,24 @@ static std::string GetText(const SourceManager &SourceManager,
 }
 
 template <typename T>
-static std::string GetText(const SourceManager &SourceManager, const T &Node) {
+static std::string getText(const SourceManager &SourceManager, const T &Node) {
   return GetText(SourceManager, Node.getLocStart(), Node.getLocEnd());
 }
 
 namespace {
 
-bool AllParentsMatch(SourceManager *SM, const CXXRecordDecl *Decl, llvm::Regex &EditFilesExpression) {
-  if (!EditFilesExpression.match(GetFile(*SM, *Decl))) {
+bool hasMethod(const CXXRecordDecl &Decl, StringRef MethodName, ASTContext &Context) {
+  clang::IdentifierInfo& Identifier = Context.Idents.get(MethodName);
+  clang::DeclContext::lookup_const_result Result = Decl.lookup(&Identifier);
+  return Result.first != Result.second;
+}
+
+bool allParentsMatch(SourceManager *SM, ASTContext &Context, const CXXRecordDecl *Decl, StringRef MethodName, llvm::Regex &EditFilesExpression) {
+  if (Decl == NULL)
+    return true;
+  if (!EditFilesExpression.match(getFile(*SM, *Decl)) &&
+      hasMethod(*Decl, MethodName, Context)) {
+    //llvm::outs() << GetFile(*SM, *Decl) << "\n";
     return false;
   }
   typedef clang::CXXRecordDecl::base_class_const_iterator BaseIterator;
@@ -95,7 +107,7 @@ bool AllParentsMatch(SourceManager *SM, const CXXRecordDecl *Decl, llvm::Regex &
     const clang::Type *TypeNode = It->getType().getTypePtr();
     clang::CXXRecordDecl *
       ClassDecl = TypeNode->getAsCXXRecordDecl();
-    if (!AllParentsMatch(SM, ClassDecl, EditFilesExpression)) {
+    if (!allParentsMatch(SM, Context, ClassDecl, MethodName, EditFilesExpression)) {
       return false;
     }
   }
@@ -105,12 +117,12 @@ bool AllParentsMatch(SourceManager *SM, const CXXRecordDecl *Decl, llvm::Regex &
 class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
  public:
   FixLLVMStyle(tooling::Replacements *Replace)
-      : Replace(Replace), EditFilesExpression(".*ASTMatchers/.*") {}
+      : Replace(Replace), EditFilesExpression(".*ASTMatchers/.*|.*tools/clang/tools/.*") {}
 
-  virtual void Run(const ast_matchers::MatchFinder::MatchResult &Result) {
-    if (const CallExpr *Call = Result.Nodes.GetStmtAs<CallExpr>("call")) {
-      llvm::errs() << "Skipping: "
-                   << GetText(*Result.SourceManager, *Call) << "\n";
+  virtual void run(const ast_matchers::MatchFinder::MatchResult &Result) {
+    if (const CallExpr *Call = Result.Nodes.getStmtAs<CallExpr>("call")) {
+   /*   llvm::errs() << "Skipping: "
+                   << GetText(*Result.SourceManager, *Call) << "\n";*/
       return;
     }
     Replacement ReplaceText;
@@ -118,14 +130,16 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
     std::string OldName;
     std::string SedCommand;
     if (const NamedDecl *Declaration =
-          Result.Nodes.GetDeclAs<NamedDecl>("declaration")) {
+          Result.Nodes.getDeclAs<NamedDecl>("declaration")) {
+      if (!EditFilesExpression.match(getFile(*Result.SourceManager, *Declaration)))
+        return;
       Name = Declaration->getNameAsString();
       OldName = Name;
       if (const CXXMethodDecl *Method =
             llvm::dyn_cast<CXXMethodDecl>(Declaration)) {
-        if (Method->size_overridden_methods() > 0 &&
-            !AllParentsMatch(Result.SourceManager, Method->getParent(), EditFilesExpression)) {
-          llvm::errs() << "NotAllParentsMatch: " << OldName << "\n";
+        if (//Method->size_overridden_methods() > 0 &&
+            !allParentsMatch(Result.SourceManager, *Result.Context, Method->getParent(), OldName, EditFilesExpression)) {
+ //         llvm::errs() << "NotAllParentsMatch: " << OldName << "\n";
           return;
         }
       }
@@ -133,11 +147,11 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
         Name[0] = tolower(Name[0]);
         if (Name == "new") Name = "create";
 
-        if (const DeclRefExpr *Reference = Result.Nodes.GetStmtAs<DeclRefExpr>("ref")) {
+        if (const DeclRefExpr *Reference = Result.Nodes.getStmtAs<DeclRefExpr>("ref")) {
           ReplaceText = Replacement(*Result.SourceManager, Reference, Name);
-        } else if (const Expr *Callee = Result.Nodes.GetStmtAs<Expr>("callee")) {
+        } else if (const Expr *Callee = Result.Nodes.getStmtAs<Expr>("callee")) {
           if (const MemberExpr *Member = dyn_cast<MemberExpr>(Callee)) {
-            llvm::errs() << OldName << "\n";
+  //          llvm::errs() << OldName << "\n";
             assert(Member != NULL);
 //          std::string CalleeText = GetText(*Result.SourceManager, *Callee);
 //          llvm::outs() << "Callee: " << CalleeText << "\n";
@@ -147,10 +161,10 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
                                       Name);
           } else if (const DeclRefExpr *Ref = dyn_cast<DeclRefExpr>(Callee)) {
             (void)Ref;
-            llvm::errs() << "XXX " << GetFile(*Result.SourceManager, *Callee) << "\n";
+    //        llvm::errs() << "XXX " << GetFile(*Result.SourceManager, *Callee) << "\n";
           } else {
-            llvm::errs() << "*** " << GetFile(*Result.SourceManager, *Callee) << "\n";
-            Callee->dump();
+    //        llvm::errs() << "*** " << GetFile(*Result.SourceManager, *Callee) << "\n";
+            //Callee->dump();
           }
         } else {
           DeclarationNameInfo NameInfo;
@@ -161,14 +175,18 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
           }
           ReplaceText = Replacement(*Result.SourceManager, &NameInfo, Name);
           if (!ReplaceText.IsApplicable()) {
-            llvm::errs() << "Not applicable: " << Name << "\n";
+   //         llvm::errs() << "Not applicable: " << Name << "\n";
           }
         }
       }
     }
     if (EditFilesExpression.match(ReplaceText.GetFilePath())) {
+      //llvm::errs() << GetPosition(*Result.Nodes.GetDeclAs<NamedDecl>("declaration"), *Result.SourceManager) << "\n";
+      //llvm::errs
       llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
-//      Replace->insert(ReplaceText);
+      Replace->insert(ReplaceText);
+    } else {
+//     llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
     }
   }
 
@@ -184,7 +202,7 @@ AST_MATCHER_P(clang::UsingDecl, HasAnyUsingShadowDeclaration,
               internal::Matcher<clang::UsingShadowDecl>, InnerMatcher) {
   for (clang::UsingDecl::shadow_iterator I = Node.shadow_begin();
        I != Node.shadow_end(); ++I) {
-    if (InnerMatcher.Matches(**I, Finder, Builder)) {
+    if (InnerMatcher.matches(**I, Finder, Builder)) {
       return true;
     }
   }
@@ -192,7 +210,55 @@ AST_MATCHER_P(clang::UsingDecl, HasAnyUsingShadowDeclaration,
 }
 AST_MATCHER_P(clang::UsingShadowDecl, HasTargetDeclaration,
               internal::Matcher<clang::NamedDecl>, InnerMatcher) {
-  return InnerMatcher.Matches(*Node.getTargetDecl(), Finder, Builder);
+  return InnerMatcher.matches(*Node.getTargetDecl(), Finder, Builder);
+}
+AST_MATCHER_P(clang::QualType, HasClassDeclaration,
+              internal::Matcher<clang::CXXRecordDecl>, InnerMatcher) {
+  if (const clang::CXXRecordDecl *Decl = Node->getAsCXXRecordDecl()) {
+    return InnerMatcher.matches(*Decl, Finder, Builder);
+  }
+  if (const clang::TemplateSpecializationType *T = Node->getAs<clang::TemplateSpecializationType>()) {
+    if (const clang::NamedDecl *N = T->getTemplateName().getAsTemplateDecl()->getTemplatedDecl()) {
+      if (const clang::CXXRecordDecl *Decl = dyn_cast<CXXRecordDecl>(N)) {
+        return InnerMatcher.matches(*Decl, Finder, Builder);
+      }
+    }
+  }
+  return false;
+}
+AST_MATCHER_P(clang::FunctionDecl, HasReturnType,
+              internal::Matcher<clang::QualType>, InnerMatcher) {
+  llvm::errs() << Node.getNameAsString() << "\n";
+  Node.getResultType().dump();
+  llvm::errs() << "\n";
+  const clang::TemplateSpecializationType* T = Node.getResultType()->getAs<clang::TemplateSpecializationType>();
+  if (T != NULL) {
+    const NamedDecl *N = T->getTemplateName().getAsTemplateDecl()->getTemplatedDecl();
+    
+    if (N != NULL) {
+      llvm::errs() << dyn_cast<CXXRecordDecl>(N) << "\n";
+    }
+/*    T->desugar().dump();
+    llvm::errs() <<  T->desugar()->getTypeClass() << "\n";
+    const clang::TemplateSpecializationType* T2 = T->desugar()->getAs<clang::TemplateSpecializationType>();
+    if (T2 != NULL) {
+      T2->desugar().dump();
+    }*/
+
+  }
+  return InnerMatcher.matches(Node.getResultType(), Finder, Builder);
+}
+AST_MATCHER_P(clang::NamedDecl, HasName2, std::string, name) {
+  assert(!name.empty());
+  const std::string full_name_string = "::" + Node.getQualifiedNameAsString();
+  const llvm::StringRef full_name = full_name_string;
+  llvm::errs() << full_name << "\n";
+  const llvm::StringRef pattern = name;
+  if (pattern.startswith("::")) {
+    return full_name == pattern;
+  } else {
+    return full_name.endswith(("::" + pattern).str());
+  }
 }
 } }
 
@@ -200,18 +266,25 @@ AST_MATCHER_P(clang::UsingShadowDecl, HasTargetDeclaration,
 int main(int argc, char **argv) {
   tooling::RefactoringTool Tool(argc, argv);
   ast_matchers::MatchFinder Finder;
+
+  DeclarationMatcher FunctionMatch = Function(Not(HasReturnType(HasClassDeclaration(
+    AnyOf(HasName2("internal::Matcher"),
+                HasName("internal::PolymorphicMatcherWithParam0"),
+                HasName("internal::PolymorphicMatcherWithParam1"),
+                HasName("internal::PolymorphicMatcherWithParam2")
+        )))));
   
-  Finder.AddMatcher(StatementMatcher(AnyOf(
-      StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", Function()))))),
-      Call(Callee(Id("declaration", Function())),
+  Finder.addMatcher(StatementMatcher(AnyOf(
+      StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", FunctionMatch))))),
+      Call(Callee(Id("declaration", FunctionMatch)),
            Callee(Id("callee", Expression()))))),
       new FixLLVMStyle(&Tool.GetReplacements()));
 
-  Finder.AddMatcher(
+  Finder.addMatcher(
       DeclarationMatcher(AnyOf(
-        Id("declaration", UsingDeclaration(HasAnyUsingShadowDeclaration(HasTargetDeclaration(Function())))),
+        Id("declaration", UsingDeclaration(HasAnyUsingShadowDeclaration(HasTargetDeclaration(FunctionMatch)))),
         AllOf(
-          Id("declaration", Function()),
+          Id("declaration", FunctionMatch),
           Not(Constructor())))
         ),
       new FixLLVMStyle(&Tool.GetReplacements()));
