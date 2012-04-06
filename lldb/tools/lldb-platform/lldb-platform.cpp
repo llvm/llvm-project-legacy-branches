@@ -225,5 +225,7 @@ main (int argc, char *argv[])
 
     Debugger::Terminate();
 
+    fprintf(stderr, "lldb-platform exiting...\n");
+
     return 0;
 }

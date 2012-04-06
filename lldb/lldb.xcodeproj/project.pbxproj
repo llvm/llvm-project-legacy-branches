@@ -514,6 +514,7 @@
 		B299580B14F2FA1400050A04 /* DisassemblerLLVMC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B299580A14F2FA1400050A04 /* DisassemblerLLVMC.cpp */; };
 		B2A58722143119810092BFBA /* SBWatchpoint.h in Headers */ = {isa = PBXBuildFile; fileRef = B2A58721143119810092BFBA /* SBWatchpoint.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		B2A58724143119D50092BFBA /* SBWatchpoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A58723143119D50092BFBA /* SBWatchpoint.cpp */; };
+		B2FA4F81152FB3F3005535AB /* lldb-platform in Resources */ = {isa = PBXBuildFile; fileRef = 26DC6A101337FE6900FF7998 /* lldb-platform */; };
 		ED236E0814F84F6800153F6F /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		ED88244E15114A9200BC98B9 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		ED88245015114CA200BC98B9 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = ED88244F15114CA200BC98B9 /* main.mm */; };
@@ -621,6 +622,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 2689FFC913353D7A00698AC0;
 			remoteInfo = "lldb-core";
+		};
+		B2FA4F7E152FB347005535AB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 26DC6A0F1337FE6900FF7998;
+			remoteInfo = "lldb-platform";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -3266,10 +3274,12 @@
 				2689FFC613353D7A00698AC0 /* Sources */,
 				2689FFC713353D7A00698AC0 /* Frameworks */,
 				2689FFC813353D7A00698AC0 /* Headers */,
+				B2FA4F80152FB360005535AB /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B2FA4F7F152FB347005535AB /* PBXTargetDependency */,
 			);
 			name = "lldb-core";
 			productName = "lldb-core";
@@ -3402,6 +3412,14 @@
 			files = (
 				262CFC7711A4510000946C6C /* debugserver in Resources */,
 				26368AF7126B960500E8659F /* darwin-debug in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2FA4F80152FB360005535AB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B2FA4F81152FB3F3005535AB /* lldb-platform in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4013,6 +4031,11 @@
 			isa = PBXTargetDependency;
 			target = 2689FFC913353D7A00698AC0 /* lldb-core */;
 			targetProxy = 26DC6A151337FE7300FF7998 /* PBXContainerItemProxy */;
+		};
+		B2FA4F7F152FB347005535AB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 26DC6A0F1337FE6900FF7998 /* lldb-platform */;
+			targetProxy = B2FA4F7E152FB347005535AB /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
