@@ -658,4 +658,14 @@ Platform::IsCompatibleWithArchitecture (const ArchSpec &arch)
     
 }
 
+Error
+Platform::PutFile (const FileSpec& source,
+                   const FileSpec& destination,
+                   uint32_t uid,
+                   uint32_t gid)
+{
+    Error error("unimplemented");
+    return error;
+}
+
 

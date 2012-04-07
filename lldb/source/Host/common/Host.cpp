@@ -1256,4 +1256,42 @@ LaunchApplication (const FileSpec &app_file_spec)
     return LLDB_INVALID_PROCESS_ID;
 }
 
+uint32_t
+Host::RunProgramAndGetExitCode (const FileSpec& file_spec)
+{
+    return UINT32_MAX;
+}
+
+uint32_t
+Host::MakeDirectory (const char* path, mode_t mode)
+{
+    return UINT32_MAX;
+}
+
+uint32_t
+Host::OpenFile (const FileSpec& file_spec,
+                uint32_t flags,
+                mode_t mode)
+{
+    return UINT32_MAX;
+}
+
+bool
+Host::CloseFile (uint32_t fd)
+{
+    return false;
+}
+
+uint32_t
+Host::WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len)
+{
+    return UINT32_MAX;
+}
+
+uint32_t
+Host::ReadFile (uint32_t fd, uint64_t offset, uint8_t* data_ptr, size_t len_wanted)
+{
+    return UINT32_MAX;
+}
+
 #endif

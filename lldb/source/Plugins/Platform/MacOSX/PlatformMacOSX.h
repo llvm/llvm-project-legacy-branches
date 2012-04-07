@@ -80,6 +80,35 @@ public:
     GetFile (const lldb_private::FileSpec &platform_file, 
              const lldb_private::UUID *uuid_ptr,
              lldb_private::FileSpec &local_file);
+    
+    virtual uint32_t
+    RunShellCommand (const std::string &command_line);
+    
+    virtual uint32_t
+    MakeDirectory (const std::string &path,
+                   mode_t mode);
+    
+    virtual lldb_private::Error
+    PutFile (const lldb_private::FileSpec& source,
+             const lldb_private::FileSpec& destination,
+             uint32_t uid = UINT32_MAX,
+             uint32_t gid = UINT32_MAX);
+    
+    virtual uint32_t
+    OpenFile (const lldb_private::FileSpec& file_spec,
+              uint32_t flags,
+              mode_t mode);
+    
+    virtual bool
+    CloseFile (uint32_t fd);
+    
+    virtual uint32_t
+    ReadFile (uint32_t fd, uint64_t offset,
+              void *data_ptr, size_t len);
+    
+    virtual uint32_t
+    WriteFile (uint32_t fd, uint64_t offset,
+               void* data, size_t len);
 
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 

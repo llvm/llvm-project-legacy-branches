@@ -9,6 +9,7 @@
 
 
 #include "GDBRemoteCommunicationServer.h"
+#import "StreamGDBRemote.h"
 
 // C Includes
 // C++ Includes
@@ -160,6 +161,24 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
 
             case StringExtractorGDBRemote::eServerPacketType_QStartNoAckMode:
                 return Handle_QStartNoAckMode (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_qPlatform_Syscall_System:
+                return Handle_qPlatform_Syscall_System (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_qPlatform_IO_MkDir:
+                return Handle_qPlatform_IO_MkDir (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Open:
+                return Handle_vFile_Open (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Close:
+                return Handle_vFile_Close (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_pRead:
+                return Handle_vFile_pRead (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_pWrite:
+                return Handle_vFile_pWrite (packet);
         }
         return true;
     }
@@ -830,5 +849,139 @@ GDBRemoteCommunicationServer::Handle_QStartNoAckMode (StringExtractorGDBRemote &
     // Send response first before changing m_send_acks to we ack this packet
     SendOKResponse ();
     m_send_acks = false;
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_qPlatform_Syscall_System (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("qPlatform_Syscall_System:"));
+    std::string path;
+    packet.GetHexByteString(path);
+    uint32_t retcode = Host::RunProgramAndGetExitCode(FileSpec(path.c_str(),false));
+    StreamString response;
+    response.PutHex32(retcode);
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_qPlatform_IO_MkDir (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("qPlatform_IO_MkDir:"));
+    mode_t mode = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
+    std::string path;
+    packet.GetHexByteString(path);
+    uint32_t retcode = Host::MakeDirectory(path.c_str(),mode);
+    StreamString response;
+    response.PutHex32(retcode);
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_Open (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:open:"));
+    std::string path;
+    packet.GetHexByteString(path);
+    if (packet.GetChar() != ',')
+        return false;
+    uint32_t flags = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
+    mode_t mode = packet.GetHexMaxU32(false, UINT32_MAX);
+    uint32_t retcode = Host::OpenFile(FileSpec(path.c_str(), false), flags, mode);
+    StreamString response;
+    response.PutChar('F');
+    response.PutHex32(retcode);
+    if (retcode == UINT32_MAX)
+    {
+        response.PutChar(',');
+        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+    }
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_Close (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:close:"));
+    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    uint32_t retcode = Host::CloseFile(fd);
+    StreamString response;
+    response.PutChar('F');
+    response.PutHex32(retcode);
+    if (retcode == UINT32_MAX)
+    {
+        response.PutChar(',');
+        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+    }
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &packet)
+{
+    StreamGDBRemote response;
+    packet.SetFilePos(::strlen("vFile:pread:"));
+    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
+    uint32_t count = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
+    uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (count == UINT32_MAX) // protect yourself against allocating a 4GB buffer
+    {
+        response.PutChar('F');
+        response.PutHex32(UINT32_MAX);
+        response.PutChar(',');
+        response.PutHex32(UINT32_MAX); // TODO: replace with Host::GetSyswideErrorCode()
+        SendPacket(response);
+        return true;
+    }
+    std::string buffer(' ',count);
+    uint32_t retcode = Host::ReadFile(fd, offset, &buffer[0], count);
+    response.PutChar('F');
+    response.PutHex32(retcode);
+    if (retcode == UINT32_MAX)
+    {
+        response.PutChar(',');
+        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+    }
+    else
+    {
+        response.PutChar(';');
+        response.PutEscapedBytes(&buffer[0], retcode);
+    }
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:pwrite:"));
+    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
+    uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);
+    std::string buffer;
+    packet.GetEscapedBinaryData(buffer);
+    uint32_t retcode = Host::WriteFile(fd, offset, &buffer[0], buffer.size());
+    StreamString response;
+    response.PutChar('F');
+    response.PutHex32(retcode);
+    if (retcode == UINT32_MAX)
+    {
+        response.PutChar(',');
+        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+    }
+    SendPacket(response);
     return true;
 }

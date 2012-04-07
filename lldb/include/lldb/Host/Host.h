@@ -438,6 +438,26 @@ public:
     DynamicLibraryGetSymbol (void *dynamic_library_handle, 
                              const char *symbol_name, 
                              Error &error);
+    
+    static uint32_t
+    RunProgramAndGetExitCode (const FileSpec& file_spec);
+    
+    static uint32_t
+    MakeDirectory (const char* path, mode_t mode);
+    
+    static uint32_t
+    OpenFile (const FileSpec& file_spec,
+              uint32_t flags,
+              mode_t mode);
+    
+    static bool
+    CloseFile (uint32_t fd);
+    
+    static uint32_t
+    WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len);
+    
+    static uint32_t
+    ReadFile (uint32_t fd, uint64_t offset, void* data_ptr, size_t len_wanted);
 };
 
 } // namespace lldb_private

@@ -218,6 +218,416 @@ public:
 };
 
 //----------------------------------------------------------------------
+// "platform shell"
+//----------------------------------------------------------------------
+class CommandObjectPlatformShell : public CommandObject
+{
+public:
+    CommandObjectPlatformShell (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform shell",
+                   "Run a shell command on the currently selected platform.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformShell ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t retcode = platform_sp->RunShellCommand(cmd_line);
+            result.AppendMessageWithFormat("Status = %d\n",retcode);
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);            
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
+// "platform mkdir"
+//----------------------------------------------------------------------
+class CommandObjectPlatformMkDir : public CommandObject
+{
+public:
+    CommandObjectPlatformMkDir (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform shell",
+                   "Make a new directory on the remote end.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformMkDir ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t retcode = platform_sp->MakeDirectory(cmd_line,0000700 | 0000070 | 0000007);
+            result.AppendMessageWithFormat("Status = %d\n",retcode);
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
+// "platform fopen"
+//----------------------------------------------------------------------
+class CommandObjectPlatformFOpen : public CommandObject
+{
+public:
+    CommandObjectPlatformFOpen (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform fopen",
+                   "Open a file on the remote end.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformFOpen ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),0x0200 | 0x0002, 0000700 | 0000070 | 0000007);
+            result.AppendMessageWithFormat("Status = %d\n",retcode);
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
+// "platform fclose"
+//----------------------------------------------------------------------
+class CommandObjectPlatformFClose : public CommandObject
+{
+public:
+    CommandObjectPlatformFClose (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform fclose",
+                   "Close a file on the remote end.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformFClose ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t fd = ::atoi(cmd_line.c_str());
+            uint32_t retcode = platform_sp->CloseFile(fd);
+            result.AppendMessageWithFormat("Status = %d\n",retcode);
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
+// "platform fread"
+//----------------------------------------------------------------------
+class CommandObjectPlatformFRead : public CommandObject
+{
+public:
+    CommandObjectPlatformFRead (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform fread",
+                   "Read data from a file on the remote end.",
+                   NULL,
+                   0),
+    m_options (interpreter)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformFRead ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t fd = ::atoi(cmd_line.c_str());
+            std::string buffer(m_options.m_count,' ');
+            uint32_t retcode = platform_sp->ReadFile(fd, m_options.m_offset, &buffer[0], m_options.m_count);
+            result.AppendMessageWithFormat("Return = %d\n",retcode);
+            result.AppendMessageWithFormat("Data = %s\n",buffer.c_str());
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+    virtual Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
+    class CommandOptions : public Options
+    {
+    public:
+        
+        CommandOptions (CommandInterpreter &interpreter) :
+        Options (interpreter)
+        {
+        }
+        
+        virtual
+        ~CommandOptions ()
+        {
+        }
+        
+        virtual Error
+        SetOptionValue (uint32_t option_idx, const char *option_arg)
+        {
+            Error error;
+            char short_option = (char) m_getopt_table[option_idx].val;
+            bool success = false;
+            
+            switch (short_option)
+            {
+                case 'o':
+                    m_offset = Args::StringToUInt32(option_arg, 0, 0, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat("invalid offset: '%s'", option_arg);
+                    break;
+                case 'c':
+                    m_count = Args::StringToUInt32(option_arg, 0, 0, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat("invalid offset: '%s'", option_arg);
+                    break;
+
+                default:
+                    error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+                    break;
+            }
+            
+            return error;
+        }
+        
+        void
+        OptionParsingStarting ()
+        {
+            m_offset = 0;
+            m_count = 1;
+        }
+        
+        const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+        
+        // Options table: Required for subclasses of Options.
+        
+        static OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        uint32_t m_offset;
+        uint32_t m_count;
+    };
+    CommandOptions m_options;
+};
+OptionDefinition
+CommandObjectPlatformFRead::CommandOptions::g_option_table[] =
+{
+    {   LLDB_OPT_SET_1, false, "offset"           , 'o', required_argument, NULL, 0, eArgTypeIndex        , "Offset into the file at which to start reading." },
+    {   LLDB_OPT_SET_1, false, "count"            , 'c', required_argument, NULL, 0, eArgTypeCount        , "Number of bytes to read from the file." },
+    {  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+};
+
+
+//----------------------------------------------------------------------
+// "platform fread"
+//----------------------------------------------------------------------
+class CommandObjectPlatformFWrite : public CommandObject
+{
+public:
+    CommandObjectPlatformFWrite (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform fwrite",
+                   "Write data to a file on the remote end.",
+                   NULL,
+                   0),
+    m_options (interpreter)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformFWrite ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string cmd_line;
+            args.GetCommandString(cmd_line);
+            uint32_t fd = ::atoi(cmd_line.c_str());
+            uint32_t retcode = platform_sp->WriteFile(fd, m_options.m_offset, &m_options.m_data[0], m_options.m_data.size());
+            result.AppendMessageWithFormat("Return = %d\n",retcode);
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+    virtual Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
+    class CommandOptions : public Options
+    {
+    public:
+        
+        CommandOptions (CommandInterpreter &interpreter) :
+        Options (interpreter)
+        {
+        }
+        
+        virtual
+        ~CommandOptions ()
+        {
+        }
+        
+        virtual Error
+        SetOptionValue (uint32_t option_idx, const char *option_arg)
+        {
+            Error error;
+            char short_option = (char) m_getopt_table[option_idx].val;
+            bool success = false;
+            
+            switch (short_option)
+            {
+                case 'o':
+                    m_offset = Args::StringToUInt32(option_arg, 0, 0, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat("invalid offset: '%s'", option_arg);
+                    break;
+                case 's':
+                    m_data.assign(option_arg);
+                    break;
+                    
+                default:
+                    error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+                    break;
+            }
+            
+            return error;
+        }
+        
+        void
+        OptionParsingStarting ()
+        {
+            m_offset = 0;
+            m_data.clear();
+        }
+        
+        const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+        
+        // Options table: Required for subclasses of Options.
+        
+        static OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        uint32_t m_offset;
+        std::string m_data;
+    };
+    CommandOptions m_options;
+};
+OptionDefinition
+CommandObjectPlatformFWrite::CommandOptions::g_option_table[] =
+{
+    {   LLDB_OPT_SET_1, false, "offset"           , 'o', required_argument, NULL, 0, eArgTypeIndex        , "Offset into the file at which to start reading." },
+    {   LLDB_OPT_SET_1, false, "data"            , 'd', required_argument, NULL, 0, eArgTypeValue        , "Text to write to the file." },
+    {  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+};
+
+//----------------------------------------------------------------------
 // "platform connect <connect-url>"
 //----------------------------------------------------------------------
 class CommandObjectPlatformConnect : public CommandObject
@@ -885,6 +1295,14 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("connect", CommandObjectSP (new CommandObjectPlatformConnect  (interpreter)));
     LoadSubCommand ("disconnect", CommandObjectSP (new CommandObjectPlatformDisconnect  (interpreter)));
     LoadSubCommand ("process", CommandObjectSP (new CommandObjectPlatformProcess  (interpreter)));
+#ifdef LLDB_CONFIGURATION_DEBUG
+    LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
+    LoadSubCommand ("mkdir", CommandObjectSP (new CommandObjectPlatformMkDir  (interpreter)));
+    LoadSubCommand ("fopen", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
+    LoadSubCommand ("fclose", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
+    LoadSubCommand ("fread", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
+    LoadSubCommand ("fwrite", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+#endif
 }
 
 

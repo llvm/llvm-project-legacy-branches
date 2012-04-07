@@ -10,6 +10,7 @@
 #include "PlatformMacOSX.h"
 
 // C Includes
+#include <sys/stat.h>
 #include <sys/sysctl.h>
 
 // C++ Includes
@@ -150,3 +151,88 @@ PlatformMacOSX::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 #endif
 }
 
+uint32_t
+PlatformMacOSX::RunShellCommand (const std::string &command_line)
+{
+    if (IsHost())
+    {
+        return Host::RunProgramAndGetExitCode(FileSpec(command_line.c_str(),false));
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->RunShellCommand(command_line);
+    return Platform::RunShellCommand(command_line);
+}
+
+uint32_t
+PlatformMacOSX::MakeDirectory (const std::string &path,
+                               mode_t mode)
+{
+    if (IsHost())
+    {
+        return Host::MakeDirectory (path.c_str(), mode);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->MakeDirectory(path, mode);
+    return Platform::MakeDirectory(path,mode);
+}
+
+uint32_t
+PlatformMacOSX::OpenFile (const FileSpec& file_spec,
+          uint32_t flags,
+          mode_t mode)
+{
+    if (IsHost())
+    {
+        return Host::OpenFile(file_spec, flags, mode);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->OpenFile(file_spec, flags, mode);
+    return Platform::OpenFile(file_spec, flags, mode);
+}
+
+bool
+PlatformMacOSX::CloseFile (uint32_t fd)
+{
+    if (IsHost())
+    {
+        return Host::CloseFile(fd);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->CloseFile(fd);
+    return Platform::CloseFile(fd);
+}
+
+uint32_t
+PlatformMacOSX::ReadFile (uint32_t fd, uint64_t offset,
+                          void *data_ptr, size_t len)
+{
+    if (IsHost())
+    {
+        return Host::ReadFile(fd, offset, data_ptr, len);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->ReadFile(fd, offset, data_ptr, len);
+    return Platform::ReadFile(fd, offset, data_ptr, len);
+}
+
+uint32_t
+PlatformMacOSX::WriteFile (uint32_t fd, uint64_t offset,
+                           void* data, size_t len)
+{
+    if (IsHost())
+    {
+        return Host::WriteFile(fd, offset, data, len);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->WriteFile(fd, offset, data, len);
+    return Platform::WriteFile(fd, offset, data, len);
+}
+
+lldb_private::Error
+PlatformMacOSX::PutFile (const lldb_private::FileSpec& source,
+                         const lldb_private::FileSpec& destination,
+                         uint32_t uid,
+                         uint32_t gid)
+{
+    return Platform::PutFile(source,destination,uid,gid);
+}

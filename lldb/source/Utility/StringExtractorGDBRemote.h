@@ -63,7 +63,13 @@ public:
         eServerPacketType_QSetSTDOUT,
         eServerPacketType_QSetSTDERR,
         eServerPacketType_QSetWorkingDir,
-        eServerPacketType_QStartNoAckMode
+        eServerPacketType_QStartNoAckMode,
+        eServerPacketType_qPlatform_Syscall_System,
+        eServerPacketType_qPlatform_IO_MkDir,
+        eServerPacketType_vFile_Open,
+        eServerPacketType_vFile_Close,
+        eServerPacketType_vFile_pRead,
+        eServerPacketType_vFile_pWrite
     };
     
     ServerPacketType
@@ -98,6 +104,10 @@ public:
     // digits. Otherwise the error encoded in XX is returned.
     uint8_t
     GetError();
+    
+    size_t
+    GetEscapedBinaryData (std::string &str);
+
 };
 
 #endif  // utility_StringExtractorGDBRemote_h_

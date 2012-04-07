@@ -1843,3 +1843,55 @@ Host::GetAuxvData(lldb_private::Process *process)
 {
     return lldb::DataBufferSP();
 }
+
+uint32_t
+Host::RunProgramAndGetExitCode (const FileSpec& file_spec)
+{
+    std::string path(512, ' ');
+    uint32_t len = file_spec.GetPath(&path[0], 512);
+    if (len >= 512)
+    {
+        path = std::string(len+1,' ');
+        len = file_spec.GetPath(&path[0], len);
+    }
+    return ::system(path.c_str());
+}
+
+uint32_t
+Host::MakeDirectory (const char* path, mode_t mode)
+{
+    return ::mkdir(path,mode);
+}
+
+uint32_t
+Host::OpenFile (const FileSpec& file_spec,
+                uint32_t flags,
+                mode_t mode)
+{
+    std::string path(512, ' ');
+    uint32_t len = file_spec.GetPath(&path[0], 512);
+    if (len >= 512)
+    {
+        path = std::string(len+1,' ');
+        len = file_spec.GetPath(&path[0], len);
+    }
+    return ::open(path.c_str(),flags,mode);
+}
+
+bool
+Host::CloseFile (uint32_t fd)
+{
+    return (::close(fd) == 0);
+}
+
+uint32_t
+Host::WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len)
+{
+    return ::pwrite(fd, data, data_len, offset);
+}
+
+uint32_t
+Host::ReadFile (uint32_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
+{
+    return ::pread(fd, data_ptr, len_wanted, offset);
+}

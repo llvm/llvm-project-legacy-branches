@@ -126,8 +126,11 @@ StringExtractorGDBRemote::GetServerPacketType () const
             break;
             
         case 'P':
-            if (PACKET_STARTS_WITH ("qProcessInfoPID:"))        return eServerPacketType_qProcessInfoPID;
+            if (PACKET_STARTS_WITH ("qProcessInfoPID:"))                 return eServerPacketType_qProcessInfoPID;
+            if (PACKET_STARTS_WITH ("qPlatform_Syscall_System:"))        return eServerPacketType_qPlatform_Syscall_System;
+            if (PACKET_STARTS_WITH ("qPlatform_IO_MkDir:"))              return eServerPacketType_qPlatform_IO_MkDir;
             break;
+                
 
         case 'S':
             if (PACKET_STARTS_WITH ("qSpeedTest:"))             return eServerPacketType_qSpeedTest;
@@ -138,6 +141,15 @@ StringExtractorGDBRemote::GetServerPacketType () const
             break;
         }
         break;
+    case 'v':
+            if (PACKET_STARTS_WITH("vFile:"))
+            {
+                if (PACKET_STARTS_WITH("vFile:open:"))               return eServerPacketType_vFile_Open;
+                else if (PACKET_STARTS_WITH("vFile:close:"))         return eServerPacketType_vFile_Close;
+                else if (PACKET_STARTS_WITH("vFile:pread"))          return eServerPacketType_vFile_pRead;
+                else if (PACKET_STARTS_WITH("vFile:pwrite"))         return eServerPacketType_vFile_pWrite;
+            }
+            break;
     }
     return eServerPacketType_unimplemented;
 }
@@ -180,3 +192,19 @@ StringExtractorGDBRemote::GetError ()
     }
     return 0;
 }
+
+size_t
+StringExtractorGDBRemote::GetEscapedBinaryData (std::string &str)
+{
+    str.clear();
+    char ch;
+    while (GetBytesLeft())
+    {
+        ch = GetChar();
+        if (ch == 0x7d)
+            ch = (GetChar() ^ 0x20);
+        str.append(1,ch);
+    }
+    return str.size();
+}
+

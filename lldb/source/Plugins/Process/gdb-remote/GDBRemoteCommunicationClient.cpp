@@ -18,6 +18,7 @@
 #include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/State.h"
+#include "lldb/Core/StreamGDBRemote.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/Endian.h"
 #include "lldb/Host/Host.h"
@@ -1875,3 +1876,152 @@ GDBRemoteCommunicationClient::GetCurrentThreadIDs (std::vector<lldb::tid_t> &thr
     }
     return thread_ids.size();
 }
+
+uint32_t
+GDBRemoteCommunicationClient::RunShellCommand (const std::string &command_line)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("qPlatform_Syscall_System:");
+    stream.PutBytesAsRawHex8(command_line.c_str(), command_line.size());
+    const char *packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        return response.GetHexMaxU32(false, UINT32_MAX);
+    }
+    return UINT32_MAX;
+}
+
+uint32_t
+GDBRemoteCommunicationClient::MakeDirectory (const std::string &path,
+                                             mode_t mode)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("qPlatform_IO_MkDir:");
+    stream.PutHex32(mode);
+    stream.PutChar(',');
+    stream.PutBytesAsRawHex8(path.c_str(), path.size());
+    const char *packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        return response.GetHexMaxU32(false, UINT32_MAX);
+    }
+    return UINT32_MAX;
+
+}
+
+uint32_t
+GDBRemoteCommunicationClient::OpenFile (const lldb_private::FileSpec& file_spec,
+                                        uint32_t flags,
+                                        mode_t mode)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:open:");
+    std::string path(512, ' ');
+    uint32_t len = file_spec.GetPath(&path[0], 512);
+    if (len >= 512)
+    {
+        path = std::string(len+1,' ');
+        len = file_spec.GetPath(&path[0], len);
+    }
+    stream.PutCStringAsRawHex8(path.c_str());
+    stream.PutChar(',');
+    stream.PutHex32(flags);
+    stream.PutChar(',');
+    stream.PutHex32(mode);
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return UINT32_MAX;
+        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
+        return retcode;
+    }
+    return UINT32_MAX;
+}
+
+bool
+GDBRemoteCommunicationClient::CloseFile (uint32_t fd)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:close:");
+    stream.PutHex32(fd);
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return UINT32_MAX;
+        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
+        return retcode;
+    }
+    return UINT32_MAX;
+}
+
+uint32_t
+GDBRemoteCommunicationClient::ReadFile (uint32_t fd, uint64_t offset,
+                                        void *data_ptr, size_t len)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:read:");
+    stream.PutHex32(fd);
+    stream.PutChar(',');
+    stream.PutHex32(len);
+    stream.PutChar(',');
+    stream.PutHex32(offset);
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return UINT32_MAX;
+        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
+        if (retcode == UINT32_MAX)
+            return retcode;
+        if (response.GetChar() == ',')
+            return UINT32_MAX;
+        if (response.GetChar() == ';')
+        {
+            std::string buffer;
+            response.GetEscapedBinaryData(buffer);
+            size_t data_to_write = len;
+            if (buffer.size() < len)
+                data_to_write = buffer.size();
+            memcpy(data_ptr, &buffer[0], data_to_write);
+        }
+        return retcode;
+    }
+    return UINT32_MAX;
+}
+
+uint32_t
+GDBRemoteCommunicationClient::WriteFile (uint32_t fd, uint64_t offset,
+                                         void* data, size_t len)
+{
+    lldb_private::StreamGDBRemote stream;
+    stream.PutCString("vFile:write:");
+    stream.PutHex32(fd);
+    stream.PutChar(',');
+    stream.PutHex32(offset);
+    stream.PutChar(',');
+    stream.PutEscapedBytes(data, len);
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return UINT32_MAX;
+        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
+        return retcode;
+    }
+    return UINT32_MAX;
+}
+

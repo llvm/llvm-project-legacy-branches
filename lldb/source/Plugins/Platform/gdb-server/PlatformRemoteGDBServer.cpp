@@ -405,4 +405,52 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
     return process_sp;
 }
 
+uint32_t
+PlatformRemoteGDBServer::RunShellCommand (const std::string &command_line)
+{
+    return m_gdb_client.RunShellCommand(command_line);
+}
 
+uint32_t
+PlatformRemoteGDBServer::MakeDirectory (const std::string &path,
+                                        mode_t mode)
+{
+    return m_gdb_client.MakeDirectory(path,mode);
+}
+
+uint32_t
+PlatformRemoteGDBServer::OpenFile (const lldb_private::FileSpec& file_spec,
+                                   uint32_t flags,
+                                   mode_t mode)
+{
+    return m_gdb_client.OpenFile (file_spec, flags, mode);
+}
+
+bool
+PlatformRemoteGDBServer::CloseFile (uint32_t fd)
+{
+    return m_gdb_client.CloseFile (fd);
+}
+
+uint32_t
+PlatformRemoteGDBServer::ReadFile (uint32_t fd, uint64_t offset,
+                                   void *data_ptr, size_t len)
+{
+    return m_gdb_client.ReadFile (fd, offset, data_ptr, len);
+}
+
+uint32_t
+PlatformRemoteGDBServer::WriteFile (uint32_t fd, uint64_t offset,
+                                    void* data, size_t len)
+{
+    return m_gdb_client.WriteFile (fd, offset, data, len);
+}
+
+lldb_private::Error
+PlatformRemoteGDBServer::PutFile (const lldb_private::FileSpec& source,
+         const lldb_private::FileSpec& destination,
+         uint32_t uid,
+         uint32_t gid)
+{
+    return Platform::PutFile(source,destination,uid,gid);
+}

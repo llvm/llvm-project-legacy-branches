@@ -183,6 +183,12 @@ main (int argc, char *argv[])
     GDBRemoteCommunicationServer gdb_server (true);
     if (!listen_host_port.empty())
     {
+        for (int j = 0; j < listen_host_port.size(); j++)
+        {
+            char c = listen_host_port[j];
+            if (c > '9' || c < '0')
+                printf("WARNING: passing anything but a number as argument to --listen will most probably make connecting impossible.\n");
+        }
         std::auto_ptr<ConnectionFileDescriptor> conn_ap(new ConnectionFileDescriptor());
         if (conn_ap.get())
         {

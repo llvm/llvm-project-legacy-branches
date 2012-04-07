@@ -449,6 +449,53 @@ namespace lldb_private {
         {
             return false;
         }
+        
+        virtual uint32_t
+        RunShellCommand (const std::string &command_line)
+        {
+            return UINT32_MAX;
+        }
+        
+        virtual uint32_t
+        MakeDirectory (const std::string &path,
+                       mode_t mode)
+        {
+            return UINT32_MAX;
+        }
+        
+        virtual uint32_t
+        OpenFile (const FileSpec& file_spec,
+                  uint32_t flags,
+                  mode_t mode)
+        {
+            return UINT32_MAX;
+        }
+        
+        virtual bool
+        CloseFile (uint32_t fd)
+        {
+            return false;
+        }
+        
+        virtual uint32_t
+        ReadFile (uint32_t fd, uint64_t offset,
+                  void *data_ptr, size_t len)
+        {
+            return UINT32_MAX;
+        }
+        
+        virtual uint32_t
+        WriteFile (uint32_t fd, uint64_t offset,
+                   void* data, size_t len)
+        {
+            return UINT32_MAX;
+        }
+        
+        virtual Error
+        PutFile (const FileSpec& source,
+                 const FileSpec& destination,
+                 uint32_t uid = UINT32_MAX,
+                 uint32_t gid = UINT32_MAX);
                 
     protected:
         bool m_is_host;

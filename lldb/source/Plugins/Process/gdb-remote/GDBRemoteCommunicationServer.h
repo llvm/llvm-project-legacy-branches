@@ -85,7 +85,7 @@ protected:
 
     bool
     Handle_A (StringExtractorGDBRemote &packet);
-
+    
     bool
     Handle_qLaunchSuccess (StringExtractorGDBRemote &packet);
 
@@ -95,6 +95,12 @@ protected:
     bool
     Handle_qLaunchGDBServer (StringExtractorGDBRemote &packet);
 
+    bool
+    Handle_qPlatform_IO_MkDir (StringExtractorGDBRemote &packet);
+    
+    bool
+    Handle_qPlatform_Syscall_System (StringExtractorGDBRemote &packet);
+    
     bool
     Handle_qProcessInfoPID (StringExtractorGDBRemote &packet);
     
@@ -137,6 +143,17 @@ protected:
     bool
     Handle_QSetSTDERR (StringExtractorGDBRemote &packet);
     
+    bool
+    Handle_vFile_Open (StringExtractorGDBRemote &packet);
+
+    bool
+    Handle_vFile_Close (StringExtractorGDBRemote &packet);
+
+    bool
+    Handle_vFile_pRead (StringExtractorGDBRemote &packet);
+
+    bool
+    Handle_vFile_pWrite (StringExtractorGDBRemote &packet);
 private:
     //------------------------------------------------------------------
     // For GDBRemoteCommunicationServer only
