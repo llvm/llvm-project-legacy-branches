@@ -361,6 +361,20 @@ StringExtractor::GetHexByteString (std::string &str)
     return str.size();
 }
 
+size_t
+StringExtractor::GetHexByteStringTerminatedBy (std::string &str,
+                                               char terminator)
+{
+    str.clear();
+    char ch;
+    while ((ch = GetHexU8(0,false)) != '\0')
+        str.append(1, ch);
+    if (Peek() && *Peek() == terminator)
+        return str.size();
+    str.clear();
+    return str.size();
+}
+
 bool
 StringExtractor::GetNameColonValue (std::string &name, std::string &value)
 {

@@ -116,6 +116,10 @@ public:
     size_t
     GetHexByteString (std::string &str);
 
+    size_t
+    GetHexByteStringTerminatedBy (std::string &str,
+                                  char terminator);
+    
     const char *
     Peek ()
     {

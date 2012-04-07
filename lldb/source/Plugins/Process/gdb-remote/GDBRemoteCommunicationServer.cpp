@@ -886,7 +886,9 @@ GDBRemoteCommunicationServer::Handle_vFile_Open (StringExtractorGDBRemote &packe
 {
     packet.SetFilePos(::strlen("vFile:open:"));
     std::string path;
-    packet.GetHexByteString(path);
+    packet.GetHexByteStringTerminatedBy(path,',');
+    if (path.size() == 0)
+        return false;
     if (packet.GetChar() != ',')
         return false;
     uint32_t flags = packet.GetHexMaxU32(false, UINT32_MAX);
@@ -945,7 +947,7 @@ GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &pack
         SendPacket(response);
         return true;
     }
-    std::string buffer(' ',count);
+    std::string buffer(count, 0);
     uint32_t retcode = Host::ReadFile(fd, offset, &buffer[0], count);
     response.PutChar('F');
     response.PutHex32(retcode);
@@ -971,6 +973,8 @@ GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &pac
     if (packet.GetChar() != ',')
         return false;
     uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);
+    if (packet.GetChar() != ',')
+        return false;
     std::string buffer;
     packet.GetEscapedBinaryData(buffer);
     uint32_t retcode = Host::WriteFile(fd, offset, &buffer[0], buffer.size());

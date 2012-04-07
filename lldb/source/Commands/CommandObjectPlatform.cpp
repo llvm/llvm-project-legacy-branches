@@ -327,6 +327,7 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
+            // TODO: make permissions safer
             uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),0x0200 | 0x0002, 0000700 | 0000070 | 0000007);
             result.AppendMessageWithFormat("Status = %d\n",retcode);
             result.SetStatus (eReturnStatusSuccessFinishResult);
@@ -412,10 +413,10 @@ public:
             std::string cmd_line;
             args.GetCommandString(cmd_line);
             uint32_t fd = ::atoi(cmd_line.c_str());
-            std::string buffer(m_options.m_count,' ');
+            std::string buffer(m_options.m_count,0);
             uint32_t retcode = platform_sp->ReadFile(fd, m_options.m_offset, &buffer[0], m_options.m_count);
             result.AppendMessageWithFormat("Return = %d\n",retcode);
-            result.AppendMessageWithFormat("Data = %s\n",buffer.c_str());
+            result.AppendMessageWithFormat("Data = \"%s\"\n",buffer.c_str());
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
         else
@@ -583,7 +584,7 @@ protected:
                     if (!success)
                         error.SetErrorStringWithFormat("invalid offset: '%s'", option_arg);
                     break;
-                case 's':
+                case 'd':
                     m_data.assign(option_arg);
                     break;
                     

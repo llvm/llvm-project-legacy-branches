@@ -1969,7 +1969,7 @@ GDBRemoteCommunicationClient::ReadFile (uint32_t fd, uint64_t offset,
                                         void *data_ptr, size_t len)
 {
     lldb_private::StreamString stream;
-    stream.PutCString("vFile:read:");
+    stream.PutCString("vFile:pread:");
     stream.PutHex32(fd);
     stream.PutChar(',');
     stream.PutHex32(len);
@@ -1985,10 +1985,12 @@ GDBRemoteCommunicationClient::ReadFile (uint32_t fd, uint64_t offset,
         uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
         if (retcode == UINT32_MAX)
             return retcode;
-        if (response.GetChar() == ',')
+        const char next = (response.Peek() ? *response.Peek() : 0);
+        if (next == ',')
             return UINT32_MAX;
-        if (response.GetChar() == ';')
+        if (next == ';')
         {
+            response.GetChar(); // skip the semicolon
             std::string buffer;
             response.GetEscapedBinaryData(buffer);
             size_t data_to_write = len;
@@ -2006,7 +2008,7 @@ GDBRemoteCommunicationClient::WriteFile (uint32_t fd, uint64_t offset,
                                          void* data, size_t len)
 {
     lldb_private::StreamGDBRemote stream;
-    stream.PutCString("vFile:write:");
+    stream.PutCString("vFile:pwrite:");
     stream.PutHex32(fd);
     stream.PutChar(',');
     stream.PutHex32(offset);
