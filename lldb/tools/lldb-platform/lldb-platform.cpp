@@ -61,12 +61,20 @@ signal_handler(int signo)
     }
 }
 
+static void
+display_usage (const char *progname)
+{
+    fprintf(stderr, "Usage:\n  %s [--log-file log-file-path] [--log-flags flags] --listen port\n", progname);
+    exit(0);
+}
+
 //----------------------------------------------------------------------
 // main
 //----------------------------------------------------------------------
 int
 main (int argc, char *argv[])
 {
+    const char *progname = argv[0];
     signal (SIGPIPE, signal_handler);
     int long_option_index = 0;
     StreamSP log_stream_sp;
@@ -165,8 +173,16 @@ main (int argc, char *argv[])
         case 'L':
             listen_host_port.append (optarg);
             break;
+
+        case 'h':   /* fall-through is intentional */
+        case '?':
+            display_usage(progname);
+            break;
         }
     }
+    // Print usage and exit if no listening port is specified.
+    if (listen_host_port.empty())
+        display_usage(progname);
     
     if (log_stream_sp)
     {
@@ -203,7 +219,6 @@ main (int argc, char *argv[])
             }
         }
     }
-
 
     if (gdb_server.IsConnected())
     {
