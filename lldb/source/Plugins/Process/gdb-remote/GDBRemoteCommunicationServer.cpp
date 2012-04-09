@@ -9,7 +9,7 @@
 
 
 #include "GDBRemoteCommunicationServer.h"
-#import "StreamGDBRemote.h"
+#include "lldb/Core/StreamGDBRemote.h"
 
 // C Includes
 // C++ Includes
