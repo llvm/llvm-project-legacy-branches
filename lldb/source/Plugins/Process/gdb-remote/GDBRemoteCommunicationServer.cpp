@@ -895,14 +895,14 @@ GDBRemoteCommunicationServer::Handle_vFile_Open (StringExtractorGDBRemote &packe
     if (packet.GetChar() != ',')
         return false;
     mode_t mode = packet.GetHexMaxU32(false, UINT32_MAX);
-    uint32_t retcode = Host::OpenFile(FileSpec(path.c_str(), false), flags, mode);
+    lldb::user_id_t retcode = Host::OpenFile(FileSpec(path.c_str(), false), flags, mode);
     StreamString response;
     response.PutChar('F');
-    response.PutHex32(retcode);
-    if (retcode == UINT32_MAX)
+    response.PutHex64(retcode);
+    if (retcode == UINT64_MAX)
     {
         response.PutChar(',');
-        response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+        response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
     SendPacket(response);
     return true;
@@ -912,7 +912,7 @@ bool
 GDBRemoteCommunicationServer::Handle_vFile_Close (StringExtractorGDBRemote &packet)
 {
     packet.SetFilePos(::strlen("vFile:close:"));
-    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
     uint32_t retcode = Host::CloseFile(fd);
     StreamString response;
     response.PutChar('F');
@@ -931,7 +931,7 @@ GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &pack
 {
     StreamGDBRemote response;
     packet.SetFilePos(::strlen("vFile:pread:"));
-    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
     if (packet.GetChar() != ',')
         return false;
     uint32_t count = packet.GetHexMaxU32(false, UINT32_MAX);
@@ -969,7 +969,7 @@ bool
 GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &packet)
 {
     packet.SetFilePos(::strlen("vFile:pwrite:"));
-    uint32_t fd = packet.GetHexMaxU32(false, UINT32_MAX);
+    lldb::user_id_t fd = packet.GetHexMaxU64(false, UINT64_MAX);
     if (packet.GetChar() != ',')
         return false;
     uint32_t offset = packet.GetHexMaxU32(false, UINT32_MAX);

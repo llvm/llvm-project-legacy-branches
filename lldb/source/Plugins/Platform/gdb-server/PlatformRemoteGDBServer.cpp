@@ -418,7 +418,7 @@ PlatformRemoteGDBServer::MakeDirectory (const std::string &path,
     return m_gdb_client.MakeDirectory(path,mode);
 }
 
-uint32_t
+lldb::user_id_t
 PlatformRemoteGDBServer::OpenFile (const lldb_private::FileSpec& file_spec,
                                    uint32_t flags,
                                    mode_t mode)
@@ -427,20 +427,20 @@ PlatformRemoteGDBServer::OpenFile (const lldb_private::FileSpec& file_spec,
 }
 
 bool
-PlatformRemoteGDBServer::CloseFile (uint32_t fd)
+PlatformRemoteGDBServer::CloseFile (lldb::user_id_t fd)
 {
     return m_gdb_client.CloseFile (fd);
 }
 
 uint32_t
-PlatformRemoteGDBServer::ReadFile (uint32_t fd, uint64_t offset,
+PlatformRemoteGDBServer::ReadFile (lldb::user_id_t fd, uint64_t offset,
                                    void *data_ptr, size_t len)
 {
     return m_gdb_client.ReadFile (fd, offset, data_ptr, len);
 }
 
 uint32_t
-PlatformRemoteGDBServer::WriteFile (uint32_t fd, uint64_t offset,
+PlatformRemoteGDBServer::WriteFile (lldb::user_id_t fd, uint64_t offset,
                                     void* data, size_t len)
 {
     return m_gdb_client.WriteFile (fd, offset, data, len);

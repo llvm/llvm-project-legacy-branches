@@ -1913,7 +1913,7 @@ GDBRemoteCommunicationClient::MakeDirectory (const std::string &path,
 
 }
 
-uint32_t
+lldb::user_id_t
 GDBRemoteCommunicationClient::OpenFile (const lldb_private::FileSpec& file_spec,
                                         uint32_t flags,
                                         mode_t mode)
@@ -1938,39 +1938,38 @@ GDBRemoteCommunicationClient::OpenFile (const lldb_private::FileSpec& file_spec,
     if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
     {
         if (response.GetChar() != 'F')
-            return UINT32_MAX;
-        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
+            return UINT64_MAX;
+        uint32_t retcode = response.GetHexMaxU64(false, UINT64_MAX);
         return retcode;
     }
-    return UINT32_MAX;
+    return UINT64_MAX;
 }
 
 bool
-GDBRemoteCommunicationClient::CloseFile (uint32_t fd)
+GDBRemoteCommunicationClient::CloseFile (lldb::user_id_t fd)
 {
     lldb_private::StreamString stream;
     stream.PutCString("vFile:close:");
-    stream.PutHex32(fd);
+    stream.PutHex64(fd);
     const char* packet = stream.GetData();
     int packet_len = stream.GetSize();
     StringExtractorGDBRemote response;
     if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
     {
         if (response.GetChar() != 'F')
-            return UINT32_MAX;
-        uint32_t retcode = response.GetHexMaxU32(false, UINT32_MAX);
-        return retcode;
+            return UINT64_MAX;
+        return true;
     }
-    return UINT32_MAX;
+    return UINT64_MAX;
 }
 
 uint32_t
-GDBRemoteCommunicationClient::ReadFile (uint32_t fd, uint64_t offset,
+GDBRemoteCommunicationClient::ReadFile (lldb::user_id_t fd, uint64_t offset,
                                         void *data_ptr, size_t len)
 {
     lldb_private::StreamString stream;
     stream.PutCString("vFile:pread:");
-    stream.PutHex32(fd);
+    stream.PutHex64(fd);
     stream.PutChar(',');
     stream.PutHex32(len);
     stream.PutChar(',');
@@ -2004,12 +2003,12 @@ GDBRemoteCommunicationClient::ReadFile (uint32_t fd, uint64_t offset,
 }
 
 uint32_t
-GDBRemoteCommunicationClient::WriteFile (uint32_t fd, uint64_t offset,
+GDBRemoteCommunicationClient::WriteFile (lldb::user_id_t fd, uint64_t offset,
                                          void* data, size_t len)
 {
     lldb_private::StreamGDBRemote stream;
     stream.PutCString("vFile:pwrite:");
-    stream.PutHex32(fd);
+    stream.PutHex64(fd);
     stream.PutChar(',');
     stream.PutHex32(offset);
     stream.PutChar(',');

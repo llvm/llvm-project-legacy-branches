@@ -1275,14 +1275,14 @@ Host::MakeDirectory (const char* path, mode_t mode)
 }
 #endif
 
-typedef std::map<uint32_t, lldb::FileSP> FDToFileMap;
+typedef std::map<lldb::user_id_t, lldb::FileSP> FDToFileMap;
 FDToFileMap& GetFDToFileMap()
 {
     static FDToFileMap g_fd2filemap;
     return g_fd2filemap;
 }
 
-uint32_t
+lldb::user_id_t
 Host::OpenFile (const FileSpec& file_spec,
                 uint32_t flags,
                 mode_t mode)
@@ -1296,16 +1296,16 @@ Host::OpenFile (const FileSpec& file_spec,
     }
     FileSP file_sp(new File(path.c_str(),flags,mode));
     if (file_sp->IsValid() == false)
-        return UINT32_MAX;
+        return UINT64_MAX;
     uint32_t fd = file_sp->GetDescriptor();
     GetFDToFileMap()[fd] = file_sp;
     return fd;
 }
 
 bool
-Host::CloseFile (uint32_t fd)
+Host::CloseFile (lldb::user_id_t fd)
 {
-    if (fd == UINT32_MAX)
+    if (fd == UINT64_MAX)
         return false;
     FDToFileMap::iterator i = GetFDToFileMap().find(fd),
     end = GetFDToFileMap().end();
@@ -1320,9 +1320,9 @@ Host::CloseFile (uint32_t fd)
 }
 
 uint32_t
-Host::WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len)
+Host::WriteFile (lldb::user_id_t fd, uint64_t offset, void* data, size_t data_len)
 {
-    if (fd == UINT32_MAX)
+    if (fd == UINT64_MAX)
         return false;
     FDToFileMap::iterator i = GetFDToFileMap().find(fd),
     end = GetFDToFileMap().end();
@@ -1343,9 +1343,9 @@ Host::WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len)
 }
 
 uint32_t
-Host::ReadFile (uint32_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
+Host::ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
 {
-    if (fd == UINT32_MAX)
+    if (fd == UINT64_MAX)
         return false;
     FDToFileMap::iterator i = GetFDToFileMap().find(fd),
     end = GetFDToFileMap().end();

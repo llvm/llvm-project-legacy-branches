@@ -176,7 +176,7 @@ PlatformMacOSX::MakeDirectory (const std::string &path,
     return Platform::MakeDirectory(path,mode);
 }
 
-uint32_t
+lldb::user_id_t
 PlatformMacOSX::OpenFile (const FileSpec& file_spec,
           uint32_t flags,
           mode_t mode)
@@ -191,7 +191,7 @@ PlatformMacOSX::OpenFile (const FileSpec& file_spec,
 }
 
 bool
-PlatformMacOSX::CloseFile (uint32_t fd)
+PlatformMacOSX::CloseFile (lldb::user_id_t fd)
 {
     if (IsHost())
     {
@@ -203,7 +203,7 @@ PlatformMacOSX::CloseFile (uint32_t fd)
 }
 
 uint32_t
-PlatformMacOSX::ReadFile (uint32_t fd, uint64_t offset,
+PlatformMacOSX::ReadFile (lldb::user_id_t fd, uint64_t offset,
                           void *data_ptr, size_t len)
 {
     if (IsHost())
@@ -216,7 +216,7 @@ PlatformMacOSX::ReadFile (uint32_t fd, uint64_t offset,
 }
 
 uint32_t
-PlatformMacOSX::WriteFile (uint32_t fd, uint64_t offset,
+PlatformMacOSX::WriteFile (lldb::user_id_t fd, uint64_t offset,
                            void* data, size_t len)
 {
     if (IsHost())

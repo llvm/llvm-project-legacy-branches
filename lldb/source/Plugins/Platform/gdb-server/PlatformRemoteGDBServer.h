@@ -148,20 +148,20 @@ public:
     MakeDirectory (const std::string &path,
                    mode_t mode);
     
-    virtual uint32_t
+    virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,
               mode_t mode);
     
     virtual bool
-    CloseFile (uint32_t fd);
+    CloseFile (lldb::user_id_t fd);
     
     virtual uint32_t
-    ReadFile (uint32_t fd, uint64_t offset,
+    ReadFile (lldb::user_id_t fd, uint64_t offset,
               void *data_ptr, size_t len);
     
     virtual uint32_t
-    WriteFile (uint32_t fd, uint64_t offset,
+    WriteFile (lldb::user_id_t fd, uint64_t offset,
                void* data, size_t len);
     
     virtual lldb_private::Error

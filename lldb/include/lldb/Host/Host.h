@@ -458,19 +458,19 @@ public:
     static uint32_t
     MakeDirectory (const char* path, mode_t mode);
     
-    static uint32_t
+    static lldb::user_id_t
     OpenFile (const FileSpec& file_spec,
               uint32_t flags,
               mode_t mode);
     
     static bool
-    CloseFile (uint32_t fd);
+    CloseFile (lldb::user_id_t fd);
     
     static uint32_t
-    WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len);
+    WriteFile (lldb::user_id_t fd, uint64_t offset, void* data, size_t data_len);
     
     static uint32_t
-    ReadFile (uint32_t fd, uint64_t offset, void* data_ptr, size_t len_wanted);
+    ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted);
 };
 
 } // namespace lldb_private
