@@ -328,7 +328,10 @@ public:
             std::string cmd_line;
             args.GetCommandString(cmd_line);
             // TODO: make permissions safer
-            uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),0x0200 | 0x0002, 0000700 | 0000070 | 0000007);
+            uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),
+                                                     File::eOpenOptionRead | File::eOpenOptionWrite |
+                                                     File::eOpenOptionAppend | File::eOpenOptionCanCreate,
+                                                     0000700 | 0000070 | 0000007);
             result.AppendMessageWithFormat("Status = %d\n",retcode);
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }

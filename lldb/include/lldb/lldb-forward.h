@@ -102,6 +102,7 @@ class   ExecutionContext;
 class   ExecutionContextRef;
 class   ExecutionContextRefLocker;
 class   ExecutionContextScope;
+class   File;
 class   FileSpec;
 class   FileSpecList;
 class   Flags;
@@ -269,6 +270,7 @@ namespace lldb {
     typedef STD_SHARED_PTR(lldb_private::Event) EventSP;
     typedef STD_SHARED_PTR(lldb_private::ExecutionContextRef) ExecutionContextRefSP;
     typedef STD_SHARED_PTR(lldb_private::TypeCategoryImpl) TypeCategoryImplSP;
+    typedef STD_SHARED_PTR(lldb_private::File) FileSP;
     typedef STD_SHARED_PTR(lldb_private::Function) FunctionSP;
     typedef STD_SHARED_PTR(lldb_private::InlineFunctionInfo) InlineFunctionInfoSP;
     typedef STD_SHARED_PTR(lldb_private::InputReader) InputReaderSP;

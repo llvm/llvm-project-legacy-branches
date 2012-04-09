@@ -13,8 +13,11 @@
 
 #include <stdarg.h>
 
+#include <map>
+
 #include "lldb/lldb-private.h"
 #include "lldb/Core/StringList.h"
+#include "lldb/Host/File.h"
 
 namespace lldb_private {
 

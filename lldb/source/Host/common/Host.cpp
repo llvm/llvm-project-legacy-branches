@@ -1273,31 +1273,95 @@ Host::MakeDirectory (const char* path, mode_t mode)
 {
     return UINT32_MAX;
 }
+#endif
+
+typedef std::map<uint32_t, lldb::FileSP> FDToFileMap;
+FDToFileMap& GetFDToFileMap()
+{
+    static FDToFileMap g_fd2filemap;
+    return g_fd2filemap;
+}
 
 uint32_t
 Host::OpenFile (const FileSpec& file_spec,
                 uint32_t flags,
                 mode_t mode)
 {
-    return UINT32_MAX;
+    std::string path(512, ' ');
+    uint32_t len = file_spec.GetPath(&path[0], 512);
+    if (len >= 512)
+    {
+        path = std::string(len+1,' ');
+        len = file_spec.GetPath(&path[0], len);
+    }
+    FileSP file_sp(new File(path.c_str(),flags,mode));
+    if (file_sp->IsValid() == false)
+        return UINT32_MAX;
+    uint32_t fd = file_sp->GetDescriptor();
+    GetFDToFileMap()[fd] = file_sp;
+    return fd;
 }
 
 bool
 Host::CloseFile (uint32_t fd)
 {
-    return false;
+    if (fd == UINT32_MAX)
+        return false;
+    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
+    end = GetFDToFileMap().end();
+    if (i == end)
+        return false;
+    FileSP file_sp = i->second;
+    Error err;
+    if (file_sp)
+        err = file_sp->Close();
+    GetFDToFileMap().erase(i);
+    return err.Success();
 }
 
 uint32_t
 Host::WriteFile (uint32_t fd, uint64_t offset, void* data, size_t data_len)
 {
-    return UINT32_MAX;
+    if (fd == UINT32_MAX)
+        return false;
+    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
+    end = GetFDToFileMap().end();
+    if (i == end)
+        return false;
+    FileSP file_sp = i->second;
+    off_t offset_ = offset;
+    Error err = file_sp->SeekFromStart(offset_);
+    if (err.Fail())
+        return 0;
+    if (!file_sp)
+        return 0;
+    size_t data_len_ = data_len;
+    err = file_sp->Write(data,data_len_);
+    if (err.Fail())
+        return 0;
+    return data_len_;
 }
 
 uint32_t
-Host::ReadFile (uint32_t fd, uint64_t offset, uint8_t* data_ptr, size_t len_wanted)
+Host::ReadFile (uint32_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
 {
-    return UINT32_MAX;
+    if (fd == UINT32_MAX)
+        return false;
+    FDToFileMap::iterator i = GetFDToFileMap().find(fd),
+    end = GetFDToFileMap().end();
+    if (i == end)
+        return false;
+    FileSP file_sp = i->second;
+    off_t offset_ = offset;
+    Error err = file_sp->SeekFromStart(offset_);
+    if (err.Fail())
+        return 0;
+    if (!file_sp)
+        return 0;
+    size_t len_wanted_ = len_wanted;
+    err = file_sp->Read(data_ptr,len_wanted_);
+    if (err.Fail())
+        return 0;
+    return len_wanted_;
 }
 
-#endif
