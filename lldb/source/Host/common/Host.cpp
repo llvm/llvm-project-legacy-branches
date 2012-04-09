@@ -1287,7 +1287,7 @@ Host::OpenFile (const FileSpec& file_spec,
                 uint32_t flags,
                 mode_t mode)
 {
-    std::string path(512, ' ');
+    std::string path(512, 0);
     uint32_t len = file_spec.GetPath(&path[0], 512);
     if (len >= 512)
     {

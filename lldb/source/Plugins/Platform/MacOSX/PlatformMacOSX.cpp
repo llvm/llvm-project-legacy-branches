@@ -14,10 +14,14 @@
 #include <sys/sysctl.h>
 
 // C++ Includes
+
+#include <sstream>
+
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/Error.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
+#include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/PluginManager.h"
@@ -234,5 +238,85 @@ PlatformMacOSX::PutFile (const lldb_private::FileSpec& source,
                          uint32_t uid,
                          uint32_t gid)
 {
+#define PUTFILE_CHUNK_SIZE 1024
+    if (IsHost())
+    {
+        if (FileSpec::Equal(source, destination, true))
+            return Error();
+        // cp src dst
+        // chown uid:gid dst
+        std::string src_path(512, 0);
+        uint32_t len = source.GetPath(&src_path[0], 512);
+        if (len >= 512)
+        {
+            src_path = std::string(len+1,0);
+            len = source.GetPath(&src_path[0], len);
+        }
+        std::string dst_path(512, 0);
+        len = destination.GetPath(&dst_path[0], 512);
+        if (len >= 512)
+        {
+            src_path = std::string(len+1,0);
+            len = destination.GetPath(&dst_path[0], len);
+        }
+        std::stringstream cp_command("cp ");
+        cp_command << src_path << ' ' << dst_path;
+        if (RunShellCommand(cp_command.str()) != 0)
+            return Error("unable to perform copy");
+        if (uid == UINT32_MAX && gid == UINT32_MAX)
+            return Error();
+        std::stringstream chown_command("chown ");
+        if (uid != UINT32_MAX)
+            chown_command << uid;
+        if (gid != UINT32_MAX)
+            chown_command << ':' << gid;
+        chown_command << ' ' << dst_path;
+        if (RunShellCommand(chown_command.str()) != 0)
+            return Error("unable to perform chown");
+        return Error();
+    }
+    if (IsRemote() && m_remote_platform_sp)
+    {
+        // open
+        // read, write, read, write, ...
+        // close
+        // chown uid:gid dst
+        File source_file(source, File::eOpenOptionRead, File::ePermissionsUserRW);
+        if (!source_file.IsValid())
+            return Error("unable to open source file");
+        lldb::user_id_t dest_file = OpenFile(destination, File::eOpenOptionCanCreate | File::eOpenOptionWrite | File::eOpenOptionTruncate,
+            File::ePermissionsUserRWX | File::ePermissionsGroupRX | File::ePermissionsWorldRX);
+        if (dest_file == UINT64_MAX)
+            return Error("unable to open target file");
+        lldb::DataBufferSP buffer_sp(new DataBufferHeap(PUTFILE_CHUNK_SIZE, 0));
+        Error err;
+        uint64_t offset = 0;
+        while (err.Success())
+        {
+            size_t read_data = PUTFILE_CHUNK_SIZE;
+            err = source_file.Read(buffer_sp->GetBytes(), read_data);
+            if (read_data)
+            {
+                WriteFile(dest_file, offset, buffer_sp->GetBytes(), read_data);
+                offset += read_data;
+            }
+            else
+                break;
+        }
+        CloseFile(dest_file);
+        if (uid == UINT32_MAX && gid == UINT32_MAX)
+            return Error();
+        std::string dst_path;
+        destination.GetPath(dst_path);
+        std::stringstream chown_command("chown ");
+        if (uid != UINT32_MAX)
+            chown_command << uid;
+        if (gid != UINT32_MAX)
+            chown_command << ':' << gid;
+        chown_command << ' ' << dst_path;
+        if (RunShellCommand(chown_command.str()) != 0)
+            return Error("unable to perform chown");
+        return Error();
+    }
     return Platform::PutFile(source,destination,uid,gid);
 }

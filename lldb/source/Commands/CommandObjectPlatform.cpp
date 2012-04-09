@@ -512,7 +512,7 @@ CommandObjectPlatformFRead::CommandOptions::g_option_table[] =
 
 
 //----------------------------------------------------------------------
-// "platform fread"
+// "platform fwrite"
 //----------------------------------------------------------------------
 class CommandObjectPlatformFWrite : public CommandObject
 {
@@ -629,6 +629,49 @@ CommandObjectPlatformFWrite::CommandOptions::g_option_table[] =
     {   LLDB_OPT_SET_1, false, "offset"           , 'o', required_argument, NULL, 0, eArgTypeIndex        , "Offset into the file at which to start reading." },
     {   LLDB_OPT_SET_1, false, "data"            , 'd', required_argument, NULL, 0, eArgTypeValue        , "Text to write to the file." },
     {  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+};
+
+//----------------------------------------------------------------------
+// "platform put-file"
+//----------------------------------------------------------------------
+class CommandObjectPlatformPutFile : public CommandObject
+{
+public:
+    CommandObjectPlatformPutFile (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform put-file",
+                   "Transfer a file from this system to the remote end.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformPutFile ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        const char* src = args.GetArgumentAtIndex(0);
+        const char* dst = args.GetArgumentAtIndex(1);
+
+        FileSpec src_fs(src, true);
+        FileSpec dst_fs(dst, false);
+        
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            platform_sp->PutFile(src_fs, dst_fs);
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
 };
 
 //----------------------------------------------------------------------
@@ -1306,6 +1349,7 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("fclose", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
     LoadSubCommand ("fread", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
     LoadSubCommand ("fwrite", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+    LoadSubCommand ("put-file", CommandObjectSP (new CommandObjectPlatformPutFile  (interpreter)));
 #endif
 }
 

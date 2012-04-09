@@ -117,6 +117,27 @@ public:
           uint32_t options,
           uint32_t permissions = ePermissionsDefault);
 
+    //------------------------------------------------------------------
+    /// Constructor with FileSpec.
+    ///
+    /// Takes a FileSpec pointing to a file which can be just a filename, or a full
+    /// path. If \a path is not NULL or empty, this function will call
+    /// File::Open (const char *path, uint32_t options, uint32_t permissions).
+    ///
+    /// @param[in] path
+    ///     The FileSpec for this file.
+    ///
+    /// @param[in] options
+    ///     Options to use when opening (see File::OpenOptions)
+    ///
+    /// @param[in] permissions
+    ///     Options to use when opening (see File::Permissions)
+    ///
+    /// @see File::Open (const char *path, uint32_t options, uint32_t permissions)
+    //------------------------------------------------------------------
+    File (const FileSpec& filespec,
+          uint32_t options,
+          uint32_t permissions = ePermissionsDefault);
     
     File (int fd, bool tranfer_ownership) : 
         m_descriptor (fd),

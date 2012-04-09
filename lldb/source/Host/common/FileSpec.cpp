@@ -676,6 +676,34 @@ FileSpec::GetFilename() const
     return m_filename;
 }
 
+size_t
+FileSpec::GetPath (std::string& path) const
+{
+    const char *dirname = m_directory.GetCString();
+    const char *filename = m_filename.GetCString();
+    
+    uint32_t max_len = strlen(dirname) + strlen(filename) + 2;
+    
+    path.resize(max_len);
+        
+    if (dirname)
+    {
+        if (filename)
+            return ::snprintf (&path[0], max_len, "%s/%s", dirname, filename);
+        else
+            return ::snprintf (&path[0], max_len, "%s", dirname);
+    }
+    else if (filename)
+    {
+        return ::snprintf (&path[0], max_len, "%s", filename);
+    }
+    else
+    {
+        path.clear();
+        return 0;
+    }
+}
+
 //------------------------------------------------------------------
 // Extract the directory and path into a fixed buffer. This is
 // needed as the directory and path are stored in separate string

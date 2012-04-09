@@ -358,6 +358,22 @@ public:
     GetPath (char *path, size_t max_path_length) const;
 
     //------------------------------------------------------------------
+    /// Extract the full path to the file.
+    ///
+    /// Extract the directory and path into a std::string. This is
+    /// needed as the directory and path are stored in separate string
+    /// values.
+    ///
+    /// @param[out] path
+    ///     The buffer in which to place the extracted full path.
+    ///
+    /// @return
+    ///     Returns the number of characters that make up this path.
+    //------------------------------------------------------------------
+    size_t
+    GetPath (std::string& path) const;
+    
+    //------------------------------------------------------------------
     /// Extract the extension of the file.
     ///
     /// Returns a ConstString that represents the extension of the filename

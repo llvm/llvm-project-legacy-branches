@@ -79,6 +79,22 @@ File::File(const char *path, uint32_t options, uint32_t permissions) :
     Open (path, options, permissions);
 }
 
+File::File (const FileSpec& filespec,
+            uint32_t options,
+            uint32_t permissions) :
+    m_descriptor (kInvalidDescriptor),
+    m_stream (kInvalidStream),
+    m_options (0),
+    m_owned (false)
+{
+    if (filespec)
+    {
+        std::string path;
+        filespec.GetPath(path);
+        Open (path.c_str(), options, permissions);
+    }
+}
+
 File::File (const File &rhs) :
     m_descriptor (kInvalidDescriptor),
     m_stream (kInvalidStream),
