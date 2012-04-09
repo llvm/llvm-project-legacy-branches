@@ -497,6 +497,12 @@ namespace lldb_private {
                  uint32_t uid = UINT32_MAX,
                  uint32_t gid = UINT32_MAX);
                 
+        virtual Error
+        GetFile (const FileSpec& source,
+                 const FileSpec& destination,
+                 uint32_t uid = UINT32_MAX,
+                 uint32_t gid = UINT32_MAX);
+                
     protected:
         bool m_is_host;
         // Set to true when we are able to actually set the OS version while 
