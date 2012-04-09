@@ -640,10 +640,34 @@ public:
     CommandObjectPlatformGetFile (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
                    "platform get-file",
-                   "Get a file from the remote platform into the host platform.",
+                   "Upload a file from the remote end into the local host.",
                    NULL,
                    0)
     {
+        SetHelpLong(
+"Examples: \n\
+\n\
+    platform get-file /the/remote/file/path /the/local/file/path\n\
+    # Upload a file from the remote end with file path /the/remote/file/path to the local host.\n");
+
+        CommandArgumentEntry arg1, arg2;
+        CommandArgumentData file_arg_remote, file_arg_host;
+    
+        // Define the first (and only) variant of this arg.
+        file_arg_remote.arg_type = eArgTypeFilename;
+        file_arg_remote.arg_repetition = eArgRepeatPlain;
+        // There is only one variant this argument could be; put it into the argument entry.
+        arg1.push_back (file_arg_remote);
+        
+        // Define the second (and only) variant of this arg.
+        file_arg_host.arg_type = eArgTypeFilename;
+        file_arg_host.arg_repetition = eArgRepeatPlain;
+        // There is only one variant this argument could be; put it into the argument entry.
+        arg2.push_back (file_arg_host);
+
+        // Push the data for the first and the second arguments into the m_arguments vector.
+        m_arguments.push_back (arg1);
+        m_arguments.push_back (arg2);
     }
     
     virtual
