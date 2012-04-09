@@ -670,9 +670,7 @@ Platform::PutFile (const FileSpec& source,
 
 Error
 Platform::GetFile (const FileSpec& source,
-                   const FileSpec& destination,
-                   uint32_t uid,
-                   uint32_t gid)
+                   const FileSpec& destination)
 {
     Error error("unimplemented");
     return error;

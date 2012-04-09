@@ -632,6 +632,57 @@ CommandObjectPlatformFWrite::CommandOptions::g_option_table[] =
 };
 
 //----------------------------------------------------------------------
+// "platform get-file remote-file-path host-file-path"
+//----------------------------------------------------------------------
+class CommandObjectPlatformGetFile : public CommandObject
+{
+public:
+    CommandObjectPlatformGetFile (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform get-file",
+                   "Get a file from the remote platform into the host platform.",
+                   NULL,
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformGetFile ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string remote_file_path(args.GetArgumentAtIndex(0));
+            std::string host_file_path(args.GetArgumentAtIndex(1));
+            Error error = platform_sp->GetFile(FileSpec(remote_file_path.c_str(), false),
+                                               FileSpec(host_file_path.c_str(), false));
+            if (error.Success())
+            {
+                result.AppendMessageWithFormat("Successfully uploaded file from %s (remote) to %s (host)\n",
+                                               remote_file_path.c_str(), host_file_path.c_str());
+                result.SetStatus (eReturnStatusSuccessFinishResult);
+            }
+            else
+            {
+                result.AppendMessageWithFormat("Uploading failed: %s\n", error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
 // "platform put-file"
 //----------------------------------------------------------------------
 class CommandObjectPlatformPutFile : public CommandObject
@@ -1349,6 +1400,7 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("fclose", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
     LoadSubCommand ("fread", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
     LoadSubCommand ("fwrite", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+    LoadSubCommand ("get-file", CommandObjectSP (new CommandObjectPlatformGetFile  (interpreter)));
     LoadSubCommand ("put-file", CommandObjectSP (new CommandObjectPlatformPutFile  (interpreter)));
 #endif
 }

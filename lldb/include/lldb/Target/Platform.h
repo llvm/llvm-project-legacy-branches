@@ -499,9 +499,7 @@ namespace lldb_private {
                 
         virtual Error
         GetFile (const FileSpec& source,
-                 const FileSpec& destination,
-                 uint32_t uid = UINT32_MAX,
-                 uint32_t gid = UINT32_MAX);
+                 const FileSpec& destination);
                 
     protected:
         bool m_is_host;
