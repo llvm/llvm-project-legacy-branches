@@ -1323,22 +1323,22 @@ uint32_t
 Host::WriteFile (lldb::user_id_t fd, uint64_t offset, void* data, size_t data_len)
 {
     if (fd == UINT64_MAX)
-        return false;
+        return UINT32_MAX;
     FDToFileMap::iterator i = GetFDToFileMap().find(fd),
     end = GetFDToFileMap().end();
     if (i == end)
-        return false;
+        return UINT32_MAX;
     FileSP file_sp = i->second;
     off_t offset_ = offset;
     Error err = file_sp->SeekFromStart(offset_);
     if (err.Fail())
-        return 0;
+        return UINT32_MAX;
     if (!file_sp)
-        return 0;
+        return UINT32_MAX;
     size_t data_len_ = data_len;
     err = file_sp->Write(data,data_len_);
     if (err.Fail())
-        return 0;
+        return UINT32_MAX;
     return data_len_;
 }
 
@@ -1346,22 +1346,22 @@ uint32_t
 Host::ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted)
 {
     if (fd == UINT64_MAX)
-        return false;
+        return UINT32_MAX;
     FDToFileMap::iterator i = GetFDToFileMap().find(fd),
     end = GetFDToFileMap().end();
     if (i == end)
-        return false;
+        return UINT32_MAX;
     FileSP file_sp = i->second;
     off_t offset_ = offset;
     Error err = file_sp->SeekFromStart(offset_);
     if (err.Fail())
-        return 0;
+        return UINT32_MAX;
     if (!file_sp)
-        return 0;
+        return UINT32_MAX;
     size_t len_wanted_ = len_wanted;
     err = file_sp->Read(data_ptr,len_wanted_);
     if (err.Fail())
-        return 0;
+        return UINT32_MAX;
     return len_wanted_;
 }
 
