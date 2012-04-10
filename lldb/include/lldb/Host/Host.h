@@ -471,6 +471,9 @@ public:
     
     static uint32_t
     ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_wanted);
+
+    static lldb::user_id_t
+    GetFileSize (const FileSpec& file_spec);
 };
 
 } // namespace lldb_private

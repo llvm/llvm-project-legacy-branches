@@ -468,7 +468,7 @@ namespace lldb_private {
                   uint32_t flags,
                   mode_t mode)
         {
-            return UINT32_MAX;
+            return UINT64_MAX;
         }
         
         virtual bool

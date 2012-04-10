@@ -1365,3 +1365,9 @@ Host::ReadFile (lldb::user_id_t fd, uint64_t offset, void* data_ptr, size_t len_
     return len_wanted_;
 }
 
+lldb::user_id_t
+Host::GetFileSize (const FileSpec& file_spec)
+{
+    return file_spec.GetByteSize();
+}
+

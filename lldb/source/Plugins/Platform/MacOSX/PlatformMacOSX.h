@@ -94,6 +94,10 @@ public:
              uint32_t uid = UINT32_MAX,
              uint32_t gid = UINT32_MAX);
     
+    virtual lldb_private::Error
+    GetFile (const lldb_private::FileSpec& source,
+             const lldb_private::FileSpec& destination);
+                
     virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,

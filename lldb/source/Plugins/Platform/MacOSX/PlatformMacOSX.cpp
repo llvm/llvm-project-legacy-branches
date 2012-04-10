@@ -320,3 +320,71 @@ PlatformMacOSX::PutFile (const lldb_private::FileSpec& source,
     }
     return Platform::PutFile(source,destination,uid,gid);
 }
+
+lldb_private::Error
+PlatformMacOSX::GetFile (const lldb_private::FileSpec& source /* remote file path */,
+                         const lldb_private::FileSpec& destination /* local file path */)
+{
+#define GETFILE_CHUNK_SIZE 1024
+    if (IsHost())
+    {
+        if (FileSpec::Equal(source, destination, true))
+            return Error("local scenario->source and destination are the same file path: no operation performed");
+        // cp src dst
+        char src_path[PATH_MAX];
+        char dst_path[PATH_MAX];
+        if (!source.GetPath(src_path, sizeof(src_path)) || !destination.GetPath(dst_path, sizeof(dst_path)))
+        {
+            return Error("max path length exceeded?");
+        }
+        std::stringstream cp_command("cp ");
+        cp_command << src_path << ' ' << dst_path;
+        if (RunShellCommand(cp_command.str()) != 0)
+            return Error("unable to perform copy");
+        return Error();
+    }
+    else if (IsRemote() && m_remote_platform_sp)
+    {
+        // open src and dst
+        // read, read, read, ...
+        // close src
+        // write dst
+        // close dst
+        user_id_t fd_src = OpenFile(source, File::eOpenOptionRead, File::ePermissionsDefault);
+        user_id_t fd_dst = Host::OpenFile(destination,
+                                          File::eOpenOptionCanCreate|File::eOpenOptionWrite,
+                                          File::ePermissionsDefault);
+        if (fd_src == UINT64_MAX)
+            return Error("unable to open source file");
+        if (fd_dst == UINT64_MAX)
+            return Error("unable to open destination file");
+
+        lldb::DataBufferSP buffer_sp(new DataBufferHeap(GETFILE_CHUNK_SIZE, 0));
+        uint8_t *cursor = buffer_sp->GetBytes();
+        Error err;
+        uint64_t offset = 0;
+        while (err.Success())
+        {
+            user_id_t n_read = ReadFile(fd_src, offset, cursor, GETFILE_CHUNK_SIZE);
+            if (n_read == UINT32_MAX)
+                return Error("error during read operation");
+            // Break out of the loop once we reach end of file.
+            if (n_read == 0)
+                break;
+
+            if (!Host::WriteFile(fd_dst, offset, cursor, n_read))
+                return Error("unable to write to destination file");
+
+            offset += n_read;
+            cursor += n_read;
+
+        }
+        // Ignore the close error of src.
+        CloseFile(fd_src);
+        // And close the dst file descriptot.
+        if (!Host::CloseFile(fd_dst))
+            return Error("unable to close destination file");
+        return Error();
+    }
+    return Platform::GetFile(source,destination);
+}
