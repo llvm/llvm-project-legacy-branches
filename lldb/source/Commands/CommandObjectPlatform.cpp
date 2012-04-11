@@ -695,13 +695,13 @@ public:
                                                FileSpec(host_file_path.c_str(), false));
             if (error.Success())
             {
-                result.AppendMessageWithFormat("Successfully uploaded file from %s (remote) to %s (host)\n",
+                result.AppendMessageWithFormat("successfully get-file from %s (remote) to %s (host)\n",
                                                remote_file_path.c_str(), host_file_path.c_str());
                 result.SetStatus (eReturnStatusSuccessFinishResult);
             }
             else
             {
-                result.AppendMessageWithFormat("Uploading failed: %s\n", error.AsCString());
+                result.AppendMessageWithFormat("get-file failed: %s\n", error.AsCString());
                 result.SetStatus (eReturnStatusFailed);
             }
         }
