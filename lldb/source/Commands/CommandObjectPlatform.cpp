@@ -307,7 +307,7 @@ class CommandObjectPlatformFOpen : public CommandObject
 public:
     CommandObjectPlatformFOpen (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
-                   "platform fopen",
+                   "platform file open",
                    "Open a file on the remote end.",
                    NULL,
                    0)
@@ -352,7 +352,7 @@ class CommandObjectPlatformFClose : public CommandObject
 public:
     CommandObjectPlatformFClose (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
-                   "platform fclose",
+                   "platform file close",
                    "Close a file on the remote end.",
                    NULL,
                    0)
@@ -394,7 +394,7 @@ class CommandObjectPlatformFRead : public CommandObject
 public:
     CommandObjectPlatformFRead (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
-                   "platform fread",
+                   "platform file read",
                    "Read data from a file on the remote end.",
                    NULL,
                    0),
@@ -519,7 +519,7 @@ class CommandObjectPlatformFWrite : public CommandObject
 public:
     CommandObjectPlatformFWrite (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
-                   "platform fwrite",
+                   "platform file write",
                    "Write data to a file on the remote end.",
                    NULL,
                    0),
@@ -1493,6 +1493,37 @@ private:
     DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformProcess);
 };
 
+class CommandObjectPlatformFile : public CommandObjectMultiword
+{
+public:
+    //------------------------------------------------------------------
+    // Constructors and Destructors
+    //------------------------------------------------------------------
+    CommandObjectPlatformFile (CommandInterpreter &interpreter) :
+    CommandObjectMultiword (interpreter,
+                            "platform file",
+                            "A set of commands to manage file access through a platform",
+                            "platform process [attach|launch|list] ...")
+    {
+        LoadSubCommand ("open", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
+        LoadSubCommand ("close", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
+        LoadSubCommand ("read", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
+        LoadSubCommand ("write", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+        
+    }
+    
+    virtual
+    ~CommandObjectPlatformFile ()
+    {
+    }
+    
+private:
+    //------------------------------------------------------------------
+    // For CommandObjectPlatform only
+    //------------------------------------------------------------------
+    DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformFile);
+};
+
 //----------------------------------------------------------------------
 // CommandObjectPlatform constructor
 //----------------------------------------------------------------------
@@ -1511,10 +1542,7 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
 #ifdef LLDB_CONFIGURATION_DEBUG
     LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
     LoadSubCommand ("mkdir", CommandObjectSP (new CommandObjectPlatformMkDir  (interpreter)));
-    LoadSubCommand ("fopen", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
-    LoadSubCommand ("fclose", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
-    LoadSubCommand ("fread", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
-    LoadSubCommand ("fwrite", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+    LoadSubCommand ("file", CommandObjectSP (new CommandObjectPlatformFile  (interpreter)));
     LoadSubCommand ("get-file", CommandObjectSP (new CommandObjectPlatformGetFile  (interpreter)));
     LoadSubCommand ("get-size", CommandObjectSP (new CommandObjectPlatformGetSize  (interpreter)));
     LoadSubCommand ("put-file", CommandObjectSP (new CommandObjectPlatformPutFile  (interpreter)));

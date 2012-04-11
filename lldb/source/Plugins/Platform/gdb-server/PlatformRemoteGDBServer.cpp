@@ -96,7 +96,7 @@ PlatformRemoteGDBServer::ResolveExecutable (const FileSpec &exe_file,
                                             const FileSpecList *module_search_paths_ptr)
 {
     Error error;
-    error.SetErrorString ("PlatformRemoteGDBServer::ResolveExecutable() is unimplemented");
+    //error.SetErrorString ("PlatformRemoteGDBServer::ResolveExecutable() is unimplemented");
     return error;
 }
 
