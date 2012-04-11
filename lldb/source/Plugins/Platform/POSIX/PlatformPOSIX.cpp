@@ -69,6 +69,14 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_i
             m_rsync_args.assign(option_arg);
             break;
             
+        case 's':
+            m_ssh = true;
+            break;
+            
+        case 'S':
+            m_ssh_args.assign(option_arg);
+            break;
+            
         default:
             error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
@@ -121,8 +129,9 @@ PlatformPOSIX::RunShellCommand (const std::string &command_line)
         {
             // run the command over SSH
             StreamString command;
-            command.Printf("ssh %s %s",
+            command.Printf("ssh %s %s %s",
                            GetSSHArgs(),
+                           GetHostname(),
                            command_line.c_str());
             return m_remote_platform_sp->RunShellCommand(command.GetData());
         }
