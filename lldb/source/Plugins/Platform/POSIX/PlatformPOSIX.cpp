@@ -359,9 +359,8 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
     else if (IsRemote() && m_remote_platform_sp)
     {
         // open src and dst
-        // read, read, read, ...
+        // read/write, read/write, read/write, ...
         // close src
-        // write dst
         // close dst
         user_id_t fd_src = OpenFile(source, File::eOpenOptionRead, File::ePermissionsDefault);
         user_id_t fd_dst = Host::OpenFile(destination,
