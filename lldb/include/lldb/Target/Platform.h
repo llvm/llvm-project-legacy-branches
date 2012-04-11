@@ -514,9 +514,9 @@ namespace lldb_private {
         }
         
         virtual void
-        SetSupportsRSync(bool rsync)
+        SetSupportsRSync(bool flag)
         {
-            m_supports_rsync = rsync;
+            m_supports_rsync = flag;
         }
         
         virtual const char*
@@ -538,9 +538,9 @@ namespace lldb_private {
         }
         
         virtual void
-        SetSupportsSSH(bool rsync)
+        SetSupportsSSH(bool flag)
         {
-            m_supports_ssh = rsync;
+            m_supports_ssh = flag;
         }
         
         virtual const char*
