@@ -320,9 +320,9 @@ PlatformRemoteiOS::GetDeviceSupportDirectoryForOSVersion()
 }
 
 Error
-PlatformRemoteiOS::GetFile (const FileSpec &platform_file, 
-                            const UUID *uuid_ptr,
-                            FileSpec &local_file)
+PlatformRemoteiOS::GetSymbolFile (const FileSpec &platform_file, 
+                                  const UUID *uuid_ptr,
+                                  FileSpec &local_file)
 {
     Error error;
     char platform_file_path[PATH_MAX];
@@ -392,7 +392,7 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
     const FileSpec &platform_file = module_spec.GetFileSpec();
 
     FileSpec local_file;
-    Error error (GetFile (platform_file, module_spec.GetUUIDPtr(), local_file));
+    Error error (GetSymbolFile (platform_file, module_spec.GetUUIDPtr(), local_file));
     if (error.Success())
     {
         error = ResolveExecutable (local_file, module_spec.GetArchitecture(), module_sp, module_search_paths_ptr);

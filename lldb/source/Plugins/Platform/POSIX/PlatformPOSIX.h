@@ -56,6 +56,13 @@ public:
     WriteFile (lldb::user_id_t fd, uint64_t offset,
                void* data, size_t len);
     
+    virtual lldb::user_id_t
+    GetFileSize (const lldb_private::FileSpec& file_spec);
+
+    virtual lldb_private::Error
+    GetFile (const lldb_private::FileSpec& source,
+             const lldb_private::FileSpec& destination);
+    
     virtual uint32_t
     RunShellCommand (const std::string &command_line);
     

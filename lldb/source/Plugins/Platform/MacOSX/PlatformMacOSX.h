@@ -77,16 +77,9 @@ public:
     }
 
     lldb_private::Error
-    GetFile (const lldb_private::FileSpec &platform_file, 
-             const lldb_private::UUID *uuid_ptr,
-             lldb_private::FileSpec &local_file);
-    
-    lldb::user_id_t
-    GetFileSize (const lldb_private::FileSpec& file_spec);
-
-    lldb_private::Error
-    GetFile (const lldb_private::FileSpec& source,
-             const lldb_private::FileSpec& destination);
+    GetSymbolFile (const lldb_private::FileSpec &platform_file, 
+                   const lldb_private::UUID *uuid_ptr,
+                   lldb_private::FileSpec &local_file);
     
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 
