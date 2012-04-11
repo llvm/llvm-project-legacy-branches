@@ -148,6 +148,7 @@ StringExtractorGDBRemote::GetServerPacketType () const
                 else if (PACKET_STARTS_WITH("vFile:close:"))         return eServerPacketType_vFile_Close;
                 else if (PACKET_STARTS_WITH("vFile:pread"))          return eServerPacketType_vFile_pRead;
                 else if (PACKET_STARTS_WITH("vFile:pwrite"))         return eServerPacketType_vFile_pWrite;
+                else if (PACKET_STARTS_WITH("vFile:size"))           return eServerPacketType_vFile_Size;
             }
             break;
     }

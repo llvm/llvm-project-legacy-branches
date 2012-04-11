@@ -156,6 +156,9 @@ public:
     virtual bool
     CloseFile (lldb::user_id_t fd);
     
+    virtual lldb::user_id_t
+    GetFileSize (const lldb_private::FileSpec& file_spec);
+
     virtual uint32_t
     ReadFile (lldb::user_id_t fd, uint64_t offset,
               void *data_ptr, size_t len);

@@ -678,6 +678,14 @@ public:
     virtual bool
     Execute (Args& args, CommandReturnObject &result)
     {
+        // If the number of arguments is incorrect, issue an error message.
+        if (args.GetArgumentCount() != 2)
+        {
+            result.GetErrorStream().Printf("error: required arguments missing; specify both the source and destination file paths\n");
+            result.SetStatus(eReturnStatusFailed);
+            return false;
+        }
+
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
         {
@@ -694,6 +702,79 @@ public:
             else
             {
                 result.AppendMessageWithFormat("Uploading failed: %s\n", error.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
+        }
+        else
+        {
+            result.AppendError ("no platform currently selected\n");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
+// "platform get-size remote-file-path"
+//----------------------------------------------------------------------
+class CommandObjectPlatformGetSize : public CommandObject
+{
+public:
+    CommandObjectPlatformGetSize (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform get-size",
+                   "Get the file size from the remote end.",
+                   NULL,
+                   0)
+    {
+        SetHelpLong(
+"Examples: \n\
+\n\
+    platform get-size /the/remote/file/path\n\
+    # Get the file size from the remote end with path /the/remote/file/path.\n");
+
+        CommandArgumentEntry arg1;
+        CommandArgumentData file_arg_remote;
+    
+        // Define the first (and only) variant of this arg.
+        file_arg_remote.arg_type = eArgTypeFilename;
+        file_arg_remote.arg_repetition = eArgRepeatPlain;
+        // There is only one variant this argument could be; put it into the argument entry.
+        arg1.push_back (file_arg_remote);
+        
+        // Push the data for the first argument into the m_arguments vector.
+        m_arguments.push_back (arg1);
+    }
+    
+    virtual
+    ~CommandObjectPlatformGetSize ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        // If the number of arguments is incorrect, issue an error message.
+        if (args.GetArgumentCount() != 1)
+        {
+            result.GetErrorStream().Printf("error: required argument missing; specify the source file path as the only argument\n");
+            result.SetStatus(eReturnStatusFailed);
+            return false;
+        }
+
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            std::string remote_file_path(args.GetArgumentAtIndex(0));
+            user_id_t size = platform_sp->GetFileSize(FileSpec(remote_file_path.c_str(), false));
+            if (size != UINT64_MAX)
+            {
+                result.AppendMessageWithFormat("File size of %s (remote): %llu\n", remote_file_path.c_str(), size);
+                result.SetStatus (eReturnStatusSuccessFinishResult);
+            }
+            else
+            {
+                result.AppendMessageWithFormat("Eroor getting file size of %s (remote)\n", remote_file_path.c_str());
                 result.SetStatus (eReturnStatusFailed);
             }
         }
@@ -1425,6 +1506,7 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("fread", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
     LoadSubCommand ("fwrite", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
     LoadSubCommand ("get-file", CommandObjectSP (new CommandObjectPlatformGetFile  (interpreter)));
+    LoadSubCommand ("get-size", CommandObjectSP (new CommandObjectPlatformGetSize  (interpreter)));
     LoadSubCommand ("put-file", CommandObjectSP (new CommandObjectPlatformPutFile  (interpreter)));
 #endif
 }

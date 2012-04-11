@@ -179,6 +179,9 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
                 
             case StringExtractorGDBRemote::eServerPacketType_vFile_pWrite:
                 return Handle_vFile_pWrite (packet);
+
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Size:
+                return Handle_vFile_Size (packet);
         }
         return true;
     }
@@ -985,6 +988,29 @@ GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &pac
     {
         response.PutChar(',');
         response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
+    }
+    SendPacket(response);
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_Size (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:size:"));
+    std::string path;
+    packet.GetHexByteStringTerminatedBy(path,',');
+    if (path.size() == 0)
+        return false;
+    if (packet.GetChar() != ',')
+        return false;
+    lldb::user_id_t retcode = Host::GetFileSize(FileSpec(path.c_str(), false));
+    StreamString response;
+    response.PutChar('F');
+    response.PutHex64(retcode);
+    if (retcode == UINT64_MAX)
+    {
+        response.PutChar(',');
+        response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
     SendPacket(response);
     return true;

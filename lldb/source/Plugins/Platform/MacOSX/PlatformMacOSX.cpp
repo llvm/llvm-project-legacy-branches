@@ -206,6 +206,18 @@ PlatformMacOSX::CloseFile (lldb::user_id_t fd)
     return Platform::CloseFile(fd);
 }
 
+lldb::user_id_t
+PlatformMacOSX::GetFileSize (const FileSpec& file_spec)
+{
+    if (IsHost())
+    {
+        return Host::GetFileSize(file_spec);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->GetFileSize(file_spec);
+    return Platform::GetFileSize(file_spec);
+}
+
 uint32_t
 PlatformMacOSX::ReadFile (lldb::user_id_t fd, uint64_t offset,
                           void *data_ptr, size_t len)

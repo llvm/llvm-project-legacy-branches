@@ -432,6 +432,12 @@ PlatformRemoteGDBServer::CloseFile (lldb::user_id_t fd)
     return m_gdb_client.CloseFile (fd);
 }
 
+lldb::user_id_t
+PlatformRemoteGDBServer::GetFileSize (const lldb_private::FileSpec& source)
+{
+    return m_gdb_client.GetFileSize(source);
+}
+
 uint32_t
 PlatformRemoteGDBServer::ReadFile (lldb::user_id_t fd, uint64_t offset,
                                    void *data_ptr, size_t len)

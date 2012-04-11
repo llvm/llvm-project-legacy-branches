@@ -1982,6 +1982,34 @@ GDBRemoteCommunicationClient::CloseFile (lldb::user_id_t fd)
     return UINT64_MAX;
 }
 
+// Extension of host I/O packets to get the file size.
+lldb::user_id_t
+GDBRemoteCommunicationClient::GetFileSize (const lldb_private::FileSpec& file_spec)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:size:");
+    std::string path(512, ' ');
+    uint32_t len = file_spec.GetPath(&path[0], 512);
+    if (len >= 512)
+    {
+        path = std::string(len+1,' ');
+        len = file_spec.GetPath(&path[0], len);
+    }
+    stream.PutCStringAsRawHex8(path.c_str());
+    stream.PutChar(',');
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return UINT64_MAX;
+        uint32_t retcode = response.GetHexMaxU64(false, UINT64_MAX);
+        return retcode;
+    }
+    return UINT64_MAX;
+}
+
 uint32_t
 GDBRemoteCommunicationClient::ReadFile (lldb::user_id_t fd, uint64_t offset,
                                         void *data_ptr, size_t len)

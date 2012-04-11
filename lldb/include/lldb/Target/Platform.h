@@ -477,6 +477,12 @@ namespace lldb_private {
             return false;
         }
         
+        virtual lldb::user_id_t
+        GetFileSize (const FileSpec& file_spec)
+        {
+            return UINT64_MAX;
+        }
+
         virtual uint32_t
         ReadFile (lldb::user_id_t fd, uint64_t offset,
                   void *data_ptr, size_t len)

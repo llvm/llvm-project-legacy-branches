@@ -154,6 +154,10 @@ protected:
 
     bool
     Handle_vFile_pWrite (StringExtractorGDBRemote &packet);
+
+    bool
+    Handle_vFile_Size (StringExtractorGDBRemote &packet);
+
 private:
     //------------------------------------------------------------------
     // For GDBRemoteCommunicationServer only
