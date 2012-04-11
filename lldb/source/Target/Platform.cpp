@@ -188,7 +188,8 @@ Platform::Platform (bool is_host) :
     m_uid_map(),
     m_gid_map(),
     m_max_uid_name_len (0),
-    m_max_gid_name_len (0)
+    m_max_gid_name_len (0),
+    m_supports_rsync(false)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)

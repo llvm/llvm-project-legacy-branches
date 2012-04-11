@@ -506,6 +506,60 @@ namespace lldb_private {
         virtual Error
         GetFile (const FileSpec& source,
                  const FileSpec& destination);
+        
+        virtual bool
+        GetSupportsRSync ()
+        {
+            return m_supports_rsync;
+        }
+        
+        virtual void
+        SetSupportsRSync(bool rsync)
+        {
+            m_supports_rsync = rsync;
+        }
+        
+        virtual const char*
+        GetRSyncArgs ()
+        {
+            return m_rsync_args.c_str();
+        }
+        
+        virtual void
+        SetRSyncArgs (const char* args)
+        {
+            m_rsync_args.assign(args);
+        }
+        
+        virtual bool
+        GetSupportsSSH ()
+        {
+            return m_supports_ssh;
+        }
+        
+        virtual void
+        SetSupportsSSH(bool rsync)
+        {
+            m_supports_ssh = rsync;
+        }
+        
+        virtual const char*
+        GetSSHArgs ()
+        {
+            return m_ssh_args.c_str();
+        }
+        
+        virtual void
+        SetSSHArgs (const char* args)
+        {
+            m_ssh_args.assign(args);
+        }
+        
+        virtual Options *
+        GetConnectionOptions (CommandInterpreter& interpreter)
+        {
+            return NULL;
+        }
                 
     protected:
         bool m_is_host;
@@ -531,7 +585,11 @@ namespace lldb_private {
         IDToNameMap m_gid_map;
         uint32_t m_max_uid_name_len;
         uint32_t m_max_gid_name_len;
-        
+        bool m_supports_rsync;
+        std::string m_rsync_args;
+        bool m_supports_ssh;
+        std::string m_ssh_args;
+
         const char *
         GetCachedUserName (uint32_t uid)
         {

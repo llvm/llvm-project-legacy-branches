@@ -469,7 +469,8 @@
 		941BCC8214E48C4000BB969C /* SBTypeSynthetic.h in Headers */ = {isa = PBXBuildFile; fileRef = 9461568914E355F2003A195C /* SBTypeSynthetic.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		9443B122140C18C40013457C /* SBData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9443B121140C18C10013457C /* SBData.cpp */; };
 		9443B123140C26AB0013457C /* SBData.h in Headers */ = {isa = PBXBuildFile; fileRef = 9443B120140C18A90013457C /* SBData.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		945E8D7E152F6AA80019BCCD /* StreamGDBRemote.h in Headers */ = {isa = PBXBuildFile; fileRef = 945E8D7D152F6AA80019BCCD /* StreamGDBRemote.h */; };
+		945759671534941F005A9070 /* PlatformPOSIX.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 945759651534941F005A9070 /* PlatformPOSIX.cpp */; };
+		945759681534941F005A9070 /* PlatformPOSIX.h in Headers */ = {isa = PBXBuildFile; fileRef = 945759661534941F005A9070 /* PlatformPOSIX.h */; };
 		945E8D80152F6AB40019BCCD /* StreamGDBRemote.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 945E8D7F152F6AB40019BCCD /* StreamGDBRemote.cpp */; };
 		94611EB213CCA4A4003A22AF /* RefCounter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94611EB113CCA4A4003A22AF /* RefCounter.cpp */; };
 		9461569A14E358A6003A195C /* SBTypeFilter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9461568A14E35621003A195C /* SBTypeFilter.cpp */; };
@@ -517,7 +518,6 @@
 		B299580B14F2FA1400050A04 /* DisassemblerLLVMC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B299580A14F2FA1400050A04 /* DisassemblerLLVMC.cpp */; };
 		B2A58722143119810092BFBA /* SBWatchpoint.h in Headers */ = {isa = PBXBuildFile; fileRef = B2A58721143119810092BFBA /* SBWatchpoint.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		B2A58724143119D50092BFBA /* SBWatchpoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A58723143119D50092BFBA /* SBWatchpoint.cpp */; };
-		B2FA4F84152FBB0F005535AB /* lldb-platform in Resources */ = {isa = PBXBuildFile; fileRef = 26DC6A101337FE6900FF7998 /* lldb-platform */; };
 		ED236E0814F84F6800153F6F /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		ED88244E15114A9200BC98B9 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		ED88245015114CA200BC98B9 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = ED88244F15114CA200BC98B9 /* main.mm */; };
@@ -625,13 +625,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 2689FFC913353D7A00698AC0;
 			remoteInfo = "lldb-core";
-		};
-		B2FA4F82152FBAF2005535AB /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 26DC6A0F1337FE6900FF7998;
-			remoteInfo = "lldb-platform";
 		};
 		94E829C8152D33B4006F96A3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -1419,6 +1412,8 @@
 		9415F61713B2C0EF00A52B36 /* FormatManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; name = FormatManager.cpp; path = source/Core/FormatManager.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		9443B120140C18A90013457C /* SBData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SBData.h; path = include/lldb/API/SBData.h; sourceTree = "<group>"; };
 		9443B121140C18C10013457C /* SBData.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBData.cpp; path = source/API/SBData.cpp; sourceTree = "<group>"; };
+		945759651534941F005A9070 /* PlatformPOSIX.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PlatformPOSIX.cpp; path = POSIX/PlatformPOSIX.cpp; sourceTree = "<group>"; };
+		945759661534941F005A9070 /* PlatformPOSIX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PlatformPOSIX.h; path = POSIX/PlatformPOSIX.h; sourceTree = "<group>"; };
 		945E8D7D152F6AA80019BCCD /* StreamGDBRemote.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = StreamGDBRemote.h; path = include/lldb/Core/StreamGDBRemote.h; sourceTree = "<group>"; };
 		945E8D7F152F6AB40019BCCD /* StreamGDBRemote.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = StreamGDBRemote.cpp; path = source/Core/StreamGDBRemote.cpp; sourceTree = "<group>"; };
 		94611EAF13CCA363003A22AF /* RefCounter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RefCounter.h; path = include/lldb/Utility/RefCounter.h; sourceTree = "<group>"; };
@@ -2884,6 +2879,7 @@
 		26C5577E132575B6008FD8FE /* Platform */ = {
 			isa = PBXGroup;
 			children = (
+				9457596415349416005A9070 /* POSIX */,
 				2694E99814FC0BB30076DE67 /* FreeBSD */,
 				264A97BC133918A30017F0BE /* GDB Server */,
 				2694E99F14FC0BBD0076DE67 /* Linux */,
@@ -3126,6 +3122,15 @@
 			path = source/Host/common;
 			sourceTree = "<group>";
 		};
+		9457596415349416005A9070 /* POSIX */ = {
+			isa = PBXGroup;
+			children = (
+				945759651534941F005A9070 /* PlatformPOSIX.cpp */,
+				945759661534941F005A9070 /* PlatformPOSIX.h */,
+			);
+			name = POSIX;
+			sourceTree = "<group>";
+		};
 		EDC6D49114E5C15C001B75F8 /* launcherXPCService */ = {
 			isa = PBXGroup;
 			children = (
@@ -3217,6 +3222,7 @@
 				2694E99E14FC0BB30076DE67 /* PlatformFreeBSD.h in Headers */,
 				2694E9A514FC0BBD0076DE67 /* PlatformLinux.h in Headers */,
 				2663E379152BD1890091EC22 /* ReadWriteLock.h in Headers */,
+				945759681534941F005A9070 /* PlatformPOSIX.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3932,6 +3938,7 @@
 				2694E99D14FC0BB30076DE67 /* PlatformFreeBSD.cpp in Sources */,
 				2694E9A414FC0BBD0076DE67 /* PlatformLinux.cpp in Sources */,
 				945E8D80152F6AB40019BCCD /* StreamGDBRemote.cpp in Sources */,
+				945759671534941F005A9070 /* PlatformPOSIX.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4038,11 +4045,6 @@
 			isa = PBXTargetDependency;
 			target = 2689FFC913353D7A00698AC0 /* lldb-core */;
 			targetProxy = 26DC6A151337FE7300FF7998 /* PBXContainerItemProxy */;
-		};
-		B2FA4F83152FBAF2005535AB /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 26DC6A0F1337FE6900FF7998 /* lldb-platform */;
-			targetProxy = B2FA4F82152FBAF2005535AB /* PBXContainerItemProxy */;
 		};
 		94E829C9152D33B4006F96A3 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;

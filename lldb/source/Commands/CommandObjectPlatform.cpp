@@ -872,11 +872,21 @@ public:
         }
         else
         {
-            result.AppendError ("no platform us currently selected\n");
+            result.AppendError ("no platform is currently selected\n");
             result.SetStatus (eReturnStatusFailed);            
         }
         return result.Succeeded();
     }
+    
+    virtual Options *
+    GetOptions ()
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+            return platform_sp->GetConnectionOptions(m_interpreter);
+        return NULL;
+    }
+
 };
 
 //----------------------------------------------------------------------

@@ -1847,13 +1847,9 @@ Host::GetAuxvData(lldb_private::Process *process)
 uint32_t
 Host::RunProgramAndGetExitCode (const FileSpec& file_spec)
 {
-    std::string path(512, 0);
-    uint32_t len = file_spec.GetPath(&path[0], 512);
-    if (len >= 512)
-    {
-        path = std::string(len+1,' ');
-        len = file_spec.GetPath(&path[0], len);
-    }
+    std::string path;
+    if (file_spec.GetPath(path) == 0)
+        return UINT32_MAX;
     return ::system(path.c_str());
 }
 

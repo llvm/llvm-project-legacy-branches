@@ -27,8 +27,7 @@ using namespace lldb_private;
 /// Default Constructor
 //------------------------------------------------------------------
 PlatformDarwin::PlatformDarwin (bool is_host) :
-    Platform(is_host),  // This is the local host platform
-    m_remote_platform_sp (),
+    PlatformPOSIX(is_host),  // This is the local host platform
     m_developer_directory ()
 {
 }
@@ -388,25 +387,26 @@ PlatformDarwin::ConnectRemote (Args& args)
         if (!m_remote_platform_sp)
             m_remote_platform_sp = Platform::Create ("remote-gdb-server", error);
 
-        if (m_remote_platform_sp)
-        {
-            if (error.Success())
-            {
-                if (m_remote_platform_sp)
-                {
-                    error = m_remote_platform_sp->ConnectRemote (args);
-                }
-                else
-                {
-                    error.SetErrorString ("\"platform connect\" takes a single argument: <connect-url>");
-                }
-            }
-        }
+        if (m_remote_platform_sp && error.Success())
+            error = m_remote_platform_sp->ConnectRemote (args);
         else
             error.SetErrorString ("failed to create a 'remote-gdb-server' platform");
         
         if (error.Fail())
             m_remote_platform_sp.reset();
+    }
+    
+    if (error.Success() && m_remote_platform_sp)
+    {
+        if (m_options.get())
+        {
+            PlatformPOSIX::POSIXPlatformConnectionOptions* posix_options = (PlatformPOSIX::POSIXPlatformConnectionOptions*)m_options.get();
+            if (posix_options->m_rsync)
+            {
+                SetSupportsRSync(true);
+                SetRSyncArgs(posix_options->m_rsync_args.c_str());
+            }
+        }
     }
 
     return error;

@@ -219,6 +219,11 @@ PlatformRemoteGDBServer::ConnectRemote (Args& args)
             error.SetErrorString ("\"platform connect\" takes a single argument: <connect-url>");
         }
     }
+    
+    if (error.Success())
+    {
+        
+    }
 
     return error;
 }

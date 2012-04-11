@@ -1287,13 +1287,9 @@ Host::OpenFile (const FileSpec& file_spec,
                 uint32_t flags,
                 mode_t mode)
 {
-    std::string path(512, 0);
-    uint32_t len = file_spec.GetPath(&path[0], 512);
-    if (len >= 512)
-    {
-        path = std::string(len+1,' ');
-        len = file_spec.GetPath(&path[0], len);
-    }
+    std::string path;
+    if (file_spec.GetPath(path) == 0)
+        return UINT64_MAX;
     FileSP file_sp(new File(path.c_str(),flags,mode));
     if (file_sp->IsValid() == false)
         return UINT64_MAX;
