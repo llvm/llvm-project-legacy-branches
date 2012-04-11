@@ -81,6 +81,9 @@ public:
              const lldb_private::UUID *uuid_ptr,
              lldb_private::FileSpec &local_file);
     
+    lldb::user_id_t
+    GetFileSize (const lldb_private::FileSpec& file_spec);
+
     lldb_private::Error
     GetFile (const lldb_private::FileSpec& source,
              const lldb_private::FileSpec& destination);

@@ -86,7 +86,7 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
                                                         bool &quit)
 {
     StringExtractorGDBRemote packet;
-    if (WaitForPacketWithTimeoutMicroSeconds(packet, timeout_usec))
+    if (WaitForPacketWithTimeoutMicroSecondsNoLock (packet, timeout_usec))
     {
         const StringExtractorGDBRemote::ServerPacketType packet_type = packet.GetServerPacketType ();
         switch (packet_type)
@@ -200,7 +200,7 @@ size_t
 GDBRemoteCommunicationServer::SendUnimplementedResponse (const char *)
 {
     // TODO: Log the packet we aren't handling...
-    return SendPacket ("");
+    return SendPacketNoLock ("", 0);
 }
 
 size_t
@@ -209,14 +209,14 @@ GDBRemoteCommunicationServer::SendErrorResponse (uint8_t err)
     char packet[16];
     int packet_len = ::snprintf (packet, sizeof(packet), "E%2.2x", err);
     assert (packet_len < sizeof(packet));
-    return SendPacket (packet, packet_len);
+    return SendPacketNoLock (packet, packet_len);
 }
 
 
 size_t
 GDBRemoteCommunicationServer::SendOKResponse ()
 {
-    return SendPacket ("OK");
+    return SendPacketNoLock ("OK", 2);
 }
 
 bool
@@ -291,7 +291,7 @@ GDBRemoteCommunicationServer::Handle_qHostInfo (StringExtractorGDBRemote &packet
         response.PutChar(';');
     }
     
-    return SendPacket (response) > 0;
+    return SendPacketNoLock (response.GetData(), response.GetSize()) > 0;
 }
 
 static void
@@ -330,7 +330,7 @@ GDBRemoteCommunicationServer::Handle_qProcessInfoPID (StringExtractorGDBRemote &
         {
             StreamString response;
             CreateProcessInfoResponse (proc_info, response);
-            return SendPacket (response);
+            return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
     return SendErrorResponse (1);
@@ -445,7 +445,7 @@ GDBRemoteCommunicationServer::Handle_qsProcessInfo (StringExtractorGDBRemote &pa
         StreamString response;
         CreateProcessInfoResponse (m_proc_infos.GetProcessInfoAtIndex(m_proc_infos_index), response);
         ++m_proc_infos_index;
-        return SendPacket (response);
+        return SendPacketNoLock (response.GetData(), response.GetSize());
     }
     return SendErrorResponse (4);
 }
@@ -463,7 +463,7 @@ GDBRemoteCommunicationServer::Handle_qUserName (StringExtractorGDBRemote &packet
         {
             StreamString response;
             response.PutCStringAsRawHex8 (name.c_str());
-            return SendPacket (response);
+            return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
     return SendErrorResponse (5);
@@ -483,7 +483,7 @@ GDBRemoteCommunicationServer::Handle_qGroupName (StringExtractorGDBRemote &packe
         {
             StreamString response;
             response.PutCStringAsRawHex8 (name.c_str());
-            return SendPacket (response);
+            return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
     return SendErrorResponse (6);
@@ -520,7 +520,7 @@ GDBRemoteCommunicationServer::Handle_qSpeedTest (StringExtractorGDBRemote &packe
                     bytes_left = 0;
                 }
             }
-            return SendPacket (response);
+            return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
     return SendErrorResponse (7);
@@ -679,7 +679,7 @@ GDBRemoteCommunicationServer::Handle_qC (StringExtractorGDBRemote &packet)
             m_process_launch_info.Clear();
         }
     }
-    return SendPacket (response);
+    return SendPacketNoLock (response.GetData(), response.GetSize());
 }
 
 bool
@@ -732,7 +732,7 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
                             const int response_len = ::snprintf (response, sizeof(response), "pid:%llu;port:%u;", debugserver_pid, port);
                             assert (response_len < sizeof(response));
                             //m_port_to_pid_map[port] = debugserver_launch_info.GetProcessID();
-                            success = SendPacket (response, response_len) > 0;
+                            success = SendPacketNoLock (response, response_len) > 0;
                         }
                     }
                     ::unlink (unix_socket_name);
@@ -758,7 +758,7 @@ GDBRemoteCommunicationServer::Handle_qLaunchSuccess (StringExtractorGDBRemote &p
     StreamString response;    
     response.PutChar('E');
     response.PutCString(m_process_launch_error.AsCString("<unknown error>"));
-    return SendPacket (response);
+    return SendPacketNoLock (response.GetData(), response.GetSize());
 }
 
 bool
@@ -864,7 +864,7 @@ GDBRemoteCommunicationServer::Handle_qPlatform_Syscall_System (StringExtractorGD
     uint32_t retcode = Host::RunProgramAndGetExitCode(FileSpec(path.c_str(),false));
     StreamString response;
     response.PutHex32(retcode);
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -880,7 +880,7 @@ GDBRemoteCommunicationServer::Handle_qPlatform_IO_MkDir (StringExtractorGDBRemot
     uint32_t retcode = Host::MakeDirectory(path.c_str(),mode);
     StreamString response;
     response.PutHex32(retcode);
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -907,7 +907,7 @@ GDBRemoteCommunicationServer::Handle_vFile_Open (StringExtractorGDBRemote &packe
         response.PutChar(',');
         response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -925,7 +925,7 @@ GDBRemoteCommunicationServer::Handle_vFile_Close (StringExtractorGDBRemote &pack
         response.PutChar(',');
         response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -947,7 +947,7 @@ GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &pack
         response.PutHex32(UINT32_MAX);
         response.PutChar(',');
         response.PutHex32(UINT32_MAX); // TODO: replace with Host::GetSyswideErrorCode()
-        SendPacket(response);
+        SendPacketNoLock(response.GetData(), response.GetSize());
         return true;
     }
     std::string buffer(count, 0);
@@ -964,7 +964,7 @@ GDBRemoteCommunicationServer::Handle_vFile_pRead (StringExtractorGDBRemote &pack
         response.PutChar(';');
         response.PutEscapedBytes(&buffer[0], retcode);
     }
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -989,7 +989,7 @@ GDBRemoteCommunicationServer::Handle_vFile_pWrite (StringExtractorGDBRemote &pac
         response.PutChar(',');
         response.PutHex32(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 
@@ -1012,6 +1012,6 @@ GDBRemoteCommunicationServer::Handle_vFile_Size (StringExtractorGDBRemote &packe
         response.PutChar(',');
         response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
-    SendPacket(response);
+    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }

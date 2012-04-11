@@ -155,6 +155,18 @@ PlatformMacOSX::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 #endif
 }
 
+lldb::user_id_t
+PlatformMacOSX::GetFileSize (const FileSpec& file_spec)
+{
+    if (IsHost())
+    {
+        return Host::GetFileSize(file_spec);
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->GetFileSize(file_spec);
+    return Platform::GetFileSize(file_spec);
+}
+
 lldb_private::Error
 PlatformMacOSX::GetFile (const lldb_private::FileSpec& source /* remote file path */,
                          const lldb_private::FileSpec& destination /* local file path */)
