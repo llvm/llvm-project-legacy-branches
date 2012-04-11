@@ -76,10 +76,14 @@ public:
         return GetDescriptionStatic (IsHost());
     }
 
-    virtual lldb_private::Error
+    lldb_private::Error
     GetFile (const lldb_private::FileSpec &platform_file, 
              const lldb_private::UUID *uuid_ptr,
              lldb_private::FileSpec &local_file);
+    
+    lldb_private::Error
+    GetFile (const lldb_private::FileSpec& source,
+             const lldb_private::FileSpec& destination);
     
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 
