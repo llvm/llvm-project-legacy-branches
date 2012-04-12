@@ -115,7 +115,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::g_option_table[] =
     {   LLDB_OPT_SET_ALL, false, "rsync-opts"             , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
     {   LLDB_OPT_SET_ALL, false, "ssh"                    , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
     {   LLDB_OPT_SET_ALL, false, "ssh-opts"               , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
-    {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname for the rsync command." },
+    {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname when composing the rsync command." },
     {   0,                false, NULL                     ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
 };
 

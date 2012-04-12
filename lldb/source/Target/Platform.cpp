@@ -257,6 +257,19 @@ Platform::GetStatus (Stream &strm)
             strm.Printf("  Hostname: %s\n", GetHostname());
         strm.Printf(" Connected: %s\n", is_connected ? "yes" : "no");
     }
+
+    if (!IsConnected())
+        return;
+
+    // The platform is connected, dump the rsync and ssh options, too.
+    strm.Printf("With rsync: %s", GetSupportsRSync() ? "yes" : "no");
+    if (GetSupportsRSync())
+    {
+        strm.Printf(" (option: %s", (GetRSyncOpts() && strlen(GetRSyncOpts()) != 0) ? GetRSyncOpts() : "none");
+        strm.Printf(", ignore hostname: %s)", GetIgnoresRemoteHostname() ? "yes" : "no");
+    }
+    strm.Printf("\n");
+    strm.Printf("  With ssh: %s\n", GetSupportsSSH() ? "yes" : "no");
 }
 
 
