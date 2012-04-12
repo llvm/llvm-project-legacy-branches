@@ -404,12 +404,12 @@ PlatformDarwin::ConnectRemote (Args& args)
             if (posix_options->m_rsync)
             {
                 SetSupportsRSync(true);
-                SetRSyncArgs(posix_options->m_rsync_args.c_str());
+                SetRSyncOpts(posix_options->m_rsync_opts.c_str());
             }
             if (posix_options->m_ssh)
             {
                 SetSupportsSSH(true);
-                SetSSHArgs(posix_options->m_ssh_args.c_str());
+                SetSSHOpts(posix_options->m_ssh_opts.c_str());
             }
         }
     }

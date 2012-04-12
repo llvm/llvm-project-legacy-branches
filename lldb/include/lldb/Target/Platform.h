@@ -520,15 +520,15 @@ namespace lldb_private {
         }
         
         virtual const char*
-        GetRSyncArgs ()
+        GetRSyncOpts ()
         {
-            return m_rsync_args.c_str();
+            return m_rsync_opts.c_str();
         }
         
         virtual void
-        SetRSyncArgs (const char* args)
+        SetRSyncOpts (const char* opts)
         {
-            m_rsync_args.assign(args);
+            m_rsync_opts.assign(opts);
         }
         
         virtual bool
@@ -544,15 +544,15 @@ namespace lldb_private {
         }
         
         virtual const char*
-        GetSSHArgs ()
+        GetSSHOpts ()
         {
-            return m_ssh_args.c_str();
+            return m_ssh_opts.c_str();
         }
         
         virtual void
-        SetSSHArgs (const char* args)
+        SetSSHOpts (const char* opts)
         {
-            m_ssh_args.assign(args);
+            m_ssh_opts.assign(opts);
         }
         
         virtual Options *
@@ -586,9 +586,9 @@ namespace lldb_private {
         uint32_t m_max_uid_name_len;
         uint32_t m_max_gid_name_len;
         bool m_supports_rsync;
-        std::string m_rsync_args;
+        std::string m_rsync_opts;
         bool m_supports_ssh;
-        std::string m_ssh_args;
+        std::string m_ssh_opts;
 
         const char *
         GetCachedUserName (uint32_t uid)

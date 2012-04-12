@@ -97,9 +97,9 @@ protected:
         // Instance variables to hold the values for command options.
         
         bool m_rsync;
-        std::string m_rsync_args;
+        std::string m_rsync_opts;
         bool m_ssh;
-        std::string m_ssh_args;
+        std::string m_ssh_opts;
     };
     
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote POSIX-compliant OS

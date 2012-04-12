@@ -190,9 +190,9 @@ Platform::Platform (bool is_host) :
     m_max_uid_name_len (0),
     m_max_gid_name_len (0),
     m_supports_rsync (false),
-    m_rsync_args (),
+    m_rsync_opts (),
     m_supports_ssh (false),
-    m_ssh_args ()
+    m_ssh_opts ()
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)

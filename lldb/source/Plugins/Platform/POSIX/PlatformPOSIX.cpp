@@ -45,7 +45,9 @@ PlatformPOSIX::~PlatformPOSIX()
 PlatformPOSIX::POSIXPlatformConnectionOptions::POSIXPlatformConnectionOptions (CommandInterpreter &interpreter) :
 Options (interpreter),
 m_rsync (false),
-m_rsync_args()
+m_rsync_opts (),
+m_ssh (false),
+m_ssh_opts ()
 {
 }
 
@@ -66,7 +68,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_i
             break;
             
         case 'R':
-            m_rsync_args.assign(option_arg);
+            m_rsync_opts.assign(option_arg);
             break;
             
         case 's':
@@ -74,7 +76,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_i
             break;
             
         case 'S':
-            m_ssh_args.assign(option_arg);
+            m_ssh_opts.assign(option_arg);
             break;
             
         default:
@@ -89,7 +91,9 @@ void
 PlatformPOSIX::POSIXPlatformConnectionOptions::OptionParsingStarting ()
 {
     m_rsync = false;
-    m_rsync_args.clear();
+    m_rsync_opts.clear();
+    m_ssh = false;
+    m_ssh_opts.clear();
 }
 
 const OptionDefinition*
@@ -130,7 +134,7 @@ PlatformPOSIX::RunShellCommand (const std::string &command_line)
             // run the command over SSH
             StreamString command;
             command.Printf("ssh %s %s %s",
-                           GetSSHArgs(),
+                           GetSSHOpts(),
                            GetHostname(),
                            command_line.c_str());
             return m_remote_platform_sp->RunShellCommand(command.GetData());
@@ -272,7 +276,7 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                 return Error("unable to get file path for destination");
             StreamString command;
             command.Printf("rsync %s %s %s:%s",
-                           GetRSyncArgs(),
+                           GetRSyncOpts(),
                            src_path.c_str(),
                            GetHostname(),
                            dst_path.c_str());
@@ -363,7 +367,7 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         {
             StreamString command;
             command.Printf("rsync %s %s:%s %s",
-                           GetRSyncArgs(),
+                           GetRSyncOpts(),
                            GetHostname(),
                            src_path.c_str(),
                            dst_path.c_str());
