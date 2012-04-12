@@ -1981,13 +1981,8 @@ GDBRemoteCommunicationClient::GetFileSize (const lldb_private::FileSpec& file_sp
 {
     lldb_private::StreamString stream;
     stream.PutCString("vFile:size:");
-    std::string path(512, ' ');
-    uint32_t len = file_spec.GetPath(&path[0], 512);
-    if (len >= 512)
-    {
-        path = std::string(len+1,' ');
-        len = file_spec.GetPath(&path[0], len);
-    }
+    std::string path;
+    file_spec.GetPath(path);
     stream.PutCStringAsRawHex8(path.c_str());
     stream.PutChar(',');
     const char* packet = stream.GetData();
@@ -2064,5 +2059,29 @@ GDBRemoteCommunicationClient::WriteFile (lldb::user_id_t fd, uint64_t offset,
         return retcode;
     }
     return UINT32_MAX;
+}
+
+// Extension of host I/O packets to get whether a file exists.
+bool
+GDBRemoteCommunicationClient::FileExists (const lldb_private::FileSpec& file_spec)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:exists:");
+    std::string path;
+    file_spec.GetPath(path);
+    stream.PutCStringAsRawHex8(path.c_str());
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return false;
+        if (response.GetChar() != ',')
+            return false;
+        bool retcode = (response.GetChar() != '0');
+        return retcode;
+    }
+    return false;
 }
 

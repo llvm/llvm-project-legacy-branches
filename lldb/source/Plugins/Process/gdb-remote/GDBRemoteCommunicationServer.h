@@ -158,6 +158,9 @@ protected:
     bool
     Handle_vFile_Size (StringExtractorGDBRemote &packet);
 
+    bool
+    Handle_vFile_Exists (StringExtractorGDBRemote &packet);
+
 private:
     //------------------------------------------------------------------
     // For GDBRemoteCommunicationServer only

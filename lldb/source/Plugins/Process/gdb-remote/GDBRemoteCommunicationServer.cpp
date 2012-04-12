@@ -182,6 +182,9 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
 
             case StringExtractorGDBRemote::eServerPacketType_vFile_Size:
                 return Handle_vFile_Size (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Exists:
+                return Handle_vFile_Exists (packet);
         }
         return true;
     }
@@ -1012,6 +1015,26 @@ GDBRemoteCommunicationServer::Handle_vFile_Size (StringExtractorGDBRemote &packe
         response.PutChar(',');
         response.PutHex64(retcode); // TODO: replace with Host::GetSyswideErrorCode()
     }
+    SendPacketNoLock(response.GetData(), response.GetSize());
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_Exists (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:exists:"));
+    std::string path;
+    packet.GetHexByteString(path);
+    if (path.size() == 0)
+        return false;
+    bool retcode = Host::GetFileExists(FileSpec(path.c_str(), false));
+    StreamString response;
+    response.PutChar('F');
+    response.PutChar(',');
+    if (retcode)
+        response.PutChar('1');
+    else
+        response.PutChar('0');
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }

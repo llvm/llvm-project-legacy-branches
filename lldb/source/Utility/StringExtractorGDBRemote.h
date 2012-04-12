@@ -70,7 +70,8 @@ public:
         eServerPacketType_vFile_Close,
         eServerPacketType_vFile_pRead,
         eServerPacketType_vFile_pWrite,
-        eServerPacketType_vFile_Size
+        eServerPacketType_vFile_Size,
+        eServerPacketType_vFile_Exists,
     };
     
     ServerPacketType

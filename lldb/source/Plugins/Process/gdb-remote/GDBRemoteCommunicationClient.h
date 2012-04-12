@@ -363,7 +363,10 @@ public:
     virtual uint32_t
     MakeDirectory (const std::string &path,
                    mode_t mode);
-
+    
+    virtual bool
+    FileExists (const lldb_private::FileSpec& file_spec);
+    
 protected:
 
     //------------------------------------------------------------------

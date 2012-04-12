@@ -682,7 +682,7 @@ FileSpec::GetPath (std::string& path) const
     const char *dirname = m_directory.GetCString();
     const char *filename = m_filename.GetCString();
     
-    uint32_t max_len = strlen(dirname) + strlen(filename) + 2;
+    uint32_t max_len = (dirname ? strlen(dirname) : 0) + (filename ? strlen(filename) : 0) + 2;
     
     path.resize(max_len);
         

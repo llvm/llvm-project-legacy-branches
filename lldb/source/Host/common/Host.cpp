@@ -1367,3 +1367,9 @@ Host::GetFileSize (const FileSpec& file_spec)
     return file_spec.GetByteSize();
 }
 
+bool
+Host::GetFileExists (const FileSpec& file_spec)
+{
+    return file_spec.Exists();
+}
+

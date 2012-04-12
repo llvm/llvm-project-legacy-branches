@@ -474,6 +474,10 @@ public:
 
     static lldb::user_id_t
     GetFileSize (const FileSpec& file_spec);
+    
+    static bool
+    GetFileExists (const FileSpec& file_spec);
+
 };
 
 } // namespace lldb_private
