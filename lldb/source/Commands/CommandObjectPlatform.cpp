@@ -640,8 +640,8 @@ public:
     CommandObjectPlatformGetFile (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
                    "platform get-file",
-                   "Transfer a file from the remote end into the local host.",
-                   NULL,
+                   "Transfer a file from the remote end to the local host.",
+                   "platform get-file <remote-file-spec> <local-file-spec>",
                    0)
     {
         SetHelpLong(
@@ -724,7 +724,7 @@ public:
     CommandObject (interpreter,
                    "platform get-size",
                    "Get the file size from the remote end.",
-                   NULL,
+                   "platform get-size <remote-file-spec>",
                    0)
     {
         SetHelpLong(
