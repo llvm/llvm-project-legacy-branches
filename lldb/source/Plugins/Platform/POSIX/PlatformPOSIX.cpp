@@ -47,7 +47,8 @@ Options (interpreter),
 m_rsync (false),
 m_rsync_opts (),
 m_ssh (false),
-m_ssh_opts ()
+m_ssh_opts (),
+m_ignores_remote_hostname (false)
 {
 }
 
@@ -79,6 +80,10 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_i
             m_ssh_opts.assign(option_arg);
             break;
             
+        case 'i':
+            m_ignores_remote_hostname = true;
+            break;
+            
         default:
             error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
@@ -94,6 +99,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::OptionParsingStarting ()
     m_rsync_opts.clear();
     m_ssh = false;
     m_ssh_opts.clear();
+    m_ignores_remote_hostname = false;
 }
 
 const OptionDefinition*
@@ -105,11 +111,12 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::GetDefinitions ()
 OptionDefinition
 PlatformPOSIX::POSIXPlatformConnectionOptions::g_option_table[] =
 {
-    {   LLDB_OPT_SET_ALL, false, "rsync"            , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
-    {   LLDB_OPT_SET_ALL, false, "rsync-opts"       , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
-    {   LLDB_OPT_SET_ALL, false, "ssh"              , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
-    {   LLDB_OPT_SET_ALL, false, "ssh-opts"         , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
-    {   0,                false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+    {   LLDB_OPT_SET_ALL, false, "rsync"                  , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
+    {   LLDB_OPT_SET_ALL, false, "rsync-opts"             , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
+    {   LLDB_OPT_SET_ALL, false, "ssh"                    , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
+    {   LLDB_OPT_SET_ALL, false, "ssh-opts"               , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
+    {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname for the rsync command." },
+    {   0,                false, NULL                     ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
 };
 
 Options *
@@ -366,11 +373,17 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         if (GetSupportsRSync())
         {
             StreamString command;
-            command.Printf("rsync %s %s:%s %s",
-                           GetRSyncOpts(),
-                           GetHostname(),
-                           src_path.c_str(),
-                           dst_path.c_str());
+            if (GetIgnoresRemoteHostname())
+                command.Printf("rsync %s %s %s",
+                               GetRSyncOpts(),
+                               src_path.c_str(),
+                               dst_path.c_str());
+            else
+                command.Printf("rsync %s %s:%s %s",
+                               GetRSyncOpts(),
+                               GetHostname(),
+                               src_path.c_str(),
+                               dst_path.c_str());
             printf("Running command: %s\n", command.GetData());
             if (RunShellCommand(command.GetData()) == 0)
                 return Error();

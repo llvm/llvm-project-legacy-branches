@@ -192,7 +192,8 @@ Platform::Platform (bool is_host) :
     m_supports_rsync (false),
     m_rsync_opts (),
     m_supports_ssh (false),
-    m_ssh_opts ()
+    m_ssh_opts (),
+    m_ignores_remote_hostname (false)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)

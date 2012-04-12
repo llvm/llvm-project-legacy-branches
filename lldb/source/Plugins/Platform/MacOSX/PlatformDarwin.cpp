@@ -411,6 +411,7 @@ PlatformDarwin::ConnectRemote (Args& args)
                 SetSupportsSSH(true);
                 SetSSHOpts(posix_options->m_ssh_opts.c_str());
             }
+            SetIgnoresRemoteHostname(posix_options->m_ignores_remote_hostname);
         }
     }
 

@@ -555,6 +555,18 @@ namespace lldb_private {
             m_ssh_opts.assign(opts);
         }
         
+        virtual bool
+        GetIgnoresRemoteHostname ()
+        {
+            return m_ignores_remote_hostname;
+        }
+        
+        virtual void
+        SetIgnoresRemoteHostname(bool flag)
+        {
+            m_ignores_remote_hostname = flag;
+        }
+        
         virtual Options *
         GetConnectionOptions (CommandInterpreter& interpreter)
         {
@@ -589,6 +601,7 @@ namespace lldb_private {
         std::string m_rsync_opts;
         bool m_supports_ssh;
         std::string m_ssh_opts;
+        bool m_ignores_remote_hostname;
 
         const char *
         GetCachedUserName (uint32_t uid)

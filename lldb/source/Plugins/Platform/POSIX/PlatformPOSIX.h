@@ -100,6 +100,7 @@ protected:
         std::string m_rsync_opts;
         bool m_ssh;
         std::string m_ssh_opts;
+        bool m_ignores_remote_hostname;
     };
     
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote POSIX-compliant OS
