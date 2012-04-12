@@ -106,10 +106,10 @@ OptionDefinition
 PlatformPOSIX::POSIXPlatformConnectionOptions::g_option_table[] =
 {
     {   LLDB_OPT_SET_ALL, false, "rsync"            , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
-    {   LLDB_OPT_SET_ALL, false, "rsync-args"       , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific arguments required for rsync to work." },
+    {   LLDB_OPT_SET_ALL, false, "rsync-opts"       , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
     {   LLDB_OPT_SET_ALL, false, "ssh"              , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
-    {   LLDB_OPT_SET_ALL, false, "ssh-args"         , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific arguments required for SSH to work." },
-    {  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+    {   LLDB_OPT_SET_ALL, false, "ssh-opts"         , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
+    {   0,                false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
 };
 
 Options *
@@ -371,7 +371,7 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
                            GetHostname(),
                            src_path.c_str(),
                            dst_path.c_str());
-            //printf("Running command: %s\n", command.GetData());
+            printf("Running command: %s\n", command.GetData());
             if (RunShellCommand(command.GetData()) == 0)
                 return Error();
             // If we are here, rsync has failed - let's try the slow way before giving up

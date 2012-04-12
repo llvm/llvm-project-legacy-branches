@@ -640,7 +640,7 @@ public:
     CommandObjectPlatformGetFile (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
                    "platform get-file",
-                   "Upload a file from the remote end into the local host.",
+                   "Transfer a file from the remote end into the local host.",
                    NULL,
                    0)
     {
@@ -648,7 +648,7 @@ public:
 "Examples: \n\
 \n\
     platform get-file /the/remote/file/path /the/local/file/path\n\
-    # Upload a file from the remote end with file path /the/remote/file/path to the local host.\n");
+    # Transfer a file from the remote end with file path /the/remote/file/path to the local host.\n");
 
         CommandArgumentEntry arg1, arg2;
         CommandArgumentData file_arg_remote, file_arg_host;
