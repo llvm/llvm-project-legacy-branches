@@ -339,25 +339,39 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
                          const lldb_private::FileSpec& destination /* local file path */)
 {
 #define GETFILE_CHUNK_SIZE 1024
+    // Check the args, first. 
+    std::string src_path;
+    if (source.GetPath(src_path) == 0)
+        return Error("unable to get file path for source");
+    std::string dst_path;
+    if (destination.GetPath(dst_path) == 0)
+        return Error("unable to get file path for destination");
     if (IsHost())
     {
         if (FileSpec::Equal(source, destination, true))
             return Error("local scenario->source and destination are the same file path: no operation performed");
         // cp src dst
-        char src_path[PATH_MAX];
-        char dst_path[PATH_MAX];
-        if (!source.GetPath(src_path, sizeof(src_path)) || !destination.GetPath(dst_path, sizeof(dst_path)))
-        {
-            return Error("max path length exceeded?");
-        }
         StreamString cp_command;
-        cp_command.Printf("cp %s %s", src_path, dst_path);
+        cp_command.Printf("cp %s %s", src_path.c_str(), dst_path.c_str());
         if (RunShellCommand(cp_command.GetData()) != 0)
             return Error("unable to perform copy");
         return Error();
     }
     else if (IsRemote() && m_remote_platform_sp)
     {
+        if (GetSupportsRSync())
+        {
+            StreamString command;
+            command.Printf("rsync %s %s:%s %s",
+                           GetRSyncArgs(),
+                           GetHostname(),
+                           src_path.c_str(),
+                           dst_path.c_str());
+            //printf("Running command: %s\n", command.GetData());
+            if (RunShellCommand(command.GetData()) == 0)
+                return Error();
+            // If we are here, rsync has failed - let's try the slow way before giving up
+        }
         // open src and dst
         // read/write, read/write, read/write, ...
         // close src
