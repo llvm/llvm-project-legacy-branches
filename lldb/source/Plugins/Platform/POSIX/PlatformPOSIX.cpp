@@ -282,11 +282,17 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
             if (destination.GetPath(dst_path) == 0)
                 return Error("unable to get file path for destination");
             StreamString command;
-            command.Printf("rsync %s %s %s:%s",
-                           GetRSyncOpts(),
-                           src_path.c_str(),
-                           GetHostname(),
-                           dst_path.c_str());
+            if (GetIgnoresRemoteHostname())
+                command.Printf("rsync %s %s %s",
+                               GetRSyncOpts(),
+                               src_path.c_str(),
+                               dst_path.c_str());
+            else
+                command.Printf("rsync %s %s %s:%s",
+                               GetRSyncOpts(),
+                               src_path.c_str(),
+                               GetHostname(),
+                               dst_path.c_str());
             if (RunShellCommand(command.GetData()) == 0)
             {
                 if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
