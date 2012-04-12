@@ -1493,6 +1493,44 @@ private:
     DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformProcess);
 };
 
+//----------------------------------------------------------------------
+// "platform install" - install a target to a remote end
+//----------------------------------------------------------------------
+class CommandObjectPlatformInstall : public CommandObject
+{
+public:
+    CommandObjectPlatformInstall (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform target-install",
+                   "Install a target (bundle or executable file) to the remote end.",
+                   "platform target-install <local-thing> <remote-sandbox>",
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformInstall ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        if (args.GetArgumentCount() != 2)
+        {
+            result.AppendError("platform target-install takes two arguments");
+            result.SetStatus(eReturnStatusFailed);
+            return false;
+        }
+        std::string local_thing(args.GetArgumentAtIndex(0));
+        std::string remote_sandbox(args.GetArgumentAtIndex(1));
+        result.AppendWarningWithFormat("error in installing %s into %s", local_thing.c_str(), remote_sandbox.c_str());
+        result.AppendError("platform target-install is unimplemented - use put-file and mkdir as required");
+        result.SetStatus(eReturnStatusFailed);
+        return false;
+    }
+};
+
 class CommandObjectPlatformFile : public CommandObjectMultiword
 {
 public:
@@ -1509,7 +1547,6 @@ public:
         LoadSubCommand ("close", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
         LoadSubCommand ("read", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
         LoadSubCommand ("write", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
-        
     }
     
     virtual
@@ -1539,6 +1576,7 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("connect", CommandObjectSP (new CommandObjectPlatformConnect  (interpreter)));
     LoadSubCommand ("disconnect", CommandObjectSP (new CommandObjectPlatformDisconnect  (interpreter)));
     LoadSubCommand ("process", CommandObjectSP (new CommandObjectPlatformProcess  (interpreter)));
+    LoadSubCommand ("target-install", CommandObjectSP (new CommandObjectPlatformInstall  (interpreter)));
 #ifdef LLDB_CONFIGURATION_DEBUG
     LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
     LoadSubCommand ("mkdir", CommandObjectSP (new CommandObjectPlatformMkDir  (interpreter)));

@@ -482,20 +482,14 @@ ProcessPOSIX::DisableBreakpoint(BreakpointSite *bp_site)
     return DisableSoftwareBreakpoint(bp_site);
 }
 
-uint32_t
-ProcessPOSIX::UpdateThreadListIfNeeded()
-{
-    // Do not allow recursive updates.
-    return m_thread_list.GetSize(false);
-}
-
-uint32_t
+bool
 ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessPOSIX::%s() (pid = %i)", __FUNCTION__, GetID());
 
+    bool has_updated = false;
     // Update the process thread list with this new thread.
     // FIXME: We should be using tid, not pid.
     assert(m_monitor);
@@ -503,13 +497,14 @@ ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
     if (!thread_sp) {
         ProcessSP me = this->shared_from_this();
         thread_sp.reset(new POSIXThread(me, GetID()));
+        has_updated = true;
     }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessPOSIX::%s() updated pid = %i", __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
-    return new_thread_list.GetSize(false);
+    return has_updated; // the list has been updated
 }
 
 ByteOrder

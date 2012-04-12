@@ -65,7 +65,8 @@ USEDLIBS = lldbAPI.a \
 	LLVMMCDisassembler.a \
 	lldbPluginPlatformMacOSX.a \
 	lldbPluginPlatformLinux.a \
-	lldbPluginPlatformFreeBSD.a
+	lldbPluginPlatformFreeBSD.a \
+	lldbPluginPlatformPOSIX.a
 
 include $(LLDB_LEVEL)/../../Makefile.config
 

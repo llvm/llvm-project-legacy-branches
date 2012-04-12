@@ -102,11 +102,9 @@ public:
     virtual lldb_private::Error
     DisableBreakpoint(lldb_private::BreakpointSite *bp_site);
 
-    virtual uint32_t
-    UpdateThreadListIfNeeded();
-
-    virtual uint32_t
-    UpdateThreadList(lldb_private::ThreadList &old_thread_list, 
+    // This method returns true if the list was actually updated or false otherwise.
+    virtual bool
+    UpdateThreadList(lldb_private::ThreadList &old_thread_list,
                      lldb_private::ThreadList &new_thread_list) = 0;
 
     virtual lldb::ByteOrder

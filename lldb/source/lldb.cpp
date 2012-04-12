@@ -40,6 +40,7 @@
 #include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
 #include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
 #include "Plugins/Platform/Linux/PlatformLinux.h"
+#include "Plugins/Platform/POSIX/PlatformPOSIX.h"
 #if defined (__APPLE__)
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
