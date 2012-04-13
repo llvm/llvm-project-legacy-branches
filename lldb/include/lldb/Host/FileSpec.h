@@ -564,10 +564,10 @@ public:
     Resolve (const char *src_path, char *dst_path, size_t dst_len);
 
     FileSpec
-    AppendPathComponent (const char *new_path, bool resolve = false);
+    AppendPathComponent (const char *new_path);
     
     FileSpec
-    RemoveLastPathComponent (bool resolve = false);
+    RemoveLastPathComponent ();
     
     const char*
     GetLastPathComponent () const;

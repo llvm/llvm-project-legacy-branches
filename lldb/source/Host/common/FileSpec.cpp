@@ -979,8 +979,9 @@ FileSpec::EnumerateDirectory
 }
 
 FileSpec
-FileSpec::AppendPathComponent (const char *new_path, bool resolve)
+FileSpec::AppendPathComponent (const char *new_path)
 {
+    const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())
         return FileSpec(new_path,resolve);
     StreamString stream;
@@ -994,8 +995,9 @@ FileSpec::AppendPathComponent (const char *new_path, bool resolve)
 }
 
 FileSpec
-FileSpec::RemoveLastPathComponent (bool resolve)
+FileSpec::RemoveLastPathComponent ()
 {
+    const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())
         return FileSpec("",resolve);
     if (m_directory.IsEmpty())
