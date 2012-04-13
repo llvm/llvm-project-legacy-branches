@@ -138,6 +138,7 @@ ProcessFreeBSD::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_th
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessFreeBSD::%s() (pid = %i)", __FUNCTION__, GetID());
 
+    bool has_updated = false;
     const tid_t tid = Host::GetCurrentThreadID();
     const lldb::pid_t pid = GetID();
     // Update the process thread list with this new thread.
@@ -147,6 +148,7 @@ ProcessFreeBSD::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_th
     if (!thread_sp) {
         ProcessSP me = this->shared_from_this();
         thread_sp.reset(new POSIXThread(me, pid));
+        has_updated = true;
     }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
@@ -154,5 +156,5 @@ ProcessFreeBSD::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_th
 
     new_thread_list.AddThread(thread_sp);
 
-    return new_thread_list.GetSize(false) > 0;
+    return has_updated; // the list has been updated
 }
