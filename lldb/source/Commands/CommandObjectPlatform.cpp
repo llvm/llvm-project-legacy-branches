@@ -27,6 +27,35 @@
 using namespace lldb;
 using namespace lldb_private;
 
+static mode_t
+ParsePermissionString(const char* permissions)
+{
+    mode_t retval = 0;
+    if (strlen(permissions) != 9)
+        return retval;
+    bool user_r,user_w,user_x,
+    group_r,group_w,group_x,
+    world_r,world_w,world_x;
+    
+    user_r = (permissions[0] == 'r');
+    user_w = (permissions[1] == 'w');
+    user_x = (permissions[2] == 'x');
+    
+    group_r = (permissions[3] == 'r');
+    group_w = (permissions[4] == 'w');
+    group_x = (permissions[5] == 'x');
+    
+    world_r = (permissions[6] == 'r');
+    world_w = (permissions[7] == 'w');
+    world_x = (permissions[8] == 'x');
+    
+    mode_t user,group,world;
+    user = (user_r ? 4 : 0) | (user_w ? 2 : 0) | (user_x ? 1 : 0);
+    group = (group_r ? 4 : 0) | (group_w ? 2 : 0) | (group_x ? 1 : 0);
+    world = (world_r ? 4 : 0) | (world_w ? 2 : 0) | (world_x ? 1 : 0);
+    
+    return user | group | world;
+}
 
 //----------------------------------------------------------------------
 // "platform select <platform-name>"
@@ -1493,6 +1522,86 @@ private:
     DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformProcess);
 };
 
+struct RecurseCopyBaton
+{
+    const std::string& destination;
+    const PlatformSP& platform_sp;
+    Error error;
+};
+
+
+static FileSpec::EnumerateDirectoryResult
+RecurseCopy_Callback (void *baton,
+                      FileSpec::FileType file_type,
+                      const FileSpec &spec)
+{
+    RecurseCopyBaton* rc_baton = (RecurseCopyBaton*)baton;
+    switch (file_type)
+    {
+        case FileSpec::eFileTypePipe:
+        case FileSpec::eFileTypeSocket:
+            // we have no way to copy pipes and sockets - ignore them and continue
+            return FileSpec::eEnumerateDirectoryResultNext;
+            break;
+            
+        case FileSpec::eFileTypeSymbolicLink:
+            // what to do for symlinks?
+            return FileSpec::eEnumerateDirectoryResultNext;
+            break;
+            
+        case FileSpec::eFileTypeDirectory:
+        {
+            // make the new directory and get in there
+            FileSpec new_directory(rc_baton->destination.c_str(),false);
+            new_directory = new_directory.AppendPathComponent(spec.GetLastPathComponent());
+            uint32_t errcode = rc_baton->platform_sp->MakeDirectory(new_directory, 0777);
+            std::string new_directory_path;
+            new_directory.GetPath(new_directory_path);
+            if (errcode != 0)
+            {
+                rc_baton->error.SetErrorStringWithFormat("unable to setup directory %s on remote end",new_directory_path.c_str());
+                return FileSpec::eEnumerateDirectoryResultQuit; // got an error, bail out
+            }
+            
+            // now recurse
+            std::string local_path;
+            spec.GetPath(local_path);
+            RecurseCopyBaton rc_baton2 = { new_directory_path, rc_baton->platform_sp, Error() };
+            FileSpec::EnumerateDirectory(local_path.c_str(), true, true, true, RecurseCopy_Callback, &rc_baton2);
+            if (rc_baton2.error.Fail())
+            {
+                rc_baton->error.SetErrorString(rc_baton2.error.AsCString());
+                return FileSpec::eEnumerateDirectoryResultQuit; // got an error, bail out
+            }
+            return FileSpec::eEnumerateDirectoryResultNext;
+        }
+            break;
+            
+        case FileSpec::eFileTypeRegular:
+        {
+            // copy the file and keep going
+            std::string dest(rc_baton->destination);
+            dest.append(spec.GetFilename().GetCString());
+            Error err = rc_baton->platform_sp->PutFile(spec, FileSpec(dest.c_str(), false));
+            if (err.Fail())
+            {
+                rc_baton->error.SetErrorString(err.AsCString());
+                return FileSpec::eEnumerateDirectoryResultQuit; // got an error, bail out
+            }
+            return FileSpec::eEnumerateDirectoryResultNext;
+        }
+            break;
+            
+        case FileSpec::eFileTypeInvalid:
+        case FileSpec::eFileTypeOther:
+        case FileSpec::eFileTypeUnknown:
+        default:
+            rc_baton->error.SetErrorStringWithFormat("invalid file detected during copy: %s/%s", spec.GetDirectory().GetCString(), spec.GetFilename().GetCString());
+            return FileSpec::eEnumerateDirectoryResultQuit; // got an error, bail out
+            break;
+    }
+}
+
 //----------------------------------------------------------------------
 // "platform install" - install a target to a remote end
 //----------------------------------------------------------------------
@@ -1524,10 +1633,80 @@ public:
         }
         std::string local_thing(args.GetArgumentAtIndex(0));
         std::string remote_sandbox(args.GetArgumentAtIndex(1));
-        result.AppendWarningWithFormat("error in installing %s into %s", local_thing.c_str(), remote_sandbox.c_str());
-        result.AppendError("platform target-install is unimplemented - use put-file and mkdir as required");
-        result.SetStatus(eReturnStatusFailed);
-        return false;
+        FileSpec source(local_thing.c_str(), true);
+        if (source.Exists() == false)
+        {
+            result.AppendError("source location does not exist or is not accessible");
+            result.SetStatus(eReturnStatusFailed);
+            return false;
+        }
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (!platform_sp)
+        {
+            result.AppendError ("no platform currently selected");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        FileSpec::FileType source_type(source.GetFileType());
+        if (source_type == FileSpec::eFileTypeDirectory)
+        {
+            FileSpec remote_folder(remote_sandbox.c_str(), false);
+            remote_folder.AppendPathComponent(source.GetLastPathComponent());
+            // TODO: default permissions are bad
+            uint32_t errcode = platform_sp->MakeDirectory(remote_folder, 0777);
+            if (errcode != 0)
+            {
+                result.AppendError("unable to setup target directory on remote end");
+                result.SetStatus(eReturnStatusSuccessFinishNoResult);
+                return result.Succeeded();
+            }
+            // now recurse
+            std::string remote_folder_path;
+            remote_folder.GetPath(remote_folder_path);
+            Error err = RecurseCopy(source,remote_folder_path,platform_sp);
+            if (err.Fail())
+            {
+                result.AppendError(err.AsCString());
+                result.SetStatus(eReturnStatusFailed);
+            }
+            else
+                result.SetStatus(eReturnStatusSuccessFinishResult);
+            return result.Succeeded();
+        }
+        else if (source_type == FileSpec::eFileTypeRegular)
+        {
+            // just a plain file - push it to remote and be done
+            remote_sandbox.append(source.GetFilename().GetCString());
+            FileSpec destination(remote_sandbox.c_str(),false);
+            Error err = platform_sp->PutFile(source, destination);
+            if (err.Success())
+                result.SetStatus(eReturnStatusSuccessFinishResult);
+            else
+            {
+                result.AppendError(err.AsCString());
+                result.SetStatus(eReturnStatusFailed);
+            }
+            return result.Succeeded();
+        }
+        else
+        {
+            result.AppendError("source is not a known type of file");
+            result.SetStatus(eReturnStatusFailed);
+            return result.Succeeded();
+        }
+    }
+private:
+    
+    Error
+    RecurseCopy (const FileSpec& source,
+                 const std::string& destination,
+                 const PlatformSP& platform_sp)
+    {
+        std::string source_path;
+        source.GetPath(source_path);
+        RecurseCopyBaton baton = { destination, platform_sp, Error() };
+        FileSpec::EnumerateDirectory(source_path.c_str(), true, true, true, RecurseCopy_Callback, &baton);
+        return baton.error;
     }
 };
 

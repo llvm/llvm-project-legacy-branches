@@ -463,6 +463,12 @@ namespace lldb_private {
             return UINT32_MAX;
         }
         
+        // this need not be virtual: the core behavior is in
+        // MakeDirectory(std::string,mode_t)
+        uint32_t
+        MakeDirectory (const FileSpec &spec,
+                       mode_t mode);
+        
         virtual lldb::user_id_t
         OpenFile (const FileSpec& file_spec,
                   uint32_t flags,

@@ -24,11 +24,11 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 
+#include "lldb/Core/StreamString.h"
 #include "lldb/Host/File.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataBufferMemoryMap.h"
-#include "lldb/Core/Stream.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Utility/CleanUp.h"
 
@@ -978,3 +978,78 @@ FileSpec::EnumerateDirectory
     return eEnumerateDirectoryResultNext;    
 }
 
+FileSpec
+FileSpec::AppendPathComponent (const char *new_path, bool resolve)
+{
+    if (m_filename.IsEmpty() && m_directory.IsEmpty())
+        return FileSpec(new_path,resolve);
+    StreamString stream;
+    if (m_filename.IsEmpty())
+        stream.Printf("%s/%s",m_directory.GetCString(),new_path);
+    else if (m_directory.IsEmpty())
+        stream.Printf("%s/%s",m_filename.GetCString(),new_path);
+    else
+        stream.Printf("%s/%s/%s",m_directory.GetCString(), m_filename.GetCString(),new_path);
+    return FileSpec(stream.GetData(),resolve);
+}
+
+FileSpec
+FileSpec::RemoveLastPathComponent (bool resolve)
+{
+    if (m_filename.IsEmpty() && m_directory.IsEmpty())
+        return FileSpec("",resolve);
+    if (m_directory.IsEmpty())
+        return FileSpec("",resolve);
+    if (m_filename.IsEmpty())
+    {
+        const char* dir_cstr = m_directory.GetCString();
+        const char* last_slash_ptr = ::strrchr(dir_cstr, '/');
+        
+        // check for obvious cases before doing the full thing
+        if (!last_slash_ptr)
+            return FileSpec("",resolve);
+        if (last_slash_ptr == dir_cstr)
+            return FileSpec("/",resolve);
+        
+        size_t last_slash_pos = last_slash_ptr - dir_cstr+1;
+        ConstString new_path(dir_cstr,last_slash_pos);
+        return FileSpec(new_path.GetCString(),resolve);
+    }
+    else
+        return FileSpec(m_directory.GetCString(),resolve);
+}
+
+const char*
+FileSpec::GetLastPathComponent () const
+{
+    if (m_filename.IsEmpty() && m_directory.IsEmpty())
+        return NULL;
+    if (m_filename.IsEmpty())
+    {
+        const char* dir_cstr = m_directory.GetCString();
+        const char* last_slash_ptr = ::strrchr(dir_cstr, '/');
+        if (last_slash_ptr == NULL)
+            return m_directory.GetCString();
+        if (last_slash_ptr == dir_cstr)
+        {
+            if (last_slash_ptr[1] == 0)
+                return last_slash_ptr;
+            else
+                return last_slash_ptr+1;
+        }
+        if (last_slash_ptr[1] != 0)
+            return last_slash_ptr+1;
+        const char* penultimate_slash_ptr = last_slash_ptr;
+        while (*penultimate_slash_ptr)
+        {
+            --penultimate_slash_ptr;
+            if (penultimate_slash_ptr == dir_cstr)
+                break;
+            if (*penultimate_slash_ptr == '/')
+                break;
+        }
+        ConstString new_path(penultimate_slash_ptr+1,last_slash_ptr-penultimate_slash_ptr);
+        return new_path.AsCString();
+    }
+    return m_filename.GetCString();
+}

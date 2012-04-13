@@ -563,6 +563,15 @@ public:
     static size_t
     Resolve (const char *src_path, char *dst_path, size_t dst_len);
 
+    FileSpec
+    AppendPathComponent (const char *new_path, bool resolve = false);
+    
+    FileSpec
+    RemoveLastPathComponent (bool resolve = false);
+    
+    const char*
+    GetLastPathComponent () const;
+    
     //------------------------------------------------------------------
     /// Resolves the user name at the beginning of \a src_path, and writes the output
     /// to \a dst_path.  Note, \a src_path can contain other path components after the

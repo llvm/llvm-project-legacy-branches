@@ -673,7 +673,15 @@ Platform::IsCompatibleWithArchitecture (const ArchSpec &arch)
             return true;
     }
     return false;
-    
+}
+
+uint32_t
+Platform::MakeDirectory (const FileSpec &spec,
+                         mode_t mode)
+{
+    std::string path;
+    spec.GetPath(path);
+    return this->MakeDirectory(path,mode);
 }
 
 Error
@@ -693,5 +701,4 @@ Platform::GetFile (const FileSpec& source,
     Error error("unimplemented");
     return error;
 }
-
 
