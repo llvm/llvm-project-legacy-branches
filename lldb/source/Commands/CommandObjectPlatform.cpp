@@ -247,6 +247,143 @@ public:
 };
 
 //----------------------------------------------------------------------
+// "platform connect <connect-url>"
+//----------------------------------------------------------------------
+class CommandObjectPlatformConnect : public CommandObject
+{
+public:
+    CommandObjectPlatformConnect (CommandInterpreter &interpreter) :
+        CommandObject (interpreter, 
+                       "platform connect",
+                       "Connect a platform by name to be the currently selected platform.",
+                       "platform connect <connect-url>",
+                       0)
+    {
+    }
+
+    virtual
+    ~CommandObjectPlatformConnect ()
+    {
+    }
+
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        Stream &ostrm = result.GetOutputStream();      
+        
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            Error error (platform_sp->ConnectRemote (args));
+            if (error.Success())
+            {
+                platform_sp->GetStatus (ostrm);
+                result.SetStatus (eReturnStatusSuccessFinishResult);            
+            }
+            else
+            {
+                result.AppendErrorWithFormat ("%s\n", error.AsCString());
+                result.SetStatus (eReturnStatusFailed);            
+            }
+        }
+        else
+        {
+            result.AppendError ("no platform is currently selected\n");
+            result.SetStatus (eReturnStatusFailed);            
+        }
+        return result.Succeeded();
+    }
+    
+    virtual Options *
+    GetOptions ()
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+            return platform_sp->GetConnectionOptions(m_interpreter);
+        return NULL;
+    }
+
+};
+
+//----------------------------------------------------------------------
+// "platform disconnect"
+//----------------------------------------------------------------------
+class CommandObjectPlatformDisconnect : public CommandObject
+{
+public:
+    CommandObjectPlatformDisconnect (CommandInterpreter &interpreter) :
+        CommandObject (interpreter, 
+                       "platform disconnect",
+                       "Disconnect a platform by name to be the currently selected platform.",
+                       "platform disconnect",
+                       0)
+    {
+    }
+
+    virtual
+    ~CommandObjectPlatformDisconnect ()
+    {
+    }
+
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            if (args.GetArgumentCount() == 0)
+            {
+                Error error;
+                
+                if (platform_sp->IsConnected())
+                {
+                    // Cache the instance name if there is one since we are 
+                    // about to disconnect and the name might go with it.
+                    const char *hostname_cstr = platform_sp->GetHostname();
+                    std::string hostname;
+                    if (hostname_cstr)
+                        hostname.assign (hostname_cstr);
+
+                    error = platform_sp->DisconnectRemote ();
+                    if (error.Success())
+                    {
+                        Stream &ostrm = result.GetOutputStream();      
+                        if (hostname.empty())
+                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetShortPluginName());
+                        else
+                            ostrm.Printf ("Disconnected from \"%s\"\n", hostname.c_str());
+                        result.SetStatus (eReturnStatusSuccessFinishResult);            
+                    }
+                    else
+                    {
+                        result.AppendErrorWithFormat ("%s", error.AsCString());
+                        result.SetStatus (eReturnStatusFailed);            
+                    }
+                }
+                else
+                {
+                    // Not connected...
+                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
+                    result.SetStatus (eReturnStatusFailed);            
+                }
+            }
+            else
+            {
+                // Bad args
+                result.AppendError ("\"platform disconnect\" doesn't take any arguments");
+                result.SetStatus (eReturnStatusFailed);            
+            }
+        }
+        else
+        {
+            result.AppendError ("no platform is currently selected");
+            result.SetStatus (eReturnStatusFailed);            
+        }
+        return result.Succeeded();
+    }
+};
+
+//----------------------------------------------------------------------
 // "platform mkdir"
 //----------------------------------------------------------------------
 class CommandObjectPlatformMkDir : public CommandObject
@@ -619,6 +756,36 @@ CommandObjectPlatformFWrite::CommandOptions::g_option_table[] =
     {  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
 };
 
+class CommandObjectPlatformFile : public CommandObjectMultiword
+{
+public:
+    //------------------------------------------------------------------
+    // Constructors and Destructors
+    //------------------------------------------------------------------
+    CommandObjectPlatformFile (CommandInterpreter &interpreter) :
+    CommandObjectMultiword (interpreter,
+                            "platform file",
+                            "A set of commands to manage file access through a platform",
+                            "platform process [attach|launch|list] ...")
+    {
+        LoadSubCommand ("open", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
+        LoadSubCommand ("close", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
+        LoadSubCommand ("read", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
+        LoadSubCommand ("write", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
+    }
+    
+    virtual
+    ~CommandObjectPlatformFile ()
+    {
+    }
+    
+private:
+    //------------------------------------------------------------------
+    // For CommandObjectPlatform only
+    //------------------------------------------------------------------
+    DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformFile);
+};
+
 //----------------------------------------------------------------------
 // "platform get-file remote-file-path host-file-path"
 //----------------------------------------------------------------------
@@ -818,142 +985,6 @@ public:
     }
 };
 
-//----------------------------------------------------------------------
-// "platform connect <connect-url>"
-//----------------------------------------------------------------------
-class CommandObjectPlatformConnect : public CommandObject
-{
-public:
-    CommandObjectPlatformConnect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform connect",
-                       "Connect a platform by name to be the currently selected platform.",
-                       "platform connect <connect-url>",
-                       0)
-    {
-    }
-
-    virtual
-    ~CommandObjectPlatformConnect ()
-    {
-    }
-
-    virtual bool
-    Execute (Args& args, CommandReturnObject &result)
-    {
-        Stream &ostrm = result.GetOutputStream();      
-        
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        if (platform_sp)
-        {
-            Error error (platform_sp->ConnectRemote (args));
-            if (error.Success())
-            {
-                platform_sp->GetStatus (ostrm);
-                result.SetStatus (eReturnStatusSuccessFinishResult);            
-            }
-            else
-            {
-                result.AppendErrorWithFormat ("%s\n", error.AsCString());
-                result.SetStatus (eReturnStatusFailed);            
-            }
-        }
-        else
-        {
-            result.AppendError ("no platform is currently selected\n");
-            result.SetStatus (eReturnStatusFailed);            
-        }
-        return result.Succeeded();
-    }
-    
-    virtual Options *
-    GetOptions ()
-    {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        if (platform_sp)
-            return platform_sp->GetConnectionOptions(m_interpreter);
-        return NULL;
-    }
-
-};
-
-//----------------------------------------------------------------------
-// "platform disconnect"
-//----------------------------------------------------------------------
-class CommandObjectPlatformDisconnect : public CommandObject
-{
-public:
-    CommandObjectPlatformDisconnect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform disconnect",
-                       "Disconnect a platform by name to be the currently selected platform.",
-                       "platform disconnect",
-                       0)
-    {
-    }
-
-    virtual
-    ~CommandObjectPlatformDisconnect ()
-    {
-    }
-
-    virtual bool
-    Execute (Args& args, CommandReturnObject &result)
-    {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        if (platform_sp)
-        {
-            if (args.GetArgumentCount() == 0)
-            {
-                Error error;
-                
-                if (platform_sp->IsConnected())
-                {
-                    // Cache the instance name if there is one since we are 
-                    // about to disconnect and the name might go with it.
-                    const char *hostname_cstr = platform_sp->GetHostname();
-                    std::string hostname;
-                    if (hostname_cstr)
-                        hostname.assign (hostname_cstr);
-
-                    error = platform_sp->DisconnectRemote ();
-                    if (error.Success())
-                    {
-                        Stream &ostrm = result.GetOutputStream();      
-                        if (hostname.empty())
-                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetShortPluginName());
-                        else
-                            ostrm.Printf ("Disconnected from \"%s\"\n", hostname.c_str());
-                        result.SetStatus (eReturnStatusSuccessFinishResult);            
-                    }
-                    else
-                    {
-                        result.AppendErrorWithFormat ("%s", error.AsCString());
-                        result.SetStatus (eReturnStatusFailed);            
-                    }
-                }
-                else
-                {
-                    // Not connected...
-                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
-                    result.SetStatus (eReturnStatusFailed);            
-                }
-            }
-            else
-            {
-                // Bad args
-                result.AppendError ("\"platform disconnect\" doesn't take any arguments");
-                result.SetStatus (eReturnStatusFailed);            
-            }
-        }
-        else
-        {
-            result.AppendError ("no platform is currently selected");
-            result.SetStatus (eReturnStatusFailed);            
-        }
-        return result.Succeeded();
-    }
-};
 //----------------------------------------------------------------------
 // "platform process launch"
 //----------------------------------------------------------------------
@@ -1737,36 +1768,6 @@ private:
     }
 };
 
-class CommandObjectPlatformFile : public CommandObjectMultiword
-{
-public:
-    //------------------------------------------------------------------
-    // Constructors and Destructors
-    //------------------------------------------------------------------
-    CommandObjectPlatformFile (CommandInterpreter &interpreter) :
-    CommandObjectMultiword (interpreter,
-                            "platform file",
-                            "A set of commands to manage file access through a platform",
-                            "platform process [attach|launch|list] ...")
-    {
-        LoadSubCommand ("open", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
-        LoadSubCommand ("close", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
-        LoadSubCommand ("read", CommandObjectSP (new CommandObjectPlatformFRead  (interpreter)));
-        LoadSubCommand ("write", CommandObjectSP (new CommandObjectPlatformFWrite  (interpreter)));
-    }
-    
-    virtual
-    ~CommandObjectPlatformFile ()
-    {
-    }
-    
-private:
-    //------------------------------------------------------------------
-    // For CommandObjectPlatform only
-    //------------------------------------------------------------------
-    DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformFile);
-};
-
 //----------------------------------------------------------------------
 // CommandObjectPlatform constructor
 //----------------------------------------------------------------------
@@ -1781,9 +1782,6 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("status", CommandObjectSP (new CommandObjectPlatformStatus  (interpreter)));
     LoadSubCommand ("connect", CommandObjectSP (new CommandObjectPlatformConnect  (interpreter)));
     LoadSubCommand ("disconnect", CommandObjectSP (new CommandObjectPlatformDisconnect  (interpreter)));
-    LoadSubCommand ("process", CommandObjectSP (new CommandObjectPlatformProcess  (interpreter)));
-    LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
-    LoadSubCommand ("target-install", CommandObjectSP (new CommandObjectPlatformInstall  (interpreter)));
 #ifdef LLDB_CONFIGURATION_DEBUG
     LoadSubCommand ("mkdir", CommandObjectSP (new CommandObjectPlatformMkDir  (interpreter)));
     LoadSubCommand ("file", CommandObjectSP (new CommandObjectPlatformFile  (interpreter)));
@@ -1791,6 +1789,9 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("get-size", CommandObjectSP (new CommandObjectPlatformGetSize  (interpreter)));
     LoadSubCommand ("put-file", CommandObjectSP (new CommandObjectPlatformPutFile  (interpreter)));
 #endif
+    LoadSubCommand ("process", CommandObjectSP (new CommandObjectPlatformProcess  (interpreter)));
+    LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
+    LoadSubCommand ("target-install", CommandObjectSP (new CommandObjectPlatformInstall  (interpreter)));
 }
 
 
