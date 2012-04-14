@@ -247,47 +247,6 @@ public:
 };
 
 //----------------------------------------------------------------------
-// "platform shell"
-//----------------------------------------------------------------------
-class CommandObjectPlatformShell : public CommandObject
-{
-public:
-    CommandObjectPlatformShell (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform shell",
-                   "Run a shell command on the currently selected platform.",
-                   NULL,
-                   0)
-    {
-    }
-    
-    virtual
-    ~CommandObjectPlatformShell ()
-    {
-    }
-    
-    virtual bool
-    Execute (Args& args, CommandReturnObject &result)
-    {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        if (platform_sp)
-        {
-            std::string cmd_line;
-            args.GetCommandString(cmd_line);
-            uint32_t retcode = platform_sp->RunShellCommand(cmd_line);
-            result.AppendMessageWithFormat("Status = %d\n",retcode);
-            result.SetStatus (eReturnStatusSuccessFinishResult);
-        }
-        else
-        {
-            result.AppendError ("no platform currently selected\n");
-            result.SetStatus (eReturnStatusFailed);            
-        }
-        return result.Succeeded();
-    }
-};
-
-//----------------------------------------------------------------------
 // "platform mkdir"
 //----------------------------------------------------------------------
 class CommandObjectPlatformMkDir : public CommandObject
@@ -1488,9 +1447,6 @@ public:
     }
 };
 
-
-
-
 class CommandObjectPlatformProcess : public CommandObjectMultiword
 {
 public:
@@ -1520,6 +1476,77 @@ private:
     // For CommandObjectPlatform only
     //------------------------------------------------------------------
     DISALLOW_COPY_AND_ASSIGN (CommandObjectPlatformProcess);
+};
+
+//----------------------------------------------------------------------
+// "platform shell"
+//----------------------------------------------------------------------
+class CommandObjectPlatformShell : public CommandObject
+{
+public:
+    CommandObjectPlatformShell (CommandInterpreter &interpreter) :
+    CommandObject (interpreter, 
+                   "platform shell",
+                   "Run a shell command on a the selected platform.",
+                   "platform shell <shell-command>",
+                   0)
+    {
+    }
+    
+    virtual
+    ~CommandObjectPlatformShell ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& command,
+             CommandReturnObject &result)
+    {
+        return false;
+    }
+    
+    virtual bool
+    WantsRawCommandString() { return true; }    
+
+    bool
+    ExecuteRawCommandString (const char *raw_command_line, CommandReturnObject &result)
+    {
+        // TODO: Implement "Platform::RunShellCommand()" and switch over to using
+        // the current platform when it is in the interface. 
+        const char *working_dir = NULL;
+        std::string output;
+        int status = -1;
+        int signo = -1;
+        Error error (Host::RunShellCommand (raw_command_line, working_dir, &status, &signo, &output, 10));
+        if (!output.empty())
+            result.GetOutputStream().PutCString(output.c_str());
+        if (status > 0)
+        {
+            if (signo > 0)
+            {
+                const char *signo_cstr = Host::GetSignalAsCString(signo);
+                if (signo_cstr)
+                    result.GetOutputStream().Printf("error: command returned with status %i and signal %s\n", status, signo_cstr);
+                else
+                    result.GetOutputStream().Printf("error: command returned with status %i and signal %i\n", status, signo);
+            }
+            else
+                result.GetOutputStream().Printf("error: command returned with status %i\n", status);
+        }
+
+        if (error.Fail())
+        {
+            result.AppendError(error.AsCString());
+            result.SetStatus (eReturnStatusFailed);
+        }
+        else
+        {
+            result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        return true;
+    }
+
+protected:
 };
 
 struct RecurseCopyBaton
@@ -1755,9 +1782,9 @@ CommandObjectPlatform::CommandObjectPlatform(CommandInterpreter &interpreter) :
     LoadSubCommand ("connect", CommandObjectSP (new CommandObjectPlatformConnect  (interpreter)));
     LoadSubCommand ("disconnect", CommandObjectSP (new CommandObjectPlatformDisconnect  (interpreter)));
     LoadSubCommand ("process", CommandObjectSP (new CommandObjectPlatformProcess  (interpreter)));
+    LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
     LoadSubCommand ("target-install", CommandObjectSP (new CommandObjectPlatformInstall  (interpreter)));
 #ifdef LLDB_CONFIGURATION_DEBUG
-    LoadSubCommand ("shell", CommandObjectSP (new CommandObjectPlatformShell  (interpreter)));
     LoadSubCommand ("mkdir", CommandObjectSP (new CommandObjectPlatformMkDir  (interpreter)));
     LoadSubCommand ("file", CommandObjectSP (new CommandObjectPlatformFile  (interpreter)));
     LoadSubCommand ("get-file", CommandObjectSP (new CommandObjectPlatformGetFile  (interpreter)));
