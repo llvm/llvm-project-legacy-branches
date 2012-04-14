@@ -1651,7 +1651,7 @@ public:
         if (source_type == FileSpec::eFileTypeDirectory)
         {
             FileSpec remote_folder(remote_sandbox.c_str(), false);
-            remote_folder.AppendPathComponent(source.GetLastPathComponent());
+            remote_folder = remote_folder.AppendPathComponent(source.GetLastPathComponent());
             // TODO: default permissions are bad
             uint32_t errcode = platform_sp->MakeDirectory(remote_folder, 0777);
             if (errcode != 0)
