@@ -864,7 +864,7 @@ GDBRemoteCommunicationServer::Handle_qPlatform_Syscall_System (StringExtractorGD
     packet.SetFilePos(::strlen("qPlatform_Syscall_System:"));
     std::string path;
     packet.GetHexByteString(path);
-    uint32_t retcode = Host::RunProgramAndGetExitCode(FileSpec(path.c_str(),false));
+    uint32_t retcode = Host::RunProgramAndGetExitCode(path.c_str());
     StreamString response;
     response.PutHex32(retcode);
     SendPacketNoLock(response.GetData(), response.GetSize());

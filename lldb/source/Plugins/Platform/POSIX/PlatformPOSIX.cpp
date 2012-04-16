@@ -131,9 +131,7 @@ uint32_t
 PlatformPOSIX::RunShellCommand (const std::string &command_line)
 {
     if (IsHost())
-    {
-        return Host::RunProgramAndGetExitCode(FileSpec(command_line.c_str(),false));
-    }
+        return Host::RunProgramAndGetExitCode(command_line.c_str());
     if (IsRemote())
     {
         if (GetSupportsSSH())
@@ -293,7 +291,7 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                                src_path.c_str(),
                                GetHostname(),
                                dst_path.c_str());
-            if (RunShellCommand(command.GetData()) == 0)
+            if (Host::RunProgramAndGetExitCode(command.GetData()) == 0)
             {
                 if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
                     return Error("unable to perform chown");

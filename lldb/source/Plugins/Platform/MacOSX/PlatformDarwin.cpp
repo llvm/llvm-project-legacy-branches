@@ -132,11 +132,11 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
             StreamString arch_names;
             for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, module_spec.GetArchitecture()); ++idx)
             {
-                error = ModuleList::GetSharedModule (module_spec, 
-                                                     exe_module_sp, 
-                                                     module_search_paths_ptr,
-                                                     NULL, 
-                                                     NULL);
+                error = GetSharedModule (module_spec, 
+                                         exe_module_sp, 
+                                         module_search_paths_ptr,
+                                         NULL, 
+                                         NULL);
                 // Did we find an executable using one of the 
                 if (error.Success())
                 {

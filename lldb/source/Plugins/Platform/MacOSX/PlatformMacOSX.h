@@ -70,6 +70,13 @@ public:
         return 1;
     }
     
+    virtual lldb_private::Error
+    GetSharedModule (const lldb_private::ModuleSpec &module_spec,
+                     lldb::ModuleSP &module_sp,
+                     const lldb_private::FileSpecList *module_search_paths_ptr,
+                     lldb::ModuleSP *old_module_sp_ptr,
+                     bool *did_create_ptr);
+    
     virtual const char *
     GetDescription ()
     {
@@ -84,6 +91,19 @@ public:
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 
                                      lldb_private::ArchSpec &arch);
+    
+    virtual void
+    SetLocalCacheDirectory (const char* local);
+    
+    virtual const char*
+    GetLocalCacheDirectory ();
+    
+    // must add --local-cache to the parent options
+    virtual lldb_private::Options *
+    GetConnectionOptions (lldb_private::CommandInterpreter& interpreter);
+    
+protected:
+    std::string m_local_cache_directory;
 
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformMacOSX);

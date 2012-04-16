@@ -1845,12 +1845,9 @@ Host::GetAuxvData(lldb_private::Process *process)
 }
 
 uint32_t
-Host::RunProgramAndGetExitCode (const FileSpec& file_spec)
+Host::RunProgramAndGetExitCode (const char *cmd_line)
 {
-    std::string path;
-    if (file_spec.GetPath(path) == 0)
-        return UINT32_MAX;
-    return ::system(path.c_str());
+    return ::system(cmd_line);
 }
 
 uint32_t

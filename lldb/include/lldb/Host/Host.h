@@ -461,7 +461,7 @@ public:
                              Error &error);
     
     static uint32_t
-    RunProgramAndGetExitCode (const FileSpec& file_spec);
+    RunProgramAndGetExitCode (const char* cmd_line);
     
     static uint32_t
     MakeDirectory (const char* path, mode_t mode);
