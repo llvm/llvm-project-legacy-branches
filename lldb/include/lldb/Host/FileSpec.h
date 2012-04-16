@@ -564,9 +564,15 @@ public:
     Resolve (const char *src_path, char *dst_path, size_t dst_len);
 
     FileSpec
-    AppendPathComponent (const char *new_path);
+    CopyByAppendingPathComponent (const char *new_path);
     
     FileSpec
+    CopyByRemovingLastPathComponent ();
+    
+    void
+    AppendPathComponent (const char *new_path);
+    
+    void
     RemoveLastPathComponent ();
     
     const char*

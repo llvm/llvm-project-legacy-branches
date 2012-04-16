@@ -979,7 +979,7 @@ FileSpec::EnumerateDirectory
 }
 
 FileSpec
-FileSpec::AppendPathComponent (const char *new_path)
+FileSpec::CopyByAppendingPathComponent (const char *new_path)
 {
     const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())
@@ -995,7 +995,7 @@ FileSpec::AppendPathComponent (const char *new_path)
 }
 
 FileSpec
-FileSpec::RemoveLastPathComponent ()
+FileSpec::CopyByRemovingLastPathComponent ()
 {
     const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())
@@ -1054,4 +1054,61 @@ FileSpec::GetLastPathComponent () const
         return new_path.AsCString();
     }
     return m_filename.GetCString();
+}
+
+void
+FileSpec::AppendPathComponent (const char *new_path)
+{
+    const bool resolve = false;
+    if (m_filename.IsEmpty() && m_directory.IsEmpty())
+    {
+        SetFile(new_path,resolve);
+        return;
+    }
+    StreamString stream;
+    if (m_filename.IsEmpty())
+        stream.Printf("%s/%s",m_directory.GetCString(),new_path);
+    else if (m_directory.IsEmpty())
+        stream.Printf("%s/%s",m_filename.GetCString(),new_path);
+    else
+        stream.Printf("%s/%s/%s",m_directory.GetCString(), m_filename.GetCString(),new_path);
+    SetFile(stream.GetData(), resolve);
+}
+
+void
+FileSpec::RemoveLastPathComponent ()
+{
+    const bool resolve = false;
+    if (m_filename.IsEmpty() && m_directory.IsEmpty())
+    {
+        SetFile("",resolve);
+        return;
+    }
+    if (m_directory.IsEmpty())
+    {
+        SetFile("",resolve);
+        return;
+    }
+    if (m_filename.IsEmpty())
+    {
+        const char* dir_cstr = m_directory.GetCString();
+        const char* last_slash_ptr = ::strrchr(dir_cstr, '/');
+        
+        // check for obvious cases before doing the full thing
+        if (!last_slash_ptr)
+        {
+            SetFile("",resolve);
+            return;
+        }
+        if (last_slash_ptr == dir_cstr)
+        {
+            SetFile("/",resolve);
+            return;
+        }        
+        size_t last_slash_pos = last_slash_ptr - dir_cstr+1;
+        ConstString new_path(dir_cstr,last_slash_pos);
+        SetFile(new_path.GetCString(),resolve);
+    }
+    else
+        SetFile(m_directory.GetCString(),resolve);
 }

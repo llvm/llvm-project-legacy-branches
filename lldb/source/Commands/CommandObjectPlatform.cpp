@@ -1611,7 +1611,7 @@ RecurseCopy_Callback (void *baton,
         {
             // make the new directory and get in there
             FileSpec new_directory(rc_baton->destination.c_str(),false);
-            new_directory = new_directory.AppendPathComponent(spec.GetLastPathComponent());
+            new_directory.AppendPathComponent(spec.GetLastPathComponent());
             uint32_t errcode = rc_baton->platform_sp->MakeDirectory(new_directory, 0777);
             std::string new_directory_path;
             new_directory.GetPath(new_directory_path);
@@ -1689,6 +1689,7 @@ public:
             result.SetStatus(eReturnStatusFailed);
             return false;
         }
+        // TODO: move the bulk of this code over to the platform itself
         std::string local_thing(args.GetArgumentAtIndex(0));
         std::string remote_sandbox(args.GetArgumentAtIndex(1));
         FileSpec source(local_thing.c_str(), true);
@@ -1708,8 +1709,18 @@ public:
         FileSpec::FileType source_type(source.GetFileType());
         if (source_type == FileSpec::eFileTypeDirectory)
         {
+            if (platform_sp->GetSupportsRSync())
+            {
+                FileSpec remote_folder(remote_sandbox.c_str(), false);
+                Error rsync_err = platform_sp->PutFile(source, remote_folder);
+                if (rsync_err.Success())
+                {
+                    result.SetStatus(eReturnStatusSuccessFinishResult);
+                    return result.Succeeded();
+                }
+            }
             FileSpec remote_folder(remote_sandbox.c_str(), false);
-            remote_folder = remote_folder.AppendPathComponent(source.GetLastPathComponent());
+            remote_folder.AppendPathComponent(source.GetLastPathComponent());
             // TODO: default permissions are bad
             uint32_t errcode = platform_sp->MakeDirectory(remote_folder, 0777);
             if (errcode != 0)
