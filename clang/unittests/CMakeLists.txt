@@ -77,3 +77,8 @@ add_clang_unittest(Tooling
   Tooling/RefactoringTest.cpp
   USED_LIBS gtest gtest_main clangTooling
  )
+
+add_clang_unittest(AST
+  AST/RecursiveASTVisitorTest.cpp
+  USED_LIBS gtest gtest_main clangAST clangTooling
+ )
