@@ -116,7 +116,7 @@ PlatformMacOSX::GetDescriptionStatic (bool is_host)
 //------------------------------------------------------------------
 PlatformMacOSX::PlatformMacOSX (bool is_host) :
     PlatformDarwin (is_host),
-    m_local_cache_directory()
+    m_local_cache_directory("/Volumes/work/egranata/myTextEdit")
 {
 }
 
@@ -189,9 +189,7 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     }
     // try to find the module in the cache
     std::string cache_path(GetLocalCacheDirectory());
-    if (cache_path[cache_path.size()-1] != '/')
-        cache_path.append(1,'/');
-    std::string module_path;
+     std::string module_path;
     module_spec.GetFileSpec().GetPath(module_path);
     cache_path.append(module_path);
     FileSpec module_cache_spec(cache_path.c_str(),false);
@@ -199,10 +197,27 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     {
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
+        module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
         return Error();
     }
     // bring in the remote module file
-    return Error("unimplemented");
+    FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
+    StreamString mkdir_folder_cmd;
+    // try to make the local directory first
+    mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
+    Host::RunProgramAndGetExitCode(mkdir_folder_cmd.GetData());
+    Error err = GetFile(module_spec.GetFileSpec(), module_cache_spec);
+    if (err.Fail())
+        return err;
+    if (module_cache_spec.Exists())
+    {
+        ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
+        module_sp.reset(new Module(local_spec));
+        module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+        return Error();
+    }
+    else
+        return Error("unable to obtain valid module file");
 }
 
 lldb_private::Options *

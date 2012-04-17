@@ -385,11 +385,11 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
             else
                 command.Printf("rsync %s %s:%s %s",
                                GetRSyncOpts(),
-                               GetHostname(),
+                               m_remote_platform_sp->GetHostname(),
                                src_path.c_str(),
                                dst_path.c_str());
             printf("Running command: %s\n", command.GetData());
-            if (RunShellCommand(command.GetData()) == 0)
+            if (Host::RunProgramAndGetExitCode(command.GetData()) == 0)
                 return Error();
             // If we are here, rsync has failed - let's try the slow way before giving up
         }
