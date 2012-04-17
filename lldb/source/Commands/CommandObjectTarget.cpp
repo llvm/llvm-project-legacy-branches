@@ -201,22 +201,30 @@ public:
             bool must_set_platform_path = false;
             
             Debugger &debugger = m_interpreter.GetDebugger();
-            
+            PlatformSP platform_sp(debugger.GetPlatformList().GetSelectedPlatform ());
+
             if (remote_file)
             {
                 // I have a remote file.. two possible cases
                 if (file_spec && file_spec.Exists())
                 {
-                    // local file also exists; create the target with local file then set its platform-path to the remote end
-                    // and if the remote file does not exist, push it there
-                    must_set_platform_path = true;
+                    // if the remote file does not exist, push it there
+                    if (!platform_sp->GetFileExists (remote_file))
+                    {
+                        Error err = platform_sp->PutFile(file_spec, remote_file);
+                        if (err.Fail())
+                        {
+                            result.AppendError(err.AsCString());
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
+                    }
                 }
                 else
                 {
                     // there is no local file and we need one
                     // in order to make the remote ---> local transfer we need a platform
                     // TODO: if the user has passed in a --platform argument, use it to fetch the right platform
-                    PlatformSP platform_sp(debugger.GetPlatformList().GetSelectedPlatform ());
                     if (!platform_sp)
                     {
                         result.AppendError("unable to perform remote debugging without a platform");
@@ -248,7 +256,7 @@ public:
             const char *arch_cstr = m_arch_option.GetArchitectureName();
             const bool get_dependent_files = true;
             Error error (debugger.GetTargetList().CreateTarget (debugger,
-                                                                file_spec,
+                                                                remote_file ? remote_file : file_spec,
                                                                 arch_cstr,
                                                                 get_dependent_files,
                                                                 &m_platform_options,
@@ -263,28 +271,6 @@ public:
                     ModuleSP module_sp = target_sp->GetSharedModule(main_module_spec);
                     if (module_sp)
                         module_sp->SetPlatformFileSpec(remote_file);
-                    // now check that the remote file also exists
-                    PlatformSP platform_sp = target_sp->GetPlatform();
-                    if (platform_sp)
-                    {
-                        if (!platform_sp->GetFileExists (remote_file))
-                        {
-                            Error err = platform_sp->PutFile(file_spec, remote_file);
-                            if (err.Fail())
-                            {
-                                result.AppendError(err.AsCString());
-                                result.SetStatus (eReturnStatusFailed);
-                                return false;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        debugger.GetTargetList().DeleteTarget(target_sp);
-                        result.AppendError("unable to perform remote debugging without a platform");
-                        result.SetStatus (eReturnStatusFailed);
-                        return false;
-                    }
                 }
                 if (core_file)
                 {
