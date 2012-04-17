@@ -75,6 +75,7 @@ public:
 
 protected:
     std::auto_ptr<lldb_private::Options> m_options;
+    std::string m_local_cache_directory;
     
     class POSIXPlatformConnectionOptions : public lldb_private::Options
     {
@@ -104,6 +105,7 @@ protected:
         bool m_ssh;
         std::string m_ssh_opts;
         bool m_ignores_remote_hostname;
+        std::string m_cache_dir;
     };
     
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote POSIX-compliant OS

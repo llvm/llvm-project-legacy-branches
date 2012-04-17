@@ -48,7 +48,8 @@ m_rsync (false),
 m_rsync_opts (),
 m_ssh (false),
 m_ssh_opts (),
-m_ignores_remote_hostname (false)
+m_ignores_remote_hostname (false),
+m_cache_dir()
 {
 }
 
@@ -84,6 +85,10 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_i
             m_ignores_remote_hostname = true;
             break;
             
+        case 'c':
+            m_cache_dir.assign(option_arg);
+            break;
+            
         default:
             error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
@@ -100,6 +105,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::OptionParsingStarting ()
     m_ssh = false;
     m_ssh_opts.clear();
     m_ignores_remote_hostname = false;
+    m_cache_dir.clear();
 }
 
 const OptionDefinition*
@@ -116,6 +122,7 @@ PlatformPOSIX::POSIXPlatformConnectionOptions::g_option_table[] =
     {   LLDB_OPT_SET_ALL, false, "ssh"                    , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
     {   LLDB_OPT_SET_ALL, false, "ssh-opts"               , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
     {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname when composing the rsync command." },
+    {   LLDB_OPT_SET_ALL, false, "local-cache-dir"        , 'c', required_argument, NULL, 0, eArgTypePath         , "Path in which to store local copies of files." },
     {   0,                false, NULL                     ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
 };
 

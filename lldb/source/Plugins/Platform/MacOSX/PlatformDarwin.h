@@ -102,6 +102,12 @@ public:
     bool 
     x86GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
 
+    virtual void
+    SetLocalCacheDirectory (const char* local);
+    
+    virtual const char*
+    GetLocalCacheDirectory ();
+    
 protected:
     std::string m_developer_directory;
     

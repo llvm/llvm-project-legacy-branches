@@ -412,6 +412,7 @@ PlatformDarwin::ConnectRemote (Args& args)
                 SetSSHOpts(posix_options->m_ssh_opts.c_str());
             }
             SetIgnoresRemoteHostname(posix_options->m_ignores_remote_hostname);
+            SetLocalCacheDirectory(posix_options->m_cache_dir.c_str());
         }
     }
 
@@ -789,3 +790,14 @@ PlatformDarwin::GetDeveloperDirectory()
     return NULL;
 }
 
+void
+PlatformDarwin::SetLocalCacheDirectory (const char* local)
+{
+    m_local_cache_directory.assign(local);
+}
+
+const char*
+PlatformDarwin::GetLocalCacheDirectory ()
+{
+    return m_local_cache_directory.c_str();
+}

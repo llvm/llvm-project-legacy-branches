@@ -115,8 +115,7 @@ PlatformMacOSX::GetDescriptionStatic (bool is_host)
 /// Default Constructor
 //------------------------------------------------------------------
 PlatformMacOSX::PlatformMacOSX (bool is_host) :
-    PlatformDarwin (is_host),
-    m_local_cache_directory("/Volumes/work/egranata/myTextEdit")
+    PlatformDarwin (is_host)
 {
 }
 
@@ -154,18 +153,6 @@ PlatformMacOSX::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 #else
     return x86GetSupportedArchitectureAtIndex (idx, arch);
 #endif
-}
-
-void
-PlatformMacOSX::SetLocalCacheDirectory (const char* local)
-{
-    m_local_cache_directory.assign(local);
-}
-
-const char*
-PlatformMacOSX::GetLocalCacheDirectory ()
-{
-    return m_local_cache_directory.c_str();
 }
 
 lldb_private::Error
