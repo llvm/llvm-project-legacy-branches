@@ -60,6 +60,11 @@ signal_handler(int signo)
     case SIGPIPE:
         g_sigpipe_received = 1;
         break;
+    case SIGHUP:
+        Debugger::Terminate();
+        fprintf(stderr, "SIGHUP received, lldb-platform exiting...\n");
+        exit(1);
+        break;
     }
 }
 
@@ -78,6 +83,7 @@ main (int argc, char *argv[])
 {
     const char *progname = argv[0];
     signal (SIGPIPE, signal_handler);
+    signal (SIGHUP, signal_handler);
     int long_option_index = 0;
     StreamSP log_stream_sp;
     Args log_args;
