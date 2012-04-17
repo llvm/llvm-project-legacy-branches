@@ -4156,11 +4156,15 @@ void RewriteModernObjC::GetBlockDeclRefExprs(Stmt *S) {
         GetBlockDeclRefExprs(*CI);
     }
   // Handle specific things.
-  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(S))
-    if (DRE->refersToEnclosingLocal() &&
-        HasLocalVariableExternalStorage(DRE->getDecl())) {
-      BlockDeclRefs.push_back(DRE);
+  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(S)) {
+    if (DRE->refersToEnclosingLocal()) {
+      // FIXME: Handle enums.
+      if (!isa<FunctionDecl>(DRE->getDecl()))
+        BlockDeclRefs.push_back(DRE);
+      if (HasLocalVariableExternalStorage(DRE->getDecl()))
+        BlockDeclRefs.push_back(DRE);
     }
+  }
   
   return;
 }
@@ -4460,19 +4464,18 @@ void RewriteModernObjC::RewriteCastExpr(CStyleCastExpr *CE) {
 
 void RewriteModernObjC::RewriteImplicitCastObjCExpr(CastExpr *IC) {
   CastKind CastKind = IC->getCastKind();
+  if (CastKind != CK_BlockPointerToObjCPointerCast &&
+      CastKind != CK_AnyPointerToBlockPointerCast)
+    return;
   
-  if (CastKind == CK_BlockPointerToObjCPointerCast) {
-    CStyleCastExpr * CastExpr = 
-      NoTypeInfoCStyleCastExpr(Context, IC->getType(), CK_BitCast, IC);
-    ReplaceStmt(IC, CastExpr);
-  }
-  else if (CastKind == CK_AnyPointerToBlockPointerCast) {
-    QualType BlockT = IC->getType();
-    (void)convertBlockPointerToFunctionPointer(BlockT);
-    CStyleCastExpr * CastExpr = 
-      NoTypeInfoCStyleCastExpr(Context, BlockT, CK_BitCast, IC);
-    ReplaceStmt(IC, CastExpr);
-  }
+  QualType QT = IC->getType();
+  (void)convertBlockPointerToFunctionPointer(QT);
+  std::string TypeString(QT.getAsString(Context->getPrintingPolicy()));
+  std::string Str = "(";
+  Str += TypeString;
+  Str += ")";
+  InsertText(IC->getSubExpr()->getLocStart(), &Str[0], Str.size());
+
   return;
 }
 
@@ -5361,6 +5364,7 @@ Stmt *RewriteModernObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
     RewriteImplicitCastObjCExpr(ICE);
   }
 #if 0
+
   if (ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(S)) {
     CastExpr *Replacement = new (Context) CastExpr(ICE->getType(),
                                                    ICE->getSubExpr(),
@@ -5613,13 +5617,11 @@ void RewriteModernObjC::Initialize(ASTContext &context) {
     // These are currently generated.
     Preamble += "\n#pragma section(\".objc_classlist$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_catlist$B\", long, read, write)\n";
-    Preamble += "#pragma section(\".objc_protolist$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_imageinfo$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_nlclslist$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_nlcatlist$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_protorefs$B\", long, read, write)\n";
     // These are generated but not necessary for functionality.
-    Preamble += "#pragma section(\".datacoal_nt$B\", long, read, write)\n";
     Preamble += "#pragma section(\".cat_cls_meth$B\", long, read, write)\n";
     Preamble += "#pragma section(\".inst_meth$B\", long, read, write)\n";
     Preamble += "#pragma section(\".cls_meth$B\", long, read, write)\n";
@@ -6590,7 +6592,7 @@ void RewriteModernObjC::RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl,
   // Writer out root metadata for current protocol: struct _protocol_t
   Result += "\n";
   if (LangOpts.MicrosoftExt)
-    Result += "__declspec(allocate(\".datacoal_nt$B\")) ";
+    Result += "static ";
   Result += "struct _protocol_t _OBJC_PROTOCOL_";
   Result += PDecl->getNameAsString();
   Result += " __attribute__ ((used, section (\"__DATA,__datacoal_nt,coalesced\"))) = {\n";
@@ -6648,11 +6650,8 @@ void RewriteModernObjC::RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl,
   else
     Result += "\t0\n};\n";
   
-  // Use this protocol meta-data to build protocol list table in section
-  // .objc_protolist$B
-  // Unspecified visibility means 'private extern'.
   if (LangOpts.MicrosoftExt)
-    Result += "__declspec(allocate(\".objc_protolist$B\")) ";
+    Result += "static ";
   Result += "struct _protocol_t *";
   Result += "_OBJC_LABEL_PROTOCOL_$_"; Result += PDecl->getNameAsString();
   Result += " = &_OBJC_PROTOCOL_"; Result += PDecl->getNameAsString();

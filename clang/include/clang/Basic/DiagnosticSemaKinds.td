@@ -1547,9 +1547,6 @@ def warn_objc_redundant_literal_use : Warning<
   "using %0 with a literal is redundant">, InGroup<ObjCRedundantLiteralUse>;
 }
 
-def warn_bool_for_boolean_literal : Warning<
-  "BOOL of type %0 is non-intergal and unsuitable for a "
-  "boolean literal - ignored">, InGroup<DiagGroup<"numeric-literals">>;
 def err_only_annotate_after_access_spec : Error<
   "access specifier can only have annotation attributes">;
 def err_attribute_section_invalid_for_target : Error<
@@ -1563,6 +1560,9 @@ def warn_redeclaration_without_attribute_prev_attribute_ignored : Warning<
 def warn_attribute_ignored : Warning<"%0 attribute ignored">;
 def warn_unknown_attribute_ignored : Warning<
   "unknown attribute %0 ignored">, InGroup<UnknownAttributes>;
+def warn_attribute_invalid_on_stmt : Warning<
+  "attribute %0 cannot be specified on a statement">,
+  InGroup<IgnoredAttributes>;
 def warn_declspec_attribute_ignored : Warning<
   "attribute %0 is ignored, place it after \"%select{class|struct|union|enum}1\" to apply attribute to type declaration">, InGroup<IgnoredAttributes>;
 def warn_attribute_precede_definition : Warning<
@@ -2583,6 +2583,8 @@ def note_template_enum_def_here : Note<
   "in instantiation of enumeration %q0 requested here">;
 def note_template_type_alias_instantiation_here : Note<
   "in instantiation of template type alias %0 requested here">;
+def note_template_exception_spec_instantiation_here : Note<
+  "in instantiation of exception specification for %0 requested here">;
   
 def note_default_arg_instantiation_here : Note<
   "in instantiation of default argument for '%0' required here">;
@@ -3798,6 +3800,9 @@ def warn_null_in_comparison_operation : Warning<
 
 def err_invalid_this_use : Error<
   "invalid use of 'this' outside of a non-static member function">;
+def err_this_static_member_func : Error<
+  "'this' cannot be%select{| implicitly}0 used in a static member function "
+  "declaration">;
 def err_invalid_member_use_in_static_method : Error<
   "invalid use of member %0 in static member function">;
 def err_invalid_qualified_function_type : Error<
