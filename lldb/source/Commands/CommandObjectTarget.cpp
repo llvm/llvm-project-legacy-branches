@@ -149,7 +149,8 @@ public:
         m_option_group (interpreter),
         m_arch_option (),
         m_platform_options(true), // Do include the "--platform" option in the platform settings by passing true
-        m_core_file (LLDB_OPT_SET_1, false, "core-file", 'c', 0, eArgTypePath, "Fullpath to a core file to use for this target.")
+        m_core_file (LLDB_OPT_SET_1, false, "core-file", 'c', 0, eArgTypePath, "Fullpath to a core file to use for this target."),
+        m_platform_path (LLDB_OPT_SET_1, false, "platform-path", 'P', 0, eArgTypePath, "Path to the remote file to use for this target.")
     {
         CommandArgumentEntry arg;
         CommandArgumentData file_arg;
@@ -167,6 +168,7 @@ public:
         m_option_group.Append (&m_arch_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_platform_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_core_file, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_platform_path, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
 
@@ -185,8 +187,9 @@ public:
     {
         const int argc = command.GetArgumentCount();
         FileSpec core_file (m_core_file.GetOptionValue().GetCurrentValue());
+        FileSpec remote_file (m_platform_path.GetOptionValue().GetCurrentValue());
 
-        if (argc == 1 || core_file)
+        if (argc == 1 || core_file || remote_file)
         {
             const char *file_path = command.GetArgumentAtIndex(0);
             Timer scoped_timer(__PRETTY_FUNCTION__, "(lldb) target create '%s'", file_path);
@@ -194,9 +197,54 @@ public:
             
             if (file_path)
                 file_spec.SetFile (file_path, true);
+            
+            bool must_set_platform_path = false;
+            
+            Debugger &debugger = m_interpreter.GetDebugger();
+            
+            if (remote_file)
+            {
+                // I have a remote file.. two possible cases
+                if (file_spec && file_spec.Exists())
+                {
+                    // local file also exists; create the target with local file then set its platform-path to the remote end
+                    // and if the remote file does not exist, push it there
+                    must_set_platform_path = true;
+                }
+                else
+                {
+                    // there is no local file and we need one
+                    // in order to make the remote ---> local transfer we need a platform
+                    // TODO: if the user has passed in a --platform argument, use it to fetch the right platform
+                    PlatformSP platform_sp(debugger.GetPlatformList().GetSelectedPlatform ());
+                    if (!platform_sp)
+                    {
+                        result.AppendError("unable to perform remote debugging without a platform");
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                    if (file_path)
+                    {
+                        // copy the remote file to the local file
+                        Error err = platform_sp->GetFile(remote_file, file_spec);
+                        if (err.Fail())
+                        {
+                            result.AppendError(err.AsCString());
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        // make up a local file
+                        result.AppendError("remote --> local transfer without local path is not implemented yet");
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                }
+            }
 
             TargetSP target_sp;
-            Debugger &debugger = m_interpreter.GetDebugger();
             const char *arch_cstr = m_arch_option.GetArchitectureName();
             const bool get_dependent_files = true;
             Error error (debugger.GetTargetList().CreateTarget (debugger,
@@ -209,6 +257,35 @@ public:
             if (target_sp)
             {
                 debugger.GetTargetList().SetSelectedTarget(target_sp.get());
+                if (must_set_platform_path)
+                {
+                    ModuleSpec main_module_spec(file_spec);
+                    ModuleSP module_sp = target_sp->GetSharedModule(main_module_spec);
+                    if (module_sp)
+                        module_sp->SetPlatformFileSpec(remote_file);
+                    // now check that the remote file also exists
+                    PlatformSP platform_sp = target_sp->GetPlatform();
+                    if (platform_sp)
+                    {
+                        if (!platform_sp->GetFileExists (remote_file))
+                        {
+                            Error err = platform_sp->PutFile(file_spec, remote_file);
+                            if (err.Fail())
+                            {
+                                result.AppendError(err.AsCString());
+                                result.SetStatus (eReturnStatusFailed);
+                                return false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        debugger.GetTargetList().DeleteTarget(target_sp);
+                        result.AppendError("unable to perform remote debugging without a platform");
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                }
                 if (core_file)
                 {
                     char core_path[PATH_MAX];
@@ -300,6 +377,7 @@ private:
     OptionGroupArchitecture m_arch_option;
     OptionGroupPlatform m_platform_options;
     OptionGroupFile m_core_file;
+    OptionGroupFile m_platform_path;
 
 };
 

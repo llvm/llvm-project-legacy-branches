@@ -172,6 +172,9 @@ public:
              const lldb_private::FileSpec& destination,
              uint32_t uid = UINT32_MAX,
              uint32_t gid = UINT32_MAX);
+    
+    virtual bool
+    GetFileExists (const lldb_private::FileSpec& file_spec);
 
 protected:
     GDBRemoteCommunicationClient m_gdb_client;

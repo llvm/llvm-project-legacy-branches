@@ -2066,7 +2066,7 @@ GDBRemoteCommunicationClient::WriteFile (lldb::user_id_t fd, uint64_t offset,
 
 // Extension of host I/O packets to get whether a file exists.
 bool
-GDBRemoteCommunicationClient::FileExists (const lldb_private::FileSpec& file_spec)
+GDBRemoteCommunicationClient::GetFileExists (const lldb_private::FileSpec& file_spec)
 {
     lldb_private::StreamString stream;
     stream.PutCString("vFile:exists:");

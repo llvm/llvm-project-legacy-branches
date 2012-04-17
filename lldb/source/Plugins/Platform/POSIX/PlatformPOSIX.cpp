@@ -349,6 +349,18 @@ PlatformPOSIX::GetFileSize (const FileSpec& file_spec)
     return Platform::GetFileSize(file_spec);
 }
 
+bool
+PlatformPOSIX::GetFileExists (const FileSpec& file_spec)
+{
+    if (IsHost())
+    {
+        return file_spec.Exists();
+    }
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->GetFileExists(file_spec);
+    return Platform::GetFileExists(file_spec);
+}
+
 lldb_private::Error
 PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path */,
                          const lldb_private::FileSpec& destination /* local file path */)

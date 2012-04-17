@@ -514,6 +514,9 @@ namespace lldb_private {
                  const FileSpec& destination);
         
         virtual bool
+        GetFileExists (const lldb_private::FileSpec& file_spec);
+        
+        virtual bool
         GetSupportsRSync ()
         {
             return m_supports_rsync;

@@ -97,7 +97,7 @@ PlatformRemoteGDBServer::ResolveExecutable (const FileSpec &exe_file,
 {
     Error error;
     //error.SetErrorString ("PlatformRemoteGDBServer::ResolveExecutable() is unimplemented");
-    if (m_gdb_client.FileExists(exe_file))
+    if (m_gdb_client.GetFileExists(exe_file))
         return error;
     // TODO: get the remote end to somehow resolve this file
     error.SetErrorString("file not found on remote end");
@@ -468,4 +468,10 @@ PlatformRemoteGDBServer::PutFile (const lldb_private::FileSpec& source,
          uint32_t gid)
 {
     return Platform::PutFile(source,destination,uid,gid);
+}
+
+bool
+PlatformRemoteGDBServer::GetFileExists (const lldb_private::FileSpec& file_spec)
+{
+    return m_gdb_client.GetFileExists (file_spec);
 }

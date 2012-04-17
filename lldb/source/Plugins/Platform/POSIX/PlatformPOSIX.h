@@ -70,6 +70,9 @@ public:
     MakeDirectory (const std::string &path,
                    mode_t mode);
     
+    virtual bool
+    GetFileExists (const lldb_private::FileSpec& file_spec);
+
 protected:
     std::auto_ptr<lldb_private::Options> m_options;
     

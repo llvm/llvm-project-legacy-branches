@@ -707,3 +707,8 @@ Platform::GetFile (const FileSpec& source,
     return error;
 }
 
+bool
+Platform::GetFileExists (const lldb_private::FileSpec& file_spec)
+{
+    return false;
+}
