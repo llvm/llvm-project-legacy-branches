@@ -13,18 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Tooling/Tooling.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Host.h"
-#include "llvm/Support/JSONParser.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/system_error.h"
-#include "clang/Basic/DiagnosticIDs.h"
-#include "clang/Basic/SourceManager.h"
+#include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/Tool.h"
@@ -32,8 +21,10 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
-#include <map>
-#include <cstdio>
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Host.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace clang {
 namespace tooling {
@@ -45,7 +36,7 @@ FrontendActionFactory::~FrontendActionFactory() {}
 // it to be based on the same framework.
 
 /// \brief Builds a clang driver initialized for running clang tools.
-static clang::driver::Driver *NewDriver(clang::DiagnosticsEngine *Diagnostics,
+static clang::driver::Driver *newDriver(clang::DiagnosticsEngine *Diagnostics,
                                         const char *BinaryName) {
   const std::string DefaultOutputName = "a.out";
   clang::driver::Driver *CompilerDriver = new clang::driver::Driver(
@@ -58,7 +49,7 @@ static clang::driver::Driver *NewDriver(clang::DiagnosticsEngine *Diagnostics,
 /// \brief Retrieves the clang CC1 specific flags out of the compilation's jobs.
 ///
 /// Returns NULL on error.
-static const clang::driver::ArgStringList *GetCC1Arguments(
+static const clang::driver::ArgStringList *getCC1Arguments(
     clang::DiagnosticsEngine *Diagnostics,
     clang::driver::Compilation *Compilation) {
   // We expect to get back exactly one Command job, if we didn't something
@@ -76,7 +67,7 @@ static const clang::driver::ArgStringList *GetCC1Arguments(
   // The one job we find should be to invoke clang again.
   const clang::driver::Command *Cmd =
       cast<clang::driver::Command>(*Jobs.begin());
-  if (llvm::StringRef(Cmd->getCreator().getName()) != "clang") {
+  if (StringRef(Cmd->getCreator().getName()) != "clang") {
     Diagnostics->Report(clang::diag::err_fe_expected_clang_command);
     return NULL;
   }
@@ -85,9 +76,10 @@ static const clang::driver::ArgStringList *GetCC1Arguments(
 }
 
 /// \brief Returns a clang build invocation initialized from the CC1 flags.
-static clang::CompilerInvocation *NewInvocation(
+static clang::CompilerInvocation *newInvocation(
     clang::DiagnosticsEngine *Diagnostics,
     const clang::driver::ArgStringList &CC1Args) {
+  assert(!CC1Args.empty() && "Must at least contain the program name!");
   clang::CompilerInvocation *Invocation = new clang::CompilerInvocation;
   clang::CompilerInvocation::CreateFromArgs(
       *Invocation, CC1Args.data() + 1, CC1Args.data() + CC1Args.size(),
@@ -96,185 +88,24 @@ static clang::CompilerInvocation *NewInvocation(
   return Invocation;
 }
 
-/// \brief Converts a string vector representing a Command line into a C
-/// string vector representing the Argv (including the trailing NULL).
-std::vector<char*> CommandLineToArgv(const std::vector<std::string> *Command) {
-  std::vector<char*> Result(Command->size() + 1);
-  for (std::vector<char*>::size_type I = 0; I < Command->size(); ++I) {
-    Result[I] = const_cast<char*>((*Command)[I].c_str());
-  }
-  Result[Command->size()] = NULL;
-  return Result;
-}
-
-bool RunSyntaxOnlyToolOnCode(
-    clang::FrontendAction *ToolAction, llvm::StringRef Code) {
-  const char *const FileName = "input.cc";
+bool runToolOnCode(clang::FrontendAction *ToolAction, const Twine &Code,
+                   const Twine &FileName) {
+  SmallString<16> FileNameStorage;
+  StringRef FileNameRef = FileName.toNullTerminatedStringRef(FileNameStorage);
   const char *const CommandLine[] = {
-      "clang-tool", "-fsyntax-only", FileName
+      "clang-tool", "-fsyntax-only", FileNameRef.data()
   };
-  std::map<std::string, std::string> FileContents;
-  FileContents[FileName] = Code;
-
   FileManager Files((FileSystemOptions()));
   ToolInvocation Invocation(
       std::vector<std::string>(
           CommandLine,
-          CommandLine + sizeof(CommandLine)/sizeof(CommandLine[0])),
+          CommandLine + llvm::array_lengthof(CommandLine)),
       ToolAction, &Files);
-  Invocation.MapVirtualFiles(FileContents);
-  return Invocation.Run();
-}
 
-namespace {
-
-/// \brief A parser for JSON escaped strings of command line arguments.
-///
-/// Assumes \-escaping for quoted arguments (see the documentation of
-/// UnescapeJsonCommandLine(...)).
-class CommandLineArgumentParser {
- public:
-  CommandLineArgumentParser(llvm::StringRef CommandLine)
-      : Input(CommandLine), Position(Input.begin()-1) {}
-
-  std::vector<std::string> Parse() {
-    bool HasMoreInput = true;
-    while (HasMoreInput && nextNonWhitespace()) {
-      std::string Argument;
-      HasMoreInput = ParseStringInto(Argument);
-      CommandLine.push_back(Argument);
-    }
-    return CommandLine;
-  }
-
- private:
-  // All private methods return true if there is more input available.
-
-  bool ParseStringInto(std::string &String) {
-    do {
-      if (*Position == '"') {
-        if (!ParseQuotedStringInto(String)) return false;
-      } else {
-        if (!ParseFreeStringInto(String)) return false;
-      }
-    } while (*Position != ' ');
-    return true;
-  }
-
-  bool ParseQuotedStringInto(std::string &String) {
-    if (!Next()) return false;
-    while (*Position != '"') {
-      if (!SkipEscapeCharacter()) return false;
-      String.push_back(*Position);
-      if (!Next()) return false;
-    }
-    return Next();
-  }
-
-  bool ParseFreeStringInto(std::string &String) {
-    do {
-      if (!SkipEscapeCharacter()) return false;
-      String.push_back(*Position);
-      if (!Next()) return false;
-    } while (*Position != ' ' && *Position != '"');
-    return true;
-  }
-
-  bool SkipEscapeCharacter() {
-    if (*Position == '\\') {
-      return Next();
-    }
-    return true;
-  }
-
-  bool nextNonWhitespace() {
-    do {
-      if (!Next()) return false;
-    } while (*Position == ' ');
-    return true;
-  }
-
-  bool Next() {
-    ++Position;
-    if (Position == Input.end()) return false;
-    // Remove the JSON escaping first. This is done unconditionally.
-    if (*Position == '\\') ++Position;
-    return Position != Input.end();
-  }
-
-  const llvm::StringRef Input;
-  llvm::StringRef::iterator Position;
-  std::vector<std::string> CommandLine;
-};
-
-} // end namespace
-
-std::vector<std::string> UnescapeJsonCommandLine(
-    llvm::StringRef JsonEscapedCommandLine) {
-  CommandLineArgumentParser parser(JsonEscapedCommandLine);
-  return parser.Parse();
-}
-
-CompileCommand FindCompileArgsInJsonDatabase(
-    llvm::StringRef FileName, llvm::StringRef JsonDatabase,
-    std::string &ErrorMessage) {
-  llvm::SourceMgr SM;
-  llvm::JSONParser Parser(JsonDatabase, &SM);
-  llvm::JSONValue *Root = Parser.parseRoot();
-  if (Root == NULL) {
-    ErrorMessage = "Error while parsing JSON.";
-    return CompileCommand();
-  }
-  llvm::JSONArray *Array = llvm::dyn_cast<llvm::JSONArray>(Root);
-  if (Array == NULL) {
-    ErrorMessage = "Expected array.";
-    return CompileCommand();
-  }
-  for (llvm::JSONArray::const_iterator AI = Array->begin(), AE = Array->end();
-       AI != AE; ++AI) {
-    const llvm::JSONObject *Object = llvm::dyn_cast<llvm::JSONObject>(*AI);
-    if (Object == NULL) {
-      ErrorMessage = "Expected object.";
-      return CompileCommand();
-    }
-    llvm::StringRef EntryDirectory;
-    llvm::StringRef EntryFile;
-    llvm::StringRef EntryCommand;
-    for (llvm::JSONObject::const_iterator KVI = Object->begin(),
-                                          KVE = Object->end();
-         KVI != KVE; ++KVI) {
-      const llvm::JSONValue *Value = (*KVI)->Value;
-      if (Value == NULL) {
-        ErrorMessage = "Expected value.";
-        return CompileCommand();
-      }
-      const llvm::JSONString *ValueString =
-        llvm::dyn_cast<llvm::JSONString>(Value);
-      if (ValueString == NULL) {
-        ErrorMessage = "Expected string as value.";
-        return CompileCommand();
-      }
-      if ((*KVI)->Key->getRawText() == "directory") {
-        EntryDirectory = ValueString->getRawText();
-      } else if ((*KVI)->Key->getRawText() == "file") {
-        EntryFile = ValueString->getRawText();
-      } else if ((*KVI)->Key->getRawText() == "command") {
-        EntryCommand = ValueString->getRawText();
-      } else {
-        ErrorMessage = (llvm::Twine("Unknown key: \"") +
-                        (*KVI)->Key->getRawText() + "\"").str();
-        return CompileCommand();
-      }
-    }
-    if (EntryFile == FileName) {
-      CompileCommand Result;
-      Result.Directory = EntryDirectory;
-      Result.CommandLine = UnescapeJsonCommandLine(EntryCommand);
-      return Result;
-    }
-  }
-  ErrorMessage = "ERROR: No matching command found.";
-  return CompileCommand();
+  SmallString<1024> CodeStorage;
+  Invocation.mapVirtualFile(FileNameRef,
+                            Code.toNullTerminatedStringRef(CodeStorage));
+  return Invocation.run();
 }
 
 /// \brief Returns the absolute path of 'File', by prepending it with
@@ -287,13 +118,13 @@ CompileCommand FindCompileArgsInJsonDatabase(
 ///
 /// \param File Either an absolute or relative path.
 /// \param BaseDirectory An absolute path.
-static std::string GetAbsolutePath(
-    llvm::StringRef File, llvm::StringRef BaseDirectory) {
+static std::string getAbsolutePath(
+    StringRef File, StringRef BaseDirectory) {
   assert(llvm::sys::path::is_absolute(BaseDirectory));
   if (llvm::sys::path::is_absolute(File)) {
     return File;
   }
-  llvm::StringRef RelativePath(File);
+  StringRef RelativePath(File);
   if (RelativePath.startswith("./")) {
     RelativePath = RelativePath.substr(strlen("./"));
   }
@@ -303,18 +134,19 @@ static std::string GetAbsolutePath(
 }
 
 ToolInvocation::ToolInvocation(
-    llvm::ArrayRef<std::string> CommandLine, FrontendAction *ToolAction,
+    ArrayRef<std::string> CommandLine, FrontendAction *ToolAction,
     FileManager *Files)
     : CommandLine(CommandLine.vec()), ToolAction(ToolAction), Files(Files) {
 }
 
-void ToolInvocation::MapVirtualFiles(
-    const std::map<std::string, std::string> &FileContents) {
-  MappedFileContents.insert(FileContents.begin(), FileContents.end());
+void ToolInvocation::mapVirtualFile(StringRef FilePath, StringRef Content) {
+  MappedFileContents[FilePath] = Content;
 }
 
-bool ToolInvocation::Run() {
-  const std::vector<char*> Argv = CommandLineToArgv(&CommandLine);
+bool ToolInvocation::run() {
+  std::vector<const char*> Argv;
+  for (int I = 0, E = CommandLine.size(); I != E; ++I)
+    Argv.push_back(CommandLine[I].c_str());
   const char *const BinaryName = Argv[0];
   DiagnosticOptions DefaultDiagnosticOptions;
   TextDiagnosticPrinter DiagnosticPrinter(
@@ -323,27 +155,26 @@ bool ToolInvocation::Run() {
       new DiagnosticIDs()), &DiagnosticPrinter, false);
 
   const llvm::OwningPtr<clang::driver::Driver> Driver(
-      NewDriver(&Diagnostics, BinaryName));
+      newDriver(&Diagnostics, BinaryName));
   // Since the input might only be virtual, don't check whether it exists.
   Driver->setCheckInputsExist(false);
   const llvm::OwningPtr<clang::driver::Compilation> Compilation(
-      Driver->BuildCompilation(llvm::ArrayRef<const char*>(
-          &Argv[0], Argv.size() - 1)));
-  const clang::driver::ArgStringList *const CC1Args = GetCC1Arguments(
+      Driver->BuildCompilation(llvm::makeArrayRef(Argv)));
+  const clang::driver::ArgStringList *const CC1Args = getCC1Arguments(
       &Diagnostics, Compilation.get());
   if (CC1Args == NULL) {
     return false;
   }
   llvm::OwningPtr<clang::CompilerInvocation> Invocation(
-      NewInvocation(&Diagnostics, *CC1Args));
-  return RunInvocation(BinaryName, Compilation.get(),
+      newInvocation(&Diagnostics, *CC1Args));
+  return runInvocation(BinaryName, Compilation.get(),
                        Invocation.take(), *CC1Args, ToolAction.take());
 }
 
 // Exists solely for the purpose of lookup of the resource path.
 static int StaticSymbol;
 
-bool ToolInvocation::RunInvocation(
+bool ToolInvocation::runInvocation(
     const char *BinaryName,
     clang::driver::Compilation *Compilation,
     clang::CompilerInvocation *Invocation,
@@ -370,7 +201,7 @@ bool ToolInvocation::RunInvocation(
     return false;
 
   Compiler.createSourceManager(*Files);
-  AddFileMappingsTo(Compiler.getSourceManager());
+  addFileMappingsTo(Compiler.getSourceManager());
 
   // Infer the builtin include path if unspecified.
   if (Compiler.getHeaderSearchOpts().UseBuiltinIncludes &&
@@ -387,66 +218,46 @@ bool ToolInvocation::RunInvocation(
   return Success;
 }
 
-void ToolInvocation::AddFileMappingsTo(SourceManager &Sources) {
-  for (std::map<std::string, std::string>::const_iterator
+void ToolInvocation::addFileMappingsTo(SourceManager &Sources) {
+  for (llvm::StringMap<StringRef>::const_iterator
            It = MappedFileContents.begin(), End = MappedFileContents.end();
        It != End; ++It) {
     // Inject the code as the given file name into the preprocessor options.
     const llvm::MemoryBuffer *Input =
-        llvm::MemoryBuffer::getMemBuffer(It->second.c_str());
+        llvm::MemoryBuffer::getMemBuffer(It->getValue());
     // FIXME: figure out what '0' stands for.
     const FileEntry *FromFile = Files->getVirtualFile(
-        It->first, Input->getBufferSize(), 0);
+        It->getKey(), Input->getBufferSize(), 0);
     // FIXME: figure out memory management ('true').
     Sources.overrideFileContents(FromFile, Input, true);
   }
 }
 
-ClangTool::ClangTool(int argc, char **argv)
+ClangTool::ClangTool(const CompilationDatabase &Compilations,
+                     ArrayRef<std::string> SourcePaths)
     : Files((FileSystemOptions())) {
-  if (argc < 3) {
-    llvm::outs() << "Usage: " << argv[0] << " <cmake-output-dir> "
-                 << "<file1> <file2> ...\n";
-    exit(1);
-  }
-  AddTranslationUnits(argv[1], std::vector<std::string>(argv + 2, argv + argc));
-}
+  llvm::SmallString<1024> BaseDirectory;
+  if (const char *PWD = ::getenv("PWD"))
+    BaseDirectory = PWD;
+  else
+    llvm::sys::fs::current_path(BaseDirectory);
+  for (unsigned I = 0, E = SourcePaths.size(); I != E; ++I) {
+    llvm::SmallString<1024> File(getAbsolutePath(
+        SourcePaths[I], BaseDirectory));
 
-void ClangTool::AddTranslationUnits(
-    llvm::StringRef JsonDatabaseDirectory,
-    llvm::ArrayRef<std::string> TranslationUnits) {
-  llvm::SmallString<1024> JsonDatabasePath(JsonDatabaseDirectory);
-  llvm::sys::path::append(JsonDatabasePath, "compile_commands.json");
-  llvm::OwningPtr<llvm::MemoryBuffer> JsonDatabase;
-  llvm::error_code Result =
-      llvm::MemoryBuffer::getFile(JsonDatabasePath, JsonDatabase);
-  if (Result != 0) {
-    llvm::outs() << "Error while opening JSON database: " << Result.message()
-                 << "\n";
-    exit(1);
-  }
-  llvm::StringRef BaseDirectory(::getenv("PWD"));
-  for (unsigned I = 0; I < TranslationUnits.size(); ++I) {
-    llvm::SmallString<1024> File(GetAbsolutePath(
-        TranslationUnits[I], BaseDirectory));
-    std::string ErrorMessage;
-    clang::tooling::CompileCommand LookupResult =
-        clang::tooling::FindCompileArgsInJsonDatabase(
-            File.str(), JsonDatabase->getBuffer(), ErrorMessage);
-    if (!ErrorMessage.empty()) {
-      llvm::outs() << "Error while parsing JSON database: " << ErrorMessage
-                   << "\n";
-      llvm::outs() << "Skipping " << File << "\n";
-      continue;
-    }
-    if (!LookupResult.CommandLine.empty()) {
-      if (!LookupResult.Directory.empty()) {
-        // FIXME: What should happen if CommandLine includes -working-directory
-        // as well?
-        LookupResult.CommandLine.push_back(
-            "-working-directory=" + LookupResult.Directory);
+    std::vector<CompileCommand> CompileCommands =
+      Compilations.getCompileCommands(File.str());
+    if (!CompileCommands.empty()) {
+      for (int I = 0, E = CompileCommands.size(); I != E; ++I) {
+        CompileCommand &Command = CompileCommands[I];
+        if (!Command.Directory.empty()) {
+          // FIXME: What should happen if CommandLine includes -working-directory
+          // as well?
+          Command.CommandLine.push_back(
+            "-working-directory=" + Command.Directory);
+        }
+        CommandLines.push_back(std::make_pair(File.str(), Command.CommandLine));
       }
-      CommandLines.push_back(make_pair(File.str(), LookupResult.CommandLine));
     } else {
       // FIXME: There are two use cases here: doing a fuzzy
       // "find . -name '*.cc' |xargs tool" match, where as a user I don't care
@@ -458,20 +269,22 @@ void ClangTool::AddTranslationUnits(
   }
 }
 
-void ClangTool::MapVirtualFiles(
-    const std::map<std::string, std::string> &FileContents) {
-  MappedFileContents.insert(FileContents.begin(), FileContents.end());
+void ClangTool::mapVirtualFile(StringRef FilePath, StringRef Content) {
+  MappedFileContents.push_back(std::make_pair(FilePath, Content));
 }
 
-int ClangTool::Run(FrontendActionFactory *ActionFactory) {
+int ClangTool::run(FrontendActionFactory *ActionFactory) {
   bool ProcessingFailed = false;
   for (unsigned I = 0; I < CommandLines.size(); ++I) {
     std::string File = CommandLines[I].first;
     std::vector<std::string> &CommandLine = CommandLines[I].second;
     llvm::outs() << "Processing: " << File << ".\n";
-    ToolInvocation Invocation(CommandLine, ActionFactory->New(), &Files);
-    Invocation.MapVirtualFiles(MappedFileContents);
-    if (!Invocation.Run()) {
+    ToolInvocation Invocation(CommandLine, ActionFactory->create(), &Files);
+    for (int I = 0, E = MappedFileContents.size(); I != E; ++I) {
+      Invocation.mapVirtualFile(MappedFileContents[I].first,
+                                MappedFileContents[I].second);
+    }
+    if (!Invocation.run()) {
       llvm::outs() << "Error while processing " << File << ".\n";
       ProcessingFailed = true;
     }

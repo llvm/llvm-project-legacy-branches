@@ -72,6 +72,7 @@ add_clang_unittest(Frontend
  )
 
 add_clang_unittest(Tooling
+  Tooling/CompilationDatabaseTest.cpp
   Tooling/ToolingTest.cpp
   Tooling/RefactoringTest.cpp
   USED_LIBS gtest gtest_main clangTooling

@@ -374,10 +374,6 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   QualType T = E->getType();
   assert(!T.isNull() && "r-value conversion on typeless expression?");
 
-  // We can't do lvalue-to-rvalue on atomics yet.
-  if (T->isAtomicType())
-    return Owned(E);
-
   // We don't want to throw lvalue-to-rvalue casts on top of
   // expressions of certain types in C++.
   if (getLangOpts().CPlusPlus &&
@@ -413,6 +409,15 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   ExprResult Res = Owned(ImplicitCastExpr::Create(Context, T, CK_LValueToRValue,
                                                   E, 0, VK_RValue));
 
+  // C11 6.3.2.1p2:
+  //   ... if the lvalue has atomic type, the value has the non-atomic version 
+  //   of the type of the lvalue ...
+  if (const AtomicType *Atomic = T->getAs<AtomicType>()) {
+    T = Atomic->getValueType().getUnqualifiedType();
+    Res = Owned(ImplicitCastExpr::Create(Context, T, CK_AtomicToNonAtomic,
+                                         Res.get(), 0, VK_RValue));
+  }
+  
   return Res;
 }
 
@@ -3610,8 +3615,6 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
           << FixItHint::CreateRemoval(
                                     SourceRange(Args[0]->getLocStart(),
                                                 Args[NumArgs-1]->getLocEnd()));
-
-        NumArgs = 0;
       }
 
       return Owned(new (Context) CallExpr(Context, Fn, 0, 0, Context.VoidTy,
@@ -4570,8 +4573,28 @@ static QualType checkConditionalPointerCompatibility(Sema &S, ExprResult &LHS,
     rhptee = RHSTy->castAs<PointerType>()->getPointeeType();
   }
 
-  if (!S.Context.typesAreCompatible(lhptee.getUnqualifiedType(),
-                                    rhptee.getUnqualifiedType())) {
+  // C99 6.5.15p6: If both operands are pointers to compatible types or to
+  // differently qualified versions of compatible types, the result type is
+  // a pointer to an appropriately qualified version of the composite
+  // type.
+
+  // Only CVR-qualifiers exist in the standard, and the differently-qualified
+  // clause doesn't make sense for our extensions. E.g. address space 2 should
+  // be incompatible with address space 3: they may live on different devices or
+  // anything.
+  Qualifiers lhQual = lhptee.getQualifiers();
+  Qualifiers rhQual = rhptee.getQualifiers();
+
+  unsigned MergedCVRQual = lhQual.getCVRQualifiers() | rhQual.getCVRQualifiers();
+  lhQual.removeCVRQualifiers();
+  rhQual.removeCVRQualifiers();
+
+  lhptee = S.Context.getQualifiedType(lhptee.getUnqualifiedType(), lhQual);
+  rhptee = S.Context.getQualifiedType(rhptee.getUnqualifiedType(), rhQual);
+
+  QualType CompositeTy = S.Context.mergeTypes(lhptee, rhptee);
+
+  if (CompositeTy.isNull()) {
     S.Diag(Loc, diag::warn_typecheck_cond_incompatible_pointers)
       << LHSTy << RHSTy << LHS.get()->getSourceRange()
       << RHS.get()->getSourceRange();
@@ -4585,16 +4608,12 @@ static QualType checkConditionalPointerCompatibility(Sema &S, ExprResult &LHS,
   }
 
   // The pointer types are compatible.
-  // C99 6.5.15p6: If both operands are pointers to compatible types *or* to
-  // differently qualified versions of compatible types, the result type is
-  // a pointer to an appropriately qualified version of the *composite*
-  // type.
-  // FIXME: Need to calculate the composite type.
-  // FIXME: Need to add qualifiers
+  QualType ResultTy = CompositeTy.withCVRQualifiers(MergedCVRQual);
+  ResultTy = S.Context.getPointerType(ResultTy);
 
-  LHS = S.ImpCastExprToType(LHS.take(), LHSTy, CK_BitCast);
-  RHS = S.ImpCastExprToType(RHS.take(), LHSTy, CK_BitCast);
-  return LHSTy;
+  LHS = S.ImpCastExprToType(LHS.take(), ResultTy, CK_BitCast);
+  RHS = S.ImpCastExprToType(RHS.take(), ResultTy, CK_BitCast);
+  return ResultTy;
 }
 
 /// \brief Return the resulting type when the operands are both block pointers.
@@ -7129,16 +7148,6 @@ static bool IsReadonlyProperty(Expr *E, Sema &S) {
   return false;
 }
 
-static bool IsConstProperty(Expr *E, Sema &S) {
-  const ObjCPropertyRefExpr *PropExpr = dyn_cast<ObjCPropertyRefExpr>(E);
-  if (!PropExpr) return false;
-  if (PropExpr->isImplicitProperty()) return false;
-    
-  ObjCPropertyDecl *PDecl = PropExpr->getExplicitProperty();
-  QualType T = PDecl->getType().getNonReferenceType();
-  return T.isConstQualified();
-}
-
 static bool IsReadonlyMessage(Expr *E, Sema &S) {
   const MemberExpr *ME = dyn_cast<MemberExpr>(E);
   if (!ME) return false;
@@ -7178,13 +7187,12 @@ static NonConstCaptureKind isReferenceToNonConstCapture(Sema &S, Expr *E) {
 /// CheckForModifiableLvalue - Verify that E is a modifiable lvalue.  If not,
 /// emit an error and return true.  If so, return false.
 static bool CheckForModifiableLvalue(Expr *E, SourceLocation Loc, Sema &S) {
+  assert(!E->hasPlaceholderType(BuiltinType::PseudoObject));
   SourceLocation OrigLoc = Loc;
   Expr::isModifiableLvalueResult IsLV = E->isModifiableLvalue(S.Context,
                                                               &Loc);
   if (IsLV == Expr::MLV_Valid && IsReadonlyProperty(E, S))
     IsLV = Expr::MLV_ReadonlyProperty;
-  else if (Expr::MLV_ConstQualified && IsConstProperty(E, S))
-    IsLV = Expr::MLV_Valid;
   else if (IsLV == Expr::MLV_ClassTemporary && IsReadonlyMessage(E, S))
     IsLV = Expr::MLV_InvalidMessageExpression;
   if (IsLV == Expr::MLV_Valid)
@@ -8548,11 +8556,28 @@ static Expr *maybeRebuildARCConsumingStmt(Stmt *Statement) {
   return cleanups;
 }
 
+void Sema::ActOnStartStmtExpr() {
+  PushExpressionEvaluationContext(ExprEvalContexts.back().Context);
+}
+
+void Sema::ActOnStmtExprError() {
+  // Note that function is also called by TreeTransform when leaving a
+  // StmtExpr scope without rebuilding anything.
+
+  DiscardCleanupsInEvaluationContext();
+  PopExpressionEvaluationContext();
+}
+
 ExprResult
 Sema::ActOnStmtExpr(SourceLocation LPLoc, Stmt *SubStmt,
                     SourceLocation RPLoc) { // "({..})"
   assert(SubStmt && isa<CompoundStmt>(SubStmt) && "Invalid action invocation!");
   CompoundStmt *Compound = cast<CompoundStmt>(SubStmt);
+
+  if (hasAnyUnrecoverableErrorsInThisFunction())
+    DiscardCleanupsInEvaluationContext();
+  assert(!ExprNeedsCleanups && "cleanups within StmtExpr not correctly bound!");
+  PopExpressionEvaluationContext();
 
   bool isFileScope
     = (getCurFunctionOrMethodDecl() == 0) && (getCurBlock() == 0);
@@ -9086,15 +9111,6 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
 
   BSI->TheDecl->setBody(cast<CompoundStmt>(Body));
 
-  for (BlockDecl::capture_const_iterator ci = BSI->TheDecl->capture_begin(),
-       ce = BSI->TheDecl->capture_end(); ci != ce; ++ci) {
-    const VarDecl *variable = ci->getVariable();
-    QualType T = variable->getType();
-    QualType::DestructionKind destructKind = T.isDestructedType();
-    if (destructKind != QualType::DK_none)
-      getCurFunction()->setHasBranchProtectedScope();
-  }
-
   computeNRVO(Body, getCurBlock());
   
   BlockExpr *Result = new (Context) BlockExpr(BSI->TheDecl, BlockTy);
@@ -9102,10 +9118,23 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
   PopFunctionScopeInfo(&WP, Result->getBlockDecl(), Result);
 
   // If the block isn't obviously global, i.e. it captures anything at
-  // all, mark this full-expression as needing a cleanup.
+  // all, then we need to do a few things in the surrounding context:
   if (Result->getBlockDecl()->hasCaptures()) {
+    // First, this expression has a new cleanup object.
     ExprCleanupObjects.push_back(Result->getBlockDecl());
     ExprNeedsCleanups = true;
+
+    // It also gets a branch-protected scope if any of the captured
+    // variables needs destruction.
+    for (BlockDecl::capture_const_iterator
+           ci = Result->getBlockDecl()->capture_begin(),
+           ce = Result->getBlockDecl()->capture_end(); ci != ce; ++ci) {
+      const VarDecl *var = ci->getVariable();
+      if (var->getType().isDestructedType() != QualType::DK_none) {
+        getCurFunction()->setHasBranchProtectedScope();
+        break;
+      }
+    }
   }
 
   return Owned(Result);
@@ -10449,7 +10478,8 @@ namespace {
 bool MarkReferencedDecls::TraverseTemplateArgument(
   const TemplateArgument &Arg) {
   if (Arg.getKind() == TemplateArgument::Declaration) {
-    S.MarkAnyDeclReferenced(Loc, Arg.getAsDecl());
+    if (Decl *D = Arg.getAsDecl())
+      S.MarkAnyDeclReferenced(Loc, D);
   }
 
   return Inherited::TraverseTemplateArgument(Arg);
@@ -11238,6 +11268,22 @@ ExprResult
 Sema::ActOnObjCBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind) {
   assert((Kind == tok::kw___objc_yes || Kind == tok::kw___objc_no) &&
          "Unknown Objective-C Boolean value!");
+  QualType ObjCBoolLiteralQT = Context.ObjCBuiltinBoolTy;
+  // signed char is the default type for boolean literals. Use 'BOOL'
+  // instead, if BOOL typedef is visible in its scope instead.
+  Decl *TD = 
+    LookupSingleName(TUScope, &Context.Idents.get("BOOL"), 
+                     SourceLocation(), LookupOrdinaryName);
+  if (TypedefDecl *BoolTD = dyn_cast_or_null<TypedefDecl>(TD)) {
+    QualType QT = BoolTD->getUnderlyingType();
+    if (!QT->isIntegralOrUnscopedEnumerationType()) {
+      Diag(OpLoc, diag::warn_bool_for_boolean_literal) << QT;
+      Diag(BoolTD->getLocation(), diag::note_previous_declaration);
+    }
+    else
+      ObjCBoolLiteralQT = QT;
+  }
+  
   return Owned(new (Context) ObjCBoolLiteralExpr(Kind == tok::kw___objc_yes,
-                                        Context.ObjCBuiltinBoolTy, OpLoc));
+                                        ObjCBoolLiteralQT, OpLoc));
 }

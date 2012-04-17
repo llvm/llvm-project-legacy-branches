@@ -252,7 +252,7 @@ template <typename T>
 class TestVisitor : public clang::RecursiveASTVisitor<T> {
 public:
   bool runOver(StringRef Code) {
-    return RunSyntaxOnlyToolOnCode(new TestAction(this), Code);
+    return runToolOnCode(new TestAction(this), Code);
   }
 
 protected:

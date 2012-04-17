@@ -3,6 +3,7 @@ SET(LLVM_USED_LIBS clangBasic clangFrontend clangAST clangASTMatchers
                    clangRewrite)
 
 add_clang_library(clangTooling
+  CompilationDatabase.cpp
   Refactoring.cpp
   Tooling.cpp
   )

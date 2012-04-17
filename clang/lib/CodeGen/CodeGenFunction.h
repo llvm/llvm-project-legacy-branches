@@ -2104,6 +2104,8 @@ public:
   LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
+  RValue EmitRValueForField(llvm::Value *Addr, const FieldDecl *FD);
+
   class ConstantEmission {
     llvm::PointerIntPair<llvm::Constant*, 1, bool> ValueAndIsReference;
     ConstantEmission(llvm::Constant *C, bool isReference)
@@ -2429,11 +2431,11 @@ public:
                                  llvm::Constant **Decls,
                                  unsigned NumDecls);
 
-  /// GenerateCXXGlobalDtorFunc - Generates code for destroying global
+  /// GenerateCXXGlobalDtorsFunc - Generates code for destroying global
   /// variables.
-  void GenerateCXXGlobalDtorFunc(llvm::Function *Fn,
-                                 const std::vector<std::pair<llvm::WeakVH,
-                                   llvm::Constant*> > &DtorsAndObjects);
+  void GenerateCXXGlobalDtorsFunc(llvm::Function *Fn,
+                                  const std::vector<std::pair<llvm::WeakVH,
+                                  llvm::Constant*> > &DtorsAndObjects);
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,
@@ -2518,8 +2520,7 @@ public:
 
   /// SetFPAccuracy - Set the minimum required accuracy of the given floating
   /// point operation, expressed as the maximum relative error in ulp.
-  void SetFPAccuracy(llvm::Value *Val, unsigned AccuracyN,
-                     unsigned AccuracyD = 1);
+  void SetFPAccuracy(llvm::Value *Val, float Accuracy);
 
 private:
   llvm::MDNode *getRangeForLoadFromType(QualType Ty);

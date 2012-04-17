@@ -444,6 +444,13 @@ def note_receiver_is_id : Note<
   "receiver is treated with 'id' type for purpose of method lookup">;
 def note_suppressed_class_declare : Note<
   "class with specified objc_requires_property_definitions attribute is declared here">;
+def err_objc_root_class_subclass : Error<
+  "objc_root_class attribute may only be specified on a root class declaration">;
+def warn_objc_root_class_missing : Warning<
+	"class %0 defined without specifying a base class">,
+  InGroup<ObjCRootClass>, DefaultIgnore;
+def note_objc_needs_superclass : Note<
+  "add a super class to fix this problem">;
 def warn_dup_category_def : Warning<
   "duplicate definition of category %1 on interface %0">;
 def err_conflicting_super_class : Error<"conflicting super class name %0">;
@@ -652,6 +659,9 @@ def warn_arc_perform_selector_leaks : Warning<
   InGroup<DiagGroup<"arc-performSelector-leaks">>;
 def err_gc_weak_property_strong_type : Error<
   "weak attribute declared on a __strong type property in GC mode">;
+def warn_receiver_is_weak : Warning <
+  "weak receiver may be unpredictably null in ARC mode">,
+  InGroup<DiagGroup<"receiver-is-weak">>, DefaultIgnore;
 
 def error_synthesized_ivar_yet_not_supported : Error<
   "instance variable synthesis not yet supported"
@@ -874,8 +884,13 @@ def note_access_natural : Note<
 def note_access_constrained_by_path : Note<
   "constrained by %select{|implicitly }1%select{private|protected}0"
   " inheritance here">;
-def note_access_protected_restricted : Note<
-  "object type %select{|%1 }0must derive from context type %2">;
+def note_access_protected_restricted_noobject : Note<
+  "must name member using the type of the current context %0">;
+def note_access_protected_restricted_ctordtor : Note<
+  "protected %select{constructor|destructor}0 can only be used to "
+  "%select{construct|destroy}0 a base class subobject">;
+def note_access_protected_restricted_object : Note<
+  "can only access this member on an object of type %0">;
 def warn_cxx98_compat_sfinae_access_control : Warning<
   "substitution failure due to access control is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore, NoSFINAE;
@@ -1368,9 +1383,9 @@ def err_constexpr_vla : Error<
   "%select{function|constructor}1">;
 def err_constexpr_var_declaration : Error<
   "variables cannot be declared in a constexpr %select{function|constructor}0">;
-def err_constexpr_function_never_constant_expr : Error<
-  "constexpr %select{function|constructor}0 never produces "
-  "a constant expression">;
+def err_constexpr_function_never_constant_expr : ExtWarn<
+  "constexpr %select{function|constructor}0 never produces a "
+  "constant expression">, InGroup<DiagGroup<"invalid-constexpr">>, DefaultError;
 def err_constexpr_body_no_return : Error<
   "no return statement in constexpr function">;
 def err_constexpr_body_multiple_return : Error<
@@ -1532,6 +1547,9 @@ def warn_objc_redundant_literal_use : Warning<
   "using %0 with a literal is redundant">, InGroup<ObjCRedundantLiteralUse>;
 }
 
+def warn_bool_for_boolean_literal : Warning<
+  "BOOL of type %0 is non-intergal and unsuitable for a "
+  "boolean literal - ignored">, InGroup<DiagGroup<"numeric-literals">>;
 def err_only_annotate_after_access_spec : Error<
   "access specifier can only have annotation attributes">;
 def err_attribute_section_invalid_for_target : Error<
@@ -1640,12 +1658,18 @@ def err_attribute_argument_out_of_range : Error<
   "%plural{0:no parameters to index into|"
   "1:can only be 1, since there is one parameter|"
   ":must be between 1 and %2}2">;
-def err_attribute_argument_not_lockable : Error<
+def warn_attribute_argument_not_lockable : Warning<
   "%0 attribute requires arguments whose type is annotated "
-  "with 'lockable' attribute">;
-def err_attribute_decl_not_lockable : Error<
+  "with 'lockable' attribute; type here is '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_attribute_decl_not_lockable : Warning<
   "%0 attribute can only be applied in a context annotated "
-  "with 'lockable' attribute">;
+  "with 'lockable' attribute">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_attribute_argument_not_class : Warning<
+  "%0 attribute requires arguments that are class type or point to"
+  " class type; type here is '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;   
 def warn_unlock_but_no_lock : Warning<
   "unlocking '%0' that was not locked">,
   InGroup<ThreadSafety>, DefaultIgnore;
@@ -1729,7 +1753,7 @@ def warn_impcast_bitfield_precision_constant : Warning<
 def warn_impcast_literal_float_to_integer : Warning<
   "implicit conversion turns literal floating-point number into integer: "
   "%0 to %1">,
-  InGroup<LiteralConversion>, DefaultIgnore;
+  InGroup<LiteralConversion>;
 def warn_impcast_string_literal_to_bool : Warning<
   "implicit conversion turns string literal into bool: %0 to %1">,
   InGroup<StringConversion>, DefaultIgnore;
@@ -2323,6 +2347,13 @@ def err_template_arg_not_integral_or_enumeral : Error<
 def err_template_arg_not_ice : Error<
   "non-type template argument of type %0 is not an integral constant "
   "expression">;
+def err_template_arg_not_address_constant : Error<
+  "non-type template argument of type %0 is not a constant expression">;
+def err_template_arg_untyped_null_constant : Error<
+  "null non-type template argument must be cast to template parameter type %0">;
+def err_template_arg_wrongtype_null_constant : Error<
+ "null non-type template argument of type %0 does not match template parameter "
+ "of type %1">;
 def err_deduced_non_type_template_arg_type_mismatch : Error<
   "deduced non-type template argument does not have the same type as the "
   "its corresponding template parameter (%0 vs %1)">;
@@ -2358,14 +2389,22 @@ def err_template_arg_field : Error<
   "non-type template argument refers to non-static data member %0">;
 def err_template_arg_method : Error<
   "non-type template argument refers to non-static member function %0">;
-def err_template_arg_function_not_extern : Error<
-  "non-template argument refers to function %0 with internal linkage">;
-def err_template_arg_object_not_extern : Error<
-  "non-template argument refers to object %0 that does not have external "
-  "linkage">;
+def err_template_arg_object_no_linkage : Error<
+  "non-type template argument refers to %select{function|object}0 %1 that "
+  "does not have linkage">;
+def warn_cxx98_compat_template_arg_object_internal : Warning<
+  "non-type template argument referring to %select{function|object}0 %1 with "
+  "internal linkage is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def ext_template_arg_object_internal : ExtWarn<
+  "non-type template argument referring to %select{function|object}0 %1 with "
+  "internal linkage is a C++11 extension">, InGroup<CXX11>;
+def err_template_arg_thread_local : Error<
+  "non-type template argument refers to thread-local object">;
 def note_template_arg_internal_object : Note<
-  "non-template argument refers to %select{function|object}0 here">;
-def note_template_arg_refers_here : Note<"non-template argument refers here">;
+  "non-type template argument refers to %select{function|object}0 here">;
+def note_template_arg_refers_here : Note<
+  "non-type template argument refers here">;
 def err_template_arg_not_object_or_func : Error<
   "non-type template argument does not refer to an object or function">;
 def err_template_arg_not_pointer_to_member_form : Error<
@@ -3758,7 +3797,7 @@ def warn_null_in_comparison_operation : Warning<
   InGroup<DiagGroup<"null-arithmetic">>;
 
 def err_invalid_this_use : Error<
-  "invalid use of 'this' outside of a nonstatic member function">;
+  "invalid use of 'this' outside of a non-static member function">;
 def err_invalid_member_use_in_static_method : Error<
   "invalid use of member %0 in static member function">;
 def err_invalid_qualified_function_type : Error<
@@ -3774,7 +3813,10 @@ def err_ref_qualifier_overload : Error<
   "without a ref-qualifier|with ref-qualifier '&'|with ref-qualifier '&&'}1">;
 
 def err_invalid_non_static_member_use : Error<
-  "invalid use of nonstatic data member %0">;
+  "invalid use of non-static data member %0">;
+def err_nested_non_static_member_use : Error<
+  "%select{call to non-static member function|use of non-static data member}0 "
+  "%2 of %1 from nested type %3">;
 def warn_cxx98_compat_non_static_member_use : Warning<
   "use of non-static data member %0 in an unevaluated context is "
   "incompatible with C++98">, InGroup<CXX98Compat>, DefaultIgnore;
@@ -4254,8 +4296,8 @@ def err_typecheck_deleted_function : Error<
 def err_expected_class_or_namespace : Error<"expected a class or namespace">;
 def err_expected_class : Error<"%0 is not a class%select{ or namespace|, "
   "namespace, or scoped enumeration}1">;
-def err_invalid_declarator_scope : Error<
-  "definition or redeclaration of %0 not in a namespace enclosing %1">;
+def err_invalid_declarator_scope : Error<"cannot define or redeclare %0 here "
+  "because namespace %1 does not enclose namespace %2">;
 def err_invalid_declarator_global_scope : Error<
   "definition or redeclaration of %0 cannot name the global scope">;
 def err_invalid_declarator_in_function : Error<
@@ -4328,22 +4370,22 @@ def ext_typecheck_convert_pointer_int : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1; "
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "with an expression of type|to parameter of type|to type}2 %1"
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IntConversion>;
 def ext_typecheck_convert_int_pointer : ExtWarn<
   "incompatible integer to pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1; "
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "with an expression of type|to parameter of type|to type}2 %1"
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IntConversion>;
 def ext_typecheck_convert_pointer_void_func : Extension<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4364,10 +4406,10 @@ def ext_typecheck_convert_incompatible_pointer : ExtWarn<
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
   "with an expression of type|to parameter of type|to type}2 %1"
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IncompatiblePointerTypes>;
 def ext_typecheck_convert_discards_qualifiers : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4483,12 +4525,15 @@ def err_atomic_builtin_pointer_size : Error<
 def err_atomic_op_needs_atomic : Error<
   "first argument to atomic operation must be a pointer to _Atomic "
   "type (%0 invalid)">;
+def err_atomic_op_needs_trivial_copy : Error<
+  "first argument to atomic operation must be a pointer to a trivially-copyable"
+  " type (%0 invalid)">;
 def err_atomic_op_needs_atomic_int_or_ptr : Error<
-  "first argument to atomic operation must be a pointer to atomic "
-  "integer or pointer (%0 invalid)">;
-def err_atomic_op_logical_needs_atomic_int : Error<
-  "first argument to logical atomic operation must be a pointer to atomic "
-  "integer (%0 invalid)">;
+  "first argument to atomic operation must be a pointer to %select{|atomic }0"
+  "integer or pointer (%1 invalid)">;
+def err_atomic_op_bitwise_needs_atomic_int : Error<
+  "first argument to bitwise atomic operation must be a pointer to "
+  "%select{|atomic }0integer (%1 invalid)">;
 
 def err_deleted_function_use : Error<"attempt to use a deleted function">;
 

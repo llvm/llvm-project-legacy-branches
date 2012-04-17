@@ -121,7 +121,8 @@ bool SaveRewrittenFiles(Rewriter &Rewrite);
 class RefactoringTool {
 public:
   /// \see ClangTool::ClangTool.
-  RefactoringTool(int argc, char **argv);
+  RefactoringTool(const CompilationDatabase &Compilations,
+                  ArrayRef<std::string> SourcePaths);
 
   /// \brief Returns a set of replacements. All replacements added during the
   /// run of the tool will be applied after all translation units have been

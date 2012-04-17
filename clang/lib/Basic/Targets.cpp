@@ -2730,7 +2730,8 @@ public:
                                  StringRef Name,
                                  bool Enabled) const {
     if (Name == "soft-float" || Name == "soft-float-abi" ||
-        Name == "vfp2" || Name == "vfp3" || Name == "neon" || Name == "d16") {
+        Name == "vfp2" || Name == "vfp3" || Name == "neon" || Name == "d16" ||
+        Name == "neonfp") {
       Features[Name] = Enabled;
     } else
       return false;
@@ -3448,8 +3449,11 @@ protected:
   std::string ABI;
 
 public:
-  MipsTargetInfoBase(const std::string& triple, const std::string& ABIStr)
+  MipsTargetInfoBase(const std::string& triple,
+                     const std::string& ABIStr,
+                     const std::string& CPUStr)
     : TargetInfo(triple),
+      CPU(CPUStr),
       SoftFloat(false), SingleFloat(false),
       ABI(ABIStr)
   {}
@@ -3475,6 +3479,10 @@ public:
       Builder.defineMacro("__mips_hard_float", Twine(1));
     else
       llvm_unreachable("Invalid float ABI for Mips.");
+
+    Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
+    Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
+    Builder.defineMacro("_MIPS_SZLONG", Twine(getLongWidth()));
   }
 
   virtual void getTargetDefines(const LangOptions &Opts,
@@ -3570,7 +3578,7 @@ public:
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
 public:
   Mips32TargetInfoBase(const std::string& triple) :
-    MipsTargetInfoBase(triple, "o32") {
+    MipsTargetInfoBase(triple, "o32", "mips32") {
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
   }
@@ -3584,10 +3592,6 @@ public:
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
     MipsTargetInfoBase::getArchDefines(Opts, Builder);
-
-    Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
-    Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
-    Builder.defineMacro("_MIPS_SZLONG", Twine(getLongWidth()));
 
     if (ABI == "o32") {
       Builder.defineMacro("__mips_o32");
@@ -3678,7 +3682,7 @@ class Mips64TargetInfoBase : public MipsTargetInfoBase {
   virtual void SetDescriptionString(const std::string &Name) = 0;
 public:
   Mips64TargetInfoBase(const std::string& triple) :
-    MipsTargetInfoBase(triple, "n64") {
+    MipsTargetInfoBase(triple, "n64", "mips64") {
     LongWidth = LongAlign = 64;
     PointerWidth = PointerAlign = 64;
     LongDoubleWidth = LongDoubleAlign = 128;

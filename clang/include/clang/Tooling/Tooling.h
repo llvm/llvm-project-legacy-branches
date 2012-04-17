@@ -10,16 +10,31 @@
 //  This file implements functions to run clang tools standalone instead
 //  of running them as a plugin.
 //
+//  A ClangTool is initialized with a CompilationDatabase and a set of files
+//  to run over. The tool will then run a user-specified FrontendAction over
+//  all TUs in which the given files are compiled.
+//
+//  It is also possible to run a FrontendAction over a snippet of code by
+//  calling runSyntaxOnlyToolOnCode, which is useful for unit testing.
+//
+//  Applications that need more fine grained control over how to run
+//  multiple FrontendActions over code can use ToolInvocation.
+//
+//  Example tools:
+//  - running clang -fsyntax-only over source code from an editor to get
+//    fast syntax checks
+//  - running match/replace tools over C++ code
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_TOOLING_TOOLING_H
 #define LLVM_CLANG_TOOLING_TOOLING_H
 
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "clang/Basic/FileManager.h"
+#include "clang/Basic/LLVM.h"
 #include "clang/Driver/Util.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
-#include <map>
 #include <string>
 #include <vector>
 
@@ -35,6 +50,8 @@ class FrontendAction;
 
 namespace tooling {
 
+class CompilationDatabase;
+
 /// \brief Interface to generate clang::FrontendActions.
 class FrontendActionFactory {
 public:
@@ -43,7 +60,7 @@ public:
   /// \brief Returns a new clang::FrontendAction.
   ///
   /// The caller takes ownership of the returned action.
-  virtual clang::FrontendAction *New() = 0;
+  virtual clang::FrontendAction *create() = 0;
 };
 
 /// \brief Returns a new FrontendActionFactory for a given type.
@@ -52,81 +69,33 @@ public:
 ///
 /// Example:
 /// FrontendActionFactory *Factory =
-///   NewFrontendActionFactor<clang::SyntaxOnlyAction>();
+///   newFrontendActionFactory<clang::SyntaxOnlyAction>();
 template <typename T>
-FrontendActionFactory *NewFrontendActionFactory();
+FrontendActionFactory *newFrontendActionFactory();
 
 /// \brief Returns a new FrontendActionFactory for any type that provides an
-/// implementation of NewFrontendAction().
+/// implementation of newFrontendAction().
 ///
-/// FactoryT must implement: FrontendAction *NewFrontendAction().
+/// FactoryT must implement: FrontendAction *newFrontendAction().
 ///
 /// Example:
 /// struct ProvidesFrontendActions {
-///   FrontendActionFactory *NewFrontendAction();
+///   FrontendAction *newFrontendAction();
 /// } Factory;
 /// FrontendActionFactory *FactoryAdapter =
-///   NewFrontendActionFactor(&Factory);
+///   newFrontendActionFactory(&Factory);
 template <typename FactoryT>
-FrontendActionFactory *NewFrontendActionFactory(FactoryT *ActionFactory);
+FrontendActionFactory *newFrontendActionFactory(FactoryT *ActionFactory);
 
-/// \brief Runs (and deletes) the tool on 'Code' with the -fsynatx-only flag.
+/// \brief Runs (and deletes) the tool on 'Code' with the -fsyntax-only flag.
 ///
 /// \param ToolAction The action to run over the code.
 /// \param Code C++ code.
+/// \param FileName The file name which 'Code' will be mapped as.
 ///
 /// \return - True if 'ToolAction' was successfully executed.
-bool RunSyntaxOnlyToolOnCode(
-    clang::FrontendAction *ToolAction, llvm::StringRef Code);
-
-/// \brief Converts a vector<string> into a vector<char*> suitable to pass
-/// to main-style functions taking (int Argc, char *Argv[]).
-std::vector<char*> CommandLineToArgv(const std::vector<std::string> *Command);
-
-/// \brief Specifies the working directory and command of a compilation.
-struct CompileCommand {
-  /// \brief The working directory the command was executed from.
-  std::string Directory;
-
-  /// \brief The command line that was executed.
-  std::vector<std::string> CommandLine;
-};
-
-/// \brief Converts a JSON escaped command line to a vector of arguments.
-///
-/// Note that for performance reasons this escapes both the JSON escape layer
-/// and the command line escape layer at the same time with a single pass over
-/// the string.
-///
-/// \param JsonEscapedCommandLine The escaped command line as a string. This
-/// is assumed to be escaped as a JSON string (e.g. " and \ are escaped).
-/// In addition, any arguments containing spaces are assumed to be \-escaped.
-///
-/// For example, the input (|| denoting non C-escaped strings):
-///   |./call  a  \"b \\\" c \\\\ \"  d|
-/// would yield:
-///   [ |./call|, |a|, |b " c \ |, |d| ].
-std::vector<std::string> UnescapeJsonCommandLine(
-    llvm::StringRef JsonEscapedCommandLine);
-
-/// \brief Looks up the compile command for 'FileName' in 'JsonDatabase'.
-///
-/// \param FileName The path to an input file for which we want the compile
-/// command line. If the 'JsonDatabase' was created by CMake, this must be
-/// an absolute path inside the CMake source directory which does not have
-/// symlinks resolved.
-///
-/// \param JsonDatabase A JSON formatted list of compile commands. This lookup
-/// command supports only a subset of the JSON standard as written by CMake.
-///
-/// \param ErrorMessage If non-empty, an error occurred and 'ErrorMessage' will
-/// be set to contain the error message. In this case CompileCommand will
-/// contain an empty directory and command line.
-///
-/// \see JsonCompileCommandLineDatabase
-CompileCommand FindCompileArgsInJsonDatabase(
-    llvm::StringRef FileName, llvm::StringRef JsonDatabase,
-    std::string &ErrorMessage);
+bool runToolOnCode(clang::FrontendAction *ToolAction, const Twine &Code,
+                   const Twine &FileName = "input.cc");
 
 /// \brief Utility to run a FrontendAction in a single clang invocation.
 class ToolInvocation {
@@ -137,36 +106,34 @@ class ToolInvocation {
   /// \param ToolAction The action to be executed. Class takes ownership.
   /// \param Files The FileManager used for the execution. Class does not take
   /// ownership.
-  ToolInvocation(
-      llvm::ArrayRef<std::string> CommandLine, FrontendAction *ToolAction,
-      FileManager *Files);
+  ToolInvocation(ArrayRef<std::string> CommandLine, FrontendAction *ToolAction,
+                 FileManager *Files);
 
-  /// \brief Map virtual files to be used while running the tool.
+  /// \brief Map a virtual file to be used while running the tool.
   ///
-  /// \param FileContents A map from file names to the file content of the
-  /// mapped virtual files.
-  void MapVirtualFiles(const std::map<std::string, std::string> &FileContents);
+  /// \param FilePath The path at which the content will be mapped.
+  /// \param Content A null terminated buffer of the file's content.
+  void mapVirtualFile(StringRef FilePath, StringRef Content);
 
   /// \brief Run the clang invocation.
   ///
   /// \returns True if there were no errors during execution.
-  bool Run();
+  bool run();
 
  private:
-  void AddFileMappingsTo(SourceManager &SourceManager);
+  void addFileMappingsTo(SourceManager &SourceManager);
 
-  bool RunInvocation(
-      const char *BinaryName,
-      clang::driver::Compilation *Compilation,
-      clang::CompilerInvocation *Invocation,
-      const clang::driver::ArgStringList &CC1Args,
-      clang::FrontendAction *ToolAction);
+  bool runInvocation(const char *BinaryName,
+                     clang::driver::Compilation *Compilation,
+                     clang::CompilerInvocation *Invocation,
+                     const clang::driver::ArgStringList &CC1Args,
+                     clang::FrontendAction *ToolAction);
 
   std::vector<std::string> CommandLine;
   llvm::OwningPtr<FrontendAction> ToolAction;
   FileManager *Files;
   // Maps <file name> -> <file content>.
-  std::map<std::string, std::string> MappedFileContents;
+  llvm::StringMap<StringRef> MappedFileContents;
 };
 
 /// \brief Utility to run a FrontendAction over a set of files.
@@ -174,92 +141,61 @@ class ToolInvocation {
 /// This class is written to be usable for command line utilities.
 class ClangTool {
  public:
-  /// \brief Construct a clang tool from a command line.
+  /// \brief Constructs a clang tool to run over a list of files.
   ///
-  /// This will parse the command line parameters and print an error message
-  /// and exit the program if the command line does not specify the required
-  /// parameters.
-  ///
-  /// Usage:
-  /// $ tool-name <cmake-output-dir> <file1> <file2> ...
-  ///
-  /// where <cmake-output-dir> is a CMake build directory in which a file named
-  /// compile_commands.json exists (enable -DCMAKE_EXPORT_COMPILE_COMMANDS in
-  /// CMake to get this output).
-  ///
-  /// <file1> ... specify the paths of files in the CMake source tree. This
-  /// path is looked up in the compile command database. If the path of a file
-  /// is absolute, it needs to point into CMake's source tree. If the path is
-  /// relative, the current working directory needs to be in the CMake source
-  /// tree and the file must be in a subdirectory of the current working
-  /// directory. "./" prefixes in the relative files will be automatically
-  /// removed, but the rest of a relative path must be a suffix of a path in
-  /// the compile command line database.
-  ///
-  /// For example, to use a tool on all files in a subtree of the source
-  /// tree, use:
-  ///
-  ///   /path/in/subtree $ find . -name '*.cpp' |
-  ///       xargs tool-name /path/to/source
-  ///
-  /// \param argc The argc argument from main.
-  /// \param argv The argv argument from main.
-  ClangTool(int argc, char **argv);
+  /// \param Compilations The CompilationDatabase which contains the compile
+  ///        command lines for the given source paths.
+  /// \param SourcePaths The source files to run over. If a source files is
+  ///        not found in Compilations, it is skipped.
+  ClangTool(const CompilationDatabase &Compilations,
+            ArrayRef<std::string> SourcePaths);
 
-  /// \brief Map virtual files to be used while running the tool.
+  /// \brief Map a virtual file to be used while running the tool.
   ///
-  /// \param FileContents A map from file names to the file content of the
-  /// mapped virtual files.
-  void MapVirtualFiles(const std::map<std::string, std::string> &FileContents);
+  /// \param FilePath The path at which the content will be mapped.
+  /// \param Content A null terminated buffer of the file's content.
+  void mapVirtualFile(StringRef FilePath, StringRef Content);
 
   /// Runs a frontend action over all files specified in the command line.
   ///
   /// \param ActionFactory Factory generating the frontend actions. The function
   /// takes ownership of this parameter. A new action is generated for every
   /// processed translation unit.
-  int Run(FrontendActionFactory *ActionFactory);
+  int run(FrontendActionFactory *ActionFactory);
 
   /// \brief Returns the file manager used in the tool.
   ///
   /// The file manager is shared between all translation units.
-  FileManager &GetFiles() { return Files; }
+  FileManager &getFiles() { return Files; }
 
  private:
-  /// \brief Add translation units to run the tool over.
-  ///
-  /// Translation units not found in JsonDatabaseDirectory (see constructore)
-  /// will be skipped.
-  void AddTranslationUnits(
-      llvm::StringRef JsonDatabaseDirectory,
-      llvm::ArrayRef<std::string> TranslationUnits);
-
   // We store command lines as pair (file name, command line).
   typedef std::pair< std::string, std::vector<std::string> > CommandLine;
   std::vector<CommandLine> CommandLines;
 
   FileManager Files;
-  // Maps <file name> -> <file content>.
-  std::map<std::string, std::string> MappedFileContents;
+  // Contains a list of pairs (<file name>, <file content>).
+  std::vector< std::pair<StringRef, StringRef> > MappedFileContents;
 };
 
 template <typename T>
-FrontendActionFactory *NewFrontendActionFactory() {
+FrontendActionFactory *newFrontendActionFactory() {
   class SimpleFrontendActionFactory : public FrontendActionFactory {
   public:
-    virtual clang::FrontendAction *New() { return new T; }
+    virtual clang::FrontendAction *create() { return new T; }
   };
 
   return new SimpleFrontendActionFactory;
 }
 
 template <typename FactoryT>
-FrontendActionFactory *NewFrontendActionFactory(FactoryT *ActionFactory) {
+FrontendActionFactory *newFrontendActionFactory(FactoryT *ActionFactory) {
   class FrontendActionFactoryAdapter : public FrontendActionFactory {
   public:
     explicit FrontendActionFactoryAdapter(FactoryT *ActionFactory)
       : ActionFactory(ActionFactory) {}
 
-    virtual clang::FrontendAction *New() {
+    virtual clang::FrontendAction *create() {
       return ActionFactory->newFrontendAction();
     }
 

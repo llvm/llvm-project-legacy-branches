@@ -3461,6 +3461,99 @@ bool Sema::CheckTemplateArgument(TemplateTypeParmDecl *Param,
   return false;
 }
 
+enum NullPointerValueKind {
+  NPV_NotNullPointer,
+  NPV_NullPointer,
+  NPV_Error
+};
+
+/// \brief Determine whether the given template argument is a null pointer
+/// value of the appropriate type.
+static NullPointerValueKind
+isNullPointerValueTemplateArgument(Sema &S, NonTypeTemplateParmDecl *Param,
+                                   QualType ParamType, Expr *Arg) {
+  if (Arg->isValueDependent() || Arg->isTypeDependent())
+    return NPV_NotNullPointer;
+  
+  if (!S.getLangOpts().CPlusPlus0x)
+    return NPV_NotNullPointer;
+  
+  // Determine whether we have a constant expression.
+  ExprResult ArgRV = S.DefaultFunctionArrayConversion(Arg);
+  if (ArgRV.isInvalid())
+    return NPV_Error;
+  Arg = ArgRV.take();
+  
+  Expr::EvalResult EvalResult;
+  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  EvalResult.Diag = &Notes;
+  if (!Arg->EvaluateAsRValue(EvalResult, S.Context) ||
+      EvalResult.HasSideEffects) {
+    SourceLocation DiagLoc = Arg->getExprLoc();
+    
+    // If our only note is the usual "invalid subexpression" note, just point
+    // the caret at its location rather than producing an essentially
+    // redundant note.
+    if (Notes.size() == 1 && Notes[0].second.getDiagID() ==
+        diag::note_invalid_subexpr_in_const_expr) {
+      DiagLoc = Notes[0].first;
+      Notes.clear();
+    }
+    
+    S.Diag(DiagLoc, diag::err_template_arg_not_address_constant)
+      << Arg->getType() << Arg->getSourceRange();
+    for (unsigned I = 0, N = Notes.size(); I != N; ++I)
+      S.Diag(Notes[I].first, Notes[I].second);
+    
+    S.Diag(Param->getLocation(), diag::note_template_param_here);
+    return NPV_Error;
+  }
+  
+  // C++11 [temp.arg.nontype]p1:
+  //   - an address constant expression of type std::nullptr_t
+  if (Arg->getType()->isNullPtrType())
+    return NPV_NullPointer;
+  
+  //   - a constant expression that evaluates to a null pointer value (4.10); or
+  //   - a constant expression that evaluates to a null member pointer value
+  //     (4.11); or
+  if ((EvalResult.Val.isLValue() && !EvalResult.Val.getLValueBase()) ||
+      (EvalResult.Val.isMemberPointer() &&
+       !EvalResult.Val.getMemberPointerDecl())) {
+    // If our expression has an appropriate type, we've succeeded.
+    bool ObjCLifetimeConversion;
+    if (S.Context.hasSameUnqualifiedType(Arg->getType(), ParamType) ||
+        S.IsQualificationConversion(Arg->getType(), ParamType, false,
+                                     ObjCLifetimeConversion))
+      return NPV_NullPointer;
+    
+    // The types didn't match, but we know we got a null pointer; complain,
+    // then recover as if the types were correct.
+    S.Diag(Arg->getExprLoc(), diag::err_template_arg_wrongtype_null_constant)
+      << Arg->getType() << ParamType << Arg->getSourceRange();
+    S.Diag(Param->getLocation(), diag::note_template_param_here);
+    return NPV_NullPointer;
+  }
+
+  // If we don't have a null pointer value, but we do have a NULL pointer
+  // constant, suggest a cast to the appropriate type.
+  if (Arg->isNullPointerConstant(S.Context, Expr::NPC_NeverValueDependent)) {
+    std::string Code = "static_cast<" + ParamType.getAsString() + ">(";
+    S.Diag(Arg->getExprLoc(), diag::err_template_arg_untyped_null_constant)
+      << ParamType
+      << FixItHint::CreateInsertion(Arg->getLocStart(), Code)
+      << FixItHint::CreateInsertion(S.PP.getLocForEndOfToken(Arg->getLocEnd()),
+                                    ")");
+    S.Diag(Param->getLocation(), diag::note_template_param_here);
+    return NPV_NullPointer;
+  }
+  
+  // FIXME: If we ever want to support general, address-constant expressions
+  // as non-type template arguments, we should return the ExprResult here to
+  // be interpreted by the caller.
+  return NPV_NotNullPointer;
+}
+
 /// \brief Checks whether the given template argument is the address
 /// of an object or function according to C++ [temp.arg.nontype]p1.
 static bool
@@ -3473,6 +3566,21 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   Expr *Arg = ArgIn;
   QualType ArgType = Arg->getType();
 
+  // If our parameter has pointer type, check for a null template value.
+  if (ParamType->isPointerType() || ParamType->isNullPtrType()) {
+    switch (isNullPointerValueTemplateArgument(S, Param, ParamType, Arg)) {
+    case NPV_NullPointer:
+      Converted = TemplateArgument((Decl *)0);
+      return false;
+
+    case NPV_Error:
+      return true;
+        
+    case NPV_NotNullPointer:
+      break;
+    }
+  }
+  
   // See through any implicit casts we added to fix the type.
   Arg = Arg->IgnoreImpCasts();
 
@@ -3527,19 +3635,19 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
            dyn_cast<SubstNonTypeTemplateParmExpr>(Arg))
     Arg = subst->getReplacement()->IgnoreImpCasts();
 
-  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg);
-  if (!DRE) {
-    S.Diag(Arg->getLocStart(), diag::err_template_arg_not_decl_ref)
-      << Arg->getSourceRange();
-    S.Diag(Param->getLocation(), diag::note_template_param_here);
-    return true;
-  }
-
   // Stop checking the precise nature of the argument if it is value dependent,
   // it should be checked when instantiated.
   if (Arg->isValueDependent()) {
     Converted = TemplateArgument(ArgIn);
     return false;
+  }
+  
+  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg);
+  if (!DRE) {
+    S.Diag(Arg->getLocStart(), diag::err_template_arg_not_decl_ref)
+    << Arg->getSourceRange();
+    S.Diag(Param->getLocation(), diag::note_template_param_here);
+    return true;
   }
 
   if (!isa<ValueDecl>(DRE->getDecl())) {
@@ -3550,10 +3658,10 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
     return true;
   }
 
-  NamedDecl *Entity = 0;
+  NamedDecl *Entity = DRE->getDecl();
 
   // Cannot refer to non-static data members
-  if (FieldDecl *Field = dyn_cast<FieldDecl>(DRE->getDecl())) {
+  if (FieldDecl *Field = dyn_cast<FieldDecl>(Entity)) {
     S.Diag(Arg->getLocStart(), diag::err_template_arg_field)
       << Field << Arg->getSourceRange();
     S.Diag(Param->getLocation(), diag::note_template_param_here);
@@ -3561,28 +3669,44 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   }
 
   // Cannot refer to non-static member functions
-  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(DRE->getDecl()))
+  if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Entity)) {
     if (!Method->isStatic()) {
       S.Diag(Arg->getLocStart(), diag::err_template_arg_method)
         << Method << Arg->getSourceRange();
       S.Diag(Param->getLocation(), diag::note_template_param_here);
       return true;
     }
+  }
 
-  // Functions must have external linkage.
-  if (FunctionDecl *Func = dyn_cast<FunctionDecl>(DRE->getDecl())) {
-    if (!isExternalLinkage(Func->getLinkage())) {
-      S.Diag(Arg->getLocStart(),
-             diag::err_template_arg_function_not_extern)
-        << Func << Arg->getSourceRange();
-      S.Diag(Func->getLocation(), diag::note_template_arg_internal_object)
-        << true;
-      return true;
-    }
+  FunctionDecl *Func = dyn_cast<FunctionDecl>(Entity);
+  VarDecl *Var = dyn_cast<VarDecl>(Entity);
 
-    // Okay: we've named a function with external linkage.
-    Entity = Func;
+  // A non-type template argument must refer to an object or function.
+  if (!Func && !Var) {
+    // We found something, but we don't know specifically what it is.
+    S.Diag(Arg->getLocStart(), diag::err_template_arg_not_object_or_func)
+      << Arg->getSourceRange();
+    S.Diag(DRE->getDecl()->getLocation(), diag::note_template_arg_refers_here);
+    return true;
+  }
 
+  // Address / reference template args must have external linkage in C++98.
+  if (Entity->getLinkage() == InternalLinkage) {
+    S.Diag(Arg->getLocStart(), S.getLangOpts().CPlusPlus0x ?
+             diag::warn_cxx98_compat_template_arg_object_internal :
+             diag::ext_template_arg_object_internal)
+      << !Func << Entity << Arg->getSourceRange();
+    S.Diag(Entity->getLocation(), diag::note_template_arg_internal_object)
+      << !Func;
+  } else if (Entity->getLinkage() == NoLinkage) {
+    S.Diag(Arg->getLocStart(), diag::err_template_arg_object_no_linkage)
+      << !Func << Entity << Arg->getSourceRange();
+    S.Diag(Entity->getLocation(), diag::note_template_arg_internal_object)
+      << !Func;
+    return true;
+  }
+
+  if (Func) {
     // If the template parameter has pointer type, the function decays.
     if (ParamType->isPointerType() && !AddressTaken)
       ArgType = S.Context.getPointerType(Func->getType());
@@ -3605,16 +3729,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
 
       ArgType = Func->getType();
     }
-  } else if (VarDecl *Var = dyn_cast<VarDecl>(DRE->getDecl())) {
-    if (!isExternalLinkage(Var->getLinkage())) {
-      S.Diag(Arg->getLocStart(),
-             diag::err_template_arg_object_not_extern)
-        << Var << Arg->getSourceRange();
-      S.Diag(Var->getLocation(), diag::note_template_arg_internal_object)
-        << true;
-      return true;
-    }
-
+  } else {
     // A value of reference type is not an object.
     if (Var->getType()->isReferenceType()) {
       S.Diag(Arg->getLocStart(),
@@ -3624,8 +3739,14 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
       return true;
     }
 
-    // Okay: we've named an object with external linkage
-    Entity = Var;
+    // A template argument must have static storage duration.
+    // FIXME: Ensure this works for thread_local as well as __thread.
+    if (Var->isThreadSpecified()) {
+      S.Diag(Arg->getLocStart(), diag::err_template_arg_thread_local)
+        << Arg->getSourceRange();
+      S.Diag(Var->getLocation(), diag::note_template_arg_refers_here);
+      return true;
+    }
 
     // If the template parameter has pointer type, we must have taken
     // the address of this object.
@@ -3672,13 +3793,6 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
         S.Diag(Param->getLocation(), diag::note_template_param_here);
       }
     }
-  } else {
-    // We found something else, but we don't know specifically what it is.
-    S.Diag(Arg->getLocStart(),
-           diag::err_template_arg_not_object_or_func)
-      << Arg->getSourceRange();
-    S.Diag(DRE->getDecl()->getLocation(), diag::note_template_arg_refers_here);
-    return true;
   }
 
   bool ObjCLifetimeConversion;
@@ -3739,9 +3853,40 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
 
 /// \brief Checks whether the given template argument is a pointer to
 /// member constant according to C++ [temp.arg.nontype]p1.
-bool Sema::CheckTemplateArgumentPointerToMember(Expr *Arg,
-                                                TemplateArgument &Converted) {
+static bool CheckTemplateArgumentPointerToMember(Sema &S,
+                                                 NonTypeTemplateParmDecl *Param,
+                                                 QualType ParamType,
+                                                 Expr *&ResultArg,
+                                                 TemplateArgument &Converted) {
   bool Invalid = false;
+
+  // Check for a null pointer value.
+  Expr *Arg = ResultArg;
+  switch (isNullPointerValueTemplateArgument(S, Param, ParamType, Arg)) {
+  case NPV_Error:
+    return true;
+  case NPV_NullPointer:
+    Converted = TemplateArgument((Decl *)0);
+    return false;
+  case NPV_NotNullPointer:
+    break;
+  }
+
+  bool ObjCLifetimeConversion;
+  if (S.IsQualificationConversion(Arg->getType(),
+                                  ParamType.getNonReferenceType(),
+                                  false, ObjCLifetimeConversion)) {
+    Arg = S.ImpCastExprToType(Arg, ParamType, CK_NoOp,
+                              Arg->getValueKind()).take();
+    ResultArg = Arg;
+  } else if (!S.Context.hasSameUnqualifiedType(Arg->getType(),
+                ParamType.getNonReferenceType())) {
+    // We can't perform this conversion.
+    S.Diag(Arg->getLocStart(), diag::err_template_arg_not_convertible)
+      << Arg->getType() << ParamType << Arg->getSourceRange();
+    S.Diag(Param->getLocation(), diag::note_template_param_here);
+    return true;
+  }
 
   // See through any implicit casts we added to fix the type.
   while (ImplicitCastExpr *Cast = dyn_cast<ImplicitCastExpr>(Arg))
@@ -3760,10 +3905,10 @@ bool Sema::CheckTemplateArgumentPointerToMember(Expr *Arg,
   bool ExtraParens = false;
   while (ParenExpr *Parens = dyn_cast<ParenExpr>(Arg)) {
     if (!Invalid && !ExtraParens) {
-      Diag(Arg->getLocStart(),
-           getLangOpts().CPlusPlus0x ?
-             diag::warn_cxx98_compat_template_arg_extra_parens :
-             diag::ext_template_arg_extra_parens)
+      S.Diag(Arg->getLocStart(),
+             S.getLangOpts().CPlusPlus0x ?
+               diag::warn_cxx98_compat_template_arg_extra_parens :
+               diag::ext_template_arg_extra_parens)
         << Arg->getSourceRange();
       ExtraParens = true;
     }
@@ -3789,7 +3934,7 @@ bool Sema::CheckTemplateArgumentPointerToMember(Expr *Arg,
       if (VD->getType()->isMemberPointerType()) {
         if (isa<NonTypeTemplateParmDecl>(VD) ||
             (isa<VarDecl>(VD) &&
-             Context.getCanonicalType(VD->getType()).isConstQualified())) {
+             S.Context.getCanonicalType(VD->getType()).isConstQualified())) {
           if (Arg->isTypeDependent() || Arg->isValueDependent())
             Converted = TemplateArgument(Arg);
           else
@@ -3803,8 +3948,8 @@ bool Sema::CheckTemplateArgumentPointerToMember(Expr *Arg,
   }
 
   if (!DRE)
-    return Diag(Arg->getLocStart(),
-                diag::err_template_arg_not_pointer_to_member_form)
+    return S.Diag(Arg->getLocStart(),
+                  diag::err_template_arg_not_pointer_to_member_form)
       << Arg->getSourceRange();
 
   if (isa<FieldDecl>(DRE->getDecl()) || isa<CXXMethodDecl>(DRE->getDecl())) {
@@ -3822,11 +3967,10 @@ bool Sema::CheckTemplateArgumentPointerToMember(Expr *Arg,
   }
 
   // We found something else, but we don't know specifically what it is.
-  Diag(Arg->getLocStart(),
-       diag::err_template_arg_not_pointer_to_member_form)
-      << Arg->getSourceRange();
-  Diag(DRE->getDecl()->getLocation(),
-       diag::note_template_arg_refers_here);
+  S.Diag(Arg->getLocStart(),
+         diag::err_template_arg_not_pointer_to_member_form)
+    << Arg->getSourceRange();
+  S.Diag(DRE->getDecl()->getLocation(), diag::note_template_arg_refers_here);
   return true;
 }
 
@@ -4042,23 +4186,6 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
   QualType ArgType = Arg->getType();
   DeclAccessPair FoundResult; // temporary for ResolveOverloadedFunction
 
-  // C++0x [temp.arg.nontype]p5 bullets 2, 4 and 6 permit conversion
-  // from a template argument of type std::nullptr_t to a non-type
-  // template parameter of type pointer to object, pointer to
-  // function, or pointer-to-member, respectively.
-  if (ArgType->isNullPtrType()) {
-    if (ParamType->isPointerType() || ParamType->isMemberPointerType()) {
-      Converted = TemplateArgument((NamedDecl *)0);
-      return Owned(Arg);
-    }
-    
-    if (ParamType->isNullPtrType()) {
-      llvm::APSInt Zero(Context.getTypeSize(Context.NullPtrTy), true);
-      Converted = TemplateArgument(Zero, Context.NullPtrTy);
-      return Owned(Arg);
-    }
-  }
-
   // Handle pointer-to-function, reference-to-function, and
   // pointer-to-member-function all in (roughly) the same way.
   if (// -- For a non-type template-parameter of type pointer to
@@ -4104,22 +4231,8 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       return Owned(Arg);
     }
 
-    bool ObjCLifetimeConversion;
-    if (IsQualificationConversion(ArgType, ParamType.getNonReferenceType(),
-                                  false, ObjCLifetimeConversion)) {
-      Arg = ImpCastExprToType(Arg, ParamType, CK_NoOp,
-                              Arg->getValueKind()).take();
-    } else if (!Context.hasSameUnqualifiedType(ArgType,
-                                           ParamType.getNonReferenceType())) {
-      // We can't perform this conversion.
-      Diag(Arg->getLocStart(),
-           diag::err_template_arg_not_convertible)
-        << Arg->getType() << InstantiatedParamType << Arg->getSourceRange();
-      Diag(Param->getLocation(), diag::note_template_param_here);
-      return ExprError();
-    }
-
-    if (CheckTemplateArgumentPointerToMember(Arg, Converted))
+    if (CheckTemplateArgumentPointerToMember(*this, Param, ParamType, Arg,
+                                             Converted))
       return ExprError();
     return Owned(Arg);
   }
@@ -4170,27 +4283,35 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
     return Owned(Arg);
   }
 
+  // Deal with parameters of type std::nullptr_t.
+  if (ParamType->isNullPtrType()) {
+    if (Arg->isTypeDependent() || Arg->isValueDependent()) {
+      Converted = TemplateArgument(Arg);
+      return Owned(Arg);
+    }
+    
+    switch (isNullPointerValueTemplateArgument(*this, Param, ParamType, Arg)) {
+    case NPV_NotNullPointer:
+      Diag(Arg->getExprLoc(), diag::err_template_arg_not_convertible)
+        << Arg->getType() << ParamType;
+      Diag(Param->getLocation(), diag::note_template_param_here);
+      return ExprError();
+      
+    case NPV_Error:
+      return ExprError();
+      
+    case NPV_NullPointer:
+      Converted = TemplateArgument((Decl *)0);
+      return Owned(Arg);;
+    }
+  }
+
   //     -- For a non-type template-parameter of type pointer to data
   //        member, qualification conversions (4.4) are applied.
   assert(ParamType->isMemberPointerType() && "Only pointers to members remain");
 
-  bool ObjCLifetimeConversion;
-  if (Context.hasSameUnqualifiedType(ParamType, ArgType)) {
-    // Types match exactly: nothing more to do here.
-  } else if (IsQualificationConversion(ArgType, ParamType, false, 
-                                       ObjCLifetimeConversion)) {
-    Arg = ImpCastExprToType(Arg, ParamType, CK_NoOp,
-                            Arg->getValueKind()).take();
-  } else {
-    // We can't perform this conversion.
-    Diag(Arg->getLocStart(),
-         diag::err_template_arg_not_convertible)
-      << Arg->getType() << InstantiatedParamType << Arg->getSourceRange();
-    Diag(Param->getLocation(), diag::note_template_param_here);
-    return ExprError();
-  }
-
-  if (CheckTemplateArgumentPointerToMember(Arg, Converted))
+  if (CheckTemplateArgumentPointerToMember(*this, Param, ParamType, Arg,
+                                           Converted))
     return ExprError();
   return Owned(Arg);
 }
@@ -4249,6 +4370,18 @@ Sema::BuildExpressionFromDeclTemplateArgument(const TemplateArgument &Arg,
                                               SourceLocation Loc) {
   assert(Arg.getKind() == TemplateArgument::Declaration &&
          "Only declaration template arguments permitted here");
+  
+  // For a NULL non-type template argument, return nullptr casted to the
+  // parameter's type.
+  if (!Arg.getAsDecl()) {
+    return ImpCastExprToType(
+             new (Context) CXXNullPtrLiteralExpr(Context.NullPtrTy, Loc),
+                             ParamType,
+                             ParamType->getAs<MemberPointerType>()
+                               ? CK_NullToMemberPointer
+                               : CK_NullToPointer);
+  }
+  
   ValueDecl *VD = cast<ValueDecl>(Arg.getAsDecl());
 
   if (VD->getDeclContext()->isRecord() &&

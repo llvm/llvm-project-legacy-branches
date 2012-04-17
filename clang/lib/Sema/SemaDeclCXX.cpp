@@ -3344,7 +3344,8 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
     CheckDestructorAccess(Base->getLocStart(), Dtor,
                           PDiag(diag::err_access_dtor_base)
                             << Base->getType()
-                            << Base->getSourceRange());
+                            << Base->getSourceRange(),
+                          Context.getTypeDeclType(ClassDecl));
     
     MarkFunctionReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
     DiagnoseUseOfDecl(Dtor, Location);
@@ -3355,7 +3356,7 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
        E = ClassDecl->vbases_end(); VBase != E; ++VBase) {
 
     // Bases are always records in a well-formed non-dependent class.
-    const RecordType *RT = VBase->getType()->getAs<RecordType>();
+    const RecordType *RT = VBase->getType()->castAs<RecordType>();
 
     // Ignore direct virtual bases.
     if (DirectVirtualBases.count(RT))
@@ -3372,7 +3373,8 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
     assert(Dtor && "No dtor found for BaseClassDecl!");
     CheckDestructorAccess(ClassDecl->getLocation(), Dtor,
                           PDiag(diag::err_access_dtor_vbase)
-                            << VBase->getType());
+                            << VBase->getType(),
+                          Context.getTypeDeclType(ClassDecl));
 
     MarkFunctionReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
     DiagnoseUseOfDecl(Dtor, Location);
@@ -4396,7 +4398,29 @@ struct SpecialMemberDeletionInfo {
   bool shouldDeleteForSubobjectCall(Subobject Subobj,
                                     Sema::SpecialMemberOverloadResult *SMOR,
                                     bool IsDtorCallInCtor);
+
+  bool isAccessible(Subobject Subobj, CXXMethodDecl *D);
 };
+}
+
+/// Is the given special member inaccessible when used on the given
+/// sub-object.
+bool SpecialMemberDeletionInfo::isAccessible(Subobject Subobj,
+                                             CXXMethodDecl *target) {
+  /// If we're operating on a base class, the object type is the
+  /// type of this special member.
+  QualType objectTy;
+  AccessSpecifier access = target->getAccess();;
+  if (CXXBaseSpecifier *base = Subobj.dyn_cast<CXXBaseSpecifier*>()) {
+    objectTy = S.Context.getTypeDeclType(MD->getParent());
+    access = CXXRecordDecl::MergeAccess(base->getAccessSpecifier(), access);
+
+  // If we're operating on a field, the object type is the type of the field.
+  } else {
+    objectTy = S.Context.getTypeDeclType(target->getParent());
+  }
+
+  return S.isSpecialMemberAccessibleForDeletion(target, access, objectTy);
 }
 
 /// Check whether we should delete a special member due to the implicit
@@ -4413,8 +4437,7 @@ bool SpecialMemberDeletionInfo::shouldDeleteForSubobjectCall(
     DiagKind = !Decl ? 0 : 1;
   else if (SMOR->getKind() == Sema::SpecialMemberOverloadResult::Ambiguous)
     DiagKind = 2;
-  else if (S.CheckDirectMemberAccess(Loc, Decl, S.PDiag())
-             != Sema::AR_accessible)
+  else if (!isAccessible(Subobj, Decl))
     DiagKind = 3;
   else if (!IsDtorCallInCtor && Field && Field->getParent()->isUnion() &&
            !Decl->isTrivial()) {
@@ -5776,7 +5799,6 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
     S.Diag(Corrected.getCorrectionDecl()->getLocation(),
          diag::note_namespace_defined_here) << CorrectedQuotedStr;
 
-    Ident = Corrected.getCorrectionAsIdentifierInfo();
     R.addDecl(Corrected.getCorrectionDecl());
     return true;
   }
@@ -6278,6 +6300,13 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   if (!IsInstantiation)
     R.setHideTags(false);
 
+  // For the purposes of this lookup, we have a base object type
+  // equal to that of the current context.
+  if (CurContext->isRecord()) {
+    R.setBaseObjectType(
+                   Context.getTypeDeclType(cast<CXXRecordDecl>(CurContext)));
+  }
+
   LookupQualifiedName(R, LookupContext);
 
   if (R.empty()) {
@@ -6743,7 +6772,7 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S,
 
   if (R.empty()) {
     if (!TryNamespaceTypoCorrection(*this, R, S, SS, IdentLoc, Ident)) {
-      Diag(NamespaceLoc, diag::err_expected_namespace_name) << SS.getRange();
+      Diag(IdentLoc, diag::err_expected_namespace_name) << SS.getRange();
       return 0;
     }
   }

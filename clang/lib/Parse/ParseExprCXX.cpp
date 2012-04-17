@@ -1389,6 +1389,7 @@ bool Parser::isCXXSimpleTypeSpecifier() const {
   case tok::kw_short:
   case tok::kw_long:
   case tok::kw___int64:
+  case tok::kw___int128:
   case tok::kw_signed:
   case tok::kw_unsigned:
   case tok::kw_void:
@@ -1498,6 +1499,9 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
     break;
   case tok::kw_int:
     DS.SetTypeSpecType(DeclSpec::TST_int, Loc, PrevSpec, DiagID);
+    break;
+  case tok::kw___int128:
+    DS.SetTypeSpecType(DeclSpec::TST_int128, Loc, PrevSpec, DiagID);
     break;
   case tok::kw_half:
     DS.SetTypeSpecType(DeclSpec::TST_half, Loc, PrevSpec, DiagID);
@@ -1813,7 +1817,9 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
       bool isNew = Tok.getKind() == tok::kw_new;
       // Consume the 'new' or 'delete'.
       SymbolLocations[SymbolIdx++] = ConsumeToken();
-      if (Tok.is(tok::l_square)) {
+      // Check for array new/delete.
+      if (Tok.is(tok::l_square) &&
+          (!getLangOpts().CPlusPlus0x || NextToken().isNot(tok::l_square))) {
         // Consume the '[' and ']'.
         BalancedDelimiterTracker T(*this, tok::l_square);
         T.consumeOpen();
@@ -2342,6 +2348,10 @@ void Parser::ParseDirectNewDeclarator(Declarator &D) {
   // Parse the array dimensions.
   bool first = true;
   while (Tok.is(tok::l_square)) {
+    // An array-size expression can't start with a lambda.
+    if (CheckProhibitedCXX11Attribute())
+      continue;
+
     BalancedDelimiterTracker T(*this, tok::l_square);
     T.consumeOpen();
 
@@ -2356,13 +2366,16 @@ void Parser::ParseDirectNewDeclarator(Declarator &D) {
 
     T.consumeClose();
 
-    ParsedAttributes attrs(AttrFactory);
+    // Attributes here appertain to the array type. C++11 [expr.new]p5.
+    ParsedAttributes Attrs(AttrFactory);
+    MaybeParseCXX0XAttributes(Attrs);
+
     D.AddTypeInfo(DeclaratorChunk::getArray(0,
                                             /*static=*/false, /*star=*/false,
                                             Size.release(),
                                             T.getOpenLocation(),
                                             T.getCloseLocation()),
-                  attrs, T.getCloseLocation());
+                  Attrs, T.getCloseLocation());
 
     if (T.getCloseLocation().isInvalid())
       return;
@@ -2414,7 +2427,11 @@ Parser::ParseCXXDeleteExpression(bool UseGlobal, SourceLocation Start) {
 
   // Array delete?
   bool ArrayDelete = false;
-  if (Tok.is(tok::l_square)) {
+  if (Tok.is(tok::l_square) && NextToken().is(tok::r_square)) {
+    // FIXME: This could be the start of a lambda-expression. We should
+    // disambiguate this, but that will require arbitrary lookahead if
+    // the next token is '(':
+    //   delete [](int*){ /* ... */
     ArrayDelete = true;
     BalancedDelimiterTracker T(*this, tok::l_square);
 

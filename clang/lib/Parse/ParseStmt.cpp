@@ -84,7 +84,7 @@ Parser::ParseStatementOrDeclaration(StmtVector &Stmts, bool OnlyStatement,
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
 
   ParsedAttributesWithRange attrs(AttrFactory);
-  MaybeParseCXX0XAttributes(attrs);
+  MaybeParseCXX0XAttributes(attrs, 0, /*MightBeObjCMessageSend*/ true);
 
   // Cases in this switch statement should fall through if the parser expects
   // the token to end in a semicolon (in which case SemiError should be set),
@@ -789,7 +789,7 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
         ConsumeToken();
 
       ParsedAttributesWithRange attrs(AttrFactory);
-      MaybeParseCXX0XAttributes(attrs);
+      MaybeParseCXX0XAttributes(attrs, 0, /*MightBeObjCMessageSend*/ true);
 
       // If this is the start of a declaration, parse it as such.
       if (isDeclarationStatement()) {
@@ -1958,11 +1958,9 @@ Decl *Parser::ParseFunctionStatementBody(Decl *Decl, ParseScope &BodyScope) {
   assert(Tok.is(tok::l_brace));
   SourceLocation LBraceLoc = Tok.getLocation();
 
-  if (PP.isCodeCompletionEnabled()) {
-    if (trySkippingFunctionBodyForCodeCompletion()) {
-      BodyScope.Exit();
-      return Actions.ActOnFinishFunctionBody(Decl, 0);
-    }
+  if (SkipFunctionBodies && trySkippingFunctionBody()) {
+    BodyScope.Exit();
+    return Actions.ActOnFinishFunctionBody(Decl, 0);
   }
 
   PrettyDeclStackTraceEntry CrashInfo(Actions, Decl, LBraceLoc,
@@ -2002,11 +2000,9 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl, ParseScope &BodyScope) {
   else
     Actions.ActOnDefaultCtorInitializers(Decl);
 
-  if (PP.isCodeCompletionEnabled()) {
-    if (trySkippingFunctionBodyForCodeCompletion()) {
-      BodyScope.Exit();
-      return Actions.ActOnFinishFunctionBody(Decl, 0);
-    }
+  if (SkipFunctionBodies && trySkippingFunctionBody()) {
+    BodyScope.Exit();
+    return Actions.ActOnFinishFunctionBody(Decl, 0);
   }
 
   SourceLocation LBraceLoc = Tok.getLocation();
@@ -2023,17 +2019,17 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl, ParseScope &BodyScope) {
   return Actions.ActOnFinishFunctionBody(Decl, FnBody.take());
 }
 
-bool Parser::trySkippingFunctionBodyForCodeCompletion() {
+bool Parser::trySkippingFunctionBody() {
   assert(Tok.is(tok::l_brace));
-  assert(PP.isCodeCompletionEnabled() &&
-         "Should only be called when in code-completion mode");
+  assert(SkipFunctionBodies &&
+         "Should only be called when SkipFunctionBodies is enabled");
 
   // We're in code-completion mode. Skip parsing for all function bodies unless
   // the body contains the code-completion point.
   TentativeParsingAction PA(*this);
   ConsumeBrace();
   if (SkipUntil(tok::r_brace, /*StopAtSemi=*/false, /*DontConsume=*/false,
-                /*StopAtCodeCompletion=*/true)) {
+                /*StopAtCodeCompletion=*/PP.isCodeCompletionEnabled())) {
     PA.Commit();
     return true;
   }

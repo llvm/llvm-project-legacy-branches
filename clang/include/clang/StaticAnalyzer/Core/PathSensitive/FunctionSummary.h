@@ -21,7 +21,8 @@
 
 namespace clang {
 namespace ento {
-typedef llvm::SmallPtrSet<const Decl*,24> SetOfDecls;
+typedef llvm::SmallPtrSet<Decl*, 24> SetOfDecls;
+typedef llvm::SmallPtrSet<const Decl*, 24> SetOfConstDecls;
 
 class FunctionSummariesTy {
   struct FunctionSummary {
@@ -87,8 +88,18 @@ public:
     return 0;
   }
 
+  /// Get the percentage of the reachable blocks.
+  unsigned getPercentBlocksReachable(const Decl *D) {
+    MapTy::const_iterator I = Map.find(D);
+      if (I != Map.end())
+        return ((I->second->VisitedBasicBlocks.count() * 100) /
+                 I->second->TotalBasicBlocks);
+    return 0;
+  }
+
   unsigned getTotalNumBasicBlocks();
   unsigned getTotalNumVisitedBasicBlocks();
+
 };
 
 }} // end clang ento namespaces

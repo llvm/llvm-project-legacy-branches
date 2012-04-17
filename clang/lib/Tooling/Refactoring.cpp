@@ -145,12 +145,14 @@ int getRangeSize(SourceManager &Sources, const CharSourceRange &Range) {
   return End.second - Start.second;
 }
 
-RefactoringTool::RefactoringTool(int argc, char **argv) : Tool(argc, argv) {}
+RefactoringTool::RefactoringTool(const CompilationDatabase &Compilations,
+                                 ArrayRef<std::string> SourcePaths)
+  : Tool(Compilations, SourcePaths) {}
 
 Replacements &RefactoringTool::GetReplacements() { return Replace; }
 
 int RefactoringTool::Run(FrontendActionFactory *ActionFactory) {
-  int Result = Tool.Run(ActionFactory);
+  int Result = Tool.run(ActionFactory);
   LangOptions DefaultLangOptions;
   DiagnosticOptions DefaultDiagnosticOptions;
   TextDiagnosticPrinter DiagnosticPrinter(llvm::errs(),
@@ -158,7 +160,7 @@ int RefactoringTool::Run(FrontendActionFactory *ActionFactory) {
   DiagnosticsEngine Diagnostics(
       llvm::IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs()),
       &DiagnosticPrinter, false);
-  SourceManager Sources(Diagnostics, Tool.GetFiles());
+  SourceManager Sources(Diagnostics, Tool.getFiles());
   Rewriter Rewrite(Sources, DefaultLangOptions);
   if (!ApplyAllReplacements(Replace, Rewrite)) {
     llvm::errs() << "Skipped some replacements.\n";

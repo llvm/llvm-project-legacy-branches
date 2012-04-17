@@ -872,7 +872,13 @@ void Sema::ActOnReenterFunctionContext(Scope* S, Decl *D) {
   if (!FD)
     return;
 
-  PushDeclContext(S, FD);
+  // Same implementation as PushDeclContext, but enters the context
+  // from the lexical parent, rather than the top-level class.
+  assert(CurContext == FD->getLexicalParent() &&
+    "The next DeclContext should be lexically contained in the current one.");
+  CurContext = FD;
+  S->setEntity(CurContext);
+
   for (unsigned P = 0, NumParams = FD->getNumParams(); P < NumParams; ++P) {
     ParmVarDecl *Param = FD->getParamDecl(P);
     // If the parameter has an identifier, then add it to the scope
@@ -881,6 +887,15 @@ void Sema::ActOnReenterFunctionContext(Scope* S, Decl *D) {
       IdResolver.AddDecl(Param);
     }
   }
+}
+
+
+void Sema::ActOnExitFunctionContext() {
+  // Same implementation as PopDeclContext, but returns to the lexical parent,
+  // rather than the top-level class.
+  assert(CurContext && "DeclContext imbalance!");
+  CurContext = CurContext->getLexicalParent();
+  assert(CurContext && "Popped translation unit!");
 }
 
 
@@ -3292,7 +3307,7 @@ bool Sema::diagnoseQualifiedDeclaration(CXXScopeSpec &SS, DeclContext *DC,
         << Name << SS.getRange();
     else
       Diag(Loc, diag::err_invalid_declarator_scope)
-      << Name << cast<NamedDecl>(DC) << SS.getRange();
+      << Name << cast<NamedDecl>(Cur) << cast<NamedDecl>(DC) << SS.getRange();
     
     return true;
   }
@@ -4500,14 +4515,7 @@ namespace {
 class DifferentNameValidatorCCC : public CorrectionCandidateCallback {
  public:
   DifferentNameValidatorCCC(CXXRecordDecl *Parent)
-      : ExpectedParent(Parent ? Parent->getCanonicalDecl() : 0) {
-    // Don't allow any additional qualification.
-    // FIXME: It would be nice to perform this additional qualification. 
-    // However, DiagnoseInvalidRedeclaration is unable to handle the 
-    // qualification, because it doesn't know how to pass the corrected
-    // nested-name-specifier through to ActOnFunctionDeclarator.
-    AllowAddedQualifier = false;
-  }
+      : ExpectedParent(Parent ? Parent->getCanonicalDecl() : 0) {}
 
   virtual bool ValidateCandidate(const TypoCorrection &candidate) {
     if (candidate.getEditDistance() == 0)
@@ -4596,12 +4604,11 @@ static NamedDecl* DiagnoseInvalidRedeclaration(
     // TODO: Refactor ActOnFunctionDeclarator so that we can call only the
     // pieces need to verify the typo-corrected C++ declaraction and hopefully
     // eliminate the need for the parameter pack ExtraArgs.
-    Result = SemaRef.ActOnFunctionDeclarator(ExtraArgs.S, ExtraArgs.D,
-                                             NewFD->getDeclContext(),
-                                             NewFD->getTypeSourceInfo(),
-                                             Previous,
-                                             ExtraArgs.TemplateParamLists,
-                                             ExtraArgs.AddToScope);
+    Result = SemaRef.ActOnFunctionDeclarator(
+        ExtraArgs.S, ExtraArgs.D,
+        Correction.getCorrectionDecl()->getDeclContext(),
+        NewFD->getTypeSourceInfo(), Previous, ExtraArgs.TemplateParamLists,
+        ExtraArgs.AddToScope);
     if (Trap.hasErrorOccurred()) {
       // Pretend the typo correction never occurred
       ExtraArgs.D.SetIdentifier(Name.getAsIdentifierInfo(),

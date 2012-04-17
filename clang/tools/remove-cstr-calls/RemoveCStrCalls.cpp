@@ -39,10 +39,12 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Lex/Lexer.h"
+#include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
@@ -50,8 +52,10 @@
 
 using namespace clang;
 using namespace clang::ast_matchers;
-using clang::tooling::NewFrontendActionFactory;
+using namespace llvm;
+using clang::tooling::newFrontendActionFactory;
 using clang::tooling::Replacement;
+using clang::tooling::CompilationDatabase;
 
 // FIXME: Pull out helper methods in here into more fitting places.
 
@@ -163,8 +167,23 @@ const char *StringCStrMethod =
     "::std::basic_string<char, std::char_traits<char>, std::allocator<char> >"
     "::c_str";
 
+cl::opt<std::string> BuildPath(
+  cl::Positional,
+  cl::desc("<build-path>"));
+
+cl::list<std::string> SourcePaths(
+  cl::Positional,
+  cl::desc("<source0> [... <sourceN>]"),
+  cl::OneOrMore);
+
 int main(int argc, char **argv) {
-  tooling::RefactoringTool Tool(argc, argv);
+  cl::ParseCommandLineOptions(argc, argv);
+  std::string ErrorMessage;
+  llvm::OwningPtr<CompilationDatabase> Compilations(
+    CompilationDatabase::loadFromDirectory(BuildPath, ErrorMessage));
+  if (!Compilations)
+    llvm::report_fatal_error(ErrorMessage);
+  tooling::RefactoringTool Tool(*Compilations, SourcePaths);
   ast_matchers::MatchFinder Finder;
   Finder.addMatcher(
       ConstructorCall(
@@ -208,6 +227,6 @@ int main(int argc, char **argv) {
                   Callee(Method(HasName(StringCStrMethod))),
                   On(Id("arg", Expression())))))),
       new FixCStrCall(&Tool.GetReplacements()));
-  return Tool.Run(NewFrontendActionFactory(&Finder));
+  return Tool.Run(newFrontendActionFactory(&Finder));
 }
 

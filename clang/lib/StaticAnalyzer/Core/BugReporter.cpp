@@ -1241,6 +1241,18 @@ BugReport::~BugReport() {
   }
 }
 
+const Decl *BugReport::getDeclWithIssue() const {
+  if (DeclWithIssue)
+    return DeclWithIssue;
+  
+  const ExplodedNode *N = getErrorNode();
+  if (!N)
+    return 0;
+  
+  const LocationContext *LC = N->getLocationContext();
+  return LC->getCurrentStackFrame()->getDecl();
+}
+
 void BugReport::Profile(llvm::FoldingSetNodeID& hash) const {
   hash.AddPointer(&BT);
   hash.AddString(Description);
@@ -1952,7 +1964,8 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   BugType& BT = exampleReport->getBugType();
 
   OwningPtr<PathDiagnostic>
-    D(new PathDiagnostic(exampleReport->getBugType().getName(),
+    D(new PathDiagnostic(exampleReport->getDeclWithIssue(),
+                         exampleReport->getBugType().getName(),
                          !PD || PD->useVerboseDescription()
                          ? exampleReport->getDescription() 
                          : exampleReport->getShortDescription(),
@@ -1960,9 +1973,6 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
 
   if (!bugReports.empty())
     GeneratePathDiagnostic(*D.get(), bugReports);
-
-  if (IsCachedDiagnostic(exampleReport, D.get()))
-    return;
   
   // Get the meta data.
   const BugReport::ExtraTextList &Meta =
@@ -1977,24 +1987,23 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   llvm::tie(Beg, End) = exampleReport->getRanges();
   DiagnosticsEngine &Diag = getDiagnostic();
   
-  // Search the description for '%', as that will be interpretted as a
-  // format character by FormatDiagnostics.
-  StringRef desc = exampleReport->getShortDescription();
-  unsigned ErrorDiag;
-  {
+  if (!IsCachedDiagnostic(exampleReport, D.get())) {
+    // Search the description for '%', as that will be interpretted as a
+    // format character by FormatDiagnostics.
+    StringRef desc = exampleReport->getShortDescription();
+
     SmallString<512> TmpStr;
     llvm::raw_svector_ostream Out(TmpStr);
-    for (StringRef::iterator I=desc.begin(), E=desc.end(); I!=E; ++I)
+    for (StringRef::iterator I=desc.begin(), E=desc.end(); I!=E; ++I) {
       if (*I == '%')
         Out << "%%";
       else
         Out << *I;
+    }
     
     Out.flush();
-    ErrorDiag = Diag.getCustomDiagID(DiagnosticsEngine::Warning, TmpStr);
-  }        
+    unsigned ErrorDiag = Diag.getCustomDiagID(DiagnosticsEngine::Warning, TmpStr);
 
-  {
     DiagnosticBuilder diagBuilder = Diag.Report(
       exampleReport->getLocation(getSourceManager()).asLocation(), ErrorDiag);
     for (BugReport::ranges_iterator I = Beg; I != End; ++I)
@@ -2009,21 +2018,17 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
     PathDiagnosticPiece *piece = new PathDiagnosticEventPiece(
                                  exampleReport->getLocation(getSourceManager()),
                                  exampleReport->getDescription());
+    for ( ; Beg != End; ++Beg)
+      piece->addRange(*Beg);
 
-    for ( ; Beg != End; ++Beg) piece->addRange(*Beg);
     D->getActivePath().push_back(piece);
   }
 
   PD->HandlePathDiagnostic(D.take());
 }
 
-void BugReporter::EmitBasicReport(StringRef name, StringRef str,
-                                  PathDiagnosticLocation Loc,
-                                  SourceRange* RBeg, unsigned NumRanges) {
-  EmitBasicReport(name, "", str, Loc, RBeg, NumRanges);
-}
-
-void BugReporter::EmitBasicReport(StringRef name,
+void BugReporter::EmitBasicReport(const Decl *DeclWithIssue,
+                                  StringRef name,
                                   StringRef category,
                                   StringRef str, PathDiagnosticLocation Loc,
                                   SourceRange* RBeg, unsigned NumRanges) {
@@ -2031,6 +2036,7 @@ void BugReporter::EmitBasicReport(StringRef name,
   // 'BT' is owned by BugReporter.
   BugType *BT = getBugTypeForName(name, category);
   BugReport *R = new BugReport(*BT, str, Loc);
+  R->setDeclWithIssue(DeclWithIssue);
   for ( ; NumRanges > 0 ; --NumRanges, ++RBeg) R->addRange(*RBeg);
   EmitReport(R);
 }

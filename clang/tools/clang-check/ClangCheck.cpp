@@ -33,13 +33,30 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Support/CommandLine.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
 
-using clang::tooling::ClangTool;
-using clang::tooling::NewFrontendActionFactory;
+using namespace clang::tooling;
+using namespace llvm;
+
+cl::opt<std::string> BuildPath(
+  cl::Positional,
+  cl::desc("<build-path>"));
+
+cl::list<std::string> SourcePaths(
+  cl::Positional,
+  cl::desc("<source0> [... <sourceN>]"),
+  cl::OneOrMore);
 
 int main(int argc, char **argv) {
-  ClangTool Tool(argc, argv);
-  return Tool.Run(NewFrontendActionFactory<clang::SyntaxOnlyAction>());
+  cl::ParseCommandLineOptions(argc, argv);
+  std::string ErrorMessage;
+  llvm::OwningPtr<CompilationDatabase> Compilations(
+    CompilationDatabase::loadFromDirectory(BuildPath, ErrorMessage));
+  if (!Compilations)
+    llvm::report_fatal_error(ErrorMessage);
+  ClangTool Tool(*Compilations, SourcePaths);
+  return Tool.run(newFrontendActionFactory<clang::SyntaxOnlyAction>());
 }

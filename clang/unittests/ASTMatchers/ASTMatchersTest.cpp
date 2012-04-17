@@ -15,7 +15,7 @@
 namespace clang {
 namespace ast_matchers {
 
-using clang::tooling::RunSyntaxOnlyToolOnCode;
+using clang::tooling::runToolOnCode;
 
 class BoundNodesCallback {
 public:
@@ -51,7 +51,7 @@ testing::AssertionResult matchesConditionally(const std::string &Code,
   bool Found = false;
   MatchFinder Finder;
   Finder.addMatcher(AMatcher, new VerifyMatch(0, &Found));
-  if (!RunSyntaxOnlyToolOnCode(Finder.newFrontendAction(), Code)) {
+  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }
   if (!Found && ExpectMatch) {
@@ -85,7 +85,7 @@ matchAndVerifyResultConditionally(const std::string &Code, const T &AMatcher,
   MatchFinder Finder;
   Finder.addMatcher(
       AMatcher, new VerifyMatch(FindResultVerifier, &VerifiedResult));
-  if (!RunSyntaxOnlyToolOnCode(Finder.newFrontendAction(), Code)) {
+  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }
   if (!VerifiedResult && ExpectResult) {

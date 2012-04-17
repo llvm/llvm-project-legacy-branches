@@ -1208,7 +1208,7 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
                                           SC_Static,
                                           SC_None,
                                           false,
-                                          true);
+                                          false);
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
 
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
@@ -1323,7 +1323,7 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
                                           SourceLocation(), II, C.VoidTy, 0,
                                           SC_Static,
                                           SC_None,
-                                          false, true);
+                                          false, false);
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
 
   llvm::Type *structPtrTy = blockInfo.StructureType->getPointerTo();
@@ -1601,7 +1601,7 @@ generateByrefCopyHelper(CodeGenFunction &CGF,
                                           SourceLocation(), II, R, 0,
                                           SC_Static,
                                           SC_None,
-                                          false, true);
+                                          false, false);
 
   CGF.StartFunction(FD, R, Fn, FI, args, SourceLocation());
 
@@ -1672,7 +1672,7 @@ generateByrefDisposeHelper(CodeGenFunction &CGF,
                                           SourceLocation(), II, R, 0,
                                           SC_Static,
                                           SC_None,
-                                          false, true);
+                                          false, false);
   CGF.StartFunction(FD, R, Fn, FI, args, SourceLocation());
 
   if (byrefInfo.needsDispose()) {
@@ -1850,7 +1850,8 @@ llvm::Type *CodeGenFunction::BuildByRefType(const VarDecl *D) {
   // int32_t __size;
   types.push_back(Int32Ty);
 
-  bool HasCopyAndDispose = getContext().BlockRequiresCopying(Ty);
+  bool HasCopyAndDispose =
+       (Ty->isObjCRetainableType()) || getContext().getBlockVarCopyInits(D);
   if (HasCopyAndDispose) {
     /// void *__copy_helper;
     types.push_back(Int8PtrTy);

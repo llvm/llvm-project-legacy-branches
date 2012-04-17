@@ -112,6 +112,7 @@ if(PYTHONINTERP_FOUND)
   add_dependencies(clang-test.deps
                  clang clang-headers c-index-test diagtool
                  arcmt-test c-arcmt-test remove-cstr-calls
+                 clang-check
                  )
 
 endif()

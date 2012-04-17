@@ -2877,7 +2877,7 @@ static void TryConstructorInitialization(Sema &S,
 
   // The type we're constructing needs to be complete.
   if (S.RequireCompleteType(Kind.getLocation(), DestType, 0)) {
-    Sequence.SetFailed(InitializationSequence::FK_Incomplete);
+    Sequence.setIncompleteTypeFailure(DestType);
     return;
   }
 
@@ -3109,7 +3109,7 @@ static void TryListInitialization(Sema &S,
   }
   if (DestType->isRecordType()) {
     if (S.RequireCompleteType(InitList->getLocStart(), DestType, S.PDiag())) {
-      Sequence.SetFailed(InitializationSequence::FK_Incomplete);
+      Sequence.setIncompleteTypeFailure(DestType);
       return;
     }
 
@@ -4584,7 +4584,7 @@ static void CheckCXX98CompatAccessibleCopy(Sema &S,
   switch (OR) {
   case OR_Success:
     S.CheckConstructorAccess(Loc, cast<CXXConstructorDecl>(Best->Function),
-                             Best->FoundDecl.getAccess(), Diag);
+                             Entity, Best->FoundDecl.getAccess(), Diag);
     // FIXME: Check default arguments as far as that's possible.
     break;
 
@@ -4807,7 +4807,8 @@ InitializationSequence::Perform(Sema &S,
                                   move(Args));
     }
     assert(Kind.getKind() == InitializationKind::IK_Copy ||
-           Kind.isExplicitCast());
+           Kind.isExplicitCast() || 
+           Kind.getKind() == InitializationKind::IK_DirectList);
     return ExprResult(Args.release()[0]);
   }
 
@@ -5686,7 +5687,7 @@ bool InitializationSequence::Diagnose(Sema &S,
     break;
 
   case FK_Incomplete:
-    S.RequireCompleteType(Kind.getLocation(), DestType,
+    S.RequireCompleteType(Kind.getLocation(), FailedIncompleteType,
                           diag::err_init_incomplete_type);
     break;
 
