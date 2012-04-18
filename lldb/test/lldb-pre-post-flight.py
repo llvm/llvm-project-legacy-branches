@@ -19,11 +19,12 @@ def pre_flight(test):
     print "for test case:", test
     # Examples:
     #test.runCmd('platform select remote-macosx')
-    #test.runCmd('platform connect connect://localhost:12345 -r -R "-avz"')
+    #test.runCmd('platform connect -c /tmp/cache connect://localhost:12345 -r -R "-avz"')
+    lldbtest_local_cache = os.environ['LLDBTEST_LOCAL_CACHE'] if 'LLDBTEST_LOCAL_CACHE' in os.environ else '/tmp/cache'
     lldbtest_platform = os.environ['LLDBTEST_PLATFORM'] if 'LLDBTEST_PLATFORM' in os.environ else 'remote-macosx'
     lldbtest_platform_url = os.environ['LLDBTEST_PLATFORM_URL'] if 'LLDBTEST_PLATFORM_URL' in os.environ else 'connect://localhost:12345 -r -R "-avz"'
     test.runCmd('platform select %s' % lldbtest_platform)
-    test.runCmd('platform connect %s' % lldbtest_platform_url)
+    test.runCmd('platform connect %s -c %s' % (lldbtest_platform_url, lldbtest_local_cache))
 
 def post_flight(test):
     __import__("lldb")
@@ -33,5 +34,4 @@ def post_flight(test):
     print "for test case:", test
     test.runCmd('platform disconnect')
 
-lldbtest_local_cache = os.environ['LLDBTEST_LOCAL_CACHE'] if 'LLDBTEST_LOCAL_CACHE' in os.environ else '/tmp/cache'
 lldbtest_remote_sandbox = os.environ['LLDBTEST_REMOTE_SANDBOX'] if 'LLDBTEST_REMOTE_SANDBOX' in os.environ else None

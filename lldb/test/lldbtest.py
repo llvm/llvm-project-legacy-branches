@@ -1114,21 +1114,22 @@ class TestBase(Base):
         if not cmd or len(cmd) == 0:
             raise Exception("Bad 'cmd' parameter encountered")
 
+        trace = (True if traceAlways else trace)
+
         # This is an opportunity to insert the 'platform target-install' command if we are told so
         # via the settig of lldb.lldbtest_remote_sandbox.
         if cmd.startswith("file ") and lldb.lldbtest_remote_sandbox:
-            target = cmd.split("file ")[1]
-            print "Found a file command, target=%s" % target
-            fpath, fname = os.path.split(target)
-            parent_dir = os.path.split(fpath)[0]
-            platform_target_install_command = 'platform target-install %s %s' % (fpath, lldb.lldbtest_remote_sandbox)
-            print "Insert this command to be run first: %s" % platform_target_install_command
-            self.ci.HandleCommand(platform_target_install_command, self.res)
-            # And this is the file command we want to execute, instead.
-            cmd = "file -P %s %s" % (target.replace(parent_dir, lldb.lldbtest_remote_sandbox), target)
-            print "And this is the replaced file command: %s" % cmd
-
-        trace = (True if traceAlways else trace)
+            with recording(self, trace) as sbuf:
+                target = cmd.split("file ")[1]
+                print >> sbuf, "Found a file command, target=%s" % target
+                fpath, fname = os.path.split(target)
+                parent_dir = os.path.split(fpath)[0]
+                platform_target_install_command = 'platform target-install %s %s' % (fpath, lldb.lldbtest_remote_sandbox)
+                print >> sbuf, "Insert this command to be run first: %s" % platform_target_install_command
+                self.ci.HandleCommand(platform_target_install_command, self.res)
+                # And this is the file command we want to execute, instead.
+                cmd = "file -P %s %s" % (target.replace(parent_dir, lldb.lldbtest_remote_sandbox), target)
+                print >> sbuf, "And this is the replaced file command: %s" % cmd
 
         running = (cmd.startswith("run") or cmd.startswith("process launch"))
 
