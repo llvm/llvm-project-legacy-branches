@@ -1,4 +1,4 @@
-##===- unittests/ASTMatchers/Makefile ----------------------*- Makefile -*-===##
+##===- unittests/AST/Makefile ------------------------------*- Makefile -*-===##
 #
 #                     The LLVM Compiler Infrastructure
 #
@@ -12,6 +12,6 @@ TESTNAME = RecursiveASTVistor
 LINK_COMPONENTS := support mc
 USEDLIBS = clangTooling.a clangFrontend.a clangSerialization.a clangDriver.a \
            clangParse.a clangSema.a clangAnalysis.a clangAST.a \
-           clangASTMatchers.a clangLex.a clangBasic.a
+           clangLex.a clangBasic.a
 
 include $(CLANG_LEVEL)/unittests/Makefile
