@@ -99,6 +99,9 @@ config = {}
 # The pre_flight and post_flight functions come from reading a config file.
 pre_flight = None
 post_flight = None
+# So do the lldbtest_local_cache and lldbtest_remote_sandbox variables.
+lldbtest_local_cache = None
+lldbtest_remote_sandbox = None
 
 # The 'archs' and 'compilers' can be specified via either command line or configFile,
 # with the command line overriding the configFile.  When specified, they should be
@@ -663,7 +666,7 @@ def parseOptionsAndInitTestdirs():
     # respectively.
     #
     # See also lldb-trunk/example/test/usage-config.
-    global config, pre_flight, post_flight
+    global config, pre_flight, post_flight, lldbtest_local_cache, lldbtest_remote_sandbox
     if configFile:
         # Pass config (a dictionary) as the locals namespace for side-effect.
         execfile(configFile, globals(), config)
@@ -678,6 +681,10 @@ def parseOptionsAndInitTestdirs():
             if not callable(post_flight):
                 print "fatal error: post_flight is not callable, exiting."
                 sys.exit(1)
+        if "lldbtest_local_cache" in config:
+            lldbtest_local_cache = config["lldbtest_local_cache"]
+        if "lldbtest_remote_sandbox" in config:
+            lldbtest_remote_sandbox = config["lldbtest_remote_sandbox"]
         #print "sys.stderr:", sys.stderr
         #print "sys.stdout:", sys.stdout
 
@@ -1050,6 +1057,10 @@ def getsource_if_available(obj):
 
 print "lldb.pre_flight:", getsource_if_available(lldb.pre_flight)
 print "lldb.post_flight:", getsource_if_available(lldb.post_flight)
+
+# So do the lldbtest_local_cache and lldbtest_remote_sandbox variables.
+lldb.lldbtest_local_cache = lldbtest_local_cache
+lldb.lldbtest_remote_sandbox = lldbtest_remote_sandbox
 
 # Put all these test decorators in the lldb namespace.
 lldb.dont_do_python_api_test = dont_do_python_api_test

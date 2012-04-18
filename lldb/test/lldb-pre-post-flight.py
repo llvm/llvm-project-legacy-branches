@@ -33,3 +33,5 @@ def post_flight(test):
     print "for test case:", test
     test.runCmd('platform disconnect')
 
+lldbtest_local_cache = os.environ['LLDBTEST_LOCAL_CACHE'] if 'LLDBTEST_LOCAL_CACHE' in os.environ else '/tmp/cache'
+lldbtest_remote_sandbox = os.environ['LLDBTEST_REMOTE_SANDBOX'] if 'LLDBTEST_REMOTE_SANDBOX' in os.environ else None
