@@ -145,6 +145,58 @@ PlatformMacOSX::GetSymbolFile (const FileSpec &platform_file,
     return Error();
 }
 
+lldb_private::Error
+PlatformMacOSX::GetFile (const lldb_private::FileSpec &platform_file,
+                         const lldb_private::UUID *uuid_ptr,
+                         lldb_private::FileSpec &local_file)
+{
+    if (IsRemote() && m_remote_platform_sp)
+    {
+        std::string local_os_build;
+        Host::GetOSBuildString(local_os_build);
+        std::string remote_os_build;
+        m_remote_platform_sp->GetOSBuildString(remote_os_build);
+        if (local_os_build.compare(remote_os_build) == 0)
+        {
+            // same OS version: the local file is good enough
+            local_file = platform_file;
+            return Error();
+        }
+        else
+        {
+            // try to find the file in the cache
+            std::string cache_path(GetLocalCacheDirectory());
+            std::string module_path;
+            platform_file.GetPath(module_path);
+            cache_path.append(module_path);
+            FileSpec module_cache_spec(cache_path.c_str(),false);
+            if (module_cache_spec.Exists())
+            {
+                local_file = module_cache_spec;
+                return Error();
+            }
+            // bring in the remote module file
+            FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
+            StreamString mkdir_folder_cmd;
+            // try to make the local directory first
+            mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
+            Host::RunProgramAndGetExitCode(mkdir_folder_cmd.GetData());
+            Error err = GetFile(platform_file, module_cache_spec);
+            if (err.Fail())
+                return err;
+            if (module_cache_spec.Exists())
+            {
+                local_file = module_cache_spec;
+                return Error();
+            }
+            else
+                return Error("unable to obtain valid module file");
+        }
+    }
+    local_file = platform_file;
+    return Error();
+}
+
 bool
 PlatformMacOSX::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 {
@@ -177,7 +229,7 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     }
     // try to find the module in the cache
     std::string cache_path(GetLocalCacheDirectory());
-     std::string module_path;
+    std::string module_path;
     module_spec.GetFileSpec().GetPath(module_path);
     cache_path.append(module_path);
     FileSpec module_cache_spec(cache_path.c_str(),false);
