@@ -1847,7 +1847,11 @@ Host::GetAuxvData(lldb_private::Process *process)
 uint32_t
 Host::RunProgramAndGetExitCode (const char *cmd_line)
 {
-    return ::system(cmd_line);
+    int exit_code;
+    Error err(RunShellCommand(cmd_line, NULL, &exit_code, NULL, NULL, 10));
+    if (err.Fail())
+        return UINT32_MAX;
+    return exit_code;
 }
 
 uint32_t
