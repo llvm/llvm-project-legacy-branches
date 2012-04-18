@@ -106,6 +106,8 @@ public:
   /// Calls 'Action' with the BoundNodes on every match.
   /// Adding more than one 'NodeMatch' allows finding different matches in a
   /// single pass over the AST.
+  ///
+  /// Does not take ownership of 'Action'.
   /// @{
   void addMatcher(const DeclarationMatcher &NodeMatch,
                   MatchCallback *Action);

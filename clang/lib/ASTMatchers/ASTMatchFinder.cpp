@@ -559,7 +559,6 @@ MatchFinder::~MatchFinder() {
            It = Triggers.begin(), End = Triggers.end();
        It != End; ++It) {
     delete It->first;
-    delete It->second;
   }
 }
 

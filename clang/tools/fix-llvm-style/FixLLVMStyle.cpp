@@ -292,12 +292,13 @@ int main(int argc, char **argv) {
                 HasName("internal::PolymorphicMatcherWithParam1"),
                 HasName("internal::PolymorphicMatcherWithParam2")
         )))));
-  
+
+  FixLLVMStyle Callback(&Tool.GetReplacements());
   Finder.addMatcher(StatementMatcher(AnyOf(
       StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", FunctionMatch))))),
       Call(Callee(Id("declaration", FunctionMatch)),
            Callee(Id("callee", Expression()))))),
-      new FixLLVMStyle(&Tool.GetReplacements()));
+      &Callback);
 
   Finder.addMatcher(
       DeclarationMatcher(AnyOf(
@@ -306,7 +307,7 @@ int main(int argc, char **argv) {
           Id("declaration", FunctionMatch),
           Not(Constructor())))
         ),
-      new FixLLVMStyle(&Tool.GetReplacements()));
+      &Callback);
   return Tool.Run(newFrontendActionFactory(&Finder));
 }
 

@@ -50,7 +50,8 @@ testing::AssertionResult matchesConditionally(const std::string &Code,
                                               bool ExpectMatch) {
   bool Found = false;
   MatchFinder Finder;
-  Finder.addMatcher(AMatcher, new VerifyMatch(0, &Found));
+  VerifyMatch Callback(0, &Found);
+  Finder.addMatcher(AMatcher, &Callback);
   if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }
@@ -83,8 +84,8 @@ matchAndVerifyResultConditionally(const std::string &Code, const T &AMatcher,
   llvm::OwningPtr<BoundNodesCallback> ScopedVerifier(FindResultVerifier);
   bool VerifiedResult = false;
   MatchFinder Finder;
-  Finder.addMatcher(
-      AMatcher, new VerifyMatch(FindResultVerifier, &VerifiedResult));
+  VerifyMatch Callback(FindResultVerifier, &VerifiedResult);
+  Finder.addMatcher(AMatcher, &Callback);
   if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }

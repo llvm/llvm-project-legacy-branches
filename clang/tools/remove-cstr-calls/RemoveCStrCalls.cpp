@@ -185,6 +185,7 @@ int main(int argc, char **argv) {
     llvm::report_fatal_error(ErrorMessage);
   tooling::RefactoringTool Tool(*Compilations, SourcePaths);
   ast_matchers::MatchFinder Finder;
+  FixCStrCall Callback(&Tool.GetReplacements());
   Finder.addMatcher(
       ConstructorCall(
           HasDeclaration(Method(HasName(StringConstructor))),
@@ -204,7 +205,7 @@ int main(int argc, char **argv) {
           HasArgument(
               1,
               DefaultArgument())),
-      new FixCStrCall(&Tool.GetReplacements()));
+      &Callback);
   Finder.addMatcher(
       ConstructorCall(
           // Implicit constructors of these classes are overloaded
@@ -226,7 +227,7 @@ int main(int argc, char **argv) {
                   Callee(Id("member", MemberExpression())),
                   Callee(Method(HasName(StringCStrMethod))),
                   On(Id("arg", Expression())))))),
-      new FixCStrCall(&Tool.GetReplacements()));
+      &Callback);
   return Tool.Run(newFrontendActionFactory(&Finder));
 }
 
