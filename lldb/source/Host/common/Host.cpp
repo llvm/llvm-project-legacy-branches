@@ -1415,15 +1415,9 @@ Host::SetCrashDescription (const char *description)
 }
 
 lldb::pid_t
-LaunchApplication (const FileSpec &app_file_spec)
+Host::LaunchApplication (const FileSpec &app_file_spec)
 {
     return LLDB_INVALID_PROCESS_ID;
-}
-
-uint32_t
-Host::RunProgramAndGetExitCode (const FileSpec& file_spec)
-{
-    return UINT32_MAX;
 }
 
 uint32_t
