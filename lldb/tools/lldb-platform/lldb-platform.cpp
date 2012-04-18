@@ -61,9 +61,11 @@ signal_handler(int signo)
         g_sigpipe_received = 1;
         break;
     case SIGHUP:
-        Debugger::Terminate();
-        fprintf(stderr, "SIGHUP received, lldb-platform exiting...\n");
-        exit(1);
+        // Use SIGINT first, if that does not work, use SIGHUP as a last resort.
+        // And we should not call exit() here because it results in the global destructors
+        // to be invoked and wreaking havoc on the threads still running.
+        Host::SystemLog(Host::eSystemLogWarning, "SIGHUP received, exiting lldb-platform...\n");
+        abort();
         break;
     }
 }
