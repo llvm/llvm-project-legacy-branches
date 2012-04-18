@@ -1531,3 +1531,12 @@ Host::GetFileExists (const FileSpec& file_spec)
     return file_spec.Exists();
 }
 
+uint32_t
+Host::RunProgramAndGetExitCode (const char *cmd_line)
+{
+    int exit_code;
+    Error err(RunShellCommand(cmd_line, NULL, &exit_code, NULL, NULL, 10));
+    if (err.Fail())
+        return UINT32_MAX;
+    return exit_code;
+}
