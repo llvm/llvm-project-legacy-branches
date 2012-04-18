@@ -262,6 +262,7 @@ private:
   class FindConsumer : public clang::ASTConsumer {
   public:
     FindConsumer(TestVisitor *Visitor) : Visitor(Visitor) {}
+
     virtual void HandleTranslationUnit(clang::ASTContext &Context) {
       Visitor->TraverseDecl(Context.getTranslationUnitDecl());
     }
@@ -284,9 +285,7 @@ private:
   private:
     TestVisitor *Visitor;
   };
-
 };
-
 } // end namespace
 
 void expectReplacementAt(const Replacement &Replace,
