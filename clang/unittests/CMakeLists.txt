@@ -74,11 +74,8 @@ add_clang_unittest(Frontend
 add_clang_unittest(Tooling
   Tooling/CompilationDatabaseTest.cpp
   Tooling/ToolingTest.cpp
+  Tooling/RecursiveASTVisitorTest.cpp
   Tooling/RefactoringTest.cpp
-  USED_LIBS gtest gtest_main clangTooling
- )
-
-add_clang_unittest(AST
-  AST/RecursiveASTVisitorTest.cpp
   USED_LIBS gtest gtest_main clangAST clangTooling
  )
+
