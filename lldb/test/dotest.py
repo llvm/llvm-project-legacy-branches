@@ -1055,6 +1055,12 @@ def getsource_if_available(obj):
 print "lldb.pre_flight:", getsource_if_available(lldb.pre_flight)
 print "lldb.post_flight:", getsource_if_available(lldb.post_flight)
 
+# If either pre_flight or post_flight is defined, set lldb.test_remote to True.
+if lldb.pre_flight or lldb.post_flight:
+    lldb.test_remote = True
+else:
+    lldb.test_remote = False
+
 # So does the lldbtest_remote_sandbox variable.
 lldb.lldbtest_remote_sandbox = lldbtest_remote_sandbox
 
