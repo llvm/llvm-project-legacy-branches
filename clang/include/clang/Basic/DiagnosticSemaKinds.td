@@ -1518,6 +1518,10 @@ def err_undeclared_nsnumber : Error<
   "NSNumber must be available to use Objective-C literals">;
 def err_invalid_nsnumber_type : Error<
   "%0 is not a valid literal type for NSNumber">;
+def err_undeclared_nsstring : Error<
+  "cannot box a string value because NSString has not been declared">;
+def err_objc_illegal_boxed_expression_type : Error<
+  "Illegal type %0 used in a boxed expression">;
 def err_undeclared_nsarray : Error<
   "NSArray must be available to use Objective-C array literals">;
 def err_undeclared_nsdictionary : Error<
@@ -3065,6 +3069,15 @@ def ext_complex_component_init : Extension<
 def err_empty_scalar_initializer : Error<"scalar initializer cannot be empty">;
 def warn_cxx98_compat_empty_scalar_initializer : Warning<
   "scalar initialized from empty initializer list is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_reference_list_init : Warning<
+  "reference initialized from initializer list is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_initializer_list_init : Warning<
+  "initialization of initializer_list object is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_ctor_list_init : Warning<
+  "constructor call from initializer list is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_illegal_initializer : Error<
   "illegal initializer (only variables can be initialized)">;

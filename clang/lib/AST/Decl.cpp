@@ -271,11 +271,10 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
   //   scope and no storage-class specifier, its linkage is
   //   external.
   LinkageInfo LV;
-  LV.mergeVisibility(Context.getLangOpts().getVisibilityMode());
 
   if (F.ConsiderVisibilityAttributes) {
     if (llvm::Optional<Visibility> Vis = D->getExplicitVisibility()) {
-      LV.setVisibility(*Vis, true);
+      LV.mergeVisibility(*Vis, true);
     } else {
       // If we're declared in a namespace with a visibility attribute,
       // use that namespace's visibility, but don't call it explicit.
@@ -285,12 +284,15 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
         const NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC);
         if (!ND) continue;
         if (llvm::Optional<Visibility> Vis = ND->getExplicitVisibility()) {
-          LV.setVisibility(*Vis, true);
+          LV.mergeVisibility(*Vis, true);
           break;
         }
       }
     }
   }
+
+  if (F.ConsiderGlobalVisibility)
+    LV.mergeVisibility(Context.getLangOpts().getVisibilityMode());
 
   // C++ [basic.link]p4:
 
@@ -325,11 +327,11 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
       LinkageInfo TypeLV = getLVForType(Var->getType());
       if (TypeLV.linkage() != ExternalLinkage)
         return LinkageInfo::uniqueExternal();
-      LV.mergeVisibilityWithMin(TypeLV);
+      LV.mergeVisibility(TypeLV);
     }
 
     if (Var->getStorageClass() == SC_PrivateExtern)
-      LV.setVisibility(HiddenVisibility, true);
+      LV.mergeVisibility(HiddenVisibility, true);
 
     if (!Context.getLangOpts().CPlusPlus &&
         (Var->getStorageClass() == SC_Extern ||
@@ -359,7 +361,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     // just too painful to make work.
 
     if (Function->getStorageClass() == SC_PrivateExtern)
-      LV.setVisibility(HiddenVisibility, true);
+      LV.mergeVisibility(HiddenVisibility, true);
 
     // C99 6.2.2p5:
     //   If the declaration of an identifier for a function has no
@@ -482,20 +484,17 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     return LinkageInfo::none();
 
   LinkageInfo LV;
-  LV.mergeVisibility(D->getASTContext().getLangOpts().getVisibilityMode());
 
-  bool DHasExplicitVisibility = false;
   // If we have an explicit visibility attribute, merge that in.
   if (F.ConsiderVisibilityAttributes) {
-    if (llvm::Optional<Visibility> Vis = D->getExplicitVisibility()) {
+    if (llvm::Optional<Visibility> Vis = D->getExplicitVisibility())
       LV.mergeVisibility(*Vis, true);
-
-      DHasExplicitVisibility = true;
-    }
   }
-  // Ignore both global visibility and attributes when computing our
-  // parent's visibility if we already have an explicit one.
-  LVFlags ClassF =  DHasExplicitVisibility ?
+
+  // If this class member has an explicit visibility attribute, the only
+  // thing that can change its visibility is the template arguments, so
+  // only look for them when processing the the class.
+  LVFlags ClassF =  LV.visibilityExplicit() ?
     LVFlags::CreateOnlyDeclLinkage() : F;
 
   // If we're paying attention to global visibility, apply
@@ -526,15 +525,21 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
       LV.mergeVisibility(HiddenVisibility, true);
   }
 
-  // Class members only have linkage if their class has external
-  // linkage.
-  LV.merge(getLVForDecl(cast<RecordDecl>(D->getDeclContext()), ClassF));
+  // If this member has an visibility attribute, ClassF will exclude
+  // attributes on the class or command line options, keeping only information
+  // about the template instantiation. If the member has no visibility
+  // attributes, mergeWithMin behaves like merge, so in both cases mergeWithMin
+  // produces the desired result.
+  LV.mergeWithMin(getLVForDecl(cast<RecordDecl>(D->getDeclContext()), ClassF));
   if (!isExternalLinkage(LV.linkage()))
     return LinkageInfo::none();
 
   // If the class already has unique-external linkage, we can't improve.
   if (LV.linkage() == UniqueExternalLinkage)
     return LinkageInfo::uniqueExternal();
+
+  if (F.ConsiderGlobalVisibility)
+    LV.mergeVisibility(D->getASTContext().getLangOpts().getVisibilityMode());
 
   if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D)) {
     // If the type of the function uses a type with unique-external
@@ -579,8 +584,7 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     LinkageInfo TypeLV = getLVForType(VD->getType());
     if (TypeLV.linkage() != ExternalLinkage)
       LV.mergeLinkage(UniqueExternalLinkage);
-    if (!LV.visibilityExplicit())
-      LV.mergeVisibility(TypeLV);
+    LV.mergeVisibility(TypeLV);
   }
 
   return LV;
@@ -785,7 +789,7 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
       LinkageInfo LV;
       if (Flags.ConsiderVisibilityAttributes) {
         if (llvm::Optional<Visibility> Vis = Function->getExplicitVisibility())
-          LV.setVisibility(*Vis, true);
+          LV.mergeVisibility(*Vis, true);
       }
       
       if (const FunctionDecl *Prev = Function->getPreviousDecl()) {
@@ -806,10 +810,10 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
 
         LinkageInfo LV;
         if (Var->getStorageClass() == SC_PrivateExtern)
-          LV.setVisibility(HiddenVisibility, true);
+          LV.mergeVisibility(HiddenVisibility, true);
         else if (Flags.ConsiderVisibilityAttributes) {
           if (llvm::Optional<Visibility> Vis = Var->getExplicitVisibility())
-            LV.setVisibility(*Vis, true);
+            LV.mergeVisibility(*Vis, true);
         }
         
         if (const VarDecl *Prev = Var->getPreviousDecl()) {
