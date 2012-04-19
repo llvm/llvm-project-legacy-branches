@@ -406,8 +406,14 @@ PlatformPOSIX::GetPlatformSpecificConnectionInformation()
     if (GetSupportsRSync())
     {
         stream.PutCString("rsync");
-        if (GetRSyncOpts() && *GetRSyncOpts())
-            stream.Printf(", options: '%s' ",GetRSyncOpts());
+        if ( (GetRSyncOpts() && *GetRSyncOpts()) || GetIgnoresRemoteHostname())
+        {
+            stream.Printf(", options: ");
+            if (GetRSyncOpts() && *GetRSyncOpts())
+                stream.Printf("'%s' ",GetRSyncOpts());
+            if (GetIgnoresRemoteHostname())
+                stream.Printf("ignore remote-hostname ");
+        }
     }
     if (GetSupportsSSH())
     {

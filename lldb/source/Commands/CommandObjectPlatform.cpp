@@ -23,6 +23,7 @@
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Utility/Utils.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -30,9 +31,8 @@ using namespace lldb_private;
 static mode_t
 ParsePermissionString(const char* permissions)
 {
-    mode_t retval = 0;
     if (strlen(permissions) != 9)
-        return retval;
+        return (mode_t)(-1);
     bool user_r,user_w,user_x,
     group_r,group_w,group_x,
     world_r,world_w,world_x;
@@ -56,6 +56,125 @@ ParsePermissionString(const char* permissions)
     
     return user | group | world;
 }
+
+static OptionDefinition
+g_permissions_options[] =
+{
+    {   LLDB_OPT_SET_ALL, false, "permissions-value", 'v', required_argument,       NULL, 0, eArgTypePermissionsNumber         , "Give out the numeric value for permissions (e.g. 757)" },
+    {   LLDB_OPT_SET_ALL, false, "permissions-string",'s', required_argument, NULL, 0, eArgTypePermissionsString  , "Give out the string value for permissions (e.g. rwxr-xr--)." },
+    {   LLDB_OPT_SET_ALL, false, "user-read", 'r', no_argument,       NULL, 0, eArgTypeNone         , "Allow user to read." },
+    {   LLDB_OPT_SET_ALL, false, "user-write", 'w', no_argument,       NULL, 0, eArgTypeNone         , "Allow user to write." },
+    {   LLDB_OPT_SET_ALL, false, "user-exec", 'x', no_argument,       NULL, 0, eArgTypeNone         , "Allow user to execute." },
+
+    {   LLDB_OPT_SET_ALL, false, "group-read", 'R', no_argument,       NULL, 0, eArgTypeNone         , "Allow group to read." },
+    {   LLDB_OPT_SET_ALL, false, "group-write", 'W', no_argument,       NULL, 0, eArgTypeNone         , "Allow group to write." },
+    {   LLDB_OPT_SET_ALL, false, "group-exec", 'X', no_argument,       NULL, 0, eArgTypeNone         , "Allow group to execute." },
+
+    {   LLDB_OPT_SET_ALL, false, "world-read", 'd', no_argument,       NULL, 0, eArgTypeNone         , "Allow world to read." },
+    {   LLDB_OPT_SET_ALL, false, "world-write", 't', no_argument,       NULL, 0, eArgTypeNone         , "Allow world to write." },
+    {   LLDB_OPT_SET_ALL, false, "world-exec", 'e', no_argument,       NULL, 0, eArgTypeNone         , "Allow world to execute." },
+
+};
+
+class OptionPermissions : public lldb_private::OptionGroup
+{
+public:
+    OptionPermissions ()
+    {
+    }
+    
+    virtual
+    ~OptionPermissions ()
+    {
+    }
+    
+    virtual lldb_private::Error
+    SetOptionValue (CommandInterpreter &interpreter,
+                    uint32_t option_idx,
+                    const char *option_arg)
+    {
+        Error error;
+        char short_option = (char) GetDefinitions()[option_idx].short_option;
+        switch (short_option)
+        {
+            case 'v':
+            {
+                bool ok;
+                uint32_t perms = Args::StringToUInt32(option_arg, 777, 8, &ok);
+                if (!ok)
+                    error.SetErrorStringWithFormat("invalid value for permissions: %s", option_arg);
+                else
+                    m_permissions = perms;
+            }
+                break;
+            case 's':
+            {
+                mode_t perms = ParsePermissionString(option_arg);
+                if (perms == (mode_t)-1)
+                    error.SetErrorStringWithFormat("invalid value for permissions: %s", option_arg);
+                else
+                    m_permissions = perms;
+            }
+            case 'r':
+                m_permissions |= File::ePermissionsUserRead;
+                break;
+            case 'w':
+                m_permissions |= File::ePermissionsUserWrite;
+                break;
+            case 'x':
+                m_permissions |= File::ePermissionsUserExecute;
+                break;
+            case 'R':
+                m_permissions |= File::ePermissionsGroupRead;
+                break;
+            case 'W':
+                m_permissions |= File::ePermissionsGroupWrite;
+                break;
+            case 'X':
+                m_permissions |= File::ePermissionsGroupExecute;
+                break;
+            case 'd':
+                m_permissions |= File::ePermissionsWorldRead;
+                break;
+            case 't':
+                m_permissions |= File::ePermissionsWorldWrite;
+                break;
+            case 'e':
+                m_permissions |= File::ePermissionsWorldExecute;
+                break;
+
+            default:
+                error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+                break;
+        }
+        
+        return error;
+    }
+    
+    void
+    OptionParsingStarting (CommandInterpreter &interpreter)
+    {
+        m_permissions = 0;
+    }
+    
+    virtual uint32_t
+    GetNumDefinitions ()
+    {
+        return arraysize(g_permissions_options);
+    }
+    
+    const lldb_private::OptionDefinition*
+    GetDefinitions ()
+    {
+        return g_permissions_options;
+    }
+        
+    // Instance variables to hold the values for command options.
+    
+    uint32_t m_permissions;
+private:
+    DISALLOW_COPY_AND_ASSIGN(OptionPermissions);
+};
 
 //----------------------------------------------------------------------
 // "platform select <platform-name>"
@@ -399,7 +518,8 @@ public:
                    "platform shell",
                    "Make a new directory on the remote end.",
                    NULL,
-                   0)
+                   0),
+    m_options(interpreter)
     {
     }
     
@@ -416,7 +536,13 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
-            uint32_t retcode = platform_sp->MakeDirectory(cmd_line,0000700 | 0000070 | 0000007);
+            mode_t perms;
+            const OptionPermissions* options_permissions = (OptionPermissions*)m_options.GetGroupWithOption('r');
+            if (options_permissions)
+                perms = options_permissions->m_permissions;
+            else
+                perms = 0000700 | 0000070 | 0000007;
+            uint32_t retcode = platform_sp->MakeDirectory(cmd_line,perms);
             result.AppendMessageWithFormat("Status = %d\n",retcode);
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
@@ -427,6 +553,19 @@ public:
         }
         return result.Succeeded();
     }
+    
+    virtual Options *
+    GetOptions ()
+    {
+        if (m_options.DidFinalize() == false)
+        {
+            m_options.Append(new OptionPermissions());
+            m_options.Finalize();
+        }
+        return &m_options;
+    }
+    OptionGroupOptions m_options;
+    
 };
 
 //----------------------------------------------------------------------
@@ -440,7 +579,8 @@ public:
                    "platform file open",
                    "Open a file on the remote end.",
                    NULL,
-                   0)
+                   0),
+    m_options(interpreter)
     {
     }
     
@@ -457,11 +597,16 @@ public:
         {
             std::string cmd_line;
             args.GetCommandString(cmd_line);
-            // TODO: make permissions safer
+            mode_t perms;
+            const OptionPermissions* options_permissions = (OptionPermissions*)m_options.GetGroupWithOption('r');
+            if (options_permissions)
+                perms = options_permissions->m_permissions;
+            else
+                perms = 0000700 | 0000070 | 0000007;
             uint32_t retcode = platform_sp->OpenFile(FileSpec(cmd_line.c_str(),false),
                                                      File::eOpenOptionRead | File::eOpenOptionWrite |
                                                      File::eOpenOptionAppend | File::eOpenOptionCanCreate,
-                                                     0000700 | 0000070 | 0000007);
+                                                     perms);
             result.AppendMessageWithFormat("Status = %d\n",retcode);
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
@@ -472,6 +617,17 @@ public:
         }
         return result.Succeeded();
     }
+    virtual Options *
+    GetOptions ()
+    {
+        if (m_options.DidFinalize() == false)
+        {
+            m_options.Append(new OptionPermissions());
+            m_options.Finalize();
+        }
+        return &m_options;
+    }
+    OptionGroupOptions m_options;
 };
 
 //----------------------------------------------------------------------

@@ -439,6 +439,12 @@ protected:
         void
         Finalize ();
         
+        bool
+        DidFinalize ()
+        {
+            return m_did_finalize;
+        }
+        
         virtual Error
         SetOptionValue (uint32_t option_idx, 
                         const char *option_arg);

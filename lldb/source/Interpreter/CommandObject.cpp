@@ -883,6 +883,8 @@ CommandObject::g_arguments_data[] =
     { eArgTypeOldPathPrefix, "old-path-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeOneLiner, "one-line-command", CommandCompletions::eNoCompletion, { NULL, false }, "A command that is entered as a single line of text." },
     { eArgTypePath, "path", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypePermissionsNumber, "perms-numeric", CommandCompletions::eNoCompletion, { NULL, false }, "Permissions given as an octal number (e.g. 755)." },
+    { eArgTypePermissionsString, "perms=string", CommandCompletions::eNoCompletion, { NULL, false }, "Permissions given as a string value (e.g. rw-r-xr--)." },
     { eArgTypePid, "pid", CommandCompletions::eNoCompletion, { NULL, false }, "The process ID number." },
     { eArgTypePlugin, "plugin", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeProcessName, "process-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the process." },
