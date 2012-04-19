@@ -731,5 +731,8 @@ Platform::RunShellCommand (const char *command,           // Shouldn't be NULL
                            std::string *command_output,   // Pass NULL if you don't want the command output
                            uint32_t timeout_sec)          // Timeout in seconds to wait for shell program to finish
 {
-    return Error("unimplemented");
+    if (IsHost())
+        return Host::RunShellCommand (command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+    else
+        return Error("unimplemented");
 }

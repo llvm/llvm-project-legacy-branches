@@ -1912,6 +1912,54 @@ GDBRemoteCommunicationClient::RunShellCommand (const std::string &command_line)
     return UINT32_MAX;
 }
 
+lldb_private::Error
+GDBRemoteCommunicationClient::RunShellCommand (const char *command,           // Shouldn't be NULL
+                                               const char *working_dir,       // Pass NULL to use the current working directory
+                                               int *status_ptr,               // Pass NULL if you don't want the process exit status
+                                               int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
+                                               std::string *command_output,   // Pass NULL if you don't want the command output
+                                               uint32_t timeout_sec)          // Timeout in seconds to wait for shell program to finish
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("qPlatform_RunCommand:");
+    stream.PutBytesAsRawHex8(command, strlen(command));
+    stream.PutChar(',');
+    stream.PutHex32(timeout_sec);
+    if (working_dir && *working_dir)
+    {
+        stream.PutChar(',');
+        stream.PutBytesAsRawHex8(working_dir, strlen(working_dir));
+    }
+    const char *packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return Error("malformed reply");
+        if (response.GetChar() != ',')
+            return Error("malformed reply");
+        uint32_t exitcode = response.GetHexMaxU32(false, UINT32_MAX);
+        if (exitcode == UINT32_MAX)
+            return Error("unable to run remote process");
+        else if (status_ptr)
+            *status_ptr = exitcode;
+        if (response.GetChar() != ',')
+            return Error("malformed reply");
+        uint32_t signo = response.GetHexMaxU32(false, UINT32_MAX);
+        if (signo_ptr)
+            *signo_ptr = signo;
+        if (response.GetChar() != ',')
+            return Error("malformed reply");
+        std::string output;
+        response.GetEscapedBinaryData(output);
+        if (command_output)
+            command_output->assign(output);
+        return Error();
+    }
+    return Error("unable to send packet");
+}
+
 uint32_t
 GDBRemoteCommunicationClient::MakeDirectory (const std::string &path,
                                              mode_t mode)

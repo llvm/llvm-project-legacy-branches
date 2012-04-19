@@ -475,3 +475,14 @@ PlatformRemoteGDBServer::GetFileExists (const lldb_private::FileSpec& file_spec)
 {
     return m_gdb_client.GetFileExists (file_spec);
 }
+
+lldb_private::Error
+PlatformRemoteGDBServer::RunShellCommand (const char *command,           // Shouldn't be NULL
+                                          const char *working_dir,       // Pass NULL to use the current working directory
+                                          int *status_ptr,               // Pass NULL if you don't want the process exit status
+                                          int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
+                                          std::string *command_output,   // Pass NULL if you don't want the command output
+                                          uint32_t timeout_sec)          // Timeout in seconds to wait for shell program to finish
+{
+    return m_gdb_client.RunShellCommand (command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+}

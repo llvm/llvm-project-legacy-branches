@@ -180,7 +180,12 @@ PlatformMacOSX::GetFile (const lldb_private::FileSpec &platform_file,
             StreamString mkdir_folder_cmd;
             // try to make the local directory first
             mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
-            Host::RunProgramAndGetExitCode(mkdir_folder_cmd.GetData());
+            Host::RunShellCommand(mkdir_folder_cmd.GetData(),
+                                  NULL,
+                                  NULL,
+                                  NULL,
+                                  NULL,
+                                  60);
             Error err = GetFile(platform_file, module_cache_spec);
             if (err.Fail())
                 return err;
@@ -245,7 +250,12 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     StreamString mkdir_folder_cmd;
     // try to make the local directory first
     mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
-    Host::RunProgramAndGetExitCode(mkdir_folder_cmd.GetData());
+    Host::RunShellCommand(mkdir_folder_cmd.GetData(),
+                          NULL,
+                          NULL,
+                          NULL,
+                          NULL,
+                          60);
     Error err = GetFile(module_spec.GetFileSpec(), module_cache_spec);
     if (err.Fail())
         return err;

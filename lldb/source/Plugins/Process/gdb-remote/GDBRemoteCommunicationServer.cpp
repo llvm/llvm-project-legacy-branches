@@ -168,6 +168,9 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
             case StringExtractorGDBRemote::eServerPacketType_qPlatform_IO_MkDir:
                 return Handle_qPlatform_IO_MkDir (packet);
                 
+            case StringExtractorGDBRemote::eServerPacketType_qPlatform_RunCommand:
+                return Handle_qPlatform_RunCommand (packet);
+                
             case StringExtractorGDBRemote::eServerPacketType_vFile_Open:
                 return Handle_vFile_Open (packet);
                 
@@ -864,7 +867,13 @@ GDBRemoteCommunicationServer::Handle_qPlatform_Syscall_System (StringExtractorGD
     packet.SetFilePos(::strlen("qPlatform_Syscall_System:"));
     std::string path;
     packet.GetHexByteString(path);
-    uint32_t retcode = Host::RunProgramAndGetExitCode(path.c_str());
+    int retcode;
+    Host::RunShellCommand(path.c_str(),
+                          NULL,
+                          &retcode,
+                          NULL,
+                          NULL,
+                          60);
     StreamString response;
     response.PutHex32(retcode);
     SendPacketNoLock(response.GetData(), response.GetSize());
@@ -1035,6 +1044,44 @@ GDBRemoteCommunicationServer::Handle_vFile_Exists (StringExtractorGDBRemote &pac
         response.PutChar('1');
     else
         response.PutChar('0');
+    SendPacketNoLock(response.GetData(), response.GetSize());
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_qPlatform_RunCommand (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("qPlatform_RunCommand:"));
+    std::string path;
+    std::string working_dir;
+    packet.GetHexByteStringTerminatedBy(path,',');
+    if (path.size() == 0)
+        return false;
+    if (packet.GetChar() != ',')
+        return false;
+    uint32_t timeout = packet.GetHexMaxU32(false, 32);
+    if (packet.GetChar() == ',')
+        packet.GetHexByteString(working_dir);
+    int status, signo;
+    std::string output;
+    Error err = Host::RunShellCommand(path.c_str(),
+                                      working_dir.empty() ? NULL : working_dir.c_str(),
+                                      &status, &signo, &output, timeout);
+    StreamGDBRemote response;
+    if (err.Fail())
+    {
+        response.PutCString("F,");
+        response.PutHex32(UINT32_MAX);
+    }
+    else
+    {
+        response.PutCString("F,");
+        response.PutHex32(status);
+        response.PutChar(',');
+        response.PutHex32(signo);
+        response.PutChar(',');
+        response.PutEscapedBytes(output.c_str(), output.size());
+    }
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }

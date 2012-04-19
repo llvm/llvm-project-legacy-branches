@@ -160,6 +160,9 @@ protected:
 
     bool
     Handle_vFile_Exists (StringExtractorGDBRemote &packet);
+    
+    bool
+    Handle_qPlatform_RunCommand (StringExtractorGDBRemote &packet);
 
 private:
     //------------------------------------------------------------------

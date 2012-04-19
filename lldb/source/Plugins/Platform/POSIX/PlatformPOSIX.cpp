@@ -138,7 +138,16 @@ uint32_t
 PlatformPOSIX::RunShellCommand (const std::string &command_line)
 {
     if (IsHost())
-        return Host::RunProgramAndGetExitCode(command_line.c_str());
+    {
+        int retcode;
+        Host::RunShellCommand(command_line.c_str(),
+                              NULL,
+                              &retcode,
+                              NULL,
+                              NULL,
+                              60);
+        return retcode;
+    }
     if (IsRemote())
     {
         if (GetSupportsSSH())
@@ -298,7 +307,14 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                                src_path.c_str(),
                                GetHostname(),
                                dst_path.c_str());
-            if (Host::RunProgramAndGetExitCode(command.GetData()) == 0)
+            int retcode;
+            Host::RunShellCommand(command.GetData(),
+                                  NULL,
+                                  &retcode,
+                                  NULL,
+                                  NULL,
+                                  60);
+            if (retcode == 0)
             {
                 if (chown_file(this,dst_path.c_str(),uid,gid) != 0)
                     return Error("unable to perform chown");
@@ -408,7 +424,14 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
                                src_path.c_str(),
                                dst_path.c_str());
             printf("Running command: %s\n", command.GetData());
-            if (Host::RunProgramAndGetExitCode(command.GetData()) == 0)
+            int retcode;
+            Host::RunShellCommand(command.GetData(),
+                                  NULL,
+                                  &retcode,
+                                  NULL,
+                                  NULL,
+                                  60);
+            if (retcode == 0)
                 return Error();
             // If we are here, rsync has failed - let's try the slow way before giving up
         }

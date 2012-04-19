@@ -65,6 +65,7 @@ public:
         eServerPacketType_QSetWorkingDir,
         eServerPacketType_QStartNoAckMode,
         eServerPacketType_qPlatform_Syscall_System,
+        eServerPacketType_qPlatform_RunCommand,
         eServerPacketType_qPlatform_IO_MkDir,
         eServerPacketType_vFile_Open,
         eServerPacketType_vFile_Close,
