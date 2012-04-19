@@ -43,8 +43,8 @@ class Issue11581TestCase(TestBase):
         self.expect("print *((StgClosure*)(r14-1))",
             substrs = ["(StgClosure) $",
             "(StgClosure *) &$","0x",
-            "(long) addr = ",
-            "(long) load_address = "])
+            "addr = ",
+            "load_address = "])
 
 
         target = lldb.debugger.GetSelectedTarget()
