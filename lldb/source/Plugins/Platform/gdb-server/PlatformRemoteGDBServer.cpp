@@ -415,12 +415,6 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
 }
 
 uint32_t
-PlatformRemoteGDBServer::RunShellCommand (const std::string &command_line)
-{
-    return m_gdb_client.RunShellCommand(command_line);
-}
-
-uint32_t
 PlatformRemoteGDBServer::MakeDirectory (const std::string &path,
                                         mode_t mode)
 {

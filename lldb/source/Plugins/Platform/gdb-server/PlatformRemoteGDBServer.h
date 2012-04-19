@@ -142,9 +142,6 @@ public:
     DisconnectRemote ();
     
     virtual uint32_t
-    RunShellCommand (const std::string &command_line);
-    
-    virtual uint32_t
     MakeDirectory (const std::string &path,
                    mode_t mode);
     

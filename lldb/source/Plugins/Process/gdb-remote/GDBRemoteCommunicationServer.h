@@ -99,9 +99,6 @@ protected:
     Handle_qPlatform_IO_MkDir (StringExtractorGDBRemote &packet);
     
     bool
-    Handle_qPlatform_Syscall_System (StringExtractorGDBRemote &packet);
-    
-    bool
     Handle_qProcessInfoPID (StringExtractorGDBRemote &packet);
     
     bool

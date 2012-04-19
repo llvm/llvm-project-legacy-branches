@@ -162,9 +162,6 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
             case StringExtractorGDBRemote::eServerPacketType_QStartNoAckMode:
                 return Handle_QStartNoAckMode (packet);
                 
-            case StringExtractorGDBRemote::eServerPacketType_qPlatform_Syscall_System:
-                return Handle_qPlatform_Syscall_System (packet);
-                
             case StringExtractorGDBRemote::eServerPacketType_qPlatform_IO_MkDir:
                 return Handle_qPlatform_IO_MkDir (packet);
                 
@@ -858,25 +855,6 @@ GDBRemoteCommunicationServer::Handle_QStartNoAckMode (StringExtractorGDBRemote &
     // Send response first before changing m_send_acks to we ack this packet
     SendOKResponse ();
     m_send_acks = false;
-    return true;
-}
-
-bool
-GDBRemoteCommunicationServer::Handle_qPlatform_Syscall_System (StringExtractorGDBRemote &packet)
-{
-    packet.SetFilePos(::strlen("qPlatform_Syscall_System:"));
-    std::string path;
-    packet.GetHexByteString(path);
-    int retcode;
-    Host::RunShellCommand(path.c_str(),
-                          NULL,
-                          &retcode,
-                          NULL,
-                          NULL,
-                          60);
-    StreamString response;
-    response.PutHex32(retcode);
-    SendPacketNoLock(response.GetData(), response.GetSize());
     return true;
 }
 

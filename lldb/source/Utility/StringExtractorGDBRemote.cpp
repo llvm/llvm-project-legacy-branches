@@ -127,7 +127,6 @@ StringExtractorGDBRemote::GetServerPacketType () const
             
         case 'P':
             if (PACKET_STARTS_WITH ("qProcessInfoPID:"))                 return eServerPacketType_qProcessInfoPID;
-            if (PACKET_STARTS_WITH ("qPlatform_Syscall_System:"))        return eServerPacketType_qPlatform_Syscall_System;
             if (PACKET_STARTS_WITH ("qPlatform_RunCommand:"))            return eServerPacketType_qPlatform_RunCommand;
             if (PACKET_STARTS_WITH ("qPlatform_IO_MkDir:"))              return eServerPacketType_qPlatform_IO_MkDir;
             break;

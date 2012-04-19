@@ -338,9 +338,6 @@ public:
         return m_interrupt_sent;
     }
     
-    virtual uint32_t
-    RunShellCommand (const std::string &command_line);
-    
     virtual lldb::user_id_t
     OpenFile (const lldb_private::FileSpec& file_spec,
               uint32_t flags,

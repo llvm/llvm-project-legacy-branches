@@ -1896,22 +1896,6 @@ GDBRemoteCommunicationClient::GetShlibInfoAddr()
     return LLDB_INVALID_ADDRESS;
 }
 
-uint32_t
-GDBRemoteCommunicationClient::RunShellCommand (const std::string &command_line)
-{
-    lldb_private::StreamString stream;
-    stream.PutCString("qPlatform_Syscall_System:");
-    stream.PutBytesAsRawHex8(command_line.c_str(), command_line.size());
-    const char *packet = stream.GetData();
-    int packet_len = stream.GetSize();
-    StringExtractorGDBRemote response;
-    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
-    {
-        return response.GetHexMaxU32(false, UINT32_MAX);
-    }
-    return UINT32_MAX;
-}
-
 lldb_private::Error
 GDBRemoteCommunicationClient::RunShellCommand (const char *command,           // Shouldn't be NULL
                                                const char *working_dir,       // Pass NULL to use the current working directory
