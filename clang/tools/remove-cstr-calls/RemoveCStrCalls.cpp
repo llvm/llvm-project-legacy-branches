@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
     llvm::report_fatal_error(ErrorMessage);
   tooling::RefactoringTool Tool(*Compilations, SourcePaths);
   ast_matchers::MatchFinder Finder;
-  FixCStrCall Callback(&Tool.GetReplacements());
+  FixCStrCall Callback(&Tool.getReplacements());
   Finder.addMatcher(
       ConstructorCall(
           HasDeclaration(Method(HasName(StringConstructor))),
@@ -228,6 +228,6 @@ int main(int argc, char **argv) {
                   Callee(Method(HasName(StringCStrMethod))),
                   On(Id("arg", Expression())))))),
       &Callback);
-  return Tool.Run(newFrontendActionFactory(&Finder));
+  return Tool.run(newFrontendActionFactory(&Finder));
 }
 

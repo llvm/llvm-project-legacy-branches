@@ -121,7 +121,7 @@ bool allParentsMatch(SourceManager *SM, ASTContext &Context, const CXXRecordDecl
 class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
  public:
   FixLLVMStyle(tooling::Replacements *Replace)
-      : Replace(Replace), EditFilesExpression(".*ASTMatchers/.*|.*tools/clang/tools/.*") {}
+      : Replace(Replace), EditFilesExpression(".*/Refactoring.*|.*tools/clang/tools/.*") {}
 
   virtual void run(const ast_matchers::MatchFinder::MatchResult &Result) {
     if (const CallExpr *Call = Result.Nodes.getStmtAs<CallExpr>("call")) {
@@ -178,16 +178,16 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
             NameInfo = Using->getNameInfo();
           }
           ReplaceText = Replacement(*Result.SourceManager, &NameInfo, Name);
-          if (!ReplaceText.IsApplicable()) {
+          if (!ReplaceText.isApplicable()) {
    //         llvm::errs() << "Not applicable: " << Name << "\n";
           }
         }
       }
     }
-    if (EditFilesExpression.match(ReplaceText.GetFilePath())) {
+    if (EditFilesExpression.match(ReplaceText.getFilePath())) {
       //llvm::errs() << GetPosition(*Result.Nodes.GetDeclAs<NamedDecl>("declaration"), *Result.SourceManager) << "\n";
       //llvm::errs
-      llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
+      llvm::errs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
       Replace->insert(ReplaceText);
     } else {
 //     llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
@@ -293,7 +293,7 @@ int main(int argc, char **argv) {
                 HasName("internal::PolymorphicMatcherWithParam2")
         )))));
 
-  FixLLVMStyle Callback(&Tool.GetReplacements());
+  FixLLVMStyle Callback(&Tool.getReplacements());
   Finder.addMatcher(StatementMatcher(AnyOf(
       StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", FunctionMatch))))),
       Call(Callee(Id("declaration", FunctionMatch)),
@@ -308,6 +308,6 @@ int main(int argc, char **argv) {
           Not(Constructor())))
         ),
       &Callback);
-  return Tool.Run(newFrontendActionFactory(&Finder));
+  return Tool.run(newFrontendActionFactory(&Finder));
 }
 

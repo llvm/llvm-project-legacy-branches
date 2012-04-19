@@ -35,19 +35,19 @@ Replacement::Replacement(llvm::StringRef FilePath, unsigned Offset,
 
 Replacement::Replacement(SourceManager &Sources, SourceLocation Start,
                          unsigned Length, llvm::StringRef ReplacementText) {
-  SetFromSourceLocation(Sources, Start, Length, ReplacementText);
+  setFromSourceLocation(Sources, Start, Length, ReplacementText);
 }
 
 Replacement::Replacement(SourceManager &Sources, const CharSourceRange &Range,
                          llvm::StringRef ReplacementText) {
-  SetFromSourceRange(Sources, Range, ReplacementText);
+  setFromSourceRange(Sources, Range, ReplacementText);
 }
 
-bool Replacement::IsApplicable() const {
+bool Replacement::isApplicable() const {
   return FilePath != InvalidLocation;
 }
 
-bool Replacement::Apply(Rewriter &Rewrite) const {
+bool Replacement::apply(Rewriter &Rewrite) const {
   SourceManager &SM = Rewrite.getSourceMgr();
   const FileEntry *Entry = SM.getFileManager().getFile(FilePath);
   if (Entry == NULL)
@@ -79,7 +79,7 @@ bool Replacement::Less::operator()(const Replacement &R1,
   return R1.ReplacementText < R2.ReplacementText;
 }
 
-void Replacement::SetFromSourceLocation(SourceManager &Sources,
+void Replacement::setFromSourceLocation(SourceManager &Sources,
                                         SourceLocation Start, unsigned Length,
                                         llvm::StringRef ReplacementText) {
   const std::pair<FileID, unsigned> DecomposedLocation =
@@ -91,20 +91,20 @@ void Replacement::SetFromSourceLocation(SourceManager &Sources,
   this->ReplacementText = ReplacementText;
 }
 
-void Replacement::SetFromSourceRange(SourceManager &Sources,
+void Replacement::setFromSourceRange(SourceManager &Sources,
                                      const CharSourceRange &Range,
                                      llvm::StringRef ReplacementText) {
-  SetFromSourceLocation(Sources, Sources.getSpellingLoc(Range.getBegin()),
+  setFromSourceLocation(Sources, Sources.getSpellingLoc(Range.getBegin()),
                         getRangeSize(Sources, Range), ReplacementText);
 }
 
-bool ApplyAllReplacements(Replacements &Replaces, Rewriter &Rewrite) {
+bool applyAllReplacements(Replacements &Replaces, Rewriter &Rewrite) {
   bool Result = true;
   for (Replacements::const_iterator I = Replaces.begin(),
                                     E = Replaces.end();
        I != E; ++I) {
-    if (I->IsApplicable()) {
-      Result = I->Apply(Rewrite) && Result;
+    if (I->isApplicable()) {
+      Result = I->apply(Rewrite) && Result;
     } else {
       Result = false;
     }
@@ -112,7 +112,7 @@ bool ApplyAllReplacements(Replacements &Replaces, Rewriter &Rewrite) {
   return Result;
 }
 
-bool SaveRewrittenFiles(Rewriter &Rewrite) {
+bool saveRewrittenFiles(Rewriter &Rewrite) {
   for (Rewriter::buffer_iterator I = Rewrite.buffer_begin(),
                                  E = Rewrite.buffer_end();
        I != E; ++I) {
@@ -149,9 +149,9 @@ RefactoringTool::RefactoringTool(const CompilationDatabase &Compilations,
                                  ArrayRef<std::string> SourcePaths)
   : Tool(Compilations, SourcePaths) {}
 
-Replacements &RefactoringTool::GetReplacements() { return Replace; }
+Replacements &RefactoringTool::getReplacements() { return Replace; }
 
-int RefactoringTool::Run(FrontendActionFactory *ActionFactory) {
+int RefactoringTool::run(FrontendActionFactory *ActionFactory) {
   int Result = Tool.run(ActionFactory);
   LangOptions DefaultLangOptions;
   DiagnosticOptions DefaultDiagnosticOptions;
@@ -162,10 +162,10 @@ int RefactoringTool::Run(FrontendActionFactory *ActionFactory) {
       &DiagnosticPrinter, false);
   SourceManager Sources(Diagnostics, Tool.getFiles());
   Rewriter Rewrite(Sources, DefaultLangOptions);
-  if (!ApplyAllReplacements(Replace, Rewrite)) {
+  if (!applyAllReplacements(Replace, Rewrite)) {
     llvm::errs() << "Skipped some replacements.\n";
   }
-  if (!SaveRewrittenFiles(Rewrite)) {
+  if (!saveRewrittenFiles(Rewrite)) {
     llvm::errs() << "Could not save rewritten files.\n";
     return 1;
   }

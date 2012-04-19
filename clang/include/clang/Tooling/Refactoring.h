@@ -64,17 +64,17 @@ public:
   /// \brief Returns whether this replacement can be applied to a file.
   ///
   /// Only replacements that are in a valid file can be applied.
-  bool IsApplicable() const;
+  bool isApplicable() const;
 
   /// \brief Accessors.
   /// @{
-  std::string GetFilePath() const { return FilePath; }
-  unsigned GetOffset() const { return Offset; }
-  unsigned GetLength() const { return Length; }
+  std::string getFilePath() const { return FilePath; }
+  unsigned getOffset() const { return Offset; }
+  unsigned getLength() const { return Length; }
   /// @}
 
   /// \brief Applies the replacement on the Rewriter.
-  bool Apply(Rewriter &Rewrite) const;
+  bool apply(Rewriter &Rewrite) const;
 
   /// \brief Comparator to be able to use Replacement in std::set for uniquing.
   class Less {
@@ -83,9 +83,9 @@ public:
   };
 
  private:
-  void SetFromSourceLocation(SourceManager &Sources, SourceLocation Start, 
+  void setFromSourceLocation(SourceManager &Sources, SourceLocation Start, 
                              unsigned Length, llvm::StringRef ReplacementText);
-  void SetFromSourceRange(SourceManager &Sources, const CharSourceRange &Range,
+  void setFromSourceRange(SourceManager &Sources, const CharSourceRange &Range,
                           llvm::StringRef ReplacementText);
 
   std::string FilePath;
@@ -103,13 +103,13 @@ typedef std::set<Replacement, Replacement::Less> Replacements;
 /// If at least one Apply returns false, ApplyAll returns false. Every
 /// Apply will be executed independently of the result of the result of
 /// other Apply operations.
-bool ApplyAllReplacements(Replacements &Replaces, Rewriter &Rewrite);
+bool applyAllReplacements(Replacements &Replaces, Rewriter &Rewrite);
 
 /// \brief Saves all changed files in the Rewriter to disk.
 ///
 /// \returns True On Success.
 /// FIXME: Put into Rewriter.
-bool SaveRewrittenFiles(Rewriter &Rewrite);
+bool saveRewrittenFiles(Rewriter &Rewrite);
 
 /// \brief A tool to run refactorings.
 ///
@@ -127,10 +127,10 @@ public:
   /// \brief Returns a set of replacements. All replacements added during the
   /// run of the tool will be applied after all translation units have been
   /// processed.
-  Replacements &GetReplacements();
+  Replacements &getReplacements();
 
   /// \see ClangTool::Run.
-  int Run(FrontendActionFactory *ActionFactory);
+  int run(FrontendActionFactory *ActionFactory);
 
 private:
   ClangTool Tool;
@@ -147,7 +147,7 @@ Replacement::Replacement(SourceManager &Sources, const Node &NodeToReplace,
                          llvm::StringRef ReplacementText) {
   const CharSourceRange Range =
       CharSourceRange::getTokenRange(NodeToReplace->getSourceRange());
-  SetFromSourceRange(Sources, Range, ReplacementText);
+  setFromSourceRange(Sources, Range, ReplacementText);
 }
 
 } // end namespace tooling

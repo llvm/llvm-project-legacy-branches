@@ -41,7 +41,7 @@ class RewriterTestContext {
     Diagnostics.setClient(&DiagnosticPrinter, false);
   }
 
-  FileID CreateInMemoryFile(llvm::StringRef Name, llvm::StringRef Content) {
+  FileID createInMemoryFile(llvm::StringRef Name, llvm::StringRef Content) {
     const llvm::MemoryBuffer *Source =
       llvm::MemoryBuffer::getMemBuffer(Content);
     const FileEntry *Entry =
@@ -51,21 +51,21 @@ class RewriterTestContext {
     return Sources.createFileID(Entry, SourceLocation(), SrcMgr::C_User);
   }
 
-  SourceLocation GetLocation(FileID ID, unsigned Line, unsigned Column) {
+  SourceLocation getLocation(FileID ID, unsigned Line, unsigned Column) {
     SourceLocation Result = Sources.translateFileLineCol(
         Sources.getFileEntryForID(ID), Line, Column);
     assert(Result.isValid());
     return Result;
   }
 
-  std::string GetRewrittenText(FileID ID) {
+  std::string getRewrittenText(FileID ID) {
     std::string Result;
     llvm::raw_string_ostream OS(Result);
     Rewrite.getEditBuffer(ID).write(OS);
     return Result;
   }
 
-  Replacement CreateReplacement(SourceLocation Start, unsigned Length,
+  Replacement createReplacement(SourceLocation Start, unsigned Length,
                                 llvm::StringRef ReplacementText) {
     return Replacement(Sources, Start, Length, ReplacementText);
   }
@@ -84,113 +84,113 @@ class ReplacementTest : public ::testing::Test {
 };
 
 TEST_F(ReplacementTest, CanDeleteAllText) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp", "text");
-  SourceLocation Location = Context.GetLocation(ID, 1, 1);
-  Replacement Replace(Context.CreateReplacement(Location, 4, ""));
-  EXPECT_TRUE(Replace.Apply(Context.Rewrite));
-  EXPECT_EQ("", Context.GetRewrittenText(ID));
+  FileID ID = Context.createInMemoryFile("input.cpp", "text");
+  SourceLocation Location = Context.getLocation(ID, 1, 1);
+  Replacement Replace(Context.createReplacement(Location, 4, ""));
+  EXPECT_TRUE(Replace.apply(Context.Rewrite));
+  EXPECT_EQ("", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, CanDeleteAllTextInTextWithNewlines) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp", "line1\nline2\nline3");
-  SourceLocation Location = Context.GetLocation(ID, 1, 1);
-  Replacement Replace(Context.CreateReplacement(Location, 17, ""));
-  EXPECT_TRUE(Replace.Apply(Context.Rewrite));
-  EXPECT_EQ("", Context.GetRewrittenText(ID));
+  FileID ID = Context.createInMemoryFile("input.cpp", "line1\nline2\nline3");
+  SourceLocation Location = Context.getLocation(ID, 1, 1);
+  Replacement Replace(Context.createReplacement(Location, 17, ""));
+  EXPECT_TRUE(Replace.apply(Context.Rewrite));
+  EXPECT_EQ("", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, CanAddText) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp", "");
-  SourceLocation Location = Context.GetLocation(ID, 1, 1);
-  Replacement Replace(Context.CreateReplacement(Location, 0, "result"));
-  EXPECT_TRUE(Replace.Apply(Context.Rewrite));
-  EXPECT_EQ("result", Context.GetRewrittenText(ID));
+  FileID ID = Context.createInMemoryFile("input.cpp", "");
+  SourceLocation Location = Context.getLocation(ID, 1, 1);
+  Replacement Replace(Context.createReplacement(Location, 0, "result"));
+  EXPECT_TRUE(Replace.apply(Context.Rewrite));
+  EXPECT_EQ("result", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, CanReplaceTextAtPosition) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp",
+  FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
-  SourceLocation Location = Context.GetLocation(ID, 2, 3);
-  Replacement Replace(Context.CreateReplacement(Location, 12, "x"));
-  EXPECT_TRUE(Replace.Apply(Context.Rewrite));
-  EXPECT_EQ("line1\nlixne4", Context.GetRewrittenText(ID));
+  SourceLocation Location = Context.getLocation(ID, 2, 3);
+  Replacement Replace(Context.createReplacement(Location, 12, "x"));
+  EXPECT_TRUE(Replace.apply(Context.Rewrite));
+  EXPECT_EQ("line1\nlixne4", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, CanReplaceTextAtPositionMultipleTimes) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp",
+  FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
-  SourceLocation Location1 = Context.GetLocation(ID, 2, 3);
-  Replacement Replace1(Context.CreateReplacement(Location1, 12, "x\ny\n"));
-  EXPECT_TRUE(Replace1.Apply(Context.Rewrite));
-  EXPECT_EQ("line1\nlix\ny\nne4", Context.GetRewrittenText(ID));
+  SourceLocation Location1 = Context.getLocation(ID, 2, 3);
+  Replacement Replace1(Context.createReplacement(Location1, 12, "x\ny\n"));
+  EXPECT_TRUE(Replace1.apply(Context.Rewrite));
+  EXPECT_EQ("line1\nlix\ny\nne4", Context.getRewrittenText(ID));
 
   // Since the original source has not been modified, the (4, 4) points to the
   // 'e' in the original content.
-  SourceLocation Location2 = Context.GetLocation(ID, 4, 4);
-  Replacement Replace2(Context.CreateReplacement(Location2, 1, "f"));
-  EXPECT_TRUE(Replace2.Apply(Context.Rewrite));
-  EXPECT_EQ("line1\nlix\ny\nnf4", Context.GetRewrittenText(ID));
+  SourceLocation Location2 = Context.getLocation(ID, 4, 4);
+  Replacement Replace2(Context.createReplacement(Location2, 1, "f"));
+  EXPECT_TRUE(Replace2.apply(Context.Rewrite));
+  EXPECT_EQ("line1\nlix\ny\nnf4", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, ApplyFailsForNonExistentLocation) {
   Replacement Replace("nonexistent-file.cpp", 0, 1, "");
-  EXPECT_FALSE(Replace.Apply(Context.Rewrite));
+  EXPECT_FALSE(Replace.apply(Context.Rewrite));
 }
 
 TEST_F(ReplacementTest, CanRetrivePath) {
   Replacement Replace("/path/to/file.cpp", 0, 1, "");
-  EXPECT_EQ("/path/to/file.cpp", Replace.GetFilePath());
+  EXPECT_EQ("/path/to/file.cpp", Replace.getFilePath());
 }
 
 TEST_F(ReplacementTest, ReturnsInvalidPath) {
   Replacement Replace1(Context.Sources, SourceLocation(), 0, "");
-  EXPECT_EQ("invalid-location", Replace1.GetFilePath());
+  EXPECT_EQ("invalid-location", Replace1.getFilePath());
 
   Replacement Replace2;
-  EXPECT_EQ("invalid-location", Replace2.GetFilePath());
+  EXPECT_EQ("invalid-location", Replace2.getFilePath());
 }
 
 TEST_F(ReplacementTest, CanApplyReplacements) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp",
+  FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
   Replacements Replaces;
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 2, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 3, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 3, 1),
                               5, "other"));
-  EXPECT_TRUE(ApplyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_EQ("line1\nreplaced\nother\nline4", Context.GetRewrittenText(ID));
+  EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
+  EXPECT_EQ("line1\nreplaced\nother\nline4", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, SkipsDuplicateReplacements) {
-  FileID ID = Context.CreateInMemoryFile("input.cpp",
+  FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
   Replacements Replaces;
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 2, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 2, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 2, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
-  EXPECT_TRUE(ApplyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_EQ("line1\nreplaced\nline3\nline4", Context.GetRewrittenText(ID));
+  EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
+  EXPECT_EQ("line1\nreplaced\nline3\nline4", Context.getRewrittenText(ID));
 }
 
 TEST_F(ReplacementTest, ApplyAllFailsIfOneApplyFails) {
   // This test depends on the value of the file name of an invalid source
   // location being in the range ]a, z[.
-  FileID IDa = Context.CreateInMemoryFile("a.cpp", "text");
-  FileID IDz = Context.CreateInMemoryFile("z.cpp", "text");
+  FileID IDa = Context.createInMemoryFile("a.cpp", "text");
+  FileID IDz = Context.createInMemoryFile("z.cpp", "text");
   Replacements Replaces;
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(IDa, 1, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(IDa, 1, 1),
                               4, "a"));
   Replaces.insert(Replacement(Context.Sources, SourceLocation(),
                               5, "2"));
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(IDz, 1, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(IDz, 1, 1),
                               4, "z"));
-  EXPECT_FALSE(ApplyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_EQ("a", Context.GetRewrittenText(IDa));
-  EXPECT_EQ("z", Context.GetRewrittenText(IDz));
+  EXPECT_FALSE(applyAllReplacements(Replaces, Context.Rewrite));
+  EXPECT_EQ("a", Context.getRewrittenText(IDa));
+  EXPECT_EQ("z", Context.getRewrittenText(IDz));
 }
 
 class FlushRewrittenFilesTest : public ::testing::Test {
@@ -207,7 +207,7 @@ class FlushRewrittenFilesTest : public ::testing::Test {
     assert(ErrorInfo.empty());
   }
 
-  FileID CreateFile(llvm::StringRef Name, llvm::StringRef Content) {
+  FileID createFile(llvm::StringRef Name, llvm::StringRef Content) {
     llvm::SmallString<1024> Path(TemporaryDirectory.str());
     llvm::sys::path::append(Path, Name);
     std::string ErrorInfo;
@@ -221,7 +221,7 @@ class FlushRewrittenFilesTest : public ::testing::Test {
     return Context.Sources.createFileID(File, SourceLocation(), SrcMgr::C_User);
   }
 
-  std::string GetFileContentFromDisk(llvm::StringRef Name) {
+  std::string getFileContentFromDisk(llvm::StringRef Name) {
     llvm::SmallString<1024> Path(TemporaryDirectory.str());
     llvm::sys::path::append(Path, Name);
     // We need to read directly from the FileManager without relaying through
@@ -237,14 +237,14 @@ class FlushRewrittenFilesTest : public ::testing::Test {
 };
 
 TEST_F(FlushRewrittenFilesTest, StoresChangesOnDisk) {
-  FileID ID = CreateFile("input.cpp", "line1\nline2\nline3\nline4");
+  FileID ID = createFile("input.cpp", "line1\nline2\nline3\nline4");
   Replacements Replaces;
-  Replaces.insert(Replacement(Context.Sources, Context.GetLocation(ID, 2, 1),
+  Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
-  EXPECT_TRUE(ApplyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_TRUE(SaveRewrittenFiles(Context.Rewrite));
+  EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
+  EXPECT_TRUE(saveRewrittenFiles(Context.Rewrite));
   EXPECT_EQ("line1\nreplaced\nline3\nline4",
-            GetFileContentFromDisk("input.cpp"));
+            getFileContentFromDisk("input.cpp"));
 }
 
 namespace {
@@ -290,10 +290,10 @@ private:
 
 void expectReplacementAt(const Replacement &Replace,
                          StringRef File, unsigned Offset, unsigned Length) {
-  ASSERT_TRUE(Replace.IsApplicable());
-  EXPECT_EQ(File, Replace.GetFilePath());
-  EXPECT_EQ(Offset, Replace.GetOffset());
-  EXPECT_EQ(Length, Replace.GetLength());
+  ASSERT_TRUE(Replace.isApplicable());
+  EXPECT_EQ(File, Replace.getFilePath());
+  EXPECT_EQ(Offset, Replace.getOffset());
+  EXPECT_EQ(Length, Replace.getLength());
 }
 
 class ClassDeclXVisitor : public TestVisitor<ClassDeclXVisitor> {
