@@ -20,6 +20,18 @@
 //  to only have the functions (which is all the user cares about) in the
 //  'ast_matchers' namespace and hide the boilerplate.
 //
+//  To define a matcher in user code, always put it into the clang::ast_matchers
+//  namespace and refer to the internal types via the 'internal::':
+//
+//  namespace clang {
+//  namespace ast_matchers {
+//  AST_MATCHER_P(MemberExpr, Member,
+//                internal::Matcher<ValueDecl>, InnerMatcher) {
+//    return InnerMatcher.matches(*Node.getMemberDecl(), Finder, Builder);
+//  }
+//  } // end namespace ast_matchers
+//  } // end namespace clang
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_MACROS_H
