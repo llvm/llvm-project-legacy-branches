@@ -101,8 +101,8 @@ typedef std::set<Replacement, Replacement::Less> Replacements;
 /// \brief Apply all replacements on the Rewriter.
 ///
 /// If at least one Apply returns false, ApplyAll returns false. Every
-/// Apply will be executed independently of the result of the result of
-/// other Apply operations.
+/// Apply will be executed independently of the result of other
+/// Apply operations.
 bool applyAllReplacements(Replacements &Replaces, Rewriter &Rewrite);
 
 /// \brief Saves all changed files in the Rewriter to disk.
@@ -114,10 +114,9 @@ bool saveRewrittenFiles(Rewriter &Rewrite);
 /// \brief A tool to run refactorings.
 ///
 /// This is a refactoring specific version of \see ClangTool.
-/// All text replacements added to GetReplacements() during the run of the
+/// All text replacements added to getReplacements() during the run of the
 /// tool will be applied and saved after all translation units have been
 /// processed.
-/// FIXME: Figure out the correct relationship to ClangTool.
 class RefactoringTool {
 public:
   /// \see ClangTool::ClangTool.
@@ -129,7 +128,7 @@ public:
   /// processed.
   Replacements &getReplacements();
 
-  /// \see ClangTool::Run.
+  /// \see ClangTool::run.
   int run(FrontendActionFactory *ActionFactory);
 
 private:

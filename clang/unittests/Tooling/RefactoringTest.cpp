@@ -24,7 +24,6 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/raw_os_ostream.h"
 #include "gtest/gtest.h"
 
 namespace clang {
@@ -322,7 +321,6 @@ TEST(Replacement, ReplacesAtSpellingLocation) {
 class CallToFVisitor : public TestVisitor<CallToFVisitor> {
 public:
   bool VisitCallExpr(CallExpr *Call) {
-    llvm::errs() << Call->getDirectCallee()->getName() << "\n";
     if (Call->getDirectCallee()->getName() == "F") {
       Replace = Replacement(*SM, Call, "");
     }
