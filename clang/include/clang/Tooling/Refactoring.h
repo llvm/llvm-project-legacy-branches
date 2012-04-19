@@ -83,7 +83,7 @@ public:
   };
 
  private:
-  void setFromSourceLocation(SourceManager &Sources, SourceLocation Start, 
+  void setFromSourceLocation(SourceManager &Sources, SourceLocation Start,
                              unsigned Length, llvm::StringRef ReplacementText);
   void setFromSourceRange(SourceManager &Sources, const CharSourceRange &Range,
                           llvm::StringRef ReplacementText);
