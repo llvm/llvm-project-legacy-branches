@@ -22,6 +22,7 @@
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/PluginInterface.h"
+#include "lldb/Interpreter/Options.h"
 #include "lldb/Host/Mutex.h"
 
 namespace lldb_private {
@@ -573,7 +574,7 @@ namespace lldb_private {
             m_ignores_remote_hostname = flag;
         }
         
-        virtual Options *
+        virtual lldb_private::OptionGroupOptions *
         GetConnectionOptions (CommandInterpreter& interpreter)
         {
             return NULL;
@@ -586,6 +587,12 @@ namespace lldb_private {
                          int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
                          std::string *command_output,   // Pass NULL if you don't want the command output
                          uint32_t timeout_sec);         // Timeout in seconds to wait for shell program to finish
+        
+        virtual void
+        SetLocalCacheDirectory (const char* local);
+        
+        virtual const char*
+        GetLocalCacheDirectory ();
                 
     protected:
         bool m_is_host;
@@ -616,6 +623,7 @@ namespace lldb_private {
         bool m_supports_ssh;
         std::string m_ssh_opts;
         bool m_ignores_remote_hostname;
+        std::string m_local_cache_directory;
 
         const char *
         GetCachedUserName (uint32_t uid)
@@ -797,6 +805,109 @@ namespace lldb_private {
     private:
         DISALLOW_COPY_AND_ASSIGN (PlatformList);
     };
+    
+    class OptionGroupPlatformRSync : public lldb_private::OptionGroup
+    {
+    public:
+        OptionGroupPlatformRSync ();
+        
+        virtual
+        ~OptionGroupPlatformRSync ();
+        
+        virtual lldb_private::Error
+        SetOptionValue (CommandInterpreter &interpreter,
+                        uint32_t option_idx,
+                        const char *option_value);
+        
+        void
+        OptionParsingStarting (CommandInterpreter &interpreter);
+        
+        const lldb_private::OptionDefinition*
+        GetDefinitions ();
+        
+        virtual uint32_t
+        GetNumDefinitions ();
+        
+        // Options table: Required for subclasses of Options.
+        
+        static lldb_private::OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        bool m_rsync;
+        std::string m_rsync_opts;
+        bool m_ignores_remote_hostname;
+    private:
+        DISALLOW_COPY_AND_ASSIGN(OptionGroupPlatformRSync);
+    };
+    
+    class OptionGroupPlatformSSH : public lldb_private::OptionGroup
+    {
+    public:
+        OptionGroupPlatformSSH ();
+        
+        virtual
+        ~OptionGroupPlatformSSH ();
+        
+        virtual lldb_private::Error
+        SetOptionValue (CommandInterpreter &interpreter,
+                        uint32_t option_idx,
+                        const char *option_value);
+        
+        void
+        OptionParsingStarting (CommandInterpreter &interpreter);
+        
+        virtual uint32_t
+        GetNumDefinitions ();
+        
+        const lldb_private::OptionDefinition*
+        GetDefinitions ();
+        
+        // Options table: Required for subclasses of Options.
+        
+        static lldb_private::OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        bool m_ssh;
+        std::string m_ssh_opts;
+    private:
+        DISALLOW_COPY_AND_ASSIGN(OptionGroupPlatformSSH);
+    };
+    
+    class OptionGroupPlatformCaching : public lldb_private::OptionGroup
+    {
+    public:
+        OptionGroupPlatformCaching ();
+        
+        virtual
+        ~OptionGroupPlatformCaching ();
+        
+        virtual lldb_private::Error
+        SetOptionValue (CommandInterpreter &interpreter,
+                        uint32_t option_idx,
+                        const char *option_value);
+        
+        void
+        OptionParsingStarting (CommandInterpreter &interpreter);
+        
+        virtual uint32_t
+        GetNumDefinitions ();
+        
+        const lldb_private::OptionDefinition*
+        GetDefinitions ();
+        
+        // Options table: Required for subclasses of Options.
+        
+        static lldb_private::OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        std::string m_cache_dir;
+    private:
+        DISALLOW_COPY_AND_ASSIGN(OptionGroupPlatformCaching);
+    };
+    
 } // namespace lldb_private
 
 #endif  // liblldb_Platform_h_

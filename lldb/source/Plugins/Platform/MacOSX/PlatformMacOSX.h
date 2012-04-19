@@ -103,10 +103,6 @@ public:
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 
                                      lldb_private::ArchSpec &arch);
-    
-    // must add --local-cache to the parent options
-    virtual lldb_private::Options *
-    GetConnectionOptions (lldb_private::CommandInterpreter& interpreter);
 
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformMacOSX);

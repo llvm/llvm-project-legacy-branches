@@ -269,9 +269,3 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     else
         return Error("unable to obtain valid module file");
 }
-
-lldb_private::Options *
-PlatformMacOSX::GetConnectionOptions (lldb_private::CommandInterpreter& interpreter)
-{
-    return PlatformDarwin::GetConnectionOptions(interpreter);
-}

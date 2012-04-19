@@ -130,6 +130,7 @@ struct  NameSearchContext;
 class   ObjCLanguageRuntime;
 class   ObjectContainer;
 class   OptionGroup;
+class   OptionGroupOptions;
 class   OptionGroupPlatform;
 class   ObjectFile;
 class   OperatingSystem;

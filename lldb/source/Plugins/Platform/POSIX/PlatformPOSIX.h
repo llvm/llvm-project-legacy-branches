@@ -31,7 +31,7 @@ public:
     //------------------------------------------------------------
     // lldb_private::Platform functions
     //------------------------------------------------------------
-    virtual lldb_private::Options *
+    virtual lldb_private::OptionGroupOptions*
     GetConnectionOptions (lldb_private::CommandInterpreter& interpreter);
     
     virtual lldb_private::Error
@@ -74,40 +74,8 @@ public:
     GetFileExists (const lldb_private::FileSpec& file_spec);
 
 protected:
-    std::auto_ptr<lldb_private::Options> m_options;
-    std::string m_local_cache_directory;
-    
-    class POSIXPlatformConnectionOptions : public lldb_private::Options
-    {
-    public:
-        POSIXPlatformConnectionOptions (lldb_private::CommandInterpreter &interpreter);
+    std::auto_ptr<lldb_private::OptionGroupOptions> m_options;
         
-        virtual
-        ~POSIXPlatformConnectionOptions ();
-        
-        virtual lldb_private::Error
-        SetOptionValue (uint32_t option_idx, const char *option_arg);
-        
-        void
-        OptionParsingStarting ();
-        
-        const lldb_private::OptionDefinition*
-        GetDefinitions ();
-        
-        // Options table: Required for subclasses of Options.
-        
-        static lldb_private::OptionDefinition g_option_table[];
-        
-        // Instance variables to hold the values for command options.
-        
-        bool m_rsync;
-        std::string m_rsync_opts;
-        bool m_ssh;
-        std::string m_ssh_opts;
-        bool m_ignores_remote_hostname;
-        std::string m_cache_dir;
-    };
-    
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote POSIX-compliant OS
     
 private:

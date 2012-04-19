@@ -298,9 +298,14 @@ public:
     GetOptions ()
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        OptionGroupOptions* m_platform_options = NULL;
         if (platform_sp)
-            return platform_sp->GetConnectionOptions(m_interpreter);
-        return NULL;
+        {
+            m_platform_options = platform_sp->GetConnectionOptions(m_interpreter);
+            if (!m_platform_options->m_did_finalize)
+                m_platform_options->Finalize();
+        }
+        return m_platform_options;
     }
 
 };

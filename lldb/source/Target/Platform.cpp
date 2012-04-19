@@ -20,6 +20,7 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Utility/Utils.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -735,4 +736,194 @@ Platform::RunShellCommand (const char *command,           // Shouldn't be NULL
         return Host::RunShellCommand (command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
     else
         return Error("unimplemented");
+}
+
+
+void
+Platform::SetLocalCacheDirectory (const char* local)
+{
+    m_local_cache_directory.assign(local);
+}
+
+const char*
+Platform::GetLocalCacheDirectory ()
+{
+    return m_local_cache_directory.c_str();
+}
+
+static OptionDefinition
+g_rsync_option_table[] =
+{
+    {   LLDB_OPT_SET_ALL, false, "rsync"                  , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
+    {   LLDB_OPT_SET_ALL, false, "rsync-opts"             , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
+    {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname when composing the rsync command." },
+};
+
+static OptionDefinition
+g_ssh_option_table[] =
+{
+    {   LLDB_OPT_SET_ALL, false, "ssh"                    , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
+    {   LLDB_OPT_SET_ALL, false, "ssh-opts"               , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
+};
+
+static OptionDefinition
+g_caching_option_table[] =
+{
+    {   LLDB_OPT_SET_ALL, false, "local-cache-dir"        , 'c', required_argument, NULL, 0, eArgTypePath         , "Path in which to store local copies of files." },
+};
+
+OptionGroupPlatformRSync::OptionGroupPlatformRSync ()
+{
+}
+
+OptionGroupPlatformRSync::~OptionGroupPlatformRSync ()
+{
+}
+
+const lldb_private::OptionDefinition*
+OptionGroupPlatformRSync::GetDefinitions ()
+{
+    return g_rsync_option_table;
+}
+
+void
+OptionGroupPlatformRSync::OptionParsingStarting (CommandInterpreter &interpreter)
+{
+    m_rsync = false;
+    m_rsync_opts.clear();
+    m_ignores_remote_hostname = false;
+}
+
+lldb_private::Error
+OptionGroupPlatformRSync::SetOptionValue (CommandInterpreter &interpreter,
+                uint32_t option_idx,
+                const char *option_arg)
+{
+    Error error;
+    char short_option = (char) GetDefinitions()[option_idx].short_option;
+    switch (short_option)
+    {
+        case 'r':
+            m_rsync = true;
+            break;
+            
+        case 'R':
+            m_rsync_opts.assign(option_arg);
+            break;
+            
+        case 'i':
+            m_ignores_remote_hostname = true;
+            break;
+            
+        default:
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+            break;
+    }
+    
+    return error;
+}
+
+uint32_t
+OptionGroupPlatformRSync::GetNumDefinitions ()
+{
+    return arraysize(g_rsync_option_table);
+}
+
+OptionGroupPlatformSSH::OptionGroupPlatformSSH ()
+{
+}
+
+OptionGroupPlatformSSH::~OptionGroupPlatformSSH ()
+{
+}
+
+const lldb_private::OptionDefinition*
+OptionGroupPlatformSSH::GetDefinitions ()
+{
+    return g_ssh_option_table;
+}
+
+void
+OptionGroupPlatformSSH::OptionParsingStarting (CommandInterpreter &interpreter)
+{
+    m_ssh = false;
+    m_ssh_opts.clear();
+}
+
+lldb_private::Error
+OptionGroupPlatformSSH::SetOptionValue (CommandInterpreter &interpreter,
+                                          uint32_t option_idx,
+                                          const char *option_arg)
+{
+    Error error;
+    char short_option = (char) GetDefinitions()[option_idx].short_option;
+    switch (short_option)
+    {
+        case 's':
+            m_ssh = true;
+            break;
+            
+        case 'S':
+            m_ssh_opts.assign(option_arg);
+            break;
+            
+        default:
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+            break;
+    }
+    
+    return error;
+}
+
+uint32_t
+OptionGroupPlatformSSH::GetNumDefinitions ()
+{
+    return arraysize(g_ssh_option_table);
+}
+
+OptionGroupPlatformCaching::OptionGroupPlatformCaching ()
+{
+}
+
+OptionGroupPlatformCaching::~OptionGroupPlatformCaching ()
+{
+}
+
+const lldb_private::OptionDefinition*
+OptionGroupPlatformCaching::GetDefinitions ()
+{
+    return g_caching_option_table;
+}
+
+void
+OptionGroupPlatformCaching::OptionParsingStarting (CommandInterpreter &interpreter)
+{
+    m_cache_dir.clear();
+}
+
+lldb_private::Error
+OptionGroupPlatformCaching::SetOptionValue (CommandInterpreter &interpreter,
+                                        uint32_t option_idx,
+                                        const char *option_arg)
+{
+    Error error;
+    char short_option = (char) GetDefinitions()[option_idx].short_option;
+    switch (short_option)
+    {
+        case 'c':
+            m_cache_dir.assign(option_arg);
+            break;
+            
+        default:
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
+            break;
+    }
+    
+    return error;
+}
+
+uint32_t
+OptionGroupPlatformCaching::GetNumDefinitions ()
+{
+    return arraysize(g_caching_option_table);
 }

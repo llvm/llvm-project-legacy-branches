@@ -102,22 +102,12 @@ public:
     bool 
     x86GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
 
-    virtual void
-    SetLocalCacheDirectory (const char* local);
-    
-    virtual const char*
-    GetLocalCacheDirectory ();
-    
 protected:
     std::string m_developer_directory;
     
     const char *
     GetDeveloperDirectory();
     
-    class CommandOptions
-    {
-    };
-
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformDarwin);
 

@@ -42,95 +42,16 @@ PlatformPOSIX::~PlatformPOSIX()
 {
 }
 
-PlatformPOSIX::POSIXPlatformConnectionOptions::POSIXPlatformConnectionOptions (CommandInterpreter &interpreter) :
-Options (interpreter),
-m_rsync (false),
-m_rsync_opts (),
-m_ssh (false),
-m_ssh_opts (),
-m_ignores_remote_hostname (false),
-m_cache_dir()
-{
-}
-
-PlatformPOSIX::POSIXPlatformConnectionOptions::~POSIXPlatformConnectionOptions ()
-{
-}
-
-Error
-PlatformPOSIX::POSIXPlatformConnectionOptions::SetOptionValue (uint32_t option_idx, const char *option_arg)
-{
-    Error error;
-    char short_option = (char) m_getopt_table[option_idx].val;
-    
-    switch (short_option)
-    {
-        case 'r':
-            m_rsync = true;
-            break;
-            
-        case 'R':
-            m_rsync_opts.assign(option_arg);
-            break;
-            
-        case 's':
-            m_ssh = true;
-            break;
-            
-        case 'S':
-            m_ssh_opts.assign(option_arg);
-            break;
-            
-        case 'i':
-            m_ignores_remote_hostname = true;
-            break;
-            
-        case 'c':
-            m_cache_dir.assign(option_arg);
-            break;
-            
-        default:
-            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
-            break;
-    }
-    
-    return error;
-}
-
-void
-PlatformPOSIX::POSIXPlatformConnectionOptions::OptionParsingStarting ()
-{
-    m_rsync = false;
-    m_rsync_opts.clear();
-    m_ssh = false;
-    m_ssh_opts.clear();
-    m_ignores_remote_hostname = false;
-    m_cache_dir.clear();
-}
-
-const OptionDefinition*
-PlatformPOSIX::POSIXPlatformConnectionOptions::GetDefinitions ()
-{
-    return g_option_table;
-}
-
-OptionDefinition
-PlatformPOSIX::POSIXPlatformConnectionOptions::g_option_table[] =
-{
-    {   LLDB_OPT_SET_ALL, false, "rsync"                  , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
-    {   LLDB_OPT_SET_ALL, false, "rsync-opts"             , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
-    {   LLDB_OPT_SET_ALL, false, "ssh"                    , 's', no_argument,       NULL, 0, eArgTypeNone         , "Enable SSH." },
-    {   LLDB_OPT_SET_ALL, false, "ssh-opts"               , 'S', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for SSH to work." },
-    {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname when composing the rsync command." },
-    {   LLDB_OPT_SET_ALL, false, "local-cache-dir"        , 'c', required_argument, NULL, 0, eArgTypePath         , "Path in which to store local copies of files." },
-    {   0,                false, NULL                     ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
-};
-
-Options *
+lldb_private::OptionGroupOptions*
 PlatformPOSIX::GetConnectionOptions (lldb_private::CommandInterpreter& interpreter)
 {
     if (m_options.get() == NULL)
-        m_options.reset(new POSIXPlatformConnectionOptions(interpreter));
+    {
+        m_options.reset(new OptionGroupOptions(interpreter));
+        m_options->Append(new OptionGroupPlatformRSync());
+        m_options->Append(new OptionGroupPlatformSSH());
+        m_options->Append(new OptionGroupPlatformCaching());
+    }
     return m_options.get();
 }
 

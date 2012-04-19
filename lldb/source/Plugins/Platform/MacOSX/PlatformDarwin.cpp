@@ -400,19 +400,23 @@ PlatformDarwin::ConnectRemote (Args& args)
     {
         if (m_options.get())
         {
-            PlatformPOSIX::POSIXPlatformConnectionOptions* posix_options = (PlatformPOSIX::POSIXPlatformConnectionOptions*)m_options.get();
-            if (posix_options->m_rsync)
+            OptionGroupOptions* options = (OptionGroupOptions*)m_options.get();
+            OptionGroupPlatformRSync* m_rsync_options = (OptionGroupPlatformRSync*)options->GetGroupWithOption('r');
+            OptionGroupPlatformSSH* m_ssh_options = (OptionGroupPlatformSSH*)options->GetGroupWithOption('s');
+            OptionGroupPlatformCaching* m_cache_options = (OptionGroupPlatformCaching*)options->GetGroupWithOption('c');
+            
+            if (m_rsync_options->m_rsync)
             {
                 SetSupportsRSync(true);
-                SetRSyncOpts(posix_options->m_rsync_opts.c_str());
+                SetRSyncOpts(m_rsync_options->m_rsync_opts.c_str());
+                SetIgnoresRemoteHostname(m_rsync_options->m_ignores_remote_hostname);
             }
-            if (posix_options->m_ssh)
+            if (m_ssh_options->m_ssh)
             {
                 SetSupportsSSH(true);
-                SetSSHOpts(posix_options->m_ssh_opts.c_str());
+                SetSSHOpts(m_ssh_options->m_ssh_opts.c_str());
             }
-            SetIgnoresRemoteHostname(posix_options->m_ignores_remote_hostname);
-            SetLocalCacheDirectory(posix_options->m_cache_dir.c_str());
+            SetLocalCacheDirectory(m_cache_options->m_cache_dir.c_str());
         }
     }
 
@@ -788,16 +792,4 @@ PlatformDarwin::GetDeveloperDirectory()
     if (m_developer_directory[0])
         return m_developer_directory.c_str();
     return NULL;
-}
-
-void
-PlatformDarwin::SetLocalCacheDirectory (const char* local)
-{
-    m_local_cache_directory.assign(local);
-}
-
-const char*
-PlatformDarwin::GetLocalCacheDirectory ()
-{
-    return m_local_cache_directory.c_str();
 }
