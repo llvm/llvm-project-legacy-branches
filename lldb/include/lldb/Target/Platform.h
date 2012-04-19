@@ -593,6 +593,12 @@ namespace lldb_private {
         
         virtual const char*
         GetLocalCacheDirectory ();
+        
+        virtual std::string
+        GetPlatformSpecificConnectionInformation()
+        {
+            return "";
+        }
                 
     protected:
         bool m_is_host;

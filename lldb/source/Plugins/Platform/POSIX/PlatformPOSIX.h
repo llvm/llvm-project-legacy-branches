@@ -72,6 +72,9 @@ public:
     
     virtual bool
     GetFileExists (const lldb_private::FileSpec& file_spec);
+    
+    virtual std::string
+    GetPlatformSpecificConnectionInformation();
 
 protected:
     std::auto_ptr<lldb_private::OptionGroupOptions> m_options;

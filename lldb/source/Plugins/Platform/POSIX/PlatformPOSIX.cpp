@@ -398,3 +398,27 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
     }
     return Platform::GetFile(source,destination);
 }
+
+std::string
+PlatformPOSIX::GetPlatformSpecificConnectionInformation()
+{
+    StreamString stream;
+    if (GetSupportsRSync())
+    {
+        stream.PutCString("rsync");
+        if (GetRSyncOpts() && *GetRSyncOpts())
+            stream.Printf(", options: '%s' ",GetRSyncOpts());
+    }
+    if (GetSupportsSSH())
+    {
+        stream.PutCString("ssh");
+        if (GetSSHOpts() && *GetSSHOpts())
+            stream.Printf(", options: '%s' ",GetSSHOpts());
+    }
+    if (GetLocalCacheDirectory() && *GetLocalCacheDirectory())
+        stream.Printf("cache dir: %s",GetLocalCacheDirectory());
+    if (stream.GetSize())
+        return stream.GetData();
+    else
+        return "";
+}

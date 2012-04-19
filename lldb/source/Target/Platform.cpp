@@ -262,15 +262,10 @@ Platform::GetStatus (Stream &strm)
     if (!IsConnected())
         return;
 
-    // The platform is connected, dump the rsync and ssh options, too.
-    strm.Printf("With rsync: %s", GetSupportsRSync() ? "yes" : "no");
-    if (GetSupportsRSync())
-    {
-        strm.Printf(" (option: %s", (GetRSyncOpts() && strlen(GetRSyncOpts()) != 0) ? GetRSyncOpts() : "none");
-        strm.Printf(", ignore hostname: %s)", GetIgnoresRemoteHostname() ? "yes" : "no");
-    }
-    strm.Printf("\n");
-    strm.Printf("  With ssh: %s\n", GetSupportsSSH() ? "yes" : "no");
+    std::string specific_info(GetPlatformSpecificConnectionInformation());
+    
+    if (specific_info.empty() == false)
+        strm.Printf("Platform-specific connection: %s\n", specific_info.c_str());
 }
 
 
