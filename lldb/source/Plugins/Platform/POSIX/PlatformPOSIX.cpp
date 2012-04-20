@@ -55,6 +55,25 @@ PlatformPOSIX::GetConnectionOptions (lldb_private::CommandInterpreter& interpret
     return m_options.get();
 }
 
+lldb_private::Error
+PlatformPOSIX::RunShellCommand (const char *command,           // Shouldn't be NULL
+                                const char *working_dir,       // Pass NULL to use the current working directory
+                                int *status_ptr,               // Pass NULL if you don't want the process exit status
+                                int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
+                                std::string *command_output,   // Pass NULL if you don't want the command output
+                                uint32_t timeout_sec)         // Timeout in seconds to wait for shell program to finish
+{
+    if (IsHost())
+        return Host::RunShellCommand(command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+    else
+    {
+        if (m_remote_platform_sp)
+            return m_remote_platform_sp->RunShellCommand(command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+        else
+            return Error("unable to run a remote command without a platform");
+    }
+}
+
 uint32_t
 PlatformPOSIX::RunShellCommand (const std::string &command_line)
 {
