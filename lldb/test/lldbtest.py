@@ -1110,7 +1110,6 @@ class TestBase(Base):
         return status.
         """
         # Fail fast if 'cmd' is not meaningful.
-        cmd = cmd.strip()
         if not cmd or len(cmd) == 0:
             raise Exception("Bad 'cmd' parameter encountered")
 
