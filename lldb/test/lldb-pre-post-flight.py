@@ -12,7 +12,8 @@ import os
 import unittest2
 
 def pre_flight(test):
-    print "\nRunning pre-flight for test case:", test
+    if test.TraceOn():
+        print "\nRunning pre-flight for test case:", test
     #traceback = __import__("traceback")
     #traceback.print_stack()
     # Examples:
@@ -25,7 +26,8 @@ def pre_flight(test):
     test.runCmd('platform connect %s -c %s' % (lldbtest_platform_url, lldbtest_local_cache))
 
 def post_flight(test):
-    print "\nRunning post-flight for test case:", test
+    if test.TraceOn():
+        print "\nRunning post-flight for test case:", test
     test.runCmd('platform disconnect')
 
 lldbtest_remote_sandbox = os.environ['LLDBTEST_REMOTE_SANDBOX'] if 'LLDBTEST_REMOTE_SANDBOX' in os.environ else None
