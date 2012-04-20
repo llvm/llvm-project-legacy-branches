@@ -1639,6 +1639,207 @@ public:
     }
 };
 
+class CommandObjectPlatformProcessAttach : public CommandObject
+{
+public:
+    
+    class CommandOptions : public Options
+    {
+    public:
+        
+        CommandOptions (CommandInterpreter &interpreter) :
+        Options(interpreter)
+        {
+            // Keep default values of all options in one place: OptionParsingStarting ()
+            OptionParsingStarting ();
+        }
+        
+        ~CommandOptions ()
+        {
+        }
+        
+        Error
+        SetOptionValue (uint32_t option_idx, const char *option_arg)
+        {
+            Error error;
+            char short_option = (char) m_getopt_table[option_idx].val;
+            bool success = false;
+            switch (short_option)
+            {
+                case 'p':   
+                {
+                    lldb::pid_t pid = Args::StringToUInt32 (option_arg, LLDB_INVALID_PROCESS_ID, 0, &success);
+                    if (!success || pid == LLDB_INVALID_PROCESS_ID)
+                    {
+                        error.SetErrorStringWithFormat("invalid process ID '%s'", option_arg);
+                    }
+                    else
+                    {
+                        attach_info.SetProcessID (pid);
+                    }
+                }
+                    break;
+                    
+                case 'P':
+                    attach_info.SetProcessPluginName (option_arg);
+                    break;
+                    
+                case 'n': 
+                    attach_info.GetExecutableFile().SetFile(option_arg, false);
+                    break;
+                    
+                case 'w':   
+                    attach_info.SetWaitForLaunch(true);
+                    break;
+                    
+                default:
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
+                    break;
+            }
+            return error;
+        }
+        
+        void
+        OptionParsingStarting ()
+        {
+            attach_info.Clear();
+        }
+        
+        const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+        
+        virtual bool
+        HandleOptionArgumentCompletion (Args &input,
+                                        int cursor_index,
+                                        int char_pos,
+                                        OptionElementVector &opt_element_vector,
+                                        int opt_element_index,
+                                        int match_start_point,
+                                        int max_return_elements,
+                                        bool &word_complete,
+                                        StringList &matches)
+        {
+            int opt_arg_pos = opt_element_vector[opt_element_index].opt_arg_pos;
+            int opt_defs_index = opt_element_vector[opt_element_index].opt_defs_index;
+            
+            // We are only completing the name option for now...
+            
+            const OptionDefinition *opt_defs = GetDefinitions();
+            if (opt_defs[opt_defs_index].short_option == 'n')
+            {
+                // Are we in the name?
+                
+                // Look to see if there is a -P argument provided, and if so use that plugin, otherwise
+                // use the default plugin.
+                
+                const char *partial_name = NULL;
+                partial_name = input.GetArgumentAtIndex(opt_arg_pos);
+                
+                PlatformSP platform_sp (m_interpreter.GetPlatform (true));
+                if (platform_sp)
+                {
+                    ProcessInstanceInfoList process_infos;
+                    ProcessInstanceInfoMatch match_info;
+                    if (partial_name)
+                    {
+                        match_info.GetProcessInfo().GetExecutableFile().SetFile(partial_name, false);
+                        match_info.SetNameMatchType(eNameMatchStartsWith);
+                    }
+                    platform_sp->FindProcesses (match_info, process_infos);
+                    const uint32_t num_matches = process_infos.GetSize();
+                    if (num_matches > 0)
+                    {
+                        for (uint32_t i=0; i<num_matches; ++i)
+                        {
+                            matches.AppendString (process_infos.GetProcessNameAtIndex(i), 
+                                                  process_infos.GetProcessNameLengthAtIndex(i));
+                        }
+                    }
+                }
+            }
+            
+            return false;
+        }
+        
+        // Options table: Required for subclasses of Options.
+        
+        static OptionDefinition g_option_table[];
+        
+        // Instance variables to hold the values for command options.
+        
+        ProcessAttachInfo attach_info;
+    };
+    
+    CommandObjectPlatformProcessAttach (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "platform process attach",
+                   "Attach to a process.",
+                   "platform process attach <cmd-options>"),
+    m_options (interpreter)
+    {
+    }
+    
+    ~CommandObjectPlatformProcessAttach ()
+    {
+    }
+    
+    bool
+    Execute (Args& command,
+             CommandReturnObject &result)
+    {
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        if (platform_sp)
+        {
+            Error err;
+            ProcessSP remote_process_sp =
+            platform_sp->Attach(m_options.attach_info, m_interpreter.GetDebugger(), NULL, m_interpreter.GetDebugger().GetListener(), err);
+            if (err.Fail())
+            {
+                result.AppendError(err.AsCString());
+                result.SetStatus (eReturnStatusFailed);
+            }
+            else if (remote_process_sp.get() == NULL)
+            {
+                result.AppendError("could not attach: unknown reason");
+                result.SetStatus (eReturnStatusFailed);
+            }
+            else
+                result.SetStatus (eReturnStatusSuccessFinishResult);
+        }
+        else
+        {
+            result.AppendError ("no platform is currently selected");
+            result.SetStatus (eReturnStatusFailed);            
+        }
+        return result.Succeeded();
+    }
+    
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
+    
+    CommandOptions m_options;
+};
+
+
+OptionDefinition
+CommandObjectPlatformProcessAttach::CommandOptions::g_option_table[] =
+{
+    { LLDB_OPT_SET_ALL, false, "plugin", 'P', required_argument, NULL, 0, eArgTypePlugin,        "Name of the process plugin you want to use."},
+    { LLDB_OPT_SET_1,   false, "pid",    'p', required_argument, NULL, 0, eArgTypePid,           "The process ID of an existing process to attach to."},
+    { LLDB_OPT_SET_2,   false, "name",   'n', required_argument, NULL, 0, eArgTypeProcessName,  "The name of the process to attach to."},
+    { LLDB_OPT_SET_2,   false, "waitfor",'w', no_argument,       NULL, 0, eArgTypeNone,              "Wait for the the process with <process-name> to launch."},
+    { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
+};
+
+
 class CommandObjectPlatformProcess : public CommandObjectMultiword
 {
 public:
@@ -1651,7 +1852,7 @@ public:
                                 "A set of commands to query, launch and attach to platform processes",
                                 "platform process [attach|launch|list] ...")
     {
-//        LoadSubCommand ("attach", CommandObjectSP (new CommandObjectPlatformProcessAttach (interpreter)));
+        LoadSubCommand ("attach", CommandObjectSP (new CommandObjectPlatformProcessAttach (interpreter)));
         LoadSubCommand ("launch", CommandObjectSP (new CommandObjectPlatformProcessLaunch (interpreter)));
         LoadSubCommand ("info"  , CommandObjectSP (new CommandObjectPlatformProcessInfo (interpreter)));
         LoadSubCommand ("list"  , CommandObjectSP (new CommandObjectPlatformProcessList (interpreter)));
