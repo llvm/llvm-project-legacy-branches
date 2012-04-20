@@ -1121,7 +1121,8 @@ class TestBase(Base):
         if cmd.startswith("file ") and lldb.lldbtest_remote_sandbox:
             with recording(self, trace) as sbuf:
                 target = cmd.split("file ")[1]
-                print >> sbuf, "Found a file command, target=%s" % target
+                target = os.path.abspath(target)
+                print >> sbuf, "Found a file command, target (with absolute pathname)=%s" % target
                 fpath, fname = os.path.split(target)
                 parent_dir = os.path.split(fpath)[0]
                 platform_target_install_command = 'platform target-install %s %s' % (fpath, lldb.lldbtest_remote_sandbox)
