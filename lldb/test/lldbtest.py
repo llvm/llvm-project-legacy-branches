@@ -1134,7 +1134,7 @@ class TestBase(Base):
                 # so that test cases can grab this thing out of the namespace.
                 #
                 lldb.lldbtest_remote_sandboxed_executable = target.replace(parent_dir, lldb.lldbtest_remote_sandbox)
-                cmd = "file -P %s %s" % lldb.lldbtest_remote_sandboxed_executable, target)
+                cmd = "file -P %s %s" % (lldb.lldbtest_remote_sandboxed_executable, target)
                 print >> sbuf, "And this is the replaced file command: %s" % cmd
 
         running = (cmd.startswith("run") or cmd.startswith("process launch"))
