@@ -1703,27 +1703,35 @@ public:
     bool
     ExecuteRawCommandString (const char *raw_command_line, CommandReturnObject &result)
     {
-        // TODO: Implement "Platform::RunShellCommand()" and switch over to using
-        // the current platform when it is in the interface. 
-        const char *working_dir = NULL;
-        std::string output;
-        int status = -1;
-        int signo = -1;
-        Error error (Host::RunShellCommand (raw_command_line, working_dir, &status, &signo, &output, 10));
-        if (!output.empty())
-            result.GetOutputStream().PutCString(output.c_str());
-        if (status > 0)
+        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Error error;
+        if (platform_sp)
         {
-            if (signo > 0)
+            const char *working_dir = NULL;
+            std::string output;
+            int status = -1;
+            int signo = -1;
+            error = (platform_sp->RunShellCommand (raw_command_line, working_dir, &status, &signo, &output, 10));
+            if (!output.empty())
+                result.GetOutputStream().PutCString(output.c_str());
+            if (status > 0)
             {
-                const char *signo_cstr = Host::GetSignalAsCString(signo);
-                if (signo_cstr)
-                    result.GetOutputStream().Printf("error: command returned with status %i and signal %s\n", status, signo_cstr);
+                if (signo > 0)
+                {
+                    const char *signo_cstr = Host::GetSignalAsCString(signo);
+                    if (signo_cstr)
+                        result.GetOutputStream().Printf("error: command returned with status %i and signal %s\n", status, signo_cstr);
+                    else
+                        result.GetOutputStream().Printf("error: command returned with status %i and signal %i\n", status, signo);
+                }
                 else
-                    result.GetOutputStream().Printf("error: command returned with status %i and signal %i\n", status, signo);
+                    result.GetOutputStream().Printf("error: command returned with status %i\n", status);
             }
-            else
-                result.GetOutputStream().Printf("error: command returned with status %i\n", status);
+        }
+        else
+        {
+            result.GetOutputStream().Printf("error: cannot run remote shell commands without a platform\n");
+            error.SetErrorString("error: cannot run remote shell commands without a platform");
         }
 
         if (error.Fail())
