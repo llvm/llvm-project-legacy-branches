@@ -1128,7 +1128,13 @@ class TestBase(Base):
                 print >> sbuf, "Insert this command to be run first: %s" % platform_target_install_command
                 self.ci.HandleCommand(platform_target_install_command, self.res)
                 # And this is the file command we want to execute, instead.
-                cmd = "file -P %s %s" % (target.replace(parent_dir, lldb.lldbtest_remote_sandbox), target)
+                #
+                # Warning: SIDE EFFECT AHEAD!!!
+                # Populate the remote executable pathname into the lldb namespace,
+                # so that test cases can grab this thing out of the namespace.
+                #
+                lldb.lldbtest_remote_sandboxed_executable = target.replace(parent_dir, lldb.lldbtest_remote_sandbox)
+                cmd = "file -P %s %s" % lldb.lldbtest_remote_sandboxed_executable, target)
                 print >> sbuf, "And this is the replaced file command: %s" % cmd
 
         running = (cmd.startswith("run") or cmd.startswith("process launch"))

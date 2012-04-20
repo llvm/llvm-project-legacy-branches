@@ -29,12 +29,6 @@ class GenericTester(TestBase):
         # used for all the test cases.
         self.exe_name = self.testMethodName
 
-    def tearDown(self):
-        """Cleanup the test byproducts."""
-        TestBase.tearDown(self)
-        #print "Removing golden-output.txt..."
-        os.remove("golden-output.txt")
-
     #==========================================================================#
     # Functions build_and_run() and build_and_run_expr() are generic functions #
     # which are called from the Test*Types*.py test cases.  The API client is  #
@@ -85,10 +79,14 @@ class GenericTester(TestBase):
 
         # First, capture the golden output emitted by the oracle, i.e., the
         # series of printf statements.
-        self.runCmd("process launch -o golden-output.txt")
-        with open("golden-output.txt") as f:
-            go = f.read()
-
+        if lldb.lldbtest_remote_sandbox:
+            if not lldb.lldbtest_remote_sandboxed_executable:
+                raise Exception("To execute 'types' testsuite remotely, the remote sandboxed executable path needs to be defined by the infrastructure")
+            if not lldb.lldbtest_remote_shell_template:
+                raise Exception("To execute 'types' testsuite remotely, make sure you have the remote shell template defined in your config file")
+            go = system(lldb.lldbtest_remote_shell_template % lldb.lldbtest_remote_sandboxed_executable, sender=self)[0]
+        else:
+            go = system("./%s" % exe_name, sender=self)[0]
         # This golden list contains a list of (variable, value) pairs extracted
         # from the golden output.
         gl = []
@@ -162,10 +160,7 @@ class GenericTester(TestBase):
 
         # First, capture the golden output emitted by the oracle, i.e., the
         # series of printf statements.
-        self.runCmd("process launch -o golden-output.txt")
-        with open("golden-output.txt") as f:
-            go = f.read()
-
+        go = system("./%s" % exe_name, sender=self)[0]
         # This golden list contains a list of (variable, value) pairs extracted
         # from the golden output.
         gl = []

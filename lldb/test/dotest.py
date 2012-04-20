@@ -99,8 +99,9 @@ config = {}
 # The pre_flight and post_flight functions come from reading a config file.
 pre_flight = None
 post_flight = None
-# So does the lldbtest_remote_sandbox variable.
+# So do the lldbtest_remote_sandbox and lldbtest_remote_shell_template variables.
 lldbtest_remote_sandbox = None
+lldbtest_remote_shell_template = None
 
 # The 'archs' and 'compilers' can be specified via either command line or configFile,
 # with the command line overriding the configFile.  When specified, they should be
@@ -665,7 +666,7 @@ def parseOptionsAndInitTestdirs():
     # respectively.
     #
     # See also lldb-trunk/example/test/usage-config.
-    global config, pre_flight, post_flight, lldbtest_remote_sandbox
+    global config, pre_flight, post_flight, lldbtest_remote_sandbox, lldbtest_remote_shell_template
     if configFile:
         # Pass config (a dictionary) as the locals namespace for side-effect.
         execfile(configFile, globals(), config)
@@ -682,6 +683,8 @@ def parseOptionsAndInitTestdirs():
                 sys.exit(1)
         if "lldbtest_remote_sandbox" in config:
             lldbtest_remote_sandbox = config["lldbtest_remote_sandbox"]
+        if "lldbtest_remote_shell_template" in config:
+            lldbtest_remote_shell_template = config["lldbtest_remote_shell_template"]
         #print "sys.stderr:", sys.stderr
         #print "sys.stdout:", sys.stdout
 
@@ -1061,8 +1064,10 @@ if lldb.pre_flight or lldb.post_flight:
 else:
     lldb.test_remote = False
 
-# So does the lldbtest_remote_sandbox variable.
+# So do the lldbtest_remote_sandbox and lldbtest_remote_shell_template variables.
 lldb.lldbtest_remote_sandbox = lldbtest_remote_sandbox
+lldb.lldbtest_remote_sandboxed_executable = None
+lldb.lldbtest_remote_shell_template = lldbtest_remote_shell_template
 
 # Put all these test decorators in the lldb namespace.
 lldb.dont_do_python_api_test = dont_do_python_api_test

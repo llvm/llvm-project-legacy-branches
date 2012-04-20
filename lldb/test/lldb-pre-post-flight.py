@@ -31,3 +31,4 @@ def post_flight(test):
     test.runCmd('platform disconnect')
 
 lldbtest_remote_sandbox = os.environ['LLDBTEST_REMOTE_SANDBOX'] if 'LLDBTEST_REMOTE_SANDBOX' in os.environ else None
+lldbtest_remote_shell_template = os.environ['LLDBTEST_REMOTE_SHELL_TEMPLATE'] if 'LLDBTEST_REMOTE_SHELL_TEMPLATE' in os.environ else None
