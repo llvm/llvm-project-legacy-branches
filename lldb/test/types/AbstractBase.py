@@ -72,8 +72,8 @@ class GenericTester(TestBase):
         else:
             self.generic_type_tester(self.exe_name, atoms, blockCaptured=bc, quotedDisplay=qd)
 
-    def generic_type_tester(self, exe_name, atoms, quotedDisplay=False, blockCaptured=False):
-        """Test that variables with basic types are displayed correctly."""
+    def run_inferior_to_capture_golden_list(self, exe_name, blockCaptured):
+        """Run the inferior to collect the golden output and return a golden list."""
         import shlex
 
         self.runCmd("file %s" % exe_name, CURRENT_EXECUTABLE_SET)
@@ -106,6 +106,11 @@ class GenericTester(TestBase):
                 var, val = match.group(1), match.group(2)
                 gl.append((var, val))
         #print "golden list:", gl
+        return gl
+
+    def generic_type_tester(self, exe_name, atoms, quotedDisplay=False, blockCaptured=False):
+        """Test that variables with basic types are displayed correctly."""
+        gl = self.run_inferior_to_capture_golden_list(exe_name, blockCaptured)
 
         # Bring the program to the point where we can issue a series of
         # 'frame variable -T' command.
@@ -157,38 +162,7 @@ class GenericTester(TestBase):
 
     def generic_type_expr_tester(self, exe_name, atoms, quotedDisplay=False, blockCaptured=False):
         """Test that variable expressions with basic types are evaluated correctly."""
-        import shlex
-
-        self.runCmd("file %s" % exe_name, CURRENT_EXECUTABLE_SET)
-
-        # First, capture the golden output emitted by the oracle, i.e., the
-        # series of printf statements.
-        if lldb.lldbtest_remote_sandbox:
-            if not lldb.lldbtest_remote_sandboxed_executable:
-                raise Exception("To execute 'types' testsuite remotely, the remote sandboxed executable path needs to be defined by the infrastructure")
-            if not lldb.lldbtest_remote_shell_template:
-                raise Exception("To execute 'types' testsuite remotely, make sure you have the remote shell template defined in your config file")
-            go = system(shlex.split(lldb.lldbtest_remote_shell_template % lldb.lldbtest_remote_sandboxed_executable),
-                        sender=self)[0]
-        else:
-            go = system("./%s" % exe_name, sender=self)[0]
-        # This golden list contains a list of (variable, value) pairs extracted
-        # from the golden output.
-        gl = []
-
-        # Scan the golden output line by line, looking for the pattern:
-        #
-        #     variable = 'value'
-        #
-        for line in go.split(os.linesep):
-            # We'll ignore variables of array types from inside a block.
-            if blockCaptured and '[' in line:
-                continue
-            match = self.pattern.search(line)
-            if match:
-                var, val = match.group(1), match.group(2)
-                gl.append((var, val))
-        #print "golden list:", gl
+        gl = self.run_inferior_to_capture_golden_list(exe_name, blockCaptured)
 
         # Bring the program to the point where we can issue a series of
         # 'expr' command.
