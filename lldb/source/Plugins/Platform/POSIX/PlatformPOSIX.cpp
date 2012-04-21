@@ -75,41 +75,6 @@ PlatformPOSIX::RunShellCommand (const char *command,           // Shouldn't be N
 }
 
 uint32_t
-PlatformPOSIX::RunShellCommand (const std::string &command_line)
-{
-    if (IsHost())
-    {
-        int retcode;
-        Host::RunShellCommand(command_line.c_str(),
-                              NULL,
-                              &retcode,
-                              NULL,
-                              NULL,
-                              60);
-        return retcode;
-    }
-    if (IsRemote())
-    {
-        if (GetSupportsSSH())
-        {
-            // run the command over SSH
-            StreamString command;
-            command.Printf("ssh %s %s %s",
-                           GetSSHOpts(),
-                           GetHostname(),
-                           command_line.c_str());
-            return m_remote_platform_sp->RunShellCommand(command.GetData());
-        }
-        else if (m_remote_platform_sp)
-        {
-            // plain run the command
-            return m_remote_platform_sp->RunShellCommand(command_line);
-        }
-    }
-    return Platform::RunShellCommand(command_line);
-}
-
-uint32_t
 PlatformPOSIX::MakeDirectory (const std::string &path,
                                mode_t mode)
 {
@@ -193,7 +158,14 @@ chown_file(Platform *platform,
     if (gid != UINT32_MAX)
         command.Printf(":%d",gid);
     command.Printf("%s",path);
-    return platform->RunShellCommand(command.GetData());
+    int status;
+    platform->RunShellCommand(command.GetData(),
+                              NULL,
+                              &status,
+                              NULL,
+                              NULL,
+                              10);
+    return status;
 }
 
 lldb_private::Error
@@ -217,7 +189,14 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
             return Error("unable to get file path for destination");
         StreamString command;
         command.Printf("cp %s %s", src_path.c_str(), dst_path.c_str());
-        if (RunShellCommand(command.GetData()) != 0)
+        int status;
+        RunShellCommand(command.GetData(),
+                        NULL,
+                        &status,
+                        NULL,
+                        NULL,
+                        10);
+        if (status != 0)
             return Error("unable to perform copy");
         if (uid == UINT32_MAX && gid == UINT32_MAX)
             return Error();
@@ -343,7 +322,14 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         // cp src dst
         StreamString cp_command;
         cp_command.Printf("cp %s %s", src_path.c_str(), dst_path.c_str());
-        if (RunShellCommand(cp_command.GetData()) != 0)
+        int status;
+        RunShellCommand(cp_command.GetData(),
+                        NULL,
+                        &status,
+                        NULL,
+                        NULL,
+                        10);
+        if (status != 0)
             return Error("unable to perform copy");
         return Error();
     }

@@ -1877,18 +1877,91 @@ private:
 class CommandObjectPlatformShell : public CommandObject
 {
 public:
+    
+    class CommandOptions : public Options
+    {
+    public:
+        
+        CommandOptions (CommandInterpreter &interpreter) :
+        Options(interpreter)
+        {
+        }
+        
+        virtual
+        ~CommandOptions ()
+        {
+        }
+        
+        virtual uint32_t
+        GetNumDefinitions ()
+        {
+            return 1;
+        }
+        
+        virtual const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+        
+        virtual Error
+        SetOptionValue (uint32_t option_idx,
+                        const char *option_value)
+        {
+            Error error;
+            
+            const char short_option = (char) g_option_table[option_idx].short_option;
+            
+            switch (short_option)
+            {
+                case 't':
+                {
+                    bool success;
+                    timeout = Args::StringToUInt32(option_value, 10, 10, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat("could not convert \"%s\" to a numeric value.", option_value);
+                    break;
+                }
+                default:
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
+                    break;
+            }
+            
+            return error;
+        }
+        
+        virtual void
+        OptionParsingStarting ()
+        {
+            timeout = 10;
+        }
+        
+        // Options table: Required for subclasses of Options.
+        
+        static OptionDefinition g_option_table[];
+        uint32_t timeout;
+    };
+    
     CommandObjectPlatformShell (CommandInterpreter &interpreter) :
     CommandObject (interpreter, 
                    "platform shell",
                    "Run a shell command on a the selected platform.",
                    "platform shell <shell-command>",
-                   0)
+                   0),
+    m_options(interpreter)
     {
     }
     
     virtual
     ~CommandObjectPlatformShell ()
     {
+    }
+    
+    virtual
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
     }
     
     virtual bool
@@ -1904,6 +1977,40 @@ public:
     bool
     ExecuteRawCommandString (const char *raw_command_line, CommandReturnObject &result)
     {
+        const char* expr = NULL;
+        if (raw_command_line[0] == '-')
+        {
+            // We have some options and these options MUST end with --.
+            const char *end_options = NULL;
+            const char *s = raw_command_line;
+            while (s && s[0])
+            {
+                end_options = ::strstr (s, "--");
+                if (end_options)
+                {
+                    end_options += 2; // Get past the "--"
+                    if (::isspace (end_options[0]))
+                    {
+                        expr = end_options;
+                        while (::isspace (*expr))
+                            ++expr;
+                        break;
+                    }
+                }
+                s = end_options;
+            }
+            
+            if (end_options)
+            {
+                Args args (raw_command_line, end_options - raw_command_line);
+                if (!ParseOptions (args, result))
+                    return false;
+            }
+        }
+        
+        if (expr == NULL)
+            expr = raw_command_line;
+        
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         Error error;
         if (platform_sp)
@@ -1912,7 +2019,7 @@ public:
             std::string output;
             int status = -1;
             int signo = -1;
-            error = (platform_sp->RunShellCommand (raw_command_line, working_dir, &status, &signo, &output, 10));
+            error = (platform_sp->RunShellCommand (expr, working_dir, &status, &signo, &output, m_options.timeout));
             if (!output.empty())
                 result.GetOutputStream().PutCString(output.c_str());
             if (status > 0)
@@ -1948,6 +2055,13 @@ public:
     }
 
 protected:
+    CommandOptions m_options;
+};
+
+OptionDefinition
+CommandObjectPlatformShell::CommandOptions::g_option_table[] =
+{
+    { LLDB_OPT_SET_ALL, false, "timeout",      't', required_argument, NULL, 0, eArgTypeValue,    "Seconds to wait for the remote host to finish running the command."},
 };
 
 struct RecurseCopyBaton

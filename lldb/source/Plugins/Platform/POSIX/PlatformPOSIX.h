@@ -63,9 +63,6 @@ public:
     GetFile (const lldb_private::FileSpec& source,
              const lldb_private::FileSpec& destination);
     
-    virtual uint32_t
-    RunShellCommand (const std::string &command_line);
-    
     virtual lldb_private::Error
     RunShellCommand (const char *command,           // Shouldn't be NULL
                      const char *working_dir,       // Pass NULL to use the current working directory
