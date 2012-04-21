@@ -1047,6 +1047,21 @@ class TestBase(Base):
         if not self.dbg:
             raise Exception('Invalid debugger instance')
 
+        #
+        # Warning: MAJOR HACK AHEAD!
+        # If we are running testsuite remotely (by checking lldb.lldbtest_remote_sandbox),
+        # redefine the self.dbg.CreateTarget(filename) method to execute a "file filename"
+        # command, instead.  See also runCmd() where it decorates the "file filename" call
+        # with additional functionality when running testsuite remotely.
+        #
+        if lldb.lldbtest_remote_sandbox:
+            def DecoratedCreateTarget(arg):
+                self.runCmd("file %s" % arg)
+                return self.dbg.GetSelectedTarget()
+            self.dbg.CreateTarget = DecoratedCreateTarget
+            if self.TraceOn():
+                print "self.dbg.Create is redefined to:\n%s" % getsource_if_available(DecoratedCreateTarget)
+
         # We want our debugger to be synchronous.
         self.dbg.SetAsync(False)
 
