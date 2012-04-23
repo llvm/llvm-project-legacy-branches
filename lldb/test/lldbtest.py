@@ -1081,6 +1081,7 @@ class TestBase(Base):
                 #
                 def DecoratedLaunchSimple(argv, envp, wd):
                     self.runCmd("run")
+                    return target.GetProcess()
                 target.LaunchSimple = DecoratedLaunchSimple
 
                 return target
