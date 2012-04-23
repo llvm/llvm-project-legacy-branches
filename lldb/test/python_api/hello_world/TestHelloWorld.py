@@ -32,6 +32,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_python()
 
+    @not_remote_testsuite_ready
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
@@ -44,6 +45,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_id_api()
 
+    @not_remote_testsuite_ready
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_attach_to_process_with_id_api(self):
@@ -55,6 +57,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_id_api()
 
+    @not_remote_testsuite_ready
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
@@ -67,6 +70,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_name_api()
 
+    @not_remote_testsuite_ready
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_attach_to_process_with_name_api(self):

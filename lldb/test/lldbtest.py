@@ -430,6 +430,23 @@ def dwarf_test(func):
     wrapper.__dwarf_test__ = True
     return wrapper
 
+def not_remote_testsuite_ready(func):
+    """Decorate the item as a test which is not ready yet for remote testsuite."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@not_remote_testsuite_ready can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.lldbtest_remote_sandbox:
+                self.skipTest("not ready for remote testsuite")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from the regular tests.
+    wrapper.__not_ready_for_remote_testsuite_test__ = True
+    return wrapper
+
 def expectedFailureClang(func):
     """Decorate the item as a Clang only expectedFailure."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
@@ -1057,7 +1074,16 @@ class TestBase(Base):
         if lldb.lldbtest_remote_sandbox:
             def DecoratedCreateTarget(arg):
                 self.runCmd("file %s" % arg)
-                return self.dbg.GetSelectedTarget()
+                target = self.dbg.GetSelectedTarget()
+                #
+                # SBTarget.LaunchSimple() currently not working for remote platform?
+                # johnny @ 04/23/2012
+                #
+                def DecoratedLaunchSimple(argv, envp, wd):
+                    self.runCmd("run")
+                target.LaunchSimple = DecoratedLaunchSimple
+
+                return target
             self.dbg.CreateTarget = DecoratedCreateTarget
             if self.TraceOn():
                 print "self.dbg.Create is redefined to:\n%s" % getsource_if_available(DecoratedCreateTarget)
