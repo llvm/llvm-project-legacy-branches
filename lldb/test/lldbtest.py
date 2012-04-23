@@ -1132,6 +1132,8 @@ class TestBase(Base):
 
         # This is an opportunity to insert the 'platform target-install' command if we are told so
         # via the settig of lldb.lldbtest_remote_sandbox.
+        if cmd.startswith("target create "):
+            cmd = cmd.replace("target create ", "file ")
         if cmd.startswith("file ") and lldb.lldbtest_remote_sandbox:
             with recording(self, trace) as sbuf:
                 target = cmd.split("file ")[1]
