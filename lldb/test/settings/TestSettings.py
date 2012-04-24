@@ -164,6 +164,7 @@ class SettingsCommandTestCase(TestBase):
         self.buildDwarf()
         self.pass_run_args_and_env_vars()
 
+    @not_remote_testsuite_ready
     def pass_run_args_and_env_vars(self):
         """Test that run-args and env-vars are passed to the launched process."""
         exe = os.path.join(os.getcwd(), "a.out")
