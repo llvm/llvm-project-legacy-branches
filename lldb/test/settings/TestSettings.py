@@ -190,6 +190,7 @@ class SettingsCommandTestCase(TestBase):
                        "argv[3] matches",
                        "Environment variable 'MY_ENV_VAR' successfully passed."])
 
+    @not_remote_testsuite_ready
     def test_pass_host_env_vars(self):
         """Test that the host env vars are passed to the launched process."""
         self.buildDefault()
@@ -221,6 +222,7 @@ class SettingsCommandTestCase(TestBase):
             substrs = ["The host environment variable 'MY_HOST_ENV_VAR1' successfully passed.",
                        "The host environment variable 'MY_HOST_ENV_VAR2' successfully passed."])
 
+    @not_remote_testsuite_ready
     def test_set_error_output_path(self):
         """Test that setting target.error/output-path for the launched process works."""
         self.buildDefault()
