@@ -76,7 +76,7 @@ class UniversalTestCase(TestBase):
         self.runCmd("continue")
 
         # Now specify i386 as the architecture for "testit".
-        self.expect("file " + exe + " -a i386", CURRENT_EXECUTABLE_SET,
+        self.expect("file -a i386 " + exe, CURRENT_EXECUTABLE_SET,
             startstr = "Current executable set to ",
             substrs = ["testit' (i386)."])
 

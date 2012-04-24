@@ -1163,10 +1163,18 @@ class TestBase(Base):
             cmd = cmd.replace("target create ", "file ")
         if cmd.startswith("file ") and lldb.lldbtest_remote_sandbox:
             with recording(self, trace) as sbuf:
-                target = cmd.split("file ")[1]
-                target = os.path.abspath(target)
-                print >> sbuf, "Found a file command, target (with absolute pathname)=%s" % target
-                fpath, fname = os.path.split(target)
+                the_rest = cmd.split("file ")[1]
+                # Split the rest of the command line.
+                atoms = the_rest.split()
+                #
+                # NOTE: This assumes that the options, if any, follow the file command,
+                # instead of follow the specified target.
+                #
+                target = atoms[-1]
+                # Now let's get the absolute pathname of our target.
+                abs_target = os.path.abspath(target)
+                print >> sbuf, "Found a file command, target (with absolute pathname)=%s" % abs_target
+                fpath, fname = os.path.split(abs_target)
                 parent_dir = os.path.split(fpath)[0]
                 platform_target_install_command = 'platform target-install %s %s' % (fpath, lldb.lldbtest_remote_sandbox)
                 print >> sbuf, "Insert this command to be run first: %s" % platform_target_install_command
@@ -1177,8 +1185,8 @@ class TestBase(Base):
                 # Populate the remote executable pathname into the lldb namespace,
                 # so that test cases can grab this thing out of the namespace.
                 #
-                lldb.lldbtest_remote_sandboxed_executable = target.replace(parent_dir, lldb.lldbtest_remote_sandbox)
-                cmd = "file -P %s %s" % (lldb.lldbtest_remote_sandboxed_executable, target)
+                lldb.lldbtest_remote_sandboxed_executable = abs_target.replace(parent_dir, lldb.lldbtest_remote_sandbox)
+                cmd = "file -P %s %s %s" % (lldb.lldbtest_remote_sandboxed_executable, the_rest.replace(target, ''), abs_target)
                 print >> sbuf, "And this is the replaced file command: %s" % cmd
 
         running = (cmd.startswith("run") or cmd.startswith("process launch"))
