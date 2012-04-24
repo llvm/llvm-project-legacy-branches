@@ -656,15 +656,21 @@ public:
     }
 
     virtual uint32_t
-    GetBitfieldBitSize()
+    GetBitfieldBitSize ()
     {
         return 0;
     }
 
     virtual uint32_t
-    GetBitfieldBitOffset()
+    GetBitfieldBitOffset ()
     {
         return 0;
+    }
+    
+    bool
+    IsBitfield ()
+    {
+        return (GetBitfieldBitSize() != 0) || (GetBitfieldBitOffset() != 0);
     }
     
     virtual bool
