@@ -5,7 +5,7 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class AnonymousTestCase(TestBase):
+class BlocksTestCase(TestBase):
 
     mydir = os.path.join("lang", "c", "blocks")
     lines = []
