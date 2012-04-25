@@ -38,7 +38,6 @@ public:
 
 protected:
   clang::ASTContext *Context;
-  clang::SourceManager *SM;
 
 private:
   class FindConsumer : public clang::ASTConsumer {
@@ -59,7 +58,6 @@ private:
 
     virtual clang::ASTConsumer* CreateASTConsumer(
         clang::CompilerInstance& compiler, llvm::StringRef dummy) {
-      Visitor->SM = &compiler.getSourceManager();
       Visitor->Context = &compiler.getASTContext();
       /// TestConsumer will be deleted by the framework calling us.
       return new FindConsumer(Visitor);
@@ -108,6 +106,7 @@ protected:
         FullLocation.isValid() &&
         FullLocation.getSpellingLineNumber() == ExpectedLine &&
         FullLocation.getSpellingColumnNumber() == ExpectedColumn) {
+      EXPECT_TRUE(!Found);
       Found = true;
     } else if (Name == ExpectedMatch ||
                (FullLocation.isValid() &&
@@ -116,7 +115,7 @@ protected:
       // If we did not match, record information about partial matches.
       llvm::raw_string_ostream Stream(PartialMatches);
       Stream << ", partial match: \"" << Name << "\" at ";
-      Location.print(Stream, *this->SM);
+      Location.print(Stream, this->Context->getSourceManager());
     }
   }
 
@@ -159,6 +158,31 @@ TEST(RecursiveASTVisitor, VisitsBaseClassDeclarations) {
   EXPECT_TRUE(Visitor.runOver("class X {}; class Y : public X {};"));
 }
 
+TEST(RecursiveASTVisitor, VisitsCXXBaseSpecifiersOfForwardDeclaredClass) {
+  TypeLocVisitor Visitor;
+  Visitor.ExpectMatch("class X", 3, 18);
+  EXPECT_TRUE(Visitor.runOver(
+    "class Y;\n"
+    "class X {};\n"
+    "class Y : public X {};"));
+}
+
+TEST(RecursiveASTVisitor, VisitsCXXBaseSpecifiersWithIncompleteInnerClass) {
+  TypeLocVisitor Visitor;
+  Visitor.ExpectMatch("class X", 2, 18);
+  EXPECT_TRUE(Visitor.runOver(
+    "class X {};\n"
+    "class Y : public X { class Z; };"));
+}
+
+TEST(RecursiveASTVisitor, VisitsCXXBaseSpecifiersOfSelfReferentialType) {
+  TypeLocVisitor Visitor;
+  Visitor.ExpectMatch("X<class Y>", 2, 18);
+  EXPECT_TRUE(Visitor.runOver(
+    "template<typename T> class X {};\n"
+    "class Y : public X<Y> {};"));
+}
+
 TEST(RecursiveASTVisitor, VisitsBaseClassTemplateArguments) {
   DeclRefExprVisitor Visitor;
   Visitor.ExpectMatch("x", 2, 3);
@@ -184,8 +208,7 @@ TEST(RecursiveASTVisitor, VisitsCallInTemplateInstantiation) {
     "void foo() { y<Y>(Y()); }"));
 }
 
-/* FIXME:
-TEST(RecursiveASTVisitor, VisitsCallInNestedTemplateInstantiation) {
+TEST(RecursiveASTVisitor, VisitsCallInNestedFunctionTemplateInstantiation) {
   CXXMemberCallVisitor Visitor;
   Visitor.ExpectMatch("Y::x", 4, 5);
   EXPECT_TRUE(Visitor.runOver(
@@ -197,7 +220,24 @@ TEST(RecursiveASTVisitor, VisitsCallInNestedTemplateInstantiation) {
     "};\n"
     "void foo() { Z<Y>::f<int>(); }"));
 }
-*/
+
+TEST(RecursiveASTVisitor, VisitsCallInNestedClassTemplateInstantiation) {
+  CXXMemberCallVisitor Visitor;
+  Visitor.ExpectMatch("A::x", 5, 7);
+  EXPECT_TRUE(Visitor.runOver(
+    "template <typename T1> struct X {\n"
+    "  template <typename T2> struct Y {\n"
+    "    void f() {\n"
+    "      T2 y;\n"
+    "      y.x();\n"
+    "    }\n"
+    "  };\n"
+    "};\n"
+    "struct A { void x(); };\n"
+    "int main() {\n"
+    "  (new X<A>::Y<A>())->f();\n"
+    "}"));
+}
 
 /* FIXME: According to Richard Smith this is a bug in the AST.
 TEST(RecursiveASTVisitor, VisitsBaseClassTemplateArgumentsInInstantiation) {
@@ -212,4 +252,3 @@ TEST(RecursiveASTVisitor, VisitsBaseClassTemplateArgumentsInInstantiation) {
 */
 
 } // end namespace clang
-
