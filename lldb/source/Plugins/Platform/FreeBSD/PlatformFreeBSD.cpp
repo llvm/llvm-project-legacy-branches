@@ -113,6 +113,26 @@ PlatformFreeBSD::~PlatformFreeBSD()
 {
 }
 
+//TODO:VK: inherit PlatformPOSIX
+lldb_private::Error
+PlatformFreeBSD::RunShellCommand (const char *command,
+                                  const char *working_dir,
+                                  int *status_ptr,
+                                  int *signo_ptr,
+                                  std::string *command_output,
+                                  uint32_t timeout_sec)
+{
+    if (IsHost())
+        return Host::RunShellCommand(command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+    else
+    {
+        if (m_remote_platform_sp)
+            return m_remote_platform_sp->RunShellCommand(command, working_dir, status_ptr, signo_ptr, command_output, timeout_sec);
+        else
+            return Error("unable to run a remote command without a platform");
+    }
+}
+
 
 Error
 PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
@@ -120,134 +140,23 @@ PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
                                     lldb::ModuleSP &exe_module_sp,
                                     const FileSpecList *module_search_paths_ptr)
 {
-    Error error;
     // Nothing special to do here, just use the actual file and architecture
 
-    char exe_path[PATH_MAX];
-    FileSpec resolved_exe_file (exe_file);
-
-    if (IsHost())
+    if (lldb_private::IsLogVerbose())
     {
-        // If we have "ls" as the exe_file, resolve the executable loation based on
-        // the current path variables
-        if (!resolved_exe_file.Exists())
-        {
-            exe_file.GetPath(exe_path, sizeof(exe_path));
-            resolved_exe_file.SetFile(exe_path, true);
+        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_VERBOSE));
+        log->Printf("Resolve executable '%s/%s'", exe_file.GetDirectory().AsCString(), exe_file.GetFilename().AsCString());
+        log->Printf("Resolve executable arch '%s'", exe_arch.GetArchitectureName());
         }
 
-        if (!resolved_exe_file.Exists())
-            resolved_exe_file.ResolveExecutableLocation ();
-
-        // Resolve any executable within a bundle on MacOSX
-        //Host::ResolveExecutableInBundle (resolved_exe_file);
-
-        if (resolved_exe_file.Exists())
-            error.Clear();
-        else
-        {
-            exe_file.GetPath(exe_path, sizeof(exe_path));
-            error.SetErrorStringWithFormat("unable to find executable for '%s'", exe_path);
-        }
-    }
-    else
-    {
-        if (m_remote_platform_sp)
-        {
-            error = m_remote_platform_sp->ResolveExecutable (exe_file,
+    if (IsRemote() && m_remote_platform_sp)
+        return m_remote_platform_sp->ResolveExecutable (exe_file,
                                                              exe_arch,
                                                              exe_module_sp,
                                                              module_search_paths_ptr);
-        }
-        else
-        {
-            // We may connect to a process and use the provided executable (Don't use local $PATH).
             
-            // Resolve any executable within a bundle on MacOSX
-            Host::ResolveExecutableInBundle (resolved_exe_file);
-            
-            if (resolved_exe_file.Exists()) {
-                error.Clear();
+    return Platform::ResolveExecutable(exe_file, exe_arch, exe_module_sp, module_search_paths_ptr);
             }
-            else
-            {
-                exe_file.GetPath(exe_path, sizeof(exe_path));
-                error.SetErrorStringWithFormat("the platform is not currently connected, and '%s' doesn't exist in the system root.", exe_path);
-            }
-        }
-    }
-
-
-    if (error.Success())
-    {
-        ModuleSpec module_spec (resolved_exe_file, exe_arch);
-        if (module_spec.GetArchitecture().IsValid())
-        {
-            error = ModuleList::GetSharedModule (module_spec,
-                                                 exe_module_sp,
-                                                 module_search_paths_ptr,
-                                                 NULL,
-                                                 NULL);
-
-            if (exe_module_sp->GetObjectFile() == NULL)
-            {
-                exe_module_sp.reset();
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain the architecture %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
-                                                exe_arch.GetArchitectureName());
-            }
-        }
-        else
-        {
-            // No valid architecture was specified, ask the platform for
-            // the architectures that we should be using (in the correct order)
-            // and see if we can find a match that way
-            StreamString arch_names;
-            ArchSpec platform_arch;
-            for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
-            {
-                error = ModuleList::GetSharedModule (module_spec,
-                                                     exe_module_sp,
-                                                     module_search_paths_ptr,
-                                                     NULL,
-                                                     NULL);
-                // Did we find an executable using one of the
-                if (error.Success())
-                {
-                    if (exe_module_sp && exe_module_sp->GetObjectFile())
-                        break;
-                    else
-                        error.SetErrorToGenericError();
-                }
-
-                if (idx > 0)
-                    arch_names.PutCString (", ");
-                arch_names.PutCString (platform_arch.GetArchitectureName());
-            }
-
-            if (error.Fail() || !exe_module_sp)
-            {
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain any '%s' platform architectures: %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
-                                                GetShortPluginName(),
-                                                arch_names.GetString().c_str());
-            }
-        }
-    }
-    else
-    {
-        error.SetErrorStringWithFormat ("'%s%s%s' does not exist",
-                                        exe_file.GetDirectory().AsCString(""),
-                                        exe_file.GetDirectory() ? "/" : "",
-                                        exe_file.GetFilename().AsCString(""));
-    }
-
-    return error;
-}
 
 size_t
 PlatformFreeBSD::GetSoftwareBreakpointTrapOpcode (Target &target, BreakpointSite *bp_site)
@@ -608,11 +517,17 @@ PlatformFreeBSD::GetStatus (Stream &strm)
 {
     struct utsname un;
 
-    if (uname(&un)) {
-        strm << "FreeBSD";
-        return;
-    }
+    strm << "      Host: ";
 
-    strm << "Host: " << un.sysname << ' ' << un.release << ' ' << un.version << '\n';
+    ::memset(&un, 0, sizeof(utsname));
+    if (uname(&un) == -1)
+        strm << "FreeBSD" << '\n';
+
+    strm << un.sysname << ' ' << un.release;
+    if (un.nodename[0] != '\0')
+        strm << " (" << un.nodename << ')';
+    strm << '\n';
+
+    // Dump a common information about the platform status.
     Platform::GetStatus(strm);
 }

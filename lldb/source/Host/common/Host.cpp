@@ -1203,7 +1203,7 @@ Host::GetEffectiveGroupID ()
     return getegid();
 }
 
-#if !defined (__APPLE__)
+#if !defined (__APPLE__) && !defined (__FreeBSD__)
 uint32_t
 Host::FindProcesses (const ProcessInstanceInfoMatch &match_info, ProcessInstanceInfoList &process_infos)
 {
@@ -1291,15 +1291,26 @@ Host::RunShellCommand (const char *command,
 {
     Error error;
     ProcessLaunchInfo launch_info;
-    launch_info.SetShell("/bin/bash");
-    launch_info.GetArguments().AppendArgument(command);
+
     const bool localhost = true;
     const bool will_debug = false;
     const bool first_arg_is_full_shell_command = true;
-    launch_info.ConvertArgumentsForLaunchingInShell (error,
+
+#ifndef LLDB_DEFAULT_SHELL_COMMAND
+#define LLDB_DEFAULT_SHELL_COMMAND   "/bin/bash"
+#endif
+    const char* shell_cmd = ::getenv("SHELL");
+    if (shell_cmd == NULL)
+        shell_cmd = LLDB_DEFAULT_SHELL_COMMAND;
+
+    launch_info.SetShell(shell_cmd);
+    launch_info.GetArguments().AppendArgument(command);
+
+    if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
                                                      localhost,
                                                      will_debug,
-                                                     first_arg_is_full_shell_command);
+                                                          first_arg_is_full_shell_command))
+        return error;
     
     if (working_dir)
         launch_info.SetWorkingDirectory(working_dir);
@@ -1313,7 +1324,7 @@ Host::RunShellCommand (const char *command,
         output_file_path = ::tmpnam(output_file_path_buffer);
         launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
         launch_info.AppendOpenFileAction(STDOUT_FILENO, output_file_path, false, true);
-        launch_info.AppendDuplicateFileAction(STDERR_FILENO, STDOUT_FILENO);
+        launch_info.AppendDuplicateFileAction(STDOUT_FILENO, STDERR_FILENO);
     }
     else
     {
@@ -1330,7 +1341,11 @@ Host::RunShellCommand (const char *command,
     
     error = LaunchProcess (launch_info);
     const lldb::pid_t pid = launch_info.GetProcessID();
-    if (pid != LLDB_INVALID_PROCESS_ID)
+
+    if (error.Success() && pid == LLDB_INVALID_PROCESS_ID)
+        error.SetErrorString("failed to get process ID");
+
+    if (error.Success())
     {
         // The process successfully launched, so we can defer ownership of
         // "shell_info" to the MonitorShellCommand callback function that will
@@ -1381,10 +1396,6 @@ Host::RunShellCommand (const char *command,
             }
         }
         shell_info->can_delete.SetValue(true, eBroadcastAlways);
-    }
-    else
-    {
-        error.SetErrorString("failed to get process ID");
     }
 
     if (output_file_path)
