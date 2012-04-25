@@ -246,6 +246,7 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
         // read, write, read, write, ...
         // close
         // chown uid:gid dst
+        printf("[PutFile] Using block by block transfer....\n");
         File source_file(source, File::eOpenOptionRead, File::ePermissionsUserRW);
         if (!source_file.IsValid())
             return Error("unable to open source file");
@@ -366,6 +367,7 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         // read/write, read/write, read/write, ...
         // close src
         // close dst
+        printf("[GetFile] Using block by block transfer....\n");
         user_id_t fd_src = OpenFile(source, File::eOpenOptionRead, File::ePermissionsDefault);
         user_id_t fd_dst = Host::OpenFile(destination,
                                           File::eOpenOptionCanCreate|File::eOpenOptionWrite,
