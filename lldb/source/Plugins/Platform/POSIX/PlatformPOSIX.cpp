@@ -226,6 +226,7 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                                src_path.c_str(),
                                GetHostname(),
                                dst_path.c_str());
+            printf("[PutFile] Running command: %s\n", command.GetData());
             int retcode;
             Host::RunShellCommand(command.GetData(),
                                   NULL,
@@ -349,7 +350,7 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
                                m_remote_platform_sp->GetHostname(),
                                src_path.c_str(),
                                dst_path.c_str());
-            //printf("Running command: %s\n", command.GetData());
+            printf("[GetFile] Running command: %s\n", command.GetData());
             int retcode;
             Host::RunShellCommand(command.GetData(),
                                   NULL,

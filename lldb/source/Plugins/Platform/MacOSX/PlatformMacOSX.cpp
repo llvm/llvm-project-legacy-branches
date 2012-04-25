@@ -219,7 +219,7 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
                                  lldb::ModuleSP *old_module_sp_ptr,
                                  bool *did_create_ptr)
 {
-    /*
+
     printf("[%s] Trying to find module %s/%s - platform path %s/%s symbol path %s/%s\n",
            (IsHost() ? "host" : "remote"),
            module_spec.GetFileSpec().GetDirectory().AsCString(),
@@ -228,7 +228,7 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
            module_spec.GetPlatformFileSpec().GetFilename().AsCString(),
            module_spec.GetSymbolFileSpec().GetDirectory().AsCString(),
            module_spec.GetSymbolFileSpec().GetFilename().AsCString());
-    */
+
     if (module_spec.GetFileSpec().Exists() && !module_sp)
     {
         module_sp.reset(new Module(module_spec));
