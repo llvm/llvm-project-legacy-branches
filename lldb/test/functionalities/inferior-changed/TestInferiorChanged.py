@@ -10,6 +10,8 @@ class ChangedInferiorTestCase(TestBase):
     mydir = os.path.join("functionalities", "inferior-changed")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    # rdar://problem/11314533
+    @unittest2.expectedFailure
     def test_inferior_crashing_dsym(self):
         """Test lldb reloads the inferior after it was changed during the session."""
         self.buildDsym()
@@ -20,6 +22,8 @@ class ChangedInferiorTestCase(TestBase):
         self.setTearDownCleanup(dictionary=d)
         self.inferior_not_crashing()
 
+    # rdar://problem/11314533
+    @unittest2.expectedFailure
     def test_inferior_crashing_dwarf(self):
         """Test lldb reloads the inferior after it was changed during the session."""
         self.buildDwarf()
@@ -39,8 +43,8 @@ class ChangedInferiorTestCase(TestBase):
 
     def inferior_crashing(self):
         """Inferior crashes upon launching; lldb should catch the event and stop."""
-        exe = os.path.join(os.getcwd(), "a.out")
-        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+        self.exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + self.exe, CURRENT_EXECUTABLE_SET)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -57,6 +61,9 @@ class ChangedInferiorTestCase(TestBase):
     def inferior_not_crashing(self):
         """Test lldb reloads the inferior after it was changed during the session."""
         self.runCmd("process kill")
+        # Prod the lldb-platform that we have a newly built inferior ready.
+        if lldb.lldbtest_remote_sandbox:
+            self.runCmd("file " + self.exe, CURRENT_EXECUTABLE_SET)
         self.runCmd("run", RUN_SUCCEEDED)
         self.runCmd("process status")
 
