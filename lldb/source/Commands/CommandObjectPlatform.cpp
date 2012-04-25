@@ -421,7 +421,7 @@ public:
         if (platform_sp)
         {
             m_platform_options = platform_sp->GetConnectionOptions(m_interpreter);
-            if (!m_platform_options->m_did_finalize)
+            if (m_platform_options != NULL && !m_platform_options->m_did_finalize)
                 m_platform_options->Finalize();
         }
         return m_platform_options;
@@ -927,7 +927,7 @@ public:
     CommandObjectMultiword (interpreter,
                             "platform file",
                             "A set of commands to manage file access through a platform",
-                            "platform process [attach|launch|list] ...")
+                            "platform file [open|close|read|write] ...")
     {
         LoadSubCommand ("open", CommandObjectSP (new CommandObjectPlatformFOpen  (interpreter)));
         LoadSubCommand ("close", CommandObjectSP (new CommandObjectPlatformFClose  (interpreter)));
@@ -1978,6 +1978,14 @@ public:
     ExecuteRawCommandString (const char *raw_command_line, CommandReturnObject &result)
     {
         const char* expr = NULL;
+
+        // Print out an usage syntax on an empty command line.
+        if (raw_command_line[0] == '\0')
+        {
+            result.GetOutputStream().Printf("%s\n", this->GetSyntax());
+            return true;
+        }
+
         if (raw_command_line[0] == '-')
         {
             // We have some options and these options MUST end with --.
