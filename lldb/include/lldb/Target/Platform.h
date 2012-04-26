@@ -535,6 +535,18 @@ namespace lldb_private {
             m_rsync_opts.assign(opts);
         }
         
+        virtual const char*
+        GetRSyncPrefix ()
+        {
+            return m_rsync_prefix.c_str();
+        }
+        
+        virtual void
+        SetRSyncPrefix (const char* prefix)
+        {
+            m_rsync_prefix.assign(prefix);
+        }
+        
         virtual bool
         GetSupportsSSH ()
         {
@@ -623,6 +635,7 @@ namespace lldb_private {
         uint32_t m_max_gid_name_len;
         bool m_supports_rsync;
         std::string m_rsync_opts;
+        std::string m_rsync_prefix;
         bool m_supports_ssh;
         std::string m_ssh_opts;
         bool m_ignores_remote_hostname;
@@ -839,6 +852,7 @@ namespace lldb_private {
         
         bool m_rsync;
         std::string m_rsync_opts;
+        std::string m_rsync_prefix;
         bool m_ignores_remote_hostname;
     private:
         DISALLOW_COPY_AND_ASSIGN(OptionGroupPlatformRSync);

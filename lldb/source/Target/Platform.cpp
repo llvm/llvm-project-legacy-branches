@@ -192,6 +192,7 @@ Platform::Platform (bool is_host) :
     m_max_gid_name_len (0),
     m_supports_rsync (false),
     m_rsync_opts (),
+    m_rsync_prefix (),
     m_supports_ssh (false),
     m_ssh_opts (),
     m_ignores_remote_hostname (false)
@@ -741,6 +742,7 @@ g_rsync_option_table[] =
 {
     {   LLDB_OPT_SET_ALL, false, "rsync"                  , 'r', no_argument,       NULL, 0, eArgTypeNone         , "Enable rsync." },
     {   LLDB_OPT_SET_ALL, false, "rsync-opts"             , 'R', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific options required for rsync to work." },
+    {   LLDB_OPT_SET_ALL, false, "rsync-prefix"           , 'P', required_argument, NULL, 0, eArgTypeCommandName  , "Platform-specific rsync prefix put before the remote path." },
     {   LLDB_OPT_SET_ALL, false, "ignore-remote-hostname" , 'i', no_argument,       NULL, 0, eArgTypeNone         , "Do not automatically fill in the remote hostname when composing the rsync command." },
 };
 
@@ -776,6 +778,7 @@ OptionGroupPlatformRSync::OptionParsingStarting (CommandInterpreter &interpreter
 {
     m_rsync = false;
     m_rsync_opts.clear();
+    m_rsync_prefix.clear();
     m_ignores_remote_hostname = false;
 }
 
@@ -794,6 +797,10 @@ OptionGroupPlatformRSync::SetOptionValue (CommandInterpreter &interpreter,
             
         case 'R':
             m_rsync_opts.assign(option_arg);
+            break;
+            
+        case 'P':
+            m_rsync_prefix.assign(option_arg);
             break;
             
         case 'i':

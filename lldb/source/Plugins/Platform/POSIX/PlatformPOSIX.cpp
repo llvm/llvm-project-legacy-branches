@@ -216,10 +216,19 @@ PlatformPOSIX::PutFile (const lldb_private::FileSpec& source,
                 return Error("unable to get file path for destination");
             StreamString command;
             if (GetIgnoresRemoteHostname())
-                command.Printf("rsync %s %s %s",
-                               GetRSyncOpts(),
-                               src_path.c_str(),
-                               dst_path.c_str());
+            {
+                if (!GetRSyncPrefix())
+                    command.Printf("rsync %s %s %s",
+                                   GetRSyncOpts(),
+                                   src_path.c_str(),
+                                   dst_path.c_str());
+                else
+                    command.Printf("rsync %s %s %s%s",
+                                   GetRSyncOpts(),
+                                   src_path.c_str(),
+                                   GetRSyncPrefix(),
+                                   dst_path.c_str());
+            }
             else
                 command.Printf("rsync %s %s %s:%s",
                                GetRSyncOpts(),
@@ -341,10 +350,19 @@ PlatformPOSIX::GetFile (const lldb_private::FileSpec& source /* remote file path
         {
             StreamString command;
             if (GetIgnoresRemoteHostname())
-                command.Printf("rsync %s %s %s",
-                               GetRSyncOpts(),
-                               src_path.c_str(),
-                               dst_path.c_str());
+            {
+                if (!GetRSyncPrefix())
+                    command.Printf("rsync %s %s %s",
+                                   GetRSyncOpts(),
+                                   src_path.c_str(),
+                                   dst_path.c_str());
+                else
+                    command.Printf("rsync %s %s%s %s",
+                                   GetRSyncOpts(),
+                                   GetRSyncPrefix(),
+                                   src_path.c_str(),
+                                   dst_path.c_str());
+            }
             else
                 command.Printf("rsync %s %s:%s %s",
                                GetRSyncOpts(),
@@ -414,11 +432,16 @@ PlatformPOSIX::GetPlatformSpecificConnectionInformation()
     if (GetSupportsRSync())
     {
         stream.PutCString("rsync");
-        if ( (GetRSyncOpts() && *GetRSyncOpts()) || GetIgnoresRemoteHostname())
+        if ( (GetRSyncOpts() && *GetRSyncOpts()) ||
+             (GetRSyncPrefix() && *GetRSyncPrefix()) ||
+             GetIgnoresRemoteHostname())
         {
             stream.Printf(", options: ");
             if (GetRSyncOpts() && *GetRSyncOpts())
                 stream.Printf("'%s' ",GetRSyncOpts());
+            stream.Printf(", prefix: ");
+            if (GetRSyncPrefix() && *GetRSyncPrefix())
+                stream.Printf("'%s' ",GetRSyncPrefix());
             if (GetIgnoresRemoteHostname())
                 stream.Printf("ignore remote-hostname ");
         }

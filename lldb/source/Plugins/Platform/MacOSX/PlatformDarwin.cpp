@@ -409,6 +409,7 @@ PlatformDarwin::ConnectRemote (Args& args)
             {
                 SetSupportsRSync(true);
                 SetRSyncOpts(m_rsync_options->m_rsync_opts.c_str());
+                SetRSyncPrefix(m_rsync_options->m_rsync_prefix.c_str());
                 SetIgnoresRemoteHostname(m_rsync_options->m_ignores_remote_hostname);
             }
             if (m_ssh_options->m_ssh)
