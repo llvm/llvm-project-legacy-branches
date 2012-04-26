@@ -37,7 +37,7 @@ import shlex
 import sys
 import time
 import uuid
-import symbolication
+import lldb.utils.symbolication 
 
 PARSE_MODE_NORMAL = 0
 PARSE_MODE_THREAD = 1
@@ -45,7 +45,7 @@ PARSE_MODE_IMAGES = 2
 PARSE_MODE_THREGS = 3
 PARSE_MODE_SYSTEM = 4
 
-class CrashLog(symbolication.Symbolicator):
+class CrashLog(lldb.utils.symbolication.Symbolicator):
     """Class that does parses darwin crash logs"""
     thread_state_regex = re.compile('^Thread ([0-9]+) crashed with')
     thread_regex = re.compile('^Thread ([0-9]+)([^:]*):(.*)')
@@ -97,7 +97,7 @@ class CrashLog(symbolication.Symbolicator):
             else:
                 return "[%3u] 0x%16.16x" % (self.index, self.pc)        
     
-    class DarwinImage(symbolication.Image):
+    class DarwinImage(lldb.utils.symbolication.Image):
         """Class that represents a binary images in a darwin crash log"""
         dsymForUUIDBinary = os.path.expanduser('~rc/bin/dsymForUUID')
         if not os.path.exists(dsymForUUIDBinary):
@@ -106,8 +106,8 @@ class CrashLog(symbolication.Symbolicator):
         dwarfdump_uuid_regex = re.compile('UUID: ([-0-9a-fA-F]+) \(([^\(]+)\) .*')
         
         def __init__(self, text_addr_lo, text_addr_hi, identifier, version, uuid, path):
-            symbolication.Image.__init__(self, path, uuid);
-            self.add_section (symbolication.Section(text_addr_lo, text_addr_hi, "__TEXT"))
+            lldb.utils.symbolication.Image.__init__(self, path, uuid);
+            self.add_section (lldb.utils.symbolication.Section(text_addr_lo, text_addr_hi, "__TEXT"))
             self.identifier = identifier
             self.version = version
         
@@ -115,7 +115,7 @@ class CrashLog(symbolication.Symbolicator):
             if self.resolved_path:
                 # Don't load a module twice...
                 return True
-            print 'Locating %s %s...' % (self.uuid, self.path),
+            print 'Getting symbols for %s %s...' % (self.uuid, self.path),
             if os.path.exists(self.dsymForUUIDBinary):
                 dsym_for_uuid_command = '%s %s' % (self.dsymForUUIDBinary, self.uuid)
                 s = commands.getoutput(dsym_for_uuid_command)
@@ -147,10 +147,10 @@ class CrashLog(symbolication.Symbolicator):
                     return False
             if (self.resolved_path and os.path.exists(self.resolved_path)) or (self.path and os.path.exists(self.path)):
                 print 'ok'
-                if self.resolved_path:
-                    print '  exe = "%s"' % self.resolved_path 
-                if self.symfile:
-                    print ' dsym = "%s"' % self.symfile
+                # if self.resolved_path:
+                #     print '  exe = "%s"' % self.resolved_path 
+                # if self.symfile:
+                #     print ' dsym = "%s"' % self.symfile
                 return True
             return False
         
@@ -158,7 +158,7 @@ class CrashLog(symbolication.Symbolicator):
         
     def __init__(self, path):
         """CrashLog constructor that take a path to a darwin crash log file"""
-        symbolication.Symbolicator.__init__(self);
+        lldb.utils.symbolication.Symbolicator.__init__(self);
         self.path = os.path.expanduser(path);
         self.info_lines = list()
         self.system_profile = list()
@@ -313,7 +313,7 @@ class CrashLog(symbolication.Symbolicator):
     
     def create_target(self):
         #print 'crashlog.create_target()...'
-        target = symbolication.Symbolicator.create_target(self)
+        target = lldb.utils.symbolication.Symbolicator.create_target(self)
         if target:
             return target
         # We weren't able to open the main executable as, but we can still symbolicate
@@ -424,7 +424,7 @@ be disassembled and lookups can be performed using the addresses found in the cr
                     if err:
                         print err
                     else:
-                        print 'loaded %s' % image
+                        #print 'loaded %s' % image
                         loaded_images.append(image)
             
             for thread in crash_log.threads:
@@ -446,11 +446,11 @@ be disassembled and lookups can be performed using the addresses found in the cr
                                     instructions = symbolicated_frame_address.get_instructions()
                                     if instructions:
                                         print
-                                        symbolication.disassemble_instructions (target, 
-                                                                                instructions, 
-                                                                                frame.pc, 
-                                                                                options.disassemble_before, 
-                                                                                options.disassemble_after, frame.index > 0)
+                                        lldb.utils.symbolication.disassemble_instructions (target, 
+                                                                                           instructions, 
+                                                                                           frame.pc, 
+                                                                                           options.disassemble_before, 
+                                                                                           options.disassemble_after, frame.index > 0)
                                         print
                             symbolicated_frame_address_idx += 1
                     else:
@@ -467,6 +467,6 @@ if __name__ == '__main__':
     lldb.debugger = lldb.SBDebugger.Create()
     SymbolicateCrashLog (sys.argv[1:])
 elif lldb.debugger:
-    lldb.debugger.HandleCommand('command script add -f crashlog.Symbolicate crashlog')
+    lldb.debugger.HandleCommand('command script add -f lldb.macosx.crashlog.Symbolicate crashlog')
     print '"crashlog" command installed, type "crashlog --help" for detailed help'
 

@@ -8,11 +8,11 @@ License. See LICENSE.TXT for details.
 # summary provider for NSData
 import lldb
 import ctypes
-import objc_runtime
-import metrics
-import Logger
+import lldb.runtime.objc.objc_runtime
+import lldb.formatters.metrics
+import lldb.formatters.Logger
 
-statistics = metrics.Metrics()
+statistics = lldb.formatters.metrics.Metrics()
 statistics.add_metric('invalid_isa')
 statistics.add_metric('invalid_pointer')
 statistics.add_metric('unknown_class')
@@ -26,7 +26,7 @@ class NSConcreteData_SummaryProvider:
 		pass
 
 	def __init__(self, valobj, params):
-		logger = Logger.Logger()
+		logger = lldb.formatters.Logger.Logger()
 		logger >> "NSConcreteData_SummaryProvider __init__"
 		self.valobj = valobj;
 		self.sys_params = params
@@ -49,7 +49,7 @@ class NSConcreteData_SummaryProvider:
 		return 2 * self.sys_params.pointer_size
 
 	def length(self):
-		logger = Logger.Logger()
+		logger = lldb.formatters.Logger.Logger()
 		logger >> "NSConcreteData_SummaryProvider length"
 		size = self.valobj.CreateChildAtOffset("count",
 							self.offset(),
@@ -64,7 +64,7 @@ class NSDataUnknown_SummaryProvider:
 		pass
 
 	def __init__(self, valobj, params):
-		logger = Logger.Logger()
+		logger = lldb.formatters.Logger.Logger()
 		logger >> "NSDataUnknown_SummaryProvider __init__"
 		self.valobj = valobj;
 		self.sys_params = params
@@ -74,7 +74,7 @@ class NSDataUnknown_SummaryProvider:
 		self.adjust_for_architecture();
 
 	def length(self):
-		logger = Logger.Logger()
+		logger = lldb.formatters.Logger.Logger()
 		logger >> "NSDataUnknown_SummaryProvider length"
 		stream = lldb.SBStream()
 		self.valobj.GetExpressionPath(stream)
@@ -90,9 +90,9 @@ class NSDataUnknown_SummaryProvider:
 
 def GetSummary_Impl(valobj):
 	global statistics
-	logger = Logger.Logger()
+	logger = lldb.formatters.Logger.Logger()
 	logger >> "NSData GetSummary_Impl"
-	class_data,wrapper = objc_runtime.Utilities.prepare_class_detection(valobj,statistics)
+	class_data,wrapper =lldb.runtime.objc.objc_runtime.Utilities.prepare_class_detection(valobj,statistics)
 	if wrapper:
 		logger >> "got a wrapper summary - using it"
 		return wrapper
@@ -110,7 +110,7 @@ def GetSummary_Impl(valobj):
 	return wrapper;
 
 def NSData_SummaryProvider (valobj,dict):
-	logger = Logger.Logger()
+	logger = lldb.formatters.Logger.Logger()
 	logger >> "NSData_SummaryProvider"
 	provider = GetSummary_Impl(valobj);
 	logger >> "found a summary provider, it is: " + str(provider)
@@ -133,12 +133,12 @@ def NSData_SummaryProvider (valobj,dict):
 	return 'Summary Unavailable'
 
 def NSData_SummaryProvider2 (valobj,dict):
-	logger = Logger.Logger()
+	logger = lldb.formatters.Logger.Logger()
 	logger >> "NSData_SummaryProvider2"
 	provider = GetSummary_Impl(valobj);
 	logger >> "found a summary provider, it is: " + str(provider)
 	if provider != None:
-		if isinstance(provider,objc_runtime.SpecialSituation_Description):
+		if isinstance(provider,lldb.runtime.objc.objc_runtime.SpecialSituation_Description):
 			return provider.message()
 		try:
 			summary = provider.length();
