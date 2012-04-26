@@ -737,24 +737,6 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
     return error;
 }
 
-
-uint32_t
-PlatformRemoteiOS::FindProcesses (const ProcessInstanceInfoMatch &match_info,
-                                  ProcessInstanceInfoList &process_infos)
-{
-    // TODO: if connected, send a packet to get the remote process infos by name
-    process_infos.Clear();
-    return 0;
-}
-
-bool
-PlatformRemoteiOS::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
-{
-    // TODO: if connected, send a packet to get the remote process info
-    process_info.Clear();
-    return false;
-}
-
 bool
 PlatformRemoteiOS::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 {
