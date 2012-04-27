@@ -80,6 +80,11 @@ public:
     
     virtual std::string
     GetPlatformSpecificConnectionInformation();
+    
+    virtual bool
+    CalculateMD5 (const lldb_private::FileSpec& file_spec,
+                  uint64_t &low,
+                  uint64_t &high);
 
 protected:
     std::auto_ptr<lldb_private::OptionGroupOptions> m_options;

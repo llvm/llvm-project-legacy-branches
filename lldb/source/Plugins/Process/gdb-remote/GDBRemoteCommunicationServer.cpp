@@ -185,6 +185,12 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
                 
             case StringExtractorGDBRemote::eServerPacketType_vFile_Exists:
                 return Handle_vFile_Exists (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_Stat:
+                return Handle_vFile_Stat (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_vFile_MD5:
+                return Handle_vFile_MD5 (packet);
         }
         return true;
     }
@@ -1059,6 +1065,37 @@ GDBRemoteCommunicationServer::Handle_qPlatform_RunCommand (StringExtractorGDBRem
         response.PutHex32(signo);
         response.PutChar(',');
         response.PutEscapedBytes(output.c_str(), output.size());
+    }
+    SendPacketNoLock(response.GetData(), response.GetSize());
+    return true;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_Stat (StringExtractorGDBRemote &packet)
+{
+    return false;
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_vFile_MD5 (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen("vFile:exists:"));
+    std::string path;
+    packet.GetHexByteString(path);
+    if (path.size() == 0)
+        return false;
+    uint64_t a,b;
+    StreamGDBRemote response;
+    if (Host::CalculateMD5(FileSpec(path.c_str(),false),a,b) == false)
+    {
+        response.PutCString("F,");
+        response.PutCString("x");
+    }
+    else
+    {
+        response.PutCString("F,");
+        response.PutHex64(a);
+        response.PutHex64(b);
     }
     SendPacketNoLock(response.GetData(), response.GetSize());
     return true;

@@ -459,3 +459,15 @@ PlatformPOSIX::GetPlatformSpecificConnectionInformation()
     else
         return "";
 }
+
+bool
+PlatformPOSIX::CalculateMD5 (const FileSpec& file_spec,
+                            uint64_t &low,
+                            uint64_t &high)
+{
+    if (IsHost())
+        return Platform::CalculateMD5 (file_spec, low, high);
+    if (m_remote_platform_sp)
+        return m_remote_platform_sp->CalculateMD5(file_spec, low, high);
+    return false;
+}

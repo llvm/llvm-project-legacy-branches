@@ -979,7 +979,7 @@ FileSpec::EnumerateDirectory
 }
 
 FileSpec
-FileSpec::CopyByAppendingPathComponent (const char *new_path)
+FileSpec::CopyByAppendingPathComponent (const char *new_path)  const
 {
     const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())
@@ -995,7 +995,7 @@ FileSpec::CopyByAppendingPathComponent (const char *new_path)
 }
 
 FileSpec
-FileSpec::CopyByRemovingLastPathComponent ()
+FileSpec::CopyByRemovingLastPathComponent ()  const
 {
     const bool resolve = false;
     if (m_filename.IsEmpty() && m_directory.IsEmpty())

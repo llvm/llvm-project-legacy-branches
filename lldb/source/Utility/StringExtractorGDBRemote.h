@@ -72,6 +72,8 @@ public:
         eServerPacketType_vFile_pWrite,
         eServerPacketType_vFile_Size,
         eServerPacketType_vFile_Exists,
+        eServerPacketType_vFile_MD5,
+        eServerPacketType_vFile_Stat
     };
     
     ServerPacketType

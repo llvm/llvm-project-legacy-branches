@@ -372,6 +372,11 @@ public:
                      std::string *command_output,   // Pass NULL if you don't want the command output
                      uint32_t timeout_sec);         // Timeout in seconds to wait for shell program to finish
     
+    virtual bool
+    CalculateMD5 (const lldb_private::FileSpec& file_spec,
+                  uint64_t &high,
+                  uint64_t &low);
+    
 protected:
 
     //------------------------------------------------------------------

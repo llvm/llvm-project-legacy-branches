@@ -212,6 +212,30 @@ PlatformMacOSX::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 #endif
 }
 
+static lldb_private::Error
+MakeCacheFolderForFile (const FileSpec& module_cache_spec)
+{
+    FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
+    StreamString mkdir_folder_cmd;
+    mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
+    return Host::RunShellCommand(mkdir_folder_cmd.GetData(),
+                          NULL,
+                          NULL,
+                          NULL,
+                          NULL,
+                          60);
+}
+
+static lldb_private::Error
+BringInRemoteFile (Platform* platform,
+                   const lldb_private::ModuleSpec &module_spec,
+                   const FileSpec& module_cache_spec)
+{
+    MakeCacheFolderForFile(module_cache_spec);
+    Error err = platform->GetFile(module_spec.GetFileSpec(), module_cache_spec);
+    return err;
+}
+
 lldb_private::Error
 PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
                                  lldb::ModuleSP &module_sp,
@@ -229,35 +253,61 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
            module_spec.GetSymbolFileSpec().GetDirectory().AsCString(),
            module_spec.GetSymbolFileSpec().GetFilename().AsCString());
 
-    if (module_spec.GetFileSpec().Exists() && !module_sp)
-    {
-        module_sp.reset(new Module(module_spec));
-        if (module_spec.GetUUID() == module_sp->GetUUID())
-        {
-            printf("[%s] module %s/%s was found\n",
-                   (IsHost() ? "host" : "remote"),
-                   module_spec.GetFileSpec().GetDirectory().AsCString(),
-                   module_spec.GetFileSpec().GetFilename().AsCString());
-            return Error();
-        }
-        else
-        {
-            printf("[%s] module %s/%s had UUID mismatch\n",
-                   (IsHost() ? "host" : "remote"),
-                   module_spec.GetFileSpec().GetDirectory().AsCString(),
-                   module_spec.GetFileSpec().GetFilename().AsCString());
-            return Error();
-            module_sp.reset();
-        }
-    }
-    // try to find the module in the cache
     std::string cache_path(GetLocalCacheDirectory());
     std::string module_path;
     module_spec.GetFileSpec().GetPath(module_path);
     cache_path.append(module_path);
     FileSpec module_cache_spec(cache_path.c_str(),false);
+    
+    // if rsync is supported, always bring in the file - rsync will be very efficient
+    // when files are the same on the local and remote end of the connection
+    if (this->GetSupportsRSync())
+    {
+        Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
+        if (err.Fail())
+            return err;
+        if (module_cache_spec.Exists())
+        {
+            printf("[%s] module %s/%s was rsynced and is now there\n",
+                   (IsHost() ? "host" : "remote"),
+                   module_spec.GetFileSpec().GetDirectory().AsCString(),
+                   module_spec.GetFileSpec().GetFilename().AsCString());
+            ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
+            module_sp.reset(new Module(local_spec));
+            module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+            return Error();
+        }
+    }
+
+    if (module_spec.GetFileSpec().Exists() && !module_sp)
+    {
+        module_sp.reset(new Module(module_spec));
+        return Error();
+    }
+    
+    // try to find the module in the cache
     if (module_cache_spec.Exists())
     {
+        // get the local and remote MD5 and compare
+        {
+            // when going over the *slow* GDB remote transfer mechanism we first check
+            // the hashes of the files - and only do the actual transfer if they differ
+            uint64_t high_local,high_remote,low_local,low_remote;
+            Host::CalculateMD5 (module_cache_spec, low_local, high_local);
+            m_remote_platform_sp->CalculateMD5(module_spec.GetFileSpec(), low_remote, high_remote);
+            if (low_local != low_remote || high_local != high_remote)
+            {
+                // bring in the remote file
+                printf("[%s] module %s/%s needs to be replaced from remote copy\n",
+                       (IsHost() ? "host" : "remote"),
+                       module_spec.GetFileSpec().GetDirectory().AsCString(),
+                       module_spec.GetFileSpec().GetFilename().AsCString());
+                Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
+                if (err.Fail())
+                    return err;
+            }
+        }
+        
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
         module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
@@ -267,22 +317,13 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
                module_spec.GetFileSpec().GetFilename().AsCString());
         return Error();
     }
+    
     // bring in the remote module file
     printf("[%s] module %s/%s needs to come in remotely\n",
            (IsHost() ? "host" : "remote"),
            module_spec.GetFileSpec().GetDirectory().AsCString(),
            module_spec.GetFileSpec().GetFilename().AsCString());
-    FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
-    StreamString mkdir_folder_cmd;
-    // try to make the local directory first
-    mkdir_folder_cmd.Printf("mkdir -p %s/%s", module_cache_folder.GetDirectory().AsCString(), module_cache_folder.GetFilename().AsCString());
-    Host::RunShellCommand(mkdir_folder_cmd.GetData(),
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL,
-                          60);
-    Error err = GetFile(module_spec.GetFileSpec(), module_cache_spec);
+    Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
     if (err.Fail())
         return err;
     if (module_cache_spec.Exists())

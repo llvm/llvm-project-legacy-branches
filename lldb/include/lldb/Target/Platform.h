@@ -608,6 +608,11 @@ namespace lldb_private {
         {
             return "";
         }
+        
+        virtual bool
+        CalculateMD5 (const FileSpec& file_spec,
+                      uint64_t &low,
+                      uint64_t &high);
                 
     protected:
         bool m_is_host;

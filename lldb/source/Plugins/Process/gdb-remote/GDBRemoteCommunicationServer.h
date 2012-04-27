@@ -157,6 +157,12 @@ protected:
 
     bool
     Handle_vFile_Exists (StringExtractorGDBRemote &packet);
+
+    bool
+    Handle_vFile_Stat (StringExtractorGDBRemote &packet);
+    
+    bool
+    Handle_vFile_MD5 (StringExtractorGDBRemote &packet);
     
     bool
     Handle_qPlatform_RunCommand (StringExtractorGDBRemote &packet);

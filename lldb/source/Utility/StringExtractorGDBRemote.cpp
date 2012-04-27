@@ -150,6 +150,9 @@ StringExtractorGDBRemote::GetServerPacketType () const
                 else if (PACKET_STARTS_WITH("vFile:pwrite"))         return eServerPacketType_vFile_pWrite;
                 else if (PACKET_STARTS_WITH("vFile:size"))           return eServerPacketType_vFile_Size;
                 else if (PACKET_STARTS_WITH("vFile:exists"))         return eServerPacketType_vFile_Exists;
+                else if (PACKET_STARTS_WITH("vFile:stat"))           return eServerPacketType_vFile_Stat;
+                else if (PACKET_STARTS_WITH("vFile:MD5"))            return eServerPacketType_vFile_MD5;
+
             }
             break;
     }

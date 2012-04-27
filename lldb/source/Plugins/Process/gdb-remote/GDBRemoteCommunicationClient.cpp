@@ -2120,3 +2120,30 @@ GDBRemoteCommunicationClient::GetFileExists (const lldb_private::FileSpec& file_
     return false;
 }
 
+bool
+GDBRemoteCommunicationClient::CalculateMD5 (const lldb_private::FileSpec& file_spec,
+                                            uint64_t &high,
+                                            uint64_t &low)
+{
+    lldb_private::StreamString stream;
+    stream.PutCString("vFile:MD5:");
+    std::string path;
+    file_spec.GetPath(path);
+    stream.PutCStringAsRawHex8(path.c_str());
+    const char* packet = stream.GetData();
+    int packet_len = stream.GetSize();
+    StringExtractorGDBRemote response;
+    if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
+    {
+        if (response.GetChar() != 'F')
+            return false;
+        if (response.GetChar() != ',')
+            return false;
+        if (response.Peek() && *response.Peek() == 'x')
+            return false;
+        low = response.GetHexMaxU64(false, UINT64_MAX);
+        high = response.GetHexMaxU64(false, UINT64_MAX);
+        return true;
+    }
+    return false;
+}

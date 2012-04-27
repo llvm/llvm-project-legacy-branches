@@ -725,6 +725,17 @@ Platform::RunShellCommand (const char *command,           // Shouldn't be NULL
 }
 
 
+bool
+Platform::CalculateMD5 (const FileSpec& file_spec,
+                        uint64_t &low,
+                        uint64_t &high)
+{
+    if (IsHost())
+        return Host::CalculateMD5(file_spec, low, high);
+    else
+        return false;
+}
+
 void
 Platform::SetLocalCacheDirectory (const char* local)
 {

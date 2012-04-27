@@ -482,6 +482,11 @@ public:
     
     static bool
     GetFileExists (const FileSpec& file_spec);
+    
+    static bool
+    CalculateMD5 (const FileSpec& file_spec,
+                  uint64_t &low,
+                  uint64_t &high);
 
 };
 

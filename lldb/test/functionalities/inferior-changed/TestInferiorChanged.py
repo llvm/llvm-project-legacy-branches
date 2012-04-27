@@ -10,8 +10,6 @@ class ChangedInferiorTestCase(TestBase):
     mydir = os.path.join("functionalities", "inferior-changed")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    # rdar://problem/11314533
-    @unittest2.expectedFailure
     def test_inferior_crashing_dsym(self):
         """Test lldb reloads the inferior after it was changed during the session."""
         self.buildDsym()
@@ -22,8 +20,6 @@ class ChangedInferiorTestCase(TestBase):
         self.setTearDownCleanup(dictionary=d)
         self.inferior_not_crashing()
 
-    # rdar://problem/11314533
-    @unittest2.expectedFailure
     def test_inferior_crashing_dwarf(self):
         """Test lldb reloads the inferior after it was changed during the session."""
         self.buildDwarf()
