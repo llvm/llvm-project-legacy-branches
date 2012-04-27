@@ -232,7 +232,23 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
     if (module_spec.GetFileSpec().Exists() && !module_sp)
     {
         module_sp.reset(new Module(module_spec));
-        return Error();
+        if (module_spec.GetUUID() == module_sp->GetUUID())
+        {
+            printf("[%s] module %s/%s was found\n",
+                   (IsHost() ? "host" : "remote"),
+                   module_spec.GetFileSpec().GetDirectory().AsCString(),
+                   module_spec.GetFileSpec().GetFilename().AsCString());
+            return Error();
+        }
+        else
+        {
+            printf("[%s] module %s/%s had UUID mismatch\n",
+                   (IsHost() ? "host" : "remote"),
+                   module_spec.GetFileSpec().GetDirectory().AsCString(),
+                   module_spec.GetFileSpec().GetFilename().AsCString());
+            return Error();
+            module_sp.reset();
+        }
     }
     // try to find the module in the cache
     std::string cache_path(GetLocalCacheDirectory());
@@ -245,9 +261,17 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
         module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+        printf("[%s] module %s/%s was found in the cache\n",
+               (IsHost() ? "host" : "remote"),
+               module_spec.GetFileSpec().GetDirectory().AsCString(),
+               module_spec.GetFileSpec().GetFilename().AsCString());
         return Error();
     }
     // bring in the remote module file
+    printf("[%s] module %s/%s needs to come in remotely\n",
+           (IsHost() ? "host" : "remote"),
+           module_spec.GetFileSpec().GetDirectory().AsCString(),
+           module_spec.GetFileSpec().GetFilename().AsCString());
     FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
     StreamString mkdir_folder_cmd;
     // try to make the local directory first
@@ -263,6 +287,10 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
         return err;
     if (module_cache_spec.Exists())
     {
+        printf("[%s] module %s/%s is now cached and fine\n",
+               (IsHost() ? "host" : "remote"),
+               module_spec.GetFileSpec().GetDirectory().AsCString(),
+               module_spec.GetFileSpec().GetFilename().AsCString());
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
         module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
