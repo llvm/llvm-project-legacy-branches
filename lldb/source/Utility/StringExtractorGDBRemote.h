@@ -58,6 +58,7 @@ public:
         eServerPacketType_qSpeedTest,
         eServerPacketType_qUserName,
         eServerPacketType_QEnvironment,
+        eServerPacketType_QLaunchArch,
         eServerPacketType_QSetDisableASLR,
         eServerPacketType_QSetSTDIN,
         eServerPacketType_QSetSTDOUT,

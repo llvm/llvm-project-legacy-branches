@@ -34,8 +34,6 @@ class UniversalTestCase(TestBase):
         process = target.LaunchSimple(None, None, os.getcwd())
         self.assertTrue(process, PROCESS_IS_VALID)
 
-    # rdar://problem/11310502
-    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin") and os.uname()[4] in ['i386', 'x86_64'],
                           "requires Darwin & i386")
     def test_process_launch_for_universal(self):
@@ -96,7 +94,6 @@ class UniversalTestCase(TestBase):
         self.assertTrue(target and process,
                         "32-bit process launched")
 
-        # rdar://problem/11310502
         pointerSize = self.invoke(process, 'GetAddressByteSize')
         self.assertTrue(pointerSize == 4,
                         "AddressByteSize of 32-bit process should be 4, got %d instead." % pointerSize)

@@ -123,6 +123,9 @@ protected:
     Handle_QEnvironment  (StringExtractorGDBRemote &packet);
     
     bool
+    Handle_QLaunchArch (StringExtractorGDBRemote &packet);
+    
+    bool
     Handle_QSetDisableASLR (StringExtractorGDBRemote &packet);
 
     bool

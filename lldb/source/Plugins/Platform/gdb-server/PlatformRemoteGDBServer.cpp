@@ -322,6 +322,12 @@ PlatformRemoteGDBServer::LaunchProcess (ProcessLaunchInfo &launch_info)
                 break;
         }
     }
+    
+    ArchSpec arch_spec = launch_info.GetArchitecture();
+    const char *arch_triple = arch_spec.GetTriple().str().c_str();
+    
+    m_gdb_client.SendLaunchArchPacket(arch_triple);
+    
     const uint32_t old_packet_timeout = m_gdb_client.SetPacketTimeout (5);
     int arg_packet_err = m_gdb_client.SendArgumentsPacket (argv);
     m_gdb_client.SetPacketTimeout (old_packet_timeout);

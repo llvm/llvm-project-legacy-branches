@@ -94,6 +94,9 @@ StringExtractorGDBRemote::GetServerPacketType () const
             else if (PACKET_STARTS_WITH ("QSetSTDERR:"))        return eServerPacketType_QSetSTDERR;
             else if (PACKET_STARTS_WITH ("QSetWorkingDir:"))    return eServerPacketType_QSetWorkingDir;
             break;
+        case 'L':
+            if (PACKET_STARTS_WITH ("QLaunchArch:"))            return eServerPacketType_QLaunchArch;
+            break;
         }
         break;
             

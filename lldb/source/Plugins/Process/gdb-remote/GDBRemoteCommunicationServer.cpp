@@ -143,6 +143,9 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
 
             case StringExtractorGDBRemote::eServerPacketType_QEnvironment:
                 return Handle_QEnvironment (packet);
+                
+            case StringExtractorGDBRemote::eServerPacketType_QLaunchArch:
+                return Handle_QLaunchArch (packet);
             
             case StringExtractorGDBRemote::eServerPacketType_QSetDisableASLR:
                 return Handle_QSetDisableASLR (packet);
@@ -781,6 +784,21 @@ GDBRemoteCommunicationServer::Handle_QEnvironment  (StringExtractorGDBRemote &pa
         return SendOKResponse ();
     }
     return SendErrorResponse (9);
+}
+
+bool
+GDBRemoteCommunicationServer::Handle_QLaunchArch (StringExtractorGDBRemote &packet)
+{
+    packet.SetFilePos(::strlen ("QLaunchArch:"));
+    const uint32_t bytes_left = packet.GetBytesLeft();
+    if (bytes_left > 0)
+    {
+        const char* arch_triple = packet.Peek();
+        ArchSpec arch_spec(arch_triple,NULL);
+        m_process_launch_info.SetArchitecture(arch_spec);
+        return SendOKResponse();
+    }
+    return SendErrorResponse(9);
 }
 
 bool

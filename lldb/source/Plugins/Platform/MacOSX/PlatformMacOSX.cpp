@@ -244,14 +244,14 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
                                  bool *did_create_ptr)
 {
 
-    printf("[%s] Trying to find module %s/%s - platform path %s/%s symbol path %s/%s\n",
+    /*printf("[%s] Trying to find module %s/%s - platform path %s/%s symbol path %s/%s\n",
            (IsHost() ? "host" : "remote"),
            module_spec.GetFileSpec().GetDirectory().AsCString(),
            module_spec.GetFileSpec().GetFilename().AsCString(),
            module_spec.GetPlatformFileSpec().GetDirectory().AsCString(),
            module_spec.GetPlatformFileSpec().GetFilename().AsCString(),
            module_spec.GetSymbolFileSpec().GetDirectory().AsCString(),
-           module_spec.GetSymbolFileSpec().GetFilename().AsCString());
+           module_spec.GetSymbolFileSpec().GetFilename().AsCString());*/
 
     std::string cache_path(GetLocalCacheDirectory());
     std::string module_path;
@@ -268,10 +268,10 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
             return err;
         if (module_cache_spec.Exists())
         {
-            printf("[%s] module %s/%s was rsynced and is now there\n",
+            /*printf("[%s] module %s/%s was rsynced and is now there\n",
                    (IsHost() ? "host" : "remote"),
                    module_spec.GetFileSpec().GetDirectory().AsCString(),
-                   module_spec.GetFileSpec().GetFilename().AsCString());
+                   module_spec.GetFileSpec().GetFilename().AsCString());*/
             ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
             module_sp.reset(new Module(local_spec));
             module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
@@ -298,10 +298,10 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
             if (low_local != low_remote || high_local != high_remote)
             {
                 // bring in the remote file
-                printf("[%s] module %s/%s needs to be replaced from remote copy\n",
+                /*printf("[%s] module %s/%s needs to be replaced from remote copy\n",
                        (IsHost() ? "host" : "remote"),
                        module_spec.GetFileSpec().GetDirectory().AsCString(),
-                       module_spec.GetFileSpec().GetFilename().AsCString());
+                       module_spec.GetFileSpec().GetFilename().AsCString());*/
                 Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
                 if (err.Fail())
                     return err;
@@ -311,27 +311,27 @@ PlatformMacOSX::GetSharedModule (const lldb_private::ModuleSpec &module_spec,
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
         module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
-        printf("[%s] module %s/%s was found in the cache\n",
+        /*printf("[%s] module %s/%s was found in the cache\n",
                (IsHost() ? "host" : "remote"),
                module_spec.GetFileSpec().GetDirectory().AsCString(),
-               module_spec.GetFileSpec().GetFilename().AsCString());
+               module_spec.GetFileSpec().GetFilename().AsCString());*/
         return Error();
     }
     
     // bring in the remote module file
-    printf("[%s] module %s/%s needs to come in remotely\n",
+    /*printf("[%s] module %s/%s needs to come in remotely\n",
            (IsHost() ? "host" : "remote"),
            module_spec.GetFileSpec().GetDirectory().AsCString(),
-           module_spec.GetFileSpec().GetFilename().AsCString());
+           module_spec.GetFileSpec().GetFilename().AsCString());*/
     Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
     if (err.Fail())
         return err;
     if (module_cache_spec.Exists())
     {
-        printf("[%s] module %s/%s is now cached and fine\n",
+        /*printf("[%s] module %s/%s is now cached and fine\n",
                (IsHost() ? "host" : "remote"),
                module_spec.GetFileSpec().GetDirectory().AsCString(),
-               module_spec.GetFileSpec().GetFilename().AsCString());
+               module_spec.GetFileSpec().GetFilename().AsCString());*/
         ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
         module_sp.reset(new Module(local_spec));
         module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
