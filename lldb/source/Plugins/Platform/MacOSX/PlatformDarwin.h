@@ -103,6 +103,13 @@ public:
     x86GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
 
 protected:
+    virtual lldb_private::Error
+    GetSharedModuleWithLocalCache (const lldb_private::ModuleSpec &module_spec,
+                                   lldb::ModuleSP &module_sp,
+                                   const lldb_private::FileSpecList *module_search_paths_ptr,
+                                   lldb::ModuleSP *old_module_sp_ptr,
+                                   bool *did_create_ptr);
+
     std::string m_developer_directory;
     
     const char *
