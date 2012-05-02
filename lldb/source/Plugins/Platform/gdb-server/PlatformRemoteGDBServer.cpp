@@ -399,11 +399,14 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                     if (process_sp)
                     {
                         char connect_url[256];
+                        const char *override_hostname = getenv("LLDB_PLATFORM_REMOTE_GDB_SERVER_HOSTNAME");
+                        const char *port_offset_c_str = getenv("LLDB_PLATFORM_REMOTE_GDB_SERVER_PORT_OFFSET");
+                        int port_offset = port_offset_c_str ? ::atoi(port_offset_c_str) : 0;
                         const int connect_url_len = ::snprintf (connect_url, 
                                                                 sizeof(connect_url), 
                                                                 "connect://%s:%u", 
-                                                                GetHostname (), 
-                                                                port);
+                                                                override_hostname ? override_hostname : GetHostname (), 
+                                                                port + port_offset);
                         assert (connect_url_len < sizeof(connect_url));
                         error = process_sp->ConnectRemote (connect_url);
                         if (error.Success())

@@ -12,10 +12,11 @@
 
 // C Includes
 // C++ Includes
+#include <vector>
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Host/Mutex.h"
 #include "lldb/Target/Process.h"
-
 #include "GDBRemoteCommunication.h"
 
 class ProcessGDBRemote;
@@ -64,6 +65,7 @@ public:
 
 protected:
     //typedef std::map<uint16_t, lldb::pid_t> PortToPIDMap;
+    typedef std::vector<uint16_t> port_vector;
 
     lldb::thread_t m_async_thread;
     lldb_private::ProcessLaunchInfo m_process_launch_info;
@@ -73,6 +75,10 @@ protected:
     uint16_t m_lo_port_num;
     uint16_t m_hi_port_num;
     //PortToPIDMap m_port_to_pid_map;
+    port_vector m_ports;
+    mutable lldb_private::Mutex m_mutex;
+    size_t m_port_index;
+    bool m_use_port_range;
 
     size_t
     SendUnimplementedResponse (const char *packet);

@@ -44,8 +44,30 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
     m_proc_infos (),
     m_proc_infos_index (0),
     m_lo_port_num (0),
-    m_hi_port_num (0)
+    m_hi_port_num (0),
+    m_ports (),
+    m_mutex (Mutex::eMutexTypeRecursive),
+    m_port_index (0),
+    m_use_port_range (false)
 {
+    // We seldom need to override the port number that the debugserver process
+    // starts with.  We just pass in 0 to let the system choose a random port.
+    // In rare situation where the need arises, use two environment variables
+    // to override.
+    uint16_t lo_port_num = 0;
+    uint16_t hi_port_num = 0;
+    const char *lo_port_c_str = getenv("LLDB_PLATFORM_START_DEBUG_SERVER_LO_PORT");
+    if (lo_port_c_str)
+        lo_port_num = ::atoi(lo_port_c_str);
+    const char *hi_port_c_str = getenv("LLDB_PLATFORM_START_DEBUG_SERVER_HI_PORT");
+    if (hi_port_c_str)
+        hi_port_num = ::atoi(hi_port_c_str);
+    if (lo_port_num && hi_port_num && lo_port_num < hi_port_num)
+    {
+        printf("SetPortRange(%u, %u) called\n", lo_port_num, hi_port_num);
+        SetPortRange(lo_port_num, hi_port_num);
+        m_use_port_range = true;
+    }
 }
 
 //----------------------------------------------------------------------
