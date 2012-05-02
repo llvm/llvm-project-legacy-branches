@@ -15,7 +15,6 @@
 #include <vector>
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Host/Mutex.h"
 #include "lldb/Target/Process.h"
 #include "GDBRemoteCommunication.h"
 
@@ -63,9 +62,21 @@ public:
         m_hi_port_num = hi_port_num;
     }
 
+    // If we are using a port range, get and update the next port to be used variable.
+    // Otherwise, just return 0.
+    uint16_t
+    GetAndUpdateNextPort ()
+    {
+        if (!m_use_port_range)
+            return 0;
+        int16_t val = m_next_port;
+        if (++m_next_port > m_hi_port_num)
+            m_next_port = m_lo_port_num;
+        return val;
+    }
+
 protected:
     //typedef std::map<uint16_t, lldb::pid_t> PortToPIDMap;
-    typedef std::vector<uint16_t> port_vector;
 
     lldb::thread_t m_async_thread;
     lldb_private::ProcessLaunchInfo m_process_launch_info;
@@ -75,9 +86,7 @@ protected:
     uint16_t m_lo_port_num;
     uint16_t m_hi_port_num;
     //PortToPIDMap m_port_to_pid_map;
-    port_vector m_ports;
-    mutable lldb_private::Mutex m_mutex;
-    size_t m_port_index;
+    uint16_t m_next_port;
     bool m_use_port_range;
 
     size_t

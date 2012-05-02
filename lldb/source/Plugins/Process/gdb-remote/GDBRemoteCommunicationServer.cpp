@@ -45,9 +45,7 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
     m_proc_infos_index (0),
     m_lo_port_num (0),
     m_hi_port_num (0),
-    m_ports (),
-    m_mutex (Mutex::eMutexTypeRecursive),
-    m_port_index (0),
+    m_next_port (0),
     m_use_port_range (false)
 {
     // We seldom need to override the port number that the debugserver process
@@ -728,7 +726,7 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
         ConnectionFileDescriptor file_conn;
         char connect_url[PATH_MAX];
         Error error;
-        char unix_socket_name[PATH_MAX] = "/tmp/XXXXXX";    
+        char unix_socket_name[PATH_MAX] = "/tmp/XXXXXX";
         if (::mktemp (unix_socket_name) == NULL)
         {
             error.SetErrorString ("failed to make temporary path for a unix socket");
@@ -745,9 +743,15 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
             
             if (IS_VALID_LLDB_HOST_THREAD(accept_thread))
             {
-                // Spawn a debugserver and try to get
+                // Spawn a debugserver and try to get the port it listens to.
                 ProcessLaunchInfo debugserver_launch_info;
-                error = StartDebugserverProcess ("localhost:0", 
+                char host_and_port[256];
+                const int host_and_port_len = ::snprintf (host_and_port,
+                                                          sizeof(host_and_port), 
+                                                          "localhost:%u", 
+                                                          GetAndUpdateNextPort());
+                assert (host_and_port_len < sizeof(host_and_port));
+                error = StartDebugserverProcess (host_and_port,
                                                  unix_socket_name, 
                                                  debugserver_launch_info);
                 
