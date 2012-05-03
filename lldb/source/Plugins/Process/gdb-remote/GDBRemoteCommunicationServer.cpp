@@ -64,7 +64,6 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
     {
         printf("SetPortRange(%u, %u) called\n", lo_port_num, hi_port_num);
         SetPortRange(lo_port_num, hi_port_num);
-        m_use_port_range = true;
     }
 }
 
@@ -751,6 +750,7 @@ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote 
                                                           "localhost:%u", 
                                                           GetAndUpdateNextPort());
                 assert (host_and_port_len < sizeof(host_and_port));
+                printf("Launching debugserver with: %s...\n", host_and_port);
                 error = StartDebugserverProcess (host_and_port,
                                                  unix_socket_name, 
                                                  debugserver_launch_info);

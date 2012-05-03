@@ -60,6 +60,8 @@ public:
     {
         m_lo_port_num = lo_port_num;
         m_hi_port_num = hi_port_num;
+        m_next_port = m_lo_port_num;
+        m_use_port_range = true;
     }
 
     // If we are using a port range, get and update the next port to be used variable.
@@ -69,7 +71,7 @@ public:
     {
         if (!m_use_port_range)
             return 0;
-        int16_t val = m_next_port;
+        uint16_t val = m_next_port;
         if (++m_next_port > m_hi_port_num)
             m_next_port = m_lo_port_num;
         return val;
