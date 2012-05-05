@@ -2903,7 +2903,7 @@ public:
             
             if (use_global_module_list)
             {
-                locker.Lock (Module::GetAllocationModuleCollectionMutex()->GetMutex());
+                locker.Lock (Module::GetAllocationModuleCollectionMutex());
                 num_modules = Module::GetNumberAllocatedModules();
             }
             else
