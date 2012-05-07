@@ -1,4 +1,4 @@
-##===- source/Plugins/Platform/FreeBSD/Makefile --------------*- Makefile -*-===##
+##===- source/Plugins/Platform/POSIX/Makefile --------------*- Makefile -*-===##
 #
 #                     The LLVM Compiler Infrastructure
 #
@@ -8,7 +8,7 @@
 ##===----------------------------------------------------------------------===##
 
 LLDB_LEVEL := ../../../..
-LIBRARYNAME := lldbPluginPlatformFreeBSD
+LIBRARYNAME := lldbPluginPlatformPOSIX
 BUILD_ARCHIVE = 1
 
 include $(LLDB_LEVEL)/Makefile
