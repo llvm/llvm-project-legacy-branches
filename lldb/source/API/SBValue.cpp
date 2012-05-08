@@ -430,8 +430,16 @@ SBValue::GetLocation ()
     return cstr;
 }
 
+// Deprecated - use the one that takes an lldb::SBError
 bool
 SBValue::SetValueFromCString (const char *value_str)
+{
+    lldb::SBError dummy;
+    return SetValueFromCString(value_str,dummy);
+}
+
+bool
+SBValue::SetValueFromCString (const char *value_str, lldb::SBError& error)
 {
     bool success = false;
     lldb::ValueObjectSP value_sp(GetSP());
@@ -451,7 +459,7 @@ SBValue::SetValueFromCString (const char *value_str)
             if (target_sp)
             {
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
-                success = value_sp->SetValueFromCString (value_str);
+                success = value_sp->SetValueFromCString (value_str,error.ref());
             }
         }
     }
@@ -1014,8 +1022,8 @@ SBValue::GetNonSyntheticValue ()
                 // deliberately breaking the rules here to optimize the case where we DO NOT want
                 // the synthetic value to be returned to the user - if we did not do this, we would have to tell
                 // the target to suppress the synthetic value, and then return the flag to its original value
-                if (value_sp->GetParent())
-                    sb_value.m_opaque_sp = value_sp->GetParent()->GetSP();
+                if (value_sp->GetNonSyntheticValue())
+                    sb_value.m_opaque_sp = value_sp->GetNonSyntheticValue();
             }
         }
     }
