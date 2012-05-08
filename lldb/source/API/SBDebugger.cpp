@@ -678,6 +678,20 @@ SBDebugger::GetTargetAtIndex (uint32_t idx)
     return sb_target;
 }
 
+uint32_t
+SBDebugger::GetIndexOfTarget (lldb::SBTarget target)
+{
+
+    lldb::TargetSP target_sp = target.GetSP();
+    if (!target_sp)
+        return UINT32_MAX;
+
+    if (!m_opaque_sp)
+        return UINT32_MAX;
+
+    return m_opaque_sp->GetTargetList().GetIndexOfTarget (target.GetSP());
+}
+
 SBTarget
 SBDebugger::FindTargetWithProcessID (pid_t pid)
 {
@@ -1146,75 +1160,27 @@ SBDebugger::GetFormatForType (SBTypeNameSpecifier type_name)
 SBTypeSummary
 SBDebugger::GetSummaryForType (SBTypeNameSpecifier type_name)
 {
-    SBTypeSummary summary_chosen;
-    uint32_t num_categories = GetNumCategories();
-    SBTypeCategory category_sb;
-    uint32_t prio_category = UINT32_MAX;
-    for (uint32_t category_id = 0;
-         category_id < num_categories;
-         category_id++)
-    {
-        category_sb = GetCategoryAtIndex(category_id);
-        if (category_sb.GetEnabled() == false)
-            continue;
-        SBTypeSummary summary_current = category_sb.GetSummaryForType(type_name);
-        if (summary_current.IsValid() && (summary_chosen.IsValid() == false || (prio_category > category_sb.m_opaque_sp->GetEnabledPosition())))
-        {
-            prio_category = category_sb.m_opaque_sp->GetEnabledPosition();
-            summary_chosen = summary_current;
-        }
-    }
-    return summary_chosen;
+    if (type_name.IsValid() == false)
+        return SBTypeSummary();
+    return SBTypeSummary(DataVisualization::GetSummaryForType(type_name.GetSP()));
 }
 #endif // LLDB_DISABLE_PYTHON
 
 SBTypeFilter
 SBDebugger::GetFilterForType (SBTypeNameSpecifier type_name)
 {
-    SBTypeFilter filter_chosen;
-    uint32_t num_categories = GetNumCategories();
-    SBTypeCategory category_sb;
-    uint32_t prio_category = UINT32_MAX;
-    for (uint32_t category_id = 0;
-         category_id < num_categories;
-         category_id++)
-    {
-        category_sb = GetCategoryAtIndex(category_id);
-        if (category_sb.GetEnabled() == false)
-            continue;
-        SBTypeFilter filter_current = category_sb.GetFilterForType(type_name);
-        if (filter_current.IsValid() && (filter_chosen.IsValid() == false || (prio_category > category_sb.m_opaque_sp->GetEnabledPosition())))
-        {
-            prio_category = category_sb.m_opaque_sp->GetEnabledPosition();
-            filter_chosen = filter_current;
-        }
-    }
-    return filter_chosen;
+    if (type_name.IsValid() == false)
+        return SBTypeFilter();
+    return SBTypeFilter(DataVisualization::GetFilterForType(type_name.GetSP()));
 }
 
 #ifndef LLDB_DISABLE_PYTHON
 SBTypeSynthetic
 SBDebugger::GetSyntheticForType (SBTypeNameSpecifier type_name)
 {
-    SBTypeSynthetic synth_chosen;
-    uint32_t num_categories = GetNumCategories();
-    SBTypeCategory category_sb;
-    uint32_t prio_category = UINT32_MAX;
-    for (uint32_t category_id = 0;
-         category_id < num_categories;
-         category_id++)
-    {
-        category_sb = GetCategoryAtIndex(category_id);
-        if (category_sb.GetEnabled() == false)
-            continue;
-        SBTypeSynthetic synth_current = category_sb.GetSyntheticForType(type_name);
-        if (synth_current.IsValid() && (synth_chosen.IsValid() == false || (prio_category > category_sb.m_opaque_sp->GetEnabledPosition())))
-        {
-            prio_category = category_sb.m_opaque_sp->GetEnabledPosition();
-            synth_chosen = synth_current;
-        }
-    }
-    return synth_chosen;
+    if (type_name.IsValid() == false)
+        return SBTypeSynthetic();
+    return SBTypeSynthetic(DataVisualization::GetSyntheticForType(type_name.GetSP()));
 }
 #endif // LLDB_DISABLE_PYTHON
 
