@@ -14,6 +14,7 @@
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Basic/OpenCL.h"
+#include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
@@ -1311,10 +1312,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
     *DeclEnd = Tok.getLocation();
 
   if (ExpectSemi &&
-      ExpectAndConsume(tok::semi,
-                       Context == Declarator::FileContext
-                         ? diag::err_invalid_token_after_toplevel_declarator
-                         : diag::err_expected_semi_declaration)) {
+      ExpectAndConsumeSemi(Context == Declarator::FileContext
+                           ? diag::err_invalid_token_after_toplevel_declarator
+                           : diag::err_expected_semi_declaration)) {
     // Okay, there was no semicolon and one was expected.  If we see a
     // declaration specifier, just assume it was missing and continue parsing.
     // Otherwise things are very confused and we skip to recover.
@@ -1671,9 +1671,20 @@ bool Parser::ParseImplicitInt(DeclSpec &DS, CXXScopeSpec *SS,
     }
 
     if (TagName) {
+      IdentifierInfo *TokenName = Tok.getIdentifierInfo();
+      LookupResult R(Actions, TokenName, SourceLocation(),
+                     Sema::LookupOrdinaryName);
+
       Diag(Loc, diag::err_use_of_tag_name_without_tag)
-        << Tok.getIdentifierInfo() << TagName << getLangOpts().CPlusPlus
-        << FixItHint::CreateInsertion(Tok.getLocation(),FixitTagName);
+        << TokenName << TagName << getLangOpts().CPlusPlus
+        << FixItHint::CreateInsertion(Tok.getLocation(), FixitTagName);
+
+      if (Actions.LookupParsedName(R, getCurScope(), SS)) {
+        for (LookupResult::iterator I = R.begin(), IEnd = R.end();
+             I != IEnd; ++I)
+          Diag((*I)->getLocation(), diag::note_decl_hiding_tag_type)
+            << TokenName << TagName;
+      }
 
       // Parse this as a tag as if the missing tag were present.
       if (TagKind == tok::kw_enum)
@@ -2549,7 +2560,7 @@ ParseStructDeclaration(DeclSpec &DS, FieldCallback &Fields) {
   bool FirstDeclarator = true;
   SourceLocation CommaLoc;
   while (1) {
-    ParsingDeclRAIIObject PD(*this);
+    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
     FieldDeclarator DeclaratorInfo(DS);
     DeclaratorInfo.D.setCommaLoc(CommaLoc);
 
@@ -2762,12 +2773,16 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     ScopedEnumKWLoc = ConsumeToken();
   }
 
-  // C++11 [temp.explicit]p12: The usual access controls do not apply to names
-  // used to specify explicit instantiations. We extend this to also cover
-  // explicit specializations.
-  Sema::SuppressAccessChecksRAII SuppressAccess(Actions,
-    TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation ||
-    TemplateInfo.Kind == ParsedTemplateInfo::ExplicitSpecialization);
+  // C++11 [temp.explicit]p12:
+  //   The usual access controls do not apply to names used to specify
+  //   explicit instantiations.
+  // We extend this to also cover explicit specializations.  Note that
+  // we don't suppress if this turns out to be an elaborated type
+  // specifier.
+  bool shouldDelayDiagsInTag =
+    (TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation ||
+     TemplateInfo.Kind == ParsedTemplateInfo::ExplicitSpecialization);
+  SuppressAccessChecks diagsFromTag(*this, shouldDelayDiagsInTag);
 
   // If attributes exist after tag, parse them.
   ParsedAttributes attrs(AttrFactory);
@@ -2831,8 +2846,10 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     IsScopedUsingClassTag = false;
   }
 
-  // Stop suppressing access control now we've parsed the enum name.
-  SuppressAccess.done();
+  // Okay, end the suppression area.  We'll decide whether to emit the
+  // diagnostics in a second.
+  if (shouldDelayDiagsInTag)
+    diagsFromTag.done();
 
   TypeResult BaseType;
 
@@ -2914,16 +2931,29 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   // enum foo {..};  void bar() { enum foo x; }  <- use of old foo.
   //
   Sema::TagUseKind TUK;
-  if (DS.isFriendSpecified())
-    TUK = Sema::TUK_Friend;
-  else if (!AllowDeclaration)
+  if (!AllowDeclaration) {
     TUK = Sema::TUK_Reference;
-  else if (Tok.is(tok::l_brace))
-    TUK = Sema::TUK_Definition;
-  else if (Tok.is(tok::semi) && DSC != DSC_type_specifier)
-    TUK = Sema::TUK_Declaration;
-  else
+  } else if (Tok.is(tok::l_brace)) {
+    if (DS.isFriendSpecified()) {
+      Diag(Tok.getLocation(), diag::err_friend_decl_defines_type)
+        << SourceRange(DS.getFriendSpecLoc());
+      ConsumeBrace();
+      SkipUntil(tok::r_brace);
+      TUK = Sema::TUK_Friend;
+    } else {
+      TUK = Sema::TUK_Definition;
+    }
+  } else if (Tok.is(tok::semi) && DSC != DSC_type_specifier) {
+    TUK = (DS.isFriendSpecified() ? Sema::TUK_Friend : Sema::TUK_Declaration);
+  } else {
     TUK = Sema::TUK_Reference;
+  }
+
+  // If this is an elaborated type specifier, and we delayed
+  // diagnostics before, just merge them into the current pool.
+  if (TUK == Sema::TUK_Reference && shouldDelayDiagsInTag) {
+    diagsFromTag.redelay();
+  }
 
   MultiTemplateParamsArg TParams;
   if (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate &&
@@ -3003,14 +3033,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   }
 
   if (Tok.is(tok::l_brace) && TUK != Sema::TUK_Reference) {
-    if (TUK == Sema::TUK_Friend) {
-      Diag(Tok, diag::err_friend_decl_defines_type)
-        << SourceRange(DS.getFriendSpecLoc());
-      ConsumeBrace();
-      SkipUntil(tok::r_brace);
-    } else {
-      ParseEnumBody(StartLoc, TagDecl);
-    }
+    ParseEnumBody(StartLoc, TagDecl);
   }
 
   if (DS.SetTypeSpecType(DeclSpec::TST_enum, StartLoc,
@@ -3056,7 +3079,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
     SourceLocation EqualLoc;
     ExprResult AssignedVal;
-    ParsingDeclRAIIObject PD(*this);
+    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
     
     if (Tok.is(tok::equal)) {
       EqualLoc = ConsumeToken();
@@ -4197,7 +4220,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
   SmallVector<ParsedType, 2> DynamicExceptions;
   SmallVector<SourceRange, 2> DynamicExceptionRanges;
   ExprResult NoexceptExpr;
-  CachedTokens *ExceptionSpecTokens = 0;
   ParsedAttributes FnAttrs(AttrFactory);
   ParsedType TrailingReturnType;
 
@@ -4264,20 +4286,12 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
                                dyn_cast<CXXRecordDecl>(Actions.CurContext),
                                DS.getTypeQualifiers(),
                                IsCXX11MemberFunction);
-      
+
       // Parse exception-specification[opt].
-      bool Delayed = (D.getContext() == Declarator::MemberContext &&
-                      D.getDeclSpec().getStorageClassSpec()
-                        != DeclSpec::SCS_typedef &&
-                      !D.getDeclSpec().isFriendSpecified());
-      for (unsigned i = 0, e = D.getNumTypeObjects(); Delayed && i != e; ++i)
-        Delayed &= D.getTypeObject(i).Kind == DeclaratorChunk::Paren;
-      ESpecType = tryParseExceptionSpecification(Delayed,
-                                                 ESpecRange,
+      ESpecType = tryParseExceptionSpecification(ESpecRange,
                                                  DynamicExceptions,
                                                  DynamicExceptionRanges,
-                                                 NoexceptExpr,
-                                                 ExceptionSpecTokens);
+                                                 NoexceptExpr);
       if (ESpecType != EST_None)
         EndLoc = ESpecRange.getEnd();
 
@@ -4312,7 +4326,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
                                              DynamicExceptions.size(),
                                              NoexceptExpr.isUsable() ?
                                                NoexceptExpr.get() : 0,
-                                             ExceptionSpecTokens,
                                              Tracker.getOpenLocation(), 
                                              EndLoc, D,
                                              TrailingReturnType),

@@ -462,7 +462,7 @@ CodeGenFunction::EmitReferenceBindingToExpr(const Expr *E,
     if (ReferenceTemporaryDtor) {
       llvm::Constant *DtorFn = 
         CGM.GetAddrOfCXXDestructor(ReferenceTemporaryDtor, Dtor_Complete);
-      EmitCXXGlobalDtorRegistration(DtorFn, 
+      CGM.getCXXABI().registerGlobalDtor(*this, DtorFn, 
                                     cast<llvm::Constant>(ReferenceTemporary));
     } else {
       assert(!ObjCARCReferenceLifetimeType.isNull());
@@ -525,15 +525,9 @@ void CodeGenFunction::EmitCheck(llvm::Value *Address, unsigned Size) {
 
   llvm::Value *F = CGM.getIntrinsic(llvm::Intrinsic::objectsize, IntPtrTy);
 
-  // In time, people may want to control this and use a 1 here.
   llvm::Value *Arg = Builder.getFalse();
   llvm::Value *C = Builder.CreateCall2(F, Address, Arg);
   llvm::BasicBlock *Cont = createBasicBlock();
-  llvm::BasicBlock *Check = createBasicBlock();
-  llvm::Value *NegativeOne = llvm::ConstantInt::get(IntPtrTy, -1ULL);
-  Builder.CreateCondBr(Builder.CreateICmpEQ(C, NegativeOne), Cont, Check);
-    
-  EmitBlock(Check);
   Builder.CreateCondBr(Builder.CreateICmpUGE(C,
                                         llvm::ConstantInt::get(IntPtrTy, Size)),
                        Cont, getTrapBB());
@@ -880,7 +874,6 @@ llvm::MDNode *CodeGenFunction::getRangeForLoadFromType(QualType Ty) {
                                  CGM.getCodeGenOpts().StrictEnums &&
                                  !ET->getDecl()->isFixed());
   bool IsBool = hasBooleanRepresentation(Ty);
-  llvm::Type *LTy;
   if (!IsBool && !IsRegularCPlusPlusEnum)
     return NULL;
 
@@ -889,10 +882,9 @@ llvm::MDNode *CodeGenFunction::getRangeForLoadFromType(QualType Ty) {
   if (IsBool) {
     Min = llvm::APInt(8, 0);
     End = llvm::APInt(8, 2);
-    LTy = Int8Ty;
   } else {
     const EnumDecl *ED = ET->getDecl();
-    LTy = ConvertTypeForMem(ED->getIntegerType());
+    llvm::Type *LTy = ConvertTypeForMem(ED->getIntegerType());
     unsigned Bitwidth = LTy->getScalarSizeInBits();
     unsigned NumNegativeBits = ED->getNumNegativeBits();
     unsigned NumPositiveBits = ED->getNumPositiveBits();
@@ -1794,25 +1786,6 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
   // Extend or truncate the index type to 32 or 64-bits.
   if (Idx->getType() != IntPtrTy)
     Idx = Builder.CreateIntCast(Idx, IntPtrTy, IdxSigned, "idxprom");
-  
-  // FIXME: As llvm implements the object size checking, this can come out.
-  if (CatchUndefined) {
-    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(E->getBase())){
-      if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(ICE->getSubExpr())) {
-        if (ICE->getCastKind() == CK_ArrayToPointerDecay) {
-          if (const ConstantArrayType *CAT
-              = getContext().getAsConstantArrayType(DRE->getType())) {
-            llvm::APInt Size = CAT->getSize();
-            llvm::BasicBlock *Cont = createBasicBlock("cont");
-            Builder.CreateCondBr(Builder.CreateICmpULE(Idx,
-                                  llvm::ConstantInt::get(Idx->getType(), Size)),
-                                 Cont, getTrapBB());
-            EmitBlock(Cont);
-          }
-        }
-      }
-    }
-  }
 
   // We know that the pointer points to a type of the correct size, unless the
   // size is a VLA or Objective-C interface.

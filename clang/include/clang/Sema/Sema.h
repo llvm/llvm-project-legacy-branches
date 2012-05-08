@@ -169,6 +169,7 @@ namespace sema {
   class BlockScopeInfo;
   class CompoundScopeInfo;
   class DelayedDiagnostic;
+  class DelayedDiagnosticPool;
   class FunctionScopeInfo;
   class LambdaScopeInfo;
   class PossiblyUnreachableDiag;
@@ -355,93 +356,63 @@ public:
 
   class DelayedDiagnostics;
 
-  class ParsingDeclState {
-    unsigned SavedStackSize;
+  class DelayedDiagnosticsState {
+    sema::DelayedDiagnosticPool *SavedPool;
     friend class Sema::DelayedDiagnostics;
   };
-
-  class ProcessingContextState {
-    unsigned SavedParsingDepth;
-    unsigned SavedActiveStackBase;
-    friend class Sema::DelayedDiagnostics;
-  };
+  typedef DelayedDiagnosticsState ParsingDeclState;
+  typedef DelayedDiagnosticsState ProcessingContextState;
 
   /// A class which encapsulates the logic for delaying diagnostics
   /// during parsing and other processing.
   class DelayedDiagnostics {
-    /// \brief The stack of diagnostics that were delayed due to being
-    /// produced during the parsing of a declaration.
-    sema::DelayedDiagnostic *Stack;
-
-    /// \brief The number of objects on the delayed-diagnostics stack.
-    unsigned StackSize;
-
-    /// \brief The current capacity of the delayed-diagnostics stack.
-    unsigned StackCapacity;
-
-    /// \brief The index of the first "active" delayed diagnostic in
-    /// the stack.  When parsing class definitions, we ignore active
-    /// delayed diagnostics from the surrounding context.
-    unsigned ActiveStackBase;
-
-    /// \brief The depth of the declarations we're currently parsing.
-    /// This gets saved and reset whenever we enter a class definition.
-    unsigned ParsingDepth;
+    /// \brief The current pool of diagnostics into which delayed
+    /// diagnostics should go.
+    sema::DelayedDiagnosticPool *CurPool;
 
   public:
-    DelayedDiagnostics() : Stack(0), StackSize(0), StackCapacity(0),
-      ActiveStackBase(0), ParsingDepth(0) {}
+    DelayedDiagnostics() : CurPool(0) {}
 
-    ~DelayedDiagnostics() {
-      delete[] reinterpret_cast<char*>(Stack);
-    }
-
-    /// Adds a delayed diagnostic.
-    void add(const sema::DelayedDiagnostic &diag);
+    /// Adds a delayed diagnostic.    
+    void add(const sema::DelayedDiagnostic &diag); // in DelayedDiagnostic.h
 
     /// Determines whether diagnostics should be delayed.
-    bool shouldDelayDiagnostics() { return ParsingDepth > 0; }
+    bool shouldDelayDiagnostics() { return CurPool != 0; }
 
-    /// Observe that we've started parsing a declaration.  Access and
-    /// deprecation diagnostics will be delayed; when the declaration
-    /// is completed, all active delayed diagnostics will be evaluated
-    /// in its context, and then active diagnostics stack will be
-    /// popped down to the saved depth.
-    ParsingDeclState pushParsingDecl() {
-      ParsingDepth++;
+    /// Returns the current delayed-diagnostics pool.
+    sema::DelayedDiagnosticPool *getCurrentPool() const {
+      return CurPool;
+    }
 
-      ParsingDeclState state;
-      state.SavedStackSize = StackSize;
+    /// Enter a new scope.  Access and deprecation diagnostics will be
+    /// collected in this pool.
+    DelayedDiagnosticsState push(sema::DelayedDiagnosticPool &pool) {
+      DelayedDiagnosticsState state;
+      state.SavedPool = CurPool;
+      CurPool = &pool;
       return state;
     }
 
-    /// Observe that we're completed parsing a declaration.
-    static void popParsingDecl(Sema &S, ParsingDeclState state, Decl *decl);
+    /// Leave a delayed-diagnostic state that was previously pushed.
+    /// Do not emit any of the diagnostics.  This is performed as part
+    /// of the bookkeeping of popping a pool "properly".
+    void popWithoutEmitting(DelayedDiagnosticsState state) {
+      CurPool = state.SavedPool;
+    }
 
-    /// Observe that we've started processing a different context, the
-    /// contents of which are semantically separate from the
-    /// declarations it may lexically appear in.  This sets aside the
-    /// current stack of active diagnostics and starts afresh.
-    ProcessingContextState pushContext() {
-      assert(StackSize >= ActiveStackBase);
-
-      ProcessingContextState state;
-      state.SavedParsingDepth = ParsingDepth;
-      state.SavedActiveStackBase = ActiveStackBase;
-
-      ActiveStackBase = StackSize;
-      ParsingDepth = 0;
-
+    /// Enter a new scope where access and deprecation diagnostics are
+    /// not delayed.
+    DelayedDiagnosticsState pushUndelayed() {
+      DelayedDiagnosticsState state;
+      state.SavedPool = CurPool;
+      CurPool = 0;
       return state;
     }
 
-    /// Observe that we've stopped processing a context.  This
-    /// restores the previous stack of active diagnostics.
-    void popContext(ProcessingContextState state) {
-      assert(ActiveStackBase == StackSize);
-      assert(ParsingDepth == 0);
-      ActiveStackBase = state.SavedActiveStackBase;
-      ParsingDepth = state.SavedParsingDepth;
+    /// Undo a previous pushUndelayed().
+    void popUndelayed(DelayedDiagnosticsState state) {
+      assert(CurPool == NULL);
+      CurPool = state.SavedPool;
     }
   } DelayedDiagnostics;
 
@@ -456,7 +427,7 @@ public:
   public:
     ContextRAII(Sema &S, DeclContext *ContextToPush)
       : S(S), SavedContext(S.CurContext),
-        SavedContextState(S.DelayedDiagnostics.pushContext()),
+        SavedContextState(S.DelayedDiagnostics.pushUndelayed()),
         SavedCXXThisTypeOverride(S.CXXThisTypeOverride)
     {
       assert(ContextToPush && "pushing null context");
@@ -466,7 +437,7 @@ public:
     void pop() {
       if (!SavedContext) return;
       S.CurContext = SavedContext;
-      S.DelayedDiagnostics.popContext(SavedContextState);
+      S.DelayedDiagnostics.popUndelayed(SavedContextState);
       S.CXXThisTypeOverride = SavedCXXThisTypeOverride;
       SavedContext = 0;
     }
@@ -833,7 +804,8 @@ public:
   bool findMacroSpelling(SourceLocation &loc, StringRef name);
 
   /// \brief Get a string to suggest for zero-initialization of a type.
-  const char *getFixItZeroInitializerForType(QualType T) const;
+  std::string getFixItZeroInitializerForType(QualType T) const;
+  std::string getFixItZeroLiteralForType(QualType T) const;
 
   ExprResult Owned(Expr* E) { return E; }
   ExprResult Owned(ExprResult R) { return R; }
@@ -943,19 +915,168 @@ public:
   /// in an Objective-C message declaration. Return the appropriate type.
   ParsedType ActOnObjCInstanceType(SourceLocation Loc);
 
+  /// \brief Abstract class used to diagnose incomplete types.
+  struct TypeDiagnoser {
+    bool Suppressed;
+    
+    TypeDiagnoser(bool Suppressed = false) : Suppressed(Suppressed) { }
+    
+    virtual void diagnose(Sema &S, SourceLocation Loc, QualType T) = 0;
+    virtual ~TypeDiagnoser() {}
+  };
+
+  static int getPrintable(int I) { return I; }
+  static unsigned getPrintable(unsigned I) { return I; }
+  static bool getPrintable(bool B) { return B; }
+  static const char * getPrintable(const char *S) { return S; }
+  static StringRef getPrintable(StringRef S) { return S; }
+  static const std::string &getPrintable(const std::string &S) { return S; }
+  static const IdentifierInfo *getPrintable(const IdentifierInfo *II) {
+    return II;
+  }
+  static DeclarationName getPrintable(DeclarationName N) { return N; }
+  static QualType getPrintable(QualType T) { return T; }
+  static SourceRange getPrintable(SourceRange R) { return R; }
+  static SourceRange getPrintable(SourceLocation L) { return L; }
+  static SourceRange getPrintable(Expr *E) { return E->getSourceRange(); }
+  static SourceRange getPrintable(TypeLoc TL) { return TL.getSourceRange();}
+  
+  template<typename T1>
+  class BoundTypeDiagnoser1 : public TypeDiagnoser {
+    unsigned DiagID;
+    const T1 &Arg1;
+    
+  public:
+    BoundTypeDiagnoser1(unsigned DiagID, const T1 &Arg1)
+      : TypeDiagnoser(DiagID == 0), DiagID(DiagID), Arg1(Arg1) { }
+    virtual void diagnose(Sema &S, SourceLocation Loc, QualType T) {
+      if (Suppressed) return;
+      S.Diag(Loc, DiagID) << getPrintable(Arg1) << T;
+    }
+    
+    virtual ~BoundTypeDiagnoser1() { }
+  };
+
+  template<typename T1, typename T2>
+  class BoundTypeDiagnoser2 : public TypeDiagnoser {
+    unsigned DiagID;
+    const T1 &Arg1;
+    const T2 &Arg2;
+    
+  public:
+    BoundTypeDiagnoser2(unsigned DiagID, const T1 &Arg1,
+                                  const T2 &Arg2)
+      : TypeDiagnoser(DiagID == 0), DiagID(DiagID), Arg1(Arg1),
+        Arg2(Arg2) { }
+    
+    virtual void diagnose(Sema &S, SourceLocation Loc, QualType T) {
+      if (Suppressed) return;
+      S.Diag(Loc, DiagID) << getPrintable(Arg1) << getPrintable(Arg2) << T;
+    }
+    
+    virtual ~BoundTypeDiagnoser2() { }
+  };
+
+  template<typename T1, typename T2, typename T3>
+  class BoundTypeDiagnoser3 : public TypeDiagnoser {
+    unsigned DiagID;
+    const T1 &Arg1;
+    const T2 &Arg2;
+    const T3 &Arg3;
+    
+  public:
+    BoundTypeDiagnoser3(unsigned DiagID, const T1 &Arg1,
+                                  const T2 &Arg2, const T3 &Arg3)
+    : TypeDiagnoser(DiagID == 0), DiagID(DiagID), Arg1(Arg1),
+      Arg2(Arg2), Arg3(Arg3) { }
+    
+    virtual void diagnose(Sema &S, SourceLocation Loc, QualType T) {
+      if (Suppressed) return;
+      S.Diag(Loc, DiagID)
+        << getPrintable(Arg1) << getPrintable(Arg2) << getPrintable(Arg3) << T;
+    }
+    
+    virtual ~BoundTypeDiagnoser3() { }
+  };
+  
   bool RequireCompleteType(SourceLocation Loc, QualType T,
-                           const PartialDiagnostic &PD,
-                           std::pair<SourceLocation, PartialDiagnostic> Note);
-  bool RequireCompleteType(SourceLocation Loc, QualType T,
-                           const PartialDiagnostic &PD);
+                           TypeDiagnoser &Diagnoser);
   bool RequireCompleteType(SourceLocation Loc, QualType T,
                            unsigned DiagID);
-  bool RequireCompleteExprType(Expr *E, const PartialDiagnostic &PD,
-                               std::pair<SourceLocation,
-                                         PartialDiagnostic> Note);
+  
+  template<typename T1>
+  bool RequireCompleteType(SourceLocation Loc, QualType T,
+                           unsigned DiagID, const T1 &Arg1) {
+    BoundTypeDiagnoser1<T1> Diagnoser(DiagID, Arg1);
+    return RequireCompleteType(Loc, T, Diagnoser);
+  }
+  
+  template<typename T1, typename T2>
+  bool RequireCompleteType(SourceLocation Loc, QualType T,
+                           unsigned DiagID, const T1 &Arg1, const T2 &Arg2) {
+    BoundTypeDiagnoser2<T1, T2> Diagnoser(DiagID, Arg1, Arg2);
+    return RequireCompleteType(Loc, T, Diagnoser);
+  }
+
+  template<typename T1, typename T2, typename T3>
+  bool RequireCompleteType(SourceLocation Loc, QualType T,
+                           unsigned DiagID, const T1 &Arg1, const T2 &Arg2,
+                           const T3 &Arg3) {
+    BoundTypeDiagnoser3<T1, T2, T3> Diagnoser(DiagID, Arg1, Arg2,
+                                                        Arg3);
+    return RequireCompleteType(Loc, T, Diagnoser);
+  }
+
+  bool RequireCompleteExprType(Expr *E, TypeDiagnoser &Diagnoser);
+  bool RequireCompleteExprType(Expr *E, unsigned DiagID);
+
+  template<typename T1>
+  bool RequireCompleteExprType(Expr *E, unsigned DiagID, const T1 &Arg1) {
+    BoundTypeDiagnoser1<T1> Diagnoser(DiagID, Arg1);
+    return RequireCompleteExprType(E, Diagnoser);
+  }
+
+  template<typename T1, typename T2>
+  bool RequireCompleteExprType(Expr *E, unsigned DiagID, const T1 &Arg1,
+                               const T2 &Arg2) {
+    BoundTypeDiagnoser2<T1, T2> Diagnoser(DiagID, Arg1, Arg2);
+    return RequireCompleteExprType(E, Diagnoser);
+  }
+
+  template<typename T1, typename T2, typename T3>
+  bool RequireCompleteExprType(Expr *E, unsigned DiagID, const T1 &Arg1,
+                               const T2 &Arg2, const T3 &Arg3) {
+    BoundTypeDiagnoser3<T1, T2, T3> Diagnoser(DiagID, Arg1, Arg2,
+                                                        Arg3);
+    return RequireCompleteExprType(E, Diagnoser);
+  }
 
   bool RequireLiteralType(SourceLocation Loc, QualType T,
-                          const PartialDiagnostic &PD);
+                          TypeDiagnoser &Diagnoser);
+  bool RequireLiteralType(SourceLocation Loc, QualType T, unsigned DiagID);
+  
+  template<typename T1>
+  bool RequireLiteralType(SourceLocation Loc, QualType T,
+                          unsigned DiagID, const T1 &Arg1) {
+    BoundTypeDiagnoser1<T1> Diagnoser(DiagID, Arg1);
+    return RequireLiteralType(Loc, T, Diagnoser);
+  }
+
+  template<typename T1, typename T2>
+  bool RequireLiteralType(SourceLocation Loc, QualType T,
+                          unsigned DiagID, const T1 &Arg1, const T2 &Arg2) {
+    BoundTypeDiagnoser2<T1, T2> Diagnoser(DiagID, Arg1, Arg2);
+    return RequireLiteralType(Loc, T, Diagnoser);
+  }
+
+  template<typename T1, typename T2, typename T3>
+  bool RequireLiteralType(SourceLocation Loc, QualType T,
+                          unsigned DiagID, const T1 &Arg1, const T2 &Arg2,
+                          const T3 &Arg3) {
+    BoundTypeDiagnoser3<T1, T2, T3> Diagnoser(DiagID, Arg1, Arg2,
+                                                        Arg3);
+    return RequireLiteralType(Loc, T, Diagnoser);
+  }
 
   QualType getElaboratedType(ElaboratedTypeKeyword Keyword,
                              const CXXScopeSpec &SS, QualType T);
@@ -1565,16 +1686,59 @@ public:
   ExprResult CheckConvertedConstantExpression(Expr *From, QualType T,
                                               llvm::APSInt &Value, CCEKind CCE);
 
+  /// \brief Abstract base class used to diagnose problems that occur while
+  /// trying to convert an expression to integral or enumeration type.
+  class ICEConvertDiagnoser {
+  public:
+    bool Suppress;
+    bool SuppressConversion;
+    
+    ICEConvertDiagnoser(bool Suppress = false,
+                        bool SuppressConversion = false)
+      : Suppress(Suppress), SuppressConversion(SuppressConversion) { }
+    
+    /// \brief Emits a diagnostic complaining that the expression does not have
+    /// integral or enumeration type.
+    virtual DiagnosticBuilder diagnoseNotInt(Sema &S, SourceLocation Loc,
+                                             QualType T) = 0;
+    
+    /// \brief Emits a diagnostic when the expression has incomplete class type.
+    virtual DiagnosticBuilder diagnoseIncomplete(Sema &S, SourceLocation Loc,
+                                                 QualType T) = 0;
+    
+    /// \brief Emits a diagnostic when the only matching conversion function
+    /// is explicit.
+    virtual DiagnosticBuilder diagnoseExplicitConv(Sema &S, SourceLocation Loc,
+                                                   QualType T,
+                                                   QualType ConvTy) = 0;
+
+    /// \brief Emits a note for the explicit conversion function.
+    virtual DiagnosticBuilder
+    noteExplicitConv(Sema &S, CXXConversionDecl *Conv, QualType ConvTy) = 0;
+
+    /// \brief Emits a diagnostic when there are multiple possible conversion
+    /// functions.
+    virtual DiagnosticBuilder diagnoseAmbiguous(Sema &S, SourceLocation Loc,
+                                                QualType T) = 0;
+
+    /// \brief Emits a note for one of the candidate conversions.
+    virtual DiagnosticBuilder noteAmbiguous(Sema &S, CXXConversionDecl *Conv,
+                                            QualType ConvTy) = 0;
+
+    /// \brief Emits a diagnostic when we picked a conversion function
+    /// (for cases when we are not allowed to pick a conversion function).
+    virtual DiagnosticBuilder diagnoseConversion(Sema &S, SourceLocation Loc,
+                                                 QualType T,
+                                                 QualType ConvTy) = 0;
+    
+    virtual ~ICEConvertDiagnoser() {}
+  };
+
   ExprResult
   ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *FromE,
-                                     const PartialDiagnostic &NotIntDiag,
-                                     const PartialDiagnostic &IncompleteDiag,
-                                     const PartialDiagnostic &ExplicitConvDiag,
-                                     const PartialDiagnostic &ExplicitConvNote,
-                                     const PartialDiagnostic &AmbigDiag,
-                                     const PartialDiagnostic &AmbigNote,
-                                     const PartialDiagnostic &ConvDiag,
+                                     ICEConvertDiagnoser &Diagnoser,
                                      bool AllowScopedEnumerations);
+
   enum ObjCSubscriptKind {
     OS_Array,
     OS_Dictionary,
@@ -2415,20 +2579,20 @@ public:
   void DiagnoseEmptyLoopBody(const Stmt *S,
                              const Stmt *PossibleBody);
 
-  ParsingDeclState PushParsingDeclaration() {
-    return DelayedDiagnostics.pushParsingDecl();
+  ParsingDeclState PushParsingDeclaration(sema::DelayedDiagnosticPool &pool) {
+    return DelayedDiagnostics.push(pool);
   }
-  void PopParsingDeclaration(ParsingDeclState state, Decl *decl) {
-    DelayedDiagnostics::popParsingDecl(*this, state, decl);
-  }
+  void PopParsingDeclaration(ParsingDeclState state, Decl *decl);
 
   typedef ProcessingContextState ParsingClassState;
   ParsingClassState PushParsingClass() {
-    return DelayedDiagnostics.pushContext();
+    return DelayedDiagnostics.pushUndelayed();
   }
   void PopParsingClass(ParsingClassState state) {
-    DelayedDiagnostics.popContext(state);
+    DelayedDiagnostics.popUndelayed(state);
   }
+
+  void redelayDiagnostics(sema::DelayedDiagnosticPool &pool);
 
   void EmitDeprecationWarning(NamedDecl *D, StringRef Message,
                               SourceLocation Loc,
@@ -3173,16 +3337,6 @@ public:
                                    Expr *NoexceptExpr,
                                    llvm::SmallVectorImpl<QualType> &Exceptions,
                                    FunctionProtoType::ExtProtoInfo &EPI);
-
-  /// \brief Add an exception-specification to the given member function
-  /// (or member function template). The exception-specification was parsed
-  /// after the method itself was declared.
-  void actOnDelayedExceptionSpecification(Decl *Method,
-         ExceptionSpecificationType EST,
-         SourceRange SpecificationRange,
-         ArrayRef<ParsedType> DynamicExceptions,
-         ArrayRef<SourceRange> DynamicExceptionRanges,
-         Expr *NoexceptExpr);
 
   /// \brief Determine if a special member function should have a deleted
   /// definition when it is defaulted.
@@ -4243,35 +4397,9 @@ public:
 
   void HandleDelayedAccessCheck(sema::DelayedDiagnostic &DD, Decl *Ctx);
 
-  /// A flag to suppress access checking.
-  bool SuppressAccessChecking;
-
   /// \brief When true, access checking violations are treated as SFINAE
   /// failures rather than hard errors.
   bool AccessCheckingSFINAE;
-
-  /// \brief RAII object used to temporarily suppress access checking.
-  class SuppressAccessChecksRAII {
-    Sema &S;
-    bool SuppressingAccess;
-
-  public:
-    SuppressAccessChecksRAII(Sema &S, bool Suppress)
-      : S(S), SuppressingAccess(Suppress) {
-      if (Suppress) S.ActOnStartSuppressingAccessChecks();
-    }
-    ~SuppressAccessChecksRAII() {
-      done();
-    }
-    void done() {
-      if (!SuppressingAccess) return;
-      S.ActOnStopSuppressingAccessChecks();
-      SuppressingAccess = false;
-    }
-  };
-
-  void ActOnStartSuppressingAccessChecks();
-  void ActOnStopSuppressingAccessChecks();
 
   enum AbstractDiagSelID {
     AbstractNone = -1,
@@ -4283,7 +4411,31 @@ public:
   };
 
   bool RequireNonAbstractType(SourceLocation Loc, QualType T,
-                              const PartialDiagnostic &PD);
+                              TypeDiagnoser &Diagnoser);
+  template<typename T1>
+  bool RequireNonAbstractType(SourceLocation Loc, QualType T,
+                              unsigned DiagID,
+                              const T1 &Arg1) {
+    BoundTypeDiagnoser1<T1> Diagnoser(DiagID, Arg1);
+    return RequireNonAbstractType(Loc, T, Diagnoser);
+  }
+
+  template<typename T1, typename T2>
+  bool RequireNonAbstractType(SourceLocation Loc, QualType T,
+                              unsigned DiagID,
+                              const T1 &Arg1, const T2 &Arg2) {
+    BoundTypeDiagnoser2<T1, T2> Diagnoser(DiagID, Arg1, Arg2);
+    return RequireNonAbstractType(Loc, T, Diagnoser);
+  }
+
+  template<typename T1, typename T2, typename T3>
+  bool RequireNonAbstractType(SourceLocation Loc, QualType T,
+                              unsigned DiagID,
+                              const T1 &Arg1, const T2 &Arg2, const T3 &Arg3) {
+    BoundTypeDiagnoser3<T1, T2, T3> Diagnoser(DiagID, Arg1, Arg2, Arg3);
+    return RequireNonAbstractType(Loc, T, Diagnoser);
+  }
+
   void DiagnoseAbstractType(const CXXRecordDecl *RD);
 
   bool RequireNonAbstractType(SourceLocation Loc, QualType T, unsigned DiagID,
@@ -5824,9 +5976,6 @@ public:
                                 const IdentifierInfo *Name);
   void ComparePropertiesInBaseAndSuper(ObjCInterfaceDecl *IDecl);
 
-  void CompareMethodParamsInBaseAndSuper(Decl *IDecl,
-                                         ObjCMethodDecl *MethodDecl,
-                                         bool IsInstance);
 
   void CompareProperties(Decl *CDecl, Decl *MergeProtocols);
 
@@ -6577,20 +6726,29 @@ public:
   /// in the global scope.
   bool CheckObjCDeclScope(Decl *D);
 
+  /// \brief Abstract base class used for diagnosing integer constant
+  /// expression violations.
+  class VerifyICEDiagnoser {
+  public:
+    bool Suppress;
+    
+    VerifyICEDiagnoser(bool Suppress = false) : Suppress(Suppress) { }
+    
+    virtual void diagnoseNotICE(Sema &S, SourceLocation Loc, SourceRange SR) =0;
+    virtual void diagnoseFold(Sema &S, SourceLocation Loc, SourceRange SR);
+    virtual ~VerifyICEDiagnoser() { }
+  };
+    
   /// VerifyIntegerConstantExpression - Verifies that an expression is an ICE,
   /// and reports the appropriate diagnostics. Returns false on success.
   /// Can optionally return the value of the expression.
   ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
-                                             const PartialDiagnostic &Diag,
-                                             bool AllowFold,
-                                             const PartialDiagnostic &FoldDiag);
+                                             VerifyICEDiagnoser &Diagnoser,
+                                             bool AllowFold = true);
   ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
-                                             const PartialDiagnostic &Diag,
-                                             bool AllowFold = true) {
-    return VerifyIntegerConstantExpression(E, Result, Diag, AllowFold,
-                                           PDiag(0));
-  }
-  ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result = 0);
+                                             unsigned DiagID,
+                                             bool AllowFold = true);
+  ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result=0);
 
   /// VerifyBitField - verifies that a bit field expression is an ICE and has
   /// the correct width, and that the field type is valid.

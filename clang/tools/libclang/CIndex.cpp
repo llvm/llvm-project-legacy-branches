@@ -61,6 +61,7 @@ CXTranslationUnit cxtu::MakeCXTranslationUnit(CIndexer *CIdx, ASTUnit *TU) {
   D->TUData = TU;
   D->StringPool = createCXStringPool();
   D->Diagnostics = 0;
+  D->OverridenCursorsPool = createOverridenCXCursorsPool();
   return D;
 }
 
@@ -2734,6 +2735,7 @@ void clang_disposeTranslationUnit(CXTranslationUnit CTUnit) {
     delete static_cast<ASTUnit *>(CTUnit->TUData);
     disposeCXStringPool(CTUnit->StringPool);
     delete static_cast<CXDiagnosticSetImpl *>(CTUnit->Diagnostics);
+    disposeOverridenCXCursorsPool(CTUnit->OverridenCursorsPool);
     delete CTUnit;
   }
 }
@@ -2829,8 +2831,8 @@ CXString clang_getTranslationUnitSpelling(CXTranslationUnit CTUnit) {
 }
 
 CXCursor clang_getTranslationUnitCursor(CXTranslationUnit TU) {
-  CXCursor Result = { CXCursor_TranslationUnit, 0, { 0, 0, TU } };
-  return Result;
+  ASTUnit *CXXUnit = static_cast<ASTUnit*>(TU->TUData);
+  return MakeCXCursor(CXXUnit->getASTContext().getTranslationUnitDecl(), TU);
 }
 
 } // end: extern "C"
@@ -5487,6 +5489,90 @@ enum CXAvailabilityKind clang_getCursorAvailability(CXCursor cursor) {
   return CXAvailability_Available;
 }
 
+static CXVersion convertVersion(VersionTuple In) {
+  CXVersion Out = { -1, -1, -1 };
+  if (In.empty())
+    return Out;
+
+  Out.Major = In.getMajor();
+  
+  if (llvm::Optional<unsigned> Minor = In.getMinor())
+    Out.Minor = *Minor;
+  else
+    return Out;
+
+  if (llvm::Optional<unsigned> Subminor = In.getSubminor())
+    Out.Subminor = *Subminor;
+  
+  return Out;
+}
+  
+int clang_getCursorPlatformAvailability(CXCursor cursor,
+                                        int *always_deprecated,
+                                        CXString *deprecated_message,
+                                        int *always_unavailable,
+                                        CXString *unavailable_message,
+                                        CXPlatformAvailability *availability,
+                                        int availability_size) {
+  if (always_deprecated)
+    *always_deprecated = 0;
+  if (deprecated_message)
+    *deprecated_message = cxstring::createCXString("", /*DupString=*/false);
+  if (always_unavailable)
+    *always_unavailable = 0;
+  if (unavailable_message)
+    *unavailable_message = cxstring::createCXString("", /*DupString=*/false);
+  
+  if (!clang_isDeclaration(cursor.kind))
+    return 0;
+  
+  Decl *D = cxcursor::getCursorDecl(cursor);
+  if (!D)
+    return 0;
+  
+  int N = 0;
+  for (Decl::attr_iterator A = D->attr_begin(), AEnd = D->attr_end(); A != AEnd;
+       ++A) {
+    if (DeprecatedAttr *Deprecated = dyn_cast<DeprecatedAttr>(*A)) {
+      if (always_deprecated)
+        *always_deprecated = 1;
+      if (deprecated_message)
+        *deprecated_message = cxstring::createCXString(Deprecated->getMessage());
+      continue;
+    }
+    
+    if (UnavailableAttr *Unavailable = dyn_cast<UnavailableAttr>(*A)) {
+      if (always_unavailable)
+        *always_unavailable = 1;
+      if (unavailable_message) {
+        *unavailable_message
+          = cxstring::createCXString(Unavailable->getMessage());
+      }
+      continue;
+    }
+    
+    if (AvailabilityAttr *Avail = dyn_cast<AvailabilityAttr>(*A)) {
+      if (N < availability_size) {
+        availability[N].Platform
+          = cxstring::createCXString(Avail->getPlatform()->getName());
+        availability[N].Introduced = convertVersion(Avail->getIntroduced());
+        availability[N].Deprecated = convertVersion(Avail->getDeprecated());
+        availability[N].Obsoleted = convertVersion(Avail->getObsoleted());
+        availability[N].Unavailable = Avail->getUnavailable();
+        availability[N].Message = cxstring::createCXString(Avail->getMessage());
+      }
+      ++N;
+    }
+  }
+  
+  return N;
+}
+  
+void clang_disposeCXPlatformAvailability(CXPlatformAvailability *availability) {
+  clang_disposeString(availability->Platform);
+  clang_disposeString(availability->Message);
+}
+
 CXLanguageKind clang_getCursorLanguage(CXCursor cursor) {
   if (clang_isDeclaration(cursor.kind))
     return getDeclLanguage(cxcursor::getCursorDecl(cursor));
@@ -5547,34 +5633,6 @@ CXCursor clang_getCursorLexicalParent(CXCursor cursor) {
   // FIXME: Note that we can't easily compute the lexical context of a 
   // statement or expression, so we return nothing.
   return clang_getNullCursor();
-}
-
-void clang_getOverriddenCursors(CXCursor cursor, 
-                                CXCursor **overridden,
-                                unsigned *num_overridden) {
-  if (overridden)
-    *overridden = 0;
-  if (num_overridden)
-    *num_overridden = 0;
-  if (!overridden || !num_overridden)
-    return;
-  if (!clang_isDeclaration(cursor.kind))
-    return;
-
-  SmallVector<CXCursor, 8> Overridden;
-  cxcursor::getOverriddenCursors(cursor, Overridden);
-
-  // Don't allocate memory if we have no overriden cursors.
-  if (Overridden.size() == 0)
-    return;
-
-  *num_overridden = Overridden.size();
-  *overridden = new CXCursor [Overridden.size()];
-  std::copy(Overridden.begin(), Overridden.end(), *overridden);
-}
-
-void clang_disposeOverriddenCursors(CXCursor *overridden) {
-  delete [] overridden;
 }
 
 CXFile clang_getIncludedFile(CXCursor cursor) {

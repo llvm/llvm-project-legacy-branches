@@ -861,9 +861,7 @@ std::string NamedDecl::getQualifiedNameAsString(const PrintingPolicy &P) const {
         for (unsigned i = 0; i < NumParams; ++i) {
           if (i)
             OS << ", ";
-          std::string Param;
-          FD->getParamDecl(i)->getType().getAsStringInternal(Param, P);
-          OS << Param;
+          OS << FD->getParamDecl(i)->getType().stream(P);
         }
 
         if (FT->isVariadic()) {
@@ -2463,15 +2461,15 @@ unsigned FieldDecl::getFieldIndex() const {
 
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I, ++Index) {
-    (*I)->CachedFieldIndex = Index + 1;
+    I->CachedFieldIndex = Index + 1;
 
     if (IsMsStruct) {
       // Zero-length bitfields following non-bitfield members are ignored.
-      if (getASTContext().ZeroBitfieldFollowsNonBitfield((*I), LastFD)) {
+      if (getASTContext().ZeroBitfieldFollowsNonBitfield(&*I, LastFD)) {
         --Index;
         continue;
       }
-      LastFD = (*I);
+      LastFD = &*I;
     }
   }
 

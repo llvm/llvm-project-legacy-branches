@@ -64,9 +64,6 @@ public:
 
   /// \brief Return the TypeLoc wrapper for the type source info.
   TypeLoc getTypeLoc() const; // implemented in TypeLoc.h
-  
-  /// \brief Override the type stored in this TypeSourceInfo. Use with caution!
-  void overrideType(QualType T) { Ty = T; }
 };
 
 /// TranslationUnitDecl - The top declaration context.
@@ -2606,6 +2603,7 @@ public:
 
   void setCompleteDefinition(bool V) { IsCompleteDefinition = V; }
 
+  // FIXME: Return StringRef;
   const char *getKindName() const {
     return TypeWithKeyword::getTagTypeKindName(getTagKind());
   }

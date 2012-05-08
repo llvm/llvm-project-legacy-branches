@@ -110,7 +110,8 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
 
   // If debug info or coverage generation is enabled, create the CGDebugInfo
   // object.
-  if (CodeGenOpts.DebugInfo || CodeGenOpts.EmitGcovArcs ||
+  if (CodeGenOpts.DebugInfo != CodeGenOptions::NoDebugInfo ||
+      CodeGenOpts.EmitGcovArcs ||
       CodeGenOpts.EmitGcovNotes)
     DebugInfo = new CGDebugInfo(*this);
 
@@ -1605,7 +1606,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
 
   // Emit global variable debug information.
   if (CGDebugInfo *DI = getModuleDebugInfo())
-    DI->EmitGlobalVariable(GV, D);
+    if (getCodeGenOpts().DebugInfo >= CodeGenOptions::LimitedDebugInfo)
+      DI->EmitGlobalVariable(GV, D);
 }
 
 llvm::GlobalValue::LinkageTypes
@@ -2343,7 +2345,7 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
                                                     ObjCImplementationDecl *D) {
   for (ObjCImplementationDecl::propimpl_iterator
          i = D->propimpl_begin(), e = D->propimpl_end(); i != e; ++i) {
-    ObjCPropertyImplDecl *PID = *i;
+    ObjCPropertyImplDecl *PID = &*i;
 
     // Dynamic is just for type-checking.
     if (PID->getPropertyImplementation() == ObjCPropertyImplDecl::Synthesize) {

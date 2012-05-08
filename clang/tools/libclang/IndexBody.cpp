@@ -9,14 +9,14 @@
 
 #include "IndexingContext.h"
 
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "RecursiveASTVisitor.h"
 
 using namespace clang;
 using namespace cxindex;
 
 namespace {
 
-class BodyIndexer : public RecursiveASTVisitor<BodyIndexer> {
+class BodyIndexer : public cxindex::RecursiveASTVisitor<BodyIndexer> {
   IndexingContext &IndexCtx;
   const NamedDecl *Parent;
   const DeclContext *ParentDC;
