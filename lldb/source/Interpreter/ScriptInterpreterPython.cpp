@@ -218,14 +218,14 @@ ScriptInterpreterPython::ScriptInterpreterPython (CommandInterpreter &interprete
         g_initialized = true;
         ScriptInterpreterPython::InitializePrivate ();
     }
-    
-    Locker locker(this,
-                  ScriptInterpreterPython::Locker::AcquireLock,
-                  ScriptInterpreterPython::Locker::FreeAcquiredLock);
 
     m_dictionary_name.append("_dict");
     StreamString run_string;
     run_string.Printf ("%s = dict()", m_dictionary_name.c_str());
+
+    Locker locker(this,
+                  ScriptInterpreterPython::Locker::AcquireLock,
+                  ScriptInterpreterPython::Locker::FreeAcquiredLock);
     PyRun_SimpleString (run_string.GetData());
 
     run_string.Clear();
@@ -686,7 +686,12 @@ ScriptInterpreterPython::InputReaderCallback
         break;
         
     case eInputReaderDone:
-        script_interpreter->LeaveSession ();
+        {
+            Locker locker(script_interpreter,
+                          ScriptInterpreterPython::Locker::AcquireLock,
+                          ScriptInterpreterPython::Locker::FreeAcquiredLock);
+            script_interpreter->LeaveSession ();
+        }
 
         // Restore terminal settings if they were validly saved
         if (log)
@@ -1463,19 +1468,17 @@ ScriptInterpreterPython::RunEmbeddedPythonInterpreter (lldb::thread_arg_t baton)
     char error_str[1024];
     const char *pty_slave_name = script_interpreter->m_embedded_python_pty.GetSlaveName (error_str, sizeof (error_str));
 
-    Locker locker(script_interpreter,
-                  ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
-                  ScriptInterpreterPython::Locker::FreeAcquiredLock | ScriptInterpreterPython::Locker::TearDownSession);
-
     if (pty_slave_name != NULL)
     {
         StreamString run_string;
 
         // Ensure we have the GIL before running any Python code.
-        // Since we're only running a few one-liners and then dropping to the interpreter.
-        // (which will release the GIL when needed), we can just release the GIL after finishing our work.
+        // Since we're only running a few one-liners and then dropping to the interpreter (which will release the GIL when needed),
+        // we can just release the GIL after finishing our work.
         // If finer-grained locking is desirable, we can lock and unlock the GIL only when calling a python function.
-        PyGILState_STATE gstate = PyGILState_Ensure();
+        Locker locker(script_interpreter,
+                      ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
+                      ScriptInterpreterPython::Locker::FreeAcquiredLock | ScriptInterpreterPython::Locker::TearDownSession);
 
         run_string.Printf ("run_one_line (%s, 'save_stderr = sys.stderr')", script_interpreter->m_dictionary_name.c_str());
         PyRun_SimpleString (run_string.GetData());
@@ -1500,7 +1503,7 @@ ScriptInterpreterPython::RunEmbeddedPythonInterpreter (lldb::thread_arg_t baton)
         // a system call that can hang, and lock it when the syscall has returned.
 
         // We need to surround the call to the embedded interpreter with calls to PyGILState_Ensure and 
-        // PyGILState_Release.  This is because Python has a global lock which must be held whenever we want
+        // PyGILState_Release (using the Locker above). This is because Python has a global lock which must be held whenever we want
         // to touch any Python objects. Otherwise, if the user calls Python code, the interpreter state will be off,
         // and things could hang (it's happened before).
 
@@ -1515,8 +1518,6 @@ ScriptInterpreterPython::RunEmbeddedPythonInterpreter (lldb::thread_arg_t baton)
         run_string.Printf ("run_one_line (%s, 'sys.stderr = save_stderr')", script_interpreter->m_dictionary_name.c_str());
         PyRun_SimpleString (run_string.GetData());
         run_string.Clear();
-
-        PyGILState_Release (gstate);
     }
     
     if (script_interpreter->m_embedded_thread_input_reader_sp)
@@ -1672,8 +1673,6 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
     lldb::DebuggerSP debugger_sp = m_interpreter.GetDebugger().shared_from_this();
 
     {
-        Locker py_lock(this);
-        
         FileSpec target_file(pathname, true);
         
         // TODO: would we want to reject any other value?
@@ -1686,6 +1685,9 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
         
         const char* directory = target_file.GetDirectory().GetCString();
         std::string basename(target_file.GetFilename().GetCString());
+
+        // Before executing Pyton code, lock the GIL.
+        Locker py_lock(this);
         
         // now make sure that Python has "directory" in the search path
         StreamString command_stream;
