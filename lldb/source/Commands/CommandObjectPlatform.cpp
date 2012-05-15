@@ -160,7 +160,7 @@ public:
     virtual uint32_t
     GetNumDefinitions ()
     {
-        return arraysize(g_permissions_options);
+        return llvm::array_lengthof(g_permissions_options);
     }
     
     const lldb_private::OptionDefinition*

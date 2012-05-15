@@ -840,7 +840,7 @@ OptionGroupPlatformRSync::SetOptionValue (CommandInterpreter &interpreter,
 uint32_t
 OptionGroupPlatformRSync::GetNumDefinitions ()
 {
-    return arraysize(g_rsync_option_table);
+    return llvm::array_lengthof(g_rsync_option_table);
 }
 
 lldb::BreakpointSP
@@ -898,7 +898,7 @@ OptionGroupPlatformSSH::SetOptionValue (CommandInterpreter &interpreter,
 uint32_t
 OptionGroupPlatformSSH::GetNumDefinitions ()
 {
-    return arraysize(g_ssh_option_table);
+    return llvm::array_lengthof(g_ssh_option_table);
 }
 
 OptionGroupPlatformCaching::OptionGroupPlatformCaching ()
@@ -945,5 +945,5 @@ OptionGroupPlatformCaching::SetOptionValue (CommandInterpreter &interpreter,
 uint32_t
 OptionGroupPlatformCaching::GetNumDefinitions ()
 {
-    return arraysize(g_caching_option_table);
+    return llvm::array_lengthof(g_caching_option_table);
 }
