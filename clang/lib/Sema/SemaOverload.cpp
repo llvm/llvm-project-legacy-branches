@@ -8149,9 +8149,14 @@ void DiagnoseArityMismatch(Sema &S, OverloadCandidate *Cand,
   std::string Description;
   OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Fn, Description);
 
-  S.Diag(Fn->getLocation(), diag::note_ovl_candidate_arity)
-    << (unsigned) FnKind << (Fn->getDescribedFunctionTemplate() != 0) << mode
-    << modeCount << NumFormalArgs;
+  if (modeCount == 1 && Fn->getParamDecl(0)->getDeclName())
+    S.Diag(Fn->getLocation(), diag::note_ovl_candidate_arity_one)
+      << (unsigned) FnKind << (Fn->getDescribedFunctionTemplate() != 0) << mode
+      << Fn->getParamDecl(0) << NumFormalArgs;
+  else
+    S.Diag(Fn->getLocation(), diag::note_ovl_candidate_arity)
+      << (unsigned) FnKind << (Fn->getDescribedFunctionTemplate() != 0) << mode
+      << modeCount << NumFormalArgs;
   MaybeEmitInheritedConstructorNote(S, Fn);
 }
 
@@ -8263,13 +8268,23 @@ void DiagnoseBadDeduction(Sema &S, OverloadCandidate *Cand,
           Fn->getDescribedFunctionTemplate()->getTemplateParameters(), *Args);
     }
 
+    // If this candidate was disabled by enable_if, say so.
+    PartialDiagnosticAt *PDiag = Cand->DeductionFailure.getSFINAEDiagnostic();
+    if (PDiag && PDiag->second.getDiagID() ==
+          diag::err_typename_nested_not_found_enable_if) {
+      // FIXME: Use the source range of the condition, and the fully-qualified
+      //        name of the enable_if template. These are both present in PDiag.
+      S.Diag(PDiag->first, diag::note_ovl_candidate_disabled_by_enable_if)
+        << "'enable_if'" << TemplateArgString;
+      return;
+    }
+
     // Format the SFINAE diagnostic into the argument string.
     // FIXME: Add a general mechanism to include a PartialDiagnostic *'s
     //        formatted message in another diagnostic.
     llvm::SmallString<128> SFINAEArgString;
     SourceRange R;
-    if (PartialDiagnosticAt *PDiag =
-          Cand->DeductionFailure.getSFINAEDiagnostic()) {
+    if (PDiag) {
       SFINAEArgString = ": ";
       R = SourceRange(PDiag->first, PDiag->first);
       PDiag->second.EmitToString(S.getDiagnostics(), SFINAEArgString);

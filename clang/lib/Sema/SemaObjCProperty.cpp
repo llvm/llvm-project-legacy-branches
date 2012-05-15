@@ -658,6 +658,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
   }
   ObjCIvarDecl *Ivar = 0;
   bool CompleteTypeErr = false;
+  bool compat = true;
   // Check that we have a valid, previously declared ivar for @synthesize
   if (Synthesize) {
     // @synthesize
@@ -773,8 +774,8 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
     QualType IvarType = Context.getCanonicalType(Ivar->getType());
 
     // Check that type of property and its ivar are type compatible.
-    if (Context.getCanonicalType(PropertyIvarType) != IvarType) {
-      bool compat = false;
+    if (!Context.hasSameType(PropertyIvarType, IvarType)) {
+      compat = false;
       if (isa<ObjCObjectPointerType>(PropertyIvarType) 
           && isa<ObjCObjectPointerType>(IvarType))
         compat = 
@@ -794,19 +795,20 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
         // Note! I deliberately want it to fall thru so, we have a
         // a property implementation and to avoid future warnings.
       }
-
-      // FIXME! Rules for properties are somewhat different that those
-      // for assignments. Use a new routine to consolidate all cases;
-      // specifically for property redeclarations as well as for ivars.
-      QualType lhsType =Context.getCanonicalType(PropertyIvarType).getUnqualifiedType();
-      QualType rhsType =Context.getCanonicalType(IvarType).getUnqualifiedType();
-      if (lhsType != rhsType &&
-          lhsType->isArithmeticType()) {
-        Diag(PropertyDiagLoc, diag::error_property_ivar_type)
-          << property->getDeclName() << PropType
-          << Ivar->getDeclName() << IvarType;
-        Diag(Ivar->getLocation(), diag::note_ivar_decl);
-        // Fall thru - see previous comment
+      else {
+        // FIXME! Rules for properties are somewhat different that those
+        // for assignments. Use a new routine to consolidate all cases;
+        // specifically for property redeclarations as well as for ivars.
+        QualType lhsType =Context.getCanonicalType(PropertyIvarType).getUnqualifiedType();
+        QualType rhsType =Context.getCanonicalType(IvarType).getUnqualifiedType();
+        if (lhsType != rhsType &&
+            lhsType->isArithmeticType()) {
+          Diag(PropertyDiagLoc, diag::error_property_ivar_type)
+            << property->getDeclName() << PropType
+            << Ivar->getDeclName() << IvarType;
+          Diag(Ivar->getLocation(), diag::note_ivar_decl);
+          // Fall thru - see previous comment
+        }
       }
       // __weak is explicit. So it works on Canonical type.
       if ((PropType.isObjCGCWeak() && !IvarType.isObjCGCWeak() &&
@@ -840,7 +842,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
                                 : ObjCPropertyImplDecl::Dynamic),
                                Ivar, PropertyIvarLoc);
 
-  if (CompleteTypeErr)
+  if (CompleteTypeErr || !compat)
     PIDecl->setInvalidDecl();
 
   if (ObjCMethodDecl *getterMethod = property->getGetterMethodDecl()) {
@@ -1428,7 +1430,7 @@ void Sema::DefaultSynthesizeProperties(Scope *S, ObjCImplDecl* IMPDecl,
                             SourceLocation()));
     if (PIDecl) {
       Diag(Prop->getLocation(), diag::warn_missing_explicit_synthesis);
-      Diag(IMPDecl->getLocation(), diag::not_while_in_implementation);
+      Diag(IMPDecl->getLocation(), diag::note_while_in_implementation);
     }
   }
 }
@@ -1776,6 +1778,18 @@ void Sema::ProcessPropertyDecl(ObjCPropertyDecl *property,
     AddInstanceMethodToGlobalPool(GetterMethod);
   if (SetterMethod)
     AddInstanceMethodToGlobalPool(SetterMethod);
+
+  ObjCInterfaceDecl *CurrentClass = dyn_cast<ObjCInterfaceDecl>(CD);
+  if (!CurrentClass) {
+    if (ObjCCategoryDecl *Cat = dyn_cast<ObjCCategoryDecl>(CD))
+      CurrentClass = Cat->getClassInterface();
+    else if (ObjCImplDecl *Impl = dyn_cast<ObjCImplDecl>(CD))
+      CurrentClass = Impl->getClassInterface();
+  }
+  if (GetterMethod)
+    CheckObjCMethodOverrides(GetterMethod, CurrentClass, Sema::RTC_Unknown);
+  if (SetterMethod)
+    CheckObjCMethodOverrides(SetterMethod, CurrentClass, Sema::RTC_Unknown);
 }
 
 void Sema::CheckObjCPropertyAttributes(Decl *PDecl,

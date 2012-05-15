@@ -3380,11 +3380,18 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // arguments for the remaining parameters), don't make the call.
   if (NumArgs < NumArgsInProto) {
     if (NumArgs < MinArgs) {
-      Diag(RParenLoc, MinArgs == NumArgsInProto
-                        ? diag::err_typecheck_call_too_few_args
-                        : diag::err_typecheck_call_too_few_args_at_least)
-        << FnKind
-        << MinArgs << NumArgs << Fn->getSourceRange();
+      if (MinArgs == 1 && FDecl && FDecl->getParamDecl(0)->getDeclName())
+        Diag(RParenLoc, MinArgs == NumArgsInProto && !Proto->isVariadic()
+                          ? diag::err_typecheck_call_too_few_args_one
+                          : diag::err_typecheck_call_too_few_args_at_least_one)
+          << FnKind
+          << FDecl->getParamDecl(0) << Fn->getSourceRange();
+      else
+        Diag(RParenLoc, MinArgs == NumArgsInProto && !Proto->isVariadic()
+                          ? diag::err_typecheck_call_too_few_args
+                          : diag::err_typecheck_call_too_few_args_at_least)
+          << FnKind
+          << MinArgs << NumArgs << Fn->getSourceRange();
 
       // Emit the location of the prototype.
       if (FDecl && !FDecl->getBuiltinID() && !IsExecConfig)
@@ -3400,14 +3407,24 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // them.
   if (NumArgs > NumArgsInProto) {
     if (!Proto->isVariadic()) {
-      Diag(Args[NumArgsInProto]->getLocStart(),
-           MinArgs == NumArgsInProto
-             ? diag::err_typecheck_call_too_many_args
-             : diag::err_typecheck_call_too_many_args_at_most)
-        << FnKind
-        << NumArgsInProto << NumArgs << Fn->getSourceRange()
-        << SourceRange(Args[NumArgsInProto]->getLocStart(),
-                       Args[NumArgs-1]->getLocEnd());
+      if (NumArgsInProto == 1 && FDecl && FDecl->getParamDecl(0)->getDeclName())
+        Diag(Args[NumArgsInProto]->getLocStart(),
+             MinArgs == NumArgsInProto
+               ? diag::err_typecheck_call_too_many_args_one
+               : diag::err_typecheck_call_too_many_args_at_most_one)
+          << FnKind
+          << FDecl->getParamDecl(0) << NumArgs << Fn->getSourceRange()
+          << SourceRange(Args[NumArgsInProto]->getLocStart(),
+                         Args[NumArgs-1]->getLocEnd());
+      else
+        Diag(Args[NumArgsInProto]->getLocStart(),
+             MinArgs == NumArgsInProto
+               ? diag::err_typecheck_call_too_many_args
+               : diag::err_typecheck_call_too_many_args_at_most)
+          << FnKind
+          << NumArgsInProto << NumArgs << Fn->getSourceRange()
+          << SourceRange(Args[NumArgsInProto]->getLocStart(),
+                         Args[NumArgs-1]->getLocEnd());
 
       // Emit the location of the prototype.
       if (FDecl && !FDecl->getBuiltinID() && !IsExecConfig)

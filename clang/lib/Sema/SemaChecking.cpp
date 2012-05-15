@@ -22,6 +22,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
@@ -1569,10 +1570,16 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
       }
 
       if (isConstant) {
-        if (const Expr *Init = VD->getAnyInitializer())
+        if (const Expr *Init = VD->getAnyInitializer()) {
+          // Look through initializers like const char c[] = { "foo" }
+          if (const InitListExpr *InitList = dyn_cast<InitListExpr>(Init)) {
+            if (InitList->isStringLiteralInit())
+              Init = InitList->getInit(0)->IgnoreParenImpCasts();
+          }
           return SemaCheckStringLiteral(Init, Args, NumArgs,
                                         HasVAListArg, format_idx, firstDataArg,
                                         Type, /*inFunctionCall*/false);
+        }
       }
 
       // For vprintf* functions (i.e., HasVAListArg==true), we add a
@@ -4075,8 +4082,17 @@ void DiagnoseFloatingLiteralImpCast(Sema &S, FloatingLiteral *FL, QualType T,
       == llvm::APFloat::opOK && isExact)
     return;
 
+  SmallString<16> PrettySourceValue;
+  Value.toString(PrettySourceValue);
+  SmallString<16> PrettyTargetValue;
+  if (T->isSpecificBuiltinType(BuiltinType::Bool))
+    PrettyTargetValue = IntegerValue == 0 ? "false" : "true";
+  else
+    IntegerValue.toString(PrettyTargetValue);
+
   S.Diag(FL->getExprLoc(), diag::warn_impcast_literal_float_to_integer)
-    << FL->getType() << T << FL->getSourceRange() << SourceRange(CContext);
+    << FL->getType() << T.getUnqualifiedType() << PrettySourceValue
+    << PrettyTargetValue << FL->getSourceRange() << SourceRange(CContext);
 }
 
 std::string PrettyPrintInRange(const llvm::APSInt &Value, IntRange Range) {
@@ -4143,7 +4159,6 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
         }
       }
     }
-    return; // Other casts to bool are not checked.
   }
 
   // Strip vector types.
@@ -4207,7 +4222,7 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     }
 
     // If the target is integral, always warn.    
-    if ((TargetBT && TargetBT->isInteger())) {
+    if (TargetBT && TargetBT->isInteger()) {
       if (S.SourceMgr.isInSystemMacro(CC))
         return;
       
@@ -4240,6 +4255,11 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
         << FixItHint::CreateReplacement(Loc, S.getFixItZeroLiteralForType(T));
     return;
   }
+
+  // TODO: remove this early return once the false positives for constant->bool
+  // in templates, macros, etc, are reduced or removed.
+  if (Target->isSpecificBuiltinType(BuiltinType::Bool))
+    return;
 
   IntRange SourceRange = GetExprRange(S.Context, E);
   IntRange TargetRange = IntRange::forTargetOfCanonicalType(S.Context, Target);
@@ -4590,12 +4610,20 @@ static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
   // substitution to form C89 tail-padded arrays.
 
   TypeSourceInfo *TInfo = FD->getTypeSourceInfo();
-  if (TInfo) {
-    ConstantArrayTypeLoc TL =
-      cast<ConstantArrayTypeLoc>(TInfo->getTypeLoc());
-    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(TL.getSizeExpr());
+  while (TInfo) {
+    TypeLoc TL = TInfo->getTypeLoc();
+    // Look through typedefs.
+    const TypedefTypeLoc *TTL = dyn_cast<TypedefTypeLoc>(&TL);
+    if (TTL) {
+      const TypedefNameDecl *TDL = TTL->getTypedefNameDecl();
+      TInfo = TDL->getTypeSourceInfo();
+      continue;
+    }
+    ConstantArrayTypeLoc CTL = cast<ConstantArrayTypeLoc>(TL);
+    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(CTL.getSizeExpr());
     if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
       return false;
+    break;
   }
 
   const RecordDecl *RD = dyn_cast<RecordDecl>(FD->getDeclContext());

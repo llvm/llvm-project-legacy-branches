@@ -1518,12 +1518,22 @@ void Sema::MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls) {
     switch (TypeID->getLength()) {
     default: break;
     case 2:
-      if (!TypeID->isStr("id"))
-        break;
-      Context.setObjCIdRedefinitionType(New->getUnderlyingType());
-      // Install the built-in type for 'id', ignoring the current definition.
-      New->setTypeForDecl(Context.getObjCIdType().getTypePtr());
-      return;
+      {
+        if (!TypeID->isStr("id"))
+          break;
+        QualType T = New->getUnderlyingType();
+        if (!T->isPointerType())
+          break;
+        if (!T->isVoidPointerType()) {
+          QualType PT = T->getAs<PointerType>()->getPointeeType();
+          if (!PT->isStructureType())
+            break;
+        }
+        Context.setObjCIdRedefinitionType(T);
+        // Install the built-in type for 'id', ignoring the current definition.
+        New->setTypeForDecl(Context.getObjCIdType().getTypePtr());
+        return;
+      }
     case 5:
       if (!TypeID->isStr("Class"))
         break;
@@ -1658,6 +1668,36 @@ DeclHasAttr(const Decl *D, const Attr *A) {
   return false;
 }
 
+bool Sema::mergeDeclAttribute(Decl *D, InheritableAttr *Attr) {
+  InheritableAttr *NewAttr = NULL;
+  if (AvailabilityAttr *AA = dyn_cast<AvailabilityAttr>(Attr))
+    NewAttr = mergeAvailabilityAttr(D, AA->getRange(), AA->getPlatform(),
+                                    AA->getIntroduced(), AA->getDeprecated(),
+                                    AA->getObsoleted(), AA->getUnavailable(),
+                                    AA->getMessage());
+  else if (VisibilityAttr *VA = dyn_cast<VisibilityAttr>(Attr))
+    NewAttr = mergeVisibilityAttr(D, VA->getRange(), VA->getVisibility());
+  else if (DLLImportAttr *ImportA = dyn_cast<DLLImportAttr>(Attr))
+    NewAttr = mergeDLLImportAttr(D, ImportA->getRange());
+  else if (DLLExportAttr *ExportA = dyn_cast<DLLExportAttr>(Attr))
+    NewAttr = mergeDLLExportAttr(D, ExportA->getRange());
+  else if (FormatAttr *FA = dyn_cast<FormatAttr>(Attr))
+    NewAttr = mergeFormatAttr(D, FA->getRange(), FA->getType(),
+                              FA->getFormatIdx(), FA->getFirstArg());
+  else if (SectionAttr *SA = dyn_cast<SectionAttr>(Attr))
+    NewAttr = mergeSectionAttr(D, SA->getRange(), SA->getName());
+  else if (!DeclHasAttr(D, Attr))
+    NewAttr = cast<InheritableAttr>(Attr->clone(Context));
+
+  if (NewAttr) {
+    NewAttr->setInherited(true);
+    D->addAttr(NewAttr);
+    return true;
+  }
+
+  return false;
+}
+
 /// mergeDeclAttributes - Copy attributes from the Old decl to the New one.
 void Sema::mergeDeclAttributes(Decl *New, Decl *Old,
                                bool MergeDeprecation) {
@@ -1681,12 +1721,8 @@ void Sema::mergeDeclAttributes(Decl *New, Decl *Old,
          isa<AvailabilityAttr>(*i)))
       continue;
 
-    if (!DeclHasAttr(New, *i)) {
-      InheritableAttr *newAttr = cast<InheritableAttr>((*i)->clone(Context));
-      newAttr->setInherited(true);
-      New->addAttr(newAttr);
+    if (mergeDeclAttribute(New, *i))
       foundAny = true;
-    }
   }
 
   if (!foundAny) New->dropAttrs();
@@ -5376,6 +5412,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     NewFD->setInvalidDecl();
   }
 
+  // Handle attributes.
+  ProcessDeclAttributes(S, NewFD, D,
+                        /*NonInheritable=*/false, /*Inheritable=*/true);
+
   if (!getLangOpts().CPlusPlus) {
     // Perform semantic checking on the function declaration.
     bool isExplicitSpecialization=false;
@@ -5623,14 +5663,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         << D.getCXXScopeSpec().getRange();
     }
   }
- 
- 
-  // Handle attributes. We need to have merged decls when handling attributes
-  // (for example to check for conflicts, etc).
-  // FIXME: This needs to happen before we merge declarations. Then,
-  // let attribute merging cope with attribute conflicts.
-  ProcessDeclAttributes(S, NewFD, D,
-                        /*NonInheritable=*/false, /*Inheritable=*/true);
 
   // attributes declared post-definition are currently ignored
   // FIXME: This should happen during attribute merging
@@ -6083,55 +6115,73 @@ namespace {
       }
     }
 
-    void VisitExpr(Expr *E) {
-      if (isa<ObjCMessageExpr>(*E)) return;
-      if (isRecordType) {
-        Expr *expr = E;
-        if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
-          ValueDecl *VD = ME->getMemberDecl();
-          if (isa<EnumConstantDecl>(VD) || isa<VarDecl>(VD)) return;
-          expr = ME->getBase();
-        }
-        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(expr)) {
+    // Sometimes, the expression passed in lacks the casts that are used
+    // to determine which DeclRefExpr's to check.  Assume that the casts
+    // are present and continue visiting the expression.
+    void HandleExpr(Expr *E) {
+      // Skip checking T a = a where T is not a record type.  Doing so is a
+      // way to silence uninitialized warnings.
+      if (isRecordType)
+        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
           HandleDeclRefExpr(DRE);
-          return;
-        }
+
+      if (ConditionalOperator *CO = dyn_cast<ConditionalOperator>(E)) {
+        HandleValue(CO->getTrueExpr());
+        HandleValue(CO->getFalseExpr());
       }
-      Inherited::VisitExpr(E);
+
+      Visit(E);
+    }
+
+    // For most expressions, the cast is directly above the DeclRefExpr.
+    // For conditional operators, the cast can be outside the conditional
+    // operator if both expressions are DeclRefExpr's.
+    void HandleValue(Expr *E) {
+      E = E->IgnoreParenImpCasts();
+      if (DeclRefExpr* DRE = dyn_cast<DeclRefExpr>(E)) {
+        HandleDeclRefExpr(DRE);
+        return;
+      }
+
+      if (ConditionalOperator *CO = dyn_cast<ConditionalOperator>(E)) {
+        HandleValue(CO->getTrueExpr());
+        HandleValue(CO->getFalseExpr());
+      }
+    }
+
+    void VisitImplicitCastExpr(ImplicitCastExpr *E) {
+      if ((!isRecordType && E->getCastKind() == CK_LValueToRValue) ||
+          (isRecordType && E->getCastKind() == CK_NoOp))
+        HandleValue(E->getSubExpr());
+
+      Inherited::VisitImplicitCastExpr(E);
     }
 
     void VisitMemberExpr(MemberExpr *E) {
+      // Don't warn on arrays since they can be treated as pointers.
       if (E->getType()->canDecayToPointerType()) return;
+
       ValueDecl *VD = E->getMemberDecl();
-      if (isa<FieldDecl>(VD) || isa<CXXMethodDecl>(VD))
+      CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(VD);
+      if (isa<FieldDecl>(VD) || (MD && !MD->isStatic()))
         if (DeclRefExpr *DRE
               = dyn_cast<DeclRefExpr>(E->getBase()->IgnoreParenImpCasts())) {
           HandleDeclRefExpr(DRE);
           return;
         }
-      Inherited::VisitMemberExpr(E);
-    }
 
-    void VisitImplicitCastExpr(ImplicitCastExpr *E) {
-      if ((!isRecordType &&E->getCastKind() == CK_LValueToRValue) ||
-          (isRecordType && E->getCastKind() == CK_NoOp)) {
-        Expr* SubExpr = E->getSubExpr()->IgnoreParenImpCasts();
-        if (MemberExpr *ME = dyn_cast<MemberExpr>(SubExpr))
-          SubExpr = ME->getBase()->IgnoreParenImpCasts();
-        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(SubExpr)) {
-          HandleDeclRefExpr(DRE);
-          return;
-        }
-      }
-      Inherited::VisitImplicitCastExpr(E);
+      Inherited::VisitMemberExpr(E);
     }
 
     void VisitUnaryOperator(UnaryOperator *E) {
       // For POD record types, addresses of its own members are well-defined.
-      if (isRecordType && isPODType) return;
+      if (E->getOpcode() == UO_AddrOf && isRecordType && isPODType &&
+          isa<MemberExpr>(E->getSubExpr())) return;
       Inherited::VisitUnaryOperator(E);
     } 
-    
+
+    void VisitObjCMessageExpr(ObjCMessageExpr *E) { return; }
+
     void HandleDeclRefExpr(DeclRefExpr *DRE) {
       Decl* ReferenceDecl = DRE->getDecl(); 
       if (OrigDecl != ReferenceDecl) return;
@@ -6148,7 +6198,7 @@ namespace {
 
 /// CheckSelfReference - Warns if OrigDecl is used in expression E.
 void Sema::CheckSelfReference(Decl* OrigDecl, Expr *E) {
-  SelfReferenceChecker(*this, OrigDecl).VisitExpr(E);
+  SelfReferenceChecker(*this, OrigDecl).HandleExpr(E);
 }
 
 /// AddInitializerToDecl - Adds the initializer Init to the
@@ -7175,9 +7225,10 @@ ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
   // Parameter declarators cannot be interface types. All ObjC objects are
   // passed by reference.
   if (T->isObjCObjectType()) {
+    SourceLocation TypeEndLoc = TSInfo->getTypeLoc().getLocEnd();
     Diag(NameLoc,
          diag::err_object_cannot_be_passed_returned_by_value) << 1 << T
-      << FixItHint::CreateInsertion(NameLoc, "*");
+      << FixItHint::CreateInsertion(TypeEndLoc, "*");
     T = Context.getObjCObjectPointerType(T);
     New->setType(T);
   }
@@ -8696,6 +8747,9 @@ CreateNewDecl:
       InFunctionDeclarator && Name)
     DeclsInPrototypeScope.push_back(New);
 
+  if (PrevDecl)
+    mergeDeclAttributes(New, PrevDecl);
+
   OwnedDecl = true;
   return New;
 }
@@ -9486,7 +9540,11 @@ Decl *Sema::ActOnIvar(Scope *S,
     S->AddDecl(NewID);
     IdResolver.AddDecl(NewID);
   }
-
+  
+  if (LangOpts.ObjCNonFragileABI2 &&
+      !NewID->isInvalidDecl() && isa<ObjCInterfaceDecl>(EnclosingDecl))
+    Diag(Loc, diag::warn_ivars_in_interface);
+  
   return NewID;
 }
 

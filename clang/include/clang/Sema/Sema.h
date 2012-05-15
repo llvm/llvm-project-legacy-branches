@@ -1560,6 +1560,24 @@ public:
   TypedefDecl *ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
                                 TypeSourceInfo *TInfo);
   bool isIncompatibleTypedef(TypeDecl *Old, TypedefNameDecl *New);
+
+  /// Attribute merging methods. Return true if a new attribute was added.
+  AvailabilityAttr *mergeAvailabilityAttr(Decl *D, SourceRange Range,
+                                          IdentifierInfo *Platform,
+                                          VersionTuple Introduced,
+                                          VersionTuple Deprecated,
+                                          VersionTuple Obsoleted,
+                                          bool IsUnavailable,
+                                          StringRef Message);
+  VisibilityAttr *mergeVisibilityAttr(Decl *D, SourceRange Range,
+                                      VisibilityAttr::VisibilityType Vis);
+  DLLImportAttr *mergeDLLImportAttr(Decl *D, SourceRange Range);
+  DLLExportAttr *mergeDLLExportAttr(Decl *D, SourceRange Range);
+  FormatAttr *mergeFormatAttr(Decl *D, SourceRange Range, StringRef Format,
+                              int FormatIdx, int FirstArg);
+  SectionAttr *mergeSectionAttr(Decl *D, SourceRange Range, StringRef Name);
+  bool mergeDeclAttribute(Decl *New, InheritableAttr *Attr);
+
   void mergeDeclAttributes(Decl *New, Decl *Old, bool MergeDeprecation = true);
   void MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls);
   bool MergeFunctionDecl(FunctionDecl *New, Decl *Old, Scope *S);
@@ -3288,11 +3306,21 @@ public:
       ComputedEST = EST_Delayed;
     }
 
-    FunctionProtoType::ExtProtoInfo getEPI() const {
-      FunctionProtoType::ExtProtoInfo EPI;
+    /// \brief Have we been unable to compute this exception specification?
+    bool isDelayed() {
+      return ComputedEST == EST_Delayed;
+    }
+
+    /// \brief Overwrite an EPI's exception specification with this
+    /// computed exception specification.
+    void getEPI(FunctionProtoType::ExtProtoInfo &EPI) const {
       EPI.ExceptionSpecType = getExceptionSpecType();
       EPI.NumExceptions = size();
       EPI.Exceptions = data();
+    }
+    FunctionProtoType::ExtProtoInfo getEPI() const {
+      FunctionProtoType::ExtProtoInfo EPI;
+      getEPI(EPI);
       return EPI;
     }
   };
@@ -4258,12 +4286,7 @@ public:
   Decl *ActOnConversionDeclarator(CXXConversionDecl *Conversion);
 
   void CheckExplicitlyDefaultedMethods(CXXRecordDecl *Record);
-  void CheckExplicitlyDefaultedDefaultConstructor(CXXConstructorDecl *Ctor);
-  void CheckExplicitlyDefaultedCopyConstructor(CXXConstructorDecl *Ctor);
-  void CheckExplicitlyDefaultedCopyAssignment(CXXMethodDecl *Method);
-  void CheckExplicitlyDefaultedMoveConstructor(CXXConstructorDecl *Ctor);
-  void CheckExplicitlyDefaultedMoveAssignment(CXXMethodDecl *Method);
-  void CheckExplicitlyDefaultedDestructor(CXXDestructorDecl *Dtor);
+  void CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD);
 
   //===--------------------------------------------------------------------===//
   // C++ Derived Classes
@@ -6174,9 +6197,16 @@ public:
                                const ObjCMethodDecl *Overridden,
                                bool IsImplementation);
 
-  /// \brief Check whether the given method overrides any methods in its class,
-  /// calling \c CheckObjCMethodOverride for each overridden method.
-  bool CheckObjCMethodOverrides(ObjCMethodDecl *NewMethod, DeclContext *DC);
+  /// \brief Describes the compatibility of a result type with its method.
+  enum ResultTypeCompatibilityKind {
+    RTC_Compatible,
+    RTC_Incompatible,
+    RTC_Unknown
+  };
+
+  void CheckObjCMethodOverrides(ObjCMethodDecl *ObjCMethod,
+                                ObjCInterfaceDecl *CurrentClass,
+                                ResultTypeCompatibilityKind RTC);
 
   enum PragmaOptionsAlignKind {
     POAK_Native,  // #pragma options align=native

@@ -6,4 +6,5 @@ add_clang_library(clangTooling
   CompilationDatabase.cpp
   Refactoring.cpp
   Tooling.cpp
+  ArgumentsAdjusters.cpp
   )
