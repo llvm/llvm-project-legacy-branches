@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/PluginManager.h"
@@ -840,6 +841,12 @@ uint32_t
 OptionGroupPlatformRSync::GetNumDefinitions ()
 {
     return arraysize(g_rsync_option_table);
+}
+
+lldb::BreakpointSP
+Platform::SetThreadCreationBreakpoint (lldb_private::Target &target)
+{
+    return lldb::BreakpointSP();
 }
 
 OptionGroupPlatformSSH::OptionGroupPlatformSSH ()
