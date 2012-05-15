@@ -291,11 +291,11 @@ Target::CreateBreakpoint (const FileSpecList *containingModules,
 
 lldb::BreakpointSP
 Target::CreateBreakpoint (const FileSpecList *containingModules,
-                  const FileSpecList *containingSourceFiles,
-                  std::vector<std::string> func_names,
-                  uint32_t func_name_type_mask, 
-                  bool internal,
-                  LazyBool skip_prologue)
+                          const FileSpecList *containingSourceFiles,
+                          const std::vector<std::string> &func_names,
+                          uint32_t func_name_type_mask,
+                          bool internal,
+                          LazyBool skip_prologue)
 {
     BreakpointSP bp_sp;
     size_t num_names = func_names.size();
@@ -1512,7 +1512,6 @@ ArchSpec
 Target::GetDefaultArchitecture ()
 {
     lldb::UserSettingsControllerSP settings_controller_sp (GetSettingsController());
-    
     if (settings_controller_sp)
         return static_cast<Target::SettingsController *>(settings_controller_sp.get())->GetArchitecture ();
     return ArchSpec();
