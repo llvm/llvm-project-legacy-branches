@@ -20,8 +20,8 @@
 
 using namespace clang;
 using namespace clang::ast_matchers;
-using namespace llvm;
 using namespace clang::tooling;
+using namespace llvm;
 
 cl::opt<std::string> BuildPath(
   cl::Positional,
@@ -34,9 +34,9 @@ cl::list<std::string> SourcePaths(
 
 // Implements a callback that replaces the calls for the AST
 // nodes we matched.
-class Renamer : public MatchFinder::MatchCallback {
+class CallRenamer : public MatchFinder::MatchCallback {
 public:
-  Renamer(Replacements *Replace) : Replace(Replace) {}
+  CallRenamer(Replacements *Replace) : Replace(Replace) {}
 
   // This method is called every time the registered matcher matches
   // on the AST.
@@ -53,6 +53,38 @@ public:
                   // Replace the range of the member name...
                   CharSourceRange::getTokenRange(
                     SourceRange(M->getMemberLoc())),
+                  // ... with "Front".
+                  "Front"));
+  }
+
+private:
+  // Replacements are the RefactoringTool's way to keep track of code
+  // transformations, deduplicate them and apply them to the code when
+  // the tool has finished with all translation units.
+  Replacements *Replace;
+};
+
+// Implements a callback that replaces the decls for the AST
+// nodes we matched.
+class DeclRenamer : public MatchFinder::MatchCallback {
+public:
+  DeclRenamer(Replacements *Replace) : Replace(Replace) {}
+
+  // This method is called every time the registered matcher matches
+  // on the AST.
+	virtual void run(const MatchFinder::MatchResult &Result) {
+    const CXXMethodDecl *D = Result.Nodes.getDeclAs<CXXMethodDecl>("method");
+    // We can assume D is non-null, because the ast matchers guarantee
+    // that a node with this type was bound, as the matcher would otherwise
+    // not match.
+
+    Replace->insert(
+      // Replacements are a source manager independent way to express
+      // transformation on the source.
+      Replacement(*Result.SourceManager,
+                  // Replace the range of the declarator identifier...
+                  CharSourceRange::getTokenRange(
+                    SourceRange(D->getLocation())),
                   // ... with "Front".
                   "Front"));
   }
@@ -84,9 +116,10 @@ int main(int argc, const char **argv) {
     if (!Compilations)
       llvm::report_fatal_error(ErrorMessage);
   }
+
   RefactoringTool Tool(*Compilations, SourcePaths);
   ast_matchers::MatchFinder Finder;
-  Renamer Callback(&Tool.getReplacements());
+  CallRenamer CallCallback(&Tool.getReplacements());
   Finder.addMatcher(
     // Match calls...
     Call(
@@ -99,7 +132,14 @@ int main(int argc, const char **argv) {
       // ... and bind the member expression to the ID "member", under which
       // it can later be found in the callback.
       Callee(Id("member", MemberExpression()))),
-    &Callback);
+    &CallCallback);
+
+  DeclRenamer DeclCallback(&Tool.getReplacements());
+  Finder.addMatcher(
+    // Match declarations...
+    Id("method", Method(HasName("Get"),
+                        OfClass(IsDerivedFrom("ElementsBase")))),
+    &DeclCallback);
 
   return Tool.run(newFrontendActionFactory(&Finder));
 }
