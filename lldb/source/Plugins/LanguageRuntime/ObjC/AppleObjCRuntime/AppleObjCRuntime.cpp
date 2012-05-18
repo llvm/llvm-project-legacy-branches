@@ -142,7 +142,7 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
                                                      &wrapper_struct_addr, 
                                                      error_stream, 
                                                      stop_others, 
-                                                     1000000, 
+                                                     100000, 
                                                      try_all_threads, 
                                                      unwind_on_error, 
                                                      ret);
@@ -350,10 +350,12 @@ AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing()
     Target &target(m_process->GetTarget());
     
     static ConstString s_method_signature("-[NSDictionary objectForKeyedSubscript:]");
+    static ConstString s_arclite_method_signature("__arclite_objectForKeyedSubscript");
     
     SymbolContextList sc_list;
     
-    if (target.GetImages().FindSymbolsWithNameAndType(s_method_signature, eSymbolTypeCode, sc_list))
+    if (target.GetImages().FindSymbolsWithNameAndType(s_method_signature, eSymbolTypeCode, sc_list) ||
+        target.GetImages().FindSymbolsWithNameAndType(s_arclite_method_signature, eSymbolTypeCode, sc_list))
         return true;
     else
         return false;

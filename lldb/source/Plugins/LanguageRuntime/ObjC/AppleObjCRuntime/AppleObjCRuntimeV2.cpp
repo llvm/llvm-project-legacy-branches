@@ -121,7 +121,7 @@ AppleObjCRuntimeV2::RunFunctionToFindClassName(addr_t object_addr, Thread *threa
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));  // FIXME - a more appropriate log channel?
     
     int32_t debug;
-    if (log)
+    if (log && log->GetVerbose())
         debug = 1;
     else
         debug = 0;
@@ -217,7 +217,7 @@ AppleObjCRuntimeV2::RunFunctionToFindClassName(addr_t object_addr, Thread *threa
                                                      &m_get_class_name_args, 
                                                      errors, 
                                                      stop_others, 
-                                                     1000000, 
+                                                     100000, 
                                                      try_all_threads, 
                                                      unwind_on_error, 
                                                      void_ptr_value);
