@@ -46,13 +46,13 @@ AppleObjCRuntime::GetObjectDescription (Stream &str, ValueObject &valobj)
     // result in an address, and we should try that to see if the address is an ObjC object.
     
     if (!(valobj.IsPointerType() || valobj.IsIntegerType(is_signed)))
-        return NULL;
+        return false;
     
     // Make the argument list: we pass one arg, the address of our pointer, to the print function.
     Value val;
     
     if (!valobj.ResolveValue(val.GetScalar()))
-        return NULL;
+        return false;
     
     ExecutionContext exe_ctx (valobj.GetExecutionContextRef());
     return GetObjectDescription(str, val, exe_ctx.GetBestExecutionContextScope());
@@ -193,11 +193,10 @@ AppleObjCRuntime::GetPrintForDebuggerAddr()
 bool
 AppleObjCRuntime::CouldHaveDynamicValue (ValueObject &in_value)
 {
-    lldb::LanguageType known_type = in_value.GetObjectRuntimeLanguage();
-    if (known_type == lldb::eLanguageTypeObjC)
-        return in_value.IsPossibleDynamicType ();
-    else
-        return in_value.IsPointerType();
+    return ClangASTContext::IsPossibleDynamicType(in_value.GetClangAST(), in_value.GetClangType(),
+                                                  NULL,
+                                                  false, // do not check C++
+                                                  true); // check ObjC
 }
 
 bool

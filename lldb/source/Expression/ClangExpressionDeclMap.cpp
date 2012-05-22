@@ -1221,12 +1221,12 @@ ClangExpressionDeclMap::GetObjectPointer
         return false;
     }
     
-    const bool ignore_const = true;
+    const bool object_pointer = true;
     
     VariableSP object_ptr_var = FindVariableInScope (*frame,
                                                      object_name, 
                                                      (suppress_type_check ? NULL : &m_struct_vars->m_object_pointer_type),
-                                                     ignore_const);
+                                                     object_pointer);
     
     if (!object_ptr_var)
     {
@@ -2175,7 +2175,7 @@ ClangExpressionDeclMap::FindVariableInScope
     StackFrame &frame,
     const ConstString &name,
     TypeFromUser *type,
-    bool ignore_const
+    bool object_pointer
 )
 {    
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
@@ -2196,25 +2196,64 @@ ClangExpressionDeclMap::FindVariableInScope
         !var_sp->LocationIsValidForFrame (&frame))
         return lldb::VariableSP();
 
-    if (var_sp && type)
+    if (var_sp)
     {
-        if (type->GetASTContext() == var_sp->GetType()->GetClangAST())
-        {
-            if (!ClangASTContext::AreTypesSame(type->GetASTContext(), 
-                                               type->GetOpaqueQualType(), 
-                                               var_sp->GetType()->GetClangFullType(), 
-                                               ignore_const))
-                return lldb::VariableSP();
-        }
-        else
+        if (!type)
+            return var_sp;
+        
+        TypeFromUser candidate_type(var_sp->GetType()->GetClangFullType(),
+                                    var_sp->GetType()->GetClangAST());
+        
+        if (candidate_type.GetASTContext() != type->GetASTContext())
         {
             if (log)
                 log->PutCString("Skipping a candidate variable because of different AST contexts");
             return lldb::VariableSP();
         }
+        
+        if (object_pointer)
+        {
+            clang::QualType desired_qual_type = clang::QualType::getFromOpaquePtr(type->GetOpaqueQualType());
+            clang::QualType candidate_qual_type = clang::QualType::getFromOpaquePtr(candidate_type.GetOpaqueQualType());
+            
+            const clang::ObjCObjectPointerType *desired_objc_ptr_type = desired_qual_type->getAs<clang::ObjCObjectPointerType>();
+            const clang::ObjCObjectPointerType *candidate_objc_ptr_type = desired_qual_type->getAs<clang::ObjCObjectPointerType>();
+            
+            if (desired_objc_ptr_type && candidate_objc_ptr_type) {
+                clang::QualType desired_target_type = desired_objc_ptr_type->getPointeeType().getUnqualifiedType();
+                clang::QualType candidate_target_type = candidate_objc_ptr_type->getPointeeType().getUnqualifiedType();
+                
+                if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                                  desired_target_type.getAsOpaquePtr(),
+                                                  candidate_target_type.getAsOpaquePtr()))
+                    return var_sp;
+            }
+            
+            const clang::PointerType *desired_ptr_type = desired_qual_type->getAs<clang::PointerType>();
+            const clang::PointerType *candidate_ptr_type = candidate_qual_type->getAs<clang::PointerType>();
+            
+            if (desired_ptr_type && candidate_ptr_type) {
+                clang::QualType desired_target_type = desired_ptr_type->getPointeeType().getUnqualifiedType();
+                clang::QualType candidate_target_type = candidate_ptr_type->getPointeeType().getUnqualifiedType();
+                
+                if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                                  desired_target_type.getAsOpaquePtr(),
+                                                  candidate_target_type.getAsOpaquePtr()))
+                    return var_sp;
+            }
+            
+            return lldb::VariableSP();
+        }
+        else
+        {
+            if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                               type->GetOpaqueQualType(), 
+                                               var_sp->GetType()->GetClangFullType()))
+                return var_sp;
+        }
     }
 
-    return var_sp;
+    return lldb::VariableSP();
 }
 
 Symbol *

@@ -34,7 +34,7 @@ class ObjCNewSyntaxTestCase(TestBase):
     def applies(self):
         if platform.system() != "Darwin":
             return False
-        if StrictVersion('12.0.0') > platform.release():
+        if StrictVersion('11.0.0') > platform.release():
             return False
 
         return True
@@ -120,7 +120,7 @@ class ObjCNewSyntaxTestCase(TestBase):
         self.expect("expr -o -- @( 1 + 3 )", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["NSNumber", "4"])
         self.expect("expr -o -- @(\"Hello world\" + 6)", VARIABLES_DISPLAYED_CORRECTLY,
-            substrs = ["NSString", "@\"world\""])
+            substrs = ["NSString", "world"])
 
             
 if __name__ == '__main__':
