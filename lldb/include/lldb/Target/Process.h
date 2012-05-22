@@ -3094,6 +3094,9 @@ public:
     GetObjCLanguageRuntime (bool retry_if_null = true);
     
     bool
+    IsPossibleDynamicValue (ValueObject& in_value);
+    
+    bool
     IsRunning () const;
     
     DynamicCheckerFunctions *GetDynamicCheckers()
@@ -3242,7 +3245,7 @@ protected:
         }
         
         virtual EventActionResult PerformAction (lldb::EventSP &event_sp) = 0;
-        virtual void HandleBeingUnshipped () {};
+        virtual void HandleBeingUnshipped () {}
         virtual EventActionResult HandleBeingInterrupted () = 0;
         virtual const char *GetExitString() = 0;
     protected:
