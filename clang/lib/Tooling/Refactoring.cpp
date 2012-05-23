@@ -23,7 +23,7 @@
 namespace clang {
 namespace tooling {
 
-static const char * const InvalidLocation = "invalid-location";
+static const char * const InvalidLocation = "";
 
 Replacement::Replacement()
   : FilePath(InvalidLocation), Offset(0), Length(0) {}
@@ -91,6 +91,21 @@ void Replacement::setFromSourceLocation(SourceManager &Sources,
   this->ReplacementText = ReplacementText;
 }
 
+// FIXME: This should go into the Lexer, but we need to figure out how
+// to handle ranges for refactoring in general first - there is no obvious
+// good way how to integrate this into the Lexer yet.
+static int getRangeSize(SourceManager &Sources, const CharSourceRange &Range) {
+  SourceLocation SpellingBegin = Sources.getSpellingLoc(Range.getBegin());
+  SourceLocation SpellingEnd = Sources.getSpellingLoc(Range.getEnd());
+  std::pair<FileID, unsigned> Start = Sources.getDecomposedLoc(SpellingBegin);
+  std::pair<FileID, unsigned> End = Sources.getDecomposedLoc(SpellingEnd);
+  if (Start.first != End.first) return -1;
+  if (Range.isTokenRange())
+    End.second += Lexer::MeasureTokenLength(SpellingEnd, Sources,
+                                            LangOptions());
+  return End.second - Start.second;
+}
+
 void Replacement::setFromSourceRange(SourceManager &Sources,
                                      const CharSourceRange &Range,
                                      llvm::StringRef ReplacementText) {
@@ -130,19 +145,6 @@ bool saveRewrittenFiles(Rewriter &Rewrite) {
     FileStream.flush();
   }
   return true;
-}
-
-int getRangeSize(SourceManager &Sources, const CharSourceRange &Range) {
-  SourceLocation SpellingBegin = Sources.getSpellingLoc(Range.getBegin());
-  SourceLocation SpellingEnd = Sources.getSpellingLoc(Range.getEnd());
-  std::pair<FileID, unsigned> Start = Sources.getDecomposedLoc(SpellingBegin);
-  std::pair<FileID, unsigned> End = Sources.getDecomposedLoc(SpellingEnd);
-  if (Start.first != End.first) return -1;
-  if (Range.isTokenRange())
-    // FIXME: Bring in the correct LangOptions.
-    End.second += Lexer::MeasureTokenLength(SpellingEnd, Sources,
-                                            LangOptions());
-  return End.second - Start.second;
 }
 
 RefactoringTool::RefactoringTool(const CompilationDatabase &Compilations,

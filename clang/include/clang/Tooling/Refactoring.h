@@ -105,12 +105,6 @@ typedef std::set<Replacement, Replacement::Less> Replacements;
 /// Apply operations.
 bool applyAllReplacements(Replacements &Replaces, Rewriter &Rewrite);
 
-/// \brief Saves all changed files in the Rewriter to disk.
-///
-/// \returns True On Success.
-/// FIXME: Put into Rewriter.
-bool saveRewrittenFiles(Rewriter &Rewrite);
-
 /// \brief A tool to run refactorings.
 ///
 /// This is a refactoring specific version of \see ClangTool.
@@ -135,11 +129,6 @@ private:
   ClangTool Tool;
   Replacements Replace;
 };
-
-/// \brief Returns the length of the given range.
-///
-/// FIXME: Put into  SourceManager.
-int getRangeSize(SourceManager &Sources, const CharSourceRange &Range);
 
 template <typename Node>
 Replacement::Replacement(SourceManager &Sources, const Node &NodeToReplace,

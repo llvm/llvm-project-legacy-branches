@@ -143,10 +143,10 @@ TEST_F(ReplacementTest, CanRetrivePath) {
 
 TEST_F(ReplacementTest, ReturnsInvalidPath) {
   Replacement Replace1(Context.Sources, SourceLocation(), 0, "");
-  EXPECT_EQ("invalid-location", Replace1.getFilePath());
+  EXPECT_TRUE(Replace1.getFilePath().empty());
 
   Replacement Replace2;
-  EXPECT_EQ("invalid-location", Replace2.getFilePath());
+  EXPECT_TRUE(Replace2.getFilePath().empty());
 }
 
 TEST_F(ReplacementTest, CanApplyReplacements) {
@@ -241,7 +241,7 @@ TEST_F(FlushRewrittenFilesTest, StoresChangesOnDisk) {
   Replaces.insert(Replacement(Context.Sources, Context.getLocation(ID, 2, 1),
                               5, "replaced"));
   EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
-  EXPECT_TRUE(saveRewrittenFiles(Context.Rewrite));
+  EXPECT_FALSE(Context.Rewrite.overwriteChangedFiles());
   EXPECT_EQ("line1\nreplaced\nline3\nline4",
             getFileContentFromDisk("input.cpp"));
 }
