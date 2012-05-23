@@ -70,7 +70,7 @@ namespace lldb
         if (error.Success())
             ((ProcessGDBRemote *)p)->GetGDBRemote().DumpHistory (strm);
     }
-};
+}
 
 
 #define DEBUGSERVER_BASENAME    "debugserver"
@@ -1854,6 +1854,14 @@ ProcessGDBRemote::GetMemoryRegionInfo (addr_t load_addr,
 {
     
     Error error (m_gdb_comm.GetMemoryRegionInfo (load_addr, region_info));
+    return error;
+}
+
+Error
+ProcessGDBRemote::GetWatchpointSupportInfo (uint32_t &num)
+{
+    
+    Error error (m_gdb_comm.GetWatchpointSupportInfo (num));
     return error;
 }
 
