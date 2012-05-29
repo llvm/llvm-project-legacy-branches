@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ASTMatchersTest.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/Tooling.h"
@@ -14,108 +15,6 @@
 
 namespace clang {
 namespace ast_matchers {
-
-using clang::tooling::runToolOnCode;
-
-class BoundNodesCallback {
-public:
-  virtual ~BoundNodesCallback() {}
-  virtual bool run(const BoundNodes *BoundNodes) = 0;
-};
-
-// If 'FindResultVerifier' is not NULL, sets *Verified to the result of
-// running 'FindResultVerifier' with the bound nodes as argument.
-// If 'FindResultVerifier' is NULL, sets *Verified to true when Run is called.
-class VerifyMatch : public MatchFinder::MatchCallback {
-public:
-  VerifyMatch(BoundNodesCallback *FindResultVerifier, bool *Verified)
-      : Verified(Verified), FindResultReviewer(FindResultVerifier) {}
-
-  virtual void run(const MatchFinder::MatchResult &Result) {
-    if (FindResultReviewer != NULL) {
-      *Verified = FindResultReviewer->run(&Result.Nodes);
-    } else {
-      *Verified = true;
-    }
-  }
-
-private:
-  bool *const Verified;
-  BoundNodesCallback *const FindResultReviewer;
-};
-
-template <typename T>
-testing::AssertionResult matchesConditionally(const std::string &Code,
-                                              const T &AMatcher,
-                                              bool ExpectMatch) {
-  bool Found = false;
-  MatchFinder Finder;
-  VerifyMatch Callback(0, &Found);
-  Finder.addMatcher(AMatcher, &Callback);
-  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
-    return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
-  }
-  if (!Found && ExpectMatch) {
-    return testing::AssertionFailure()
-      << "Could not find match in \"" << Code << "\"";
-  } else if (Found && !ExpectMatch) {
-    return testing::AssertionFailure()
-      << "Found unexpected match in \"" << Code << "\"";
-  }
-  return testing::AssertionSuccess();
-}
-
-template <typename T>
-testing::AssertionResult matches(const std::string &Code, const T &AMatcher) {
-  return matchesConditionally(Code, AMatcher, true);
-}
-
-template <typename T>
-testing::AssertionResult notMatches(const std::string &Code,
-                                    const T &AMatcher) {
-  return matchesConditionally(Code, AMatcher, false);
-}
-
-template <typename T>
-testing::AssertionResult
-matchAndVerifyResultConditionally(const std::string &Code, const T &AMatcher,
-                                  BoundNodesCallback *FindResultVerifier,
-                                  bool ExpectResult) {
-  llvm::OwningPtr<BoundNodesCallback> ScopedVerifier(FindResultVerifier);
-  bool VerifiedResult = false;
-  MatchFinder Finder;
-  VerifyMatch Callback(FindResultVerifier, &VerifiedResult);
-  Finder.addMatcher(AMatcher, &Callback);
-  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
-    return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
-  }
-  if (!VerifiedResult && ExpectResult) {
-    return testing::AssertionFailure()
-      << "Could not verify result in \"" << Code << "\"";
-  } else if (VerifiedResult && !ExpectResult) {
-    return testing::AssertionFailure()
-      << "Verified unexpected result in \"" << Code << "\"";
-  }
-  return testing::AssertionSuccess();
-}
-
-// FIXME: Find better names for these functions (or document what they
-// do more precisely).
-template <typename T>
-testing::AssertionResult
-matchAndVerifyResultTrue(const std::string &Code, const T &AMatcher,
-                         BoundNodesCallback *FindResultVerifier) {
-  return matchAndVerifyResultConditionally(
-      Code, AMatcher, FindResultVerifier, true);
-}
-
-template <typename T>
-testing::AssertionResult
-matchAndVerifyResultFalse(const std::string &Code, const T &AMatcher,
-                          BoundNodesCallback *FindResultVerifier) {
-  return matchAndVerifyResultConditionally(
-      Code, AMatcher, FindResultVerifier, false);
-}
 
 TEST(HasNameDeathTest, DiesOnEmptyName) {
   ASSERT_DEBUG_DEATH({
@@ -2077,5 +1976,5 @@ TEST(IsTemplateInstantiation, DoesNotMatchNonTemplate) {
       Class(IsTemplateInstantiation())));
 }
 
-} // end namespace tooling
+} // end namespace ast_matchers
 } // end namespace clang

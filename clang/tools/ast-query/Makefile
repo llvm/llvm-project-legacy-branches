@@ -1,4 +1,4 @@
-##===- unittests/ASTMatchers/Makefile ----------------------*- Makefile -*-===##
+##===- tools/ast-query/Makefile ----------------------------*- Makefile -*-===##
 #
 #                     The LLVM Compiler Infrastructure
 #
@@ -7,13 +7,18 @@
 #
 ##===----------------------------------------------------------------------===##
 
-CLANG_LEVEL = ../..
-PARALLEL_DIRS = Dynamic
+CLANG_LEVEL := ../..
 
-TESTNAME = ASTMatchers
+TOOLNAME = ast-query
+NO_INSTALL = 1
+
+# No plugins, optimize startup time.
+TOOL_NO_EXPORTS = 1
+
 LINK_COMPONENTS := support mc
 USEDLIBS = clangTooling.a clangFrontend.a clangSerialization.a clangDriver.a \
            clangRewrite.a clangParse.a clangSema.a clangAnalysis.a \
-					 clangAST.a clangASTMatchers.a clangLex.a clangBasic.a
+           clangAST.a clangASTMatchers.a clangDynamicASTMatchers.a \
+           clangLex.a clangBasic.a
 
-include $(CLANG_LEVEL)/unittests/Makefile
+include $(CLANG_LEVEL)/Makefile

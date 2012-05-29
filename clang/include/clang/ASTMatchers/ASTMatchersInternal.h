@@ -311,16 +311,18 @@ private:
 /// node class hierarchies (i.e. if T is Decl, Stmt, or QualType).
 template <typename T>
 struct IsBaseType {
-  static const bool value = (llvm::is_same<T, clang::Decl>::value ||
-                             llvm::is_same<T, clang::Stmt>::value ||
-                             llvm::is_same<T, clang::QualType>::value);
+  static const bool value =
+      (llvm::is_same<T, clang::Decl>::value ||
+       llvm::is_same<T, clang::Stmt>::value ||
+       llvm::is_same<T, clang::QualType>::value ||
+       llvm::is_same<T, clang::CXXCtorInitializer>::value);
 };
 template <typename T>
 const bool IsBaseType<T>::value;
 
 /// \brief Interface that can match any AST base node type and contains default
 /// implementations returning false.
-class UntypedBaseMatcher {
+class UntypedBaseMatcher : public llvm::RefCountedBaseVPTR {
 public:
   virtual ~UntypedBaseMatcher() {}
 
@@ -333,6 +335,11 @@ public:
     return false;
   }
   virtual bool matches(const clang::Stmt &StmtNode, ASTMatchFinder *Finder,
+                       BoundNodesTreeBuilder *Builder) const {
+    return false;
+  }
+  virtual bool matches(const clang::CXXCtorInitializer &CtorInitNode,
+                       ASTMatchFinder *Finder,
                        BoundNodesTreeBuilder *Builder) const {
     return false;
   }

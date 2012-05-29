@@ -55,6 +55,15 @@ add_clang_unittest(ASTMatchers
   USED_LIBS gtest gtest_main clangASTMatchers clangTooling
  )
 
+add_clang_unittest(ASTMatchers/Dynamic
+  ASTMatchers/Dynamic/GenericMatcherTest.cpp
+  ASTMatchers/Dynamic/GenericValueTest.cpp
+  ASTMatchers/Dynamic/NumberHolderTest.cpp
+  ASTMatchers/Dynamic/ParserTest.cpp
+  ASTMatchers/Dynamic/RegistryTest.cpp
+  USED_LIBS gtest gtest_main clangASTMatchers clangDynamicASTMatchers clangTooling
+ )
+
 add_clang_unittest(Basic
   Basic/FileManagerTest.cpp
   Basic/SourceManagerTest.cpp

@@ -1,3 +1,5 @@
+add_subdirectory(Dynamic)
+
 set(LLVM_LINK_COMPONENTS support)
 SET(LLVM_USED_LIBS clangBasic clangAST)
 
