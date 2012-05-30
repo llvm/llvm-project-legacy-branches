@@ -751,7 +751,6 @@ ObjectFileMachO::ParseSections ()
 {
     lldb::user_id_t segID = 0;
     lldb::user_id_t sectID = 0;
-    struct segment_command_64 load_cmd;
     uint32_t offset = MachHeaderSizeFromMagic(m_header.magic);
     uint32_t i;
     const bool is_core = GetType() == eTypeCoreFile;
@@ -760,24 +759,32 @@ ObjectFileMachO::ParseSections ()
     // First look up any LC_ENCRYPTION_INFO load commands
     typedef RangeArray<uint32_t, uint32_t, 8> EncryptedFileRanges;
     EncryptedFileRanges encrypted_file_ranges;
+    encryption_info_command encryption_cmd;
     for (i=0; i<m_header.ncmds; ++i)
     {
         const uint32_t load_cmd_offset = offset;
-        if (m_data.GetU32(&offset, &load_cmd, 2) == NULL)
+        if (m_data.GetU32(&offset, &encryption_cmd, 2) == NULL)
             break;
         
-        if (load_cmd.cmd == LoadCommandEncryptionInfo)
+        if (encryption_cmd.cmd == LoadCommandEncryptionInfo)
         {
-            EncryptedFileRanges::Entry entry;
-            entry.SetRangeBase(m_data.GetU32(&offset));
-            entry.SetByteSize(m_data.GetU32(&offset));
-            encrypted_file_ranges.Append(entry);
+            if (m_data.GetU32(&offset, &encryption_cmd.cryptoff, 3))
+            {
+                if (encryption_cmd.cryptid != 0)
+                {
+                    EncryptedFileRanges::Entry entry;
+                    entry.SetRangeBase(encryption_cmd.cryptoff);
+                    entry.SetByteSize(encryption_cmd.cryptsize);
+                    encrypted_file_ranges.Append(entry);
+                }
+            }
         }
-        offset = load_cmd_offset + load_cmd.cmdsize;
+        offset = load_cmd_offset + encryption_cmd.cmdsize;
     }
 
     offset = MachHeaderSizeFromMagic(m_header.magic);
 
+    struct segment_command_64 load_cmd;
     for (i=0; i<m_header.ncmds; ++i)
     {
         const uint32_t load_cmd_offset = offset;
@@ -1359,20 +1366,24 @@ ObjectFileMachO::ParseSymtab (bool minimize)
         }
 
 
-        if (process)
+        const bool have_strtab_data = strtab_data.GetByteSize() > 0;
+        if (!have_strtab_data)
         {
-            if (strtab_addr == LLDB_INVALID_ADDRESS)
+            if (process)
+            {
+                if (strtab_addr == LLDB_INVALID_ADDRESS)
+                {
+                    if (log)
+                        module_sp->LogMessage(log.get(), "failed to locate the strtab in memory");
+                    return 0;
+                }
+            }
+            else
             {
                 if (log)
-                    module_sp->LogMessage(log.get(), "failed to locate the strtab in memory");
+                    module_sp->LogMessage(log.get(), "failed to read strtab data");
                 return 0;
             }
-        }
-        else if (strtab_data.GetByteSize() == 0)
-        {
-            if (log)
-                module_sp->LogMessage(log.get(), "failed to read strtab data");
-            return 0;
         }
 
         const ConstString &g_segment_name_TEXT = GetSegmentNameTEXT();
@@ -1449,14 +1460,7 @@ ObjectFileMachO::ParseSymtab (bool minimize)
             SymbolType type = eSymbolTypeInvalid;
             const char *symbol_name = NULL;
             
-            if (process)
-            {
-                const addr_t str_addr = strtab_addr + nlist.n_strx;
-                Error str_error;
-                if (process->ReadCStringFromMemory(str_addr, memory_symbol_name, str_error))
-                    symbol_name = memory_symbol_name.c_str();
-            }
-            else
+            if (have_strtab_data)
             {
                 symbol_name = strtab_data.PeekCStr(nlist.n_strx);
                 
@@ -1475,6 +1479,13 @@ ObjectFileMachO::ParseSymtab (bool minimize)
                 }
                 if (symbol_name[0] == '\0')
                     symbol_name = NULL;
+            }
+            else
+            {
+                const addr_t str_addr = strtab_addr + nlist.n_strx;
+                Error str_error;
+                if (process->ReadCStringFromMemory(str_addr, memory_symbol_name, str_error))
+                    symbol_name = memory_symbol_name.c_str();
             }
             const char *symbol_name_non_abi_mangled = NULL;
 
@@ -1654,10 +1665,28 @@ ObjectFileMachO::ParseSymtab (bool minimize)
                     {
                         // We use the current number of symbols in the symbol table in lieu of
                         // using nlist_idx in case we ever start trimming entries out
-                        if (symbol_name[0] == '/')
-                            N_SO_index = sym_idx;
+                        const bool N_SO_has_full_path = symbol_name[0] == '/';
+                        if (N_SO_has_full_path)
+                        {
+                            if (minimize && (N_SO_index == sym_idx - 1) && ((sym_idx - 1) < num_syms))
+                            {
+                                // We have two consecutive N_SO entries where the first contains a directory
+                                // and the second contains a full path.
+                                sym[sym_idx - 1].GetMangled().SetValue(symbol_name, false);
+                                m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
+                                add_nlist = false;
+                            }
+                            else
+                            {
+                                // This is the first entry in a N_SO that contains a directory or
+                                // a full path to the source file
+                                N_SO_index = sym_idx;
+                            }
+                        }
                         else if (minimize && (N_SO_index == sym_idx - 1) && ((sym_idx - 1) < num_syms))
                         {
+                            // This is usually the second N_SO entry that contains just the filename,
+                            // so here we combine it with the first one if we are minimizing the symbol table
                             const char *so_path = sym[sym_idx - 1].GetMangled().GetDemangledName().AsCString();
                             if (so_path && so_path[0])
                             {
