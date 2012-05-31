@@ -34,7 +34,7 @@ class ObjCNewSyntaxTestCase(TestBase):
     def applies(self):
         if platform.system() != "Darwin":
             return False
-        if StrictVersion('11.0.0') > platform.release():
+        if StrictVersion('12.0.0') > platform.release():
             return False
 
         return True
