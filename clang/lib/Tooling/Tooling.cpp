@@ -166,7 +166,9 @@ ToolInvocation::ToolInvocation(
 }
 
 void ToolInvocation::mapVirtualFile(StringRef FilePath, StringRef Content) {
-  MappedFileContents[FilePath] = Content;
+  SmallString<1024> PathStorage;
+  llvm::sys::path::native(FilePath, PathStorage);
+  MappedFileContents[PathStorage] = Content;
 }
 
 bool ToolInvocation::run() {
@@ -193,17 +195,15 @@ bool ToolInvocation::run() {
   }
   llvm::OwningPtr<clang::CompilerInvocation> Invocation(
       newInvocation(&Diagnostics, *CC1Args));
-  return runInvocation(BinaryName, Compilation.get(),
-                       Invocation.take(), *CC1Args, ToolAction.take());
+  return runInvocation(BinaryName, Compilation.get(), Invocation.take(),
+                       *CC1Args);
 }
 
 bool ToolInvocation::runInvocation(
     const char *BinaryName,
     clang::driver::Compilation *Compilation,
     clang::CompilerInvocation *Invocation,
-    const clang::driver::ArgStringList &CC1Args,
-    clang::FrontendAction *ToolAction) {
-  llvm::OwningPtr<clang::FrontendAction> ScopedToolAction(ToolAction);
+    const clang::driver::ArgStringList &CC1Args) {
   // Show the invocation, with -v.
   if (Invocation->getHeaderSearchOpts().Verbose) {
     llvm::errs() << "clang Invocation:\n";
@@ -216,6 +216,11 @@ bool ToolInvocation::runInvocation(
   Compiler.setInvocation(Invocation);
   Compiler.setFileManager(Files);
   // FIXME: What about LangOpts?
+
+  // ToolAction can have lifetime requirements for Compiler or its members, and
+  // we need to ensure it's deleted earlier than Compiler. So we pass it to an
+  // OwningPtr declared after the Compiler variable.
+  llvm::OwningPtr<FrontendAction> ScopedToolAction(ToolAction.take());
 
   // Create the compilers actual diagnostics engine.
   Compiler.createDiagnostics(CC1Args.size(),
@@ -235,7 +240,7 @@ bool ToolInvocation::runInvocation(
         clang::CompilerInvocation::GetResourcesPath(BinaryName, SymbolAddr);
   }
 
-  const bool Success = Compiler.ExecuteAction(*ToolAction);
+  const bool Success = Compiler.ExecuteAction(*ScopedToolAction);
 
   Compiler.resetAndLeakFileManager();
   return Success;
@@ -251,8 +256,7 @@ void ToolInvocation::addFileMappingsTo(SourceManager &Sources) {
     // FIXME: figure out what '0' stands for.
     const FileEntry *FromFile = Files->getVirtualFile(
         It->getKey(), Input->getBufferSize(), 0);
-    // FIXME: figure out memory management ('true').
-    Sources.overrideFileContents(FromFile, Input, true);
+    Sources.overrideFileContents(FromFile, Input);
   }
 }
 

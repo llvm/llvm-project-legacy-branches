@@ -3795,20 +3795,19 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   // Make the call expr early, before semantic checks.  This guarantees cleanup
   // of arguments and function on error.
   CallExpr *TheCall;
-  if (Config) {
+  if (Config)
     TheCall = new (Context) CUDAKernelCallExpr(Context, Fn,
                                                cast<CallExpr>(Config),
                                                Args, NumArgs,
                                                Context.BoolTy,
                                                VK_RValue,
                                                RParenLoc);
-  } else {
+  else
     TheCall = new (Context) CallExpr(Context, Fn,
                                      Args, NumArgs,
                                      Context.BoolTy,
                                      VK_RValue,
                                      RParenLoc);
-  }
 
   unsigned BuiltinID = (FDecl ? FDecl->getBuiltinID() : 0);
 
@@ -8093,7 +8092,7 @@ static void DiagnoseBitwisePrecedence(Sema &Self, BinaryOperatorKind Opc,
     << DiagRange << BinOp::getOpcodeStr(Opc) << OpStr;
   SuggestParentheses(Self, OpLoc,
     Self.PDiag(diag::note_precedence_bitwise_silence) << OpStr,
-    RHSExpr->getSourceRange());
+    (isLeftComp ? LHSExpr : RHSExpr)->getSourceRange());
   SuggestParentheses(Self, OpLoc,
     Self.PDiag(diag::note_precedence_bitwise_first) << BinOp::getOpcodeStr(Opc),
     ParensRange);

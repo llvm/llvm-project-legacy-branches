@@ -828,19 +828,9 @@ static void getMipsCPUAndABI(const ArgList &Args,
     ABIName = getMipsABIFromArch(ArchName);
 }
 
-void Clang::AddMIPSTargetArgs(const ArgList &Args,
-                             ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-  StringRef CPUName;
-  StringRef ABIName;
-  getMipsCPUAndABI(Args, getToolChain(), CPUName, ABIName);
-
-  CmdArgs.push_back("-target-cpu");
-  CmdArgs.push_back(CPUName.data());
-
-  CmdArgs.push_back("-target-abi");
-  CmdArgs.push_back(ABIName.data());
-
+// Select the MIPS float ABI as determined by -msoft-float, -mhard-float,
+// and -mfloat-abi=.
+static StringRef getMipsFloatABI(const Driver &D, const ArgList &Args) {
   // Select the float ABI as determined by -msoft-float, -mhard-float,
   // and -mfloat-abi=.
   StringRef FloatABI;
@@ -854,8 +844,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     else {
       FloatABI = A->getValue(Args);
       if (FloatABI != "soft" && FloatABI != "single" && FloatABI != "hard") {
-        D.Diag(diag::err_drv_invalid_mfloat_abi)
-          << A->getAsString(Args);
+        D.Diag(diag::err_drv_invalid_mfloat_abi) << A->getAsString(Args);
         FloatABI = "hard";
       }
     }
@@ -868,6 +857,24 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     // we will be able to select the default more correctly.
     FloatABI = "hard";
   }
+
+  return FloatABI;
+}
+
+void Clang::AddMIPSTargetArgs(const ArgList &Args,
+                             ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
+  StringRef CPUName;
+  StringRef ABIName;
+  getMipsCPUAndABI(Args, getToolChain(), CPUName, ABIName);
+
+  CmdArgs.push_back("-target-cpu");
+  CmdArgs.push_back(CPUName.data());
+
+  CmdArgs.push_back("-target-abi");
+  CmdArgs.push_back(ABIName.data());
+
+  StringRef FloatABI = getMipsFloatABI(D, Args);
 
   if (FloatABI == "soft") {
     // Floating point operations and argument passing are soft.
@@ -1283,6 +1290,8 @@ static void addAsanRTLinux(const ToolChain &TC, const ArgList &Args,
     return;
   if(TC.getTriple().getEnvironment() == llvm::Triple::ANDROIDEABI) {
     if (!Args.hasArg(options::OPT_shared)) {
+      if (!Args.hasArg(options::OPT_pie))
+        TC.getDriver().Diag(diag::err_drv_asan_android_requires_pie);
       // For an executable, we add a .preinit_array stub.
       CmdArgs.push_back("-u");
       CmdArgs.push_back("__asan_preinit");
@@ -1529,22 +1538,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // This comes from the default translation the driver + cc1
   // would do to enable flag_pic.
-  //
-  // FIXME: Centralize this code.
-  Arg *LastPICArg = 0;
-  for (ArgList::const_iterator I = Args.begin(), E = Args.end(); I != E; ++I) {
-    if ((*I)->getOption().matches(options::OPT_fPIC) ||
-        (*I)->getOption().matches(options::OPT_fno_PIC) ||
-        (*I)->getOption().matches(options::OPT_fpic) ||
-        (*I)->getOption().matches(options::OPT_fno_pic) ||
-        (*I)->getOption().matches(options::OPT_fPIE) ||
-        (*I)->getOption().matches(options::OPT_fno_PIE) ||
-        (*I)->getOption().matches(options::OPT_fpie) ||
-        (*I)->getOption().matches(options::OPT_fno_pie)) {
-      LastPICArg = *I;
-      (*I)->claim();
-    }
-  }
+
+  Arg *LastPICArg = Args.getLastArg(options::OPT_fPIC, options::OPT_fno_PIC,
+                                    options::OPT_fpic, options::OPT_fno_pic,
+                                    options::OPT_fPIE, options::OPT_fno_PIE,
+                                    options::OPT_fpie, options::OPT_fno_pie);
   bool PICDisabled = false;
   bool PICEnabled = false;
   bool PICForPIE = false;
@@ -5148,6 +5146,18 @@ void linuxtools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-EB");
     else
       CmdArgs.push_back("-EL");
+
+    Arg *LastPICArg = Args.getLastArg(options::OPT_fPIC, options::OPT_fno_PIC,
+                                      options::OPT_fpic, options::OPT_fno_pic,
+                                      options::OPT_fPIE, options::OPT_fno_PIE,
+                                      options::OPT_fpie, options::OPT_fno_pie);
+    if (LastPICArg &&
+        (LastPICArg->getOption().matches(options::OPT_fPIC) ||
+         LastPICArg->getOption().matches(options::OPT_fpic) ||
+         LastPICArg->getOption().matches(options::OPT_fPIE) ||
+         LastPICArg->getOption().matches(options::OPT_fpie))) {
+      CmdArgs.push_back("-KPIC");
+    }
   }
 
   Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
