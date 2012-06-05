@@ -61,6 +61,7 @@ class RewriterTestContext {
     std::string Result;
     llvm::raw_string_ostream OS(Result);
     Rewrite.getEditBuffer(ID).write(OS);
+    OS.flush();
     return Result;
   }
 
