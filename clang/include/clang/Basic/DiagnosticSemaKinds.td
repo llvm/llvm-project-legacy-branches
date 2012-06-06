@@ -173,6 +173,8 @@ def warn_unneeded_internal_decl : Warning<
 def warn_unneeded_member_function : Warning<
   "member function %0 is not needed and will not be emitted">,
   InGroup<UnneededMemberFunction>, DefaultIgnore;
+def warn_unused_private_field: Warning<"private field %0 is not used">,
+  InGroup<UnusedPrivateField>, DefaultIgnore;
 
 def warn_parameter_size: Warning<
   "%0 is a large (%1 bytes) pass-by-value argument; "
@@ -1155,6 +1157,10 @@ def err_reference_bind_failed : Error<
   "%2">;
 def err_reference_bind_init_list : Error<
   "reference to type %0 cannot bind to an initializer list">;
+def warn_temporary_array_to_pointer_decay : Warning<
+  "pointer is initialized by a temporary array, which will be destroyed at the "
+  "end of the full-expression">,
+  InGroup<DiagGroup<"address-of-array-temporary">>;
 def err_init_list_bad_dest_type : Error<
   "%select{|non-aggregate }0type %1 cannot be initialized with an initializer "
   "list">;
@@ -4330,10 +4336,6 @@ let CategoryName = "Lambda Issue" in {
   def note_lambda_decl : Note<"lambda expression begins here">;
   def err_lambda_unevaluated_operand : Error<
     "lambda expression in an unevaluated operand">;
-  def ext_lambda_implies_void_return : ExtWarn<
-    "C++11 requires lambda with omitted result type to consist of a single "
-    "return statement">,
-    InGroup<LambdaExtensions>;
   def err_lambda_return_init_list : Error<
     "cannot deduce lambda return type from initializer list">;
   def err_lambda_capture_default_arg : Error<
