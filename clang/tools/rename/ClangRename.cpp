@@ -1,4 +1,4 @@
-//=- tools/fix-llvm-style/FixLLVMStyle.cpp - Automatic LLVM style correction =//
+//=- tools/rename/ClangRename.cpp - Rename Declarations =//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,6 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// Rename takes a declaration under a cursor (whose lines and column are 
+// specified by the -l and -c flags) respectively and renames them to the 
+// target text -t. 
+// 
+// 
 // FIXME: This is an early first draft that needs clean-up.
 //
 //===----------------------------------------------------------------------===//
@@ -143,7 +148,7 @@ ExpandedIdentifierRange getExpandedIdentifierRange(SourceLocation L, ASTContext 
 std::string getDeclarationKey(Decl *DL, ASTContext *Context) {
   Decl *D = DL->getCanonicalDecl();
   while (UsingDecl *U = dyn_cast<UsingDecl>(D)) {
-    // FIXME: If there are multiple shadow decls, we need to get that information up and awrn / error.
+    // FIXME: If there are multiple shadow decls, we need to get that information up and warn / error.
     D = (*U->shadow_begin())->getTargetDecl()->getCanonicalDecl();
   }
   ExpandedIdentifierRange R = getExpandedIdentifierRange(getIdentifierRange(D).getBegin(), Context);
@@ -246,7 +251,7 @@ int main(int argc, char **argv) {
   Tool.run(newFrontendActionFactory(&GetIdentifierVisitor));
   llvm::outs() << GetIdentifierVisitor.Key << "\n";
   if (GetIdentifierVisitor.Key.empty()) {
-    llvm::errs() << "Noooooooooooo!!!!!\n";
+    llvm::errs() << "No key to replace, is the specified cursor location valid?\n";
     return -1;
   }
   RenameIdentifierVisitor Renamer(GetIdentifierVisitor.Key, &Tool.getReplacements());
