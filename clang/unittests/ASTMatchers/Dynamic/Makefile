@@ -10,7 +10,7 @@
 CLANG_LEVEL = ../../..
 TESTNAME = DynamicASTMatchers
 LINK_COMPONENTS := support mc
-USEDLIBS = clangTooling.a clangFrontend.a clangSerialization.a clangDriver.a \
+USEDLIBS = clangEdit.a clangTooling.a clangFrontend.a clangSerialization.a clangDriver.a \
            clangRewrite.a clangParse.a clangSema.a clangAnalysis.a \
            clangAST.a clangASTMatchers.a clangLex.a clangBasic.a \
            clangDynamicASTMatchers.a
