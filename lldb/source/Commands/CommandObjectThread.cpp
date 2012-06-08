@@ -660,11 +660,26 @@ public:
                 std::vector<uint32_t> resume_thread_indexes;
                 for (uint32_t i=0; i<argc; ++i)
                 {
-                    idx = Args::StringToUInt32 (command.GetArgumentAtIndex(0), LLDB_INVALID_INDEX32);
-                    if (idx < num_threads)
-                        resume_thread_indexes.push_back(idx);
+                    bool success;
+                    const int base = 0;
+                    idx = Args::StringToUInt32 (command.GetArgumentAtIndex(i), LLDB_INVALID_INDEX32, base, &success);
+                    if (!success)
+                    {
+                        result.AppendErrorWithFormat ("invalid value for thread index: %s.", command.GetArgumentAtIndex(i));
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                    else if (process->GetThreadList().FindThreadByIndexID(idx))
+                    {
+                        if (find(resume_thread_indexes.begin(), resume_thread_indexes.end(), idx) == resume_thread_indexes.end())
+                            resume_thread_indexes.push_back(idx);
+                    }
                     else
-                        result.AppendWarningWithFormat("Thread index %u out of range.\n", idx);
+                    {
+                        result.AppendErrorWithFormat("thread index %u out of range.\n", idx);
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
                 }
 
                 if (resume_thread_indexes.empty())
@@ -675,13 +690,24 @@ public:
                 }
                 else
                 {
-                    result.AppendMessage ("Resuming thread ");
+                    if (resume_thread_indexes.size() == 1)
+                        result.AppendMessageWithFormat ("Resuming thread: ");
+                    else
+                        result.AppendMessageWithFormat ("Resuming threads: ");
+
                     for (idx=0; idx<num_threads; ++idx)
                     {
-                        Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
-                        if (find(resume_thread_indexes.begin(), resume_thread_indexes.end(), idx) != resume_thread_indexes.end())
+                        Thread *thread = process->GetThreadList().FindThreadByIndexID(idx).get();
+                        std::vector<uint32_t>::iterator this_thread_pos = find(resume_thread_indexes.begin(), resume_thread_indexes.end(), thread->GetIndexID());
+                        
+                        if (this_thread_pos != resume_thread_indexes.end())
                         {
-                            result.AppendMessageWithFormat ("%u ", idx);
+                            resume_thread_indexes.erase(this_thread_pos);
+                            if (resume_thread_indexes.size() > 0)
+                                result.AppendMessageWithFormat ("%u, ", thread->GetIndexID());
+                            else
+                                result.AppendMessageWithFormat ("%u ", thread->GetIndexID());
+                            
                             thread->SetResumeState (eStateRunning);
                         }
                         else
@@ -704,7 +730,7 @@ public:
                 // Set the actions that the threads should each take when resuming
                 for (idx=0; idx<num_threads; ++idx)
                 {
-                    Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
+                    Thread *thread = process->GetThreadList().FindThreadByIndexID(idx).get();
                     if (thread == current_thread)
                     {
                         result.AppendMessageWithFormat ("Resuming thread 0x%4.4llx in process %llu\n", thread->GetID(), process->GetID());
@@ -937,7 +963,7 @@ public:
             }
             else
             {
-                thread = process->GetThreadList().GetThreadAtIndex(m_options.m_thread_idx).get();
+                thread = process->GetThreadList().FindThreadByIndexID(m_options.m_thread_idx).get();
             }
 
             if (thread == NULL)

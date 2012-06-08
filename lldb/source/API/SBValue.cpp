@@ -304,7 +304,7 @@ SBValue::GetType()
         if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
             if (log)
-                log->Printf ("SBValue(%p)::GetValueDidChange() => error: process is running", value_sp.get());
+                log->Printf ("SBValue(%p)::GetType() => error: process is running", value_sp.get());
         }
         else
         {
@@ -482,7 +482,7 @@ SBValue::GetTypeFormat ()
         {
             LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
             if (log)
-                log->Printf ("SBValue(%p)::GetTypeSummary() => error: process is running", value_sp.get());
+                log->Printf ("SBValue(%p)::GetTypeFormat() => error: process is running", value_sp.get());
         }
         else
         {
@@ -627,7 +627,7 @@ SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
         {
             LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
             if (log)
-                log->Printf ("SBValue(%p)::GetTypeSynthetic() => error: process is running", value_sp.get());
+                log->Printf ("SBValue(%p)::CreateChildAtOffset() => error: process is running", value_sp.get());
         }
         else
         {
@@ -650,9 +650,9 @@ SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
     if (log)
     {
         if (new_value_sp)
-            log->Printf ("SBValue(%p)::GetChildAtOffset => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::GetChildAtOffset => NULL", value_sp.get());
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => NULL", value_sp.get());
     }
     return sb_value;
 }
@@ -709,13 +709,13 @@ SBValue::CreateValueFromExpression (const char *name, const char* expression)
     if (log)
     {
         if (new_value_sp)
-            log->Printf ("SBValue(%p)::GetChildFromExpression(name=\"%s\", expression=\"%s\") => SBValue (%p)",
+            log->Printf ("SBValue(%p)::CreateValueFromExpression(name=\"%s\", expression=\"%s\") => SBValue (%p)",
                          value_sp.get(),
                          name,
                          expression,
                          new_value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetChildFromExpression(name=\"%s\", expression=\"%s\") => NULL",
+            log->Printf ("SBValue(%p)::CreateValueFromExpression(name=\"%s\", expression=\"%s\") => NULL",
                          value_sp.get(),
                          name,
                          expression);
@@ -793,9 +793,9 @@ SBValue::CreateValueFromData (const char* name, SBData data, SBType type)
     if (log)
     {
         if (new_value_sp)
-            log->Printf ("SBValue(%p)::GetChildFromExpression => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
+            log->Printf ("SBValue(%p)::CreateValueFromData => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::GetChildFromExpression => NULL", value_sp.get());
+            log->Printf ("SBValue(%p)::CreateValueFromData => NULL", value_sp.get());
     }
     return sb_value;
 }
@@ -1501,7 +1501,7 @@ SBValue::AddressOf()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetPointerToObject () => SBValue(%p)", value_sp.get(), value_sp.get());
+        log->Printf ("SBValue(%p)::AddressOf () => SBValue(%p)", value_sp.get(), value_sp.get());
     
     return sb_value;
 }
@@ -1655,7 +1655,7 @@ SBValue::GetData ()
 }
 
 lldb::SBWatchpoint
-SBValue::Watch (bool resolve_location, bool read, bool write)
+SBValue::Watch (bool resolve_location, bool read, bool write, SBError &error)
 {
     SBWatchpoint sb_watchpoint;
     
@@ -1696,7 +1696,9 @@ SBValue::Watch (bool resolve_location, bool read, bool write)
         if (write)
             watch_type |= LLDB_WATCH_TYPE_WRITE;
         
-        WatchpointSP watchpoint_sp = target_sp->CreateWatchpoint(addr, byte_size, watch_type);
+        Error rc;
+        WatchpointSP watchpoint_sp = target_sp->CreateWatchpoint(addr, byte_size, watch_type, rc);
+        error.SetError(rc);
                 
         if (watchpoint_sp) 
         {
@@ -1717,12 +1719,21 @@ SBValue::Watch (bool resolve_location, bool read, bool write)
     return sb_watchpoint;
 }
 
+// FIXME: Remove this method impl (as well as the decl in .h) once it is no longer needed.
+// Backward compatibility fix in the interim.
 lldb::SBWatchpoint
-SBValue::WatchPointee (bool resolve_location, bool read, bool write)
+SBValue::Watch (bool resolve_location, bool read, bool write)
+{
+    SBError error;
+    return Watch(resolve_location, read, write, error);
+}
+
+lldb::SBWatchpoint
+SBValue::WatchPointee (bool resolve_location, bool read, bool write, SBError &error)
 {
     SBWatchpoint sb_watchpoint;
     if (IsInScope() && GetType().IsPointerType())
-        sb_watchpoint = Dereference().Watch (resolve_location, read, write);
+        sb_watchpoint = Dereference().Watch (resolve_location, read, write, error);
     return sb_watchpoint;
 }
 

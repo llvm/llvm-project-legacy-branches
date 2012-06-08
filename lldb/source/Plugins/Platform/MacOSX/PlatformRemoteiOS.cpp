@@ -624,7 +624,7 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
                                                module_spec.GetArchitecture(),
                                                module_sp,
                                                NULL);
-                    if (module_sp && module_sp->GetUUID() == *module_uuid_ptr)
+                    if (module_sp && ((module_uuid_ptr == NULL) || (module_sp->GetUUID() == *module_uuid_ptr)))
                     {
                         //printf ("sdk[%u] last found\n", m_last_module_sdk_idx);
                         error.Clear();
@@ -650,7 +650,7 @@ PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
                                                module_spec.GetArchitecture(),
                                                module_sp,
                                                NULL);
-                    if (module_sp && module_sp->GetUUID() == *module_uuid_ptr)
+                    if (module_sp && ((module_uuid_ptr == NULL) || (module_sp->GetUUID() == *module_uuid_ptr)))
                     {
                         // Remember the index of the last SDK that we found a file
                         // in in case the wrong SDK was selected.

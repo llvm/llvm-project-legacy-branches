@@ -943,6 +943,7 @@ CommandObjectWatchpointSetVariable::Execute
     CommandReturnObject &result
 )
 {
+    Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
     ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
     StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame == NULL)
@@ -1011,7 +1012,8 @@ CommandObjectWatchpointSetVariable::Execute
 
     // Now it's time to create the watchpoint.
     uint32_t watch_type = m_option_watchpoint.watch_type;
-    Watchpoint *wp = exe_ctx.GetTargetRef().CreateWatchpoint(addr, size, watch_type).get();
+    error.Clear();
+    Watchpoint *wp = target->CreateWatchpoint(addr, size, watch_type, error).get();
     if (wp) {
         if (var_sp && var_sp->GetDeclaration().GetFile()) {
             StreamString ss;
@@ -1027,6 +1029,8 @@ CommandObjectWatchpointSetVariable::Execute
     } else {
         result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu).\n",
                                      addr, size);
+        if (error.AsCString(NULL))
+            result.AppendError(error.AsCString());
         result.SetStatus(eReturnStatusFailed);
     }
 
@@ -1192,8 +1196,9 @@ CommandObjectWatchpointSetExpression::ExecuteRawCommandString
     }
 
     // Get the address to watch.
-    addr = valobj_sp->GetValueAsUnsigned(0);
-    if (!addr) {
+    bool success = false;
+    addr = valobj_sp->GetValueAsUnsigned(0, &success);
+    if (!success) {
         result.GetErrorStream().Printf("error: expression did not evaluate to an address\n");
         result.SetStatus(eReturnStatusFailed);
         return false;
@@ -1203,7 +1208,8 @@ CommandObjectWatchpointSetExpression::ExecuteRawCommandString
 
     // Now it's time to create the watchpoint.
     uint32_t watch_type = m_option_watchpoint.watch_type;
-    Watchpoint *wp = exe_ctx.GetTargetRef().CreateWatchpoint(addr, size, watch_type).get();
+    Error error;
+    Watchpoint *wp = target->CreateWatchpoint(addr, size, watch_type, error).get();
     if (wp) {
         if (var_sp && var_sp->GetDeclaration().GetFile()) {
             StreamString ss;
@@ -1219,6 +1225,8 @@ CommandObjectWatchpointSetExpression::ExecuteRawCommandString
     } else {
         result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu).\n",
                                      addr, size);
+        if (error.AsCString(NULL))
+            result.AppendError(error.AsCString());
         result.SetStatus(eReturnStatusFailed);
     }
 

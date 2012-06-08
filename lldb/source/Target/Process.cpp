@@ -812,6 +812,7 @@ Process::Process(Target &target, Listener &listener) :
     m_should_detach (false),
     m_next_event_action_ap(),
     m_run_lock (),
+    m_currently_handling_event(false),
     m_can_jit(eCanJITDontKnow)
 {
     UpdateInstanceName();
@@ -1299,15 +1300,24 @@ Process::SetPublicState (StateType new_state)
     // to tell the program to run.
     if (!IsHijackedForEvent(eBroadcastBitStateChanged))
     {
-        const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
-        const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
-        if (old_state_is_stopped != new_state_is_stopped)
+        if (new_state == eStateDetached)
         {
-            if (new_state_is_stopped)
+            if (log)
+                log->Printf("Process::SetPublicState (%s) -- unlocking run lock for detach", StateAsCString(new_state));
+            m_run_lock.WriteUnlock();
+        }
+        else
+        {
+            const bool old_state_is_stopped = StateIsStoppedState(old_state, false);
+            const bool new_state_is_stopped = StateIsStoppedState(new_state, false);
+            if (old_state_is_stopped != new_state_is_stopped)
             {
-                if (log)
-                    log->Printf("Process::SetPublicState (%s) -- unlocking run lock", StateAsCString(new_state));
-                m_run_lock.WriteUnlock();
+                if (new_state_is_stopped)
+                {
+                    if (log)
+                        log->Printf("Process::SetPublicState (%s) -- unlocking run lock", StateAsCString(new_state));
+                    m_run_lock.WriteUnlock();
+                }
             }
         }
     }
@@ -1923,64 +1933,55 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
 
 }
 
-// Comment out line below to disable memory caching
+// Comment out line below to disable memory caching, overriding the process setting
+// target.process.disable-memory-cache
 #define ENABLE_MEMORY_CACHING
 // Uncomment to verify memory caching works after making changes to caching code
 //#define VERIFY_MEMORY_READS
 
-#if defined (ENABLE_MEMORY_CACHING)
-
+size_t
+Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
+{
+    if (!GetDisableMemoryCache())
+    {        
 #if defined (VERIFY_MEMORY_READS)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching is enabled, with debug verification
-    if (buf && size)
-    {
-        // Uncomment the line below to make sure memory caching is working.
-        // I ran this through the test suite and got no assertions, so I am 
-        // pretty confident this is working well. If any changes are made to
-        // memory caching, uncomment the line below and test your changes!
-
-        // Verify all memory reads by using the cache first, then redundantly
-        // reading the same memory from the inferior and comparing to make sure
-        // everything is exactly the same.
-        std::string verify_buf (size, '\0');
-        assert (verify_buf.size() == size);
-        const size_t cache_bytes_read = m_memory_cache.Read (this, addr, buf, size, error);
-        Error verify_error;
-        const size_t verify_bytes_read = ReadMemoryFromInferior (addr, const_cast<char *>(verify_buf.data()), verify_buf.size(), verify_error);
-        assert (cache_bytes_read == verify_bytes_read);
-        assert (memcmp(buf, verify_buf.data(), verify_buf.size()) == 0);
-        assert (verify_error.Success() == error.Success());
-        return cache_bytes_read;
+        // Memory caching is enabled, with debug verification
+        
+        if (buf && size)
+        {
+            // Uncomment the line below to make sure memory caching is working.
+            // I ran this through the test suite and got no assertions, so I am 
+            // pretty confident this is working well. If any changes are made to
+            // memory caching, uncomment the line below and test your changes!
+            
+            // Verify all memory reads by using the cache first, then redundantly
+            // reading the same memory from the inferior and comparing to make sure
+            // everything is exactly the same.
+            std::string verify_buf (size, '\0');
+            assert (verify_buf.size() == size);
+            const size_t cache_bytes_read = m_memory_cache.Read (this, addr, buf, size, error);
+            Error verify_error;
+            const size_t verify_bytes_read = ReadMemoryFromInferior (addr, const_cast<char *>(verify_buf.data()), verify_buf.size(), verify_error);
+            assert (cache_bytes_read == verify_bytes_read);
+            assert (memcmp(buf, verify_buf.data(), verify_buf.size()) == 0);
+            assert (verify_error.Success() == error.Success());
+            return cache_bytes_read;
+        }
+        return 0;
+#else // !defined(VERIFY_MEMORY_READS)
+        // Memory caching is enabled, without debug verification
+        
+        return m_memory_cache.Read (addr, buf, size, error);
+#endif // defined (VERIFY_MEMORY_READS)
     }
-    return 0;
+    else
+    {
+        // Memory caching is disabled
+        
+        return ReadMemoryFromInferior (addr, buf, size, error);
+    }
 }
-
-#else   // #if defined (VERIFY_MEMORY_READS)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching enabled, no verification
-    return m_memory_cache.Read (addr, buf, size, error);
-}
-
-#endif  // #else for #if defined (VERIFY_MEMORY_READS)
     
-#else   // #if defined (ENABLE_MEMORY_CACHING)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching is disabled
-    return ReadMemoryFromInferior (addr, buf, size, error);
-}
-
-#endif  // #else for #if defined (ENABLE_MEMORY_CACHING)
-
 size_t
 Process::ReadCStringFromMemory (addr_t addr, std::string &out_str, Error &error)
 {
@@ -2927,6 +2928,11 @@ Process::PrivateResume ()
 Error
 Process::Halt ()
 {
+    // First make sure we aren't in the middle of handling an event, or we might restart.  This is pretty weak, since
+    // we could just straightaway get another event.  It just narrows the window...
+    m_currently_handling_event.WaitForValueEqualTo(false);
+
+    
     // Pause our private state thread so we can ensure no one else eats
     // the stop event out from under us.
     Listener halt_listener ("lldb.process.halt_listener");
@@ -3030,30 +3036,50 @@ Process::Destroy ()
     Error error (WillDestroy());
     if (error.Success())
     {
-        DisableAllBreakpointSites();
         if (m_public_state.GetValue() == eStateRunning)
         {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
+            if (log)
+                log->Printf("Process::Destroy() About to halt.");
             error = Halt();
             if (error.Success())
             {
                 // Consume the halt event.
                 EventSP stop_event;
                 TimeValue timeout (TimeValue::Now());
-                timeout.OffsetWithMicroSeconds(1000);
+                timeout.OffsetWithSeconds(1);
                 StateType state = WaitForProcessToStop (&timeout);
                 if (state != eStateStopped)
                 {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
                     if (log)
                         log->Printf("Process::Destroy() Halt failed to stop, state is: %s", StateAsCString(state));
+                    // If we really couldn't stop the process then we should just error out here, but if the
+                    // lower levels just bobbled sending the event and we really are stopped, then continue on.
+                    StateType private_state = m_private_state.GetValue();
+                    if (private_state != eStateStopped && private_state != eStateExited)
+                    {
+                        return error;
+                    }
                 }
             }
             else
             {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TEMPORARY));
                     if (log)
                         log->Printf("Process::Destroy() Halt got error: %s", error.AsCString());
+                    return error;
             }
+        }
+
+        if (m_public_state.GetValue() != eStateRunning)
+        {
+            // Ditch all thread plans, and remove all our breakpoints: in case we have to restart the target to
+            // kill it, we don't want it hitting a breakpoint...
+            // Only do this if we've stopped, however, since if we didn't manage to halt it above, then
+            // we're not going to have much luck doing this now.
+            m_thread_list.DiscardThreadPlans();
+            DisableAllBreakpointSites();
         }
         
         error = DoDestroy();
@@ -3333,6 +3359,7 @@ void
 Process::HandlePrivateEvent (EventSP &event_sp)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    m_currently_handling_event.SetValue(true, eBroadcastNever);
     
     const StateType new_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
     
@@ -3398,6 +3425,7 @@ Process::HandlePrivateEvent (EventSP &event_sp)
                          StateAsCString (GetState ()));
         }
     }
+    m_currently_handling_event.SetValue(false, eBroadcastAlways);
 }
 
 void *
@@ -3956,7 +3984,6 @@ Process::SettingsInitialize ()
         }
     }
     UserSettingsControllerSP &usc = GetSettingsController();
-    usc.reset (new SettingsController);
     UserSettingsController::InitializeSettingsController (usc,
                                                           SettingsController::global_settings_table,
                                                           SettingsController::instance_settings_table);
@@ -4877,16 +4904,36 @@ ProcessInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_
                                                          Error &err,
                                                          bool pending)
 {
+    if (var_name == GetDisableMemoryCacheVarName())
+    {
+        bool success;
+        bool result = Args::StringToBoolean(value, false, &success);
+        
+        if (success)
+        {
+            m_disable_memory_cache = result;
+        }
+        else
+        {
+            err.SetErrorStringWithFormat ("Bad value \"%s\" for %s, should be Boolean.", value, GetDisableMemoryCacheVarName().AsCString());
+        }
+        
+    }
 }
 
 void
 ProcessInstanceSettings::CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
                                                bool pending)
 {
-//    if (new_settings.get() == NULL)
-//        return;
-//
-//    ProcessInstanceSettings *new_process_settings = (ProcessInstanceSettings *) new_settings.get();
+    if (new_settings.get() == NULL)
+        return;
+    
+    ProcessInstanceSettings *new_settings_ptr = static_cast <ProcessInstanceSettings *> (new_settings.get());
+    
+    if (!new_settings_ptr)
+        return;
+    
+    *this = *new_settings_ptr;
 }
 
 bool
@@ -4895,9 +4942,17 @@ ProcessInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
                                                    StringList &value,
                                                    Error *err)
 {
-    if (err)
-        err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
-    return false;
+    if (var_name == GetDisableMemoryCacheVarName())
+    {
+        value.AppendString(m_disable_memory_cache ? "true" : "false");
+        return true;
+    }
+    else
+    {
+        if (err)
+            err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
+        return false;
+    }
 }
 
 const ConstString
@@ -4911,6 +4966,14 @@ ProcessInstanceSettings::CreateInstanceName ()
 
     const ConstString ret_val (sstr.GetData());
     return ret_val;
+}
+
+const ConstString &
+ProcessInstanceSettings::GetDisableMemoryCacheVarName () const
+{
+    static ConstString disable_memory_cache_var_name ("disable-memory-cache");
+    
+    return disable_memory_cache_var_name;
 }
 
 //--------------------------------------------------
@@ -4929,6 +4992,13 @@ SettingEntry
 Process::SettingsController::instance_settings_table[] =
 {
   //{ "var-name",       var-type,              "default",       enum-table, init'd, hidden, "help-text"},
+    {  "disable-memory-cache", eSetVarTypeBoolean,
+#ifdef ENABLE_MEMORY_CACHING
+        "false",
+#else
+        "true",
+#endif
+        NULL,       false,  false,  "Disable reading and caching of memory in fixed-size units." },
     {  NULL,            eSetVarTypeNone,        NULL,           NULL,       false,  false,  NULL }
 };
 
