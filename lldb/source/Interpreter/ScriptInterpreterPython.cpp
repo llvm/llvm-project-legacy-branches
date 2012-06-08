@@ -293,13 +293,7 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
                 input_fd = STDIN_FILENO;
             
             script_interpreter->SaveTerminalState(input_fd);
-            
-            {
-                ScriptInterpreterPython::Locker locker(script_interpreter,
-                                                       ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
-                                                       ScriptInterpreterPython::Locker::FreeAcquiredLock);
-            }
-            
+
             char error_str[1024];
             if (script_interpreter->m_embedded_python_pty.OpenFirstAvailableMaster (O_RDWR|O_NOCTTY, error_str, 
                                                                                     sizeof(error_str)))
@@ -313,6 +307,9 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
                     const char *pty_slave_name = script_interpreter->m_embedded_python_pty.GetSlaveName (error_str, sizeof (error_str));
                     if (pty_slave_name != NULL)
                     {
+                        ScriptInterpreterPython::Locker locker(script_interpreter,
+                                                               ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
+                                                               ScriptInterpreterPython::Locker::FreeAcquiredLock);
                         run_string.Printf ("run_one_line (%s, 'save_stderr = sys.stderr')", script_interpreter->m_dictionary_name.c_str());
                         PyRun_SimpleString (run_string.GetData());
                         run_string.Clear ();
@@ -364,20 +361,9 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
             
         case eInputReaderReactivate:
         {
-            // Don't try and acquire the interpreter lock here because code like
-            // this:
-            //
-            // (lldb) script
-            // >>> v = lldb.frame.EvaluateExpression("collection->get_at_index(12)")
-            //
-            // This will cause the process to run. The interpreter lock is taken
-            // by the input reader for the "script" command. If we try and acquire
-            // the lock here, when the process runs it might deactivate this input
-            // reader (if STDIN is hooked up to the inferior process) and 
-            // reactivate it when the process stops which will deadlock.
-            //ScriptInterpreterPython::Locker locker(script_interpreter,
-            //                                       ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
-            //                                       ScriptInterpreterPython::Locker::FreeAcquiredLock);
+            ScriptInterpreterPython::Locker locker(script_interpreter,
+                                                   ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
+                                                   ScriptInterpreterPython::Locker::FreeAcquiredLock);
         }
             break;
             
@@ -420,6 +406,9 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
             const char *pty_slave_name = script_interpreter->m_embedded_python_pty.GetSlaveName (error_str, sizeof (error_str));
             if (pty_slave_name != NULL)
             {
+                ScriptInterpreterPython::Locker locker(script_interpreter,
+                                                       ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
+                                                       ScriptInterpreterPython::Locker::FreeAcquiredLock);
                 run_string.Printf ("run_one_line (%s, 'sys.stdin = save_stdin')", script_interpreter->m_dictionary_name.c_str());
                 PyRun_SimpleString (run_string.GetData());
                 run_string.Clear();
@@ -882,20 +871,9 @@ ScriptInterpreterPython::InputReaderCallback
 
     case eInputReaderReactivate:
         {
-            // Don't try and acquire the interpreter lock here because code like
-            // this:
-            //
-            // (lldb) script
-            // >>> v = lldb.frame.EvaluateExpression("collection->get_at_index(12)")
-            //
-            // This will cause the process to run. The interpreter lock is taken
-            // by the input reader for the "script" command. If we try and acquire
-            // the lock here, when the process runs it might deactivate this input
-            // reader (if STDIN is hooked up to the inferior process) and 
-            // reactivate it when the process stops which will deadlock.
-            //ScriptInterpreterPython::Locker locker(script_interpreter,
-            //                                       ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
-            //                                       ScriptInterpreterPython::Locker::FreeAcquiredLock);
+            ScriptInterpreterPython::Locker locker(script_interpreter,
+                                                   ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
+                                                   ScriptInterpreterPython::Locker::FreeAcquiredLock);
         }
         break;
         
