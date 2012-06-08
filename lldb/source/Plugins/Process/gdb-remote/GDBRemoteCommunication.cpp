@@ -237,7 +237,8 @@ GDBRemoteCommunication::SendPacketNoLock (const char *payload, size_t payload_le
             {
                 if (GetAck () != '+')
                 {
-                    printf("get ack failed...");
+                    if (log)
+                        log->Printf("get ack failed...");
                     return 0;
                 }
             }
@@ -264,7 +265,11 @@ GDBRemoteCommunication::GetAck ()
 bool
 GDBRemoteCommunication::GetSequenceMutex (Mutex::Locker& locker)
 {
-    return locker.TryLock (m_sequence_mutex);
+    if (IsRunning())
+        return locker.TryLock (m_sequence_mutex);
+
+    locker.Lock (m_sequence_mutex);
+    return true;
 }
 
 

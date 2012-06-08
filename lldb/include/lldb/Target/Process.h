@@ -719,6 +719,22 @@ public:
     {
         m_resume_count = c;
     }
+    
+    bool
+    GetLaunchInSeparateProcessGroup ()
+    {
+        return m_flags.Test(lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+    }
+    
+    void
+    SetLaunchInSeparateProcessGroup (bool separate)
+    {
+        if (separate)
+            m_flags.Set(lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+        else
+            m_flags.Clear (lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+
+    }
 
     void
     Clear ()
@@ -779,6 +795,7 @@ protected:
     Host::MonitorChildProcessCallback m_monitor_callback;
     void *m_monitor_callback_baton;
     bool m_monitor_signals;
+
 };
 
 //----------------------------------------------------------------------
@@ -3365,6 +3382,7 @@ protected:
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
     ReadWriteLock               m_run_lock;
+    Predicate<bool>             m_currently_handling_event;
 
     enum {
         eCanJITDontKnow= 0,
