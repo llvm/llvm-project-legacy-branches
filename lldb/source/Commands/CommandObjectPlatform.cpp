@@ -179,15 +179,15 @@ private:
 //----------------------------------------------------------------------
 // "platform select <platform-name>"
 //----------------------------------------------------------------------
-class CommandObjectPlatformSelect : public CommandObject
+class CommandObjectPlatformSelect : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformSelect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform select",
-                       "Create a platform if needed and select it as the current platform.",
-                       "platform select <platform-name>",
-                       0),
+        CommandObjectParsed (interpreter, 
+                             "platform select",
+                             "Create a platform if needed and select it as the current platform.",
+                             "platform select <platform-name>",
+                             0),
         m_option_group (interpreter),
         m_platform_options (false) // Don't include the "--platform" option by passing false
     {
@@ -200,8 +200,37 @@ public:
     {
     }
 
+    virtual int
+    HandleCompletion (Args &input,
+                      int &cursor_index,
+                      int &cursor_char_position,
+                      int match_start_point,
+                      int max_return_elements,
+                      bool &word_complete,
+                      StringList &matches)
+    {
+        std::string completion_str (input.GetArgumentAtIndex(cursor_index));
+        completion_str.erase (cursor_char_position);
+        
+        CommandCompletions::PlatformPluginNames (m_interpreter, 
+                                                 completion_str.c_str(),
+                                                 match_start_point,
+                                                 max_return_elements,
+                                                 NULL,
+                                                 word_complete,
+                                                 matches);
+        return matches.GetSize();
+    }
+
+    virtual Options *
+    GetOptions ()
+    {
+        return &m_option_group;
+    }
+
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         if (args.GetArgumentCount() == 1)
         {
@@ -237,37 +266,7 @@ public:
         }
         return result.Succeeded();
     }
-    
-    
-    virtual int
-    HandleCompletion (Args &input,
-                      int &cursor_index,
-                      int &cursor_char_position,
-                      int match_start_point,
-                      int max_return_elements,
-                      bool &word_complete,
-                      StringList &matches)
-    {
-        std::string completion_str (input.GetArgumentAtIndex(cursor_index));
-        completion_str.erase (cursor_char_position);
-        
-        CommandCompletions::PlatformPluginNames (m_interpreter, 
-                                                 completion_str.c_str(),
-                                                 match_start_point,
-                                                 max_return_elements,
-                                                 NULL,
-                                                 word_complete,
-                                                 matches);
-        return matches.GetSize();
-    }
 
-    virtual Options *
-    GetOptions ()
-    {
-        return &m_option_group;
-    }
-
-protected:
     OptionGroupOptions m_option_group;
     OptionGroupPlatform m_platform_options;
 };
@@ -275,15 +274,15 @@ protected:
 //----------------------------------------------------------------------
 // "platform list"
 //----------------------------------------------------------------------
-class CommandObjectPlatformList : public CommandObject
+class CommandObjectPlatformList : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformList (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "platform list",
-                       "List all platforms that are available.",
-                       NULL,
-                       0)
+        CommandObjectParsed (interpreter,
+                             "platform list",
+                             "List all platforms that are available.",
+                             NULL,
+                             0)
     {
     }
 
@@ -292,8 +291,9 @@ public:
     {
     }
 
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         Stream &ostrm = result.GetOutputStream();
         ostrm.Printf("Available platforms:\n");
@@ -329,15 +329,15 @@ public:
 //----------------------------------------------------------------------
 // "platform status"
 //----------------------------------------------------------------------
-class CommandObjectPlatformStatus : public CommandObject
+class CommandObjectPlatformStatus : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformStatus (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "platform status",
-                       "Display status for the currently selected platform.",
-                       NULL,
-                       0)
+        CommandObjectParsed (interpreter,
+                             "platform status",
+                             "Display status for the currently selected platform.",
+                             NULL,
+                             0)
     {
     }
 
@@ -346,8 +346,9 @@ public:
     {
     }
 
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         Stream &ostrm = result.GetOutputStream();      
         
@@ -369,15 +370,15 @@ public:
 //----------------------------------------------------------------------
 // "platform connect <connect-url>"
 //----------------------------------------------------------------------
-class CommandObjectPlatformConnect : public CommandObject
+class CommandObjectPlatformConnect : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformConnect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform connect",
-                       "Connect a platform by name to be the currently selected platform.",
-                       "platform connect <connect-url>",
-                       0)
+        CommandObjectParsed (interpreter, 
+                             "platform connect",
+                             "Connect a platform by name to be the currently selected platform.",
+                             "platform connect <connect-url>",
+                             0)
     {
     }
 
@@ -386,8 +387,9 @@ public:
     {
     }
 
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         Stream &ostrm = result.GetOutputStream();      
         
@@ -433,15 +435,15 @@ public:
 //----------------------------------------------------------------------
 // "platform disconnect"
 //----------------------------------------------------------------------
-class CommandObjectPlatformDisconnect : public CommandObject
+class CommandObjectPlatformDisconnect : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformDisconnect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform disconnect",
-                       "Disconnect a platform by name to be the currently selected platform.",
-                       "platform disconnect",
-                       0)
+        CommandObjectParsed (interpreter, 
+                             "platform disconnect",
+                             "Disconnect a platform by name to be the currently selected platform.",
+                             "platform disconnect",
+                             0)
     {
     }
 
@@ -450,8 +452,9 @@ public:
     {
     }
 
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -511,15 +514,15 @@ public:
 //----------------------------------------------------------------------
 // "platform mkdir"
 //----------------------------------------------------------------------
-class CommandObjectPlatformMkDir : public CommandObject
+class CommandObjectPlatformMkDir : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformMkDir (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform shell",
-                   "Make a new directory on the remote end.",
-                   NULL,
-                   0),
+    CommandObjectParsed (interpreter,
+                         "platform shell",
+                         "Make a new directory on the remote end.",
+                         NULL,
+                         0),
     m_options(interpreter)
     {
     }
@@ -530,7 +533,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -572,15 +575,15 @@ public:
 //----------------------------------------------------------------------
 // "platform fopen"
 //----------------------------------------------------------------------
-class CommandObjectPlatformFOpen : public CommandObject
+class CommandObjectPlatformFOpen : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformFOpen (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform file open",
-                   "Open a file on the remote end.",
-                   NULL,
-                   0),
+    CommandObjectParsed (interpreter,
+                         "platform file open",
+                         "Open a file on the remote end.",
+                         NULL,
+                         0),
     m_options(interpreter)
     {
     }
@@ -591,7 +594,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -634,15 +637,15 @@ public:
 //----------------------------------------------------------------------
 // "platform fclose"
 //----------------------------------------------------------------------
-class CommandObjectPlatformFClose : public CommandObject
+class CommandObjectPlatformFClose : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformFClose (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform file close",
-                   "Close a file on the remote end.",
-                   NULL,
-                   0)
+    CommandObjectParsed (interpreter,
+                         "platform file close",
+                         "Close a file on the remote end.",
+                         NULL,
+                         0)
     {
     }
     
@@ -652,7 +655,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -676,15 +679,15 @@ public:
 //----------------------------------------------------------------------
 // "platform fread"
 //----------------------------------------------------------------------
-class CommandObjectPlatformFRead : public CommandObject
+class CommandObjectPlatformFRead : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformFRead (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform file read",
-                   "Read data from a file on the remote end.",
-                   NULL,
-                   0),
+    CommandObjectParsed (interpreter,
+                         "platform file read",
+                         "Read data from a file on the remote end.",
+                         NULL,
+                         0),
     m_options (interpreter)
     {
     }
@@ -695,7 +698,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -801,15 +804,15 @@ CommandObjectPlatformFRead::CommandOptions::g_option_table[] =
 //----------------------------------------------------------------------
 // "platform fwrite"
 //----------------------------------------------------------------------
-class CommandObjectPlatformFWrite : public CommandObject
+class CommandObjectPlatformFWrite : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformFWrite (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform file write",
-                   "Write data to a file on the remote end.",
-                   NULL,
-                   0),
+    CommandObjectParsed (interpreter,
+                         "platform file write",
+                         "Write data to a file on the remote end.",
+                         NULL,
+                         0),
     m_options (interpreter)
     {
     }
@@ -820,7 +823,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -951,15 +954,15 @@ private:
 //----------------------------------------------------------------------
 // "platform get-file remote-file-path host-file-path"
 //----------------------------------------------------------------------
-class CommandObjectPlatformGetFile : public CommandObject
+class CommandObjectPlatformGetFile : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformGetFile (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform get-file",
-                   "Transfer a file from the remote end to the local host.",
-                   "platform get-file <remote-file-spec> <local-file-spec>",
-                   0)
+    CommandObjectParsed (interpreter,
+                         "platform get-file",
+                         "Transfer a file from the remote end to the local host.",
+                         "platform get-file <remote-file-spec> <local-file-spec>",
+                         0)
     {
         SetHelpLong(
 "Examples: \n\
@@ -993,7 +996,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         // If the number of arguments is incorrect, issue an error message.
         if (args.GetArgumentCount() != 2)
@@ -1034,15 +1037,15 @@ public:
 //----------------------------------------------------------------------
 // "platform get-size remote-file-path"
 //----------------------------------------------------------------------
-class CommandObjectPlatformGetSize : public CommandObject
+class CommandObjectPlatformGetSize : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformGetSize (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform get-size",
-                   "Get the file size from the remote end.",
-                   "platform get-size <remote-file-spec>",
-                   0)
+    CommandObjectParsed (interpreter,
+                         "platform get-size",
+                         "Get the file size from the remote end.",
+                         "platform get-size <remote-file-spec>",
+                         0)
     {
         SetHelpLong(
 "Examples: \n\
@@ -1069,7 +1072,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         // If the number of arguments is incorrect, issue an error message.
         if (args.GetArgumentCount() != 1)
@@ -1107,15 +1110,15 @@ public:
 //----------------------------------------------------------------------
 // "platform put-file"
 //----------------------------------------------------------------------
-class CommandObjectPlatformPutFile : public CommandObject
+class CommandObjectPlatformPutFile : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformPutFile (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform put-file",
-                   "Transfer a file from this system to the remote end.",
-                   NULL,
-                   0)
+    CommandObjectParsed (interpreter,
+                         "platform put-file",
+                         "Transfer a file from this system to the remote end.",
+                         NULL,
+                         0)
     {
     }
     
@@ -1125,7 +1128,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         const char* src = args.GetArgumentAtIndex(0);
         const char* dst = args.GetArgumentAtIndex(1);
@@ -1150,15 +1153,15 @@ public:
 //----------------------------------------------------------------------
 // "platform process launch"
 //----------------------------------------------------------------------
-class CommandObjectPlatformProcessLaunch : public CommandObject
+class CommandObjectPlatformProcessLaunch : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform process launch",
-                       "Launch a new process on a remote platform.",
-                       "platform process launch program",
-                       0),
+        CommandObjectParsed (interpreter, 
+                             "platform process launch",
+                             "Launch a new process on a remote platform.",
+                             "platform process launch program",
+                             0),
         m_options (interpreter)
     {
     }
@@ -1168,8 +1171,15 @@ public:
     {
     }
     
+    virtual Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         
@@ -1256,12 +1266,6 @@ public:
         return result.Succeeded();
     }
     
-    virtual Options *
-    GetOptions ()
-    {
-        return &m_options;
-    }
-    
 protected:
     ProcessLaunchCommandOptions m_options;
 };
@@ -1271,15 +1275,15 @@ protected:
 //----------------------------------------------------------------------
 // "platform process list"
 //----------------------------------------------------------------------
-class CommandObjectPlatformProcessList : public CommandObject
+class CommandObjectPlatformProcessList : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessList (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "platform process list",
-                       "List processes on a remote platform by name, pid, or many other matching attributes.",
-                       "platform process list",
-                       0),
+        CommandObjectParsed (interpreter, 
+                             "platform process list",
+                             "List processes on a remote platform by name, pid, or many other matching attributes.",
+                             "platform process list",
+                             0),
         m_options (interpreter)
     {
     }
@@ -1289,8 +1293,15 @@ public:
     {
     }
     
+    virtual Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         
@@ -1383,14 +1394,6 @@ public:
         }
         return result.Succeeded();
     }
-    
-    virtual Options *
-    GetOptions ()
-    {
-        return &m_options;
-    }
-    
-protected:
     
     class CommandOptions : public Options
     {
@@ -1547,15 +1550,15 @@ CommandObjectPlatformProcessList::CommandOptions::g_option_table[] =
 //----------------------------------------------------------------------
 // "platform process info"
 //----------------------------------------------------------------------
-class CommandObjectPlatformProcessInfo : public CommandObject
+class CommandObjectPlatformProcessInfo : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessInfo (CommandInterpreter &interpreter) :
-    CommandObject (interpreter, 
-                   "platform process info",
-                   "Get detailed information for one or more process by process ID.",
-                   "platform process info <pid> [<pid> <pid> ...]",
-                   0)
+    CommandObjectParsed (interpreter, 
+                         "platform process info",
+                         "Get detailed information for one or more process by process ID.",
+                         "platform process info <pid> [<pid> <pid> ...]",
+                         0)
     {
         CommandArgumentEntry arg;
         CommandArgumentData pid_args;
@@ -1576,8 +1579,9 @@ public:
     {
     }
     
+protected:
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
         if (platform_sp)
@@ -1640,7 +1644,7 @@ public:
     }
 };
 
-class CommandObjectPlatformProcessAttach : public CommandObject
+class CommandObjectPlatformProcessAttach : public CommandObjectParsed
 {
 public:
     
@@ -1775,10 +1779,10 @@ public:
     };
     
     CommandObjectPlatformProcessAttach (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform process attach",
-                   "Attach to a process.",
-                   "platform process attach <cmd-options>"),
+    CommandObjectParsed (interpreter,
+                         "platform process attach",
+                         "Attach to a process.",
+                         "platform process attach <cmd-options>"),
     m_options (interpreter)
     {
     }
@@ -1788,7 +1792,7 @@ public:
     }
     
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
@@ -1875,7 +1879,7 @@ private:
 //----------------------------------------------------------------------
 // "platform shell"
 //----------------------------------------------------------------------
-class CommandObjectPlatformShell : public CommandObject
+class CommandObjectPlatformShell : public CommandObjectRaw
 {
 public:
     
@@ -1944,11 +1948,11 @@ public:
     };
     
     CommandObjectPlatformShell (CommandInterpreter &interpreter) :
-    CommandObject (interpreter, 
-                   "platform shell",
-                   "Run a shell command on a the selected platform.",
-                   "platform shell <shell-command>",
-                   0),
+    CommandObjectRaw (interpreter, 
+                      "platform shell",
+                      "Run a shell command on a the selected platform.",
+                      "platform shell <shell-command>",
+                      0),
     m_options(interpreter)
     {
     }
@@ -1958,25 +1962,8 @@ public:
     {
     }
     
-    virtual
-    Options *
-    GetOptions ()
-    {
-        return &m_options;
-    }
-    
     virtual bool
-    Execute (Args& command,
-             CommandReturnObject &result)
-    {
-        return false;
-    }
-    
-    virtual bool
-    WantsRawCommandString() { return true; }    
-
-    bool
-    ExecuteRawCommandString (const char *raw_command_line, CommandReturnObject &result)
+    DoExecute (const char *raw_command_line, CommandReturnObject &result)
     {
         const char* expr = NULL;
 
@@ -2062,8 +2049,6 @@ public:
         }
         return true;
     }
-
-protected:
     CommandOptions m_options;
 };
 
@@ -2156,15 +2141,15 @@ RecurseCopy_Callback (void *baton,
 //----------------------------------------------------------------------
 // "platform install" - install a target to a remote end
 //----------------------------------------------------------------------
-class CommandObjectPlatformInstall : public CommandObject
+class CommandObjectPlatformInstall : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformInstall (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "platform target-install",
-                   "Install a target (bundle or executable file) to the remote end.",
-                   "platform target-install <local-thing> <remote-sandbox>",
-                   0)
+    CommandObjectParsed (interpreter,
+                         "platform target-install",
+                         "Install a target (bundle or executable file) to the remote end.",
+                         "platform target-install <local-thing> <remote-sandbox>",
+                         0)
     {
     }
     
@@ -2174,7 +2159,7 @@ public:
     }
     
     virtual bool
-    Execute (Args& args, CommandReturnObject &result)
+    DoExecute (Args& args, CommandReturnObject &result)
     {
         if (args.GetArgumentCount() != 2)
         {
