@@ -401,7 +401,8 @@ ProcessGDBRemote::BuildDynamicRegisterInfo (bool force)
     }
 
     // Add some convenience registers (eax, ebx, ecx, edx, esi, edi, ebp, esp) to x86_64.
-    if (target_arch.IsValid() && target_arch.GetMachine() == llvm::Triple::x86_64)
+    if ((target_arch.IsValid() && target_arch.GetMachine() == llvm::Triple::x86_64)
+        || (remote_arch.IsValid() && remote_arch.GetMachine() == llvm::Triple::x86_64))
         m_register_info.Addx86_64ConvenienceRegisters();
 
     // At this point, we can finalize our register info.
@@ -1189,9 +1190,6 @@ ProcessGDBRemote::UpdateThreadIDList ()
     m_gdb_comm.GetCurrentThreadIDs (m_thread_ids, sequence_mutex_unavailable);
     if (sequence_mutex_unavailable)
     {
-#if defined (LLDB_CONFIGURATION_DEBUG)
-        assert(!"ProcessGDBRemote::UpdateThreadList() failed due to not getting the sequence mutex");
-#endif
         return false; // We just didn't get the list
     }
     return true;
