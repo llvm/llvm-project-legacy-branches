@@ -97,14 +97,14 @@ public:
   Lexer(FileID FID, const llvm::MemoryBuffer *InputBuffer, Preprocessor &PP);
 
   /// Lexer constructor - Create a new raw lexer object.  This object is only
-  /// suitable for calls to 'LexRawToken'.  This lexer assumes that the text
-  /// range will outlive it, so it doesn't take ownership of it.
+  /// suitable for calls to 'LexFromRawLexer'.  This lexer assumes that the
+  /// text range will outlive it, so it doesn't take ownership of it.
   Lexer(SourceLocation FileLoc, const LangOptions &LangOpts,
         const char *BufStart, const char *BufPtr, const char *BufEnd);
 
   /// Lexer constructor - Create a new raw lexer object.  This object is only
-  /// suitable for calls to 'LexRawToken'.  This lexer assumes that the text
-  /// range will outlive it, so it doesn't take ownership of it.
+  /// suitable for calls to 'LexFromRawLexer'.  This lexer assumes that the
+  /// text range will outlive it, so it doesn't take ownership of it.
   Lexer(FileID FID, const llvm::MemoryBuffer *InputBuffer,
         const SourceManager &SM, const LangOptions &LangOpts);
 
@@ -540,6 +540,9 @@ public:
                                          const SourceManager &SM,
                                          const LangOptions &LangOpts,
                                          bool SkipTrailingWhitespaceAndNewLine);
+
+  /// \brief Returns true if the given character could appear in an identifier.
+  static bool isIdentifierBodyChar(char c, const LangOptions &LangOpts);
 
 private:
 

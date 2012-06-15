@@ -1215,10 +1215,10 @@ public:
                                         const TemplateArgument &ArgPack) const;
   
   enum GetBuiltinTypeError {
-    GE_None,              //< No error
-    GE_Missing_stdio,     //< Missing a type from <stdio.h>
-    GE_Missing_setjmp,    //< Missing a type from <setjmp.h>
-    GE_Missing_ucontext   //< Missing a type from <ucontext.h>
+    GE_None,              ///< No error
+    GE_Missing_stdio,     ///< Missing a type from <stdio.h>
+    GE_Missing_setjmp,    ///< Missing a type from <setjmp.h>
+    GE_Missing_ucontext   ///< Missing a type from <ucontext.h>
   };
 
   /// GetBuiltinType - Return the type for the specified builtin.  If 
@@ -1705,7 +1705,7 @@ public:
   /// \brief Get the implementation of ObjCCategoryDecl, or NULL if none exists.
   ObjCCategoryImplDecl   *getObjCImplementation(ObjCCategoryDecl *D);
 
-  /// \brief returns true if there is at lease one @implementation in TU.
+  /// \brief returns true if there is at least one \@implementation in TU.
   bool AnyObjCImplementation() {
     return !ObjCImpls.empty();
   }

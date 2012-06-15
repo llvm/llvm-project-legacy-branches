@@ -389,11 +389,20 @@ StandardConversionSequence::getNarrowingKind(ASTContext &Ctx,
     const unsigned ToWidth = Ctx.getIntWidth(ToType);
 
     if (FromWidth > ToWidth ||
-        (FromWidth == ToWidth && FromSigned != ToSigned)) {
+        (FromWidth == ToWidth && FromSigned != ToSigned) ||
+        (FromSigned && !ToSigned)) {
       // Not all values of FromType can be represented in ToType.
       llvm::APSInt InitializerValue;
       const Expr *Initializer = IgnoreNarrowingConversion(Converted);
-      if (Initializer->isIntegerConstantExpr(InitializerValue, Ctx)) {
+      if (!Initializer->isIntegerConstantExpr(InitializerValue, Ctx)) {
+        // Such conversions on variables are always narrowing.
+        return NK_Variable_Narrowing;
+      } else if (FromWidth < ToWidth) {
+        // Negative -> unsigned is narrowing. Otherwise, more bits is never
+        // narrowing.
+        if (InitializerValue.isSigned() && InitializerValue.isNegative())
+          return NK_Constant_Narrowing;
+      } else {
         ConstantValue = APValue(InitializerValue);
 
         // Add a bit to the InitializerValue so we don't have to worry about
@@ -411,9 +420,6 @@ StandardConversionSequence::getNarrowingKind(ASTContext &Ctx,
           ConstantType = Initializer->getType();
           return NK_Constant_Narrowing;
         }
-      } else {
-        // Variables are always narrowings.
-        return NK_Variable_Narrowing;
       }
     }
     return NK_Not_Narrowing;
@@ -5212,7 +5218,7 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
 /// @p SuppressUserConversions, then don't allow user-defined
 /// conversions via constructors or conversion operators.
 ///
-/// \para PartialOverloading true if we are performing "partial" overloading
+/// \param PartialOverloading true if we are performing "partial" overloading
 /// based on an incomplete set of function arguments. This feature is used by
 /// code completion.
 void
@@ -6399,12 +6405,12 @@ class BuiltinOperatorOverloadBuilder {
   // The "promoted arithmetic types" are the arithmetic
   // types are that preserved by promotion (C++ [over.built]p2).
   static const unsigned FirstIntegralType = 3;
-  static const unsigned LastIntegralType = 18;
+  static const unsigned LastIntegralType = 20;
   static const unsigned FirstPromotedIntegralType = 3,
-                        LastPromotedIntegralType = 9;
+                        LastPromotedIntegralType = 11;
   static const unsigned FirstPromotedArithmeticType = 0,
-                        LastPromotedArithmeticType = 9;
-  static const unsigned NumArithmeticTypes = 18;
+                        LastPromotedArithmeticType = 11;
+  static const unsigned NumArithmeticTypes = 20;
 
   /// \brief Get the canonical type for a given arithmetic type index.
   CanQualType getArithmeticType(unsigned index) {
@@ -6420,9 +6426,11 @@ class BuiltinOperatorOverloadBuilder {
       &ASTContext::IntTy,
       &ASTContext::LongTy,
       &ASTContext::LongLongTy,
+      &ASTContext::Int128Ty,
       &ASTContext::UnsignedIntTy,
       &ASTContext::UnsignedLongTy,
       &ASTContext::UnsignedLongLongTy,
+      &ASTContext::UnsignedInt128Ty,
       // End of promoted types.
 
       &ASTContext::BoolTy,
@@ -6435,7 +6443,7 @@ class BuiltinOperatorOverloadBuilder {
       &ASTContext::UnsignedCharTy,
       &ASTContext::UnsignedShortTy,
       // End of integral types.
-      // FIXME: What about complex?
+      // FIXME: What about complex? What about half?
     };
     return S.Context.*ArithmeticTypes[index];
   }
@@ -6454,20 +6462,24 @@ class BuiltinOperatorOverloadBuilder {
     // *except* when dealing with signed types of higher rank.
     // (we could precompute SLL x UI for all known platforms, but it's
     // better not to make any assumptions).
+    // We assume that int128 has a higher rank than long long on all platforms.
     enum PromotedType {
-                  Flt,  Dbl, LDbl,   SI,   SL,  SLL,   UI,   UL,  ULL, Dep=-1
+            Dep=-1,
+            Flt,  Dbl, LDbl,   SI,   SL,  SLL, S128,   UI,   UL,  ULL, U128
     };
     static const PromotedType ConversionsTable[LastPromotedArithmeticType]
                                         [LastPromotedArithmeticType] = {
-      /* Flt*/ {  Flt,  Dbl, LDbl,  Flt,  Flt,  Flt,  Flt,  Flt,  Flt },
-      /* Dbl*/ {  Dbl,  Dbl, LDbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl },
-      /*LDbl*/ { LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl },
-      /*  SI*/ {  Flt,  Dbl, LDbl,   SI,   SL,  SLL,   UI,   UL,  ULL },
-      /*  SL*/ {  Flt,  Dbl, LDbl,   SL,   SL,  SLL,  Dep,   UL,  ULL },
-      /* SLL*/ {  Flt,  Dbl, LDbl,  SLL,  SLL,  SLL,  Dep,  Dep,  ULL },
-      /*  UI*/ {  Flt,  Dbl, LDbl,   UI,  Dep,  Dep,   UI,   UL,  ULL },
-      /*  UL*/ {  Flt,  Dbl, LDbl,   UL,   UL,  Dep,   UL,   UL,  ULL },
-      /* ULL*/ {  Flt,  Dbl, LDbl,  ULL,  ULL,  ULL,  ULL,  ULL,  ULL },
+/* Flt*/ {  Flt,  Dbl, LDbl,  Flt,  Flt,  Flt,  Flt,  Flt,  Flt,  Flt,  Flt },
+/* Dbl*/ {  Dbl,  Dbl, LDbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl,  Dbl },
+/*LDbl*/ { LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl, LDbl },
+/*  SI*/ {  Flt,  Dbl, LDbl,   SI,   SL,  SLL, S128,   UI,   UL,  ULL, U128 },
+/*  SL*/ {  Flt,  Dbl, LDbl,   SL,   SL,  SLL, S128,  Dep,   UL,  ULL, U128 },
+/* SLL*/ {  Flt,  Dbl, LDbl,  SLL,  SLL,  SLL, S128,  Dep,  Dep,  ULL, U128 },
+/*S128*/ {  Flt,  Dbl, LDbl, S128, S128, S128, S128, S128, S128, S128, U128 },
+/*  UI*/ {  Flt,  Dbl, LDbl,   UI,  Dep,  Dep, S128,   UI,   UL,  ULL, U128 },
+/*  UL*/ {  Flt,  Dbl, LDbl,   UL,   UL,  Dep, S128,   UL,   UL,  ULL, U128 },
+/* ULL*/ {  Flt,  Dbl, LDbl,  ULL,  ULL,  ULL, S128,  ULL,  ULL,  ULL, U128 },
+/*U128*/ {  Flt,  Dbl, LDbl, U128, U128, U128, U128, U128, U128, U128, U128 },
     };
 
     assert(L < LastPromotedArithmeticType);
@@ -6567,13 +6579,13 @@ public:
     assert(getArithmeticType(FirstPromotedIntegralType) == S.Context.IntTy &&
            "Invalid first promoted integral type");
     assert(getArithmeticType(LastPromotedIntegralType - 1)
-             == S.Context.UnsignedLongLongTy &&
+             == S.Context.UnsignedInt128Ty &&
            "Invalid last promoted integral type");
     assert(getArithmeticType(FirstPromotedArithmeticType)
              == S.Context.FloatTy &&
            "Invalid first promoted arithmetic type");
     assert(getArithmeticType(LastPromotedArithmeticType - 1)
-             == S.Context.UnsignedLongLongTy &&
+             == S.Context.UnsignedInt128Ty &&
            "Invalid last promoted arithmetic type");
   }
 

@@ -2127,7 +2127,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
                                            /*Mutable=*/false,
-                                           /*HasInit=*/false);
+                                           ICIS_NoInit);
       Field->setAccess(AS_public);
       D->addDecl(Field);
     }
@@ -2202,7 +2202,7 @@ QualType CodeGenModule::getObjCFastEnumerationStateType() {
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
                                            /*Mutable=*/false,
-                                           /*HasInit=*/false);
+                                           ICIS_NoInit);
       Field->setAccess(AS_public);
       D->addDecl(Field);
     }
@@ -2365,7 +2365,7 @@ void CodeGenModule::EmitObjCPropertyImplementations(const
                                                     ObjCImplementationDecl *D) {
   for (ObjCImplementationDecl::propimpl_iterator
          i = D->propimpl_begin(), e = D->propimpl_end(); i != e; ++i) {
-    ObjCPropertyImplDecl *PID = &*i;
+    ObjCPropertyImplDecl *PID = *i;
 
     // Dynamic is just for type-checking.
     if (PID->getPropertyImplementation() == ObjCPropertyImplDecl::Synthesize) {

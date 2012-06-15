@@ -797,7 +797,7 @@ CollectRecordFields(const RecordDecl *record, llvm::DIFile tunit,
     for (RecordDecl::field_iterator I = record->field_begin(),
            E = record->field_end();
          I != E; ++I, ++fieldNo) {
-      FieldDecl *field = &*I;
+      FieldDecl *field = *I;
 
       if (IsMsStruct) {
         // Zero-length bitfields following non-bitfield members are ignored
@@ -1086,7 +1086,7 @@ CollectTemplateParams(const TemplateParameterList *TPList,
       llvm::DIType TTy = getOrCreateType(TA.getIntegralType(), Unit);
       llvm::DITemplateValueParameter TVP =
         DBuilder.createTemplateValueParameter(TheCU, ND->getName(), TTy,
-                                          TA.getAsIntegral()->getZExtValue());
+                                             TA.getAsIntegral().getZExtValue());
       TemplateParams.push_back(TVP);          
     }
   }
@@ -1338,7 +1338,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
 
   for (ObjCContainerDecl::prop_iterator I = ID->prop_begin(),
          E = ID->prop_end(); I != E; ++I) {
-    const ObjCPropertyDecl *PD = &*I;
+    const ObjCPropertyDecl *PD = *I;
     SourceLocation Loc = PD->getLocation();
     llvm::DIFile PUnit = getOrCreateFile(Loc);
     unsigned PLine = getLineNumber(Loc);
@@ -1565,7 +1565,6 @@ llvm::DIType CGDebugInfo::CreateType(const AtomicType *Ty,
 
 /// CreateEnumType - get enumeration type.
 llvm::DIType CGDebugInfo::CreateEnumType(const EnumDecl *ED) {
-  llvm::DIFile Unit = getOrCreateFile(ED->getLocation());
   SmallVector<llvm::Value *, 16> Enumerators;
 
   // Create DIEnumerator elements for each enumerator.
@@ -1700,7 +1699,8 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
 
   llvm::DIType TC = getTypeOrNull(Ty);
   if (TC.Verify() && TC.isForwardDecl())
-    ReplaceMap.push_back(std::make_pair(Ty.getAsOpaquePtr(), TC));
+    ReplaceMap.push_back(std::make_pair(Ty.getAsOpaquePtr(),
+                                        static_cast<llvm::Value*>(TC)));
   
   // And update the type cache.
   TypeCache[Ty.getAsOpaquePtr()] = Res;
@@ -1811,7 +1811,8 @@ llvm::DIType CGDebugInfo::getOrCreateLimitedType(QualType Ty,
   llvm::DIType Res = CreateLimitedTypeNode(Ty, Unit);
 
   if (T.Verify() && T.isForwardDecl())
-    ReplaceMap.push_back(std::make_pair(Ty.getAsOpaquePtr(), T));
+    ReplaceMap.push_back(std::make_pair(Ty.getAsOpaquePtr(),
+                                        static_cast<llvm::Value*>(T)));
 
   // And update the type cache.
   TypeCache[Ty.getAsOpaquePtr()] = Res;
@@ -2332,7 +2333,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
       for (RecordDecl::field_iterator I = RD->field_begin(),
              E = RD->field_end();
            I != E; ++I) {
-        FieldDecl *Field = &*I;
+        FieldDecl *Field = *I;
         llvm::DIType FieldTy = getOrCreateType(Field->getType(), Unit);
         StringRef FieldName = Field->getName();
           

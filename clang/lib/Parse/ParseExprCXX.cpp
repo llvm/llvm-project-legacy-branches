@@ -792,10 +792,10 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
     MaybeParseCXX0XAttributes(Attr, &DeclEndLoc);
 
     // Parse trailing-return-type[opt].
-    ParsedType TrailingReturnType;
+    TypeResult TrailingReturnType;
     if (Tok.is(tok::arrow)) {
       SourceRange Range;
-      TrailingReturnType = ParseTrailingReturnType(Range).get();
+      TrailingReturnType = ParseTrailingReturnType(Range);
       if (Range.getEnd().isValid())
         DeclEndLoc = Range.getEnd();
     }
@@ -838,10 +838,10 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
     }
     
     // Parse the return type, if there is one.
-    ParsedType TrailingReturnType;
+    TypeResult TrailingReturnType;
     if (Tok.is(tok::arrow)) {
       SourceRange Range;
-      TrailingReturnType = ParseTrailingReturnType(Range).get();
+      TrailingReturnType = ParseTrailingReturnType(Range);
       if (Range.getEnd().isValid())
         DeclEndLoc = Range.getEnd();      
     }
@@ -1235,8 +1235,6 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
                                              MultiExprArg(&InitList, 1),
                                              SourceLocation());
   } else {
-    GreaterThanIsOperatorScope G(GreaterThanIsOperator, true);
-
     BalancedDelimiterTracker T(*this, tok::l_paren);
     T.consumeOpen();
 
