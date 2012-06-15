@@ -4,7 +4,7 @@ COMMON="lib/CMakeLists.txt lib/Makefile unittests/CMakeLists.txt unittests/Makef
 
 AST_H="include/clang/ASTMatchers/ASTMatchFinder.h include/clang/ASTMatchers/ASTMatchers.h include/clang/ASTMatchers/ASTMatchersInternal.h include/clang/ASTMatchers/ASTMatchersMacros.h"
 AST_C="lib/ASTMatchers/ASTMatchFinder.cpp lib/ASTMatchers/ASTMatchersInternal.cpp"
-AST_T="unittests/ASTMatchers/ASTMatchersTest.cpp"
+AST_T="unittests/ASTMatchers/ASTMatchersTest.cpp unittests/ASTMatchers/ASTMatchersTest.h"
 AST_M="lib/ASTMatchers/CMakeLists.txt lib/ASTMatchers/Makefile unittests/ASTMatchers/Makefile"
 AST_SRC="$AST_H $AST_C $AST_T $AST_M $COMMON"
 
