@@ -1296,3 +1296,8 @@ class TestBase(Base):
             return
 
         print child
+
+    @classmethod
+    def RemoveTempFile(cls, file):
+        if os.path.exists(file):
+            os.remove(file)
