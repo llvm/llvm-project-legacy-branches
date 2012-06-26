@@ -444,6 +444,13 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
   CXXScopeSpec SS;
   SourceLocation TypenameLoc;
   bool IsTypeName;
+  ParsedAttributesWithRange attrs(AttrFactory);
+
+  // FIXME: Simply skip the attributes and diagnose, don't bother parsing them.
+  MaybeParseCXX0XAttributes(attrs);
+  ProhibitAttributes(attrs);
+  attrs.clear();
+  attrs.Range = SourceRange();
 
   // Ignore optional 'typename'.
   // FIXME: This is wrong; we should parse this as a typename-specifier.
@@ -480,7 +487,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     return 0;
   }
 
-  ParsedAttributes attrs(AttrFactory);
+  MaybeParseCXX0XAttributes(attrs);
 
   // Maybe this is an alias-declaration.
   bool IsAliasDecl = Tok.is(tok::equal);
@@ -533,9 +540,14 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     TypeAlias = ParseTypeName(0, TemplateInfo.Kind ?
                               Declarator::AliasTemplateContext :
                               Declarator::AliasDeclContext, AS, OwnedType);
-  } else
+  } else {
+    // C++11 attributes are not allowed on a using-declaration, but GNU ones
+    // are.
+    ProhibitAttributes(attrs);
+
     // Parse (optional) attributes (most likely GNU strong-using extension).
     MaybeParseGNUAttributes(attrs);
+  }
 
   // Eat ';'.
   DeclEnd = Tok.getLocation();
@@ -572,6 +584,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     MultiTemplateParamsArg TemplateParamsArg(Actions,
       TemplateParams ? TemplateParams->data() : 0,
       TemplateParams ? TemplateParams->size() : 0);
+    // FIXME: Propagate attributes.
     return Actions.ActOnAliasDeclaration(getCurScope(), AS, TemplateParamsArg,
                                          UsingLoc, Name, TypeAlias);
   }
@@ -874,10 +887,12 @@ Parser::TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
   }
 
   // We have an identifier; check whether it is actually a type.
+  IdentifierInfo *CorrectedII = 0;
   ParsedType Type = Actions.getTypeName(*Id, IdLoc, getCurScope(), &SS, true,
                                         false, ParsedType(),
                                         /*IsCtorOrDtorName=*/false,
-                                        /*NonTrivialTypeSourceInfo=*/true);
+                                        /*NonTrivialTypeSourceInfo=*/true,
+                                        &CorrectedII);
   if (!Type) {
     Diag(IdLoc, diag::err_expected_class_name);
     return true;
@@ -907,7 +922,7 @@ void Parser::ParseMicrosoftInheritanceClassAttributes(ParsedAttributes &attrs) {
     IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
     attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
-                 SourceLocation(), 0, 0, false);
+                 SourceLocation(), 0, 0, AttributeList::AS_GNU);
   }
 }
 
@@ -987,7 +1002,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
      TemplateInfo.Kind == ParsedTemplateInfo::ExplicitSpecialization);
   SuppressAccessChecks diagsFromTag(*this, shouldDelayDiagsInTag);
 
-  ParsedAttributes attrs(AttrFactory);
+  ParsedAttributesWithRange attrs(AttrFactory);
   // If attributes exist after tag, parse them.
   if (Tok.is(tok::kw___attribute))
     ParseGNUAttributes(attrs);
@@ -1200,6 +1215,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     if (TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation &&
         TUK == Sema::TUK_Declaration) {
       // This is an explicit instantiation of a class template.
+      ProhibitAttributes(attrs);
+
       TagOrTempResult
         = Actions.ActOnExplicitInstantiation(getCurScope(),
                                              TemplateInfo.ExternLoc,
@@ -1221,6 +1238,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     } else if (TUK == Sema::TUK_Reference ||
                (TUK == Sema::TUK_Friend &&
                 TemplateInfo.Kind == ParsedTemplateInfo::NonTemplate)) {
+      ProhibitAttributes(attrs);
       TypeResult = Actions.ActOnTagTemplateIdType(TUK, TagType, StartLoc,
                                                   TemplateId->SS,
                                                   TemplateId->TemplateKWLoc,
@@ -1285,6 +1303,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
     //
     //   template struct Outer<int>::Inner;
     //
+    ProhibitAttributes(attrs);
+
     TagOrTempResult
       = Actions.ActOnExplicitInstantiation(getCurScope(),
                                            TemplateInfo.ExternLoc,
@@ -1293,6 +1313,8 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
                                            NameLoc, attrs.getList());
   } else if (TUK == Sema::TUK_Friend &&
              TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate) {
+    ProhibitAttributes(attrs);
+
     TagOrTempResult =
       Actions.ActOnTemplatedFriendTag(getCurScope(), DS.getFriendSpecLoc(),
                                       TagType, StartLoc, SS,
@@ -1305,6 +1327,9 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
         TUK == Sema::TUK_Definition) {
       // FIXME: Diagnose this particular error.
     }
+
+    if (TUK != Sema::TUK_Declaration && TUK != Sema::TUK_Definition)
+      ProhibitAttributes(attrs);
 
     bool IsDependent = false;
 
@@ -2899,13 +2924,14 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
     }
 
     bool AttrParsed = false;
-    switch (AttributeList::getKind(AttrName, ScopeName)) {
+    switch (AttributeList::getKind(AttrName, ScopeName,
+                                   AttributeList::AS_CXX11)) {
     // No arguments
-    case AttributeList::AT_carries_dependency:
+    case AttributeList::AT_CarriesDependency:
     // FIXME: implement generic support of attributes with C++11 syntax
     // see Parse/ParseDecl.cpp: ParseGNUAttributes
-    case AttributeList::AT_clang___fallthrough:
-    case AttributeList::AT_noreturn: {
+    case AttributeList::AT_FallThrough:
+    case AttributeList::AT_NoReturn: {
       if (Tok.is(tok::l_paren)) {
         Diag(Tok.getLocation(), diag::err_cxx11_attribute_forbids_arguments)
           << AttrName->getName();
@@ -2916,7 +2942,7 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
                    SourceRange(ScopeLoc.isValid() ? ScopeLoc : AttrLoc,
                                AttrLoc),
                    ScopeName, ScopeLoc, 0,
-                   SourceLocation(), 0, 0, false, true);
+                   SourceLocation(), 0, 0, AttributeList::AS_CXX11);
       AttrParsed = true;
       break;
     }
@@ -2948,7 +2974,7 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
     SkipUntil(tok::r_square, false);
 }
 
-/// ParseCXX11Attributes - Parse a C++0x attribute-specifier-seq.
+/// ParseCXX11Attributes - Parse a C++11 attribute-specifier-seq.
 ///
 /// attribute-specifier-seq:
 ///       attribute-specifier-seq[opt] attribute-specifier

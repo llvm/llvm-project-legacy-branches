@@ -130,6 +130,77 @@ void Sema::NoteDeletedFunction(FunctionDecl *Decl) {
     << 1 << Decl->isDeleted();
 }
 
+/// \brief Determine whether a FunctionDecl was ever declared with an
+/// explicit storage class.
+static bool hasAnyExplicitStorageClass(const FunctionDecl *D) {
+  for (FunctionDecl::redecl_iterator I = D->redecls_begin(),
+                                     E = D->redecls_end();
+       I != E; ++I) {
+    if (I->getStorageClassAsWritten() != SC_None)
+      return true;
+  }
+  return false;
+}
+
+/// \brief Check whether we're in an extern inline function and referring to a
+/// variable or function with internal linkage (C11 6.7.4p3).
+///
+/// This is only a warning because we used to silently accept this code, but
+/// in many cases it will not behave correctly. This is not enabled in C++ mode
+/// because the restriction language is a bit weaker (C++11 [basic.def.odr]p6)
+/// and so while there may still be user mistakes, most of the time we can't
+/// prove that there are errors.
+static void diagnoseUseOfInternalDeclInInlineFunction(Sema &S,
+                                                      const NamedDecl *D,
+                                                      SourceLocation Loc) {
+  // This is disabled under C++; there are too many ways for this to fire in
+  // contexts where the warning is a false positive, or where it is technically
+  // correct but benign.
+  if (S.getLangOpts().CPlusPlus)
+    return;
+
+  // Check if this is an inlined function or method.
+  FunctionDecl *Current = S.getCurFunctionDecl();
+  if (!Current)
+    return;
+  if (!Current->isInlined())
+    return;
+  if (Current->getLinkage() != ExternalLinkage)
+    return;
+  
+  // Check if the decl has internal linkage.
+  if (D->getLinkage() != InternalLinkage)
+    return;
+
+  // Downgrade from ExtWarn to Extension if
+  //  (1) the supposedly external inline function is in the main file,
+  //      and probably won't be included anywhere else.
+  //  (2) the thing we're referencing is a pure function.
+  //  (3) the thing we're referencing is another inline function.
+  // This last can give us false negatives, but it's better than warning on
+  // wrappers for simple C library functions.
+  const FunctionDecl *UsedFn = dyn_cast<FunctionDecl>(D);
+  bool DowngradeWarning = S.getSourceManager().isFromMainFile(Loc);
+  if (!DowngradeWarning && UsedFn)
+    DowngradeWarning = UsedFn->isInlined() || UsedFn->hasAttr<ConstAttr>();
+
+  S.Diag(Loc, DowngradeWarning ? diag::ext_internal_in_extern_inline
+                               : diag::warn_internal_in_extern_inline)
+    << /*IsVar=*/!UsedFn << D;
+
+  // Suggest "static" on the inline function, if possible.
+  if (!hasAnyExplicitStorageClass(Current)) {
+    const FunctionDecl *FirstDecl = Current->getCanonicalDecl();
+    SourceLocation DeclBegin = FirstDecl->getSourceRange().getBegin();
+    S.Diag(DeclBegin, diag::note_convert_inline_to_static)
+      << Current << FixItHint::CreateInsertion(DeclBegin, "static ");
+  }
+
+  S.Diag(D->getCanonicalDecl()->getLocation(),
+         diag::note_internal_decl_declared_here)
+    << D;
+}
+
 /// \brief Determine whether the use of this declaration is valid, and
 /// emit any corresponding diagnostics.
 ///
@@ -182,6 +253,9 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
   // Warn if this is used but marked unused.
   if (D->hasAttr<UnusedAttr>())
     Diag(Loc, diag::warn_used_but_marked_unused) << D->getDeclName();
+
+  diagnoseUseOfInternalDeclInInlineFunction(*this, D, Loc);
+
   return false;
 }
 
@@ -943,6 +1017,10 @@ QualType Sema::UsualArithmeticConversions(ExprResult &LHS, ExprResult &RHS,
   QualType RHSType =
     Context.getCanonicalType(RHS.get()->getType()).getUnqualifiedType();
 
+  // For conversion purposes, we ignore any atomic qualifier on the LHS.
+  if (const AtomicType *AtomicLHS = LHSType->getAs<AtomicType>())
+    LHSType = AtomicLHS->getValueType();
+
   // If both types are identical, no conversion is needed.
   if (LHSType == RHSType)
     return LHSType;
@@ -950,7 +1028,7 @@ QualType Sema::UsualArithmeticConversions(ExprResult &LHS, ExprResult &RHS,
   // If either side is a non-arithmetic type (e.g. a pointer), we are done.
   // The caller can deal with this (e.g. pointer + int).
   if (!LHSType->isArithmeticType() || !RHSType->isArithmeticType())
-    return LHSType;
+    return QualType();
 
   // Apply unary and bitfield promotions to the LHS's type.
   QualType LHSUnpromotedType = LHSType;
@@ -1396,42 +1474,44 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
         // Give a code modification hint to insert 'this->'.
         // TODO: fixit for inserting 'Base<T>::' in the other cases.
         // Actually quite difficult!
+        if (getLangOpts().MicrosoftMode)
+          diagnostic = diag::warn_found_via_dependent_bases_lookup;
         if (isInstance) {
+          Diag(R.getNameLoc(), diagnostic) << Name
+            << FixItHint::CreateInsertion(R.getNameLoc(), "this->");
           UnresolvedLookupExpr *ULE = cast<UnresolvedLookupExpr>(
               CallsUndergoingInstantiation.back()->getCallee());
-          CXXMethodDecl *DepMethod = cast_or_null<CXXMethodDecl>(
-              CurMethod->getInstantiatedFromMemberFunction());
-          if (DepMethod) {
-            if (getLangOpts().MicrosoftMode)
-              diagnostic = diag::warn_found_via_dependent_bases_lookup;
-            Diag(R.getNameLoc(), diagnostic) << Name
-              << FixItHint::CreateInsertion(R.getNameLoc(), "this->");
-            QualType DepThisType = DepMethod->getThisType(Context);
-            CheckCXXThisCapture(R.getNameLoc());
-            CXXThisExpr *DepThis = new (Context) CXXThisExpr(
-                                       R.getNameLoc(), DepThisType, false);
-            TemplateArgumentListInfo TList;
-            if (ULE->hasExplicitTemplateArgs())
-              ULE->copyTemplateArgumentsInto(TList);
-            
-            CXXScopeSpec SS;
-            SS.Adopt(ULE->getQualifierLoc());
-            CXXDependentScopeMemberExpr *DepExpr =
-                CXXDependentScopeMemberExpr::Create(
-                    Context, DepThis, DepThisType, true, SourceLocation(),
-                    SS.getWithLocInContext(Context),
-                    ULE->getTemplateKeywordLoc(), 0,
-                    R.getLookupNameInfo(),
-                    ULE->hasExplicitTemplateArgs() ? &TList : 0);
-            CallsUndergoingInstantiation.back()->setCallee(DepExpr);
-          } else {
-            // FIXME: we should be able to handle this case too. It is correct
-            // to add this-> here. This is a workaround for PR7947.
-            Diag(R.getNameLoc(), diagnostic) << Name;
-          }
+
+          
+          CXXMethodDecl *DepMethod;
+          if (CurMethod->getTemplatedKind() ==
+              FunctionDecl::TK_FunctionTemplateSpecialization)
+            DepMethod = cast<CXXMethodDecl>(CurMethod->getPrimaryTemplate()->
+                getInstantiatedFromMemberTemplate()->getTemplatedDecl());
+          else
+            DepMethod = cast<CXXMethodDecl>(
+                CurMethod->getInstantiatedFromMemberFunction());
+          assert(DepMethod && "No template pattern found");
+
+          QualType DepThisType = DepMethod->getThisType(Context);
+          CheckCXXThisCapture(R.getNameLoc());
+          CXXThisExpr *DepThis = new (Context) CXXThisExpr(
+                                     R.getNameLoc(), DepThisType, false);
+          TemplateArgumentListInfo TList;
+          if (ULE->hasExplicitTemplateArgs())
+            ULE->copyTemplateArgumentsInto(TList);
+          
+          CXXScopeSpec SS;
+          SS.Adopt(ULE->getQualifierLoc());
+          CXXDependentScopeMemberExpr *DepExpr =
+              CXXDependentScopeMemberExpr::Create(
+                  Context, DepThis, DepThisType, true, SourceLocation(),
+                  SS.getWithLocInContext(Context),
+                  ULE->getTemplateKeywordLoc(), 0,
+                  R.getLookupNameInfo(),
+                  ULE->hasExplicitTemplateArgs() ? &TList : 0);
+          CallsUndergoingInstantiation.back()->setCallee(DepExpr);
         } else {
-          if (getLangOpts().MicrosoftMode)
-            diagnostic = diag::warn_found_via_dependent_bases_lookup;
           Diag(R.getNameLoc(), diagnostic) << Name;
         }
 
@@ -2383,6 +2463,7 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
   default: llvm_unreachable("Unknown simple primary expr!");
   case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
   case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
+  case tok::kw_L__FUNCTION__: IT = PredefinedExpr::LFunction; break;
   case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
   }
 
@@ -2404,7 +2485,10 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
     unsigned Length = PredefinedExpr::ComputeName(IT, currentDecl).length();
 
     llvm::APInt LengthI(32, Length + 1);
-    ResTy = Context.CharTy.withConst();
+    if (Kind == tok::kw_L__FUNCTION__)
+      ResTy = Context.WCharTy.withConst();
+    else
+      ResTy = Context.CharTy.withConst();
     ResTy = Context.getConstantArrayType(ResTy, LengthI, ArrayType::Normal, 0);
   }
   return Owned(new (Context) PredefinedExpr(Loc, ResTy, IT));
@@ -2801,7 +2885,7 @@ static bool CheckObjCTraitOperandConstraints(Sema &S, QualType T,
                                              SourceRange ArgRange,
                                              UnaryExprOrTypeTrait TraitKind) {
   // Reject sizeof(interface) and sizeof(interface<proto>) in 64-bit mode.
-  if (S.LangOpts.ObjCNonFragileABI && T->isObjCObjectType()) {
+  if (S.LangOpts.ObjCRuntime.isNonFragile() && T->isObjCObjectType()) {
     S.Diag(Loc, diag::err_sizeof_nonfragile_interface)
       << T << (TraitKind == UETT_SizeOf)
       << ArgRange;
@@ -3250,7 +3334,7 @@ Sema::CreateBuiltinArraySubscriptExpr(Expr *Base, SourceLocation LLoc,
     return ExprError();
 
   // Diagnose bad cases where we step over interface counts.
-  if (ResultType->isObjCObjectType() && LangOpts.ObjCNonFragileABI) {
+  if (ResultType->isObjCObjectType() && LangOpts.ObjCRuntime.isNonFragile()) {
     Diag(LLoc, diag::err_subscript_nonfragile_interface)
       << ResultType << BaseExpr->getSourceRange();
     return ExprError();
@@ -4083,11 +4167,6 @@ CastKind Sema::PrepareScalarCast(ExprResult &Src, QualType DestTy) {
   // pointers.  Everything else should be possible.
 
   QualType SrcTy = Src.get()->getType();
-  if (const AtomicType *SrcAtomicTy = SrcTy->getAs<AtomicType>())
-    SrcTy = SrcAtomicTy->getValueType();
-  if (const AtomicType *DestAtomicTy = DestTy->getAs<AtomicType>())
-    DestTy = DestAtomicTy->getValueType();
-
   if (Context.hasSameUnqualifiedType(SrcTy, DestTy))
     return CK_NoOp;
 
@@ -5411,20 +5490,18 @@ Sema::CheckAssignmentConstraints(QualType LHSType, ExprResult &RHS,
     return Compatible;
   }
 
+  // If we have an atomic type, try a non-atomic assignment, then just add an
+  // atomic qualification step.
   if (const AtomicType *AtomicTy = dyn_cast<AtomicType>(LHSType)) {
-    if (AtomicTy->getValueType() == RHSType) {
-      Kind = CK_NonAtomicToAtomic;
-      return Compatible;
-    }
+    Sema::AssignConvertType result =
+      CheckAssignmentConstraints(AtomicTy->getValueType(), RHS, Kind);
+    if (result != Compatible)
+      return result;
+    if (Kind != CK_NoOp)
+      RHS = ImpCastExprToType(RHS.take(), AtomicTy->getValueType(), Kind);
+    Kind = CK_NonAtomicToAtomic;
+    return Compatible;
   }
-
-  if (const AtomicType *AtomicTy = dyn_cast<AtomicType>(RHSType)) {
-    if (AtomicTy->getValueType() == LHSType) {
-      Kind = CK_AtomicToNonAtomic;
-      return Compatible;
-    }
-  }
-
 
   // If the left-hand side is a reference type, then we are in a
   // (rare!) case where we've allowed the use of references in C,
@@ -5965,14 +6042,8 @@ QualType Sema::CheckMultiplyDivideOperands(ExprResult &LHS, ExprResult &RHS,
     return QualType();
 
 
-  if (!LHS.get()->getType()->isArithmeticType() ||
-      !RHS.get()->getType()->isArithmeticType()) {
-    if (IsCompAssign &&
-        LHS.get()->getType()->isAtomicType() &&
-        RHS.get()->getType()->isArithmeticType())
-      return compType;
+  if (compType.isNull() || !compType->isArithmeticType())
     return InvalidOperands(Loc, LHS, RHS);
-  }
 
   // Check for division by zero.
   if (IsDiv &&
@@ -6000,8 +6071,7 @@ QualType Sema::CheckRemainderOperands(
   if (LHS.isInvalid() || RHS.isInvalid())
     return QualType();
 
-  if (!LHS.get()->getType()->isIntegerType() ||
-      !RHS.get()->getType()->isIntegerType())
+  if (compType.isNull() || !compType->isIntegerType())
     return InvalidOperands(Loc, LHS, RHS);
 
   // Check for remainder by zero.
@@ -6158,7 +6228,7 @@ static bool checkArithmethicPointerOnNonFragileABI(Sema &S,
                                                    Expr *Op) {
   assert(Op->getType()->isAnyPointerType());
   QualType PointeeTy = Op->getType()->getPointeeType();
-  if (!PointeeTy->isObjCObjectType() || !S.LangOpts.ObjCNonFragileABI)
+  if (!PointeeTy->isObjCObjectType() || S.LangOpts.ObjCRuntime.isFragile())
     return true;
 
   S.Diag(OpLoc, diag::err_arithmetic_nonfragile_interface)
@@ -6237,15 +6307,8 @@ QualType Sema::CheckAdditionOperands( // C99 6.5.6
     diagnoseStringPlusInt(*this, Loc, LHS.get(), RHS.get());
 
   // handle the common case first (both operands are arithmetic).
-  if (LHS.get()->getType()->isArithmeticType() &&
-      RHS.get()->getType()->isArithmeticType()) {
+  if (!compType.isNull() && compType->isArithmeticType()) {
     if (CompLHSTy) *CompLHSTy = compType;
-    return compType;
-  }
-
-  if (LHS.get()->getType()->isAtomicType() &&
-      RHS.get()->getType()->isArithmeticType()) {
-    *CompLHSTy = LHS.get()->getType();
     return compType;
   }
 
@@ -6303,15 +6366,8 @@ QualType Sema::CheckSubtractionOperands(ExprResult &LHS, ExprResult &RHS,
   // Enforce type constraints: C99 6.5.6p3.
 
   // Handle the common case first (both operands are arithmetic).
-  if (LHS.get()->getType()->isArithmeticType() &&
-      RHS.get()->getType()->isArithmeticType()) {
+  if (!compType.isNull() && compType->isArithmeticType()) {
     if (CompLHSTy) *CompLHSTy = compType;
-    return compType;
-  }
-
-  if (LHS.get()->getType()->isAtomicType() &&
-      RHS.get()->getType()->isArithmeticType()) {
-    *CompLHSTy = LHS.get()->getType();
     return compType;
   }
 
@@ -7216,8 +7272,7 @@ inline QualType Sema::CheckBitwiseOperands(
   LHS = LHSResult.take();
   RHS = RHSResult.take();
 
-  if (LHS.get()->getType()->isIntegralOrUnscopedEnumerationType() &&
-      RHS.get()->getType()->isIntegralOrUnscopedEnumerationType())
+  if (!compType.isNull() && compType->isIntegralOrUnscopedEnumerationType())
     return compType;
   return InvalidOperands(Loc, LHS, RHS);
 }
@@ -9086,7 +9141,8 @@ void Sema::ActOnBlockStart(SourceLocation CaretLoc, Scope *CurScope) {
   PushExpressionEvaluationContext(PotentiallyEvaluated);  
 }
 
-void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
+void Sema::ActOnBlockArguments(SourceLocation CaretLoc, Declarator &ParamInfo,
+                               Scope *CurScope) {
   assert(ParamInfo.getIdentifier()==0 && "block-id should have no identifier!");
   assert(ParamInfo.getContext() == Declarator::BlockLiteralContext);
   BlockScopeInfo *CurBlock = getCurBlock();
@@ -9094,6 +9150,18 @@ void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
   TypeSourceInfo *Sig = GetTypeForDeclarator(ParamInfo, CurScope);
   QualType T = Sig->getType();
 
+  // FIXME: We should allow unexpanded parameter packs here, but that would,
+  // in turn, make the block expression contain unexpanded parameter packs.
+  if (DiagnoseUnexpandedParameterPack(CaretLoc, Sig, UPPC_Block)) {
+    // Drop the parameters.
+    FunctionProtoType::ExtProtoInfo EPI;
+    EPI.HasTrailingReturn = false;
+    EPI.TypeQuals |= DeclSpec::TQ_const;
+    T = Context.getFunctionType(Context.DependentTy, /*Args=*/0, /*NumArgs=*/0,
+                                EPI);
+    Sig = Context.getTrivialTypeSourceInfo(T);
+  }
+  
   // GetTypeForDeclarator always produces a function type for a block
   // literal signature.  Furthermore, it is always a FunctionProtoType
   // unless the function was written with a typedef.

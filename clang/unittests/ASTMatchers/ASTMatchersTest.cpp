@@ -44,8 +44,7 @@ TEST(NameableDeclaration, MatchesVariousDecls) {
 
 TEST(DeclarationMatcher, MatchClass) {
   DeclarationMatcher ClassMatcher(Class());
-  // Even for an empty string there are classes in the AST.
-  EXPECT_TRUE(matches("", ClassMatcher));
+  EXPECT_FALSE(matches("", ClassMatcher));
 
   DeclarationMatcher ClassX = Class(Class(HasName("X")));
   EXPECT_TRUE(matches("class X;", ClassX));

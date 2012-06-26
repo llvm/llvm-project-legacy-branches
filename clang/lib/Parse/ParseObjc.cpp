@@ -420,7 +420,7 @@ void Parser::ParseObjCInterfaceDeclList(tok::ObjCKeywordKind contextKey,
       // erroneous r_brace would cause an infinite loop if not handled here.
       if (Tok.is(tok::r_brace))
         break;
-      ParsedAttributes attrs(AttrFactory);
+      ParsedAttributesWithRange attrs(AttrFactory);
       allTUVariables.push_back(ParseDeclarationOrFunctionDefinition(attrs));
       continue;
     }
@@ -1106,7 +1106,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
   }
 
   bool isVariadic = false;
-
+  bool cStyleParamWarned = false;
   // Parse the (optional) parameter list.
   while (Tok.is(tok::comma)) {
     ConsumeToken();
@@ -1114,6 +1114,10 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
       isVariadic = true;
       ConsumeToken();
       break;
+    }
+    if (!cStyleParamWarned) {
+      Diag(Tok, diag::warn_cstyle_param);
+      cStyleParamWarned = true;
     }
     DeclSpec DS(AttrFactory);
     ParseDeclarationSpecifiers(DS);
@@ -1126,7 +1130,6 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
                                                     ParmDecl.getIdentifierLoc(), 
                                                     Param,
                                                    0));
-
   }
 
   // FIXME: Add support for optional parameter list...
@@ -2115,7 +2118,7 @@ bool Parser::ParseObjCXXMessageReceiver(bool &IsExpr, void *&TypeOrExpr) {
       Tok.is(tok::kw_typename) || Tok.is(tok::annot_cxxscope))
     TryAnnotateTypeOrScopeToken();
 
-  if (!isCXXSimpleTypeSpecifier()) {
+  if (!Actions.isSimpleTypeSpecifier(Tok.getKind())) {
     //   objc-receiver:
     //     expression
     ExprResult Receiver = ParseExpression();

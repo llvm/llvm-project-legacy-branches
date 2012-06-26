@@ -1181,7 +1181,7 @@ bool ResultBuilder::IsImpossibleToSatisfy(NamedDecl *ND) const {
   return false;
 }
 
-/// \rief Determines whether the given declaration is an Objective-C
+/// \brief Determines whether the given declaration is an Objective-C
 /// instance variable.
 bool ResultBuilder::IsObjCIvar(NamedDecl *ND) const {
   return isa<ObjCIvarDecl>(ND);
@@ -4411,7 +4411,7 @@ static void AddObjCExpressionResults(ResultBuilder &Results, bool NeedAt) {
   const char *EncodeType = "char[]";
   if (Results.getSema().getLangOpts().CPlusPlus ||
       Results.getSema().getLangOpts().ConstStrings)
-    EncodeType = " const char[]";
+    EncodeType = "const char[]";
   Builder.AddResultTypeChunk(EncodeType);
   Builder.AddTypedTextChunk(OBJC_AT_KEYWORD_NAME(NeedAt,"encode"));
   Builder.AddChunk(CodeCompletionString::CK_LeftParen);
@@ -4434,8 +4434,16 @@ static void AddObjCExpressionResults(ResultBuilder &Results, bool NeedAt) {
   Builder.AddPlaceholderChunk("selector");
   Builder.AddChunk(CodeCompletionString::CK_RightParen);
   Results.AddResult(Result(Builder.TakeString()));
-  
+
+  // @"string"
+  Builder.AddResultTypeChunk("NSString *");
+  Builder.AddTypedTextChunk(OBJC_AT_KEYWORD_NAME(NeedAt,"\""));
+  Builder.AddPlaceholderChunk("string");
+  Builder.AddTextChunk("\"");
+  Results.AddResult(Result(Builder.TakeString()));
+
   // @[ objects, ... ]
+  Builder.AddResultTypeChunk("NSArray *");
   Builder.AddTypedTextChunk(OBJC_AT_KEYWORD_NAME(NeedAt,"["));
   Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
   Builder.AddPlaceholderChunk("objects, ...");
@@ -4444,6 +4452,7 @@ static void AddObjCExpressionResults(ResultBuilder &Results, bool NeedAt) {
   Results.AddResult(Result(Builder.TakeString()));
 
   // @{ key : object, ... }
+  Builder.AddResultTypeChunk("NSDictionary *");
   Builder.AddTypedTextChunk(OBJC_AT_KEYWORD_NAME(NeedAt,"{"));
   Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
   Builder.AddPlaceholderChunk("key");
@@ -4453,6 +4462,15 @@ static void AddObjCExpressionResults(ResultBuilder &Results, bool NeedAt) {
   Builder.AddPlaceholderChunk("object, ...");
   Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
   Builder.AddChunk(CodeCompletionString::CK_RightBrace);
+  Results.AddResult(Result(Builder.TakeString()));
+
+  // @( expression )
+  Builder.AddResultTypeChunk("id");
+  Builder.AddTypedTextChunk(OBJC_AT_KEYWORD_NAME(NeedAt, "("));
+  Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
+  Builder.AddPlaceholderChunk("expression");
+  Builder.AddChunk(CodeCompletionString::CK_HorizontalSpace);
+  Builder.AddChunk(CodeCompletionString::CK_RightParen);
   Results.AddResult(Result(Builder.TakeString()));
 }
 
@@ -4638,7 +4656,7 @@ void Sema::CodeCompleteObjCPropertyFlags(Scope *S, ObjCDeclSpec &ODS) {
                             Results.data(),Results.size());
 }
 
-/// \brief Descripts the kind of Objective-C method that we want to find
+/// \brief Describes the kind of Objective-C method that we want to find
 /// via code completion.
 enum ObjCMethodKind {
   MK_Any, ///< Any kind of method, provided it means other specified criteria.

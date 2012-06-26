@@ -115,6 +115,7 @@ public:
   }
 
   bool shouldVisitTemplateInstantiations() const { return true; }
+  bool shouldVisitImplicitCode() const { return true; }
 
 private:
   // Used for updating the depth during traversal.
@@ -333,6 +334,7 @@ public:
   }
 
   bool shouldVisitTemplateInstantiations() const { return true; }
+  bool shouldVisitImplicitCode() const { return true; }
 
 private:
   // Implements a BoundNodesTree::Visitor that calls a MatchCallback with

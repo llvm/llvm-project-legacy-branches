@@ -9626,7 +9626,8 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
       Diag(Loc, diag::err_objc_object_catch);
       Invalid = true;
     } else if (T->isObjCObjectPointerType()) {
-      if (!getLangOpts().ObjCNonFragileABI)
+      // FIXME: should this be a test for macosx-fragile specifically?
+      if (getLangOpts().ObjCRuntime.isFragile())
         Diag(Loc, diag::warn_objc_pointer_cxx_catch_fragile);
     }
   }
@@ -9973,7 +9974,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
 ///   friend class A<T>::B<unsigned>;
 /// We permit this as a special case; if there are any template
 /// parameters present at all, require proper matching, i.e.
-///   template <> template <class T> friend class A<int>::B;
+///   template <> template \<class T> friend class A<int>::B;
 Decl *Sema::ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                                 MultiTemplateParamsArg TempParams) {
   SourceLocation Loc = DS.getLocStart();

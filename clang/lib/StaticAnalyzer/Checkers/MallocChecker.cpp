@@ -34,15 +34,24 @@ using namespace ento;
 namespace {
 
 class RefState {
-  enum Kind { AllocateUnchecked, AllocateFailed, Released, Escaped,
+  enum Kind { // Reference to allocated memory.
+              Allocated,
+              // Reference to released/freed memory.
+              Released,
+              // Reference to escaped memory - no assumptions can be made of
+              // the state after the reference escapes.
+              Escaped,
+              // The responsibility for freeing resources has transfered from
+              // this reference. A relinquished symbol should not be freed.
               Relinquished } K;
   const Stmt *S;
 
 public:
   RefState(Kind k, const Stmt *s) : K(k), S(s) {}
 
-  bool isAllocated() const { return K == AllocateUnchecked; }
+  bool isAllocated() const { return K == Allocated; }
   bool isReleased() const { return K == Released; }
+  bool isRelinquished() const { return K == Relinquished; }
 
   const Stmt *getStmt() const { return S; }
 
@@ -50,11 +59,8 @@ public:
     return K == X.K && S == X.S;
   }
 
-  static RefState getAllocateUnchecked(const Stmt *s) { 
-    return RefState(AllocateUnchecked, s); 
-  }
-  static RefState getAllocateFailed() {
-    return RefState(AllocateFailed, 0);
+  static RefState getAllocated(const Stmt *s) {
+    return RefState(Allocated, s);
   }
   static RefState getReleased(const Stmt *s) { return RefState(Released, s); }
   static RefState getEscaped(const Stmt *s) { return RefState(Escaped, s); }
@@ -90,6 +96,7 @@ class MallocChecker : public Checker<check::DeadSymbols,
                                      check::PreStmt<CallExpr>,
                                      check::PostStmt<CallExpr>,
                                      check::PostStmt<BlockExpr>,
+                                     check::PreObjCMessage,
                                      check::Location,
                                      check::Bind,
                                      eval::Assume,
@@ -117,6 +124,7 @@ public:
 
   void checkPreStmt(const CallExpr *S, CheckerContext &C) const;
   void checkPostStmt(const CallExpr *CE, CheckerContext &C) const;
+  void checkPreObjCMessage(const ObjCMessage &Msg, CheckerContext &C) const;
   void checkPostStmt(const BlockExpr *BE, CheckerContext &C) const;
   void checkDeadSymbols(SymbolReaper &SymReaper, CheckerContext &C) const;
   void checkEndPath(CheckerContext &C) const;
@@ -172,8 +180,12 @@ private:
   ProgramStateRef FreeMemAttr(CheckerContext &C, const CallExpr *CE,
                               const OwnershipAttr* Att) const;
   ProgramStateRef FreeMemAux(CheckerContext &C, const CallExpr *CE,
-                                 ProgramStateRef state, unsigned Num,
-                                 bool Hold) const;
+                             ProgramStateRef state, unsigned Num,
+                             bool Hold) const;
+  ProgramStateRef FreeMemAux(CheckerContext &C, const Expr *Arg,
+                             const Expr *ParentExpr,
+                             ProgramStateRef state,
+                             bool Hold) const;
 
   ProgramStateRef ReallocMem(CheckerContext &C, const CallExpr *CE,
                              bool FreesMemOnFailure) const;
@@ -247,6 +259,15 @@ private:
       // Did not track -> released. Other state (allocated) -> released.
       return (Stmt && isa<CallExpr>(Stmt) &&
               (S && S->isReleased()) && (!SPrev || !SPrev->isReleased()));
+    }
+
+    inline bool isRelinquished(const RefState *S, const RefState *SPrev,
+                               const Stmt *Stmt) {
+      // Did not track -> relinquished. Other state (allocated) -> relinquished.
+      return (Stmt && (isa<CallExpr>(Stmt) || isa<ObjCMessageExpr>(Stmt) ||
+                                              isa<ObjCPropertyRefExpr>(Stmt)) &&
+              (S && S->isRelinquished()) &&
+              (!SPrev || !SPrev->isRelinquished()));
     }
 
     inline bool isReallocFailedCheck(const RefState *S, const RefState *SPrev,
@@ -460,6 +481,39 @@ void MallocChecker::checkPostStmt(const CallExpr *CE, CheckerContext &C) const {
   C.addTransition(State);
 }
 
+static bool isFreeWhenDoneSetToZero(CallOrObjCMessage Call, Selector &S) {
+  for (unsigned i = 1; i < S.getNumArgs(); ++i)
+    if (S.getNameForSlot(i).equals("freeWhenDone"))
+      if (Call.getArgSVal(i).isConstant(0))
+        return true;
+
+  return false;
+}
+
+void MallocChecker::checkPreObjCMessage(const ObjCMessage &Msg,
+                                         CheckerContext &C) const {
+  const ObjCMethodDecl *MD = Msg.getMethodDecl();
+  if (!MD)
+    return;
+
+  CallOrObjCMessage Call(Msg, C.getState(), C.getLocationContext());
+  Selector S = Msg.getSelector();
+
+  // If the first selector is dataWithBytesNoCopy, assume that the memory will
+  // be released with 'free' by the new object.
+  // Ex:  [NSData dataWithBytesNoCopy:bytes length:10];
+  // Unless 'freeWhenDone' param set to 0.
+  // TODO: Check that the memory was allocated with malloc.
+  if ((S.getNameForSlot(0) == "dataWithBytesNoCopy" ||
+       S.getNameForSlot(0) == "initWithBytesNoCopy" ||
+       S.getNameForSlot(0) == "initWithCharactersNoCopy") &&
+      !isFreeWhenDoneSetToZero(Call, S)){
+    unsigned int argIdx  = 0;
+    C.addTransition(FreeMemAux(C, Call.getArg(argIdx),
+                    Msg.getMessageExpr(), C.getState(), true));
+  }
+}
+
 ProgramStateRef MallocChecker::MallocMemReturnsAttr(CheckerContext &C,
                                                     const CallExpr *CE,
                                                     const OwnershipAttr* Att) {
@@ -528,7 +582,7 @@ ProgramStateRef MallocChecker::MallocUpdateRefState(CheckerContext &C,
   assert(Sym);
 
   // Set the symbol's state to Allocated.
-  return state->set<RegionState>(Sym, RefState::getAllocateUnchecked(CE));
+  return state->set<RegionState>(Sym, RefState::getAllocated(CE));
 
 }
 
@@ -558,7 +612,15 @@ ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
   if (CE->getNumArgs() < (Num + 1))
     return 0;
 
-  const Expr *ArgExpr = CE->getArg(Num);
+  return FreeMemAux(C, CE->getArg(Num), CE, state, Hold);
+}
+
+ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
+                                          const Expr *ArgExpr,
+                                          const Expr *ParentExpr,
+                                          ProgramStateRef state,
+                                          bool Hold) const {
+
   SVal ArgVal = state->getSVal(ArgExpr, C.getLocationContext());
   if (!isa<DefinedOrUnknownSVal>(ArgVal))
     return 0;
@@ -628,13 +690,14 @@ ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
     return 0;
 
   // Check double free.
-  if (RS->isReleased()) {
+  if (RS->isReleased() || RS->isRelinquished()) {
     if (ExplodedNode *N = C.generateSink()) {
       if (!BT_DoubleFree)
         BT_DoubleFree.reset(
           new BugType("Double free", "Memory Error"));
       BugReport *R = new BugReport(*BT_DoubleFree, 
-                        "Attempt to free released memory", N);
+        (RS->isReleased() ? "Attempt to free released memory" : 
+                            "Attempt to free non-owned memory"), N);
       R->addRange(ArgExpr->getSourceRange());
       R->markInteresting(Sym);
       R->addVisitor(new MallocBugVisitor(Sym));
@@ -645,8 +708,8 @@ ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
 
   // Normal free.
   if (Hold)
-    return state->set<RegionState>(Sym, RefState::getRelinquished(CE));
-  return state->set<RegionState>(Sym, RefState::getReleased(CE));
+    return state->set<RegionState>(Sym, RefState::getRelinquished(ParentExpr));
+  return state->set<RegionState>(Sym, RefState::getReleased(ParentExpr));
 }
 
 bool MallocChecker::SummarizeValue(raw_ostream &os, SVal V) {
@@ -1237,7 +1300,7 @@ ProgramStateRef MallocChecker::evalAssume(ProgramStateRef state,
       if (RS) {
         if (RS->isReleased() && ! I.getData().IsFreeOnFailure)
           state = state->set<RegionState>(ReallocSym,
-                             RefState::getAllocateUnchecked(RS->getStmt()));
+                             RefState::getAllocated(RS->getStmt()));
       }
       state = state->remove<ReallocPairs>(I.getKey());
     }
@@ -1291,6 +1354,12 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     if (FName.equals("pthread_setspecific"))
       return false;
 
+    // White list xpc connection context.
+    // TODO: Ensure that the deallocation actually happens, need to reason
+    // about "xpc_connection_set_finalizer_f".
+    if (FName.equals("xpc_connection_set_context"))
+      return false;
+
     // White list the 'XXXNoCopy' ObjC functions.
     if (FName.endswith("NoCopy")) {
       // Look for the deallocator argument. We know that the memory ownership
@@ -1334,12 +1403,14 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
                 return false;
     }
 
-    // A bunch of other functions, which take ownership of a pointer (See retain
-    // release checker). Not all the parameters here are invalidated, but the
-    // Malloc checker cannot differentiate between them. The right way of doing
-    // this would be to implement a pointer escapes callback.
-    if (FName == "CVPixelBufferCreateWithBytes" ||
+    // A bunch of other functions which either take ownership of a pointer or
+    // wrap the result up in a struct or object, meaning it can be freed later.
+    // (See RetainCountChecker.) Not all the parameters here are invalidated,
+    // but the Malloc checker cannot differentiate between them. The right way
+    // of doing this would be to implement a pointer escapes callback.
+    if (FName == "CGBitmapContextCreate" ||
         FName == "CGBitmapContextCreateWithData" ||
+        FName == "CVPixelBufferCreateWithBytes" ||
         FName == "CVPixelBufferCreateWithPlanarBytes" ||
         FName == "OSAtomicEnqueue") {
       return false;
@@ -1379,6 +1450,16 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     // transferred as well.
     // Ex:  [NSData dataWithBytesNoCopy:bytes length:10];
     if (S.getNameForSlot(0).endswith("NoCopy")) {
+      return false;
+    }
+
+    // If the first selector starts with addPointer, insertPointer,
+    // or replacePointer, assume we are dealing with NSPointerArray or similar.
+    // This is similar to C++ containers (vector); we still might want to check
+    // that the pointers get freed, by following the container itself.
+    if (S.getNameForSlot(0).startswith("addPointer") ||
+        S.getNameForSlot(0).startswith("insertPointer") ||
+        S.getNameForSlot(0).startswith("replacePointer")) {
       return false;
     }
 
@@ -1427,9 +1508,14 @@ MallocChecker::checkRegionChanges(ProgramStateRef State,
     SymbolRef sym = *I;
     if (WhitelistedSymbols.count(sym))
       continue;
-    // The symbol escaped.
-    if (const RefState *RS = State->get<RegionState>(sym))
-      State = State->set<RegionState>(sym, RefState::getEscaped(RS->getStmt()));
+    // The symbol escaped. Note, we assume that if the symbol is released,
+    // passing it out will result in a use after free. We also keep tracking
+    // relinquished symbols.
+    if (const RefState *RS = State->get<RegionState>(sym)) {
+      if (RS->isAllocated())
+        State = State->set<RegionState>(sym,
+                                        RefState::getEscaped(RS->getStmt()));
+    }
   }
   return State;
 }
@@ -1489,6 +1575,9 @@ MallocChecker::MallocBugVisitor::VisitNode(const ExplodedNode *N,
       Msg = "Memory is released";
       StackHint = new StackHintGeneratorForSymbol(Sym,
                                                   "Returned released memory");
+    } else if (isRelinquished(RS, RSPrev, S)) {
+      Msg = "Memory ownership is transfered";
+      StackHint = new StackHintGeneratorForSymbol(Sym, "");
     } else if (isReallocFailedCheck(RS, RSPrev, S)) {
       Mode = ReallocationFailed;
       Msg = "Reallocation failed";

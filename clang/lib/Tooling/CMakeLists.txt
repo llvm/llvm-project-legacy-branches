@@ -8,3 +8,10 @@ add_clang_library(clangTooling
   Tooling.cpp
   ArgumentsAdjusters.cpp
   )
+
+target_link_libraries(clangTooling
+  clangBasic
+  clangFrontend
+  clangAST
+  clangRewrite
+  )

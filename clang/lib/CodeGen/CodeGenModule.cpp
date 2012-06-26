@@ -135,10 +135,21 @@ CodeGenModule::~CodeGenModule() {
 }
 
 void CodeGenModule::createObjCRuntime() {
-  if (!LangOpts.NeXTRuntime)
+  // This is just isGNUFamily(), but we want to force implementors of
+  // new ABIs to decide how best to do this.
+  switch (LangOpts.ObjCRuntime.getKind()) {
+  case ObjCRuntime::GNU:
+  case ObjCRuntime::FragileGNU:
     ObjCRuntime = CreateGNUObjCRuntime(*this);
-  else
+    return;
+
+  case ObjCRuntime::FragileMacOSX:
+  case ObjCRuntime::MacOSX:
+  case ObjCRuntime::iOS:
     ObjCRuntime = CreateMacObjCRuntime(*this);
+    return;
+  }
+  llvm_unreachable("bad runtime kind");
 }
 
 void CodeGenModule::createOpenCLRuntime() {
@@ -494,7 +505,7 @@ static bool hasUnwindExceptions(const LangOptions &LangOpts) {
 
   // If ObjC exceptions are enabled, this depends on the ABI.
   if (LangOpts.ObjCExceptions) {
-    if (!LangOpts.ObjCNonFragileABI) return false;
+    if (LangOpts.ObjCRuntime.isFragile()) return false;
   }
 
   return true;
@@ -518,7 +529,7 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     F->addFnAttr(llvm::Attribute::NoInline);
 
   // (noinline wins over always_inline, and we can't specify both in IR)
-  if (D->hasAttr<AlwaysInlineAttr>() &&
+  if ((D->hasAttr<AlwaysInlineAttr>() || D->hasAttr<ForceInlineAttr>()) &&
       !F->hasFnAttr(llvm::Attribute::NoInline))
     F->addFnAttr(llvm::Attribute::AlwaysInline);
 
@@ -657,7 +668,7 @@ void CodeGenModule::EmitDeferred() {
     if (!DeferredVTables.empty()) {
       const CXXRecordDecl *RD = DeferredVTables.back();
       DeferredVTables.pop_back();
-      getVTables().GenerateClassData(getVTableLinkage(RD), RD);
+      getCXXABI().EmitVTables(RD);
       continue;
     }
 
@@ -935,7 +946,7 @@ CodeGenModule::shouldEmitFunction(const FunctionDecl *F) {
   if (getFunctionLinkage(F) != llvm::Function::AvailableExternallyLinkage)
     return true;
   if (CodeGenOpts.OptimizationLevel == 0 &&
-      !F->hasAttr<AlwaysInlineAttr>())
+      !F->hasAttr<AlwaysInlineAttr>() && !F->hasAttr<ForceInlineAttr>())
     return false;
   // PR9614. Avoid cases where the source code is lying to us. An available
   // externally function should have an equivalent function somewhere else,
@@ -1176,7 +1187,7 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
     new llvm::GlobalVariable(getModule(), Ty->getElementType(), false,
                              llvm::GlobalValue::ExternalLinkage,
                              0, MangledName, 0,
-                             false, AddrSpace);
+                             llvm::GlobalVariable::NotThreadLocal, AddrSpace);
 
   // Handle things which are present even on external declarations.
   if (D) {
@@ -1200,6 +1211,12 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
     }
 
     GV->setThreadLocal(D->isThreadSpecified());
+
+    // Set the TLS model if it it's explicitly specified.
+    if (D->hasAttr<TLSModelAttr>()) {
+      const TLSModelAttr *Attr = D->getAttr<TLSModelAttr>();
+      GV->setThreadLocalMode(GetLLVMTLSModel(Attr->getModel()));
+    }
   }
 
   if (AddrSpace != Ty->getAddressSpace())
@@ -1295,7 +1312,7 @@ void CodeGenModule::EmitTentativeDefinition(const VarDecl *D) {
 
 void CodeGenModule::EmitVTable(CXXRecordDecl *Class, bool DefinitionRequired) {
   if (DefinitionRequired)
-    getVTables().GenerateClassData(getVTableLinkage(Class), Class);
+    getCXXABI().EmitVTables(Class);
 }
 
 llvm::GlobalVariable::LinkageTypes 
@@ -2082,7 +2099,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
     std::string StringClass(getLangOpts().ObjCConstantStringClass);
     llvm::Type *Ty = getTypes().ConvertType(getContext().IntTy);
     llvm::Constant *GV;
-    if (LangOpts.ObjCNonFragileABI) {
+    if (LangOpts.ObjCRuntime.isNonFragile()) {
       std::string str = 
         StringClass.empty() ? "OBJC_CLASS_$_NSConstantString" 
                             : "OBJC_CLASS_$_" + StringClass;
@@ -2170,7 +2187,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
                                 "_unnamed_nsstring_");
   // FIXME. Fix section.
   if (const char *Sect = 
-        LangOpts.ObjCNonFragileABI 
+        LangOpts.ObjCRuntime.isNonFragile() 
           ? getContext().getTargetInfo().getNSStringNonFragileABISection() 
           : getContext().getTargetInfo().getNSStringSection())
     GV->setSection(Sect);
@@ -2553,7 +2570,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
 
   case Decl::ObjCImplementation: {
     ObjCImplementationDecl *OMD = cast<ObjCImplementationDecl>(D);
-    if (LangOpts.ObjCNonFragileABI2 && OMD->hasSynthBitfield())
+    if (LangOpts.ObjCRuntime.isNonFragile() && OMD->hasSynthBitfield())
       Context.ResetObjCLayout(OMD->getClassInterface());
     EmitObjCPropertyImplementations(OMD);
     EmitObjCIvarInitializations(OMD);

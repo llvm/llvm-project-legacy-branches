@@ -1276,7 +1276,7 @@ bool Sema::SemaBuiltinUnorderedCompare(CallExpr *TheCall) {
 
   // If the common type isn't a real floating type, then the arguments were
   // invalid for this operation.
-  if (!Res->isRealFloatingType())
+  if (Res.isNull() || !Res->isRealFloatingType())
     return Diag(OrigArg0.get()->getLocStart(),
                 diag::err_typecheck_call_invalid_ordered_compare)
       << OrigArg0.get()->getType() << OrigArg1.get()->getType()
@@ -4279,11 +4279,9 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     return;
   }
 
-  if (!Source->isIntegerType() || !Target->isIntegerType())
-    return;
-
   if ((E->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNotNull)
-           == Expr::NPCK_GNUNull) && Target->isIntegerType()) {
+           == Expr::NPCK_GNUNull) && !Target->isAnyPointerType()
+      && !Target->isBlockPointerType() && !Target->isMemberPointerType()) {
     SourceLocation Loc = E->getSourceRange().getBegin();
     if (Loc.isMacroID())
       Loc = S.SourceMgr.getImmediateExpansionRange(Loc).first;
@@ -4291,8 +4289,10 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
       S.Diag(Loc, diag::warn_impcast_null_pointer_to_integer)
           << T << clang::SourceRange(CC)
           << FixItHint::CreateReplacement(Loc, S.getFixItZeroLiteralForType(T));
-    return;
   }
+
+  if (!Source->isIntegerType() || !Target->isIntegerType())
+    return;
 
   // TODO: remove this early return once the false positives for constant->bool
   // in templates, macros, etc, are reduced or removed.

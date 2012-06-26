@@ -789,6 +789,7 @@ NumericLiteralParser::GetFloatValue(llvm::APFloat &Result) {
 }
 
 
+/// \verbatim
 ///       user-defined-character-literal: [C++11 lex.ext]
 ///         character-literal ud-suffix
 ///       ud-suffix:
@@ -824,6 +825,7 @@ NumericLiteralParser::GetFloatValue(llvm::APFloat &Result) {
 ///         \U hex-quad hex-quad
 ///       hex-quad:
 ///         hex-digit hex-digit hex-digit hex-digit
+/// \endverbatim
 ///
 CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
                                      SourceLocation Loc, Preprocessor &PP,
@@ -1004,7 +1006,7 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
     Value = (signed char)Value;
 }
 
-
+/// \verbatim
 ///       string-literal: [C++0x lex.string]
 ///         encoding-prefix " [s-char-sequence] "
 ///         encoding-prefix R raw-string
@@ -1056,6 +1058,7 @@ CharLiteralParser::CharLiteralParser(const char *begin, const char *end,
 ///         \U hex-quad hex-quad
 ///       hex-quad:
 ///         hex-digit hex-digit hex-digit hex-digit
+/// \endverbatim
 ///
 StringLiteralParser::
 StringLiteralParser(const Token *StringToks, unsigned NumStringToks,
