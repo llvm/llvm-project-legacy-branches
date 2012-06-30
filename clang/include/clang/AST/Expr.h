@@ -634,6 +634,13 @@ public:
   /// ParenExpr or CastExprs, returning their operand.
   Expr *IgnoreParenNoopCasts(ASTContext &Ctx) LLVM_READONLY;
 
+  /// Ignore parentheses and derived-to-base casts.
+  Expr *ignoreParenBaseCasts() LLVM_READONLY;
+
+  const Expr *ignoreParenBaseCasts() const LLVM_READONLY {
+    return const_cast<Expr*>(this)->ignoreParenBaseCasts();
+  }
+
   /// \brief Determine whether this expression is a default function argument.
   ///
   /// Default arguments are implicitly generated in the abstract syntax tree
@@ -664,6 +671,15 @@ public:
   }
 
   static bool hasAnyTypeDependentArguments(llvm::ArrayRef<Expr *> Exprs);
+
+  /// \brief For an expression of class type or pointer to class type,
+  /// return the most derived class decl the expression is known to refer to.
+  ///
+  /// If this expression is a cast, this method looks through it to find the
+  /// most derived decl that can be inferred from the expression.
+  /// This is valid because derived-to-base conversions have undefined
+  /// behavior if the object isn't dynamically of the derived type.
+  const CXXRecordDecl *getBestDynamicClassType() const;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() >= firstExprConstant &&

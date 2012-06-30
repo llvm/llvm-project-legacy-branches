@@ -33,6 +33,18 @@
 #include <cstring>
 using namespace clang;
 
+const CXXRecordDecl *Expr::getBestDynamicClassType() const {
+  const Expr *E = ignoreParenBaseCasts();
+
+  QualType DerivedType = E->getType();
+  if (const PointerType *PTy = DerivedType->getAs<PointerType>())
+    DerivedType = PTy->getPointeeType();
+
+  const RecordType *Ty = DerivedType->castAs<RecordType>();
+  Decl *D = Ty->getDecl();
+  return cast<CXXRecordDecl>(D);
+}
+
 /// isKnownToHaveBooleanValue - Return true if this is an integer expression
 /// that is known to return 0 or 1.  This happens for _Bool/bool expressions
 /// but also int expressions which are produced by things like comparisons in
@@ -2205,7 +2217,27 @@ Expr *Expr::IgnoreParenLValueCasts() {
   }
   return E;
 }
-  
+
+Expr *Expr::ignoreParenBaseCasts() {
+  Expr *E = this;
+  while (true) {
+    if (ParenExpr *P = dyn_cast<ParenExpr>(E)) {
+      E = P->getSubExpr();
+      continue;
+    }
+    if (CastExpr *CE = dyn_cast<CastExpr>(E)) {
+      if (CE->getCastKind() == CK_DerivedToBase ||
+          CE->getCastKind() == CK_UncheckedDerivedToBase ||
+          CE->getCastKind() == CK_NoOp) {
+        E = CE->getSubExpr();
+        continue;
+      }
+    }
+
+    return E;
+  }
+}
+
 Expr *Expr::IgnoreParenImpCasts() {
   Expr *E = this;
   while (true) {

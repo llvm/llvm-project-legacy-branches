@@ -307,6 +307,20 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts, ToArgsList &Res) {
     Res.push_back("-disable-llvm-verifier");
   for (unsigned i = 0, e = Opts.BackendOptions.size(); i != e; ++i)
     Res.push_back("-backend-option", Opts.BackendOptions[i]);
+
+  switch (Opts.DefaultTLSModel) {
+  case CodeGenOptions::GeneralDynamicTLSModel:
+    break;
+  case CodeGenOptions::LocalDynamicTLSModel:
+    Res.push_back("-ftls-model=local-dynamic");
+    break;
+  case CodeGenOptions::InitialExecTLSModel:
+    Res.push_back("-ftls-model=initial-exec");
+    break;
+  case CodeGenOptions::LocalExecTLSModel:
+    Res.push_back("-ftls-model=local-exec");
+    break;
+  }
 }
 
 static void DependencyOutputOptsToArgs(const DependencyOutputOptions &Opts,
@@ -788,7 +802,7 @@ static void LangOptsToArgs(const LangOptions &Opts, ToArgsList &Res) {
   
   if (Opts.AppleKext)
     Res.push_back("-fapple-kext");
-  
+
   if (Opts.getVisibilityMode() != DefaultVisibility) {
     Res.push_back("-fvisibility");
     if (Opts.getVisibilityMode() == HiddenVisibility) {
@@ -1256,6 +1270,22 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
     }
   }
 
+  if (Arg *A = Args.getLastArg(OPT_ftlsmodel_EQ)) {
+    StringRef Name = A->getValue(Args);
+    unsigned Model = llvm::StringSwitch<unsigned>(Name)
+        .Case("global-dynamic", CodeGenOptions::GeneralDynamicTLSModel)
+        .Case("local-dynamic", CodeGenOptions::LocalDynamicTLSModel)
+        .Case("initial-exec", CodeGenOptions::InitialExecTLSModel)
+        .Case("local-exec", CodeGenOptions::LocalExecTLSModel)
+        .Default(~0U);
+    if (Model == ~0U) {
+      Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args) << Name;
+      Success = false;
+    } else {
+      Opts.DefaultTLSModel = static_cast<CodeGenOptions::TLSModel>(Model);
+    }
+  }
+
   return Success;
 }
 
@@ -1349,6 +1379,8 @@ bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   Opts.ShowSourceRanges = Args.hasArg(OPT_fdiagnostics_print_source_range_info);
   Opts.ShowParseableFixits = Args.hasArg(OPT_fdiagnostics_parseable_fixits);
   Opts.VerifyDiagnostics = Args.hasArg(OPT_verify);
+  Opts.ElideType = !Args.hasArg(OPT_fno_elide_type);
+  Opts.ShowTemplateTree = Args.hasArg(OPT_fdiagnostics_show_template_tree);
   Opts.ErrorLimit = Args.getLastArgIntValue(OPT_ferror_limit, 0, Diags);
   Opts.MacroBacktraceLimit
     = Args.getLastArgIntValue(OPT_fmacro_backtrace_limit,

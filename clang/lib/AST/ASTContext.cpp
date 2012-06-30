@@ -61,6 +61,10 @@ const RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
 
   assert(D);
 
+  // User can not attach documentation to implicit declarations.
+  if (D->isImplicit())
+    return NULL;
+
   // TODO: handle comments for function parameters properly.
   if (isa<ParmVarDecl>(D))
     return NULL;
@@ -90,7 +94,7 @@ const RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
 
   // First check whether we have a trailing comment.
   if (Comment != RawComments.end() &&
-      Comment->isDoxygen() && Comment->isTrailingComment() &&
+      Comment->isDocumentation() && Comment->isTrailingComment() &&
       !isa<TagDecl>(D) && !isa<NamespaceDecl>(D)) {
     std::pair<FileID, unsigned> CommentBeginDecomp
       = SourceMgr.getDecomposedLoc(Comment->getSourceRange().getBegin());
@@ -111,7 +115,7 @@ const RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
   --Comment;
 
   // Check that we actually have a non-member Doxygen comment.
-  if (!Comment->isDoxygen() || Comment->isTrailingComment())
+  if (!Comment->isDocumentation() || Comment->isTrailingComment())
     return NULL;
 
   // Decompose the end of the comment.
@@ -134,8 +138,9 @@ const RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
   StringRef Text(Buffer + CommentEndDecomp.second,
                  DeclLocDecomp.second - CommentEndDecomp.second);
 
-  // There should be no other declarations between comment and declaration.
-  if (Text.find_first_of(",;{}") != StringRef::npos)
+  // There should be no other declarations or preprocessor directives between
+  // comment and declaration.
+  if (Text.find_first_of(",;{}#") != StringRef::npos)
     return NULL;
 
   return &*Comment;
@@ -150,6 +155,8 @@ const RawComment *ASTContext::getRawCommentForDecl(const Decl *D) const {
       return Pos->second;
 
   const RawComment *RC = getRawCommentForDeclNoCache(D);
+  // If we found a comment, it should be a documentation comment.
+  assert(!RC || RC->isDocumentation());
   DeclComments[D] = RC;
   return RC;
 }
@@ -4142,6 +4149,8 @@ std::string ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr) const {
        E = Decl->param_end(); PI != E; ++PI) {
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
+    if (sz.isZero())
+      continue;
     assert (sz.isPositive() && "BlockExpr - Incomplete param type");
     ParmOffset += sz;
   }
@@ -4183,8 +4192,8 @@ bool ASTContext::getObjCEncodingForFunctionDecl(const FunctionDecl *Decl,
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
     if (sz.isZero())
-      return true;
-    
+      continue;
+ 
     assert (sz.isPositive() && 
         "getObjCEncodingForFunctionDecl - Incomplete param type");
     ParmOffset += sz;
@@ -4252,8 +4261,8 @@ bool ASTContext::getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl,
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
     if (sz.isZero())
-      return true;
-    
+      continue;
+ 
     assert (sz.isPositive() && 
         "getObjCEncodingForMethodDecl - Incomplete param type");
     ParmOffset += sz;
