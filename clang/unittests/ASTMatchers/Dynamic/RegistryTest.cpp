@@ -59,7 +59,7 @@ GenericValue constructMatcher(const std::string& MatcherName,
 }
 
 TEST(RegistryTest, CanConstructNoArgs) {
-  const GenericValue IsArrowValue = constructMatcher("IsArrow");
+  const GenericValue IsArrowValue = constructMatcher("isArrow");
   const GenericValue BoolValue = constructMatcher("BoolLiteral");
 
   const std::string ClassSnippet =
@@ -75,19 +75,19 @@ TEST(RegistryTest, CanConstructNoArgs) {
 }
 
 TEST(RegistryTest, ConstructWithSimpleArgs) {
-  const GenericValue Value = constructMatcher("HasName", std::string("X"));
+  const GenericValue Value = constructMatcher("hasName", std::string("X"));
   EXPECT_TRUE(matchesGeneric("class X {};", Value));
   EXPECT_FALSE(matchesGeneric("int x;", Value));
 }
 
 TEST(RegistryTest, ContructWithMatcherArgs) {
   const GenericValue OperatorPlus =
-      constructMatcher("HasOperatorName", std::string("+"));
+      constructMatcher("hasOperatorName", std::string("+"));
   const GenericValue OperatorMinus =
-      constructMatcher("HasOperatorName", std::string("-"));
+      constructMatcher("hasOperatorName", std::string("-"));
   const GenericValue One =
       constructMatcher("IntegerLiteral", constructMatcher("Equals", 1));
-  const GenericValue HasLHSOne = constructMatcher("HasLHS", One);
+  const GenericValue HasLHSOne = constructMatcher("hasLHS", One);
 
   const GenericValue OnePlus =
       constructMatcher("BinaryOperator", OperatorPlus, HasLHSOne);
@@ -117,18 +117,18 @@ TEST(RegistryTest, ContructWithMatcherArgs) {
 
 TEST(RegistryTest, Errors) {
   // Incorrect argument count.
-  GenericValue BadArgCount = constructMatcher("HasBody");
-  EXPECT_EQ("Incorrect argument count on function HasBody. "
+  GenericValue BadArgCount = constructMatcher("hasBody");
+  EXPECT_EQ("Incorrect argument count on function hasBody. "
             "(Expected = 1) != (Actual = 0)",
             BadArgCount.get<GenericError>().Message);
-  BadArgCount = constructMatcher("IsArrow", std::string());
-  EXPECT_EQ("Incorrect argument count on function IsArrow. "
+  BadArgCount = constructMatcher("isArrow", std::string());
+  EXPECT_EQ("Incorrect argument count on function isArrow. "
             "(Expected = 0) != (Actual = 1)",
             BadArgCount.get<GenericError>().Message);
 
   // Bad argument type
-  GenericValue BadArgType = constructMatcher("OfClass", true);
-  EXPECT_EQ("Incorrect type on function OfClass for arg 0",
+  GenericValue BadArgType = constructMatcher("ofClass", true);
+  EXPECT_EQ("Incorrect type on function ofClass for arg 0",
             BadArgType.get<GenericError>().Message);
   BadArgType = constructMatcher("Class", Class(), 3);
   EXPECT_EQ("Incorrect type on function Class for arg 1",
