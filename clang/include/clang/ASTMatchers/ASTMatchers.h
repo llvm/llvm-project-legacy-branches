@@ -139,7 +139,7 @@ inline internal::PolymorphicMatcherWithParam0<internal::TrueMatcher> anything() 
 ///   };
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::NamedDecl> NameableDeclaration;
+  clang::NamedDecl> nameableDeclaration;
 
 /// \brief Matches C++ class declarations.
 ///
@@ -148,7 +148,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   template<class T> class Z {};
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::CXXRecordDecl> Class;
+  clang::CXXRecordDecl> record;
 
 /// \brief Matches C++ constructor declarations.
 ///
@@ -161,7 +161,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   };
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::CXXConstructorDecl> Constructor;
+  clang::CXXConstructorDecl> constructor;
 
 /// \brief Matches method declarations.
 ///
@@ -169,7 +169,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   class X { void y() };
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::CXXMethodDecl> Method;
+  clang::CXXMethodDecl> method;
 
 /// \brief Matches variable declarations.
 ///
@@ -180,7 +180,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   int a;
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::VarDecl> Variable;
+  clang::VarDecl> variable;
 
 /// \brief Matches field declarations.
 ///
@@ -190,7 +190,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   matches 'm'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::FieldDecl> Field;
+  clang::FieldDecl> field;
 
 /// \brief Matches function declarations.
 ///
@@ -198,7 +198,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   void f();
 const internal::VariadicDynCastAllOfMatcher<
   clang::Decl,
-  clang::FunctionDecl> Function;
+  clang::FunctionDecl> function;
 
 
 /// \brief Matches statements.
@@ -207,7 +207,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   { ++a; }
 /// Statement()
 ///   matches both the compound statement '{ ++a; }' and '++a'.
-const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::Stmt> Statement;
+const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::Stmt> statement;
 
 /// \brief Matches declaration statements.
 ///
@@ -217,7 +217,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::Stmt> Statement;
 ///   matches 'int a'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::DeclStmt> DeclarationStatement;
+  clang::DeclStmt> declarationStatement;
 
 /// \brief Matches member expressions.
 ///
@@ -230,14 +230,14 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   matches this->x, x, y.x, a, this->b
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::MemberExpr> MemberExpression;
+  clang::MemberExpr> memberExpression;
 
 /// \brief Matches call expressions.
 ///
 /// Example matches x.y()
 ///   X x;
 ///   x.y();
-const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::CallExpr> Call;
+const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::CallExpr> call;
 
 /// \brief Matches constructor call expressions (including implicit ones).
 ///
@@ -249,7 +249,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::CallExpr> Call;
 ///   f(string(ptr, n), ptr);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CXXConstructExpr> ConstructorCall;
+  clang::CXXConstructExpr> constructorCall;
 
 /// \brief Matches nodes where temporaries are created.
 ///
@@ -259,7 +259,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   FunctionTakesStringByPointer(GetStringPointer());
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CXXBindTemporaryExpr> BindTemporaryExpression;
+  clang::CXXBindTemporaryExpr> bindTemporaryExpression;
 
 /// \brief Matches new expressions.
 ///
@@ -269,7 +269,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   matches 'new X'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CXXNewExpr> NewExpression;
+  clang::CXXNewExpr> newExpression;
 
 /// \brief Matches the value of a default argument at the call site.
 ///
@@ -280,7 +280,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   f(42);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CXXDefaultArgExpr> DefaultArgument;
+  clang::CXXDefaultArgExpr> defaultArgument;
 
 /// \brief Matches overloaded operator calls.
 ///
@@ -296,7 +296,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   o << b << c;
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CXXOperatorCallExpr> OverloadedOperatorCall;
+  clang::CXXOperatorCallExpr> overloadedOperatorCall;
 
 /// \brief Matches expressions.
 ///
@@ -304,7 +304,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   void f() { x(); }
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::Expr> Expression;
+  clang::Expr> expression;
 
 /// \brief Matches expressions that refer to declarations.
 ///
@@ -313,19 +313,19 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   if (x) {}
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::DeclRefExpr> DeclarationReference;
+  clang::DeclRefExpr> declarationReference;
 
 /// \brief Matches if statements.
 ///
 /// Example matches 'if (x) {}'
 ///   if (x) {}
-const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::IfStmt> If;
+const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::IfStmt> ifStmt;
 
 /// \brief Matches for statements.
 ///
 /// Example matches 'for (;;) {}'
 ///   for (;;) {}
-const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::ForStmt> For;
+const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::ForStmt> forStmt;
 
 /// \brief Matches while statements.
 ///
@@ -335,7 +335,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::ForStmt> For;
 ///   matches 'while (true) {}'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::WhileStmt> While;
+  clang::WhileStmt> whileStmt;
 
 /// \brief Matches do statements.
 ///
@@ -343,7 +343,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   do {} while (true);
 /// Do()
 ///   matches 'do {} while(true)'
-const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> Do;
+const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> doStmt;
 
 /// \brief Matches case and default statements inside switch statements.
 ///
@@ -353,7 +353,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> Do;
 ///   matches 'case 42: break;' and 'default: break;'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::SwitchCase> SwitchCase;
+  clang::SwitchCase> switchCase;
 
 /// \brief Matches compound statements.
 ///
@@ -361,7 +361,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   for (;;) {{}}
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::CompoundStmt> CompoundStatement;
+  clang::CompoundStmt> compoundStatement;
 
 /// \brief Matches bool literals.
 ///
@@ -369,7 +369,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   true
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXBoolLiteralExpr> BoolLiteral;
+  clang::CXXBoolLiteralExpr> boolLiteral;
 
 /// \brief Matches string literals (also matches wide string literals).
 ///
@@ -377,7 +377,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   char *s = "abcd"; wchar_t *ws = L"abcd"
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::StringLiteral> StringLiteral;
+  clang::StringLiteral> stringLiteral;
 
 /// \brief Matches character literals (also matches wchar_t).
 ///
@@ -388,7 +388,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   char ch = 'a'; wchar_t chw = L'a';
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CharacterLiteral> CharacterLiteral;
+  clang::CharacterLiteral> characterLiteral;
 
 /// \brief Matches integer literals of all sizes / encodings.
 ///
@@ -397,7 +397,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// Example matches 1, 1L, 0x1, 1U
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::IntegerLiteral> IntegerLiteral;
+  clang::IntegerLiteral> integerLiteral;
 
 /// \brief Matches binary operator expressions.
 ///
@@ -405,7 +405,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   !(a || b)
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::BinaryOperator> BinaryOperator;
+  clang::BinaryOperator> binaryOperator;
 
 /// \brief Matches unary operator expressions.
 ///
@@ -413,7 +413,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   !a || b
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::UnaryOperator> UnaryOperator;
+  clang::UnaryOperator> unaryOperator;
 
 /// \brief Matches conditional operator expressions.
 ///
@@ -421,7 +421,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   (a ? b : c) + 42
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
-  clang::ConditionalOperator> ConditionalOperator;
+  clang::ConditionalOperator> conditionalOperator;
 
 /// \brief Matches a reinterpret_cast expression.
 ///
@@ -433,7 +433,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   void* p = reinterpret_cast<char*>(&p);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXReinterpretCastExpr> ReinterpretCast;
+  clang::CXXReinterpretCastExpr> reinterpretCast;
 
 /// \brief Matches a C++ static_cast expression.
 ///
@@ -448,7 +448,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   long eight(static_cast<long>(8));
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXStaticCastExpr> StaticCast;
+  clang::CXXStaticCastExpr> staticCast;
 
 /// \brief Matches a dynamic_cast expression.
 ///
@@ -462,7 +462,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   D* p = dynamic_cast<D*>(&b);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXDynamicCastExpr> DynamicCast;
+  clang::CXXDynamicCastExpr> dynamicCast;
 
 /// \brief Matches a const_cast expression.
 ///
@@ -472,7 +472,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   int* p = const_cast<int*>(&r);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXConstCastExpr> ConstCast;
+  clang::CXXConstCastExpr> constCast;
 
 /// \brief Matches explicit cast expressions.
 ///
@@ -493,7 +493,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   long ell = 42;
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::ExplicitCastExpr> ExplicitCast;
+  clang::ExplicitCastExpr> explicitCast;
 
 /// \brief Matches the implicit cast nodes of Clang's AST.
 ///
@@ -501,7 +501,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// eliding, as well as any type conversions.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::ImplicitCastExpr> ImplicitCast;
+  clang::ImplicitCastExpr> implicitCast;
 
 /// \brief Matches functional cast expressions
 ///
@@ -511,7 +511,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   Foo h = Foo(bar);
 const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
-  clang::CXXFunctionalCastExpr> FunctionalCast;
+  clang::CXXFunctionalCastExpr> functionalCast;
 
 /// \brief Various overloads for the AnyOf matcher.
 /// @{

@@ -68,7 +68,7 @@ TEST(GenericValueTest, Bool) {
 }
 
 TEST(GenericValueTest, GenericMatcher) {
-  GenericValue Value = Statement();
+  GenericValue Value = statement();
 
   EXPECT_FALSE(Value.is< ::std::string>());
   EXPECT_FALSE(Value.is<GenericError>());
@@ -85,12 +85,12 @@ TEST(GenericValueTest, GenericMatcher) {
   // Conversion to any type of matcher works.
   // If they are not compatible it would just return a matcher that matches
   // nothing. That is tested in GenericMatcher's unittest.
-  Value = GenericMatcher(Class());
+  Value = GenericMatcher(record());
   EXPECT_TRUE(Value.is<GenericMatcher>());
   EXPECT_TRUE(Value.is<Matcher<clang::Decl> >());
   EXPECT_TRUE(Value.is<Matcher<clang::UnaryOperator> >());
 
-  Value = GenericMatcher(UnaryOperator());
+  Value = GenericMatcher(unaryOperator());
   EXPECT_TRUE(Value.is<GenericMatcher>());
   EXPECT_TRUE(Value.is<Matcher<clang::Decl> >());
   EXPECT_TRUE(Value.is<Matcher<clang::Stmt> >());
@@ -137,7 +137,7 @@ TEST(GenericValueTest, Assignment) {
   EXPECT_TRUE(Value.is<GenericError>());
   EXPECT_EQ("foo", Value.get<GenericError>().Message);
 
-  Value = GenericMatcher(Class());
+  Value = GenericMatcher(record());
   EXPECT_FALSE(Value.is<bool>());
   EXPECT_TRUE(Value.is<GenericMatcher>());
   EXPECT_TRUE(Value.is<Matcher<clang::Decl> >());

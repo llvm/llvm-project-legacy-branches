@@ -51,44 +51,6 @@ std::string getFile(const clang::SourceManager& source_manager, const T& node) {
   return file_entry->getName();
 }
 
-// Returns the text that makes up 'node' in the source.
-// Returns an empty string if the text cannot be found.
-static std::string getText(const SourceManager &SourceManager,
-                           SourceLocation LocStart, SourceLocation LocEnd) {
-  SourceLocation StartSpellingLocatino =
-      SourceManager.getSpellingLoc(LocStart);
-  SourceLocation EndSpellingLocation =
-      SourceManager.getSpellingLoc(LocEnd);
-  if (!StartSpellingLocatino.isValid() || !EndSpellingLocation.isValid()) {
-    return std::string();
-  }
-  bool Invalid = true;
-  const char *Text =
-    SourceManager.getCharacterData(StartSpellingLocatino, &Invalid);
-  if (Invalid) {
-    return std::string();
-  }
-  std::pair<FileID, unsigned> Start =
-      SourceManager.getDecomposedLoc(StartSpellingLocatino);
-  std::pair<FileID, unsigned> End =
-      SourceManager.getDecomposedLoc(Lexer::getLocForEndOfToken(
-          EndSpellingLocation, 0, SourceManager, LangOptions()));
-  if (Start.first != End.first) {
-    // Start and end are in different files.
-    return std::string();
-  }
-  if (End.second < Start.second) {
-    // Shuffling text with macros may cause this.
-    return std::string();
-  }
-  return std::string(Text, End.second - Start.second);
-}
-
-template <typename T>
-static std::string getText(const SourceManager &SourceManager, const T &Node) {
-  return GetText(SourceManager, Node.getLocStart(), Node.getLocEnd());
-}
-
 namespace {
 
 bool hasMethod(const CXXRecordDecl &Decl, StringRef MethodName, ASTContext &Context) {
@@ -124,7 +86,7 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
       : Replace(Replace), EditFilesExpression(".*/ASTMatchers/.*") {}
 
   virtual void run(const ast_matchers::MatchFinder::MatchResult &Result) {
-    if (const CallExpr *Call = Result.Nodes.getStmtAs<CallExpr>("call")) {
+    if (Result.Nodes.getStmtAs<CallExpr>("call")) {
    /*   llvm::errs() << "Skipping: "
                    << GetText(*Result.SourceManager, *Call) << "\n";*/
       return;
@@ -152,6 +114,11 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
         if (Name == "new") Name = "create";
         if (Name == "true") Name = "anything";
         if (Name == "not") Name = "unless";
+        if (Name == "class") Name = "record";
+        if (Name == "do") Name = "doStmt";
+        if (Name == "for") Name = "forStmt";
+        if (Name == "if") Name = "ifStmt";
+        if (Name == "while") Name = "whileStmt";
 
         if (const DeclRefExpr *Reference = Result.Nodes.getStmtAs<DeclRefExpr>("ref")) {
           ReplaceText = Replacement(*Result.SourceManager, CharSourceRange::getTokenRange(SourceRange(Reference->getLocation(), Reference->getLocation())), Name);
@@ -172,6 +139,9 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
     //        llvm::errs() << "*** " << GetFile(*Result.SourceManager, *Callee) << "\n";
             //Callee->dump();
           }
+        } else if (const VarDecl *Var = llvm::dyn_cast<VarDecl>(Declaration)) {
+      llvm::outs() << "Here " << Name << "\n";
+          ReplaceText = Replacement(*Result.SourceManager, CharSourceRange::getTokenRange(SourceRange(Var->getLocation(), Var->getLocation())), Name);
         } else {
           DeclarationNameInfo NameInfo;
           if (const FunctionDecl *Function = llvm::dyn_cast<FunctionDecl>(Declaration)) {
@@ -189,7 +159,7 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
     //if (EditFilesExpression.match(ReplaceText.getFilePath())) {
       //llvm::errs() << GetPosition(*Result.Nodes.GetDeclAs<NamedDecl>("declaration"), *Result.SourceManager) << "\n";
       //llvm::errs
-      llvm::outs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
+//      llvm::outs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
       Replace->insert(ReplaceText);
     //} else {
 //     llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
@@ -290,17 +260,19 @@ int main(int argc, char **argv) {
 
   FixLLVMStyle Callback(&Tool.getReplacements());
   Finder.addMatcher(StatementMatcher(anyOf(
-      StatementMatcher(id("ref", DeclarationReference(to(id("declaration", Function()))))),
-      Call(callee(id("declaration", Function())),
-           callee(id("callee", Expression()))))),
+      StatementMatcher(id("ref", declarationReference(to(id("declaration", 
+                DeclarationMatcher(anyOf(function(), variable(
+                      hasType(record(isDerivedFrom("VariadicFunction"))))))))))),
+      call(callee(id("declaration", function())),
+           callee(id("callee", expression()))))),
       &Callback);
 
   Finder.addMatcher(
       DeclarationMatcher(anyOf(
-        id("declaration", UsingDeclaration(hasAnyUsingShadowDeclaration(hasTargetDeclaration(Function())))),
+        id("declaration", UsingDeclaration(hasAnyUsingShadowDeclaration(hasTargetDeclaration(function())))),
         allOf(
-          id("declaration", Function()),
-          unless(Constructor())))
+          id("declaration", DeclarationMatcher(anyOf(function(), variable(hasType(record(isDerivedFrom("VariadicFunction"))))))),
+          unless(constructor())))
         ),
       &Callback);
   return Tool.run(newFrontendActionFactory(&Finder));

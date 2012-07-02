@@ -32,24 +32,24 @@ testing::AssertionResult matchesGeneric(const std::string& Code,
 
 TEST(GeneicMatcherTest, SingleNode) {
   EXPECT_TRUE(matchesGeneric("class X {};",
-                             GenericMatcher(Class(hasName("X")))));
-  EXPECT_TRUE(matchesGeneric("int x;", GenericMatcher(Variable())));
+                             GenericMatcher(record(hasName("X")))));
+  EXPECT_TRUE(matchesGeneric("int x;", GenericMatcher(variable())));
   EXPECT_TRUE(matchesGeneric("int foo() { return 1 + 1; }",
-                             GenericMatcher(Function())));
+                             GenericMatcher(function())));
 
-  EXPECT_FALSE(matchesGeneric("int x;", GenericMatcher(Function())));
+  EXPECT_FALSE(matchesGeneric("int x;", GenericMatcher(function())));
   EXPECT_FALSE(matchesGeneric("int foo() { return 1 + 1; }",
-                              GenericMatcher(DeclarationReference())));
+                              GenericMatcher(declarationReference())));
 }
 
 TEST(GeneicMatcherTest, AnyOf) {
-  GenericMatcher Generic(Class(hasName("X")));
+  GenericMatcher Generic(record(hasName("X")));
 
   EXPECT_TRUE(matchesGeneric("class X {};", Generic));
   EXPECT_FALSE(matchesGeneric("int x;", Generic));
   EXPECT_FALSE(matchesGeneric("int foo() { return 1 + 1; }", Generic));
 
-  Generic = GenericMatcher::anyOf(Generic, Variable());
+  Generic = GenericMatcher::anyOf(Generic, variable());
 
   EXPECT_TRUE(matchesGeneric("class X {};", Generic));
   EXPECT_TRUE(matchesGeneric("int x;", Generic));
@@ -57,7 +57,7 @@ TEST(GeneicMatcherTest, AnyOf) {
 
   // We can mix different types of matchers (statements and declarations)
   Generic = GenericMatcher::anyOf(Generic,
-                                  BinaryOperator(hasOperatorName("+")));
+                                  binaryOperator(hasOperatorName("+")));
 
   EXPECT_TRUE(matchesGeneric("class X {};", Generic));
   EXPECT_TRUE(matchesGeneric("int x;", Generic));
@@ -65,7 +65,7 @@ TEST(GeneicMatcherTest, AnyOf) {
 }
 
 TEST(GeneicMatcherTest, AllOf) {
-  GenericMatcher Generic(BinaryOperator(hasOperatorName("+")));
+  GenericMatcher Generic(binaryOperator(hasOperatorName("+")));
 
   EXPECT_TRUE(matchesGeneric("int i = 1 + 1;", Generic));
   EXPECT_TRUE(matchesGeneric("int i = 2 + 1;", Generic));
@@ -74,7 +74,7 @@ TEST(GeneicMatcherTest, AllOf) {
 
   Generic = GenericMatcher::allOf(
       Generic,
-      BinaryOperator(hasLHS(IntegerLiteral(equals(1)))));
+      binaryOperator(hasLHS(integerLiteral(equals(1)))));
 
   EXPECT_TRUE( matchesGeneric("int i = 1 + 1;", Generic));
   EXPECT_FALSE(matchesGeneric("int i = 2 + 1;", Generic));
@@ -83,14 +83,14 @@ TEST(GeneicMatcherTest, AllOf) {
 
   Generic = GenericMatcher::allOf(
       Generic,
-      BinaryOperator(hasRHS(IntegerLiteral(equals(3)))));
+      binaryOperator(hasRHS(integerLiteral(equals(3)))));
 
   EXPECT_FALSE(matchesGeneric("int i = 1 + 1;", Generic));
   EXPECT_FALSE(matchesGeneric("int i = 2 + 1;", Generic));
   EXPECT_TRUE( matchesGeneric("int i = 1 + 3;", Generic));
   EXPECT_FALSE(matchesGeneric("void foo() { }", Generic));
 
-  Generic = GenericMatcher::allOf(Generic, Function());
+  Generic = GenericMatcher::allOf(Generic, function());
   // Now nothing matches. Not even the function one because it is an AllOf().
 
   EXPECT_FALSE(matchesGeneric("int i = 1 + 1;", Generic));

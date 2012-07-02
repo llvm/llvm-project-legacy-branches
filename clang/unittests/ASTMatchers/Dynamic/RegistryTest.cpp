@@ -60,7 +60,7 @@ GenericValue constructMatcher(const std::string& MatcherName,
 
 TEST(RegistryTest, CanConstructNoArgs) {
   const GenericValue IsArrowValue = constructMatcher("isArrow");
-  const GenericValue BoolValue = constructMatcher("BoolLiteral");
+  const GenericValue BoolValue = constructMatcher("boolLiteral");
 
   const std::string ClassSnippet =
       "struct Foo { int x; };\n"
@@ -80,24 +80,24 @@ TEST(RegistryTest, ConstructWithSimpleArgs) {
   EXPECT_FALSE(matchesGeneric("int x;", Value));
 }
 
-TEST(RegistryTest, ContructWithMatcherArgs) {
+TEST(RegistryTest, ConstructWithMatcherArgs) {
   const GenericValue OperatorPlus =
       constructMatcher("hasOperatorName", std::string("+"));
   const GenericValue OperatorMinus =
       constructMatcher("hasOperatorName", std::string("-"));
   const GenericValue One =
-      constructMatcher("IntegerLiteral", constructMatcher("Equals", 1));
+      constructMatcher("integerLiteral", constructMatcher("Equals", 1));
   const GenericValue HasLHSOne = constructMatcher("hasLHS", One);
 
   const GenericValue OnePlus =
-      constructMatcher("BinaryOperator", OperatorPlus, HasLHSOne);
+      constructMatcher("binaryOperator", OperatorPlus, HasLHSOne);
   const GenericValue JustPlus =
-      constructMatcher("BinaryOperator", OperatorPlus);
+      constructMatcher("binaryOperator", OperatorPlus);
 
   const GenericValue OneMinus =
-      constructMatcher("BinaryOperator", OperatorMinus, HasLHSOne);
+      constructMatcher("binaryOperator", OperatorMinus, HasLHSOne);
   const GenericValue JustMinus =
-      constructMatcher("BinaryOperator", OperatorMinus);
+      constructMatcher("binaryOperator", OperatorMinus);
 
   EXPECT_TRUE( matchesGeneric("int i = 1 + 1;", OnePlus));
   EXPECT_TRUE( matchesGeneric("int i = 1 + 1;", JustPlus));
@@ -130,8 +130,8 @@ TEST(RegistryTest, Errors) {
   GenericValue BadArgType = constructMatcher("ofClass", true);
   EXPECT_EQ("Incorrect type on function ofClass for arg 0",
             BadArgType.get<GenericError>().Message);
-  BadArgType = constructMatcher("Class", Class(), 3);
-  EXPECT_EQ("Incorrect type on function Class for arg 1",
+  BadArgType = constructMatcher("record", record(), 3);
+  EXPECT_EQ("Incorrect type on function record for arg 1",
             BadArgType.get<GenericError>().Message);
 }
 
