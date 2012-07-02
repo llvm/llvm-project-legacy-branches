@@ -266,13 +266,13 @@ RegistryMaps* registerMatchers() {
   REGISTER_POLY_MATCHER_AUTO(hasCondition, clang::ConditionalOperator);
 
   // Equals. TODO: Needs more.
-  REGISTER_POLY_NAMED_MATCHER_AUTO(Equals, equals<bool>,
+  REGISTER_POLY_NAMED_MATCHER_AUTO(equals, equals<bool>,
                                    clang::CXXBoolLiteralExpr);
-  REGISTER_POLY_NAMED_MATCHER_AUTO(Equals, equals<unsigned long long>,
+  REGISTER_POLY_NAMED_MATCHER_AUTO(equals, equals<unsigned long long>,
                                    clang::IntegerLiteral);
-  REGISTER_POLY_NAMED_MATCHER_AUTO(Equals, equals<long long>,
+  REGISTER_POLY_NAMED_MATCHER_AUTO(equals, equals<long long>,
                                    clang::IntegerLiteral);
-  REGISTER_POLY_NAMED_MATCHER_AUTO(Equals, equals<unsigned>,
+  REGISTER_POLY_NAMED_MATCHER_AUTO(equals, equals<unsigned>,
                                    clang::CharacterLiteral);
 
   // Has/hasDescendant/forEach/forEachDescendant for Decl and Stmt

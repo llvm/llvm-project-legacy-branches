@@ -86,7 +86,7 @@ TEST(RegistryTest, ConstructWithMatcherArgs) {
   const GenericValue OperatorMinus =
       constructMatcher("hasOperatorName", std::string("-"));
   const GenericValue One =
-      constructMatcher("integerLiteral", constructMatcher("Equals", 1));
+      constructMatcher("integerLiteral", constructMatcher("equals", 1));
   const GenericValue HasLHSOne = constructMatcher("hasLHS", One);
 
   const GenericValue OnePlus =

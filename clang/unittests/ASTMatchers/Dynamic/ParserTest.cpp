@@ -196,13 +196,13 @@ TEST(ParserTest, FullParserTest) {
   RealProcessor Processor;
   const GenericValue Value = Parser::parseMatcher(
       "binaryOperator( hasOperatorName(\"+\"),\n"
-      "               hasLHS(integerLiteral(Equals(1))))", &Processor);
+      "               hasLHS(integerLiteral(equals(1))))", &Processor);
   EXPECT_TRUE(matchesGeneric("int x = 1 + 1;", Value));
   EXPECT_FALSE(matchesGeneric("int x = 2 + 1;", Value));
 
   const GenericValue Error = Parser::parseMatcher(
       "binaryOperator( hasOperatorName(6),\n"
-      "               hasLHS(integerLiteral(Equals(1))))", &Processor);
+      "               hasLHS(integerLiteral(equals(1))))", &Processor);
   EXPECT_EQ("Error parsing argument 0 for matcher binaryOperator: "
             "Error building matcher hasOperatorName: "
             "Incorrect type on function hasOperatorName for arg 0",
