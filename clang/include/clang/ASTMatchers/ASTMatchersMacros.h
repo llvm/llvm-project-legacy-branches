@@ -60,7 +60,7 @@
   };                                                                           \
   }                                                                            \
   inline internal::Matcher<Type> DefineMatcher() {                             \
-    return internal::MakeMatcher(                                              \
+    return internal::makeMatcher(                                              \
       new internal::matcher_##DefineMatcher##Matcher());                       \
   }                                                                            \
   inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
@@ -95,7 +95,7 @@
   };                                                                           \
   }                                                                            \
   inline internal::Matcher<Type> DefineMatcher(const ParamType &Param) {       \
-    return internal::MakeMatcher(                                              \
+    return internal::makeMatcher(                                              \
       new internal::matcher_##DefineMatcher##Matcher(Param));                  \
   }                                                                            \
   inline bool internal::matcher_##DefineMatcher##Matcher::matches(             \
@@ -135,7 +135,7 @@
   }                                                                            \
   inline internal::Matcher<Type> DefineMatcher(                                \
       const ParamType1 &Param1, const ParamType2 &Param2) {                    \
-    return internal::MakeMatcher(                                              \
+    return internal::makeMatcher(                                              \
       new internal::matcher_##DefineMatcher##Matcher(                          \
         Param1, Param2));                                                      \
   }                                                                            \

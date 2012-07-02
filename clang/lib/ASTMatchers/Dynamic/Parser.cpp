@@ -37,7 +37,7 @@ class CodeTokenizer {
     consumeWhitespace();
     Parser::TokenInfo Result;
     Result.StartLine = Line;
-    Result.StartColumn = Column();
+    Result.StartColumn = column();
 
     if (Code.empty()) {
       // Nothing to do.
@@ -61,7 +61,7 @@ class CodeTokenizer {
     }
 
     Result.EndLine = Line;
-    Result.EndColumn = Column() - 1;
+    Result.EndColumn = column() - 1;
     return Result;
   }
 
@@ -103,12 +103,12 @@ class CodeTokenizer {
   llvm::StringRef Code;
   llvm::StringRef StartOfLine;
   int Line;
-  int Column() const {
+  int column() const {
     return Code.data() - StartOfLine.data() + 1;
   }
 };
 
-char UnescapeCharSequence(llvm::StringRef* Escaped) {
+char unescapeCharSequence(llvm::StringRef* Escaped) {
   if (Escaped->empty()) return 0;
   char Char = (*Escaped)[0];
   *Escaped = Escaped->drop_front();
@@ -136,7 +136,7 @@ char UnescapeCharSequence(llvm::StringRef* Escaped) {
   return Char;
 }
 
-GenericValue ParseString(const Parser::TokenInfo& Token,
+GenericValue parseString(const Parser::TokenInfo& Token,
                          Parser::TokenProcessor* Processor) {
   if (Token.Token.size() < 2 ||
       !Token.Token.startswith("\"") || !Token.Token.endswith("\"")) {
@@ -148,14 +148,14 @@ GenericValue ParseString(const Parser::TokenInfo& Token,
   std::string Unescaped;
 
   while (!Escaped.empty()) {
-    Unescaped.push_back(UnescapeCharSequence(&Escaped));
+    Unescaped.push_back(unescapeCharSequence(&Escaped));
   }
 
   GenericValue Value = Unescaped;
   return Processor->processValueToken(Value, Token);
 }
 
-GenericValue ParseChar(const Parser::TokenInfo& Token,
+GenericValue parseChar(const Parser::TokenInfo& Token,
                        Parser::TokenProcessor* Processor) {
   if (Token.Token.size() < 3 ||
       !Token.Token.startswith("'") || !Token.Token.endswith("'")) {
@@ -163,7 +163,7 @@ GenericValue ParseChar(const Parser::TokenInfo& Token,
         llvm::Twine("Error parsing char token: <" + Token.Token + ">").str());
   }
   llvm::StringRef Escaped = Token.Token.drop_front().drop_back();
-  const int Unescaped = UnescapeCharSequence(&Escaped);
+  const int Unescaped = unescapeCharSequence(&Escaped);
   if (!Escaped.empty()) {
     return GenericError(
         llvm::Twine("Error parsing char token: <" + Token.Token + ">").str());
@@ -173,7 +173,7 @@ GenericValue ParseChar(const Parser::TokenInfo& Token,
   return Processor->processValueToken(Value, Token);
 }
 
-GenericValue ParseNumber(const Parser::TokenInfo& Token,
+GenericValue parseNumber(const Parser::TokenInfo& Token,
                          Parser::TokenProcessor* Processor) {
   long long SignedLong;
   if (!Token.Token.getAsInteger(0, SignedLong)) {
@@ -195,11 +195,11 @@ GenericValue ParseNumber(const Parser::TokenInfo& Token,
       llvm::Twine("Error parsing number token: <" + Token.Token + ">").str());
 }
 
-GenericValue ParseToken(const Parser::TokenInfo& Token,
+GenericValue parseToken(const Parser::TokenInfo& Token,
                         CodeTokenizer* Tokenizer,
                         Parser::TokenProcessor* Processor);
 
-GenericValue ParseMatcher(const Parser::TokenInfo& Token,
+GenericValue parseMatcher(const Parser::TokenInfo& Token,
                           CodeTokenizer* Tokenizer,
                           Parser::TokenProcessor* Processor) {
   const Parser::TokenInfo& OpenToken = Tokenizer->getNextToken();
@@ -227,7 +227,7 @@ GenericValue ParseMatcher(const Parser::TokenInfo& Token,
       }
       NextToken = Tokenizer->getNextToken();
     }
-    const GenericValue Arg = ParseToken(NextToken, Tokenizer, Processor);
+    const GenericValue Arg = parseToken(NextToken, Tokenizer, Processor);
     if (Arg.is<GenericError>()) {
       return GenericError(
           llvm::Twine("Error parsing argument " + llvm::Twine(Args.size()) +
@@ -257,18 +257,18 @@ GenericValue ParseMatcher(const Parser::TokenInfo& Token,
   return Result;
 }
 
-GenericValue ParseToken(const Parser::TokenInfo& Token,
+GenericValue parseToken(const Parser::TokenInfo& Token,
                         CodeTokenizer* Tokenizer,
                         Parser::TokenProcessor* Processor) {
   if (Token.Token.empty()) {
     return GenericError("End of code found while looking for token.");
   }
 
-  if (Token.Token[0] == '"') return ParseString(Token, Processor);
-  if (Token.Token[0] == '\'') return ParseChar(Token, Processor);
+  if (Token.Token[0] == '"') return parseString(Token, Processor);
+  if (Token.Token[0] == '\'') return parseChar(Token, Processor);
   if (isdigit(Token.Token[0]) ||
       Token.Token[0] == '-' || Token.Token[0] == '+') {
-    return ParseNumber(Token, Processor);
+    return parseNumber(Token, Processor);
   }
 
   // TODO: Do this better when we have more constants.
@@ -278,7 +278,7 @@ GenericValue ParseToken(const Parser::TokenInfo& Token,
   if (Token.Token == "false")
     return Processor->processValueToken(false, Token);
 
-  return ParseMatcher(Token, Tokenizer, Processor);
+  return parseMatcher(Token, Tokenizer, Processor);
 }
 
 }  // anonymous namespace
@@ -286,7 +286,7 @@ GenericValue ParseToken(const Parser::TokenInfo& Token,
 GenericValue Parser::parseMatcher(llvm::StringRef Code,
                                   Parser::TokenProcessor* Processor) {
   CodeTokenizer Tokenizer(Code);
-  return ParseToken(Tokenizer.getNextToken(), &Tokenizer, Processor);
+  return parseToken(Tokenizer.getNextToken(), &Tokenizer, Processor);
 }
 
 }  // namespace dynamic

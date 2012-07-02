@@ -124,21 +124,21 @@ int main(int argc, const char **argv) {
     // Match calls...
     Call(
       // Where the callee is a method called "Get"...
-      Callee(Method(HasName("Get"))),
+      callee(Method(hasName("Get"))),
       // ... and the class on which the method is called is derived
       // from ElementsBase ...
-      ThisPointerType(Class(
-        IsDerivedFrom("ElementsBase"))),
+      thisPointerType(Class(
+        isDerivedFrom("ElementsBase"))),
       // ... and bind the member expression to the ID "member", under which
       // it can later be found in the callback.
-      Callee(Id("member", MemberExpression()))),
+      callee(id("member", MemberExpression()))),
     &CallCallback);
 
   DeclRenamer DeclCallback(&Tool.getReplacements());
   Finder.addMatcher(
     // Match declarations...
-    Id("method", Method(HasName("Get"),
-                        OfClass(IsDerivedFrom("ElementsBase")))),
+    id("method", Method(hasName("Get"),
+                        ofClass(isDerivedFrom("ElementsBase")))),
     &DeclCallback);
 
   return Tool.run(newFrontendActionFactory(&Finder));

@@ -24,7 +24,7 @@ class ValueProcessor : public Parser::TokenProcessor {
  public:
   virtual ~ValueProcessor() { }
 
-  void Parse(const std::string& Code) {
+  void parse(const std::string& Code) {
     const GenericValue Value = Parser::parseMatcher(Code, this);
     if (Value.is<GenericError>()) {
       ValueInfo ToStore = { Value, Parser::TokenInfo() };
@@ -65,10 +65,10 @@ class ValueProcessor : public Parser::TokenProcessor {
 
 TEST(ParserTest, ParseString) {
   ValueProcessor Processor;
-  Processor.Parse("\"Foo\"");
-  Processor.Parse("\"F\\\"o o\\n\"");
-  Processor.Parse("\"\"");
-  Processor.Parse("\"Baz");
+  Processor.parse("\"Foo\"");
+  Processor.parse("\"F\\\"o o\\n\"");
+  Processor.parse("\"\"");
+  Processor.parse("\"Baz");
   EXPECT_EQ(4ULL, Processor.Values.size());
   EXPECT_EQ("Foo", Processor.Values[0].Value.get<std::string>());
   EXPECT_EQ("F\"o o\n", Processor.Values[1].Value.get<std::string>());
@@ -79,13 +79,13 @@ TEST(ParserTest, ParseString) {
 
 TEST(ParserTest, ParseChar) {
   ValueProcessor Processor;
-  Processor.Parse("'a'");
-  Processor.Parse("'^'");
-  Processor.Parse("'\\n'");
-  Processor.Parse("'aa'");
-  Processor.Parse("'6");
-  Processor.Parse("' '");
-  Processor.Parse("','");
+  Processor.parse("'a'");
+  Processor.parse("'^'");
+  Processor.parse("'\\n'");
+  Processor.parse("'aa'");
+  Processor.parse("'6");
+  Processor.parse("' '");
+  Processor.parse("','");
   EXPECT_EQ(7ULL, Processor.Values.size());
   EXPECT_EQ('a', Processor.Values[0].Value.get<int>());
   EXPECT_EQ('^', Processor.Values[1].Value.get<int>());
@@ -100,12 +100,12 @@ TEST(ParserTest, ParseChar) {
 
 TEST(ParserTest, ParseNumber) {
   ValueProcessor Processor;
-  Processor.Parse("123456789012345");
-  Processor.Parse("-1234567890123456");
-  Processor.Parse("1.23e5");
-  Processor.Parse("1.234e-5");
-  Processor.Parse("0x5");
-  Processor.Parse("0d3jg#");
+  Processor.parse("123456789012345");
+  Processor.parse("-1234567890123456");
+  Processor.parse("1.23e5");
+  Processor.parse("1.234e-5");
+  Processor.parse("0x5");
+  Processor.parse("0d3jg#");
   EXPECT_EQ(6ULL, Processor.Values.size());
   EXPECT_EQ(123456789012345ULL, Processor.Values[0].Value.get<uint64_t>());
   EXPECT_EQ(-1234567890123456LL, Processor.Values[1].Value.get<int64_t>());
@@ -118,14 +118,14 @@ TEST(ParserTest, ParseNumber) {
 
 TEST(ParserTest, ParseBool) {
   ValueProcessor Processor;
-  Processor.Parse("true");
-  Processor.Parse("false");
+  Processor.parse("true");
+  Processor.parse("false");
   EXPECT_EQ(2UL, Processor.Values.size());
   EXPECT_EQ(true, Processor.Values[0].Value.get<bool>());
   EXPECT_EQ(false, Processor.Values[1].Value.get<bool>());
 }
 
-bool MatchesInfo(const Parser::TokenInfo& Info,
+bool matchesInfo(const Parser::TokenInfo& Info,
                  int StartLine, int EndLine, int StartColumn, int EndColumn) {
   EXPECT_EQ(StartLine, Info.StartLine);
   EXPECT_EQ(EndLine, Info.EndLine);
@@ -137,7 +137,7 @@ bool MatchesInfo(const Parser::TokenInfo& Info,
 
 TEST(ParserTest, ParseMatcher) {
   ValueProcessor Processor;
-  Processor.Parse(" Foo ( 1.2, Bar (), Baz( \n \"B \\nA,\\\"Z\"), \ntrue)  ");
+  Processor.parse(" Foo ( 1.2, Bar (), Baz( \n \"B \\nA,\\\"Z\"), \ntrue)  ");
   for (size_t i = 0; i < Processor.Values.size(); ++i) {
     EXPECT_FALSE(Processor.Values[i].Value.is<GenericError>())
         << Processor.Values[i].Value.get<GenericError>().Message;
@@ -146,18 +146,18 @@ TEST(ParserTest, ParseMatcher) {
   EXPECT_EQ(3ULL, Processor.Matchers.size());
   const ValueProcessor::MatcherInfo Bar = Processor.Matchers[0];
   EXPECT_EQ("Bar", Bar.MatcherName);
-  EXPECT_TRUE(MatchesInfo(Bar.Info, 1, 1, 13, 18));
+  EXPECT_TRUE(matchesInfo(Bar.Info, 1, 1, 13, 18));
   EXPECT_EQ(0ULL, Bar.Args.size());
 
   const ValueProcessor::MatcherInfo Baz = Processor.Matchers[1];
   EXPECT_EQ("Baz", Baz.MatcherName);
-  EXPECT_TRUE(MatchesInfo(Baz.Info, 1, 2, 21, 13));
+  EXPECT_TRUE(matchesInfo(Baz.Info, 1, 2, 21, 13));
   EXPECT_EQ(1ULL, Baz.Args.size());
   EXPECT_EQ("B \nA,\"Z", Baz.Args[0].get<std::string>());
 
   const ValueProcessor::MatcherInfo Foo = Processor.Matchers[2];
   EXPECT_EQ("Foo", Foo.MatcherName);
-  EXPECT_TRUE(MatchesInfo(Foo.Info, 1, 3, 2, 5));
+  EXPECT_TRUE(matchesInfo(Foo.Info, 1, 3, 2, 5));
   EXPECT_EQ(4ULL, Foo.Args.size());
   EXPECT_EQ(1.2, Foo.Args[0].get<double>());
   EXPECT_EQ("__Bar__", Foo.Args[1].get<std::string>());
@@ -175,7 +175,7 @@ class RealProcessor : public Parser::TokenProcessor {
   }
 };
 
-testing::AssertionResult MatchesGeneric(const std::string& Code,
+testing::AssertionResult matchesGeneric(const std::string& Code,
                                         const GenericValue& Value) {
   if (!Value.is<GenericMatcher>())
     return testing::AssertionFailure();
@@ -197,8 +197,8 @@ TEST(ParserTest, FullParserTest) {
   const GenericValue Value = Parser::parseMatcher(
       "BinaryOperator( HasOperatorName(\"+\"),\n"
       "               HasLHS(IntegerLiteral(Equals(1))))", &Processor);
-  EXPECT_TRUE(MatchesGeneric("int x = 1 + 1;", Value));
-  EXPECT_FALSE(MatchesGeneric("int x = 2 + 1;", Value));
+  EXPECT_TRUE(matchesGeneric("int x = 1 + 1;", Value));
+  EXPECT_FALSE(matchesGeneric("int x = 2 + 1;", Value));
 
   const GenericValue Error = Parser::parseMatcher(
       "BinaryOperator( HasOperatorName(6),\n"

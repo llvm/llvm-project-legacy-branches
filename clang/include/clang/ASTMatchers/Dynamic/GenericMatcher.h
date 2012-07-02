@@ -55,7 +55,7 @@ class GenericMatcher {
 
   template <typename T>
   Matcher<T> getAs() const {
-    return ast_matchers::internal::MakeMatcher(new UntypedWrapper<T>(Untyped));
+    return ast_matchers::internal::makeMatcher(new UntypedWrapper<T>(Untyped));
   }
 
   static GenericMatcher anyOf(const GenericMatcher& First,
@@ -89,7 +89,7 @@ class GenericMatcher {
   template <typename From, typename To>
   static Matcher<From> maybeMakeDynCastMatcher(const Matcher<To>& BaseMatcher,
                                                const From* dummy) {
-    return MakeMatcher(
+    return makeMatcher(
         new ast_matchers::internal::DynCastMatcher<From, To>(BaseMatcher));
   }
   template <typename T>

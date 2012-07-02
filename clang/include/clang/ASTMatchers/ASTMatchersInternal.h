@@ -251,7 +251,7 @@ private:
 /// \brief A convenient helper for creating a Matcher<T> without specifying
 /// the template type argument.
 template <typename T>
-inline Matcher<T> MakeMatcher(MatcherInterface<T> *Implementation) {
+inline Matcher<T> makeMatcher(MatcherInterface<T> *Implementation) {
   return Matcher<T>(Implementation);
 }
 
@@ -575,7 +575,7 @@ template <>
 template <>
 inline Matcher<clang::CXXMemberCallExpr>::
 operator Matcher<clang::CallExpr>() const {
-  return MakeMatcher(
+  return makeMatcher(
     new DynCastMatcher<clang::CallExpr, clang::CXXMemberCallExpr>(*this));
 }
 
@@ -727,15 +727,15 @@ private:
 /// \brief Creates a Matcher<T> that matches if
 /// T is dyn_cast'able into InnerT and all inner matchers match.
 template<typename T, typename InnerT>
-Matcher<T> MakeDynCastAllOfComposite(
+Matcher<T> makeDynCastAllOfComposite(
     ArrayRef<const Matcher<InnerT> *> InnerMatchers) {
   if (InnerMatchers.empty()) {
     return ArgumentAdaptingMatcher<DynCastMatcher, InnerT>(
-        MakeMatcher(new TrueMatcher<InnerT>));
+        makeMatcher(new TrueMatcher<InnerT>));
   }
   Matcher<InnerT> InnerMatcher = *InnerMatchers.back();
   for (int i = InnerMatchers.size() - 2; i >= 0; --i) {
-    InnerMatcher = MakeMatcher(
+    InnerMatcher = makeMatcher(
         new AllOfMatcher<InnerT, Matcher<InnerT>, Matcher<InnerT> >(
             *InnerMatchers[i], InnerMatcher));
   }
@@ -876,7 +876,7 @@ template <typename SourceT, typename TargetT>
 class VariadicDynCastAllOfMatcher
     : public llvm::VariadicFunction<
         Matcher<SourceT>, Matcher<TargetT>,
-        MakeDynCastAllOfComposite<SourceT, TargetT> > {
+        makeDynCastAllOfComposite<SourceT, TargetT> > {
 public:
   VariadicDynCastAllOfMatcher() {}
 };

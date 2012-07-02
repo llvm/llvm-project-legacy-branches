@@ -188,21 +188,21 @@ int main(int argc, char **argv) {
   FixCStrCall Callback(&Tool.getReplacements());
   Finder.addMatcher(
       ConstructorCall(
-          HasDeclaration(Method(HasName(StringConstructor))),
-          ArgumentCountIs(2),
+          hasDeclaration(Method(hasName(StringConstructor))),
+          argumentCountIs(2),
           // The first argument must have the form x.c_str() or p->c_str()
           // where the method is string::c_str().  We can use the copy
           // constructor of string instead (or the compiler might share
           // the string object).
-          HasArgument(
+          hasArgument(
               0,
-              Id("call", Call(
-                  Callee(Id("member", MemberExpression())),
-                  Callee(Method(HasName(StringCStrMethod))),
-                  On(Id("arg", Expression()))))),
+              id("call", Call(
+                  callee(id("member", MemberExpression())),
+                  callee(Method(hasName(StringCStrMethod))),
+                  on(id("arg", Expression()))))),
           // The second argument is the alloc object which must not be
           // present explicitly.
-          HasArgument(
+          hasArgument(
               1,
               DefaultArgument())),
       &Callback);
@@ -212,21 +212,21 @@ int main(int argc, char **argv) {
           // wrt. string types and they internally make a StringRef
           // referring to the argument.  Passing a string directly to
           // them is preferred to passing a char pointer.
-          HasDeclaration(Method(AnyOf(
-              HasName("::llvm::StringRef::StringRef"),
-              HasName("::llvm::Twine::Twine")))),
-          ArgumentCountIs(1),
+          hasDeclaration(Method(anyOf(
+              hasName("::llvm::StringRef::StringRef"),
+              hasName("::llvm::Twine::Twine")))),
+          argumentCountIs(1),
           // The only argument must have the form x.c_str() or p->c_str()
           // where the method is string::c_str().  StringRef also has
           // a constructor from string which is more efficient (avoids
           // strlen), so we can construct StringRef from the string
           // directly.
-          HasArgument(
+          hasArgument(
               0,
-              Id("call", Call(
-                  Callee(Id("member", MemberExpression())),
-                  Callee(Method(HasName(StringCStrMethod))),
-                  On(Id("arg", Expression())))))),
+              id("call", Call(
+                  callee(id("member", MemberExpression())),
+                  callee(Method(hasName(StringCStrMethod))),
+                  on(id("arg", Expression())))))),
       &Callback);
   return Tool.run(newFrontendActionFactory(&Finder));
 }

@@ -63,7 +63,7 @@ class MatcherCreateCallbackImpl : public MatcherCreateCallback {
 };
 
 template <typename MarshallerType, typename FuncType>
-MatcherCreateCallback* CreateMarshallerCallback(
+MatcherCreateCallback* createMarshallerCallback(
     MarshallerType Marshaller,
     FuncType Func,
     const std::string& MatcherName) {
@@ -88,7 +88,7 @@ MatcherCreateCallback* CreateMarshallerCallback(
 
 // 0-arg marshaller function.
 template <typename FuncType, typename ReturnType>
-GenericValue MatcherMarshall0(FuncType Func,
+GenericValue matcherMarshall0(FuncType Func,
                               const std::string& MatcherName,
                               const std::vector<GenericValue>& Args) {
   CHECK_ARG_COUNT(0);
@@ -97,7 +97,7 @@ GenericValue MatcherMarshall0(FuncType Func,
 
 // 1-arg marshaller function.
 template <typename FuncType, typename ReturnType, typename ArgType1>
-GenericValue MatcherMarshall1(FuncType Func,
+GenericValue matcherMarshall1(FuncType Func,
                               const std::string& MatcherName,
                               const std::vector<GenericValue>& Args) {
   CHECK_ARG_COUNT(1);
@@ -108,7 +108,7 @@ GenericValue MatcherMarshall1(FuncType Func,
 // 2-arg marshaller function.
 template <typename FuncType, typename ReturnType,
           typename ArgType1, typename ArgType2>
-GenericValue MatcherMarshall2(FuncType Func,
+GenericValue matcherMarshall2(FuncType Func,
                               const std::string& MatcherName,
                               const std::vector<GenericValue>& Args) {
   CHECK_ARG_COUNT(2);
@@ -136,7 +136,7 @@ class MatcherMarshallVariadic : public MatcherCreateCallback {
       InnerArgs[i] = &References.back();
     }
     return GenericValue(
-        ast_matchers::internal::MakeDynCastAllOfComposite<BaseType>(
+        ast_matchers::internal::makeDynCastAllOfComposite<BaseType>(
             ArrayRef<const DerivedMatcherType*>(InnerArgs)));
   }
 
@@ -163,59 +163,59 @@ struct remove_const_ref
 
 // 0-arg
 template <typename ReturnType, typename PolyReturnType>
-MatcherCreateCallback* MakeMatcherAutoMarshallPoly(
+MatcherCreateCallback* makeMatcherAutoMarshallPoly(
     PolyReturnType (*Func)(),
     const std::string& MatcherName) {
-  return CreateMarshallerCallback(
-      MatcherMarshall0<PolyReturnType(*)(), ReturnType>, Func, MatcherName);
+  return createMarshallerCallback(
+      matcherMarshall0<PolyReturnType(*)(), ReturnType>, Func, MatcherName);
 }
 template <typename ReturnType>
-MatcherCreateCallback* MakeMatcherAutoMarshall(
+MatcherCreateCallback* makeMatcherAutoMarshall(
     ReturnType (*Func)(),
     const std::string& MatcherName) {
-  return MakeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
+  return makeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
 }
 
 // 1-arg
 template <typename ReturnType, typename PolyReturnType, typename InArgType1>
-MatcherCreateCallback* MakeMatcherAutoMarshallPoly(
+MatcherCreateCallback* makeMatcherAutoMarshallPoly(
     PolyReturnType (*Func)(InArgType1),
     const std::string& MatcherName) {
   typedef typename remove_const_ref<InArgType1>::type ArgType1;
-  return CreateMarshallerCallback(
-      MatcherMarshall1<PolyReturnType (*)(InArgType1), ReturnType, ArgType1>,
+  return createMarshallerCallback(
+      matcherMarshall1<PolyReturnType (*)(InArgType1), ReturnType, ArgType1>,
       Func, MatcherName);
 }
 template <typename ReturnType, typename InArgType1>
-MatcherCreateCallback* MakeMatcherAutoMarshall(
+MatcherCreateCallback* makeMatcherAutoMarshall(
     ReturnType (*Func)(InArgType1),
     const std::string& MatcherName) {
-  return MakeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
+  return makeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
 }
 
 // 2-arg
 template <typename ReturnType, typename PolyReturnType,
           typename InArgType1, typename InArgType2>
-MatcherCreateCallback* MakeMatcherAutoMarshallPoly(
+MatcherCreateCallback* makeMatcherAutoMarshallPoly(
     PolyReturnType (*Func)(InArgType1, InArgType2),
     const std::string& MatcherName) {
   typedef typename remove_const_ref<InArgType1>::type ArgType1;
   typedef typename remove_const_ref<InArgType2>::type ArgType2;
-  return CreateMarshallerCallback(
-      MatcherMarshall2<PolyReturnType (*)(InArgType1, InArgType2),
+  return createMarshallerCallback(
+      matcherMarshall2<PolyReturnType (*)(InArgType1, InArgType2),
                        ReturnType, ArgType1, ArgType2>,
       Func, MatcherName);
 }
 template <typename ReturnType, typename InArgType1, typename InArgType2>
-MatcherCreateCallback* MakeMatcherAutoMarshall(
+MatcherCreateCallback* makeMatcherAutoMarshall(
     ReturnType (*Func)(InArgType1, InArgType2),
     const std::string& MatcherName) {
-  return MakeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
+  return makeMatcherAutoMarshallPoly<ReturnType>(Func, MatcherName);
 }
 
 // Variadic
 template <typename BaseType, typename MatcherType>
-MatcherCreateCallback* MakeMatcherAutoMarshall(
+MatcherCreateCallback* makeMatcherAutoMarshall(
     ast_matchers::internal::VariadicDynCastAllOfMatcher<
         BaseType, MatcherType> Func,
     const std::string& MatcherName) {

@@ -150,6 +150,8 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
       if (isupper(Name[0])) {
         Name[0] = tolower(Name[0]);
         if (Name == "new") Name = "create";
+        if (Name == "true") Name = "anything";
+        if (Name == "not") Name = "unless";
 
         if (const DeclRefExpr *Reference = Result.Nodes.getStmtAs<DeclRefExpr>("ref")) {
           ReplaceText = Replacement(*Result.SourceManager, CharSourceRange::getTokenRange(SourceRange(Reference->getLocation(), Reference->getLocation())), Name);
@@ -184,14 +186,14 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
         }
       }
     }
-    if (EditFilesExpression.match(ReplaceText.getFilePath())) {
+    //if (EditFilesExpression.match(ReplaceText.getFilePath())) {
       //llvm::errs() << GetPosition(*Result.Nodes.GetDeclAs<NamedDecl>("declaration"), *Result.SourceManager) << "\n";
       //llvm::errs
       llvm::outs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
       Replace->insert(ReplaceText);
-    } else {
+    //} else {
 //     llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
-    }
+    //}
   }
 
  private:
@@ -202,7 +204,7 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
 
 const internal::VariadicDynCastAllOfMatcher<clang::Decl, clang::UsingDecl> UsingDeclaration;
 namespace clang { namespace ast_matchers {
-AST_MATCHER_P(clang::UsingDecl, HasAnyUsingShadowDeclaration,
+AST_MATCHER_P(clang::UsingDecl, hasAnyUsingShadowDeclaration,
               internal::Matcher<clang::UsingShadowDecl>, InnerMatcher) {
   for (clang::UsingDecl::shadow_iterator I = Node.shadow_begin();
        I != Node.shadow_end(); ++I) {
@@ -212,11 +214,11 @@ AST_MATCHER_P(clang::UsingDecl, HasAnyUsingShadowDeclaration,
   }
   return false;
 }
-AST_MATCHER_P(clang::UsingShadowDecl, HasTargetDeclaration,
+AST_MATCHER_P(clang::UsingShadowDecl, hasTargetDeclaration,
               internal::Matcher<clang::NamedDecl>, InnerMatcher) {
   return InnerMatcher.matches(*Node.getTargetDecl(), Finder, Builder);
 }
-AST_MATCHER_P(clang::QualType, HasClassDeclaration,
+AST_MATCHER_P(clang::QualType, hasClassDeclaration,
               internal::Matcher<clang::CXXRecordDecl>, InnerMatcher) {
   if (const clang::CXXRecordDecl *Decl = Node->getAsCXXRecordDecl()) {
     return InnerMatcher.matches(*Decl, Finder, Builder);
@@ -230,7 +232,7 @@ AST_MATCHER_P(clang::QualType, HasClassDeclaration,
   }
   return false;
 }
-AST_MATCHER_P(clang::FunctionDecl, HasReturnType,
+AST_MATCHER_P(clang::FunctionDecl, hasReturnType,
               internal::Matcher<clang::QualType>, InnerMatcher) {
   llvm::errs() << Node.getNameAsString() << "\n";
   Node.getResultType().dump();
@@ -252,7 +254,7 @@ AST_MATCHER_P(clang::FunctionDecl, HasReturnType,
   }
   return InnerMatcher.matches(Node.getResultType(), Finder, Builder);
 }
-AST_MATCHER_P(clang::NamedDecl, HasName2, std::string, name) {
+AST_MATCHER_P(clang::NamedDecl, hasName2, std::string, name) {
   assert(!name.empty());
   const std::string full_name_string = "::" + Node.getQualifiedNameAsString();
   const llvm::StringRef full_name = full_name_string;
@@ -287,18 +289,18 @@ int main(int argc, char **argv) {
   ast_matchers::MatchFinder Finder;
 
   FixLLVMStyle Callback(&Tool.getReplacements());
-  Finder.addMatcher(StatementMatcher(AnyOf(
-      StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", Function()))))),
-      Call(Callee(Id("declaration", Function())),
-           Callee(Id("callee", Expression()))))),
+  Finder.addMatcher(StatementMatcher(anyOf(
+      StatementMatcher(id("ref", DeclarationReference(to(id("declaration", Function()))))),
+      Call(callee(id("declaration", Function())),
+           callee(id("callee", Expression()))))),
       &Callback);
 
   Finder.addMatcher(
-      DeclarationMatcher(AnyOf(
-        Id("declaration", UsingDeclaration(HasAnyUsingShadowDeclaration(HasTargetDeclaration(Function())))),
-        AllOf(
-          Id("declaration", Function()),
-          Not(Constructor())))
+      DeclarationMatcher(anyOf(
+        id("declaration", UsingDeclaration(hasAnyUsingShadowDeclaration(hasTargetDeclaration(Function())))),
+        allOf(
+          id("declaration", Function()),
+          unless(Constructor())))
         ),
       &Callback);
   return Tool.run(newFrontendActionFactory(&Finder));

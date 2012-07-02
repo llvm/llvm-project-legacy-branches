@@ -42,11 +42,11 @@ class GenericValue {
   }
 
   ~GenericValue() {
-    Reset();
+    reset();
   }
 
   GenericValue& operator=(const GenericValue& Other) {
-    Reset();
+    reset();
     switch (Other.Type) {
       case VT_String:  setImpl(Other.get<std::string>());    break;
       case VT_Error:   setImpl(Other.get<GenericError>());   break;
@@ -70,7 +70,7 @@ class GenericValue {
   }
 
  private:
-  void Reset() {
+  void reset() {
     switch (Type) {
       case VT_String:  delete Value.String;  break;
       case VT_Error:   delete Value.Error;   break;
