@@ -121,7 +121,7 @@ bool allParentsMatch(SourceManager *SM, ASTContext &Context, const CXXRecordDecl
 class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
  public:
   FixLLVMStyle(tooling::Replacements *Replace)
-      : Replace(Replace), EditFilesExpression(".*/Refactoring.*|.*tools/clang/tools/.*") {}
+      : Replace(Replace), EditFilesExpression(".*/ASTMatchers/.*") {}
 
   virtual void run(const ast_matchers::MatchFinder::MatchResult &Result) {
     if (const CallExpr *Call = Result.Nodes.getStmtAs<CallExpr>("call")) {
@@ -152,7 +152,7 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
         if (Name == "new") Name = "create";
 
         if (const DeclRefExpr *Reference = Result.Nodes.getStmtAs<DeclRefExpr>("ref")) {
-          ReplaceText = Replacement(*Result.SourceManager, Reference, Name);
+          ReplaceText = Replacement(*Result.SourceManager, CharSourceRange::getTokenRange(SourceRange(Reference->getLocation(), Reference->getLocation())), Name);
         } else if (const Expr *Callee = Result.Nodes.getStmtAs<Expr>("callee")) {
           if (const MemberExpr *Member = dyn_cast<MemberExpr>(Callee)) {
   //          llvm::errs() << OldName << "\n";
@@ -187,7 +187,7 @@ class FixLLVMStyle: public ast_matchers::MatchFinder::MatchCallback {
     if (EditFilesExpression.match(ReplaceText.getFilePath())) {
       //llvm::errs() << GetPosition(*Result.Nodes.GetDeclAs<NamedDecl>("declaration"), *Result.SourceManager) << "\n";
       //llvm::errs
-      llvm::errs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
+      llvm::outs() << ReplaceText.getFilePath() << ":" << ReplaceText.getOffset() << ", " << ReplaceText.getLength() << ": s/" << OldName << "/" << Name << "/g;\n";
       Replace->insert(ReplaceText);
     } else {
 //     llvm::errs() << ReplaceText.GetFilePath() << ":" << ReplaceText.GetOffset() << ", " << ReplaceText.GetLength() << ": s/" << OldName << "/" << Name << "/g;\n";
@@ -286,25 +286,18 @@ int main(int argc, char **argv) {
   tooling::RefactoringTool Tool(*Compilations, SourcePaths);
   ast_matchers::MatchFinder Finder;
 
-  DeclarationMatcher FunctionMatch = Function(Not(HasReturnType(HasClassDeclaration(
-    AnyOf(HasName2("internal::Matcher"),
-                HasName("internal::PolymorphicMatcherWithParam0"),
-                HasName("internal::PolymorphicMatcherWithParam1"),
-                HasName("internal::PolymorphicMatcherWithParam2")
-        )))));
-
   FixLLVMStyle Callback(&Tool.getReplacements());
   Finder.addMatcher(StatementMatcher(AnyOf(
-      StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", FunctionMatch))))),
-      Call(Callee(Id("declaration", FunctionMatch)),
+      StatementMatcher(Id("ref", DeclarationReference(To(Id("declaration", Function()))))),
+      Call(Callee(Id("declaration", Function())),
            Callee(Id("callee", Expression()))))),
       &Callback);
 
   Finder.addMatcher(
       DeclarationMatcher(AnyOf(
-        Id("declaration", UsingDeclaration(HasAnyUsingShadowDeclaration(HasTargetDeclaration(FunctionMatch)))),
+        Id("declaration", UsingDeclaration(HasAnyUsingShadowDeclaration(HasTargetDeclaration(Function())))),
         AllOf(
-          Id("declaration", FunctionMatch),
+          Id("declaration", Function()),
           Not(Constructor())))
         ),
       &Callback);
