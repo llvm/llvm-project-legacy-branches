@@ -226,7 +226,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///     void x() { this->x(); x(); Y y; y.x(); a; this->b; Y::b; }
 ///     int a; static int b;
 ///   };
-/// MemberExpression()
+/// memberExpression()
 ///   matches this->x, x, y.x, a, this->b
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
@@ -242,7 +242,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::CallExpr> call;
 /// \brief Matches constructor call expressions (including implicit ones).
 ///
 /// Example matches string(ptr, n) and ptr within arguments of f
-///     (matcher = ConstructorCall())
+///     (matcher = constructorCall())
 ///   void f(const string &a, const string &b);
 ///   char *ptr;
 ///   int n;
@@ -254,7 +254,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// \brief Matches nodes where temporaries are created.
 ///
 /// Example matches FunctionTakesString(GetStringByValue())
-///     (matcher = BindTemporaryExpr())
+///     (matcher = bindTemporaryExpr())
 ///   FunctionTakesString(GetStringByValue());
 ///   FunctionTakesStringByPointer(GetStringPointer());
 const internal::VariadicDynCastAllOfMatcher<
@@ -265,7 +265,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Given
 ///   new X;
-/// NewExpression()
+/// newExpression()
 ///   matches 'new X'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
@@ -275,7 +275,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches the CXXDefaultArgExpr placeholder inserted for the
 ///     default value of the second parameter in the call expression f(42)
-///     (matcher = DefaultArgument())
+///     (matcher = defaultArgument())
 ///   void f(int x, int y = 0);
 ///   f(42);
 const internal::VariadicDynCastAllOfMatcher<
@@ -285,12 +285,12 @@ const internal::VariadicDynCastAllOfMatcher<
 /// \brief Matches overloaded operator calls.
 ///
 /// Note that if an operator isn't overloaded, it won't match. Instead, use
-/// BinaryOperator matcher.
+/// binaryOperator matcher.
 /// Currently it does not match operators such as new delete.
 /// FIXME: figure out why these do not match?
 ///
 /// Example matches both operator<<((o << b), c) and operator<<(o, b)
-///     (matcher = OverloadedOperatorCall())
+///     (matcher = overloadedOperatorCall())
 ///   ostream &operator<< (ostream &out, int i) { };
 ///   ostream &o; int b = 1, c = 1;
 ///   o << b << c;
@@ -332,7 +332,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Given
 ///   while (true) {}
-/// While()
+/// whileStmt()
 ///   matches 'while (true) {}'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
@@ -342,7 +342,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Given
 ///   do {} while (true);
-/// Do()
+/// doStmt()
 ///   matches 'do {} while(true)'
 const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> doStmt;
 
@@ -350,7 +350,7 @@ const internal::VariadicDynCastAllOfMatcher<clang::Stmt, clang::DoStmt> doStmt;
 ///
 /// Given
 ///   switch(a) { case 42: break; default: break; }
-/// SwitchCase()
+/// switchCase()
 ///   matches 'case 42: break;' and 'default: break;'.
 const internal::VariadicDynCastAllOfMatcher<
   clang::Stmt,
@@ -427,7 +427,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// \brief Matches a reinterpret_cast expression.
 ///
 /// Either the source expression or the destination type can be matched
-/// using Has(), but HasDestinationType() is more specific and can be
+/// using has(), but hasDestinationType() is more specific and can be
 /// more readable.
 ///
 /// Example matches reinterpret_cast<char*>(&p) in
@@ -438,11 +438,11 @@ const internal::VariadicDynCastAllOfMatcher<
 
 /// \brief Matches a C++ static_cast expression.
 ///
-/// \see HasDestinationType
-/// \see ReinterpretCast
+/// \see hasDestinationType
+/// \see reinterpretCast
 ///
 /// Example:
-///   StaticCast()
+///   staticCast()
 /// matches
 ///   static_cast<long>(8)
 /// in
@@ -454,7 +454,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// \brief Matches a dynamic_cast expression.
 ///
 /// Example:
-///   DynamicCast()
+///   dynamicCast()
 /// matches
 ///   dynamic_cast<D*>(&b);
 /// in
@@ -482,11 +482,11 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Does not match implicit conversions.
 ///
-/// Note: the name "ExplicitCast" is chosen to match Clang's terminology, as
+/// Note: the name "explicitCast" is chosen to match Clang's terminology, as
 /// Clang uses the term "cast" to apply to implicit conversions as well as to
 /// actual cast expressions.
 ///
-/// \see HasDestinationType.
+/// \see hasDestinationType.
 ///
 /// Example: matches all five of the casts in
 ///   int((int)(reinterpret_cast<int>(static_cast<int>(const_cast<int>(42)))))
@@ -514,7 +514,7 @@ const internal::VariadicDynCastAllOfMatcher<
   clang::Expr,
   clang::CXXFunctionalCastExpr> functionalCast;
 
-/// \brief Various overloads for the AnyOf matcher.
+/// \brief Various overloads for the anyOf matcher.
 /// @{
 template<typename C1, typename C2>
 internal::PolymorphicMatcherWithParam2<internal::AnyOfMatcher, C1, C2>
@@ -547,7 +547,7 @@ anyOf(const C1& P1, const C2& P2, const C3& P3, const C4& P4, const C5& P5) {
 }
 /// @}
 
-/// \brief Various overloads for the AllOf matcher.
+/// \brief Various overloads for the allOf matcher.
 /// @{
 template<typename C1, typename C2>
 internal::PolymorphicMatcherWithParam2<internal::AllOfMatcher, C1, C2>
@@ -569,10 +569,10 @@ allOf(const C1& P1, const C2& P2, const C3& P3) {
 /// with '<enclosing>::'.
 /// Does not match typedefs of an underlying type with the given name.
 ///
-/// Example matches X (name == "X")
+/// Example matches X (Name == "X")
 ///   class X;
 ///
-/// Example matches X (name is one of "::a::b::X", "a::b::X", "b::X", "X")
+/// Example matches X (Name is one of "::a::b::X", "a::b::X", "b::X", "X")
 /// namespace a { namespace b { class X; } }
 AST_MATCHER_P(clang::NamedDecl, hasName, std::string, Name) {
   assert(!Name.empty());
@@ -592,7 +592,7 @@ AST_MATCHER_P(clang::NamedDecl, hasName, std::string, Name) {
 /// "operator" prefix, such as "<<", for OverloadedOperatorCall's.
 ///
 /// Example matches a << b
-///     (matcher == OverloadedOperatorCall(HasOverloadedOperatorName("<<")))
+///     (matcher == overloadedOperatorCall(hasOverloadedOperatorName("<<")))
 ///   a << b;
 ///   c && d;  // assuming both operator<<
 ///            // and operator&& are overloaded somewhere.
@@ -609,15 +609,15 @@ AST_MATCHER_P(clang::CXXOperatorCallExpr,
 /// typedef), and does not allow structural matches for namespaces or template
 /// type parameters.
 ///
-/// Example matches X, Y, Z, C (base == "X")
-///   class X;                // A class is considered to be derived from itself.
+/// Example matches X, Y, Z, C (Base == "X")
+///   class X;                // A class is considered to be derived from itself
 ///   class Y : public X {};  // directly derived
 ///   class Z : public Y {};  // indirectly derived
 ///   typedef X A;
 ///   typedef A B;
 ///   class C : public B {};  // derived from a typedef of X
 ///
-/// In the following example, Bar matches IsDerivedFrom("X"):
+/// In the following example, Bar matches isDerivedFrom("X"):
 ///   class Foo;
 ///   typedef Foo X;
 ///   class Bar : public Foo {};  // derived from a type that X is a typedef of
@@ -629,7 +629,7 @@ AST_MATCHER_P(clang::CXXRecordDecl, isDerivedFrom, std::string, Base) {
 /// \brief Matches AST nodes that have child AST nodes that match the
 /// provided matcher.
 ///
-/// Example matches X, Y (matcher = record(Has(record(hasName("X")))
+/// Example matches X, Y (matcher = record(has(record(hasName("X")))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
 ///   class Y { class X {}; };
 ///   class Z { class Y { class X {}; }; };  // Does not match Z.
@@ -646,7 +646,7 @@ internal::ArgumentAdaptingMatcher<internal::HasMatcher, ChildT> has(
 /// provided matcher.
 ///
 /// Example matches X, Y, Z
-///     (matcher = record(HasDescendant(record(hasName("X")))))
+///     (matcher = record(hasDescendant(record(hasName("X")))))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
 ///   class Y { class X {}; };
 ///   class Z { class Y { class X {}; }; };
@@ -664,14 +664,14 @@ hasDescendant(const internal::Matcher<DescendantT> &DescendantMatcher) {
 /// \brief Matches AST nodes that have child AST nodes that match the
 /// provided matcher.
 ///
-/// Example matches X, Y (matcher = record(ForEach(record(hasName("X")))
+/// Example matches X, Y (matcher = record(forEach(record(hasName("X")))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
 ///   class Y { class X {}; };
 ///   class Z { class Y { class X {}; }; };  // Does not match Z.
 ///
 /// ChildT must be an AST base type.
 ///
-/// As opposed to 'Has', 'ForEach' will cause a match for each result that
+/// As opposed to 'has', 'forEach' will cause a match for each result that
 /// matches instead of only on the first one.
 template <typename ChildT>
 internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> forEach(
@@ -685,18 +685,18 @@ internal::ArgumentAdaptingMatcher<internal::ForEachMatcher, ChildT> forEach(
 /// provided matcher.
 ///
 /// Example matches X, A, B, C
-///     (matcher = record(ForEachDescendant(record(hasName("X")))))
+///     (matcher = record(forEachDescendant(record(hasName("X")))))
 ///   class X {};  // Matches X, because X::X is a class of name X inside X.
 ///   class A { class X {}; };
 ///   class B { class C { class X {}; }; };
 ///
 /// DescendantT must be an AST base type.
 ///
-/// As opposed to 'HasDescendant', 'ForEachDescendant' will cause a match for
+/// As opposed to 'hasDescendant', 'forEachDescendant' will cause a match for
 /// each result that matches instead of only on the first one.
 ///
 /// Note: Recursively combined ForEachDescendant can cause many matches:
-///   record(ForEachDescendant(record(ForEachDescendant(record()))))
+///   record(forEachDescendant(record(forEachDescendant(record()))))
 /// will match 10 times (plus injected class name matches) on:
 ///   class A { class B { class C { class D { class E {}; }; }; }; };
 template <typename DescendantT>
@@ -710,7 +710,7 @@ forEachDescendant(
 
 /// \brief Matches if the provided matcher does not match.
 ///
-/// Example matches Y (matcher = record(Not(hasName("X"))))
+/// Example matches Y (matcher = record(unless(hasName("X"))))
 ///   class X {};
 ///   class Y {};
 template <typename M>
@@ -731,7 +731,7 @@ inline internal::PolymorphicMatcherWithParam1< internal::HasDeclarationMatcher,
 
 /// \brief Matches on the implicit object argument of a member call expression.
 ///
-/// Example matches y.x() (matcher = Call(On(HasType(record(hasName("Y"))))))
+/// Example matches y.x() (matcher = call(on(hasType(record(hasName("Y"))))))
 ///   class Y { public: void x(); };
 ///   void z() { Y y; y.x(); }",
 ///
@@ -750,9 +750,9 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, on, internal::Matcher<clang::Expr>,
 /// Given
 ///   class Y { void x() { this->x(); x(); Y y; y.x(); } };
 ///   void f() { f(); }
-/// Call(Callee(Expression()))
+/// call(callee(expression()))
 ///   matches this->x(), x(), y.x(), f()
-/// with Callee(...)
+/// with callee(...)
 ///   matching this->x, x, y.x, f respectively
 ///
 /// Note: Callee cannot take the more general internal::Matcher<clang::Expr> because
