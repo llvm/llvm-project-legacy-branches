@@ -93,7 +93,7 @@ public:
 
   /// \brief Visits all matches that this BoundNodesTree represents.
   ///
-  /// The ownership of 'visitor' remains at the caller.
+  /// The ownership of 'ResultVisitor' remains at the caller.
   void visitMatches(Visitor* ResultVisitor);
 
 private:
@@ -362,7 +362,7 @@ public:
   /// \brief Implements UntypedBaseMatcher::Matches.
   ///
   /// Since T is guaranteed to be a "base" AST node type, this method is
-  /// guaranteed to override one of the Matches() methods from
+  /// guaranteed to override one of the matches() methods from
   /// UntypedBaseMatcher.
   virtual bool matches(const T &Node,
                        ASTMatchFinder *Finder,
@@ -370,7 +370,7 @@ public:
     return InnerMatcher.matches(Node, Finder, Builder);
   }
 
-  /// \brief Implements UntypedBaseMatcher::GetID.
+  /// \brief Implements UntypedBaseMatcher::getID.
   virtual uint64_t getID() const {
     return InnerMatcher.getID();
   }
@@ -383,10 +383,10 @@ private:
 /// FIXME: Find a better name.
 ///
 /// This provides two entry methods for each base node type in the AST:
-/// - MatchesChildOf:
+/// - matchesChildOf:
 ///   Matches a matcher on every child node of the given node. Returns true
 ///   if at least one child node could be matched.
-/// - MatchesDescendantOf:
+/// - matchesDescendantOf:
 ///   Matches a matcher on all descendant nodes of the given node. Returns true
 ///   if at least one descendant matched.
 class ASTMatchFinder {
@@ -526,14 +526,14 @@ private:
 /// \brief Matches any instance of the given NodeType.
 ///
 /// This is useful when a matcher syntactically requires a child matcher,
-/// but the context doesn't care. See for example: True().
+/// but the context doesn't care. See for example: anything().
 ///
 /// FIXME: Alternatively we could also create a IsAMatcher or something
 /// that checks that a dyn_cast is possible. This is purely needed for the
 /// difference between calling for example:
-///   Class()
+///   record()
 /// and
-///   Class(SomeMatcher)
+///   record(SomeMatcher)
 /// In the second case we need the correct type we were dyn_cast'ed to in order
 /// to get the right type for the inner matcher. In the first case we don't need
 /// that, but we use the type conversion anyway and insert a TrueMatcher.
@@ -867,8 +867,8 @@ class IsConstQualifiedMatcher
 ///
 /// For example:
 ///   const VariadicDynCastAllOfMatcher<
-///       clang::Decl, clang::CXXRecordDecl> Class;
-/// Creates a functor Class(...) that creates a Matcher<clang::Decl> given
+///       clang::Decl, clang::CXXRecordDecl> record;
+/// Creates a functor record(...) that creates a Matcher<clang::Decl> given
 /// a variable number of arguments of type Matcher<clang::CXXRecordDecl>.
 /// The returned matcher matches if the given clang::Decl can by dynamically
 /// casted to clang::CXXRecordDecl and all given matchers match.

@@ -31,7 +31,7 @@
 //  int main(int argc, char **argv) {
 //    ClangTool Tool(argc, argv);
 //    MatchFinder finder;
-//    finder.AddMatcher(Id("id", Class(HasName("::a_namespace::AClass"))),
+//    finder.AddMatcher(Id("id", record(hasName("::a_namespace::AClass"))),
 //                      new HandleMatch);
 //    return Tool.Run(finder.NewFrontendActionFactory());
 //  }
@@ -52,10 +52,10 @@ namespace ast_matchers {
 /// \brief A class to allow finding matches over the Clang AST.
 ///
 /// After creation, you can add multiple matchers to the MatchFinder via
-/// calls to AddMatcher(...).
+/// calls to addMatcher(...).
 ///
-/// Once all matchers are added, NewFrontendAction() returns a FrontendAction
-/// that will trigger the callbacks specified via AddMatcher(...) when a match
+/// Once all matchers are added, newFrontendAction() returns a FrontendAction
+/// that will trigger the callbacks specified via addMatcher(...) when a match
 /// is found.
 ///
 /// See ASTMatchers.h for more information about how to create matchers.
