@@ -202,15 +202,9 @@ class MatchASTVisitor : public clang::RecursiveASTVisitor<MatchASTVisitor>,
                         public ASTMatchFinder {
 public:
   MatchASTVisitor(std::vector< std::pair<const UntypedBaseMatcher*,
-                               MatchFinder::MatchCallback*> > *Triggers,
-                  clang::SourceManager *VisitorSourceManager,
-                  clang::LangOptions *LanguageOptions)
+                               MatchFinder::MatchCallback*> > *Triggers)
      : Triggers(Triggers),
-       VisitorSourceManager(VisitorSourceManager),
        ActiveASTContext(NULL) {
-    assert(VisitorSourceManager != NULL);
-    assert(LanguageOptions != NULL);
-    // FIXME: add rewriter_(*source_manager, *language_options)
   }
 
   void set_active_ast_context(clang::ASTContext *NewActiveASTContext) {
@@ -341,18 +335,16 @@ private:
   class MatchVisitor : public BoundNodesTree::Visitor {
   public:
     MatchVisitor(clang::ASTContext* Context,
-                 clang::SourceManager* Sources,
                  MatchFinder::MatchCallback* Callback)
-      : Context(Context), Sources(Sources),
+      : Context(Context),
         Callback(Callback) {}
 
     virtual void visitMatch(const BoundNodes& BoundNodesView) {
-      Callback->run(MatchFinder::MatchResult(BoundNodesView, Context, Sources));
+      Callback->run(MatchFinder::MatchResult(BoundNodesView, Context));
     }
 
   private:
     clang::ASTContext* Context;
-    clang::SourceManager* Sources;
     MatchFinder::MatchCallback* Callback;
   };
 
@@ -379,8 +371,7 @@ private:
       BoundNodesTreeBuilder Builder;
       if (It->first->matches(node, this, &Builder)) {
         BoundNodesTree BoundNodes = Builder.build();
-        MatchVisitor Visitor(ActiveASTContext, VisitorSourceManager,
-                             It->second);
+        MatchVisitor Visitor(ActiveASTContext, It->second);
         BoundNodes.visitMatches(&Visitor);
       }
     }
@@ -388,7 +379,6 @@ private:
 
   std::vector< std::pair<const UntypedBaseMatcher*,
                MatchFinder::MatchCallback*> > *const Triggers;
-  clang::SourceManager *const VisitorSourceManager;
   clang::ASTContext *ActiveASTContext;
 
   // Maps a canonical type to the names of its typedefs.
@@ -496,10 +486,8 @@ class MatchASTConsumer : public clang::ASTConsumer {
 public:
   MatchASTConsumer(std::vector< std::pair<const UntypedBaseMatcher*,
                                 MatchFinder::MatchCallback*> > *Triggers,
-                   MatchFinder::ParsingDoneTestCallback *ParsingDone,
-                   clang::SourceManager *ConsumerSourceManager,
-                   clang::LangOptions *LanaguageOptions)
-      : Visitor(Triggers, ConsumerSourceManager, LanaguageOptions),
+                   MatchFinder::ParsingDoneTestCallback *ParsingDone)
+      : Visitor(Triggers),
         ParsingDone(ParsingDone) {}
 
 private:
@@ -529,10 +517,7 @@ class MatchASTAction : public clang::ASTFrontendAction {
   clang::ASTConsumer *CreateASTConsumer(
       clang::CompilerInstance &Compiler,
       llvm::StringRef) {
-    return new MatchASTConsumer(Triggers,
-                                ParsingDone,
-                                &Compiler.getSourceManager(),
-                                &Compiler.getLangOpts());
+    return new MatchASTConsumer(Triggers, ParsingDone);
   }
 
   std::vector< std::pair<const UntypedBaseMatcher*,
@@ -544,9 +529,9 @@ class MatchASTAction : public clang::ASTFrontendAction {
 } // end namespace internal
 
 MatchFinder::MatchResult::MatchResult(const BoundNodes &Nodes,
-                                      clang::ASTContext *Context,
-                                      clang::SourceManager *SourceManager)
-  : Nodes(Nodes), Context(Context), SourceManager(SourceManager) {}
+                                      clang::ASTContext *Context)
+  : Nodes(Nodes), Context(Context),
+    SourceManager(&Context->getSourceManager()) {}
 
 MatchFinder::MatchCallback::~MatchCallback() {}
 MatchFinder::ParsingDoneTestCallback::~ParsingDoneTestCallback() {}

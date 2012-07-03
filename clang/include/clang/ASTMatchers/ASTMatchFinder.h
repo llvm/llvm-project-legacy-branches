@@ -68,8 +68,7 @@ public:
   /// Every time a match is found, the MatchFinder will invoke the registered
   /// MatchCallback with a MatchResult containing information about the match.
   struct MatchResult {
-    MatchResult(const BoundNodes &Nodes, clang::ASTContext *Context,
-                clang::SourceManager *SourceManager);
+    MatchResult(const BoundNodes &Nodes, clang::ASTContext *Context);
 
     /// \brief Contains the nodes bound on the current match.
     ///
