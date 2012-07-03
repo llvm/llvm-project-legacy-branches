@@ -17,7 +17,9 @@
 namespace clang {
 namespace ast_matchers {
 
+using clang::tooling::newFrontendActionFactory;
 using clang::tooling::runToolOnCode;
+using clang::tooling::FrontendActionFactory;
 
 class BoundNodesCallback {
 public:
@@ -53,7 +55,8 @@ testing::AssertionResult matchesConditionally(const std::string &Code,
   bool Found = false;
   MatchFinder Finder;
   Finder.addMatcher(AMatcher, new VerifyMatch(0, &Found));
-  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
+  OwningPtr<FrontendActionFactory> Factory(newFrontendActionFactory(&Finder));
+  if (!runToolOnCode(Factory->create(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }
   if (!Found && ExpectMatch) {
@@ -87,7 +90,8 @@ matchAndVerifyResultConditionally(const std::string &Code, const T &AMatcher,
   MatchFinder Finder;
   Finder.addMatcher(
       AMatcher, new VerifyMatch(FindResultVerifier, &VerifiedResult));
-  if (!runToolOnCode(Finder.newFrontendAction(), Code)) {
+  OwningPtr<FrontendActionFactory> Factory(newFrontendActionFactory(&Finder));
+  if (!runToolOnCode(Factory->create(), Code)) {
     return testing::AssertionFailure() << "Parsing error in \"" << Code << "\"";
   }
   if (!VerifiedResult && ExpectResult) {

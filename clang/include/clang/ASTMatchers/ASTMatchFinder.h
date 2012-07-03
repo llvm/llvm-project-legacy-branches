@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  Provides a way to construct a FrontendAction that runs given matchers
+//  Provides a way to construct an ASTConsumer that runs given matchers
 //  over the AST and invokes a given callback on every match.
 //
 //  The general idea is to construct a matcher expression that describes a
@@ -33,7 +33,7 @@
 //    MatchFinder finder;
 //    finder.AddMatcher(Id("id", record(hasName("::a_namespace::AClass"))),
 //                      new HandleMatch);
-//    return Tool.Run(finder.NewFrontendActionFactory());
+//    return Tool.Run(newFrontendActionFactory(&finder));
 //  }
 //
 //===----------------------------------------------------------------------===//
@@ -45,8 +45,6 @@
 
 namespace clang {
 
-class FrontendAction;
-
 namespace ast_matchers {
 
 /// \brief A class to allow finding matches over the Clang AST.
@@ -54,7 +52,7 @@ namespace ast_matchers {
 /// After creation, you can add multiple matchers to the MatchFinder via
 /// calls to addMatcher(...).
 ///
-/// Once all matchers are added, newFrontendAction() returns a FrontendAction
+/// Once all matchers are added, newASTConsumer() returns an ASTConsumer
 /// that will trigger the callbacks specified via addMatcher(...) when a match
 /// is found.
 ///
@@ -116,8 +114,8 @@ public:
                   MatchCallback *Action);
   /// @}
 
-  /// \brief Creates a clang FrontendAction that finds all matches.
-  FrontendAction *newFrontendAction();
+  /// \brief Creates a clang ASTConsumer that finds all matches.
+  clang::ASTConsumer *newASTConsumer();
 
   /// \brief Registers a callback to notify the end of parsing.
   ///
@@ -135,8 +133,6 @@ private:
 
   /// \brief Called when parsing is done.
   ParsingDoneTestCallback *ParsingDone;
-
-  friend class MatchFinderFrontendActionFactory;
 };
 
 } // end namespace ast_matchers

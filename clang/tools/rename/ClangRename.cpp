@@ -48,7 +48,7 @@ using clang::tooling::CompilationDatabase;
 template <typename T>
 class TestVisitor : public clang::RecursiveASTVisitor<T> {
 public:
-  FrontendAction *newFrontendAction() { return new TestAction(this); }
+  clang::ASTConsumer *newASTConsumer() { return new FindConsumer(this); }
 
   bool shouldVisitTemplateInstantiations() const {
     return true;
@@ -63,22 +63,8 @@ private:
     FindConsumer(TestVisitor *Visitor) : Visitor(Visitor) {}
 
     virtual void HandleTranslationUnit(clang::ASTContext &Context) {
+      Visitor->Context = &Context;
       Visitor->TraverseDecl(Context.getTranslationUnitDecl());
-    }
-
-  private:
-    TestVisitor *Visitor;
-  };
-
-  class TestAction : public clang::ASTFrontendAction {
-  public:
-    TestAction(TestVisitor *Visitor) : Visitor(Visitor) {}
-
-    virtual clang::ASTConsumer* CreateASTConsumer(
-        clang::CompilerInstance& compiler, llvm::StringRef dummy) {
-      Visitor->Context = &compiler.getASTContext();
-      /// TestConsumer will be deleted by the framework calling us.
-      return new FindConsumer(Visitor);
     }
 
   private:

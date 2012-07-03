@@ -19,8 +19,6 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/Frontend/FrontendAction.h"
 #include <set>
 
 namespace clang {
@@ -504,27 +502,6 @@ private:
   MatchFinder::ParsingDoneTestCallback *ParsingDone;
 };
 
-class MatchASTAction : public clang::ASTFrontendAction {
- public:
-  explicit MatchASTAction(
-      std::vector< std::pair<const UntypedBaseMatcher*,
-                   MatchFinder::MatchCallback*> > *Triggers,
-      MatchFinder::ParsingDoneTestCallback *ParsingDone)
-      : Triggers(Triggers),
-        ParsingDone(ParsingDone) {}
-
- private:
-  clang::ASTConsumer *CreateASTConsumer(
-      clang::CompilerInstance &Compiler,
-      llvm::StringRef) {
-    return new MatchASTConsumer(Triggers, ParsingDone);
-  }
-
-  std::vector< std::pair<const UntypedBaseMatcher*,
-               MatchFinder::MatchCallback*> > *const Triggers;
-  MatchFinder::ParsingDoneTestCallback *ParsingDone;
-};
-
 } // end namespace
 } // end namespace internal
 
@@ -565,8 +542,8 @@ void MatchFinder::addMatcher(const StatementMatcher &NodeMatch,
     new internal::TypedBaseMatcher<clang::Stmt>(NodeMatch), Action));
 }
 
-clang::FrontendAction *MatchFinder::newFrontendAction() {
-  return new internal::MatchASTAction(&Triggers, ParsingDone);
+clang::ASTConsumer *MatchFinder::newASTConsumer() {
+  return new internal::MatchASTConsumer(&Triggers, ParsingDone);
 }
 
 void MatchFinder::registerTestCallbackAfterParsing(
