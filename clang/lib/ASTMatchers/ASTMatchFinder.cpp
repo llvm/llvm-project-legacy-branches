@@ -207,7 +207,6 @@ public:
                   clang::LangOptions *LanguageOptions)
      : Triggers(Triggers),
        VisitorSourceManager(VisitorSourceManager),
-       LanguageOptions(LanguageOptions),
        ActiveASTContext(NULL) {
     assert(VisitorSourceManager != NULL);
     assert(LanguageOptions != NULL);
@@ -390,7 +389,6 @@ private:
   std::vector< std::pair<const UntypedBaseMatcher*,
                MatchFinder::MatchCallback*> > *const Triggers;
   clang::SourceManager *const VisitorSourceManager;
-  clang::LangOptions *const LanguageOptions;
   clang::ASTContext *ActiveASTContext;
 
   // Maps a canonical type to the names of its typedefs.
