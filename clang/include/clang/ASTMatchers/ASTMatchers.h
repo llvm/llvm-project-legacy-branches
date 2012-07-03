@@ -755,10 +755,10 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, on, internal::Matcher<clang::Expr>,
 /// with callee(...)
 ///   matching this->x, x, y.x, f respectively
 ///
-/// Note: Callee cannot take the more general internal::Matcher<clang::Expr> because
-/// this introduces ambiguous overloads with calls to Callee taking a
-/// internal::Matcher<clang::Decl>, as the matcher hierarchy is purely implemented in
-/// terms of implicit casts.
+/// Note: Callee cannot take the more general internal::Matcher<clang::Expr>
+/// because this introduces ambiguous overloads with calls to Callee taking a
+/// internal::Matcher<clang::Decl>, as the matcher hierarchy is purely
+/// implemented in terms of implicit casts.
 AST_MATCHER_P(clang::CallExpr, callee, internal::Matcher<clang::Stmt>,
               InnerMatcher) {
   const clang::Expr *ExprNode = Node.getCallee();
@@ -769,7 +769,7 @@ AST_MATCHER_P(clang::CallExpr, callee, internal::Matcher<clang::Stmt>,
 /// \brief Matches if the call expression's callee's declaration matches the
 /// given matcher.
 ///
-/// Example matches y.x() (matcher = Call(Callee(Method(hasName("x")))))
+/// Example matches y.x() (matcher = call(callee(method(hasName("x")))))
 ///   class Y { public: void x(); };
 ///   void z() { Y y; y.x();
 inline internal::Matcher<clang::CallExpr> callee(
@@ -780,10 +780,10 @@ inline internal::Matcher<clang::CallExpr> callee(
 /// \brief Matches if the expression's or declaration's type matches a type
 /// matcher.
 ///
-/// Example matches x (matcher = Expression(HasType(
-///                        HasDeclaration(record(hasName("X"))))))
-///             and z (matcher = Variable(HasType(
-///                        HasDeclaration(record(hasName("X"))))))
+/// Example matches x (matcher = expression(hasType(
+///                        hasDeclaration(record(hasName("X"))))))
+///             and z (matcher = variable(hasType(
+///                        hasDeclaration(record(hasName("X"))))))
 ///  class X {};
 ///  void y(X &x) { x; X z; }
 AST_POLYMORPHIC_MATCHER_P(hasType, internal::Matcher<clang::QualType>,
@@ -800,11 +800,11 @@ AST_POLYMORPHIC_MATCHER_P(hasType, internal::Matcher<clang::QualType>,
 /// In case of a value declaration (for example a variable declaration),
 /// this resolves one layer of indirection. For example, in the value
 /// declaration "X x;", record(hasName("X")) matches the declaration of X,
-/// while Variable(HasType(record(hasName("X")))) matches the declaration
+/// while variable(hasType(record(hasName("X")))) matches the declaration
 /// of x."
 ///
-/// Example matches x (matcher = Expression(HasType(record(hasName("X")))))
-///             and z (matcher = Variable(HasType(record(hasName("X")))))
+/// Example matches x (matcher = expression(hasType(record(hasName("X")))))
+///             and z (matcher = variable(hasType(record(hasName("X")))))
 ///  class X {};
 ///  void y(X &x) { x; X z; }
 inline internal::PolymorphicMatcherWithParam1<
@@ -819,7 +819,7 @@ hasType(const internal::Matcher<clang::Decl> &InnerMatcher) {
 /// matches the specified matcher.
 ///
 /// Example matches y->x()
-///     (matcher = Call(On(HasType(PointsTo(record(hasName("Y")))))))
+///     (matcher = call(on(hasType(pointsTo(record(hasName("Y")))))))
 ///   class Y { public: void x(); };
 ///   void z() { Y *y; y->x(); }
 AST_MATCHER_P(
@@ -840,7 +840,7 @@ inline internal::Matcher<clang::QualType> pointsTo(
 /// type matches the specified matcher.
 ///
 /// Example matches X &x and const X &y
-///     (matcher = Variable(HasType(References(record(hasName("X"))))))
+///     (matcher = variable(hasType(references(record(hasName("X"))))))
 ///   class X {
 ///     void a(X b) {
 ///       X &x = b;
@@ -886,7 +886,7 @@ inline internal::Matcher<clang::CallExpr> thisPointerType(
 /// specified matcher.
 ///
 /// Example matches x in if(x)
-///     (matcher = DeclarationReference(To(Variable(hasName("x")))))
+///     (matcher = declarationReference(to(variable(hasName("x")))))
 ///   bool x;
 ///   if (x) {}
 AST_MATCHER_P(clang::DeclRefExpr, to, internal::Matcher<clang::Decl>,
@@ -899,7 +899,7 @@ AST_MATCHER_P(clang::DeclRefExpr, to, internal::Matcher<clang::Decl>,
 /// \brief Matches a variable declaration that has an initializer expression
 /// that matches the given matcher.
 ///
-/// Example matches x (matcher = Variable(HasInitializer(Call())))
+/// Example matches x (matcher = variable(hasInitializer(call())))
 ///   bool y() { return true; }
 ///   bool x = y();
 AST_MATCHER_P(
@@ -913,7 +913,7 @@ AST_MATCHER_P(
 /// \brief Checks that a call expression or a constructor call expression has
 /// a specific number of arguments (including absent default arguments).
 ///
-/// Example matches f(0, 0) (matcher = Call(ArgumentCountIs(2)))
+/// Example matches f(0, 0) (matcher = call(argumentCountIs(2)))
 ///   void f(int x, int y);
 ///   f(0, 0);
 AST_POLYMORPHIC_MATCHER_P(argumentCountIs, unsigned, N) {
@@ -928,7 +928,7 @@ AST_POLYMORPHIC_MATCHER_P(argumentCountIs, unsigned, N) {
 /// call expression.
 ///
 /// Example matches y in x(y)
-///     (matcher = Call(HasArgument(0, DeclarationReference())))
+///     (matcher = call(hasArgument(0, declarationReference())))
 ///   void x(int) { int y; x(y); }
 AST_POLYMORPHIC_MATCHER_P2(
     hasArgument, unsigned, N, internal::Matcher<clang::Expr>, InnerMatcher) {
@@ -948,8 +948,8 @@ AST_POLYMORPHIC_MATCHER_P2(
 ///     Foo() : foo_(1) { }
 ///     int foo_;
 ///   };
-/// record(Has(Constructor(HasAnyConstructorInitializer(anything()))))
-///   Class matches Foo, HasAnyConstructorInitializer matches foo_(1)
+/// record(Has(Constructor(hasAnyConstructorInitializer(anything()))))
+///   Class matches Foo, hasAnyConstructorInitializer matches foo_(1)
 AST_MATCHER_P(clang::CXXConstructorDecl, hasAnyConstructorInitializer,
               internal::Matcher<clang::CXXCtorInitializer>, InnerMatcher) {
   for (clang::CXXConstructorDecl::init_const_iterator I = Node.init_begin();
@@ -968,10 +968,10 @@ AST_MATCHER_P(clang::CXXConstructorDecl, hasAnyConstructorInitializer,
 ///     Foo() : foo_(1) { }
 ///     int foo_;
 ///   };
-/// record(Has(Constructor(HasAnyConstructorInitializer(
-///     Forfield(hasName("foo_"))))))
+/// record(has(constructor(hasAnyConstructorInitializer(
+///     forField(hasName("foo_"))))))
 ///   matches Foo
-/// with ForField matching foo_
+/// with forField matching foo_
 AST_MATCHER_P(clang::CXXCtorInitializer, forField,
               internal::Matcher<clang::FieldDecl>, InnerMatcher) {
   const clang::FieldDecl *NodeAsDecl = Node.getMember();
@@ -986,10 +986,10 @@ AST_MATCHER_P(clang::CXXCtorInitializer, forField,
 ///     Foo() : foo_(1) { }
 ///     int foo_;
 ///   };
-/// record(Has(Constructor(HasAnyConstructorInitializer(
-///     WithInitializer(IntegerLiteral(Equals(1)))))))
+/// record(has(constructor(hasAnyConstructorInitializer(
+///     withInitializer(integerLiteral(equals(1)))))))
 ///   matches Foo
-/// with WithInitializer matching (1)
+/// with withInitializer matching (1)
 AST_MATCHER_P(clang::CXXCtorInitializer, withInitializer,
               internal::Matcher<clang::Expr>, InnerMatcher) {
   const clang::Expr* NodeAsExpr = Node.getInit();
@@ -1006,7 +1006,7 @@ AST_MATCHER_P(clang::CXXCtorInitializer, withInitializer,
 ///     Foo(int) : foo_("A") { }
 ///     string foo_;
 ///   };
-/// Constructor(HasAnyConstructorInitializer(IsWritten()))
+/// constructor(hasAnyConstructorInitializer(isWritten()))
 ///   will match Foo(int), but not Foo()
 AST_MATCHER(clang::CXXCtorInitializer, isWritten) {
   return Node.isWritten();
@@ -1023,9 +1023,9 @@ AST_MATCHER(clang::CXXConstructorDecl, isImplicit) {
 ///
 /// Given
 ///   void x(int, int, int) { int y; x(1, y, 42); }
-/// Call(HasAnyArgument(DeclarationReference()))
+/// call(hasAnyArgument(declarationReference()))
 ///   matches x(1, y, 42)
-/// with HasAnyArgument(...)
+/// with hasAnyArgument(...)
 ///   matching y
 AST_POLYMORPHIC_MATCHER_P(hasAnyArgument, internal::Matcher<clang::Expr>,
                           InnerMatcher) {
@@ -1046,9 +1046,9 @@ AST_POLYMORPHIC_MATCHER_P(hasAnyArgument, internal::Matcher<clang::Expr>,
 ///
 /// Given
 ///   class X { void f(int x) {} };
-/// Method(HasParameter(0, HasType(Variable())))
+/// method(hasParameter(0, hasType(variable())))
 ///   matches f(int x) {}
-/// with HasParameter(...)
+/// with hasParameter(...)
 ///   matching int x
 AST_MATCHER_P2(clang::FunctionDecl, hasParameter,
                unsigned, N, internal::Matcher<clang::ParmVarDecl>,
@@ -1064,9 +1064,9 @@ AST_MATCHER_P2(clang::FunctionDecl, hasParameter,
 ///
 /// Given
 ///   class X { void f(int x, int y, int z) {} };
-/// Method(HasAnyParameter(hasName("y")))
+/// method(hasAnyParameter(hasName("y")))
 ///   matches f(int x, int y, int z) {}
-/// with HasAnyParameter(...)
+/// with hasAnyParameter(...)
 ///   matching int y
 AST_MATCHER_P(clang::FunctionDecl, hasAnyParameter,
               internal::Matcher<clang::ParmVarDecl>, InnerMatcher) {
@@ -1081,7 +1081,7 @@ AST_MATCHER_P(clang::FunctionDecl, hasAnyParameter,
 /// \brief Matches the condition expression of an if statement or conditional
 /// operator.
 ///
-/// Example matches true (matcher = HasCondition(BoolLiteral(Equals(true))))
+/// Example matches true (matcher = hasCondition(boolLiteral(equals(true))))
 ///   if (true) {}
 AST_POLYMORPHIC_MATCHER_P(hasCondition, internal::Matcher<clang::Expr>,
                           InnerMatcher) {
@@ -1098,7 +1098,7 @@ AST_POLYMORPHIC_MATCHER_P(hasCondition, internal::Matcher<clang::Expr>,
 ///
 /// Given
 ///   if (A* a = GetAPointer()) {}
-/// HasConditionVariableStatment(...)
+/// hasConditionVariableStatment(...)
 ///   matches 'A* a = GetAPointer()'.
 AST_MATCHER_P(clang::IfStmt, hasConditionVariableStatement,
               internal::Matcher<clang::DeclStmt>, InnerMatcher) {
@@ -1112,9 +1112,9 @@ AST_MATCHER_P(clang::IfStmt, hasConditionVariableStatement,
 ///
 /// Given
 ///   for (;;) {}
-/// HasBody(CompoundStatement())
+/// hasBody(compoundStatement())
 ///   matches 'for (;;) {}'
-/// with CompoundStatement()
+/// with compoundStatement()
 ///   matching '{}'
 AST_MATCHER_P(clang::ForStmt, hasBody, internal::Matcher<clang::Stmt>,
               InnerMatcher) {
@@ -1128,9 +1128,9 @@ AST_MATCHER_P(clang::ForStmt, hasBody, internal::Matcher<clang::Stmt>,
 ///
 /// Given
 ///   { {}; 1+2; }
-/// HasAnySubstatement(CompoundStatement())
+/// hasAnySubstatement(compoundStatement())
 ///   matches '{ {}; 1+2; }'
-/// with CompoundStatement()
+/// with compoundStatement()
 ///   matching '{}'
 AST_MATCHER_P(clang::CompoundStmt, hasAnySubstatement,
               internal::Matcher<clang::Stmt>, InnerMatcher) {
@@ -1147,7 +1147,7 @@ AST_MATCHER_P(clang::CompoundStmt, hasAnySubstatement,
 ///
 /// Example: Given
 ///   { for (;;) {} }
-/// CompoundStatement(StatementCountIs(0)))
+/// compoundStatement(statementCountIs(0)))
 ///   matches '{}'
 ///   but does not match the outer compound statement.
 AST_MATCHER_P(clang::CompoundStmt, statementCountIs, unsigned, N) {
@@ -1156,7 +1156,7 @@ AST_MATCHER_P(clang::CompoundStmt, statementCountIs, unsigned, N) {
 
 /// \brief Matches literals that are equal to the given value.
 ///
-/// Example matches true (matcher = BoolLiteral(Equals(true)))
+/// Example matches true (matcher = boolLiteral(equals(true)))
 ///   true
 template <typename ValueT>
 internal::PolymorphicMatcherWithParam1<internal::ValueEqualsMatcher, ValueT>
@@ -1169,7 +1169,7 @@ equals(const ValueT &Value) {
 /// \brief Matches the operator Name of operator expressions (binary or
 /// unary).
 ///
-/// Example matches a || b (matcher = BinaryOperator(HasOperatorName("||")))
+/// Example matches a || b (matcher = binaryOperator(hasOperatorName("||")))
 ///   !(a || b)
 AST_POLYMORPHIC_MATCHER_P(hasOperatorName, std::string, Name) {
   TOOLING_COMPILE_ASSERT(
@@ -1181,7 +1181,7 @@ AST_POLYMORPHIC_MATCHER_P(hasOperatorName, std::string, Name) {
 
 /// \brief Matches the left hand side of binary operator expressions.
 ///
-/// Example matches a (matcher = BinaryOperator(HasLHS()))
+/// Example matches a (matcher = binaryOperator(hasLHS()))
 ///   a || b
 AST_MATCHER_P(clang::BinaryOperator, hasLHS,
               internal::Matcher<clang::Expr>, InnerMatcher) {
@@ -1192,7 +1192,7 @@ AST_MATCHER_P(clang::BinaryOperator, hasLHS,
 
 /// \brief Matches the right hand side of binary operator expressions.
 ///
-/// Example matches b (matcher = BinaryOperator(HasRHS()))
+/// Example matches b (matcher = binaryOperator(hasRHS()))
 ///   a || b
 AST_MATCHER_P(clang::BinaryOperator, hasRHS,
               internal::Matcher<clang::Expr>, InnerMatcher) {
@@ -1210,7 +1210,7 @@ inline internal::Matcher<clang::BinaryOperator> hasEitherOperand(
 
 /// \brief Matches if the operand of a unary operator matches.
 ///
-/// Example matches true (matcher = HasOperand(BoolLiteral(Equals(true))))
+/// Example matches true (matcher = hasOperand(boolLiteral(equals(true))))
 ///   !true
 AST_MATCHER_P(clang::UnaryOperator, hasUnaryOperand,
               internal::Matcher<clang::Expr>, InnerMatcher) {
@@ -1222,7 +1222,7 @@ AST_MATCHER_P(clang::UnaryOperator, hasUnaryOperand,
 /// Matches if the implicit cast's source expression matches the given matcher.
 ///
 /// Example: matches "a string" (matcher =
-///                                  HasSourceExpression(ConstructorCall()))
+///                                  hasSourceExpression(constructorCall()))
 ///
 /// class URL { URL(string); };
 /// URL url = "a string";
@@ -1297,7 +1297,7 @@ isDefinition() {
 /// this to?
 ///
 /// Example matches A() in the last line
-///     (matcher = ConstructorCall(HasDeclaration(Method(
+///     (matcher = constructorCall(hasDeclaration(method(
 ///         ofClass(hasName("A"))))))
 ///   class A {
 ///    public:
@@ -1322,7 +1322,7 @@ AST_MATCHER_P(clang::CXXMethodDecl, ofClass,
 ///     int a;
 ///     static int b;
 ///   };
-/// MemberExpression(IsArrow())
+/// memberExpression(isArrow())
 ///   matches this->x, x, y.x, a, this->b
 inline internal::Matcher<clang::MemberExpr> isArrow() {
   return makeMatcher(new internal::IsArrowMatcher());
@@ -1337,7 +1337,7 @@ inline internal::Matcher<clang::MemberExpr> isArrow() {
 ///   void c(const int);
 ///   void d(const int*);
 ///   void e(int const) {};
-/// Function(HasAnyParameter(HasType(IsConstQualified())))
+/// function(hasAnyParameter(hasType(isConstQualified())))
 ///   matches "void b(int const)", "void c(const int)" and
 ///   "void e(int const) {}". It does not match d as there
 ///   is no top-level const on the parameter type "const int *".
@@ -1352,7 +1352,7 @@ inline internal::Matcher<clang::QualType> isConstQualified() {
 ///   struct { int first, second; } first, second;
 ///   int i(second.first);
 ///   int j(first.second);
-/// MemberExpression(Member(hasName("first")))
+/// memberExpression(member(hasName("first")))
 ///   matches second.first
 ///   but not first.second (because the member name there is "second").
 AST_MATCHER_P(clang::MemberExpr, member,
@@ -1366,9 +1366,9 @@ AST_MATCHER_P(clang::MemberExpr, member,
 /// Given
 ///   struct X { int m; };
 ///   void f(X x) { x.m; m; }
-/// MemberExpression(HasObjectExpression(HasType(record(hasName("X")))))))
+/// memberExpression(hasObjectExpression(hasType(record(hasName("X")))))))
 ///   matches "x.m" and "m"
-/// with HasObjectExpression(...)
+/// with hasObjectExpression(...)
 ///   matching "x" and the implicit object expression of "m" which has type X*.
 AST_MATCHER_P(clang::MemberExpr, hasObjectExpression,
               internal::Matcher<clang::Expr>, InnerMatcher) {
@@ -1382,13 +1382,13 @@ AST_MATCHER_P(clang::MemberExpr, hasObjectExpression,
 ///   template <typename T> class X {}; class A {}; X<A> x;
 /// or
 ///   template <typename T> class X {}; class A {}; template class X<A>;
-/// record(hasName("::X"), IsTemplateInstantiation())
+/// record(hasName("::X"), isTemplateInstantiation())
 ///   matches the template instantiation of X<A>.
 ///
 /// But given
 ///   template <typename T> class X {}; class A {};
 ///   template <> class X<A> {}; X<A> x;
-/// record(hasName("::X"), IsTemplateInstantiation())
+/// record(hasName("::X"), isTemplateInstantiation())
 ///   does not match, as X<A> is an explicit template specialization.
 inline internal::PolymorphicMatcherWithParam0<
   internal::IsTemplateInstantiationMatcher>
