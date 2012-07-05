@@ -3599,8 +3599,10 @@ namespace {
 class MipsTargetInfoBase : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
-  bool SoftFloat;
-  bool SingleFloat;
+  bool IsMips16;
+  enum MipsFloatABI {
+    HardFloat, SingleFloat, SoftFloat
+  } FloatABI;
 
 protected:
   std::string ABI;
@@ -3611,7 +3613,8 @@ public:
                      const std::string& CPUStr)
     : TargetInfo(triple),
       CPU(CPUStr),
-      SoftFloat(false), SingleFloat(false),
+      IsMips16(false),
+      FloatABI(HardFloat),
       ABI(ABIStr)
   {}
 
@@ -3628,15 +3631,22 @@ public:
 
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
-    if (SoftFloat && SingleFloat)
-      llvm_unreachable("Invalid float ABI for Mips.");
-    else if (SoftFloat)
-      Builder.defineMacro("__mips_soft_float", Twine(1));
-    else {
+    switch (FloatABI) {
+    default:
+    case HardFloat:
       Builder.defineMacro("__mips_hard_float", Twine(1));
-      if (SingleFloat)
-        Builder.defineMacro("__mips_single_float", Twine(1));
+      break;
+    case SingleFloat:
+      Builder.defineMacro("__mips_hard_float", Twine(1));
+      Builder.defineMacro("__mips_single_float", Twine(1));
+      break;
+    case SoftFloat:
+      Builder.defineMacro("__mips_soft_float", Twine(1));
+      break;
     }
+
+    if (IsMips16)
+      Builder.defineMacro("__mips16", Twine(1));
 
     Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
     Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
@@ -3708,7 +3718,8 @@ public:
     if (Name == "soft-float" || Name == "single-float" ||
         Name == "o32" || Name == "n32" || Name == "n64" || Name == "eabi" ||
         Name == "mips32" || Name == "mips32r2" ||
-        Name == "mips64" || Name == "mips64r2") {
+        Name == "mips64" || Name == "mips64r2" ||
+        Name == "mips16") {
       Features[Name] = Enabled;
       return true;
     }
@@ -3716,24 +3727,24 @@ public:
   }
 
   virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
-    SoftFloat = false;
-    SingleFloat = false;
+    IsMips16 = false;
+    FloatABI = HardFloat;
 
     for (std::vector<std::string>::iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it) {
-      if (*it == "+single-float") {
-        SingleFloat = true;
-        break;
-      }
-
-      if (*it == "+soft-float") {
-        SoftFloat = true;
-        // This option is front-end specific.
-        // Do not need to pass it to the backend.
-        Features.erase(it);
-        break;
-      }
+      if (*it == "+single-float")
+        FloatABI = SingleFloat;
+      else if (*it == "+soft-float")
+        FloatABI = SoftFloat;
+      else if (*it == "+mips16")
+        IsMips16 = true;
     }
+
+    // Remove front-end specific option.
+    std::vector<std::string>::iterator it =
+      std::find(Features.begin(), Features.end(), "+soft-float");
+    if (it != Features.end())
+      Features.erase(it);
   }
 };
 
