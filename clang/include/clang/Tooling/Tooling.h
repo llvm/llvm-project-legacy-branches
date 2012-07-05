@@ -77,7 +77,7 @@ FrontendActionFactory *newFrontendActionFactory();
 /// \brief Returns a new FrontendActionFactory for any type that provides an
 /// implementation of newASTConsumer().
 ///
-/// FactoryT must implement: FrontendAction *newASTConsumer().
+/// FactoryT must implement: ASTConsumer *newASTConsumer().
 ///
 /// Example:
 /// struct ProvidesASTConsumers {
