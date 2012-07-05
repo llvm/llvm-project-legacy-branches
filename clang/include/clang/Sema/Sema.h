@@ -28,6 +28,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
+#include "clang/AST/LambdaMangleContext.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/NSAPI.h"
 #include "clang/Lex/ModuleLoader.h"
@@ -2493,12 +2494,14 @@ public:
                           FullExprArg Third,
                           SourceLocation RParenLoc,
                           Stmt *Body);
-  ExprResult ActOnObjCForCollectionOperand(SourceLocation forLoc,
+  ExprResult CheckObjCForCollectionOperand(SourceLocation forLoc,
                                            Expr *collection);
   StmtResult ActOnObjCForCollectionStmt(SourceLocation ForColLoc,
                                         SourceLocation LParenLoc,
-                                        Stmt *First, Expr *Second,
-                                        SourceLocation RParenLoc, Stmt *Body);
+                                        Stmt *First, Expr *collection,
+                                        SourceLocation RParenLoc);
+  StmtResult FinishObjCForCollectionStmt(Stmt *ForCollection, Stmt *Body);
+  
   StmtResult ActOnCXXForRangeStmt(SourceLocation ForLoc,
                                   SourceLocation LParenLoc, Stmt *LoopVar,
                                   SourceLocation ColonLoc, Expr *Collection,
@@ -3300,7 +3303,7 @@ public:
   public:
     explicit ImplicitExceptionSpecification(Sema &Self)
       : Self(&Self), ComputedEST(EST_BasicNoexcept) {
-      if (!Self.Context.getLangOpts().CPlusPlus0x)
+      if (!Self.getLangOpts().CPlusPlus0x)
         ComputedEST = EST_DynamicNone;
     }
 

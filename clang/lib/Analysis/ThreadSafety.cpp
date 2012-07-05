@@ -26,6 +26,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/OperatorKinds.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/ImmutableMap.h"
@@ -162,6 +163,13 @@ class MutexID {
         buildMutexID(At->getArg(), &LRCallCtx);
         return;
       }
+      // Hack to treat smart pointers and iterators as pointers;
+      // ignore any method named get().
+      if (CMCE->getMethodDecl()->getNameAsString() == "get" &&
+          CMCE->getNumArgs() == 0) {
+        buildMutexID(CMCE->getImplicitObjectArgument(), CallCtx);
+        return;
+      }
       DeclSeq.push_back(CMCE->getMethodDecl()->getCanonicalDecl());
       buildMutexID(CMCE->getImplicitObjectArgument(), CallCtx);
       unsigned NumCallArgs = CMCE->getNumArgs();
@@ -178,6 +186,15 @@ class MutexID {
         LRCallCtx.PrevCtx = CallCtx;
         buildMutexID(At->getArg(), &LRCallCtx);
         return;
+      }
+      // Treat smart pointers and iterators as pointers;
+      // ignore the * and -> operators.
+      if (CXXOperatorCallExpr *OE = dyn_cast<CXXOperatorCallExpr>(CE)) {
+        OverloadedOperatorKind k = OE->getOperator();
+        if (k == OO_Arrow || k == OO_Star) {
+          buildMutexID(OE->getArg(0), CallCtx);
+          return;
+        }
       }
       buildMutexID(CE->getCallee(), CallCtx);
       unsigned NumCallArgs = CE->getNumArgs();
@@ -206,15 +223,19 @@ class MutexID {
       buildMutexID(CE->getSubExpr(), CallCtx);
     } else if (ParenExpr *PE = dyn_cast<ParenExpr>(Exp)) {
       buildMutexID(PE->getSubExpr(), CallCtx);
+    } else if (ExprWithCleanups *EWC = dyn_cast<ExprWithCleanups>(Exp)) {
+      buildMutexID(EWC->getSubExpr(), CallCtx);
+    } else if (CXXBindTemporaryExpr *E = dyn_cast<CXXBindTemporaryExpr>(Exp)) {
+      buildMutexID(E->getSubExpr(), CallCtx);
     } else if (isa<CharacterLiteral>(Exp) ||
-             isa<CXXNullPtrLiteralExpr>(Exp) ||
-             isa<GNUNullExpr>(Exp) ||
-             isa<CXXBoolLiteralExpr>(Exp) ||
-             isa<FloatingLiteral>(Exp) ||
-             isa<ImaginaryLiteral>(Exp) ||
-             isa<IntegerLiteral>(Exp) ||
-             isa<StringLiteral>(Exp) ||
-             isa<ObjCStringLiteral>(Exp)) {
+               isa<CXXNullPtrLiteralExpr>(Exp) ||
+               isa<GNUNullExpr>(Exp) ||
+               isa<CXXBoolLiteralExpr>(Exp) ||
+               isa<FloatingLiteral>(Exp) ||
+               isa<ImaginaryLiteral>(Exp) ||
+               isa<IntegerLiteral>(Exp) ||
+               isa<StringLiteral>(Exp) ||
+               isa<ObjCStringLiteral>(Exp)) {
       return;  // FIXME: Ignore literals for now
     } else {
       // Ignore.  FIXME: mark as invalid expression?
@@ -1523,6 +1544,10 @@ void BuildLockset::VisitDeclStmt(DeclStmt *S) {
     Decl *D = *I;
     if (VarDecl *VD = dyn_cast_or_null<VarDecl>(D)) {
       Expr *E = VD->getInit();
+      // handle constructors that involve temporaries
+      if (ExprWithCleanups *EWC = dyn_cast_or_null<ExprWithCleanups>(E))
+        E = EWC->getSubExpr();
+
       if (CXXConstructExpr *CE = dyn_cast_or_null<CXXConstructExpr>(E)) {
         NamedDecl *CtorD = dyn_cast_or_null<NamedDecl>(CE->getConstructor());
         if (!CtorD || !CtorD->hasAttrs())
