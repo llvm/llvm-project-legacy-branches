@@ -289,7 +289,7 @@ public:
   }
 
   virtual bool classIsDerivedFrom(const clang::CXXRecordDecl *Declaration,
-                                  const std::string &BaseName) const;
+                                  StringRef BaseName) const;
 
   // Implements ASTMatchFinder::MatchesChildOf.
   virtual bool matchesChildOf(const clang::Decl &DeclNode,
@@ -351,7 +351,7 @@ private:
   // words, there is a type (including typedef) with the name 'Name'
   // that is equal to 'TypeNode'.
   bool typeHasAlias(const clang::Type *TypeNode,
-                    const std::string &Name) const {
+                    StringRef Name) const {
     const clang::Type *const CanonicalType =
       ActiveASTContext->getCanonicalType(TypeNode);
     const std::set<std::string> *UnqualifiedAlias =
@@ -394,8 +394,8 @@ private:
 // also derived from itself.
 bool
 MatchASTVisitor::classIsDerivedFrom(const clang::CXXRecordDecl *Declaration,
-                                    const std::string &BaseName) const {
-  if (std::string(Declaration->getName()) == BaseName) {
+                                    StringRef BaseName) const {
+  if (Declaration->getName() == BaseName) {
     return true;
   }
   if (!Declaration->hasDefinition()) {

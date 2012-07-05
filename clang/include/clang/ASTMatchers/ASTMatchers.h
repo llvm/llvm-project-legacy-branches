@@ -67,11 +67,11 @@ public:
   /// FIXME: We'll need one of those for every base type.
   /// @{
   template <typename T>
-  const T *getDeclAs(const std::string &ID) const {
+  const T *getDeclAs(StringRef ID) const {
     return getNodeAs<T>(DeclBindings, ID);
   }
   template <typename T>
-  const T *getStmtAs(const std::string &ID) const {
+  const T *getStmtAs(StringRef ID) const {
     return getNodeAs<T>(StmtBindings, ID);
   }
   /// @}
@@ -83,7 +83,7 @@ private:
       : DeclBindings(DeclBindings), StmtBindings(StmtBindings) {}
 
   template <typename T, typename MapT>
-  const T *getNodeAs(const MapT &Bindings, const std::string &ID) const {
+  const T *getNodeAs(const MapT &Bindings, StringRef ID) const {
     typename MapT::const_iterator It = Bindings.find(ID);
     if (It == Bindings.end()) {
       return NULL;

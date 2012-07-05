@@ -415,7 +415,7 @@ public:
   ///
   /// A class is considered to be also derived from itself.
   virtual bool classIsDerivedFrom(const clang::CXXRecordDecl *Declaration,
-                                  const std::string &BaseName) const = 0;
+                                  StringRef BaseName) const = 0;
 
   // FIXME: Implement for other base nodes.
   virtual bool matchesChildOf(const clang::Decl &DeclNode,
@@ -586,7 +586,7 @@ class IdMatcher : public MatcherInterface<T> {
 public:
   /// \brief Creates an IdMatcher that binds to 'ID' if 'InnerMatcher' matches
   /// the node.
-  IdMatcher(const std::string &ID, const Matcher<T> &InnerMatcher)
+  IdMatcher(StringRef ID, const Matcher<T> &InnerMatcher)
       : ID(ID), InnerMatcher(InnerMatcher) {}
 
   virtual bool matches(const T &Node,
