@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "RewriterTestContext.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclCXX.h"
@@ -30,64 +31,20 @@
 namespace clang {
 namespace tooling {
 
-class RewriterTestContext {
- public:
-  RewriterTestContext()
-      : Diagnostics(llvm::IntrusiveRefCntPtr<DiagnosticIDs>()),
-        DiagnosticPrinter(llvm::outs(), DiagnosticOptions()),
-        Files((FileSystemOptions())),
-        Sources(Diagnostics, Files),
-        Rewrite(Sources, Options) {
-    Diagnostics.setClient(&DiagnosticPrinter, false);
-  }
-
-  FileID createInMemoryFile(llvm::StringRef Name, llvm::StringRef Content) {
-    const llvm::MemoryBuffer *Source =
-      llvm::MemoryBuffer::getMemBuffer(Content);
-    const FileEntry *Entry =
-      Files.getVirtualFile(Name, Source->getBufferSize(), 0);
-    Sources.overrideFileContents(Entry, Source, true);
-    assert(Entry != NULL);
-    return Sources.createFileID(Entry, SourceLocation(), SrcMgr::C_User);
-  }
-
-  SourceLocation getLocation(FileID ID, unsigned Line, unsigned Column) {
-    SourceLocation Result = Sources.translateFileLineCol(
-        Sources.getFileEntryForID(ID), Line, Column);
-    assert(Result.isValid());
-    return Result;
-  }
-
-  std::string getRewrittenText(FileID ID) {
-    std::string Result;
-    llvm::raw_string_ostream OS(Result);
-    Rewrite.getEditBuffer(ID).write(OS);
-    OS.flush();
-    return Result;
-  }
-
-  Replacement createReplacement(SourceLocation Start, unsigned Length,
-                                llvm::StringRef ReplacementText) {
-    return Replacement(Sources, Start, Length, ReplacementText);
-  }
-
-  DiagnosticsEngine Diagnostics;
-  TextDiagnosticPrinter DiagnosticPrinter;
-  FileManager Files;
-  SourceManager Sources;
-  LangOptions Options;
-  Rewriter Rewrite;
-};
-
 class ReplacementTest : public ::testing::Test {
  protected:
+  Replacement createReplacement(SourceLocation Start, unsigned Length,
+                                llvm::StringRef ReplacementText) {
+    return Replacement(Context.Sources, Start, Length, ReplacementText);
+  }
+
   RewriterTestContext Context;
 };
 
 TEST_F(ReplacementTest, CanDeleteAllText) {
   FileID ID = Context.createInMemoryFile("input.cpp", "text");
   SourceLocation Location = Context.getLocation(ID, 1, 1);
-  Replacement Replace(Context.createReplacement(Location, 4, ""));
+  Replacement Replace(createReplacement(Location, 4, ""));
   EXPECT_TRUE(Replace.apply(Context.Rewrite));
   EXPECT_EQ("", Context.getRewrittenText(ID));
 }
@@ -95,7 +52,7 @@ TEST_F(ReplacementTest, CanDeleteAllText) {
 TEST_F(ReplacementTest, CanDeleteAllTextInTextWithNewlines) {
   FileID ID = Context.createInMemoryFile("input.cpp", "line1\nline2\nline3");
   SourceLocation Location = Context.getLocation(ID, 1, 1);
-  Replacement Replace(Context.createReplacement(Location, 17, ""));
+  Replacement Replace(createReplacement(Location, 17, ""));
   EXPECT_TRUE(Replace.apply(Context.Rewrite));
   EXPECT_EQ("", Context.getRewrittenText(ID));
 }
@@ -103,7 +60,7 @@ TEST_F(ReplacementTest, CanDeleteAllTextInTextWithNewlines) {
 TEST_F(ReplacementTest, CanAddText) {
   FileID ID = Context.createInMemoryFile("input.cpp", "");
   SourceLocation Location = Context.getLocation(ID, 1, 1);
-  Replacement Replace(Context.createReplacement(Location, 0, "result"));
+  Replacement Replace(createReplacement(Location, 0, "result"));
   EXPECT_TRUE(Replace.apply(Context.Rewrite));
   EXPECT_EQ("result", Context.getRewrittenText(ID));
 }
@@ -112,7 +69,7 @@ TEST_F(ReplacementTest, CanReplaceTextAtPosition) {
   FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
   SourceLocation Location = Context.getLocation(ID, 2, 3);
-  Replacement Replace(Context.createReplacement(Location, 12, "x"));
+  Replacement Replace(createReplacement(Location, 12, "x"));
   EXPECT_TRUE(Replace.apply(Context.Rewrite));
   EXPECT_EQ("line1\nlixne4", Context.getRewrittenText(ID));
 }
@@ -121,14 +78,14 @@ TEST_F(ReplacementTest, CanReplaceTextAtPositionMultipleTimes) {
   FileID ID = Context.createInMemoryFile("input.cpp",
                                          "line1\nline2\nline3\nline4");
   SourceLocation Location1 = Context.getLocation(ID, 2, 3);
-  Replacement Replace1(Context.createReplacement(Location1, 12, "x\ny\n"));
+  Replacement Replace1(createReplacement(Location1, 12, "x\ny\n"));
   EXPECT_TRUE(Replace1.apply(Context.Rewrite));
   EXPECT_EQ("line1\nlix\ny\nne4", Context.getRewrittenText(ID));
 
   // Since the original source has not been modified, the (4, 4) points to the
   // 'e' in the original content.
   SourceLocation Location2 = Context.getLocation(ID, 4, 4);
-  Replacement Replace2(Context.createReplacement(Location2, 1, "f"));
+  Replacement Replace2(createReplacement(Location2, 1, "f"));
   EXPECT_TRUE(Replace2.apply(Context.Rewrite));
   EXPECT_EQ("line1\nlix\ny\nnf4", Context.getRewrittenText(ID));
 }
