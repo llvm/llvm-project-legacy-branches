@@ -693,10 +693,6 @@ Module::FindTypes (const SymbolContext& sc,
             types.RemoveMismatchedTypes (type_scope, type_basename, exact_match);
             num_matches = types.GetSize();
         }
-        else
-        {
-            types.Clear();
-        }
     }
     else
     {
@@ -1139,11 +1135,11 @@ Module::SetLoadAddress (Target &target, lldb::addr_t offset, bool &changed)
                 // Iterate through the object file sections to find the
                 // first section that starts of file offset zero and that
                 // has bytes in the file...
-                Section *section = section_list->GetSectionAtIndex (sect_idx).get();
+                SectionSP section_sp (section_list->GetSectionAtIndex (sect_idx));
                 // Only load non-thread specific sections when given a slide
-                if (section && !section->IsThreadSpecific())
+                if (section_sp && !section_sp->IsThreadSpecific())
                 {
-                    if (target.GetSectionLoadList().SetSectionLoadAddress (section, section->GetFileAddress() + offset))
+                    if (target.GetSectionLoadList().SetSectionLoadAddress (section_sp, section_sp->GetFileAddress() + offset))
                         ++num_loaded_sections;
                 }
             }
