@@ -2933,13 +2933,8 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                             func_start_entry->data = true;
                             
                             addr_t symbol_file_addr = func_start_entry->addr;
-                            uint32_t symbol_flags = 0;
                             if (is_arm)
-                            {
-                                if (symbol_file_addr & 1)
-                                    symbol_flags = MACHO_NLIST_ARM_SYMBOL_IS_THUMB;
                                 symbol_file_addr &= 0xfffffffffffffffeull;
-                            }
 
                             const FunctionStarts::Entry *next_func_start_entry = function_starts.FindNextEntry (func_start_entry);
                             const addr_t section_end_file_addr = section_file_addr + symbol_section->GetByteSize();
@@ -3236,8 +3231,21 @@ ObjectFileMachO::GetUUID (lldb_private::UUID* uuid)
             if (load_cmd.cmd == LoadCommandUUID)
             {
                 const uint8_t *uuid_bytes = m_data.PeekData(offset, 16);
+                
                 if (uuid_bytes)
                 {
+                    // OpenCL on Mac OS X uses the same UUID for each of its object files.
+                    // We pretend these object files have no UUID to prevent crashing.
+                    
+                    const uint8_t opencl_uuid[] = { 0x8c, 0x8e, 0xb3, 0x9b,
+                                                    0x3b, 0xa8,
+                                                    0x4b, 0x16,
+                                                    0xb6, 0xa4,
+                                                    0x27, 0x63, 0xbb, 0x14, 0xf0, 0x0d };
+                    
+                    if (!memcmp(uuid_bytes, opencl_uuid, 16))
+                        return false;
+                    
                     uuid->SetBytes (uuid_bytes);
                     return true;
                 }

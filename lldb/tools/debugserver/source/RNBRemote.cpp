@@ -586,7 +586,7 @@ RNBRemote::CommDataReceived(const std::string& new_data)
                 case '$':
                     // Look for a standard gdb packet?
                     end_idx = data.find('#',  idx + 1);
-                    if (end_idx == std::string::npos || end_idx + 2 > data_size)
+                    if (end_idx == std::string::npos || end_idx + 3 > data_size)
                     {
                         end_idx = std::string::npos;
                     }
@@ -594,7 +594,7 @@ RNBRemote::CommDataReceived(const std::string& new_data)
                     {
                         // Add two for the checksum bytes and 1 to point to the
                         // byte just past the end of this packet
-                        end_idx += 2 + 1;
+                        end_idx += 3;
                     }
                     break;
 
@@ -1674,7 +1674,7 @@ set_logging (const char *p)
                 }
             }
             // Did we get a properly formatted logging bitmask?
-            if (*p == ';')
+            if (p && *p == ';')
             {
                 // Enable DNB logging
                 DNBLogSetLogCallback(ASLLogCallback, NULL);
@@ -2028,14 +2028,21 @@ void
 register_value_in_hex_fixed_width (std::ostream& ostrm,
                                    nub_process_t pid,
                                    nub_thread_t tid,
-                                   const register_map_entry_t* reg)
+                                   const register_map_entry_t* reg,
+                                   const DNBRegisterValue *reg_value_ptr)
 {
     if (reg != NULL)
     {
-        DNBRegisterValue val;
-        if (DNBThreadGetRegisterValueByID (pid, tid, reg->nub_info.set, reg->nub_info.reg, &val))
+        DNBRegisterValue reg_value;
+        if (reg_value_ptr == NULL)
         {
-            append_hex_value (ostrm, val.value.v_uint8, reg->gdb_size, false);
+            if (DNBThreadGetRegisterValueByID (pid, tid, reg->nub_info.set, reg->nub_info.reg, &reg_value))
+                reg_value_ptr = &reg_value;
+        }
+        
+        if (reg_value_ptr)
+        {
+            append_hex_value (ostrm, reg_value_ptr->value.v_uint8, reg->gdb_size, false);
         }
         else
         {
@@ -2063,7 +2070,8 @@ void
 gdb_regnum_with_fixed_width_hex_register_value (std::ostream& ostrm,
                                                 nub_process_t pid,
                                                 nub_thread_t tid,
-                                                const register_map_entry_t* reg)
+                                                const register_map_entry_t* reg,
+                                                const DNBRegisterValue *reg_value_ptr)
 {
     // Output the register number as 'NN:VVVVVVVV;' where NN is a 2 bytes HEX
     // gdb register number, and VVVVVVVV is the correct number of hex bytes
@@ -2071,7 +2079,7 @@ gdb_regnum_with_fixed_width_hex_register_value (std::ostream& ostrm,
     if (reg != NULL)
     {
         ostrm << RAWHEX8(reg->gdb_regnum) << ':';
-        register_value_in_hex_fixed_width (ostrm, pid, tid, reg);
+        register_value_in_hex_fixed_width (ostrm, pid, tid, reg, reg_value_ptr);
         ostrm << ';';
     }
 }
@@ -2173,15 +2181,18 @@ RNBRemote::SendStopReplyPacketForThread (nub_thread_t tid)
         if (g_num_reg_entries == 0)
             InitializeRegisters ();
 
-        DNBRegisterValue reg_value;
-        for (uint32_t reg = 0; reg < g_num_reg_entries; reg++)
+        if (g_reg_entries != NULL)
         {
-            if (g_reg_entries[reg].expedite)
+            DNBRegisterValue reg_value;
+            for (uint32_t reg = 0; reg < g_num_reg_entries; reg++)
             {
-                if (!DNBThreadGetRegisterValueByID (pid, tid, g_reg_entries[reg].nub_info.set, g_reg_entries[reg].nub_info.reg, &reg_value))
-                    continue;
+                if (g_reg_entries[reg].expedite)
+                {
+                    if (!DNBThreadGetRegisterValueByID (pid, tid, g_reg_entries[reg].nub_info.set, g_reg_entries[reg].nub_info.reg, &reg_value))
+                        continue;
 
-                gdb_regnum_with_fixed_width_hex_register_value (ostrm, pid, tid, &g_reg_entries[reg]);
+                    gdb_regnum_with_fixed_width_hex_register_value (ostrm, pid, tid, &g_reg_entries[reg], &reg_value);
+                }
             }
         }
 
@@ -2496,7 +2507,7 @@ RNBRemote::HandlePacket_g (const char *p)
     }
     
     for (uint32_t reg = 0; reg < g_num_reg_entries; reg++)
-        register_value_in_hex_fixed_width (ostrm, pid, tid, &g_reg_entries[reg]);
+        register_value_in_hex_fixed_width (ostrm, pid, tid, &g_reg_entries[reg], NULL);
 
     return SendPacket (ostrm.str ());
 }
@@ -2695,7 +2706,6 @@ RNBRemote::HandlePacket_v (const char *p)
     }
     else if (strstr (p, "vCont") == p)
     {
-        rnb_err_t rnb_err = rnb_success;
         typedef struct
         {
             nub_thread_t tid;
@@ -2747,7 +2757,7 @@ RNBRemote::HandlePacket_v (const char *p)
                     break;
 
                 default:
-                    rnb_err = HandlePacket_ILLFORMED (__FILE__, __LINE__, p, "Unsupported action in vCont packet");
+                    HandlePacket_ILLFORMED (__FILE__, __LINE__, p, "Unsupported action in vCont packet");
                     break;
             }
             if (*c == ':')
@@ -3194,7 +3204,7 @@ RNBRemote::HandlePacket_p (const char *p)
     }
     else
     {
-        register_value_in_hex_fixed_width (ostrm, pid, tid, reg_entry);
+        register_value_in_hex_fixed_width (ostrm, pid, tid, reg_entry, NULL);
     }
     return SendPacket (ostrm.str());
 }
@@ -3587,10 +3597,13 @@ RNBRemote::HandlePacket_qHostInfo (const char *p)
     if (cputype == CPU_TYPE_ARM)
     {
         strm << "ostype:ios;";
+        // On armv7 we use "synchronous" watchpoints which means the exception is delivered before the instruction executes.
+        strm << "watchpoint_exceptions_received:before;";
     }
     else
     {
         strm << "ostype:macosx;";
+        strm << "watchpoint_exceptions_received:after;";
     }
 //    char ostype[64];
 //    len = sizeof(ostype);
