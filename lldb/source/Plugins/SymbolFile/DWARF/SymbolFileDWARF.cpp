@@ -859,9 +859,9 @@ SymbolFileDWARF::ParseCompileUnitFunction (const SymbolContext& sc, DWARFCompile
         {
             Mangled func_name;
             if (mangled)
-                func_name.SetValue(mangled, true);
+                func_name.SetValue(ConstString(mangled), true);
             else if (name)
-                func_name.SetValue(name, false);
+                func_name.SetValue(ConstString(name), false);
 
             FunctionSP func_sp;
             std::auto_ptr<Declaration> decl_ap;
@@ -3069,7 +3069,7 @@ SymbolFileDWARF::FunctionDieMatchesPartialName (const DWARFDebugInfoEntry* die,
             if (attributes.ExtractFormValueAtIndex(this, idx, form_value))
             {
                 const char *name = form_value.AsCString(&get_debug_str_data());
-                best_name.SetValue (name, true);
+                best_name.SetValue (ConstString(name), true);
             } 
         }
         if (best_name)
@@ -6162,9 +6162,6 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                         {
                             std::vector<uint64_t> element_orders;
                             ParseChildArrayInfo(sc, dwarf_cu, die, first_index, element_orders, byte_stride, bit_stride);
-                            // We have an array that claims to have no members, lets give it at least one member...
-                            if (element_orders.empty())
-                                element_orders.push_back (1);
                             if (byte_stride == 0 && bit_stride == 0)
                                 byte_stride = element_type->GetByteSize();
                             clang_type_t array_element_type = element_type->GetClangForwardType();
