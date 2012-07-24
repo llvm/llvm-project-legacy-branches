@@ -1156,9 +1156,6 @@ ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type
     if (decl)
         SetMetadata(ast, (uintptr_t)decl, metadata);
     
-    if (!name)
-        decl->setAnonymousStructOrUnion(true);
-
     if (decl_ctx)
     {
         if (access_type != eAccessNone)
@@ -1961,8 +1958,18 @@ ClangASTContext::AddFieldToRecordType
                                                   false,      // Mutable
                                                   false);     // HasInit
             
-            if (!name)
-                field->setImplicit();
+            if (!name) {
+                // Determine whether this field corresponds to an anonymous
+                // struct or union.
+                if (const TagType *TagT = field->getType()->getAs<TagType>()) {
+                  if (RecordDecl *Rec = dyn_cast<RecordDecl>(TagT->getDecl()))
+                    if (!Rec->getDeclName()) {
+                      Rec->setAnonymousStructOrUnion(true);
+                      field->setImplicit();
+
+                    }
+                }
+            }
 
             field->setAccess (ConvertAccessTypeToAccessSpecifier (access));
 
@@ -2413,7 +2420,7 @@ ClangASTContext::AddObjCClassProperty
         {
             ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
             
-            clang_type_t property_opaque_type_to_access;
+            clang_type_t property_opaque_type_to_access = NULL;
             
             if (property_opaque_type)
                 property_opaque_type_to_access = property_opaque_type;
@@ -6321,5 +6328,51 @@ clang::DeclContext *
 ClangASTContext::GetAsDeclContext (clang::ObjCMethodDecl *objc_method_decl)
 {
     return llvm::dyn_cast<clang::DeclContext>(objc_method_decl);
+}
+
+
+bool
+ClangASTContext::GetClassMethodInfoForDeclContext (clang::DeclContext *decl_ctx,
+                                                   lldb::LanguageType &language,
+                                                   bool &is_instance_method,
+                                                   ConstString &language_object_name)
+{
+    language_object_name.Clear();
+    language = eLanguageTypeUnknown;
+    is_instance_method = false;
+
+    if (decl_ctx)
+    {
+        if (clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_ctx))
+        {
+            if (method_decl->isStatic())
+            {
+                is_instance_method = false;
+            }
+            else
+            {
+                language_object_name.SetCString("this");
+                is_instance_method = true;
+            }
+            language = eLanguageTypeC_plus_plus;
+            return true;
+        }
+        else if (clang::ObjCMethodDecl *method_decl = llvm::dyn_cast<clang::ObjCMethodDecl>(decl_ctx))
+        {
+            // Both static and instance methods have a "self" object in objective C
+            language_object_name.SetCString("self");
+            if (method_decl->isInstanceMethod())
+            {
+                is_instance_method = true;
+            }
+            else
+            {
+                is_instance_method = false;
+            }
+            language = eLanguageTypeObjC;
+            return true;
+        }
+    }
+    return false;
 }
 

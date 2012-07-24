@@ -762,9 +762,7 @@ public:
                          uint32_t first_frame,
                          uint32_t num_frames,
                          bool show_frame_info,
-                         uint32_t num_frames_with_source,
-                         uint32_t source_lines_before,
-                         uint32_t source_lines_after);
+                         uint32_t num_frames_with_source);
 
     // We need a way to verify that even though we have a thread in a shared
     // pointer that the object itself is still valid. Currently this won't be
@@ -775,6 +773,13 @@ public:
     {
         return m_destroy_called;
     }
+
+    // When you implement this method, make sure you don't overwrite the m_actual_stop_info if it claims to be
+    // valid.  The stop info may be a "checkpointed and restored" stop info, so if it is still around it is right
+    // even if you have not calculated this yourself, or if it disagrees with what you might have calculated.
+    virtual lldb::StopInfoSP
+    GetPrivateStopReason () = 0;
+
 protected:
 
     friend class ThreadPlan;
@@ -795,12 +800,6 @@ protected:
     DiscardPlan ();
 
     ThreadPlan *GetPreviousPlan (ThreadPlan *plan);
-
-    // When you implement this method, make sure you don't overwrite the m_actual_stop_info if it claims to be
-    // valid.  The stop info may be a "checkpointed and restored" stop info, so if it is still around it is right
-    // even if you have not calculated this yourself, or if it disagrees with what you might have calculated.
-    virtual lldb::StopInfoSP
-    GetPrivateStopReason () = 0;
 
     typedef std::vector<lldb::ThreadPlanSP> plan_stack;
 

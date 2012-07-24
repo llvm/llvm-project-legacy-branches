@@ -49,7 +49,7 @@ class ProcessLaunchTestCase(TestBase):
             pass
 
         launch_command = "process launch -i " + in_file + " -o " + out_file + " -e " + err_file
-        
+
         self.expect (launch_command,
                      patterns = [ "Process .* launched: .*a.out" ])
 
@@ -70,7 +70,7 @@ class ProcessLaunchTestCase(TestBase):
                 success = False
                 err_msg = err_msg + "    ERROR: stdout file does not contain correct output.\n"
                 out_f.close();
-            
+
         # Try to delete the 'stdout' file
         try:
             os.remove (out_file)
@@ -141,6 +141,15 @@ class ProcessLaunchTestCase(TestBase):
         except OSError:
             pass
 
+        # Check that we get an error when we have a nonexisting path
+        launch_command = "process launch -w %s -o %s -e %s" % (my_working_dir_path + 'z',
+                                                               out_file_path,
+                                                               err_file_path)
+
+        self.expect(launch_command, error=True,
+                startstr = "error: No such file or directory: %sz" % my_working_dir_path)
+
+        # Really launch the process
         launch_command = "process launch -w %s -o %s -e %s" % (my_working_dir_path,
                                                                out_file_path,
                                                                err_file_path)
@@ -166,7 +175,7 @@ class ProcessLaunchTestCase(TestBase):
                 success = False
                 err_msg = err_msg + "The current working directory was not set correctly.\n"
                 out_f.close();
-            
+
         # Try to delete the 'stdout' and 'stderr' files
         try:
             os.remove(out_file_path)

@@ -1801,7 +1801,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                                 {
                                                                     // We have two consecutive N_SO entries where the first contains a directory
                                                                     // and the second contains a full path.
-                                                                    sym[sym_idx - 1].GetMangled().SetValue(symbol_name, false);
+                                                                    sym[sym_idx - 1].GetMangled().SetValue(ConstString(symbol_name), false);
                                                                     m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                                                                     add_nlist = false;
                                                                 }
@@ -1823,7 +1823,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                                     if (*full_so_path.rbegin() != '/')
                                                                         full_so_path += '/';
                                                                     full_so_path += symbol_name;
-                                                                    sym[sym_idx - 1].GetMangled().SetValue(full_so_path.c_str(), false);
+                                                                    sym[sym_idx - 1].GetMangled().SetValue(ConstString(full_so_path.c_str()), false);
                                                                     add_nlist = false;
                                                                     m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                                                                 }
@@ -2127,8 +2127,8 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                 
                                                 if (symbol_name_non_abi_mangled)
                                                 {
-                                                    sym[sym_idx].GetMangled().SetMangledName (symbol_name_non_abi_mangled);
-                                                    sym[sym_idx].GetMangled().SetDemangledName (symbol_name);
+                                                    sym[sym_idx].GetMangled().SetMangledName (ConstString(symbol_name_non_abi_mangled));
+                                                    sym[sym_idx].GetMangled().SetDemangledName (ConstString(symbol_name));
                                                 }
                                                 else
                                                 {
@@ -2140,7 +2140,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                     
                                                     if (symbol_name)
                                                     {
-                                                        sym[sym_idx].GetMangled().SetValue(symbol_name, symbol_name_is_mangled);
+                                                        sym[sym_idx].GetMangled().SetValue(ConstString(symbol_name), symbol_name_is_mangled);
                                                     }
                                                 }
                                                 
@@ -2520,7 +2520,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                             {
                                 // We have two consecutive N_SO entries where the first contains a directory
                                 // and the second contains a full path.
-                                sym[sym_idx - 1].GetMangled().SetValue(symbol_name, false);
+                                sym[sym_idx - 1].GetMangled().SetValue(ConstString(symbol_name), false);
                                 m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                                 add_nlist = false;
                             }
@@ -2542,7 +2542,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                 if (*full_so_path.rbegin() != '/')
                                     full_so_path += '/';
                                 full_so_path += symbol_name;
-                                sym[sym_idx - 1].GetMangled().SetValue(full_so_path.c_str(), false);
+                                sym[sym_idx - 1].GetMangled().SetValue(ConstString(full_so_path.c_str()), false);
                                 add_nlist = false;
                                 m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                             }
@@ -2846,8 +2846,8 @@ struct lldb_copy_dyld_cache_local_symbols_entry
 
                 if (symbol_name_non_abi_mangled)
                 {
-                    sym[sym_idx].GetMangled().SetMangledName (symbol_name_non_abi_mangled);
-                    sym[sym_idx].GetMangled().SetDemangledName (symbol_name);
+                    sym[sym_idx].GetMangled().SetMangledName (ConstString(symbol_name_non_abi_mangled));
+                    sym[sym_idx].GetMangled().SetDemangledName (ConstString(symbol_name));
                 }
                 else
                 {
@@ -2859,7 +2859,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
 
                     if (symbol_name)
                     {
-                        sym[sym_idx].GetMangled().SetValue(symbol_name, symbol_name_is_mangled);
+                        sym[sym_idx].GetMangled().SetValue(ConstString(symbol_name), symbol_name_is_mangled);
                     }
                 }
 
@@ -2933,13 +2933,8 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                             func_start_entry->data = true;
                             
                             addr_t symbol_file_addr = func_start_entry->addr;
-                            uint32_t symbol_flags = 0;
                             if (is_arm)
-                            {
-                                if (symbol_file_addr & 1)
-                                    symbol_flags = MACHO_NLIST_ARM_SYMBOL_IS_THUMB;
                                 symbol_file_addr &= 0xfffffffffffffffeull;
-                            }
 
                             const FunctionStarts::Entry *next_func_start_entry = function_starts.FindNextEntry (func_start_entry);
                             const addr_t section_end_file_addr = section_file_addr + symbol_section->GetByteSize();
@@ -3070,7 +3065,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                           ++synthetic_function_symbol_idx,
                                           module_sp->GetFileSpec().GetFilename().GetCString());
                                 sym[sym_idx].SetID (synthetic_sym_id++);
-                                sym[sym_idx].GetMangled().SetDemangledName(synthetic_function_symbol);
+                                sym[sym_idx].GetMangled().SetDemangledName(ConstString(synthetic_function_symbol));
                                 sym[sym_idx].SetType (eSymbolTypeCode);
                                 sym[sym_idx].SetIsSynthetic (true);
                                 sym[sym_idx].GetAddress() = symbol_addr;
@@ -3236,8 +3231,21 @@ ObjectFileMachO::GetUUID (lldb_private::UUID* uuid)
             if (load_cmd.cmd == LoadCommandUUID)
             {
                 const uint8_t *uuid_bytes = m_data.PeekData(offset, 16);
+                
                 if (uuid_bytes)
                 {
+                    // OpenCL on Mac OS X uses the same UUID for each of its object files.
+                    // We pretend these object files have no UUID to prevent crashing.
+                    
+                    const uint8_t opencl_uuid[] = { 0x8c, 0x8e, 0xb3, 0x9b,
+                                                    0x3b, 0xa8,
+                                                    0x4b, 0x16,
+                                                    0xb6, 0xa4,
+                                                    0x27, 0x63, 0xbb, 0x14, 0xf0, 0x0d };
+                    
+                    if (!memcmp(uuid_bytes, opencl_uuid, 16))
+                        return false;
+                    
                     uuid->SetBytes (uuid_bytes);
                     return true;
                 }

@@ -924,7 +924,7 @@ public:
                              "Set a watchpoint on a variable. "
                              "Use the '-w' option to specify the type of watchpoint and "
                              "the '-x' option to specify the byte size to watch for. "
-                             "If no '-w' option is specified, it defaults to read_write. "
+                             "If no '-w' option is specified, it defaults to write. "
                              "If no '-x' option is specified, it defaults to the variable's "
                              "byte size. "
                              "Note that there are limited hardware resources for watchpoints. "
@@ -991,10 +991,10 @@ protected:
             return false;
         }
 
-        // If no '-w' is specified, default to '-w read_write'.
+        // If no '-w' is specified, default to '-w write'.
         if (!m_option_watchpoint.watch_type_specified)
         {
-            m_option_watchpoint.watch_type = OptionGroupWatchpoint::eWatchReadWrite;
+            m_option_watchpoint.watch_type = OptionGroupWatchpoint::eWatchWrite;
         }
 
         // We passed the sanity check for the command.
@@ -1015,7 +1015,8 @@ protected:
 
         // Things have checked out ok...
         Error error;
-        uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember;
+        uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember |
+                                     StackFrame::eExpressionPathOptionsAllowDirectIVarAccess;
         valobj_sp = frame->GetValueForVariableExpressionPath (command.GetArgumentAtIndex(0), 
                                                               eNoDynamicValues, 
                                                               expr_path_options,
@@ -1087,7 +1088,7 @@ public:
                           "Set a watchpoint on an address by supplying an expression. "
                           "Use the '-w' option to specify the type of watchpoint and "
                           "the '-x' option to specify the byte size to watch for. "
-                          "If no '-w' option is specified, it defaults to read_write. "
+                          "If no '-w' option is specified, it defaults to write. "
                           "If no '-x' option is specified, it defaults to the target's "
                           "pointer byte size. "
                           "Note that there are limited hardware resources for watchpoints. "
@@ -1167,10 +1168,10 @@ protected:
         bool with_dash_w = m_option_watchpoint.watch_type_specified;
         bool with_dash_x = (m_option_watchpoint.watch_size != 0);
 
-        // If no '-w' is specified, default to '-w read_write'.
+        // If no '-w' is specified, default to '-w write'.
         if (!with_dash_w)
         {
-            m_option_watchpoint.watch_type = OptionGroupWatchpoint::eWatchReadWrite;
+            m_option_watchpoint.watch_type = OptionGroupWatchpoint::eWatchWrite;
         }
 
         // We passed the sanity check for the command.
@@ -1205,7 +1206,8 @@ protected:
                                                                    unwind_on_error, 
                                                                    keep_in_memory, 
                                                                    eNoDynamicValues, 
-                                                                   valobj_sp);
+                                                                   valobj_sp,
+                                                                   0 /* no timeout */);
         if (expr_result != eExecutionCompleted) {
             result.GetErrorStream().Printf("error: expression evaluation of address to watch failed\n");
             result.GetErrorStream().Printf("expression evaluated: %s\n", expr_str.c_str());
@@ -1293,8 +1295,6 @@ CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(CommandInterp
                             "A set of commands for operating on watchpoints.",
                             "watchpoint <command> [<command-options>]")
 {
-    bool status;
-
     CommandObjectSP list_command_object (new CommandObjectWatchpointList (interpreter));
     CommandObjectSP enable_command_object (new CommandObjectWatchpointEnable (interpreter));
     CommandObjectSP disable_command_object (new CommandObjectWatchpointDisable (interpreter));
@@ -1311,13 +1311,13 @@ CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(CommandInterp
     modify_command_object->SetCommandName("watchpoint modify");
     set_command_object->SetCommandName("watchpoint set");
 
-    status = LoadSubCommand ("list",       list_command_object);
-    status = LoadSubCommand ("enable",     enable_command_object);
-    status = LoadSubCommand ("disable",    disable_command_object);
-    status = LoadSubCommand ("delete",     delete_command_object);
-    status = LoadSubCommand ("ignore",     ignore_command_object);
-    status = LoadSubCommand ("modify",     modify_command_object);
-    status = LoadSubCommand ("set",        set_command_object);
+    LoadSubCommand ("list",       list_command_object);
+    LoadSubCommand ("enable",     enable_command_object);
+    LoadSubCommand ("disable",    disable_command_object);
+    LoadSubCommand ("delete",     delete_command_object);
+    LoadSubCommand ("ignore",     ignore_command_object);
+    LoadSubCommand ("modify",     modify_command_object);
+    LoadSubCommand ("set",        set_command_object);
 }
 
 CommandObjectMultiwordWatchpoint::~CommandObjectMultiwordWatchpoint()
