@@ -48,13 +48,13 @@
 // Project includes
 #include "lldb/Host/Host.h"
 #include "Plugins/Process/Utility/InferiorCallPOSIX.h"
+#include "Plugins/Process/Utility/StopInfoMachException.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
 #include "Utility/StringExtractorGDBRemote.h"
 #include "GDBRemoteRegisterContext.h"
 #include "ProcessGDBRemote.h"
 #include "ProcessGDBRemoteLog.h"
 #include "ThreadGDBRemote.h"
-#include "StopInfoMachException.h"
 
 namespace lldb
 {
@@ -1868,7 +1868,7 @@ ProcessGDBRemote::DoDestroy ()
         {
             if (log)
                 log->Printf ("ProcessGDBRemote::DoDestroy - failed to send k packet");
-            exit_string.assign ("killing while attaching.");
+            exit_string.assign ("killed or interrupted while attaching.");
         }
     }
     else
