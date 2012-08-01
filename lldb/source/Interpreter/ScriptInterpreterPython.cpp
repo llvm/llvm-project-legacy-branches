@@ -305,7 +305,7 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
                     StreamString run_string;
                     char error_str[1024];
                     const char *pty_slave_name = script_interpreter->m_embedded_python_pty.GetSlaveName (error_str, sizeof (error_str));
-                    if (pty_slave_name != NULL)
+                    if (pty_slave_name != NULL && PyThreadState_GetDict() != NULL)
                     {
                         ScriptInterpreterPython::Locker locker(script_interpreter,
                                                                ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
@@ -404,7 +404,7 @@ ScriptInterpreterPython::PythonInputReaderManager::InputReaderCallback
             StreamString run_string;
             char error_str[1024];
             const char *pty_slave_name = script_interpreter->m_embedded_python_pty.GetSlaveName (error_str, sizeof (error_str));
-            if (pty_slave_name != NULL)
+            if (pty_slave_name != NULL && PyThreadState_GetDict() != NULL)
             {
                 ScriptInterpreterPython::Locker locker(script_interpreter,
                                                        ScriptInterpreterPython::Locker::AcquireLock | ScriptInterpreterPython::Locker::InitSession,
