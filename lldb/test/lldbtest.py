@@ -1144,7 +1144,7 @@ class TestBase(Base):
             elif running:
                 # For process launch, wait some time before possible next try.
                 time.sleep(self.timeWaitNextLaunch)
-                with recording(self, True) as sbuf:
+                with recording(self, trace) as sbuf:
                     print >> sbuf, "Command '" + cmd + "' failed!"
 
         if check:
