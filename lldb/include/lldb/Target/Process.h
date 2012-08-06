@@ -1218,6 +1218,12 @@ public:
         return m_stop_id != UINT32_MAX;
     }
     
+    bool
+    IsLastResumeForUserExpression () const
+    {
+        return m_resume_id == m_last_user_expression_resume;
+    }
+    
     void
     SetRunningUserExpression (bool on)
     {
