@@ -556,8 +556,10 @@ ClangUserExpression::Execute (Stream &error_stream,
         lldb::addr_t object_ptr = 0;
         lldb::addr_t cmd_ptr = 0;
         
-        if (!PrepareToExecuteJITExpression (error_stream, exe_ctx, struct_address, object_ptr, cmd_ptr))
+        if (!PrepareToExecuteJITExpression (error_stream, exe_ctx, struct_address, object_ptr, cmd_ptr)) {
+            error_stream.Printf("Errored out in %s, couldn't PrepareToExecuteJITExpression", __FUNCTION__);
             return eExecutionSetupError;
+        }
         
         const bool stop_others = true;
         const bool try_all_threads = true;
@@ -572,8 +574,10 @@ ClangUserExpression::Execute (Stream &error_stream,
                                                                           ((m_needs_object_ptr && m_objectivec) ? &cmd_ptr : NULL),
                                                                           shared_ptr_to_me));
         
-        if (call_plan_sp == NULL || !call_plan_sp->ValidatePlan (NULL))
+        if (call_plan_sp == NULL || !call_plan_sp->ValidatePlan (NULL)) {
+            error_stream.Printf("Errored out in %s, couldn't ValidatePlan", __FUNCTION__);
             return eExecutionSetupError;
+        }
         
         lldb::addr_t function_stack_pointer = static_cast<ThreadPlanCallFunction *>(call_plan_sp.get())->GetFunctionStackPointer();
     
@@ -630,6 +634,7 @@ ClangUserExpression::Execute (Stream &error_stream,
         if  (FinalizeJITExecution (error_stream, exe_ctx, result, function_stack_pointer))
             return eExecutionCompleted;
         else
+            error_stream.Printf("Errored out in %s: Couldn't FinalizeJITExpression", __FUNCTION__);
             return eExecutionSetupError;
     }
     else
