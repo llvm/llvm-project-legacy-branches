@@ -28,16 +28,20 @@ Watchpoint::Watchpoint (lldb::addr_t addr, size_t size, bool hardware) :
     m_target(NULL),
     m_enabled(false),
     m_is_hardware(hardware),
+    m_is_watch_variable(false),
     m_watch_read(0),
     m_watch_write(0),
     m_watch_was_read(0),
     m_watch_was_written(0),
     m_ignore_count(0),
-    m_callback(NULL),
-    m_callback_baton(NULL),
     m_decl_str(),
     m_watch_spec_str(),
-    m_error()
+    m_snapshot_old_str(),
+    m_snapshot_new_str(),
+    m_snapshot_old_val(0),
+    m_snapshot_new_val(0),
+    m_error(),
+    m_options ()
 {
 }
 
@@ -45,25 +49,102 @@ Watchpoint::~Watchpoint()
 {
 }
 
-bool
-Watchpoint::SetCallback (WatchpointHitCallback callback, void *callback_baton)
+// This function is used when "baton" doesn't need to be freed
+void
+Watchpoint::SetCallback (WatchpointHitCallback callback, void *baton, bool is_synchronous)
 {
-    m_callback = callback;
-    m_callback_baton = callback_baton;
-    return true;
+    // The default "Baton" class will keep a copy of "baton" and won't free
+    // or delete it when it goes goes out of scope.
+    m_options.SetCallback(callback, BatonSP (new Baton(baton)), is_synchronous);
+    
+    //SendWatchpointChangedEvent (eWatchpointEventTypeCommandChanged);
+}
+
+// This function is used when a baton needs to be freed and therefore is 
+// contained in a "Baton" subclass.
+void
+Watchpoint::SetCallback (WatchpointHitCallback callback, const BatonSP &callback_baton_sp, bool is_synchronous)
+{
+    m_options.SetCallback(callback, callback_baton_sp, is_synchronous);
 }
 
 void
-Watchpoint::SetDeclInfo (std::string &str)
+Watchpoint::ClearCallback ()
+{
+    m_options.ClearCallback ();
+}
+
+void
+Watchpoint::SetDeclInfo (const std::string &str)
 {
     m_decl_str = str;
     return;
 }
 
+std::string
+Watchpoint::GetWatchSpec()
+{
+    return m_watch_spec_str;
+}
+
 void
-Watchpoint::SetWatchSpec (std::string &str)
+Watchpoint::SetWatchSpec (const std::string &str)
 {
     m_watch_spec_str = str;
+    return;
+}
+
+std::string
+Watchpoint::GetOldSnapshot() const
+{
+    return m_snapshot_old_str;
+}
+
+void
+Watchpoint::SetOldSnapshot (const std::string &str)
+{
+    m_snapshot_old_str = str;
+    return;
+}
+
+std::string
+Watchpoint::GetNewSnapshot() const
+{
+    return m_snapshot_new_str;
+}
+
+void
+Watchpoint::SetNewSnapshot (const std::string &str)
+{
+    m_snapshot_old_str = m_snapshot_new_str;
+    m_snapshot_new_str = str;
+    return;
+}
+
+uint64_t
+Watchpoint::GetOldSnapshotVal() const
+{
+    return m_snapshot_old_val;
+}
+
+void
+Watchpoint::SetOldSnapshotVal (uint64_t val)
+{
+    m_snapshot_old_val = val;
+    return;
+}
+
+uint64_t
+Watchpoint::GetNewSnapshotVal() const
+{
+    return m_snapshot_new_val;
+}
+
+void
+Watchpoint::SetNewSnapshotVal (uint64_t val)
+{
+    m_snapshot_old_val = m_snapshot_new_val;
+    m_snapshot_new_val = val;
     return;
 }
 
@@ -73,6 +154,18 @@ bool
 Watchpoint::IsHardware () const
 {
     return m_is_hardware;
+}
+
+bool
+Watchpoint::IsWatchVariable() const
+{
+    return m_is_watch_variable;
+}
+
+void
+Watchpoint::SetWatchVariable(bool val)
+{
+    m_is_watch_variable = val;
 }
 
 // RETURNS - true if we should stop at this breakpoint, false if we
@@ -106,6 +199,24 @@ Watchpoint::Dump(Stream *s) const
 }
 
 void
+Watchpoint::DumpSnapshots(const char *prefix, Stream *s) const
+{
+    if (IsWatchVariable())
+    {
+        if (!m_snapshot_old_str.empty())
+            s->Printf("\n%swatchpoint old value:\n\t%s", prefix, m_snapshot_old_str.c_str());
+        if (!m_snapshot_new_str.empty())
+            s->Printf("\n%swatchpoint new value:\n\t%s", prefix, m_snapshot_new_str.c_str());
+    }
+    else
+    {
+        uint32_t num_hex_digits = GetByteSize() * 2;
+        s->Printf("\n%swatchpoint old value:0x%0*.*llx", prefix, num_hex_digits, num_hex_digits, m_snapshot_old_val);
+        s->Printf("\n%swatchpoint new value:0x%0*.*llx", prefix, num_hex_digits, num_hex_digits, m_snapshot_new_val);
+    }
+}
+
+void
 Watchpoint::DumpWithLevel(Stream *s, lldb::DescriptionLevel description_level) const
 {
     if (s == NULL)
@@ -126,29 +237,22 @@ Watchpoint::DumpWithLevel(Stream *s, lldb::DescriptionLevel description_level) c
         if (!m_decl_str.empty())
             s->Printf("\n    declare @ '%s'", m_decl_str.c_str());
         if (!m_watch_spec_str.empty())
-            s->Printf("\n    static watchpoint spec = '%s'", m_watch_spec_str.c_str());
+            s->Printf("\n    watchpoint spec = '%s'", m_watch_spec_str.c_str());
+
+        // Dump the snapshots we have taken.
+        DumpSnapshots("   ", s);
+
         if (GetConditionText())
             s->Printf("\n    condition = '%s'", GetConditionText());
+        m_options.GetCallbackDescription(s, description_level);
     }
 
     if (description_level >= lldb::eDescriptionLevelVerbose)
     {
-        if (m_callback)
-        {
-            s->Printf("\n    hw_index = %i  hit_count = %-4u  ignore_count = %-4u  callback = %8p baton = %8p",
-                      GetHardwareIndex(),
-                      GetHitCount(),
-                      GetIgnoreCount(),
-                      m_callback,
-                      m_callback_baton);
-        }
-        else
-        {
-            s->Printf("\n    hw_index = %i  hit_count = %-4u  ignore_count = %-4u",
-                      GetHardwareIndex(),
-                      GetHitCount(),
-                      GetIgnoreCount());
-        }
+        s->Printf("\n    hw_index = %i  hit_count = %-4u  ignore_count = %-4u",
+                  GetHardwareIndex(),
+                  GetHitCount(),
+                  GetIgnoreCount());
     }
 }
 
@@ -198,17 +302,7 @@ Watchpoint::SetIgnoreCount (uint32_t n)
 bool
 Watchpoint::InvokeCallback (StoppointCallbackContext *context)
 {
-    if (m_callback && context->is_synchronous)
-    {
-        uint32_t access = 0;
-        if (m_watch_was_read)
-            access |= LLDB_WATCH_TYPE_READ;
-        if (m_watch_was_written)
-            access |= LLDB_WATCH_TYPE_WRITE;
-        return m_callback(m_callback_baton, context, GetID(), access);
-    }
-    else
-        return true;
+    return m_options.InvokeCallback (context, GetID());
 }
 
 void 

@@ -1108,6 +1108,7 @@ protected:
             case eFormatAddressInfo:
             case eFormatHexFloat:
             case eFormatInstruction:
+            case eFormatVoid:
                 result.AppendError("unsupported format for writing memory");
                 result.SetStatus(eReturnStatusFailed);
                 return false;
@@ -1115,6 +1116,7 @@ protected:
             case eFormatDefault:
             case eFormatBytes:
             case eFormatHex:
+            case eFormatHexUppercase:
             case eFormatPointer:
                 
                 // Decode hex bytes

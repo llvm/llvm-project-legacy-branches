@@ -664,8 +664,9 @@ def parseOptionsAndInitTestdirs():
         #
         # where the make directory contains the Makefile.rules file.
         if len(testdirs) != 1 or os.path.basename(orig_testdirs[0]) != 'test':
+            scriptdir = os.path.dirname(__file__)
             # Don't copy the .svn stuffs.
-            copytree('make', os.path.join(rdir, 'make'),
+            copytree(os.path.join(scriptdir, 'make'), os.path.join(rdir, 'make'),
                      ignore=ignore_patterns('.svn'))
 
     #print "testdirs:", testdirs
@@ -748,7 +749,7 @@ def setupSysPath():
     sys.path.append(scriptPath)
     sys.path.append(pluginPath)
     sys.path.append(pexpectPath)
-    
+
     # This is our base name component.
     base = os.path.abspath(os.path.join(scriptPath, os.pardir))
 
@@ -814,7 +815,7 @@ def setupSysPath():
     else:
         os.environ["LLDB_EXEC"] = lldbExec
         #print "The 'lldb' from PATH env variable", lldbExec
-    
+
     if os.path.isdir(os.path.join(base, '.svn')):
         pipe = subprocess.Popen(["svn", "info", base], stdout = subprocess.PIPE)
         svn_info = pipe.stdout.read()
@@ -829,7 +830,7 @@ def setupSysPath():
     # The '-i' option is used to skip looking for lldb.py in the build tree.
     if ignore:
         return
-        
+
     dbgPath  = os.path.join(base, *(xcode3_build_dir + dbg + python_resource_dir))
     dbgPath2 = os.path.join(base, *(xcode4_build_dir + dbg + python_resource_dir))
     relPath  = os.path.join(base, *(xcode3_build_dir + rel + python_resource_dir))
@@ -945,7 +946,7 @@ def visit(prefix, dir, names):
             # and no '-g' option is specified
             if filters and fs4all and not filtered:
                 continue
-                
+
             # Add either the filtered test case(s) (which is done before) or the entire test class.
             if not filterspec or not filtered:
                 # A simple case of just the module name.  Also the failover case
@@ -1230,7 +1231,7 @@ for ia in range(len(archs) if iterArchs else 1):
                     new_stdout.close()
                 new_stdout = open("%s.%s" % (old_stdout.name, configPostfix), "w")
                 sys.stdout = new_stdout
- 
+
             # If we specified a relocated directory to run the test suite, do
             # the extra housekeeping to copy the testdirs to a configStringified
             # directory and to update sys.path before invoking the test runner.
@@ -1246,7 +1247,7 @@ for ia in range(len(archs) if iterArchs else 1):
                     rmtree(newrdir)
                 copytree(rdir, newrdir, ignore=ignore_patterns('*.pyc', '*.o', '*.d'))
 
-               # Update the LLDB_TEST environment variable to reflect new top
+                # Update the LLDB_TEST environment variable to reflect new top
                 # level test directory.
                 #
                 # See also lldbtest.TestBase.setUpClass(cls).
@@ -1374,7 +1375,7 @@ for ia in range(len(archs) if iterArchs else 1):
                                                   verbosity=(1 if progress_bar else verbose),
                                                   failfast=failfast,
                                                   resultclass=LLDBTestResult).run(suite)
-        
+
 
 if sdir_has_content:
     sys.stderr.write("Session logs for test failures/errors/unexpected successes"

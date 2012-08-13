@@ -41,12 +41,6 @@ Opcode::Dump (Stream *s, uint32_t min_byte_width)
         bytes_written = s->Printf ("0x%4.4x", m_data.inst16); 
         break;
     case Opcode::eType16_2:
-        if (GetDataByteOrder() == eByteOrderLittle)
-            bytes_written = s->Printf ("0x%4.4x%4.4x", m_data.inst32 & 0xffff, m_data.inst32 >> 16);
-        else
-            bytes_written = s->Printf ("0x%2.2x%2.2x%2.2x%2.2x", (m_data.inst32 >> 16) & 0xff, (m_data.inst32 >> 24),
-                                                                 (m_data.inst32 & 0xff), (m_data.inst32 >> 8) & 0xff); 
-        break;
     case Opcode::eType32:
         bytes_written = s->Printf ("0x%8.8x", m_data.inst32); 
         break;
@@ -92,7 +86,7 @@ Opcode::GetDataByteOrder () const
 }
 
 uint32_t
-Opcode::GetData (DataExtractor &data, lldb::AddressClass address_class) const
+Opcode::GetData (DataExtractor &data) const
 {
     uint32_t byte_size = GetByteSize ();
     
@@ -106,8 +100,20 @@ Opcode::GetData (DataExtractor &data, lldb::AddressClass address_class) const
                 
             case Opcode::eType8:    buffer_sp.reset (new DataBufferHeap (&m_data.inst8,  byte_size)); break;
             case Opcode::eType16:   buffer_sp.reset (new DataBufferHeap (&m_data.inst16, byte_size)); break;
-            case Opcode::eType16_2: // passthrough
-            case Opcode::eType32:   buffer_sp.reset (new DataBufferHeap (&m_data.inst32, byte_size)); break;
+            case Opcode::eType16_2:
+                {
+                    // 32 bit thumb instruction, we need to sizzle this a bit
+                    uint8_t buf[4];
+                    buf[0] = m_data.inst.bytes[2];
+                    buf[1] = m_data.inst.bytes[3];
+                    buf[2] = m_data.inst.bytes[0];
+                    buf[3] = m_data.inst.bytes[1];
+                    buffer_sp.reset (new DataBufferHeap (buf, byte_size));
+                }
+                break;
+            case Opcode::eType32:
+                buffer_sp.reset (new DataBufferHeap (&m_data.inst32, byte_size));
+                break;
             case Opcode::eType64:   buffer_sp.reset (new DataBufferHeap (&m_data.inst64, byte_size)); break;
             case Opcode::eTypeBytes:buffer_sp.reset (new DataBufferHeap (GetOpcodeBytes(), byte_size)); break;
                 break;

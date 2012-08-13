@@ -142,8 +142,8 @@ public:
     //------------------------------------------------------------------
     /// Used in InvokeCallback to tell whether it is the right time to run this kind of callback.
     ///
-    /// @param[in] condition
-    ///    The condition expression to evaluate when the breakpoint is hit.
+    /// @return
+    ///     The synchronicity of our callback.
     //------------------------------------------------------------------
     bool IsCallbackSynchronous () {
         return m_callback_is_synchronous;
