@@ -574,10 +574,8 @@ ClangUserExpression::Execute (Stream &error_stream,
                                                                           ((m_needs_object_ptr && m_objectivec) ? &cmd_ptr : NULL),
                                                                           shared_ptr_to_me));
         
-        if (call_plan_sp == NULL || !call_plan_sp->ValidatePlan (NULL)) {
-            error_stream.Printf("Errored out in %s, couldn't ValidatePlan", __FUNCTION__);
+        if (!call_plan_sp || !call_plan_sp->ValidatePlan (NULL))
             return eExecutionSetupError;
-        }
         
         lldb::addr_t function_stack_pointer = static_cast<ThreadPlanCallFunction *>(call_plan_sp.get())->GetFunctionStackPointer();
     

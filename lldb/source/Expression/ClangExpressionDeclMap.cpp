@@ -2657,7 +2657,7 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
                                                               err);
             
             // If we found a variable in scope, no need to pull up function names
-            if (err.Success() && var != NULL)
+            if (err.Success() && var)
             {
                 AddOneVariable(context, var, valobj, current_id);
                 context.m_found.variable = true;
@@ -3135,7 +3135,7 @@ ClangExpressionDeclMap::ResolveUnknownTypes()
                 if (log)
                     log->Printf("ClangExpressionDeclMap::ResolveUnknownType - Couldn't import the type for a variable");
                 
-                return lldb::ClangExpressionVariableSP();
+                return (bool) lldb::ClangExpressionVariableSP();
             }
             
             TypeFromUser user_type(copied_type, scratch_ast_context);
