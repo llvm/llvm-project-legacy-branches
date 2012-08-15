@@ -30,12 +30,10 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_TARGET_DESC
 #include "AMDILGenSubtarget.inc"
 
-AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT, llvm::StringRef CPU, llvm::StringRef FS) : AMDILGenSubtargetInfo( TT, CPU, FS )
+AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT, llvm::StringRef GPU, llvm::StringRef FS) : AMDILGenSubtargetInfo( TT, GPU, FS )
 {
   memset(CapsOverride, 0, sizeof(*CapsOverride)
          * AMDILDeviceInfo::MaxNumberCapabilities);
-  // Default card
-  std::string GPU = "rv770";
   mIs64bit = false;
   mFlatAddress = false;
   mVersion = -1U;
@@ -69,7 +67,6 @@ AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT, llvm::StringRef CPU, llvm::St
       SplitString(Features[x], version, "=");
       mVersion = ::atoi(version[1].data());
     } else {
-      GPU = CPU;
       if (newFeatures.length() > 0) newFeatures += ',';
       newFeatures += Features[x];
     }
