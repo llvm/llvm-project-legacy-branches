@@ -34,6 +34,7 @@ Watchpoint::Watchpoint (lldb::addr_t addr, size_t size, bool hardware) :
     m_watch_was_read(0),
     m_watch_was_written(0),
     m_ignore_count(0),
+    m_false_alarms(0),
     m_decl_str(),
     m_watch_spec_str(),
     m_snapshot_old_str(),
@@ -94,6 +95,17 @@ Watchpoint::SetWatchSpec (const std::string &str)
     return;
 }
 
+// Strip at most one character from the end of the string.
+static inline std::string
+RStripOnce(const std::string &str, const char c)
+{
+    std::string res = str;
+    size_t len = res.length();
+    if (len && res.at(len - 1) == '\n')
+        res.resize(len - 1);
+    return res;
+}
+
 std::string
 Watchpoint::GetOldSnapshot() const
 {
@@ -103,11 +115,7 @@ Watchpoint::GetOldSnapshot() const
 void
 Watchpoint::SetOldSnapshot (const std::string &str)
 {
-    size_t len = str.length();
-    m_snapshot_old_str = str;
-    if (len && str.at(len - 1) == '\n')
-        m_snapshot_old_str.resize(len - 1);
-    return;
+    m_snapshot_old_str = RStripOnce(str, '\n');
 }
 
 std::string
@@ -120,11 +128,7 @@ void
 Watchpoint::SetNewSnapshot (const std::string &str)
 {
     m_snapshot_old_str = m_snapshot_new_str;
-    size_t len = str.length();
-    m_snapshot_new_str = str;
-    if (len && str.at(len - 1) == '\n')
-        m_snapshot_new_str.resize(len - 1);
-    return;
+    m_snapshot_new_str = RStripOnce(str, '\n');
 }
 
 uint64_t
@@ -181,6 +185,25 @@ void
 Watchpoint::SetWatchVariable(bool val)
 {
     m_is_watch_variable = val;
+}
+
+void
+Watchpoint::IncrementFalseAlarmsAndReviseHitCount()
+{
+    ++m_false_alarms;
+    if (m_false_alarms)
+    {
+        if (m_hit_count >= m_false_alarms)
+        {
+            m_hit_count -= m_false_alarms;
+            m_false_alarms = 0;
+        }
+        else
+        {
+            m_false_alarms -= m_hit_count;
+            m_hit_count = 0;
+        }
+    }
 }
 
 // RETURNS - true if we should stop at this breakpoint, false if we
