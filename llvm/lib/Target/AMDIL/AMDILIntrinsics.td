@@ -207,7 +207,7 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
  def int_AMDIL_ldexp : GCCBuiltin<"__amdil_ldexp">,
     Intrinsic<[llvm_anyfloat_ty], [llvm_anyfloat_ty, llvm_anyint_ty], []>;
   def int_AMDIL_drcp : GCCBuiltin<"__amdil_rcp">,
-      Intrinsic<[llvm_double_ty], [llvm_double_ty], []>;
+      Intrinsic<[llvm_double_ty], [llvm_double_ty], [IntrNoMem]>;
   def int_AMDIL_convert_f16_f32 : GCCBuiltin<"__amdil_half_to_float">,
       ConvertIntITOF;
   def int_AMDIL_convert_f32_f16 : GCCBuiltin<"__amdil_float_to_half">,

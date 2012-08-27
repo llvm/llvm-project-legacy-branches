@@ -4,4 +4,4 @@ add_llvm_library(LLVMAMDILInfo
   AMDILTargetInfo.cpp
   )
 
-add_dependencies(LLVMAMDILInfo AMDILCodeGenTable_gen)
+add_dependencies(LLVMAMDILInfo AMDILCommonTableGen)

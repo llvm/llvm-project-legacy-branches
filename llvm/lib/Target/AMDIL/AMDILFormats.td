@@ -477,40 +477,40 @@ class CmpXChgNoRet64I64<ILOpCode op, string idType, SDNode intr>
 //===--------------------------------------------------------------------===//
 let TargetPrefix = "AMDIL", isTarget = 1 in {
      class VoidIntLong :
-          Intrinsic<[llvm_i64_ty], [], []>;
+          Intrinsic<[llvm_i64_ty], [], [IntrNoMem]>;
      class VoidIntInt :
-          Intrinsic<[llvm_i32_ty], [], []>;
+          Intrinsic<[llvm_i32_ty], [], [IntrNoMem]>;
      class VoidIntBool :
-          Intrinsic<[llvm_i32_ty], [], []>;
+          Intrinsic<[llvm_i32_ty], [], [IntrNoMem]>;
      class UnaryIntInt :
-          Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>], []>;
+          Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>], [IntrNoMem]>;
      class UnaryIntFloat :
-          Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>], []>;
+          Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]>;
      class ConvertIntFTOI :
-          Intrinsic<[llvm_anyint_ty], [llvm_anyfloat_ty], []>;
+          Intrinsic<[llvm_anyint_ty], [llvm_anyfloat_ty], [IntrNoMem]>;
      class ConvertIntITOF :
-          Intrinsic<[llvm_anyfloat_ty], [llvm_anyint_ty], []>;
+          Intrinsic<[llvm_anyfloat_ty], [llvm_anyint_ty], [IntrNoMem]>;
      class UnaryIntNoRetInt :
-          Intrinsic<[], [llvm_anyint_ty], []>;
+          Intrinsic<[], [llvm_anyint_ty], [IntrNoMem]>;
      class UnaryIntNoRetFloat :
-          Intrinsic<[], [llvm_anyfloat_ty], []>;
+          Intrinsic<[], [llvm_anyfloat_ty], [IntrNoMem]>;
      class BinaryIntInt :
-          Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>, LLVMMatchType<0>], []>;
+          Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>, LLVMMatchType<0>], [IntrNoMem]>;
      class BinaryIntFloat :
-          Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>, LLVMMatchType<0>], []>;
+          Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>, LLVMMatchType<0>], [IntrNoMem]>;
      class BinaryIntNoRetInt :
-          Intrinsic<[], [llvm_anyint_ty, LLVMMatchType<0>], []>;
+          Intrinsic<[], [llvm_anyint_ty, LLVMMatchType<0>], [IntrNoMem]>;
      class BinaryIntNoRetFloat :
-          Intrinsic<[], [llvm_anyfloat_ty, LLVMMatchType<0>], []>;
+          Intrinsic<[], [llvm_anyfloat_ty, LLVMMatchType<0>], [IntrNoMem]>;
      class TernaryIntInt :
           Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>,
-          LLVMMatchType<0>, LLVMMatchType<0>], []>;
+          LLVMMatchType<0>, LLVMMatchType<0>], [IntrNoMem]>;
      class TernaryIntFloat :
           Intrinsic<[llvm_anyfloat_ty], [LLVMMatchType<0>,
-          LLVMMatchType<0>, LLVMMatchType<0>], []>;
+          LLVMMatchType<0>, LLVMMatchType<0>], [IntrNoMem]>;
      class QuaternaryIntInt :
           Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>,
-          LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>], []>;
+          LLVMMatchType<0>, LLVMMatchType<0>, LLVMMatchType<0>], [IntrNoMem]>;
      class UnaryAtomicInt :
           Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadWriteArgMem]>;
      class BinaryAtomicInt :
