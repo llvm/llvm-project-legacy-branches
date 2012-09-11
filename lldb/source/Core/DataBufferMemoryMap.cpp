@@ -12,7 +12,10 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <sys/stat.h>
+
+#ifdef _POSIX_SOURCE
 #include <sys/mman.h>
+#endif
 
 #include "lldb/Core/DataBufferMemoryMap.h"
 #include "lldb/Core/Error.h"
@@ -80,7 +83,9 @@ DataBufferMemoryMap::Clear()
 {
     if (m_mmap_addr != NULL)
     {
+#ifdef _POSIX_SOURCE
         ::munmap((void *)m_mmap_addr, m_mmap_size);
+#endif
         m_mmap_addr = NULL;
         m_mmap_size = 0;
         m_data = NULL;
@@ -152,6 +157,7 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
         struct stat stat;
         if (::fstat(fd, &stat) == 0)
         {
+#ifdef _POSIX_SOURCE
             if (S_ISREG(stat.st_mode) && (stat.st_size > offset))
             {
                 const size_t max_bytes_available = stat.st_size - offset;
@@ -222,6 +228,7 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
                     }
                 }
             }
+#endif
         }
     }
     return GetByteSize ();

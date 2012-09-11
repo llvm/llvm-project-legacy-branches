@@ -23,6 +23,17 @@
 #include <string.h>
 #include <limits.h>
 
+#ifdef _WIN32
+enum
+{
+  CC_ERROR,
+  CC_REDISPLAY,
+  CC_REFRESH_BEEP,
+};
+#endif
+
+
+
 using namespace lldb;
 
 typedef std::map<EditLine *, std::string> PromptMap;
@@ -53,6 +64,7 @@ IOChannel::GetPrompt ()
 bool
 IOChannel::EditLineHasCharacters ()
 {
+#ifdef __unix__
     const LineInfo *line_info  = el_line(m_edit_line);
     if (line_info)
     {
@@ -65,26 +77,31 @@ IOChannel::EditLineHasCharacters ()
             return line_info->cursor != line_info->buffer;
     }
     else
-        return false;
+#endif	
+		return false;
 }
 
 
 void
 IOChannel::EraseCharsBeforeCursor ()
 {
+#ifdef __unix__
     const LineInfo *line_info  = el_line(m_edit_line);
     el_deletestr(m_edit_line, line_info->cursor - line_info->buffer);
+#endif	
 }
 
 unsigned char
 IOChannel::ElCompletionFn (EditLine *e, int ch)
 {
+#ifdef __unix__
     IOChannel *io_channel;
     if (el_get(e, EL_CLIENTDATA, &io_channel) == 0)
     {
         return io_channel->HandleCompletion (e, ch);
     }
     else
+#endif	
     {
         return CC_ERROR;
     }
@@ -94,7 +111,7 @@ unsigned char
 IOChannel::HandleCompletion (EditLine *e, int ch)
 {
     assert (e == m_edit_line);
-
+#ifdef __unix__
     const LineInfo *line_info  = el_line(m_edit_line);
     SBStringList completions;
     int page_size = 40;
@@ -180,7 +197,8 @@ IOChannel::HandleCompletion (EditLine *e, int ch)
     if (num_completions == 0)
         return CC_REFRESH_BEEP;
     else
-        return CC_REDISPLAY;
+#endif
+		return CC_REDISPLAY;
 }
 
 IOChannel::IOChannel
@@ -201,14 +219,17 @@ IOChannel::IOChannel
     m_err_file (err),
     m_command_queue (),
     m_completion_key ("\t"),
+#ifdef __unix__
     m_edit_line (::el_init (SBHostOS::GetProgramFileSpec().GetFilename(), editline_in, editline_out,  editline_out)),
     m_history (history_init()),
+#endif	
     m_history_event(),
     m_getting_command (false),
     m_expecting_prompt (false),
 	m_prompt_str (),
     m_refresh_request_pending (false)
 {
+#ifdef __unix__
     assert (m_edit_line);
     ::el_set (m_edit_line, EL_PROMPT, el_prompt);
     ::el_set (m_edit_line, EL_EDITOR, "emacs");
@@ -247,7 +268,7 @@ IOChannel::IOChannel
     assert (error == 0);
 
     // Initialize time that ::el_gets was last called.
-
+#endif
     m_enter_elgets_time.tv_sec = 0;
     m_enter_elgets_time.tv_usec = 0;
 }
@@ -257,6 +278,7 @@ IOChannel::~IOChannel ()
     // Save history
     HistorySaveLoad (true);
 
+#ifdef __unix__
     if (m_history != NULL)
     {
         ::history_end (m_history);
@@ -270,6 +292,7 @@ IOChannel::~IOChannel ()
     }
 
     ::pthread_mutex_destroy (&m_output_mutex);
+#endif
 }
 
 void
@@ -277,6 +300,7 @@ IOChannel::HistorySaveLoad (bool save)
 {
     if (m_history != NULL)
     {
+#ifdef __unix__
         char history_path[PATH_MAX];
         ::snprintf (history_path, sizeof(history_path), "~/.%s-history", SBHostOS::GetProgramFileSpec().GetFilename());
         if ((size_t)SBFileSpec::ResolvePath (history_path, history_path, sizeof(history_path)) < sizeof(history_path) - 1)
@@ -287,7 +311,8 @@ IOChannel::HistorySaveLoad (bool save)
             else
                 ::history (m_history, &m_history_event, H_LOAD, path_ptr);
         }
-    }
+#endif
+	}
 }
 
 void
@@ -326,7 +351,8 @@ IOChannel::LibeditOutputBytesReceived (void *baton, const void *src, size_t src_
 bool
 IOChannel::LibeditGetInput (std::string &new_line)
 {
-    if (m_edit_line != NULL)
+ #ifdef __unix__
+	if (m_edit_line != NULL)
     {
         int line_len = 0;
 
@@ -360,13 +386,15 @@ IOChannel::LibeditGetInput (std::string &new_line)
             return true;
         }
     }
+#endif
     // Return false to indicate failure. This can happen when the file handle
     // is closed (EOF).
     new_line.clear();
     return false;
+	
 }
 
-void *
+thread_result_t 
 IOChannel::IOReadThread (void *ptr)
 {
     IOChannel *myself = static_cast<IOChannel *> (ptr);
@@ -520,8 +548,9 @@ IOChannel::RefreshPrompt ()
 
     if (m_refresh_request_pending)
         return;
-
+#ifdef __unix__
     ::el_set (m_edit_line, EL_REFRESH);
+#endif	
     m_refresh_request_pending = true;    
 }
 
@@ -611,16 +640,14 @@ IOChannel::SetGettingCommand (bool new_value)
     m_getting_command = new_value;
 }
 
-IOLocker::IOLocker (pthread_mutex_t &mutex) :
+IOLocker::IOLocker (llvm::sys::Mutex &mutex) :
     m_mutex_ptr (&mutex)
 {
-    if (m_mutex_ptr)
-        ::pthread_mutex_lock (m_mutex_ptr);
+    mutex.acquire();		
         
 }
 
 IOLocker::~IOLocker ()
 {
-    if (m_mutex_ptr)
-        ::pthread_mutex_unlock (m_mutex_ptr);
+    m_mutex_ptr->release();
 }

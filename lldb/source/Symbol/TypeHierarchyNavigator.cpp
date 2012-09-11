@@ -11,6 +11,7 @@
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/TypeHierarchyNavigator.h"
+#include "clang/AST/ASTContext.h"
 
 using namespace lldb;
 using namespace lldb_private;

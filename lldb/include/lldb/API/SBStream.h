@@ -39,7 +39,7 @@ public:
     GetSize();
 
     void
-    Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    Printf (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
     RedirectToFile (const char *path, bool append);

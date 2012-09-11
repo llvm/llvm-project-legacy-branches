@@ -26,6 +26,7 @@
 
 static uint32_t COFFMachineToMachCPU(uint16_t machine);
 
+#ifndef IMAGE_FILE_MACHINE_UNKNOWN
 #define IMAGE_FILE_MACHINE_UNKNOWN      0x0000
 #define IMAGE_FILE_MACHINE_AM33         0x01d3  // Matsushita AM33
 #define IMAGE_FILE_MACHINE_AMD64        0x8664  // x64
@@ -52,8 +53,7 @@ static uint32_t COFFMachineToMachCPU(uint16_t machine);
 #define IMAGE_OS2_SIGNATURE             0x454E      // NE
 #define IMAGE_OS2_SIGNATURE_LE          0x454C      // LE
 #define IMAGE_NT_SIGNATURE              0x00004550  // PE00
-#define OPT_HEADER_MAGIC_PE32           0x010b
-#define OPT_HEADER_MAGIC_PE32_PLUS      0x020b
+
 
 #define IMAGE_FILE_RELOCS_STRIPPED          0x0001
 #define IMAGE_FILE_EXECUTABLE_IMAGE         0x0002
@@ -71,7 +71,10 @@ static uint32_t COFFMachineToMachCPU(uint16_t machine);
 #define IMAGE_FILE_DLL                      0x2000
 #define IMAGE_FILE_UP_SYSTEM_ONLY           0x4000
 #define IMAGE_FILE_BYTES_REVERSED_HI        0x8000
+#endif
 
+#define OPT_HEADER_MAGIC_PE32           0x010b
+#define OPT_HEADER_MAGIC_PE32_PLUS      0x020b
 
 // Section Flags
 // The section flags in the Characteristics field of the section header indicate

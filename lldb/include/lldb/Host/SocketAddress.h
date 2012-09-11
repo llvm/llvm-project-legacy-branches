@@ -12,17 +12,24 @@
 
 // C Includes
 #include <stdint.h>
+#ifdef _POSIX_SOURCE
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#endif
 
 #if defined(__FreeBSD__)
 #include <sys/types.h>
 #endif
 
+#ifdef _WIN32
+#include <WS2tcpip.h>
+#endif
+
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/lldb-private.h"
 
 namespace lldb_private {
 

@@ -2679,7 +2679,7 @@ IRForTarget::runOnModule (Module &llvm_module)
                                                    Constant::getNullValue(intptr_ty),
                                                    "reloc_placeholder",
                                                    NULL /* InsertBefore */,
-                                                   false /* ThreadLocal */,
+                                                   GlobalVariable::NotThreadLocal /* ThreadLocal */,
                                                    0 /* AddressSpace */);
         
     Function::iterator bbi;

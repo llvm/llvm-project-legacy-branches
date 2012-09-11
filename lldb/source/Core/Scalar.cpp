@@ -17,7 +17,7 @@
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Host/Endian.h"
 
-#include "Plugins/Process/Utility/InstructionUtils.h"
+//#include "Plugins/Process/Utility/InstructionUtils.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -2017,6 +2017,18 @@ Scalar::GetAsMemoryData (void *dst,
         error.SetErrorString ("failed to copy data");
 
     return bytes_copied;
+}
+
+int SignedBits(int data, uint32_t a, uint32_t b)
+{
+    // TODO
+    return 0;
+}
+
+int UnsignedBits(int data, uint32_t a, uint32_t b)
+{
+    // TODO
+    return 0;
 }
 
 bool

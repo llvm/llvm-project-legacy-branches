@@ -24,7 +24,11 @@ using namespace lldb_private;
 Condition::Condition () :
     m_condition()
 {
+#ifdef _WIN32
+    InitializeConditionVariable(&m_condition);
+#else
     ::pthread_cond_init (&m_condition, NULL);
+#endif
 }
 
 //----------------------------------------------------------------------
@@ -34,7 +38,9 @@ Condition::Condition () :
 //----------------------------------------------------------------------
 Condition::~Condition ()
 {
+#ifndef _WIN32
     ::pthread_cond_destroy (&m_condition);
+#endif
 }
 
 //----------------------------------------------------------------------
@@ -43,9 +49,14 @@ Condition::~Condition ()
 int
 Condition::Broadcast ()
 {
+#ifdef _WIN32
+    WakeAllConditionVariable(&m_condition);
+    return 0;
+#else
     return ::pthread_cond_broadcast (&m_condition);
+#endif
 }
-
+#ifndef _WIN32
 //----------------------------------------------------------------------
 // Get accessor to the pthread condition object
 //----------------------------------------------------------------------
@@ -54,14 +65,19 @@ Condition::GetCondition ()
 {
     return &m_condition;
 }
-
+#endif
 //----------------------------------------------------------------------
 // Unblocks one thread waiting for the condition variable
 //----------------------------------------------------------------------
 int
 Condition::Signal ()
 {
+#ifdef _WIN32
+    WakeConditionVariable(&m_condition);
+    return 0;
+#else
     return ::pthread_cond_signal (&m_condition);
+#endif
 }
 
 //----------------------------------------------------------------------
@@ -77,9 +93,33 @@ Condition::Signal ()
 //
 // The current thread re-acquires the lock on "mutex".
 //----------------------------------------------------------------------
+
+/* convert struct timeval to ms(milliseconds) */
+static unsigned long int tv2ms(struct timeval a) {
+    return ((a.tv_sec * 1000) + (a.tv_usec / 1000));
+}
+
 int
 Condition::Wait (Mutex &mutex, const TimeValue *abstime, bool *timed_out)
 {
+#ifdef _WIN32
+    DWORD wait = INFINITE;
+    if (abstime != NULL)
+        wait = tv2ms(abstime->GetAsTimeVal());
+
+    int err = SleepConditionVariableCS(&m_condition, (PCRITICAL_SECTION)&mutex,
+        wait);
+
+    if (timed_out != NULL)
+    {
+        if ((err == 0) && GetLastError() == ERROR_TIMEOUT)
+            *timed_out = true;
+        else
+            *timed_out = false;
+    }
+
+    return err != 0;
+#else
     int err = 0;
     do
     {
@@ -100,7 +140,7 @@ Condition::Wait (Mutex &mutex, const TimeValue *abstime, bool *timed_out)
             *timed_out = false;
     }
 
-
     return err;
+#endif
 }
 

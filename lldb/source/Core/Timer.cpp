@@ -26,7 +26,12 @@ uint32_t Timer::g_display_depth = 0;
 FILE * Timer::g_file = NULL;
 typedef std::vector<Timer *> TimerStack;
 typedef std::map<const char *, uint64_t> CategoryMap;
+
+#ifdef _POSIX_SOURCE
 static pthread_key_t g_key;
+#else
+static DWORD g_key;
+#endif
 
 static Mutex &
 GetCategoryMutex()
@@ -46,6 +51,7 @@ GetCategoryMap()
 static TimerStack *
 GetTimerStackForCurrentThread ()
 {
+#ifdef _POSIX_SOURCE
     void *timer_stack = ::pthread_getspecific (g_key);
     if (timer_stack == NULL)
     {
@@ -53,6 +59,15 @@ GetTimerStackForCurrentThread ()
         timer_stack = ::pthread_getspecific (g_key);
     }
     return (TimerStack *)timer_stack;
+#else
+    void *timer_stack = ::TlsGetValue  (g_key);
+    if (timer_stack == NULL)
+    {
+        ::TlsSetValue  (g_key, new TimerStack);
+        timer_stack = ::TlsGetValue (g_key);
+    }
+    return (TimerStack *)timer_stack;
+#endif
 }
 
 void
@@ -71,8 +86,11 @@ void
 Timer::Initialize ()
 {
     Timer::g_file = stdout;
+#ifdef _POSIX_SOURCE
     ::pthread_key_create (&g_key, ThreadSpecificCleanup);
-
+#else
+    g_key = ::TlsAlloc();
+#endif
 }
 
 Timer::Timer (const char *category, const char *format, ...) :

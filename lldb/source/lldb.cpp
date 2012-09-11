@@ -22,8 +22,6 @@
 
 #include "llvm/ADT/StringRef.h"
 
-#include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
-#include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
 #include "Plugins/ABI/SysV-x86_64/ABISysV_x86_64.h"
 #include "Plugins/Disassembler/llvm/DisassemblerLLVM.h"
 #include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
@@ -38,12 +36,12 @@
 #include "Plugins/UnwindAssembly/InstEmulation/UnwindAssemblyInstEmulation.h"
 #include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
 #include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
-#include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
-#include "Plugins/Platform/Linux/PlatformLinux.h"
 #ifndef LLDB_DISABLE_PYTHON
 #include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
 #endif
 #if defined (__APPLE__)
+#include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
+#include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 #include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
@@ -62,13 +60,19 @@
 #include "Plugins/Process/mach-core/ProcessMachCore.h"
 
 #if defined (__linux__)
+#include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Process/Linux/ProcessLinux.h"
 #endif
 
 #if defined (__FreeBSD__)
+#include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Process/POSIX/ProcessPOSIX.h"
 #include "Plugins/Process/FreeBSD/ProcessFreeBSD.h"
+#endif
+
+#if defined(_WIN32) || defined(_WIN64)
+#include "Plugins/Platform/Windows/PlatformWindows.h"
 #endif
 
 #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
@@ -92,6 +96,11 @@ lldb_private::Initialize ()
         Timer::Initialize ();
         Timer scoped_timer (__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
         
+#ifdef _WIN32
+        PlatformWindows::Initialize();
+#endif
+
+#ifndef _WIN32
         ABIMacOSX_i386::Initialize();
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
@@ -106,8 +115,7 @@ lldb_private::Initialize ()
         EmulateInstructionARM::Initialize ();
         ObjectFilePECOFF::Initialize ();
         DynamicLoaderPOSIXDYLD::Initialize ();
-        PlatformFreeBSD::Initialize();
-        PlatformLinux::Initialize();
+#endif
 #ifndef LLDB_DISABLE_PYTHON
         OperatingSystemPython::Initialize();
 #endif
@@ -146,9 +154,12 @@ lldb_private::Initialize ()
         //----------------------------------------------------------------------
         // Platform agnostic plugins
         //----------------------------------------------------------------------
+#ifndef _WIN32 // TODO: Enable this for Windows later
         PlatformRemoteGDBServer::Initialize ();
-        DynamicLoaderStatic::Initialize();
+#endif
 
+        DynamicLoaderStatic::Initialize();
+      
         // Scan for any system or user LLDB plug-ins
         PluginManager::Initialize();
 
@@ -173,6 +184,7 @@ lldb_private::Terminate ()
     // Terminate and unload and loaded system or user LLDB plug-ins
     PluginManager::Terminate();
 
+#ifndef _WIN32
     ABIMacOSX_i386::Terminate();
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
@@ -187,8 +199,7 @@ lldb_private::Terminate ()
     EmulateInstructionARM::Terminate ();
     ObjectFilePECOFF::Terminate ();
     DynamicLoaderPOSIXDYLD::Terminate ();
-    PlatformFreeBSD::Terminate();
-    PlatformLinux::Terminate();
+#endif
 #ifndef LLDB_DISABLE_PYTHON
     OperatingSystemPython::Terminate();
 #endif
@@ -215,10 +226,12 @@ lldb_private::Terminate ()
     Debugger::SettingsTerminate ();
 
 #if defined (__linux__)
+	PlatformLinux::Terminate();
     ProcessLinux::Terminate();
 #endif
 
 #if defined (__FreeBSD__)
+	PlatformFreeBSD::Terminate();
     ProcessFreeBSD::Terminate();
     ProcessGDBRemote::Terminate();
 #endif
@@ -228,7 +241,13 @@ lldb_private::Terminate ()
     Log::Terminate();
 }
 
-extern "C" const double liblldb_coreVersionNumber;
+#ifndef _WIN32
+ extern "C" const double liblldb_coreVersionNumber;
+#else
+const unsigned char liblldb_coreVersionString[] = "LLDB-win32-1";
+const double liblldb_coreVersionNumber = (double) 1.0;
+#endif
+
 const char *
 lldb_private::GetVersion ()
 {

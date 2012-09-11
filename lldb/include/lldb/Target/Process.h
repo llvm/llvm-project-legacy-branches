@@ -12,7 +12,10 @@
 
 // C Includes
 #include <limits.h>
+
+#ifdef _POSIX_SOURCE
 #include <spawn.h>
+#endif
 
 // C++ Includes
 #include <list>
@@ -22,6 +25,7 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
+#include "lldb/lldb-types.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Communication.h"
@@ -428,11 +432,13 @@ public:
         bool
         Open (int fd, const char *path, bool read, bool write);
         
+#ifdef _POSIX_SOURCE
         static bool
         AddPosixSpawnFileAction (posix_spawn_file_actions_t *file_actions,
                                  const FileAction *info,
                                  Log *log, 
                                  Error& error);
+#endif
 
         int
         GetFD () const
@@ -1306,7 +1312,7 @@ class Process :
 {
 friend class ThreadList;
 friend class ClangFunction; // For WaitForStateChangeEventsPrivate
-friend class CommandObjectProcessLaunch;
+//friend class CommandObjectProcessLaunch;
 friend class ProcessEventData;
 friend class CommandObjectBreakpointCommand;
 friend class StopInfo;
@@ -3412,7 +3418,7 @@ protected:
     void
     ResumePrivateStateThread ();
 
-    static void *
+    static lldb::thread_result_t
     PrivateStateThread (void *arg);
 
     void *

@@ -760,21 +760,21 @@ public:
     // This centralizes code so that everyone doesn't need to format their error and log messages on
     // their own and keeps the output a bit more consistent.
     void                    
-    LogMessage (Log *log, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
+    LogMessage (Log *log, const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
 
     void                    
-    LogMessageVerboseBacktrace (Log *log, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
+    LogMessageVerboseBacktrace (Log *log, const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
     
     void
-    ReportWarning (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+    ReportWarning (const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    ReportError (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+    ReportError (const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     // Only report an error once when the module is first detected to be modified
     // so we don't spam the console with many messages.
     void
-    ReportErrorIfModifyDetected (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+    ReportErrorIfModifyDetected (const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     //------------------------------------------------------------------
     // Return true if the file backing this module has changed since the

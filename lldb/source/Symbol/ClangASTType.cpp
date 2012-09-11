@@ -23,6 +23,7 @@
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Basic/Version.h"
 
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
@@ -1271,7 +1272,11 @@ ClangASTType::DumpTypeDescription (clang::ASTContext *ast_context, clang_type_t 
                     if (class_interface_decl)
                     {
                         clang::PrintingPolicy policy = ast_context->getPrintingPolicy();
+						
+#if CLANG_VERSION_MAJOR > 3 || (CLANG_VERSION_MAJOR == 3 && CLANG_VERSION_MINOR  >= 2)
+#else
                         policy.Dump = 1;
+#endif
                         class_interface_decl->print(llvm_ostrm, policy, s->GetIndentLevel());
                     }
                 }

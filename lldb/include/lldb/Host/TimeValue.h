@@ -12,6 +12,8 @@
 
 // C Includes
 #include <stdint.h>
+
+#ifndef _MSC_VER
 #include <sys/time.h>
 
 // BEGIN: MinGW work around
@@ -19,6 +21,9 @@
 #include <pthread.h>
 #endif
 // END: MinGW work around
+#else
+#include <winsock2.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes
@@ -61,8 +66,10 @@ public:
     uint64_t
     GetAsSecondsSinceJan1_1970() const;
 
+#ifdef _POSIX_SOURCE
     struct timespec
     GetAsTimeSpec () const;
+#endif
 
     struct timeval
     GetAsTimeVal () const;

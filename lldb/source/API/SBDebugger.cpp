@@ -464,7 +464,7 @@ SBDebugger::GetScriptingLanguage (const char *script_language_name)
 const char *
 SBDebugger::GetVersionString ()
 {
-    return GetVersion();
+    return lldb_private::GetVersion();
 }
 
 const char *

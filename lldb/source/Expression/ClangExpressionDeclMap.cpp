@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Decl.h"
 #include "lldb/lldb-private.h"
@@ -1595,7 +1596,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
     if (!var_sp)
     {
         err.SetErrorString("Invalid persistent variable");
-        return LLDB_INVALID_ADDRESS;
+        return /*LLDB_INVALID_ADDRESS*/false;
     }
     
     const size_t pvar_byte_size = var_sp->GetByteSize();

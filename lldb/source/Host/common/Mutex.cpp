@@ -12,7 +12,6 @@
 
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 
 #if 0
 // This logging is way too verbose to enable even for a log channel. 
@@ -184,6 +183,7 @@ Mutex::Locker::TryLock (Mutex &mutex, const char *failure_message)
 Mutex::Mutex () :
     m_mutex()
 {
+#ifdef _POSIX_SOURCE
     int err;
     err = ::pthread_mutex_init (&m_mutex, NULL);
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -191,6 +191,7 @@ Mutex::Mutex () :
         error_check_mutex (&m_mutex, eMutexActionInitialized);
 #endif
     assert(err == 0);
+#endif;
 }
 
 //----------------------------------------------------------------------
@@ -201,6 +202,7 @@ Mutex::Mutex () :
 Mutex::Mutex (Mutex::Type type) :
     m_mutex()
 {
+#ifdef _POSIX_SOURCE
     int err;
     ::pthread_mutexattr_t attr;
     err = ::pthread_mutexattr_init (&attr);
@@ -232,6 +234,7 @@ Mutex::Mutex (Mutex::Type type) :
     assert(err == 0);
     err = ::pthread_mutexattr_destroy (&attr);
     assert(err == 0);
+#endif
 }
 
 //----------------------------------------------------------------------
@@ -241,6 +244,7 @@ Mutex::Mutex (Mutex::Type type) :
 //----------------------------------------------------------------------
 Mutex::~Mutex()
 {
+#ifdef _POSIX_SOURCE
     int err;
     err = ::pthread_mutex_destroy (&m_mutex);
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -253,17 +257,19 @@ Mutex::~Mutex()
     }
     memset (&m_mutex, '\xba', sizeof(m_mutex));
 #endif
+#endif
 }
 
 //----------------------------------------------------------------------
 // Mutex get accessor.
 //----------------------------------------------------------------------
+#ifdef _POSIX_SOURCE
 pthread_mutex_t *
 Mutex::GetMutex()
 {
     return &m_mutex;
 }
-
+#endif
 //----------------------------------------------------------------------
 // Locks the mutex owned by this object, if the mutex is already
 // locked, the calling thread will block until the mutex becomes
@@ -275,6 +281,7 @@ Mutex::GetMutex()
 int
 Mutex::Lock()
 {
+#ifdef _POSIX_SOURCE
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p)...\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex);
 
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -293,6 +300,8 @@ Mutex::Lock()
 #endif
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
+#endif
+    return m_mutex.acquire();
 }
 
 //----------------------------------------------------------------------
@@ -306,6 +315,7 @@ Mutex::Lock()
 int
 Mutex::TryLock(const char *failure_message)
 {
+#ifdef _POSIX_SOURCE
 #if ENABLE_MUTEX_ERROR_CHECKING
     error_check_mutex (&m_mutex, eMutexActionAssertInitialized);
 #endif
@@ -313,6 +323,8 @@ Mutex::TryLock(const char *failure_message)
     int err = ::pthread_mutex_trylock (&m_mutex);
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
+#endif
+    return m_mutex.tryacquire();
 }
 
 //----------------------------------------------------------------------
@@ -327,6 +339,7 @@ Mutex::TryLock(const char *failure_message)
 int
 Mutex::Unlock()
 {
+#ifdef _POSIX_SOURCE
 #if ENABLE_MUTEX_ERROR_CHECKING
     error_check_mutex (&m_mutex, eMutexActionAssertInitialized);
 #endif
@@ -342,6 +355,8 @@ Mutex::Unlock()
 #endif
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_unlock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
+#endif
+    return m_mutex.release();
 }
 
 #ifdef LLDB_CONFIGURATION_DEBUG

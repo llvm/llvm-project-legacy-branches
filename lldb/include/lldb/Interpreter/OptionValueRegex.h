@@ -55,7 +55,7 @@ public:
     virtual bool
     Clear ()
     {
-        m_regex.Clear();
+        m_regex.Free();
         m_value_was_set = false;
         return true;
     }
@@ -80,7 +80,7 @@ public:
         if (value && value[0])
             m_regex.Compile (value, regex_flags);
         else
-            m_regex.Clear();
+            m_regex.Free();
     }
 
     bool

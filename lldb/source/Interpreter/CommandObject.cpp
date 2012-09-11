@@ -12,7 +12,9 @@
 #include <string>
 #include <map>
 
+#ifdef _POSIX_SOURCE
 #include <getopt.h>
+#endif
 #include <stdlib.h>
 #include <ctype.h>
 

@@ -138,7 +138,7 @@ public:
     };
 
     static void
-    SystemLog (SystemLogType type, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+    SystemLog (SystemLogType type, const char *format, ...) LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     static void
     SystemLog (SystemLogType type, const char *format, va_list args);
@@ -396,7 +396,7 @@ public:
     ///     description string.
     //------------------------------------------------------------------
     static void
-    SetCrashDescriptionWithFormat (const char *format, ...)  __attribute__ ((format (printf, 1, 2)));
+    SetCrashDescriptionWithFormat (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 1, 2))));
 
     static void
     SetCrashDescription (const char *description);

@@ -10,9 +10,6 @@
 #ifndef liblldb_Command_h_
 #define liblldb_Command_h_
 
-// C Includes
-#include <getopt.h>
-
 // C++ Includes
 #include <list>
 #include <string>

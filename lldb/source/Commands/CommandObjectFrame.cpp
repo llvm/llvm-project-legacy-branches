@@ -475,8 +475,8 @@ protected:
                         }
                         else
                         {
-                            char regex_error[1024];
-                            if (regex.GetErrorAsCString(regex_error, sizeof(regex_error)))
+                            std::string regex_error = regex.GetErrorAsCString();
+                            if (!regex_error.empty())
                                 result.GetErrorStream().Printf ("error: %s\n", regex_error);
                             else
                                 result.GetErrorStream().Printf ("error: unkown regex error when compiling '%s'\n", name_cstr);

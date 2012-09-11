@@ -10,7 +10,9 @@
 #include <string>
 #include <vector>
 
+#ifdef _POSIX_SOURCE
 #include <getopt.h>
+#endif
 #include <stdlib.h>
 
 #include "CommandObjectScript.h"

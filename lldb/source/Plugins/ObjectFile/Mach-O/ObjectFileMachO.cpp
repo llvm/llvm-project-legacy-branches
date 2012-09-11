@@ -36,6 +36,7 @@
 #include "Plugins/Process/Utility/RegisterContextDarwin_i386.h"
 #include "Plugins/Process/Utility/RegisterContextDarwin_x86_64.h"
 
+
 using namespace lldb;
 using namespace lldb_private;
 using namespace llvm::MachO;
@@ -1246,7 +1247,7 @@ ObjectFileMachO::ParseSymtab (bool minimize)
             function_starts_load_command.cmd = lc.cmd;
             function_starts_load_command.cmdsize = lc.cmdsize;
             if (m_data.GetU32(&offset, &function_starts_load_command.dataoff, 2) == NULL) // fill in symoff, nsyms, stroff, strsize fields
-                bzero (&function_starts_load_command, sizeof(function_starts_load_command));
+                memset (&function_starts_load_command, 0, sizeof(function_starts_load_command));
             break;
 
         default:

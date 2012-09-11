@@ -37,11 +37,12 @@ TimeValue::TimeValue(const TimeValue& rhs) :
 {
 }
 
+#ifdef _POSIX_SOURCE
 TimeValue::TimeValue(const struct timespec& ts) :
     m_nano_seconds ((uint64_t) ts.tv_sec * NanoSecPerSec + ts.tv_nsec)
 {
 }
-
+#endif
 TimeValue::TimeValue(const struct timeval& tv) :
     m_nano_seconds ((uint64_t) tv.tv_sec * NanoSecPerSec + (uint64_t) tv.tv_usec * NanoSecPerMicroSec)
 {
@@ -73,8 +74,7 @@ TimeValue::GetAsSecondsSinceJan1_1970() const
     return m_nano_seconds / NanoSecPerSec;
 }
 
-
-
+#ifdef _POSIX_SOURCE
 struct timespec
 TimeValue::GetAsTimeSpec () const
 {
@@ -83,6 +83,7 @@ TimeValue::GetAsTimeSpec () const
     ts.tv_nsec = m_nano_seconds % NanoSecPerSec;
     return ts;
 }
+#endif
 
 struct timeval
 TimeValue::GetAsTimeVal () const
@@ -127,7 +128,9 @@ TimeValue
 TimeValue::Now()
 {
     struct timeval tv;
+#ifdef _POSIX_SOURCE
     gettimeofday(&tv, NULL);
+#endif
     TimeValue now(tv);
     return now;
 }
@@ -148,6 +151,7 @@ TimeValue::Dump (Stream *s, uint32_t width) const
     if (s == NULL)
         return;
 
+#ifdef _POSIX_SOURCE
     char time_buf[32];
     time_t time = GetAsSecondsSinceJan1_1970();
     char *time_cstr = ::ctime_r(&time, time_buf);
@@ -163,6 +167,7 @@ TimeValue::Dump (Stream *s, uint32_t width) const
     }
     else if (width > 0)
         s->Printf("%-*s", width, "");
+#endif
 }
 
 bool

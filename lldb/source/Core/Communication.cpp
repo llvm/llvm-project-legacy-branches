@@ -333,7 +333,7 @@ Communication::ReadThreadIsRunning ()
     return m_read_thread_enabled;
 }
 
-void *
+thread_result_t
 Communication::ReadThread (void *p)
 {
     Communication *comm = (Communication *)p;

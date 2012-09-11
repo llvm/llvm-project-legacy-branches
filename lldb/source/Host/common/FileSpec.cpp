@@ -10,8 +10,12 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+
+#ifdef _POSIX_SOURCE
 #include <libgen.h>
 #include <sys/stat.h>
+#endif
+
 #include <string.h>
 #include <fstream>
 
@@ -45,6 +49,13 @@ GetFileStats (const FileSpec *file_spec, struct stat *stats_ptr)
         return ::stat (resolved_path, stats_ptr) == 0;
     return false;
 }
+
+#ifdef _WIN32
+char* realpath( const char * name, char * resolved );
+char* basename(char *path);
+char *dirname(char *path);
+typedef uint32_t mode_t;
+#endif
 
 #ifdef LLDB_CONFIG_TILDE_RESOLVES_TO_USER
 
@@ -917,8 +928,10 @@ FileSpec::EnumerateDirectory
                 case DT_REG:        file_type = eFileTypeRegular;       call_callback = find_files;         break;
                 case DT_LNK:        file_type = eFileTypeSymbolicLink;  call_callback = find_other;         break;
                 case DT_SOCK:       file_type = eFileTypeSocket;        call_callback = find_other;         break;
+#ifndef _WIN32
 #if !defined(__OpenBSD__)
                 case DT_WHT:        file_type = eFileTypeOther;         call_callback = find_other;         break;
+#endif
 #endif
                 }
 
@@ -990,7 +1003,7 @@ FileSpec::IsSourceImplementationFile () const
     if (extension)
     {
         static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads)$",
-                                                      REG_EXTENDED | REG_ICASE);
+                                                      llvm::Regex::IgnoreCase);
         return g_source_file_regex.Execute (extension.GetCString());
     }
     return false;

@@ -458,7 +458,7 @@ public:
     ///     format string \a format.
     //------------------------------------------------------------------
     int
-    Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    Printf (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
     
     int
     PrintfVarArg(const char *format, va_list args);

@@ -26,6 +26,10 @@
 
 #include "lldb/Host/mingw/Config.h"
 
+#elif defined(_WIN32) || defined(_WIN64)
+
+//#include "lldb/Host/windows/Config.h"
+
 #else
 
 #error undefined platform

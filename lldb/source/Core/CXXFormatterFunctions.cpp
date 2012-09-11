@@ -666,7 +666,6 @@ lldb_private::formatters::NSString_SummaryProvider (ValueObject& valobj, Stream&
     return true;
     
 }
-
 template bool
 lldb_private::formatters::NSDictionary_SummaryProvider<true> (ValueObject&, Stream&) ;
 

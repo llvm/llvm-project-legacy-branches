@@ -14,7 +14,7 @@
 
 #include <ciso646>  // detect C++ lib
 
-#ifdef _LIBCPP_VERSION
+#if defined(_LIBCPP_VERSION) || defined(_MSC_VER)
 #include <memory>
 #define STD_SHARED_PTR(T) std::shared_ptr<T>
 #define STD_WEAK_PTR(T) std::weak_ptr<T>

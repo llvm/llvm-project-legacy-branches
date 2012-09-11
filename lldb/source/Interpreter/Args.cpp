@@ -8,7 +8,9 @@
 //===----------------------------------------------------------------------===//
 
 // C Includes
+#ifdef _POSIX_SOURCE
 #include <getopt.h>
+#endif
 #include <cstdlib>
 // C++ Includes
 // Other libraries and framework includes

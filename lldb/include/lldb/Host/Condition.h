@@ -11,8 +11,11 @@
 #define liblldb_DBCondition_h_
 #if defined(__cplusplus)
 
-
+#ifdef _POSIX_SOURCE
 #include <pthread.h>
+#endif
+
+#include "lldb/lldb-types.h"
 #include "lldb/Host/Mutex.h"
 
 namespace lldb_private {
@@ -102,6 +105,8 @@ public:
     Wait (Mutex &mutex, const TimeValue *abstime = NULL, bool *timed_out = NULL);
 
 protected:
+
+#ifdef _POSIX_SOURCE
     //------------------------------------------------------------------
     // Member variables
     //------------------------------------------------------------------
@@ -115,6 +120,11 @@ protected:
     //------------------------------------------------------------------
     pthread_cond_t *
     GetCondition ();
+#else
+
+    lldb::condition_t m_condition;
+
+#endif
 };
 
 } // namespace lldb_private

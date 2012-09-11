@@ -692,7 +692,7 @@ FormatManager::FormatManager() :
     LoadSystemFormatters();
     LoadSTLFormatters();
     LoadLibcxxFormatters();
-    LoadObjCFormatters();
+	LoadObjCFormatters();
     
     EnableCategory(m_objc_category_name,CategoryMap::Last);
     EnableCategory(m_corefoundation_category_name,CategoryMap::Last);

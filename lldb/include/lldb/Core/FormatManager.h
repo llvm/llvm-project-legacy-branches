@@ -718,7 +718,11 @@ public:
     void
     Changed ()
     {
+#ifdef _MSC_VER
+        InterlockedIncrement(&m_last_revision);
+#else
         __sync_add_and_fetch(&m_last_revision, +1);
+#endif
     }
     
     uint32_t
@@ -767,10 +771,8 @@ private:
     void
     LoadSystemFormatters();
     
-#ifndef LLDB_DISABLE_PYTHON
     void
     LoadObjCFormatters();
-#endif
 };
     
 } // namespace lldb_private

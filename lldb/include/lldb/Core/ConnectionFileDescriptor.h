@@ -11,9 +11,11 @@
 #define liblldb_ConnectionFileDescriptor_h_
 
 // C Includes
+#ifdef _POSIX_SOURCE
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes

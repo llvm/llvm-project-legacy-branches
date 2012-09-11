@@ -10,8 +10,6 @@
 #ifndef lldb_Driver_h_
 #define lldb_Driver_h_
 
-#include "lldb/Utility/PseudoTerminal.h"
-
 #include <set>
 #include <bitset>
 #include <string>
@@ -22,6 +20,10 @@
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBError.h"
 #include "lldb/API/SBInputReader.h"
+#include "lldb/API/SBEvent.h"
+#include "lldb/API/SBCommandInterpreter.h"
+#include "lldb/API/SBCommandReturnObject.h"
+#include "lldb/Utility/PseudoTerminal.h"
 
 #define ASYNC true
 #define NO_ASYNC false
@@ -32,7 +34,6 @@ namespace lldb
 {
     class SBInputReader;
 }
-
 
 class Driver : public lldb::SBBroadcaster
 {
@@ -46,6 +47,9 @@ public:
 
     virtual
     ~Driver ();
+
+    void
+    Initialize();
 
     void
     MainLoop ();
@@ -150,6 +154,9 @@ public:
 
 private:
     lldb::SBDebugger m_debugger;
+    lldb::SBCommandInterpreter* m_interpreter;
+    lldb::SBListener* m_listener;
+
     lldb_utility::PseudoTerminal m_editline_pty;
     FILE *m_editline_slave_fh;
     lldb::SBInputReader m_editline_reader;
@@ -157,6 +164,8 @@ private:
     OptionData m_option_data;
     bool m_waiting_for_command;
     bool m_done;
+
+    bool iochannel_thread_exited;
 
     void
     ResetOptionValues ();
@@ -172,6 +181,24 @@ private:
 
     void
     CloseIOChannelFile ();
+
+    void
+    InitializePseudoTerminal();
+
+    void
+    DestroyPseudoTerminal();
+
+    void
+    InitializeEditLineIO();
+
+    void
+    ProcessEvent(lldb::SBEvent& event);
+
+    void
+    AttachToProcess();
+
+    void
+    HandleCommandLine(lldb::SBCommandReturnObject& result);
 
     static size_t
     EditLineInputReaderCallback (void *baton, 

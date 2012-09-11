@@ -17,6 +17,25 @@
 #include <sys/ioctl.h>
 #endif
 
+#ifdef _WIN32
+#include "lldb/lldb-windows.h"
+int posix_openpt(int flag) { return 0; }
+
+int strerror_r(int errnum, char *buf, size_t buflen) { return 0; }
+
+int unlockpt(int fd) { return 0; }
+int grantpt(int fd) { return 0; }
+char *ptsname(int fd) { return 0; }
+
+int open(const char *pathname, int flags) { return 0; }
+void close(int fd) {}
+int dup(int oldfd);int dup2(int oldfd, int newfd) { return 0; }
+
+typedef uint32_t pid_t;
+pid_t fork(void) { return 0; }
+pid_t setsid(void) { return 0; }
+#endif
+
 using namespace lldb_utility;
 
 //----------------------------------------------------------------------

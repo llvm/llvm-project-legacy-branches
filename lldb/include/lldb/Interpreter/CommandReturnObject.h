@@ -121,7 +121,7 @@ public:
     AppendMessage (const char *in_string, int len = -1);
 
     void
-    AppendMessageWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    AppendMessageWithFormat (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
     AppendRawWarning (const char *in_string, int len = -1);
@@ -130,7 +130,7 @@ public:
     AppendWarning (const char *in_string, int len = -1);
 
     void
-    AppendWarningWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    AppendWarningWithFormat (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
     AppendError (const char *in_string, int len = -1);
@@ -139,7 +139,7 @@ public:
     AppendRawError (const char *in_string, int len = -1);
 
     void
-    AppendErrorWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    AppendErrorWithFormat (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
     SetError (const Error &error, 

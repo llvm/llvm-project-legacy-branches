@@ -37,7 +37,7 @@
 #include "lldb/Target/ThreadSpec.h"
 #include "lldb/Target/Unwind.h"
 #include "Plugins/Process/Utility/UnwindLLDB.h"
-#include "UnwindMacOSXFrameBackchain.h"
+//#include "UnwindMacOSXFrameBackchain.h"
 
 
 using namespace lldb;
@@ -1450,12 +1450,16 @@ Thread::GetUnwinder ()
             case llvm::Triple::x86:
             case llvm::Triple::arm:
             case llvm::Triple::thumb:
+#ifndef _WIN32
                 m_unwinder_ap.reset (new UnwindLLDB (*this));
+#endif
                 break;
                 
             default:
+#ifdef __APPLE__
                 if (target_arch.GetTriple().getVendor() == llvm::Triple::Apple)
                     m_unwinder_ap.reset (new UnwindMacOSXFrameBackchain (*this));
+#endif
                 break;
         }
     }

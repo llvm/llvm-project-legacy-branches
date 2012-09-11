@@ -10,6 +10,12 @@
 #ifndef liblldb_RefCounter_h_
 #define liblldb_RefCounter_h_
 
+#ifdef _MSC_VER
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#endif
+
 #include "lldb/lldb-public.h"
 
 namespace lldb_utility {
@@ -39,14 +45,22 @@ private:
     inline T
     increment(T* t)
     {
-        return __sync_fetch_and_add(t, 1);
+#ifdef _MSC_VER
+    return InterlockedIncrement((LONG*)&t);
+#else
+    return __sync_add_and_fetch(&t, 1);
+#endif
     }
     
     template <class T>
     inline T
     decrement(T* t)
     {
-        return __sync_fetch_and_add(t, -1);
+#ifdef _MSC_VER
+    return InterlockedIncrement((LONG*)&t);
+#else
+    return __sync_add_and_fetch(&t, 1);
+#endif
     }
     
 };

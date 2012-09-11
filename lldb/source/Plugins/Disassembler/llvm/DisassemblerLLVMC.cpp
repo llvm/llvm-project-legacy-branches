@@ -23,7 +23,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/StackFrame.h"
 
-#include <regex.h>
+#include "lldb/Core/RegularExpression.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -303,7 +303,7 @@ public:
                         m_does_branch = eLazyBoolNo;
                 }
             }
-            
+#if 0
             if (!s_regex_compiled)
             {
                 ::regcomp(&s_regex, "[ \t]*([^ ^\t]+)[ \t]*([^ ^\t].*)?", REG_EXTENDED);
@@ -319,6 +319,7 @@ public:
                 if (matches[2].rm_so != -1)
                     m_mnemocics.assign(out_string + matches[2].rm_so, matches[2].rm_eo - matches[2].rm_so);
             }
+#endif
         }
     }
     
@@ -423,11 +424,11 @@ protected:
     LazyBool                m_does_branch;
     
     static bool             s_regex_compiled;
-    static ::regex_t        s_regex;
+    static lldb::RegularExpressionSP s_regex;
 };
 
 bool InstructionLLVMC::s_regex_compiled = false;
-::regex_t InstructionLLVMC::s_regex;
+lldb::RegularExpressionSP InstructionLLVMC::s_regex;
 
 Disassembler *
 DisassemblerLLVMC::CreateInstance (const ArchSpec &arch)
@@ -597,7 +598,7 @@ int DisassemblerLLVMC::OpInfo (uint64_t PC,
     default:
         break;
     case 1:
-        bzero (tag_bug, sizeof(::LLVMOpInfo1));
+        memset (tag_bug, '\0', sizeof(::LLVMOpInfo1));
         break;
     }
     return 0;

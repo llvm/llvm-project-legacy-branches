@@ -14,11 +14,8 @@
 #include "lldb/lldb-forward.h"
 
 #include <assert.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
-#include <stdbool.h>
-#include <unistd.h>
 
 //----------------------------------------------------------------------
 // All host systems must define:
@@ -39,19 +36,45 @@
 // things should be defined. Currently MacOSX is being assumed by default
 // since that is what lldb was first developed for.
 
-namespace lldb {
-        //----------------------------------------------------------------------
-        // MacOSX Types
-        //----------------------------------------------------------------------
-        typedef ::pthread_mutex_t   mutex_t;
-        typedef pthread_cond_t      condition_t;
-        typedef pthread_t           thread_t;                   // Host thread type
-        typedef void *              thread_arg_t;               // Host thread argument type
-        typedef void *              thread_result_t;            // Host thread result type
-        typedef void *              (*thread_func_t)(void *);   // Host thread function type
-        typedef void                (*LogOutputCallback) (const char *, void *baton);
-        typedef bool                (*CommandOverrideCallback)(void *baton, const char **argv);
-} // namespace lldb
+#if defined(_WIN32) || defined(_WIN64)
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+
+#include <Windows.h>
+#include <process.h>
+
+namespace lldb
+{
+    typedef CRITICAL_SECTION    mutex_t;
+    typedef CONDITION_VARIABLE  condition_t;
+    typedef uintptr_t           thread_t;                   // Host thread type
+    typedef void *              thread_arg_t;               // Host thread argument type
+    typedef unsigned            thread_result_t;            // Host thread result type
+    typedef thread_result_t     (*thread_func_t)(void *);   // Host thread function type
+    typedef void                (*LogOutputCallback) (const char *, void *baton);
+    typedef bool                (*CommandOverrideCallback)(void *baton, const char **argv);
+}
+
+#else
+
+#include <stdbool.h>
+#include <unistd.h>
+#include <pthread.h>
+
+namespace lldb
+{
+    typedef ::pthread_mutex_t   mutex_t;
+    typedef pthread_cond_t      condition_t;
+    typedef pthread_t           thread_t;                   // Host thread type
+    typedef void *              thread_arg_t;               // Host thread argument type
+    typedef void *              thread_result_t;            // Host thread result type
+    typedef void *              (*thread_func_t)(void *);   // Host thread function type
+    typedef void                (*LogOutputCallback) (const char *, void *baton);
+    typedef bool                (*CommandOverrideCallback)(void *baton, const char **argv);
+}
+
+#endif
 
 #if defined(__MINGW32__)
 

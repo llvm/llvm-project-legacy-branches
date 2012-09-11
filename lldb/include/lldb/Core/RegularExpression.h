@@ -11,7 +11,9 @@
 #define liblldb_DBRegex_h_
 #if defined(__cplusplus)
 
-#include <regex.h>
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Regex.h"
 #include <stdint.h>
 
 #include <string>
@@ -123,8 +125,8 @@ public:
     bool
     Execute (const char* string, size_t match_count = 0, int execute_flags = 0) const;
 
-    size_t
-    GetErrorAsCString (char *err_str, size_t err_str_max_len) const;
+    std::string
+    GetErrorAsCString () const;
 
     bool
     GetMatchAtIndex (const char* s, uint32_t idx, std::string& match_str) const;
@@ -168,21 +170,6 @@ public:
     bool
     IsValid () const;
     
-    void
-    Clear ()
-    {
-        Free();
-        m_re.clear();
-        m_compile_flags = 0;
-        m_comp_err = 1;
-    }
-    
-    int
-    GetErrorCode() const
-    {
-        return m_comp_err;
-    }
-
     bool
     operator < (const RegularExpression& rhs) const;
 
@@ -190,12 +177,14 @@ private:
     //------------------------------------------------------------------
     // Member variables
     //------------------------------------------------------------------
-    std::string m_re;   ///< A copy of the original regular expression text
-    int m_comp_err;     ///< Error code for the regular expression compilation
-    regex_t m_preg;     ///< The compiled regular expression
+    mutable std::string m_re;   ///< A copy of the original regular expression text
+    mutable llvm::Regex m_regex;     ///< The compiled regular expression
     int     m_compile_flags; ///< Stores the flags from the last compile.
-    mutable std::vector<regmatch_t> m_matches; ///< Where parenthesized subexpressions results are stored
-    
+
+    typedef llvm::SmallVectorImpl<llvm::StringRef> MatchVectorImpl;
+    typedef llvm::SmallVector<llvm::StringRef, 1>  MatchVector;
+    mutable MatchVector m_matches;
+
 };
 
 } // namespace lldb_private

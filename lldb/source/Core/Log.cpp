@@ -8,11 +8,19 @@
 //===----------------------------------------------------------------------===//
 
 // C Includes
-#include <pthread.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <time.h>
+#ifdef _POSIX_SOURCE
+#include <pthread.h>
 #include <unistd.h>
+#endif
+#ifdef _WIN32
+#define NOMINMAX
+#include <Winsock2.h>
+#undef interface
+#endif
 
 // C++ Includes
 #include <map>

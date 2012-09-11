@@ -13,6 +13,12 @@
 #include <algorithm>
 #include <memory>
 
+#ifdef _MSC_VER
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#endif
+
 //#define ENABLE_SP_LOGGING 1 // DON'T CHECK THIS LINE IN UNLESS COMMENTED OUT
 #if defined (ENABLE_SP_LOGGING)
 
@@ -28,14 +34,22 @@ template <class T>
 inline T
 increment(T& t)
 {
+#ifdef _MSC_VER
+    return InterlockedIncrement(&t);
+#else
     return __sync_add_and_fetch(&t, 1);
+#endif
 }
 
 template <class T>
 inline T
 decrement(T& t)
 {
+#ifdef _MSC_VER
+     return InterlockedDecrement(&t);
+#else
     return __sync_add_and_fetch(&t, -1);
+#endif
 }
 
 class shared_count

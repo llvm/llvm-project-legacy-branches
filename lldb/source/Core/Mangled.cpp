@@ -15,7 +15,9 @@
 #if defined(USE_BUILTIN_LIBCXXABI_DEMANGLER)
 #include "lldb/Core/cxa_demangle.h"
 #else
+#ifdef LLDB_LIBCXXABI
 #include <cxxabi.h>
+#endif
 #endif
 
 
@@ -207,7 +209,11 @@ Mangled::GetDemangledName () const
 #if defined(USE_BUILTIN_LIBCXXABI_DEMANGLER)
                 char *demangled_name = lldb_cxxabiv1::__cxa_demangle (mangled_cstr, NULL, NULL, NULL);
 #else
+#ifdef LLDB_LIBCXXABI
                 char *demangled_name = abi::__cxa_demangle (mangled_cstr, NULL, NULL, NULL);
+#else
+                char *demangled_name = 0;
+#endif
 #endif
 
                 if (demangled_name)

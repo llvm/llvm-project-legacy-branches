@@ -12,6 +12,10 @@
 
 #if defined(__cplusplus)
 
+#ifdef _MSC_VER
+#include "lldb/lldb-windows.h"
+#endif
+
 #include "lldb/lldb-public.h"
 #include "lldb/lldb-private-enumerations.h"
 #include "lldb/lldb-private-interfaces.h"

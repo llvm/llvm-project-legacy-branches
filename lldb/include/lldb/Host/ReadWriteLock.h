@@ -11,9 +11,17 @@
 #define liblldb_ReadWriteLock_h_
 #if defined(__cplusplus)
 
+#if defined(WIN32)
+#include "lldb/lldb-defines.h"
+#include <Windows.h>
+#undef interface
+#else
+#include <pthread.h>
+#endif
+
 #include "lldb/Host/Mutex.h"
 #include "lldb/Host/Condition.h"
-#include <pthread.h>
+
 #include <stdint.h>
 #include <time.h>
 
@@ -36,6 +44,16 @@ namespace lldb_private {
 class ReadWriteLock
 {
 public:
+#if defined(WIN32)
+    ReadWriteLock ();
+    ~ReadWriteLock ();
+    bool ReadLock ();
+    bool ReadTryLock ();
+    bool ReadUnlock ();
+    bool WriteLock ();
+    bool WriteTryLock ();
+    bool WriteUnlock ();
+#else
     ReadWriteLock () :
         m_rwlock()
     {
@@ -88,6 +106,7 @@ public:
     {
         return ::pthread_rwlock_unlock (&m_rwlock) == 0;
     }
+#endif
 
     class ReadLocker
     {
@@ -229,7 +248,11 @@ public:
     };
 
 protected:
+#if defined(WIN32)
+    void* m_data;
+#else
     pthread_rwlock_t m_rwlock;
+#endif
 private:
     DISALLOW_COPY_AND_ASSIGN(ReadWriteLock);
 };

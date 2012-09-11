@@ -11,7 +11,12 @@
 #define liblldb_Mutex_h_
 #if defined(__cplusplus)
 
+#include "llvm\Support\Mutex.h"
+
+#ifdef _POSIX_SOURCE
 #include <pthread.h>
+#endif
+
 #include <assert.h>
 
 #ifdef LLDB_CONFIGURATION_DEBUG
@@ -125,10 +130,10 @@ public:
         ///     returns \b false otherwise.
         //--------------------------------------------------------------
         bool
-        TryLock (Mutex &mutex, const char *failure_message = NULL);
+        TryLock (Mutex &mutex, const char *failure_message = 0);
         
         bool
-        TryLock (Mutex *mutex, const char *failure_message = NULL)
+        TryLock (Mutex *mutex, const char *failure_message = 0)
         {
             if (mutex)
                 return TryLock(*mutex, failure_message);
@@ -210,7 +215,7 @@ public:
     virtual
 #endif
     int
-    TryLock(const char *failure_message = NULL);
+    TryLock(const char *failure_message = 0);
 
     //------------------------------------------------------------------
     /// Unlock the mutex.
@@ -230,14 +235,17 @@ public:
     Unlock();
 
 protected:
+#ifdef _POSIX_SOURCE
     //------------------------------------------------------------------
     // Member variables
     //------------------------------------------------------------------
     // TODO: Hide the mutex in the implementation file in case we ever need to port to an
     // architecture that doesn't have pthread mutexes.
     pthread_mutex_t m_mutex; ///< The pthread mutex object.
+#endif
 
 private:
+#ifdef _POSIX_SOURCE
     //------------------------------------------------------------------
     /// Mutex get accessor.
     ///
@@ -246,6 +254,11 @@ private:
     //------------------------------------------------------------------
     pthread_mutex_t *
     GetMutex();
+#endif
+
+#ifndef _POSIX_SOURCE
+    llvm::sys::MutexImpl m_mutex;
+#endif
 
     Mutex(const Mutex&);
     const Mutex& operator=(const Mutex&);

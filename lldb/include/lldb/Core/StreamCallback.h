@@ -11,6 +11,7 @@
 #define liblldb_StreamCallback_h_
 
 #include <string>
+#include <map>
 
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamString.h"

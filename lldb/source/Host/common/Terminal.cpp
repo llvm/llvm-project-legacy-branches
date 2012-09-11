@@ -11,7 +11,6 @@
 #include "lldb/Host/Config.h"
 
 #include <fcntl.h>
-#include <unistd.h>
 #include <signal.h>
 
 #ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
@@ -24,7 +23,11 @@ using namespace lldb_private;
 bool
 Terminal::IsATerminal () const
 {
+#ifdef _POSIX_SOURCE
     return m_fd >= 0 && ::isatty (m_fd);
+#else
+    return false;
+#endif
 }
     
 
@@ -131,7 +134,10 @@ TerminalState::Save (int fd, bool save_process_group)
     m_tty.SetFileDescriptor(fd);
     if (m_tty.IsATerminal())
     {
+#ifdef _POSIX_SOURCE
         m_tflags = ::fcntl (fd, F_GETFL, 0);
+#endif
+
 #ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
         if (m_termios_ap.get() == NULL)
             m_termios_ap.reset (new struct termios);
@@ -139,9 +145,11 @@ TerminalState::Save (int fd, bool save_process_group)
         if (err != 0)
             m_termios_ap.reset();
 #endif // #ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
+#ifdef _POSIX_SOURCE
         if (save_process_group)
             m_process_group = ::tcgetpgrp (0);
         else
+#endif
             m_process_group = -1;
     }
     else
@@ -164,8 +172,10 @@ TerminalState::Restore () const
     if (IsValid())
     {
         const int fd = m_tty.GetFileDescriptor();
+#ifdef _POSIX_SOURCE
         if (TFlagsIsValid())
             fcntl (fd, F_SETFL, m_tflags);
+#endif
 
 #ifdef LLDB_CONFIG_TERMIOS_SUPPORTED
         if (TTYStateIsValid())
@@ -174,6 +184,7 @@ TerminalState::Restore () const
 
         if (ProcessGroupIsValid())
         {
+#ifdef _POSIX_SOURCE
             // Save the original signal handler.
             void (*saved_sigttou_callback) (int) = NULL;
             saved_sigttou_callback = (void (*)(int)) signal (SIGTTOU, SIG_IGN);
@@ -181,6 +192,7 @@ TerminalState::Restore () const
             tcsetpgrp (fd, m_process_group);
             // Restore the original signal handler.
             signal (SIGTTOU, saved_sigttou_callback);
+#endif
         }
         return true;
     }

@@ -563,7 +563,7 @@ ProcessLaunchInfo::FileAction::Duplicate (int fd, int dup_fd)
 }
 
 
-
+#ifdef _POSIX_SOURCE
 bool
 ProcessLaunchInfo::FileAction::AddPosixSpawnFileAction (posix_spawn_file_actions_t *file_actions,
                                                         const FileAction *info,
@@ -638,6 +638,7 @@ ProcessLaunchInfo::FileAction::AddPosixSpawnFileAction (posix_spawn_file_actions
     }
     return error.Success();
 }
+#endif
 
 Error
 ProcessLaunchCommandOptions::SetOptionValue (uint32_t option_idx, const char *option_arg)
@@ -3509,12 +3510,16 @@ Process::HandlePrivateEvent (EventSP &event_sp)
     m_currently_handling_event.SetValue(false, eBroadcastAlways);
 }
 
-void *
+thread_result_t
 Process::PrivateStateThread (void *arg)
 {
     Process *proc = static_cast<Process*> (arg);
     void *result = proc->RunPrivateStateThread ();
+#ifdef _WIN32
+    return 0;
+#else
     return result;
+#endif
 }
 
 void *

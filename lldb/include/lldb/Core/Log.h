@@ -11,11 +11,9 @@
 #define liblldb_Log_h_
 
 // C Includes
-#include <stdbool.h>
 #include <stdint.h>
 #include <signal.h>
 #include <stdio.h>
-#include <unistd.h>
 
 // C++ Includes
 // Other libraries and framework includes
@@ -126,37 +124,37 @@ public:
     PutCString (const char *cstr);
 
     void
-    Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
+    Printf (const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
     VAPrintf (const char *format, va_list args);
 
     void
-    PrintfWithFlags( uint32_t flags, const char *format, ...)  __attribute__ ((format (printf, 3, 4)));
+    PrintfWithFlags( uint32_t flags, const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
 
     void
-    LogIf (uint32_t mask, const char *fmt, ...)  __attribute__ ((format (printf, 3, 4)));
+    LogIf (uint32_t mask, const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
 
     void
-    Debug (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    Debug (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    DebugVerbose (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    DebugVerbose (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    Error (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    Error (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    FatalError (int err, const char *fmt, ...)  __attribute__ ((format (printf, 3, 4)));
+    FatalError (int err, const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
 
     void
-    Verbose (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    Verbose (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    Warning (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    Warning (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     void
-    WarningVerbose (const char *fmt, ...)  __attribute__ ((format (printf, 2, 3)));
+    WarningVerbose (const char *fmt, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
 
     Flags &
     GetOptions();

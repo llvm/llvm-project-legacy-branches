@@ -39,7 +39,7 @@ public:
     //--------------------------------------------------------------
     /// Default constructor.
     //--------------------------------------------------------------
-    Timer(const char *category, const char *format, ...)  __attribute__ ((format (printf, 3, 4)));
+    Timer(const char *category, const char *format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 3, 4))));
 
     //--------------------------------------------------------------
     /// Desstructor

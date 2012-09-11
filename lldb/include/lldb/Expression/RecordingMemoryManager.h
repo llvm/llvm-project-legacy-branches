@@ -84,6 +84,15 @@ public:
     //------------------------------------------------------------------
     /// Passthrough interface stub
     //------------------------------------------------------------------
+    virtual void *getPointerToNamedFunction(const std::string &Name,
+                                          bool AbortOnFailure = true)
+    {
+        return m_default_mm_ap->getPointerToNamedFunction(Name, AbortOnFailure);
+    }
+
+    //------------------------------------------------------------------
+    /// Passthrough interface stub
+    //------------------------------------------------------------------
     virtual void AllocateGOT()
     {
         m_default_mm_ap->AllocateGOT();

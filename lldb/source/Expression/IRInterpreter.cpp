@@ -1003,6 +1003,12 @@ IRInterpreter::supportsFunction (Function &llvm_function,
     return true;
 }
 
+#ifdef _MSC_VER
+#define LLDB_ULL
+#else
+#define LLDB_ULL ull
+#endif
+
 bool 
 IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                               const lldb_private::ConstString &result_name,
@@ -1032,12 +1038,12 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
         err.SetErrorString(interpreter_initialization_error);
         return false;    
     case 4:
-        alloc_min = 0x00001000llu;
-        alloc_max = 0x0000ffffllu;
+        alloc_min = 0x00001000 LLDB_ULL;
+        alloc_max = 0x0000ffff LLDB_ULL;
         break;
     case 8:
-        alloc_min = 0x0000000000001000llu;
-        alloc_max = 0x000000000000ffffllu;
+        alloc_min = 0x0000000000001000 LLDB_ULL;
+        alloc_max = 0x000000000000ffff LLDB_ULL;
         break;
     }
     

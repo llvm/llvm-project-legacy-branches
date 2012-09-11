@@ -25,14 +25,17 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
 
-#include <dlfcn.h>
 #include <errno.h>
-#include <grp.h>
 #include <limits.h>
+
+#ifdef __unix__
+#include <dlfcn.h>
+#include <grp.h>
 #include <netdb.h>
 #include <pwd.h>
-#include <sys/types.h>
+#endif
 
+#include <sys/types.h>
 
 #if defined (__APPLE__)
 
@@ -67,7 +70,7 @@ struct MonitorInfo
     bool monitor_signals;                       // If true, call the callback when "pid" gets signaled.
 };
 
-static void *
+static thread_result_t
 MonitorChildProcessThreadFunction (void *arg);
 
 lldb::thread_t
@@ -102,6 +105,7 @@ Host::StartMonitoringChildProcess
 // constructed, and exception safely restore the previous value it
 // when it goes out of scope.
 //------------------------------------------------------------------
+#ifndef _WIN32
 class ScopedPThreadCancelDisabler
 {
 public:
@@ -124,8 +128,8 @@ public:
 private:
     int m_old_state;    // Save the old cancelability state.
 };
-
-static void *
+#endif
+static thread_result_t
 MonitorChildProcessThreadFunction (void *arg)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
@@ -144,6 +148,8 @@ MonitorChildProcessThreadFunction (void *arg)
 
     int status = -1;
     const int options = 0;
+
+#ifndef _WIN32
     while (1)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
@@ -224,12 +230,16 @@ MonitorChildProcessThreadFunction (void *arg)
             }
         }
     }
-
+#endif
     log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
     if (log)
         log->Printf ("%s (arg = %p) thread exiting...", __FUNCTION__, arg);
 
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 
@@ -253,7 +263,18 @@ Host::SystemLog (SystemLogType type, const char *format, ...)
 size_t
 Host::GetPageSize()
 {
+#ifdef _WIN32
+    static long g_pagesize = 0;
+    if (!g_pagesize)
+    {
+        SYSTEM_INFO systemInfo;
+        GetNativeSystemInfo(&systemInfo);
+        g_pagesize = systemInfo.dwPageSize;
+    }
+    return g_pagesize;
+#else
     return ::getpagesize();
+#endif
 }
 
 const ArchSpec &
@@ -427,6 +448,8 @@ Host::GetCurrentThreadID()
     return ::mach_thread_self();
 #elif defined(__FreeBSD__)
     return lldb::tid_t(pthread_getthreadid_np());
+#elif defined(_WIN32)
+    return lldb::tid_t(::GetCurrentThreadId());
 #else
     return lldb::tid_t(pthread_self());
 #endif
@@ -435,12 +458,17 @@ Host::GetCurrentThreadID()
 lldb::thread_t
 Host::GetCurrentThread ()
 {
+#ifdef _WIN32
+    return lldb::thread_t(::GetCurrentThread());
+#else
     return lldb::thread_t(pthread_self());
+#endif
 }
 
 const char *
 Host::GetSignalAsCString (int signo)
 {
+#ifndef _WIN32
     switch (signo)
     {
     case SIGHUP:    return "SIGHUP";    // 1    hangup
@@ -486,6 +514,7 @@ Host::GetSignalAsCString (int signo)
     default:
         break;
     }
+#endif
     return NULL;
 }
 
@@ -530,6 +559,9 @@ struct HostThreadCreateInfo
 };
 
 static thread_result_t
+#ifdef _WIN32
+__stdcall
+#endif
 ThreadCreateTrampoline (thread_arg_t arg)
 {
     HostThreadCreateInfo *info = (HostThreadCreateInfo *)arg;
@@ -559,7 +591,13 @@ Host::ThreadCreate
     // Host::ThreadCreateTrampoline will delete this pointer for us.
     HostThreadCreateInfo *info_ptr = new HostThreadCreateInfo (thread_name, thread_fptr, thread_arg);
     
+#ifdef _WIN32
+    thread = ::_beginthreadex(0, 0, ThreadCreateTrampoline, info_ptr, 0, NULL);
+    int err = thread;
+#else
     int err = ::pthread_create (&thread, NULL, ThreadCreateTrampoline, info_ptr);
+#endif
+
     if (err == 0)
     {
         if (error)
@@ -576,28 +614,41 @@ Host::ThreadCreate
 bool
 Host::ThreadCancel (lldb::thread_t thread, Error *error)
 {
+#ifdef _WIN32
+    int err = ::TerminateThread((HANDLE)thread, 0);
+#else
     int err = ::pthread_cancel (thread);
     if (error)
         error->SetError(err, eErrorTypePOSIX);
+#endif
     return err == 0;
 }
 
 bool
 Host::ThreadDetach (lldb::thread_t thread, Error *error)
 {
+#ifdef _WIN32
+    return ThreadCancel(thread, error);
+#else
     int err = ::pthread_detach (thread);
     if (error)
         error->SetError(err, eErrorTypePOSIX);
     return err == 0;
+#endif
 }
 
 bool
 Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Error *error)
 {
+#ifdef _WIN32
+    WaitForSingleObject((HANDLE) thread, INFINITE);
+    return true;
+#else
     int err = ::pthread_join (thread, thread_result_ptr);
     if (error)
         error->SetError(err, eErrorTypePOSIX);
     return err == 0;
+#endif
 }
 
 // rdar://problem/8153284
@@ -609,7 +660,9 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
 // Another approach is to introduce a static guard object which monitors its
 // own destruction and raises a flag, but this incurs more overhead.
 
+#ifndef _WIN32
 static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
+#endif
 static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
 
 static void
@@ -625,9 +678,11 @@ InitThreadNamesMap()
 static const char *
 ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name)
 {
+#ifndef _WIN32
     int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
     if (success != 0)
         return NULL;
+#endif
     
     uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
 
@@ -753,12 +808,14 @@ FileSpec
 Host::GetModuleFileSpecForHostAddress (const void *host_addr)
 {
     FileSpec module_filespec;
+#ifdef __unix__
     Dl_info info;
     if (::dladdr (host_addr, &info))
     {
         if (info.dli_fname)
             module_filespec.SetFile(info.dli_fname, true);
     }
+#endif
     return module_filespec;
 }
 
@@ -796,6 +853,7 @@ struct DynamicLibraryInfo
 void *
 Host::DynamicLibraryOpen (const FileSpec &file_spec, uint32_t options, Error &error)
 {
+#ifndef _WIN32
     char path[PATH_MAX];
     if (file_spec.GetPath(path, sizeof(path)))
     {
@@ -833,6 +891,7 @@ Host::DynamicLibraryOpen (const FileSpec &file_spec, uint32_t options, Error &er
     {
         error.SetErrorString("failed to extract path");
     }
+#endif
     return NULL;
 }
 
@@ -840,6 +899,7 @@ Error
 Host::DynamicLibraryClose (void *opaque)
 {
     Error error;
+#ifndef _WIN32
     if (opaque == NULL)
     {
         error.SetErrorString ("invalid dynamic library handle");
@@ -856,6 +916,7 @@ Host::DynamicLibraryClose (void *opaque)
         dylib_info->handle = 0;
         delete dylib_info;
     }
+#endif
     return error;
 }
 
@@ -869,7 +930,7 @@ Host::DynamicLibraryGetSymbol (void *opaque, const char *symbol_name, Error &err
     else
     {
         DynamicLibraryInfo *dylib_info = (DynamicLibraryInfo *) opaque;
-
+#ifndef _WIN32
         void *symbol_addr = ::dlsym (dylib_info->handle, symbol_name);
         if (symbol_addr)
         {
@@ -898,6 +959,7 @@ Host::DynamicLibraryGetSymbol (void *opaque, const char *symbol_name, Error &err
         {
             error.SetErrorString(::dlerror());
         }
+#endif
     }
     return NULL;
 }
@@ -1116,6 +1178,7 @@ Host::GetHostname (std::string &s)
 const char *
 Host::GetUserName (uint32_t uid, std::string &user_name)
 {
+#ifndef _WIN32
     struct passwd user_info;
     struct passwd *user_info_ptr = &user_info;
     char user_buffer[PATH_MAX];
@@ -1133,12 +1196,14 @@ Host::GetUserName (uint32_t uid, std::string &user_name)
         }
     }
     user_name.clear();
+#endif
     return NULL;
 }
 
 const char *
 Host::GetGroupName (uint32_t gid, std::string &group_name)
 {
+#ifndef _WIN32
     char group_buffer[PATH_MAX];
     size_t group_buffer_size = sizeof(group_buffer);
     struct group group_info;
@@ -1169,6 +1234,7 @@ Host::GetGroupName (uint32_t gid, std::string &group_name)
         }
     }
     group_name.clear();
+#endif
     return NULL;
 }
 
@@ -1191,25 +1257,41 @@ Host::GetOSKernelDescription (std::string &s)
 uint32_t
 Host::GetUserID ()
 {
+#ifdef _WIN32
+    return 0;
+#else
     return getuid();
+#endif
 }
 
 uint32_t
 Host::GetGroupID ()
 {
+#ifdef _WIN32
+    return 0;
+#else
     return getgid();
+#endif
 }
 
 uint32_t
 Host::GetEffectiveUserID ()
 {
+#ifdef _WIN32
+    return 0;
+#else
     return geteuid();
+#endif
 }
 
 uint32_t
 Host::GetEffectiveGroupID ()
 {
+#ifdef _WIN32
+    return 0;
+#else
     return getegid();
+#endif
 }
 
 #if !defined (__APPLE__)
@@ -1287,8 +1369,10 @@ MonitorShellCommand (void *callback_baton,
     // Now wait for a handshake back from that thread running Host::RunShellCommand
     // so we know that we can delete shell_info_ptr
     shell_info->can_delete.WaitForValueEqualTo(true);
+#ifdef _POSIX_SOURCE
     // Sleep a bit to allow the shell_info->can_delete.SetValue() to complete...
     usleep(1000);
+#endif
     // Now delete the shell info that was passed into this function
     delete shell_info;
     return true;
@@ -1357,9 +1441,10 @@ Host::RunShellCommand (const char *command,
         if (timed_out)
         {
             error.SetErrorString("timed out waiting for shell command to complete");
-            
+#ifdef _POSIX_SOURCE
             // Kill the process since it didn't complete withint the timeout specified
             ::kill (pid, SIGKILL);
+#endif
             // Wait for the monitor callback to get the message
             timeout_time = TimeValue::Now();
             timeout_time.OffsetWithSeconds(1);

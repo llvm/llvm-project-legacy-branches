@@ -435,10 +435,8 @@ protected:
                     RegularExpression regexp(m_options.m_func_regexp.c_str());
                     if (!regexp.IsValid())
                     {
-                        char err_str[1024];
-                        regexp.GetErrorAsCString(err_str, sizeof(err_str));
                         result.AppendErrorWithFormat("Function name regular expression could not be compiled: \"%s\"",
-                                                     err_str);
+                                                     regexp.GetErrorAsCString().c_str());
                         result.SetStatus (eReturnStatusFailed);
                         return false;
                     }
@@ -472,10 +470,8 @@ protected:
                     RegularExpression regexp(m_options.m_source_text_regexp.c_str());
                     if (!regexp.IsValid())
                     {
-                        char err_str[1024];
-                        regexp.GetErrorAsCString(err_str, sizeof(err_str));
                         result.AppendErrorWithFormat("Source text regular expression could not be compiled: \"%s\"",
-                                                     err_str);
+                                                     regexp.GetErrorAsCString().c_str());
                         result.SetStatus (eReturnStatusFailed);
                         return false;
                     }

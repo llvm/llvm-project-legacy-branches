@@ -11,12 +11,16 @@
 
 // C Includes
 #include <errno.h>
+#ifdef LLDB_PTHREAD
 #include <pthread.h>
+#endif
 #include <stdlib.h>
+#ifdef _POSIX_SOURCE
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes
@@ -70,12 +74,14 @@ ConnectionSharedMemory::Connect (const char *s, Error *error_ptr)
 ConnectionStatus
 ConnectionSharedMemory::Disconnect (Error *error_ptr)
 {
+#ifdef _POSIX_SOURCE
     m_mmap.Clear();
     if (!m_name.empty())
     {
         shm_unlink (m_name.c_str());
         m_name.clear();
     }
+#endif
     return eConnectionStatusSuccess;
 }
 
@@ -106,6 +112,7 @@ ConnectionSharedMemory::BytesAvailable (uint32_t timeout_usec, Error *error_ptr)
 ConnectionStatus
 ConnectionSharedMemory::Open (bool create, const char *name, size_t size, Error *error_ptr)
 {
+#ifdef _POSIX_SOURCE
     if (m_fd != -1)
     {
         if (error_ptr)
@@ -126,6 +133,7 @@ ConnectionSharedMemory::Open (bool create, const char *name, size_t size, Error 
         return eConnectionStatusSuccess;
 
     Disconnect(NULL);
+#endif
     return eConnectionStatusError;
 }
 

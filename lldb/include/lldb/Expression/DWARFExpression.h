@@ -17,11 +17,10 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Scalar.h"
 
-class ClangExpressionVariable;
-class ClangExpressionVariableList;
-
 namespace lldb_private {
 
+class ClangExpressionVariable;
+class ClangExpressionVariableList;
 class ClangExpressionDeclMap;
 
 //----------------------------------------------------------------------

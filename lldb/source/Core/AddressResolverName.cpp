@@ -35,12 +35,15 @@ AddressResolverName::AddressResolverName
 {
     if (m_match_type == AddressResolver::Regexp)
     {
-        if (!m_regex.Compile (m_func_name.AsCString()))
+        m_regex = RegularExpression(m_func_name.AsCString());
+        if (!m_regex.IsValid())
         {
             LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
             if (log)
-                log->Warning ("function name regexp: \"%s\" did not compile.", m_func_name.AsCString());
+                log->Warning ("function name regexp: \"%s\" did not compile: %s.",
+                              m_func_name.AsCString(),
+                              m_regex.GetErrorAsCString().c_str());
         }
     }
 }

@@ -48,6 +48,7 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/LangStandard.h"
+#include "clang/Basic/Version.h"
 
 #ifdef LLDB_DEFINED_NDEBUG_FOR_CLANG
 #undef NDEBUG
@@ -358,7 +359,9 @@ ParseLangArgs
     // inlining enabled.
     //
     // FIXME: This is affected by other options (-fno-inline).
+#if (CLANG_VERSION_MAJOR <= 3 && CLANG_VERSION_MINOR < 2)
     Opts.NoInline = !Opt;
+#endif
 
 //    unsigned SSP = getLastArgIntValue(Args, OPT_stack_protector, 0, Diags);
 //    switch (SSP) {
@@ -1177,7 +1180,7 @@ CreateTemplateParameterList (ASTContext *ast,
     for (size_t i=0; i<num_template_params; ++i)
     {
         const char *name = template_param_infos.names[i];
-        if (template_param_infos.args[i].getAsIntegral())
+        if (template_param_infos.args[i].getAsIntegral().getBoolValue())
         {
             template_param_decls.push_back (NonTypeTemplateParmDecl::Create (*ast,
                                                                              ast->getTranslationUnitDecl(), // Is this the right decl context?, SourceLocation StartLoc,
@@ -1956,7 +1959,7 @@ ClangASTContext::AddFieldToRecordType
                                                   NULL,       // TInfo *
                                                   bit_width,  // BitWidth
                                                   false,      // Mutable
-                                                  false);     // HasInit
+                                                  ICIS_NoInit); // HasInit
             
             if (!name) {
                 // Determine whether this field corresponds to an anonymous

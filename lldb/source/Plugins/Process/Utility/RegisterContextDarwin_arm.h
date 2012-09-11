@@ -137,6 +137,10 @@ public:
 //      } v3;
 //      uint32_t fpscr;
 //  };
+// windows defines far as nothing
+#if defined(far)
+#undef far
+#endif
 
     struct EXC
     {

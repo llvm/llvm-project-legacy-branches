@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if defined(USE_BUILTIN_LIBCXXABI_DEMANGLER)
 #include "lldb/Core/cxa_demangle.h"
 
 #include <stdlib.h>
@@ -11009,3 +11010,5 @@ __cxa_demangle(const char* mangled_name, char* buf, size_t* n, int* status)
 //}  // extern "C"
 
 }  // lldb_cxxabiv1
+
+#endif

@@ -11,7 +11,9 @@
 #define liblldb_Options_h_
 
 // C Includes
+#ifdef _POSIX_SOURCE
 #include <getopt.h>
+#endif
 
 // C++ Includes
 #include <set>

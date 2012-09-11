@@ -320,7 +320,7 @@ public:
 
 protected:
     friend class BreakpointLocationList;
-    friend class CommandObjectBreakpointCommandAdd;
+    //friend class CommandObjectBreakpointCommandAdd;
     friend class Process;
 
     //------------------------------------------------------------------
