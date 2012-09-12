@@ -398,6 +398,27 @@ def VecListFourQWordIndexed : Operand<i32> {
   let MIOperandInfo = (ops DPR:$Vd, i32imm:$idx);
 }
 
+def hword_alignedload : PatFrag<(ops node:$ptr), (load node:$ptr), [{
+  return cast<LoadSDNode>(N)->getAlignment() == 2;
+}]>;
+def hword_alignedstore : PatFrag<(ops node:$val, node:$ptr),
+                                 (store node:$val, node:$ptr), [{
+  return cast<StoreSDNode>(N)->getAlignment() == 2;
+}]>;
+def byte_alignedload : PatFrag<(ops node:$ptr), (load node:$ptr), [{
+  return cast<LoadSDNode>(N)->getAlignment() == 1;
+}]>;
+def byte_alignedstore : PatFrag<(ops node:$val, node:$ptr),
+                             (store node:$val, node:$ptr), [{
+  return cast<StoreSDNode>(N)->getAlignment() == 1;
+}]>;
+def non_word_alignedload : PatFrag<(ops node:$ptr), (load node:$ptr), [{
+  return cast<LoadSDNode>(N)->getAlignment() < 4;
+}]>;
+def non_word_alignedstore : PatFrag<(ops node:$val, node:$ptr),
+                                    (store node:$val, node:$ptr), [{
+  return cast<StoreSDNode>(N)->getAlignment() < 4;
+}]>;
 
 //===----------------------------------------------------------------------===//
 // NEON-specific DAG Nodes.
@@ -1959,7 +1980,7 @@ def VST1LNd8  : VST1LN<0b0000, {?,?,?,0}, "8", v8i8, truncstorei8,
 def VST1LNd16 : VST1LN<0b0100, {?,?,0,?}, "16", v4i16, truncstorei16,
                        NEONvgetlaneu, addrmode6> {
   let Inst{7-6} = lane{1-0};
-  let Inst{4}   = Rn{5};
+  let Inst{4}   = Rn{4};
 }
 
 def VST1LNd32 : VST1LN<0b1000, {?,0,?,?}, "32", v2i32, store, extractelt,
@@ -2002,7 +2023,7 @@ def VST1LNd8_UPD  : VST1LNWB<0b0000, {?,?,?,0}, "8", v8i8, post_truncsti8,
 def VST1LNd16_UPD : VST1LNWB<0b0100, {?,?,0,?}, "16", v4i16, post_truncsti16,
                              NEONvgetlaneu, addrmode6> {
   let Inst{7-6} = lane{1-0};
-  let Inst{4}   = Rn{5};
+  let Inst{4}   = Rn{4};
 }
 def VST1LNd32_UPD : VST1LNWB<0b1000, {?,0,?,?}, "32", v2i32, post_store,
                              extractelt, addrmode6oneL32> {
@@ -2238,6 +2259,19 @@ def VST4LNq32Pseudo_UPD : VSTQQQQLNWBPseudo<IIC_VST4lnu>;
 
 } // mayStore = 1, neverHasSideEffects = 1, hasExtraSrcRegAllocReq = 1
 
+// Use vld1/vst1 for unaligned f64 load / store
+def : Pat<(f64 (hword_alignedload addrmode6:$addr)),
+          (VLD1d16 addrmode6:$addr)>, Requires<[IsLE]>;
+def : Pat<(hword_alignedstore (f64 DPR:$value), addrmode6:$addr),
+          (VST1d16 addrmode6:$addr, DPR:$value)>, Requires<[IsLE]>;
+def : Pat<(f64 (byte_alignedload addrmode6:$addr)),
+          (VLD1d8 addrmode6:$addr)>, Requires<[IsLE]>;
+def : Pat<(byte_alignedstore (f64 DPR:$value), addrmode6:$addr),
+          (VST1d8 addrmode6:$addr, DPR:$value)>, Requires<[IsLE]>;
+def : Pat<(f64 (non_word_alignedload addrmode6:$addr)),
+          (VLD1d64 addrmode6:$addr)>, Requires<[IsBE]>;
+def : Pat<(non_word_alignedstore (f64 DPR:$value), addrmode6:$addr),
+          (VST1d64 addrmode6:$addr, DPR:$value)>, Requires<[IsBE]>;
 
 //===----------------------------------------------------------------------===//
 // NEON pattern fragments
@@ -5011,25 +5045,23 @@ def VSETLNi32 : NVSetLane<{1,1,1,0,0,0,?,0}, 0b1011, 0b00, (outs DPR:$V),
                                            GPR:$R, imm:$lane))]> {
   let Inst{21} = lane{0};
 }
+
+def VSETLNi8Q : PseudoNeonI<(outs QPR:$V),
+                             (ins QPR:$src1, GPR:$R, VectorIndex8:$lane),
+                             IIC_VMOVISL, "",
+                             [(set QPR:$V, (vector_insert (v16i8 QPR:$src1),
+                                           GPR:$R, imm:$lane))]>;
+def VSETLNi16Q : PseudoNeonI<(outs QPR:$V),
+                             (ins QPR:$src1, GPR:$R, VectorIndex16:$lane),
+                             IIC_VMOVISL, "",
+                             [(set QPR:$V, (vector_insert (v8i16 QPR:$src1),
+                                           GPR:$R, imm:$lane))]>;
 }
-def : Pat<(vector_insert (v16i8 QPR:$src1), GPR:$src2, imm:$lane),
-          (v16i8 (INSERT_SUBREG QPR:$src1,
-                  (v8i8 (VSETLNi8 (v8i8 (EXTRACT_SUBREG QPR:$src1,
-                                   (DSubReg_i8_reg imm:$lane))),
-                            GPR:$src2, (SubReg_i8_lane imm:$lane))),
-                  (DSubReg_i8_reg imm:$lane)))>;
-def : Pat<(vector_insert (v8i16 QPR:$src1), GPR:$src2, imm:$lane),
-          (v8i16 (INSERT_SUBREG QPR:$src1,
-                  (v4i16 (VSETLNi16 (v4i16 (EXTRACT_SUBREG QPR:$src1,
-                                     (DSubReg_i16_reg imm:$lane))),
-                             GPR:$src2, (SubReg_i16_lane imm:$lane))),
-                  (DSubReg_i16_reg imm:$lane)))>;
+
 def : Pat<(insertelt (v4i32 QPR:$src1), GPR:$src2, imm:$lane),
-          (v4i32 (INSERT_SUBREG QPR:$src1,
-                  (v2i32 (VSETLNi32 (v2i32 (EXTRACT_SUBREG QPR:$src1,
-                                     (DSubReg_i32_reg imm:$lane))),
-                             GPR:$src2, (SubReg_i32_lane imm:$lane))),
-                  (DSubReg_i32_reg imm:$lane)))>;
+         (v4i32 (INSERT_SUBREG QPR:$src1,
+                 GPR:$src2,
+                 (SSubReg_f32_reg imm:$lane)))>;
 
 def : Pat<(v2f32 (insertelt DPR:$src1, SPR:$src2, imm:$src3)),
           (INSERT_SUBREG (v2f32 (COPY_TO_REGCLASS DPR:$src1, DPR_VFP2)),
@@ -5597,26 +5629,27 @@ def : Pat<(v2f64 (bitconvert (v4f32 QPR:$src))), (v2f64 QPR:$src)>;
 // Vector lengthening move with load, matching extending loads.
 
 // extload, zextload and sextload for a standard lengthening load. Example:
-// Lengthen_Single<"8", "i16", "i8"> = 
-//     Pat<(v8i16 (extloadvi8 addrmode6oneL32:$addr))
-//         (VMOVLuv8i16 (VLD1LNd32 addrmode6oneL32:$addr,
-//                                 (f64 (IMPLICIT_DEF)), (i32 0)))>;
+// Lengthen_Single<"8", "i16", "8"> = 
+//     Pat<(v8i16 (extloadvi8 addrmode6:$addr))
+//         (VMOVLuv8i16 (VLD1d8 addrmode6:$addr,
+//                              (f64 (IMPLICIT_DEF)), (i32 0)))>;
 multiclass Lengthen_Single<string DestLanes, string DestTy, string SrcTy> {
+  let AddedComplexity = 10 in {
   def _Any : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                    (!cast<PatFrag>("extloadv" # SrcTy) addrmode6oneL32:$addr)),
+                    (!cast<PatFrag>("extloadvi" # SrcTy) addrmode6:$addr)),
                   (!cast<Instruction>("VMOVLuv" # DestLanes # DestTy)
-                    (VLD1LNd32 addrmode6oneL32:$addr, 
-                               (f64 (IMPLICIT_DEF)), (i32 0)))>;
+                    (!cast<Instruction>("VLD1d" # SrcTy) addrmode6:$addr))>;
+
   def _Z : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                  (!cast<PatFrag>("zextloadv" # SrcTy) addrmode6oneL32:$addr)),
+                  (!cast<PatFrag>("zextloadvi" # SrcTy) addrmode6:$addr)),
                 (!cast<Instruction>("VMOVLuv" # DestLanes # DestTy)
-                    (VLD1LNd32 addrmode6oneL32:$addr, 
-                               (f64 (IMPLICIT_DEF)), (i32 0)))>;
+                    (!cast<Instruction>("VLD1d" # SrcTy) addrmode6:$addr))>;
+
   def _S : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                  (!cast<PatFrag>("sextloadv" # SrcTy) addrmode6oneL32:$addr)),
+                  (!cast<PatFrag>("sextloadvi" # SrcTy) addrmode6:$addr)),
                 (!cast<Instruction>("VMOVLsv" # DestLanes # DestTy)
-                    (VLD1LNd32 addrmode6oneL32:$addr, 
-                               (f64 (IMPLICIT_DEF)), (i32 0)))>;
+                    (!cast<Instruction>("VLD1d" # SrcTy) addrmode6:$addr))>;
+  }
 }
 
 // extload, zextload and sextload for a lengthening load which only uses
@@ -5648,8 +5681,8 @@ multiclass Lengthen_HalfSingle<string DestLanes, string DestTy, string SrcTy,
 // extload, zextload and sextload for a lengthening load followed by another
 // lengthening load, to quadruple the initial length.
 //
-// Lengthen_Double<"4", "i32", "i8", "8", "i16", "4", "i32", qsub_0> =
-//     Pat<(v4i32 (extloadvi8 addrmode5:$addr))
+// Lengthen_Double<"4", "i32", "i8", "8", "i16", "4", "i32"> =
+//     Pat<(v4i32 (extloadvi8 addrmode6oneL32:$addr))
 //         (EXTRACT_SUBREG (VMOVLuv4i32
 //           (EXTRACT_SUBREG (VMOVLuv8i16 (VLD1LNd32 addrmode6oneL32:$addr,
 //                                                   (f64 (IMPLICIT_DEF)),
@@ -5663,19 +5696,19 @@ multiclass Lengthen_Double<string DestLanes, string DestTy, string SrcTy,
                    (!cast<PatFrag>("extloadv" # SrcTy) addrmode6oneL32:$addr)),
          (!cast<Instruction>("VMOVLuv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0))>;
   def _Z   : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
                    (!cast<PatFrag>("zextloadv" # SrcTy) addrmode6oneL32:$addr)),
          (!cast<Instruction>("VMOVLuv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0))>;
   def _S   : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
                    (!cast<PatFrag>("sextloadv" # SrcTy) addrmode6oneL32:$addr)),
          (!cast<Instruction>("VMOVLsv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLsv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0))>;
 }
 
@@ -5684,9 +5717,9 @@ multiclass Lengthen_Double<string DestLanes, string DestTy, string SrcTy,
 // requiring half the available lanes (a 64-bit outcome instead of a 128-bit).
 //
 // Lengthen_HalfDouble<"2", "i32", "i8", "8", "i16", "4", "i32"> =
-// Pat<(v4i32 (extloadvi8 addrmode5:$addr))
+// Pat<(v2i32 (extloadvi8 addrmode6:$addr))
 //     (EXTRACT_SUBREG (VMOVLuv4i32
-//       (EXTRACT_SUBREG (VMOVLuv8i16 (VLD1LNd32 addrmode6oneL32:$addr,
+//       (EXTRACT_SUBREG (VMOVLuv8i16 (VLD1LNd16 addrmode6:$addr,
 //                                               (f64 (IMPLICIT_DEF)), (i32 0))),
 //                       dsub_0)),
 //       dsub_0)>;
@@ -5694,34 +5727,33 @@ multiclass Lengthen_HalfDouble<string DestLanes, string DestTy, string SrcTy,
                            string Insn1Lanes, string Insn1Ty, string Insn2Lanes,
                            string Insn2Ty> {
   def _Any : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                   (!cast<PatFrag>("extloadv" # SrcTy) addrmode6oneL32:$addr)),
+                   (!cast<PatFrag>("extloadv" # SrcTy) addrmode6:$addr)),
          (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd16 addrmode6:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0)),
           dsub_0)>;
   def _Z   : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                   (!cast<PatFrag>("zextloadv" # SrcTy) addrmode6oneL32:$addr)),
+                   (!cast<PatFrag>("zextloadv" # SrcTy) addrmode6:$addr)),
          (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLuv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd16 addrmode6:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0)),
           dsub_0)>;
   def _S   : Pat<(!cast<ValueType>("v" # DestLanes # DestTy)
-                   (!cast<PatFrag>("sextloadv" # SrcTy) addrmode6oneL32:$addr)),
+                   (!cast<PatFrag>("sextloadv" # SrcTy) addrmode6:$addr)),
          (EXTRACT_SUBREG (!cast<Instruction>("VMOVLsv" # Insn2Lanes # Insn2Ty)
            (EXTRACT_SUBREG (!cast<Instruction>("VMOVLsv" # Insn1Lanes # Insn1Ty)
-             (VLD1LNd32 addrmode6oneL32:$addr, (f64 (IMPLICIT_DEF)), (i32 0))), 
+             (VLD1LNd16 addrmode6:$addr, (f64 (IMPLICIT_DEF)), (i32 0))),
              dsub_0)),
           dsub_0)>;
 }
 
-defm : Lengthen_Single<"8", "i16", "i8">; // v8i8 -> v8i16
-defm : Lengthen_Single<"4", "i32", "i16">; // v4i16 -> v4i32
-defm : Lengthen_Single<"2", "i64", "i32">; // v2i32 -> v2i64
+defm : Lengthen_Single<"8", "i16", "8">; // v8i8 -> v8i16
+defm : Lengthen_Single<"4", "i32", "16">; // v4i16 -> v4i32
+defm : Lengthen_Single<"2", "i64", "32">; // v2i32 -> v2i64
 
 defm : Lengthen_HalfSingle<"4", "i16", "i8", "8", "i16">; // v4i8 -> v4i16
-defm : Lengthen_HalfSingle<"2", "i16", "i8", "8", "i16">; // v2i8 -> v2i16
 defm : Lengthen_HalfSingle<"2", "i32", "i16", "4", "i32">; // v2i16 -> v2i32
 
 // Double lengthening - v4i8 -> v4i16 -> v4i32
@@ -5732,17 +5764,17 @@ defm : Lengthen_HalfDouble<"2", "i32", "i8", "8", "i16", "4", "i32">;
 defm : Lengthen_Double<"2", "i64", "i16", "4", "i32", "2", "i64">;
 
 // Triple lengthening - v2i8 -> v2i16 -> v2i32 -> v2i64
-def : Pat<(v2i64 (extloadvi8 addrmode6oneL32:$addr)),
+def : Pat<(v2i64 (extloadvi8 addrmode6:$addr)),
       (VMOVLuv2i64 (EXTRACT_SUBREG (VMOVLuv4i32 (EXTRACT_SUBREG (VMOVLuv8i16
-         (VLD1LNd32 addrmode6oneL32:$addr, 
+         (VLD1LNd16 addrmode6:$addr, 
                     (f64 (IMPLICIT_DEF)), (i32 0))), dsub_0)), dsub_0))>;
-def : Pat<(v2i64 (zextloadvi8 addrmode6oneL32:$addr)),
+def : Pat<(v2i64 (zextloadvi8 addrmode6:$addr)),
       (VMOVLuv2i64 (EXTRACT_SUBREG (VMOVLuv4i32 (EXTRACT_SUBREG (VMOVLuv8i16
-         (VLD1LNd32 addrmode6oneL32:$addr,
+         (VLD1LNd16 addrmode6:$addr,
                     (f64 (IMPLICIT_DEF)), (i32 0))), dsub_0)), dsub_0))>;
-def : Pat<(v2i64 (sextloadvi8 addrmode6oneL32:$addr)),
+def : Pat<(v2i64 (sextloadvi8 addrmode6:$addr)),
       (VMOVLsv2i64 (EXTRACT_SUBREG (VMOVLsv4i32 (EXTRACT_SUBREG (VMOVLsv8i16
-         (VLD1LNd32 addrmode6oneL32:$addr,
+         (VLD1LNd16 addrmode6:$addr,
                     (f64 (IMPLICIT_DEF)), (i32 0))), dsub_0)), dsub_0))>;
 
 //===----------------------------------------------------------------------===//
