@@ -73,36 +73,33 @@ namespace llvmCFGStruct
   if (DEBUGME) errs() << "New instr: " << *i << "\n"
 
 #define SHOWNEWBLK(b, msg) \
-if (DEBUGME) { \
-  errs() << msg << "BB" << b->getNumber() << "size " << b->size(); \
-  errs() << "\n"; \
-}
+  if (DEBUGME) { \
+    errs() << msg << "BB" << b->getNumber() << "size " << b->size(); \
+    errs() << "\n"; \
+  }
 
 #define SHOWBLK_DETAIL(b, msg) \
-if (DEBUGME) { \
-  if (b) { \
-  errs() << msg << "BB" << b->getNumber() << "size " << b->size(); \
-  b->print(errs()); \
-  errs() << "\n"; \
-  } \
-}
+  if (DEBUGME) { \
+    if (b) { \
+      errs() << msg << "BB" << b->getNumber() << "size " << b->size(); \
+      b->print(errs()); \
+      errs() << "\n"; \
+    } \
+  }
 
 #define INVALIDSCCNUM -1
 #define INVALIDREGNUM 0
 
 template<class LoopinfoT>
-void PrintLoopinfo(const LoopinfoT &LoopInfo, llvm::raw_ostream &OS)
-{
+void PrintLoopinfo(const LoopinfoT &LoopInfo, llvm::raw_ostream &OS) {
   for (typename LoopinfoT::iterator iter = LoopInfo.begin(),
        iterEnd = LoopInfo.end();
        iter != iterEnd; ++iter) {
     (*iter)->print(OS, 0);
   }
 }
-
 template<class NodeT>
-void ReverseVector(SmallVector<NodeT *, DEFAULT_VEC_SLOTS> &Src)
-{
+void ReverseVector(SmallVector<NodeT *, DEFAULT_VEC_SLOTS> &Src) {
   size_t sz = Src.size();
   for (size_t i = 0; i < sz/2; ++i) {
     NodeT *t = Src[i];
@@ -110,20 +107,20 @@ void ReverseVector(SmallVector<NodeT *, DEFAULT_VEC_SLOTS> &Src)
     Src[sz - i - 1] = t;
   }
 }
-
 } //end namespace llvmCFGStruct
 
-static MachineInstr *getLastBreakInstr(MachineBasicBlock *blk)
-{
-  for (MachineBasicBlock::reverse_iterator iter = blk->rbegin(); (iter != blk->rend()); ++iter) {
+static MachineInstr *getLastBreakInstr(MachineBasicBlock *blk) {
+  for (MachineBasicBlock::reverse_iterator iter = blk->rbegin();
+       (iter != blk->rend());
+       ++iter) {
     MachineInstr *instr = &(*iter);
-    if ((instr->getOpcode() == AMDIL::BREAK_LOGICALNZ_i32) || (instr->getOpcode() == AMDIL::BREAK_LOGICALZ_i32)) {
+    if ((instr->getOpcode() == AMDIL::BREAK_LOGICALNZi32r) ||
+        (instr->getOpcode() == AMDIL::BREAK_LOGICALZi32r)) {
       return instr;
     }
   }
   return NULL;
 }
-
 //===----------------------------------------------------------------------===//
 //
 // MachinePostDominatorTree
@@ -135,11 +132,8 @@ static MachineInstr *getLastBreakInstr(MachineBasicBlock *blk)
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/DominatorInternals.h"
 
-namespace llvm
-{
-
+namespace llvm {
 extern void initializeMachinePostDominatorTreePass(PassRegistry&);
-FunctionPass *createMachinePostDominatorTreePass();
 
 /// PostDominatorTree Class - Concrete subclass of DominatorTree that is used
 /// to compute the a post-dominator tree.
@@ -147,12 +141,12 @@ FunctionPass *createMachinePostDominatorTreePass();
 struct MachinePostDominatorTree : public MachineFunctionPass {
   static char ID; // Pass identification, replacement for typeid
   DominatorTreeBase<MachineBasicBlock> *DT;
-  MachinePostDominatorTree() : MachineFunctionPass(ID) {
+  MachinePostDominatorTree() : MachineFunctionPass(ID)
+  {
     initializeMachinePostDominatorTreePass(*PassRegistry::getPassRegistry());
     DT = new DominatorTreeBase<MachineBasicBlock>(true); //true indicate
     // postdominator
   }
-
   ~MachinePostDominatorTree();
 
   virtual bool runOnMachineFunction(MachineFunction &MF);
@@ -161,46 +155,36 @@ struct MachinePostDominatorTree : public MachineFunctionPass {
     AU.setPreservesAll();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
-
   inline const std::vector<MachineBasicBlock *> &getRoots() const {
     return DT->getRoots();
   }
-
   inline MachineDomTreeNode *getRootNode() const {
     return DT->getRootNode();
   }
-
   inline MachineDomTreeNode *operator[](MachineBasicBlock *BB) const {
     return DT->getNode(BB);
   }
-
   inline MachineDomTreeNode *getNode(MachineBasicBlock *BB) const {
     return DT->getNode(BB);
   }
-
   inline bool dominates(MachineDomTreeNode *A, MachineDomTreeNode *B) const {
     return DT->dominates(A, B);
   }
-
   inline bool dominates(MachineBasicBlock *A, MachineBasicBlock *B) const {
     return DT->dominates(A, B);
   }
-
   inline bool
   properlyDominates(const MachineDomTreeNode *A, MachineDomTreeNode *B) const {
     return DT->properlyDominates(A, B);
   }
-
   inline bool
   properlyDominates(MachineBasicBlock *A, MachineBasicBlock *B) const {
     return DT->properlyDominates(A, B);
   }
-
   inline MachineBasicBlock *
   findNearestCommonDominator(MachineBasicBlock *A, MachineBasicBlock *B) {
     return DT->findNearestCommonDominator(A, B);
   }
-
   virtual void print(llvm::raw_ostream &OS, const Module *M = 0) const {
     DT->print(OS);
   }
@@ -210,28 +194,22 @@ struct MachinePostDominatorTree : public MachineFunctionPass {
 char MachinePostDominatorTree::ID = 0;
 INITIALIZE_PASS(MachinePostDominatorTree, "machinepostdomtree",
                 "MachinePostDominator Tree Construction",
-                true, true)
+                true, true);
 
-FunctionPass *llvm::createMachinePostDominatorTreePass()
-{
+FunctionPass *llvm::createMachinePostDominatorTreePass() {
   return new MachinePostDominatorTree();
 }
-
 //const PassInfo *const llvm::MachinePostDominatorsID
 //= &machinePostDominatorTreePass;
 
-bool MachinePostDominatorTree::runOnMachineFunction(MachineFunction &F)
-{
+bool MachinePostDominatorTree::runOnMachineFunction(MachineFunction &F) {
   DT->recalculate(F);
   //DEBUG(DT->dump());
   return false;
 }
-
-MachinePostDominatorTree::~MachinePostDominatorTree()
-{
+MachinePostDominatorTree::~MachinePostDominatorTree() {
   delete DT;
 }
-
 //===----------------------------------------------------------------------===//
 //
 // supporting data structure for CFGStructurizer
@@ -245,38 +223,37 @@ struct CFGStructTraits {
 };
 
 template <class InstrT>
-class BlockInformation
-{
+class BlockInformation {
 public:
   bool isRetired;
-  int  sccNum;
+  int sccNum;
   //SmallVector<InstrT*, DEFAULT_VEC_SLOTS> succInstr;
   //Instructions defining the corresponding successor.
-  BlockInformation() : isRetired(false), sccNum(INVALIDSCCNUM) {}
+  BlockInformation() : isRetired(false), sccNum(INVALIDSCCNUM) {
+  }
 };
 
 template <class BlockT, class InstrT, class RegiT>
-class LandInformation
-{
+class LandInformation {
 public:
   BlockT *landBlk;
   std::set<RegiT> breakInitRegs;  //Registers that need to "reg = 0", before
-  //WHILELOOP(thisloop) init before entering
-  //thisloop.
+                                  //WHILELOOP(thisloop) init before entering
+                                  //thisloop.
   std::set<RegiT> contInitRegs;   //Registers that need to "reg = 0", after
-  //WHILELOOP(thisloop) init after entering
-  //thisloop.
+                                  //WHILELOOP(thisloop) init after entering
+                                  //thisloop.
   std::set<RegiT> endbranchInitRegs; //Init after entering this loop, at loop
-  //land block, branch cond on this reg.
+                                     //land block, branch cond on this reg.
   std::set<RegiT> breakOnRegs;       //registers that need to "if (reg) break
-  //endif" after ENDLOOP(thisloop) break
-  //outerLoopOf(thisLoop).
+                                     //endif" after ENDLOOP(thisloop) break
+                                     //outerLoopOf(thisLoop).
   std::set<RegiT> contOnRegs;       //registers that need to "if (reg) continue
-  //endif" after ENDLOOP(thisloop) continue on
-  //outerLoopOf(thisLoop).
-  LandInformation() : landBlk(NULL) {}
+                                    //endif" after ENDLOOP(thisloop) continue on
+                                    //outerLoopOf(thisLoop).
+  LandInformation() : landBlk(NULL) {
+  }
 };
-
 } //end of namespace llvmCFGStruct
 
 //===----------------------------------------------------------------------===//
@@ -288,12 +265,11 @@ public:
 namespace llvmCFGStruct
 {
 // Stores the list of defs and uses of a virtual register
-class DefUseList
-{
-  enum {
-    FLAG_DEF = 0,
-    FLAG_USE = 1
-  };
+class DefUseList {
+enum {
+  FLAG_DEF = 0,
+  FLAG_USE = 1
+};
 
 public:
   // struct that represents a single def or use
@@ -307,7 +283,8 @@ public:
       return _flag == FLAG_USE;
     }
     DefOrUseT(unsigned slotIndex, unsigned flag)
-      : _slotIndex(slotIndex), _flag(flag) {}
+      : _slotIndex(slotIndex), _flag(flag) {
+    }
   };
 
 private:
@@ -319,7 +296,8 @@ public:
 
   DefUseVecT _defUses;
 
-  DefUseList() : _defUses() {}
+  DefUseList() : _defUses() {
+  }
   void addDef(unsigned slotIndex) {
     _defUses.push_back(DefOrUseT(slotIndex, FLAG_DEF));
   }
@@ -352,6 +330,7 @@ bool DefUseList::isSorted() const
   assert(it != e && "no def/use");
   const_iterator pre = it;
   for (++it; it != e; ++it) {
+    const DefOrUseT& defOrUse = *it;
     if ((*pre)._slotIndex > (*it)._slotIndex) {
       return false;
     }
@@ -359,7 +338,6 @@ bool DefUseList::isSorted() const
   }
   return true;
 }
-
 void DefUseList::dump() const
 {
   for (const_iterator it = begin(), e = end(); it != e; ++it) {
@@ -368,23 +346,22 @@ void DefUseList::dump() const
     errs() << "    " << defOrUse._slotIndex << " " << str << "\n";
   }
 }
-
 // a live interval
-class LiveInterval
-{
-  enum {
-    UndefinedSlotIndex = -1
-  };
-  unsigned _vreg;
-  int _startSlotIndex;
-  int _endSlotIndex;
+class LiveInterval {
+enum {
+  UndefinedSlotIndex = -1
+};
+unsigned _vreg;
+int _startSlotIndex;
+int _endSlotIndex;
 
 public:
   LiveInterval(unsigned vreg)
     : _vreg(vreg),
       _startSlotIndex(UndefinedSlotIndex),
       _endSlotIndex(UndefinedSlotIndex)
-  {}
+  {
+  }
   bool hasStart() const {
     return _startSlotIndex != UndefinedSlotIndex;
   }
@@ -409,9 +386,8 @@ public:
 };
 
 // a list of live intervals
-class LiveIntervals
-{
-  typedef SmallVector<LiveInterval, 16> IntervalVecType;
+class LiveIntervals {
+typedef SmallVector<LiveInterval, 16> IntervalVecType;
 
 public:
   typedef IntervalVecType::iterator iterator;
@@ -425,7 +401,8 @@ private:
   iterator findIntervalImpl(unsigned vreg);
 
 public:
-  LiveIntervals(bool sorted) : _intervals(), _sorted(sorted) {}
+  LiveIntervals(bool sorted) : _intervals(), _sorted(sorted) {
+  }
   LiveInterval* findInterval(unsigned vreg) {
     iterator it = findIntervalImpl(vreg);
     if (it == _intervals.end()) {
@@ -452,7 +429,6 @@ public:
     }
     insertIntervalSorted(interval);
   }
-
   void removeInterval(unsigned vreg);
   iterator removeInterval(iterator it) {
     return _intervals.erase(it);
@@ -484,7 +460,6 @@ LiveIntervals::iterator LiveIntervals::findIntervalImpl(unsigned vreg)
   }
   return it;
 }
-
 void LiveIntervals::insertIntervalSorted(LiveInterval& interval)
 {
   iterator it = _intervals.begin();
@@ -496,14 +471,12 @@ void LiveIntervals::insertIntervalSorted(LiveInterval& interval)
   }
   _intervals.insert(it, interval);
 }
-
 void LiveIntervals::removeInterval(unsigned vreg)
 {
   iterator it = findIntervalImpl(vreg);
   assert(it != _intervals.end() && "interval not found");
   _intervals.erase(it);
 }
-
 bool LiveIntervals::isSortedByStart() const
 {
   const_iterator it = _intervals.begin();
@@ -521,7 +494,6 @@ bool LiveIntervals::isSortedByStart() const
   }
   return true;
 }
-
 void LiveIntervals::dump() const
 {
   errs() << "Intervals:\n";
@@ -534,7 +506,6 @@ void LiveIntervals::dump() const
            << " end " << interval.end() << "\n";
   }
 }
-
 // Trivial linear scan register allocator to allocate physical registers
 // for registers requested during CFGStructurizer pass.
 // Since register allocator has already been run before this pass, we have
@@ -542,10 +513,10 @@ void LiveIntervals::dump() const
 // for registers requested during this pass.
 class TrivialRegAlloc
 {
-  typedef SmallVector<LiveIntervals, 2>   IntervalsVecT;
-  typedef std::map<unsigned, unsigned>    RegMapT;
-  typedef std::set<unsigned>              RegSetT;
-  typedef std::map<unsigned, DefUseList*> VRegDefUseMapT;
+typedef SmallVector<LiveIntervals, 2>   IntervalsVecT;
+typedef std::map<unsigned, unsigned>    RegMapT;
+typedef std::set<unsigned>              RegSetT;
+typedef std::map<unsigned, DefUseList*> VRegDefUseMapT;
 
 private:
   // data structures passed in to this class
@@ -595,7 +566,6 @@ TrivialRegAlloc::TrivialRegAlloc(MachineFunction& func,
 {
   assert(_regClass.getID() == AMDIL::GPRI32RegClassID && "unimplemented");
 }
-
 TrivialRegAlloc::~TrivialRegAlloc()
 {
   for (VRegDefUseMapT::iterator I = _vregDefUseMap.begin(),
@@ -604,7 +574,6 @@ TrivialRegAlloc::~TrivialRegAlloc()
     delete I->second;
   }
 }
-
 // find all physical registers that are still available after the global
 // register allocator
 static void findAvailPhysRegs(MachineFunction& func,
@@ -625,7 +594,6 @@ static void findAvailPhysRegs(MachineFunction& func,
     }
   }
 }
-
 // initialize the register set with remaining physical registers that are still
 // available and the set of physical registers reserved for CFGStructurizer
 void TrivialRegAlloc::initRegSet()
@@ -644,22 +612,18 @@ void TrivialRegAlloc::initRegSet()
     errs() << "\n";
   }
 }
-
 // compute live intervals for the virtual registers created during
 // CFGStructurizer pass
-void TrivialRegAlloc::computeIntervals()
-{
+void TrivialRegAlloc::computeIntervals() {
   MachineBasicBlock* entryBlk
-  = GraphTraits<MachineFunction*>::nodes_begin(&_func);
+    = GraphTraits<MachineFunction*>::nodes_begin(&_func);
   unsigned slotIndex = 0;
-  if (DEBUGME) errs() << "start computeIntervals()\n";
   // there is only one block now in the function
   for (MachineBasicBlock::iterator iter = entryBlk->begin(),
        iterEnd = entryBlk->end();
        iter != iterEnd;
        ++iter) {
     MachineInstr* inst = iter;
-    if (DEBUGME) errs() << *inst;
     for (unsigned i = 0; i < inst->getNumOperands(); ++i) {
       MachineOperand& oper = inst->getOperand(i);
       if (!oper.isReg() || !oper.getReg()) {
@@ -670,7 +634,6 @@ void TrivialRegAlloc::computeIntervals()
       if (!_vregs.count(vreg)) {
         continue;
       }
-      if (DEBUGME) errs() << "  oper " << oper << " vreg " << TargetRegisterInfo::virtReg2Index(vreg) << "\n";
       // add to vreg's def/use list
       DefUseList*& defUses = _vregDefUseMap[vreg];
       LiveInterval* interval = _intervals.findInterval(vreg);
@@ -688,10 +651,12 @@ void TrivialRegAlloc::computeIntervals()
             errs() << "interval for vreg "
                    << TargetRegisterInfo::virtReg2Index(vreg)
                    << " start at " << slotIndex << "\n";
-        } else {
+        }
+        else {
           assert(slotIndex > interval->start() && "sanity");
         }
-      } else {
+      }
+      else {
         assert(defUses && "use before def");
         defUses->addUse(slotIndex);
         assert(interval && "use before def");
@@ -726,7 +691,6 @@ void TrivialRegAlloc::computeIntervals()
   }
 #endif
 }
-
 // pick a physical register that is not in use
 unsigned TrivialRegAlloc::getPhysicalRegister()
 {
@@ -741,7 +705,6 @@ unsigned TrivialRegAlloc::getPhysicalRegister()
   abort();
   return 0;
 }
-
 // allocate a physical register for the live interval
 void TrivialRegAlloc::allocateRegisterFor(LiveInterval& interval)
 {
@@ -754,7 +717,6 @@ void TrivialRegAlloc::allocateRegisterFor(LiveInterval& interval)
            << TargetRegisterInfo::virtReg2Index(vreg) << "\n";
 // _func->getRegInfo().setPhysRegUsed(tempReg);
 }
-
 // release physical register allocated for the interval
 void TrivialRegAlloc::releaseRegisterFor(const LiveInterval& interval)
 {
@@ -768,22 +730,21 @@ void TrivialRegAlloc::releaseRegisterFor(const LiveInterval& interval)
   assert(i < _regSet.size() && "invalid physical regsiter");
   _regInUse[i] = 0;
 }
-
 // remove out of active intervals list if an interval becomes inactive
 void TrivialRegAlloc::handleActiveIntervals(unsigned pos)
 {
   for (LiveIntervals::iterator it = _activeIntervals.begin();
-       it != _activeIntervals.end();) {
+       it != _activeIntervals.end(); ) {
     LiveInterval& interval = *it;
     if (pos > interval.end()) {
       releaseRegisterFor(interval);
       it = _activeIntervals.removeInterval(it);
-    } else {
+    }
+    else {
       ++it;
     }
   }
 }
-
 // allocate physical registers for each live interval in the interval list
 void TrivialRegAlloc::allocateRegisters()
 {
@@ -801,12 +762,10 @@ void TrivialRegAlloc::allocateRegisters()
     allocateRegisterFor(interval);
   }
 }
-
 // rewrite the machine instructions to use the physical registers allocated
-void TrivialRegAlloc::rewrite()
-{
+void TrivialRegAlloc::rewrite() {
   MachineBasicBlock* entryBlk
-  = GraphTraits<MachineFunction*>::nodes_begin(&_func);
+    = GraphTraits<MachineFunction*>::nodes_begin(&_func);
   // there is only one block now in the function
   for (MachineBasicBlock::iterator iter = entryBlk->begin(),
        iterEnd = entryBlk->end();
@@ -829,7 +788,6 @@ void TrivialRegAlloc::rewrite()
     }
   }
 }
-
 // the main driver of this register allocator
 void TrivialRegAlloc::run()
 {
@@ -838,7 +796,6 @@ void TrivialRegAlloc::run()
   allocateRegisters();
   rewrite();
 }
-
 //===----------------------------------------------------------------------===//
 //
 // CFGStructurizer
@@ -857,29 +814,29 @@ public:
   } PathToKind;
 
 public:
-  typedef typename PassT::InstructionType         InstrT;
-  typedef typename PassT::FunctionType            FuncT;
-  typedef typename PassT::DominatortreeType       DomTreeT;
-  typedef typename PassT::PostDominatortreeType   PostDomTreeT;
-  typedef typename PassT::DomTreeNodeType         DomTreeNodeT;
-  typedef typename PassT::LoopinfoType            LoopInfoT;
+  typedef typename PassT::InstructionType InstrT;
+  typedef typename PassT::FunctionType FuncT;
+  typedef typename PassT::DominatortreeType DomTreeT;
+  typedef typename PassT::PostDominatortreeType PostDomTreeT;
+  typedef typename PassT::DomTreeNodeType DomTreeNodeT;
+  typedef typename PassT::LoopinfoType LoopInfoT;
 
   typedef GraphTraits<FuncT *>                    FuncGTraits;
   //typedef FuncGTraits::nodes_iterator BlockIterator;
-  typedef typename FuncT::iterator                BlockIterator;
+  typedef typename FuncT::iterator BlockIterator;
 
-  typedef typename FuncGTraits::NodeType          BlockT;
+  typedef typename FuncGTraits::NodeType BlockT;
   typedef GraphTraits<BlockT *>                   BlockGTraits;
   typedef GraphTraits<Inverse<BlockT *> >         InvBlockGTraits;
   //typedef BlockGTraits::succ_iterator InstructionIterator;
-  typedef typename BlockT::iterator               InstrIterator;
+  typedef typename BlockT::iterator InstrIterator;
 
   typedef CFGStructTraits<PassT>                  CFGTraits;
   typedef BlockInformation<InstrT>                BlockInfo;
   typedef std::map<BlockT *, BlockInfo *>         BlockInfoMap;
 
-  typedef int                                     RegiT;
-  typedef typename PassT::LoopType                LoopT;
+  typedef int RegiT;
+  typedef typename PassT::LoopType LoopT;
   typedef LandInformation<BlockT, InstrT, RegiT>  LoopLandInfo;
   typedef std::map<LoopT *, LoopLandInfo *> LoopLandInfoMap;
   //landing info for loop break
@@ -1008,21 +965,16 @@ private:
 };  //template class CFGStructurizer
 
 template<class PassT> CFGStructurizer<PassT>::CFGStructurizer()
-  : domTree(NULL), postDomTree(NULL), loopInfo(NULL)
-{
+  : domTree(NULL), postDomTree(NULL), loopInfo(NULL) {
 }
-
-template<class PassT> CFGStructurizer<PassT>::~CFGStructurizer()
-{
+template<class PassT> CFGStructurizer<PassT>::~CFGStructurizer() {
   for (typename BlockInfoMap::iterator I = blockInfoMap.begin(),
        E = blockInfoMap.end(); I != E; ++I) {
     delete I->second;
   }
 }
-
 template<class PassT>
-bool CFGStructurizer<PassT>::prepare(FuncT &func, PassT &pass)
-{
+bool CFGStructurizer<PassT>::prepare(FuncT &func, PassT &pass) {
   passRep = &pass;
   funcRep = &func;
 
@@ -1107,10 +1059,8 @@ bool CFGStructurizer<PassT>::prepare(FuncT &func, PassT &pass)
 
   return changed;
 } //CFGStructurizer::prepare
-
 template<class PassT>
-bool CFGStructurizer<PassT>::run(FuncT &func, PassT &pass)
-{
+bool CFGStructurizer<PassT>::run(FuncT &func, PassT &pass) {
   passRep = &pass;
   funcRep = &func;
 
@@ -1183,7 +1133,7 @@ bool CFGStructurizer<PassT>::run(FuncT &func, PassT &pass)
     sccBeginIter = iterBlk;
     BlockT *sccBeginBlk = NULL;
     int sccNumBlk = 0;  // The number of active blocks, init to a
-    // maximum possible number.
+                        // maximum possible number.
     int sccNumIter;     // Number of iteration in this SCC.
 
     while (iterBlk != iterBlkEnd) {
@@ -1257,7 +1207,7 @@ bool CFGStructurizer<PassT>::run(FuncT &func, PassT &pass)
       }
     } else {
       int newnumRemainedBlk
-      = countActiveBlock(orderedBlks.begin(), orderedBlks.end());
+        = countActiveBlock(orderedBlks.begin(), orderedBlks.end());
       // consider cloned blocks ??
       if (newnumRemainedBlk == 1 || newnumRemainedBlk < numRemainedBlk) {
         makeProgress = true;
@@ -1313,12 +1263,10 @@ bool CFGStructurizer<PassT>::run(FuncT &func, PassT &pass)
 
   return true;
 } //CFGStructurizer::run
-
 /// Print the ordered Blocks.
 ///
 template<class PassT>
-void CFGStructurizer<PassT>::printOrderedBlocks(llvm::raw_ostream &os)
-{
+void CFGStructurizer<PassT>::printOrderedBlocks(llvm::raw_ostream &os) {
   size_t i = 0;
   for (typename SmallVector<BlockT *, DEFAULT_VEC_SLOTS>::const_iterator
        iterBlk = orderedBlks.begin(), iterBlkEnd = orderedBlks.end();
@@ -1333,11 +1281,9 @@ void CFGStructurizer<PassT>::printOrderedBlocks(llvm::raw_ostream &os)
     }
   }
 } //printOrderedBlocks
-
 /// Compute the reversed DFS post order of Blocks
 ///
-template<class PassT> void CFGStructurizer<PassT>::orderBlocks()
-{
+template<class PassT> void CFGStructurizer<PassT>::orderBlocks() {
   int sccNum = 0;
   BlockT *bb;
   for (scc_iterator<FuncT *> sccIter = scc_begin(funcRep),
@@ -1363,11 +1309,10 @@ template<class PassT> void CFGStructurizer<PassT>::orderBlocks()
     }
   } //end of for
 } //orderBlocks
-
 /// Compute the reversed DFS post order of Blocks
 ///
-template<class PassT> void CFGStructurizer<PassT>::processAddedToTraversalBlocks()
-{
+template<class PassT> void CFGStructurizer<PassT>::
+processAddedToTraversalBlocks() {
   typename SmallVector<BlockT *, DEFAULT_VEC_SLOTS>::const_iterator
   iterBlk = addedToTraversalBlks.begin();
   typename SmallVector<BlockT *, DEFAULT_VEC_SLOTS>::const_iterator
@@ -1384,7 +1329,6 @@ template<class PassT> void CFGStructurizer<PassT>::processAddedToTraversalBlocks
     ++iterBlk;
   }
 } //CFGStructurizer<PassT>::processAddedToTraversalBlocks
-
 template<class PassT> int CFGStructurizer<PassT>::patternMatch(BlockT *curBlk)
 {
   int numMatch = 0;
@@ -1405,10 +1349,8 @@ template<class PassT> int CFGStructurizer<PassT>::patternMatch(BlockT *curBlk)
 
   return numMatch;
 } //patternMatch
-
 template<class PassT>
-int CFGStructurizer<PassT>::patternMatchGroup(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::patternMatchGroup(BlockT *curBlk) {
   int numMatch = 0;
   numMatch += serialPatternMatch(curBlk);
   numMatch += ifPatternMatch(curBlk);
@@ -1416,11 +1358,9 @@ int CFGStructurizer<PassT>::patternMatchGroup(BlockT *curBlk)
   numMatch += loopendPatternMatch(curBlk);
   numMatch += loopPatternMatch(curBlk);
   return numMatch;
-}//patternMatchGroup
-
+} //patternMatchGroup
 template<class PassT>
-int CFGStructurizer<PassT>::serialPatternMatch(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::serialPatternMatch(BlockT *curBlk) {
   if (curBlk->succ_size() != 1) {
     return 0;
   }
@@ -1434,10 +1374,8 @@ int CFGStructurizer<PassT>::serialPatternMatch(BlockT *curBlk)
   ++numSerialPatternMatch;
   return 1;
 } //serialPatternMatch
-
 template<class PassT>
-int CFGStructurizer<PassT>::ifPatternMatch(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::ifPatternMatch(BlockT *curBlk) {
   //two edges
   if (curBlk->succ_size() != 2) {
     return 0;
@@ -1509,16 +1447,12 @@ int CFGStructurizer<PassT>::ifPatternMatch(BlockT *curBlk)
 
   return 1 + cloned;
 } //ifPatternMatch
-
 template<class PassT>
-int CFGStructurizer<PassT>::switchPatternMatch(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::switchPatternMatch(BlockT *curBlk) {
   return 0;
 } //switchPatternMatch
-
 template<class PassT>
-int CFGStructurizer<PassT>::loopendPatternMatch(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::loopendPatternMatch(BlockT *curBlk) {
   LoopT *loopRep = loopInfo->getLoopFor(curBlk);
   typename std::vector<LoopT *> nestedLoops;
   while (loopRep) {
@@ -1556,10 +1490,8 @@ int CFGStructurizer<PassT>::loopendPatternMatch(BlockT *curBlk)
 
   return num;
 } //loopendPatternMatch
-
 template<class PassT>
-int CFGStructurizer<PassT>::loopPatternMatch(BlockT *curBlk)
-{
+int CFGStructurizer<PassT>::loopPatternMatch(BlockT *curBlk) {
   if (curBlk->succ_size() != 0) {
     return 0;
   }
@@ -1583,11 +1515,9 @@ int CFGStructurizer<PassT>::loopPatternMatch(BlockT *curBlk)
 
   return numLoop;
 } //loopPatternMatch
-
 template<class PassT>
 int CFGStructurizer<PassT>::loopbreakPatternMatch(LoopT *loopRep,
-    BlockT *loopHeader)
-{
+                                                  BlockT *loopHeader) {
   BlockTSmallerVector exitingBlks;
   loopRep->getExitingBlocks(exitingBlks);
 
@@ -1623,7 +1553,8 @@ int CFGStructurizer<PassT>::loopbreakPatternMatch(LoopT *loopRep,
   int numCloned = 0;
   int numSerial = 0;
 
-  if (exitBlkSet.size() == 1) {
+  if (exitBlkSet.size() == 1)
+  {
     exitLandBlk = *exitBlkSet.begin();
   } else {
     exitLandBlk = findNearestCommonPostDom(exitBlkSet);
@@ -1668,15 +1599,15 @@ int CFGStructurizer<PassT>::loopbreakPatternMatch(LoopT *loopRep,
 
       if (exitLandBlk == parentLoopHeader &&
           (exitLandBlk = relocateLoopcontBlock(parentLoopRep,
-                         loopRep,
-                         exitBlkSet,
-                         exitLandBlk)) != NULL) {
+                                               loopRep,
+                                               exitBlkSet,
+                                               exitLandBlk)) != NULL) {
         if (DEBUGME) {
           errs() << "relocateLoopcontBlock success\n";
         }
       } else if ((exitLandBlk = addLoopEndbranchBlock(loopRep,
-                                exitingBlks,
-                                exitBlks)) != NULL) {
+                                                      exitingBlks,
+                                                      exitBlks)) != NULL) {
         if (DEBUGME) {
           errs() << "insertEndbranchBlock success\n";
         }
@@ -1687,8 +1618,8 @@ int CFGStructurizer<PassT>::loopbreakPatternMatch(LoopT *loopRep,
         return -1;
       }
     } else if ((exitLandBlk = addLoopEndbranchBlock(loopRep,
-                              exitingBlks,
-                              exitBlks)) != NULL) {
+                                                    exitingBlks,
+                                                    exitBlks)) != NULL) {
       //current addLoopEndbranchBlock always does something and return non-NULL
       if (DEBUGME) {
         errs() << "insertEndbranchBlock success\n";
@@ -1762,11 +1693,9 @@ int CFGStructurizer<PassT>::loopbreakPatternMatch(LoopT *loopRep,
   numClonedBlock += numCloned;
   return numBreak + numSerial + numCloned;
 } //loopbreakPatternMatch
-
 template<class PassT>
 int CFGStructurizer<PassT>::loopcontPatternMatch(LoopT *loopRep,
-    BlockT *loopHeader)
-{
+                                                 BlockT *loopHeader) {
   int numCont = 0;
   SmallVector<BlockT *, DEFAULT_VEC_SLOTS> contBlk;
   for (typename InvBlockGTraits::ChildIteratorType iter =
@@ -1792,12 +1721,9 @@ int CFGStructurizer<PassT>::loopcontPatternMatch(LoopT *loopRep,
 
   return numCont;
 } //loopcontPatternMatch
-
-
 template<class PassT>
 bool CFGStructurizer<PassT>::isSameloopDetachedContbreak(BlockT *src1Blk,
-    BlockT *src2Blk)
-{
+                                                         BlockT *src2Blk) {
   // return true iff src1Blk->succ_size() == 0 && src1Blk and src2Blk are in the
   // same loop with LoopLandInfo without explicitly keeping track of
   // loopContBlks and loopBreakBlks, this is a method to get the information.
@@ -1818,12 +1744,10 @@ bool CFGStructurizer<PassT>::isSameloopDetachedContbreak(BlockT *src1Blk,
   }
   return false;
 }  //isSameloopDetachedContbreak
-
 template<class PassT>
 int CFGStructurizer<PassT>::handleJumpintoIf(BlockT *headBlk,
-    BlockT *trueBlk,
-    BlockT *falseBlk)
-{
+                                             BlockT *trueBlk,
+                                             BlockT *falseBlk) {
   int num = handleJumpintoIfImp(headBlk, trueBlk, falseBlk);
   if (num == 0) {
     if (DEBUGME) {
@@ -1857,16 +1781,13 @@ int CFGStructurizer<PassT>::handleJumpintoIf(BlockT *headBlk,
         }
       }
     } //check NULL
-
   }
   return num;
 }
-
 template<class PassT>
 int CFGStructurizer<PassT>::handleJumpintoIfImp(BlockT *headBlk,
-    BlockT *trueBlk,
-    BlockT *falseBlk)
-{
+                                                BlockT *trueBlk,
+                                                BlockT *falseBlk) {
   int num = 0;
   BlockT *downBlk;
 
@@ -1885,7 +1806,7 @@ int CFGStructurizer<PassT>::handleJumpintoIfImp(BlockT *headBlk,
       errs() << "check down = BB" << downBlk->getNumber();
     }
 
-    if (//postDomTree->dominates(downBlk, falseBlk) &&
+    if ( //postDomTree->dominates(downBlk, falseBlk) &&
       singlePathTo(falseBlk, downBlk) == SinglePath_InPath) {
       if (DEBUGME) {
         errs() << " working\n";
@@ -1910,14 +1831,12 @@ int CFGStructurizer<PassT>::handleJumpintoIfImp(BlockT *headBlk,
 
   return num;
 } //handleJumpintoIf
-
 template<class PassT>
 void CFGStructurizer<PassT>::showImproveSimpleJumpintoIf(BlockT *headBlk,
-    BlockT *trueBlk,
-    BlockT *falseBlk,
-    BlockT *landBlk,
-    bool detail)
-{
+                                                         BlockT *trueBlk,
+                                                         BlockT *falseBlk,
+                                                         BlockT *landBlk,
+                                                         bool detail) {
   errs() << "head = BB" << headBlk->getNumber()
          << " size = " << headBlk->size();
   if (detail) {
@@ -1956,13 +1875,11 @@ void CFGStructurizer<PassT>::showImproveSimpleJumpintoIf(BlockT *headBlk,
 
   errs() << "\n";
 } //showImproveSimpleJumpintoIf
-
 template<class PassT>
 int CFGStructurizer<PassT>::improveSimpleJumpintoIf(BlockT *headBlk,
-    BlockT *trueBlk,
-    BlockT *falseBlk,
-    BlockT **plandBlk)
-{
+                                                    BlockT *trueBlk,
+                                                    BlockT *falseBlk,
+                                                    BlockT **plandBlk) {
   bool migrateTrue = false;
   bool migrateFalse = false;
 
@@ -2042,7 +1959,7 @@ int CFGStructurizer<PassT>::improveSimpleJumpintoIf(BlockT *headBlk,
       headBlk->addSuccessor(landBlk);
     }
 
-    numNewBlk ++;
+    numNewBlk++;
   }
 
   bool landBlkHasOtherPred = (landBlk->pred_size() > 2);
@@ -2050,7 +1967,7 @@ int CFGStructurizer<PassT>::improveSimpleJumpintoIf(BlockT *headBlk,
   //insert AMDIL::ENDIF to avoid special case "input landBlk == NULL"
   typename BlockT::iterator insertPos =
     CFGTraits::getInstrPos
-    (landBlk, CFGTraits::insertInstrBefore(landBlk, AMDIL::ENDIF, passRep));
+      (landBlk, CFGTraits::insertInstrBefore(landBlk, AMDIL::ENDIF, passRep));
 
   if (landBlkHasOtherPred) {
     unsigned immReg = getRegister(&AMDIL::GPRI32RegClass);
@@ -2059,11 +1976,11 @@ int CFGStructurizer<PassT>::improveSimpleJumpintoIf(BlockT *headBlk,
     CFGTraits::insertCompareInstrBefore(landBlk, insertPos, passRep, cmpResReg,
                                         initReg, immReg);
     CFGTraits::insertCondBranchBefore(landBlk, insertPos,
-                                      AMDIL::IF_LOGICALZ_i32, passRep,
+                                      AMDIL::IF_LOGICALZi32r, passRep,
                                       cmpResReg, DebugLoc());
   }
 
-  CFGTraits::insertCondBranchBefore(landBlk, insertPos, AMDIL::IF_LOGICALNZ_i32,
+  CFGTraits::insertCondBranchBefore(landBlk, insertPos, AMDIL::IF_LOGICALNZi32r,
                                     passRep, initReg, DebugLoc());
 
   if (migrateTrue) {
@@ -2109,7 +2026,6 @@ int CFGStructurizer<PassT>::improveSimpleJumpintoIf(BlockT *headBlk,
 
   return numNewBlk;
 } //improveSimpleJumpintoIf
-
 // Since we are after the register allocator, we don't want to use virtual
 // registers as it is possible that we can get a virtual register that is
 // passed the 65K limit of IL text format. So instead we serach through the
@@ -2128,14 +2044,12 @@ inline int CFGStructurizer<PassT>::getRegister(
            << TargetRegisterInfo::virtReg2Index(reg) << "\n";
   return reg;
 }
-
 template<class PassT>
 void CFGStructurizer<PassT>::handleLoopbreak(BlockT *exitingBlk,
-    LoopT *exitingLoop,
-    BlockT *exitBlk,
-    LoopT *exitLoop,
-    BlockT *landBlk)
-{
+                                             LoopT *exitingLoop,
+                                             BlockT *exitBlk,
+                                             LoopT *exitLoop,
+                                             BlockT *landBlk) {
   if (DEBUGME) {
     errs() << "Trying to break loop-depth = " << getLoopDepth(exitLoop)
            << " from loop-depth = " << getLoopDepth(exitingLoop) << "\n";
@@ -2154,15 +2068,12 @@ void CFGStructurizer<PassT>::handleLoopbreak(BlockT *exitingBlk,
   }
 
   mergeLoopbreakBlock(exitingBlk, exitBlk, landBlk, initReg);
-
 } //handleLoopbreak
-
 template<class PassT>
 void CFGStructurizer<PassT>::handleLoopcontBlock(BlockT *contingBlk,
-    LoopT *contingLoop,
-    BlockT *contBlk,
-    LoopT *contLoop)
-{
+                                                 LoopT *contingLoop,
+                                                 BlockT *contBlk,
+                                                 LoopT *contLoop) {
   if (DEBUGME) {
     errs() << "loopcontPattern cont = BB" << contingBlk->getNumber()
            << " header = BB" << contBlk->getNumber() << "\n";
@@ -2188,10 +2099,8 @@ void CFGStructurizer<PassT>::handleLoopcontBlock(BlockT *contingBlk,
   settleLoopcontBlock(contingBlk, contBlk, initReg);
   //contingBlk->removeSuccessor(loopHeader);
 } //handleLoopcontBlock
-
 template<class PassT>
-void CFGStructurizer<PassT>::mergeSerialBlock(BlockT *dstBlk, BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::mergeSerialBlock(BlockT *dstBlk, BlockT *srcBlk) {
   if (DEBUGME) {
     errs() << "serialPattern BB" << dstBlk->getNumber()
            << " <= BB" << srcBlk->getNumber() << "\n";
@@ -2205,14 +2114,12 @@ void CFGStructurizer<PassT>::mergeSerialBlock(BlockT *dstBlk, BlockT *srcBlk)
   removeSuccessor(srcBlk);
   retireBlock(dstBlk, srcBlk);
 } //mergeSerialBlock
-
 template<class PassT>
 void CFGStructurizer<PassT>::mergeIfthenelseBlock(InstrT *branchInstr,
-    BlockT *curBlk,
-    BlockT *trueBlk,
-    BlockT *falseBlk,
-    BlockT *landBlk)
-{
+                                                  BlockT *curBlk,
+                                                  BlockT *trueBlk,
+                                                  BlockT *falseBlk,
+                                                  BlockT *landBlk) {
   if (DEBUGME) {
     errs() << "ifPattern BB" << curBlk->getNumber();
     errs() << "{  ";
@@ -2260,7 +2167,8 @@ void CFGStructurizer<PassT>::mergeIfthenelseBlock(InstrT *branchInstr,
                                     branchDL);
 
   if (trueBlk) {
-    curBlk->splice(branchInstrPos, trueBlk, FirstNonDebugInstr(trueBlk), trueBlk->end());
+    curBlk->splice(branchInstrPos, trueBlk, FirstNonDebugInstr(
+                     trueBlk), trueBlk->end());
     curBlk->removeSuccessor(trueBlk);
     if (landBlk && trueBlk->succ_size()!=0) {
       trueBlk->removeSuccessor(landBlk);
@@ -2290,13 +2198,10 @@ void CFGStructurizer<PassT>::mergeIfthenelseBlock(InstrT *branchInstr,
   if (landBlk && trueBlk && falseBlk) {
     curBlk->addSuccessor(landBlk);
   }
-
 } //mergeIfthenelseBlock
-
 template<class PassT>
 void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
-    LoopLandInfo *loopLand)
-{
+                                                LoopLandInfo *loopLand) {
   BlockT *landBlk = loopLand->landBlk;
 
   if (DEBUGME) {
@@ -2319,25 +2224,29 @@ void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
   }
 
   /* we last inserterd the DebugLoc in the
-   * BREAK_LOGICALZ_i32 or AMDIL::BREAK_LOGICALNZ statement in the current dstBlk.
+   * BREAK_LOGICALZi32r or AMDIL::BREAK_LOGICALNZ statement in the current dstBlk.
    * search for the DebugLoc in the that statement.
    * if not found, we have to insert the empty/default DebugLoc */
   InstrT *loopBreakInstr = CFGTraits::getLoopBreakInstr(dstBlk);
-  DebugLoc DLBreak = (loopBreakInstr) ? loopBreakInstr->getDebugLoc() : DebugLoc();
+  DebugLoc DLBreak =
+    (loopBreakInstr) ? loopBreakInstr->getDebugLoc() : DebugLoc();
 
   // fogbugz #7310: work-around discussed with Uri regarding do-while loops:
   // in case the the WHILELOOP line number is greater than do.body line numbers,
   // take the do.body line number instead.
   MachineBasicBlock::iterator iter = dstBlk->begin();
   MachineInstr *instrDoBody = &(*iter);
-  DebugLoc DLBreakDoBody = (instrDoBody) ? instrDoBody->getDebugLoc() : DebugLoc();
-  DebugLoc DLBreakMin = (DLBreak.getLine() < DLBreakDoBody.getLine()) ? DLBreak : DLBreakDoBody;
+  DebugLoc DLBreakDoBody =
+    (instrDoBody) ? instrDoBody->getDebugLoc() : DebugLoc();
+  DebugLoc DLBreakMin =
+    (DLBreak.getLine() < DLBreakDoBody.getLine()) ? DLBreak : DLBreakDoBody;
 
   CFGTraits::insertInstrBefore(dstBlk, AMDIL::WHILELOOP, passRep, DLBreakMin);
   // Loop breakInitRegs are init before entering the loop.
   for (typename std::set<RegiT>::const_iterator iter =
          loopLand->breakInitRegs.begin(),
-       iterEnd = loopLand->breakInitRegs.end(); iter != iterEnd; ++iter) {
+       iterEnd = loopLand->breakInitRegs.end(); iter != iterEnd; ++iter)
+  {
     CFGTraits::insertAssignInstrBefore(dstBlk, passRep, *iter, 0);
   }
 
@@ -2345,7 +2254,8 @@ void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
    * search for the DebugLoc in the continue statement.
    * if not found, we have to insert the empty/default DebugLoc */
   InstrT *continueInstr = CFGTraits::getContinueInstr(dstBlk);
-  DebugLoc DLContinue = (continueInstr) ? continueInstr->getDebugLoc() : DebugLoc();
+  DebugLoc DLContinue =
+    (continueInstr) ? continueInstr->getDebugLoc() : DebugLoc();
 
   CFGTraits::insertInstrEnd(dstBlk, AMDIL::ENDLOOP, passRep, DLContinue);
   // Loop breakOnRegs are check after the ENDLOOP: break the loop outside this
@@ -2353,7 +2263,7 @@ void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
   for (typename std::set<RegiT>::const_iterator iter =
          loopLand->breakOnRegs.begin(),
        iterEnd = loopLand->breakOnRegs.end(); iter != iterEnd; ++iter) {
-    CFGTraits::insertCondBranchEnd(dstBlk, AMDIL::BREAK_LOGICALNZ_i32, passRep,
+    CFGTraits::insertCondBranchEnd(dstBlk, AMDIL::BREAK_LOGICALNZi32r, passRep,
                                    *iter);
   }
 
@@ -2361,7 +2271,7 @@ void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
   // loop.
   for (std::set<RegiT>::const_iterator iter = loopLand->contOnRegs.begin(),
        iterEnd = loopLand->contOnRegs.end(); iter != iterEnd; ++iter) {
-    CFGTraits::insertCondBranchEnd(dstBlk, AMDIL::CONTINUE_LOGICALNZ_i32,
+    CFGTraits::insertCondBranchEnd(dstBlk, AMDIL::CONTINUE_LOGICALNZi32r,
                                    passRep, *iter);
   }
 
@@ -2375,13 +2285,11 @@ void CFGStructurizer<PassT>::mergeLooplandBlock(BlockT *dstBlk,
   removeSuccessor(landBlk);
   retireBlock(dstBlk, landBlk);
 } //mergeLooplandBlock
-
 template<class PassT>
 void CFGStructurizer<PassT>::mergeLoopbreakBlock(BlockT *exitingBlk,
-    BlockT *exitBlk,
-    BlockT *exitLandBlk,
-    RegiT  setReg)
-{
+                                                 BlockT *exitBlk,
+                                                 BlockT *exitLandBlk,
+                                                 RegiT setReg) {
   if (DEBUGME) {
     errs() << "loopbreakPattern exiting = BB" << exitingBlk->getNumber()
            << " exit = BB" << exitBlk->getNumber()
@@ -2441,14 +2349,11 @@ void CFGStructurizer<PassT>::mergeLoopbreakBlock(BlockT *exitingBlk,
     exitBlk->removeSuccessor(exitLandBlk);
     retireBlock(exitingBlk, exitBlk);
   }
-
 } //mergeLoopbreakBlock
-
 template<class PassT>
 void CFGStructurizer<PassT>::settleLoopcontBlock(BlockT *contingBlk,
-    BlockT *contBlk,
-    RegiT   setReg)
-{
+                                                 BlockT *contBlk,
+                                                 RegiT setReg) {
   if (DEBUGME) {
     errs() << "settleLoopcontBlock conting = BB"
            << contingBlk->getNumber()
@@ -2477,7 +2382,8 @@ void CFGStructurizer<PassT>::settleLoopcontBlock(BlockT *contingBlk,
     bool useContinueLogical =
       (setReg == INVALIDREGNUM && (&*contingBlk->rbegin()) == branchInstr);
 
-    if (useContinueLogical == false) {
+    if (useContinueLogical == false)
+    {
       int branchOpcode =
         trueBranch == contBlk ? CFGTraits::getBranchNzeroOpcode(oldOpcode)
         : CFGTraits::getBranchZeroOpcode(oldOpcode);
@@ -2508,8 +2414,8 @@ void CFGStructurizer<PassT>::settleLoopcontBlock(BlockT *contingBlk,
     branchInstr->eraseFromParent();
   } else {
     /* if we've arrived here then we've already erased the branch instruction
-    * travel back up the basic block to see the last reference of our debug location
-    * we've just inserted that reference here so it should be representative */
+         * travel back up the basic block to see the last reference of our debug location
+         * we've just inserted that reference here so it should be representative */
     if (setReg != INVALIDREGNUM) {
       CFGTraits::insertAssignInstrBefore(contingBlk, passRep, setReg, 1);
       // insertEnd to ensure phi-moves, if exist, go before the continue-instr.
@@ -2521,9 +2427,7 @@ void CFGStructurizer<PassT>::settleLoopcontBlock(BlockT *contingBlk,
                                 CFGTraits::getLastDebugLocInBB(contingBlk));
     }
   } //else
-
 } //settleLoopcontBlock
-
 // BBs in exitBlkSet are determined as in break-path for loopRep,
 // before we can put code for BBs as inside loop-body for loopRep
 // check whether those BBs are determined as cont-BB for parentLoopRep
@@ -2536,14 +2440,12 @@ void CFGStructurizer<PassT>::settleLoopcontBlock(BlockT *contingBlk,
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::relocateLoopcontBlock(LoopT *parentLoopRep,
-    LoopT *loopRep,
-    std::set<BlockT *> &exitBlkSet,
-    BlockT *exitLandBlk)
-{
+                                              LoopT *loopRep,
+                                              std::set<BlockT *> &exitBlkSet,
+                                              BlockT *exitLandBlk) {
   std::set<BlockT *> endBlkSet;
 
 //  BlockT *parentLoopHead = parentLoopRep->getHeader();
-
 
   for (typename std::set<BlockT *>::const_iterator iter = exitBlkSet.begin(),
        iterEnd = exitBlkSet.end();
@@ -2579,8 +2481,6 @@ CFGStructurizer<PassT>::relocateLoopcontBlock(LoopT *parentLoopRep,
 
   return newBlk;
 } //relocateLoopcontBlock
-
-
 // LoopEndbranchBlock is a BB created by the CFGStructurizer to use as
 // LoopLandBlock. This BB branch on the loop endBranchInit register to the
 // pathes corresponding to the loop exiting branches.
@@ -2588,9 +2488,8 @@ CFGStructurizer<PassT>::relocateLoopcontBlock(LoopT *parentLoopRep,
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::addLoopEndbranchBlock(LoopT *loopRep,
-    BlockTSmallerVector &exitingBlks,
-    BlockTSmallerVector &exitBlks)
-{
+                                              BlockTSmallerVector &exitingBlks,
+                                              BlockTSmallerVector &exitBlks) {
   const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
 
   RegiT endBranchReg = getRegister(&AMDIL::GPRI32RegClass);
@@ -2654,20 +2553,20 @@ CFGStructurizer<PassT>::addLoopEndbranchBlock(LoopT *loopRep,
     DebugLoc DL;
     RegiT preValReg = getRegister(&AMDIL::GPRI32RegClass);
     MachineInstr* preValInst
-    = BuildMI(preBranchBlk, DL, tii->get(AMDIL::LOADCONST_i32), preValReg)
-      .addImm(i - 1); //preVal
+      = BuildMI(preBranchBlk, DL, tii->get(AMDIL::LOADCONSTi32), preValReg)
+        .addImm(i - 1); //preVal
     SHOWNEWINSTR(preValInst);
 
     // condResReg = (endBranchReg == preValReg)
     RegiT condResReg = getRegister(&AMDIL::GPRI32RegClass);
     MachineInstr* cmpInst
-    = BuildMI(preBranchBlk, DL, tii->get(AMDIL::IEQ), condResReg)
-      .addReg(endBranchReg).addReg(preValReg);
+      = BuildMI(preBranchBlk, DL, tii->get(AMDIL::EQi32rr), condResReg)
+        .addReg(endBranchReg).addReg(preValReg);
     SHOWNEWINSTR(cmpInst);
 
     MachineInstr* condBranchInst
-    = BuildMI(preBranchBlk, DL, tii->get(AMDIL::BRANCH_COND_i32))
-      .addMBB(preExitBlk).addReg(condResReg);
+      = BuildMI(preBranchBlk, DL, tii->get(AMDIL::BRANCHi32br))
+        .addMBB(preExitBlk).addReg(condResReg);
     SHOWNEWINSTR(condBranchInst);
 
     preBranchBlk->addSuccessor(preExitBlk);
@@ -2677,17 +2576,14 @@ CFGStructurizer<PassT>::addLoopEndbranchBlock(LoopT *loopRep,
     preExitingBlk = curExitingBlk;
     preExitBlk = curExitBlk;
     preBranchBlk = curBranchBlk;
-
   }  //end for 1 .. n blocks
 
   return newLandBlk;
 } //addLoopEndbranchBlock
-
 template<class PassT>
 typename CFGStructurizer<PassT>::PathToKind
 CFGStructurizer<PassT>::singlePathTo(BlockT *srcBlk, BlockT *dstBlk,
-                                     bool allowSideEntry)
-{
+                                     bool allowSideEntry) {
   assert(dstBlk);
 
   if (srcBlk == dstBlk) {
@@ -2711,15 +2607,13 @@ CFGStructurizer<PassT>::singlePathTo(BlockT *srcBlk, BlockT *dstBlk,
 
   return Not_SinglePath;
 } //singlePathTo
-
 // If there is a single path from srcBlk to dstBlk, return the last block before
 // dstBlk If there is a single path from srcBlk->end without dstBlk, return the
 // last block in the path Otherwise, return NULL
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::singlePathEnd(BlockT *srcBlk, BlockT *dstBlk,
-                                      bool allowSideEntry)
-{
+                                      bool allowSideEntry) {
   //assert(dstBlk);
 
   if (srcBlk == dstBlk) {
@@ -2748,13 +2642,10 @@ CFGStructurizer<PassT>::singlePathEnd(BlockT *srcBlk, BlockT *dstBlk,
   }
 
   return NULL;
-
 } //singlePathEnd
-
 template<class PassT>
 int CFGStructurizer<PassT>::cloneOnSideEntryTo(BlockT *preBlk, BlockT *srcBlk,
-    BlockT *dstBlk)
-{
+                                               BlockT *dstBlk) {
   int cloned = 0;
   assert(preBlk->isSuccessor(srcBlk));
   while (srcBlk && srcBlk != dstBlk) {
@@ -2774,12 +2665,10 @@ int CFGStructurizer<PassT>::cloneOnSideEntryTo(BlockT *preBlk, BlockT *srcBlk,
 
   return cloned;
 } //cloneOnSideEntryTo
-
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::cloneBlockForPredecessor(BlockT *curBlk,
-    BlockT *predBlk)
-{
+                                                 BlockT *predBlk) {
   assert(predBlk->isSuccessor(curBlk) &&
          "succBlk is not a prececessor of curBlk");
 
@@ -2804,12 +2693,10 @@ CFGStructurizer<PassT>::cloneBlockForPredecessor(BlockT *curBlk,
 
   return cloneBlk;
 } //cloneBlockForPredecessor
-
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::exitingBlock2ExitBlock(LoopT *loopRep,
-    BlockT *exitingBlk)
-{
+                                               BlockT *exitingBlk) {
   BlockT *exitBlk = NULL;
 
   for (typename BlockT::succ_iterator iterSucc = exitingBlk->succ_begin(),
@@ -2826,23 +2713,21 @@ CFGStructurizer<PassT>::exitingBlock2ExitBlock(LoopT *loopRep,
 
   return exitBlk;
 } //exitingBlock2ExitBlock
-
 template<class PassT>
 void CFGStructurizer<PassT>::migrateInstruction(BlockT *srcBlk,
-    BlockT *dstBlk,
-    InstrIterator insertPos)
-{
+                                                BlockT *dstBlk,
+                                                InstrIterator insertPos) {
   InstrIterator spliceEnd;
   //look for the input branchinstr, not the AMDIL branchinstr
   InstrT *branchInstr = CFGTraits::getNormalBlockBranchInstr(srcBlk);
   if (branchInstr == NULL) {
     if (DEBUGME) {
-      errs() << "migrateInstruction don't see branch instr\n" ;
+      errs() << "migrateInstruction don't see branch instr\n";
     }
     spliceEnd = srcBlk->end();
   } else {
     if (DEBUGME) {
-      errs() << "migrateInstruction see branch instr\n" ;
+      errs() << "migrateInstruction see branch instr\n";
       branchInstr->dump();
     }
     spliceEnd = CFGTraits::getInstrPos(srcBlk, branchInstr);
@@ -2860,7 +2745,6 @@ void CFGStructurizer<PassT>::migrateInstruction(BlockT *srcBlk,
            << "srcSize = " << srcBlk->size() << "\n";
   }
 } //migrateInstruction
-
 // normalizeInfiniteLoopExit change
 //   B1:
 //        uncond_br LoopHeader
@@ -2872,8 +2756,7 @@ void CFGStructurizer<PassT>::migrateInstruction(BlockT *srcBlk,
 //
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
-CFGStructurizer<PassT>::normalizeInfiniteLoopExit(LoopT* LoopRep)
-{
+CFGStructurizer<PassT>::normalizeInfiniteLoopExit(LoopT* LoopRep) {
   BlockT *loopHeader;
   BlockT *loopLatch;
   loopHeader = LoopRep->getHeader();
@@ -2893,7 +2776,7 @@ CFGStructurizer<PassT>::normalizeInfiniteLoopExit(LoopT* LoopRep)
       unsigned immReg = getRegister(&AMDIL::GPRI32RegClass);
       CFGTraits::insertAssignInstrBefore(insertPos, passRep, immReg, 1);
       InstrT *newInstr =
-        CFGTraits::insertInstrBefore(insertPos, AMDIL::BRANCH_COND_i32,
+        CFGTraits::insertInstrBefore(insertPos, AMDIL::BRANCHi32br,
                                      passRep);
       MachineInstrBuilder(newInstr).addMBB(loopHeader).addReg(immReg, false);
       SHOWNEWINSTR(newInstr);
@@ -2904,10 +2787,8 @@ CFGStructurizer<PassT>::normalizeInfiniteLoopExit(LoopT* LoopRep)
 
   return dummyExitBlk;
 } //normalizeInfiniteLoopExit
-
 template<class PassT>
-void CFGStructurizer<PassT>::removeUnconditionalBranch(BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::removeUnconditionalBranch(BlockT *srcBlk) {
   InstrT *branchInstr;
 
   // I saw two unconditional branch in one basic block in example
@@ -2915,16 +2796,14 @@ void CFGStructurizer<PassT>::removeUnconditionalBranch(BlockT *srcBlk)
   while ((branchInstr = CFGTraits::getLoopendBlockBranchInstr(srcBlk))
          && CFGTraits::isUncondBranch(branchInstr)) {
     if (DEBUGME) {
-      errs() << "Removing unconditional branch instruction" ;
+      errs() << "Removing unconditional branch instruction";
       branchInstr->dump();
     }
     branchInstr->eraseFromParent();
   }
 } //removeUnconditionalBranch
-
 template<class PassT>
-void CFGStructurizer<PassT>::removeRedundantConditionalBranch(BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::removeRedundantConditionalBranch(BlockT *srcBlk) {
   if (srcBlk->succ_size() == 2) {
     BlockT *blk1 = *srcBlk->succ_begin();
     BlockT *blk2 = *(srcBlk->succ_begin()+1);
@@ -2933,7 +2812,7 @@ void CFGStructurizer<PassT>::removeRedundantConditionalBranch(BlockT *srcBlk)
       InstrT *branchInstr = CFGTraits::getNormalBlockBranchInstr(srcBlk);
       assert(branchInstr && CFGTraits::isCondBranch(branchInstr));
       if (DEBUGME) {
-        errs() << "Removing unneeded conditional branch instruction" ;
+        errs() << "Removing unneeded conditional branch instruction";
         branchInstr->dump();
       }
       branchInstr->eraseFromParent();
@@ -2942,11 +2821,10 @@ void CFGStructurizer<PassT>::removeRedundantConditionalBranch(BlockT *srcBlk)
     }
   }
 } //removeRedundantConditionalBranch
-
 template<class PassT>
 void CFGStructurizer<PassT>::addDummyExitBlock(SmallVector<BlockT*,
-    DEFAULT_VEC_SLOTS> &retBlks)
-{
+                                                           DEFAULT_VEC_SLOTS> &
+                                               retBlks) {
   BlockT *dummyExitBlk = funcRep->CreateMachineBasicBlock();
   funcRep->push_back(dummyExitBlk);  //insert to function
   CFGTraits::insertInstrEnd(dummyExitBlk, AMDIL::RETURN, passRep);
@@ -2979,18 +2857,14 @@ void CFGStructurizer<PassT>::addDummyExitBlock(SmallVector<BlockT*,
 
   SHOWNEWBLK(dummyExitBlk, "DummyExitBlock: ");
 } //addDummyExitBlock
-
 template<class PassT>
-void CFGStructurizer<PassT>::removeSuccessor(BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::removeSuccessor(BlockT *srcBlk) {
   while (srcBlk->succ_size()) {
     srcBlk->removeSuccessor(*srcBlk->succ_begin());
   }
 }
-
 template<class PassT>
-void CFGStructurizer<PassT>::recordSccnum(BlockT *srcBlk, int sccNum)
-{
+void CFGStructurizer<PassT>::recordSccnum(BlockT *srcBlk, int sccNum) {
   BlockInfo *&srcBlkInfo = blockInfoMap[srcBlk];
 
   if (srcBlkInfo == NULL) {
@@ -2999,27 +2873,21 @@ void CFGStructurizer<PassT>::recordSccnum(BlockT *srcBlk, int sccNum)
 
   srcBlkInfo->sccNum = sccNum;
 }
-
 template<class PassT>
-int CFGStructurizer<PassT>::getSCCNum(BlockT *srcBlk)
-{
+int CFGStructurizer<PassT>::getSCCNum(BlockT *srcBlk) {
   BlockInfo *srcBlkInfo = blockInfoMap[srcBlk];
   return srcBlkInfo ? srcBlkInfo->sccNum : INVALIDSCCNUM;
 }
-
 template<class PassT>
-void CFGStructurizer<PassT>::addToTraversalBlock(BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::addToTraversalBlock(BlockT *srcBlk) {
   if (DEBUGME) {
     errs() << "AddToTraversal BB" << srcBlk->getNumber() << "\n";
   }
 
   addedToTraversalBlks.push_back(srcBlk);
 }
-
 template<class PassT>
-void CFGStructurizer<PassT>::retireBlock(BlockT *dstBlk, BlockT *srcBlk)
-{
+void CFGStructurizer<PassT>::retireBlock(BlockT *dstBlk, BlockT *srcBlk) {
   if (DEBUGME) {
     errs() << "Retiring BB" << srcBlk->getNumber() << "\n";
   }
@@ -3036,17 +2904,13 @@ void CFGStructurizer<PassT>::retireBlock(BlockT *dstBlk, BlockT *srcBlk)
   assert(srcBlk->succ_size() == 0 && srcBlk->pred_size() == 0
          && "can't retire block yet");
 }
-
 template<class PassT>
-bool CFGStructurizer<PassT>::isRetiredBlock(BlockT *srcBlk)
-{
+bool CFGStructurizer<PassT>::isRetiredBlock(BlockT *srcBlk) {
   BlockInfo *srcBlkInfo = blockInfoMap[srcBlk];
   return (srcBlkInfo && srcBlkInfo->isRetired);
 }
-
 template<class PassT>
-bool CFGStructurizer<PassT>::isActiveLoophead(BlockT *curBlk)
-{
+bool CFGStructurizer<PassT>::isActiveLoophead(BlockT *curBlk) {
   LoopT *loopRep = loopInfo->getLoopFor(curBlk);
   while (loopRep && loopRep->getHeader() == curBlk) {
     LoopLandInfo *loopLand = getLoopLandInfo(loopRep);
@@ -3065,10 +2929,8 @@ bool CFGStructurizer<PassT>::isActiveLoophead(BlockT *curBlk)
 
   return false;
 } //isActiveLoophead
-
 template<class PassT>
-bool CFGStructurizer<PassT>::needMigrateBlock(BlockT *blk)
-{
+bool CFGStructurizer<PassT>::needMigrateBlock(BlockT *blk) {
   const unsigned blockSizeThreshold = 30;
   const unsigned cloneInstrThreshold = 100;
 
@@ -3081,19 +2943,18 @@ bool CFGStructurizer<PassT>::needMigrateBlock(BlockT *blk)
   return ((blkSize > blockSizeThreshold)
           && (blkSize * (blk->pred_size() - 1) > cloneInstrThreshold));
 } //needMigrateBlock
-
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::recordLoopLandBlock(LoopT *loopRep, BlockT *landBlk,
-    BlockTSmallerVector &exitBlks,
-    std::set<BlockT *> &exitBlkSet)
-{
+                                            BlockTSmallerVector &exitBlks,
+                                            std::set<BlockT *> &exitBlkSet) {
   SmallVector<BlockT *, DEFAULT_VEC_SLOTS> inpathBlks;  //in exit path blocks
 
   for (typename BlockT::pred_iterator predIter = landBlk->pred_begin(),
        predIterEnd = landBlk->pred_end();
        predIter != predIterEnd; ++predIter) {
     BlockT *curBlk = *predIter;
+    if (curBlk == landBlk) continue;  // in case landBlk is a single-block loop
     if (loopRep->contains(curBlk) || exitBlkSet.count(curBlk)) {
       inpathBlks.push_back(curBlk);
     }
@@ -3127,10 +2988,8 @@ CFGStructurizer<PassT>::recordLoopLandBlock(LoopT *loopRep, BlockT *landBlk,
 
   return newLandBlk;
 } // recordLoopbreakLand
-
 template<class PassT>
-void CFGStructurizer<PassT>::setLoopLandBlock(LoopT *loopRep, BlockT *blk)
-{
+void CFGStructurizer<PassT>::setLoopLandBlock(LoopT *loopRep, BlockT *blk) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3152,10 +3011,8 @@ void CFGStructurizer<PassT>::setLoopLandBlock(LoopT *loopRep, BlockT *blk)
            << "  landing-block = BB" << blk->getNumber() << "\n";
   }
 } // setLoopLandBlock
-
 template<class PassT>
-void CFGStructurizer<PassT>::addLoopBreakOnReg(LoopT *loopRep, RegiT regNum)
-{
+void CFGStructurizer<PassT>::addLoopBreakOnReg(LoopT *loopRep, RegiT regNum) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3170,10 +3027,8 @@ void CFGStructurizer<PassT>::addLoopBreakOnReg(LoopT *loopRep, RegiT regNum)
            << "  regNum = " << regNum << "\n";
   }
 } // addLoopBreakOnReg
-
 template<class PassT>
-void CFGStructurizer<PassT>::addLoopContOnReg(LoopT *loopRep, RegiT regNum)
-{
+void CFGStructurizer<PassT>::addLoopContOnReg(LoopT *loopRep, RegiT regNum) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3187,10 +3042,9 @@ void CFGStructurizer<PassT>::addLoopContOnReg(LoopT *loopRep, RegiT regNum)
            << "  regNum = " << regNum << "\n";
   }
 } // addLoopContOnReg
-
 template<class PassT>
-void CFGStructurizer<PassT>::addLoopBreakInitReg(LoopT *loopRep, RegiT regNum)
-{
+void CFGStructurizer<PassT>::addLoopBreakInitReg(LoopT *loopRep,
+                                                 RegiT regNum) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3204,10 +3058,8 @@ void CFGStructurizer<PassT>::addLoopBreakInitReg(LoopT *loopRep, RegiT regNum)
            << "  regNum = " << regNum << "\n";
   }
 } // addLoopBreakInitReg
-
 template<class PassT>
-void CFGStructurizer<PassT>::addLoopContInitReg(LoopT *loopRep, RegiT regNum)
-{
+void CFGStructurizer<PassT>::addLoopContInitReg(LoopT *loopRep, RegiT regNum) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3221,11 +3073,9 @@ void CFGStructurizer<PassT>::addLoopContInitReg(LoopT *loopRep, RegiT regNum)
            << "  regNum = " << regNum << "\n";
   }
 } // addLoopContInitReg
-
 template<class PassT>
 void CFGStructurizer<PassT>::addLoopEndbranchInitReg(LoopT *loopRep,
-    RegiT regNum)
-{
+                                                     RegiT regNum) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   if (theEntry == NULL) {
@@ -3233,35 +3083,29 @@ void CFGStructurizer<PassT>::addLoopEndbranchInitReg(LoopT *loopRep,
   }
   theEntry->endbranchInitRegs.insert(regNum);
 
-  if (DEBUGME) {
+  if (DEBUGME)
+  {
     errs() << "addLoopEndbranchInitReg loop-header = BB"
            << loopRep->getHeader()->getNumber()
            << "  regNum = " << regNum << "\n";
   }
 } // addLoopEndbranchInitReg
-
 template<class PassT>
 typename CFGStructurizer<PassT>::LoopLandInfo *
-CFGStructurizer<PassT>::getLoopLandInfo(LoopT *loopRep)
-{
+CFGStructurizer<PassT>::getLoopLandInfo(LoopT *loopRep) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   return theEntry;
 } // getLoopLandInfo
-
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
-CFGStructurizer<PassT>::getLoopLandBlock(LoopT *loopRep)
-{
+CFGStructurizer<PassT>::getLoopLandBlock(LoopT *loopRep) {
   LoopLandInfo *&theEntry = loopLandInfoMap[loopRep];
 
   return theEntry ? theEntry->landBlk : NULL;
 } // getLoopLandBlock
-
-
 template<class PassT>
-bool CFGStructurizer<PassT>::hasBackEdge(BlockT *curBlk)
-{
+bool CFGStructurizer<PassT>::hasBackEdge(BlockT *curBlk) {
   LoopT *loopRep = loopInfo->getLoopFor(curBlk);
   if (loopRep == NULL)
     return false;
@@ -3269,20 +3113,15 @@ bool CFGStructurizer<PassT>::hasBackEdge(BlockT *curBlk)
   BlockT *loopHeader = loopRep->getHeader();
 
   return curBlk->isSuccessor(loopHeader);
-
 } //hasBackEdge
-
 template<class PassT>
-unsigned CFGStructurizer<PassT>::getLoopDepth(LoopT *loopRep)
-{
+unsigned CFGStructurizer<PassT>::getLoopDepth(LoopT *loopRep) {
   return loopRep ? loopRep->getLoopDepth() : 0;
 } //getLoopDepth
-
 template<class PassT>
 int CFGStructurizer<PassT>::countActiveBlock
-(typename SmallVector<BlockT*, DEFAULT_VEC_SLOTS>::const_iterator iterStart,
- typename SmallVector<BlockT*, DEFAULT_VEC_SLOTS>::const_iterator iterEnd)
-{
+  (typename SmallVector<BlockT*, DEFAULT_VEC_SLOTS>::const_iterator iterStart,
+  typename SmallVector<BlockT*, DEFAULT_VEC_SLOTS>::const_iterator iterEnd) {
   int count = 0;
   while (iterStart != iterEnd) {
     if (!isRetiredBlock(*iterStart)) {
@@ -3293,15 +3132,12 @@ int CFGStructurizer<PassT>::countActiveBlock
 
   return count;
 } //countActiveBlock
-
 // This is work around solution for findNearestCommonDominator not avaiable to
 // post dom a proper fix should go to Dominators.h.
 
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT*
-CFGStructurizer<PassT>::findNearestCommonPostDom(BlockT *blk1, BlockT *blk2)
-{
-
+CFGStructurizer<PassT>::findNearestCommonPostDom(BlockT *blk1, BlockT *blk2) {
   if (postDomTree->dominates(blk1, blk2)) {
     return blk1;
   }
@@ -3334,12 +3170,10 @@ CFGStructurizer<PassT>::findNearestCommonPostDom(BlockT *blk1, BlockT *blk2)
 
   return NULL;
 }
-
 template<class PassT>
 typename CFGStructurizer<PassT>::BlockT *
 CFGStructurizer<PassT>::findNearestCommonPostDom
-(typename std::set<BlockT *> &blks)
-{
+  (typename std::set<BlockT *> &blks) {
   BlockT *commonDom;
   typename std::set<BlockT *>::const_iterator iter = blks.begin();
   typename std::set<BlockT *>::const_iterator iterEnd = blks.end();
@@ -3361,18 +3195,15 @@ CFGStructurizer<PassT>::findNearestCommonPostDom
 
   return commonDom;
 } //findNearestCommonPostDom
-
 } //end namespace llvm
 
 //todo: move-end
-
 
 //===----------------------------------------------------------------------===//
 //
 // CFGStructurizer for AMDIL
 //
 //===----------------------------------------------------------------------===//
-
 
 using namespace llvmCFGStruct;
 
@@ -3381,14 +3212,14 @@ namespace llvm
 class AMDILCFGStructurizer : public MachineFunctionPass
 {
 public:
-  typedef MachineInstr              InstructionType;
-  typedef MachineFunction           FunctionType;
-  typedef MachineBasicBlock         BlockType;
-  typedef MachineLoopInfo           LoopinfoType;
-  typedef MachineDominatorTree      DominatortreeType;
-  typedef MachinePostDominatorTree  PostDominatortreeType;
-  typedef MachineDomTreeNode        DomTreeNodeType;
-  typedef MachineLoop               LoopType;
+  typedef MachineInstr InstructionType;
+  typedef MachineFunction FunctionType;
+  typedef MachineBasicBlock BlockType;
+  typedef MachineLoopInfo LoopinfoType;
+  typedef MachineDominatorTree DominatortreeType;
+  typedef MachinePostDominatorTree PostDominatortreeType;
+  typedef MachineDomTreeNode DomTreeNodeType;
+  typedef MachineLoop LoopType;
 //private:
   const TargetInstrInfo *TII;
 
@@ -3402,18 +3233,14 @@ public:
   virtual bool runOnMachineFunction(MachineFunction &F) = 0;
 
 private:
-
 };   //end of class AMDILCFGStructurizer
 
 //char AMDILCFGStructurizer::ID = 0;
 } //end of namespace llvm
 AMDILCFGStructurizer::AMDILCFGStructurizer(char &pid)
-  : MachineFunctionPass(pid), TII(NULL)
-{
+  : MachineFunctionPass(pid), TII(NULL) {
 }
-
-const TargetInstrInfo *AMDILCFGStructurizer::getTargetInstrInfo() const
-{
+const TargetInstrInfo *AMDILCFGStructurizer::getTargetInstrInfo() const {
   return TII;
 }
 //===----------------------------------------------------------------------===//
@@ -3422,14 +3249,15 @@ const TargetInstrInfo *AMDILCFGStructurizer::getTargetInstrInfo() const
 //
 //===----------------------------------------------------------------------===//
 
+namespace llvm
+{
+extern void initializeAMDILCFGPreparePass(llvm::PassRegistry&);
+}
 
 using namespace llvmCFGStruct;
 
 namespace llvm
 {
-
-extern void initializeAMDILCFGPreparePass(PassRegistry&);
-
 class AMDILCFGPrepare : public AMDILCFGStructurizer
 {
 public:
@@ -3444,7 +3272,6 @@ public:
   bool runOnMachineFunction(MachineFunction &F);
 
 private:
-
 };   //end of class AMDILCFGPrepare
 
 char AMDILCFGPrepare::ID = 0;
@@ -3455,34 +3282,31 @@ AMDILCFGPrepare::AMDILCFGPrepare()
 {
   initializeAMDILCFGPreparePass(*PassRegistry::getPassRegistry());
 }
-const char *AMDILCFGPrepare::getPassName() const
-{
+const char *AMDILCFGPrepare::getPassName() const {
   return "AMD IL Control Flow Graph Preparation Pass";
 }
-
-void AMDILCFGPrepare::getAnalysisUsage(AnalysisUsage &AU) const
-{
+void AMDILCFGPrepare::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<MachineFunctionAnalysis>();
   AU.addRequired<MachineFunctionAnalysis>();
   AU.addRequired<MachineDominatorTree>();
   AU.addRequired<MachinePostDominatorTree>();
   AU.addRequired<MachineLoopInfo>();
 }
-
 //===----------------------------------------------------------------------===//
 //
 // CFGPerform
 //
 //===----------------------------------------------------------------------===//
 
+namespace llvm
+{
+extern void initializeAMDILCFGPerformPass(llvm::PassRegistry&);
+}
 
 using namespace llvmCFGStruct;
 
 namespace llvm
 {
-
-extern void initializeAMDILCFGPerformPass(PassRegistry&);
-
 class AMDILCFGPerform : public AMDILCFGStructurizer
 {
 public:
@@ -3495,7 +3319,6 @@ public:
   bool runOnMachineFunction(MachineFunction &F);
 
 private:
-
 };   //end of class AMDILCFGPerform
 
 char AMDILCFGPerform::ID = 0;
@@ -3506,21 +3329,16 @@ AMDILCFGPerform::AMDILCFGPerform()
 {
   initializeAMDILCFGPerformPass(*PassRegistry::getPassRegistry());
 }
-
-const char *AMDILCFGPerform::getPassName() const
-{
+const char *AMDILCFGPerform::getPassName() const {
   return "AMD IL Control Flow Graph structurizer Pass";
 }
-
-void AMDILCFGPerform::getAnalysisUsage(AnalysisUsage &AU) const
-{
+void AMDILCFGPerform::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<MachineFunctionAnalysis>();
   AU.addRequired<MachineFunctionAnalysis>();
   AU.addRequired<MachineDominatorTree>();
   AU.addRequired<MachinePostDominatorTree>();
   AU.addRequired<MachineLoopInfo>();
 }
-
 //===----------------------------------------------------------------------===//
 //
 // CFGStructTraits<AMDILCFGStructurizer>
@@ -3531,63 +3349,125 @@ namespace llvmCFGStruct
 {
 // this class is tailor to the AMDIL backend
 template<>
-struct CFGStructTraits<AMDILCFGStructurizer> {
+struct CFGStructTraits<AMDILCFGStructurizer>
+{
   typedef int RegiT;
 
   static int getBreakNzeroOpcode(int oldOpcode) {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::BREAK_LOGICALNZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::BREAK_LOGICALNZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::BREAK_LOGICALNZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::BREAK_LOGICALNZi64r;
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi32br: return AMDIL::BREAK_LOGICALNZi32r;
+    case AMDIL::BRANCHi16bi:
+    case AMDIL::BRANCHi16br: return AMDIL::BREAK_LOGICALNZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::BREAK_LOGICALNZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
   static int getBreakZeroOpcode(int oldOpcode) {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::BREAK_LOGICALZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::BREAK_LOGICALZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::BREAK_LOGICALZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::BREAK_LOGICALZi64r;
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi32br: return AMDIL::BREAK_LOGICALZi32r;
+    case AMDIL::BRANCHi16bi:
+    case AMDIL::BRANCHi16br: return AMDIL::BREAK_LOGICALZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::BREAK_LOGICALZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
   static int getBranchNzeroOpcode(int oldOpcode) {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::IF_LOGICALNZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::IF_LOGICALNZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::IF_LOGICALNZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::IF_LOGICALNZi64r;
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi32br: return AMDIL::IF_LOGICALNZi32r;
+    case AMDIL::BRANCHi16bi:
+    case AMDIL::BRANCHi16br: return AMDIL::IF_LOGICALNZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::IF_LOGICALNZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
   static int getBranchZeroOpcode(int oldOpcode) {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::IF_LOGICALZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::IF_LOGICALZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::IF_LOGICALZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::IF_LOGICALZi64r;
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi32br: return AMDIL::IF_LOGICALZi32r;
+    case AMDIL::BRANCHi16br:
+    case AMDIL::BRANCHi16bi: return AMDIL::IF_LOGICALZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::IF_LOGICALZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
-  static int getContinueNzeroOpcode(int oldOpcode) {
+  static int getContinueNzeroOpcode(int oldOpcode)
+  {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::CONTINUE_LOGICALNZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::CONTINUE_LOGICALNZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::CONTINUE_LOGICALNZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::CONTINUE_LOGICALNZi64r;
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi32br: return AMDIL::CONTINUE_LOGICALNZi32r;
+    case AMDIL::BRANCHi16bi:
+    case AMDIL::BRANCHi16br: return AMDIL::CONTINUE_LOGICALNZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::CONTINUE_LOGICALNZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
   static int getContinueZeroOpcode(int oldOpcode) {
     switch(oldOpcode) {
-      ExpandCaseToAllScalarReturn(AMDIL::BRANCH_COND, AMDIL::CONTINUE_LOGICALZ);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf64br: return AMDIL::CONTINUE_LOGICALZf64r;
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHf32br: return AMDIL::CONTINUE_LOGICALZf32r;
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi64br: return AMDIL::CONTINUE_LOGICALZi64r;
+    case AMDIL::BRANCHi32br:
+    case AMDIL::BRANCHi32bi: return AMDIL::CONTINUE_LOGICALZi32r;
+    case AMDIL::BRANCHi16br:
+    case AMDIL::BRANCHi16bi: return AMDIL::CONTINUE_LOGICALZi16r;
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHi8br:  return AMDIL::CONTINUE_LOGICALZi8r;
     default:
       assert(0 && "internal error");
     };
     return -1;
   }
-
 // the explicitly represented branch target is the true branch target
 #define getExplicitBranch getTrueBranch
 #define setExplicitBranch setTrueBranch
@@ -3595,11 +3475,9 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
   static MachineBasicBlock *getTrueBranch(MachineInstr *instr) {
     return instr->getOperand(0).getMBB();
   }
-
   static void setTrueBranch(MachineInstr *instr, MachineBasicBlock *blk) {
     instr->getOperand(0).setMBB(blk);
   }
-
   static MachineBasicBlock *
   getFalseBranch(MachineBasicBlock *blk, MachineInstr *instr) {
     assert(blk->succ_size() == 2);
@@ -3610,41 +3488,41 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     return (*iter == trueBranch) ? *iterNext : *iter;
   }
-
   static bool isCondBranch(MachineInstr *instr) {
     switch (instr->getOpcode()) {
-      ExpandCaseToAllScalarTypes(AMDIL::BRANCH_COND);
+    case AMDIL::BRANCHf64bi:
+    case AMDIL::BRANCHf32bi:
+    case AMDIL::BRANCHi64bi:
+    case AMDIL::BRANCHi32bi:
+    case AMDIL::BRANCHi16bi:
+    case AMDIL::BRANCHi8bi:
+    case AMDIL::BRANCHf64br:
+    case AMDIL::BRANCHf32br:
+    case AMDIL::BRANCHi64br:
+    case AMDIL::BRANCHi32br:
+    case AMDIL::BRANCHi16br:
+    case AMDIL::BRANCHi8br:
       break;
     default:
       return false;
     }
     return true;
   }
-
   static bool isUncondBranch(MachineInstr *instr) {
     switch (instr->getOpcode()) {
-    case AMDIL::BRANCH:
+    case AMDIL::BRANCHb:
       break;
     default:
       return false;
     }
     return true;
   }
-
-  static bool isPhimove(MachineInstr *instr) {
-    switch (instr->getOpcode()) {
-      ExpandCaseToAllTypes(AMDIL::MOVE);
-      break;
-    default:
-      return false;
-    }
-    return true;
-  }
-
   static DebugLoc getLastDebugLocInBB(MachineBasicBlock *blk) {
     //get DebugLoc from the first MachineBasicBlock instruction with debug info
     DebugLoc DL;
-    for (MachineBasicBlock::iterator iter = blk->begin(); iter != blk->end(); ++iter) {
+    for (MachineBasicBlock::iterator iter = blk->begin();
+         iter != blk->end();
+         ++iter) {
       MachineInstr *instr = &(*iter);
       if (instr->getDebugLoc().isUnknown() == false) {
         DL = instr->getDebugLoc();
@@ -3652,7 +3530,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
     return DL;
   }
-
   static MachineInstr *getNormalBlockBranchInstr(MachineBasicBlock *blk) {
     MachineBasicBlock::reverse_iterator iter = blk->rbegin();
     MachineInstr *instr = &*iter;
@@ -3661,7 +3538,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
     return NULL;
   }
-
   // The correct naming for this is getPossibleLoopendBlockBranchInstr.
   //
   // BB with backward-edge could have move instructions after the branch
@@ -3675,14 +3551,13 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
       if (instr) {
         if (isCondBranch(instr) || isUncondBranch(instr)) {
           return instr;
-        } else if (!isPhimove(instr)) {
+        } else if (instr->getOpcode() == TargetOpcode::COPY) {
           break;
         }
       }
     }
     return NULL;
   }
-
   static MachineInstr *getReturnInstr(MachineBasicBlock *blk) {
     MachineBasicBlock::reverse_iterator iter = blk->rbegin();
     if (iter != blk->rend()) {
@@ -3693,7 +3568,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
     return NULL;
   }
-
   static MachineInstr *getContinueInstr(MachineBasicBlock *blk) {
     MachineBasicBlock::reverse_iterator iter = blk->rbegin();
     if (iter != blk->rend()) {
@@ -3704,17 +3578,18 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
     return NULL;
   }
-
   static MachineInstr *getLoopBreakInstr(MachineBasicBlock *blk) {
-    for (MachineBasicBlock::iterator iter = blk->begin(); (iter != blk->end()); ++iter) {
+    for (MachineBasicBlock::iterator iter = blk->begin();
+         (iter != blk->end());
+         ++iter) {
       MachineInstr *instr = &(*iter);
-      if ((instr->getOpcode() == AMDIL::BREAK_LOGICALNZ_i32) || (instr->getOpcode() == AMDIL::BREAK_LOGICALZ_i32)) {
+      if ((instr->getOpcode() == AMDIL::BREAK_LOGICALNZi32r) ||
+          (instr->getOpcode() == AMDIL::BREAK_LOGICALZi32r)) {
         return instr;
       }
     }
     return NULL;
   }
-
   static bool isReturnBlock(MachineBasicBlock *blk) {
     MachineInstr *instr = getReturnInstr(blk);
     bool isReturn = (blk->succ_size() == 0);
@@ -3727,9 +3602,8 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
       }
     }
 
-    return  isReturn;
+    return isReturn;
   }
-
   static MachineBasicBlock::iterator
   getInstrPos(MachineBasicBlock *blk, MachineInstr *instr) {
     assert(instr->getParent() == blk && "instruction doesn't belong to block");
@@ -3741,15 +3615,15 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     assert(iter != iterEnd);
     return iter;
-  }//getInstrPos
-
+  } //getInstrPos
   static MachineInstr *insertInstrBefore(MachineBasicBlock *blk, int newOpcode,
                                          AMDILCFGStructurizer *passRep) {
     return insertInstrBefore(blk,newOpcode,passRep,DebugLoc());
   } //insertInstrBefore
-
-  static MachineInstr *insertInstrBefore(MachineBasicBlock *blk, int newOpcode,
-                                         AMDILCFGStructurizer *passRep, DebugLoc DL) {
+  static MachineInstr *insertInstrBefore(MachineBasicBlock *blk,
+                                         int newOpcode,
+                                         AMDILCFGStructurizer *passRep,
+                                         DebugLoc DL) {
     const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
     MachineInstr *newInstr =
       blk->getParent()->CreateMachineInstr(tii->get(newOpcode), DL);
@@ -3765,12 +3639,10 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     return newInstr;
   } //insertInstrBefore
-
   static void insertInstrEnd(MachineBasicBlock *blk, int newOpcode,
                              AMDILCFGStructurizer *passRep) {
     insertInstrEnd(blk,newOpcode,passRep,DebugLoc());
   } //insertInstrEnd
-
   static void insertInstrEnd(MachineBasicBlock *blk, int newOpcode,
                              AMDILCFGStructurizer *passRep, DebugLoc DL) {
     const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
@@ -3782,7 +3654,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     SHOWNEWINSTR(newInstr);
   } //insertInstrEnd
-
   static MachineInstr *insertInstrBefore(MachineBasicBlock::iterator instrPos,
                                          int newOpcode,
                                          AMDILCFGStructurizer *passRep,
@@ -3799,13 +3670,11 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     SHOWNEWINSTR(newInstr);
     return newInstr;
   } //insertInstrBefore
-
   static MachineInstr *insertInstrBefore(MachineBasicBlock::iterator instrPos,
                                          int newOpcode,
                                          AMDILCFGStructurizer *passRep) {
     return insertInstrBefore(instrPos, newOpcode, passRep, DebugLoc());
   } //insertInstrBefore
-
   static void insertCondBranchBefore(MachineBasicBlock::iterator instrPos,
                                      int newOpcode,
                                      AMDILCFGStructurizer *passRep,
@@ -3818,13 +3687,20 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
                                            DL);
 
     blk->insert(instrPos, newInstr);
-    MachineInstrBuilder(newInstr).addReg(oldInstr->getOperand(1).getReg(),
-                                         false);
+    if (oldInstr->getOperand(1).isReg()) {
+      MachineInstrBuilder(newInstr).addReg(
+        oldInstr->getOperand(1).getReg(), false);
+    } else if (oldInstr->getOperand(1).isImm()) {
+      MachineInstrBuilder(newInstr).addImm(
+        oldInstr->getOperand(1).getImm());
+    } else if (oldInstr->getOperand(1).isFPImm()) {
+      MachineInstrBuilder(newInstr).addFPImm(
+        oldInstr->getOperand(1).getFPImm());
+    }
 
     SHOWNEWINSTR(newInstr);
     //erase later oldInstr->eraseFromParent();
   } //insertCondBranchBefore
-
   static void insertCondBranchBefore(MachineBasicBlock *blk,
                                      MachineBasicBlock::iterator insertPos,
                                      int newOpcode,
@@ -3842,7 +3718,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     SHOWNEWINSTR(newInstr);
   } //insertCondBranchBefore
-
   static void insertCondBranchEnd(MachineBasicBlock *blk,
                                   int newOpcode,
                                   AMDILCFGStructurizer *passRep,
@@ -3856,8 +3731,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     SHOWNEWINSTR(newInstr);
   } //insertCondBranchEnd
-
-
   static void insertAssignInstrBefore(MachineBasicBlock::iterator instrPos,
                                       AMDILCFGStructurizer *passRep,
                                       RegiT regNum, int regVal) {
@@ -3865,7 +3738,7 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
     MachineBasicBlock *blk = oldInstr->getParent();
     MachineInstr *newInstr =
-      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::LOADCONST_i32),
+      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::LOADCONSTi32),
                                            DebugLoc());
     MachineInstrBuilder(newInstr).addReg(regNum, RegState::Define); //set target
     MachineInstrBuilder(newInstr).addImm(regVal); //set src value
@@ -3874,14 +3747,13 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     SHOWNEWINSTR(newInstr);
   } //insertAssignInstrBefore
-
   static void insertAssignInstrBefore(MachineBasicBlock *blk,
                                       AMDILCFGStructurizer *passRep,
                                       RegiT regNum, int regVal) {
     const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
 
     MachineInstr *newInstr =
-      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::LOADCONST_i32),
+      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::LOADCONSTi32),
                                            DebugLoc());
     MachineInstrBuilder(newInstr).addReg(regNum, RegState::Define); //set target
     MachineInstrBuilder(newInstr).addImm(regVal); //set src value
@@ -3893,9 +3765,7 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
 
     SHOWNEWINSTR(newInstr);
-
   } //insertInstrBefore
-
   static void insertCompareInstrBefore(MachineBasicBlock *blk,
                                        MachineBasicBlock::iterator instrPos,
                                        AMDILCFGStructurizer *passRep,
@@ -3903,7 +3773,7 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
                                        RegiT src2Reg) {
     const TargetInstrInfo *tii = passRep->getTargetInstrInfo();
     MachineInstr *newInstr =
-      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::IEQ), DebugLoc());
+      blk->getParent()->CreateMachineInstr(tii->get(AMDIL::EQi32rr), DebugLoc());
 
     MachineInstrBuilder(newInstr).addReg(dstReg, RegState::Define); //set target
     MachineInstrBuilder(newInstr).addReg(src1Reg); //set src value
@@ -3911,9 +3781,7 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
 
     blk->insert(instrPos, newInstr);
     SHOWNEWINSTR(newInstr);
-
   } //insertCompareInstrBefore
-
   static void cloneSuccessorList(MachineBasicBlock *dstBlk,
                                  MachineBasicBlock *srcBlk) {
     for (MachineBasicBlock::succ_iterator iter = srcBlk->succ_begin(),
@@ -3921,7 +3789,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
       dstBlk->addSuccessor(*iter);  // *iter's predecessor is also taken care of
     }
   } //cloneSuccessorList
-
   static MachineBasicBlock *clone(MachineBasicBlock *srcBlk) {
     MachineFunction *func = srcBlk->getParent();
     MachineBasicBlock *newBlk = func->CreateMachineBasicBlock();
@@ -3939,7 +3806,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     }
     return newBlk;
   }
-
   //MachineBasicBlock::ReplaceUsesOfBlockWith doesn't serve the purpose because
   //the AMDIL instruction is not recognized as terminator fix this and retire
   //this routine
@@ -3952,7 +3818,6 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
       setExplicitBranch(branchInstr, newBlk);
     }
   }
-
   static void wrapup(MachineBasicBlock *entryBlk) {
     assert((!entryBlk->getParent()->getJumpTableInfo()
             || entryBlk->getParent()->getJumpTableInfo()->isEmpty())
@@ -3970,7 +3835,7 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
       }
       pre = iter;
       ++iter;
-    } //end while
+    }  //end while
 
     //delete continue right before endloop
     for (unsigned i = 0; i < contInstr.size(); ++i) {
@@ -3981,18 +3846,14 @@ struct CFGStructTraits<AMDILCFGStructurizer> {
     // (jumpTableInfo->isEmpty() == false) { need to clean the jump table, but
     // there isn't such an interface yet.  alternatively, replace all the other
     // blocks in the jump table with the entryBlk //}
-
   } //wrapup
-
   static MachineDominatorTree *getDominatorTree(AMDILCFGStructurizer &pass) {
     return &pass.getAnalysis<MachineDominatorTree>();
   }
-
   static MachinePostDominatorTree*
   getPostDominatorTree(AMDILCFGStructurizer &pass) {
     return &pass.getAnalysis<MachinePostDominatorTree>();
   }
-
   static MachineLoopInfo *getLoopInfo(AMDILCFGStructurizer &pass) {
     return &pass.getAnalysis<MachineLoopInfo>();
   }
@@ -4009,7 +3870,7 @@ INITIALIZE_PASS_DEPENDENCY(MachinePostDominatorTree);
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo);
 INITIALIZE_PASS_END(AMDILCFGPrepare, "amdcfgprepare",
                     "AMD IL Control Flow Graph Preparation Pass",
-                    false, false)
+                    false, false);
 
 INITIALIZE_PASS_BEGIN(AMDILCFGPerform, "amdcfgperform",
                       "AMD IL Control Flow Graph structurizer Pass",
@@ -4019,39 +3880,25 @@ INITIALIZE_PASS_DEPENDENCY(MachinePostDominatorTree);
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo);
 INITIALIZE_PASS_END(AMDILCFGPerform, "amdcfgperform",
                     "AMD IL Control Flow Graph structurizer Pass",
-                    false, false)
-
-namespace llvm
-{
-FunctionPass *createAMDILCFGPreparationPass();
-FunctionPass *createAMDILCFGStructurizerPass();
-}
+                    false, false);
 
 // createAMDILCFGPreparationPass- Returns a pass
-FunctionPass *llvm::createAMDILCFGPreparationPass()
-{
+FunctionPass *llvm::createAMDILCFGPreparationPass() {
   return new AMDILCFGPrepare();
 }
-
-bool AMDILCFGPrepare::runOnMachineFunction(MachineFunction &func)
-{
+bool AMDILCFGPrepare::runOnMachineFunction(MachineFunction &func) {
   TII = func.getTarget().getInstrInfo();
   return llvmCFGStruct::CFGStructurizer<AMDILCFGStructurizer>().prepare(func,
-         *this);
+                                                                        *this);
 }
-
 // createAMDILCFGStructurizerPass- Returns a pass
-FunctionPass *llvm::createAMDILCFGStructurizerPass()
-{
+FunctionPass *llvm::createAMDILCFGStructurizerPass() {
   return new AMDILCFGPerform();
 }
-
-bool AMDILCFGPerform::runOnMachineFunction(MachineFunction &func)
-{
+bool AMDILCFGPerform::runOnMachineFunction(MachineFunction &func) {
   TII = func.getTarget().getInstrInfo();
   return llvmCFGStruct::CFGStructurizer<AMDILCFGStructurizer>().run(func,
-         *this);
+                                                                    *this);
 }
-
 //end of file newline goes below
 

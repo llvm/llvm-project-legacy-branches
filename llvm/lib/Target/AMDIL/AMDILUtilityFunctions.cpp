@@ -29,13 +29,10 @@
 #include <queue>
 #include <list>
 using namespace llvm;
-int64_t GET_SCALAR_SIZE(llvm::Type *A)
-{
+int64_t GET_SCALAR_SIZE(llvm::Type *A) {
   return A->getScalarSizeInBits();
 }
-
-const TargetRegisterClass * getRegClassFromID(unsigned int ID)
-{
+const TargetRegisterClass * getRegClassFromID(unsigned int ID) {
   switch (ID) {
   default:
     assert(0 && "Passed in ID does not match any register classes.");
@@ -74,91 +71,7 @@ const TargetRegisterClass * getRegClassFromID(unsigned int ID)
     return &AMDIL::GPRV2I64RegClass;
   };
 }
-
-unsigned int getMoveInstFromID(unsigned int ID)
-{
-  switch (ID) {
-  default:
-    assert(0 && "Passed in ID does not match any move instructions.");
-  case AMDIL::GPRI8RegClassID:
-    return AMDIL::MOVE_i8;
-  case AMDIL::GPRI16RegClassID:
-    return AMDIL::MOVE_i16;
-  case AMDIL::GPRI32RegClassID:
-    return AMDIL::MOVE_i32;
-  case AMDIL::GPRF32RegClassID:
-    return AMDIL::MOVE_f32;
-  case AMDIL::GPRI64RegClassID:
-    return AMDIL::MOVE_i64;
-  case AMDIL::GPRF64RegClassID:
-    return AMDIL::MOVE_f64;
-  case AMDIL::GPRV4F32RegClassID:
-    return AMDIL::MOVE_v4f32;
-  case AMDIL::GPRV4I8RegClassID:
-    return AMDIL::MOVE_v4i8;
-  case AMDIL::GPRV4I16RegClassID:
-    return AMDIL::MOVE_v4i16;
-  case AMDIL::GPRV4I32RegClassID:
-    return AMDIL::MOVE_v4i32;
-  case AMDIL::GPRV2F32RegClassID:
-    return AMDIL::MOVE_v2f32;
-  case AMDIL::GPRV2I8RegClassID:
-    return AMDIL::MOVE_v2i8;
-  case AMDIL::GPRV2I16RegClassID:
-    return AMDIL::MOVE_v2i16;
-  case AMDIL::GPRV2I32RegClassID:
-    return AMDIL::MOVE_v2i32;
-  case AMDIL::GPRV2F64RegClassID:
-    return AMDIL::MOVE_v2f64;
-  case AMDIL::GPRV2I64RegClassID:
-    return AMDIL::MOVE_v2i64;
-  };
-  return -1;
-}
-
-unsigned int getPHIMoveInstFromID(unsigned int ID)
-{
-  switch (ID) {
-  default:
-    assert(0 && "Passed in ID does not match any move instructions.");
-  case AMDIL::GPRI8RegClassID:
-    return AMDIL::PHIMOVE_i8;
-  case AMDIL::GPRI16RegClassID:
-    return AMDIL::PHIMOVE_i16;
-  case AMDIL::GPRI32RegClassID:
-    return AMDIL::PHIMOVE_i32;
-  case AMDIL::GPRF32RegClassID:
-    return AMDIL::PHIMOVE_f32;
-  case AMDIL::GPRI64RegClassID:
-    return AMDIL::PHIMOVE_i64;
-  case AMDIL::GPRF64RegClassID:
-    return AMDIL::PHIMOVE_f64;
-  case AMDIL::GPRV4F32RegClassID:
-    return AMDIL::PHIMOVE_v4f32;
-  case AMDIL::GPRV4I8RegClassID:
-    return AMDIL::PHIMOVE_v4i8;
-  case AMDIL::GPRV4I16RegClassID:
-    return AMDIL::PHIMOVE_v4i16;
-  case AMDIL::GPRV4I32RegClassID:
-    return AMDIL::PHIMOVE_v4i32;
-  case AMDIL::GPRV2F32RegClassID:
-    return AMDIL::PHIMOVE_v2f32;
-  case AMDIL::GPRV2I8RegClassID:
-    return AMDIL::PHIMOVE_v2i8;
-  case AMDIL::GPRV2I16RegClassID:
-    return AMDIL::PHIMOVE_v2i16;
-  case AMDIL::GPRV2I32RegClassID:
-    return AMDIL::PHIMOVE_v2i32;
-  case AMDIL::GPRV2F64RegClassID:
-    return AMDIL::PHIMOVE_v2f64;
-  case AMDIL::GPRV2I64RegClassID:
-    return AMDIL::PHIMOVE_v2i64;
-  };
-  return -1;
-}
-
-const TargetRegisterClass* getRegClassFromType(unsigned int type)
-{
+const TargetRegisterClass* getRegClassFromType(unsigned int type) {
   switch (type) {
   default:
     assert(0 && "Passed in type does not match any register classes.");
@@ -196,23 +109,57 @@ const TargetRegisterClass* getRegClassFromType(unsigned int type)
     return &AMDIL::GPRV2I64RegClass;
   }
 }
-
-void printSDNode(const SDNode *N)
+unsigned getRegClassFromName(const StringRef &name)
 {
+  if (name.find("v4i32") != StringRef::npos) {
+    return AMDIL::GPRV4I32RegClassID;
+  } else if (name.find("v2i32") != StringRef::npos) {
+    return AMDIL::GPRV2I32RegClassID;
+  } else if (name.find("i32") != StringRef::npos) {
+    return AMDIL::GPRI32RegClassID;
+  } else if (name.find("v4f32") != StringRef::npos) {
+    return AMDIL::GPRV4F32RegClassID;
+  } else if (name.find("v2f32") != StringRef::npos) {
+    return AMDIL::GPRV2I32RegClassID;
+  } else if (name.find("f32") != StringRef::npos) {
+    return AMDIL::GPRF32RegClassID;
+  } else if (name.find("v4i16") != StringRef::npos) {
+    return AMDIL::GPRV4I16RegClassID;
+  } else if (name.find("v2i16") != StringRef::npos) {
+    return AMDIL::GPRV2I16RegClassID;
+  } else if (name.find("i16") != StringRef::npos) {
+    return AMDIL::GPRI16RegClassID;
+  } else if (name.find("v4i8") != StringRef::npos) {
+    return AMDIL::GPRV4I8RegClassID;
+  } else if (name.find("v2i8") != StringRef::npos) {
+    return AMDIL::GPRV2I8RegClassID;
+  } else if (name.find("i8") != StringRef::npos) {
+    return AMDIL::GPRI8RegClassID;
+  } else if (name.find("v2i64") != StringRef::npos) {
+    return AMDIL::GPRV2I64RegClassID;
+  } else if (name.find("i64") != StringRef::npos) {
+    return AMDIL::GPRI64RegClassID;
+  } else if (name.find("v2f64") != StringRef::npos) {
+    return AMDIL::GPRV2F64RegClassID;
+  } else if (name.find("f64") != StringRef::npos) {
+    return AMDIL::GPRF64RegClassID;
+  }
+  assert("Found a name that I couldn't determine a class for!");
+  return AMDIL::GPRI32RegClassID;
+}
+void printSDNode(const SDNode *N) {
   printf("Opcode: %d isTargetOpcode: %d isMachineOpcode: %d\n",
          N->getOpcode(), N->isTargetOpcode(), N->isMachineOpcode());
   printf("Empty: %d OneUse: %d Size: %d NodeID: %d\n",
          N->use_empty(), N->hasOneUse(), (int)N->use_size(), N->getNodeId());
   for (unsigned int i = 0; i < N->getNumOperands(); ++i) {
     printf("OperandNum: %d ValueCount: %d ValueType: %d\n",
-           i, N->getNumValues(), N->getValueType(0) .getSimpleVT().SimpleTy);
+           i, N->getNumValues(), N->getValueType(0).getSimpleVT().SimpleTy);
     printSDValue(N->getOperand(i), 0);
   }
 }
-
-void printSDValue(const SDValue &Op, int level)
-{
-  printf("\nOp: %p OpCode: %d NumOperands: %d ", (void*)&Op, Op.getOpcode(),
+void printSDValue(const SDValue &Op, int level) {
+  printf("\nOp: %p OpCode: %d NumOperands: %d ", &Op, Op.getOpcode(),
          Op.getNumOperands());
   printf("IsTarget: %d IsMachine: %d ", Op.isTargetOpcode(),
          Op.isMachineOpcode());
@@ -232,34 +179,19 @@ void printSDValue(const SDValue &Op, int level)
     }
   }
 }
+#undef ExpandCaseToAllScalarTypes
+#define ExpandCaseToAllScalarTypes(Instr) \
+case Instr ## i8r:  \
+case Instr ## i16r: \
+case Instr ## i32r: \
+case Instr ## i64r: \
+case Instr ## f32r: \
+case Instr ## f64r:
 
-bool isPHIMove(unsigned int opcode)
-{
+bool isMoveOrEquivalent(unsigned int opcode) {
   switch (opcode) {
   default:
     return false;
-    ExpandCaseToAllTypes(AMDIL::PHIMOVE);
-    return true;
-  }
-  return false;
-}
-
-bool isMove(unsigned int opcode)
-{
-  switch (opcode) {
-  default:
-    return false;
-    ExpandCaseToAllTypes(AMDIL::MOVE);
-    return true;
-  }
-  return false;
-}
-
-bool isMoveOrEquivalent(unsigned int opcode)
-{
-  switch (opcode) {
-  default:
-    return isMove(opcode) || isPHIMove(opcode);
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASCHAR);
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASSHORT);
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASINT);
@@ -276,29 +208,23 @@ bool isMoveOrEquivalent(unsigned int opcode)
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASV4SHORT);
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASV4INT);
     ExpandCaseToAllScalarTypes(AMDIL::IL_ASV4FLOAT);
-  case AMDIL::INTTOANY_i8:
-  case AMDIL::INTTOANY_i16:
-  case AMDIL::INTTOANY_i32:
-  case AMDIL::INTTOANY_f32:
-  case AMDIL::DLO:
-  case AMDIL::LLO:
-  case AMDIL::LLO_v2i64:
+  case AMDIL::DLOf64r:
+  case AMDIL::LLOi64r:
+  case AMDIL::LLOv2i64r:
     return true;
   };
   return false;
 }
+#undef ExpandCaseToAllScalarTypes
 
-bool check_type(const Value *ptr, unsigned int addrspace)
-{
+bool check_type(const Value *ptr, unsigned int addrspace) {
   if (!ptr) {
     return false;
   }
   Type *ptrType = ptr->getType();
   return dyn_cast<PointerType>(ptrType)->getAddressSpace() == addrspace;
 }
-
-size_t getNumElements(Type * const T)
-{
+size_t getNumElements(Type * const T) {
   size_t size = 0;
   if (!T) {
     return size;
@@ -335,9 +261,7 @@ size_t getNumElements(Type * const T)
   };
   return size;
 }
-
-size_t getNumElements(StructType * const ST)
-{
+size_t getNumElements(StructType * const ST) {
   size_t size = 0;
   if (!ST) {
     return size;
@@ -352,34 +276,24 @@ size_t getNumElements(StructType * const ST)
   }
   return size;
 }
-
-size_t getNumElements(IntegerType * const IT)
-{
+size_t getNumElements(IntegerType * const IT) {
   return (!IT) ? 0 : 1;
 }
-
-size_t getNumElements(FunctionType * const FT)
-{
+size_t getNumElements(FunctionType * const FT) {
   assert(0 && "Should not be able to calculate the number of "
          "elements of a function type");
   return 0;
 }
-
-size_t getNumElements(ArrayType * const AT)
-{
+size_t getNumElements(ArrayType * const AT) {
   return (!AT) ? 0
          :  (size_t)(getNumElements(AT->getElementType()) *
                      AT->getNumElements());
 }
-
-size_t getNumElements(VectorType * const VT)
-{
+size_t getNumElements(VectorType * const VT) {
   return (!VT) ? 0
          : VT->getNumElements() * getNumElements(VT->getElementType());
 }
-
-size_t getNumElements(PointerType * const PT)
-{
+size_t getNumElements(PointerType * const PT) {
   size_t size = 0;
   if (!PT) {
     return size;
@@ -389,8 +303,6 @@ size_t getNumElements(PointerType * const PT)
   }
   return size;
 }
-
-
 const llvm::Value *getBasePointerValue(const llvm::Value *V)
 {
   if (!V) {
@@ -431,9 +343,7 @@ const llvm::Value *getBasePointerValue(const llvm::Value *V)
   }
   return ret;
 }
-
-const llvm::Value *getBasePointerValue(const llvm::MachineInstr *MI)
-{
+const llvm::Value *getBasePointerValue(const llvm::MachineInstr *MI) {
   const Value *moVal = NULL;
   if (!MI->memoperands_empty()) {
     const MachineMemOperand *memOp = (*MI->memoperands_begin());
@@ -442,79 +352,52 @@ const llvm::Value *getBasePointerValue(const llvm::MachineInstr *MI)
   }
   return moVal;
 }
-
-bool commaPrint(int i, OSTREAM_TYPE &O)
-{
+bool commaPrint(int i, OSTREAM_TYPE &O) {
   O << ":" << i;
   return false;
 }
-
-bool isLoadInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  if (strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "LOADCONST")) {
-    return false;
-  }
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "LOAD");
+bool isLoadInst(const llvm::MachineInstr *MI) {
+  return !(MI->getDesc().TSFlags & (1ULL << AMDID::LOADCONST))
+         && (MI->getDesc().TSFlags & (1ULL << AMDID::LOAD));
 }
-
+bool isPtrLoadInst(const llvm::MachineInstr *MI) {
+  return isLoadInst(MI)
+         && !(MI->getDesc().TSFlags & (1ULL << AMDID::IMAGE));
+}
 bool isSWSExtLoadInst(const llvm::MachineInstr *MI)
 {
-  switch (MI->getOpcode()) {
-  default:
-    break;
-    ExpandCaseToByteShortTypes(AMDIL::LOCALLOAD);
-    ExpandCaseToByteShortTypes(AMDIL::GLOBALLOAD);
-    ExpandCaseToByteShortTypes(AMDIL::REGIONLOAD);
-    ExpandCaseToByteShortTypes(AMDIL::PRIVATELOAD);
-    ExpandCaseToByteShortTypes(AMDIL::CPOOLLOAD);
-    ExpandCaseToByteShortTypes(AMDIL::CONSTANTLOAD);
-    return true;
-  };
-  return false;
+  return isPtrLoadInst(MI) && (MI->getDesc().TSFlags & (1ULL << AMDID::SWSEXTLD));
 }
-
-bool isExtLoadInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "EXTLOAD");
+bool isExtLoadInst(const llvm::MachineInstr *MI) {
+  return isPtrLoadInst(MI) && (MI->getDesc().TSFlags & AMDID::EXTLOAD);
 }
-
-bool isSExtLoadInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "SEXTLOAD");
+bool isSExtLoadInst(const llvm::MachineInstr *MI) {
+  return isPtrLoadInst(MI) && (MI->getDesc().TSFlags & (1ULL << AMDID::SEXTLOAD))
+         && !(MI->getDesc().TSFlags & (1ULL << AMDID::ZEXTLOAD));
 }
-
-bool isAExtLoadInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "AEXTLOAD");
+bool isAExtLoadInst(const llvm::MachineInstr *MI) {
+  return isPtrLoadInst(MI) && (MI->getDesc().TSFlags & AMDID::AEXTLOAD);
 }
-
-bool isZExtLoadInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ZEXTLOAD");
+bool isZExtLoadInst(const llvm::MachineInstr *MI) {
+  return isPtrLoadInst(MI) && (MI->getDesc().TSFlags & (1ULL << AMDID::ZEXTLOAD))
+         && !(MI->getDesc().TSFlags & (1ULL << AMDID::SEXTLOAD));
 }
-
-bool isStoreInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "STORE");
+bool isPtrStoreInst(const llvm::MachineInstr *MI) {
+  return isStoreInst(MI) && !(MI->getDesc().TSFlags & (1ULL << AMDID::IMAGE));
 }
-
-bool isArenaInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ARENA");
+bool isStoreInst(const llvm::MachineInstr *MI) {
+  return MI->getDesc().TSFlags & (1ULL << AMDID::STORE);
 }
-
-bool isTruncStoreInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "TRUNCSTORE");
+bool isArenaInst(const llvm::MachineInstr *MI) {
+  return MI->getDesc().TSFlags & (1ULL << AMDID::ARENAUAV);
 }
-
-bool isAtomicInst(TargetMachine &TM, const llvm::MachineInstr *MI)
-{
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM");
+bool isTruncStoreInst(const llvm::MachineInstr *MI) {
+  return MI->getDesc().TSFlags & (1ULL << AMDID::TRUNCATE);
 }
-
-bool isVolatileInst(const llvm::MachineInstr *MI)
-{
+bool isAtomicInst(const llvm::MachineInstr *MI) {
+  return MI->getDesc().TSFlags & (1ULL << AMDID::ATOMIC);
+}
+bool isVolatileInst(const llvm::MachineInstr *MI) {
   if (!MI->memoperands_empty()) {
     for (MachineInstr::mmo_iterator mob = MI->memoperands_begin(),
          moe = MI->memoperands_end(); mob != moe; ++mob) {
@@ -526,158 +409,268 @@ bool isVolatileInst(const llvm::MachineInstr *MI)
   }
   return false;
 }
-bool isGlobalInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isGlobalInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "GLOBAL");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::GLOBAL);
 }
-bool isPrivateInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isPrivateInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "PRIVATE");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::PRIVATE);
 }
-bool isConstantInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isConstantInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "CONSTANT")
-         || strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "CPOOL");
+  return (MI->getDesc().TSFlags & (1ULL << AMDID::CONSTANT))
+         || isConstantPoolInst(MI);
 }
-bool is64bitLSOp(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool is64bitLSOp(const llvm::MachineInstr *MI)
 {
-  return (isLoadInst(TM, MI) || isStoreInst(TM, MI))
-         && strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "64_")
-         && !strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "3264_");
+  return (isPtrLoadInst(MI) || isPtrStoreInst(MI))
+         && is64BitInst(MI);
 }
-bool isConstantPoolInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isConstantPoolInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "CPOOL");
+  return (MI->getDesc().TSFlags & (1ULL << AMDID::CPOOL));
 }
-bool isRegionInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isRegionInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "REGION");
+  return (MI->getDesc().TSFlags & (1ULL << AMDID::REGION));
 }
-bool isLocalInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isGWSInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "LOCAL");
+  return (MI->getDesc().TSFlags & (1ULL << AMDID::GWS));
 }
-bool isImageInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isLocalInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "IMAGE");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::LOCAL);
 }
-bool is64BitImageInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isLDSInst(const llvm::MachineInstr *MI)
 {
-  return isImageInst(TM, MI) &&
-         strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "64_");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::LDS);
 }
-bool isReadImageInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isGDSInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "IMAGE")
-         && strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "READ");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::GDS);
 }
-bool isWriteImageInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isUAVArenaInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "IMAGE")
-         && strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "WRITE");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::ARENAUAV);
 }
-bool isImageInfoInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isUAVRawInst(const llvm::MachineInstr *MI)
 {
-  return isImageInst(TM, MI) &&
-         strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "INFO");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::RAWUAV);
 }
-bool isImageInfo0Inst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isCBInst(const llvm::MachineInstr *MI)
 {
-  return isImageInst(TM, MI) &&
-         strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "INFO0");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::CBMEM);
 }
-bool isImageInfo1Inst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isScratchInst(const llvm::MachineInstr *MI)
 {
-  return isImageInst(TM, MI) &&
-         strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "INFO1");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::SCRATCH);
 }
-bool isImageTXLDInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isImageInst(const llvm::MachineInstr *MI)
 {
-  return isImageInst(TM, MI) &&
-         strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "TXLD");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::IMAGE);
 }
-bool isSemaphoreInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool is64BitImageInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "SEMAPHORE");
+  return isImageInst(MI) && is64BitInst(MI);
 }
-bool isAppendInst(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isReadImageInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "APPEND");
+  return isImageInst(MI) && isLoadInst(MI) && !isImageTXLDInst(MI);
 }
-bool isRegionAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isWriteImageInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM_R");
+  return isImageInst(MI) && isStoreInst(MI);
 }
-bool is64BitRegionAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isImageInfoInst(const llvm::MachineInstr* MI) {
+  return isImageInst(MI)
+         && (MI->getDesc().TSFlags & AMDID::INFO);
+}
+bool isImageInfo0Inst(const llvm::MachineInstr* MI) {
+  return isImageInst(MI)
+         && (MI->getDesc().TSFlags & (1ULL << AMDID::INFO0));
+}
+bool isImageInfo1Inst(const llvm::MachineInstr* MI) {
+  return isImageInst(MI)
+         && (MI->getDesc().TSFlags & (1ULL << AMDID::INFO1));
+}
+bool isImageTXLDInst(const llvm::MachineInstr* MI) {
+  return isImageInst(MI)
+         && MI->getDesc().TSFlags & (1ULL << AMDID::TXLD);
+}
+bool isSemaphoreInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM64_R");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::SEMA);
 }
-bool isLocalAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isAppendInst(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM_L");
+  return MI->getDesc().TSFlags & (1ULL << AMDID::APPEND);
 }
-bool is64BitLocalAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isRegionAtomic(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM64_L");
+  return isAtomicInst(MI) && isRegionInst(MI);
 }
-bool isGlobalAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool is64BitRegionAtomic(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM_G")
-         || isArenaAtomic(TM, MI);
+  return isRegionAtomic(MI) && is64BitInst(MI);
 }
-bool is64BitGlobalAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool isLocalAtomic(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM64_G");
+  return isAtomicInst(MI) && isLocalInst(MI);
 }
-bool isArenaAtomic(TargetMachine &TM, const llvm::MachineInstr *MI)
+bool is64BitLocalAtomic(const llvm::MachineInstr *MI)
 {
-  return strstr(TM.getInstrInfo()->getName(MI->getOpcode()), "ATOM_A");
+  return isLocalAtomic(MI) && is64BitInst(MI);
 }
+bool isGlobalAtomic(const llvm::MachineInstr *MI)
+{
+  return isAtomicInst(MI) && (isGlobalInst(MI)
+                              || isArenaInst(MI));
+}
+bool is64BitGlobalAtomic(const llvm::MachineInstr *MI)
+{
+  return isGlobalAtomic(MI) && is64BitInst(MI);
+}
+bool isArenaAtomic(const llvm::MachineInstr *MI)
+{
+  return isAtomicInst(MI) && isArenaInst(MI);
+}
+bool is64BitInst(const llvm::MachineInstr *MI)
+{
+  return MI->getDesc().TSFlags & (1ULL << AMDID::ADDR64);
+}
+bool isPackedInst(const llvm::MachineInstr *MI)
+{
+  return MI->getDesc().TSFlags & (1ULL << AMDID::PACKED);
+}
+bool isSub32BitIOInst(const llvm::MachineInstr *MI)
+{
+  return MI->getDesc().TSFlags & (1ULL << AMDID::SUB32BITS);
+}
+bool isPackV2I8Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV2I8
+         && isPackedInst(MI) && isStoreInst(MI);
+}
+bool isPackV2I16Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV2I16
+         && isPackedInst(MI) && isStoreInst(MI);
+}
+bool isPackV4I8Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV4I8
+         && isPackedInst(MI) && isStoreInst(MI);
+}
+bool isPackV4I16Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV4I16
+         && isPackedInst(MI) && isStoreInst(MI);
+}
+bool isUnpackV2I8Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV2I8
+         && isPackedInst(MI) && isLoadInst(MI);
+}
+bool isUnpackV2I16Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV2I16
+         && isPackedInst(MI) && isLoadInst(MI);
+}
+bool isUnpackV4I8Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV4I8
+         && isPackedInst(MI) && isLoadInst(MI);
+}
+bool isUnpackV4I16Inst(const llvm::MachineInstr *MI)
+{
+  return (MI->getDesc().TSFlags & AMDID::TYPEMASK) == AMDID::TYPEV4I16
+         && isPackedInst(MI) && isLoadInst(MI);
+}
+bool isVectorOpInst(const llvm::MachineInstr *MI)
+{
+  return MI->getDesc().TSFlags & (1ULL << AMDID::VECTOR);
+}
+bool
+isSkippedLiteral(const llvm::MachineInstr *MI, uint32_t opNum)
+{
+  uint32_t opcode = MI->getOpcode();
+  if ((opcode >= AMDIL::VEXTRACTv2f32i
+       && opcode <= AMDIL::VEXTRACTv4i8r)
+      && (opNum == 2)) {
+    return true;
+  } else if ((opcode >= AMDIL::VINSERTv2f32ii)
+             && (opcode <= AMDIL::VINSERTv4i8rr)
+             && ((opNum == 3)  || (opNum == 4))) {
+    return true;
+  }
+  return false;
+}
+bool
+isBypassedLiteral(const llvm::MachineInstr *MI, uint32_t opNum)
+{
+  uint32_t opcode = MI->getOpcode();
+  if (((int)opNum == (int)(MI->getNumOperands() - 1))
+      && (isAtomicInst(MI)
+          || isScratchInst(MI)
+          || isLDSInst(MI)
+          || isGDSInst(MI)
+          || isUAVArenaInst(MI)
+          || isUAVRawInst(MI)
+          || isCBInst(MI)
+          || opcode == AMDIL::CASE)) {
+    return true;
+  } else if (opNum == 1 &&
+             (isAppendInst(MI)
+              || isReadImageInst(MI)
+              || isImageTXLDInst(MI)
+              || isCBInst(MI)))  {
+    return true;
+  } else if  (opNum == 0 &&
+              (isSemaphoreInst(MI)
+               || isReadImageInst(MI)
+               || isWriteImageInst(MI))) {
+    return true;
+  } else if (opNum == 3 && isReadImageInst(MI)) return true;
 
-bool isXComponentReg(unsigned reg)
-{
+  return false;
+}
+bool isXComponentReg(unsigned reg) {
   return (reg >= AMDIL::Rx1 && reg < AMDIL::Rxy1)
          || reg == AMDIL::MEMx;
 }
-bool isYComponentReg(unsigned reg)
-{
+bool isYComponentReg(unsigned reg) {
   return (reg >= AMDIL::Ry1 && reg < AMDIL::Rz1);
 }
-bool isZComponentReg(unsigned reg)
-{
+bool isZComponentReg(unsigned reg) {
   return (reg >= AMDIL::Rz1 && reg < AMDIL::Rzw1);
 }
-bool isWComponentReg(unsigned reg)
-{
+bool isWComponentReg(unsigned reg) {
   return (reg >= AMDIL::Rw1 && reg < AMDIL::Rx1);
 }
-bool isXYComponentReg(unsigned reg)
-{
+bool isXYComponentReg(unsigned reg) {
   return (reg >= AMDIL::Rxy1 && reg < AMDIL::Ry1)
          || reg == AMDIL::MEMxy;
 }
-bool isZWComponentReg(unsigned reg)
-{
+bool isZWComponentReg(unsigned reg) {
   return (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP);
 }
-
-const char* getSrcSwizzle(unsigned idx)
-{
+const char* getSrcSwizzle(unsigned idx) {
   const char *srcSwizzles[AMDIL_SRC_LAST]  = {
     "",
     ".x000", ".0x00", ".00x0", ".000x", ".y000", ".0y00", ".00y0", ".000y",
     ".z000", ".0z00", ".00z0", ".000z", ".w000", ".0w00", ".00w0", ".000w",
     ".xy00", ".00xy", ".zw00", ".00zw", ".xyz0", ".0xyz",
     ".xzxz", ".ywyw", ".x0y0", ".0x0y", ".0yzw", ".x0zw", ".xy0w",
-    ".x"   , ".y"   , ".z"   , ".w"   , ".xyxy", ".zwzw", ".yzw0",
+    ".x", ".y", ".z", ".w", ".xyxy", ".zwzw", ".yzw0",
     ".z0w0", ".0z0w",
   };
   assert(idx < sizeof(srcSwizzles)/sizeof(srcSwizzles[0])
          && "Idx passed in is invalid!");
   return srcSwizzles[idx];
 }
-const char* getDstSwizzle(unsigned idx)
-{
+const char* getDstSwizzle(unsigned idx) {
   const char *dstSwizzles[AMDIL_DST_LAST] = {
     "", ".x___", "._y__", ".__z_", ".___w", ".xy__", ".__zw",
     ".xyz_"
@@ -707,7 +700,6 @@ void setAsmPrinterFlags(MachineInstr *MI, AMDILAS::InstrResEnc &curRes)
   MI->setFlags(lower);
   MI->setAsmPrinterFlag((llvm::MachineInstr::CommentFlag)upper);
 }
-
 // symTab is a dummy arg to ease the transition...
 const char *
 getTypeName(Type *ptr, const char *symTab,
@@ -715,30 +707,33 @@ getTypeName(Type *ptr, const char *symTab,
 {
   Type *name = ptr;
   switch (ptr->getTypeID()) {
-  case Type::StructTyID: {
+  case Type::StructTyID:
+  {
     const StructType *ST = cast<StructType>(ptr);
     if (!ST->isOpaque())
       return "struct";
     // ptr is a pre-LLVM 3.0 "opaque" type.
     StringRef name = ST->getName();
-    if (name.startswith( "struct._event_t" ))         return "event";
-    if (name.startswith( "struct._image1d_t" ))       return "image1d";
+    if (name.startswith( "struct._event_t" )) return "event";
+    if (name.startswith( "struct._image1d_t" )) return "image1d";
     if (name.startswith( "struct._image1d_array_t" )) return "image1d_array";
-    if (name.startswith( "struct._image2d_t" ))       return "image2d";
+    if (name.startswith( "struct._image2d_t" )) return "image2d";
     if (name.startswith( "struct._image2d_array_t" )) return "image2d_array";
-    if (name.startswith( "struct._image3d_t" ))       return "image3d";
-    if (name.startswith( "struct._sema_t" ))          return "semaphore";
-    if (name.startswith( "struct._counter32_t" ))     return "counter32";
-    if (name.startswith( "struct._counter64_t" ))     return "counter64";
+    if (name.startswith( "struct._image3d_t" )) return "image3d";
+    if (name.startswith( "struct._sema_t" )) return "semaphore";
+    if (name.startswith( "struct._counter32_t" )) return "counter32";
+    if (name.startswith( "struct._counter64_t" )) return "counter64";
     return "opaque";
     break;
   }
   case Type::FloatTyID:
     return "float";
-  case Type::DoubleTyID: {
+  case Type::DoubleTyID:
+  {
     return "double";
   }
-  case Type::IntegerTyID: {
+  case Type::IntegerTyID:
+  {
     LLVMContext& ctx = ptr->getContext();
     if (name == Type::getInt8Ty(ctx)) {
       return (signedType) ? "i8" : "u8";
@@ -753,25 +748,29 @@ getTypeName(Type *ptr, const char *symTab,
   }
   default:
     break;
-  case Type::ArrayTyID: {
+  case Type::ArrayTyID:
+  {
     const ArrayType *AT = cast<ArrayType>(ptr);
     name = AT->getElementType();
     return getTypeName(name, symTab, mfi, signedType);
     break;
   }
-  case Type::VectorTyID: {
+  case Type::VectorTyID:
+  {
     const VectorType *VT = cast<VectorType>(ptr);
     name = VT->getElementType();
     return getTypeName(name, symTab, mfi, signedType);
     break;
   }
-  case Type::PointerTyID: {
+  case Type::PointerTyID:
+  {
     const PointerType *PT = cast<PointerType>(ptr);
     name = PT->getElementType();
     return getTypeName(name, symTab, mfi, signedType);
     break;
   }
-  case Type::FunctionTyID: {
+  case Type::FunctionTyID:
+  {
     const FunctionType *FT = cast<FunctionType>(ptr);
     name = FT->getReturnType();
     return getTypeName(name, symTab, mfi, signedType);

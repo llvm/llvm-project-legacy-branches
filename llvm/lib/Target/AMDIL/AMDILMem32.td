@@ -19,818 +19,572 @@ let Predicates = [Has32BitPtr] in {
     //===----------------------------------------------------------------------===//
     // Store Memory Operations
     //===----------------------------------------------------------------------===//
-    defm GLOBALTRUNCSTORE   : GTRUNCSTORE<"!global trunc store">;
-    defm GLOBALSTORE        : STORE<"!global store"         , global_store>;
-    defm LOCALTRUNCSTORE    : LTRUNCSTORE<"!local trunc store">;
-    defm LOCALSTORE         : STORE<"!local store"          , local_store>;
-    defm PRIVATETRUNCSTORE  : PTRUNCSTORE<"!private trunc store">;
-    defm PRIVATESTORE       : STORE<"!private store"        , private_store>;
-    defm REGIONTRUNCSTORE   : RTRUNCSTORE<"!region trunc store">;
-    defm REGIONSTORE        : STORE<"!region hw store"      , region_store>;
+    defm GLOBALTRUNCSTORE   : GTRUNCSTORE<"!global trunc store", MEM3232, ADDR>;
+    let global = 1 in {
+      defm GLOBALSTORE        : STORE<"!global store"         , global_store, MEM3232, ADDR>;
+    }
+    defm LOCALTRUNCSTORE    : LTRUNCSTORE<"!local trunc store", MEM3232, ADDR>;
+    let local = 1 in {
+      defm LOCALSTORE         : STORE<"!local store"          , local_store, MEM3232, ADDR>;
+    }
+    defm PRIVATETRUNCSTORE  : PTRUNCSTORE<"!private trunc store", MEM3232, ADDR>;
+    let private = 1 in {
+      defm PRIVATESTORE       : STORE<"!private store"        , private_store, MEM3232, ADDR>;
+    }
+    defm REGIONTRUNCSTORE   : RTRUNCSTORE<"!region trunc store", MEM3232, ADDR>;
+    let region = 1 in {
+      defm REGIONSTORE        : STORE<"!region hw store"      , region_store, MEM3232, ADDR>;
+    }
 
 
     //===---------------------------------------------------------------------===//
     // Load Memory Operations
     //===---------------------------------------------------------------------===//
-    defm GLOBALLOAD         : LOAD<"!global load"            , global_load>;
-    defm GLOBALZEXTLOAD     : LOAD<"!global zext load"       , global_zext_load>;
-    defm GLOBALSEXTLOAD     : LOAD<"!global sext load"       , global_sext_load>;
-    defm GLOBALAEXTLOAD     : LOAD<"!global aext load"       , global_aext_load>;
-    defm PRIVATELOAD        : LOAD<"!private load"           , private_load>;
-    defm PRIVATEZEXTLOAD    : LOAD<"!private zext load"      , private_zext_load>;
-    defm PRIVATESEXTLOAD    : LOAD<"!private sext load"      , private_sext_load>;
-    defm PRIVATEAEXTLOAD    : LOAD<"!private aext load"      , private_aext_load>;
-    defm CPOOLLOAD          : LOAD<"!constant pool load"     , cp_load>;
-    defm CPOOLZEXTLOAD      : LOAD<"!constant pool zext load", cp_zext_load>;
-    defm CPOOLSEXTLOAD      : LOAD<"!constant pool sext load", cp_sext_load>;
-    defm CPOOLAEXTLOAD      : LOAD<"!constant aext pool load", cp_aext_load>;
-    defm CONSTANTLOAD       : LOAD<"!constant load"          , constant_load>;
-    defm CONSTANTZEXTLOAD   : LOAD<"!constant zext load"     , constant_zext_load>;
-    defm CONSTANTSEXTLOAD   : LOAD<"!constant sext load"     , constant_sext_load>;
-    defm CONSTANTAEXTLOAD   : LOAD<"!constant aext load"     , constant_aext_load>;
-    defm LOCALLOAD          : LOAD<"!local load"             , local_load>;
-    defm LOCALZEXTLOAD      : LOAD<"!local zext load"        , local_zext_load>;
-    defm LOCALSEXTLOAD      : LOAD<"!local sext load"        , local_sext_load>;
-    defm LOCALAEXTLOAD      : LOAD<"!local aext load"        , local_aext_load>;
-    defm REGIONLOAD         : LOAD<"!region load"            , region_load>;
-    defm REGIONZEXTLOAD     : LOAD<"!region zext load"       , region_zext_load>;
-    defm REGIONSEXTLOAD     : LOAD<"!region sext load"       , region_sext_load>;
-    defm REGIONAEXTLOAD     : LOAD<"!region aext load"       , region_aext_load>;
+    let global = 1 in {
+      defm GLOBALLOAD         : LOAD<"!global load"            , global_load, MEM3232, ADDR>;
+      let extLoadType = 2 in {
+        defm GLOBALZEXTLOAD     : LOAD<"!global zext load"       , global_zext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 1 in {
+        defm GLOBALSEXTLOAD     : LOAD<"!global sext load"       , global_sext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 3 in {
+        defm GLOBALAEXTLOAD     : LOAD<"!global aext load"       , global_aext_load, MEM3232, ADDR>;
+      }
+    }
+    let private = 1 in {
+      defm PRIVATELOAD        : LOAD<"!private load"           , private_load, MEM3232, ADDR>;
+      let extLoadType = 2 in {
+        defm PRIVATEZEXTLOAD    : LOAD<"!private zext load"      , private_zext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 1 in {
+        defm PRIVATESEXTLOAD    : LOAD<"!private sext load"      , private_sext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 3 in {
+        defm PRIVATEAEXTLOAD    : LOAD<"!private aext load"      , private_aext_load, MEM3232, ADDR>;
+      }
+    }
+    let cpool = 1  in {
+      defm CPOOLLOAD          : LOAD<"!constant pool load"     , cp_load, MEM3232, ADDR>;
+      let extLoadType = 2 in {
+        defm CPOOLZEXTLOAD      : LOAD<"!constant pool zext load", cp_zext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 1 in {
+        defm CPOOLSEXTLOAD      : LOAD<"!constant pool sext load", cp_sext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 3 in {
+        defm CPOOLAEXTLOAD      : LOAD<"!constant aext pool load", cp_aext_load, MEM3232, ADDR>;
+      }
+    }
+    let constant = 1 in {
+      defm CONSTANTLOAD       : LOAD<"!constant load"          , constant_load, MEM3232, ADDR>;
+      let extLoadType = 2 in {
+        defm CONSTANTZEXTLOAD   : LOAD<"!constant zext load"     , constant_zext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 1 in {
+        defm CONSTANTSEXTLOAD   : LOAD<"!constant sext load"     , constant_sext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 3 in {
+        defm CONSTANTAEXTLOAD   : LOAD<"!constant aext load"     , constant_aext_load, MEM3232, ADDR>;
+      }
+    }
+    let local = 1 in {
+      defm LOCALLOAD          : LOAD<"!local load"             , local_load, MEM3232, ADDR>;
+      let extLoadType = 2 in {
+        defm LOCALZEXTLOAD      : LOAD<"!local zext load"        , local_zext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 1 in {
+        defm LOCALSEXTLOAD      : LOAD<"!local sext load"        , local_sext_load, MEM3232, ADDR>;
+      }
+      let extLoadType = 3 in {
+        defm LOCALAEXTLOAD      : LOAD<"!local aext load"        , local_aext_load, MEM3232, ADDR>;
+      }
+      let region = 1 in {
+        defm REGIONLOAD         : LOAD<"!region load"            , region_load, MEM3232, ADDR>;
+        let extLoadType = 2 in {
+          defm REGIONZEXTLOAD     : LOAD<"!region zext load"       , region_zext_load, MEM3232, ADDR>;
+        }
+        let extLoadType = 1 in {
+          defm REGIONSEXTLOAD     : LOAD<"!region sext load"       , region_sext_load, MEM3232, ADDR>;
+        }
+        let extLoadType = 3 in {
+          defm REGIONAEXTLOAD     : LOAD<"!region aext load"       , region_aext_load, MEM3232, ADDR>;
+        }
+      }
+    }
   }
 
 
   //===---------------------------------------------------------------------===//
   // IO Expansion Load/Store Instructions
   //===---------------------------------------------------------------------===//
-  // These opcode has custom swizzle patterns for some of the arguments.
-  let mayLoad = 1 in {
-    // Raw UAV Operations
-    def UAVRAWLOAD_i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id) $dst, $addy"), []>;
-    def UAVRAWLOAD_v2i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV2I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id) $dst, $addy"), []>;
-    def UAVRAWLOAD_v4i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV4I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id) $dst, $addy"), []>;
-    def UAVRAWLOADCACHED_i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-    def UAVRAWLOADCACHED_v2i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV2I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-    def UAVRAWLOADCACHED_v4i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV4I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-    def UAVRAWLOADCACHEDALIGNED_v2i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV2I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id)_cached_aligned $dst, $addy"), []>;
-    def UAVRAWLOADCACHEDALIGNED_v4i32 : TwoInOneOut<IL_OP_RAW_UAV_LOAD, (outs GPRV4I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_LOAD.Text, "_id($id)_cached_aligned $dst, $addy"), []>;
-    let Predicates = [HasByteShortUAV] in {
-      def UAVRAWLOAD_i8 : TwoInOneOut<IL_OP_UAV_BYTE_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_BYTE_LOAD.Text, "_id($id) $dst, $addy"), []>;
-      def UAVRAWLOAD_u8 : TwoInOneOut<IL_OP_UAV_UBYTE_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_UBYTE_LOAD.Text, "_id($id) $dst, $addy"), []>;
-      def UAVRAWLOAD_i16 : TwoInOneOut<IL_OP_UAV_SHORT_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_SHORT_LOAD.Text, "_id($id) $dst, $addy"), []>;
-      def UAVRAWLOAD_u16 : TwoInOneOut<IL_OP_UAV_USHORT_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_USHORT_LOAD.Text, "_id($id) $dst, $addy"), []>;
-      def UAVRAWLOADCACHED_i8 : TwoInOneOut<IL_OP_UAV_BYTE_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_BYTE_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-      def UAVRAWLOADCACHED_u8 : TwoInOneOut<IL_OP_UAV_UBYTE_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_UBYTE_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-      def UAVRAWLOADCACHED_i16 : TwoInOneOut<IL_OP_UAV_SHORT_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_SHORT_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-      def UAVRAWLOADCACHED_u16 : TwoInOneOut<IL_OP_UAV_USHORT_LOAD, (outs GPRI32:$dst),
-          (ins GPRXI32:$addy, i32imm:$id),
-          !strconcat(IL_OP_UAV_USHORT_LOAD.Text, "_id($id)_cached $dst, $addy"), []>;
-    }
-    // Arena UAV Operations
-    def UAVARENALOAD_i8 : TwoInOneOut<IL_OP_ARENA_UAV_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_LOAD.Text, "_id($id)_size(byte) $dst, $addy"), []>;
-    def UAVARENALOAD_i16 : TwoInOneOut<IL_OP_ARENA_UAV_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_LOAD.Text, "_id($id)_size(short) $dst, $addy"), []>;
-    def UAVARENALOAD_i32 : TwoInOneOut<IL_OP_ARENA_UAV_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_LOAD.Text, "_id($id)_size(dword) $dst, $addy"), []>;
-
-    // Scratch Buffer Operations
-    def SCRATCHLOAD : TwoInOneOut<IL_OP_MOV, (outs GPRV4I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_MOV.Text, " $dst, x$id[$addy]"), []>;
-
+  let mayLoad = 1, load = 1, cbmem = 1 in {
     // Constant Buffer Operations
-    def CBLOAD : TwoInOneOut<IL_OP_MOV, (outs GPRV4I32:$dst),
+    def CB32LOAD : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
         (ins GPRXI32:$addy, i32imm:$id),
         !strconcat(IL_OP_MOV.Text, " $dst, cb$id[$addy]"), []>;
-
-    // GDS Operations
-    def GDSLOAD : TwoInOneOut<IL_OP_GDS_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_GDS_LOAD.Text, "_id($id) $dst, $addy"), []>;
-    def GDSLOAD_i8 : TwoInOneOut<IL_OP_GDS_LOAD_BYTE, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_GDS_LOAD_BYTE.Text, "_id($id) $dst, $addy"), []>;
-    def GDSLOAD_u8 : TwoInOneOut<IL_OP_GDS_LOAD_UBYTE, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_GDS_LOAD_UBYTE.Text, "_id($id) $dst, $addy"), []>;
-    def GDSLOAD_i16 : TwoInOneOut<IL_OP_GDS_LOAD_SHORT, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_GDS_LOAD_SHORT.Text, "_id($id) $dst, $addy"), []>;
-    def GDSLOAD_u16 : TwoInOneOut<IL_OP_GDS_LOAD_USHORT, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_GDS_LOAD_USHORT.Text, "_id($id) $dst, $addy"), []>;
-
-    // LDS Operations
-    def LDSLOADVEC : TwoInOneOut<IL_OP_LDS_LOAD_VEC, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_VEC.Text, "_id($id) $dst, $addy, $addy"), []>;
-    def LDSLOADVEC_v2i32 : TwoInOneOut<IL_OP_LDS_LOAD_VEC, (outs GPRV2I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_VEC.Text, "_id($id) $dst, $addy, $addy"), []>;
-    def LDSLOADVEC_v4i32 : TwoInOneOut<IL_OP_LDS_LOAD_VEC, (outs GPRV4I32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_VEC.Text, "_id($id) $dst, $addy, $addy"), []>;
-    def LDSLOAD : TwoInOneOut<IL_OP_LDS_LOAD, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD.Text, "_id($id) $dst, $addy"), []>;
-    def LDSLOAD_i8 : TwoInOneOut<IL_OP_LDS_LOAD_BYTE, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_BYTE.Text, "_id($id) $dst, $addy"), []>;
-    def LDSLOAD_u8 : TwoInOneOut<IL_OP_LDS_LOAD_UBYTE, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_UBYTE.Text, "_id($id) $dst, $addy"), []>;
-    def LDSLOAD_i16 : TwoInOneOut<IL_OP_LDS_LOAD_SHORT, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_SHORT.Text, "_id($id) $dst, $addy"), []>;
-    def LDSLOAD_u16 : TwoInOneOut<IL_OP_LDS_LOAD_USHORT, (outs GPRI32:$dst),
-        (ins GPRXI32:$addy, i32imm:$id),
-        !strconcat(IL_OP_LDS_LOAD_USHORT.Text, "_id($id) $dst, $addy"), []>;
-
   }
-  // Store Operations
-  let mayStore = 1 in {
-    // Raw UAV Operations
-    def UAVRAWSTORE_i32 : TwoInOneOut<IL_OP_RAW_UAV_STORE, (outs GPRI32:$mem),
-        (ins GPRXI32:$addy, GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_STORE.Text, "_id($id) $mem, $addy, $src"), []>;
-    def UAVRAWSTORE_v2i32 : TwoInOneOut<IL_OP_RAW_UAV_STORE, (outs GPRV2I32:$mem),
-        (ins GPRXI32:$addy, GPRV2I32:$src, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_STORE.Text, "_id($id) $mem, $addy, $src"), []>;
-    def UAVRAWSTORE_v4i32 : TwoInOneOut<IL_OP_RAW_UAV_STORE, (outs GPRV4I32:$mem),
-        (ins GPRXI32:$addy, GPRV4I32:$src, i32imm:$id),
-        !strconcat(IL_OP_RAW_UAV_STORE.Text, "_id($id) $mem, $addy, $src"), []>;
-    let Predicates = [HasByteShortUAV] in {
-      def UAVRAWSTORE_i8 : TwoInOneOut<IL_OP_UAV_BYTE_STORE, (outs GPRI32:$mem),
-          (ins GPRXI32:$addy, GPRI32:$src, i32imm:$id),
-          !strconcat(IL_OP_UAV_BYTE_STORE.Text, "_id($id) $mem, $addy, $src"), []>;
-      def UAVRAWSTORE_i16 : TwoInOneOut<IL_OP_UAV_SHORT_STORE, (outs GPRI32:$mem),
-          (ins GPRXI32:$addy, GPRI32:$src, i32imm:$id),
-          !strconcat(IL_OP_UAV_SHORT_STORE.Text, "_id($id) $mem, $addy, $src"), []>;
 
-    }
-    // Arena UAV Operations
-    def UAVARENASTORE_i8 : TwoInOneOut<IL_OP_ARENA_UAV_STORE, (outs GPRXI32:$addy),
-        (ins GPRI8:$src, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_STORE.Text,
-            "_id($id)_size(byte) $addy, $src"), []>;
-    def UAVARENASTORE_i16 : TwoInOneOut<IL_OP_ARENA_UAV_STORE, (outs GPRXI32:$addy),
-        (ins GPRI16:$src, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_STORE.Text,
-            "_id($id)_size(short) $addy, $src"), []>;
-    def UAVARENASTORE_i32 : TwoInOneOut<IL_OP_ARENA_UAV_STORE, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_ARENA_UAV_STORE.Text,
-            "_id($id)_size(dword) $addy, $src"), []>;
+  defm UAVRAW32 : UAVRawLSInst<GPRXI32, "_id($id)">;
+  defm SCRATCH32 : ScratchLSInst<GPRXI32>;
+  defm UAVARENA32 : ArenaLSInst<GPRXI32>;
+  defm GDS32 : GDSLSInst<GPRXI32>;
+  defm LDS32 : LDSLSInst<GPRXI32>; 
 
-    // Scratch Buffer Operations
-    def SCRATCHSTORE : TwoInOneOut<IL_OP_MOV, (outs GPRXI32:$addy),
-        (ins GPRV4I32:$data, i32imm:$id),
-        !strconcat(IL_OP_MOV.Text, " x$id[$addy, $data"), []>;
-
-    // GDS Operations
-    def GDSSTORE : TwoInOneOut<IL_OP_GDS_STORE, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_GDS_STORE.Text, "_id($id) $addy, $src"), []>;
-
-    def GDSSTORE_i8 : TwoInOneOut<IL_OP_GDS_STORE_BYTE, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_GDS_STORE_BYTE.Text, "_id($id) $addy, $src"), []>;
-
-    def GDSSTORE_i16 : TwoInOneOut<IL_OP_GDS_STORE_SHORT, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_GDS_STORE_SHORT.Text, "_id($id) $addy, $src"), []>;
-  
-    // LDS Operations
-    def LDSSTOREVEC : ThreeInOneOut<IL_OP_LDS_STORE_VEC, (outs GPRI32:$mem),
-        (ins GPRXI32:$addy, GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE_VEC.Text, "_id($id) $mem, $addy, $src, $src"), []>;
-    def LDSSTOREVEC_v2i32 : ThreeInOneOut<IL_OP_LDS_STORE_VEC, (outs GPRV2I32:$mem),
-        (ins GPRXI32:$addy, GPRV2I32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE_VEC.Text, "_id($id) $mem, $addy, $src, $src"), []>;
-
-    def LDSSTOREVEC_v4i32 : ThreeInOneOut<IL_OP_LDS_STORE_VEC, (outs GPRV4I32:$mem),
-        (ins GPRXI32:$addy, GPRV4I32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE_VEC.Text, "_id($id) $mem, $addy, $src, $src"), []>;
-
-    def LDSSTORE : TwoInOneOut<IL_OP_LDS_STORE, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE.Text, "_id($id) $addy, $src"), []>;
-
-    def LDSSTORE_i8 : TwoInOneOut<IL_OP_LDS_STORE_BYTE, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE_BYTE.Text, "_id($id) $addy, $src"), []>;
-
-    def LDSSTORE_i16 : TwoInOneOut<IL_OP_LDS_STORE_SHORT, (outs GPRXI32:$addy),
-        (ins GPRI32:$src, i32imm:$id),
-        !strconcat(IL_OP_LDS_STORE_SHORT.Text, "_id($id) $addy, $src"), []>;
+  let image = 1, txld = 1, load = 1 in {
+    def TXLD321DB : ILFormat<IL_OP_LOAD, (outs GPRV4I32:$dst),
+        (ins MEM3232:$ptr, GPRI32:$addy),
+        !strconcat(IL_OP_LOAD.Text, 
+            "_id($ptr) $dst, $addy"),
+        [(set GPRV4I32:$dst,
+            (int_AMDIL_image1d_buffer_load ADDR:$ptr, GPRI32:$addy))]>;
   }
-  // Image related operations.
-  def IMAGE1D_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1DA_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_array_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1DB_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text, 
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_buffer_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1DB_TXLD : ILFormat<IL_OP_LOAD, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$addy),
-      !strconcat(IL_OP_LOAD.Text, 
-          "_id($ptr) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_buffer_load ADDR:$ptr, GPRI32:$addy))]>;
-  def IMAGE2D_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image2d_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE2DA_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image2d_array_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE3D_READ : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(normalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image3d_read_norm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1D_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1DA_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_array_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1DB_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text, 
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image1d_buffer_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE2D_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image2d_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE2DA_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image2d_array_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE3D_READ_UNNORM : ILFormat<IL_OP_SAMPLE, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr, GPRI32:$sampler, GPRV4F32:$addy),
-      !strconcat(IL_OP_SAMPLE.Text,
-          "_id($ptr)_sampler($sampler)_coordtype(unnormalized) $dst, $addy"),
-      [(set GPRV4I32:$dst,
-          (int_AMDIL_image3d_read_unnorm ADDR:$ptr, GPRI32:$sampler, GPRV4F32:$addy))]>;
-  def IMAGE1D_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_info0 ADDR:$ptr))]>;
-  def IMAGE1D_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_info1 ADDR:$ptr))]>;
-  def IMAGE1DA_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_array_info0 ADDR:$ptr))]>;
-  def IMAGE1DA_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_array_info1 ADDR:$ptr))]>;
-  def IMAGE1DB_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_buffer_info0 ADDR:$ptr))]>;
-  def IMAGE1DB_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image1d_buffer_info1 ADDR:$ptr))]>;
-  def IMAGE2D_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image2d_info0 ADDR:$ptr))]>;
-  def IMAGE2D_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image2d_info1 ADDR:$ptr))]>;
-  def IMAGE2DA_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image2d_array_info0 ADDR:$ptr))]>;
-  def IMAGE2DA_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image2d_array_info1 ADDR:$ptr))]>;
-  def IMAGE3D_INFO0 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image3d_info0 ADDR:$ptr))]>;
-  def IMAGE3D_INFO1 : ILFormat<IL_OP_MOV, (outs GPRV4I32:$dst),
-      (ins MEM3232:$ptr),
-      !strconcat(IL_OP_MOV.Text, " $dst, $ptr"),
-      [(set GPRV4I32:$dst, (int_AMDIL_image3d_info1 ADDR:$ptr))]>;
-  def IMAGE1D_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV2I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image1d_write ADDR:$ptr, GPRV2I32:$addy, GPRV4I32:$data)]>;
-  def IMAGE1DA_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV2I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image1d_array_write ADDR:$ptr, GPRV2I32:$addy, GPRV4I32:$data)]>;
-  def IMAGE1DB_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV2I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image1d_buffer_write ADDR:$ptr, GPRV2I32:$addy, GPRV4I32:$data)]>;
-  def IMAGE2D_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV2I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image2d_write ADDR:$ptr, GPRV2I32:$addy, GPRV4I32:$data)]>;
-  def IMAGE2DA_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV4I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image2d_array_write ADDR:$ptr, GPRV4I32:$addy, GPRV4I32:$data)]>;
-  def IMAGE3D_WRITE : ILFormat<IL_OP_UAV_STORE, (outs),
-      (ins MEM3232:$ptr, GPRV4I32:$addy, GPRV4I32:$data),
-      !strconcat(IL_OP_UAV_STORE.Text,
-          "_id($ptr) $addy, $data"),
-      [(int_AMDIL_image3d_write ADDR:$ptr, GPRV4I32:$addy, GPRV4I32:$data)]>;
+  defm READ32 : IMAGEREAD<MEM3232, ADDR>;
+  defm INFO032 : IMAGEINFO0<MEM3232, ADDR>;
+  defm INFO132 : IMAGEINFO1<MEM3232, ADDR>;
+  defm WRITE32 : IMAGEWRITE<MEM3232, ADDR>;
 
   // Printf related operations.
   let isCall=1, isAsCheapAsAMove = 1 in {
-    def GET_PRINTF_OFFSET_i32 : ILFormat<IL_OP_MOV, (outs GPRXI32:$dst),
+    def GET_PRINTF_OFFSETi32 : ILFormat<IL_OP_MOV, (outs GPRXI32:$dst),
         (ins), !strconcat(IL_OP_MOV.Text, " $dst, cb0[8].y0"),
         [(set GPRXI32:$dst, (int_AMDIL_get_printf_offset))]>;
-    def GET_PRINTF_SIZE_i32 : ILFormat<IL_OP_MOV, (outs GPRXI32:$dst),
+    def GET_PRINTF_SIZEi32 : ILFormat<IL_OP_MOV, (outs GPRXI32:$dst),
         (ins), !strconcat(IL_OP_MOV.Text, " $dst, cb0[8].z0"),
         [(set GPRXI32:$dst, (int_AMDIL_get_printf_size))]>;
   }
-  // Atomic operations
-  def ATOM_G_ADD_NORET     : BinAtomNoRet<IL_OP_UAV_ADD,
-      "_id($id)", atom_g_add_noret>;
-  def ATOM_G_AND_NORET     : BinAtomNoRet<IL_OP_UAV_AND,
-      "_id($id)", atom_g_and_noret>;
-  def ATOM_G_MAX_NORET     : BinAtomNoRet<IL_OP_UAV_MAX,
-      "_id($id)", atom_g_max_noret>;
-  def ATOM_G_MIN_NORET     : BinAtomNoRet<IL_OP_UAV_MIN,
-      "_id($id)", atom_g_min_noret>;
-  def ATOM_G_UMAX_NORET    : BinAtomNoRet<IL_OP_UAV_UMAX,
-      "_id($id)", atom_g_umax_noret>;
-  def ATOM_G_UMIN_NORET    : BinAtomNoRet<IL_OP_UAV_UMIN,
-      "_id($id)", atom_g_umin_noret>;
-  def ATOM_G_OR_NORET      : BinAtomNoRet<IL_OP_UAV_OR,
-      "_id($id)", atom_g_or_noret>;
-  def ATOM_G_RSUB_NORET    : BinAtomNoRet<IL_OP_UAV_RSUB,
-      "_id($id)", atom_g_rsub_noret>;
-  def ATOM_G_SUB_NORET     : BinAtomNoRet<IL_OP_UAV_SUB,
-      "_id($id)", atom_g_sub_noret>;
-  def ATOM_G_XOR_NORET     : BinAtomNoRet<IL_OP_UAV_XOR,
-      "_id($id)", atom_g_xor_noret>;
-  def ATOM_G_INC_NORET     : BinAtomNoRet<IL_OP_UAV_INC,
-      "_id($id)", atom_g_inc_noret>;
-  def ATOM_G_DEC_NORET     : BinAtomNoRet<IL_OP_UAV_DEC,
-      "_id($id)", atom_g_dec_noret>;
-  def ATOM_G_CMPXCHG_NORET    : CmpXChgNoRet<IL_OP_UAV_CMP,
-      "_id($id)", atom_g_cmpxchg_noret>;
-  let Predicates = [ArenaSupport] in {
-  def ATOM_A_ADD_NORET     : BinAtomNoRet<IL_OP_UAV_ADD,
-      "_id($id)_arena", atom_g_add_noret>;
-  def ATOM_A_AND_NORET     : BinAtomNoRet<IL_OP_UAV_AND,
-      "_id($id)_arena", atom_g_and_noret>;
-  def ATOM_A_MAX_NORET     : BinAtomNoRet<IL_OP_UAV_MAX,
-      "_id($id)_arena", atom_g_max_noret>;
-  def ATOM_A_MIN_NORET     : BinAtomNoRet<IL_OP_UAV_MIN,
-      "_id($id)_arena", atom_g_min_noret>;
-  def ATOM_A_UMAX_NORET    : BinAtomNoRet<IL_OP_UAV_UMAX,
-      "_id($id)_arena", atom_g_umax_noret>;
-  def ATOM_A_UMIN_NORET    : BinAtomNoRet<IL_OP_UAV_UMIN,
-      "_id($id)_arena", atom_g_umin_noret>;
-  def ATOM_A_OR_NORET      : BinAtomNoRet<IL_OP_UAV_OR,
-      "_id($id)_arena", atom_g_or_noret>;
-  def ATOM_A_RSUB_NORET    : BinAtomNoRet<IL_OP_UAV_RSUB,
-      "_id($id)_arena", atom_g_rsub_noret>;
-  def ATOM_A_SUB_NORET     : BinAtomNoRet<IL_OP_UAV_SUB,
-      "_id($id)_arena", atom_g_sub_noret>;
-  def ATOM_A_XOR_NORET     : BinAtomNoRet<IL_OP_UAV_XOR,
-      "_id($id)_arena", atom_g_xor_noret>;
-  def ATOM_A_INC_NORET     : BinAtomNoRet<IL_OP_UAV_INC,
-      "_id($id)_arena", atom_g_inc_noret>;
-  def ATOM_A_DEC_NORET     : BinAtomNoRet<IL_OP_UAV_DEC,
-      "_id($id)_arena", atom_g_dec_noret>;
-  def ATOM_A_CMPXCHG_NORET    : CmpXChgNoRet<IL_OP_UAV_CMP,
-      "_id($id)_arena", atom_g_cmpxchg_noret>;
+  let atomic = 1 in {
+    let global = 1 in {
+      // Atomic operations
+      def ATOM_G_ADD_NORET     : BinAtomNoRet<IL_OP_UAV_ADD,
+          "_id($id)", atom_g_add_noret>;
+      def ATOM_G_AND_NORET     : BinAtomNoRet<IL_OP_UAV_AND,
+          "_id($id)", atom_g_and_noret>;
+      def ATOM_G_MAX_NORET     : BinAtomNoRet<IL_OP_UAV_MAX,
+          "_id($id)", atom_g_max_noret>;
+      def ATOM_G_MIN_NORET     : BinAtomNoRet<IL_OP_UAV_MIN,
+          "_id($id)", atom_g_min_noret>;
+      def ATOM_G_UMAX_NORET    : BinAtomNoRet<IL_OP_UAV_UMAX,
+          "_id($id)", atom_g_umax_noret>;
+      def ATOM_G_UMIN_NORET    : BinAtomNoRet<IL_OP_UAV_UMIN,
+          "_id($id)", atom_g_umin_noret>;
+      def ATOM_G_OR_NORET      : BinAtomNoRet<IL_OP_UAV_OR,
+          "_id($id)", atom_g_or_noret>;
+      def ATOM_G_RSUB_NORET    : BinAtomNoRet<IL_OP_UAV_RSUB,
+          "_id($id)", atom_g_rsub_noret>;
+      def ATOM_G_SUB_NORET     : BinAtomNoRet<IL_OP_UAV_SUB,
+          "_id($id)", atom_g_sub_noret>;
+      def ATOM_G_XOR_NORET     : BinAtomNoRet<IL_OP_UAV_XOR,
+          "_id($id)", atom_g_xor_noret>;
+      def ATOM_G_INC_NORET     : BinAtomNoRet<IL_OP_UAV_INC,
+          "_id($id)", atom_g_inc_noret>;
+      def ATOM_G_DEC_NORET     : BinAtomNoRet<IL_OP_UAV_DEC,
+          "_id($id)", atom_g_dec_noret>;
+      def ATOM_G_CMPXCHG_NORET    : CmpXChgNoRet<IL_OP_UAV_CMP,
+          "_id($id)", atom_g_cmpxchg_noret>;
+          // All of the atomic functions that return
+      def ATOM_G_ADD     : BinAtom<IL_OP_UAV_READ_ADD,
+          "_id($id)", atom_g_add>;
+      def ATOM_G_AND     : BinAtom<IL_OP_UAV_READ_AND,
+          "_id($id)", atom_g_and>;
+      def ATOM_G_MAX     : BinAtom<IL_OP_UAV_READ_MAX,
+          "_id($id)", atom_g_max>;
+      def ATOM_G_MIN     : BinAtom<IL_OP_UAV_READ_MIN,
+          "_id($id)", atom_g_min>;
+      def ATOM_G_UMAX    : BinAtom<IL_OP_UAV_READ_UMAX,
+          "_id($id)", atom_g_umax>;
+      def ATOM_G_UMIN    : BinAtom<IL_OP_UAV_READ_UMIN,
+          "_id($id)", atom_g_umin>;
+      def ATOM_G_OR      : BinAtom<IL_OP_UAV_READ_OR,
+          "_id($id)", atom_g_or>;
+      def ATOM_G_RSUB    : BinAtom<IL_OP_UAV_READ_RSUB,
+          "_id($id)", atom_g_rsub>;
+      def ATOM_G_SUB     : BinAtom<IL_OP_UAV_READ_SUB,
+          "_id($id)", atom_g_sub>;
+      def ATOM_G_XOR     : BinAtom<IL_OP_UAV_READ_XOR,
+          "_id($id)", atom_g_xor>;
+      def ATOM_G_INC     : BinAtom<IL_OP_UAV_READ_INC,
+          "_id($id)", atom_g_inc>;
+      def ATOM_G_DEC     : BinAtom<IL_OP_UAV_READ_DEC,
+          "_id($id)", atom_g_dec>;
+      def ATOM_G_XCHG    : BinAtom<IL_OP_UAV_READ_XCHG,
+          "_id($id)", atom_g_xchg>;
+      def ATOM_G_CMPXCHG : CmpXChg<IL_OP_UAV_READ_CMPXCHG,
+          "_id($id)", atom_g_cmpxchg>;
+      def ATOM_G_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_ADD,
+          "_b64_id($id)", atom_g_add_noret>;
+      def ATOM_G_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_AND,
+          "_b64_id($id)", atom_g_and_noret>;
+      def ATOM_G_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_MAX,
+          "_b64_id($id)", atom_g_max_noret>;
+      def ATOM_G_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_MIN,
+          "_b64_id($id)", atom_g_min_noret>;
+      def ATOM_G_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_UMAX,
+          "_b64_id($id)", atom_g_umax_noret>;
+      def ATOM_G_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_UMIN,
+          "_b64_id($id)", atom_g_umin_noret>;
+      def ATOM_G_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_UAV_OR,
+          "_b64_id($id)", atom_g_or_noret>;
+      def ATOM_G_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_RSUB,
+          "_b64_id($id)", atom_g_rsub_noret>;
+      def ATOM_G_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_SUB,
+          "_b64_id($id)", atom_g_sub_noret>;
+      def ATOM_G_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_XOR,
+          "_b64_id($id)", atom_g_xor_noret>;
+      def ATOM_G_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_INC,
+          "_b64_id($id)", atom_g_inc_noret>;
+      def ATOM_G_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_DEC,
+          "_b64_id($id)", atom_g_dec_noret>;
+      def ATOM_G_CMPXCHG_NORET_B64 : CmpXChgNoRetI64<IL_OP_UAV_CMP,
+          "_b64_id($id)", atom_g_cmpxchg_noret>;
+      def ATOM_G_ADD_B64     : BinAtomI64<IL_OP_UAV_READ_ADD,
+          "_b64_id($id)", atom_g_add>;
+      def ATOM_G_AND_B64     : BinAtomI64<IL_OP_UAV_READ_AND,
+          "_b64_id($id)", atom_g_and>;
+      def ATOM_G_MAX_B64     : BinAtomI64<IL_OP_UAV_READ_MAX,
+          "_b64_id($id)", atom_g_max>;
+      def ATOM_G_MIN_B64     : BinAtomI64<IL_OP_UAV_READ_MIN,
+          "_b64_id($id)", atom_g_min>;
+      def ATOM_G_UMAX_B64    : BinAtomI64<IL_OP_UAV_READ_UMAX,
+          "_b64_id($id)", atom_g_umax>;
+      def ATOM_G_UMIN_B64    : BinAtomI64<IL_OP_UAV_READ_UMIN,
+          "_b64_id($id)", atom_g_umin>;
+      def ATOM_G_OR_B64      : BinAtomI64<IL_OP_UAV_READ_OR,
+          "_b64_id($id)", atom_g_or>;
+      def ATOM_G_RSUB_B64    : BinAtomI64<IL_OP_UAV_READ_RSUB,
+          "_b64_id($id)", atom_g_rsub>;
+      def ATOM_G_SUB_B64     : BinAtomI64<IL_OP_UAV_READ_SUB,
+          "_b64_id($id)", atom_g_sub>;
+      def ATOM_G_XOR_B64     : BinAtomI64<IL_OP_UAV_READ_XOR,
+          "_b64_id($id)", atom_g_xor>;
+      def ATOM_G_INC_B64     : BinAtomI64<IL_OP_UAV_READ_INC,
+          "_b64_id($id)", atom_g_inc>;
+      def ATOM_G_DEC_B64     : BinAtomI64<IL_OP_UAV_READ_DEC,
+          "_b64_id($id)", atom_g_dec>;
+      def ATOM_G_XCHG_B64    : BinAtomI64<IL_OP_UAV_READ_XCHG,
+          "_b64_id($id)", atom_g_xchg>;
+      def ATOM_G_CMPXCHG_B64 : CmpXChgI64<IL_OP_UAV_READ_CMPXCHG,
+          "_b64_id($id)", atom_g_cmpxchg>;
+    }
+    let Predicates = [ArenaSupport], arenauav = 1 in {
+      def ATOM_A_ADD_NORET     : BinAtomNoRet<IL_OP_UAV_ADD,
+          "_id($id)_arena", atom_g_add_noret>;
+      def ATOM_A_AND_NORET     : BinAtomNoRet<IL_OP_UAV_AND,
+          "_id($id)_arena", atom_g_and_noret>;
+      def ATOM_A_MAX_NORET     : BinAtomNoRet<IL_OP_UAV_MAX,
+          "_id($id)_arena", atom_g_max_noret>;
+      def ATOM_A_MIN_NORET     : BinAtomNoRet<IL_OP_UAV_MIN,
+          "_id($id)_arena", atom_g_min_noret>;
+      def ATOM_A_UMAX_NORET    : BinAtomNoRet<IL_OP_UAV_UMAX,
+          "_id($id)_arena", atom_g_umax_noret>;
+      def ATOM_A_UMIN_NORET    : BinAtomNoRet<IL_OP_UAV_UMIN,
+          "_id($id)_arena", atom_g_umin_noret>;
+      def ATOM_A_OR_NORET      : BinAtomNoRet<IL_OP_UAV_OR,
+          "_id($id)_arena", atom_g_or_noret>;
+      def ATOM_A_RSUB_NORET    : BinAtomNoRet<IL_OP_UAV_RSUB,
+          "_id($id)_arena", atom_g_rsub_noret>;
+      def ATOM_A_SUB_NORET     : BinAtomNoRet<IL_OP_UAV_SUB,
+          "_id($id)_arena", atom_g_sub_noret>;
+      def ATOM_A_XOR_NORET     : BinAtomNoRet<IL_OP_UAV_XOR,
+          "_id($id)_arena", atom_g_xor_noret>;
+      def ATOM_A_INC_NORET     : BinAtomNoRet<IL_OP_UAV_INC,
+          "_id($id)_arena", atom_g_inc_noret>;
+      def ATOM_A_DEC_NORET     : BinAtomNoRet<IL_OP_UAV_DEC,
+          "_id($id)_arena", atom_g_dec_noret>;
+      def ATOM_A_CMPXCHG_NORET    : CmpXChgNoRet<IL_OP_UAV_CMP,
+          "_id($id)_arena", atom_g_cmpxchg_noret>;
+      def ATOM_A_ADD     : BinAtom<IL_OP_UAV_READ_ADD,
+          "_id($id)_arena", atom_g_add>;
+      def ATOM_A_AND     : BinAtom<IL_OP_UAV_READ_AND,
+          "_id($id)_arena", atom_g_and>;
+      def ATOM_A_MAX     : BinAtom<IL_OP_UAV_READ_MAX,
+          "_id($id)_arena", atom_g_max>;
+      def ATOM_A_MIN     : BinAtom<IL_OP_UAV_READ_MIN,
+          "_id($id)_arena", atom_g_min>;
+      def ATOM_A_UMAX    : BinAtom<IL_OP_UAV_READ_UMAX,
+          "_id($id)_arena", atom_g_umax>;
+      def ATOM_A_UMIN    : BinAtom<IL_OP_UAV_READ_UMIN,
+          "_id($id)_arena", atom_g_umin>;
+      def ATOM_A_OR      : BinAtom<IL_OP_UAV_READ_OR,
+          "_id($id)_arena", atom_g_or>;
+      def ATOM_A_RSUB    : BinAtom<IL_OP_UAV_READ_RSUB,
+          "_id($id)_arena", atom_g_rsub>;
+      def ATOM_A_SUB     : BinAtom<IL_OP_UAV_READ_SUB,
+          "_id($id)_arena", atom_g_sub>;
+      def ATOM_A_XOR     : BinAtom<IL_OP_UAV_READ_XOR,
+          "_id($id)_arena", atom_g_xor>;
+      def ATOM_A_INC     : BinAtom<IL_OP_UAV_READ_INC,
+          "_id($id)_arena", atom_g_inc>;
+      def ATOM_A_DEC     : BinAtom<IL_OP_UAV_READ_DEC,
+          "_id($id)_arena", atom_g_dec>;
+      def ATOM_A_XCHG    : BinAtom<IL_OP_UAV_READ_XCHG,
+          "_id($id)_arena", atom_g_xchg>;
+      def ATOM_A_CMPXCHG : CmpXChg<IL_OP_UAV_READ_CMPXCHG,
+          "_id($id)_arena", atom_g_cmpxchg>;
+    }
+    let local = 1 in {
+      def ATOM_L_ADD_NORET     : BinAtomNoRet<IL_OP_LDS_ADD,
+          "_id($id)", atom_l_add_noret>;
+      def ATOM_L_AND_NORET     : BinAtomNoRet<IL_OP_LDS_AND,
+          "_id($id)", atom_l_and_noret>;
+      def ATOM_L_MAX_NORET     : BinAtomNoRet<IL_OP_LDS_MAX,
+          "_id($id)", atom_l_max_noret>;
+      def ATOM_L_MIN_NORET     : BinAtomNoRet<IL_OP_LDS_MIN,
+          "_id($id)", atom_l_min_noret>;
+      def ATOM_L_UMAX_NORET    : BinAtomNoRet<IL_OP_LDS_UMAX,
+          "_id($id)", atom_l_umax_noret>;
+      def ATOM_L_UMIN_NORET    : BinAtomNoRet<IL_OP_LDS_UMIN,
+          "_id($id)", atom_l_umin_noret>;
+      def ATOM_L_MSKOR_NORET   : TriAtomNoRet<IL_OP_LDS_MSKOR,
+          "_id($id)", atom_l_mskor_noret>;
+      def ATOM_L_OR_NORET      : BinAtomNoRet<IL_OP_LDS_OR,
+          "_id($id)", atom_l_or_noret>;
+      def ATOM_L_RSUB_NORET    : BinAtomNoRet<IL_OP_LDS_RSUB,
+          "_id($id)", atom_l_rsub_noret>;
+      def ATOM_L_SUB_NORET     : BinAtomNoRet<IL_OP_LDS_SUB,
+          "_id($id)", atom_l_sub_noret>;
+      def ATOM_L_XOR_NORET     : BinAtomNoRet<IL_OP_LDS_XOR,
+          "_id($id)", atom_l_xor_noret>;
+      def ATOM_L_INC_NORET     : BinAtomNoRet<IL_OP_LDS_INC,
+          "_id($id)", atom_l_inc_noret>;
+      def ATOM_L_DEC_NORET     : BinAtomNoRet<IL_OP_LDS_DEC,
+          "_id($id)", atom_l_dec_noret>;
+      def ATOM_L_CMPXCHG_NORET    : TriAtomNoRet<IL_OP_LDS_CMP,
+          "_id($id)", atom_l_cmpxchg_noret>;
+      def ATOM_L_ADD     : BinAtom<IL_OP_LDS_READ_ADD,
+          "_id($id)", atom_l_add>;
+      def ATOM_L_AND     : BinAtom<IL_OP_LDS_READ_AND,
+          "_id($id)", atom_l_and>;
+      def ATOM_L_MAX     : BinAtom<IL_OP_LDS_READ_MAX,
+          "_id($id)", atom_l_max>;
+      def ATOM_L_MIN     : BinAtom<IL_OP_LDS_READ_MIN,
+          "_id($id)", atom_l_min>;
+      def ATOM_L_UMAX    : BinAtom<IL_OP_LDS_READ_UMAX,
+          "_id($id)", atom_l_umax>;
+      def ATOM_L_UMIN    : BinAtom<IL_OP_LDS_READ_UMIN,
+          "_id($id)", atom_l_umin>;
+      def ATOM_L_OR      : BinAtom<IL_OP_LDS_READ_OR,
+          "_id($id)", atom_l_or>;
+      def ATOM_L_MSKOR   : TriAtom<IL_OP_LDS_READ_MSKOR,
+          "_id($id)", atom_l_mskor>;
+      def ATOM_L_RSUB    : BinAtom<IL_OP_LDS_READ_RSUB,
+          "_id($id)", atom_l_rsub>;
+      def ATOM_L_SUB     : BinAtom<IL_OP_LDS_READ_SUB,
+          "_id($id)", atom_l_sub>;
+      def ATOM_L_XOR     : BinAtom<IL_OP_LDS_READ_XOR,
+          "_id($id)", atom_l_xor>;
+      def ATOM_L_INC     : BinAtom<IL_OP_LDS_READ_INC,
+          "_id($id)", atom_l_inc>;
+      def ATOM_L_DEC     : BinAtom<IL_OP_LDS_READ_DEC,
+          "_id($id)", atom_l_dec>;
+      def ATOM_L_XCHG    : BinAtom<IL_OP_LDS_READ_XCHG,
+          "_id($id)", atom_l_xchg>;
+      def ATOM_L_CMPXCHG : TriAtom<IL_OP_LDS_READ_CMPXCHG,
+          "_id($id)", atom_l_cmpxchg>;
+      def ATOM_L_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_ADD,
+          "64_id($id)", atom_l_add_noret>;
+      def ATOM_L_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_AND,
+          "64_id($id)", atom_l_and_noret>;
+      def ATOM_L_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_MAX,
+          "64_id($id)", atom_l_max_noret>;
+      def ATOM_L_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_MIN,
+          "64_id($id)", atom_l_min_noret>;
+      def ATOM_L_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_UMAX,
+          "64_id($id)", atom_l_umax_noret>;
+      def ATOM_L_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_UMIN,
+          "64_id($id)", atom_l_umin_noret>;
+      def ATOM_L_MSKOR_NORET_B64: TriAtomNoRetI64<IL_OP_LDS_MSKOR,
+          "64_id($id)", atom_l_mskor_noret>;
+      def ATOM_L_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_LDS_OR,
+          "64_id($id)", atom_l_or_noret>;
+      def ATOM_L_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_RSUB,
+          "64_id($id)", atom_l_rsub_noret>;
+      def ATOM_L_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_SUB,
+          "64_id($id)", atom_l_sub_noret>;
+      def ATOM_L_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_XOR,
+          "64_id($id)", atom_l_xor_noret>;
+      def ATOM_L_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_INC,
+          "64_id($id)", atom_l_inc_noret>;
+      def ATOM_L_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_DEC,
+          "64_id($id)", atom_l_dec_noret>;
+      def ATOM_L_CMPXCHG_NORET_B64 : TriAtomNoRetI64<IL_OP_LDS_CMP,
+          "64_id($id)", atom_l_cmpxchg_noret>;
+      def ATOM_L_ADD_B64     : BinAtomI64<IL_OP_LDS_READ_ADD,
+          "64_id($id)", atom_l_add>;
+      def ATOM_L_AND_B64     : BinAtomI64<IL_OP_LDS_READ_AND,
+          "64_id($id)", atom_l_and>;
+      def ATOM_L_MAX_B64     : BinAtomI64<IL_OP_LDS_READ_MAX,
+          "64_id($id)", atom_l_max>;
+      def ATOM_L_MIN_B64    : BinAtomI64<IL_OP_LDS_READ_MIN,
+          "64_id($id)", atom_l_min>;
+      def ATOM_L_UMAX_B64    : BinAtomI64<IL_OP_LDS_READ_UMAX,
+          "64_id($id)", atom_l_umax>;
+      def ATOM_L_UMIN_B64    : BinAtomI64<IL_OP_LDS_READ_UMIN,
+          "64_id($id)", atom_l_umin>;
+      def ATOM_L_OR_B64      : BinAtomI64<IL_OP_LDS_READ_OR,
+          "64_id($id)", atom_l_or>;
+      def ATOM_L_MSKOR_B64   : TriAtomI64<IL_OP_LDS_READ_MSKOR,
+          "64_id($id)", atom_l_mskor>;
+      def ATOM_L_RSUB_B64    : BinAtomI64<IL_OP_LDS_READ_RSUB,
+          "64_id($id)", atom_l_rsub>;
+      def ATOM_L_SUB_B64     : BinAtomI64<IL_OP_LDS_READ_SUB,
+          "64_id($id)", atom_l_sub>;
+      def ATOM_L_XOR_B64     : BinAtomI64<IL_OP_LDS_READ_XOR,
+          "64_id($id)", atom_l_xor>;
+      def ATOM_L_INC_B64     : BinAtomI64<IL_OP_LDS_READ_INC,
+          "64_id($id)", atom_l_inc>;
+      def ATOM_L_DEC_B64     : BinAtomI64<IL_OP_LDS_READ_DEC,
+          "64_id($id)", atom_l_dec>;
+      def ATOM_L_XCHG_B64    : BinAtomI64<IL_OP_LDS_READ_XCHG,
+          "64_id($id)", atom_l_xchg>;
+      def ATOM_L_CMPXCHG_B64 : TriAtomI64<IL_OP_LDS_READ_CMPXCHG,
+          "64_id($id)", atom_l_cmpxchg>;
+    }
+    let region = 1 in {
+      def ATOM_R_ADD_NORET     : BinAtomNoRet<IL_OP_GDS_ADD,
+          "_id($id)", atom_r_add_noret>;
+      def ATOM_R_AND_NORET     : BinAtomNoRet<IL_OP_GDS_AND,
+          "_id($id)", atom_r_and_noret>;
+      def ATOM_R_MAX_NORET     : BinAtomNoRet<IL_OP_GDS_MAX,
+          "_id($id)", atom_r_max_noret>;
+      def ATOM_R_MIN_NORET     : BinAtomNoRet<IL_OP_GDS_MIN,
+          "_id($id)", atom_r_min_noret>;
+      def ATOM_R_UMAX_NORET    : BinAtomNoRet<IL_OP_GDS_UMAX,
+          "_id($id)", atom_r_umax_noret>;
+      def ATOM_R_UMIN_NORET    : BinAtomNoRet<IL_OP_GDS_UMIN,
+          "_id($id)", atom_r_umin_noret>;
+      def ATOM_R_MSKOR_NORET   : TriAtomNoRet<IL_OP_GDS_MSKOR,
+          "_id($id)", atom_r_mskor_noret>;
+      def ATOM_R_OR_NORET      : BinAtomNoRet<IL_OP_GDS_OR,
+          "_id($id)", atom_r_or_noret>;
+      def ATOM_R_RSUB_NORET    : BinAtomNoRet<IL_OP_GDS_RSUB,
+          "_id($id)", atom_r_rsub_noret>;
+      def ATOM_R_SUB_NORET     : BinAtomNoRet<IL_OP_GDS_SUB,
+          "_id($id)", atom_r_sub_noret>;
+      def ATOM_R_XOR_NORET     : BinAtomNoRet<IL_OP_GDS_XOR,
+          "_id($id)", atom_r_xor_noret>;
+      def ATOM_R_INC_NORET     : BinAtomNoRet<IL_OP_GDS_INC,
+          "_id($id)", atom_r_inc_noret>;
+      def ATOM_R_DEC_NORET     : BinAtomNoRet<IL_OP_GDS_DEC,
+          "_id($id)", atom_r_dec_noret>;
+      def ATOM_R_CMPXCHG_NORET : TriAtomNoRet<IL_OP_GDS_CMP,
+          "_id($id)", atom_r_cmpxchg_noret>;
+      def ATOM_R_ADD     : BinAtom<IL_OP_GDS_READ_ADD,
+          "_id($id)", atom_r_add>;
+      def ATOM_R_AND     : BinAtom<IL_OP_GDS_READ_AND,
+          "_id($id)", atom_r_and>;
+      def ATOM_R_MAX     : BinAtom<IL_OP_GDS_READ_MAX,
+          "_id($id)", atom_r_max>;
+      def ATOM_R_MIN     : BinAtom<IL_OP_GDS_READ_MIN,
+          "_id($id)", atom_r_min>;
+      def ATOM_R_UMAX    : BinAtom<IL_OP_GDS_READ_UMAX,
+          "_id($id)", atom_r_umax>;
+      def ATOM_R_UMIN    : BinAtom<IL_OP_GDS_READ_UMIN,
+          "_id($id)", atom_r_umin>;
+      def ATOM_R_OR      : BinAtom<IL_OP_GDS_READ_OR,
+          "_id($id)", atom_r_or>;
+      def ATOM_R_MSKOR   : TriAtom<IL_OP_GDS_READ_MSKOR,
+          "_id($id)", atom_r_mskor>;
+      def ATOM_R_RSUB    : BinAtom<IL_OP_GDS_READ_RSUB,
+          "_id($id)", atom_r_rsub>;
+      def ATOM_R_SUB     : BinAtom<IL_OP_GDS_READ_SUB,
+          "_id($id)", atom_r_sub>;
+      def ATOM_R_XOR     : BinAtom<IL_OP_GDS_READ_XOR,
+          "_id($id)", atom_r_xor>;
+      def ATOM_R_INC     : BinAtom<IL_OP_GDS_READ_INC,
+          "_id($id)", atom_r_inc>;
+      def ATOM_R_DEC     : BinAtom<IL_OP_GDS_READ_DEC,
+          "_id($id)", atom_r_dec>;
+      def ATOM_R_XCHG    : BinAtom<IL_OP_GDS_READ_XCHG,
+          "_id($id)", atom_r_xchg>;
+      def ATOM_R_CMPXCHG : TriAtom<IL_OP_GDS_READ_CMPXCHG,
+          "_id($id)", atom_r_cmpxchg>;
+      def ATOM_R_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_ADD,
+          "64_id($id)", atom_r_add_noret>;
+      def ATOM_R_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_AND,
+          "64_id($id)", atom_r_and_noret>;
+      def ATOM_R_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_MAX,
+          "64_id($id)", atom_r_max_noret>;
+      def ATOM_R_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_MIN,
+          "64_id($id)", atom_r_min_noret>;
+      def ATOM_R_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_UMAX,
+          "64_id($id)", atom_r_umax_noret>;
+      def ATOM_R_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_UMIN,
+          "64_id($id)", atom_r_umin_noret>;
+      def ATOM_R_MSKOR_NORET_B64: TriAtomNoRetI64<IL_OP_GDS_MSKOR,
+          "64_id($id)", atom_r_mskor_noret>;
+      def ATOM_R_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_GDS_OR,
+          "64_id($id)", atom_r_or_noret>;
+      def ATOM_R_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_RSUB,
+          "64_id($id)", atom_r_rsub_noret>;
+      def ATOM_R_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_SUB,
+          "64_id($id)", atom_r_sub_noret>;
+      def ATOM_R_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_XOR,
+          "64_id($id)", atom_r_xor_noret>;
+      def ATOM_R_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_INC,
+          "64_id($id)", atom_r_inc_noret>;
+      def ATOM_R_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_DEC,
+          "64_id($id)", atom_r_dec_noret>;
+      def ATOM_R_CMPXCHG_NORET_B64 : TriAtomNoRetI64<IL_OP_GDS_CMP,
+          "64_id($id)", atom_r_cmpxchg_noret>;
+      def ATOM_R_ADD_B64     : BinAtomI64<IL_OP_GDS_READ_ADD,
+          "64_id($id)", atom_r_add>;
+      def ATOM_R_AND_B64     : BinAtomI64<IL_OP_GDS_READ_AND,
+          "64_id($id)", atom_r_and>;
+      def ATOM_R_MAX_B64     : BinAtomI64<IL_OP_GDS_READ_MAX,
+          "64_id($id)", atom_r_max>;
+      def ATOM_R_MIN_B64     : BinAtomI64<IL_OP_GDS_READ_MIN,
+          "64_id($id)", atom_r_min>;
+      def ATOM_R_UMAX_B64    : BinAtomI64<IL_OP_GDS_READ_UMAX,
+          "64_id($id)", atom_r_umax>;
+      def ATOM_R_UMIN_B64    : BinAtomI64<IL_OP_GDS_READ_UMIN,
+          "64_id($id)", atom_r_umin>;
+      def ATOM_R_OR_B64      : BinAtomI64<IL_OP_GDS_READ_OR,
+          "64_id($id)", atom_r_or>;
+      def ATOM_R_MSKOR_B64   : TriAtomI64<IL_OP_GDS_READ_MSKOR,
+          "64_id($id)", atom_r_mskor>;
+      def ATOM_R_RSUB_B64    : BinAtomI64<IL_OP_GDS_READ_RSUB,
+          "64_id($id)", atom_r_rsub>;
+      def ATOM_R_SUB_B64     : BinAtomI64<IL_OP_GDS_READ_SUB,
+          "64_id($id)", atom_r_sub>;
+      def ATOM_R_XOR_B64     : BinAtomI64<IL_OP_GDS_READ_XOR,
+          "64_id($id)", atom_r_xor>;
+      def ATOM_R_INC_B64     : BinAtomI64<IL_OP_GDS_READ_INC,
+          "64_id($id)", atom_r_inc>;
+      def ATOM_R_DEC_B64     : BinAtomI64<IL_OP_GDS_READ_DEC,
+          "64_id($id)", atom_r_dec>;
+      def ATOM_R_XCHG_B64    : BinAtomI64<IL_OP_GDS_READ_XCHG,
+          "64_id($id)", atom_r_xchg>;
+      def ATOM_R_CMPXCHG_B64 : TriAtomI64<IL_OP_GDS_READ_CMPXCHG,
+          "64_id($id)", atom_r_cmpxchg>;
+    }
   }
-  def ATOM_L_ADD_NORET     : BinAtomNoRet<IL_OP_LDS_ADD,
-      "_id($id)", atom_l_add_noret>;
-  def ATOM_L_AND_NORET     : BinAtomNoRet<IL_OP_LDS_AND,
-      "_id($id)", atom_l_and_noret>;
-  def ATOM_L_MAX_NORET     : BinAtomNoRet<IL_OP_LDS_MAX,
-      "_id($id)", atom_l_max_noret>;
-  def ATOM_L_MIN_NORET     : BinAtomNoRet<IL_OP_LDS_MIN,
-      "_id($id)", atom_l_min_noret>;
-  def ATOM_L_UMAX_NORET    : BinAtomNoRet<IL_OP_LDS_UMAX,
-      "_id($id)", atom_l_umax_noret>;
-  def ATOM_L_UMIN_NORET    : BinAtomNoRet<IL_OP_LDS_UMIN,
-      "_id($id)", atom_l_umin_noret>;
-  def ATOM_L_MSKOR_NORET   : TriAtomNoRet<IL_OP_LDS_MSKOR,
-      "_id($id)", atom_l_mskor_noret>;
-  def ATOM_L_OR_NORET      : BinAtomNoRet<IL_OP_LDS_OR,
-      "_id($id)", atom_l_or_noret>;
-  def ATOM_L_RSUB_NORET    : BinAtomNoRet<IL_OP_LDS_RSUB,
-      "_id($id)", atom_l_rsub_noret>;
-  def ATOM_L_SUB_NORET     : BinAtomNoRet<IL_OP_LDS_SUB,
-      "_id($id)", atom_l_sub_noret>;
-  def ATOM_L_XOR_NORET     : BinAtomNoRet<IL_OP_LDS_XOR,
-      "_id($id)", atom_l_xor_noret>;
-  def ATOM_L_INC_NORET     : BinAtomNoRet<IL_OP_LDS_INC,
-      "_id($id)", atom_l_inc_noret>;
-  def ATOM_L_DEC_NORET     : BinAtomNoRet<IL_OP_LDS_DEC,
-      "_id($id)", atom_l_dec_noret>;
-  def ATOM_L_CMPXCHG_NORET    : TriAtomNoRet<IL_OP_LDS_CMP,
-      "_id($id)", atom_l_cmpxchg_noret>;
-  def ATOM_R_ADD_NORET     : BinAtomNoRet<IL_OP_GDS_ADD,
-      "_id($id)", atom_r_add_noret>;
-  def ATOM_R_AND_NORET     : BinAtomNoRet<IL_OP_GDS_AND,
-      "_id($id)", atom_r_and_noret>;
-  def ATOM_R_MAX_NORET     : BinAtomNoRet<IL_OP_GDS_MAX,
-      "_id($id)", atom_r_max_noret>;
-  def ATOM_R_MIN_NORET     : BinAtomNoRet<IL_OP_GDS_MIN,
-      "_id($id)", atom_r_min_noret>;
-  def ATOM_R_UMAX_NORET    : BinAtomNoRet<IL_OP_GDS_UMAX,
-      "_id($id)", atom_r_umax_noret>;
-  def ATOM_R_UMIN_NORET    : BinAtomNoRet<IL_OP_GDS_UMIN,
-      "_id($id)", atom_r_umin_noret>;
-  def ATOM_R_MSKOR_NORET   : TriAtomNoRet<IL_OP_GDS_MSKOR,
-      "_id($id)", atom_r_mskor_noret>;
-  def ATOM_R_OR_NORET      : BinAtomNoRet<IL_OP_GDS_OR,
-      "_id($id)", atom_r_or_noret>;
-  def ATOM_R_RSUB_NORET    : BinAtomNoRet<IL_OP_GDS_RSUB,
-      "_id($id)", atom_r_rsub_noret>;
-  def ATOM_R_SUB_NORET     : BinAtomNoRet<IL_OP_GDS_SUB,
-      "_id($id)", atom_r_sub_noret>;
-  def ATOM_R_XOR_NORET     : BinAtomNoRet<IL_OP_GDS_XOR,
-      "_id($id)", atom_r_xor_noret>;
-  def ATOM_R_INC_NORET     : BinAtomNoRet<IL_OP_GDS_INC,
-      "_id($id)", atom_r_inc_noret>;
-  def ATOM_R_DEC_NORET     : BinAtomNoRet<IL_OP_GDS_DEC,
-      "_id($id)", atom_r_dec_noret>;
-  def ATOM_R_CMPXCHG_NORET    : CmpXChgNoRet<IL_OP_GDS_CMP,
-      "_id($id)", atom_r_cmpxchg_noret>;
-  // All of the atomic functions that return
-  def ATOM_G_ADD     : BinAtom<IL_OP_UAV_READ_ADD,
-      "_id($id)", atom_g_add>;
-  def ATOM_G_AND     : BinAtom<IL_OP_UAV_READ_AND,
-      "_id($id)", atom_g_and>;
-  def ATOM_G_MAX     : BinAtom<IL_OP_UAV_READ_MAX,
-      "_id($id)", atom_g_max>;
-  def ATOM_G_MIN     : BinAtom<IL_OP_UAV_READ_MIN,
-      "_id($id)", atom_g_min>;
-  def ATOM_G_UMAX    : BinAtom<IL_OP_UAV_READ_UMAX,
-      "_id($id)", atom_g_umax>;
-  def ATOM_G_UMIN    : BinAtom<IL_OP_UAV_READ_UMIN,
-      "_id($id)", atom_g_umin>;
-  def ATOM_G_OR      : BinAtom<IL_OP_UAV_READ_OR,
-      "_id($id)", atom_g_or>;
-  def ATOM_G_RSUB    : BinAtom<IL_OP_UAV_READ_RSUB,
-      "_id($id)", atom_g_rsub>;
-  def ATOM_G_SUB     : BinAtom<IL_OP_UAV_READ_SUB,
-      "_id($id)", atom_g_sub>;
-  def ATOM_G_XOR     : BinAtom<IL_OP_UAV_READ_XOR,
-      "_id($id)", atom_g_xor>;
-  def ATOM_G_INC     : BinAtom<IL_OP_UAV_READ_INC,
-      "_id($id)", atom_g_inc>;
-  def ATOM_G_DEC     : BinAtom<IL_OP_UAV_READ_DEC,
-      "_id($id)", atom_g_dec>;
-  def ATOM_G_XCHG    : BinAtom<IL_OP_UAV_READ_XCHG,
-      "_id($id)", atom_g_xchg>;
-  def ATOM_G_CMPXCHG : CmpXChg<IL_OP_UAV_READ_CMPXCHG,
-      "_id($id)", atom_g_cmpxchg>;
-  // Arena atomic accesses
-  let Predicates = [ArenaSupport] in {
-  def ATOM_A_ADD     : BinAtom<IL_OP_UAV_READ_ADD,
-      "_id($id)_arena", atom_g_add>;
-  def ATOM_A_AND     : BinAtom<IL_OP_UAV_READ_AND,
-      "_id($id)_arena", atom_g_and>;
-  def ATOM_A_MAX     : BinAtom<IL_OP_UAV_READ_MAX,
-      "_id($id)_arena", atom_g_max>;
-  def ATOM_A_MIN     : BinAtom<IL_OP_UAV_READ_MIN,
-      "_id($id)_arena", atom_g_min>;
-  def ATOM_A_UMAX    : BinAtom<IL_OP_UAV_READ_UMAX,
-      "_id($id)_arena", atom_g_umax>;
-  def ATOM_A_UMIN    : BinAtom<IL_OP_UAV_READ_UMIN,
-      "_id($id)_arena", atom_g_umin>;
-  def ATOM_A_OR      : BinAtom<IL_OP_UAV_READ_OR,
-      "_id($id)_arena", atom_g_or>;
-  def ATOM_A_RSUB    : BinAtom<IL_OP_UAV_READ_RSUB,
-      "_id($id)_arena", atom_g_rsub>;
-  def ATOM_A_SUB     : BinAtom<IL_OP_UAV_READ_SUB,
-      "_id($id)_arena", atom_g_sub>;
-  def ATOM_A_XOR     : BinAtom<IL_OP_UAV_READ_XOR,
-      "_id($id)_arena", atom_g_xor>;
-  def ATOM_A_INC     : BinAtom<IL_OP_UAV_READ_INC,
-      "_id($id)_arena", atom_g_inc>;
-  def ATOM_A_DEC     : BinAtom<IL_OP_UAV_READ_DEC,
-      "_id($id)_arena", atom_g_dec>;
-  def ATOM_A_XCHG    : BinAtom<IL_OP_UAV_READ_XCHG,
-      "_id($id)_arena", atom_g_xchg>;
-  def ATOM_A_CMPXCHG : CmpXChg<IL_OP_UAV_READ_CMPXCHG,
-      "_id($id)_arena", atom_g_cmpxchg>;
-}
-  def ATOM_L_ADD     : BinAtom<IL_OP_LDS_READ_ADD,
-      "_id($id)", atom_l_add>;
-  def ATOM_L_AND     : BinAtom<IL_OP_LDS_READ_AND,
-      "_id($id)", atom_l_and>;
-  def ATOM_L_MAX     : BinAtom<IL_OP_LDS_READ_MAX,
-      "_id($id)", atom_l_max>;
-  def ATOM_L_MIN     : BinAtom<IL_OP_LDS_READ_MIN,
-      "_id($id)", atom_l_min>;
-  def ATOM_L_UMAX    : BinAtom<IL_OP_LDS_READ_UMAX,
-      "_id($id)", atom_l_umax>;
-  def ATOM_L_UMIN    : BinAtom<IL_OP_LDS_READ_UMIN,
-      "_id($id)", atom_l_umin>;
-  def ATOM_L_OR      : BinAtom<IL_OP_LDS_READ_OR,
-      "_id($id)", atom_l_or>;
-  def ATOM_L_MSKOR   : TriAtom<IL_OP_LDS_READ_MSKOR,
-      "_id($id)", atom_l_mskor>;
-  def ATOM_L_RSUB    : BinAtom<IL_OP_LDS_READ_RSUB,
-      "_id($id)", atom_l_rsub>;
-  def ATOM_L_SUB     : BinAtom<IL_OP_LDS_READ_SUB,
-      "_id($id)", atom_l_sub>;
-  def ATOM_L_XOR     : BinAtom<IL_OP_LDS_READ_XOR,
-      "_id($id)", atom_l_xor>;
-  def ATOM_L_INC     : BinAtom<IL_OP_LDS_READ_INC,
-      "_id($id)", atom_l_inc>;
-  def ATOM_L_DEC     : BinAtom<IL_OP_LDS_READ_DEC,
-      "_id($id)", atom_l_dec>;
-  def ATOM_L_XCHG    : BinAtom<IL_OP_LDS_READ_XCHG,
-      "_id($id)", atom_l_xchg>;
-  def ATOM_L_CMPXCHG : TriAtom<IL_OP_LDS_READ_CMPXCHG,
-      "_id($id)", atom_l_cmpxchg>;
-  def ATOM_R_ADD     : BinAtom<IL_OP_GDS_READ_ADD,
-      "_id($id)", atom_r_add>;
-  def ATOM_R_AND     : BinAtom<IL_OP_GDS_READ_AND,
-      "_id($id)", atom_r_and>;
-  def ATOM_R_MAX     : BinAtom<IL_OP_GDS_READ_MAX,
-      "_id($id)", atom_r_max>;
-  def ATOM_R_MIN     : BinAtom<IL_OP_GDS_READ_MIN,
-      "_id($id)", atom_r_min>;
-  def ATOM_R_UMAX    : BinAtom<IL_OP_GDS_READ_UMAX,
-      "_id($id)", atom_r_umax>;
-  def ATOM_R_UMIN    : BinAtom<IL_OP_GDS_READ_UMIN,
-      "_id($id)", atom_r_umin>;
-  def ATOM_R_OR      : BinAtom<IL_OP_GDS_READ_OR,
-      "_id($id)", atom_r_or>;
-  def ATOM_R_MSKOR   : TriAtom<IL_OP_GDS_READ_MSKOR,
-      "_id($id)", atom_r_mskor>;
-  def ATOM_R_RSUB    : BinAtom<IL_OP_GDS_READ_RSUB,
-      "_id($id)", atom_r_rsub>;
-  def ATOM_R_SUB     : BinAtom<IL_OP_GDS_READ_SUB,
-      "_id($id)", atom_r_sub>;
-  def ATOM_R_XOR     : BinAtom<IL_OP_GDS_READ_XOR,
-      "_id($id)", atom_r_xor>;
-  def ATOM_R_INC     : BinAtom<IL_OP_GDS_READ_INC,
-      "_id($id)", atom_r_inc>;
-  def ATOM_R_DEC     : BinAtom<IL_OP_GDS_READ_DEC,
-      "_id($id)", atom_r_dec>;
-  def ATOM_R_XCHG    : BinAtom<IL_OP_GDS_READ_XCHG,
-      "_id($id)", atom_r_xchg>;
-  def ATOM_R_CMPXCHG : CmpXChg<IL_OP_GDS_READ_CMPXCHG,
-      "_id($id)", atom_r_cmpxchg>;
-  // 64bit atomic operations.
-  def ATOM_G_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_ADD,
-      "_b64_id($id)", atom_g_add_noret>;
-  def ATOM_G_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_AND,
-      "_b64_id($id)", atom_g_and_noret>;
-  def ATOM_G_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_MAX,
-      "_b64_id($id)", atom_g_max_noret>;
-  def ATOM_G_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_MIN,
-      "_b64_id($id)", atom_g_min_noret>;
-  def ATOM_G_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_UMAX,
-      "_b64_id($id)", atom_g_umax_noret>;
-  def ATOM_G_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_UMIN,
-      "_b64_id($id)", atom_g_umin_noret>;
-  def ATOM_G_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_UAV_OR,
-      "_b64_id($id)", atom_g_or_noret>;
-  def ATOM_G_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_UAV_RSUB,
-      "_b64_id($id)", atom_g_rsub_noret>;
-  def ATOM_G_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_SUB,
-      "_b64_id($id)", atom_g_sub_noret>;
-  def ATOM_G_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_XOR,
-      "_b64_id($id)", atom_g_xor_noret>;
-  def ATOM_G_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_INC,
-      "_b64_id($id)", atom_g_inc_noret>;
-  def ATOM_G_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_UAV_DEC,
-      "_b64_id($id)", atom_g_dec_noret>;
-  def ATOM_G_CMPXCHG_NORET_B64 : CmpXChgNoRetI64<IL_OP_UAV_CMP,
-      "_b64_id($id)", atom_g_cmpxchg_noret>;
-  def ATOM_L_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_ADD,
-      "64_id($id)", atom_l_add_noret>;
-  def ATOM_L_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_AND,
-      "64_id($id)", atom_l_and_noret>;
-  def ATOM_L_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_MAX,
-      "64_id($id)", atom_l_max_noret>;
-  def ATOM_L_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_MIN,
-      "64_id($id)", atom_l_min_noret>;
-  def ATOM_L_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_UMAX,
-      "64_id($id)", atom_l_umax_noret>;
-  def ATOM_L_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_UMIN,
-      "64_id($id)", atom_l_umin_noret>;
-  def ATOM_L_MSKOR_NORET_B64: TriAtomNoRetI64<IL_OP_LDS_MSKOR,
-      "64_id($id)", atom_l_mskor_noret>;
-  def ATOM_L_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_LDS_OR,
-      "64_id($id)", atom_l_or_noret>;
-  def ATOM_L_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_LDS_RSUB,
-      "64_id($id)", atom_l_rsub_noret>;
-  def ATOM_L_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_SUB,
-      "64_id($id)", atom_l_sub_noret>;
-  def ATOM_L_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_XOR,
-      "64_id($id)", atom_l_xor_noret>;
-  def ATOM_L_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_INC,
-      "64_id($id)", atom_l_inc_noret>;
-  def ATOM_L_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_LDS_DEC,
-      "64_id($id)", atom_l_dec_noret>;
-  def ATOM_L_CMPXCHG_NORET_B64 : TriAtomNoRetI64<IL_OP_LDS_CMP,
-      "64_id($id)", atom_l_cmpxchg_noret>;
-  def ATOM_R_ADD_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_ADD,
-      "64_id($id)", atom_r_add_noret>;
-  def ATOM_R_AND_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_AND,
-      "64_id($id)", atom_r_and_noret>;
-  def ATOM_R_MAX_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_MAX,
-      "64_id($id)", atom_r_max_noret>;
-  def ATOM_R_MIN_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_MIN,
-      "64_id($id)", atom_r_min_noret>;
-  def ATOM_R_UMAX_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_UMAX,
-      "64_id($id)", atom_r_umax_noret>;
-  def ATOM_R_UMIN_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_UMIN,
-      "64_id($id)", atom_r_umin_noret>;
-  def ATOM_R_MSKOR_NORET_B64: TriAtomNoRetI64<IL_OP_GDS_MSKOR,
-      "64_id($id)", atom_r_mskor_noret>;
-  def ATOM_R_OR_NORET_B64   : BinAtomNoRetI64<IL_OP_GDS_OR,
-      "64_id($id)", atom_r_or_noret>;
-  def ATOM_R_RSUB_NORET_B64 : BinAtomNoRetI64<IL_OP_GDS_RSUB,
-      "64_id($id)", atom_r_rsub_noret>;
-  def ATOM_R_SUB_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_SUB,
-      "64_id($id)", atom_r_sub_noret>;
-  def ATOM_R_XOR_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_XOR,
-      "64_id($id)", atom_r_xor_noret>;
-  def ATOM_R_INC_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_INC,
-      "64_id($id)", atom_r_inc_noret>;
-  def ATOM_R_DEC_NORET_B64  : BinAtomNoRetI64<IL_OP_GDS_DEC,
-      "64_id($id)", atom_r_dec_noret>;
-  def ATOM_R_CMPXCHG_NORET_B64 : CmpXChgNoRetI64<IL_OP_GDS_CMP,
-      "64_id($id)", atom_r_cmpxchg_noret>;
-  // All of the atomic functions that return
-  def ATOM_G_ADD_B64     : BinAtomI64<IL_OP_UAV_READ_ADD,
-      "_b64_id($id)", atom_g_add>;
-  def ATOM_G_AND_B64     : BinAtomI64<IL_OP_UAV_READ_AND,
-      "_b64_id($id)", atom_g_and>;
-  def ATOM_G_MAX_B64     : BinAtomI64<IL_OP_UAV_READ_MAX,
-      "_b64_id($id)", atom_g_max>;
-  def ATOM_G_MIN_B64     : BinAtomI64<IL_OP_UAV_READ_MIN,
-      "_b64_id($id)", atom_g_min>;
-  def ATOM_G_UMAX_B64    : BinAtomI64<IL_OP_UAV_READ_UMAX,
-      "_b64_id($id)", atom_g_umax>;
-  def ATOM_G_UMIN_B64    : BinAtomI64<IL_OP_UAV_READ_UMIN,
-      "_b64_id($id)", atom_g_umin>;
-  def ATOM_G_OR_B64      : BinAtomI64<IL_OP_UAV_READ_OR,
-      "_b64_id($id)", atom_g_or>;
-  def ATOM_G_RSUB_B64    : BinAtomI64<IL_OP_UAV_READ_RSUB,
-      "_b64_id($id)", atom_g_rsub>;
-  def ATOM_G_SUB_B64     : BinAtomI64<IL_OP_UAV_READ_SUB,
-      "_b64_id($id)", atom_g_sub>;
-  def ATOM_G_XOR_B64     : BinAtomI64<IL_OP_UAV_READ_XOR,
-      "_b64_id($id)", atom_g_xor>;
-  def ATOM_G_INC_B64     : BinAtomI64<IL_OP_UAV_READ_INC,
-      "_b64_id($id)", atom_g_inc>;
-  def ATOM_G_DEC_B64     : BinAtomI64<IL_OP_UAV_READ_DEC,
-      "_b64_id($id)", atom_g_dec>;
-  def ATOM_G_XCHG_B64    : BinAtomI64<IL_OP_UAV_READ_XCHG,
-      "_b64_id($id)", atom_g_xchg>;
-  def ATOM_G_CMPXCHG_B64 : CmpXChgI64<IL_OP_UAV_READ_CMPXCHG,
-      "_b64_id($id)", atom_g_cmpxchg>;
-  def ATOM_L_ADD_B64     : BinAtomI64<IL_OP_LDS_READ_ADD,
-      "64_id($id)", atom_l_add>;
-  def ATOM_L_AND_B64     : BinAtomI64<IL_OP_LDS_READ_AND,
-      "64_id($id)", atom_l_and>;
-  def ATOM_L_MAX_B64     : BinAtomI64<IL_OP_LDS_READ_MAX,
-      "64_id($id)", atom_l_max>;
-  def ATOM_L_MIN_B64    : BinAtomI64<IL_OP_LDS_READ_MIN,
-      "64_id($id)", atom_l_min>;
-  def ATOM_L_UMAX_B64    : BinAtomI64<IL_OP_LDS_READ_UMAX,
-      "64_id($id)", atom_l_umax>;
-  def ATOM_L_UMIN_B64    : BinAtomI64<IL_OP_LDS_READ_UMIN,
-      "64_id($id)", atom_l_umin>;
-  def ATOM_L_OR_B64      : BinAtomI64<IL_OP_LDS_READ_OR,
-      "64_id($id)", atom_l_or>;
-  def ATOM_L_MSKOR_B64   : TriAtomI64<IL_OP_LDS_READ_MSKOR,
-      "64_id($id)", atom_l_mskor>;
-  def ATOM_L_RSUB_B64    : BinAtomI64<IL_OP_LDS_READ_RSUB,
-      "64_id($id)", atom_l_rsub>;
-  def ATOM_L_SUB_B64     : BinAtomI64<IL_OP_LDS_READ_SUB,
-      "64_id($id)", atom_l_sub>;
-  def ATOM_L_XOR_B64     : BinAtomI64<IL_OP_LDS_READ_XOR,
-      "64_id($id)", atom_l_xor>;
-  def ATOM_L_INC_B64     : BinAtomI64<IL_OP_LDS_READ_INC,
-      "64_id($id)", atom_l_inc>;
-  def ATOM_L_DEC_B64     : BinAtomI64<IL_OP_LDS_READ_DEC,
-      "64_id($id)", atom_l_dec>;
-  def ATOM_L_XCHG_B64    : BinAtomI64<IL_OP_LDS_READ_XCHG,
-      "64_id($id)", atom_l_xchg>;
-  def ATOM_L_CMPXCHG_B64 : TriAtomI64<IL_OP_LDS_READ_CMPXCHG,
-      "64_id($id)", atom_l_cmpxchg>;
-  def ATOM_R_ADD_B64     : BinAtomI64<IL_OP_GDS_READ_ADD,
-      "64_id($id)", atom_r_add>;
-  def ATOM_R_AND_B64     : BinAtomI64<IL_OP_GDS_READ_AND,
-      "64_id($id)", atom_r_and>;
-  def ATOM_R_MAX_B64     : BinAtomI64<IL_OP_GDS_READ_MAX,
-      "64_id($id)", atom_r_max>;
-  def ATOM_R_MIN_B64     : BinAtomI64<IL_OP_GDS_READ_MIN,
-      "64_id($id)", atom_r_min>;
-  def ATOM_R_UMAX_B64    : BinAtomI64<IL_OP_GDS_READ_UMAX,
-      "64_id($id)", atom_r_umax>;
-  def ATOM_R_UMIN_B64    : BinAtomI64<IL_OP_GDS_READ_UMIN,
-      "64_id($id)", atom_r_umin>;
-  def ATOM_R_OR_B64      : BinAtomI64<IL_OP_GDS_READ_OR,
-      "64_id($id)", atom_r_or>;
-  def ATOM_R_MSKOR_B64   : TriAtomI64<IL_OP_GDS_READ_MSKOR,
-      "64_id($id)", atom_r_mskor>;
-  def ATOM_R_RSUB_B64    : BinAtomI64<IL_OP_GDS_READ_RSUB,
-      "64_id($id)", atom_r_rsub>;
-  def ATOM_R_SUB_B64     : BinAtomI64<IL_OP_GDS_READ_SUB,
-      "64_id($id)", atom_r_sub>;
-  def ATOM_R_XOR_B64     : BinAtomI64<IL_OP_GDS_READ_XOR,
-      "64_id($id)", atom_r_xor>;
-  def ATOM_R_INC_B64     : BinAtomI64<IL_OP_GDS_READ_INC,
-      "64_id($id)", atom_r_inc>;
-  def ATOM_R_DEC_B64     : BinAtomI64<IL_OP_GDS_READ_DEC,
-      "64_id($id)", atom_r_dec>;
-  def ATOM_R_XCHG_B64    : BinAtomI64<IL_OP_GDS_READ_XCHG,
-      "64_id($id)", atom_r_xchg>;
-  def ATOM_R_CMPXCHG_B64 : CmpXChgI64<IL_OP_GDS_READ_CMPXCHG,
-      "64_id($id)", atom_r_cmpxchg>;
 
-  // atomic counter operations.
-  def APPEND_ALLOC : Append<IL_OP_APPEND_BUF_ALLOC,
-      "_id($id)", append_alloc>;
-  def APPEND_CONSUME : Append<IL_OP_APPEND_BUF_CONSUME,
-      "_id($id)", append_consume>;
+  let append = 1, swizzle = 3 in {
+    def APPEND_ALLOC : Append<IL_OP_APPEND_BUF_ALLOC,
+        "_id($id)", append_alloc>;
+    def APPEND_CONSUME : Append<IL_OP_APPEND_BUF_CONSUME,
+        "_id($id)", append_consume>;
+  }
+
+  let sema = 1 in {
+    let swizzle = 7 in {
+      def SEMAPHORE_WAIT : ILFormat<IL_OP_SEMAPHORE_WAIT, (outs),
+          (ins MEM3232:$ptr),
+          !strconcat(IL_OP_SEMAPHORE_WAIT.Text, "_id($ptr)"),
+          [(int_AMDIL_semaphore_wait ADDR:$ptr)]>;
+
+      def SEMAPHORE_SIGNAL : ILFormat<IL_OP_SEMAPHORE_SIGNAL, (outs),
+          (ins MEM3232:$ptr),
+          !strconcat(IL_OP_SEMAPHORE_SIGNAL.Text, "_id($ptr)"),
+          [(int_AMDIL_semaphore_signal ADDR:$ptr)]>;
+    }
+  }
+
+  let Predicates = [IsSIOrLaterDevice] in {
+    // atomic global load
+    defm ATOM_G_LOAD : AtomGLoadMC<MEM3232, ADDR>;
+    // atomic global store
+    defm ATOM_G_STORE : AtomGLoadMC<MEM3232, ADDR>;
+  }
 }

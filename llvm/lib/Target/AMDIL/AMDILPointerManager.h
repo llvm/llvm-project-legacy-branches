@@ -32,8 +32,7 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Target/TargetMachine.h"
 
-namespace llvm
-{
+namespace llvm {
 class MachineFunction;
 class AnalysisUsage;
 // The default pointer manager. This handles pointer
@@ -42,10 +41,9 @@ class AnalysisUsage;
 class AMDILPointerManager : public MachineFunctionPass
 {
 public:
-  AMDILPointerManager(
-    TargetMachine &tm,
-    CodeGenOpt::Level OL);
-  virtual ~AMDILPointerManager();
+  AMDILPointerManager();
+  virtual ~AMDILPointerManager() {
+  };
   virtual const char*
   getPassName() const;
   virtual bool
@@ -53,27 +51,26 @@ public:
   virtual void
   getAnalysisUsage(AnalysisUsage &AU) const;
   static char ID;
-protected:
-  TargetMachine& TM;
-  virtual void clearTempMIFlags(MachineFunction &F);
 private:
-}; // class AMDILPointerManager
+};   // class AMDILPointerManager
 
 // The pointer manager for Evergreen and Northern Island
 // devices. This pointer manager allocates and trackes
 // cached memory, arena resources, raw resources and
 // whether multi-uav is utilized or not.
-class AMDILEGPointerManager : public AMDILPointerManager
+class AMDILEGPointerManager : public MachineFunctionPass
 {
 public:
-  AMDILEGPointerManager(
-    TargetMachine &tm,
-    CodeGenOpt::Level OL);
-  virtual ~AMDILEGPointerManager();
+  AMDILEGPointerManager();
+  virtual ~AMDILEGPointerManager() {
+  };
   virtual const char*
   getPassName() const;
   virtual bool
   runOnMachineFunction(MachineFunction &F);
-}; // class AMDILEGPointerManager
+  virtual void
+  getAnalysisUsage(AnalysisUsage &AU) const;
+  static char ID;
+};   // class AMDILEGPointerManager
 } // end llvm namespace
 #endif // _AMDIL_POINTER_MANAGER_H_

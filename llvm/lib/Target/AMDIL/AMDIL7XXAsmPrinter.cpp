@@ -42,7 +42,6 @@ AMDIL7XXAsmPrinter::AMDIL7XXAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS)
   : AMDILAsmPrinter(ASM_PRINTER_ARGUMENTS)
 {
 }
-
 AMDIL7XXAsmPrinter::~AMDIL7XXAsmPrinter()
 {
 }
@@ -82,7 +81,6 @@ AMDIL7XXAsmPrinter::emitMacroFunc(const MachineInstr *MI,
   }
   emitMCallInst(MI, O, name);
 }
-
 bool
 AMDIL7XXAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
 {
@@ -100,7 +98,6 @@ AMDIL7XXAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
   EmitFunctionBody();
   return false;
 }
-
 void
 AMDIL7XXAsmPrinter::EmitInstruction(const MachineInstr *II)
 {
@@ -109,7 +106,7 @@ AMDIL7XXAsmPrinter::EmitInstruction(const MachineInstr *II)
   formatted_raw_ostream O(OFunStr);
   const AMDILSubtarget *curTarget = mTM->getSubtargetImpl();
   if (mDebugMode) {
-    O << ";" ;
+    O << ";";
     II->print(O);
   }
   if (isMacroFunc(II)) {
@@ -159,7 +156,7 @@ AMDIL7XXAsmPrinter::EmitInstruction(const MachineInstr *II)
       } else {
         printOperand(II, x
                      , O
-                    );
+                     );
       }
       if (!x) {
         O << "), (";
@@ -194,8 +191,6 @@ AMDIL7XXAsmPrinter::EmitInstruction(const MachineInstr *II)
       mMFI->addCalledIntr(macronum);
     }
   } else {
-
-
     // Print the assembly for the instruction.
     // We want to make sure that we do HW constants
     // before we do arena segment
@@ -209,6 +204,8 @@ AMDIL7XXAsmPrinter::EmitInstruction(const MachineInstr *II)
       O << "mem0.x___, cb0[3].x, r0.0\n";
       O << "\tendif\n";
       mMFI->addMetadata(";memory:compilerwrite");
+    } else if (II->getOpcode() == AMDIL::COPY) {
+      printCopy(II, O);
     } else {
       printInstruction(II, O);
     }

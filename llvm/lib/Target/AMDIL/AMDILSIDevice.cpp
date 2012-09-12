@@ -34,11 +34,9 @@ AMDILSIDevice::AMDILSIDevice(AMDILSubtarget *ST)
     mDeviceFlag = OCL_DEVICE_CAPEVERDE;
   }
 }
-
 AMDILSIDevice::~AMDILSIDevice()
 {
 }
-
 void
 AMDILSIDevice::setCaps()
 {
@@ -47,10 +45,8 @@ AMDILSIDevice::setCaps()
   mSWBits.reset(AMDILDeviceInfo::ArenaSegment);
   mHWBits.reset(AMDILDeviceInfo::ArenaSegment);
   mHWBits.set(AMDILDeviceInfo::ByteStores);
-  if (mSTM->calVersion() >= CAL_VERSION_SC_140) {
-    mHWBits.set(AMDILDeviceInfo::HW64BitDivMod);
-    mSWBits.reset(AMDILDeviceInfo::HW64BitDivMod);
-  }
+  mHWBits.set(AMDILDeviceInfo::HW64BitDivMod);
+  mSWBits.reset(AMDILDeviceInfo::HW64BitDivMod);
   if (!mSTM->isApple()) {
     if (mSTM->isOverride(AMDILDeviceInfo::Images)) {
       mHWBits.set(AMDILDeviceInfo::Images);
@@ -58,40 +54,30 @@ AMDILSIDevice::setCaps()
   } else {
     mHWBits.set(AMDILDeviceInfo::Images);
   }
-  if (mSTM->calVersion() > CAL_VERSION_GLOBAL_RETURN_BUFFER) {
-    mHWBits.set(AMDILDeviceInfo::CachedMem);
-  }
+  mHWBits.set(AMDILDeviceInfo::CachedMem);
   mHWBits.set(AMDILDeviceInfo::ByteLDSOps);
   mSWBits.reset(AMDILDeviceInfo::ByteLDSOps);
   mHWBits.set(AMDILDeviceInfo::LongOps);
   mSWBits.reset(AMDILDeviceInfo::LongOps);
   mHWBits.set(AMDILDeviceInfo::TmrReg);
   mHWBits.set(AMDILDeviceInfo::PPAMode);
-  // The software mode is enabled until global memory has
-  // been verified, then we can enable constant/private/local/region
-  // memory in hw mode.
-  //mHWBits.reset(AMDILDeviceInfo::ConstantMem);
-  //mHWBits.reset(AMDILDeviceInfo::PrivateMem);
-  //mSWBits.set(AMDILDeviceInfo::ConstantMem);
-  //mSWBits.set(AMDILDeviceInfo::PrivateMem);
-  //mHWBits.set(AMDILDeviceInfo::LocalMem);
-  //mHWBits.set(AMDILDeviceInfo::RegionMem);
+  mHWBits.set(AMDILDeviceInfo::ConstantMem);
+  mHWBits.set(AMDILDeviceInfo::PrivateMem);
+  mHWBits.set(AMDILDeviceInfo::LocalMem);
+  mHWBits.set(AMDILDeviceInfo::RegionMem);
 }
-
 uint32_t
 AMDILSIDevice::getGeneration() const
 {
   return AMDILDeviceInfo::HD7XXX;
 }
-
 uint32_t
 AMDILSIDevice::getMaxNumUAVs() const
 {
   return 1024;
 }
 uint32_t
-AMDILSIDevice::getResourceID(uint32_t id) const
-{
+AMDILSIDevice::getResourceID(uint32_t id) const {
   switch(id) {
   default:
     assert(0 && "ID type passed in is unknown!");
@@ -124,34 +110,28 @@ AMDILSIDevice::getResourceID(uint32_t id) const
   return 0;
 }
 FunctionPass*
-AMDILSIDevice::getIOExpansion(
-  TargetMachine& TM, CodeGenOpt::Level OptLevel) const
+AMDILSIDevice::getIOExpansion() const
 {
-  return new AMDILSIIOExpansion(TM, OptLevel);
+  return new AMDILSIIOExpansion();
 }
-
 AsmPrinter*
 AMDILSIDevice::getAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS) const
 {
   return new AMDILSIAsmPrinter(ASM_PRINTER_ARGUMENTS);
 }
-
 FunctionPass*
 AMDILSIDevice::getPointerManager(
   TargetMachine& TM, CodeGenOpt::Level OptLevel) const
 {
-  return new AMDILSIPointerManager(TM, OptLevel);
+  return new AMDILSIPointerManager();
 }
-
 AMDILSIDevice32::AMDILSIDevice32(AMDILSubtarget *ST)
   : AMDILSIDevice(ST)
 {
 }
-
 AMDILSIDevice32::~AMDILSIDevice32()
 {
 }
-
 std::string
 AMDILSIDevice32::getDataLayout() const
 {
@@ -171,7 +151,6 @@ AMDILSIDevice64on32::AMDILSIDevice32(AMDILSubtarget *ST)
 AMDILSIDevice64on32::~AMDILSIDevice64on32()
 {
 }
-
 std::string
 AMDILSIDevice64on32::getDataLayout() const
 {
@@ -188,11 +167,9 @@ AMDILSIDevice64::AMDILSIDevice64(AMDILSubtarget *ST)
   : AMDILSIDevice(ST)
 {
 }
-
 AMDILSIDevice64::~AMDILSIDevice64()
 {
 }
-
 std::string
 AMDILSIDevice64::getDataLayout() const
 {
@@ -203,4 +180,3 @@ AMDILSIDevice64::getDataLayout() const
                      "-v512:512:512-v1024:1024:1024-v2048:2048:2048"
                      "-n8:16:32:64");
 }
-

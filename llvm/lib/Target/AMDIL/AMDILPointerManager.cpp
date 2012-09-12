@@ -46,9 +46,7 @@
 #define SAMPLER_INDEX 3
 #define SAMPLER_ARG_COUNT 5
 using namespace llvm;
-char AMDILPointerManager::ID = 0;
-namespace llvm
-{
+namespace llvm {
 FunctionPass*
 createAMDILPointerManager(TargetMachine &tm, CodeGenOpt::Level OL)
 {
@@ -57,25 +55,25 @@ createAMDILPointerManager(TargetMachine &tm, CodeGenOpt::Level OL)
 }
 }
 
-AMDILPointerManager::AMDILPointerManager(
-  TargetMachine &tm,
-  CodeGenOpt::Level OL) :
-  MachineFunctionPass(ID),
-  TM(tm)
+namespace llvm
 {
-  initializeMachineDominatorTreePass(*PassRegistry::getPassRegistry());
+extern void initializeAMDILPointerManagerPass(llvm::PassRegistry&);
 }
 
-AMDILPointerManager::~AMDILPointerManager()
-{
-}
+char AMDILPointerManager::ID = 0;
+INITIALIZE_PASS(AMDILPointerManager, "pointer-manager",
+                "AMDIL Pointer Manager", false, false);
 
+AMDILPointerManager::AMDILPointerManager()
+  : MachineFunctionPass(ID)
+{
+  initializeAMDILPointerManagerPass(*PassRegistry::getPassRegistry());
+}
 const char*
 AMDILPointerManager::getPassName() const
 {
   return "AMD IL Default Pointer Manager Pass";
 }
-
 void
 AMDILPointerManager::getAnalysisUsage(AnalysisUsage &AU) const
 {
@@ -83,13 +81,15 @@ AMDILPointerManager::getAnalysisUsage(AnalysisUsage &AU) const
   AU.addRequiredID(MachineDominatorsID);
   MachineFunctionPass::getAnalysisUsage(AU);
 }
-
 // The default pointer manager just assigns the default ID's to
 // each load/store instruction and does nothing else. This is
 // the pointer manager for the 7XX series of cards.
 bool
 AMDILPointerManager::runOnMachineFunction(MachineFunction &MF)
 {
+  const TargetMachine& TM = MF.getTarget();
+  const AMDILTargetMachine *ATM
+    = reinterpret_cast<const AMDILTargetMachine*>(&TM);
   if (DEBUGME) {
     dbgs() << getPassName() << "\n";
     dbgs() << MF.getFunction()->getName() << "\n";
@@ -98,18 +98,73 @@ AMDILPointerManager::runOnMachineFunction(MachineFunction &MF)
   // On the 7XX we don't have to do any special processing, so we
   // can just allocate the default ID and be done with it.
   AMDILPointerManagerImpl impl(MF, TM);
-  impl.allocateDefaultIDs(TM);
+  bool changed = impl.perform();
+  return changed;
+}
+namespace llvm
+{
+extern void initializeAMDILEGPointerManagerPass(llvm::PassRegistry&);
+}
+
+char AMDILEGPointerManager::ID = 0;
+INITIALIZE_PASS(AMDILEGPointerManager, "eg-pointer-manager",
+                "AMDIL EG Pointer Manager", false, false);
+
+AMDILEGPointerManager::AMDILEGPointerManager()
+  : MachineFunctionPass(ID)
+{
+  initializeAMDILEGPointerManagerPass(*PassRegistry::getPassRegistry());
+}
+void
+AMDILEGPointerManager::getAnalysisUsage(AnalysisUsage &AU) const
+{
+  AU.setPreservesAll();
+  AU.addRequiredID(MachineDominatorsID);
+  MachineFunctionPass::getAnalysisUsage(AU);
+}
+bool
+AMDILEGPointerManager::runOnMachineFunction(MachineFunction &MF)
+{
+  if (DEBUGME) {
+    dbgs() << getPassName() << "\n";
+    dbgs() << MF.getFunction()->getName() << "\n";
+    MF.dump();
+  }
+
+  const TargetMachine& TM = MF.getTarget();
+  AMDILEGPointerManagerImpl impl(MF, TM);
+  bool changed = impl.perform();
+  return changed;
+}
+const char*
+AMDILEGPointerManager::getPassName() const
+{
+  return "AMD IL EG Pointer Manager Pass";
+}
+AMDILPointerManagerImpl::AMDILPointerManagerImpl(MachineFunction& mf,
+                                                 const TargetMachine& tm)
+  : MF(mf), TM(tm)
+{
+  mMFI = MF.getInfo<AMDILMachineFunctionInfo>();
+  ATM = reinterpret_cast<const AMDILTargetMachine*>(&TM);
+  STM = ATM->getSubtargetImpl();
+  KM = STM->getKernelManager();
+  mAMI = &(MF.getMMI().getObjFileInfo<AMDILModuleInfo>());
+}
+bool AMDILPointerManagerImpl::perform()
+{
+  allocateDefaultIDs();
   clearTempMIFlags(MF);
   return false;
 }
-
 void
-AMDILPointerManager::clearTempMIFlags(MachineFunction &MF)
+AMDILPointerManagerImpl::clearTempMIFlags(MachineFunction &MF)
 {
   for (MachineFunction::iterator mfBegin = MF.begin(),
        mfEnd = MF.end(); mfBegin != mfEnd; ++mfBegin) {
     MachineBasicBlock *MB = mfBegin;
-    for (MachineBasicBlock::instr_iterator mbb = MB->instr_begin(), mbe = MB->instr_end();
+    for (MachineBasicBlock::instr_iterator mbb = MB->instr_begin(),
+         mbe = MB->instr_end();
          mbb != mbe; ++mbb) {
       MachineInstr *MI = mbb;
       AMDILAS::InstrResEnc curRes;
@@ -123,63 +178,18 @@ AMDILPointerManager::clearTempMIFlags(MachineFunction &MF)
     }
   }
 }
-
-
-AMDILEGPointerManager::AMDILEGPointerManager(
-  TargetMachine &tm,
-  CodeGenOpt::Level OL) :
-  AMDILPointerManager(tm, OL)
+AMDILEGPointerManagerImpl::AMDILEGPointerManagerImpl(MachineFunction& mf,
+                                                     const TargetMachine& tm)
+  : AMDILPointerManagerImpl(mf, tm)
 {
-}
-
-AMDILEGPointerManager::~AMDILEGPointerManager()
-{
-}
-
-bool
-AMDILEGPointerManager::runOnMachineFunction(MachineFunction &MF)
-{
-  if (DEBUGME) {
-    dbgs() << getPassName() << "\n";
-    dbgs() << MF.getFunction()->getName() << "\n";
-    MF.dump();
-  }
-
-  AMDILPointerManagerImpl impl(MF, TM);
-  bool changed = impl.perform();
-  clearTempMIFlags(MF);
-  return changed;
-}
-
-const char*
-AMDILEGPointerManager::getPassName() const
-{
-  return "AMD IL EG Pointer Manager Pass";
-}
-
-AMDILPointerManagerImpl::AMDILPointerManagerImpl(MachineFunction& mf,
-    TargetMachine& tm)
-  : MF(mf), TM(tm)
-{
-  ATM = reinterpret_cast<const AMDILTargetMachine*>(&TM);
-  STM = ATM->getSubtargetImpl();
-  KM = STM->getKernelManager();
-  mAMI = &(MF.getMMI().getObjFileInfo<AMDILModuleInfo>());
-  mMFI = MF.getInfo<AMDILMachineFunctionInfo>();
   numWriteImages = 0;
+  doPerPointerLDS = false;
 }
-
 std::string
-AMDILPointerManagerImpl::findSamplerName(TargetMachine &TM, MachineInstr* MI, unsigned &val)
+AMDILEGPointerManagerImpl::findSamplerNameFromReg(unsigned reg, unsigned &val)
 {
   std::string sampler = "unknown";
-  assert(MI->getNumOperands() == SAMPLER_ARG_COUNT && "Only an "
-         "image read instruction with SAMPLER_ARG_COUNT arguments can "
-         "have a sampler.");
-  assert(MI->getOperand(SAMPLER_INDEX).isReg() &&
-         "Argument SAMPLER_INDEX must be a register to call this function");
   val = ~0U;
-  unsigned reg = MI->getOperand(SAMPLER_INDEX).getReg();
   // If this register points to an argument, then
   // we can return the argument name.
   if (dyn_cast_or_null<Argument>(lookupTable[reg].second.second)) {
@@ -195,19 +205,21 @@ AMDILPointerManagerImpl::findSamplerName(TargetMachine &TM, MachineInstr* MI, un
   // In the optimized case, the instruction that defined
   // register from operand #3 is a private load.
   MachineRegisterInfo &regInfo = MF.getRegInfo();
-  assert(!regInfo.def_empty(reg)
-         && "We don't have any defs of this register, but we aren't an argument!");
+  assert(!regInfo.def_empty(
+           reg)
+         &&
+         "We don't have any defs of this register, but we aren't an argument!");
 
   MachineOperand& defOp = regInfo.reg_begin(reg).getOperand();
-
   MachineInstr *defMI = defOp.getParent();
-  if (isPrivateInst(TM, defMI) && isLoadInst(TM, defMI)) {
+
+  if (isPrivateInst(defMI) && isPtrLoadInst(defMI)) {
     if (defMI->getOperand(1).isFI()) {
       RegValPair &fiRVP = FIToPtrMap[defMI->getOperand(1).getIndex()];
       if (fiRVP.second.second && dyn_cast<Argument>(fiRVP.second.second)) {
         return fiRVP.second.second->getName();
       } else if (!fiRVP.second.second && fiRVP.first) {
-        defOp = regInfo.reg_begin(fiRVP.first).getOperand();
+        defOp  = regInfo.reg_begin(fiRVP.first).getOperand();
         defMI = defOp.getParent();
         if (defMI->getOperand(1).isImm()) {
           val = defMI->getOperand(1).getImm();
@@ -222,15 +234,60 @@ AMDILPointerManagerImpl::findSamplerName(TargetMachine &TM, MachineInstr* MI, un
         }
       } else {
         // FIXME: Fix the case where the value stored is not a kernel argument and not a situation which is modified by AMDdbgmove pass.
-        assert(!"Found a private load of a sampler where the value isn't an argument!");
+        assert(
+          !
+          "Found a private load of a sampler where the value isn't an argument!");
       }
     } else {
       // FIXME: Fix the case where someone dynamically loads a sampler value
       // from private memory. This is problematic because we need to know the
       // sampler value at compile time and if it is dynamically loaded, we won't
       // know what sampler value to use.
-      assert(!"Found a private load of a sampler that isn't from a frame index!");
+      assert(
+        !"Found a private load of a sampler that isn't from a frame index!");
     }
+  } else if (isConstantInst(defMI) && isPtrLoadInst(defMI)) {
+    if (defMI->hasOneMemOperand()) {
+      const Value *memRef = (*defMI->memoperands_begin())->getValue();
+      if (dyn_cast<Argument>(memRef)) {
+        return memRef->getName();
+      } else if (dyn_cast<GlobalVariable>(memRef)) {
+        const GlobalVariable *gvRef = dyn_cast<GlobalVariable>(memRef);
+        if (gvRef->hasInitializer()) {
+          if (dyn_cast<ConstantInt>(gvRef->getInitializer())) {
+            char buffer[1024];
+            sprintf(buffer, "_%u", (uint32_t)dyn_cast<ConstantInt>(
+                      gvRef->getInitializer())->getZExtValue());
+            return sampler + std::string(buffer);
+          } else {
+            // FIXME: Found a case where a non-integer initializer
+            // was found!
+            assert(!"Found a case we don't handle!");
+          }
+        } else {
+          // FIXME: Found a global sampler from the constant address space
+          // that does not have an initializer, this isn't legal in OpenCL.
+          assert(!"Found a constant global sampler without an initializer!");
+        }
+      } else {
+        // FIXME: We are loading from a constant pointer that is not
+        // a global variable or an argument, how is that possible?
+        assert(!"Found a constant load for a value type that isn't understood.");
+      }
+    } else {
+      // FIXME: What do we do if we have a load from a constant that
+      // does not memory operand associated with it!
+      assert(!"Found a constant load but no memory operand!");
+    }
+  } else if (defMI->getOpcode() == TargetOpcode::COPY) {
+    // Somehow are a copy instruction, we need to further parse up and
+    // see if we can determine the sampler name.
+    return findSamplerNameFromReg(defMI->getOperand(1).getReg(), val);
+  } else if (defMI->getOpcode() == AMDIL::LOADCONSTi32) {
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+    ::sprintf(buffer,"_%d", (int32_t)defMI->getOperand(1).getImm());
+    sampler += buffer;
   } else {
     // FIXME: Handle the case where the def is neither a private instruction
     // and not a load instruction. This shouldn't occur, but putting an assertion
@@ -239,58 +296,89 @@ AMDILPointerManagerImpl::findSamplerName(TargetMachine &TM, MachineInstr* MI, un
   }
   return sampler;
 }
+std::string
+AMDILEGPointerManagerImpl::findSamplerName(MachineInstr* MI, unsigned &val)
+{
+  assert(MI->getNumOperands() == SAMPLER_ARG_COUNT && "Only an "
+         "image read instruction with SAMPLER_ARG_COUNT arguments can "
+         "have a sampler.");
+  assert(MI->getOperand(SAMPLER_INDEX).isReg() &&
+         "Argument SAMPLER_INDEX must be a register to call this function");
+  unsigned reg = MI->getOperand(SAMPLER_INDEX).getReg();
+  return findSamplerNameFromReg(reg, val);
+}
+// initialize localPtrSets and localPtr2SetIdMap
+// initialize localPtrSets so that each global local pointer is in its own set,
+// and all argument local pointers are in the default local buffer set
+// then map the local pointers to the id of the set that it belongs
+void AMDILEGPointerManagerImpl::initializeLocalPtrSets()
+{
+  const AMDILKernel *krnl = mAMI->getKernel(MF.getFunction()->getName());
+  const AMDILLocalArg* lvgv = krnl->lvgv;
+  if (lvgv == NULL) return;
+  localPtrSets.reserve(lvgv->local.size() + 1);
 
+  // first put local pointer arguments to the default buffer set
+  localPtrSets.push_back(SmallValSet());
+  for (ValueSet::iterator siBegin = localPtrs.begin(), siEnd = localPtrs.end();
+       siBegin != siEnd; ++siBegin) {
+    const Value* val = *siBegin;
+    if (isa<GlobalValue>(val)) continue;
 
+    localPtrSets.back().insert(val);
+    localPtr2SetIdMap[val] = 0;
+  }
+
+  // next put each non-argument local pointer in its own set
+  for (ValueSet::iterator siBegin = localPtrs.begin(), siEnd = localPtrs.end();
+       siBegin != siEnd; ++siBegin) {
+    const Value* val = *siBegin;
+    if (!isa<GlobalValue>(val)) continue;
+
+    localPtrSets.push_back(SmallValSet());
+    localPtrSets.back().insert(val);
+    localPtr2SetIdMap[val] = localPtrSets.size() - 1;
+  }
+}
 // Helper function to determine if the current pointer is from the
 // local, region or private address spaces.
 static bool
-isLRPInst(TargetMachine &TM,
-          MachineInstr *MI,
-          const AMDILTargetMachine *ATM)
+isLRPInst(MachineInstr *MI, const AMDILSubtarget *STM)
 {
-  const AMDILSubtarget *STM
-  = ATM->getSubtargetImpl();
-  if (!MI) {
-    return false;
-  }
-  if ((isRegionInst(TM, MI)
+  if ((isRegionInst(MI)
        && STM->device()->usesHardware(AMDILDeviceInfo::RegionMem))
-      || (isLocalInst(TM, MI)
+      || (isLocalInst(MI)
           && STM->device()->usesHardware(AMDILDeviceInfo::LocalMem))
-      || (isPrivateInst(TM, MI)
+      || (isPrivateInst(MI)
           && STM->device()->usesHardware(AMDILDeviceInfo::PrivateMem))
       // FIXME: This is a hack since the frontend doesn't recognize semaphores yet.
-      || isSemaphoreInst(TM, MI)) {
+      || isSemaphoreInst(MI)) {
     return true;
   }
   return false;
 }
-
 /// Helper function to determine if the I/O instruction uses
 /// global device memory or not.
 static bool
 usesGlobal(
-  TargetMachine &TM,
+  const TargetMachine &TM,
   const AMDILTargetMachine *ATM,
-  MachineInstr *MI)
-{
+  MachineInstr *MI) {
   const AMDILSubtarget *STM = ATM->getSubtargetImpl();
-  return (isGlobalInst(TM, MI)
-          || (isRegionInst(TM, MI)
+  return (isGlobalInst(MI)
+          || (isRegionInst(MI)
               && !STM->device()->usesHardware(AMDILDeviceInfo::RegionMem))
-          || (isLocalInst(TM, MI)
+          || (isLocalInst(MI)
               && !STM->device()->usesHardware(AMDILDeviceInfo::LocalMem))
-          || (isConstantInst(TM, MI)
+          || (isConstantInst(MI)
               && !STM->device()->usesHardware(AMDILDeviceInfo::ConstantMem))
-          || (isPrivateInst(TM, MI)
+          || (isPrivateInst(MI)
               && !STM->device()->usesHardware(AMDILDeviceInfo::PrivateMem)));
 }
-
 // Helper function that allocates the default resource ID for the
 // respective I/O types.
 void
 AMDILPointerManagerImpl::allocateDefaultID(
-  TargetMachine &TM,
   AMDILAS::InstrResEnc &curRes,
   MachineInstr *MI,
   bool addID)
@@ -302,11 +390,11 @@ AMDILPointerManagerImpl::allocateDefaultID(
   // If we use global memory, lets set the Operand to
   // the ARENA_UAV_ID.
   if (usesGlobal(TM, ATM, MI)
-      || isGlobalAtomic(TM, MI) || is64BitGlobalAtomic(TM, MI)
-      || isArenaAtomic(TM, MI)) {
+      || isGlobalAtomic(MI) || is64BitGlobalAtomic(MI)
+      || isArenaAtomic(MI)) {
     curRes.bits.ResourceID =
       STM->device()->getResourceID(AMDILDevice::GLOBAL_ID);
-    if (isAtomicInst(TM, MI)) {
+    if (isAtomicInst(MI)) {
       MI->getOperand(MI->getNumOperands()-1)
       .setImm(curRes.bits.ResourceID);
     }
@@ -318,35 +406,35 @@ AMDILPointerManagerImpl::allocateDefaultID(
     if (addID) {
       mMFI->uav_insert(curRes.bits.ResourceID);
     }
-  } else if (isPrivateInst(TM, MI)) {
+  } else if (isPrivateInst(MI)) {
     curRes.bits.ResourceID =
       STM->device()->getResourceID(AMDILDevice::SCRATCH_ID);
     mMFI->setUsesScratch();
-  } else if (isLocalInst(TM, MI)
-             || isLocalAtomic(TM, MI) || is64BitLocalAtomic(TM, MI)) {
+  } else if (isLocalInst(MI)
+             || isLocalAtomic(MI) || is64BitLocalAtomic(MI)) {
     curRes.bits.ResourceID =
       STM->device()->getResourceID(AMDILDevice::LDS_ID);
     mMFI->setUsesLDS();
-    if (isAtomicInst(TM, MI)) {
+    if (isAtomicInst(MI)) {
       assert(curRes.bits.ResourceID && "Atomic resource ID "
              "cannot be zero!");
       MI->getOperand(MI->getNumOperands()-1)
       .setImm(curRes.bits.ResourceID);
     }
     mMFI->setUsesLDS();
-  } else if (isRegionInst(TM, MI)
-             || isRegionAtomic(TM, MI) || is64BitRegionAtomic(TM, MI)) {
+  } else if (isRegionInst(MI)
+             || isRegionAtomic(MI) || is64BitRegionAtomic(MI)) {
     curRes.bits.ResourceID =
       STM->device()->getResourceID(AMDILDevice::GDS_ID);
     mMFI->setUsesGDS();
-    if (isAtomicInst(TM, MI)) {
+    if (isAtomicInst(MI)) {
       assert(curRes.bits.ResourceID && "Atomic resource ID "
              "cannot be zero!");
       (MI)->getOperand((MI)->getNumOperands()-1)
       .setImm(curRes.bits.ResourceID);
     }
     mMFI->setUsesGDS();
-  } else if (isConstantInst(TM, MI)) {
+  } else if (isConstantInst(MI)) {
     // If we are unknown constant instruction and the base pointer is known.
     // Set the resource ID accordingly, otherwise use the default constant ID.
     // FIXME: this should not require the base pointer to know what constant
@@ -366,29 +454,31 @@ AMDILPointerManagerImpl::allocateDefaultID(
         curRes.bits.ResourceID = 2;
         curRes.bits.HardwareInst = 1;
       } else {
-        if (isStoreInst(TM, MI)) {
+        if (isPtrStoreInst(MI)) {
           if (DEBUGME) {
             dbgs() << __LINE__ << ": Setting byte store bit on instruction: ";
             MI->dump();
           }
           curRes.bits.ByteStore = 1;
         }
-        curRes.bits.ResourceID = STM->device()->getResourceID(AMDILDevice::CONSTANT_ID);
+        curRes.bits.ResourceID = STM->device()->getResourceID(
+          AMDILDevice::CONSTANT_ID);
       }
       mMFI->setUsesConstant();
     } else {
-      if (isStoreInst(TM, MI)) {
+      if (isPtrStoreInst(MI)) {
         if (DEBUGME) {
           dbgs() << __LINE__ << ": Setting byte store bit on instruction: ";
           MI->dump();
         }
         curRes.bits.ByteStore = 1;
       }
-      curRes.bits.ResourceID = STM->device()->getResourceID(AMDILDevice::GLOBAL_ID);
+      curRes.bits.ResourceID = STM->device()->getResourceID(
+        AMDILDevice::GLOBAL_ID);
       KM->setUAVID(NULL, curRes.bits.ResourceID);
       mMFI->uav_insert(curRes.bits.ResourceID);
     }
-  } else if (isAppendInst(TM, MI)) {
+  } else if (isAppendInst(MI)) {
     unsigned opcode = MI->getOpcode();
     if (opcode == AMDIL::APPEND_ALLOC || opcode == AMDIL::APPEND64_ALLOC) {
       curRes.bits.ResourceID = 1;
@@ -398,7 +488,24 @@ AMDILPointerManagerImpl::allocateDefaultID(
   }
   setAsmPrinterFlags(MI, curRes);
 }
+// add local arrays that belong to the given function into "localPtrs" set
+void
+AMDILEGPointerManagerImpl::parseLocalArrays()
+{
+  const Function* func = MF.getFunction();
+  const AMDILKernel *krnl = mAMI->getKernel(func->getName());
+  const AMDILLocalArg* lvgv = krnl->lvgv;
+  if (lvgv == NULL) return;
 
+  llvm::SmallVector<AMDILArrayMem *, DEFAULT_VEC_SLOTS>::const_iterator it
+    = lvgv->local.begin();
+  llvm::SmallVector<AMDILArrayMem *, DEFAULT_VEC_SLOTS>::const_iterator end
+    = lvgv->local.end();
+  for (; it != end; ++it) {
+    const AMDILArrayMem* local = *it;
+    localPtrs.insert(local->base);
+  }
+}
 // Function that parses the arguments and updates the lookupTable with the
 // pointer -> register mapping. This function also checks for cacheable
 // pointers and updates the CacheableSet with the arguments that
@@ -406,7 +513,7 @@ AMDILPointerManagerImpl::allocateDefaultID(
 // purpose of this function is to update the images and counters
 // with all pointers that are either images or atomic counters.
 uint32_t
-AMDILPointerManagerImpl::parseArguments()
+AMDILEGPointerManagerImpl::parseArguments()
 {
   uint32_t writeOnlyImages = 0;
   uint32_t readOnlyImages = 0;
@@ -489,17 +596,19 @@ AMDILPointerManagerImpl::parseArguments()
             // correctly encode the 'info' intrinsics.
             lookupTable[mMFI->getArgReg(regNum)] =
               std::make_pair
-              ((cbNum << 16 | readOnlyImages++), createStrValPair(curArg));
-          } else if (mAMI->isWriteOnlyImage(MF.getFunction()->getName(), imageNum)) {
+                ((cbNum << 16 | readOnlyImages++), createStrValPair(curArg));
+          } else if (mAMI->isWriteOnlyImage(MF.getFunction()->getName(),
+                                            imageNum)) {
             if (DEBUGME) {
               dbgs() << "Pointer: '" << curArg->getName()
-                     << "' is a write only image # " << writeOnlyImages << "!\n";
+                     << "' is a write only image # " << writeOnlyImages <<
+              "!\n";
             }
             // We store the cbNum along with the image number so that we can
             // correctly encode the 'info' intrinsics.
             lookupTable[mMFI->getArgReg(regNum)] =
               std::make_pair
-              ((cbNum << 16 | writeOnlyImages++), createStrValPair(curArg));
+                ((cbNum << 16 | writeOnlyImages++), createStrValPair(curArg));
           } else {
             assert(!"Read/Write images are not supported!");
           }
@@ -525,11 +634,11 @@ AMDILPointerManagerImpl::parseArguments()
       if (STM->device()->isSupported(AMDILDeviceInfo::CachedMem)
           && GV && GV->hasInitializer()) {
         const ConstantArray *nameArray
-        = dyn_cast_or_null<ConstantArray>(GV->getInitializer());
+          = dyn_cast_or_null<ConstantArray>(GV->getInitializer());
         if (nameArray) {
           for (unsigned x = 0, y = nameArray->getNumOperands(); x < y; ++x) {
             const GlobalVariable *gV= dyn_cast_or_null<GlobalVariable>(
-                                        nameArray->getOperand(x)->getOperand(0));
+              nameArray->getOperand(x)->getOperand(0));
             const ConstantDataArray *argName =
               dyn_cast_or_null<ConstantDataArray>(gV->getInitializer());
             if (!argName) {
@@ -553,19 +662,19 @@ AMDILPointerManagerImpl::parseArguments()
         dbgs() << "Pointer: " << curArg->getName() << " is assigned ";
         if (as == AMDILAS::GLOBAL_ADDRESS) {
           dbgs() << "uav " << STM->device()
-                 ->getResourceID(AMDILDevice::GLOBAL_ID);
+          ->getResourceID(AMDILDevice::GLOBAL_ID);
         } else if (as == AMDILAS::PRIVATE_ADDRESS) {
           dbgs() << "scratch " << STM->device()
-                 ->getResourceID(AMDILDevice::SCRATCH_ID);
+          ->getResourceID(AMDILDevice::SCRATCH_ID);
         } else if (as == AMDILAS::LOCAL_ADDRESS) {
           dbgs() << "lds " << STM->device()
-                 ->getResourceID(AMDILDevice::LDS_ID);
+          ->getResourceID(AMDILDevice::LDS_ID);
         } else if (as == AMDILAS::CONSTANT_ADDRESS) {
           dbgs() << "cb " << STM->device()
-                 ->getResourceID(AMDILDevice::CONSTANT_ID);
+          ->getResourceID(AMDILDevice::CONSTANT_ID);
         } else if (as == AMDILAS::REGION_ADDRESS) {
           dbgs() << "gds " << STM->device()
-                 ->getResourceID(AMDILDevice::GDS_ID);
+          ->getResourceID(AMDILDevice::GDS_ID);
         } else {
           assert(!"Found an address space that we don't support!");
         }
@@ -575,26 +684,38 @@ AMDILPointerManagerImpl::parseArguments()
       switch (as) {
       default:
         lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                               (STM->device()->getResourceID(AMDILDevice::GLOBAL_ID), createStrValPair(curArg));
+                                                 (STM->device()->getResourceID(
+                                                   AMDILDevice::GLOBAL_ID),
+                                                 createStrValPair(curArg));
         break;
       case AMDILAS::LOCAL_ADDRESS:
         lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                               (STM->device()->getResourceID(AMDILDevice::LDS_ID), createStrValPair(curArg));
+                                                 (STM->device()->getResourceID(
+                                                   AMDILDevice::LDS_ID),
+                                                 createStrValPair(curArg));
         mMFI->setHasLDSArg();
+        localPtrs.insert(curArg);
+        localPtrMap[mMFI->getArgReg(regNum)].insert(curArg);
         break;
       case AMDILAS::REGION_ADDRESS:
         lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                               (STM->device()->getResourceID(AMDILDevice::GDS_ID), createStrValPair(curArg));
+                                                 (STM->device()->getResourceID(
+                                                   AMDILDevice::GDS_ID),
+                                                 createStrValPair(curArg));
         mMFI->setHasGDSArg();
         break;
       case AMDILAS::CONSTANT_ADDRESS:
         lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                               (STM->device()->getResourceID(AMDILDevice::CONSTANT_ID), createStrValPair(curArg));
+                                                 (STM->device()->getResourceID(
+                                                   AMDILDevice::CONSTANT_ID),
+                                                 createStrValPair(curArg));
         mMFI->setHasConstantArg();
         break;
       case AMDILAS::PRIVATE_ADDRESS:
         lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                               (STM->device()->getResourceID(AMDILDevice::SCRATCH_ID), createStrValPair(curArg));
+                                                 (STM->device()->getResourceID(
+                                                   AMDILDevice::SCRATCH_ID),
+                                                 createStrValPair(curArg));
         mMFI->setHasScratchArg();
         break;
       }
@@ -605,20 +726,89 @@ AMDILPointerManagerImpl::parseArguments()
       // Is anything missing that is legal in CL?
       assert(0 && "Current type is not supported!");
       lookupTable[mMFI->getArgReg(regNum)] = std::make_pair
-                                             (STM->device()->getResourceID(AMDILDevice::GLOBAL_ID), createStrValPair(curArg));
+                                               (STM->device()->getResourceID(
+                                                 AMDILDevice::GLOBAL_ID),
+                                               createStrValPair(curArg));
       ++regNum;
       ++cbNum;
     }
   }
   return writeOnlyImages;
 }
+// Given a load, store or atomic instruction, if it's a local instruction,
+// and if its pointer oper derives from multiple local pointers, then
+// merge the sets that the conflicting local pointers belong to,
+// so that in the end local pointers that conflict with each other
+// are in the same set.
+void
+AMDILEGPointerManagerImpl::detectConflictLocalPtrs(MachineInstr *MI,
+                                                   unsigned reg,
+                                                   const AMDILSubtarget *STM)
+{
+  assert((isLoadInst(MI) || isStoreInst(MI) || isAtomicInst(MI))
+         && "unexpected instruction type");
+  assert(isLocalInst(MI)
+         && STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+         && "not local");
+  Reg2ValSet::iterator it = localPtrMap.find(reg);
+  if (it != localPtrMap.end()) {
+    SmallValSet& locals = it->second;
+    assert(!locals.empty() && "sanity");
 
+    // see if one of the local pointers is a kernel argument
+    bool hasKernelArg = false;
+    for (SmallValSet::iterator it = locals.begin(), end = locals.end();
+         it != end; ++it) {
+      if (!isa<GlobalValue>(*it)) {
+        hasKernelArg = true;
+        break;
+      }
+    }
+    // if one of the local pointers is an argument, merge to the default
+    // local buffer set, otherwise merge to the set that the first local
+    // belongs to
+    unsigned dstSetId;
+    if (hasKernelArg) {
+      dstSetId = 0;
+    }
+    else {
+      dstSetId = localPtr2SetIdMap[*locals.begin()];
+    }
+    for (SmallValSet::iterator it = locals.begin(), end = locals.end();
+         it != end; ++it) {
+      const Value* local = *it;
+      unsigned curSetId = localPtr2SetIdMap[local];
+      if (curSetId == dstSetId) continue;
+
+      // point the local pointers in current set to dst set
+      for (SmallValSet::iterator it2 = localPtrSets[curSetId].begin(),
+           end2 = localPtrSets[curSetId].end();
+           it2 != end2; ++it2) {
+        localPtr2SetIdMap[*it2] = dstSetId;
+      }
+
+      // merge the set current local belongs to the set dst local belongs
+      localPtrSets[dstSetId].insert(localPtrSets[curSetId].begin(),
+                                    localPtrSets[curSetId].end());
+      localPtrSets[curSetId].clear();
+
+      // merge instructions current set accesses to dst set
+      localSetId2InstMap[dstSetId].insert(
+        localSetId2InstMap[dstSetId].end(),
+        localSetId2InstMap[curSetId].begin(),
+        localSetId2InstMap[curSetId].end());
+    }
+
+    // add MI to list of instructions dst set accesses
+    localSetId2InstMap[dstSetId].push_back(MI);
+  }
+}
 // The call stack is interesting in that even in SSA form, it assigns
 // registers to the same value's over and over again. So we need to
 // ignore the values that are assigned and just deal with the input
 // and return registers.
 void
-AMDILPointerManagerImpl::parseCall(
+AMDILEGPointerManagerImpl::parseCall(
   MachineBasicBlock::iterator &mBegin,
   MachineBasicBlock::iterator mEnd)
 {
@@ -630,35 +820,49 @@ AMDILPointerManagerImpl::parseCall(
   MachineBasicBlock::iterator callInst = mBegin;
   MachineInstr *CallMI = callInst;
   getAsmPrinterFlags(CallMI, curRes);
-  MachineInstr *MI = --mBegin;
+  MachineInstr *MI = NULL;
   unsigned reg = AMDIL::R1;
-  // First we need to check the input registers.
-  do {
-    // We stop if we hit the beginning of the call stack
-    // adjustment.
-    if (MI->getOpcode() == AMDIL::ADJCALLSTACKDOWN
-        || MI->getOpcode() == AMDIL::ADJCALLSTACKUP
-        || MI->getNumOperands() != 2
-        || !MI->getOperand(0).isReg()) {
-      break;
-    }
-    reg = MI->getOperand(0).getReg();
-    if (MI->getOperand(1).isReg()) {
-      unsigned reg1 = MI->getOperand(1).getReg();
-      inputRegs.push_back(reg1);
-      if (lookupTable[reg1].second.second) {
-        curRes.bits.PointerPath = 1;
-      }
-    }
-    lookupTable.erase(reg);
-    if ((signed)reg < 0
-        || mBegin == CallMI->getParent()->begin()) {
-      break;
-    }
+  if (CallMI->getParent()->begin() != mBegin) {
     MI = --mBegin;
-  } while (1);
+    // First we need to check the input registers.
+    do {
+      // We stop if we hit the beginning of the call stack
+      // adjustment.
+      if (MI->getOpcode() == AMDIL::ADJCALLSTACKDOWN
+          || MI->getOpcode() == AMDIL::ADJCALLSTACKUP
+          || MI->getNumOperands() != 2
+          || !MI->getOperand(0).isReg()) {
+        break;
+      }
+      reg = MI->getOperand(0).getReg();
+      if (MI->getOperand(1).isReg()) {
+        unsigned reg1 = MI->getOperand(1).getReg();
+        inputRegs.push_back(reg1);
+        if (lookupTable[reg1].second.second) {
+          curRes.bits.PointerPath = 1;
+        }
+      }
+      lookupTable.erase(reg);
+      if ((signed)reg < 0
+          || mBegin == CallMI->getParent()->begin()) {
+        break;
+      }
+      MI = --mBegin;
+    } while (1);
+  }
   mBegin = callInst;
   MI = ++mBegin;
+  // If we hit the end, then lets move back one and return.
+  // This occurs when a function call with no return is the
+  // last instruction in a basic block.
+  if (mBegin == mEnd) {
+    setAsmPrinterFlags(CallMI, curRes);
+    --mBegin;
+    if (DEBUGME) {
+      dbgs() << "Parsing Call Stack End.\n";
+    }
+    return;
+  }
   // If the next registers operand 1 is not a register or that register
   // is not R1, then we don't have any return values.
   if (MI->getNumOperands() == 2
@@ -693,7 +897,7 @@ AMDILPointerManagerImpl::parseCall(
 // Detect if the current instruction conflicts with another instruction
 // and add the instruction to the correct location accordingly.
 void
-AMDILPointerManagerImpl::detectConflictInst(
+AMDILEGPointerManagerImpl::detectConflictInst(
   MachineInstr *MI,
   AMDILAS::InstrResEnc &curRes,
   bool isLoadStore,
@@ -718,23 +922,13 @@ AMDILPointerManagerImpl::detectConflictInst(
           assert(dyn_cast<PointerType>(lookupTable[reg].second.second->getType())
                  && "Must be a pointer type for an instruction!");
           switch (dyn_cast<PointerType>(
-                    lookupTable[reg].second.second->getType())->getAddressSpace()) {
-          case AMDILAS::GLOBAL_ADDRESS:
-            dbgs() << " UAV: ";
-            break;
-          case AMDILAS::LOCAL_ADDRESS:
-            dbgs() << " LDS: ";
-            break;
-          case AMDILAS::REGION_ADDRESS:
-            dbgs() << " GDS: ";
-            break;
-          case AMDILAS::PRIVATE_ADDRESS:
-            dbgs() << " SCRATCH: ";
-            break;
-          case AMDILAS::CONSTANT_ADDRESS:
-            dbgs() << " CB: ";
-            break;
-
+                    lookupTable[reg].second.second->getType())->getAddressSpace())
+          {
+          case AMDILAS::GLOBAL_ADDRESS:  dbgs() << " UAV: "; break;
+          case AMDILAS::LOCAL_ADDRESS: dbgs() << " LDS: "; break;
+          case AMDILAS::REGION_ADDRESS: dbgs() << " GDS: "; break;
+          case AMDILAS::PRIVATE_ADDRESS: dbgs() << " SCRATCH: "; break;
+          case AMDILAS::CONSTANT_ADDRESS: dbgs() << " CB: "; break;
           }
           dbgs() << lookupTable[reg].first << " Reg: " << reg
                  << " assigned to reg " << dstReg << ". Inst: ";
@@ -757,23 +951,13 @@ AMDILPointerManagerImpl::detectConflictInst(
         assert(dyn_cast<PointerType>(lookupTable[reg].second.second->getType())
                && "Must be a pointer type for a conflict instruction!");
         switch (dyn_cast<PointerType>(
-                  lookupTable[reg].second.second->getType())->getAddressSpace()) {
-        case AMDILAS::GLOBAL_ADDRESS:
-          dbgs() << " UAV: ";
-          break;
-        case AMDILAS::LOCAL_ADDRESS:
-          dbgs() << " LDS: ";
-          break;
-        case AMDILAS::REGION_ADDRESS:
-          dbgs() << " GDS: ";
-          break;
-        case AMDILAS::PRIVATE_ADDRESS:
-          dbgs() << " SCRATCH: ";
-          break;
-        case AMDILAS::CONSTANT_ADDRESS:
-          dbgs() << " CB: ";
-          break;
-
+                  lookupTable[reg].second.second->getType())->getAddressSpace())
+        {
+        case AMDILAS::GLOBAL_ADDRESS:  dbgs() << " UAV: "; break;
+        case AMDILAS::LOCAL_ADDRESS: dbgs() << " LDS: "; break;
+        case AMDILAS::REGION_ADDRESS: dbgs() << " GDS: "; break;
+        case AMDILAS::PRIVATE_ADDRESS: dbgs() << " SCRATCH: "; break;
+        case AMDILAS::CONSTANT_ADDRESS: dbgs() << " CB: "; break;
         }
         dbgs() << lookupTable[reg].first << " Reg: " << reg;
         if (InstToPtrMap[MI].size() > 1) {
@@ -802,12 +986,11 @@ AMDILPointerManagerImpl::detectConflictInst(
   }
   setAsmPrinterFlags(MI, curRes);
 }
-
 // In this case we want to handle a load instruction.
 void
-AMDILPointerManagerImpl::parseLoadInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseLoadInst(MachineInstr *MI)
 {
-  assert(isLoadInst(TM, MI) && "Only a load instruction can be parsed by "
+  assert(isPtrLoadInst(MI) && "Only a load instruction can be parsed by "
          "the parseLoadInst function.");
   AMDILAS::InstrResEnc curRes;
   getAsmPrinterFlags(MI, curRes);
@@ -836,12 +1019,20 @@ AMDILPointerManagerImpl::parseLoadInst(TargetMachine &TM, MachineInstr *MI)
     }
     cpool.insert(MI);
   }
-  // If we are a hardware local, then we don't need to track as there
-  // is only one resource ID that we need to know about, so we
+
+  // if this is a local inst, detect if we find conflicting local ptrs
+  if (isLocalInst(MI)
+      && STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+      && MI->getOperand(1).isReg()) {
+    detectConflictLocalPtrs(MI, idx, STM);
+    return;
+  }
+
+  // If we are a hardware region or private, then we don't need to track
+  // as there is only one resource ID that we need to know about, so we
   // map it using allocateDefaultID, which maps it to the default.
-  // This is also the case for REGION_ADDRESS and PRIVATE_ADDRESS.
-  if (isLRPInst(TM, MI, ATM) || !basePtr) {
-    allocateDefaultID(TM, curRes, MI, true);
+  if (isLRPInst(MI, STM) || !basePtr) {
+    allocateDefaultID(curRes, MI, true);
     return;
   }
   // We have a load instruction so we map this instruction
@@ -850,40 +1041,41 @@ AMDILPointerManagerImpl::parseLoadInst(TargetMachine &TM, MachineInstr *MI)
   InstToPtrMap[MI].insert(createStrValPair(basePtr));
   PtrToInstMap[basePtr].push_back(MI);
 
-  if (isGlobalInst(TM, MI)) {
+  if (isGlobalInst(MI)) {
     // Add to the cacheable set for the block. If there was a store earlier
     // in the block, this call won't actually add it to the cacheable set.
     bbCacheable[MI->getParent()].addPossiblyCacheableInst(MI);
   }
 
   if (DEBUGME) {
-    dbgs() << "Assigning instruction to pointer ";
+    dbgs() << "Assigning instruction to load pointer ";
     dbgs() << basePtr->getName() << ". Inst: ";
     MI->dump();
   }
   detectConflictInst(MI, curRes, true, idx, dstReg);
 }
-
 // In this case we want to handle a store instruction.
 void
-AMDILPointerManagerImpl::parseStoreInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseStoreInst(MachineInstr *MI)
 {
-  assert(isStoreInst(TM, MI) && "Only a store instruction can be parsed by "
+  assert(isPtrStoreInst(MI) && "Only a store instruction can be parsed by "
          "the parseStoreInst function.");
   AMDILAS::InstrResEnc curRes;
   getAsmPrinterFlags(MI, curRes);
-  unsigned dstReg;
+  unsigned dstReg = ~0U;
   if (MI->getOperand(0).isFI()) {
     dstReg = MI->getOperand(0).getIndex();
-  } else {
+  } else if (MI->getOperand(0).isReg()) {
     dstReg = MI->getOperand(0).getReg();
+  } else {
   }
 
   // If the data part of the store instruction is known to
   // be a pointer, then we need to mark this pointer as being
   // a byte pointer. This is the conservative case that needs
   // to be handled correctly.
-  if (lookupTable[dstReg].second.second && lookupTable[dstReg].first != ~0U) {
+  if (dstReg != ~0U && lookupTable[dstReg].second.second &&
+      lookupTable[dstReg].first != ~0U) {
     curRes.bits.ConflictPtr = 1;
     if (DEBUGME) {
       dbgs() << "Found a case where the pointer is being stored!\n";
@@ -899,7 +1091,7 @@ AMDILPointerManagerImpl::parseStoreInst(TargetMachine &TM, MachineInstr *MI)
 
   // Before we go through the special cases, for the cacheable information
   // all we care is if the store if global or not.
-  if (!isLRPInst(TM, MI, ATM)) {
+  if (!isLRPInst(MI, STM)) {
     bbCacheable[MI->getParent()].setReachesExit();
   }
 
@@ -943,23 +1135,33 @@ AMDILPointerManagerImpl::parseStoreInst(TargetMachine &TM, MachineInstr *MI)
       FIToPtrMap[MI->getOperand(1).getIndex()] = tmp;
     }
 
-    allocateDefaultID(TM, curRes, MI, true);
+    allocateDefaultID(curRes, MI, true);
     return;
   }
+
   unsigned reg = MI->getOperand(1).getReg();
+
+  // if this is a local inst, detect if we find conflicting local ptrs
+  if (isLocalInst(MI)
+      && STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
+    detectConflictLocalPtrs(MI, reg, STM);
+    return;
+  }
+
   // If we don't know what value the register
   // is assigned to, then we need to special case
   // this instruction.
   if (!lookupTable[reg].second.second) {
-    allocateDefaultID(TM, curRes, MI, true);
+    allocateDefaultID(curRes, MI, true);
     return;
   }
-  // If we are a hardware local, then we don't need to track as there
-  // is only one resource ID that we need to know about, so we
+
+  // If we are a hardware region or private, then we don't need to track
+  // as there is only one resource ID that we need to know about, so we
   // map it using allocateDefaultID, which maps it to the default.
   // This is also the case for REGION_ADDRESS and PRIVATE_ADDRESS.
-  if (isLRPInst(TM, MI, ATM)) {
-    allocateDefaultID(TM, curRes, MI, true);
+  if (isLRPInst(MI, STM)) {
+    allocateDefaultID(curRes, MI, true);
     return;
   }
 
@@ -983,7 +1185,7 @@ AMDILPointerManagerImpl::parseStoreInst(TargetMachine &TM, MachineInstr *MI)
       curRes.bits.ByteStore = 1;
       setAsmPrinterFlags(MI, curRes);
       const PointerType *PT = dyn_cast<PointerType>(
-                                lookupTable[reg].second.second->getType());
+        lookupTable[reg].second.second->getType());
       if (PT) {
         bytePtrs.insert(lookupTable[reg].second);
       }
@@ -994,61 +1196,57 @@ AMDILPointerManagerImpl::parseStoreInst(TargetMachine &TM, MachineInstr *MI)
   // size of the pointer that we are truncating to, and if we
   // are less than 32 bits, we need to mark the pointer as a
   // byte store pointer.
-  switch (MI->getOpcode()) {
-  case AMDIL::GLOBALTRUNCSTORE_i16i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i16i8:
-  case AMDIL::GLOBALTRUNCSTORE_i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_i64i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i8:
-  case AMDIL::GLOBALTRUNCSTORE_i32i16:
-  case AMDIL::GLOBALTRUNCSTORE_i64i16:
-  case AMDIL::GLOBALSTORE_i8:
-  case AMDIL::GLOBALSTORE_i16:
+  if (isGlobalInst(MI) && isStoreInst(MI) && isSub32BitIOInst(MI)) {
     curRes.bits.ByteStore = 1;
     setAsmPrinterFlags(MI, curRes);
     bytePtrs.insert(lookupTable[reg].second);
-    break;
-  default:
-    break;
   }
 
   if (DEBUGME) {
-    dbgs() << "Assigning instruction to pointer ";
+    dbgs() << "Assigning instruction to store pointer ";
     dbgs() << lookupTable[reg].second.second->getName() << ". Inst: ";
     MI->dump();
   }
-  detectConflictInst(MI, curRes, true, reg, dstReg);
+  if (dstReg != ~0U) {
+    detectConflictInst(MI, curRes, true, reg, dstReg);
+  }
 }
-
 // In this case we want to handle an atomic instruction.
 void
-AMDILPointerManagerImpl::parseAtomicInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseAtomicInst(MachineInstr *MI)
 {
-  assert(isAtomicInst(TM, MI) && "Only an atomic instruction can be parsed by "
+  assert(isAtomicInst(MI) && "Only an atomic instruction can be parsed by "
          "the parseAtomicInst function.");
   AMDILAS::InstrResEnc curRes;
   unsigned dstReg = MI->getOperand(0).getReg();
   unsigned reg = 0;
   getAsmPrinterFlags(MI, curRes);
-  unsigned numOps = MI->getNumOperands();
+  int numOps = MI->getNumOperands() - 1;
   bool found = false;
-  while (--numOps) {
+  while (--numOps >= 0) {
     MachineOperand &Op = MI->getOperand(numOps);
     if (!Op.isReg()) {
       continue;
     }
     reg = Op.getReg();
+
+    if (isLocalInst(MI)
+        && STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
+      detectConflictLocalPtrs(MI, reg, STM);
+      continue;
+    }
+
     // If the register is not known to be owned by a pointer
     // then we can ignore it
     if (!lookupTable[reg].second.second) {
       continue;
     }
-    // if the pointer is known to be local, region or private, then we
+
+    // if the pointer is known to be region or private, then we
     // can ignore it.  Although there are no private atomics, we still
     // do this check so we don't have to write a new function to check
-    // for only local and region.
-    if (isLRPInst(TM, MI, ATM)) {
+    // for only region.
+    if (isLRPInst(MI, STM)) {
       continue;
     }
     found = true;
@@ -1059,35 +1257,32 @@ AMDILPointerManagerImpl::parseAtomicInst(TargetMachine &TM, MachineInstr *MI)
     // This is a store so must update the cacheable information.
     bbCacheable[MI->getParent()].setReachesExit();
 
-    // Only do if have SC with arena atomic bug fix (EPR 326883).
-    if (STM->calVersion() >= CAL_VERSION_SC_150) {
-      // Force pointers that are used by atomics to be in the arena.
-      // If they were allowed to be accessed as RAW they would cause
-      // all access to use the slow complete path.
-      if (DEBUGME) {
-        dbgs() << __LINE__ << ": Setting byte store bit on atomic instruction: ";
-        MI->dump();
-      }
-      curRes.bits.ByteStore = 1;
-      bytePtrs.insert(lookupTable[reg].second);
+    // Force pointers that are used by atomics to be in the arena.
+    // If they were allowed to be accessed as RAW they would cause
+    // all access to use the slow complete path.
+    if (DEBUGME) {
+      dbgs() << __LINE__ << ": Setting byte store bit on atomic instruction: ";
+      MI->dump();
     }
+    curRes.bits.ByteStore = 1;
+    bytePtrs.insert(lookupTable[reg].second);
 
     if (DEBUGME) {
-      dbgs() << "Assigning instruction to pointer ";
+      dbgs() << "Assigning instruction to atomic ";
       dbgs() << lookupTable[reg].second.second->getName()<< ". Inst: ";
       MI->dump();
     }
     detectConflictInst(MI, curRes, true, reg, dstReg);
   }
   if (!found) {
-    allocateDefaultID(TM, curRes, MI, true);
+    allocateDefaultID(curRes, MI, true);
   }
 }
 // In this case we want to handle a counter instruction.
 void
-AMDILPointerManagerImpl::parseAppendInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseAppendInst(MachineInstr *MI)
 {
-  assert(isAppendInst(TM, MI) && "Only an atomic counter instruction can be "
+  assert(isAppendInst(MI) && "Only an atomic counter instruction can be "
          "parsed by the parseAppendInst function.");
   AMDILAS::InstrResEnc curRes;
   unsigned dstReg = MI->getOperand(0).getReg();
@@ -1096,13 +1291,13 @@ AMDILPointerManagerImpl::parseAppendInst(TargetMachine &TM, MachineInstr *MI)
   // If the register is not known to be owned by a pointer
   // then we set it to the default
   if (!lookupTable[reg].second.second) {
-    allocateDefaultID(TM, curRes, MI, true);
+    allocateDefaultID(curRes, MI, true);
     return;
   }
   InstToPtrMap[MI].insert(lookupTable[reg].second);
   PtrToInstMap[lookupTable[reg].second.second].push_back(MI);
   if (DEBUGME) {
-    dbgs() << "Assigning instruction to pointer ";
+    dbgs() << "Assigning instruction to append ";
     dbgs() << lookupTable[reg].second.second->getName() << ". Inst: ";
     MI->dump();
   }
@@ -1110,9 +1305,9 @@ AMDILPointerManagerImpl::parseAppendInst(TargetMachine &TM, MachineInstr *MI)
 }
 /// In this case we want to handle a counter instruction.
 void
-AMDILPointerManagerImpl::parseSemaInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseSemaInst(MachineInstr *MI)
 {
-  assert(isSemaphoreInst(TM, MI) && "Only an semaphore instruction can be "
+  assert(isSemaphoreInst(MI) && "Only an semaphore instruction can be "
          "parsed by the parseSemaInst function.");
   AMDILAS::InstrResEnc curRes;
   unsigned dstReg = MI->getOperand(0).getReg();
@@ -1120,20 +1315,20 @@ AMDILPointerManagerImpl::parseSemaInst(TargetMachine &TM, MachineInstr *MI)
   InstToPtrMap[MI].insert(lookupTable[dstReg].second);
   PtrToInstMap[lookupTable[dstReg].second.second].push_back(MI);
   if (DEBUGME) {
-    dbgs() << "Assigning instruction to pointer ";
+    dbgs() << "Assigning instruction to semaphore ";
     dbgs() << lookupTable[dstReg].second.second->getName() << ". Inst: ";
     MI->dump();
   }
 }
 // In this case we want to handle an Image instruction.
 void
-AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseImageInst(MachineInstr *MI)
 {
-  assert(isImageInst(TM, MI) && "Only an image instruction can be "
+  assert(isImageInst(MI) && "Only an image instruction can be "
          "parsed by the parseImageInst function.");
   AMDILAS::InstrResEnc curRes;
   getAsmPrinterFlags(MI, curRes);
-  if (isWriteImageInst(TM, MI)) {
+  if (isWriteImageInst(MI)) {
     unsigned dstReg = MI->getOperand(0).getReg();
     curRes.bits.ResourceID = lookupTable[dstReg].first & 0xFFFF;
     curRes.bits.isImage = 1;
@@ -1151,7 +1346,7 @@ AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
     // then we set it to the default
     if (!lookupTable[reg].second.second) {
       assert(!"This should not happen for images!");
-      allocateDefaultID(TM, curRes, MI, true);
+      allocateDefaultID(curRes, MI, true);
       return;
     }
     InstToPtrMap[MI].insert(lookupTable[reg].second);
@@ -1161,9 +1356,9 @@ AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
       dbgs() << lookupTable[reg].second.second->getName() << ". Inst: ";
       MI->dump();
     }
-    if (isImageTXLDInst(TM, MI)) {
+    if (isImageTXLDInst(MI)) {
       curRes.bits.ResourceID = lookupTable[reg].first & 0xFFFF;
-    } else if (isReadImageInst(TM, MI)) {
+    } else if (isReadImageInst(MI)) {
       curRes.bits.ResourceID = lookupTable[reg].first & 0xFFFF;
       if (MI->getOperand(SAMPLER_INDEX).isReg()) {
         // Our sampler is not a literal value.
@@ -1176,7 +1371,7 @@ AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
         }
         uint32_t val = ~0U;
         if (sampler_name.empty()) {
-          sampler_name = findSamplerName(TM, MI, val);
+          sampler_name = findSamplerName(MI, val);
         }
         val = mMFI->addSampler(sampler_name, val);
         if (DEBUGME) {
@@ -1192,7 +1387,8 @@ AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
         memset(buffer, 0, sizeof(buffer));
         ::sprintf(buffer,"_%d", (int32_t)MI->getOperand(SAMPLER_INDEX).getImm());
         std::string sampler_name = std::string("unknown") + std::string(buffer);
-        uint32_t val = mMFI->addSampler(sampler_name, MI->getOperand(SAMPLER_INDEX).getImm());
+        uint32_t val =
+          mMFI->addSampler(sampler_name, MI->getOperand(SAMPLER_INDEX).getImm());
         if (DEBUGME) {
           dbgs() << "Mapping internal sampler " << sampler_name
                  << " to sampler number " << val << " for Inst:\n";
@@ -1200,22 +1396,40 @@ AMDILPointerManagerImpl::parseImageInst(TargetMachine &TM, MachineInstr *MI)
         }
         MI->getOperand(SAMPLER_INDEX).setImm(val);
       }
-    } else if (isImageInfo0Inst(TM, MI)) {
+    } else if (isImageInfo0Inst(MI)) {
       curRes.bits.ResourceID = lookupTable[reg].first >> 16;
-    } else if (isImageInfo1Inst(TM, MI)) {
+    } else if (isImageInfo1Inst(MI)) {
       curRes.bits.ResourceID = (lookupTable[reg].first >> 16) + 1;
     }
     curRes.bits.isImage = 1;
   }
   setAsmPrinterFlags(MI, curRes);
 }
-
+// if addri's address is a local array, map addri's dest reg to the local arra y
+void
+AMDILEGPointerManagerImpl::parseAddriInst(MachineInstr *MI)
+{
+  assert(isAddriInst(MI) && "Only a Addri instruction can be parsed by "
+         "the parseAddriInst function.");
+  unsigned dstReg = MI->getOperand(0).getReg();
+  MachineOperand &MemOp = MI->getOperand(1);
+  if (!MemOp.isGlobal()) return;
+  const GlobalValue* GV = MemOp.getGlobal();
+  if (!localPtrs.count(GV)) return;
+  if (DEBUGME) {
+    dbgs() << "Pointer: " << GV->getName();
+    dbgs() << "Reg: " << dstReg << " map to " << GV->getName() << "\n";
+  }
+  localPtrMap[dstReg].insert(GV);
+  localNAddriVec.push_back(GVInstPair(GV, MI));
+  mMFI->setUsesLDS();
+}
 // This case handles the rest of the instructions
 void
-AMDILPointerManagerImpl::parseInstruction(TargetMachine &TM, MachineInstr *MI)
+AMDILEGPointerManagerImpl::parseInstruction(MachineInstr *MI)
 {
-  assert(!isAtomicInst(TM, MI) && !isStoreInst(TM, MI) && !isLoadInst(TM, MI) &&
-         !isAppendInst(TM, MI) && !isImageInst(TM, MI) &&
+  assert(!isAtomicInst(MI) && !isPtrStoreInst(MI) && !isPtrLoadInst(MI) &&
+         !isAppendInst(MI) && !isImageInst(MI) &&
          "Atomic/Load/Store/Append/Image insts should not be handled here!");
   unsigned numOps = MI->getNumOperands();
   // If we don't have any operands, we can skip this instruction
@@ -1228,19 +1442,19 @@ AMDILPointerManagerImpl::parseInstruction(TargetMachine &TM, MachineInstr *MI)
   if (!MI->getOperand(0).isReg()) {
     return;
   }
-  // If we are a LOADCONST_i32, we might be a sampler, so we need
+  // If we are a LOADCONSTi32, we might be a sampler, so we need
   // to propogate the LOADCONST to IMAGE[1|2|3]D[A|B][64]_READ instructions.
-  if (MI->getOpcode() == AMDIL::LOADCONST_i32) {
+  if (MI->getOpcode() == AMDIL::LOADCONSTi32) {
     uint32_t val = MI->getOperand(1).getImm();
 
     for(MachineRegisterInfo::reg_iterator
         RI = MF.getRegInfo().reg_begin(MI->getOperand(0).getReg()),
         RE = MF.getRegInfo().reg_end();
         RI != RE; ++RI) {
-      if (isReadImageInst(TM, RI.getOperand().getParent())) {
+      if (isReadImageInst(RI.getOperand().getParent())) {
         if (DEBUGME) {
           dbgs() << "Found a constant sampler for image read inst: ";
-          RI.getOperand().print(dbgs());
+          RI.getOperand().getParent()->print(dbgs());
         }
         RI.getOperand().ChangeToImmediate(val);
       }
@@ -1261,48 +1475,53 @@ AMDILPointerManagerImpl::parseInstruction(TargetMachine &TM, MachineInstr *MI)
       continue;
     }
     reg = Op.getReg();
+    // propagate local ptr set from oper to dst
+    Reg2ValSet::iterator it = localPtrMap.find(reg);
+    if (it != localPtrMap.end()) {
+      SmallValSet& locals = it->second;
+      localPtrMap[dstReg].insert(locals.begin(), locals.end());
+    }
     // If the register is not known to be owned by a pointer
     // then we can ignore it
     if (!lookupTable[reg].second.second) {
       continue;
     }
     detectConflictInst(MI, curRes, false, reg, dstReg);
-
   }
 }
-
 // This function parses the basic block and based on the instruction type,
 // calls the function to finish parsing the instruction.
 void
-AMDILPointerManagerImpl::parseBasicBlock(TargetMachine &TM, MachineBasicBlock *MB)
+AMDILEGPointerManagerImpl::parseBasicBlock(MachineBasicBlock *MB)
 {
   for (MachineBasicBlock::iterator mbb = MB->begin(), mbe = MB->end();
        mbb != mbe; ++mbb) {
     MachineInstr *MI = mbb;
     if (MI->getOpcode() == AMDIL::CALL) {
       parseCall(mbb, mbe);
-    } else if (isLoadInst(TM, MI)) {
-      parseLoadInst(TM, MI);
-    } else if (isStoreInst(TM, MI)) {
-      parseStoreInst(TM, MI);
-    } else if (isAtomicInst(TM, MI)) {
-      parseAtomicInst(TM, MI);
-    } else if (isAppendInst(TM, MI)) {
-      parseAppendInst(TM, MI);
-    } else if (isSemaphoreInst(TM, MI)) {
-      parseSemaInst(TM, MI);
-    } else if (isImageInst(TM, MI)) {
-      parseImageInst(TM, MI);
+    } else if (isPtrLoadInst(MI)) {
+      parseLoadInst(MI);
+    } else if (isPtrStoreInst(MI)) {
+      parseStoreInst(MI);
+    } else if (isAtomicInst(MI)) {
+      parseAtomicInst(MI);
+    } else if (isAppendInst(MI)) {
+      parseAppendInst(MI);
+    } else if (isSemaphoreInst(MI)) {
+      parseSemaInst(MI);
+    } else if (isImageInst(MI)) {
+      parseImageInst(MI);
+    } else if (isAddriInst(MI)) {
+      parseAddriInst(MI);
     } else {
-      parseInstruction(TM, MI);
+      parseInstruction(MI);
     }
   }
 }
-
 // Follows the Reverse Post Order Traversal of the basic blocks to
 // determine which order to parse basic blocks in.
 void
-AMDILPointerManagerImpl::parseFunction(TargetMachine &TM)
+AMDILEGPointerManagerImpl::parseFunction()
 {
   std::list<MachineBasicBlock*> prop_worklist;
 
@@ -1328,7 +1547,7 @@ AMDILPointerManagerImpl::parseFunction(TargetMachine &TM)
       dbgs() << "[BlockOrdering] Parsing CurrentBlock: "
              << MB->getNumber() << "\n";
     }
-    parseBasicBlock(TM, MB);
+    parseBasicBlock(MB);
 
     if (bci.storeReachesExit())
       prop_worklist.push_back(MB);
@@ -1339,7 +1558,8 @@ AMDILPointerManagerImpl::parseFunction(TargetMachine &TM)
       for (CacheableInstrSet::const_iterator cibit = bci.cacheableBegin(),
            cibitend = bci.cacheableEnd();
            cibit != cibitend;
-           cibit++) {
+           cibit++)
+      {
         (*cibit)->dump();
       }
     }
@@ -1355,7 +1575,8 @@ AMDILPointerManagerImpl::parseFunction(TargetMachine &TM)
     for (MachineBasicBlock::succ_iterator mbbit = wlb->succ_begin(),
          mbbitend = wlb->succ_end();
          mbbit != mbbitend;
-         mbbit++) {
+         mbbit++)
+    {
       BlockCacheableInfo &blockCache = bbCacheable[*mbbit];
       if (!blockCache.storeReachesTop()) {
         blockCache.setReachesTop();
@@ -1370,11 +1591,10 @@ AMDILPointerManagerImpl::parseFunction(TargetMachine &TM)
     }
   }
 }
-
 // Helper function that dumps to dbgs() information about
 // a pointer set.
 void
-AMDILPointerManagerImpl::dumpPointers(AppendSet &Ptrs, const char *str)
+AMDILEGPointerManagerImpl::dumpPointers(AppendSet &Ptrs, const char *str)
 {
   if (Ptrs.empty()) {
     return;
@@ -1389,7 +1609,7 @@ AMDILPointerManagerImpl::dumpPointers(AppendSet &Ptrs, const char *str)
 // Helper function that dumps to dbgs() information about
 // a pointer set.
 void
-AMDILPointerManagerImpl::dumpPointers(PtrSet &Ptrs, const char *str)
+AMDILEGPointerManagerImpl::dumpPointers(PtrSet &Ptrs, const char *str)
 {
   if (Ptrs.empty()) {
     return;
@@ -1405,7 +1625,7 @@ AMDILPointerManagerImpl::dumpPointers(PtrSet &Ptrs, const char *str)
 // the pointers that are detected to the conflict set, otherwise
 // they are added to the raw or byte set based on their usage.
 void
-AMDILPointerManagerImpl::detectConflictingPointers(TargetMachine &TM)
+AMDILEGPointerManagerImpl::detectConflictingPointers()
 {
   if (InstToPtrMap.empty()) {
     return;
@@ -1423,9 +1643,8 @@ AMDILPointerManagerImpl::detectConflictingPointers(TargetMachine &TM)
         // already detected as byte-inst
         continue;
       }
-      if (isLRPInst(TM, MI, ATM)) {
-        // We don't need to deal with pointers to local/region/private
-        // memory regions
+      if (isLRPInst(MI, STM)) {
+        // We don't need to deal with pointers to local/region/private memory regions
         continue;
       }
       AMDILAS::InstrResEnc curRes;
@@ -1501,7 +1720,7 @@ AMDILPointerManagerImpl::detectConflictingPointers(TargetMachine &TM)
           cfIter->second->dump();
         }
         // bool aliased = false;
-        if (isLRPInst(TM, mapIter->first, ATM)) {
+        if (isLRPInst(mapIter->first, STM)) {
           // We don't need to deal with pointers to local/region/private
           // memory regions
           continue;
@@ -1558,7 +1777,7 @@ AMDILPointerManagerImpl::detectConflictingPointers(TargetMachine &TM)
 }
 // Function that detects aliased constant pool operations.
 void
-AMDILPointerManagerImpl::detectAliasedCPoolOps()
+AMDILEGPointerManagerImpl::detectAliasedCPoolOps()
 {
   if (DEBUGME && !cpool.empty()) {
     dbgs() << "Instructions w/ CPool Ops: \n";
@@ -1583,7 +1802,7 @@ AMDILPointerManagerImpl::detectAliasedCPoolOps()
       if (visited.count(cur)) {
         continue;
       }
-      if (isLoadInst(TM, cur) && isPrivateInst(TM, cur)) {
+      if (isPtrLoadInst(cur) && isPrivateInst(cur)) {
         // If we are a private load and the register is
         // used in the address register, we need to
         // switch from private to constant pool load.
@@ -1595,18 +1814,20 @@ AMDILPointerManagerImpl::detectAliasedCPoolOps()
         }
         AMDILAS::InstrResEnc curRes;
         getAsmPrinterFlags(cur, curRes);
-        curRes.bits.ResourceID = STM->device()->getResourceID(AMDILDevice::GLOBAL_ID);
+        curRes.bits.ResourceID = STM->device()->getResourceID(
+          AMDILDevice::GLOBAL_ID);
         curRes.bits.ConflictPtr = 1;
         setAsmPrinterFlags(cur, curRes);
         cur->setDesc(TM.getInstrInfo()->get(
-                       (cur->getOpcode() - AMDIL::PRIVATEAEXTLOAD_f32)
-                       + AMDIL::CPOOLAEXTLOAD_f32));
+                       (cur->getOpcode() - AMDIL::PRIVATEAEXTLOAD64f32r)
+                       + AMDIL::CPOOLAEXTLOAD64f32r));
       } else {
         if (cur->getOperand(0).isReg()) {
           for(MachineRegisterInfo::reg_iterator
               RI = MF.getRegInfo().reg_begin(cur->getOperand(0).getReg()),
               RE = MF.getRegInfo().reg_end();
-              RI != RE && RI.getOperand().isDef() && RI.getOperand().isReg(); ++RI) {
+              RI != RE && RI.getOperand().isDef() && RI.getOperand().isReg();
+              ++RI) {
             queue.push(RI.getOperand().getParent());
           }
         }
@@ -1618,7 +1839,7 @@ AMDILPointerManagerImpl::detectAliasedCPoolOps()
 // Function that detects fully cacheable pointers. Fully cacheable pointers
 // are pointers that have no writes to them and no-alias is specified.
 void
-AMDILPointerManagerImpl::detectFullyCacheablePointers(TargetMachine &TM)
+AMDILEGPointerManagerImpl::detectFullyCacheablePointers()
 {
   if (PtrToInstMap.empty()) {
     return;
@@ -1645,11 +1866,11 @@ AMDILPointerManagerImpl::detectFullyCacheablePointers(TargetMachine &TM)
       for (std::vector<MachineInstr*>::iterator
            miBegin = mapIter->second.begin(),
            miEnd = mapIter->second.end(); miBegin != miEnd; ++miBegin) {
-        if (isStoreInst(TM, *miBegin)  ||
-            isImageInst(TM, *miBegin)  ||
-            isAtomicInst(TM, *miBegin) ||
-            isAppendInst(TM, *miBegin) ||
-            isSemaphoreInst(TM, *miBegin)) {
+        if (isPtrStoreInst(*miBegin)  ||
+            isImageInst(*miBegin)  ||
+            isAtomicInst(*miBegin) ||
+            isAppendInst(*miBegin) ||
+            isSemaphoreInst(*miBegin)) {
           cacheable = false;
           break;
         }
@@ -1678,10 +1899,9 @@ AMDILPointerManagerImpl::detectFullyCacheablePointers(TargetMachine &TM)
     }
   }
 }
-
 // Are any of the pointers in PtrSet also in the BytePtrs or the CachePtrs?
 bool
-AMDILPointerManagerImpl::ptrSetIntersectsByteOrCache(PtrSet &cacheSet)
+AMDILEGPointerManagerImpl::ptrSetIntersectsByteOrCache(PtrSet &cacheSet)
 {
   for (PtrSet::const_iterator psit = cacheSet.begin(),
        psitend = cacheSet.end();
@@ -1694,14 +1914,13 @@ AMDILPointerManagerImpl::ptrSetIntersectsByteOrCache(PtrSet &cacheSet)
   }
   return false;
 }
-
 // Function that detects which instructions are cacheable even if
 // all instructions of the pointer are not cacheable. The resulting
 // set of instructions will not contain Ptrs that are in the cacheable
 // ptr set (under the assumption they will get marked cacheable already)
 // or pointers in the byte set, since they are not cacheable.
 void
-AMDILPointerManagerImpl::detectCacheableInstrs()
+AMDILEGPointerManagerImpl::detectCacheableInstrs()
 
 {
   for (MBBCacheableMap::const_iterator mbbcit = bbCacheable.begin(),
@@ -1709,9 +1928,9 @@ AMDILPointerManagerImpl::detectCacheableInstrs()
        mbbcit != mbbcitend;
        mbbcit++) {
     for (CacheableInstrSet::const_iterator bciit
-         = mbbcit->second.cacheableBegin(),
+           = mbbcit->second.cacheableBegin(),
          bciitend
-         = mbbcit->second.cacheableEnd();
+           = mbbcit->second.cacheableEnd();
          bciit != bciitend;
          bciit++) {
       if (!ptrSetIntersectsByteOrCache(InstToPtrMap[*bciit])) {
@@ -1729,7 +1948,7 @@ AMDILPointerManagerImpl::detectCacheableInstrs()
 // condition means that UAV 11 is available for cacheable
 // reads.
 void
-AMDILPointerManagerImpl::annotateCacheablePtrs()
+AMDILEGPointerManagerImpl::annotateCacheablePtrs()
 {
   PtrSet::iterator siBegin, siEnd;
   std::vector<MachineInstr*>::iterator miBegin, miEnd;
@@ -1766,11 +1985,10 @@ AMDILPointerManagerImpl::annotateCacheablePtrs()
 static unsigned switchAtomicToArena(unsigned op)
 {
 #define ATOM_CASE(OP) \
-  case AMDIL::ATOM_G_##OP: return AMDIL::ATOM_A_##OP; \
-  case AMDIL::ATOM_G_##OP##_NORET: return AMDIL::ATOM_A_##OP##_NORET;
+case AMDIL::ATOM_G_ ## OP: return AMDIL::ATOM_A_ ## OP; \
+case AMDIL::ATOM_G_ ## OP ## _NORET: return AMDIL::ATOM_A_ ## OP ## _NORET;
   switch (op) {
-  default:
-    break;
+  default: break;
     ATOM_CASE(ADD);
     ATOM_CASE(AND);
     ATOM_CASE(CMPXCHG);
@@ -1784,8 +2002,7 @@ static unsigned switchAtomicToArena(unsigned op)
     ATOM_CASE(UMAX);
     ATOM_CASE(UMIN);
     ATOM_CASE(XOR);
-  case AMDIL::ATOM_G_XCHG:
-    return AMDIL::ATOM_A_XCHG;
+  case AMDIL::ATOM_G_XCHG: return AMDIL::ATOM_A_XCHG;
   }
   assert(!"Unknown atomic opcode found!");
   return 0;
@@ -1793,7 +2010,7 @@ static unsigned switchAtomicToArena(unsigned op)
 // A byte pointer is a pointer that along the pointer path has a
 // byte store assigned to it.
 void
-AMDILPointerManagerImpl::annotateBytePtrs()
+AMDILEGPointerManagerImpl::annotateBytePtrs()
 {
   PtrSet::iterator siBegin, siEnd;
   std::vector<MachineInstr*>::iterator miBegin, miEnd;
@@ -1836,7 +2053,7 @@ AMDILPointerManagerImpl::annotateBytePtrs()
         if (mAMI->isKernel(funcName)) {
           const AMDILKernel *krnl = mAMI->getKernel(funcName);
           curRes.bits.ResourceID = mAMI->getConstPtrCB(krnl,
-                                   siBegin->second->getName());
+                                                       siBegin->second->getName());
           curRes.bits.HardwareInst = 1;
         } else {
           curRes.bits.ResourceID = STM->device()
@@ -1849,7 +2066,7 @@ AMDILPointerManagerImpl::annotateBytePtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::LDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -1862,7 +2079,7 @@ AMDILPointerManagerImpl::annotateBytePtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::GDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -1881,13 +2098,15 @@ AMDILPointerManagerImpl::annotateBytePtrs()
         }
         curRes.bits.ByteStore = 1;
         curRes.bits.ResourceID = (curArg
-                                  && (STM->device()->isSupported(AMDILDeviceInfo::NoAlias)
+                                  && (STM->device()->isSupported(
+                                        AMDILDeviceInfo::NoAlias)
                                       || curArg->hasNoAliasAttr())) ?
-                                 arenaID : STM->device()->getResourceID(AMDILDevice::ARENA_UAV_ID);
+                                 arenaID : STM->device()->getResourceID(
+          AMDILDevice::ARENA_UAV_ID);
         if (STM->device()->isSupported(AMDILDeviceInfo::ArenaSegment)) {
           arenaInc = true;
         }
-        if (isAtomicInst(TM, *miBegin) &&
+        if (isAtomicInst(*miBegin) &&
             STM->device()->isSupported(AMDILDeviceInfo::ArenaUAV)) {
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
           .setImm(curRes.bits.ResourceID);
@@ -1914,11 +2133,12 @@ AMDILPointerManagerImpl::annotateBytePtrs()
 // A semaphore pointer is a opaque object that has semaphore instructions
 // in its path.
 void
-AMDILPointerManagerImpl::annotateSemaPtrs()
+AMDILEGPointerManagerImpl::annotateSemaPtrs()
 {
   unsigned currentSemaphore = 1;
   for (SemaSet::iterator asBegin = semaphores.begin(),
-       asEnd = semaphores.end(); asBegin != asEnd; ++asBegin) {
+       asEnd = semaphores.end(); asBegin != asEnd; ++asBegin)
+  {
     const Value* curVal = asBegin->second;
     if (DEBUGME) {
       dbgs() << "Semaphore: " << curVal->getName()
@@ -1936,20 +2156,6 @@ AMDILPointerManagerImpl::annotateSemaPtrs()
           MI->dump();
         }
         break;
-      case AMDIL::SEMAPHORE_INIT: {
-        MachineRegisterInfo &regInfo = MI->getParent()->getParent()->getRegInfo();
-        MachineOperand &init_value = MI->getOperand(2);
-        MachineOperand& defOp = regInfo.reg_begin(init_value.getReg()).getOperand();
-        MachineInstr *defMI = defOp.getParent();
-        if (!defOp.isReg()
-            || defMI->getOpcode() != AMDIL::LOADCONST_i32
-            || MI->getNumOperands() != 3) {
-          mMFI->addErrorMsg(
-            amd::CompilerErrorMessage[INVALID_INIT_VALUE]);
-        } else {
-          MI->getOperand(2).ChangeToImmediate(defMI->getOperand(1).getImm());
-        }
-      }
       case AMDIL::SEMAPHORE_WAIT:
       case AMDIL::SEMAPHORE_SIGNAL:
         MI->getOperand(0).ChangeToImmediate(currentSemaphore);
@@ -1971,11 +2177,12 @@ AMDILPointerManagerImpl::annotateSemaPtrs()
 /// An append pointer is a opaque object that has append instructions
 // in its path.
 void
-AMDILPointerManagerImpl::annotateAppendPtrs()
+AMDILEGPointerManagerImpl::annotateAppendPtrs()
 {
   unsigned currentCounter = 0;
   for (AppendSet::iterator asBegin = counters.begin(),
-       asEnd = counters.end(); asBegin != asEnd; ++asBegin) {
+       asEnd = counters.end(); asBegin != asEnd; ++asBegin)
+  {
     bool usesWrite = false;
     bool usesRead = false;
     const Value* curVal = asBegin->second;
@@ -2023,7 +2230,7 @@ AMDILPointerManagerImpl::annotateAppendPtrs()
 }
 // A raw pointer is any pointer that does not have byte store in its path.
 void
-AMDILPointerManagerImpl::annotateRawPtrs()
+AMDILEGPointerManagerImpl::annotateRawPtrs()
 {
   PtrSet::iterator siBegin, siEnd;
   std::vector<MachineInstr*>::iterator miBegin, miEnd;
@@ -2069,7 +2276,7 @@ AMDILPointerManagerImpl::annotateRawPtrs()
         if (mAMI->isKernel(funcName)) {
           const AMDILKernel *krnl = mAMI->getKernel(funcName);
           curRes.bits.ResourceID = mAMI->getConstPtrCB(krnl,
-                                   siBegin->second->getName());
+                                                       siBegin->second->getName());
           curRes.bits.HardwareInst = 1;
         } else {
           curRes.bits.ResourceID = STM->device()
@@ -2082,7 +2289,7 @@ AMDILPointerManagerImpl::annotateRawPtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::LDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -2095,7 +2302,7 @@ AMDILPointerManagerImpl::annotateRawPtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::GDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -2132,7 +2339,7 @@ AMDILPointerManagerImpl::annotateRawPtrs()
           curRes.bits.ResourceID = STM->device()
                                    ->getResourceID(AMDILDevice::ARENA_UAV_ID);
         }
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
           .setImm(curRes.bits.ResourceID);
           if (curRes.bits.ResourceID
@@ -2152,11 +2359,9 @@ AMDILPointerManagerImpl::annotateRawPtrs()
       setAsmPrinterFlags(*miBegin, curRes);
     }
   }
-
 }
-
 void
-AMDILPointerManagerImpl::annotateCacheableInstrs()
+AMDILEGPointerManagerImpl::annotateCacheableInstrs()
 {
   CacheableInstrSet::iterator miBegin, miEnd;
 
@@ -2177,28 +2382,134 @@ AMDILPointerManagerImpl::annotateCacheableInstrs()
     }
   }
 }
-
-// Annotate the instructions along various pointer paths. The paths that
-// are handled are the raw, byte and cacheable pointer paths.
+// A local pointer is a pointer that point to the local address space
+// For local pointers that don't conflict with other local pointers,
+// allocate a new local buffer for each such pointer. For all local
+// pointers that conflict with another local pointer, allocate all local
+// pointers that conflict with each other into their own local buffer.
 void
-AMDILPointerManagerImpl::annotatePtrPath()
+AMDILEGPointerManagerImpl::annotateLocalPtrs()
 {
-  if (PtrToInstMap.empty()) {
-    return;
+  assert(STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+         && "not checked before calling this");
+  std::vector<MachineInstr*>::iterator miBegin, miEnd;
+  unsigned setId = 0;
+  for (SmallValSets::iterator siBegin = localPtrSets.begin(),
+       siEnd = localPtrSets.end();
+       siBegin != siEnd; ++siBegin, ++setId) {
+    const SmallValSet& set = *siBegin;
+    if (set.empty()) continue;
+
+    // populate the next local buffer with the current set of local pointers
+    bool isDefaultBuf = setId == 0;
+    uint32_t resourceID = mAMI->populateNextLocalBuffer(set, isDefaultBuf);
+
+    // mark resource id of all instructions that accesses local pointers
+    // in the set to the local buffer id
+    for (miBegin = localSetId2InstMap[setId].begin(),
+         miEnd = localSetId2InstMap[setId].end();
+         miBegin != miEnd; ++miBegin) {
+      if (DEBUGME) {
+        dbgs() << "Annotating local pointer as " << resourceID << ". Inst: ";
+        (*miBegin)->dump();
+      }
+      AMDILAS::InstrResEnc curRes;
+      getAsmPrinterFlags(*miBegin, curRes);
+
+      if (curRes.bits.ResourceID != resourceID) {
+        curRes.bits.ResourceID = resourceID;
+        setAsmPrinterFlags((*miBegin), curRes);
+        if (isAtomicInst(*miBegin)) {
+          (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
+          .setImm(resourceID);
+        }
+      }
+    }
   }
-  // First we can check the cacheable pointers
-  annotateCacheablePtrs();
-
-  // Next we annotate the byte pointers
-  annotateBytePtrs();
-
-  // Next we annotate the raw pointers
-  annotateRawPtrs();
 }
+// Now replace the Addri instruction that corresponds to each local array
+// with a loadconst instruction
+void
+AMDILEGPointerManagerImpl::replaceAddri()
+{
+  MachineRegisterInfo &regInfo = MF.getRegInfo();
+  for (GVInstPairVec::iterator it = localNAddriVec.begin(),
+       end = localNAddriVec.end(); it != end; ++it) {
+    const GlobalValue* localPtr = (*it).first;
+    MachineInstr* addri = (*it).second;
+    unsigned baseOffsetReg = addri->getOperand(2).getReg();
+    MachineInstr* baseOffsetInst = regInfo.getVRegDef(baseOffsetReg);
+    assert(baseOffsetInst->getOpcode() == AMDIL::LOADCONSTi32 && "sanity");
+    int32_t baseOffset = baseOffsetInst->getOperand(1).getImm();
+    int32_t dummyimm = addri->getOperand(3).getImm();
+    assert(dummyimm == 0 && "sanity");
+    int32_t arrayOffset = mAMI->getArrayOffset(localPtr->getName().str());
+    unsigned dstReg = addri->getOperand(0).getReg();
+    // if baseOffst + arrayOffset is 0, and addri's use is a add,
+    // it's adding 0, so the add can be optimized away
+    if (baseOffset + arrayOffset == 0) {
+      SmallVector<MachineInstr*, 1> deadInsts;
+      for (MachineRegisterInfo::use_iterator it = regInfo.use_begin(dstReg),
+           end = regInfo.use_end(); it != end; ++it) {
+        MachineInstr& useInst = *it;
+        if (isAddInst(&useInst) || isCustomAddInst(&useInst)) {
+          assert(useInst.getNumOperands() == 3
+                 && useInst.getOperand(0).isDef()
+                 && "unexpected add inst format");
+          unsigned useDstReg = useInst.getOperand(0).getReg();
+          unsigned useOp1Reg = useInst.getOperand(1).getReg();
+          unsigned useOp2Reg = useInst.getOperand(2).getReg();
+          assert((useOp1Reg == dstReg || useOp2Reg == dstReg) && "invalid use");
+          unsigned opReg = (useOp1Reg == dstReg) ? useOp2Reg : useOp1Reg;
+          regInfo.replaceRegWith(useDstReg, opReg);
+          deadInsts.push_back(&useInst);
+        }
+      }
+      // erase the add instructions
+      for (SmallVector<MachineInstr*, 1>::iterator it = deadInsts.begin(),
+           end = deadInsts.end(); it != end; ++it) {
+        (*it)->eraseFromParent();
+      }
+    }
+    if (!regInfo.use_empty(dstReg)) {
+      short ptrRegClassID = addri->getDesc().OpInfo[0].RegClass;
+      assert((ptrRegClassID == AMDIL::GPRI32RegClassID
+              || ptrRegClassID == AMDIL::GPRI64RegClassID)
+             && "unexpected reg class for pointer type");
+      unsigned loadconstOp = (ptrRegClassID == AMDIL::GPRI32RegClassID)
+                             ? AMDIL::LOADCONSTi32 : AMDIL::LOADCONSTi64;
+      MachineBasicBlock* mb = addri->getParent();
+      BuildMI(*mb, addri, addri->getDebugLoc(),
+              TM.getInstrInfo()->get(loadconstOp), dstReg)
+      .addImm(arrayOffset + baseOffset);
+    }
+    addri->eraseFromParent();
+  }
+}
+// Annotate the instructions along various pointer paths. The paths that
+// are handled are the raw, byte, cacheable and local pointer paths.
+void
+AMDILEGPointerManagerImpl::annotatePtrPath()
+{
+  if (!PtrToInstMap.empty()) {
+    // First we can check the cacheable pointers
+    annotateCacheablePtrs();
 
+    // Next we annotate the byte pointers
+    annotateBytePtrs();
+
+    // Next we annotate the raw pointers
+    annotateRawPtrs();
+  }
+
+  // Next we annotate the local pointers
+  if(STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
+    if (doPerPointerLDS) annotateLocalPtrs();
+  }
+}
 // Allocate MultiUAV pointer ID's for the raw/conflict pointers.
 void
-AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
+AMDILEGPointerManagerImpl::allocateMultiUAVPointers()
 {
   if (PtrToInstMap.empty()) {
     return;
@@ -2216,8 +2527,9 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
   // First lets handle the raw pointers.
   for (siBegin = rawPtrs.begin(), siEnd = rawPtrs.end();
        siBegin != siEnd; ++siBegin) {
-    assert(siBegin->second->getType()->isPointerTy() && "We must be a pointer type "
-           "to be processed at this point!");
+    assert(
+      siBegin->second->getType()->isPointerTy() && "We must be a pointer type "
+      "to be processed at this point!");
     const PointerType *PT = dyn_cast<PointerType>(siBegin->second->getType());
     if (conflictPtrs.count(*siBegin) || !PT) {
       continue;
@@ -2243,7 +2555,8 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
       }
       if (PT->getAddressSpace() == AMDILAS::PRIVATE_ADDRESS) {
         if (STM->device()->usesSoftware(AMDILDeviceInfo::PrivateMem)) {
-          const PointerType *PT = dyn_cast<PointerType>(siBegin->second->getType());
+          const PointerType *PT = dyn_cast<PointerType>(
+            siBegin->second->getType());
           if (PT) {
             conflictPtrs.insert(*siBegin);
           }
@@ -2251,7 +2564,7 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
           if (DEBUGME) {
             dbgs() << "Scratch Pointer '" << siBegin->second->getName()
                    << "' being assigned uav "<<
-                   STM->device()->getResourceID(AMDILDevice::SCRATCH_ID) << "\n";
+            STM->device()->getResourceID(AMDILDevice::SCRATCH_ID) << "\n";
           }
           for (miBegin = PtrToInstMap[siBegin->second].begin(),
                miEnd = PtrToInstMap[siBegin->second].end();
@@ -2301,7 +2614,7 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
       AMDILAS::InstrResEnc curRes;
       getAsmPrinterFlags(*miBegin, curRes);
       curRes.bits.ResourceID = curUAV;
-      if (isAtomicInst(TM, *miBegin)) {
+      if (isAtomicInst(*miBegin)) {
         (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
         .setImm(curRes.bits.ResourceID);
         if (curRes.bits.ResourceID
@@ -2345,8 +2658,9 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
   // Now lets handle the conflict pointers
   for (siBegin = conflictPtrs.begin(), siEnd = conflictPtrs.end();
        siBegin != siEnd; ++siBegin) {
-    assert(siBegin->second->getType()->isPointerTy() && "We must be a pointer type "
-           "to be processed at this point!");
+    assert(
+      siBegin->second->getType()->isPointerTy() && "We must be a pointer type "
+      "to be processed at this point!");
     const PointerType *PT = dyn_cast<PointerType>(siBegin->second->getType());
     // We only want to process global address space pointers
     if (!PT || PT->getAddressSpace() != AMDILAS::GLOBAL_ADDRESS) {
@@ -2366,7 +2680,7 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
       AMDILAS::InstrResEnc curRes;
       getAsmPrinterFlags(*miBegin, curRes);
       curRes.bits.ResourceID = curUAV;
-      if (isAtomicInst(TM, *miBegin)) {
+      if (isAtomicInst(*miBegin)) {
         (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
         .setImm(curRes.bits.ResourceID);
         if (curRes.bits.ResourceID
@@ -2401,8 +2715,9 @@ AMDILPointerManagerImpl::allocateMultiUAVPointers(TargetMachine &TM)
 // is just an optimization to more efficiently allocate
 // resource ID's.
 void
-AMDILPointerManagerImpl::allocateDefaultIDs(TargetMachine &TM)
+AMDILPointerManagerImpl::allocateDefaultIDs()
 {
+  MachineModuleInfo &mmi = MF.getMMI();
   std::string longName = std::string("llvm.sampler.annotations.") +
                          std::string(MF.getFunction()->getName());
   llvm::StringRef funcName = longName;
@@ -2419,23 +2734,22 @@ AMDILPointerManagerImpl::allocateDefaultIDs(TargetMachine &TM)
     for (MachineBasicBlock::iterator mbb = MB->begin(), mbe = MB->end();
          mbb != mbe; ++mbb) {
       MachineInstr *MI = mbb;
-      if (isLoadInst(TM, MI)
-          || isStoreInst(TM, MI)
-          || isAtomicInst(TM, MI)) {
+      if (isPtrLoadInst(MI)
+          || isPtrStoreInst(MI)
+          || isAtomicInst(MI)) {
         AMDILAS::InstrResEnc curRes;
         getAsmPrinterFlags(MI, curRes);
-        allocateDefaultID(TM, curRes, MI, false);
+        allocateDefaultID(curRes, MI, false);
       }
     }
   }
 }
-
 bool
-AMDILPointerManagerImpl::perform()
+AMDILEGPointerManagerImpl::perform()
 {
   // Start out by allocating the default ID's to all instructions in the
   // function.
-  allocateDefaultIDs(TM);
+  allocateDefaultIDs();
 
   if (!mMFI->isKernel()) {
     // We don't need to parse non-kernel functions as
@@ -2448,6 +2762,32 @@ AMDILPointerManagerImpl::perform()
   // First we need to go through all of the arguments and assign the
   // live in registers to the lookup table and the pointer mapping.
   numWriteImages = parseArguments();
+
+  doPerPointerLDS = false;
+
+  // If hardware supports local memory, remember local arrays that belongs
+  // to this function into "localPtrs"
+  if (STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
+#ifndef PER_POINTER_LDS_WITH_KERNEL_ARG
+    // As of now, the meta data we pass to the runtime only has the total
+    // amount of lds buffer allocated by the kernel. If both lds pointer type
+    // kernel arguments and lds arrays exist, the runtime needs to also know
+    // the amount allocated by the kernel in the lds buffer where kernel
+    // arguments will be allocated. But we don't want to change the ABI to
+    // break ABI compatibility.
+    // So for now, disable per-pointer lds buffer allocation if lds pointer
+    // kernel arguments exist, until we move away from meta data.
+    if (!localPtrs.empty()) {
+      doPerPointerLDS = false;
+      localPtrs.clear();
+    }
+#endif
+    if (doPerPointerLDS) {
+      parseLocalArrays();
+      // initialize localPtrSets
+      initializeLocalPtrSets();
+    }
+  }
 
   // Lets do some error checking on the results of the parsing.
   if (counters.size() > OPENCL_MAX_NUM_ATOMIC_COUNTERS) {
@@ -2466,24 +2806,23 @@ AMDILPointerManagerImpl::perform()
 
   // Now lets parse all of the instructions and update our
   // lookup tables.
-  parseFunction(TM);
+  parseFunction();
 
   // We need to go over our pointer map and find all the conflicting
   // pointers that have byte stores and put them in the bytePtr map.
   // All conflicting pointers that don't have byte stores go into
   // the rawPtr map.
-  detectConflictingPointers(TM);
+  detectConflictingPointers();
 
   // The next step is to detect whether the pointer should be added to
   // the fully cacheable set or not. A pointer is marked as cacheable if
   // no store instruction exists.
-  detectFullyCacheablePointers(TM);
+  detectFullyCacheablePointers();
 
   // Disable partially cacheable for now when multiUAV is on.
   // SC versions before SC139 have a bug that generates incorrect
   // addressing for some cached accesses.
-  if (!STM->device()->isSupported(AMDILDeviceInfo::MultiUAV) &&
-      STM->calVersion() >= CAL_VERSION_SC_139) {
+  if (!STM->device()->isSupported(AMDILDeviceInfo::MultiUAV)) {
     // Now we take the set of loads that have no reachable stores and
     // create a list of additional instructions (those that aren't already
     // in a cacheablePtr set) that are safe to mark as cacheable.
@@ -2506,13 +2845,21 @@ AMDILPointerManagerImpl::perform()
   // Annotate the semaphore path if any exists.
   annotateSemaPtrs();
 
+  // Now replace the Addri instruction that corresponds to each local array
+  // with a loadconst instruction.
+  // Note that this should be called after annotateLocalPtrs()
+  if(STM->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+     && doPerPointerLDS) {
+    replaceAddri();
+  }
+
   // If we support MultiUAV, then we need to determine how
   // many write images exist so that way we know how many UAV are
   // left to allocate to buffers.
   if (STM->device()->isSupported(AMDILDeviceInfo::MultiUAV)) {
     // We now have (OPENCL_MAX_WRITE_IMAGES - numPtrs) buffers open for
     // multi-uav allocation.
-    allocateMultiUAVPointers(TM);
+    allocateMultiUAVPointers();
   }
 
   // The last step is to detect if we have any alias constant pool operations.
@@ -2528,6 +2875,10 @@ AMDILPointerManagerImpl::perform()
        csEnd = cacheablePtrs.end(); csBegin != csEnd; ++csBegin) {
     mMFI->add_read_ptr((*csBegin).second);
   }
+
+  // clear temporary machine instruction flags
+  clearTempMIFlags(MF);
+
   if (DEBUGME) {
     dumpPointers(bytePtrs, "Byte Store Ptrs");
     dumpPointers(rawPtrs, "Raw Ptrs");

@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "SwizzleEncoder"
+#define DEBUG_TYPE "swizzleencoder"
 #if !defined(NDEBUG)
 #define DEBUGME (DebugFlag && isCurrentDebugType(DEBUG_TYPE))
 #else
@@ -57,17 +57,12 @@ static bool isCustomDstInst(MachineInstr *MI);
 /// instruction.
 static OpSwizzle getCustomDstSwizzle(MachineInstr *MI);
 
-/// Determine if the instruction is a custom vector instruction
-/// that needs a unique swizzle type.
-static bool isCustomVectorInst(MachineInstr *MI);
-
 /// Encode the new swizzle for the vector instruction.
 static void encodeVectorInst(MachineInstr *MI, bool mDebug);
 /// Helper function to dump the operand for the machine instruction
 /// and the relevant target flags.
 static void dumpOperand(MachineInstr *MI, unsigned opNum);
-namespace llvm
-{
+namespace llvm {
 FunctionPass*
 createAMDILSwizzleEncoder(TargetMachine &TM, CodeGenOpt::Level OptLevel)
 {
@@ -76,25 +71,22 @@ createAMDILSwizzleEncoder(TargetMachine &TM, CodeGenOpt::Level OptLevel)
 }
 
 AMDILSwizzleEncoder::AMDILSwizzleEncoder(TargetMachine &tm,
-    CodeGenOpt::Level OptLevel) :
+                                         CodeGenOpt::Level OptLevel) :
   MachineFunctionPass(ID)
 {
   mDebug = DEBUGME;
   opt = OptLevel;
 }
-
 const char* AMDILSwizzleEncoder::getPassName() const
 {
   return "AMD IL Swizzle Encoder Pass";
 }
-
 bool AMDILSwizzleEncoder::runOnMachineFunction(MachineFunction &MF)
 {
   // Encode swizzles in instruction operands.
   encodeSwizzles(MF, mDebug);
   return true;
 }
-
 /// Dump the operand swizzle information to the dbgs() stream.
 void dumpOperand(MachineInstr *MI, unsigned opNum)
 {
@@ -104,172 +96,98 @@ void dumpOperand(MachineInstr *MI, unsigned opNum)
          << " Operand: " << opNum << " SwizID: "
          << (unsigned)swizID.bits.swizzle
          << " Swizzle: " << (swizID.bits.dst
-                             ? getDstSwizzle(swizID.bits.swizzle)
-                             : getSrcSwizzle(swizID.bits.swizzle)) << "\n";
-
+                      ? getDstSwizzle(swizID.bits.swizzle)
+                      : getSrcSwizzle(swizID.bits.swizzle)) << "\n";
 }
-
 // This function checks for instructions that don't have
 // normal swizzle patterns to their source operands. These have to be
 // handled on a case by case basis.
-bool isCustomSrcInst(MachineInstr *MI, unsigned opNum)
-{
+bool isCustomSrcInst(MachineInstr *MI, unsigned opNum) {
+  if (!MI->getDesc().getNumOperands()) return false;
   unsigned opcode = MI->getOpcode();
-  switch (opcode) {
-  default:
-    break;
-  case AMDIL::LDSLOAD:
-  case AMDIL::LDSLOAD_i8:
-  case AMDIL::LDSLOAD_u8:
-  case AMDIL::LDSLOAD_i16:
-  case AMDIL::LDSLOAD_u16:
-  case AMDIL::LDSSTORE:
-  case AMDIL::LDSSTORE_i8:
-  case AMDIL::LDSSTORE_i16:
-  case AMDIL::GDSLOAD:
-  case AMDIL::GDSSTORE:
-  case AMDIL::SCRATCHLOAD:
-  case AMDIL::CBLOAD:
-  case AMDIL::UAVARENALOAD_i8:
-  case AMDIL::UAVARENALOAD_i16:
-  case AMDIL::UAVARENALOAD_i32:
-  case AMDIL::UAVARENASTORE_i8:
-  case AMDIL::UAVARENASTORE_i16:
-  case AMDIL::UAVARENASTORE_i32:
-  case AMDIL::LDSLOAD64:
-  case AMDIL::LDSLOAD64_i8:
-  case AMDIL::LDSLOAD64_u8:
-  case AMDIL::LDSLOAD64_i16:
-  case AMDIL::LDSLOAD64_u16:
-  case AMDIL::LDSSTORE64:
-  case AMDIL::LDSSTORE64_i8:
-  case AMDIL::LDSSTORE64_i16:
-  case AMDIL::GDSLOAD64:
-  case AMDIL::GDSSTORE64:
-  case AMDIL::SCRATCHLOAD64:
-  case AMDIL::CBLOAD64:
+  unsigned regClass = MI->getDesc().OpInfo[0].RegClass;
+  if ((isPtrLoadInst(MI) || isPtrStoreInst(MI))
+      && (isScratchInst(MI)
+          || isCBInst(MI)
+          || isUAVArenaInst(MI))
+      && (regClass == AMDIL::GPRI16RegClassID
+          || regClass == AMDIL::GPRI8RegClassID
+          || regClass == AMDIL::GPRI32RegClassID
+          || regClass == AMDIL::GPRF32RegClassID
+          )
+      && !isExtLoadInst(MI)
+      && !isTruncStoreInst(MI)) {
     return true;
-  case AMDIL::CMOVLOG_f64:
-  case AMDIL::CMOVLOG_i64:
-    return (opNum == 1) ? true : false;
-  case AMDIL::SEMAPHORE_INIT:
-  case AMDIL::SEMAPHORE_WAIT:
-  case AMDIL::SEMAPHORE_SIGNAL:
-  case AMDIL::APPEND_CONSUME:
-  case AMDIL::APPEND_ALLOC:
-  case AMDIL::APPEND64_CONSUME:
-  case AMDIL::APPEND64_ALLOC:
-  case AMDIL::LLO:
-  case AMDIL::LLO_v2i64:
-  case AMDIL::LHI:
-  case AMDIL::LHI_v2i64:
-  case AMDIL::LCREATE:
-  case AMDIL::LCREATE_v2i64:
-  case AMDIL::CALL:
-  case AMDIL::RETURN:
-  case AMDIL::RETDYN:
-  case AMDIL::DHI:
-  case AMDIL::DLO:
-  case AMDIL::DCREATE:
-  case AMDIL::DHI_v2f64:
-  case AMDIL::DLO_v2f64:
-  case AMDIL::DCREATE_v2f64:
-  case AMDIL::HILO_BITOR_v2i32:
-  case AMDIL::HILO_BITOR_v4i16:
-  case AMDIL::HILO_BITOR_v2i64:
-  case AMDIL::CONTINUE_LOGICALNZ_f64:
-  case AMDIL::BREAK_LOGICALNZ_f64:
-  case AMDIL::IF_LOGICALNZ_f64:
-  case AMDIL::CONTINUE_LOGICALZ_f64:
-  case AMDIL::BREAK_LOGICALZ_f64:
-  case AMDIL::IF_LOGICALZ_f64:
-  case AMDIL::CONTINUE_LOGICALNZ_i64:
-  case AMDIL::BREAK_LOGICALNZ_i64:
-  case AMDIL::IF_LOGICALNZ_i64:
-  case AMDIL::CONTINUE_LOGICALZ_i64:
-  case AMDIL::BREAK_LOGICALZ_i64:
-  case AMDIL::IF_LOGICALZ_i64:
-    return true;
-  case AMDIL::UBIT_INSERT_i32:
-  case AMDIL::UBIT_INSERT_v2i32:
-  case AMDIL::UBIT_INSERT_v4i32:
-    return (opNum == 1 || opNum == 2);
-  };
-  return false;
+  }
+  uint32_t maskVal =
+    (MI->getDesc().TSFlags & AMDID::SWZLMASK) >> AMDID::SWZLSHFT;
+  return (maskVal ? (maskVal & (1ULL << opNum)) : false);
 }
+#define GENERATE_1ARG_CASE(A) \
+case A ## r: \
+case A ## i:
+#define GENERATE_2ARG_CASE(A) \
+  GENERATE_1ARG_CASE(A ## r) \
+  GENERATE_1ARG_CASE(A ## i)
+#define GENERATE_3ARG_CASE(A) \
+  GENERATE_2ARG_CASE(A ## r) \
+  GENERATE_2ARG_CASE(A ## i)
+#define GENERATE_4ARG_CASE(A) \
+  GENERATE_3ARG_CASE(A ## r) \
+  GENERATE_3ARG_CASE(A ## i)
 
 // This function returns the OpSwizzle with the custom swizzle set
 // correclty for source operands.
-OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
-{
+OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum) {
   OpSwizzle opSwiz;
   opSwiz.u8all = 0;
   unsigned opcode = MI->getOpcode();
   unsigned reg = (MI->getOperand(opNum).isReg()
                   ? MI->getOperand(opNum).getReg() : 0);
+  unsigned regClass = MI->getDesc().OpInfo[0].RegClass;
+  if ((isPtrLoadInst(MI) || isPtrStoreInst(MI))
+      && (isScratchInst(MI)
+          || isCBInst(MI)
+          || isUAVArenaInst(MI))
+      && (regClass == AMDIL::GPRI16RegClassID
+          || regClass == AMDIL::GPRI8RegClassID
+          || regClass == AMDIL::GPRI32RegClassID
+          || regClass == AMDIL::GPRF32RegClassID
+          )
+      && !isExtLoadInst(MI)
+      && !isTruncStoreInst(MI)) {
+    if (isUAVArenaInst(MI)) {
+      if (isXComponentReg(reg)) {
+        opSwiz.bits.swizzle = AMDIL_SRC_XXXX;
+      } else if (isYComponentReg(reg)) {
+        opSwiz.bits.swizzle = AMDIL_SRC_YYYY;
+      } else if (isZComponentReg(reg)) {
+        opSwiz.bits.swizzle = AMDIL_SRC_ZZZZ;
+      } else if (isWComponentReg(reg)) {
+        opSwiz.bits.swizzle = AMDIL_SRC_WWWW;
+      }
+      if (opNum != 1) {
+        opSwiz.bits.swizzle = AMDIL_SRC_DFLT;
+      }
+    } else {
+      opSwiz.bits.swizzle = (opNum == 1)
+                            ? AMDIL_SRC_XXXX : AMDIL_SRC_DFLT;
+    }
+    return opSwiz;
+  }
+  if (isSemaphoreInst(MI)
+      || isAppendInst(MI)
+      || opcode == AMDIL::CALL
+      || opcode == AMDIL::RETURN
+      || opcode == AMDIL::RETDYN) {
+    opSwiz.bits.swizzle = AMDIL_SRC_DFLT;
+    return opSwiz;
+  }
   switch (opcode) {
   default:
     break;
-  case AMDIL::SCRATCHLOAD:
-  case AMDIL::CBLOAD:
-  case AMDIL::LDSLOAD:
-  case AMDIL::LDSLOAD_i8:
-  case AMDIL::LDSLOAD_u8:
-  case AMDIL::LDSLOAD_i16:
-  case AMDIL::LDSLOAD_u16:
-  case AMDIL::GDSLOAD:
-  case AMDIL::GDSSTORE:
-  case AMDIL::LDSSTORE:
-  case AMDIL::LDSSTORE_i8:
-  case AMDIL::LDSSTORE_i16:
-  case AMDIL::SCRATCHLOAD64:
-  case AMDIL::CBLOAD64:
-  case AMDIL::LDSLOAD64:
-  case AMDIL::LDSLOAD64_i8:
-  case AMDIL::LDSLOAD64_u8:
-  case AMDIL::LDSLOAD64_i16:
-  case AMDIL::LDSLOAD64_u16:
-  case AMDIL::GDSLOAD64:
-  case AMDIL::GDSSTORE64:
-  case AMDIL::LDSSTORE64:
-  case AMDIL::LDSSTORE64_i8:
-  case AMDIL::LDSSTORE64_i16:
-    opSwiz.bits.swizzle = (opNum == 1)
-                          ? AMDIL_SRC_XXXX: AMDIL_SRC_DFLT;
-    break;
-  case AMDIL::UAVARENALOAD_i8:
-  case AMDIL::UAVARENALOAD_i16:
-  case AMDIL::UAVARENALOAD_i32:
-  case AMDIL::UAVARENASTORE_i8:
-  case AMDIL::UAVARENASTORE_i16:
-  case AMDIL::UAVARENASTORE_i32:
-    if (isXComponentReg(reg)) {
-      opSwiz.bits.swizzle = AMDIL_SRC_XXXX;
-    } else if (isYComponentReg(reg)) {
-      opSwiz.bits.swizzle = AMDIL_SRC_YYYY;
-    } else if (isZComponentReg(reg)) {
-      opSwiz.bits.swizzle = AMDIL_SRC_ZZZZ;
-    } else if (isWComponentReg(reg)) {
-      opSwiz.bits.swizzle = AMDIL_SRC_WWWW;
-    }
-    if (opNum != 1) {
-      opSwiz.bits.swizzle = AMDIL_SRC_DFLT;
-    }
-    break;
-  case AMDIL::SEMAPHORE_INIT:
-  case AMDIL::SEMAPHORE_WAIT:
-  case AMDIL::SEMAPHORE_SIGNAL:
-  case AMDIL::APPEND_CONSUME:
-  case AMDIL::APPEND_ALLOC:
-  case AMDIL::APPEND64_CONSUME:
-  case AMDIL::APPEND64_ALLOC:
-  case AMDIL::CALL:
-  case AMDIL::RETURN:
-  case AMDIL::RETDYN:
-    opSwiz.bits.swizzle = AMDIL_SRC_DFLT;
-    break;
-  case AMDIL::CMOVLOG_f64:
-  case AMDIL::CMOVLOG_i64:
+    GENERATE_3ARG_CASE(AMDIL::SELECTf64)
+    GENERATE_3ARG_CASE(AMDIL::SELECTi64)
     assert(opNum == 1 && "Only operand number 1 is custom!");
     if (isZWComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_ZZZZ;
@@ -277,8 +195,8 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle = AMDIL_SRC_XXXX;
     }
     break;
-  case AMDIL::DHI:
-  case AMDIL::LLO:
+  case AMDIL::DHIf64r:
+  case AMDIL::LLOi64r:
     if (isZWComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_Z000;
     } else {
@@ -294,12 +212,12 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle += 3;
     }
     break;
-  case AMDIL::DHI_v2f64:
-  case AMDIL::LLO_v2i64:
+  case AMDIL::DHIv2f64r:
+  case AMDIL::LLOv2i64r:
     opSwiz.bits.swizzle = AMDIL_SRC_XZXZ;
     break;
-  case AMDIL::DLO:
-  case AMDIL::LHI:
+  case AMDIL::DLOf64r:
+  case AMDIL::LHIi64r:
     if (isZWComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_W000;
     } else {
@@ -316,11 +234,12 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle += 2;
     }
     break;
-  case AMDIL::DLO_v2f64:
-  case AMDIL::LHI_v2i64:
+  case AMDIL::DLOv2f64r:
+  case AMDIL::LHIv2i64r:
     opSwiz.bits.swizzle = AMDIL_SRC_YWYW;
     break;
-  case AMDIL::DCREATE: {
+  case AMDIL::DCREATEf64rr:
+  {
     unsigned swiz = AMDIL_SRC_X000;
     if (isWComponentReg(reg)) {
       swiz = AMDIL_SRC_W000;
@@ -336,11 +255,12 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
     opSwiz.bits.swizzle = swiz + (opNum == 1);
   }
   break;
-  case AMDIL::DCREATE_v2f64:
+  case AMDIL::DCREATEv2f64rr:
     opSwiz.bits.swizzle = (opNum == 1)
                           ? AMDIL_SRC_0X0Y : AMDIL_SRC_X0Y0;
     break;
-  case AMDIL::LCREATE: {
+  case AMDIL::LCREATEi64rr:
+  {
     unsigned swiz1 = (opNum == 1) ? AMDIL_SRC_X000 : AMDIL_SRC_0X00;
     if (MI->getOperand(opNum).isReg()) {
       reg = MI->getOperand(opNum).getReg();
@@ -359,25 +279,25 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
     opSwiz.bits.swizzle = swiz1;
   }
   break;
-  case AMDIL::LCREATE_v2i64:
+  case AMDIL::LCREATEv2i64rr:
     if (isXYComponentReg(reg)) {
       opSwiz.bits.swizzle = opNum + AMDIL_SRC_YWYW;
     } else {
       opSwiz.bits.swizzle = opNum + AMDIL_SRC_YZW0;
     }
     break;
-  case AMDIL::CONTINUE_LOGICALNZ_f64:
-  case AMDIL::BREAK_LOGICALNZ_f64:
-  case AMDIL::IF_LOGICALNZ_f64:
-  case AMDIL::CONTINUE_LOGICALZ_f64:
-  case AMDIL::BREAK_LOGICALZ_f64:
-  case AMDIL::IF_LOGICALZ_f64:
-  case AMDIL::CONTINUE_LOGICALNZ_i64:
-  case AMDIL::BREAK_LOGICALNZ_i64:
-  case AMDIL::IF_LOGICALNZ_i64:
-  case AMDIL::CONTINUE_LOGICALZ_i64:
-  case AMDIL::BREAK_LOGICALZ_i64:
-  case AMDIL::IF_LOGICALZ_i64:
+  case AMDIL::CONTINUE_LOGICALNZf64r:
+  case AMDIL::BREAK_LOGICALNZf64r:
+  case AMDIL::IF_LOGICALNZf64r:
+  case AMDIL::CONTINUE_LOGICALZf64r:
+  case AMDIL::BREAK_LOGICALZf64r:
+  case AMDIL::IF_LOGICALZf64r:
+  case AMDIL::CONTINUE_LOGICALNZi64r:
+  case AMDIL::BREAK_LOGICALNZi64r:
+  case AMDIL::IF_LOGICALNZi64r:
+  case AMDIL::CONTINUE_LOGICALZi64r:
+  case AMDIL::BREAK_LOGICALZi64r:
+  case AMDIL::IF_LOGICALZi64r:
     assert(opNum == 0
            && "Only operand numbers 0 is custom!");
   case AMDIL::SWITCH:
@@ -389,7 +309,7 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       assert(!"Found a case we don't handle!");
     }
     break;
-  case AMDIL::UBIT_INSERT_i32:
+    GENERATE_4ARG_CASE(AMDIL::UBIT_INSERTi32)
     assert((opNum == 1 || opNum == 2)
            && "Only operand numbers 1 or 2 is custom!");
     if (isXComponentReg(reg)) {
@@ -402,7 +322,7 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle = AMDIL_SRC_WWWW;
     }
     break;
-  case AMDIL::UBIT_INSERT_v2i32:
+    GENERATE_4ARG_CASE(AMDIL::UBIT_INSERTv2i32)
     assert((opNum == 1 || opNum == 2)
            && "Only operand numbers 1 or 2 is custom!");
     if (isXYComponentReg(reg)) {
@@ -411,15 +331,15 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle = AMDIL_SRC_ZWZW;
     }
     break;
-  case AMDIL::UBIT_INSERT_v4i32:
+    GENERATE_4ARG_CASE(AMDIL::UBIT_INSERTv4i32)
     assert((opNum == 1 || opNum == 2)
            && "Only operand numbers 1 or 2 is custom!");
     opSwiz.bits.swizzle = AMDIL_SRC_DFLT;
     break;
-  case AMDIL::HILO_BITOR_v4i16:
+  case AMDIL::HILO_BITORv4i16rr:
     opSwiz.bits.swizzle = AMDIL_SRC_XZXZ + (opNum - 1);
     break;
-  case AMDIL::HILO_BITOR_v2i32:
+  case AMDIL::HILO_BITORv2i32rr:
     if (isXComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_X000;
     } else if (isYComponentReg(reg)) {
@@ -438,7 +358,8 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
       opSwiz.bits.swizzle += 3;
     }
     break;
-  case AMDIL::HILO_BITOR_v2i64: {
+  case AMDIL::HILO_BITORv2i64rr:
+  {
     unsigned offset = 0;
 
     if (isXYComponentReg(reg)) {
@@ -453,105 +374,60 @@ OpSwizzle getCustomSrcSwizzle(MachineInstr *MI, unsigned opNum)
     opSwiz.bits.swizzle = offset;
   }
   break;
-  };
+  }
   return opSwiz;
 }
+#undef GENERATE_3ARG_CASE
+#undef GENERATE_4ARG_CASE
 
 // This function checks for instructions that don't have
 // normal swizzle patterns to their destination operand.
 // These have to be handled on a case by case basis.
-bool isCustomDstInst(MachineInstr *MI)
-{
+bool isCustomDstInst(MachineInstr *MI) {
+  if (!MI->getDesc().getNumOperands()) return false;
   unsigned opcode = MI->getOpcode();
-  switch (opcode) {
-  default:
-    break;
-  case AMDIL::UAVARENASTORE_i8:
-  case AMDIL::UAVARENASTORE_i16:
-  case AMDIL::UAVARENASTORE_i32:
-  case AMDIL::UAVARENALOAD_i8:
-  case AMDIL::UAVARENALOAD_i16:
-  case AMDIL::UAVARENALOAD_i32:
-  case AMDIL::LDSLOAD:
-  case AMDIL::LDSLOAD_i8:
-  case AMDIL::LDSLOAD_u8:
-  case AMDIL::LDSLOAD_i16:
-  case AMDIL::LDSLOAD_u16:
-  case AMDIL::LDSSTORE:
-  case AMDIL::LDSSTORE_i8:
-  case AMDIL::LDSSTORE_i16:
-  case AMDIL::GDSLOAD:
-  case AMDIL::GDSSTORE:
-  case AMDIL::SEMAPHORE_INIT:
-  case AMDIL::SEMAPHORE_WAIT:
-  case AMDIL::SEMAPHORE_SIGNAL:
-  case AMDIL::APPEND_CONSUME:
-  case AMDIL::APPEND_ALLOC:
-  case AMDIL::HILO_BITOR_v4i16:
-  case AMDIL::HILO_BITOR_v2i64:
-    // 64 bit IO Instructions
-  case AMDIL::LDSLOAD64:
-  case AMDIL::LDSLOAD64_i8:
-  case AMDIL::LDSLOAD64_u8:
-  case AMDIL::LDSLOAD64_i16:
-  case AMDIL::LDSLOAD64_u16:
-  case AMDIL::LDSSTORE64:
-  case AMDIL::LDSSTORE64_i8:
-  case AMDIL::LDSSTORE64_i16:
-  case AMDIL::GDSLOAD64:
-  case AMDIL::GDSSTORE64:
-  case AMDIL::APPEND64_CONSUME:
-  case AMDIL::APPEND64_ALLOC:
+  unsigned regClass = MI->getDesc().OpInfo[0].RegClass;
+  if ((isPtrLoadInst(MI) || isPtrStoreInst(MI))
+      && ( (isLDSInst(MI)
+            && (MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI16RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI8RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI32RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI64RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRF32RegClassID))
+           || isGDSInst(MI)
+           || isScratchInst(MI)
+           || isCBInst(MI)
+           || isUAVArenaInst(MI))
+      && !isExtLoadInst(MI)
+      && !isTruncStoreInst(MI)) {
     return true;
   }
-
-  return false;
+  return MI->getDesc().TSFlags & (1ULL << AMDID::SWZLDST);
 }
 // This function returns the OpSwizzle with the custom swizzle set
 // correclty for destination operands.
-OpSwizzle getCustomDstSwizzle(MachineInstr *MI)
-{
+OpSwizzle getCustomDstSwizzle(MachineInstr *MI) {
   OpSwizzle opSwiz;
   opSwiz.u8all = 0;
   unsigned opcode = MI->getOpcode();
   opSwiz.bits.dst = 1;
   unsigned reg = MI->getOperand(0).isReg() ?
                  MI->getOperand(0).getReg() : 0;
-  switch (opcode) {
-  case AMDIL::LDSLOAD:
-  case AMDIL::LDSLOAD_i8:
-  case AMDIL::LDSLOAD_u8:
-  case AMDIL::LDSLOAD_i16:
-  case AMDIL::LDSLOAD_u16:
-  case AMDIL::LDSSTORE:
-  case AMDIL::LDSSTORE_i8:
-  case AMDIL::LDSSTORE_i16:
-  case AMDIL::UAVARENALOAD_i8:
-  case AMDIL::UAVARENALOAD_i16:
-  case AMDIL::UAVARENALOAD_i32:
-  case AMDIL::UAVARENASTORE_i8:
-  case AMDIL::UAVARENASTORE_i16:
-  case AMDIL::UAVARENASTORE_i32:
-  case AMDIL::GDSLOAD:
-  case AMDIL::GDSSTORE:
-  case AMDIL::SEMAPHORE_INIT:
-  case AMDIL::SEMAPHORE_WAIT:
-  case AMDIL::SEMAPHORE_SIGNAL:
-  case AMDIL::APPEND_CONSUME:
-  case AMDIL::APPEND_ALLOC:
-    // 64 bit IO instructions
-  case AMDIL::LDSLOAD64:
-  case AMDIL::LDSLOAD64_i8:
-  case AMDIL::LDSLOAD64_u8:
-  case AMDIL::LDSLOAD64_i16:
-  case AMDIL::LDSLOAD64_u16:
-  case AMDIL::LDSSTORE64:
-  case AMDIL::LDSSTORE64_i8:
-  case AMDIL::LDSSTORE64_i16:
-  case AMDIL::GDSLOAD64:
-  case AMDIL::GDSSTORE64:
-  case AMDIL::APPEND64_CONSUME:
-  case AMDIL::APPEND64_ALLOC:
+  unsigned regClass = MI->getDesc().OpInfo[0].RegClass;
+  if (((isPtrLoadInst(MI) || isPtrStoreInst(MI))
+       && ((isLDSInst(MI)
+            && (MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI16RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI8RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRI32RegClassID
+                || MI->getDesc().OpInfo[1].RegClass == AMDIL::GPRF32RegClassID))
+           || isGDSInst(MI)
+           || isScratchInst(MI)
+           || isCBInst(MI)
+           || isUAVArenaInst(MI))
+       && !isExtLoadInst(MI)
+       && !isTruncStoreInst(MI))
+      || isSemaphoreInst(MI)
+      || isAppendInst(MI)) {
     opSwiz.bits.dst = 0;
     if (isXComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_XXXX;
@@ -562,9 +438,20 @@ OpSwizzle getCustomDstSwizzle(MachineInstr *MI)
     } else if (isWComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_SRC_WWWW;
     }
-    break;
-  case AMDIL::HILO_BITOR_v4i16:
-  case AMDIL::HILO_BITOR_v2i64:
+    if (isPtrStoreInst(MI) && isScratchInst(MI)) {
+      if (isXYComponentReg(reg)) {
+        opSwiz.bits.dst = 1;
+        opSwiz.bits.swizzle = AMDIL_DST_XY__;
+      } else if (isZWComponentReg(reg)) {
+        opSwiz.bits.dst = 1;
+        opSwiz.bits.swizzle = AMDIL_DST___ZW;
+      }
+    }
+    return opSwiz;
+  }
+  switch (opcode) {
+  case AMDIL::HILO_BITORv4i16rr:
+  case AMDIL::HILO_BITORv2i64rr:
     if (isXYComponentReg(reg)) {
       opSwiz.bits.swizzle = AMDIL_DST_XY__;
     } else {
@@ -586,7 +473,6 @@ OpSwizzle getCustomDstSwizzle(MachineInstr *MI)
   };
   return opSwiz;
 }
-
 OpSwizzle getSrcSwizzleID(MachineInstr *MI, unsigned opNum)
 {
   assert(opNum < MI->getNumOperands() &&
@@ -612,7 +498,8 @@ OpSwizzle getSrcSwizzleID(MachineInstr *MI, unsigned opNum)
     curSwiz.bits.swizzle = AMDIL_SRC_XYXY;
   } else if (isZWComponentReg(reg)) {
     curSwiz.bits.swizzle = AMDIL_SRC_ZWZW;
-  } else if (reg == AMDIL::R1011 && isMove(MI->getOpcode())) {
+  } else if (reg == AMDIL::R1011
+             && MI->getOpcode() == TargetOpcode::COPY) {
     reg = MI->getOperand(0).getReg();
     if (isXComponentReg(reg) || isYComponentReg(reg)
         || isZComponentReg(reg) || isWComponentReg(reg)) {
@@ -625,7 +512,6 @@ OpSwizzle getSrcSwizzleID(MachineInstr *MI, unsigned opNum)
   }
   return curSwiz;
 }
-
 OpSwizzle getDstSwizzleID(MachineInstr *MI)
 {
   OpSwizzle curSwiz;
@@ -655,19 +541,9 @@ OpSwizzle getDstSwizzleID(MachineInstr *MI)
 
   return curSwiz;
 }
-
-/// All vector instructions except for VCREATE_* need to be handled
-/// with custom swizzle packing code.
-bool isCustomVectorInst(MachineInstr *MI)
-{
-  unsigned opcode = MI->getOpcode();
-  return (opcode >= AMDIL::VCONCAT_v2f32 && opcode <= AMDIL::VCONCAT_v4i8)
-         || (opcode >= AMDIL::VEXTRACT_v2f32 && opcode <= AMDIL::VINSERT_v4i8);
-}
-
 void encodeVectorInst(MachineInstr *MI, bool mDebug)
 {
-  assert(isCustomVectorInst(MI) && "Only a vector instruction can be"
+  assert(isVectorOpInst(MI) && "Only a vector instruction can be"
          " used to generate a new vector instruction!");
   unsigned opcode = MI->getOpcode();
   // For all of the opcodes, the destination swizzle is the same.
@@ -678,16 +554,18 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
   unsigned offset = 0;
   unsigned reg = MI->getOperand(0).getReg();
   switch (opcode) {
-  case AMDIL::VCONCAT_v2f32:
-  case AMDIL::VCONCAT_v2i16:
-  case AMDIL::VCONCAT_v2i32:
-  case AMDIL::VCONCAT_v2i8:
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2f32)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2i32)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2i16)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2i8)
     if (isZWComponentReg(reg)) {
       offset = 2;
     }
     for (unsigned x = 1; x < 3; ++x) {
-      reg = MI->getOperand(x).getReg();
       unsigned offset2 = 0;
+      if (MI->getOperand(x).isReg()) {
+        reg = MI->getOperand(x).getReg();
+      }
       if (isXComponentReg(reg)) {
         offset2 = 0;
       } else if (isYComponentReg(reg)) {
@@ -701,14 +579,16 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
       MI->getOperand(x).setTargetFlags(srcID.u8all);
     }
     break;
-  case AMDIL::VCONCAT_v2f64:
-  case AMDIL::VCONCAT_v2i64:
-  case AMDIL::VCONCAT_v4f32:
-  case AMDIL::VCONCAT_v4i16:
-  case AMDIL::VCONCAT_v4i32:
-  case AMDIL::VCONCAT_v4i8:
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2f64)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv2i64)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv4f32)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv4i32)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv4i16)
+    GENERATE_2ARG_CASE(AMDIL::VCONCATv4i8)
     for (unsigned x = 1; x < 3; ++x) {
-      reg = MI->getOperand(x).getReg();
+      if (MI->getOperand(x).isReg()) {
+        reg = MI->getOperand(x).getReg();
+      }
       if (isZWComponentReg(reg)) {
         srcID.bits.swizzle = AMDIL_SRC_ZW00 + (x - 1);
       } else {
@@ -717,10 +597,10 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
       MI->getOperand(x).setTargetFlags(srcID.u8all);
     }
     break;
-  case AMDIL::VEXTRACT_v2f32:
-  case AMDIL::VEXTRACT_v2i16:
-  case AMDIL::VEXTRACT_v2i32:
-  case AMDIL::VEXTRACT_v2i8:
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2f32)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2i32)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2i16)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2i8)
     assert(MI->getOperand(2).getImm() <= 2
            && "Invalid immediate value encountered for this formula!");
     if (isXComponentReg(reg)) {
@@ -734,7 +614,9 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
     }
     assert(MI->getOperand(2).getImm() <= 4
            && "Invalid immediate value encountered for this formula!");
-    reg = MI->getOperand(1).getReg();
+    if (MI->getOperand(1).isReg()) {
+      reg = MI->getOperand(1).getReg();
+    }
     if (isZWComponentReg(reg)) {
       srcID.bits.swizzle = AMDIL_SRC_Z000;
     } else {
@@ -744,10 +626,10 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
     MI->getOperand(1).setTargetFlags(srcID.u8all);
     MI->getOperand(2).setTargetFlags(0);
     break;
-  case AMDIL::VEXTRACT_v4f32:
-  case AMDIL::VEXTRACT_v4i16:
-  case AMDIL::VEXTRACT_v4i32:
-  case AMDIL::VEXTRACT_v4i8:
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv4f32)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv4i32)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv4i16)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv4i8)
     if (isXComponentReg(reg)) {
       offset = 0;
     } else if (isYComponentReg(reg)) {
@@ -767,8 +649,8 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
     MI->getOperand(1).setTargetFlags(srcID.u8all);
     MI->getOperand(2).setTargetFlags(0);
     break;
-  case AMDIL::VEXTRACT_v2i64:
-  case AMDIL::VEXTRACT_v2f64:
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2f64)
+    GENERATE_1ARG_CASE(AMDIL::VEXTRACTv2i64)
     assert(MI->getOperand(2).getImm() <= 2
            && "Invalid immediate value encountered for this formula!");
     if (isZWComponentReg(reg)) {
@@ -779,107 +661,118 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
     MI->getOperand(1).setTargetFlags(srcID.u8all);
     MI->getOperand(2).setTargetFlags(0);
     break;
-  case AMDIL::VINSERT_v2f32:
-  case AMDIL::VINSERT_v2i32:
-  case AMDIL::VINSERT_v2i16:
-  case AMDIL::VINSERT_v2i8: {
-    unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
-    OpSwizzle src2ID;
-    src2ID.u8all = 0;
-    if (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP) {
-      offset = 2;
-    }
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2f32)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2i32)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2i16)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2i8)
+    {
+      unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
+      OpSwizzle src2ID;
+      src2ID.u8all = 0;
+      if (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP) {
+        offset = 2;
+      }
 
-    unsigned offset1 = 0;
-    reg = MI->getOperand(1).getReg();
-    if (isZWComponentReg(reg)) {
-      offset1 = 8;
-    }
+      unsigned offset1 = 0;
+      if (MI->getOperand(1).isReg()) {
+        reg = MI->getOperand(1).getReg();
+        if (isZWComponentReg(reg)) {
+          offset1 = 8;
+        }
+      }
 
-    unsigned offset2 = 0;
-    reg = MI->getOperand(2).getReg();
-    if (isYComponentReg(reg)) {
-      offset2 = 4;
-    } else if (isZComponentReg(reg)) {
-      offset2 = 8;
-    } else if (isWComponentReg(reg)) {
-      offset2 = 12;
+      unsigned offset2 = 0;
+      if (MI->getOperand(2).isReg()) {
+        reg = MI->getOperand(2).getReg();
+        if (isYComponentReg(reg)) {
+          offset2 = 4;
+        } else if (isZComponentReg(reg)) {
+          offset2 = 8;
+        } else if (isWComponentReg(reg)) {
+          offset2 = 12;
+        }
+      }
+      if (((swizVal >> 8) & 0xFF) == 1) {
+        srcID.bits.swizzle = AMDIL_SRC_X000 + offset1 + offset;
+        src2ID.bits.swizzle = AMDIL_SRC_0X00 + offset2 + offset;
+      } else {
+        srcID.bits.swizzle = AMDIL_SRC_0Y00 + offset1 + offset;
+        src2ID.bits.swizzle = AMDIL_SRC_X000 + offset2 + offset;
+      }
+      MI->getOperand(1).setTargetFlags(srcID.u8all);
+      MI->getOperand(2).setTargetFlags(src2ID.u8all);
+      MI->getOperand(3).setTargetFlags(0);
+      MI->getOperand(4).setTargetFlags(0);
     }
-    if (((swizVal >> 8) & 0xFF) == 1) {
-      srcID.bits.swizzle = AMDIL_SRC_X000 + offset1 + offset;
-      src2ID.bits.swizzle = AMDIL_SRC_0X00 + offset2 + offset;
-    } else {
-      srcID.bits.swizzle = AMDIL_SRC_0Y00 + offset1 + offset;
-      src2ID.bits.swizzle = AMDIL_SRC_X000 + offset2 + offset;
+    break;
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv4f32)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv4i32)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv4i16)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv4i8)
+    {
+      unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
+      OpSwizzle src2ID;
+      src2ID.u8all = 0;
+      if (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP) {
+        offset = 2;
+      }
+      unsigned offset2 = 0;
+      if (MI->getOperand(2).isReg()) {
+        reg = MI->getOperand(2).getReg();
+        if (isYComponentReg(reg)) {
+          offset2 = 4;
+        } else if (isZComponentReg(reg)) {
+          offset2 = 8;
+        } else if (isWComponentReg(reg)) {
+          offset2 = 12;
+        } else if (isZWComponentReg(reg)) {
+          offset2 = 2;
+        }
+      }
+      if ((swizVal >> 8 & 0xFF) == 1) {
+        srcID.bits.swizzle = (!offset) ? AMDIL_SRC_X0ZW : AMDIL_SRC_XYZ0;
+        src2ID.bits.swizzle = AMDIL_SRC_0X00 + offset2 + offset;
+      } else if ((swizVal >> 16 & 0xFF) == 1) {
+        srcID.bits.swizzle = AMDIL_SRC_XY0W;
+        src2ID.bits.swizzle = AMDIL_SRC_00X0 + offset2;
+      } else if ((swizVal >> 24 & 0xFF) == 1) {
+        srcID.bits.swizzle = AMDIL_SRC_XYZ0;
+        src2ID.bits.swizzle = AMDIL_SRC_000X + offset2;
+      } else {
+        srcID.bits.swizzle = (!offset) ? AMDIL_SRC_0YZW : AMDIL_SRC_XY0W;
+        src2ID.bits.swizzle = AMDIL_SRC_X000 + offset2 + offset;
+      }
+      MI->getOperand(1).setTargetFlags(srcID.u8all);
+      MI->getOperand(2).setTargetFlags(src2ID.u8all);
+      MI->getOperand(3).setTargetFlags(0);
+      MI->getOperand(4).setTargetFlags(0);
     }
-    MI->getOperand(1).setTargetFlags(srcID.u8all);
-    MI->getOperand(2).setTargetFlags(src2ID.u8all);
-    MI->getOperand(3).setTargetFlags(0);
-    MI->getOperand(4).setTargetFlags(0);
-  }
-  break;
-  case AMDIL::VINSERT_v4f32:
-  case AMDIL::VINSERT_v4i16:
-  case AMDIL::VINSERT_v4i32:
-  case AMDIL::VINSERT_v4i8: {
-    unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
-    OpSwizzle src2ID;
-    src2ID.u8all = 0;
-    if (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP) {
-      offset = 2;
+    break;
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2f64)
+    GENERATE_2ARG_CASE(AMDIL::VINSERTv2i64)
+    {
+      unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
+      OpSwizzle src2ID;
+      src2ID.u8all = 0;
+      if (MI->getOperand(2).isReg()) {
+        reg = MI->getOperand(2).getReg();
+        if (isZWComponentReg(reg)) {
+          offset = 2;
+        }
+      }
+      if (((swizVal >> 8) & 0xFF) == 1) {
+        srcID.bits.swizzle = AMDIL_SRC_XY00;
+        src2ID.bits.swizzle = AMDIL_SRC_00XY + offset;
+      } else {
+        srcID.bits.swizzle = AMDIL_SRC_00ZW;
+        src2ID.bits.swizzle = AMDIL_SRC_XY00 + offset;
+      }
+      MI->getOperand(1).setTargetFlags(srcID.u8all);
+      MI->getOperand(2).setTargetFlags(src2ID.u8all);
+      MI->getOperand(3).setTargetFlags(0);
+      MI->getOperand(4).setTargetFlags(0);
     }
-    unsigned offset2 = 0;
-    reg = MI->getOperand(2).getReg();
-    if (isYComponentReg(reg)) {
-      offset2 = 4;
-    } else if (isZComponentReg(reg)) {
-      offset2 = 8;
-    } else if (isWComponentReg(reg)) {
-      offset2 = 12;
-    } else if (isZWComponentReg(reg)) {
-      offset2 = 2;
-    }
-    if ((swizVal >> 8 & 0xFF) == 1) {
-      srcID.bits.swizzle = (!offset) ? AMDIL_SRC_X0ZW : AMDIL_SRC_XYZ0;
-      src2ID.bits.swizzle = AMDIL_SRC_0X00 + offset2 + offset;
-    } else if ((swizVal >> 16 & 0xFF) == 1) {
-      srcID.bits.swizzle = AMDIL_SRC_XY0W;
-      src2ID.bits.swizzle = AMDIL_SRC_00X0 + offset2;
-    } else if ((swizVal >> 24 & 0xFF) == 1) {
-      srcID.bits.swizzle = AMDIL_SRC_XYZ0;
-      src2ID.bits.swizzle = AMDIL_SRC_000X + offset2;
-    } else {
-      srcID.bits.swizzle = (!offset) ? AMDIL_SRC_0YZW : AMDIL_SRC_XY0W;
-      src2ID.bits.swizzle = AMDIL_SRC_X000 + offset2 + offset;
-    }
-    MI->getOperand(1).setTargetFlags(srcID.u8all);
-    MI->getOperand(2).setTargetFlags(src2ID.u8all);
-    MI->getOperand(3).setTargetFlags(0);
-    MI->getOperand(4).setTargetFlags(0);
-  }
-  break;
-  case AMDIL::VINSERT_v2f64:
-  case AMDIL::VINSERT_v2i64: {
-    unsigned swizVal = (unsigned)MI->getOperand(4).getImm();
-    OpSwizzle src2ID;
-    src2ID.u8all = 0;
-    reg = MI->getOperand(2).getReg();
-    if (isZWComponentReg(reg)) {
-      offset = 2;
-    }
-    if (((swizVal >> 8) & 0xFF) == 1) {
-      srcID.bits.swizzle = AMDIL_SRC_XY00;
-      src2ID.bits.swizzle = AMDIL_SRC_00XY + offset;
-    } else {
-      srcID.bits.swizzle = AMDIL_SRC_00ZW;
-      src2ID.bits.swizzle = AMDIL_SRC_XY00 + offset;
-    }
-    MI->getOperand(1).setTargetFlags(srcID.u8all);
-    MI->getOperand(2).setTargetFlags(src2ID.u8all);
-    MI->getOperand(3).setTargetFlags(0);
-    MI->getOperand(4).setTargetFlags(0);
-  }
-  break;
+    break;
   };
   if (mDebug) {
     for (unsigned i = 0; i < MI->getNumOperands(); ++i) {
@@ -888,7 +781,6 @@ void encodeVectorInst(MachineInstr *MI, bool mDebug)
     dbgs() << "\n";
   }
 }
-
 // This function loops through all of the instructions, skipping function
 // calls, and encodes the swizzles in the operand.
 void encodeSwizzles(MachineFunction &MF, bool mDebug)
@@ -908,7 +800,7 @@ void encodeSwizzles(MachineFunction &MF, bool mDebug)
         dbgs() << "Encoding instruction: ";
         MI->print(dbgs());
       }
-      if (isCustomVectorInst(MI)) {
+      if (isVectorOpInst(MI)) {
         encodeVectorInst(MI, mDebug);
         continue;
       }

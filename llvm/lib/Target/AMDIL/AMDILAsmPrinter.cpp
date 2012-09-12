@@ -57,21 +57,17 @@ createAMDILCodePrinterPass(AMDIL_ASM_PRINTER_ARGUMENTS)
   const AMDILSubtarget *stm = &TM.getSubtarget<AMDILSubtarget>();
   return stm->device()->getAsmPrinter(ASM_PRINTER_ARGUMENTS);
 }
-
 #include "AMDILGenAsmWriter.inc"
 // Force static initialization
-extern "C" void LLVMInitializeAMDILAsmPrinter()
-{
+extern "C" void LLVMInitializeAMDILAsmPrinter() {
   llvm::TargetRegistry::RegisterAsmPrinter(TheAMDILTarget,
-      createAMDILCodePrinterPass);
+                                           createAMDILCodePrinterPass);
 }
-
-AMDILInstPrinter *llvm::createAMDILInstPrinter(const MCAsmInfo &MAI, const MCInstrInfo &MII,
-    const MCRegisterInfo &MRI)
-{
+AMDILInstPrinter *llvm::createAMDILInstPrinter(const MCAsmInfo &MAI,
+                                               const MCInstrInfo &MII,
+                                               const MCRegisterInfo &MRI) {
   return new AMDILInstPrinter(MAI, MII, MRI);
 }
-
 //
 // @param name
 // @brief strips KERNEL_PREFIX and KERNEL_SUFFIX from the name
@@ -103,7 +99,6 @@ AMDILAsmPrinter::AMDILAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS)
   mMFI = NULL;
   mAMI = NULL;
 }
-
 AMDILAsmPrinter::~AMDILAsmPrinter()
 {
   delete mMeta;
@@ -113,7 +108,6 @@ AMDILAsmPrinter::getPassName() const
 {
   return "AMDIL Assembly Printer";
 }
-
 void
 AMDILAsmPrinter::EmitInstruction(const MachineInstr *II)
 {
@@ -122,7 +116,7 @@ AMDILAsmPrinter::EmitInstruction(const MachineInstr *II)
   formatted_raw_ostream O(OFunStr);
   const AMDILSubtarget *curTarget = mTM->getSubtargetImpl();
   if (mDebugMode) {
-    O << ";" ;
+    O << ";";
     II->print(O);
   }
   if (isMacroFunc(II)) {
@@ -172,7 +166,7 @@ AMDILAsmPrinter::EmitInstruction(const MachineInstr *II)
       } else {
         printOperand(II, x
                      , O
-                    );
+                     );
       }
       if (!x) {
         O << "), (";
@@ -206,12 +200,23 @@ AMDILAsmPrinter::EmitInstruction(const MachineInstr *II)
     } else {
       mMFI->addCalledIntr(macronum);
     }
+  } else if (II->getOpcode() == AMDIL::COPY) {
+    printCopy(II, O);
   } else {
-
     printInstruction(II, O);
   }
   O.flush();
   OutStreamer.EmitRawText(StringRef(FunStr));
+}
+void
+AMDILAsmPrinter::printCopy(const MachineInstr *MI,
+                           OSTREAM_TYPE &O)
+{
+  O << "\tmov ";
+  printOperand(MI, 0, O);
+  O << ", ";
+  printOperand(MI, 1, O);
+  O << "\n";
 }
 void
 AMDILAsmPrinter::emitMacroFunc(const MachineInstr *MI,
@@ -225,7 +230,6 @@ AMDILAsmPrinter::emitMacroFunc(const MachineInstr *MI,
   }
   emitMCallInst(MI, O, name);
 }
-
 bool
 AMDILAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
 {
@@ -243,7 +247,6 @@ AMDILAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
   EmitFunctionBody();
   return false;
 }
-
 void
 AMDILAsmPrinter::addCPoolLiteral(const Constant *C)
 {
@@ -261,11 +264,11 @@ AMDILAsmPrinter::addCPoolLiteral(const Constant *C)
     if (CI->getBitWidth() == (int64_t)64) {
       mMFI->addi64Literal(val);
     } else if (CI->getBitWidth() == (int64_t)8) {
-      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONST_i8);
+      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONSTi8);
     } else if (CI->getBitWidth() == (int64_t)16) {
-      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONST_i16);
+      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONSTi16);
     } else {
-      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONST_i32);
+      mMFI->addi32Literal((uint32_t)val, AMDIL::LOADCONSTi32);
     }
   } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
     uint32_t size = CA->getNumOperands();
@@ -273,9 +276,9 @@ AMDILAsmPrinter::addCPoolLiteral(const Constant *C)
       addCPoolLiteral(CA->getOperand(x));
     }
   } else if (const ConstantAggregateZero *CAZ
-             = dyn_cast<ConstantAggregateZero>(C)) {
+               = dyn_cast<ConstantAggregateZero>(C)) {
     if (CAZ->isNullValue()) {
-      mMFI->addi32Literal(0, AMDIL::LOADCONST_i32);
+      mMFI->addi32Literal(0, AMDIL::LOADCONSTi32);
       mMFI->addi64Literal(0);
       mMFI->addf64Literal((uint64_t)0);
       mMFI->addf32Literal((uint32_t)0);
@@ -299,7 +302,6 @@ AMDILAsmPrinter::addCPoolLiteral(const Constant *C)
     assert(0 && "Found a constant type that I don't know how to handle");
   }
 }
-
 void
 AMDILAsmPrinter::EmitGlobalVariable(const GlobalVariable *GV)
 {
@@ -317,12 +319,10 @@ AMDILAsmPrinter::EmitGlobalVariable(const GlobalVariable *GV)
   O.flush();
   OutStreamer.EmitRawText(O.str());
 }
-
-
 void
 AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
                               , OSTREAM_TYPE &O
-                             )
+                              )
 {
   const MachineOperand &MO = MI->getOperand (opNum);
 
@@ -334,13 +334,37 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
         // FIXME: we need to remove all virtual register creation after register allocation.
         // This is a work-around to make sure that the virtual register range does not
         // clobber the physical register range.
-        O << "r" << ((MO.getReg() & 0x7FFFFFFF)  + 2048) << getSwizzle(MI, opNum);
+        O << "r" << ((MO.getReg() & 0x7FFFFFFF)  + 2048) << getSwizzle(MI,
+                                                                       opNum);
       } else if (opNum == 0
-                 && (opcode == AMDIL::SCRATCHSTORE
-                     ||opcode == AMDIL::SCRATCHSTORE64)) {
+                 && isAtomicInst(MI) && isStoreInst(MI)) {
+        const MachineOperand &MO = MI->getOperand(opNum);
+        OpSwizzle swiz;
+        unsigned reg = MI->getOperand(2).getReg();
+        swiz.u8all = MO.getTargetFlags();
+        O << "mem0";
+        if (isXComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST_X___);
+        } else if (isYComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST__Y__);
+        } else if (isZComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST___Z_);
+        } else if (isWComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST____W);
+        } else if (isXYComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST_XY__);
+        } else if (isZWComponentReg(reg)) {
+          O << getDstSwizzle(AMDIL_DST___ZW);
+        } else {
+          O << getDstSwizzle(AMDIL_DST_DFLT);
+        }
+        O << ", " << getRegisterName(MO.getReg()) << getSwizzle(MI, opNum);
+      } else if (opNum == 0
+                 && isScratchInst(MI) && isStoreInst(MI)) {
         O << getRegisterName(MO.getReg()) << ".x]";
-        // If we aren't the vector register, print the dst swizzle.
-        if (MI->getOperand(1).getReg() != AMDIL::R1011) {
+        uint32_t reg = MI->getOperand(1).getReg();
+        // If we aren't a vector register, print the dst swizzle.
+        if (reg < AMDIL::R1 || reg > AMDIL::R1012) {
           O << getSwizzle(MI, opNum);
         }
       } else {
@@ -352,56 +376,10 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
     }
     break;
   case MachineOperand::MO_Immediate:
-  case MachineOperand::MO_FPImmediate: {
-    unsigned opcode = MI->getOpcode();
-    if ((opNum == (int)(MI->getNumOperands() - 1))
-        && (   (opcode >= AMDIL::ATOM_A_ADD
-                && opcode <= AMDIL::ATOM_R_XOR_NORET_B64)
-               || (opcode >= AMDIL::ATOM64_G_ADD
-                   && opcode <= AMDIL::ATOM64_R_XOR_NORET_B64)
-               || opcode == AMDIL::SEMAPHORE_INIT
-               || (opcode >= AMDIL::SCRATCHLOAD
-                   && opcode <= AMDIL::SCRATCHSTORE)
-               || (opcode >= AMDIL::LDSLOAD && opcode <= AMDIL::LDSSTORE_i8)
-               || (opcode >= AMDIL::GDSLOAD && opcode <= AMDIL::GDSSTORE)
-               || (opcode >= AMDIL::UAVARENALOAD_i16
-                   && opcode <= AMDIL::UAVRAWSTORE_v4i32)
-               || opcode == AMDIL::CBLOAD
-               || opcode == AMDIL::CASE)
-       ) {
-      O << MO.getImm();
-    } else if (((opcode >= AMDIL::VEXTRACT_v2f32
-                 && opcode <= AMDIL::VEXTRACT_v4i8)
-                && (opNum == 2))) {
-      // The swizzle is encoded in the operand so the
-      // literal that represents the swizzle out of ISel
-      // can be ignored.
-    } else if ((opcode >= AMDIL::VINSERT_v2f32)
-               && (opcode <= AMDIL::VINSERT_v4i8)
-               && ((opNum == 3)  || (opNum == 4))) {
-      // The swizzle is encoded in the operand so the
-      // literal that represents the swizzle out of ISel
-      // can be ignored.
-      // The swizzle is encoded in the operand so the
-      // literal that represents the swizzle out of ISel
-      // can be ignored.
-    } else if (opNum == 1 &&
-               (isAppendInst(TM, MI)
-                || isReadImageInst(TM, MI)
-                || isImageTXLDInst(TM, MI)
-                || opcode == AMDIL::CBLOAD)) {
-      // We don't need to emit the 'l' so we just emit
-      // the immediate as it stores the resource ID and
-      // is not a true literal.
-      O << MO.getImm();
-    } else if (opNum == 0 &&
-               (opcode == AMDIL::SEMAPHORE_INIT
-                || opcode == AMDIL::SEMAPHORE_WAIT
-                || opcode == AMDIL::SEMAPHORE_SIGNAL
-                || isReadImageInst(TM, MI)
-                || isWriteImageInst(TM, MI))) {
-      O << MO.getImm();
-    } else if (opNum == 3 && isReadImageInst(TM, MI)) {
+  case MachineOperand::MO_FPImmediate:
+  {
+    if (isSkippedLiteral(MI, opNum)) {
+    } else if (isBypassedLiteral(MI, opNum)) {
       O << MO.getImm();
     } else if (MO.isImm() || MO.isFPImm()) {
       O << "l" << MO.getImm() << getSwizzle(MI, opNum);
@@ -415,7 +393,8 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
   case MachineOperand::MO_MachineBasicBlock:
     EmitBasicBlockStart(MO.getMBB());
     return;
-  case MachineOperand::MO_GlobalAddress: {
+  case MachineOperand::MO_GlobalAddress:
+  {
     int offset = 0;
     const GlobalValue *gv = MO.getGlobal();
     // Here we look up by the name for the corresponding number
@@ -431,11 +410,11 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
     } else if((offset = mAMI->getArrayOffset(gv->getName()))
               != -1) {
       mMFI->setUsesLDS();
-      O << "l" << mMFI->getIntLits(offset) << ".x";
+      O << "l" << mMFI->getLitIdx((uint32_t)offset) << ".x";
     } else if((offset = mAMI->getConstOffset(gv->getName()))
               != -1) {
       mMFI->addMetadata(";memory:datareqd");
-      O << "l" << mMFI->getIntLits(offset) << ".x";
+      O << "l" << mMFI->getLitIdx((uint32_t)offset) << ".x";
       mMFI->setUsesConstant();
     } else {
       assert(0 && "GlobalAddress without a function call!");
@@ -444,10 +423,11 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
     }
   }
   break;
-  case MachineOperand::MO_ExternalSymbol: {
+  case MachineOperand::MO_ExternalSymbol:
+  {
     if (MI->getOpcode() == AMDIL::CALL) {
       uint32_t funcNum = mAMI->getOrCreateFunctionID(
-                           std::string(MO.getSymbolName()));
+        std::string(MO.getSymbolName()));
       mMFI->addCalledFunc(funcNum);
       O << funcNum << " ; "<< MO.getSymbolName();
       // This is where pointers should get resolved
@@ -458,32 +438,31 @@ AMDILAsmPrinter::printOperand(const MachineInstr *MI, int opNum
     }
   }
   break;
-  case MachineOperand::MO_ConstantPoolIndex: {
+  case MachineOperand::MO_ConstantPoolIndex:
+  {
     // Copies of constant buffers need to be done here
     const AMDILKernel *tmp = mAMI->getKernel(mKernelName);
-    O << "l" << mMFI->getIntLits(
-        tmp->CPOffsets[MO.getIndex()].first);
+    O << "l" << mMFI->getLitIdx(
+      tmp->CPOffsets[MO.getIndex()].first);
   }
   break;
   default:
-    O << "<unknown operand type>";
-    break;
+    O << "<unknown operand type>"; break;
   }
 }
-
 void
 AMDILAsmPrinter::printMemOperand(
   const MachineInstr *MI,
   int opNum,
   OSTREAM_TYPE &O,
   const char *Modifier
-)
+  )
 {
   const MachineOperand &MO = MI->getOperand (opNum);
   if (opNum != 1) {
     printOperand(MI, opNum
                  , O
-                );
+                 );
   } else {
     switch (MO.getType()) {
     case MachineOperand::MO_Register:
@@ -493,57 +472,34 @@ AMDILAsmPrinter::printMemOperand(
           // FIXME: we need to remove all virtual register creation after register allocation.
           // This is a work-around to make sure that the virtual register range does not
           // clobber the physical register range.
-          O << "r" << ((MO.getReg() & 0x7FFFFFFF) + 2048) << getSwizzle(MI, opNum);
+          O << "r" << ((MO.getReg() & 0x7FFFFFFF) + 2048) << getSwizzle(MI,
+                                                                        opNum);
         } else if (opNum == 0
-                   && (opcode == AMDIL::SCRATCHSTORE
-                       ||opcode == AMDIL::SCRATCHSTORE64)) {
-          O << getRegisterName(MO.getReg()) << ".x]" << getSwizzle(MI, opNum);
+                   && isScratchInst(MI)) {
+          O << getRegisterName(MO.getReg()) << ".x]";
+          uint32_t reg = MI->getOperand(1).getReg();
+          // If we aren't the vector register, print the dst swizzle.
+          if (reg < AMDIL::R1 || reg > AMDIL::R1012) {
+            O << getSwizzle(MI, opNum);
+          }
         } else {
           O << getRegisterName(MO.getReg()) << getSwizzle(MI, opNum);
         }
-      } else {
+      }
+      else {
         assert(0 && "Invalid Register type");
         mMFI->addErrorMsg(
           amd::CompilerErrorMessage[INTERNAL_ERROR]);
       }
       break;
     case MachineOperand::MO_Immediate:
-    case MachineOperand::MO_FPImmediate: {
-      unsigned opcode = MI->getOpcode();
-      if ((opNum == (int)(MI->getNumOperands() - 1))
-          && ((opcode >= AMDIL::ATOM_A_ADD
-               && opcode <= AMDIL::ATOM_R_XOR_B64)
-              || opcode == AMDIL::SEMAPHORE_INIT
-              || (opcode >= AMDIL::SCRATCHLOAD
-                  && opcode <= AMDIL::SCRATCHSTORE)
-              || (opcode >= AMDIL::LDSLOAD && opcode <= AMDIL::LDSSTORE_i8)
-              || (opcode >= AMDIL::GDSLOAD && opcode <= AMDIL::GDSSTORE)
-              || (opcode >= AMDIL::UAVARENALOAD_i32
-                  && opcode <= AMDIL::UAVRAWSTORE_v4i32)
-              || opcode == AMDIL::CBLOAD
-              || opcode == AMDIL::CASE)
-         ) {
-        O << MO.getImm();
-      } else if (opNum == 1 &&
-                 (isAppendInst(TM, MI)
-                  || isReadImageInst(TM, MI)
-                  || isImageTXLDInst(TM, MI)
-                  || opcode == AMDIL::CBLOAD)) {
-        // We don't need to emit the 'l' so we just emit
-        // the immediate as it stores the resource ID and
-        // is not a true literal.
-        O << MO.getImm();
-      } else if (opNum == 0 &&
-                 (opcode == AMDIL::SEMAPHORE_INIT
-                  || opcode == AMDIL::SEMAPHORE_WAIT
-                  || opcode == AMDIL::SEMAPHORE_SIGNAL
-                  || isReadImageInst(TM, MI)
-                  || isWriteImageInst(TM, MI))) {
-        O << MO.getImm();
-      } else if (opNum == 3 && isReadImageInst(TM, MI)) {
+    case MachineOperand::MO_FPImmediate:
+    {
+      if (isSkippedLiteral(MI, opNum)) {
+      } else if (isBypassedLiteral(MI, opNum)) {
         O << MO.getImm();
       } else if (MO.isImm() || MO.isFPImm()) {
-        O << "l" << MO.getImm();
+        O << "l" << MO.getImm() << getSwizzle(MI, opNum);
       } else {
         assert(0 && "Invalid literal/constant type");
         mMFI->addErrorMsg(
@@ -551,21 +507,19 @@ AMDILAsmPrinter::printMemOperand(
       }
     }
     break;
-    case MachineOperand::MO_ConstantPoolIndex: {
+    case MachineOperand::MO_ConstantPoolIndex:
+    {
       // Copies of constant buffers need to be done here
       const AMDILKernel *tmp = mAMI->getKernel(mKernelName);
-      O << "l" << mMFI->getIntLits(
-          tmp->CPOffsets[MO.getIndex()].first);
+      O << "l" << mMFI->getLitIdx(
+        tmp->CPOffsets[MO.getIndex()].first);
     }
     break;
     default:
-      O << "<unknown operand type>";
-      break;
+      O << "<unknown operand type>"; break;
     };
   }
 }
-
-
 const char*
 AMDILAsmPrinter::getSwizzle(const MachineInstr *MI, int opNum)
 {
@@ -578,7 +532,6 @@ AMDILAsmPrinter::getSwizzle(const MachineInstr *MI, int opNum)
     return getDstSwizzle(swiz.bits.swizzle);
   }
 }
-
 void
 AMDILAsmPrinter::EmitStartOfAsmFile(Module &M)
 {
@@ -586,7 +539,6 @@ AMDILAsmPrinter::EmitStartOfAsmFile(Module &M)
   raw_svector_ostream O(Str);
   const AMDILSubtarget *curTarget = mTM->getSubtargetImpl();
   curTarget->setKernelManager(mMeta);
-
 
   if (curTarget->device()->isSupported(
         AMDILDeviceInfo::MacroDB)) {
@@ -601,7 +553,6 @@ AMDILAsmPrinter::EmitStartOfAsmFile(Module &M)
     O << "mov out0, r0\n";
     O << "mend\n";
   }
-
 
   // We need to increase the number of reserved literals for
   // any literals we output manually instead of via the
@@ -669,7 +620,9 @@ AMDILAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned int OpNo,
 }
 bool
 AMDILAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
-                                       unsigned int OpNo, unsigned int AsmVariant, const char *ExtraCode)
+                                       unsigned int OpNo,
+                                       unsigned int AsmVariant,
+                                       const char *ExtraCode)
 {
   assert(0 && "When is this function hit!");
   return false;
@@ -681,13 +634,13 @@ AMDILAsmPrinter::EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV)
 }
 void
 AMDILAsmPrinter::printPICJumpTableSetLabel(unsigned uid,
-    const MachineBasicBlock *MBB) const
+                                           const MachineBasicBlock *MBB) const
 {
   assert(0 && "When is this function hit!");
 }
 void
 AMDILAsmPrinter::printPICJumpTableSetLabel(unsigned uid, unsigned uid2,
-    const MachineBasicBlock *MBB) const
+                                           const MachineBasicBlock *MBB) const
 {
   assert(0 && "When is this function hit!");
 }
@@ -698,7 +651,6 @@ AMDILAsmPrinter::printPICJumpTableEntry(const MachineJumpTableInfo *MJTI,
 {
   assert(0 && "When is this function hit!");
 }
-
 void
 AMDILAsmPrinter::EmitFunctionBodyStart()
 {
@@ -745,7 +697,8 @@ AMDILAsmPrinter::EmitFunctionBodyStart()
 
     // Add the literals for the offsets and sizes of
     // all the kernel constant arrays
-    llvm::SmallVector<AMDILConstPtr, DEFAULT_VEC_SLOTS>::const_iterator cpb, cpe;
+    llvm::SmallVector<AMDILConstPtr,
+                      DEFAULT_VEC_SLOTS>::const_iterator cpb, cpe;
     for (cpb = tmp.constPtr.begin(), cpe = tmp.constPtr.end();
          cpb != cpe; ++cpb) {
       mMFI->addi32Literal(cpb->size);
@@ -819,7 +772,7 @@ AMDILAsmPrinter::EmitConstantPool()
   {
     const MachineConstantPool *MCP = MF->getConstantPool();
     const std::vector<MachineConstantPoolEntry> &consts
-    = MCP->getConstants();
+      = MCP->getConstants();
     for (uint32_t x = 0, s = consts.size(); x < s; ++x) {
       addCPoolLiteral(consts[x].Val.ConstVal);
     }
@@ -831,11 +784,9 @@ AMDILAsmPrinter::EmitFunctionEntryLabel()
   return;
   assert(0 && "When is this function hit!");
 }
-
 /// getDebugResourceLocation - Get resource id information encoded in
 /// target flags.
-uint32_t AMDILAsmPrinter::getDebugResourceID(const MachineInstr *MI) const
-{
+uint32_t AMDILAsmPrinter::getDebugResourceID(const MachineInstr *MI) const {
   const llvm::MachineOperand& opr = MI->getOperand(MI->getNumOperands() - 1);
   assert(opr.isMetadata());
   const MDNode *Var = opr.getMetadata();
@@ -843,16 +794,12 @@ uint32_t AMDILAsmPrinter::getDebugResourceID(const MachineInstr *MI) const
   uint32_t resourceID = mMeta->getUAVID(valOfVar);
   return resourceID;
 }
-
 bool
-AMDILAsmPrinter::isMacroCall(const MachineInstr *MI)
-{
+AMDILAsmPrinter::isMacroCall(const MachineInstr *MI) {
   return !strncmp(mTM->getInstrInfo()->getName(MI->getOpcode()), "MACRO", 5);
 }
-
 bool
-AMDILAsmPrinter::isMacroFunc(const MachineInstr *MI)
-{
+AMDILAsmPrinter::isMacroFunc(const MachineInstr *MI) {
   if (MI->getOpcode() != AMDIL::CALL) {
     return false;
   }
@@ -882,11 +829,13 @@ getRegSwizzle(unsigned reg, bool dst)
   } else if (reg >= AMDIL::Rzw1 && reg < AMDIL::SDP) {
     return ((dst) ? ".__zw" : ".00zw");
   } else {
-    return  "";
+    return "";
   }
 }
 void
-AMDILAsmPrinter::emitMCallInst(const MachineInstr *MI, OSTREAM_TYPE &O, const char *name)
+AMDILAsmPrinter::emitMCallInst(const MachineInstr *MI,
+                               OSTREAM_TYPE &O,
+                               const char *name)
 {
   const AMDILSubtarget *curTarget = mTM->getSubtargetImpl();
   int macronum = amd::MacroDBFindMacro(name);
@@ -915,7 +864,7 @@ AMDILAsmPrinter::emitMCallInst(const MachineInstr *MI, OSTREAM_TYPE &O, const ch
           .getRegisterInfo()->getRegClass(AMDIL::GPRF32RegClassID);
   }
   O << "\tmcall(" << macronum << ")(";
-  int x ;
+  int x;
   for (x = 0; x < numOut - 1; ++x) {
     O << getRegisterName(trc->getRegister(x))
       << getRegSwizzle(trc->getRegister(x), true) << ", ";
@@ -930,16 +879,13 @@ AMDILAsmPrinter::emitMCallInst(const MachineInstr *MI, OSTREAM_TYPE &O, const ch
     << getRegSwizzle(trc->getRegister(x), false) << ")";
   O << " ;" << name <<"\n";
 }
-
 #if defined(LLVM_29) || defined(USE_APPLE)
 void
-AMDILAsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const
-{
+AMDILAsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const {
 }
 #else
 void
-AMDILAsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const
-{
+AMDILAsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const {
   const TargetRegisterInfo *RI = TM.getRegisterInfo();
   unsigned reg = MLoc.getReg();
   unsigned baseReg = AMDIL::R1;

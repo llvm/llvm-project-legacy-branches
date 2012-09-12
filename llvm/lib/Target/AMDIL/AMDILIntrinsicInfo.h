@@ -17,11 +17,9 @@
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Intrinsics.h"
 
-namespace llvm
-{
+namespace llvm {
 class AMDILTargetMachine;
-namespace AMDILIntrinsic
-{
+namespace AMDILIntrinsic {
 enum ID {
   last_non_AMDIL_intrinsic = Intrinsic::num_intrinsics - 1,
 #define GET_INTRINSIC_ENUM_VALUES
@@ -29,13 +27,10 @@ enum ID {
 #undef GET_INTRINSIC_ENUM_VALUES
   , num_AMDIL_intrinsics
 };
-
 }
 
-
-class AMDILIntrinsicInfo : public TargetIntrinsicInfo
-{
-  AMDILTargetMachine *mTM;
+class AMDILIntrinsicInfo : public TargetIntrinsicInfo {
+AMDILTargetMachine *mTM;
 public:
   AMDILIntrinsicInfo(AMDILTargetMachine *tm);
   std::string getName(unsigned int IntrId, Type **Tys = 0,
@@ -46,7 +41,7 @@ public:
                            Type **Tys = 0,
                            unsigned int numTys = 0) const;
   bool isValidIntrinsic(unsigned int) const;
-}; // AMDILIntrinsicInfo
+};   // AMDILIntrinsicInfo
 }
 
 #endif // _AMDIL_INTRINSICS_H_

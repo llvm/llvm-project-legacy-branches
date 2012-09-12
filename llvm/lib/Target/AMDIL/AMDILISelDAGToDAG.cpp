@@ -28,18 +28,18 @@ using namespace llvm;
 // AMDILDAGToDAGISel - AMDIL specific code to select AMDIL machine instructions
 // //for SelectionDAG operations.
 //
-namespace
-{
-class AMDILDAGToDAGISel : public SelectionDAGISel
-{
-  // Subtarget - Keep a pointer to the AMDIL Subtarget around so that we can
-  // make the right decision when generating code for different targets.
-  const AMDILSubtarget *Subtarget;
+namespace {
+class AMDILDAGToDAGISel : public SelectionDAGISel {
+// Subtarget - Keep a pointer to the AMDIL Subtarget around so that we can
+// make the right decision when generating code for different targets.
+const AMDILSubtarget *Subtarget;
 public:
   explicit AMDILDAGToDAGISel(AMDILTargetMachine &TM, CodeGenOpt::Level OptLevel)
     : SelectionDAGISel(TM, OptLevel),
-      Subtarget(&TM.getSubtarget<AMDILSubtarget>()) {}
-  virtual ~AMDILDAGToDAGISel() {};
+      Subtarget(&TM.getSubtarget<AMDILSubtarget>()) {
+  }
+  virtual ~AMDILDAGToDAGISel() {
+  };
   inline SDValue getSmallIPtrImm(unsigned Imm);
 
   SDNode *Select(SDNode *N);
@@ -76,19 +76,14 @@ private:
 // DAG, ready for instruction scheduling.
 //
 FunctionPass *llvm::createAMDILISelDag(AMDILTargetMachine &TM,
-                                       llvm::CodeGenOpt::Level OptLevel)
-{
+                                       llvm::CodeGenOpt::Level OptLevel) {
   return new AMDILDAGToDAGISel(TM, OptLevel);
 }
-
-SDValue AMDILDAGToDAGISel::getSmallIPtrImm(unsigned int Imm)
-{
+SDValue AMDILDAGToDAGISel::getSmallIPtrImm(unsigned int Imm) {
   return CurDAG->getTargetConstant(Imm, MVT::i32);
 }
-
 bool AMDILDAGToDAGISel::SelectADDR(
-  SDValue Addr, SDValue& R1, SDValue& R2)
-{
+  SDValue Addr, SDValue& R1, SDValue& R2) {
   if (Addr.getOpcode() == ISD::TargetExternalSymbol ||
       Addr.getOpcode() == ISD::TargetGlobalAddress) {
     return false;
@@ -111,11 +106,8 @@ bool AMDILDAGToDAGISel::SelectADDR(
   }
   return true;
 }
-
-
 bool AMDILDAGToDAGISel::SelectADDR64(
-  SDValue Addr, SDValue& R1, SDValue& R2)
-{
+  SDValue Addr, SDValue& R1, SDValue& R2) {
   if (Addr.getOpcode() == ISD::TargetExternalSymbol ||
       Addr.getOpcode() == ISD::TargetGlobalAddress) {
     return false;
@@ -123,7 +115,7 @@ bool AMDILDAGToDAGISel::SelectADDR64(
 
   if (Addr.getOpcode() == ISD::FrameIndex) {
     if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
-      R1 = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i64);
+      R1 = Addr;
       R2 = CurDAG->getTargetConstant(0, MVT::i64);
     } else {
       R1 = Addr;
@@ -138,26 +130,23 @@ bool AMDILDAGToDAGISel::SelectADDR64(
   }
   return true;
 }
-
-SDNode *AMDILDAGToDAGISel::Select(SDNode *N)
-{
+SDNode *AMDILDAGToDAGISel::Select(SDNode *N) {
   unsigned int Opc = N->getOpcode();
   if (N->isMachineOpcode()) {
     return NULL;   // Already selected.
   }
-  switch (Opc) {
-  default:
-    break;
-  case ISD::FrameIndex: {
-    if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(N)) {
-      unsigned int FI = FIN->getIndex();
-      EVT OpVT = N->getValueType(0);
-      unsigned int NewOpc = AMDIL::MOVE_i32;
-      SDValue TFI = CurDAG->getTargetFrameIndex(FI, MVT::i32);
-      return CurDAG->SelectNodeTo(N, NewOpc, OpVT, TFI);
-    }
-  }
-  break;
+  if (Opc == ISD::FrameIndex
+      && dyn_cast<FrameIndexSDNode>(N)) {
+    FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(N);
+    SDValue TFI = CurDAG->getTargetFrameIndex(FI->getIndex(),
+                                              FI->getValueType(0));
+    return CurDAG->SelectNodeTo(N, AMDIL::LOADFIi32, FI->getValueType(0), TFI);
+    /*
+     *
+    return CurDAG->getNode(ISD::ADD, N->getDebugLoc(), FI->getValueType(0),
+        CurDAG->getTargetFrameIndex(FI->getIndex(), FI->getValueType(0)),
+        CurDAG->getConstant(0, FI->getValueType(0)));
+        */
   }
   // For all atomic instructions, we need to add a constant
   // operand that stores the resource ID in the instruction
@@ -166,50 +155,37 @@ SDNode *AMDILDAGToDAGISel::Select(SDNode *N)
   }
   return SelectCode(N);
 }
-
 bool AMDILDAGToDAGISel::isFlatASOverrideEnabled() const
 {
   return Subtarget->overridesFlatAS();
 }
-
-bool AMDILDAGToDAGISel::isGlobalStore(const StoreSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isGlobalStore(const StoreSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS)
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isFlatStore(const StoreSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isFlatStore(const StoreSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::FLAT_ADDRESS)
          || (isFlatASOverrideEnabled()
              && (check_type(N->getSrcValue(), AMDILAS::LOCAL_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::CONSTANT_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::PRIVATE_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS))
-            );
+             );
 }
-
-bool AMDILDAGToDAGISel::isPrivateStore(const StoreSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isPrivateStore(const StoreSDNode *N) const {
   return (!check_type(N->getSrcValue(), AMDILAS::LOCAL_ADDRESS)
           && !check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS)
           && !check_type(N->getSrcValue(), AMDILAS::REGION_ADDRESS))
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isLocalStore(const StoreSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isLocalStore(const StoreSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::LOCAL_ADDRESS)
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isRegionStore(const StoreSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isRegionStore(const StoreSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::REGION_ADDRESS);
 }
-
-bool AMDILDAGToDAGISel::isConstantLoad(const LoadSDNode *N, int cbID) const
-{
+bool AMDILDAGToDAGISel::isConstantLoad(const LoadSDNode *N, int cbID) const {
   if (check_type(N->getSrcValue(), AMDILAS::CONSTANT_ADDRESS)
       && !isFlatASOverrideEnabled()) {
     return true;
@@ -228,38 +204,28 @@ bool AMDILDAGToDAGISel::isConstantLoad(const LoadSDNode *N, int cbID) const
     return false;
   }
 }
-
-bool AMDILDAGToDAGISel::isGlobalLoad(const LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isGlobalLoad(const LoadSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS)
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isFlatLoad(const LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isFlatLoad(const LoadSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::FLAT_ADDRESS)
          || (isFlatASOverrideEnabled()
              && (check_type(N->getSrcValue(), AMDILAS::LOCAL_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::CONSTANT_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::PRIVATE_ADDRESS)
                  || check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS))
-            );
+             );
 }
-
-bool AMDILDAGToDAGISel::isLocalLoad(const  LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isLocalLoad(const LoadSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::LOCAL_ADDRESS)
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isRegionLoad(const  LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isRegionLoad(const LoadSDNode *N) const {
   return check_type(N->getSrcValue(), AMDILAS::REGION_ADDRESS)
          && !isFlatASOverrideEnabled();
 }
-
-bool AMDILDAGToDAGISel::isCPLoad(const LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isCPLoad(const LoadSDNode *N) const {
   MachineMemOperand *MMO = N->getMemOperand();
   if (check_type(N->getSrcValue(), AMDILAS::PRIVATE_ADDRESS)
       && !isFlatASOverrideEnabled()) {
@@ -273,9 +239,7 @@ bool AMDILDAGToDAGISel::isCPLoad(const LoadSDNode *N) const
   }
   return false;
 }
-
-bool AMDILDAGToDAGISel::isPrivateLoad(const LoadSDNode *N) const
-{
+bool AMDILDAGToDAGISel::isPrivateLoad(const LoadSDNode *N) const {
   if (check_type(N->getSrcValue(), AMDILAS::PRIVATE_ADDRESS)
       && !isFlatASOverrideEnabled()) {
     // Check to make sure we are not a constant pool load or a constant load
@@ -288,17 +252,15 @@ bool AMDILDAGToDAGISel::isPrivateLoad(const LoadSDNode *N) const
       && !check_type(N->getSrcValue(), AMDILAS::GLOBAL_ADDRESS)
       && !check_type(N->getSrcValue(), AMDILAS::REGION_ADDRESS)
       && !check_type(N->getSrcValue(), AMDILAS::CONSTANT_ADDRESS)
-      && !isFlatASOverrideEnabled()) {
+      && !isFlatASOverrideEnabled())
+  {
     return true;
   }
   return false;
 }
-
-const char *AMDILDAGToDAGISel::getPassName() const
-{
+const char *AMDILDAGToDAGISel::getPassName() const {
   return "AMDIL DAG->DAG Pattern Instruction Selection";
 }
-
 SDNode*
 AMDILDAGToDAGISel::xformAtomicInst(SDNode *N)
 {
@@ -306,8 +268,7 @@ AMDILDAGToDAGISel::xformAtomicInst(SDNode *N)
   bool addOne = false;
   unsigned opc = N->getOpcode();
   switch (opc) {
-  default:
-    return N;
+  default: return N;
   case AMDILISD::ATOM_G_ADD:
   case AMDILISD::ATOM_G_AND:
   case AMDILISD::ATOM_G_MAX:
@@ -319,6 +280,8 @@ AMDILDAGToDAGISel::xformAtomicInst(SDNode *N)
   case AMDILISD::ATOM_G_RSUB:
   case AMDILISD::ATOM_G_XCHG:
   case AMDILISD::ATOM_G_XOR:
+  case AMDILISD::ATOM_G_LOAD:
+  case AMDILISD::ATOM_G_STORE:
   case AMDILISD::ATOM_G_ADD_NORET:
   case AMDILISD::ATOM_G_AND_NORET:
   case AMDILISD::ATOM_G_MAX_NORET:
@@ -382,100 +345,19 @@ AMDILDAGToDAGISel::xformAtomicInst(SDNode *N)
   case AMDILISD::ATOM_R_CMPXCHG_NORET:
     break;
   case AMDILISD::ATOM_G_DEC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_G_SUB;
-    }
-    break;
   case AMDILISD::ATOM_G_INC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_G_ADD;
-    }
-    break;
   case AMDILISD::ATOM_G_DEC_NORET:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_G_SUB_NORET;
-    }
-    break;
   case AMDILISD::ATOM_G_INC_NORET:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_G_ADD_NORET;
-    }
-    break;
   case AMDILISD::ATOM_L_DEC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_L_SUB;
-    }
-    break;
   case AMDILISD::ATOM_L_INC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_L_ADD;
-    }
-    break;
   case AMDILISD::ATOM_L_DEC_NORET:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_L_SUB_NORET;
-    }
-    break;
   case AMDILISD::ATOM_L_INC_NORET:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_L_ADD_NORET;
-    }
-    break;
   case AMDILISD::ATOM_R_DEC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_R_SUB;
-    }
-    break;
   case AMDILISD::ATOM_R_INC:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_R_ADD;
-    }
-    break;
   case AMDILISD::ATOM_R_DEC_NORET:
-    addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_R_SUB;
-    }
-    break;
   case AMDILISD::ATOM_R_INC_NORET:
     addOne = true;
-    if (Subtarget->calVersion() >= CAL_VERSION_SC_136) {
-      addVal = (uint32_t)-1;
-    } else {
-      opc = AMDILISD::ATOM_R_ADD_NORET;
-    }
+    addVal = (uint32_t)-1;
     break;
   }
   // The largest we can have is a cmpxchg w/ a return value and an output chain.
@@ -488,17 +370,18 @@ AMDILDAGToDAGISel::xformAtomicInst(SDNode *N)
     Ops[x] = N->getOperand(x);
   }
   if (addOne) {
-    Ops[x++] = SDValue(SelectCode(CurDAG->getConstant(addVal, MVT::i32).getNode()), 0);
+    Ops[x++] = SDValue(SelectCode(CurDAG->getConstant(addVal, MVT::i32).getNode(
+                                    )), 0);
   }
   Ops[x++] = CurDAG->getTargetConstant(0, MVT::i32);
   SDVTList Tys = N->getVTList();
   MemSDNode *MemNode = dyn_cast<MemSDNode>(N);
   assert(MemNode && "Atomic should be of MemSDNode type!");
   N = CurDAG->getMemIntrinsicNode(opc, N->getDebugLoc(), Tys, Ops, x,
-                                  MemNode->getMemoryVT(), MemNode->getMemOperand()).getNode();
+                                  MemNode->getMemoryVT(),
+                                  MemNode->getMemOperand()).getNode();
   return N;
 }
-
 #ifdef DEBUGTMP
 #undef INT64_C
 #endif

@@ -15,8 +15,7 @@
 #define _AMDIL7XXDEVICEIMPL_H_
 #include "AMDILDevice.h"
 #include "AMDILSubtarget.h"
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 
 //===----------------------------------------------------------------------===//
@@ -27,8 +26,7 @@ class AMDILSubtarget;
 // devices are derived from this class. The AMDIL7XX device will only
 // support the minimal features that are required to be considered OpenCL 1.0
 // compliant and nothing more.
-class AMDIL7XXDevice : public AMDILDevice
-{
+class AMDIL7XXDevice : public AMDILDevice {
 public:
   AMDIL7XXDevice(AMDILSubtarget *ST);
   virtual ~AMDIL7XXDevice();
@@ -37,8 +35,7 @@ public:
   virtual uint32_t getGeneration() const;
   virtual uint32_t getResourceID(uint32_t DeviceID) const;
   virtual uint32_t getMaxNumUAVs() const;
-  FunctionPass*
-  getIOExpansion(TargetMachine&, CodeGenOpt::Level) const;
+  FunctionPass* getIOExpansion() const;
   AsmPrinter*
   getAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS) const;
   FunctionPass*
@@ -52,8 +49,7 @@ protected:
 // derivative cards. The difference between this device and the base
 // class is this device device adds support for double precision
 // and has a larger wavefront size.
-class AMDIL770Device : public AMDIL7XXDevice
-{
+class AMDIL770Device : public AMDIL7XXDevice {
 public:
   AMDIL770Device(AMDILSubtarget *ST);
   virtual ~AMDIL770Device();
@@ -65,13 +61,11 @@ private:
 // The AMDIL710Device class derives from the 7XX base class, but this
 // class is a smaller derivative, so we need to overload some of the
 // functions in order to correctly specify this information.
-class AMDIL710Device : public AMDIL7XXDevice
-{
+class AMDIL710Device : public AMDIL7XXDevice {
 public:
   AMDIL710Device(AMDILSubtarget *ST);
   virtual ~AMDIL710Device();
   virtual size_t getWavefrontSize() const;
 }; // AMDIL710Device
-
 } // namespace llvm
 #endif // _AMDILDEVICEIMPL_H_

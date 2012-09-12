@@ -14,7 +14,6 @@
 #ifndef __AMDIL_DEVICES_H_
 #define __AMDIL_DEVICES_H_
 // Include all of the device specific header files
-// This file is for Internal use only!
 #include "AMDILDevice.h"
 #include "AMDIL7XXDevice.h"
 #include "AMDILEvergreenDevice.h"

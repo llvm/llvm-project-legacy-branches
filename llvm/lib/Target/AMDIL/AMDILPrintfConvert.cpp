@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "PrintfConvert"
-#ifdef DEBUG
+#define DEBUG_TYPE "printfconvert"
+#if !defined(NDEBUG)
 #define DEBUGME (DebugFlag && isCurrentDebugType(DEBUG_TYPE))
 #else
 #define DEBUGME 0
@@ -49,7 +49,8 @@ public:
   bool doInitialization(Module &M);
   bool doFinalization(Module &M);
   void getAnalysisUsage(AnalysisUsage &AU) const;
-  static const char* getConversionSpecifiers(const std::string& fmt,size_t num_ops);
+  static const char* getConversionSpecifiers(const std::string& fmt,
+                                             size_t num_ops);
 private:
   bool expandPrintf(BasicBlock::iterator *bbb);
   AMDILMachineFunctionInfo *mMFI;
@@ -107,17 +108,21 @@ AMDILPrintfConvert::expandPrintf(BasicBlock::iterator *bbb)
   ConstantExpr *GEPinst = dyn_cast<ConstantExpr>(op);
   if (GEPinst) {
     GlobalVariable *GVar
-    = dyn_cast<GlobalVariable>(GEPinst->getOperand(0));
+      = dyn_cast<GlobalVariable>(GEPinst->getOperand(0));
     std::string str = "unknown";
     if (GVar && GVar->hasInitializer()) {
       ConstantDataArray *CA
-      = dyn_cast<ConstantDataArray>(GVar->getInitializer());
+        = dyn_cast<ConstantDataArray>(GVar->getInitializer());
       str = (CA->isString() ? CA->getAsString() : "unknown");
       opConvSpecifiers = getConversionSpecifiers(str,num_ops - 2);
     }
     uint64_t id = (uint64_t)mMFI->addPrintfString(str,
-                  getAnalysis<MachineFunctionAnalysis>().getMF()
-                  .getMMI().getObjFileInfo<AMDILModuleInfo>().get_printf_offset());
+                                                  getAnalysis<
+                                                    MachineFunctionAnalysis>().
+                                                  getMF()
+                                                  .getMMI().getObjFileInfo<
+                                                    AMDILModuleInfo>().
+                                                  get_printf_offset());
     std::string name = "___dumpStringID";
     Function *nF = NULL;
     std::vector<Type*> types;
@@ -125,13 +130,13 @@ AMDILPrintfConvert::expandPrintf(BasicBlock::iterator *bbb)
     nF = mF->getParent()->getFunction(name);
     if (!nF) {
       nF = Function::Create(
-             FunctionType::get(
-               Type::getVoidTy(mF->getContext()), types, false),
-             GlobalValue::ExternalLinkage,
-             name, mF->getParent());
+        FunctionType::get(
+          Type::getVoidTy(mF->getContext()), types, false),
+        GlobalValue::ExternalLinkage,
+        name, mF->getParent());
     }
     Constant *C = ConstantInt::get(
-                    Type::getInt32Ty(mF->getContext()), id, false);
+      Type::getInt32Ty(mF->getContext()), id, false);
     CallInst *nCI = CallInst::Create(nF, C);
     nCI->insertBefore(CI);
     bytes = strlen(str.data());
@@ -161,10 +166,10 @@ AMDILPrintfConvert::expandPrintf(BasicBlock::iterator *bbb)
       Type *iType = NULL;
       if (oType->isFloatTy()) {
         iType = dyn_cast<Type>(
-                  Type::getInt32Ty(oType->getContext()));
+          Type::getInt32Ty(oType->getContext()));
       } else {
         iType = dyn_cast<Type>(
-                  Type::getInt64Ty(oType->getContext()));
+          Type::getInt64Ty(oType->getContext()));
       }
       op = new BitCastInst(op, iType, "printfBitCast", CI);
     } else if (oType->getTypeID() == Type::VectorTyID) {
@@ -191,38 +196,38 @@ AMDILPrintfConvert::expandPrintf(BasicBlock::iterator *bbb)
       default:
         eleCount = totalSize / 64;
         iType = dyn_cast<Type>(
-                  Type::getInt64Ty(oType->getContext()));
+          Type::getInt64Ty(oType->getContext()));
         break;
       case 8:
         if (eleCount >= 8) {
           eleCount = totalSize / 64;
           iType = dyn_cast<Type>(
-                    Type::getInt64Ty(oType->getContext()));
+            Type::getInt64Ty(oType->getContext()));
         } else if (eleCount >= 3) {
           eleCount = 1;
           iType = dyn_cast<Type>(
-                    Type::getInt32Ty(oType->getContext()));
+            Type::getInt32Ty(oType->getContext()));
         } else {
           eleCount = 1;
           iType = dyn_cast<Type>(
-                    Type::getInt16Ty(oType->getContext()));
+            Type::getInt16Ty(oType->getContext()));
         }
         break;
       case 16:
         if (eleCount >= 3) {
           eleCount = totalSize / 64;
           iType = dyn_cast<Type>(
-                    Type::getInt64Ty(oType->getContext()));
+            Type::getInt64Ty(oType->getContext()));
         } else {
           eleCount = 1;
           iType = dyn_cast<Type>(
-                    Type::getInt32Ty(oType->getContext()));
+            Type::getInt32Ty(oType->getContext()));
         }
         break;
       }
       if (eleCount > 1) {
         iType = dyn_cast<Type>(
-                  VectorType::get(iType, eleCount));
+          VectorType::get(iType, eleCount));
       }
       op = new BitCastInst(op, iType, "printfBitCast", CI);
     }
@@ -258,10 +263,10 @@ AMDILPrintfConvert::expandPrintf(BasicBlock::iterator *bbb)
     nF = mF->getParent()->getFunction(name);
     if (!nF) {
       nF = Function::Create(
-             FunctionType::get(
-               Type::getVoidTy(mF->getContext()), types, false),
-             GlobalValue::ExternalLinkage,
-             name, mF->getParent());
+        FunctionType::get(
+          Type::getVoidTy(mF->getContext()), types, false),
+        GlobalValue::ExternalLinkage,
+        name, mF->getParent());
     }
     CallInst *nCI = CallInst::Create(nF, op);
     nCI->insertBefore(CI);
@@ -290,7 +295,6 @@ AMDILPrintfConvert::runOnFunction(Function &MF)
                         &AMDILPrintfConvert::expandPrintf), this));
   return mChanged;
 }
-
 const char*
 AMDILPrintfConvert::getPassName() const
 {
@@ -301,13 +305,11 @@ AMDILPrintfConvert::doInitialization(Module &M)
 {
   return false;
 }
-
 bool
 AMDILPrintfConvert::doFinalization(Module &M)
 {
   return false;
 }
-
 void
 AMDILPrintfConvert::getAnalysisUsage(AnalysisUsage &AU) const
 {
@@ -316,16 +318,22 @@ AMDILPrintfConvert::getAnalysisUsage(AnalysisUsage &AU) const
   AU.setPreservesAll();
 }
 const char*
-AMDILPrintfConvert::getConversionSpecifiers(const std::string& fmt,size_t num_ops)
+AMDILPrintfConvert::getConversionSpecifiers(const std::string& fmt,
+                                            size_t num_ops)
 {
   static const char* convSpecifiers = "cdieEfgGaosuxXp";
   size_t curFmtSpecifierIdx = 0;
   size_t prevFmtSpecifierIdx = 0;
   size_t opIdx = 0;
   char* opConvSpecifiers = new char[num_ops];
-  while ((curFmtSpecifierIdx = fmt.find_first_of(convSpecifiers,curFmtSpecifierIdx)) != std::string::npos) {
+  while ((curFmtSpecifierIdx =
+            fmt.find_first_of(convSpecifiers,
+                              curFmtSpecifierIdx)) != std::string::npos) {
     bool argDump = false;
-    const std::string curFmt = fmt.substr(prevFmtSpecifierIdx,curFmtSpecifierIdx - prevFmtSpecifierIdx);
+    const std::string curFmt = fmt.substr(
+      prevFmtSpecifierIdx,
+      curFmtSpecifierIdx -
+      prevFmtSpecifierIdx);
     size_t pTag = curFmt.find_last_of("%");
     if (pTag != std::string::npos) {
       argDump = true;
@@ -340,7 +348,7 @@ AMDILPrintfConvert::getConversionSpecifiers(const std::string& fmt,size_t num_op
   }
   if (opIdx == 0) {
     delete[] opConvSpecifiers;
-    return  NULL;
+    return NULL;
   }
   return opConvSpecifiers;
 }

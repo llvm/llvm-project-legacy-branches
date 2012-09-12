@@ -27,92 +27,117 @@
 #include "llvm/Support/DebugLoc.h"
 #include <cstdio>
 using namespace llvm;
-AMDILSIIOExpansion::AMDILSIIOExpansion(TargetMachine &tm,
-                                       CodeGenOpt::Level OptLevel) : AMDILEGIOExpansion(tm, OptLevel)
+
+namespace llvm
 {
+extern void initializeAMDILSIIOExpansionPass(llvm::PassRegistry&);
 }
 
-AMDILSIIOExpansion::~AMDILSIIOExpansion()
+char AMDILSIIOExpansion::ID = 0;
+INITIALIZE_PASS(AMDILSIIOExpansion, "si-io-expansion",
+                "AMDIL SI IO Expansion", false, false);
+
+AMDILSIIOExpansion::AMDILSIIOExpansion()
+  : MachineFunctionPass(ID)
 {
+  initializeAMDILSIIOExpansionPass(*PassRegistry::getPassRegistry());
 }
 const char *AMDILSIIOExpansion::getPassName() const
 {
   return "AMDIL SI IO Expansion Pass";
 }
-
+bool AMDILSIIOExpansion::runOnMachineFunction(MachineFunction& MF)
+{
+  AMDILSIIOExpansionImpl impl(MF);
+  return impl.run();
+}
 bool
-AMDILSIIOExpansion::isCacheableOp(MachineInstr *MI)
+AMDILSIIOExpansionImpl::isCacheableOp(MachineInstr *MI)
 {
   AMDILAS::InstrResEnc curRes;
   getAsmPrinterFlags(MI, curRes);
   return curRes.bits.CacheableRead;
 }
-
 bool
-AMDILSIIOExpansion::isIOInstruction(TargetMachine &TM, MachineInstr *MI)
+AMDILSIIOExpansionImpl::isIOInstruction(MachineInstr *MI)
 {
   if (!MI) {
     return false;
   }
-  if (is64BitImageInst(TM, MI)) {
+  if (is64BitImageInst(MI)) {
     return true;
   }
-  return AMDILEGIOExpansion::isIOInstruction(MI);
+  switch (MI->getOpcode()) {
+  default:
+    return AMDILEGIOExpansionImpl::isIOInstruction(MI);
+  case AMDIL::ATOM_G_LOADi8:
+  case AMDIL::ATOM_G_STOREi8:
+  case AMDIL::ATOM64_G_LOADi8:
+  case AMDIL::ATOM64_G_STOREi8:
+  case AMDIL::ATOM_G_LOADi16:
+  case AMDIL::ATOM_G_STOREi16:
+  case AMDIL::ATOM64_G_LOADi16:
+  case AMDIL::ATOM64_G_STOREi16:
+  case AMDIL::ATOM_G_LOADi32:
+  case AMDIL::ATOM_G_STOREi32:
+  case AMDIL::ATOM64_G_LOADi32:
+  case AMDIL::ATOM64_G_STOREi32:
+  case AMDIL::ATOM_G_LOADv2i32:
+  case AMDIL::ATOM_G_STOREv2i32:
+  case AMDIL::ATOM64_G_LOADv2i32:
+  case AMDIL::ATOM64_G_STOREv2i32:
+  case AMDIL::ATOM_G_LOADv4i32:
+  case AMDIL::ATOM_G_STOREv4i32:
+  case AMDIL::ATOM64_G_LOADv4i32:
+  case AMDIL::ATOM64_G_STOREv4i32:
+    return false;
+  }
+  return AMDILEGIOExpansionImpl::isIOInstruction(MI);
 }
-
 void
-AMDILSIIOExpansion::expandIOInstruction(TargetMachine &TM, MachineInstr *MI)
+AMDILSIIOExpansionImpl::expandIOInstruction(MachineInstr *MI)
 {
-  assert(isIOInstruction(TM, MI) && "Must be an IO instruction to "
+  assert(isIOInstruction(MI) && "Must be an IO instruction to "
          "be passed to this function!");
-  if (is64BitImageInst(TM, MI)) {
-    if (isReadImageInst(TM, MI) || isImageTXLDInst(TM, MI)) {
+  if (is64BitImageInst(MI)) {
+    if (isReadImageInst(MI) || isImageTXLDInst(MI)) {
       expandImageLoad(mBB, MI);
       return;
     }
-    if (isWriteImageInst(TM, MI)) {
+    if (isWriteImageInst(MI)) {
       expandImageStore(mBB, MI);
       return;
     }
-    if (isImageInfoInst(TM, MI)) {
+    if (isImageInfoInst(MI)) {
       expandImageParam(mBB, MI);
       return;
     }
   }
-  AMDILEGIOExpansion::expandIOInstruction(MI);
+  AMDILEGIOExpansionImpl::expandIOInstruction(MI);
 }
-
 void
-AMDILSIIOExpansion::expandGlobalLoad(MachineInstr *MI)
+AMDILSIIOExpansionImpl::expandGlobalLoad(MachineInstr *MI)
 {
-  // These instructions are generated before the current MI.
-  expandLoadStartCode(MI);
+  uint32_t addyReg = MI->getOperand(1).getReg();
+  uint32_t dataReg = MI->getOperand(0).getReg();
+  expandLoadStartCode(MI, addyReg);
   DebugLoc DL = MI->getDebugLoc();
   uint32_t ID = getPointerID(MI);
   bool cacheable = isCacheableOp(MI);
-  bool is64bit = is64bitLSOp(TM, MI);
-  bool aligned = mSTM->calVersion() >= CAL_CACHED_ALIGNED_UAVS;
+  bool is64bit = is64bitLSOp(MI);
   mKM->setOutputInst();
-  uint32_t addyReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
   switch (getMemorySize(MI)) {
   default:
     if (cacheable) {
-      if (aligned) {
-        BuildMI(*mBB, MI, DL, mTII->get((is64bit) ?
-                                        AMDIL::UAVRAWLOADCACHEDALIGNED64_v4i32
-                                        : AMDIL::UAVRAWLOADCACHEDALIGNED_v4i32),
-                AMDIL::R1011).addReg(addyReg).addImm(ID);
-      } else {
-        BuildMI(*mBB, MI, DL, mTII->get(
-                  (is64bit) ? AMDIL::UAVRAWLOADCACHED64_v4i32 :
-                  AMDIL::UAVRAWLOADCACHED_v4i32),
-                AMDIL::R1011).addReg(addyReg).addImm(ID);
-      }
+      BuildMI(*mBB, MI, DL, mTII->get((is64bit) ?
+                                      AMDIL::UAVRAW64LOADCACHEDALIGNEDv4i32
+                                      : AMDIL::UAVRAW32LOADCACHEDALIGNEDv4i32),
+              dataReg).addReg(addyReg).addImm(ID);
     } else {
       BuildMI(*mBB, MI, DL, mTII->get(
-                (is64bit) ? AMDIL::UAVRAWLOAD_v4i32 :
-                AMDIL::UAVRAWLOAD_v4i32),
-              AMDIL::R1011)
+                (is64bit) ? AMDIL::UAVRAW64LOADv4i32 :
+                AMDIL::UAVRAW32LOADv4i32),
+              dataReg)
       .addReg(addyReg)
       .addImm(ID);
     }
@@ -120,139 +145,133 @@ AMDILSIIOExpansion::expandGlobalLoad(MachineInstr *MI)
   case 1:
     if (cacheable) {
       BuildMI(*mBB, MI, DL, mTII->get((isSWSExtLoadInst(MI)
-                                       ? ((is64bit) ? AMDIL::UAVRAWLOADCACHED64_i8
-                                          : AMDIL::UAVRAWLOADCACHED_i8) :
-                                         ((is64bit) ? AMDIL::UAVRAWLOADCACHED64_u8
-                                          : AMDIL::UAVRAWLOADCACHED_u8))),
-                AMDIL::Rx1011)
-        .addReg(addyReg)
-        .addImm(ID);
+                                       ? ((is64bit) ? AMDIL::
+                                          UAVRAW64LOADCACHEDi8
+                                          : AMDIL::UAVRAW32LOADCACHEDi8) :
+                                       ((is64bit) ? AMDIL::UAVRAW64LOADCACHEDu8
+                                        : AMDIL::UAVRAW32LOADCACHEDu8))),
+              dataReg)
+      .addReg(addyReg)
+      .addImm(ID);
     } else {
       BuildMI(*mBB, MI, DL, mTII->get((isSWSExtLoadInst(MI)
-                                       ? ((is64bit) ? AMDIL::UAVRAWLOAD64_i8 : AMDIL::UAVRAWLOAD_i8) :
-                                         ((is64bit) ? AMDIL::UAVRAWLOAD64_u8 : AMDIL::UAVRAWLOAD_u8))),
-                AMDIL::Rx1011)
-        .addReg(addyReg)
-        .addImm(ID);
+                                       ? ((is64bit) ? AMDIL::UAVRAW64LOADi8 :
+                                          AMDIL::UAVRAW32LOADi8) :
+                                       ((is64bit) ? AMDIL::UAVRAW64LOADu8 :
+                                        AMDIL::UAVRAW32LOADu8))),
+              dataReg)
+      .addReg(addyReg)
+      .addImm(ID);
     }
     break;
   case 2:
     if (cacheable) {
       BuildMI(*mBB, MI, DL, mTII->get((isSWSExtLoadInst(MI)
-                                       ?  ((is64bit) ? AMDIL::UAVRAWLOADCACHED64_i16
-                                           : AMDIL::UAVRAWLOADCACHED_i16) :
-                                         ((is64bit) ? AMDIL::UAVRAWLOADCACHED64_u16
-                                          : AMDIL::UAVRAWLOADCACHED_u16))),
-                AMDIL::Rx1011)
-        .addReg(addyReg)
-        .addImm(ID);
+                                       ?  ((is64bit) ? AMDIL::
+                                           UAVRAW64LOADCACHEDi16
+                                           : AMDIL::UAVRAW32LOADCACHEDi16) :
+                                       ((is64bit) ? AMDIL::
+                                        UAVRAW64LOADCACHEDu16
+                                        : AMDIL::UAVRAW32LOADCACHEDu16))),
+              dataReg)
+      .addReg(addyReg)
+      .addImm(ID);
     } else {
       BuildMI(*mBB, MI, DL, mTII->get((isSWSExtLoadInst(MI)
-                                       ? ((is64bit) ? AMDIL::UAVRAWLOAD64_i16 : AMDIL::UAVRAWLOAD_i16) :
-                                         ((is64bit) ? AMDIL::UAVRAWLOAD64_u16 : AMDIL::UAVRAWLOAD_u16))),
-                AMDIL::Rx1011)
-        .addReg(addyReg)
-        .addImm(ID);
+                                       ? ((is64bit) ? AMDIL::UAVRAW64LOADi16 :
+                                          AMDIL::UAVRAW32LOADi16) :
+                                       ((is64bit) ? AMDIL::UAVRAW64LOADu16 :
+                                        AMDIL::UAVRAW32LOADu16))),
+              dataReg)
+      .addReg(addyReg)
+      .addImm(ID);
     }
     break;
   case 4:
     if (cacheable) {
       BuildMI(*mBB, MI, DL, mTII->get(
-                (is64bit) ? AMDIL::UAVRAWLOADCACHED64_i32 : AMDIL::UAVRAWLOADCACHED_i32),
-              AMDIL::Rx1011)
+                (is64bit) ? AMDIL::UAVRAW64LOADCACHEDi32 : AMDIL::
+                UAVRAW32LOADCACHEDi32),
+              dataReg)
       .addReg(addyReg)
       .addImm(ID);
     } else {
       BuildMI(*mBB, MI, DL, mTII->get(
-                (is64bit) ? AMDIL::UAVRAWLOAD64_i32 : AMDIL::UAVRAWLOAD_i32),
-              AMDIL::Rx1011)
+                (is64bit) ? AMDIL::UAVRAW64LOADi32 : AMDIL::UAVRAW32LOADi32),
+              dataReg)
       .addReg(addyReg)
       .addImm(ID);
     }
     break;
   case 8:
     if (cacheable) {
-      if (aligned) {
-        BuildMI(*mBB, MI, DL, mTII->get(
-                  (is64bit) ? AMDIL::UAVRAWLOADCACHEDALIGNED64_v2i32
-                  : AMDIL::UAVRAWLOADCACHEDALIGNED_v2i32),
-                AMDIL::Rxy1011).addReg(addyReg).addImm(ID);
-      } else {
-        BuildMI(*mBB, MI, DL, mTII->get(
-                  (is64bit) ? AMDIL::UAVRAWLOADCACHED64_v2i32 : AMDIL::UAVRAWLOADCACHED_v2i32),
-                AMDIL::Rxy1011).addReg(addyReg).addImm(ID);
-      }
+      BuildMI(*mBB, MI, DL, mTII->get(
+                (is64bit) ? AMDIL::UAVRAW64LOADCACHEDALIGNEDv2i32
+                : AMDIL::UAVRAW32LOADCACHEDALIGNEDv2i32),
+              AMDIL::Rxy1011).addReg(addyReg).addImm(ID);
     } else {
       BuildMI(*mBB, MI, DL, mTII->get(
-                (is64bit) ? AMDIL::UAVRAWLOAD64_v2i32 : AMDIL::UAVRAWLOAD_v2i32),
-              AMDIL::Rxy1011)
-      .addReg(addyReg)
-      .addImm(ID);
+                (is64bit) ? AMDIL::UAVRAW64LOADv2i32 : AMDIL::UAVRAW32LOADv2i32),
+              AMDIL::Rxy1011).addReg(addyReg).addImm(ID);
     }
+    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::COPY), dataReg)
+    .addReg(AMDIL::Rxy1011);
     break;
   };
-  expandPackedData(MI);
-  unsigned dataReg = expandExtendLoad(MI);
-  if (!dataReg) {
-    dataReg = getDataReg(MI);
-  }
-  BuildMI(*mBB, MI, MI->getDebugLoc(),
-          mTII->get(getMoveInstFromID(
-                      MI->getDesc().OpInfo[0].RegClass)))
-  .addOperand(MI->getOperand(0))
-  .addReg(dataReg);
+  expandPackedData(MI, dataReg);
+  expandExtendLoad(MI, dataReg);
   MI->getOperand(0).setReg(dataReg);
 }
-
 void
-AMDILSIIOExpansion::expandGlobalStore(MachineInstr *MI)
+AMDILSIIOExpansionImpl::expandGlobalStore(MachineInstr *MI)
 {
+  uint32_t addyReg = MI->getOperand(1).getReg();
+  uint32_t dataReg = MI->getOperand(0).getReg();
   // These instructions are expandted before the current MI.
-  AMDIL789IOExpansion::expandStoreSetupCode(MI);
+  AMDIL789IOExpansionImpl::expandStoreSetupCode(MI, addyReg, dataReg);
   uint32_t ID = getPointerID(MI);
   mKM->setOutputInst();
-  bool is64bit = is64bitLSOp(TM, MI);
+  bool is64bit = is64bitLSOp(MI);
   DebugLoc DL = MI->getDebugLoc();
-  uint32_t addyReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
   switch (getMemorySize(MI)) {
   default:
     BuildMI(*mBB, MI, DL, mTII->get(
-              (is64bit) ? AMDIL::UAVRAWSTORE64_v4i32 :
-              AMDIL::UAVRAWSTORE_v4i32), AMDIL::MEM)
+              (is64bit) ? AMDIL::UAVRAW64STOREv4i32 :
+              AMDIL::UAVRAW32STOREv4i32), AMDIL::MEM)
     .addReg(addyReg)
-    .addReg(AMDIL::R1011)
+    .addReg(dataReg)
     .addImm(ID);
     break;
   case 1:
     BuildMI(*mBB, MI, DL, mTII->get(
-              (is64bit) ? AMDIL::UAVRAWSTORE64_i8 :
-              AMDIL::UAVRAWSTORE_i8), AMDIL::MEMx)
+              (is64bit) ? AMDIL::UAVRAW64STOREi8 :
+              AMDIL::UAVRAW32STOREi8), AMDIL::MEMx)
     .addReg(addyReg)
-    .addReg(AMDIL::Rx1011)
+    .addReg(dataReg)
     .addImm(ID);
     break;
   case 2:
     BuildMI(*mBB, MI, DL, mTII->get(
-              (is64bit) ? AMDIL::UAVRAWSTORE64_i16 :
-              AMDIL::UAVRAWSTORE_i16), AMDIL::MEMx)
+              (is64bit) ? AMDIL::UAVRAW64STOREi16 :
+              AMDIL::UAVRAW32STOREi16), AMDIL::MEMx)
     .addReg(addyReg)
-    .addReg(AMDIL::Rx1011)
+    .addReg(dataReg)
     .addImm(ID);
     break;
   case 4:
     BuildMI(*mBB, MI, DL, mTII->get(
-              (is64bit) ? AMDIL::UAVRAWSTORE64_i32 :
-              AMDIL::UAVRAWSTORE_i32), AMDIL::MEMx)
+              (is64bit) ? AMDIL::UAVRAW64STOREi32 :
+              AMDIL::UAVRAW32STOREi32), AMDIL::MEMx)
     .addReg(addyReg)
-    .addReg(AMDIL::Rx1011)
+    .addReg(dataReg)
     .addImm(ID);
     break;
   case 8:
     BuildMI(*mBB, MI, DL, mTII->get(
-              (is64bit) ? AMDIL::UAVRAWSTORE64_v2i32 :
-              AMDIL::UAVRAWSTORE_v2i32), AMDIL::MEMxy)
+              (is64bit) ? AMDIL::UAVRAW64STOREv2i32 :
+              AMDIL::UAVRAW32STOREv2i32), AMDIL::MEMxy)
     .addReg(addyReg)
-    .addReg(AMDIL::Rxy1011)
+    .addReg(dataReg)
     .addImm(ID);
     break;
   };

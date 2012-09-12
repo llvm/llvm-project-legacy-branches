@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "PeepholeOpt"
-#ifdef DEBUG
+#define DEBUG_TYPE "peepholeopt"
+#if !defined(NDEBUG)
 #define DEBUGME (DebugFlag && isCurrentDebugType(DEBUG_TYPE))
 #else
 #define DEBUGME 0
@@ -38,15 +38,16 @@
 #include "llvm/Support/InstIterator.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include <sstream>
+STATISTIC(PointerAssignments, "Number of dynamic pointer "
+          "assigments discovered");
+STATISTIC(PointerSubtract, "Number of pointer subtractions discovered");
 STATISTIC(LocalFuncs, "Number of get_local_size(N) functions removed");
 
 using namespace llvm;
 // The Peephole optimization pass is used to do simple last minute optimizations
 // that are required for correct code or to remove redundant functions
-namespace
-{
-class LLVM_LIBRARY_VISIBILITY AMDILPeepholeOpt : public FunctionPass
-{
+namespace {
+class LLVM_LIBRARY_VISIBILITY AMDILPeepholeOpt : public FunctionPass {
 public:
   TargetMachine &TM;
   static char ID;
@@ -95,18 +96,13 @@ private:
   bool setupBitInsert(Instruction *base,
                       Instruction *&src,
                       Constant *&mask,
-                      Constant *&shift);
+                      Constant *&shift,
+                      bool &inv_mode);
   // A peephole optimization to optimize [d]class calls that or the results.
   bool optimizeClassInst(Instruction *inst);
   // Generate F2U4 intrinisic
   bool genIntrF2U4(Instruction *inst);
 
-  // Expand the bit field insert instruction on versions of OpenCL that
-  // don't support it.
-  bool expandBFI(CallInst *CI);
-  // Expand the bit field mask instruction on version of OpenCL that
-  // don't support it.
-  bool expandBFM(CallInst *CI);
   // On 7XX and 8XX operations, we do not have 24 bit signed operations. So in
   // this case we need to expand them. These functions check for 24bit functions
   // and then expand.
@@ -150,7 +146,9 @@ char AMDILPeepholeOpt::ID = 0;
    For exaample:  given that val = 0xFF00;  start_bit = 8 and bitwidth = 8.
 */
 bool
-getMaskBitfield(unsigned int val, unsigned int &start_bit, unsigned int &bitwidth)
+getMaskBitfield(unsigned int val,
+                unsigned int &start_bit,
+                unsigned int &bitwidth)
 {
   if (val == 0) {
     // zero, no bitfield
@@ -176,7 +174,6 @@ getMaskBitfield(unsigned int val, unsigned int &start_bit, unsigned int &bitwidt
   }
   return true;
 }
-
 bool getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
                         Value*& vecval, unsigned& whichelem)
 {
@@ -187,7 +184,8 @@ bool getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
 
   vecval = einst->getVectorOperand();
   VectorType *vt = dyn_cast<VectorType>(vecval->getType());
-  assert (vt && "ExtractElementInst must have a vector type as its first argument");
+  assert (
+    vt && "ExtractElementInst must have a vector type as its first argument");
   Type *et = vt->getElementType();
   if ( (vt->getNumElements() != numElem) ||
        (et->getTypeID() != tid) ) {
@@ -201,7 +199,6 @@ bool getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
   whichelem = (unsigned)cv->getZExtValue();
   return true;
 }
-
 bool getIntValue(Instruction *Inst, Value *& Src, unsigned int &src_start,
                  unsigned int &dst_start, unsigned int &dst_width)
 {
@@ -290,11 +287,9 @@ bool getIntValue(Instruction *Inst, Value *& Src, unsigned int &src_start,
   dst_width = nbits;
   return true;
 }
-
 } // anonymous namespace
 
-namespace llvm
-{
+namespace llvm {
 FunctionPass *
 createAMDILPeepholeOpt(TargetMachine &tm, CodeGenOpt::Level OL)
 {
@@ -308,17 +303,14 @@ AMDILPeepholeOpt::AMDILPeepholeOpt(TargetMachine &tm, CodeGenOpt::Level OL)
   mDebug = DEBUGME;
   optLevel = OL;
 }
-
 AMDILPeepholeOpt::~AMDILPeepholeOpt()
 {
 }
-
 const char *
 AMDILPeepholeOpt::getPassName() const
 {
   return "AMDIL PeepHole Optimization Pass";
 }
-
 bool
 containsPointerType(Type *Ty)
 {
@@ -347,7 +339,6 @@ containsPointerType(Type *Ty)
   };
   return false;
 }
-
 bool
 AMDILPeepholeOpt::dumpAllIntoArena(Function &F)
 {
@@ -361,7 +352,7 @@ AMDILPeepholeOpt::dumpAllIntoArena(Function &F)
     }
     Type *DereferencedType = PT->getElementType();
     if (!dyn_cast<StructType>(DereferencedType)
-       ) {
+        ) {
       continue;
     }
     if (!containsPointerType(DereferencedType)) {
@@ -404,7 +395,6 @@ AMDILPeepholeOpt::doAtomicConversionIfNeeded(Function &F)
     atomicFuncs[x].first->setOperand(
       atomicFuncs[x].first->getNumOperands()-1,
       atomicFuncs[x].second);
-
   }
   mChanged = true;
   if (mConvertAtomics) {
@@ -428,7 +418,6 @@ AMDILPeepholeOpt::doAtomicConversionIfNeeded(Function &F)
     }
   }
 }
-
 bool
 AMDILPeepholeOpt::runOnFunction(Function &MF)
 {
@@ -477,7 +466,6 @@ AMDILPeepholeOpt::runOnFunction(Function &MF)
   }
   return mChanged;
 }
-
 bool
 AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
 {
@@ -495,10 +483,6 @@ AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
     return true;
   }
   if (propagateSamplerInst(CI)) {
-    return true;
-  }
-  if (expandBFI(CI) || expandBFM(CI)) {
-    CI->eraseFromParent();
     return true;
   }
   if (convertAccurateDivide(CI)) {
@@ -547,6 +531,8 @@ AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
     return false;
   }
   if (F->getName().startswith("__atom") && !CI->getNumUses()
+      && !F->getName().startswith("__atomic_load")
+      && !F->getName().startswith("__atomic_store")
       && F->getName().find("_xchg") == StringRef::npos
       && F->getName().find("_noret") == StringRef::npos) {
     std::string buffer(F->getName().str() + "_noret");
@@ -554,14 +540,14 @@ AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
     FunctionType *ptr = F->getFunctionType();
     callTypes.insert(callTypes.begin(), ptr->param_begin(), ptr->param_end());
     FunctionType *newFunc = FunctionType::get(Type::getVoidTy(F->getContext()),
-                            callTypes, false);
+                                              callTypes, false);
     std::vector<Value*> args;
     for (unsigned x = 0, y = CI->getNumArgOperands(); x < y; ++x) {
       args.push_back(CI->getArgOperand(x));
     }
 
     Function *newF = dyn_cast<Function>(
-                       F->getParent()->getOrInsertFunction(buffer, newFunc));
+      F->getParent()->getOrInsertFunction(buffer, newFunc));
     CallInst *newCI = CallInst::Create(newF, args);
     newCI->insertAfter(CI);
     CI->eraseFromParent();
@@ -588,7 +574,7 @@ AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
         std::string val;
         ss >> val;
         F = dyn_cast<Function>(
-              F->getParent() ->getOrInsertFunction(val, F->getFunctionType()));
+          F->getParent()->getOrInsertFunction(val, F->getFunctionType()));
         atomicFuncs.push_back(std::make_pair(CI, F));
       } else {
         mConvertAtomics = false;
@@ -599,12 +585,12 @@ AMDILPeepholeOpt::optimizeCallInst(Instruction *inst)
   }
   return false;
 }
-
 bool
 AMDILPeepholeOpt::setupBitInsert(Instruction *base,
                                  Instruction *&src,
                                  Constant *&mask,
-                                 Constant *&shift)
+                                 Constant *&shift,
+                                 bool &inv_type)
 {
   if (!base) {
     if (mDebug) {
@@ -612,12 +598,12 @@ AMDILPeepholeOpt::setupBitInsert(Instruction *base,
     }
     return false;
   }
-  bool andOp = false;
   if (base->getOpcode() == Instruction::Shl) {
     shift = dyn_cast<Constant>(base->getOperand(1));
+    inv_type = true;
   } else if (base->getOpcode() == Instruction::And) {
     mask = dyn_cast<Constant>(base->getOperand(1));
-    andOp = true;
+    inv_type = false;
   } else {
     if (mDebug) {
       dbgs() << "Failed setup with no Shl or And instruction on base opcode!\n";
@@ -632,18 +618,13 @@ AMDILPeepholeOpt::setupBitInsert(Instruction *base,
     }
     return false;
   }
-  // If we find an 'and' operation, then we don't need to
-  // find the next operation as we already know the
-  // bits that are valid at this point.
-  if (andOp) {
-    return true;
-  }
   if (src->getOpcode() == Instruction::Shl && !shift) {
     shift = dyn_cast<Constant>(src->getOperand(1));
     src = dyn_cast<Instruction>(src->getOperand(0));
   } else if (src->getOpcode() == Instruction::And && !mask) {
     mask = dyn_cast<Constant>(src->getOperand(1));
   }
+
   if (!mask && !shift) {
     if (mDebug) {
       dbgs() << "Failed setup since both mask and shift are NULL!\n";
@@ -716,7 +697,6 @@ AMDILPeepholeOpt::optimizeClassInst(Instruction *inst)
   }
   return true;
 }
-
 bool
 AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
 {
@@ -768,98 +748,51 @@ AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
   Constant *LHSShift = NULL, *RHSShift = NULL;
   Instruction *LHS = dyn_cast<Instruction>(inst->getOperand(0));
   Instruction *RHS = dyn_cast<Instruction>(inst->getOperand(1));
-  if (!setupBitInsert(LHS, LHSSrc, LHSMask, LHSShift)) {
+  bool lhs_inv_type = false, rhs_inv_type = false;
+  if (!setupBitInsert(LHS, LHSSrc, LHSMask, LHSShift, lhs_inv_type)) {
     if (mDebug) {
       dbgs() << "Found an OR Operation that failed setup!\n";
       inst->dump();
-      if (LHS) {
-        LHS->dump();
-      }
-      if (LHSSrc) {
-        LHSSrc->dump();
-      }
-      if (LHSMask) {
-        LHSMask->dump();
-      }
-      if (LHSShift) {
-        LHSShift->dump();
-      }
+      if (LHS) { LHS->dump(); }
+      if (LHSSrc) { LHSSrc->dump(); }
+      if (LHSMask) { LHSMask->dump(); }
+      if (LHSShift) { LHSShift->dump(); }
     }
     // There was an issue with the setup for BitInsert.
     return false;
   }
-  if (!setupBitInsert(RHS, RHSSrc, RHSMask, RHSShift)) {
+  if (!setupBitInsert(RHS, RHSSrc, RHSMask, RHSShift, rhs_inv_type)) {
     if (mDebug) {
       dbgs() << "Found an OR Operation that failed setup!\n";
       inst->dump();
-      if (RHS) {
-        RHS->dump();
-      }
-      if (RHSSrc) {
-        RHSSrc->dump();
-      }
-      if (RHSMask) {
-        RHSMask->dump();
-      }
-      if (RHSShift) {
-        RHSShift->dump();
-      }
+      if (RHS) { RHS->dump(); }
+      if (RHSSrc) { RHSSrc->dump(); }
+      if (RHSMask) { RHSMask->dump(); }
+      if (RHSShift) { RHSShift->dump(); }
     }
     // There was an issue with the setup for BitInsert.
     return false;
   }
   if (mDebug) {
-    dbgs() << "Found an OR operation that can possible be optimized to ubit insert!\n";
-    dbgs() << "Op:        ";
-    inst->dump();
+    dbgs() <<
+    "Found an OR operation that can possible be optimized to ubit insert!\n";
+    dbgs() << "Op:        "; inst->dump();
     dbgs() << "LHS:       ";
-    if (LHS) {
-      LHS->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (LHS) { LHS->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "LHS Src:   ";
-    if (LHSSrc) {
-      LHSSrc->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (LHSSrc) { LHSSrc->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "LHS Mask:  ";
-    if (LHSMask) {
-      LHSMask->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (LHSMask) { LHSMask->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "LHS Shift: ";
-    if (LHSShift) {
-      LHSShift->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (LHSShift) { LHSShift->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "RHS:       ";
-    if (RHS) {
-      RHS->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (RHS) { RHS->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "RHS Src:   ";
-    if (RHSSrc) {
-      RHSSrc->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (RHSSrc) { RHSSrc->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "RHS Mask:  ";
-    if (RHSMask) {
-      RHSMask->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (RHSMask) { RHSMask->dump(); } else { dbgs() << "(None)\n"; }
     dbgs() << "RHS Shift: ";
-    if (RHSShift) {
-      RHSShift->dump();
-    } else {
-      dbgs() << "(None)\n";
-    }
+    if (RHSShift) { RHSShift->dump(); } else { dbgs() << "(None)\n"; }
   }
   Constant *offset = NULL;
   Constant *width = NULL;
@@ -875,16 +808,28 @@ AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
                           ? dyn_cast<ConstantInt>(LHSShift)->getZExtValue() : 0);
   rhsShiftVal = (int32_t)(RHSShift
                           ? dyn_cast<ConstantInt>(RHSShift)->getZExtValue() : 0);
-  lhsMaskWidth = lhsMaskVal ? CountPopulation_32(lhsMaskVal) : 32 - lhsShiftVal;
-  rhsMaskWidth = rhsMaskVal ? CountPopulation_32(rhsMaskVal) : 32 - rhsShiftVal;
-  lhsMaskOffset = lhsMaskVal ? CountTrailingZeros_32(lhsMaskVal) : lhsShiftVal;
-  rhsMaskOffset = rhsMaskVal ? CountTrailingZeros_32(rhsMaskVal) : rhsShiftVal;
+  lhsMaskWidth = CountPopulation_32(lhsMaskVal);
+  rhsMaskWidth = CountPopulation_32(rhsMaskVal);
+  lhsMaskOffset = CountTrailingZeros_32(lhsMaskVal);
+  rhsMaskOffset = CountTrailingZeros_32(rhsMaskVal);
   // TODO: Handle the case of A & B | D & ~B(i.e. inverted masks).
   if (mDebug) {
-    dbgs() << "Found pattern: \'((A" << (LHSMask ? " & B)" : ")");
-    dbgs() << (LHSShift ? " << C)" : ")") << " | ((D" ;
-    dbgs() << (RHSMask ? " & E)" : ")");
-    dbgs() << (RHSShift ? " << F)\'\n" : ")\'\n");
+    dbgs() << "Found pattern: \'";
+    if (lhs_inv_type) {
+      dbgs() << "((A" << (LHSShift ? " << C)" : ")");
+      dbgs() << (LHSMask ? " & B)" : ")");
+    } else {
+      dbgs() << "((A" << (LHSMask ? " & B)" : ")");
+      dbgs() << (LHSShift ? " << C)" : ")");
+    }
+    dbgs() << " | ";
+    if (rhs_inv_type) {
+      dbgs() << "((D" << (RHSMask ? " & E)" : ")");
+      dbgs() << (RHSShift ? " << F)\'\n" : ")\'\n");
+    } else {
+      dbgs() << "((D" << (RHSShift ? " << F)" : ")");
+      dbgs() << (RHSMask ? " & E)\'\n" : ")\'\n");
+    }
     dbgs() << "A = LHSSrc\t\tD = RHSSrc \n";
     dbgs() << "B = " << lhsMaskVal << "\t\tE = " << rhsMaskVal << "\n";
     dbgs() << "C = " << lhsShiftVal << "\t\tF = " << rhsShiftVal << "\n";
@@ -893,108 +838,208 @@ AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
     dbgs() << "offset(B) = " << lhsMaskOffset;
     dbgs() << "\toffset(E) = " << rhsMaskOffset << "\n";
     dbgs() << "Constraints: \n";
-    dbgs() << "\t(1) B ^ E == 0\n";
-    dbgs() << "\t(2-LHS) B is a mask\n";
-    dbgs() << "\t(2-LHS) E is a mask\n";
-    dbgs() << "\t(3-LHS) (offset(B)) >= (width(E) + offset(E))\n";
-    dbgs() << "\t(3-RHS) (offset(E)) >= (width(B) + offset(B))\n";
-  }
-  if ((lhsMaskVal || rhsMaskVal) && !(lhsMaskVal ^ rhsMaskVal)) {
-    if (mDebug) {
-      dbgs() << lhsMaskVal << " ^ " << rhsMaskVal;
-      dbgs() << " = " << (lhsMaskVal ^ rhsMaskVal) << "\n";
-      dbgs() << "Failed constraint 1!\n";
+    dbgs() << "\t(1) (B";
+    if (lhs_inv_type) {
+      dbgs() << " << C";
     }
+    dbgs() << ") ^ (E";
+    if (rhs_inv_type) {
+      dbgs() << " << F";
+    }
+    dbgs() << ") == 0\n";
+    if (lhsMaskVal) {
+      dbgs() << "\t(2-LHS) B is a mask\n";
+    } else {
+      dbgs() << "\t(2-LHS) C > 0\n";
+    }
+    if (rhsMaskVal) {
+      dbgs() << "\t(2-RHS) E is a mask\n";
+    } else {
+      dbgs() << "\t(2-RHS) F > 0\n";
+    }
+    dbgs() << "\t(3-LHS) (B << C) is a mask\n";
+    dbgs() << "\t(3-RHS) (E << F) is a mask\n";
+    if (lhsMaskWidth) {
+      if (lhs_inv_type) {
+        dbgs() << "\t(4-LHS) (offset(B) + C) < 32)\n";
+      } else {
+        dbgs() << "\t(4-LHS) (offset(B) + width(B)) <= 32\n";
+      }
+    } else {
+      dbgs() << "\t(4-LHS) (offset(B) - C > 0\n";
+    }
+    if (rhsMaskWidth) {
+      if (rhs_inv_type) {
+        dbgs() << "\t(4-RHS) (offset(E) + F) < 32)\n";
+      } else {
+        dbgs() << "\t(4-RHS) (offset(E) + width(E)) <= 32\n";
+      }
+    } else {
+      dbgs() << "\t(4-RHS) (offset(E) - F > 0\n";
+    }
+    if (rhsMaskWidth) {
+      if (lhsMaskWidth) {
+        if (lhs_inv_type) {
+          dbgs() << "\t(5-LHS) (offset(B) + C) >= (width(E) + offset(E) + F)\n";
+        } else {
+          dbgs() << "\t(5-LHS) offset(B) >= (width(E) + offset(E) + F)\n";
+        }
+      } else {
+        dbgs() << "\t(5-LHS) C >= (width(E) + offset(E) + F)\n";
+      }
+    } else {
+      if (lhsMaskWidth) {
+        dbgs() << "\t(5-LHS) (offset(B) + C) >= F\n";
+      } else {
+        dbgs() << "\t(5-LHS) C >= F\n";
+      }
+    }
+    if (lhsMaskWidth) {
+      if (rhsMaskWidth) {
+        if (rhs_inv_type) {
+          dbgs() << "\t(5-RHS) (offset(E) + F) >= (width(B) + offset(B) + C)\n";
+        } else {
+          dbgs() << "\t(5-RHS) offset(E) >= (width(B) + offset(B) + C)\n";
+        }
+      } else {
+        dbgs() << "\t(5-RHS) F >= (width(B) + offset(B) + C)\n";
+      }
+    } else {
+      if (rhsMaskWidth) {
+        dbgs() << "\t(5-RHS) (offset(E) + F) >= C\n";
+      } else {
+        dbgs() << "\t(5-RHS) F >= C\n";
+      }
+    }
+  }
+  if ((lhsMaskVal ||
+       rhsMaskVal) &&
+      !((lhsMaskVal <<
+         (lhs_inv_type ? lhsShiftVal : 0)) ^
+        (rhsMaskVal << (rhs_inv_type ? rhsShiftVal : 0)))) {
+    DEBUG(dbgs() << "Failed constraint 1!\n");
     return false;
   }
-  if (mDebug) {
-    dbgs() << "LHS = " << lhsMaskOffset << "";
-    dbgs() << " >= (" << rhsMaskWidth << " + " << rhsMaskOffset << ") = ";
-    dbgs() << (lhsMaskOffset >= (rhsMaskWidth + rhsMaskOffset));
-    dbgs() << "\nRHS = " << rhsMaskOffset << "";
-    dbgs() << " >= (" << lhsMaskWidth << " + " << lhsMaskOffset << ") = ";
-    dbgs() << (rhsMaskOffset >= (lhsMaskWidth + lhsMaskOffset));
-    dbgs() << "\n";
-  }
-  if (lhsMaskOffset >= (rhsMaskWidth + rhsMaskOffset)) {
-    offset = ConstantInt::get(aType, lhsMaskOffset, false);
-    width = ConstantInt::get(aType, lhsMaskWidth, false);
+  if (
+    (rhsMaskWidth && lhsMaskWidth && lhs_inv_type &&
+     (lhsMaskOffset + lhsShiftVal) >=
+     (rhsMaskWidth + rhsMaskOffset + rhsShiftVal)) ||
+    (rhsMaskWidth && lhsMaskWidth && !lhs_inv_type && lhsMaskOffset >=
+     (rhsMaskWidth + rhsMaskOffset + rhsShiftVal)) ||
+    (rhsMaskWidth && !lhsMaskWidth && lhsShiftVal >=
+     (rhsMaskWidth + rhsMaskOffset + rhsShiftVal)) ||
+    (!rhsMaskWidth && lhsMaskWidth &&
+     ((lhsMaskOffset + lhsShiftVal) >= rhsShiftVal)) ||
+    (!rhsMaskWidth && !lhsMaskWidth && (lhsShiftVal >= rhsShiftVal))
+    ) {
+    if (lhsMaskVal) {
+      offset =
+        ConstantInt::get(aType,
+                         lhsMaskOffset +
+                         (lhs_inv_type ? lhsShiftVal : (lhsMaskOffset ? -
+                                                        lhsShiftVal : 0)),
+                         false);
+      width = ConstantInt::get(aType, lhsMaskWidth, false);
+    } else {
+      offset = ConstantInt::get(aType, lhsShiftVal, false);
+      width = ConstantInt::get(aType, lhsMaskOffset - lhsShiftVal, false);
+    }
     RHSSrc = RHS;
-    if (!isMask_32(lhsMaskVal) && !isShiftedMask_32(lhsMaskVal)) {
-      if (mDebug) {
-        dbgs() << "Value is not a Mask: " << lhsMaskVal << "\n";
-        dbgs() << "Failed constraint 2!\n";
-      }
+    if ((lhsMaskVal && !isMask_32(lhsMaskVal) && !isShiftedMask_32(lhsMaskVal))
+        || (!lhsMaskVal && !lhsShiftVal)) {
+      DEBUG(dbgs() << "Failed constraint 2-LHS!\n");
       return false;
     }
-    if (!LHSShift) {
-      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
-                                      "MaskShr", LHS);
-    } else if (lhsShiftVal != lhsMaskOffset) {
-      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
-                                      "MaskShr", LHS);
+    if (lhsShiftVal && !isShiftedMask_32(lhsMaskVal << lhsShiftVal)) {
+      DEBUG(dbgs() << "Failed constraint 3-LHS!\n");
+      return false;
     }
-    if (mDebug) {
-      dbgs() << "Optimizing LHS!\n";
+    if ((lhsMaskVal && (lhsMaskOffset + lhsShiftVal) >= 32)
+        || (lhsMaskOffset - lhsShiftVal) > 32) {
+      DEBUG(dbgs() << "Failed constraint 4-LHS!\n");
+      return false;
     }
-  } else if (rhsMaskOffset >= (lhsMaskWidth + lhsMaskOffset)) {
-    offset = ConstantInt::get(aType, rhsMaskOffset, false);
-    width = ConstantInt::get(aType, rhsMaskWidth, false);
+    // If we have a mask offset, but we don't have a shift,
+    // we need to make sure that the mask offset is returned back to 0.
+    if (!LHSShift && lhsMaskOffset) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
+                                      "MaskShr1", LHS);
+    } else if (!lhs_inv_type && lhsShiftVal && lhsMaskOffset) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc,
+                                      offset, "MaskShr2", LHS);
+      offset = ConstantInt::get(aType, lhsMaskOffset, false);
+    } else if (lhs_inv_type && lhsShiftVal && lhsMaskOffset && lhsMaskWidth) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHS,
+                                      offset, "MaskShr3", inst);
+    }
+    DEBUG(dbgs() << "Optimizing LHS!\n");
+  } else if ((lhsMaskWidth && rhsMaskWidth && rhs_inv_type &&
+              (rhsMaskOffset + rhsShiftVal) >=
+              (lhsMaskWidth + lhsMaskOffset + lhsShiftVal)) ||
+             (lhsMaskWidth && rhsMaskWidth && !rhs_inv_type && rhsMaskOffset >=
+              (lhsMaskWidth + lhsMaskOffset + lhsShiftVal)) ||
+             (lhsMaskWidth && !rhsMaskWidth && rhsShiftVal >=
+              (lhsMaskWidth + lhsMaskOffset + lhsShiftVal)) ||
+             (!lhsMaskWidth && rhsMaskWidth &&
+              ((rhsMaskOffset + rhsShiftVal) >= lhsShiftVal)) ||
+             (!lhsMaskWidth && !rhsMaskWidth && (rhsShiftVal >= lhsShiftVal))
+             ) {
+    if (rhsMaskVal) {
+      offset =
+        ConstantInt::get(aType,
+                         rhsMaskOffset +
+                         (rhs_inv_type ? rhsShiftVal : (rhsMaskOffset ? -
+                                                        rhsShiftVal : 0)),
+                         false);
+      width = ConstantInt::get(aType, rhsMaskWidth, false);
+    } else {
+      offset = ConstantInt::get(aType, rhsShiftVal, false);
+      width = ConstantInt::get(aType, rhsMaskOffset - rhsShiftVal, false);
+    }
     LHSSrc = RHSSrc;
     RHSSrc = LHS;
-    if (!isMask_32(rhsMaskVal) && !isShiftedMask_32(rhsMaskVal)) {
-      if (mDebug) {
-        dbgs() << "Non-Mask: " << rhsMaskVal << "\n";
-        dbgs() << "Failed constraint 2!\n";
-      }
+    if ((rhsMaskVal && !isMask_32(rhsMaskVal) && !isShiftedMask_32(rhsMaskVal))
+        || (!rhsMaskVal && !rhsShiftVal)) {
+      DEBUG(dbgs() << "Failed constraint 2-RHS!\n");
       return false;
     }
-    if (!RHSShift) {
-      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
-                                      "MaskShr", RHS);
-    } else if (rhsShiftVal != rhsMaskOffset) {
-      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
-                                      "MaskShr", RHS);
+    if (rhsShiftVal && !isShiftedMask_32(rhsMaskVal << rhsShiftVal)) {
+      DEBUG(dbgs() << "Failed constraint 3-RHS!\n");
+      return false;
     }
-    if (mDebug) {
-      dbgs() << "Optimizing RHS!\n";
+    if ((rhsMaskVal && (rhsMaskOffset + rhsShiftVal) >= 32)
+        || (rhsMaskOffset - rhsShiftVal > 32)) {
+      DEBUG(dbgs() << "Failed constraint 4-RHS!\n");
+      return false;
     }
+    if (!RHSShift && rhsMaskOffset) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc, offset,
+                                      "MaskShr1", RHS);
+    } else if (!rhs_inv_type && rhsShiftVal && rhsMaskOffset) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, LHSSrc,
+                                      offset, "MaskShr2", RHS);
+      offset = ConstantInt::get(aType, rhsMaskOffset, false);
+    } else if (rhs_inv_type && rhsShiftVal && rhsMaskWidth && rhsMaskOffset) {
+      LHSSrc = BinaryOperator::Create(Instruction::LShr, RHS,
+                                      offset, "MaskShr3", inst);
+    }
+    DEBUG(dbgs() << "Optimizing RHS!\n");
   } else {
-    if (mDebug) {
-      dbgs() << "Failed constraint 3!\n";
-    }
+    DEBUG(dbgs() << "Failed constraint 5!\n");
     return false;
   }
-  if (mDebug) {
+  DEBUG(
     dbgs() << "Width:  ";
-    if (width) {
-      width->dump();
-    } else {
-      dbgs() << "(0)\n";
-    }
+    if (width) { width->dump(); } else { dbgs() << "(0)\n"; }
     dbgs() << "Offset: ";
-    if (offset) {
-      offset->dump();
-    } else {
-      dbgs() << "(0)\n";
-    }
+    if (offset) { offset->dump(); } else { dbgs() << "(0)\n"; }
     dbgs() << "LHSSrc: ";
-    if (LHSSrc) {
-      LHSSrc->dump();
-    } else {
-      dbgs() << "(0)\n";
-    }
+    if (LHSSrc) { LHSSrc->dump(); } else { dbgs() << "(0)\n"; }
     dbgs() << "RHSSrc: ";
-    if (RHSSrc) {
-      RHSSrc->dump();
-    } else {
-      dbgs() << "(0)\n";
-    }
-  }
+    if (RHSSrc) { RHSSrc->dump(); } else { dbgs() << "(0)\n"; }
+    );
   if (!offset || !width) {
-    if (mDebug) {
-      dbgs() << "Either width or offset are NULL, failed detection!\n";
-    }
+    DEBUG(dbgs() << "Either width or offset are NULL, failed detection!\n");
     return false;
   }
   // Lets create the function signature.
@@ -1005,11 +1050,8 @@ AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
   callTypes.push_back(aType);
   FunctionType *funcType = FunctionType::get(aType, callTypes, false);
   std::string name = "__amdil_ubit_insert";
-  if (isVector) {
-    name += "_v" + itostr(numEle) + "u32";
-  } else {
-    name += "_u32";
-  }
+  if (isVector) { name += "_v" + itostr(numEle) + "u32"; } else { name +=
+                                                                    "_u32"; }
   Function *Func =
     dyn_cast<Function>(inst->getParent()->getParent()->getParent()->
                        getOrInsertFunction(llvm::StringRef(name), funcType));
@@ -1032,15 +1074,13 @@ AMDILPeepholeOpt::optimizeBitInsert(Instruction *inst)
   inst->eraseFromParent();
   return true;
 }
-
 bool
 AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
 {
   assert (inst && (inst->getOpcode() == Instruction::Xor) &&
           "optimizeBitExtract() expects Xor instruction");
   if (mDebug) {
-    dbgs() << "\nInst: ";
-    inst->dump();
+    dbgs() << "\nInst: "; inst->dump();
   }
   if (optLevel == CodeGenOpt::None) {
     return false;
@@ -1077,17 +1117,14 @@ AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
     // Inverted operands, swap them.
     Apneg1 = dyn_cast<Constant>(inst->getOperand(0));
     Ap = dyn_cast<Instruction>(inst->getOperand(1));
-
   }
   if (Apneg1 == NULL || Ap == NULL ||
       Ap->getOpcode() != Instruction::And) {
     return false;
   }
   if (mDebug) {
-    dbgs() << "Ap: ";
-    Ap->dump();
-    dbgs() << "Ap-1: ";
-    Apneg1->dump();
+    dbgs() << "Ap: "; Ap->dump();
+    dbgs() << "Ap-1: "; Apneg1->dump();
   }
   Instruction *Cp = dyn_cast<Instruction>(Ap->getOperand(0));
   Instruction *A = dyn_cast<Instruction>(Ap->getOperand(1));
@@ -1095,10 +1132,8 @@ AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
     return false;
   }
   if (mDebug) {
-    dbgs() << "A: ";
-    A->dump();
-    dbgs() << "Cp: ";
-    Cp->dump();
+    dbgs() << "A: "; A->dump();
+    dbgs() << "Cp: "; Cp->dump();
   }
   if (Cp->getOpcode() != Instruction::Or
       && A->getOpcode() == Instruction::Or) {
@@ -1121,10 +1156,8 @@ AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
     return false;
   }
   if (mDebug) {
-    dbgs() << "C: ";
-    C->dump();
-    dbgs() << "Bp: ";
-    Bp->dump();
+    dbgs() << "C: "; C->dump();
+    dbgs() << "Bp: "; Bp->dump();
   }
   Constant *Bpneg1 = dyn_cast<Constant>(Bp->getOperand(1));
   Instruction *B = dyn_cast<Instruction>(Bp->getOperand(0));
@@ -1136,10 +1169,8 @@ AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
     return false;
   }
   if (mDebug) {
-    dbgs() << "B: ";
-    B->dump();
-    dbgs() << "Bp-1: ";
-    Bpneg1->dump();
+    dbgs() << "B: "; B->dump();
+    dbgs() << "Bp-1: "; Bpneg1->dump();
   }
   if (aType->isVectorTy()) {
     ConstantDataVector *Bpneg1v = dyn_cast<ConstantDataVector>(Bpneg1);
@@ -1227,7 +1258,6 @@ AMDILPeepholeOpt::optimizeBFI(Instruction *inst)
   inst->eraseFromParent();
   return true;
 }
-
 bool
 AMDILPeepholeOpt::optimizeBitExtract(Instruction *inst)
 {
@@ -1298,8 +1328,10 @@ AMDILPeepholeOpt::optimizeBitExtract(Instruction *inst)
            "combination where the number of elements to a "
            "shift and an and are different!");
     for (size_t x = 0, y = AndMaskVec->getNumElements(); x < y; ++x) {
-      ConstantInt *AndCI = dyn_cast<ConstantInt>(AndMaskVec->getElementAsConstant(x));
-      ConstantInt *ShiftIC = dyn_cast<ConstantInt>(ShrValVec->getElementAsConstant(x));
+      ConstantInt *AndCI = dyn_cast<ConstantInt>(
+        AndMaskVec->getElementAsConstant(x));
+      ConstantInt *ShiftIC = dyn_cast<ConstantInt>(
+        ShrValVec->getElementAsConstant(x));
       if (!AndCI || !ShiftIC) {
         return false;
       }
@@ -1375,7 +1407,6 @@ AMDILPeepholeOpt::optimizeBitExtract(Instruction *inst)
   inst->eraseFromParent();
   return true;
 }
-
 bool
 getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
                    Value*& vecval, unsigned& whichelem)
@@ -1387,7 +1418,8 @@ getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
 
   vecval = einst->getVectorOperand();
   VectorType *vt = dyn_cast<VectorType>(vecval->getType());
-  assert (!vt && "ExtractElementInst must have a vector type as its first argument");
+  assert (
+    !vt && "ExtractElementInst must have a vector type as its first argument");
   Type       *et = vt->getElementType();
   if ( (vt->getNumElements() != numElem) ||
        (et->getTypeID() != tid) ) {
@@ -1401,7 +1433,6 @@ getVectorComponent(Instruction *inst, int tid, unsigned int numElem,
   whichelem = (unsigned)cv->getZExtValue();
   return true;
 }
-
 bool getIntValue(Instruction *Inst, Value *& Val,
                  unsigned int &start_pos, unsigned int &nbits)
 {
@@ -1475,7 +1506,6 @@ bool getIntValue(Instruction *Inst, Value *& Val,
   Val = intval;
   return true;
 }
-
 /*
    format:     f_2_u4 dst, src
    semantics:  dist.xyzw =
@@ -1520,7 +1550,8 @@ AMDILPeepholeOpt::genIntrF2U4(Instruction *inst)
     or1 = dyn_cast<Instruction>(or1->getOperand(1));
     if (!or1 || !or2) {
       return false;
-    } else {
+    }
+    else {
       bool b1 = (or1->getOpcode() == Instruction::Or);
       bool b2 = (or2->getOpcode() == Instruction::Or);
       if ((b1 && b2) || (!b1 && !b2)) {
@@ -1612,7 +1643,7 @@ AMDILPeepholeOpt::genIntrF2U4(Instruction *inst)
   argtypes.push_back(v4f32val->getType());
   FunctionType *functype = FunctionType::get(rtype, argtypes, false);
   Function *proto_f2u4 = dyn_cast<Function>(
-                           mF->getParent()->getOrInsertFunction("__amdil_f_2_u4", functype));
+    mF->getParent()->getOrInsertFunction("__amdil_f_2_u4", functype));
 
   CallInst *call_f2u4 = CallInst::Create(proto_f2u4, v4f32val, "F_2_U4", inst);
   inst->replaceAllUsesWith(call_f2u4);
@@ -1620,97 +1651,14 @@ AMDILPeepholeOpt::genIntrF2U4(Instruction *inst)
 
   return true;
 }
-
-bool
-AMDILPeepholeOpt::expandBFI(CallInst *CI)
-{
-  if (!CI || mSTM->calVersion() > CAL_VERSION_SC_150) {
-    return false;
-  }
-  Value *LHS = CI->getOperand(CI->getNumOperands() - 1);
-  if (!LHS->getName().startswith("__amdil_bfi")) {
-    return false;
-  }
-  Type* type = CI->getOperand(0)->getType();
-  Constant *negOneConst = NULL;
-  if (type->isVectorTy()) {
-    std::vector<Constant *> negOneVals;
-    negOneConst = ConstantInt::get(CI->getContext(),
-                                   APInt(32, StringRef("-1"), 10));
-    for (size_t x = 0,
-         y = dyn_cast<VectorType>(type)->getNumElements(); x < y; ++x) {
-      negOneVals.push_back(negOneConst);
-    }
-    negOneConst = ConstantVector::get(negOneVals);
-  } else {
-    negOneConst = ConstantInt::get(CI->getContext(),
-                                   APInt(32, StringRef("-1"), 10));
-  }
-  // __amdil_bfi => (A & B) | (~A & C)
-  BinaryOperator *lhs =
-    BinaryOperator::Create(Instruction::And, CI->getOperand(0),
-                           CI->getOperand(1), "bfi_and", CI);
-  BinaryOperator *rhs =
-    BinaryOperator::Create(Instruction::Xor, CI->getOperand(0), negOneConst,
-                           "bfi_not", CI);
-  rhs = BinaryOperator::Create(Instruction::And, rhs, CI->getOperand(2),
-                               "bfi_and", CI);
-  lhs = BinaryOperator::Create(Instruction::Or, lhs, rhs, "bfi_or", CI);
-  CI->replaceAllUsesWith(lhs);
-  return true;
-}
-
-bool
-AMDILPeepholeOpt::expandBFM(CallInst *CI)
-{
-  if (!CI || mSTM->calVersion() > CAL_VERSION_SC_150) {
-    return false;
-  }
-  Value *LHS = CI->getOperand(CI->getNumOperands() - 1);
-  if (!LHS->getName().startswith("__amdil_bfm")) {
-    return false;
-  }
-  // __amdil_bfm => ((1 << (src0 & 0x1F)) - 1) << (src1 & 0x1f)
-  Constant *newMaskConst = NULL;
-  Constant *newShiftConst = NULL;
-  Type* type = CI->getOperand(0)->getType();
-  if (type->isVectorTy()) {
-    std::vector<Constant*> newMaskVals, newShiftVals;
-    newMaskConst = ConstantInt::get(Type::getInt32Ty(*mCTX), 0x1F);
-    newShiftConst = ConstantInt::get(Type::getInt32Ty(*mCTX), 1);
-    for (size_t x = 0,
-         y = dyn_cast<VectorType>(type)->getNumElements(); x < y; ++x) {
-      newMaskVals.push_back(newMaskConst);
-      newShiftVals.push_back(newShiftConst);
-    }
-    newMaskConst = ConstantVector::get(newMaskVals);
-    newShiftConst = ConstantVector::get(newShiftVals);
-  } else {
-    newMaskConst = ConstantInt::get(Type::getInt32Ty(*mCTX), 0x1F);
-    newShiftConst = ConstantInt::get(Type::getInt32Ty(*mCTX), 1);
-  }
-  BinaryOperator *lhs =
-    BinaryOperator::Create(Instruction::And, CI->getOperand(0),
-                           newMaskConst, "bfm_mask", CI);
-  lhs = BinaryOperator::Create(Instruction::Shl, newShiftConst,
-                               lhs, "bfm_shl", CI);
-  lhs = BinaryOperator::Create(Instruction::Sub, lhs,
-                               newShiftConst, "bfm_sub", CI);
-  BinaryOperator *rhs =
-    BinaryOperator::Create(Instruction::And, CI->getOperand(1),
-                           newMaskConst, "bfm_mask", CI);
-  lhs = BinaryOperator::Create(Instruction::Shl, lhs, rhs, "bfm_shl", CI);
-  CI->replaceAllUsesWith(lhs);
-  return true;
-}
-
 bool
 AMDILPeepholeOpt::instLevelOptimizations(Instruction* inst)
 {
   assert (inst && "inst should not be NULL");
 
   bool isDebug = (optLevel == CodeGenOpt::None);
-  bool isEGOrLater = (mSTM->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX);
+  bool isEGOrLater =
+    (mSTM->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX);
 
   // Remove dead inst (probably should do it in caller)
   if (!isDebug && isInstructionTriviallyDead(inst)) {
@@ -1761,7 +1709,6 @@ AMDILPeepholeOpt::instLevelOptimizations(Instruction* inst)
   }
   return false;
 }
-
 bool
 AMDILPeepholeOpt::correctMisalignedMemOp(Instruction *inst)
 {
@@ -1813,7 +1760,6 @@ AMDILPeepholeOpt::isSigned24BitOps(CallInst *CI)
   }
   return true;
 }
-
 void
 AMDILPeepholeOpt::expandSigned24BitOps(CallInst *CI)
 {
@@ -1842,8 +1788,8 @@ AMDILPeepholeOpt::expandSigned24BitOps(CallInst *CI)
       name += "_i32";
     }
     Function *Func = dyn_cast<Function>(
-                       CI->getParent()->getParent()->getParent()->
-                       getOrInsertFunction(llvm::StringRef(name), funcType));
+      CI->getParent()->getParent()->getParent()->
+      getOrInsertFunction(llvm::StringRef(name), funcType));
     Value *Operands[3] = {
       CI->getOperand(0),
       CI->getOperand(1),
@@ -1874,8 +1820,8 @@ AMDILPeepholeOpt::expandSigned24BitOps(CallInst *CI)
       name += "_i32";
     }
     Function *Func = dyn_cast<Function>(
-                       CI->getParent()->getParent()->getParent()->
-                       getOrInsertFunction(llvm::StringRef(name), funcType));
+      CI->getParent()->getParent()->getParent()->
+      getOrInsertFunction(llvm::StringRef(name), funcType));
     Value *Operands[2] = {
       CI->getOperand(0),
       CI->getOperand(1)
@@ -1885,7 +1831,6 @@ AMDILPeepholeOpt::expandSigned24BitOps(CallInst *CI)
     CI->replaceAllUsesWith(nCI);
   }
 }
-
 bool
 AMDILPeepholeOpt::isRWGLocalOpt(CallInst *CI)
 {
@@ -1900,7 +1845,6 @@ AMDILPeepholeOpt::isRWGLocalOpt(CallInst *CI)
           // information.
           && mAMI->getKernel(mF->getName()));
 }
-
 void
 AMDILPeepholeOpt::expandRWGLocalOpt(CallInst *CI)
 {
@@ -1920,7 +1864,6 @@ AMDILPeepholeOpt::expandRWGLocalOpt(CallInst *CI)
   ++LocalFuncs;
   return;
 }
-
 bool
 AMDILPeepholeOpt::convertAccurateDivide(CallInst *CI)
 {
@@ -1936,7 +1879,6 @@ AMDILPeepholeOpt::convertAccurateDivide(CallInst *CI)
   return CI->getOperand(CI->getNumOperands() - 1)->getName().substr(0, 20)
          == "__amdil_improved_div";
 }
-
 void
 AMDILPeepholeOpt::expandAccurateDivide(CallInst *CI)
 {
@@ -1947,7 +1889,6 @@ AMDILPeepholeOpt::expandAccurateDivide(CallInst *CI)
                            CI->getOperand(1), "fdiv32", CI);
   CI->replaceAllUsesWith(divOp);
 }
-
 bool
 AMDILPeepholeOpt::propagateSamplerInst(CallInst *CI)
 {
@@ -2011,19 +1952,16 @@ AMDILPeepholeOpt::propagateSamplerInst(CallInst *CI)
   lInst->replaceAllUsesWith(samplerVal);
   return true;
 }
-
 bool
 AMDILPeepholeOpt::doInitialization(Module &M)
 {
   return false;
 }
-
 bool
 AMDILPeepholeOpt::doFinalization(Module &M)
 {
   return false;
 }
-
 void
 AMDILPeepholeOpt::getAnalysisUsage(AnalysisUsage &AU) const
 {

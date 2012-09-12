@@ -27,16 +27,12 @@
 
 using namespace llvm;
 
-static inline uint32_t AlignDown_32(uint32_t Value, uint32_t Alignment)
-{
+static inline uint32_t AlignDown_32(uint32_t Value, uint32_t Alignment) {
   return Value & ~(Alignment - 1);
 }
-
-static inline uint32_t AlignUp_32(uint32_t Value, uint32_t Alignment)
-{
+static inline uint32_t AlignUp_32(uint32_t Value, uint32_t Alignment) {
   return AlignDown_32(Value + Alignment - 1, Alignment);
 }
-
 AMDILModuleInfo::AMDILModuleInfo(const MachineModuleInfo &MMI)
   : mMMI(&MMI),
     symTab(NULL),
@@ -46,24 +42,26 @@ AMDILModuleInfo::AMDILModuleInfo(const MachineModuleInfo &MMI)
     mReservedBuffs(0),
     mCurrentCPOffset(0),
     mPrintfOffset(0),
-    mProcessed(false) { }
+    mNumLocalBuffers(1),
+    mProcessed(false) {
+}
 
-AMDILModuleInfo::~AMDILModuleInfo()
-{
-  for (StringMap<AMDILKernel*>::iterator kb = mKernels.begin(), ke = mKernels.end();
+AMDILModuleInfo::~AMDILModuleInfo() {
+  for (StringMap<AMDILKernel*>::iterator kb = mKernels.begin(),
+       ke = mKernels.end();
        kb != ke; ++kb) {
     StringMapEntry<AMDILKernel*> cur = *kb;
     AMDILKernel *ptr = cur.getValue();
     delete ptr;
   }
 }
-
-static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl, const std::string &arg)
-{
+static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl,
+                                        const std::string &arg) {
   if (!krnl) {
     return NULL;
   }
-  llvm::SmallVector<AMDILConstPtr, DEFAULT_VEC_SLOTS>::const_iterator begin, end;
+  llvm::SmallVector<AMDILConstPtr,
+                    DEFAULT_VEC_SLOTS>::const_iterator begin, end;
   for (begin = krnl->constPtr.begin(), end = krnl->constPtr.end();
        begin != end; ++begin) {
     if (!strcmp(begin->name.data(),arg.c_str())) {
@@ -72,10 +70,8 @@ static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl, const std::stri
   }
   return NULL;
 }
-
 void AMDILModuleInfo::processModule(const Module *M,
-                                    const AMDILTargetMachine *mTM)
-{
+                                    const AMDILTargetMachine *mTM) {
   Module::const_global_iterator GI;
   Module::const_global_iterator GE;
   mSTM = mTM->getSubtargetImpl();
@@ -94,7 +90,8 @@ void AMDILModuleInfo::processModule(const Module *M,
     } else if (!strncmp(name, "fgv", 3)) {
       // we can ignore this since we don't care about the filename
       // string
-    } else if ((name[0] == 'l' || name[0] == 'r') && !strncmp(name + 1, "vgv", 3)) {
+    } else if ((name[0] == 'l' ||
+                name[0] == 'r') && !strncmp(name + 1, "vgv", 3)) {
       // "lvgv" or "rvgv"
       mLocalArgs[GVName] = parseXVGV(GV);
     } else if (!strncmp(name, "llvm.image.annotations", 22)) {
@@ -137,9 +134,7 @@ void AMDILModuleInfo::processModule(const Module *M,
   // is called everytime a MachineFunctionInfo object is instantiated.
   mProcessed = true;
 }
-
-void AMDILModuleInfo::allocateGlobalCB(void)
-{
+void AMDILModuleInfo::allocateGlobalCB(void) {
   uint32_t maxCBSize = mSTM->device()->getMaxCBSize();
   uint32_t offset = 0;
   uint32_t curCB = 0;
@@ -176,9 +171,7 @@ void AMDILModuleInfo::allocateGlobalCB(void)
     mReservedBuffs = curCB + 1;
   }
 }
-
-bool AMDILModuleInfo::checkConstPtrsUseHW(llvm::Module::const_iterator *FCI)
-{
+bool AMDILModuleInfo::checkConstPtrsUseHW(llvm::Module::const_iterator *FCI) {
   Function::const_arg_iterator AI, AE;
   const Function *func = *FCI;
   std::string name = func->getName();
@@ -268,9 +261,7 @@ bool AMDILModuleInfo::checkConstPtrsUseHW(llvm::Module::const_iterator *FCI)
   }
   return false;
 }
-
-int32_t AMDILModuleInfo::getArrayOffset(const llvm::StringRef &a) const
-{
+int32_t AMDILModuleInfo::getArrayOffset(const llvm::StringRef &a) const {
   StringMap<AMDILArrayMem>::const_iterator iter = mArrayMems.find(a);
   if (iter != mArrayMems.end()) {
     return iter->second.offset;
@@ -278,9 +269,7 @@ int32_t AMDILModuleInfo::getArrayOffset(const llvm::StringRef &a) const
     return -1;
   }
 }
-
-int32_t AMDILModuleInfo::getConstOffset(const llvm::StringRef &a) const
-{
+int32_t AMDILModuleInfo::getConstOffset(const llvm::StringRef &a) const {
   StringMap<AMDILConstPtr>::const_iterator iter = mConstMems.find(a);
   if (iter != mConstMems.end()) {
     return iter->second.offset;
@@ -288,9 +277,7 @@ int32_t AMDILModuleInfo::getConstOffset(const llvm::StringRef &a) const
     return -1;
   }
 }
-
-bool AMDILModuleInfo::getConstHWBit(const llvm::StringRef &name) const
-{
+bool AMDILModuleInfo::getConstHWBit(const llvm::StringRef &name) const {
   StringMap<AMDILConstPtr>::const_iterator iter = mConstMems.find(name);
   if (iter != mConstMems.end()) {
     return iter->second.usesHardware;
@@ -298,11 +285,9 @@ bool AMDILModuleInfo::getConstHWBit(const llvm::StringRef &name) const
     return false;
   }
 }
-
 // As of right now we only care about the required group size
 // so we can skip the variable encoding
-AMDILKernelAttr AMDILModuleInfo::parseSGV(const GlobalValue *G)
-{
+AMDILKernelAttr AMDILModuleInfo::parseSGV(const GlobalValue *G) {
   AMDILKernelAttr nArg;
   const GlobalVariable *GV = dyn_cast<GlobalVariable>(G);
   memset(&nArg, 0, sizeof(nArg));
@@ -324,7 +309,7 @@ AMDILKernelAttr AMDILModuleInfo::parseSGV(const GlobalValue *G)
     pos += 3;
     std::string LWS = init.substr(pos, init.length() - pos);
     const char *lws = LWS.c_str();
-    sscanf(lws, "%u,%u,%u", &(nArg.reqGroupSize[0]),
+    sscanf(lws, "%d,%d,%d", &(nArg.reqGroupSize[0]),
            &(nArg.reqGroupSize[1]),
            &(nArg.reqGroupSize[2]));
     nArg.mHasRWG = true;
@@ -334,16 +319,14 @@ AMDILKernelAttr AMDILModuleInfo::parseSGV(const GlobalValue *G)
     pos += 3;
     std::string LWS = init.substr(pos, init.length() - pos);
     const char *lws = LWS.c_str();
-    sscanf(lws, "%u,%u,%u", &(nArg.reqRegionSize[0]),
+    sscanf(lws, "%d,%d,%d", &(nArg.reqRegionSize[0]),
            &(nArg.reqRegionSize[1]),
            &(nArg.reqRegionSize[2]));
     nArg.mHasRWR = true;
   }
   return nArg;
 }
-
-AMDILLocalArg AMDILModuleInfo::parseXVGV(const GlobalValue *G)
-{
+AMDILLocalArg AMDILModuleInfo::parseXVGV(const GlobalValue *G) {
   AMDILLocalArg nArg;
   const GlobalVariable *GV = dyn_cast<GlobalVariable>(G);
   nArg.name = "";
@@ -368,7 +351,6 @@ AMDILLocalArg AMDILModuleInfo::parseXVGV(const GlobalValue *G)
   }
   return nArg;
 }
-
 void AMDILModuleInfo::parseSamplerAnnotate(const GlobalValue *G)
 {
   const GlobalVariable *GV = dyn_cast_or_null<GlobalVariable>(G);
@@ -395,10 +377,8 @@ void AMDILModuleInfo::parseSamplerAnnotate(const GlobalValue *G)
       // and don't generate code/metadata for strings that are never used.
       mConstMems.erase(mConstMems.find(nameGV->getName()));
     }
-
   }
 }
-
 void AMDILModuleInfo::parseIgnoredGlobal(const GlobalValue *G)
 {
   const GlobalVariable *GV = dyn_cast_or_null<GlobalVariable>(G);
@@ -423,15 +403,13 @@ void AMDILModuleInfo::parseIgnoredGlobal(const GlobalValue *G)
     }
   }
 }
-
 std::set<std::string> *
 AMDILModuleInfo::getSamplerForKernel(llvm::StringRef &ref)
 {
-  return (mSamplerSet.find(ref) != mSamplerSet.end()) ? &mSamplerSet[ref] : NULL;
+  return (mSamplerSet.find(ref) !=
+          mSamplerSet.end()) ? &mSamplerSet[ref] : NULL;
 }
-
-void AMDILModuleInfo::parseConstantPtrAnnotate(const GlobalValue *G)
-{
+void AMDILModuleInfo::parseConstantPtrAnnotate(const GlobalValue *G) {
   const GlobalVariable *GV = dyn_cast_or_null<GlobalVariable>(G);
   const ConstantArray *CA =
     dyn_cast_or_null<ConstantArray>(GV->getInitializer());
@@ -491,9 +469,7 @@ void AMDILModuleInfo::parseConstantPtrAnnotate(const GlobalValue *G)
     mKernels[AMDILKernelName] = k;
   }
 }
-
-void AMDILModuleInfo::parseImageAnnotate(const GlobalValue *G)
-{
+void AMDILModuleInfo::parseImageAnnotate(const GlobalValue *G) {
   const GlobalVariable *GV = dyn_cast<GlobalVariable>(G);
   const ConstantArray *CA = dyn_cast<ConstantArray>(GV->getInitializer());
   if (!CA) {
@@ -544,11 +520,10 @@ void AMDILModuleInfo::parseImageAnnotate(const GlobalValue *G)
   }
   mKernels[name] = k;
 }
-
-void AMDILModuleInfo::parseAutoArray(const GlobalValue *GV, bool isRegion)
-{
+void AMDILModuleInfo::parseAutoArray(const GlobalValue *GV, bool isRegion) {
   const GlobalVariable *G = dyn_cast<GlobalVariable>(GV);
   AMDILArrayMem tmp;
+  tmp.base = GV;
   tmp.isHW = true;
   tmp.offset = 0;
   tmp.align = std::max(G->getAlignment(), 16U);
@@ -564,11 +539,10 @@ void AMDILModuleInfo::parseAutoArray(const GlobalValue *GV, bool isRegion)
     tmp.vecSize = TM->getTargetData()->getTypeAllocSize(ty);
   }
   tmp.isRegion = isRegion;
+  tmp.resourceID = 0;
   mArrayMems[GV->getName()] = tmp;
 }
-
-void AMDILModuleInfo::parseConstantPtr(const GlobalValue *GV)
-{
+void AMDILModuleInfo::parseConstantPtr(const GlobalValue *GV) {
   const GlobalVariable *G = dyn_cast<GlobalVariable>(GV);
   AMDILConstPtr constAttr;
   constAttr.name = G->getName();
@@ -592,9 +566,7 @@ void AMDILModuleInfo::parseConstantPtr(const GlobalValue *GV)
   constAttr.usesHardware = false;
   mConstMems[GV->getName()] = constAttr;
 }
-
-void AMDILModuleInfo::parseGlobalAnnotate(const GlobalValue *G)
-{
+void AMDILModuleInfo::parseGlobalAnnotate(const GlobalValue *G) {
   const GlobalVariable *GV = dyn_cast<GlobalVariable>(G);
   if (!GV->hasInitializer()) {
     return;
@@ -613,9 +585,8 @@ void AMDILModuleInfo::parseGlobalAnnotate(const GlobalValue *G)
     parseKernelInformation(CA->getOperand(i));
   }
 }
-
-AMDILLocalArg* AMDILModuleInfo::parseKernelLRInfo(AMDILKernel *kernel, const Constant *CV)
-{
+AMDILLocalArg* AMDILModuleInfo::parseKernelLRInfo(AMDILKernel *kernel,
+                                                  const Constant *CV) {
   llvm::StringRef xvgvName = "";  // lvgv or rvgv
 
   assert(CV);
@@ -639,6 +610,8 @@ AMDILLocalArg* AMDILModuleInfo::parseKernelLRInfo(AMDILKernel *kernel, const Con
         curSize = (a->isHW) ? &kernel->curHWRSize : &kernel->curRSize;
       } else {
         curSize = (a->isHW) ? &kernel->curHWSize : &kernel->curSize;
+        // by default all local arrays are allocated in the default local buffer
+        a->resourceID = mSTM->device()->getResourceID(AMDILDevice::LDS_ID);
       }
       a->offset = AlignUp_32(*curSize, a->align);
       *curSize = a->offset + a->vecSize;
@@ -647,9 +620,7 @@ AMDILLocalArg* AMDILModuleInfo::parseKernelLRInfo(AMDILKernel *kernel, const Con
 
   return ptr;
 }
-
-void AMDILModuleInfo::parseKernelInformation(const Value *V)
-{
+void AMDILModuleInfo::parseKernelInformation(const Value *V) {
   if (isa<GlobalValue>(V)) {
     return;
   }
@@ -692,7 +663,6 @@ void AMDILModuleInfo::parseKernelInformation(const Value *V)
     kernel->sgv = &mKernelArgs[sgvName];
   }
 
-
   // The third operand is FGV, which is skipped
 
   // The fourth operand is LVGV
@@ -700,17 +670,16 @@ void AMDILModuleInfo::parseKernelInformation(const Value *V)
 
   // The possibly missing (e.g. on Apple) fifth operand is RVGV
   if (N >= 5) {
-    kernel->rvgv = parseKernelLRInfo(kernel, dyn_cast<Constant>(CS->getOperand(4)));
+    kernel->rvgv =
+      parseKernelLRInfo(kernel, dyn_cast<Constant>(CS->getOperand(4)));
   }
 
   // The last (fifth or sixth) operand is NULL
 
   mKernels[AMDILKernelName] = kernel;
 }
-
 AMDILKernel *
-AMDILModuleInfo::getKernel(const llvm::StringRef &name)
-{
+AMDILModuleInfo::getKernel(const llvm::StringRef &name) {
   StringMap<AMDILKernel*>::iterator iter = mKernels.find(name);
   if (iter == mKernels.end()) {
     return NULL;
@@ -718,34 +687,26 @@ AMDILModuleInfo::getKernel(const llvm::StringRef &name)
     return iter->second;
   }
 }
-
-bool AMDILModuleInfo::isKernel(const llvm::StringRef &name) const
-{
+bool AMDILModuleInfo::isKernel(const llvm::StringRef &name) const {
   return (mKernels.find(name) != mKernels.end());
 }
-
 bool AMDILModuleInfo::isWriteOnlyImage(const llvm::StringRef &name,
-                                       uint32_t iID) const
-{
+                                       uint32_t iID) const {
   const StringMap<AMDILKernel*>::const_iterator kiter = mKernels.find(name);
   if (kiter == mKernels.end()) {
     return false;
   }
   return kiter->second->writeOnly.count(iID);
 }
-
 bool AMDILModuleInfo::isReadOnlyImage(const llvm::StringRef &name,
-                                      uint32_t iID) const
-{
+                                      uint32_t iID) const {
   const StringMap<AMDILKernel*>::const_iterator kiter = mKernels.find(name);
   if (kiter == mKernels.end()) {
     return false;
   }
   return kiter->second->readOnly.count(iID);
 }
-
-int32_t AMDILModuleInfo::getArgID(const Argument *arg)
-{
+int32_t AMDILModuleInfo::getArgID(const Argument *arg) {
   DenseMap<const Argument *, int32_t>::iterator argiter = mArgIDMap.find(arg);
   if (argiter != mArgIDMap.end()) {
     return argiter->second;
@@ -753,16 +714,13 @@ int32_t AMDILModuleInfo::getArgID(const Argument *arg)
     return -1;
   }
 }
-
 uint32_t
-AMDILModuleInfo::getRegion(const llvm::StringRef &name, uint32_t dim) const
-{
+AMDILModuleInfo::getRegion(const llvm::StringRef &name, uint32_t dim) const {
   StringMap<AMDILKernel*>::const_iterator iter = mKernels.find(name);
   if (iter != mKernels.end() && iter->second->sgv) {
     AMDILKernelAttr *sgv = iter->second->sgv;
     switch (dim) {
-    default:
-      break;
+    default: break;
     case 0:
     case 1:
     case 2:
@@ -789,40 +747,28 @@ AMDILModuleInfo::getRegion(const llvm::StringRef &name, uint32_t dim) const
   };
   return 1;
 }
-
-StringMap<AMDILConstPtr>::iterator AMDILModuleInfo::consts_begin()
-{
+StringMap<AMDILConstPtr>::iterator AMDILModuleInfo::consts_begin() {
   return mConstMems.begin();
 }
-
-
-StringMap<AMDILConstPtr>::iterator AMDILModuleInfo::consts_end()
-{
+StringMap<AMDILConstPtr>::iterator AMDILModuleInfo::consts_end() {
   return mConstMems.end();
 }
-
-bool AMDILModuleInfo::consts_empty()
-{
+bool AMDILModuleInfo::consts_empty() {
   return mConstMems.empty();
 }
-
-bool AMDILModuleInfo::byteStoreExists(StringRef S) const
-{
+bool AMDILModuleInfo::byteStoreExists(StringRef S) const {
   return mByteStore.find(S) != mByteStore.end();
 }
-
 bool AMDILModuleInfo::usesHWConstant(const AMDILKernel *krnl,
-                                     const llvm::StringRef &arg)
-{
+                                     const llvm::StringRef &arg) {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (!curConst) {
     return false;
   }
   return curConst->usesHardware;
 }
-
 uint32_t AMDILModuleInfo::getConstPtrSize(const AMDILKernel *krnl,
-    const llvm::StringRef &arg)
+                                          const llvm::StringRef &arg)
 {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (!curConst) {
@@ -830,9 +776,8 @@ uint32_t AMDILModuleInfo::getConstPtrSize(const AMDILKernel *krnl,
   }
   return curConst->size;
 }
-
 uint32_t AMDILModuleInfo::getConstPtrOff(const AMDILKernel *krnl,
-    const llvm::StringRef &arg)
+                                         const llvm::StringRef &arg)
 {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (!curConst) {
@@ -840,20 +785,16 @@ uint32_t AMDILModuleInfo::getConstPtrOff(const AMDILKernel *krnl,
   }
   return curConst->offset;
 }
-
 uint32_t AMDILModuleInfo::getConstPtrCB(const AMDILKernel *krnl,
-                                        const llvm::StringRef &arg)
-{
+                                        const llvm::StringRef &arg) {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (!curConst) {
     return 0;
   }
   return curConst->cbNum;
 }
-
 void AMDILModuleInfo::calculateCPOffsets(const MachineFunction *MF,
-    AMDILKernel *krnl)
-{
+                                         AMDILKernel *krnl) {
   const MachineConstantPool *MCP = MF->getConstantPool();
   if (!MCP) {
     return;
@@ -882,10 +823,8 @@ void AMDILModuleInfo::calculateCPOffsets(const MachineFunction *MF,
     mCurrentCPOffset += curSize;
   }
 }
-
 bool AMDILModuleInfo::isConstPtrArray(const AMDILKernel *krnl,
-                                      const llvm::StringRef &arg)
-{
+                                      const llvm::StringRef &arg) {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (curConst) {
     return curConst->isArray;
@@ -893,10 +832,8 @@ bool AMDILModuleInfo::isConstPtrArray(const AMDILKernel *krnl,
     return false;
   }
 }
-
 bool AMDILModuleInfo::isConstPtrArgument(const AMDILKernel *krnl,
-    const llvm::StringRef &arg)
-{
+                                         const llvm::StringRef &arg) {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (curConst) {
     return curConst->isArgument;
@@ -904,10 +841,8 @@ bool AMDILModuleInfo::isConstPtrArgument(const AMDILKernel *krnl,
     return false;
   }
 }
-
 const Value *AMDILModuleInfo::getConstPtrValue(const AMDILKernel *krnl,
-    const llvm::StringRef &arg)
-{
+                                               const llvm::StringRef &arg) {
   const AMDILConstPtr *curConst = getConstPtr(krnl, arg);
   if (curConst) {
     return curConst->base;
@@ -915,7 +850,6 @@ const Value *AMDILModuleInfo::getConstPtrValue(const AMDILKernel *krnl,
     return NULL;
   }
 }
-
 static void
 dumpZeroElements(StructType * const T, OSTREAM_TYPE &O, bool asBytes);
 static void
@@ -927,8 +861,7 @@ dumpZeroElements(VectorType * const T, OSTREAM_TYPE &O, bool asBytes);
 static void
 dumpZeroElements(Type * const T, OSTREAM_TYPE &O, bool asBytes);
 
-void dumpZeroElements(Type * const T, OSTREAM_TYPE &O, bool asBytes)
-{
+void dumpZeroElements(Type * const T, OSTREAM_TYPE &O, bool asBytes) {
   if (!T) {
     return;
   }
@@ -954,14 +887,16 @@ void dumpZeroElements(Type * const T, OSTREAM_TYPE &O, bool asBytes)
     } else {
       O << ":0";
     }
+    break;
   case Type::IntegerTyID:
     dumpZeroElements(dyn_cast<IntegerType>(T), O, asBytes);
     break;
-  case Type::StructTyID: {
+  case Type::StructTyID:
+  {
     const StructType *ST = cast<StructType>(T);
     if (!ST->isOpaque()) {
       dumpZeroElements(dyn_cast<StructType>(T), O, asBytes);
-    } else { // A pre-LLVM 3.0 opaque type
+    } else {   // A pre-LLVM 3.0 opaque type
       if (asBytes) {
         O << ":0:0:0:0";
       } else {
@@ -978,10 +913,8 @@ void dumpZeroElements(Type * const T, OSTREAM_TYPE &O, bool asBytes)
     break;
   };
 }
-
 void
-dumpZeroElements(StructType * const ST, OSTREAM_TYPE &O, bool asBytes)
-{
+dumpZeroElements(StructType * const ST, OSTREAM_TYPE &O, bool asBytes) {
   if (!ST) {
     return;
   }
@@ -993,10 +926,8 @@ dumpZeroElements(StructType * const ST, OSTREAM_TYPE &O, bool asBytes)
     dumpZeroElements(curType, O, asBytes);
   }
 }
-
 void
-dumpZeroElements(IntegerType * const IT, OSTREAM_TYPE &O, bool asBytes)
-{
+dumpZeroElements(IntegerType * const IT, OSTREAM_TYPE &O, bool asBytes) {
   if (asBytes) {
     unsigned byteWidth = (IT->getBitWidth() >> 3);
     for (unsigned x = 0; x < byteWidth; ++x) {
@@ -1004,28 +935,22 @@ dumpZeroElements(IntegerType * const IT, OSTREAM_TYPE &O, bool asBytes)
     }
   }
 }
-
 void
-dumpZeroElements(ArrayType * const AT, OSTREAM_TYPE &O, bool asBytes)
-{
+dumpZeroElements(ArrayType * const AT, OSTREAM_TYPE &O, bool asBytes) {
   size_t size = AT->getNumElements();
   for (size_t x = 0; x < size; ++x) {
     dumpZeroElements(AT->getElementType(), O, asBytes);
   }
 }
-
 void
-dumpZeroElements(VectorType * const VT, OSTREAM_TYPE &O, bool asBytes)
-{
+dumpZeroElements(VectorType * const VT, OSTREAM_TYPE &O, bool asBytes) {
   size_t size = VT->getNumElements();
   for (size_t x = 0; x < size; ++x) {
     dumpZeroElements(VT->getElementType(), O, asBytes);
   }
 }
-
 void AMDILModuleInfo::printConstantValue(const Constant *CAval,
-    OSTREAM_TYPE &O, bool asBytes)
-{
+                                         OSTREAM_TYPE &O, bool asBytes) {
   if (const ConstantFP *CFP = dyn_cast<ConstantFP>(CAval)) {
     bool isDouble = &CFP->getValueAPF().getSemantics()==&APFloat::IEEEdouble;
     if (isDouble) {
@@ -1070,7 +995,8 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
       O.write_hex(zVal);
     } else {
       switch (CI->getBitWidth()) {
-      default: {
+      default:
+      {
         union ltob_union {
           uint64_t l;
           char c[8];
@@ -1086,7 +1012,8 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
         O << ":";
         O.write_hex(zVal & 0xFF);
         break;
-      case 16: {
+      case 16:
+      {
         union stob_union {
           uint16_t s;
           char c[2];
@@ -1098,7 +1025,8 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
         O.write_hex((unsigned)conv.c[1] & 0xFF);
       }
       break;
-      case 32: {
+      case 32:
+      {
         union itob_union {
           uint32_t i;
           char c[4];
@@ -1126,7 +1054,7 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
       printConstantValue(CS->getOperand(x), O, asBytes);
     }
   } else if (const ConstantAggregateZero *CAZ
-             = dyn_cast<ConstantAggregateZero>(CAval)) {
+               = dyn_cast<ConstantAggregateZero>(CAval)) {
     int y = CAZ->getNumOperands();
     if (y > 0) {
       int x = 0;
@@ -1151,7 +1079,8 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
     for (; x < y; ++x) {
       printConstantValue(CA->getOperand(x), O, asBytes);
     }
-  } else if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(CAval)) {
+  } else if (const ConstantDataSequential *CDS =
+               dyn_cast<ConstantDataSequential>(CAval)) {
     int y = CDS->getNumElements();
     int x = 0;
     for (; x < y; ++x) {
@@ -1167,7 +1096,6 @@ void AMDILModuleInfo::printConstantValue(const Constant *CAval,
     assert(0 && "Hit condition which was not expected");
   }
 }
-
 static bool isStruct(Type * const T)
 {
   if (!T) {
@@ -1184,12 +1112,10 @@ static bool isStruct(Type * const T)
   case Type::VectorTyID:
     return isStruct(dyn_cast<SequentialType>(T)->getElementType());
   };
-
 }
-
-void AMDILModuleInfo::dumpDataToCB(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mfi,
-                                   uint32_t id)
-{
+void AMDILModuleInfo::dumpDataToCB(OSTREAM_TYPE &O,
+                                   AMDILMachineFunctionInfo *mfi,
+                                   uint32_t id) {
   uint32_t size = 0;
   for (StringMap<AMDILConstPtr>::iterator cmb = consts_begin(),
        cme = consts_end(); cmb != cme; ++cmb) {
@@ -1224,7 +1150,7 @@ void AMDILModuleInfo::dumpDataToCB(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mf
           size_t size = (isStruct(Ty) ? TD->getTypeAllocSize(Ty)
                          : getNumElements(Ty));
           O << ";#" << getTypeName(Ty, symTab, mfi, true) << ":";
-          O << offset << ":" << size ;
+          O << offset << ":" << size;
           printConstantValue(C, O, isStruct(Ty));
           O << "\n";
         }
@@ -1234,7 +1160,8 @@ void AMDILModuleInfo::dumpDataToCB(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mf
     O << ";#DATASTART:" << id << ":" << size << "\n";
   }
 
-  for (StringMap<AMDILConstPtr>::iterator cmb = consts_begin(), cme = consts_end();
+  for (StringMap<AMDILConstPtr>::iterator cmb = consts_begin(),
+       cme = consts_end();
        cmb != cme; ++cmb) {
     if (cmb->second.cbNum != id) {
       continue;
@@ -1266,15 +1193,15 @@ void AMDILModuleInfo::dumpDataToCB(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mf
     O << ";#DATAEND:" << id << "\n";
   }
 }
-
 void
-AMDILModuleInfo::dumpDataSection(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mfi)
-{
+AMDILModuleInfo::dumpDataSection(OSTREAM_TYPE &O,
+                                 AMDILMachineFunctionInfo *mfi) {
   if (consts_empty() && !mCurrentCPOffset) {
     return;
   } else {
     llvm::DenseSet<uint32_t> const_set;
-    for (StringMap<AMDILConstPtr>::iterator cmb = consts_begin(), cme = consts_end();
+    for (StringMap<AMDILConstPtr>::iterator cmb = consts_begin(),
+         cme = consts_end();
          cmb != cme; ++cmb) {
       const_set.insert(cmb->second.cbNum);
     }
@@ -1287,11 +1214,9 @@ AMDILModuleInfo::dumpDataSection(OSTREAM_TYPE &O, AMDILMachineFunctionInfo *mfi)
     }
   }
 }
-
 /// Create a function ID if it is not known or return the known
 /// function ID.
-uint32_t AMDILModuleInfo::getOrCreateFunctionID(const GlobalValue* func)
-{
+uint32_t AMDILModuleInfo::getOrCreateFunctionID(const GlobalValue* func) {
   if (func->getName().size()) {
     return getOrCreateFunctionID(func->getName());
   }
@@ -1304,9 +1229,7 @@ uint32_t AMDILModuleInfo::getOrCreateFunctionID(const GlobalValue* func)
   }
   return id;
 }
-
-uint32_t AMDILModuleInfo::getOrCreateFunctionID(const std::string &func)
-{
+uint32_t AMDILModuleInfo::getOrCreateFunctionID(const std::string &func) {
   uint32_t id;
   if (mFuncNames.find(func) == mFuncNames.end()) {
     id = mFuncNames.size() + RESERVED_FUNCS + mFuncPtrNames.size();
@@ -1316,4 +1239,32 @@ uint32_t AMDILModuleInfo::getOrCreateFunctionID(const std::string &func)
   }
   return id;
 }
-
+// populate the next local buffer with a set of local pointers
+// return the resource ID of the local buffer populated
+uint32_t AMDILModuleInfo::populateNextLocalBuffer(
+  const SmallSet<const Value*, 1>& locals, bool isDefaultBuf)
+{
+  uint32_t defLocalId = mSTM->device()->getResourceID(AMDILDevice::LDS_ID);
+  uint32_t resId = isDefaultBuf ? defLocalId : defLocalId + mNumLocalBuffers;
+  if (!isDefaultBuf) ++mNumLocalBuffers;
+  unsigned offset = 0;
+  for (SmallSet<const Value*, 1>::iterator sBegin = locals.begin(),
+       sEnd = locals.end();
+       sBegin != sEnd; ++sBegin) {
+    const Value* V = *sBegin;
+    // skip kernal arguments
+    if (!isa<GlobalValue>(V)) continue;
+    const Value* GV = *sBegin;
+    const PointerType *PT = dyn_cast<PointerType>(GV->getType());
+    assert(PT && PT->getAddressSpace() == AMDILAS::LOCAL_ADDRESS && "sanity");
+    llvm::StringRef GVName = GV->getName();
+    StringMap<AMDILArrayMem>::iterator iter = mArrayMems.find(GVName);
+    assert(iter != mArrayMems.end() && "undefined local buffer?");
+    AMDILArrayMem& local = iter->second;
+    assert(local.isHW && !local.isRegion && "sanity");
+    local.resourceID = resId;
+    local.offset = AlignUp_32(offset, local.align);
+    offset = local.offset + local.vecSize;
+  }
+  return resId;
+}

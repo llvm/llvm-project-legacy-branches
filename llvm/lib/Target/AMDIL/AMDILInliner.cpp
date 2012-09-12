@@ -36,7 +36,7 @@ using namespace llvm;
 
 namespace
 {
-class LLVM_LIBRARY_VISIBILITY AMDILInlinePass: public FunctionPass
+class LLVM_LIBRARY_VISIBILITY AMDILInlinePass : public FunctionPass
 
 {
 public:
@@ -51,7 +51,8 @@ public:
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 private:
   typedef DenseMap<const ArrayType*, SmallVector<AllocaInst*,
-          DEFAULT_VEC_SLOTS> > InlinedArrayAllocasTy;
+                                                 DEFAULT_VEC_SLOTS> >
+  InlinedArrayAllocasTy;
   bool
   AMDILInlineCallIfPossible(CallSite CS,
                             const TargetData *TD,
@@ -60,7 +61,6 @@ private:
 };
 char AMDILInlinePass::ID = 0;
 } // anonymouse namespace
-
 
 namespace llvm
 {
@@ -79,12 +79,12 @@ AMDILInlinePass::AMDILInlinePass(TargetMachine &tm, CodeGenOpt::Level OL)
 AMDILInlinePass::~AMDILInlinePass()
 {
 }
-
-
 bool
-AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
-    const TargetData *TD, InlinedArrayAllocasTy &InlinedArrayAllocas)
-{
+AMDILInlinePass::AMDILInlineCallIfPossible(
+  CallSite CS,
+  const TargetData *TD,
+  InlinedArrayAllocasTy &
+  InlinedArrayAllocas) {
   Function *Callee = CS.getCalledFunction();
   Function *Caller = CS.getCaller();
 
@@ -95,7 +95,7 @@ AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
   if (!InlineFunction(CS, IFI))
     return false;
   DEBUG(errs() << "<amdilinline> function " << Caller->getName()
-        << ": inlined call to "<< Callee->getName() << "\n");
+               << ": inlined call to "<< Callee->getName() << "\n");
 
   // If the inlined function had a higher stack protection level than the
   // calling function, then bump up the caller's stack protection level.
@@ -104,7 +104,6 @@ AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
   else if (Callee->hasFnAttr(Attribute::StackProtect) &&
            !Caller->hasFnAttr(Attribute::StackProtectReq))
     Caller->addFnAttr(Attribute::StackProtect);
-
 
   // Look at all of the allocas that we inlined through this call site.  If we
   // have already inlined other allocas through other calls into this function,
@@ -135,7 +134,6 @@ AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
   for (unsigned AllocaNo = 0,
        e = IFI.StaticAllocas.size();
        AllocaNo != e; ++AllocaNo) {
-
     AllocaInst *AI = IFI.StaticAllocas[AllocaNo];
 
     // Don't bother trying to merge array allocations (they will usually be
@@ -147,7 +145,7 @@ AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
 
     // Get the list of all available allocas for this array type.
     SmallVector<AllocaInst*, DEFAULT_VEC_SLOTS> &AllocasForType
-    = InlinedArrayAllocas[ATy];
+      = InlinedArrayAllocas[ATy];
 
     // Loop over the allocas in AllocasForType to see if we can reuse one.  Note
     // that we have to be careful not to reuse the same "available" alloca for
@@ -193,7 +191,6 @@ AMDILInlinePass::AMDILInlineCallIfPossible(CallSite CS,
 
   return true;
 }
-
 bool
 AMDILInlinePass::runOnFunction(Function &MF)
 {
@@ -219,7 +216,8 @@ AMDILInlinePass::runOnFunction(Function &MF)
         continue;
 
       // We don't want to inline if we are recursive.
-      if (CS.getCalledFunction() && CS.getCalledFunction()->getName() == MF.getName()) {
+      if (CS.getCalledFunction() && CS.getCalledFunction()->getName() ==
+          MF.getName()) {
         AMDILMachineFunctionInfo *MFI =
           getAnalysis<MachineFunctionAnalysis>().getMF()
           .getInfo<AMDILMachineFunctionInfo>();
@@ -248,7 +246,6 @@ AMDILInlinePass::runOnFunction(Function &MF)
   }
   return Changed;
 }
-
 const char*
 AMDILInlinePass::getPassName() const
 {
@@ -259,13 +256,11 @@ AMDILInlinePass::doInitialization(Module &M)
 {
   return false;
 }
-
 bool
 AMDILInlinePass::doFinalization(Module &M)
 {
   return false;
 }
-
 void
 AMDILInlinePass::getAnalysisUsage(AnalysisUsage &AU) const
 {

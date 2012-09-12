@@ -22,14 +22,12 @@
 #define GET_INSTRINFO_HEADER
 #include "AMDILGenInstrInfo.inc"
 
-namespace llvm
-{
+namespace llvm {
 // AMDIL - This namespace holds all of the target specific flags that
 // instruction info tracks.
 //
 //class AMDILTargetMachine;
-class AMDILInstrInfo : public AMDILGenInstrInfo
-{
+class AMDILInstrInfo : public AMDILGenInstrInfo {
 private:
   const AMDILRegisterInfo RI;
   AMDILTargetMachine &TM;
@@ -66,8 +64,6 @@ public:
                            const MachineMemOperand *&MMO,
                            int &FrameIndex) const;
 
-
-
   void reMaterialize(MachineBasicBlock &MBB,
                      MachineBasicBlock::iterator MI,
                      unsigned DestReg, unsigned SubIdx,
@@ -89,8 +85,6 @@ public:
   bool produceSameValue(const MachineInstr *MI0,
                         const MachineInstr *MI1,
                         const MachineRegisterInfo *MRI = 0) const;
-
-
 
   bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                      MachineBasicBlock *&FBB,
@@ -187,9 +181,7 @@ public:
   unsigned GetFunctionSizeInBytes(const MachineFunction &MF) const;
   unsigned getInlineAsmLength(const char *Str,
                               const MCAsmInfo &MAI) const;
-
 };
-
 }
 
 #endif // AMDILINSTRINFO_H_

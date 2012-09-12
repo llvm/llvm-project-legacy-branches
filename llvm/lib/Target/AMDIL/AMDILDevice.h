@@ -16,8 +16,7 @@
 #include "AMDIL.h"
 #include "AMDILLLVMPC.h"
 #include "llvm/ADT/BitVector.h"
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 class AMDILAsmPrinter;
 class AMDILIOExpansion;
@@ -25,8 +24,7 @@ class AMDILPointerManager;
 //===----------------------------------------------------------------------===//
 // Interface for data that is specific to a single device
 //===----------------------------------------------------------------------===//
-class AMDILDevice
-{
+class AMDILDevice {
 public:
   AMDILDevice(AMDILSubtarget *ST);
   virtual ~AMDILDevice();
@@ -83,8 +81,7 @@ public:
   virtual uint32_t getMaxNumUAVs() const = 0;
 
   // Interface to get the IO Expansion pass for each device.
-  virtual FunctionPass*
-  getIOExpansion(TargetMachine&, CodeGenOpt::Level) const = 0;
+  virtual FunctionPass* getIOExpansion() const = 0;
 
   // Interface to get the Asm printer for each device.
   virtual AsmPrinter*
@@ -93,7 +90,6 @@ public:
   // Interface to get the Pointer manager pass for each device.
   virtual FunctionPass*
   getPointerManager(TargetMachine&, CodeGenOpt::Level) const = 0;
-
 
   // API utilizing more detailed capabilities of each family of
   // cards. If a capability is supported, then either usesHardware or
@@ -125,6 +121,5 @@ private:
   AMDILDeviceInfo::ExecutionMode
   getExecutionMode(AMDILDeviceInfo::Caps Caps) const;
 }; // AMDILDevice
-
 } // namespace llvm
 #endif // _AMDILDEVICEIMPL_H_

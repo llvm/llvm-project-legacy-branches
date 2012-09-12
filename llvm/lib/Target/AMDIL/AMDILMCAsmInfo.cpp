@@ -17,6 +17,8 @@
 #define NULL 0
 #endif
 
+#include "llvm/Config/config.h"
+
 using namespace llvm;
 AMDILMCAsmInfo::AMDILMCAsmInfo(const Triple &Triple) : MCAsmInfo()
 {
@@ -90,10 +92,8 @@ AMDILMCAsmInfo::AMDILMCAsmInfo(const Triple &Triple) : MCAsmInfo()
   ExceptionsType = ExceptionHandling::None;
   DwarfUsesInlineInfoSection = false;
   DwarfSectionOffsetDirective = ".offset";
-  //DwarfUsesLabelOffsetForRanges = true;
 
   //===--- CBE Asm Translation Table -----------------------------------===//
-  //AsmTransCBE = NULL;
 }
 const char*
 AMDILMCAsmInfo::getDataASDirective(unsigned int Size, unsigned int AS) const
@@ -106,4 +106,3 @@ AMDILMCAsmInfo::getDataASDirective(unsigned int Size, unsigned int AS) const
   };
   return NULL;
 }
-

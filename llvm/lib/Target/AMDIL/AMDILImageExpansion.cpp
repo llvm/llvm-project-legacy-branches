@@ -23,15 +23,7 @@
 #include "llvm/Target/TargetInstrInfo.h"
 using namespace llvm;
 
-AMDILImageExpansion::AMDILImageExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel)
-  : AMDIL789IOExpansion(tm, OptLevel)
-{
-}
-
-AMDILImageExpansion::~AMDILImageExpansion()
-{
-}
-void AMDILImageExpansion::expandInefficientImageLoad(
+void AMDILImageExpansionImpl::expandInefficientImageLoad(
   MachineBasicBlock *mBB, MachineInstr *MI)
 {
 #if 0
@@ -69,7 +61,7 @@ void AMDILImageExpansion::expandInefficientImageLoad(
       if (!rID) {
         O << "\tdefault\n";
       } else {
-        O << "\tcase " << rID << "\n" ;
+        O << "\tcase " << rID << "\n";
       }
       O << "\tswitch " << mASM->getRegisterName(MI->getOperand(2).getReg())
         << "\n";
@@ -79,7 +71,7 @@ void AMDILImageExpansion::expandInefficientImageLoad(
         if (!sID) {
           O << "\tdefault\n";
         } else {
-          O << "\tcase " << sID << "\n" ;
+          O << "\tcase " << sID << "\n";
         }
       }
       if (internalSampler) {
@@ -103,30 +95,30 @@ void AMDILImageExpansion::expandInefficientImageLoad(
           << "\tendif\n";
       } else {
         O << "\tiadd " << tReg1 << ".y, " << tReg1 << ".x, l0.y\n"
-          // Check if sampler has normalized setting.
+        // Check if sampler has normalized setting.
           << "\tand r0, " << tReg2 << ".x, l0.y\n"
-          // Convert image dimensions to float.
+        // Convert image dimensions to float.
           << "\titof " << tReg4 << ", cb1[" << tReg1 << ".x].xyz\n"
-          // Move into R0 1 if unnormalized or dimensions if normalized.
+        // Move into R0 1 if unnormalized or dimensions if normalized.
           << "\tcmov_logical r0, r0, " << tReg4 << ", r1.1111\n"
-          // Make coordinates unnormalized.
+        // Make coordinates unnormalized.
           << "\tmul " << tReg3 << ", r0, " << tReg3 << "\n"
-          // Get linear filtering if set.
+        // Get linear filtering if set.
           << "\tand " << tReg4 << ", " << tReg2 << ".x, l6.x\n"
-          // Save unnormalized coordinates in R0.
+        // Save unnormalized coordinates in R0.
           << "\tmov r0, " << tReg3 << "\n"
-          // Floor the coordinates due to HW incompatibility with precision
-          // requirements.
-          << "\tflr " << tReg3 << ", " << tReg3 << "\n"
-          // get Origianl coordinates (without floor) if linear filtering
-          << "\tcmov_logical " << tReg3 << ", " << tReg4
-          << ".xxxx, r0, " << tReg3 << "\n"
-          // Normalize the coordinates with multiplying by 1/dimensions
-          << "\tmul " << tReg3 << ", " << tReg3 << ", cb1["
-          << tReg1 << ".y].xyz\n"
-          << "\tsample_resource(" << rID << ")_sampler("
-          << sID << ")_coordtype(normalized) "
-          << tReg1 << ", " << tReg3 << " ; " << name.data() << "\n";
+        // Floor the coordinates due to HW incompatibility with precision
+        // requirements.
+        << "\tflr " << tReg3 << ", " << tReg3 << "\n"
+        // get Origianl coordinates (without floor) if linear filtering
+        << "\tcmov_logical " << tReg3 << ", " << tReg4
+        << ".xxxx, r0, " << tReg3 << "\n"
+        // Normalize the coordinates with multiplying by 1/dimensions
+        << "\tmul " << tReg3 << ", " << tReg3 << ", cb1["
+        << tReg1 << ".y].xyz\n"
+        << "\tsample_resource(" << rID << ")_sampler("
+        << sID << ")_coordtype(normalized) "
+        << tReg1 << ", " << tReg3 << " ; " << name.data() << "\n";
       }
       if (SamplerCount - 1) {
         O << "\tbreak\n";
@@ -145,14 +137,16 @@ void AMDILImageExpansion::expandInefficientImageLoad(
 #endif
 }
 void
-AMDILImageExpansion::expandImageLoad(MachineBasicBlock *mBB, MachineInstr *MI)
+AMDILImageExpansionImpl::expandImageLoad(MachineBasicBlock *mBB,
+                                         MachineInstr *MI)
 {
   uint32_t imageID = getPointerID(MI);
   MI->getOperand(1).ChangeToImmediate(imageID);
   saveInst = true;
 }
 void
-AMDILImageExpansion::expandImageStore(MachineBasicBlock *mBB, MachineInstr *MI)
+AMDILImageExpansionImpl::expandImageStore(MachineBasicBlock *mBB,
+                                          MachineInstr *MI)
 {
   uint32_t imageID = getPointerID(MI);
   mKM->setOutputInst();
@@ -160,11 +154,12 @@ AMDILImageExpansion::expandImageStore(MachineBasicBlock *mBB, MachineInstr *MI)
   saveInst = true;
 }
 void
-AMDILImageExpansion::expandImageParam(MachineBasicBlock *mBB, MachineInstr *MI)
+AMDILImageExpansionImpl::expandImageParam(MachineBasicBlock *mBB,
+                                          MachineInstr *MI)
 {
   uint32_t ID = getPointerID(MI);
   DebugLoc DL = MI->getDebugLoc();
-  BuildMI(*mBB, MI, DL, mTII->get(AMDIL::CBLOAD),
+  BuildMI(*mBB, MI, DL, mTII->get(AMDIL::CB32LOAD),
           MI->getOperand(0).getReg())
   .addImm(ID)
   .addImm(1);

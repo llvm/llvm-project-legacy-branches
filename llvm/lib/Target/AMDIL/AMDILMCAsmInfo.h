@@ -16,12 +16,10 @@
 
 #include "llvm/MC/MCAsmInfo.h"
 #include "AMDILLLVMPC.h"
-namespace llvm
-{
+namespace llvm {
 class Triple;
 
-class AMDILMCAsmInfo : public MCAsmInfo
-{
+class AMDILMCAsmInfo : public MCAsmInfo {
 public:
   AMDILMCAsmInfo(const Triple &Triple);
   const char*

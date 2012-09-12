@@ -27,7 +27,6 @@ AMDILInstPrinter::printInst(const MCInst *MI, raw_ostream &OS, StringRef annot)
 {
   llvm_unreachable("unsupported");
 }
-
 AMDILInstPrinter::~AMDILInstPrinter()
 {
 }

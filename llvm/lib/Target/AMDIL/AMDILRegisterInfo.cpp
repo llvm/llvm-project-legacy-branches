@@ -20,7 +20,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/FormattedStream.h"
 
-
 using namespace llvm;
 
 AMDILRegisterInfo::AMDILRegisterInfo(AMDILTargetMachine &tm,
@@ -31,7 +30,6 @@ AMDILRegisterInfo::AMDILRegisterInfo(AMDILTargetMachine &tm,
   baseOffset = 0;
   nextFuncOffset = 0;
 }
-
 const uint16_t*
 AMDILRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const
 {
@@ -43,7 +41,6 @@ AMDILRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const
   //TODO(getCalleeSavedRegs);
   return CalleeSavedRegs;
 }
-
 BitVector
 AMDILRegisterInfo::getReservedRegs(const MachineFunction &MF) const
 {
@@ -81,6 +78,9 @@ AMDILRegisterInfo::getReservedRegs(const MachineFunction &MF) const
   Reserved.set(AMDIL::CFG9);
   Reserved.set(AMDIL::CFG10);
 
+  // Set PRINTF register as reserved.
+  Reserved.set(AMDIL::PRINTF);
+
   // Reserve the live-ins for the function.
   MachineBasicBlock::livein_iterator LII = MF.begin()->livein_begin();
   MachineBasicBlock::livein_iterator LIE = MF.begin()->livein_end();
@@ -90,7 +90,6 @@ AMDILRegisterInfo::getReservedRegs(const MachineFunction &MF) const
   }
   return Reserved;
 }
-
 const TargetRegisterClass* const*
 AMDILRegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const
 {
@@ -107,7 +106,6 @@ AMDILRegisterInfo::eliminateCallFramePseudoInstr(
 {
   MBB.erase(I);
 }
-
 // For each frame index we find, we store the offset in the stack which is
 // being pushed back into the global buffer. The offset into the stack where
 // the value is stored is copied into a new register and the frame index is
@@ -126,7 +124,7 @@ AMDILRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     if (!MI.getOperand(x).isFI()) {
       continue;
     }
-    bool def = isStoreInst(TM, &MI);
+    bool def = isPtrStoreInst(&MI);
     int FrameIndex = MI.getOperand(x).getIndex();
     int64_t Offset = MFI->getObjectOffset(FrameIndex);
     //int64_t Size = MF.getFrameInfo()->getObjectSize(FrameIndex);
@@ -135,22 +133,37 @@ AMDILRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     // instead of just a pointer. If we are size 4 then we can
     // just do register copies since we don't need to worry about
     // indexing dynamically
-    MachineInstr *nMI = MF.CreateMachineInstr(
-                          TII.get(AMDIL::LOADCONST_i32), MI.getDebugLoc());
-    nMI->addOperand(MachineOperand::CreateReg(AMDIL::DFP, true));
-    nMI->addOperand(
-      MachineOperand::CreateImm(Offset));
-    MI.getParent()->insert(II, nMI);
-    if (MI.getOperand(x).isReg() == false)  {
-      MI.getOperand(x).ChangeToRegister(
-        nMI->getOperand(0).getReg(), def);
+    // FIXME: This needs to embed the literals directly instead of
+    // using DFP.
+    unsigned reg = (def && !x) ? AMDIL::T5 : AMDIL::DFP;
+    if (MI.getOpcode() != AMDIL::LOADFIi32) {
+      MachineInstr *nMI = MF.CreateMachineInstr(
+        TII.get(AMDIL::LOADFIi32), MI.getDebugLoc());
+      nMI->addOperand(MachineOperand::CreateReg(reg, true));
+      nMI->addOperand(
+        MachineOperand::CreateImm(Offset));
+      MI.getParent()->insert(II, nMI);
+      if (MI.getOperand(x).isReg() == false)  {
+        MI.getOperand(x).ChangeToRegister(
+          nMI->getOperand(0).getReg(), false);
+      } else {
+        MI.getOperand(x).setReg(
+          nMI->getOperand(0).getReg());
+      }
     } else {
-      MI.getOperand(x).setReg(
-        nMI->getOperand(0).getReg());
+      MI.getOperand(1).ChangeToImmediate(Offset);
     }
   }
 }
-
+const TargetRegisterClass *
+AMDILRegisterInfo::getPointerRegClass(const MachineFunction &MF,
+                                      unsigned Kind) const
+{
+  assert(!Kind && "Unknown register class pointer specified!");
+  return TM.getSubtargetImpl()->is64bit()
+         ? &AMDIL::GPRI64RegClass
+         : &AMDIL::GPRI32RegClass;
+}
 void
 AMDILRegisterInfo::processFunctionBeforeFrameFinalized(
   MachineFunction &MF) const
@@ -178,34 +191,28 @@ AMDILRegisterInfo::getRARegister() const
 {
   return AMDIL::RA;
 }
-
 unsigned int
 AMDILRegisterInfo::getFrameRegister(const MachineFunction &MF) const
 {
   return AMDIL::FP;
 }
-
 unsigned int
 AMDILRegisterInfo::getEHExceptionRegister() const
 {
   assert(0 && "What is the exception register");
   return 0;
 }
-
 unsigned int
 AMDILRegisterInfo::getEHHandlerRegister() const
 {
   assert(0 && "What is the exception handler register");
   return 0;
 }
-
-
 int64_t
 AMDILRegisterInfo::getStackSize() const
 {
   return nextFuncOffset - baseOffset;
 }
-
 #define GET_REGINFO_MC_DESC
 #define GET_REGINFO_TARGET_DESC
 #include "AMDILGenRegisterInfo.inc"

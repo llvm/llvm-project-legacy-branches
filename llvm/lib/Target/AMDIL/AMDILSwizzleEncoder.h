@@ -25,8 +25,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include <set>
 #include <map>
-namespace llvm
-{
+namespace llvm {
 struct AMDILRegisterInfo;
 class AMDILSwizzleEncoder : public MachineFunctionPass
 {
@@ -36,9 +35,9 @@ public:
   bool runOnMachineFunction(MachineFunction &MF);
   static char ID;
 private:
-  bool mDebug; ///< Flag to specify whether to dump debug information.
+  bool mDebug;     ///< Flag to specify whether to dump debug information.
   CodeGenOpt::Level opt;
-}; // class AMDILSwizzleEncoder
+};   // class AMDILSwizzleEncoder
 char AMDILSwizzleEncoder::ID = 0;
 } // end llvm namespace
 #endif // _AMDIL_SWIZZLE_ENCODER_H_

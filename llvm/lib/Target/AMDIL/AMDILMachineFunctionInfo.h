@@ -30,34 +30,32 @@
 namespace llvm
 {
 class AMDILSubtarget;
-class PrintfInfo
-{
-  uint32_t mPrintfID;
-  SmallVector<uint32_t, DEFAULT_VEC_SLOTS> mOperands;
+class PrintfInfo {
+uint32_t mPrintfID;
+SmallVector<uint32_t, DEFAULT_VEC_SLOTS> mOperands;
 public:
   void addOperand(size_t idx, uint32_t size);
   uint32_t getPrintfID();
   void setPrintfID(uint32_t idx);
   size_t getNumOperands();
   uint32_t getOperandID(uint32_t idx);
-}; // class PrintfInfo
+};   // class PrintfInfo
 
-enum NameDecorationStyle {
+enum NameDecorationStyle
+{
   None,
   StdCall,
   FastCall
 };
 typedef struct SamplerInfoRec {
-  std::string name; // The name of the sampler
-  uint32_t val; // The value of the sampler
-  uint32_t idx; // The sampler resource id
+  std::string name;   // The name of the sampler
+  uint32_t val;   // The value of the sampler
+  uint32_t idx;   // The sampler resource id
 } SamplerInfo;
 // Some typedefs that will help with using the various iterators
 // of the machine function info class.
-typedef std::map<uint32_t, uint32_t>::iterator lit32_iterator;
-typedef std::map<uint64_t, uint32_t>::iterator lit64_iterator;
 typedef std::map<std::pair<uint64_t, uint64_t>, uint32_t>::iterator
-lit128_iterator;
+lit_iterator;
 typedef StringMap<SamplerInfo>::iterator sampler_iterator;
 typedef DenseSet<uint32_t>::iterator func_iterator;
 typedef DenseSet<uint32_t>::iterator intr_iterator;
@@ -85,133 +83,126 @@ typedef std::vector<std::string>::iterator kernel_md_iterator;
 // amdil target-specific information for each MachineFunction
 class AMDILMachineFunctionInfo : public MachineFunctionInfo
 {
-  // CalleeSavedFrameSize - Size of the callee-saved
-  // register portion of the
-  // stack frame in bytes.
-  unsigned int CalleeSavedFrameSize;
-  // BytesToPopOnReturn - Number of bytes function pops on return.
-  // Used on windows platform for stdcall & fastcall name decoration
-  unsigned int BytesToPopOnReturn;
-  // DecorationStyle - If the function requires additional
-  // name decoration,
-  // DecorationStyle holds the right way to do so.
-  NameDecorationStyle DecorationStyle;
-  // ReturnAddrIndex - FrameIndex for return slot.
-  int ReturnAddrIndex;
+// CalleeSavedFrameSize - Size of the callee-saved
+// register portion of the
+// stack frame in bytes.
+unsigned int CalleeSavedFrameSize;
+// BytesToPopOnReturn - Number of bytes function pops on return.
+// Used on windows platform for stdcall & fastcall name decoration
+unsigned int BytesToPopOnReturn;
+// DecorationStyle - If the function requires additional
+// name decoration,
+// DecorationStyle holds the right way to do so.
+NameDecorationStyle DecorationStyle;
+// ReturnAddrIndex - FrameIndex for return slot.
+int ReturnAddrIndex;
 
-  // TailCallReturnAddrDelta - Delta the ReturnAddr stack slot is moved
-  // Used for creating an area before the register spill area
-  // on the stack
-  // the returnaddr can be savely move to this area
-  int TailCallReturnAddrDelta;
+// TailCallReturnAddrDelta - Delta the ReturnAddr stack slot is moved
+// Used for creating an area before the register spill area
+// on the stack
+// the returnaddr can be savely move to this area
+int TailCallReturnAddrDelta;
 
-  // SRetReturnReg - Some subtargets require that sret lowering includes
-  // returning the value of the returned struct in a register.
-  // This field holds the virtual register into which the sret
-  // argument is passed.
-  unsigned int SRetReturnReg;
+// SRetReturnReg - Some subtargets require that sret lowering includes
+// returning the value of the returned struct in a register.
+// This field holds the virtual register into which the sret
+// argument is passed.
+unsigned int SRetReturnReg;
 
-  // The size in bytes required to host all of the kernel arguments.
-  // -1 means this value has not been determined yet.
-  int32_t mArgSize;
+// The size in bytes required to host all of the kernel arguments.
+// -1 means this value has not been determined yet.
+int32_t mArgSize;
 
-  // The size in bytes required to host the stack and the kernel arguments
-  // in private memory.
-  // -1 means this value has not been determined yet.
-  int32_t mScratchSize;
+// The size in bytes required to host the stack and the kernel arguments
+// in private memory.
+// -1 means this value has not been determined yet.
+int32_t mScratchSize;
 
-  // The size in bytes required to host the the kernel arguments
-  // on the stack.
-  // -1 means this value has not been determined yet.
-  int32_t mStackSize;
+// The size in bytes required to host the the kernel arguments
+// on the stack.
+// -1 means this value has not been determined yet.
+int32_t mStackSize;
 
-  /// A map of constant to literal mapping for all of the 32bit or
-  /// smaller literals in the current function.
-  std::map<uint32_t, uint32_t> mIntLits;
+/// A map of constant to literal mapping for all of the 128bit
+/// literals in the current function.
+std::map<std::pair<uint64_t, uint64_t>, uint32_t> mLits;
+uint32_t addLiteral(uint64_t val_lo, uint64_t val_hi);
 
-  /// A map of constant to literal mapping for all of the 64bit
-  /// literals in the current function.
-  std::map<uint64_t, uint32_t> mLongLits;
+/// The number of literals that should be reserved.
+/// TODO: Remove this when the wrapper emitter is added.
+uint32_t mReservedLits;
 
-  /// A map of constant to literal mapping for all of the 128bit
-  /// literals in the current function.
-  std::map<std::pair<uint64_t, uint64_t>, uint32_t> mVecLits;
+/// A map of name to sampler information that is used to emit
+/// metadata to the IL stream that the runtimes can use for
+/// hardware setup.
+StringMap<SamplerInfo> mSamplerMap;
 
-  /// The number of literals that should be reserved.
-  /// TODO: Remove this when the wrapper emitter is added.
-  uint32_t mReservedLits;
+/// Array of flags to specify if a specific memory type is used or not.
+bool mUsedMem[AMDILDevice::MAX_IDS];
 
-  /// A map of name to sampler information that is used to emit
-  /// metadata to the IL stream that the runtimes can use for
-  /// hardware setup.
-  StringMap<SamplerInfo> mSamplerMap;
+/// Set of all functions that this function calls.
+DenseSet<uint32_t> mFuncs;
 
-  /// Array of flags to specify if a specific memory type is used or not.
-  bool mUsedMem[AMDILDevice::MAX_IDS];
+/// Set of all intrinsics that this function calls.
+DenseSet<uint32_t> mIntrs;
 
-  /// Set of all functions that this function calls.
-  DenseSet<uint32_t> mFuncs;
+/// Set of all write only 1D images.
+DenseSet<uint32_t> mWO1D;
+/// Set of all read only 1D images.
+DenseSet<uint32_t> mRO1D;
+/// Set of all write only 1D image arrays.
+DenseSet<uint32_t> mWO1DA;
+/// Set of all read only 1D image arrays.
+DenseSet<uint32_t> mRO1DA;
+/// Set of all write only 1D image buffers.
+DenseSet<uint32_t> mWO1DB;
+/// Set of all read only 1D image buffers.
+DenseSet<uint32_t> mRO1DB;
+/// Set of all write only 2D images.
+DenseSet<uint32_t> mWO2D;
+/// Set of all read only 2D images.
+DenseSet<uint32_t> mRO2D;
+/// Set of all write only 2D image arrays.
+DenseSet<uint32_t> mWO2DA;
+/// Set of all read only 2D image arrays.
+DenseSet<uint32_t> mRO2DA;
+/// Set of all read only 3D images.
+DenseSet<uint32_t> mRO3D;
+/// Set of all write only 3D images.
+DenseSet<uint32_t> mWO3D;
+/// Set of all the raw uavs.
+DenseSet<uint32_t> mRawUAV;
+/// Set of all the arena uavs.
+DenseSet<uint32_t> mArenaUAV;
 
-  /// Set of all intrinsics that this function calls.
-  DenseSet<uint32_t> mIntrs;
+/// Set of all semaphores
+DenseSet<uint32_t> mSemaphore;
 
-  /// Set of all write only 1D images.
-  DenseSet<uint32_t> mWO1D;
-  /// Set of all read only 1D images.
-  DenseSet<uint32_t> mRO1D;
-  /// Set of all write only 1D image arrays.
-  DenseSet<uint32_t> mWO1DA;
-  /// Set of all read only 1D image arrays.
-  DenseSet<uint32_t> mRO1DA;
-  /// Set of all write only 1D image buffers.
-  DenseSet<uint32_t> mWO1DB;
-  /// Set of all read only 1D image buffers.
-  DenseSet<uint32_t> mRO1DB;
-  /// Set of all write only 2D images.
-  DenseSet<uint32_t> mWO2D;
-  /// Set of all read only 2D images.
-  DenseSet<uint32_t> mRO2D;
-  /// Set of all write only 2D image arrays.
-  DenseSet<uint32_t> mWO2DA;
-  /// Set of all read only 2D image arrays.
-  DenseSet<uint32_t> mRO2DA;
-  /// Set of all read only 3D images.
-  DenseSet<uint32_t> mRO3D;
-  /// Set of all write only 3D images.
-  DenseSet<uint32_t> mWO3D;
-  /// Set of all the raw uavs.
-  DenseSet<uint32_t> mRawUAV;
-  /// Set of all the arena uavs.
-  DenseSet<uint32_t> mArenaUAV;
+/// Set of all the read-only pointers
+DenseSet<const Value*> mReadPtr;
 
-  /// Set of all semaphores
-  DenseSet<uint32_t> mSemaphore;
+/// A set of all errors that occured in the backend for this function.
+DenseSet<const char *> mErrors;
 
-  /// Set of all the read-only pointers
-  DenseSet<const Value*> mReadPtr;
+/// A mapping of printf data and the printf string
+std::map<std::string, PrintfInfo*> mPrintfMap;
 
-  /// A set of all errors that occured in the backend for this function.
-  DenseSet<const char *> mErrors;
+/// A set of all of the metadata that is used for the current function.
+std::set<std::string> mMetadataFunc;
 
-  /// A mapping of printf data and the printf string
-  std::map<std::string, PrintfInfo*> mPrintfMap;
+/// A set of all of the metadata that is used for the function wrapper.
+std::vector<std::string> mMetadataKernel;
 
-  /// A set of all of the metadata that is used for the current function.
-  std::set<std::string> mMetadataFunc;
+SmallVector<unsigned, 16> mArgRegs;
 
-  /// A set of all of the metadata that is used for the function wrapper.
-  std::vector<std::string> mMetadataKernel;
+/// Information about the kernel, NULL if the function is not a kernel.
+AMDILKernel *mKernel;
 
-  SmallVector<unsigned, 16> mArgRegs;
+/// Pointer to the machine function that this information belongs to.
+MachineFunction *mMF;
 
-  /// Information about the kernel, NULL if the function is not a kernel.
-  AMDILKernel *mKernel;
-
-  /// Pointer to the machine function that this information belongs to.
-  MachineFunction *mMF;
-
-  /// Pointer to the subtarget for this function.
-  const AMDILSubtarget *mSTM;
+/// Pointer to the subtarget for this function.
+const AMDILSubtarget *mSTM;
 public:
   AMDILMachineFunctionInfo();
   AMDILMachineFunctionInfo(MachineFunction &MF);
@@ -247,14 +238,15 @@ public:
   setSRetReturnReg(unsigned int Reg);
 
 #define AS_SET_GET(A) \
-    private: \
-      bool Uses##A;\
-      bool A##Arg; \
-    public: \
-      void setUses##A() { Uses##A = true; }\
-      bool uses##A() const { return Uses##A; }\
-      void setHas##A##Arg() { A##Arg = true; setUses##A(); }\
-      bool has##A##Arg() { return A##Arg; }
+  private: \
+    bool Uses ## A; \
+    bool A ## Arg; \
+  public: \
+    void setUses ## A() { Uses ## A = true; \
+    } \
+    bool uses ## A() const { return Uses ## A; } \
+    void setHas ## A ## Arg() { A ## Arg = true; setUses ## A(); } \
+    bool has ## A ## Arg() { return A ## Arg; }
 
   AS_SET_GET(LDS)
   AS_SET_GET(GDS)
@@ -294,7 +286,7 @@ public:
   /// to the literal to integer and integer to literal mappings.
   ///
   /// Add a 32bit integer value to the literal table.
-  uint32_t addi32Literal(uint32_t val, int Opcode = AMDIL::LOADCONST_i32);
+  uint32_t addi32Literal(uint32_t val, int Opcode = AMDIL::LOADCONSTi32);
 
   /// Add a 32bit floating point value to the literal table.
   uint32_t addf32Literal(const ConstantFP *CFP);
@@ -318,41 +310,22 @@ public:
   size_t getNumLiterals() const;
 
   /// Get the literal ID of an Integer literal of the given offset.
-  uint32_t getIntLits(uint32_t lit);
+  uint32_t getLitIdx(uint32_t lit);
 
   /// Get the literal ID of a Long literal of the given offset.
-  uint32_t getLongLits(uint64_t lit);
-
-  /// Get the literal ID of a Long literal of the given offset.
-  uint32_t getVecLits(uint64_t low64, uint64_t high64);
+  uint32_t getLitIdx(uint64_t lit);
 
   /// Add some literals to the number of reserved literals.
   void addReservedLiterals(uint32_t);
 
   // Functions that return iterators to the beginning and end
   // of the various literal maps.
-  // Functions that return the beginning and end of the 32bit literal map
-  lit32_iterator begin_32() {
-    return mIntLits.begin();
+  // Functions that return the beginning and end of the literal map
+  lit_iterator lit_begin() {
+    return mLits.begin();
   }
-  lit32_iterator end_32() {
-    return mIntLits.end();
-  }
-
-  // Functions that return the beginning and end of the 64bit literal map
-  lit64_iterator begin_64() {
-    return mLongLits.begin();
-  }
-  lit64_iterator end_64() {
-    return mLongLits.end();
-  }
-
-  // Functions that return the beginning and end of the 2x64bit literal map
-  lit128_iterator begin_128() {
-    return mVecLits.begin();
-  }
-  lit128_iterator end_128() {
-    return mVecLits.end();
+  lit_iterator lit_end() {
+    return mLits.end();
   }
 
   // Add a sampler to the set of known samplers for the current kernel.
@@ -365,7 +338,6 @@ public:
   sampler_iterator sampler_end() {
     return mSamplerMap.end();
   }
-
 
   /// Set the flag for the memory ID to true for the current function.
   void setUsesMem(unsigned);
@@ -649,9 +621,9 @@ public:
 
   // Add an error to the output for the current function.
   typedef enum {
-    RELEASE_ONLY, /// Only emit error message in release mode.
-    DEBUG_ONLY, /// Only emit error message in debug mode.
-    ALWAYS /// Always emit the error message.
+    RELEASE_ONLY,   /// Only emit error message in release mode.
+    DEBUG_ONLY,   /// Only emit error message in debug mode.
+    ALWAYS   /// Always emit the error message.
   } ErrorMsgEnum;
   /// Add an error message to the set of all error messages.
   void addErrorMsg(const char* msg, ErrorMsgEnum val = ALWAYS);

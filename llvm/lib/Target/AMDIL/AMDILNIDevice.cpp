@@ -33,7 +33,6 @@ AMDILNIDevice::AMDILNIDevice(AMDILSubtarget *ST)
 AMDILNIDevice::~AMDILNIDevice()
 {
 }
-
 size_t
 AMDILNIDevice::getMaxLDSSize() const
 {
@@ -43,24 +42,19 @@ AMDILNIDevice::getMaxLDSSize() const
     return 0;
   }
 }
-
 uint32_t
 AMDILNIDevice::getGeneration() const
 {
   return AMDILDeviceInfo::HD6XXX;
 }
-
-
 AMDILCaymanDevice::AMDILCaymanDevice(AMDILSubtarget *ST)
   : AMDILNIDevice(ST)
 {
   setCaps();
 }
-
 AMDILCaymanDevice::~AMDILCaymanDevice()
 {
 }
-
 void
 AMDILCaymanDevice::setCaps()
 {
@@ -72,4 +66,3 @@ AMDILCaymanDevice::setCaps()
   mSWBits.reset(AMDILDeviceInfo::Signed24BitOps);
   mSWBits.set(AMDILDeviceInfo::ArenaSegment);
 }
-

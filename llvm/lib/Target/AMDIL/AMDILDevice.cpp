@@ -22,24 +22,20 @@ AMDILDevice::AMDILDevice(AMDILSubtarget *ST) : mSTM(ST)
   setCaps();
   mDeviceFlag = OCL_DEVICE_ALL;
 }
-
 AMDILDevice::~AMDILDevice()
 {
   mHWBits.clear();
   mSWBits.clear();
 }
-
 size_t AMDILDevice::getMaxGDSSize() const
 {
   return 0;
 }
-
 uint32_t
 AMDILDevice::getDeviceFlag() const
 {
   return mDeviceFlag;
 }
-
 size_t AMDILDevice::getMaxNumCBs() const
 {
   if (usesHardware(AMDILDeviceInfo::ConstantMem)) {
@@ -48,7 +44,6 @@ size_t AMDILDevice::getMaxNumCBs() const
 
   return 0;
 }
-
 size_t AMDILDevice::getMaxCBSize() const
 {
   if (usesHardware(AMDILDeviceInfo::ConstantMem)) {
@@ -57,17 +52,14 @@ size_t AMDILDevice::getMaxCBSize() const
 
   return 0;
 }
-
 size_t AMDILDevice::getMaxScratchSize() const
 {
   return 65536;
 }
-
 uint32_t AMDILDevice::getStackAlignment() const
 {
   return 16;
 }
-
 void AMDILDevice::setCaps()
 {
   mSWBits.set(AMDILDeviceInfo::HalfOps);
@@ -104,7 +96,6 @@ void AMDILDevice::setCaps()
   mSWBits.set(AMDILDeviceInfo::ByteGDSOps);
   mSWBits.set(AMDILDeviceInfo::LongOps);
 }
-
 AMDILDeviceInfo::ExecutionMode
 AMDILDevice::getExecutionMode(AMDILDeviceInfo::Caps Caps) const
 {
@@ -119,24 +110,19 @@ AMDILDevice::getExecutionMode(AMDILDeviceInfo::Caps Caps) const
   }
 
   return AMDILDeviceInfo::Unsupported;
-
 }
-
 bool AMDILDevice::isSupported(AMDILDeviceInfo::Caps Mode) const
 {
   return getExecutionMode(Mode) != AMDILDeviceInfo::Unsupported;
 }
-
 bool AMDILDevice::usesHardware(AMDILDeviceInfo::Caps Mode) const
 {
   return getExecutionMode(Mode) == AMDILDeviceInfo::Hardware;
 }
-
 bool AMDILDevice::usesSoftware(AMDILDeviceInfo::Caps Mode) const
 {
   return getExecutionMode(Mode) == AMDILDeviceInfo::Software;
 }
-
 std::string
 AMDILDevice::getDataLayout() const
 {

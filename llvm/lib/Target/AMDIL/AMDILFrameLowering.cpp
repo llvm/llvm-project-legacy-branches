@@ -20,20 +20,16 @@ AMDILFrameLowering::AMDILFrameLowering(StackDirection D, unsigned StackAl,
   : TargetFrameLowering(D, StackAl, LAO, TransAl)
 {
 }
-
 AMDILFrameLowering::~AMDILFrameLowering()
 {
 }
-
 /// getFrameIndexOffset - Returns the displacement from the frame register to
 /// the stack frame of the specified index.
 int AMDILFrameLowering::getFrameIndexOffset(const MachineFunction &MF,
-    int FI) const
-{
+                                            int FI) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   return MFI->getObjectOffset(FI);
 }
-
 const TargetFrameLowering::SpillSlot *
 AMDILFrameLowering::getCalleeSavedSpillSlots(unsigned &NumEntries) const
 {
@@ -45,7 +41,8 @@ AMDILFrameLowering::emitPrologue(MachineFunction &MF) const
 {
 }
 void
-AMDILFrameLowering::emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const
+AMDILFrameLowering::emitEpilogue(MachineFunction &MF,
+                                 MachineBasicBlock &MBB) const
 {
 }
 bool

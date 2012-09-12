@@ -22,10 +22,8 @@
 /// each function, and the offset to the locals area.
 /// See TargetFrameInfo for more comments.
 
-namespace llvm
-{
-class AMDILFrameLowering : public TargetFrameLowering
-{
+namespace llvm {
+class AMDILFrameLowering : public TargetFrameLowering {
 public:
   AMDILFrameLowering(StackDirection D, unsigned StackAl, int LAO, unsigned
                      TransAl = 1);
@@ -37,6 +35,6 @@ public:
   virtual void emitPrologue(MachineFunction &MF) const;
   virtual void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
   virtual bool hasFP(const MachineFunction &MF) const;
-}; // class AMDILFrameLowering
+};   // class AMDILFrameLowering
 } // namespace llvm
 #endif // _AMDILFRAME_LOWERING_H_

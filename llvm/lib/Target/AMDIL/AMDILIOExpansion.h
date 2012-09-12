@@ -34,8 +34,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetMachine.h"
 
-namespace llvm
-{
+namespace llvm {
 class MachineFunction;
 class AMDILKernelManager;
 class AMDILMachineFunctionInfo;
@@ -43,6 +42,7 @@ class AMDILSubtarget;
 class MachineInstr;
 class Constant;
 class TargetInstrInfo;
+class TargetRegisterInfo;
 typedef enum {
   NO_PACKING = 0,
   PACK_V2I8,
@@ -55,15 +55,14 @@ typedef enum {
   UNPACK_V4I16,
   UNPACK_LAST
 } REG_PACKED_TYPE;
-class AMDILIOExpansion : public MachineFunctionPass
+class AMDILIOExpansionImpl
 {
 public:
-  virtual ~AMDILIOExpansion();
-  virtual const char* getPassName() const;
-  bool runOnMachineFunction(MachineFunction &MF);
-  static char ID;
+  virtual ~AMDILIOExpansionImpl() {
+  };
+  bool run();
 protected:
-  AMDILIOExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel);
+  AMDILIOExpansionImpl(MachineFunction& mf);
   //
   // @param MI Machine instruction to check.
   // @brief checks to see if the machine instruction
@@ -105,8 +104,8 @@ protected:
   isHardwareRegion(MachineInstr *MI);
   bool
   isHardwareLocal(MachineInstr *MI);
-  bool
-  isPackedData(MachineInstr *MI);
+  uint32_t
+  getPackedReg(uint32_t &, uint32_t);
   bool
   isStaticCPLoad(MachineInstr *MI);
   bool
@@ -121,58 +120,73 @@ protected:
   getShiftSize(MachineInstr *MI);
   uint32_t
   getPointerID(MachineInstr *MI);
-  uint32_t
-  getDataReg(MachineInstr *MI);
   void
-  expandTruncData(MachineInstr *MI);
+  expandTruncData(MachineInstr *MI, uint32_t &dataReg);
   void
-  expandLoadStartCode(MachineInstr *MI);
+  expandLoadStartCode(MachineInstr *MI, uint32_t &addyReg);
   virtual void
-  expandStoreSetupCode(MachineInstr *MI) = 0;
+  expandStoreSetupCode(MachineInstr *MI, uint32_t &addyReg,
+                       uint32_t &dataReg) = 0;
   void
-  expandAddressCalc(MachineInstr *MI);
-  unsigned
+  expandAddressCalc(MachineInstr *MI, uint32_t &addyReg);
+  void
   expandLongExtend(MachineInstr *MI,
-                   uint32_t numComponents, uint32_t size, bool signedShift);
-  unsigned
+                   uint32_t numComponents,
+                   uint32_t size,
+                   bool signedShift,
+                   uint32_t &dataReg);
+  void
   expandLongExtendSub32(MachineInstr *MI,
-                        unsigned SHLop, unsigned SHRop, unsigned USHRop,
-                        unsigned SHLimm, uint64_t SHRimm, unsigned USHRimm,
-                        unsigned LCRop, bool signedShift, bool vec2);
-  unsigned
+                        unsigned SHLop,
+                        unsigned SHRop,
+                        unsigned USHRop,
+                        unsigned SHLimm,
+                        uint64_t SHRimm,
+                        unsigned USHRimm,
+                        unsigned LCRop,
+                        bool signedShift,
+                        bool vec2,
+                        uint32_t &dataReg);
+  void
   expandIntegerExtend(MachineInstr *MI, unsigned,
                       unsigned, unsigned, unsigned);
-  unsigned
-  expandExtendLoad(MachineInstr *MI);
+  void
+  expandExtendLoad(MachineInstr *MI, uint32_t &dataReg);
   virtual void
-  expandPackedData(MachineInstr *MI) = 0;
+  expandPackedData(MachineInstr *MI, uint32_t &dataReg) = 0;
   void
   emitCPInst(MachineInstr* MI, const Constant* C,
-             AMDILKernelManager* KM, int swizzle, bool ExtFPLoad);
+             AMDILKernelManager* KM, int swizzle, bool ExtFPLoad,
+             uint32_t &dataReg);
 
   bool mDebug;
+  MachineFunction& MF;
+  MachineBasicBlock *mBB;
+  const TargetMachine &TM;
   const AMDILSubtarget *mSTM;
   AMDILKernelManager *mKM;
-  MachineBasicBlock *mBB;
   AMDILMachineFunctionInfo *mMFI;
+  const TargetRegisterInfo *mTRI;
   const TargetInstrInfo *mTII;
   bool saveInst;
 protected:
   void
   emitStaticCPLoad(MachineInstr* MI, int swizzle, int id,
-                   bool ExtFPLoad);
-  TargetMachine &TM;
-}; // class AMDILIOExpansion
+                   bool ExtFPLoad, uint32_t &dataReg);
+  uint32_t getCompReg(uint32_t reg,
+                      uint32_t subIdx0 = 0, uint32_t subIdx1 = 0);
+};   // class AMDILIOExpansionImpl
 
 // Intermediate class that holds I/O code expansion that is common to the
 // 7XX, Evergreen and Northern Island family of chips.
-class AMDIL789IOExpansion : public AMDILIOExpansion
-{
+class AMDIL789IOExpansionImpl : public AMDILIOExpansionImpl  {
 public:
-  virtual ~AMDIL789IOExpansion();
-  virtual const char* getPassName() const;
+  virtual ~AMDIL789IOExpansionImpl() {
+  };
 protected:
-  AMDIL789IOExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel);
+  AMDIL789IOExpansionImpl(MachineFunction& mf)
+    : AMDILIOExpansionImpl(mf) {
+  };
   virtual void
   expandGlobalStore(MachineInstr *MI) = 0;
   virtual void
@@ -190,29 +204,33 @@ protected:
   virtual void
   expandConstantLoad(MachineInstr *MI);
   virtual void
-  expandPrivateLoad(MachineInstr *MI) ;
+  expandPrivateLoad(MachineInstr *MI);
   virtual void
   expandConstantPoolLoad(MachineInstr *MI);
   void
-  expandStoreSetupCode(MachineInstr *MI);
+  expandStoreSetupCode(MachineInstr *MI, uint32_t &addyReg, uint32_t &dataReg);
   virtual void
-  expandPackedData(MachineInstr *MI);
+  expandPackedData(MachineInstr *MI, uint32_t &dataReg);
 private:
   void emitVectorAddressCalc(MachineInstr *MI, bool is32bit,
-                             bool needsSelect);
-  void emitVectorSwitchWrite(MachineInstr *MI, bool is32bit);
+                             bool needsSelect, uint32_t &addy);
+  void emitVectorSwitchWrite(MachineInstr *MI,
+                             bool is32bit,
+                             uint32_t &addy,
+                             uint32_t &data);
   void emitComponentExtract(MachineInstr *MI, unsigned src,
                             unsigned dst, bool beforeInst);
-  void emitDataLoadSelect(MachineInstr *MI);
-}; // class AMDIL789IOExpansion
-// Class that handles I/O emission for the 7XX family of devices.
-class AMDIL7XXIOExpansion : public AMDIL789IOExpansion
-{
+  void emitDataLoadSelect(MachineInstr *MI, uint32_t &data, uint32_t &addy);
+};   // class AMDIL789IOExpansionImpl
+     // Class that handles I/O emission for the 7XX family of devices.
+class AMDIL7XXIOExpansionImpl : public AMDIL789IOExpansionImpl {
 public:
-  AMDIL7XXIOExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel);
+  AMDIL7XXIOExpansionImpl(MachineFunction& mf)
+    : AMDIL789IOExpansionImpl(mf) {
+  };
 
-  ~AMDIL7XXIOExpansion();
-  const char* getPassName() const;
+  ~AMDIL7XXIOExpansionImpl() {
+  };
 protected:
   void
   expandGlobalStore(MachineInstr *MI);
@@ -226,16 +244,18 @@ protected:
   expandRegionLoad(MachineInstr *MI);
   void
   expandLocalLoad(MachineInstr *MI);
-}; // class AMDIL7XXIOExpansion
+};   // class AMDIL7XXIOExpansionImpl
 
 // Class that handles image functions to expand them into the
 // correct set of I/O instructions.
-class AMDILImageExpansion : public AMDIL789IOExpansion
-{
+class AMDILImageExpansionImpl : public AMDIL789IOExpansionImpl {
 public:
-  AMDILImageExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel);
+  AMDILImageExpansionImpl(MachineFunction& mf)
+    : AMDIL789IOExpansionImpl(mf) {
+  };
 
-  virtual ~AMDILImageExpansion();
+  virtual ~AMDILImageExpansionImpl() {
+  };
 protected:
   //
   // @param MI Instruction iterator that has the sample instruction
@@ -281,27 +301,23 @@ protected:
   //
   virtual void
   expandInefficientImageLoad(MachineBasicBlock *BB, MachineInstr *MI);
-private:
-  AMDILImageExpansion(); // Do not implement.
-
-}; // class AMDILImageExpansion
+};   // class AMDILImageExpansion
 
 // Class that expands IO instructions for Evergreen and Northern
 // Island family of devices.
-class AMDILEGIOExpansion : public AMDILImageExpansion
-{
+class AMDILEGIOExpansionImpl : public AMDILImageExpansionImpl {
 public:
-  AMDILEGIOExpansion(TargetMachine &tm, CodeGenOpt::Level OptLevel);
+  AMDILEGIOExpansionImpl(MachineFunction& mf)
+    : AMDILImageExpansionImpl(mf) {
+  };
 
-  virtual ~AMDILEGIOExpansion();
-  const char* getPassName() const;
+  virtual ~AMDILEGIOExpansionImpl() {
+  };
 protected:
   virtual bool
   isIOInstruction(MachineInstr *MI);
   virtual void
   expandIOInstruction(MachineInstr *MI);
-  bool
-  isImageIO(MachineInstr *MI);
   virtual void
   expandGlobalStore(MachineInstr *MI);
   void
@@ -317,14 +333,30 @@ protected:
   virtual bool
   isCacheableOp(MachineInstr *MI);
   void
-  expandStoreSetupCode(MachineInstr *MI);
-  void
-  expandPackedData(MachineInstr *MI);
+  expandPackedData(MachineInstr *MI, uint32_t &dataReg);
 private:
   bool
   isArenaOp(MachineInstr *MI);
   void
-  expandArenaSetup(MachineInstr *MI);
-}; // class AMDILEGIOExpansion
+  expandArenaSetup(MachineInstr *MI, uint32_t &addy);
+};   // class AMDILEGIOExpansionImpl
+
+class AMDIL7XXIOExpansion : public MachineFunctionPass {
+public:
+  static char ID;
+public:
+  AMDIL7XXIOExpansion();
+  virtual const char* getPassName() const;
+  bool runOnMachineFunction(MachineFunction &MF);
+};
+
+class AMDILEGIOExpansion : public MachineFunctionPass {
+public:
+  static char ID;
+public:
+  AMDILEGIOExpansion();
+  virtual const char* getPassName() const;
+  bool runOnMachineFunction(MachineFunction &MF);
+};
 } // namespace llvm
 #endif // _AMDILIOEXPANSION_H_

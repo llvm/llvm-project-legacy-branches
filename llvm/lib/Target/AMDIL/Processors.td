@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//
+// AMDIL processors supported.
 //
 //===----------------------------------------------------------------------===//
 
@@ -23,12 +23,5 @@ def : Proc<"cypress",    [FeatureByteAddress, FeatureImages, FeatureFP64]>;
 def : Proc<"barts",      [FeatureByteAddress, FeatureImages]>;
 def : Proc<"turks",      [FeatureByteAddress, FeatureImages]>;
 def : Proc<"caicos",     [FeatureByteAddress, FeatureImages]>;
-def : Proc<"kauai",      [FeatureByteAddress, FeatureImages, FeatureFP64]>;
 def : Proc<"cayman",     [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"tahiti",     [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"pitcairn",   [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"capeverde",  [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"trinity",    [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"dogs",       [FeatureByteAddress, FeatureImages, FeatureFP64]>;
-def : Proc<"cats",       [FeatureByteAddress, FeatureImages, FeatureFP64]>;
 

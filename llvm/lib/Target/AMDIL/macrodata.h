@@ -21,8 +21,7 @@
 #ifndef MACRODATA_HPP_
 #define MACRODATA_HPP_
 
-namespace amd
-{
+namespace amd {
 /*! \brief Returns macro ordinal.
 *
 *  \details
@@ -37,10 +36,10 @@ const char **MacroPtrs;
 const char *MacroPtr;
 int MacrosCnt;
     MacroPtrs  =  amd::MacroDBGetMacro(&MacrosCnt,ordinal);
-	for( int i = 0; i < MacrosCnt; i++)
+        for( int i = 0; i < MacrosCnt; i++)
     {
-	   MacroPtr = MacroPtrs[i];
-	}
+           MacroPtr = MacroPtrs[i];
+        }
 */
 const char ** MacroDBGetMacro( int *_MacroListCounter, int _iMacroId );
 
@@ -52,6 +51,5 @@ int MacroDBNumInputs(int macronum);
 */
 int MacroDBNumOutputs(int macronum);
 } // namespace amd
-
 
 #endif /*MACRODATA_HPP_*/

@@ -16,54 +16,44 @@
 /*
 The time is Mon Jul 18 18:22:11 2011
 */
-const macrodata::SMacroEntry sMacroDB[] = {
-  {
-    "barrier",
+const macrodata::SMacroEntry sMacroDB[] =
+{
+  { "barrier",
     "mdef(0)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "fence_threads_memory_lds\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "barrierGlobal",
+    ,1,1},
+  { "barrierGlobal",
     "mdef(1)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "fence_threads_memory\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "barrierLocal",
+    ,1,1},
+  { "barrierLocal",
     "mdef(2)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "fence_threads_lds\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "read_mem_fence",
+    ,1,1},
+  { "read_mem_fence",
     "mdef(3)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "fence_lds_mem_read_only\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "write_mem_fence",
+    ,1,1},
+  { "write_mem_fence",
     "mdef(4)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "fence_lds_mem_write_only\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__acosh_f32",
+    ,1,1},
+  { "__acosh_f32",
     "mdef(5)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -189,10 +179,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, l45, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__acospi_f32",
+    ,1,1},
+  { "__acospi_f32",
     "mdef(6)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -296,10 +284,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.x___, r0.x, l27\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__acos_f32",
+    ,1,1},
+  { "__acos_f32",
     "mdef(7)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -376,10 +362,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, l26, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_bitalign_1",
+    ,1,1},
+  { "__amdil_bitalign_1",
     "mdef(8)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -387,10 +371,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bitalign r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bitalign_2",
+    ,3,1},
+  { "__amdil_bitalign_2",
     "mdef(9)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -398,10 +380,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bitalign r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bitalign_3",
+    ,3,1},
+  { "__amdil_bitalign_3",
     "mdef(10)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -409,10 +389,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bitalign r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bitalign_4",
+    ,3,1},
+  { "__amdil_bitalign_4",
     "mdef(11)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -420,10 +398,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bitalign r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bytealign_1",
+    ,3,1},
+  { "__amdil_bytealign_1",
     "mdef(12)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -431,10 +407,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bytealign r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bytealign_2",
+    ,3,1},
+  { "__amdil_bytealign_2",
     "mdef(13)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -442,10 +416,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bytealign r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bytealign_3",
+    ,3,1},
+  { "__amdil_bytealign_3",
     "mdef(14)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -453,10 +425,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bytealign r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_bytealign_4",
+    ,3,1},
+  { "__amdil_bytealign_4",
     "mdef(15)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -464,10 +434,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "bytealign r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_cmovl_1",
+    ,3,1},
+  { "__amdil_cmovl_1",
     "mdef(16)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -475,10 +443,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_cmovl_2",
+    ,3,1},
+  { "__amdil_cmovl_2",
     "mdef(17)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -486,10 +452,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_cmovl_3",
+    ,3,1},
+  { "__amdil_cmovl_3",
     "mdef(18)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -497,10 +461,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xyz, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_cmovl_4",
+    ,3,1},
+  { "__amdil_cmovl_4",
     "mdef(19)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -508,29 +470,23 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_dfrexp",
+    ,3,1},
+  { "__amdil_dfrexp",
     "mdef(20)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dfrexp r0, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_dldexp",
+    ,1,1},
+  { "__amdil_dldexp",
     "mdef(21)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dldexp r0.xy__, r0.xy, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_dmad",
+    ,2,1},
+  { "__amdil_dmad",
     "mdef(22)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -538,186 +494,146 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "dmad r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_dmax",
+    ,3,1},
+  { "__amdil_dmax",
     "mdef(23)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dmax r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_dmin",
+    ,2,1},
+  { "__amdil_dmin",
     "mdef(24)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dmin r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_dp2_ieee",
+    ,2,1},
+  { "__amdil_dp2_ieee",
     "mdef(25)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dp2_ieee r0.x___, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_dp3_ieee",
+    ,2,1},
+  { "__amdil_dp3_ieee",
     "mdef(26)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dp3_ieee r0.x___, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_dp4_ieee",
+    ,2,1},
+  { "__amdil_dp4_ieee",
     "mdef(27)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dp4_ieee r0.x___, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_drcp",
+    ,2,1},
+  { "__amdil_drcp",
     "mdef(28)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "drcp_zeroop(infinity) r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_drsq",
+    ,1,1},
+  { "__amdil_drsq",
     "mdef(29)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "drsq_zeroop(infinity) r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_fabs_1",
+    ,1,1},
+  { "__amdil_fabs_1",
     "mdef(30)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, r0.x_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_fabs_2",
+    ,1,1},
+  { "__amdil_fabs_2",
     "mdef(31)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xy, r0.xy_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_fabs_3",
+    ,1,1},
+  { "__amdil_fabs_3",
     "mdef(32)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xyz, r0.xyz_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_fabs_4",
+    ,1,1},
+  { "__amdil_fabs_4",
     "mdef(33)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, r0_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_hi_1",
+    ,1,1},
+  { "__amdil_ffb_hi_1",
     "mdef(34)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_hi r0.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_hi_2",
+    ,1,1},
+  { "__amdil_ffb_hi_2",
     "mdef(35)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_hi r0.xy, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_hi_3",
+    ,1,1},
+  { "__amdil_ffb_hi_3",
     "mdef(36)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_hi r0.xyz, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_hi_4",
+    ,1,1},
+  { "__amdil_ffb_hi_4",
     "mdef(37)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_hi r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_lo_1",
+    ,1,1},
+  { "__amdil_ffb_lo_1",
     "mdef(38)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_lo r0.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_lo_2",
+    ,1,1},
+  { "__amdil_ffb_lo_2",
     "mdef(39)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_lo r0.xy, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_lo_3",
+    ,1,1},
+  { "__amdil_ffb_lo_3",
     "mdef(40)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_lo r0.xyz, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_ffb_lo_4",
+    ,1,1},
+  { "__amdil_ffb_lo_4",
     "mdef(41)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ffb_lo r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_near_f32",
+    ,1,1},
+  { "__amdil_float_to_half_near_f32",
     "mdef(42)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -777,10 +693,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x, r5.x, r10.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_near_v2f32",
+    ,1,1},
+  { "__amdil_float_to_half_near_v2f32",
     "mdef(43)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -840,10 +754,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.xy, r5.xy, r10.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_near_v4f32",
+    ,1,1},
+  { "__amdil_float_to_half_near_v4f32",
     "mdef(44)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -903,10 +815,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0, r5, r10\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_neg_inf_f32",
+    ,1,1},
+  { "__amdil_float_to_half_neg_inf_f32",
     "mdef(45)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -967,10 +877,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x, r5.x, r10.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_neg_inf_v2f32",
+    ,1,1},
+  { "__amdil_float_to_half_neg_inf_v2f32",
     "mdef(46)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -1031,10 +939,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.xy, r5.xy, r10.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_neg_inf_v4f32",
+    ,1,1},
+  { "__amdil_float_to_half_neg_inf_v4f32",
     "mdef(47)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -1095,10 +1001,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0, r5, r10\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_plus_inf_f32",
+    ,1,1},
+  { "__amdil_float_to_half_plus_inf_f32",
     "mdef(48)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -1159,10 +1063,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x, r5.x, r10.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_plus_inf_v2f32",
+    ,1,1},
+  { "__amdil_float_to_half_plus_inf_v2f32",
     "mdef(49)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -1223,10 +1125,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.xy, r5.xy, r10.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_half_plus_inf_v4f32",
+    ,1,1},
+  { "__amdil_float_to_half_plus_inf_v4f32",
     "mdef(50)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x007fffff, 0x007fffff, 0x007fffff, 0x007fffff\n"
@@ -1287,81 +1187,63 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0, r5, r10\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_int_flr_f32",
+    ,1,1},
+  { "__amdil_float_to_int_flr_f32",
     "mdef(51)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.x, r0.x\n"
     "ftoi r0.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_int_flr_v2f32",
+    ,1,1},
+  { "__amdil_float_to_int_flr_v2f32",
     "mdef(52)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.xy, r0.xy\n"
     "ftoi r0.xy, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_float_to_int_flr_v4f32",
+    ,1,1},
+  { "__amdil_float_to_int_flr_v4f32",
     "mdef(53)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0, r0\n"
     "ftoi r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_f_2_u4",
+    ,1,1},
+  { "__amdil_f_2_u4",
     "mdef(54)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "f_2_u4 r0.x___, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_global_id",
+    ,1,1},
+  { "__amdil_global_id",
     "mdef(55)_out(1)_in(0)\n"
     "mov r0.xyz, vAbsTid.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_global_id_flat",
+    ,0,1},
+  { "__amdil_global_id_flat",
     "mdef(56)_out(1)_in(0)\n"
     "mov r0.x, vAbsTidFlat.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_group_id",
+    ,0,1},
+  { "__amdil_group_id",
     "mdef(57)_out(1)_in(0)\n"
     "mov r0.xyz, vThreadGrpId.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_group_id_flat",
+    ,0,1},
+  { "__amdil_group_id_flat",
     "mdef(58)_out(1)_in(0)\n"
     "mov r0.x, vThreadGrpIdFlat.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_imad_1",
+    ,0,1},
+  { "__amdil_imad_1",
     "mdef(59)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1369,10 +1251,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imad r0.x, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_imad_2",
+    ,3,1},
+  { "__amdil_imad_2",
     "mdef(60)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1380,10 +1260,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imad r0.xy, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_imad_3",
+    ,3,1},
+  { "__amdil_imad_3",
     "mdef(61)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1391,10 +1269,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imad r0.xyz, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_imad_4",
+    ,3,1},
+  { "__amdil_imad_4",
     "mdef(62)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1402,90 +1278,72 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imad r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_imax_1",
+    ,3,1},
+  { "__amdil_imax_1",
     "mdef(63)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imax r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imax_2",
+    ,2,1},
+  { "__amdil_imax_2",
     "mdef(64)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imax r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imax_3",
+    ,2,1},
+  { "__amdil_imax_3",
     "mdef(65)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imax r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imax_4",
+    ,2,1},
+  { "__amdil_imax_4",
     "mdef(66)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imax r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imin_1",
+    ,2,1},
+  { "__amdil_imin_1",
     "mdef(67)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imin r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imin_2",
+    ,2,1},
+  { "__amdil_imin_2",
     "mdef(68)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imin r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imin_3",
+    ,2,1},
+  { "__amdil_imin_3",
     "mdef(69)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imin r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imin_4",
+    ,2,1},
+  { "__amdil_imin_4",
     "mdef(70)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imin r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_improved_div_f32",
+    ,2,1},
+  { "__amdil_improved_div_f32",
     "mdef(71)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1496,10 +1354,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "fma r0.x, r4.x, r2.x, r3.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_improved_div_v2f32",
+    ,2,1},
+  { "__amdil_improved_div_v2f32",
     "mdef(72)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1510,10 +1366,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "fma r0.xy, r4.xy, r2.xy, r3.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_improved_div_v4f32",
+    ,2,1},
+  { "__amdil_improved_div_v4f32",
     "mdef(73)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1524,66 +1378,52 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "fma r0, r4, r2, r3\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imul_high_1",
+    ,2,1},
+  { "__amdil_imul_high_1",
     "mdef(74)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imul_high r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imul_high_2",
+    ,2,1},
+  { "__amdil_imul_high_2",
     "mdef(75)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imul_high r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imul_high_3",
+    ,2,1},
+  { "__amdil_imul_high_3",
     "mdef(76)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imul_high r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_imul_high_4",
+    ,2,1},
+  { "__amdil_imul_high_4",
     "mdef(77)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "imul_high r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_local_id",
+    ,2,1},
+  { "__amdil_local_id",
     "mdef(78)_out(1)_in(0)\n"
     "mov r0.xyz, vTidInGrp.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_local_id_flat",
+    ,0,1},
+  { "__amdil_local_id_flat",
     "mdef(79)_out(1)_in(0)\n"
     "mov r0.x, vTidInGrpFlat.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,0,1
-  },
-  {
-    "__amdil_lpr_3",
+    ,0,1},
+  { "__amdil_lpr_3",
     "mdef(80)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1591,10 +1431,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "lrp r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_lrp_1",
+    ,3,1},
+  { "__amdil_lrp_1",
     "mdef(81)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1602,10 +1440,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "lrp r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_lrp_2",
+    ,3,1},
+  { "__amdil_lrp_2",
     "mdef(82)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1613,10 +1449,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "lrp r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_lrp_4",
+    ,3,1},
+  { "__amdil_lrp_4",
     "mdef(83)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1624,10 +1458,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "lrp r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_mad_ieee_1",
+    ,3,1},
+  { "__amdil_mad_ieee_1",
     "mdef(84)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1635,10 +1467,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.x, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_mad_ieee_2",
+    ,3,1},
+  { "__amdil_mad_ieee_2",
     "mdef(85)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1646,10 +1476,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.xy, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_mad_ieee_3",
+    ,3,1},
+  { "__amdil_mad_ieee_3",
     "mdef(86)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1657,10 +1485,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.xyz, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_mad_ieee_4",
+    ,3,1},
+  { "__amdil_mad_ieee_4",
     "mdef(87)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1668,306 +1494,240 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_max_ieee_1",
+    ,3,1},
+  { "__amdil_max_ieee_1",
     "mdef(88)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "max_ieee r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_max_ieee_2",
+    ,2,1},
+  { "__amdil_max_ieee_2",
     "mdef(89)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "max_ieee r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_max_ieee_3",
+    ,2,1},
+  { "__amdil_max_ieee_3",
     "mdef(90)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "max_ieee r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_max_ieee_4",
+    ,2,1},
+  { "__amdil_max_ieee_4",
     "mdef(91)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "max_ieee r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_min_ieee_1",
+    ,2,1},
+  { "__amdil_min_ieee_1",
     "mdef(92)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "min_ieee r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_min_ieee_2",
+    ,2,1},
+  { "__amdil_min_ieee_2",
     "mdef(93)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "min_ieee r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_min_ieee_3",
+    ,2,1},
+  { "__amdil_min_ieee_3",
     "mdef(94)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "min_ieee r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_min_ieee_4",
+    ,2,1},
+  { "__amdil_min_ieee_4",
     "mdef(95)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "min_ieee r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_rcp_1",
+    ,2,1},
+  { "__amdil_rcp_1",
     "mdef(96)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rcp_zeroop(infinity) r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rcp_2",
+    ,1,1},
+  { "__amdil_rcp_2",
     "mdef(97)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rcp_zeroop(infinity) r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rcp_3",
+    ,1,1},
+  { "__amdil_rcp_3",
     "mdef(98)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rcp_zeroop(infinity) r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rcp_4",
+    ,1,1},
+  { "__amdil_rcp_4",
     "mdef(99)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rcp_zeroop(infinity) r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_nearest_1",
+    ,1,1},
+  { "__amdil_round_nearest_1",
     "mdef(100)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_nearest r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_nearest_2",
+    ,1,1},
+  { "__amdil_round_nearest_2",
     "mdef(101)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_nearest r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_nearest_3",
+    ,1,1},
+  { "__amdil_round_nearest_3",
     "mdef(102)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_nearest r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_nearest_4",
+    ,1,1},
+  { "__amdil_round_nearest_4",
     "mdef(103)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_nearest r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_neginf_1",
+    ,1,1},
+  { "__amdil_round_neginf_1",
     "mdef(104)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_neginf_2",
+    ,1,1},
+  { "__amdil_round_neginf_2",
     "mdef(105)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_neginf_3",
+    ,1,1},
+  { "__amdil_round_neginf_3",
     "mdef(106)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_neginf_4",
+    ,1,1},
+  { "__amdil_round_neginf_4",
     "mdef(107)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_plusinf_1",
+    ,1,1},
+  { "__amdil_round_plusinf_1",
     "mdef(108)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_plusinf r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_plusinf_2",
+    ,1,1},
+  { "__amdil_round_plusinf_2",
     "mdef(109)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_plusinf r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_plusinf_3",
+    ,1,1},
+  { "__amdil_round_plusinf_3",
     "mdef(110)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_plusinf r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_plusinf_4",
+    ,1,1},
+  { "__amdil_round_plusinf_4",
     "mdef(111)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_plusinf r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_z_1",
+    ,1,1},
+  { "__amdil_round_z_1",
     "mdef(112)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_z_2",
+    ,1,1},
+  { "__amdil_round_z_2",
     "mdef(113)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_z_3",
+    ,1,1},
+  { "__amdil_round_z_3",
     "mdef(114)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_round_z_4",
+    ,1,1},
+  { "__amdil_round_z_4",
     "mdef(115)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rsq_vec_1",
+    ,1,1},
+  { "__amdil_rsq_vec_1",
     "mdef(116)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rsq_vec_2",
+    ,1,1},
+  { "__amdil_rsq_vec_2",
     "mdef(117)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rsq_vec_3",
+    ,1,1},
+  { "__amdil_rsq_vec_3",
     "mdef(118)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_rsq_vec_4",
+    ,1,1},
+  { "__amdil_rsq_vec_4",
     "mdef(119)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_sad4",
+    ,1,1},
+  { "__amdil_sad4",
     "mdef(120)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1975,10 +1735,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sad4 r0.x___, r0, r1, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sadhi_1",
+    ,3,1},
+  { "__amdil_sadhi_1",
     "mdef(121)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1986,10 +1744,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sadhi r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sadhi_2",
+    ,3,1},
+  { "__amdil_sadhi_2",
     "mdef(122)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -1997,10 +1753,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sadhi r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sadhi_3",
+    ,3,1},
+  { "__amdil_sadhi_3",
     "mdef(123)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2008,10 +1762,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sadhi r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sadhi_4",
+    ,3,1},
+  { "__amdil_sadhi_4",
     "mdef(124)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2019,10 +1771,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sadhi r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sad_1",
+    ,3,1},
+  { "__amdil_sad_1",
     "mdef(125)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2030,10 +1780,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sad r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sad_2",
+    ,3,1},
+  { "__amdil_sad_2",
     "mdef(126)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2041,10 +1789,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sad r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sad_3",
+    ,3,1},
+  { "__amdil_sad_3",
     "mdef(127)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2052,10 +1798,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sad r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sad_4",
+    ,3,1},
+  { "__amdil_sad_4",
     "mdef(128)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2063,46 +1807,36 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sad r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_sqrt_vec_1",
+    ,3,1},
+  { "__amdil_sqrt_vec_1",
     "mdef(129)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_sqrt_vec_2",
+    ,1,1},
+  { "__amdil_sqrt_vec_2",
     "mdef(130)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_sqrt_vec_3",
+    ,1,1},
+  { "__amdil_sqrt_vec_3",
     "mdef(131)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_sqrt_vec_4",
+    ,1,1},
+  { "__amdil_sqrt_vec_4",
     "mdef(132)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_u4lerp_1",
+    ,1,1},
+  { "__amdil_u4lerp_1",
     "mdef(133)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2110,10 +1844,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "u4lerp r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_u4lerp_2",
+    ,3,1},
+  { "__amdil_u4lerp_2",
     "mdef(134)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2121,10 +1853,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "u4lerp r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_u4lerp_3",
+    ,3,1},
+  { "__amdil_u4lerp_3",
     "mdef(135)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2132,10 +1862,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "u4lerp r0.xyz_, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_u4lerp_4",
+    ,3,1},
+  { "__amdil_u4lerp_4",
     "mdef(136)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2143,10 +1871,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "u4lerp r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad24_1",
+    ,3,1},
+  { "__amdil_umad24_1",
     "mdef(137)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2154,10 +1880,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad24 r0.x, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad24_2",
+    ,3,1},
+  { "__amdil_umad24_2",
     "mdef(138)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2165,10 +1889,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad24 r0.xy, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad24_3",
+    ,3,1},
+  { "__amdil_umad24_3",
     "mdef(139)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2176,10 +1898,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad24 r0.xyz, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad24_4",
+    ,3,1},
+  { "__amdil_umad24_4",
     "mdef(140)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2187,10 +1907,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad24 r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad_1",
+    ,3,1},
+  { "__amdil_umad_1",
     "mdef(141)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2198,10 +1916,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad r0.x, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad_2",
+    ,3,1},
+  { "__amdil_umad_2",
     "mdef(142)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2209,10 +1925,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad r0.xy, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad_3",
+    ,3,1},
+  { "__amdil_umad_3",
     "mdef(143)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2220,10 +1934,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad r0.xyz, r0.xyz, r1.xyz, r2.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umad_4",
+    ,3,1},
+  { "__amdil_umad_4",
     "mdef(144)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -2231,323 +1943,255 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umad r0, r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__amdil_umax_1",
+    ,3,1},
+  { "__amdil_umax_1",
     "mdef(145)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umax r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umax_2",
+    ,2,1},
+  { "__amdil_umax_2",
     "mdef(146)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umax r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umax_3",
+    ,2,1},
+  { "__amdil_umax_3",
     "mdef(147)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umax r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umax_4",
+    ,2,1},
+  { "__amdil_umax_4",
     "mdef(148)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umax r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umin_1",
+    ,2,1},
+  { "__amdil_umin_1",
     "mdef(149)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umin r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umin_2",
+    ,2,1},
+  { "__amdil_umin_2",
     "mdef(150)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umin r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umin_3",
+    ,2,1},
+  { "__amdil_umin_3",
     "mdef(151)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umin r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umin_4",
+    ,2,1},
+  { "__amdil_umin_4",
     "mdef(152)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umin r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul24_1",
+    ,2,1},
+  { "__amdil_umul24_1",
     "mdef(153)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul24 r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul24_2",
+    ,2,1},
+  { "__amdil_umul24_2",
     "mdef(154)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul24 r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul24_3",
+    ,2,1},
+  { "__amdil_umul24_3",
     "mdef(155)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul24 r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul24_4",
+    ,2,1},
+  { "__amdil_umul24_4",
     "mdef(156)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul24 r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul_high_1",
+    ,2,1},
+  { "__amdil_umul_high_1",
     "mdef(157)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul_high r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul_high_2",
+    ,2,1},
+  { "__amdil_umul_high_2",
     "mdef(158)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul_high r0.xy, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul_high_3",
+    ,2,1},
+  { "__amdil_umul_high_3",
     "mdef(159)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul_high r0.xyz, r0.xyz, r1.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_umul_high_4",
+    ,2,1},
+  { "__amdil_umul_high_4",
     "mdef(160)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "umul_high r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__amdil_unpack0_1",
+    ,2,1},
+  { "__amdil_unpack0_1",
     "mdef(161)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack0 r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack0_2",
+    ,1,1},
+  { "__amdil_unpack0_2",
     "mdef(162)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack0 r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack0_3",
+    ,1,1},
+  { "__amdil_unpack0_3",
     "mdef(163)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack0 r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack0_4",
+    ,1,1},
+  { "__amdil_unpack0_4",
     "mdef(164)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack0 r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack1_1",
+    ,1,1},
+  { "__amdil_unpack1_1",
     "mdef(165)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack1 r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack1_2",
+    ,1,1},
+  { "__amdil_unpack1_2",
     "mdef(166)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack1 r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack1_3",
+    ,1,1},
+  { "__amdil_unpack1_3",
     "mdef(167)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack1 r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack1_4",
+    ,1,1},
+  { "__amdil_unpack1_4",
     "mdef(168)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack1 r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack2_1",
+    ,1,1},
+  { "__amdil_unpack2_1",
     "mdef(169)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack2 r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack2_2",
+    ,1,1},
+  { "__amdil_unpack2_2",
     "mdef(170)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack2 r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack2_3",
+    ,1,1},
+  { "__amdil_unpack2_3",
     "mdef(171)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack2 r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack2_4",
+    ,1,1},
+  { "__amdil_unpack2_4",
     "mdef(172)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack2 r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack3_1",
+    ,1,1},
+  { "__amdil_unpack3_1",
     "mdef(173)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack3 r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack3_2",
+    ,1,1},
+  { "__amdil_unpack3_2",
     "mdef(174)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack3 r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack3_3",
+    ,1,1},
+  { "__amdil_unpack3_3",
     "mdef(175)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack3 r0.xyz_, r0.xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amdil_unpack3_4",
+    ,1,1},
+  { "__amdil_unpack3_4",
     "mdef(176)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "unpack3 r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__amd_early_exit",
+    ,1,1},
+  { "__amd_early_exit",
     "mdef(177)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "ret_logical_non_zero r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__asinh_f32",
+    ,1,1},
+  { "__asinh_f32",
     "mdef(178)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -2644,10 +2288,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.w, l34, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__asinpi_f32",
+    ,1,1},
+  { "__asinpi_f32",
     "mdef(179)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -2873,10 +2515,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l61, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__asin_f32",
+    ,1,1},
+  { "__asin_f32",
     "mdef(180)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -2953,10 +2593,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, l26, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__atan2pi_f32",
+    ,1,1},
+  { "__atan2pi_f32",
     "mdef(181)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -3405,10 +3043,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r2.y, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__atan2_f32",
+    ,2,1},
+  { "__atan2_f32",
     "mdef(182)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -3757,10 +3393,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r2.y, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__atanh_f32",
+    ,2,1},
+  { "__atanh_f32",
     "mdef(183)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x ___, r0.x\n"
@@ -3863,10 +3497,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, r0.z, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__atanpi_f32",
+    ,1,1},
+  { "__atanpi_f32",
     "mdef(184)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -4080,10 +3712,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__atan_f32",
+    ,1,1},
+  { "__atan_f32",
     "mdef(185)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -4163,10 +3793,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__cbrt_f32",
+    ,1,1},
+  { "__cbrt_f32",
     "mdef(186)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x7FFFFFFF, 0x7F800000, 0x007FFFFF\n"
@@ -4349,19 +3977,15 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ceil_f32",
+    ,1,1},
+  { "__ceil_f32",
     "mdef(187)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_plusinf r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__clamp_f32",
+    ,1,1},
+  { "__clamp_f32",
     "mdef(188)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -4370,10 +3994,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "min r0.x___, r2.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__copysign_f32",
+    ,3,1},
+  { "__copysign_f32",
     "mdef(189)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -4384,10 +4006,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__cosh_f32",
+    ,2,1},
+  { "__cosh_f32",
     "mdef(190)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -4555,10 +4175,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.z, l45\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__cospi_f32",
+    ,1,1},
+  { "__cospi_f32",
     "mdef(191)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -4663,10 +4281,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__cos_f32",
+    ,1,1},
+  { "__cos_f32",
     "mdef(192)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -5717,10 +5333,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__cross_4f32",
+    ,1,1},
+  { "__cross_4f32",
     "mdef(193)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5762,10 +5376,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "add r0.xyz_, r2.xyzx, r0.xyzx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ddiv_f64",
+    ,2,1},
+  { "__ddiv_f64",
     "mdef(194)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5861,10 +5473,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.xy, r10.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ddiv_f64_fma",
+    ,2,1},
+  { "__ddiv_f64_fma",
     "mdef(195)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5940,20 +5550,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.xy, r10.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__degrees_f32",
+    ,2,1},
+  { "__degrees_f32",
     "mdef(196)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x42652EE1, 0x00000000, 0x00000000, 0x00000000\n"
     "mul_ieee r0.x___, r0.x, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__distance_2f32",
+    ,1,1},
+  { "__distance_2f32",
     "mdef(197)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5962,10 +5568,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r2.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__distance_4f32",
+    ,2,1},
+  { "__distance_4f32",
     "mdef(198)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5976,10 +5580,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__distance_f32",
+    ,2,1},
+  { "__distance_f32",
     "mdef(199)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -5987,20 +5589,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r2.y_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__dot_2f32",
+    ,2,1},
+  { "__dot_2f32",
     "mdef(200)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "dp2_ieee r0.x___, r1.xyxx, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__dot_3f32",
+    ,2,1},
+  { "__dot_3f32",
     "mdef(201)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -6008,10 +5606,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.x___, r1.z, r0.z, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__dot_4f32",
+    ,2,1},
+  { "__dot_4f32",
     "mdef(202)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -6020,20 +5616,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.x___, r1.w, r0.w, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__dot_f32",
+    ,2,1},
+  { "__dot_f32",
     "mdef(203)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mul_ieee r0.x___, r1.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__erfc_f32",
+    ,2,1},
+  { "__erfc_f32",
     "mdef(204)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -6554,10 +6146,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__erf_f32",
+    ,1,1},
+  { "__erf_f32",
     "mdef(205)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -7080,10 +6670,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__exp10_f32",
+    ,1,1},
+  { "__exp10_f32",
     "mdef(206)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x40549A78, 0x40549A78, 0x40549A78, 0x40549A78\n"
@@ -7230,10 +6818,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l50, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__exp2_f32",
+    ,1,1},
+  { "__exp2_f32",
     "mdef(207)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_nearest r0._y__, r0.x\n"
@@ -7334,10 +6920,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__expm1_f32",
+    ,1,1},
+  { "__expm1_f32",
     "mdef(208)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r3.x___, r0.x\n"
@@ -7559,10 +7143,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r3.z, l78, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__exp_f32",
+    ,1,1},
+  { "__exp_f32",
     "mdef(209)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x00000000, 0xC2CFF1B5, 0x00000000\n"
@@ -7667,20 +7249,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fabs_f32",
+    ,1,1},
+  { "__fabs_f32",
     "mdef(210)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
     "and r0.x___, r0.x, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_distance_2f32",
+    ,1,1},
+  { "__fast_distance_2f32",
     "mdef(211)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -7689,10 +7267,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r2.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fast_distance_4f32",
+    ,2,1},
+  { "__fast_distance_4f32",
     "mdef(212)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -7703,10 +7279,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fast_distance_f32",
+    ,2,1},
+  { "__fast_distance_f32",
     "mdef(213)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -7714,20 +7288,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r2.y_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fast_length_2f32",
+    ,2,1},
+  { "__fast_length_2f32",
     "mdef(214)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r1._y__, r0.xyxx, r0.xyxx\n"
     "sqrt_vec r0.x___, r1.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_length_4f32",
+    ,1,1},
+  { "__fast_length_4f32",
     "mdef(215)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r0.x___, r0.xyxx, r0.xyxx\n"
@@ -7736,19 +7306,15 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_length_f32",
+    ,1,1},
+  { "__fast_length_f32",
     "mdef(216)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x___, r0.x_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_normalize_2f32",
+    ,1,1},
+  { "__fast_normalize_2f32",
     "mdef(217)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r2.x___, r0.xyxx, r0.xyxx\n"
@@ -7780,10 +7346,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_normalize_4f32",
+    ,1,1},
+  { "__fast_normalize_4f32",
     "mdef(218)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r2.x___, r0.xyxx, r0.xyxx\n"
@@ -7816,10 +7380,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fast_normalize_f32",
+    ,1,1},
+  { "__fast_normalize_f32",
     "mdef(219)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r2.x___, r0.x_abs\n"
@@ -7851,10 +7413,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fdim_f32",
+    ,1,1},
+  { "__fdim_f32",
     "mdef(220)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8055,10 +7615,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fdiv_f32",
+    ,2,1},
+  { "__fdiv_f32",
     "mdef(221)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8099,19 +7657,15 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x, r4.x, r4.y, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__floor_f32",
+    ,2,1},
+  { "__floor_f32",
     "mdef(222)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_neginf r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__fmax_f32",
+    ,1,1},
+  { "__fmax_f32",
     "mdef(223)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8145,10 +7699,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, l5, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fma_f32",
+    ,2,1},
+  { "__fma_f32",
     "mdef(224)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8284,10 +7836,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x, r23.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__fma_f64",
+    ,3,1},
+  { "__fma_f64",
     "mdef(225)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8295,10 +7845,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "dmad r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__fmin_f32",
+    ,3,1},
+  { "__fmin_f32",
     "mdef(226)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8334,10 +7882,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fmod_f32",
+    ,2,1},
+  { "__fmod_f32",
     "mdef(227)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -8869,10 +8415,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__fract_2f32f32",
+    ,2,1},
+  { "__fract_2f32f32",
     "mdef(228)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r1._y__, r0.x\n"
@@ -8924,10 +8468,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r0.w, l17, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__frexp_2f32f32",
+    ,1,1},
+  { "__frexp_2f32f32",
     "mdef(229)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x80000000, 0x7FFFFFFF, 0x00000000\n"
@@ -8985,10 +8527,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0._y__, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ftol_i64",
+    ,1,1},
+  { "__ftol_i64",
     "mdef(230)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7F800000, 0x80000000, 0x007FFFFF, 0x00000000\n"
@@ -9051,10 +8591,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r0.x, l21, r1.zwzz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ftoul_i64",
+    ,1,1},
+  { "__ftoul_i64",
     "mdef(231)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7F800000, 0x007FFFFF, 0x80000000, 0x00000000\n"
@@ -9111,10 +8649,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r0.x, l20, r0.ywyy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ftz_2f32",
+    ,1,1},
+  { "__ftz_2f32",
     "mdef(232)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x7F800000, 0xFFFFFFFF, 0x80000000, 0x00000000\n"
@@ -9123,10 +8659,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iand r0.xy__, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ftz_4f32",
+    ,1,1},
+  { "__ftz_4f32",
     "mdef(233)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x7F800000, 0xFFFFFFFF, 0x80000000, 0x00000000\n"
@@ -9135,10 +8669,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iand r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ftz_f32",
+    ,1,1},
+  { "__ftz_f32",
     "mdef(234)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x7F800000, 0xFFFFFFFF, 0x80000000, 0x00000000\n"
@@ -9147,10 +8679,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iand r0.x___, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_cos_f32",
+    ,1,1},
+  { "__half_cos_f32",
     "mdef(235)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -9361,10 +8891,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l56, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_divide_f32",
+    ,1,1},
+  { "__half_divide_f32",
     "mdef(236)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -9594,10 +9122,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "endif\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__half_exp10_f32",
+    ,2,1},
+  { "__half_exp10_f32",
     "mdef(237)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x421A209B, 0x421A209B, 0x421A209B, 0x421A209B\n"
@@ -9644,10 +9170,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l16, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_exp2_f32",
+    ,1,1},
+  { "__half_exp2_f32",
     "mdef(238)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -9695,10 +9219,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_exp_f32",
+    ,1,1},
+  { "__half_exp_f32",
     "mdef(239)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -9749,10 +9271,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_log10_f32",
+    ,1,1},
+  { "__half_log10_f32",
     "mdef(240)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -9893,10 +9413,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_log2_f32",
+    ,1,1},
+  { "__half_log2_f32",
     "mdef(241)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -10031,10 +9549,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, r0.z, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_log_f32",
+    ,1,1},
+  { "__half_log_f32",
     "mdef(242)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -10175,10 +9691,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_powr_f32",
+    ,1,1},
+  { "__half_powr_f32",
     "mdef(243)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -10735,10 +10249,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l194, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__half_recip_f32",
+    ,2,1},
+  { "__half_recip_f32",
     "mdef(244)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -10845,10 +10357,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, r0.y, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_rsqrt_f32",
+    ,1,1},
+  { "__half_rsqrt_f32",
     "mdef(245)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x7FFFFFFF, 0x7F800000, 0x00000000\n"
@@ -10975,10 +10485,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "endif\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_sin_f32",
+    ,1,1},
+  { "__half_sin_f32",
     "mdef(246)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -11168,10 +10676,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l49, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_sqrt_f32",
+    ,1,1},
+  { "__half_sqrt_f32",
     "mdef(247)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -11197,10 +10703,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.w, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__half_tan_f32",
+    ,1,1},
+  { "__half_tan_f32",
     "mdef(248)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF\n"
@@ -11348,10 +10852,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l38, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__hwfma_f32",
+    ,1,1},
+  { "__hwfma_f32",
     "mdef(249)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -11359,10 +10861,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "fma r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__hypot_f32",
+    ,3,1},
+  { "__hypot_f32",
     "mdef(250)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -11725,10 +11225,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l100, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ilogb_f32",
+    ,2,1},
+  { "__ilogb_f32",
     "mdef(251)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x7FFFFFFF, 0x7F800000, 0x00000000, 0x00000000\n"
@@ -11770,10 +11268,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, l16, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ldexp_f32i32",
+    ,1,1},
+  { "__ldexp_f32i32",
     "mdef(252)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -11854,20 +11350,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__length_2f32",
+    ,2,1},
+  { "__length_2f32",
     "mdef(253)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r1._y__, r0.xyxx, r0.xyxx\n"
     "sqrt_vec r0.x___, r1.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__length_4f32",
+    ,1,1},
+  { "__length_4f32",
     "mdef(254)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r0.x___, r0.xyxx, r0.xyxx\n"
@@ -11876,19 +11368,15 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__length_f32",
+    ,1,1},
+  { "__length_f32",
     "mdef(255)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x___, r0.x_abs\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__lgamma_f32",
+    ,1,1},
+  { "__lgamma_f32",
     "mdef(256)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -12543,10 +12031,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l171, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__lgamma_r_2f32f32",
+    ,1,1},
+  { "__lgamma_r_2f32f32",
     "mdef(257)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x_neg(xyzw)\n"
@@ -13238,226 +12724,176 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.y, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_128bit_global",
+    ,1,1},
+  { "__load_128bit_global",
     "mdef(258)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, g[r0.x]\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_128bit_local",
+    ,1,1},
+  { "__load_128bit_local",
     "mdef(259)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "lds_load_vec_id(0) r0, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_128bit_private",
+    ,1,1},
+  { "__load_128bit_private",
     "mdef(260)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, x0[r0.x]\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_128bit_uav",
+    ,1,1},
+  { "__load_128bit_uav",
     "mdef(261)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "uav_raw_load_id(0) r0, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_32bit_local",
+    ,1,1},
+  { "__load_32bit_local",
     "mdef(262)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "lds_load_id(0) r0.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_32bit_uav",
+    ,1,1},
+  { "__load_32bit_uav",
     "mdef(263)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "uav_raw_load_id(0) r0.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_64bit_local",
+    ,1,1},
+  { "__load_64bit_local",
     "mdef(264)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "lds_load_vec_id(0) r0.xy__, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_64bit_uav",
+    ,1,1},
+  { "__load_64bit_uav",
     "mdef(265)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "uav_raw_load_id(0) r0.xy, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_96bit_global",
+    ,1,1},
+  { "__load_96bit_global",
     "mdef(266)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xyz_, g[r0.x].xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_96bit_local",
+    ,1,1},
+  { "__load_96bit_local",
     "mdef(267)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "lds_load_vec_id(0) r0.xyz_, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_96bit_private",
+    ,1,1},
+  { "__load_96bit_private",
     "mdef(268)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xyz_, x0[r0.x].xyz\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_96bit_uav",
+    ,1,1},
+  { "__load_96bit_uav",
     "mdef(269)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "uav_raw_load_id(0) r0.xyz, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_hi_64bit_global",
+    ,1,1},
+  { "__load_hi_64bit_global",
     "mdef(270)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xy__, g[r0.x].zw\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_hi_64bit_private",
+    ,1,1},
+  { "__load_hi_64bit_private",
     "mdef(271)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xy__, x0[r0.x].zw\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_lo_64bit_global",
+    ,1,1},
+  { "__load_lo_64bit_global",
     "mdef(272)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xy__, g[r0.x].xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_lo_64bit_private",
+    ,1,1},
+  { "__load_lo_64bit_private",
     "mdef(273)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.xy__, x0[r0.x].xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_w_32bit_global",
+    ,1,1},
+  { "__load_w_32bit_global",
     "mdef(274)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, g[r0.x].w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_w_32bit_private",
+    ,1,1},
+  { "__load_w_32bit_private",
     "mdef(275)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, x0[r0.x].w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_x_32bit_global",
+    ,1,1},
+  { "__load_x_32bit_global",
     "mdef(276)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, g[r0.x].x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_x_32bit_private",
+    ,1,1},
+  { "__load_x_32bit_private",
     "mdef(277)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, x0[r0.x].x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_y_32bit_global",
+    ,1,1},
+  { "__load_y_32bit_global",
     "mdef(278)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, g[r0.x].y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_y_32bit_private",
+    ,1,1},
+  { "__load_y_32bit_private",
     "mdef(279)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, x0[r0.x].y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_z_32bit_global",
+    ,1,1},
+  { "__load_z_32bit_global",
     "mdef(280)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, g[r0.x].z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__load_z_32bit_private",
+    ,1,1},
+  { "__load_z_32bit_private",
     "mdef(281)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0.x, x0[r0.x].z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__log10_f32",
+    ,1,1},
+  { "__log10_f32",
     "mdef(282)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -13587,10 +13023,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__log1p_f32",
+    ,1,1},
+  { "__log1p_f32",
     "mdef(283)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x40000000, 0x3F800000, 0x00000000\n"
@@ -13853,10 +13287,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.z, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__log2_f32",
+    ,1,1},
+  { "__log2_f32",
     "mdef(284)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -13983,10 +13415,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__logb_f32",
+    ,1,1},
+  { "__logb_f32",
     "mdef(285)_out(2)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x00000000, 0x7FFFFFFF, 0x7F800000, 0x00000000\n"
@@ -14030,10 +13460,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov out0, r0\n"
     "mov out1, r1\n"
     "mend\n"
-    ,1,2
-  },
-  {
-    "__log_f32",
+    ,1,2},
+  { "__log_f32",
     "mdef(286)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14163,10 +13591,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__ltof_f32",
+    ,1,1},
+  { "__ltof_f32",
     "mdef(287)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "inot r0.__zw, r0.xxxy\n"
@@ -14315,10 +13741,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r0.w, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__mad_f32",
+    ,1,1},
+  { "__mad_f32",
     "mdef(288)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14326,10 +13750,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.x___, r0.x, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__mad_f64",
+    ,3,1},
+  { "__mad_f64",
     "mdef(289)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14337,10 +13759,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "dmad r0.xy__, r0.xy, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__max_f32",
+    ,3,1},
+  { "__max_f32",
     "mdef(290)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14348,10 +13768,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "max r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__min_f32",
+    ,2,1},
+  { "__min_f32",
     "mdef(291)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14359,10 +13777,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "min r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__mix_f32",
+    ,2,1},
+  { "__mix_f32",
     "mdef(292)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14371,10 +13787,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mad_ieee r0.x___, r0.w, r2.x, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__modf_2f32f32",
+    ,3,1},
+  { "__modf_2f32f32",
     "mdef(293)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.___w, r0.x\n"
@@ -14397,10 +13811,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r0.z, l4, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__mul_i64",
+    ,1,1},
+  { "__mul_i64",
     "mdef(294)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14412,10 +13824,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.xy, r7.x0, r6.0x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__mul_v2i64",
+    ,2,1},
+  { "__mul_v2i64",
     "mdef(295)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14427,10 +13837,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0, r7.x0z0, r6.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__nan_u32",
+    ,2,1},
+  { "__nan_u32",
     "mdef(296)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l0, 0x007FFFFF, 0x007FFFFF, 0x007FFFFF, 0x007FFFFF\n"
@@ -14439,49 +13847,39 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r0.x, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_cos_f32",
+    ,1,1},
+  { "__native_cos_f32",
     "mdef(297)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "cos_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_divide_2f32",
+    ,1,1},
+  { "__native_divide_2f32",
     "mdef(298)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "div_zeroop(infinity) r0.xy__, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_divide_4f32",
+    ,2,1},
+  { "__native_divide_4f32",
     "mdef(299)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "div_zeroop(infinity) r0, r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_divide_f32",
+    ,2,1},
+  { "__native_divide_f32",
     "mdef(300)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "div_zeroop(infinity) r0.x___, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_exp10_2f32",
+    ,2,1},
+  { "__native_exp10_2f32",
     "mdef(301)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14490,10 +13888,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0.xy__, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp10_4f32",
+    ,1,1},
+  { "__native_exp10_4f32",
     "mdef(302)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14502,10 +13898,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp10_f32",
+    ,1,1},
+  { "__native_exp10_f32",
     "mdef(303)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14514,37 +13908,29 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0.x___, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp2_2f32",
+    ,1,1},
+  { "__native_exp2_2f32",
     "mdef(304)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "exp_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp2_4f32",
+    ,1,1},
+  { "__native_exp2_4f32",
     "mdef(305)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "exp_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp2_f32",
+    ,1,1},
+  { "__native_exp2_f32",
     "mdef(306)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "exp_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp_2f32",
+    ,1,1},
+  { "__native_exp_2f32",
     "mdef(307)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14553,10 +13939,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0.xy__, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp_4f32",
+    ,1,1},
+  { "__native_exp_4f32",
     "mdef(308)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14565,10 +13949,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0, r1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_exp_f32",
+    ,1,1},
+  { "__native_exp_f32",
     "mdef(309)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14577,10 +13959,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "exp_vec r0.x___, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log10_2f32",
+    ,1,1},
+  { "__native_log10_2f32",
     "mdef(310)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1.xy__, r0.x\n"
@@ -14589,10 +13969,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.xy__, r1.xy, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log10_4f32",
+    ,1,1},
+  { "__native_log10_4f32",
     "mdef(311)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1, r0\n"
@@ -14601,10 +13979,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0, r1, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log10_f32",
+    ,1,1},
+  { "__native_log10_f32",
     "mdef(312)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1.x___, r0.x\n"
@@ -14613,37 +13989,29 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.x___, r1.x, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log2_2f32",
+    ,1,1},
+  { "__native_log2_2f32",
     "mdef(313)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log2_4f32",
+    ,1,1},
+  { "__native_log2_4f32",
     "mdef(314)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log2_f32",
+    ,1,1},
+  { "__native_log2_f32",
     "mdef(315)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log_2f32",
+    ,1,1},
+  { "__native_log_2f32",
     "mdef(316)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1.xy__, r0.xy\n"
@@ -14652,10 +14020,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.xy__, r1.xy, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log_4f32",
+    ,1,1},
+  { "__native_log_4f32",
     "mdef(317)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1, r0\n"
@@ -14664,10 +14030,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0, r1, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_log_f32",
+    ,1,1},
+  { "__native_log_f32",
     "mdef(318)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "log_vec r1.x___, r0.x\n"
@@ -14676,10 +14040,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.x___, r1.x, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_powr_2f32",
+    ,1,1},
+  { "__native_powr_2f32",
     "mdef(319)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14694,10 +14056,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy, r4.xy, l1, r3.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_powr_4f32",
+    ,2,1},
+  { "__native_powr_4f32",
     "mdef(320)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14712,10 +14072,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0, r4, l1, r3\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_powr_f32",
+    ,2,1},
+  { "__native_powr_f32",
     "mdef(321)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14730,10 +14088,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x, r4.x, l1, r3.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__native_recip_2f32",
+    ,2,1},
+  { "__native_recip_2f32",
     "mdef(322)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14741,10 +14097,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0.xy__, l0, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_recip_4f32",
+    ,1,1},
+  { "__native_recip_4f32",
     "mdef(323)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14752,10 +14106,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0, l0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_recip_f32",
+    ,1,1},
+  { "__native_recip_f32",
     "mdef(324)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -14763,91 +14115,71 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0.x___, l0, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_rsqrt_2f32",
+    ,1,1},
+  { "__native_rsqrt_2f32",
     "mdef(325)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_rsqrt_4f32",
+    ,1,1},
+  { "__native_rsqrt_4f32",
     "mdef(326)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_rsqrt_f32",
+    ,1,1},
+  { "__native_rsqrt_f32",
     "mdef(327)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "rsq_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sin_2f32",
+    ,1,1},
+  { "__native_sin_2f32",
     "mdef(328)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r0.xy, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sin_4f32",
+    ,1,1},
+  { "__native_sin_4f32",
     "mdef(329)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sin_f32",
+    ,1,1},
+  { "__native_sin_f32",
     "mdef(330)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sqrt_2f32",
+    ,1,1},
+  { "__native_sqrt_2f32",
     "mdef(331)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0.xy__, r0.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sqrt_4f32",
+    ,1,1},
+  { "__native_sqrt_4f32",
     "mdef(332)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_sqrt_f32",
+    ,1,1},
+  { "__native_sqrt_f32",
     "mdef(333)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sqrt_vec r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_tan_2f32",
+    ,1,1},
+  { "__native_tan_2f32",
     "mdef(334)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r1.xy__, r0.xy\n"
@@ -14855,10 +14187,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0.xy__, r1.xy, r2.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_tan_4f32",
+    ,1,1},
+  { "__native_tan_4f32",
     "mdef(335)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r1, r0\n"
@@ -14866,10 +14196,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0, r1, r2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__native_tan_f32",
+    ,1,1},
+  { "__native_tan_f32",
     "mdef(336)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "sin_vec r1.x___, r0.x\n"
@@ -14877,10 +14205,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "div_zeroop(infinity) r0.x___, r1.x, r2.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__nextafter_f32",
+    ,1,1},
+  { "__nextafter_f32",
     "mdef(337)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -14919,10 +14245,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l8, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__normalize_2f32",
+    ,2,1},
+  { "__normalize_2f32",
     "mdef(338)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r2.x___, r0.xyxx, r0.xyxx\n"
@@ -14953,10 +14277,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.__zw, l13\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__normalize_4f32",
+    ,1,1},
+  { "__normalize_4f32",
     "mdef(339)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dp2_ieee r2.x___, r0.xyxx, r0.xyxx\n"
@@ -14988,10 +14310,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0, r2.x, l19, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__normalize_f32",
+    ,1,1},
+  { "__normalize_f32",
     "mdef(340)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r2.x___, r0.x_abs\n"
@@ -15022,10 +14342,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0._yzw, l6\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__pown_f32i32",
+    ,1,1},
+  { "__pown_f32i32",
     "mdef(341)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -15658,10 +14976,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l212, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__powr_f32",
+    ,2,1},
+  { "__powr_f32",
     "mdef(342)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -16196,10 +15512,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l187, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__pow_f32",
+    ,2,1},
+  { "__pow_f32",
     "mdef(343)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -16808,10 +16122,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l205, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__radians_f32",
+    ,2,1},
+  { "__radians_f32",
     "mdef(344)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -16819,10 +16131,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mul_ieee r0.x___, r0.x, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__reciprocal_f32",
+    ,1,1},
+  { "__reciprocal_f32",
     "mdef(345)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r1.x___, r0.x\n"
@@ -16929,10 +16239,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, r0.y, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__remainder_f32",
+    ,1,1},
+  { "__remainder_f32",
     "mdef(346)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -17663,10 +16971,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r1.z, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__remquo_2f32f32",
+    ,2,1},
+  { "__remquo_2f32f32",
     "mdef(347)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -18410,10 +17716,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r0.w, r1.xyxx, r0.xzxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__rint_f32",
+    ,2,1},
+  { "__rint_f32",
     "mdef(348)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -18429,10 +17733,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__rootn_f32i32",
+    ,1,1},
+  { "__rootn_f32i32",
     "mdef(349)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19345,10 +18647,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, l264, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__round_f32",
+    ,2,1},
+  { "__round_f32",
     "mdef(350)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "frc r0._y__, r0.x_abs\n"
@@ -19377,10 +18677,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r0.w, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__rsqrt_f32",
+    ,1,1},
+  { "__rsqrt_f32",
     "mdef(351)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19511,10 +18809,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "endif\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sabs_diff_i16",
+    ,1,1},
+  { "__sabs_diff_i16",
     "mdef(352)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19527,10 +18823,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sabs_diff_i32",
+    ,2,1},
+  { "__sabs_diff_i32",
     "mdef(353)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19541,10 +18835,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w_neg(xyzw)\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sabs_diff_i8",
+    ,2,1},
+  { "__sabs_diff_i8",
     "mdef(354)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19557,37 +18849,29 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sabs_i16",
+    ,2,1},
+  { "__sabs_i16",
     "mdef(355)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "imax r0.x___, r0.x_neg(xyzw), r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sabs_i32",
+    ,1,1},
+  { "__sabs_i32",
     "mdef(356)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "imax r0.x___, r0.x_neg(xyzw), r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sabs_i8",
+    ,1,1},
+  { "__sabs_i8",
     "mdef(357)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "imax r0.x___, r0.x_neg(xyzw), r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sadd_sat_i16",
+    ,1,1},
+  { "__sadd_sat_i16",
     "mdef(358)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19602,10 +18886,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.w, l4\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sadd_sat_i8",
+    ,2,1},
+  { "__sadd_sat_i8",
     "mdef(359)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19621,10 +18903,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sadd_sat_u32",
+    ,2,1},
+  { "__sadd_sat_u32",
     "mdef(360)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19649,10 +18929,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, l9, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sall_i16",
+    ,2,1},
+  { "__sall_i16",
     "mdef(361)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19666,10 +18944,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l4, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sall_i32",
+    ,1,1},
+  { "__sall_i32",
     "mdef(362)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19683,10 +18959,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l7, l8\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sall_i8",
+    ,1,1},
+  { "__sall_i8",
     "mdef(363)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19700,10 +18974,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l1, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sany_i16",
+    ,1,1},
+  { "__sany_i16",
     "mdef(364)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19717,10 +18989,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l4, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sany_i32",
+    ,1,1},
+  { "__sany_i32",
     "mdef(365)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19734,10 +19004,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l7, l8\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sany_i8",
+    ,1,1},
+  { "__sany_i8",
     "mdef(366)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19750,10 +19018,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l1, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sclz_i16",
+    ,1,1},
+  { "__sclz_i16",
     "mdef(367)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19786,10 +19052,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.w, l18\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sclz_i32",
+    ,1,1},
+  { "__sclz_i32",
     "mdef(368)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19857,10 +19121,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, r0.w, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sclz_i8",
+    ,1,1},
+  { "__sclz_i8",
     "mdef(369)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -19896,10 +19158,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r0.z, l9\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sdiv_i16",
+    ,1,1},
+  { "__sdiv_i16",
     "mdef(370)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19931,10 +19191,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sdiv_i32",
+    ,2,1},
+  { "__sdiv_i32",
     "mdef(371)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -19949,10 +19207,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ixor r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sdiv_i64",
+    ,2,1},
+  { "__sdiv_i64",
     "mdef(372)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21164,10 +20420,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r1.x, r0.zwzz, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sdiv_i8",
+    ,2,1},
+  { "__sdiv_i8",
     "mdef(373)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21199,10 +20453,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shadd_i16",
+    ,2,1},
+  { "__shadd_i16",
     "mdef(374)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21214,10 +20466,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ishr r0.x___, r0.w, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shadd_i32",
+    ,2,1},
+  { "__shadd_i32",
     "mdef(375)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21234,10 +20484,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shadd_i8",
+    ,2,1},
+  { "__shadd_i8",
     "mdef(376)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21250,10 +20498,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shl_apple_i64",
+    ,2,1},
+  { "__shl_apple_i64",
     "mdef(377)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21270,10 +20516,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, r5.x, r9.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shl_apple_v2i64",
+    ,2,1},
+  { "__shl_apple_v2i64",
     "mdef(378)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21290,10 +20534,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, r5.0x0z, r9.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shl_i64",
+    ,2,1},
+  { "__shl_i64",
     "mdef(379)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21310,10 +20552,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, r5.x, r9.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shl_v2i64",
+    ,2,1},
+  { "__shl_v2i64",
     "mdef(380)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21330,10 +20570,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, r5.0x0z, r9.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shr_apple_i64",
+    ,2,1},
+  { "__shr_apple_i64",
     "mdef(381)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21350,10 +20588,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, l0.z, r5.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shr_apple_v2i64",
+    ,2,1},
+  { "__shr_apple_v2i64",
     "mdef(382)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21370,10 +20606,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, l0.z, r5.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shr_i64",
+    ,2,1},
+  { "__shr_i64",
     "mdef(383)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21390,10 +20624,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, l0.z, r5.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__shr_v2i64",
+    ,2,1},
+  { "__shr_v2i64",
     "mdef(384)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -21410,10 +20642,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, l0.z, r5.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sign_f32",
+    ,2,1},
+  { "__sign_f32",
     "mdef(385)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -21442,10 +20672,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l6, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sincos_2f32f32",
+    ,1,1},
+  { "__sincos_2f32f32",
     "mdef(386)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, r0.yxzw\n"
@@ -22503,10 +21731,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r1.y, l245, r0.yxyy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sinh_f32",
+    ,1,1},
+  { "__sinh_f32",
     "mdef(387)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -22694,10 +21920,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, r0.y_neg(xyzw), r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sinpi_f32",
+    ,1,1},
+  { "__sinpi_f32",
     "mdef(388)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -22832,10 +22056,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sin_f32",
+    ,1,1},
+  { "__sin_f32",
     "mdef(389)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0._y__, r0.x_abs\n"
@@ -23891,10 +23113,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__smad24_i32",
+    ,1,1},
+  { "__smad24_i32",
     "mdef(390)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -23911,10 +23131,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imad r0.x___, r1.x, r1.y, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_hi_i16",
+    ,3,1},
+  { "__smad_hi_i16",
     "mdef(391)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -23936,10 +23154,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, r1.z, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_hi_i32",
+    ,3,1},
+  { "__smad_hi_i32",
     "mdef(392)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -23997,10 +23213,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_hi_i8",
+    ,3,1},
+  { "__smad_hi_i8",
     "mdef(393)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24022,10 +23236,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.y, r1.z, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_sat_i16",
+    ,3,1},
+  { "__smad_sat_i16",
     "mdef(394)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24043,10 +23255,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_sat_i32",
+    ,3,1},
+  { "__smad_sat_i32",
     "mdef(395)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24075,10 +23285,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smad_sat_i8",
+    ,3,1},
+  { "__smad_sat_i8",
     "mdef(396)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24096,10 +23304,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smax_i16",
+    ,3,1},
+  { "__smax_i16",
     "mdef(397)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24108,10 +23314,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smax_i32",
+    ,2,1},
+  { "__smax_i32",
     "mdef(398)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24120,10 +23324,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smax_i8",
+    ,2,1},
+  { "__smax_i8",
     "mdef(399)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24132,10 +23334,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smin_i16",
+    ,2,1},
+  { "__smin_i16",
     "mdef(400)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24144,10 +23344,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smin_i32",
+    ,2,1},
+  { "__smin_i32",
     "mdef(401)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24156,10 +23354,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smin_i8",
+    ,2,1},
+  { "__smin_i8",
     "mdef(402)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24168,10 +23364,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smod_i16",
+    ,2,1},
+  { "__smod_i16",
     "mdef(403)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24205,10 +23399,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smod_i32",
+    ,2,1},
+  { "__smod_i32",
     "mdef(404)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -24224,10 +23416,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ixor r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smod_i64",
+    ,2,1},
+  { "__smod_i64",
     "mdef(405)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25347,10 +24537,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r1.x, r0.zwzz, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smod_i8",
+    ,2,1},
+  { "__smod_i8",
     "mdef(406)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25384,10 +24572,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smoothstep_f32",
+    ,2,1},
+  { "__smoothstep_f32",
     "mdef(407)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25418,10 +24604,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l4, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__smul24_i32",
+    ,3,1},
+  { "__smul24_i32",
     "mdef(408)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25436,10 +24620,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imul r0.x___, r1.x, r1.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smul_hi_i16",
+    ,2,1},
+  { "__smul_hi_i16",
     "mdef(409)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25451,10 +24633,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ishr r0.x___, r0.w, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smul_hi_i32",
+    ,2,1},
+  { "__smul_hi_i32",
     "mdef(410)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25506,10 +24686,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, r1.x, r1.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__smul_hi_i8",
+    ,2,1},
+  { "__smul_hi_i8",
     "mdef(411)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25522,10 +24700,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sqrt_f32",
+    ,2,1},
+  { "__sqrt_f32",
     "mdef(412)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -25658,10 +24834,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "endif\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sqrt_f64",
+    ,1,1},
+  { "__sqrt_f64",
     "mdef(413)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x00000001, 0x3ff00000, 0x000fffff, 0x3ff80000\n"
@@ -25695,10 +24869,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy, r10.ww, r0.xy, r1.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sqrt_f64_7XX",
+    ,1,1},
+  { "__sqrt_f64_7XX",
     "mdef(414)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x00000001, 0x3ff00000, 0x40000000, 0x3fe00000\n"
@@ -25739,10 +24911,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy, r10.ww, r0.xy, r20.xy\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__sra_apple_i64",
+    ,1,1},
+  { "__sra_apple_i64",
     "mdef(415)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25760,10 +24930,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, r6.x, r5.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sra_apple_v2i64",
+    ,2,1},
+  { "__sra_apple_v2i64",
     "mdef(416)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25781,10 +24949,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, r6.0x0z, r5.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sra_i64",
+    ,2,1},
+  { "__sra_i64",
     "mdef(417)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25802,10 +24968,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y__, r3.x, r6.x, r5.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__sra_v2i64",
+    ,2,1},
+  { "__sra_v2i64",
     "mdef(418)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25823,10 +24987,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0._y_w, r3.0x0z, r6.0x0z, r5.0x0z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srhadd_i16",
+    ,2,1},
+  { "__srhadd_i16",
     "mdef(419)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25841,10 +25003,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ishr r0.x___, r0.w, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srhadd_i32",
+    ,2,1},
+  { "__srhadd_i32",
     "mdef(420)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25861,10 +25021,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srhadd_i8",
+    ,2,1},
+  { "__srhadd_i8",
     "mdef(421)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25880,10 +25038,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srotate_i16",
+    ,2,1},
+  { "__srotate_i16",
     "mdef(422)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25909,10 +25065,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ishr r0.x___, r0.w, l12\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srotate_i32",
+    ,2,1},
+  { "__srotate_i32",
     "mdef(423)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25929,10 +25083,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__srotate_i8",
+    ,2,1},
+  { "__srotate_i8",
     "mdef(424)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25958,10 +25110,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ishr r0.x___, r0.w, l4\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ssub_sat_i16",
+    ,2,1},
+  { "__ssub_sat_i16",
     "mdef(425)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -25976,10 +25126,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.w, l4\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ssub_sat_i32",
+    ,2,1},
+  { "__ssub_sat_i32",
     "mdef(426)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -26004,10 +25152,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.w, l9, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ssub_sat_i8",
+    ,2,1},
+  { "__ssub_sat_i8",
     "mdef(427)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -26022,10 +25168,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "imin r0.x___, r0.w, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__step_f32",
+    ,2,1},
+  { "__step_f32",
     "mdef(428)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -26037,226 +25181,176 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l0, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__store_128bit_global",
+    ,2,1},
+  { "__store_128bit_global",
     "mdef(429)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x], r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_128bit_local",
+    ,2,0},
+  { "__store_128bit_local",
     "mdef(430)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "lds_store_vec_id(0) mem, r0.x, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_128bit_private",
+    ,2,0},
+  { "__store_128bit_private",
     "mdef(431)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x], r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_128bit_uav",
+    ,2,0},
+  { "__store_128bit_uav",
     "mdef(432)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "uav_raw_store_id(0) mem0, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_32bit_local",
+    ,2,0},
+  { "__store_32bit_local",
     "mdef(433)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "lds_store_id(0) mem, r0.x, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_32bit_uav",
+    ,2,0},
+  { "__store_32bit_uav",
     "mdef(434)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "uav_raw_store_id(0) mem0.x, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_64bit_local",
+    ,2,0},
+  { "__store_64bit_local",
     "mdef(435)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "lds_store_vec_id(0) mem.xy__, r0.x, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_64bit_uav",
+    ,2,0},
+  { "__store_64bit_uav",
     "mdef(436)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "uav_raw_store_id(0) mem0.xy, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_96bit_global",
+    ,2,0},
+  { "__store_96bit_global",
     "mdef(437)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].xyz_, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_96bit_local",
+    ,2,0},
+  { "__store_96bit_local",
     "mdef(438)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "lds_store_vec_id(0) mem.xyz_, r0.x, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_96bit_private",
+    ,2,0},
+  { "__store_96bit_private",
     "mdef(439)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].xyz_, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_96bit_uav",
+    ,2,0},
+  { "__store_96bit_uav",
     "mdef(440)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "uav_raw_store_id(0) mem0.xyz, r0.x, r1\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_hi_64bit_global",
+    ,2,0},
+  { "__store_hi_64bit_global",
     "mdef(441)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].__zw, r1.00xy\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_hi_64bit_private",
+    ,2,0},
+  { "__store_hi_64bit_private",
     "mdef(442)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].__zw, r1.00xy\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_lo_64bit_global",
+    ,2,0},
+  { "__store_lo_64bit_global",
     "mdef(443)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].xy__, r1.xy\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_lo_64bit_private",
+    ,2,0},
+  { "__store_lo_64bit_private",
     "mdef(444)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].xy__, r1.xy\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_w_32bit_global",
+    ,2,0},
+  { "__store_w_32bit_global",
     "mdef(445)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].w, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_w_32bit_private",
+    ,2,0},
+  { "__store_w_32bit_private",
     "mdef(446)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].w, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_x_32bit_global",
+    ,2,0},
+  { "__store_x_32bit_global",
     "mdef(447)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].x, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_x_32bit_private",
+    ,2,0},
+  { "__store_x_32bit_private",
     "mdef(448)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].x, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_y_32bit_global",
+    ,2,0},
+  { "__store_y_32bit_global",
     "mdef(449)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].y, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_y_32bit_private",
+    ,2,0},
+  { "__store_y_32bit_private",
     "mdef(450)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].y, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_z_32bit_global",
+    ,2,0},
+  { "__store_z_32bit_global",
     "mdef(451)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov g[r0.x].z, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__store_z_32bit_private",
+    ,2,0},
+  { "__store_z_32bit_private",
     "mdef(452)_out(0)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "mov x0[r0.x].z, r1.x\n"
     "mend\n"
-    ,2,0
-  },
-  {
-    "__tanh_f32",
+    ,2,0},
+  { "__tanh_f32",
     "mdef(453)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0._y__, r0.x_abs\n"
@@ -26587,10 +25681,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.y, r0.z, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__tanpi_f32",
+    ,1,1},
+  { "__tanpi_f32",
     "mdef(454)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "add r0._y__, r0.x_abs, r0.x_abs\n"
@@ -26687,10 +25779,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, l33, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__tan_f32",
+    ,1,1},
+  { "__tan_f32",
     "mdef(455)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0._y__, r0.x_abs\n"
@@ -27713,10 +26803,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.x, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__tgamma_f32",
+    ,1,1},
+  { "__tgamma_f32",
     "mdef(456)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29202,19 +28290,15 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l379, r0.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__trunc_f32",
+    ,1,1},
+  { "__trunc_f32",
     "mdef(457)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "round_z r0.x___, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uabs_diff_u16",
+    ,1,1},
+  { "__uabs_diff_u16",
     "mdef(458)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29227,10 +28311,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uabs_diff_u32",
+    ,2,1},
+  { "__uabs_diff_u32",
     "mdef(459)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29241,10 +28323,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w_neg(xyzw)\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uabs_diff_u8",
+    ,2,1},
+  { "__uabs_diff_u8",
     "mdef(460)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29257,37 +28337,29 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uabs_u16",
+    ,2,1},
+  { "__uabs_u16",
     "mdef(461)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uabs_u32",
+    ,1,1},
+  { "__uabs_u32",
     "mdef(462)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uabs_u8",
+    ,1,1},
+  { "__uabs_u8",
     "mdef(463)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "mov r0, r0\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uadd_sat_i32",
+    ,1,1},
+  { "__uadd_sat_i32",
     "mdef(464)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29300,10 +28372,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, l10, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uadd_sat_u16",
+    ,2,1},
+  { "__uadd_sat_u16",
     "mdef(465)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29315,10 +28385,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.w, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uadd_sat_u8",
+    ,2,1},
+  { "__uadd_sat_u8",
     "mdef(466)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29330,10 +28398,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r1.x, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uall_u16",
+    ,2,1},
+  { "__uall_u16",
     "mdef(467)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29347,10 +28413,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l4, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uall_u32",
+    ,1,1},
+  { "__uall_u32",
     "mdef(468)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29364,10 +28428,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l7, l8\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uall_u8",
+    ,1,1},
+  { "__uall_u8",
     "mdef(469)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29381,10 +28443,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l1, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uany_i16",
+    ,1,1},
+  { "__uany_i16",
     "mdef(470)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29398,10 +28458,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l4, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uany_i32",
+    ,1,1},
+  { "__uany_i32",
     "mdef(471)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29415,10 +28473,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l7, l8\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uany_u8",
+    ,1,1},
+  { "__uany_u8",
     "mdef(472)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29431,10 +28487,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, l1, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uclz_u16",
+    ,1,1},
+  { "__uclz_u16",
     "mdef(473)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29467,10 +28521,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.z, r0.w, l18\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uclz_u32",
+    ,1,1},
+  { "__uclz_u32",
     "mdef(474)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29538,10 +28590,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r1.x, r0.w, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__uclz_u8",
+    ,1,1},
+  { "__uclz_u8",
     "mdef(475)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "\n"
@@ -29577,10 +28627,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r0.z, l9\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__udiv_i16",
+    ,1,1},
+  { "__udiv_i16",
     "mdef(476)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -29597,20 +28645,16 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__udiv_i32",
+    ,2,1},
+  { "__udiv_i32",
     "mdef(477)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
     "udiv r0.x, r0.x, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__udiv_i64",
+    ,2,1},
+  { "__udiv_i64",
     "mdef(478)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -30809,10 +29853,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r1.w, l340, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__udiv_i8",
+    ,2,1},
+  { "__udiv_i8",
     "mdef(479)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -30829,10 +29871,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uhadd_u16",
+    ,2,1},
+  { "__uhadd_u16",
     "mdef(480)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -30844,10 +29884,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r0.w, l3\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uhadd_u32",
+    ,2,1},
+  { "__uhadd_u32",
     "mdef(481)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -30864,10 +29902,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__uhadd_u8",
+    ,2,1},
+  { "__uhadd_u8",
     "mdef(482)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -30879,10 +29915,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r1.x, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__ultof_f32",
+    ,2,1},
+  { "__ultof_f32",
     "mdef(483)_out(1)_in(1)\n"
     "mov r0, in0\n"
     "dcl_literal l1, 0x0000000E, 0x0000000E, 0x0000000E, 0x0000000E\n"
@@ -31019,10 +30053,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.x___, r0.x, l56, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,1,1
-  },
-  {
-    "__umad24_u32",
+    ,1,1},
+  { "__umad24_u32",
     "mdef(484)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31037,10 +30069,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_hi_u16",
+    ,3,1},
+  { "__umad_hi_u16",
     "mdef(485)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31058,10 +30088,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r1.x, l9\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_hi_u32",
+    ,3,1},
+  { "__umad_hi_u32",
     "mdef(486)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31096,10 +30124,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_hi_u8",
+    ,3,1},
+  { "__umad_hi_u8",
     "mdef(487)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31117,10 +30143,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r1.x, l4\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_sat_u16",
+    ,3,1},
+  { "__umad_sat_u16",
     "mdef(488)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31136,10 +30160,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_sat_u32",
+    ,3,1},
+  { "__umad_sat_u32",
     "mdef(489)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31156,10 +30178,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umad_sat_u8",
+    ,3,1},
+  { "__umad_sat_u8",
     "mdef(490)_out(1)_in(3)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31175,10 +30195,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,3,1
-  },
-  {
-    "__umax_u16",
+    ,3,1},
+  { "__umax_u16",
     "mdef(491)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31187,10 +30205,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umax_u32",
+    ,2,1},
+  { "__umax_u32",
     "mdef(492)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31199,10 +30215,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umax_u8",
+    ,2,1},
+  { "__umax_u8",
     "mdef(493)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31211,10 +30225,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umax r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umin_u16",
+    ,2,1},
+  { "__umin_u16",
     "mdef(494)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31223,10 +30235,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umin_u32",
+    ,2,1},
+  { "__umin_u32",
     "mdef(495)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31235,10 +30245,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umin_u8",
+    ,2,1},
+  { "__umin_u8",
     "mdef(496)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31247,10 +30255,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.y, r0.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umod_i16",
+    ,2,1},
+  { "__umod_i16",
     "mdef(497)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31269,10 +30275,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umod_i32",
+    ,2,1},
+  { "__umod_i32",
     "mdef(498)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -31281,10 +30285,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x, r0.x, r2.x_neg(xyzw)\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umod_i64",
+    ,2,1},
+  { "__umod_i64",
     "mdef(499)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32387,10 +31389,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.xy__, r1.w, l307, r0.xyxx\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umod_i8",
+    ,2,1},
+  { "__umod_i8",
     "mdef(500)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32409,10 +31409,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "mov r0.x___, r0.z\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umul24_u32",
+    ,2,1},
+  { "__umul24_u32",
     "mdef(501)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32424,10 +31422,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umul r1.x___, r1.x, r1.y\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umul_hi_u16",
+    ,2,1},
+  { "__umul_hi_u16",
     "mdef(502)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32440,10 +31436,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r0.w, l3\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umul_hi_u32",
+    ,2,1},
+  { "__umul_hi_u32",
     "mdef(503)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32475,10 +31469,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r0.w, r1.x\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__umul_hi_u8",
+    ,2,1},
+  { "__umul_hi_u8",
     "mdef(504)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32490,10 +31482,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r0.w, l1\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urhadd_u16",
+    ,2,1},
+  { "__urhadd_u16",
     "mdef(505)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32508,10 +31498,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r0.w, l7\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urhadd_u32",
+    ,2,1},
+  { "__urhadd_u32",
     "mdef(506)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32528,10 +31516,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "iadd r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urhadd_u8",
+    ,2,1},
+  { "__urhadd_u8",
     "mdef(507)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32546,10 +31532,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ushr r0.x___, r0.w, l3\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urotate_u16",
+    ,2,1},
+  { "__urotate_u16",
     "mdef(508)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32569,10 +31553,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l15\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urotate_u32",
+    ,2,1},
+  { "__urotate_u32",
     "mdef(509)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32589,10 +31571,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "ior r0.x___, r1.x, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__urotate_u8",
+    ,2,1},
+  { "__urotate_u8",
     "mdef(510)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32612,10 +31592,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "and r0.x___, r0.w, l7\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__usub_sat_u16",
+    ,2,1},
+  { "__usub_sat_u16",
     "mdef(511)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32627,10 +31605,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.w, l5\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__usub_sat_u32",
+    ,2,1},
+  { "__usub_sat_u32",
     "mdef(512)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32643,10 +31619,8 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "cmov_logical r0.__z_, r1.x, l10, r0.w\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
-  {
-    "__usub_sat_u8",
+    ,2,1},
+  { "__usub_sat_u8",
     "mdef(513)_out(1)_in(2)\n"
     "mov r0, in0\n"
     "mov r1, in1\n"
@@ -32658,8 +31632,7 @@ const macrodata::SMacroEntry sMacroDB[] = {
     "umin r0.x___, r0.w, l2\n"
     "mov out0, r0\n"
     "mend\n"
-    ,2,1
-  },
+    ,2,1},
   { "", NULL }
 };
 #endif // _macrodb_gen_HPP_

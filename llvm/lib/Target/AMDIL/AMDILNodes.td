@@ -13,7 +13,6 @@
 
 def IL_d2f : SDNode<"AMDILISD::DP_TO_FP"   , SDTIL_DPToFPOp>;
 
-def IL_inttoany: SDNode<"AMDILISD::INTTOANY", SDTIL_IntToAny>;
 //===----------------------------------------------------------------------===//
 // Flow Control DAG Nodes
 //===----------------------------------------------------------------------===//
@@ -50,32 +49,15 @@ def IL_addaddrir : SDNode<"AMDILISD::ADDADDR", SDTIL_AddAddrir,
 // Instructions
 //===--------------------------------------------------------------------===//
 // Floating point math functions
-def IL_cmov_logical : SDNode<"AMDILISD::CMOVLOG", SDTIL_GenTernaryOp>;
 def IL_add       : SDNode<"AMDILISD::ADD"     , SDTIL_GenBinaryOp,
                         [SDNPCommutative, SDNPAssociative]>;
-def IL_cmov        : SDNode<"AMDILISD::CMOV"    , SDTIL_GenBinaryOp>;
-def IL_or      : SDNode<"AMDILISD::OR"    ,SDTIL_GenBinaryOp,
-                        [SDNPCommutative, SDNPAssociative]>;
-def IL_and      : SDNode<"AMDILISD::AND"    ,SDTIL_GenBinaryOp,
-                        [SDNPCommutative, SDNPAssociative]>;
-def IL_xor          : SDNode<"AMDILISD::XOR", SDTIL_GenBinaryOp,
-                        [SDNPCommutative, SDNPAssociative]>;
-def IL_not          : SDNode<"AMDILISD::NOT", SDTIL_GenUnaryOp>;
-def IL_div_inf      : SDNode<"AMDILISD::DIV_INF", SDTIL_GenBinaryOp>;
-def IL_mad          : SDNode<"AMDILISD::MAD", SDTIL_GenTernaryOp>;
 
 //===----------------------------------------------------------------------===//
 // Integer functions
 //===----------------------------------------------------------------------===//
-def IL_inegate     : SDNode<"AMDILISD::INEGATE" , SDTIntUnaryOp>;
 def IL_umul        : SDNode<"AMDILISD::UMUL"    , SDTIntBinOp,
     [SDNPCommutative, SDNPAssociative]>;
-def IL_mov        : SDNode<"AMDILISD::MOVE", SDTIL_GenUnaryOp>;
-def IL_phimov      : SDNode<"AMDILISD::PHIMOVE", SDTIL_GenUnaryOp>;
 def IL_bitconv     : SDNode<"AMDILISD::BITCONV", SDTIL_GenBitConv>;
-def IL_ffb_hi      : SDNode<"AMDILISD::IFFB_HI", SDTIL_GenUnaryOp>;
-def IL_ffb_lo      : SDNode<"AMDILISD::IFFB_LO", SDTIL_GenUnaryOp>;
-def IL_smax        : SDNode<"AMDILISD::SMAX", SDTIL_GenBinaryOp>;
 
 //===----------------------------------------------------------------------===//
 // Double functions
@@ -141,6 +123,10 @@ def atom_g_xchg : SDNode<"AMDILISD::ATOM_G_XCHG", SDTIL_BinAtom,
     [SDNPHasChain, SDNPMayLoad, SDNPMayStore, SDNPMemOperand]>;
 def atom_g_xor : SDNode<"AMDILISD::ATOM_G_XOR", SDTIL_BinAtom,
     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+def atom_g_store : SDNode<"AMDILISD::ATOM_G_STORE", SDTIL_AtomStore,
+    [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+def atom_g_load : SDNode<"AMDILISD::ATOM_G_LOAD",SDTIL_AtomLoad,
+    [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 
 //===------------- 32 bit global atomics without return values ------------===//
 def atom_g_add_noret : SDNode<"AMDILISD::ATOM_G_ADD_NORET", SDTIL_BinAtomNoRet,

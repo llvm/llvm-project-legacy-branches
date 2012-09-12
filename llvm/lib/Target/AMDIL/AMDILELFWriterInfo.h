@@ -15,10 +15,8 @@
 #define _AMDIL_ELF_WRITER_INFO_H_
 #include "llvm/Target/TargetELFWriterInfo.h"
 
-namespace llvm
-{
-class AMDILELFWriterInfo : public TargetELFWriterInfo
-{
+namespace llvm {
+class AMDILELFWriterInfo : public TargetELFWriterInfo {
 public:
   AMDILELFWriterInfo(bool is64Bit_, bool isLittleEndian_);
   virtual ~AMDILELFWriterInfo();
@@ -34,7 +32,7 @@ public:
   /// getDefaultAddendForRelTy - Gets the default addend value for a
   /// relocation entry based on the target ELF relocation type.
   virtual long int getDefaultAddendForRelTy(unsigned RelTy,
-      long int Modifier = 0) const;
+                                            long int Modifier = 0) const;
 
   /// getRelTySize - Returns the size of relocatble field in bits
   virtual unsigned getRelocationTySize(unsigned RelTy) const;

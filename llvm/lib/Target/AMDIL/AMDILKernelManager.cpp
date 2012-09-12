@@ -42,7 +42,11 @@ using namespace llvm;
 #define NUM_EXTRA_SLOTS_PER_IMAGE 1
 
 void
-printRegName(AMDILAsmPrinter *RegNames, unsigned reg, OSTREAM_TYPE &O, bool dst, bool dupe = false)
+printRegName(AMDILAsmPrinter *RegNames,
+             unsigned reg,
+             OSTREAM_TYPE &O,
+             bool dst,
+             bool dupe = false)
 {
   if (reg >= AMDIL::Rx1 && reg < AMDIL::Rxy1) {
     O << RegNames->getRegisterName(reg) << ".x,";
@@ -104,8 +108,7 @@ getFirstComponent(unsigned reg, unsigned fcall)
     };
   }
 }
-static bool errorPrint(const char *ptr, OSTREAM_TYPE &O)
-{
+static bool errorPrint(const char *ptr, OSTREAM_TYPE &O) {
   if (ptr[0] == 'E') {
     O << ";error:" << ptr << "\n";
   } else {
@@ -113,36 +116,30 @@ static bool errorPrint(const char *ptr, OSTREAM_TYPE &O)
   }
   return false;
 }
-static bool semaPrint(uint32_t val, OSTREAM_TYPE &O)
-{
+static bool semaPrint(uint32_t val, OSTREAM_TYPE &O) {
   O << "dcl_semaphore_id(" << val << ")\n";
   return false;
 }
-static bool arenaPrint(uint32_t val, OSTREAM_TYPE &O)
-{
+static bool arenaPrint(uint32_t val, OSTREAM_TYPE &O) {
   if (val >= ARENA_SEGMENT_RESERVED_UAVS) {
     O << "dcl_arena_uav_id(" << val << ")\n";
   }
   return false;
 }
-
-static bool uavPrint(uint32_t val, OSTREAM_TYPE &O)
-{
+static bool uavPrint(uint32_t val, OSTREAM_TYPE &O) {
   if (val < 8 || val == 11) {
     O << "dcl_raw_uav_id(" << val << ")\n";
   }
   return false;
 }
-
-static bool uavPrintSI(uint32_t val, OSTREAM_TYPE &O)
-{
-  O << "dcl_typeless_uav_id(" << val << ")_stride(4)_length(4)_access(read_write)\n";
+static bool uavPrintSI(uint32_t val, OSTREAM_TYPE &O) {
+  O << "dcl_typeless_uav_id(" << val <<
+  ")_stride(4)_length(4)_access(read_write)\n";
   return false;
 }
-
 static bool
-printfPrint(std::pair<const std::string, PrintfInfo *> &data, OSTREAM_TYPE &O)
-{
+printfPrint(std::pair<const std::string,
+                      PrintfInfo *> &data, OSTREAM_TYPE &O) {
   O << ";printf_fmt:" << data.second->getPrintfID();
   // Number of operands
   O << ":" << data.second->getNumOperands();
@@ -166,13 +163,10 @@ printfPrint(std::pair<const std::string, PrintfInfo *> &data, OSTREAM_TYPE &O)
   O << ";\n";   // c_str() is cheap way to trim
   return false;
 }
-
-
 void AMDILKernelManager::updatePtrArg(Function::const_arg_iterator Ip,
                                       int numWriteImages, int raw_uav_buffer,
                                       int counter, bool isKernel,
-                                      const Function *F)
-{
+                                      const Function *F) {
   assert(F && "Cannot pass a NULL Pointer to F!");
   assert(Ip->getType()->isPointerTy() &&
          "Argument must be a pointer to be passed into this function!\n");
@@ -187,7 +181,8 @@ void AMDILKernelManager::updatePtrArg(Function::const_arg_iterator Ip,
     if ((Align & (Align - 1))) Align = NextPowerOf2(Align);
   }
   ptrArg += Ip->getName().str() + ":" + getTypeName(PT, symTab, mMFI,
-            mMFI->isSignedIntType(Ip)) + ":1:1:" +
+                                                    mMFI->isSignedIntType(Ip))
+            + ":1:1:" +
             itostr(counter * 16) + ":";
   if (mSTM->overridesFlatAS()) {
     MemType = "flat";
@@ -215,7 +210,8 @@ void AMDILKernelManager::updatePtrArg(Function::const_arg_iterator Ip,
       mMFI->uav_insert(ptrID);
       break;
     case AMDILAS::CONSTANT_ADDRESS: {
-      if (isKernel && mSTM->device()->usesHardware(AMDILDeviceInfo::ConstantMem)) {
+      if (isKernel &&
+          mSTM->device()->usesHardware(AMDILDeviceInfo::ConstantMem)) {
         const AMDILKernel* t = mAMI->getKernel(F->getName());
         if (mAMI->usesHWConstant(t, Ip->getName())) {
           MemType = /*(isSI) ? "uc\0" :*/ "hc\0";
@@ -255,7 +251,9 @@ void AMDILKernelManager::updatePtrArg(Function::const_arg_iterator Ip,
     case AMDILAS::LOCAL_ADDRESS:
       if (mSTM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
         MemType = "hl\0";
-        ptrID = 1;
+        // size of local mem pointed to by ptr type args are unknown,
+        // so go to default lds buffer
+        ptrID = DEFAULT_LDS_ID;
         mMFI->setUsesLDS();
       } else {
         MemType = "l\0";
@@ -280,7 +278,6 @@ void AMDILKernelManager::updatePtrArg(Function::const_arg_iterator Ip,
   ptrArg += (mMFI->isRestrictPointer(Ip)) ? ":1" : ":0";
   mMFI->addMetadata(ptrArg, true);
 }
-
 AMDILKernelManager::AMDILKernelManager(AMDILTargetMachine *TM)
 {
   mTM = TM;
@@ -290,12 +287,9 @@ AMDILKernelManager::AMDILKernelManager(AMDILTargetMachine *TM)
   mMF = NULL;
   clear();
 }
-
-AMDILKernelManager::~AMDILKernelManager()
-{
+AMDILKernelManager::~AMDILKernelManager() {
   clear();
 }
-
 void
 AMDILKernelManager::setMF(MachineFunction *MF)
 {
@@ -303,24 +297,19 @@ AMDILKernelManager::setMF(MachineFunction *MF)
   mMFI = MF->getInfo<AMDILMachineFunctionInfo>();
   mAMI = &(MF->getMMI().getObjFileInfo<AMDILModuleInfo>());
 }
-
-void AMDILKernelManager::clear()
-{
+void AMDILKernelManager::clear() {
   mUniqueID = 0;
   mWasKernel = false;
   mHasImageWrite = false;
   mHasOutputInst = false;
 }
-
-bool AMDILKernelManager::useCompilerWrite(const MachineInstr *MI)
-{
+bool AMDILKernelManager::useCompilerWrite(const MachineInstr *MI) {
   return (MI->getOpcode() == AMDIL::RETURN && wasKernel() && !mHasImageWrite
           && !mHasOutputInst);
 }
-
 void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
-    uint32_t buf,
-    bool isKernel)
+                                            uint32_t buf,
+                                            bool isKernel)
 {
   const Function *F = mMF->getFunction();
   const char * symTab = "NoSymTab";
@@ -329,7 +318,6 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
 
   if (F->hasStructRetAttr()) {
     assert(Ip != Ep && "Invalid struct return fucntion!");
-    mMFI->addErrorMsg(amd::CompilerErrorMessage[INTERNAL_ERROR]);
     ++Ip;
   }
   uint32_t mCBSize = 0;
@@ -352,8 +340,12 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
     Type *cType = Ip->getType();
     if (cType->isIntOrIntVectorTy() || cType->isFPOrFPVectorTy()) {
       std::string argMeta(";value:");
-      argMeta += Ip->getName().str() + ":" + getTypeName(cType, symTab, mMFI
-                 , mMFI->isSignedIntType(Ip)) + ":";
+      argMeta += Ip->getName().str() + ":" + getTypeName(cType,
+                                                         symTab,
+                                                         mMFI
+                                                         ,
+                                                         mMFI->isSignedIntType(
+                                                           Ip)) + ":";
       int bitsize = cType->getPrimitiveSizeInBits();
       int numEle = 1;
       if (cType->getTypeID() == Type::VectorTyID) {
@@ -391,24 +383,24 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
           if (mSTM->device()->isSupported(AMDILDeviceInfo::Images)) {
             std::string imageArg(";image:");
             imageArg += Ip->getName().str() + ":";
-            if (i1d)       imageArg += "1D:";
+            if (i1d) imageArg += "1D:";
             else if (i1da) imageArg += "1DA:";
             else if (i1db) imageArg += "1DB:";
-            else if (i2d)  imageArg += "2D:";
+            else if (i2d) imageArg += "2D:";
             else if (i2da) imageArg += "2DA:";
-            else if (i3d)  imageArg += "3D:";
+            else if (i3d) imageArg += "3D:";
 
             if (isKernel) {
               if (mAMI->isReadOnlyImage (mMF->getFunction()->getName(),
                                          (ROArg + WOArg))) {
                 imageArg += "RO:" + itostr(ROArg);
                 O << "dcl_resource_id(" << ROArg << ")_type(";
-                if (i1d)       O << "1d";
+                if (i1d) O << "1d";
                 else if (i1da) O << "1darray";
                 else if (i1db) O << "buffer";
-                else if (i2d)  O << "2d";
+                else if (i2d) O << "2d";
                 else if (i2da) O << "2darray";
-                else if (i3d)  O << "3d";
+                else if (i3d) O << "3d";
                 O << ")_fmtx(unknown)_fmty(unknown)"
                   << "_fmtz(unknown)_fmtw(unknown)\n";
                 ++ROArg;
@@ -418,12 +410,12 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
                 offset += WOArg;
                 imageArg += "WO:" + itostr(offset & 0x7);
                 O << "dcl_uav_id(" << ((offset) & 0x7) << ")_type(";
-                if (i1d)       O << "1d";
+                if (i1d) O << "1d";
                 else if (i1da) O << "1darray";
                 else if (i1db) O << "buffer";
-                else if (i2d)  O << "2d";
+                else if (i2d) O << "2d";
                 else if (i2da) O << "2darray";
-                else if (i3d)  O << "3d";
+                else if (i3d) O << "3d";
                 O << ")_fmtx(uint)\n";
                 ++WOArg;
               } else {
@@ -455,8 +447,9 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
                        F);
           ++mCBSize;
         }
-      } else if (CT->getTypeID() == Type::StructTyID
-                 && PT->getAddressSpace() == AMDILAS::PRIVATE_ADDRESS) {
+      }
+      else if (CT->getTypeID() == Type::StructTyID
+               && PT->getAddressSpace() == AMDILAS::PRIVATE_ADDRESS) {
         const TargetData *td = mTM->getTargetData();
         const StructLayout *sl = td->getStructLayout(dyn_cast<StructType>(CT));
         int bytesize = sl->getSizeInBytes();
@@ -494,11 +487,9 @@ void AMDILKernelManager::processArgMetadata(OSTREAM_TYPE &O,
     ++Ip;
   }
 }
-
 void AMDILKernelManager::printHeader(AMDILAsmPrinter *AsmPrinter,
                                      OSTREAM_TYPE &O,
-                                     const std::string &name)
-{
+                                     const std::string &name) {
   mName = name;
   std::string kernelName;
   kernelName = (mSTM->isApple()) ? "__OpenCL_" + name + "_kernel"
@@ -512,9 +503,7 @@ void AMDILKernelManager::printHeader(AMDILAsmPrinter *AsmPrinter,
   }
   O << "mov " << AsmPrinter->getRegisterName(AMDIL::SP) << ", l1.0000\n";
 }
-
-void AMDILKernelManager::printGroupSize(OSTREAM_TYPE& O)
-{
+void AMDILKernelManager::printGroupSize(OSTREAM_TYPE& O) {
   // The HD4XXX generation of hardware does not support a 3D launch, so we need
   // to use dcl_num_thread_per_group to specify the launch size. If the launch
   // size is specified via a kernel attribute, we print it here. Otherwise we
@@ -531,14 +520,14 @@ void AMDILKernelManager::printGroupSize(OSTREAM_TYPE& O)
       O << "dcl_num_thread_per_group "
         << kernel->sgv->reqGroupSize[0] << ", "
         << kernel->sgv->reqGroupSize[1] << ", "
-        << kernel->sgv->reqGroupSize[2] << "          \n";
+        << kernel->sgv->reqGroupSize[2] << "\n";
     } else {
       // If the kernel uses local memory, then the kernel is being
       // compiled in single wavefront mode. So we have to generate code slightly
       // different.
       O << "dcl_num_thread_per_group "
         << mSTM->device()->getWavefrontSize()
-        << ", 1, 1       \n";
+        << ", 1, 1\n";
     }
   } else {
     // Otherwise we generate for devices that support 3D launch natively.  If
@@ -549,65 +538,95 @@ void AMDILKernelManager::printGroupSize(OSTREAM_TYPE& O)
         O << "dcl_num_thread_per_group "
           << kernel->sgv->reqGroupSize[0] << ", "
           << kernel->sgv->reqGroupSize[1] << ", "
-          << kernel->sgv->reqGroupSize[2] << "          \n";
+          << kernel->sgv->reqGroupSize[2] << "\n";
       } else {
         // Otherwise we specify the largest workgroup size that can be launched.
         O << "dcl_max_thread_per_group " <<
-          kernel->sgv->reqGroupSize[0]
-          * kernel->sgv->reqGroupSize[1]
-          * kernel->sgv->reqGroupSize[2] << " \n";
+        kernel->sgv->reqGroupSize[0]
+        * kernel->sgv->reqGroupSize[1]
+        * kernel->sgv->reqGroupSize[2] << "\n";
+      }
+
+      if (kernel->sgv->mHasRWR) {
+        O << "dcl_gws_thread_count " <<
+        kernel->sgv->reqRegionSize[0]
+        * kernel->sgv->reqRegionSize[1]
+        * kernel->sgv->reqRegionSize[2] << "\n";
       }
     } else {
-      O << "dcl_max_thread_per_group " << mSTM->device()->getWavefrontSize() << "\n";
+      O << "dcl_max_thread_per_group " << mSTM->device()->getWavefrontSize() <<
+      "\n";
     }
   }
   // Now that we have specified the workgroup size, lets declare the local
   // memory size. If we are using hardware and we know the value at compile
   // time, then we need to declare the correct value. Otherwise we should just
   // declare the maximum size.
-  if (mSTM->device()->usesHardware(AMDILDeviceInfo::LocalMem)) {
+  if (mSTM->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+      && mMFI->usesLDS()) {
     size_t kernelLocalSize = (kernel->curHWSize + 3) & ~3;
     if (kernelLocalSize > mSTM->device()->getMaxLDSSize()) {
       mMFI->addErrorMsg(amd::CompilerErrorMessage[INSUFFICIENT_LOCAL_RESOURCES]);
     }
+    // declare non-default local buffers
+    unsigned nLocals = mAMI->numLocalBuffers();
+    std::vector<unsigned> localBufferSizes(nLocals, 0);
+    AMDILLocalArg* locals = kernel->lvgv;
+    llvm::SmallVector<AMDILArrayMem *, DEFAULT_VEC_SLOTS>::iterator ib, ie;
+    for (ib = locals->local.begin(), ie = locals->local.end(); ib != ie;
+         ++ib) {
+      AMDILArrayMem* local = *ib;
+      if (!local->isHW || local->isRegion) {
+        continue;
+      }
+      assert(local->resourceID != 0 && "bad resourceID");
+      uint32_t size = (local->vecSize + 3) & ~3;
+      localBufferSizes[local->resourceID-DEFAULT_LDS_ID] += size;
+    }
+    unsigned nDefSize = 0;
+    for (unsigned i = 1; i < nLocals; ++i) {
+      unsigned size = localBufferSizes[i];
+      if (size > 0) {
+        O << "dcl_lds_id(" << DEFAULT_LDS_ID + i << ") " << size << "\n";
+        nDefSize += size;
+      }
+    }
     // If there is a local pointer as a kernel argument, we don't know the size
     // at compile time, so we reserve all of the space.
-    if (mMFI->usesLDS() && (mMFI->hasLDSArg() || !kernelLocalSize)) {
-      O << "dcl_lds_id(" << DEFAULT_LDS_ID << ") "
-        << mSTM->device()->getMaxLDSSize() << "\n";
-      mMFI->setUsesMem(AMDILDevice::LDS_ID);
-    } else if (kernelLocalSize) {
-      // We know the size, so lets declare it correctly.
-      O << "dcl_lds_id(" << DEFAULT_LDS_ID << ") "
-        << kernelLocalSize << "\n";
-      mMFI->setUsesMem(AMDILDevice::LDS_ID);
+    unsigned defLocalSize = localBufferSizes[0];
+    if (mMFI->hasLDSArg() || !kernelLocalSize) {
+      defLocalSize = mSTM->device()->getMaxLDSSize() - nDefSize;
     }
+    // decalre the default local buffer
+    if (defLocalSize > 0) {
+      O << "dcl_lds_id(" << DEFAULT_LDS_ID << ") " << defLocalSize << "\n";
+    }
+    mMFI->setUsesMem(AMDILDevice::LDS_ID);
   }
   // If the device supports the region memory extension, which maps to our
   // hardware GDS memory, then lets declare it so we can use it later on.
   if (mSTM->device()->usesHardware(AMDILDeviceInfo::RegionMem)) {
     size_t kernelGDSSize = (kernel->curHWRSize + 3) & ~3;
     if (kernelGDSSize > mSTM->device()->getMaxGDSSize()) {
-      mMFI->addErrorMsg(amd::CompilerErrorMessage[INSUFFICIENT_REGION_RESOURCES]);
+      mMFI->addErrorMsg(
+        amd::CompilerErrorMessage[INSUFFICIENT_REGION_RESOURCES]);
     }
     // If there is a region pointer as a kernel argument, we don't know the size
     // at compile time, so we reserved all of the space.
     if (mMFI->usesGDS() && (mMFI->hasGDSArg() || !kernelGDSSize)) {
       O << "dcl_gds_id(" << DEFAULT_GDS_ID <<
-        ") " << mSTM->device()->getMaxGDSSize() << "\n";
+      ") " << mSTM->device()->getMaxGDSSize() << "\n";
       mMFI->setUsesMem(AMDILDevice::GDS_ID);
     } else if (kernelGDSSize) {
       // We know the size, so lets declare it.
       O << "dcl_gds_id(" << DEFAULT_GDS_ID <<
-        ") " << kernelGDSSize << "\n";
+      ") " << kernelGDSSize << "\n";
       mMFI->setUsesMem(AMDILDevice::GDS_ID);
     }
   }
 }
-
 void
-AMDILKernelManager::printDecls(AMDILAsmPrinter *AsmPrinter, OSTREAM_TYPE &O)
-{
+AMDILKernelManager::printDecls(AMDILAsmPrinter *AsmPrinter, OSTREAM_TYPE &O) {
   // If we are a HD4XXX generation device, then we only support a single uav
   // surface, so we declare it and leave
   if (mSTM->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
@@ -636,7 +655,8 @@ AMDILKernelManager::printDecls(AMDILAsmPrinter *AsmPrinter, OSTREAM_TYPE &O)
     binaryForEach(mMFI->uav_begin(), mMFI->uav_end(), arenaPrint, O);
   }
 
-  if (mMFI->sema_size() && !mSTM->device()->usesHardware(AMDILDeviceInfo::Semaphore)) {
+  if (mMFI->sema_size() &&
+      !mSTM->device()->usesHardware(AMDILDeviceInfo::Semaphore)) {
     mMFI->addErrorMsg(amd::CompilerErrorMessage[NO_SEMAPHORE_SUPPORT]);
   } else {
     binaryForEach(mMFI->sema_begin(), mMFI->sema_end(), semaPrint, O);
@@ -677,9 +697,8 @@ AMDILKernelManager::printDecls(AMDILAsmPrinter *AsmPrinter, OSTREAM_TYPE &O)
   }
   getIntrinsicSetup(AsmPrinter, O);
 }
-
 void AMDILKernelManager::getIntrinsicSetup(AMDILAsmPrinter *AsmPrinter,
-    OSTREAM_TYPE &O)
+                                           OSTREAM_TYPE &O)
 {
   O << "mov r0.__z_, vThreadGrpIdFlat0.x\n"
     << "mov r1022.xyz0, vTidInGrp0.xyz\n";
@@ -687,12 +706,12 @@ void AMDILKernelManager::getIntrinsicSetup(AMDILAsmPrinter *AsmPrinter,
     O << "mov r1023.xyz0, vThreadGrpId0.xyz\n";
   } else {
     O << "imul r0.___w, cb0[2].x, cb0[2].y\n"
-      // Calculates the local id.
-      // Calculates the group id.
-      << "umod r1023.x___, r0.z, cb0[2].x\n"
-      << "udiv r1023._y__, r0.z, cb0[2].x\n"
-      << "umod r1023._y__, r1023.y, cb0[2].y\n"
-      << "udiv r1023.__z_, r0.z, r0.w\n";
+    // Calculates the local id.
+    // Calculates the group id.
+    << "umod r1023.x___, r0.z, cb0[2].x\n"
+    << "udiv r1023._y__, r0.z, cb0[2].x\n"
+    << "umod r1023._y__, r1023.y, cb0[2].y\n"
+    << "udiv r1023.__z_, r0.z, r0.w\n";
   }
   // Calculates the global id.
   const AMDILKernel *kernel = mAMI->getKernel(mName);
@@ -745,7 +764,6 @@ void AMDILKernelManager::getIntrinsicSetup(AMDILAsmPrinter *AsmPrinter,
         << "i64add " << AsmPrinter->getRegisterName(AMDIL::T2)
         << ".xy__, " << AsmPrinter->getRegisterName(AMDIL::T2)
         << ".xyyy, cb0[4].xyyy\n";
-
     } else {
       O << "imad " << AsmPrinter->getRegisterName(AMDIL::T2)
         << ".x___, r1023.w, cb0[4].y, cb0[4].x\n";
@@ -760,7 +778,6 @@ void AMDILKernelManager::getIntrinsicSetup(AMDILAsmPrinter *AsmPrinter,
         << "i64add " << AsmPrinter->getRegisterName(AMDIL::T1)
         << ".xy__, " << AsmPrinter->getRegisterName(AMDIL::T1)
         << ".xyyy, cb0[3].xyyy\n";
-
     } else {
       O << "imad " << AsmPrinter->getRegisterName(AMDIL::T1)
         << ".x___, vAbsTidFlat.x, cb0[3].y, cb0[3].x\n";
@@ -781,10 +798,11 @@ void AMDILKernelManager::getIntrinsicSetup(AMDILAsmPrinter *AsmPrinter,
       O << "imad r1025.xyz0, r1023.xyzz, cb0[10].xyzz, r1022.xyzz\n";
     }
   }
+  if (!mMFI->printf_empty()) {
+    O << "mov " << AsmPrinter->getRegisterName(AMDIL::PRINTF) << ".x, l0.y\n";
+  }
 }
-
-void AMDILKernelManager::printFooter(OSTREAM_TYPE &O)
-{
+void AMDILKernelManager::printFooter(OSTREAM_TYPE &O) {
   O << "ret\n";
   if (mSTM->isApple()) {
     O << "endfunc ; __OpenCL_" << mName << "_kernel\n";
@@ -792,13 +810,12 @@ void AMDILKernelManager::printFooter(OSTREAM_TYPE &O)
     O << "endfunc ; " << mName << "\n";
   }
 }
-
 void
-AMDILKernelManager::printMetaData(OSTREAM_TYPE &O, uint32_t id, bool kernel)
-{
+AMDILKernelManager::printMetaData(OSTREAM_TYPE &O, uint32_t id, bool kernel) {
   if (kernel) {
     int kernelId = (mSTM->isApple())
-                   ? mAMI->getOrCreateFunctionID("__OpenCL_" + mName + "_kernel")
+                   ? mAMI->getOrCreateFunctionID(
+      "__OpenCL_" + mName + "_kernel")
                    : mAMI->getOrCreateFunctionID(mName);
     mMFI->addCalledFunc(id);
     mUniqueID = kernelId;
@@ -811,40 +828,28 @@ AMDILKernelManager::printMetaData(OSTREAM_TYPE &O, uint32_t id, bool kernel)
     mUniqueID = id;
   }
 }
-
-void AMDILKernelManager::setKernel(bool kernel)
-{
+void AMDILKernelManager::setKernel(bool kernel) {
   mIsKernel = kernel;
   if (kernel) {
     mWasKernel = mIsKernel;
   }
 }
-
 void AMDILKernelManager::setID(uint32_t id)
 {
   mUniqueID = id;
 }
-
-void AMDILKernelManager::setName(const std::string &name)
-{
+void AMDILKernelManager::setName(const std::string &name) {
   mName = name;
 }
-
-bool AMDILKernelManager::wasKernel()
-{
+bool AMDILKernelManager::wasKernel() {
   return mWasKernel;
 }
-
-void AMDILKernelManager::setImageWrite()
-{
+void AMDILKernelManager::setImageWrite() {
   mHasImageWrite = true;
 }
-
-void AMDILKernelManager::setOutputInst()
-{
+void AMDILKernelManager::setOutputInst() {
   mHasOutputInst = true;
 }
-
 void AMDILKernelManager::printConstantToRegMapping(
   AMDILAsmPrinter *RegNames,
   unsigned &LII,
@@ -872,7 +877,7 @@ void AMDILKernelManager::printConstantToRegMapping(
     O << "mov ";
     if (isImage) {
       printRegName(RegNames, mMFI->getArgReg(LII), O, true);
-      O << " l" << mMFI->getIntLits(Counter++) << "\n";
+      O << " l" << mMFI->getLitIdx(Counter++) << "\n";
     } else {
       printRegName(RegNames, mMFI->getArgReg(LII), O, true);
       O << " cb" <<Buffer<< "[" <<Counter++<< "]"
@@ -923,7 +928,7 @@ void AMDILKernelManager::printConstantToRegMapping(
       break;
     };
     if (lit) {
-      O << "ishl " ;
+      O << "ishl ";
       printRegName(RegNames, mMFI->getArgReg(LII), O, true);
       O << " ";
       printRegName(RegNames, mMFI->getArgReg(LII), O, false, true);
@@ -939,20 +944,19 @@ void AMDILKernelManager::printConstantToRegMapping(
     }
   }
 }
-
 void
 AMDILKernelManager::printCopyStructPrivate(const StructType *ST,
-    OSTREAM_TYPE &O,
-    size_t stackSize,
-    uint32_t Buffer,
-    uint32_t mLitIdx,
-    uint32_t &Counter)
+                                           OSTREAM_TYPE &O,
+                                           size_t stackSize,
+                                           uint32_t Buffer,
+                                           uint32_t mLitIdx,
+                                           uint32_t &Counter)
 {
   size_t n = ((stackSize + 15) & ~15) >> 4;
   for (size_t x = 0; x < n; ++x) {
     if (mSTM->device()->usesHardware(AMDILDeviceInfo::PrivateUAV)) {
       O << "uav_raw_store_id(" <<
-        mSTM->device()->getResourceID(AMDILDevice::SCRATCH_ID)
+      mSTM->device()->getResourceID(AMDILDevice::SCRATCH_ID)
         << ") mem0, r0.x, cb" << Buffer << "[" << Counter++ << "]\n";
     } else if (mSTM->device()->usesHardware(AMDILDeviceInfo::PrivateMem)) {
       O << "ishr r0.y, r0.x, l0.x\n";
@@ -960,23 +964,21 @@ AMDILKernelManager::printCopyStructPrivate(const StructType *ST,
         <<"[r0.y], cb" << Buffer << "[" << Counter++ << "]\n";
     } else {
       O << "uav_raw_store_id(" <<
-        mSTM->device()->getResourceID(AMDILDevice::GLOBAL_ID)
+      mSTM->device()->getResourceID(AMDILDevice::GLOBAL_ID)
         << ") mem0, r0.x, cb" << Buffer << "[" << Counter++ << "]\n";
     }
     O << "iadd r0.x, r0.x, l" << mLitIdx << ".z\n";
   }
 }
-
-void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O)
-{
+void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O) {
   std::string version(";version:");
   version += itostr(mSTM->supportMetadata30() ? AMDIL_MAJOR_VERSION : 2) + ":"
              + itostr(AMDIL_MINOR_VERSION) + ":"
              + itostr(mSTM->supportMetadata30()
                       ? AMDIL_REVISION_NUMBER : AMDIL_20_REVISION_NUMBER);
   const AMDILKernel *kernel = mAMI->getKernel(
-                                (mSTM->isApple() && !mIsKernel)
-                                ?  "__OpenCL_" + mName + "_kernel" : mName);
+    (mSTM->isApple() && !mIsKernel)
+    ?  "__OpenCL_" + mName + "_kernel" : mName);
   bool isKernel = (kernel) ? kernel->mKernel : false;
   if (mSTM->isApple()) {
     if (isKernel) {
@@ -1001,11 +1003,13 @@ void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O)
       size_t local = kernel->curSize;
       size_t hwlocal = ((kernel->curHWSize + 3) & (~0x3));
       bool usehwlocal = mSTM->device()->usesHardware(AMDILDeviceInfo::LocalMem);
-      bool usehwprivate = mSTM->device()->usesHardware(AMDILDeviceInfo::PrivateMem);
-      bool useuavprivate = mSTM->device()->isSupported(AMDILDeviceInfo::PrivateUAV);
+      bool usehwprivate = mSTM->device()->usesHardware(
+        AMDILDeviceInfo::PrivateMem);
+      bool useuavprivate = mSTM->device()->isSupported(
+        AMDILDeviceInfo::PrivateUAV);
       if (isKernel) {
         O << ";memory:" << ((usehwprivate) ?
-                    (useuavprivate) ? "uav" : "hw" : "" ) << "private:"
+                            (useuavprivate) ? "uav" : "hw" : "" ) << "private:"
           <<(((mMFI->getStackSize() + 15) & (~0xF)))<< "\n";
       }
       O << ";memory:" << ((usehwlocal) ? "hw" : "") << "local:"
@@ -1061,7 +1065,7 @@ void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O)
   } else {
     for (StringMap<SamplerInfo>::iterator
          smb = mMFI->sampler_begin(),
-         sme = mMFI->sampler_end(); smb != sme; ++ smb) {
+         sme = mMFI->sampler_end(); smb != sme; ++smb) {
       O << ";sampler:" << (*smb).second.name << ":" << (*smb).second.idx
         << ":" << ((*smb).second.val == (uint32_t)-1 ? 0 : 1)
         << ":" << ((*smb).second.val != (uint32_t)-1 ? (*smb).second.val : 0)
@@ -1122,18 +1126,19 @@ void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O)
                          ->getGlobalVariable(argKernel);
     if (GV && GV->hasInitializer()) {
       const ConstantArray *nameArray
-      = dyn_cast_or_null<ConstantArray>(GV->getInitializer());
+        = dyn_cast_or_null<ConstantArray>(GV->getInitializer());
       if (nameArray) {
         for (unsigned x = 0, y = nameArray->getNumOperands(); x < y; ++x) {
           const GlobalVariable *gV= dyn_cast_or_null<GlobalVariable>(
-                                      nameArray->getOperand(x)->getOperand(0));
+            nameArray->getOperand(x)->getOperand(0));
           const ConstantDataArray *argName =
             dyn_cast_or_null<ConstantDataArray>(gV->getInitializer());
           if (!argName) {
             continue;
           }
           std::string argStr = argName->getAsString();
-          O << ";reflection:" << x << ":" << argStr.substr(0, argStr.length()-1) << "\n";
+          O << ";reflection:" << x << ":" <<
+          argStr.substr(0, argStr.length()-1) << "\n";
         }
       }
     }
@@ -1148,7 +1153,6 @@ void AMDILKernelManager::printKernelArgs(OSTREAM_TYPE &O)
     O << ";ARGEND:" << mName << "\n";
   }
 }
-
 void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
                                         AMDILAsmPrinter *RegNames)
 {
@@ -1166,14 +1170,17 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
   uint32_t stackSize = mMFI->getStackSize();
   uint32_t privateSize = mMFI->getScratchSize();
   uint32_t stackOffset = (privateSize + 15) & (~0xF);
-  if (mSTM->device()->usesHardware(AMDILDeviceInfo::PrivateMem) && !mSTM->overridesFlatAS()) {
+  if (mSTM->device()->usesHardware(AMDILDeviceInfo::PrivateMem) &&
+      !mSTM->overridesFlatAS()) {
     // TODO: If the size is too large, we need to fall back to software emulated
     // instead of using the hardware capability.
-    int size = (((((stackSize != privateSize) ? stackSize + privateSize :  stackSize)
-                  + 15) & (~0xF)) >> 4)
-               + (mSTM->device()->isSupported(AMDILDeviceInfo::Debug) ? 1 : 0);
+    int size =
+      (((((stackSize != privateSize) ? stackSize + privateSize :  stackSize)
+         + 15) & (~0xF)) >> 4)
+      + (mSTM->device()->isSupported(AMDILDeviceInfo::Debug) ? 1 : 0);
     if (size > 4096) {
-      mMFI->addErrorMsg(amd::CompilerErrorMessage[INSUFFICIENT_PRIVATE_RESOURCES]);
+      mMFI->addErrorMsg(amd::CompilerErrorMessage[
+                          INSUFFICIENT_PRIVATE_RESOURCES]);
     }
     if (size) {
       // For any stack variables, we need to declare the literals for them so that
@@ -1204,8 +1211,10 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
         }
       }
       mMFI->addReservedLiterals(1);
-      O << "dcl_literal l" << mMFI->getNumLiterals() << ", " << stackSize << ", "
-        << privateSize << ", 16, " << ((stackSize == privateSize) ? 0 : stackOffset) << "\n"
+      O << "dcl_literal l" << mMFI->getNumLiterals() << ", " << stackSize <<
+      ", "
+        << privateSize << ", 16, " <<
+      ((stackSize == privateSize) ? 0 : stackOffset) << "\n"
         << "iadd r0.x, " << RegNames->getRegisterName(AMDIL::T1) << ".x, l"
         << mMFI->getNumLiterals() << ".w\n";
 
@@ -1214,6 +1223,7 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
     }
   }
   I = mMF->getFunction()->arg_begin();
+  int32_t count = 0;
   unsigned curReg = 0;
   for (I = mMF->getFunction()->arg_begin(); I != Ie; ++I) {
     Type *curType = I->getType();
@@ -1229,7 +1239,13 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
                                   "l3.y" );
         break;
       case 8:
-        printConstantToRegMapping(RegNames, curReg, O, Counter, Buffer, 1, "l3.x" );
+        printConstantToRegMapping(RegNames,
+                                  curReg,
+                                  O,
+                                  Counter,
+                                  Buffer,
+                                  1,
+                                  "l3.x" );
         break;
       }
     } else if (const VectorType *VT = dyn_cast<VectorType>(curType)) {
@@ -1258,7 +1274,8 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
                                     (numEle) >> 1);
         }
         break;
-      case 16: {
+      case 16:
+      {
         switch (numEle) {
         default:
           printConstantToRegMapping(RegNames, curReg, O, Counter,
@@ -1271,7 +1288,8 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
         }
         break;
       }
-      case 8: {
+      case 8:
+      {
         switch (numEle) {
         default:
           printConstantToRegMapping(RegNames, curReg, O, Counter,
@@ -1329,13 +1347,17 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
         } else {
           const TargetData* TD = mTM->getTargetData();
           size_t structSize
-          = TD->RoundUpAlignment(TD->getTypeAllocSize(ST), 16);
+            = TD->RoundUpAlignment(TD->getTypeAllocSize(ST), 16);
 
           stackOffset += structSize;
           O << "mov ";
           printRegName(RegNames, mMFI->getArgReg(curReg), O, true);
           O << " r0.x\n";
-          printCopyStructPrivate(ST, O, structSize, Buffer, mMFI->getNumLiterals(),
+          printCopyStructPrivate(ST,
+                                 O,
+                                 structSize,
+                                 Buffer,
+                                 mMFI->getNumLiterals(),
                                  Counter);
           ++curReg;
         }
@@ -1388,33 +1410,15 @@ void AMDILKernelManager::printArgCopies(OSTREAM_TYPE &O,
     // constant pointers to the software emulated section.
     if (constNum > mSTM->device()->getMaxNumCBs()) {
       assert(0 && "Max constant buffer limit passed!");
-      mMFI->addErrorMsg(amd::CompilerErrorMessage[INSUFFICIENT_CONSTANT_RESOURCES]);
+      mMFI->addErrorMsg(amd::CompilerErrorMessage[
+                          INSUFFICIENT_CONSTANT_RESOURCES]);
     }
   }
 }
-
-void AMDILKernelManager::emitLiterals(OSTREAM_TYPE &O)
-{
+void AMDILKernelManager::emitLiterals(OSTREAM_TYPE &O) {
   char buffer[256];
-  std::map<uint32_t, uint32_t>::iterator ilb, ile;
-  for (ilb = mMFI->begin_32(), ile = mMFI->end_32(); ilb != ile; ++ilb) {
-    uint32_t a = ilb->first;
-    O << "dcl_literal l" <<ilb->second<< ", ";
-    sprintf(buffer, "0x%08X, 0x%08X, 0x%08X, 0x%08X", a, a, a, a);
-    O << buffer << "; f32:i32 " << ilb->first << "\n";
-  }
-  std::map<uint64_t, uint32_t>::iterator llb, lle;
-  for (llb = mMFI->begin_64(), lle = mMFI->end_64(); llb != lle; ++llb) {
-    uint32_t v[2];
-    uint64_t a = llb->first;
-    memcpy(v, &a, sizeof(uint64_t));
-    O << "dcl_literal l" <<llb->second<< ", ";
-    sprintf(buffer, "0x%08X, 0x%08X, 0x%08X, 0x%08X; f64:i64 ",
-            v[0], v[1], v[0], v[1]);
-    O << buffer << llb->first << "\n";
-  }
   std::map<std::pair<uint64_t, uint64_t>, uint32_t>::iterator vlb, vle;
-  for (vlb = mMFI->begin_128(), vle = mMFI->end_128(); vlb != vle; ++vlb) {
+  for (vlb = mMFI->lit_begin(), vle = mMFI->lit_end(); vlb != vle; ++vlb) {
     uint32_t v[2][2];
     uint64_t a = vlb->first.first;
     uint64_t b = vlb->first.second;
@@ -1426,18 +1430,14 @@ void AMDILKernelManager::emitLiterals(OSTREAM_TYPE &O)
     O << buffer << vlb->first.first << vlb->first.second << "\n";
   }
 }
-
 // If the value is not known, then the uav is set, otherwise the mValueIDMap
 // is used.
-void AMDILKernelManager::setUAVID(const Value *value, uint32_t ID)
-{
+void AMDILKernelManager::setUAVID(const Value *value, uint32_t ID) {
   if (value) {
     mValueIDMap[value] = ID;
   }
 }
-
-uint32_t AMDILKernelManager::getUAVID(const Value *value)
-{
+uint32_t AMDILKernelManager::getUAVID(const Value *value) {
   if (mValueIDMap.find(value) != mValueIDMap.end()) {
     return mValueIDMap[value];
   }
@@ -1448,4 +1448,3 @@ uint32_t AMDILKernelManager::getUAVID(const Value *value)
     return mSTM->device()->getResourceID(AMDILDevice::RAW_UAV_ID);
   }
 }
-

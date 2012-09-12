@@ -15,10 +15,12 @@
 #include "AMDILSubtarget.h"
 #include <string>
 using namespace llvm;
-namespace llvm
-{
+namespace llvm {
 AMDILDevice*
-getDeviceFromName(const std::string &deviceName, AMDILSubtarget *ptr, bool is64bit, bool is64on32bit)
+getDeviceFromName(const std::string &deviceName,
+                  AMDILSubtarget *ptr,
+                  bool is64bit,
+                  bool is64on32bit)
 {
   if (deviceName.c_str()[2] == '7') {
     switch (deviceName.c_str()[3]) {
@@ -88,33 +90,18 @@ getDeviceFromName(const std::string &deviceName, AMDILSubtarget *ptr, bool is64b
 #endif
     return new AMDILNIDevice(ptr);
   } else if (deviceName == "tahiti") {
-#if DEBUG
-    assert(!is64bit && "This device does not support 64bit pointers!");
-    assert(!is64on32bit && "This device does not support 64bit"
-           " on 32bit pointers!");
-#endif
     if (is64bit) {
       return new AMDILSIDevice64(ptr);
     } else {
       return new AMDILSIDevice32(ptr);
     }
   } else if (deviceName == "pitcairn") {
-#if DEBUG
-    assert(!is64bit && "This device does not support 64bit pointers!");
-    assert(!is64on32bit && "This device does not support 64bit"
-           " on 32bit pointers!");
-#endif
     if (is64bit) {
       return new AMDILSIDevice64(ptr);
     } else {
       return new AMDILSIDevice32(ptr);
     }
   } else if (deviceName == "capeverde") {
-#if DEBUG
-    assert(!is64bit && "This device does not support 64bit pointers!");
-    assert(!is64on32bit && "This device does not support 64bit"
-           " on 32bit pointers!");
-#endif
     if (is64bit) {
       return new AMDILSIDevice64(ptr);
     } else {

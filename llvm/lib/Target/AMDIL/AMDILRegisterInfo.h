@@ -20,25 +20,27 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 #define GET_REGINFO_HEADER
 #include "AMDILGenRegisterInfo.inc"
+
+#include "llvm/Config/config.h"
+
 // See header file for explanation
 
 namespace llvm
 {
-
 class AMDILTargetMachine;
 class TargetInstrInfo;
 class Type;
 
 /// DWARFFlavour - Flavour of dwarf regnumbers
 ///
-namespace DWARFFlavour
-{
+namespace DWARFFlavour {
 enum {
   AMDIL_Generic = 0
 };
 }
 
-struct AMDILRegisterInfo : public AMDILGenRegisterInfo {
+struct AMDILRegisterInfo : public AMDILGenRegisterInfo
+{
   AMDILTargetMachine &TM;
   const TargetInstrInfo &TII;
 
@@ -50,6 +52,9 @@ struct AMDILRegisterInfo : public AMDILGenRegisterInfo {
   const TargetRegisterClass* const*
   getCalleeSavedRegClasses(
     const MachineFunction *MF = 0) const;
+
+  virtual const TargetRegisterClass *
+  getPointerRegClass(const MachineFunction &MF, unsigned Kind=0) const;
 
   BitVector
   getReservedRegs(const MachineFunction &MF) const;
@@ -80,7 +85,6 @@ struct AMDILRegisterInfo : public AMDILGenRegisterInfo {
   unsigned int
   getEHHandlerRegister() const;
 
-
   int64_t
   getStackSize() const;
 #if 0
@@ -89,7 +93,7 @@ struct AMDILRegisterInfo : public AMDILGenRegisterInfo {
     return true;
   }
   bool
-  requireFrameIndexScavenging(const MachineFunction&)const {
+  requireFrameIndexScavenging(const MachineFunction&) const {
     return true;
   }
   bool
@@ -98,11 +102,10 @@ struct AMDILRegisterInfo : public AMDILGenRegisterInfo {
   }
 #endif
 
-private:
-  mutable int64_t baseOffset;
-  mutable int64_t nextFuncOffset;
+  private:
+    mutable int64_t baseOffset;
+    mutable int64_t nextFuncOffset;
 };
-
 } // end namespace llvm
 
 #endif // AMDILREGISTERINFO_H_

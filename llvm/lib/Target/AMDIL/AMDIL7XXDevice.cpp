@@ -31,16 +31,13 @@ AMDIL7XXDevice::AMDIL7XXDevice(AMDILSubtarget *ST) : AMDILDevice(ST)
     mDeviceFlag = OCL_DEVICE_RV770;
   }
 }
-
 AMDIL7XXDevice::~AMDIL7XXDevice()
 {
 }
-
 void AMDIL7XXDevice::setCaps()
 {
   mSWBits.set(AMDILDeviceInfo::LocalMem);
 }
-
 size_t AMDIL7XXDevice::getMaxLDSSize() const
 {
   if (usesHardware(AMDILDeviceInfo::LocalMem)) {
@@ -48,17 +45,14 @@ size_t AMDIL7XXDevice::getMaxLDSSize() const
   }
   return 0;
 }
-
 size_t AMDIL7XXDevice::getWavefrontSize() const
 {
   return AMDILDevice::HalfWavefrontSize;
 }
-
 uint32_t AMDIL7XXDevice::getGeneration() const
 {
   return AMDILDeviceInfo::HD4XXX;
 }
-
 uint32_t AMDIL7XXDevice::getResourceID(uint32_t DeviceID) const
 {
   switch (DeviceID) {
@@ -90,25 +84,20 @@ uint32_t AMDIL7XXDevice::getResourceID(uint32_t DeviceID) const
 
   return 0;
 }
-
 uint32_t AMDIL7XXDevice::getMaxNumUAVs() const
 {
   return 1;
 }
-
 FunctionPass*
-AMDIL7XXDevice::getIOExpansion(
-  TargetMachine& TM, CodeGenOpt::Level OptLevel) const
+AMDIL7XXDevice::getIOExpansion() const
 {
-  return new AMDIL7XXIOExpansion(TM, OptLevel);
+  return new AMDIL7XXIOExpansion();
 }
-
 AsmPrinter*
 AMDIL7XXDevice::getAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS) const
 {
   return new AMDIL7XXAsmPrinter(ASM_PRINTER_ARGUMENTS);
 }
-
 FunctionPass*
 AMDIL7XXDevice::getPointerManager(
   TargetMachine& TM, CodeGenOpt::Level OptLevel) const
@@ -118,21 +107,18 @@ AMDIL7XXDevice::getPointerManager(
     // more advanced tracking pass as it is possible to
     // loose information through the stack. The EGPM
     // pass tracks this, but the standard pass does not.
-    return new AMDILEGPointerManager(TM, OptLevel);
+    return new AMDILEGPointerManager();
   } else {
-    return new AMDILPointerManager(TM, OptLevel);
+    return new AMDILPointerManager();
   }
 }
-
-AMDIL770Device::AMDIL770Device(AMDILSubtarget *ST): AMDIL7XXDevice(ST)
+AMDIL770Device::AMDIL770Device(AMDILSubtarget *ST) : AMDIL7XXDevice(ST)
 {
   setCaps();
 }
-
 AMDIL770Device::~AMDIL770Device()
 {
 }
-
 void AMDIL770Device::setCaps()
 {
   if (mSTM->isOverride(AMDILDeviceInfo::DoubleOps)) {
@@ -144,20 +130,16 @@ void AMDIL770Device::setCaps()
   mSWBits.set(AMDILDeviceInfo::LongOps);
   mSWBits.set(AMDILDeviceInfo::LocalMem);
 }
-
 size_t AMDIL770Device::getWavefrontSize() const
 {
   return AMDILDevice::WavefrontSize;
 }
-
 AMDIL710Device::AMDIL710Device(AMDILSubtarget *ST) : AMDIL7XXDevice(ST)
 {
 }
-
 AMDIL710Device::~AMDIL710Device()
 {
 }
-
 size_t AMDIL710Device::getWavefrontSize() const
 {
   return AMDILDevice::QuarterWavefrontSize;

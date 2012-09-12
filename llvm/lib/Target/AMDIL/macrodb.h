@@ -21,11 +21,8 @@
 #ifndef MACRODB_HPP_
 #define MACRODB_HPP_
 
-namespace amd
-{
-
-namespace macrodata
-{
+namespace amd {
+namespace macrodata {
 struct SMacroEntry {
   const char* Name;
   const char* Body;
@@ -34,8 +31,7 @@ struct SMacroEntry {
 };
 }
 
-class CMacroData
-{
+class CMacroData {
 public:
   CMacroData();
   ~CMacroData();
@@ -57,16 +53,16 @@ protected:
   int NumberOfReferences( int Ord );
   int InsertReferences( int Ord, int StartPos );
   int SearchForPattern(char *_SearchBuf, const char *_Pattern, int _PatLen);
-  int ExtractString(int *_Pos0, int *_Pos1,char * _Name, char *_pBuf, const char*_Delim0, const char*_Delim1);
-
-
-
+  int ExtractString(int *_Pos0,
+                    int *_Pos1,
+                    char * _Name,
+                    char *_pBuf,
+                    const char*_Delim0,
+                    const char*_Delim1);
 };
-
 
 // real macros
 #include "macrodb_gen.h"
-
 }
 
 #endif /*MACRODB_HPP_*/

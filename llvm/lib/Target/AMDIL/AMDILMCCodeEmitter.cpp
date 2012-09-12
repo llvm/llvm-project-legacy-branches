@@ -20,19 +20,16 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/raw_ostream.h"
 
-
 using namespace llvm;
 #if 0
-namespace
-{
-class AMDILMCCodeEmitter : public MCCodeEmitter
-{
-  AMDILMCCodeEmitter(const AMDILMCCodeEmitter &);// DO NOT IMPLEMENT
-  void operator=(const AMDILMCCodeEmitter &); // DO NOT IMPLEMENT
-  const TargetMachine &TM;
-  const TargetInstrInfo &TII;
-  MCContext &Ctx;
-  bool Is64BitMode;
+namespace {
+class AMDILMCCodeEmitter : public MCCodeEmitter {
+AMDILMCCodeEmitter(const AMDILMCCodeEmitter &);    // DO NOT IMPLEMENT
+void operator=(const AMDILMCCodeEmitter &);     // DO NOT IMPLEMENT
+const TargetMachine &TM;
+const TargetInstrInfo &TII;
+MCContext &Ctx;
+bool Is64BitMode;
 public:
   AMDILMCCodeEmitter(TargetMachine &tm, MCContext &ctx, bool is64Bit);
   ~AMDILMCCodeEmitter();
@@ -48,12 +45,10 @@ public:
 
   void EncodeInstruction(const MCInst &MI, raw_ostream &OS,
                          SmallVectorImpl<MCFixup> &Fixups) const;
-
-}; // class AMDILMCCodeEmitter
+};   // class AMDILMCCodeEmitter
 }; // anonymous namespace
 
-namespace llvm
-{
+namespace llvm {
 MCCodeEmitter *createAMDILMCCodeEmitter(const Target &,
                                         TargetMachine &TM, MCContext &Ctx)
 {
@@ -67,17 +62,14 @@ AMDILMCCodeEmitter::AMDILMCCodeEmitter(TargetMachine &tm, MCContext &ctx
 {
   Is64BitMode = is64Bit;
 }
-
 AMDILMCCodeEmitter::~AMDILMCCodeEmitter()
 {
 }
-
 unsigned
 AMDILMCCodeEmitter::getNumFixupKinds() const
 {
   return 0;
 }
-
 const MCFixupKindInfo &
 AMDILMCCodeEmitter::getFixupKindInfo(MCFixupKind Kind) const
 {
@@ -88,10 +80,8 @@ AMDILMCCodeEmitter::getFixupKindInfo(MCFixupKind Kind) const
   assert(unsigned(Kind - FirstTargetFixupKind) < getNumFixupKinds() &&
          "Invalid kind!");
   return MCCodeEmitter::getFixupKindInfo(Kind);
-// return Infos[Kind - FirstTargetFixupKind];
-
+  // return Infos[Kind - FirstTargetFixupKind];
 }
-
 void
 AMDILMCCodeEmitter::EmitByte(unsigned char C, unsigned &CurByte,
                              raw_ostream &OS) const
@@ -110,9 +100,13 @@ AMDILMCCodeEmitter::EmitConstant(uint64_t Val, unsigned Size, unsigned &CurByte,
   }
 }
 void
-AMDILMCCodeEmitter::EmitImmediate(const MCOperand &DispOp, unsigned ImmSize,
-                                  MCFixupKind FixupKind, unsigned &CurByte, raw_ostream &OS,
-                                  SmallVectorImpl<MCFixup> &Fixups, int ImmOffset) const
+AMDILMCCodeEmitter::EmitImmediate(const MCOperand &DispOp,
+                                  unsigned ImmSize,
+                                  MCFixupKind FixupKind,
+                                  unsigned &CurByte,
+                                  raw_ostream &OS,
+                                  SmallVectorImpl<MCFixup> &Fixups,
+                                  int ImmOffset) const
 {
   // If this is a simple integer displacement that doesn't require a relocation
   // emit it now.
@@ -132,7 +126,6 @@ AMDILMCCodeEmitter::EmitImmediate(const MCOperand &DispOp, unsigned ImmSize,
   // TODO: Why the 4 zeros?
   EmitConstant(0, ImmSize, CurByte, OS);
 }
-
 void
 AMDILMCCodeEmitter::EncodeInstruction(const MCInst &MI, raw_ostream &OS,
                                       SmallVectorImpl<MCFixup> &Fixups) const
@@ -151,7 +144,7 @@ AMDILMCCodeEmitter::EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   unsigned char BaseOpcode = 0;
 #ifndef NDEBUG
   // FIXME: Verify.
-  if (// !Desc.isVariadic() &&
+  if ( // !Desc.isVariadic() &&
     CurOp != NumOps) {
     errs() << "Cannot encode all operands of: ";
     MI.dump();

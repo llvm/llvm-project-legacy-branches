@@ -32,38 +32,29 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/Support/DebugLoc.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 using namespace llvm;
 
-char AMDILIOExpansion::ID = 0;
-namespace llvm
-{
+namespace llvm {
 FunctionPass*
-createAMDILIOExpansion(TargetMachine &TM, CodeGenOpt::Level OptLevel)
+createAMDILIOExpansion(TargetMachine& TM, CodeGenOpt::Level OptLevel)
 {
-  return TM.getSubtarget<AMDILSubtarget>()
-         .device()->getIOExpansion(TM, OptLevel);
+  return TM.getSubtarget<AMDILSubtarget>().device()->getIOExpansion();
 }
 }
 
-AMDILIOExpansion::AMDILIOExpansion(TargetMachine &tm,
-                                   CodeGenOpt::Level OptLevel) :
-  MachineFunctionPass(ID), TM(tm)
+AMDILIOExpansionImpl::AMDILIOExpansionImpl(MachineFunction& mf)
+  : mDebug(DEBUGME), MF(mf), mBB(NULL),TM(MF.getTarget())
 {
-  mSTM = &tm.getSubtarget<AMDILSubtarget>();
-  mDebug = DEBUGME;
-  mTII = tm.getInstrInfo();
-  mKM = NULL;
-}
-
-AMDILIOExpansion::~AMDILIOExpansion()
-{
-}
-
-bool
-AMDILIOExpansion::runOnMachineFunction(MachineFunction &MF)
-{
+  mSTM = &TM.getSubtarget<AMDILSubtarget>();
   mKM = const_cast<AMDILKernelManager*>(mSTM->getKernelManager());
   mMFI = MF.getInfo<AMDILMachineFunctionInfo>();
+  mTRI = TM.getRegisterInfo();
+  mTII = TM.getInstrInfo();
+}
+bool
+AMDILIOExpansionImpl::run()
+{
   for (MachineFunction::iterator MFI = MF.begin(), MFE = MF.end();
        MFI != MFE; ++MFI) {
     MachineBasicBlock *MBB = MFI;
@@ -85,37 +76,33 @@ AMDILIOExpansion::runOnMachineFunction(MachineFunction &MF)
   }
   return false;
 }
-const char *AMDILIOExpansion::getPassName() const
-{
-  return "AMDIL Generic IO Expansion Pass";
-}
 bool
-AMDILIOExpansion::isIOInstruction(MachineInstr *MI)
+AMDILIOExpansionImpl::isIOInstruction(MachineInstr *MI)
 {
   if (!MI) {
     return false;
   }
-  if (isLoadInst(TM, MI) || isStoreInst(TM, MI)) {
+  if (isPtrLoadInst(MI) || isPtrStoreInst(MI)) {
     return true;
   }
   return false;
 }
 void
-AMDILIOExpansion::expandIOInstruction(MachineInstr *MI)
+AMDILIOExpansionImpl::expandIOInstruction(MachineInstr *MI)
 {
   assert(isIOInstruction(MI) && "Must be an IO instruction to "
          "be passed to this function!");
-  if (isLoadInst(TM, MI)) {
-    if (isGlobalInst(TM, MI)) {
+  if (isPtrLoadInst(MI)) {
+    if (isGlobalInst(MI)) {
       expandGlobalLoad(MI);
-    } else if (isRegionInst(TM, MI)) {
+    } else if (isRegionInst(MI)) {
       expandRegionLoad(MI);
-    } else if (isPrivateInst(TM, MI)) {
+    } else if (isPrivateInst(MI)) {
       expandPrivateLoad(MI);
-    } else if (isLocalInst(TM, MI)) {
+    } else if (isLocalInst(MI)) {
       expandLocalLoad(MI);
-    } else if (isConstantInst(TM, MI)) {
-      if (isConstantPoolInst(TM, MI)) {
+    } else if (isConstantInst(MI)) {
+      if (isConstantPoolInst(MI)) {
         expandConstantPoolLoad(MI);
       } else {
         expandConstantLoad(MI);
@@ -123,14 +110,14 @@ AMDILIOExpansion::expandIOInstruction(MachineInstr *MI)
     } else {
       assert(!"Found an unsupported load instruction!");
     }
-  } else if (isStoreInst(TM, MI)) {
-    if (isGlobalInst(TM, MI)) {
+  } else if (isPtrStoreInst(MI)) {
+    if (isGlobalInst(MI)) {
       expandGlobalStore(MI);
-    } else if (isRegionInst(TM, MI)) {
+    } else if (isRegionInst(MI)) {
       expandRegionStore(MI);
-    } else if (isPrivateInst(TM, MI)) {
+    } else if (isPrivateInst(MI)) {
       expandPrivateStore(MI);
-    } else if (isLocalInst(TM, MI)) {
+    } else if (isLocalInst(MI)) {
       expandLocalStore(MI);
     } else {
       assert(!"Found an unsupported load instruction!");
@@ -139,11 +126,10 @@ AMDILIOExpansion::expandIOInstruction(MachineInstr *MI)
     assert(!"Found an unsupported IO instruction!");
   }
 }
-
 bool
-AMDILIOExpansion::isAddrCalcInstr(MachineInstr *MI)
+AMDILIOExpansionImpl::isAddrCalcInstr(MachineInstr *MI)
 {
-  if (isPrivateInst(TM, MI) && isLoadInst(TM, MI)) {
+  if (isPrivateInst(MI) && isPtrLoadInst(MI)) {
     // This section of code is a workaround for the problem of
     // globally scoped constant address variables. The problems
     // comes that although they are declared in the constant
@@ -165,138 +151,36 @@ AMDILIOExpansion::isAddrCalcInstr(MachineInstr *MI)
     } else {
       return false;
     }
-  } else if (isConstantPoolInst(TM, MI) && isLoadInst(TM, MI)) {
+  } else if (isConstantPoolInst(MI) && isPtrLoadInst(MI)) {
     return MI->getOperand(1).isReg();
-  } else if (isPrivateInst(TM, MI) && isStoreInst(TM, MI)) {
+  } else if (isPrivateInst(MI) && isPtrStoreInst(MI)) {
     return mSTM->device()->usesSoftware(AMDILDeviceInfo::PrivateMem);
-  } else if (isLocalInst(TM, MI) && (isStoreInst(TM, MI) || isLoadInst(TM, MI))) {
+  } else if (isLocalInst(MI) && (isPtrStoreInst(MI) || isPtrLoadInst(MI))) {
     return mSTM->device()->usesSoftware(AMDILDeviceInfo::LocalMem);
   }
   return false;
 }
-
 bool
-AMDILIOExpansion::isExtendLoad(MachineInstr *MI)
+AMDILIOExpansionImpl::isExtendLoad(MachineInstr *MI)
 {
-  return isSExtLoadInst(TM, MI) || isZExtLoadInst(TM, MI) || isAExtLoadInst(TM, MI);
+  return isSExtLoadInst(MI) || isZExtLoadInst(MI) || isAExtLoadInst(MI);
 }
-
 bool
-AMDILIOExpansion::isHardwareRegion(MachineInstr *MI)
+AMDILIOExpansionImpl::isHardwareRegion(MachineInstr *MI)
 {
-  return (isRegionInst(TM, MI) && (isLoadInst(TM, MI) || isStoreInst(TM, MI)) &&
+  return (isRegionInst(MI) && (isPtrLoadInst(MI) || isPtrStoreInst(MI)) &&
           mSTM->device()->usesHardware(AMDILDeviceInfo::RegionMem));
 }
 bool
-AMDILIOExpansion::isHardwareLocal(MachineInstr *MI)
+AMDILIOExpansionImpl::isHardwareLocal(MachineInstr *MI)
 {
-  return (isLocalInst(TM, MI) && (isLoadInst(TM, MI) || isStoreInst(TM, MI)) &&
+  return (isLocalInst(MI) && (isPtrLoadInst(MI) || isPtrStoreInst(MI)) &&
           mSTM->device()->usesHardware(AMDILDeviceInfo::LocalMem));
 }
 bool
-AMDILIOExpansion::isPackedData(MachineInstr *MI)
+AMDILIOExpansionImpl::isStaticCPLoad(MachineInstr *MI)
 {
-  switch(MI->getOpcode()) {
-  default:
-    if (isTruncStoreInst(TM, MI)) {
-      switch (MI->getDesc().OpInfo[0].RegClass) {
-      default:
-        break;
-      case AMDIL::GPRV2I64RegClassID:
-      case AMDIL::GPRV2I32RegClassID:
-        switch (getMemorySize(MI)) {
-        case 2:
-        case 4:
-          return true;
-        default:
-          break;
-        }
-        break;
-      case AMDIL::GPRV4I32RegClassID:
-        switch (getMemorySize(MI)) {
-        case 4:
-        case 8:
-          return true;
-        default:
-          break;
-        }
-        break;
-      }
-    }
-    break;
-    ExpandCaseToPackedTypes(AMDIL::CPOOLLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLSEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLZEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALLOAD);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALSEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALZEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::LOCALLOAD);
-    ExpandCaseToPackedTypes(AMDIL::LOCALSEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::LOCALZEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::LOCALAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::REGIONLOAD);
-    ExpandCaseToPackedTypes(AMDIL::REGIONSEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::REGIONZEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::REGIONAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATELOAD);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATESEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATEZEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATEAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTSEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTAEXTLOAD);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTZEXTLOAD);
-    ExpandCaseToAllTruncTypes(AMDIL::GLOBALTRUNCSTORE)
-    ExpandCaseToAllTruncTypes(AMDIL::PRIVATETRUNCSTORE);
-    ExpandCaseToAllTruncTypes(AMDIL::LOCALTRUNCSTORE);
-    ExpandCaseToAllTruncTypes(AMDIL::REGIONTRUNCSTORE);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALSTORE);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATESTORE);
-    ExpandCaseToPackedTypes(AMDIL::LOCALSTORE);
-    ExpandCaseToPackedTypes(AMDIL::REGIONSTORE);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLSEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLZEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CPOOLAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALSEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALZEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::LOCALLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::LOCALSEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::LOCALZEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::LOCALAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::REGIONLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::REGIONSEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::REGIONZEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::REGIONAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATELOAD64);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATESEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATEZEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATEAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTSEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTAEXTLOAD64);
-    ExpandCaseToPackedTypes(AMDIL::CONSTANTZEXTLOAD64);
-    ExpandCaseToAllTruncTypes(AMDIL::GLOBALTRUNCSTORE64)
-    ExpandCaseToAllTruncTypes(AMDIL::PRIVATETRUNCSTORE64);
-    ExpandCaseToAllTruncTypes(AMDIL::LOCALTRUNCSTORE64);
-    ExpandCaseToAllTruncTypes(AMDIL::REGIONTRUNCSTORE64);
-    ExpandCaseToPackedTypes(AMDIL::GLOBALSTORE64);
-    ExpandCaseToPackedTypes(AMDIL::PRIVATESTORE64);
-    ExpandCaseToPackedTypes(AMDIL::LOCALSTORE64);
-    ExpandCaseToPackedTypes(AMDIL::REGIONSTORE64);
-    return true;
-  }
-  return false;
-}
-
-bool
-AMDILIOExpansion::isStaticCPLoad(MachineInstr *MI)
-{
-  if (isConstantPoolInst(TM, MI) && isLoadInst(TM, MI)) {
+  if (isConstantPoolInst(MI) && isPtrLoadInst(MI)) {
     uint32_t x = 0;
     uint32_t num = MI->getNumOperands();
     for (x = 0; x < num; ++x) {
@@ -307,9 +191,8 @@ AMDILIOExpansion::isStaticCPLoad(MachineInstr *MI)
   }
   return false;
 }
-
 bool
-AMDILIOExpansion::isNbitType(Type *mType, uint32_t nBits, bool isScalar)
+AMDILIOExpansionImpl::isNbitType(Type *mType, uint32_t nBits, bool isScalar)
 {
   if (!mType) {
     return false;
@@ -336,334 +219,35 @@ AMDILIOExpansion::isNbitType(Type *mType, uint32_t nBits, bool isScalar)
     return false;
   }
 }
-
 bool
-AMDILIOExpansion::isHardwareInst(MachineInstr *MI)
+AMDILIOExpansionImpl::isHardwareInst(MachineInstr *MI)
 {
   AMDILAS::InstrResEnc curInst;
   getAsmPrinterFlags(MI, curInst);
   return curInst.bits.HardwareInst;
 }
-
-uint32_t
-AMDILIOExpansion::getDataReg(MachineInstr *MI)
-{
-  REG_PACKED_TYPE id = getPackedID(MI);
-  switch (getMemorySize(MI)) {
-  default:
-    return AMDIL::R1011;
-  case 4:
-    if (id == UNPACK_V4I8
-        || id == PACK_V4I8) {
-      return AMDIL::R1011;
-    } else if (id == UNPACK_V2I16
-               || id == PACK_V2I16) {
-      return AMDIL::Rxy1011;
-    }
-  case 2:
-    if (id == UNPACK_V2I8
-        || id == PACK_V2I8) {
-      return AMDIL::Rxy1011;
-    }
-  case 1:
-    return AMDIL::Rx1011;
-  case 8:
-    if (id == UNPACK_V4I16
-        || id == PACK_V4I16) {
-      return AMDIL::R1011;
-    }
-    return AMDIL::Rxy1011;
-  }
-}
-
 REG_PACKED_TYPE
-AMDILIOExpansion::getPackedID(MachineInstr *MI)
+AMDILIOExpansionImpl::getPackedID(MachineInstr *MI)
 {
-  switch (MI->getOpcode()) {
-  default:
-    break;
-  case AMDIL::GLOBALTRUNCSTORE64_v2i64i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i64i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i64i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i64i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i64i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i64i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i64i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i32i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i32i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i32i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i32i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i32i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i32i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i32i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i16i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i16i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i16i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i16i8:
-  case AMDIL::GLOBALSTORE64_v2i8:
-  case AMDIL::LOCALSTORE64_v2i8:
-  case AMDIL::REGIONSTORE64_v2i8:
-  case AMDIL::PRIVATESTORE64_v2i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i16i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i16i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i16i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i16i8:
-  case AMDIL::GLOBALSTORE_v2i8:
-  case AMDIL::LOCALSTORE_v2i8:
-  case AMDIL::REGIONSTORE_v2i8:
-  case AMDIL::PRIVATESTORE_v2i8:
-    return PACK_V2I8;
-  case AMDIL::GLOBALTRUNCSTORE64_v4i32i8:
-  case AMDIL::REGIONTRUNCSTORE64_v4i32i8:
-  case AMDIL::LOCALTRUNCSTORE64_v4i32i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_v4i32i8:
-  case AMDIL::REGIONTRUNCSTORE_v4i32i8:
-  case AMDIL::LOCALTRUNCSTORE_v4i32i8:
-  case AMDIL::PRIVATETRUNCSTORE_v4i32i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v4i16i8:
-  case AMDIL::REGIONTRUNCSTORE64_v4i16i8:
-  case AMDIL::LOCALTRUNCSTORE64_v4i16i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i16i8:
-  case AMDIL::GLOBALSTORE64_v4i8:
-  case AMDIL::LOCALSTORE64_v4i8:
-  case AMDIL::REGIONSTORE64_v4i8:
-  case AMDIL::PRIVATESTORE64_v4i8:
-  case AMDIL::GLOBALTRUNCSTORE_v4i16i8:
-  case AMDIL::REGIONTRUNCSTORE_v4i16i8:
-  case AMDIL::LOCALTRUNCSTORE_v4i16i8:
-  case AMDIL::PRIVATETRUNCSTORE_v4i16i8:
-  case AMDIL::GLOBALSTORE_v4i8:
-  case AMDIL::LOCALSTORE_v4i8:
-  case AMDIL::REGIONSTORE_v4i8:
-  case AMDIL::PRIVATESTORE_v4i8:
-    return PACK_V4I8;
-  case AMDIL::GLOBALTRUNCSTORE64_v2i64i16:
-  case AMDIL::REGIONTRUNCSTORE64_v2i64i16:
-  case AMDIL::LOCALTRUNCSTORE64_v2i64i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i64i16:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i16:
-  case AMDIL::REGIONTRUNCSTORE_v2i64i16:
-  case AMDIL::LOCALTRUNCSTORE_v2i64i16:
-  case AMDIL::PRIVATETRUNCSTORE_v2i64i16:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i32i16:
-  case AMDIL::REGIONTRUNCSTORE64_v2i32i16:
-  case AMDIL::LOCALTRUNCSTORE64_v2i32i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i32i16:
-  case AMDIL::GLOBALSTORE64_v2i16:
-  case AMDIL::LOCALSTORE64_v2i16:
-  case AMDIL::REGIONSTORE64_v2i16:
-  case AMDIL::PRIVATESTORE64_v2i16:
-  case AMDIL::GLOBALTRUNCSTORE_v2i32i16:
-  case AMDIL::REGIONTRUNCSTORE_v2i32i16:
-  case AMDIL::LOCALTRUNCSTORE_v2i32i16:
-  case AMDIL::PRIVATETRUNCSTORE_v2i32i16:
-  case AMDIL::GLOBALSTORE_v2i16:
-  case AMDIL::LOCALSTORE_v2i16:
-  case AMDIL::REGIONSTORE_v2i16:
-  case AMDIL::PRIVATESTORE_v2i16:
-    return PACK_V2I16;
-  case AMDIL::GLOBALTRUNCSTORE64_v4i32i16:
-  case AMDIL::REGIONTRUNCSTORE64_v4i32i16:
-  case AMDIL::LOCALTRUNCSTORE64_v4i32i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i32i16:
-  case AMDIL::GLOBALSTORE64_v4i16:
-  case AMDIL::LOCALSTORE64_v4i16:
-  case AMDIL::REGIONSTORE64_v4i16:
-  case AMDIL::PRIVATESTORE64_v4i16:
-  case AMDIL::GLOBALTRUNCSTORE_v4i32i16:
-  case AMDIL::REGIONTRUNCSTORE_v4i32i16:
-  case AMDIL::LOCALTRUNCSTORE_v4i32i16:
-  case AMDIL::PRIVATETRUNCSTORE_v4i32i16:
-  case AMDIL::GLOBALSTORE_v4i16:
-  case AMDIL::LOCALSTORE_v4i16:
-  case AMDIL::REGIONSTORE_v4i16:
-  case AMDIL::PRIVATESTORE_v4i16:
-    return PACK_V4I16;
-
-  case AMDIL::GLOBALLOAD64_v2i8:
-  case AMDIL::GLOBALSEXTLOAD64_v2i8:
-  case AMDIL::GLOBALAEXTLOAD64_v2i8:
-  case AMDIL::GLOBALZEXTLOAD64_v2i8:
-  case AMDIL::LOCALLOAD64_v2i8:
-  case AMDIL::LOCALSEXTLOAD64_v2i8:
-  case AMDIL::LOCALAEXTLOAD64_v2i8:
-  case AMDIL::LOCALZEXTLOAD64_v2i8:
-  case AMDIL::REGIONLOAD64_v2i8:
-  case AMDIL::REGIONSEXTLOAD64_v2i8:
-  case AMDIL::REGIONAEXTLOAD64_v2i8:
-  case AMDIL::REGIONZEXTLOAD64_v2i8:
-  case AMDIL::PRIVATELOAD64_v2i8:
-  case AMDIL::PRIVATESEXTLOAD64_v2i8:
-  case AMDIL::PRIVATEAEXTLOAD64_v2i8:
-  case AMDIL::PRIVATEZEXTLOAD64_v2i8:
-  case AMDIL::CONSTANTLOAD64_v2i8:
-  case AMDIL::CONSTANTSEXTLOAD64_v2i8:
-  case AMDIL::CONSTANTAEXTLOAD64_v2i8:
-  case AMDIL::CONSTANTZEXTLOAD64_v2i8:
-  case AMDIL::GLOBALLOAD_v2i8:
-  case AMDIL::GLOBALSEXTLOAD_v2i8:
-  case AMDIL::GLOBALAEXTLOAD_v2i8:
-  case AMDIL::GLOBALZEXTLOAD_v2i8:
-  case AMDIL::LOCALLOAD_v2i8:
-  case AMDIL::LOCALSEXTLOAD_v2i8:
-  case AMDIL::LOCALAEXTLOAD_v2i8:
-  case AMDIL::LOCALZEXTLOAD_v2i8:
-  case AMDIL::REGIONLOAD_v2i8:
-  case AMDIL::REGIONSEXTLOAD_v2i8:
-  case AMDIL::REGIONAEXTLOAD_v2i8:
-  case AMDIL::REGIONZEXTLOAD_v2i8:
-  case AMDIL::PRIVATELOAD_v2i8:
-  case AMDIL::PRIVATESEXTLOAD_v2i8:
-  case AMDIL::PRIVATEAEXTLOAD_v2i8:
-  case AMDIL::PRIVATEZEXTLOAD_v2i8:
-  case AMDIL::CONSTANTLOAD_v2i8:
-  case AMDIL::CONSTANTSEXTLOAD_v2i8:
-  case AMDIL::CONSTANTAEXTLOAD_v2i8:
-  case AMDIL::CONSTANTZEXTLOAD_v2i8:
-    return UNPACK_V2I8;
-
-  case AMDIL::GLOBALLOAD64_v4i8:
-  case AMDIL::GLOBALSEXTLOAD64_v4i8:
-  case AMDIL::GLOBALAEXTLOAD64_v4i8:
-  case AMDIL::GLOBALZEXTLOAD64_v4i8:
-  case AMDIL::LOCALLOAD64_v4i8:
-  case AMDIL::LOCALSEXTLOAD64_v4i8:
-  case AMDIL::LOCALAEXTLOAD64_v4i8:
-  case AMDIL::LOCALZEXTLOAD64_v4i8:
-  case AMDIL::REGIONLOAD64_v4i8:
-  case AMDIL::REGIONSEXTLOAD64_v4i8:
-  case AMDIL::REGIONAEXTLOAD64_v4i8:
-  case AMDIL::REGIONZEXTLOAD64_v4i8:
-  case AMDIL::PRIVATELOAD64_v4i8:
-  case AMDIL::PRIVATESEXTLOAD64_v4i8:
-  case AMDIL::PRIVATEAEXTLOAD64_v4i8:
-  case AMDIL::PRIVATEZEXTLOAD64_v4i8:
-  case AMDIL::CONSTANTLOAD64_v4i8:
-  case AMDIL::CONSTANTSEXTLOAD64_v4i8:
-  case AMDIL::CONSTANTAEXTLOAD64_v4i8:
-  case AMDIL::CONSTANTZEXTLOAD64_v4i8:
-  case AMDIL::GLOBALLOAD_v4i8:
-  case AMDIL::GLOBALSEXTLOAD_v4i8:
-  case AMDIL::GLOBALAEXTLOAD_v4i8:
-  case AMDIL::GLOBALZEXTLOAD_v4i8:
-  case AMDIL::LOCALLOAD_v4i8:
-  case AMDIL::LOCALSEXTLOAD_v4i8:
-  case AMDIL::LOCALAEXTLOAD_v4i8:
-  case AMDIL::LOCALZEXTLOAD_v4i8:
-  case AMDIL::REGIONLOAD_v4i8:
-  case AMDIL::REGIONSEXTLOAD_v4i8:
-  case AMDIL::REGIONAEXTLOAD_v4i8:
-  case AMDIL::REGIONZEXTLOAD_v4i8:
-  case AMDIL::PRIVATELOAD_v4i8:
-  case AMDIL::PRIVATESEXTLOAD_v4i8:
-  case AMDIL::PRIVATEAEXTLOAD_v4i8:
-  case AMDIL::PRIVATEZEXTLOAD_v4i8:
-  case AMDIL::CONSTANTLOAD_v4i8:
-  case AMDIL::CONSTANTSEXTLOAD_v4i8:
-  case AMDIL::CONSTANTAEXTLOAD_v4i8:
-  case AMDIL::CONSTANTZEXTLOAD_v4i8:
-    return UNPACK_V4I8;
-
-  case AMDIL::GLOBALLOAD64_v2i16:
-  case AMDIL::GLOBALSEXTLOAD64_v2i16:
-  case AMDIL::GLOBALAEXTLOAD64_v2i16:
-  case AMDIL::GLOBALZEXTLOAD64_v2i16:
-  case AMDIL::LOCALLOAD64_v2i16:
-  case AMDIL::LOCALSEXTLOAD64_v2i16:
-  case AMDIL::LOCALAEXTLOAD64_v2i16:
-  case AMDIL::LOCALZEXTLOAD64_v2i16:
-  case AMDIL::REGIONLOAD64_v2i16:
-  case AMDIL::REGIONSEXTLOAD64_v2i16:
-  case AMDIL::REGIONAEXTLOAD64_v2i16:
-  case AMDIL::REGIONZEXTLOAD64_v2i16:
-  case AMDIL::PRIVATELOAD64_v2i16:
-  case AMDIL::PRIVATESEXTLOAD64_v2i16:
-  case AMDIL::PRIVATEAEXTLOAD64_v2i16:
-  case AMDIL::PRIVATEZEXTLOAD64_v2i16:
-  case AMDIL::CONSTANTLOAD64_v2i16:
-  case AMDIL::CONSTANTSEXTLOAD64_v2i16:
-  case AMDIL::CONSTANTAEXTLOAD64_v2i16:
-  case AMDIL::CONSTANTZEXTLOAD64_v2i16:
-  case AMDIL::GLOBALLOAD_v2i16:
-  case AMDIL::GLOBALSEXTLOAD_v2i16:
-  case AMDIL::GLOBALAEXTLOAD_v2i16:
-  case AMDIL::GLOBALZEXTLOAD_v2i16:
-  case AMDIL::LOCALLOAD_v2i16:
-  case AMDIL::LOCALSEXTLOAD_v2i16:
-  case AMDIL::LOCALAEXTLOAD_v2i16:
-  case AMDIL::LOCALZEXTLOAD_v2i16:
-  case AMDIL::REGIONLOAD_v2i16:
-  case AMDIL::REGIONSEXTLOAD_v2i16:
-  case AMDIL::REGIONAEXTLOAD_v2i16:
-  case AMDIL::REGIONZEXTLOAD_v2i16:
-  case AMDIL::PRIVATELOAD_v2i16:
-  case AMDIL::PRIVATESEXTLOAD_v2i16:
-  case AMDIL::PRIVATEAEXTLOAD_v2i16:
-  case AMDIL::PRIVATEZEXTLOAD_v2i16:
-  case AMDIL::CONSTANTLOAD_v2i16:
-  case AMDIL::CONSTANTSEXTLOAD_v2i16:
-  case AMDIL::CONSTANTAEXTLOAD_v2i16:
-  case AMDIL::CONSTANTZEXTLOAD_v2i16:
-    return UNPACK_V2I16;
-
-  case AMDIL::GLOBALLOAD64_v4i16:
-  case AMDIL::GLOBALSEXTLOAD64_v4i16:
-  case AMDIL::GLOBALAEXTLOAD64_v4i16:
-  case AMDIL::GLOBALZEXTLOAD64_v4i16:
-  case AMDIL::LOCALLOAD64_v4i16:
-  case AMDIL::LOCALSEXTLOAD64_v4i16:
-  case AMDIL::LOCALAEXTLOAD64_v4i16:
-  case AMDIL::LOCALZEXTLOAD64_v4i16:
-  case AMDIL::REGIONLOAD64_v4i16:
-  case AMDIL::REGIONSEXTLOAD64_v4i16:
-  case AMDIL::REGIONAEXTLOAD64_v4i16:
-  case AMDIL::REGIONZEXTLOAD64_v4i16:
-  case AMDIL::PRIVATELOAD64_v4i16:
-  case AMDIL::PRIVATESEXTLOAD64_v4i16:
-  case AMDIL::PRIVATEAEXTLOAD64_v4i16:
-  case AMDIL::PRIVATEZEXTLOAD64_v4i16:
-  case AMDIL::CONSTANTLOAD64_v4i16:
-  case AMDIL::CONSTANTSEXTLOAD64_v4i16:
-  case AMDIL::CONSTANTAEXTLOAD64_v4i16:
-  case AMDIL::CONSTANTZEXTLOAD64_v4i16:
-  case AMDIL::GLOBALLOAD_v4i16:
-  case AMDIL::GLOBALSEXTLOAD_v4i16:
-  case AMDIL::GLOBALAEXTLOAD_v4i16:
-  case AMDIL::GLOBALZEXTLOAD_v4i16:
-  case AMDIL::LOCALLOAD_v4i16:
-  case AMDIL::LOCALSEXTLOAD_v4i16:
-  case AMDIL::LOCALAEXTLOAD_v4i16:
-  case AMDIL::LOCALZEXTLOAD_v4i16:
-  case AMDIL::REGIONLOAD_v4i16:
-  case AMDIL::REGIONSEXTLOAD_v4i16:
-  case AMDIL::REGIONAEXTLOAD_v4i16:
-  case AMDIL::REGIONZEXTLOAD_v4i16:
-  case AMDIL::PRIVATELOAD_v4i16:
-  case AMDIL::PRIVATESEXTLOAD_v4i16:
-  case AMDIL::PRIVATEAEXTLOAD_v4i16:
-  case AMDIL::PRIVATEZEXTLOAD_v4i16:
-  case AMDIL::CONSTANTLOAD_v4i16:
-  case AMDIL::CONSTANTSEXTLOAD_v4i16:
-  case AMDIL::CONSTANTAEXTLOAD_v4i16:
-  case AMDIL::CONSTANTZEXTLOAD_v4i16:
-    return UNPACK_V4I16;
-  };
+  if (isPackV2I8Inst(MI)) return PACK_V2I8;
+  if (isPackV4I8Inst(MI)) return PACK_V4I8;
+  if (isPackV2I16Inst(MI)) return PACK_V2I16;
+  if (isPackV4I16Inst(MI)) return PACK_V4I16;
+  if (isUnpackV2I8Inst(MI)) return UNPACK_V2I8;
+  if (isUnpackV4I8Inst(MI)) return UNPACK_V4I8;
+  if (isUnpackV2I16Inst(MI)) return UNPACK_V2I16;
+  if (isUnpackV4I16Inst(MI)) return UNPACK_V4I16;
   return NO_PACKING;
 }
-
 uint32_t
-AMDILIOExpansion::getPointerID(MachineInstr *MI)
+AMDILIOExpansionImpl::getPointerID(MachineInstr *MI)
 {
   AMDILAS::InstrResEnc curInst;
   getAsmPrinterFlags(MI, curInst);
   return curInst.bits.ResourceID;
 }
-
 uint32_t
-AMDILIOExpansion::getShiftSize(MachineInstr *MI)
+AMDILIOExpansionImpl::getShiftSize(MachineInstr *MI)
 {
   switch(getPackedID(MI)) {
   default:
@@ -682,17 +266,19 @@ AMDILIOExpansion::getShiftSize(MachineInstr *MI)
   return 0;
 }
 uint32_t
-AMDILIOExpansion::getMemorySize(MachineInstr *MI)
+AMDILIOExpansionImpl::getMemorySize(MachineInstr *MI)
 {
   if (MI->memoperands_empty()) {
     return 4;
   }
   return (uint32_t)((*MI->memoperands_begin())->getSize());
 }
-
-unsigned
-AMDILIOExpansion::expandLongExtend(MachineInstr *MI,
-                                   uint32_t numComps, uint32_t size, bool signedShift)
+void
+AMDILIOExpansionImpl::expandLongExtend(MachineInstr *MI,
+                                       uint32_t numComps,
+                                       uint32_t size,
+                                       bool signedShift,
+                                       uint32_t &dataReg)
 {
   DebugLoc DL = MI->getDebugLoc();
   switch(size) {
@@ -701,30 +287,58 @@ AMDILIOExpansion::expandLongExtend(MachineInstr *MI,
     break;
   case 8:
     if (numComps == 1) {
-      return expandLongExtendSub32(MI, AMDIL::SHL_i8, AMDIL::SHRVEC_v2i32,
-                                   AMDIL::USHRVEC_i8,
-                                   24, (24ULL | (31ULL << 32)), 24, AMDIL::LCREATE, signedShift,
-                                   false);
+      expandLongExtendSub32(MI,
+                            AMDIL::SHLi8i32rr,
+                            AMDIL::SHRv2i32i32rr,
+                            AMDIL::USHRi8i32rr,
+                            24,
+                            (24ULL | (31ULL << 32)),
+                            24,
+                            AMDIL::LCREATEi64rr,
+                            signedShift,
+                            false,
+                            dataReg);
     } else if (numComps == 2) {
-      return expandLongExtendSub32(MI, AMDIL::SHL_v2i8, AMDIL::SHRVEC_v4i32,
-                                   AMDIL::USHRVEC_v2i8,
-                                   24, (24ULL | (31ULL << 32)), 24, AMDIL::LCREATE_v2i64, signedShift,
-                                   true);
+      expandLongExtendSub32(MI,
+                            AMDIL::SHLv2i8i32rr,
+                            AMDIL::SHRv4i32i32rr,
+                            AMDIL::USHRv2i8i32rr,
+                            24,
+                            (24ULL | (31ULL << 32)),
+                            24,
+                            AMDIL::LCREATEv2i64rr,
+                            signedShift,
+                            true,
+                            dataReg);
     } else {
       assert(0 && "Found a case we don't handle!");
     }
     break;
   case 16:
     if (numComps == 1) {
-      return expandLongExtendSub32(MI, AMDIL::SHL_i16, AMDIL::SHRVEC_v2i32,
-                                   AMDIL::USHRVEC_i16,
-                                   16, (16ULL | (31ULL << 32)), 16, AMDIL::LCREATE, signedShift,
-                                   false);
+      expandLongExtendSub32(MI,
+                            AMDIL::SHLi16i32rr,
+                            AMDIL::SHRv2i32i32rr,
+                            AMDIL::USHRi16i32rr,
+                            16,
+                            (16ULL | (31ULL << 32)),
+                            16,
+                            AMDIL::LCREATEi64rr,
+                            signedShift,
+                            false,
+                            dataReg);
     } else if (numComps == 2) {
-      return expandLongExtendSub32(MI, AMDIL::SHL_v2i16, AMDIL::SHRVEC_v4i32,
-                                   AMDIL::USHRVEC_v2i16,
-                                   16, (16ULL | (31ULL << 32)), 16, AMDIL::LCREATE_v2i64, signedShift,
-                                   true);
+      expandLongExtendSub32(MI,
+                            AMDIL::SHLv2i16i32rr,
+                            AMDIL::SHRv4i32i32rr,
+                            AMDIL::USHRv2i16i32rr,
+                            16,
+                            (16ULL | (31ULL << 32)),
+                            16,
+                            AMDIL::LCREATEv2i64rr,
+                            signedShift,
+                            true,
+                            dataReg);
     } else {
       assert(0 && "Found a case we don't handle!");
     }
@@ -733,73 +347,78 @@ AMDILIOExpansion::expandLongExtend(MachineInstr *MI,
     if (numComps == 1) {
       MachineInstr *nMI = NULL;
       if (signedShift) {
-        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::SHRVEC_i32), AMDIL::Rxy1011)
-              .addReg(AMDIL::Rx1011)
+        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::SHRi32i32rr), dataReg)
+              .addReg(getCompReg(dataReg, sub_x_comp, sub_z_comp))
               .addImm(mMFI->addi64Literal((0ULL | (31ULL << 32))));
       } else {
-        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATE), AMDIL::Rxy1011)
-              .addReg(AMDIL::Rx1011)
+        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATEi64rr), dataReg)
+              .addReg(dataReg)
               .addImm(mMFI->addi32Literal(0));
       }
-      return nMI->getOperand(0).getReg();
     } else if (numComps == 2) {
       MachineInstr *nMI = NULL;
       if (signedShift) {
-        BuildMI(*mBB, MI, DL, mTII->get(AMDIL::SHRVEC_v2i32), AMDIL::Rxy1012)
-        .addReg(AMDIL::Rxy1011)
+        BuildMI(*mBB, MI, DL, mTII->get(AMDIL::SHRv2i32i32rr), AMDIL::Rxy1012)
+        .addReg(getCompReg(dataReg, sub_xy_comp, sub_zw_comp))
         .addImm(mMFI->addi64Literal(31));
-        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATE_v2i64), AMDIL::R1011)
-              .addReg(AMDIL::Rxy1011)
+        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATEv2i64rr), dataReg)
+              .addReg(dataReg)
               .addReg(AMDIL::Rxy1012);
       } else {
-        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATE_v2i64), AMDIL::R1011)
-              .addReg(AMDIL::Rxy1011)
+        nMI = BuildMI(*mBB, MI, DL, mTII->get(AMDIL::LCREATEv2i64rr), dataReg)
+              .addReg(dataReg)
               .addImm(mMFI->addi32Literal(0));
       }
-      return nMI->getOperand(0).getReg();
     } else {
       assert(0 && "Found a case we don't handle!");
     }
   };
-  return 0;
 }
-unsigned
-AMDILIOExpansion::expandLongExtendSub32(MachineInstr *MI,
-                                        unsigned SHLop, unsigned SHRop, unsigned USHRop,
-                                        unsigned SHLimm, uint64_t SHRimm, unsigned USHRimm,
-                                        unsigned LCRop, bool signedShift, bool vec2)
+void
+AMDILIOExpansionImpl::expandLongExtendSub32(MachineInstr *MI,
+                                            unsigned SHLop,
+                                            unsigned SHRop,
+                                            unsigned USHRop,
+                                            unsigned SHLimm,
+                                            uint64_t SHRimm,
+                                            unsigned USHRimm,
+                                            unsigned LCRop,
+                                            bool signedShift,
+                                            bool vec2,
+                                            uint32_t &dataReg)
 {
   MachineInstr *nMI = NULL;
   DebugLoc DL = MI->getDebugLoc();
+  unsigned origReg = dataReg;
   BuildMI(*mBB, MI, DL, mTII->get(SHLop),
           (vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
-  .addReg((vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
+  .addReg(dataReg)
   .addImm(mMFI->addi32Literal(SHLimm));
+  dataReg = (vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011;
   if (signedShift) {
     BuildMI(*mBB, MI, DL, mTII->get(LCRop),
             (vec2) ? AMDIL::R1011 : AMDIL::Rxy1011)
-    .addReg((vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
-    .addReg(AMDIL::Rxy1011);
+    .addReg(dataReg).addReg(dataReg);
+    dataReg = (vec2) ? AMDIL::R1011 : AMDIL::Rxy1011;
     nMI = BuildMI(*mBB, MI, DL, mTII->get(SHRop),
-                  (vec2) ? AMDIL::R1011 : AMDIL::Rxy1011)
-          .addReg((vec2) ? AMDIL::R1011 : AMDIL::Rxy1011)
+                  origReg).addReg(dataReg)
           .addImm(mMFI->addi64Literal(SHRimm));
   } else {
     BuildMI(*mBB, MI, DL, mTII->get(USHRop),
-            (vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
-    .addReg((vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
+            dataReg).addReg(dataReg)
     .addImm(mMFI->addi32Literal(USHRimm));
     nMI = BuildMI(*mBB, MI, MI->getDebugLoc(), mTII->get(LCRop),
-                  (vec2) ? AMDIL::R1011 : AMDIL::Rxy1011)
-          .addReg((vec2) ? AMDIL::Rxy1011 : AMDIL::Rx1011)
+                  origReg)
+          .addReg(dataReg)
           .addImm(mMFI->addi32Literal(0));
   }
-  return nMI->getOperand(0).getReg();
 }
-
-unsigned
-AMDILIOExpansion::expandIntegerExtend(MachineInstr *MI, unsigned SHLop,
-                                      unsigned SHRop, unsigned offset, unsigned reg)
+void
+AMDILIOExpansionImpl::expandIntegerExtend(MachineInstr *MI,
+                                          unsigned SHLop,
+                                          unsigned SHRop,
+                                          unsigned offset,
+                                          unsigned reg)
 {
   DebugLoc DL = MI->getDebugLoc();
   offset = mMFI->addi32Literal(offset);
@@ -809,13 +428,12 @@ AMDILIOExpansion::expandIntegerExtend(MachineInstr *MI, unsigned SHLop,
   BuildMI(*mBB, MI, DL,
           mTII->get(SHRop), reg)
   .addReg(reg).addImm(offset);
-  return reg;
 }
-unsigned
-AMDILIOExpansion::expandExtendLoad(MachineInstr *MI)
+void
+AMDILIOExpansionImpl::expandExtendLoad(MachineInstr *MI, uint32_t &dataReg)
 {
   if (!isExtendLoad(MI)) {
-    return 0;
+    return;
   }
   Type *mType = NULL;
   if (!MI->memoperands_empty()) {
@@ -825,7 +443,7 @@ AMDILIOExpansion::expandExtendLoad(MachineInstr *MI)
   }
   unsigned opcode = 0;
   DebugLoc DL = MI->getDebugLoc();
-  if (isZExtLoadInst(TM, MI) || isAExtLoadInst(TM, MI) || isSExtLoadInst(TM, MI)) {
+  if (isExtLoadInst(MI)) {
     switch(MI->getDesc().OpInfo[0].RegClass) {
     default:
       assert(0 && "Found an extending load that we don't handle!");
@@ -833,69 +451,72 @@ AMDILIOExpansion::expandExtendLoad(MachineInstr *MI)
     case AMDIL::GPRI16RegClassID:
       if (!isHardwareLocal(MI)
           || mSTM->device()->usesSoftware(AMDILDeviceInfo::ByteLDSOps)) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_i16 : AMDIL::USHRVEC_i16;
-        return expandIntegerExtend(MI, AMDIL::SHL_i16, opcode, 24, AMDIL::Rx1011);
+        opcode = isSExtLoadInst(MI) ? AMDIL::SHRi16i32rr : AMDIL::USHRi16i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLi16i32rr, opcode, 24, dataReg);
       }
       break;
     case AMDIL::GPRV2I16RegClassID:
-      opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v2i16 : AMDIL::USHRVEC_v2i16;
-      return expandIntegerExtend(MI, AMDIL::SHL_v2i16, opcode, 24, AMDIL::Rxy1011);
+      opcode =
+        isSExtLoadInst(MI) ? AMDIL::SHRv2i16i32rr : AMDIL::USHRv2i16i32rr;
+      expandIntegerExtend(MI, AMDIL::SHLv2i16i32rr, opcode, 24, dataReg);
       break;
     case AMDIL::GPRV4I8RegClassID:
-      opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v4i8 : AMDIL::USHRVEC_v4i8;
-      return expandIntegerExtend(MI, AMDIL::SHL_v4i8, opcode, 24, AMDIL::R1011);
+      opcode = isSExtLoadInst(MI) ? AMDIL::SHRv4i8i32rr : AMDIL::USHRv4i8i32rr;
+      expandIntegerExtend(MI, AMDIL::SHLv4i8i32rr, opcode, 24, dataReg);
       break;
     case AMDIL::GPRV4I16RegClassID:
-      opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v4i16 : AMDIL::USHRVEC_v4i16;
-      return expandIntegerExtend(MI, AMDIL::SHL_v4i16, opcode, 24, AMDIL::R1011);
+      opcode =
+        isSExtLoadInst(MI) ? AMDIL::SHRv4i16i32rr : AMDIL::USHRv4i16i32rr;
+      expandIntegerExtend(MI, AMDIL::SHLv4i16i32rr, opcode, 24, dataReg);
       break;
     case AMDIL::GPRI32RegClassID:
       // We can be a i8 or i16 bit sign extended value
       if (isNbitType(mType, 8) || getMemorySize(MI) == 1) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_i32 : AMDIL::USHRVEC_i32;
-        expandIntegerExtend(MI, AMDIL::SHL_i32, opcode, 24, AMDIL::Rx1011);
+        opcode = isSExtLoadInst(MI) ? AMDIL::SHRi32i32rr : AMDIL::USHRi32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLi32i32rr, opcode, 24, dataReg);
       } else if (isNbitType(mType, 16) || getMemorySize(MI) == 2) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_i32 : AMDIL::USHRVEC_i32;
-        expandIntegerExtend(MI, AMDIL::SHL_i32, opcode, 16, AMDIL::Rx1011);
+        opcode = isSExtLoadInst(MI) ? AMDIL::SHRi32i32rr : AMDIL::USHRi32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLi32i32rr, opcode, 16, dataReg);
       } else {
         assert(0 && "Found an extending load that we don't handle!");
       }
-      return AMDIL::Rx1011;
       break;
     case AMDIL::GPRV2I32RegClassID:
       // We can be a v2i8 or v2i16 bit sign extended value
       if (isNbitType(mType, 8, false) || getMemorySize(MI) == 2) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v2i32 : AMDIL::USHRVEC_v2i32;
-        expandIntegerExtend(MI, AMDIL::SHL_v2i32, opcode, 24, AMDIL::Rxy1011);
+        opcode =
+          isSExtLoadInst(MI) ? AMDIL::SHRv2i32i32rr : AMDIL::USHRv2i32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLv2i32i32rr, opcode, 24, dataReg);
       } else if (isNbitType(mType, 16, false) || getMemorySize(MI) == 4) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v2i32 : AMDIL::USHRVEC_v2i32;
-        expandIntegerExtend(MI, AMDIL::SHL_v2i32, opcode, 16, AMDIL::Rxy1011);
+        opcode =
+          isSExtLoadInst(MI) ? AMDIL::SHRv2i32i32rr : AMDIL::USHRv2i32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLv2i32i32rr, opcode, 16, dataReg);
       } else {
         assert(0 && "Found an extending load that we don't handle!");
       }
-      return AMDIL::Rxy1011;
       break;
     case AMDIL::GPRV4I32RegClassID:
       // We can be a v4i8 or v4i16 bit sign extended value
       if (isNbitType(mType, 8, false) || getMemorySize(MI) == 4) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v4i32 : AMDIL::USHRVEC_v4i32;
-        expandIntegerExtend(MI, AMDIL::SHL_v4i32, opcode, 24, AMDIL::R1011);
+        opcode =
+          isSExtLoadInst(MI) ? AMDIL::SHRv4i32i32rr : AMDIL::USHRv4i32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLv4i32i32rr, opcode, 24, dataReg);
       } else if (isNbitType(mType, 16, false) || getMemorySize(MI) == 8) {
-        opcode = isSExtLoadInst(TM, MI) ? AMDIL::SHRVEC_v4i32 : AMDIL::USHRVEC_v4i32;
-        expandIntegerExtend(MI, AMDIL::SHL_v4i32, opcode, 16, AMDIL::R1011);
+        opcode =
+          isSExtLoadInst(MI) ? AMDIL::SHRv4i32i32rr : AMDIL::USHRv4i32i32rr;
+        expandIntegerExtend(MI, AMDIL::SHLv4i32i32rr, opcode, 16, dataReg);
       } else {
         assert(0 && "Found an extending load that we don't handle!");
       }
-      return AMDIL::R1011;
       break;
     case AMDIL::GPRI64RegClassID:
       // We can be a i8, i16 or i32 bit sign extended value
       if (isNbitType(mType, 8) || getMemorySize(MI) == 1) {
-        return expandLongExtend(MI, 1, 8, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 1, 8, isSExtLoadInst(MI), dataReg);
       } else if (isNbitType(mType, 16) || getMemorySize(MI) == 2) {
-        return expandLongExtend(MI, 1, 16, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 1, 16, isSExtLoadInst(MI), dataReg);
       } else if (isNbitType(mType, 32) || getMemorySize(MI) == 4) {
-        return expandLongExtend(MI, 1, 32, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 1, 32, isSExtLoadInst(MI), dataReg);
       } else {
         assert(0 && "Found an extending load that we don't handle!");
       }
@@ -903,52 +524,59 @@ AMDILIOExpansion::expandExtendLoad(MachineInstr *MI)
     case AMDIL::GPRV2I64RegClassID:
       // We can be a v2i8, v2i16 or v2i32 bit sign extended value
       if (isNbitType(mType, 8, false) || getMemorySize(MI) == 2) {
-        return expandLongExtend(MI, 2, 8, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 2, 8, isSExtLoadInst(MI), dataReg);
       } else if (isNbitType(mType, 16, false) || getMemorySize(MI) == 4) {
-        return expandLongExtend(MI, 2, 16, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 2, 16, isSExtLoadInst(MI), dataReg);
       } else if (isNbitType(mType, 32, false) || getMemorySize(MI) == 8) {
-        return expandLongExtend(MI, 2, 32, isSExtLoadInst(TM, MI));
+        expandLongExtend(MI, 2, 32, isSExtLoadInst(MI), dataReg);
       } else {
         assert(0 && "Found an extending load that we don't handle!");
       }
       break;
     case AMDIL::GPRF32RegClassID:
       BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::HTOF_f32), AMDIL::Rx1011)
-      .addReg(AMDIL::Rx1011);
-      return AMDIL::Rx1011;
+              mTII->get(AMDIL::HTOFf32r), dataReg)
+      .addReg(dataReg);
+      break;
     case AMDIL::GPRV2F32RegClassID:
       BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::HTOF_v2f32), AMDIL::Rxy1011)
-      .addReg(AMDIL::Rxy1011);
-      return AMDIL::Rxy1011;
+              mTII->get(AMDIL::HTOFv2f32r), dataReg)
+      .addReg(dataReg);
+      break;
     case AMDIL::GPRV4F32RegClassID:
       BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::HTOF_v4f32), AMDIL::R1011)
-      .addReg(AMDIL::R1011);
-      return AMDIL::R1011;
+              mTII->get(AMDIL::HTOFv4f32r), dataReg)
+      .addReg(dataReg);
+      break;
     case AMDIL::GPRF64RegClassID:
       BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::FTOD), AMDIL::Rxy1011)
-      .addReg(AMDIL::Rx1011);
-      return AMDIL::Rxy1011;
+              mTII->get(AMDIL::FTODr), dataReg)
+      .addReg(dataReg);
+      break;
     case AMDIL::GPRV2F64RegClassID:
-      BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::FTOD), AMDIL::Rzw1011)
-      .addReg(AMDIL::Ry1011);
-      BuildMI(*mBB, MI, DL,
-              mTII->get(AMDIL::FTOD), AMDIL::Rxy1011)
-      .addReg(AMDIL::Rx1011);
-      return AMDIL::R1011;
+      if (mTRI->getSubReg(dataReg, sub_xy_comp)) {
+        BuildMI(*mBB, MI, DL,
+                mTII->get(AMDIL::FTODr), getCompReg(dataReg, sub_zw_comp))
+        .addReg(getCompReg(dataReg, sub_y_comp));
+        BuildMI(*mBB, MI, DL,
+                mTII->get(AMDIL::FTODr), getCompReg(dataReg, sub_xy_comp))
+        .addReg(getCompReg(dataReg, sub_x_comp));
+      } else {
+        BuildMI(*mBB, MI, DL,
+                mTII->get(AMDIL::FTODr), getCompReg(dataReg, sub_xy_comp))
+        .addReg(getCompReg(dataReg, sub_z_comp));
+        BuildMI(*mBB, MI, DL,
+                mTII->get(AMDIL::FTODr), getCompReg(dataReg, sub_zw_comp))
+        .addReg(getCompReg(dataReg, sub_w_comp));
+      }
+      break;
     }
   }
-  return 0;
 }
-
 void
-AMDILIOExpansion::expandTruncData(MachineInstr *MI)
+AMDILIOExpansionImpl::expandTruncData(MachineInstr *MI, uint32_t &dataReg)
 {
-  if (!isTruncStoreInst(TM, MI)) {
+  if (!isTruncStoreInst(MI)) {
     return;
   }
   DebugLoc DL = MI->getDebugLoc();
@@ -957,280 +585,311 @@ AMDILIOExpansion::expandTruncData(MachineInstr *MI)
     MI->dump();
     assert(!"Found a trunc store instructions we don't handle!");
     break;
-  case AMDIL::GLOBALTRUNCSTORE64_i64i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i64i8:
-  case AMDIL::LOCALTRUNCSTORE64_i64i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i64i8:
-  case AMDIL::REGIONTRUNCSTORE64_i64i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i64i8:
-  case AMDIL::PRIVATETRUNCSTORE64_i64i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i64i8:
-  case AMDIL::GLOBALTRUNCSTORE_i64i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i8:
-  case AMDIL::LOCALTRUNCSTORE_i64i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i64i8:
-  case AMDIL::REGIONTRUNCSTORE_i64i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i64i8:
-  case AMDIL::PRIVATETRUNCSTORE_i64i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i64i8:
+  case AMDIL::GLOBALTRUNCSTORE64i64i8r:  // case AMDIL::GLOBALTRUNCSTORE64i64i8i:
+  case AMDIL::LOCALTRUNCSTORE64i64i8r:  // case AMDIL::LOCALTRUNCSTORE64i64i8i:
+  case AMDIL::REGIONTRUNCSTORE64i64i8r:  // case AMDIL::REGIONTRUNCSTORE64i64i8i:
+  case AMDIL::PRIVATETRUNCSTORE64i64i8r:  // case AMDIL::PRIVATETRUNCSTORE64i64i8i:
+  case AMDIL::GLOBALTRUNCSTOREi64i8r:  // case AMDIL::GLOBALTRUNCSTOREi64i8i:
+  case AMDIL::LOCALTRUNCSTOREi64i8r:  // case AMDIL::LOCALTRUNCSTOREi64i8i:
+  case AMDIL::REGIONTRUNCSTOREi64i8r:  // case AMDIL::REGIONTRUNCSTOREi64i8i:
+  case AMDIL::PRIVATETRUNCSTOREi64i8r:  // case AMDIL::PRIVATETRUNCSTOREi64i8i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::LLO_v2i64), AMDIL::Rxy1011)
-    .addReg(AMDIL::R1011);
-  case AMDIL::GLOBALTRUNCSTORE64_i16i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i16i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v4i16i8:
-  case AMDIL::LOCALTRUNCSTORE64_i16i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i16i8:
-  case AMDIL::LOCALTRUNCSTORE64_v4i16i8:
-  case AMDIL::REGIONTRUNCSTORE64_i16i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i16i8:
-  case AMDIL::REGIONTRUNCSTORE64_v4i16i8:
-  case AMDIL::PRIVATETRUNCSTORE64_i16i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i16i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i16i8:
-  case AMDIL::GLOBALTRUNCSTORE_i16i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i16i8:
-  case AMDIL::GLOBALTRUNCSTORE_v4i16i8:
-  case AMDIL::LOCALTRUNCSTORE_i16i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i16i8:
-  case AMDIL::LOCALTRUNCSTORE_v4i16i8:
-  case AMDIL::REGIONTRUNCSTORE_i16i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i16i8:
-  case AMDIL::REGIONTRUNCSTORE_v4i16i8:
-  case AMDIL::PRIVATETRUNCSTORE_i16i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i16i8:
-  case AMDIL::PRIVATETRUNCSTORE_v4i16i8:
-  case AMDIL::GLOBALTRUNCSTORE64_i32i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i32i8:
-  case AMDIL::GLOBALTRUNCSTORE64_v4i32i8:
-  case AMDIL::LOCALTRUNCSTORE64_i32i8:
-  case AMDIL::LOCALTRUNCSTORE64_v2i32i8:
-  case AMDIL::LOCALTRUNCSTORE64_v4i32i8:
-  case AMDIL::REGIONTRUNCSTORE64_i32i8:
-  case AMDIL::REGIONTRUNCSTORE64_v2i32i8:
-  case AMDIL::REGIONTRUNCSTORE64_v4i32i8:
-  case AMDIL::PRIVATETRUNCSTORE64_i32i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i32i8:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_v2i32i8:
-  case AMDIL::GLOBALTRUNCSTORE_v4i32i8:
-  case AMDIL::LOCALTRUNCSTORE_i32i8:
-  case AMDIL::LOCALTRUNCSTORE_v2i32i8:
-  case AMDIL::LOCALTRUNCSTORE_v4i32i8:
-  case AMDIL::REGIONTRUNCSTORE_i32i8:
-  case AMDIL::REGIONTRUNCSTORE_v2i32i8:
-  case AMDIL::REGIONTRUNCSTORE_v4i32i8:
-  case AMDIL::PRIVATETRUNCSTORE_i32i8:
-  case AMDIL::PRIVATETRUNCSTORE_v2i32i8:
-  case AMDIL::PRIVATETRUNCSTORE_v4i32i8:
+            mTII->get(AMDIL::LLOi64r), AMDIL::Rx1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rx1011;
+  case AMDIL::GLOBALTRUNCSTORE64i16i8r:  // case AMDIL::GLOBALTRUNCSTORE64i16i8i:
+  case AMDIL::LOCALTRUNCSTORE64i16i8r:  // case AMDIL::LOCALTRUNCSTORE64i16i8i:
+  case AMDIL::REGIONTRUNCSTORE64i16i8r:  // case AMDIL::REGIONTRUNCSTORE64i16i8i:
+  case AMDIL::PRIVATETRUNCSTORE64i16i8r:  // case AMDIL::PRIVATETRUNCSTORE64i16i8i:
+  case AMDIL::GLOBALTRUNCSTOREi16i8r:  // case AMDIL::GLOBALTRUNCSTOREi16i8i:
+  case AMDIL::LOCALTRUNCSTOREi16i8r:  // case AMDIL::LOCALTRUNCSTOREi16i8i:
+  case AMDIL::REGIONTRUNCSTOREi16i8r:  // case AMDIL::REGIONTRUNCSTOREi16i8i:
+  case AMDIL::PRIVATETRUNCSTOREi16i8r:  // case AMDIL::PRIVATETRUNCSTOREi16i8i:
+  case AMDIL::GLOBALTRUNCSTORE64i32i8r:  // case AMDIL::GLOBALTRUNCSTORE64i32i8i:
+  case AMDIL::LOCALTRUNCSTORE64i32i8r:  // case AMDIL::LOCALTRUNCSTORE64i32i8i:
+  case AMDIL::REGIONTRUNCSTORE64i32i8r:  // case AMDIL::REGIONTRUNCSTORE64i32i8i:
+  case AMDIL::PRIVATETRUNCSTORE64i32i8r:  // case AMDIL::PRIVATETRUNCSTORE64i32i8i:
+  case AMDIL::GLOBALTRUNCSTOREi32i8r:  // case AMDIL::GLOBALTRUNCSTOREi32i8i:
+  case AMDIL::LOCALTRUNCSTOREi32i8r:  // case AMDIL::LOCALTRUNCSTOREi32i8i:
+  case AMDIL::REGIONTRUNCSTOREi32i8r:  // case AMDIL::REGIONTRUNCSTOREi32i8i:
+  case AMDIL::PRIVATETRUNCSTOREi32i8r:  // case AMDIL::PRIVATETRUNCSTOREi32i8i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::BINARY_AND_v4i32), AMDIL::R1011)
-    .addReg(AMDIL::R1011)
+            mTII->get(AMDIL::ANDi32rr), AMDIL::Rx1011)
+    .addReg(dataReg)
     .addImm(mMFI->addi32Literal(0xFF));
+    dataReg = AMDIL::Rx1011;
     break;
-  case AMDIL::GLOBALTRUNCSTORE64_i64i16:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i64i16:
-  case AMDIL::LOCALTRUNCSTORE64_i64i16:
-  case AMDIL::LOCALTRUNCSTORE64_v2i64i16:
-  case AMDIL::REGIONTRUNCSTORE64_i64i16:
-  case AMDIL::REGIONTRUNCSTORE64_v2i64i16:
-  case AMDIL::PRIVATETRUNCSTORE64_i64i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i64i16:
-  case AMDIL::GLOBALTRUNCSTORE_i64i16:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i16:
-  case AMDIL::LOCALTRUNCSTORE_i64i16:
-  case AMDIL::LOCALTRUNCSTORE_v2i64i16:
-  case AMDIL::REGIONTRUNCSTORE_i64i16:
-  case AMDIL::REGIONTRUNCSTORE_v2i64i16:
-  case AMDIL::PRIVATETRUNCSTORE_i64i16:
-  case AMDIL::PRIVATETRUNCSTORE_v2i64i16:
+  case AMDIL::GLOBALTRUNCSTORE64v2i64i8r:  // case AMDIL::GLOBALTRUNCSTORE64v2i64i8i:
+  case AMDIL::LOCALTRUNCSTORE64v2i64i8r:  // case AMDIL::LOCALTRUNCSTORE64v2i64i8i:
+  case AMDIL::REGIONTRUNCSTORE64v2i64i8r:  // case AMDIL::REGIONTRUNCSTORE64v2i64i8i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i64i8r:  // case AMDIL::PRIVATETRUNCSTORE64v2i64i8i:
+  case AMDIL::GLOBALTRUNCSTOREv2i64i8r:  // case AMDIL::GLOBALTRUNCSTOREv2i64i8i:
+  case AMDIL::LOCALTRUNCSTOREv2i64i8r:  // case AMDIL::LOCALTRUNCSTOREv2i64i8i:
+  case AMDIL::REGIONTRUNCSTOREv2i64i8r:  // case AMDIL::REGIONTRUNCSTOREv2i64i8i:
+  case AMDIL::PRIVATETRUNCSTOREv2i64i8r:  // case AMDIL::PRIVATETRUNCSTOREv2i64i8i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::LLO_v2i64), AMDIL::Rxy1011)
-    .addReg(AMDIL::R1011);
-  case AMDIL::GLOBALTRUNCSTORE64_i32i16:
-  case AMDIL::GLOBALTRUNCSTORE64_v2i32i16:
-  case AMDIL::GLOBALTRUNCSTORE64_v4i32i16:
-  case AMDIL::LOCALTRUNCSTORE64_i32i16:
-  case AMDIL::LOCALTRUNCSTORE64_v2i32i16:
-  case AMDIL::LOCALTRUNCSTORE64_v4i32i16:
-  case AMDIL::REGIONTRUNCSTORE64_i32i16:
-  case AMDIL::REGIONTRUNCSTORE64_v2i32i16:
-  case AMDIL::REGIONTRUNCSTORE64_v4i32i16:
-  case AMDIL::PRIVATETRUNCSTORE64_i32i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i32i16:
-  case AMDIL::PRIVATETRUNCSTORE64_v4i32i16:
-  case AMDIL::GLOBALTRUNCSTORE_i32i16:
-  case AMDIL::GLOBALTRUNCSTORE_v2i32i16:
-  case AMDIL::GLOBALTRUNCSTORE_v4i32i16:
-  case AMDIL::LOCALTRUNCSTORE_i32i16:
-  case AMDIL::LOCALTRUNCSTORE_v2i32i16:
-  case AMDIL::LOCALTRUNCSTORE_v4i32i16:
-  case AMDIL::REGIONTRUNCSTORE_i32i16:
-  case AMDIL::REGIONTRUNCSTORE_v2i32i16:
-  case AMDIL::REGIONTRUNCSTORE_v4i32i16:
-  case AMDIL::PRIVATETRUNCSTORE_i32i16:
-  case AMDIL::PRIVATETRUNCSTORE_v2i32i16:
-  case AMDIL::PRIVATETRUNCSTORE_v4i32i16:
+            mTII->get(AMDIL::LLOv2i64r), AMDIL::Rxy1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rxy1011;
+  case AMDIL::GLOBALTRUNCSTORE64v2i16i8r:  // case AMDIL::GLOBALTRUNCSTORE64v2i16i8i:
+  case AMDIL::LOCALTRUNCSTORE64v2i16i8r:  // case AMDIL::LOCALTRUNCSTORE64v2i16i8i:
+  case AMDIL::REGIONTRUNCSTORE64v2i16i8r:  // case AMDIL::REGIONTRUNCSTORE64v2i16i8i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i16i8r:  // case AMDIL::PRIVATETRUNCSTORE64v2i16i8i:
+  case AMDIL::GLOBALTRUNCSTOREv2i16i8r:  // case AMDIL::GLOBALTRUNCSTOREv2i16i8i:
+  case AMDIL::LOCALTRUNCSTOREv2i16i8r:  // case AMDIL::LOCALTRUNCSTOREv2i16i8i:
+  case AMDIL::REGIONTRUNCSTOREv2i16i8r:  // case AMDIL::REGIONTRUNCSTOREv2i16i8i:
+  case AMDIL::PRIVATETRUNCSTOREv2i16i8r:  // case AMDIL::PRIVATETRUNCSTOREv2i16i8i:
+  case AMDIL::GLOBALTRUNCSTORE64v2i32i8r:  // case AMDIL::GLOBALTRUNCSTORE64v2i32i8i:
+  case AMDIL::LOCALTRUNCSTORE64v2i32i8r:  // case AMDIL::LOCALTRUNCSTORE64v2i32i8i:
+  case AMDIL::REGIONTRUNCSTORE64v2i32i8r:  // case AMDIL::REGIONTRUNCSTORE64v2i32i8i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i32i8r:  // case AMDIL::PRIVATETRUNCSTORE64v2i32i8i:
+  case AMDIL::GLOBALTRUNCSTOREv2i32i8r:  // case AMDIL::GLOBALTRUNCSTOREv2i32i8i:
+  case AMDIL::LOCALTRUNCSTOREv2i32i8r:  // case AMDIL::LOCALTRUNCSTOREv2i32i8i:
+  case AMDIL::REGIONTRUNCSTOREv2i32i8r:  // case AMDIL::REGIONTRUNCSTOREv2i32i8i:
+  case AMDIL::PRIVATETRUNCSTOREv2i32i8r:  // case AMDIL::PRIVATETRUNCSTOREv2i32i8i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::BINARY_AND_v4i32), AMDIL::R1011)
-    .addReg(AMDIL::R1011)
+            mTII->get(AMDIL::ANDv2i32rr), AMDIL::Rxy1011)
+    .addReg(dataReg)
+    .addImm(mMFI->addi32Literal(0xFF));
+    dataReg = AMDIL::Rxy1011;
+    break;
+  case AMDIL::GLOBALTRUNCSTORE64v4i16i8r:  // case AMDIL::GLOBALTRUNCSTORE64v4i16i8i:
+  case AMDIL::LOCALTRUNCSTORE64v4i16i8r:  // case AMDIL::LOCALTRUNCSTORE64v4i16i8i:
+  case AMDIL::REGIONTRUNCSTORE64v4i16i8r:  // case AMDIL::REGIONTRUNCSTORE64v4i16i8i:
+  case AMDIL::PRIVATETRUNCSTORE64v4i16i8r:  // case AMDIL::PRIVATETRUNCSTORE64v4i16i8i:
+  case AMDIL::GLOBALTRUNCSTOREv4i16i8r:  // case AMDIL::GLOBALTRUNCSTOREv4i16i8i:
+  case AMDIL::LOCALTRUNCSTOREv4i16i8r:  // case AMDIL::LOCALTRUNCSTOREv4i16i8i:
+  case AMDIL::REGIONTRUNCSTOREv4i16i8r:  // case AMDIL::REGIONTRUNCSTOREv4i16i8i:
+  case AMDIL::PRIVATETRUNCSTOREv4i16i8r:  // case AMDIL::PRIVATETRUNCSTOREv4i16i8i:
+  case AMDIL::GLOBALTRUNCSTORE64v4i32i8r:  // case AMDIL::GLOBALTRUNCSTORE64v4i32i8i:
+  case AMDIL::LOCALTRUNCSTORE64v4i32i8r:  // case AMDIL::LOCALTRUNCSTORE64v4i32i8i:
+  case AMDIL::REGIONTRUNCSTORE64v4i32i8r:  // case AMDIL::REGIONTRUNCSTORE64v4i32i8i:
+  case AMDIL::PRIVATETRUNCSTORE64v4i32i8r:  // case AMDIL::PRIVATETRUNCSTORE64v4i32i8i:
+  case AMDIL::GLOBALTRUNCSTOREv4i32i8r:  // case AMDIL::GLOBALTRUNCSTOREv4i32i8i:
+  case AMDIL::LOCALTRUNCSTOREv4i32i8r:  // case AMDIL::LOCALTRUNCSTOREv4i32i8i:
+  case AMDIL::REGIONTRUNCSTOREv4i32i8r:  // case AMDIL::REGIONTRUNCSTOREv4i32i8i:
+  case AMDIL::PRIVATETRUNCSTOREv4i32i8r:  // case AMDIL::PRIVATETRUNCSTOREv4i32i8i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::ANDv4i32rr), AMDIL::R1011)
+    .addReg(dataReg)
+    .addImm(mMFI->addi32Literal(0xFF));
+    dataReg = AMDIL::R1011;
+    break;
+  case AMDIL::GLOBALTRUNCSTORE64i64i16r:  // case AMDIL::GLOBALTRUNCSTORE64i64i16i:
+  case AMDIL::LOCALTRUNCSTORE64i64i16r:  // case AMDIL::LOCALTRUNCSTORE64i64i16i:
+  case AMDIL::REGIONTRUNCSTORE64i64i16r:  // case AMDIL::REGIONTRUNCSTORE64i64i16i:
+  case AMDIL::PRIVATETRUNCSTORE64i64i16r:  // case AMDIL::PRIVATETRUNCSTORE64i64i16i:
+  case AMDIL::GLOBALTRUNCSTOREi64i16r:  // case AMDIL::GLOBALTRUNCSTOREi64i16i:
+  case AMDIL::LOCALTRUNCSTOREi64i16r:  // case AMDIL::LOCALTRUNCSTOREi64i16i:
+  case AMDIL::REGIONTRUNCSTOREi64i16r:  // case AMDIL::REGIONTRUNCSTOREi64i16i:
+  case AMDIL::PRIVATETRUNCSTOREi64i16r:  // case AMDIL::PRIVATETRUNCSTOREi64i16i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::LLOv2i64r), AMDIL::Rxy1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rxy1011;
+  case AMDIL::GLOBALTRUNCSTORE64i32i16r:  // case AMDIL::GLOBALTRUNCSTORE64i32i16i:
+  case AMDIL::LOCALTRUNCSTORE64i32i16r:  // case AMDIL::LOCALTRUNCSTORE64i32i16i:
+  case AMDIL::REGIONTRUNCSTORE64i32i16r:  // case AMDIL::REGIONTRUNCSTORE64i32i16i:
+  case AMDIL::PRIVATETRUNCSTORE64i32i16r:  // case AMDIL::PRIVATETRUNCSTORE64i32i16i:
+  case AMDIL::GLOBALTRUNCSTOREi32i16r:  // case AMDIL::GLOBALTRUNCSTOREi32i16i:
+  case AMDIL::LOCALTRUNCSTOREi32i16r:  // case AMDIL::LOCALTRUNCSTOREi32i16i:
+  case AMDIL::REGIONTRUNCSTOREi32i16r:  // case AMDIL::REGIONTRUNCSTOREi32i16i:
+  case AMDIL::PRIVATETRUNCSTOREi32i16r:  // case AMDIL::PRIVATETRUNCSTOREi32i16i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::ANDi32rr), AMDIL::Rx1011)
+    .addReg(dataReg)
     .addImm(mMFI->addi32Literal(0xFFFF));
+    dataReg = AMDIL::Rx1011;
     break;
-  case AMDIL::GLOBALTRUNCSTORE64_i64i32:
-  case AMDIL::LOCALTRUNCSTORE64_i64i32:
-  case AMDIL::REGIONTRUNCSTORE64_i64i32:
-  case AMDIL::PRIVATETRUNCSTORE64_i64i32:
-  case AMDIL::GLOBALTRUNCSTORE_i64i32:
-  case AMDIL::LOCALTRUNCSTORE_i64i32:
-  case AMDIL::REGIONTRUNCSTORE_i64i32:
-  case AMDIL::PRIVATETRUNCSTORE_i64i32:
+  case AMDIL::GLOBALTRUNCSTORE64v2i64i16r:  // case AMDIL::GLOBALTRUNCSTORE64v2i64i16i:
+  case AMDIL::LOCALTRUNCSTORE64v2i64i16r:  // case AMDIL::LOCALTRUNCSTORE64v2i64i16i:
+  case AMDIL::REGIONTRUNCSTORE64v2i64i16r:  // case AMDIL::REGIONTRUNCSTORE64v2i64i16i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i64i16r:  // case AMDIL::PRIVATETRUNCSTORE64v2i64i16i:
+  case AMDIL::GLOBALTRUNCSTOREv2i64i16r:  // case AMDIL::GLOBALTRUNCSTOREv2i64i16i:
+  case AMDIL::LOCALTRUNCSTOREv2i64i16r:  // case AMDIL::LOCALTRUNCSTOREv2i64i16i:
+  case AMDIL::REGIONTRUNCSTOREv2i64i16r:  // case AMDIL::REGIONTRUNCSTOREv2i64i16i:
+  case AMDIL::PRIVATETRUNCSTOREv2i64i16r:  // case AMDIL::PRIVATETRUNCSTOREv2i64i16i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::LLO), AMDIL::Rx1011)
-    .addReg(AMDIL::Rxy1011);
-    break;
-  case AMDIL::GLOBALTRUNCSTORE64_v2i64i32:
-  case AMDIL::LOCALTRUNCSTORE64_v2i64i32:
-  case AMDIL::REGIONTRUNCSTORE64_v2i64i32:
-  case AMDIL::PRIVATETRUNCSTORE64_v2i64i32:
-  case AMDIL::GLOBALTRUNCSTORE_v2i64i32:
-  case AMDIL::LOCALTRUNCSTORE_v2i64i32:
-  case AMDIL::REGIONTRUNCSTORE_v2i64i32:
-  case AMDIL::PRIVATETRUNCSTORE_v2i64i32:
+            mTII->get(AMDIL::LLOv2i64r), AMDIL::Rxy1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rxy1011;
+  case AMDIL::GLOBALTRUNCSTORE64v2i32i16r:  // case AMDIL::GLOBALTRUNCSTORE64v2i32i16i:
+  case AMDIL::LOCALTRUNCSTORE64v2i32i16r:  // case AMDIL::LOCALTRUNCSTORE64v2i32i16i:
+  case AMDIL::REGIONTRUNCSTORE64v2i32i16r:  // case AMDIL::REGIONTRUNCSTORE64v2i32i16i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i32i16r:  // case AMDIL::PRIVATETRUNCSTORE64v2i32i16i:
+  case AMDIL::GLOBALTRUNCSTOREv2i32i16r:  // case AMDIL::GLOBALTRUNCSTOREv2i32i16i:
+  case AMDIL::LOCALTRUNCSTOREv2i32i16r:  // case AMDIL::LOCALTRUNCSTOREv2i32i16i:
+  case AMDIL::REGIONTRUNCSTOREv2i32i16r:  // case AMDIL::REGIONTRUNCSTOREv2i32i16i:
+  case AMDIL::PRIVATETRUNCSTOREv2i32i16r:  // case AMDIL::PRIVATETRUNCSTOREv2i32i16i:
     BuildMI(*mBB, MI, DL,
-            mTII->get(AMDIL::LLO_v2i64), AMDIL::Rxy1011)
-    .addReg(AMDIL::R1011);
+            mTII->get(AMDIL::ANDv2i32rr), AMDIL::Rxy1011)
+    .addReg(dataReg)
+    .addImm(mMFI->addi32Literal(0xFFFF));
+    dataReg = AMDIL::Rxy1011;
     break;
-  case AMDIL::GLOBALTRUNCSTORE64_f64f32:
-  case AMDIL::LOCALTRUNCSTORE64_f64f32:
-  case AMDIL::REGIONTRUNCSTORE64_f64f32:
-  case AMDIL::PRIVATETRUNCSTORE64_f64f32:
-  case AMDIL::GLOBALTRUNCSTORE_f64f32:
-  case AMDIL::LOCALTRUNCSTORE_f64f32:
-  case AMDIL::REGIONTRUNCSTORE_f64f32:
-  case AMDIL::PRIVATETRUNCSTORE_f64f32:
-    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOF),
-            AMDIL::Rx1011).addReg(AMDIL::Rxy1011);
+  case AMDIL::GLOBALTRUNCSTORE64v4i32i16r:  // case AMDIL::GLOBALTRUNCSTORE64v4i32i16i:
+  case AMDIL::LOCALTRUNCSTORE64v4i32i16r:  // case AMDIL::LOCALTRUNCSTORE64v4i32i16i:
+  case AMDIL::REGIONTRUNCSTORE64v4i32i16r:  // case AMDIL::REGIONTRUNCSTORE64v4i32i16i:
+  case AMDIL::PRIVATETRUNCSTORE64v4i32i16r:  // case AMDIL::PRIVATETRUNCSTORE64v4i32i16i:
+  case AMDIL::GLOBALTRUNCSTOREv4i32i16r:  // case AMDIL::GLOBALTRUNCSTOREv4i32i16i:
+  case AMDIL::LOCALTRUNCSTOREv4i32i16r:  // case AMDIL::LOCALTRUNCSTOREv4i32i16i:
+  case AMDIL::REGIONTRUNCSTOREv4i32i16r:  // case AMDIL::REGIONTRUNCSTOREv4i32i16i:
+  case AMDIL::PRIVATETRUNCSTOREv4i32i16r:  // case AMDIL::PRIVATETRUNCSTOREv4i32i16i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::ANDv4i32rr), AMDIL::R1011)
+    .addReg(dataReg)
+    .addImm(mMFI->addi32Literal(0xFFFF));
+    dataReg = AMDIL::R1011;
     break;
-  case AMDIL::GLOBALTRUNCSTORE64_v2f64f32:
-  case AMDIL::LOCALTRUNCSTORE64_v2f64f32:
-  case AMDIL::REGIONTRUNCSTORE64_v2f64f32:
-  case AMDIL::PRIVATETRUNCSTORE64_v2f64f32:
-  case AMDIL::GLOBALTRUNCSTORE_v2f64f32:
-  case AMDIL::LOCALTRUNCSTORE_v2f64f32:
-  case AMDIL::REGIONTRUNCSTORE_v2f64f32:
-  case AMDIL::PRIVATETRUNCSTORE_v2f64f32:
-    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOF),
-            AMDIL::Rx1011).addReg(AMDIL::Rxy1011);
-    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOF),
-            AMDIL::Ry1011).addReg(AMDIL::Rzw1011);
+  case AMDIL::GLOBALTRUNCSTORE64i64i32r:  // case AMDIL::GLOBALTRUNCSTORE64i64i32i:
+  case AMDIL::LOCALTRUNCSTORE64i64i32r:  // case AMDIL::LOCALTRUNCSTORE64i64i32i:
+  case AMDIL::REGIONTRUNCSTORE64i64i32r:  // case AMDIL::REGIONTRUNCSTORE64i64i32i:
+  case AMDIL::PRIVATETRUNCSTORE64i64i32r:  // case AMDIL::PRIVATETRUNCSTORE64i64i32i:
+  case AMDIL::GLOBALTRUNCSTOREi64i32r:  // case AMDIL::GLOBALTRUNCSTOREi64i32i:
+  case AMDIL::LOCALTRUNCSTOREi64i32r:  // case AMDIL::LOCALTRUNCSTOREi64i32i:
+  case AMDIL::REGIONTRUNCSTOREi64i32r:  // case AMDIL::REGIONTRUNCSTOREi64i32i:
+  case AMDIL::PRIVATETRUNCSTOREi64i32r:  // case AMDIL::PRIVATETRUNCSTOREi64i32i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::LLOi64r), AMDIL::Rx1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rx1011;
+    break;
+  case AMDIL::GLOBALTRUNCSTORE64v2i64i32r:  // case AMDIL::GLOBALTRUNCSTORE64v2i64i32i:
+  case AMDIL::LOCALTRUNCSTORE64v2i64i32r:  // case AMDIL::LOCALTRUNCSTORE64v2i64i32i:
+  case AMDIL::REGIONTRUNCSTORE64v2i64i32r:  // case AMDIL::REGIONTRUNCSTORE64v2i64i32i:
+  case AMDIL::PRIVATETRUNCSTORE64v2i64i32r:  // case AMDIL::PRIVATETRUNCSTORE64v2i64i32i:
+  case AMDIL::GLOBALTRUNCSTOREv2i64i32r:  // case AMDIL::GLOBALTRUNCSTOREv2i64i32i:
+  case AMDIL::LOCALTRUNCSTOREv2i64i32r:  // case AMDIL::LOCALTRUNCSTOREv2i64i32i:
+  case AMDIL::REGIONTRUNCSTOREv2i64i32r:  // case AMDIL::REGIONTRUNCSTOREv2i64i32i:
+  case AMDIL::PRIVATETRUNCSTOREv2i64i32r:  // case AMDIL::PRIVATETRUNCSTOREv2i64i32i:
+    BuildMI(*mBB, MI, DL,
+            mTII->get(AMDIL::LLOv2i64r), AMDIL::Rxy1011)
+    .addReg(dataReg);
+    dataReg = AMDIL::Rxy1011;
+    break;
+  case AMDIL::GLOBALTRUNCSTORE64f64f32r:  // case AMDIL::GLOBALTRUNCSTORE64f64f32i:
+  case AMDIL::LOCALTRUNCSTORE64f64f32r:  // case AMDIL::LOCALTRUNCSTORE64f64f32i:
+  case AMDIL::REGIONTRUNCSTORE64f64f32r:  // case AMDIL::REGIONTRUNCSTORE64f64f32i:
+  case AMDIL::PRIVATETRUNCSTORE64f64f32r:  // case AMDIL::PRIVATETRUNCSTORE64f64f32i:
+  case AMDIL::GLOBALTRUNCSTOREf64f32r:  // case AMDIL::GLOBALTRUNCSTOREf64f32i:
+  case AMDIL::LOCALTRUNCSTOREf64f32r:  // case AMDIL::LOCALTRUNCSTOREf64f32i:
+  case AMDIL::REGIONTRUNCSTOREf64f32r:  // case AMDIL::REGIONTRUNCSTOREf64f32i:
+  case AMDIL::PRIVATETRUNCSTOREf64f32r:  // case AMDIL::PRIVATETRUNCSTOREf64f32i:
+    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOFr),
+            AMDIL::Rx1011).addReg(dataReg);
+    dataReg = AMDIL::Rx1011;
+    break;
+  case AMDIL::GLOBALTRUNCSTORE64v2f64f32r:  // case AMDIL::GLOBALTRUNCSTORE64v2f64f32i:
+  case AMDIL::LOCALTRUNCSTORE64v2f64f32r:  // case AMDIL::LOCALTRUNCSTORE64v2f64f32i:
+  case AMDIL::REGIONTRUNCSTORE64v2f64f32r:  // case AMDIL::REGIONTRUNCSTORE64v2f64f32i:
+  case AMDIL::PRIVATETRUNCSTORE64v2f64f32r:  // case AMDIL::PRIVATETRUNCSTORE64v2f64f32i:
+  case AMDIL::GLOBALTRUNCSTOREv2f64f32r:  // case AMDIL::GLOBALTRUNCSTOREv2f64f32i:
+  case AMDIL::LOCALTRUNCSTOREv2f64f32r:  // case AMDIL::LOCALTRUNCSTOREv2f64f32i:
+  case AMDIL::REGIONTRUNCSTOREv2f64f32r:  // case AMDIL::REGIONTRUNCSTOREv2f64f32i:
+  case AMDIL::PRIVATETRUNCSTOREv2f64f32r:  // case AMDIL::PRIVATETRUNCSTOREv2f64f32i:
+    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOFr),
+            AMDIL::Rx1011).addReg(getCompReg(dataReg, sub_xy_comp));
+    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::DTOFr),
+            AMDIL::Ry1011).addReg(getCompReg(dataReg, sub_zw_comp));
+    dataReg = AMDIL::Rxy1011;
     break;
   }
 }
+uint32_t
+AMDILIOExpansionImpl::getPackedReg(uint32_t &dataReg, uint32_t id)
+{
+  switch (id) {
+  default:
+    return dataReg;
+  case UNPACK_V2I8:
+  case UNPACK_V2I16:
+  case UNPACK_V4I8:
+    return getCompReg(dataReg, sub_x_comp, sub_z_comp);
+  case UNPACK_V4I16:
+    return getCompReg(dataReg, sub_xy_comp, sub_zw_comp);
+  }
+}
 void
-AMDILIOExpansion::expandAddressCalc(MachineInstr *MI)
+AMDILIOExpansionImpl::expandAddressCalc(MachineInstr *MI, uint32_t &addyReg)
 {
   if (!isAddrCalcInstr(MI)) {
     return;
   }
   DebugLoc DL = MI->getDebugLoc();
-  bool is64bit = is64bitLSOp(TM, MI);
-  uint32_t addyReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
-  uint32_t addInst = (is64bit) ? AMDIL::LADD_i64 : AMDIL::ADD_i32;
-  switch(MI->getOpcode()) {
-    ExpandCaseToAllTruncTypes(AMDIL::PRIVATETRUNCSTORE)
-    ExpandCaseToAllTruncTypes(AMDIL::PRIVATETRUNCSTORE64)
-    ExpandCaseToAllTypes(AMDIL::PRIVATESTORE)
-    ExpandCaseToAllTypes(AMDIL::PRIVATELOAD)
-    ExpandCaseToAllTypes(AMDIL::PRIVATESEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::PRIVATEZEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::PRIVATEAEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::PRIVATESTORE64)
-    ExpandCaseToAllTypes(AMDIL::PRIVATELOAD64)
-    ExpandCaseToAllTypes(AMDIL::PRIVATESEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::PRIVATEZEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::PRIVATEAEXTLOAD64)
+  bool is64bit = is64bitLSOp(MI);
+  uint32_t newReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
+  uint32_t addInst = (is64bit) ? AMDIL::ADDi64rr : AMDIL::ADDi32rr;
+  if (isPrivateInst(MI) && (isPtrLoadInst(MI)
+                            || (isPtrStoreInst(MI)
+                                && mSTM->device()->usesSoftware(AMDILDeviceInfo
+                                                                ::PrivateMem))))
+  {
     BuildMI(*mBB, MI, DL, mTII->get(addInst),
-            addyReg).addReg(addyReg).addReg(AMDIL::T1);
-    break;
-    ExpandCaseToAllTruncTypes(AMDIL::LOCALTRUNCSTORE)
-    ExpandCaseToAllTypes(AMDIL::LOCALLOAD)
-    ExpandCaseToAllTypes(AMDIL::LOCALSEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::LOCALZEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::LOCALAEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::LOCALSTORE)
-    ExpandCaseToAllTruncTypes(AMDIL::LOCALTRUNCSTORE64)
-    ExpandCaseToAllTypes(AMDIL::LOCALLOAD64)
-    ExpandCaseToAllTypes(AMDIL::LOCALSEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::LOCALZEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::LOCALAEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::LOCALSTORE64)
+            newReg).addReg(addyReg).addReg(AMDIL::T1);
+    addyReg = newReg;
+  } else if (isLocalInst(MI) && (isPtrStoreInst(MI) || isPtrLoadInst(MI))) {
     BuildMI(*mBB, MI, DL, mTII->get(addInst),
-            addyReg).addReg(addyReg).addReg(AMDIL::T2);
-    break;
-    ExpandCaseToAllTypes(AMDIL::CPOOLLOAD)
-    ExpandCaseToAllTypes(AMDIL::CPOOLSEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::CPOOLZEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::CPOOLAEXTLOAD)
-    ExpandCaseToAllTypes(AMDIL::CPOOLLOAD64)
-    ExpandCaseToAllTypes(AMDIL::CPOOLSEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::CPOOLZEXTLOAD64)
-    ExpandCaseToAllTypes(AMDIL::CPOOLAEXTLOAD64)
+            newReg).addReg(addyReg).addReg(AMDIL::T2);
+    addyReg = newReg;
+  } else if (isConstantPoolInst(MI) && isPtrLoadInst(MI) &&
+             MI->getOperand(1).isReg()) {
     BuildMI(*mBB, MI, DL, mTII->get(addInst),
-            addyReg).addReg(addyReg).addReg(AMDIL::SDP);
-    break;
-  default:
-    return;
+            newReg).addReg(addyReg).addReg(AMDIL::SDP);
+    addyReg = newReg;
   }
 }
 void
-AMDILIOExpansion::expandLoadStartCode(MachineInstr *MI)
+AMDILIOExpansionImpl::expandLoadStartCode(MachineInstr *MI, uint32_t &addyReg)
 {
   DebugLoc DL = MI->getDebugLoc();
-  bool is64bit = is64bitLSOp(TM, MI);
-  uint32_t addyReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
-  uint32_t addInst = (is64bit) ? AMDIL::LADD_i64 : AMDIL::ADD_i32;
-  uint32_t moveInst = (is64bit) ? AMDIL::MOVE_i64 : AMDIL::MOVE_i32;
+  bool is64bit = is64bitLSOp(MI);
   if (MI->getOperand(2).isReg()) {
+    uint32_t newReg = (is64bit) ? AMDIL::Rxy1010 : AMDIL::Rx1010;
+    uint32_t addInst = (is64bit) ? AMDIL::ADDi64rr : AMDIL::ADDi32rr;
     BuildMI(*mBB, MI, DL, mTII->get(addInst),
-            addyReg).addReg(MI->getOperand(1).getReg())
+            newReg).addReg(addyReg)
     .addReg(MI->getOperand(2).getReg());
-  } else {
-    BuildMI(*mBB, MI, DL, mTII->get(moveInst),
-            addyReg).addReg(MI->getOperand(1).getReg());
+    addyReg = newReg;
   }
-  MI->getOperand(1).setReg(addyReg);
-  expandAddressCalc(MI);
+  expandAddressCalc(MI, addyReg);
 }
 void
-AMDILIOExpansion::emitStaticCPLoad(MachineInstr* MI, int swizzle,
-                                   int id, bool ExtFPLoad)
+AMDILIOExpansionImpl::emitStaticCPLoad(MachineInstr* MI,
+                                       int swizzle,
+                                       int id,
+                                       bool ExtFPLoad,
+                                       uint32_t &dataReg)
 {
   DebugLoc DL = MI->getDebugLoc();
   switch(swizzle) {
   default:
     BuildMI(*mBB, MI, DL, mTII->get(ExtFPLoad
-                                    ? AMDIL::DTOF : AMDIL::MOVE_i32),
-            MI->getOperand(0).getReg())
+                                    ? AMDIL::DTOFr : AMDIL::COPY),
+            dataReg)
     .addImm(id);
     break;
   case 1:
   case 2:
   case 3:
     BuildMI(*mBB, MI, DL, mTII->get(ExtFPLoad
-                                    ? AMDIL::DTOF : AMDIL::MOVE_i32), AMDIL::Rx1001)
+                                    ? AMDIL::DTOFr : AMDIL::COPY),
+            AMDIL::Rx1001)
     .addImm(id);
-    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::VINSERT_v4i32),
-            MI->getOperand(0).getReg())
-    .addReg(MI->getOperand(0).getReg())
+    BuildMI(*mBB, MI, DL, mTII->get(AMDIL::VINSERTv4i32rr),
+            dataReg)
+    .addReg(dataReg)
     .addReg(AMDIL::Rx1001)
     .addImm(swizzle + 1);
     break;
   };
 }
 void
-AMDILIOExpansion::emitCPInst(MachineInstr* MI,
-                             const Constant* C, AMDILKernelManager* KM, int swizzle, bool ExtFPLoad)
+AMDILIOExpansionImpl::emitCPInst(MachineInstr* MI,
+                                 const Constant* C,
+                                 AMDILKernelManager* KM,
+                                 int swizzle,
+                                 bool ExtFPLoad,
+                                 uint32_t &dataReg)
 {
   if (const ConstantFP* CFP = dyn_cast<ConstantFP>(C)) {
     if (CFP->getType()->isFloatTy()) {
@@ -1252,7 +911,7 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
         }
         id = mMFI->addi64Literal(conv.ul);
       }
-      emitStaticCPLoad(MI, swizzle, id, ExtFPLoad);
+      emitStaticCPLoad(MI, swizzle, id, ExtFPLoad, dataReg);
     } else {
       const APFloat &APF = CFP->getValueAPF();
       union ftol_union {
@@ -1266,11 +925,11 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       } else {
         conv.d = APF.convertToDouble();
       }
-      uint32_t id = mMFI->getLongLits(conv.ul);
+      uint32_t id = mMFI->getLitIdx(conv.ul);
       if (!id) {
-        id = mMFI->getIntLits((uint32_t)conv.ul);
+        id = mMFI->getLitIdx((uint32_t)conv.ul);
       }
-      emitStaticCPLoad(MI, swizzle, id, ExtFPLoad);
+      emitStaticCPLoad(MI, swizzle, id, ExtFPLoad, dataReg);
     }
   } else if (const ConstantInt* CI = dyn_cast<ConstantInt>(C)) {
     int64_t val = 0;
@@ -1278,9 +937,11 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       val = CI->getSExtValue();
     }
     if (CI->getBitWidth() == 64) {
-      emitStaticCPLoad(MI, swizzle, mMFI->addi64Literal(val), ExtFPLoad);
+      emitStaticCPLoad(MI, swizzle, mMFI->addi64Literal(
+                         val), ExtFPLoad, dataReg);
     } else {
-      emitStaticCPLoad(MI, swizzle, mMFI->addi32Literal(val), ExtFPLoad);
+      emitStaticCPLoad(MI, swizzle, mMFI->addi32Literal(
+                         val), ExtFPLoad, dataReg);
     }
   } else if (const ConstantArray* CA = dyn_cast<ConstantArray>(C)) {
     uint32_t size = CA->getNumOperands();
@@ -1289,12 +950,12 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       size = 4;
     }
     for (uint32_t x = 0; x < size; ++x) {
-      emitCPInst(MI, CA->getOperand(0), KM, x, ExtFPLoad);
+      emitCPInst(MI, CA->getOperand(0), KM, x, ExtFPLoad, dataReg);
     }
   } else if (const ConstantAggregateZero* CAZ
-             = dyn_cast<ConstantAggregateZero>(C)) {
+               = dyn_cast<ConstantAggregateZero>(C)) {
     if (CAZ->isNullValue()) {
-      emitStaticCPLoad(MI, swizzle, mMFI->addi32Literal(0), ExtFPLoad);
+      emitStaticCPLoad(MI, swizzle, mMFI->addi32Literal(0), ExtFPLoad, dataReg);
     }
   } else if (const ConstantStruct* CS = dyn_cast<ConstantStruct>(C)) {
     uint32_t size = CS->getNumOperands();
@@ -1303,7 +964,7 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       size = 4;
     }
     for (uint32_t x = 0; x < size; ++x) {
-      emitCPInst(MI, CS->getOperand(0), KM, x, ExtFPLoad);
+      emitCPInst(MI, CS->getOperand(0), KM, x, ExtFPLoad, dataReg);
     }
   } else if (const ConstantVector* CV = dyn_cast<ConstantVector>(C)) {
     // TODO: Make this handle vectors natively up to the correct
@@ -1314,7 +975,7 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       size = 4;
     }
     for (uint32_t x = 0; x < size; ++x) {
-      emitCPInst(MI, CV->getOperand(0), KM, x, ExtFPLoad);
+      emitCPInst(MI, CV->getOperand(0), KM, x, ExtFPLoad, dataReg);
     }
   } else if (const ConstantDataVector* CV = dyn_cast<ConstantDataVector>(C)) {
     // TODO: Make this handle vectors natively up to the correct
@@ -1325,7 +986,7 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
       size = 4;
     }
     for (uint32_t x = 0; x < size; ++x) {
-      emitCPInst(MI, CV->getElementAsConstant(0), KM, x, ExtFPLoad);
+      emitCPInst(MI, CV->getElementAsConstant(0), KM, x, ExtFPLoad, dataReg);
     }
   } else {
     // TODO: Do we really need to handle ConstantPointerNull?
@@ -1334,4 +995,19 @@ AMDILIOExpansion::emitCPInst(MachineInstr* MI,
     assert(0 && "Found a constant type that I don't know how to handle");
   }
 }
-
+uint32_t
+AMDILIOExpansionImpl::getCompReg(uint32_t reg,
+                                 uint32_t subIdx0,
+                                 uint32_t subIdx1)
+{
+  uint32_t subreg = mTRI->getSubReg(reg, subIdx0);
+  if (!subreg) {
+    subreg = mTRI->getSubReg(reg, subIdx1);
+  }
+  assert(subreg
+         && "Found a case where the register does not have either sub-index!");
+  // Just incase we hit this assert, lets as least use a valid register so
+  // we don't have possible crashes in release mode.
+  if (!subreg) subreg = reg;
+  return subreg;
+}

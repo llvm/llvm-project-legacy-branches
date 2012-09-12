@@ -29,8 +29,7 @@
 #define IMAGETYPE_3D 1
 #define RESERVED_LIT_COUNT 6
 
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 class AMDILMachineFunctionInfo;
 class AMDILModuleInfo;
@@ -44,9 +43,7 @@ class MachineInstr;
 class ConstantFP;
 class PrintfInfo;
 
-
-class AMDILKernelManager
-{
+class AMDILKernelManager {
 public:
   typedef enum {
     RELEASE_ONLY,
@@ -64,7 +61,6 @@ public:
   /// kernel.
   void processArgMetadata(OSTREAM_TYPE &O,
                           uint32_t buf, bool kernel);
-
 
   /// Prints the header for the kernel which includes the groupsize declaration
   /// and calculation of the local/group/global id's.
@@ -103,6 +99,9 @@ public:
 
   // Returns whether a compiler needs to insert a write to memory or not.
   bool useCompilerWrite(const MachineInstr *MI);
+
+  // Return whether a region_barrier is used
+  bool useRegionBarrier(const MachineInstr *MI);
 
   // Set the flag that there exists an image write.
   void setImageWrite();
@@ -155,6 +154,7 @@ private:
   /// compiler specific write if no other writes to memory occured.
   bool mHasImageWrite;
   bool mHasOutputInst;
+  bool mHasRegionBarrier;
 
   /// Map from const Value * to UAV ID.
   std::map<const Value *, uint32_t> mValueIDMap;
@@ -166,6 +166,5 @@ private:
   AMDILMachineFunctionInfo *mMFI;
   AMDILModuleInfo *mAMI;
 }; // class AMDILKernelManager
-
 } // llvm namespace
 #endif // _AMDILKERNELMANAGER_H_

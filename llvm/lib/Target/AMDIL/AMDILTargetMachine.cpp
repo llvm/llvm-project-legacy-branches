@@ -41,9 +41,7 @@ static MCAsmInfo* createMCAsmInfo(const Target &T, StringRef TT)
     return new AMDILMCAsmInfo(TheTriple);
   }
 }
-
-extern "C" void LLVMInitializeAMDILTarget()
-{
+extern "C" void LLVMInitializeAMDILTarget() {
   // Register the target
   RegisterTargetMachine<TheAMDILTargetMachine> X(TheAMDILTarget);
 
@@ -54,42 +52,46 @@ extern "C" void LLVMInitializeAMDILTarget()
   //TargetRegistry::RegisterCodeEmitter(TheAMDILTarget,
   //createAMDILMCCodeEmitter);
 }
-
 TheAMDILTargetMachine::TheAMDILTargetMachine(const Target &T,
-    StringRef TT, StringRef CPU, StringRef FS, const TargetOptions &Options,
-    Reloc::Model RM, CodeModel::Model CM, CodeGenOpt::Level OL)
+                                             StringRef TT,
+                                             StringRef CPU,
+                                             StringRef FS,
+                                             const TargetOptions &Options,
+                                             Reloc::Model RM,
+                                             CodeModel::Model CM,
+                                             CodeGenOpt::Level OL)
   : AMDILTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL)
 {
 }
-
 /// AMDILTargetMachine ctor -
 ///
 AMDILTargetMachine::AMDILTargetMachine(const Target &T,
-                                       StringRef TT, StringRef CPU, StringRef FS,
+                                       StringRef TT,
+                                       StringRef CPU,
+                                       StringRef FS,
                                        const TargetOptions &Options,
-                                       Reloc::Model RM, CodeModel::Model CM,
+                                       Reloc::Model RM,
+                                       CodeModel::Model CM,
                                        CodeGenOpt::Level OL)
   :
-  LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-  Subtarget(TT, CPU, FS),
-  DataLayout(Subtarget.getDataLayout()),
-  FrameLowering(TargetFrameLowering::StackGrowsUp,
-                Subtarget.device()->getStackAlignment(), 0),
-  InstrInfo(*this), //JITInfo(*this),
-  TLInfo(*this),
-  IntrinsicInfo(this),
-  ELFWriterInfo(false, true)
+    LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    Subtarget(TT, CPU, FS),
+    DataLayout(Subtarget.getDataLayout()),
+    FrameLowering(TargetFrameLowering::StackGrowsUp,
+                  Subtarget.device()->getStackAlignment(), 0),
+    InstrInfo(*this), //JITInfo(*this),
+    TLInfo(*this),
+    IntrinsicInfo(this),
+    ELFWriterInfo(false, true)
 {
   setAsmVerbosityDefault(true);
   setMCUseLoc(false);
 }
-
 AMDILTargetLowering*
 AMDILTargetMachine::getTargetLowering() const
 {
   return const_cast<AMDILTargetLowering*>(&TLInfo);
 }
-
 const AMDILInstrInfo*
 AMDILTargetMachine::getInstrInfo() const
 {
@@ -100,37 +102,30 @@ AMDILTargetMachine::getFrameLowering() const
 {
   return &FrameLowering;
 }
-
 const AMDILSubtarget*
 AMDILTargetMachine::getSubtargetImpl() const
 {
   return &Subtarget;
 }
-
 const AMDILRegisterInfo*
 AMDILTargetMachine::getRegisterInfo() const
 {
   return &InstrInfo.getRegisterInfo();
 }
-
 const TargetData*
 AMDILTargetMachine::getTargetData() const
 {
   return &DataLayout;
 }
-
 const AMDILELFWriterInfo*
 AMDILTargetMachine::getELFWriterInfo() const
 {
   return Subtarget.isTargetELF() ? &ELFWriterInfo : 0;
 }
-
 TargetPassConfig*
-AMDILTargetMachine::createPassConfig(PassManagerBase &PM)
-{
+AMDILTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new AMDILPassConfig(this, PM);
 }
-
 const AMDILIntrinsicInfo*
 AMDILTargetMachine::getIntrinsicInfo() const
 {
@@ -141,11 +136,6 @@ AMDILPassConfig::addPreISel()
 {
   // Vector Coarsening as the current implementation does not support
   // big endian yet.
-  /*  ---- TODO: WHAT TO DO WITH THIS???
-  if (getAMDILTargetMachine().getOptLevel() != CodeGenOpt::None &&
-      getAMDILTargetMachine().getTargetData()->isLittleEndian())
-    addPass(createVectorCoarseningPass());
-  */
 
   return true;
 }
@@ -173,19 +163,15 @@ AMDILPassConfig::addPreRegAlloc()
     llvm::RegisterScheduler::setDefault(&llvm::createSourceListDAGScheduler);
   }
 
-  addPass(createAMDILMachinePeephole(getAMDILTargetMachine(),
-                                     getAMDILTargetMachine().getOptLevel()));
+  addPass(createAMDILMachinePeephole());
   addPass(createAMDILPointerManager(getAMDILTargetMachine(),
                                     getAMDILTargetMachine().getOptLevel()));
   return false;
 }
-
 bool
-AMDILPassConfig::addPostRegAlloc()
-{
+AMDILPassConfig::addPostRegAlloc() {
   return false;  // -print-machineinstr should print after this.
 }
-
 /// addPreEmitPass - This pass may be implemented by targets that want to run
 /// passes immediately before machine code is emitted.  This should return
 /// true if -print-machineinstrs should print out the code after the passes.
@@ -202,7 +188,6 @@ AMDILPassConfig::addPreEmitPass()
                                     getAMDILTargetMachine().getOptLevel()));
   return true;
 }
-
 void
 AMDILTargetMachine::dump(OSTREAM_TYPE &O)
 {
@@ -211,17 +196,15 @@ AMDILTargetMachine::dump(OSTREAM_TYPE &O)
   }
   O << ";AMDIL Target Machine State Dump: \n";
 }
-
 void
 AMDILTargetMachine::setDebug(bool debugMode)
 {
   mDebugMode = debugMode;
 }
-
 bool
 AMDILTargetMachine::getDebug() const
 {
   return mDebugMode;
 }
-
-extern "C" void LLVMInitializeAMDILTargetMC() {}
+extern "C" void LLVMInitializeAMDILTargetMC() {
+}

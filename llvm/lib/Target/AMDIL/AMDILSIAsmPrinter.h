@@ -53,7 +53,6 @@ protected:
   //
   virtual void
   emitMacroFunc(const MachineInstr *MI, OSTREAM_TYPE &O);
-
-}; // AMDILSIAsmPrinter
+};   // AMDILSIAsmPrinter
 } // end of llvm namespace
 #endif // _AMDIL_SI_ASM_PRINTER_H_

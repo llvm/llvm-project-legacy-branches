@@ -15,8 +15,7 @@
 #define _AMDILNIDEVICE_H_
 #include "AMDILEvergreenDevice.h"
 #include "AMDILSubtarget.h"
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 //===---------------------------------------------------------------------===//
 // NI generation of devices and their respective sub classes
@@ -28,15 +27,14 @@ class AMDILSubtarget;
 // NI devices are all 64 wide wavefronts and also add support for signed 24 bit
 // integer operations
 
-class AMDILNIDevice : public AMDILEvergreenDevice
-{
+class AMDILNIDevice : public AMDILEvergreenDevice {
 public:
   AMDILNIDevice(AMDILSubtarget*);
   virtual ~AMDILNIDevice();
   virtual size_t getMaxLDSSize() const;
   virtual uint32_t getGeneration() const;
 protected:
-}; // AMDILNIDevice
+};   // AMDILNIDevice
 
 // Just as the AMDILCypressDevice is the double capable version of the
 // AMDILEvergreenDevice, the AMDILCaymanDevice is the double capable version of
@@ -44,14 +42,13 @@ protected:
 // standpoint is that the Cayman Device has 4 wide ALU's, whereas the rest of the
 // NI family is a 5 wide.
 
-class AMDILCaymanDevice: public AMDILNIDevice
-{
+class AMDILCaymanDevice : public AMDILNIDevice {
 public:
   AMDILCaymanDevice(AMDILSubtarget*);
   virtual ~AMDILCaymanDevice();
 private:
   virtual void setCaps();
-}; // AMDILCaymanDevice
+};   // AMDILCaymanDevice
 
 static const unsigned int MAX_LDS_SIZE_900 = AMDILDevice::MAX_LDS_SIZE_800;
 } // namespace llvm

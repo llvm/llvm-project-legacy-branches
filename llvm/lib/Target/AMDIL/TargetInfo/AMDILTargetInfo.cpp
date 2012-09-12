@@ -54,10 +54,8 @@ using namespace llvm;
 /// The target for the AMDIL backend
 Target llvm::TheAMDILTarget;
 
-
 /// Extern function to initialize the targets for the AMDIL backend
-extern "C" void LLVMInitializeAMDILTargetInfo()
-{
+extern "C" void LLVMInitializeAMDILTargetInfo() {
   RegisterTarget<Triple::amdil, false>
   IL(TheAMDILTarget, "amdil", "ATI graphics cards");
 }

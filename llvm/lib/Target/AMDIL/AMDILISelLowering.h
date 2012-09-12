@@ -25,74 +25,35 @@ namespace llvm
 {
 namespace AMDILISD
 {
-enum {
+enum
+{
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
-  INTTOANY,    // Dummy instruction that takes an int and goes to
-  // any type converts the SDNode to an int
-  DP_TO_FP,    // Conversion from 64bit FP to 32bit FP
-  FP_TO_DP,    // Conversion from 32bit FP to 64bit FP
-  BITCONV,     // instruction that converts from any type to any type
-  CMOV,        // 32bit FP Conditional move instruction
-  CMOVLOG,     // 32bit FP Conditional move logical instruction
-  SELECT,      // 32bit FP Conditional move logical instruction
-  SETCC,       // 32bit FP Conditional move logical instruction
-  ISGN,        // 32bit Int Sign instruction
-  INEGATE,     // 32bit Int Negation instruction
-  MAD,         // 32bit Fused Multiply Add instruction
-  ADD,         // 32/64 bit pseudo instruction
-  AND,         // 128 bit and instruction
-  OR,          // 128 bit or instruction
-  NOT,         // 128 bit not instruction
-  XOR,         // 128 bit xor instruction
-  MOVE,        // generic mov instruction
-  PHIMOVE,     // generic phi-node mov instruction
-  VBUILD,      // scalar to vector mov instruction
-  VEXTRACT,    // extract vector components
-  VINSERT,     // insert vector components
-  VCONCAT,     // concat a single vector to another vector
-  UMAD,        // 32bit UInt Fused Multiply Add instruction
-  CALL,        // Function call based on a single integer
-  RET,         // Return from a function call
-  SELECT_CC,   // Select the correct conditional instruction
-  BRCC,        // Select the correct branch instruction
-  CMPCC,       // Compare to GPR operands
-  CMPICC,      // Compare two GPR operands, set icc.
-  CMPFCC,      // Compare two FP operands, set fcc.
-  BRICC,       // Branch to dest on icc condition
-  BRFCC,       // Branch to dest on fcc condition
-  SELECT_ICC,  // Select between two values using the current ICC
-  //flags.
-  SELECT_FCC,  // Select between two values using the current FCC
-  //flags.
-  LCREATE,     // Create a 64bit integer from two 32 bit integers
-  LCOMPHI,     // Get the hi 32 bits from a 64 bit integer
-  LCOMPLO,     // Get the lo 32 bits from a 64 bit integer
-  DCREATE,     // Create a 64bit float from two 32 bit integers
-  DCOMPHI,     // Get the hi 32 bits from a 64 bit float
-  DCOMPLO,     // Get the lo 32 bits from a 64 bit float
-  LCREATE2,     // Create a 64bit integer from two 32 bit integers
-  LCOMPHI2,     // Get the hi 32 bits from a 64 bit integer
-  LCOMPLO2,     // Get the lo 32 bits from a 64 bit integer
-  DCREATE2,     // Create a 64bit float from two 32 bit integers
-  DCOMPHI2,     // Get the hi 32 bits from a 64 bit float
-  DCOMPLO2,     // Get the lo 32 bits from a 64 bit float
-  UMUL,        // 32bit unsigned multiplication
-  IFFB_HI,  // 32bit find first hi bit instruction
-  IFFB_LO,  // 32bit find first low bit instruction
-  DIV_INF,      // Divide with infinity returned on zero divisor
-  SMAX,        // Signed integer max
-  CMP,
-  IL_CC_I_GT,
-  IL_CC_I_LT,
-  IL_CC_I_GE,
-  IL_CC_I_LE,
-  IL_CC_I_EQ,
-  IL_CC_I_NE,
+  DP_TO_FP,        // Conversion from 64bit FP to 32bit FP
+  FP_TO_DP,        // Conversion from 32bit FP to 64bit FP
+  BITCONV,         // instruction that converts from any type to any type
+  ADD,             // 32/64 bit pseudo instruction
+  VBUILD,          // scalar to vector mov instruction
+  VEXTRACT,        // extract vector components
+  VINSERT,         // insert vector components
+  VCONCAT,         // concat a single vector to another vector
+  CALL,            // Function call based on a single integer
+  RET,             // Return from a function call
+  SELECT_CC,       // Select the correct conditional instruction
+  LCREATE,         // Create a 64bit integer from two 32 bit integers
+  LCOMPHI,         // Get the hi 32 bits from a 64 bit integer
+  LCOMPLO,         // Get the lo 32 bits from a 64 bit integer
+  DCREATE,         // Create a 64bit float from two 32 bit integers
+  DCOMPHI,         // Get the hi 32 bits from a 64 bit float
+  DCOMPLO,         // Get the lo 32 bits from a 64 bit float
+  LCREATE2,         // Create a 64bit integer from two 32 bit integers
+  LCOMPHI2,         // Get the hi 32 bits from a 64 bit integer
+  LCOMPLO2,         // Get the lo 32 bits from a 64 bit integer
+  DCREATE2,         // Create a 64bit float from two 32 bit integers
+  DCOMPHI2,         // Get the hi 32 bits from a 64 bit float
+  DCOMPLO2,         // Get the lo 32 bits from a 64 bit float
+  UMUL,            // 32bit unsigned multiplication
   RET_FLAG,
   BRANCH_COND,
-  LOOP_NZERO,
-  LOOP_ZERO,
-  LOOP_CMP,
   ADDADDR,
   // ATOMIC Operations
   // Global Memory
@@ -110,6 +71,8 @@ enum {
   ATOM_G_RSUB,
   ATOM_G_XCHG,
   ATOM_G_XOR,
+  ATOM_G_STORE,
+  ATOM_G_LOAD,
   ATOM_G_ADD_NORET,
   ATOM_G_AND_NORET,
   ATOM_G_CMPXCHG_NORET,
@@ -215,7 +178,7 @@ enum {
 
   LAST_ISD_NUMBER
 };
-} // AMDILISD
+}   // AMDILISD
 
 class MachineBasicBlock;
 class MachineInstr;
@@ -225,7 +188,7 @@ class TargetInstrInfo;
 class AMDILTargetLowering : public TargetLowering
 {
 private:
-  int VarArgsFrameOffset;   // Frame offset to start of varargs area.
+  int VarArgsFrameOffset;       // Frame offset to start of varargs area.
 public:
   AMDILTargetLowering(TargetMachine &TM);
 
@@ -251,12 +214,7 @@ public:
     APInt &KnownOne,
     const SelectionDAG &DAG,
     unsigned Depth = 0
-  ) const;
-
-  virtual MachineBasicBlock*
-  EmitInstrWithCustomInserter(
-    MachineInstr *MI,
-    MachineBasicBlock *MBB) const;
+    ) const;
 
   virtual bool
   getTgtMemIntrinsic(IntrinsicInfo &Info,
@@ -264,7 +222,7 @@ public:
   virtual const char*
   getTargetNodeName(
     unsigned Opcode
-  ) const;
+    ) const;
 
   /// getSetCCResultType - Return the value type to use for ISD::SETCC.
   virtual EVT getSetCCResultType(EVT VT) const;
@@ -359,12 +317,13 @@ private:
   SDValue
   genCLZu32(SDValue Op, SelectionDAG &DAG) const;
   SDValue
-  genf64toi32(SDValue Op, SelectionDAG &DAG,
-              bool includeSign) const;
-
+  genf64toi32(SDValue Op, SelectionDAG &DAG, bool includeSign) const;
   SDValue
-  genf64toi64(SDValue Op, SelectionDAG &DAG,
-              bool includeSign) const;
+  genf64toi64(SDValue Op, SelectionDAG &DAG, bool includeSign) const;
+  SDValue
+  genf32toi64(SDValue Op, SelectionDAG &DAG, bool includeSign) const;
+  SDValue
+  geni64tof32(SDValue Op, SelectionDAG &DAG, bool includeSign) const;
 
   SDValue
   genu32tof64(SDValue Op, EVT dblvt, SelectionDAG &DAG) const;
@@ -480,19 +439,13 @@ private:
   LowerCONCAT_VECTORS(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue
-  LowerAND(SDValue Op, SelectionDAG &DAG) const;
-
-  SDValue
-  LowerOR(SDValue Op, SelectionDAG &DAG) const;
+  LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue
   LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue
   LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
-
-  SDValue
-  LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue
   LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
@@ -513,51 +466,11 @@ private:
   LowerBR_CC(SDValue Op, SelectionDAG &DAG) const;
   SDValue
   LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const;
-  void
-  generateCMPInstr(MachineInstr*, MachineBasicBlock*,
-                   const TargetInstrInfo&) const;
-  MachineOperand
-  convertToReg(MachineOperand) const;
-
-  // private members used by the set of instruction generation
-  // functions, these are marked mutable as they are cached so
-  // that they don't have to constantly be looked up when using the
-  // generateMachineInst/genVReg instructions. This is to simplify
-  // the code
-  // and to make it cleaner. The object itself doesn't change as
-  // only these functions use these three data types.
-  mutable MachineBasicBlock *mBB;
-  mutable DebugLoc *mDL;
-  mutable const TargetInstrInfo *mTII;
-  mutable MachineBasicBlock::iterator mBBI;
-  void
-  setPrivateData(MachineBasicBlock *BB,
-                 MachineBasicBlock::iterator &BBI,
-                 DebugLoc *DL,
-                 const TargetInstrInfo *TII) const;
-  uint32_t genVReg(uint32_t regType) const;
-  MachineInstrBuilder
-  generateMachineInst(uint32_t opcode,
-                      uint32_t dst) const;
-  MachineInstrBuilder
-  generateMachineInst(uint32_t opcode,
-                      uint32_t dst, uint32_t src1) const;
-  MachineInstrBuilder
-  generateMachineInst(uint32_t opcode,
-                      uint32_t dst, uint32_t src1, uint32_t src2) const;
-  MachineInstrBuilder
-  generateMachineInst(uint32_t opcode,
-                      uint32_t dst, uint32_t src1, uint32_t src2,
-                      uint32_t src3) const;
   uint32_t
   addExtensionInstructions(
     uint32_t reg, bool signedShift,
     unsigned int simpleVT) const;
-  void
-  generateLongRelational(MachineInstr *MI,
-                         unsigned int opCode) const;
-
-}; // AMDILTargetLowering
+};   // AMDILTargetLowering
 } // end namespace llvm
 
 #endif    // AMDIL_ISELLOWERING_H_

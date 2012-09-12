@@ -13,6 +13,20 @@
 
 let TargetPrefix = "AMDIL", isTarget = 1 in {
 //------------- Synchronization Functions - OpenCL 6.11.9 --------------------//
+  def int_AMDIL_gws : GCCBuiltin<"__amdil_gws">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_global : GCCBuiltin<"__amdil_gws_global">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_local : GCCBuiltin<"__amdil_gws_local">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_region : GCCBuiltin<"__amdil_gws_region">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_global_local : GCCBuiltin<"__amdil_gws_global_local">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_global_region : GCCBuiltin<"__amdil_gws_global_region">,
+        UnaryIntNoRetInt;
+  def int_AMDIL_gws_local_region : GCCBuiltin<"__amdil_gws_local_region">,
+        UnaryIntNoRetInt;
   def int_AMDIL_fence   : GCCBuiltin<"__amdil_mem_fence">,
         UnaryIntNoRetInt;
   def int_AMDIL_fence_global   : GCCBuiltin<"__amdil_mem_fence_global">,
@@ -61,11 +75,11 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
   def int_AMDIL_early_exit : GCCBuiltin<"__amdil_early_exit">,
         UnaryIntNoRetInt;
 
+let Properties = [IntrNoMem] in {
   def int_AMDIL_cmov_logical  : GCCBuiltin<"__amdil_cmov_logical">,
           TernaryIntInt;
   def int_AMDIL_fabs : GCCBuiltin<"__amdil_fabs">, UnaryIntFloat;
   def int_AMDIL_abs : GCCBuiltin<"__amdil_abs">, UnaryIntInt;
-
   def int_AMDIL_bit_extract_i32 : GCCBuiltin<"__amdil_ibit_extract">,
           TernaryIntInt;
   def int_AMDIL_bit_extract_u32 : GCCBuiltin<"__amdil_ubit_extract">,
@@ -116,16 +130,23 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
           BinaryIntInt;
   def int_AMDIL_borrow_i32 : GCCBuiltin<"__amdil_borrow">,
           BinaryIntInt;
+}
   def int_AMDIL_min_i32 : GCCBuiltin<"__amdil_imin">,
-          BinaryIntInt;
+       BinaryIntInt;
   def int_AMDIL_min_u32 : GCCBuiltin<"__amdil_umin">,
           BinaryIntInt;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_min     : GCCBuiltin<"__amdil_min">,
           BinaryIntFloat;
+}
+
   def int_AMDIL_max_i32 : GCCBuiltin<"__amdil_imax">,
-          BinaryIntInt;
+       BinaryIntInt;
   def int_AMDIL_max_u32 : GCCBuiltin<"__amdil_umax">,
-          BinaryIntInt;
+       BinaryIntInt;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_max     : GCCBuiltin<"__amdil_max">,
           BinaryIntFloat;
   def int_AMDIL_media_lerp_u4 : GCCBuiltin<"__amdil_u4lerp">,
@@ -164,12 +185,20 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
           UnaryIntFloat;
   def int_AMDIL_sin_vec : GCCBuiltin<"__amdil_sin_vec">,
           UnaryIntFloat;
+}
+
   def int_AMDIL_ftz : GCCBuiltin<"__amdil_ftz">,
       UnaryIntFloat;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_pow : GCCBuiltin<"__amdil_pow">, BinaryIntFloat;
   def int_AMDIL_div : GCCBuiltin<"__amdil_div">, BinaryIntFloat;
   def int_AMDIL_div_precise : GCCBuiltin<"__amdil_div_precise">, BinaryIntFloat;
+}
+
   def int_AMDIL_udiv : GCCBuiltin<"__amdil_udiv">, BinaryIntInt;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_sqrt: GCCBuiltin<"__amdil_sqrt">,
           UnaryIntFloat;
   def int_AMDIL_sqrt_vec: GCCBuiltin<"__amdil_sqrt_vec">,
@@ -198,52 +227,56 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
           UnaryIntFloat;
   def int_AMDIL_lerp : GCCBuiltin<"__amdil_lerp">,
           TernaryIntFloat;
-  def int_AMDIL_media_sad4 : GCCBuiltin<"__amdil_sad4">,
-      Intrinsic<[llvm_i32_ty], [llvm_v4i32_ty,
-           llvm_v4i32_ty, llvm_i32_ty], []>;
+}
 
-  def int_AMDIL_frexp_f64 : GCCBuiltin<"__amdil_frexp">,
-        Intrinsic<[llvm_v2i64_ty], [llvm_double_ty], []>;
+ def int_AMDIL_media_sad4 : GCCBuiltin<"__amdil_sad4">,
+   Intrinsic<[llvm_i32_ty], [llvm_v4i32_ty,
+        llvm_v4i32_ty, llvm_i32_ty], []>;
+
+ def int_AMDIL_frexp_f64 : GCCBuiltin<"__amdil_frexp">,
+   Intrinsic<[llvm_v2i64_ty], [llvm_double_ty], []>;
  def int_AMDIL_ldexp : GCCBuiltin<"__amdil_ldexp">,
-    Intrinsic<[llvm_anyfloat_ty], [llvm_anyfloat_ty, llvm_anyint_ty], []>;
+   Intrinsic<[llvm_anyfloat_ty], [llvm_anyfloat_ty, llvm_anyint_ty], []>;
+
   def int_AMDIL_drcp : GCCBuiltin<"__amdil_rcp">,
       Intrinsic<[llvm_double_ty], [llvm_double_ty], [IntrNoMem]>;
+
   def int_AMDIL_convert_f16_f32 : GCCBuiltin<"__amdil_half_to_float">,
-      ConvertIntITOF;
+   ConvertIntITOF;
   def int_AMDIL_convert_f32_f16 : GCCBuiltin<"__amdil_float_to_half">,
-      ConvertIntFTOI;
+   ConvertIntFTOI;
   def int_AMDIL_convert_f32_i32_rpi : GCCBuiltin<"__amdil_float_to_int_rpi">,
-      ConvertIntFTOI;
+   ConvertIntFTOI;
   def int_AMDIL_convert_f32_i32_flr : GCCBuiltin<"__amdil_float_to_int_flr">,
-      ConvertIntFTOI;
+   ConvertIntFTOI;
   def int_AMDIL_convert_f32_f16_near : GCCBuiltin<"__amdil_float_to_half_near">,
-      ConvertIntFTOI;
+   ConvertIntFTOI;
   def int_AMDIL_convert_f32_f16_neg_inf : GCCBuiltin<"__amdil_float_to_half_neg_inf">,
-      ConvertIntFTOI;
+   ConvertIntFTOI;
   def int_AMDIL_convert_f32_f16_plus_inf : GCCBuiltin<"__amdil_float_to_half_plus_inf">,
-      ConvertIntFTOI;
- def int_AMDIL_media_convert_f2v4u8 : GCCBuiltin<"__amdil_f_2_u4">,
-      Intrinsic<[llvm_i32_ty], [llvm_v4f32_ty], []>;
+   ConvertIntFTOI;
+  def int_AMDIL_media_convert_f2v4u8 : GCCBuiltin<"__amdil_f_2_u4">,
+   Intrinsic<[llvm_i32_ty], [llvm_v4f32_ty], []>;
   def int_AMDIL_media_unpack_byte_0 : GCCBuiltin<"__amdil_unpack_0">,
-      ConvertIntITOF;
+   ConvertIntITOF;
   def int_AMDIL_media_unpack_byte_1 : GCCBuiltin<"__amdil_unpack_1">,
-      ConvertIntITOF;
+   ConvertIntITOF;
   def int_AMDIL_media_unpack_byte_2 : GCCBuiltin<"__amdil_unpack_2">,
-      ConvertIntITOF;
+   ConvertIntITOF;
   def int_AMDIL_media_unpack_byte_3 : GCCBuiltin<"__amdil_unpack_3">,
-      ConvertIntITOF;
+   ConvertIntITOF;
   def int_AMDIL_dp2_add : GCCBuiltin<"__amdil_dp2_add">,
-        Intrinsic<[llvm_float_ty], [llvm_v2f32_ty,
-          llvm_v2f32_ty, llvm_float_ty], []>;
+     Intrinsic<[llvm_float_ty], [llvm_v2f32_ty,
+       llvm_v2f32_ty, llvm_float_ty], []>;
   def int_AMDIL_dp2 : GCCBuiltin<"__amdil_dp2">,
-        Intrinsic<[llvm_float_ty], [llvm_v2f32_ty,
-          llvm_v2f32_ty], []>;
+     Intrinsic<[llvm_float_ty], [llvm_v2f32_ty,
+       llvm_v2f32_ty], []>;
   def int_AMDIL_dp3 : GCCBuiltin<"__amdil_dp3">,
-        Intrinsic<[llvm_float_ty], [llvm_v4f32_ty,
-          llvm_v4f32_ty], []>;
+     Intrinsic<[llvm_float_ty], [llvm_v4f32_ty,
+       llvm_v4f32_ty], []>;
   def int_AMDIL_dp4 : GCCBuiltin<"__amdil_dp4">,
-        Intrinsic<[llvm_float_ty], [llvm_v4f32_ty,
-          llvm_v4f32_ty], []>;
+       Intrinsic<[llvm_float_ty], [llvm_v4f32_ty,
+         llvm_v4f32_ty], []>;
 //===---------------------- Image functions begin ------------------------===//
   def int_AMDIL_image1d_write : GCCBuiltin<"__amdil_image1d_write">,
       Intrinsic<[], [llvm_ptr_ty, llvm_v2i32_ty, llvm_v4i32_ty], [IntrReadWriteArgMem]>;
@@ -260,7 +293,7 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
   def int_AMDIL_image1d_info1 : GCCBuiltin<"__amdil_image1d_info1">,
       Intrinsic<[llvm_v4i32_ty], [llvm_ptr_ty], []>;
 
- def int_AMDIL_image1d_array_write : GCCBuiltin<"__amdil_image1d_array_write">,
+  def int_AMDIL_image1d_array_write : GCCBuiltin<"__amdil_image1d_array_write">,
       Intrinsic<[], [llvm_ptr_ty, llvm_v2i32_ty, llvm_v4i32_ty], [IntrReadWriteArgMem]>;
 
   def int_AMDIL_image1d_array_read_norm  : GCCBuiltin<"__amdil_image1d_array_read_norm">,
@@ -275,7 +308,7 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
   def int_AMDIL_image1d_array_info1 : GCCBuiltin<"__amdil_image1d_array_info1">,
       Intrinsic<[llvm_v4i32_ty], [llvm_ptr_ty], []>;
 
- def int_AMDIL_image1d_buffer_write : GCCBuiltin<"__amdil_image1d_buffer_write">,
+  def int_AMDIL_image1d_buffer_write : GCCBuiltin<"__amdil_image1d_buffer_write">,
       Intrinsic<[], [llvm_ptr_ty, llvm_v2i32_ty, llvm_v4i32_ty], [IntrReadWriteArgMem]>;
 
   def int_AMDIL_image1d_buffer_load : GCCBuiltin<"__amdil_image1d_buffer_load">,
@@ -346,25 +379,29 @@ let TargetPrefix = "AMDIL", isTarget = 1 in {
       Intrinsic<[llvm_i32_ty], [llvm_ptr_ty], [IntrReadWriteArgMem]>;
 
   def int_AMDIL_get_global_id : GCCBuiltin<"__amdil_get_global_id_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_local_id : GCCBuiltin<"__amdil_get_local_id_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_group_id : GCCBuiltin<"__amdil_get_group_id_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_num_groups : GCCBuiltin<"__amdil_get_num_groups_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_local_size : GCCBuiltin<"__amdil_get_local_size_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_global_size : GCCBuiltin<"__amdil_get_global_size_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_global_offset : GCCBuiltin<"__amdil_get_global_offset_int">,
-      Intrinsic<[llvm_v4i32_ty], [], []>;
+   Intrinsic<[llvm_v4i32_ty], [], []>;
   def int_AMDIL_get_work_dim : GCCBuiltin<"get_work_dim">,
-      Intrinsic<[llvm_i32_ty], [], []>;
+   Intrinsic<[llvm_i32_ty], [], []>;
   def int_AMDIL_get_printf_offset : GCCBuiltin<"__amdil_get_printf_offset">,
-      Intrinsic<[llvm_anyint_ty], []>;
+   Intrinsic<[llvm_anyint_ty], []>;
   def int_AMDIL_get_printf_size : GCCBuiltin<"__amdil_get_printf_size">,
-      Intrinsic<[llvm_anyint_ty], []>;
+   Intrinsic<[llvm_anyint_ty], []>;
+  def int_AMDIL_get_printf_item_offset : GCCBuiltin<"__amdil_get_printf_item_offset">,
+   Intrinsic<[llvm_anyint_ty], []>;
+  def int_AMDIL_inc_printf_item_offset : GCCBuiltin<"__amdil_inc_printf_item_offset">,
+   Intrinsic<[], [llvm_anyint_ty]>;
 
 /// Intrinsics for atomic instructions with no return value
 /// Signed 32 bit integer atomics for global address space
@@ -393,7 +430,73 @@ def int_AMDIL_atomic_or_gi32_noret : GCCBuiltin<"__atomic_or_gi32_noret">,
 def int_AMDIL_atomic_xor_gi32_noret : GCCBuiltin<"__atomic_xor_gi32_noret">,
     BinaryAtomicIntNoRet;
 
+// atomic stores
+def int_AMDIL_atomic_store_gv4i32
+  : GCCBuiltin<"__atomic_store_explicit_gv4i32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_v4i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gv4u32
+  : GCCBuiltin<"__atomic_store_explicit_gv4u32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_v4i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gv2i32
+  : GCCBuiltin<"__atomic_store_explicit_gv2i32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_v2i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gv2u32
+  : GCCBuiltin<"__atomic_store_explicit_gv2u32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_v2i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gi64 : GCCBuiltin<"__atomic_store_explicit_gi64">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gu64 : GCCBuiltin<"__atomic_store_explicit_gu64">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gi32 : GCCBuiltin<"__atomic_store_explicit_gi32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gu32 : GCCBuiltin<"__atomic_store_explicit_gu32">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i32_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gi16 : GCCBuiltin<"__atomic_store_explicit_gi16">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i16_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gu16 : GCCBuiltin<"__atomic_store_explicit_gu16">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i16_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gi8 : GCCBuiltin<"__atomic_store_explicit_gi8">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i8_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
+def int_AMDIL_atomic_store_gu8 : GCCBuiltin<"__atomic_store_explicit_gu8">,
+    Intrinsic<[], [llvm_ptr_ty, llvm_i8_ty, llvm_i32_ty],
+              [IntrReadWriteArgMem]>;
 
+// atomic loads
+def int_AMDIL_atomic_load_gv4i32 : GCCBuiltin<"__atomic_load_explicit_gv4i32">,
+    Intrinsic<[llvm_v4i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gv4u32 : GCCBuiltin<"__atomic_load_explicit_gv4u32">,
+    Intrinsic<[llvm_v4i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gv2i32 : GCCBuiltin<"__atomic_load_explicit_gv2i32">,
+    Intrinsic<[llvm_v2i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gv2u32 : GCCBuiltin<"__atomic_load_explicit_gv2u32">,
+    Intrinsic<[llvm_v2i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gi64 : GCCBuiltin<"__atomic_load_explicit_gi64">,
+    Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gu64 : GCCBuiltin<"__atomic_load_explicit_gu64">,
+    Intrinsic<[llvm_i64_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gi32 : GCCBuiltin<"__atomic_load_explicit_gi32">,
+    Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gu32 : GCCBuiltin<"__atomic_load_explicit_gu32">,
+    Intrinsic<[llvm_i32_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gi16 : GCCBuiltin<"__atomic_load_explicit_gi16">,
+    Intrinsic<[llvm_i16_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gu16 : GCCBuiltin<"__atomic_load_explicit_gu16">,
+    Intrinsic<[llvm_i16_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gi8 : GCCBuiltin<"__atomic_load_explicit_gi8">,
+    Intrinsic<[llvm_i8_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
+def int_AMDIL_atomic_load_gu8 : GCCBuiltin<"__atomic_load_explicit_gu8">,
+    Intrinsic<[llvm_i8_ty], [llvm_ptr_ty, llvm_i32_ty], [IntrReadArgMem]>;
 
 /// Unsigned 32 bit integer atomics for global address space
 def int_AMDIL_atomic_add_gu32_noret : GCCBuiltin<"__atomic_add_gu32_noret">,
@@ -598,13 +701,13 @@ def int_AMDIL_atomic_xor_ru32_noret : GCCBuiltin<"__atomic_xor_ru32_noret">,
     BinaryAtomicIntNoRet;
 
 def int_AMDIL_get_cycle_count : GCCBuiltin<"__amdil_get_cycle_count">,
-    VoidIntLong;
+ VoidIntLong;
 
 def int_AMDIL_compute_unit_id : GCCBuiltin<"__amdil_compute_unit_id">,
-    VoidIntInt;
+ VoidIntInt;
 
 def int_AMDIL_wavefront_id : GCCBuiltin<"__amdil_wavefront_id">,
-    VoidIntInt;
+ VoidIntInt;
 
 
 /// Intrinsics for atomic instructions with a return value
@@ -730,14 +833,12 @@ def int_AMDIL_atomic_mskor_ru32 : GCCBuiltin<"__atomic_mskor_ru32">,
 def int_AMDIL_atomic_xor_ru32 : GCCBuiltin<"__atomic_xor_ru32">,
     BinaryAtomicInt;
 
-/// Semaphore signal/wait/init
-def int_AMDIL_semaphore_init : GCCBuiltin<"__amdil_semaphore_init">,
-    UnaryAtomicIntNoRet;
+/// Semaphore signal/wait
 def int_AMDIL_semaphore_wait : GCCBuiltin<"__amdil_semaphore_wait">,
     VoidAtomicIntNoRet;
 def int_AMDIL_semaphore_signal : GCCBuiltin<"__amdil_semaphore_signal">,
     VoidAtomicIntNoRet;
-def int_AMDIL_semaphore_size   : GCCBuiltin<"__amdil_max_semaphore_size">,
+def int_AMDIL_max_semaphore_size   : GCCBuiltin<"__amdil_max_semaphore_size">,
     VoidIntInt;
 
 /// Intrinsics for atomic instructions with no return value
@@ -1095,20 +1196,20 @@ def int_AMDIL_med3_i32 : GCCBuiltin<"__amdil_imed3">,
 def int_AMDIL_med3_u32 : GCCBuiltin<"__amdil_umed3">,
     TernaryIntInt;
 def int_AMDIL_med3     : GCCBuiltin<"__amdil_med3">,
-    TernaryIntFloat;
-  def int_AMDIL_class : GCCBuiltin<"__amdil_class">,
-      Intrinsic<[llvm_anyint_ty], [llvm_anyfloat_ty, llvm_anyint_ty], []>;
-  def int_AMDIL_trig_preop_f64 : GCCBuiltin<"__amdil_trig_preop">,
-      Intrinsic<[llvm_double_ty], [llvm_double_ty, llvm_float_ty], []>;
+   TernaryIntFloat;
+def int_AMDIL_class : GCCBuiltin<"__amdil_class">,
+    Intrinsic<[llvm_anyint_ty], [llvm_anyfloat_ty, llvm_anyint_ty], []>;
+def int_AMDIL_trig_preop_f64 : GCCBuiltin<"__amdil_trig_preop">,
+  Intrinsic<[llvm_double_ty], [llvm_double_ty, llvm_float_ty], []>;
 
 def int_AMDIL_frexp_exp : GCCBuiltin<"__amdil_frexp_exp">,
-    ConvertIntFTOI;
+ ConvertIntFTOI;
 def int_AMDIL_frexp_mant : GCCBuiltin<"__amdil_frexp_mant">,
-    UnaryIntFloat;
+ UnaryIntFloat;
 def int_AMDIL_media_sad16 : GCCBuiltin<"__amdil_sad16">,
-    TernaryIntInt;
+ TernaryIntInt;
 def int_AMDIL_media_sad32 : GCCBuiltin<"__amdil_sad32">,
-    TernaryIntInt;
+ TernaryIntInt;
 
 def int_AMDIL_media_msad     : GCCBuiltin<"__amdil_msad">,
     TernaryIntInt;

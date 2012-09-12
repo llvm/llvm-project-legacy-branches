@@ -14,7 +14,6 @@
 #ifndef AMDILTARGETMACHINE_H_
 #define AMDILTARGETMACHINE_H_
 
-
 #include "AMDIL.h"
 #include "AMDILELFWriterInfo.h"
 #include "AMDILFrameLowering.h"
@@ -37,7 +36,7 @@ class AMDILTargetMachine : public LLVMTargetMachine
 {
 private:
   AMDILSubtarget Subtarget;
-  const TargetData DataLayout;       // Calculates type size & alignment
+  const TargetData DataLayout;             // Calculates type size & alignment
   AMDILFrameLowering FrameLowering;
   AMDILInstrInfo InstrInfo;
   AMDILTargetLowering TLInfo;
@@ -70,45 +69,37 @@ public:
   void dump(OSTREAM_TYPE &O);
   void setDebug(bool debugMode);
   bool getDebug() const;
+};     // AMDILTargetMachine
 
-
-}; // AMDILTargetMachine
-
-class TheAMDILTargetMachine : public AMDILTargetMachine
-{
+class TheAMDILTargetMachine : public AMDILTargetMachine {
 public:
   TheAMDILTargetMachine(const Target &T,
                         StringRef TT, StringRef CPU, StringRef FS,
                         const TargetOptions &Options,
                         Reloc::Model RM, CodeModel::Model CM,
                         CodeGenOpt::Level OL);
-}; // TheAMDILTargetMachine
-
+};     // TheAMDILTargetMachine
 } // end namespace llvm
 
-namespace llvm
-{
-class AMDILPassConfig : public TargetPassConfig
-{
+namespace llvm {
+class AMDILPassConfig : public TargetPassConfig {
 public:
   AMDILPassConfig(AMDILTargetMachine *TM, PassManagerBase &PM)
-    : TargetPassConfig(TM, PM) {}
+    : TargetPassConfig(TM, PM) {
+  }
 
   AMDILTargetMachine &getAMDILTargetMachine() const {
     return getTM<AMDILTargetMachine>();
   }
-
   const AMDILSubtarget &getAMDILSubtarget() const {
     return *getAMDILTargetMachine().getSubtargetImpl();
   }
-
   // Pass Pipeline Configuration
   virtual bool addPreEmitPass();
   virtual bool addPreISel();
   virtual bool addInstSelector();
   virtual bool addPreRegAlloc();
   virtual bool addPostRegAlloc();
-
 };
 } // end namespace llvm
 

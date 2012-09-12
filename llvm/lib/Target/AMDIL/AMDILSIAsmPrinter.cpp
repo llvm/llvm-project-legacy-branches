@@ -37,13 +37,11 @@
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
-
 // TODO: Add support for verbose.
 AMDILSIAsmPrinter::AMDILSIAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS)
   : AMDILAsmPrinter(ASM_PRINTER_ARGUMENTS)
 {
 }
-
 AMDILSIAsmPrinter::~AMDILSIAsmPrinter()
 {
 }
@@ -82,7 +80,6 @@ AMDILSIAsmPrinter::emitMacroFunc(const MachineInstr *MI,
   }
   emitMCallInst(MI, O, name);
 }
-
 bool
 AMDILSIAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
 {
@@ -100,7 +97,6 @@ AMDILSIAsmPrinter::runOnMachineFunction(MachineFunction &lMF)
   EmitFunctionBody();
   return false;
 }
-
 void
 AMDILSIAsmPrinter::EmitInstruction(const MachineInstr *II)
 {
@@ -109,7 +105,7 @@ AMDILSIAsmPrinter::EmitInstruction(const MachineInstr *II)
   formatted_raw_ostream O(OFunStr);
   const AMDILSubtarget *curTarget = mTM->getSubtargetImpl();
   if (mDebugMode) {
-    O << ";" ;
+    O << ";";
     II->print(O);
   }
   if (isMacroFunc(II)) {
@@ -167,7 +163,7 @@ AMDILSIAsmPrinter::EmitInstruction(const MachineInstr *II)
       } else {
         printOperand(II, x
                      , O
-                    );
+                     );
       }
       if (!x) {
         O << "), (";
@@ -201,8 +197,9 @@ AMDILSIAsmPrinter::EmitInstruction(const MachineInstr *II)
     } else {
       mMFI->addCalledIntr(macronum);
     }
+  } else if (II->getOpcode() == AMDIL::COPY) {
+    printCopy(II, O);
   } else {
-
     // Print the assembly for the instruction.
     // We want to make sure that we do HW constants
     // before we do arena segment

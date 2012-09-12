@@ -15,8 +15,7 @@
 #define _AMDILTNDEVICE_H_
 #include "AMDILNIDevice.h"
 #include "AMDILSubtarget.h"
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 //===---------------------------------------------------------------------===//
 // NI generation of devices and their respective sub classes
@@ -26,14 +25,12 @@ class AMDILSubtarget;
 // Like Cayman, they have a 4 wide ALU. They do support FP64, but this
 // maybe not be advertised at the OpenCL API layer depending on
 // performance.
-class AMDILTrinityDevice: public AMDILCaymanDevice
-{
+class AMDILTrinityDevice : public AMDILCaymanDevice {
 public:
   AMDILTrinityDevice(AMDILSubtarget*);
   virtual ~AMDILTrinityDevice();
 private:
   virtual void setCaps();
-}; // AMDILTrinityDevice
-
+};   // AMDILTrinityDevice
 } // namespace llvm
 #endif // _AMDILTNDEVICE_H_

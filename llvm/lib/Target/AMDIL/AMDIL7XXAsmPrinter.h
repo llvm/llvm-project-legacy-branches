@@ -35,7 +35,6 @@ public:
   //
   virtual ~AMDIL7XXAsmPrinter();
 
-
   void
   EmitInstruction(const MachineInstr *MI);
 
@@ -56,7 +55,6 @@ protected:
   //
   virtual void
   emitMacroFunc(const MachineInstr *MI, OSTREAM_TYPE &O);
-
-}; // AMDIL7XXAsmPrinter
+};   // AMDIL7XXAsmPrinter
 } // end of llvm namespace
 #endif // AMDIL_7XX_ASM_PRINTER_H_

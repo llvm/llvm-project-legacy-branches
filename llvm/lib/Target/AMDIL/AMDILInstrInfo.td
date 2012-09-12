@@ -14,8 +14,7 @@
 def HasHWDDiv                 : Predicate<"Subtarget->device()"
                            "->getGeneration() > AMDILDeviceInfo::HD4XXX && "
               "Subtarget->device()->usesHardware(AMDILDeviceInfo::DoubleOps) && "
-            "(Subtarget->device()->getGeneration() <= AMDILDeviceInfo::HD6XXX ||"
-              "Subtarget->calVersion() < CAL_VERSION_SC_155)">;
+            "Subtarget->device()->getGeneration() <= AMDILDeviceInfo::HD6XXX">;
 
 // Predicate that is set to true if the hardware supports double, but not double
 // precision divide in hardware
@@ -48,13 +47,12 @@ def noRegionAS             : Predicate<"!Subtarget->device()"
 
 
 // Predicate that is set to true if 64bit Mul is supported in the IL or not
-def HasHW64Mul              : Predicate<"Subtarget->calVersion()" 
-                                          ">= CAL_VERSION_SC_139"
-                                          "&& Subtarget->device()"
+def HasHW64Mul              : Predicate<"Subtarget->device()"
                                           "->getGeneration() >="
                                           "AMDILDeviceInfo::HD5XXX">;
-def HasSW64Mul              : Predicate<"Subtarget->calVersion()" 
-                                          "< CAL_VERSION_SC_139">;
+def HasSW64Mul              : Predicate<"Subtarget->device()"
+                                          "->getGeneration() <"
+                                          "AMDILDeviceInfo::HD5XXX">;
 // Predicate that is set to true if 64bit Div/Mod is supported in the IL or not
 def HasHW64DivMod           : Predicate<"Subtarget->device()"
                             "->usesHardware(AMDILDeviceInfo::HW64BitDivMod)">;
@@ -63,22 +61,13 @@ def HasSW64DivMod           : Predicate<"Subtarget->device()"
 
 
 // Predicate that is set to true if BFI/BFM are supported.
-def HasHWBitFieldInst : Predicate<"Subtarget->calVersion()"
-                                  ">= CAL_VERSION_SC_151"
-                                  "&& Subtarget->device()"
+def HasHWBitFieldInst : Predicate<"Subtarget->device()"
                                   "->getGeneration() >="
                                   "AMDILDeviceInfo::HD5XXX">;
 
-def HasHWDoubleAbs : Predicate<"Subtarget->calVersion()"
-                                   ">= CAL_VERSION_SC_153">;
-def HasSWDoubleAbs : Predicate<"Subtarget->calVersion()"
-                                   "< CAL_VERSION_SC_153">;
-def HasHWDoubleConv : Predicate<"Subtarget->calVersion()"
-                                   ">= CAL_VERSION_SC_155">;
-
 def IsEGOrLaterDevice : Predicate<"Subtarget->device()->getGeneration()"
                           " >= AMDILDeviceInfo::HD5XXX">;
-def HasByteShortUAV         : Predicate<"Subtarget->device()"
+def IsSIOrLaterDevice : Predicate<"Subtarget->device()"
                             "->getGeneration() >= AMDILDeviceInfo::HD7XXX">;
 
 def Has64BitPtr             : Predicate<"Subtarget->is64bit()">;
@@ -109,14 +98,14 @@ include "AMDILPatterns.td"
 include "AMDILFormats.td"
 
 //===--------------------------------------------------------------------===//
-// Multiclass Instruction formats
-//===--------------------------------------------------------------------===//
-include "AMDILMultiClass.td"
-
-//===--------------------------------------------------------------------===//
 // Intrinsics support
 //===--------------------------------------------------------------------===//
 include "AMDILIntrinsics.td"
+
+//===--------------------------------------------------------------------===//
+// Multiclass Instruction formats
+//===--------------------------------------------------------------------===//
+include "AMDILMultiClass.td"
 
 //===--------------------------------------------------------------------===//
 // Instructions support

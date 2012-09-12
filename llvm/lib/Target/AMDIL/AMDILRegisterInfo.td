@@ -51,6 +51,7 @@ include "AMDILRegisterDefsV4.td"
 // r1027 is used as mem register
 // r1026 is used as the return address register.
 // r1030-r1039 are reserved for AMDILCFGStructurizer.
+// r1040 is reserved for printf implementation.
 //def R1025 : AMDILReg<1025, "r1025">, DwarfRegNum<[1025]>;
 //def R1024 : AMDILReg<1024, "r1024">, DwarfRegNum<[1024]>;
 //def R1023 : AMDILReg<1023, "r1023">, DwarfRegNum<[1023]>;
@@ -81,6 +82,7 @@ def CFG7 : AMDILReg<5044, "r1036">, DwarfRegNum<[1036]>;
 def CFG8 : AMDILReg<5048, "r1037">, DwarfRegNum<[1037]>;
 def CFG9 : AMDILReg<5052, "r1038">, DwarfRegNum<[1038]>;
 def CFG10 : AMDILReg<5056, "r1039">, DwarfRegNum<[1039]>;
+def PRINTF : AMDILReg<5060, "r1040">, DwarfRegNum<[1040]>;
 
 def GPRI8 : RegisterClass<"AMDIL", [i8], 8,
     ( add include "AMDILRegisterUsesScalar.td"
@@ -101,7 +103,7 @@ def GPRI16 : RegisterClass<"AMDIL", [i16], 16,
             }
 def GPRI32 : RegisterClass<"AMDIL", [i32], 32,
     ( add include "AMDILRegisterUsesScalar.td"
-    , FP, RA, SDP, MEMx
+    , FP, RA, SDP, T5, MEMx
     )>
     {
         let AltOrders = [(add (sequence "Rx%u", 65, 191), (sequence "Ry%u", 65, 191), (sequence "Rz%u", 65, 191), (sequence "Rw%u", 65, 191))];
@@ -258,7 +260,7 @@ def GPRV4F32 : RegisterClass<"AMDIL", [v4f32], 128,
 }
 def GPRV4I32 : RegisterClass<"AMDIL", [v4i32], 128,
     ( add include "AMDILRegisterUsesV4.td"
-    , SP, T1, T2, T3, T4, T5, MEM
+    , SP, T1, T2, T3, T4, MEM
     )>
 {
         let AltOrders = [(add (sequence "R%u", 65, 191))];

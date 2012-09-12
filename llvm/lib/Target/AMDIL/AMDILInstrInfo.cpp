@@ -28,26 +28,21 @@ using namespace llvm;
 AMDILInstrInfo::AMDILInstrInfo(AMDILTargetMachine &tm)
   : AMDILGenInstrInfo(AMDIL::ADJCALLSTACKDOWN, AMDIL::ADJCALLSTACKUP),
     RI(tm, *this),
-    TM(tm)
-{
+    TM(tm) {
 }
-
-const AMDILRegisterInfo &AMDILInstrInfo::getRegisterInfo() const
-{
+const AMDILRegisterInfo &AMDILInstrInfo::getRegisterInfo() const {
   return RI;
 }
-
 /// Return true if the instruction is a register to register move and leave the
 /// source and dest operands in the passed parameters.
 bool AMDILInstrInfo::isMoveInstr(const MachineInstr &MI, unsigned int &SrcReg,
                                  unsigned int &DstReg, unsigned int &SrcSubIdx,
-                                 unsigned int &DstSubIdx) const
-{
+                                 unsigned int &DstSubIdx) const {
   // FIXME: we should look for:
   //    add with 0
   //assert(0 && "is Move Instruction has not been implemented yet!");
   //return true;
-  if (!isMove(MI.getOpcode())) {
+  if (MI.getOpcode() == TargetOpcode::COPY) {
     return false;
   }
   if (!MI.getOperand(0).isReg() || !MI.getOperand(1).isReg()) {
@@ -59,19 +54,17 @@ bool AMDILInstrInfo::isMoveInstr(const MachineInstr &MI, unsigned int &SrcReg,
   SrcSubIdx = 0;
   return true;
 }
-
 bool AMDILInstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
-    unsigned &SrcReg, unsigned &DstReg,
-    unsigned &SubIdx) const
-{
+                                           unsigned &SrcReg, unsigned &DstReg,
+                                           unsigned &SubIdx) const {
   return false;
   unsigned opc = MI.getOpcode();
   SubIdx = llvm::NoSubRegister;
   switch (opc) {
   default:
     return false;
-  case AMDIL::DHI:
-  case AMDIL::LHI:
+  case AMDIL::DHIf64r:
+  case AMDIL::LHIi64r:
     if (MI.getOperand(0).getSubReg() || MI.getOperand(1).getSubReg())
       // Be conservative.
       return false;
@@ -79,8 +72,8 @@ bool AMDILInstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
     DstReg = MI.getOperand(0).getReg();
     SubIdx = llvm::sub_y_comp;
     break;
-  case AMDIL::DLO:
-  case AMDIL::LLO:
+  case AMDIL::DLOf64r:
+  case AMDIL::LLOi64r:
     if (MI.getOperand(0).getSubReg() || MI.getOperand(1).getSubReg())
       // Be conservative.
       return false;
@@ -88,8 +81,8 @@ bool AMDILInstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
     DstReg = MI.getOperand(0).getReg();
     SubIdx = llvm::sub_x_comp;
     break;
-  case AMDIL::VEXTRACT_v2f64:
-  case AMDIL::VEXTRACT_v2i64:
+  case AMDIL::VEXTRACTv2f64r:
+  case AMDIL::VEXTRACTv2i64r:
     if (MI.getOperand(0).getSubReg() || MI.getOperand(1).getSubReg())
       // Be conservative.
       return false;
@@ -107,14 +100,14 @@ bool AMDILInstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
     default:
       return false;
     };
-  case AMDIL::VEXTRACT_v2f32:
-  case AMDIL::VEXTRACT_v2i32:
-  case AMDIL::VEXTRACT_v2i16:
-  case AMDIL::VEXTRACT_v2i8:
-  case AMDIL::VEXTRACT_v4f32:
-  case AMDIL::VEXTRACT_v4i32:
-  case AMDIL::VEXTRACT_v4i16:
-  case AMDIL::VEXTRACT_v4i8:
+  case AMDIL::VEXTRACTv2f32r:
+  case AMDIL::VEXTRACTv2i32r:
+  case AMDIL::VEXTRACTv2i16r:
+  case AMDIL::VEXTRACTv2i8r:
+  case AMDIL::VEXTRACTv4f32r:
+  case AMDIL::VEXTRACTv4i32r:
+  case AMDIL::VEXTRACTv4i16r:
+  case AMDIL::VEXTRACTv4i8r:
     if (MI.getOperand(0).getSubReg() || MI.getOperand(1).getSubReg())
       // Be conservative.
       return false;
@@ -141,31 +134,25 @@ bool AMDILInstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
   };
   return SubIdx != llvm::NoSubRegister;
 }
-
 unsigned AMDILInstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
-    int &FrameIndex) const
-{
-  if (isPrivateInst(TM, MI) && isLoadInst(TM, MI) && MI->getOperand(1).isFI()) {
+                                             int &FrameIndex) const {
+  if (isPrivateInst(MI) && isPtrLoadInst(MI) && MI->getOperand(1).isFI()) {
     FrameIndex = MI->getOperand(1).getIndex();
     return MI->getOperand(0).getReg();
   }
   return 0;
 }
-
 unsigned AMDILInstrInfo::isLoadFromStackSlotPostFE(const MachineInstr *MI,
-    int &FrameIndex) const
-{
-  if (isPrivateInst(TM, MI) && isLoadInst(TM, MI) && MI->getOperand(1).isFI()) {
+                                                   int &FrameIndex) const {
+  if (isPrivateInst(MI) && isPtrLoadInst(MI) && MI->getOperand(1).isFI()) {
     FrameIndex = MI->getOperand(1).getIndex();
     return MI->getOperand(0).getReg();
   }
   return 0;
 }
-
 bool AMDILInstrInfo::hasLoadFromStackSlot(const MachineInstr *MI,
-    const MachineMemOperand *&MMO,
-    int &FrameIndex) const
-{
+                                          const MachineMemOperand *&MMO,
+                                          int &FrameIndex) const {
   for (MachineInstr::mmo_iterator o = MI->memoperands_begin(),
        oe = MI->memoperands_end();
        o != oe;
@@ -181,18 +168,16 @@ bool AMDILInstrInfo::hasLoadFromStackSlot(const MachineInstr *MI,
   return false;
 }
 unsigned AMDILInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
-    int &FrameIndex) const
-{
-  if (isPrivateInst(TM, MI) && isStoreInst(TM, MI) && MI->getOperand(1).isFI()) {
+                                            int &FrameIndex) const {
+  if (isPrivateInst(MI) && isPtrStoreInst(MI) && MI->getOperand(1).isFI()) {
     FrameIndex = MI->getOperand(1).getIndex();
     return MI->getOperand(0).getReg();
   }
   return 0;
 }
 unsigned AMDILInstrInfo::isStoreToStackSlotPostFE(const MachineInstr *MI,
-    int &FrameIndex) const
-{
-  if (isPrivateInst(TM, MI) && isStoreInst(TM, MI) && MI->getOperand(1).isFI()) {
+                                                  int &FrameIndex) const {
+  if (isPrivateInst(MI) && isPtrStoreInst(MI) && MI->getOperand(1).isFI()) {
     unsigned Reg;
     if ((Reg = isStoreToStackSlot(MI, FrameIndex))) {
       return Reg;
@@ -203,9 +188,8 @@ unsigned AMDILInstrInfo::isStoreToStackSlotPostFE(const MachineInstr *MI,
   return 0;
 }
 bool AMDILInstrInfo::hasStoreToStackSlot(const MachineInstr *MI,
-    const MachineMemOperand *&MMO,
-    int &FrameIndex) const
-{
+                                         const MachineMemOperand *&MMO,
+                                         int &FrameIndex) const {
   for (MachineInstr::mmo_iterator o = MI->memoperands_begin(),
        oe = MI->memoperands_end();
        o != oe;
@@ -220,38 +204,30 @@ bool AMDILInstrInfo::hasStoreToStackSlot(const MachineInstr *MI,
   }
   return false;
 }
-
 void
 AMDILInstrInfo::reMaterialize(MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator MI,
                               unsigned DestReg, unsigned SubIdx,
                               const MachineInstr *Orig,
-                              const TargetRegisterInfo &TRI) const
-{
+                              const TargetRegisterInfo &TRI) const {
   // TODO: Implement this function
 }
-
 MachineInstr*
 AMDILInstrInfo::duplicate(MachineInstr *Orig,
-                          MachineFunction &MF) const
-{
+                          MachineFunction &MF) const {
   // TODO: Implement this function
   return MF.CloneMachineInstr(Orig);
 }
-
 MachineInstr *
 AMDILInstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
                                       MachineBasicBlock::iterator &MBBI,
-                                      LiveVariables *LV) const
-{
+                                      LiveVariables *LV) const {
   // TODO: Implement this function
   return NULL;
 }
-
 MachineInstr*
 AMDILInstrInfo::commuteInstruction(MachineInstr *MI,
-                                   bool NewMI) const
-{
+                                   bool NewMI) const {
   // TODO: Implement this function
   return NULL;
 }
@@ -270,29 +246,30 @@ AMDILInstrInfo::produceSameValue(const MachineInstr *MI0,
   // TODO: Implement this function
   return false;
 }
-
 bool AMDILInstrInfo::getNextBranchInstr(MachineBasicBlock::iterator &iter,
-                                        MachineBasicBlock &MBB) const
-{
+                                        MachineBasicBlock &MBB) const {
   while (iter != MBB.end()) {
     switch (iter->getOpcode()) {
     default:
       break;
-      ExpandCaseToAllScalarTypes(AMDIL::BRANCH_COND);
-    case AMDIL::BRANCH:
+    case AMDIL::BRANCHf64br:
+    case AMDIL::BRANCHf32br:
+    case AMDIL::BRANCHi64br:
+    case AMDIL::BRANCHi32br:
+    case AMDIL::BRANCHi16br:
+    case AMDIL::BRANCHi8br:
+    case AMDIL::BRANCHb:
       return true;
     };
     ++iter;
   }
   return false;
 }
-
 bool AMDILInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
                                    MachineBasicBlock *&TBB,
                                    MachineBasicBlock *&FBB,
                                    SmallVectorImpl<MachineOperand> &Cond,
-                                   bool AllowModify) const
-{
+                                   bool AllowModify) const {
   bool retVal = true;
   return retVal;
   MachineBasicBlock::iterator iter = MBB.begin();
@@ -301,7 +278,7 @@ bool AMDILInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
   } else {
     MachineInstr *firstBranch = iter;
     if (!getNextBranchInstr(++iter, MBB)) {
-      if (firstBranch->getOpcode() == AMDIL::BRANCH) {
+      if (firstBranch->getOpcode() == AMDIL::BRANCHb) {
         TBB = firstBranch->getOperand(0).getMBB();
         firstBranch->eraseFromParent();
         retVal = false;
@@ -317,7 +294,7 @@ bool AMDILInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
     } else {
       MachineInstr *secondBranch = iter;
       if (!getNextBranchInstr(++iter, MBB)) {
-        if (secondBranch->getOpcode() == AMDIL::BRANCH) {
+        if (secondBranch->getOpcode() == AMDIL::BRANCHb) {
           TBB = firstBranch->getOperand(0).getMBB();
           Cond.push_back(firstBranch->getOperand(1));
           FBB = secondBranch->getOperand(0).getMBB();
@@ -336,28 +313,19 @@ bool AMDILInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
   }
   return retVal;
 }
-
-unsigned int AMDILInstrInfo::getBranchInstr(const MachineOperand &op) const
-{
+unsigned int AMDILInstrInfo::getBranchInstr(const MachineOperand &op) const {
   const MachineInstr *MI = op.getParent();
 
   switch (MI->getDesc().OpInfo->RegClass) {
-  default: // FIXME: fallthrough??
-  case AMDIL::GPRI8RegClassID:
-    return AMDIL::BRANCH_COND_i8;
-  case AMDIL::GPRI16RegClassID:
-    return AMDIL::BRANCH_COND_i16;
-  case AMDIL::GPRI32RegClassID:
-    return AMDIL::BRANCH_COND_i32;
-  case AMDIL::GPRI64RegClassID:
-    return AMDIL::BRANCH_COND_i64;
-  case AMDIL::GPRF32RegClassID:
-    return AMDIL::BRANCH_COND_f32;
-  case AMDIL::GPRF64RegClassID:
-    return AMDIL::BRANCH_COND_f64;
+  default:   // FIXME: fallthrough??
+  case AMDIL::GPRI8RegClassID:  return AMDIL::BRANCHi8br;
+  case AMDIL::GPRI16RegClassID: return AMDIL::BRANCHi16br;
+  case AMDIL::GPRI32RegClassID: return AMDIL::BRANCHi32br;
+  case AMDIL::GPRI64RegClassID: return AMDIL::BRANCHi64br;
+  case AMDIL::GPRF32RegClassID: return AMDIL::BRANCHf32br;
+  case AMDIL::GPRF64RegClassID: return AMDIL::BRANCHf64br;
   };
 }
-
 unsigned int
 AMDILInstrInfo::InsertBranch(MachineBasicBlock &MBB,
                              MachineBasicBlock *TBB,
@@ -371,7 +339,7 @@ AMDILInstrInfo::InsertBranch(MachineBasicBlock &MBB,
   }
   if (FBB == 0) {
     if (Cond.empty()) {
-      BuildMI(&MBB, DL, get(AMDIL::BRANCH)).addMBB(TBB);
+      BuildMI(&MBB, DL, get(AMDIL::BRANCHb)).addMBB(TBB);
     } else {
       BuildMI(&MBB, DL, get(getBranchInstr(Cond[0])))
       .addMBB(TBB).addReg(Cond[0].getReg());
@@ -380,14 +348,12 @@ AMDILInstrInfo::InsertBranch(MachineBasicBlock &MBB,
   } else {
     BuildMI(&MBB, DL, get(getBranchInstr(Cond[0])))
     .addMBB(TBB).addReg(Cond[0].getReg());
-    BuildMI(&MBB, DL, get(AMDIL::BRANCH)).addMBB(FBB);
+    BuildMI(&MBB, DL, get(AMDIL::BRANCHb)).addMBB(FBB);
   }
   assert(0 && "Inserting two branches not supported");
   return 0;
 }
-
-unsigned int AMDILInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const
-{
+unsigned int AMDILInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
   MachineBasicBlock::iterator I = MBB.end();
   if (I == MBB.begin()) {
     return 0;
@@ -396,8 +362,13 @@ unsigned int AMDILInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const
   switch (I->getOpcode()) {
   default:
     return 0;
-    ExpandCaseToAllScalarTypes(AMDIL::BRANCH_COND);
-  case AMDIL::BRANCH:
+  case AMDIL::BRANCHf64br:
+  case AMDIL::BRANCHf32br:
+  case AMDIL::BRANCHi64br:
+  case AMDIL::BRANCHi32br:
+  case AMDIL::BRANCHi16br:
+  case AMDIL::BRANCHi8br:
+  case AMDIL::BRANCHb:
     I->eraseFromParent();
     break;
   }
@@ -408,18 +379,21 @@ unsigned int AMDILInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const
   }
   --I;
   switch (I->getOpcode()) {
-    // FIXME: only one case??
+  // FIXME: only one case??
   default:
     return 1;
-    ExpandCaseToAllScalarTypes(AMDIL::BRANCH_COND);
+  case AMDIL::BRANCHf64br:
+  case AMDIL::BRANCHf32br:
+  case AMDIL::BRANCHi64br:
+  case AMDIL::BRANCHi32br:
+  case AMDIL::BRANCHi16br:
+  case AMDIL::BRANCHi8br:
     I->eraseFromParent();
     break;
   }
   return 2;
 }
-
-MachineBasicBlock::iterator skipFlowControl(MachineBasicBlock *MBB)
-{
+MachineBasicBlock::iterator skipFlowControl(MachineBasicBlock *MBB) {
   MachineBasicBlock::iterator tmp = MBB->end();
   if (!MBB->size()) {
     return MBB->end();
@@ -439,23 +413,20 @@ MachineBasicBlock::iterator skipFlowControl(MachineBasicBlock *MBB)
   }
   return MBB->end();
 }
-
 bool
 AMDILInstrInfo::copyRegToReg(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator I,
                              unsigned DestReg, unsigned SrcReg,
                              const TargetRegisterClass *DestRC,
                              const TargetRegisterClass *SrcRC,
-                             DebugLoc DL) const
-{
+                             DebugLoc DL) const {
   // If we are adding to the end of a basic block we can safely assume that the
   // move is caused by a PHI node since all move instructions that are non-PHI
   // have already been inserted into the basic blocks Therefor we call the skip
   // flow control instruction to move the iterator before the flow control
   // instructions and put the move instruction there.
   bool phi = (DestReg < 1025) || (SrcReg < 1025);
-  int movInst = phi ? getMoveInstFromID(DestRC->getID())
-                : getPHIMoveInstFromID(DestRC->getID());
+  int movInst = TargetOpcode::COPY;
 
   MachineBasicBlock::iterator iTemp = (I == MBB.end()) ? skipFlowControl(&MBB)
                                       : I;
@@ -484,12 +455,12 @@ AMDILInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                             unsigned DestReg, unsigned SrcReg,
                             bool KillSrc) const
 {
-  BuildMI(MBB, MI, DL, get(AMDIL::MOVE_v4i32), DestReg)
+  BuildMI(MBB, MI, DL, get(TargetOpcode::COPY), DestReg)
   .addReg(SrcReg, getKillRegState(KillSrc));
   return;
 #if 0
   DEBUG(dbgs() << "Cannot copy " << RI.getName(SrcReg)
-        << " to " << RI.getName(DestReg) << '\n');
+               << " to " << RI.getName(DestReg) << '\n');
   llvm_unreachable("Cannot emit physreg copy instruction");
 #endif
 }
@@ -499,8 +470,7 @@ AMDILInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                     unsigned SrcReg, bool isKill,
                                     int FrameIndex,
                                     const TargetRegisterClass *RC,
-                                    const TargetRegisterInfo *TRI) const
-{
+                                    const TargetRegisterInfo *TRI) const {
   unsigned int Opc = 0;
   MachineFunction &MF = *(MBB.getParent());
   MachineFrameInfo &MFI = *MF.getFrameInfo();
@@ -508,64 +478,64 @@ AMDILInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
   DebugLoc DL;
   switch (RC->getID()) {
   default:
-    Opc = AMDIL::PRIVATESTORE_v4i32;
+    Opc = AMDIL::PRIVATESTOREv4i32r;
     break;
   case AMDIL::GPRF32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_f32;
+    Opc = AMDIL::PRIVATESTOREf32r;
     break;
   case AMDIL::GPRF64RegClassID:
-    Opc = AMDIL::PRIVATESTORE_f64;
+    Opc = AMDIL::PRIVATESTOREf64r;
     break;
   case AMDIL::GPRI16RegClassID:
-    Opc = AMDIL::PRIVATESTORE_i16;
+    Opc = AMDIL::PRIVATESTOREi16r;
     break;
   case AMDIL::GPRI32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_i32;
+    Opc = AMDIL::PRIVATESTOREi32r;
     break;
   case AMDIL::GPRI8RegClassID:
-    Opc = AMDIL::PRIVATESTORE_i8;
+    Opc = AMDIL::PRIVATESTOREi8r;
     break;
   case AMDIL::GPRI64RegClassID:
-    Opc = AMDIL::PRIVATESTORE_i64;
+    Opc = AMDIL::PRIVATESTOREi64r;
     break;
   case AMDIL::GPRV2F32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2f32;
+    Opc = AMDIL::PRIVATESTOREv2f32r;
     break;
   case AMDIL::GPRV2F64RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2f64;
+    Opc = AMDIL::PRIVATESTOREv2f64r;
     break;
   case AMDIL::GPRV2I16RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2i16;
+    Opc = AMDIL::PRIVATESTOREv2i16r;
     break;
   case AMDIL::GPRV2I32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2i32;
+    Opc = AMDIL::PRIVATESTOREv2i32r;
     break;
   case AMDIL::GPRV2I8RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2i8;
+    Opc = AMDIL::PRIVATESTOREv2i8r;
     break;
   case AMDIL::GPRV2I64RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v2i64;
+    Opc = AMDIL::PRIVATESTOREv2i64r;
     break;
   case AMDIL::GPRV4F32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v4f32;
+    Opc = AMDIL::PRIVATESTOREv4f32r;
     break;
   case AMDIL::GPRV4I16RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v4i16;
+    Opc = AMDIL::PRIVATESTOREv4i16r;
     break;
   case AMDIL::GPRV4I32RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v4i32;
+    Opc = AMDIL::PRIVATESTOREv4i32r;
     break;
   case AMDIL::GPRV4I8RegClassID:
-    Opc = AMDIL::PRIVATESTORE_v4i8;
+    Opc = AMDIL::PRIVATESTOREv4i8r;
     break;
   }
   if (MI != MBB.end()) DL = MI->getDebugLoc();
   MachineMemOperand *MMO =
     new MachineMemOperand(
-    MachinePointerInfo::getFixedStack(FrameIndex),
-    MachineMemOperand::MOLoad,
-    MFI.getObjectSize(FrameIndex),
-    MFI.getObjectAlignment(FrameIndex));
+      MachinePointerInfo::getFixedStack(FrameIndex),
+      MachineMemOperand::MOLoad,
+      MFI.getObjectSize(FrameIndex),
+      MFI.getObjectAlignment(FrameIndex));
   if (MI != MBB.end()) {
     DL = MI->getDebugLoc();
   }
@@ -578,81 +548,79 @@ AMDILInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
   mfinfo->setUsesScratch();
   AMDILAS::InstrResEnc curRes;
   curRes.bits.ResourceID
-  = TM.getSubtargetImpl()->device()->getResourceID(AMDILDevice::SCRATCH_ID);
+    = TM.getSubtargetImpl()->device()->getResourceID(AMDILDevice::SCRATCH_ID);
   setAsmPrinterFlags(nMI, curRes);
 }
-
 void
 AMDILInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator MI,
                                      unsigned DestReg, int FrameIndex,
                                      const TargetRegisterClass *RC,
-                                     const TargetRegisterInfo *TRI) const
-{
+                                     const TargetRegisterInfo *TRI) const {
   unsigned int Opc = 0;
   MachineFunction &MF = *(MBB.getParent());
   MachineFrameInfo &MFI = *MF.getFrameInfo();
   DebugLoc DL;
   switch (RC->getID()) {
   default:
-    Opc = AMDIL::PRIVATELOAD_v4i32;
+    Opc = AMDIL::PRIVATELOADv4i32r;
     break;
   case AMDIL::GPRF32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_f32;
+    Opc = AMDIL::PRIVATELOADf32r;
     break;
   case AMDIL::GPRF64RegClassID:
-    Opc = AMDIL::PRIVATELOAD_f64;
+    Opc = AMDIL::PRIVATELOADf64r;
     break;
   case AMDIL::GPRI16RegClassID:
-    Opc = AMDIL::PRIVATELOAD_i16;
+    Opc = AMDIL::PRIVATELOADi16r;
     break;
   case AMDIL::GPRI32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_i32;
+    Opc = AMDIL::PRIVATELOADi32r;
     break;
   case AMDIL::GPRI8RegClassID:
-    Opc = AMDIL::PRIVATELOAD_i8;
+    Opc = AMDIL::PRIVATELOADi8r;
     break;
   case AMDIL::GPRI64RegClassID:
-    Opc = AMDIL::PRIVATELOAD_i64;
+    Opc = AMDIL::PRIVATELOADi64r;
     break;
   case AMDIL::GPRV2F32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2f32;
+    Opc = AMDIL::PRIVATELOADv2f32r;
     break;
   case AMDIL::GPRV2F64RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2f64;
+    Opc = AMDIL::PRIVATELOADv2f64r;
     break;
   case AMDIL::GPRV2I16RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2i16;
+    Opc = AMDIL::PRIVATELOADv2i16r;
     break;
   case AMDIL::GPRV2I32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2i32;
+    Opc = AMDIL::PRIVATELOADv2i32r;
     break;
   case AMDIL::GPRV2I8RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2i8;
+    Opc = AMDIL::PRIVATELOADv2i8r;
     break;
   case AMDIL::GPRV2I64RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v2i64;
+    Opc = AMDIL::PRIVATELOADv2i64r;
     break;
   case AMDIL::GPRV4F32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v4f32;
+    Opc = AMDIL::PRIVATELOADv4f32r;
     break;
   case AMDIL::GPRV4I16RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v4i16;
+    Opc = AMDIL::PRIVATELOADv4i16r;
     break;
   case AMDIL::GPRV4I32RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v4i32;
+    Opc = AMDIL::PRIVATELOADv4i32r;
     break;
   case AMDIL::GPRV4I8RegClassID:
-    Opc = AMDIL::PRIVATELOAD_v4i8;
+    Opc = AMDIL::PRIVATELOADv4i8r;
     break;
   }
 
   MachineMemOperand *MMO =
     new MachineMemOperand(
-    MachinePointerInfo::getFixedStack(FrameIndex),
-    MachineMemOperand::MOLoad,
-    MFI.getObjectSize(FrameIndex),
-    MFI.getObjectAlignment(FrameIndex));
+      MachinePointerInfo::getFixedStack(FrameIndex),
+      MachineMemOperand::MOLoad,
+      MFI.getObjectSize(FrameIndex),
+      MFI.getObjectAlignment(FrameIndex));
   if (MI != MBB.end()) {
     DL = MI->getDebugLoc();
   }
@@ -665,17 +633,15 @@ AMDILInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                       .addImm(0);
   AMDILAS::InstrResEnc curRes;
   curRes.bits.ResourceID
-  = TM.getSubtargetImpl()->device()->getResourceID(AMDILDevice::SCRATCH_ID);
+    = TM.getSubtargetImpl()->device()->getResourceID(AMDILDevice::SCRATCH_ID);
   setAsmPrinterFlags(nMI, curRes);
-
 }
 #if 0
 MachineInstr *
 AMDILInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
                                       MachineInstr *MI,
                                       const SmallVectorImpl<unsigned> &Ops,
-                                      int FrameIndex) const
-{
+                                      int FrameIndex) const {
   // TODO: Implement this function
   return 0;
 }
@@ -683,8 +649,7 @@ MachineInstr*
 AMDILInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
                                       MachineInstr *MI,
                                       const SmallVectorImpl<unsigned> &Ops,
-                                      MachineInstr *LoadMI) const
-{
+                                      MachineInstr *LoadMI) const {
   // TODO: Implement this function
   return 0;
 }
@@ -693,7 +658,8 @@ AMDILInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
 #if 0
 bool
 AMDILInstrInfo::canFoldMemoryOperand(const MachineInstr *MI,
-                                     const SmallVectorImpl<unsigned> &Ops) const
+                                     const SmallVectorImpl<unsigned> &Ops)
+const
 {
   // TODO: Implement this function
   return TargetInstrInfoImpl::canFoldMemoryOperand(MI, Ops);
@@ -702,25 +668,21 @@ bool
 AMDILInstrInfo::unfoldMemoryOperand(MachineFunction &MF, MachineInstr *MI,
                                     unsigned Reg, bool UnfoldLoad,
                                     bool UnfoldStore,
-                                    SmallVectorImpl<MachineInstr*> &NewMIs) const
-{
+                                    SmallVectorImpl<MachineInstr*> &NewMIs)
+const {
   // TODO: Implement this function
   return false;
 }
-
 bool
 AMDILInstrInfo::unfoldMemoryOperand(SelectionDAG &DAG, SDNode *N,
-                                    SmallVectorImpl<SDNode*> &NewNodes) const
-{
+                                    SmallVectorImpl<SDNode*> &NewNodes) const {
   // TODO: Implement this function
   return false;
 }
-
 unsigned
 AMDILInstrInfo::getOpcodeAfterMemoryUnfold(unsigned Opc,
-    bool UnfoldLoad, bool UnfoldStore,
-    unsigned *LoadRegIndex) const
-{
+                                           bool UnfoldLoad, bool UnfoldStore,
+                                           unsigned *LoadRegIndex) const {
   // TODO: Implement this function
   return 0;
 }
@@ -728,8 +690,7 @@ AMDILInstrInfo::getOpcodeAfterMemoryUnfold(unsigned Opc,
 bool
 AMDILInstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
                                         int64_t &Offset1,
-                                        int64_t &Offset2) const
-{
+                                        int64_t &Offset2) const {
   if (!Load1->isMachineOpcode() || !Load2->isMachineOpcode()) {
     return false;
   }
@@ -783,11 +744,9 @@ AMDILInstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   }
   return false;
 }
-
 bool AMDILInstrInfo::shouldScheduleLoadsNear(SDNode *Load1, SDNode *Load2,
-    int64_t Offset1, int64_t Offset2,
-    unsigned NumLoads) const
-{
+                                             int64_t Offset1, int64_t Offset2,
+                                             unsigned NumLoads) const {
   LoadSDNode *LoadSD1 = dyn_cast<LoadSDNode>(Load1);
   LoadSDNode *LoadSD2 = dyn_cast<LoadSDNode>(Load2);
   if (!LoadSD1 || !LoadSD2) {
@@ -810,9 +769,8 @@ bool AMDILInstrInfo::shouldScheduleLoadsNear(SDNode *Load1, SDNode *Load2,
   // TODO: Make the loads schedule near if it fits in a cacheline
   return (NumLoads < 16 && (Offset2 - Offset1) < 16);
 }
-
-bool AMDILInstrInfo::shouldScheduleWithNormalPriority(SDNode* instruction) const
-{
+bool AMDILInstrInfo::shouldScheduleWithNormalPriority(SDNode* instruction)
+const {
   if (instruction->isMachineOpcode()) {
     unsigned int Opc = instruction->getMachineOpcode();
     switch(Opc) {
@@ -821,103 +779,99 @@ bool AMDILInstrInfo::shouldScheduleWithNormalPriority(SDNode* instruction) const
     case AMDIL::BARRIER_LOCAL:
     case AMDIL::BARRIER_GLOBAL:
     case AMDIL::BARRIER_REGION:
-    case AMDIL::FENCE:
-    case AMDIL::FENCE_LOCAL:
-    case AMDIL::FENCE_GLOBAL:
-    case AMDIL::FENCE_REGION:
-    case AMDIL::FENCE_READ_ONLY:
-    case AMDIL::FENCE_READ_ONLY_LOCAL:
-    case AMDIL::FENCE_READ_ONLY_GLOBAL:
-    case AMDIL::FENCE_READ_ONLY_REGION:
-    case AMDIL::FENCE_WRITE_ONLY:
-    case AMDIL::FENCE_WRITE_ONLY_LOCAL:
-    case AMDIL::FENCE_WRITE_ONLY_GLOBAL:
-    case AMDIL::FENCE_WRITE_ONLY_REGION:
-      return true;  // Maybe other instructions will need to be added to this?
+    case AMDIL::FENCEr:
+    case AMDIL::FENCE_Lr:
+    case AMDIL::FENCE_Mr:
+    case AMDIL::FENCE_Gr:
+    case AMDIL::FENCE_LMr:
+    case AMDIL::FENCE_LGr:
+    case AMDIL::FENCE_MGr:
+    case AMDIL::FENCE_ROr:
+    case AMDIL::FENCE_RO_Lr:
+    case AMDIL::FENCE_RO_Mr:
+    case AMDIL::FENCE_RO_Gr:
+    case AMDIL::FENCE_RO_LMr:
+    case AMDIL::FENCE_RO_LGr:
+    case AMDIL::FENCE_RO_MGr:
+    case AMDIL::FENCE_WOr:
+    case AMDIL::FENCE_WO_Lr:
+    case AMDIL::FENCE_WO_Mr:
+    case AMDIL::FENCE_WO_Gr:
+    case AMDIL::FENCE_WO_LMr:
+    case AMDIL::FENCE_WO_LGr:
+    case AMDIL::FENCE_WO_MGr:
+    case AMDIL::FENCE_Sr:
+    case AMDIL::FENCE_MSr:
+    case AMDIL::FENCE_LSr:
+    case AMDIL::FENCE_GSr:
+    case AMDIL::FENCE_LMSr:
+    case AMDIL::FENCE_MGSr:
+    case AMDIL::FENCE_LGSr:
+      return true;    // Maybe other instructions will need to be added to this?
     default:
       return false;
     }
   }
   return false;
 }
-
 bool
 AMDILInstrInfo::ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond)
-const
-{
+const {
   // TODO: Implement this function
   return true;
 }
 void AMDILInstrInfo::insertNoop(MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator MI) const
-{
+                                MachineBasicBlock::iterator MI) const {
   // TODO: Implement this function
 }
-
-bool AMDILInstrInfo::isPredicated(const MachineInstr *MI) const
-{
+bool AMDILInstrInfo::isPredicated(const MachineInstr *MI) const {
   // TODO: Implement this function
   return false;
 }
-bool AMDILInstrInfo::isUnpredicatedTerminator(const MachineInstr *MI) const
-{
+bool AMDILInstrInfo::isUnpredicatedTerminator(const MachineInstr *MI) const {
   // TODO: Implement this function
   return false;
 }
-
-bool AMDILInstrInfo::PredicateInstruction(MachineInstr *MI,
-    const SmallVectorImpl<MachineOperand> &Pred) const
-{
+bool AMDILInstrInfo::PredicateInstruction(
+  MachineInstr *MI,
+  const SmallVectorImpl<MachineOperand>
+  &Pred) const {
   // TODO: Implement this function
   return false;
 }
-
 bool
 AMDILInstrInfo::SubsumesPredicate(const SmallVectorImpl<MachineOperand> &Pred1,
                                   const SmallVectorImpl<MachineOperand> &Pred2)
-const
-{
+const {
   // TODO: Implement this function
   return false;
 }
-
 bool AMDILInstrInfo::DefinesPredicate(MachineInstr *MI,
                                       std::vector<MachineOperand> &Pred) const
 {
   // TODO: Implement this function
   return false;
 }
-
-bool AMDILInstrInfo::isPredicable(MachineInstr *MI) const
-{
+bool AMDILInstrInfo::isPredicable(MachineInstr *MI) const {
   // TODO: Implement this function
   return MI->getDesc().isPredicable();
 }
-
 bool
-AMDILInstrInfo::isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const
-{
+AMDILInstrInfo::isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const {
   // TODO: Implement this function
   return true;
 }
-
-unsigned AMDILInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const
-{
+unsigned AMDILInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
   // TODO: Implement this function
   return 0;
 }
-
-
 unsigned
-AMDILInstrInfo::GetFunctionSizeInBytes(const MachineFunction &MF) const
-{
+AMDILInstrInfo::GetFunctionSizeInBytes(const MachineFunction &MF) const {
   // TODO: Implement this function
   return 0;
 }
-
 unsigned AMDILInstrInfo::getInlineAsmLength(const char *Str,
-    const MCAsmInfo &MAI) const
-{
+                                            const MCAsmInfo &MAI) const {
   // TODO: Implement this function
   return 0;
 }

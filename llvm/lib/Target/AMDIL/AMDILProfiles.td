@@ -164,3 +164,15 @@ def SDTIL_BinAtomNoRetFloat : SDTypeProfile<0, 3, [
 def SDTIL_Append : SDTypeProfile<1, 1, [
     SDTCisVT<0, i32>, SDTCisPtrTy<1>
     ]>;
+
+//===----------------------------------------------------------------------===//
+// Atomic Load/Store Profile Types
+//===----------------------------------------------------------------------===//
+
+def SDTIL_AtomLoad : SDTypeProfile<1, 3, [
+  SDTCisPtrTy<1>, SDTCisInt<2>, SDTCisVT<3, i32>
+]>;
+
+def SDTIL_AtomStore : SDTypeProfile<0, 4, [
+  SDTCisPtrTy<0>, SDTCisInt<2>, SDTCisVT<3, i32>
+]>;

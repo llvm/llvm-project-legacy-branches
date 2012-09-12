@@ -27,8 +27,7 @@
 #include <set>
 #define CB_BASE_OFFSET 2
 
-namespace llvm
-{
+namespace llvm {
 class AMDILKernel;
 class Argument;
 class TypeSymbolTable;
@@ -37,8 +36,7 @@ class MachineFunction;
 class GlobalValue;
 
 class AMDILMachineFunctionInfo;
-class AMDILModuleInfo : public MachineModuleInfoImpl
-{
+class AMDILModuleInfo : public MachineModuleInfoImpl {
 protected:
   const MachineModuleInfo *mMMI;
 public:
@@ -103,7 +101,8 @@ public:
   uint32_t getConstPtrCB(const AMDILKernel *krnl, const llvm::StringRef &arg);
 
   /// Query the Value* that the constant pointer originates from.
-  const Value *getConstPtrValue(const AMDILKernel *krnl, const llvm::StringRef &arg);
+  const Value *getConstPtrValue(const AMDILKernel *krnl,
+                                const llvm::StringRef &arg);
 
   /// Get the ID of the argument.
   int32_t getArgID(const Argument *arg);
@@ -123,8 +122,12 @@ public:
   uint32_t get_printf_offset() {
     return mPrintfOffset;
   }
-
+  uint32_t populateNextLocalBuffer(
+    const SmallSet<const Value*, 1>& locals, bool isDefaultBuf);
   std::set<std::string>* getSamplerForKernel(llvm::StringRef &kernelName);
+  uint32_t numLocalBuffers() const {
+    return mNumLocalBuffers;
+  }
 
 private:
   /// Various functions that parse global value information and store them in
@@ -143,7 +146,6 @@ private:
   void printConstantValue(const Constant *CAval,
                           OSTREAM_TYPE& O,
                           bool asByte);
-
 
   // parse the local and region operands for parseKernelInformation
   AMDILLocalArg* parseKernelLRInfo(AMDILKernel *kernel, const Constant *CV);
@@ -173,11 +175,9 @@ private:
   uint32_t mReservedBuffs;
   uint32_t mCurrentCPOffset;
   uint32_t mPrintfOffset;
+  uint32_t mNumLocalBuffers;
   bool mProcessed;
 };
-
-
-
 } // end namespace llvm
 
 #endif // _AMDIL_COFF_MACHINE_MODULE_INFO_H_

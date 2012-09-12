@@ -35,12 +35,13 @@
 #include <utility>
 using namespace llvm;
 
-static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl, const std::string &arg)
-{
+static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl,
+                                        const std::string &arg) {
   if (!krnl) {
     return NULL;
   }
-  llvm::SmallVector<AMDILConstPtr, DEFAULT_VEC_SLOTS>::const_iterator begin, end;
+  llvm::SmallVector<AMDILConstPtr,
+                    DEFAULT_VEC_SLOTS>::const_iterator begin, end;
   for (begin = krnl->constPtr.begin(), end = krnl->constPtr.end();
        begin != end; ++begin) {
     if (!strcmp(begin->name.data(),arg.c_str())) {
@@ -49,33 +50,22 @@ static const AMDILConstPtr *getConstPtr(const AMDILKernel *krnl, const std::stri
   }
   return NULL;
 }
-
-void PrintfInfo::addOperand(size_t idx, uint32_t size)
-{
+void PrintfInfo::addOperand(size_t idx, uint32_t size) {
   mOperands.resize((unsigned)(idx + 1));
   mOperands[(unsigned)idx] = size;
 }
-
-uint32_t PrintfInfo::getPrintfID()
-{
+uint32_t PrintfInfo::getPrintfID() {
   return mPrintfID;
 }
-
-void PrintfInfo::setPrintfID(uint32_t id)
-{
+void PrintfInfo::setPrintfID(uint32_t id) {
   mPrintfID = id;
 }
-
-size_t PrintfInfo::getNumOperands()
-{
+size_t PrintfInfo::getNumOperands() {
   return mOperands.size();
 }
-
-uint32_t PrintfInfo::getOperandID(uint32_t idx)
-{
+uint32_t PrintfInfo::getOperandID(uint32_t idx) {
   return mOperands[idx];
 }
-
 AMDILMachineFunctionInfo::AMDILMachineFunctionInfo()
   : CalleeSavedFrameSize(0), BytesToPopOnReturn(0),
     DecorationStyle(None), ReturnAddrIndex(0),
@@ -93,7 +83,6 @@ AMDILMachineFunctionInfo::AMDILMachineFunctionInfo()
   mArgSize = -1;
   mStackSize = -1;
 }
-
 AMDILMachineFunctionInfo::AMDILMachineFunctionInfo(MachineFunction& MF)
   : CalleeSavedFrameSize(0), BytesToPopOnReturn(0),
     DecorationStyle(None), ReturnAddrIndex(0),
@@ -124,7 +113,6 @@ AMDILMachineFunctionInfo::AMDILMachineFunctionInfo(MachineFunction& MF)
   mArgSize = -1;
   mStackSize = -1;
 }
-
 AMDILMachineFunctionInfo::~AMDILMachineFunctionInfo()
 {
   for (std::map<std::string, PrintfInfo*>::iterator pfb = printf_begin(),
@@ -192,7 +180,6 @@ AMDILMachineFunctionInfo::setSRetReturnReg(unsigned int reg)
 {
   SRetReturnReg = reg;
 }
-
 bool
 AMDILMachineFunctionInfo::usesHWConstant(std::string name) const
 {
@@ -203,15 +190,13 @@ AMDILMachineFunctionInfo::usesHWConstant(std::string name) const
     return false;
   }
 }
-
 uint32_t
 AMDILMachineFunctionInfo::getLocal(uint32_t dim)
 {
   if (mKernel && mKernel->sgv) {
     AMDILKernelAttr *sgv = mKernel->sgv;
     switch (dim) {
-    default:
-      break;
+    default: break;
     case 0:
     case 1:
     case 2:
@@ -241,13 +226,11 @@ AMDILMachineFunctionInfo::isKernel() const
 {
   return mKernel != NULL && mKernel->mKernel;
 }
-
 AMDILKernel*
 AMDILMachineFunctionInfo::getKernel()
 {
   return mKernel;
 }
-
 std::string
 AMDILMachineFunctionInfo::getName()
 {
@@ -257,13 +240,13 @@ AMDILMachineFunctionInfo::getName()
     return "";
   }
 }
-
 uint32_t
 AMDILMachineFunctionInfo::getArgSize()
 {
   if (mArgSize == -1) {
     const AMDILTargetMachine *TM =
       reinterpret_cast<const AMDILTargetMachine*>(&mMF->getTarget());
+    const TargetData* TD = TM->getTargetData();
     Function::const_arg_iterator I = mMF->getFunction()->arg_begin();
     Function::const_arg_iterator Ie = mMF->getFunction()->arg_end();
     uint32_t Counter = 0;
@@ -351,6 +334,7 @@ AMDILMachineFunctionInfo::getScratchSize()
 {
   const AMDILTargetMachine *TM =
     reinterpret_cast<const AMDILTargetMachine*>(&mMF->getTarget());
+  const TargetData* TD = TM->getTargetData();
   if (mScratchSize == -1) {
     mScratchSize = 0;
     Function::const_arg_iterator I = mMF->getFunction()->arg_begin();
@@ -365,7 +349,6 @@ AMDILMachineFunctionInfo::getScratchSize()
   }
   return (uint32_t)mScratchSize;
 }
-
 uint32_t
 AMDILMachineFunctionInfo::getStackSize()
 {
@@ -396,126 +379,89 @@ AMDILMachineFunctionInfo::getStackSize()
     mStackSize = privSize;
   }
   return (uint32_t)mStackSize;
-
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addi32Literal(uint32_t val, int Opcode)
-{
+AMDILMachineFunctionInfo::addi32Literal(uint32_t val, int Opcode) {
   // Since we have emulated 16/8/1 bit register types with a 32bit real
   // register, we need to sign extend the constants to 32bits in order for
   // comparisons against the constants to work correctly, this fixes some issues
   // we had in conformance failing for saturation.
-  if (Opcode == AMDIL::LOADCONST_i16) {
+  if (Opcode == AMDIL::LOADCONSTi16) {
     val = (((int32_t)val << 16) >> 16);
-  } else if (Opcode == AMDIL::LOADCONST_i8) {
+  } else if (Opcode == AMDIL::LOADCONSTi8) {
     val = (((int32_t)val << 24) >> 24);
   }
-  if (mIntLits.find(val) == mIntLits.end()) {
-    mIntLits[val] = getNumLiterals();
-  }
-  return mIntLits[val];
+  uint64_t val64b = ((uint64_t)val | (uint64_t)val << 32U);
+  return addLiteral(val64b, val64b);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addi64Literal(uint64_t val)
-{
-  if (mLongLits.find(val) == mLongLits.end()) {
-    mLongLits[val] = getNumLiterals();
-  }
-  return mLongLits[val];
+AMDILMachineFunctionInfo::addi64Literal(uint64_t val) {
+  return addLiteral(val, val);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addi128Literal(uint64_t val_lo, uint64_t val_hi)
-{
+AMDILMachineFunctionInfo::addi128Literal(uint64_t val_lo, uint64_t val_hi) {
+  return addLiteral(val_lo, val_hi);
+}
+uint32_t
+AMDILMachineFunctionInfo::addLiteral(uint64_t val_lo, uint64_t val_hi) {
   std::pair<uint64_t, uint64_t> a;
   a.first = val_lo;
   a.second = val_hi;
-  if (mVecLits.find(a) == mVecLits.end()) {
-    mVecLits[a] = getNumLiterals();
+  if (mLits.find(a) == mLits.end()) {
+    mLits[a] = getNumLiterals();
   }
-  return mVecLits[a];
+  return mLits[a];
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addf32Literal(uint32_t val)
-{
-  if (mIntLits.find(val) == mIntLits.end()) {
-    mIntLits[val] = getNumLiterals();
-  }
-  return mIntLits[val];
+AMDILMachineFunctionInfo::addf32Literal(uint32_t val) {
+  uint64_t Val64b = ((uint64_t)val | ((uint64_t)val << 32));
+  return addLiteral(Val64b, Val64b);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addf32Literal(const ConstantFP *CFP)
-{
+AMDILMachineFunctionInfo::addf32Literal(const ConstantFP *CFP) {
   uint32_t val = (uint32_t)CFP->getValueAPF().bitcastToAPInt().getZExtValue();
-  if (mIntLits.find(val) == mIntLits.end()) {
-    mIntLits[val] = getNumLiterals();
-  }
-  return mIntLits[val];
+  return addf32Literal(val);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addf64Literal(uint64_t val)
-{
-  if (mLongLits.find(val) == mLongLits.end()) {
-    mLongLits[val] = getNumLiterals();
-  }
-  return mLongLits[val];
+AMDILMachineFunctionInfo::addf64Literal(uint64_t val) {
+  return addLiteral(val, val);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::addf64Literal(const ConstantFP *CFP)
-{
+AMDILMachineFunctionInfo::addf64Literal(const ConstantFP *CFP) {
   union dtol_union {
     double d;
     uint64_t ul;
   } dval;
   const APFloat &APF = CFP->getValueAPF();
-  if (&APF.getSemantics() == (const llvm::fltSemantics *)&APFloat::IEEEsingle) {
+  if (&APF.getSemantics() ==
+      (const llvm::fltSemantics *)&APFloat::IEEEsingle) {
     float fval = APF.convertToFloat();
     dval.d = (double)fval;
   } else {
     dval.d = APF.convertToDouble();
   }
-  if (mLongLits.find(dval.ul) == mLongLits.end()) {
-    mLongLits[dval.ul] = getNumLiterals();
-  }
-  return mLongLits[dval.ul];
+  return addLiteral(dval.ul, dval.ul);
 }
-
 uint32_t
-AMDILMachineFunctionInfo::getIntLits(uint32_t offset)
+AMDILMachineFunctionInfo::getLitIdx(uint32_t val)
 {
-  return mIntLits[offset];
+  uint64_t val64 = ((uint64_t)val | ((uint64_t)val << 32));
+  return mLits[std::pair<uint64_t, uint64_t>(val64, val64)];
 }
-
 uint32_t
-AMDILMachineFunctionInfo::getLongLits(uint64_t offset)
+AMDILMachineFunctionInfo::getLitIdx(uint64_t val)
 {
-  return mLongLits[offset];
+  return mLits[std::pair<uint64_t, uint64_t>(val, val)];
 }
-
-uint32_t
-AMDILMachineFunctionInfo::getVecLits(uint64_t low64, uint64_t high64)
-{
-  return mVecLits[std::pair<uint64_t, uint64_t>(low64, high64)];
-}
-
 size_t
-AMDILMachineFunctionInfo::getNumLiterals() const
-{
-  return mLongLits.size() + mIntLits.size() + mVecLits.size() + mReservedLits;
+AMDILMachineFunctionInfo::getNumLiterals() const {
+  return mLits.size() + mReservedLits;
 }
-
 void
 AMDILMachineFunctionInfo::addReservedLiterals(uint32_t size)
 {
   mReservedLits += size;
 }
-
 uint32_t
 AMDILMachineFunctionInfo::addSampler(std::string name, uint32_t val)
 {
@@ -533,39 +479,33 @@ AMDILMachineFunctionInfo::addSampler(std::string name, uint32_t val)
     return curVal.idx;
   }
 }
-
 void
-AMDILMachineFunctionInfo::setUsesMem(unsigned id)
-{
+AMDILMachineFunctionInfo::setUsesMem(unsigned id) {
   assert(id < AMDILDevice::MAX_IDS &&
          "Must set the ID to be less than MAX_IDS!");
   mUsedMem[id] = true;
 }
-
 bool
-AMDILMachineFunctionInfo::usesMem(unsigned id)
-{
+AMDILMachineFunctionInfo::usesMem(unsigned id) {
   assert(id < AMDILDevice::MAX_IDS &&
          "Must set the ID to be less than MAX_IDS!");
   return mUsedMem[id];
 }
-
 void
 AMDILMachineFunctionInfo::addErrorMsg(const char *msg, ErrorMsgEnum val)
 {
   if (val == DEBUG_ONLY) {
-#if defined(DEBUG) || defined(_DEBUG)
+#if !defined(NDEBUG)
     mErrors.insert(msg);
 #endif
   }  else if (val == RELEASE_ONLY) {
-#if !defined(DEBUG) && !defined(_DEBUG)
+#if defined(NDEBUG)
     mErrors.insert(msg);
 #endif
   } else if (val == ALWAYS) {
     mErrors.insert(msg);
   }
 }
-
 uint32_t
 AMDILMachineFunctionInfo::addPrintfString(std::string &name, unsigned offset)
 {
@@ -578,21 +518,18 @@ AMDILMachineFunctionInfo::addPrintfString(std::string &name, unsigned offset)
     return info->getPrintfID();
   }
 }
-
 void
 AMDILMachineFunctionInfo::addPrintfOperand(std::string &name,
-    size_t idx,
-    uint32_t size)
+                                           size_t idx,
+                                           uint32_t size)
 {
   mPrintfMap[name]->addOperand(idx, size);
 }
-
 void
 AMDILMachineFunctionInfo::addMetadata(const char *md, bool kernelOnly)
 {
   addMetadata(std::string(md), kernelOnly);
 }
-
 void
 AMDILMachineFunctionInfo::addMetadata(std::string md, bool kernelOnly)
 {
@@ -602,7 +539,6 @@ AMDILMachineFunctionInfo::addMetadata(std::string md, bool kernelOnly)
     mMetadataFunc.insert(md);
   }
 }
-
 size_t
 AMDILMachineFunctionInfo::get_num_write_images()
 {
@@ -610,7 +546,6 @@ AMDILMachineFunctionInfo::get_num_write_images()
          + write_image2d_array_size() + write_image1d_array_size()
          + write_image1d_size() + write_image1d_buffer_size();
 }
-
 bool
 AMDILMachineFunctionInfo::isSignedIntType(const Value* ptr)
 {
@@ -624,7 +559,8 @@ AMDILMachineFunctionInfo::isSignedIntType(const Value* ptr)
   if (!GV || !GV->hasInitializer()) return false;
   const ConstantArray *CA = dyn_cast<ConstantArray>(GV->getInitializer());
   if (!CA) return false;
-  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop; ++start) {
+  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop;
+       ++start) {
     const ConstantExpr *nameField = dyn_cast<ConstantExpr>(CA->getOperand(start));
     if (!nameField) continue;
 
@@ -655,7 +591,8 @@ AMDILMachineFunctionInfo::isVolatilePointer(const Value* ptr)
   if (!GV || !GV->hasInitializer()) return false;
   const ConstantArray *CA = dyn_cast<ConstantArray>(GV->getInitializer());
   if (!CA) return false;
-  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop; ++start) {
+  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop;
+       ++start) {
     const ConstantExpr *nameField = dyn_cast<ConstantExpr>(CA->getOperand(start));
     if (!nameField) continue;
 
@@ -686,7 +623,8 @@ AMDILMachineFunctionInfo::isRestrictPointer(const Value* ptr)
   if (!GV || !GV->hasInitializer()) return false;
   const ConstantArray *CA = dyn_cast<ConstantArray>(GV->getInitializer());
   if (!CA) return false;
-  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop; ++start) {
+  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop;
+       ++start) {
     const ConstantExpr *nameField = dyn_cast<ConstantExpr>(CA->getOperand(start));
     if (!nameField) continue;
 
@@ -704,7 +642,6 @@ AMDILMachineFunctionInfo::isRestrictPointer(const Value* ptr)
   }
   return false;
 }
-
 bool
 AMDILMachineFunctionInfo::isConstantArgument(const Value* ptr)
 {
@@ -718,7 +655,8 @@ AMDILMachineFunctionInfo::isConstantArgument(const Value* ptr)
   if (!GV || !GV->hasInitializer()) return false;
   const ConstantArray *CA = dyn_cast<ConstantArray>(GV->getInitializer());
   if (!CA) return false;
-  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop; ++start) {
+  for (uint32_t start = 0, stop = CA->getNumOperands(); start < stop;
+       ++start) {
     const ConstantExpr *nameField = dyn_cast<ConstantExpr>(CA->getOperand(start));
     if (!nameField) continue;
 
@@ -736,4 +674,3 @@ AMDILMachineFunctionInfo::isConstantArgument(const Value* ptr)
   }
   return false;
 }
-

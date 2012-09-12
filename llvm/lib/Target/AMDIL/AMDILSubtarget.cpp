@@ -30,13 +30,16 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_TARGET_DESC
 #include "AMDILGenSubtarget.inc"
 
-AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT, llvm::StringRef GPU, llvm::StringRef FS) : AMDILGenSubtargetInfo( TT, GPU, FS )
+AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT,
+                               llvm::StringRef GPU,
+                               llvm::StringRef FS) : AMDILGenSubtargetInfo( TT,
+                                                                            GPU,
+                                                                            FS )
 {
   memset(CapsOverride, 0, sizeof(*CapsOverride)
          * AMDILDeviceInfo::MaxNumberCapabilities);
   mIs64bit = false;
   mFlatAddress = false;
-  mVersion = -1U;
   mMetadata30 = false;
   SmallVector<StringRef, DEFAULT_VEC_SLOTS> Features;
   SplitString(FS, Features, ",");
@@ -63,19 +66,10 @@ AMDILSubtarget::AMDILSubtarget(llvm::StringRef TT, llvm::StringRef GPU, llvm::St
       useTest = true;
 #endif
     } else if (Features[x].startswith("+cal")) {
-      SmallVector<StringRef, DEFAULT_VEC_SLOTS> version;
-      SplitString(Features[x], version, "=");
-      mVersion = ::atoi(version[1].data());
     } else {
       if (newFeatures.length() > 0) newFeatures += ',';
       newFeatures += Features[x];
     }
-  }
-  // If we don't have a version then set it to
-  // -1 which enables everything. This is for
-  // offline devices.
-  if (!mVersion) {
-    mVersion = (uint32_t)-1;
   }
   for (int x = 0; x < 3; ++x) {
     if (!mDefaultSize[x]) {
@@ -108,35 +102,29 @@ AMDILSubtarget::isOverride(AMDILDeviceInfo::Caps caps) const
   return CapsOverride[caps];
 }
 bool
-AMDILSubtarget::isApple() const
-{
+AMDILSubtarget::isApple() const {
   return false;
 }
-
 bool
 AMDILSubtarget::overridesFlatAS() const
 {
   return mFlatAddress;
 }
-
 bool
 AMDILSubtarget::is64bit() const
 {
   return mIs64bit;
 }
-
 bool
 AMDILSubtarget::isTargetELF() const
 {
   return false;
 }
-
 bool
 AMDILSubtarget::supportMetadata30() const
 {
   return mMetadata30;
 }
-
 size_t
 AMDILSubtarget::getDefaultSize(uint32_t dim) const
 {
@@ -146,12 +134,6 @@ AMDILSubtarget::getDefaultSize(uint32_t dim) const
     return mDefaultSize[dim];
   }
 }
-uint32_t
-AMDILSubtarget::calVersion() const
-{
-  return mVersion;
-}
-
 AMDILKernelManager*
 AMDILSubtarget::getKernelManager() const
 {
@@ -167,22 +149,23 @@ AMDILSubtarget::getDataLayout() const
 {
   if (!mDevice) {
     if (is64bit()) {
-      return std::string("e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16"
-                         "-i32:32:32-i64:64:64-f32:32:32-f64:64:64-f80:32:32"
-                         "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64"
-                         "-v96:128:128-v128:128:128-v192:256:256-v256:256:256"
-                         "-v512:512:512-v1024:1024:1024-v2048:2048:2048-a0:0:64");
+      return std::string(
+               "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16"
+               "-i32:32:32-i64:64:64-f32:32:32-f64:64:64-f80:32:32"
+               "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64"
+               "-v96:128:128-v128:128:128-v192:256:256-v256:256:256"
+               "-v512:512:512-v1024:1024:1024-v2048:2048:2048-a0:0:64");
     } else {
-      return std::string("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16"
-                         "-i32:32:32-i64:64:64-f32:32:32-f64:64:64-f80:32:32"
-                         "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64"
-                         "-v96:128:128-v128:128:128-v192:256:256-v256:256:256"
-                         "-v512:512:512-v1024:1024:1024-v2048:2048:2048-a0:0:64");
+      return std::string(
+               "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16"
+               "-i32:32:32-i64:64:64-f32:32:32-f64:64:64-f80:32:32"
+               "-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64"
+               "-v96:128:128-v128:128:128-v192:256:256-v256:256:256"
+               "-v512:512:512-v1024:1024:1024-v2048:2048:2048-a0:0:64");
     }
   }
   return mDevice->getDataLayout();
 }
-
 std::string
 AMDILSubtarget::getDeviceName() const
 {

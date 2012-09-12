@@ -28,7 +28,6 @@ AMDILIntrinsicInfo::AMDILIntrinsicInfo(AMDILTargetMachine *tm)
   : TargetIntrinsicInfo(), mTM(tm)
 {
 }
-
 std::string
 AMDILIntrinsicInfo::getName(unsigned int IntrID, Type **Tys,
                             unsigned int numTys) const
@@ -50,7 +49,6 @@ AMDILIntrinsicInfo::getName(unsigned int IntrID, Type **Tys,
   std::string Result(names[IntrID - Intrinsic::num_intrinsics]);
   return Result;
 }
-
 static bool
 checkTruncation(const char *Name, unsigned int& Len)
 {
@@ -80,7 +78,6 @@ checkTruncation(const char *Name, unsigned int& Len)
   }
   return false;
 }
-
 // We don't want to support both the OpenCL 1.0 atomics
 // and the 1.1 atomics with different names, so we translate
 // the 1.0 atomics to the 1.1 naming here if needed.
@@ -102,7 +99,6 @@ atomTranslateIfNeeded(const char *Name, unsigned int Len)
   buffer[Len] = '\0';
   return buffer;
 }
-
 unsigned int
 AMDILIntrinsicInfo::lookupName(const char *Name, unsigned int Len) const
 {
@@ -110,7 +106,7 @@ AMDILIntrinsicInfo::lookupName(const char *Name, unsigned int Len) const
 #include "AMDILGenIntrinsics.inc"
 #undef GET_FUNCTION_RECOGNIZER
   AMDILIntrinsic::ID IntrinsicID
-  = (AMDILIntrinsic::ID)Intrinsic::not_intrinsic;
+    = (AMDILIntrinsic::ID)Intrinsic::not_intrinsic;
   if (checkTruncation(Name, Len)) {
     char *buffer = atomTranslateIfNeeded(Name, Len);
     IntrinsicID = getIntrinsicForGCCBuiltin("AMDIL", buffer);
@@ -118,15 +114,11 @@ AMDILIntrinsicInfo::lookupName(const char *Name, unsigned int Len) const
   } else {
     IntrinsicID = getIntrinsicForGCCBuiltin("AMDIL", Name);
   }
-  if (!isValidIntrinsic(IntrinsicID)) {
-    return 0;
-  }
   if (IntrinsicID != (AMDILIntrinsic::ID)Intrinsic::not_intrinsic) {
     return IntrinsicID;
   }
   return 0;
 }
-
 bool
 AMDILIntrinsicInfo::isOverloaded(unsigned IntrID) const
 {
@@ -138,7 +130,6 @@ AMDILIntrinsicInfo::isOverloaded(unsigned IntrID) const
 #include "AMDILGenIntrinsics.inc"
 #undef GET_INTRINSIC_OVERLOAD_TABLE
 }
-
 /// This defines the "getAttributes(ID id)" method.
 #define GET_INTRINSIC_ATTRIBUTES
 #include "AMDILGenIntrinsics.inc"
@@ -167,27 +158,8 @@ AMDILIntrinsicInfo::getDeclaration(Module *M, unsigned IntrID,
   }
 
   return cast<Function>(M->getOrInsertFunction(getName(IntrID),
-                        FunctionType::get(ResultTy, ArgTys, IsVarArg),
-                        AList));
-}
-
-/// Because the code generator has to support different SC versions,
-/// this function is added to check that the intrinsic being used
-/// is actually valid. In the case where it isn't valid, the
-/// function call is not translated into an intrinsic and the
-/// fall back software emulated path should pick up the result.
-bool
-AMDILIntrinsicInfo::isValidIntrinsic(unsigned int IntrID) const
-{
-  const AMDILSubtarget *stm = mTM->getSubtargetImpl();
-  switch (IntrID) {
-  default:
-    return true;
-  case AMDILIntrinsic::AMDIL_convert_f32_i32_rpi:
-  case AMDILIntrinsic::AMDIL_convert_f32_i32_flr:
-  case AMDILIntrinsic::AMDIL_convert_f32_f16_near:
-  case AMDILIntrinsic::AMDIL_convert_f32_f16_neg_inf:
-  case AMDILIntrinsic::AMDIL_convert_f32_f16_plus_inf:
-    return stm->calVersion() >= CAL_VERSION_SC_139;
-  };
+                                               FunctionType::get(ResultTy,
+                                                                 ArgTys,
+                                                                 IsVarArg),
+                                               AList));
 }

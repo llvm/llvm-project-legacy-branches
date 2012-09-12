@@ -25,15 +25,12 @@ AMDILTrinityDevice::AMDILTrinityDevice(AMDILSubtarget *ST)
   }
   setCaps();
 }
-
 AMDILTrinityDevice::~AMDILTrinityDevice()
 {
 }
-
 void
 AMDILTrinityDevice::setCaps()
 {
   // Trinity inherits everything from Cayman. If there are any
   // differences (like disabling FP64, do it here).
 }
-

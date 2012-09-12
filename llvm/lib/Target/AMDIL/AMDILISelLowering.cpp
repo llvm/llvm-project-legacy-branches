@@ -47,586 +47,6 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 // TargetLowering Implementation Help Functions Begin
 //===----------------------------------------------------------------------===//
-static SDValue
-getConversionNode(SelectionDAG &DAG, SDValue& Src, SDValue& Dst, bool asType)
-{
-  DebugLoc DL = Src.getDebugLoc();
-  EVT svt = Src.getValueType().getScalarType();
-  EVT dvt = Dst.getValueType().getScalarType();
-  if (svt.isFloatingPoint() && dvt.isFloatingPoint()) {
-    if (dvt.bitsGT(svt)) {
-      Src = DAG.getNode(ISD::FP_EXTEND, DL, dvt, Src);
-    } else if (svt.bitsLT(svt)) {
-      Src = DAG.getNode(ISD::FP_ROUND, DL, dvt, Src,
-                        DAG.getConstant(1, MVT::i32));
-    }
-  } else if (svt.isInteger() && dvt.isInteger()) {
-    if (!svt.bitsEq(dvt)) {
-      Src = DAG.getSExtOrTrunc(Src, DL, dvt);
-    } else {
-      Src = DAG.getNode(AMDILISD::MOVE, DL, dvt, Src);
-    }
-  } else if (svt.isInteger()) {
-    unsigned opcode = (asType) ? ISDBITCAST : ISD::SINT_TO_FP;
-    if (!svt.bitsEq(dvt)) {
-      if (dvt.getSimpleVT().SimpleTy == MVT::f32) {
-        Src = DAG.getSExtOrTrunc(Src, DL, MVT::i32);
-      } else if (dvt.getSimpleVT().SimpleTy == MVT::f64) {
-        Src = DAG.getSExtOrTrunc(Src, DL, MVT::i64);
-      } else {
-        assert(0 && "We only support 32 and 64bit fp types");
-      }
-    }
-    Src = DAG.getNode(opcode, DL, dvt, Src);
-  } else if (dvt.isInteger()) {
-    unsigned opcode = (asType) ? ISDBITCAST : ISD::FP_TO_SINT;
-    if (svt.getSimpleVT().SimpleTy == MVT::f32) {
-      Src = DAG.getNode(opcode, DL, MVT::i32, Src);
-    } else if (svt.getSimpleVT().SimpleTy == MVT::f64) {
-      Src = DAG.getNode(opcode, DL, MVT::i64, Src);
-    } else {
-      assert(0 && "We only support 32 and 64bit fp types");
-    }
-    Src = DAG.getSExtOrTrunc(Src, DL, dvt);
-  }
-  return Src;
-}
-// CondCCodeToCC - Convert a DAG condition code to a AMDIL CC
-// condition.
-static AMDILCC::CondCodes
-CondCCodeToCC(ISD::CondCode CC, const MVT::SimpleValueType& type)
-{
-  switch (CC) {
-  default: {
-    errs()<<"Condition Code: "<< (unsigned int)CC<<"\n";
-    assert(0 && "Unknown condition code!");
-  }
-  case ISD::SETO:
-    switch(type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_O;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_O;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETUO:
-    switch(type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_UO;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_UO;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETGT:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_GT;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_GT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_GT;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_GT;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETGE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_GE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_GE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_GE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_GE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETLT:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_LT;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_LT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_LT;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_LT;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETLE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_LE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_LE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_LE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_LE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETNE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_NE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_NE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_NE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_NE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETEQ:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_I_EQ;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_EQ;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_EQ;
-    case MVT::i64:
-      return AMDILCC::IL_CC_L_EQ;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETUGT:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_GT;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_UGT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_UGT;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_GT;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETUGE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_GE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_UGE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_UGE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_GE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETULT:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_LT;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_ULT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_ULT;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_LT;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETULE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_LE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_ULE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_ULE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_LE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETUNE:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_NE;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_UNE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_UNE;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_NE;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETUEQ:
-    switch (type) {
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-      return AMDILCC::IL_CC_U_EQ;
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_UEQ;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_UEQ;
-    case MVT::i64:
-      return AMDILCC::IL_CC_UL_EQ;
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETOGT:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_OGT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_OGT;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETOGE:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_OGE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_OGE;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETOLT:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_OLT;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_OLT;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETOLE:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_OLE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_OLE;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETONE:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_ONE;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_ONE;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  case ISD::SETOEQ:
-    switch (type) {
-    case MVT::f32:
-      return AMDILCC::IL_CC_F_OEQ;
-    case MVT::f64:
-      return AMDILCC::IL_CC_D_OEQ;
-    case MVT::i1:
-    case MVT::i8:
-    case MVT::i16:
-    case MVT::i32:
-    case MVT::i64:
-    default:
-      assert(0 && "Opcode combination not generated correctly!");
-      return AMDILCC::COND_ERROR;
-    };
-  };
-}
-
-static unsigned int
-translateToOpcode(uint64_t CCCode, unsigned int regClass)
-{
-  switch (CCCode) {
-  case AMDILCC::IL_CC_D_EQ:
-  case AMDILCC::IL_CC_D_OEQ:
-    if (regClass == AMDIL::GPRV2F64RegClassID) {
-      return (unsigned int)AMDIL::DEQ_v2f64;
-    } else {
-      return (unsigned int)AMDIL::DEQ;
-    }
-  case AMDILCC::IL_CC_D_LE:
-  case AMDILCC::IL_CC_D_OLE:
-  case AMDILCC::IL_CC_D_ULE:
-  case AMDILCC::IL_CC_D_GE:
-  case AMDILCC::IL_CC_D_OGE:
-  case AMDILCC::IL_CC_D_UGE:
-    return (unsigned int)AMDIL::DGE;
-  case AMDILCC::IL_CC_D_LT:
-  case AMDILCC::IL_CC_D_OLT:
-  case AMDILCC::IL_CC_D_ULT:
-  case AMDILCC::IL_CC_D_GT:
-  case AMDILCC::IL_CC_D_OGT:
-  case AMDILCC::IL_CC_D_UGT:
-    return (unsigned int)AMDIL::DLT;
-  case AMDILCC::IL_CC_D_NE:
-  case AMDILCC::IL_CC_D_UNE:
-    return (unsigned int)AMDIL::DNE;
-  case AMDILCC::IL_CC_F_EQ:
-  case AMDILCC::IL_CC_F_OEQ:
-    return (unsigned int)AMDIL::FEQ;
-  case AMDILCC::IL_CC_F_LE:
-  case AMDILCC::IL_CC_F_ULE:
-  case AMDILCC::IL_CC_F_OLE:
-  case AMDILCC::IL_CC_F_GE:
-  case AMDILCC::IL_CC_F_UGE:
-  case AMDILCC::IL_CC_F_OGE:
-    return (unsigned int)AMDIL::FGE;
-  case AMDILCC::IL_CC_F_LT:
-  case AMDILCC::IL_CC_F_OLT:
-  case AMDILCC::IL_CC_F_ULT:
-  case AMDILCC::IL_CC_F_GT:
-  case AMDILCC::IL_CC_F_OGT:
-  case AMDILCC::IL_CC_F_UGT:
-    if (regClass == AMDIL::GPRV2F32RegClassID) {
-      return (unsigned int)AMDIL::FLT_v2f32;
-    } else if (regClass == AMDIL::GPRV4F32RegClassID) {
-      return (unsigned int)AMDIL::FLT_v4f32;
-    } else {
-      return (unsigned int)AMDIL::FLT;
-    }
-  case AMDILCC::IL_CC_F_NE:
-  case AMDILCC::IL_CC_F_UNE:
-    return (unsigned int)AMDIL::FNE;
-  case AMDILCC::IL_CC_I_EQ:
-  case AMDILCC::IL_CC_U_EQ:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::IEQ;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRV2I8RegClassID
-               || regClass == AMDIL::GPRV2I16RegClassID) {
-      return (unsigned int)AMDIL::IEQ_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRV4I8RegClassID
-               || regClass == AMDIL::GPRV4I16RegClassID) {
-      return (unsigned int)AMDIL::IEQ_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_L_EQ:
-  case AMDILCC::IL_CC_UL_EQ:
-    return (unsigned int)AMDIL::LEQ;
-  case AMDILCC::IL_CC_I_GE:
-  case AMDILCC::IL_CC_I_LE:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::IGE;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::IGE_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::IGE_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_I_LT:
-  case AMDILCC::IL_CC_I_GT:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ILT;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ILT_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ILT_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_L_GE:
-    return (unsigned int)AMDIL::LGE;
-  case AMDILCC::IL_CC_L_LE:
-    return (unsigned int)AMDIL::LLE;
-  case AMDILCC::IL_CC_L_LT:
-    return (unsigned int)AMDIL::LLT;
-  case AMDILCC::IL_CC_L_GT:
-    return (unsigned int)AMDIL::LGT;
-  case AMDILCC::IL_CC_I_NE:
-  case AMDILCC::IL_CC_U_NE:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::INE;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::INE_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::INE_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_U_GE:
-  case AMDILCC::IL_CC_U_LE:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGE;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGE_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGE_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_L_NE:
-  case AMDILCC::IL_CC_UL_NE:
-    return (unsigned int)AMDIL::LNE;
-  case AMDILCC::IL_CC_UL_GE:
-    return (unsigned int)AMDIL::ULGE;
-  case AMDILCC::IL_CC_UL_LE:
-    return (unsigned int)AMDIL::ULLE;
-  case AMDILCC::IL_CC_U_LT:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ULT;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ULT_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::ULT_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_U_GT:
-    if (regClass == AMDIL::GPRI32RegClassID
-        || regClass == AMDIL::GPRI8RegClassID
-        || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGT;
-    } else if (regClass == AMDIL::GPRV2I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGT_v2i32;
-    } else if (regClass == AMDIL::GPRV4I32RegClassID
-               || regClass == AMDIL::GPRI8RegClassID
-               || regClass == AMDIL::GPRI16RegClassID) {
-      return (unsigned int)AMDIL::UGT_v4i32;
-    } else {
-      assert(!"Unknown reg class!");
-    }
-  case AMDILCC::IL_CC_UL_LT:
-    return (unsigned int)AMDIL::ULLT;
-  case AMDILCC::IL_CC_UL_GT:
-    return (unsigned int)AMDIL::ULGT;
-  case AMDILCC::IL_CC_F_UEQ:
-  case AMDILCC::IL_CC_D_UEQ:
-  case AMDILCC::IL_CC_F_ONE:
-  case AMDILCC::IL_CC_D_ONE:
-  case AMDILCC::IL_CC_F_O:
-  case AMDILCC::IL_CC_F_UO:
-  case AMDILCC::IL_CC_D_O:
-  case AMDILCC::IL_CC_D_UO:
-    // we don't care
-    return 0;
-
-  }
-  errs()<<"Opcode: "<<CCCode<<"\n";
-  assert(0 && "Unknown opcode retrieved");
-  return 0;
-}
 SDValue
 AMDILTargetLowering::LowerMemArgument(
   SDValue Chain,
@@ -650,7 +70,7 @@ AMDILTargetLowering::LowerMemArgument(
   // could be overwritten by lowering of arguments in case of a tail call.
   int FI = MFI->CreateFixedObject(VA.getValVT().getSizeInBits()/8,
                                   VA.getLocMemOffset(), isImmutable
-                                 );
+                                  );
   SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
 
   if (Flags.isByVal())
@@ -662,418 +82,6 @@ AMDILTargetLowering::LowerMemArgument(
 //===----------------------------------------------------------------------===//
 // TargetLowering Implementation Help Functions End
 //===----------------------------------------------------------------------===//
-//===----------------------------------------------------------------------===//
-// Instruction generation functions
-//===----------------------------------------------------------------------===//
-uint32_t
-AMDILTargetLowering::addExtensionInstructions(
-  uint32_t reg, bool signedShift,
-  unsigned int simpleVT) const
-{
-  int shiftSize = 0;
-  uint32_t LShift, RShift, Promote, Demote;
-  uint32_t intRegClassID;
-  switch(simpleVT) {
-  default:
-    return reg;
-  case AMDIL::GPRI8RegClassID:
-    shiftSize = 24;
-    LShift = AMDIL::SHL_i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_i32;
-    } else {
-      RShift = AMDIL::USHR_i32;
-    }
-    Promote = AMDIL::IL_ASINT_i8;
-    Demote = AMDIL::IL_ASCHAR_i32;
-    intRegClassID = AMDIL::GPRI32RegClassID;
-    break;
-  case AMDIL::GPRV2I8RegClassID:
-    shiftSize = 24;
-    LShift = AMDIL::SHL_v2i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_v2i32;
-    } else {
-      RShift = AMDIL::USHR_v2i32;
-    }
-    Promote = AMDIL::IL_ASV2INT_v2i8;
-    Demote = AMDIL::IL_ASV2CHAR_v2i32;
-    intRegClassID = AMDIL::GPRV2I32RegClassID;
-    break;
-  case AMDIL::GPRV4I8RegClassID:
-    shiftSize = 24;
-    LShift = AMDIL::SHL_v4i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_v4i32;
-    } else {
-      RShift = AMDIL::USHR_v4i32;
-    }
-    Promote = AMDIL::IL_ASV4INT_v4i8;
-    Demote = AMDIL::IL_ASV4CHAR_v4i32;
-    intRegClassID = AMDIL::GPRV4I32RegClassID;
-    break;
-  case AMDIL::GPRI16RegClassID:
-    shiftSize = 16;
-    LShift = AMDIL::SHL_i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_i32;
-    } else {
-      RShift = AMDIL::USHR_i32;
-    }
-    Promote = AMDIL::IL_ASINT_i16;
-    Demote = AMDIL::IL_ASSHORT_i32;
-    intRegClassID = AMDIL::GPRI32RegClassID;
-    break;
-  case AMDIL::GPRV2I16RegClassID:
-    shiftSize = 16;
-    LShift = AMDIL::SHL_v2i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_v2i32;
-    } else {
-      RShift = AMDIL::USHR_v2i32;
-    }
-    Promote = AMDIL::IL_ASV2INT_v2i16;
-    Demote = AMDIL::IL_ASV2SHORT_v2i32;
-    intRegClassID = AMDIL::GPRV2I32RegClassID;
-    break;
-  case AMDIL::GPRV4I16RegClassID:
-    shiftSize = 16;
-    LShift = AMDIL::SHL_v4i32;
-    if (signedShift) {
-      RShift = AMDIL::SHR_v4i32;
-    } else {
-      RShift = AMDIL::USHR_v4i32;
-    }
-    Promote = AMDIL::IL_ASV4INT_v4i16;
-    Demote = AMDIL::IL_ASV4SHORT_v4i32;
-    intRegClassID = AMDIL::GPRV4I32RegClassID;
-    break;
-  };
-  uint32_t LoadReg = genVReg(simpleVT);
-  uint32_t tmp1 = genVReg(intRegClassID);
-  uint32_t tmp2 = genVReg(intRegClassID);
-  uint32_t tmp3 = genVReg(intRegClassID);
-  uint32_t dst = genVReg(simpleVT);
-  generateMachineInst(Promote, tmp1, reg);
-  generateMachineInst(AMDIL::LOADCONST_i32, LoadReg).addImm(shiftSize);
-  generateMachineInst(LShift, tmp2, tmp1, LoadReg);
-  generateMachineInst(RShift, tmp3, tmp2, LoadReg);
-  generateMachineInst(Demote, dst, tmp3);
-  return dst;
-}
-
-MachineOperand
-AMDILTargetLowering::convertToReg(MachineOperand op) const
-{
-  if (op.isReg()) {
-    return op;
-  } else if (op.isImm()) {
-    uint32_t loadReg
-    = genVReg(op.getParent()->getDesc().OpInfo[0].RegClass);
-    generateMachineInst(AMDIL::LOADCONST_i32, loadReg)
-    .addImm(op.getImm());
-    op.ChangeToRegister(loadReg, false);
-  } else if (op.isFPImm()) {
-    uint32_t loadReg
-    = genVReg(op.getParent()->getDesc().OpInfo[0].RegClass);
-    generateMachineInst(AMDIL::LOADCONST_f32, loadReg)
-    .addFPImm(op.getFPImm());
-    op.ChangeToRegister(loadReg, false);
-  } else if (op.isMBB()) {
-    op.ChangeToRegister(0, false);
-  } else if (op.isFI()) {
-    op.ChangeToRegister(0, false);
-  } else if (op.isCPI()) {
-    op.ChangeToRegister(0, false);
-  } else if (op.isJTI()) {
-    op.ChangeToRegister(0, false);
-  } else if (op.isGlobal()) {
-    op.ChangeToRegister(0, false);
-  } else if (op.isSymbol()) {
-    op.ChangeToRegister(0, false);
-  }/* else if (op.isMetadata()) {
-      op.ChangeToRegister(0, false);
-      }*/
-  return op;
-}
-
-void
-AMDILTargetLowering::generateCMPInstr(
-  MachineInstr *MI,
-  MachineBasicBlock *BB,
-  const TargetInstrInfo& TII)
-const
-{
-  MachineOperand DST = MI->getOperand(0);
-  MachineOperand CC = MI->getOperand(1);
-  MachineOperand LHS = MI->getOperand(2);
-  MachineOperand RHS = MI->getOperand(3);
-  int64_t ccCode = CC.getImm();
-  unsigned int simpleVT = MI->getDesc().OpInfo[0].RegClass;
-  unsigned int opCode = translateToOpcode(ccCode, simpleVT);
-  DebugLoc DL = MI->getDebugLoc();
-  MachineBasicBlock::iterator BBI = MI;
-  setPrivateData(BB, BBI, &DL, &TII);
-  if (!LHS.isReg()) {
-    LHS = convertToReg(LHS);
-  }
-  if (!RHS.isReg()) {
-    RHS = convertToReg(RHS);
-  }
-  uint32_t lhsreg = LHS.getReg();
-  uint32_t rhsreg = RHS.getReg();
-  switch (ccCode) {
-  case AMDILCC::IL_CC_I_EQ:
-  case AMDILCC::IL_CC_I_NE:
-  case AMDILCC::IL_CC_I_GE:
-  case AMDILCC::IL_CC_I_LT:
-  case AMDILCC::IL_CC_I_GT:
-  case AMDILCC::IL_CC_I_LE: {
-    lhsreg = addExtensionInstructions(lhsreg, true, simpleVT);
-    rhsreg = addExtensionInstructions(rhsreg, true, simpleVT);
-  }
-  break;
-  case AMDILCC::IL_CC_U_EQ:
-  case AMDILCC::IL_CC_U_NE:
-  case AMDILCC::IL_CC_U_GE:
-  case AMDILCC::IL_CC_U_LT:
-  case AMDILCC::IL_CC_U_GT:
-  case AMDILCC::IL_CC_U_LE: {
-    lhsreg = addExtensionInstructions(lhsreg, false, simpleVT);
-    rhsreg = addExtensionInstructions(rhsreg, false, simpleVT);
-  }
-  break;
-  }
-
-  switch (ccCode) {
-  case AMDILCC::IL_CC_I_EQ:
-  case AMDILCC::IL_CC_I_NE:
-  case AMDILCC::IL_CC_I_GE:
-  case AMDILCC::IL_CC_I_LT:
-  case AMDILCC::IL_CC_U_EQ:
-  case AMDILCC::IL_CC_U_NE:
-  case AMDILCC::IL_CC_U_GE:
-  case AMDILCC::IL_CC_U_LT:
-  case AMDILCC::IL_CC_D_EQ:
-  case AMDILCC::IL_CC_F_EQ:
-  case AMDILCC::IL_CC_F_OEQ:
-  case AMDILCC::IL_CC_D_OEQ:
-  case AMDILCC::IL_CC_D_NE:
-  case AMDILCC::IL_CC_F_NE:
-  case AMDILCC::IL_CC_F_UNE:
-  case AMDILCC::IL_CC_D_UNE:
-  case AMDILCC::IL_CC_D_GE:
-  case AMDILCC::IL_CC_F_GE:
-  case AMDILCC::IL_CC_D_OGE:
-  case AMDILCC::IL_CC_F_OGE:
-  case AMDILCC::IL_CC_D_LT:
-  case AMDILCC::IL_CC_F_LT:
-  case AMDILCC::IL_CC_F_OLT:
-  case AMDILCC::IL_CC_D_OLT:
-    generateMachineInst(opCode, DST.getReg(), lhsreg, rhsreg);
-    break;
-  case AMDILCC::IL_CC_I_GT:
-  case AMDILCC::IL_CC_I_LE:
-  case AMDILCC::IL_CC_U_GT:
-  case AMDILCC::IL_CC_U_LE:
-  case AMDILCC::IL_CC_F_GT:
-  case AMDILCC::IL_CC_D_GT:
-  case AMDILCC::IL_CC_F_OGT:
-  case AMDILCC::IL_CC_D_OGT:
-  case AMDILCC::IL_CC_F_LE:
-  case AMDILCC::IL_CC_D_LE:
-  case AMDILCC::IL_CC_D_OLE:
-  case AMDILCC::IL_CC_F_OLE:
-    generateMachineInst(opCode, DST.getReg(), rhsreg, lhsreg);
-    break;
-  case AMDILCC::IL_CC_F_UGT:
-  case AMDILCC::IL_CC_F_ULE: {
-    uint32_t VReg[4] = {
-      genVReg(simpleVT), genVReg(simpleVT),
-      genVReg(simpleVT), genVReg(simpleVT)
-    };
-    generateMachineInst(opCode, VReg[0], rhsreg, lhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[1], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[2], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_F_ULT:
-  case AMDILCC::IL_CC_F_UGE: {
-    uint32_t VReg[4] = {
-      genVReg(simpleVT), genVReg(simpleVT),
-      genVReg(simpleVT), genVReg(simpleVT)
-    };
-    generateMachineInst(opCode, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[1], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[2], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_D_UGT:
-  case AMDILCC::IL_CC_D_ULE: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[4] = {
-      genVReg(regID), genVReg(regID),
-      genVReg(regID), genVReg(regID)
-    };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(opCode, VReg[0], rhsreg, lhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[1], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[2], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_D_UGE:
-  case AMDILCC::IL_CC_D_ULT: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[4] = {
-      genVReg(regID), genVReg(regID),
-      genVReg(regID), genVReg(regID)
-    };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(opCode, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[1], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[2], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_F_UEQ: {
-    uint32_t VReg[4] = {
-      genVReg(simpleVT), genVReg(simpleVT),
-      genVReg(simpleVT), genVReg(simpleVT)
-    };
-    generateMachineInst(AMDIL::FEQ, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[2], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_F_ONE: {
-    uint32_t VReg[4] = {
-      genVReg(simpleVT), genVReg(simpleVT),
-      genVReg(simpleVT), genVReg(simpleVT)
-    };
-    generateMachineInst(AMDIL::FNE, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::FEQ, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::FEQ, VReg[2], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-  }
-  break;
-  case AMDILCC::IL_CC_D_UEQ: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[4] = {
-      genVReg(regID), genVReg(regID),
-      genVReg(regID), genVReg(regID)
-    };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(AMDIL::DEQ, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[2], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-
-  }
-  break;
-  case AMDILCC::IL_CC_D_ONE: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[4] = {
-      genVReg(regID), genVReg(regID),
-      genVReg(regID), genVReg(regID)
-    };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(AMDIL::DNE, VReg[0], lhsreg, rhsreg);
-    generateMachineInst(AMDIL::DEQ, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::DEQ, VReg[2], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        VReg[3], VReg[0], VReg[1]);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        DST.getReg(), VReg[2], VReg[3]);
-
-  }
-  break;
-  case AMDILCC::IL_CC_F_O: {
-    uint32_t VReg[2] = { genVReg(simpleVT), genVReg(simpleVT) };
-    generateMachineInst(AMDIL::FEQ, VReg[0], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::FEQ, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        DST.getReg(), VReg[0], VReg[1]);
-  }
-  break;
-  case AMDILCC::IL_CC_D_O: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[2] = { genVReg(regID), genVReg(regID) };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(AMDIL::DEQ, VReg[0], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::DEQ, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_AND_f32,
-                        DST.getReg(), VReg[0], VReg[1]);
-  }
-  break;
-  case AMDILCC::IL_CC_F_UO: {
-    uint32_t VReg[2] = { genVReg(simpleVT), genVReg(simpleVT) };
-    generateMachineInst(AMDIL::FNE, VReg[0], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::FNE, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[0], VReg[1]);
-  }
-  break;
-  case AMDILCC::IL_CC_D_UO: {
-    uint32_t regID = AMDIL::GPRF64RegClassID;
-    uint32_t VReg[2] = { genVReg(regID), genVReg(regID) };
-    // The result of a double comparison is a 32bit result
-    generateMachineInst(AMDIL::DNE, VReg[0], rhsreg, rhsreg);
-    generateMachineInst(AMDIL::DNE, VReg[1], lhsreg, lhsreg);
-    generateMachineInst(AMDIL::BINARY_OR_f32,
-                        DST.getReg(), VReg[0], VReg[1]);
-  }
-  break;
-  case AMDILCC::IL_CC_L_LE:
-  case AMDILCC::IL_CC_L_GE:
-  case AMDILCC::IL_CC_L_EQ:
-  case AMDILCC::IL_CC_L_NE:
-  case AMDILCC::IL_CC_L_LT:
-  case AMDILCC::IL_CC_L_GT:
-  case AMDILCC::IL_CC_UL_LE:
-  case AMDILCC::IL_CC_UL_GE:
-  case AMDILCC::IL_CC_UL_EQ:
-  case AMDILCC::IL_CC_UL_NE:
-  case AMDILCC::IL_CC_UL_LT:
-  case AMDILCC::IL_CC_UL_GT: {
-    const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                  &this->getTargetMachine())->getSubtargetImpl();
-    if (stm->device()->usesHardware(AMDILDeviceInfo::LongOps)) {
-      generateMachineInst(opCode, DST.getReg(), lhsreg, rhsreg);
-    } else {
-      generateLongRelational(MI, opCode);
-    }
-  }
-  break;
-  case AMDILCC::COND_ERROR:
-    assert(0 && "Invalid CC code");
-    break;
-  };
-}
 
 //===----------------------------------------------------------------------===//
 // TargetLowering Class Implementation Begins
@@ -1082,7 +90,9 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
   : TargetLowering(TM, new TargetLoweringObjectFileELF())
 {
   setBooleanVectorContents( ZeroOrNegativeOneBooleanContent );
-  int types[] = {
+  setBooleanContents( ZeroOrNegativeOneBooleanContent );
+  int types[] =
+  {
     (int)MVT::i8,
     (int)MVT::i16,
     (int)MVT::i32,
@@ -1101,19 +111,22 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     (int)MVT::v2i64
   };
 
-  int IntTypes[] = {
+  int IntTypes[] =
+  {
     (int)MVT::i8,
     (int)MVT::i16,
     (int)MVT::i32,
     (int)MVT::i64
   };
 
-  int FloatTypes[] = {
+  int FloatTypes[] =
+  {
     (int)MVT::f32,
     (int)MVT::f64
   };
 
-  int VectorTypes[] = {
+  int VectorTypes[] =
+  {
     (int)MVT::v2i8,
     (int)MVT::v4i8,
     (int)MVT::v2i16,
@@ -1131,35 +144,56 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
   size_t numVectorTypes = sizeof(VectorTypes) / sizeof(*VectorTypes);
 
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
+  uint32_t promoteOpCodes[] = {
+    ISD::AND, ISD::XOR, ISD::OR, ISD::SETCC, ISD::SDIV, ISD::SREM, ISD::UDIV,
+    ISD::UREM,
+    ISD::SHL, ISD::SRL, ISD::SRA
+  };
   // These are the current register classes that are
   // supported
-
   addRegisterClass(MVT::i32, &AMDIL::GPRI32RegClass);
   addRegisterClass(MVT::f32, &AMDIL::GPRF32RegClass);
 
   if (stm->device()->isSupported(AMDILDeviceInfo::DoubleOps)) {
-    addRegisterClass(MVT::f64,   &AMDIL::GPRF64RegClass);
+    addRegisterClass(MVT::f64, &AMDIL::GPRF64RegClass);
     addRegisterClass(MVT::v2f64, &AMDIL::GPRV2F64RegClass);
   }
   if (stm->device()->isSupported(AMDILDeviceInfo::ByteOps)) {
-    addRegisterClass(MVT::i8,   &AMDIL::GPRI8RegClass);
+    addRegisterClass(MVT::i8, &AMDIL::GPRI8RegClass);
     addRegisterClass(MVT::v2i8, &AMDIL::GPRV2I8RegClass);
     addRegisterClass(MVT::v4i8, &AMDIL::GPRV4I8RegClass);
-    setOperationAction(ISD::Constant          , MVT::i8   , Legal);
+    setOperationAction(ISD::Constant, MVT::i8, Legal);
+    /*
+    for (unsigned x = 0, y = sizeof(promoteOpCodes)/sizeof(uint32_t); x < y; ++x) {
+      setOperationAction(promoteOpCodes[x], MVT::i8, Promote);
+      setOperationAction(promoteOpCodes[x], MVT::v2i8, Promote);
+      setOperationAction(promoteOpCodes[x], MVT::v4i8, Promote);
+      AddPromotedToType(promoteOpCodes[x], MVT::v2i8, MVT::v2i32);
+      AddPromotedToType(promoteOpCodes[x], MVT::v4i8, MVT::v4i32);
+  }
+    */
   }
   if (stm->device()->isSupported(AMDILDeviceInfo::ShortOps)) {
-    addRegisterClass(MVT::i16,   &AMDIL::GPRI16RegClass);
+    addRegisterClass(MVT::i16, &AMDIL::GPRI16RegClass);
     addRegisterClass(MVT::v2i16, &AMDIL::GPRV2I16RegClass);
     addRegisterClass(MVT::v4i16, &AMDIL::GPRV4I16RegClass);
-    setOperationAction(ISD::Constant          , MVT::i16  , Legal);
+    setOperationAction(ISD::Constant, MVT::i16, Legal);
+    /*
+    for (unsigned x = 0, y = sizeof(promoteOpCodes)/sizeof(uint32_t); x < y; ++x) {
+      setOperationAction(promoteOpCodes[x], MVT::i16, Promote);
+      setOperationAction(promoteOpCodes[x], MVT::v2i16, Promote);
+      setOperationAction(promoteOpCodes[x], MVT::v4i16, Promote);
+      AddPromotedToType(promoteOpCodes[x], MVT::v2i16, MVT::v2i32);
+  }
+    */
   }
   addRegisterClass(MVT::v2f32, &AMDIL::GPRV2F32RegClass);
   addRegisterClass(MVT::v4f32, &AMDIL::GPRV4F32RegClass);
   addRegisterClass(MVT::v2i32, &AMDIL::GPRV2I32RegClass);
   addRegisterClass(MVT::v4i32, &AMDIL::GPRV4I32RegClass);
   if (stm->device()->isSupported(AMDILDeviceInfo::LongOps)) {
-    addRegisterClass(MVT::i64,   &AMDIL::GPRI64RegClass);
+    addRegisterClass(MVT::i64, &AMDIL::GPRI64RegClass);
     addRegisterClass(MVT::v2i64, &AMDIL::GPRV2I64RegClass);
   }
 
@@ -1168,7 +202,7 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::FTRUNC, MVT::f32, Legal);
   setOperationAction(ISD::FNEARBYINT, MVT::f32, Legal);
   setOperationAction(ISD::FCEIL,  MVT::f32, Legal);
-  setOperationAction(ISD::FLOG ,  MVT::f32, Legal);
+  setOperationAction(ISD::FLOG,  MVT::f32, Legal);
   // Set explicitly to expand in case default changes
   setOperationAction(ISD::FRINT,  MVT::f32, Expand);
 
@@ -1180,17 +214,17 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::SIGN_EXTEND_INREG, VT, Custom);
     setOperationAction(ISD::EXTRACT_SUBVECTOR, VT, Custom);
     setOperationAction(ISD::FP_ROUND, VT, Expand);
-    setOperationAction(ISD::OR, VT, Custom);
     setOperationAction(ISD::SUBE, VT, Expand);
     setOperationAction(ISD::SUBC, VT, Expand);
     setOperationAction(ISD::ADD, VT, Custom);
     setOperationAction(ISD::ADDE, VT, Expand);
     setOperationAction(ISD::ADDC, VT, Expand);
-    setOperationAction(ISD::SETCC, VT, Custom);
-    setOperationAction(ISD::BRCOND, VT, Custom);
-    setOperationAction(ISD::BR_CC, VT, Custom);
     setOperationAction(ISD::BR_JT, VT, Expand);
+    // TODO: This should only be for integer/f64 types,
+    // f32 types can you if_relop instruction.
+    setOperationAction(ISD::BR_CC, VT, Expand);
     setOperationAction(ISD::BRIND, VT, Expand);
+    setOperationAction(ISD::SELECT_CC, VT, Expand);
     // TODO: Implement custom UREM/SREM routines
     setOperationAction(ISD::UREM, VT, Expand);
     setOperationAction(ISD::SREM, VT, Expand);
@@ -1202,14 +236,42 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::GlobalAddress, VT, Custom);
     setOperationAction(ISD::JumpTable, VT, Custom);
     setOperationAction(ISD::ConstantPool, VT, Custom);
-    setOperationAction(ISD::SELECT_CC, VT, Custom);
-    setOperationAction(ISD::SELECT, VT, Custom);
     setOperationAction(ISD::SMUL_LOHI, VT, Expand);
     setOperationAction(ISD::UMUL_LOHI, VT, Expand);
+    /*
+    setCondCodeAction(ISD::SETGT, VT, Expand);
+    setCondCodeAction(ISD::SETLE, VT, Expand);
+    */
+    setCondCodeAction(ISD::SETONE, VT, Expand);
+    setCondCodeAction(ISD::SETUEQ, VT, Expand);
+    setCondCodeAction(ISD::SETO,   VT, Expand);
+    setCondCodeAction(ISD::SETUO,  VT, Expand);
+    // FIXME: Need to support this instruction!
+    setOperationAction(ISD::VSELECT, VT, Expand);
     if (VT != MVT::i64 && VT != MVT::v2i64) {
       setOperationAction(ISD::SDIV, VT, Custom);
       setOperationAction(ISD::UDIV, VT, Custom);
     }
+    MVT xVT = MVT(VT);
+    if (xVT.isInteger()) {
+      setCondCodeAction(ISD::SETUGT, VT, Expand);
+      setCondCodeAction(ISD::SETULE, VT, Expand);
+      setCondCodeAction(ISD::SETOGT, VT, Expand);
+      setCondCodeAction(ISD::SETOLE, VT, Expand);
+      setCondCodeAction(ISD::SETOGE, VT, Expand);
+      setCondCodeAction(ISD::SETOLT, VT, Expand);
+      setCondCodeAction(ISD::SETOEQ, VT, Expand);
+      setCondCodeAction(ISD::SETUNE, VT, Expand);
+    }
+    /*
+    for (unsigned y = 0; y < numTypes; ++y) {
+      MVT::SimpleValueType DVT = (MVT::SimpleValueType)types[y];
+      setTruncStoreAction(VT, DVT, Expand);
+    }
+    setLoadExtAction(ISD::SEXTLOAD, VT, Expand);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, Expand);
+    setLoadExtAction(ISD::EXTLOAD, VT, Expand);
+    */
     setOperationAction(ISD::INSERT_VECTOR_ELT, VT, Custom);
     setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT, Custom);
   }
@@ -1219,14 +281,8 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     // IL does not have these operations for floating point types
     setOperationAction(ISD::FP_ROUND_INREG, VT, Expand);
     setOperationAction(ISD::FP_ROUND, VT, Custom);
-    setOperationAction(ISD::SETOLT, VT, Expand);
-    setOperationAction(ISD::SETOGE, VT, Expand);
-    setOperationAction(ISD::SETOGT, VT, Expand);
-    setOperationAction(ISD::SETOLE, VT, Expand);
-    setOperationAction(ISD::SETULT, VT, Expand);
-    setOperationAction(ISD::SETUGE, VT, Expand);
-    setOperationAction(ISD::SETUGT, VT, Expand);
-    setOperationAction(ISD::SETULE, VT, Expand);
+    setCondCodeAction(ISD::SETULT, VT, Expand);
+    setCondCodeAction(ISD::SETUGE, VT, Expand);
   }
 
   for (unsigned int x = 0; x < numIntTypes; ++x) {
@@ -1252,7 +308,8 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::CTLZ, VT, Expand);
   }
 
-  for ( unsigned int ii = 0; ii < numVectorTypes; ++ii ) {
+  for ( unsigned int ii = 0; ii < numVectorTypes; ++ii )
+  {
     MVT::SimpleValueType VT = (MVT::SimpleValueType)VectorTypes[ii];
 
     setOperationAction(ISD::BUILD_VECTOR, VT, Custom);
@@ -1264,18 +321,17 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::SDIVREM, VT, Expand);
     setOperationAction(ISD::UDIVREM, VT, Expand);
     setOperationAction(ISD::SMUL_LOHI, VT, Expand);
-    // setOperationAction(ISD::VSETCC, VT, Expand);
-    setOperationAction(ISD::SETCC, VT, Expand);
-    setOperationAction(ISD::SELECT_CC, VT, Expand);
     setOperationAction(ISD::SELECT, VT, Expand);
-
   }
+
   setOperationAction(ISD::FP_ROUND, MVT::Other, Expand);
   if (stm->device()->isSupported(AMDILDeviceInfo::LongOps)) {
-    if (stm->calVersion() < CAL_VERSION_SC_139
-        || stm->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
+    if (stm->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
       setOperationAction(ISD::MUL, MVT::i64, Custom);
     }
+    setOperationAction(ISD::SRL, MVT::v2i64, Expand);
+    setOperationAction(ISD::SRA, MVT::v2i64, Expand);
+    setOperationAction(ISD::SHL, MVT::v2i64, Expand);
     setOperationAction(ISD::SUB, MVT::i64, Custom);
     setOperationAction(ISD::ADD, MVT::i64, Custom);
     setOperationAction(ISD::MULHU, MVT::i64, Expand);
@@ -1284,9 +340,12 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::MULHS, MVT::v2i64, Expand);
     setOperationAction(ISD::MUL, MVT::v2i64, Expand);
     setOperationAction(ISD::SUB, MVT::v2i64, Expand);
+    setOperationAction(ISD::SRL, MVT::v2i64, Expand);
+    setOperationAction(ISD::SRA, MVT::v2i64, Expand);
+    setOperationAction(ISD::SHL, MVT::v2i64, Expand);
     setOperationAction(ISD::ADD, MVT::v2i64, Expand);
     setOperationAction(ISD::SREM, MVT::v2i64, Expand);
-    setOperationAction(ISD::Constant          , MVT::i64  , Legal);
+    setOperationAction(ISD::Constant, MVT::i64, Legal);
     setOperationAction(ISD::UDIV, MVT::v2i64, Expand);
     setOperationAction(ISD::SDIV, MVT::v2i64, Expand);
     setOperationAction(ISD::SINT_TO_FP, MVT::v2i64, Expand);
@@ -1296,6 +355,7 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::SIGN_EXTEND, MVT::v2i64, Expand);
     setOperationAction(ISD::ZERO_EXTEND, MVT::v2i64, Expand);
     setOperationAction(ISD::ANY_EXTEND, MVT::v2i64, Expand);
+    setOperationAction(ISD::SETCC, MVT::v2i64, Custom);
   }
   if (stm->device()->isSupported(AMDILDeviceInfo::DoubleOps)) {
     // we support loading/storing v2f64 but not operations on the type
@@ -1305,7 +365,7 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::FP_ROUND, MVT::v2f64, Expand);
     setOperationAction(ISD::FP_ROUND_INREG, MVT::v2f64, Expand);
     setOperationAction(ISD::FP_EXTEND, MVT::v2f64, Expand);
-    setOperationAction(ISD::ConstantFP        , MVT::f64  , Legal);
+    setOperationAction(ISD::ConstantFP, MVT::f64, Legal);
     setOperationAction(ISD::FDIV, MVT::v2f64, Expand);
     // We want to expand vector conversions into their scalar
     // counterparts.
@@ -1319,6 +379,7 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::ANY_EXTEND, MVT::v2f64, Expand);
     setOperationAction(ISD::FABS, MVT::f64, Expand);
     setOperationAction(ISD::FABS, MVT::v2f64, Expand);
+    setOperationAction(ISD::SETCC, MVT::v2f64, Custom);
   }
   // TODO: Fix the UDIV24 algorithm so it works for these
   // types correctly. This needs vector comparisons
@@ -1332,10 +393,9 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::ADDE, MVT::Other, Expand);
   setOperationAction(ISD::ADDC, MVT::Other, Expand);
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
-  setOperationAction(ISD::BR_CC, MVT::Other, Custom);
   setOperationAction(ISD::BR_JT, MVT::Other, Expand);
   setOperationAction(ISD::BRIND, MVT::Other, Expand);
-  setOperationAction(ISD::SETCC, MVT::Other, Custom);
+  setOperationAction(ISD::BR_CC, MVT::Other, Expand);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::Other, Expand);
   setOperationAction(ISD::FDIV, MVT::f32, Custom);
   setOperationAction(ISD::FDIV, MVT::v2f32, Custom);
@@ -1343,15 +403,15 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
 
   setOperationAction(ISD::BUILD_VECTOR, MVT::Other, Custom);
   // Use the default implementation.
-  setOperationAction(ISD::VAARG             , MVT::Other, Expand);
-  setOperationAction(ISD::VACOPY            , MVT::Other, Expand);
-  setOperationAction(ISD::VAEND             , MVT::Other, Expand);
-  setOperationAction(ISD::STACKSAVE         , MVT::Other, Expand);
-  setOperationAction(ISD::STACKRESTORE      , MVT::Other, Expand);
-  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32  , Custom);
-  setOperationAction(ISD::ConstantFP        , MVT::f32    , Legal);
-  setOperationAction(ISD::Constant          , MVT::i32    , Legal);
-  setOperationAction(ISD::TRAP              , MVT::Other  , Legal);
+  setOperationAction(ISD::VAARG, MVT::Other, Expand);
+  setOperationAction(ISD::VACOPY, MVT::Other, Expand);
+  setOperationAction(ISD::VAEND, MVT::Other, Expand);
+  setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
+  setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
+  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Custom);
+  setOperationAction(ISD::ConstantFP, MVT::f32, Legal);
+  setOperationAction(ISD::Constant, MVT::i32, Legal);
+  setOperationAction(ISD::TRAP, MVT::Other, Legal);
 
   setStackPointerRegisterToSaveRestore(AMDIL::SP);
   setSchedulingPreference(Sched::RegPressure);
@@ -1370,7 +430,6 @@ AMDILTargetLowering::AMDILTargetLowering(TargetMachine &TM)
 #undef numVectorTypes
 #undef numFloatTypes
 }
-
 // This only works for region/local/global address spaces on EG/NI as
 // the other address spaces required 128 bit alignement of loads/stores.
 // However, there is no way to disable for those address spaces
@@ -1390,332 +449,157 @@ AMDILTargetLowering::allowsUnalignedMemoryAccesses(EVT VT) const
           || VT == MVT::f64   || VT == MVT::i64
           || VT == MVT::v2f64 || VT == MVT::v2i64);
 }
-
 const char *
 AMDILTargetLowering::getTargetNodeName(unsigned Opcode) const
 {
   switch (Opcode) {
-  default:
-    return 0;
-  case AMDILISD::INTTOANY:
-    return "AMDILISD::INTTOANY";
-  case AMDILISD::DP_TO_FP:
-    return "AMDILISD::DP_TO_FP";
-  case AMDILISD::FP_TO_DP:
-    return "AMDILISD::FP_TO_DP";
-  case AMDILISD::BITCONV:
-    return "AMDILISD::BITCONV";
-  case AMDILISD::CMOV:
-    return "AMDILISD::CMOV";
-  case AMDILISD::CMOVLOG:
-    return "AMDILISD::CMOVLOG";
-  case AMDILISD::INEGATE:
-    return "AMDILISD::INEGATE";
-  case AMDILISD::MAD:
-    return "AMDILISD::MAD";
-  case AMDILISD::UMAD:
-    return "AMDILISD::UMAD";
-  case AMDILISD::CALL:
-    return "AMDILISD::CALL";
-  case AMDILISD::RET:
-    return "AMDILISD::RET";
-  case AMDILISD::IFFB_HI:
-    return "AMDILISD::IFFB_HI";
-  case AMDILISD::IFFB_LO:
-    return "AMDILISD::IFFB_LO";
-  case AMDILISD::ADD:
-    return "AMDILISD::ADD";
-  case AMDILISD::UMUL:
-    return "AMDILISD::UMUL";
-  case AMDILISD::AND:
-    return "AMDILISD::AND";
-  case AMDILISD::OR:
-    return "AMDILISD::OR";
-  case AMDILISD::NOT:
-    return "AMDILISD::NOT";
-  case AMDILISD::XOR:
-    return "AMDILISD::XOR";
-  case AMDILISD::DIV_INF:
-    return "AMDILISD::DIV_INF";
-  case AMDILISD::SMAX:
-    return "AMDILISD::SMAX";
-  case AMDILISD::PHIMOVE:
-    return "AMDILISD::PHIMOVE";
-  case AMDILISD::MOVE:
-    return "AMDILISD::MOVE";
-  case AMDILISD::VBUILD:
-    return "AMDILISD::VBUILD";
-  case AMDILISD::VEXTRACT:
-    return "AMDILISD::VEXTRACT";
-  case AMDILISD::VINSERT:
-    return "AMDILISD::VINSERT";
-  case AMDILISD::VCONCAT:
-    return "AMDILISD::VCONCAT";
-  case AMDILISD::LCREATE:
-    return "AMDILISD::LCREATE";
-  case AMDILISD::LCOMPHI:
-    return "AMDILISD::LCOMPHI";
-  case AMDILISD::LCOMPLO:
-    return "AMDILISD::LCOMPLO";
-  case AMDILISD::DCREATE:
-    return "AMDILISD::DCREATE";
-  case AMDILISD::DCOMPHI:
-    return "AMDILISD::DCOMPHI";
-  case AMDILISD::DCOMPLO:
-    return "AMDILISD::DCOMPLO";
-  case AMDILISD::LCREATE2:
-    return "AMDILISD::LCREATE2";
-  case AMDILISD::LCOMPHI2:
-    return "AMDILISD::LCOMPHI2";
-  case AMDILISD::LCOMPLO2:
-    return "AMDILISD::LCOMPLO2";
-  case AMDILISD::DCREATE2:
-    return "AMDILISD::DCREATE2";
-  case AMDILISD::DCOMPHI2:
-    return "AMDILISD::DCOMPHI2";
-  case AMDILISD::DCOMPLO2:
-    return "AMDILISD::DCOMPLO2";
-  case AMDILISD::CMP:
-    return "AMDILISD::CMP";
-  case AMDILISD::IL_CC_I_LT:
-    return "AMDILISD::IL_CC_I_LT";
-  case AMDILISD::IL_CC_I_LE:
-    return "AMDILISD::IL_CC_I_LE";
-  case AMDILISD::IL_CC_I_GT:
-    return "AMDILISD::IL_CC_I_GT";
-  case AMDILISD::IL_CC_I_GE:
-    return "AMDILISD::IL_CC_I_GE";
-  case AMDILISD::IL_CC_I_EQ:
-    return "AMDILISD::IL_CC_I_EQ";
-  case AMDILISD::IL_CC_I_NE:
-    return "AMDILISD::IL_CC_I_NE";
-  case AMDILISD::RET_FLAG:
-    return "AMDILISD::RET_FLAG";
-  case AMDILISD::BRANCH_COND:
-    return "AMDILISD::BRANCH_COND";
-  case AMDILISD::LOOP_NZERO:
-    return "AMDILISD::LOOP_NZERO";
-  case AMDILISD::LOOP_ZERO:
-    return "AMDILISD::LOOP_ZERO";
-  case AMDILISD::LOOP_CMP:
-    return "AMDILISD::LOOP_CMP";
-  case AMDILISD::ADDADDR:
-    return "AMDILISD::ADDADDR";
-  case AMDILISD::ATOM_F_ADD:
-    return "AMDILISD::ATOM_F_ADD";
-  case AMDILISD::ATOM_F_AND:
-    return "AMDILISD::ATOM_F_AND";
-  case AMDILISD::ATOM_F_CMPXCHG:
-    return "AMDILISD::ATOM_F_CMPXCHG";
-  case AMDILISD::ATOM_F_DEC:
-    return "AMDILISD::ATOM_F_DEC";
-  case AMDILISD::ATOM_F_INC:
-    return "AMDILISD::ATOM_F_INC";
-  case AMDILISD::ATOM_F_MAX:
-    return "AMDILISD::ATOM_F_MAX";
-  case AMDILISD::ATOM_F_UMAX:
-    return "AMDILISD::ATOM_F_UMAX";
-  case AMDILISD::ATOM_F_MIN:
-    return "AMDILISD::ATOM_F_MIN";
-  case AMDILISD::ATOM_F_UMIN:
-    return "AMDILISD::ATOM_F_UMIN";
-  case AMDILISD::ATOM_F_OR:
-    return "AMDILISD::ATOM_F_OR";
-  case AMDILISD::ATOM_F_SUB:
-    return "AMDILISD::ATOM_F_SUB";
-  case AMDILISD::ATOM_F_XCHG:
-    return "AMDILISD::ATOM_F_XCHG";
-  case AMDILISD::ATOM_F_XOR:
-    return "AMDILISD::ATOM_F_XOR";
-  case AMDILISD::ATOM_G_ADD:
-    return "AMDILISD::ATOM_G_ADD";
-  case AMDILISD::ATOM_G_AND:
-    return "AMDILISD::ATOM_G_AND";
-  case AMDILISD::ATOM_G_CMPXCHG:
-    return "AMDILISD::ATOM_G_CMPXCHG";
-  case AMDILISD::ATOM_G_DEC:
-    return "AMDILISD::ATOM_G_DEC";
-  case AMDILISD::ATOM_G_INC:
-    return "AMDILISD::ATOM_G_INC";
-  case AMDILISD::ATOM_G_MAX:
-    return "AMDILISD::ATOM_G_MAX";
-  case AMDILISD::ATOM_G_UMAX:
-    return "AMDILISD::ATOM_G_UMAX";
-  case AMDILISD::ATOM_G_MIN:
-    return "AMDILISD::ATOM_G_MIN";
-  case AMDILISD::ATOM_G_UMIN:
-    return "AMDILISD::ATOM_G_UMIN";
-  case AMDILISD::ATOM_G_OR:
-    return "AMDILISD::ATOM_G_OR";
-  case AMDILISD::ATOM_G_SUB:
-    return "AMDILISD::ATOM_G_SUB";
-  case AMDILISD::ATOM_G_RSUB:
-    return "AMDILISD::ATOM_G_RSUB";
-  case AMDILISD::ATOM_G_XCHG:
-    return "AMDILISD::ATOM_G_XCHG";
-  case AMDILISD::ATOM_G_XOR:
-    return "AMDILISD::ATOM_G_XOR";
-  case AMDILISD::ATOM_G_ADD_NORET:
-    return "AMDILISD::ATOM_G_ADD_NORET";
-  case AMDILISD::ATOM_G_AND_NORET:
-    return "AMDILISD::ATOM_G_AND_NORET";
-  case AMDILISD::ATOM_G_CMPXCHG_NORET:
-    return "AMDILISD::ATOM_G_CMPXCHG_NORET";
-  case AMDILISD::ATOM_G_DEC_NORET:
-    return "AMDILISD::ATOM_G_DEC_NORET";
-  case AMDILISD::ATOM_G_INC_NORET:
-    return "AMDILISD::ATOM_G_INC_NORET";
-  case AMDILISD::ATOM_G_MAX_NORET:
-    return "AMDILISD::ATOM_G_MAX_NORET";
-  case AMDILISD::ATOM_G_UMAX_NORET:
-    return "AMDILISD::ATOM_G_UMAX_NORET";
-  case AMDILISD::ATOM_G_MIN_NORET:
-    return "AMDILISD::ATOM_G_MIN_NORET";
-  case AMDILISD::ATOM_G_UMIN_NORET:
-    return "AMDILISD::ATOM_G_UMIN_NORET";
-  case AMDILISD::ATOM_G_OR_NORET:
-    return "AMDILISD::ATOM_G_OR_NORET";
-  case AMDILISD::ATOM_G_SUB_NORET:
-    return "AMDILISD::ATOM_G_SUB_NORET";
-  case AMDILISD::ATOM_G_RSUB_NORET:
-    return "AMDILISD::ATOM_G_RSUB_NORET";
-  case AMDILISD::ATOM_G_XCHG_NORET:
-    return "AMDILISD::ATOM_G_XCHG_NORET";
-  case AMDILISD::ATOM_G_XOR_NORET:
-    return "AMDILISD::ATOM_G_XOR_NORET";
-  case AMDILISD::ATOM_L_ADD:
-    return "AMDILISD::ATOM_L_ADD";
-  case AMDILISD::ATOM_L_AND:
-    return "AMDILISD::ATOM_L_AND";
-  case AMDILISD::ATOM_L_CMPXCHG:
-    return "AMDILISD::ATOM_L_CMPXCHG";
-  case AMDILISD::ATOM_L_DEC:
-    return "AMDILISD::ATOM_L_DEC";
-  case AMDILISD::ATOM_L_INC:
-    return "AMDILISD::ATOM_L_INC";
-  case AMDILISD::ATOM_L_MAX:
-    return "AMDILISD::ATOM_L_MAX";
-  case AMDILISD::ATOM_L_UMAX:
-    return "AMDILISD::ATOM_L_UMAX";
-  case AMDILISD::ATOM_L_MIN:
-    return "AMDILISD::ATOM_L_MIN";
-  case AMDILISD::ATOM_L_UMIN:
-    return "AMDILISD::ATOM_L_UMIN";
-  case AMDILISD::ATOM_L_OR:
-    return "AMDILISD::ATOM_L_OR";
-  case AMDILISD::ATOM_L_SUB:
-    return "AMDILISD::ATOM_L_SUB";
-  case AMDILISD::ATOM_L_RSUB:
-    return "AMDILISD::ATOM_L_RSUB";
-  case AMDILISD::ATOM_L_XCHG:
-    return "AMDILISD::ATOM_L_XCHG";
-  case AMDILISD::ATOM_L_XOR:
-    return "AMDILISD::ATOM_L_XOR";
-  case AMDILISD::ATOM_L_ADD_NORET:
-    return "AMDILISD::ATOM_L_ADD_NORET";
-  case AMDILISD::ATOM_L_AND_NORET:
-    return "AMDILISD::ATOM_L_AND_NORET";
-  case AMDILISD::ATOM_L_CMPXCHG_NORET:
-    return "AMDILISD::ATOM_L_CMPXCHG_NORET";
-  case AMDILISD::ATOM_L_DEC_NORET:
-    return "AMDILISD::ATOM_L_DEC_NORET";
-  case AMDILISD::ATOM_L_INC_NORET:
-    return "AMDILISD::ATOM_L_INC_NORET";
-  case AMDILISD::ATOM_L_MAX_NORET:
-    return "AMDILISD::ATOM_L_MAX_NORET";
-  case AMDILISD::ATOM_L_UMAX_NORET:
-    return "AMDILISD::ATOM_L_UMAX_NORET";
-  case AMDILISD::ATOM_L_MIN_NORET:
-    return "AMDILISD::ATOM_L_MIN_NORET";
-  case AMDILISD::ATOM_L_UMIN_NORET:
-    return "AMDILISD::ATOM_L_UMIN_NORET";
-  case AMDILISD::ATOM_L_OR_NORET:
-    return "AMDILISD::ATOM_L_OR_NORET";
-  case AMDILISD::ATOM_L_SUB_NORET:
-    return "AMDILISD::ATOM_L_SUB_NORET";
-  case AMDILISD::ATOM_L_RSUB_NORET:
-    return "AMDILISD::ATOM_L_RSUB_NORET";
-  case AMDILISD::ATOM_L_XCHG_NORET:
-    return "AMDILISD::ATOM_L_XCHG_NORET";
-  case AMDILISD::ATOM_R_ADD:
-    return "AMDILISD::ATOM_R_ADD";
-  case AMDILISD::ATOM_R_AND:
-    return "AMDILISD::ATOM_R_AND";
-  case AMDILISD::ATOM_R_CMPXCHG:
-    return "AMDILISD::ATOM_R_CMPXCHG";
-  case AMDILISD::ATOM_R_DEC:
-    return "AMDILISD::ATOM_R_DEC";
-  case AMDILISD::ATOM_R_INC:
-    return "AMDILISD::ATOM_R_INC";
-  case AMDILISD::ATOM_R_MAX:
-    return "AMDILISD::ATOM_R_MAX";
-  case AMDILISD::ATOM_R_UMAX:
-    return "AMDILISD::ATOM_R_UMAX";
-  case AMDILISD::ATOM_R_MIN:
-    return "AMDILISD::ATOM_R_MIN";
-  case AMDILISD::ATOM_R_UMIN:
-    return "AMDILISD::ATOM_R_UMIN";
-  case AMDILISD::ATOM_R_OR:
-    return "AMDILISD::ATOM_R_OR";
-  case AMDILISD::ATOM_R_MSKOR:
-    return "AMDILISD::ATOM_R_MSKOR";
-  case AMDILISD::ATOM_R_SUB:
-    return "AMDILISD::ATOM_R_SUB";
-  case AMDILISD::ATOM_R_RSUB:
-    return "AMDILISD::ATOM_R_RSUB";
-  case AMDILISD::ATOM_R_XCHG:
-    return "AMDILISD::ATOM_R_XCHG";
-  case AMDILISD::ATOM_R_XOR:
-    return "AMDILISD::ATOM_R_XOR";
-  case AMDILISD::ATOM_R_ADD_NORET:
-    return "AMDILISD::ATOM_R_ADD_NORET";
-  case AMDILISD::ATOM_R_AND_NORET:
-    return "AMDILISD::ATOM_R_AND_NORET";
-  case AMDILISD::ATOM_R_CMPXCHG_NORET:
-    return "AMDILISD::ATOM_R_CMPXCHG_NORET";
-  case AMDILISD::ATOM_R_DEC_NORET:
-    return "AMDILISD::ATOM_R_DEC_NORET";
-  case AMDILISD::ATOM_R_INC_NORET:
-    return "AMDILISD::ATOM_R_INC_NORET";
-  case AMDILISD::ATOM_R_MAX_NORET:
-    return "AMDILISD::ATOM_R_MAX_NORET";
-  case AMDILISD::ATOM_R_UMAX_NORET:
-    return "AMDILISD::ATOM_R_UMAX_NORET";
-  case AMDILISD::ATOM_R_MIN_NORET:
-    return "AMDILISD::ATOM_R_MIN_NORET";
-  case AMDILISD::ATOM_R_UMIN_NORET:
-    return "AMDILISD::ATOM_R_UMIN_NORET";
-  case AMDILISD::ATOM_R_OR_NORET:
-    return "AMDILISD::ATOM_R_OR_NORET";
-  case AMDILISD::ATOM_R_MSKOR_NORET:
-    return "AMDILISD::ATOM_R_MSKOR_NORET";
-  case AMDILISD::ATOM_R_SUB_NORET:
-    return "AMDILISD::ATOM_R_SUB_NORET";
-  case AMDILISD::ATOM_R_RSUB_NORET:
-    return "AMDILISD::ATOM_R_RSUB_NORET";
-  case AMDILISD::ATOM_R_XCHG_NORET:
-    return "AMDILISD::ATOM_R_XCHG_NORET";
-  case AMDILISD::ATOM_R_XOR_NORET:
-    return "AMDILISD::ATOM_R_XOR_NORET";
-  case AMDILISD::APPEND_ALLOC:
-    return "AMDILISD::APPEND_ALLOC";
-  case AMDILISD::APPEND_CONSUME:
-    return "AMDILISD::APPEND_CONSUME";
+  default: return 0;
+  case AMDILISD::DP_TO_FP:  return "AMDILISD::DP_TO_FP";
+  case AMDILISD::FP_TO_DP:  return "AMDILISD::FP_TO_DP";
+  case AMDILISD::BITCONV: return "AMDILISD::BITCONV";
+  case ISD::SELECT:  return "ISD::SELECT";
+  case AMDILISD::CALL:  return "AMDILISD::CALL";
+  case AMDILISD::RET:   return "AMDILISD::RET";
+  case AMDILISD::ADD: return "AMDILISD::ADD";
+  case AMDILISD::UMUL: return "AMDILISD::UMUL";
+  case AMDILISD::VBUILD: return "AMDILISD::VBUILD";
+  case AMDILISD::VEXTRACT: return "AMDILISD::VEXTRACT";
+  case AMDILISD::VINSERT: return "AMDILISD::VINSERT";
+  case AMDILISD::VCONCAT: return "AMDILISD::VCONCAT";
+  case AMDILISD::LCREATE: return "AMDILISD::LCREATE";
+  case AMDILISD::LCOMPHI: return "AMDILISD::LCOMPHI";
+  case AMDILISD::LCOMPLO: return "AMDILISD::LCOMPLO";
+  case AMDILISD::DCREATE: return "AMDILISD::DCREATE";
+  case AMDILISD::DCOMPHI: return "AMDILISD::DCOMPHI";
+  case AMDILISD::DCOMPLO: return "AMDILISD::DCOMPLO";
+  case AMDILISD::LCREATE2: return "AMDILISD::LCREATE2";
+  case AMDILISD::LCOMPHI2: return "AMDILISD::LCOMPHI2";
+  case AMDILISD::LCOMPLO2: return "AMDILISD::LCOMPLO2";
+  case AMDILISD::DCREATE2: return "AMDILISD::DCREATE2";
+  case AMDILISD::DCOMPHI2: return "AMDILISD::DCOMPHI2";
+  case AMDILISD::DCOMPLO2: return "AMDILISD::DCOMPLO2";
+  case AMDILISD::RET_FLAG: return "AMDILISD::RET_FLAG";
+  case AMDILISD::BRANCH_COND: return "AMDILISD::BRANCH_COND";
+  case AMDILISD::ADDADDR: return "AMDILISD::ADDADDR";
+  case AMDILISD::ATOM_F_ADD: return "AMDILISD::ATOM_F_ADD";
+  case AMDILISD::ATOM_F_AND: return "AMDILISD::ATOM_F_AND";
+  case AMDILISD::ATOM_F_CMPXCHG: return "AMDILISD::ATOM_F_CMPXCHG";
+  case AMDILISD::ATOM_F_DEC: return "AMDILISD::ATOM_F_DEC";
+  case AMDILISD::ATOM_F_INC: return "AMDILISD::ATOM_F_INC";
+  case AMDILISD::ATOM_F_MAX: return "AMDILISD::ATOM_F_MAX";
+  case AMDILISD::ATOM_F_UMAX: return "AMDILISD::ATOM_F_UMAX";
+  case AMDILISD::ATOM_F_MIN: return "AMDILISD::ATOM_F_MIN";
+  case AMDILISD::ATOM_F_UMIN: return "AMDILISD::ATOM_F_UMIN";
+  case AMDILISD::ATOM_F_OR: return "AMDILISD::ATOM_F_OR";
+  case AMDILISD::ATOM_F_SUB: return "AMDILISD::ATOM_F_SUB";
+  case AMDILISD::ATOM_F_XCHG: return "AMDILISD::ATOM_F_XCHG";
+  case AMDILISD::ATOM_F_XOR: return "AMDILISD::ATOM_F_XOR";
+  case AMDILISD::ATOM_G_ADD: return "AMDILISD::ATOM_G_ADD";
+  case AMDILISD::ATOM_G_AND: return "AMDILISD::ATOM_G_AND";
+  case AMDILISD::ATOM_G_CMPXCHG: return "AMDILISD::ATOM_G_CMPXCHG";
+  case AMDILISD::ATOM_G_DEC: return "AMDILISD::ATOM_G_DEC";
+  case AMDILISD::ATOM_G_INC: return "AMDILISD::ATOM_G_INC";
+  case AMDILISD::ATOM_G_MAX: return "AMDILISD::ATOM_G_MAX";
+  case AMDILISD::ATOM_G_UMAX: return "AMDILISD::ATOM_G_UMAX";
+  case AMDILISD::ATOM_G_MIN: return "AMDILISD::ATOM_G_MIN";
+  case AMDILISD::ATOM_G_UMIN: return "AMDILISD::ATOM_G_UMIN";
+  case AMDILISD::ATOM_G_OR: return "AMDILISD::ATOM_G_OR";
+  case AMDILISD::ATOM_G_SUB: return "AMDILISD::ATOM_G_SUB";
+  case AMDILISD::ATOM_G_RSUB: return "AMDILISD::ATOM_G_RSUB";
+  case AMDILISD::ATOM_G_XCHG: return "AMDILISD::ATOM_G_XCHG";
+  case AMDILISD::ATOM_G_XOR: return "AMDILISD::ATOM_G_XOR";
+  case AMDILISD::ATOM_G_STORE: return "AMDILISD::ATOM_G_STORE";
+  case AMDILISD::ATOM_G_LOAD: return "AMDILISD::ATOM_G_LOAD";
+  case AMDILISD::ATOM_G_ADD_NORET: return "AMDILISD::ATOM_G_ADD_NORET";
+  case AMDILISD::ATOM_G_AND_NORET: return "AMDILISD::ATOM_G_AND_NORET";
+  case AMDILISD::ATOM_G_CMPXCHG_NORET: return "AMDILISD::ATOM_G_CMPXCHG_NORET";
+  case AMDILISD::ATOM_G_DEC_NORET: return "AMDILISD::ATOM_G_DEC_NORET";
+  case AMDILISD::ATOM_G_INC_NORET: return "AMDILISD::ATOM_G_INC_NORET";
+  case AMDILISD::ATOM_G_MAX_NORET: return "AMDILISD::ATOM_G_MAX_NORET";
+  case AMDILISD::ATOM_G_UMAX_NORET: return "AMDILISD::ATOM_G_UMAX_NORET";
+  case AMDILISD::ATOM_G_MIN_NORET: return "AMDILISD::ATOM_G_MIN_NORET";
+  case AMDILISD::ATOM_G_UMIN_NORET: return "AMDILISD::ATOM_G_UMIN_NORET";
+  case AMDILISD::ATOM_G_OR_NORET: return "AMDILISD::ATOM_G_OR_NORET";
+  case AMDILISD::ATOM_G_SUB_NORET: return "AMDILISD::ATOM_G_SUB_NORET";
+  case AMDILISD::ATOM_G_RSUB_NORET: return "AMDILISD::ATOM_G_RSUB_NORET";
+  case AMDILISD::ATOM_G_XCHG_NORET: return "AMDILISD::ATOM_G_XCHG_NORET";
+  case AMDILISD::ATOM_G_XOR_NORET: return "AMDILISD::ATOM_G_XOR_NORET";
+  case AMDILISD::ATOM_L_ADD: return "AMDILISD::ATOM_L_ADD";
+  case AMDILISD::ATOM_L_AND: return "AMDILISD::ATOM_L_AND";
+  case AMDILISD::ATOM_L_CMPXCHG: return "AMDILISD::ATOM_L_CMPXCHG";
+  case AMDILISD::ATOM_L_DEC: return "AMDILISD::ATOM_L_DEC";
+  case AMDILISD::ATOM_L_INC: return "AMDILISD::ATOM_L_INC";
+  case AMDILISD::ATOM_L_MAX: return "AMDILISD::ATOM_L_MAX";
+  case AMDILISD::ATOM_L_UMAX: return "AMDILISD::ATOM_L_UMAX";
+  case AMDILISD::ATOM_L_MIN: return "AMDILISD::ATOM_L_MIN";
+  case AMDILISD::ATOM_L_UMIN: return "AMDILISD::ATOM_L_UMIN";
+  case AMDILISD::ATOM_L_OR: return "AMDILISD::ATOM_L_OR";
+  case AMDILISD::ATOM_L_SUB: return "AMDILISD::ATOM_L_SUB";
+  case AMDILISD::ATOM_L_RSUB: return "AMDILISD::ATOM_L_RSUB";
+  case AMDILISD::ATOM_L_XCHG: return "AMDILISD::ATOM_L_XCHG";
+  case AMDILISD::ATOM_L_XOR: return "AMDILISD::ATOM_L_XOR";
+  case AMDILISD::ATOM_L_ADD_NORET: return "AMDILISD::ATOM_L_ADD_NORET";
+  case AMDILISD::ATOM_L_AND_NORET: return "AMDILISD::ATOM_L_AND_NORET";
+  case AMDILISD::ATOM_L_CMPXCHG_NORET: return "AMDILISD::ATOM_L_CMPXCHG_NORET";
+  case AMDILISD::ATOM_L_DEC_NORET: return "AMDILISD::ATOM_L_DEC_NORET";
+  case AMDILISD::ATOM_L_INC_NORET: return "AMDILISD::ATOM_L_INC_NORET";
+  case AMDILISD::ATOM_L_MAX_NORET: return "AMDILISD::ATOM_L_MAX_NORET";
+  case AMDILISD::ATOM_L_UMAX_NORET: return "AMDILISD::ATOM_L_UMAX_NORET";
+  case AMDILISD::ATOM_L_MIN_NORET: return "AMDILISD::ATOM_L_MIN_NORET";
+  case AMDILISD::ATOM_L_UMIN_NORET: return "AMDILISD::ATOM_L_UMIN_NORET";
+  case AMDILISD::ATOM_L_OR_NORET: return "AMDILISD::ATOM_L_OR_NORET";
+  case AMDILISD::ATOM_L_SUB_NORET: return "AMDILISD::ATOM_L_SUB_NORET";
+  case AMDILISD::ATOM_L_RSUB_NORET: return "AMDILISD::ATOM_L_RSUB_NORET";
+  case AMDILISD::ATOM_L_XCHG_NORET: return "AMDILISD::ATOM_L_XCHG_NORET";
+  case AMDILISD::ATOM_R_ADD: return "AMDILISD::ATOM_R_ADD";
+  case AMDILISD::ATOM_R_AND: return "AMDILISD::ATOM_R_AND";
+  case AMDILISD::ATOM_R_CMPXCHG: return "AMDILISD::ATOM_R_CMPXCHG";
+  case AMDILISD::ATOM_R_DEC: return "AMDILISD::ATOM_R_DEC";
+  case AMDILISD::ATOM_R_INC: return "AMDILISD::ATOM_R_INC";
+  case AMDILISD::ATOM_R_MAX: return "AMDILISD::ATOM_R_MAX";
+  case AMDILISD::ATOM_R_UMAX: return "AMDILISD::ATOM_R_UMAX";
+  case AMDILISD::ATOM_R_MIN: return "AMDILISD::ATOM_R_MIN";
+  case AMDILISD::ATOM_R_UMIN: return "AMDILISD::ATOM_R_UMIN";
+  case AMDILISD::ATOM_R_OR: return "AMDILISD::ATOM_R_OR";
+  case AMDILISD::ATOM_R_MSKOR: return "AMDILISD::ATOM_R_MSKOR";
+  case AMDILISD::ATOM_R_SUB: return "AMDILISD::ATOM_R_SUB";
+  case AMDILISD::ATOM_R_RSUB: return "AMDILISD::ATOM_R_RSUB";
+  case AMDILISD::ATOM_R_XCHG: return "AMDILISD::ATOM_R_XCHG";
+  case AMDILISD::ATOM_R_XOR: return "AMDILISD::ATOM_R_XOR";
+  case AMDILISD::ATOM_R_ADD_NORET: return "AMDILISD::ATOM_R_ADD_NORET";
+  case AMDILISD::ATOM_R_AND_NORET: return "AMDILISD::ATOM_R_AND_NORET";
+  case AMDILISD::ATOM_R_CMPXCHG_NORET: return "AMDILISD::ATOM_R_CMPXCHG_NORET";
+  case AMDILISD::ATOM_R_DEC_NORET: return "AMDILISD::ATOM_R_DEC_NORET";
+  case AMDILISD::ATOM_R_INC_NORET: return "AMDILISD::ATOM_R_INC_NORET";
+  case AMDILISD::ATOM_R_MAX_NORET: return "AMDILISD::ATOM_R_MAX_NORET";
+  case AMDILISD::ATOM_R_UMAX_NORET: return "AMDILISD::ATOM_R_UMAX_NORET";
+  case AMDILISD::ATOM_R_MIN_NORET: return "AMDILISD::ATOM_R_MIN_NORET";
+  case AMDILISD::ATOM_R_UMIN_NORET: return "AMDILISD::ATOM_R_UMIN_NORET";
+  case AMDILISD::ATOM_R_OR_NORET: return "AMDILISD::ATOM_R_OR_NORET";
+  case AMDILISD::ATOM_R_MSKOR_NORET: return "AMDILISD::ATOM_R_MSKOR_NORET";
+  case AMDILISD::ATOM_R_SUB_NORET: return "AMDILISD::ATOM_R_SUB_NORET";
+  case AMDILISD::ATOM_R_RSUB_NORET: return "AMDILISD::ATOM_R_RSUB_NORET";
+  case AMDILISD::ATOM_R_XCHG_NORET: return "AMDILISD::ATOM_R_XCHG_NORET";
+  case AMDILISD::ATOM_R_XOR_NORET: return "AMDILISD::ATOM_R_XOR_NORET";
+  case AMDILISD::APPEND_ALLOC: return "AMDILISD::APPEND_ALLOC";
+  case AMDILISD::APPEND_CONSUME: return "AMDILISD::APPEND_CONSUME";
   };
 }
-
 /// getSetCCResultType - Return the value type to use for ISD::SETCC.
 EVT AMDILTargetLowering::getSetCCResultType(EVT VT) const
 {
-  if (!VT.isVector())
-    return MVT::i32;
-  return VT.changeVectorElementTypeToInteger();
+  if (VT == MVT::Other) return MVT::i32;
+  if (!VT.isVector()) {
+    return VT.getSizeInBits() <= 32 ? MVT::i32 : MVT::i64;
+  }
+  return MVT::getVectorVT(
+           (VT.getScalarType().getSizeInBits() == 64) ? MVT::i64 : MVT::i32,
+           VT.getVectorNumElements());
 }
-
-
 bool
 AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
-                                        const CallInst &I, unsigned Intrinsic) const
+                                        const CallInst &I,
+                                        unsigned Intrinsic) const
 {
   if (Intrinsic <= AMDILIntrinsic::last_non_AMDIL_intrinsic
       || Intrinsic > AMDILIntrinsic::num_AMDIL_intrinsics) {
@@ -1723,488 +607,409 @@ AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   }
   bool bitCastToInt = false;
   unsigned IntNo;
+  bool isStore = true;
   bool isRet = true;
   const AMDILSubtarget *STM = &this->getTargetMachine()
                               .getSubtarget<AMDILSubtarget>();
   switch (Intrinsic) {
-  default:
-    return false; // Don't custom lower most intrinsics.
+  default: return false;   // Don't custom lower most intrinsics.
   case AMDILIntrinsic::AMDIL_atomic_add_gi32:
   case AMDILIntrinsic::AMDIL_atomic_add_gu32:
   case AMDILIntrinsic::AMDIL_atomic_add_gi64:
   case AMDILIntrinsic::AMDIL_atomic_add_gu64:
-    IntNo = AMDILISD::ATOM_G_ADD;
-    break;
+    IntNo = AMDILISD::ATOM_G_ADD; break;
   case AMDILIntrinsic::AMDIL_atomic_add_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_ADD_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_ADD_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_add_lu32:
   case AMDILIntrinsic::AMDIL_atomic_add_li32:
   case AMDILIntrinsic::AMDIL_atomic_add_lu64:
   case AMDILIntrinsic::AMDIL_atomic_add_li64:
-    IntNo = AMDILISD::ATOM_L_ADD;
-    break;
+    IntNo = AMDILISD::ATOM_L_ADD; break;
   case AMDILIntrinsic::AMDIL_atomic_add_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_ADD_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_ADD_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_add_ru32:
   case AMDILIntrinsic::AMDIL_atomic_add_ri32:
   case AMDILIntrinsic::AMDIL_atomic_add_ru64:
   case AMDILIntrinsic::AMDIL_atomic_add_ri64:
-    IntNo = AMDILISD::ATOM_R_ADD;
-    break;
+    IntNo = AMDILISD::ATOM_R_ADD; break;
   case AMDILIntrinsic::AMDIL_atomic_add_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_add_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_ADD_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_ADD_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_and_gi32:
   case AMDILIntrinsic::AMDIL_atomic_and_gu32:
   case AMDILIntrinsic::AMDIL_atomic_and_gi64:
   case AMDILIntrinsic::AMDIL_atomic_and_gu64:
-    IntNo = AMDILISD::ATOM_G_AND;
-    break;
+    IntNo = AMDILISD::ATOM_G_AND; break;
   case AMDILIntrinsic::AMDIL_atomic_and_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_AND_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_AND_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_and_li32:
   case AMDILIntrinsic::AMDIL_atomic_and_lu32:
   case AMDILIntrinsic::AMDIL_atomic_and_li64:
   case AMDILIntrinsic::AMDIL_atomic_and_lu64:
-    IntNo = AMDILISD::ATOM_L_AND;
-    break;
+    IntNo = AMDILISD::ATOM_L_AND; break;
   case AMDILIntrinsic::AMDIL_atomic_and_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_AND_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_AND_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_and_ri32:
   case AMDILIntrinsic::AMDIL_atomic_and_ru32:
   case AMDILIntrinsic::AMDIL_atomic_and_ri64:
   case AMDILIntrinsic::AMDIL_atomic_and_ru64:
-    IntNo = AMDILISD::ATOM_R_AND;
-    break;
+    IntNo = AMDILISD::ATOM_R_AND; break;
   case AMDILIntrinsic::AMDIL_atomic_and_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_and_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_AND_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_AND_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gi32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gu32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gi64:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gu64:
-    IntNo = AMDILISD::ATOM_G_CMPXCHG;
-    break;
+    IntNo = AMDILISD::ATOM_G_CMPXCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_CMPXCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_CMPXCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_li32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_lu32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_li64:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_lu64:
-    IntNo = AMDILISD::ATOM_L_CMPXCHG;
-    break;
+    IntNo = AMDILISD::ATOM_L_CMPXCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_CMPXCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_CMPXCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ri32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ru32:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ri64:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ru64:
-    IntNo = AMDILISD::ATOM_R_CMPXCHG;
-    break;
+    IntNo = AMDILISD::ATOM_R_CMPXCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_cmpxchg_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_CMPXCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_CMPXCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_dec_gi32:
   case AMDILIntrinsic::AMDIL_atomic_dec_gu32:
   case AMDILIntrinsic::AMDIL_atomic_dec_gi64:
   case AMDILIntrinsic::AMDIL_atomic_dec_gu64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_G_DEC;
-    } else {
-      IntNo = AMDILISD::ATOM_G_SUB;
-    }
+    IntNo = AMDILISD::ATOM_G_DEC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_dec_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_gu64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_G_DEC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_G_SUB_NORET;
-    }
+    IntNo = AMDILISD::ATOM_G_DEC_NORET;
     break;
   case AMDILIntrinsic::AMDIL_atomic_dec_li32:
   case AMDILIntrinsic::AMDIL_atomic_dec_lu32:
   case AMDILIntrinsic::AMDIL_atomic_dec_li64:
   case AMDILIntrinsic::AMDIL_atomic_dec_lu64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_L_DEC;
-    } else {
-      IntNo = AMDILISD::ATOM_L_SUB;
-    }
+    IntNo = AMDILISD::ATOM_L_DEC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_dec_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_lu64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_L_DEC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_L_SUB_NORET;
-    }
+    IntNo = AMDILISD::ATOM_L_DEC_NORET;
     break;
   case AMDILIntrinsic::AMDIL_atomic_dec_ri32:
   case AMDILIntrinsic::AMDIL_atomic_dec_ru32:
   case AMDILIntrinsic::AMDIL_atomic_dec_ri64:
   case AMDILIntrinsic::AMDIL_atomic_dec_ru64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_R_DEC;
-    } else {
-      IntNo = AMDILISD::ATOM_R_SUB;
-    }
+    IntNo = AMDILISD::ATOM_R_DEC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_dec_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_dec_ru64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_R_DEC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_R_SUB_NORET;
-    }
+    IntNo = AMDILISD::ATOM_R_DEC_NORET;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_gi32:
   case AMDILIntrinsic::AMDIL_atomic_inc_gu32:
   case AMDILIntrinsic::AMDIL_atomic_inc_gi64:
   case AMDILIntrinsic::AMDIL_atomic_inc_gu64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_G_INC;
-    } else {
-      IntNo = AMDILISD::ATOM_G_ADD;
-    }
+    IntNo = AMDILISD::ATOM_G_INC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_gu64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_G_INC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_G_ADD_NORET;
-    }
+    IntNo = AMDILISD::ATOM_G_INC_NORET;
+    break;
+  case AMDILIntrinsic::AMDIL_atomic_store_gv4u32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gv4i32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gv2u32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gv2i32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gu64:
+  case AMDILIntrinsic::AMDIL_atomic_store_gi64:
+  case AMDILIntrinsic::AMDIL_atomic_store_gu32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gi32:
+  case AMDILIntrinsic::AMDIL_atomic_store_gu16:
+  case AMDILIntrinsic::AMDIL_atomic_store_gi16:
+  case AMDILIntrinsic::AMDIL_atomic_store_gu8:
+  case AMDILIntrinsic::AMDIL_atomic_store_gi8:
+    isRet = false;
+    IntNo = AMDILISD::ATOM_G_STORE;
+    break;
+  case AMDILIntrinsic::AMDIL_atomic_load_gv4u32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gv4i32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gv2u32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gv2i32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gu64:
+  case AMDILIntrinsic::AMDIL_atomic_load_gi64:
+  case AMDILIntrinsic::AMDIL_atomic_load_gu32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gi32:
+  case AMDILIntrinsic::AMDIL_atomic_load_gu16:
+  case AMDILIntrinsic::AMDIL_atomic_load_gi16:
+  case AMDILIntrinsic::AMDIL_atomic_load_gu8:
+  case AMDILIntrinsic::AMDIL_atomic_load_gi8:
+    IntNo = AMDILISD::ATOM_G_LOAD;
+    isStore = false;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_li32:
   case AMDILIntrinsic::AMDIL_atomic_inc_lu32:
   case AMDILIntrinsic::AMDIL_atomic_inc_li64:
   case AMDILIntrinsic::AMDIL_atomic_inc_lu64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_L_INC;
-    } else {
-      IntNo = AMDILISD::ATOM_L_ADD;
-    }
+    IntNo = AMDILISD::ATOM_L_INC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_lu64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_L_INC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_L_ADD_NORET;
-    }
+    IntNo = AMDILISD::ATOM_L_INC_NORET;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_ri32:
   case AMDILIntrinsic::AMDIL_atomic_inc_ru32:
   case AMDILIntrinsic::AMDIL_atomic_inc_ri64:
   case AMDILIntrinsic::AMDIL_atomic_inc_ru64:
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_R_INC;
-    } else {
-      IntNo = AMDILISD::ATOM_R_ADD;
-    }
+    IntNo = AMDILISD::ATOM_R_INC;
     break;
   case AMDILIntrinsic::AMDIL_atomic_inc_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_inc_ru64_noret:
     isRet = false;
-    if (STM->calVersion() >= CAL_VERSION_SC_136) {
-      IntNo = AMDILISD::ATOM_R_INC_NORET;
-    } else {
-      IntNo = AMDILISD::ATOM_R_ADD_NORET;
-    }
+    IntNo = AMDILISD::ATOM_R_INC_NORET;
     break;
   case AMDILIntrinsic::AMDIL_atomic_max_gi32:
   case AMDILIntrinsic::AMDIL_atomic_max_gi64:
-    IntNo = AMDILISD::ATOM_G_MAX;
-    break;
+    IntNo = AMDILISD::ATOM_G_MAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_gu32:
   case AMDILIntrinsic::AMDIL_atomic_max_gu64:
-    IntNo = AMDILISD::ATOM_G_UMAX;
-    break;
+    IntNo = AMDILISD::ATOM_G_UMAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_gi64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_MAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_MAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_max_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_UMAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_UMAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_max_li32:
   case AMDILIntrinsic::AMDIL_atomic_max_li64:
-    IntNo = AMDILISD::ATOM_L_MAX;
-    break;
+    IntNo = AMDILISD::ATOM_L_MAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_lu32:
   case AMDILIntrinsic::AMDIL_atomic_max_lu64:
-    IntNo = AMDILISD::ATOM_L_UMAX;
-    break;
+    IntNo = AMDILISD::ATOM_L_UMAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_li64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_MAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_MAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_max_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_UMAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_UMAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_max_ri32:
   case AMDILIntrinsic::AMDIL_atomic_max_ri64:
-    IntNo = AMDILISD::ATOM_R_MAX;
-    break;
+    IntNo = AMDILISD::ATOM_R_MAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_ru32:
   case AMDILIntrinsic::AMDIL_atomic_max_ru64:
-    IntNo = AMDILISD::ATOM_R_UMAX;
-    break;
+    IntNo = AMDILISD::ATOM_R_UMAX; break;
   case AMDILIntrinsic::AMDIL_atomic_max_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_ri64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_MAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_MAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_max_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_max_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_UMAX_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_UMAX_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_gi32:
   case AMDILIntrinsic::AMDIL_atomic_min_gi64:
-    IntNo = AMDILISD::ATOM_G_MIN;
-    break;
+    IntNo = AMDILISD::ATOM_G_MIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_gu32:
   case AMDILIntrinsic::AMDIL_atomic_min_gu64:
-    IntNo = AMDILISD::ATOM_G_UMIN;
-    break;
+    IntNo = AMDILISD::ATOM_G_UMIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_gi64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_MIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_MIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_UMIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_UMIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_li32:
   case AMDILIntrinsic::AMDIL_atomic_min_li64:
-    IntNo = AMDILISD::ATOM_L_MIN;
-    break;
+    IntNo = AMDILISD::ATOM_L_MIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_lu32:
   case AMDILIntrinsic::AMDIL_atomic_min_lu64:
-    IntNo = AMDILISD::ATOM_L_UMIN;
-    break;
+    IntNo = AMDILISD::ATOM_L_UMIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_li64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_MIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_MIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_UMIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_UMIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_ri32:
   case AMDILIntrinsic::AMDIL_atomic_min_ri64:
-    IntNo = AMDILISD::ATOM_R_MIN;
-    break;
+    IntNo = AMDILISD::ATOM_R_MIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_ru32:
   case AMDILIntrinsic::AMDIL_atomic_min_ru64:
-    IntNo = AMDILISD::ATOM_R_UMIN;
-    break;
+    IntNo = AMDILISD::ATOM_R_UMIN; break;
   case AMDILIntrinsic::AMDIL_atomic_min_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_ri64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_MIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_MIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_min_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_min_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_UMIN_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_UMIN_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_or_gi32:
   case AMDILIntrinsic::AMDIL_atomic_or_gu32:
   case AMDILIntrinsic::AMDIL_atomic_or_gi64:
   case AMDILIntrinsic::AMDIL_atomic_or_gu64:
-    IntNo = AMDILISD::ATOM_G_OR;
-    break;
+    IntNo = AMDILISD::ATOM_G_OR; break;
   case AMDILIntrinsic::AMDIL_atomic_or_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_OR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_OR_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_or_li32:
   case AMDILIntrinsic::AMDIL_atomic_or_lu32:
   case AMDILIntrinsic::AMDIL_atomic_or_li64:
   case AMDILIntrinsic::AMDIL_atomic_or_lu64:
-    IntNo = AMDILISD::ATOM_L_OR;
-    break;
+    IntNo = AMDILISD::ATOM_L_OR; break;
   case AMDILIntrinsic::AMDIL_atomic_or_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_OR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_OR_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_or_ri32:
   case AMDILIntrinsic::AMDIL_atomic_or_ru32:
   case AMDILIntrinsic::AMDIL_atomic_or_ri64:
   case AMDILIntrinsic::AMDIL_atomic_or_ru64:
-    IntNo = AMDILISD::ATOM_R_OR;
-    break;
+    IntNo = AMDILISD::ATOM_R_OR; break;
   case AMDILIntrinsic::AMDIL_atomic_or_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_or_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_OR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_OR_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_gi32:
   case AMDILIntrinsic::AMDIL_atomic_sub_gu32:
   case AMDILIntrinsic::AMDIL_atomic_sub_gi64:
   case AMDILIntrinsic::AMDIL_atomic_sub_gu64:
-    IntNo = AMDILISD::ATOM_G_SUB;
-    break;
+    IntNo = AMDILISD::ATOM_G_SUB; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_SUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_SUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_li32:
   case AMDILIntrinsic::AMDIL_atomic_sub_lu32:
   case AMDILIntrinsic::AMDIL_atomic_sub_li64:
   case AMDILIntrinsic::AMDIL_atomic_sub_lu64:
-    IntNo = AMDILISD::ATOM_L_SUB;
-    break;
+    IntNo = AMDILISD::ATOM_L_SUB; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_SUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_SUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_ri32:
   case AMDILIntrinsic::AMDIL_atomic_sub_ru32:
   case AMDILIntrinsic::AMDIL_atomic_sub_ri64:
   case AMDILIntrinsic::AMDIL_atomic_sub_ru64:
-    IntNo = AMDILISD::ATOM_R_SUB;
-    break;
+    IntNo = AMDILISD::ATOM_R_SUB; break;
   case AMDILIntrinsic::AMDIL_atomic_sub_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_sub_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_SUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_SUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_gi32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gu32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gi64:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gu64:
-    IntNo = AMDILISD::ATOM_G_RSUB;
-    break;
+    IntNo = AMDILISD::ATOM_G_RSUB; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_RSUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_RSUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_li32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_lu32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_li64:
   case AMDILIntrinsic::AMDIL_atomic_rsub_lu64:
-    IntNo = AMDILISD::ATOM_L_RSUB;
-    break;
+    IntNo = AMDILISD::ATOM_L_RSUB; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_RSUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_RSUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_ri32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ru32:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ri64:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ru64:
-    IntNo = AMDILISD::ATOM_R_RSUB;
-    break;
+    IntNo = AMDILISD::ATOM_R_RSUB; break;
   case AMDILIntrinsic::AMDIL_atomic_rsub_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_rsub_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_RSUB_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_RSUB_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_gf32:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_gi32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_gu32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_gi64:
   case AMDILIntrinsic::AMDIL_atomic_xchg_gu64:
-    IntNo = AMDILISD::ATOM_G_XCHG;
-    break;
+    IntNo = AMDILISD::ATOM_G_XCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_gf32_noret:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_gi32_noret:
@@ -2212,16 +1017,14 @@ AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   case AMDILIntrinsic::AMDIL_atomic_xchg_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xchg_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_XCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_XCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_lf32:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_li32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_lu32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_li64:
   case AMDILIntrinsic::AMDIL_atomic_xchg_lu64:
-    IntNo = AMDILISD::ATOM_L_XCHG;
-    break;
+    IntNo = AMDILISD::ATOM_L_XCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_lf32_noret:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_li32_noret:
@@ -2229,16 +1032,14 @@ AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   case AMDILIntrinsic::AMDIL_atomic_xchg_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xchg_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_XCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_XCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_rf32:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_ri32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_ru32:
   case AMDILIntrinsic::AMDIL_atomic_xchg_ri64:
   case AMDILIntrinsic::AMDIL_atomic_xchg_ru64:
-    IntNo = AMDILISD::ATOM_R_XCHG;
-    break;
+    IntNo = AMDILISD::ATOM_R_XCHG; break;
   case AMDILIntrinsic::AMDIL_atomic_xchg_rf32_noret:
     bitCastToInt = true;
   case AMDILIntrinsic::AMDIL_atomic_xchg_ri32_noret:
@@ -2246,58 +1047,49 @@ AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   case AMDILIntrinsic::AMDIL_atomic_xchg_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xchg_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_XCHG_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_XCHG_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_gi32:
   case AMDILIntrinsic::AMDIL_atomic_xor_gu32:
   case AMDILIntrinsic::AMDIL_atomic_xor_gi64:
   case AMDILIntrinsic::AMDIL_atomic_xor_gu64:
-    IntNo = AMDILISD::ATOM_G_XOR;
-    break;
+    IntNo = AMDILISD::ATOM_G_XOR; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_gi32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_gu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_gi64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_gu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_G_XOR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_G_XOR_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_li32:
   case AMDILIntrinsic::AMDIL_atomic_xor_lu32:
   case AMDILIntrinsic::AMDIL_atomic_xor_li64:
   case AMDILIntrinsic::AMDIL_atomic_xor_lu64:
-    IntNo = AMDILISD::ATOM_L_XOR;
-    break;
+    IntNo = AMDILISD::ATOM_L_XOR; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_li32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_lu32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_li64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_lu64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_L_XOR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_L_XOR_NORET; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_ri32:
   case AMDILIntrinsic::AMDIL_atomic_xor_ru32:
   case AMDILIntrinsic::AMDIL_atomic_xor_ri64:
   case AMDILIntrinsic::AMDIL_atomic_xor_ru64:
-    IntNo = AMDILISD::ATOM_R_XOR;
-    break;
+    IntNo = AMDILISD::ATOM_R_XOR; break;
   case AMDILIntrinsic::AMDIL_atomic_xor_ri32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_ru32_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_ri64_noret:
   case AMDILIntrinsic::AMDIL_atomic_xor_ru64_noret:
     isRet = false;
-    IntNo = AMDILISD::ATOM_R_XOR_NORET;
-    break;
+    IntNo = AMDILISD::ATOM_R_XOR_NORET; break;
   case AMDILIntrinsic::AMDIL_append_alloc_i32:
-    IntNo = AMDILISD::APPEND_ALLOC;
-    break;
+    IntNo = AMDILISD::APPEND_ALLOC; break;
   case AMDILIntrinsic::AMDIL_append_consume_i32:
-    IntNo = AMDILISD::APPEND_CONSUME;
-    break;
+    IntNo = AMDILISD::APPEND_CONSUME; break;
   };
   const AMDILSubtarget *stm = &this->getTargetMachine()
                               .getSubtarget<AMDILSubtarget>();
   AMDILKernelManager *KM = const_cast<AMDILKernelManager*>(
-                             stm->getKernelManager());
+    stm->getKernelManager());
   KM->setOutputInst();
 
   Info.opc = IntNo;
@@ -2307,7 +1099,7 @@ AMDILTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   Info.align = 4;
   Info.vol = true;
   Info.readMem = isRet;
-  Info.writeMem = true;
+  Info.writeMem = isStore;
   return true;
 }
 // The backend supports 32 and 64 bit floating point immediates
@@ -2321,7 +1113,6 @@ AMDILTargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT) const
     return false;
   }
 }
-
 bool
 AMDILTargetLowering::ShouldShrinkFPConstant(EVT VT) const
 {
@@ -2332,8 +1123,6 @@ AMDILTargetLowering::ShouldShrinkFPConstant(EVT VT) const
     return true;
   }
 }
-
-
 // isMaskedValueZeroForTargetNode - Return true if 'Op & Mask' is known to
 // be zero. Op is expected to be a target specific node. Used by DAG
 // combiner.
@@ -2351,20 +1140,20 @@ AMDILTargetLowering::computeMaskedBitsForTargetNode(
   unsigned BitWidth = KnownZero.getBitWidth();
   KnownZero = KnownOne = APInt(BitWidth, 0); // Don't know anything
   switch (Op.getOpcode()) {
-  default:
-    break;
+  default: break;
+  case ISD::SELECT_CC:
   case AMDILISD::SELECT_CC:
     DAG.ComputeMaskedBits(
       Op.getOperand(1),
       KnownZero,
       KnownOne,
       Depth + 1
-    );
+      );
     DAG.ComputeMaskedBits(
       Op.getOperand(0),
       KnownZero2,
       KnownOne2
-    );
+      );
     assert((KnownZero & KnownOne) == 0
            && "Bits known to be one AND zero?");
     assert((KnownZero2 & KnownOne2) == 0
@@ -2375,7 +1164,6 @@ AMDILTargetLowering::computeMaskedBitsForTargetNode(
     break;
   };
 }
-
 // This is the function that determines which calling convention should
 // be used. Currently there is only one calling convention
 CCAssignFn*
@@ -2384,7 +1172,6 @@ AMDILTargetLowering::CCAssignFnForNode(unsigned int Op) const
   //uint64_t CC = cast<ConstantSDNode>(Op.getOperand(1))->getZExtValue();
   return CC_AMDIL32;
 }
-
 // LowerCallResult - Lower the result values of an ISD::CALL into the
 // appropriate copies out of appropriate physical registers.  This assumes that
 // Chain/InFlag are the input chain/flag to use, and that TheCall is the call
@@ -2412,12 +1199,12 @@ AMDILTargetLowering::LowerCallResult(
     EVT CopyVT = RVLocs[i].getValVT();
     if (RVLocs[i].isRegLoc()) {
       Chain = DAG.getCopyFromReg(
-                Chain,
-                dl,
-                RVLocs[i].getLocReg(),
-                CopyVT,
-                InFlag
-              ).getValue(1);
+        Chain,
+        dl,
+        RVLocs[i].getLocReg(),
+        CopyVT,
+        InFlag
+        ).getValue(1);
       SDValue Val = Chain.getValue(0);
       InFlag = Chain.getValue(2);
       InVals.push_back(Val);
@@ -2425,28 +1212,10 @@ AMDILTargetLowering::LowerCallResult(
   }
 
   return Chain;
-
 }
-
 //===----------------------------------------------------------------------===//
 //                           Other Lowering Hooks
 //===----------------------------------------------------------------------===//
-
-MachineBasicBlock *
-AMDILTargetLowering::EmitInstrWithCustomInserter(
-  MachineInstr *MI, MachineBasicBlock *BB) const
-{
-  const TargetInstrInfo &TII = *getTargetMachine().getInstrInfo();
-  switch (MI->getOpcode()) {
-    ExpandCaseToAllTypes(AMDIL::CMP);
-    generateCMPInstr(MI, BB, TII);
-    MI->eraseFromParent();
-    break;
-  default:
-    break;
-  }
-  return BB;
-}
 
 // Recursively assign SDNodeOrdering to any unordered nodes
 // This is necessary to maintain source ordering of instructions
@@ -2461,10 +1230,9 @@ Ordered( SelectionDAG &DAG, unsigned order, const SDValue New )
   }
   return New;
 }
-
 #define LOWER(A) \
-  case ISD:: A: \
-return Ordered( DAG, DAG.GetOrdering( Op.getNode() ), Lower##A(Op, DAG) )
+case ISD:: A: \
+  return Ordered( DAG, DAG.GetOrdering( Op.getNode() ), Lower ## A(Op, DAG) )
 
 SDValue
 AMDILTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
@@ -2497,11 +1265,9 @@ AMDILTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
     LOWER(EXTRACT_SUBVECTOR);
     LOWER(SCALAR_TO_VECTOR);
     LOWER(CONCAT_VECTORS);
-    LOWER(AND);
-    LOWER(OR);
+    LOWER(SETCC);
     LOWER(SELECT);
     LOWER(SELECT_CC);
-    LOWER(SETCC);
     LOWER(SIGN_EXTEND_INREG);
     LOWER(BITCAST);
     LOWER(DYNAMIC_STACKALLOC);
@@ -2511,7 +1277,6 @@ AMDILTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
   }
   return Op;
 }
-
 int
 AMDILTargetLowering::getVarArgsFrameOffset() const
 {
@@ -2534,9 +1299,22 @@ AMDILTargetLowering::LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const
   int32_t arrayoffset = AMI->getArrayOffset(G->getName().str());
   int32_t constoffset = AMI->getConstOffset(G->getName().str());
   if (arrayoffset != -1) {
-    DST = DAG.getConstant(arrayoffset, PtrVT);
-    DST = DAG.getNode(ISD::ADD, DL, PtrVT,
-                      DST, DAG.getConstant(base_offset, PtrVT));
+    // We will do per-pointer local buffer allocation.
+    // Here we temporarily use an addri node to represent the address
+    // of the local array. It will be replaced in AMDILPointerManager
+    // when we figure out which local pointer is allocated in its own buffer.
+    const AMDILSubtarget *stm = &this->getTargetMachine()
+                                .getSubtarget<AMDILSubtarget>();
+    if (stm->device()->usesHardware(AMDILDeviceInfo::LocalMem)
+        && G->getType()->getAddressSpace() == AMDILAS::LOCAL_ADDRESS) {
+      SDValue addr = DAG.getTargetGlobalAddress(G, DL, PtrVT);
+      DST = DAG.getConstant(base_offset, PtrVT);
+      DST = DAG.getNode(AMDILISD::ADDADDR, DL, PtrVT, addr, DST);
+    } else {
+      DST = DAG.getConstant(arrayoffset, PtrVT);
+      DST = DAG.getNode(ISD::ADD, DL, PtrVT,
+                        DST, DAG.getConstant(base_offset, PtrVT));
+    }
   } else if (constoffset != -1) {
     if (AMI->getConstHWBit(G->getName().str())) {
       DST = DAG.getConstant(constoffset, PtrVT);
@@ -2558,7 +1336,6 @@ AMDILTargetLowering::LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const
         const Constant *C = dyn_cast<Constant>(GV->getInitializer());
         if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
           DST = DAG.getConstant(CI->getValue(), Op.getValueType());
-
         } else if (const ConstantFP *CF = dyn_cast<ConstantFP>(C)) {
           DST = DAG.getConstantFP(CF->getValueAPF(),
                                   Op.getValueType());
@@ -2582,7 +1359,6 @@ AMDILTargetLowering::LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
 {
@@ -2598,14 +1374,15 @@ AMDILTargetLowering::LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
   SDValue Result;
   if (CP->isMachineConstantPoolEntry()) {
     Result = DAG.getTargetConstantPool(CP->getMachineCPVal(), PtrVT,
-                                       CP->getAlignment(), CP->getOffset(), CP->getTargetFlags());
+                                       CP->getAlignment(),
+                                       CP->getOffset(), CP->getTargetFlags());
   } else {
     Result = DAG.getTargetConstantPool(CP->getConstVal(), PtrVT,
-                                       CP->getAlignment(), CP->getOffset(), CP->getTargetFlags());
+                                       CP->getAlignment(),
+                                       CP->getOffset(), CP->getTargetFlags());
   }
   return Result;
 }
-
 SDValue
 AMDILTargetLowering::LowerExternalSymbol(SDValue Op, SelectionDAG &DAG) const
 {
@@ -2618,18 +1395,20 @@ AMDILTargetLowering::LowerExternalSymbol(SDValue Op, SelectionDAG &DAG) const
 /// arguments places on the stack.
 /// TODO: isVarArg, hasStructRet, isMemReg
 SDValue
-AMDILTargetLowering::LowerFormalArguments(SDValue Chain,
-    CallingConv::ID CallConv,
-    bool isVarArg,
-    const SmallVectorImpl<ISD::InputArg> &Ins,
-    DebugLoc dl,
-    SelectionDAG &DAG,
-    SmallVectorImpl<SDValue> &InVals)
+AMDILTargetLowering::LowerFormalArguments(
+  SDValue Chain,
+  CallingConv::ID CallConv,
+  bool isVarArg,
+  const SmallVectorImpl<ISD::InputArg>
+  &Ins,
+  DebugLoc dl,
+  SelectionDAG &DAG,
+  SmallVectorImpl<SDValue> &InVals)
 const
 {
   MachineFunction &MF = DAG.getMachineFunction();
   AMDILMachineFunctionInfo *FuncInfo
-  = MF.getInfo<AMDILMachineFunctionInfo>();
+    = MF.getInfo<AMDILMachineFunctionInfo>();
   MachineFrameInfo *MFI = MF.getFrameInfo();
   //const Function *Fn = MF.getFunction();
   //MachineRegisterInfo &RegInfo = MF.getRegInfo();
@@ -2653,40 +1432,40 @@ const
       EVT RegVT = VA.getLocVT();
       EVT ValVT = VA.getValVT();
       const TargetRegisterClass *RC = getRegClassFromType(
-                                        RegVT.getSimpleVT().SimpleTy);
+        RegVT.getSimpleVT().SimpleTy);
 
       unsigned int Reg = MF.addLiveIn(VA.getLocReg(), RC);
       FuncInfo->addArgReg(VA.getLocReg());
       SDValue ArgValue = DAG.getCopyFromReg(
-                           Chain,
-                           dl,
-                           Reg,
-                           RegVT);
+        Chain,
+        dl,
+        Reg,
+        RegVT);
       // If this is an 8 or 16-bit value, it is really passed
       // promoted to 32 bits.  Insert an assert[sz]ext to capture
       // this, then truncate to the right size.
 
       if (VA.getLocInfo() == CCValAssign::SExt) {
         ArgValue = DAG.getNode(
-                     ISD::AssertSext,
-                     dl,
-                     RegVT,
-                     ArgValue,
-                     DAG.getValueType(ValVT));
+          ISD::AssertSext,
+          dl,
+          RegVT,
+          ArgValue,
+          DAG.getValueType(ValVT));
       } else if (VA.getLocInfo() == CCValAssign::ZExt) {
         ArgValue = DAG.getNode(
-                     ISD::AssertZext,
-                     dl,
-                     RegVT,
-                     ArgValue,
-                     DAG.getValueType(ValVT));
+          ISD::AssertZext,
+          dl,
+          RegVT,
+          ArgValue,
+          DAG.getValueType(ValVT));
       }
       if (VA.getLocInfo() != CCValAssign::Full) {
         ArgValue = DAG.getNode(
-                     ISD::TRUNCATE,
-                     dl,
-                     ValVT,
-                     ArgValue);
+          ISD::TRUNCATE,
+          dl,
+          ValVT,
+          ArgValue);
       }
       // Add the value to the list of arguments
       // to be passed in registers
@@ -2724,18 +1503,16 @@ const
 /// function parameter.
 static SDValue
 CreateCopyOfByValArgument(SDValue Src, SDValue Dst, SDValue Chain,
-                          ISD::ArgFlagsTy Flags, SelectionDAG &DAG)
-{
+                          ISD::ArgFlagsTy Flags, SelectionDAG &DAG) {
   assert(0 && "MemCopy does not exist yet");
   SDValue SizeNode     = DAG.getConstant(Flags.getByValSize(), MVT::i32);
 
   return DAG.getMemcpy(Chain,
                        Src.getDebugLoc(),
                        Dst, Src, SizeNode, Flags.getByValAlign(),
-                       /*IsVol=*/false, /*AlwaysInline=*/true,
+                       /*IsVol=*/ false, /*AlwaysInline=*/ true,
                        MachinePointerInfo(), MachinePointerInfo());
 }
-
 SDValue
 AMDILTargetLowering::LowerMemOpCallTo(SDValue Chain,
                                       SDValue StackPtr, SDValue Arg,
@@ -2762,12 +1539,17 @@ AMDILTargetLowering::LowerMemOpCallTo(SDValue Chain,
 /// CALLSEQ_END are emitted.
 /// TODO: isVarArg, isTailCall, hasStructRet
 SDValue
-AMDILTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
-                               CallingConv::ID CallConv, bool doesNotReturn, bool isVarArg, bool& isTailCall,
+AMDILTargetLowering::LowerCall(SDValue Chain,
+                               SDValue Callee,
+                               CallingConv::ID CallConv,
+                               bool doesNotReturn,
+                               bool isVarArg,
+                               bool& isTailCall,
                                const SmallVectorImpl<ISD::OutputArg> &Outs,
                                const SmallVectorImpl<SDValue> &OutVals,
                                const SmallVectorImpl<ISD::InputArg> &Ins,
-                               DebugLoc dl, SelectionDAG &DAG,
+                               DebugLoc dl,
+                               SelectionDAG &DAG,
                                SmallVectorImpl<SDValue> &InVals)
 const
 {
@@ -2810,8 +1592,7 @@ const
     SDValue Arg = OutVals[i];
     //Promote the value if needed
     switch(VA.getLocInfo()) {
-    default:
-      assert(0 && "Unknown loc info!");
+    default: assert(0 && "Unknown loc info!");
     case CCValAssign::Full:
       break;
     case CCValAssign::SExt:
@@ -2837,7 +1618,7 @@ const
       // Create the frame index object for this incoming parameter
       int FI = MFI->CreateFixedObject(VA.getValVT().getSizeInBits()/8,
                                       VA.getLocMemOffset(), true
-                                     );
+                                      );
       SDValue PtrOff = DAG.getFrameIndex(FI,getPointerTy());
 
       // emit ISD::STORE whichs stores the
@@ -2874,9 +1655,11 @@ const
   // node so that legalize doesn't hack it.
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))  {
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, getPointerTy());
-  } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
+  }
+  else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(), getPointerTy());
-  } else if (isTailCall) {
+  }
+  else if (isTailCall) {
     assert(0 && "Tail calls are not handled yet");
     // see X86 ISelLowering for ideas on implementation: 1708
   }
@@ -2923,10 +1706,10 @@ const
 
   // Create the CALLSEQ_END node
   Chain = DAG.getCALLSEQ_END(
-            Chain,
-            DAG.getIntPtrConstant(NumBytes, true),
-            DAG.getIntPtrConstant(0, true),
-            InFlag);
+    Chain,
+    DAG.getIntPtrConstant(NumBytes, true),
+    DAG.getIntPtrConstant(0, true),
+    InFlag);
   InFlag = Chain.getValue(1);
   // Handle result values, copying them out of physregs into vregs that
   // we return
@@ -2992,7 +1775,6 @@ static void checkMADType(
     is24bitMAD = true;
   }
 }
-
 SDValue
 AMDILTargetLowering::LowerADD(SDValue Op, SelectionDAG &DAG) const
 {
@@ -3018,20 +1800,32 @@ AMDILTargetLowering::LowerADD(SDValue Op, SelectionDAG &DAG) const
     } else {
       SDValue LHSLO, LHSHI, RHSLO, RHSHI, INTLO, INTHI;
       // TODO: need to turn this into a bitcast of i64/v2i64 to v2i32/v4i32
-      LHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, LHS);
-      RHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, RHS);
-      LHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTTY, LHS);
-      RHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTTY, RHS);
+      LHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                          DL,
+                          INTTY,
+                          LHS);
+      RHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                          DL,
+                          INTTY,
+                          RHS);
+      LHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                          DL,
+                          INTTY,
+                          LHS);
+      RHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                          DL,
+                          INTTY,
+                          RHS);
       INTLO = DAG.getNode(ISD::ADD, DL, INTTY, LHSLO, RHSLO);
       INTHI = DAG.getNode(ISD::ADD, DL, INTTY, LHSHI, RHSHI);
       SDValue cmp;
-      cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                        DAG.getConstant(CondCCodeToCC(ISD::SETULT, MVT::i32), MVT::i32),
-                        INTLO, RHSLO);
-      cmp = DAG.getNode(AMDILISD::INEGATE, DL, INTTY, cmp);
-      INTHI = DAG.getNode(ISD::ADD, DL, INTTY, INTHI, cmp);
-      DST = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, OVT,
-                        INTLO, INTHI);
+      cmp = DAG.getSetCC(DL, INTTY, INTLO, RHSLO, ISD::SETULT);
+      INTHI = DAG.getNode(ISD::SUB, DL, INTTY, INTHI, cmp);
+      DST = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                        DL,
+                        OVT,
+                        INTLO,
+                        INTHI);
     }
   } else {
     if (LHS.getOpcode() == ISD::FrameIndex ||
@@ -3067,24 +1861,26 @@ AMDILTargetLowering::LowerADD(SDValue Op, SelectionDAG &DAG) const
           } else if (LHS.getOpcode() == ISD::SHL && LHSConstOpCode) {
             Op1 = LHS.getOperand(0);
             Op2 = DAG.getConstant(
-                    1 << LHSConstOpCode->getZExtValue(), MVT::i32);
+              1 << LHSConstOpCode->getZExtValue(), MVT::i32);
             Op3 = RHS;
           } else if (RHS.getOpcode() == ISD::SHL && RHSConstOpCode) {
             Op1 = RHS.getOperand(0);
             Op2 = DAG.getConstant(
-                    1 << RHSConstOpCode->getZExtValue(), MVT::i32);
+              1 << RHSConstOpCode->getZExtValue(), MVT::i32);
             Op3 = LHS;
           }
           checkMADType(Op, stm, is24bitMAD, is32bitMAD);
           // We can possibly do a MAD transform!
-          if (is24bitMAD && stm->device()->usesHardware(AMDILDeviceInfo::Signed24BitOps)) {
+          if (is24bitMAD &&
+              stm->device()->usesHardware(AMDILDeviceInfo::Signed24BitOps)) {
             uint32_t opcode = AMDILIntrinsic::AMDIL_mad24_i32;
-            SDVTList Tys = DAG.getVTList(OVT/*, MVT::Other*/);
+            SDVTList Tys = DAG.getVTList(OVT /*, MVT::Other*/);
             DST = DAG.getNode(ISD::INTRINSIC_W_CHAIN,
-                              DL, Tys, DAG.getEntryNode(), DAG.getConstant(opcode, MVT::i32),
+                              DL, Tys, DAG.getEntryNode(),
+                              DAG.getConstant(opcode, MVT::i32),
                               Op1, Op2, Op3);
           } else if(is32bitMAD) {
-            SDVTList Tys = DAG.getVTList(OVT/*, MVT::Other*/);
+            SDVTList Tys = DAG.getVTList(OVT /*, MVT::Other*/);
             DST = DAG.getNode(ISD::INTRINSIC_W_CHAIN,
                               DL, Tys, DAG.getEntryNode(),
                               DAG.getConstant(
@@ -3143,9 +1939,8 @@ AMDILTargetLowering::genCLZuN(SDValue Op, SelectionDAG &DAG,
   // uint tint = as_uint(t)
   SDValue tint = DAG.getNode(ISDBITCAST, DL, INTTY, t);
   // int cmp = (x != 0)
-  SDValue cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                            DAG.getConstant(CondCCodeToCC(ISD::SETNE, MVT::i32), MVT::i32), x,
-                            DAG.getConstant(0, INTTY));
+  SDValue cmp = DAG.getSetCC(DL, INTTY, x, DAG.getConstant(0,
+                                                           INTTY), ISD::SETNE);
   // uint tsrc = tint >> 23
   SDValue tsrc = DAG.getNode(ISD::SRL, DL, INTTY, tint,
                              DAG.getConstant(23, INTTY));
@@ -3156,11 +1951,10 @@ AMDILTargetLowering::genCLZuN(SDValue Op, SelectionDAG &DAG,
   SDValue cst = DAG.getNode(ISD::SUB, DL, INTTY,
                             DAG.getConstant((103U + bits), INTTY), tmask);
   // return cmp ? cst : N
-  cst = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, cmp, cst,
-                    DAG.getConstant(bits, INTTY));
+  cst = DAG.getSelect(DL, INTTY, cmp, cst,
+                      DAG.getConstant(bits, INTTY));
   return cst;
 }
-
 SDValue
 AMDILTargetLowering::genCLZu32(SDValue Op, SelectionDAG &DAG) const
 {
@@ -3168,7 +1962,7 @@ AMDILTargetLowering::genCLZu32(SDValue Op, SelectionDAG &DAG) const
   DebugLoc DL = Op.getDebugLoc();
   EVT INTTY = Op.getValueType();
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
   if (stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
     //__clz_32bit(uint u)
     //{
@@ -3178,14 +1972,17 @@ AMDILTargetLowering::genCLZu32(SDValue Op, SelectionDAG &DAG) const
     // uint u = op
     SDValue u = Op;
     // int z = __amdil_ffb_hi(u)
-    SDValue z = DAG.getNode(AMDILISD::IFFB_HI, DL, INTTY, u);
+    SDValue z = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, INTTY,
+                            DAG.getEntryNode(),
+                            DAG.getConstant(AMDILIntrinsic::
+                                            AMDIL_bit_find_first_hi, MVT::i32),
+                            u);
     // int cmp = z < 0
-    SDValue cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::i32), MVT::i32),
-                              z, DAG.getConstant(0, INTTY));
+    SDValue cmp = DAG.getSetCC(DL, INTTY, z, DAG.getConstant(0,
+                                                             INTTY), ISD::SETLT);
     // return cmp ? 32 : z
-    DST = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, cmp,
-                      DAG.getConstant(32, INTTY), z);
+    DST = DAG.getSelect(DL, INTTY, cmp,
+                        DAG.getConstant(32, INTTY), z);
   } else if (stm->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
     //  static inline uint
     //__clz_32bit(uint x)
@@ -3207,15 +2004,15 @@ AMDILTargetLowering::genCLZu32(SDValue Op, SelectionDAG &DAG) const
     // uint zl = __clz_16bit(xa16)
     SDValue zl = genCLZuN(xa16, DAG, 16);
     // uint cmp = zh == 16U
-    SDValue cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              zh, DAG.getConstant(16U, INTTY));
+    SDValue cmp = DAG.getSetCC(DL, INTTY, zh, DAG.getConstant(16U,
+                                                              INTTY),
+                               ISD::SETEQ);
     // uint zl16 = zl + 16
     SDValue zl16 = DAG.getNode(ISD::ADD, DL, INTTY,
                                DAG.getConstant(16, INTTY), zl);
     // return cmp ? zl16 : zh
-    DST = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY,
-                      cmp, zl16, zh);
+    DST = DAG.getSelect(DL, INTTY,
+                        cmp, zl16, zh);
   } else {
     assert(0 && "Attempting to generate a CLZ function with an"
            " unknown graphics card");
@@ -3237,7 +2034,7 @@ AMDILTargetLowering::genCLZu64(SDValue Op, SelectionDAG &DAG) const
     INTTY = EVT(MVT::i32);
   }
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
   if (stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
     // Evergreen:
     // static inline uint
@@ -3250,22 +2047,28 @@ AMDILTargetLowering::genCLZu64(SDValue Op, SelectionDAG &DAG) const
     //ulong x = op
     SDValue x = Op;
     // uint xhi = x >> 32
-    SDValue xlo = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, x);
+    SDValue xlo = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                              DL,
+                              INTTY,
+                              x);
     // uint xlo = x & 0xFFFFFFFF
-    SDValue xhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTTY, x);
+    SDValue xhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                              DL,
+                              INTTY,
+                              x);
     // uint zhi = __clz_32bit(xhi)
     SDValue zhi = genCLZu32(xhi, DAG);
     // uint zlo = __clz_32bit(xlo)
     SDValue zlo = genCLZu32(xlo, DAG);
     // uint cmp = zhi == 32
-    SDValue cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              zhi, DAG.getConstant(32U, INTTY));
+    SDValue cmp = DAG.getSetCC(DL, INTTY, zhi, DAG.getConstant(32U,
+                                                               INTTY),
+                               ISD::SETEQ);
     // uint zlop32 = 32 + zlo
     SDValue zlop32 = DAG.getNode(AMDILISD::ADD, DL, INTTY,
                                  DAG.getConstant(32U, INTTY), zlo);
     // return cmp ? zlop32: zhi
-    DST = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, cmp, zlop32, zhi);
+    DST = DAG.getSelect(DL, INTTY, cmp, zlop32, zhi);
   } else if (stm->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
     // HD4XXX:
     //  static inline uint
@@ -3293,7 +2096,10 @@ AMDILTargetLowering::genCLZu64(SDValue Op, SelectionDAG &DAG) const
     SDValue xs23m23 = DAG.getNode(ISD::AND, DL, INTTY, ixs23,
                                   DAG.getConstant(0x7fffffU, INTTY));
     // uint ix = (uint)x
-    SDValue ix = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, x);
+    SDValue ix = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                             DL,
+                             INTTY,
+                             x);
     // uint xm23 = ix & 0x7FFFFF
     SDValue xm23 = DAG.getNode(ISD::AND, DL, INTTY, ix,
                                DAG.getConstant(0x7fffffU, INTTY));
@@ -3309,29 +2115,170 @@ AMDILTargetLowering::genCLZu64(SDValue Op, SelectionDAG &DAG) const
     SDValue const18 = DAG.getConstant(18, INTTY);
     SDValue const41 = DAG.getConstant(41, INTTY);
     // uint cmp1 = zh = 18
-    SDValue cmp1 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                               DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                               zhm5, const18);
+    SDValue cmp1 = DAG.getSetCC(DL, INTTY, zhm5, const18, ISD::SETEQ);
     // uint zhm5zm = zhm5 + zh
     SDValue zhm5zm = DAG.getNode(ISD::ADD, DL, INTTY, zhm5, zm);
     // uint cmp2 = zhm5zm == 41
-    SDValue cmp2 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                               DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                               zhm5zm, const41);
+    SDValue cmp2 = DAG.getSetCC(DL, INTTY, zhm5zm, const41, ISD::SETEQ);
     // uint zmp18 = zhm5 + 18
     SDValue zmp18 = DAG.getNode(ISD::ADD, DL, INTTY, zm, const18);
     // uint zlp41 = zl + 41
     SDValue zlp41 = DAG.getNode(ISD::ADD, DL, INTTY, zl, const41);
     // uint r = cmp1 ? zmp18 : zh
-    SDValue r = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY,
-                            cmp1, zmp18, zhm5);
+    SDValue r = DAG.getSelect(DL, INTTY,
+                              cmp1, zmp18, zhm5);
     // return cmp2 ? zlp41 : r
-    DST = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, cmp2, zlp41, r);
+    DST = DAG.getSelect(DL, INTTY, cmp2, zlp41, r);
   } else {
     assert(0 && "Attempting to generate a CLZ function with an"
            " unknown graphics card");
   }
   return DST;
+}
+SDValue
+AMDILTargetLowering::genf32toi64(SDValue RHS, SelectionDAG &DAG,
+                                 bool includeSign) const
+{
+  DebugLoc DL = RHS.getDebugLoc();
+  EVT RHSVT = RHS.getValueType();
+  bool isVec = RHSVT.isVector();
+  EVT LHSVT = (isVec) ? MVT::v2i64 : MVT::i64;
+  EVT INTVT = (isVec) ? MVT::v2i32 : MVT::i32;
+  //cf2ul(float f)
+  //{
+  //  float fh = f * 0x1.0p-32f;
+  //  uint uh = (uint)fh;
+  //  float fuh = (float)uh;
+  //  float fl = mad(-0x1.0p+32f, fuh, f);
+  //  uint ul = (uint)fl;
+  //  return ((ulong)uh << 32) | (ulong)ul;
+  //}
+  // Signed
+  //cf2l(float f)
+  //{
+  //  int s = as_int(f) & 0x80000000;
+  //  ulong u = cf2ul(as_float(as_uint(f) ^ s));
+  //  long ls = s ? -1L : 0L;
+  //  return ((long)u + ls) ^ ls;
+  //}
+  SDValue fh, uh, fuh, fl, ul, r, s, f;
+  f = RHS;
+  if (includeSign) {
+    SDValue fi = DAG.getNode(ISDBITCAST, DL, INTVT, f);
+    s = DAG.getNode(ISD::AND, DL, INTVT,
+                    fi, DAG.getConstant(0x80000000, INTVT));
+    f = DAG.getNode(ISDBITCAST, DL, RHSVT,
+                    DAG.getNode(ISD::XOR, DL, INTVT, fi, s));
+  }
+  fh = DAG.getNode(ISD::FMUL, DL, RHSVT,
+                   DAG.getNode(ISD::BITCAST, DL, RHSVT,
+                               DAG.getConstant(0x2F800000, INTVT)), f);
+  uh = DAG.getNode(ISD::FP_TO_UINT, DL, INTVT, fh);
+  fuh = DAG.getNode(ISD::UINT_TO_FP, DL, RHSVT, uh);
+  fl = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, RHSVT,
+                   DAG.getEntryNode(),
+                   DAG.getConstant(AMDILIntrinsic::AMDIL_mad, MVT::i32),
+                   DAG.getNode(ISD::BITCAST, DL, RHSVT,
+                               DAG.getConstant(0xCF800000, INTVT)), fuh, f);
+  ul = DAG.getNode(ISD::FP_TO_UINT, DL, INTVT, fl);
+  r = DAG.getNode(ISD::OR, DL, LHSVT,
+                  DAG.getNode(ISD::SHL, DL, LHSVT,
+                              DAG.getZExtOrTrunc(uh, DL,
+                                                 LHSVT),
+                              DAG.getConstant(32, LHSVT)),
+                  DAG.getZExtOrTrunc(ul, DL, LHSVT));
+  if (includeSign) {
+    SDValue ls = DAG.getSelect(DL, LHSVT,
+                               DAG.getZExtOrTrunc(s, DL, LHSVT),
+                               DAG.getConstant(-1L, LHSVT),
+                               DAG.getConstant(0L, LHSVT));
+    r = DAG.getNode(ISD::ADD, DL, LHSVT, r, ls);
+    r = DAG.getNode(ISD::XOR, DL, LHSVT, r, ls);
+  }
+  return r;
+}
+SDValue
+AMDILTargetLowering::geni64tof32(SDValue RHS, SelectionDAG &DAG,
+                                 bool includeSign) const
+{
+  DebugLoc DL = RHS.getDebugLoc();
+  EVT RHSVT = RHS.getValueType();
+  bool isVec = RHSVT.isVector();
+  EVT LHSVT = (isVec) ? MVT::v2f32 : MVT::f32;
+  EVT INTVT = (isVec) ? MVT::v2i32 : MVT::i32;
+  // Unsigned
+  // cul2f(ulong u)
+  //{
+  //  uint lz = clz(u);
+  //  uint e = (u != 0) ? 127U + 63U - lz : 0;
+  //  u = (u << lz) & 0x7fffffffffffffffUL;
+  //  ulong t = u & 0xffffffffffUL;
+  //  uint v = (e << 23) | (uint)(u >> 40);
+  //  uint r = t > 0x8000000000UL ? 1U : (t == 0x8000000000UL ? v & 1U : 0U);
+  //  return as_float(v + r);
+  //}
+  // Signed
+  // cl2f(long l)
+  //{
+  //  long s = l >> 63;
+  //  float r = cul2f((l + s) ^ s);
+  //  return s ? -r : r;
+  //}
+  SDValue l = RHS;
+  SDValue s;
+  if (includeSign) {
+    s = DAG.getNode(ISD::SRA, DL, RHSVT, l,
+                    DAG.getConstant(63, RHSVT));
+    SDValue s_add = DAG.getNode(ISD::ADD, DL, RHSVT,
+                                l, s);
+    l = DAG.getNode(ISD::XOR, DL, RHSVT, s_add, s);
+  }
+  SDValue lz = genCLZu64(l, DAG);
+  SDValue e = DAG.getSelect(DL, INTVT,
+                            DAG.getZExtOrTrunc(
+                              DAG.getSetCC(DL, getSetCCResultType(RHSVT), l,
+                                           DAG.getConstant(0,
+                                                           RHSVT), ISD::SETNE),
+                              DL, INTVT),
+                            DAG.getNode(ISD::SUB, DL, INTVT,
+                                        DAG.getConstant(127U + 63U, INTVT), lz),
+                            DAG.getConstant(0, INTVT));
+  SDValue u = DAG.getNode(ISD::AND, DL, RHSVT,
+                          DAG.getNode(ISD::SHL, DL, RHSVT, l, lz),
+                          DAG.getConstant((-1ULL) >> 1, RHSVT));
+  SDValue t = DAG.getNode(ISD::AND, DL, RHSVT, u,
+                          DAG.getConstant(0xffffffffffULL, RHSVT));
+  SDValue v = DAG.getNode(ISD::OR, DL, INTVT,
+                          DAG.getNode(ISD::SHL, DL, INTVT, e,
+                                      DAG.getConstant(23, INTVT)),
+                          DAG.getZExtOrTrunc(
+                            DAG.getNode(ISD::SRL, DL, RHSVT, u,
+                                        DAG.getConstant(40, RHSVT)),
+                            DL, INTVT));
+  SDValue r_cmp = DAG.getZExtOrTrunc(
+    DAG.getSetCC(DL, getSetCCResultType(RHSVT), t,
+                 DAG.getConstant(0x8000000000ULL, RHSVT),
+                 ISD::SETUGT), DL, INTVT);
+  SDValue t_cmp = DAG.getZExtOrTrunc(
+    DAG.getSetCC(DL, getSetCCResultType(RHSVT), t,
+                 DAG.getConstant(0x8000000000ULL, RHSVT),
+                 ISD::SETEQ), DL, INTVT);
+  SDValue r = DAG.getSelect(DL, INTVT,
+                            r_cmp, DAG.getConstant(1U, INTVT),
+                            DAG.getSelect(DL, INTVT, t_cmp,
+                                          DAG.getNode(ISD::AND, DL, INTVT, v,
+                                                      DAG.getConstant(1U, INTVT)),
+                                          DAG.getConstant(0U, INTVT)));
+  r = DAG.getNode(ISDBITCAST, DL, LHSVT,
+                  DAG.getNode(ISD::ADD, DL, INTVT, v, r));
+  if (includeSign) {
+    SDValue r_neg = DAG.getNode(ISD::FSUB, DL, LHSVT,
+                                DAG.getConstantFP(0, LHSVT), r);
+    r = DAG.getSelect(DL, getSetCCResultType(LHSVT),
+                      DAG.getSExtOrTrunc(s, DL, getSetCCResultType(LHSVT))
+                      , r_neg, r);
+  }
+  return r;
 }
 SDValue
 AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
@@ -3353,7 +2300,7 @@ AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
     INTVT = EVT(MVT::i32);
   }
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
   if (0 && stm->device()->getGeneration() > AMDILDeviceInfo::HD6XXX) {
     // unsigned version:
     // uint uhi = (uint)(d * 0x1.0p-32);
@@ -3377,16 +2324,22 @@ AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
     SDValue ulod = DAG.getNode(ISD::UINT_TO_FP, DL, RHSVT, uhi);
     val = 0xC1F0000000000000ULL;
     dval = *(double*)&val;
-    ulod = DAG.getNode(AMDILISD::MAD, DL, RHSVT, ulod,
-                       DAG.getConstantFP(dval, RHSVT), d);
+    ulod = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, RHSVT,
+                       DAG.getEntryNode(),
+                       DAG.getConstant(AMDILIntrinsic::AMDIL_mad, MVT::i32),
+                       ulod, DAG.getConstantFP(dval, RHSVT), d);
     SDValue ulo = DAG.getNode(ISD::FP_TO_UINT, DL, INTVT, ulod);
-    SDValue l = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, ulo, uhi);
+    SDValue l = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                            DL,
+                            LONGVT,
+                            ulo,
+                            uhi);
     if (includeSign) {
-      SDValue nl = DAG.getNode(AMDILISD::INEGATE, DL, LONGVT, l);
-      SDValue c = DAG.getNode(AMDILISD::CMP, DL, RHSVT,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::f64), MVT::i32),
-                              RHS, d);
-      l = DAG.getNode(AMDILISD::CMOVLOG, DL, LONGVT, c, l, nl);
+      SDValue nl =
+        DAG.getNode(ISD::XOR, DL, LONGVT, l, DAG.getConstant(~0ULL, LONGVT));
+      SDValue c = DAG.getSetCC(DL, getSetCCResultType(
+                                 RHSVT), RHS, d, ISD::SETEQ);
+      l = DAG.getSelect(DL, LONGVT, c, l, nl);
     }
     DST = l;
   } else {
@@ -3452,8 +2405,14 @@ AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
     // Convert d in to 32-bit components
     SDValue d = RHS;
     SDValue x = DAG.getNode(ISDBITCAST, DL, LONGVT, d);
-    SDValue xhi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, x );
-    SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, x );
+    SDValue xhi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                               DL,
+                               INTVT,
+                               x );
+    SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                               DL,
+                               INTVT,
+                               x );
 
     // Generate 'normalized' mantissa
     SDValue mhi = DAG.getNode( ISD::OR, DL, INTVT,
@@ -3471,12 +2430,12 @@ AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
                      e, DAG.getConstant( 0x7ff, INTVT ) );
     SDValue sr = DAG.getNode( ISD::SUB, DL, INTVT,
                               DAG.getConstant( 1023 + 63, INTVT ), e );
-    SDValue srge64 = DAG.getNode( AMDILISD::CMP, DL, INTVT,
-                                  DAG.getConstant(CondCCodeToCC(ISD::SETGE, MVT::i32), MVT::i32),
-                                  sr, DAG.getConstant(64, INTVT));
-    SDValue srge32 = DAG.getNode( AMDILISD::CMP, DL, INTVT,
-                                  DAG.getConstant(CondCCodeToCC(ISD::SETGE, MVT::i32), MVT::i32),
-                                  sr, DAG.getConstant(32, INTVT));
+    SDValue srge64 = DAG.getSetCC(DL, INTVT, sr, DAG.getConstant(64,
+                                                                 INTVT),
+                                  ISD::SETGE);
+    SDValue srge32 = DAG.getSetCC(DL, INTVT, sr, DAG.getConstant(32,
+                                                                 INTVT),
+                                  ISD::SETGE);
 
     // Compute result for 0 <= sr < 32
     SDValue rhi0 = DAG.getNode( ISD::SRL, DL, INTVT, mhi, sr );
@@ -3484,27 +2443,35 @@ AMDILTargetLowering::genf64toi64(SDValue RHS, SelectionDAG &DAG,
     temp = DAG.getNode( ISD::SUB, DL, INTVT, c32, sr );
     temp = DAG.getNode( ISD::SHL, DL, INTVT, mhi, temp );
     temp = DAG.getNode( ISD::OR,  DL, INTVT, rlo0, temp );
-    rlo0 = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT, sr, temp, rlo0 );
+    rlo0 = DAG.getNode( ISD::SELECT, DL, INTVT, sr, temp, rlo0 );
 
     // Compute result for 32 <= sr
     SDValue rhi1 = DAG.getConstant( 0, INTVT );
-    SDValue rlo1 = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
+    SDValue rlo1 = DAG.getNode( ISD::SELECT, DL, INTVT,
                                 srge64, rhi1, rhi0 );
 
     // Pick between the 2 results
-    SDValue rhi = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
+    SDValue rhi = DAG.getNode( ISD::SELECT, DL, INTVT,
                                srge32, rhi1, rhi0 );
-    SDValue rlo = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
+    SDValue rlo = DAG.getNode( ISD::SELECT, DL, INTVT,
                                srge32, rlo1, rlo0 );
 
     // Create long
-    SDValue res = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, rlo, rhi );
+    SDValue res = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                               DL,
+                               LONGVT,
+                               rlo,
+                               rhi );
 
     // Deal with sign bit
     if (includeSign) {
       SDValue sign = DAG.getNode( ISD::SRA, DL, INTVT,
                                   xhi, DAG.getConstant( 31, INTVT ) );
-      sign = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, sign, sign );
+      sign = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                          DL,
+                          LONGVT,
+                          sign,
+                          sign );
       res = DAG.getNode( ISD::ADD, DL, LONGVT, res, sign );
       res = DAG.getNode( ISD::XOR, DL, LONGVT, res, sign );
     }
@@ -3573,8 +2540,14 @@ AMDILTargetLowering::genf64toi32(SDValue RHS, SelectionDAG &DAG,
   // Convert d in to 32-bit components
   SDValue d = RHS;
   SDValue x = DAG.getNode(ISDBITCAST, DL, LONGVT, d);
-  SDValue xhi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, x );
-  SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, x );
+  SDValue xhi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                             DL,
+                             INTVT,
+                             x );
+  SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                             DL,
+                             INTVT,
+                             x );
 
   // Generate 'normalized' mantissa
   SDValue mhi = DAG.getNode( ISD::OR, DL, INTVT,
@@ -3591,13 +2564,13 @@ AMDILTargetLowering::genf64toi32(SDValue RHS, SelectionDAG &DAG,
                    e, DAG.getConstant( 0x7ff, INTVT ) );
   SDValue sr = DAG.getNode( ISD::SUB, DL, INTVT,
                             DAG.getConstant( 1023 + 31, INTVT ), e );
-  SDValue srge32 = DAG.getNode( AMDILISD::CMP, DL, INTVT,
-                                DAG.getConstant(CondCCodeToCC(ISD::SETGE, MVT::i32), MVT::i32),
-                                sr, DAG.getConstant(32, INTVT));
+  SDValue srge32 = DAG.getSetCC(DL, INTVT, sr, DAG.getConstant(32,
+                                                               INTVT),
+                                ISD::SETGE);
 
   // Compute result for 0 <= sr < 32
   SDValue res = DAG.getNode( ISD::SRL, DL, INTVT, mhi, sr );
-  res = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
+  res = DAG.getNode( ISD::SELECT, DL, INTVT,
                      srge32, DAG.getConstant(0,INTVT), res );
 
   // Deal with sign bit
@@ -3624,7 +2597,7 @@ AMDILTargetLowering::LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const
           (&this->getTargetMachine());
   const AMDILSubtarget*
   stm = dynamic_cast<const AMDILSubtarget*>(
-          amdtm->getSubtargetImpl());
+    amdtm->getSubtargetImpl());
   if (RST == MVT::f64 && RHSVT.isVector()) {
     // We dont support vector 64bit floating point convertions.
     for (unsigned x = 0, y = RHSVT.getVectorNumElements(); x < y; ++x) {
@@ -3640,8 +2613,8 @@ AMDILTargetLowering::LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const
     }
   } else if (RST == MVT::f64
              && LST == MVT::i32) {
-    if (stm->calVersion() >= CAL_VERSION_SC_155 && !RHSVT.isVector()
-        && stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
+    if (!RHSVT.isVector() &&
+        stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
       DST = SDValue(Op.getNode(), 0);
     } else {
       DST = genf64toi32(RHS, DAG, true);
@@ -3651,19 +2624,21 @@ AMDILTargetLowering::LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const
     DST = genf64toi64(RHS, DAG, true);
   } else if (RST == MVT::f64
              && (LST == MVT::i8 || LST == MVT::i16)) {
-    if (stm->calVersion() >= CAL_VERSION_SC_155 && !RHSVT.isVector()) {
+    if (!RHSVT.isVector()) {
       DST = DAG.getNode(ISD::FP_TO_SINT, DL, MVT::i32, RHS);
       DST = DAG.getNode(ISD::TRUNCATE, DL, LHSVT, DST);
     } else {
       SDValue ToInt = genf64toi32(RHS, DAG, true);
       DST = DAG.getNode(ISD::TRUNCATE, DL, LHSVT, ToInt);
     }
+  } else if (RST == MVT::f32
+             && LST == MVT::i64) {
+    DST = genf32toi64(RHS, DAG, true);
   } else {
     DST = SDValue(Op.getNode(), 0);
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const
 {
@@ -3679,7 +2654,7 @@ AMDILTargetLowering::LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const
           (&this->getTargetMachine());
   const AMDILSubtarget*
   stm = dynamic_cast<const AMDILSubtarget*>(
-          amdtm->getSubtargetImpl());
+    amdtm->getSubtargetImpl());
   if (RST == MVT::f64 && RHSVT.isVector()) {
     // We dont support vector 64bit floating point convertions.
     for (unsigned x = 0, y = RHSVT.getVectorNumElements(); x < y; ++x) {
@@ -3692,12 +2667,11 @@ AMDILTargetLowering::LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const
         DST = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, LHSVT,
                           DST, op, DAG.getTargetConstant(x, MVT::i32));
       }
-
     }
   } else if (RST == MVT::f64
              && LST == MVT::i32) {
-    if (stm->calVersion() >= CAL_VERSION_SC_155 && !RHSVT.isVector()
-        && stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
+    if (!RHSVT.isVector() &&
+        stm->device()->getGeneration() >= AMDILDeviceInfo::HD5XXX) {
       DST = SDValue(Op.getNode(), 0);
     } else {
       DST = genf64toi32(RHS, DAG, false);
@@ -3707,13 +2681,16 @@ AMDILTargetLowering::LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const
     DST = genf64toi64(RHS, DAG, false);
   } else if (RST == MVT::f64
              && (LST == MVT::i8 || LST == MVT::i16)) {
-    if (stm->calVersion() >= CAL_VERSION_SC_155 && !RHSVT.isVector()) {
+    if (!RHSVT.isVector()) {
       DST = DAG.getNode(ISD::FP_TO_UINT, DL, MVT::i32, RHS);
       DST = DAG.getNode(ISD::TRUNCATE, DL, LHSVT, DST);
     } else {
       SDValue ToInt = genf64toi32(RHS, DAG, false);
       DST = DAG.getNode(ISD::TRUNCATE, DL, LHSVT, ToInt);
     }
+  } else if (RST == MVT::f32
+             && LST == MVT::i64) {
+    DST = genf32toi64(RHS, DAG, false);
   } else {
     DST = SDValue(Op.getNode(), 0);
   }
@@ -3743,47 +2720,20 @@ AMDILTargetLowering::genu32tof64(SDValue RHS, EVT LHSVT,
           (&this->getTargetMachine());
   const AMDILSubtarget*
   stm = dynamic_cast<const AMDILSubtarget*>(
-          amdtm->getSubtargetImpl());
-  if (stm->calVersion() >= CAL_VERSION_SC_135) {
-    // unsigned x = RHS;
-    // ulong xd = (ulong)(0x4330_0000 << 32) | x;
-    // double d = as_double( xd );
-    // return d - 0x1.0p+52; // 0x1.0p+52 == 0x4330_0000_0000_0000
-    SDValue xd = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, x,
-                              DAG.getConstant( 0x43300000, INTVT ) );
-    SDValue d = DAG.getNode( ISDBITCAST, DL, LHSVT, xd );
-    SDValue offsetd = DAG.getNode( ISDBITCAST, DL, LHSVT,
-                                   DAG.getConstant( 0x4330000000000000ULL, LONGVT ) );
-    return DAG.getNode( ISD::FSUB, DL, LHSVT, d, offsetd );
-  } else {
-    SDValue clz = genCLZu32(x, DAG);
-
-    // Compute the exponent. 1023 is the bias, 31-clz the actual power of 2
-    // Except for an input 0... which requires a 0 exponent
-    SDValue exp = DAG.getNode( ISD::SUB, DL, INTVT,
-                               DAG.getConstant( (1023+31), INTVT), clz );
-    exp = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT, x, exp, x );
-
-    // Normalize frac
-    SDValue rhi = DAG.getNode( ISD::SHL, DL, INTVT, x, clz );
-
-    // Eliminate hidden bit
-    rhi = DAG.getNode( ISD::AND, DL, INTVT,
-                       rhi, DAG.getConstant( 0x7fffffff, INTVT ) );
-
-    // Pack exponent and frac
-    SDValue rlo = DAG.getNode( ISD::SHL, DL, INTVT,
-                               rhi, DAG.getConstant( (32 - 11), INTVT ) );
-    rhi = DAG.getNode( ISD::SRL, DL, INTVT,
-                       rhi, DAG.getConstant( 11, INTVT ) );
-    exp = DAG.getNode( ISD::SHL, DL, INTVT,
-                       exp, DAG.getConstant( 20, INTVT ) );
-    rhi = DAG.getNode( ISD::OR, DL, INTVT, rhi, exp );
-
-    // Convert 2 x 32 in to 1 x 64, then to double precision float type
-    SDValue res = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, rlo, rhi );
-    return DAG.getNode(ISDBITCAST, DL, LHSVT, res);
-  }
+    amdtm->getSubtargetImpl());
+  // unsigned x = RHS;
+  // ulong xd = (ulong)(0x4330_0000 << 32) | x;
+  // double d = as_double( xd );
+  // return d - 0x1.0p+52; // 0x1.0p+52 == 0x4330_0000_0000_0000
+  SDValue xd = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                            DL,
+                            LONGVT,
+                            x,
+                            DAG.getConstant( 0x43300000, INTVT ) );
+  SDValue d = DAG.getNode( ISDBITCAST, DL, LHSVT, xd );
+  SDValue offsetd = DAG.getNode( ISDBITCAST, DL, LHSVT,
+                                 DAG.getConstant( 0x4330000000000000ULL, LONGVT ) );
+  return DAG.getNode( ISD::FSUB, DL, LHSVT, d, offsetd );
 }
 SDValue
 AMDILTargetLowering::genu64tof64(SDValue RHS, EVT LHSVT,
@@ -3803,104 +2753,55 @@ AMDILTargetLowering::genu64tof64(SDValue RHS, EVT LHSVT,
   LONGVT = RHSVT;
   SDValue x = RHS;
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
   if (0 && stm->device()->getGeneration() > AMDILDeviceInfo::HD6XXX) {
     // double dhi = (double)(as_uint2(x).y);
     // double dlo = (double)(as_uint2(x).x);
     // return mad(dhi, 0x1.0p+32, dlo)
-    SDValue dhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, x);
+    SDValue dhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                              DL,
+                              INTVT,
+                              x);
     dhi = DAG.getNode(ISD::UINT_TO_FP, DL, LHSVT, dhi);
-    SDValue dlo = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, x);
+    SDValue dlo = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                              DL,
+                              INTVT,
+                              x);
     dlo = DAG.getNode(ISD::UINT_TO_FP, DL, LHSVT, dlo);
     uint64_t val = 0x41f0000000000000ULL;
     double dval = *(double*)&val;
-    return DAG.getNode(AMDILISD::MAD, DL, LHSVT, dhi,
-                       DAG.getConstantFP(dval, LHSVT), dlo);
-  } else if (stm->calVersion() >= CAL_VERSION_SC_135) {
+    return DAG.getNode(ISD::INTRINSIC_W_CHAIN,
+                       DL, LHSVT, DAG.getEntryNode(),
+                       DAG.getConstant(AMDILIntrinsic::AMDIL_mad, MVT::i32),
+                       dhi, DAG.getConstantFP(dval, LHSVT), dlo);
+  } else {
     // double lo = as_double( as_ulong( 0x1.0p+52) | (u & 0xffff_ffffUL));
     // double hi = as_double( as_ulong( 0x1.0p+84) | (u >> 32));
     // return (hi - (0x1.0p+84 + 0x1.0p+52)) + lo;
-    SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, x );  // x & 0xffff_ffffUL
-    SDValue xd = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, xlo, DAG.getConstant( 0x43300000, INTVT ) );
+    SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                               DL,
+                               INTVT,
+                               x );                                                               // x & 0xffff_ffffUL
+    SDValue xd = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                              DL,
+                              LONGVT,
+                              xlo,
+                              DAG.getConstant( 0x43300000, INTVT ) );
     SDValue lo = DAG.getNode( ISDBITCAST, DL, LHSVT, xd );
-    SDValue xhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 :  AMDILISD::LCOMPHI, DL, INTVT, x ); // x >> 32
-    SDValue xe = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, xhi, DAG.getConstant( 0x45300000, INTVT ) );
+    SDValue xhi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 :  AMDILISD::LCOMPHI,
+                              DL,
+                              INTVT,
+                              x );                                                               // x >> 32
+    SDValue xe = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                              DL,
+                              LONGVT,
+                              xhi,
+                              DAG.getConstant( 0x45300000, INTVT ) );
     SDValue hi = DAG.getNode( ISDBITCAST, DL, LHSVT, xe );
     SDValue c = DAG.getNode( ISDBITCAST, DL, LHSVT,
                              DAG.getConstant( 0x4530000000100000ULL, LONGVT ) );
     hi = DAG.getNode( ISD::FSUB, DL, LHSVT, hi, c );
     return DAG.getNode( ISD::FADD, DL, LHSVT, hi, lo );
-
-  } else {
-    SDValue clz = genCLZu64(x, DAG);
-    SDValue xhi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, x );
-    SDValue xlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, x );
-
-    // Compute the exponent. 1023 is the bias, 63-clz the actual power of 2
-    SDValue exp = DAG.getNode( ISD::SUB, DL, INTVT,
-                               DAG.getConstant( (1023+63), INTVT), clz );
-    SDValue mash = DAG.getNode( ISD::OR, DL, INTVT, xhi, xlo );
-    exp = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
-                       mash, exp, mash );  // exp = exp, or 0 if input was 0
-
-    // Normalize frac
-    SDValue clz31 = DAG.getNode( ISD::AND, DL, INTVT,
-                                 clz, DAG.getConstant( 31, INTVT ) );
-    SDValue rshift = DAG.getNode( ISD::SUB, DL, INTVT,
-                                  DAG.getConstant( 32, INTVT ), clz31 );
-    SDValue t1 = DAG.getNode( ISD::SHL, DL, INTVT, xhi, clz31 );
-    SDValue t2 = DAG.getNode( ISD::SRL, DL, INTVT, xlo, rshift );
-    t2 = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT, clz31, t2, t1 );
-    SDValue rhi1 = DAG.getNode( ISD::OR, DL, INTVT, t1, t2 );
-    SDValue rlo1 = DAG.getNode( ISD::SHL, DL, INTVT, xlo, clz31 );
-    SDValue rhi2 = DAG.getNode( ISD::SHL, DL, INTVT, xlo, clz31 );
-    SDValue rlo2 = DAG.getConstant( 0, INTVT );
-    SDValue clz32 = DAG.getNode( ISD::AND, DL, INTVT,
-                                 clz, DAG.getConstant( 32, INTVT ) );
-    SDValue rhi = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
-                               clz32, rhi2, rhi1 );
-    SDValue rlo = DAG.getNode( AMDILISD::CMOVLOG, DL, INTVT,
-                               clz32, rlo2, rlo1 );
-
-    // Eliminate hidden bit
-    rhi = DAG.getNode( ISD::AND, DL, INTVT,
-                       rhi, DAG.getConstant( 0x7fffffff, INTVT ) );
-
-    // Save bits needed to round properly
-    SDValue round = DAG.getNode( ISD::AND, DL, INTVT,
-                                 rlo, DAG.getConstant( 0x7ff, INTVT ) );
-
-    // Pack exponent and frac
-    rlo = DAG.getNode( ISD::SRL, DL, INTVT,
-                       rlo, DAG.getConstant( 11, INTVT ) );
-    SDValue temp = DAG.getNode( ISD::SHL, DL, INTVT,
-                                rhi, DAG.getConstant( (32 - 11), INTVT ) );
-    rlo = DAG.getNode( ISD::OR, DL, INTVT, rlo, temp );
-    rhi = DAG.getNode( ISD::SRL, DL, INTVT,
-                       rhi, DAG.getConstant( 11, INTVT ) );
-    exp = DAG.getNode( ISD::SHL, DL, INTVT,
-                       exp, DAG.getConstant( 20, INTVT ) );
-    rhi = DAG.getNode( ISD::OR, DL, INTVT, rhi, exp );
-
-    // Compute rounding bit
-    SDValue even = DAG.getNode( ISD::AND, DL, INTVT,
-                                rlo, DAG.getConstant( 1, INTVT ) );
-    SDValue grs = DAG.getNode( ISD::AND, DL, INTVT,
-                               round, DAG.getConstant( 0x3ff, INTVT ) );
-    grs = DAG.getNode( AMDILISD::CMP, DL, INTVT,
-                       DAG.getConstant( CondCCodeToCC( ISD::SETNE, MVT::i32), MVT::i32),
-                       grs, DAG.getConstant( 0, INTVT ) ); // -1 if any GRS set, 0 if none
-    grs = DAG.getNode( ISD::OR, DL, INTVT, grs, even );
-    round = DAG.getNode( ISD::SRL, DL, INTVT,
-                         round, DAG.getConstant( 10, INTVT ) );
-    round = DAG.getNode( ISD::AND, DL, INTVT, round, grs ); // 0 or 1
-
-    // Add rounding bit
-    SDValue lround = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT,
-                                  round, DAG.getConstant( 0, INTVT ) );
-    SDValue res = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, rlo, rhi );
-    res = DAG.getNode( ISD::ADD, DL, LONGVT, res, lround );
-    return DAG.getNode(ISDBITCAST, DL, LHSVT, res);
   }
 }
 SDValue
@@ -3920,7 +2821,7 @@ AMDILTargetLowering::LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
           (&this->getTargetMachine());
   const AMDILSubtarget*
   stm = dynamic_cast<const AMDILSubtarget*>(
-          amdtm->getSubtargetImpl());
+    amdtm->getSubtargetImpl());
   if (LST == MVT::f64 && LHSVT.isVector()) {
     // We dont support vector 64bit floating point convertions.
     DST = Op;
@@ -3934,12 +2835,10 @@ AMDILTargetLowering::LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
         DST = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, LHSVT, DST,
                           op, DAG.getTargetConstant(x, MVT::i32));
       }
-
     }
   } else if (RST == MVT::i32
              && LST == MVT::f64) {
-    if (stm->device()->getGeneration() > AMDILDeviceInfo::HD4XXX
-        && stm->calVersion() >= CAL_VERSION_SC_155) {
+    if (stm->device()->getGeneration() > AMDILDeviceInfo::HD4XXX) {
       DST = SDValue(Op.getNode(), 0);
     } else {
       DST = genu32tof64(RHS, LHSVT, DAG);
@@ -3947,12 +2846,14 @@ AMDILTargetLowering::LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
   } else if (RST == MVT::i64
              && LST == MVT::f64) {
     DST = genu64tof64(RHS, LHSVT, DAG);
+  } else if (RST == MVT::i64
+             && LST == MVT::f32) {
+    DST = geni64tof32(RHS, DAG, false);
   } else {
     DST = SDValue(Op.getNode(), 0);
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
 {
@@ -3971,7 +2872,7 @@ AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
           (&this->getTargetMachine());
   const AMDILSubtarget*
   stm = dynamic_cast<const AMDILSubtarget*>(
-          amdtm->getSubtargetImpl());
+    amdtm->getSubtargetImpl());
   if (LST == MVT::f64 && LHSVT.isVector()) {
     // We dont support vector 64bit floating point convertions.
     for (unsigned x = 0, y = LHSVT.getVectorNumElements(); x < y; ++x) {
@@ -3985,9 +2886,10 @@ AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
                           op, DAG.getTargetConstant(x, MVT::i32));
       }
     }
-
+  } else if (RST == MVT::i64
+             && LST == MVT::f32) {
+    DST = geni64tof32(RHS, DAG, true);
   } else {
-
     if (isVec) {
       LONGVT = EVT(MVT::getVectorVT(MVT::i64,
                                     RHSVT.getVectorNumElements()));
@@ -4001,8 +2903,7 @@ AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
     if ((RST == MVT::i32 || RST == MVT::i64)
         && LST == MVT::f64) {
       if (RST == MVT::i32) {
-        if (stm->device()->getGeneration() > AMDILDeviceInfo::HD4XXX
-            && stm->calVersion() >= CAL_VERSION_SC_155) {
+        if (stm->device()->getGeneration() > AMDILDeviceInfo::HD4XXX) {
           DST = SDValue(Op.getNode(), 0);
           return DST;
         }
@@ -4016,10 +2917,18 @@ AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
         Sbit = DAG.getNode( ISD::AND, DL, INTVT, RHS, cSbit );
         S = DAG.getNode(ISD::SRA, DL, RHSVT, RHS, c31 );
       } else { // 64-bit case... SRA of 64-bit values is slow
-        SDValue hi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, RHS );
+        SDValue hi = DAG.getNode(
+          (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+          DL,
+          INTVT,
+          RHS );
         Sbit = DAG.getNode( ISD::AND, DL, INTVT, hi, cSbit );
         SDValue temp = DAG.getNode( ISD::SRA, DL, INTVT, hi, c31 );
-        S = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, RHSVT, temp, temp );
+        S = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                         DL,
+                         RHSVT,
+                         temp,
+                         temp );
       }
 
       // get abs() of input value, given sign as S (0 or -1)
@@ -4040,10 +2949,22 @@ AMDILTargetLowering::LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const
 
       // drop in the sign bit
       SDValue t = DAG.getNode( AMDILISD::BITCONV, DL, LONGVT, R );
-      SDValue thi = DAG.getNode( (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTVT, t );
-      SDValue tlo = DAG.getNode( (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTVT, t );
+      SDValue thi = DAG.getNode(
+        (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+        DL,
+        INTVT,
+        t );
+      SDValue tlo = DAG.getNode(
+        (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+        DL,
+        INTVT,
+        t );
       thi = DAG.getNode( ISD::OR, DL, INTVT, thi, Sbit );
-      t = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, LONGVT, tlo, thi );
+      t = DAG.getNode( (isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                       DL,
+                       LONGVT,
+                       tlo,
+                       thi );
       DST = DAG.getNode( AMDILISD::BITCONV, DL, LHSVT, t );
     } else {
       DST = SDValue(Op.getNode(), 0);
@@ -4073,35 +2994,45 @@ AMDILTargetLowering::LowerSUB(SDValue Op, SelectionDAG &DAG) const
     }
     SDValue LHSLO, LHSHI, RHSLO, RHSHI, INTLO, INTHI;
     // TODO: need to turn this into a bitcast of i64/v2i64 to v2i32/v4i32
-    LHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, LHS);
-    RHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, INTTY, RHS);
-    LHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTTY, LHS);
-    RHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, INTTY, RHS);
+    LHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                        DL,
+                        INTTY,
+                        LHS);
+    RHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+                        DL,
+                        INTTY,
+                        RHS);
+    LHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                        DL,
+                        INTTY,
+                        LHS);
+    RHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+                        DL,
+                        INTTY,
+                        RHS);
     INTLO = DAG.getNode(ISD::SUB, DL, INTTY, LHSLO, RHSLO);
     INTHI = DAG.getNode(ISD::SUB, DL, INTTY, LHSHI, RHSHI);
     //TODO: need to use IBORROW on HD5XXX and later hardware
     SDValue cmp;
     if (OVT == MVT::i64) {
-      cmp = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                        DAG.getConstant(CondCCodeToCC(ISD::SETULT, MVT::i32), MVT::i32),
-                        LHSLO, RHSLO);
+      cmp = DAG.getSetCC(DL, INTTY, LHSLO, RHSLO, ISD::SETULT);
     } else {
       SDValue cmplo;
       SDValue cmphi;
       SDValue LHSRLO = DAG.getNode(ISD::EXTRACT_VECTOR_ELT,
-                                   DL, MVT::i32, LHSLO, DAG.getTargetConstant(0, MVT::i32));
+                                   DL, MVT::i32, LHSLO,
+                                   DAG.getTargetConstant(0, MVT::i32));
       SDValue LHSRHI = DAG.getNode(ISD::EXTRACT_VECTOR_ELT,
-                                   DL, MVT::i32, LHSLO, DAG.getTargetConstant(1, MVT::i32));
+                                   DL, MVT::i32, LHSLO,
+                                   DAG.getTargetConstant(1, MVT::i32));
       SDValue RHSRLO = DAG.getNode(ISD::EXTRACT_VECTOR_ELT,
-                                   DL, MVT::i32, RHSLO, DAG.getTargetConstant(0, MVT::i32));
+                                   DL, MVT::i32, RHSLO,
+                                   DAG.getTargetConstant(0, MVT::i32));
       SDValue RHSRHI = DAG.getNode(ISD::EXTRACT_VECTOR_ELT,
-                                   DL, MVT::i32, RHSLO, DAG.getTargetConstant(1, MVT::i32));
-      cmplo = DAG.getNode(AMDILISD::CMP, DL, MVT::i32,
-                          DAG.getConstant(CondCCodeToCC(ISD::SETULT, MVT::i32), MVT::i32),
-                          LHSRLO, RHSRLO);
-      cmphi = DAG.getNode(AMDILISD::CMP, DL, MVT::i32,
-                          DAG.getConstant(CondCCodeToCC(ISD::SETULT, MVT::i32), MVT::i32),
-                          LHSRHI, RHSRHI);
+                                   DL, MVT::i32, RHSLO,
+                                   DAG.getTargetConstant(1, MVT::i32));
+      cmplo = DAG.getSetCC(DL, MVT::i32, LHSRLO, RHSRLO, ISD::SETULT);
+      cmphi = DAG.getSetCC(DL, MVT::i32, LHSRHI, RHSRHI, ISD::SETULT);
       cmp = DAG.getNode(AMDILISD::VBUILD, DL, MVT::v2i32, cmplo);
       cmp = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v2i32,
                         cmp, cmphi, DAG.getTargetConstant(1, MVT::i32));
@@ -4128,7 +3059,6 @@ AMDILTargetLowering::LowerFDIV(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerSDIV(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4146,7 +3076,6 @@ AMDILTargetLowering::LowerSDIV(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerUDIV(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4164,7 +3093,6 @@ AMDILTargetLowering::LowerUDIV(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerSREM(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4183,7 +3111,6 @@ AMDILTargetLowering::LowerSREM(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerUREM(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4202,7 +3129,6 @@ AMDILTargetLowering::LowerUREM(SDValue Op, SelectionDAG &DAG) const
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerMUL(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4210,10 +3136,12 @@ AMDILTargetLowering::LowerMUL(SDValue Op, SelectionDAG &DAG) const
   EVT OVT = Op.getValueType();
   SDValue DST;
   bool isVec = OVT.isVector();
-  if (OVT.getScalarType() != MVT::i64) {
+  if (OVT.getScalarType() != MVT::i64)
+  {
     DST = SDValue(Op.getNode(), 0);
   } else {
-    assert(OVT.getScalarType() == MVT::i64 && "Only 64 bit mul should be lowered!");
+    assert(
+      OVT.getScalarType() == MVT::i64 && "Only 64 bit mul should be lowered!");
     // TODO: This needs to be turned into a tablegen pattern
     SDValue LHS = Op.getOperand(0);
     SDValue RHS = Op.getOperand(1);
@@ -4223,18 +3151,26 @@ AMDILTargetLowering::LowerMUL(SDValue Op, SelectionDAG &DAG) const
       INTTY = MVT::v2i32;
     }
     // mul64(h1, l1, h0, l0)
-    SDValue LHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
-                                DL,
-                                INTTY, LHS);
-    SDValue LHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
-                                DL,
-                                INTTY, LHS);
-    SDValue RHSLO = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
-                                DL,
-                                INTTY, RHS);
-    SDValue RHSHI = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
-                                DL,
-                                INTTY, RHS);
+    SDValue LHSLO = DAG.getNode(
+      (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+      DL,
+      INTTY,
+      LHS);
+    SDValue LHSHI = DAG.getNode(
+      (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+      DL,
+      INTTY,
+      LHS);
+    SDValue RHSLO = DAG.getNode(
+      (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+      DL,
+      INTTY,
+      RHS);
+    SDValue RHSHI = DAG.getNode(
+      (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+      DL,
+      INTTY,
+      RHS);
     // MULLO_UINT_1 r1, h0, l1
     SDValue RHILLO = DAG.getNode(AMDILISD::UMUL,
                                  DL,
@@ -4296,43 +3232,42 @@ AMDILTargetLowering::LowerBUILD_VECTOR( SDValue Op, SelectionDAG &DAG ) const
     fourth = Op.getOperand(3);
     if (fourth.getOpcode() != ISD::UNDEF) {
       Nodes1 = DAG.getNode(
-                 ISD::INSERT_VECTOR_ELT,
-                 DL,
-                 Op.getValueType(),
-                 Nodes1,
-                 fourth,
-                 DAG.getConstant(7, MVT::i32));
+        ISD::INSERT_VECTOR_ELT,
+        DL,
+        Op.getValueType(),
+        Nodes1,
+        fourth,
+        DAG.getConstant(7, MVT::i32));
     }
   case 3:
     third = Op.getOperand(2);
     if (third.getOpcode() != ISD::UNDEF) {
       Nodes1 = DAG.getNode(
-                 ISD::INSERT_VECTOR_ELT,
-                 DL,
-                 Op.getValueType(),
-                 Nodes1,
-                 third,
-                 DAG.getConstant(6, MVT::i32));
+        ISD::INSERT_VECTOR_ELT,
+        DL,
+        Op.getValueType(),
+        Nodes1,
+        third,
+        DAG.getConstant(6, MVT::i32));
     }
   case 2:
     second = Op.getOperand(1);
     if (second.getOpcode() != ISD::UNDEF) {
       Nodes1 = DAG.getNode(
-                 ISD::INSERT_VECTOR_ELT,
-                 DL,
-                 Op.getValueType(),
-                 Nodes1,
-                 second,
-                 DAG.getConstant(5, MVT::i32));
+        ISD::INSERT_VECTOR_ELT,
+        DL,
+        Op.getValueType(),
+        Nodes1,
+        second,
+        DAG.getConstant(5, MVT::i32));
     }
     break;
   };
   return Nodes1;
 }
-
 SDValue
 AMDILTargetLowering::LowerINSERT_VECTOR_ELT(SDValue Op,
-    SelectionDAG &DAG) const
+                                            SelectionDAG &DAG) const
 {
   DebugLoc DL = Op.getDebugLoc();
   EVT VT = Op.getValueType();
@@ -4375,20 +3310,19 @@ AMDILTargetLowering::LowerINSERT_VECTOR_ELT(SDValue Op,
                               DL, VT, Op.getOperand(0), *ptr,
                               DAG.getTargetConstant(mask2, MVT::i32),
                               DAG.getTargetConstant(mask3, MVT::i32));
-      SDValue c = DAG.getNode(AMDILISD::CMP, DL, ptr->getValueType(),
-                              DAG.getConstant(AMDILCC::IL_CC_I_EQ, MVT::i32),
-                              Op.getOperand(2), DAG.getConstant(x, MVT::i32));
+      SDValue c = DAG.getSetCC(DL, getSetCCResultType(ptr->getValueType()),
+                               Op.getOperand(2),
+                               DAG.getConstant(x - 1, MVT::i32), ISD::SETEQ);
       c = DAG.getNode(AMDILISD::VBUILD, DL, Op.getValueType(), c);
-      res = DAG.getNode(AMDILISD::CMOVLOG, DL, VT, c, t, res);
+      res = DAG.getSelect(DL, VT, c, t, res);
     }
     DST = res;
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerEXTRACT_VECTOR_ELT(SDValue Op,
-    SelectionDAG &DAG) const
+                                             SelectionDAG &DAG) const
 {
   EVT VT = Op.getValueType();
   //printSDValue(Op, 1);
@@ -4421,22 +3355,19 @@ AMDILTargetLowering::LowerEXTRACT_VECTOR_ELT(SDValue Op,
       SDValue t = DAG.getNode(AMDILISD::VEXTRACT,
                               DL, VT, Op0,
                               DAG.getTargetConstant(x, MVT::i32));
-      SDValue c = DAG.getNode(AMDILISD::CMP,
-                              DL, Op1.getValueType(),
-                              DAG.getConstant(AMDILCC::IL_CC_I_EQ, MVT::i32),
-                              Op1, DAG.getConstant(x, MVT::i32));
-      res = DAG.getNode(AMDILISD::CMOVLOG, DL,
-                        VT, c, t, res);
-
+      SDValue c = DAG.getSetCC(DL, getSetCCResultType(Op1.getValueType()),
+                               Op1, DAG.getConstant(x - 1,
+                                                    MVT::i32), ISD::SETEQ);
+      res = DAG.getSelect(DL,
+                          VT, c, t, res);
     }
     Res = res;
   }
   return Res;
 }
-
 SDValue
 AMDILTargetLowering::LowerEXTRACT_SUBVECTOR(SDValue Op,
-    SelectionDAG &DAG) const
+                                            SelectionDAG &DAG) const
 {
   uint32_t vecSize = Op.getValueType().getVectorNumElements();
   SDValue src = Op.getOperand(0);
@@ -4481,7 +3412,7 @@ AMDILTargetLowering::LowerEXTRACT_SUBVECTOR(SDValue Op,
 }
 SDValue
 AMDILTargetLowering::LowerSCALAR_TO_VECTOR(SDValue Op,
-    SelectionDAG &DAG) const
+                                           SelectionDAG &DAG) const
 {
   SDValue Res = DAG.getNode(AMDILISD::VBUILD,
                             Op.getDebugLoc(),
@@ -4490,27 +3421,42 @@ AMDILTargetLowering::LowerSCALAR_TO_VECTOR(SDValue Op,
   return Res;
 }
 SDValue
-AMDILTargetLowering::LowerAND(SDValue Op, SelectionDAG &DAG) const
+AMDILTargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const
 {
-  SDValue andOp;
-  andOp = DAG.getNode(
-            AMDILISD::AND,
-            Op.getDebugLoc(),
-            Op.getValueType(),
-            Op.getOperand(0),
-            Op.getOperand(1));
-  return andOp;
-}
-SDValue
-AMDILTargetLowering::LowerOR(SDValue Op, SelectionDAG &DAG) const
-{
-  SDValue orOp;
-  orOp = DAG.getNode(AMDILISD::OR,
-                     Op.getDebugLoc(),
-                     Op.getValueType(),
-                     Op.getOperand(0),
-                     Op.getOperand(1));
-  return orOp;
+  ISD::CondCode CC = dyn_cast<CondCodeSDNode>(Op.getOperand(2))->get();
+  SDValue LHS = Op.getOperand(0);
+  SDValue RHS = Op.getOperand(1);
+  DebugLoc DL = Op.getDebugLoc();
+  EVT OpVT = Op.getValueType();
+  if (!OpVT.isVector()) return SDValue();
+  EVT OpSVT = OpVT.getScalarType();
+  EVT SVT = LHS.getValueType().getScalarType();
+  EVT ccSVT = getSetCCResultType(SVT);
+  assert((SVT == MVT::f64 || SVT == MVT::i64) &&
+         "we don't support expansion of SetCC on non-64bit types!");
+  SDValue ccOp;
+  for (unsigned x = 0, y = OpVT.getVectorNumElements(); x < y; ++x) {
+    SDValue lhsComp = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, SVT,
+                                  LHS, DAG.getTargetConstant(x, MVT::i32));
+    SDValue rhsComp = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, SVT,
+                                  RHS, DAG.getTargetConstant(x, MVT::i32));
+    SDValue opComp = DAG.getSetCC(DL, ccSVT, lhsComp, rhsComp, CC);
+    // Need to handle the case where we are splitting up a
+    // setCC where the result is less than 32bits.
+    if (ccSVT != OpSVT && SVT.isInteger()) {
+      opComp = DAG.getSExtOrTrunc(opComp, DL, OpSVT);
+    }
+    if (!x) {
+      ccOp = DAG.getNode(AMDILISD::VBUILD, DL, OpVT, opComp);
+    } else {
+      ccOp = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, OpVT,
+                         ccOp, opComp, DAG.getTargetConstant(x, MVT::i32));
+    }
+  }
+  if (OpSVT != SVT) {
+    ccOp = DAG.getSExtOrTrunc(ccOp, DL, OpVT);
+  }
+  return ccOp;
 }
 SDValue
 AMDILTargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const
@@ -4519,11 +3465,10 @@ AMDILTargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const
   SDValue LHS = Op.getOperand(1);
   SDValue RHS = Op.getOperand(2);
   DebugLoc DL = Op.getDebugLoc();
-  Cond = getConversionNode(DAG, Cond, Op, true);
-  Cond = DAG.getNode(AMDILISD::CMOVLOG,
-                     DL,
-                     Op.getValueType(), Cond, LHS, RHS);
-  return Cond;
+  if (LHS.getValueType().isVector()) {
+    return DAG.getNode(ISD::VSELECT, DL, Op.getValueType(), Cond, LHS, RHS);
+  }
+  return SDValue();
 }
 SDValue
 AMDILTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
@@ -4542,74 +3487,36 @@ AMDILTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   // Check for possible elimination of cmov
   if (TRUE.getValueType().getSimpleVT().SimpleTy == MVT::i32) {
     const ConstantSDNode *trueConst
-    = dyn_cast<ConstantSDNode>( TRUE.getNode() );
+      = dyn_cast<ConstantSDNode>( TRUE.getNode() );
     const ConstantSDNode *falseConst
-    = dyn_cast<ConstantSDNode>( FALSE.getNode() );
+      = dyn_cast<ConstantSDNode>( FALSE.getNode() );
     if (trueConst && falseConst) {
       // both possible result values are constants
       if (trueConst->isAllOnesValue()
           && falseConst->isNullValue()) { // and convenient constants
         skipCMov = true;
-      } else if (trueConst->isNullValue()
-                 && falseConst->isAllOnesValue()) { // less convenient
+      }
+      else if (trueConst->isNullValue()
+               && falseConst->isAllOnesValue()) { // less convenient
         skipCMov = true;
         genINot = true;
       }
     }
   }
   ISD::CondCode SetCCOpcode = cast<CondCodeSDNode>(CC)->get();
-  unsigned int AMDILCC = CondCCodeToCC(
-                           SetCCOpcode,
-                           LHS.getValueType().getSimpleVT().SimpleTy);
-  assert((AMDILCC != AMDILCC::COND_ERROR) && "Invalid SetCC!");
-  Cond = DAG.getNode(
-           AMDILISD::CMP,
-           DL,
-           LHS.getValueType(),
-           DAG.getConstant(AMDILCC, MVT::i32),
-           LHS,
-           RHS);
-  Cond = getConversionNode(DAG, Cond, Op, true);
+  Cond = DAG.getSetCC(DL, getSetCCResultType(LHS.getValueType()),
+                      LHS, RHS, SetCCOpcode);
   if (genINot) {
-    Cond = DAG.getNode(AMDILISD::NOT, DL, OVT, Cond);
+    Cond = DAG.getNode(ISD::XOR, DL, OVT, Cond, DAG.getConstant(-1, OVT));
   }
   if (!skipCMov) {
-    Cond = DAG.getNode(AMDILISD::CMOVLOG, DL, OVT, Cond, TRUE, FALSE);
+    Cond = DAG.getSelect(DL, OVT, Cond, TRUE, FALSE);
   }
   return Cond;
 }
 SDValue
-AMDILTargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const
-{
-  SDValue Cond;
-  SDValue LHS = Op.getOperand(0);
-  SDValue RHS = Op.getOperand(1);
-  SDValue CC  = Op.getOperand(2);
-  DebugLoc DL = Op.getDebugLoc();
-  ISD::CondCode SetCCOpcode = cast<CondCodeSDNode>(CC)->get();
-  unsigned int AMDILCC = CondCCodeToCC(
-                           SetCCOpcode,
-                           LHS.getValueType().getSimpleVT().SimpleTy);
-  assert((AMDILCC != AMDILCC::COND_ERROR) && "Invalid SetCC!");
-  Cond = DAG.getNode(
-           AMDILISD::CMP,
-           DL,
-           LHS.getValueType(),
-           DAG.getConstant(AMDILCC, MVT::i32),
-           LHS,
-           RHS);
-  Cond = getConversionNode(DAG, Cond, Op, true);
-  Cond = DAG.getNode(
-           ISD::AND,
-           DL,
-           Cond.getValueType(),
-           DAG.getConstant(1, Cond.getValueType()),
-           Cond);
-  return Cond;
-}
-
-SDValue
-AMDILTargetLowering::LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const
+AMDILTargetLowering::LowerSIGN_EXTEND_INREG(SDValue Op,
+                                            SelectionDAG &DAG) const
 {
   SDValue Data = Op.getOperand(0);
   VTSDNode *BaseType = cast<VTSDNode>(Op.getOperand(1));
@@ -4661,7 +3568,6 @@ AMDILTargetLowering::genIntType(uint32_t size, uint32_t numEle) const
     }
   }
 }
-
 SDValue
 AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4733,16 +3639,28 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         w = DAG.getNode(ISD::SHL, DL, MVT::i32, w, const16);
         x = DAG.getNode(ISD::OR, DL, MVT::i32, x, y);
         y = DAG.getNode(ISD::OR, DL, MVT::i32, z, w);
-        Res = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE, DL, MVT::i64, x, y);
+        Res = DAG.getNode((isVec) ? AMDILISD::LCREATE2 : AMDILISD::LCREATE,
+                          DL,
+                          MVT::i64,
+                          x,
+                          y);
         return Res;
       } else {
         // case 2
-        SDValue lo = DAG.getNode((isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO, DL, MVT::i32, Src);
+        SDValue lo = DAG.getNode(
+          (isVec) ? AMDILISD::LCOMPLO2 : AMDILISD::LCOMPLO,
+          DL,
+          MVT::i32,
+          Src);
         SDValue lor16
-        = DAG.getNode(ISD::SRL, DL, MVT::i32, lo, const16);
-        SDValue hi = DAG.getNode((isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI, DL, MVT::i32, Src);
+          = DAG.getNode(ISD::SRL, DL, MVT::i32, lo, const16);
+        SDValue hi = DAG.getNode(
+          (isVec) ? AMDILISD::LCOMPHI2 : AMDILISD::LCOMPHI,
+          DL,
+          MVT::i32,
+          Src);
         SDValue hir16
-        = DAG.getNode(ISD::SRL, DL, MVT::i32, hi, const16);
+          = DAG.getNode(ISD::SRL, DL, MVT::i32, hi, const16);
         SDValue resVec = DAG.getNode(AMDILISD::VBUILD, DL,
                                      MVT::v4i32, lo);
         SDValue idxVal = DAG.getNode(ISD::ZERO_EXTEND, DL,
@@ -4787,7 +3705,7 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         SDValue res = DAG.getSExtOrTrunc(Src, DL, IntTy);
 #else
         SDValue res = DAG.getNode(AMDILISD::VBUILD, DL, IntTy,
-                                  DAG.getConstant(0, IntTy));
+                                  DAG.getConstant(0, IntTy.getScalarType()));
         for (uint32_t x = 0; x < SrcNumEle; ++x) {
           SDValue idx = DAG.getNode(ISD::ZERO_EXTEND, DL,
                                     MVT::i32, DAG.getConstant(x, MVT::i32));
@@ -4800,7 +3718,8 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         }
 #endif
         SDValue mask = DAG.getNode(AMDILISD::VBUILD, DL, IntTy,
-                                   DAG.getConstant((1 << ScalarSrcSize) - 1, MVT::i32));
+                                   DAG.getConstant((1 << ScalarSrcSize) - 1,
+                                                   MVT::i32));
         SDValue *newEle = new SDValue[SrcNumEle];
         res = DAG.getNode(ISD::AND, DL, IntTy, res, mask);
         for (uint32_t x = 0; x < SrcNumEle; ++x) {
@@ -4819,12 +3738,14 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         }
         for (uint32_t x = 0; x < SrcNumEle; x += 2) {
           newEle[x] = DAG.getNode(ISD::OR, DL,
-                                  IntTy.getScalarType(), newEle[x], newEle[x + 1]);
+                                  IntTy.getScalarType(), newEle[x],
+                                  newEle[x + 1]);
         }
         if (ScalarSrcSize == 8) {
           for (uint32_t x = 0; x < SrcNumEle; x += 4) {
             newEle[x] = DAG.getNode(ISD::OR, DL,
-                                    IntTy.getScalarType(), newEle[x], newEle[x + 2]);
+                                    IntTy.getScalarType(), newEle[x],
+                                    newEle[x + 2]);
           }
           if (DstNumEle == 1) {
             Dst = newEle[0];
@@ -4858,7 +3779,7 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         // case 2:
         EVT IntTy = genIntType(ScalarSrcSize, DstNumEle);
         SDValue vec = DAG.getNode(AMDILISD::VBUILD, DL, IntTy,
-                                  DAG.getConstant(0, IntTy));
+                                  DAG.getConstant(0, IntTy.getScalarType()));
         uint32_t mult = (ScalarDstSize == 8) ? 4 : 2;
         for (uint32_t x = 0; x < SrcNumEle; ++x) {
           for (uint32_t y = 0; y < mult; ++y) {
@@ -4920,9 +3841,11 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
         SDValue *numEle = new SDValue[DstNumEle];
         for (uint32_t x = 0; x < SrcNumEle; ++x) {
           numEle[x * 2] = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL,
-                                      MVT::i16, Src, DAG.getConstant(x, MVT::i32));
+                                      MVT::i16, Src,
+                                      DAG.getConstant(x, MVT::i32));
           numEle[x * 2 + 1] = DAG.getNode(ISD::SRL, DL, MVT::i16,
-                                          numEle[x * 2], DAG.getConstant(8, MVT::i16));
+                                          numEle[x * 2],
+                                          DAG.getConstant(8, MVT::i16));
         }
         MVT ty = (SrcNumEle == 1) ? MVT::v2i16 : MVT::v4i16;
         Dst = DAG.getNode(AMDILISD::VBUILD, DL, ty, numEle[0]);
@@ -4944,10 +3867,9 @@ AMDILTargetLowering::LowerBITCAST(SDValue Op, SelectionDAG &DAG) const
                     Dst.getValueType(), Src);
   return Res;
 }
-
 SDValue
 AMDILTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
-    SelectionDAG &DAG) const
+                                             SelectionDAG &DAG) const
 {
   SDValue Chain = Op.getOperand(0);
   SDValue Size = Op.getOperand(1);
@@ -4963,24 +3885,24 @@ AMDILTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
                            DL,
                            SPReg, NewSP);
   SDValue Ops[2] = {NewSP, Chain};
-  Chain = DAG.getMergeValues(Ops, 2 ,DL);
+  Chain = DAG.getMergeValues(Ops, 2,DL);
   return Chain;
 }
 SDValue
 AMDILTargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) const
 {
   SDValue Chain = Op.getOperand(0);
+  SDValue Entry = Op.getOperand(1);
   SDValue Cond  = Op.getOperand(1);
   SDValue Jump  = Op.getOperand(2);
   SDValue Result;
   Result = DAG.getNode(
-             AMDILISD::BRANCH_COND,
-             Op.getDebugLoc(),
-             Op.getValueType(),
-             Chain, Jump, Cond);
+    AMDILISD::BRANCH_COND,
+    Op.getDebugLoc(),
+    Op.getValueType(),
+    Chain, Jump, Cond);
   return Result;
 }
-
 SDValue
 AMDILTargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const
 {
@@ -4992,44 +3914,35 @@ AMDILTargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const
   SDValue CmpValue;
   ISD::CondCode CC = CCNode->get();
   SDValue Result;
-  unsigned int cmpOpcode = CondCCodeToCC(
-                             CC,
-                             LHS.getValueType().getSimpleVT().SimpleTy);
-  CmpValue = DAG.getNode(
-               AMDILISD::CMP,
-               Op.getDebugLoc(),
-               LHS.getValueType(),
-               DAG.getConstant(cmpOpcode, MVT::i32),
-               LHS, RHS);
+  CmpValue = DAG.getSetCC(Op.getDebugLoc(), getSetCCResultType(LHS.getValueType()),
+                          LHS, RHS, CC);
   Result = DAG.getNode(
-             AMDILISD::BRANCH_COND,
-             CmpValue.getDebugLoc(),
-             MVT::Other, Chain,
-             JumpT, CmpValue);
+    AMDILISD::BRANCH_COND,
+    CmpValue.getDebugLoc(),
+    MVT::Other, Chain,
+    JumpT, CmpValue);
   return Result;
 }
-
 SDValue
 AMDILTargetLowering::LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const
 {
   SDValue Result = DAG.getNode(
-                     AMDILISD::DP_TO_FP,
-                     Op.getDebugLoc(),
-                     Op.getValueType(),
-                     Op.getOperand(0),
-                     Op.getOperand(1));
+    AMDILISD::DP_TO_FP,
+    Op.getDebugLoc(),
+    Op.getValueType(),
+    Op.getOperand(0),
+    Op.getOperand(1));
   return Result;
 }
-
 SDValue
 AMDILTargetLowering::LowerCONCAT_VECTORS(SDValue Op, SelectionDAG &DAG) const
 {
   SDValue Result = DAG.getNode(
-                     AMDILISD::VCONCAT,
-                     Op.getDebugLoc(),
-                     Op.getValueType(),
-                     Op.getOperand(0),
-                     Op.getOperand(1));
+    AMDILISD::VCONCAT,
+    Op.getDebugLoc(),
+    Op.getValueType(),
+    Op.getOperand(0),
+    Op.getOperand(1));
   return Result;
 }
 // LowerRET - Lower an ISD::RET node.
@@ -5068,7 +3981,7 @@ const
   SDValue Flag;
   SmallVector<SDValue, 6> RetOps;
   RetOps.push_back(Chain);
-  RetOps.push_back(DAG.getConstant(0/*getBytesToPopOnReturn()*/, MVT::i32));
+  RetOps.push_back(DAG.getConstant(0 /*getBytesToPopOnReturn()*/, MVT::i32));
   for (unsigned int i = 0, e = RVLocs.size(); i != e; ++i) {
     CCValAssign &VA = RVLocs[i];
     SDValue ValToCopy = OutVals[i];
@@ -5097,163 +4010,20 @@ const
                      MVT::Other, &RetOps[0], RetOps.size());
   return Flag;
 }
-void
-AMDILTargetLowering::generateLongRelational(MachineInstr *MI,
-    unsigned int opCode) const
-{
-  MachineOperand DST = MI->getOperand(0);
-  MachineOperand LHS = MI->getOperand(2);
-  MachineOperand RHS = MI->getOperand(3);
-  unsigned int opi32Code = 0, si32Code = 0;
-  unsigned int simpleVT = MI->getDesc().OpInfo[0].RegClass;
-  uint32_t REGS[12];
-  switch (simpleVT)  {
-  case AMDIL::GPRI64RegClassID:
-    simpleVT = AMDIL::GPRI32RegClassID;
-    break;
-  case AMDIL::GPRV2I64RegClassID:
-    simpleVT = AMDIL::GPRV2I64RegClassID;
-    break;
-  };
-  // All the relationals can be generated with with 6 temp registers
-  for (int x = 0; x < 12; ++x) {
-    REGS[x] = genVReg(simpleVT);
-  }
-  // Pull out the high and low components of each 64 bit register
-  generateMachineInst(AMDIL::LHI, REGS[0], LHS.getReg());
-  generateMachineInst(AMDIL::LLO, REGS[1], LHS.getReg());
-  generateMachineInst(AMDIL::LHI, REGS[2], RHS.getReg());
-  generateMachineInst(AMDIL::LLO, REGS[3], RHS.getReg());
-  // Determine the correct opcode that we should use
-  switch(opCode) {
-  default:
-    assert(!"comparison case not handled!");
-    break;
-  case AMDIL::LEQ:
-    si32Code = opi32Code = AMDIL::IEQ;
-    break;
-  case AMDIL::LNE:
-    si32Code = opi32Code = AMDIL::INE;
-    break;
-  case AMDIL::LLE:
-  case AMDIL::ULLE:
-  case AMDIL::LGE:
-  case AMDIL::ULGE:
-    if (opCode == AMDIL::LGE || opCode == AMDIL::ULGE) {
-      std::swap(REGS[0], REGS[2]);
-    } else {
-      std::swap(REGS[1], REGS[3]);
-    }
-    if (opCode == AMDIL::LLE || opCode == AMDIL::LGE) {
-      opi32Code = AMDIL::ILT;
-    } else {
-      opi32Code = AMDIL::ULT;
-    }
-    si32Code = AMDIL::UGE;
-    break;
-  case AMDIL::LGT:
-  case AMDIL::ULGT:
-    std::swap(REGS[0], REGS[2]);
-    std::swap(REGS[1], REGS[3]);
-  case AMDIL::LLT:
-  case AMDIL::ULLT:
-    if (opCode == AMDIL::LGT || opCode == AMDIL::LLT) {
-      opi32Code = AMDIL::ILT;
-    } else {
-      opi32Code = AMDIL::ULT;
-    }
-    si32Code = AMDIL::ULT;
-    break;
-  };
-  // Do the initial opcode on the high and low components.
-  // This leaves the following:
-  // REGS[4] = L_HI OP R_HI
-  // REGS[5] = L_LO OP R_LO
-  generateMachineInst(opi32Code, REGS[4], REGS[0], REGS[2]);
-  generateMachineInst(si32Code, REGS[5], REGS[1], REGS[3]);
-  switch(opi32Code) {
-  case AMDIL::IEQ:
-  case AMDIL::INE: {
-    // combine the results with an and or or depending on if
-    // we are eq or ne
-    uint32_t combineOp = (opi32Code == AMDIL::IEQ)
-                         ? AMDIL::BINARY_AND_i32 : AMDIL::BINARY_OR_i32;
-    generateMachineInst(combineOp, REGS[11], REGS[4], REGS[5]);
-  }
-  break;
-  default:
-    // this finishes codegen for the following pattern
-    // REGS[4] || (REGS[5] && (L_HI == R_HI))
-    generateMachineInst(AMDIL::IEQ, REGS[9], REGS[0], REGS[2]);
-    generateMachineInst(AMDIL::BINARY_AND_i32, REGS[10], REGS[5],
-                        REGS[9]);
-    generateMachineInst(AMDIL::BINARY_OR_i32, REGS[11], REGS[4],
-                        REGS[10]);
-    break;
-  }
-  generateMachineInst(AMDIL::LCREATE, DST.getReg(), REGS[11], REGS[11]);
-}
-
 unsigned int
 AMDILTargetLowering::getFunctionAlignment(const Function *) const
 {
   return 0;
 }
-
 bool
 AMDILTargetLowering::isLoadBitCastBeneficial(EVT lVT, EVT bVT) const
 {
   return !(lVT.getSizeInBits() == bVT.getSizeInBits()
-           && lVT.getScalarType().getSizeInBits() > bVT.getScalarType().getSizeInBits()
+           && lVT.getScalarType().getSizeInBits() >
+           bVT.getScalarType().getSizeInBits()
            && bVT.getScalarType().getSizeInBits() < 32
            && lVT.getScalarType().getSizeInBits() >= 32);
 }
-
-void
-AMDILTargetLowering::setPrivateData(MachineBasicBlock *BB,
-                                    MachineBasicBlock::iterator &BBI,
-                                    DebugLoc *DL, const TargetInstrInfo *TII) const
-{
-  mBB = BB;
-  mBBI = BBI;
-  mDL = DL;
-  mTII = TII;
-}
-uint32_t
-AMDILTargetLowering::genVReg(uint32_t regType) const
-{
-  return mBB->getParent()->getRegInfo().createVirtualRegister(
-           getRegClassFromID(regType));
-}
-
-MachineInstrBuilder
-AMDILTargetLowering::generateMachineInst(uint32_t opcode, uint32_t dst) const
-{
-  return BuildMI(*mBB, mBBI, *mDL, mTII->get(opcode), dst);
-}
-
-MachineInstrBuilder
-AMDILTargetLowering::generateMachineInst(uint32_t opcode, uint32_t dst,
-    uint32_t src1) const
-{
-  return generateMachineInst(opcode, dst).addReg(src1);
-}
-
-MachineInstrBuilder
-AMDILTargetLowering::generateMachineInst(uint32_t opcode, uint32_t dst,
-    uint32_t src1, uint32_t src2) const
-{
-  return generateMachineInst(opcode, dst, src1).addReg(src2);
-}
-
-MachineInstrBuilder
-AMDILTargetLowering::generateMachineInst(uint32_t opcode, uint32_t dst,
-    uint32_t src1, uint32_t src2, uint32_t src3) const
-{
-  return generateMachineInst(opcode, dst, src1, src2).addReg(src3);
-}
-
-
 SDValue
 AMDILTargetLowering::LowerSDIV24(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5298,7 +4068,10 @@ AMDILTargetLowering::LowerSDIV24(SDValue Op, SelectionDAG &DAG) const
   SDValue fb = DAG.getNode(ISD::SINT_TO_FP, DL, FLTTY, ib);
 
   // float fq = native_divide(fa, fb);
-  SDValue fq = DAG.getNode(AMDILISD::DIV_INF, DL, FLTTY, fa, fb);
+  SDValue fq = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, FLTTY,
+                           DAG.getEntryNode(),
+                           DAG.getConstant(AMDILIntrinsic::AMDIL_div, MVT::i32),
+                           fa, fb);
 
   // fq = trunc(fq);
   fq = DAG.getNode(ISD::FTRUNC, DL, FLTTY, fq);
@@ -5307,7 +4080,10 @@ AMDILTargetLowering::LowerSDIV24(SDValue Op, SelectionDAG &DAG) const
   SDValue fqneg = DAG.getNode(ISD::FNEG, DL, FLTTY, fq);
 
   // float fr = mad(fqneg, fb, fa);
-  SDValue fr = DAG.getNode(AMDILISD::MAD, DL, FLTTY, fqneg, fb, fa);
+  SDValue fr = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, FLTTY,
+                           DAG.getEntryNode(),
+                           DAG.getConstant(AMDILIntrinsic::AMDIL_mad, MVT::i32),
+                           fqneg, fb, fa);
 
   // int iq = (int)fq;
   SDValue iq = DAG.getNode(ISD::FP_TO_SINT, DL, INTTY, fq);
@@ -5319,15 +4095,14 @@ AMDILTargetLowering::LowerSDIV24(SDValue Op, SelectionDAG &DAG) const
   fb = DAG.getNode(ISD::FABS, DL, FLTTY, fb);
 
   // int cv = fr >= fb;
-  SDValue cv = DAG.getSetCC(DL, OVT, fr, fb, ISD::SETOGE);
+  SDValue cv = DAG.getSetCC(DL, INTTY, fr, fb, ISD::SETGE);
   // jq = (cv ? jq : 0);
-  jq = DAG.getNode(AMDILISD::CMOVLOG, DL, OVT, cv, jq, DAG.getConstant(0, OVT));
+  jq = DAG.getSelect(DL, OVT, cv, jq, DAG.getConstant(0, OVT));
   // dst = iq + jq;
   iq = DAG.getSExtOrTrunc(iq, DL, OVT);
   iq = DAG.getNode(ISD::ADD, DL, OVT, iq, jq);
   return iq;
 }
-
 SDValue
 AMDILTargetLowering::LowerSDIV32(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5356,15 +4131,9 @@ AMDILTargetLowering::LowerSDIV32(SDValue Op, SelectionDAG &DAG) const
   SDValue r1 = RHS;
 
   // ilt r10, r0, 0
-  SDValue r10 = DAG.getNode(AMDILISD::CMP, DL, OVT,
-                            DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::i32), MVT::i32),
-                            r0, DAG.getConstant(0, OVT));
-
+  SDValue r10 = DAG.getSetCC(DL, OVT, r0, DAG.getConstant(0, OVT), ISD::SETLT);
   // ilt r11, r1, 0
-  SDValue r11 = DAG.getNode(AMDILISD::CMP, DL, OVT,
-                            DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::i32), MVT::i32),
-                            r1, DAG.getConstant(0, OVT));
-
+  SDValue r11 = DAG.getSetCC(DL, OVT, r1, DAG.getConstant(0, OVT), ISD::SETLT);
   // iadd r0, r0, r10
   r0 = DAG.getNode(ISD::ADD, DL, OVT, r0, r10);
 
@@ -5390,13 +4159,11 @@ AMDILTargetLowering::LowerSDIV32(SDValue Op, SelectionDAG &DAG) const
   SDValue DST = DAG.getNode(ISD::XOR, DL, OVT, r0, r10);
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerSDIV64(SDValue Op, SelectionDAG &DAG) const
 {
   return SDValue(Op.getNode(), 0);
 }
-
 SDValue
 AMDILTargetLowering::LowerUDIV24(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5441,37 +4208,35 @@ AMDILTargetLowering::LowerUDIV24(SDValue Op, SelectionDAG &DAG) const
   SDValue fb = DAG.getNode(ISD::SINT_TO_FP, DL, FLTTY, ib);
 
   // float fq = native_divide(fa, fb)
-  SDValue fq = DAG.getNode(AMDILISD::DIV_INF, DL, FLTTY, fa, fb);
+  SDValue fq = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, FLTTY,
+                           DAG.getEntryNode(),
+                           DAG.getConstant(AMDILIntrinsic::AMDIL_div, MVT::i32),
+                           fa, fb);
 
   // fq = trunc(fq)
   fq = DAG.getNode(ISD::FTRUNC, DL, FLTTY, fq);
 
   // float t = mad(fq, fb, fb)
-  SDValue t = DAG.getNode(AMDILISD::MAD, DL, FLTTY, fq, fb, fb);
+  SDValue t = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, FLTTY,
+                          DAG.getEntryNode(),
+                          DAG.getConstant(AMDILIntrinsic::AMDIL_mad, MVT::i32),
+                          fq, fb, fb);
 
   // int iq = (int)fq - (t <= fa) // This is sub and not add because GPU returns 0, -1
   SDValue iq;
   fq = DAG.getNode(ISD::FP_TO_SINT, DL, INTTY, fq);
-  if (INTTY == MVT::i32) {
-    iq = DAG.getSetCC(DL, INTTY, t, fa, ISD::SETOLE);
-  } else {
-    iq = DAG.getSetCC(DL, INTTY, t, fa, ISD::SETOLE);
-  }
-  iq = DAG.getNode(ISD::ADD, DL, INTTY, fq, iq);
-
+  iq = DAG.getSetCC(DL, INTTY, t, fa, ISD::SETLE);
+  iq = DAG.getNode(ISD::SUB, DL, INTTY, fq, iq);
 
   // return (type)iq
   iq = DAG.getZExtOrTrunc(iq, DL, OVT);
   return iq;
-
 }
-
 SDValue
 AMDILTargetLowering::LowerUDIV32(SDValue Op, SelectionDAG &DAG) const
 {
   return SDValue(Op.getNode(), 0);
 }
-
 SDValue
 AMDILTargetLowering::LowerUDIV64(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5494,7 +4259,6 @@ AMDILTargetLowering::LowerSREM8(SDValue Op, SelectionDAG &DAG) const
   LHS = DAG.getSExtOrTrunc(LHS, DL, OVT);
   return LHS;
 }
-
 SDValue
 AMDILTargetLowering::LowerSREM16(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5512,7 +4276,6 @@ AMDILTargetLowering::LowerSREM16(SDValue Op, SelectionDAG &DAG) const
   LHS = DAG.getSExtOrTrunc(LHS, DL, OVT);
   return LHS;
 }
-
 SDValue
 AMDILTargetLowering::LowerSREM32(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5542,14 +4305,9 @@ AMDILTargetLowering::LowerSREM32(SDValue Op, SelectionDAG &DAG) const
   SDValue r1 = RHS;
 
   // ilt r10, r0, 0
-  SDValue r10 = DAG.getNode(AMDILISD::CMP, DL, OVT,
-                            DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::i32), MVT::i32),
-                            r0, DAG.getConstant(0, OVT));
-
+  SDValue r10 = DAG.getSetCC(DL, OVT, r0, DAG.getConstant(0, OVT), ISD::SETLT);
   // ilt r11, r1, 0
-  SDValue r11 = DAG.getNode(AMDILISD::CMP, DL, OVT,
-                            DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::i32), MVT::i32),
-                            r1, DAG.getConstant(0, OVT));
+  SDValue r11 = DAG.getSetCC(DL, OVT, r1, DAG.getConstant(0, OVT), ISD::SETLT);
 
   // iadd r0, r0, r10
   r0 = DAG.getNode(ISD::ADD, DL, OVT, r0, r10);
@@ -5579,13 +4337,11 @@ AMDILTargetLowering::LowerSREM32(SDValue Op, SelectionDAG &DAG) const
   SDValue DST = DAG.getNode(ISD::XOR, DL, OVT, r0, r10);
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerSREM64(SDValue Op, SelectionDAG &DAG) const
 {
   return SDValue(Op.getNode(), 0);
 }
-
 SDValue
 AMDILTargetLowering::LowerUREM8(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5626,15 +4382,15 @@ AMDILTargetLowering::LowerUREM8(SDValue Op, SelectionDAG &DAG) const
                             DAG.getConstant(0xFF, INTTY));
 
   // cmov_logical r3, r11, r11, 0x1
-  SDValue r3 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, r11, r11,
-                           DAG.getConstant(0x01, INTTY));
+  SDValue r3 = DAG.getSelect(DL, INTTY, r11, r11,
+                             DAG.getConstant(0x01, INTTY));
 
   // udiv r3, r10, r3
   r3 = DAG.getNode(ISD::UREM, DL, INTTY, r10, r3);
 
   // cmov_logical r3, r11, r3, 0
-  r3 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, r11, r3,
-                   DAG.getConstant(0, INTTY));
+  r3 = DAG.getSelect(DL, INTTY, r11, r3,
+                     DAG.getConstant(0, INTTY));
 
   // umul r3, r3, r11
   r3 = DAG.getNode(AMDILISD::UMUL, DL, INTTY, r3, r11);
@@ -5648,7 +4404,6 @@ AMDILTargetLowering::LowerUREM8(SDValue Op, SelectionDAG &DAG) const
   DST = DAG.getZExtOrTrunc(DST, DL, OVT);
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerUREM16(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5691,8 +4446,8 @@ AMDILTargetLowering::LowerUREM16(SDValue Op, SelectionDAG &DAG) const
                             DAG.getConstant(0xFFFF, OVT));
 
   // cmov_logical r3, r11, r11, 0x1
-  SDValue r3 = DAG.getNode(AMDILISD::CMOVLOG, DL, OVT, r11, r11,
-                           DAG.getConstant(0x01, OVT));
+  SDValue r3 = DAG.getSelect(DL, OVT, r11, r11,
+                             DAG.getConstant(0x01, OVT));
 
   // udiv as_u16(r3), as_u32(r10), as_u32(r3)
   r10 = DAG.getZExtOrTrunc(r10, DL, INTTY);
@@ -5706,8 +4461,8 @@ AMDILTargetLowering::LowerUREM16(SDValue Op, SelectionDAG &DAG) const
                    DAG.getConstant(0xFFFF, OVT));
 
   // cmov_logical r3, r11, r3, 0
-  r3 = DAG.getNode(AMDILISD::CMOVLOG, DL, OVT, r11, r3,
-                   DAG.getConstant(0, OVT));
+  r3 = DAG.getSelect(DL, OVT, r11, r3,
+                     DAG.getConstant(0, OVT));
   // umul r3, r3, r11
   r3 = DAG.getNode(AMDILISD::UMUL, DL, OVT, r3, r11);
 
@@ -5719,7 +4474,6 @@ AMDILTargetLowering::LowerUREM16(SDValue Op, SelectionDAG &DAG) const
                             DAG.getConstant(0xFFFF, OVT));
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerUREM32(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5742,14 +4496,11 @@ AMDILTargetLowering::LowerUREM32(SDValue Op, SelectionDAG &DAG) const
   SDValue DST = DAG.getNode(ISD::SUB, DL, OVT, LHS, r20);
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerUREM64(SDValue Op, SelectionDAG &DAG) const
 {
   return SDValue(Op.getNode(), 0);
 }
-
-
 SDValue
 AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
 {
@@ -5765,7 +4516,7 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
   SDValue RHS = Op.getOperand(1);
   SDValue DST;
   const AMDILSubtarget *stm = reinterpret_cast<const AMDILTargetMachine*>(
-                                &this->getTargetMachine())->getSubtargetImpl();
+    &this->getTargetMachine())->getSubtargetImpl();
   if (stm->device()->getGeneration() == AMDILDeviceInfo::HD4XXX) {
     // TODO: This doesn't work for vector types yet
     // The LowerFDIV32 function generates equivalent to the following
@@ -5834,25 +4585,23 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
                               DAG.getConstant(0x807FFFFF, INTTY));
 
     // ieq r40, r30, 0x7F800000
-    SDValue R40 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              R30, DAG.getConstant(0x7F800000, INTTY));
+    SDValue R40 =
+      DAG.getSetCC(DL, INTTY, R30, DAG.getConstant(0x7F800000,
+                                                   INTTY), ISD::SETEQ);
 
     // ieq r41, r31, 0x7F800000
-    SDValue R41 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              R31, DAG.getConstant(0x7F800000, INTTY));
+    SDValue R41 =
+      DAG.getSetCC(DL, INTTY, R31, DAG.getConstant(0x7F800000,
+                                                   INTTY), ISD::SETEQ);
 
     // ieq r42, r30, 0
-    SDValue R42 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              R30, DAG.getConstant(0, INTTY));
-
+    SDValue R42 = DAG.getSetCC(DL, INTTY, R30, DAG.getConstant(0,
+                                                               INTTY),
+                               ISD::SETEQ);
     // ieq r43, r31, 0
-    SDValue R43 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                              DAG.getConstant(CondCCodeToCC(ISD::SETEQ, MVT::i32), MVT::i32),
-                              R31, DAG.getConstant(0, INTTY));
-
+    SDValue R43 = DAG.getSetCC(DL, INTTY, R31, DAG.getConstant(0,
+                                                               INTTY),
+                               ISD::SETEQ);
     // and r50, r20, 0x80000000
     SDValue R50 = DAG.getNode(ISD::AND, DL, INTTY, R20,
                               DAG.getConstant(0x80000000, INTTY));
@@ -5870,16 +4619,16 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
                       DAG.getConstant(0x3F800000, INTTY));
 
     // cmov_logical r32, r42, r50, r32
-    R32 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R42, R50, R32);
+    R32 = DAG.getSelect(DL, INTTY, R42, R50, R32);
 
     // cmov_logical r33, r43, r51, r33
-    R33 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R43, R51, R33);
+    R33 = DAG.getSelect(DL, INTTY, R43, R51, R33);
 
     // cmov_logical r32, r40, r20, r32
-    R32 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R40, R20, R32);
+    R32 = DAG.getSelect(DL, INTTY, R40, R20, R32);
 
     // cmov_logical r33, r41, r21, r33
-    R33 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R41, R21, R33);
+    R33 = DAG.getSelect(DL, INTTY, R41, R21, R33);
 
     // ior r50, r40, r41
     R50 = DAG.getNode(ISD::OR, DL, INTTY, R40, R41);
@@ -5891,18 +4640,21 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
     R50 = DAG.getNode(ISD::OR, DL, INTTY, R50, R51);
 
     // inegate r52, r31
-    SDValue R52 = DAG.getNode(AMDILISD::INEGATE, DL, INTTY, R31);
+    SDValue R52 =
+      DAG.getNode(ISD::XOR, DL, INTTY, R31, DAG.getConstant(~0, INTTY));
 
     // iadd r30, r30, r52
     R30 = DAG.getNode(ISD::ADD, DL, INTTY, R30, R52);
 
     // cmov_logical r30, r50, 0, r30
-    R30 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R50,
-                      DAG.getConstant(0, INTTY), R30);
+    R30 = DAG.getSelect(DL, INTTY, R50,
+                        DAG.getConstant(0, INTTY), R30);
 
     // div_zeroop(infinity) r21, 1.0, as_float(r33)
     R33 = DAG.getNode(ISDBITCAST, DL, OVT, R33);
-    R21 = DAG.getNode(AMDILISD::DIV_INF, DL, OVT,
+    R21 = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, OVT,
+                      DAG.getEntryNode(),
+                      DAG.getConstant(AMDILIntrinsic::AMDIL_div, MVT::i32),
                       DAG.getConstantFP(1.0f, OVT), R33);
 
     // mul_ieee as_int(r20), as_float(r32), r21
@@ -5912,7 +4664,9 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
 
     // div_zeroop(infinity) r21, 1.0, as_float(r33)
     R33 = DAG.getNode(ISDBITCAST, DL, OVT, R33);
-    R21 = DAG.getNode(AMDILISD::DIV_INF, DL, OVT,
+    R21 = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, OVT,
+                      DAG.getEntryNode(),
+                      DAG.getConstant(AMDILIntrinsic::AMDIL_div, MVT::i32),
                       DAG.getConstantFP(1.0f, OVT), R33);
 
     // mul_ieee as_int(r20), as_float(r32), r21
@@ -5946,31 +4700,23 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
     R60 = DAG.getNode(ISD::ADD, DL, INTTY, R60, R61);
 
     // ige r42, 0, R60
-    R42 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                      DAG.getConstant(CondCCodeToCC(ISD::SETGE, MVT::i32), MVT::i32),
-                      DAG.getConstant(0, INTTY),
-                      R60);
-
+    R42 = DAG.getSetCC(DL, INTTY, DAG.getConstant(0, INTTY), R60, ISD::SETGE);
     // ior r41, r23, 0x7F800000
     R41 = DAG.getNode(ISD::OR, DL, INTTY, R23,
                       DAG.getConstant(0x7F800000, INTTY));
 
     // ige r40, r60, 0x000000FF
-    R40 = DAG.getNode(AMDILISD::CMP, DL, INTTY,
-                      DAG.getConstant(CondCCodeToCC(ISD::SETGE, MVT::i32), MVT::i32),
-                      R60,
-                      DAG.getConstant(0x0000000FF, INTTY));
-
+    R40 = DAG.getSetCC(DL, INTTY, R60, DAG.getConstant(0xFF, INTTY), ISD::SETGE);
     // cmov_logical r40, r50, 0, r40
-    R40 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R50,
-                      DAG.getConstant(0, INTTY),
-                      R40);
+    R40 = DAG.getSelect(DL, INTTY, R50,
+                        DAG.getConstant(0, INTTY),
+                        R40);
 
     // cmov_logical r20, r42, r23, r20
-    R20 = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R42, R23, R20);
+    R20 = DAG.getSelect(DL, INTTY, R42, R23, R20);
 
     // cmov_logical DST, r40, r41, r20
-    DST = DAG.getNode(AMDILISD::CMOVLOG, DL, INTTY, R40, R41, R20);
+    DST = DAG.getSelect(DL, INTTY, R40, R41, R20);
 
     // as_float(DST)
     DST = DAG.getNode(ISDBITCAST, DL, OVT, DST);
@@ -5986,23 +4732,29 @@ AMDILTargetLowering::LowerFDIV32(SDValue Op, SelectionDAG &DAG) const
     // fabs r1, RHS
     SDValue r1 = DAG.getNode(ISD::FABS, DL, OVT, RHS);
     // lt r2, 0x1.0p+96f, r1
-    SDValue r2 = DAG.getNode(AMDILISD::CMP, DL, OVT,
-                             DAG.getConstant(CondCCodeToCC(ISD::SETLT, MVT::f32), MVT::i32),
-                             DAG.getConstant(0x6f800000, INTTY), r1);
+    SDValue cst1 = DAG.getConstant(0x6f800000, INTTY);
+    cst1 = DAG.getNode(ISDBITCAST, DL, OVT, cst1);
+    SDValue r2 = DAG.getSetCC(DL, INTTY, cst1, r1, ISD::SETLT);
     // cmov_logical r3, r2, 0x1.0p-23f, 1.0f
-    SDValue r3 = DAG.getNode(AMDILISD::CMOVLOG, DL, OVT, r2,
-                             DAG.getConstant(0x2f800000, INTTY),
-                             DAG.getConstant(0x3f800000, INTTY));
+    cst1 = DAG.getConstant(0x2f800000, INTTY);
+    cst1 = DAG.getNode(ISDBITCAST, DL, OVT, cst1);
+    SDValue cst2 = DAG.getConstant(0x3f800000, INTTY);
+    cst2 = DAG.getNode(ISDBITCAST, DL, OVT, cst2);
+    SDValue r3 = DAG.getSelect(DL, OVT, r2,
+                               cst1, cst2);
     // mul_ieee r1, RHS, r3
     r1 = DAG.getNode(ISD::FMUL, DL, OVT, RHS, r3);
     // div_zeroop(infinity) r0, LHS, r1
-    SDValue r0 = DAG.getNode(AMDILISD::DIV_INF, DL, OVT, LHS, r1);
+    SDValue r0 = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL, OVT,
+                             DAG.getEntryNode(),
+                             DAG.getConstant(AMDILIntrinsic::AMDIL_div,
+                                             MVT::i32),
+                             LHS, r1);
     // mul_ieee DST, r0, r3
     DST = DAG.getNode(ISD::FMUL, DL, OVT, r0, r3);
   }
   return DST;
 }
-
 SDValue
 AMDILTargetLowering::LowerFDIV64(SDValue Op, SelectionDAG &DAG) const
 {

@@ -15,20 +15,17 @@
 #define _AMDILEVERGREENDEVICE_H_
 #include "AMDILDevice.h"
 #include "AMDILSubtarget.h"
-namespace llvm
-{
+namespace llvm {
 class AMDILSubtarget;
 //===----------------------------------------------------------------------===//
 // Evergreen generation of devices and their respective sub classes
 //===----------------------------------------------------------------------===//
 
-
 // The AMDILEvergreenDevice is the base device class for all of the Evergreen
 // series of cards. This class contains information required to differentiate
 // the Evergreen device from the generic AMDILDevice. This device represents
 // that capabilities of the 'Juniper' cards, also known as the HD57XX.
-class AMDILEvergreenDevice : public AMDILDevice
-{
+class AMDILEvergreenDevice : public AMDILDevice {
 public:
   AMDILEvergreenDevice(AMDILSubtarget *ST);
   virtual ~AMDILEvergreenDevice();
@@ -38,8 +35,7 @@ public:
   virtual uint32_t getGeneration() const;
   virtual uint32_t getMaxNumUAVs() const;
   virtual uint32_t getResourceID(uint32_t) const;
-  virtual FunctionPass*
-  getIOExpansion(TargetMachine&, CodeGenOpt::Level) const;
+  virtual FunctionPass* getIOExpansion() const;
   virtual AsmPrinter*
   getAsmPrinter(AMDIL_ASM_PRINTER_ARGUMENTS) const;
   virtual FunctionPass*
@@ -52,8 +48,7 @@ protected:
 // support for double precision operations. This device is used to represent
 // both the Cypress and Hemlock cards, which are commercially known as HD58XX
 // and HD59XX cards.
-class AMDILCypressDevice : public AMDILEvergreenDevice
-{
+class AMDILCypressDevice : public AMDILEvergreenDevice {
 public:
   AMDILCypressDevice(AMDILSubtarget *ST);
   virtual ~AMDILCypressDevice();
@@ -61,13 +56,11 @@ private:
   virtual void setCaps();
 }; // AMDILCypressDevice
 
-
 // The AMDILCedarDevice is the class that represents all of the 'Cedar' based
 // devices. This class differs from the base AMDILEvergreenDevice in that the
 // device is a ~quarter of the 'Juniper'. These are commercially known as the
 // HD54XX and HD53XX series of cards.
-class AMDILCedarDevice : public AMDILEvergreenDevice
-{
+class AMDILCedarDevice : public AMDILEvergreenDevice {
 public:
   AMDILCedarDevice(AMDILSubtarget *ST);
   virtual ~AMDILCedarDevice();
@@ -80,8 +73,7 @@ private:
 // devices. This class differs from the base class, in that these devices are
 // considered about half of a 'Juniper' device. These are commercially known as
 // the HD55XX and HD56XX series of cards.
-class AMDILRedwoodDevice : public AMDILEvergreenDevice
-{
+class AMDILRedwoodDevice : public AMDILEvergreenDevice {
 public:
   AMDILRedwoodDevice(AMDILSubtarget *ST);
   virtual ~AMDILRedwoodDevice();
@@ -89,6 +81,5 @@ public:
 private:
   virtual void setCaps();
 }; // AMDILRedwoodDevice
-
 } // namespace llvm
 #endif // _AMDILEVERGREENDEVICE_H_

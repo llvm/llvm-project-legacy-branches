@@ -28,52 +28,37 @@ AMDILELFWriterInfo::AMDILELFWriterInfo(bool is64bit, bool endian)
   : TargetELFWriterInfo(is64bit, endian)
 {
 }
-
-AMDILELFWriterInfo::~AMDILELFWriterInfo()
-{
+AMDILELFWriterInfo::~AMDILELFWriterInfo() {
 }
-
-unsigned AMDILELFWriterInfo::getRelocationType(unsigned MachineRelTy) const
-{
+unsigned AMDILELFWriterInfo::getRelocationType(unsigned MachineRelTy) const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return 0;
 }
-
-bool AMDILELFWriterInfo::hasRelocationAddend() const
-{
+bool AMDILELFWriterInfo::hasRelocationAddend() const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return false;
 }
-
 long int AMDILELFWriterInfo::getDefaultAddendForRelTy(unsigned RelTy,
-    long int Modifier) const
+                                                      long int Modifier) const
 {
   assert(0 && "What do we do here? Lets assert an analyze");
   return 0;
 }
-
-unsigned AMDILELFWriterInfo::getRelocationTySize(unsigned RelTy) const
-{
+unsigned AMDILELFWriterInfo::getRelocationTySize(unsigned RelTy) const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return 0;
 }
-
-bool AMDILELFWriterInfo::isPCRelativeRel(unsigned RelTy) const
-{
+bool AMDILELFWriterInfo::isPCRelativeRel(unsigned RelTy) const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return false;
 }
-
-unsigned AMDILELFWriterInfo::getAbsoluteLabelMachineRelTy() const
-{
+unsigned AMDILELFWriterInfo::getAbsoluteLabelMachineRelTy() const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return 0;
 }
-
 long int AMDILELFWriterInfo::computeRelocation(unsigned SymOffset,
-    unsigned RelOffset,
-    unsigned RelTy) const
-{
+                                               unsigned RelOffset,
+                                               unsigned RelTy) const {
   assert(0 && "What do we do here? Lets assert an analyze");
   return 0;
 }

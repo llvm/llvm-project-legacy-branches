@@ -11,1033 +11,1033 @@
 //
 //===----------------------------------------------------------------------===//
 
-def actos_i16:Pat < (i16 (anyext GPRI8:$src)),
-(IL_ASSHORT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def actosi16rr:Pat < (i16 (anyext GPRI8:$src)),
+(IL_ASSHORTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def uctos_i16:Pat < (i16 (zext GPRI8:$src)),
-(IL_ASSHORT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def uctosi16rr:Pat < (i16 (zext GPRI8:$src)),
+(IL_ASSHORTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def sctos_i16:Pat < (i16 (sext GPRI8:$src)),
-(IL_ASSHORT_i32
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def sctosi16rr:Pat < (i16 (sext GPRI8:$src)),
+(IL_ASSHORTi32r
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def actoi_i32:Pat < (i32 (anyext GPRI8:$src)),
-(IL_ASINT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def actoii32rr:Pat < (i32 (anyext GPRI8:$src)),
+(IL_ASINTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def uctoi_i32:Pat < (i32 (zext GPRI8:$src)),
-(IL_ASINT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def uctoii32rr:Pat < (i32 (zext GPRI8:$src)),
+(IL_ASINTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def sctoi_i32:Pat < (i32 (sext GPRI8:$src)),
-(IL_ASINT_i32
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))) >;
+def sctoii32rr:Pat < (i32 (sext GPRI8:$src)),
+(IL_ASINTi32r
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))) >;
 
 
-def actol_i64:Pat < (i64 (anyext GPRI8:$src)),
-(LCREATE
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24)),
- (LOADCONST_i32 0)) >;
+def actoli64rr:Pat < (i64 (anyext GPRI8:$src)),
+(LCREATEi64rr
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24)),
+ (LOADCONSTi32 0)) >;
 
 
-def uctol_i64:Pat < (i64 (zext GPRI8:$src)),
-(LCREATE
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24)),
- (LOADCONST_i32 0)) >;
+def uctoli64rr:Pat < (i64 (zext GPRI8:$src)),
+(LCREATEi64rr
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24)),
+ (LOADCONSTi32 0)) >;
 
 
-def sctol_i64:Pat < (i64 (sext GPRI8:$src)),
-(LCREATE
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24)),
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 31))) >;
+def sctoli64rr:Pat < (i64 (sext GPRI8:$src)),
+(LCREATEi64rr
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24)),
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 31))) >;
 
 
-def astoi_i32:Pat < (i32 (anyext GPRI16:$src)),
-(IL_ASINT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16))) >;
+def astoii32rr:Pat < (i32 (anyext GPRI16:$src)),
+(IL_ASINTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16))) >;
 
 
-def ustoi_i32:Pat < (i32 (zext GPRI16:$src)),
-(IL_ASINT_i32
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16))) >;
+def ustoii32rr:Pat < (i32 (zext GPRI16:$src)),
+(IL_ASINTi32r
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16))) >;
 
 
-def sstoi_i32:Pat < (i32 (sext GPRI16:$src)),
-(IL_ASINT_i32
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16))) >;
+def sstoii32rr:Pat < (i32 (sext GPRI16:$src)),
+(IL_ASINTi32r
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16))) >;
 
 
-def astol_i64:Pat < (i64 (anyext GPRI16:$src)),
-(LCREATE
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16)),
- (LOADCONST_i32 0)) >;
+def astoli64rr:Pat < (i64 (anyext GPRI16:$src)),
+(LCREATEi64rr
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16)),
+ (LOADCONSTi32 0)) >;
 
 
-def ustol_i64:Pat < (i64 (zext GPRI16:$src)),
-(LCREATE
- (USHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16)),
- (LOADCONST_i32 0)) >;
+def ustoli64rr:Pat < (i64 (zext GPRI16:$src)),
+(LCREATEi64rr
+ (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16)),
+ (LOADCONSTi32 0)) >;
 
 
-def sstol_i64:Pat < (i64 (sext GPRI16:$src)),
-(LCREATE
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16)),
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 31))) >;
+def sstoli64rr:Pat < (i64 (sext GPRI16:$src)),
+(LCREATEi64rr
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16)),
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 31))) >;
 
 
-def aitol_i64:Pat < (i64 (anyext GPRI32:$src)),
-(LCREATE
-(IL_ASINT_i32 GPRI32:$src),
- (LOADCONST_i32 0)) >;
+def aitoli64rr:Pat < (i64 (anyext GPRI32:$src)),
+(LCREATEi64rr
+(IL_ASINTi32r GPRI32:$src),
+ (LOADCONSTi32 0)) >;
 
 
-def uitol_i64:Pat < (i64 (zext GPRI32:$src)),
-(LCREATE
-(IL_ASINT_i32 GPRI32:$src),
- (LOADCONST_i32 0)) >;
+def uitoli64rr:Pat < (i64 (zext GPRI32:$src)),
+(LCREATEi64rr
+(IL_ASINTi32r GPRI32:$src),
+ (LOADCONSTi32 0)) >;
 
 
-def sitol_i64:Pat < (i64 (sext GPRI32:$src)),
-(LCREATE
-(IL_ASINT_i32 GPRI32:$src),
- (SHR_i32
-  (SHL_i32
-(IL_ASINT_i32 GPRI32:$src),
-   (LOADCONST_i32 0)),
-  (LOADCONST_i32 31))) >;
+def sitoli64rr:Pat < (i64 (sext GPRI32:$src)),
+(LCREATEi64rr
+(IL_ASINTi32r GPRI32:$src),
+ (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi32r GPRI32:$src),
+   (LOADCONSTi32 0)),
+  (LOADCONSTi32 31))) >;
 
 
 
-def sctof_f32:Pat < (f32 (sint_to_fp GPRI8:$src)),
+def sctoff32rr:Pat < (f32 (sint_to_fp GPRI8:$src)),
 (f32
- (ITOF
-  (SHR_i32
-   (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-    (LOADCONST_i32 24)),
-   (LOADCONST_i32 24)))) >;
+ (ITOFf32r
+  (SHRi32i32rr
+   (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+    (LOADCONSTi32 24)),
+   (LOADCONSTi32 24)))) >;
 
 
-def uctof_f32:Pat < (f32 (uint_to_fp GPRI8:$src)),
+def uctoff32rr:Pat < (f32 (uint_to_fp GPRI8:$src)),
 (f32
- (UTOF
-  (USHR_i32
-   (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-    (LOADCONST_i32 24)),
-   (LOADCONST_i32 24)))) >;
+ (UTOFf32r
+  (USHRi32i32rr
+   (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+    (LOADCONSTi32 24)),
+   (LOADCONSTi32 24)))) >;
 
 
-def ftosc_i8:Pat < (i8 (fp_to_sint GPRF32:$src)),
+def ftosci8rr:Pat < (i8 (fp_to_sint GPRF32:$src)),
 (i8
- (IL_ASCHAR_i32
-  (BINARY_AND_i32
-(FTOI GPRF32:$src),
-   (LOADCONST_i32 0x000000FF)))) >;
+ (IL_ASCHARi32r
+  (ANDi32rr
+(FTOIi32r GPRF32:$src),
+   (LOADCONSTi32 0x000000FF)))) >;
 
 
-def ftouc_i8:Pat < (i8 (fp_to_uint GPRF32:$src)),
+def ftouci8rr:Pat < (i8 (fp_to_uint GPRF32:$src)),
 (i8
- (IL_ASCHAR_i32
-  (BINARY_AND_i32
-(FTOU GPRF32:$src),
-   (LOADCONST_i32 0x000000FF)))) >;
+ (IL_ASCHARi32r
+  (ANDi32rr
+(FTOUi32r GPRF32:$src),
+   (LOADCONSTi32 0x000000FF)))) >;
 
 
-def sctod_f64:Pat < (f64 (sint_to_fp GPRI8:$src)),
-(f64 (FTOD
-      (ITOF
-       (SHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))))) >;
+def sctodf64rr:Pat < (f64 (sint_to_fp GPRI8:$src)),
+(f64 (FTODr
+      (ITOFf32r
+       (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))))) >;
 
 
-def uctod_f64:Pat < (f64 (uint_to_fp GPRI8:$src)),
-(f64 (FTOD
-      (UTOF
-       (USHR_i32
-  (SHL_i32
-(IL_ASINT_i8 GPRI8:$src),
-   (LOADCONST_i32 24)),
-  (LOADCONST_i32 24))))) >;
+def uctodf64rr:Pat < (f64 (uint_to_fp GPRI8:$src)),
+(f64 (FTODr
+      (UTOFf32r
+       (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi8r GPRI8:$src),
+   (LOADCONSTi32 24)),
+  (LOADCONSTi32 24))))) >;
 
 
-def dtosc_i8:Pat < (i8 (fp_to_sint GPRF64:$src)),
+def dtosci8rr:Pat < (i8 (fp_to_sint GPRF64:$src)),
 (i8
- (IL_ASCHAR_i32
-  (BINARY_AND_i32
-(FTOI (DTOF GPRF64:$src)),
-   (LOADCONST_i32 0x000000FF)))) >;
+ (IL_ASCHARi32r
+  (ANDi32rr
+(FTOIi32r (DTOFr GPRF64:$src)),
+   (LOADCONSTi32 0x000000FF)))) >;
 
 
-def dtouc_i8:Pat < (i8 (fp_to_uint GPRF64:$src)),
+def dtouci8rr:Pat < (i8 (fp_to_uint GPRF64:$src)),
 (i8
- (IL_ASCHAR_i32
-  (BINARY_AND_i32
-(FTOU (DTOF GPRF64:$src)),
-   (LOADCONST_i32 0x000000FF)))) >;
+ (IL_ASCHARi32r
+  (ANDi32rr
+(FTOUi32r (DTOFr GPRF64:$src)),
+   (LOADCONSTi32 0x000000FF)))) >;
 
 
-def sstof_f32:Pat < (f32 (sint_to_fp GPRI16:$src)),
+def sstoff32rr:Pat < (f32 (sint_to_fp GPRI16:$src)),
 (f32
- (ITOF
-  (SHR_i32
-   (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-    (LOADCONST_i32 16)),
-   (LOADCONST_i32 16)))) >;
+ (ITOFf32r
+  (SHRi32i32rr
+   (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+    (LOADCONSTi32 16)),
+   (LOADCONSTi32 16)))) >;
 
 
-def ustof_f32:Pat < (f32 (uint_to_fp GPRI16:$src)),
+def ustoff32rr:Pat < (f32 (uint_to_fp GPRI16:$src)),
 (f32
- (UTOF
-  (USHR_i32
-   (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-    (LOADCONST_i32 16)),
-   (LOADCONST_i32 16)))) >;
+ (UTOFf32r
+  (USHRi32i32rr
+   (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+    (LOADCONSTi32 16)),
+   (LOADCONSTi32 16)))) >;
 
 
-def ftoss_i16:Pat < (i16 (fp_to_sint GPRF32:$src)),
+def ftossi16rr:Pat < (i16 (fp_to_sint GPRF32:$src)),
 (i16
- (IL_ASSHORT_i32
-  (BINARY_AND_i32
-(FTOI GPRF32:$src),
-   (LOADCONST_i32 0x0000FFFF)))) >;
+ (IL_ASSHORTi32r
+  (ANDi32rr
+(FTOIi32r GPRF32:$src),
+   (LOADCONSTi32 0x0000FFFF)))) >;
 
 
-def ftous_i16:Pat < (i16 (fp_to_uint GPRF32:$src)),
+def ftousi16rr:Pat < (i16 (fp_to_uint GPRF32:$src)),
 (i16
- (IL_ASSHORT_i32
-  (BINARY_AND_i32
-(FTOU GPRF32:$src),
-   (LOADCONST_i32 0x0000FFFF)))) >;
+ (IL_ASSHORTi32r
+  (ANDi32rr
+(FTOUi32r GPRF32:$src),
+   (LOADCONSTi32 0x0000FFFF)))) >;
 
 
-def sstod_f64:Pat < (f64 (sint_to_fp GPRI16:$src)),
-(f64 (FTOD
-      (ITOF
-       (SHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16))))) >;
+def sstodf64rr:Pat < (f64 (sint_to_fp GPRI16:$src)),
+(f64 (FTODr
+      (ITOFf32r
+       (SHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16))))) >;
 
 
-def ustod_f64:Pat < (f64 (uint_to_fp GPRI16:$src)),
-(f64 (FTOD
-      (UTOF
-       (USHR_i32
-  (SHL_i32
-(IL_ASINT_i16 GPRI16:$src),
-   (LOADCONST_i32 16)),
-  (LOADCONST_i32 16))))) >;
+def ustodf64rr:Pat < (f64 (uint_to_fp GPRI16:$src)),
+(f64 (FTODr
+      (UTOFf32r
+       (USHRi32i32rr
+  (SHLi32i32rr
+(IL_ASINTi16r GPRI16:$src),
+   (LOADCONSTi32 16)),
+  (LOADCONSTi32 16))))) >;
 
 
-def dtoss_i16:Pat < (i16 (fp_to_sint GPRF64:$src)),
+def dtossi16rr:Pat < (i16 (fp_to_sint GPRF64:$src)),
 (i16
- (IL_ASSHORT_i32
-  (BINARY_AND_i32
-(FTOI (DTOF GPRF64:$src)),
-   (LOADCONST_i32 0x0000FFFF)))) >;
+ (IL_ASSHORTi32r
+  (ANDi32rr
+(FTOIi32r (DTOFr GPRF64:$src)),
+   (LOADCONSTi32 0x0000FFFF)))) >;
 
 
-def dtous_i16:Pat < (i16 (fp_to_uint GPRF64:$src)),
+def dtousi16rr:Pat < (i16 (fp_to_uint GPRF64:$src)),
 (i16
- (IL_ASSHORT_i32
-  (BINARY_AND_i32
-(FTOU (DTOF GPRF64:$src)),
-   (LOADCONST_i32 0x0000FFFF)))) >;
+ (IL_ASSHORTi32r
+  (ANDi32rr
+(FTOUi32r (DTOFr GPRF64:$src)),
+   (LOADCONSTi32 0x0000FFFF)))) >;
 
 
 
 
 
-def stoc_i8:Pat < (i8 (trunc GPRI16:$src)),
-(IL_ASCHAR_i32
- (SHR_i32
- (SHL_i32
-   (IL_ASINT_i16
-(BINARY_AND_i16 GPRI16:$src,
-     (LOADCONST_i16 0x000000FF))),
- (LOADCONST_i32 16)),
- (LOADCONST_i32 16))
+def stoci8rr:Pat < (i8 (trunc GPRI16:$src)),
+(IL_ASCHARi32r
+ (SHRi32i32rr
+ (SHLi32i32rr
+   (IL_ASINTi16r
+(ANDi16rr GPRI16:$src,
+     (LOADCONSTi16 0x000000FF))),
+ (LOADCONSTi32 16)),
+ (LOADCONSTi32 16))
  )>;
 
 
-def itoc_i8:Pat < (i8 (trunc GPRI32:$src)),
-(IL_ASCHAR_i32
- (SHR_i32
- (SHL_i32
-   (IL_ASINT_i32
-(BINARY_AND_i32 GPRI32:$src,
-     (LOADCONST_i32 0x000000FF)))
- , (LOADCONST_i32 24)),
- (LOADCONST_i32 24))
+def itoci8rr:Pat < (i8 (trunc GPRI32:$src)),
+(IL_ASCHARi32r
+ (SHRi32i32rr
+ (SHLi32i32rr
+   (IL_ASINTi32r
+(ANDi32rr GPRI32:$src,
+     (LOADCONSTi32 0x000000FF)))
+ , (LOADCONSTi32 24)),
+ (LOADCONSTi32 24))
   ) >;
 
 
-def itos_i16:Pat < (i16 (trunc GPRI32:$src)),
-(IL_ASSHORT_i32
- (SHR_i32
- (SHL_i32
-   (IL_ASINT_i32
-(BINARY_AND_i32 GPRI32:$src,
-     (LOADCONST_i32 0x0000FFFF)))
- , (LOADCONST_i32 16)),
- (LOADCONST_i32 16))
+def itosi16rr:Pat < (i16 (trunc GPRI32:$src)),
+(IL_ASSHORTi32r
+ (SHRi32i32rr
+ (SHLi32i32rr
+   (IL_ASINTi32r
+(ANDi32rr GPRI32:$src,
+     (LOADCONSTi32 0x0000FFFF)))
+ , (LOADCONSTi32 16)),
+ (LOADCONSTi32 16))
   ) >;
 
 
-def ltoc_i8:Pat < (i8 (trunc GPRI64:$src)),
-(IL_ASCHAR_i32
- (SHR_i32
- (SHL_i32
-   (BINARY_AND_i32
-(LLO GPRI64:$src),
-    (LOADCONST_i32 0x000000FF))
- , (LOADCONST_i32 24)),
- (LOADCONST_i32 24))
+def ltoci8rr:Pat < (i8 (trunc GPRI64:$src)),
+(IL_ASCHARi32r
+ (SHRi32i32rr
+ (SHLi32i32rr
+   (ANDi32rr
+(LLOi64r GPRI64:$src),
+    (LOADCONSTi32 0x000000FF))
+ , (LOADCONSTi32 24)),
+ (LOADCONSTi32 24))
   ) >;
 
 
-def ltos_i16:Pat < (i16 (trunc GPRI64:$src)),
-(IL_ASSHORT_i32
- (SHR_i32
- (SHL_i32
-   (BINARY_AND_i32
-(LLO GPRI64:$src),
-    (LOADCONST_i32 0x0000FFFF))
- , (LOADCONST_i32 16)),
- (LOADCONST_i32 16))
+def ltosi16rr:Pat < (i16 (trunc GPRI64:$src)),
+(IL_ASSHORTi32r
+ (SHRi32i32rr
+ (SHLi32i32rr
+   (ANDi32rr
+(LLOi64r GPRI64:$src),
+    (LOADCONSTi32 0x0000FFFF))
+ , (LOADCONSTi32 16)),
+ (LOADCONSTi32 16))
   ) >;
 
 
-def ltoi_i32:Pat < (i32 (trunc GPRI64:$src)), (LLO GPRI64:$src) >;
+def ltoii32rr:Pat < (i32 (trunc GPRI64:$src)), (LLOi64r GPRI64:$src) >;
 
-def actos_v2i16:Pat < (v2i16 (anyext GPRV2I8:$src)),
-(IL_ASV2SHORT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
-
-
-def uctos_v2i16:Pat < (v2i16 (zext GPRV2I8:$src)),
-(IL_ASV2SHORT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
+def actosv2i16rr:Pat < (v2i16 (anyext GPRV2I8:$src)),
+(IL_ASV2SHORTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def sctos_v2i16:Pat < (v2i16 (sext GPRV2I8:$src)),
-(IL_ASV2SHORT_v2i32
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
+def uctosv2i16rr:Pat < (v2i16 (zext GPRV2I8:$src)),
+(IL_ASV2SHORTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def actoi_v2i32:Pat < (v2i32 (anyext GPRV2I8:$src)),
-(IL_ASV2INT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
+def sctosv2i16rr:Pat < (v2i16 (sext GPRV2I8:$src)),
+(IL_ASV2SHORTv2i32r
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def uctoi_v2i32:Pat < (v2i32 (zext GPRV2I8:$src)),
-(IL_ASV2INT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
+def actoiv2i32rr:Pat < (v2i32 (anyext GPRV2I8:$src)),
+(IL_ASV2INTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def sctoi_v2i32:Pat < (v2i32 (sext GPRV2I8:$src)),
-(IL_ASV2INT_v2i32
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24)))) >;
+def uctoiv2i32rr:Pat < (v2i32 (zext GPRV2I8:$src)),
+(IL_ASV2INTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def actol_v2i64:Pat < (v2i64 (anyext GPRV2I8:$src)),
-(LCREATE_v2i64
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24))),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def sctoiv2i32rr:Pat < (v2i32 (sext GPRV2I8:$src)),
+(IL_ASV2INTv2i32r
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24)))) >;
 
 
-def uctol_v2i64:Pat < (v2i64 (zext GPRV2I8:$src)),
-(LCREATE_v2i64
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24))),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def actolv2i64rr:Pat < (v2i64 (anyext GPRV2I8:$src)),
+(LCREATEv2i64rr
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24))),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
 
 
-def sctol_v2i64:Pat < (v2i64 (sext GPRV2I8:$src)),
-(LCREATE_v2i64
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 24))),
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 24))),
-  (VCREATE_v2i32 (LOADCONST_i32 31)))) >;
+def uctolv2i64rr:Pat < (v2i64 (zext GPRV2I8:$src)),
+(LCREATEv2i64rr
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24))),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
 
 
-def astoi_v2i32:Pat < (v2i32 (anyext GPRV2I16:$src)),
-(IL_ASV2INT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16)))) >;
+def sctolv2i64rr:Pat < (v2i64 (sext GPRV2I8:$src)),
+(LCREATEv2i64rr
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 24))),
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+   (VCREATEv2i32r (LOADCONSTi32 24))),
+  (VCREATEv2i32r (LOADCONSTi32 31)))) >;
 
 
-def ustoi_v2i32:Pat < (v2i32 (zext GPRV2I16:$src)),
-(IL_ASV2INT_v2i32
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16)))) >;
+def astoiv2i32rr:Pat < (v2i32 (anyext GPRV2I16:$src)),
+(IL_ASV2INTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16)))) >;
 
 
-def sstoi_v2i32:Pat < (v2i32 (sext GPRV2I16:$src)),
-(IL_ASV2INT_v2i32
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16)))) >;
+def ustoiv2i32rr:Pat < (v2i32 (zext GPRV2I16:$src)),
+(IL_ASV2INTv2i32r
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16)))) >;
 
 
-def astol_v2i64:Pat < (v2i64 (anyext GPRV2I16:$src)),
-(LCREATE_v2i64
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16))),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def sstoiv2i32rr:Pat < (v2i32 (sext GPRV2I16:$src)),
+(IL_ASV2INTv2i32r
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16)))) >;
 
 
-def ustol_v2i64:Pat < (v2i64 (zext GPRV2I16:$src)),
-(LCREATE_v2i64
- (USHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16))),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def astolv2i64rr:Pat < (v2i64 (anyext GPRV2I16:$src)),
+(LCREATEv2i64rr
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16))),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
 
 
-def sstol_v2i64:Pat < (v2i64 (sext GPRV2I16:$src)),
-(LCREATE_v2i64
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 16))),
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 16))),
-  (VCREATE_v2i32 (LOADCONST_i32 31)))) >;
+def ustolv2i64rr:Pat < (v2i64 (zext GPRV2I16:$src)),
+(LCREATEv2i64rr
+ (USHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16))),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
 
 
-def aitol_v2i64:Pat < (v2i64 (anyext GPRV2I32:$src)),
-(LCREATE_v2i64
-(IL_ASV2INT_v2i32 GPRV2I32:$src),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def sstolv2i64rr:Pat < (v2i64 (sext GPRV2I16:$src)),
+(LCREATEv2i64rr
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 16))),
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+   (VCREATEv2i32r (LOADCONSTi32 16))),
+  (VCREATEv2i32r (LOADCONSTi32 31)))) >;
 
 
-def uitol_v2i64:Pat < (v2i64 (zext GPRV2I32:$src)),
-(LCREATE_v2i64
-(IL_ASV2INT_v2i32 GPRV2I32:$src),
- (VCREATE_v2i32 (LOADCONST_i32 0))) >;
+def aitolv2i64rr:Pat < (v2i64 (anyext GPRV2I32:$src)),
+(LCREATEv2i64rr
+(IL_ASV2INTv2i32r GPRV2I32:$src),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
 
 
-def sitol_v2i64:Pat < (v2i64 (sext GPRV2I32:$src)),
-(LCREATE_v2i64
-(IL_ASV2INT_v2i32 GPRV2I32:$src),
- (SHRVEC_v2i32
-  (SHLVEC_v2i32
-(IL_ASV2INT_v2i32 GPRV2I32:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 0))),
-  (VCREATE_v2i32 (LOADCONST_i32 31)))) >;
+def uitolv2i64rr:Pat < (v2i64 (zext GPRV2I32:$src)),
+(LCREATEv2i64rr
+(IL_ASV2INTv2i32r GPRV2I32:$src),
+ (VCREATEv2i32r (LOADCONSTi32 0))) >;
+
+
+def sitolv2i64rr:Pat < (v2i64 (sext GPRV2I32:$src)),
+(LCREATEv2i64rr
+(IL_ASV2INTv2i32r GPRV2I32:$src),
+ (SHRv2i32i32rr
+  (SHLv2i32i32rr
+(IL_ASV2INTv2i32r GPRV2I32:$src),
+   (VCREATEv2i32r (LOADCONSTi32 0))),
+  (VCREATEv2i32r (LOADCONSTi32 31)))) >;
 
 
 
-def sctof_v2f32:Pat < (v2f32 (sint_to_fp GPRV2I8:$src)),
+def sctofv2f32rr:Pat < (v2f32 (sint_to_fp GPRV2I8:$src)),
 (v2f32
- (ITOF_v2f32
-  (SHRVEC_v2i32
-   (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 24))),
-   (VCREATE_v2i32 (LOADCONST_i32 24))))) >;
+ (ITOFv2f32r
+  (SHRv2i32i32rr
+   (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+    (VCREATEv2i32r (LOADCONSTi32 24))),
+   (VCREATEv2i32r (LOADCONSTi32 24))))) >;
 
 
-def uctof_v2f32:Pat < (v2f32 (uint_to_fp GPRV2I8:$src)),
+def uctofv2f32rr:Pat < (v2f32 (uint_to_fp GPRV2I8:$src)),
 (v2f32
- (UTOF_v2f32
-  (USHRVEC_v2i32
-   (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 24))),
-   (VCREATE_v2i32 (LOADCONST_i32 24))))) >;
+ (UTOFv2f32r
+  (USHRv2i32i32rr
+   (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+    (VCREATEv2i32r (LOADCONSTi32 24))),
+   (VCREATEv2i32r (LOADCONSTi32 24))))) >;
 
 
-def ftosc_v2i8:Pat < (v2i8 (fp_to_sint GPRV2F32:$src)),
+def ftoscv2i8rr:Pat < (v2i8 (fp_to_sint GPRV2F32:$src)),
 (v2i8
- (IL_ASV2CHAR_v2i32
-  (BINARY_AND_v2i32
-(FTOI_v2i32 GPRV2F32:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 0x000000FF))))) >;
+ (IL_ASV2CHARv2i32r
+  (ANDv2i32rr
+(FTOIv2i32r GPRV2F32:$src),
+   (VCREATEv2i32r (LOADCONSTi32 0x000000FF))))) >;
 
 
-def ftouc_v2i8:Pat < (v2i8 (fp_to_uint GPRV2F32:$src)),
+def ftoucv2i8rr:Pat < (v2i8 (fp_to_uint GPRV2F32:$src)),
 (v2i8
- (IL_ASV2CHAR_v2i32
-  (BINARY_AND_v2i32
-(FTOU_v2i32 GPRV2F32:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 0x000000FF))))) >;
+ (IL_ASV2CHARv2i32r
+  (ANDv2i32rr
+(FTOUv2i32r GPRV2F32:$src),
+   (VCREATEv2i32r (LOADCONSTi32 0x000000FF))))) >;
 
-def sctod_v2f64:Pat < (v2f64 (sint_to_fp GPRV2I8:$src)),
+def sctodv2f64rr:Pat < (v2f64 (sint_to_fp GPRV2I8:$src)),
 (v2f64 
- (VINSERT_v2f64
- (VCREATE_v2f64 
- (FTOD
-  (VEXTRACT_v2f32
-  (ITOF_v2f32
-   (SHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 24))),
-    (VCREATE_v2i32 (LOADCONST_i32 24)))),
+ (VINSERTv2f64rr
+ (VCREATEv2f64r 
+ (FTODr
+  (VEXTRACTv2f32r
+  (ITOFv2f32r
+   (SHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+     (VCREATEv2i32r (LOADCONSTi32 24))),
+    (VCREATEv2i32r (LOADCONSTi32 24)))),
   1)
  )),
- (FTOD
-  (VEXTRACT_v2f32
-  (ITOF_v2f32
-   (SHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 24))),
-    (VCREATE_v2i32 (LOADCONST_i32 24)))),
+ (FTODr
+  (VEXTRACTv2f32r
+  (ITOFv2f32r
+   (SHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+     (VCREATEv2i32r (LOADCONSTi32 24))),
+    (VCREATEv2i32r (LOADCONSTi32 24)))),
   2)
   ), 1, 256)
  ) >;
 
-def uctod_v2f64:Pat < (v2f64 (uint_to_fp GPRV2I8:$src)),
+def uctodv2f64rr:Pat < (v2f64 (uint_to_fp GPRV2I8:$src)),
 (v2f64 
- (VINSERT_v2f64
- (VCREATE_v2f64 
- (FTOD
-  (VEXTRACT_v2f32
-  (UTOF_v2f32
-   (USHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 24))),
-    (VCREATE_v2i32 (LOADCONST_i32 24)))),
+ (VINSERTv2f64rr
+ (VCREATEv2f64r 
+ (FTODr
+  (VEXTRACTv2f32r
+  (UTOFv2f32r
+   (USHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+     (VCREATEv2i32r (LOADCONSTi32 24))),
+    (VCREATEv2i32r (LOADCONSTi32 24)))),
   1)
  )),
- (FTOD
-  (VEXTRACT_v2f32
-  (UTOF_v2f32
-   (USHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i8 GPRV2I8:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 24))),
-    (VCREATE_v2i32 (LOADCONST_i32 24)))),
-  2)
-  ), 1, 256)
- ) >;
-
-
-def dtosc_v2i8:Pat < (v2i8 (fp_to_sint GPRV2F64:$src)),
-(v2i8
- (IL_ASV2CHAR_v2i32
-  (BINARY_AND_v2i32
-(FTOI_v2i32 (VINSERT_v2f32 
-             (VCREATE_v2f32 
-              (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 1))),
-             (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 2)), 1, 256)),
-   (VCREATE_v2i32 (LOADCONST_i32 0x000000FF))))) >;
-
-
-def dtouc_v2i8:Pat < (v2i8 (fp_to_uint GPRV2F64:$src)),
-(v2i8
- (IL_ASV2CHAR_v2i32
-  (BINARY_AND_v2i32
-(FTOU_v2i32 (VINSERT_v2f32 
-             (VCREATE_v2f32 
-              (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 1))),
-             (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 2)), 1, 256)),
-   (VCREATE_v2i32 (LOADCONST_i32 0x000000FF))))) >;
-
-
-def sstof_v2f32:Pat < (v2f32 (sint_to_fp GPRV2I16:$src)),
-(v2f32
- (ITOF_v2f32
-  (SHRVEC_v2i32
-   (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 16))),
-   (VCREATE_v2i32 (LOADCONST_i32 16))))) >;
-
-
-def ustof_v2f32:Pat < (v2f32 (uint_to_fp GPRV2I16:$src)),
-(v2f32
- (UTOF_v2f32
-  (USHRVEC_v2i32
-   (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 16))),
-   (VCREATE_v2i32 (LOADCONST_i32 16))))) >;
-
-
-def ftoss_v2i16:Pat < (v2i16 (fp_to_sint GPRV2F32:$src)),
-(v2i16
- (IL_ASV2SHORT_v2i32
-  (BINARY_AND_v2i32
-(FTOI_v2i32 GPRV2F32:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF))))) >;
-
-
-def ftous_v2i16:Pat < (v2i16 (fp_to_uint GPRV2F32:$src)),
-(v2i16
- (IL_ASV2SHORT_v2i32
-  (BINARY_AND_v2i32
-(FTOU_v2i32 GPRV2F32:$src),
-   (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF))))) >;
-
-
-def sstod_v2f64:Pat < (v2f64 (sint_to_fp GPRV2I16:$src)),
-(v2f64 
- (VINSERT_v2f64
- (VCREATE_v2f64 
- (FTOD
-  (VEXTRACT_v2f32
-  (ITOF_v2f32
-   (SHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 16))),
-    (VCREATE_v2i32 (LOADCONST_i32 16)))),
-  1)
- )),
- (FTOD
-  (VEXTRACT_v2f32
-  (ITOF_v2f32
-   (SHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 16))),
-    (VCREATE_v2i32 (LOADCONST_i32 16)))),
-  2)
-  ), 1, 256)
- ) >;
-
-def ustod_v2f64:Pat < (v2f64 (uint_to_fp GPRV2I16:$src)),
-(v2f64 
- (VINSERT_v2f64
- (VCREATE_v2f64 
- (FTOD
-  (VEXTRACT_v2f32
-  (UTOF_v2f32
-   (USHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 16))),
-    (VCREATE_v2i32 (LOADCONST_i32 16)))),
-  1)
- )),
- (FTOD
-  (VEXTRACT_v2f32
-  (UTOF_v2f32
-   (USHRVEC_v2i32
-    (SHLVEC_v2i32
-(IL_ASV2INT_v2i16 GPRV2I16:$src),
-     (VCREATE_v2i32 (LOADCONST_i32 16))),
-    (VCREATE_v2i32 (LOADCONST_i32 16)))),
+ (FTODr
+  (VEXTRACTv2f32r
+  (UTOFv2f32r
+   (USHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i8r GPRV2I8:$src),
+     (VCREATEv2i32r (LOADCONSTi32 24))),
+    (VCREATEv2i32r (LOADCONSTi32 24)))),
   2)
   ), 1, 256)
  ) >;
 
 
-def dtoss_v2i16:Pat < (v2i16 (fp_to_sint GPRV2F64:$src)),
+def dtoscv2i8rr:Pat < (v2i8 (fp_to_sint GPRV2F64:$src)),
+(v2i8
+ (IL_ASV2CHARv2i32r
+  (ANDv2i32rr
+(FTOIv2i32r (VINSERTv2f32rr 
+             (VCREATEv2f32r 
+              (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 1))),
+             (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 2)), 1, 256)),
+   (VCREATEv2i32r (LOADCONSTi32 0x000000FF))))) >;
+
+
+def dtoucv2i8rr:Pat < (v2i8 (fp_to_uint GPRV2F64:$src)),
+(v2i8
+ (IL_ASV2CHARv2i32r
+  (ANDv2i32rr
+(FTOUv2i32r (VINSERTv2f32rr 
+             (VCREATEv2f32r 
+              (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 1))),
+             (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 2)), 1, 256)),
+   (VCREATEv2i32r (LOADCONSTi32 0x000000FF))))) >;
+
+
+def sstofv2f32rr:Pat < (v2f32 (sint_to_fp GPRV2I16:$src)),
+(v2f32
+ (ITOFv2f32r
+  (SHRv2i32i32rr
+   (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+    (VCREATEv2i32r (LOADCONSTi32 16))),
+   (VCREATEv2i32r (LOADCONSTi32 16))))) >;
+
+
+def ustofv2f32rr:Pat < (v2f32 (uint_to_fp GPRV2I16:$src)),
+(v2f32
+ (UTOFv2f32r
+  (USHRv2i32i32rr
+   (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+    (VCREATEv2i32r (LOADCONSTi32 16))),
+   (VCREATEv2i32r (LOADCONSTi32 16))))) >;
+
+
+def ftossv2i16rr:Pat < (v2i16 (fp_to_sint GPRV2F32:$src)),
 (v2i16
- (IL_ASV2SHORT_v2i32
-  (BINARY_AND_v2i32
-(FTOI_v2i32 (VINSERT_v2f32 
-             (VCREATE_v2f32 
-              (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 1))),
-             (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 2)), 1, 256)),
-   (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF))))) >;
+ (IL_ASV2SHORTv2i32r
+  (ANDv2i32rr
+(FTOIv2i32r GPRV2F32:$src),
+   (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF))))) >;
 
 
-def dtous_v2i16:Pat < (v2i16 (fp_to_uint GPRV2F64:$src)),
+def ftousv2i16rr:Pat < (v2i16 (fp_to_uint GPRV2F32:$src)),
 (v2i16
- (IL_ASV2SHORT_v2i32
-  (BINARY_AND_v2i32
-(FTOU_v2i32 (VINSERT_v2f32 
-             (VCREATE_v2f32 
-              (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 1))),
-             (DTOF (VEXTRACT_v2f64 GPRV2F64:$src, 2)), 1, 256)),
-   (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF))))) >;
+ (IL_ASV2SHORTv2i32r
+  (ANDv2i32rr
+(FTOUv2i32r GPRV2F32:$src),
+   (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF))))) >;
 
-def stoc_v2i8:Pat < (v2i8 (trunc GPRV2I16:$src)),
-(IL_ASV2CHAR_v2i32
- (SHRVEC_v2i32
- (SHLVEC_v2i32
-   (IL_ASV2INT_v2i16
-(BINARY_AND_v2i16 GPRV2I16:$src,
-     (VCREATE_v2i16 (LOADCONST_i16 0x000000FF))))
-   , (VCREATE_v2i32 (LOADCONST_i32 24))),
- (VCREATE_v2i32 (LOADCONST_i32 24)))
+
+def sstodv2f64rr:Pat < (v2f64 (sint_to_fp GPRV2I16:$src)),
+(v2f64 
+ (VINSERTv2f64rr
+ (VCREATEv2f64r 
+ (FTODr
+  (VEXTRACTv2f32r
+  (ITOFv2f32r
+   (SHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+     (VCREATEv2i32r (LOADCONSTi32 16))),
+    (VCREATEv2i32r (LOADCONSTi32 16)))),
+  1)
+ )),
+ (FTODr
+  (VEXTRACTv2f32r
+  (ITOFv2f32r
+   (SHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+     (VCREATEv2i32r (LOADCONSTi32 16))),
+    (VCREATEv2i32r (LOADCONSTi32 16)))),
+  2)
+  ), 1, 256)
+ ) >;
+
+def ustodv2f64rr:Pat < (v2f64 (uint_to_fp GPRV2I16:$src)),
+(v2f64 
+ (VINSERTv2f64rr
+ (VCREATEv2f64r 
+ (FTODr
+  (VEXTRACTv2f32r
+  (UTOFv2f32r
+   (USHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+     (VCREATEv2i32r (LOADCONSTi32 16))),
+    (VCREATEv2i32r (LOADCONSTi32 16)))),
+  1)
+ )),
+ (FTODr
+  (VEXTRACTv2f32r
+  (UTOFv2f32r
+   (USHRv2i32i32rr
+    (SHLv2i32i32rr
+(IL_ASV2INTv2i16r GPRV2I16:$src),
+     (VCREATEv2i32r (LOADCONSTi32 16))),
+    (VCREATEv2i32r (LOADCONSTi32 16)))),
+  2)
+  ), 1, 256)
+ ) >;
+
+
+def dtossv2i16rr:Pat < (v2i16 (fp_to_sint GPRV2F64:$src)),
+(v2i16
+ (IL_ASV2SHORTv2i32r
+  (ANDv2i32rr
+(FTOIv2i32r (VINSERTv2f32rr 
+             (VCREATEv2f32r 
+              (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 1))),
+             (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 2)), 1, 256)),
+   (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF))))) >;
+
+
+def dtousv2i16rr:Pat < (v2i16 (fp_to_uint GPRV2F64:$src)),
+(v2i16
+ (IL_ASV2SHORTv2i32r
+  (ANDv2i32rr
+(FTOUv2i32r (VINSERTv2f32rr 
+             (VCREATEv2f32r 
+              (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 1))),
+             (DTOFr (VEXTRACTv2f64r GPRV2F64:$src, 2)), 1, 256)),
+   (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF))))) >;
+
+def stocv2i8rr:Pat < (v2i8 (trunc GPRV2I16:$src)),
+(IL_ASV2CHARv2i32r
+ (SHRv2i32i32rr
+ (SHLv2i32i32rr
+   (IL_ASV2INTv2i16r
+(ANDv2i16rr GPRV2I16:$src,
+     (VCREATEv2i16r (LOADCONSTi16 0x000000FF))))
+   , (VCREATEv2i32r (LOADCONSTi32 24))),
+ (VCREATEv2i32r (LOADCONSTi32 24)))
   ) >;
 
 
-def itoc_v2i8:Pat < (v2i8 (trunc GPRV2I32:$src)),
-(IL_ASV2CHAR_v2i32
- (SHRVEC_v2i32
- (SHLVEC_v2i32
-   (IL_ASV2INT_v2i32
-(BINARY_AND_v2i32 GPRV2I32:$src,
-     (VCREATE_v2i32 (LOADCONST_i32 0x000000FF))))
-   , (VCREATE_v2i32 (LOADCONST_i32 24))),
- (VCREATE_v2i32 (LOADCONST_i32 24)))
+def itocv2i8rr:Pat < (v2i8 (trunc GPRV2I32:$src)),
+(IL_ASV2CHARv2i32r
+ (SHRv2i32i32rr
+ (SHLv2i32i32rr
+   (IL_ASV2INTv2i32r
+(ANDv2i32rr GPRV2I32:$src,
+     (VCREATEv2i32r (LOADCONSTi32 0x000000FF))))
+   , (VCREATEv2i32r (LOADCONSTi32 24))),
+ (VCREATEv2i32r (LOADCONSTi32 24)))
   ) >;
 
 
-def itos_v2i16:Pat < (v2i16 (trunc GPRV2I32:$src)),
-(IL_ASV2SHORT_v2i32
- (SHRVEC_v2i32
- (SHLVEC_v2i32
-   (IL_ASV2INT_v2i32
-(BINARY_AND_v2i32 GPRV2I32:$src,
-     (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF))))
-   , (VCREATE_v2i32 (LOADCONST_i32 16))),
- (VCREATE_v2i32 (LOADCONST_i32 16)))
+def itosv2i16rr:Pat < (v2i16 (trunc GPRV2I32:$src)),
+(IL_ASV2SHORTv2i32r
+ (SHRv2i32i32rr
+ (SHLv2i32i32rr
+   (IL_ASV2INTv2i32r
+(ANDv2i32rr GPRV2I32:$src,
+     (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF))))
+   , (VCREATEv2i32r (LOADCONSTi32 16))),
+ (VCREATEv2i32r (LOADCONSTi32 16)))
   ) >;
 
 
-def ltoc_v2i8:Pat < (v2i8 (trunc GPRV2I64:$src)),
-(IL_ASV2CHAR_v2i32
- (SHRVEC_v2i32
- (SHLVEC_v2i32
-   (BINARY_AND_v2i32
-(LLO_v2i64 GPRV2I64:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 0x000000FF)))
-   , (VCREATE_v2i32 (LOADCONST_i32 24))),
- (VCREATE_v2i32 (LOADCONST_i32 24)))
+def ltocv2i8rr:Pat < (v2i8 (trunc GPRV2I64:$src)),
+(IL_ASV2CHARv2i32r
+ (SHRv2i32i32rr
+ (SHLv2i32i32rr
+   (ANDv2i32rr
+(LLOv2i64r GPRV2I64:$src),
+    (VCREATEv2i32r (LOADCONSTi32 0x000000FF)))
+   , (VCREATEv2i32r (LOADCONSTi32 24))),
+ (VCREATEv2i32r (LOADCONSTi32 24)))
   ) >;
 
 
-def ltos_v2i16:Pat < (v2i16 (trunc GPRV2I64:$src)),
-(IL_ASV2SHORT_v2i32
- (SHRVEC_v2i32
- (SHLVEC_v2i32
-   (BINARY_AND_v2i32
-(LLO_v2i64 GPRV2I64:$src),
-    (VCREATE_v2i32 (LOADCONST_i32 0x0000FFFF)))
-   , (VCREATE_v2i32 (LOADCONST_i32 16))),
- (VCREATE_v2i32 (LOADCONST_i32 16)))
+def ltosv2i16rr:Pat < (v2i16 (trunc GPRV2I64:$src)),
+(IL_ASV2SHORTv2i32r
+ (SHRv2i32i32rr
+ (SHLv2i32i32rr
+   (ANDv2i32rr
+(LLOv2i64r GPRV2I64:$src),
+    (VCREATEv2i32r (LOADCONSTi32 0x0000FFFF)))
+   , (VCREATEv2i32r (LOADCONSTi32 16))),
+ (VCREATEv2i32r (LOADCONSTi32 16)))
   ) >;
 
 
-def ltoi_v2i32:Pat < (v2i32 (trunc GPRV2I64:$src)), (LLO_v2i64 GPRV2I64:$src)>;
+def ltoiv2i32rr:Pat < (v2i32 (trunc GPRV2I64:$src)), (LLOv2i64r GPRV2I64:$src)>;
 
 
 
-def actos_v4i16:Pat < (v4i16 (anyext GPRV4I8:$src)),
-(IL_ASV4SHORT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def actosv4i16rr:Pat < (v4i16 (anyext GPRV4I8:$src)),
+(IL_ASV4SHORTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def uctos_v4i16:Pat < (v4i16 (zext GPRV4I8:$src)),
-(IL_ASV4SHORT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def uctosv4i16rr:Pat < (v4i16 (zext GPRV4I8:$src)),
+(IL_ASV4SHORTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def sctos_v4i16:Pat < (v4i16 (sext GPRV4I8:$src)),
-(IL_ASV4SHORT_v4i32
- (SHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def sctosv4i16rr:Pat < (v4i16 (sext GPRV4I8:$src)),
+(IL_ASV4SHORTv4i32r
+ (SHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def actoi_v4i32:Pat < (v4i32 (anyext GPRV4I8:$src)),
-(IL_ASV4INT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def actoiv4i32rr:Pat < (v4i32 (anyext GPRV4I8:$src)),
+(IL_ASV4INTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def uctoi_v4i32:Pat < (v4i32 (zext GPRV4I8:$src)),
-(IL_ASV4INT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def uctoiv4i32rr:Pat < (v4i32 (zext GPRV4I8:$src)),
+(IL_ASV4INTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def sctoi_v4i32:Pat < (v4i32 (sext GPRV4I8:$src)),
-(IL_ASV4INT_v4i32
- (SHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 24))),
-  (VCREATE_v4i32 (LOADCONST_i32 24)))) >;
+def sctoiv4i32rr:Pat < (v4i32 (sext GPRV4I8:$src)),
+(IL_ASV4INTv4i32r
+ (SHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+   (VCREATEv4i32r (LOADCONSTi32 24))),
+  (VCREATEv4i32r (LOADCONSTi32 24)))) >;
 
 
-def astoi_v4i32:Pat < (v4i32 (anyext GPRV4I16:$src)),
-(IL_ASV4INT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i16 GPRV4I16:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 16))),
-  (VCREATE_v4i32 (LOADCONST_i32 16)))) >;
+def astoiv4i32rr:Pat < (v4i32 (anyext GPRV4I16:$src)),
+(IL_ASV4INTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i16r GPRV4I16:$src),
+   (VCREATEv4i32r (LOADCONSTi32 16))),
+  (VCREATEv4i32r (LOADCONSTi32 16)))) >;
 
 
-def ustoi_v4i32:Pat < (v4i32 (zext GPRV4I16:$src)),
-(IL_ASV4INT_v4i32
- (USHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i16 GPRV4I16:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 16))),
-  (VCREATE_v4i32 (LOADCONST_i32 16)))) >;
+def ustoiv4i32rr:Pat < (v4i32 (zext GPRV4I16:$src)),
+(IL_ASV4INTv4i32r
+ (USHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i16r GPRV4I16:$src),
+   (VCREATEv4i32r (LOADCONSTi32 16))),
+  (VCREATEv4i32r (LOADCONSTi32 16)))) >;
 
 
-def sstoi_v4i32:Pat < (v4i32 (sext GPRV4I16:$src)),
-(IL_ASV4INT_v4i32
- (SHRVEC_v4i32
-  (SHLVEC_v4i32
-(IL_ASV4INT_v4i16 GPRV4I16:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 16))),
-  (VCREATE_v4i32 (LOADCONST_i32 16)))) >;
+def sstoiv4i32rr:Pat < (v4i32 (sext GPRV4I16:$src)),
+(IL_ASV4INTv4i32r
+ (SHRv4i32i32rr
+  (SHLv4i32i32rr
+(IL_ASV4INTv4i16r GPRV4I16:$src),
+   (VCREATEv4i32r (LOADCONSTi32 16))),
+  (VCREATEv4i32r (LOADCONSTi32 16)))) >;
 
 
 
-def sctof_v4f32:Pat < (v4f32 (sint_to_fp GPRV4I8:$src)),
+def sctofv4f32rr:Pat < (v4f32 (sint_to_fp GPRV4I8:$src)),
 (v4f32
- (ITOF_v4f32
-  (SHRVEC_v4i32
-   (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-    (VCREATE_v4i32 (LOADCONST_i32 24))),
-   (VCREATE_v4i32 (LOADCONST_i32 24))))) >;
+ (ITOFv4f32r
+  (SHRv4i32i32rr
+   (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+    (VCREATEv4i32r (LOADCONSTi32 24))),
+   (VCREATEv4i32r (LOADCONSTi32 24))))) >;
 
 
-def uctof_v4f32:Pat < (v4f32 (uint_to_fp GPRV4I8:$src)),
+def uctofv4f32rr:Pat < (v4f32 (uint_to_fp GPRV4I8:$src)),
 (v4f32
- (UTOF_v4f32
-  (USHRVEC_v4i32
-   (SHLVEC_v4i32
-(IL_ASV4INT_v4i8 GPRV4I8:$src),
-    (VCREATE_v4i32 (LOADCONST_i32 24))),
-   (VCREATE_v4i32 (LOADCONST_i32 24))))) >;
+ (UTOFv4f32r
+  (USHRv4i32i32rr
+   (SHLv4i32i32rr
+(IL_ASV4INTv4i8r GPRV4I8:$src),
+    (VCREATEv4i32r (LOADCONSTi32 24))),
+   (VCREATEv4i32r (LOADCONSTi32 24))))) >;
 
 
-def ftosc_v4i8:Pat < (v4i8 (fp_to_sint GPRV4F32:$src)),
+def ftoscv4i8rr:Pat < (v4i8 (fp_to_sint GPRV4F32:$src)),
 (v4i8
- (IL_ASV4CHAR_v4i32
-  (BINARY_AND_v4i32
-(FTOI_v4i32 GPRV4F32:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 0x000000FF))))) >;
+ (IL_ASV4CHARv4i32r
+  (ANDv4i32rr
+(FTOIv4i32r GPRV4F32:$src),
+   (VCREATEv4i32r (LOADCONSTi32 0x000000FF))))) >;
 
 
-def ftouc_v4i8:Pat < (v4i8 (fp_to_uint GPRV4F32:$src)),
+def ftoucv4i8rr:Pat < (v4i8 (fp_to_uint GPRV4F32:$src)),
 (v4i8
- (IL_ASV4CHAR_v4i32
-  (BINARY_AND_v4i32
-(FTOU_v4i32 GPRV4F32:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 0x000000FF))))) >;
+ (IL_ASV4CHARv4i32r
+  (ANDv4i32rr
+(FTOUv4i32r GPRV4F32:$src),
+   (VCREATEv4i32r (LOADCONSTi32 0x000000FF))))) >;
 
 
-def sstof_v4f32:Pat < (v4f32 (sint_to_fp GPRV4I16:$src)),
+def sstofv4f32rr:Pat < (v4f32 (sint_to_fp GPRV4I16:$src)),
 (v4f32
- (ITOF_v4f32
-  (SHRVEC_v4i32
-   (SHLVEC_v4i32
-(IL_ASV4INT_v4i16 GPRV4I16:$src),
-    (VCREATE_v4i32 (LOADCONST_i32 16))),
-   (VCREATE_v4i32 (LOADCONST_i32 16))))) >;
+ (ITOFv4f32r
+  (SHRv4i32i32rr
+   (SHLv4i32i32rr
+(IL_ASV4INTv4i16r GPRV4I16:$src),
+    (VCREATEv4i32r (LOADCONSTi32 16))),
+   (VCREATEv4i32r (LOADCONSTi32 16))))) >;
 
 
-def ustof_v4f32:Pat < (v4f32 (uint_to_fp GPRV4I16:$src)),
+def ustofv4f32rr:Pat < (v4f32 (uint_to_fp GPRV4I16:$src)),
 (v4f32
- (UTOF_v4f32
-  (USHRVEC_v4i32
-   (SHLVEC_v4i32
-(IL_ASV4INT_v4i16 GPRV4I16:$src),
-    (VCREATE_v4i32 (LOADCONST_i32 16))),
-   (VCREATE_v4i32 (LOADCONST_i32 16))))) >;
+ (UTOFv4f32r
+  (USHRv4i32i32rr
+   (SHLv4i32i32rr
+(IL_ASV4INTv4i16r GPRV4I16:$src),
+    (VCREATEv4i32r (LOADCONSTi32 16))),
+   (VCREATEv4i32r (LOADCONSTi32 16))))) >;
 
 
-def ftoss_v4i16:Pat < (v4i16 (fp_to_sint GPRV4F32:$src)),
+def ftossv4i16rr:Pat < (v4i16 (fp_to_sint GPRV4F32:$src)),
 (v4i16
- (IL_ASV4SHORT_v4i32
-  (BINARY_AND_v4i32
-(FTOI_v4i32 GPRV4F32:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 0x0000FFFF))))) >;
+ (IL_ASV4SHORTv4i32r
+  (ANDv4i32rr
+(FTOIv4i32r GPRV4F32:$src),
+   (VCREATEv4i32r (LOADCONSTi32 0x0000FFFF))))) >;
 
 
-def ftous_v4i16:Pat < (v4i16 (fp_to_uint GPRV4F32:$src)),
+def ftousv4i16rr:Pat < (v4i16 (fp_to_uint GPRV4F32:$src)),
 (v4i16
- (IL_ASV4SHORT_v4i32
-  (BINARY_AND_v4i32
-(FTOU_v4i32 GPRV4F32:$src),
-   (VCREATE_v4i32 (LOADCONST_i32 0x0000FFFF))))) >;
+ (IL_ASV4SHORTv4i32r
+  (ANDv4i32rr
+(FTOUv4i32r GPRV4F32:$src),
+   (VCREATEv4i32r (LOADCONSTi32 0x0000FFFF))))) >;
 
 
 
 
 
-def stoc_v4i8:Pat < (v4i8 (trunc GPRV4I16:$src)),
-(IL_ASV4CHAR_v4i32
- (SHRVEC_v4i32
- (SHLVEC_v4i32
-   (IL_ASV4INT_v4i16
-(BINARY_AND_v4i16 GPRV4I16:$src,
-     (VCREATE_v4i16 (LOADCONST_i16 0x000000FF))))
-   , (VCREATE_v4i32 (LOADCONST_i32 24))),
- (VCREATE_v4i32 (LOADCONST_i32 24)))
+def stocv4i8rr:Pat < (v4i8 (trunc GPRV4I16:$src)),
+(IL_ASV4CHARv4i32r
+ (SHRv4i32i32rr
+ (SHLv4i32i32rr
+   (IL_ASV4INTv4i16r
+(ANDv4i16rr GPRV4I16:$src,
+     (VCREATEv4i16r (LOADCONSTi16 0x000000FF))))
+   , (VCREATEv4i32r (LOADCONSTi32 24))),
+ (VCREATEv4i32r (LOADCONSTi32 24)))
   ) >;
 
 
-def itoc_v4i8:Pat < (v4i8 (trunc GPRV4I32:$src)),
-(IL_ASV4CHAR_v4i32
- (SHRVEC_v4i32
- (SHLVEC_v4i32
-   (IL_ASV4INT_v4i32
-(BINARY_AND_v4i32 GPRV4I32:$src,
-     (VCREATE_v4i32 (LOADCONST_i32 0x000000FF))))
-   , (VCREATE_v4i32 (LOADCONST_i32 24))),
- (VCREATE_v4i32 (LOADCONST_i32 24)))
+def itocv4i8rr:Pat < (v4i8 (trunc GPRV4I32:$src)),
+(IL_ASV4CHARv4i32r
+ (SHRv4i32i32rr
+ (SHLv4i32i32rr
+   (IL_ASV4INTv4i32r
+(ANDv4i32rr GPRV4I32:$src,
+     (VCREATEv4i32r (LOADCONSTi32 0x000000FF))))
+   , (VCREATEv4i32r (LOADCONSTi32 24))),
+ (VCREATEv4i32r (LOADCONSTi32 24)))
   ) >;
 
 
-def itos_v4i16:Pat < (v4i16 (trunc GPRV4I32:$src)),
-(IL_ASV4SHORT_v4i32
- (SHRVEC_v4i32
- (SHLVEC_v4i32
-   (IL_ASV4INT_v4i32
-(BINARY_AND_v4i32 GPRV4I32:$src,
-     (VCREATE_v4i32 (LOADCONST_i32 0x0000FFFF))))
-   , (VCREATE_v4i32 (LOADCONST_i32 16))),
- (VCREATE_v4i32 (LOADCONST_i32 16)))
+def itosv4i16rr:Pat < (v4i16 (trunc GPRV4I32:$src)),
+(IL_ASV4SHORTv4i32r
+ (SHRv4i32i32rr
+ (SHLv4i32i32rr
+   (IL_ASV4INTv4i32r
+(ANDv4i32rr GPRV4I32:$src,
+     (VCREATEv4i32r (LOADCONSTi32 0x0000FFFF))))
+   , (VCREATEv4i32r (LOADCONSTi32 16))),
+ (VCREATEv4i32r (LOADCONSTi32 16)))
   ) >;
 
 

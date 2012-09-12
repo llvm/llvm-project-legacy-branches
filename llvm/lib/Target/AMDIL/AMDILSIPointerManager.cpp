@@ -41,21 +41,6 @@
 #include <queue>
 #include <iomanip>
 using namespace llvm;
-namespace
-{
-class AMDILSIPointerManagerImpl : public AMDILPointerManagerImpl
-{
-public:
-  AMDILSIPointerManagerImpl(MachineFunction &mf, TargetMachine &tm)
-    : AMDILPointerManagerImpl(mf, tm) {}
-  virtual ~AMDILSIPointerManagerImpl() {}
-protected:
-  virtual void annotateBytePtrs();
-  virtual void annotateRawPtrs();
-  virtual void annotateCacheablePtrs();
-  virtual void annotateCacheableInstrs();
-};
-}
 
 // A byte pointer is a pointer that along the pointer path has a
 // byte store assigned to it.
@@ -99,7 +84,7 @@ AMDILSIPointerManagerImpl::annotateBytePtrs()
         if (mAMI->isKernel(funcName)) {
           const AMDILKernel *krnl = mAMI->getKernel(funcName);
           curRes.bits.ResourceID = mAMI->getConstPtrCB(krnl,
-                                   siBegin->second->getName());
+                                                       siBegin->second->getName());
           curRes.bits.HardwareInst = 1;
         } else {
           curRes.bits.ResourceID = STM->device()
@@ -111,7 +96,7 @@ AMDILSIPointerManagerImpl::annotateBytePtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::LDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           MI->getOperand(MI->getNumOperands()-1)
@@ -123,7 +108,7 @@ AMDILSIPointerManagerImpl::annotateBytePtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::GDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -142,7 +127,8 @@ AMDILSIPointerManagerImpl::annotateBytePtrs()
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::GLOBAL_ID);
         if (MI->getOperand(MI->getNumOperands() - 1).isImm()) {
-          MI->getOperand(MI->getNumOperands() - 1).setImm(curRes.bits.ResourceID);
+          MI->getOperand(MI->getNumOperands() - 1).setImm(
+            curRes.bits.ResourceID);
         }
         if (DEBUGME) {
           dbgs() << "Annotating pointer as default. Inst: ";
@@ -159,7 +145,6 @@ AMDILSIPointerManagerImpl::annotateBytePtrs()
     }
   }
 }
-
 // A raw pointer is any pointer that does not have byte store in its path.
 // This function is unique to SI devices as arena is not part of it.
 void
@@ -216,7 +201,7 @@ AMDILSIPointerManagerImpl::annotateRawPtrs()
         if (mAMI->isKernel(funcName)) {
           const AMDILKernel *krnl = mAMI->getKernel(funcName);
           curRes.bits.ResourceID = mAMI->getConstPtrCB(krnl,
-                                   siBegin->second->getName());
+                                                       siBegin->second->getName());
           curRes.bits.HardwareInst = 1;
         } else {
           curRes.bits.ResourceID = STM->device()
@@ -228,7 +213,7 @@ AMDILSIPointerManagerImpl::annotateRawPtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::LDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -240,7 +225,7 @@ AMDILSIPointerManagerImpl::annotateRawPtrs()
         // the device to use as the ResourceID
         curRes.bits.ResourceID = STM->device()
                                  ->getResourceID(AMDILDevice::GDS_ID);
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           assert(curRes.bits.ResourceID && "Atomic resource ID "
                  "cannot be non-zero!");
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
@@ -260,7 +245,7 @@ AMDILSIPointerManagerImpl::annotateRawPtrs()
           curRes.bits.ResourceID = STM->device()
                                    ->getResourceID(AMDILDevice::GLOBAL_ID);
         }
-        if (isAtomicInst(TM, *miBegin)) {
+        if (isAtomicInst(*miBegin)) {
           (*miBegin)->getOperand((*miBegin)->getNumOperands()-1)
           .setImm(curRes.bits.ResourceID);
         }
@@ -279,7 +264,6 @@ AMDILSIPointerManagerImpl::annotateRawPtrs()
       setAsmPrinterFlags(*miBegin, curRes);
     }
   }
-
 }
 // This function annotates the cacheable pointers with the
 // CacheableRead bit.
@@ -333,18 +317,27 @@ AMDILSIPointerManagerImpl::annotateCacheableInstrs()
     setAsmPrinterFlags(*miBegin, curRes);
   }
 }
-
-AMDILSIPointerManager::AMDILSIPointerManager(
-  TargetMachine &tm,
-  CodeGenOpt::Level OL) :
-  AMDILPointerManager(tm, OL)
+namespace llvm
 {
+extern void initializeAMDILSIPointerManagerPass(llvm::PassRegistry&);
 }
 
-AMDILSIPointerManager::~AMDILSIPointerManager()
-{
-}
+char AMDILSIPointerManager::ID = 0;
+INITIALIZE_PASS(AMDILSIPointerManager, "si-pointer-manager",
+                "AMDIL SI Pointer Manager", false, false);
 
+AMDILSIPointerManager::AMDILSIPointerManager()
+  : MachineFunctionPass(ID)
+{
+  initializeAMDILSIPointerManagerPass(*PassRegistry::getPassRegistry());
+}
+void
+AMDILSIPointerManager::getAnalysisUsage(AnalysisUsage &AU) const
+{
+  AU.setPreservesAll();
+  AU.addRequiredID(MachineDominatorsID);
+  MachineFunctionPass::getAnalysisUsage(AU);
+}
 const char*
 AMDILSIPointerManager::getPassName() const
 {
@@ -359,10 +352,9 @@ AMDILSIPointerManager::runOnMachineFunction(MachineFunction &MF)
     MF.dump();
   }
 
+  const TargetMachine& TM = MF.getTarget();
   AMDILSIPointerManagerImpl impl(MF, TM);
   bool changed = impl.perform();
-
-  clearTempMIFlags(MF);
 
   return changed;
 }

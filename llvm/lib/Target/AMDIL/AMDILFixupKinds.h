@@ -17,10 +17,8 @@
 
 #include "llvm/MC/MCFixup.h"
 
-namespace llvm
-{
-namespace AMDIL
-{
+namespace llvm {
+namespace AMDIL {
 enum Fixups {
   reloc_pcrel_4byte = FirstTargetFixupKind,  // 32-bit pcrel, e.g. a branch.
   reloc_riprel_4byte,                        // 32-bit rip-relative

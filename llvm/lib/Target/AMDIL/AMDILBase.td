@@ -49,19 +49,28 @@ def FeatureNoInline : SubtargetFeature<"no-inline",
         "true",
         "specify whether to not inline functions">;
 
-def Feature64BitPtr : SubtargetFeature<"64BitPtr",
+def Feature64BitPtr : SubtargetFeature<"64bitptr",
         "mIs64bit",
-        "false",
+        "true",
         "Specify if 64bit addressing should be used.">;
 
-def Feature32on64BitPtr : SubtargetFeature<"64on32BitPtr",
+def Feature32on64BitPtr : SubtargetFeature<"64on32bitptr",
         "mIs32on64bit",
-        "false",
+        "true",
         "Specify if 64bit sized pointers with 32bit addressing should be used.">;
 def FeatureDebug : SubtargetFeature<"debug",
         "CapsOverride[AMDILDeviceInfo::Debug]",
         "true",
         "Debug mode is enabled, so disable hardware accelerated address spaces.">;
+
+def FeatureMetadata30 : SubtargetFeature<"metadata30",
+        "mMetadata30",
+        "true",
+        "Enable generation of version 3.0 of the metadata spec">;
+
+def FeatureFlatAS : SubtargetFeature<"flatas", "mFlatAddress", "true", 
+    "Enable flat address space override for global/local/scratch/constant memory.">;
+    
 
 //===----------------------------------------------------------------------===//
 // Register File, Calling Conv, Instruction Descriptions

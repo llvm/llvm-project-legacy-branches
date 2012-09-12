@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "BarrierDetect"
-#ifdef DEBUG
+#define DEBUG_TYPE "barrierdetect"
+#if !defined(NDEBUG)
 #define DEBUGME (DebugFlag && isCurrentDebugType(DEBUG_TYPE))
 #else
 #define DEBUGME 0
@@ -45,8 +45,8 @@ namespace
 {
 class LLVM_LIBRARY_VISIBILITY AMDILBarrierDetect : public FunctionPass
 {
-  TargetMachine &TM;
-  static char ID;
+TargetMachine &TM;
+static char ID;
 public:
   AMDILBarrierDetect(TargetMachine &TM, CodeGenOpt::Level OptLevel);
   ~AMDILBarrierDetect();
@@ -80,16 +80,13 @@ createAMDILBarrierDetect(TargetMachine &TM, CodeGenOpt::Level OptLevel)
 
 AMDILBarrierDetect::AMDILBarrierDetect(TargetMachine &TM,
                                        CodeGenOpt::Level OptLevel)
-  :
-  FunctionPass(ID),
-  TM(TM)
+  : FunctionPass(ID),
+    TM(TM)
 {
 }
-
 AMDILBarrierDetect::~AMDILBarrierDetect()
 {
 }
-
 bool AMDILBarrierDetect::detectBarrier(BasicBlock::iterator *BBI)
 {
   SmallVector<int64_t, DEFAULT_VEC_SLOTS>::iterator bIter;
@@ -100,8 +97,23 @@ bool AMDILBarrierDetect::detectBarrier(BasicBlock::iterator *BBI)
   if (!CI || !CI->getNumOperands()) {
     return false;
   }
+
   const Value *funcVal = CI->getOperand(CI->getNumOperands() - 1);
-  if (funcVal && strncmp(funcVal->getName().data(), "barrier", 7)) {
+
+  if (!funcVal) {
+    return false;
+  }
+
+  const StringRef& funcName = funcVal->getName();
+
+  if (funcName.startswith("__amdil_gws")) {
+    AMDILMachineFunctionInfo *MFI =
+      getAnalysis<MachineFunctionAnalysis>().getMF()
+      .getInfo<AMDILMachineFunctionInfo>();
+    MFI->addMetadata(";memory:gws");
+    return false;
+  } else if (!funcName.startswith("barrier") &&
+             !funcName.startswith("__amd_barrier")) {
     return false;
   }
 
@@ -130,9 +142,11 @@ bool AMDILBarrierDetect::detectBarrier(BasicBlock::iterator *BBI)
     MFI->addMetadata(";limitgroupsize");
     MFI->setUsesLDS();
   }
-  const Value *V = inst->getOperand(inst->getNumOperands()-2);
+
+  const Value *V = inst->getOperand(inst->getNumOperands() - 2);
   const ConstantInt *Cint = dyn_cast<ConstantInt>(V);
-  Function *iF = dyn_cast<Function>(inst->getOperand(inst->getNumOperands()-1));
+  Function *iF = dyn_cast<Function>(inst->getOperand(inst->getNumOperands() - 1));
+
   Module *M = iF->getParent();
   bID = Cint->getSExtValue();
   if (bID > 0) {
@@ -148,13 +162,12 @@ bool AMDILBarrierDetect::detectBarrier(BasicBlock::iterator *BBI)
     }
     Function *nF =
       dyn_cast<Function>(M->getOrInsertFunction(name, iF->getFunctionType()));
-    inst->setOperand(inst->getNumOperands()-1, nF);
+    inst->setOperand(inst->getNumOperands() - 1, nF);
     return false;
   }
 
   return false;
 }
-
 bool AMDILBarrierDetect::runOnFunction(Function &MF)
 {
   mChanged = false;
@@ -167,22 +180,18 @@ bool AMDILBarrierDetect::runOnFunction(Function &MF)
                         &AMDILBarrierDetect::detectBarrier), this));
   return mChanged;
 }
-
 const char* AMDILBarrierDetect::getPassName() const
 {
   return "AMDIL Barrier Detect Pass";
 }
-
 bool AMDILBarrierDetect::doInitialization(Module &M)
 {
   return false;
 }
-
 bool AMDILBarrierDetect::doFinalization(Module &M)
 {
   return false;
 }
-
 void AMDILBarrierDetect::getAnalysisUsage(AnalysisUsage &AU) const
 {
   AU.addRequired<MachineFunctionAnalysis>();
