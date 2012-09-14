@@ -277,7 +277,11 @@ Error::SetError (ValueType err, ErrorType type)
 void
 Error::SetErrorToErrno()
 {
+#ifdef _WIN32
+    m_code = GetLastError();
+#else
     m_code = errno;
+#endif
     m_type = eErrorTypePOSIX;
     m_string.clear();
 }

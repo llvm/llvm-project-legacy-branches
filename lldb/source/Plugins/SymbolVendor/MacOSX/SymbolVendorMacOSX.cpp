@@ -13,7 +13,9 @@
 #include <libxml/tree.h>
 #include <string.h>
 
+#ifdef _POSIX_SOURCE
 #include <AvailabilityMacros.h>
+#endif
 
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"

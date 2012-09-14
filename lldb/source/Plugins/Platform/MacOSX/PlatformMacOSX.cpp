@@ -10,7 +10,9 @@
 #include "PlatformMacOSX.h"
 
 // C Includes
+#ifdef _POSIX_SOURCE
 #include <sys/sysctl.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes

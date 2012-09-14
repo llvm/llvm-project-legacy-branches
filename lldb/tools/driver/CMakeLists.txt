@@ -29,6 +29,7 @@ set( LLDB_USED_LIBS
   lldbPluginObjectFileMachO
   lldbPluginObjectContainerMachOArchive
   lldbPluginObjectContainerBSDArchive
+  lldbPluginPlatformMacOSX
   
   # Windows
   lldbHostWindows

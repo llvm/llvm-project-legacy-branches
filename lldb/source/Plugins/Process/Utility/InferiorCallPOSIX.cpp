@@ -17,7 +17,17 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/ThreadPlanCallFunction.h"
 
+#ifdef _POSIX_SOURCE
 #include <sys/mman.h>
+#else
+// define them 
+#define PROT_NONE 0
+#define PROT_READ 1
+#define PROT_WRITE 2
+#define PROT_EXEC 4
+#define MAP_PRIVATE 2
+#define MAP_ANON 0x1000
+#endif
 
 using namespace lldb;
 using namespace lldb_private;

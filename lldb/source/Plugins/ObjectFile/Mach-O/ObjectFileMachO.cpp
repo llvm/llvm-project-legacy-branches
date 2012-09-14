@@ -3530,7 +3530,7 @@ ObjectFileMachO::GetThreadContextAtIndex (uint32_t idx, lldb_private::Thread &th
         DataExtractor data (m_data, 
                             thread_context_file_range->GetRangeBase(), 
                             thread_context_file_range->GetByteSize());
-
+#if defined(__APPLE__)
         switch (m_header.cputype)
         {
             case llvm::MachO::CPUTypeARM:
@@ -3545,6 +3545,9 @@ ObjectFileMachO::GetThreadContextAtIndex (uint32_t idx, lldb_private::Thread &th
                 reg_ctx_sp.reset (new RegisterContextDarwin_x86_64_Mach (thread, data));
                 break;
         }
+#else
+        llvm_unreachable("Should only occur for host debugging");
+#endif
     }
     return reg_ctx_sp;
 }

@@ -31,6 +31,10 @@
 using namespace lldb;
 using namespace lldb_private;
 
+#ifndef _POSIX_SOURCE
+#define SIGSTOP 17
+#endif
+
 //----------------------------------------------------------------------
 // GDBRemoteCommunicationClient constructor
 //----------------------------------------------------------------------

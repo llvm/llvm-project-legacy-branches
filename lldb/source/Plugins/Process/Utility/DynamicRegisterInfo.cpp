@@ -6,6 +6,7 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+#ifndef LLDB_DISABLE_PYTHON
 
 #include "DynamicRegisterInfo.h"
 
@@ -267,3 +268,4 @@ DynamicRegisterInfo::Clear()
     m_set_reg_nums.clear();
     m_set_names.clear();
 }
+#endif

@@ -10,7 +10,9 @@
 #include "PlatformRemoteGDBServer.h"
 
 // C Includes
+#ifdef _POSIX_SOURCE
 #include <sys/sysctl.h>
+#endif
 
 // C++ Includes
 // Other libraries and framework includes
@@ -27,6 +29,9 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
+#ifdef _WIN32
+#include <Winsock2.h>
+#endif
 
 using namespace lldb;
 using namespace lldb_private;

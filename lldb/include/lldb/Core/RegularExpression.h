@@ -178,7 +178,7 @@ private:
     // Member variables
     //------------------------------------------------------------------
     mutable std::string m_re;   ///< A copy of the original regular expression text
-    mutable llvm::Regex m_regex;     ///< The compiled regular expression
+    mutable llvm::Regex* m_regex;     ///< The compiled regular expression
     int     m_compile_flags; ///< Stores the flags from the last compile.
 
     typedef llvm::SmallVectorImpl<llvm::StringRef> MatchVectorImpl;

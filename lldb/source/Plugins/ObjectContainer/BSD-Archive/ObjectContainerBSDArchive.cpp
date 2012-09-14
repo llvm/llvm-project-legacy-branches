@@ -9,8 +9,6 @@
 
 #include "ObjectContainerBSDArchive.h"
 
-#include <ar.h>
-
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Module.h"
@@ -23,6 +21,24 @@ using namespace lldb;
 using namespace lldb_private;
 
 
+#ifdef _POSIX_SOURCE 
+#include <ar.h>
+#else
+// Defines from ar, missing on Windows
+#define ARMAG   "!<arch>\n"
+#define SARMAG  8 
+#define ARFMAG  "`\n"
+
+typedef struct ar_hdr
+  {
+    char ar_name[16];          
+    char ar_date[12];          
+    char ar_uid[6], ar_gid[6]; 
+    char ar_mode[8];           
+    char ar_size[10];          
+    char ar_fmag[2];           
+  } ar_hdr;
+#endif
 
 ObjectContainerBSDArchive::Object::Object() :
     ar_name(),

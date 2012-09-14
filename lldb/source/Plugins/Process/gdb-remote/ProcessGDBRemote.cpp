@@ -9,12 +9,20 @@
 
 // C Includes
 #include <errno.h>
+
+#ifdef _POSIX_SOURCE
 #include <spawn.h>
+#endif
 #include <stdlib.h>
+#ifdef _POSIX_SOURCE
 #include <netinet/in.h>
 #include <sys/mman.h>       // for mmap
 #include <sys/stat.h>
 #include <sys/types.h>
+#endif
+#ifndef _POSIX_SOURCE
+#define	SIGTRAP		5	
+#endif
 #include <time.h>
 
 // C++ Includes
@@ -93,6 +101,11 @@ static bool rand_initialized = false;
 #define LOW_PORT    (1024u)
 #define HIGH_PORT   (49151u)
 #endif
+
+#ifdef _WIN32
+#define usleep(usec) Sleep ((usec) / 1000)
+#endif
+
 
 static inline uint16_t
 get_random_port ()
@@ -686,7 +699,7 @@ ProcessGDBRemote::ConnectToDebugserver (const char *connect_url)
             if (retry_count >= max_retry_count)
                 break;
 
-            usleep (100000);
+			usleep (100000);
         }
     }
 
@@ -721,7 +734,7 @@ ProcessGDBRemote::ConnectToDebugserver (const char *connect_url)
     for (size_t idx = 0; idx < num_cmds; idx++)
     {
         StringExtractorGDBRemote response;
-        printf ("Sending command: \%s.\n", GetExtraStartupCommands().GetArgumentAtIndex(idx));
+        printf ("Sending command: \\%s.\n", GetExtraStartupCommands().GetArgumentAtIndex(idx));
         m_gdb_comm.SendPacketAndWaitForResponse (GetExtraStartupCommands().GetArgumentAtIndex(idx), response, false);
     }
     return error;
@@ -1721,7 +1734,11 @@ ProcessGDBRemote::DoDestroy ()
         // FIXME: These should be ConstStrings so we aren't doing strcmp'ing.
         if (platform_sp
             && platform_sp->GetName()
+#if defined (__APPLE__)
             && strcmp (platform_sp->GetName(), PlatformRemoteiOS::GetShortPluginNameStatic()) == 0)
+#else
+			&& false)
+#endif
         {
             if (m_destroy_tried_resuming)
             {
@@ -2553,7 +2570,11 @@ ProcessGDBRemote::KillDebugserverProcess ()
 {
     if (m_debugserver_pid != LLDB_INVALID_PROCESS_ID)
     {
-        ::kill (m_debugserver_pid, SIGINT);
+#if _WIN32
+		TerminateProcess ((HANDLE)m_debugserver_pid, 1);
+#else
+		::kill (m_debugserver_pid, SIGINT);
+#endif
         m_debugserver_pid = LLDB_INVALID_PROCESS_ID;
     }
 }
@@ -2615,7 +2636,7 @@ ProcessGDBRemote::StopAsyncThread ()
 }
 
 
-void *
+thread_result_t
 ProcessGDBRemote::AsyncThread (void *arg)
 {
     ProcessGDBRemote *process = (ProcessGDBRemote*) arg;

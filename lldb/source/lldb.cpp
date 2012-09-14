@@ -39,6 +39,10 @@
 #ifndef LLDB_DISABLE_PYTHON
 #include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
 #endif
+
+#include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
+#include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
+
 #if defined (__APPLE__)
 #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
 #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
@@ -48,14 +52,12 @@
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
-#include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
-#include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
 #include "Plugins/Process/MacOSX-Kernel/ProcessKDP.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
+#endif
 #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
 #include "Plugins/Platform/MacOSX/PlatformiOSSimulator.h"
-#endif
 
 #include "Plugins/Process/mach-core/ProcessMachCore.h"
 
@@ -73,6 +75,7 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "Plugins/Platform/Windows/PlatformWindows.h"
+#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #endif
 
 #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
@@ -120,6 +123,8 @@ lldb_private::Initialize ()
         OperatingSystemPython::Initialize();
 #endif
 
+        ObjectContainerUniversalMachO::Initialize();
+        ObjectFileMachO::Initialize();
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
@@ -131,16 +136,14 @@ lldb_private::Initialize ()
         ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
         AppleObjCRuntimeV1::Initialize();
-        ObjectContainerUniversalMachO::Initialize();
-        ObjectFileMachO::Initialize();
         ProcessGDBRemote::Initialize();
         ProcessKDP::Initialize();
         ProcessMachCore::Initialize();
         SymbolVendorMacOSX::Initialize();
+#endif
         PlatformRemoteiOS::Initialize();
         PlatformMacOSX::Initialize();
         PlatformiOSSimulator::Initialize();
-#endif
 #if defined (__linux__)
         //----------------------------------------------------------------------
         // Linux hosted plugins
@@ -154,9 +157,10 @@ lldb_private::Initialize ()
         //----------------------------------------------------------------------
         // Platform agnostic plugins
         //----------------------------------------------------------------------
-#ifndef _WIN32 // TODO: Enable this for Windows later
-        PlatformRemoteGDBServer::Initialize ();
+#ifdef _WIN32 // TODO: Enable this for Windows later
+        ProcessGDBRemote::Initialize();
 #endif
+        PlatformRemoteGDBServer::Initialize ();
 
         DynamicLoaderStatic::Initialize();
       

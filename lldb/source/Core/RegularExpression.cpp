@@ -16,9 +16,9 @@ using namespace lldb_private;
 // Default constructor
 //----------------------------------------------------------------------
 RegularExpression::RegularExpression() :
-	m_re(),
-	m_regex(llvm::StringRef())
+    m_re()
 {
+    m_regex = NULL;
 }
 
 //----------------------------------------------------------------------
@@ -26,9 +26,9 @@ RegularExpression::RegularExpression() :
 // resulting compiled regular expression into this object.
 //----------------------------------------------------------------------
 RegularExpression::RegularExpression(const char* re, int flags) :
-	m_re(),
-    m_regex(llvm::StringRef())
+    m_re()
 {
+    m_regex = NULL;
     Compile(re);
 }
 
@@ -37,16 +37,19 @@ RegularExpression::RegularExpression(const char* re, int flags) :
 // resulting compiled regular expression into this object.
 //----------------------------------------------------------------------
 RegularExpression::RegularExpression(const char* re) :
-    m_re(),
-    m_regex(llvm::StringRef())
+    m_re()
 {
+    m_regex = NULL;
     Compile(re);
 }
 
 RegularExpression::RegularExpression(const RegularExpression &rhs) :
-    m_regex(llvm::StringRef())
+    m_re()
  {
-     Compile(rhs.GetText(), rhs.GetCompileFlags());
+     m_regex = NULL;
+     const char* data = rhs.GetText();
+     if (data)
+       Compile(data, rhs.GetCompileFlags());
  }
 
 
@@ -67,7 +70,11 @@ RegularExpression::operator= (const RegularExpression &rhs)
 //----------------------------------------------------------------------
 RegularExpression::~RegularExpression()
 {
-
+    if (m_regex)
+    {
+        delete m_regex;
+        m_regex = NULL;
+    }
 }
 
 //----------------------------------------------------------------------
@@ -94,7 +101,9 @@ RegularExpression::Compile(const char* re, int flags)
     Free();
     m_compile_flags = flags;
     m_re = re;
-    m_regex = llvm::Regex(llvm::StringRef(re));
+    if (m_regex)
+        delete m_regex;
+    m_regex = new llvm::Regex(llvm::StringRef(re));
  
     return IsValid();
 }
@@ -110,7 +119,9 @@ RegularExpression::Compile(const char* re, int flags)
 bool
 RegularExpression::Execute(const char* s, size_t num_matches, int execute_flags) const
 {
-    return m_regex.match(llvm::StringRef(s), &m_matches);
+    if (!m_regex)
+        return false;
+    return m_regex->match(llvm::StringRef(s), &m_matches);
 }
 
 bool
@@ -133,7 +144,8 @@ bool
 RegularExpression::IsValid () const
 {
     std::string err;
-    return m_regex.isValid(err);
+    if (!m_regex) return false;
+    return m_regex->isValid(err);
 }
 
 //----------------------------------------------------------------------
@@ -155,7 +167,9 @@ void
 RegularExpression::Free()
 {
     m_re.clear();
-    m_regex = llvm::Regex(llvm::StringRef());
+    if (m_regex)
+        delete m_regex;
+    m_regex = NULL;
     m_matches.clear();
 }
 
@@ -163,7 +177,8 @@ std::string
 RegularExpression::GetErrorAsCString () const
 {
     std::string err;
-    m_regex.isValid(err);
+    if (m_regex)
+        m_regex->isValid(err);
     return err;
 }
 

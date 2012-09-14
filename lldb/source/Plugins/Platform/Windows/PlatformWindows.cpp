@@ -106,6 +106,8 @@ PlatformWindows::Initialize ()
     if (g_initialize_count++ == 0)
     {
 #if defined (_WIN32)
+        WSADATA dummy;
+        WSAStartup(0x202, &dummy);
         // Force a host flag to true for the default platform object.
         PlatformSP default_platform_sp (new PlatformWindows(true));
         default_platform_sp->SetSystemArchitecture (Host::GetArchitecture());
@@ -120,8 +122,12 @@ PlatformWindows::Initialize ()
 void
 PlatformWindows::Terminate ()
 {
-    if (g_initialize_count > 0 && --g_initialize_count == 0)
+    if (g_initialize_count > 0 && --g_initialize_count == 0) {
+#ifdef _WIN32
+        WSACleanup();
+#endif
         PluginManager::UnregisterPlugin (PlatformWindows::CreateInstance);
+    }
 }
 
 //------------------------------------------------------------------

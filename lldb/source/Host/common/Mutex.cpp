@@ -324,7 +324,7 @@ Mutex::TryLock(const char *failure_message)
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
-    return m_mutex.tryacquire();
+    return 0 == m_mutex.tryacquire(); // try acquire returns <> 0 for success
 }
 
 //----------------------------------------------------------------------

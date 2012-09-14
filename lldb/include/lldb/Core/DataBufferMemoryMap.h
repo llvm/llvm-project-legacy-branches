@@ -149,6 +149,9 @@ protected:
     size_t m_mmap_size;     ///< The actual number of bytes that were mapped when \c mmap() was called
     uint8_t *m_data;        ///< The data the user requested somewhere within the memory mapped data.
     size_t m_size;          ///< The size of the data the user got when data was requested
+#ifdef _WIN32
+    HANDLE m_mmap_handle;
+#endif
 
 private:
     DISALLOW_COPY_AND_ASSIGN (DataBufferMemoryMap);

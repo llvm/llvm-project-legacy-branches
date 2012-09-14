@@ -16,6 +16,9 @@
 #ifdef _POSIX_SOURCE
 #include <sys/mman.h>
 #endif
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 #include "lldb/Core/DataBufferMemoryMap.h"
 #include "lldb/Core/Error.h"
@@ -83,7 +86,13 @@ DataBufferMemoryMap::Clear()
 {
     if (m_mmap_addr != NULL)
     {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+        if (m_mmap_addr)
+            UnmapViewOfFile(m_mmap_addr);
+        if (m_mmap_handle)
+            CloseHandle(m_mmap_handle);
+        m_mmap_handle = NULL;
+#else
         ::munmap((void *)m_mmap_addr, m_mmap_size);
 #endif
         m_mmap_addr = NULL;
@@ -157,7 +166,43 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
         struct stat stat;
         if (::fstat(fd, &stat) == 0)
         {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+            if ((stat.st_mode & _S_IFREG) && (stat.st_size > offset))
+            {
+                const size_t max_bytes_available = stat.st_size - offset;
+                if (length == SIZE_MAX)
+                {
+                    length = max_bytes_available;
+                }
+                else if (length > max_bytes_available)
+                {
+                    // Cap the length if too much data was requested
+                    length = max_bytes_available;
+                }
+
+                if (length > 0)
+                {
+                    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+                    m_mmap_handle = CreateFileMapping(handle, NULL, writeable ? PAGE_READWRITE : PAGE_READONLY, 0, 0, NULL);
+                    if (m_mmap_handle <= 0)
+                    {
+                        Error error;
+                        error.SetErrorToErrno ();
+                        return 0;
+                    }
+                    LPVOID data = MapViewOfFile(m_mmap_handle, writeable ? FILE_MAP_WRITE : FILE_MAP_READ, 0, offset, length);
+                    m_mmap_addr = (uint8_t *)data;
+                    m_data = m_mmap_addr;
+                    if (!m_data) {
+                        Error error;
+                        error.SetErrorToErrno ();
+                        return 0;
+                    }
+                    m_mmap_size = length;
+                    m_size = length;
+                }
+            }
+#else
             if (S_ISREG(stat.st_mode) && (stat.st_size > offset))
             {
                 const size_t max_bytes_available = stat.st_size - offset;

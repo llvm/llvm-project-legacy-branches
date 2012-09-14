@@ -593,7 +593,7 @@ Host::ThreadCreate
     
 #ifdef _WIN32
     thread = ::_beginthreadex(0, 0, ThreadCreateTrampoline, info_ptr, 0, NULL);
-    int err = thread;
+    int err = thread <= 0 ? GetLastError() : 0;
 #else
     int err = ::pthread_create (&thread, NULL, ThreadCreateTrampoline, info_ptr);
 #endif

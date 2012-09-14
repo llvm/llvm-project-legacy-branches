@@ -413,6 +413,18 @@ ConnectionFileDescriptor::Read (void *dst,
         {
 #ifdef _POSIX_SOURCE
             bytes_read = ::read (m_fd_recv, dst, dst_len);
+#else
+            switch (m_fd_send_type) {
+            case eFDTypeSocket:
+            case eFDTypeSocketUDP:
+                bytes_read = ::recv(m_fd_recv, (char*) dst, dst_len, 0);
+                break;
+            default:
+                bytes_read = -1;
+                break;
+
+            }
+
 #endif			
         } while (bytes_read < 0 && errno == EINTR);
     }
@@ -515,20 +527,20 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
 
     ssize_t bytes_sent = 0;
 
-#ifdef _POSIX_SOURCE
     switch (m_fd_send_type)
     {
+#ifdef _POSIX_SOURCE
         case eFDTypeFile:       // Other FD requireing read/write
             do
             {
                 bytes_sent = ::write (m_fd_send, src, src_len);
             } while (bytes_sent < 0 && errno == EINTR);
             break;
-            
+#endif     
         case eFDTypeSocket:     // Socket requiring send/recv
             do
             {
-                bytes_sent = ::send (m_fd_send, src, src_len, 0);
+                bytes_sent = ::send (m_fd_send, (char*)src, src_len, 0);
             } while (bytes_sent < 0 && errno == EINTR);
             break;
             
@@ -537,15 +549,16 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
             do
             {
                 bytes_sent = ::sendto (m_fd_send, 
-                                       src, 
+                                       (char*)src, 
                                        src_len, 
                                        0, 
                                        m_udp_send_sockaddr, 
                                        m_udp_send_sockaddr.GetLength());
             } while (bytes_sent < 0 && errno == EINTR);
             break;
+        default:
+            bytes_sent = 0;
     }
-#endif	
 
     if (bytes_sent < 0)
         error.SetErrorToErrno ();
