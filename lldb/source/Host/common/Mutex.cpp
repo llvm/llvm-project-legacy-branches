@@ -183,7 +183,10 @@ Mutex::Locker::TryLock (Mutex &mutex, const char *failure_message)
 Mutex::Mutex () :
     m_mutex()
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    m_mutex = new CRITICAL_SECTION();
+    InitializeCriticalSection(m_mutex);
+#else
     int err;
     err = ::pthread_mutex_init (&m_mutex, NULL);
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -202,7 +205,10 @@ Mutex::Mutex () :
 Mutex::Mutex (Mutex::Type type) :
     m_mutex()
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    m_mutex = new CRITICAL_SECTION();
+    InitializeCriticalSection(m_mutex);
+#else
     int err;
     ::pthread_mutexattr_t attr;
     err = ::pthread_mutexattr_init (&attr);
@@ -244,7 +250,10 @@ Mutex::Mutex (Mutex::Type type) :
 //----------------------------------------------------------------------
 Mutex::~Mutex()
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    DeleteCriticalSection(m_mutex);
+    delete m_mutex;
+#else
     int err;
     err = ::pthread_mutex_destroy (&m_mutex);
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -281,7 +290,10 @@ Mutex::GetMutex()
 int
 Mutex::Lock()
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    EnterCriticalSection(m_mutex);
+    return 0;
+#else
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p)...\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex);
 
 #if ENABLE_MUTEX_ERROR_CHECKING
@@ -301,7 +313,6 @@ Mutex::Lock()
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_lock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
-    return m_mutex.acquire();
 }
 
 //----------------------------------------------------------------------
@@ -315,7 +326,9 @@ Mutex::Lock()
 int
 Mutex::TryLock(const char *failure_message)
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    return 0 == TryEnterCriticalSection(m_mutex);
+#else
 #if ENABLE_MUTEX_ERROR_CHECKING
     error_check_mutex (&m_mutex, eMutexActionAssertInitialized);
 #endif
@@ -324,7 +337,6 @@ Mutex::TryLock(const char *failure_message)
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
-    return 0 == m_mutex.tryacquire(); // try acquire returns <> 0 for success
 }
 
 //----------------------------------------------------------------------
@@ -339,7 +351,10 @@ Mutex::TryLock(const char *failure_message)
 int
 Mutex::Unlock()
 {
-#ifdef _POSIX_SOURCE
+#ifdef _WIN32
+    LeaveCriticalSection(m_mutex);
+   return 0;
+#else
 #if ENABLE_MUTEX_ERROR_CHECKING
     error_check_mutex (&m_mutex, eMutexActionAssertInitialized);
 #endif
@@ -356,7 +371,6 @@ Mutex::Unlock()
     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_unlock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
     return err;
 #endif
-    return m_mutex.release();
 }
 
 #ifdef LLDB_CONFIGURATION_DEBUG

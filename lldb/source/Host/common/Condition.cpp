@@ -104,11 +104,15 @@ Condition::Wait (Mutex &mutex, const TimeValue *abstime, bool *timed_out)
 {
 #ifdef _WIN32
     DWORD wait = INFINITE;
-    if (abstime != NULL)
-        wait = tv2ms(abstime->GetAsTimeVal());
+    if (abstime != NULL) {
+        int wval = (*abstime - TimeValue::Now()) / 1000000;
+        if (wval < 0) wval = 0;
 
-    int err = SleepConditionVariableCS(&m_condition, (PCRITICAL_SECTION)&mutex,
-        wait);
+        wait = wval;
+    }
+    
+    
+    int err = SleepConditionVariableCS(&m_condition, mutex.m_mutex, wait);
 
     if (timed_out != NULL)
     {

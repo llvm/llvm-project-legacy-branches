@@ -16,6 +16,11 @@
 #ifdef _POSIX_SOURCE
 #include <pthread.h>
 #endif
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#endif
 
 #include <assert.h>
 
@@ -257,7 +262,11 @@ private:
 #endif
 
 #ifndef _POSIX_SOURCE
+#ifdef _WIN32
+    CRITICAL_SECTION* m_mutex;
+#else
     llvm::sys::MutexImpl m_mutex;
+#endif
 #endif
 
     Mutex(const Mutex&);
