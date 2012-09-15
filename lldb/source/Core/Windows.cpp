@@ -163,12 +163,12 @@ char* __cdecl realpath( const char * name, char * resolved )
 
 long long int strtoll(const char *nptr, char **endptr, int base)
 {
-    return 0;
+    return _strtoi64(nptr, endptr, base);
 }
 
 unsigned long long int strtoull(const char *nptr, char **endptr, int base)
 {
-    return 0;
+    return _strtoui64(nptr, endptr, base);
 }
 
 //char* realpath( const char * name, char * resolved )
