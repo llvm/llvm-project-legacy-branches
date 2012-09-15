@@ -29,6 +29,10 @@ using namespace lldb;
 using namespace lldb_private;
 
 
+SBCommandInterpreter::SBCommandInterpreter() 
+{
+}
+
 SBCommandInterpreter::SBCommandInterpreter (CommandInterpreter *interpreter) :
     m_opaque_ptr (interpreter)
 {

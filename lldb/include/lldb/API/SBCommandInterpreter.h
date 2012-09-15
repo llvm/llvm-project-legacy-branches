@@ -26,6 +26,8 @@ public:
         eBroadcastBitAsynchronousErrorData  = (1 << 4)
     };
 
+    SBCommandInterpreter ();
+
     SBCommandInterpreter (const lldb::SBCommandInterpreter &rhs);
     
     const lldb::SBCommandInterpreter &
@@ -112,7 +114,7 @@ protected:
 private:
     friend class SBDebugger;
 
-    SBCommandInterpreter (lldb_private::CommandInterpreter *interpreter_ptr = NULL);   // Access using SBDebugger::GetCommandInterpreter();
+    SBCommandInterpreter (lldb_private::CommandInterpreter *interpreter_ptr);   // Access using SBDebugger::GetCommandInterpreter();
 
     static void
     InitializeSWIG ();
