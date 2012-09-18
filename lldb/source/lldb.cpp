@@ -42,11 +42,11 @@
 
 #include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
+#include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 
 #if defined (__APPLE__)
 #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
 #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
-#include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 #include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
@@ -117,8 +117,9 @@ lldb_private::Initialize ()
         UnwindAssembly_x86::Initialize();
         EmulateInstructionARM::Initialize ();
         ObjectFilePECOFF::Initialize ();
-        DynamicLoaderPOSIXDYLD::Initialize ();
 #endif
+        DynamicLoaderPOSIXDYLD::Initialize ();
+        DynamicLoaderMacOSXDYLD::Initialize();
 #ifndef LLDB_DISABLE_PYTHON
         OperatingSystemPython::Initialize();
 #endif
@@ -129,7 +130,6 @@ lldb_private::Initialize ()
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
-        DynamicLoaderMacOSXDYLD::Initialize();
         DynamicLoaderDarwinKernel::Initialize();
         OperatingSystemDarwinKernel::Initialize();
         SymbolFileDWARFDebugMap::Initialize();
