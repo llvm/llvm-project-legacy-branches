@@ -113,11 +113,11 @@ lldb_private::Initialize ()
         ObjectFileELF::Initialize();
         SymbolFileDWARF::Initialize();
         SymbolFileSymtab::Initialize();
-        UnwindAssemblyInstEmulation::Initialize();
-        UnwindAssembly_x86::Initialize();
         EmulateInstructionARM::Initialize ();
         ObjectFilePECOFF::Initialize ();
 #endif
+        UnwindAssemblyInstEmulation::Initialize();
+        UnwindAssembly_x86::Initialize();
         DynamicLoaderPOSIXDYLD::Initialize ();
         DynamicLoaderMacOSXDYLD::Initialize();
 #ifndef LLDB_DISABLE_PYTHON

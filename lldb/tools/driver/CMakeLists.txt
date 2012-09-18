@@ -32,6 +32,8 @@ set( LLDB_USED_LIBS
   lldbPluginPlatformMacOSX
   lldbPluginDynamicLoaderMacOSXDYLD
   lldbPluginDynamicLoaderPosixDYLD
+  lldbPluginUnwindAssemblyInstEmulation
+  lldbPluginUnwindAssemblyX86
   
   # Windows
   lldbHostWindows
@@ -79,6 +81,7 @@ set( LLVM_LINK_COMPONENTS
   bitreader
   mc
   core
+  mcdisassembler
   )
 
 add_lldb_executable(lldb
