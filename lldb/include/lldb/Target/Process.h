@@ -3039,7 +3039,7 @@ public:
     GetNextEvent (lldb::EventSP &event_sp);
 
     lldb::StateType
-    WaitForProcessToStop (const TimeValue *timeout);
+    WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr = NULL);
 
     lldb::StateType
     WaitForStateChangedEvents (const TimeValue *timeout, lldb::EventSP &event_sp);

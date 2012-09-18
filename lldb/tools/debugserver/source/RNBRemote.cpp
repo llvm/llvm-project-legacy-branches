@@ -2599,7 +2599,7 @@ RNBRemote::HandlePacket_G (const char *p)
             }
             else
             {
-                DNBLogError("RNBRemote::HandlePacket_G(%s): extracted %zu of %zu bytes, size mismatch\n", p, bytes_extracted, reg_ctx_size);
+                DNBLogError("RNBRemote::HandlePacket_G(%s): extracted %llu of %llu bytes, size mismatch\n", p, (uint64_t)bytes_extracted, (uint64_t)reg_ctx_size);
                 return SendPacket ("E64");
             }
         }
@@ -3525,10 +3525,17 @@ RNBRemote::HandlePacket_k (const char *p)
 rnb_err_t
 RNBRemote::HandlePacket_stop_process (const char *p)
 {
+//#define TEST_EXIT_ON_INTERRUPT // This should only be uncommented to test exiting on interrupt
+#if defined(TEST_EXIT_ON_INTERRUPT)
+    rnb_err_t err = HandlePacket_k (p);
+    m_comm.Disconnect(true);
+    return err;
+#else
     DNBProcessSignal (m_ctx.ProcessID(), SIGSTOP);
     //DNBProcessSignal (m_ctx.ProcessID(), SIGINT);
     // Do not send any response packet! Wait for the stop reply packet to naturally happen
     return rnb_success;
+#endif
 }
 
 /* 's'

@@ -4500,8 +4500,6 @@ ClangASTContext::GetIndexOfChildMemberWithName
                                  named_decl_pos != path->Decls.second && parent_record_decl;
                                  ++named_decl_pos)
                             {
-                                //printf ("path[%zu] = %s\n", child_indexes.size(), (*named_decl_pos)->getNameAsCString());
-
                                 child_idx = GetIndexForRecordChild (parent_record_decl, *named_decl_pos, omit_empty_base_classes);
                                 if (child_idx == UINT32_MAX)
                                 {
@@ -5603,7 +5601,7 @@ ClangASTContext::IsPossibleDynamicType (clang::ASTContext *ast,
                         {
                             bool is_complete = cxx_record_decl->isCompleteDefinition();
                             if (!is_complete)
-                                is_complete = ClangASTContext::GetCompleteType (ast, clang_type);
+                                is_complete = ClangASTContext::GetCompleteType (ast, pointee_qual_type.getAsOpaquePtr());
 
                             if (is_complete)
                             {

@@ -241,6 +241,8 @@ Thread::CheckpointThreadState (ThreadStateCheckpoint &saved_state)
     ProcessSP process_sp (GetProcess());
     if (process_sp)
         saved_state.orig_stop_id = process_sp->GetStopID();
+    saved_state.current_inlined_depth = GetCurrentInlinedDepth();
+    
     return true;
 }
 
@@ -251,6 +253,7 @@ Thread::RestoreThreadStateFromCheckpoint (ThreadStateCheckpoint &saved_state)
     if (saved_state.stop_info_sp)
         saved_state.stop_info_sp->MakeStopInfoValid();
     SetStopInfo(saved_state.stop_info_sp);
+    GetStackFrameList()->SetCurrentInlinedDepth (saved_state.current_inlined_depth);
     return true;
 }
 
@@ -417,9 +420,6 @@ Thread::ShouldStop (Event* event_ptr)
         return false;
     }
     
-    // Adjust the stack frame's current inlined depth if it is needed.
-    GetStackFrameList()->CalculateCurrentInlinedDepth();
-    
     if (log)
     {
         log->Printf ("Thread::%s for tid = 0x%4.4llx, pc = 0x%16.16llx", 
@@ -446,6 +446,13 @@ Thread::ShouldStop (Event* event_ptr)
             log->Printf ("StopInfo::ShouldStop async callback says we should not stop, returning ShouldStop of false.");
         return false;
     }
+
+    // If we've already been restarted, don't query the plans since the state they would examine is not current.
+    if (Process::ProcessEventData::GetRestartedFromEvent(event_ptr))
+        return false;
+
+    // Before the plans see the state of the world, calculate the current inlined depth.
+    GetStackFrameList()->CalculateCurrentInlinedDepth();
 
     // If the base plan doesn't understand why we stopped, then we have to find a plan that does.
     // If that plan is still working, then we don't need to do any more work.  If the plan that explains 
@@ -948,7 +955,7 @@ Thread::DiscardThreadPlans(bool force)
     {
 
         int master_plan_idx;
-        bool discard;
+        bool discard = true;
 
         // Find the first master plan, see if it wants discarding, and if yes discard up to it.
         for (master_plan_idx = m_plan_stack.size() - 1; master_plan_idx >= 0; master_plan_idx--)
@@ -1264,6 +1271,67 @@ Thread::GetFrameWithConcreteFrameIndex (uint32_t unwind_idx)
     return GetStackFrameList()->GetFrameWithConcreteFrameIndex (unwind_idx);
 }
 
+
+Error
+Thread::ReturnFromFrameWithIndex (uint32_t frame_idx, lldb::ValueObjectSP return_value_sp)
+{
+    StackFrameSP frame_sp = GetStackFrameAtIndex (frame_idx);
+    Error return_error;
+    
+    if (!frame_sp)
+    {
+        return_error.SetErrorStringWithFormat("Could not find frame with index %d in thread 0x%llx.", frame_idx, GetID());
+    }
+    
+    return ReturnFromFrame(frame_sp, return_value_sp);
+}
+
+Error
+Thread::ReturnFromFrame (lldb::StackFrameSP frame_sp, lldb::ValueObjectSP return_value_sp)
+{
+    Error return_error;
+    
+    if (!frame_sp)
+    {
+        return_error.SetErrorString("Can't return to a null frame.");
+        return return_error;
+    }
+    
+    Thread *thread = frame_sp->GetThread().get();
+    uint32_t older_frame_idx = frame_sp->GetFrameIndex() + 1;
+    StackFrameSP older_frame_sp = thread->GetStackFrameAtIndex(older_frame_idx);
+    
+    if (return_value_sp)
+    {
+        // TODO: coerce the return_value_sp to the type of the function in frame_sp.
+    
+        lldb::ABISP abi = thread->GetProcess()->GetABI();
+        if (!abi)
+        {
+            return_error.SetErrorString("Could not find ABI to set return value.");
+        }
+        return_error = abi->SetReturnValueObject(older_frame_sp, return_value_sp);
+        if (!return_error.Success())
+            return return_error;
+    }
+    
+    // Now write the return registers for the chosen frame:
+    // Note, we can't use ReadAllRegisterValues->WriteAllRegisterValues, since the read & write
+    // cook their data 
+    bool copy_success = thread->GetStackFrameAtIndex(0)->GetRegisterContext()->CopyFromRegisterContext(older_frame_sp->GetRegisterContext());
+    if (copy_success)
+    {
+        thread->DiscardThreadPlans(true);
+        thread->ClearStackFrames();
+        return return_error;
+    }
+    else
+    {
+        return_error.SetErrorString("Could not reset register values.");
+        return return_error;
+    }
+}
+
 void
 Thread::DumpUsingSettingsFormat (Stream &strm, uint32_t frame_idx)
 {
@@ -1423,10 +1491,16 @@ Thread::SaveFrameZeroState (RegisterCheckpoint &checkpoint)
 bool
 Thread::RestoreSaveFrameZero (const RegisterCheckpoint &checkpoint)
 {
+    return ResetFrameZeroRegisters (checkpoint.GetData());
+}
+
+bool
+Thread::ResetFrameZeroRegisters (lldb::DataBufferSP register_data_sp)
+{
     lldb::StackFrameSP frame_sp(GetStackFrameAtIndex (0));
     if (frame_sp)
     {
-        bool ret = frame_sp->GetRegisterContext()->WriteAllRegisterValues (checkpoint.GetData());
+        bool ret = frame_sp->GetRegisterContext()->WriteAllRegisterValues (register_data_sp);
 
         // Clear out all stack frames as our world just changed.
         ClearStackFrames();

@@ -25,6 +25,9 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/ValueObject.h"
+
+#include "lldb/Symbol/ClangASTContext.h"
+
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
@@ -425,13 +428,16 @@ protected:
     bool
     Get_Impl (ConstString key, MapValueType& value, lldb::RegularExpressionSP *dummy)
     {
+       const char* key_cstr = key.AsCString();
+       if (!key_cstr)
+           return false;
        Mutex& x_mutex = m_format_map.mutex();
        lldb_private::Mutex::Locker locker(x_mutex);
        MapIterator pos, end = m_format_map.map().end();
        for (pos = m_format_map.map().begin(); pos != end; pos++)
        {
            lldb::RegularExpressionSP regex = pos->first;
-           if (regex->Execute(key.AsCString()))
+           if (regex->Execute(key_cstr))
            {
                value = pos->second;
                return true;
@@ -575,8 +581,7 @@ protected:
                 return true;
             }
         }
-        
-        if (typePtr->isPointerType())
+        else if (typePtr->isPointerType())
         {
             if (log)
                 log->Printf("stripping pointer");
@@ -588,7 +593,13 @@ protected:
             }
         }
 
-        if (typePtr->isObjCObjectPointerType())
+        bool canBeObjCDynamic = ClangASTContext::IsPossibleDynamicType (valobj.GetClangAST(),
+                                                                        type.getAsOpaquePtr(),
+                                                                        NULL,
+                                                                        false, // no C++
+                                                                        true); // yes ObjC
+        
+        if (canBeObjCDynamic)
         {
             if (use_dynamic != lldb::eNoDynamicValues)
             {

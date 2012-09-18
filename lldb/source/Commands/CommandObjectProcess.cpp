@@ -630,12 +630,13 @@ protected:
             
             if (!old_arch_spec.IsValid())
             {
-                result.AppendMessageWithFormat ("Architecture set to: %s.\n", target->GetArchitecture().GetArchitectureName());
+                result.AppendMessageWithFormat ("Architecture set to: %s.\n", target->GetArchitecture().GetTriple().getTriple().c_str());
             }
             else if (old_arch_spec != target->GetArchitecture())
             {
                 result.AppendWarningWithFormat("Architecture changed from %s to %s.\n", 
-                                                old_arch_spec.GetArchitectureName(), target->GetArchitecture().GetArchitectureName());
+                                               old_arch_spec.GetTriple().getTriple().c_str(),
+                                               target->GetArchitecture().GetTriple().getTriple().c_str());
             }
 
             // This supports the use-case scenario of immediately continuing the process once attached.
@@ -792,14 +793,17 @@ protected:
                 }
             }
             
-            const uint32_t num_threads = process->GetThreadList().GetSize();
+            {  // Scope for thread list mutex:
+                Mutex::Locker locker (process->GetThreadList().GetMutex());
+                const uint32_t num_threads = process->GetThreadList().GetSize();
 
-            // Set the actions that the threads should each take when resuming
-            for (uint32_t idx=0; idx<num_threads; ++idx)
-            {
-                process->GetThreadList().GetThreadAtIndex(idx)->SetResumeState (eStateRunning);
+                // Set the actions that the threads should each take when resuming
+                for (uint32_t idx=0; idx<num_threads; ++idx)
+                {
+                    process->GetThreadList().GetThreadAtIndex(idx)->SetResumeState (eStateRunning);
+                }
             }
-
+            
             Error error(process->Resume());
             if (error.Success())
             {

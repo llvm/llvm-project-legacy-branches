@@ -13,6 +13,9 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/BreakpointLocation.h"
+#include "lldb/Breakpoint/Breakpoint.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Symbol/Block.h"
@@ -77,13 +80,16 @@ StackFrameList::CalculateCurrentInlinedDepth()
 uint32_t
 StackFrameList::GetCurrentInlinedDepth ()
 {
-    if (m_show_inlined_frames)
+    if (m_show_inlined_frames && m_current_inlined_pc != LLDB_INVALID_ADDRESS)
     {
         lldb::addr_t cur_pc = m_thread.GetRegisterContext()->GetPC();
         if (cur_pc != m_current_inlined_pc)
         {
             m_current_inlined_pc = LLDB_INVALID_ADDRESS;
             m_current_inlined_depth = UINT32_MAX;
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            if (log && log->GetVerbose())
+                log->Printf ("GetCurrentInlinedDepth: invalidating current inlined depth.\n");
         }
         return m_current_inlined_depth;
     }
@@ -93,18 +99,19 @@ StackFrameList::GetCurrentInlinedDepth ()
     }
 }
 
-static const bool LLDB_FANCY_INLINED_STEPPING = false;
-
 void
 StackFrameList::ResetCurrentInlinedDepth ()
 {
-    if (LLDB_FANCY_INLINED_STEPPING && m_show_inlined_frames)
+    if (m_show_inlined_frames)
     {        
         GetFramesUpTo(0);
         if (!m_frames[0]->IsInlined())
         {
             m_current_inlined_depth = UINT32_MAX;
             m_current_inlined_pc = LLDB_INVALID_ADDRESS;
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            if (log && log->GetVerbose())
+                log->Printf ("ResetCurrentInlinedDepth: Invalidating current inlined depth.\n");
         }
         else
         {
@@ -138,11 +145,6 @@ StackFrameList::ResetCurrentInlinedDepth ()
                         {
                             switch (stop_info_sp->GetStopReason())
                             {
-                            case eStopReasonBreakpoint:
-                                {
-                            
-                                }
-                                break;
                             case eStopReasonWatchpoint:
                             case eStopReasonException:
                             case eStopReasonSignal:
@@ -150,6 +152,37 @@ StackFrameList::ResetCurrentInlinedDepth ()
                                 m_current_inlined_pc = curr_pc;
                                 m_current_inlined_depth = 0;
                                 break;
+                            case eStopReasonBreakpoint:
+                                {
+                                    // FIXME: Figure out what this break point is doing, and set the inline depth
+                                    // appropriately.  Be careful to take into account breakpoints that implement
+                                    // step over prologue, since that should do the default calculation.
+                                    // For now, if the breakpoints corresponding to this hit are all internal,
+                                    // I set the stop location to the top of the inlined stack, since that will make
+                                    // things like stepping over prologues work right.  But if there are any non-internal
+                                    // breakpoints I do to the bottom of the stack, since that was the old behavior.
+                                    uint32_t bp_site_id = stop_info_sp->GetValue();
+                                    BreakpointSiteSP bp_site_sp(m_thread.GetProcess()->GetBreakpointSiteList().FindByID(bp_site_id));
+                                    bool all_internal = true;
+                                    if (bp_site_sp)
+                                    {
+                                        uint32_t num_owners = bp_site_sp->GetNumberOfOwners();
+                                        for (uint32_t i = 0; i < num_owners; i++)
+                                        {
+                                            Breakpoint &bp_ref = bp_site_sp->GetOwnerAtIndex(i)->GetBreakpoint();
+                                            if (!bp_ref.IsInternal())
+                                            {
+                                                all_internal = false;
+                                            }
+                                        }
+                                    }
+                                    if (!all_internal)
+                                    {
+                                        m_current_inlined_pc = curr_pc;
+                                        m_current_inlined_depth = 0;
+                                        break;
+                                    }
+                                }
                             default:
                                 {
                                     // Otherwise, we should set ourselves at the container of the inlining, so that the
@@ -170,6 +203,9 @@ StackFrameList::ResetCurrentInlinedDepth ()
                                     }
                                     m_current_inlined_pc = curr_pc;
                                     m_current_inlined_depth = num_inlined_functions + 1;
+                                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                                    if (log && log->GetVerbose())
+                                        log->Printf ("ResetCurrentInlinedDepth: setting inlined depth: %d 0x%llx.\n", m_current_inlined_depth, curr_pc);
                                     
                                 }
                                 break;
@@ -191,11 +227,23 @@ StackFrameList::DecrementCurrentInlinedDepth ()
         if (current_inlined_depth != UINT32_MAX)
         {
             if (current_inlined_depth > 0)
+            {
                 m_current_inlined_depth--;
-            return true;
+                return true;
+            }
         }
     }
     return false;
+}
+
+void
+StackFrameList::SetCurrentInlinedDepth (uint32_t new_depth)
+{
+    m_current_inlined_depth = new_depth;
+    if (new_depth == UINT32_MAX)
+        m_current_inlined_pc = LLDB_INVALID_ADDRESS;
+    else
+        m_current_inlined_pc = m_thread.GetRegisterContext()->GetPC();
 }
 
 void
@@ -214,10 +262,11 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
 #endif
         // If we are hiding some frames from the outside world, we need to add those onto the total count of
         // frames to fetch.  However, we don't need ot do that if end_idx is 0 since in that case we always
-        // get the first concrete frame and all the inlined frames below it...
+        // get the first concrete frame and all the inlined frames below it...  And of course, if end_idx is
+        // UINT32_MAX that means get all, so just do that...
         
         uint32_t inlined_depth = 0;
-        if (end_idx > 0)
+        if (end_idx > 0 && end_idx != UINT32_MAX)
         {
             inlined_depth = GetCurrentInlinedDepth();
             if (inlined_depth != UINT32_MAX)
@@ -320,6 +369,10 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
         {
             StackFrameList *prev_frames = m_prev_frames_sp.get();
             StackFrameList *curr_frames = this;
+            
+            //curr_frames->m_current_inlined_depth = prev_frames->m_current_inlined_depth;
+            //curr_frames->m_current_inlined_pc = prev_frames->m_current_inlined_pc;
+            //printf ("GetFramesUpTo: Copying current inlined depth: %d 0x%llx.\n", curr_frames->m_current_inlined_depth, curr_frames->m_current_inlined_pc);
 
 #if defined (DEBUG_STACK_FRAMES)
             s.PutCString("\nprev_frames:\n");

@@ -16,6 +16,8 @@
 #include "lldb/Core/cxa_demangle.h"
 #else
 #ifdef LLDB_LIBCXXABI
+// FreeBSD9-STABLE requires this to know about size_t in cxxabi.h
+#include <cstddef>
 #include <cxxabi.h>
 #endif
 #endif

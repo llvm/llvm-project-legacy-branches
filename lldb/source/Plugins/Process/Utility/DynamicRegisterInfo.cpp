@@ -15,7 +15,10 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Args.h"
+
+#ifndef LLDB_DISABLE_PYTHON
 #include "lldb/Interpreter/PythonDataObjects.h"
+#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -47,6 +50,7 @@ DynamicRegisterInfo::~DynamicRegisterInfo ()
 size_t
 DynamicRegisterInfo::SetRegisterInfo (const lldb_private::PythonDataDictionary &dict)
 {
+#ifndef LLDB_DISABLE_PYTHON
     PythonDataArray sets (dict.GetItemForKey("sets").GetArrayObject());
     if (sets)
     {
@@ -160,6 +164,7 @@ DynamicRegisterInfo::SetRegisterInfo (const lldb_private::PythonDataDictionary &
         }
         Finalize ();
     }
+#endif
     return 0;
 }
 

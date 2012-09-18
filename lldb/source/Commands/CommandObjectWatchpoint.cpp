@@ -743,7 +743,7 @@ private:
 OptionDefinition
 CommandObjectWatchpointIgnore::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, true, "ignore-count", 'i', required_argument, NULL, NULL, eArgTypeCount, "Set the number of times this watchpoint is skipped before stopping." },
+    { LLDB_OPT_SET_ALL, true, "ignore-count", 'i', required_argument, NULL, 0, eArgTypeCount, "Set the number of times this watchpoint is skipped before stopping." },
     { 0,                false, NULL,            0 , 0,                 NULL, 0,    eArgTypeNone, NULL }
 };
 
@@ -906,7 +906,7 @@ private:
 OptionDefinition
 CommandObjectWatchpointModify::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, NULL, eArgTypeExpression, "The watchpoint stops only if this condition expression evaluates to true."},
+{ LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, 0, eArgTypeExpression, "The watchpoint stops only if this condition expression evaluates to true."},
 { 0,                false, NULL,            0 , 0,                 NULL, 0,    eArgTypeNone, NULL }
 };
 
@@ -970,6 +970,21 @@ public:
     }
 
 protected:
+    static uint32_t GetVariableCallback (void *baton,
+                                         const char *name,
+                                         VariableList &variable_list)
+    {
+        Target *target = static_cast<Target *>(baton);
+        if (target)
+        {
+            return target->GetImages().FindGlobalVariables (ConstString(name),
+                                                            true,
+                                                            UINT32_MAX,
+                                                            variable_list);
+        }
+        return 0;
+    }
+    
     virtual bool
     DoExecute (Args& command,
              CommandReturnObject &result)
@@ -1023,6 +1038,24 @@ protected:
                                                               expr_path_options,
                                                               var_sp,
                                                               error);
+        
+        if (!valobj_sp) {
+            // Not in the frame; let's check the globals.
+            
+            VariableList variable_list;
+            ValueObjectList valobj_list;
+            
+            Error error (Variable::GetValuesForVariableExpressionPath (command.GetArgumentAtIndex(0),
+                                                                       exe_ctx.GetBestExecutionContextScope(),
+                                                                       GetVariableCallback,
+                                                                       target,
+                                                                       variable_list,
+                                                                       valobj_list));
+            
+            if (valobj_list.GetSize())
+                valobj_sp = valobj_list.GetValueObjectAtIndex(0);
+        }
+        
         if (valobj_sp) {
             AddressType addr_type;
             addr = valobj_sp->GetAddressOf(false, &addr_type);
@@ -1201,18 +1234,16 @@ protected:
         }
 
         // Use expression evaluation to arrive at the address to watch.
-        const bool coerce_to_id = true;
-        const bool unwind_on_error = true;
-        const bool keep_in_memory = false;
+        Target::EvaluateExpressionOptions options;
+        options.SetCoerceToId(false)
+        .SetUnwindOnError(true)
+        .SetKeepInMemory(false)
+        .SetSingleThreadTimeoutUsec(0);
+        
         ExecutionResults expr_result = target->EvaluateExpression (expr_str.c_str(), 
                                                                    frame, 
-                                                                   eExecutionPolicyOnlyWhenNeeded,
-                                                                   coerce_to_id,
-                                                                   unwind_on_error, 
-                                                                   keep_in_memory, 
-                                                                   eNoDynamicValues, 
                                                                    valobj_sp,
-                                                                   0 /* no timeout */);
+                                                                   options);
         if (expr_result != eExecutionCompleted) {
             result.GetErrorStream().Printf("error: expression evaluation of address to watch failed\n");
             result.GetErrorStream().Printf("expression evaluated: %s\n", expr_str.c_str());

@@ -1079,12 +1079,13 @@ Process::GetNextEvent (EventSP &event_sp)
 
 
 StateType
-Process::WaitForProcessToStop (const TimeValue *timeout)
+Process::WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr)
 {
     // We can't just wait for a "stopped" event, because the stopped event may have restarted the target.
     // We have to actually check each event, and in the case of a stopped event check the restarted flag
     // on the event.
-    EventSP event_sp;
+    if (event_sp_ptr)
+        event_sp_ptr->reset();
     StateType state = GetState();
     // If we are exited or detached, we won't ever get back to any
     // other valid state...
@@ -1093,7 +1094,11 @@ Process::WaitForProcessToStop (const TimeValue *timeout)
 
     while (state != eStateInvalid)
     {
+        EventSP event_sp;
         state = WaitForStateChangedEvents (timeout, event_sp);
+        if (event_sp_ptr && event_sp)
+            *event_sp_ptr = event_sp;
+
         switch (state)
         {
         case eStateCrashed:
@@ -2943,7 +2948,7 @@ Process::ConnectRemote (const char *remote_url)
 Error
 Process::PrivateResume ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS|LIBLLDB_LOG_STEP));
     if (log)
         log->Printf("Process::Resume() m_stop_id = %u, public state: %s private state: %s", 
                     m_mod_id.GetStopID(),
@@ -3109,6 +3114,7 @@ Process::Destroy ()
     Error error (WillDestroy());
     if (error.Success())
     {
+        EventSP exit_event_sp;
         if (m_public_state.GetValue() == eStateRunning)
         {
             LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
@@ -3118,10 +3124,12 @@ Process::Destroy ()
             if (error.Success())
             {
                 // Consume the halt event.
-                EventSP stop_event;
                 TimeValue timeout (TimeValue::Now());
                 timeout.OffsetWithSeconds(1);
-                StateType state = WaitForProcessToStop (&timeout);
+                StateType state = WaitForProcessToStop (&timeout, &exit_event_sp);
+                if (state != eStateExited)
+                    exit_event_sp.reset(); // It is ok to consume any non-exit stop events
+        
                 if (state != eStateStopped)
                 {
                     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
@@ -3132,16 +3140,18 @@ Process::Destroy ()
                     StateType private_state = m_private_state.GetValue();
                     if (private_state != eStateStopped && private_state != eStateExited)
                     {
+                        // If we exited when we were waiting for a process to stop, then
+                        // forward the event here so we don't lose the event
                         return error;
                     }
                 }
             }
             else
             {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
-                    if (log)
-                        log->Printf("Process::Destroy() Halt got error: %s", error.AsCString());
-                    return error;
+                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+                if (log)
+                    log->Printf("Process::Destroy() Halt got error: %s", error.AsCString());
+                return error;
             }
         }
 
@@ -3167,7 +3177,16 @@ Process::Destroy ()
             m_target.GetDebugger().PopInputReader (m_process_input_reader);
         if (m_process_input_reader)
             m_process_input_reader.reset();
-            
+        
+        // If we exited when we were waiting for a process to stop, then
+        // forward the event here so we don't lose the event
+        if (exit_event_sp)
+        {
+            // Directly broadcast our exited event because we shut down our
+            // private state thread above
+            BroadcastEvent(exit_event_sp);
+        }
+
         // If we have been interrupted (to kill us) in the middle of running, we may not end up propagating
         // the last events through the event system, in which case we might strand the write lock.  Unlock
         // it here so when we do to tear down the process we don't get an error destroying the lock.
@@ -3284,6 +3303,9 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
 
                 if (m_thread_list.ShouldStop (event_ptr) == false)
                 {
+                    // ShouldStop may have restarted the target already.  If so, don't
+                    // resume it twice.
+                    bool was_restarted = ProcessEventData::GetRestartedFromEvent (event_ptr);
                     switch (m_thread_list.ShouldReportStop (event_ptr))
                     {
                         case eVoteYes:
@@ -3297,7 +3319,8 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
 
                     if (log)
                         log->Printf ("Process::ShouldBroadcastEvent (%p) Restarting process from state: %s", event_ptr, StateAsCString(state));
-                    PrivateResume ();
+                    if (!was_restarted)
+                        PrivateResume ();
                 }
                 else
                 {
@@ -3902,7 +3925,7 @@ Process::GetSTDOUT (char *buf, size_t buf_size, Error &error)
     {
         LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         if (log)
-            log->Printf ("Process::GetSTDOUT (buf = %p, size = %zu)", buf, buf_size);
+            log->Printf ("Process::GetSTDOUT (buf = %p, size = %llu)", buf, (uint64_t)buf_size);
         if (bytes_available > buf_size)
         {
             memcpy(buf, m_stdout_data.c_str(), buf_size);
@@ -3928,7 +3951,7 @@ Process::GetSTDERR (char *buf, size_t buf_size, Error &error)
     {
         LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
         if (log)
-            log->Printf ("Process::GetSTDERR (buf = %p, size = %zu)", buf, buf_size);
+            log->Printf ("Process::GetSTDERR (buf = %p, size = %llu)", buf, (uint64_t)buf_size);
         if (bytes_available > buf_size)
         {
             memcpy(buf, m_stderr_data.c_str(), buf_size);
@@ -4861,6 +4884,7 @@ Process::GetThreadStatus (Stream &strm,
 {
     size_t num_thread_infos_dumped = 0;
     
+    Mutex::Locker locker (GetThreadList().GetMutex());
     const size_t num_threads = GetThreadList().GetSize();
     for (uint32_t i = 0; i < num_threads; i++)
     {

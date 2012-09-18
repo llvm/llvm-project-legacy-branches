@@ -240,7 +240,7 @@ public:
     CalculateNumChildren() = 0;
     
     virtual lldb::ValueObjectSP
-    GetChildAtIndex (uint32_t idx, bool can_create) = 0;
+    GetChildAtIndex (uint32_t idx) = 0;
     
     virtual uint32_t
     GetIndexOfChildWithName (const ConstString &name) = 0;
@@ -555,11 +555,11 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create)
+        GetChildAtIndex (uint32_t idx)
         {
             if (idx >= filter->GetCount())
                 return lldb::ValueObjectSP();
-            return m_backend.GetSyntheticExpressionPathChild(filter->GetExpressionPathAtIndex(idx), can_create);
+            return m_backend.GetSyntheticExpressionPathChild(filter->GetExpressionPathAtIndex(idx), true);
         }
         
         virtual bool
@@ -600,6 +600,42 @@ public:
 private:
     DISALLOW_COPY_AND_ASSIGN(TypeFilterImpl);
 };
+
+    class CXXSyntheticChildren : public SyntheticChildren
+    {
+    public:
+        typedef SyntheticChildrenFrontEnd* (*CreateFrontEndCallback) (CXXSyntheticChildren*, lldb::ValueObjectSP);
+    protected:
+        CreateFrontEndCallback m_create_callback;
+        std::string m_description;
+    public:
+        CXXSyntheticChildren(const SyntheticChildren::Flags& flags,
+                             const char* description,
+                             CreateFrontEndCallback callback) :
+        SyntheticChildren(flags),
+        m_create_callback(callback),
+        m_description(description ? description : "")
+        {
+        }
+        
+        bool
+        IsScripted()
+        {
+            return false;
+        }
+        
+        std::string
+        GetDescription();
+                
+        virtual SyntheticChildrenFrontEnd::AutoPointer
+        GetFrontEnd(ValueObject &backend)
+        {
+            return SyntheticChildrenFrontEnd::AutoPointer(m_create_callback(this, backend.GetSP()));
+        }
+        
+    private:
+        DISALLOW_COPY_AND_ASSIGN(CXXSyntheticChildren);
+    };
 
 #ifndef LLDB_DISABLE_PYTHON
 
@@ -679,7 +715,7 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create);
+        GetChildAtIndex (uint32_t idx);
         
         virtual bool
         Update()
@@ -887,11 +923,11 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create)
+        GetChildAtIndex (uint32_t idx)
         {
             if (idx >= filter->GetCount())
                 return lldb::ValueObjectSP();
-            return m_backend.GetSyntheticArrayMember(filter->GetRealIndexForIndex(idx), can_create);
+            return m_backend.GetSyntheticArrayMember(filter->GetRealIndexForIndex(idx), true);
         }
         
         virtual bool

@@ -27,165 +27,6 @@ class AppleObjCRuntimeV2 :
         public AppleObjCRuntime
 {
 public:
-    
-    class ClassDescriptorV2 : public ObjCLanguageRuntime::ClassDescriptor
-    {
-    public:
-        ClassDescriptorV2 (ValueObject &isa_pointer);
-        ClassDescriptorV2 (ObjCISA isa, lldb::ProcessSP process);
-        
-        virtual ConstString
-        GetClassName ()
-        {
-            return m_name;
-        }
-        
-        virtual ClassDescriptorSP
-        GetSuperclass ();
-        
-        virtual bool
-        IsValid ()
-        {
-            return m_valid;
-        }
-        
-        virtual bool
-        IsTagged ()
-        {
-            return false;   // we use a special class for tagged descriptors
-        }
-        
-        virtual uint64_t
-        GetInstanceSize ()
-        {
-            return m_instance_size;
-        }
-        
-        virtual ObjCISA
-        GetISA ()
-        {
-            return m_isa;
-        }
-        
-        virtual
-        ~ClassDescriptorV2 ()
-        {}
-        
-    protected:
-        virtual bool
-        CheckPointer (lldb::addr_t value,
-                      uint32_t ptr_size)
-        {
-            if (ptr_size != 8)
-                return true;
-            return ((value & 0xFFFF800000000000) == 0);
-        }
-        
-        void
-        Initialize (ObjCISA isa, lldb::ProcessSP process_sp);
-        
-    private:
-        ConstString m_name;
-        ObjCISA m_isa;
-        ObjCISA m_parent_isa;
-        bool m_valid;
-        lldb::ProcessWP m_process_wp;
-        uint64_t m_instance_size;
-    };
-    
-    class ClassDescriptorV2Tagged : public ObjCLanguageRuntime::ClassDescriptor
-    {
-    public:
-        ClassDescriptorV2Tagged (ValueObject &isa_pointer);
-        
-        virtual ConstString
-        GetClassName ()
-        {
-            return m_name;
-        }
-        
-        virtual ClassDescriptorSP
-        GetSuperclass ()
-        {
-            // tagged pointers can represent a class that has a superclass, but since that information is not
-            // stored in the object itself, we would have to query the runtime to discover the hierarchy
-            // for the time being, we skip this step in the interest of static discovery
-            return ClassDescriptorSP(new ObjCLanguageRuntime::ClassDescriptor_Invalid());
-        }
-        
-        virtual bool
-        IsValid ()
-        {
-            return m_valid;
-        }
-        
-        virtual bool
-        IsKVO ()
-        {
-            return false; // tagged pointers are not KVO'ed
-        }
-        
-        virtual bool
-        IsCFType ()
-        {
-            return false; // tagged pointers are not CF objects
-        }
-        
-        virtual bool
-        IsTagged ()
-        {
-            return true;   // we use this class to describe tagged pointers
-        }
-        
-        virtual uint64_t
-        GetInstanceSize ()
-        {
-            return (IsValid() ? m_pointer_size : 0);
-        }
-        
-        virtual ObjCISA
-        GetISA ()
-        {
-            return 0; // tagged pointers have no ISA
-        }
-
-        virtual uint64_t
-        GetClassBits ()
-        {
-            return (IsValid() ? m_class_bits : 0);
-        }
-        
-        // these calls are not part of any formal tagged pointers specification
-        virtual uint64_t
-        GetValueBits ()
-        {
-            return (IsValid() ? m_value_bits : 0);
-        }
-        
-        virtual uint64_t
-        GetInfoBits ()
-        {
-            return (IsValid() ? m_info_bits : 0);
-        }
-        
-        virtual
-        ~ClassDescriptorV2Tagged ()
-        {}
-        
-    protected:
-        // TODO make this into a smarter OS version detector
-        LazyBool
-        IsLion (lldb::TargetSP &target_sp);
-        
-    private:
-        ConstString m_name;
-        uint8_t m_pointer_size;
-        bool m_valid;
-        uint64_t m_class_bits;
-        uint64_t m_info_bits;
-        uint64_t m_value_bits;
-    };
-    
     virtual ~AppleObjCRuntimeV2() { }
     
     // These are generic runtime functions:
@@ -232,19 +73,30 @@ public:
     virtual size_t
     GetByteOffsetForIvar (ClangASTType &parent_qual_type, const char *ivar_name);
     
+    virtual void
+    UpdateISAToDescriptorMap_Impl();
+    
     virtual bool
     IsValidISA (ObjCLanguageRuntime::ObjCISA isa)
     {
         return (isa != 0);
     }
     
-    // this is not a valid ISA in the sense that no valid
-    // class pointer can live at address 1. we use it to refer to
-    // tagged types, where the ISA must be dynamically determined
+    // none of these are valid ISAs - we use them to infer the type
+    // of tagged pointers - if we have something meaningful to say
+    // we report an actual type - otherwise, we just say tagged
+    // there is no connection between the values here and the tagged pointers map
     static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA = 1;
+
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA_NSAtom = 2;
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA_NSNumber = 3;
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA_NSDateTS = 4;
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA_NSManagedObject = 5;
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA_NSDate = 6;
+
     
     virtual ObjCLanguageRuntime::ObjCISA
-    GetISA(ValueObject& valobj);   
+    GetISA(ValueObject& valobj);
     
     virtual ConstString
     GetActualTypeName(ObjCLanguageRuntime::ObjCISA isa);
@@ -255,8 +107,8 @@ public:
     virtual ClassDescriptorSP
     GetClassDescriptor (ObjCISA isa);
     
-    virtual SymbolVendor *
-    GetSymbolVendor();
+    virtual TypeVendor *
+    GetTypeVendor();
     
 protected:
     virtual lldb::BreakpointResolverSP
@@ -278,7 +130,7 @@ private:
     lldb::addr_t                        m_get_class_name_args;
     Mutex                               m_get_class_name_args_mutex;
     
-    std::auto_ptr<SymbolVendor>         m_symbol_vendor_ap;
+    std::auto_ptr<TypeVendor>           m_type_vendor_ap;
     
     static const char *g_find_class_name_function_name;
     static const char *g_find_class_name_function_body;

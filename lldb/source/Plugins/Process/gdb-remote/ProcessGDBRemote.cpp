@@ -1756,7 +1756,7 @@ ProcessGDBRemote::DoDestroy ()
                 ThreadList &threads = GetThreadList();
                 
                 {
-                    Mutex::Locker(threads.GetMutex());
+                    Mutex::Locker locker(threads.GetMutex());
                     
                     size_t num_threads = threads.GetSize();
                     for (size_t i = 0; i < num_threads; i++)
@@ -1791,7 +1791,7 @@ ProcessGDBRemote::DoDestroy ()
                     // have to run the risk of letting those threads proceed a bit.
     
                     {
-                        Mutex::Locker(threads.GetMutex());
+                        Mutex::Locker locker(threads.GetMutex());
                         
                         size_t num_threads = threads.GetSize();
                         for (size_t i = 0; i < num_threads; i++)
@@ -1910,7 +1910,7 @@ ProcessGDBRemote::DoReadMemory (addr_t addr, void *buf, size_t size, Error &erro
     }
 
     char packet[64];
-    const int packet_len = ::snprintf (packet, sizeof(packet), "m%llx,%zx", (uint64_t)addr, size);
+    const int packet_len = ::snprintf (packet, sizeof(packet), "m%llx,%llx", (uint64_t)addr, (uint64_t)size);
     assert (packet_len + 1 < sizeof(packet));
     StringExtractorGDBRemote response;
     if (m_gdb_comm.SendPacketAndWaitForResponse(packet, packet_len, response, true))
@@ -1946,7 +1946,7 @@ ProcessGDBRemote::DoWriteMemory (addr_t addr, const void *buf, size_t size, Erro
     }
 
     StreamString packet;
-    packet.Printf("M%llx,%zx:", addr, size);
+    packet.Printf("M%llx,%llx:", addr, (uint64_t)size);
     packet.PutBytesAsRawHex8(buf, size, lldb::endian::InlHostByteOrder(), lldb::endian::InlHostByteOrder());
     StringExtractorGDBRemote response;
     if (m_gdb_comm.SendPacketAndWaitForResponse(packet.GetData(), packet.GetSize(), response, true))
@@ -2003,7 +2003,7 @@ ProcessGDBRemote::DoAllocateMemory (size_t size, uint32_t permissions, Error &er
     }
     
     if (allocated_addr == LLDB_INVALID_ADDRESS)
-        error.SetErrorStringWithFormat("unable to allocate %zu bytes of memory with permissions %s", size, GetPermissionsAsCString (permissions));
+        error.SetErrorStringWithFormat("unable to allocate %llu bytes of memory with permissions %s", (uint64_t)size, GetPermissionsAsCString (permissions));
     else
         error.Clear();
     return allocated_addr;

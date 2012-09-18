@@ -19,6 +19,39 @@
 
 using namespace lldb_private;
 
+class DummySyntheticFrontEnd : public SyntheticChildrenFrontEnd
+{
+public:
+    DummySyntheticFrontEnd(ValueObject &backend) :
+    SyntheticChildrenFrontEnd(backend)
+    {}
+
+    uint32_t
+    CalculateNumChildren()
+    {
+        return 0;
+    }
+    
+    lldb::ValueObjectSP
+    GetChildAtIndex (uint32_t idx)
+    {
+        return lldb::ValueObjectSP();
+    }
+    
+    uint32_t
+    GetIndexOfChildWithName (const ConstString &name)
+    {
+        return UINT32_MAX;
+    }
+    
+    bool
+    Update()
+    {
+        return false;
+    }
+
+};
+
 ValueObjectSynthetic::ValueObjectSynthetic (ValueObject &parent, lldb::SyntheticChildrenSP filter) :
     ValueObject(parent),
     m_synth_sp(filter),
@@ -34,6 +67,8 @@ ValueObjectSynthetic::ValueObjectSynthetic (ValueObject &parent, lldb::Synthetic
 #else
     SetName(parent.GetName());
 #endif
+    if (!m_synth_filter_ap.get())
+        m_synth_filter_ap.reset(new DummySyntheticFrontEnd(parent));
 }
 
 ValueObjectSynthetic::~ValueObjectSynthetic()
@@ -121,7 +156,7 @@ ValueObjectSynthetic::GetChildAtIndex (uint32_t idx, bool can_create)
     {
         if (can_create && m_synth_filter_ap.get() != NULL)
         {
-            lldb::ValueObjectSP synth_guy = m_synth_filter_ap->GetChildAtIndex (idx, can_create);
+            lldb::ValueObjectSP synth_guy = m_synth_filter_ap->GetChildAtIndex (idx);
             if (!synth_guy)
                 return synth_guy;
             m_children_byindex[idx]= synth_guy.get();

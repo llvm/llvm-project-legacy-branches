@@ -3886,22 +3886,22 @@ protected:
 OptionDefinition
 CommandObjectTargetModulesLookup::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1,   true,  "address",    'a', required_argument, NULL, 0, eArgTypeAddress,      "Lookup an address in one or more target modules."},
-    { LLDB_OPT_SET_1,   false, "offset",     'o', required_argument, NULL, 0, eArgTypeOffset,       "When looking up an address subtract <offset> from any addresses before doing the lookup."},
+    { LLDB_OPT_SET_1,   true,  "address",    'a', required_argument, NULL, 0, eArgTypeAddress,          "Lookup an address in one or more target modules."},
+    { LLDB_OPT_SET_1,   false, "offset",     'o', required_argument, NULL, 0, eArgTypeOffset,           "When looking up an address subtract <offset> from any addresses before doing the lookup."},
     { LLDB_OPT_SET_2| LLDB_OPT_SET_4 | LLDB_OPT_SET_5
       /* FIXME: re-enable this for types when the LookupTypeInModule actually uses the regex option: | LLDB_OPT_SET_6 */ ,
-                        false, "regex",      'r', no_argument,       NULL, 0, eArgTypeNone,         "The <name> argument for name lookups are regular expressions."},
-    { LLDB_OPT_SET_2,   true,  "symbol",     's', required_argument, NULL, 0, eArgTypeSymbol,       "Lookup a symbol by name in the symbol tables in one or more target modules."},
-    { LLDB_OPT_SET_3,   true,  "file",       'f', required_argument, NULL, 0, eArgTypeFilename,     "Lookup a file by fullpath or basename in one or more target modules."},
-    { LLDB_OPT_SET_3,   false, "line",       'l', required_argument, NULL, 0, eArgTypeLineNum,      "Lookup a line number in a file (must be used in conjunction with --file)."},
+                        false, "regex",      'r', no_argument,       NULL, 0, eArgTypeNone,             "The <name> argument for name lookups are regular expressions."},
+    { LLDB_OPT_SET_2,   true,  "symbol",     's', required_argument, NULL, 0, eArgTypeSymbol,           "Lookup a symbol by name in the symbol tables in one or more target modules."},
+    { LLDB_OPT_SET_3,   true,  "file",       'f', required_argument, NULL, 0, eArgTypeFilename,         "Lookup a file by fullpath or basename in one or more target modules."},
+    { LLDB_OPT_SET_3,   false, "line",       'l', required_argument, NULL, 0, eArgTypeLineNum,          "Lookup a line number in a file (must be used in conjunction with --file)."},
     { LLDB_OPT_SET_FROM_TO(3,5),
-                        false, "no-inlines", 'i', no_argument,       NULL, 0, eArgTypeNone,         "Ignore inline entries (must be used in conjunction with --file or --function)."},
-    { LLDB_OPT_SET_4,   true,  "function",   'F', required_argument, NULL, 0, eArgTypeFunctionName, "Lookup a function by name in the debug symbols in one or more target modules."},
-    { LLDB_OPT_SET_5,   true,  "name",       'n', required_argument, NULL, 0, eArgTypeFunctionName, "Lookup a function or symbol by name in one or more target modules."},
-    { LLDB_OPT_SET_6,   true,  "type",       't', required_argument, NULL, 0, eArgTypeName,         "Lookup a type by name in the debug symbols in one or more target modules."},
-    { LLDB_OPT_SET_ALL, false, "verbose",    'v', no_argument,       NULL, 0, eArgTypeNone,         "Enable verbose lookup information."},
-    { LLDB_OPT_SET_ALL, false, "all",        'A', no_argument,       NULL, 0, eArgTypeNone,         "Print all matches, not just the best match, if a best match is available."},
-    { 0,                false, NULL,           0, 0,                 NULL, 0, eArgTypeNone, NULL }
+                        false, "no-inlines", 'i', no_argument,       NULL, 0, eArgTypeNone,             "Ignore inline entries (must be used in conjunction with --file or --function)."},
+    { LLDB_OPT_SET_4,   true,  "function",   'F', required_argument, NULL, 0, eArgTypeFunctionName,     "Lookup a function by name in the debug symbols in one or more target modules."},
+    { LLDB_OPT_SET_5,   true,  "name",       'n', required_argument, NULL, 0, eArgTypeFunctionOrSymbol, "Lookup a function or symbol by name in one or more target modules."},
+    { LLDB_OPT_SET_6,   true,  "type",       't', required_argument, NULL, 0, eArgTypeName,             "Lookup a type by name in the debug symbols in one or more target modules."},
+    { LLDB_OPT_SET_ALL, false, "verbose",    'v', no_argument,       NULL, 0, eArgTypeNone,             "Enable verbose lookup information."},
+    { LLDB_OPT_SET_ALL, false, "all",        'A', no_argument,       NULL, 0, eArgTypeNone,             "Print all matches, not just the best match, if a best match is available."},
+    { 0,                false, NULL,           0, 0,                 NULL, 0, eArgTypeNone,             NULL }
 };
 
 
@@ -4040,12 +4040,21 @@ protected:
             }
             else
             {
+                PlatformSP platform_sp (target->GetPlatform());
+
                 for (size_t i=0; i<argc; ++i)
                 {
                     const char *symfile_path = args.GetArgumentAtIndex(i);
                     if (symfile_path)
                     {
-                        FileSpec symfile_spec(symfile_path, true);
+                        ModuleSpec sym_spec;
+                        FileSpec symfile_spec;
+                        sym_spec.GetSymbolFileSpec().SetFile(symfile_path, true);
+                        if (platform_sp)
+                            platform_sp->ResolveSymbolFile(*target, sym_spec, symfile_spec);
+                        else
+                            symfile_spec.SetFile(symfile_path, true);
+                        
                         ArchSpec arch;
                         if (symfile_spec.Exists())
                         {
@@ -4561,17 +4570,17 @@ private:
 OptionDefinition
 CommandObjectTargetStopHookAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "one-liner", 'o', required_argument, NULL, NULL, eArgTypeOneLiner,
+    { LLDB_OPT_SET_ALL, false, "one-liner", 'o', required_argument, NULL, 0, eArgTypeOneLiner,
         "Specify a one-line breakpoint command inline. Be sure to surround it with quotes." },
     { LLDB_OPT_SET_ALL, false, "shlib", 's', required_argument, NULL, CommandCompletions::eModuleCompletion, eArgTypeShlibName,
         "Set the module within which the stop-hook is to be run."},
-    { LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, NULL, eArgTypeThreadIndex,
+    { LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, 0, eArgTypeThreadIndex,
         "The stop hook is run only for the thread whose index matches this argument."},
-    { LLDB_OPT_SET_ALL, false, "thread-id", 't', required_argument, NULL, NULL, eArgTypeThreadID,
+    { LLDB_OPT_SET_ALL, false, "thread-id", 't', required_argument, NULL, 0, eArgTypeThreadID,
         "The stop hook is run only for the thread whose TID matches this argument."},
-    { LLDB_OPT_SET_ALL, false, "thread-name", 'T', required_argument, NULL, NULL, eArgTypeThreadName,
+    { LLDB_OPT_SET_ALL, false, "thread-name", 'T', required_argument, NULL, 0, eArgTypeThreadName,
         "The stop hook is run only for the thread whose thread name matches this argument."},
-    { LLDB_OPT_SET_ALL, false, "queue-name", 'q', required_argument, NULL, NULL, eArgTypeQueueName,
+    { LLDB_OPT_SET_ALL, false, "queue-name", 'q', required_argument, NULL, 0, eArgTypeQueueName,
         "The stop hook is run only for threads in the queue whose name is given by this argument."},
     { LLDB_OPT_SET_1, false, "file", 'f', required_argument, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
         "Specify the source file within which the stop-hook is to be run." },
@@ -4579,7 +4588,7 @@ CommandObjectTargetStopHookAdd::CommandOptions::g_option_table[] =
         "Set the start of the line range for which the stop-hook is to be run."},
     { LLDB_OPT_SET_1, false, "end-line", 'e', required_argument, NULL, 0, eArgTypeLineNum,
         "Set the end of the line range for which the stop-hook is to be run."},
-    { LLDB_OPT_SET_2, false, "classname", 'c', required_argument, NULL, NULL, eArgTypeClassName,
+    { LLDB_OPT_SET_2, false, "classname", 'c', required_argument, NULL, 0, eArgTypeClassName,
         "Specify the class within which the stop-hook is to be run." },
     { LLDB_OPT_SET_3, false, "name", 'n', required_argument, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
         "Set the function name within which the stop hook will be run." },

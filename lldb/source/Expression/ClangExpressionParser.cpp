@@ -200,6 +200,8 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
             llvm::InitializeAllAsmPrinters();
             llvm::InitializeAllTargetMCs();
             llvm::InitializeAllDisassemblers();
+            
+            llvm::DisablePrettyStackTrace = true;
         }
     } InitializeLLVM;
         

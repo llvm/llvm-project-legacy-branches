@@ -625,7 +625,7 @@ SBThread::StepOut ()
     if (exe_ctx.HasThreadScope())
     {
         bool abort_other_plans = false;
-        bool stop_other_threads = true;
+        bool stop_other_threads = false;
 
         Thread *thread = exe_ctx.GetThreadPtr();
 
@@ -661,7 +661,7 @@ SBThread::StepOutOfFrame (lldb::SBFrame &sb_frame)
     if (exe_ctx.HasThreadScope())
     {
         bool abort_other_plans = false;
-        bool stop_other_threads = true;
+        bool stop_other_threads = false;
         Thread *thread = exe_ctx.GetThreadPtr();
 
         ThreadPlan *new_plan = thread->QueueThreadPlanForStepOut (abort_other_plans,
@@ -765,7 +765,6 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
             return sb_error;
         }
         
-        StackFrameSP frame_sp;
         if (!frame_sp)
         {
             frame_sp = thread->GetSelectedFrame ();
@@ -819,7 +818,7 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
         
         std::vector<addr_t> step_over_until_addrs;
         const bool abort_other_plans = false;
-        const bool stop_other_threads = true;
+        const bool stop_other_threads = false;
         const bool check_inlines = true;
         const bool exact = false;
 
@@ -874,6 +873,29 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
     {
         sb_error.SetErrorString("this SBThread object is invalid");
     }
+    return sb_error;
+}
+
+SBError
+SBThread::ReturnFromFrame (SBFrame &frame, SBValue &return_value)
+{
+    SBError sb_error;
+    
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    Mutex::Locker api_locker;
+    ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
+
+
+    if (log)
+        log->Printf ("SBThread(%p)::ReturnFromFrame (frame=%d)", exe_ctx.GetThreadPtr(), frame.GetFrameID());
+    
+    if (exe_ctx.HasThreadScope())
+    {
+        Thread *thread = exe_ctx.GetThreadPtr();
+        sb_error.SetError (thread->ReturnFromFrame(frame.GetFrameSP(), return_value.GetSP()));
+    }
+    
     return sb_error;
 }
 

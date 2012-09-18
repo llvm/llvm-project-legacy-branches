@@ -247,8 +247,6 @@ Target::CreateBreakpoint (const FileSpecList *containingModules,
                           LazyBool skip_prologue,
                           bool internal)
 {
-    SearchFilterSP filter_sp(GetSearchFilterForModuleList (containingModules));
-    
     if (check_inlines == eLazyBoolCalculate)
     {
         const InlineStrategy inline_strategy = GetInlineStrategy();
@@ -269,6 +267,18 @@ Target::CreateBreakpoint (const FileSpecList *containingModules,
                 check_inlines = eLazyBoolYes;
                 break;
         }
+    }
+    SearchFilterSP filter_sp;
+    if (check_inlines == eLazyBoolNo)
+    {
+        // Not checking for inlines, we are looking only for matching compile units
+        FileSpecList compile_unit_list;
+        compile_unit_list.Append (file);
+        filter_sp = GetSearchFilterForModuleAndCUList (containingModules, &compile_unit_list);
+    }
+    else
+    {
+        filter_sp = GetSearchFilterForModuleList (containingModules);
     }
     BreakpointResolverSP resolver_sp(new BreakpointResolverFileLine (NULL,
                                                                      file,
@@ -517,8 +527,8 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, uint32_t type, Error &e
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_WATCHPOINTS));
     if (log)
-        log->Printf("Target::%s (addr = 0x%8.8llx size = %zu type = %u)\n",
-                    __FUNCTION__, addr, size, type);
+        log->Printf("Target::%s (addr = 0x%8.8llx size = %llu type = %u)\n",
+                    __FUNCTION__, addr, (uint64_t)size, type);
 
     WatchpointSP wp_sp;
     if (!ProcessIsValid())
@@ -1225,7 +1235,7 @@ Target::ReadMemory (const Address& addr,
                     if (bytes_read == 0)
                         error.SetErrorStringWithFormat("read memory from 0x%llx failed", load_addr);
                     else
-                        error.SetErrorStringWithFormat("only %zu of %zu bytes were read from memory at 0x%llx", bytes_read, dst_len, load_addr);
+                        error.SetErrorStringWithFormat("only %llu of %llu bytes were read from memory at 0x%llx", (uint64_t)bytes_read, (uint64_t)dst_len, load_addr);
                 }
             }
             if (bytes_read)
@@ -1606,18 +1616,13 @@ Target::EvaluateExpression
 (
     const char *expr_cstr,
     StackFrame *frame,
-    lldb_private::ExecutionPolicy execution_policy,
-    bool coerce_to_id,
-    bool unwind_on_error,
-    bool keep_in_memory,
-    lldb::DynamicValueType use_dynamic,
     lldb::ValueObjectSP &result_valobj_sp,
-    uint32_t single_thread_timeout_usec
+    const EvaluateExpressionOptions& options
 )
 {
-    ExecutionResults execution_results = eExecutionSetupError;
-
     result_valobj_sp.reset();
+    
+    ExecutionResults execution_results = eExecutionSetupError;
 
     if (expr_cstr == NULL || expr_cstr[0] == '\0')
         return execution_results;
@@ -1645,7 +1650,7 @@ Target::EvaluateExpression
         if (::strcspn (expr_cstr, "()+*&|!~<=/^%,?") == expr_cstr_len)
         {
             result_valobj_sp = frame->GetValueForVariableExpressionPath (expr_cstr, 
-                                                                         use_dynamic, 
+                                                                         options.GetUseDynamic(),
                                                                          expr_path_options, 
                                                                          var_sp, 
                                                                          error);
@@ -1679,9 +1684,9 @@ Target::EvaluateExpression
         }
         else
         {
-            if (use_dynamic != lldb::eNoDynamicValues)
+            if (options.GetUseDynamic() != lldb::eNoDynamicValues)
             {
-                ValueObjectSP dynamic_sp = result_valobj_sp->GetDynamicValue(use_dynamic);
+                ValueObjectSP dynamic_sp = result_valobj_sp->GetDynamicValue(options.GetUseDynamic());
                 if (dynamic_sp)
                     result_valobj_sp = dynamic_sp;
             }
@@ -1735,14 +1740,14 @@ Target::EvaluateExpression
             const char *prefix = GetExpressionPrefixContentsAsCString();
                     
             execution_results = ClangUserExpression::Evaluate (exe_ctx, 
-                                                               execution_policy,
+                                                               options.GetExecutionPolicy(),
                                                                lldb::eLanguageTypeUnknown,
-                                                               coerce_to_id ? ClangUserExpression::eResultTypeId : ClangUserExpression::eResultTypeAny,
-                                                               unwind_on_error,
+                                                               options.DoesCoerceToId() ? ClangUserExpression::eResultTypeId : ClangUserExpression::eResultTypeAny,
+                                                               options.DoesUnwindOnError(),
                                                                expr_cstr, 
                                                                prefix, 
                                                                result_valobj_sp,
-                                                               single_thread_timeout_usec);
+                                                               options.GetSingleThreadTimeoutUsec());
         }
     }
     
