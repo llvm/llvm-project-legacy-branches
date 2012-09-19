@@ -17,6 +17,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#undef GetUserName
 #endif
 
 //#define ENABLE_SP_LOGGING 1 // DON'T CHECK THIS LINE IN UNLESS COMMENTED OUT

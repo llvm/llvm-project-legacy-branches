@@ -28,6 +28,7 @@ struct EditLine;
 struct History;
 struct HistEvent {};
 #include <Winsock2.h>
+#undef GetUserName
 #endif
 
 #include "llvm/Support/Mutex.h"

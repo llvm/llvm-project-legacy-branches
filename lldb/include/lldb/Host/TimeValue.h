@@ -23,6 +23,7 @@
 // END: MinGW work around
 #else
 #include <winsock2.h>
+#undef GetUserName
 #endif
 
 // C++ Includes
