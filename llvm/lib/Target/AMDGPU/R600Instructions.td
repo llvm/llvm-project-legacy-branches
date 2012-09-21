@@ -658,7 +658,7 @@ multiclass CUBE_Common <bits<11> inst> {
     let Inst{59-53} = dst;
   }
 }
-
+} // End mayLoad = 0, mayStore = 0, hasSideEffects = 0
 class EXP_IEEE_Common <bits<11> inst> : R600_1OP <
   inst, "EXP_IEEE",
   [(set R600_Reg32:$dst, (fexp2 R600_Reg32:$src))]

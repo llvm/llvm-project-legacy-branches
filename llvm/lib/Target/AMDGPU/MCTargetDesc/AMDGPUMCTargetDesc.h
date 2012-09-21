@@ -38,7 +38,8 @@ MCCodeEmitter *createSIMCCodeEmitter(const MCInstrInfo &MCII,
                                      const MCSubtargetInfo &STI,
                                      MCContext &Ctx);
 
-MCAsmBackend *createAMDGPUAsmBackend(const Target &T, StringRef TT);
+MCAsmBackend *createAMDGPUAsmBackend(const Target &T, StringRef TT,
+                                     StringRef CPU);
 } // End llvm namespace
 
 #define GET_REGINFO_ENUM

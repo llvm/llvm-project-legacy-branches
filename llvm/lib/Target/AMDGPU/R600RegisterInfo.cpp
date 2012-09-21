@@ -50,7 +50,6 @@ BitVector R600RegisterInfo::getReservedRegs(const MachineFunction &MF) const
   for (std::vector<unsigned>::const_iterator I = MFI->ReservedRegs.begin(),
                                     E = MFI->ReservedRegs.end(); I != E; ++I) {
     Reserved.set(*I);
-    Reserved.set(*(getSuperRegisters(*I)));
   }
 
   return Reserved;

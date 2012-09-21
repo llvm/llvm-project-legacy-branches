@@ -633,7 +633,7 @@ uint64_t R600MCCodeEmitter::getMachineOpValue(const MCInst &MI,
                                               const MCOperand &MO,
                                         SmallVectorImpl<MCFixup> &Fixup) const {
   if (MO.isReg()) {
-    return getHWRegIndex(MO.getReg());
+    return MRI.getEncodingValue(MO.getReg());
   } else if (MO.isImm()) {
     return MO.getImm();
   } else {

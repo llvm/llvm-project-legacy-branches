@@ -70,7 +70,8 @@ void AMDGPUMCObjectWriter::WriteObject(MCAssembler &Asm,
   }
 }
 
-MCAsmBackend *llvm::createAMDGPUAsmBackend(const Target &T, StringRef TT) {
+MCAsmBackend *llvm::createAMDGPUAsmBackend(const Target &T, StringRef TT,
+                                           StringRef CPU) {
   return new AMDGPUAsmBackend(T);
 }
 
