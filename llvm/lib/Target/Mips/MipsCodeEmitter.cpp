@@ -30,6 +30,7 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -138,7 +139,7 @@ bool MipsCodeEmitter::runOnMachineFunction(MachineFunction &MF) {
 
   do {
     DEBUG(errs() << "JITTing function '"
-        << MF.getName() << "'\n");
+        << MF.getFunction()->getName() << "'\n");
     MCE.startFunction(MF);
 
     for (MachineFunction::iterator MBB = MF.begin(), E = MF.end();

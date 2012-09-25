@@ -1190,7 +1190,6 @@ def t2ADR : T2PCOneRegImm<(outs rGPR:$Rd),
 let neverHasSideEffects = 1, isReMaterializable = 1 in
 def t2LEApcrel   : t2PseudoInst<(outs rGPR:$Rd), (ins i32imm:$label, pred:$p),
                                 4, IIC_iALUi, []>;
-let hasSideEffects = 1 in
 def t2LEApcrelJT : t2PseudoInst<(outs rGPR:$Rd),
                                 (ins i32imm:$label, nohash_imm:$id, pred:$p),
                                 4, IIC_iALUi,
@@ -2429,14 +2428,14 @@ def t2UMULL : T2MulLong<0b010, 0b0000,
 
 // Multiply + accumulate
 def t2SMLAL : T2MlaLong<0b100, 0b0000,
-                  (outs rGPR:$RdLo, rGPR:$RdHi),
-                  (ins rGPR:$Rn, rGPR:$Rm, rGPR:$RLo, rGPR:$RHi), IIC_iMAC64,
+                  (outs rGPR:$RdLo, rGPR:$RdHi, rGPR:$RLo, rGPR:$RHi),
+                  (ins rGPR:$Rn, rGPR:$Rm), IIC_iMAC64,
                   "smlal", "\t$RdLo, $RdHi, $Rn, $Rm", []>,
                   RegConstraint<"$RLo = $RdLo, $RHi = $RdHi">;
 
 def t2UMLAL : T2MlaLong<0b110, 0b0000,
-                  (outs rGPR:$RdLo, rGPR:$RdHi),
-                  (ins rGPR:$Rn, rGPR:$Rm, rGPR:$RLo, rGPR:$RHi), IIC_iMAC64,
+                  (outs rGPR:$RdLo, rGPR:$RdHi, rGPR:$RLo, rGPR:$RHi),
+                  (ins rGPR:$Rn, rGPR:$Rm), IIC_iMAC64,
                   "umlal", "\t$RdLo, $RdHi, $Rn, $Rm", []>,
                   RegConstraint<"$RLo = $RdLo, $RHi = $RdHi">;
 
@@ -2958,7 +2957,7 @@ defm t2TEQ  : T2I_cmp_irs<0b0100, "teq",
 // a two-value operand where a dag node expects two operands. :(
 let neverHasSideEffects = 1 in {
 
-let isCommutable = 1, isSelect = 1 in
+let isCommutable = 1 in
 def t2MOVCCr : t2PseudoInst<(outs rGPR:$Rd),
                             (ins rGPR:$false, rGPR:$Rm, pred:$p),
                             4, IIC_iCMOVr,
@@ -3042,6 +3041,34 @@ def t2MOVCCror : T2I_movcc_sh<0b11, (outs rGPR:$Rd),
                  RegConstraint<"$false = $Rd">;
 } // isCodeGenOnly = 1
 
+multiclass T2I_bincc_irs<Instruction iri, Instruction irr, Instruction irs,
+                   InstrItinClass iii, InstrItinClass iir, InstrItinClass iis> {
+   // shifted imm
+   def ri : t2PseudoExpand<(outs rGPR:$Rd),
+                           (ins rGPR:$Rn, t2_so_imm:$imm, pred:$p, cc_out:$s),
+                           4, iii, [],
+                  (iri rGPR:$Rd, rGPR:$Rn, t2_so_imm:$imm, pred:$p, cc_out:$s)>,
+                           RegConstraint<"$Rn = $Rd">;
+   // register
+   def rr : t2PseudoExpand<(outs rGPR:$Rd),
+                           (ins rGPR:$Rn, rGPR:$Rm, pred:$p, cc_out:$s),
+                           4, iir, [],
+                        (irr rGPR:$Rd, rGPR:$Rn, rGPR:$Rm, pred:$p, cc_out:$s)>,
+                           RegConstraint<"$Rn = $Rd">;
+   // shifted register
+   def rs : t2PseudoExpand<(outs rGPR:$Rd),
+                       (ins rGPR:$Rn, t2_so_reg:$ShiftedRm, pred:$p, cc_out:$s),
+                           4, iis, [],
+            (irs rGPR:$Rd, rGPR:$Rn, t2_so_reg:$ShiftedRm, pred:$p, cc_out:$s)>,
+                           RegConstraint<"$Rn = $Rd">;
+} // T2I_bincc_irs
+
+defm t2ANDCC : T2I_bincc_irs<t2ANDri, t2ANDrr, t2ANDrs,
+                             IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2ORRCC : T2I_bincc_irs<t2ORRri, t2ORRrr, t2ORRrs,
+                             IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2EORCC : T2I_bincc_irs<t2EORri, t2EORrr, t2EORrs,
+                             IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
 } // neverHasSideEffects
 
 //===----------------------------------------------------------------------===//

@@ -47,7 +47,6 @@ def HexagonModel : SchedMachineModel {
   // Max issue per cycle == bundle width.
   let IssueWidth = 4;
   let Itineraries = HexagonItineraries;
-  let LoadLatency = 1;
 }
 
 //===----------------------------------------------------------------------===//

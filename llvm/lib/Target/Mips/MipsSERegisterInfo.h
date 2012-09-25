@@ -18,14 +18,11 @@
 #include "MipsRegisterInfo.h"
 
 namespace llvm {
-class MipsSEInstrInfo;
 
 class MipsSERegisterInfo : public MipsRegisterInfo {
-  const MipsSEInstrInfo &TII;
-
 public:
   MipsSERegisterInfo(const MipsSubtarget &Subtarget,
-                     const MipsSEInstrInfo &TII);
+                     const TargetInstrInfo &TII);
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,

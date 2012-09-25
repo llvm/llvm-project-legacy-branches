@@ -100,7 +100,6 @@ namespace {
       Base_Reg = Reg;
     }
 
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
     void dump() {
       dbgs() << "X86ISelAddressMode " << this << '\n';
       dbgs() << "Base_Reg ";
@@ -134,7 +133,6 @@ namespace {
         dbgs() << "nul";
       dbgs() << " JT" << JT << " Align" << Align << '\n';
     }
-#endif
   };
 }
 
@@ -1013,7 +1011,7 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
           AM.IndexReg = ShVal.getNode()->getOperand(0);
           ConstantSDNode *AddVal =
             cast<ConstantSDNode>(ShVal.getNode()->getOperand(1));
-          uint64_t Disp = (uint64_t)AddVal->getSExtValue() << Val;
+          uint64_t Disp = AddVal->getSExtValue() << Val;
           if (!FoldOffsetIntoAddress(Disp, AM))
             return false;
         }
@@ -2064,7 +2062,7 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
   case X86ISD::ATOMSWAP64_DAG: {
     unsigned Opc;
     switch (Opcode) {
-    default: llvm_unreachable("Impossible opcode");
+    default: llvm_unreachable("Impossible intrinsic");
     case X86ISD::ATOMOR64_DAG:   Opc = X86::ATOMOR6432;   break;
     case X86ISD::ATOMXOR64_DAG:  Opc = X86::ATOMXOR6432;  break;
     case X86ISD::ATOMADD64_DAG:  Opc = X86::ATOMADD6432;  break;
@@ -2118,11 +2116,10 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
 
     // Make sure that we don't change the operation by removing bits.
     // This only matters for OR and XOR, AND is unaffected.
-    uint64_t RemovedBitsMask = (1ULL << ShlVal) - 1;
-    if (Opcode != ISD::AND && (Val & RemovedBitsMask) != 0)
+    if (Opcode != ISD::AND && ((Val >> ShlVal) << ShlVal) != Val)
       break;
 
-    unsigned ShlOp, Op;
+    unsigned ShlOp, Op = 0;
     EVT CstVT = NVT;
 
     // Check the minimum bitwidth for the new constant.
@@ -2145,7 +2142,6 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
       ShlOp = X86::SHL32ri;
 
       switch (Opcode) {
-      default: llvm_unreachable("Impossible opcode");
       case ISD::AND: Op = X86::AND32ri8; break;
       case ISD::OR:  Op =  X86::OR32ri8; break;
       case ISD::XOR: Op = X86::XOR32ri8; break;
@@ -2156,7 +2152,6 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
       ShlOp = X86::SHL64ri;
 
       switch (Opcode) {
-      default: llvm_unreachable("Impossible opcode");
       case ISD::AND: Op = CstVT==MVT::i8? X86::AND64ri8 : X86::AND64ri32; break;
       case ISD::OR:  Op = CstVT==MVT::i8?  X86::OR64ri8 :  X86::OR64ri32; break;
       case ISD::XOR: Op = CstVT==MVT::i8? X86::XOR64ri8 : X86::XOR64ri32; break;

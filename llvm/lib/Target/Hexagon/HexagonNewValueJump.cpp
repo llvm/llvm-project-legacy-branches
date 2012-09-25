@@ -337,7 +337,7 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
 
   DEBUG(dbgs() << "********** Hexagon New Value Jump **********\n"
                << "********** Function: "
-               << MF.getName() << "\n");
+               << MF.getFunction()->getName() << "\n");
 
 #if 0
   // for now disable this, if we move NewValueJump before register

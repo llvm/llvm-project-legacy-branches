@@ -1388,9 +1388,10 @@ bool ARMConstantIslands::handleConstantPoolUser(unsigned CPUserIndex) {
     // If the original WaterList entry was "new water" on this iteration,
     // propagate that to the new island.  This is just keeping NewWaterList
     // updated to match the WaterList, which will be updated below.
-    if (NewWaterList.erase(WaterBB))
+    if (NewWaterList.count(WaterBB)) {
+      NewWaterList.erase(WaterBB);
       NewWaterList.insert(NewIsland);
-
+    }
     // The new CPE goes before the following block (NewMBB).
     NewMBB = llvm::next(MachineFunction::iterator(WaterBB));
 

@@ -130,16 +130,23 @@ let Properties = [IntrNoMem] in {
           BinaryIntInt;
   def int_AMDIL_borrow_i32 : GCCBuiltin<"__amdil_borrow">,
           BinaryIntInt;
+}
   def int_AMDIL_min_i32 : GCCBuiltin<"__amdil_imin">,
        BinaryIntInt;
   def int_AMDIL_min_u32 : GCCBuiltin<"__amdil_umin">,
           BinaryIntInt;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_min     : GCCBuiltin<"__amdil_min">,
           BinaryIntFloat;
+}
+
   def int_AMDIL_max_i32 : GCCBuiltin<"__amdil_imax">,
        BinaryIntInt;
   def int_AMDIL_max_u32 : GCCBuiltin<"__amdil_umax">,
        BinaryIntInt;
+
+let Properties = [IntrNoMem] in {
   def int_AMDIL_max     : GCCBuiltin<"__amdil_max">,
           BinaryIntFloat;
   def int_AMDIL_media_lerp_u4 : GCCBuiltin<"__amdil_u4lerp">,

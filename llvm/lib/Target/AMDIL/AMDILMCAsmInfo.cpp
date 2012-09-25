@@ -70,6 +70,7 @@ AMDILMCAsmInfo::AMDILMCAsmInfo(const Triple &Triple) : MCAsmInfo()
   // of the symbol use. This could be disabled and handled as it
   // would simplify the patching code in AMDILMDParser.cpp.
   HasAggressiveSymbolFolding = true;
+  LCOMMDirectiveType = LCOMM::None;
   COMMDirectiveAlignmentIsInBytes = false;
   // TODO: This generates .type @__OpenCL_<name>_kernel,@function
   // and .size @__OpenCL_<name>_kernel, ;.<tmp>-@__OpenCL_<name>_kernel,

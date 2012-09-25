@@ -20,10 +20,8 @@ using namespace llvm;
 
 TargetRegisterInfo::TargetRegisterInfo(const TargetRegisterInfoDesc *ID,
                              regclass_iterator RCB, regclass_iterator RCE,
-                             const char *const *SRINames,
-                             const unsigned *SRILaneMasks)
-  : InfoDesc(ID), SubRegIndexNames(SRINames),
-    SubRegIndexLaneMasks(SRILaneMasks),
+                             const char *const *subregindexnames)
+  : InfoDesc(ID), SubRegIndexNames(subregindexnames),
     RegClassBegin(RCB), RegClassEnd(RCE) {
 }
 

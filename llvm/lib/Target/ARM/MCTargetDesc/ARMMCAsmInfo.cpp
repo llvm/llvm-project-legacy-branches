@@ -50,6 +50,7 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo() {
   Code32Directive = ".code\t32";
 
   WeakRefDirective = "\t.weak\t";
+  LCOMMDirectiveType = LCOMM::NoAlignment;
 
   HasLEB128 = true;
   SupportsDebugInformation = true;

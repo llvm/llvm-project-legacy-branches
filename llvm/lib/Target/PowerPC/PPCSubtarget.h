@@ -41,8 +41,6 @@ namespace PPC {
     DIR_750, 
     DIR_970, 
     DIR_A2,
-    DIR_E500mc,
-    DIR_E5500,
     DIR_PWR6,
     DIR_PWR7,
     DIR_64  

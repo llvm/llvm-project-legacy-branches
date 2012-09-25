@@ -129,7 +129,7 @@ def retflag       : SDNode<"SPISD::RET_FLAG", SDT_SPRet,
                            [SDNPHasChain, SDNPOptInGlue]>;
 
 def flushw        : SDNode<"SPISD::FLUSHW", SDTNone,
-                           [SDNPHasChain, SDNPSideEffect, SDNPMayStore]>;
+                           [SDNPHasChain]>;
 
 def getPCX        : Operand<i32> {
   let PrintMethod = "printGetPCX";

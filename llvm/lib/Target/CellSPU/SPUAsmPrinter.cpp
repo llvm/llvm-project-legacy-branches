@@ -130,7 +130,8 @@ namespace {
     void
     printS10ImmOperand(const MachineInstr *MI, unsigned OpNo, raw_ostream &O)
     {
-      short value = MI->getOperand(OpNo).getImm();
+      short value = (short) (((int) MI->getOperand(OpNo).getImm() << 16)
+                             >> 16);
       assert((value >= -(1 << 9) && value <= (1 << 9) - 1)
              && "Invalid s10 argument");
       O << value;
@@ -139,7 +140,8 @@ namespace {
     void
     printU10ImmOperand(const MachineInstr *MI, unsigned OpNo, raw_ostream &O)
     {
-      short value = MI->getOperand(OpNo).getImm();
+      short value = (short) (((int) MI->getOperand(OpNo).getImm() << 16)
+                             >> 16);
       assert((value <= (1 << 10) - 1) && "Invalid u10 argument");
       O << value;
     }

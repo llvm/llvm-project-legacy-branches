@@ -143,11 +143,7 @@ getBranchTargetOpValue(const MCInst &MI, unsigned OpNo,
                        SmallVectorImpl<MCFixup> &Fixups) const {
 
   const MCOperand &MO = MI.getOperand(OpNo);
-
-  // If the destination is an immediate, we have nothing to do.
-  if (MO.isImm()) return MO.getImm();
-  assert(MO.isExpr() &&
-         "getBranchTargetOpValue expects only expressions or immediates");
+  assert(MO.isExpr() && "getBranchTargetOpValue expects only expressions");
 
   const MCExpr *Expr = MO.getExpr();
   Fixups.push_back(MCFixup::Create(0, Expr,
@@ -163,10 +159,7 @@ getJumpTargetOpValue(const MCInst &MI, unsigned OpNo,
                      SmallVectorImpl<MCFixup> &Fixups) const {
 
   const MCOperand &MO = MI.getOperand(OpNo);
-  // If the destination is an immediate, we have nothing to do.
-  if (MO.isImm()) return MO.getImm();
-  assert(MO.isExpr() &&
-         "getJumpTargetOpValue expects only expressions or an immediate");
+  assert(MO.isExpr() && "getJumpTargetOpValue expects only expressions");
 
   const MCExpr *Expr = MO.getExpr();
   Fixups.push_back(MCFixup::Create(0, Expr,

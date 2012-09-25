@@ -83,10 +83,12 @@ namespace {
       return true;
     } else if (vt == MVT::i32) {
       int32_t i_val = (int32_t) CN->getZExtValue();
-      return i_val == SignExtend32<16>(i_val);
+      short s_val = (short) i_val;
+      return i_val == s_val;
     } else {
       int64_t i_val = (int64_t) CN->getZExtValue();
-      return i_val == SignExtend64<16>(i_val);
+      short s_val = (short) i_val;
+      return i_val == s_val;
     }
   }
 
@@ -97,10 +99,9 @@ namespace {
     EVT vt = FPN->getValueType(0);
     if (vt == MVT::f32) {
       int val = FloatToBits(FPN->getValueAPF().convertToFloat());
-      if (val == SignExtend32<16>(val)) {
-        Imm = (short) val;
-        return true;
-      }
+      int sval = (int) ((val << 16) >> 16);
+      Imm = (short) val;
+      return val == sval;
     }
 
     return false;

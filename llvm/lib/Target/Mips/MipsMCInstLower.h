@@ -33,6 +33,7 @@ public:
   MipsMCInstLower(MipsAsmPrinter &asmprinter);
   void Initialize(Mangler *mang, MCContext *C);
   void Lower(const MachineInstr *MI, MCInst &OutMI) const;
+  void LowerLargeShift(const MachineInstr *MI, MCInst &Inst, int64_t Shift);
 
 private:
   MCOperand LowerSymbolOperand(const MachineOperand &MO,

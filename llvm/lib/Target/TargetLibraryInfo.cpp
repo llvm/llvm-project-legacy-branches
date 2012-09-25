@@ -24,16 +24,6 @@ void TargetLibraryInfo::anchor() { }
 
 const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
   {
-    "_ZdaPv",
-    "_ZdlPv",
-    "_Znaj",
-    "_ZnajRKSt9nothrow_t",
-    "_Znam",
-    "_ZnamRKSt9nothrow_t",
-    "_Znwj",
-    "_ZnwjRKSt9nothrow_t",
-    "_Znwm",
-    "_ZnwmRKSt9nothrow_t",
     "__cxa_atexit",
     "__cxa_guard_abort",
     "__cxa_guard_acquire",
@@ -41,29 +31,16 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "__memcpy_chk",
     "acos",
     "acosf",
-    "acosh",
-    "acoshf",
-    "acoshl",
     "acosl",
     "asin",
     "asinf",
-    "asinh",
-    "asinhf",
-    "asinhl",
     "asinl",
     "atan",
     "atan2",
     "atan2f",
     "atan2l",
     "atanf",
-    "atanh",
-    "atanhf",
-    "atanhl",
     "atanl",
-    "calloc",
-    "cbrt",
-    "cbrtf",
-    "cbrtl",
     "ceil",
     "ceilf",
     "ceill",
@@ -77,9 +54,6 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "coshl",
     "cosl",
     "exp",
-    "exp10",
-    "exp10f",
-    "exp10l",
     "exp2",
     "exp2f",
     "exp2l",
@@ -100,7 +74,6 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "fmodl",
     "fputc",
     "fputs",
-    "free",
     "fwrite",
     "iprintf",
     "log",
@@ -113,12 +86,8 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "log2",
     "log2f",
     "log2l",
-    "logb",
-    "logbf",
-    "logbl",
     "logf",
     "logl",
-    "malloc",
     "memchr",
     "memcmp",
     "memcpy",
@@ -128,14 +97,11 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "nearbyint",
     "nearbyintf",
     "nearbyintl",
-    "posix_memalign",
     "pow",
     "powf",
     "powl",
     "putchar",
     "puts",
-    "realloc",
-    "reallocf",
     "rint",
     "rintf",
     "rintl",
@@ -155,12 +121,10 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "strcat",
     "strchr",
     "strcpy",
-    "strdup",
     "strlen",
     "strncat",
     "strncmp",
     "strncpy",
-    "strndup",
     "strnlen",
     "tan",
     "tanf",
@@ -170,8 +134,7 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "tanl",
     "trunc",
     "truncf",
-    "truncl",
-    "valloc"
+    "truncl"
   };
 
 /// initialize - Initialize the set of available library functions based on the
@@ -242,21 +205,6 @@ static void initialize(TargetLibraryInfo &TLI, const Triple &T,
     TLI.setUnavailable(LibFunc::tanhl);
 
     // Win32 only has C89 math
-    TLI.setUnavailable(LibFunc::acosh);
-    TLI.setUnavailable(LibFunc::acoshf);
-    TLI.setUnavailable(LibFunc::acoshl);
-    TLI.setUnavailable(LibFunc::asinh);
-    TLI.setUnavailable(LibFunc::asinhf);
-    TLI.setUnavailable(LibFunc::asinhl);
-    TLI.setUnavailable(LibFunc::atanh);
-    TLI.setUnavailable(LibFunc::atanhf);
-    TLI.setUnavailable(LibFunc::atanhl);
-    TLI.setUnavailable(LibFunc::cbrt);
-    TLI.setUnavailable(LibFunc::cbrtf);
-    TLI.setUnavailable(LibFunc::cbrtl);
-    TLI.setUnavailable(LibFunc::exp10);
-    TLI.setUnavailable(LibFunc::exp10f);
-    TLI.setUnavailable(LibFunc::exp10l);
     TLI.setUnavailable(LibFunc::exp2);
     TLI.setUnavailable(LibFunc::exp2f);
     TLI.setUnavailable(LibFunc::exp2l);
@@ -269,9 +217,6 @@ static void initialize(TargetLibraryInfo &TLI, const Triple &T,
     TLI.setUnavailable(LibFunc::log1p);
     TLI.setUnavailable(LibFunc::log1pf);
     TLI.setUnavailable(LibFunc::log1pl);
-    TLI.setUnavailable(LibFunc::logb);
-    TLI.setUnavailable(LibFunc::logbf);
-    TLI.setUnavailable(LibFunc::logbl);
     TLI.setUnavailable(LibFunc::nearbyint);
     TLI.setUnavailable(LibFunc::nearbyintf);
     TLI.setUnavailable(LibFunc::nearbyintl);

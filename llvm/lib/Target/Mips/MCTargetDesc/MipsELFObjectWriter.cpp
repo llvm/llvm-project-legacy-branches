@@ -34,8 +34,7 @@ namespace {
 
   class MipsELFObjectWriter : public MCELFObjectTargetWriter {
   public:
-    MipsELFObjectWriter(bool _is64Bit, uint8_t OSABI,
-                        bool _isN64, bool IsLittleEndian);
+    MipsELFObjectWriter(bool _is64Bit, uint8_t OSABI, bool _isN64);
 
     virtual ~MipsELFObjectWriter();
 
@@ -54,9 +53,9 @@ namespace {
 }
 
 MipsELFObjectWriter::MipsELFObjectWriter(bool _is64Bit, uint8_t OSABI,
-                                         bool _isN64, bool IsLittleEndian)
+                                         bool _isN64)
   : MCELFObjectTargetWriter(_is64Bit, OSABI, ELF::EM_MIPS,
-                            /*HasRelocationAddend*/ (_isN64) ? true : false,
+                            /*HasRelocationAddend*/ false,
                             /*IsN64*/ _isN64) {}
 
 MipsELFObjectWriter::~MipsELFObjectWriter() {}
@@ -275,7 +274,6 @@ MCObjectWriter *llvm::createMipsELFObjectWriter(raw_ostream &OS,
                                                 bool IsLittleEndian,
                                                 bool Is64Bit) {
   MCELFObjectTargetWriter *MOTW = new MipsELFObjectWriter(Is64Bit, OSABI,
-                                                (Is64Bit) ? true : false,
-                                                IsLittleEndian);
+                                                (Is64Bit) ? true : false);
   return createELFObjectWriter(MOTW, OS, IsLittleEndian);
 }

@@ -63,6 +63,9 @@ namespace llvm {
       FMSTAT,       // ARM fmstat instruction.
 
       CMOV,         // ARM conditional move instructions.
+      CAND,         // ARM conditional and instructions.
+      COR,          // ARM conditional or instructions.
+      CXOR,         // ARM conditional xor instructions.
 
       BCC_i64,
 
@@ -260,11 +263,6 @@ namespace llvm {
 
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
-    virtual bool isSelectSupported(SelectSupportKind Kind) const {
-      // ARM does not support scalar condition selects on vectors.
-      return (Kind != ScalarCondVectorVal);
-    }
-
     /// getSetCCResultType - Return the value type to use for ISD::SETCC.
     virtual EVT getSetCCResultType(EVT VT) const;
 
@@ -399,9 +397,9 @@ namespace llvm {
     ///
     unsigned ARMPCLabelIndex;
 
-    void addTypeForNEON(MVT VT, MVT PromotedLdStVT, MVT PromotedBitwiseVT);
-    void addDRTypeForNEON(MVT VT);
-    void addQRTypeForNEON(MVT VT);
+    void addTypeForNEON(EVT VT, EVT PromotedLdStVT, EVT PromotedBitwiseVT);
+    void addDRTypeForNEON(EVT VT);
+    void addQRTypeForNEON(EVT VT);
 
     typedef SmallVector<std::pair<unsigned, SDValue>, 8> RegsToPassVector;
     void PassF64ArgInRegs(DebugLoc dl, SelectionDAG &DAG,

@@ -22,6 +22,7 @@
 #include "llvm/Constants.h"
 #include "llvm/DebugInfo.h"
 #include "llvm/Type.h"
+#include "llvm/Function.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -42,8 +43,9 @@
 
 using namespace llvm;
 
-MipsRegisterInfo::MipsRegisterInfo(const MipsSubtarget &ST)
-  : MipsGenRegisterInfo(Mips::RA), Subtarget(ST) {}
+MipsRegisterInfo::MipsRegisterInfo(const MipsSubtarget &ST,
+                                   const TargetInstrInfo &tii)
+  : MipsGenRegisterInfo(Mips::RA), Subtarget(ST), TII(tii) {}
 
 unsigned MipsRegisterInfo::getPICCallReg() { return Mips::T9; }
 
@@ -129,12 +131,6 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::RA_64);
   }
 
-  // Reserve GP if small section is used.
-  if (Subtarget.useSmallSection()) {
-    Reserved.set(Mips::GP);
-    Reserved.set(Mips::GP_64);
-  }
-
   return Reserved;
 }
 
@@ -164,7 +160,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
            "Instr doesn't have FrameIndex operand!");
   }
 
-  DEBUG(errs() << "\nFunction : " << MF.getName() << "\n";
+  DEBUG(errs() << "\nFunction : " << MF.getFunction()->getName() << "\n";
         errs() << "<--------->\n" << MI);
 
   int FrameIndex = MI.getOperand(i).getIndex();

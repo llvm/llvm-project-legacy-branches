@@ -389,7 +389,7 @@ bool ARMCodeEmitter::runOnMachineFunction(MachineFunction &MF) {
 
   do {
     DEBUG(errs() << "JITTing function '"
-          << MF.getName() << "'\n");
+          << MF.getFunction()->getName() << "'\n");
     MCE.startFunction(MF);
     for (MachineFunction::iterator MBB = MF.begin(), E = MF.end();
          MBB != E; ++MBB) {

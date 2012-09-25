@@ -40,7 +40,6 @@ def IntMulHWU    : InstrItinClass;
 def IntMulLI     : InstrItinClass;
 def IntRFID      : InstrItinClass;
 def IntRotateD   : InstrItinClass;
-def IntRotateDI  : InstrItinClass;
 def IntRotate    : InstrItinClass;
 def IntShift     : InstrItinClass;
 def IntTrapD     : InstrItinClass;
@@ -53,18 +52,15 @@ def LdStDCBA     : InstrItinClass;
 def LdStDCBF     : InstrItinClass;
 def LdStDCBI     : InstrItinClass;
 def LdStLoad     : InstrItinClass;
-def LdStLoadUpd  : InstrItinClass;
 def LdStStore    : InstrItinClass;
-def LdStStoreUpd : InstrItinClass;
 def LdStDSS      : InstrItinClass;
 def LdStICBI     : InstrItinClass;
+def LdStUX       : InstrItinClass;
 def LdStLD       : InstrItinClass;
-def LdStLDU      : InstrItinClass;
 def LdStLDARX    : InstrItinClass;
 def LdStLFD      : InstrItinClass;
 def LdStLFDU     : InstrItinClass;
 def LdStLHA      : InstrItinClass;
-def LdStLHAU     : InstrItinClass;
 def LdStLMW      : InstrItinClass;
 def LdStLVecX    : InstrItinClass;
 def LdStLWA      : InstrItinClass;
@@ -73,9 +69,6 @@ def LdStSLBIA    : InstrItinClass;
 def LdStSLBIE    : InstrItinClass;
 def LdStSTD      : InstrItinClass;
 def LdStSTDCX    : InstrItinClass;
-def LdStSTDU     : InstrItinClass;
-def LdStSTFD     : InstrItinClass;
-def LdStSTFDU    : InstrItinClass;
 def LdStSTVEBX   : InstrItinClass;
 def LdStSTWCX    : InstrItinClass;
 def LdStSync     : InstrItinClass;
@@ -93,7 +86,6 @@ def SprMTSRIN    : InstrItinClass;
 def SprRFI       : InstrItinClass;
 def SprSC        : InstrItinClass;
 def FPGeneral    : InstrItinClass;
-def FPAddSub     : InstrItinClass;
 def FPCompare    : InstrItinClass;
 def FPDivD       : InstrItinClass;
 def FPDivS       : InstrItinClass;
@@ -118,8 +110,6 @@ include "PPCScheduleG4.td"
 include "PPCScheduleG4Plus.td"
 include "PPCScheduleG5.td"
 include "PPCScheduleA2.td"
-include "PPCScheduleE500mc.td"
-include "PPCScheduleE5500.td"
 
 //===----------------------------------------------------------------------===//
 // Instruction to itinerary class map - When add new opcodes to the supported
@@ -181,7 +171,7 @@ include "PPCScheduleE5500.td"
 //    extsh      IntSimple
 //    extsw      IntSimple
 //    fabs       FPGeneral
-//    fadd       FPAddSub
+//    fadd       FPGeneral
 //    fadds      FPGeneral
 //    fcfid      FPGeneral
 //    fcmpo      FPCompare
@@ -211,35 +201,35 @@ include "PPCScheduleE5500.td"
 //    fsel       FPGeneral
 //    fsqrt      FPSqrt
 //    fsqrts     FPSqrt
-//    fsub       FPAddSub
+//    fsub       FPGeneral
 //    fsubs      FPGeneral
 //    icbi       LdStICBI
 //    isync      SprISYNC
 //    lbz        LdStLoad
-//    lbzu       LdStLoadUpd
-//    lbzux      LdStLoadUpd
+//    lbzu       LdStLoad
+//    lbzux      LdStUX
 //    lbzx       LdStLoad
 //    ld         LdStLD
 //    ldarx      LdStLDARX
-//    ldu        LdStLDU
-//    ldux       LdStLDU
+//    ldu        LdStLD
+//    ldux       LdStLD
 //    ldx        LdStLD
 //    lfd        LdStLFD
 //    lfdu       LdStLFDU
 //    lfdux      LdStLFDU
-//    lfdx       LdStLFD
-//    lfs        LdStLFD
+//    lfdx       LdStLFDU
+//    lfs        LdStLFDU
 //    lfsu       LdStLFDU
 //    lfsux      LdStLFDU
-//    lfsx       LdStLFD
+//    lfsx       LdStLFDU
 //    lha        LdStLHA
-//    lhau       LdStLHAU
-//    lhaux      LdStLHAU
+//    lhau       LdStLHA
+//    lhaux      LdStLHA
 //    lhax       LdStLHA
 //    lhbrx      LdStLoad
 //    lhz        LdStLoad
-//    lhzu       LdStLoadUpd
-//    lhzux      LdStLoadUpd
+//    lhzu       LdStLoad
+//    lhzux      LdStUX
 //    lhzx       LdStLoad
 //    lmw        LdStLMW
 //    lswi       LdStLMW
@@ -253,12 +243,12 @@ include "PPCScheduleE5500.td"
 //    lvxl       LdStLVecX
 //    lwa        LdStLWA
 //    lwarx      LdStLWARX
-//    lwaux      LdStLHAU
+//    lwaux      LdStLHA
 //    lwax       LdStLHA
 //    lwbrx      LdStLoad
 //    lwz        LdStLoad
-//    lwzu       LdStLoadUpd
-//    lwzux      LdStLoadUpd
+//    lwzu       LdStLoad
+//    lwzux      LdStUX
 //    lwzx       LdStLoad
 //    mcrf       BrMCR
 //    mcrfs      FPGeneral
@@ -302,10 +292,10 @@ include "PPCScheduleE5500.td"
 //    rfid       IntRFID
 //    rldcl      IntRotateD
 //    rldcr      IntRotateD
-//    rldic      IntRotateDI
-//    rldicl     IntRotateDI
-//    rldicr     IntRotateDI
-//    rldimi     IntRotateDI
+//    rldic      IntRotateD
+//    rldicl     IntRotateD
+//    rldicr     IntRotateD
+//    rldimi     IntRotateD
 //    rlwimi     IntRotate
 //    rlwinm     IntGeneral
 //    rlwnm      IntGeneral
@@ -315,33 +305,33 @@ include "PPCScheduleE5500.td"
 //    sld        IntRotateD
 //    slw        IntGeneral
 //    srad       IntRotateD
-//    sradi      IntRotateDI
+//    sradi      IntRotateD
 //    sraw       IntShift
 //    srawi      IntShift
 //    srd        IntRotateD
 //    srw        IntGeneral
 //    stb        LdStStore
-//    stbu       LdStStoreUpd
-//    stbux      LdStStoreUpd
+//    stbu       LdStStore
+//    stbux      LdStStore
 //    stbx       LdStStore
 //    std        LdStSTD
 //    stdcx.     LdStSTDCX
-//    stdu       LdStSTDU
-//    stdux      LdStSTDU
+//    stdu       LdStSTD
+//    stdux      LdStSTD
 //    stdx       LdStSTD
-//    stfd       LdStSTFD
-//    stfdu      LdStSTFDU
-//    stfdux     LdStSTFDU
-//    stfdx      LdStSTFD
-//    stfiwx     LdStSTFD
-//    stfs       LdStSTFD
-//    stfsu      LdStSTFDU
-//    stfsux     LdStSTFDU
-//    stfsx      LdStSTFD
+//    stfd       LdStUX
+//    stfdu      LdStUX
+//    stfdux     LdStUX
+//    stfdx      LdStUX
+//    stfiwx     LdStUX
+//    stfs       LdStUX
+//    stfsu      LdStUX
+//    stfsux     LdStUX
+//    stfsx      LdStUX
 //    sth        LdStStore
 //    sthbrx     LdStStore
-//    sthu       LdStStoreUpd
-//    sthux      LdStStoreUpd
+//    sthu       LdStStore
+//    sthux      LdStStore
 //    sthx       LdStStore
 //    stmw       LdStLMW
 //    stswi      LdStLMW
@@ -354,8 +344,8 @@ include "PPCScheduleE5500.td"
 //    stw        LdStStore
 //    stwbrx     LdStStore
 //    stwcx.     LdStSTWCX
-//    stwu       LdStStoreUpd
-//    stwux      LdStStoreUpd
+//    stwu       LdStStore
+//    stwux      LdStStore
 //    stwx       LdStStore
 //    subf       IntGeneral
 //    subfc      IntGeneral

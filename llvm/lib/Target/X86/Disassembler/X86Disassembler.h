@@ -78,7 +78,7 @@
   uint16_t operands;
 
 #define INSTRUCTION_IDS               \
-  uint16_t instructionIDs;
+  unsigned instructionIDs;
 
 #include "X86DisassemblerDecoderCommon.h"
 

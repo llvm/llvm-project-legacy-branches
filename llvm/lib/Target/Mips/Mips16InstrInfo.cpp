@@ -26,7 +26,7 @@ using namespace llvm;
 
 Mips16InstrInfo::Mips16InstrInfo(MipsTargetMachine &tm)
   : MipsInstrInfo(tm, /* FIXME: set mips16 unconditional br */ 0),
-    RI(*tm.getSubtargetImpl()) {}
+    RI(*tm.getSubtargetImpl(), *this) {}
 
 const MipsRegisterInfo &Mips16InstrInfo::getRegisterInfo() const {
   return RI;

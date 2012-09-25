@@ -40,8 +40,8 @@
 using namespace llvm;
 
 MipsSERegisterInfo::MipsSERegisterInfo(const MipsSubtarget &ST,
-                                       const MipsSEInstrInfo &I)
-  : MipsRegisterInfo(ST), TII(I) {}
+                                       const TargetInstrInfo &TII)
+  : MipsRegisterInfo(ST, TII) {}
 
 // This function eliminate ADJCALLSTACKDOWN,
 // ADJCALLSTACKUP pseudo instructions
@@ -122,14 +122,15 @@ void MipsSERegisterInfo::eliminateFI(MachineBasicBlock::iterator II,
     DebugLoc DL = II->getDebugLoc();
     unsigned ADDu = Subtarget.isABI_N64() ? Mips::DADDu : Mips::ADDu;
     unsigned ATReg = Subtarget.isABI_N64() ? Mips::AT_64 : Mips::AT;
-    unsigned NewImm;
+    MipsAnalyzeImmediate::Inst LastInst(0, 0);
 
     MipsFI->setEmitNOAT();
-    unsigned Reg = TII.loadImmediate(Offset, MBB, II, DL, &NewImm);
-    BuildMI(MBB, II, DL, TII.get(ADDu), ATReg).addReg(FrameReg).addReg(Reg);
+    Mips::loadImmediate(Offset, Subtarget.isABI_N64(), TII, MBB, II, DL, true,
+                        &LastInst);
+    BuildMI(MBB, II, DL, TII.get(ADDu), ATReg).addReg(FrameReg).addReg(ATReg);
 
     FrameReg = ATReg;
-    Offset = SignExtend64<16>(NewImm);
+    Offset = SignExtend64<16>(LastInst.ImmOpnd);
   }
 
   MI.getOperand(OpNo).ChangeToRegister(FrameReg, false);

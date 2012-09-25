@@ -97,10 +97,9 @@ def ARMWrapperPIC    : SDNode<"ARMISD::WrapperPIC",  SDTIntUnaryOp>;
 def ARMWrapperJT     : SDNode<"ARMISD::WrapperJT",   SDTIntBinOp>;
 
 def ARMcallseq_start : SDNode<"ISD::CALLSEQ_START", SDT_ARMCallSeqStart,
-                              [SDNPHasChain, SDNPSideEffect, SDNPOutGlue]>;
+                              [SDNPHasChain, SDNPOutGlue]>;
 def ARMcallseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_ARMCallSeqEnd,
-                              [SDNPHasChain, SDNPSideEffect,
-                               SDNPOptInGlue, SDNPOutGlue]>;
+                              [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 def ARMcopystructbyval : SDNode<"ARMISD::COPY_STRUCT_BYVAL" ,
                                 SDT_ARMStructByVal,
                                 [SDNPHasChain, SDNPInGlue, SDNPOutGlue,
@@ -156,16 +155,14 @@ def ARMsube          : SDNode<"ARMISD::SUBE",  SDTBinaryArithWithFlagsInOut>;
 
 def ARMthread_pointer: SDNode<"ARMISD::THREAD_POINTER", SDT_ARMThreadPointer>;
 def ARMeh_sjlj_setjmp: SDNode<"ARMISD::EH_SJLJ_SETJMP",
-                               SDT_ARMEH_SJLJ_Setjmp,
-                               [SDNPHasChain, SDNPSideEffect]>;
+                               SDT_ARMEH_SJLJ_Setjmp, [SDNPHasChain]>;
 def ARMeh_sjlj_longjmp: SDNode<"ARMISD::EH_SJLJ_LONGJMP",
-                               SDT_ARMEH_SJLJ_Longjmp,
-                               [SDNPHasChain, SDNPSideEffect]>;
+                               SDT_ARMEH_SJLJ_Longjmp, [SDNPHasChain]>;
 
 def ARMMemBarrier     : SDNode<"ARMISD::MEMBARRIER", SDT_ARMMEMBARRIER,
-                               [SDNPHasChain, SDNPSideEffect]>;
+                               [SDNPHasChain]>;
 def ARMMemBarrierMCR  : SDNode<"ARMISD::MEMBARRIER_MCR", SDT_ARMMEMBARRIER,
-                               [SDNPHasChain, SDNPSideEffect]>;
+                               [SDNPHasChain]>;
 def ARMPreload        : SDNode<"ARMISD::PRELOAD", SDT_ARMPREFETCH,
                                [SDNPHasChain, SDNPMayLoad, SDNPMayStore]>;
 
@@ -252,9 +249,6 @@ def UseFusedMAC      : Predicate<"(TM.Options.AllowFPOpFusion =="
 def DontUseFusedMAC  : Predicate<"!Subtarget->hasVFP4() || "
                                  "Subtarget->isTargetDarwin()">;
 
-def IsLE             : Predicate<"TLI.isLittleEndian()">;
-def IsBE             : Predicate<"TLI.isBigEndian()">;
-
 //===----------------------------------------------------------------------===//
 // ARM Flag Definitions.
 
@@ -285,7 +279,7 @@ def imm16_31 : ImmLeaf<i32, [{
 
 def so_imm_neg_asmoperand : AsmOperandClass { let Name = "ARMSOImmNeg"; }
 def so_imm_neg : Operand<i32>, PatLeaf<(imm), [{
-    unsigned Value = -(unsigned)N->getZExtValue();
+    int64_t Value = -(int)N->getZExtValue();
     return Value && ARM_AM::getSOImmVal(Value) != -1;
   }], imm_neg_XFORM> {
   let ParserMatchClass = so_imm_neg_asmoperand;
@@ -1801,15 +1795,12 @@ def ADR : AI1<{0,?,?,0}, (outs GPR:$Rd), (ins adrlabel:$label),
   let Inst{15-12} = Rd;
   let Inst{11-0} = label{11-0};
 }
-
-let hasSideEffects = 1 in {
 def LEApcrel : ARMPseudoInst<(outs GPR:$Rd), (ins i32imm:$label, pred:$p),
                     4, IIC_iALUi, []>;
 
 def LEApcrelJT : ARMPseudoInst<(outs GPR:$Rd),
                       (ins i32imm:$label, nohash_imm:$id, pred:$p),
                       4, IIC_iALUi, []>;
-}
 
 //===----------------------------------------------------------------------===//
 //  Control Flow Instructions.
@@ -3969,7 +3960,7 @@ def BCCZi64 : PseudoInst<(outs),
 // a two-value operand where a dag node expects two operands. :(
 let neverHasSideEffects = 1 in {
 
-let isCommutable = 1, isSelect = 1 in
+let isCommutable = 1 in
 def MOVCCr : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$false, GPR:$Rm, pred:$p),
                            4, IIC_iCMOVr,
   [/*(set GPR:$Rd, (ARMcmov GPR:$false, GPR:$Rm, imm:$cc, CCR:$ccr))*/]>,
@@ -4015,6 +4006,40 @@ def MVNCCi : ARMPseudoInst<(outs GPR:$Rd),
                            4, IIC_iCMOVi,
  [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_imm_not:$imm, imm:$cc, CCR:$ccr))*/]>,
                 RegConstraint<"$false = $Rd">;
+
+// Conditional instructions
+multiclass AsI1_bincc_irs<Instruction iri, Instruction irr, Instruction irsi,
+                          Instruction irsr,
+                          InstrItinClass iii, InstrItinClass iir,
+                          InstrItinClass iis> {
+  def ri  : ARMPseudoExpand<(outs GPR:$Rd),
+                            (ins GPR:$Rn, so_imm:$imm, pred:$p, cc_out:$s),
+                            4, iii, [],
+                       (iri GPR:$Rd, GPR:$Rn, so_imm:$imm, pred:$p, cc_out:$s)>,
+                            RegConstraint<"$Rn = $Rd">;
+  def rr  : ARMPseudoExpand<(outs GPR:$Rd),
+                            (ins GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s),
+                            4, iir, [],
+                           (irr GPR:$Rd, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+                            RegConstraint<"$Rn = $Rd">;
+  def rsi : ARMPseudoExpand<(outs GPR:$Rd),
+                           (ins GPR:$Rn, so_reg_imm:$shift, pred:$p, cc_out:$s),
+                            4, iis, [],
+                (irsi GPR:$Rd, GPR:$Rn, so_reg_imm:$shift, pred:$p, cc_out:$s)>,
+                            RegConstraint<"$Rn = $Rd">;
+  def rsr : ARMPseudoExpand<(outs GPRnopc:$Rd),
+                       (ins GPRnopc:$Rn, so_reg_reg:$shift, pred:$p, cc_out:$s),
+                            4, iis, [],
+                (irsr GPR:$Rd, GPR:$Rn, so_reg_reg:$shift, pred:$p, cc_out:$s)>,
+                            RegConstraint<"$Rn = $Rd">;
+}
+
+defm ANDCC : AsI1_bincc_irs<ANDri, ANDrr, ANDrsi, ANDrsr,
+                            IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm ORRCC : AsI1_bincc_irs<ORRri, ORRrr, ORRrsi, ORRrsr,
+                            IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm EORCC : AsI1_bincc_irs<EORri, EORrr, EORrsi, EORrsr,
+                            IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
 
 } // neverHasSideEffects
 
