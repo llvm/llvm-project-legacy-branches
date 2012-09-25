@@ -49,7 +49,7 @@ def R600_CReg32 : RegisterClass <"AMDGPU", [f32, i32], 32,
                                   (interleave (sequence "C%u_X", 0, 127),
                                               (sequence "C%u_Z", 0, 127)),
                                   (interleave (sequence "C%u_Y", 0, 127),
-                                              (sequence "C%u_Z", 0, 127))))>;
+                                              (sequence "C%u_W", 0, 127))))>;
 
 def R600_TReg32_X : RegisterClass <"AMDGPU", [f32, i32], 32,
                                    (add (sequence "T%u_X", 0, 127))>;
