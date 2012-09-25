@@ -86,6 +86,7 @@ set(LLVM_ALL_TARGETS
   Sparc
   X86
   XCore
+  AMDIL
   )
 
 # List of targets with JIT support:
