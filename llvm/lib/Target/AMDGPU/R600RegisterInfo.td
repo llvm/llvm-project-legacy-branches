@@ -14,11 +14,11 @@ class R600Reg_128<string n, list<Register> subregs, bits<16> encoding> :
 foreach Index = 0-127 in {
   foreach Chan = [ "X", "Y", "Z", "W" ] in {
     // 32-bit Temporary Registers
-    def T#Index#_#Chan : R600Reg <"T"#Index#"."#Chan, !cast<bits<16>>(Index)>;
+    def T#Index#_#Chan : R600Reg <"T"#Index#"."#Chan, Index>;
 
     // 32-bit Constant Registers (There are more than 128, this the number
     // that is currently supported.
-    def C#Index#_#Chan : R600Reg <"C"#Index#"."#Chan, !cast<bits<16>>(Index)>;
+    def C#Index#_#Chan : R600Reg <"C"#Index#"."#Chan, Index>;
   }
   // 128-bit Temporary Registers
   def T#Index#_XYZW : R600Reg_128 <"T"#Index#".XYZW",
@@ -26,7 +26,7 @@ foreach Index = 0-127 in {
                                     !cast<Register>("T"#Index#"_Y"),
                                     !cast<Register>("T"#Index#"_Z"),
                                     !cast<Register>("T"#Index#"_W")],
-                                   !cast<bits<16>>(Index)>;
+                                   Index>;
 }
 
 // Special Registers

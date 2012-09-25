@@ -623,13 +623,7 @@ unsigned R600MCCodeEmitter::getHWRegChan(unsigned reg) const {
   }
 }
 unsigned R600MCCodeEmitter::getHWReg(unsigned RegNo) const {
-  unsigned HWReg;
-
-  HWReg = MRI.getEncodingValue(RegNo);
-  if (AMDGPUMCRegisterClasses[AMDGPU::R600_CReg32RegClassID].contains(RegNo)) {
-    HWReg += 512;
-  }
-  return HWReg;
+  return MRI.getEncodingValue(RegNo);
 }
 
 uint64_t R600MCCodeEmitter::getMachineOpValue(const MCInst &MI,

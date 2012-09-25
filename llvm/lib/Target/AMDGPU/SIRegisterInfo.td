@@ -66,7 +66,7 @@ def POS_FIXED_PT : SIReg <"POS_FIXED_PT">;
 
 // SGPR 32-bit registers
 foreach Index = 0-103 in {
-  def SGPR#Index : SGPR_32 <!cast<bits<16>>(Index), "SGPR"#Index>;
+  def SGPR#Index : SGPR_32 <Index, "SGPR"#Index>;
 }
 
 def SGPR_32 : RegisterClass<"AMDGPU", [f32, i32], 32,
@@ -97,7 +97,7 @@ def SGPR_256 : RegisterTuples<[sub0, sub1, sub2, sub3, sub4, sub5, sub6, sub7],
 
 // VGPR 32-bit registers
 foreach Index = 0-255 in {
-  def VGPR#Index : VGPR_32 <!cast<bits<16>>(Index), "VGPR"#Index>;
+  def VGPR#Index : VGPR_32 <Index, "VGPR"#Index>;
 }
 
 def VGPR_32 : RegisterClass<"AMDGPU", [f32, i32], 32,
