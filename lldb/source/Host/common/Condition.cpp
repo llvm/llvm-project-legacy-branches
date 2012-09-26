@@ -110,9 +110,8 @@ Condition::Wait (Mutex &mutex, const TimeValue *abstime, bool *timed_out)
 
         wait = wval;
     }
-    
-    
-    int err = SleepConditionVariableCS(&m_condition, mutex.m_mutex, wait);
+      
+    int err = SleepConditionVariableCS(&m_condition, &mutex.m_mutex, wait);
 
     if (timed_out != NULL)
     {

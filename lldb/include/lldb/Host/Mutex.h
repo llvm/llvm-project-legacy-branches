@@ -264,7 +264,7 @@ private:
 
 #ifndef _POSIX_SOURCE
 #ifdef _WIN32
-    CRITICAL_SECTION* m_mutex;
+    CRITICAL_SECTION m_mutex;
 #else
     llvm::sys::MutexImpl m_mutex;
 #endif
