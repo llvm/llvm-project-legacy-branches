@@ -178,12 +178,21 @@ unsigned long long int strtoull(const char *nptr, char **endptr, int base)
 
 char* basename(char *path)
 {
-    return 0;
+    char* l1 = strrchr(path, '\\');
+    char* l2 = strrchr(path, '/');
+    if (l2 > l1) l1 = l2;
+    if (!l1) return path; // no base name
+    return &l1[1];
 }
 
 char *dirname(char *path)
 {
-    return 0;
+    char* l1 = strrchr(path, '\\');
+    char* l2 = strrchr(path, '/');
+    if (l2 > l1) l1 = l2;
+    if (!l1) return NULL; // no dir name
+    *l1 = 0;
+    return path;
 }
 
 #include "lldb/lldb-windows.h"

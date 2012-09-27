@@ -297,6 +297,7 @@ FileSpec::operator= (const FileSpec& rhs)
 // be split up into a directory and filename and stored as uniqued
 // string values for quick comparison and efficient memory usage.
 //------------------------------------------------------------------
+
 void
 FileSpec::SetFile (const char *pathname, bool resolve)
 {
@@ -334,7 +335,11 @@ FileSpec::SetFile (const char *pathname, bool resolve)
             // Truncate the basename off the end of the resolved path
 
             // Only attempt to get the dirname if it looks like we have a path
-            if (strchr(resolved_path, '/'))
+            if (strchr(resolved_path, '/') 
+#ifdef _WIN32
+                || strchr(resolved_path, '\\')
+#endif
+                )
             {
                 char *directory = ::dirname (resolved_path);
 
@@ -344,7 +349,13 @@ FileSpec::SetFile (const char *pathname, bool resolve)
                     m_directory.SetCString(directory);
                 else
                 {
-                    char *last_resolved_path_slash = strrchr(resolved_path, '/');
+                    char *last_resolved_path_slash = 
+#ifdef _WIN32
+                        max(strrchr(resolved_path, '/'), strrchr(resolved_path, '\\'));
+#else
+                        strrchr(resolved_path, '/');
+#endif
+
                     if (last_resolved_path_slash)
                     {
                         *last_resolved_path_slash = '\0';
@@ -1002,7 +1013,7 @@ FileSpec::IsSourceImplementationFile () const
     ConstString extension (GetFileNameExtension());
     if (extension)
     {
-        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads)$",
+        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads|pas)$",
                                                       llvm::Regex::IgnoreCase);
         return g_source_file_regex.Execute (extension.GetCString());
     }

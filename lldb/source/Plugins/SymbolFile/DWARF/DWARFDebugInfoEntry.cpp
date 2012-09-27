@@ -186,6 +186,11 @@ DWARFDebugInfoEntry::FastExtract
                     case DW_FORM_ref_addr   :
                         form_size = cu->GetAddressByteSize();
                         break;
+                    
+                    // zero sized field
+                    case DW_FORM_flag_present:
+                        form_size = 0;
+                        break;
 
                     // 1 byte values
                     case DW_FORM_data1      :
@@ -330,6 +335,11 @@ DWARFDebugInfoEntry::Extract
                             case DW_FORM_addr       :
                             case DW_FORM_ref_addr   :
                                 form_size = cu_addr_size;
+                                break;
+
+                            // zero sized field
+                            case DW_FORM_flag_present:
+                                form_size = 0;
                                 break;
 
                             // 1 byte values

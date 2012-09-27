@@ -110,12 +110,12 @@ lldb_private::Initialize ()
         DisassemblerLLVMC::Initialize();
         DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
+        EmulateInstructionARM::Initialize ();
+#endif
+        ObjectFilePECOFF::Initialize ();
         ObjectFileELF::Initialize();
         SymbolFileDWARF::Initialize();
         SymbolFileSymtab::Initialize();
-        EmulateInstructionARM::Initialize ();
-        ObjectFilePECOFF::Initialize ();
-#endif
         UnwindAssemblyInstEmulation::Initialize();
         UnwindAssembly_x86::Initialize();
         DynamicLoaderPOSIXDYLD::Initialize ();
@@ -132,7 +132,6 @@ lldb_private::Initialize ()
         //----------------------------------------------------------------------
         DynamicLoaderDarwinKernel::Initialize();
         OperatingSystemDarwinKernel::Initialize();
-        SymbolFileDWARFDebugMap::Initialize();
         ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
         AppleObjCRuntimeV1::Initialize();
@@ -141,6 +140,7 @@ lldb_private::Initialize ()
         ProcessMachCore::Initialize();
         SymbolVendorMacOSX::Initialize();
 #endif
+        SymbolFileDWARFDebugMap::Initialize();
         PlatformRemoteiOS::Initialize();
         PlatformMacOSX::Initialize();
         PlatformiOSSimulator::Initialize();
@@ -196,36 +196,36 @@ lldb_private::Terminate ()
     DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
     ObjectFileELF::Terminate();
-    SymbolFileDWARF::Terminate();
-    SymbolFileSymtab::Terminate();
     UnwindAssembly_x86::Terminate();
     UnwindAssemblyInstEmulation::Terminate();
     EmulateInstructionARM::Terminate ();
+#endif
+    SymbolFileDWARF::Terminate();
+    SymbolFileSymtab::Terminate();
     ObjectFilePECOFF::Terminate ();
     DynamicLoaderPOSIXDYLD::Terminate ();
-#endif
 #ifndef LLDB_DISABLE_PYTHON
     OperatingSystemPython::Terminate();
 #endif
 
-#if defined (__APPLE__)
     DynamicLoaderMacOSXDYLD::Terminate();
+#if defined (__APPLE__)
     DynamicLoaderDarwinKernel::Terminate();
     OperatingSystemDarwinKernel::Terminate();
-    SymbolFileDWARFDebugMap::Terminate();
     ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
     AppleObjCRuntimeV1::Terminate();
-    ObjectContainerUniversalMachO::Terminate();
-    ObjectFileMachO::Terminate();
     ProcessMachCore::Terminate();
     ProcessGDBRemote::Terminate();
     ProcessKDP::Terminate();
     SymbolVendorMacOSX::Terminate();
+#endif
+    SymbolFileDWARFDebugMap::Terminate();
+    ObjectContainerUniversalMachO::Terminate();
+    ObjectFileMachO::Terminate();
     PlatformMacOSX::Terminate();
     PlatformRemoteiOS::Terminate();
     PlatformiOSSimulator::Terminate();
-#endif
 
     Debugger::SettingsTerminate ();
 
