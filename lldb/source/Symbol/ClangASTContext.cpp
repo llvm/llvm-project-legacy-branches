@@ -359,9 +359,7 @@ ParseLangArgs
     // inlining enabled.
     //
     // FIXME: This is affected by other options (-fno-inline).
-#if (CLANG_VERSION_MAJOR <= 3 && CLANG_VERSION_MINOR < 2)
-    Opts.NoInline = !Opt;
-#endif
+    Opts.NoInlineDefine = !Opt;
 
 //    unsigned SSP = getLastArgIntValue(Args, OPT_stack_protector, 0, Diags);
 //    switch (SSP) {
@@ -1170,7 +1168,7 @@ ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type
 
 static TemplateParameterList *
 CreateTemplateParameterList (ASTContext *ast, 
-                             const ClangASTContext::TemplateParameterInfos &template_param_infos, 
+                             const ClangASTContext::TemplateParameterInfos &template_param_infos,
                              llvm::SmallVector<NamedDecl *, 8> &template_param_decls)
 {
     const bool parameter_pack = false;
@@ -1180,7 +1178,7 @@ CreateTemplateParameterList (ASTContext *ast,
     for (size_t i=0; i<num_template_params; ++i)
     {
         const char *name = template_param_infos.names[i];
-        if (template_param_infos.args[i].getAsIntegral().getBoolValue())
+        if (template_param_infos.args[i].getKind() == TemplateArgument::Integral)
         {
             template_param_decls.push_back (NonTypeTemplateParmDecl::Create (*ast,
                                                                              ast->getTranslationUnitDecl(), // Is this the right decl context?, SourceLocation StartLoc,
@@ -1951,15 +1949,15 @@ ClangASTContext::AddFieldToRecordType
                 bit_width = new (*ast)IntegerLiteral (*ast, bitfield_bit_size_apint, ast->IntTy, SourceLocation());
             }
             field = FieldDecl::Create (*ast,
-                                                  record_decl,
-                                                  SourceLocation(),
-                                                  SourceLocation(),
-                                                  name ? &identifier_table->get(name) : NULL, // Identifier
-                                                  QualType::getFromOpaquePtr(field_type), // Field type
-                                                  NULL,       // TInfo *
-                                                  bit_width,  // BitWidth
-                                                  false,      // Mutable
-                                                  ICIS_NoInit); // HasInit
+                                       record_decl,
+                                       SourceLocation(),
+                                       SourceLocation(),
+                                       name ? &identifier_table->get(name) : NULL, // Identifier
+                                       QualType::getFromOpaquePtr(field_type), // Field type
+                                       NULL,            // TInfo *
+                                       bit_width,       // BitWidth
+                                       false,           // Mutable
+                                       ICIS_NoInit);    // HasInit
             
             if (!name) {
                 // Determine whether this field corresponds to an anonymous
@@ -3701,6 +3699,7 @@ ClangASTContext::GetNumPointeeChildren (clang_type_t clang_type)
         case clang::BuiltinType::Half:          
         case clang::BuiltinType::ARCUnbridgedCast:          
         case clang::BuiltinType::PseudoObject:
+        case clang::BuiltinType::BuiltinFn:
             return 1;
         }
         break;
@@ -5589,6 +5588,7 @@ ClangASTContext::IsPossibleDynamicType (clang::ASTContext *ast,
                         case clang::BuiltinType::Half:          
                         case clang::BuiltinType::ARCUnbridgedCast:          
                         case clang::BuiltinType::PseudoObject:
+                        case clang::BuiltinType::BuiltinFn:
                             break;
                     }
                     break;

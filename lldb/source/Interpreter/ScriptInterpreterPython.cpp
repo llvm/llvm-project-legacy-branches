@@ -2542,9 +2542,12 @@ ScriptInterpreterPython::RunScriptBasedCommand(const char* impl_function,
 // in Python, a special attribute __doc__ contains the docstring
 // for an object (function, method, class, ...) if any is defined
 // Otherwise, the attribute's value is None
-std::string
-ScriptInterpreterPython::GetDocumentationForItem(const char* item)
+bool
+ScriptInterpreterPython::GetDocumentationForItem(const char* item, std::string& dest)
 {
+	dest.clear();
+	if (!item || !*item)
+		return false;
     std::string command(item);
     command += ".__doc__";
     
@@ -2552,12 +2555,19 @@ ScriptInterpreterPython::GetDocumentationForItem(const char* item)
     
     if (ExecuteOneLineWithReturn (command.c_str(),
                                  ScriptInterpreter::eScriptReturnTypeCharStrOrNone,
-                                 &result_ptr, false) && result_ptr)
+                                 &result_ptr, false))
     {
-        return std::string(result_ptr);
+        if (result_ptr)
+            dest.assign(result_ptr);
+        return true;
     }
     else
-        return std::string("");
+    {
+        StreamString str_stream;
+        str_stream.Printf("Function %s was not found. Containing module might be missing.",item);
+        dest.assign(str_stream.GetData());
+        return false;
+    }
 }
 
 void

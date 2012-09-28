@@ -269,7 +269,27 @@ ClangASTImporter::GetDeclOrigin(const clang::Decl *decl)
         return DeclOrigin();
 }
 
-void 
+void
+ClangASTImporter::SetDeclOrigin (const clang::Decl *decl, clang::Decl *original_decl)
+{
+    ASTContextMetadataSP context_md = GetContextMetadata(&decl->getASTContext());
+    
+    OriginMap &origins = context_md->m_origins;
+    
+    OriginMap::iterator iter = origins.find(decl);
+    
+    if (iter != origins.end())
+    {
+        iter->second.decl = original_decl;
+        iter->second.ctx = &original_decl->getASTContext();
+    }
+    else
+    {
+        origins[decl] = DeclOrigin(&original_decl->getASTContext(), original_decl);
+    }
+}
+
+void
 ClangASTImporter::RegisterNamespaceMap(const clang::NamespaceDecl *decl, 
                                        NamespaceMapSP &namespace_map)
 {
@@ -515,7 +535,8 @@ clang::Decl
         TagDecl *to_tag_decl = dyn_cast<TagDecl>(to);
         
         to_tag_decl->setHasExternalLexicalStorage();
-                        
+        to_tag_decl->setMustBuildLookupTable();
+                                
         if (log)
             log->Printf("    [ClangASTImporter] To is a TagDecl - attributes %s%s [%s->%s]",
                         (to_tag_decl->hasExternalLexicalStorage() ? " Lexical" : ""),

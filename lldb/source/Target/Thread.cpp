@@ -15,6 +15,7 @@
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Symbol/Function.h"
 #include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
@@ -204,6 +205,17 @@ Thread::GetStopInfo ()
     }
 }
 
+lldb::StopReason
+Thread::GetStopReason()
+{
+    lldb::StopInfoSP stop_info_sp (GetStopInfo ());
+    if (stop_info_sp)
+        stop_info_sp->GetStopReason();
+    return eStopReasonNone;
+}
+
+
+
 void
 Thread::SetStopInfo (const lldb::StopInfoSP &stop_info_sp)
 {
@@ -332,7 +344,7 @@ Thread::WillResume (StateType resume_state)
     m_completed_plan_stack.clear();
     m_discarded_plan_stack.clear();
 
-    SetTemporaryResumeState(resume_state);
+    m_temporary_resume_state = resume_state;
     
     // This is a little dubious, but we are trying to limit how often we actually fetch stop info from
     // the target, 'cause that slows down single stepping.  So assume that if we got to the point where
@@ -1302,14 +1314,37 @@ Thread::ReturnFromFrame (lldb::StackFrameSP frame_sp, lldb::ValueObjectSP return
     StackFrameSP older_frame_sp = thread->GetStackFrameAtIndex(older_frame_idx);
     
     if (return_value_sp)
-    {
-        // TODO: coerce the return_value_sp to the type of the function in frame_sp.
-    
+    {    
         lldb::ABISP abi = thread->GetProcess()->GetABI();
         if (!abi)
         {
             return_error.SetErrorString("Could not find ABI to set return value.");
         }
+        SymbolContext sc = frame_sp->GetSymbolContext(eSymbolContextFunction);
+        
+        // FIXME: ValueObject::Cast doesn't currently work correctly, at least not for scalars.
+        // Turn that back on when that works.
+        if (0 && sc.function != NULL)
+        {
+            Type *function_type = sc.function->GetType();
+            if (function_type)
+            {
+                clang_type_t return_type = sc.function->GetReturnClangType();
+                if (return_type)
+                {
+                    ClangASTType ast_type (function_type->GetClangAST(), return_type);
+                    StreamString s;
+                    ast_type.DumpTypeDescription(&s);
+                    ValueObjectSP cast_value_sp = return_value_sp->Cast(ast_type);
+                    if (cast_value_sp)
+                    {
+                        cast_value_sp->SetFormat(eFormatHex);
+                        return_value_sp = cast_value_sp;
+                    }
+                }
+            }
+        }
+
         return_error = abi->SetReturnValueObject(older_frame_sp, return_value_sp);
         if (!return_error.Success())
             return return_error;

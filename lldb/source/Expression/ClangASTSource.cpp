@@ -313,8 +313,45 @@ ClangASTSource::CompleteType (clang::ObjCInterfaceDecl *interface_decl)
     }
 }
 
+clang::ObjCInterfaceDecl *
+ClangASTSource::GetCompleteObjCInterface (clang::ObjCInterfaceDecl *interface_decl)
+{
+    lldb::ProcessSP process(m_target->GetProcessSP());
+    
+    if (!process)
+        return NULL;
+    
+    ObjCLanguageRuntime *language_runtime(process->GetObjCLanguageRuntime());
+    
+    if (!language_runtime)
+        return NULL;
+        
+    ConstString class_name(interface_decl->getNameAsString().c_str());
+    
+    lldb::TypeSP complete_type_sp(language_runtime->LookupInCompleteClassCache(class_name));
+    
+    if (!complete_type_sp)
+        return NULL;
+    
+    TypeFromUser complete_type = TypeFromUser(complete_type_sp->GetClangFullType(), complete_type_sp->GetClangAST());
+    lldb::clang_type_t complete_opaque_type = complete_type.GetOpaqueQualType();
+    
+    if (!complete_opaque_type)
+        return NULL;
+    
+    const clang::Type *complete_clang_type = QualType::getFromOpaquePtr(complete_opaque_type).getTypePtr();
+    const ObjCInterfaceType *complete_interface_type = dyn_cast<ObjCInterfaceType>(complete_clang_type);
+    
+    if (!complete_interface_type)
+        return NULL;
+    
+    ObjCInterfaceDecl *complete_iface_decl(complete_interface_type->getDecl());
+    
+    return complete_iface_decl;
+}
+
 clang::ExternalLoadResult
-ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context, 
+ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
                                           bool (*predicate)(Decl::Kind),
                                           llvm::SmallVectorImpl<Decl*> &decls)
 {    
@@ -364,6 +401,19 @@ ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
         ASTDumper(original_decl).ToLog(log, "    ");
     }
     
+    if (ObjCInterfaceDecl *original_iface_decl = dyn_cast<ObjCInterfaceDecl>(original_decl))
+    {
+        ObjCInterfaceDecl *complete_iface_decl = GetCompleteObjCInterface(original_iface_decl);
+        
+        if (complete_iface_decl && (complete_iface_decl != original_iface_decl))
+        {
+            original_decl = complete_iface_decl;
+            original_ctx = &complete_iface_decl->getASTContext();
+            
+            m_ast_importer->SetDeclOrigin(context_decl, original_iface_decl);
+        }
+    }
+    
     if (TagDecl *original_tag_decl = dyn_cast<TagDecl>(original_decl))
     {
         ExternalASTSource *external_source = original_ctx->getExternalSource();
@@ -389,9 +439,9 @@ ClangASTSource::FindExternalLexicalDecls (const DeclContext *decl_context,
             {
                 ASTDumper ast_dumper(decl);
                 if (const NamedDecl *context_named_decl = dyn_cast<NamedDecl>(context_decl))
-                    log->Printf("  FELD[%d] Adding [to %s] lexical decl %s", current_id, context_named_decl->getNameAsString().c_str(), ast_dumper.GetCString());
+                    log->Printf("  FELD[%d] Adding [to %sDecl %s] lexical %sDecl %s", current_id, context_named_decl->getDeclKindName(), context_named_decl->getNameAsString().c_str(), decl->getDeclKindName(), ast_dumper.GetCString());
                 else
-                    log->Printf("  FELD[%d] Adding lexical decl %s", current_id, ast_dumper.GetCString());
+                    log->Printf("  FELD[%d] Adding lexical %sDecl %s", current_id, decl->getDeclKindName(), ast_dumper.GetCString());
             }
             
             Decl *copied_decl = m_ast_importer->CopyDecl(m_ast_context, original_ctx, decl);
@@ -1132,26 +1182,12 @@ ClangASTSource::FindObjCPropertyAndIvarDecls (NameSearchContext &context)
     
     do
     {
-        // First see if any other debug information has this property/ivar.
+        ObjCInterfaceDecl *complete_interface_decl = GetCompleteObjCInterface(const_cast<ObjCInterfaceDecl*>(parser_iface_decl.decl));
         
-        lldb::TypeSP complete_type_sp(language_runtime->LookupInCompleteClassCache(class_name));
-        
-        if (!complete_type_sp)
+        if (!complete_interface_decl)
             break;
         
-        TypeFromUser complete_type = TypeFromUser(complete_type_sp->GetClangFullType(), complete_type_sp->GetClangAST());
-        lldb::clang_type_t complete_opaque_type = complete_type.GetOpaqueQualType();
-        
-        if (!complete_opaque_type)
-            break;
-        
-        const clang::Type *complete_clang_type = QualType::getFromOpaquePtr(complete_opaque_type).getTypePtr();
-        const ObjCInterfaceType *complete_interface_type = dyn_cast<ObjCInterfaceType>(complete_clang_type);
-        
-        if (!complete_interface_type)
-            break;
-        
-        DeclFromUser<const ObjCInterfaceDecl> complete_iface_decl(complete_interface_type->getDecl());
+        DeclFromUser<const ObjCInterfaceDecl> complete_iface_decl(complete_interface_decl);
         
         if (complete_iface_decl.decl == origin_iface_decl.decl)
             break; // already checked this one

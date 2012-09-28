@@ -946,6 +946,30 @@ class TestBase(Base):
                 waitTime = float(os.environ["LLDB_TIME_WAIT_BETWEEN_TEST_CASES"])
             time.sleep(waitTime)
 
+    # Returns the list of categories to which this test case belongs
+    # by default, look for a ".categories" file, and read its contents
+    # if no such file exists, traverse the hierarchy - we guarantee
+    # a .categories to exist at the top level directory so we do not end up
+    # looping endlessly - subclasses are free to define their own categories
+    # in whatever way makes sense to them
+    def getCategories(self):
+        import inspect
+        import os.path
+        folder = inspect.getfile(self.__class__)
+        folder = os.path.dirname(folder)
+        while folder != '/':
+                categories_file_name = os.path.join(folder,".categories")
+                if os.path.exists(categories_file_name):
+                        categories_file = open(categories_file_name,'r')
+                        categories = categories_file.readline()
+                        categories_file.close()
+                        categories = str.replace(categories,'\n','')
+                        categories = str.replace(categories,'\r','')
+                        return categories.split(',')
+                else:
+                        folder = os.path.dirname(folder)
+                        continue
+
     def setUp(self):
         #import traceback
         #traceback.print_stack()
@@ -1076,6 +1100,49 @@ class TestBase(Base):
         if check:
             self.assertTrue(self.res.Succeeded(),
                             msg if msg else CMD_MSG(cmd))
+
+    def match (self, str, patterns, msg=None, trace=False, error=False, matching=True, exe=True):
+        """run command in str, and match the result against regexp in patterns returning the match object for the first matching pattern
+
+        Otherwise, all the arguments have the same meanings as for the expect function"""
+
+        trace = (True if traceAlways else trace)
+
+        if exe:
+            # First run the command.  If we are expecting error, set check=False.
+            # Pass the assert message along since it provides more semantic info.
+            self.runCmd(str, msg=msg, trace = (True if trace else False), check = not error)
+
+            # Then compare the output against expected strings.
+            output = self.res.GetError() if error else self.res.GetOutput()
+
+            # If error is True, the API client expects the command to fail!
+            if error:
+                self.assertFalse(self.res.Succeeded(),
+                                 "Command '" + str + "' is expected to fail!")
+        else:
+            # No execution required, just compare str against the golden input.
+            output = str
+            with recording(self, trace) as sbuf:
+                print >> sbuf, "looking at:", output
+
+        # The heading says either "Expecting" or "Not expecting".
+        heading = "Expecting" if matching else "Not expecting"
+
+        for pattern in patterns:
+            # Match Objects always have a boolean value of True.
+            match_object = re.search(pattern, output)
+            matched = bool(match_object)
+            with recording(self, trace) as sbuf:
+                print >> sbuf, "%s pattern: %s" % (heading, pattern)
+                print >> sbuf, "Matched" if matched else "Not matched"
+            if matched:
+                break
+
+        self.assertTrue(matched if matching else not matched,
+                        msg if msg else EXP_MSG(str, exe))
+
+        return match_object        
 
     def expect(self, str, msg=None, patterns=None, startstr=None, endstr=None, substrs=None, trace=False, error=False, matching=True, exe=True):
         """

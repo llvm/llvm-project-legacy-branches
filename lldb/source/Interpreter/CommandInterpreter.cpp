@@ -270,7 +270,10 @@ CommandInterpreter::Initialize ()
     
     cmd_obj_sp = GetCommandSPExact ("process kill", false);
     if (cmd_obj_sp)
+    {
         AddAlias ("kill", cmd_obj_sp);
+        AddAlias ("k", cmd_obj_sp);
+    }
     
     cmd_obj_sp = GetCommandSPExact ("process launch", false);
     if (cmd_obj_sp)
@@ -458,6 +461,36 @@ CommandInterpreter::LoadCommandDictionary ()
         {
             CommandObjectSP undisplay_regex_cmd_sp(undisplay_regex_cmd_ap.release());
             m_command_dict[undisplay_regex_cmd_sp->GetCommandName ()] = undisplay_regex_cmd_sp;
+        }
+    }
+
+    std::auto_ptr<CommandObjectRegexCommand>
+    connect_gdb_remote_cmd_ap(new CommandObjectRegexCommand (*this,
+                                                      "gdb-remote",
+                                                      "Connect to a remote GDB server.",
+                                                      "gdb-remote [<host>:<port>]\ngdb-remote [<port>]", 2));
+    if (connect_gdb_remote_cmd_ap.get())
+    {
+        if (connect_gdb_remote_cmd_ap->AddRegexCommand("^([^:]+:[[:digit:]]+)$", "process connect --plugin gdb-remote connect://%1") &&
+            connect_gdb_remote_cmd_ap->AddRegexCommand("^([[:digit:]]+)$", "process connect --plugin gdb-remote connect://localhost:%1"))
+        {
+            CommandObjectSP command_sp(connect_gdb_remote_cmd_ap.release());
+            m_command_dict[command_sp->GetCommandName ()] = command_sp;
+        }
+    }
+
+    std::auto_ptr<CommandObjectRegexCommand>
+    connect_kdp_remote_cmd_ap(new CommandObjectRegexCommand (*this,
+                                                             "kdp-remote",
+                                                             "Connect to a remote KDP server.",
+                                                             "kdp-remote [<host>]\nkdp-remote [<host>:<port>]", 2));
+    if (connect_kdp_remote_cmd_ap.get())
+    {
+        if (connect_kdp_remote_cmd_ap->AddRegexCommand("^([^:]+:[[:digit:]]+)$", "process connect --plugin kdp-remote udp://%1") &&
+            connect_kdp_remote_cmd_ap->AddRegexCommand("^(.+)$", "process connect --plugin kdp-remote udp://%1:41139"))
+        {
+            CommandObjectSP command_sp(connect_kdp_remote_cmd_ap.release());
+            m_command_dict[command_sp->GetCommandName ()] = command_sp;
         }
     }
 

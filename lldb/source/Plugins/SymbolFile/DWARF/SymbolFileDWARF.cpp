@@ -1388,8 +1388,9 @@ SymbolFileDWARF::ParseTemplateDIE (DWARFCompileUnit* dwarf_cu,
                     if (tag == DW_TAG_template_value_parameter && ClangASTContext::IsIntegerType (clang_type, is_signed) && uval64_valid)
                     {
                         llvm::APInt apint (lldb_type->GetByteSize() * 8, uval64, is_signed);
-                        template_param_infos.args.push_back (clang::TemplateArgument (
-                            *GetClangASTContext().getASTContext(), llvm::APSInt(apint), clang_qual_type));
+                        template_param_infos.args.push_back (clang::TemplateArgument (*GetClangASTContext().getASTContext(),
+                                                                                      llvm::APSInt(apint),
+                                                                                      clang_qual_type));
                     }
                     else
                     {
