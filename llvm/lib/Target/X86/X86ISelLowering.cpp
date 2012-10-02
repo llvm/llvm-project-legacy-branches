@@ -514,6 +514,10 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     setOperationAction(ISD::ATOMIC_LOAD_XOR, MVT::i64, Custom);
     setOperationAction(ISD::ATOMIC_LOAD_NAND, MVT::i64, Custom);
     setOperationAction(ISD::ATOMIC_SWAP, MVT::i64, Custom);
+    setOperationAction(ISD::ATOMIC_LOAD_MAX, MVT::i64, Custom);
+    setOperationAction(ISD::ATOMIC_LOAD_MIN, MVT::i64, Custom);
+    setOperationAction(ISD::ATOMIC_LOAD_UMAX, MVT::i64, Custom);
+    setOperationAction(ISD::ATOMIC_LOAD_UMIN, MVT::i64, Custom);
   }
 
   if (Subtarget->hasCmpxchg16b()) {
@@ -2198,7 +2202,7 @@ X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     // Check if it's really possible to do a tail call.
     isTailCall = IsEligibleForTailCallOptimization(Callee, CallConv,
                     isVarArg, SR != NotStructReturn,
-                    MF.getFunction()->hasStructRetAttr(),
+                    MF.getFunction()->hasStructRetAttr(), CLI.RetTy,
                     Outs, OutVals, Ins, DAG);
 
     // Sibcalls are automatically detected tailcalls which do not require
@@ -2718,6 +2722,7 @@ X86TargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
                                                      bool isVarArg,
                                                      bool isCalleeStructRet,
                                                      bool isCallerStructRet,
+                                                     Type *RetTy,
                                     const SmallVectorImpl<ISD::OutputArg> &Outs,
                                     const SmallVectorImpl<SDValue> &OutVals,
                                     const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -2729,6 +2734,13 @@ X86TargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
   // If -tailcallopt is specified, make fastcc functions tail-callable.
   const MachineFunction &MF = DAG.getMachineFunction();
   const Function *CallerF = DAG.getMachineFunction().getFunction();
+
+  // If the function return type is x86_fp80 and the callee return type is not,
+  // then the FP_EXTEND of the call result is not a nop. It's not safe to
+  // perform a tailcall optimization here.
+  if (CallerF->getReturnType()->isX86_FP80Ty() && !RetTy->isX86_FP80Ty())
+    return false;
+
   CallingConv::ID CallerCC = CallerF->getCallingConv();
   bool CCMatch = CallerCC == CalleeCC;
 
@@ -11585,6 +11597,10 @@ void X86TargetLowering::ReplaceNodeResults(SDNode *N,
   case ISD::ATOMIC_LOAD_OR:
   case ISD::ATOMIC_LOAD_SUB:
   case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_MAX:
+  case ISD::ATOMIC_LOAD_MIN:
+  case ISD::ATOMIC_LOAD_UMAX:
+  case ISD::ATOMIC_LOAD_UMIN:
   case ISD::ATOMIC_SWAP: {
     unsigned Opc;
     switch (N->getOpcode()) {
@@ -11606,6 +11622,18 @@ void X86TargetLowering::ReplaceNodeResults(SDNode *N,
       break;
     case ISD::ATOMIC_LOAD_XOR:
       Opc = X86ISD::ATOMXOR64_DAG;
+      break;
+    case ISD::ATOMIC_LOAD_MAX:
+      Opc = X86ISD::ATOMMAX64_DAG;
+      break;
+    case ISD::ATOMIC_LOAD_MIN:
+      Opc = X86ISD::ATOMMIN64_DAG;
+      break;
+    case ISD::ATOMIC_LOAD_UMAX:
+      Opc = X86ISD::ATOMUMAX64_DAG;
+      break;
+    case ISD::ATOMIC_LOAD_UMIN:
+      Opc = X86ISD::ATOMUMIN64_DAG;
       break;
     case ISD::ATOMIC_SWAP:
       Opc = X86ISD::ATOMSWAP64_DAG;
@@ -11996,6 +12024,10 @@ static unsigned getNonAtomic6432Opcode(unsigned Opc, unsigned &HiOpc) {
   case X86::ATOMADD6432:  HiOpc = X86::ADC32rr; return X86::ADD32rr;
   case X86::ATOMSUB6432:  HiOpc = X86::SBB32rr; return X86::SUB32rr;
   case X86::ATOMSWAP6432: HiOpc = X86::MOV32rr; return X86::MOV32rr;
+  case X86::ATOMMAX6432:  HiOpc = X86::SETLr;   return X86::SETLr;
+  case X86::ATOMMIN6432:  HiOpc = X86::SETGr;   return X86::SETGr;
+  case X86::ATOMUMAX6432: HiOpc = X86::SETBr;   return X86::SETBr;
+  case X86::ATOMUMIN6432: HiOpc = X86::SETAr;   return X86::SETAr;
   }
   llvm_unreachable("Unhandled atomic-load-op opcode!");
 }
@@ -12313,6 +12345,7 @@ X86TargetLowering::EmitAtomicLoadArith6432(MachineInstr *MI,
   SrcHiReg = MI->getOperand(CurOp++).getReg();
 
   const TargetRegisterClass *RC = &X86::GR32RegClass;
+  const TargetRegisterClass *RC8 = &X86::GR8RegClass;
 
   unsigned LCMPXCHGOpc = X86::LCMPXCHG8B;
   unsigned LOADOpc = X86::MOV32rm;
@@ -12398,6 +12431,55 @@ X86TargetLowering::EmitAtomicLoadArith6432(MachineInstr *MI,
     BuildMI(mainMBB, DL, TII->get(HiOpc), t2H).addReg(SrcHiReg).addReg(HiReg);
     BuildMI(mainMBB, DL, TII->get(NOTOpc), t1L).addReg(t2L);
     BuildMI(mainMBB, DL, TII->get(NOTOpc), t1H).addReg(t2H);
+    break;
+  }
+  case X86::ATOMMAX6432:
+  case X86::ATOMMIN6432:
+  case X86::ATOMUMAX6432:
+  case X86::ATOMUMIN6432: {
+    unsigned HiOpc;
+    unsigned LoOpc = getNonAtomic6432Opcode(Opc, HiOpc);
+    unsigned cL = MRI.createVirtualRegister(RC8);
+    unsigned cH = MRI.createVirtualRegister(RC8);
+    unsigned cL32 = MRI.createVirtualRegister(RC);
+    unsigned cH32 = MRI.createVirtualRegister(RC);
+    unsigned cc = MRI.createVirtualRegister(RC);
+    // cl := cmp src_lo, lo
+    BuildMI(mainMBB, DL, TII->get(X86::CMP32rr))
+      .addReg(SrcLoReg).addReg(LoReg);
+    BuildMI(mainMBB, DL, TII->get(LoOpc), cL);
+    BuildMI(mainMBB, DL, TII->get(X86::MOVZX32rr8), cL32).addReg(cL);
+    // ch := cmp src_hi, hi
+    BuildMI(mainMBB, DL, TII->get(X86::CMP32rr))
+      .addReg(SrcHiReg).addReg(HiReg);
+    BuildMI(mainMBB, DL, TII->get(HiOpc), cH);
+    BuildMI(mainMBB, DL, TII->get(X86::MOVZX32rr8), cH32).addReg(cH);
+    // cc := if (src_hi == hi) ? cl : ch;
+    if (Subtarget->hasCMov()) {
+      BuildMI(mainMBB, DL, TII->get(X86::CMOVE32rr), cc)
+        .addReg(cH32).addReg(cL32);
+    } else {
+      MIB = BuildMI(mainMBB, DL, TII->get(X86::CMOV_GR32), cc)
+              .addReg(cH32).addReg(cL32)
+              .addImm(X86::COND_E);
+      mainMBB = EmitLoweredSelect(MIB, mainMBB);
+    }
+    BuildMI(mainMBB, DL, TII->get(X86::TEST32rr)).addReg(cc).addReg(cc);
+    if (Subtarget->hasCMov()) {
+      BuildMI(mainMBB, DL, TII->get(X86::CMOVNE32rr), t1L)
+        .addReg(SrcLoReg).addReg(LoReg);
+      BuildMI(mainMBB, DL, TII->get(X86::CMOVNE32rr), t1H)
+        .addReg(SrcHiReg).addReg(HiReg);
+    } else {
+      MIB = BuildMI(mainMBB, DL, TII->get(X86::CMOV_GR32), t1L)
+              .addReg(SrcLoReg).addReg(LoReg)
+              .addImm(X86::COND_NE);
+      mainMBB = EmitLoweredSelect(MIB, mainMBB);
+      MIB = BuildMI(mainMBB, DL, TII->get(X86::CMOV_GR32), t1H)
+              .addReg(SrcHiReg).addReg(HiReg)
+              .addImm(X86::COND_NE);
+      mainMBB = EmitLoweredSelect(MIB, mainMBB);
+    }
     break;
   }
   case X86::ATOMSWAP6432: {
@@ -13373,6 +13455,10 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   case X86::ATOMNAND6432:
   case X86::ATOMADD6432:
   case X86::ATOMSUB6432:
+  case X86::ATOMMAX6432:
+  case X86::ATOMMIN6432:
+  case X86::ATOMUMAX6432:
+  case X86::ATOMUMIN6432:
   case X86::ATOMSWAP6432:
     return EmitAtomicLoadArith6432(MI, BB);
 

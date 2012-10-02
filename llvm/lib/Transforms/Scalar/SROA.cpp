@@ -202,11 +202,11 @@ public:
   use_iterator use_begin(const_iterator I) { return Uses[I - begin()].begin(); }
   use_iterator use_end(unsigned Idx) { return Uses[Idx].end(); }
   use_iterator use_end(const_iterator I) { return Uses[I - begin()].end(); }
-  void use_insert(unsigned Idx, use_iterator UI, const PartitionUse &U) {
-    Uses[Idx].insert(UI, U);
+  void use_push_back(unsigned Idx, const PartitionUse &U) {
+    Uses[Idx].push_back(U);
   }
-  void use_insert(const_iterator I, use_iterator UI, const PartitionUse &U) {
-    Uses[I - begin()].insert(UI, U);
+  void use_push_back(const_iterator I, const PartitionUse &U) {
+    Uses[I - begin()].push_back(U);
   }
   void use_erase(unsigned Idx, use_iterator UI) { Uses[Idx].erase(UI); }
   void use_erase(const_iterator I, use_iterator UI) {
@@ -522,8 +522,10 @@ private:
 
   void insertUse(Instruction &I, int64_t Offset, uint64_t Size,
                  bool IsSplittable = false) {
-    // Completely skip uses which don't overlap the allocation.
-    if ((Offset >= 0 && (uint64_t)Offset >= AllocSize) ||
+    // Completely skip uses which have a zero size or don't overlap the
+    // allocation.
+    if (Size == 0 ||
+        (Offset >= 0 && (uint64_t)Offset >= AllocSize) ||
         (Offset < 0 && (uint64_t)-Offset >= Size)) {
       DEBUG(dbgs() << "WARNING: Ignoring " << Size << " byte use @" << Offset
                    << " which starts past the end of the " << AllocSize
@@ -697,6 +699,9 @@ private:
     SmallVector<std::pair<Instruction *, Instruction *>, 4> Uses;
     Visited.insert(Root);
     Uses.push_back(std::make_pair(cast<Instruction>(*U), Root));
+    // If there are no loads or stores, the access is dead. We mark that as
+    // a size zero access.
+    Size = 0;
     do {
       Instruction *I, *UsedI;
       llvm::tie(UsedI, I) = Uses.pop_back_val();
@@ -824,9 +829,9 @@ private:
   }
 
   void insertUse(Instruction &User, int64_t Offset, uint64_t Size) {
-    // If the use extends outside of the allocation, record it as a dead use
-    // for elimination later.
-    if ((uint64_t)Offset >= AllocSize ||
+    // If the use has a zero size or extends outside of the allocation, record
+    // it as a dead use for elimination later.
+    if (Size == 0 || (uint64_t)Offset >= AllocSize ||
         (Offset < 0 && (uint64_t)-Offset >= Size))
       return markAsDead(User);
 
@@ -853,7 +858,7 @@ private:
       PartitionUse NewUse(std::max(I->BeginOffset, BeginOffset),
                           std::min(I->EndOffset, EndOffset),
                           &User, cast<Instruction>(*U));
-      P.Uses[I - P.begin()].push_back(NewUse);
+      P.use_push_back(I, NewUse);
       if (isa<PHINode>(U->getUser()) || isa<SelectInst>(U->getUser()))
         P.PHIOrSelectOpMap[std::make_pair(&User, U->get())]
           = std::make_pair(I - P.begin(), P.Uses[I - P.begin()].size() - 1);
@@ -1102,8 +1107,6 @@ AllocaPartitioning::AllocaPartitioning(const TargetData &TD, AllocaInst &AI)
   Uses.resize(Partitions.size());
   UseBuilder UB(TD, AI, *this);
   UB();
-  for (iterator I = Partitions.begin(), E = Partitions.end(); I != E; ++I)
-    std::stable_sort(use_begin(I), use_end(I));
 }
 
 Type *AllocaPartitioning::getCommonType(iterator I) const {
@@ -2460,8 +2463,7 @@ private:
         else {
           AllocaPartitioning::PartitionUse OtherUse = *UI;
           OtherUse.User = Load;
-          P.use_insert(PI, std::upper_bound(UI, P.use_end(PI), OtherUse),
-                       OtherUse);
+          P.use_push_back(PI, OtherUse);
         }
       }
     }
@@ -2559,7 +2561,7 @@ private:
         LoadInst *OtherLoad = IsTrueVal ? FL : TL;
         assert(OtherUse.Ptr == OtherLoad->getOperand(0));
         OtherUse.User = OtherLoad;
-        P.use_insert(PI, P.use_end(PI), OtherUse);
+        P.use_push_back(PI, OtherUse);
       }
 
       // Transfer alignment and TBAA info if present.
@@ -2576,8 +2578,6 @@ private:
       LI->replaceAllUsesWith(V);
       Pass.DeadInsts.push_back(LI);
     }
-    if (PI != P.end())
-      std::stable_sort(P.use_begin(PI), P.use_end(PI));
 
     deleteIfTriviallyDead(OldPtr);
     return NewPtr == &NewAI;
