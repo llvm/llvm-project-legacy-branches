@@ -1083,6 +1083,12 @@ def : Pat <
   (RAT_WRITE_CACHELESS_128_eg R600_Reg128:$val, R600_TReg32_X:$ptr, 0)
 >;
 
+// v4i32 global store
+def : Pat <
+  (global_store (v4i32 R600_Reg128:$val), R600_TReg32_X:$ptr),
+  (RAT_WRITE_CACHELESS_128_eg R600_Reg128:$val, R600_TReg32_X:$ptr, 0)
+>;
+
 class VTX_READ_eg <bits<8> buffer_id, dag outs, list<dag> pattern>
     : InstR600ISA <outs, (ins MEMxi:$ptr), "VTX_READ_eg $dst, $ptr", pattern> {
 
