@@ -672,9 +672,11 @@ def S_CBRANCH_EXECNZ : SOPP <
 } // End isTerminator = 1
 
 //def S_BARRIER : SOPP_ <0x0000000a, "S_BARRIER", []>;
+let hasSideEffects = 1 in {
 def S_WAITCNT : SOPP <0x0000000c, (ins i32imm:$simm16), "S_WAITCNT $simm16",
   []
 >;
+} // End hasSideEffects
 //def S_SETHALT : SOPP_ <0x0000000d, "S_SETHALT", []>;
 //def S_SLEEP : SOPP_ <0x0000000e, "S_SLEEP", []>;
 //def S_SETPRIO : SOPP_ <0x0000000f, "S_SETPRIO", []>;
