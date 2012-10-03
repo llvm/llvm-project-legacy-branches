@@ -716,6 +716,13 @@ SDValue R600TargetLowering::LowerFormalArguments(
   return Chain;
 }
 
+EVT R600TargetLowering::getSetCCResultType(EVT VT) const {
+  if (VT.isVector()) {
+    return VT;
+  }
+  return MVT::i32;
+}
+
 //===----------------------------------------------------------------------===//
 // Custom DAG Optimizations
 //===----------------------------------------------------------------------===//

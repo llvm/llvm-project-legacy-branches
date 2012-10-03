@@ -38,6 +38,7 @@ public:
                                       const SmallVectorImpl<ISD::InputArg> &Ins,
                                       DebugLoc DL, SelectionDAG &DAG,
                                       SmallVectorImpl<SDValue> &InVals) const;
+  virtual EVT getSetCCResultType(EVT VT) const;
 private:
   const R600InstrInfo * TII;
 
