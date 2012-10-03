@@ -65,7 +65,8 @@ bool SILowerLiteralConstantsPass::runOnMachineFunction(MachineFunction &MF) {
                                                   BB != BB_E; ++BB) {
     MachineBasicBlock &MBB = *BB;
     for (MachineBasicBlock::iterator I = MBB.begin(), Next = llvm::next(I);
-                               I != MBB.end(); I = Next, Next = llvm::next(I)) {
+                               I != MBB.end(); I = Next) {
+      Next = llvm::next(I);
       MachineInstr &MI = *I;
       switch (MI.getOpcode()) {
       default: break;
