@@ -136,6 +136,10 @@ defm V_CMP_NEQ_F32 : VOPC_32 <0x0000000d, "V_CMP_NEQ_F32",
 >;
 defm V_CMP_NLT_F32 : VOPC_32 <0x0000000e, "V_CMP_NLT_F32", []>;
 defm V_CMP_TRU_F32 : VOPC_32 <0x0000000f, "V_CMP_TRU_F32", []>;
+
+//Side effect is writing to EXEC
+let hasSideEffects = 1 in {
+
 defm V_CMPX_F_F32 : VOPC_32 <0x00000010, "V_CMPX_F_F32", []>;
 defm V_CMPX_LT_F32 : VOPC_32 <0x00000011, "V_CMPX_LT_F32", []>;
 defm V_CMPX_EQ_F32 : VOPC_32 <0x00000012, "V_CMPX_EQ_F32", []>;
@@ -152,6 +156,9 @@ defm V_CMPX_NLE_F32 : VOPC_32 <0x0000001c, "V_CMPX_NLE_F32", []>;
 defm V_CMPX_NEQ_F32 : VOPC_32 <0x0000001d, "V_CMPX_NEQ_F32", []>;
 defm V_CMPX_NLT_F32 : VOPC_32 <0x0000001e, "V_CMPX_NLT_F32", []>;
 defm V_CMPX_TRU_F32 : VOPC_32 <0x0000001f, "V_CMPX_TRU_F32", []>;
+
+} // End hasSideEffects = 1
+
 defm V_CMP_F_F64 : VOPC_64 <0x00000020, "V_CMP_F_F64", []>;
 defm V_CMP_LT_F64 : VOPC_64 <0x00000021, "V_CMP_LT_F64", []>;
 defm V_CMP_EQ_F64 : VOPC_64 <0x00000022, "V_CMP_EQ_F64", []>;
@@ -168,6 +175,10 @@ defm V_CMP_NLE_F64 : VOPC_64 <0x0000002c, "V_CMP_NLE_F64", []>;
 defm V_CMP_NEQ_F64 : VOPC_64 <0x0000002d, "V_CMP_NEQ_F64", []>;
 defm V_CMP_NLT_F64 : VOPC_64 <0x0000002e, "V_CMP_NLT_F64", []>;
 defm V_CMP_TRU_F64 : VOPC_64 <0x0000002f, "V_CMP_TRU_F64", []>;
+
+//Side effect is writing to EXEC
+let hasSideEffects = 1 in {
+
 defm V_CMPX_F_F64 : VOPC_64 <0x00000030, "V_CMPX_F_F64", []>;
 defm V_CMPX_LT_F64 : VOPC_64 <0x00000031, "V_CMPX_LT_F64", []>;
 defm V_CMPX_EQ_F64 : VOPC_64 <0x00000032, "V_CMPX_EQ_F64", []>;
@@ -184,6 +195,9 @@ defm V_CMPX_NLE_F64 : VOPC_64 <0x0000003c, "V_CMPX_NLE_F64", []>;
 defm V_CMPX_NEQ_F64 : VOPC_64 <0x0000003d, "V_CMPX_NEQ_F64", []>;
 defm V_CMPX_NLT_F64 : VOPC_64 <0x0000003e, "V_CMPX_NLT_F64", []>;
 defm V_CMPX_TRU_F64 : VOPC_64 <0x0000003f, "V_CMPX_TRU_F64", []>;
+
+} // End hasSideEffects = 1
+
 defm V_CMPS_F_F32 : VOPC_32 <0x00000040, "V_CMPS_F_F32", []>;
 defm V_CMPS_LT_F32 : VOPC_32 <0x00000041, "V_CMPS_LT_F32", []>;
 defm V_CMPS_EQ_F32 : VOPC_32 <0x00000042, "V_CMPS_EQ_F32", []>;
@@ -268,6 +282,9 @@ defm V_CMP_GE_I32 : VOPC_32 <0x00000086, "V_CMP_GE_I32",
   [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETGE))]
 >;
 defm V_CMP_T_I32 : VOPC_32 <0x00000087, "V_CMP_T_I32", []>;
+
+let hasSideEffects = 1 in {
+
 defm V_CMPX_F_I32 : VOPC_32 <0x00000090, "V_CMPX_F_I32", []>;
 defm V_CMPX_LT_I32 : VOPC_32 <0x00000091, "V_CMPX_LT_I32", []>;
 defm V_CMPX_EQ_I32 : VOPC_32 <0x00000092, "V_CMPX_EQ_I32", []>;
@@ -276,6 +293,9 @@ defm V_CMPX_GT_I32 : VOPC_32 <0x00000094, "V_CMPX_GT_I32", []>;
 defm V_CMPX_NE_I32 : VOPC_32 <0x00000095, "V_CMPX_NE_I32", []>;
 defm V_CMPX_GE_I32 : VOPC_32 <0x00000096, "V_CMPX_GE_I32", []>;
 defm V_CMPX_T_I32 : VOPC_32 <0x00000097, "V_CMPX_T_I32", []>;
+
+} // End hasSideEffects
+
 defm V_CMP_F_I64 : VOPC_64 <0x000000a0, "V_CMP_F_I64", []>;
 defm V_CMP_LT_I64 : VOPC_64 <0x000000a1, "V_CMP_LT_I64", []>;
 defm V_CMP_EQ_I64 : VOPC_64 <0x000000a2, "V_CMP_EQ_I64", []>;
@@ -284,6 +304,9 @@ defm V_CMP_GT_I64 : VOPC_64 <0x000000a4, "V_CMP_GT_I64", []>;
 defm V_CMP_NE_I64 : VOPC_64 <0x000000a5, "V_CMP_NE_I64", []>;
 defm V_CMP_GE_I64 : VOPC_64 <0x000000a6, "V_CMP_GE_I64", []>;
 defm V_CMP_T_I64 : VOPC_64 <0x000000a7, "V_CMP_T_I64", []>;
+
+let hasSideEffects = 1 in {
+
 defm V_CMPX_F_I64 : VOPC_64 <0x000000b0, "V_CMPX_F_I64", []>;
 defm V_CMPX_LT_I64 : VOPC_64 <0x000000b1, "V_CMPX_LT_I64", []>;
 defm V_CMPX_EQ_I64 : VOPC_64 <0x000000b2, "V_CMPX_EQ_I64", []>;
@@ -292,6 +315,9 @@ defm V_CMPX_GT_I64 : VOPC_64 <0x000000b4, "V_CMPX_GT_I64", []>;
 defm V_CMPX_NE_I64 : VOPC_64 <0x000000b5, "V_CMPX_NE_I64", []>;
 defm V_CMPX_GE_I64 : VOPC_64 <0x000000b6, "V_CMPX_GE_I64", []>;
 defm V_CMPX_T_I64 : VOPC_64 <0x000000b7, "V_CMPX_T_I64", []>;
+
+} // End hasSideEffects
+
 defm V_CMP_F_U32 : VOPC_32 <0x000000c0, "V_CMP_F_U32", []>;
 defm V_CMP_LT_U32 : VOPC_32 <0x000000c1, "V_CMP_LT_U32", []>;
 defm V_CMP_EQ_U32 : VOPC_32 <0x000000c2, "V_CMP_EQ_U32", []>;
@@ -300,6 +326,9 @@ defm V_CMP_GT_U32 : VOPC_32 <0x000000c4, "V_CMP_GT_U32", []>;
 defm V_CMP_NE_U32 : VOPC_32 <0x000000c5, "V_CMP_NE_U32", []>;
 defm V_CMP_GE_U32 : VOPC_32 <0x000000c6, "V_CMP_GE_U32", []>;
 defm V_CMP_T_U32 : VOPC_32 <0x000000c7, "V_CMP_T_U32", []>;
+
+let hasSideEffects = 1 in {
+
 defm V_CMPX_F_U32 : VOPC_32 <0x000000d0, "V_CMPX_F_U32", []>;
 defm V_CMPX_LT_U32 : VOPC_32 <0x000000d1, "V_CMPX_LT_U32", []>;
 defm V_CMPX_EQ_U32 : VOPC_32 <0x000000d2, "V_CMPX_EQ_U32", []>;
@@ -308,6 +337,9 @@ defm V_CMPX_GT_U32 : VOPC_32 <0x000000d4, "V_CMPX_GT_U32", []>;
 defm V_CMPX_NE_U32 : VOPC_32 <0x000000d5, "V_CMPX_NE_U32", []>;
 defm V_CMPX_GE_U32 : VOPC_32 <0x000000d6, "V_CMPX_GE_U32", []>;
 defm V_CMPX_T_U32 : VOPC_32 <0x000000d7, "V_CMPX_T_U32", []>;
+
+} // End hasSideEffects
+
 defm V_CMP_F_U64 : VOPC_64 <0x000000e0, "V_CMP_F_U64", []>;
 defm V_CMP_LT_U64 : VOPC_64 <0x000000e1, "V_CMP_LT_U64", []>;
 defm V_CMP_EQ_U64 : VOPC_64 <0x000000e2, "V_CMP_EQ_U64", []>;
