@@ -93,12 +93,12 @@ FunctionPass *llvm::createSILowerFlowControlPass(TargetMachine &tm) {
 bool SILowerFlowControlPass::runOnMachineFunction(MachineFunction &MF) {
 
   // Find all the unused registers that can be used for the predicate stack.
-  for (TargetRegisterClass::iterator S = AMDGPU::SReg_64RegClass.begin(),
-                                     I = AMDGPU::SReg_64RegClass.end();
-                                     I != S; --I) {
+  for (TargetRegisterClass::iterator I = AMDGPU::SReg_64RegClass.begin(),
+                                     S = AMDGPU::SReg_64RegClass.end();
+                                     I != S; ++I) {
     unsigned Reg = *I;
     if (!MF.getRegInfo().isPhysRegOrOverlapUsed(Reg)) {
-      UnusedRegisters.push_back(Reg);
+      UnusedRegisters.insert(UnusedRegisters.begin(), Reg);
     }
   }
 
