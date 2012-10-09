@@ -551,10 +551,8 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   EVT CompareVT = LHS.getValueType();
 
   // We need all the operands of SELECT_CC to have the same value type, so if
-  // necessary we need to convert LHS and RHS to be the same type True and
-  // False.  True and False are guaranteed to have the same type as this
-  // SELECT_CC node.
-
+  // necessary we need to change True and False to be the same type as LHS and
+  // RHS, and then convert the result of the select_cc back to the correct type.
   if (isHWTrueValue(True) && isHWFalseValue(False)) {
     if (CompareVT !=  VT) {
       if (VT == MVT::f32 && CompareVT == MVT::i32) {
@@ -563,23 +561,30 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
             DAG.getConstant(-1, MVT::i32),
             DAG.getConstant(0, MVT::i32),
             CC);
-        return DAG.getNode(ISD::UINT_TO_FP, DL, VT, Boolean);
+        // Convert integer values of true (-1) and false (0) to fp values of
+        // true (1.0f) and false (0.0f).
+        SDValue LSB = DAG.getNode(ISD::AND, DL, MVT::i32, Boolean,
+                                                  DAG.getConstant(1, MVT::i32));
+        return DAG.getNode(ISD::UINT_TO_FP, DL, VT, LSB);
       } else if (VT == MVT::i32 && CompareVT == MVT::f32) {
         SDValue BoolAsFlt = DAG.getNode(ISD::SELECT_CC, DL, CompareVT,
             LHS, RHS,
             DAG.getConstantFP(1.0f, MVT::f32),
             DAG.getConstantFP(0.0f, MVT::f32),
             CC);
-        return DAG.getNode(ISD::FP_TO_UINT, DL, VT, BoolAsFlt);
+        // Convert fp values of true (1.0f) and false (0.0f) to integer values
+        // of true (-1) and false (0).
+        SDValue Neg = DAG.getNode(ISD::FNEG, DL, MVT::f32, BoolAsFlt);
+        return DAG.getNode(ISD::FP_TO_SINT, DL, VT, Neg);
       } else {
         // I don't think there will be any other type pairings.
         assert(!"Unhandled operand type parings in SELECT_CC");
       }
     } else {
+      // This SELECT_CC is already legal.
       return DAG.getNode(ISD::SELECT_CC, DL, VT, LHS, RHS, True, False, CC);
     }
   }
-
 
   // XXX If True is a hardware TRUE value and False is a hardware FALSE value,
   // we can handle this with a native instruction, but we need to swap true
