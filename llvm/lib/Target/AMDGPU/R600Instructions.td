@@ -1377,6 +1377,13 @@ let isTerminator = 1, isReturn = 1, isBarrier = 1, hasCtrlDep = 1 in {
 // ISel Patterns
 //===----------------------------------------------------------------------===//
 
+//CNDGE_INT extra pattern
+def : Pat <
+  (selectcc (i32 R600_Reg32:$src0), -1, (i32 R600_Reg32:$src1),
+                                        (i32 R600_Reg32:$src2), COND_GT),
+  (CNDGE_INT R600_Reg32:$src0, R600_Reg32:$src1, R600_Reg32:$src2)
+>;
+
 // KIL Patterns
 def KILP : Pat <
   (int_AMDGPU_kilp),
