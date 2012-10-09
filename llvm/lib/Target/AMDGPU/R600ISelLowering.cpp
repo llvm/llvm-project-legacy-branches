@@ -550,6 +550,56 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   // LHS and RHS are guaranteed to be the same value type
   EVT CompareVT = LHS.getValueType();
 
+  // Check if we can lower this to a native operation.
+
+  // Try to lower to a CND* instruction:
+  // CND* instructions requires RHS to be zero.  Some SELECT_CC nodes that
+  // can be lowered to CND* instructions can also be lowered to SET*
+  // instructions.  CND* instructions are cheaper, because they dont't
+  // require additional instructions to convert their result to the correct
+  // value type, so this check should be first.
+  if (isZero(LHS) || isZero(RHS)) {
+    SDValue Cond = (isZero(LHS) ? RHS : LHS);
+    SDValue Zero = (isZero(LHS) ? LHS : RHS);
+    ISD::CondCode CCOpcode = cast<CondCodeSDNode>(CC)->get();
+    if (CompareVT != VT) {
+      // Bitcast True / False to the correct types.  This will end up being
+      // a nop, but it allows us to define only a single pattern in the
+      // .TD files for each CND* instruction rather than having to have
+      // one pattern for integer True/False and one for fp True/False
+      True = DAG.getNode(ISD::BITCAST, DL, CompareVT, True);
+      False = DAG.getNode(ISD::BITCAST, DL, CompareVT, False);
+    }
+    if (isZero(LHS)) {
+      CCOpcode = ISD::getSetCCSwappedOperands(CCOpcode);
+    }
+
+    switch (CCOpcode) {
+    case ISD::SETONE:
+    case ISD::SETUNE:
+    case ISD::SETNE:
+    case ISD::SETULE:
+    case ISD::SETULT:
+    case ISD::SETOLE:
+    case ISD::SETOLT:
+    case ISD::SETLE:
+    case ISD::SETLT:
+      CCOpcode = ISD::getSetCCInverse(CCOpcode, CompareVT == MVT::i32);
+      Temp = True;
+      True = False;
+      False = Temp;
+      break;
+    default:
+      break;
+    }
+    SDValue SelectNode = DAG.getNode(ISD::SELECT_CC, DL, CompareVT,
+        Cond, Zero,
+        True, False,
+        DAG.getCondCode(CCOpcode));
+    return DAG.getNode(ISD::BITCAST, DL, VT, SelectNode);
+  }
+
+  // Try to lower to a SET* instruction:
   // We need all the operands of SELECT_CC to have the same value type, so if
   // necessary we need to change True and False to be the same type as LHS and
   // RHS, and then convert the result of the select_cc back to the correct type.
@@ -591,48 +641,6 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   // and false and change the conditional.
   if (isHWTrueValue(False) && isHWFalseValue(True)) {
   }
-
-  // Check if we can lower this to a native operation.
-  // CND* instructions requires all operands to have the same type,
-  // and RHS to be zero.
-
-  if (isZero(LHS) || isZero(RHS)) {
-    SDValue Cond = (isZero(LHS) ? RHS : LHS);
-    SDValue Zero = (isZero(LHS) ? LHS : RHS);
-    ISD::CondCode CCOpcode = cast<CondCodeSDNode>(CC)->get();
-    if (CompareVT != VT) {
-      True = DAG.getNode(ISD::BITCAST, DL, CompareVT, True);
-      False = DAG.getNode(ISD::BITCAST, DL, CompareVT, False);
-    }
-    if (isZero(LHS)) {
-      CCOpcode = ISD::getSetCCSwappedOperands(CCOpcode);
-    }
-
-    switch (CCOpcode) {
-    case ISD::SETONE:
-    case ISD::SETUNE:
-    case ISD::SETNE:
-    case ISD::SETULE:
-    case ISD::SETULT:
-    case ISD::SETOLE:
-    case ISD::SETOLT:
-    case ISD::SETLE:
-    case ISD::SETLT:
-      CCOpcode = ISD::getSetCCInverse(CCOpcode, CompareVT == MVT::i32);
-      Temp = True;
-      True = False;
-      False = Temp;
-      break;
-    default:
-      break;
-    }
-    SDValue SelectNode = DAG.getNode(ISD::SELECT_CC, DL, CompareVT,
-        Cond, Zero,
-        True, False,
-        DAG.getCondCode(CCOpcode));
-    return DAG.getNode(ISD::BITCAST, DL, VT, SelectNode);
-  }
-
 
   // If we make it this for it means we have no native instructions to handle
   // this SELECT_CC, so we must lower it.
