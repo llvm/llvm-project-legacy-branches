@@ -1022,6 +1022,16 @@ let Predicates = [isEGorCayman] in {
 
   def UINT_TO_FLT_eg : UINT_TO_FLT_Common<0x9C>;
 
+  // TRUNC is used for the FLT_TO_INT instructions to work around a
+  // perceived problem where the rounding modes are applied differently
+  // depending on the instruction and the slot they are in.
+  // See:
+  // https://bugs.freedesktop.org/show_bug.cgi?id=50232
+  // Mesa commit: a1a0974401c467cb86ef818f22df67c21774a38c
+  //
+  // XXX: Lowering SELECT_CC will sometimes generate fp_to_[su]int nodes,
+  // which do not need to be truncated since the fp values are 0.0f or 1.0f.
+  // We should look into handling these cases separately.
   def : Pat<(fp_to_sint R600_Reg32:$src),
     (FLT_TO_INT_eg (TRUNC R600_Reg32:$src))>;
 
