@@ -603,6 +603,14 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   // We need all the operands of SELECT_CC to have the same value type, so if
   // necessary we need to change True and False to be the same type as LHS and
   // RHS, and then convert the result of the select_cc back to the correct type.
+
+  // Move hardware True/False values to the correct operand.
+  if (isHWTrueValue(False) && isHWFalseValue(True)) {
+    ISD::CondCode CCOpcode = cast<CondCodeSDNode>(CC)->get();
+    std::swap(False, True);
+    CC = DAG.getCondCode(ISD::getSetCCInverse(CCOpcode, CompareVT == MVT::i32));
+  }
+
   if (isHWTrueValue(True) && isHWFalseValue(False)) {
     if (CompareVT !=  VT) {
       if (VT == MVT::f32 && CompareVT == MVT::i32) {
@@ -634,12 +642,6 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
       // This SELECT_CC is already legal.
       return DAG.getNode(ISD::SELECT_CC, DL, VT, LHS, RHS, True, False, CC);
     }
-  }
-
-  // XXX If True is a hardware TRUE value and False is a hardware FALSE value,
-  // we can handle this with a native instruction, but we need to swap true
-  // and false and change the conditional.
-  if (isHWTrueValue(False) && isHWFalseValue(True)) {
   }
 
   // If we make it this for it means we have no native instructions to handle
