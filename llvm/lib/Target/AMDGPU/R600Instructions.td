@@ -1428,7 +1428,7 @@ def : Pat <
 // SETGE_UINT reverse args
 def : Pat <
   (selectcc (i32 R600_Reg32:$src0), R600_Reg32:$src1, -1, 0, SETULE),
-  (SETGE_UINT R600_Reg32:$src0, R600_Reg32:$src1)
+  (SETGE_UINT R600_Reg32:$src1, R600_Reg32:$src0)
 >;
 
 // The next two patterns are special cases for handling 'true if ordered' and
