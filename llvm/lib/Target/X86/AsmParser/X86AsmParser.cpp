@@ -53,7 +53,7 @@ private:
   X86Operand *ParseOperand();
   X86Operand *ParseATTOperand();
   X86Operand *ParseIntelOperand();
-  X86Operand *ParseIntelMemOperand();
+  X86Operand *ParseIntelMemOperand(unsigned SegReg, SMLoc StartLoc);
   X86Operand *ParseIntelBracExpression(unsigned SegReg, unsigned Size);
   X86Operand *ParseMemOperand(unsigned SegReg, SMLoc StartLoc);
 
@@ -69,7 +69,7 @@ private:
   bool MatchInstruction(SMLoc IDLoc,
                         SmallVectorImpl<MCParsedAsmOperand*> &Operands,
                         MCStreamer &Out, unsigned &Kind, unsigned &Opcode,
-  SmallVectorImpl<std::pair< unsigned, std::string > > &MapAndConstraints,
+                        MatchInstMapAndConstraintsImpl &MapAndConstraints,
                        unsigned &OrigErrorInfo, bool matchingInlineAsm = false);
 
   /// isSrcOp - Returns true if operand is either (%rsi) or %ds:%(rsi)
@@ -729,10 +729,9 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg,
 }
 
 /// ParseIntelMemOperand - Parse intel style memory operand.
-X86Operand *X86AsmParser::ParseIntelMemOperand() {
+X86Operand *X86AsmParser::ParseIntelMemOperand(unsigned SegReg, SMLoc Start) {
   const AsmToken &Tok = Parser.getTok();
-  SMLoc Start = Parser.getTok().getLoc(), End;
-  unsigned SegReg = 0;
+  SMLoc End;
 
   unsigned Size = getIntelMemOperandSize(Tok.getString());
   if (Size) {
@@ -776,12 +775,17 @@ X86Operand *X86AsmParser::ParseIntelOperand() {
   // register
   unsigned RegNo = 0;
   if (!ParseRegister(RegNo, Start, End)) {
-    End = Parser.getTok().getLoc();
-    return X86Operand::CreateReg(RegNo, Start, End);
+    // If this is a segment register followed by a ':', then this is the start
+    // of a memory reference, otherwise this is a normal register reference.
+    if (getLexer().isNot(AsmToken::Colon))
+      return X86Operand::CreateReg(RegNo, Start, Parser.getTok().getLoc());
+
+    getParser().Lex(); // Eat the colon.
+    return ParseIntelMemOperand(RegNo, Start);
   }
 
   // mem operand
-  return ParseIntelMemOperand();
+  return ParseIntelMemOperand(0, Start);
 }
 
 X86Operand *X86AsmParser::ParseATTOperand() {
@@ -1522,7 +1526,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   unsigned Kind;
   unsigned Opcode;
   unsigned ErrorInfo;
-  SmallVector<std::pair< unsigned, std::string >, 4> MapAndConstraints;
+  MatchInstMapAndConstraints MapAndConstraints;
   bool Error = MatchInstruction(IDLoc, Operands, Out, Kind, Opcode,
                                 MapAndConstraints, ErrorInfo);
   return Error;
@@ -1627,7 +1631,7 @@ MatchInstruction(SMLoc IDLoc,
   unsigned Match1, Match2, Match3, Match4;
   unsigned tKind;
 
-  SmallVector<std::pair< unsigned, std::string >, 4> tMapAndConstraints[4];
+  MatchInstMapAndConstraints tMapAndConstraints[4];
   Match1 = MatchInstructionImpl(Operands, tKind, Inst, tMapAndConstraints[0],
                                 ErrorInfoIgnore, isParsingIntelSyntax());
   if (Match1 == Match_Success) Kind = tKind;

@@ -10,54 +10,20 @@
 // This file describes Mips16 instructions.
 //
 //===----------------------------------------------------------------------===//
-
-//
-// RRR-type instruction format
 //
 
-class FRRR16_ins<bits<2> _f, string asmstr,  InstrItinClass itin> :
-  FRRR16<_f, (outs CPU16Regs:$rz), (ins CPU16Regs:$rx, CPU16Regs:$ry),
-         !strconcat(asmstr, "\t$rz, $rx, $ry"), [], itin>;
-
 //
-// I8_MOVR32 instruction format (used only by the MOVR32 instructio
-//
-class FI8_MOVR3216_ins<string asmstr, InstrItinClass itin>:
-       FI8_MOVR3216<(outs CPU16Regs:$rz), (ins CPURegs:$r32),
-       !strconcat(asmstr,  "\t$rz, $r32"), [], itin>;
-
-//
-// I8_MOV32R instruction format (used only by MOV32R instruction)
-//
-
-class FI8_MOV32R16_ins<string asmstr, InstrItinClass itin>:
-  FI8_MOV32R16<(outs CPURegs:$r32), (ins CPU16Regs:$rz),
-               !strconcat(asmstr,  "\t$r32, $rz"), [], itin>;
-
-
-//
-// RR-type instruction format
-//
-
-class FRR16_ins<bits<5> f, string asmstr, InstrItinClass itin> :
-  FRR16<f, (outs CPU16Regs:$rx), (ins CPU16Regs:$ry),
-        !strconcat(asmstr, "\t$rx, $ry"), [], itin> {
+// Address operand
+def mem16 : Operand<i32> {
+  let PrintMethod = "printMemOperand";
+  let MIOperandInfo = (ops CPU16Regs, simm16);
+  let EncoderMethod = "getMemEncoding";
 }
 
-class FRxRxRy16_ins<bits<5> f, string asmstr,
-                    InstrItinClass itin> :
-  FRR16<f, (outs CPU16Regs:$rz), (ins CPU16Regs:$rx, CPU16Regs:$ry),
-            !strconcat(asmstr, "\t$rz, $ry"),
-            [], itin> {
-  let Constraints = "$rx = $rz";
-}
-
-let rx=0 in
-class FRR16_JALRC_RA_only_ins<bits<1> nd_, bits<1> l_,
-                              string asmstr, InstrItinClass itin>:
-  FRR16_JALRC<nd_, l_, 1, (outs), (ins), !strconcat(asmstr, "\t $$ra"),
-              [], itin> ;
-
+//
+// Assembler formats in alphabetical order.
+// Natural and pseudos are mixed together.
+//
 //
 // EXT-RI instruction format
 //
@@ -74,21 +40,19 @@ class FEXT_RI16_ins<bits<5> _op, string asmstr,
 class FEXT_RI16_PC_ins<bits<5> _op, string asmstr, InstrItinClass itin>:
   FEXT_RI16_ins_base<_op, asmstr, "\t$rx, $$pc, $imm", itin>;
 
-
 class FEXT_2RI16_ins<bits<5> _op, string asmstr,
                      InstrItinClass itin>:
   FEXT_RI16<_op, (outs CPU16Regs:$rx), (ins CPU16Regs:$rx_, simm16:$imm),
             !strconcat(asmstr, "\t$rx, $imm"), [], itin> {
   let Constraints = "$rx_ = $rx";
 }
+
 // this has an explicit sp argument that we ignore to work around a problem
 // in the compiler
 class FEXT_RI16_SP_explicit_ins<bits<5> _op, string asmstr,
                                 InstrItinClass itin>:
   FEXT_RI16<_op, (outs CPU16Regs:$rx), (ins CPUSPReg:$ry, simm16:$imm),
-                  !strconcat(asmstr, "\t$rx, $imm ( $ry ); "), [], itin> {
-}
-
+            !strconcat(asmstr, "\t$rx, $imm ( $ry ); "), [], itin>;
 
 //
 // EXT-RRI instruction format
@@ -111,13 +75,75 @@ class FEXT_SHIFT16_ins<bits<2> _f, string asmstr, InstrItinClass itin>:
   FEXT_SHIFT16<_f, (outs CPU16Regs:$rx), (ins CPU16Regs:$ry, shamt:$sa),
                !strconcat(asmstr, "\t$rx, $ry, $sa"), [], itin>;
 
+
 //
-// Address operand
-def mem16 : Operand<i32> {
-  let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops CPU16Regs, simm16);
-  let EncoderMethod = "getMemEncoding";
+// I8_MOVR32 instruction format (used only by the MOVR32 instructio
+//
+class FI8_MOVR3216_ins<string asmstr, InstrItinClass itin>:
+       FI8_MOVR3216<(outs CPU16Regs:$rz), (ins CPURegs:$r32),
+       !strconcat(asmstr,  "\t$rz, $r32"), [], itin>;
+
+//
+// I8_MOV32R instruction format (used only by MOV32R instruction)
+//
+
+class FI8_MOV32R16_ins<string asmstr, InstrItinClass itin>:
+  FI8_MOV32R16<(outs CPURegs:$r32), (ins CPU16Regs:$rz),
+               !strconcat(asmstr,  "\t$r32, $rz"), [], itin>;
+
+//
+// This are pseudo formats for multiply
+// This first one can be changed to non pseudo now.
+//
+// MULT
+//
+class FMULT16_ins<string asmstr, InstrItinClass itin> :
+  MipsPseudo16<(outs), (ins CPU16Regs:$rx, CPU16Regs:$ry),
+               !strconcat(asmstr, "\t$rx, $ry"), []>;
+
+//
+// MULT-LO
+//
+class FMULT16_LO_ins<string asmstr, InstrItinClass itin> :
+  MipsPseudo16<(outs CPU16Regs:$rz), (ins CPU16Regs:$rx, CPU16Regs:$ry),
+               !strconcat(asmstr, "\t$rx, $ry\n\tmflo\t$rz"), []> {
+  let isCodeGenOnly=1;
 }
+
+//
+// RR-type instruction format
+//
+
+class FRR16_ins<bits<5> f, string asmstr, InstrItinClass itin> :
+  FRR16<f, (outs CPU16Regs:$rx), (ins CPU16Regs:$ry),
+        !strconcat(asmstr, "\t$rx, $ry"), [], itin> {
+}
+class FRR16_M_ins<bits<5> f, string asmstr,
+                  InstrItinClass itin> :
+  FRR16<f, (outs CPU16Regs:$rx), (ins),
+        !strconcat(asmstr, "\t$rx"), [], itin>;
+
+class FRxRxRy16_ins<bits<5> f, string asmstr,
+                    InstrItinClass itin> :
+  FRR16<f, (outs CPU16Regs:$rz), (ins CPU16Regs:$rx, CPU16Regs:$ry),
+            !strconcat(asmstr, "\t$rz, $ry"),
+            [], itin> {
+  let Constraints = "$rx = $rz";
+}
+
+let rx=0 in
+class FRR16_JALRC_RA_only_ins<bits<1> nd_, bits<1> l_,
+                              string asmstr, InstrItinClass itin>:
+  FRR16_JALRC<nd_, l_, 1, (outs), (ins), !strconcat(asmstr, "\t $$ra"),
+              [], itin> ;
+
+//
+// RRR-type instruction format
+//
+
+class FRRR16_ins<bits<2> _f, string asmstr,  InstrItinClass itin> :
+  FRRR16<_f, (outs CPU16Regs:$rz), (ins CPU16Regs:$rx, CPU16Regs:$ry),
+         !strconcat(asmstr, "\t$rz, $rx, $ry"), [], itin>;
 
 //
 // Some general instruction class info
@@ -243,6 +269,63 @@ def Move32R16: FI8_MOV32R16_ins<"move", IIAlu>;
 // To move the contents of a GPR to a GPR.
 //
 def MoveR3216: FI8_MOVR3216_ins<"move", IIAlu>;
+
+//
+// Format: MFHI rx MIPS16e
+// Purpose: Move From HI Register
+// To copy the special purpose HI register to a GPR.
+//
+def Mfhi16: FRR16_M_ins<0b10000, "mfhi", IIAlu> {
+  let Uses = [HI];
+  let neverHasSideEffects = 1;
+}
+
+//
+// Format: MFLO rx MIPS16e
+// Purpose: Move From LO Register
+// To copy the special purpose LO register to a GPR.
+//
+def Mflo16: FRR16_M_ins<0b10010, "mflo", IIAlu> {
+  let Uses = [LO];
+  let neverHasSideEffects = 1;
+}
+
+//
+// Pseudo Instruction for mult
+//
+def MultRxRy16:  FMULT16_ins<"mult",  IIAlu> {
+  let isCommutable = 1;
+  let neverHasSideEffects = 1;
+  let Defs = [HI, LO];
+}
+
+def MultuRxRy16: FMULT16_ins<"multu", IIAlu> {
+  let isCommutable = 1;
+  let neverHasSideEffects = 1;
+  let Defs = [HI, LO];
+}
+
+//
+// Format: MULT rx, ry MIPS16e
+// Purpose: Multiply Word
+// To multiply 32-bit signed integers.
+//
+def MultRxRyRz16: FMULT16_LO_ins<"mult", IIAlu> {
+  let isCommutable = 1;
+  let neverHasSideEffects = 1;
+  let Defs = [HI, LO];
+}
+
+//
+// Format: MULTU rx, ry MIPS16e
+// Purpose: Multiply Unsigned Word
+// To multiply 32-bit unsigned integers.
+//
+def MultuRxRyRz16: FMULT16_LO_ins<"multu", IIAlu> {
+  let isCommutable = 1;
+  let neverHasSideEffects = 1;
+  let Defs = [HI, LO];
+}
 
 //
 // Format: NEG rx, ry MIPS16e
@@ -413,6 +496,7 @@ class ArithLogic16_pat<SDNode OpNode, Instruction I> :
 
 def: ArithLogic16_pat<add, AdduRxRyRz16>;
 def: ArithLogic16_pat<and, AndRxRxRy16>;
+def: ArithLogic16_pat<mul, MultRxRyRz16>;
 def: ArithLogic16_pat<or, OrRxRxRy16>;
 def: ArithLogic16_pat<sub, SubuRxRyRz16>;
 def: ArithLogic16_pat<xor, XorRxRxRy16>;
