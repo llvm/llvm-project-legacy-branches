@@ -20,7 +20,7 @@
 #include "AMDILIntrinsicInfo.h"
 #include "R600ISelLowering.h"
 #include "llvm/ADT/OwningPtr.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/DataLayout.h"
 
 namespace llvm {
 
@@ -29,7 +29,7 @@ MCAsmInfo* createMCAsmInfo(const Target &T, StringRef TT);
 class AMDGPUTargetMachine : public LLVMTargetMachine {
 
   AMDGPUSubtarget Subtarget;
-  const TargetData DataLayout;
+  const DataLayout Layout;
   AMDGPUFrameLowering FrameLowering;
   AMDGPUIntrinsicInfo IntrinsicInfo;
   const AMDGPUInstrInfo * InstrInfo;
@@ -61,7 +61,7 @@ public:
    virtual const InstrItineraryData* getInstrItineraryData() const {
       return InstrItins;
    }
-   virtual const TargetData* getTargetData() const { return &DataLayout; }
+   virtual const DataLayout* getDataLayout() const { return &Layout; }
    virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
 };
 

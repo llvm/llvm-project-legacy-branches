@@ -47,7 +47,7 @@ AMDGPUTargetMachine::AMDGPUTargetMachine(const Target &T, StringRef TT,
 :
   LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OptLevel),
   Subtarget(TT, CPU, FS),
-  DataLayout(Subtarget.getDataLayout()),
+  Layout(Subtarget.getDataLayout()),
   FrameLowering(TargetFrameLowering::StackGrowsUp,
       Subtarget.device()->getStackAlignment(), 0),
   IntrinsicInfo(this),
