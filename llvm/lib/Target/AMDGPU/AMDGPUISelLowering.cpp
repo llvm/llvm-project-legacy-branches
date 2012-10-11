@@ -275,11 +275,10 @@ SDValue AMDGPUTargetLowering::LowerUDIVREM(SDValue Op,
   // Rem = (Remainder_GE_Zero == 0 ? Remainder_A_Den : Rem)
   Rem = DAG.getSelectCC(DL, Remainder_GE_Zero, DAG.getConstant(0, VT),
                             Remainder_A_Den, Rem, ISD::SETEQ);
-
-  DAG.ReplaceAllUsesWith(Op.getValue(0).getNode(), &Div);
-  DAG.ReplaceAllUsesWith(Op.getValue(1).getNode(), &Rem);
-
-  return Op;
+  SDValue Ops[2];
+  Ops[0] = Div;
+  Ops[1] = Rem;
+  return DAG.getMergeValues(Ops, 2, DL);
 }
 
 //===----------------------------------------------------------------------===//
