@@ -4,7 +4,7 @@
 
 define void @test() {
    %r0 = call float @llvm.R600.load.input(i32 0)
-   %r1 = call float @llvm.AMDIL.fabs.( float %r0)
+   %r1 = call float @fabs( float %r0)
    call void @llvm.AMDGPU.store.output(float %r1, i32 0)
    ret void
 }
@@ -13,4 +13,4 @@ declare float @llvm.R600.load.input(i32) readnone
 
 declare void @llvm.AMDGPU.store.output(float, i32)
 
-declare float @llvm.AMDIL.fabs.(float ) readnone
+declare float @fabs(float ) readnone
