@@ -13,6 +13,7 @@
 
 #include "R600RegisterInfo.h"
 #include "AMDGPUTargetMachine.h"
+#include "R600Defines.h"
 #include "R600MachineFunctionInfo.h"
 
 using namespace llvm;
@@ -68,21 +69,7 @@ R600RegisterInfo::getISARegClass(const TargetRegisterClass * rc) const
 
 unsigned R600RegisterInfo::getHWRegChan(unsigned reg) const
 {
-  switch(reg) {
-  case AMDGPU::ZERO:
-  case AMDGPU::ONE:
-  case AMDGPU::ONE_INT:
-  case AMDGPU::NEG_ONE:
-  case AMDGPU::HALF:
-  case AMDGPU::NEG_HALF:
-  case AMDGPU::ALU_LITERAL_X:
-  case AMDGPU::PREDICATE_BIT:
-  case AMDGPU::PRED_SEL_OFF:
-  case AMDGPU::PRED_SEL_ZERO:
-  case AMDGPU::PRED_SEL_ONE:
-    return 0;
-  default: return getHWRegChanGen(reg);
-  }
+  return this->getEncodingValue(reg) >> HW_CHAN_SHIFT;
 }
 
 const TargetRegisterClass * R600RegisterInfo::getCFGStructurizerRegClass(
@@ -104,5 +91,3 @@ unsigned R600RegisterInfo::getSubRegFromChannel(unsigned Channel) const
     case 3: return AMDGPU::sel_w;
   }
 }
-
-#include "R600HwRegInfo.include"

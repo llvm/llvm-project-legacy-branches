@@ -4,6 +4,18 @@ class R600Reg <string name, bits<16> encoding> : Register<name> {
   let HWEncoding = encoding;
 }
 
+class R600RegWithChan <string name, bits<9> sel, string chan> :
+    Register <name> {
+
+  field bits<2> chan_encoding = !if(!eq(chan, "X"), 0,
+                                !if(!eq(chan, "Y"), 1,
+                                !if(!eq(chan, "Z"), 2,
+                                !if(!eq(chan, "W"), 3, 0))));
+  let HWEncoding{8-0}  = sel;
+  let HWEncoding{10-9} = chan_encoding;
+  let Namespace = "AMDGPU";
+}
+
 class R600Reg_128<string n, list<Register> subregs, bits<16> encoding> :
     RegisterWithSubRegs<n, subregs> {
   let Namespace = "AMDGPU";
@@ -14,11 +26,11 @@ class R600Reg_128<string n, list<Register> subregs, bits<16> encoding> :
 foreach Index = 0-127 in {
   foreach Chan = [ "X", "Y", "Z", "W" ] in {
     // 32-bit Temporary Registers
-    def T#Index#_#Chan : R600Reg <"T"#Index#"."#Chan, Index>;
+    def T#Index#_#Chan : R600RegWithChan <"T"#Index#"."#Chan, Index, Chan>;
 
     // 32-bit Constant Registers (There are more than 128, this the number
     // that is currently supported.
-    def C#Index#_#Chan : R600Reg <"C"#Index#"."#Chan, Index>;
+    def C#Index#_#Chan : R600RegWithChan <"C"#Index#"."#Chan, Index, Chan>;
   }
   // 128-bit Temporary Registers
   def T#Index#_XYZW : R600Reg_128 <"T"#Index#".XYZW",

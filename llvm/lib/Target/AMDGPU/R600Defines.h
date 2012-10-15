@@ -7,6 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef R600DEFINES_H_
+#define R600DEFINES_H_
+
+#include "llvm/MC/MCRegisterInfo.h"
 
 // Operand Flags
 #define MO_FLAG_CLAMP (1 << 0)
@@ -33,3 +37,9 @@ namespace R600_InstFlag {
     //FlagOperand bits 7, 8
 	};
 }
+
+// Defines for extracting register infomation from register encoding
+#define HW_REG_MASK 0x1ff
+#define HW_CHAN_SHIFT 9
+
+#endif // R600DEFINES_H_

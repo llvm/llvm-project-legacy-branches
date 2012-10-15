@@ -78,7 +78,6 @@ private:
   void Emit(uint32_t value, raw_ostream &OS) const;
   void Emit(uint64_t value, raw_ostream &OS) const;
 
-  unsigned getHWRegIndex(unsigned reg) const;
   unsigned getHWRegChan(unsigned reg) const;
   unsigned getHWReg(unsigned regNo) const;
 
@@ -86,9 +85,6 @@ private:
   bool isTexOp(unsigned opcode) const;
   bool isFlagSet(const MCInst &MI, unsigned Operand, unsigned Flag) const;
 
-  /// getHWRegChanGen - Get the register's channel.  Implemented in
-  /// R600HwRegInfo.include.
-  unsigned getHWRegChanGen(unsigned int Reg) const;
 };
 
 } // End anonymous namespace
@@ -606,31 +602,18 @@ void R600MCCodeEmitter::Emit(uint64_t Value, raw_ostream &OS) const {
 }
 
 unsigned R600MCCodeEmitter::getHWRegChan(unsigned reg) const {
-  switch(reg) {
-  case AMDGPU::ZERO:
-  case AMDGPU::ONE:
-  case AMDGPU::ONE_INT:
-  case AMDGPU::NEG_ONE:
-  case AMDGPU::HALF:
-  case AMDGPU::NEG_HALF:
-  case AMDGPU::ALU_LITERAL_X:
-  case AMDGPU::PREDICATE_BIT:
-  case AMDGPU::PRED_SEL_OFF:
-  case AMDGPU::PRED_SEL_ZERO:
-  case AMDGPU::PRED_SEL_ONE:
-    return 0;
-  default: return getHWRegChanGen(reg);
-  }
+  return MRI.getEncodingValue(reg) >> HW_CHAN_SHIFT;
 }
+
 unsigned R600MCCodeEmitter::getHWReg(unsigned RegNo) const {
-  return MRI.getEncodingValue(RegNo);
+  return MRI.getEncodingValue(RegNo) & HW_REG_MASK;
 }
 
 uint64_t R600MCCodeEmitter::getMachineOpValue(const MCInst &MI,
                                               const MCOperand &MO,
                                         SmallVectorImpl<MCFixup> &Fixup) const {
   if (MO.isReg()) {
-    return MRI.getEncodingValue(MO.getReg());
+    return getHWReg(MO.getReg());
   } else if (MO.isImm()) {
     return MO.getImm();
   } else {
@@ -694,8 +677,5 @@ bool R600MCCodeEmitter::isFlagSet(const MCInst &MI, unsigned Operand,
   return !!((MI.getOperand(FlagIndex).getImm() >>
             (NUM_MO_FLAGS * Operand)) & Flag);
 }
-#define R600RegisterInfo R600MCCodeEmitter
-#include "R600HwRegInfo.include"
-#undef R600RegisterInfo
 
 #include "AMDGPUGenMCCodeEmitter.inc"

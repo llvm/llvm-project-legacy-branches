@@ -251,7 +251,7 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
           // Mask the write if the original instruction does not write to
           // the current Channel.
           Flags |= (Chan != TRI.getHWRegChan(DstReg) ? MO_FLAG_MASK : 0);
-          unsigned DstBase = TRI.getEncodingValue(DstReg);
+          unsigned DstBase = TRI.getEncodingValue(DstReg) & HW_REG_MASK;
           DstReg = AMDGPU::R600_TReg32RegClass.getRegister((DstBase * 4) + Chan);
         }
 

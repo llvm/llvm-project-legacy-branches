@@ -47,10 +47,6 @@ struct R600RegisterInfo : public AMDGPURegisterInfo
   /// Channel (e.g. getSubRegFromChannel(0) -> AMDGPU::sel_x)
   unsigned getSubRegFromChannel(unsigned Channel) const;
 
-private:
-  /// getHWRegChanGen - Generated function returns a register's channel
-  /// encoding.
-  unsigned getHWRegChanGen(unsigned reg) const;
 };
 
 } // End namespace llvm
