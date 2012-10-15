@@ -16,6 +16,7 @@ add_lldb_library(lldbCommands
   CommandObjectMemory.cpp
   CommandObjectMultiword.cpp
   CommandObjectPlatform.cpp
+  CommandObjectPlugin.cpp
   CommandObjectProcess.cpp
   CommandObjectQuit.cpp
   CommandObjectRegister.cpp

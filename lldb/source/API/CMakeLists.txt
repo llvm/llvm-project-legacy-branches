@@ -12,6 +12,7 @@ add_lldb_library(lldbAPI
   SBCompileUnit.cpp
   SBData.cpp
   SBDebugger.cpp
+  SBDeclaration.cpp
   SBError.cpp
   SBEvent.cpp
   SBFileSpec.cpp

@@ -34,6 +34,8 @@ set( LLDB_USED_LIBS
   lldbPluginDynamicLoaderPosixDYLD
   lldbPluginUnwindAssemblyInstEmulation
   lldbPluginUnwindAssemblyX86
+  lldbPluginDynamicLoaderDarwinKernel
+
   
   # Windows
   lldbHostWindows

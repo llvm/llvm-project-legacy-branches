@@ -11,12 +11,12 @@
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Constants.h"
+#include "llvm/DataLayout.h"
 #include "llvm/InstrTypes.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Module.h"
 #include "llvm/PassManager.h"
-#include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/ValueSymbolTable.h"
 
@@ -78,11 +78,14 @@ static std::string
 PrintValue(const Value *value, bool truncate = false)
 {
     std::string s;
-    raw_string_ostream rso(s);
-    value->print(rso);
-    rso.flush();
-    if (truncate)
-        s.resize(s.length() - 1);
+    if (value)
+    {
+        raw_string_ostream rso(s);
+        value->print(rso);
+        rso.flush();
+        if (truncate)
+            s.resize(s.length() - 1);
+    }
     return s;
 }
 
@@ -238,7 +241,7 @@ IRForTarget::GetFunctionAddress (llvm::Function *fun,
                 // Check for an alternate mangling for "std::basic_string<char>"
                 // that is part of the itanium C++ name mangling scheme
                 const char *name_cstr = name.GetCString();
-                if (strncmp(name_cstr, "_ZNKSbIcE", strlen("_ZNKSbIcE")) == 0)
+                if (name_cstr && strncmp(name_cstr, "_ZNKSbIcE", strlen("_ZNKSbIcE")) == 0)
                 {
                     std::string alternate_mangling("_ZNKSs");
                     alternate_mangling.append (name_cstr + strlen("_ZNKSbIcE"));
@@ -491,6 +494,9 @@ IRForTarget::MaybeSetCastResult (lldb_private::TypeFromParser type)
             return;
         }
     }
+    
+    if (!original_load)
+        return;
     
     Value *loaded_value = original_load->getPointerOperand();
     GlobalVariable *loaded_global = dyn_cast<GlobalVariable>(loaded_value);
@@ -840,7 +846,8 @@ IRForTarget::RewriteObjCConstString (llvm::GlobalVariable *ns_str,
     
     Type *i8_ptr_ty = Type::getInt8PtrTy(m_module->getContext());
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
-                                                   (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
+                                                   (m_module->getPointerSize()
+                                                    == Module::Pointer64) ? 64 : 32);
     Type *i32_ty = Type::getInt32Ty(m_module->getContext());
     Type *i8_ty = Type::getInt8Ty(m_module->getContext());
     
@@ -1724,7 +1731,6 @@ IRForTarget::HandleSymbol (Value *symbol)
         log->Printf("Found \"%s\" at 0x%llx", name.GetCString(), symbol_addr);
     
     Type *symbol_type = symbol->getType();
-    
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
                                              (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
     
@@ -1807,7 +1813,8 @@ IRForTarget::HandleObjCClass(Value *classlist_reference)
         return false;
     
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
-                                             (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
+                                             (m_module->getPointerSize()
+                                              == Module::Pointer64) ? 64 : 32);
     
     Constant *class_addr = ConstantInt::get(intptr_ty, (uint64_t)class_ptr);
     Constant *class_bitcast = ConstantExpr::getIntToPtr(class_addr, load_instruction->getType());
@@ -2686,7 +2693,7 @@ IRForTarget::runOnModule (Module &llvm_module)
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     m_module = &llvm_module;
-    m_target_data.reset(new TargetData(m_module));
+    m_target_data.reset(new DataLayout(m_module));
     
     Function* function = m_module->getFunction(StringRef(m_func_name.c_str()));
     

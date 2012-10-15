@@ -350,7 +350,7 @@ public:
             }
             else
             {
-                is_zero_argument = true;
+                is_zero_argument = false;
                 selector_components.push_back(&ast_ctx.Idents.get(llvm::StringRef(name_cursor, colon_loc - name_cursor)));
                 name_cursor = colon_loc + 1;
             }
@@ -571,9 +571,6 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
     
     uint32_t ret = 0;
     
-    // TODO Remove this return once testing is complete.
-    return ret;
-    
     do
     {
         // See if the type is already in our ASTContext.
@@ -640,6 +637,8 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
                 log->Printf("AOCTV::FT [%u] Couldn't get the Objective-C interface for isa 0x%llx",
                             current_id,
                             (uint64_t)isa);
+            
+            break;
         }
         
         clang::QualType new_iface_type = ast_ctx->getObjCInterfaceType(iface_decl);
@@ -651,6 +650,8 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
                         current_id,
                         dumper.GetCString(),
                         (uint64_t)isa);
+            
+            break;
         }
         
         types.push_back(ClangASTType(ast_ctx, new_iface_type.getAsOpaquePtr()));

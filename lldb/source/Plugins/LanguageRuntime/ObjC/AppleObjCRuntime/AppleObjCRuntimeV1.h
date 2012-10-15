@@ -124,19 +124,7 @@ public:
     }
     
     virtual bool
-    IsValidISA(ObjCISA isa)
-    {
-        return (isa != 0) && ( (isa % 2) == 0);
-    }
-    
-    virtual ObjCISA
-    GetISA(ValueObject& valobj);
-    
-    virtual ClassDescriptorSP
-    GetClassDescriptor (ValueObject& in_value);
-    
-    virtual ClassDescriptorSP
-    GetClassDescriptor (ObjCISA isa);
+    UpdateISAToDescriptorMap_Impl();
 
 protected:
     virtual lldb::BreakpointResolverSP

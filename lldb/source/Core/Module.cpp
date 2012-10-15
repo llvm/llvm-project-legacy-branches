@@ -117,7 +117,7 @@ namespace lldb {
 }
 
 #endif
-    
+
 Module::Module (const ModuleSpec &module_spec) :
     m_mutex (Mutex::eMutexTypeRecursive),
     m_mod_time (module_spec.GetFileSpec().GetModificationTime()),
@@ -146,7 +146,7 @@ Module::Module (const ModuleSpec &module_spec) :
         GetModuleCollection().push_back(this);
     }
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -191,7 +191,7 @@ Module::Module(const FileSpec& file_spec,
 
     if (object_name)
         m_object_name = *object_name;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -211,10 +211,10 @@ Module::~Module()
         ModuleCollection &modules = GetModuleCollection();
         ModuleCollection::iterator end = modules.end();
         ModuleCollection::iterator pos = std::find(modules.begin(), end, this);
-        if (pos != end)
-            modules.erase(pos);
+        assert (pos != end);
+        modules.erase(pos);
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::~Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -1171,7 +1171,7 @@ Module::MatchesModuleSpec (const ModuleSpec &module_ref)
     const FileSpec &platform_file_spec = module_ref.GetPlatformFileSpec();
     if (platform_file_spec)
     {
-        if (!FileSpec::Equal (platform_file_spec, m_platform_file, platform_file_spec.GetDirectory()))
+        if (!FileSpec::Equal (platform_file_spec, GetPlatformFileSpec (), platform_file_spec.GetDirectory()))
             return false;
     }
     

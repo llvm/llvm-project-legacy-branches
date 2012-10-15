@@ -71,8 +71,8 @@ public:
     CanDebug (lldb_private::Target &target,
               bool plugin_specified_by_name);
 
-//    virtual uint32_t
-//    ListProcessesMatchingName (const char *name, lldb_private::StringList &matches, std::vector<lldb::pid_t> &pids);
+    virtual lldb_private::CommandObject *
+    GetPluginCommandObject();
 
     //------------------------------------------------------------------
     // Creating a new process, or attaching to an existing one
@@ -94,7 +94,7 @@ public:
     WillAttachToProcessWithName (const char *process_name, bool wait_for_launch);
 
     virtual lldb_private::Error
-    DoConnectRemote (const char *remote_url);
+    DoConnectRemote (lldb_private::Stream *strm, const char *remote_url);
     
     lldb_private::Error
     WillLaunchOrAttach ();
@@ -293,6 +293,10 @@ protected:
         lldb_private::Mutex::Locker locker (m_last_stop_packet_mutex);
         m_last_stop_packet = response;
     }
+
+    void
+    CheckForKernel (lldb_private::Stream *strm);
+
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
     //------------------------------------------------------------------
@@ -325,6 +329,9 @@ protected:
     lldb::BreakpointSP m_thread_create_bp_sp;
     bool m_waiting_for_attach;
     bool m_destroy_tried_resuming;
+    std::string m_dyld_plugin_name;
+    lldb::addr_t m_kernel_load_addr;
+    lldb::CommandObjectSP m_command_sp;
     
     bool
     StartAsyncThread ();
@@ -372,6 +379,9 @@ protected:
     InterruptIfRunning (bool discard_thread_plans, 
                         bool catch_stop_event, 
                         lldb::EventSP &stop_event_sp);
+
+    lldb_private::DynamicLoader *
+    GetDynamicLoader ();
 
 private:
     //------------------------------------------------------------------

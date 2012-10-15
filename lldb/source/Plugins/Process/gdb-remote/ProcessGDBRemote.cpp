@@ -46,6 +46,7 @@
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/Value.h"
+#include "lldb/Host/Symbols.h"
 #include "lldb/Host/TimeValue.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/DynamicLoader.h"
@@ -64,6 +65,8 @@
 #include "ProcessGDBRemote.h"
 #include "ProcessGDBRemoteLog.h"
 #include "ThreadGDBRemote.h"
+
+#include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 
 namespace lldb
 {
@@ -204,7 +207,10 @@ ProcessGDBRemote::ProcessGDBRemote(Target& target, Listener &listener) :
     m_addr_to_mmap_size (),
     m_thread_create_bp_sp (),
     m_waiting_for_attach (false),
-    m_destroy_tried_resuming (false)
+    m_destroy_tried_resuming (false),
+    m_dyld_plugin_name(),
+    m_kernel_load_addr (LLDB_INVALID_ADDRESS),
+    m_command_sp ()
 {
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncThreadShouldExit,   "async thread should exit");
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncContinue,           "async thread continue");
@@ -427,7 +433,7 @@ ProcessGDBRemote::WillAttachToProcessWithName (const char *process_name, bool wa
 }
 
 Error
-ProcessGDBRemote::DoConnectRemote (const char *remote_url)
+ProcessGDBRemote::DoConnectRemote (Stream *strm, const char *remote_url)
 {
     Error error (WillLaunchOrAttach ());
     
@@ -439,6 +445,8 @@ ProcessGDBRemote::DoConnectRemote (const char *remote_url)
     if (error.Fail())
         return error;
     StartAsyncThread ();
+
+    CheckForKernel (strm);
 
     lldb::pid_t pid = m_gdb_comm.GetCurrentProcessID ();
     if (pid == LLDB_INVALID_PROCESS_ID)
@@ -475,6 +483,110 @@ ProcessGDBRemote::DoConnectRemote (const char *remote_url)
     }
 
     return error;
+}
+
+// When we are establishing a connection to a remote system and we have no executable specified,
+// or the executable is a kernel, we may be looking at a KASLR situation (where the kernel has been
+// slid in memory.)
+//
+// This function tries to locate the kernel in memory if this is possibly a kernel debug session.
+//
+// If a kernel is found, return the address of the kernel in GetImageInfoAddress() -- the 
+// DynamicLoaderDarwinKernel plugin uses this address as the kernel load address and will load the
+// binary, if needed, along with all the kexts.
+
+void
+ProcessGDBRemote::CheckForKernel (Stream *strm)
+{
+    // early return if this isn't an "unknown" system (kernel debugging doesn't have a system type)
+    const ArchSpec &gdb_remote_arch = m_gdb_comm.GetHostArchitecture();
+    if (!gdb_remote_arch.IsValid() || gdb_remote_arch.GetTriple().getVendor() != llvm::Triple::UnknownVendor)
+        return;
+
+    Module *exe_module = GetTarget().GetExecutableModulePointer();
+    ObjectFile *exe_objfile = NULL;
+    if (exe_module)
+        exe_objfile = exe_module->GetObjectFile();
+
+    // early return if we have an executable and it is not a kernel--this is very unlikely to be a kernel debug session.
+    if (exe_objfile
+        && (exe_objfile->GetType() != ObjectFile::eTypeExecutable 
+            || exe_objfile->GetStrata() != ObjectFile::eStrataKernel))
+        return;
+
+    // See if the kernel is in memory at the File address (slide == 0) -- no work needed, if so.
+    if (exe_objfile && exe_objfile->GetHeaderAddress().IsValid())
+    {
+        ModuleSP memory_module_sp;
+        memory_module_sp = ReadModuleFromMemory (exe_module->GetFileSpec(), exe_objfile->GetHeaderAddress().GetFileAddress(), false, false);
+        if (memory_module_sp.get() 
+            && memory_module_sp->GetUUID().IsValid() 
+            && memory_module_sp->GetUUID() == exe_module->GetUUID())
+        {
+            m_kernel_load_addr = exe_objfile->GetHeaderAddress().GetFileAddress();
+            m_dyld_plugin_name = DynamicLoaderDarwinKernel::GetPluginNameStatic();
+            SetCanJIT(false);
+            return;
+        }
+    }
+
+    // See if the kernel's load address is stored in the kernel's low globals page; this is
+    // done when a debug boot-arg has been set.  
+
+    Error error;
+    uint8_t buf[24];
+    ModuleSP memory_module_sp;
+    addr_t kernel_addr = LLDB_INVALID_ADDRESS;
+    
+    // First try the 32-bit 
+    if (memory_module_sp.get() == NULL)
+    {
+        DataExtractor data4 (buf, sizeof(buf), gdb_remote_arch.GetByteOrder(), 4);
+        if (DoReadMemory (0xffff0110, buf, 4, error) == 4)
+        {
+            uint32_t offset = 0;
+            kernel_addr = data4.GetU32(&offset);
+            memory_module_sp = ReadModuleFromMemory (FileSpec("mach_kernel", false), kernel_addr, false, false);
+            if (!memory_module_sp.get()
+                || !memory_module_sp->GetUUID().IsValid()
+                || memory_module_sp->GetObjectFile() == NULL
+                || memory_module_sp->GetObjectFile()->GetType() != ObjectFile::eTypeExecutable
+                || memory_module_sp->GetObjectFile()->GetStrata() != ObjectFile::eStrataKernel)
+            {
+                memory_module_sp.reset();
+            }
+        }
+    }
+
+    // Now try the 64-bit location
+    if (memory_module_sp.get() == NULL)
+    {
+        DataExtractor data8 (buf, sizeof(buf), gdb_remote_arch.GetByteOrder(), 8);
+        if (DoReadMemory (0xffffff8000002010ULL, buf, 8, error) == 8)
+        {   
+            uint32_t offset = 0; 
+            kernel_addr = data8.GetU32(&offset);
+            memory_module_sp = ReadModuleFromMemory (FileSpec("mach_kernel", false), kernel_addr, false, false);
+            if (!memory_module_sp.get()
+                || !memory_module_sp->GetUUID().IsValid()
+                || memory_module_sp->GetObjectFile() == NULL
+                || memory_module_sp->GetObjectFile()->GetType() != ObjectFile::eTypeExecutable
+                || memory_module_sp->GetObjectFile()->GetStrata() != ObjectFile::eStrataKernel)
+            {
+                memory_module_sp.reset();
+            }
+        }
+    }
+
+    if (memory_module_sp.get() 
+        && memory_module_sp->GetArchitecture().IsValid() 
+        && memory_module_sp->GetArchitecture().GetTriple().getVendor() == llvm::Triple::Apple)
+    {
+        m_kernel_load_addr = kernel_addr;
+        m_dyld_plugin_name = DynamicLoaderDarwinKernel::GetPluginNameStatic();
+        SetCanJIT(false);
+        return;
+    }
 }
 
 Error
@@ -1240,7 +1352,7 @@ ProcessGDBRemote::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new
             tid_t tid = m_thread_ids[i];
             ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
             if (!thread_sp)
-                thread_sp.reset (new ThreadGDBRemote (shared_from_this(), tid));
+                thread_sp.reset (new ThreadGDBRemote (*this, tid));
             new_thread_list.AddThread(thread_sp);
         }
     }
@@ -1307,7 +1419,7 @@ ProcessGDBRemote::SetThreadStopInfo (StringExtractor& stop_packet)
                     if (!thread_sp)
                     {
                         // Create the thread if we need to
-                        thread_sp.reset (new ThreadGDBRemote (shared_from_this(), tid));
+                        thread_sp.reset (new ThreadGDBRemote (*this, tid));
                         m_thread_list.AddThread(thread_sp);
                     }
                 }
@@ -1889,10 +2001,16 @@ ProcessGDBRemote::IsAlive ()
     return m_gdb_comm.IsConnected() && m_private_state.GetValue() != eStateExited;
 }
 
+// For kernel debugging, we return the load address of the kernel binary as the
+// ImageInfoAddress and we return the DynamicLoaderDarwinKernel as the GetDynamicLoader()
+// name so the correct DynamicLoader plugin is chosen.
 addr_t
 ProcessGDBRemote::GetImageInfoAddress()
 {
-    return m_gdb_comm.GetShlibInfoAddr();
+    if (m_kernel_load_addr != LLDB_INVALID_ADDRESS)
+        return m_kernel_load_addr;
+    else
+        return m_gdb_comm.GetShlibInfoAddr();
 }
 
 //------------------------------------------------------------------
@@ -2402,8 +2520,8 @@ ProcessGDBRemote::StartDebugserverProcess (const char *debugserver_url, const Pr
                 ::snprintf (arg_cstr, sizeof(arg_cstr), "--log-flags=%s", env_debugserver_log_flags);
                 debugserver_args.AppendArgument(arg_cstr);
             }
-            debugserver_args.AppendArgument("--log-file=/tmp/debugserver.txt");
-            debugserver_args.AppendArgument("--log-flags=0x802e0e");
+//            debugserver_args.AppendArgument("--log-file=/tmp/debugserver.txt");
+//            debugserver_args.AppendArgument("--log-flags=0x802e0e");
 
             // We currently send down all arguments, attach pids, or attach 
             // process names in dedicated GDB server packets, so we don't need
@@ -2909,4 +3027,66 @@ ProcessGDBRemote::StopNoticingNewThreads()
     return true;
 }
     
+lldb_private::DynamicLoader *
+ProcessGDBRemote::GetDynamicLoader ()
+{
+    if (m_dyld_ap.get() == NULL)
+        m_dyld_ap.reset (DynamicLoader::FindPlugin(this, m_dyld_plugin_name.empty() ? NULL : m_dyld_plugin_name.c_str()));
+    return m_dyld_ap.get();
+}
 
+#include "lldb/Interpreter/CommandObject.h"
+#include "lldb/Interpreter/CommandObjectMultiword.h"
+
+class CommandObjectProcessGDBRemotePacket : public CommandObjectParsed
+{
+private:
+    
+public:
+    CommandObjectProcessGDBRemotePacket(CommandInterpreter &interpreter) :
+    CommandObjectParsed (interpreter,
+                         "process plugin packet",
+                         "Send a custom packet through the GDB remote protocol and print the answer.",
+                         NULL)
+    {
+    }
+    
+    ~CommandObjectProcessGDBRemotePacket ()
+    {
+    }
+    
+    bool
+    DoExecute (Args& command, CommandReturnObject &result)
+    {
+        printf ("CommandObjectProcessGDBRemotePacket::DoExecute() called!!!\n");
+        return true;
+    }
+};
+
+
+class CommandObjectMultiwordProcessGDBRemote : public CommandObjectMultiword
+{
+public:
+    CommandObjectMultiwordProcessGDBRemote (CommandInterpreter &interpreter) :
+        CommandObjectMultiword (interpreter,
+                                "process plugin",
+                                "A set of commands for operating on a ProcessGDBRemote process.",
+                                "process plugin <subcommand> [<subcommand-options>]")
+    {
+        LoadSubCommand ("packet", CommandObjectSP (new CommandObjectProcessGDBRemotePacket    (interpreter)));
+    }
+
+    ~CommandObjectMultiwordProcessGDBRemote ()
+    {
+    }
+};
+
+
+
+CommandObject *
+ProcessGDBRemote::GetPluginCommandObject()
+{
+    if (!m_command_sp)
+        m_command_sp.reset (new CommandObjectMultiwordProcessGDBRemote (GetTarget().GetDebugger().GetCommandInterpreter()));
+    return m_command_sp.get();
+}

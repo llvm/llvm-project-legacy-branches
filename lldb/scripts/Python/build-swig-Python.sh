@@ -104,7 +104,7 @@ HEADER_FILES="${SRC_ROOT}/include/lldb/lldb.h"\
 " ${SRC_ROOT}/include/lldb/API/SBTypeSynthetic.h"\
 " ${SRC_ROOT}/include/lldb/API/SBValue.h"\
 " ${SRC_ROOT}/include/lldb/API/SBValueList.h"\
-" ${SRC_ROOT}/include/lldb/API/SBWatchpoint.h"\
+" ${SRC_ROOT}/include/lldb/API/SBWatchpoint.h"
 
 INTERFACE_FILES="${SRC_ROOT}/scripts/Python/interface/SBAddress.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBBlock.i"\
@@ -117,6 +117,7 @@ INTERFACE_FILES="${SRC_ROOT}/scripts/Python/interface/SBAddress.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBCompileUnit.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBData.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBDebugger.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBDeclaration.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBError.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBEvent.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBFileSpec.i"\

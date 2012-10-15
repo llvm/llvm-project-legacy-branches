@@ -1227,7 +1227,7 @@ DumpModuleArchitecture (Stream &strm, Module *module, bool full_triple, uint32_t
 static void
 DumpModuleUUID (Stream &strm, Module *module)
 {
-    if (module->GetUUID().IsValid())
+    if (module && module->GetUUID().IsValid())
         module->GetUUID().Dump (&strm);
     else
         strm.PutCString("                                    ");
@@ -2720,8 +2720,14 @@ protected:
                     }
                     else
                     {
-                        module->GetFileSpec().GetPath (path, sizeof(path));
-                        result.AppendErrorWithFormat ("invalid module '%s'.\n", path);
+                        FileSpec *module_spec_file = module_spec.GetFileSpecPtr();
+                        if (module_spec_file)
+                        {
+                            module_spec_file->GetPath (path, sizeof(path));
+                            result.AppendErrorWithFormat ("invalid module '%s'.\n", path);
+                        }
+                        else
+                            result.AppendError ("no module spec");
                         result.SetStatus (eReturnStatusFailed);
                     }
                 }
@@ -3033,6 +3039,12 @@ protected:
     PrintModule (Target *target, Module *module, uint32_t idx, int indent, Stream &strm)
     {
 
+        if (module == NULL)
+        {
+            strm.PutCString("Null module");
+            return;
+        }
+        
         bool dump_object_name = false;
         if (m_options.m_format_array.empty())
         {
@@ -3855,9 +3867,9 @@ protected:
                     const size_t num_matches = FindModulesByName (target, arg_cstr, module_list, false);
                     if (num_matches > 0)
                     {
-                        for (size_t i=0; i<num_matches; ++i)
+                        for (size_t j=0; j<num_matches; ++j)
                         {
-                            Module *module = module_list.GetModulePointerAtIndex(i);
+                            Module *module = module_list.GetModulePointerAtIndex(j);
                             if (module)
                             {
                                 if (LookupInModule (m_interpreter, module, result, syntax_error))

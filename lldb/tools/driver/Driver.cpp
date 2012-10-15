@@ -189,6 +189,25 @@ Driver::UpdateSelectedThread ()
         }
     }
 }
+void
+Driver::HandleThreadEvent (const SBEvent &event)
+{
+    // At present the only thread event we handle is the Frame Changed event, and all we do for that is just
+    // reprint the thread status for that thread.
+    using namespace lldb;
+    const uint32_t event_type = event.GetType();
+    if (event_type == SBThread::eBroadcastBitStackChanged)
+    {
+        SBThread thread = SBThread::GetThreadFromEvent (event);
+        if (thread.IsValid())
+        {
+            SBStream out_stream;
+            thread.GetStatus(out_stream);
+            m_io_channel_ap->OutWrite (out_stream.GetData (), out_stream.GetSize (), ASYNC);
+        }
+    }
+}
+
 
 void LogOutput(const char * msg, void *baton)
 {
@@ -217,12 +236,15 @@ void Driver::Initialize()
     m_interpreter = &sb_interpreter;
 
     SBListener listener(m_debugger.GetListener());
-    listener.StartListeningForEventClass(m_debugger, 
-                                         SBTarget::GetBroadcasterClassName(), 
-                                         SBTarget::eBroadcastBitBreakpointChanged);
     if (!listener.IsValid())
         return;
 
+        listener.StartListeningForEventClass(m_debugger, 
+                                         SBTarget::GetBroadcasterClassName(), 
+                                         SBTarget::eBroadcastBitBreakpointChanged);
+        listener.StartListeningForEventClass(m_debugger, 
+                                         SBThread::GetBroadcasterClassName(),
+                                         SBThread::eBroadcastBitStackChanged);
     listener.StartListeningForEvents (*m_io_channel_ap,
                                         IOChannel::eBroadcastBitHasUserInput |
                                         IOChannel::eBroadcastBitUserInterrupt |
@@ -291,6 +313,10 @@ Driver::MainLoop ()
         if (event.IsValid())
 		{
             ProcessEvent(event);
+                        }
+                        else if (SBThread::EventIsThreadEvent (event))
+                        {
+                            HandleThreadEvent (event);
         }
     }
 	

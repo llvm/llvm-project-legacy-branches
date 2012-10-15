@@ -60,6 +60,9 @@ namespace lldb_private {
         bool
         NSStringSummaryProvider (ValueObject& valobj, Stream& stream);
         
+        bool
+        RuntimeSpecificDescriptionSummaryProvider (ValueObject& valobj, Stream& stream);
+        
         template bool
         NSDictionarySummaryProvider<true> (ValueObject&, Stream&) ;
         

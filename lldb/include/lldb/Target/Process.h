@@ -1585,6 +1585,26 @@ public:
     }
 
     //------------------------------------------------------------------
+    /// Return a multi-word command object that can be used to expose
+    /// plug-in specific commands.
+    ///
+    /// This object will be used to resolve plug-in commands and can be
+    /// triggered by a call to:
+    ///
+    ///     (lldb) process commmand <args>
+    ///
+    /// @return
+    ///     A CommandObject which can be one of the concrete subclasses
+    ///     of CommandObject like CommandObjectRaw, CommandObjectParsed,
+    ///     or CommandObjectMultiword.
+    //------------------------------------------------------------------
+    virtual CommandObject *
+    GetPluginCommandObject()
+    {
+        return NULL;
+    }
+
+    //------------------------------------------------------------------
     /// Launch a new process.
     ///
     /// Launch a new process by spawning a new process using the
@@ -1679,8 +1699,22 @@ public:
     virtual Error
     Attach (ProcessAttachInfo &attach_info);
 
+    //------------------------------------------------------------------
+    /// Attach to a remote system via a URL
+    ///
+    /// @param[in] strm
+    ///     A stream where output intended for the user
+    ///     (if the driver has a way to display that) generated during
+    ///     the connection.  This may be NULL if no output is needed.A
+    ///
+    /// @param[in] remote_url
+    ///     The URL format that we are connecting to.
+    ///
+    /// @return
+    ///     Returns an error object.
+    //------------------------------------------------------------------
     virtual Error
-    ConnectRemote (const char *remote_url);
+    ConnectRemote (Stream *strm, const char *remote_url);
 
     bool
     GetShouldDetach () const
@@ -1902,8 +1936,22 @@ public:
         return Error(); 
     }
 
+    //------------------------------------------------------------------
+    /// Attach to a remote system via a URL
+    ///
+    /// @param[in] strm
+    ///     A stream where output intended for the user 
+    ///     (if the driver has a way to display that) generated during
+    ///     the connection.  This may be NULL if no output is needed.A
+    ///
+    /// @param[in] remote_url
+    ///     The URL format that we are connecting to.
+    ///
+    /// @return
+    ///     Returns an error object.
+    //------------------------------------------------------------------
     virtual Error
-    DoConnectRemote (const char *remote_url)
+    DoConnectRemote (Stream *strm, const char *remote_url)
     {
         Error error;
         error.SetErrorString ("remote connections are not supported");
@@ -2525,7 +2573,7 @@ public:
     /// Read a NULL terminated C string from memory
     ///
     /// This function will read a cache page at a time until the NULL
-    /// C stirng terminator is found. It will stop reading if the NULL
+    /// C string terminator is found. It will stop reading if the NULL
     /// termination byte isn't found before reading \a cstr_max_len
     /// bytes, and the results are always guaranteed to be NULL 
     /// terminated (at most cstr_max_len - 1 bytes will be read).

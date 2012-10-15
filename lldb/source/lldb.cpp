@@ -44,10 +44,10 @@
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 
+#include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 #if defined (__APPLE__)
 #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
 #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
-#include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 #include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
@@ -126,11 +126,11 @@ lldb_private::Initialize ()
 
         ObjectContainerUniversalMachO::Initialize();
         ObjectFileMachO::Initialize();
+        DynamicLoaderDarwinKernel::Initialize();
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
-        DynamicLoaderDarwinKernel::Initialize();
         OperatingSystemDarwinKernel::Initialize();
         ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
@@ -209,8 +209,8 @@ lldb_private::Terminate ()
 #endif
 
     DynamicLoaderMacOSXDYLD::Terminate();
-#if defined (__APPLE__)
     DynamicLoaderDarwinKernel::Terminate();
+#if defined (__APPLE__)
     OperatingSystemDarwinKernel::Terminate();
     ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();

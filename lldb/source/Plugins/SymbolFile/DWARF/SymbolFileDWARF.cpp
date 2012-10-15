@@ -921,9 +921,12 @@ SymbolFileDWARF::ParseCompileUnitLanguage (const SymbolContext& sc)
     if (dwarf_cu)
     {
         const DWARFDebugInfoEntry *die = dwarf_cu->GetCompileUnitDIEOnly();
-        const uint32_t language = die->GetAttributeValueAsUnsigned(this, dwarf_cu, DW_AT_language, 0);
-        if (language)
-            return (lldb::LanguageType)language;
+        if (die)
+        {
+            const uint32_t language = die->GetAttributeValueAsUnsigned(this, dwarf_cu, DW_AT_language, 0);
+            if (language)
+                return (lldb::LanguageType)language;
+        }
     }
     return eLanguageTypeUnknown;
 }
@@ -5916,14 +5919,16 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                     if (accessibility == eAccessNone)
                                         accessibility = eAccessPublic;
 
-                                    clang::ObjCMethodDecl *objc_method_decl;
-                                    objc_method_decl = ast.AddMethodToObjCObjectType (class_opaque_type, 
-                                                                                      type_name_cstr,
-                                                                                      clang_type,
-                                                                                      accessibility);
-                                    LinkDeclContextToDIE(ClangASTContext::GetAsDeclContext(objc_method_decl), die);
+                                    clang::ObjCMethodDecl *objc_method_decl = ast.AddMethodToObjCObjectType (class_opaque_type, 
+                                                                                                             type_name_cstr,
+                                                                                                             clang_type,
+                                                                                                             accessibility);
                                     type_handled = objc_method_decl != NULL;
-                                    GetClangASTContext().SetMetadata((uintptr_t)objc_method_decl, MakeUserID(die->GetOffset()));
+                                    if (type_handled)
+                                    {
+                                        LinkDeclContextToDIE(ClangASTContext::GetAsDeclContext(objc_method_decl), die);
+                                        GetClangASTContext().SetMetadata((uintptr_t)objc_method_decl, MakeUserID(die->GetOffset()));
+                                    }
                                 }
                             }
                             else if (is_cxx_method)

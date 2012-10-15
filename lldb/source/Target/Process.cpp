@@ -2751,10 +2751,19 @@ Process::Attach (ProcessAttachInfo &attach_info)
                 error = WillAttachToProcessWithName(process_name, wait_for_launch);
                 if (error.Success())
                 {
-                    m_should_detach = true;
+                    if (m_run_lock.WriteTryLock())
+                    {
+                        m_should_detach = true;
+                        SetPublicState (eStateAttaching);
+                        // Now attach using these arguments.
+                        error = DoAttachToProcessWithName (process_name, wait_for_launch, attach_info);
+                    }
+                    else
+                    {
+                        // This shouldn't happen
+                        error.SetErrorString("failed to acquire process run lock");
+                    }
 
-                    SetPublicState (eStateAttaching);
-                    error = DoAttachToProcessWithName (process_name, wait_for_launch, attach_info);
                     if (error.Fail())
                     {
                         if (GetID() != LLDB_INVALID_PROCESS_ID)
@@ -2818,10 +2827,20 @@ Process::Attach (ProcessAttachInfo &attach_info)
         error = WillAttachToProcessWithID(attach_pid);
         if (error.Success())
         {
-            m_should_detach = true;
-            SetPublicState (eStateAttaching);
 
-            error = DoAttachToProcessWithID (attach_pid, attach_info);
+            if (m_run_lock.WriteTryLock())
+            {
+                // Now attach using these arguments.
+                m_should_detach = true;
+                SetPublicState (eStateAttaching);
+                error = DoAttachToProcessWithID (attach_pid, attach_info);
+            }
+            else
+            {
+                // This shouldn't happen
+                error.SetErrorString("failed to acquire process run lock");
+            }
+
             if (error.Success())
             {
                 
@@ -2907,7 +2926,7 @@ Process::CompleteAttach ()
 }
 
 Error
-Process::ConnectRemote (const char *remote_url)
+Process::ConnectRemote (Stream *strm, const char *remote_url)
 {
     m_abi_sp.reset();
     m_process_input_reader.reset();
@@ -2915,7 +2934,7 @@ Process::ConnectRemote (const char *remote_url)
     // Find the process and its architecture.  Make sure it matches the architecture
     // of the current Target, and if not adjust it.
     
-    Error error (DoConnectRemote (remote_url));
+    Error error (DoConnectRemote (strm, remote_url));
     if (error.Success())
     {
         if (GetID() != LLDB_INVALID_PROCESS_ID)
@@ -3132,7 +3151,6 @@ Process::Destroy ()
         
                 if (state != eStateStopped)
                 {
-                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
                     if (log)
                         log->Printf("Process::Destroy() Halt failed to stop, state is: %s", StateAsCString(state));
                     // If we really couldn't stop the process then we should just error out here, but if the
@@ -3148,7 +3166,6 @@ Process::Destroy ()
             }
             else
             {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
                 if (log)
                     log->Printf("Process::Destroy() Halt got error: %s", error.AsCString());
                 return error;

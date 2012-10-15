@@ -98,17 +98,10 @@ public:
         virtual uint64_t
         GetInstanceSize () = 0;
         
-        virtual bool
-        IsRealized ()
-        {
-            // anything other than some instances of v2 classes are always realized
-            return true;
-        }
-        
         // use to implement version-specific additional constraints on pointers
         virtual bool
         CheckPointer (lldb::addr_t value,
-                      uint32_t ptr_size)
+                      uint32_t ptr_size) const
         {
             return true;
         }
@@ -135,7 +128,7 @@ public:
                         uint32_t ptr_size,
                         bool allow_NULLs = false,
                         bool allow_tagged = false,
-                        bool check_version_specific = false);
+                        bool check_version_specific = false) const;
         
     private:
         LazyBool m_is_kvo;
@@ -167,8 +160,10 @@ public:
         GetISA () { return 0; }
         
         virtual bool
-        CheckPointer (lldb::addr_t value,
-                      uint32_t ptr_size) { return false; }
+        CheckPointer (lldb::addr_t value, uint32_t ptr_size) const
+        {
+            return false;
+        }
         
         virtual
         ~ClassDescriptor_Invalid ()
@@ -177,16 +172,19 @@ public:
     };
     
     virtual ClassDescriptorSP
-    GetClassDescriptor (ValueObject& in_value)
-    {
-        return ClassDescriptorSP();
-    }
+    GetClassDescriptor (ValueObject& in_value);
     
+    ClassDescriptorSP
+    GetNonKVOClassDescriptor (ValueObject& in_value);
+
     virtual ClassDescriptorSP
-    GetClassDescriptor (ObjCISA isa)
-    {
-        return ClassDescriptorSP();
-    }
+    GetClassDescriptor (const ConstString &class_name);
+
+    virtual ClassDescriptorSP
+    GetClassDescriptor (ObjCISA isa);
+
+    ClassDescriptorSP
+    GetNonKVOClassDescriptor (ObjCISA isa);
     
     virtual
     ~ObjCLanguageRuntime();
@@ -208,7 +206,7 @@ public:
     
     virtual lldb::ThreadPlanSP
     GetStepThroughTrampolinePlan (Thread &thread, bool stop_others) = 0;
-    
+
     lldb::addr_t
     LookupInMethodCache (lldb::addr_t class_addr, lldb::addr_t sel);
 
@@ -236,17 +234,15 @@ public:
         return eObjC_VersionUnknown;
     }
         
-    virtual bool
-    IsValidISA(ObjCISA isa) = 0;
-    
-    virtual ObjCISA
-    GetISA(ValueObject& valobj) = 0;
-    
-    virtual void
-    UpdateISAToDescriptorMap_Impl()
+    bool
+    IsValidISA(ObjCISA isa)
     {
-        // to be implemented by runtimes if they support doing this
+        UpdateISAToDescriptorMap();
+        return m_isa_to_descriptor_cache.count(isa) > 0;
     }
+
+    virtual bool
+    UpdateISAToDescriptorMap_Impl() = 0;
     
     void
     UpdateISAToDescriptorMap()
@@ -254,9 +250,7 @@ public:
         if (m_isa_to_descriptor_cache_is_up_to_date)
             return;
         
-        m_isa_to_descriptor_cache_is_up_to_date = true;
-
-        UpdateISAToDescriptorMap_Impl();
+        m_isa_to_descriptor_cache_is_up_to_date = UpdateISAToDescriptorMap_Impl();
     }
     
     virtual ObjCISA

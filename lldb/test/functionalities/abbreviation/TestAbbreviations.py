@@ -36,6 +36,7 @@ class AbbreviationsTestCase(TestBase):
                     startstr = "The following is a list of built-in, permanent debugger commands:")
 
         # Several matching commands: list them and error out.
+        self.runCmd("command unalias t")
         self.expect("t",
                     COMMAND_FAILED_AS_EXPECTED, error = True,
                     substrs = ["Ambiguous command 't'. Possible matches:",
@@ -88,7 +89,7 @@ class AbbreviationsTestCase(TestBase):
                     patterns = [ "Current executable set to .*a.out.*" ])
 
         # By default, the setting interpreter.expand-regex-aliases is false.
-        self.expect("_regexp-b product", matching=False,
+        self.expect("_regexp-br product", matching=False,
                     substrs = [ "breakpoint set --name" ])
 
         match_object = lldbutil.run_break_set_command (self, "br s -n sum")

@@ -69,6 +69,9 @@ public:
     void
     HandleBreakpointEvent (const lldb::SBEvent &event);
 
+    void
+    HandleThreadEvent (const lldb::SBEvent &event);
+
     lldb::SBError
     ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &do_exit);
 

@@ -17,8 +17,11 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/State.h"
+#include "lldb/Core/UUID.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/Symbols.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/Target.h"
@@ -28,6 +31,7 @@
 #include "ProcessKDP.h"
 #include "ProcessKDPLog.h"
 #include "ThreadKDP.h"
+#include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -102,7 +106,9 @@ ProcessKDP::ProcessKDP(Target& target, Listener &listener) :
     m_comm("lldb.process.kdp-remote.communication"),
     m_async_broadcaster (NULL, "lldb.process.kdp-remote.async-broadcaster"),
     m_async_thread (LLDB_INVALID_HOST_THREAD),
-    m_destroy_in_process (false)
+    m_destroy_in_process (false),
+    m_dyld_plugin_name (),
+    m_kernel_load_addr (LLDB_INVALID_ADDRESS)
 {
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncThreadShouldExit,   "async thread should exit");
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncContinue,           "async thread continue");
@@ -167,7 +173,7 @@ ProcessKDP::WillAttachToProcessWithName (const char *process_name, bool wait_for
 }
 
 Error
-ProcessKDP::DoConnectRemote (const char *remote_url)
+ProcessKDP::DoConnectRemote (Stream *strm, const char *remote_url)
 {
     Error error;
 
@@ -214,6 +220,18 @@ ProcessKDP::DoConnectRemote (const char *remote_url)
                     ArchSpec kernel_arch;
                     kernel_arch.SetArchitecture(eArchTypeMachO, cpu, sub);
                     m_target.SetArchitecture(kernel_arch);
+
+                    /* Get the kernel's UUID and load address via kdp-kernelversion packet.  */
+                        
+                    UUID kernel_uuid = m_comm.GetUUID ();
+                    addr_t kernel_load_addr = m_comm.GetLoadAddress ();
+
+                    if (kernel_load_addr != LLDB_INVALID_ADDRESS)
+                    {
+                        m_kernel_load_addr = kernel_load_addr;
+                        m_dyld_plugin_name = DynamicLoaderDarwinKernel::GetPluginNameStatic();
+                    }
+
                     // Set the thread ID
                     UpdateThreadListIfNeeded ();
                     SetID (1);
@@ -237,13 +255,11 @@ ProcessKDP::DoConnectRemote (const char *remote_url)
                 }
                 else
                 {
-                    puts ("KDP_CONNECT failed"); // REMOVE THIS
                     error.SetErrorString("KDP_REATTACH failed");
                 }
             }
             else
             {
-                puts ("KDP_REATTACH failed"); // REMOVE THIS
                 error.SetErrorString("KDP_REATTACH failed");
             }
         }
@@ -313,6 +329,20 @@ ProcessKDP::DidAttach ()
     }
 }
 
+addr_t
+ProcessKDP::GetImageInfoAddress()
+{
+    return m_kernel_load_addr;
+}
+
+lldb_private::DynamicLoader *
+ProcessKDP::GetDynamicLoader ()
+{
+    if (m_dyld_ap.get() == NULL)
+        m_dyld_ap.reset (DynamicLoader::FindPlugin(this, m_dyld_plugin_name.empty() ? NULL : m_dyld_plugin_name.c_str()));
+    return m_dyld_ap.get();
+}
+
 Error
 ProcessKDP::WillResume ()
 {
@@ -340,17 +370,14 @@ ProcessKDP::DoResume ()
             case eStateSuspended:
                 // Nothing to do here when a thread will stay suspended
                 // we just leave the CPU mask bit set to zero for the thread
-                puts("REMOVE THIS: ProcessKDP::DoResume () -- thread suspended");
                 break;
                 
             case eStateStepping:
-                puts("REMOVE THIS: ProcessKDP::DoResume () -- thread stepping");
                 kernel_thread_sp->GetRegisterContext()->HardwareSingleStep (true);
                 resume = true;
                 break;
     
             case eStateRunning:
-                puts("REMOVE THIS: ProcessKDP::DoResume () -- thread running");
                 kernel_thread_sp->GetRegisterContext()->HardwareSingleStep (false);
                 resume = true;
                 break;
@@ -392,7 +419,7 @@ ProcessKDP::GetKernelThread(ThreadList &old_thread_list, ThreadList &new_thread_
     ThreadSP thread_sp (old_thread_list.FindThreadByID (kernel_tid, false));
     if (!thread_sp)
     {
-        thread_sp.reset(new ThreadKDP (shared_from_this(), kernel_tid));
+        thread_sp.reset(new ThreadKDP (*this, kernel_tid));
         new_thread_list.AddThread(thread_sp);
     }
     return thread_sp;
