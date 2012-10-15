@@ -405,7 +405,7 @@ def RNDNE : R600_1OP <
 
 def FLOOR : R600_1OP <
   0x14, "FLOOR",
-  [(set R600_Reg32:$dst, (int_AMDGPU_floor R600_Reg32:$src))]
+  [(set R600_Reg32:$dst, (ffloor R600_Reg32:$src))]
 >;
 
 let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in {
