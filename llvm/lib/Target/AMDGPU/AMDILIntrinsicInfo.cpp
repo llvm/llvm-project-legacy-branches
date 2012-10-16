@@ -76,18 +76,10 @@ AMDGPUIntrinsicInfo::isOverloaded(unsigned id) const
 #undef GET_INTRINSIC_OVERLOAD_TABLE
 }
 
-/// This defines the "getAttributes(ID id)" method.
-#define GET_INTRINSIC_ATTRIBUTES
-#include "AMDGPUGenIntrinsics.inc"
-#undef GET_INTRINSIC_ATTRIBUTES
-
 Function*
 AMDGPUIntrinsicInfo::getDeclaration(Module *M, unsigned IntrID,
     Type **Tys,
     unsigned numTys) const 
 {
-  //Silence a warning
-  AttrListPtr List = getAttributes((AMDGPUIntrinsic::ID)IntrID);
-  (void)List;
   assert(!"Not implemented");
 }
