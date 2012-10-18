@@ -35,6 +35,11 @@ set( LLDB_USED_LIBS
   lldbPluginUnwindAssemblyInstEmulation
   lldbPluginUnwindAssemblyX86
   lldbPluginDynamicLoaderDarwinKernel
+  lldbPluginAppleObjCRuntime
+  lldbPluginCXXItaniumABI
+  lldbPluginABIMacOSX_arm
+  lldbPluginABIMacOSX_i386
+  lldbPluginABISysV_x86_64
 
   
   # Windows

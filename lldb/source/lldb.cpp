@@ -45,13 +45,13 @@
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
-#if defined (__APPLE__)
-#include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
-#include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
-#include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
+#include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
+#include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
+#if defined (__APPLE__)
+#include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
 #include "Plugins/Process/MacOSX-Kernel/ProcessKDP.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #endif
@@ -103,10 +103,10 @@ lldb_private::Initialize ()
         PlatformWindows::Initialize();
 #endif
 
-#ifndef _WIN32
         ABIMacOSX_i386::Initialize();
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
+#ifndef _WIN32
         DisassemblerLLVMC::Initialize();
         DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
@@ -127,14 +127,14 @@ lldb_private::Initialize ()
         ObjectContainerUniversalMachO::Initialize();
         ObjectFileMachO::Initialize();
         DynamicLoaderDarwinKernel::Initialize();
+        ItaniumABILanguageRuntime::Initialize();
+        AppleObjCRuntimeV2::Initialize();
+        AppleObjCRuntimeV1::Initialize();
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
         OperatingSystemDarwinKernel::Initialize();
-        ItaniumABILanguageRuntime::Initialize();
-        AppleObjCRuntimeV2::Initialize();
-        AppleObjCRuntimeV1::Initialize();
         ProcessGDBRemote::Initialize();
         ProcessKDP::Initialize();
         ProcessMachCore::Initialize();
@@ -188,10 +188,10 @@ lldb_private::Terminate ()
     // Terminate and unload and loaded system or user LLDB plug-ins
     PluginManager::Terminate();
 
-#ifndef _WIN32
     ABIMacOSX_i386::Terminate();
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
+#ifndef _WIN32
     DisassemblerLLVMC::Terminate();
     DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
@@ -210,11 +210,11 @@ lldb_private::Terminate ()
 
     DynamicLoaderMacOSXDYLD::Terminate();
     DynamicLoaderDarwinKernel::Terminate();
-#if defined (__APPLE__)
-    OperatingSystemDarwinKernel::Terminate();
     ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
     AppleObjCRuntimeV1::Terminate();
+#if defined (__APPLE__)
+    OperatingSystemDarwinKernel::Terminate();
     ProcessMachCore::Terminate();
     ProcessGDBRemote::Terminate();
     ProcessKDP::Terminate();

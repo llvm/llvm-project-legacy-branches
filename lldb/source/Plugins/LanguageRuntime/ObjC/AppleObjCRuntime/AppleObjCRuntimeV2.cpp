@@ -755,7 +755,8 @@ public:
                    lldb::addr_t load_addr) :
         m_process_sp(process_sp),
         m_end_iterator(*this, -1ll),
-        m_load_addr(load_addr)
+        m_load_addr(load_addr),
+        m_classheader_size((sizeof(int32_t) * 2))
     {
         lldb::addr_t cursor = load_addr;
         
@@ -968,7 +969,7 @@ private:
     lldb::ProcessSP                     m_process_sp;
     const_iterator                      m_end_iterator;
     lldb::addr_t                        m_load_addr;
-    const size_t                        m_classheader_size = (sizeof(int32_t) * 2);
+    const size_t                        m_classheader_size;
 };
 
 class ClassDescriptorV2 : public ObjCLanguageRuntime::ClassDescriptor
@@ -1745,8 +1746,10 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMap_Impl()
             {
                 RemoteNXMapTable gdb_objc_realized_classes(process_sp, gdb_objc_realized_classes_nxmaptable_ptr);
             
-                for (RemoteNXMapTable::element elt : gdb_objc_realized_classes)
+                //for (RemoteNXMapTable::element elt : gdb_objc_realized_classes)
+                for (RemoteNXMapTable::const_iterator it = gdb_objc_realized_classes.begin(); it != gdb_objc_realized_classes.end(); ++it)
                 {
+                    RemoteNXMapTable::element elt = *it;
                     ++num_map_table_isas;
                     
                     if (m_isa_to_descriptor_cache.count(elt.second))
@@ -1784,9 +1787,10 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMap_Impl()
                     if (objc_opt_ptr != LLDB_INVALID_ADDRESS)
                     {
                         RemoteObjCOpt objc_opt(process_sp, objc_opt_ptr);
-                        
-                        for (ObjCLanguageRuntime::ObjCISA objc_isa : objc_opt)
+                                                
+                        for (RemoteObjCOpt::const_iterator it = objc_opt.begin(); it != objc_opt.end(); ++it)
                         {
+                            ObjCLanguageRuntime::ObjCISA objc_isa = *it;
                             ++num_objc_opt_ro_isas;
                             if (m_isa_to_descriptor_cache.count(objc_isa))
                                 continue;

@@ -562,14 +562,11 @@ Symtab::AppendSymbolIndexesWithNameAndType (const ConstString& symbol_name, Symb
 
     if (AppendSymbolIndexesWithName(symbol_name, indexes) > 0)
     {
-        std::vector<uint32_t>::iterator pos = indexes.begin();
-        while (pos != indexes.end())
+        for (int i = indexes.size()-1; i>= 0; i -- )
         {
-            if (symbol_type == eSymbolTypeAny || m_symbols[*pos].GetType() == symbol_type)
-                ++pos;
-            else
-                indexes.erase(pos);
-        }
+            if (!(symbol_type == eSymbolTypeAny || m_symbols[indexes[i]].GetType() == symbol_type))
+                indexes.erase(indexes.begin() + i);
+        }       
     }
     return indexes.size();
 }
@@ -581,14 +578,11 @@ Symtab::AppendSymbolIndexesWithNameAndType (const ConstString& symbol_name, Symb
 
     if (AppendSymbolIndexesWithName(symbol_name, symbol_debug_type, symbol_visibility, indexes) > 0)
     {
-        std::vector<uint32_t>::iterator pos = indexes.begin();
-        while (pos != indexes.end())
+        for (int i = indexes.size() - 1; i>= 0; i -- )
         {
-            if (symbol_type == eSymbolTypeAny || m_symbols[*pos].GetType() == symbol_type)
-                ++pos;
-            else
-                indexes.erase(pos);
-        }
+            if (!(symbol_type == eSymbolTypeAny || m_symbols[indexes[i]].GetType() == symbol_type))
+                indexes.erase(indexes.begin() + i);
+        }       
     }
     return indexes.size();
 }

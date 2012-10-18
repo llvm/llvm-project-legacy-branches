@@ -667,6 +667,8 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
 
 #ifndef _WIN32
 static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
+#else
+static unsigned int g_thread_map_once = 0;
 #endif
 static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
 
@@ -687,6 +689,9 @@ ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name
     int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
     if (success != 0)
         return NULL;
+#else
+    if (InterlockedExchange(&g_thread_map_once, 1) == 0)
+        InitThreadNamesMap();
 #endif
     
     uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
