@@ -819,17 +819,17 @@ class RECIP_CLAMPED_Common <bits<11> inst> : R600_1OP <
   []
 >;
 
-class RECIP_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIP_IEEE",
-  [(set R600_Reg32:$dst, (int_AMDGPU_rcp R600_Reg32:$src))]
->;
-
 class RECIP_UINT_Common <bits<11> inst> : R600_1OP <
   inst, "RECIP_INT $dst, $src",
   [(set R600_Reg32:$dst, (AMDGPUurecip R600_Reg32:$src))]
 >;
 
 let FlagOperandIdx = 3 in {
+
+class RECIP_IEEE_Common <bits<11> inst> : R600_1OP <
+  inst, "RECIP_IEEE",
+  [(set R600_Reg32:$dst, (int_AMDGPU_rcp R600_Reg32:$src))]
+>;
 
 class RECIPSQRT_CLAMPED_Common <bits<11> inst> : R600_1OP <
   inst, "RECIPSQRT_CLAMPED",
