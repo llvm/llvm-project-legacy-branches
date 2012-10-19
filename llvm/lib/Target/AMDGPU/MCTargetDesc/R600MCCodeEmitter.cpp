@@ -540,8 +540,7 @@ void R600MCCodeEmitter::EmitFCInstr(const MCInst &MI, raw_ostream &OS) const {
   case AMDGPU::BREAK_LOGICALZ_i32:
     instr = FC_BREAK_Z_INT;
     break;
-  case AMDGPU::CONTINUE_LOGICALNZ_f32:
-  case AMDGPU::CONTINUE_LOGICALNZ_i32:
+  case AMDGPU::CONTINUE:
     instr = FC_CONTINUE;
     break;
   case AMDGPU::IF_LOGICALNZ_f32:
@@ -633,7 +632,7 @@ bool R600MCCodeEmitter::isFCOp(unsigned opcode) const {
   case AMDGPU::BREAK_LOGICALNZ_i32:
   case AMDGPU::BREAK_LOGICALZ_i32:
   case AMDGPU::BREAK_LOGICALNZ_f32:
-  case AMDGPU::CONTINUE_LOGICALNZ_f32:
+  case AMDGPU::CONTINUE:
   case AMDGPU::IF_LOGICALNZ_i32:
   case AMDGPU::IF_LOGICALZ_f32:
   case AMDGPU::ELSE:
