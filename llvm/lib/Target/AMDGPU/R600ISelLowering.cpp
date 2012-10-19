@@ -128,6 +128,17 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
       return BB;
     }
 
+  case AMDGPU::MOV_IMM_F32:
+    TII->buildMovImm(*BB, I, MI->getOperand(0).getReg(),
+                     MI->getOperand(1).getFPImm()->getValueAPF()
+                         .bitcastToAPInt().getZExtValue());
+    break;
+  case AMDGPU::MOV_IMM_I32:
+    TII->buildMovImm(*BB, I, MI->getOperand(0).getReg(),
+                     MI->getOperand(1).getImm());
+    break;
+
+
   case AMDGPU::RAT_WRITE_CACHELESS_32_eg:
   case AMDGPU::RAT_WRITE_CACHELESS_128_eg:
     {
@@ -141,11 +152,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
       // XXX In theory, we should be able to pass ShiftValue directly to
       // the LSHR_eg instruction as an inline literal, but I tried doing it
       // this way and it didn't produce the correct results.
-      BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::MOV_IMM_I32),
-              ShiftValue)
-              .addReg(AMDGPU::ALU_LITERAL_X)
-              .addReg(AMDGPU::PRED_SEL_OFF)
-              .addImm(2);
+      TII->buildMovImm(*BB, I, ShiftValue, 2);
       BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::LSHR_eg), NewAddr)
               .addOperand(MI->getOperand(1))
               .addReg(ShiftValue)

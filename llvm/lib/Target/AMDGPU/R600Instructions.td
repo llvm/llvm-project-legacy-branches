@@ -516,31 +516,27 @@ def FLOOR : R600_1OP_Helper <0x14, "FLOOR", ffloor>;
 
 def MOV : R600_1OP <0x19, "MOV", []>;
 
-class MOV_IMM <ValueType vt, Operand immType> : InstR600 <0x19,
+let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1 in {
+
+class MOV_IMM <ValueType vt, Operand immType> : AMDGPUInst <
   (outs R600_Reg32:$dst),
-  (ins R600_Reg32:$alu_literal, R600_Pred:$p, immType:$imm),
-  "MOV_IMM $dst, $imm",
-  [], AnyALU
->{
-  bits<7> dst;
-  bits<9> alu_literal;
-  bits<9> p;
-  let Inst{8-0}   = alu_literal;
-  let Inst{21-13} = p;
-  let Inst{49-39} = op_code;
-  let Inst{59-53} = dst;
-}
+  (ins immType:$imm),
+  "",
+  []
+>;
+
+} // end let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1
 
 def MOV_IMM_I32 : MOV_IMM<i32, i32imm>;
 def : Pat <
   (imm:$val),
-  (MOV_IMM_I32 (i32 ALU_LITERAL_X), imm:$val)
+  (MOV_IMM_I32 imm:$val)
 >;
 
 def MOV_IMM_F32 : MOV_IMM<f32, f32imm>;
 def : Pat <
   (fpimm:$val),
-  (MOV_IMM_F32 (i32 ALU_LITERAL_X), fpimm:$val)
+  (MOV_IMM_F32  fpimm:$val)
 >;
 
 def KILLGT : InstR600 <0x2D,
@@ -989,12 +985,12 @@ let Predicates = [isR600] in {
 // cards.
 class COS_PAT <InstR600 trig> : Pat<
   (fcos R600_Reg32:$src),
-  (trig (MUL (MOV_IMM_I32 (i32 ALU_LITERAL_X), CONST.TWO_PI_INV), R600_Reg32:$src))
+  (trig (MUL (MOV_IMM_I32 CONST.TWO_PI_INV), R600_Reg32:$src))
 >;
 
 class SIN_PAT <InstR600 trig> : Pat<
   (fsin R600_Reg32:$src),
-  (trig (MUL (MOV_IMM_I32 (i32 ALU_LITERAL_X), CONST.TWO_PI_INV), R600_Reg32:$src))
+  (trig (MUL (MOV_IMM_I32 CONST.TWO_PI_INV), R600_Reg32:$src))
 >;
 
 //===----------------------------------------------------------------------===//
@@ -1376,7 +1372,7 @@ defm DIV_cm : DIV_Common<RECIP_IEEE_cm>;
 def : Pat <
   (AMDGPUurecip R600_Reg32:$src0),
   (FLT_TO_UINT_eg (MUL_IEEE (RECIP_IEEE_cm (UINT_TO_FLT_eg R600_Reg32:$src0)),
-                            (MOV_IMM_I32 (i32 ALU_LITERAL_X), 0x4f800000)))
+                            (MOV_IMM_I32 0x4f800000)))
 >;
 
 } // End isCayman

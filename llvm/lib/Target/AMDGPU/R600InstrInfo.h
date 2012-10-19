@@ -120,6 +120,11 @@ namespace llvm {
                                               unsigned DstReg,
                                               unsigned Src0Reg) const;
 
+  MachineInstr *buildMovImm(MachineBasicBlock &BB,
+                                  MachineBasicBlock::iterator I,
+                                  unsigned DstReg,
+                                  uint64_t Imm) const;
+
   /// getOperandIdx - Get the index of Op in the MachineInstr.  Returns -1
   /// if the Instruction does not contain the specified Op.
   int getOperandIdx(const MachineInstr &MI, R600Operands::Ops Op) const;

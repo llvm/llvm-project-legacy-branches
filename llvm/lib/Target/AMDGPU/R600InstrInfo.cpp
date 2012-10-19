@@ -496,6 +496,17 @@ MachineInstrBuilder R600InstrInfo::buildDefaultInstruction(MachineBasicBlock &MB
     .addImm(0);        // $literal
 }
 
+MachineInstr *R600InstrInfo::buildMovImm(MachineBasicBlock &BB,
+                                         MachineBasicBlock::iterator I,
+                                         unsigned DstReg,
+                                         uint64_t Imm) const
+{
+  MachineInstr *MovImm = buildDefaultInstruction(BB, I, AMDGPU::MOV, DstReg,
+                                                  AMDGPU::ALU_LITERAL_X);
+  MovImm->getOperand(getOperandIdx(*MovImm, R600Operands::IMM)).setImm(Imm);
+  return MovImm;
+}
+
 int R600InstrInfo::getOperandIdx(const MachineInstr &MI,
                                  R600Operands::Ops Op) const
 {
