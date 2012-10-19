@@ -119,8 +119,25 @@ class R600ALU_Word0 {
   let Word0{31}    = last;
 }
 
-class R600ALU_Word1_OP2 <bits<11> alu_inst> {
+class R600ALU_Word1 {
   field bits<32> Word1;
+
+  bits<11> dst;
+  bits<3>  bank_swizzle = 0;
+  bits<1>  dst_rel;
+  bits<1>  clamp;
+
+  bits<7>  dst_sel  = dst{6-0};
+  bits<2>  dst_chan = dst{10-9};
+
+  let Word1{20-18} = bank_swizzle;
+  let Word1{27-21} = dst_sel;
+  let Word1{28}    = dst_rel;
+  let Word1{30-29} = dst_chan;
+  let Word1{31}    = clamp;
+}
+
+class R600ALU_Word1_OP2 <bits<11> alu_inst> : R600ALU_Word1{
 
   bits<1>  src0_abs;
   bits<1>  src1_abs;
@@ -128,13 +145,6 @@ class R600ALU_Word1_OP2 <bits<11> alu_inst> {
   bits<1>  update_pred = 0;
   bits<1>  write;
   bits<2>  omod;
-  bits<3>  bank_swizzle = 0;
-  bits<11> dst;
-  bits<1>  dst_rel;
-  bits<1>  clamp;
-
-  bits<7>  dst_sel  = dst{6-0};
-  bits<2>  dst_chan = dst{10-9};
 
   let Word1{0}     = src0_abs;
   let Word1{1}     = src1_abs;
@@ -143,11 +153,22 @@ class R600ALU_Word1_OP2 <bits<11> alu_inst> {
   let Word1{4}     = write;
   let Word1{6-5}   = omod;
   let Word1{17-7}  = alu_inst;
-  let Word1{20-18} = bank_swizzle;
-  let Word1{27-21} = dst_sel;
-  let Word1{28}    = dst_rel;
-  let Word1{30-29} = dst_chan;
-  let Word1{31}    = clamp;
+}
+
+class R600ALU_Word1_OP3 <bits<5> alu_inst> : R600ALU_Word1{
+
+  bits<11> src2;
+  bits<1>  src2_rel;
+  bits<1>  src2_neg;
+
+  bits<9>  src2_sel = src2{8-0};
+  bits<2>  src2_chan = src2{10-9};
+
+  let Word1{8-0}   = src2_sel;
+  let Word1{9}     = src2_rel;
+  let Word1{11-10} = src2_chan;
+  let Word1{12}    = src2_neg;
+  let Word1{17-13} = alu_inst;
 }
 
 /*
@@ -256,27 +277,36 @@ class R600_2OP_Helper <bits<11> inst, string opName, SDPatternOperator node,
                                            R600_Reg32:$src1))]
 >;
 
-class R600_3OP <bits<11> inst, string opName, list<dag> pattern,
+// If you add our change the operands for R600_3OP instructions, you must
+// also update the R600Op3OperandIndex::ROI enum in R600Defines.h,
+// R600InstrInfo::buildDefaultInstruction(), and
+// R600InstrInfo::getOperandIdx().
+class R600_3OP <bits<5> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
-  InstR600 <inst,
+  InstR600 <0,
           (outs R600_Reg32:$dst),
-          (ins R600_Reg32:$src0, R600_Reg32:$src1, R600_Reg32:$src2,R600_Pred:$p, variable_ops),
-          !strconcat(opName, " $dst, $src0, $src1, $src2"),
+          (ins REL:$dst_rel, CLAMP:$clamp,
+               R600_Reg32:$src0, NEG:$src0_neg, REL:$src0_rel,
+               R600_Reg32:$src1, NEG:$src1_neg, REL:$src1_rel,
+               R600_Reg32:$src2, NEG:$src2_neg, REL:$src2_rel,
+               LAST:$last, R600_Pred:$pred_sel, LITERAL:$literal),
+          !strconcat(opName, "$clamp $dst$dst_rel, "
+                             "$src0_neg$src0$src0_rel, "
+                             "$src1_neg$src1$src1_rel, "
+                             "$src2_neg$src2$src2_rel, "
+                             "$literal $pred_sel$last"),
           pattern,
-          itin>{
-    bits<7> dst;
-    bits<9> src0;
-    bits<9> src1;
-    bits<9> src2;
-    let Inst{8-0}   = src0;
-    let Inst{21-13} = src1;
-    let Inst{40-32} = src2;
-    let Inst{49-45} = inst{4-0};
-    let Inst{59-53} = dst;
-    let Op3 = 1;
-  }
+          itin>,
+    R600ALU_Word0,
+    R600ALU_Word1_OP3<inst>{
 
+  let HasNativeOperands = 1;
+  let DisableEncoding = "$literal";
+  let Op3 = 1;
 
+  let Inst{31-0}  = Word0;
+  let Inst{63-32} = Word1;
+}
 
 def PRED_X : InstR600 <0, (outs R600_Predicate_Bit:$dst),
            (ins R600_Reg32:$src0, i32imm:$src1, i32imm:$flags),
@@ -707,18 +737,18 @@ def TEX_SAMPLE_C_G : R600_TEX <
 // Helper classes for common instructions
 //===----------------------------------------------------------------------===//
 
-class MUL_LIT_Common <bits<11> inst> : R600_3OP <
+class MUL_LIT_Common <bits<5> inst> : R600_3OP <
   inst, "MUL_LIT",
   []
 >;
 
-class MULADD_Common <bits<11> inst> : R600_3OP <
+class MULADD_Common <bits<5> inst> : R600_3OP <
   inst, "MULADD",
   [(set (f32 R600_Reg32:$dst),
    (IL_mad R600_Reg32:$src0, R600_Reg32:$src1, R600_Reg32:$src2))]
 >;
 
-class CNDE_Common <bits<11> inst> : R600_3OP <
+class CNDE_Common <bits<5> inst> : R600_3OP <
   inst, "CNDE",
   [(set R600_Reg32:$dst,
    (selectcc (f32 R600_Reg32:$src0), FP_ZERO,
@@ -726,7 +756,7 @@ class CNDE_Common <bits<11> inst> : R600_3OP <
        COND_EQ))]
 >;
 
-class CNDGT_Common <bits<11> inst> : R600_3OP <
+class CNDGT_Common <bits<5> inst> : R600_3OP <
   inst, "CNDGT",
   [(set R600_Reg32:$dst,
    (selectcc (f32 R600_Reg32:$src0), FP_ZERO,
@@ -734,7 +764,7 @@ class CNDGT_Common <bits<11> inst> : R600_3OP <
        COND_GT))]
 >;
 
-class CNDGE_Common <bits<11> inst> : R600_3OP <
+class CNDGE_Common <bits<5> inst> : R600_3OP <
   inst, "CNDGE",
   [(set R600_Reg32:$dst,
    (selectcc (f32 R600_Reg32:$src0), FP_ZERO,
