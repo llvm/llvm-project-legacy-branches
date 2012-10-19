@@ -205,104 +205,23 @@ void R600MCCodeEmitter::EmitALUInstr(const MCInst &MI,
     InstWord01 |= ISAOpCode << 1;
   }
 
-  if (HAS_NATIVE_OPERANDS(MCDesc.TSFlags)) {
-    unsigned SrcIdx = 0;
-    for (unsigned int OpIdx = 1; OpIdx < NumOperands; ++OpIdx) {
-      if (MI.getOperand(OpIdx).isImm() || MI.getOperand(OpIdx).isFPImm() ||
-          OpIdx == (unsigned)MCDesc.findFirstPredOperandIdx()) {
-        continue;
-      }
-      EmitSrcISA(MI, OpIdx, InstWord01, OS);
-      SrcIdx++;
+  unsigned SrcIdx = 0;
+  for (unsigned int OpIdx = 1; OpIdx < NumOperands; ++OpIdx) {
+    if (MI.getOperand(OpIdx).isImm() || MI.getOperand(OpIdx).isFPImm() ||
+        OpIdx == (unsigned)MCDesc.findFirstPredOperandIdx()) {
+      continue;
     }
-
-    // Emit zeros for unused sources
-    for ( ; SrcIdx < 3; SrcIdx++) {
-      EmitNullBytes(SRC_BYTE_COUNT - 6, OS);
-    }
-
-    Emit(InstWord01, OS);
-    return;
-  }
-
-  if(MCDesc.findFirstPredOperandIdx() > -1)
-    NumOperands--;
-
-  if (GET_FLAG_OPERAND_IDX(MCDesc.TSFlags) != 0)
-    NumOperands--;
-
-  if(MI.getOpcode() == AMDGPU::PRED_X)
-    NumOperands = 2;
-
-  // XXX Check if instruction writes a result
-  if (NumOperands < 1) {
-    return;
-  }
-
-  unsigned int OpIndex;
-  for (OpIndex = 1; OpIndex < NumOperands; OpIndex++) {
-    // Literal constants are always stored as the last operand.
-    if (MI.getOperand(OpIndex).isImm() || MI.getOperand(OpIndex).isFPImm()) {
-      break;
-    }
-    EmitSrcISA(MI, OpIndex, InstWord01, OS);
+    EmitSrcISA(MI, OpIdx, InstWord01, OS);
+    SrcIdx++;
   }
 
   // Emit zeros for unused sources
-  for ( ; OpIndex < 4; OpIndex++) {
+  for ( ; SrcIdx < 3; SrcIdx++) {
     EmitNullBytes(SRC_BYTE_COUNT - 6, OS);
   }
 
-  // Emit destination register
-  const MCOperand &dstOp = MI.getOperand(0);
-  if (dstOp.isReg() && dstOp.getReg() != AMDGPU::PREDICATE_BIT) {
-    //element of destination register
-    InstWord01 |= uint64_t(getHWRegChan(dstOp.getReg())) << 61;
-
-    // isClamped
-    if (isFlagSet(MI, 0, MO_FLAG_CLAMP)) {
-      InstWord01 |= 1ULL << 63;
-    }
-
-    // write mask
-    if (!isFlagSet(MI, 0, MO_FLAG_MASK) && NumOperands < 4) {
-      InstWord01 |= 1ULL << 36;
-    }
-
-    // XXX: Emit relative addressing mode
-  }
-
-  // Emit ALU
-
-  // Emit IsLast (for this instruction group) (1 byte)
-  if (!isFlagSet(MI, 0, MO_FLAG_NOT_LAST)) {
-    InstWord01 |= 1ULL << 31;
-  }
-
-  // XXX: Emit push modifier
-  if(isFlagSet(MI, 0,  MO_FLAG_PUSH)) {
-    InstWord01 |= 1ULL << 34;
-  }
-
-    // XXX: Emit predicate (1 byte)
-  int PredIdx = MCDesc.findFirstPredOperandIdx();
-  if (PredIdx != -1) {
-    switch(MI.getOperand(PredIdx).getReg()) {
-    case AMDGPU::PRED_SEL_ZERO:
-      InstWord01 |= 2ULL << 29;
-      break;
-    case AMDGPU::PRED_SEL_ONE:
-      InstWord01 |= 3ULL << 29;
-      break;
-    }
-  }
-
-  //XXX: predicate
-  //XXX: bank swizzle
-  //XXX: OMOD
-  //XXX: index mode
-
   Emit(InstWord01, OS);
+  return;
 }
 
 void R600MCCodeEmitter::EmitSrc(const MCInst &MI, unsigned OpIdx,
@@ -398,49 +317,10 @@ void R600MCCodeEmitter::EmitSrcISA(const MCInst &MI, unsigned OpIdx,
         InlineConstant.i = ImmOp.getImm();
       }
     }
-  } else {
-    // XXX: Handle other operand types.
-    EmitTwoBytes(0, OS);
   }
 
   // Emit the literal value, if applicable (4 bytes).
   Emit(InlineConstant.i, OS);
-
-  if (HAS_NATIVE_OPERANDS(MCII.get(MI.getOpcode()).TSFlags)) {
-    return;
-  }
-
-  // source channel
-  uint64_t sourceChannelValue = getHWRegChan(MO.getReg());
-  if (OpIdx == 1)
-    Value |= sourceChannelValue << 10;
-  if (OpIdx == 2)
-    Value |= sourceChannelValue << 23;
-  if (OpIdx == 3)
-    Value |= sourceChannelValue << 42;
-
-  // isNegated
-  if ((!(isFlagSet(MI, OpIdx, MO_FLAG_ABS)))
-      && (isFlagSet(MI, OpIdx, MO_FLAG_NEG) ||
-     (MO.isReg() &&
-      (MO.getReg() == AMDGPU::NEG_ONE || MO.getReg() == AMDGPU::NEG_HALF)))){
-    if (OpIdx == 1)
-      Value |= 1ULL << 12;
-    else if (OpIdx == 2)
-      Value |= 1ULL << 25;
-    else if (OpIdx == 3)
-      Value |= 1ULL << 44;
-  }
-
-  // isAbsolute
-  if (isFlagSet(MI, OpIdx, MO_FLAG_ABS)) {
-    assert(OpIdx < 3);
-    Value |= 1ULL << (32+OpIdx-1);
-  }
-
-  // XXX: relative addressing mode
-  // XXX: kc_bank
-
 }
 
 void R600MCCodeEmitter::EmitTexInstr(const MCInst &MI,
