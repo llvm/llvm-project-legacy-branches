@@ -313,15 +313,6 @@ class R600_3OP <bits<5> inst, string opName, list<dag> pattern,
   let Inst{63-32} = Word1;
 }
 
-let isTerminator = 1, isBranch = 1, isPseudo = 1 in {
-def JUMP : InstR600 <0x10,
-          (outs),
-          (ins brtarget:$target, R600_Pred:$p),
-          "JUMP $target ($p)",
-          [], AnyALU
-  >;
-}
-
 class R600_REDUCTION <bits<11> inst, dag ins, string asm, list<dag> pattern,
                       InstrItinClass itin = VecALU> :
   InstR600 <inst,
@@ -1365,25 +1356,18 @@ def PRED_X : InstR600 <
   let FlagOperandIdx = 3;
 }
 
-} // End isPseudo = 1
+let isTerminator = 1, isBranch = 1 in {
 
-let isCodeGenOnly = 1 in {
-
-  def MULLIT : AMDGPUShaderInst <
-    (outs R600_Reg128:$dst),
-    (ins R600_Reg32:$src0, R600_Reg32:$src1, R600_Reg32:$src2),
-    "MULLIT $dst, $src0, $src1",
-    [(set R600_Reg128:$dst, (int_AMDGPU_mullit R600_Reg32:$src0, R600_Reg32:$src1, R600_Reg32:$src2))]
+def JUMP : InstR600 <0x10,
+          (outs),
+          (ins brtarget:$target, R600_Pred:$p),
+          "JUMP $target ($p)",
+          [], AnyALU
   >;
 
-let usesCustomInserter = 1, isPseudo = 1 in {
+}  // End isTerminator = 1, isBranch = 1
 
-class R600PreloadInst <string asm, Intrinsic intr> : AMDGPUInst <
-  (outs R600_TReg32:$dst),
-  (ins),
-  asm,
-  [(set R600_TReg32:$dst, (intr))]
->;
+let usesCustomInserter = 1 in {
 
 def R600_LOAD_CONST : AMDGPUShaderInst <
   (outs R600_Reg32:$dst),
@@ -1413,9 +1397,8 @@ def TXD_SHADOW: AMDGPUShaderInst <
   [(set R600_Reg128:$dst, (int_AMDGPU_txd R600_Reg128:$src0, R600_Reg128:$src1, R600_Reg128:$src2, imm:$src3, TEX_SHADOW:$src4))]
 >;
 
-} // End usesCustomInserter = 1, isPseudo = 1
-
-} // End isCodeGenOnly = 1
+} // End isPseudo = 1
+} // End usesCustomInserter = 1
 
 def CLAMP_R600 :  CLAMP <R600_Reg32>;
 def FABS_R600 : FABS<R600_Reg32>;
