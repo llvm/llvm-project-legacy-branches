@@ -230,7 +230,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
                 .addOperand(MI->getOperand(1))
                 .addImm(OPCODE_IS_NOT_ZERO)
                 .addImm(0); // Flags
-      TII->addFlag(NewMI, 1, MO_FLAG_PUSH);
+      TII->addFlag(NewMI, 0, MO_FLAG_PUSH);
       BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::JUMP))
               .addOperand(MI->getOperand(0))
               .addReg(AMDGPU::PREDICATE_BIT, RegState::Kill);
@@ -244,7 +244,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
               .addOperand(MI->getOperand(1))
               .addImm(OPCODE_IS_NOT_ZERO_INT)
               .addImm(0); // Flags
-      TII->addFlag(NewMI, 1, MO_FLAG_PUSH);
+      TII->addFlag(NewMI, 0, MO_FLAG_PUSH);
       BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::JUMP))
              .addOperand(MI->getOperand(0))
               .addReg(AMDGPU::PREDICATE_BIT, RegState::Kill);

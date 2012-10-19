@@ -271,7 +271,7 @@ R600InstrInfo::InsertBranch(MachineBasicBlock &MBB,
     } else {
       MachineInstr *PredSet = findFirstPredicateSetterFrom(MBB, MBB.end());
       assert(PredSet && "No previous predicate !");
-      addFlag(PredSet, 1, MO_FLAG_PUSH);
+      addFlag(PredSet, 0, MO_FLAG_PUSH);
       PredSet->getOperand(2).setImm(Cond[1].getImm());
 
       BuildMI(&MBB, DL, get(AMDGPU::JUMP))
@@ -282,7 +282,7 @@ R600InstrInfo::InsertBranch(MachineBasicBlock &MBB,
   } else {
     MachineInstr *PredSet = findFirstPredicateSetterFrom(MBB, MBB.end());
     assert(PredSet && "No previous predicate !");
-    addFlag(PredSet, 1, MO_FLAG_PUSH);
+    addFlag(PredSet, 0, MO_FLAG_PUSH);
     PredSet->getOperand(2).setImm(Cond[1].getImm());
     BuildMI(&MBB, DL, get(AMDGPU::JUMP))
             .addMBB(TBB)
@@ -311,7 +311,7 @@ R600InstrInfo::RemoveBranch(MachineBasicBlock &MBB) const
   case AMDGPU::JUMP:
     if (isPredicated(I)) {
       MachineInstr *predSet = findFirstPredicateSetterFrom(MBB, I);
-      clearFlag(predSet, 1, MO_FLAG_PUSH);
+      clearFlag(predSet, 0, MO_FLAG_PUSH);
     }
     I->eraseFromParent();
     break;
@@ -329,7 +329,7 @@ R600InstrInfo::RemoveBranch(MachineBasicBlock &MBB) const
   case AMDGPU::JUMP:
     if (isPredicated(I)) {
       MachineInstr *predSet = findFirstPredicateSetterFrom(MBB, I);
-      clearFlag(predSet, 1, MO_FLAG_PUSH);
+      clearFlag(predSet, 0, MO_FLAG_PUSH);
     }
     I->eraseFromParent();
     break;
@@ -482,15 +482,20 @@ MachineInstrBuilder R600InstrInfo::buildDefaultInstruction(MachineBasicBlock &MB
                                                   unsigned Src1Reg) const
 {
   MachineInstrBuilder MIB = BuildMI(MBB, I, MBB.findDebugLoc(I), get(Opcode),
-    DstReg)           // $dst
-    .addImm(1)        // $write
-    .addImm(0)        // $omod
-    .addImm(0)        // $dst_rel
-    .addImm(0)        // $dst_clamp
-    .addReg(Src0Reg)  // $src0
-    .addImm(0)        // $src0_neg
-    .addImm(0)        // $src0_rel
-    .addImm(0);       // $src0_abs
+    DstReg);           // $dst
+
+  if (Src1Reg) {
+    MIB.addImm(0)     // $update_exec_mask
+       .addImm(0);    // $update_predicate
+  }
+  MIB.addImm(1)        // $write
+     .addImm(0)        // $omod
+     .addImm(0)        // $dst_rel
+     .addImm(0)        // $dst_clamp
+     .addReg(Src0Reg)  // $src0
+     .addImm(0)        // $src0_neg
+     .addImm(0)        // $src0_rel
+     .addImm(0);       // $src0_abs
 
   if (Src1Reg) {
     MIB.addReg(Src1Reg) // $src1
@@ -523,14 +528,14 @@ int R600InstrInfo::getOperandIdx(const MachineInstr &MI,
                                  R600Operands::Ops Op) const
 {
   const static int OpTable[3][R600Operands::COUNT] = {
-//      W        C     S  S  S     S  S  S     S  S
-//      R  O  D  L  S  R  R  R  S  R  R  R  S  R  R  L  P
-//   D  I  M  R  A  R  C  C  C  C  C  C  C  R  C  C  A  R  I
-//   S  T  O  E  M  C  0  0  0  C  1  1  1  C  2  2  S  E  M
-//   T  E  D  L  P  0  N  R  A  1  N  R  A  2  N  R  T  D  M
-    {0, 1, 2, 3, 4, 5, 6, 7, 8,-1,-1,-1,-1,-1,-1,-1, 9,10,11},
-    {0, 1, 2, 3, 4 ,5 ,6 ,7, 8, 9,10,11,12,-1,-1,-1,13,14,15},
-    {0, 1, 2, 3, 4, 5, 6, 7,-1, 8, 9,10,-1,11,12,13,14,15,16}
+//            W        C     S  S  S     S  S  S     S  S
+//            R  O  D  L  S  R  R  R  S  R  R  R  S  R  R  L  P
+//   D  U     I  M  R  A  R  C  C  C  C  C  C  C  R  C  C  A  R  I
+//   S  E  U  T  O  E  M  C  0  0  0  C  1  1  1  C  2  2  S  E  M
+//   T  M  P  E  D  L  P  0  N  R  A  1  N  R  A  2  N  R  T  D  M
+    {0,-1,-1, 1, 2, 3, 4, 5, 6, 7, 8,-1,-1,-1,-1,-1,-1,-1, 9,10,11},
+    {0, 1, 2, 3, 4 ,5 ,6 ,7, 8, 9,10,11,12,-1,-1,-1,13,14,15,16,17},
+    {0,-1,-1, 1, 2, 3, 4, 5, 6, 7,-1, 8, 9,10,-1,11,12,13,14,15,16}
   };
   unsigned TargetFlags = get(MI.getOpcode()).TSFlags;
   unsigned OpTableIdx;

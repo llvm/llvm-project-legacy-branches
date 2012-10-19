@@ -51,6 +51,8 @@ namespace R600_InstFlag {
 namespace R600Operands {
   enum Ops {
     DST,
+    UPDATE_EXEC_MASK,
+    UPDATE_PREDICATE,
     WRITE,
     OMOD,
     DST_REL,

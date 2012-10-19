@@ -78,6 +78,8 @@ def REL : InstFlag <"printRel">;
 def CLAMP : InstFlag <"printClamp">;
 def NEG : InstFlag <"printNeg">;
 def ABS : InstFlag <"printAbs">;
+def UEM : InstFlag <"printUpdateExecMask">;
+def UP : InstFlag <"printUpdatePred">;
 
 // XXX: The r600g finalizer in Mesa expects last to be one in most cases.
 // Once we start using the packetizer in this backend we should have this
@@ -141,8 +143,8 @@ class R600ALU_Word1_OP2 <bits<11> alu_inst> : R600ALU_Word1{
 
   bits<1>  src0_abs;
   bits<1>  src1_abs;
-  bits<1>  update_exec_mask = 0;
-  bits<1>  update_pred = 0;
+  bits<1>  update_exec_mask;
+  bits<1>  update_pred;
   bits<1>  write;
   bits<2>  omod;
 
@@ -227,6 +229,8 @@ class R600_1OP <bits<11> inst, string opName, list<dag> pattern,
   let src1_rel = 0;
   let src1_neg = 0;
   let src1_abs = 0;
+  let update_exec_mask = 0;
+  let update_pred = 0;
   let HasNativeOperands = 1;
   let Op1 = 1;
   let DisableEncoding = "$literal";
@@ -248,12 +252,13 @@ class R600_2OP <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
   InstR600 <inst,
           (outs R600_Reg32:$dst),
-          (ins WRITE:$write, OMOD:$omod, REL:$dst_rel, CLAMP:$clamp,
+          (ins UEM:$update_exec_mask, UP:$update_pred, WRITE:$write,
+               OMOD:$omod, REL:$dst_rel, CLAMP:$clamp,
                R600_Reg32:$src0, NEG:$src0_neg, REL:$src0_rel, ABS:$src0_abs,
                R600_Reg32:$src1, NEG:$src1_neg, REL:$src1_rel, ABS:$src1_abs,
                LAST:$last, R600_Pred:$pred_sel, LITERAL:$literal),
           !strconcat(opName,
-                "$clamp $dst$write$dst_rel$omod, "
+                "$clamp $update_exec_mask$update_pred$dst$write$dst_rel$omod, "
                 "$src0_neg$src0_abs$src0$src0_abs$src0_rel, "
                 "$src1_neg$src1_abs$src1$src1_abs$src1_rel, "
                 "$literal $pred_sel$last"),
@@ -306,20 +311,6 @@ class R600_3OP <bits<5> inst, string opName, list<dag> pattern,
 
   let Inst{31-0}  = Word0;
   let Inst{63-32} = Word1;
-}
-
-def PRED_X : InstR600 <0, (outs R600_Predicate_Bit:$dst),
-           (ins R600_Reg32:$src0, i32imm:$src1, i32imm:$flags),
-           "PRED $dst, $src0, $src1",
-           [], NullALU>
-{
-  bits<7> dst;
-  bits<9> src0;
-  bits<11> src1;
-  let Inst{8-0}   = src0;
-  let Inst{49-39} = src1;
-  let Inst{59-53} = dst;
-  let FlagOperandIdx = 3;
 }
 
 let isTerminator = 1, isBranch = 1, isPseudo = 1 in {
@@ -568,6 +559,11 @@ def : Pat <
   (MOV_IMM_F32  fpimm:$val)
 >;
 
+def PRED_SETE : R600_2OP <0x20, "PRED_SETE", []>;
+def PRED_SETGT : R600_2OP <0x21, "PRED_SETGT", []>;
+def PRED_SETGE : R600_2OP <0x22, "PRED_SETGE", []>;
+def PRED_SETNE : R600_2OP <0x23, "PRED_SETNE", []>;
+
 def KILLGT : InstR600 <0x2D,
           (outs R600_Reg32:$dst),
           (ins R600_Reg32:$src0, R600_Reg32:$src1, i32imm:$flags, R600_Pred:$p,
@@ -631,6 +627,11 @@ def SETGE_UINT : R600_2OP <
   [(set (i32 R600_Reg32:$dst),
     (selectcc (i32 R600_Reg32:$src0), R600_Reg32:$src1, -1, 0, SETUGE))]
 >;
+
+def PRED_SETE_INT : R600_2OP <0x42, "PRED_SETE_INT", []>;
+def PRED_SETGT_INT : R600_2OP <0x43, "PRED_SETGE_INT", []>;
+def PRED_SETGE_INT : R600_2OP <0x44, "PRED_SETGE_INT", []>;
+def PRED_SETNE_INT : R600_2OP <0x45, "PRED_SETNE_INT", []>;
 
 def CNDE_INT : R600_3OP <
 	0x1C, "CNDE_INT",
@@ -1350,6 +1351,21 @@ def : Pat <
 >;
 
 } // End isCayman
+
+//===----------------------------------------------------------------------===//
+// Pseudo instructions
+//===----------------------------------------------------------------------===//
+
+let isPseudo = 1 in {
+
+def PRED_X : InstR600 <
+  0, (outs R600_Predicate_Bit:$dst),
+  (ins R600_Reg32:$src0, i32imm:$src1, i32imm:$flags),
+  "", [], NullALU> {
+  let FlagOperandIdx = 3;
+}
+
+} // End isPseudo = 1
 
 let isCodeGenOnly = 1 in {
 

@@ -40,6 +40,8 @@ private:
   void printNeg(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printOMOD(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printRel(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printUpdateExecMask(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printUpdatePred(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printWrite(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 };
 

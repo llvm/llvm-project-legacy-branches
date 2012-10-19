@@ -97,6 +97,16 @@ void AMDGPUInstPrinter::printRel(const MCInst *MI, unsigned OpNo,
   }
 }
 
+void AMDGPUInstPrinter::printUpdateExecMask(const MCInst *MI, unsigned OpNo,
+                                            raw_ostream &O) {
+  printIfSet(MI, OpNo, O, "ExecMask,");
+}
+
+void AMDGPUInstPrinter::printUpdatePred(const MCInst *MI, unsigned OpNo,
+                                        raw_ostream &O) {
+  printIfSet(MI, OpNo, O, "Pred,");
+}
+
 void AMDGPUInstPrinter::printWrite(const MCInst *MI, unsigned OpNo,
                                        raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNo);

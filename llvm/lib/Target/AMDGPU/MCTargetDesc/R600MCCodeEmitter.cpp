@@ -280,7 +280,7 @@ void R600MCCodeEmitter::EmitALUInstr(const MCInst &MI,
   }
 
   // XXX: Emit push modifier
-  if(isFlagSet(MI, 1,  MO_FLAG_PUSH)) {
+  if(isFlagSet(MI, 0,  MO_FLAG_PUSH)) {
     InstWord01 |= 1ULL << 34;
   }
 

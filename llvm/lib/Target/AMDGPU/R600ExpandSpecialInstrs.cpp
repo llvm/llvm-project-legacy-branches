@@ -184,10 +184,36 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
       MachineInstr &MI = *I;
       I = llvm::next(I);
 
-	if (ExpandInputPerspective(MI))
-	  continue;
-	if (ExpandInputConstant(MI))
-	  continue;
+      switch (MI.getOpcode()) {
+      default: break;
+      // Expand PRED_X to one of the PRED_SET instructions.
+      case AMDGPU::PRED_X: {
+        uint64_t Flags = MI.getOperand(3).getImm();
+        // The native opcode used by PRED_X is stored as an immediate in the
+        // third operand.
+        MachineInstr *PredSet = TII->buildDefaultInstruction(MBB, I,
+                                            MI.getOperand(2).getImm(), // opcode
+                                            MI.getOperand(0).getReg(), // dst
+                                            MI.getOperand(1).getReg(), // src0
+                                            AMDGPU::ZERO);             // src1
+        TII->addFlag(PredSet, 0, MO_FLAG_MASK);
+        if (Flags & MO_FLAG_PUSH) {
+          PredSet->getOperand(TII->getOperandIdx(
+                  *PredSet, R600Operands::UPDATE_EXEC_MASK)).setImm(1);
+        } else {
+          PredSet->getOperand(
+            TII->getOperandIdx(
+                  *PredSet, R600Operands::UPDATE_PREDICATE)).setImm(1);
+        }
+        MI.eraseFromParent();
+        continue;
+        }
+     }
+
+    if (ExpandInputPerspective(MI))
+      continue;
+    if (ExpandInputConstant(MI))
+      continue;
 
       bool IsReduction = TII->isReductionOp(MI.getOpcode());
       bool IsVector = TII->isVector(MI);
