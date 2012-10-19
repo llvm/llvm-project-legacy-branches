@@ -121,8 +121,8 @@ bool R600InstrInfo::isReductionOp(unsigned Opcode) const
 {
   switch(Opcode) {
     default: return false;
-    case AMDGPU::DOT4_r600:
-    case AMDGPU::DOT4_eg:
+    case AMDGPU::DOT4_r600_pseudo:
+    case AMDGPU::DOT4_eg_pseudo:
       return true;
   }
 }

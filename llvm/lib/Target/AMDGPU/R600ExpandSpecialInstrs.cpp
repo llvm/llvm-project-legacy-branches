@@ -290,47 +290,51 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
         }
 
         // Determine the correct destination registers;
-        unsigned Flags = 0;
+        bool Mask = false;
+        bool NotLast = true;
         if (IsCube) {
           unsigned SubRegIndex = TRI.getSubRegFromChannel(Chan);
           DstReg = TRI.getSubReg(DstReg, SubRegIndex);
         } else {
           // Mask the write if the original instruction does not write to
           // the current Channel.
-          Flags |= (Chan != TRI.getHWRegChan(DstReg) ? MO_FLAG_MASK : 0);
+          Mask = (Chan != TRI.getHWRegChan(DstReg));
           unsigned DstBase = TRI.getEncodingValue(DstReg) & HW_REG_MASK;
           DstReg = AMDGPU::R600_TReg32RegClass.getRegister((DstBase * 4) + Chan);
         }
 
         // Set the IsLast bit
-        Flags |= (Chan != 3 ? MO_FLAG_NOT_LAST : 0);
+        NotLast = (Chan != 3 );
 
         // Add the new instruction
-        unsigned Opcode;
-        if (IsCube) {
-          switch (MI.getOpcode()) {
-          case AMDGPU::CUBE_r600_pseudo:
-            Opcode = AMDGPU::CUBE_r600_real;
-            break;
-          case AMDGPU::CUBE_eg_pseudo:
-            Opcode = AMDGPU::CUBE_eg_real;
-            break;
-          default:
-            assert(!"Unknown CUBE instruction");
-            Opcode = 0;
-            break;
-          }
-        } else {
-          Opcode = MI.getOpcode();
+        unsigned Opcode = MI.getOpcode();
+        switch (Opcode) {
+        case AMDGPU::CUBE_r600_pseudo:
+          Opcode = AMDGPU::CUBE_r600_real;
+          break;
+        case AMDGPU::CUBE_eg_pseudo:
+          Opcode = AMDGPU::CUBE_eg_real;
+          break;
+        case AMDGPU::DOT4_r600_pseudo:
+          Opcode = AMDGPU::DOT4_r600_real;
+          break;
+        case AMDGPU::DOT4_eg_pseudo:
+          Opcode = AMDGPU::DOT4_eg_real;
+          break;
+        default:
+          break;
         }
+
         MachineInstr *NewMI =
-          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(Opcode), DstReg)
-                  .addReg(Src0)
-                  .addReg(Src1)
-                  .addImm(0); // Flag
+          TII->buildDefaultInstruction(MBB, I, Opcode, DstReg, Src0, Src1);
 
         NewMI->setIsInsideBundle(Chan != 0);
-        TII->addFlag(NewMI, 0, Flags);
+        if (Mask) {
+          TII->addFlag(NewMI, 0, MO_FLAG_MASK);
+        }
+        if (NotLast) {
+          TII->addFlag(NewMI, 0, MO_FLAG_NOT_LAST);
+        }
       }
       MI.eraseFromParent();
     }

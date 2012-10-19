@@ -320,11 +320,7 @@ class R600_REDUCTION <bits<11> inst, dag ins, string asm, list<dag> pattern,
           ins,
           asm,
           pattern,
-          itin>{
-    bits<7> dst;
-    let Inst{49-39} = inst;
-    let Inst{59-53} = dst;
-  }
+          itin>;
 
 class R600_TEX <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
@@ -764,23 +760,16 @@ class CNDGE_Common <bits<5> inst> : R600_3OP <
        COND_GE))]
 >;
 
-class DOT4_Common <bits<11> inst> : R600_REDUCTION <
-  inst,
-  (ins R600_Reg128:$src0, R600_Reg128:$src1, i32imm:$flags),
-  "DOT4 $dst $src0, $src1",
-  []
-  > {
-  bits<9> src0;
-  bits<9> src1;
-  let Inst{8-0}   = src0;
-  let Inst{21-13} = src1;
-  let FlagOperandIdx = 3;
-}
+multiclass DOT4_Common <bits<11> inst> {
 
-class DOT4_Pat <Instruction dot4> : Pat <
-  (int_AMDGPU_dp4 R600_Reg128:$src0, R600_Reg128:$src1),
-  (dot4 R600_Reg128:$src0, R600_Reg128:$src1, 0)
->;
+  def _pseudo : R600_REDUCTION <inst,
+    (ins R600_Reg128:$src0, R600_Reg128:$src1),
+    "DOT4 $dst $src0, $src1",
+    [(set R600_Reg32:$dst, (int_AMDGPU_dp4 R600_Reg128:$src0, R600_Reg128:$src1))]
+  >;
+
+  def _real : R600_2OP <inst, "DOT4", []>;
+}
 
 let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in {
 multiclass CUBE_Common <bits<11> inst> {
@@ -792,24 +781,11 @@ multiclass CUBE_Common <bits<11> inst> {
     "CUBE $dst $src",
     [(set R600_Reg128:$dst, (int_AMDGPU_cube R600_Reg128:$src))],
     VecALU
-  >;
-
-  def _real : InstR600 <
-    inst,
-    (outs R600_Reg32:$dst),
-    (ins R600_Reg32:$src0, R600_Reg32:$src1, i32imm:$flags),
-    "CUBE $dst, $src0, $src1",
-    [], VecALU
-  >{
-    let FlagOperandIdx = 3;
-    bits<7> dst;
-    bits<9> src0;
-    bits<9> src1;
-    let Inst{8-0}   = src0;
-    let Inst{21-13} = src1;
-    let Inst{49-39} = inst;
-    let Inst{59-53} = dst;
+  > {
+    let isPseudo = 1;
   }
+
+  def _real : R600_2OP <inst, "CUBE", []>;
 }
 } // End mayLoad = 0, mayStore = 0, hasSideEffects = 0
 
@@ -917,8 +893,7 @@ let Predicates = [isR600] in {
   def CNDE_r600 : CNDE_Common<0x18>;
   def CNDGT_r600 : CNDGT_Common<0x19>;
   def CNDGE_r600 : CNDGE_Common<0x1A>;
-  def DOT4_r600 : DOT4_Common<0x50>;
-  def : DOT4_Pat <DOT4_r600>;
+  defm DOT4_r600 : DOT4_Common<0x50>;
   defm CUBE_r600 : CUBE_Common<0x52>;
   def EXP_IEEE_r600 : EXP_IEEE_Common<0x61>;
   def LOG_CLAMPED_r600 : LOG_CLAMPED_Common<0x62>;
@@ -1037,8 +1012,7 @@ let Predicates = [isEGorCayman] in {
   def RECIPSQRT_IEEE_eg : RECIPSQRT_IEEE_Common<0x89>;
   def SIN_eg : SIN_Common<0x8D>;
   def COS_eg : COS_Common<0x8E>;
-  def DOT4_eg : DOT4_Common<0xBE>;
-  def : DOT4_Pat <DOT4_eg>;
+  defm DOT4_eg : DOT4_Common<0xBE>;
   defm CUBE_eg : CUBE_Common<0xC0>;
 
   def TGSI_LIT_Z_eg : TGSI_LIT_Z_Common<MUL_LIT_eg, LOG_CLAMPED_eg, EXP_IEEE_eg>;
