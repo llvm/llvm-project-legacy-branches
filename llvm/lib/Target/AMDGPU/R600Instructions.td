@@ -514,19 +514,7 @@ def CEIL : R600_1OP_Helper <0x12, "CEIL", fceil>;
 def RNDNE : R600_1OP_Helper <0x13, "RNDNE", frint>;
 def FLOOR : R600_1OP_Helper <0x14, "FLOOR", ffloor>;
 
-let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in {
-
-def MOV : InstR600 <0x19, (outs R600_Reg32:$dst),
-                          (ins R600_Reg32:$src0, i32imm:$flags,
-                               R600_Pred:$p),
-                          "MOV $dst, $src0", [], AnyALU> {
-  let FlagOperandIdx = 2;
-  bits<7> dst;
-  bits<9> src0;
-  let Inst{8-0}   = src0;
-  let Inst{49-39} = op_code;
-  let Inst{59-53} = dst;
-}
+def MOV : R600_1OP <0x19, "MOV", []>;
 
 class MOV_IMM <ValueType vt, Operand immType> : InstR600 <0x19,
   (outs R600_Reg32:$dst),
@@ -543,7 +531,6 @@ class MOV_IMM <ValueType vt, Operand immType> : InstR600 <0x19,
   let Inst{59-53} = dst;
 }
 
-} // End mayLoad = 0, mayStore = 0, hasSideEffects = 0
 def MOV_IMM_I32 : MOV_IMM<i32, i32imm>;
 def : Pat <
   (imm:$val),

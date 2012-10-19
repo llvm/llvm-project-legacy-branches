@@ -81,36 +81,30 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
   case AMDGPU::SHADER_TYPE: break;
   case AMDGPU::CLAMP_R600:
     {
-      MachineInstr *NewMI =
-        BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::MOV))
-               .addOperand(MI->getOperand(0))
-               .addOperand(MI->getOperand(1))
-               .addImm(0) // Flags
-               .addReg(AMDGPU::PRED_SEL_OFF);
+      MachineInstr *NewMI = TII->buildDefaultInstruction(*BB, I,
+                                                    AMDGPU::MOV,
+                                                    MI->getOperand(0).getReg(),
+                                                    MI->getOperand(1).getReg());
       TII->addFlag(NewMI, 0, MO_FLAG_CLAMP);
       break;
     }
   case AMDGPU::FABS_R600:
     {
-      MachineInstr *NewMI =
-        BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::MOV))
-               .addOperand(MI->getOperand(0))
-               .addOperand(MI->getOperand(1))
-               .addImm(0) // Flags
-               .addReg(AMDGPU::PRED_SEL_OFF);
-      TII->addFlag(NewMI, 1, MO_FLAG_ABS);
+      MachineInstr *NewMI = TII->buildDefaultInstruction(*BB, I,
+                                                    AMDGPU::MOV,
+                                                    MI->getOperand(0).getReg(),
+                                                    MI->getOperand(1).getReg());
+      TII->addFlag(NewMI, 0, MO_FLAG_ABS);
       break;
     }
 
   case AMDGPU::FNEG_R600:
     {
-      MachineInstr *NewMI =
-        BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::MOV))
-                .addOperand(MI->getOperand(0))
-                .addOperand(MI->getOperand(1))
-                .addImm(0) // Flags
-                .addReg(AMDGPU::PRED_SEL_OFF);
-      TII->addFlag(NewMI, 1, MO_FLAG_NEG);
+      MachineInstr *NewMI = TII->buildDefaultInstruction(*BB, I,
+                                                    AMDGPU::MOV,
+                                                    MI->getOperand(0).getReg(),
+                                                    MI->getOperand(1).getReg());
+      TII->addFlag(NewMI, 0, MO_FLAG_NEG);
     break;
     }
 

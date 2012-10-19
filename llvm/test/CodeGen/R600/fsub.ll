@@ -1,5 +1,6 @@
 ;RUN: llc < %s -march=r600 -mcpu=redwood | FileCheck %s
 
+; CHECK: MOV T{{[0-9]+\.[XYZW], -T[0-9]+\.[XYZW]}}
 ; CHECK: ADD T{{[0-9]+\.[XYZW], T[0-9]+\.[XYZW], T[0-9]+\.[XYZW]}}
 
 define void @test() {

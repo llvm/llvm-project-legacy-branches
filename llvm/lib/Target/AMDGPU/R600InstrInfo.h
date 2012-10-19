@@ -110,6 +110,16 @@ namespace llvm {
   virtual int getInstrLatency(const InstrItineraryData *ItinData,
                               SDNode *Node) const { return 1;}
 
+  ///buildDefaultInstruction - This function returns a MachineInstr with
+  /// all the instruction modifiers initialized to their default values.
+  /// You can use this function to avoid manually specifying each instruction
+  /// modifier operand when building a new instruction.
+  MachineInstrBuilder buildDefaultInstruction(MachineBasicBlock &MBB,
+                                              MachineBasicBlock::iterator I,
+                                              unsigned Opcode,
+                                              unsigned DstReg,
+                                              unsigned Src0Reg) const;
+
   /// getOperandIdx - Get the index of Op in the MachineInstr.  Returns -1
   /// if the Instruction does not contain the specified Op.
   int getOperandIdx(const MachineInstr &MI, R600Operands::Ops Op) const;

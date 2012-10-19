@@ -54,23 +54,22 @@ R600InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       && AMDGPU::R600_Reg128RegClass.contains(SrcReg)) {
     for (unsigned I = 0; I < 4; I++) {
       unsigned SubRegIndex = RI.getSubRegFromChannel(I);
-      BuildMI(MBB, MI, DL, get(AMDGPU::MOV))
-              .addReg(RI.getSubReg(DestReg, SubRegIndex), RegState::Define)
-              .addReg(RI.getSubReg(SrcReg, SubRegIndex))
-              .addImm(0) // Flag
-              .addReg(0) // PREDICATE_BIT
-              .addReg(DestReg, RegState::Define | RegState::Implicit);
+      buildDefaultInstruction(MBB, MI, AMDGPU::MOV,
+                              RI.getSubReg(DestReg, SubRegIndex),
+                              RI.getSubReg(SrcReg, SubRegIndex))
+                              .addReg(DestReg,
+                                      RegState::Define | RegState::Implicit);
     }
   } else {
 
-    /* We can't copy vec4 registers */
+    // We can't copy vec4 registers
     assert(!AMDGPU::R600_Reg128RegClass.contains(DestReg)
            && !AMDGPU::R600_Reg128RegClass.contains(SrcReg));
 
-    BuildMI(MBB, MI, DL, get(AMDGPU::MOV), DestReg)
-      .addReg(SrcReg, getKillRegState(KillSrc))
-      .addImm(0) // Flag
-      .addReg(0); // PREDICATE_BIT
+    MachineInstr *NewMI = buildDefaultInstruction(MBB, MI, AMDGPU::MOV,
+                                                  DestReg, SrcReg);
+    NewMI->getOperand(getOperandIdx(*NewMI, R600Operands::SRC0))
+                                    .setIsKill(KillSrc);
   }
 }
 
@@ -473,6 +472,28 @@ unsigned int R600InstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
   if (PredCost)
     *PredCost = 2;
   return 2;
+}
+
+MachineInstrBuilder R600InstrInfo::buildDefaultInstruction(MachineBasicBlock &MBB,
+                                                  MachineBasicBlock::iterator I,
+                                                  unsigned Opcode,
+                                                  unsigned DstReg,
+                                                  unsigned Src0Reg) const
+{
+  return BuildMI(MBB, I, MBB.findDebugLoc(I), get(Opcode), DstReg)
+    .addImm(1)        // $write
+    .addImm(0)        // $omod
+    .addImm(0)        // $dst_rel
+    .addImm(0)        // $dst_clamp
+    .addReg(Src0Reg)  // $src0
+    .addImm(0)        // $src0_neg
+    .addImm(0)        // $src0_rel
+    .addImm(0)        // $src0_abs
+    //XXX: The r600g finalizer expects this to be 1, once we've moved the
+    //scheduling to the backend, we can change the default to 0.
+    .addImm(1)        // $last
+    .addReg(AMDGPU::PRED_SEL_OFF) // $pred_sel
+    .addImm(0);        // $literal
 }
 
 int R600InstrInfo::getOperandIdx(const MachineInstr &MI,
