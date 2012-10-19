@@ -153,10 +153,9 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
       // the LSHR_eg instruction as an inline literal, but I tried doing it
       // this way and it didn't produce the correct results.
       TII->buildMovImm(*BB, I, ShiftValue, 2);
-      BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::LSHR_eg), NewAddr)
-              .addOperand(MI->getOperand(1))
-              .addReg(ShiftValue)
-              .addReg(AMDGPU::PRED_SEL_OFF);
+      TII->buildDefaultInstruction(*BB, I, AMDGPU::LSHR_eg, NewAddr,
+                                   MI->getOperand(1).getReg(),
+                                   ShiftValue);
       BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(MI->getOpcode()))
               .addOperand(MI->getOperand(0))
               .addReg(NewAddr)

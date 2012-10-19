@@ -220,22 +220,41 @@ class R600_1OP_Helper <bits<11> inst, string opName, SDPatternOperator node,
               [(set R600_Reg32:$dst, (node R600_Reg32:$src0))]
 >;
 
+// If you add our change the operands for R600_2OP instructions, you must
+// also update the R600Op2OperandIndex::ROI enum in R600Defines.h,
+// R600InstrInfo::buildDefaultInstruction(), and R600InstrInfo::getOperandIdx().
 class R600_2OP <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
   InstR600 <inst,
           (outs R600_Reg32:$dst),
-          (ins R600_Reg32:$src0, R600_Reg32:$src1,R600_Pred:$p, variable_ops),
-          !strconcat(opName, " $dst, $src0, $src1"),
+          (ins WRITE:$write, OMOD:$omod, REL:$dst_rel, CLAMP:$clamp,
+               R600_Reg32:$src0, NEG:$src0_neg, REL:$src0_rel, ABS:$src0_abs,
+               R600_Reg32:$src1, NEG:$src1_neg, REL:$src1_rel, ABS:$src1_abs,
+               LAST:$last, R600_Pred:$pred_sel, LITERAL:$literal),
+          !strconcat(opName,
+                "$clamp $dst$write$dst_rel$omod, "
+                "$src0_neg$src0_abs$src0$src0_abs$src0_rel, "
+                "$src1_neg$src1_abs$src1$src1_abs$src1_rel, "
+                "$literal $pred_sel$last"),
           pattern,
-          itin>{
-    bits<7> dst;
-    bits<9> src0;
-    bits<9> src1;
-    let Inst{8-0}   = src0;
-    let Inst{21-13} = src1;
-    let Inst{49-39} = inst;
-    let Inst{59-53} = dst;
-  }
+          itin>,
+    R600ALU_Word0,
+    R600ALU_Word1_OP2 <inst> {
+
+  let HasNativeOperands = 1;
+  let Op2 = 1;
+  let DisableEncoding = "$literal";
+
+  let Inst{31-0}  = Word0;
+  let Inst{63-32} = Word1;
+}
+
+class R600_2OP_Helper <bits<11> inst, string opName, SDPatternOperator node,
+                       InstrItinClass itim = AnyALU> :
+    R600_2OP <inst, opName,
+              [(set R600_Reg32:$dst, (node R600_Reg32:$src0,
+                                           R600_Reg32:$src1))]
+>;
 
 class R600_3OP <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
@@ -450,36 +469,16 @@ let Predicates = [isR600toCayman] in {
 // Common Instructions R600, R700, Evergreen, Cayman
 //===----------------------------------------------------------------------===//
 
-def ADD : R600_2OP <
-  0x0, "ADD",
-  [(set R600_Reg32:$dst, (fadd R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
+def ADD : R600_2OP_Helper <0x0, "ADD", fadd>;
 // Non-IEEE MUL: 0 * anything = 0
-def MUL : R600_2OP <
-  0x1, "MUL NON-IEEE",
-  [(set R600_Reg32:$dst, (int_AMDGPU_mul R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def MUL_IEEE : R600_2OP <
-  0x2, "MUL_IEEE",
-  [(set R600_Reg32:$dst, (fmul R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def MAX : R600_2OP <
-  0x3, "MAX",
-  [(set R600_Reg32:$dst, (AMDGPUfmax R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def MIN : R600_2OP <
-  0x4, "MIN",
-  [(set R600_Reg32:$dst, (AMDGPUfmin R600_Reg32:$src0, R600_Reg32:$src1))]
->;
+def MUL : R600_2OP_Helper <0x1, "MUL NON-IEEE", int_AMDGPU_mul>;
+def MUL_IEEE : R600_2OP_Helper <0x2, "MUL_IEEE", fmul>;
+def MAX : R600_2OP_Helper <0x3, "MAX", AMDGPUfmax>;
+def MIN : R600_2OP_Helper <0x4, "MIN", AMDGPUfmin>;
 
 // For the SET* instructions there is a naming conflict in TargetSelectionDAG.td,
 // so some of the instruction names don't match the asm string.
 // XXX: Use the defs in TargetSelectionDAG.td instead of intrinsics.
-
 def SETE : R600_2OP <
   0x08, "SETE",
   [(set R600_Reg32:$dst,
@@ -556,50 +555,16 @@ def KILLGT : InstR600 <0x2D,
   let Inst{59-53} = dst;
 }
 
-def AND_INT : R600_2OP <
-  0x30, "AND_INT",
-  [(set R600_Reg32:$dst, (and R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def OR_INT : R600_2OP <
-  0x31, "OR_INT",
-  [(set R600_Reg32:$dst, (or R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def XOR_INT : R600_2OP <
-  0x32, "XOR_INT",
-  [(set R600_Reg32:$dst, (xor R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
+def AND_INT : R600_2OP_Helper <0x30, "AND_INT", and>;
+def OR_INT : R600_2OP_Helper <0x31, "OR_INT", or>;
+def XOR_INT : R600_2OP_Helper <0x32, "XOR_INT", xor>;
 def NOT_INT : R600_1OP_Helper <0x33, "NOT_INT", not>;
-
-def ADD_INT : R600_2OP <
-  0x34, "ADD_INT",
-  [(set R600_Reg32:$dst, (add R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def SUB_INT : R600_2OP <
-	0x35, "SUB_INT",
-	[(set R600_Reg32:$dst, (sub R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def MAX_INT : R600_2OP <
-  0x36, "MAX_INT",
-  [(set R600_Reg32:$dst, (AMDGPUsmax R600_Reg32:$src0, R600_Reg32:$src1))]>;
-
-def MIN_INT : R600_2OP <
-  0x37, "MIN_INT",
-  [(set R600_Reg32:$dst, (AMDGPUsmin R600_Reg32:$src0, R600_Reg32:$src1))]>;
-
-def MAX_UINT : R600_2OP <
-  0x38, "MAX_UINT",
-  [(set R600_Reg32:$dst, (AMDGPUsmax R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-def MIN_UINT : R600_2OP <
-  0x39, "MIN_UINT",
-  [(set R600_Reg32:$dst, (AMDGPUumin R600_Reg32:$src0, R600_Reg32:$src1))]
->;
+def ADD_INT : R600_2OP_Helper <0x34, "ADD_INT", add>;
+def SUB_INT : R600_2OP_Helper <0x35, "SUB_INT", sub>;
+def MAX_INT : R600_2OP_Helper <0x36, "MAX_INT", AMDGPUsmax>;
+def MIN_INT : R600_2OP_Helper <0x37, "MIN_INT", AMDGPUsmin>;
+def MAX_UINT : R600_2OP_Helper <0x38, "MAX_UINT", AMDGPUsmax>;
+def MIN_UINT : R600_2OP_Helper <0x39, "MIN_UINT", AMDGPUumin>;
 
 def SETE_INT : R600_2OP <
   0x3A, "SETE_INT",
@@ -854,40 +819,19 @@ class LOG_IEEE_Common <bits<11> inst> : R600_1OP_Helper <
   inst, "LOG_IEEE", flog2
 >;
 
-class LSHL_Common <bits<11> inst> : R600_2OP <
-  inst, "LSHL $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (shl R600_Reg32:$src0, R600_Reg32:$src1))]
+class LSHL_Common <bits<11> inst> : R600_2OP_Helper <inst, "LSHL", shl>;
+class LSHR_Common <bits<11> inst> : R600_2OP_Helper <inst, "LSHR", srl>;
+class ASHR_Common <bits<11> inst> : R600_2OP_Helper <inst, "ASHR", sra>;
+class MULHI_INT_Common <bits<11> inst> : R600_2OP_Helper <
+  inst, "MULHI_INT", mulhs
 >;
-
-class LSHR_Common <bits<11> inst> : R600_2OP <
-  inst, "LSHR $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (srl R600_Reg32:$src0, R600_Reg32:$src1))]
+class MULHI_UINT_Common <bits<11> inst> : R600_2OP_Helper <
+  inst, "MULHI", mulhu
 >;
-
-class ASHR_Common <bits<11> inst> : R600_2OP <
-  inst, "ASHR $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (sra R600_Reg32:$src0, R600_Reg32:$src1))]
+class MULLO_INT_Common <bits<11> inst> : R600_2OP_Helper <
+  inst, "MULLO_INT", mul
 >;
-
-class MULHI_INT_Common <bits<11> inst> : R600_2OP <
-  inst, "MULHI_INT $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (mulhs R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-class MULHI_UINT_Common <bits<11> inst> : R600_2OP <
-  inst, "MULHI $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (mulhu R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-class MULLO_INT_Common <bits<11> inst> : R600_2OP <
-  inst, "MULLO_INT $dst, $src0, $src1",
-  [(set R600_Reg32:$dst, (mul R600_Reg32:$src0, R600_Reg32:$src1))]
->;
-
-class MULLO_UINT_Common <bits<11> inst> : R600_2OP <
-  inst, "MULLO_UINT $dst, $src0, $src1",
-  []
->;
+class MULLO_UINT_Common <bits<11> inst> : R600_2OP <inst, "MULLO_UINT", []>;
 
 class RECIP_CLAMPED_Common <bits<11> inst> : R600_1OP <
   inst, "RECIP_CLAMPED", []

@@ -478,9 +478,11 @@ MachineInstrBuilder R600InstrInfo::buildDefaultInstruction(MachineBasicBlock &MB
                                                   MachineBasicBlock::iterator I,
                                                   unsigned Opcode,
                                                   unsigned DstReg,
-                                                  unsigned Src0Reg) const
+                                                  unsigned Src0Reg,
+                                                  unsigned Src1Reg) const
 {
-  return BuildMI(MBB, I, MBB.findDebugLoc(I), get(Opcode), DstReg)
+  MachineInstrBuilder MIB = BuildMI(MBB, I, MBB.findDebugLoc(I), get(Opcode),
+    DstReg)           // $dst
     .addImm(1)        // $write
     .addImm(0)        // $omod
     .addImm(0)        // $dst_rel
@@ -488,12 +490,22 @@ MachineInstrBuilder R600InstrInfo::buildDefaultInstruction(MachineBasicBlock &MB
     .addReg(Src0Reg)  // $src0
     .addImm(0)        // $src0_neg
     .addImm(0)        // $src0_rel
-    .addImm(0)        // $src0_abs
-    //XXX: The r600g finalizer expects this to be 1, once we've moved the
-    //scheduling to the backend, we can change the default to 0.
-    .addImm(1)        // $last
-    .addReg(AMDGPU::PRED_SEL_OFF) // $pred_sel
-    .addImm(0);        // $literal
+    .addImm(0);       // $src0_abs
+
+  if (Src1Reg) {
+    MIB.addReg(Src1Reg) // $src1
+       .addImm(0)       // $src1_neg
+       .addImm(0)       // $src1_rel
+       .addImm(0);       // $src1_abs
+  }
+
+  //XXX: The r600g finalizer expects this to be 1, once we've moved the
+  //scheduling to the backend, we can change the default to 0.
+  MIB.addImm(1)        // $last
+      .addReg(AMDGPU::PRED_SEL_OFF) // $pred_sel
+      .addImm(0);        // $literal
+
+  return MIB;
 }
 
 MachineInstr *R600InstrInfo::buildMovImm(MachineBasicBlock &BB,

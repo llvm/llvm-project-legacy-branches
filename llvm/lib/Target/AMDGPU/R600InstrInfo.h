@@ -118,7 +118,8 @@ namespace llvm {
                                               MachineBasicBlock::iterator I,
                                               unsigned Opcode,
                                               unsigned DstReg,
-                                              unsigned Src0Reg) const;
+                                              unsigned Src0Reg,
+                                              unsigned Src1Reg = 0) const;
 
   MachineInstr *buildMovImm(MachineBasicBlock &BB,
                                   MachineBasicBlock::iterator I,
