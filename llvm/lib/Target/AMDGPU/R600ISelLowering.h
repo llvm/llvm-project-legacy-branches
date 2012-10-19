@@ -61,6 +61,7 @@ private:
   SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerInputFace(SDNode *Op, SelectionDAG &DAG) const;
   SDValue LowerFPTOUINT(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFPOW(SDValue Op, SelectionDAG &DAG) const;
   
   bool isZero(SDValue Op) const;
 };
