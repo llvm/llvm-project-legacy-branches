@@ -1647,7 +1647,6 @@ void CFGStructurizer<PassT>::mergeLoopbreakBlock(BlockT *exitingBlk,
       CFGTraits::insertAssignInstrBefore(branchInstrPos, passRep, setReg, 1);
     }
     CFGTraits::insertInstrBefore(branchInstrPos, AMDGPU::BREAK, passRep);
-    CFGTraits::insertInstrBefore(branchInstrPos, AMDGPU::ENDIF, passRep);
   } //if_logical
 
   //now branchInst can be erase safely
