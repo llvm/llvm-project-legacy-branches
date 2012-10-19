@@ -869,11 +869,6 @@ def : Pat<
 >;
 }
 
-class SSG_Common <InstR600 cndgt, InstR600 cndge> : Pat <
-  (int_AMDGPU_ssg R600_Reg32:$src),
-  (cndgt R600_Reg32:$src, (f32 ONE), (cndge R600_Reg32:$src, (f32 ZERO), (f32 NEG_ONE)))
->;
-
 class TGSI_LIT_Z_Common <InstR600 mul_lit, InstR600 log_clamped, InstR600 exp_ieee> : Pat <
   (int_TGSI_lit_z R600_Reg32:$src_x, R600_Reg32:$src_y, R600_Reg32:$src_w),
   (exp_ieee (mul_lit (log_clamped (MAX R600_Reg32:$src_y, (f32 ZERO))), R600_Reg32:$src_w, R600_Reg32:$src_x))
@@ -916,7 +911,6 @@ let Predicates = [isR600] in {
   def RECIP_UINT_r600 : RECIP_UINT_Common <0x78>;
 
   defm DIV_r600 : DIV_Common<RECIP_IEEE_r600>;
-  def SSG_r600 : SSG_Common<CNDGT_r600, CNDGE_r600>;
   def TGSI_LIT_Z_r600 : TGSI_LIT_Z_Common<MUL_LIT_r600, LOG_CLAMPED_r600, EXP_IEEE_r600>;
 
 }
@@ -1015,7 +1009,6 @@ let Predicates = [isEGorCayman] in {
   def : DOT4_Pat <DOT4_eg>;
   defm CUBE_eg : CUBE_Common<0xC0>;
 
-  def SSG_eg : SSG_Common<CNDGT_eg, CNDGE_eg>;
   def TGSI_LIT_Z_eg : TGSI_LIT_Z_Common<MUL_LIT_eg, LOG_CLAMPED_eg, EXP_IEEE_eg>;
 
   def : SIN_PAT <SIN_eg>;
