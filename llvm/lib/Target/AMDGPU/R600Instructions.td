@@ -953,6 +953,7 @@ let Predicates = [isR700] in {
 let Predicates = [isEG] in {
   
 def RECIP_IEEE_eg : RECIP_IEEE_Common<0x86>;
+defm DIV_eg : DIV_Common<RECIP_IEEE_eg>;
 
 def MULLO_INT_eg : MULLO_INT_Common<0x8F>;
 def MULHI_INT_eg : MULHI_INT_Common<0x90>;
@@ -1014,7 +1015,6 @@ let Predicates = [isEGorCayman] in {
   def : DOT4_Pat <DOT4_eg>;
   defm CUBE_eg : CUBE_Common<0xC0>;
 
-  defm DIV_eg : DIV_Common<RECIP_IEEE_eg>;
   def SSG_eg : SSG_Common<CNDGT_eg, CNDGE_eg>;
   def TGSI_LIT_Z_eg : TGSI_LIT_Z_Common<MUL_LIT_eg, LOG_CLAMPED_eg, EXP_IEEE_eg>;
 
@@ -1306,6 +1306,8 @@ def RECIPSQRT_CLAMPED_cm : RECIPSQRT_CLAMPED_Common<0x87>;
 def EXP_IEEE_cm : EXP_IEEE_Common<0x81>;
 def LOG_IEEE_ : LOG_IEEE_Common<0x83>;
 } // End isVector = 1
+
+defm DIV_cm : DIV_Common<RECIP_IEEE_cm>;
 
 // RECIP_UINT emulation for Cayman
 def : Pat <
