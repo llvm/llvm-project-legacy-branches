@@ -111,7 +111,6 @@ bool R600InstrInfo::isPlaceHolderOpcode(unsigned Opcode) const
   switch (Opcode) {
   default: return false;
   case AMDGPU::RETURN:
-  case AMDGPU::MASK_WRITE:
   case AMDGPU::RESERVE_REG:
     return true;
   }
@@ -357,7 +356,16 @@ R600InstrInfo::isPredicated(const MachineInstr *MI) const
 bool
 R600InstrInfo::isPredicable(MachineInstr *MI) const
 {
-  return AMDGPUInstrInfo::isPredicable(MI);
+  // XXX: KILL* instructions can be predicated, but they must be the last
+  // instruction in a clause, so this means any instructions after them cannot
+  // be predicated.  Until we have proper support for instruction clauses in the
+  // backend, we will mark KILL* instructions as unpredicable.
+
+  if (MI->getOpcode() == AMDGPU::KILLGT) {
+    return false;
+  } else {
+    return AMDGPUInstrInfo::isPredicable(MI);
+  }
 }
 
 

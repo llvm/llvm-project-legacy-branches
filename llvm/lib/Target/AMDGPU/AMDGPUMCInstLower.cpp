@@ -58,11 +58,6 @@ void AMDGPUMCInstLower::lower(const MachineInstr *MI, MCInst &OutMI) const {
 void AMDGPUAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   AMDGPUMCInstLower MCInstLowering;
 
-  // Ignore placeholder instructions:
-  if (MI->getOpcode() == AMDGPU::MASK_WRITE) {
-    return;
-  }
-
   if (MI->isBundle()) {
     const MachineBasicBlock *MBB = MI->getParent();
     MachineBasicBlock::const_instr_iterator I = MI;

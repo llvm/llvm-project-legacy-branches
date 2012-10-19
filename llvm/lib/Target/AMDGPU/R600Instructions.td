@@ -551,22 +551,11 @@ def PRED_SETGT : R600_2OP <0x21, "PRED_SETGT", []>;
 def PRED_SETGE : R600_2OP <0x22, "PRED_SETGE", []>;
 def PRED_SETNE : R600_2OP <0x23, "PRED_SETNE", []>;
 
-def KILLGT : InstR600 <0x2D,
-          (outs R600_Reg32:$dst),
-          (ins R600_Reg32:$src0, R600_Reg32:$src1, i32imm:$flags, R600_Pred:$p,
-               variable_ops),
-          "KILLGT $dst, $src0, $src1, $flags ($p)",
-          [],
-          NullALU>{
-  let FlagOperandIdx = 3;
-  bits<7> dst;
-  bits<9> src0;
-  bits<9> src1;
-  let Inst{8-0}   = src0;
-  let Inst{21-13} = src1;
-  let Inst{49-39} = op_code;
-  let Inst{59-53} = dst;
-}
+let hasSideEffects = 1 in {
+
+def KILLGT : R600_2OP <0x2D, "KILLGT", []>;
+
+} // end hasSideEffects
 
 def AND_INT : R600_2OP_Helper <0x30, "AND_INT", and>;
 def OR_INT : R600_2OP_Helper <0x31, "OR_INT", or>;
@@ -1343,6 +1332,17 @@ def JUMP : InstR600 <0x10,
 
 let usesCustomInserter = 1 in {
 
+let mayLoad = 0, mayStore = 0, hasSideEffects = 1 in {
+
+def MASK_WRITE : AMDGPUShaderInst <
+    (outs),
+    (ins R600_Reg32:$src),
+    "MASK_WRITE $src",
+    []
+>;
+
+} // End mayLoad = 0, mayStore = 0, hasSideEffects = 1
+
 def R600_LOAD_CONST : AMDGPUShaderInst <
   (outs R600_Reg32:$dst),
   (ins i32imm:$src0),
@@ -1378,17 +1378,6 @@ def CLAMP_R600 :  CLAMP <R600_Reg32>;
 def FABS_R600 : FABS<R600_Reg32>;
 def FNEG_R600 : FNEG<R600_Reg32>;
 
-let usesCustomInserter = 1, mayLoad = 0, mayStore = 0, hasSideEffects = 1 in {
-
-def MASK_WRITE : AMDGPUShaderInst <
-    (outs),
-    (ins R600_Reg32:$src),
-    "MASK_WRITE $src",
-    []
->;
-
-} // End usesCustomInserter = 1, mayLoad = 0, mayStore = 0, hasSideEffects = 0
-
 //===---------------------------------------------------------------------===//
 // Return instruction
 //===---------------------------------------------------------------------===//
@@ -1411,12 +1400,12 @@ def : Pat <
 // KIL Patterns
 def KILP : Pat <
   (int_AMDGPU_kilp),
-  (MASK_WRITE (KILLGT (f32 ONE), (f32 ZERO), 0))
+  (MASK_WRITE (KILLGT (f32 ONE), (f32 ZERO)))
 >;
 
 def KIL : Pat <
   (int_AMDGPU_kill R600_Reg32:$src0),
-  (MASK_WRITE (KILLGT (f32 ZERO), (f32 R600_Reg32:$src0), 0))
+  (MASK_WRITE (KILLGT (f32 ZERO), (f32 R600_Reg32:$src0)))
 >;
 
 // SGT Reverse args

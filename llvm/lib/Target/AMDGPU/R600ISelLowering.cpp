@@ -124,8 +124,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
       assert(TargetRegisterInfo::isVirtualRegister(maskedRegister));
       MachineInstr * defInstr = MRI.getVRegDef(maskedRegister);
       TII->addFlag(defInstr, 0, MO_FLAG_MASK);
-      // Return early so the instruction is not erased
-      return BB;
+      break;
     }
 
   case AMDGPU::MOV_IMM_F32:
