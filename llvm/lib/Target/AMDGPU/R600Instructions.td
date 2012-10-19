@@ -739,10 +739,6 @@ multiclass CUBE_Common <bits<11> inst> {
   }
 }
 } // End mayLoad = 0, mayStore = 0, hasSideEffects = 0
-class EXP_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "EXP_IEEE",
-  [(set R600_Reg32:$dst, (fexp2 R600_Reg32:$src))]
->;
 
 class FLT_TO_INT_Common <bits<11> inst> : R600_1OP <
   inst, "FLT_TO_INT",
@@ -769,10 +765,19 @@ class LOG_CLAMPED_Common <bits<11> inst> : R600_1OP <
   []
 >;
 
+let FlagOperandIdx = 3 in {
+
+class EXP_IEEE_Common <bits<11> inst> : R600_1OP <
+  inst, "EXP_IEEE",
+  [(set R600_Reg32:$dst, (fexp2 R600_Reg32:$src))]
+>;
+
 class LOG_IEEE_Common <bits<11> inst> : R600_1OP <
   inst, "LOG_IEEE",
   [(set R600_Reg32:$dst, (flog2 R600_Reg32:$src))]
 >;
+
+} // End let FlagOperandIdx = 3
 
 class LSHL_Common <bits<11> inst> : R600_2OP <
   inst, "LSHL $dst, $src0, $src1",
@@ -824,10 +829,14 @@ class RECIP_UINT_Common <bits<11> inst> : R600_1OP <
   [(set R600_Reg32:$dst, (AMDGPUurecip R600_Reg32:$src))]
 >;
 
+let FlagOperandIdx = 3 in {
+
 class RECIPSQRT_CLAMPED_Common <bits<11> inst> : R600_1OP <
   inst, "RECIPSQRT_CLAMPED",
   [(set R600_Reg32:$dst, (int_AMDGPU_rsq R600_Reg32:$src))]
 >;
+
+} // End let FlagOperandIdx = 3
 
 class RECIPSQRT_IEEE_Common <bits<11> inst> : R600_1OP <
   inst, "RECIPSQRT_IEEE",
@@ -950,7 +959,9 @@ def MULHI_INT_eg : MULHI_INT_Common<0x90>;
 def MULLO_UINT_eg : MULLO_UINT_Common<0x91>;
 def MULHI_UINT_eg : MULHI_UINT_Common<0x92>;
 def RECIP_UINT_eg : RECIP_UINT_Common<0x94>;
-
+def RECIPSQRT_CLAMPED_eg : RECIPSQRT_CLAMPED_Common<0x87>;
+def EXP_IEEE_eg : EXP_IEEE_Common<0x81>;
+def LOG_IEEE_eg : LOG_IEEE_Common<0x83>;
 } // End Predicates = [isEG]
 
 //===----------------------------------------------------------------------===//
@@ -994,11 +1005,8 @@ let Predicates = [isEGorCayman] in {
   def CNDGT_eg : CNDGT_Common<0x1A>;
   def CNDGE_eg : CNDGE_Common<0x1B>;
   def MUL_LIT_eg : MUL_LIT_Common<0x1F>;
-  def EXP_IEEE_eg : EXP_IEEE_Common<0x81>;
   def LOG_CLAMPED_eg : LOG_CLAMPED_Common<0x82>;
-  def LOG_IEEE_eg : LOG_IEEE_Common<0x83>;
   def RECIP_CLAMPED_eg : RECIP_CLAMPED_Common<0x84>;
-  def RECIPSQRT_CLAMPED_eg : RECIPSQRT_CLAMPED_Common<0x87>;
   def RECIPSQRT_IEEE_eg : RECIPSQRT_IEEE_Common<0x89>;
   def SIN_eg : SIN_Common<0x8D>;
   def COS_eg : COS_Common<0x8E>;
@@ -1294,7 +1302,9 @@ def MULLO_INT_cm : MULLO_INT_Common<0x8F>;
 def MULHI_INT_cm : MULHI_INT_Common<0x90>;
 def MULLO_UINT_cm : MULLO_UINT_Common<0x91>;
 def MULHI_UINT_cm : MULHI_UINT_Common<0x92>;
-
+def RECIPSQRT_CLAMPED_cm : RECIPSQRT_CLAMPED_Common<0x87>;
+def EXP_IEEE_cm : EXP_IEEE_Common<0x81>;
+def LOG_IEEE_ : LOG_IEEE_Common<0x83>;
 } // End isVector = 1
 
 // RECIP_UINT emulation for Cayman
