@@ -196,6 +196,7 @@ DataBufferMemoryMap::MemoryMapFromFileDescriptor (int fd,
                     if (!m_data) {
                         Error error;
                         error.SetErrorToErrno ();
+                        CloseHandle(m_mmap_handle);
                         return 0;
                     }
                     m_mmap_size = length;
