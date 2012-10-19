@@ -496,10 +496,10 @@ PlatformWindows::Attach(ProcessAttachInfo &attach_info,
             ArchSpec emptyArchSpec;
 
             error = debugger.GetTargetList().CreateTarget (debugger,
-                                                           emptyFileSpec,
-                                                           emptyArchSpec,
+                                                           NULL,
+                                                           NULL,
                                                            false,
-                                                           m_remote_platform_sp,
+                                                           NULL,
                                                            new_target_sp);
             target = new_target_sp.get();
         }

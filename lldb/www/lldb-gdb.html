@@ -311,6 +311,30 @@
                             <b>(lldb)</b> br s -S count<br>
                         </td>
                     </tr>
+                    <tr><td class="header" colspan="2">Set a breakpoint by regular expression on function name.</td></tr>
+
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> rbreak regular-expression<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> breakpoint set --regex regular-expression<br>
+                            <b>(lldb)</b> br s -r regular-expression<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Set a breakpoint by regular expression on source file contents.</td></tr>
+
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> shell grep -e -n pattern source-file<br>
+                            <b>(gdb)</b> break source-file:CopyLineNumbers<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> breakpoint set --source-pattern regular-expression --file SourceFile<br>
+                            <b>(lldb)</b> br s -p regular-expression -f file<br>
+                        </td>
+                    </tr>
 
                     <tr><td class="header" colspan="2">List all breakpoints.</td></tr>
                     <tr>
@@ -691,6 +715,26 @@
                         </td>
                         <td class="content">
                             <b>(lldb)</b> register read<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Write a new decimal value '123' to the current thread register 'rax'.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> p $rax = 123<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> register write rax 123<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Skip 8 bytes ahead of the current program counter (instruction pointer). Note that we use backticks to evaluate an expression and insert the scalar result in LLDB.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> jump *$pc+8<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> register write pc `$pc+8`<br>
                         </td>
                     </tr>
 

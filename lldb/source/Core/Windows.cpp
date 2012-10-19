@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cerrno>
+#include <Windows.h>
 
 int strcasecmp(const char* s1, const char* s2)
 {
@@ -183,6 +184,13 @@ char* basename(char *path)
     if (l2 > l1) l1 = l2;
     if (!l1) return path; // no base name
     return &l1[1];
+}
+
+char* getcwd(char* path, int max) 
+{
+    if (GetCurrentDirectory(max, path) == 0)
+        return path;
+    return NULL;
 }
 
 char *dirname(char *path)

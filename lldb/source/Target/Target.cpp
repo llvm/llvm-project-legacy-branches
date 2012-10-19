@@ -1747,7 +1747,8 @@ Target::EvaluateExpression
                                                                expr_cstr, 
                                                                prefix, 
                                                                result_valobj_sp,
-                                                               options.GetSingleThreadTimeoutUsec());
+                                                               options.GetRunOthers(),
+                                                               options.GetTimeoutUsec());
         }
     }
     
@@ -2150,7 +2151,8 @@ g_properties[] =
     { "max-children-count"                 , OptionValue::eTypeSInt64    , false, 256                       , NULL, NULL, "Maximum number of children to expand in any level of depth." },
     { "max-string-summary-length"          , OptionValue::eTypeSInt64    , false, 1024                      , NULL, NULL, "Maximum number of characters to show when using %s in summary strings." },
     { "breakpoints-use-platform-avoid-list", OptionValue::eTypeBoolean   , false, true                      , NULL, NULL, "Consult the platform module avoid list when setting non-module specific breakpoints." },
-    { "run-args"                           , OptionValue::eTypeArgs      , false, 0                         , NULL, NULL, "A list containing all the arguments to be passed to the executable when it is run." },
+    { "arg0"                               , OptionValue::eTypeString    , false, 0                         , NULL, NULL, "The first argument passed to the program in the argument array which can be different from the executable itself." },
+    { "run-args"                           , OptionValue::eTypeArgs      , false, 0                         , NULL, NULL, "A list containing all the arguments to be passed to the executable when it is run. Note that this does NOT include the argv[0] which is in target.arg0." },
     { "env-vars"                           , OptionValue::eTypeDictionary, false, OptionValue::eTypeString  , NULL, NULL, "A list of all the environment variables to be passed to the executable's environment, and their values." },
     { "inherit-env"                        , OptionValue::eTypeBoolean   , false, true                      , NULL, NULL, "Inherit the environment from the process that is running LLDB." },
     { "input-path"                         , OptionValue::eTypeFileSpec  , false, 0                         , NULL, NULL, "The file/path to be used by the executable program for reading its standard input." },
@@ -2165,6 +2167,7 @@ g_properties[] =
         "Always checking for inlined breakpoint locations can be expensive (memory and time), so we try to minimize the "
         "times we look for inlined locations. This setting allows you to control exactly which strategy is used when settings "
         "file and line breakpoints." },
+    { "disable-kext-loading"              , OptionValue::eTypeBoolean   , false, false                     , NULL, NULL, "Disable kext image loading in a Darwin kernel debug session" },
     { NULL                                 , OptionValue::eTypeInvalid   , false, 0                         , NULL, NULL, NULL }
 };
 enum
@@ -2179,6 +2182,7 @@ enum
     ePropertyMaxChildrenCount,
     ePropertyMaxSummaryLength,
     ePropertyBreakpointUseAvoidList,
+    ePropertyArg0,
     ePropertyRunArgs,
     ePropertyEnvVars,
     ePropertyInheritEnv,
@@ -2187,7 +2191,8 @@ enum
     ePropertyErrorPath,
     ePropertyDisableASLR,
     ePropertyDisableSTDIO,
-    ePropertyInlineStrategy
+    ePropertyInlineStrategy,
+    ePropertyDisableKextLoading
 };
 
 
@@ -2370,6 +2375,20 @@ TargetProperties::GetInlineStrategy () const
     return (InlineStrategy)m_collection_sp->GetPropertyAtIndexAsEnumeration (NULL, idx, g_properties[idx].default_uint_value);
 }
 
+const char *
+TargetProperties::GetArg0 () const
+{
+    const uint32_t idx = ePropertyArg0;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, NULL);
+}
+
+void
+TargetProperties::SetArg0 (const char *arg)
+{
+    const uint32_t idx = ePropertyArg0;
+    m_collection_sp->SetPropertyAtIndexAsString (NULL, idx, arg);
+}
+
 bool
 TargetProperties::GetRunArguments (Args &args) const
 {
@@ -2499,6 +2518,20 @@ TargetProperties::GetBreakpointsConsultPlatformAvoidList ()
 {
     const uint32_t idx = ePropertyBreakpointUseAvoidList;
     return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+bool
+TargetProperties::GetDisableKextLoading () const
+{
+    const uint32_t idx = ePropertyDisableKextLoading;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+void
+TargetProperties::SetDisableKextLoading (bool b)
+{
+    const uint32_t idx = ePropertyDisableKextLoading;
+    m_collection_sp->SetPropertyAtIndexAsBoolean (NULL, idx, b);
 }
 
 const TargetPropertiesSP &

@@ -71,6 +71,12 @@ public:
 
     void
     SetExtraStartupCommands (const Args &args);
+    
+    FileSpec
+    GetPythonOSPluginPath () const;
+
+    void
+    SetPythonOSPluginPath (const FileSpec &file);
 };
 
 typedef STD_SHARED_PTR(ProcessProperties) ProcessPropertiesSP;
@@ -246,15 +252,28 @@ public:
         return m_arguments;
     }
     
+    const char *
+    GetArg0 () const
+    {
+        if (m_arg0.empty())
+            return NULL;
+        return m_arg0.c_str();
+    }
+    
     void
-    SetArguments (const Args& args, 
-                  bool first_arg_is_executable,
-                  bool first_arg_is_executable_and_argument);
+    SetArg0 (const char *arg)
+    {
+        if (arg && arg[0])
+            m_arg0.clear();
+        else
+            m_arg0 = arg;
+    }
+    
+    void
+    SetArguments (const Args& args, bool first_arg_is_executable);
 
     void
-    SetArguments (char const **argv,
-                  bool first_arg_is_executable,
-                  bool first_arg_is_executable_and_argument);
+    SetArguments (char const **argv, bool first_arg_is_executable);
     
     Args &
     GetEnvironmentEntries ()
@@ -270,7 +289,11 @@ public:
     
 protected:
     FileSpec m_executable;
-    Args m_arguments;
+    std::string m_arg0; // argv[0] if supported. If empty, then use m_executable.
+                        // Not all process plug-ins support specifying an argv[0]
+                        // that differs from the resolved platform executable
+                        // (which is in m_executable)
+    Args m_arguments;   // All program arguments except argv[0]
     Args m_environment;
     uint32_t m_uid;
     uint32_t m_gid;    
@@ -2369,9 +2392,9 @@ public:
     RunThreadPlan (ExecutionContext &exe_ctx,    
                     lldb::ThreadPlanSP &thread_plan_sp,
                     bool stop_others,
-                    bool try_all_threads,
+                    bool run_others,
                     bool discard_on_error,
-                    uint32_t single_thread_timeout_usec,
+                    uint32_t timeout_usec,
                     Stream &errors);
 
     static const char *

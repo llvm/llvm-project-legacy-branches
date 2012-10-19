@@ -92,6 +92,12 @@ public:
     size_t
     Printf(const char* format, ...)  LLDB_ATTR(__attribute__ ((format (printf, 2, 3))));
     
+    const char *
+    GetOutput (bool only_if_no_immediate);
+    
+    const char *
+    GetError (bool only_if_no_immediate);
+    
 protected:
     friend class SBCommandInterpreter;
     friend class SBOptions;

@@ -380,7 +380,7 @@ ClangASTContext::ClangASTContext (const char *target_triple) :
     m_language_options_ap(),
     m_source_manager_ap(),
     m_diagnostics_engine_ap(),
-    m_target_options_ap(),
+    m_target_options_rp(),
     m_target_info_ap(),
     m_identifier_table_ap(),
     m_selector_table_ap(),
@@ -403,7 +403,7 @@ ClangASTContext::~ClangASTContext()
     m_selector_table_ap.reset();
     m_identifier_table_ap.reset();
     m_target_info_ap.reset();
-    m_target_options_ap.reset();
+    m_target_options_rp.reset();
     m_diagnostics_engine_ap.reset();
     m_source_manager_ap.reset();
     m_language_options_ap.reset();
@@ -418,7 +418,7 @@ ClangASTContext::Clear()
     m_language_options_ap.reset();
     m_source_manager_ap.reset();
     m_diagnostics_engine_ap.reset();
-    m_target_options_ap.reset();
+    m_target_options_rp.reset();
     m_target_info_ap.reset();
     m_identifier_table_ap.reset();
     m_selector_table_ap.reset();
@@ -610,13 +610,14 @@ ClangASTContext::getDiagnosticConsumer()
 TargetOptions *
 ClangASTContext::getTargetOptions()
 {
-    if (m_target_options_ap.get() == NULL && !m_target_triple.empty())
+    if (m_target_options_rp.getPtr() == NULL && !m_target_triple.empty())
     {
-        m_target_options_ap.reset (new TargetOptions());
-        if (m_target_options_ap.get())
-            m_target_options_ap->Triple = m_target_triple;
+        m_target_options_rp.reset ();
+        m_target_options_rp = new TargetOptions();
+        if (m_target_options_rp.getPtr() != NULL)
+            m_target_options_rp->Triple = m_target_triple;
     }
-    return m_target_options_ap.get();
+    return m_target_options_rp.getPtr();
 }
 
 
@@ -3652,11 +3653,10 @@ ClangASTContext::GetLLDBBasicTypeEnumeration (clang_type_t clang_type)
     {
         QualType qual_type(QualType::getFromOpaquePtr(clang_type));
         const clang::Type::TypeClass type_class = qual_type->getTypeClass();
-        switch (type_class)
+        if (type_class == clang::Type::Builtin)
         {
-        case clang::Type::Builtin:                  
             switch (cast<clang::BuiltinType>(qual_type)->getKind())
-
+            {
             case clang::BuiltinType::Void:      return eBasicTypeVoid;
             case clang::BuiltinType::Bool:      return eBasicTypeBool;
             case clang::BuiltinType::Char_S:    return eBasicTypeSignedChar;
@@ -3695,6 +3695,7 @@ ClangASTContext::GetLLDBBasicTypeEnumeration (clang_type_t clang_type)
             case clang::BuiltinType::BuiltinFn:
             case clang::BuiltinType::ARCUnbridgedCast:
                 return eBasicTypeOther;
+            }
         }
     }
     

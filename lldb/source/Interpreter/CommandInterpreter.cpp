@@ -311,8 +311,8 @@ CommandInterpreter::Initialize ()
     {
         alias_arguments_vector_sp.reset (new OptionArgVector);
         ProcessAliasOptionsArgs (cmd_obj_sp, "--func-regex %1", alias_arguments_vector_sp);
-        AddAlias ("rb", cmd_obj_sp);
-        AddOrReplaceAliasOptions("rb", alias_arguments_vector_sp);
+        AddAlias ("rbreak", cmd_obj_sp);
+        AddOrReplaceAliasOptions("rbreak", alias_arguments_vector_sp);
     }
 }
 
@@ -1310,11 +1310,12 @@ CommandInterpreter::PreprocessCommand (std::string &command)
                 {
                     ValueObjectSP expr_result_valobj_sp;
                     
-                    Target::EvaluateExpressionOptions options;
+                    EvaluateExpressionOptions options;
                     options.SetCoerceToId(false)
                     .SetUnwindOnError(true)
                     .SetKeepInMemory(false)
-                    .SetSingleThreadTimeoutUsec(0);
+                    .SetRunOthers(true)
+                    .SetTimeoutUsec(0);
                     
                     ExecutionResults expr_result = target->EvaluateExpression (expr_str.c_str(), 
                                                                                exe_ctx.GetFramePtr(),
