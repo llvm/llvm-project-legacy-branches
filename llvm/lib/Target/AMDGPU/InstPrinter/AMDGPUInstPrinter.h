@@ -33,8 +33,14 @@ private:
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 //  void printUnsignedImm(const MCInst *MI, int OpNo, raw_ostream &O);
   void printMemOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
-
-
+  void printIfSet(const MCInst *MI, unsigned OpNo, raw_ostream &O, StringRef Asm);
+  void printAbs(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printClamp(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printLast(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printNeg(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printOMOD(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printRel(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printWrite(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 };
 
 } // End namespace llvm

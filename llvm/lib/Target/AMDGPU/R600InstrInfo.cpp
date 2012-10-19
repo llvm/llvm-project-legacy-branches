@@ -475,6 +475,47 @@ unsigned int R600InstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
   return 2;
 }
 
+int R600InstrInfo::getOperandIdx(const MachineInstr &MI,
+                                 R600Operands::Ops Op) const
+{
+  const static int OpTable[3][R600Operands::COUNT] = {
+//      W        C     S  S  S     S  S  S     S  S
+//      R  O  D  L  S  R  R  R  S  R  R  R  S  R  R  L  P
+//   D  I  M  R  A  R  C  C  C  C  C  C  C  R  C  C  A  R  I
+//   S  T  O  E  M  C  0  0  0  C  1  1  1  C  2  2  S  E  M
+//   T  E  D  L  P  0  N  R  A  1  N  R  A  2  N  R  T  D  M
+    {0, 1, 2, 3, 4, 5, 6, 7, 8,-1,-1,-1,-1,-1,-1,-1, 9,10,11},
+    {0, 1, 2, 3, 4 ,5 ,6 ,7, 8, 9,10,11,12,-1,-1,-1,13,14,15},
+    {0, 1, 2, 3, 4, 5, 6, 7,-1, 8, 9,10,-1,11,12,13,14,15,16}
+  };
+  unsigned TargetFlags = get(MI.getOpcode()).TSFlags;
+  unsigned OpTableIdx;
+
+  if (!HAS_NATIVE_OPERANDS(TargetFlags)) {
+    switch (Op) {
+    case R600Operands::DST: return 0;
+    case R600Operands::SRC0: return 1;
+    case R600Operands::SRC1: return 2;
+    case R600Operands::SRC2: return 3;
+    default:
+      assert(!"Unknown operand type for instruction");
+      return -1;
+    }
+  }
+
+  if (TargetFlags & R600_InstFlag::OP1) {
+    OpTableIdx = 0;
+  } else if (TargetFlags & R600_InstFlag::OP2) {
+    OpTableIdx = 1;
+  } else {
+    assert((TargetFlags & R600_InstFlag::OP3) && "OP1, OP2, or OP3 not defined "
+                                                 "for this instruction");
+    OpTableIdx = 2;
+  }
+
+  return OpTable[OpTableIdx][Op];
+}
+
 //===----------------------------------------------------------------------===//
 // Instruction flag getters/setters
 //===----------------------------------------------------------------------===//
@@ -484,11 +525,56 @@ bool R600InstrInfo::hasFlagOperand(const MachineInstr &MI) const
   return GET_FLAG_OPERAND_IDX(get(MI.getOpcode()).TSFlags) != 0;
 }
 
-MachineOperand &R600InstrInfo::getFlagOp(MachineInstr *MI) const
+MachineOperand &R600InstrInfo::getFlagOp(MachineInstr *MI, unsigned SrcIdx,
+                                         unsigned Flag) const
 {
-  unsigned FlagIndex = GET_FLAG_OPERAND_IDX(get(MI->getOpcode()).TSFlags);
-  assert(FlagIndex != 0 &&
+  unsigned TargetFlags = get(MI->getOpcode()).TSFlags;
+  int FlagIndex = 0;
+  if (Flag != 0) {
+    // If we pass something other than the default value of Flag to this
+    // function, it means we are want to set a flag on an instruction
+    // that uses native encoding.
+    assert(HAS_NATIVE_OPERANDS(TargetFlags));
+    bool IsOP3 = (TargetFlags & R600_InstFlag::OP3) == R600_InstFlag::OP3;
+    switch (Flag) {
+    case MO_FLAG_CLAMP:
+      FlagIndex = getOperandIdx(*MI, R600Operands::CLAMP);
+      break;
+    case MO_FLAG_MASK:
+      FlagIndex = getOperandIdx(*MI, R600Operands::WRITE);
+      break;
+    case MO_FLAG_NOT_LAST:
+    case MO_FLAG_LAST:
+      FlagIndex = getOperandIdx(*MI, R600Operands::LAST);
+      break;
+    case MO_FLAG_NEG:
+      switch (SrcIdx) {
+      case 0: FlagIndex = getOperandIdx(*MI, R600Operands::SRC0_NEG); break;
+      case 1: FlagIndex = getOperandIdx(*MI, R600Operands::SRC1_NEG); break;
+      case 2: FlagIndex = getOperandIdx(*MI, R600Operands::SRC2_NEG); break;
+      }
+      break;
+
+    case MO_FLAG_ABS:
+      assert(!IsOP3 && "Cannot set absolute value modifier for OP3 "
+                       "instructions.");
+      switch (SrcIdx) {
+      case 0: FlagIndex = getOperandIdx(*MI, R600Operands::SRC0_ABS); break;
+      case 1: FlagIndex = getOperandIdx(*MI, R600Operands::SRC1_ABS); break;
+      }
+      break;
+
+    default:
+      FlagIndex = -1;
+      break;
+    }
+    assert(FlagIndex != -1 && "Flag not supported for this instruction");
+  } else {
+      FlagIndex = GET_FLAG_OPERAND_IDX(TargetFlags);
+      assert(FlagIndex != 0 &&
          "Instruction flags not supported for this instruction");
+  }
+
   MachineOperand &FlagOp = MI->getOperand(FlagIndex);
   assert(FlagOp.isImm());
   return FlagOp;
@@ -497,15 +583,36 @@ MachineOperand &R600InstrInfo::getFlagOp(MachineInstr *MI) const
 void R600InstrInfo::addFlag(MachineInstr *MI, unsigned Operand,
                             unsigned Flag) const
 {
-  MachineOperand &FlagOp = getFlagOp(MI);
-  FlagOp.setImm(FlagOp.getImm() | (Flag << (NUM_MO_FLAGS * Operand)));
+  unsigned TargetFlags = get(MI->getOpcode()).TSFlags;
+  if (Flag == 0) {
+    return;
+  }
+  if (HAS_NATIVE_OPERANDS(TargetFlags)) {
+    MachineOperand &FlagOp = getFlagOp(MI, Operand, Flag);
+    if (Flag == MO_FLAG_NOT_LAST) {
+      clearFlag(MI, Operand, MO_FLAG_LAST);
+    } else if (Flag == MO_FLAG_MASK) {
+      clearFlag(MI, Operand, Flag);
+    } else {
+      FlagOp.setImm(1);
+    }
+  } else {
+      MachineOperand &FlagOp = getFlagOp(MI, Operand);
+      FlagOp.setImm(FlagOp.getImm() | (Flag << (NUM_MO_FLAGS * Operand)));
+  }
 }
 
 void R600InstrInfo::clearFlag(MachineInstr *MI, unsigned Operand,
                               unsigned Flag) const
 {
-  MachineOperand &FlagOp = getFlagOp(MI);
-  unsigned InstFlags = FlagOp.getImm();
-  InstFlags &= ~(Flag << (NUM_MO_FLAGS * Operand));
-  FlagOp.setImm(InstFlags);
+  unsigned TargetFlags = get(MI->getOpcode()).TSFlags;
+  if (HAS_NATIVE_OPERANDS(TargetFlags)) {
+    MachineOperand &FlagOp = getFlagOp(MI, Operand, Flag);
+    FlagOp.setImm(0);
+  } else {
+    MachineOperand &FlagOp = getFlagOp(MI);
+    unsigned InstFlags = FlagOp.getImm();
+    InstFlags &= ~(Flag << (NUM_MO_FLAGS * Operand));
+    FlagOp.setImm(InstFlags);
+  }
 }

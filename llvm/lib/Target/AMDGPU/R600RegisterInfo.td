@@ -53,8 +53,8 @@ def ALU_LITERAL_X : R600Reg<"literal.x", 253>;
 def PV_X : R600Reg<"pv.x", 254>;
 def PREDICATE_BIT : R600Reg<"PredicateBit", 0>;
 def PRED_SEL_OFF: R600Reg<"Pred_sel_off", 0>;
-def PRED_SEL_ZERO : R600Reg<"Pred_sel_zero", 0>;
-def PRED_SEL_ONE : R600Reg<"Pred_sel_one", 0>;
+def PRED_SEL_ZERO : R600Reg<"Pred_sel_zero", 2>;
+def PRED_SEL_ONE : R600Reg<"Pred_sel_one", 3>;
 
 def R600_CReg32 : RegisterClass <"AMDGPU", [f32, i32], 32,
                           (add (interleave

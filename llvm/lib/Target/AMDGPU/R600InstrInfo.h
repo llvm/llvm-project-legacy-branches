@@ -16,6 +16,7 @@
 
 #include "AMDIL.h"
 #include "AMDGPUInstrInfo.h"
+#include "R600Defines.h"
 #include "R600RegisterInfo.h"
 
 #include <map>
@@ -109,6 +110,10 @@ namespace llvm {
   virtual int getInstrLatency(const InstrItineraryData *ItinData,
                               SDNode *Node) const { return 1;}
 
+  /// getOperandIdx - Get the index of Op in the MachineInstr.  Returns -1
+  /// if the Instruction does not contain the specified Op.
+  int getOperandIdx(const MachineInstr &MI, R600Operands::Ops Op) const;
+
   ///hasFlagOperand - Returns true if this instruction has an operand for
   /// storing target flags.
   bool hasFlagOperand(const MachineInstr &MI) const;
@@ -120,7 +125,10 @@ namespace llvm {
   bool isFlagSet(const MachineInstr &MI, unsigned Operand, unsigned Flag) const;
 
   ///getFlagOp - Return the operand containing the flags for this instruction.
-  MachineOperand &getFlagOp(MachineInstr *MI) const;
+  /// SrcIdx is the register source to set the flag on (e.g src0, src1, src2)
+  /// Flag is the flag being set.
+  MachineOperand &getFlagOp(MachineInstr *MI, unsigned SrcIdx = 0,
+                            unsigned Flag = 0) const;
 
   ///clearFlag - Clear the specified flag on the instruction.
   void clearFlag(MachineInstr *MI, unsigned Operand, unsigned Flag) const;

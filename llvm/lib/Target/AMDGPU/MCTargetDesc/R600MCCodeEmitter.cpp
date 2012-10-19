@@ -191,20 +191,6 @@ void R600MCCodeEmitter::EmitALUInstr(const MCInst &MI,
   const MCInstrDesc &MCDesc = MCII.get(MI.getOpcode());
   unsigned NumOperands = MI.getNumOperands();
 
-  if(MCDesc.findFirstPredOperandIdx() > -1)
-    NumOperands--;
-
-  if (GET_FLAG_OPERAND_IDX(MCDesc.TSFlags) != 0)
-    NumOperands--;
-
-  if(MI.getOpcode() == AMDGPU::PRED_X)
-    NumOperands = 2;
-
-  // XXX Check if instruction writes a result
-  if (NumOperands < 1) {
-    return;
-  }
-
   // Emit instruction type
   EmitByte(INSTR_ALU, OS);
 
@@ -217,6 +203,40 @@ void R600MCCodeEmitter::EmitALUInstr(const MCInst &MI,
     uint64_t ISAOpCode = InstWord01 & (0x3FFULL << 39);
     InstWord01 &= ~(0x3FFULL << 39);
     InstWord01 |= ISAOpCode << 1;
+  }
+
+  if (HAS_NATIVE_OPERANDS(MCDesc.TSFlags)) {
+    unsigned SrcIdx = 0;
+    for (unsigned int OpIdx = 1; OpIdx < NumOperands; ++OpIdx) {
+      if (MI.getOperand(OpIdx).isImm() || MI.getOperand(OpIdx).isFPImm() ||
+          OpIdx == (unsigned)MCDesc.findFirstPredOperandIdx()) {
+        continue;
+      }
+      EmitSrcISA(MI, OpIdx, InstWord01, OS);
+      SrcIdx++;
+    }
+
+    // Emit zeros for unused sources
+    for ( ; SrcIdx < 3; SrcIdx++) {
+      EmitNullBytes(SRC_BYTE_COUNT - 6, OS);
+    }
+
+    Emit(InstWord01, OS);
+    return;
+  }
+
+  if(MCDesc.findFirstPredOperandIdx() > -1)
+    NumOperands--;
+
+  if (GET_FLAG_OPERAND_IDX(MCDesc.TSFlags) != 0)
+    NumOperands--;
+
+  if(MI.getOpcode() == AMDGPU::PRED_X)
+    NumOperands = 2;
+
+  // XXX Check if instruction writes a result
+  if (NumOperands < 1) {
+    return;
   }
 
   unsigned int OpIndex;
@@ -383,6 +403,13 @@ void R600MCCodeEmitter::EmitSrcISA(const MCInst &MI, unsigned OpIdx,
     EmitTwoBytes(0, OS);
   }
 
+  // Emit the literal value, if applicable (4 bytes).
+  Emit(InlineConstant.i, OS);
+
+  if (HAS_NATIVE_OPERANDS(MCII.get(MI.getOpcode()).TSFlags)) {
+    return;
+  }
+
   // source channel
   uint64_t sourceChannelValue = getHWRegChan(MO.getReg());
   if (OpIdx == 1)
@@ -413,9 +440,6 @@ void R600MCCodeEmitter::EmitSrcISA(const MCInst &MI, unsigned OpIdx,
 
   // XXX: relative addressing mode
   // XXX: kc_bank
-
-  // Emit the literal value, if applicable (4 bytes).
-  Emit(InlineConstant.i, OS);
 
 }
 
@@ -612,7 +636,11 @@ uint64_t R600MCCodeEmitter::getMachineOpValue(const MCInst &MI,
                                               const MCOperand &MO,
                                         SmallVectorImpl<MCFixup> &Fixup) const {
   if (MO.isReg()) {
-    return getHWReg(MO.getReg());
+    if (HAS_NATIVE_OPERANDS(MCII.get(MI.getOpcode()).TSFlags)) {
+      return MRI.getEncodingValue(MO.getReg());
+    } else {
+      return getHWReg(MO.getReg());
+    }
   } else if (MO.isImm()) {
     return MO.getImm();
   } else {

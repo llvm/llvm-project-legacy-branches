@@ -19,27 +19,58 @@
 #define MO_FLAG_MASK  (1 << 3)
 #define MO_FLAG_PUSH  (1 << 4)
 #define MO_FLAG_NOT_LAST  (1 << 5)
-#define NUM_MO_FLAGS 6
+#define MO_FLAG_LAST  (1 << 6)
+#define NUM_MO_FLAGS 7
 
 // Helper for finding getting the operand index for the instruction flags
 // operand.
 #define GET_FLAG_OPERAND_IDX(Flags) (((Flags) >> 7) & 0x3)
 
 namespace R600_InstFlag {
-	enum TIF {
-		TRANS_ONLY = (1 << 0),
-		TEX = (1 << 1),
-		REDUCTION = (1 << 2),
-		FC = (1 << 3),
-		TRIG = (1 << 4),
-		OP3 = (1 << 5),
-		VECTOR = (1 << 6)
+  enum TIF {
+    TRANS_ONLY = (1 << 0),
+    TEX = (1 << 1),
+    REDUCTION = (1 << 2),
+    FC = (1 << 3),
+    TRIG = (1 << 4),
+    OP3 = (1 << 5),
+    VECTOR = (1 << 6),
     //FlagOperand bits 7, 8
-	};
+    NATIVE_OPERANDS = (1 << 9),
+    OP1 = (1 << 10),
+    OP2 = (1 << 11)
+  };
 }
+
+#define HAS_NATIVE_OPERANDS(Flags) ((Flags) & R600_InstFlag::NATIVE_OPERANDS)
 
 // Defines for extracting register infomation from register encoding
 #define HW_REG_MASK 0x1ff
 #define HW_CHAN_SHIFT 9
+
+namespace R600Operands {
+  enum Ops {
+    DST,
+    WRITE,
+    OMOD,
+    DST_REL,
+    CLAMP,
+    SRC0,
+    SRC0_NEG,
+    SRC0_REL,
+    SRC0_ABS,
+    SRC1,
+    SRC1_NEG,
+    SRC1_REL,
+    SRC1_ABS,
+    SRC2,
+    SRC2_NEG,
+    SRC2_REL,
+    LAST,
+    PRED_SEL,
+    IMM,
+    COUNT
+ };
+}
 
 #endif // R600DEFINES_H_

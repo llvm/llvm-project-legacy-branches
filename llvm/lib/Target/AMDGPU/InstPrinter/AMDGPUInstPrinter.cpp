@@ -44,4 +44,65 @@ void AMDGPUInstPrinter::printMemOperand(const MCInst *MI, unsigned OpNo,
   printOperand(MI, OpNo, O);
 }
 
+void AMDGPUInstPrinter::printIfSet(const MCInst *MI, unsigned OpNo,
+                                    raw_ostream &O, StringRef Asm) {
+  const MCOperand &Op = MI->getOperand(OpNo);
+  assert(Op.isImm());
+  if (Op.getImm() == 1) {
+    O << Asm;
+  }
+}
+
+void AMDGPUInstPrinter::printAbs(const MCInst *MI, unsigned OpNo,
+                                 raw_ostream &O) {
+  printIfSet(MI, OpNo, O, "|");
+}
+
+void AMDGPUInstPrinter::printClamp(const MCInst *MI, unsigned OpNo,
+                                   raw_ostream &O) {
+  printIfSet(MI, OpNo, O, "_SAT");
+}
+
+void AMDGPUInstPrinter::printLast(const MCInst *MI, unsigned OpNo,
+                                  raw_ostream &O) {
+  printIfSet(MI, OpNo, O, " *");
+}
+
+void AMDGPUInstPrinter::printNeg(const MCInst *MI, unsigned OpNo,
+                                 raw_ostream &O) {
+  printIfSet(MI, OpNo, O, "-");
+}
+
+void AMDGPUInstPrinter::printOMOD(const MCInst *MI, unsigned OpNo,
+                                  raw_ostream &O) {
+  switch (MI->getOperand(OpNo).getImm()) {
+  default: break;
+  case 1:
+    O << " * 2.0";
+    break;
+  case 2:
+    O << " * 4.0";
+    break;
+  case 3:
+    O << " / 2.0";
+    break;
+  }
+}
+
+void AMDGPUInstPrinter::printRel(const MCInst *MI, unsigned OpNo,
+                                 raw_ostream &O) {
+  const MCOperand &Op = MI->getOperand(OpNo);
+  if (Op.getImm() != 0) {
+    O << " + " + Op.getImm();
+  }
+}
+
+void AMDGPUInstPrinter::printWrite(const MCInst *MI, unsigned OpNo,
+                                       raw_ostream &O) {
+  const MCOperand &Op = MI->getOperand(OpNo);
+  if (Op.getImm() == 0) {
+    O << " (MASKED)";
+  }
+}
+
 #include "AMDGPUGenAsmWriter.inc"

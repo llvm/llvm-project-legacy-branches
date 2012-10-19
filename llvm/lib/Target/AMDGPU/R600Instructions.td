@@ -22,6 +22,9 @@ class InstR600 <bits<11> inst, dag outs, dag ins, string asm, list<dag> pattern,
   bit Op3 = 0;
   bit isVector = 0;
   bits<2> FlagOperandIdx = 0;
+  bit Op1 = 0;
+  bit Op2 = 0;
+  bit HasNativeOperands = 0;
 
   bits<11> op_code = inst;
   //let Inst = inst;
@@ -39,6 +42,9 @@ class InstR600 <bits<11> inst, dag outs, dag ins, string asm, list<dag> pattern,
   // instruction group
   let TSFlags{6} = isVector;
   let TSFlags{8-7} = FlagOperandIdx;
+  let TSFlags{9} = HasNativeOperands;
+  let TSFlags{10} = Op1;
+  let TSFlags{11} = Op2;
 }
 
 class InstR600ISA <dag outs, dag ins, string asm, list<dag> pattern> :
@@ -57,22 +63,116 @@ def MEMrr : Operand<iPTR> {
   let MIOperandInfo = (ops R600_Reg32:$ptr, R600_Reg32:$index);
 }
 
-def InstFlag : OperandWithDefaultOps <i32, (ops (i32 0))>;
+// Operands for non-registers
+
+class InstFlag<string PM = "printOperand", int Default = 0>
+    : OperandWithDefaultOps <i32, (ops (i32 Default))> {
+  let PrintMethod = PM;
+}
+
+def LITERAL : InstFlag;
+
+def WRITE : InstFlag <"printWrite", 1>;
+def OMOD : InstFlag <"printOMOD">;
+def REL : InstFlag <"printRel">;
+def CLAMP : InstFlag <"printClamp">;
+def NEG : InstFlag <"printNeg">;
+def ABS : InstFlag <"printAbs">;
+
+// XXX: The r600g finalizer in Mesa expects last to be one in most cases.
+// Once we start using the packetizer in this backend we should have this
+// default to 0.
+def LAST : InstFlag<"printLast", 1>;
 
 def ADDRParam : ComplexPattern<i32, 2, "SelectADDRParam", [], []>;
 def ADDRDWord : ComplexPattern<i32, 1, "SelectADDRDWord", [], []>;
 def ADDRVTX_READ : ComplexPattern<i32, 2, "SelectADDRVTX_READ", [], []>;
 
-class R600_ALU {
+class R600ALU_Word0 {
+  field bits<32> Word0;
 
-  bits<7> DST_GPR = 0;
-  bits<9> SRC0_SEL = 0;
-  bits<1> SRC0_NEG = 0;
-  bits<9> SRC1_SEL = 0;
-  bits<1> SRC1_NEG = 0;
-  bits<1> CLAMP = 0;
-  
+  bits<11> src0;
+  bits<1>  src0_neg;
+  bits<1>  src0_rel;
+  bits<11> src1;
+  bits<1>  src1_rel;
+  bits<1>  src1_neg;
+  bits<3>  index_mode = 0;
+  bits<2>  pred_sel;
+  bits<1>  last;
+
+  bits<9>  src0_sel  = src0{8-0};
+  bits<2>  src0_chan = src0{10-9};
+  bits<9>  src1_sel  = src1{8-0};
+  bits<2>  src1_chan = src1{10-9};
+
+  let Word0{8-0}   = src0_sel;
+  let Word0{9}     = src0_rel;
+  let Word0{11-10} = src0_chan;
+  let Word0{12}    = src0_neg;
+  let Word0{21-13} = src1_sel;
+  let Word0{22}    = src1_rel;
+  let Word0{24-23} = src1_chan;
+  let Word0{25}    = src1_neg;
+  let Word0{28-26} = index_mode;
+  let Word0{30-29} = pred_sel;
+  let Word0{31}    = last;
 }
+
+class R600ALU_Word1_OP2 <bits<11> alu_inst> {
+  field bits<32> Word1;
+
+  bits<1>  src0_abs;
+  bits<1>  src1_abs;
+  bits<1>  update_exec_mask = 0;
+  bits<1>  update_pred = 0;
+  bits<1>  write;
+  bits<2>  omod;
+  bits<3>  bank_swizzle = 0;
+  bits<11> dst;
+  bits<1>  dst_rel;
+  bits<1>  clamp;
+
+  bits<7>  dst_sel  = dst{6-0};
+  bits<2>  dst_chan = dst{10-9};
+
+  let Word1{0}     = src0_abs;
+  let Word1{1}     = src1_abs;
+  let Word1{2}     = update_exec_mask;
+  let Word1{3}     = update_pred;
+  let Word1{4}     = write;
+  let Word1{6-5}   = omod;
+  let Word1{17-7}  = alu_inst;
+  let Word1{20-18} = bank_swizzle;
+  let Word1{27-21} = dst_sel;
+  let Word1{28}    = dst_rel;
+  let Word1{30-29} = dst_chan;
+  let Word1{31}    = clamp;
+}
+
+/*
+XXX: R600 subtarget uses a slightly different encoding than the other
+subtargets.  We currently handle this in R600MCCodeEmitter, but we may
+want to use these instruction classes in the future.
+
+class R600ALU_Word1_OP2_r600 : R600ALU_Word1_OP2 {
+
+  bits<1>  fog_merge;
+  bits<10> alu_inst;
+
+  let Inst{37}    = fog_merge;
+  let Inst{39-38} = omod;
+  let Inst{49-40} = alu_inst;
+}
+
+class R600ALU_Word1_OP2_r700 : R600ALU_Word1_OP2 {
+
+  bits<11> alu_inst;
+
+  let Inst{38-37} = omod;
+  let Inst{49-39} = alu_inst;
+}
+*/
 
 def R600_Pred : PredicateOperand<i32, (ops R600_Predicate),
                                      (ops PRED_SEL_OFF)>;
@@ -80,20 +180,45 @@ def R600_Pred : PredicateOperand<i32, (ops R600_Predicate),
 
 let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in {
 
+// Class for instructions with only one source register.
+// If you add new ins to this instruction, make sure they are listed before
+// $literal, because the backend currently assumes that the last operand is
+// a literal.  Also be sure to update the enum R600Op1OperandIndex::ROI in
+// R600Defines.h, R600InstrInfo::buildDefaultInstruction(),
+// and R600InstrInfo::getOperandIdx().
 class R600_1OP <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
-  InstR600 <inst,
-          (outs R600_Reg32:$dst),
-          (ins R600_Reg32:$src, R600_Pred:$p, variable_ops),
-          !strconcat(opName, " $dst, $src $p"),
-          pattern,
-          itin>{
-    bits<7> dst;
-    bits<9> src;
-    let Inst{8-0}   = src;
-    let Inst{49-39} = inst;
-    let Inst{59-53} = dst;
-  }
+    InstR600 <0,
+              (outs R600_Reg32:$dst),
+              (ins WRITE:$write, OMOD:$omod, REL:$dst_rel, CLAMP:$clamp,
+                   R600_Reg32:$src0, NEG:$src0_neg, REL:$src0_rel, ABS:$src0_abs,
+                   LAST:$last, R600_Pred:$pred_sel, LITERAL:$literal),
+              !strconcat(opName,
+                   "$clamp $dst$write$dst_rel$omod, "
+                   "$src0_neg$src0_abs$src0$src0_abs$src0_rel, "
+                   "$literal $pred_sel$last"),
+              pattern,
+              itin>,
+    R600ALU_Word0,
+    R600ALU_Word1_OP2 <inst> {
+
+  let src1 = 0;
+  let src1_rel = 0;
+  let src1_neg = 0;
+  let src1_abs = 0;
+  let HasNativeOperands = 1;
+  let Op1 = 1;
+  let DisableEncoding = "$literal";
+
+  let Inst{31-0}  = Word0;
+  let Inst{63-32} = Word1;
+}
+
+class R600_1OP_Helper <bits<11> inst, string opName, SDPatternOperator node,
+                    InstrItinClass itin = AnyALU> :
+    R600_1OP <inst, opName,
+              [(set R600_Reg32:$dst, (node R600_Reg32:$src0))]
+>;
 
 class R600_2OP <bits<11> inst, string opName, list<dag> pattern,
                 InstrItinClass itin = AnyALU> :
@@ -383,30 +508,11 @@ def SNE : R600_2OP <
     COND_NE))]
 >;
 
-def FRACT : R600_1OP <
-  0x10, "FRACT",
-  [(set R600_Reg32:$dst, (AMDGPUfract R600_Reg32:$src))]
->;
-
-def TRUNC : R600_1OP <
-  0x11, "TRUNC",
-  [(set R600_Reg32:$dst, (int_AMDGPU_trunc R600_Reg32:$src))]
->;
-
-def CEIL : R600_1OP <
-  0x12, "CEIL",
-  [(set R600_Reg32:$dst, (fceil R600_Reg32:$src))]
->;
-
-def RNDNE : R600_1OP <
-  0x13, "RNDNE",
-  [(set R600_Reg32:$dst, (frint R600_Reg32:$src))]
->;
-
-def FLOOR : R600_1OP <
-  0x14, "FLOOR",
-  [(set R600_Reg32:$dst, (ffloor R600_Reg32:$src))]
->;
+def FRACT : R600_1OP_Helper <0x10, "FRACT", AMDGPUfract>;
+def TRUNC : R600_1OP_Helper <0x11, "TRUNC", int_AMDGPU_trunc>;
+def CEIL : R600_1OP_Helper <0x12, "CEIL", fceil>;
+def RNDNE : R600_1OP_Helper <0x13, "RNDNE", frint>;
+def FLOOR : R600_1OP_Helper <0x14, "FLOOR", ffloor>;
 
 let mayLoad = 0, mayStore = 0, hasSideEffects = 0 in {
 
@@ -482,10 +588,7 @@ def XOR_INT : R600_2OP <
   [(set R600_Reg32:$dst, (xor R600_Reg32:$src0, R600_Reg32:$src1))]
 >;
 
-def NOT_INT : R600_1OP <
-  0x33, "NOT_INT",
-  [(set R600_Reg32:$dst, (not R600_Reg32:$src))]
->;
+def NOT_INT : R600_1OP_Helper <0x33, "NOT_INT", not>;
 
 def ADD_INT : R600_2OP <
   0x34, "ADD_INT",
@@ -740,44 +843,33 @@ multiclass CUBE_Common <bits<11> inst> {
 }
 } // End mayLoad = 0, mayStore = 0, hasSideEffects = 0
 
-class FLT_TO_INT_Common <bits<11> inst> : R600_1OP <
-  inst, "FLT_TO_INT",
-  [(set R600_Reg32:$dst, (fp_to_sint R600_Reg32:$src))]
+class EXP_IEEE_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "EXP_IEEE", fexp2
 >;
 
-class INT_TO_FLT_Common <bits<11> inst> : R600_1OP <
-  inst, "INT_TO_FLT",
-  [(set R600_Reg32:$dst, (sint_to_fp R600_Reg32:$src))]
+class FLT_TO_INT_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "FLT_TO_INT", fp_to_sint
 >;
 
-class FLT_TO_UINT_Common <bits<11> inst> : R600_1OP <
-  inst, "FLT_TO_UINT",
-  [(set R600_Reg32:$dst, (fp_to_uint R600_Reg32:$src))]
+class INT_TO_FLT_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "INT_TO_FLT", sint_to_fp
 >;
 
-class UINT_TO_FLT_Common <bits<11> inst> : R600_1OP <
-  inst, "UINT_TO_FLT",
-  [(set R600_Reg32:$dst, (uint_to_fp R600_Reg32:$src))]
+class FLT_TO_UINT_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "FLT_TO_UINT", fp_to_uint
+>;
+
+class UINT_TO_FLT_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "UINT_TO_FLT", uint_to_fp
 >;
 
 class LOG_CLAMPED_Common <bits<11> inst> : R600_1OP <
-  inst, "LOG_CLAMPED",
-  []
+  inst, "LOG_CLAMPED", []
 >;
 
-let FlagOperandIdx = 3 in {
-
-class EXP_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "EXP_IEEE",
-  [(set R600_Reg32:$dst, (fexp2 R600_Reg32:$src))]
+class LOG_IEEE_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "LOG_IEEE", flog2
 >;
-
-class LOG_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "LOG_IEEE",
-  [(set R600_Reg32:$dst, (flog2 R600_Reg32:$src))]
->;
-
-} // End let FlagOperandIdx = 3
 
 class LSHL_Common <bits<11> inst> : R600_2OP <
   inst, "LSHL $dst, $src0, $src1",
@@ -815,32 +907,23 @@ class MULLO_UINT_Common <bits<11> inst> : R600_2OP <
 >;
 
 class RECIP_CLAMPED_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIP_CLAMPED",
-  []
+  inst, "RECIP_CLAMPED", []
 >;
 
-class RECIP_UINT_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIP_INT $dst, $src",
-  [(set R600_Reg32:$dst, (AMDGPUurecip R600_Reg32:$src))]
+class RECIP_IEEE_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "RECIP_IEEE", int_AMDGPU_rcp
 >;
 
-let FlagOperandIdx = 3 in {
-
-class RECIP_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIP_IEEE",
-  [(set R600_Reg32:$dst, (int_AMDGPU_rcp R600_Reg32:$src))]
+class RECIP_UINT_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "RECIP_UINT", AMDGPUurecip
 >;
 
-class RECIPSQRT_CLAMPED_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIPSQRT_CLAMPED",
-  [(set R600_Reg32:$dst, (int_AMDGPU_rsq R600_Reg32:$src))]
+class RECIPSQRT_CLAMPED_Common <bits<11> inst> : R600_1OP_Helper <
+  inst, "RECIPSQRT_CLAMPED", int_AMDGPU_rsq
 >;
-
-} // End let FlagOperandIdx = 3
 
 class RECIPSQRT_IEEE_Common <bits<11> inst> : R600_1OP <
-  inst, "RECIPSQRT_IEEE",
-  []
+  inst, "RECIPSQRT_IEEE", []
 >;
 
 class SIN_Common <bits<11> inst> : R600_1OP <
@@ -1036,11 +1119,11 @@ let Predicates = [isEGorCayman] in {
   // XXX: Lowering SELECT_CC will sometimes generate fp_to_[su]int nodes,
   // which do not need to be truncated since the fp values are 0.0f or 1.0f.
   // We should look into handling these cases separately.
-  def : Pat<(fp_to_sint R600_Reg32:$src),
-    (FLT_TO_INT_eg (TRUNC R600_Reg32:$src))>;
+  def : Pat<(fp_to_sint R600_Reg32:$src0),
+    (FLT_TO_INT_eg (TRUNC R600_Reg32:$src0))>;
 
-  def : Pat<(fp_to_uint R600_Reg32:$src),
-    (FLT_TO_UINT_eg (TRUNC R600_Reg32:$src))>;
+  def : Pat<(fp_to_uint R600_Reg32:$src0),
+    (FLT_TO_UINT_eg (TRUNC R600_Reg32:$src0))>;
 
   def : Pat<(fsqrt R600_Reg32:$src),
     (MUL R600_Reg32:$src, (RECIPSQRT_CLAMPED_eg R600_Reg32:$src))>;

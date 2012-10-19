@@ -222,13 +222,18 @@ bool R600ExpandSpecialInstrsPass::runOnMachineFunction(MachineFunction &MF) {
       // T0_Z = CUBE T1_X, T1_Z
       // T0_W = CUBE T1_Y, T1_Z
       for (unsigned Chan = 0; Chan < 4; Chan++) {
-        unsigned DstReg = MI.getOperand(0).getReg();
-        unsigned Src0 = MI.getOperand(1).getReg();
+        unsigned DstReg = MI.getOperand(
+                            TII->getOperandIdx(MI, R600Operands::DST)).getReg();
+        unsigned Src0 = MI.getOperand(
+                           TII->getOperandIdx(MI, R600Operands::SRC0)).getReg();
         unsigned Src1 = 0;
 
         // Determine the correct source registers
         if (!IsCube) {
-          Src1 = MI.getOperand(2).getReg();
+          int Src1Idx = TII->getOperandIdx(MI, R600Operands::SRC1);
+          if (Src1Idx != -1) {
+            Src1 = MI.getOperand(Src1Idx).getReg();
+          }
         }
         if (IsReduction) {
           unsigned SubRegIndex = TRI.getSubRegFromChannel(Chan);
