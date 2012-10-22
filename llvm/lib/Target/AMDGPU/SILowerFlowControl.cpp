@@ -97,7 +97,7 @@ bool SILowerFlowControlPass::runOnMachineFunction(MachineFunction &MF) {
                                      S = AMDGPU::SReg_64RegClass.end();
                                      I != S; ++I) {
     unsigned Reg = *I;
-    if (!MF.getRegInfo().isPhysRegOrOverlapUsed(Reg)) {
+    if (!MF.getRegInfo().isPhysRegUsed(Reg)) {
       UnusedRegisters.insert(UnusedRegisters.begin(), Reg);
     }
   }
