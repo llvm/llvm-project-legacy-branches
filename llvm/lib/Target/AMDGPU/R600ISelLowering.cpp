@@ -64,6 +64,9 @@ R600TargetLowering::R600TargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::SETCC, MVT::f32, Custom);
   setOperationAction(ISD::FP_TO_UINT, MVT::i1, Custom);
 
+  setOperationAction(ISD::SELECT, MVT::i32, Custom);
+  setOperationAction(ISD::SELECT, MVT::f32, Custom);
+
   setTargetDAGCombine(ISD::FP_ROUND);
 
   setSchedulingPreference(Sched::VLIW);
@@ -295,6 +298,7 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
   case ISD::BR_CC: return LowerBR_CC(Op, DAG);
   case ISD::ROTL: return LowerROTL(Op, DAG);
   case ISD::SELECT_CC: return LowerSELECT_CC(Op, DAG);
+  case ISD::SELECT: return LowerSELECT(Op, DAG);
   case ISD::SETCC: return LowerSETCC(Op, DAG);
   case ISD::FPOW: return LowerFPOW(Op, DAG);
   case ISD::INTRINSIC_VOID: {
@@ -635,6 +639,18 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
   return DAG.getNode(ISD::SELECT_CC, DL, VT,
       Cond, HWFalse,
       True, False,
+      DAG.getCondCode(ISD::SETNE));
+}
+
+SDValue R600TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const
+{
+  return DAG.getNode(ISD::SELECT_CC,
+      Op.getDebugLoc(),
+      Op.getValueType(),
+      Op.getOperand(0),
+      DAG.getConstant(0, MVT::i32),
+      Op.getOperand(1),
+      Op.getOperand(2),
       DAG.getCondCode(ISD::SETNE));
 }
 
