@@ -41,6 +41,12 @@ foreach Index = 0-127 in {
                                    Index>;
 }
 
+// Array Base Register holding input in FS
+foreach Index = 448-464 in {
+  def ArrayBase#Index :  R600Reg<"ARRAY_BASE", Index>;
+}
+
+
 // Special Registers
 
 def ZERO : R600Reg<"0.0", 248>;
@@ -55,6 +61,9 @@ def PREDICATE_BIT : R600Reg<"PredicateBit", 0>;
 def PRED_SEL_OFF: R600Reg<"Pred_sel_off", 0>;
 def PRED_SEL_ZERO : R600Reg<"Pred_sel_zero", 2>;
 def PRED_SEL_ONE : R600Reg<"Pred_sel_one", 3>;
+
+def R600_ArrayBase : RegisterClass <"AMDGPU", [f32, i32], 32,
+                          (add (sequence "ArrayBase%u", 448, 464))>;
 
 def R600_CReg32 : RegisterClass <"AMDGPU", [f32, i32], 32,
                           (add (interleave
@@ -83,6 +92,7 @@ def R600_TReg32 : RegisterClass <"AMDGPU", [f32, i32], 32,
 def R600_Reg32 : RegisterClass <"AMDGPU", [f32, i32], 32, (add
     R600_TReg32,
     R600_CReg32,
+    R600_ArrayBase,
     ZERO, HALF, ONE, ONE_INT, PV_X, ALU_LITERAL_X, NEG_ONE, NEG_HALF)>;
 
 def R600_Predicate : RegisterClass <"AMDGPU", [i32], 32, (add

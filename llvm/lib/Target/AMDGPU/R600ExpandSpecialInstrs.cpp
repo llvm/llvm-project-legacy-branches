@@ -95,8 +95,9 @@ bool R600ExpandSpecialInstrsPass::ExpandInputPerspective(MachineInstr &MI)
   for (unsigned i = 0; i < 8; i++) {
     unsigned IJIndex = AMDGPU::R600_TReg32RegClass.getRegister(
         2 * IJIndexBase + ((i + 1) % 2));
-    unsigned ReadReg = AMDGPU::R600_TReg32RegClass.getRegister(
-        4 * MI.getOperand(2).getImm());
+    unsigned ReadReg = AMDGPU::R600_ArrayBaseRegClass.getRegister(
+        MI.getOperand(2).getImm());
+
 
     unsigned Sel;
     switch (i % 4) {
@@ -109,16 +110,11 @@ bool R600ExpandSpecialInstrsPass::ExpandInputPerspective(MachineInstr &MI)
 
     unsigned Res = TRI.getSubReg(DstReg, Sel);
 
-    const MCInstrDesc &Opcode = (i < 4)?
-        TII->get(AMDGPU::INTERP_ZW):
-        TII->get(AMDGPU::INTERP_XY);
+    unsigned Opcode = (i < 4)?AMDGPU::INTERP_ZW:AMDGPU::INTERP_XY;
 
-    MachineInstr *NewMI = BuildMI(*(MI.getParent()),
-        I, MI.getParent()->findDebugLoc(I),
-        Opcode, Res)
-        .addReg(IJIndex)
-        .addReg(ReadReg)
-        .addImm(0);
+    MachineBasicBlock &MBB = *(MI.getParent());
+    MachineInstr *NewMI =
+        TII->buildDefaultInstruction(MBB, I, Opcode, Res, IJIndex, ReadReg);
 
     if (!(i> 1 && i < 6)) {
       TII->addFlag(NewMI, 0, MO_FLAG_MASK);
@@ -143,8 +139,8 @@ bool R600ExpandSpecialInstrsPass::ExpandInputConstant(MachineInstr &MI)
   unsigned DstReg = MI.getOperand(0).getReg();
 
   for (unsigned i = 0; i < 4; i++) {
-    unsigned ReadReg = AMDGPU::R600_TReg32RegClass.getRegister(
-        4 * MI.getOperand(1).getImm() + i);
+    unsigned ReadReg = AMDGPU::R600_ArrayBaseRegClass.getRegister(
+        MI.getOperand(1).getImm());
 
     unsigned Sel;
     switch (i % 4) {
@@ -157,11 +153,9 @@ bool R600ExpandSpecialInstrsPass::ExpandInputConstant(MachineInstr &MI)
 
     unsigned Res = TRI.getSubReg(DstReg, Sel);
 
-    MachineInstr *NewMI = BuildMI(*(MI.getParent()),
-        I, MI.getParent()->findDebugLoc(I),
-        TII->get(AMDGPU::INTERP_LOAD_P0), Res)
-        .addReg(ReadReg)
-        .addImm(0);
+    MachineBasicBlock &MBB = *(MI.getParent());
+    MachineInstr *NewMI = TII->buildDefaultInstruction(
+        MBB, I, AMDGPU::INTERP_LOAD_P0, Res, ReadReg);
 
     if (i % 4 !=  3)
       TII->addFlag(NewMI, 0, MO_FLAG_NOT_LAST);

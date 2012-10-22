@@ -444,32 +444,17 @@ def input_constant :  AMDGPUShaderInst <
 
 
 
-def INTERP_XY : InstR600 <0xD6,
-  (outs R600_Reg32:$dst),
-  (ins R600_Reg32:$src0, R600_Reg32:$src1, i32imm:$flags),
-  "INTERP_XY dst",
-  [], AnyALU>
+def INTERP_XY : R600_2OP <0xD6, "INTERP_XY", []>
 {
-  let FlagOperandIdx = 3;
+  let bank_swizzle = 5;
 }
 
-def INTERP_ZW : InstR600 <0xD7,
-  (outs R600_Reg32:$dst),
-  (ins R600_Reg32:$src0, R600_Reg32:$src1, i32imm:$flags),
-  "INTERP_ZW dst",
-  [], AnyALU>
+def INTERP_ZW : R600_2OP <0xD7, "INTERP_ZW", []>
 {
-  let FlagOperandIdx = 3;
+  let bank_swizzle = 5;
 }
 
-def INTERP_LOAD_P0 : InstR600 <0xE0,
-  (outs R600_Reg32:$dst),
-  (ins R600_Reg32:$src, i32imm:$flags),
-  "INTERP_LOAD_P0 dst",
-  [], AnyALU>
-{
-  let FlagOperandIdx = 2;
-}
+def INTERP_LOAD_P0 : R600_1OP <0xE0, "INTERP_LOAD_P0", []>;
 
 let Predicates = [isR600toCayman] in { 
 
