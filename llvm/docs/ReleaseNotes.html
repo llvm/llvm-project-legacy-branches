@@ -466,6 +466,20 @@ Release Notes</a>.</h1>
 <p>In addition to many minor performance tweaks and bug fixes, this release
    includes a few major enhancements and additions to the optimizers:</p>
 
+<p> Loop Vectorizer - We've added a loop vectorizer and we are now able to
+    vectorize small loops. The loop vectorizer is disabled by default and
+    can be enabled using the <b>-mllvm -vectorize</b> flag. <br/>
+    We can now vectorize this code:
+
+    <pre class="doc_code">
+    for (i=0; i&lt;n; i++) {
+      a[i] = b[i+1] + c[i+3] + i;
+      sum += d[i];
+    }
+    </pre>
+
+ </p>
+
 <ul>
   <li>...</li>
 </ul>
@@ -505,6 +519,8 @@ Release Notes</a>.</h1>
   where it is clear to the optimizer that the stack slot is not shared.
   We use the lifetime markers to tell the codegen that a certain alloca
   is used within a region.</p>
+
+<p> We now merge consecutive loads and stores. </p>
 
 <p>We have put a significant amount of work into the code generator
    infrastructure, which allows us to implement more aggressive algorithms and
@@ -644,6 +660,11 @@ Release Notes</a>.</h1>
 
 <p>In addition, many APIs have changed in this release.  Some of the major
    LLVM API changes are:</p>
+
+<p> We've added a new interface for allowing IR-level passes to access
+  target-specific information. A new IR-level pass, called
+  "TargetTransformInfo" provides a number of low-level interfaces.
+  LSR and LowerInvoke already use the new interface. </p>
 
 <ul>
   <li>...</li>

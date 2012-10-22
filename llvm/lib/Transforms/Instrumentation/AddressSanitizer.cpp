@@ -245,38 +245,6 @@ static GlobalVariable *createPrivateGlobalForString(Module &M, StringRef Str) {
                             GlobalValue::PrivateLinkage, StrConst, "");
 }
 
-// Split the basic block and insert an if-then code.
-// Before:
-//   Head
-//   Cmp
-//   Tail
-// After:
-//   Head
-//   if (Cmp)
-//     ThenBlock
-//   Tail
-//
-// ThenBlock block is created and its terminator is returned.
-// If Unreachable, ThenBlock is terminated with UnreachableInst, otherwise
-// it is terminated with BranchInst to Tail.
-static TerminatorInst *splitBlockAndInsertIfThen(Value *Cmp, bool Unreachable) {
-  Instruction *SplitBefore = cast<Instruction>(Cmp)->getNextNode();
-  BasicBlock *Head = SplitBefore->getParent();
-  BasicBlock *Tail = Head->splitBasicBlock(SplitBefore);
-  TerminatorInst *HeadOldTerm = Head->getTerminator();
-  LLVMContext &C = Head->getParent()->getParent()->getContext();
-  BasicBlock *ThenBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
-  TerminatorInst *CheckTerm;
-  if (Unreachable)
-    CheckTerm = new UnreachableInst(C, ThenBlock);
-  else
-    CheckTerm = BranchInst::Create(Tail, ThenBlock);
-  BranchInst *HeadNewTerm =
-    BranchInst::Create(/*ifTrue*/ThenBlock, /*ifFalse*/Tail, Cmp);
-  ReplaceInstWithInst(HeadOldTerm, HeadNewTerm);
-  return CheckTerm;
-}
-
 Value *AddressSanitizer::memToShadow(Value *Shadow, IRBuilder<> &IRB) {
   // Shadow >> scale
   Shadow = IRB.CreateLShr(Shadow, MappingScale);
@@ -324,7 +292,7 @@ bool AddressSanitizer::instrumentMemIntrinsic(MemIntrinsic *MI) {
 
     Value *Cmp = IRB.CreateICmpNE(Length,
                                   Constant::getNullValue(Length->getType()));
-    InsertBefore = splitBlockAndInsertIfThen(Cmp, false);
+    InsertBefore = SplitBlockAndInsertIfThen(cast<Instruction>(Cmp), false);
   }
 
   instrumentMemIntrinsicParam(MI, Dst, Length, InsertBefore, true);
@@ -480,7 +448,8 @@ void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
   TerminatorInst *CrashTerm = 0;
 
   if (ClAlwaysSlowPath || (TypeSize < 8 * Granularity)) {
-    TerminatorInst *CheckTerm = splitBlockAndInsertIfThen(Cmp, false);
+    TerminatorInst *CheckTerm =
+        SplitBlockAndInsertIfThen(cast<Instruction>(Cmp), false);
     assert(dyn_cast<BranchInst>(CheckTerm)->isUnconditional());
     BasicBlock *NextBB = CheckTerm->getSuccessor(0);
     IRB.SetInsertPoint(CheckTerm);
@@ -491,7 +460,7 @@ void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
     BranchInst *NewTerm = BranchInst::Create(CrashBlock, NextBB, Cmp2);
     ReplaceInstWithInst(CheckTerm, NewTerm);
   } else {
-    CrashTerm = splitBlockAndInsertIfThen(Cmp, true);
+    CrashTerm = SplitBlockAndInsertIfThen(cast<Instruction>(Cmp), true);
   }
 
   Instruction *Crash =
@@ -534,7 +503,7 @@ void AddressSanitizer::createInitializerPoisonCalls(Module &M,
 
 bool AddressSanitizer::ShouldInstrumentGlobal(GlobalVariable *G) {
   Type *Ty = cast<PointerType>(G->getType())->getElementType();
-  DEBUG(dbgs() << "GLOBAL: " << *G);
+  DEBUG(dbgs() << "GLOBAL: " << *G << "\n");
 
   if (BL->isIn(*G)) return false;
   if (!Ty->isSized()) return false;
@@ -682,7 +651,7 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
         FirstDynamic = LastDynamic;
     }
 
-    DEBUG(dbgs() << "NEW GLOBAL:\n" << *NewGlobal);
+    DEBUG(dbgs() << "NEW GLOBAL: " << *NewGlobal << "\n");
   }
 
   ArrayType *ArrayOfGlobalStructTy = ArrayType::get(GlobalStructTy, n);
@@ -851,6 +820,7 @@ bool AddressSanitizer::maybeInsertAsanInitAtFunctionEntry(Function &F) {
 bool AddressSanitizer::runOnFunction(Function &F) {
   if (BL->isIn(F)) return false;
   if (&F == AsanCtorFunction) return false;
+  DEBUG(dbgs() << "ASAN instrumenting:\n" << F << "\n");
 
   // If needed, insert __asan_init before checking for AddressSafety attr.
   maybeInsertAsanInitAtFunctionEntry(F);
@@ -914,8 +884,6 @@ bool AddressSanitizer::runOnFunction(Function &F) {
     NumInstrumented++;
   }
 
-  DEBUG(dbgs() << F);
-
   bool ChangedStack = poisonStackInFunction(F);
 
   // We must unpoison the stack before every NoReturn call (throw, _exit, etc).
@@ -925,6 +893,7 @@ bool AddressSanitizer::runOnFunction(Function &F) {
     IRBuilder<> IRB(CI);
     IRB.CreateCall(AsanHandleNoReturnFunc);
   }
+  DEBUG(dbgs() << "ASAN done instrumenting:\n" << F << "\n");
 
   return NumInstrumented > 0 || ChangedStack || !NoReturnCalls.empty();
 }
@@ -1147,6 +1116,10 @@ bool AddressSanitizer::poisonStackInFunction(Function &F) {
                          OrigStackBase);
     }
   }
+
+  // We are done. Remove the old unused alloca instructions.
+  for (size_t i = 0, n = AllocaVec.size(); i < n; i++)
+    AllocaVec[i]->eraseFromParent();
 
   if (ClDebugStack) {
     DEBUG(dbgs() << F);

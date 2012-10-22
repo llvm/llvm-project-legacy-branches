@@ -19,6 +19,8 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCParser/AsmCond.h"
 #include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
@@ -35,12 +37,16 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cctype>
+#include <set>
+#include <string>
 #include <vector>
 using namespace llvm;
 
 static cl::opt<bool>
 FatalAssemblerWarnings("fatal-assembler-warnings",
                        cl::desc("Consider warnings as error"));
+
+MCAsmParserSemaCallback::~MCAsmParserSemaCallback() {} 
 
 namespace {
 
@@ -139,7 +145,8 @@ private:
   /// ParsedOperands - The parsed operands from the last parsed statement.
   SmallVector<MCParsedAsmOperand*, 8> ParsedOperands;
 
-  /// Opcode - The opcode from the last parsed instruction.
+  /// Opcode - The opcode from the last parsed instruction.  This is MS-style
+  /// inline asm specific.
   unsigned Opcode;
 
 public:
@@ -180,20 +187,17 @@ public:
 
   virtual const AsmToken &Lex();
 
-  bool ParseStatement();
   void setParsingInlineAsm(bool V) { ParsingInlineAsm = V; }
-  unsigned getNumParsedOperands() { return ParsedOperands.size(); }
-  MCParsedAsmOperand &getParsedOperand(unsigned OpNum) {
-    assert (ParsedOperands.size() > OpNum);
-    return *ParsedOperands[OpNum];
-  }
-  void freeParsedOperands() {
-    for (unsigned i = 0, e = ParsedOperands.size(); i != e; ++i)
-      delete ParsedOperands[i];
-    ParsedOperands.clear();
-  }
-  bool isInstruction() { return Opcode != (unsigned)~0x0; }
-  unsigned getOpcode() { return Opcode; }
+  bool isParsingInlineAsm() { return ParsingInlineAsm; }
+
+  bool ParseMSInlineAsm(void *AsmLoc, std::string &AsmString,
+                        unsigned &NumOutputs, unsigned &NumInputs,
+                        SmallVectorImpl<void *> &OpDecls,
+                        SmallVectorImpl<std::string> &Constraints,
+                        SmallVectorImpl<std::string> &Clobbers,
+                        const MCInstrInfo *MII,
+                        const MCInstPrinter *IP,
+                        MCAsmParserSemaCallback &SI);
 
   bool ParseExpression(const MCExpr *&Res);
   virtual bool ParseExpression(const MCExpr *&Res, SMLoc &EndLoc);
@@ -205,6 +209,7 @@ public:
 private:
   void CheckForValidSection();
 
+  bool ParseStatement();
   void EatToEndOfLine();
   bool ParseCppHashLineFilenameComment(const SMLoc &L);
 
@@ -310,6 +315,11 @@ private:
   bool ParseDirectiveIrp(SMLoc DirectiveLoc);  // ".irp"
   bool ParseDirectiveIrpc(SMLoc DirectiveLoc); // ".irpc"
   bool ParseDirectiveEndr(SMLoc DirectiveLoc); // ".endr"
+
+  // MS-style inline assembly parsing.
+  bool isInstruction() { return Opcode != (unsigned)~0x0; }
+  unsigned getOpcode() { return Opcode; }
+  void setOpcode(unsigned Value) { Opcode = Value; }
 };
 
 /// \brief Generic implementations of directive handling, etc. which is shared
@@ -1377,10 +1387,13 @@ bool AsmParser::ParseStatement() {
                                                          ParsingInlineAsm);
   }
 
-  // Free any parsed operands.  If parsing ms-style inline assembly it is the
-  // responsibility of the caller (i.e., clang) to free the parsed operands.
-  if (!ParsingInlineAsm)
-    freeParsedOperands();
+  // Free any parsed operands.  If parsing ms-style inline assembly the operands
+  // will be freed by the ParseMSInlineAsm() function.
+  if (!ParsingInlineAsm) {
+    for (unsigned i = 0, e = ParsedOperands.size(); i != e; ++i)
+      delete ParsedOperands[i];
+    ParsedOperands.clear();
+  }
 
   // Don't skip the rest of the line, the instruction parser is responsible for
   // that.
@@ -3558,6 +3571,222 @@ bool AsmParser::ParseDirectiveEndr(SMLoc DirectiveLoc) {
   assert(getLexer().is(AsmToken::EndOfStatement));
 
   HandleMacroExit();
+  return false;
+}
+
+namespace {
+enum AsmRewriteKind {
+   AOK_Imm,
+   AOK_Input,
+   AOK_Output,
+   AOK_SizeDirective,
+   AOK_Skip
+};
+
+struct AsmRewrite {
+  AsmRewriteKind Kind;
+  SMLoc Loc;
+  unsigned Len;
+  unsigned Size;
+public:
+  AsmRewrite(AsmRewriteKind kind, SMLoc loc, unsigned len, unsigned size = 0)
+    : Kind(kind), Loc(loc), Len(len), Size(size) { }
+};
+}
+
+bool AsmParser::ParseMSInlineAsm(void *AsmLoc, std::string &AsmString,
+                                 unsigned &NumOutputs, unsigned &NumInputs,
+                                 SmallVectorImpl<void *> &OpDecls,
+                                 SmallVectorImpl<std::string> &Constraints,
+                                 SmallVectorImpl<std::string> &Clobbers,
+                                 const MCInstrInfo *MII,
+                                 const MCInstPrinter *IP,
+                                 MCAsmParserSemaCallback &SI) {
+  SmallVector<void*, 4> InputDecls;
+  SmallVector<void*, 4> OutputDecls;
+  SmallVector<std::string, 4> InputConstraints;
+  SmallVector<std::string, 4> OutputConstraints;
+  std::set<std::string> ClobberRegs;
+
+  SmallVector<struct AsmRewrite, 4> AsmStrRewrites;
+
+  // Prime the lexer.
+  Lex();
+
+  // While we have input, parse each statement.
+  unsigned InputIdx = 0;
+  unsigned OutputIdx = 0;
+  while (getLexer().isNot(AsmToken::Eof)) {
+    // Clear the opcode.
+    setOpcode(~0x0);
+
+    // Save the conditional ignore state of the parser prior to parsing the statement.
+    bool PreParseCondStateIgnore = TheCondState.Ignore;
+
+    // Save the starting point of this statement in case we need to skip it.
+    SMLoc Start = getLexer().getLoc();
+
+    if (ParseStatement())
+      return true;
+
+    // If PreParseCondStateIgnore is false, but TheCondState.Ignore is true, then we
+    // just parsed a directive that changed the state to ignore.  Don't skip 
+    // emitting this directive.
+    if (PreParseCondStateIgnore && TheCondState.Ignore) {
+      unsigned Len = getLexer().getLoc().getPointer() - Start.getPointer();
+      AsmStrRewrites.push_back(AsmRewrite(AOK_Skip, Start, Len));
+      continue;
+    }
+
+    if (isInstruction()) {
+      const MCInstrDesc &Desc = MII->get(getOpcode());
+
+      // Build the list of clobbers, outputs and inputs.
+      for (unsigned i = 1, e = ParsedOperands.size(); i != e; ++i) {
+        MCParsedAsmOperand *Operand = ParsedOperands[i];
+
+        // Immediate.
+        if (Operand->isImm()) {
+          AsmStrRewrites.push_back(AsmRewrite(AOK_Imm,
+                                                Operand->getStartLoc(),
+                                                Operand->getNameLen()));
+          continue;
+        }
+
+        // Register operand.
+        if (Operand->isReg()) {
+          unsigned NumDefs = Desc.getNumDefs();
+          // Clobber.
+          if (NumDefs && Operand->getMCOperandNum() < NumDefs) {
+            std::string Reg;
+            raw_string_ostream OS(Reg);
+            IP->printRegName(OS, Operand->getReg());
+            ClobberRegs.insert(StringRef(OS.str()));
+          }
+          continue;
+        }
+
+        // Expr/Input or Output.
+        unsigned Size;
+        void *OpDecl = SI.LookupInlineAsmIdentifier(Operand->getName(), AsmLoc,
+                                                    Size);
+        if (OpDecl) {
+          bool isOutput = (i == 1) && Desc.mayStore();
+          if (Operand->needSizeDirective())
+            AsmStrRewrites.push_back(AsmRewrite(AOK_SizeDirective,
+                                                  Operand->getStartLoc(), 0,
+                                                  Operand->getMemSize()));
+          
+          if (isOutput) {
+            std::string Constraint = "=";
+            ++InputIdx;
+            OutputDecls.push_back(OpDecl);
+            Constraint += Operand->getConstraint().str();
+            OutputConstraints.push_back(Constraint);
+            AsmStrRewrites.push_back(AsmRewrite(AOK_Output,
+                                                  Operand->getStartLoc(),
+                                                  Operand->getNameLen()));
+          } else {
+            InputDecls.push_back(OpDecl);
+            InputConstraints.push_back(Operand->getConstraint().str());
+            AsmStrRewrites.push_back(AsmRewrite(AOK_Input,
+                                                  Operand->getStartLoc(),
+                                                  Operand->getNameLen()));
+          }
+        }
+      }
+      // Free any parsed operands.
+      for (unsigned i = 0, e = ParsedOperands.size(); i != e; ++i)
+        delete ParsedOperands[i];
+      ParsedOperands.clear();
+    }
+  }
+
+  // Set the number of Outputs and Inputs.
+  NumOutputs = OutputDecls.size();
+  NumInputs = InputDecls.size();
+
+  // Set the unique clobbers.
+  for (std::set<std::string>::iterator I = ClobberRegs.begin(),
+         E = ClobberRegs.end(); I != E; ++I)
+    Clobbers.push_back(*I);
+
+  // Merge the various outputs and inputs.  Output are expected first.
+  if (NumOutputs || NumInputs) {
+    unsigned NumExprs = NumOutputs + NumInputs;
+    OpDecls.resize(NumExprs);
+    Constraints.resize(NumExprs);
+    for (unsigned i = 0; i < NumOutputs; ++i) {
+      OpDecls[i] = OutputDecls[i];
+      Constraints[i] = OutputConstraints[i];
+    }
+    for (unsigned i = 0, j = NumOutputs; i < NumInputs; ++i, ++j) {
+      OpDecls[j] = InputDecls[i];
+      Constraints[j] = InputConstraints[i];
+    }
+  }
+
+  // Build the IR assembly string.
+  std::string AsmStringIR;
+  AsmRewriteKind PrevKind = AOK_Imm;
+  raw_string_ostream OS(AsmStringIR);
+  const char *Start = SrcMgr.getMemoryBuffer(0)->getBufferStart();
+  for (SmallVectorImpl<struct AsmRewrite>::iterator
+         I = AsmStrRewrites.begin(), E = AsmStrRewrites.end(); I != E; ++I) {
+    const char *Loc = (*I).Loc.getPointer();
+
+    AsmRewriteKind Kind = (*I).Kind;
+
+    // Emit everything up to the immediate/expression.  If the previous rewrite
+    // was a size directive, then this has already been done.
+    if (PrevKind != AOK_SizeDirective)
+      OS << StringRef(Start, Loc - Start);
+    PrevKind = Kind;
+
+    // Skip the original expression.
+    if (Kind == AOK_Skip) {
+      Start = Loc + (*I).Len;
+      continue;
+    }
+
+    // Rewrite expressions in $N notation.
+    switch (Kind) {
+    default: break;
+    case AOK_Imm:
+      OS << Twine("$$") + StringRef(Loc, (*I).Len);
+      break;
+    case AOK_Input:
+      OS << '$';
+      OS << InputIdx++;
+      break;
+    case AOK_Output:
+      OS << '$';
+      OS << OutputIdx++;
+      break;
+    case AOK_SizeDirective:
+      switch((*I).Size) {
+      default: break;
+      case 8:  OS << "byte ptr "; break;
+      case 16: OS << "word ptr "; break;
+      case 32: OS << "dword ptr "; break;
+      case 64: OS << "qword ptr "; break;
+      case 80: OS << "xword ptr "; break;
+      case 128: OS << "xmmword ptr "; break;
+      case 256: OS << "ymmword ptr "; break;
+      }
+    }
+
+    // Skip the original expression.
+    if (Kind != AOK_SizeDirective)
+      Start = Loc + (*I).Len;
+  }
+
+  // Emit the remainder of the asm string.
+  const char *AsmEnd = SrcMgr.getMemoryBuffer(0)->getBufferEnd();
+  if (Start != AsmEnd)
+    OS << StringRef(Start, AsmEnd - Start);
+
+  AsmString = OS.str();
   return false;
 }
 
