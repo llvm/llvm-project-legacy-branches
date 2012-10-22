@@ -169,6 +169,9 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
       unsigned ReservedReg =
                           AMDGPU::R600_TReg32RegClass.getRegister(ReservedIndex);
       MFI->ReservedRegs.push_back(ReservedReg);
+      unsigned SuperReg =
+          AMDGPU::R600_Reg128RegClass.getRegister(ReservedIndex / 4);
+      MFI->ReservedRegs.push_back(SuperReg);
       break;
     }
 
