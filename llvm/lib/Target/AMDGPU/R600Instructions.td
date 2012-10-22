@@ -938,6 +938,15 @@ def RECIP_UINT_eg : RECIP_UINT_Common<0x94>;
 def RECIPSQRT_CLAMPED_eg : RECIPSQRT_CLAMPED_Common<0x87>;
 def EXP_IEEE_eg : EXP_IEEE_Common<0x81>;
 def LOG_IEEE_eg : LOG_IEEE_Common<0x83>;
+def RECIP_CLAMPED_eg : RECIP_CLAMPED_Common<0x84>;
+def RECIPSQRT_IEEE_eg : RECIPSQRT_IEEE_Common<0x89>;
+def SIN_eg : SIN_Common<0x8D>;
+def COS_eg : COS_Common<0x8E>;
+
+def : SIN_PAT <SIN_eg>;
+def : COS_PAT <COS_eg>;
+def : Pat<(fsqrt R600_Reg32:$src),
+  (MUL R600_Reg32:$src, (RECIPSQRT_CLAMPED_eg R600_Reg32:$src))>;
 } // End Predicates = [isEG]
 
 //===----------------------------------------------------------------------===//
@@ -982,17 +991,10 @@ let Predicates = [isEGorCayman] in {
   def CNDGE_eg : CNDGE_Common<0x1B>;
   def MUL_LIT_eg : MUL_LIT_Common<0x1F>;
   def LOG_CLAMPED_eg : LOG_CLAMPED_Common<0x82>;
-  def RECIP_CLAMPED_eg : RECIP_CLAMPED_Common<0x84>;
-  def RECIPSQRT_IEEE_eg : RECIPSQRT_IEEE_Common<0x89>;
-  def SIN_eg : SIN_Common<0x8D>;
-  def COS_eg : COS_Common<0x8E>;
   defm DOT4_eg : DOT4_Common<0xBE>;
   defm CUBE_eg : CUBE_Common<0xC0>;
 
   def TGSI_LIT_Z_eg : TGSI_LIT_Z_Common<MUL_LIT_eg, LOG_CLAMPED_eg, EXP_IEEE_eg>;
-
-  def : SIN_PAT <SIN_eg>;
-  def : COS_PAT <COS_eg>;
 
   def FLT_TO_INT_eg : FLT_TO_INT_Common<0x50> {
     let Pattern = [];
@@ -1021,9 +1023,6 @@ let Predicates = [isEGorCayman] in {
 
   def : Pat<(fp_to_uint R600_Reg32:$src0),
     (FLT_TO_UINT_eg (TRUNC R600_Reg32:$src0))>;
-
-  def : Pat<(fsqrt R600_Reg32:$src),
-    (MUL R600_Reg32:$src, (RECIPSQRT_CLAMPED_eg R600_Reg32:$src))>;
 
 //===----------------------------------------------------------------------===//
 // Memory read/write instructions
@@ -1278,7 +1277,14 @@ def MULHI_UINT_cm : MULHI_UINT_Common<0x92>;
 def RECIPSQRT_CLAMPED_cm : RECIPSQRT_CLAMPED_Common<0x87>;
 def EXP_IEEE_cm : EXP_IEEE_Common<0x81>;
 def LOG_IEEE_ : LOG_IEEE_Common<0x83>;
+def RECIP_CLAMPED_cm : RECIP_CLAMPED_Common<0x84>;
+def RECIPSQRT_IEEE_cm : RECIPSQRT_IEEE_Common<0x89>;
+def SIN_cm : SIN_Common<0x8D>;
+def COS_cm : COS_Common<0x8E>;
 } // End isVector = 1
+
+def : SIN_PAT <SIN_cm>;
+def : COS_PAT <COS_cm>;
 
 defm DIV_cm : DIV_Common<RECIP_IEEE_cm>;
 
@@ -1288,6 +1294,10 @@ def : Pat <
   (FLT_TO_UINT_eg (MUL_IEEE (RECIP_IEEE_cm (UINT_TO_FLT_eg R600_Reg32:$src0)),
                             (MOV_IMM_I32 0x4f800000)))
 >;
+
+
+def : Pat<(fsqrt R600_Reg32:$src),
+  (MUL R600_Reg32:$src, (RECIPSQRT_CLAMPED_cm R600_Reg32:$src))>;
 
 } // End isCayman
 
