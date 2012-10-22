@@ -19,8 +19,4 @@ let TargetPrefix = "R600", isTarget = 1 in {
     Intrinsic<[llvm_float_ty], [llvm_i32_ty], [IntrReadMem]>;
   def int_R600_load_input_linear :
     Intrinsic<[llvm_float_ty], [llvm_i32_ty], [IntrReadMem]>;
-  def int_R600_load_input_position :
-    Intrinsic<[llvm_float_ty], [llvm_i32_ty], [IntrReadMem]>;
-  def int_R600_load_input_face :
-    Intrinsic<[llvm_i1_ty], [llvm_i32_ty], [IntrReadMem]>;
 }

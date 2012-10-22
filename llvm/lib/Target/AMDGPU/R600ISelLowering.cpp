@@ -357,20 +357,6 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
       return DAG.getNode(ISD::EXTRACT_VECTOR_ELT,
           DL, VT, FullVector, DAG.getConstant(slot % 4, MVT::i32));
     }
-    case AMDGPUIntrinsic::R600_load_input_position: {
-      unsigned slot = cast<ConstantSDNode>(Op.getOperand(1))->getZExtValue();
-      unsigned RegIndex = AMDGPU::R600_TReg32RegClass.getRegister(slot);
-      SDValue Reg = CreateLiveInRegister(DAG, &AMDGPU::R600_TReg32RegClass,
-	    RegIndex, MVT::f32);
-      if ((slot % 4) == 3) {
-        return DAG.getNode(ISD::FDIV,
-            DL, VT,
-            DAG.getConstantFP(1.0f, MVT::f32),
-            Reg);
-      } else {
-        return Reg;
-      }
-    }
 
     case r600_read_ngroups_x:
       return LowerImplicitParameter(DAG, VT, DL, 0);
@@ -424,28 +410,7 @@ void R600TargetLowering::ReplaceNodeResults(SDNode *N,
   switch (N->getOpcode()) {
   default: return;
   case ISD::FP_TO_UINT: Results.push_back(LowerFPTOUINT(N->getOperand(0), DAG));
-  case ISD::INTRINSIC_WO_CHAIN:
-    {
-      unsigned IntrinsicID =
-          cast<ConstantSDNode>(N->getOperand(0))->getZExtValue();
-      if (IntrinsicID == AMDGPUIntrinsic::R600_load_input_face) {
-        Results.push_back(LowerInputFace(N, DAG));
-      } else {
-        return;
-      }
-    }
   }
-}
-
-SDValue R600TargetLowering::LowerInputFace(SDNode* Op, SelectionDAG &DAG) const
-{
-  unsigned slot = cast<ConstantSDNode>(Op->getOperand(1))->getZExtValue();
-  unsigned RegIndex = AMDGPU::R600_TReg32RegClass.getRegister(slot);
-  SDValue Reg = CreateLiveInRegister(DAG, &AMDGPU::R600_TReg32RegClass,
-      RegIndex, MVT::f32);
-  return DAG.getNode(ISD::SETCC, Op->getDebugLoc(), MVT::i1,
-      Reg, DAG.getConstantFP(0.0f, MVT::f32),
-      DAG.getCondCode(ISD::SETUGT));
 }
 
 SDValue R600TargetLowering::LowerFPTOUINT(SDValue Op, SelectionDAG &DAG) const
