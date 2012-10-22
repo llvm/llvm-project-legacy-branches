@@ -719,10 +719,8 @@ SDValue R600TargetLowering::LowerFormalArguments(
 }
 
 EVT R600TargetLowering::getSetCCResultType(EVT VT) const {
-  if (VT.isVector()) {
-    return VT;
-  }
-  return MVT::i32;
+   if (!VT.isVector()) return MVT::i32;
+   return VT.changeVectorElementTypeToInteger();
 }
 
 //===----------------------------------------------------------------------===//
