@@ -1203,6 +1203,11 @@ def : Pat <
 >;
 
 def : Pat <
+  (int_SI_fs_read_face),
+  (f32 FRONT_FACE)
+>;
+
+def : Pat <
   (int_SI_fs_read_pos 0),
   (f32 POS_X_FLOAT)
 >;
