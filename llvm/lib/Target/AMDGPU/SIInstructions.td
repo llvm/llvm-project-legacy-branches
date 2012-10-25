@@ -107,23 +107,35 @@ def S_GETREG_REGRD_B32 : SOPK_32 <0x00000014, "S_GETREG_REGRD_B32", []>;
 //def EXP : EXP_ <0x00000000, "EXP", []>;
 
 defm V_CMP_F_F32 : VOPC_32 <0x00000000, "V_CMP_F_F32", []>;
-defm V_CMP_LT_F32 : VOPC_32 <0x00000001, "V_CMP_LT_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_LT))]
+defm V_CMP_LT_F32 : VOPC_32 <0x00000001, "V_CMP_LT_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_LT)),
+  (V_CMP_LT_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_EQ_F32 : VOPC_32 <0x00000002, "V_CMP_EQ_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_EQ))]
+defm V_CMP_EQ_F32 : VOPC_32 <0x00000002, "V_CMP_EQ_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_EQ)),
+  (V_CMP_EQ_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_LE_F32 : VOPC_32 <0x00000003, "V_CMP_LE_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_LE))]
+defm V_CMP_LE_F32 : VOPC_32 <0x00000003, "V_CMP_LE_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_LE)),
+  (V_CMP_LE_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_GT_F32 : VOPC_32 <0x00000004, "V_CMP_GT_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_GT))]
+defm V_CMP_GT_F32 : VOPC_32 <0x00000004, "V_CMP_GT_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_GT)),
+  (V_CMP_GT_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_LG_F32 : VOPC_32 <0x00000005, "V_CMP_LG_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_NE))]
+defm V_CMP_LG_F32 : VOPC_32 <0x00000005, "V_CMP_LG_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_NE)),
+  (V_CMP_LG_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_GE_F32 : VOPC_32 <0x00000006, "V_CMP_GE_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_GE))]
+defm V_CMP_GE_F32 : VOPC_32 <0x00000006, "V_CMP_GE_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_GE)),
+  (V_CMP_GE_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
 defm V_CMP_O_F32 : VOPC_32 <0x00000007, "V_CMP_O_F32", []>;
 defm V_CMP_U_F32 : VOPC_32 <0x00000008, "V_CMP_U_F32", []>;
@@ -131,8 +143,10 @@ defm V_CMP_NGE_F32 : VOPC_32 <0x00000009, "V_CMP_NGE_F32", []>;
 defm V_CMP_NLG_F32 : VOPC_32 <0x0000000a, "V_CMP_NLG_F32", []>;
 defm V_CMP_NGT_F32 : VOPC_32 <0x0000000b, "V_CMP_NGT_F32", []>;
 defm V_CMP_NLE_F32 : VOPC_32 <0x0000000c, "V_CMP_NLE_F32", []>;
-defm V_CMP_NEQ_F32 : VOPC_32 <0x0000000d, "V_CMP_NEQ_F32",
-  [(set VCCReg:$dst, (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_NE))]
+defm V_CMP_NEQ_F32 : VOPC_32 <0x0000000d, "V_CMP_NEQ_F32", []>;
+def : Pat <
+  (i1 (setcc (f32 AllReg_32:$src0), VReg_32:$src1, COND_NE)),
+  (V_CMP_NEQ_F32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
 defm V_CMP_NLT_F32 : VOPC_32 <0x0000000e, "V_CMP_NLT_F32", []>;
 defm V_CMP_TRU_F32 : VOPC_32 <0x0000000f, "V_CMP_TRU_F32", []>;
@@ -263,23 +277,35 @@ defm V_CMPSX_NEQ_F64 : VOPC_64 <0x0000007d, "V_CMPSX_NEQ_F64", []>;
 defm V_CMPSX_NLT_F64 : VOPC_64 <0x0000007e, "V_CMPSX_NLT_F64", []>;
 defm V_CMPSX_TRU_F64 : VOPC_64 <0x0000007f, "V_CMPSX_TRU_F64", []>;
 defm V_CMP_F_I32 : VOPC_32 <0x00000080, "V_CMP_F_I32", []>;
-defm V_CMP_LT_I32 : VOPC_32 <0x00000081, "V_CMP_LT_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETLT))]
+defm V_CMP_LT_I32 : VOPC_32 <0x00000081, "V_CMP_LT_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_LT)),
+  (V_CMP_LT_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_EQ_I32 : VOPC_32 <0x00000082, "V_CMP_EQ_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETEQ))]
+defm V_CMP_EQ_I32 : VOPC_32 <0x00000082, "V_CMP_EQ_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_EQ)),
+  (V_CMP_EQ_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_LE_I32 : VOPC_32 <0x00000083, "V_CMP_LE_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETLE))]
+defm V_CMP_LE_I32 : VOPC_32 <0x00000083, "V_CMP_LE_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_LE)),
+  (V_CMP_LE_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_GT_I32 : VOPC_32 <0x00000084, "V_CMP_GT_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETGT))]
+defm V_CMP_GT_I32 : VOPC_32 <0x00000084, "V_CMP_GT_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_GT)),
+  (V_CMP_GT_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_NE_I32 : VOPC_32 <0x00000085, "V_CMP_NE_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETNE))]
+defm V_CMP_NE_I32 : VOPC_32 <0x00000085, "V_CMP_NE_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_NE)),
+  (V_CMP_NE_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
-defm V_CMP_GE_I32 : VOPC_32 <0x00000086, "V_CMP_GE_I32",
-  [(set VCCReg:$dst, (setcc (i32 AllReg_32:$src0), VReg_32:$src1, SETGE))]
+defm V_CMP_GE_I32 : VOPC_32 <0x00000086, "V_CMP_GE_I32", []>;
+def : Pat <
+  (i1 (setcc (i32 AllReg_32:$src0), VReg_32:$src1, COND_GE)),
+  (V_CMP_GE_I32_e64 AllReg_32:$src0, VReg_32:$src1)
 >;
 defm V_CMP_T_I32 : VOPC_32 <0x00000087, "V_CMP_T_I32", []>;
 
@@ -720,31 +746,38 @@ def S_WAITCNT : SOPP <0x0000000c, (ins i32imm:$simm16), "S_WAITCNT $simm16",
 //def S_DECPERFLEVEL : SOPP_ <0x00000015, "S_DECPERFLEVEL", []>;
 //def S_TTRACEDATA : SOPP_ <0x00000016, "S_TTRACEDATA", []>;
 
-/* XXX: No VOP3 version of this instruction yet */
-def V_CNDMASK_B32 : VOP2 <0x00000000, (outs VReg_32:$dst),
-  (ins AllReg_32:$src0, VReg_32:$src1, VCCReg:$vcc), "V_CNDMASK_B32",
-  [(set (i32 VReg_32:$dst),
-   (select VCCReg:$vcc, VReg_32:$src1, AllReg_32:$src0))] > {
-
+def V_CNDMASK_B32_e32 : VOP2 <0x00000000, (outs VReg_32:$dst),
+  (ins AllReg_32:$src0, VReg_32:$src1, VCCReg:$vcc), "V_CNDMASK_B32_e32",
+  []
+>{
   let DisableEncoding = "$vcc";
 }
 
-//f32 pattern for V_CNDMASK_B32
+def V_CNDMASK_B32_e64 : VOP3 <0x00000100, (outs VReg_32:$dst),
+  (ins AllReg_32:$src0, AllReg_32:$src1, SReg_1:$src2, InstFlag:$abs, InstFlag:$clamp, InstFlag:$omod, InstFlag:$neg),
+  "V_CNDMASK_B32_e64",
+  [(set (i32 VReg_32:$dst), (select SReg_1:$src2, AllReg_32:$src1, AllReg_32:$src0))]
+>;
+
+//f32 pattern for V_CNDMASK_B32_e64
 def : Pat <
-  (f32 (select VCCReg:$vcc, VReg_32:$src0, AllReg_32:$src1)),
-  (V_CNDMASK_B32 AllReg_32:$src1, VReg_32:$src0, VCCReg:$vcc)
+  (f32 (select SReg_1:$src2, AllReg_32:$src1, AllReg_32:$src0)),
+  (V_CNDMASK_B32_e64 AllReg_32:$src0, AllReg_32:$src1, SReg_1:$src2)
 >;
 
 defm V_READLANE_B32 : VOP2_32 <0x00000001, "V_READLANE_B32", []>;
 defm V_WRITELANE_B32 : VOP2_32 <0x00000002, "V_WRITELANE_B32", []>;
 
-defm V_ADD_F32 : VOP2_32 <
-  0x00000003, "V_ADD_F32",
-  [(set VReg_32:$dst, (fadd AllReg_32:$src0, VReg_32:$src1))]
+defm V_ADD_F32 : VOP2_32 <0x00000003, "V_ADD_F32", []>;
+def : Pat <
+  (f32 (fadd AllReg_32:$src0, VReg_32:$src1)),
+  (V_ADD_F32_e32  AllReg_32:$src0, VReg_32:$src1)
 >;
 
-defm V_SUB_F32 : VOP2_32 <0x00000004, "V_SUB_F32",
-  [(set VReg_32:$dst, (fsub AllReg_32:$src0, VReg_32:$src1))]
+defm V_SUB_F32 : VOP2_32 <0x00000004, "V_SUB_F32", []>;
+def : Pat <
+  (f32 (fsub AllReg_32:$src0, VReg_32:$src1)),
+  (V_SUB_F32_e32  AllReg_32:$src0, VReg_32:$src1)
 >;
 defm V_SUBREV_F32 : VOP2_32 <0x00000005, "V_SUBREV_F32", []>;
 defm V_MAC_LEGACY_F32 : VOP2_32 <0x00000006, "V_MAC_LEGACY_F32", []>;
@@ -922,7 +955,7 @@ def S_AND_B64 : SOP2_64 <0x0000000f, "S_AND_B64",
   [(set SReg_64:$dst, (and SReg_64:$src0, SReg_64:$src1))]
 >;
 def S_AND_VCC : SOP2_VCC <0x0000000f, "S_AND_B64",
-  [(set VCCReg:$vcc, (SIvcc_and SReg_64:$src0, SReg_64:$src1))]
+  [(set SReg_1:$vcc, (SIvcc_and SReg_64:$src0, SReg_64:$src1))]
 >;
 def S_OR_B32 : SOP2_32 <0x00000010, "S_OR_B32", []>;
 def S_OR_B64 : SOP2_64 <0x00000011, "S_OR_B64", []>;
@@ -1120,6 +1153,16 @@ def : BitConvert <i32, f32, VReg_32>;
 
 def : BitConvert <f32, i32, SReg_32>;
 def : BitConvert <f32, i32, VReg_32>;
+
+def : Pat <
+  (i64 (SIsreg1_bitcast SReg_1:$vcc)),
+  (S_MOV_B64 (COPY_TO_REGCLASS SReg_1:$vcc, SReg_64))
+>;
+
+def : Pat <
+  (i1 (SIsreg1_bitcast SReg_64:$vcc)),
+  (COPY_TO_REGCLASS SReg_64:$vcc, SReg_1)
+>;
 
 def : Pat <
   (i64 (SIvcc_bitcast VCCReg:$vcc)),

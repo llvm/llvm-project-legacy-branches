@@ -122,6 +122,8 @@ def SReg_32 : RegisterClass<"AMDGPU", [f32, i32], 32,
 
 def SReg_64 : RegisterClass<"AMDGPU", [i64], 64, (add SGPR_64, VCC, EXEC)>;
 
+def SReg_1 : RegisterClass<"AMDGPU", [i1], 1, (add VCC, SGPR_64, EXEC)>;
+
 def SReg_128 : RegisterClass<"AMDGPU", [v4f32, v4i32], 128, (add SGPR_128)>;
 
 def SReg_256 : RegisterClass<"AMDGPU", [v8i32], 256, (add SGPR_256)>;

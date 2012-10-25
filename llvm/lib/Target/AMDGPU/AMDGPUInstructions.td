@@ -33,6 +33,8 @@ class AMDGPUShaderInst <dag outs, dag ins, string asm, list<dag> pattern>
 
 }
 
+def InstFlag : OperandWithDefaultOps <i32, (ops (i32 0))>;
+
 def COND_EQ : PatLeaf <
   (cond),
   [{switch(N->get()){{default: return false;

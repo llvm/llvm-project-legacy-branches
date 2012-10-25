@@ -254,16 +254,19 @@ void SITargetLowering::LowerSI_KIL(MachineInstr *MI, MachineBasicBlock &BB,
 void SITargetLowering::LowerSI_V_CNDLT(MachineInstr *MI, MachineBasicBlock &BB,
     MachineBasicBlock::iterator I, MachineRegisterInfo & MRI) const
 {
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::V_CMP_GT_F32_e32),
-          AMDGPU::VCC)
+  unsigned VCC = MRI.createVirtualRegister(&AMDGPU::SReg_64RegClass);
+
+  BuildMI(BB, I, BB.findDebugLoc(I),
+	  TII->get(AMDGPU::V_CMP_GT_F32_e32),
+	  VCC)
           .addReg(AMDGPU::SREG_LIT_0)
           .addOperand(MI->getOperand(1));
 
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::V_CNDMASK_B32))
+  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::V_CNDMASK_B32_e32))
           .addOperand(MI->getOperand(0))
           .addOperand(MI->getOperand(3))
           .addOperand(MI->getOperand(2))
-	  .addReg(AMDGPU::VCC);
+          .addReg(VCC);
 
   MI->eraseFromParent();
 }

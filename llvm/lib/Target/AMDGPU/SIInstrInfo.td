@@ -19,6 +19,16 @@ def SDTVCCBinaryOp : SDTypeProfile<1, 2, [
 //===----------------------------------------------------------------------===//
 
 // and operation on 64-bit wide vcc
+def SIsreg1_and : SDNode<"SIISD::VCC_AND", SDTVCCBinaryOp,
+  [SDNPCommutative, SDNPAssociative]
+>;
+
+// Special bitcast node for sharing VCC register between VALU and SALU
+def SIsreg1_bitcast : SDNode<"SIISD::VCC_BITCAST",
+  SDTypeProfile<1, 1, [SDTCisInt<0>, SDTCisInt<1>]>
+>;
+
+// and operation on 64-bit wide vcc
 def SIvcc_and : SDNode<"SIISD::VCC_AND", SDTVCCBinaryOp,
   [SDNPCommutative, SDNPAssociative]
 >;
@@ -445,6 +455,35 @@ class VOP3 <bits<9> op, dag outs, dag ins, string asm, list<dag> pattern> :
   let Inst{60-59} = OMOD;
   let Inst{63-61} = NEG;
   
+  let EncodingType = 14; // SIInstrEncodingType::VOP3
+  let PostEncoderMethod = "VOPPostEncode";
+
+  let mayLoad = 0;
+  let mayStore = 0;
+  let hasSideEffects = 0;
+}
+
+class VOP3b <bits<9> op, dag outs, dag ins, string asm, list<dag> pattern> :
+    Enc64 <outs, ins, asm, pattern> {
+
+  bits<8> VDST;
+  bits<9> SRC0;
+  bits<9> SRC1;
+  bits<9> SRC2;
+  bits<7> SDST;
+  bits<2> OMOD;
+  bits<3> NEG;
+
+  let Inst{7-0} = VDST;
+  let Inst{14-8} = SDST;
+  let Inst{25-17} = op;
+  let Inst{31-26} = 0x34; //encoding
+  let Inst{40-32} = SRC0;
+  let Inst{49-41} = SRC1;
+  let Inst{58-50} = SRC2;
+  let Inst{60-59} = OMOD;
+  let Inst{63-61} = NEG;
+
   let EncodingType = 14; // SIInstrEncodingType::VOP3
   let PostEncoderMethod = "VOPPostEncode";
 
