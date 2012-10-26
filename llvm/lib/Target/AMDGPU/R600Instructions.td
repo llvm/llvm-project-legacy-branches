@@ -1314,7 +1314,7 @@ def PRED_X : InstR600 <
   let FlagOperandIdx = 3;
 }
 
-let isTerminator = 1, isBranch = 1 in {
+let isTerminator = 1, isBranch = 1, isBarrier = 1 in {
 
 def JUMP : InstR600 <0x10,
           (outs),
@@ -1323,7 +1323,7 @@ def JUMP : InstR600 <0x10,
           [], AnyALU
   >;
 
-}  // End isTerminator = 1, isBranch = 1
+}  // End isTerminator = 1, isBranch = 1, isBarrier = 1
 
 let usesCustomInserter = 1 in {
 
