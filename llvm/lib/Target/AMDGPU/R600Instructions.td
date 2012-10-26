@@ -1487,5 +1487,6 @@ def : Vector_Build <v4i32, R600_Reg128, i32, R600_Reg32>;
 def : BitConvert <i32, f32, R600_Reg32>;
 def : BitConvert <f32, i32, R600_Reg32>;
 def : BitConvert <v4f32, v4i32, R600_Reg128>;
+def : BitConvert <v4i32, v4f32, R600_Reg128>;
 
 } // End isR600toCayman Predicate
