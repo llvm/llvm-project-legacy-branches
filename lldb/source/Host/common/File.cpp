@@ -557,6 +557,7 @@ File::Read (void *buf, size_t &num_bytes, off_t &offset)
     return error;
 #else
     long cur = ::lseek(m_descriptor, 0, SEEK_CUR);
+    SeekFromStart(offset);
     Error error = Read(buf, num_bytes);
     if (!error.Fail())
         SeekFromStart(cur);
