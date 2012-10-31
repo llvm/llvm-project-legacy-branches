@@ -1092,14 +1092,14 @@ let isBranch = 1, isTerminator = 1, mayLoad = 0, mayStore = 0,
                                                  hasSideEffects = 0 in {
 def SI_IF_NZ : InstSI <
   (outs),
-  (ins brtarget:$target, VCCReg:$vcc),
+  (ins brtarget:$target, SReg_1:$vcc),
   "SI_BRANCH_NZ",
-  [(IL_brcond bb:$target, VCCReg:$vcc)]
+  [(IL_brcond bb:$target, SReg_1:$vcc)]
 >;
 
 def SI_IF_Z : InstSI <
   (outs),
-  (ins brtarget:$target, VCCReg:$vcc),
+  (ins brtarget:$target, SReg_1:$vcc),
   "SI_BRANCH_Z",
   []
 >;
