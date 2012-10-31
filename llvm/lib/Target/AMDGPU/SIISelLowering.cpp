@@ -228,26 +228,6 @@ void SITargetLowering::LowerSI_KIL(MachineInstr *MI, MachineBasicBlock &BB,
           .addReg(AMDGPU::SREG_LIT_0)
           .addOperand(MI->getOperand(0));
 
-  // If the exec mask is non-zero, skip the next two instructions
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::S_CBRANCH_EXECNZ))
-          .addImm(3)
-          .addReg(AMDGPU::EXEC);
-
-  // Exec mask is zero: Export to NULL target...
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::EXP))
-          .addImm(0)
-          .addImm(0x09) // V_008DFC_SQ_EXP_NULL
-          .addImm(0)
-          .addImm(1)
-          .addImm(1)
-          .addReg(AMDGPU::SREG_LIT_0)
-          .addReg(AMDGPU::SREG_LIT_0)
-          .addReg(AMDGPU::SREG_LIT_0)
-          .addReg(AMDGPU::SREG_LIT_0);
-
-  // ... and terminate wavefront
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::S_ENDPGM));
-
   MI->eraseFromParent();
 }
 

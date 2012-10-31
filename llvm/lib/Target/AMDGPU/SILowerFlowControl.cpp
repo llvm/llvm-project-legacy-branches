@@ -50,6 +50,7 @@
 
 #include "AMDGPU.h"
 #include "SIInstrInfo.h"
+#include "SIMachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -117,20 +118,48 @@ bool SILowerFlowControlPass::runOnMachineFunction(MachineFunction &MF) {
                   AMDGPU::EXEC)
                   .addOperand(MI.getOperand(0)) // VCC
                   .addReg(AMDGPU::EXEC);
-          MI.eraseFromParent();
-          break;
-        case AMDGPU::ELSE:
-          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_NOT_B64),
-                  AMDGPU::EXEC)
-                  .addReg(AMDGPU::EXEC);
-          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_AND_B64),
-                  AMDGPU::EXEC)
+          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_XOR_B64),
+                  PredicateStack.back())
                   .addReg(PredicateStack.back())
                   .addReg(AMDGPU::EXEC);
           MI.eraseFromParent();
           break;
+        case AMDGPU::ELSE:
+          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_MOV_B64),
+                  UnusedRegisters.back())
+                  .addReg(AMDGPU::EXEC);
+          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_MOV_B64),
+                  AMDGPU::EXEC)
+                  .addReg(PredicateStack.back());
+          BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_MOV_B64),
+                  PredicateStack.back())
+                  .addReg(UnusedRegisters.back());
+          MI.eraseFromParent();
+          break;
         case AMDGPU::ENDIF:
           popExecMask(MBB, I);
+	  if (MF.getInfo<SIMachineFunctionInfo>()->ShaderType == ShaderType::PIXEL &&
+	      PredicateStack.empty()) {
+            // If the exec mask is non-zero, skip the next two instructions
+            BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_CBRANCH_EXECNZ))
+                    .addImm(3)
+                    .addReg(AMDGPU::EXEC);
+
+            // Exec mask is zero: Export to NULL target...
+            BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::EXP))
+                    .addImm(0)
+                    .addImm(0x09) // V_008DFC_SQ_EXP_NULL
+                    .addImm(0)
+                    .addImm(1)
+                    .addImm(1)
+                    .addReg(AMDGPU::SREG_LIT_0)
+                    .addReg(AMDGPU::SREG_LIT_0)
+                    .addReg(AMDGPU::SREG_LIT_0)
+                    .addReg(AMDGPU::SREG_LIT_0);
+
+            // ... and terminate wavefront
+            BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_ENDPGM));
+	  }
           MI.eraseFromParent();
           break;
       }
@@ -156,7 +185,8 @@ void SILowerFlowControlPass::popExecMask(MachineBasicBlock &MBB,
   unsigned StackReg = PredicateStack.back();
   PredicateStack.pop_back();
   UnusedRegisters.push_back(StackReg);
-  BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_MOV_B64),
+  BuildMI(MBB, I, MBB.findDebugLoc(I), TII->get(AMDGPU::S_OR_B64),
           AMDGPU::EXEC)
+          .addReg(AMDGPU::EXEC)
           .addReg(StackReg);
 }
