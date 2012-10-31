@@ -134,8 +134,7 @@ bool AMDGPUPassConfig::addPreEmitPass() {
     addPass(&FinalizeMachineBundlesID);
   } else {
     addPass(createSILowerLiteralConstantsPass(*TM));
-    // piglit is unreliable (VM protection faults, GPU lockups) with this pass:
-    //addPass(createSILowerFlowControlPass(*TM));
+    addPass(createSILowerFlowControlPass(*TM));
   }
 
   return false;
