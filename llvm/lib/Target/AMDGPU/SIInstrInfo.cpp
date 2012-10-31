@@ -85,3 +85,8 @@ bool SIInstrInfo::isMov(unsigned Opcode) const
     return true;
   }
 }
+
+bool
+SIInstrInfo::isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const {
+  return RC != &AMDGPU::EXECRegRegClass;
+}

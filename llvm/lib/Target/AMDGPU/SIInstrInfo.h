@@ -47,6 +47,7 @@ public:
   virtual unsigned getIEQOpcode() const { assert(!"Implement"); return 0;}
   virtual bool isMov(unsigned Opcode) const;
 
+  virtual bool isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const;
   };
 
 } // End namespace llvm
