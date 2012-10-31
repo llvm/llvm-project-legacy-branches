@@ -101,7 +101,8 @@ enum InstrTypes {
   INSTR_TEX,
   INSTR_FC,
   INSTR_NATIVE,
-  INSTR_VTX
+  INSTR_VTX,
+  INSTR_EXPORT
 };
 
 enum FCInstr {
@@ -175,6 +176,14 @@ void R600MCCodeEmitter::EncodeInstruction(const MCInst &MI, raw_ostream &OS,
         EmitByte(INSTR_VTX, OS);
         Emit(InstWord01, OS);
         Emit(InstWord2, OS);
+        break;
+      }
+    case AMDGPU::EG_Export:
+    case AMDGPU::R600_Export:
+      {
+        uint64_t Inst = getBinaryCodeForInstr(MI, Fixups);
+        EmitByte(INSTR_EXPORT, OS);
+        Emit(Inst, OS);
         break;
       }
 

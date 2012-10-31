@@ -456,6 +456,78 @@ def INTERP_ZW : R600_2OP <0xD7, "INTERP_ZW", []>
 
 def INTERP_LOAD_P0 : R600_1OP <0xE0, "INTERP_LOAD_P0", []>;
 
+//===----------------------------------------------------------------------===//
+// Export Instructions
+//===----------------------------------------------------------------------===//
+
+def ExportType : SDTypeProfile<0, 7, [SDTCisFP<0>, SDTCisInt<1>]>;
+
+def EXPORT: SDNode<"AMDGPUISD::EXPORT", ExportType,
+  [SDNPHasChain, SDNPSideEffect]>;
+
+multiclass ExportPattern<Instruction ExportInst, bits<8> cf_inst> {
+  def : Pat<(int_R600_store_pixel_depth R600_Reg32:$reg),
+    (ExportInst
+        (INSERT_SUBREG (v4f32 (IMPLICIT_DEF)), R600_Reg32:$reg, sel_x),
+        0, 61, 0, 7, 7, 7, cf_inst, 0)
+  >;
+
+  def : Pat<(int_R600_store_pixel_stencil R600_Reg32:$reg),
+    (ExportInst
+        (INSERT_SUBREG (v4f32 (IMPLICIT_DEF)), R600_Reg32:$reg, sel_x),
+        0, 61, 7, 0, 7, 7, cf_inst, 0)
+  >;
+
+  def : Pat<(int_R600_store_pixel_dummy),
+    (ExportInst
+        (v4f32 (IMPLICIT_DEF)), 0, 0, 7, 7, 7, 7, cf_inst, 0)
+  >;
+
+  def : Pat<(EXPORT (v4f32 R600_Reg128:$src),
+    (i32 imm:$type), (i32 imm:$arraybase),
+    (i32 imm:$sw_x), (i32 imm:$sw_y), (i32 imm:$sw_z), (i32 imm:$sw_w)),
+        (ExportInst R600_Reg128:$src, imm:$type, imm:$arraybase,
+        imm:$sw_x, imm:$sw_y, imm:$sw_z, imm:$sw_w, cf_inst, 0)
+  >;
+}
+
+let isTerminator = 1, usesCustomInserter = 1 in {
+
+class ExportInst : InstR600ISA<(
+    outs),
+    (ins R600_Reg128:$src, i32imm:$type, i32imm:$arraybase,
+    i32imm:$sw_x, i32imm:$sw_y, i32imm:$sw_z, i32imm:$sw_w, i32imm:$inst,
+    i32imm:$eop),
+    !strconcat("EXPORT", " $src"),
+    []>
+{
+  bits<13> arraybase;
+  bits<2> type;
+  bits<7> src;
+
+  bits<3> sw_x;
+  bits<3> sw_y;
+  bits<3> sw_z;
+  bits<3> sw_w;
+
+  bits<1> eop;
+  bits<8> inst;
+
+  let Inst{12-0} = arraybase;
+  let Inst{14-13}   = type;
+  let Inst{21-15} = src;
+  let Inst{22} = 0; // RW_REL
+  let Inst{29-23} = 0; // INDEX_GPR
+  let Inst{31-30} = 3; // ELEM_SIZE
+  let Inst{34-32} = sw_x;
+  let Inst{37-35} = sw_y;
+  let Inst{40-38} = sw_z;
+  let Inst{43-41} = sw_w;
+}
+
+} // End isTerminator = 1, usesCustomInserter = 1
+
+
 let Predicates = [isR600toCayman] in { 
 
 //===----------------------------------------------------------------------===//
@@ -894,6 +966,16 @@ let Predicates = [isR600] in {
   defm DIV_r600 : DIV_Common<RECIP_IEEE_r600>;
   def TGSI_LIT_Z_r600 : TGSI_LIT_Z_Common<MUL_LIT_r600, LOG_CLAMPED_r600, EXP_IEEE_r600>;
 
+  def R600_Export : ExportInst
+  {
+    let Inst{52-49} = 1; // BURST_COUNT
+    let Inst{53} = 1; // VALID_PIXEL_MODE
+    let Inst{54} = eop;
+    let Inst{62-55} = inst;
+    let Inst{63} = 1; // BARRIER
+  }
+
+  defm : ExportPattern<R600_Export, 39>;
 }
 
 // Helper pattern for normalizing inputs to triginomic instructions for R700+
@@ -1023,6 +1105,18 @@ let Predicates = [isEGorCayman] in {
 
   def : Pat<(fp_to_uint R600_Reg32:$src0),
     (FLT_TO_UINT_eg (TRUNC R600_Reg32:$src0))>;
+
+  def EG_Export : ExportInst
+  {
+    let Inst{51-48} = 1; // BURST_COUNT
+    let Inst{52} = 1; // VALID_PIXEL_MODE
+    let Inst{53} = eop;
+    let Inst{61-54} = inst;
+    let Inst{62} = 0; // MARK
+    let Inst{63} = 1; // BARRIER
+  }
+
+  defm : ExportPattern<EG_Export, 83>;
 
 //===----------------------------------------------------------------------===//
 // Memory read/write instructions

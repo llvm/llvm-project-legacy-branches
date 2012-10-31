@@ -16,6 +16,7 @@
 #define R600MACHINEFUNCTIONINFO_H
 
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/SelectionDAG.h"
 #include <vector>
 
 namespace llvm {
@@ -25,6 +26,7 @@ class R600MachineFunctionInfo : public MachineFunctionInfo {
 public:
   R600MachineFunctionInfo(const MachineFunction &MF);
   std::vector<unsigned> ReservedRegs;
+  SDNode *Outputs[16];
   bool HasLinearInterpolation;
   bool HasPerspectiveInterpolation;
 

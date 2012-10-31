@@ -19,4 +19,12 @@ let TargetPrefix = "R600", isTarget = 1 in {
     Intrinsic<[llvm_float_ty], [llvm_i32_ty], [IntrReadMem]>;
   def int_R600_load_input_linear :
     Intrinsic<[llvm_float_ty], [llvm_i32_ty], [IntrReadMem]>;
+  def int_R600_store_pixel_color :
+      Intrinsic<[], [llvm_float_ty, llvm_i32_ty], []>;
+  def int_R600_store_pixel_depth :
+      Intrinsic<[], [llvm_float_ty], []>;
+  def int_R600_store_pixel_stencil :
+      Intrinsic<[], [llvm_float_ty], []>;
+  def int_R600_store_pixel_dummy :
+      Intrinsic<[], [], []>;
 }

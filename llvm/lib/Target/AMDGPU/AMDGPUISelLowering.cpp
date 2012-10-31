@@ -346,5 +346,6 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const
   NODE_NAME_CASE(URECIP)
   NODE_NAME_CASE(INTERP)
   NODE_NAME_CASE(INTERP_P0)
+  NODE_NAME_CASE(EXPORT)
   }
 }

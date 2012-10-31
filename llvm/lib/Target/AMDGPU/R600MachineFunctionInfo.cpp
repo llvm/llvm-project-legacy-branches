@@ -15,7 +15,9 @@ R600MachineFunctionInfo::R600MachineFunctionInfo(const MachineFunction &MF)
   : MachineFunctionInfo(),
     HasLinearInterpolation(false),
     HasPerspectiveInterpolation(false)
-  { }
+  {
+    memset(Outputs, 0, sizeof(Outputs));
+  }
 
 unsigned R600MachineFunctionInfo::GetIJPerspectiveIndex() const
 {

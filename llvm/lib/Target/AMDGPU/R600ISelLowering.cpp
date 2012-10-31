@@ -278,6 +278,25 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
 
       return BB;
     }
+  case AMDGPU::EG_Export:
+  case AMDGPU::R600_Export:
+    {
+      bool EOP = (llvm::next(I)->getOpcode() == AMDGPU::RETURN)? 1 : 0;
+      if (!EOP)
+        return BB;
+      unsigned CfInst = (MI->getOpcode() == AMDGPU::EG_Export)? 84 : 40;
+      BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(MI->getOpcode()))
+            .addOperand(MI->getOperand(0))
+            .addOperand(MI->getOperand(1))
+            .addOperand(MI->getOperand(2))
+            .addOperand(MI->getOperand(3))
+            .addOperand(MI->getOperand(4))
+            .addOperand(MI->getOperand(5))
+            .addOperand(MI->getOperand(6))
+            .addImm(CfInst)
+            .addImm(1);
+      break;
+    }
   }
 
   MI->eraseFromParent();
@@ -315,6 +334,53 @@ SDValue R600TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const
         MRI.addLiveOut(Reg);
       }
       return DAG.getCopyToReg(Chain, Op.getDebugLoc(), Reg, Op.getOperand(2));
+    }
+    case AMDGPUIntrinsic::R600_store_pixel_color: {
+      MachineFunction &MF = DAG.getMachineFunction();
+      R600MachineFunctionInfo *MFI = MF.getInfo<R600MachineFunctionInfo>();
+      int64_t RegIndex = cast<ConstantSDNode>(Op.getOperand(3))->getZExtValue();
+      unsigned Slot = RegIndex / 4;
+
+      SDNode **OutputsMap = MFI->Outputs;
+
+      if (!OutputsMap[Slot]) {
+        SDValue Vector = DAG.getNode(ISD::INSERT_VECTOR_ELT,
+          Op.getDebugLoc(), MVT::v4f32,
+          DAG.getUNDEF(MVT::v4f32),
+          Op.getOperand(2),
+          DAG.getConstant(RegIndex % 4, MVT::i32));
+
+        const SDValue Ops[8] = {Chain, Vector, DAG.getConstant(0, MVT::i32),
+            DAG.getConstant(Slot, MVT::i32), DAG.getConstant(0, MVT::i32),
+            DAG.getConstant(1, MVT::i32), DAG.getConstant(2, MVT::i32),
+            DAG.getConstant(3, MVT::i32)};
+
+        SDValue Res =  DAG.getNode(
+            AMDGPUISD::EXPORT,
+            Op.getDebugLoc(),
+            MVT::Other,
+            Ops, 8);
+         OutputsMap[Slot] = Res.getNode();
+         return Res;
+      }
+
+      SDNode *ExportInstruction = (SDNode *) OutputsMap[Slot] ;
+      SDValue PreviousVector = ExportInstruction->getOperand(1);
+      SDValue Vector = DAG.getNode(ISD::INSERT_VECTOR_ELT,
+          Op.getDebugLoc(), MVT::v4f32,
+          PreviousVector,
+          Op.getOperand(2),
+          DAG.getConstant(RegIndex % 4, MVT::i32));
+
+      const SDValue Ops[8] = {ExportInstruction->getOperand(0), Vector, DAG.getConstant(0, MVT::i32),
+          DAG.getConstant(Slot, MVT::i32), DAG.getConstant(0, MVT::i32),
+          DAG.getConstant(1, MVT::i32), DAG.getConstant(2, MVT::i32),
+          DAG.getConstant(3, MVT::i32)};
+
+      DAG.UpdateNodeOperands(ExportInstruction,
+          Ops, 8);
+
+      return Chain;
     }
     // default for switch(IntrinsicID)
     default: break;
