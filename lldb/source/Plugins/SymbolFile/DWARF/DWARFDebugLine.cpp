@@ -507,7 +507,8 @@ DWARFDebugLine::ParseSupportFiles (const lldb::ModuleSP &module_sp,
             debug_line_data.Skip_LEB128(&offset); // Skip mod_time
             debug_line_data.Skip_LEB128(&offset); // Skip length
 
-            if (path[0] == '/')
+            if (path[0] == '/' ||
+                (path[0] && path[1] == ':' && path[2] == '\\'))
             {
                 // The path starts with a directory delimiter, so we are done.
                 if (module_sp->RemapSourceFile (path, fullpath))
@@ -519,7 +520,11 @@ DWARFDebugLine::ParseSupportFiles (const lldb::ModuleSP &module_sp,
             {
                 if (dir_idx > 0 && dir_idx < include_directories.size())
                 {
-                    if (cu_comp_dir && include_directories[dir_idx][0] != '/')
+                    std::string includedir = include_directories[dir_idx];
+                    bool rooted = (includedir[0] == '/') || 
+                        (includedir.size() > 2 && includedir[1] == ':' && includedir[2] == '\\');
+
+                    if (cu_comp_dir && !rooted)
                     {
                         fullpath = cu_comp_dir;
 

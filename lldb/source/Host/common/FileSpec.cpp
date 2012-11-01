@@ -1013,7 +1013,7 @@ FileSpec::IsSourceImplementationFile () const
     ConstString extension (GetFileNameExtension());
     if (extension)
     {
-        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads|pas)$",
+        static RegularExpression g_source_file_regex ("^(c|m|mm|cpp|c\\+\\+|cxx|cc|cp|s|asm|f|f77|f90|f95|f03|for|ftn|fpp|ada|adb|ads)$",
                                                       llvm::Regex::IgnoreCase);
         return g_source_file_regex.Execute (extension.GetCString());
     }
