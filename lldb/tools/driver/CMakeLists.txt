@@ -87,6 +87,7 @@ set( LLVM_LINK_COMPONENTS
   selectiondag
   bitreader
   mc
+  mcjit
   core
   mcdisassembler
   )

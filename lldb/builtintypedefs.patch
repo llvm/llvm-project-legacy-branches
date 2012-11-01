@@ -1,0 +1,51 @@
+Index: include/lldb/Symbol/ClangASTContext.h
+===================================================================
+--- include/lldb/Symbol/ClangASTContext.h	(revision 166968)
++++ include/lldb/Symbol/ClangASTContext.h	(working copy)
+@@ -970,6 +970,13 @@
+     static unsigned
+     GetTypeQualifiers(lldb::clang_type_t clang_type);
+ protected:
++    
++    lldb::clang_type_t
++    GetBuiltinTypeForDWARFEncodingAndBitSize_Private (const char *type_name,
++                                                      uint32_t dw_ate,
++                                                      uint32_t bit_size);
++    
++
+     //------------------------------------------------------------------
+     // Classes that inherit from ClangASTContext can see and modify these
+     //------------------------------------------------------------------
+Index: source/Symbol/ClangASTContext.cpp
+===================================================================
+--- source/Symbol/ClangASTContext.cpp	(revision 166968)
++++ source/Symbol/ClangASTContext.cpp	(working copy)
+@@ -717,6 +717,28 @@
+ clang_type_t
+ ClangASTContext::GetBuiltinTypeForDWARFEncodingAndBitSize (const char *type_name, uint32_t dw_ate, uint32_t bit_size)
+ {
++    clang_type_t clang_type = GetBuiltinTypeForDWARFEncodingAndBitSize_Private (type_name, dw_ate, bit_size);
++    if (type_name && type_name[0] && clang_type)
++    {
++        ASTContext *ast = getASTContext();
++        std::string clang_type_name (ClangASTType::GetTypeNameForOpaqueQualType (ast, clang_type));
++        if (clang_type_name.compare(type_name) != 0)
++        {
++            if (strchr(type_name, ' ') == NULL)
++            {
++                //printf ("\ncreating typedef: typedef %s %s;\n", clang_type_name.c_str(), type_name);
++                clang_type_t typedef_clang_type = CreateTypedefType (type_name, clang_type, NULL);
++                if (typedef_clang_type)
++                    return typedef_clang_type;
++            }
++        }
++    }
++    return clang_type;
++}
++
++clang_type_t
++ClangASTContext::GetBuiltinTypeForDWARFEncodingAndBitSize_Private (const char *type_name, uint32_t dw_ate, uint32_t bit_size)
++{
+     ASTContext *ast = getASTContext();
+     
+ #define streq(a,b) strcmp(a,b) == 0

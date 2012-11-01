@@ -45,6 +45,12 @@ public:
     }
     
     bool
+    MightHaveChildren ()
+    {
+        return true;
+    }
+    
+    bool
     Update()
     {
         return false;
@@ -58,7 +64,8 @@ ValueObjectSynthetic::ValueObjectSynthetic (ValueObject &parent, lldb::Synthetic
     m_children_byindex(),
     m_name_toindex(),
     m_synthetic_children_count(UINT32_MAX),
-    m_parent_type_name(parent.GetTypeName())
+    m_parent_type_name(parent.GetTypeName()),
+    m_might_have_children(eLazyBoolCalculate)
 {
 #ifdef LLDB_CONFIGURATION_DEBUG
     std::string new_name(parent.GetName().AsCString());
@@ -67,6 +74,7 @@ ValueObjectSynthetic::ValueObjectSynthetic (ValueObject &parent, lldb::Synthetic
 #else
     SetName(parent.GetName());
 #endif
+    CopyParentData();
     CreateSynthFilter();
 }
 
@@ -94,6 +102,15 @@ ValueObjectSynthetic::CalculateNumChildren()
         return m_synthetic_children_count;
     return (m_synthetic_children_count = m_synth_filter_ap->CalculateNumChildren());
 }
+
+bool
+ValueObjectSynthetic::MightHaveChildren()
+{
+    if (m_might_have_children == eLazyBoolCalculate)
+        m_might_have_children = (m_synth_filter_ap->MightHaveChildren() ? eLazyBoolYes : eLazyBoolNo);
+    return (m_might_have_children == eLazyBoolNo ? false : true);
+}
+
 
 clang::ASTContext *
 ValueObjectSynthetic::GetClangASTImpl ()
@@ -155,7 +172,10 @@ ValueObjectSynthetic::UpdateValue ()
         // that they need to come back to us asking for children
         m_children_count_valid = false;
         m_synthetic_children_count = UINT32_MAX;
+        m_might_have_children = eLazyBoolCalculate;
     }
+    
+    CopyParentData();
     
     SetValueIsValid(true);
     return true;
@@ -229,4 +249,12 @@ lldb::ValueObjectSP
 ValueObjectSynthetic::GetNonSyntheticValue ()
 {
     return m_parent->GetSP();
+}
+
+void
+ValueObjectSynthetic::CopyParentData ()
+{
+    m_value = m_parent->GetValue();
+    ExecutionContext exe_ctx (GetExecutionContextRef());
+    m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
 }

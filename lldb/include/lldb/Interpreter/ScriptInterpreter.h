@@ -87,11 +87,13 @@ public:
                                                const char *session_dictionary_name,
                                                const lldb::ProcessSP& process_sp);
     
-    typedef uint32_t       (*SWIGPythonCalculateNumChildren)        (void *implementor);
-    typedef void*          (*SWIGPythonGetChildAtIndex)             (void *implementor, uint32_t idx);
-    typedef int            (*SWIGPythonGetIndexOfChildWithName)     (void *implementor, const char* child_name);
-    typedef void*          (*SWIGPythonCastPyObjectToSBValue)       (void* data);
-    typedef bool           (*SWIGPythonUpdateSynthProviderInstance) (void* data);
+    typedef uint32_t       (*SWIGPythonCalculateNumChildren)                   (void *implementor);
+    typedef void*          (*SWIGPythonGetChildAtIndex)                        (void *implementor, uint32_t idx);
+    typedef int            (*SWIGPythonGetIndexOfChildWithName)                (void *implementor, const char* child_name);
+    typedef void*          (*SWIGPythonCastPyObjectToSBValue)                  (void* data);
+    typedef bool           (*SWIGPythonUpdateSynthProviderInstance)            (void* data);
+    typedef bool           (*SWIGPythonMightHaveChildrenSynthProviderInstance) (void* data);
+
     
     typedef bool           (*SWIGPythonCallCommand)                 (const char *python_function_name,
                                                                      const char *session_dictionary_name,
@@ -126,11 +128,65 @@ public:
 
     virtual ~ScriptInterpreter ();
 
+    struct ExecuteScriptOptions
+    {
+    public:
+        ExecuteScriptOptions () :
+            m_enable_io(true),
+            m_set_lldb_globals(true),
+            m_maskout_errors(true)
+        {
+        }
+        
+        bool
+        GetEnableIO () const
+        {
+            return m_enable_io;
+        }
+        
+        bool
+        GetSetLLDBGlobals () const
+        {
+            return m_set_lldb_globals;
+        }
+        
+        bool
+        GetMaskoutErrors () const
+        {
+            return m_maskout_errors;
+        }
+        
+        ExecuteScriptOptions&
+        SetEnableIO (bool enable)
+        {
+            m_enable_io = enable;
+            return *this;
+        }
+
+        ExecuteScriptOptions&
+        SetSetLLDBGlobals (bool set)
+        {
+            m_set_lldb_globals = set;
+            return *this;
+        }
+
+        ExecuteScriptOptions&
+        SetMaskoutErrors (bool maskout)
+        {
+            m_maskout_errors = maskout;
+            return *this;
+        }
+        
+    private:
+        bool m_enable_io;
+        bool m_set_lldb_globals;
+        bool m_maskout_errors;
+    };
+    
     virtual bool
     ExecuteOneLine (const char *command,
                     CommandReturnObject *result,
-                    bool enable_io,
-                    bool set_lldb_globals = true) = 0;
+                    const ExecuteScriptOptions &options = ExecuteScriptOptions()) = 0;
 
     virtual void
     ExecuteInterpreterLoop () = 0;
@@ -139,16 +195,14 @@ public:
     ExecuteOneLineWithReturn (const char *in_string,
                               ScriptReturnType return_type,
                               void *ret_value,
-                              bool enable_io,
-                              bool set_lldb_globals = true)
+                              const ExecuteScriptOptions &options = ExecuteScriptOptions())
     {
         return true;
     }
 
     virtual bool
     ExecuteMultipleLines (const char *in_string,
-                          bool enable_io,
-                          bool set_lldb_globals = true)
+                          const ExecuteScriptOptions &options = ExecuteScriptOptions())
     {
         return true;
     }
@@ -296,7 +350,13 @@ public:
     {
         return false;
     }
-        
+    
+    virtual bool
+    MightHaveChildrenSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor)
+    {
+        return true;
+    }
+    
     virtual bool
     RunScriptBasedCommand (const char* impl_function,
                            const char* args,

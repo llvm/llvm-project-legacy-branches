@@ -437,14 +437,20 @@ CategoryMap::GetSummaryFormat (ValueObject& valobj,
     uint32_t reason_why;        
     ActiveCategoriesIterator begin, end = m_active_categories.end();
     
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    
     for (begin = m_active_categories.begin(); begin != end; begin++)
     {
-        lldb::TypeCategoryImplSP category = *begin;
+        lldb::TypeCategoryImplSP category_sp = *begin;
         lldb::TypeSummaryImplSP current_format;
-        if (!category->Get(valobj, current_format, use_dynamic, &reason_why))
+        if (log)
+            log->Printf("[CategoryMap::GetSummaryFormat] Trying to use category %s\n", category_sp->GetName());
+        if (!category_sp->Get(valobj, current_format, use_dynamic, &reason_why))
             continue;
         return current_format;
     }
+    if (log)
+        log->Printf("[CategoryMap::GetSummaryFormat] nothing found - returning empty SP\n");
     return lldb::TypeSummaryImplSP();
 }
 
@@ -554,14 +560,20 @@ CategoryMap::GetSyntheticChildren (ValueObject& valobj,
     
     ActiveCategoriesIterator begin, end = m_active_categories.end();
     
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    
     for (begin = m_active_categories.begin(); begin != end; begin++)
     {
-        lldb::TypeCategoryImplSP category = *begin;
+        lldb::TypeCategoryImplSP category_sp = *begin;
         lldb::SyntheticChildrenSP current_format;
-        if (!category->Get(valobj, current_format, use_dynamic, &reason_why))
+        if (log)
+            log->Printf("[CategoryMap::GetSyntheticChildren] Trying to use category %s\n", category_sp->GetName());
+        if (!category_sp->Get(valobj, current_format, use_dynamic, &reason_why))
             continue;
         return current_format;
     }
+    if (log)
+        log->Printf("[CategoryMap::GetSyntheticChildren] nothing found - returning empty SP\n");
     return lldb::SyntheticChildrenSP();
 }
 #endif
@@ -935,34 +947,27 @@ FormatManager::LoadObjCFormatters()
 
     TypeCategoryImpl::SharedPointer objc_category_sp = GetCategory(m_objc_category_name);
     
-#ifndef LLDB_DISABLE_PYTHON
-    lldb::TypeSummaryImplSP ObjC_BOOL_summary(new ScriptSummaryFormat(objc_flags,
-                                                                      "lldb.formatters.objc.objc.BOOL_SummaryProvider",
-                                                                      ""));
+    lldb::TypeSummaryImplSP ObjC_BOOL_summary(new CXXFunctionSummaryFormat(objc_flags, lldb_private::formatters::ObjCBOOLSummaryProvider,""));
     objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL"),
                                                  ObjC_BOOL_summary);
-
-    lldb::TypeSummaryImplSP ObjC_BOOLRef_summary(new ScriptSummaryFormat(objc_flags,
-                                                                      "lldb.formatters.objc.objc.BOOLRef_SummaryProvider",
-                                                                      ""));
     objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL &"),
-                                                 ObjC_BOOLRef_summary);
-    lldb::TypeSummaryImplSP ObjC_BOOLPtr_summary(new ScriptSummaryFormat(objc_flags,
-                                                                      "lldb.formatters.objc.objc.BOOLPtr_SummaryProvider",
-                                                                      ""));
+                                                 ObjC_BOOL_summary);
     objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL *"),
-                                                 ObjC_BOOLPtr_summary);
+                                                 ObjC_BOOL_summary);
 
-    
+
     // we need to skip pointers here since we are special casing a SEL* when retrieving its value
     objc_flags.SetSkipPointers(true);
-    AddScriptSummary(objc_category_sp, "lldb.formatters.objc.Selector.SEL_Summary", ConstString("SEL"), objc_flags);
-    AddScriptSummary(objc_category_sp, "lldb.formatters.objc.Selector.SEL_Summary", ConstString("struct objc_selector"), objc_flags);
-    AddScriptSummary(objc_category_sp, "lldb.formatters.objc.Selector.SEL_Summary", ConstString("objc_selector"), objc_flags);
-    AddScriptSummary(objc_category_sp, "lldb.formatters.objc.Selector.SELPointer_Summary", ConstString("objc_selector *"), objc_flags);
+#ifndef LLDB_DISABLE_PYTHON
+    AddCXXSummary(objc_category_sp, lldb_private::formatters::ObjCSELSummaryProvider<false>, "SEL summary", ConstString("SEL"), objc_flags);
+    AddCXXSummary(objc_category_sp, lldb_private::formatters::ObjCSELSummaryProvider<false>, "SEL summary", ConstString("struct objc_selector"), objc_flags);
+    AddCXXSummary(objc_category_sp, lldb_private::formatters::ObjCSELSummaryProvider<false>, "SEL summary", ConstString("objc_selector"), objc_flags);
+    AddCXXSummary(objc_category_sp, lldb_private::formatters::ObjCSELSummaryProvider<true>, "SEL summary", ConstString("objc_selector *"), objc_flags);
+    
     AddScriptSummary(objc_category_sp, "lldb.formatters.objc.Class.Class_Summary", ConstString("Class"), objc_flags);
-    objc_flags.SetSkipPointers(false);
 #endif // LLDB_DISABLE_PYTHON
+
+    objc_flags.SetSkipPointers(false);
 
     TypeCategoryImpl::SharedPointer corefoundation_category_sp = GetCategory(m_corefoundation_category_name);
 

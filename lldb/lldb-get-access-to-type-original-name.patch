@@ -1,0 +1,399 @@
+Index: include/lldb/API/SBType.h
+===================================================================
+--- include/lldb/API/SBType.h	(revision 165942)
++++ include/lldb/API/SBType.h	(working copy)
+@@ -143,6 +143,9 @@
+ 
+     const char*
+     GetName();
++
++    const char* 
++    GetOriginalName();
+     
+     lldb::TypeClass
+     GetTypeClass ();
+Index: include/lldb/Core/ValueObject.h
+===================================================================
+--- include/lldb/Core/ValueObject.h	(revision 166275)
++++ include/lldb/Core/ValueObject.h	(working copy)
+@@ -1071,6 +1071,9 @@
+         m_did_calculate_complete_objc_class_type = true;
+     }
+     
++    virtual lldb::TypeSP
++    GetType () = 0;
++    
+ protected:
+     typedef ClusterManager<ValueObject> ValueObjectManager;
+     
+Index: include/lldb/Core/ValueObjectChild.h
+===================================================================
+--- include/lldb/Core/ValueObjectChild.h	(revision 165938)
++++ include/lldb/Core/ValueObjectChild.h	(working copy)
+@@ -77,6 +77,9 @@
+         return m_is_deref_of_parent;
+     }
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+Index: include/lldb/Core/ValueObjectConstResult.h
+===================================================================
+--- include/lldb/Core/ValueObjectConstResult.h	(revision 165938)
++++ include/lldb/Core/ValueObjectConstResult.h	(working copy)
+@@ -135,6 +135,9 @@
+     virtual lldb::ValueObjectSP
+     GetDynamicValue (lldb::DynamicValueType valueType);
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+Index: include/lldb/Core/ValueObjectDynamicValue.h
+===================================================================
+--- include/lldb/Core/ValueObjectDynamicValue.h	(revision 165938)
++++ include/lldb/Core/ValueObjectDynamicValue.h	(working copy)
+@@ -72,6 +72,9 @@
+             return m_parent->GetSP();
+         }
+         
++        virtual lldb::TypeSP
++        GetType ();
++
+     protected:
+         virtual bool
+         UpdateValue ();
+@@ -162,6 +165,9 @@
+     
+     virtual bool
+     SetValueFromCString (const char *value_str, Error& error);
++
++    virtual lldb::TypeSP
++    GetType ();
+     
+ protected:
+     virtual bool
+Index: include/lldb/Core/ValueObjectMemory.h
+===================================================================
+--- include/lldb/Core/ValueObjectMemory.h	(revision 165938)
++++ include/lldb/Core/ValueObjectMemory.h	(working copy)
+@@ -59,6 +59,9 @@
+     virtual lldb::ModuleSP
+     GetModule();
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+Index: include/lldb/Core/ValueObjectRegister.h
+===================================================================
+--- include/lldb/Core/ValueObjectRegister.h	(revision 165938)
++++ include/lldb/Core/ValueObjectRegister.h	(working copy)
+@@ -52,6 +52,9 @@
+     virtual ValueObject *
+     CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index);
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+@@ -108,6 +111,8 @@
+     virtual uint32_t
+     GetIndexOfChildWithName (const ConstString &name);
+ 
++    virtual lldb::TypeSP
++    GetType ();
+ 
+ protected:
+     virtual bool
+@@ -166,6 +171,9 @@
+     virtual void
+     GetExpressionPath (Stream &s, bool qualify_cxx_base_classes, GetExpressionPathFormat epformat = eGetExpressionPathFormatDereferencePointers);
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+Index: include/lldb/Core/ValueObjectSyntheticFilter.h
+===================================================================
+--- include/lldb/Core/ValueObjectSyntheticFilter.h	(revision 165942)
++++ include/lldb/Core/ValueObjectSyntheticFilter.h	(working copy)
+@@ -108,6 +108,9 @@
+             return m_parent->ResolveValue(scalar);
+         return false;
+     }
++
++    virtual lldb::TypeSP
++    GetType ();
+     
+ protected:
+     virtual bool
+Index: include/lldb/Core/ValueObjectVariable.h
+===================================================================
+--- include/lldb/Core/ValueObjectVariable.h	(revision 165938)
++++ include/lldb/Core/ValueObjectVariable.h	(working copy)
+@@ -58,6 +58,9 @@
+     virtual bool
+     GetDeclaration (Declaration &decl);
+ 
++    virtual lldb::TypeSP
++    GetType ();
++
+ protected:
+     virtual bool
+     UpdateValue ();
+Index: include/lldb/Symbol/Type.h
+===================================================================
+--- include/lldb/Symbol/Type.h	(revision 165938)
++++ include/lldb/Symbol/Type.h	(working copy)
+@@ -384,6 +384,8 @@
+     }
+     
+     TypeImpl(const lldb_private::ClangASTType& type);
++
++    TypeImpl(const lldb_private::ClangASTType& clang_type, const lldb::TypeSP& type);
+     
+     TypeImpl(const lldb::TypeSP& type);
+     
+Index: source/API/SBType.cpp
+===================================================================
+--- source/API/SBType.cpp	(revision 165942)
++++ source/API/SBType.cpp	(working copy)
+@@ -468,6 +468,18 @@
+                                           m_opaque_sp->GetOpaqueQualType()).GetCString();
+ }
+ 
++const char*
++SBType::GetOriginalName()
++{
++    if (!IsValid()) 
++        return "";
++
++    lldb::TypeSP type = m_opaque_sp->GetTypeSP();
++    if (type)
++        return type->GetName().AsCString();
++    return "";
++}
++
+ lldb::TypeClass
+ SBType::GetTypeClass ()
+ {
+Index: source/API/SBValue.cpp
+===================================================================
+--- source/API/SBValue.cpp	(revision 166275)
++++ source/API/SBValue.cpp	(working copy)
+@@ -357,7 +357,7 @@
+             if (target_sp)
+             {
+                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
+-                type_sp.reset (new TypeImpl(ClangASTType (value_sp->GetClangAST(), value_sp->GetClangType())));
++                type_sp.reset (new TypeImpl(ClangASTType (value_sp->GetClangAST(), value_sp->GetClangType()), value_sp->GetType()));
+                 sb_type.SetSP(type_sp);
+             }
+         }
+Index: source/Core/ValueObjectChild.cpp
+===================================================================
+--- source/Core/ValueObjectChild.cpp	(revision 165938)
++++ source/Core/ValueObjectChild.cpp	(working copy)
+@@ -111,6 +111,18 @@
+     return qualified_name;
+ }
+ 
++lldb::TypeSP
++ValueObjectChild::GetType ()
++{
++    if (UpdateValueIfNeeded(false)) {
++        Type* type = m_value.GetType();
++        if (type)
++            return type->shared_from_this();
++    }
++    return lldb::TypeSP();
++}
++
++
+ bool
+ ValueObjectChild::UpdateValue ()
+ {
+Index: source/Core/ValueObjectConstResult.cpp
+===================================================================
+--- source/Core/ValueObjectConstResult.cpp	(revision 165938)
++++ source/Core/ValueObjectConstResult.cpp	(working copy)
+@@ -281,6 +281,15 @@
+     return m_value.GetClangType();
+ }
+ 
++lldb::TypeSP
++ValueObjectConstResult::GetType() 
++{
++    Type* type = m_value.GetType();
++    if (type)
++        return type->shared_from_this();
++    return lldb::TypeSP();
++}
++
+ lldb::ValueType
+ ValueObjectConstResult::GetValueType() const
+ {
+Index: source/Core/ValueObjectDynamicValue.cpp
+===================================================================
+--- source/Core/ValueObjectDynamicValue.cpp	(revision 166275)
++++ source/Core/ValueObjectDynamicValue.cpp	(working copy)
+@@ -67,6 +67,12 @@
+     return m_cast_type.GetOpaqueQualType();
+ }
+ 
++lldb::TypeSP
++ValueObjectCast::GetType ()
++{
++    return lldb::TypeSP();
++}
++
+ uint32_t
+ ValueObjectCast::CalculateNumChildren()
+ {
+@@ -162,6 +168,15 @@
+         return m_parent->GetClangType();
+ }
+ 
++lldb::TypeSP
++ValueObjectDynamicValue::GetType ()
++{
++    if (m_type_sp)
++        return m_type_sp;
++    else
++        return m_parent->GetType();
++}
++
+ ConstString
+ ValueObjectDynamicValue::GetTypeName()
+ {
+Index: source/Core/ValueObjectMemory.cpp
+===================================================================
+--- source/Core/ValueObjectMemory.cpp	(revision 165938)
++++ source/Core/ValueObjectMemory.cpp	(working copy)
+@@ -165,6 +165,12 @@
+     return m_clang_type.GetASTContext();
+ }
+ 
++lldb::TypeSP
++ValueObjectMemory::GetType ()
++{
++   return m_type_sp;
++}
++
+ size_t
+ ValueObjectMemory::GetByteSize()
+ {
+Index: source/Core/ValueObjectRegister.cpp
+===================================================================
+--- source/Core/ValueObjectRegister.cpp	(revision 165938)
++++ source/Core/ValueObjectRegister.cpp	(working copy)
+@@ -48,6 +48,12 @@
+     return NULL;
+ }
+ 
++lldb::TypeSP
++ValueObjectRegisterContext::GetType ()
++{
++    return lldb::TypeSP();
++}
++
+ ConstString
+ ValueObjectRegisterContext::GetTypeName()
+ {
+@@ -150,6 +156,12 @@
+     return NULL;
+ }
+ 
++lldb::TypeSP
++ValueObjectRegisterSet::GetType () 
++{
++    return lldb::TypeSP();
++}
++
+ ConstString
+ ValueObjectRegisterSet::GetTypeName()
+ {
+@@ -333,6 +345,17 @@
+     return m_clang_type;
+ }
+ 
++lldb::TypeSP
++ValueObjectRegister::GetType () 
++{
++    if (UpdateValueIfNeeded(false)) {
++        lldb_private::Type* type = m_value.GetType();
++        if (type)
++            return type->shared_from_this();
++    }
++    return lldb::TypeSP();
++}
++
+ ConstString
+ ValueObjectRegister::GetTypeName()
+ {
+Index: source/Core/ValueObjectSyntheticFilter.cpp
+===================================================================
+--- source/Core/ValueObjectSyntheticFilter.cpp	(revision 165942)
++++ source/Core/ValueObjectSyntheticFilter.cpp	(working copy)
+@@ -86,6 +86,12 @@
+     return m_parent->GetTypeName();
+ }
+ 
++lldb::TypeSP
++ValueObjectSynthetic::GetType() 
++{
++    return m_parent->GetType();
++}
++
+ uint32_t
+ ValueObjectSynthetic::CalculateNumChildren()
+ {
+Index: source/Core/ValueObjectVariable.cpp
+===================================================================
+--- source/Core/ValueObjectVariable.cpp	(revision 165938)
++++ source/Core/ValueObjectVariable.cpp	(working copy)
+@@ -102,6 +102,15 @@
+     return 0;
+ }
+ 
++lldb::TypeSP
++ValueObjectVariable::GetType () 
++{
++    Type* type = m_variable_sp->GetType();
++    if (type)
++        return type->shared_from_this();
++    return lldb::TypeSP();
++}
++
+ size_t
+ ValueObjectVariable::GetByteSize()
+ {
+Index: source/Symbol/Type.cpp
+===================================================================
+--- source/Symbol/Type.cpp	(revision 165938)
++++ source/Symbol/Type.cpp	(working copy)
+@@ -846,6 +846,12 @@
+ {
+ }
+ 
++TypeImpl::TypeImpl(const lldb_private::ClangASTType& clang_type, const lldb::TypeSP& type) :
++m_clang_ast_type(clang_type),
++    m_type_sp(type)
++{
++}
++
+ void
+ TypeImpl::SetType (const lldb::TypeSP &type_sp)
+ {

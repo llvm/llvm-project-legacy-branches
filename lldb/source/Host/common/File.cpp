@@ -373,7 +373,7 @@ File::SeekFromEnd (off_t& offset)
     Error error;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_CUR);
+        offset = ::lseek (m_descriptor, offset, SEEK_END);
         
         if (offset == -1)
             error.SetErrorToErrno();

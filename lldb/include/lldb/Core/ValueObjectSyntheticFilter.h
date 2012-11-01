@@ -39,6 +39,9 @@ public:
     virtual ConstString
     GetTypeName();
 
+    virtual bool
+    MightHaveChildren();
+
     virtual uint32_t
     CalculateNumChildren();
 
@@ -138,9 +141,14 @@ protected:
     
     ConstString     m_parent_type_name;
 
+    LazyBool        m_might_have_children;
+    
 private:
     friend class ValueObject;
     ValueObjectSynthetic (ValueObject &parent, lldb::SyntheticChildrenSP filter);
+    
+    void
+    CopyParentData ();
     
     //------------------------------------------------------------------
     // For ValueObject only

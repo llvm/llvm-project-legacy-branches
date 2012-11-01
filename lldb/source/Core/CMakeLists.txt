@@ -64,6 +64,7 @@ add_lldb_library(lldbCore
   UUID.cpp
   Value.cpp
   ValueObject.cpp
+  ValueObjectCast.cpp
   ValueObjectChild.cpp
   ValueObjectConstResult.cpp
   ValueObjectConstResultChild.cpp

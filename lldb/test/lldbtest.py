@@ -32,6 +32,7 @@ $
 """
 
 import os, sys, traceback
+import os.path
 import re
 from subprocess import *
 import StringIO
@@ -89,6 +90,8 @@ BREAKPOINT_HIT_ONCE = "Breakpoint resolved with hit cout = 1"
 BREAKPOINT_HIT_TWICE = "Breakpoint resolved with hit cout = 2"
 
 BREAKPOINT_HIT_THRICE = "Breakpoint resolved with hit cout = 3"
+
+MISSING_EXPECTED_REGISTERS = "At least one expected register is unavailable."
 
 OBJECT_PRINTED_CORRECTLY = "Object printed correctly"
 
@@ -414,6 +417,7 @@ class Base(unittest2.TestCase):
     accomplish things.
     
     """
+
     # The concrete subclass should override this attribute.
     mydir = None
 
@@ -434,6 +438,7 @@ class Base(unittest2.TestCase):
         # Fail fast if 'mydir' attribute is not overridden.
         if not cls.mydir or len(cls.mydir) == 0:
             raise Exception("Subclasses must override the 'mydir' attribute.")
+
         # Save old working directory.
         cls.oldcwd = os.getcwd()
 
@@ -1021,6 +1026,27 @@ class TestBase(Base):
         if lldb.pre_flight:
             lldb.pre_flight(self)
 
+    # utility methods that tests can use to access the current objects
+    def target(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget()
+
+    def process(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess()
+
+    def thread(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess().GetSelectedThread()
+
+    def frame(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess().GetSelectedThread().GetSelectedFrame()
+
     def tearDown(self):
         #import traceback
         #traceback.print_stack()
@@ -1184,7 +1210,10 @@ class TestBase(Base):
                                  "Command '" + str + "' is expected to fail!")
         else:
             # No execution required, just compare str against the golden input.
-            output = str
+            if isinstance(str,lldb.SBCommandReturnObject):
+                output = str.GetOutput()
+            else:
+                output = str
             with recording(self, trace) as sbuf:
                 print >> sbuf, "looking at:", output
 

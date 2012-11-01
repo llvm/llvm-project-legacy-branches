@@ -260,7 +260,7 @@ class RegisterContextDarwin_arm_Mach : public RegisterContextDarwin_arm
 {
 public:
     RegisterContextDarwin_arm_Mach (lldb_private::Thread &thread, const DataExtractor &data) :
-    RegisterContextDarwin_arm (thread, 0)
+        RegisterContextDarwin_arm (thread, 0)
     {
         SetRegisterDataFrom_LC_THREAD (data);
     }
@@ -317,6 +317,12 @@ protected:
     {
         return 0;
     }
+
+    virtual int
+    DoReadDBG (lldb::tid_t tid, int flavor, DBG &dbg)
+    {
+        return -1;
+    }
     
     virtual int
     DoWriteGPR (lldb::tid_t tid, int flavor, const GPR &gpr)
@@ -334,6 +340,12 @@ protected:
     DoWriteEXC (lldb::tid_t tid, int flavor, const EXC &exc)
     {
         return 0;
+    }
+    
+    virtual int
+    DoWriteDBG (lldb::tid_t tid, int flavor, const DBG &dbg)
+    {
+        return -1;
     }
 };
 

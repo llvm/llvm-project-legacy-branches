@@ -61,6 +61,13 @@ namespace lldb_private {
         NSStringSummaryProvider (ValueObject& valobj, Stream& stream);
         
         bool
+        ObjCBOOLSummaryProvider (ValueObject& valobj, Stream& stream);
+        
+        template <bool is_sel_ptr>
+        bool
+        ObjCSELSummaryProvider (ValueObject& valobj, Stream& stream);
+        
+        bool
         RuntimeSpecificDescriptionSummaryProvider (ValueObject& valobj, Stream& stream);
         
         template bool
@@ -74,6 +81,12 @@ namespace lldb_private {
         
         template bool
         NSDataSummaryProvider<false> (ValueObject&, Stream&) ;
+        
+        template bool
+        ObjCSELSummaryProvider<true> (ValueObject&, Stream&);
+
+        template bool
+        ObjCSELSummaryProvider<false> (ValueObject&, Stream&);
         
         class NSArrayMSyntheticFrontEnd : public SyntheticChildrenFrontEnd
         {
@@ -110,6 +123,9 @@ namespace lldb_private {
             virtual bool
             Update();
             
+            virtual bool
+            MightHaveChildren ();
+            
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);
             
@@ -138,6 +154,9 @@ namespace lldb_private {
             virtual bool
             Update();
             
+            virtual bool
+            MightHaveChildren ();
+            
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);
             
@@ -165,6 +184,9 @@ namespace lldb_private {
             
             virtual bool
             Update();
+            
+            virtual bool
+            MightHaveChildren ();
             
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);
@@ -207,6 +229,9 @@ namespace lldb_private {
             
             virtual bool
             Update();
+            
+            virtual bool
+            MightHaveChildren ();
             
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);
@@ -261,6 +286,9 @@ namespace lldb_private {
             virtual bool
             Update();
             
+            virtual bool
+            MightHaveChildren ();
+            
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);
             
@@ -288,6 +316,9 @@ namespace lldb_private {
             
             virtual bool
             Update();
+            
+            virtual bool
+            MightHaveChildren ();
             
             virtual uint32_t
             GetIndexOfChildWithName (const ConstString &name);

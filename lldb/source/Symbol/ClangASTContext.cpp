@@ -566,7 +566,7 @@ ClangASTContext::getDiagnosticsEngine()
     if (m_diagnostics_engine_ap.get() == NULL)
     {
         llvm::IntrusiveRefCntPtr<DiagnosticIDs> diag_id_sp(new DiagnosticIDs());
-        m_diagnostics_engine_ap.reset(new DiagnosticsEngine(diag_id_sp));
+        m_diagnostics_engine_ap.reset(new DiagnosticsEngine(diag_id_sp, new DiagnosticOptions()));
     }
     return m_diagnostics_engine_ap.get();
 }
@@ -1127,7 +1127,7 @@ ClangASTContext::GetTypeForDecl (ObjCInterfaceDecl *decl)
 #pragma mark Structure, Unions, Classes
 
 clang_type_t
-ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type, const char *name, int kind, LanguageType language, uint64_t metadata)
+ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type, const char *name, int kind, LanguageType language, ClangASTMetadata *metadata)
 {
     ASTContext *ast = getASTContext();
     assert (ast != NULL);
@@ -1155,8 +1155,8 @@ ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type
                                                  SourceLocation(),
                                                  name && name[0] ? &ast->Idents.get(name) : NULL);
     
-    if (decl)
-        SetMetadata(ast, (uintptr_t)decl, metadata);
+    if (decl && metadata)
+        SetMetadata(ast, (uintptr_t)decl, *metadata);
     
     if (decl_ctx)
     {
@@ -2263,7 +2263,7 @@ ClangASTContext::CreateObjCClass
     DeclContext *decl_ctx, 
     bool isForwardDecl, 
     bool isInternal,
-    uint64_t metadata
+    ClangASTMetadata *metadata
 )
 {
     ASTContext *ast = getASTContext();
@@ -2286,8 +2286,8 @@ ClangASTContext::CreateObjCClass
                                                          /*isForwardDecl,*/
                                                          isInternal);
     
-    if (decl)
-        SetMetadata(ast, (uintptr_t)decl, metadata);
+    if (decl && metadata)
+        SetMetadata(ast, (uintptr_t)decl, *metadata);
     
     return ast->getObjCInterfaceType(decl).getAsOpaquePtr();
 }
@@ -2401,7 +2401,7 @@ ClangASTContext::AddObjCClassProperty
     const char *property_setter_name,
     const char *property_getter_name,
     uint32_t property_attributes,
-    uint64_t metadata
+    ClangASTMetadata *metadata
 )
 {
     if (class_opaque_type == NULL || property_name == NULL || property_name[0] == '\0')
@@ -2448,7 +2448,8 @@ ClangASTContext::AddObjCClassProperty
                 
                 if (property_decl)
                 {
-                    SetMetadata(ast, (uintptr_t)property_decl, metadata);
+                    if (metadata)
+                        SetMetadata(ast, (uintptr_t)property_decl, *metadata);
                     
                     class_interface_decl->addDecl (property_decl);
                     
@@ -2527,8 +2528,8 @@ ClangASTContext::AddObjCClassProperty
                                                                         impControl,
                                                                         HasRelatedResultType);
                         
-                        if (getter)
-                            SetMetadata(ast, (uintptr_t)getter, metadata);
+                        if (getter && metadata)
+                            SetMetadata(ast, (uintptr_t)getter, *metadata);
                                                 
                         getter->setMethodParams(*ast, ArrayRef<ParmVarDecl*>(), ArrayRef<SourceLocation>());
                         
@@ -2562,8 +2563,8 @@ ClangASTContext::AddObjCClassProperty
                                                                         impControl,
                                                                         HasRelatedResultType);
                         
-                        if (setter)
-                            SetMetadata(ast, (uintptr_t)setter, metadata);
+                        if (setter && metadata)
+                            SetMetadata(ast, (uintptr_t)setter, *metadata);
                         
                         llvm::SmallVector<ParmVarDecl *, 1> params;
 
@@ -6401,9 +6402,18 @@ ClangASTContext::GetCompleteDecl (clang::ASTContext *ast,
 }
 
 void
+ClangASTContext::SetMetadataAsUserID (uintptr_t object,
+                                      user_id_t user_id)
+{
+    ClangASTMetadata meta_data;
+    meta_data.SetUserID (user_id);
+    SetMetadata (object, meta_data);
+}
+
+void
 ClangASTContext::SetMetadata (clang::ASTContext *ast,
                               uintptr_t object,
-                              uint64_t metadata)
+                              ClangASTMetadata &metadata)
 {
     ClangExternalASTSourceCommon *external_source =
         static_cast<ClangExternalASTSourceCommon*>(ast->getExternalSource());
@@ -6412,7 +6422,7 @@ ClangASTContext::SetMetadata (clang::ASTContext *ast,
         external_source->SetMetadata(object, metadata);
 }
 
-uint64_t
+ClangASTMetadata *
 ClangASTContext::GetMetadata (clang::ASTContext *ast,
                               uintptr_t object)
 {
@@ -6422,7 +6432,7 @@ ClangASTContext::GetMetadata (clang::ASTContext *ast,
     if (external_source && external_source->HasMetadata(object))
         return external_source->GetMetadata(object);
     else
-        return 0;
+        return NULL;
 }
 
 clang::DeclContext *
@@ -6477,6 +6487,17 @@ ClangASTContext::GetClassMethodInfoForDeclContext (clang::DeclContext *decl_ctx,
                 is_instance_method = false;
             }
             language = eLanguageTypeObjC;
+            return true;
+        }
+        else if (clang::FunctionDecl *function_decl = llvm::dyn_cast<clang::FunctionDecl>(decl_ctx))
+        {
+            ClangASTMetadata *metadata = GetMetadata (&decl_ctx->getParentASTContext(), (uintptr_t) function_decl);
+            if (metadata && metadata->HasObjectPtr())
+            {
+                language_object_name.SetCString (metadata->GetObjectPtrName());
+                language = eLanguageTypeObjC;
+                is_instance_method = true;
+            }
             return true;
         }
     }

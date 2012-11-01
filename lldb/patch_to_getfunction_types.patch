@@ -1,0 +1,86 @@
+Index: include/lldb/API/SBType.h
+===================================================================
+--- include/lldb/API/SBType.h	(revision 165942)
++++ include/lldb/API/SBType.h	(working copy)
+@@ -141,6 +141,18 @@
+     lldb::TemplateArgumentKind
+     GetTemplateArgumentKind (uint32_t idx);
+ 
++    bool 
++    IsFunctionType ();
++
++    lldb::SBType 
++    GetFunctionReturnType ();
++
++    int 
++    GetNumberOfFunctionArguments ();
++
++    lldb::SBType
++    GetFunctionArgumentTypeAtIndex (int no);
++
+     const char*
+     GetName();
+     
+Index: source/API/SBType.cpp
+===================================================================
+--- source/API/SBType.cpp	(revision 165942)
++++ source/API/SBType.cpp	(working copy)
+@@ -219,7 +219,58 @@
+     return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getNonReferenceType().getAsOpaquePtr()));
+ }
+ 
++bool 
++SBType::IsFunctionType ()
++{
++    if (!IsValid())
++        return false;
++    QualType qt = QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType());
++    
++    return qt->isFunctionProtoType();
++}
++
++lldb::SBType 
++SBType::GetFunctionReturnType ()
++{
++    if (!IsValid())
++        return lldb::SBType();
++    QualType qt = QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType());
++    
++    if (qt->isFunctionProtoType())
++        return SBType(ClangASTType(m_opaque_sp->GetASTContext(), cast<FunctionProtoType>(qt.getTypePtr())->getResultType().getAsOpaquePtr()));
++    return lldb::SBType();
++}
++
++int 
++SBType::GetNumberOfFunctionArguments ()
++{
++    if (!IsValid())
++        return 0;
++    QualType qt = QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType());
++    
++    if (qt->isFunctionProtoType())
++        return cast<FunctionProtoType>(qt.getTypePtr())->getNumArgs();
++    return 0;
++}
++
+ lldb::SBType
++SBType::GetFunctionArgumentTypeAtIndex (int no)
++{
++    if (!IsValid())
++        return lldb::SBType();
++    QualType qt = QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType());
++    
++    if (qt->isFunctionProtoType()) {
++        const FunctionProtoType* func = cast<FunctionProtoType>(qt.getTypePtr());
++        if (no >= 0 && no < func->getNumArgs())
++        {
++            return SBType(ClangASTType(m_opaque_sp->GetASTContext(), func->getArgType(no).getAsOpaquePtr()));
++        }
++    }
++    return lldb::SBType();
++}
++
++lldb::SBType
+ SBType::GetUnqualifiedType()
+ {
+     if (!IsValid())

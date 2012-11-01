@@ -330,7 +330,8 @@ namespace lldb {
         eLanguageTypeObjC_plus_plus  = 0x0011,   ///< Objective-C++.
         eLanguageTypeUPC             = 0x0012,   ///< Unified Parallel C.
         eLanguageTypeD               = 0x0013,   ///< D.
-        eLanguageTypePython          = 0x0014    ///< Python.
+        eLanguageTypePython          = 0x0014,   ///< Python.
+        eNumLanguageTypes
     } LanguageType;
 
     typedef enum DynamicValueType
@@ -362,6 +363,7 @@ namespace lldb {
         eArgTypeClassName,
         eArgTypeCommandName,
         eArgTypeCount,
+        eArgTypeDirectoryName,
         eArgTypeEndAddress,
         eArgTypeExpression,
         eArgTypeExpressionPath,
@@ -386,7 +388,6 @@ namespace lldb {
         eArgTypeOffset,
         eArgTypeOldPathPrefix,
         eArgTypeOneLiner,
-        eArgTypePath, 
         eArgTypePid,
         eArgTypePlugin,
         eArgTypeProcessName,

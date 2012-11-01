@@ -223,8 +223,6 @@ ObjectFilePECOFF::ParseHeader ()
                     ParseCOFFOptionalHeader(&offset);
                 ParseSectionHeaders (offset);
             }
-            StreamFile s(stdout, false);// REMOVE THIS LINE!!!
-            Dump(&s);// REMOVE THIS LINE!!!
             return true;
         }
     }

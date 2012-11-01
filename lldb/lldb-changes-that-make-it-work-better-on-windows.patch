@@ -1,0 +1,658 @@
+Index: .
+===================================================================
+--- .	(revision 163819)
++++ .	(working copy)
+
+Property changes on: .
+___________________________________________________________________
+Added: svn:ignore
+## -0,0 +1 ##
++build
+Index: include/lldb/Core/RegularExpression.h
+===================================================================
+--- include/lldb/Core/RegularExpression.h	(revision 163819)
++++ include/lldb/Core/RegularExpression.h	(working copy)
+@@ -71,7 +71,7 @@
+     RegularExpression (const RegularExpression &rhs);
+     
+     const RegularExpression & operator=(const RegularExpression &rhs);
+-
++    
+     //------------------------------------------------------------------
+     /// Compile a regular expression.
+     ///
+@@ -178,7 +178,7 @@
+     // Member variables
+     //------------------------------------------------------------------
+     mutable std::string m_re;   ///< A copy of the original regular expression text
+-    mutable llvm::Regex m_regex;     ///< The compiled regular expression
++    mutable llvm::Regex* m_regex;     ///< The compiled regular expression
+     int     m_compile_flags; ///< Stores the flags from the last compile.
+ 
+     typedef llvm::SmallVectorImpl<llvm::StringRef> MatchVectorImpl;
+Index: source/Core/ConnectionFileDescriptor.cpp
+===================================================================
+--- source/Core/ConnectionFileDescriptor.cpp	(revision 163819)
++++ source/Core/ConnectionFileDescriptor.cpp	(working copy)
+@@ -413,6 +413,18 @@
+         {
+ #ifdef _POSIX_SOURCE
+             bytes_read = ::read (m_fd_recv, dst, dst_len);
++#else
++            switch (m_fd_send_type) {
++            case eFDTypeSocket:
++            case eFDTypeSocketUDP:
++                bytes_read = ::recv(m_fd_recv, (char*) dst, dst_len, 0);
++                break;
++            default:
++                bytes_read = -1;
++                break;
++
++            }
++
+ #endif			
+         } while (bytes_read < 0 && errno == EINTR);
+     }
+@@ -515,20 +527,24 @@
+ 
+     ssize_t bytes_sent = 0;
+ 
+-#ifdef _POSIX_SOURCE
+     switch (m_fd_send_type)
+     {
++#ifdef _POSIX_SOURCE
+         case eFDTypeFile:       // Other FD requireing read/write
+             do
+             {
+                 bytes_sent = ::write (m_fd_send, src, src_len);
+             } while (bytes_sent < 0 && errno == EINTR);
+             break;
+-            
++#endif     
+         case eFDTypeSocket:     // Socket requiring send/recv
+             do
+             {
++#ifdef _WIN32
++                bytes_sent = ::send (m_fd_send, (char*)src, src_len, 0);
++#else
+                 bytes_sent = ::send (m_fd_send, src, src_len, 0);
++#endif
+             } while (bytes_sent < 0 && errno == EINTR);
+             break;
+             
+@@ -536,16 +552,26 @@
+             assert (m_udp_send_sockaddr.GetFamily() != 0);
+             do
+             {
++#ifdef _WIN32
+                 bytes_sent = ::sendto (m_fd_send, 
++                                       (char*)src, 
++                                       src_len, 
++                                       0, 
++                                       m_udp_send_sockaddr, 
++                                       m_udp_send_sockaddr.GetLength());
++#else
++                bytes_sent = ::sendto (m_fd_send, 
+                                        src, 
+                                        src_len, 
+                                        0, 
+                                        m_udp_send_sockaddr, 
+                                        m_udp_send_sockaddr.GetLength());
++#endif
+             } while (bytes_sent < 0 && errno == EINTR);
+             break;
++        default:
++            bytes_sent = 0;
+     }
+-#endif	
+ 
+     if (bytes_sent < 0)
+         error.SetErrorToErrno ();
+Index: source/Core/Debugger.cpp
+===================================================================
+--- source/Core/Debugger.cpp	(revision 163819)
++++ source/Core/Debugger.cpp	(working copy)
+@@ -86,6 +86,7 @@
+     { eScriptLanguageNone,      "none",     "Disable scripting languages."},
+     { eScriptLanguagePython,    "python",   "Select python as the default scripting language."},
+     { eScriptLanguageDefault,   "default",  "Select the lldb default as the default scripting language."},
++    { 0, NULL, NULL }
+ };
+ 
+ #define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name-with-args}${function.pc-offset}}}"
+Index: source/Core/Error.cpp
+===================================================================
+--- source/Core/Error.cpp	(revision 163819)
++++ source/Core/Error.cpp	(working copy)
+@@ -277,7 +277,11 @@
+ void
+ Error::SetErrorToErrno()
+ {
++#ifdef _WIN32
++    m_code = GetLastError();
++#else
+     m_code = errno;
++#endif
+     m_type = eErrorTypePOSIX;
+     m_string.clear();
+ }
+Index: source/Core/RegularExpression.cpp
+===================================================================
+--- source/Core/RegularExpression.cpp	(revision 163819)
++++ source/Core/RegularExpression.cpp	(working copy)
+@@ -16,9 +16,9 @@
+ // Default constructor
+ //----------------------------------------------------------------------
+ RegularExpression::RegularExpression() :
+-	m_re(),
+-	m_regex(llvm::StringRef())
++	m_re()
+ {
++	m_regex = NULL;
+ }
+ 
+ //----------------------------------------------------------------------
+@@ -26,9 +26,9 @@
+ // resulting compiled regular expression into this object.
+ //----------------------------------------------------------------------
+ RegularExpression::RegularExpression(const char* re, int flags) :
+-	m_re(),
+-    m_regex(llvm::StringRef())
++	m_re()
+ {
++	m_regex = NULL;
+     Compile(re);
+ }
+ 
+@@ -37,16 +37,19 @@
+ // resulting compiled regular expression into this object.
+ //----------------------------------------------------------------------
+ RegularExpression::RegularExpression(const char* re) :
+-    m_re(),
+-    m_regex(llvm::StringRef())
++    m_re()
+ {
++	m_regex = NULL;
+     Compile(re);
+ }
+ 
+ RegularExpression::RegularExpression(const RegularExpression &rhs) :
+-    m_regex(llvm::StringRef())
++    m_re()
+  {
+-     Compile(rhs.GetText(), rhs.GetCompileFlags());
++	 m_regex = NULL;
++     const char* data = rhs.GetText();
++     if (data)
++       Compile(data, rhs.GetCompileFlags());
+  }
+ 
+ 
+@@ -67,7 +70,11 @@
+ //----------------------------------------------------------------------
+ RegularExpression::~RegularExpression()
+ {
+-
++	if (m_regex)
++	{
++		delete m_regex;
++		m_regex = NULL;
++	}
+ }
+ 
+ //----------------------------------------------------------------------
+@@ -94,7 +101,9 @@
+     Free();
+     m_compile_flags = flags;
+     m_re = re;
+-    m_regex = llvm::Regex(llvm::StringRef(re));
++	if (m_regex)
++		delete m_regex;
++    m_regex = new llvm::Regex(llvm::StringRef(re));
+  
+     return IsValid();
+ }
+@@ -110,7 +119,9 @@
+ bool
+ RegularExpression::Execute(const char* s, size_t num_matches, int execute_flags) const
+ {
+-    return m_regex.match(llvm::StringRef(s), &m_matches);
++	if (!m_regex)
++		return false;
++    return m_regex->match(llvm::StringRef(s), &m_matches);
+ }
+ 
+ bool
+@@ -133,7 +144,8 @@
+ RegularExpression::IsValid () const
+ {
+     std::string err;
+-    return m_regex.isValid(err);
++	if (!m_regex) return false;
++    return m_regex->isValid(err);
+ }
+ 
+ //----------------------------------------------------------------------
+@@ -155,7 +167,9 @@
+ RegularExpression::Free()
+ {
+     m_re.clear();
+-    m_regex = llvm::Regex(llvm::StringRef());
++	if (m_regex)
++		delete m_regex;
++    m_regex = NULL;
+     m_matches.clear();
+ }
+ 
+@@ -163,7 +177,8 @@
+ RegularExpression::GetErrorAsCString () const
+ {
+     std::string err;
+-    m_regex.isValid(err);
++	if (m_regex)
++		m_regex->isValid(err);
+     return err;
+ }
+ 
+Index: source/Host/common/Host.cpp
+===================================================================
+--- source/Host/common/Host.cpp	(revision 163819)
++++ source/Host/common/Host.cpp	(working copy)
+@@ -593,7 +593,7 @@
+     
+ #ifdef _WIN32
+     thread = ::_beginthreadex(0, 0, ThreadCreateTrampoline, info_ptr, 0, NULL);
+-    int err = thread;
++    int err = thread <= 0 ? GetLastError() : 0;
+ #else
+     int err = ::pthread_create (&thread, NULL, ThreadCreateTrampoline, info_ptr);
+ #endif
+Index: source/Host/common/Mutex.cpp
+===================================================================
+--- source/Host/common/Mutex.cpp	(revision 163819)
++++ source/Host/common/Mutex.cpp	(working copy)
+@@ -324,7 +324,7 @@
+     DEBUG_LOG ("[%4.4llx/%4.4llx] pthread_mutex_trylock (%p) => %i\n", Host::GetCurrentProcessID(), Host::GetCurrentThreadID(), &m_mutex, err);
+     return err;
+ #endif
+-    return m_mutex.tryacquire();
++    return 0 == m_mutex.tryacquire(); // try acquire returns <> 0 for success
+ }
+ 
+ //----------------------------------------------------------------------
+Index: source/lldb.cpp
+===================================================================
+--- source/lldb.cpp	(revision 163819)
++++ source/lldb.cpp	(working copy)
+@@ -39,6 +39,10 @@
+ #ifndef LLDB_DISABLE_PYTHON
+ #include "Plugins/OperatingSystem/Python/OperatingSystemPython.h"
+ #endif
++
++#include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
++#include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
++
+ #if defined (__APPLE__)
+ #include "Plugins/ABI/MacOSX-i386/ABIMacOSX_i386.h"
+ #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
+@@ -48,8 +52,6 @@
+ #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
+ #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
+ #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
+-#include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
+-#include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
+ #include "Plugins/Process/MacOSX-Kernel/ProcessKDP.h"
+ #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
+ #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
+@@ -73,6 +75,7 @@
+ 
+ #if defined(_WIN32) || defined(_WIN64)
+ #include "Plugins/Platform/Windows/PlatformWindows.h"
++#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
+ #endif
+ 
+ #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
+@@ -120,6 +123,8 @@
+         OperatingSystemPython::Initialize();
+ #endif
+ 
++        ObjectContainerUniversalMachO::Initialize();
++        ObjectFileMachO::Initialize();
+ #if defined (__APPLE__)
+         //----------------------------------------------------------------------
+         // Apple/Darwin hosted plugins
+@@ -131,8 +136,6 @@
+         ItaniumABILanguageRuntime::Initialize();
+         AppleObjCRuntimeV2::Initialize();
+         AppleObjCRuntimeV1::Initialize();
+-        ObjectContainerUniversalMachO::Initialize();
+-        ObjectFileMachO::Initialize();
+         ProcessGDBRemote::Initialize();
+         ProcessKDP::Initialize();
+         ProcessMachCore::Initialize();
+@@ -154,9 +157,10 @@
+         //----------------------------------------------------------------------
+         // Platform agnostic plugins
+         //----------------------------------------------------------------------
+-#ifndef _WIN32 // TODO: Enable this for Windows later
++#ifdef _WIN32 // TODO: Enable this for Windows later
++        ProcessGDBRemote::Initialize();
++#endif
+         PlatformRemoteGDBServer::Initialize ();
+-#endif
+ 
+         DynamicLoaderStatic::Initialize();
+       
+Index: source/Plugins/ObjectContainer/BSD-Archive/ObjectContainerBSDArchive.cpp
+===================================================================
+--- source/Plugins/ObjectContainer/BSD-Archive/ObjectContainerBSDArchive.cpp	(revision 163819)
++++ source/Plugins/ObjectContainer/BSD-Archive/ObjectContainerBSDArchive.cpp	(working copy)
+@@ -9,7 +9,7 @@
+ 
+ #include "ObjectContainerBSDArchive.h"
+ 
+-#include <ar.h>
++//#include <ar.h>
+ 
+ #include "lldb/Core/Stream.h"
+ #include "lldb/Core/ArchSpec.h"
+@@ -22,7 +22,20 @@
+ using namespace lldb;
+ using namespace lldb_private;
+ 
++// Defines from ar, missing on Windows
++#define ARMAG   "!<arch>\n"
++#define SARMAG  8 
++#define ARFMAG  "`\n"
+ 
++typedef struct ar_hdr
++  {
++    char ar_name[16];          
++    char ar_date[12];          
++    char ar_uid[6], ar_gid[6]; 
++    char ar_mode[8];           
++    char ar_size[10];          
++    char ar_fmag[2];           
++  } ar_hdr;
+ 
+ ObjectContainerBSDArchive::Object::Object() :
+     ar_name(),
+Index: source/Plugins/ObjectFile/Mach-O/ObjectFileMachO.cpp
+===================================================================
+--- source/Plugins/ObjectFile/Mach-O/ObjectFileMachO.cpp	(revision 163819)
++++ source/Plugins/ObjectFile/Mach-O/ObjectFileMachO.cpp	(working copy)
+@@ -3530,7 +3530,7 @@
+         DataExtractor data (m_data, 
+                             thread_context_file_range->GetRangeBase(), 
+                             thread_context_file_range->GetByteSize());
+-
++#if defined(__APPLE__)
+         switch (m_header.cputype)
+         {
+             case llvm::MachO::CPUTypeARM:
+@@ -3545,6 +3545,9 @@
+                 reg_ctx_sp.reset (new RegisterContextDarwin_x86_64_Mach (thread, data));
+                 break;
+         }
++#else
++        abort();
++#endif
+     }
+     return reg_ctx_sp;
+ }
+Index: source/Plugins/Platform/gdb-server/PlatformRemoteGDBServer.cpp
+===================================================================
+--- source/Plugins/Platform/gdb-server/PlatformRemoteGDBServer.cpp	(revision 163819)
++++ source/Plugins/Platform/gdb-server/PlatformRemoteGDBServer.cpp	(working copy)
+@@ -10,7 +10,9 @@
+ #include "PlatformRemoteGDBServer.h"
+ 
+ // C Includes
++#ifdef _POSIX_SOURCE
+ #include <sys/sysctl.h>
++#endif
+ 
+ // C++ Includes
+ // Other libraries and framework includes
+@@ -27,6 +29,9 @@
+ #include "lldb/Host/Host.h"
+ #include "lldb/Target/Process.h"
+ #include "lldb/Target/Target.h"
++#ifdef _WIN32
++#include <Winsock2.h>
++#endif
+ 
+ using namespace lldb;
+ using namespace lldb_private;
+@@ -39,7 +44,11 @@
+     if (g_initialized == false)
+     {
+         g_initialized = true;
+-        PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetShortPluginNameStatic(),
++#ifdef _WIN32
++		WSADATA dummy;
++		WSAStartup(0x202, &dummy);
++#endif
++		PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetShortPluginNameStatic(),
+                                        PlatformRemoteGDBServer::GetDescriptionStatic(),
+                                        PlatformRemoteGDBServer::CreateInstance);
+     }
+@@ -52,6 +61,9 @@
+     {
+         g_initialized = false;
+         PluginManager::UnregisterPlugin (PlatformRemoteGDBServer::CreateInstance);
++#ifdef _WIN32
++		WSACleanup();
++#endif
+     }
+ }
+ 
+Index: source/Plugins/Process/gdb-remote/GDBRemoteCommunicationClient.cpp
+===================================================================
+--- source/Plugins/Process/gdb-remote/GDBRemoteCommunicationClient.cpp	(revision 163819)
++++ source/Plugins/Process/gdb-remote/GDBRemoteCommunicationClient.cpp	(working copy)
+@@ -31,6 +31,10 @@
+ using namespace lldb;
+ using namespace lldb_private;
+ 
++#ifndef _POSIX_SOURCE
++#define SIGSTOP 17
++#endif
++
+ //----------------------------------------------------------------------
+ // GDBRemoteCommunicationClient constructor
+ //----------------------------------------------------------------------
+Index: source/Plugins/Process/gdb-remote/GDBRemoteCommunicationServer.cpp
+===================================================================
+--- source/Plugins/Process/gdb-remote/GDBRemoteCommunicationServer.cpp	(revision 163819)
++++ source/Plugins/Process/gdb-remote/GDBRemoteCommunicationServer.cpp	(working copy)
+@@ -668,6 +668,10 @@
+ bool
+ GDBRemoteCommunicationServer::Handle_qLaunchGDBServer (StringExtractorGDBRemote &packet)
+ {
++#ifdef _WIN32
++	return false;
++	// No unix sockets on windows
++#else
+     // Spawn a local debugserver as a platform so we can then attach or launch
+     // a process...
+ 
+@@ -731,6 +735,7 @@
+         }
+     }
+     return SendErrorResponse (13);
++#endif
+ }
+ 
+ bool
+Index: source/Plugins/Process/gdb-remote/ProcessGDBRemote.cpp
+===================================================================
+--- source/Plugins/Process/gdb-remote/ProcessGDBRemote.cpp	(revision 163819)
++++ source/Plugins/Process/gdb-remote/ProcessGDBRemote.cpp	(working copy)
+@@ -9,12 +9,20 @@
+ 
+ // C Includes
+ #include <errno.h>
++
++#ifdef _POSIX_SOURCE
+ #include <spawn.h>
++#endif
+ #include <stdlib.h>
++#ifdef _POSIX_SOURCE
+ #include <netinet/in.h>
+ #include <sys/mman.h>       // for mmap
+ #include <sys/stat.h>
+ #include <sys/types.h>
++#endif
++#ifndef _POSIX_SOURCE
++#define	SIGTRAP		5	
++#endif
+ #include <time.h>
+ 
+ // C++ Includes
+@@ -686,7 +694,11 @@
+             if (retry_count >= max_retry_count)
+                 break;
+ 
+-            usleep (100000);
++#ifdef _WIN32
++			Sleep (100);
++#else
++			usleep (100000);
++#endif
+         }
+     }
+ 
+@@ -721,7 +733,7 @@
+     for (size_t idx = 0; idx < num_cmds; idx++)
+     {
+         StringExtractorGDBRemote response;
+-        printf ("Sending command: \%s.\n", GetExtraStartupCommands().GetArgumentAtIndex(idx));
++        printf ("Sending command: \\%s.\n", GetExtraStartupCommands().GetArgumentAtIndex(idx));
+         m_gdb_comm.SendPacketAndWaitForResponse (GetExtraStartupCommands().GetArgumentAtIndex(idx), response, false);
+     }
+     return error;
+@@ -1721,7 +1733,11 @@
+         // FIXME: These should be ConstStrings so we aren't doing strcmp'ing.
+         if (platform_sp
+             && platform_sp->GetName()
++#if defined (__APPLE__)
+             && strcmp (platform_sp->GetName(), PlatformRemoteiOS::GetShortPluginNameStatic()) == 0)
++#else
++			&& false)
++#endif
+         {
+             if (m_destroy_tried_resuming)
+             {
+@@ -2513,7 +2529,11 @@
+             // Sleep for a half a second to make sure our inferior process has
+             // time to set its exit status before we set it incorrectly when
+             // both the debugserver and the inferior process shut down.
++#if _WIN32
++			Sleep (500);
++#else
+             usleep (500000);
++#endif
+             // If our process hasn't yet exited, debugserver might have died.
+             // If the process did exit, the we are reaping it.
+             const StateType state = process->GetState();
+@@ -2553,7 +2573,11 @@
+ {
+     if (m_debugserver_pid != LLDB_INVALID_PROCESS_ID)
+     {
+-        ::kill (m_debugserver_pid, SIGINT);
++#if _WIN32
++		TerminateProcess ((HANDLE)m_debugserver_pid, 1);
++#else
++		::kill (m_debugserver_pid, SIGINT);
++#endif
+         m_debugserver_pid = LLDB_INVALID_PROCESS_ID;
+     }
+ }
+@@ -2615,7 +2639,7 @@
+ }
+ 
+ 
+-void *
++thread_result_t
+ ProcessGDBRemote::AsyncThread (void *arg)
+ {
+     ProcessGDBRemote *process = (ProcessGDBRemote*) arg;
+Index: source/Plugins/Process/gdb-remote/ProcessGDBRemote.h
+===================================================================
+--- source/Plugins/Process/gdb-remote/ProcessGDBRemote.h	(revision 163819)
++++ source/Plugins/Process/gdb-remote/ProcessGDBRemote.h	(working copy)
+@@ -332,7 +332,7 @@
+     void
+     StopAsyncThread ();
+ 
+-    static void *
++    static lldb::thread_result_t
+     AsyncThread (void *arg);
+ 
+     static bool
+Index: source/Plugins/Process/Utility/DynamicRegisterInfo.cpp
+===================================================================
+--- source/Plugins/Process/Utility/DynamicRegisterInfo.cpp	(revision 163819)
++++ source/Plugins/Process/Utility/DynamicRegisterInfo.cpp	(working copy)
+@@ -6,6 +6,7 @@
+ // License. See LICENSE.TXT for details.
+ //
+ //===----------------------------------------------------------------------===//
++#ifndef LLDB_DISABLE_PYTHON
+ 
+ #include "DynamicRegisterInfo.h"
+ 
+@@ -267,3 +268,4 @@
+     m_set_reg_nums.clear();
+     m_set_names.clear();
+ }
++#endif
+Index: source/Plugins/Process/Utility/InferiorCallPOSIX.cpp
+===================================================================
+--- source/Plugins/Process/Utility/InferiorCallPOSIX.cpp	(revision 163819)
++++ source/Plugins/Process/Utility/InferiorCallPOSIX.cpp	(working copy)
+@@ -17,7 +17,17 @@
+ #include "lldb/Target/Target.h"
+ #include "lldb/Target/ThreadPlanCallFunction.h"
+ 
++#ifdef _POSIX_SOURCE
+ #include <sys/mman.h>
++#else
++// define them 
++#define PROT_NONE 0
++#define PROT_READ 1
++#define PROT_WRITE 2
++#define PROT_EXEC 4
++#define MAP_PRIVATE 2
++#define MAP_ANON 0x1000
++#endif
+ 
+ using namespace lldb;
+ using namespace lldb_private;
+Index: source/Plugins/Process/Utility/RegisterContextMacOSXFrameBackchain.cpp
+===================================================================
+--- source/Plugins/Process/Utility/RegisterContextMacOSXFrameBackchain.cpp	(revision 163819)
++++ source/Plugins/Process/Utility/RegisterContextMacOSXFrameBackchain.cpp	(working copy)
+@@ -149,7 +149,7 @@
+ 
+             // TOOD: need a better way to detect when "long double" types are 
+             // the same bytes size as "double"
+-#if !defined(__arm__)
++#if !defined(__arm__) && !defined(_MSC_VER)
+         case sizeof (long double):
+             if (sizeof (long double) == sizeof(uint32_t))
+             {
+Index: source/Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.cpp
+===================================================================
+--- source/Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.cpp	(revision 163819)
++++ source/Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.cpp	(working copy)
+@@ -13,7 +13,7 @@
+ #include <libxml/tree.h>
+ #include <string.h>
+ 
+-#include <AvailabilityMacros.h>
++//#include <AvailabilityMacros.h>
+ 
+ #include "lldb/Core/Module.h"
+ #include "lldb/Core/ModuleSpec.h"

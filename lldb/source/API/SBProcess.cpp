@@ -81,6 +81,29 @@ SBProcess::GetBroadcasterClassName ()
     return Process::GetStaticBroadcasterClass().AsCString();
 }
 
+const char *
+SBProcess::GetPluginName ()
+{
+    ProcessSP process_sp(GetSP());
+    if (process_sp)
+    {
+        return process_sp->GetPluginName();
+    }
+    return "<Unknown>";
+}
+
+const char *
+SBProcess::GetShortPluginName ()
+{
+    ProcessSP process_sp(GetSP());
+    if (process_sp)
+    {
+        return process_sp->GetShortPluginName();
+    }
+    return "<Unknown>";
+}
+
+
 lldb::ProcessSP
 SBProcess::GetSP() const
 {
@@ -393,12 +416,6 @@ SBProcess::SetSelectedThread (const SBThread &thread)
         return process_sp->GetThreadList().SetSelectedThreadByID (thread.GetThreadID());
     }
     return false;
-}
-
-bool
-SBProcess::SetSelectedThreadByID (uint32_t tid)
-{
-    return SetSelectedThreadByID ((lldb::tid_t)tid);
 }
 
 bool

@@ -13,6 +13,7 @@ add_lldb_library(lldbInterpreter
   OptionGroupFormat.cpp
   OptionGroupOutputFile.cpp
   OptionGroupPlatform.cpp
+  OptionGroupString.cpp
   OptionGroupUInt64.cpp
   OptionGroupUUID.cpp
   OptionGroupValueObjectDisplay.cpp

@@ -45,14 +45,16 @@ public:
     public:
         
         ClassDescriptor() :
-        m_is_kvo(eLazyBoolCalculate),
-        m_is_cf(eLazyBoolCalculate)
-        {}
-        
-        ClassDescriptor (ObjCISA isa, lldb::ProcessSP process)  :
-        m_is_kvo(eLazyBoolCalculate),
-        m_is_cf(eLazyBoolCalculate)
-        {}
+            m_is_kvo (eLazyBoolCalculate),
+            m_is_cf (eLazyBoolCalculate),
+            m_type_wp ()
+        {
+        }
+
+        virtual
+        ~ClassDescriptor ()
+        {
+        }
         
         virtual ConstString
         GetClassName () = 0;
@@ -118,9 +120,17 @@ public:
             return false;
         }
         
-        virtual
-        ~ClassDescriptor ()
-        {}
+        lldb::TypeSP
+        GetType ()
+        {
+            return m_type_wp.lock();
+        }
+        
+        void
+        SetType (const lldb::TypeSP &type_sp)
+        {
+            m_type_wp = type_sp;
+        }
         
     protected:
         bool
@@ -133,6 +143,7 @@ public:
     private:
         LazyBool m_is_kvo;
         LazyBool m_is_cf;
+        lldb::TypeWP m_type_wp;
     };
     
     // a convenience subclass of ClassDescriptor meant to represent invalid objects
@@ -140,6 +151,10 @@ public:
     {
     public:
         ClassDescriptor_Invalid() {}
+        
+        virtual
+        ~ClassDescriptor_Invalid ()
+        {}
         
         virtual ConstString
         GetClassName () { return ConstString(""); }
@@ -164,11 +179,6 @@ public:
         {
             return false;
         }
-        
-        virtual
-        ~ClassDescriptor_Invalid ()
-        {}
-        
     };
     
     virtual ClassDescriptorSP
@@ -241,16 +251,17 @@ public:
         return m_isa_to_descriptor_cache.count(isa) > 0;
     }
 
-    virtual bool
-    UpdateISAToDescriptorMap_Impl() = 0;
-    
+    virtual void
+    UpdateISAToDescriptorMapIfNeeded() = 0;
+
     void
     UpdateISAToDescriptorMap()
     {
-        if (m_isa_to_descriptor_cache_is_up_to_date)
-            return;
-        
-        m_isa_to_descriptor_cache_is_up_to_date = UpdateISAToDescriptorMap_Impl();
+        if (m_process && m_process->GetStopID() != m_isa_to_descriptor_cache_stop_id)
+        {
+            UpdateISAToDescriptorMapIfNeeded ();
+            assert (m_process->GetStopID() == m_isa_to_descriptor_cache_stop_id); // REMOVE THIS PRIOR TO CHECKIN
+        }
     }
     
     virtual ObjCISA
@@ -440,13 +451,8 @@ private:
 protected:
     typedef std::map<ObjCISA, ClassDescriptorSP> ISAToDescriptorMap;
     typedef ISAToDescriptorMap::iterator ISAToDescriptorIterator;
-    ISAToDescriptorMap                  m_isa_to_descriptor_cache;
-    bool                                m_isa_to_descriptor_cache_is_up_to_date;
-    
-    typedef std::map<lldb::addr_t,TypeAndOrName> ClassNameMap;
-    typedef ClassNameMap::iterator ClassNameIterator;
-    ClassNameMap m_class_name_cache;
-    
+    ISAToDescriptorMap m_isa_to_descriptor_cache;
+    uint32_t m_isa_to_descriptor_cache_stop_id;
     typedef std::map<ConstString, lldb::TypeWP> CompleteClassMap;
     CompleteClassMap m_complete_class_cache;
 

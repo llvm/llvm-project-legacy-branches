@@ -19,6 +19,7 @@
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Host/Endian.h"
+#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Target.h"
 
@@ -686,6 +687,63 @@ lldb_private::formatters::RuntimeSpecificDescriptionSummaryProvider (ValueObject
     return true;
 }
 
+bool
+lldb_private::formatters::ObjCBOOLSummaryProvider (ValueObject& valobj, Stream& stream)
+{
+    const uint32_t type_info = ClangASTContext::GetTypeInfo(valobj.GetClangType(),
+                                                            valobj.GetClangAST(),
+                                                            NULL);
+    
+    ValueObjectSP real_guy_sp = valobj.GetSP();
+    
+    if (type_info & ClangASTContext::eTypeIsPointer)
+    {
+        Error err;
+        real_guy_sp = valobj.Dereference(err);
+        if (err.Fail() || !real_guy_sp)
+            return false;
+    }
+    else if (type_info & ClangASTContext::eTypeIsReference)
+    {
+        real_guy_sp =  valobj.GetChildAtIndex(0, true);
+        if (!real_guy_sp)
+            return false;
+    }
+    uint64_t value = real_guy_sp->GetValueAsUnsigned(0);
+    if (value == 0)
+    {
+        stream.Printf("NO");
+        return true;
+    }
+    stream.Printf("YES");
+    return true;
+}
+
+template <bool is_sel_ptr>
+bool
+lldb_private::formatters::ObjCSELSummaryProvider (ValueObject& valobj, Stream& stream)
+{
+    lldb::addr_t data_address = LLDB_INVALID_ADDRESS;
+    
+    if (is_sel_ptr)
+        data_address = valobj.GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
+    else
+        data_address = valobj.GetAddressOf();
+
+    if (data_address == LLDB_INVALID_ADDRESS)
+        return false;
+    
+    ExecutionContext exe_ctx(valobj.GetExecutionContextRef());
+    
+    void* char_opaque_type = valobj.GetClangAST()->CharTy.getAsOpaquePtr();
+    ClangASTType charstar(valobj.GetClangAST(),ClangASTType::GetPointerType(valobj.GetClangAST(), char_opaque_type));
+    
+    ValueObjectSP valobj_sp(ValueObject::CreateValueObjectFromAddress("text", data_address, exe_ctx, charstar));
+    
+    stream.Printf("%s",valobj_sp->GetSummaryAsCString());
+    return true;
+}
+
 lldb_private::formatters::NSArrayMSyntheticFrontEnd::NSArrayMSyntheticFrontEnd (lldb::ValueObjectSP valobj_sp) :
 SyntheticChildrenFrontEnd(*valobj_sp.get()),
 m_exe_ctx_ref(),
@@ -770,6 +828,14 @@ lldb_private::formatters::NSArrayMSyntheticFrontEnd::Update()
     if (error.Fail())
         return false;
     return false;
+}
+
+bool
+lldb_private::formatters::NSArrayMSyntheticFrontEnd::MightHaveChildren ()
+{
+    if (!m_data_32 && !m_data_64)
+        Update ();
+    return CalculateNumChildren();
 }
 
 static uint32_t
@@ -881,6 +947,14 @@ lldb_private::formatters::NSArrayISyntheticFrontEnd::Update()
     return false;
 }
 
+bool
+lldb_private::formatters::NSArrayISyntheticFrontEnd::MightHaveChildren ()
+{
+    if (!m_data_ptr)
+        Update ();
+    return CalculateNumChildren();
+}
+
 lldb::ValueObjectSP
 lldb_private::formatters::NSArrayISyntheticFrontEnd::GetChildAtIndex (uint32_t idx)
 {
@@ -975,6 +1049,12 @@ lldb_private::formatters::NSArrayCodeRunningSyntheticFrontEnd::Update()
     return false;
 }
 
+bool
+lldb_private::formatters::NSArrayCodeRunningSyntheticFrontEnd::MightHaveChildren ()
+{
+    return CalculateNumChildren() > 0;
+}
+
 uint32_t
 lldb_private::formatters::NSArrayCodeRunningSyntheticFrontEnd::GetIndexOfChildWithName (const ConstString &name)
 {
@@ -1064,6 +1144,12 @@ bool
 lldb_private::formatters::NSDictionaryCodeRunningSyntheticFrontEnd::Update()
 {
     return false;
+}
+
+bool
+lldb_private::formatters::NSDictionaryCodeRunningSyntheticFrontEnd::MightHaveChildren ()
+{
+    return CalculateNumChildren() > 0;
 }
 
 uint32_t
@@ -1156,6 +1242,14 @@ lldb_private::formatters::NSDictionaryISyntheticFrontEnd::Update()
         return false;
     m_data_ptr = data_location + m_ptr_size;
     return false;
+}
+
+bool
+lldb_private::formatters::NSDictionaryISyntheticFrontEnd::MightHaveChildren ()
+{
+    if (!m_data_32 && !m_data_64)
+        Update ();
+    return CalculateNumChildren();
 }
 
 lldb::ValueObjectSP
@@ -1299,6 +1393,14 @@ lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::Update()
     return false;
 }
 
+bool
+lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::MightHaveChildren ()
+{
+    if (!m_data_32 && !m_data_64)
+        Update ();
+    return CalculateNumChildren();
+}
+
 lldb::ValueObjectSP
 lldb_private::formatters::NSDictionaryMSyntheticFrontEnd::GetChildAtIndex (uint32_t idx)
 {
@@ -1372,3 +1474,9 @@ lldb_private::formatters::NSDataSummaryProvider<true> (ValueObject&, Stream&) ;
 
 template bool
 lldb_private::formatters::NSDataSummaryProvider<false> (ValueObject&, Stream&) ;
+
+template bool
+lldb_private::formatters::ObjCSELSummaryProvider<true> (ValueObject&, Stream&) ;
+
+template bool
+lldb_private::formatters::ObjCSELSummaryProvider<false> (ValueObject&, Stream&) ;
