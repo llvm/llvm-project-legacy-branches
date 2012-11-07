@@ -40,6 +40,7 @@ set( LLDB_USED_LIBS
   lldbPluginABIMacOSX_arm
   lldbPluginABIMacOSX_i386
   lldbPluginABISysV_x86_64
+  lldbPluginInstructionARM
 
   
   # Windows

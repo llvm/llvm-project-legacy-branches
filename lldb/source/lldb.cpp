@@ -106,12 +106,10 @@ lldb_private::Initialize ()
         ABIMacOSX_i386::Initialize();
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
-#ifndef _WIN32
         DisassemblerLLVMC::Initialize();
         DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
         EmulateInstructionARM::Initialize ();
-#endif
         ObjectFilePECOFF::Initialize ();
         ObjectFileELF::Initialize();
         SymbolFileDWARF::Initialize();
@@ -191,7 +189,6 @@ lldb_private::Terminate ()
     ABIMacOSX_i386::Terminate();
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
-#ifndef _WIN32
     DisassemblerLLVMC::Terminate();
     DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
@@ -199,7 +196,6 @@ lldb_private::Terminate ()
     UnwindAssembly_x86::Terminate();
     UnwindAssemblyInstEmulation::Terminate();
     EmulateInstructionARM::Terminate ();
-#endif
     SymbolFileDWARF::Terminate();
     SymbolFileSymtab::Terminate();
     ObjectFilePECOFF::Terminate ();
