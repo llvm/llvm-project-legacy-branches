@@ -24,6 +24,7 @@ let TargetPrefix = "SI", isTarget = 1 in {
 
   def int_SI_sample : Intrinsic <[llvm_v4f32_ty], [llvm_i32_ty, llvm_v4f32_ty, llvm_v8i32_ty, llvm_v4i32_ty], [IntrReadMem]>;
   def int_SI_sample_bias : Intrinsic <[llvm_v4f32_ty], [llvm_i32_ty, llvm_v4f32_ty, llvm_v8i32_ty, llvm_v4i32_ty], [IntrReadMem]>;
+  def int_SI_sample_lod : Intrinsic <[llvm_v4f32_ty], [llvm_i32_ty, llvm_v4f32_ty, llvm_v8i32_ty, llvm_v4i32_ty], [IntrReadMem]>;
 
   /* Interpolation Intrinsics */
 
