@@ -498,7 +498,7 @@ def IMAGE_SAMPLE : MIMG_Load_Helper <0x00000020, "IMAGE_SAMPLE">;
 //def IMAGE_SAMPLE_D : MIMG_NoPattern_ <"IMAGE_SAMPLE_D", 0x00000022>;
 //def IMAGE_SAMPLE_D_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_D_CL", 0x00000023>;
 //def IMAGE_SAMPLE_L : MIMG_NoPattern_ <"IMAGE_SAMPLE_L", 0x00000024>;
-//def IMAGE_SAMPLE_B : MIMG_NoPattern_ <"IMAGE_SAMPLE_B", 0x00000025>;
+def IMAGE_SAMPLE_B : MIMG_Load_Helper <0x00000025, "IMAGE_SAMPLE_B">;
 //def IMAGE_SAMPLE_B_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_B_CL", 0x00000026>;
 //def IMAGE_SAMPLE_LZ : MIMG_NoPattern_ <"IMAGE_SAMPLE_LZ", 0x00000027>;
 //def IMAGE_SAMPLE_C : MIMG_NoPattern_ <"IMAGE_SAMPLE_C", 0x00000028>;
@@ -1129,6 +1129,13 @@ def : Pat <
   (int_SI_sample imm:$writemask, VReg_128:$coord, SReg_256:$rsrc, SReg_128:$sampler),
   (IMAGE_SAMPLE imm:$writemask, 0, 0, 0, 0, 0, 0, 0, VReg_128:$coord,
                 SReg_256:$rsrc, SReg_128:$sampler)
+>;
+
+/* int_SI_sample_bias */
+def : Pat <
+  (int_SI_sample_bias imm:$writemask, VReg_128:$coord, SReg_256:$rsrc, SReg_128:$sampler),
+  (IMAGE_SAMPLE_B imm:$writemask, 0, 0, 0, 0, 0, 0, 0, VReg_128:$coord,
+                  SReg_256:$rsrc, SReg_128:$sampler)
 >;
 
 def CLAMP_SI : CLAMP<VReg_32>;
