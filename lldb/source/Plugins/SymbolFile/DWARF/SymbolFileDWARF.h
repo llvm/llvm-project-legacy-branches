@@ -59,6 +59,14 @@ class DWARFDIECollection;
 class DWARFFormValue;
 class SymbolFileDWARFDebugMap;
 
+struct BitfieldInfo
+{
+    uint32_t bit_size;
+    uint32_t bit_offset;
+};
+
+typedef std::map<int64_t, BitfieldInfo> BitfieldMap;
+
 class SymbolFileDWARF : public lldb_private::SymbolFile, public lldb_private::UserID
 {
 public:
@@ -166,16 +174,16 @@ public:
         LayoutInfo () :
             bit_size(0),
             alignment(0),
-            field_offsets()//,
-            //base_offsets(), // We don't need to fill in the base classes, this can be done automatically
-            //vbase_offsets() // We don't need to fill in the virtual base classes, this can be done automatically
+            field_offsets(),
+            base_offsets(),
+            vbase_offsets()
         {
         }
         uint64_t bit_size;
         uint64_t alignment;
         llvm::DenseMap <const clang::FieldDecl *, uint64_t> field_offsets;
-//        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> base_offsets;
-//        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> vbase_offsets;
+        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> base_offsets;
+        llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> vbase_offsets;
     };
     //------------------------------------------------------------------
     // PluginInterface protocol
@@ -345,6 +353,7 @@ protected:
                                 std::vector<clang::CXXBaseSpecifier *>& base_classes,
                                 std::vector<int>& member_accessibilities,
                                 DWARFDIECollection& member_function_dies,
+                                BitfieldMap &bitfield_map,
                                 DelayedPropertyList& delayed_properties,
                                 lldb::AccessType &default_accessibility,
                                 bool &is_a_class,

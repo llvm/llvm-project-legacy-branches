@@ -442,7 +442,7 @@ FileSpec::operator== (const FileSpec& rhs) const
                 // rhs's path wasn't resolved but now it is. Check if the resolved
                 // directory is the same as rhs's unresolved directory, and if so, 
                 // we can mark this object as resolved to avoid more future resolves
-                rhs.m_is_resolved = (m_directory == resolved_rhs.m_directory);
+                rhs.m_is_resolved = (rhs.m_directory == resolved_rhs.m_directory);
             }
             else
                 return false;
@@ -546,10 +546,13 @@ FileSpec::Equal (const FileSpec& a, const FileSpec& b, bool full)
 void
 FileSpec::Dump(Stream *s) const
 {
-    m_directory.Dump(s);
-    if (m_directory)
-        s->PutChar('/');
-    m_filename.Dump(s);
+    if (s)
+    {
+        m_directory.Dump(s);
+        if (m_directory)
+            s->PutChar('/');
+        m_filename.Dump(s);
+    }
 }
 
 //------------------------------------------------------------------

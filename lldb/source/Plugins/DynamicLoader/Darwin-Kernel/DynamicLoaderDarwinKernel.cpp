@@ -264,7 +264,8 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (
             uuid = memory_module_sp->GetUUID();
             uuid_is_valid = uuid.IsValid();
         }
-        if (memory_module_sp->GetObjectFile() 
+        if (memory_module_sp 
+            && memory_module_sp->GetObjectFile() 
             && memory_module_sp->GetObjectFile()->GetType() == ObjectFile::eTypeExecutable
             && memory_module_sp->GetObjectFile()->GetStrata() == ObjectFile::eStrataKernel)
         {
@@ -280,7 +281,7 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (
     {
         if (uuid_is_valid)
         {
-            ModuleList &target_images = target.GetImages();
+            const ModuleList &target_images = target.GetImages();
             module_sp = target_images.FindModule(uuid);
 
             if (!module_sp)
@@ -668,10 +669,7 @@ DynamicLoaderDarwinKernel::AddModulesUsingImageInfos (OSKextLoadedKextSummary::c
             loaded_module_list.AppendIfNeeded (image_infos[idx].module_sp);
     }
     
-    if (loaded_module_list.GetSize() > 0)
-    {
-        m_process->GetTarget().ModulesDidLoad (loaded_module_list);
-    }
+    m_process->GetTarget().ModulesDidLoad (loaded_module_list);
     return true;
 }
 

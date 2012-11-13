@@ -955,7 +955,6 @@ FormatManager::LoadObjCFormatters()
     objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL *"),
                                                  ObjC_BOOL_summary);
 
-
     // we need to skip pointers here since we are special casing a SEL* when retrieving its value
     objc_flags.SetSkipPointers(true);
 #ifndef LLDB_DISABLE_PYTHON

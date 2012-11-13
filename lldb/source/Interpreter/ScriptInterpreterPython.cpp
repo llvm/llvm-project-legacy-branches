@@ -2300,7 +2300,7 @@ ScriptInterpreterPython::GetChildAtIndex (const lldb::ScriptInterpreterObjectSP&
             if (value_sb == NULL)
                 Py_XDECREF(child_ptr);
             else
-                ret_val = value_sb->get_sp();
+                ret_val = value_sb->GetSP();
         }
         else
         {
@@ -2424,7 +2424,7 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
         
         // now make sure that Python has "directory" in the search path
         StreamString command_stream;
-        command_stream.Printf("if not (sys.path.__contains__('%s')):\n    sys.path.append('%s');\n\n",
+        command_stream.Printf("if not (sys.path.__contains__('%s')):\n    sys.path.insert(1,'%s');\n\n",
                               directory,
                               directory);
         bool syspath_retval = ExecuteMultipleLines(command_stream.GetData(), ScriptInterpreter::ExecuteScriptOptions().SetEnableIO(false).SetSetLLDBGlobals(false));
@@ -2483,7 +2483,17 @@ ScriptInterpreterPython::LoadScriptingModule (const char* pathname,
                 }
                 else // any other error
                 {
-                    error.SetErrorString("Python raised an error while importing module");
+                    PyObject *type,*value,*traceback;
+                    PyErr_Fetch (&type,&value,&traceback);
+                    
+                    if (value && value != Py_None)
+                        error.SetErrorStringWithFormat("Python error raised while importing module: %s", PyString_AsString(PyObject_Str(value)));
+                    else
+                        error.SetErrorString("Python raised an error while importing module");
+                    
+                    Py_XDECREF(type);
+                    Py_XDECREF(value);
+                    Py_XDECREF(traceback);
                 }
             }
             else // we failed but have no error to explain why

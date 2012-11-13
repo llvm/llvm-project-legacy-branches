@@ -75,7 +75,7 @@ ObjCLanguageRuntime::LookupInCompleteClassCache (ConstString &name)
             m_complete_class_cache.erase(name);
     }
     
-    ModuleList &modules = m_process->GetTarget().GetImages();
+    const ModuleList &modules = m_process->GetTarget().GetImages();
 
     SymbolContextList sc_list;
     const size_t matching_symbols = modules.FindSymbolsWithNameAndType (name,
@@ -123,17 +123,6 @@ ObjCLanguageRuntime::LookupInCompleteClassCache (ConstString &name)
                     else if (!incomplete_type_sp)
                         incomplete_type_sp = type_sp;
                 }
-            }
-           
-            // We didn't find any "real" definitions, so just use any??? Why was
-            // this being done? Prior to this, if there was 1 match only, then it
-            // would always use any objc definition, else we would only accept a
-            // definition if it was the real thing???? Doesn't make sense.
-
-            if (incomplete_type_sp)
-            {
-                m_complete_class_cache[name] = incomplete_type_sp;
-                return incomplete_type_sp;
             }
         }
     }

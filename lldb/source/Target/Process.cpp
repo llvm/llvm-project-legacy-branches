@@ -2984,7 +2984,7 @@ Process::CompleteAttach ()
 
     m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
     // Figure out which one is the executable, and set that in our target:
-    ModuleList &target_modules = m_target.GetImages();
+    const ModuleList &target_modules = m_target.GetImages();
     Mutex::Locker modules_locker(target_modules.GetMutex());
     size_t num_modules = target_modules.GetSize();
     ModuleSP new_executable_module_sp;
@@ -3654,7 +3654,11 @@ Process::RunPrivateStateThread ()
     while (!exit_now)
     {
         EventSP event_sp;
-        WaitForEventsPrivate (NULL, event_sp, control_only);
+        if (!WaitForEventsPrivate (NULL, event_sp, control_only)) {
+            if (log)
+                log->Printf ("Process::%s (arg = %p, pid = %llu) returned false for WaitForEventsPrivate", __FUNCTION__, this, GetID());
+            break;
+        }
         if (event_sp->BroadcasterIs(&m_private_state_control_broadcaster))
         {
             if (log)
