@@ -1,4 +1,4 @@
-//===-- SILowerFlowControl.cpp - Use predicates for flow control ----------===//
+//===-- SILowerControlFlow.cpp - Use predicates for control flow ----------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,10 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass lowers the pseudo flow control instructions (SI_IF_NZ, ELSE, ENDIF)
+// This pass lowers the pseudo control flow instructions (SI_IF_NZ, ELSE, ENDIF)
 // to predicated instructions.
 //
-// All flow control (except loops) is handled using predicated instructions and
+// All control flow (except loops) is handled using predicated instructions and
 // a predicate stack.  Each Scalar ALU controls the operations of 64 Vector
 // ALUs.  The Scalar ALU can update the predicate for any of the Vector ALUs
 // by writting to the 64-bit EXEC register (each bit corresponds to a
@@ -61,7 +61,7 @@ using namespace llvm;
 
 namespace {
 
-class SILowerFlowControlPass : public MachineFunctionPass {
+class SILowerControlFlowPass : public MachineFunctionPass {
 
 private:
   static char ID;
@@ -73,26 +73,26 @@ private:
   void popExecMask(MachineBasicBlock &MBB, MachineBasicBlock::iterator I);
 
 public:
-  SILowerFlowControlPass(TargetMachine &tm) :
+  SILowerControlFlowPass(TargetMachine &tm) :
     MachineFunctionPass(ID), TII(tm.getInstrInfo()) { }
 
   virtual bool runOnMachineFunction(MachineFunction &MF);
 
   const char *getPassName() const {
-    return "SI Lower flow control instructions";
+    return "SI Lower control flow instructions";
   }
 
 };
 
 } // End anonymous namespace
 
-char SILowerFlowControlPass::ID = 0;
+char SILowerControlFlowPass::ID = 0;
 
-FunctionPass *llvm::createSILowerFlowControlPass(TargetMachine &tm) {
-  return new SILowerFlowControlPass(tm);
+FunctionPass *llvm::createSILowerControlFlowPass(TargetMachine &tm) {
+  return new SILowerControlFlowPass(tm);
 }
 
-bool SILowerFlowControlPass::runOnMachineFunction(MachineFunction &MF) {
+bool SILowerControlFlowPass::runOnMachineFunction(MachineFunction &MF) {
 
   // Find all the unused registers that can be used for the predicate stack.
   for (TargetRegisterClass::iterator I = AMDGPU::SReg_64RegClass.begin(),
@@ -169,7 +169,7 @@ bool SILowerFlowControlPass::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-void SILowerFlowControlPass::pushExecMask(MachineBasicBlock &MBB,
+void SILowerControlFlowPass::pushExecMask(MachineBasicBlock &MBB,
                                           MachineBasicBlock::iterator I) {
 
   assert(!UnusedRegisters.empty() && "Ran out of registers for predicate stack");
@@ -181,7 +181,7 @@ void SILowerFlowControlPass::pushExecMask(MachineBasicBlock &MBB,
           .addReg(AMDGPU::EXEC);
 }
 
-void SILowerFlowControlPass::popExecMask(MachineBasicBlock &MBB,
+void SILowerControlFlowPass::popExecMask(MachineBasicBlock &MBB,
                                         MachineBasicBlock::iterator I) {
   unsigned StackReg = PredicateStack.back();
   PredicateStack.pop_back();

@@ -137,7 +137,7 @@ bool AMDGPUPassConfig::addPreEmitPass() {
     addPass(&FinalizeMachineBundlesID);
   } else {
     addPass(createSILowerLiteralConstantsPass(*TM));
-    addPass(createSILowerFlowControlPass(*TM));
+    addPass(createSILowerControlFlowPass(*TM));
   }
 
   return false;
