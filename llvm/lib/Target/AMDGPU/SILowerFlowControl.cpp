@@ -31,6 +31,7 @@
 //
 // %SGPR0 = S_MOV_B64 %EXEC          // Save the current exec mask
 // %EXEC = S_AND_B64 %VCC, %EXEC     // Update the exec mask
+// %SGPR0 = S_XOR_B64 %SGPR0, %EXEC  // Clear live bits from saved exec mask
 // S_CBRANCH_EXECZ label0            // This instruction is an
 //                                   // optimization which allows us to
 //                                   // branch if all the bits of
@@ -38,14 +39,14 @@
 // %VGPR0 = V_ADD_F32 %VGPR0, %VGPR0 // Do the IF block of the branch
 //
 // label0:
-// %EXEC = S_NOT_B64 %EXEC            // Invert the exec mask for the
-//                                    // Then block.
-// %EXEC = S_AND_B64 %SGPR0, %EXEC
+// %SGPR2 = S_MOV_B64 %EXEC           // Save the current exec mask
+// %EXEC = S_MOV_B64 %SGPR0           // Restore the exec mask for the Then block
+// %SGPR0 = S_MOV_B64 %SGPR2          // Save the exec mask from the If block
 // S_BRANCH_EXECZ label1              // Use our branch optimization
 //                                    // instruction again.
 // %VGPR0 = V_SUB_F32 %VGPR0, %VGPR   // Do the THEN block
 // label1:
-// S_MOV_B64                          // Restore the old EXEC value
+// %EXEC = S_OR_B64 %EXEC, %SGPR0     // Re-enable saved exec mask bits
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPU.h"
