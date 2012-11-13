@@ -35,10 +35,10 @@ class VOP3_1_32 <bits<9> op, string opName, list<dag> pattern>
   : VOP3b_2IN <op, opName, SReg_1, AllReg_32, VReg_32, pattern>;
 
 class VOP3_32 <bits<9> op, string opName, list<dag> pattern>
-  : VOP3 <op, (outs VReg_32:$dst), (ins AllReg_32:$src0, AllReg_32:$src1, AllReg_32:$src2, i32imm:$src3, i32imm:$src4, i32imm:$src5, i32imm:$src6), opName, pattern>;
+  : VOP3 <op, (outs VReg_32:$dst), (ins AllReg_32:$src0, VReg_32:$src1, VReg_32:$src2, i32imm:$src3, i32imm:$src4, i32imm:$src5, i32imm:$src6), opName, pattern>;
 
 class VOP3_64 <bits<9> op, string opName, list<dag> pattern>
-  : VOP3 <op, (outs VReg_64:$dst), (ins AllReg_64:$src0, AllReg_64:$src1, AllReg_64:$src2, i32imm:$src3, i32imm:$src4, i32imm:$src5, i32imm:$src6), opName, pattern>;
+  : VOP3 <op, (outs VReg_64:$dst), (ins AllReg_64:$src0, VReg_64:$src1, VReg_64:$src2, i32imm:$src3, i32imm:$src4, i32imm:$src5, i32imm:$src6), opName, pattern>;
 
 
 class SOP1_32 <bits<8> op, string opName, list<dag> pattern>
