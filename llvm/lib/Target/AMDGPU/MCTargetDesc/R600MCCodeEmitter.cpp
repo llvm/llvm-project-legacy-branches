@@ -349,8 +349,8 @@ void R600MCCodeEmitter::EmitTexInstr(const MCInst &MI,
   // Emit instruction
   EmitByte(getBinaryCodeForInstr(MI, Fixups), OS);
 
-  // XXX: Emit resource id r600_shader.c uses sampler + 1.  Why?
-  EmitByte(sampler + 1 + 1, OS);
+  // XXX: Emit resource id (sampler + 3 (R600_MAX_CONST_BUFFERS) )
+  EmitByte(sampler + 3, OS);
 
   // Emit source register
   EmitByte(getHWReg(MI.getOperand(1).getReg()), OS);
