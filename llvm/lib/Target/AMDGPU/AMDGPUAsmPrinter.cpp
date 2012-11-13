@@ -40,7 +40,9 @@ extern "C" void LLVMInitializeAMDGPUAsmPrinter() {
 bool AMDGPUAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   const AMDGPUSubtarget &STM = TM.getSubtarget<AMDGPUSubtarget>();
   if (STM.dumpCode()) {
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
     MF.dump();
+#endif
   }
   SetupMachineFunction(MF);
   OutStreamer.SwitchSection(getObjFileLowering().getTextSection());
