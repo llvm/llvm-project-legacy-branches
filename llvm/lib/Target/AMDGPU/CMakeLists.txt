@@ -44,6 +44,7 @@ add_llvm_target(AMDGPUCodeGen
   SILowerFlowControl.cpp
   SIMachineFunctionInfo.cpp
   SIRegisterInfo.cpp
+  SIFixSGPRLiveness.cpp
   )
 
 add_dependencies(LLVMAMDGPUCodeGen intrinsics_gen)

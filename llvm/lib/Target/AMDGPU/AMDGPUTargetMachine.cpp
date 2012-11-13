@@ -111,6 +111,9 @@ bool AMDGPUPassConfig::addPreRegAlloc() {
     addPass(createSIAssignInterpRegsPass(*TM));
   }
   addPass(createAMDGPUConvertToISAPass(*TM));
+  if (ST.device()->getGeneration() > AMDGPUDeviceInfo::HD6XXX) {
+    addPass(createSIFixSGPRLivenessPass(*TM));
+  }
   return false;
 }
 

@@ -28,6 +28,7 @@ FunctionPass *createSIAssignInterpRegsPass(TargetMachine &tm);
 FunctionPass *createSILowerFlowControlPass(TargetMachine &tm);
 FunctionPass *createSICodeEmitterPass(formatted_raw_ostream &OS);
 FunctionPass *createSILowerLiteralConstantsPass(TargetMachine &tm);
+FunctionPass *createSIFixSGPRLivenessPass(TargetMachine &tm);
 
 // Passes common to R600 and SI
 FunctionPass *createAMDGPUConvertToISAPass(TargetMachine &tm);
