@@ -1350,7 +1350,8 @@ public:
         eBroadcastBitStateChanged   = (1 << 0),
         eBroadcastBitInterrupt      = (1 << 1),
         eBroadcastBitSTDOUT         = (1 << 2),
-        eBroadcastBitSTDERR         = (1 << 3)
+        eBroadcastBitSTDERR         = (1 << 3),
+        eBroadcastBitProfileData    = (1 << 4)
     };
 
     enum
@@ -2948,7 +2949,7 @@ public:
 
     Error
     DeallocateMemory (lldb::addr_t ptr);
-
+    
     //------------------------------------------------------------------
     /// Get any available STDOUT.
     ///
@@ -3004,6 +3005,24 @@ public:
         return 0;
     }
 
+    //------------------------------------------------------------------
+    /// Get any available profile data.
+    ///
+    /// @param[out] buf
+    ///     A buffer that will receive any profile data bytes that are
+    ///     currently available.
+    ///
+    /// @param[out] buf_size
+    ///     The size in bytes for the buffer \a buf.
+    ///
+    /// @return
+    ///     The number of bytes written into \a buf. If this value is
+    ///     equal to \a buf_size, another call to this function should
+    ///     be made to retrieve more profile data.
+    //------------------------------------------------------------------
+    virtual size_t
+    GetAsyncProfileData (char *buf, size_t buf_size, Error &error);
+    
     //----------------------------------------------------------------------
     // Process Breakpoints
     //----------------------------------------------------------------------
@@ -3124,8 +3143,7 @@ public:
     {
     public:
         ProcessEventHijacker (Process &process, Listener *listener) :
-            m_process (process),
-            m_listener (listener)
+            m_process (process)
         {
             m_process.HijackProcessEvents (listener);
         }
@@ -3136,7 +3154,6 @@ public:
          
     private:
         Process &m_process;
-        Listener *m_listener;
     };
     friend class ProcessEventHijacker;
     //------------------------------------------------------------------
@@ -3445,14 +3462,16 @@ protected:
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
-    Communication 				m_stdio_communication;
-    Mutex        				m_stdio_communication_mutex;
+    Communication               m_stdio_communication;
+    Mutex                       m_stdio_communication_mutex;
     std::string                 m_stdout_data;
     std::string                 m_stderr_data;
+    Mutex                       m_profile_data_comm_mutex;
+    std::string                 m_profile_data;
     MemoryCache                 m_memory_cache;
     AllocatedMemoryCache        m_allocated_memory_cache;
     bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?
-    LanguageRuntimeCollection 	m_language_runtimes;
+    LanguageRuntimeCollection   m_language_runtimes;
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
     ReadWriteLock               m_run_lock;
@@ -3523,6 +3542,9 @@ protected:
     
     void
     AppendSTDERR (const char *s, size_t len);
+    
+    void
+    BroadcastAsyncProfileData(const char *s, size_t len);
     
     static void
     STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);

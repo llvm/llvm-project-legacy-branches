@@ -38,6 +38,9 @@ class BreakpointCommandTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set break point at this line.')
+        # disable "There is a running process, kill it and restart?" prompt
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
 
     def breakpoint_command_sequence(self):
         """Test a sequence of breakpoint command add, list, and delete."""

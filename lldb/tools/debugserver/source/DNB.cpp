@@ -1217,6 +1217,28 @@ DNBProcessMemoryRegionInfo (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *r
     return -1;
 }
 
+const char *
+DNBProcessGetProfileDataAsCString (nub_process_t pid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->Task().GetProfileDataAsCString();
+    
+    return NULL;
+}
+
+nub_bool_t
+DNBProcessSetAsyncEnableProfiling (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+    {
+        procSP->SetAsyncEnableProfiling(enable, interval_usec);
+        return true;
+    }
+    
+    return false;    
+}
 
 //----------------------------------------------------------------------
 // Formatted output that uses memory and registers from process and
@@ -2068,6 +2090,15 @@ DNBProcessGetAvailableSTDERR (nub_process_t pid, char *buf, nub_size_t buf_size)
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
         return procSP->GetAvailableSTDERR (buf, buf_size);
+    return 0;
+}
+
+nub_size_t
+DNBProcessGetAvailableProfileData (nub_process_t pid, char *buf, nub_size_t buf_size)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->GetAsyncProfileData (buf, buf_size);
     return 0;
 }
 

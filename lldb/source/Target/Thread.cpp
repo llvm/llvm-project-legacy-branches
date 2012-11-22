@@ -1682,6 +1682,8 @@ Thread::ResetFrameZeroRegisters (lldb::DataBufferSP register_data_sp)
         // Clear out all stack frames as our world just changed.
         ClearStackFrames();
         frame_sp->GetRegisterContext()->InvalidateIfNeeded(true);
+        if (m_unwinder_ap.get())
+            m_unwinder_ap->Clear();
 
         return ret;
     }
@@ -1723,7 +1725,7 @@ Thread::Flush ()
     m_reg_context_sp.reset();
 }
 
-const bool
+bool
 Thread::IsStillAtLastBreakpointHit ()
 {
     // If we are currently stopped at a breakpoint, always return that stopinfo and don't reset it.
